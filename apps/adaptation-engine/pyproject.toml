@@ -1,11 +1,11 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "estalara-adaptation-engine"
 version = "0.0.0"
-description = "Estalara adaptation engine — Modal serverless service for generating listing adaptation directives"
+description = "Estalara adaptation-engine — Modal serverless Python service"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []

@@ -1,11 +1,11 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "estalara-data-quality"
 version = "0.0.0"
-description = "Estalara data quality — Modal service for event validation and schema drift detection"
+description = "Estalara data-quality — Modal serverless Python service"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []

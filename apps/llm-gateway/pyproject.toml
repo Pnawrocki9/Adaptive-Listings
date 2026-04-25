@@ -1,11 +1,11 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "estalara-llm-gateway"
 version = "0.0.0"
-description = "Estalara LLM gateway — Modal LiteLLM router for Claude Haiku/Sonnet calls"
+description = "Estalara llm-gateway — Modal serverless Python service"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []

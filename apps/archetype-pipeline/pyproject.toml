@@ -1,11 +1,11 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "estalara-archetype-pipeline"
 version = "0.0.0"
-description = "Estalara archetype pipeline — Modal daily batch job for buyer archetype clustering"
+description = "Estalara archetype-pipeline — Modal serverless Python service"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []

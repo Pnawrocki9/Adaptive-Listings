@@ -1,11 +1,11 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "estalara-intent-engine"
 version = "0.0.0"
-description = "Estalara intent engine — Modal serverless Python service for buyer intent extraction"
+description = "Estalara intent-engine — Modal serverless Python service"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []

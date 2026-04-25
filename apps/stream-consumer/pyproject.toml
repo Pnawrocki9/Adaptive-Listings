@@ -1,11 +1,11 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "estalara-stream-consumer"
 version = "0.0.0"
-description = "Estalara stream consumer — Modal service consuming Redpanda events into ClickHouse"
+description = "Estalara stream-consumer — Modal serverless Python service"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []

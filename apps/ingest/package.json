@@ -1,0 +1,21 @@
+{
+  "name": "@estalara/ingest",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Estalara event ingest Cloudflare Worker — p95 latency target <50ms",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "dev": "wrangler dev",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "deploy": "wrangler deploy",
+    "clean": "rm -rf dist .wrangler"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "*",
+    "vitest": "*",
+    "wrangler": "^3.0.0"
+  }
+}

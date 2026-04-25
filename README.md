@@ -1,107 +1,283 @@
 # Estalara Adaptive Listings
 
-Embeddable AI layer + standalone SaaS that lets any real estate website serve listings adapted in real time to each anonymous buyer based on chat, behavior, questions, and cross-listing journey.
+Embeddable AI layer + standalone SaaS that lets any real estate website serve listings adapted in
+real time to each anonymous buyer based on chat, behavior, questions, and cross-listing journey.
 
-This repository is run by an **agent-orchestrated workflow**: most code is written by specialized Claude Code subagents under the supervision of a PM agent, with humans reviewing PRs and resolving escalations.
+This repository is run by an **agent-orchestrated workflow**: most code is written by specialized
+Claude Code subagents under the supervision of a PM agent, with humans reviewing PRs and resolving
+escalations.
 
 ## Status
 
 **Pre-MVP / Sprint 0 / Repository scaffolding phase.**
 
-| Sprint | Theme | State |
-|---|---|---|
-| 0 | Foundation | Not started |
-| 1–11 | Per `docs/AGENT_WORKFLOW.md` | Pending |
+| Sprint | Theme                 | State       |
+| ------ | --------------------- | ----------- |
+| 0      | Foundation            | In Progress |
+| 1-11   | Per AGENT_WORKFLOW.md | Pending     |
 
-## Quick start (humans)
+---
 
-If you are Piotr, Rafał, or Krystian, your day looks like this:
+## Prerequisites
+
+| Tool   | Version  | Notes                                      |
+| ------ | -------- | ------------------------------------------ |
+| Node   | 22.x LTS | Use nvm: `nvm use` or mise: `mise install` |
+| pnpm   | 9.x      | `corepack enable && corepack prepare`      |
+| Python | 3.12+    | Required for Modal apps only               |
+| Git    | 2.40+    |                                            |
+
+Recommended: [mise](https://mise.jdx.dev/) (formerly `asdf`) — `.tool-versions` is present.
 
 ```bash
-# Morning
-claude /sprint-status        # what's the state of the world
-gh pr list --state open      # what needs my review
-# ...review and merge PRs...
-claude /run-pm               # kick the PM into the next loop iteration
+# Install mise (if not installed)
+curl https://mise.run | sh
 
-# Afternoon — same loop
-
-# Evening — same loop, plus add escalations for anything you noticed
-claude /escalate             # surface a concern
+# Install all pinned tool versions
+mise install
 ```
 
-The PM agent picks tickets, delegates them to worker agents, validates the resulting PRs against acceptance criteria, and either marks them ready for your review or escalates if something is off.
+---
 
-You stay in the loop on:
+## Install
 
-- **Merging PRs** (you do this; agents never merge)
-- **Resolving escalations** (`backlog/ESCALATIONS.md`)
-- **Architectural decisions** (ADRs in `docs/adr/`)
-- **Approving production deploys** (tagged releases, gated)
+```bash
+# Clone and enter
+git clone git@github.com:pnawrocki9/adaptive-listings.git
+cd adaptive-listings
 
-## Quick start (Claude Code agents)
+# Install all Node dependencies (workspaces resolved automatically)
+pnpm install
+```
 
-Read `CLAUDE.md` first. It tells you who you are, what to do, and where the rules live.
+Secrets are managed via **Doppler** — never stored in `.env` files. For local development:
 
-Then read the file that names your role: `.claude/agents/<your-name>.md`.
+```bash
+# Install Doppler CLI: https://docs.doppler.com/docs/install-cli
+doppler login
+doppler setup   # select estalara / development project
 
-Then check `backlog/QUEUE.md` for the next ticket assigned to you, and find its full spec at `backlog/sprint-N/TICKET-XXX.md`.
+# Run any command with secrets injected
+doppler run -- pnpm dev
+```
+
+---
+
+## Development
+
+```bash
+# Start all services in dev mode (hot reload)
+pnpm dev
+
+# Start a specific app
+pnpm --filter @estalara/ingest dev
+pnpm --filter @estalara/control-plane dev
+pnpm --filter @estalara/decision-api dev
+
+# Python Modal apps (run locally without Modal)
+cd apps/intent-engine
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+python src/main.py
+```
+
+---
+
+## Lint
+
+```bash
+# Lint all packages and apps
+pnpm lint
+
+# Lint a specific package
+pnpm --filter @estalara/shared lint
+
+# Auto-fix
+pnpm exec eslint --fix packages/shared/src
+```
+
+---
+
+## Typecheck
+
+```bash
+# Typecheck all packages and apps
+pnpm typecheck
+
+# Typecheck a specific package
+pnpm --filter @estalara/sdk typecheck
+```
+
+---
+
+## Test
+
+```bash
+# Run all tests (TypeScript + skips Python)
+pnpm test
+
+# Run tests for a specific package
+pnpm --filter @estalara/shared test
+
+# Run Python tests for a specific Modal app
+cd apps/intent-engine
+pytest src/ -v
+
+# Run all Python app tests (from repo root)
+for app in intent-engine adaptation-engine llm-gateway stream-consumer archetype-pipeline data-quality; do
+  echo "=== $app ==="
+  (cd apps/$app && pip install -e ".[dev]" -q && python -m pytest src/ -v)
+done
+```
+
+---
+
+## Build
+
+```bash
+# Build all TypeScript packages and apps
+pnpm build
+
+# Build a specific package
+pnpm --filter @estalara/shared build
+pnpm --filter @estalara/control-plane build
+
+# Check bundle size against budgets (full impl in TICKET-018)
+npx tsx scripts/check-bundle-size.ts
+```
+
+---
+
+## Format
+
+```bash
+# Check formatting
+pnpm format:check
+
+# Fix formatting
+pnpm format
+```
+
+---
+
+## Deploy
+
+Deployments are managed via **GitHub Actions** on tagged releases. No developer has direct
+production deploy access.
+
+```bash
+# Deploy to staging (automatic on merge to main)
+# Just merge a PR — CI handles the rest.
+
+# Deploy to production (tagged release, requires human approval)
+git tag v1.2.3
+git push origin v1.2.3
+# Then approve the deploy workflow in GitHub Actions UI
+```
+
+See `docs/runbooks/` for incident response, rollback procedures, and SLO definitions.
+
+Terraform infrastructure is in `infra/terraform/`. Apply via:
+
+```bash
+# Staging (automatic via CI on merge)
+cd infra/terraform/staging
+terragrunt apply
+
+# Production (human-gated)
+cd infra/terraform/production
+terragrunt plan   # review
+terragrunt apply  # requires approval
+```
+
+---
 
 ## Repository structure
 
-See `docs/CONVENTIONS.md` for the canonical layout. Key roots:
+See `docs/CONVENTIONS.md` for the canonical layout.
 
-- `apps/` — deployable services (Cloudflare Workers, Next.js, Modal Python)
-- `packages/` — shared TypeScript libraries
-- `infra/` — Terraform, ClickHouse DDL, observability config
-- `tests/` — E2E, integration, load tests, fixtures
-- `docs/` — design docs, ADRs, runbooks, compliance docs
-- `backlog/` — ticket queue, sprint specs, status, escalations
-- `.claude/` — agent definitions, hooks, slash commands, settings
+```
+.
+├── apps/                  # Deployable services
+│   ├── ingest/            # Cloudflare Worker — event ingest
+│   ├── decision-api/      # Cloudflare Worker — adaptation decisions
+│   ├── control-plane/     # Next.js 15 App Router — dashboard + management API
+│   ├── intent-engine/     # Modal Python — buyer intent extraction
+│   ├── adaptation-engine/ # Modal Python — listing adaptation directives
+│   ├── llm-gateway/       # Modal Python — LiteLLM router
+│   ├── stream-consumer/   # Modal Python — Redpanda → ClickHouse
+│   ├── archetype-pipeline/# Modal Python — daily archetype clustering
+│   └── data-quality/      # Modal Python — event validation
+├── packages/              # Shared TypeScript libraries
+│   ├── sdk/               # Core embeddable SDK
+│   ├── sdk-loader/        # Tiny async loader (<2KB gzip)
+│   ├── sdk-react/         # React wrapper
+│   ├── sdk-vue/           # Vue wrapper
+│   ├── shared/            # Zod schemas + shared types
+│   ├── db/                # Drizzle ORM schemas + migrations
+│   ├── auth/              # JWT + API key utilities
+│   ├── intent-ontology/   # 12-dimension buyer intent schema
+│   └── compliance/        # Consent + fair-housing linter
+├── infra/                 # Terraform, ClickHouse DDL, observability
+├── tests/                 # E2E, integration, load tests
+├── docs/                  # Design docs, ADRs, runbooks, compliance
+├── backlog/               # Ticket queue, sprint specs, escalations
+├── scripts/               # Repo maintenance scripts
+└── .claude/               # Agent definitions and hooks
+```
+
+---
 
 ## The agent team
 
-Nine specialized Claude Code subagents, each with its own scope, tools, and quality bars:
+Nine specialized Claude Code subagents, each with its own scope and quality bars:
 
-1. **`pm-orchestrator`** — drives the backlog
-2. **`architect`** — interfaces and ADRs
-3. **`sdk-engineer`** — `@estalara/sdk` (Preact + Shadow DOM)
-4. **`backend-engineer`** — Cloudflare Workers + Next.js + Postgres
-5. **`data-engineer`** — ClickHouse + Redpanda + ETL
-6. **`ml-engineer`** — intent engine + adaptation + LLM gateway
-7. **`devops-engineer`** — Terraform + CI/CD + observability
-8. **`qa-engineer`** — E2E + integration + load tests
-9. **`compliance-engineer`** — DPIA, GDPR/CCPA/PDPL, fair-housing
+| Agent                 | Role                                     |
+| --------------------- | ---------------------------------------- |
+| `pm-orchestrator`     | Drives the backlog                       |
+| `architect`           | Interfaces and ADRs                      |
+| `sdk-engineer`        | `@estalara/sdk` (Preact + Shadow DOM)    |
+| `backend-engineer`    | Cloudflare Workers + Next.js + Postgres  |
+| `data-engineer`       | ClickHouse + Redpanda + ETL              |
+| `ml-engineer`         | Intent engine + adaptation + LLM gateway |
+| `devops-engineer`     | Terraform + CI/CD + observability        |
+| `qa-engineer`         | E2E + integration + load tests           |
+| `compliance-engineer` | DPIA, GDPR/CCPA/PDPL, fair-housing       |
 
-Read the full coordination protocol in `docs/AGENT_WORKFLOW.md`.
+---
 
-## Tech stack (decided)
+## Tech stack (decided — do not re-litigate)
 
-- **Monorepo:** Turborepo + pnpm
-- **SDK:** TypeScript 5, Preact 10, tsup, Shadow DOM, <40KB gzip
-- **Edge ingest:** Cloudflare Workers + Durable Objects
-- **Control plane:** Next.js 15 App Router on Vercel
-- **ML services:** Modal (Python)
-- **Event bus:** Redpanda Cloud
-- **Postgres:** Supabase (multi-region)
-- **Event store:** ClickHouse Cloud
-- **Vector store:** pgvector → Qdrant (Y2)
-- **Cache:** Upstash Redis
-- **LLM:** Claude Haiku 4.5 (workhorse) + Sonnet 4.6 (complex), via LiteLLM
-- **Embeddings:** OpenAI text-embedding-3-small (MVP) → BGE-M3 (Y2)
-- **Observability:** Sentry + OpenTelemetry + Grafana Cloud
-- **Secrets:** Doppler
+| Concern       | Technology                                |
+| ------------- | ----------------------------------------- |
+| Monorepo      | Turborepo + pnpm                          |
+| SDK           | TypeScript 5, Preact 10, tsup, Shadow DOM |
+| Edge ingest   | Cloudflare Workers + Durable Objects      |
+| Control plane | Next.js 15 App Router on Vercel           |
+| ML services   | Modal (Python 3.12)                       |
+| Event bus     | Redpanda Cloud                            |
+| Postgres      | Supabase (multi-region, 4 projects)       |
+| Event store   | ClickHouse Cloud                          |
+| Vector store  | pgvector (MVP) → Qdrant (Y2)              |
+| Cache         | Upstash Redis (multi-region)              |
+| LLM           | Claude Haiku 4.5 + Sonnet 4.6 via LiteLLM |
+| Embeddings    | OpenAI text-embedding-3-small (MVP)       |
+| Observability | Sentry + OpenTelemetry + Grafana Cloud    |
+| Secrets       | Doppler                                   |
+| IaC           | Terraform + Terragrunt                    |
 
-If you want to change a stack decision, write an ADR in `docs/adr/PROPOSED-XXX.md` and escalate. Do not silently swap.
+---
 
 ## Multi-region scope
 
-Live regions from MVP:
+| Region | Location  | Compliance      |
+| ------ | --------- | --------------- |
+| fra1   | Frankfurt | GDPR (EU/EEA)   |
+| iad1   | Virginia  | CCPA/CPRA (US)  |
+| lhr1   | London    | UK GDPR         |
+| dxb1   | Dubai     | UAE PDPL + DIFC |
 
-- **EU** (Frankfurt) — primary, GDPR
-- **US** (Virginia) — CCPA/CPRA
-- **UK** (London) — UK GDPR
-- **UAE** (Dubai) — PDPL + DIFC
+---
 
 ## License
 
@@ -113,4 +289,4 @@ Private and proprietary. Estalara Inc. All rights reserved.
 - Rafał Palak PhD — CTO — `rafal@estalara.io`
 - Krystian Wojtkiewicz PhD — CPO — `krystian@estalara.io`
 
-For agents: do not contact humans except via `backlog/ESCALATIONS.md`.
+For agents: communicate only via `backlog/ESCALATIONS.md`.

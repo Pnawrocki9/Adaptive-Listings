@@ -1,0 +1,10 @@
+name = "estalara-ingest"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "development"
+
+# Production configuration is managed via Terraform in infra/terraform/
+# Secrets are managed via Doppler — never commit .env files

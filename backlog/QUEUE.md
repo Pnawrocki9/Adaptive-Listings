@@ -21,7 +21,7 @@ Status changes are atomic: PM reads the file, modifies one entry, writes it back
 
 | Sprint | Weeks | Theme | Tickets | DONE | IN_PROGRESS | READY | BLOCKED |
 |---|---|---|---|---|---|---|---|
-| 0 | 1 | Foundation (repo, monorepo, CI, scaffolding) | 15 | 0 | 0 | 1 | 14 |
+| 0 | 1 | Foundation (repo, monorepo, CI, scaffolding) | 15 | 0 | 1 | 0 | 14 |
 | 1 | 2 | Ingest baseline + event schema | tbd | 0 | 0 | 0 | tbd |
 | 2 | 3 | Postgres + tenant auth + dashboard skeleton | tbd | 0 | 0 | 0 | tbd |
 | 3 | 4 | SDK Tier 1 Observer + Cloudflare deploy | tbd | 0 | 0 | 0 | tbd |
@@ -42,7 +42,9 @@ Detailed tickets for sprints 0–3 in Pakiet 2. Sprints 4–11 in Pakiet 3.
 - id: TICKET-001
   title: Bootstrap monorepo (Turborepo + pnpm + tooling)
   agent: devops-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: devops-engineer
+  started_at: "2026-04-25T00:00:00Z"
   priority: P0
   estimated_hours: 4
   depends_on: []
@@ -61,7 +63,7 @@ The remaining 14 Sprint 0 tickets ship in Pakiet 2.
 
 ## Currently in flight
 
-None — Sprint 0 not yet started.
+- TICKET-001 | devops-engineer | IN_PROGRESS | started 2026-04-25T00:00:00Z | Bootstrap monorepo
 
 ## Awaiting human review
 

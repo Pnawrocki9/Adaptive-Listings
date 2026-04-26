@@ -8,11 +8,11 @@
 
 ## Context
 
-GitHub CodeQL provides automated security analysis for code repositories, identifying vulnerabilities
-and security issues in JavaScript/TypeScript and Python code.
+GitHub CodeQL provides automated security analysis for code repositories, identifying
+vulnerabilities and security issues in JavaScript/TypeScript and Python code.
 
-During Sprint 0 (TICKET-001: Bootstrap monorepo), we initially added
-`.github/workflows/codeql.yml` to enable security scanning. However, CI checks revealed that:
+During Sprint 0 (TICKET-001: Bootstrap monorepo), we initially added `.github/workflows/codeql.yml`
+to enable security scanning. However, CI checks revealed that:
 
 1. **Code scanning is not enabled for this repository** — GitHub's security scanning features
    require a paid GitHub plan (Team, Enterprise) or the repository to be public

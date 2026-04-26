@@ -111,8 +111,8 @@ tickets fill in actual code.
 - Create `.github/workflows/ci.yml` running: install, lint, typecheck, test, build (matrix: Node 22,
   ubuntu-latest)
 - ~~Create `.github/workflows/codeql.yml` for security scanning~~ **Deferred:** CodeQL requires paid
-  GitHub plan or public repo. Decision documented in ADR-0002. Will be enabled when we upgrade plan or
-  open-source.
+  GitHub plan or public repo. Decision documented in ADR-0002. Will be enabled when we upgrade plan
+  or open-source.
 - Set up lefthook with pre-commit hooks: lint-staged formatting, typecheck on changed files
 - Create `scripts/check-bundle-size.ts` placeholder (full impl in TICKET-018)
 - Initial commit on `main` branch

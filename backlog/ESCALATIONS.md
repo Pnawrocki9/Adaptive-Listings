@@ -7,16 +7,12 @@ Issues that require human decisions. Agents append; humans resolve.
 ```markdown
 ## OPEN — <short title>
 
-**Filed by:** <agent or human>
-**Date:** <ISO timestamp>
-**Affects:** <ticket-id or area>
-**Type:** [architectural | compliance | priority | scope | vendor | other]
+**Filed by:** <agent or human> **Date:** <ISO timestamp> **Affects:** <ticket-id or area> **Type:**
+[architectural | compliance | priority | scope | vendor | other]
 
-**Description:**
-What happened, what was expected, what's needed to unblock.
+**Description:** What happened, what was expected, what's needed to unblock.
 
-**Required action:**
-What needs to happen to resolve.
+**Required action:** What needs to happen to resolve.
 
 **Resolution:** <empty until resolved>
 ```

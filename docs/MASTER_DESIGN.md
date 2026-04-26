@@ -143,7 +143,7 @@ Allegro Lokalnie — Polska, scraping fallback przez Apify-style ($0.50/1k prope
 JSON Schema feed + REST webhook — fallback dla każdej innej platformy
 
 C. Signal Ingestion & Data Sources C.1. Pełna taxonomia sygnałów (event schema) Wszystkie eventy
-mają wspólny envelope: type EstalaraEvent = { event_id: string; // UUIDv7 tenant_id: string;
+mają wspólny envelope: type EstalaraEvent = { event*id: string; // UUIDv7 tenant_id: string;
 session_id: string; // session-scoped fingerprint hash archetype_hint?: string; // populated by
 intent engine, not SDK listing_id?: string; ts: number; // ms since epoch (client clock + server
 skew) region: 'eu' | 'us' | 'uk' | 'uae'; consent_state: 'none' | 'legitimate-interest' |
@@ -159,7 +159,7 @@ filter.applied, filter.removed, sort.changed 5–50 Chat (NLP target) chat.opene
 listing.compared, listing.bookmarked 1–10 Inquiry / conversion inquiry.started, inquiry.completed,
 tour.requested 0–3 Device/context One-time per session: device class, viewport, language, IP-derived
 country/city, time-of-day 1 C.2. Ingestion rate i strategia Klient wysyła batches co 2 sekundy (lub
-immediate flush dla inquiry._ i chat._) Realistic peak: 100k DAU x avg 60 events/session = 6M
+immediate flush dla inquiry.* i chat.\_) Realistic peak: 100k DAU x avg 60 events/session = 6M
 events/dzień w Year 1; rozdzielone na ~70k events/sec peak (przy mocnym targowym ruchu) — Cloudflare
 Workers obsłuży to bez problemu, ClickHouse Cloud na tier $500/mo ingestuje 100M+/dzień Real-time
 path (chat / live adaptation): WebSocket lub Server-Sent Events przez Cloudflare Durable Objects
@@ -261,7 +261,7 @@ expertise. Nasz zespół 5-osobowy nie ma na to capacity. Google i Meta używaj�
 pragmatyczny wybór: centralized aggregation + DP + k-anonymity. F.2. Architektura archetypes Tenant
 A events ──┐ Tenant B events ──┼──► Anonymization Pipeline ──► Archetype Update Job Tenant C events
 ──┘ (k-anon ≥ 50 per bucket, (Modal, daily, with DP-SGD, DP noise added, ε ≤ 2 per epoch, no
-tenant_id retained) epoch_budget tracked) │ ▼ ┌────────────────────┐ │ Global Archetype │ │
+tenant*id retained) epoch_budget tracked) │ ▼ ┌────────────────────┐ │ Global Archetype │ │
 Embedding Space │ │ (~50–500 archetypes│ │ in pgvector, │ │ per region) │ └────────────────────┘ │ ▼
 All tenants benefit: - Faster cold-start intent detection - Better archetype matching - Cross-market
 patterns (e.g. "British retirees → Costa del Sol" shows up in tenant B's data even if tenant B never
@@ -275,7 +275,7 @@ re-identification No raw PII w global store Tylko vector + categorical archetype
 transcripts rzadko transferred globally i tylko po LLM-based redaction PII Zero PII leakage
 cross-tenant Consent-aware aggregation Sessions z consent_state = consented → wkład pełny;
 legitimate-interest → tylko aggregated metrics; none → wyłączone z global learning Compliance with
-GDPR Art. 6/9 F.4. MOAT mathematics dla inwestorów Tenant utility(t) = α _ own_data(t) + β _
+GDPR Art. 6/9 F.4. MOAT mathematics dla inwestorów Tenant utility(t) = α * own*data(t) + β *
 network_data(N) + γ \* model_quality(t,N)
 
 Gdzie:

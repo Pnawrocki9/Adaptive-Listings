@@ -22,7 +22,7 @@ updates.
 
 | Sprint | Weeks | Theme                                            | Tickets | DONE | IN_PROGRESS | READY | BLOCKED |
 | ------ | ----- | ------------------------------------------------ | ------- | ---- | ----------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding)     | 15      | 0    | 0           | 1     | 14      |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding)     | 15      | 1    | 0           | 14    | 0       |
 | 1      | 2     | Ingest baseline + event schema                   | tbd     | 0    | 0           | 0     | tbd     |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton      | tbd     | 0    | 0           | 0     | tbd     |
 | 3      | 4     | SDK Tier 1 Observer + Cloudflare deploy          | tbd     | 0    | 0           | 0     | tbd     |
@@ -43,7 +43,9 @@ Detailed tickets for sprints 0–3 in Pakiet 2. Sprints 4–11 in Pakiet 3.
 - id: TICKET-001
   title: Bootstrap monorepo (Turborepo + pnpm + tooling)
   agent: devops-engineer
-  status: READY
+  status: DONE
+  completed_at: 2026-04-26T18:15:00Z
+  pr: '#2'
   priority: P0
   estimated_hours: 4
   depends_on: []
@@ -58,11 +60,11 @@ Detailed tickets for sprints 0–3 in Pakiet 2. Sprints 4–11 in Pakiet 3.
   spec: backlog/sprint-0/TICKET-001.md
 ```
 
-The remaining 14 Sprint 0 tickets ship in Pakiet 2.
+The remaining 14 Sprint 0 tickets ship in Pakiet 2. All 14 are now READY (unblocked by TICKET-001).
 
 ## Currently in flight
 
-None — Sprint 0 not yet started.
+None.
 
 ## Awaiting human review
 
@@ -70,4 +72,9 @@ None.
 
 ## Recent merges
 
-None — repo just initialized.
+- **2026-04-26T18:15Z** — TICKET-001 (PR #2): Bootstrap monorepo (Turborepo + pnpm + tooling) by
+  devops-engineer
+  - Monorepo foundation with all 9 packages + 9 apps
+  - CI/CD with GitHub Actions (lint, typecheck, test, build)
+  - Fixed pnpm version conflict, Python build backend, formatting
+  - Documented CodeQL deferral in ADR-0002

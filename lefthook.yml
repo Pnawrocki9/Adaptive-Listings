@@ -1,0 +1,29 @@
+pre-commit:
+  parallel: true
+  commands:
+    format:
+      glob: "*.{ts,tsx,js,jsx,json,yaml,yml,md,css}"
+      run: pnpm exec prettier --write {staged_files}
+      stage_fixed: true
+    lint:
+      glob: "*.{ts,tsx}"
+      run: pnpm exec eslint --fix {staged_files}
+      stage_fixed: true
+    typecheck:
+      glob: "*.{ts,tsx}"
+      # Run full typecheck rather than per-file to avoid turbo filter complexity
+      run: pnpm turbo run typecheck
+
+commit-msg:
+  commands:
+    validate:
+      run: |
+        # Validate conventional commit format with ticket reference
+        MSG=$(cat {1})
+        PATTERN="^(feat|fix|chore|docs|test|refactor|perf|build|ci)\([a-z-]+\): .+ \[TICKET-[0-9]+\]"
+        if ! echo "$MSG" | grep -qE "$PATTERN"; then
+          echo "Commit message must follow: <type>(<scope>): <subject> [TICKET-XXX]"
+          echo "Example: feat(ingest): add event validation [TICKET-042]"
+          echo "Got: $MSG"
+          exit 1
+        fi

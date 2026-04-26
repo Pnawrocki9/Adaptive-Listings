@@ -1,11 +1,13 @@
 # Conventions
 
-The non-negotiable rules every agent follows. When in doubt, follow these. When these conflict with a ticket, follow these and flag the conflict in escalations.
+The non-negotiable rules every agent follows. When in doubt, follow these. When these conflict with
+a ticket, follow these and flag the conflict in escalations.
 
 ## Languages and tooling
 
 - **TypeScript** for everything in `packages/` and `apps/` except Python ML services
-- **Python 3.12+** for `apps/intent-engine`, `apps/adaptation-engine`, `apps/stream-consumer`, `apps/archetype-pipeline`, `apps/data-quality`
+- **Python 3.12+** for `apps/intent-engine`, `apps/adaptation-engine`, `apps/stream-consumer`,
+  `apps/archetype-pipeline`, `apps/data-quality`
 - **SQL** with Drizzle (Postgres) and raw SQL files (ClickHouse)
 - **HCL** for Terraform
 - **YAML** for GitHub Actions, docker-compose
@@ -78,6 +80,7 @@ The non-negotiable rules every agent follows. When in doubt, follow these. When 
 `<agent>/TICKET-XXX-<kebab-summary>`
 
 Examples:
+
 - `backend-engineer/TICKET-042-event-validation`
 - `sdk-engineer/TICKET-018-shadow-dom-mount`
 - `compliance-engineer/TICKET-029-fair-housing-linter-us`
@@ -102,12 +105,14 @@ Same format as commit subject. Always include ticket ID. Always pass CI before r
 
 ### Squash on merge
 
-PRs squash on merge to keep `main` linear. The squash commit message is the PR title plus a one-paragraph summary.
+PRs squash on merge to keep `main` linear. The squash commit message is the PR title plus a
+one-paragraph summary.
 
 ## TypeScript conventions
 
 - **strict mode** on everywhere
-- No `any` without an inline `// eslint-disable-next-line @typescript-eslint/no-explicit-any -- <reason>`
+- No `any` without an inline
+  `// eslint-disable-next-line @typescript-eslint/no-explicit-any -- <reason>`
 - Prefer `unknown` over `any` when type is genuinely unknown
 - All public exports have JSDoc
 - All async functions return `Promise<T>` explicitly
@@ -135,7 +140,8 @@ PRs squash on merge to keep `main` linear. The squash commit message is the PR t
 - Or in dedicated test dirs for E2E/integration: `tests/e2e/`, `tests/integration/`
 - Use AAA pattern: Arrange, Act, Assert
 - One assertion focus per test (multiple expects ok if testing one behavior)
-- Test names describe behavior, not implementation: `it('rejects events without tenant_id')` not `it('throws ZodError')`
+- Test names describe behavior, not implementation: `it('rejects events without tenant_id')` not
+  `it('throws ZodError')`
 - Mock external services with MSW (frontend) or pytest-mock (backend Python) or Vitest mocks
 - No real network calls in unit tests
 
@@ -163,6 +169,7 @@ export type Event = z.infer<typeof EventSchema>;
 ```
 
 Rules:
+
 - One schema per file
 - Always export both the schema and the inferred type
 - Always include `schema_version` literal
@@ -182,7 +189,8 @@ Rules:
 
 - Structured logging only (JSON via Pino in TS, structlog in Python)
 - Standard fields: `ts`, `level`, `service`, `msg`, `tenant_id?`, `session_id?`, `trace_id?`
-- Levels: `debug` (dev only), `info` (lifecycle events), `warn` (recoverable issues), `error` (failed operations), `fatal` (process death)
+- Levels: `debug` (dev only), `info` (lifecycle events), `warn` (recoverable issues), `error`
+  (failed operations), `fatal` (process death)
 - No PII in log messages — use IDs, hashes, or redacted markers
 - Log volume budget: 1KB per request average
 
@@ -191,7 +199,9 @@ Rules:
 - All public HTTP APIs versioned: `/v1/...`
 - Resource-oriented URLs, plural nouns: `/v1/tenants/{tenant_id}/listings`
 - Standard methods: GET (read), POST (create), PATCH (update), DELETE (delete)
-- Standard responses: 200 (ok), 201 (created), 204 (no content), 400 (bad request), 401 (unauthenticated), 403 (forbidden), 404 (not found), 409 (conflict), 422 (validation), 429 (rate limited), 5xx (our fault)
+- Standard responses: 200 (ok), 201 (created), 204 (no content), 400 (bad request), 401
+  (unauthenticated), 403 (forbidden), 404 (not found), 409 (conflict), 422 (validation), 429 (rate
+  limited), 5xx (our fault)
 - Every error response includes `code`, `message`, `request_id`
 - Pagination: cursor-based with `?cursor=...&limit=...` (max limit 100)
 - All list responses include `next_cursor` (or null when end reached)
@@ -208,24 +218,24 @@ Rules:
 
 ## Performance budgets (CI-enforced)
 
-| Service | p95 latency target |
-|---|---|
-| `apps/ingest` | 50ms |
-| `apps/decision-api` (cached path) | 80ms |
-| `apps/decision-api` (LLM path) | 2000ms |
-| Postgres queries | 50ms |
-| ClickHouse dashboard queries | 200ms |
-| ClickHouse analytical queries | 30s |
+| Service                           | p95 latency target |
+| --------------------------------- | ------------------ |
+| `apps/ingest`                     | 50ms               |
+| `apps/decision-api` (cached path) | 80ms               |
+| `apps/decision-api` (LLM path)    | 2000ms             |
+| Postgres queries                  | 50ms               |
+| ClickHouse dashboard queries      | 200ms              |
+| ClickHouse analytical queries     | 30s                |
 
 ## Bundle size budgets (CI-enforced)
 
-| Bundle | Budget gzip |
-|---|---|
-| `@estalara/sdk-loader` | 2 KB |
-| `@estalara/sdk` Tier 1 | 25 KB |
-| `@estalara/sdk` Tier 1+2 | 40 KB |
-| `@estalara/sdk` Tier 1+2+3 | 80 KB |
-| `@estalara/sdk-react` (delta) | +5 KB |
+| Bundle                        | Budget gzip |
+| ----------------------------- | ----------- |
+| `@estalara/sdk-loader`        | 2 KB        |
+| `@estalara/sdk` Tier 1        | 25 KB       |
+| `@estalara/sdk` Tier 1+2      | 40 KB       |
+| `@estalara/sdk` Tier 1+2+3    | 80 KB       |
+| `@estalara/sdk-react` (delta) | +5 KB       |
 
 ## Security
 

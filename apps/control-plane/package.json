@@ -1,0 +1,27 @@
+{
+  "name": "@estalara/control-plane",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Estalara control plane — Next.js 15 App Router dashboard and management API",
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev --turbo",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "next start",
+    "clean": "rm -rf .next"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}

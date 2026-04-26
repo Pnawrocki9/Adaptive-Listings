@@ -4,7 +4,9 @@ This file is loaded automatically into every Claude Code session in this repo. R
 
 ## What we're building
 
-**Estalara Adaptive Listings** is an embeddable AI layer + standalone SaaS that lets any real estate website serve listings adapted in real time to each anonymous buyer based on chat, behavior, questions, and cross-listing journey.
+**Estalara Adaptive Listings** is an embeddable AI layer + standalone SaaS that lets any real estate
+website serve listings adapted in real time to each anonymous buyer based on chat, behavior,
+questions, and cross-listing journey.
 
 Three integration tiers:
 
@@ -14,11 +16,13 @@ Three integration tiers:
 
 Founders: Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO).
 
-The full architectural and business design is in `docs/MASTER_DESIGN.md`. **Read that file before making any architectural decision.**
+The full architectural and business design is in `docs/MASTER_DESIGN.md`. **Read that file before
+making any architectural decision.**
 
 ## How this repo is run
 
-This is an agent-orchestrated codebase. Most code is written by specialized Claude Code subagents coordinated by a PM agent. Humans review PRs and make architectural calls.
+This is an agent-orchestrated codebase. Most code is written by specialized Claude Code subagents
+coordinated by a PM agent. Humans review PRs and make architectural calls.
 
 Read these in order before doing anything:
 
@@ -31,26 +35,30 @@ Read these in order before doing anything:
 
 **Important:** Claude Code subagents do NOT talk to each other directly. They communicate through:
 
-1. **`backlog/QUEUE.md`** — single source of truth for ticket status. Every agent writes status changes here.
-2. **`backlog/sprint-N/TICKET-XXX.md`** files — each ticket has acceptance criteria, context, and agent assignment.
-3. **PR descriptions** — when a worker finishes, they open a PR. The PM agent reads PRs and runs validation.
+1. **`backlog/QUEUE.md`** — single source of truth for ticket status. Every agent writes status
+   changes here.
+2. **`backlog/sprint-N/TICKET-XXX.md`** files — each ticket has acceptance criteria, context, and
+   agent assignment.
+3. **PR descriptions** — when a worker finishes, they open a PR. The PM agent reads PRs and runs
+   validation.
 4. **`backlog/HANDOFFS.md`** — when one worker's output is input to another, handoff notes go here.
 
-The `.claude/hooks/` scripts (notably `SubagentStop`) read the queue after each subagent finishes and surface the next command to the human or PM agent.
+The `.claude/hooks/` scripts (notably `SubagentStop`) read the queue after each subagent finishes
+and surface the next command to the human or PM agent.
 
 ## The 9 agents
 
-| Agent | Role | Model |
-|-------|------|-------|
-| `pm-orchestrator` | Reads backlog, delegates to workers, validates output, updates queue | sonnet |
-| `architect` | Designs interfaces between modules, writes ADRs, resolves cross-cutting concerns | sonnet |
-| `sdk-engineer` | Builds `@estalara/sdk` (Preact + Shadow DOM, vanilla TS) | sonnet |
-| `backend-engineer` | Cloudflare Workers ingest, Next.js control plane, Postgres/Supabase | sonnet |
-| `data-engineer` | ClickHouse schemas, Redpanda pipelines, ETL jobs | sonnet |
-| `ml-engineer` | Intent engine, embeddings, archetype space, Modal serverless ML | sonnet |
-| `devops-engineer` | Terraform, CI/CD, multi-region deploy, observability | sonnet |
-| `qa-engineer` | E2E tests, integration tests, load tests, accessibility | sonnet |
-| `compliance-engineer` | DPIA, ROPA, privacy policy, GDPR/CCPA/UAE PDPL implementation | sonnet |
+| Agent                 | Role                                                                             | Model  |
+| --------------------- | -------------------------------------------------------------------------------- | ------ |
+| `pm-orchestrator`     | Reads backlog, delegates to workers, validates output, updates queue             | sonnet |
+| `architect`           | Designs interfaces between modules, writes ADRs, resolves cross-cutting concerns | sonnet |
+| `sdk-engineer`        | Builds `@estalara/sdk` (Preact + Shadow DOM, vanilla TS)                         | sonnet |
+| `backend-engineer`    | Cloudflare Workers ingest, Next.js control plane, Postgres/Supabase              | sonnet |
+| `data-engineer`       | ClickHouse schemas, Redpanda pipelines, ETL jobs                                 | sonnet |
+| `ml-engineer`         | Intent engine, embeddings, archetype space, Modal serverless ML                  | sonnet |
+| `devops-engineer`     | Terraform, CI/CD, multi-region deploy, observability                             | sonnet |
+| `qa-engineer`         | E2E tests, integration tests, load tests, accessibility                          | sonnet |
+| `compliance-engineer` | DPIA, ROPA, privacy policy, GDPR/CCPA/UAE PDPL implementation                    | sonnet |
 
 Each agent is defined in `.claude/agents/<name>.md`.
 
@@ -59,6 +67,7 @@ Each agent is defined in `.claude/agents/<name>.md`.
 Piotr has 2h/day for review. Agents have wide autonomy within limits:
 
 **Agents act autonomously without human review when:**
+
 - Implementing a ticket within its defined scope
 - Refactoring code they own (within their module)
 - Adding tests
@@ -67,9 +76,11 @@ Piotr has 2h/day for review. Agents have wide autonomy within limits:
 - Fixing CI failures within their module
 
 **Agents MUST escalate to human (write to `backlog/ESCALATIONS.md`) when:**
+
 - A ticket's acceptance criteria are ambiguous → block ticket, ask
 - They discover the ticket conflicts with another module's contract
-- They need to change a public API surface (`@estalara/sdk` exports, ingest event schema, decision API contract)
+- They need to change a public API surface (`@estalara/sdk` exports, ingest event schema, decision
+  API contract)
 - They need to add a new third-party service (vendor lock-in)
 - They need to change pricing, billing, or compliance posture
 - A test reveals a security issue
@@ -77,6 +88,7 @@ Piotr has 2h/day for review. Agents have wide autonomy within limits:
 - A bumped dependency has breaking changes
 
 **The PM agent escalates to human when:**
+
 - Two workers disagree on an interface
 - A ticket has been blocked >24h
 - Sprint velocity is <50% of planned
@@ -99,7 +111,8 @@ Piotr has 2h/day for review. Agents have wide autonomy within limits:
 - **Observability:** Sentry + OpenTelemetry + Grafana Cloud
 - **Auth:** Supabase Auth + tenant-scoped JWT
 
-If you think a stack decision is wrong, write an ADR proposal in `docs/adr/PROPOSED-XXX.md` and escalate. Do not silently swap.
+If you think a stack decision is wrong, write an ADR proposal in `docs/adr/PROPOSED-XXX.md` and
+escalate. Do not silently swap.
 
 ## Commit conventions
 
@@ -116,6 +129,7 @@ Every commit must reference a ticket: `feat(ingest): add event validation [TICKE
 `<agent>/<ticket-id>-<kebab-summary>`
 
 Examples:
+
 - `backend-engineer/TICKET-042-event-validation`
 - `sdk-engineer/TICKET-018-shadow-dom-mount`
 

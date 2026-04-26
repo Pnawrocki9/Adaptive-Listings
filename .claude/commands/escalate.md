@@ -9,16 +9,12 @@ Format:
 ```markdown
 ## OPEN — <short title>
 
-**Filed by:** human
-**Date:** <ISO timestamp>
-**Affects:** <ticket-id or area>
-**Type:** [architectural | compliance | priority | scope | vendor | other]
+**Filed by:** human **Date:** <ISO timestamp> **Affects:** <ticket-id or area> **Type:**
+[architectural | compliance | priority | scope | vendor | other]
 
-**Description:**
-<the user's description, cleaned up>
+**Description:** <the user's description, cleaned up>
 
-**Required action:**
-<what needs to happen to resolve, in 1-3 bullets>
+**Required action:** <what needs to happen to resolve, in 1-3 bullets>
 
 **Resolution:** <empty until resolved>
 ```

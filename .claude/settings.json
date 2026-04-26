@@ -78,20 +78,37 @@
   "hooks": {
     "SubagentStop": [
       {
-        "command": "bash .claude/hooks/subagent-stop.sh"
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/subagent-stop.sh"
+          }
+        ]
       }
     ],
     "Stop": [
       {
-        "command": "bash .claude/hooks/session-stop.sh"
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/session-stop.sh"
+          }
+        ]
       }
     ],
     "PreToolUse": [
       {
         "matcher": "Bash",
-        "command": "bash .claude/hooks/pre-bash-guard.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-bash-guard.sh"
+          }
+        ]
       }
     ]
   },
-  "model": "claude-sonnet-4-7"
+  "model": "claude-sonnet-4-5"
 }

@@ -95,10 +95,13 @@ pnpm build
 If any local check fails → comment on PR with specific failure → move ticket back to `IN_PROGRESS` →
 re-invoke worker (max 3 retry attempts before escalating).
 
-#### 5b. CI validation (NON-NEGOTIABLE)
+#### 5b. CI validation (NON-NEGOTIABLE — with hard cap)
 
-**This step is mandatory. Skipping it is the failure mode that broke TICKET-001 in Paczka 1
-testing.**
+**This step is mandatory. Skipping it is the failure mode that broke TICKET-001 in Paczka 1 testing.
+Looping on it is the failure mode that broke TICKET-002 in Paczka 2 testing.**
+
+**Use ONLY `gh pr checks <pr-number> --watch`** — NOT `gh api actions/runs/<id>` (that points at one
+historical run, not the PR's current state).
 
 ```bash
 gh pr checks <pr-number> --watch
@@ -122,9 +125,39 @@ If the result is greater than `0`:
 - Move ticket back to `IN_PROGRESS` in QUEUE.md
 - Re-invoke the worker with explicit instructions to fix the failing CI checks
 - After they push, return to step 5b (re-watch CI)
-- Max 3 attempts at this loop before escalating
 
-**You MUST NOT mark a ticket READY_FOR_REVIEW while any CI check is failing.**
+**HARD CAP — applies cumulatively across the whole ticket lifecycle:**
+
+- Maximum **5 calls** to `gh pr checks` for any single ticket. Track this count in your working
+  memory.
+- Maximum **3 fix-attempt iterations** with the worker (push → check → push → check → push → check).
+- If you hit either cap and CI is still not green → **STOP** and write to `backlog/ESCALATIONS.md`:
+
+```markdown
+## OPEN — TICKET-XXX CI verification budget exhausted
+
+**Filed by:** pm-orchestrator **Date:** <ISO timestamp> **Type:** ci-verification-budget-exhausted
+
+**Description:** After N fix attempts (max 3) and M `gh pr checks` calls (max 5), CI for PR #X is
+still not green. The most recent failing check(s) are: <list>. The worker has attempted:
+<list of attempts>.
+
+**Required action:** Human review of PR #X to determine root cause and next step. The agents have
+exhausted their autonomous fix budget for this ticket.
+
+**Resolution:** <empty until human decides>
+```
+
+Then mark ticket `STUCK` in QUEUE.md and stop the loop. Do not run more bash commands. Do not
+investigate further. The escalation is the next step — humans take it from there.
+
+**SHORT-CIRCUIT — if PR shows "Ready to merge" in GitHub UI with all checks green, do NOT verify
+further.** A single `gh pr checks <pr-number>` returning all SUCCESS is sufficient. Do not run
+`gh api actions/runs/...`, do not check workflow attempts, do not diff `ci.yml` against history.
+Trust the green status and proceed to 5c.
+
+**You MUST NOT mark a ticket READY_FOR_REVIEW while any CI check is failing. You MUST NOT loop
+indefinitely on CI verification.**
 
 #### 5c. Acceptance criteria validation
 

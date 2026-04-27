@@ -72,10 +72,14 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-003
   title: Sentry + OpenTelemetry baseline instrumentation
   agent: devops-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-001]
+  assigned_to: devops-engineer
+  started_at: '2026-04-27T14:40:00Z'
+  completed_at: '2026-04-27T19:20:00Z'
+  pr: '#7'
   spec: backlog/sprint-0/TICKET-003.md
 
 - id: TICKET-004
@@ -328,7 +332,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Currently in flight
 
-None.
+- TICKET-003 (devops-engineer, IN_PROGRESS, started 2026-04-27T14:40:00Z) — Sentry + OTel baseline
 
 ## Awaiting human review
 

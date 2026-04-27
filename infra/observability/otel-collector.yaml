@@ -1,0 +1,97 @@
+# OpenTelemetry Collector configuration — Estalara Adaptive Listings
+#
+# This is a skeleton configuration for local development and CI.
+# Sprint 1+: swap the `logging` exporter for OTLP → Grafana Tempo (traces)
+#             and Prometheus remote-write → Grafana Cloud (metrics).
+#
+# Docs: https://opentelemetry.io/docs/collector/configuration/
+
+extensions:
+  health_check:
+    endpoint: "0.0.0.0:13133"
+  pprof:
+    endpoint: "0.0.0.0:1777"
+  zpages:
+    endpoint: "0.0.0.0:55679"
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        # gRPC endpoint — used by Node.js / SDK services
+        endpoint: "0.0.0.0:4317"
+      http:
+        # HTTP/protobuf endpoint — used by Cloudflare Workers (fetch-based)
+        endpoint: "0.0.0.0:4318"
+        cors:
+          allowed_origins:
+            - "http://localhost:*"
+            - "https://*.estalara.com"
+
+processors:
+  memory_limiter:
+    # Hard cap to prevent OOM in constrained environments.
+    # Tune for production: aim for <75% of available container memory.
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  batch:
+    # Batch spans/metrics before exporting to reduce network overhead.
+    send_batch_size: 512
+    timeout: 5s
+    send_batch_max_size: 1024
+
+  # Resource attributes added to every telemetry signal.
+  # service.name and service.version are set by each SDK; region is injected
+  # here from an env var so the collector itself doesn't need per-app config.
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: "${ENVIRONMENT}"
+        action: upsert
+
+exporters:
+  # Development / CI exporter — logs telemetry to stdout.
+  # Replace with otlp/tempo and prometheusremotewrite in staging/production.
+  logging:
+    verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+  # Placeholder OTLP exporter for Grafana Tempo (uncomment in Sprint 1).
+  # otlp/tempo:
+  #   endpoint: "${GRAFANA_TEMPO_ENDPOINT}"
+  #   headers:
+  #     authorization: "Basic ${GRAFANA_TEMPO_AUTH}"
+
+  # Placeholder Prometheus remote-write exporter (uncomment in Sprint 1).
+  # prometheusremotewrite:
+  #   endpoint: "${GRAFANA_PROMETHEUS_ENDPOINT}"
+  #   headers:
+  #     authorization: "Basic ${GRAFANA_PROMETHEUS_AUTH}"
+
+service:
+  extensions: [health_check, pprof, zpages]
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [logging]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [logging]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [logging]
+
+  telemetry:
+    logs:
+      level: "warn"
+    metrics:
+      address: "0.0.0.0:8888"

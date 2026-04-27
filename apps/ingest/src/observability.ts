@@ -1,0 +1,71 @@
+/**
+ * Sentry instrumentation wrapper for the Estalara ingest Cloudflare Worker.
+ *
+ * Uses `@sentry/cloudflare` (NOT `@sentry/node` — Workers run in V8 isolates,
+ * not Node.js). Wraps the ExportedHandler object with Sentry error capture
+ * and tracing.
+ *
+ * When `SENTRY_DSN_INGEST` is absent from `env`, the original handler is
+ * returned unchanged — graceful no-op.
+ *
+ * @module apps/ingest/src/observability
+ *
+ * @example
+ * ```ts
+ * import { withSentry } from './observability';
+ *
+ * const handler: ExportedHandler<Env> = { fetch: myFetchFn };
+ * export default withSentry(handler);
+ * ```
+ */
+
+import * as Sentry from '@sentry/cloudflare';
+
+/**
+ * Minimum set of environment bindings consumed by the observability wrapper.
+ * Extend with additional Cloudflare Workers `env` fields as needed.
+ */
+export interface ObservabilityEnv {
+  /** Sentry DSN for the ingest Worker. Absent = Sentry disabled. */
+  SENTRY_DSN_INGEST?: string;
+  /** Running environment: `production`, `staging`, or `development`. */
+  ENVIRONMENT?: string;
+  /** Git SHA injected at build time for release tagging. */
+  GIT_SHA?: string;
+}
+
+/**
+ * Wraps a Cloudflare `ExportedHandler` with Sentry error capture and
+ * performance tracing.
+ *
+ * If `env.SENTRY_DSN_INGEST` is falsy when the Worker boots, the original
+ * handler is returned untouched so the Worker continues to function without
+ * Sentry.
+ *
+ * @param handler - The `ExportedHandler` object to wrap.
+ * @returns The original handler or a Sentry-instrumented wrapper.
+ *
+ * @example
+ * ```ts
+ * const handler: ExportedHandler<Env> = {
+ *   async fetch(request, env, ctx) { ... },
+ * };
+ * export default withSentry(handler);
+ * ```
+ */
+export function withSentry<TEnv extends ObservabilityEnv>(
+  handler: ExportedHandler<TEnv>,
+): ExportedHandler<TEnv> {
+  return Sentry.withSentry((env: TEnv) => {
+    if (!env.SENTRY_DSN_INGEST) {
+      // Return undefined to disable Sentry when DSN is absent.
+      return undefined;
+    }
+    return {
+      dsn: env.SENTRY_DSN_INGEST,
+      tracesSampleRate: env.ENVIRONMENT === 'production' ? 0.05 : 0.1,
+      release: env.GIT_SHA ?? 'dev',
+      environment: env.ENVIRONMENT ?? 'development',
+    };
+  }, handler);
+}

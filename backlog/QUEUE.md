@@ -24,7 +24,7 @@ updates.
 
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 2    | 0       | 7     | 0       |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 4    | 0       | 5     | 0       |
 | 1      | 2     | Ingest baseline + event schema                                       | 10      | 0    | 0       | 0     | 10      |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
@@ -72,13 +72,13 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-003
   title: Sentry + OpenTelemetry baseline instrumentation
   agent: devops-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-001]
   assigned_to: devops-engineer
   started_at: '2026-04-27T14:40:00Z'
-  completed_at: '2026-04-27T19:20:00Z'
+  completed_at: '2026-04-27T19:30:00Z'
   pr: '#7'
   spec: backlog/sprint-0/TICKET-003.md
 
@@ -131,13 +131,13 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
   title:
     Vendor account stubs (Supabase + ClickHouse + Modal + Redpanda + Upstash) Terraform skeleton
   agent: devops-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 6
   depends_on: [TICKET-001, TICKET-002]
   assigned_to: devops-engineer
   started_at: '2026-04-27T08:00:00Z'
-  completed_at: '2026-04-27T14:15:00Z'
+  completed_at: '2026-04-27T19:30:00Z'
   pr: '#6'
   spec: backlog/sprint-0/TICKET-009.md
 ```
@@ -332,15 +332,16 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Currently in flight
 
-- TICKET-003 (devops-engineer, IN_PROGRESS, started 2026-04-27T14:40:00Z) — Sentry + OTel baseline
+None.
 
 ## Awaiting human review
 
-- TICKET-009 (devops-engineer, PR #6, completed 2026-04-27T14:15:00Z) — Vendor account stubs
-  Terraform skeleton + runbooks
+None.
 
 ## Recent merges
 
+- 2026-04-27T19:30Z — TICKET-009 (PR #6): Vendor account stubs Terraform skeleton by devops-engineer
+- 2026-04-27T19:30Z — TICKET-003 (PR #7): Sentry + OTel baseline by devops-engineer
 - 2026-04-27T07:30Z — TICKET-002 (PR #4 + PR #5): Doppler integration + secrets management baseline
   by devops-engineer
   - Secrets management via Doppler, CI integration, hard cap on CI verification loop

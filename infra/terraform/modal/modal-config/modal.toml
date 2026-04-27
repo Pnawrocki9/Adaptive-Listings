@@ -1,0 +1,30 @@
+# Modal Workspace Configuration
+# Modal uses code-as-config (Python decorators), not Terraform.
+# This file is a placeholder for workspace-level settings.
+
+[environment]
+# Environment will be set via Modal CLI:
+#   modal token set --token-id $MODAL_TOKEN_ID --token-secret $MODAL_TOKEN_SECRET
+# Or via environment variables in CI:
+#   MODAL_TOKEN_ID=<id>
+#   MODAL_TOKEN_SECRET=<secret>
+
+# Workspace: estalara (create at https://modal.com/settings)
+# Each app deploys to this workspace via:
+#   modal deploy apps/<app>/src/main.py
+
+[apps]
+# Placeholder for app registry (populated as apps are built in Sprint 4+)
+# Examples (future):
+#   intent-engine = "apps/intent/src/main.py"
+#   adapt-engine = "apps/adapt/src/main.py"
+#   auto-detect = "apps/auto-detect/src/main.py"
+
+[secrets]
+# Modal Secrets are managed via Modal dashboard or CLI:
+#   modal secret create <name> KEY=value
+# Common secrets needed:
+#   - anthropic-api-key (for Claude Haiku 4.5 / Sonnet 4.6)
+#   - openai-api-key (for embeddings fallback)
+#   - supabase-url + supabase-key (for Postgres access)
+#   - clickhouse-host + clickhouse-password (for event queries)

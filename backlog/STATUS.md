@@ -2,11 +2,12 @@
 
 _This file is overwritten by `pm-orchestrator` after every loop iteration. Do not edit manually._
 
-# Status — 2026-04-26T18:15:00Z
+# Status — 2026-04-27T00:00:00Z
 
 ## Active
 
-None.
+- TICKET-002 (devops-engineer, IN_PROGRESS, just delegated) — Doppler integration + secrets
+  management baseline
 
 ## Ready for human review
 
@@ -14,27 +15,32 @@ None.
 
 ## Blocked
 
-None.
+- TICKET-007 — depends on TICKET-005, TICKET-006
+- TICKET-008 — depends on TICKET-002 (now IN_PROGRESS)
+- TICKET-009 — depends on TICKET-002 (now IN_PROGRESS)
+- Sprint 1 (all 10 tickets) — depends on Sprint 0 completion
+- Sprint 2 (all 10 tickets) — depends on Sprint 1
 
 ## Sprint 0 progress
 
-- 1/15 tickets DONE (TICKET-001 merged 2026-04-26)
-- 0 IN_PROGRESS
-- 14 READY (all unblocked by TICKET-001, awaiting Pakiet 2 for detailed specs)
-- Status: Foundation complete, ready for parallel execution
+- 1/9 tickets DONE (TICKET-001)
+- 1 IN_PROGRESS (TICKET-002)
+- 7 READY (TICKET-003, 004, 005, 006, 008, 009 — note 008+009 wait on TICKET-002)
+- On track
 
 ## Next escalation candidate
 
 None.
 
-## Recent completion
+## Delegation log
 
-**TICKET-001** (PR #2) merged 2026-04-26T18:15Z:
+- 2026-04-27T00:00:00Z — TICKET-002 delegated to devops-engineer (P0, unblocks TICKET-008 and
+  TICKET-009 which together unblock Sprint 1)
 
-- Monorepo bootstrapped: Turborepo + pnpm + 9 packages + 9 apps
-- CI/CD green: lint, typecheck, test (Node + Python), build
-- All acceptance criteria validated
-- CodeQL deferred (documented in ADR-0002)
+## Retro flag — 2026-04-27
 
-NEXT: Pakiet 2 will define detailed specs for TICKET-002 through TICKET-015. All 14 tickets are now
-unblocked and can be worked on in parallel once specs arrive.
+**TICKET-002 PM verification loop:** pm-orchestrator consumed 94+ tool calls attempting to verify CI
+status for TICKET-002 PR #4. Human manually confirmed CI green and terminated the loop. **Root
+cause:** verification loop lacked a hard tool-call budget / timeout guard. **Action item for next
+retro:** add a max-attempts cap (e.g. 5 `gh pr checks` calls) and an explicit escalation path when
+CI watch exceeds budget. Human review confirmed PR #4 is green and ready to merge.

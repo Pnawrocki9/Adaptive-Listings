@@ -116,3 +116,28 @@ connections per region per service).
 - `docs/runbooks/vendor-accounts.md` (section 1: Supabase)
 
 ---
+
+## TICKET-003 → TICKET-018
+
+**From:** devops-engineer  
+**To:** devops-engineer  
+**Date:** 2026-04-27  
+**Summary:** Sentry + OTel baseline in packages/shared/src/observability/. Ingest wrapper at
+apps/ingest/src/observability.ts. DSN env vars: SENTRY_DSN_INGEST (ingest), SENTRY_DSN_CONTROL_PLANE
+(control-plane). OTel collector skeleton at infra/observability/otel-collector.yaml.  
+**Action required:** TICKET-018 should add real span instrumentation to the ingest handler using
+createTracer() and createLogger() from packages/shared/src/observability.  
+**Files:**
+
+- `packages/shared/src/observability/logger.ts`
+- `packages/shared/src/observability/tracer.ts`
+- `packages/shared/src/observability/error.ts`
+- `packages/shared/src/observability/index.ts`
+- `apps/ingest/src/observability.ts`
+- `apps/control-plane/sentry.client.config.ts`
+- `apps/control-plane/sentry.server.config.ts`
+- `apps/control-plane/sentry.edge.config.ts`
+- `infra/observability/otel-collector.yaml`
+- `docs/runbooks/observability.md`
+
+---

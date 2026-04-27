@@ -193,6 +193,7 @@ Rules:
   (failed operations), `fatal` (process death)
 - No PII in log messages — use IDs, hashes, or redacted markers
 - Log volume budget: 1KB per request average
+- See full observability guide: [`docs/runbooks/observability.md`](runbooks/observability.md)
 
 ## API design
 

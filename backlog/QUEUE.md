@@ -17,27 +17,29 @@ Each ticket has a one-line entry in the appropriate sprint section. Statuses:
 - `STUCK` — escalation needed
 - `CANCELLED` — won't do
 
-Status changes are atomic: PM reads the file, modifies one entry, writes it back. Never partial updates.
+Status changes are atomic: PM reads the file, modifies one entry, writes it back. Never partial
+updates.
 
 ## Sprint progress
 
-| Sprint | Weeks | Theme | Tickets | DONE | IN_PROG | READY | BLOCKED |
-|---|---|---|---|---|---|---|---|
-| 0 | 1 | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9 | 1 | 0 | 8 | 0 |
-| 1 | 2 | Ingest baseline + event schema | 10 | 0 | 0 | 0 | 10 |
-| 2 | 3 | Postgres + tenant auth + dashboard skeleton | 10 | 0 | 0 | 0 | 10 |
-| 2.5 | 4 | Auto-Onboarding pipeline (NEW v1.1) | 6 | 0 | 0 | 0 | 6 |
-| 3 | 5 | SDK Tier 1 Observer + Magic Link UI | 10 | 0 | 0 | 0 | 10 |
-| 4 | 6 | Intent ontology v1 + Modal scaffolding | tbd | — | — | — | tbd |
-| 5 | 7 | LLM gateway + intent extraction from chat | tbd | — | — | — | tbd |
-| 6 | 8 | Embeddings + archetype matching + decision API | tbd | — | — | — | tbd |
-| 7 | 9 | SDK Tier 2 Augment + adaptation directives | tbd | — | — | — | tbd |
-| 8 | 10 | A/B holdout framework + analytics dashboard | tbd | — | — | — | tbd |
-| 9 | 11 | DPIA + ROPA + DSR + fair-housing + continuous validation | tbd | — | — | — | tbd |
-| 10 | 12 | Multi-region deploy + observability + load tests | tbd | — | — | — | tbd |
-| 11 | 13 | Pilot onboarding + docs + launch checklist | tbd | — | — | — | tbd |
+| Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
+| ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 1    | 0       | 8     | 0       |
+| 1      | 2     | Ingest baseline + event schema                                       | 10      | 0    | 0       | 0     | 10      |
+| 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
+| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
+| 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 0    | 0       | 0     | 10      |
+| 4      | 6     | Intent ontology v1 + Modal scaffolding                               | tbd     | —    | —       | —     | tbd     |
+| 5      | 7     | LLM gateway + intent extraction from chat                            | tbd     | —    | —       | —     | tbd     |
+| 6      | 8     | Embeddings + archetype matching + decision API                       | tbd     | —    | —       | —     | tbd     |
+| 7      | 9     | SDK Tier 2 Augment + adaptation directives                           | tbd     | —    | —       | —     | tbd     |
+| 8      | 10    | A/B holdout framework + analytics dashboard                          | tbd     | —    | —       | —     | tbd     |
+| 9      | 11    | DPIA + ROPA + DSR + fair-housing + continuous validation             | tbd     | —    | —       | —     | tbd     |
+| 10     | 12    | Multi-region deploy + observability + load tests                     | tbd     | —    | —       | —     | tbd     |
+| 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
 
-**Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7 (auto-onboarding).**
+**Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
+(auto-onboarding).**
 
 Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 ship in Paczka 3.
 
@@ -118,7 +120,8 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
   spec: backlog/sprint-0/TICKET-008.md
 
 - id: TICKET-009
-  title: Vendor account stubs (Supabase + ClickHouse + Modal + Redpanda + Upstash) Terraform skeleton
+  title:
+    Vendor account stubs (Supabase + ClickHouse + Modal + Redpanda + Upstash) Terraform skeleton
   agent: devops-engineer
   status: READY
   priority: P0
@@ -325,5 +328,7 @@ None.
 
 ## Recent merges
 
-- 2026-04-26T18:15Z — TICKET-001 (PR #2): Bootstrap monorepo (Turborepo + pnpm + tooling) by devops-engineer
-  - Monorepo foundation with all 9 packages + 9 apps (10+10 after Sprint 0 completes via TICKET-005/006)
+- 2026-04-26T18:15Z — TICKET-001 (PR #2): Bootstrap monorepo (Turborepo + pnpm + tooling) by
+  devops-engineer
+  - Monorepo foundation with all 9 packages + 9 apps (10+10 after Sprint 0 completes via
+    TICKET-005/006)

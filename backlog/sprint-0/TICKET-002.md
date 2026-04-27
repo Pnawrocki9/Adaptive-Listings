@@ -9,12 +9,12 @@ estimated_hours: 3
 depends_on: [TICKET-001]
 produces: []
 affects_files:
-  - "doppler.yaml"
-  - ".github/workflows/ci.yml"
-  - "package.json"
-  - "docs/runbooks/secrets.md"
-  - "scripts/doppler-bootstrap.sh"
-  - ".env.example"
+  - 'doppler.yaml'
+  - '.github/workflows/ci.yml'
+  - 'package.json'
+  - 'docs/runbooks/secrets.md'
+  - 'scripts/doppler-bootstrap.sh'
+  - '.env.example'
 context_files:
   - docs/MASTER_DESIGN.md (section I — tech stack, secrets)
   - docs/CONVENTIONS.md
@@ -27,13 +27,20 @@ labels: [foundation, p0, infra, secrets, devx]
 
 ## Summary
 
-Set up Doppler as the single source of secrets for local dev, CI, and (later) production. Establish the project structure in Doppler, integrate `doppler` CLI into local workflow (`pnpm dev` runs through `doppler run`), wire Doppler service token into GitHub Actions CI, and document the rotation/onboarding runbook. No real secrets get added in this ticket — only the plumbing.
+Set up Doppler as the single source of secrets for local dev, CI, and (later) production. Establish
+the project structure in Doppler, integrate `doppler` CLI into local workflow (`pnpm dev` runs
+through `doppler run`), wire Doppler service token into GitHub Actions CI, and document the
+rotation/onboarding runbook. No real secrets get added in this ticket — only the plumbing.
 
 ## Context
 
-Master Design section I (tech stack) specifies Doppler for secrets management. CLAUDE.md lists `Edit(.env)` and `Read(.env)` in the deny list — meaning agents cannot read or write `.env*` files directly. Doppler is the workaround: secrets live in Doppler service, fetched at runtime by CLI or by service tokens in CI.
+Master Design section I (tech stack) specifies Doppler for secrets management. CLAUDE.md lists
+`Edit(.env)` and `Read(.env)` in the deny list — meaning agents cannot read or write `.env*` files
+directly. Doppler is the workaround: secrets live in Doppler service, fetched at runtime by CLI or
+by service tokens in CI.
 
 We use Doppler for three reasons over alternatives (1Password, AWS Secrets Manager, Vercel env):
+
 1. Native multi-environment model (dev/staging/prod) with branch-based secret inheritance
 2. Free tier covers 5 users + unlimited secrets (sufficient for MVP team)
 3. CLI-first workflow that fits Claude Code agents naturally
@@ -41,9 +48,12 @@ We use Doppler for three reasons over alternatives (1Password, AWS Secrets Manag
 ## Scope
 
 ### In scope
+
 - Create `doppler.yaml` at repo root mapping `doppler.config` → environment (dev/staging/prod)
-- Update root `package.json` scripts to optionally wrap with `doppler run` (graceful fallback if Doppler not installed)
-- GitHub Actions: add `DOPPLER_TOKEN_DEV` secret check + `dopplerhq/cli-action` setup step in `.github/workflows/ci.yml`
+- Update root `package.json` scripts to optionally wrap with `doppler run` (graceful fallback if
+  Doppler not installed)
+- GitHub Actions: add `DOPPLER_TOKEN_DEV` secret check + `dopplerhq/cli-action` setup step in
+  `.github/workflows/ci.yml`
 - Create `.env.example` at repo root documenting all expected secrets (without values)
 - Write `docs/runbooks/secrets.md` documenting:
   - How to install Doppler CLI on macOS / Linux / WSL
@@ -56,27 +66,38 @@ We use Doppler for three reasons over alternatives (1Password, AWS Secrets Manag
 - No actual secrets added yet — just the structure
 
 ### Out of scope
+
 - Adding production secrets — that's per-vendor in Sprint 0 / 1
 - Production deploy secrets — that's TICKET-008/009 vendor setup
 - Doppler webhook / change auditing — Sprint 9 compliance work
 
 ## Acceptance criteria
 
-- [ ] AC1: `doppler.yaml` exists at repo root with `setup.project: estalara-adaptive-listings`, configs `dev`/`staging`/`prod`
-- [ ] AC2: `.env.example` exists at repo root, lists every expected env var with one-line description, no values
-- [ ] AC3: `package.json` root has `"dev:secrets": "doppler run -- pnpm dev"` script that works locally if user has Doppler installed; `"dev"` script still works without Doppler (graceful fallback)
-- [ ] AC4: `scripts/doppler-bootstrap.sh` is executable, runs `doppler login`, `doppler setup`, exits successfully on a fresh checkout
-- [ ] AC5: `.github/workflows/ci.yml` has new step that uses `dopplerhq/cli-action@v3`, conditional on `secrets.DOPPLER_TOKEN_DEV` being present; CI passes if token present, also passes (with warning) if not present (so PRs from forks don't break)
-- [ ] AC6: `docs/runbooks/secrets.md` covers: install, login, setup, add secret, rotate, CI integration, troubleshooting, at minimum 200 words
+- [ ] AC1: `doppler.yaml` exists at repo root with `setup.project: estalara-adaptive-listings`,
+      configs `dev`/`staging`/`prod`
+- [ ] AC2: `.env.example` exists at repo root, lists every expected env var with one-line
+      description, no values
+- [ ] AC3: `package.json` root has `"dev:secrets": "doppler run -- pnpm dev"` script that works
+      locally if user has Doppler installed; `"dev"` script still works without Doppler (graceful
+      fallback)
+- [ ] AC4: `scripts/doppler-bootstrap.sh` is executable, runs `doppler login`, `doppler setup`,
+      exits successfully on a fresh checkout
+- [ ] AC5: `.github/workflows/ci.yml` has new step that uses `dopplerhq/cli-action@v3`, conditional
+      on `secrets.DOPPLER_TOKEN_DEV` being present; CI passes if token present, also passes (with
+      warning) if not present (so PRs from forks don't break)
+- [ ] AC6: `docs/runbooks/secrets.md` covers: install, login, setup, add secret, rotate, CI
+      integration, troubleshooting, at minimum 200 words
 - [ ] AC7: `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build` all pass
 - [ ] AC8: PR title is `chore(infra): doppler integration baseline [TICKET-002]`
 
 ## Implementation guidance
 
 Suggested order:
+
 1. Create `doppler.yaml` and `.env.example` first
 2. Update `package.json` scripts (test that fallback works without Doppler)
-3. Update CI workflow (test that workflow is valid YAML via `pnpm exec js-yaml .github/workflows/ci.yml`)
+3. Update CI workflow (test that workflow is valid YAML via
+   `pnpm exec js-yaml .github/workflows/ci.yml`)
 4. Write the runbook
 5. Make `scripts/doppler-bootstrap.sh` and `chmod +x`
 
@@ -98,9 +119,12 @@ The `if:` guard means PRs from forks (which can't access secrets) still pass CI.
 
 ## Test plan
 
-- Local: clone repo to temp dir, run `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build` — all pass
-- CI: open PR, verify workflow run is green, verify Doppler step is skipped (because token not set yet)
-- Manual: run `bash scripts/doppler-bootstrap.sh` — script doesn't crash even if Doppler CLI isn't installed (gives helpful error)
+- Local: clone repo to temp dir, run
+  `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build` — all pass
+- CI: open PR, verify workflow run is green, verify Doppler step is skipped (because token not set
+  yet)
+- Manual: run `bash scripts/doppler-bootstrap.sh` — script doesn't crash even if Doppler CLI isn't
+  installed (gives helpful error)
 
 ## Definition of Done (universal)
 
@@ -115,5 +139,7 @@ The `if:` guard means PRs from forks (which can't access secrets) still pass CI.
 
 ## Notes
 
-- This ticket creates **no real secrets**. We're setting up plumbing. First real secret likely goes in TICKET-008 (Cloudflare API token).
-- Escalate if: Doppler free tier signup somehow blocks (unlikely), or if the team agrees we should swap to 1Password/AWS Secrets Manager (different tool, would need ADR).
+- This ticket creates **no real secrets**. We're setting up plumbing. First real secret likely goes
+  in TICKET-008 (Cloudflare API token).
+- Escalate if: Doppler free tier signup somehow blocks (unlikely), or if the team agrees we should
+  swap to 1Password/AWS Secrets Manager (different tool, would need ADR).

@@ -1,6 +1,7 @@
 # CLAUDE.md Update Patch (Paczka 2)
 
-**This file documents the changes that should be applied to your existing `CLAUDE.md`.** You can either:
+**This file documents the changes that should be applied to your existing `CLAUDE.md`.** You can
+either:
 
 A) Apply manually by hand (cleanest), or  
 B) Copy this entire file as `CLAUDE_PATCH.md` to the repo, agents will read both.
@@ -9,8 +10,10 @@ B) Copy this entire file as `CLAUDE_PATCH.md` to the repo, agents will read both
 
 Paczka 1 testing revealed three issues to harden in CLAUDE.md:
 
-1. The agent counts ("9 packages, 9 apps") are now stale — Master Design v1.1 added `apps/auto-detect/` and `packages/platform-templates/`. Sprint 0 in Paczka 2 will create them.
-2. The "When agents must escalate" rules need additions for the failure modes we found (CI not green, repo-config dependencies).
+1. The agent counts ("9 packages, 9 apps") are now stale — Master Design v1.1 added
+   `apps/auto-detect/` and `packages/platform-templates/`. Sprint 0 in Paczka 2 will create them.
+2. The "When agents must escalate" rules need additions for the failure modes we found (CI not
+   green, repo-config dependencies).
 3. Three new rules from Paczka 1 lessons need to be visible at the top of every Claude Code session.
 
 ## Apply these specific changes to `CLAUDE.md`
@@ -58,17 +61,24 @@ Insert this section between "How agents communicate" and "The 9 agents":
 
 These are codified in CONVENTIONS_PATCH.md. Highlights:
 
-1. **Always verify CI green before READY_FOR_REVIEW.** PM-orchestrator MUST run `gh pr checks <pr-number> --watch` and wait for completion before marking any ticket ready. Local tests passing ≠ CI passing.
+1. **Always verify CI green before READY_FOR_REVIEW.** PM-orchestrator MUST run
+   `gh pr checks <pr-number> --watch` and wait for completion before marking any ticket ready. Local
+   tests passing ≠ CI passing.
 
-2. **Run prettier on every file you edit, every time.** Even if you ran prettier earlier in the session, re-run on every file you touch. CI format check is strict.
+2. **Run prettier on every file you edit, every time.** Even if you ran prettier earlier in the
+   session, re-run on every file you touch. CI format check is strict.
 
-3. **Check repo-config dependencies BEFORE PR.** If your workflow needs Code Scanning, secrets, or branch protection rules, verify they exist or escalate via backlog/ESCALATIONS.md before opening the PR.
+3. **Check repo-config dependencies BEFORE PR.** If your workflow needs Code Scanning, secrets, or
+   branch protection rules, verify they exist or escalate via backlog/ESCALATIONS.md before opening
+   the PR.
 
 4. **Python packaging gotchas:**
-   - `pyproject.toml` build-backend MUST be `setuptools.build_meta` (NOT `setuptools.backends.legacy` — that does not exist)
+   - `pyproject.toml` build-backend MUST be `setuptools.build_meta` (NOT
+     `setuptools.backends.legacy` — that does not exist)
    - Every Python app needs `__init__.py` in src/ (even if empty)
 
-5. **pnpm version is in `package.json`, not in CI.** Don't put `version:` in `pnpm/action-setup@v4` step.
+5. **pnpm version is in `package.json`, not in CI.** Don't put `version:` in `pnpm/action-setup@v4`
+   step.
 ```
 
 ### Change 4 — Update "The 9 agents" → "The 9 agents"
@@ -77,23 +87,35 @@ These are codified in CONVENTIONS_PATCH.md. Highlights:
 
 The table doesn't need numerical updates, but the descriptions of these three should expand:
 
-**backend-engineer description (current):** 
-> Builds Cloudflare Workers ingest service, the Next.js control plane (dashboard + API), Postgres schemas with RLS
+**backend-engineer description (current):**
+
+> Builds Cloudflare Workers ingest service, the Next.js control plane (dashboard + API), Postgres
+> schemas with RLS
 
 **backend-engineer description (new):**
-> Builds Cloudflare Workers ingest service, the Next.js control plane (dashboard + API including Magic Link onboarding wizard), Postgres schemas with RLS, and the Auto-Onboarding HTTP API layer
+
+> Builds Cloudflare Workers ingest service, the Next.js control plane (dashboard + API including
+> Magic Link onboarding wizard), Postgres schemas with RLS, and the Auto-Onboarding HTTP API layer
 
 **ml-engineer description (current):**
-> Owns the intent engine (NLP + behavioral signal fusion), embeddings strategy, archetype space, adaptation engine
+
+> Owns the intent engine (NLP + behavioral signal fusion), embeddings strategy, archetype space,
+> adaptation engine
 
 **ml-engineer description (new):**
-> Owns the intent engine, embeddings strategy, archetype space, adaptation engine, the auto-detect Vision pipeline (apps/auto-detect, Claude Sonnet 4.6 Vision), and the platform templates library (packages/platform-templates)
+
+> Owns the intent engine, embeddings strategy, archetype space, adaptation engine, the auto-detect
+> Vision pipeline (apps/auto-detect, Claude Sonnet 4.6 Vision), and the platform templates library
+> (packages/platform-templates)
 
 **data-engineer description (current):**
+
 > Owns ClickHouse schemas, Redpanda Kafka topics and consumers, ETL jobs
 
 **data-engineer description (new):**
-> Owns ClickHouse schemas, Redpanda Kafka topics and consumers, ETL jobs, and the daily continuous schema validation cron (drift detection per tenant, per Master Design B.6)
+
+> Owns ClickHouse schemas, Redpanda Kafka topics and consumers, ETL jobs, and the daily continuous
+> schema validation cron (drift detection per tenant, per Master Design B.6)
 
 ### Change 5 — Update escalation rules
 

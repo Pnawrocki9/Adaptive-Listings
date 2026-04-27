@@ -9,12 +9,12 @@ estimated_hours: 6
 depends_on: [TICKET-014, TICKET-012]
 produces: [TICKET-016]
 affects_files:
-  - "apps/stream-consumer/src/main.py"
-  - "apps/stream-consumer/src/consumers/events.py"
-  - "apps/stream-consumer/src/clickhouse_client.py"
-  - "apps/stream-consumer/src/redpanda_client.py"
-  - "apps/stream-consumer/pyproject.toml"
-  - "apps/stream-consumer/tests/**"
+  - 'apps/stream-consumer/src/main.py'
+  - 'apps/stream-consumer/src/consumers/events.py'
+  - 'apps/stream-consumer/src/clickhouse_client.py'
+  - 'apps/stream-consumer/src/redpanda_client.py'
+  - 'apps/stream-consumer/pyproject.toml'
+  - 'apps/stream-consumer/tests/**'
 context_files:
   - apps/stream-consumer/* (existing skeleton from TICKET-001)
   - infra/clickhouse/migrations/* (TICKET-014)
@@ -26,20 +26,31 @@ labels: [sprint-1, p0, data, modal, consumers]
 
 ## Summary
 
-Implement the stream consumer that subscribes to Redpanda topic `events.raw` (where ingest Worker publishes), batches events for 5s or 5000 messages whichever first, validates schema, enriches as needed, and inserts into ClickHouse `events` table. This runs as a Modal Python function with auto-scaling. Idempotent on `event_id` (use ClickHouse's deduplication via `INSERT INTO ... ENGINE = MergeTree` doesn't dedup, but we add a deduplication step by relying on ClickHouse's `MergeTree` behavior + idempotent `event_id`).
+Implement the stream consumer that subscribes to Redpanda topic `events.raw` (where ingest Worker
+publishes), batches events for 5s or 5000 messages whichever first, validates schema, enriches as
+needed, and inserts into ClickHouse `events` table. This runs as a Modal Python function with
+auto-scaling. Idempotent on `event_id` (use ClickHouse's deduplication via
+`INSERT INTO ... ENGINE = MergeTree` doesn't dedup, but we add a deduplication step by relying on
+ClickHouse's `MergeTree` behavior + idempotent `event_id`).
 
 ## Context
 
-Master Design C.2: stream path is Worker → Redpanda → consumer → ClickHouse. Consumer's job is bridge between async event bus and analytical store, with batching for ClickHouse efficiency.
+Master Design C.2: stream path is Worker → Redpanda → consumer → ClickHouse. Consumer's job is
+bridge between async event bus and analytical store, with batching for ClickHouse efficiency.
 
-Modal idiomatic pattern: schedule a `@app.function` that runs continuously OR triggered by a webhook. We use the continuous-loop pattern since we need real-time consumption. Modal auto-scales replicas based on lag.
+Modal idiomatic pattern: schedule a `@app.function` that runs continuously OR triggered by a
+webhook. We use the continuous-loop pattern since we need real-time consumption. Modal auto-scales
+replicas based on lag.
 
-For Redpanda: use `confluent-kafka-python` (well-maintained, fast). Modal's Python runtime supports it natively (no Workers limitations like ingest had).
+For Redpanda: use `confluent-kafka-python` (well-maintained, fast). Modal's Python runtime supports
+it natively (no Workers limitations like ingest had).
 
 ## Scope
 
 ### In scope
-- `apps/stream-consumer/pyproject.toml` — add deps: `confluent-kafka>=2.0`, `clickhouse-connect>=0.7`, `pydantic>=2.0`, `modal>=0.60`
+
+- `apps/stream-consumer/pyproject.toml` — add deps: `confluent-kafka>=2.0`,
+  `clickhouse-connect>=0.7`, `pydantic>=2.0`, `modal>=0.60`
 - `apps/stream-consumer/src/main.py` — Modal app definition + entry point
 - `apps/stream-consumer/src/consumers/events.py` — main consumer loop:
   - Subscribe to `events.raw`
@@ -51,10 +62,12 @@ For Redpanda: use `confluent-kafka-python` (well-maintained, fast). Modal's Pyth
 - `apps/stream-consumer/src/redpanda_client.py` — wrapper around confluent-kafka with TLS config
 - Tests:
   - Unit: mock kafka consumer, verify batching logic
-  - Integration: docker-compose with Redpanda + ClickHouse, end-to-end produce → consume → verify in ClickHouse
+  - Integration: docker-compose with Redpanda + ClickHouse, end-to-end produce → consume → verify in
+    ClickHouse
 - Modal app config: Modal secret for Redpanda credentials, Modal volume for offset state if needed
 
 ### Out of scope
+
 - Multiple consumer apps (intent_signals, archetype_pipeline) — they're separate tickets
 - Schema-drift event handling (Sprint 9)
 - Cross-region replication (Sprint 10)
@@ -62,14 +75,21 @@ For Redpanda: use `confluent-kafka-python` (well-maintained, fast). Modal's Pyth
 
 ## Acceptance criteria
 
-- [ ] AC1: Modal app `estalara-stream-consumer-events` defined; entry point function `consume_events`
-- [ ] AC2: Pydantic models in `apps/stream-consumer/src/models/event.py` mirror Zod schemas from packages/shared (envelope + types from TICKET-011)
+- [ ] AC1: Modal app `estalara-stream-consumer-events` defined; entry point function
+      `consume_events`
+- [ ] AC2: Pydantic models in `apps/stream-consumer/src/models/event.py` mirror Zod schemas from
+      packages/shared (envelope + types from TICKET-011)
 - [ ] AC3: Consumer subscribes to `events.raw`, processes in batches of 5000 or 5s, whichever first
-- [ ] AC4: Failed schema validation: log + skip + emit metric `stream_consumer.schema_failure` (don't block batch)
-- [ ] AC5: ClickHouse insert uses `JSONEachRow` format for efficiency; on failure retries 3x with backoff (1s, 5s, 30s); after exhaustion writes to dead-letter topic `events.dlq`
-- [ ] AC6: Offsets committed only after successful ClickHouse insert (at-least-once delivery; deduplication via event_id PK in ClickHouse handled by ReplicatedMergeTree merge process)
-- [ ] AC7: Unit tests cover: batching by count, batching by time, schema failure handling, retry on ClickHouse failure, DLQ write on retry exhaustion
-- [ ] AC8: Integration test: docker-compose Redpanda + ClickHouse + this consumer, produce 100 events to topic, verify 100 rows in ClickHouse `events` table, verify offsets committed
+- [ ] AC4: Failed schema validation: log + skip + emit metric `stream_consumer.schema_failure`
+      (don't block batch)
+- [ ] AC5: ClickHouse insert uses `JSONEachRow` format for efficiency; on failure retries 3x with
+      backoff (1s, 5s, 30s); after exhaustion writes to dead-letter topic `events.dlq`
+- [ ] AC6: Offsets committed only after successful ClickHouse insert (at-least-once delivery;
+      deduplication via event_id PK in ClickHouse handled by ReplicatedMergeTree merge process)
+- [ ] AC7: Unit tests cover: batching by count, batching by time, schema failure handling, retry on
+      ClickHouse failure, DLQ write on retry exhaustion
+- [ ] AC8: Integration test: docker-compose Redpanda + ClickHouse + this consumer, produce 100
+      events to topic, verify 100 rows in ClickHouse `events` table, verify offsets committed
 - [ ] AC9: Python build backend MUST be `setuptools.build_meta`, `__init__.py` present in src/
 - [ ] AC10: All CI checks pass; new CI job for stream-consumer Python tests
 - [ ] AC11: PR title `feat(data): stream consumer events scaffold [TICKET-015]`
@@ -118,10 +138,10 @@ BATCH_MAX_WAIT_S = 5
 def run_consumer():
     consumer = build_consumer(group_id="stream-consumer-events", topics=["events.raw"])
     ch = ClickHouseClient.from_env()
-    
+
     batch: list[dict] = []
     batch_started_at = time.time()
-    
+
     while True:
         msg = consumer.poll(timeout=1.0)
         if msg is None:
@@ -137,7 +157,7 @@ def run_consumer():
                 # log schema failure metric
                 continue
             should_flush = len(batch) >= BATCH_MAX_SIZE
-        
+
         if should_flush and batch:
             try:
                 ch.insert_events(batch)
@@ -178,13 +198,14 @@ class EventEnvelope(BaseModel):
 ## Test plan
 
 - Unit: 8+ tests as per AC7
-- Integration: docker-compose with Redpanda + ClickHouse + consumer; produce 100 events; assert 100 rows in events table; assert offsets advanced
+- Integration: docker-compose with Redpanda + ClickHouse + consumer; produce 100 events; assert 100
+  rows in events table; assert offsets advanced
 
 ## Definition of Done
 
 - [ ] Branch `data-engineer/TICKET-015-stream-consumer-events`
 - [ ] PR title above
-- [ ] All ACs verified including Python conventions (build_meta + __init__.py)
+- [ ] All ACs verified including Python conventions (build_meta + **init**.py)
 - [ ] CI green via `gh pr checks <pr> --watch`
 - [ ] Prettier clean (markdown only — Python uses ruff/black per CONVENTIONS)
 - [ ] HANDOFF: TICKET-015 → TICKET-016 (smoke test e2e)
@@ -192,5 +213,7 @@ class EventEnvelope(BaseModel):
 ## Notes
 
 - Use `confluent-kafka` not `kafka-python`. The former is a C binding and 10x faster.
-- Modal's `keep_warm=1` keeps one replica always running. For MVP that's fine; in Sprint 10 we tune scaling.
-- Pydantic + Zod schema duplication is annoying. If it becomes a real maintenance burden, escalate for ADR on codegen approach (e.g., `quicktype` from JSON Schema).
+- Modal's `keep_warm=1` keeps one replica always running. For MVP that's fine; in Sprint 10 we tune
+  scaling.
+- Pydantic + Zod schema duplication is annoying. If it becomes a real maintenance burden, escalate
+  for ADR on codegen approach (e.g., `quicktype` from JSON Schema).

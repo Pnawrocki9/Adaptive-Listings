@@ -9,12 +9,12 @@ estimated_hours: 4
 depends_on: [TICKET-009, TICKET-011]
 produces: [TICKET-015, TICKET-016]
 affects_files:
-  - "infra/clickhouse/migrations/0001_create_events.sql"
-  - "infra/clickhouse/migrations/0002_create_session_summary_mv.sql"
-  - "infra/clickhouse/dbt_project.yml"
-  - "infra/clickhouse/profiles.yml.example"
-  - "infra/clickhouse/scripts/migrate.sh"
-  - "infra/clickhouse/README.md"
+  - 'infra/clickhouse/migrations/0001_create_events.sql'
+  - 'infra/clickhouse/migrations/0002_create_session_summary_mv.sql'
+  - 'infra/clickhouse/dbt_project.yml'
+  - 'infra/clickhouse/profiles.yml.example'
+  - 'infra/clickhouse/scripts/migrate.sh'
+  - 'infra/clickhouse/README.md'
 context_files:
   - docs/MASTER_DESIGN.md (sections C.1, K.1 — data architecture)
   - packages/shared/src/schemas/event.ts (TICKET-011)
@@ -26,31 +26,44 @@ labels: [sprint-1, p0, data, clickhouse]
 
 ## Summary
 
-Create the canonical `events` table in ClickHouse with proper partitioning, ordering, compression, and TTL. Plus the first materialized view (`session_summary`) for fast session-level dashboard queries. This is the first real ClickHouse work — schema must match the Zod schemas from TICKET-011 exactly. Use dbt-clickhouse for migration management going forward.
+Create the canonical `events` table in ClickHouse with proper partitioning, ordering, compression,
+and TTL. Plus the first materialized view (`session_summary`) for fast session-level dashboard
+queries. This is the first real ClickHouse work — schema must match the Zod schemas from TICKET-011
+exactly. Use dbt-clickhouse for migration management going forward.
 
 ## Context
 
 Master Design event store layout:
 
-- Partition by `(tenant_id, toYYYYMMDD(ts))` for fast tenant-scoped queries + automatic dropping of old partitions
-- Order by `(tenant_id, type, session_id, ts)` for efficient queries (tenant + type are common filters)
+- Partition by `(tenant_id, toYYYYMMDD(ts))` for fast tenant-scoped queries + automatic dropping of
+  old partitions
+- Order by `(tenant_id, type, session_id, ts)` for efficient queries (tenant + type are common
+  filters)
 - ZSTD codec on String columns (mandatory cost optimization)
-- TTL 13 months default (compliance retention; tenants on `audit_retention_days: 'compliance'` get longer per-region rules)
+- TTL 13 months default (compliance retention; tenants on `audit_retention_days: 'compliance'` get
+  longer per-region rules)
 
-Materialized view pattern: `events` is the polymorphic source of truth (payload as JSON String). MVs project specific event types into typed columns for fast queries.
+Materialized view pattern: `events` is the polymorphic source of truth (payload as JSON String). MVs
+project specific event types into typed columns for fast queries.
 
 ## Scope
 
 ### In scope
+
 - `infra/clickhouse/migrations/0001_create_events.sql` — events table DDL per Master Design
-- `infra/clickhouse/migrations/0002_create_session_summary_mv.sql` — session_summary materialized view (one row per session with derived features: tenant, region, started_at, ended_at, page_count, listing_ids_seen, last_event_type, has_chat, has_inquiry)
+- `infra/clickhouse/migrations/0002_create_session_summary_mv.sql` — session_summary materialized
+  view (one row per session with derived features: tenant, region, started_at, ended_at, page_count,
+  listing_ids_seen, last_event_type, has_chat, has_inquiry)
 - `infra/clickhouse/dbt_project.yml` — dbt project config pointing to ClickHouse
 - `infra/clickhouse/profiles.yml.example` — example profiles file (real one in Doppler)
-- `infra/clickhouse/scripts/migrate.sh` — wrapper script that applies migrations in order against `CLICKHOUSE_URL`
+- `infra/clickhouse/scripts/migrate.sh` — wrapper script that applies migrations in order against
+  `CLICKHOUSE_URL`
 - README documenting: migration process, naming convention, backwards-compat rules
-- A second migration that's a smoke test: insert 5 sample events, query them back via the MV, drop them
+- A second migration that's a smoke test: insert 5 sample events, query them back via the MV, drop
+  them
 
 ### Out of scope
+
 - Schema-drift events table (Sprint 9 / 2.5)
 - Other materialized views (rollup tables, intent signal stream) — Sprint 4-6 as needed
 - Schema-per-tenant partitioning for top enterprise — Sprint 7
@@ -58,13 +71,24 @@ Materialized view pattern: `events` is the polymorphic source of truth (payload 
 
 ## Acceptance criteria
 
-- [ ] AC1: `0001_create_events.sql` creates `events` table with all columns from Master Design (event_id UUID, tenant_id String CODEC(ZSTD(3)), session_id, ts DateTime64(3 'UTC'), region LowCardinality, type LowCardinality, schema_version UInt16, consent_state LowCardinality, listing_id String CODEC(ZSTD(3)), archetype_hint LowCardinality, payload String CODEC(ZSTD(3)), ingest_received_at DateTime64(3 'UTC'))
-- [ ] AC2: Table uses `ReplicatedMergeTree`, partition by `(tenant_id, toYYYYMMDD(ts))`, order by `(tenant_id, type, session_id, ts)`, TTL `ts + INTERVAL 13 MONTH`, `index_granularity = 8192`
-- [ ] AC3: `0002_create_session_summary_mv.sql` creates `session_summary_mv` materialized view + target table `session_summary` aggregating one row per (tenant_id, session_id) with at least 8 derived columns
-- [ ] AC4: `migrate.sh` reads `CLICKHOUSE_URL` from env, applies migrations in order, idempotent (re-run is no-op)
+- [ ] AC1: `0001_create_events.sql` creates `events` table with all columns from Master Design
+      (event_id UUID, tenant_id String CODEC(ZSTD(3)), session_id, ts DateTime64(3 'UTC'), region
+      LowCardinality, type LowCardinality, schema_version UInt16, consent_state LowCardinality,
+      listing_id String CODEC(ZSTD(3)), archetype_hint LowCardinality, payload String
+      CODEC(ZSTD(3)), ingest_received_at DateTime64(3 'UTC'))
+- [ ] AC2: Table uses `ReplicatedMergeTree`, partition by `(tenant_id, toYYYYMMDD(ts))`, order by
+      `(tenant_id, type, session_id, ts)`, TTL `ts + INTERVAL 13 MONTH`, `index_granularity = 8192`
+- [ ] AC3: `0002_create_session_summary_mv.sql` creates `session_summary_mv` materialized view +
+      target table `session_summary` aggregating one row per (tenant_id, session_id) with at least 8
+      derived columns
+- [ ] AC4: `migrate.sh` reads `CLICKHOUSE_URL` from env, applies migrations in order, idempotent
+      (re-run is no-op)
 - [ ] AC5: dbt project config compiles (`dbt compile`) against a local ClickHouse via Docker
-- [ ] AC6: Smoke test: spin up ClickHouse locally via docker-compose, run migrations, INSERT 5 sample events, SELECT from `events` (returns 5 rows), SELECT from `session_summary` (correctly aggregated)
-- [ ] AC7: README covers migration process, columns explanation, retention/TTL behavior, example queries; minimum 300 words
+- [ ] AC6: Smoke test: spin up ClickHouse locally via docker-compose, run migrations, INSERT 5
+      sample events, SELECT from `events` (returns 5 rows), SELECT from `session_summary` (correctly
+      aggregated)
+- [ ] AC7: README covers migration process, columns explanation, retention/TTL behavior, example
+      queries; minimum 300 words
 - [ ] AC8: All existing CI checks pass; new CI job runs ClickHouse smoke via docker-compose
 - [ ] AC9: PR title `feat(data): clickhouse events table + session summary mv [TICKET-014]`
 
@@ -144,9 +168,12 @@ echo "Migrations done."
 
 ## Test plan
 
-- Local: `docker-compose up clickhouse` (use clickhouse-server image), run migrate.sh, verify tables exist (`SHOW TABLES`)
-- Local: insert 5 sample events via curl, verify `events` rows count = 5, `session_summary` reflects aggregations
-- CI: docker-compose smoke job in CI runs migrations + sample insert + assert query (SELECT count(*) FROM events == 5)
+- Local: `docker-compose up clickhouse` (use clickhouse-server image), run migrate.sh, verify tables
+  exist (`SHOW TABLES`)
+- Local: insert 5 sample events via curl, verify `events` rows count = 5, `session_summary` reflects
+  aggregations
+- CI: docker-compose smoke job in CI runs migrations + sample insert + assert query (SELECT
+  count(\*) FROM events == 5)
 
 ## Definition of Done
 
@@ -159,5 +186,7 @@ echo "Migrations done."
 
 ## Notes
 
-- TTL is set to 13 months by default. Compliance retention overrides will be applied per-tenant in Sprint 9 via partition-level TTL, NOT row-level.
-- The MV uses `AggregatingMergeTree` so it auto-merges. Don't index `last_event_type` separately — `argMax` covers it.
+- TTL is set to 13 months by default. Compliance retention overrides will be applied per-tenant in
+  Sprint 9 via partition-level TTL, NOT row-level.
+- The MV uses `AggregatingMergeTree` so it auto-merges. Don't index `last_event_type` separately —
+  `argMax` covers it.

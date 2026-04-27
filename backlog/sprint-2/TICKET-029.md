@@ -9,13 +9,13 @@ estimated_hours: 4
 depends_on: [TICKET-021]
 produces: []
 affects_files:
-  - "packages/db/src/schema/usage_metering.ts"
-  - "packages/db/src/schema/subscriptions.ts"
-  - "packages/db/migrations/0004_create_billing.sql"
-  - "apps/control-plane/src/app/api/v1/webhooks/stripe/route.ts"
-  - "apps/control-plane/src/lib/stripe.ts"
-  - "apps/control-plane/tests/api/webhooks-stripe.test.ts"
-  - "docs/runbooks/billing.md"
+  - 'packages/db/src/schema/usage_metering.ts'
+  - 'packages/db/src/schema/subscriptions.ts'
+  - 'packages/db/migrations/0004_create_billing.sql'
+  - 'apps/control-plane/src/app/api/v1/webhooks/stripe/route.ts'
+  - 'apps/control-plane/src/lib/stripe.ts'
+  - 'apps/control-plane/tests/api/webhooks-stripe.test.ts'
+  - 'docs/runbooks/billing.md'
 context_files:
   - packages/db/src/schema/tenants.ts (TICKET-021)
   - docs/MASTER_DESIGN.md (section M — pricing)
@@ -29,20 +29,31 @@ labels: [sprint-2, p1, backend, billing]
 
 Two related foundational pieces for the billing path:
 
-1. **Database tables** for `subscriptions` (one row per tenant linking to Stripe customer/subscription IDs) and `usage_metering` (event-level usage records: tenant_id, metric, value, period, recorded_at — supports per-tenant usage aggregation for billing).
-2. **Stripe webhook endpoint stub** at `/api/v1/webhooks/stripe`: verifies Stripe signature, parses event, logs the event type, persists customer/subscription state changes for `customer.subscription.created/updated/deleted` and `invoice.payment_succeeded`. No real reconciliation logic yet — that's Sprint 7.
+1. **Database tables** for `subscriptions` (one row per tenant linking to Stripe
+   customer/subscription IDs) and `usage_metering` (event-level usage records: tenant_id, metric,
+   value, period, recorded_at — supports per-tenant usage aggregation for billing).
+2. **Stripe webhook endpoint stub** at `/api/v1/webhooks/stripe`: verifies Stripe signature, parses
+   event, logs the event type, persists customer/subscription state changes for
+   `customer.subscription.created/updated/deleted` and `invoice.payment_succeeded`. No real
+   reconciliation logic yet — that's Sprint 7.
 
-This ticket sets up the wiring so when we wire real billing in Sprint 7, the table schema and webhook signature verification are already proven. **No real Stripe customer creation in this ticket.**
+This ticket sets up the wiring so when we wire real billing in Sprint 7, the table schema and
+webhook signature verification are already proven. **No real Stripe customer creation in this
+ticket.**
 
 ## Context
 
-Master Design M mentions tier-based pricing (Observer, Augment, Native) with usage-based components (events/month, AI calls/month). Stripe is the chosen billing provider.
+Master Design M mentions tier-based pricing (Observer, Augment, Native) with usage-based components
+(events/month, AI calls/month). Stripe is the chosen billing provider.
 
-For MVP, we won't run real billing — pilot tenants use complimentary access. But we want the structure in place so when we flip the switch in Sprint 7, it's a wiring change not an architecture change.
+For MVP, we won't run real billing — pilot tenants use complimentary access. But we want the
+structure in place so when we flip the switch in Sprint 7, it's a wiring change not an architecture
+change.
 
 ## Scope
 
 ### In scope
+
 - New tables:
   - `subscriptions`:
     - `id UUID PK`
@@ -60,7 +71,8 @@ For MVP, we won't run real billing — pilot tenants use complimentary access. B
   - `usage_metering`:
     - `id UUID PK DEFAULT gen_random_uuid()`
     - `tenant_id UUID FK NOT NULL`
-    - `metric TEXT NOT NULL` (e.g., `'events_ingested'`, `'ai_calls_haiku'`, `'ai_calls_sonnet'`, `'mb_stored'`)
+    - `metric TEXT NOT NULL` (e.g., `'events_ingested'`, `'ai_calls_haiku'`, `'ai_calls_sonnet'`,
+      `'mb_stored'`)
     - `value DOUBLE PRECISION NOT NULL`
     - `period DATE NOT NULL` (the day this usage applies to)
     - `recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()`
@@ -69,18 +81,23 @@ For MVP, we won't run real billing — pilot tenants use complimentary access. B
 - Indexes:
   - `subscriptions(stripe_customer_id)` for webhook lookup
   - `usage_metering(tenant_id, period, metric)` for billing aggregation
-- `apps/control-plane/src/lib/stripe.ts`: Stripe client factory (lazy, only when STRIPE_SECRET_KEY present)
+- `apps/control-plane/src/lib/stripe.ts`: Stripe client factory (lazy, only when STRIPE_SECRET_KEY
+  present)
 - Webhook route `POST /api/v1/webhooks/stripe`:
   - Reads raw body
   - Verifies signature with `stripe.webhooks.constructEvent` using `STRIPE_WEBHOOK_SECRET`
   - Returns 400 on invalid sig
   - Logs event type + id for audit
-  - Handles 4 event types (stub logic, just upsert subscription row): `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_succeeded`
+  - Handles 4 event types (stub logic, just upsert subscription row):
+    `customer.subscription.created`, `customer.subscription.updated`,
+    `customer.subscription.deleted`, `invoice.payment_succeeded`
   - Returns 200 (Stripe expects 200 quickly to avoid retries)
 - Tests
-- `docs/runbooks/billing.md`: how Stripe webhook works, where the secret is stored, how to test locally with Stripe CLI
+- `docs/runbooks/billing.md`: how Stripe webhook works, where the secret is stored, how to test
+  locally with Stripe CLI
 
 ### Out of scope
+
 - Real customer creation on tenant signup (Sprint 7)
 - Usage aggregation cron (Sprint 7)
 - Pricing UI / plan upgrade UI (Sprint 7)
@@ -92,9 +109,12 @@ For MVP, we won't run real billing — pilot tenants use complimentary access. B
 - [ ] AC1: `subscriptions` table with all columns and constraints listed
 - [ ] AC2: `usage_metering` table with all columns and indexes
 - [ ] AC3: RLS policies prevent cross-tenant access
-- [ ] AC4: Webhook route verifies Stripe signature; returns 400 with `{ error: { code: 'invalid_signature' } }` on failure
-- [ ] AC5: Webhook handles 4 listed event types: upserts to `subscriptions` table; logs event_id + type
-- [ ] AC6: Webhook handler is idempotent: re-delivering same event (Stripe retries) does not create duplicate rows; uses `stripe_subscription_id` as unique key for upserts
+- [ ] AC4: Webhook route verifies Stripe signature; returns 400 with
+      `{ error: { code: 'invalid_signature' } }` on failure
+- [ ] AC5: Webhook handles 4 listed event types: upserts to `subscriptions` table; logs event_id +
+      type
+- [ ] AC6: Webhook handler is idempotent: re-delivering same event (Stripe retries) does not create
+      duplicate rows; uses `stripe_subscription_id` as unique key for upserts
 - [ ] AC7: Webhook returns 200 within 200ms (Stripe times out at 10s but we want fast)
 - [ ] AC8: Tests:
   - Unit: signature verification (valid sig → 200, invalid → 400, missing → 400)
@@ -102,7 +122,8 @@ For MVP, we won't run real billing — pilot tenants use complimentary access. B
   - Unit: idempotency (same event delivered twice → one row)
   - Unit: unhandled event type → 200 (don't error, just log)
   - At least 8 tests
-- [ ] AC9: `docs/runbooks/billing.md` covers Stripe CLI local testing, secret rotation, error scenarios; minimum 250 words
+- [ ] AC9: `docs/runbooks/billing.md` covers Stripe CLI local testing, secret rotation, error
+      scenarios; minimum 250 words
 - [ ] AC10: All previous CI checks pass
 - [ ] AC11: PR title `feat(billing): stripe webhook stub + usage_metering [TICKET-029]`
 
@@ -162,31 +183,35 @@ export async function POST(req: NextRequest) {
         console.warn({ stripe_subscription_id: sub.id }, 'no tenant_id in metadata; skipping');
         break;
       }
-      await db.insert(subscriptions).values({
-        tenantId,
-        stripeCustomerId: sub.customer,
-        stripeSubscriptionId: sub.id,
-        stripePriceId: sub.items.data[0]?.price.id,
-        status: sub.status,
-        currentPeriodStart: new Date(sub.current_period_start * 1000),
-        currentPeriodEnd: new Date(sub.current_period_end * 1000),
-        cancelAtPeriodEnd: sub.cancel_at_period_end,
-        trialEnd: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
-      }).onConflictDoUpdate({
-        target: subscriptions.stripeSubscriptionId,
-        set: {
+      await db
+        .insert(subscriptions)
+        .values({
+          tenantId,
+          stripeCustomerId: sub.customer,
+          stripeSubscriptionId: sub.id,
+          stripePriceId: sub.items.data[0]?.price.id,
           status: sub.status,
           currentPeriodStart: new Date(sub.current_period_start * 1000),
           currentPeriodEnd: new Date(sub.current_period_end * 1000),
           cancelAtPeriodEnd: sub.cancel_at_period_end,
-          updatedAt: new Date(),
-        },
-      });
+          trialEnd: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
+        })
+        .onConflictDoUpdate({
+          target: subscriptions.stripeSubscriptionId,
+          set: {
+            status: sub.status,
+            currentPeriodStart: new Date(sub.current_period_start * 1000),
+            currentPeriodEnd: new Date(sub.current_period_end * 1000),
+            cancelAtPeriodEnd: sub.cancel_at_period_end,
+            updatedAt: new Date(),
+          },
+        });
       break;
     }
     case 'customer.subscription.deleted': {
       const sub = event.data.object as any;
-      await db.update(subscriptions)
+      await db
+        .update(subscriptions)
         .set({ status: 'canceled', updatedAt: new Date() })
         .where(eq(subscriptions.stripeSubscriptionId, sub.id));
       break;
@@ -207,7 +232,9 @@ export async function POST(req: NextRequest) {
 ## Test plan
 
 - Unit: signature verification, each event type, idempotency, unhandled type
-- Manual local test using Stripe CLI: `stripe listen --forward-to localhost:3000/api/v1/webhooks/stripe`, then `stripe trigger customer.subscription.created` — verify row appears in subscriptions table
+- Manual local test using Stripe CLI:
+  `stripe listen --forward-to localhost:3000/api/v1/webhooks/stripe`, then
+  `stripe trigger customer.subscription.created` — verify row appears in subscriptions table
 
 ## Definition of Done
 
@@ -220,6 +247,9 @@ export async function POST(req: NextRequest) {
 
 ## Notes
 
-- We use Stripe API version `2025-08-27.basil` (current LTS-ish). Pin in `stripe.ts` so future SDK updates don't break us.
-- The webhook is idempotent because Stripe retries up to 3 days on non-200. Our upsert by `stripe_subscription_id` handles dupes.
-- `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` go in Doppler. Document in runbook how to obtain (Stripe dashboard).
+- We use Stripe API version `2025-08-27.basil` (current LTS-ish). Pin in `stripe.ts` so future SDK
+  updates don't break us.
+- The webhook is idempotent because Stripe retries up to 3 days on non-200. Our upsert by
+  `stripe_subscription_id` handles dupes.
+- `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` go in Doppler. Document in runbook how to obtain
+  (Stripe dashboard).

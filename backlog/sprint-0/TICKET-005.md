@@ -9,9 +9,9 @@ estimated_hours: 2
 depends_on: [TICKET-001]
 produces: [TICKET-007, TICKET-033]
 affects_files:
-  - "apps/auto-detect/**"
-  - "pnpm-workspace.yaml"
-  - "turbo.json"
+  - 'apps/auto-detect/**'
+  - 'pnpm-workspace.yaml'
+  - 'turbo.json'
 context_files:
   - docs/MASTER_DESIGN.md (sections B.4, B.5 — auto-onboarding)
   - apps/intent-engine/* (existing pattern to mirror)
@@ -24,17 +24,24 @@ labels: [foundation, p1, infra, auto-onboarding, v1.1]
 
 ## Summary
 
-Create the `apps/auto-detect/` Python app placeholder following the same pattern as the other 6 Modal Python apps (intent-engine, adaptation-engine, llm-gateway, stream-consumer, archetype-pipeline, data-quality). This is a placeholder only — actual auto-detection logic ships in TICKET-033 and beyond. This ticket just creates the scaffold so other tickets can depend on it.
+Create the `apps/auto-detect/` Python app placeholder following the same pattern as the other 6
+Modal Python apps (intent-engine, adaptation-engine, llm-gateway, stream-consumer,
+archetype-pipeline, data-quality). This is a placeholder only — actual auto-detection logic ships in
+TICKET-033 and beyond. This ticket just creates the scaffold so other tickets can depend on it.
 
 ## Context
 
-Master Design v1.1 added sections B.4-B.7 (Auto-Onboarding & Zero-Config Installation). The implementation lives in a new Modal Python app at `apps/auto-detect/`. This brings our Modal Python apps from 6 to 7, total apps from 9 to 10.
+Master Design v1.1 added sections B.4-B.7 (Auto-Onboarding & Zero-Config Installation). The
+implementation lives in a new Modal Python app at `apps/auto-detect/`. This brings our Modal Python
+apps from 6 to 7, total apps from 9 to 10.
 
-Pattern to mirror exactly: look at `apps/intent-engine/` from TICKET-001 — same `pyproject.toml` shape, same `src/__init__.py` + `src/main.py` skeleton, same smoke test in `tests/`.
+Pattern to mirror exactly: look at `apps/intent-engine/` from TICKET-001 — same `pyproject.toml`
+shape, same `src/__init__.py` + `src/main.py` skeleton, same smoke test in `tests/`.
 
 ## Scope
 
 ### In scope
+
 - Create directory `apps/auto-detect/` with this structure:
   ```
   apps/auto-detect/
@@ -49,28 +56,34 @@ Pattern to mirror exactly: look at `apps/intent-engine/` from TICKET-001 — sam
   ```
 - Update root `pnpm-workspace.yaml` (if it lists apps explicitly) to include `apps/auto-detect`
 - Update `turbo.json` if it has app-specific config
-- Update CI workflow (`.github/workflows/ci.yml`) to add a Test (Python 3.12, auto-detect) job mirroring the pattern for other Python apps
+- Update CI workflow (`.github/workflows/ci.yml`) to add a Test (Python 3.12, auto-detect) job
+  mirroring the pattern for other Python apps
 - README.md should be brief but reference Master Design B.4-B.7 sections
 
 ### Out of scope
+
 - Actual Puppeteer / Vision / Schema.org logic — that's TICKETs 030-035 in Sprint 2.5
 - Modal serverless deployment config — comes with real implementation
 - Dependencies beyond the placeholder set (no real `puppeteer`, `playwright`, `anthropic` yet)
 
 ## Acceptance criteria
 
-- [ ] AC1: `apps/auto-detect/pyproject.toml` exists with `[build-system]` block specifying `build-backend = "setuptools.build_meta"` (NEVER `setuptools.backends.legacy`)
+- [ ] AC1: `apps/auto-detect/pyproject.toml` exists with `[build-system]` block specifying
+      `build-backend = "setuptools.build_meta"` (NEVER `setuptools.backends.legacy`)
 - [ ] AC2: `apps/auto-detect/src/__init__.py` exists (even if empty)
 - [ ] AC3: `apps/auto-detect/src/main.py` exists with at least one exported function/symbol
-- [ ] AC4: `apps/auto-detect/tests/test_smoke.py` exists, imports from `src`, has at least one passing pytest test
+- [ ] AC4: `apps/auto-detect/tests/test_smoke.py` exists, imports from `src`, has at least one
+      passing pytest test
 - [ ] AC5: `apps/auto-detect/README.md` exists, references Master Design sections B.4, B.5, B.6
-- [ ] AC6: CI workflow has `Test (Python 3.12, auto-detect)` job that succeeds on this app's smoke test
+- [ ] AC6: CI workflow has `Test (Python 3.12, auto-detect)` job that succeeds on this app's smoke
+      test
 - [ ] AC7: All other CI checks (lint, typecheck, format, build, existing Python tests) still pass
 - [ ] AC8: PR title `chore(infra): add apps/auto-detect placeholder [TICKET-005]`
 
 ## Implementation guidance
 
-Open `apps/intent-engine/pyproject.toml` first and copy its structure. Replace name, description. Critical:
+Open `apps/intent-engine/pyproject.toml` first and copy its structure. Replace name, description.
+Critical:
 
 ```toml
 [build-system]
@@ -163,5 +176,6 @@ test-python-auto-detect:
 
 ## Notes
 
-- This is a small ticket. ~2h max. If it takes longer, you're overthinking it. Mirror existing Python app exactly.
+- This is a small ticket. ~2h max. If it takes longer, you're overthinking it. Mirror existing
+  Python app exactly.
 - Don't add real Puppeteer/Vision deps yet — they go with the actual implementation in TICKET-033+.

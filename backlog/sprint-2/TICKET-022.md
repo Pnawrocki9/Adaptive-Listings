@@ -9,11 +9,11 @@ estimated_hours: 4
 depends_on: [TICKET-021]
 produces: [TICKET-024]
 affects_files:
-  - "packages/db/src/schema/users.ts"
-  - "packages/db/src/schema/tenant_members.ts"
-  - "packages/db/migrations/0002_create_users_and_members.sql"
-  - "packages/db/scripts/seed.ts"
-  - "packages/db/tests/schema/users.test.ts"
+  - 'packages/db/src/schema/users.ts'
+  - 'packages/db/src/schema/tenant_members.ts'
+  - 'packages/db/migrations/0002_create_users_and_members.sql'
+  - 'packages/db/scripts/seed.ts'
+  - 'packages/db/tests/schema/users.test.ts'
 context_files:
   - packages/db/src/schema/tenants.ts (TICKET-021)
   - .claude/agents/backend-engineer.md
@@ -24,13 +24,20 @@ labels: [sprint-2, p0, backend, database, auth]
 
 ## Summary
 
-`users` table mirrors Supabase `auth.users` (one row per Supabase auth.users.id), and `tenant_members` table is a many-to-many join: a user can belong to multiple tenants with a role per tenant (admin/editor/viewer). RLS policies on both. Seed: link the 3 sample tenants (from TICKET-021) to a single dev user.
+`users` table mirrors Supabase `auth.users` (one row per Supabase auth.users.id), and
+`tenant_members` table is a many-to-many join: a user can belong to multiple tenants with a role per
+tenant (admin/editor/viewer). RLS policies on both. Seed: link the 3 sample tenants (from
+TICKET-021) to a single dev user.
 
 ## Context
 
-Supabase Auth manages auth.users — we don't. Our own `public.users` mirrors it for FK relationships. A trigger on `auth.users` insert auto-creates a `public.users` row. Tenant membership is independent of auth: even after a user is created, they need an explicit row in `tenant_members` to access a tenant.
+Supabase Auth manages auth.users — we don't. Our own `public.users` mirrors it for FK relationships.
+A trigger on `auth.users` insert auto-creates a `public.users` row. Tenant membership is independent
+of auth: even after a user is created, they need an explicit row in `tenant_members` to access a
+tenant.
 
 Roles for MVP:
+
 - `admin` — full access including billing, integrations, team management
 - `editor` — can change brand tokens, signals, adapters; cannot change billing or remove members
 - `viewer` — read-only
@@ -38,13 +45,18 @@ Roles for MVP:
 ## Scope
 
 ### In scope
-- `packages/db/src/schema/users.ts` — Drizzle schema for `users` (id, email, full_name, avatar_url, created_at, last_signed_in_at, deleted_at)
-- `packages/db/src/schema/tenant_members.ts` — Drizzle schema for `tenant_members` (user_id FK, tenant_id FK, role enum, created_at, deleted_at; PK on (user_id, tenant_id))
-- `packages/db/migrations/0002_create_users_and_members.sql` — generated DDL + RLS policies + auth.users trigger
+
+- `packages/db/src/schema/users.ts` — Drizzle schema for `users` (id, email, full_name, avatar_url,
+  created_at, last_signed_in_at, deleted_at)
+- `packages/db/src/schema/tenant_members.ts` — Drizzle schema for `tenant_members` (user_id FK,
+  tenant_id FK, role enum, created_at, deleted_at; PK on (user_id, tenant_id))
+- `packages/db/migrations/0002_create_users_and_members.sql` — generated DDL + RLS policies +
+  auth.users trigger
 - Seed update: insert one dev user, give them admin role on all 3 sample tenants
 - Tests
 
 ### Out of scope
+
 - Real Supabase Auth integration in apps (TICKET-024 wires JWT middleware)
 - Invitation flow (Sprint 7)
 - 2FA / MFA (Sprint 9)
@@ -68,11 +80,14 @@ Roles for MVP:
   - `deleted_at TIMESTAMPTZ`
   - `PRIMARY KEY (user_id, tenant_id)`
 - [ ] AC3: RLS on `users`: user can SELECT/UPDATE only own row (`id = auth.uid()`)
-- [ ] AC4: RLS on `tenant_members`: user can SELECT only their own memberships; admins of a tenant can SELECT all members of that tenant
+- [ ] AC4: RLS on `tenant_members`: user can SELECT only their own memberships; admins of a tenant
+      can SELECT all members of that tenant
 - [ ] AC5: Trigger `on_auth_user_created` on `auth.users` INSERT auto-creates `public.users` row
 - [ ] AC6: Index on `tenant_members(tenant_id, role)` for fast "who are admins of tenant X" queries
-- [ ] AC7: Seed creates 1 dev user (email `dev@estalara.io`, fake auth.users id), inserts 3 admin memberships
-- [ ] AC8: Tests: insertable, FK constraints work, RLS enforces correctly with simulated auth.uid(), unique email enforced
+- [ ] AC7: Seed creates 1 dev user (email `dev@estalara.io`, fake auth.users id), inserts 3 admin
+      memberships
+- [ ] AC8: Tests: insertable, FK constraints work, RLS enforces correctly with simulated auth.uid(),
+      unique email enforced
 - [ ] AC9: All previous tests pass; migration runs cleanly
 - [ ] AC10: PR title `feat(db): users + tenant_members tables [TICKET-022]`
 
@@ -83,7 +98,7 @@ Roles for MVP:
 import { pgTable, uuid, text, timestamp } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
-  id: uuid('id').primaryKey(),  // matches auth.users.id, NO defaultRandom
+  id: uuid('id').primaryKey(), // matches auth.users.id, NO defaultRandom
   email: text('email').notNull().unique(),
   fullName: text('full_name'),
   avatarUrl: text('avatar_url'),
@@ -103,8 +118,12 @@ import { tenants } from './tenants.js';
 export const tenantMembers = pgTable(
   'tenant_members',
   {
-    userId: uuid('user_id').notNull().references(() => users.id),
-    tenantId: uuid('tenant_id').notNull().references(() => tenants.tenantId),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.tenantId),
     role: text('role').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -127,9 +146,9 @@ CREATE POLICY users_self_access ON users
   FOR ALL TO authenticated USING (id = auth.uid()) WITH CHECK (id = auth.uid());
 
 CREATE POLICY tenant_members_self ON tenant_members
-  FOR SELECT TO authenticated 
+  FOR SELECT TO authenticated
   USING (user_id = auth.uid() OR EXISTS (
-    SELECT 1 FROM tenant_members tm 
+    SELECT 1 FROM tenant_members tm
     WHERE tm.user_id = auth.uid() AND tm.tenant_id = tenant_members.tenant_id AND tm.role = 'admin'
   ));
 
@@ -167,5 +186,7 @@ CREATE TRIGGER on_auth_user_created
 
 ## Notes
 
-- The trigger uses `SECURITY DEFINER` so it runs with elevated privileges. Audit this in security review (Sprint 9).
-- Don't implement role changes in this ticket. Just the schema. Role mutation flows are Sprint 7 work.
+- The trigger uses `SECURITY DEFINER` so it runs with elevated privileges. Audit this in security
+  review (Sprint 9).
+- Don't implement role changes in this ticket. Just the schema. Role mutation flows are Sprint 7
+  work.

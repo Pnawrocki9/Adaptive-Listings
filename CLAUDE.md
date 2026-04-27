@@ -2,11 +2,16 @@
 
 ## ⚠️ Master Design v1.1 update (2026-04-26)
 
-Master Design został zaktualizowany do v1.1 — dodane sekcje B.4 do B.7 dotyczące Auto-Onboarding (Magic Link, AI Vision Auto-Detect, Schema Discovery, Continuous Validation, Pre-Built Platform Templates).
+Master Design został zaktualizowany do v1.1 — dodane sekcje B.4 do B.7 dotyczące Auto-Onboarding
+(Magic Link, AI Vision Auto-Detect, Schema Discovery, Continuous Validation, Pre-Built Platform
+Templates).
 
 Implikacje dla aktualnej pracy:
-- Sprint 0 dostaje 1 dodatkowy app (apps/auto-detect/) i 1 dodatkowy package (packages/platform-templates/) ponad to co zbuduje TICKET-001
-- Sprint 1-2 musi uwzględnić Auto-Detection Service, Schema Discovery Pipeline, Magic Link UI flow w dashboardzie
+
+- Sprint 0 dostaje 1 dodatkowy app (apps/auto-detect/) i 1 dodatkowy package
+  (packages/platform-templates/) ponad to co zbuduje TICKET-001
+- Sprint 1-2 musi uwzględnić Auto-Detection Service, Schema Discovery Pipeline, Magic Link UI flow w
+  dashboardzie
 - Sprint 5-6 dostaje Continuous Schema Validation + drift detection
 - Każdy ticket dotykający TenantConfig MUSI uwzględnić nowe pole `auto_detected_schema`
 

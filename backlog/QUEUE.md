@@ -24,7 +24,7 @@ updates.
 
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 1    | 1       | 7     | 0       |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 2    | 0       | 7     | 0       |
 | 1      | 2     | Ingest baseline + event schema                                       | 10      | 0    | 0       | 0     | 10      |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
@@ -127,12 +127,14 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
   title:
     Vendor account stubs (Supabase + ClickHouse + Modal + Redpanda + Upstash) Terraform skeleton
   agent: devops-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 6
   depends_on: [TICKET-001, TICKET-002]
   assigned_to: devops-engineer
   started_at: '2026-04-27T08:00:00Z'
+  completed_at: '2026-04-27T14:15:00Z'
+  pr: '#6'
   spec: backlog/sprint-0/TICKET-009.md
 ```
 
@@ -326,12 +328,12 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Currently in flight
 
-- TICKET-009 (devops-engineer, IN_PROGRESS, started 2026-04-27T08:00:00Z) — Vendor account stubs
-  Terraform skeleton
+None.
 
 ## Awaiting human review
 
-None.
+- TICKET-009 (devops-engineer, PR #6, completed 2026-04-27T14:15:00Z) — Vendor account stubs
+  Terraform skeleton + runbooks
 
 ## Recent merges
 

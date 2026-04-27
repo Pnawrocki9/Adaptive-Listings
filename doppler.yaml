@@ -1,0 +1,8 @@
+setup:
+  project: estalara-adaptive-listings
+  config: dev
+
+# Environment configs:
+#   dev     — local development
+#   staging — single-region staging (eu-frankfurt)
+#   prod    — multi-region production (eu, us, uk, dxb)

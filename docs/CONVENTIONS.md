@@ -239,7 +239,8 @@ Rules:
 
 ## Security
 
-- All secrets in Doppler, never in committed files
+- All secrets in Doppler, never in committed files — see
+  [`docs/runbooks/secrets.md`](runbooks/secrets.md) for the full secrets management runbook
 - All inputs validated with Zod / Pydantic
 - All HTTP endpoints rate-limited
 - All cross-origin endpoints have explicit CORS allowlist

@@ -27,27 +27,23 @@ env:
   TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
 
 jobs:
-  # ── Doppler CLI setup (optional — skipped if DOPPLER_TOKEN_DEV not set) ──
+  # ── Doppler CLI setup (optional - skipped if DOPPLER_TOKEN_DEV not set) ──
   # Forks and external PRs won't have this secret; CI still passes without it.
+  # Job-level if guards the entire job so secrets context is safe to use here.
   doppler-verify:
     name: Doppler verify (optional)
     runs-on: ubuntu-latest
+    if: ${{ secrets.DOPPLER_TOKEN_DEV != '' }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Doppler CLI
-        if: ${{ secrets.DOPPLER_TOKEN_DEV != '' }}
         uses: dopplerhq/cli-action@v3
 
       - name: Verify Doppler auth
-        if: ${{ secrets.DOPPLER_TOKEN_DEV != '' }}
         run: doppler me
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
-
-      - name: Skip note (no token)
-        if: ${{ secrets.DOPPLER_TOKEN_DEV == '' }}
-        run: echo "DOPPLER_TOKEN_DEV not set — Doppler verification skipped (OK for fork PRs)"
 
   # ── Static checks (parallel, ~3min) ─────────────────────────────────────
   lint:

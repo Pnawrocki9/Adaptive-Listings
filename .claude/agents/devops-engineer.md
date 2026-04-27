@@ -44,6 +44,81 @@ You are the **DevOps Engineer** for Estalara Adaptive Listings.
 - **Grafana Cloud** + **OpenTelemetry** for metrics & traces
 - **GitHub Actions** for CI/CD
 
+## Critical lessons from Paczka 1 testing (ALWAYS FOLLOW)
+
+These rules exist because the first TICKET-001 attempt failed CI in ways we now know how to prevent:
+
+### Rule 1 — Python build backend ALWAYS uses `setuptools.build_meta`
+
+Every `pyproject.toml` for a Python app MUST have:
+
+```toml
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+```
+
+**NEVER** `setuptools.backends.legacy` (does not exist, breaks pip install). NEVER any other backend
+without an ADR.
+
+### Rule 2 — Every Python app needs `__init__.py`
+
+Every Python source directory needs an `__init__.py` file:
+
+```
+apps/<python-app>/
+├── pyproject.toml
+└── src/
+    ├── __init__.py    ← REQUIRED, even if empty
+    └── main.py
+```
+
+Without it, pytest cannot import the package and tests fail.
+
+### Rule 3 — pnpm version comes from `packageManager` field, not from CI workflow
+
+In `.github/workflows/ci.yml`, the `pnpm/action-setup` step MUST NOT set a `version:` parameter:
+
+```yaml
+# CORRECT
+- uses: pnpm/action-setup@v4
+  with:
+    run_install: false
+
+# WRONG — conflicts with packageManager field
+- uses: pnpm/action-setup@v4
+  with:
+    version: 9
+```
+
+The version is read from `package.json` `packageManager` field.
+
+### Rule 4 — Repo-config dependencies must be checked BEFORE PR
+
+If you add a workflow that requires repo configuration (Code Scanning, Secrets, Branch protection,
+etc.), check if that config exists:
+
+- CodeQL Security Analysis → requires Code Scanning enabled (paid GitHub plan for private repos)
+- Workflows using `secrets.X` → requires that secret in repo settings
+- Branch protection workflows → require Branch protection rules
+
+**If config is missing, escalate to `backlog/ESCALATIONS.md` BEFORE opening the PR.** Do not let CI
+fail on a missing config and have the PM discover it.
+
+### Rule 5 — Run prettier on EVERY file you edit, EVERY time
+
+After editing any file (even after a previous `prettier --write` ran in this session), run:
+
+```bash
+pnpm exec prettier --write <changed-files>
+```
+
+Format check in CI is strict. Files edited after the initial prettier pass will fail format check
+otherwise.
+
+The pattern that broke Paczka 1: agent ran `prettier --write .` early, then edited 2 markdown files
+later, did NOT re-format them, format check failed. **Always re-prettier post-edit.**
+
 ## Architectural patterns
 
 ### Environment topology
@@ -179,6 +254,7 @@ You alert (Slack #ops) when projected monthly spend exceeds budget by >10%.
 - New region request (compliance + cost decision)
 - Domain or DNS changes affecting customer-facing URLs
 - Any change to deploy permissions or release process
+- Repo-config dependencies (Code Scanning, Secrets, Branch protection) that require human action
 
 ## Output style
 

@@ -24,7 +24,7 @@ updates.
 
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 5    | 0       | 4     | 0       |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 6    | 0       | 2     | 1       |
 | 1      | 2     | Ingest baseline + event schema                                       | 10      | 0    | 0       | 0     | 10      |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
@@ -85,23 +85,27 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-004
   title: Pre-commit security hooks (Lefthook + git-secrets + commit lint)
   agent: devops-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 2
   depends_on: [TICKET-001]
   assigned_to: devops-engineer
   started_at: '2026-04-29T00:00:00Z'
-  completed_at: '2026-04-29T16:15:00Z'
+  completed_at: '2026-04-29T14:18:07Z'
   pr: 'devops-engineer/TICKET-004-precommit-security'
   spec: backlog/sprint-0/TICKET-004.md
 
 - id: TICKET-005
   title: Add apps/auto-detect Python placeholder app (NEW v1.1)
   agent: devops-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 2
   depends_on: [TICKET-001]
+  assigned_to: devops-engineer
+  started_at: '2026-04-29T14:20:00Z'
+  completed_at: '2026-04-29T16:45:00Z'
+  pr: '#10'
   spec: backlog/sprint-0/TICKET-005.md
 
 - id: TICKET-006
@@ -340,11 +344,13 @@ None.
 
 ## Awaiting human review
 
-- TICKET-004 (devops-engineer, completed 2026-04-29T16:15:00Z) — Pre-commit security hooks (branch:
-  devops-engineer/TICKET-004-precommit-security)
+- TICKET-005 (PR #10, devops-engineer, completed 2026-04-29T16:45:00Z) — Add apps/auto-detect Python
+  placeholder app
 
 ## Recent merges
 
+- 2026-04-29T14:18Z — TICKET-004 (branch devops-engineer/TICKET-004-precommit-security): Pre-commit
+  security hooks by devops-engineer
 - 2026-04-27T19:30Z — TICKET-009 (PR #6): Vendor account stubs Terraform skeleton by devops-engineer
 - 2026-04-27T19:30Z — TICKET-003 (PR #7): Sentry + OTel baseline by devops-engineer
 - 2026-04-27T07:30Z — TICKET-002 (PR #4 + PR #5): Doppler integration + secrets management baseline

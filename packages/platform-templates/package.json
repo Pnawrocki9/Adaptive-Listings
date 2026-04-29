@@ -1,0 +1,31 @@
+{
+  "name": "@estalara/platform-templates",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Pre-built platform fingerprints for Auto-Onboarding Layer 3 (Master Design B.4.2, B.5.1)",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "*",
+    "vitest": "*"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}

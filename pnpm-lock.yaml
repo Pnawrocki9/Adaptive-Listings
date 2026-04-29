@@ -157,6 +157,19 @@ importers:
         specifier: "*"
         version: 2.1.9(@types/node@22.19.17)(terser@5.46.2)
 
+  packages/platform-templates:
+    dependencies:
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: "*"
+        version: 5.9.3
+      vitest:
+        specifier: "*"
+        version: 2.1.9(@types/node@22.19.17)(terser@5.46.2)
+
   packages/sdk:
     devDependencies:
       typescript:
@@ -6243,6 +6256,12 @@ packages:
         integrity: sha512-EjIevzuJRiRPbVH4mGc8nApb/lVLKVpmUhAaR5R5doKGfAnGJ6Gr3CViAVjP+4FWSxCsybeWQdcgCtbX+7oZug==,
       }
 
+  zod@3.25.76:
+    resolution:
+      {
+        integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==,
+      }
+
 snapshots:
   "@babel/code-frame@7.29.0":
     dependencies:
@@ -10062,3 +10081,5 @@ snapshots:
       stacktracey: 2.2.0
 
   zod@3.22.3: {}
+
+  zod@3.25.76: {}

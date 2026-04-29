@@ -24,7 +24,7 @@ updates.
 
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 6    | 0       | 1     | 2       |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 7    | 0       | 1     | 1       |
 | 1      | 2     | Ingest baseline + event schema                                       | 10      | 0    | 0       | 0     | 10      |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
@@ -111,7 +111,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-006
   title: Add packages/platform-templates TS placeholder (NEW v1.1)
   agent: devops-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 2
   depends_on: [TICKET-001]
@@ -124,7 +124,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-007
   title: Update README + CLAUDE.md to reflect 10 apps / 10 packages
   agent: architect
-  status: BLOCKED
+  status: READY
   priority: P2
   estimated_hours: 1
   depends_on: [TICKET-005, TICKET-006]
@@ -348,13 +348,17 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Awaiting human review
 
-- TICKET-006 (PR #11, devops-engineer, completed 2026-04-29T17:15:00Z) — Add
-  packages/platform-templates TS placeholder
-- TICKET-005 (PR #10, devops-engineer, completed 2026-04-29T16:45:00Z) — Add apps/auto-detect Python
-  placeholder app
+- (None)
 
 ## Recent merges
 
+- 2026-04-29T17:08Z — TICKET-006 (PR #11): Add packages/platform-templates TS placeholder by
+  devops-engineer
+  - TypeScript package with Zod schemas for platform fingerprints, Layer 3 of Auto-Onboarding
+    detection pipeline, brings monorepo to 10 packages
+- 2026-04-29T16:50Z — TICKET-005 (PR #10): Add apps/auto-detect Python placeholder by
+  devops-engineer
+  - Modal-deployed service for AI Vision-powered schema detection, brings monorepo to 10 apps
 - 2026-04-29T14:18Z — TICKET-004 (branch devops-engineer/TICKET-004-precommit-security): Pre-commit
   security hooks by devops-engineer
 - 2026-04-27T19:30Z — TICKET-009 (PR #6): Vendor account stubs Terraform skeleton by devops-engineer

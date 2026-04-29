@@ -124,13 +124,16 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-007
   title: Update README + CLAUDE.md to reflect 10 apps / 10 packages
   agent: architect
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P2
   estimated_hours: 1
   depends_on: [TICKET-005, TICKET-006]
   assigned_to: architect
   started_at: '2026-04-29T17:30:00Z'
+  completed_at: '2026-04-29T17:45:00Z'
+  pr: '#12'
   spec: backlog/sprint-0/TICKET-007.md
+  notes: CI not yet started at time of PR creation
 
 - id: TICKET-008
   title: Cloudflare account setup + Wrangler Terraform module

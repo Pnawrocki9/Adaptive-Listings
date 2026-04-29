@@ -1,0 +1,89 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false # Never cancel in-flight deploys
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+jobs:
+  deploy-ingest:
+    name: Deploy Ingest Worker (Staging)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build ingest worker
+        run: pnpm --filter @estalara/ingest build
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/ingest
+          command: deploy --env staging
+
+      - name: Smoke test ingest endpoint
+        continue-on-error: true
+        run: |
+          echo "Waiting for DNS propagation..."
+          sleep 10
+          curl -f https://ingest-staging.estalara.io/health || echo "Health endpoint not ready yet"
+
+  deploy-decision-api:
+    name: Deploy Decision API Worker (Staging)
+    runs-on: ubuntu-latest
+    needs: deploy-ingest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build decision-api worker
+        run: pnpm --filter @estalara/decision-api build
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/decision-api
+          command: deploy --env staging
+
+      - name: Smoke test decision API endpoint
+        continue-on-error: true
+        run: |
+          echo "Waiting for DNS propagation..."
+          sleep 10
+          curl -f https://api-staging.estalara.io/health || echo "Health endpoint not ready yet"

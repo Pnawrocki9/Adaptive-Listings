@@ -1,10 +1,42 @@
 name = "estalara-ingest"
 main = "src/index.ts"
-compatibility_date = "2024-01-01"
+compatibility_date = "2026-04-26"
 compatibility_flags = ["nodejs_compat"]
+
+# Account ID is set via CLOUDFLARE_ACCOUNT_ID env var at deploy time
+# Never hardcode credentials in this file
 
 [vars]
 ENVIRONMENT = "development"
 
-# Production configuration is managed via Terraform in infra/terraform/
+# Durable Objects binding for rate limiting
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+script_name = "estalara-ingest"
+
+# Development environment (local wrangler dev)
+[env.dev]
+name = "estalara-ingest-dev"
+vars = { ENVIRONMENT = "development" }
+
+# Staging environment (auto-deploy on merge to main)
+[env.staging]
+name = "estalara-ingest-staging"
+vars = { ENVIRONMENT = "staging" }
+
+[[env.staging.routes]]
+pattern = "ingest-staging.estalara.io/*"
+zone_name = "estalara.io"
+
+# Production environment (manual deploy with human approval)
+[env.production]
+name = "estalara-ingest-production"
+vars = { ENVIRONMENT = "production" }
+
+[[env.production.routes]]
+pattern = "ingest.estalara.io/*"
+zone_name = "estalara.io"
+
+# Production configuration is managed via Terraform in infra/terraform/cloudflare/
 # Secrets are managed via Doppler — never commit .env files

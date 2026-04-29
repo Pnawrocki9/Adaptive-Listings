@@ -2,12 +2,12 @@
 
 _This file is overwritten by `pm-orchestrator` after every loop iteration. Do not edit manually._
 
-# Status — 2026-04-29T14:20:00Z
+# Status — 2026-04-29T17:30:00Z
 
 ## Active
 
-- TICKET-005 (devops-engineer, IN_PROGRESS, started 2026-04-29T14:20:00Z) — Add apps/auto-detect
-  Python placeholder app
+- TICKET-007 (architect, IN_PROGRESS, started 2026-04-29T17:30:00Z) — Update README + CLAUDE.md to
+  reflect 10 apps / 10 packages
 
 ## Ready for human review
 
@@ -15,25 +15,30 @@ None.
 
 ## Blocked
 
-- TICKET-007 — depends on TICKET-005, TICKET-006
 - TICKET-008 — deferred per human instruction (no Cloudflare account yet)
 - All Sprint 1 tickets (10) — depend on Sprint 0 completion
 - All Sprint 2 tickets (10) — depend on Sprint 0/1 completion
 
 ## Sprint 0 progress
 
-- 6/9 tickets DONE (TICKET-001, TICKET-002, TICKET-003, TICKET-004, TICKET-009)
-- 1 IN_PROGRESS (TICKET-005)
-- 2 READY (TICKET-006)
-- 0 BLOCKED within sprint
-- Status: On track — 67% complete (6/9 done, 1 in flight)
+- 7/9 tickets DONE (TICKET-001, TICKET-002, TICKET-003, TICKET-004, TICKET-005, TICKET-006,
+  TICKET-009)
+- 1 IN_PROGRESS (TICKET-007)
+- 0 READY
+- 1 BLOCKED (TICKET-008, vendor dependency)
+- Status: On track — 77.8% complete (7/9 done, 1 in flight, 1 deferred)
 
 ## Next escalation candidate
 
-None.
+None — open escalation about vendor accounts does not block current work.
 
 ## Delegation log
 
+- 2026-04-29T17:30:00Z — TICKET-007 delegated to architect (P2, 1h, update docs for 10+10 structure)
+- 2026-04-29T17:15:00Z — TICKET-006 DONE (merged PR #11 by human)
+- 2026-04-29T16:50:00Z — TICKET-006 delegated to devops-engineer (P1, 2h,
+  packages/platform-templates placeholder)
+- 2026-04-29T16:45:00Z — TICKET-005 DONE (merged PR #10 by human)
 - 2026-04-29T14:20:00Z — TICKET-005 delegated to devops-engineer (P1, 2h, apps/auto-detect
   placeholder)
 - 2026-04-29T14:18:00Z — TICKET-004 DONE (merged by human)

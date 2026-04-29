@@ -6,8 +6,8 @@ a ticket, follow these and flag the conflict in escalations.
 ## Languages and tooling
 
 - **TypeScript** for everything in `packages/` and `apps/` except Python ML services
-- **Python 3.12+** for `apps/intent-engine`, `apps/adaptation-engine`, `apps/stream-consumer`,
-  `apps/archetype-pipeline`, `apps/data-quality`
+- **Python 3.12+** for `apps/intent-engine`, `apps/adaptation-engine`, `apps/auto-detect`,
+  `apps/stream-consumer`, `apps/archetype-pipeline`, `apps/data-quality`
 - **SQL** with Drizzle (Postgres) and raw SQL files (ClickHouse)
 - **HCL** for Terraform
 - **YAML** for GitHub Actions, docker-compose
@@ -22,17 +22,18 @@ a ticket, follow these and flag the conflict in escalations.
 │   ├── hooks/           # lifecycle hooks
 │   ├── commands/        # custom slash commands
 │   └── settings.json
-├── apps/                # deployable services
+├── apps/                # deployable services (10 total)
 │   ├── ingest/                # Cloudflare Worker
 │   ├── control-plane/         # Next.js dashboard + API
 │   ├── decision-api/          # Edge Worker for adaptation decisions
+│   ├── auto-detect/           # Modal Python (AI Vision Auto-Detect)
 │   ├── intent-engine/         # Modal Python
 │   ├── adaptation-engine/     # Modal Python
 │   ├── llm-gateway/           # Modal Python (LiteLLM router)
 │   ├── stream-consumer/       # Modal Python (Redpanda → ClickHouse)
 │   ├── archetype-pipeline/    # Modal Python (daily batch)
 │   └── data-quality/          # Modal Python
-├── packages/            # shared libraries
+├── packages/            # shared libraries (10 total)
 │   ├── sdk/                   # core embeddable SDK
 │   ├── sdk-loader/            # tiny loader
 │   ├── sdk-react/             # React wrapper
@@ -41,7 +42,8 @@ a ticket, follow these and flag the conflict in escalations.
 │   ├── db/                    # Drizzle schemas, migrations
 │   ├── auth/                  # JWT, API key utilities
 │   ├── intent-ontology/       # 12-dimension schema
-│   └── compliance/            # linters, consent utilities, retention
+│   ├── compliance/            # linters, consent utilities, retention
+│   └── platform-templates/    # pre-built platform fingerprints
 ├── infra/
 │   ├── terraform/
 │   ├── clickhouse/

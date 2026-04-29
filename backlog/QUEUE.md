@@ -24,7 +24,7 @@ updates.
 
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 7    | 1       | 0     | 1       |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 8    | 0       | 0     | 1       |
 | 1      | 2     | Ingest baseline + event schema                                       | 10      | 0    | 0       | 0     | 10      |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
@@ -124,12 +124,14 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-007
   title: Update README + CLAUDE.md to reflect 10 apps / 10 packages
   agent: architect
-  status: IN_PROGRESS
+  status: DONE
   priority: P2
   estimated_hours: 1
   depends_on: [TICKET-005, TICKET-006]
   assigned_to: architect
   started_at: '2026-04-29T17:30:00Z'
+  completed_at: '2026-04-29T17:50:00Z'
+  pr: '#12'
   spec: backlog/sprint-0/TICKET-007.md
 
 - id: TICKET-008

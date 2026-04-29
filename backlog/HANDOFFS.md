@@ -141,3 +141,45 @@ createTracer() and createLogger() from packages/shared/src/observability.
 - `docs/runbooks/observability.md`
 
 ---
+
+## TICKET-005 → TICKET-007, TICKET-033
+
+**From:** devops-engineer  
+**To:** backend-engineer (TICKET-007), ml-engineer (TICKET-033)  
+**Date:** 2026-04-29
+
+**Summary:**
+
+`apps/auto-detect/` Python placeholder app created following the same pattern as
+`apps/intent-engine/`. The app includes pyproject.toml with setuptools.build_meta build backend,
+src/main.py with `is_ready()` function, tests/test_smoke.py with passing pytest tests, and README.md
+referencing Master Design sections B.4-B.7 (Auto-Onboarding, Schema Discovery, Continuous
+Validation, Pre-Built Templates). CI workflow updated to include auto-detect in Python test matrix.
+
+**Action required:**
+
+For TICKET-007 (backend-engineer):
+
+1. Add `auto_detected_schema` field to TenantConfig schema in `packages/db/src/schema.ts`
+2. Field should store JSON mapping:
+   `{ selectors: {...}, confidence: number, detected_at: timestamp }`
+3. Document field purpose and update migration script
+
+For TICKET-033 (ml-engineer):
+
+1. Implement real auto-detection logic in `apps/auto-detect/src/main.py`
+2. Add dependencies: puppeteer (or playwright), anthropic SDK, modal SDK
+3. Implement Puppeteer screenshot capture + Claude Vision analysis
+4. Add Modal serverless deployment decorator (@stub.function)
+5. Create tests beyond smoke tests (mock Vision API, test selector extraction)
+
+**Files:**
+
+- `apps/auto-detect/README.md`
+- `apps/auto-detect/pyproject.toml`
+- `apps/auto-detect/src/main.py`
+- `apps/auto-detect/src/__init__.py`
+- `apps/auto-detect/tests/test_smoke.py`
+- `.github/workflows/ci.yml` (auto-detect added to Python test matrix)
+
+---

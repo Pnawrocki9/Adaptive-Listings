@@ -126,6 +126,7 @@ jobs:
           - stream-consumer
           - archetype-pipeline
           - data-quality
+          - auto-detect
     defaults:
       run:
         working-directory: apps/${{ matrix.app }}

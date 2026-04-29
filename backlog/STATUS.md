@@ -2,11 +2,12 @@
 
 _This file is overwritten by `pm-orchestrator` after every loop iteration. Do not edit manually._
 
-# Status — 2026-04-27T19:35:00Z
+# Status — 2026-04-29T00:00:00Z
 
 ## Active
 
-None.
+- TICKET-004 (devops-engineer, IN_PROGRESS, started 2026-04-29T00:00:00Z) — Pre-commit security
+  hooks (Lefthook + git-secrets + commit lint)
 
 ## Ready for human review
 
@@ -22,10 +23,10 @@ None.
 ## Sprint 0 progress
 
 - 4/9 tickets DONE (TICKET-001, TICKET-002, TICKET-003, TICKET-009)
-- 0 IN_PROGRESS
-- 5 READY (TICKET-004, 005, 006, 008 — 008 deferred)
+- 1 IN_PROGRESS (TICKET-004)
+- 4 READY (TICKET-005, 006, 008 — 008 deferred per user, no Cloudflare account)
 - 0 BLOCKED within sprint
-- Status: On track
+- Status: On track — foundational security piece in progress
 
 ## Next escalation candidate
 
@@ -33,6 +34,7 @@ None.
 
 ## Delegation log
 
+- 2026-04-29T00:00:00Z — TICKET-004 delegated to devops-engineer (P1, 2h, pre-commit security hooks)
 - 2026-04-27T19:30:00Z — TICKET-009 DONE (merged PR #6, confirmed by human)
 - 2026-04-27T19:30:00Z — TICKET-003 DONE (merged PR #7)
 - 2026-04-27T14:40:00Z — TICKET-003 delegated to devops-engineer (P0, 4h, unblocks TICKET-018)

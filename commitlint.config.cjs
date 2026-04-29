@@ -1,0 +1,128 @@
+/**
+ * Commitlint configuration for Estalara Adaptive Listings
+ * Enforces Conventional Commits format from docs/CONVENTIONS.md
+ *
+ * Format: <type>(<scope>): <subject> [TICKET-XXX]
+ * Example: feat(ingest): add event validation [TICKET-042]
+ *
+ * @type {import('@commitlint/types').UserConfig}
+ */
+
+module.exports = {
+  extends: ['@commitlint/config-conventional'],
+  rules: {
+    // Allowed types from CONVENTIONS.md
+    'type-enum': [
+      2,
+      'always',
+      [
+        'feat', // New feature
+        'fix', // Bug fix
+        'chore', // Maintenance, deps, config
+        'docs', // Documentation only
+        'test', // Adding or refactoring tests
+        'refactor', // Code restructuring without behavior change
+        'perf', // Performance improvement
+        'build', // Build system or external dependencies
+        'ci', // CI/CD configuration
+      ],
+    ],
+
+    // Scope is REQUIRED (module or area affected)
+    'scope-empty': [2, 'never'],
+
+    // Valid scopes from CONVENTIONS.md
+    'scope-enum': [
+      2,
+      'always',
+      [
+        'sdk', // @estalara/sdk
+        'ingest', // apps/ingest
+        'control-plane', // apps/control-plane
+        'decision-api', // apps/decision-api
+        'intent', // apps/intent-engine
+        'adapt', // apps/adaptation-engine
+        'data', // data-engineer work
+        'infra', // devops-engineer work
+        'compliance', // compliance-engineer work
+        'qa', // qa-engineer work
+        'agents', // .claude/ agent definitions
+        'deps', // dependency updates
+        'repo', // repo-wide changes
+      ],
+    ],
+
+    // Subject must be substantive (min 10 chars)
+    'subject-min-length': [2, 'always', 10],
+
+    // Subject should be concise (max 80 chars before ticket ref)
+    'subject-max-length': [2, 'always', 120],
+
+    // Subject must not end with period
+    'subject-full-stop': [2, 'never', '.'],
+
+    // Subject must be lowercase (conventional commits style)
+    'subject-case': [2, 'never', ['upper-case', 'pascal-case', 'start-case']],
+
+    // Body should be wrapped at 100 chars
+    'body-max-line-length': [1, 'always', 100],
+
+    // Footer should be wrapped at 100 chars
+    'footer-max-line-length': [1, 'always', 100],
+  },
+
+  // Custom parser options
+  parserPreset: {
+    parserOpts: {
+      // Allow [TICKET-XXX] suffix (not part of standard conventional commits)
+      // This is validated separately in lefthook
+      headerPattern: /^(\w+)(?:\(([^)]*)\))?: (.+)/,
+      headerCorrespondence: ['type', 'scope', 'subject'],
+    },
+  },
+
+  // Plugins for additional validation
+  plugins: [
+    {
+      rules: {
+        // Custom rule: ensure [TICKET-XXX] is present
+        'ticket-reference': (parsed) => {
+          const { subject } = parsed;
+          if (!subject) {
+            return [false, 'Subject is required'];
+          }
+
+          // Check for [TICKET-NNN] pattern
+          const ticketPattern = /\[TICKET-\d+\]/;
+          if (!ticketPattern.test(subject)) {
+            return [
+              false,
+              'Commit message must include [TICKET-XXX] reference. Example: feat(ingest): add validation [TICKET-042]',
+            ];
+          }
+
+          return [true];
+        },
+      },
+    },
+  ],
+
+  // Enable custom rules
+  rules: {
+    'ticket-reference': [2, 'always'],
+  },
+
+  // Ignore certain commits
+  ignores: [
+    // Merge commits from GitHub
+    (message) => message.startsWith('Merge '),
+    // Revert commits
+    (message) => message.startsWith('Revert '),
+    // Initial commit
+    (message) => message === 'Initial commit',
+  ],
+
+  // Help URL shown on errors
+  helpUrl:
+    'https://github.com/Estalara/adaptive-listings/blob/main/docs/CONVENTIONS.md#commit-messages-conventional-commits',
+};

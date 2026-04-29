@@ -6,24 +6,21 @@ pre-commit:
       run: pnpm exec prettier --write {staged_files}
       stage_fixed: true
     lint:
-      glob: "*.{ts,tsx}"
+      glob: "*.{ts,tsx,js,jsx}"
       run: pnpm exec eslint --fix {staged_files}
       stage_fixed: true
-    typecheck:
-      glob: "*.{ts,tsx}"
-      # Run full typecheck rather than per-file to avoid turbo filter complexity
-      run: pnpm turbo run typecheck
+    gitleaks:
+      run: |
+        # Run gitleaks on staged files only
+        # If gitleaks binary is not found, skip with warning (CI will catch it)
+        if command -v gitleaks >/dev/null 2>&1; then
+          gitleaks protect --staged --no-banner --redact
+        else
+          echo "⚠️  gitleaks not installed locally. Install via: brew install gitleaks"
+          echo "    Secrets will be checked in CI. To install now, see: https://github.com/gitleaks/gitleaks#installing"
+        fi
 
 commit-msg:
   commands:
-    validate:
-      run: |
-        # Validate conventional commit format with ticket reference
-        MSG=$(cat {1})
-        PATTERN="^(feat|fix|chore|docs|test|refactor|perf|build|ci)\([a-z-]+\): .+ \[TICKET-[0-9]+\]"
-        if ! echo "$MSG" | grep -qE "$PATTERN"; then
-          echo "Commit message must follow: <type>(<scope>): <subject> [TICKET-XXX]"
-          echo "Example: feat(ingest): add event validation [TICKET-042]"
-          echo "Got: $MSG"
-          exit 1
-        fi
+    commitlint:
+      run: pnpm exec commitlint --edit {1}

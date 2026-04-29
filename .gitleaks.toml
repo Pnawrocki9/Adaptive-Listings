@@ -1,0 +1,193 @@
+# Gitleaks configuration for Estalara Adaptive Listings
+# Prevents common API keys, credentials, and secrets from being committed
+# Documentation: https://github.com/gitleaks/gitleaks
+
+[extend]
+# Use default gitleaks rules as base
+useDefault = true
+
+# AWS Access Key ID
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key ID"
+regex = '''(?i)(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}'''
+tags = ["aws", "key"]
+
+# AWS Secret Access Key
+[[rules]]
+id = "aws-secret-key"
+description = "AWS Secret Access Key"
+regex = '''(?i)aws(.{0,20})?(?-i)['\"][0-9a-zA-Z\/+]{40}['\"]'''
+tags = ["aws", "secret"]
+
+# Anthropic API Key (Claude)
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API Key"
+regex = '''sk-ant-api03-[a-zA-Z0-9\-_]{95}'''
+tags = ["anthropic", "api-key", "claude"]
+
+# OpenAI API Key (project-scoped)
+[[rules]]
+id = "openai-api-key-project"
+description = "OpenAI API Key (project-scoped)"
+regex = '''sk-proj-[a-zA-Z0-9]{48,}'''
+tags = ["openai", "api-key"]
+
+# OpenAI API Key (legacy)
+[[rules]]
+id = "openai-api-key-legacy"
+description = "OpenAI API Key (legacy format)"
+regex = '''sk-[a-zA-Z0-9]{48}'''
+tags = ["openai", "api-key"]
+
+# Stripe Secret Key (live)
+[[rules]]
+id = "stripe-secret-key-live"
+description = "Stripe Secret Key (live)"
+regex = '''sk_live_[0-9a-zA-Z]{24,99}'''
+tags = ["stripe", "secret", "live"]
+
+# Stripe Secret Key (test) - warning only
+[[rules]]
+id = "stripe-secret-key-test"
+description = "Stripe Secret Key (test)"
+regex = '''sk_test_[0-9a-zA-Z]{24,99}'''
+tags = ["stripe", "secret", "test"]
+
+# Stripe Restricted Key (live)
+[[rules]]
+id = "stripe-restricted-key-live"
+description = "Stripe Restricted Key (live)"
+regex = '''rk_live_[0-9a-zA-Z]{24,99}'''
+tags = ["stripe", "restricted", "live"]
+
+# Doppler Token
+[[rules]]
+id = "doppler-token"
+description = "Doppler Service Token"
+regex = '''dp\.st\.[a-zA-Z0-9]{43}'''
+tags = ["doppler", "token"]
+
+# Generic high-entropy strings (passwords, tokens)
+[[rules]]
+id = "generic-high-entropy"
+description = "Generic high-entropy string (possible secret)"
+regex = '''(?i)(password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?token)['"\s:=]+[a-zA-Z0-9+/=]{32,}'''
+entropy = 4.5
+tags = ["generic", "high-entropy"]
+
+# Private keys (RSA, EC, etc.)
+[[rules]]
+id = "private-key"
+description = "Private key"
+regex = '''-----BEGIN\s+(RSA|DSA|EC|OPENSSH|PGP)\s+PRIVATE KEY-----'''
+tags = ["private-key"]
+
+# GCP Service Account JSON
+[[rules]]
+id = "gcp-service-account"
+description = "GCP Service Account JSON"
+regex = '''"type":\s*"service_account"'''
+tags = ["gcp", "service-account"]
+
+# Database connection strings
+[[rules]]
+id = "database-connection-string"
+description = "Database connection string with password"
+regex = '''(?i)(postgres|mysql|mongodb|redis)://[a-zA-Z0-9]+:[a-zA-Z0-9]+@'''
+tags = ["database", "connection-string"]
+
+# Supabase keys (anon key is OK, service_role is NOT)
+[[rules]]
+id = "supabase-service-role-key"
+description = "Supabase service_role key (should never be in client code)"
+regex = '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+'''
+[rules.allowlist]
+description = "Allow anon keys (start with 'eyJ...' but we filter via context)"
+regexes = [
+  '''anonKey''', # Anon keys are safe for client
+]
+
+# GitHub Personal Access Token
+[[rules]]
+id = "github-pat"
+description = "GitHub Personal Access Token"
+regex = '''ghp_[a-zA-Z0-9]{36}'''
+tags = ["github", "token"]
+
+# GitHub OAuth Token
+[[rules]]
+id = "github-oauth"
+description = "GitHub OAuth Token"
+regex = '''gho_[a-zA-Z0-9]{36}'''
+tags = ["github", "oauth"]
+
+# GitHub App Token
+[[rules]]
+id = "github-app-token"
+description = "GitHub App Token"
+regex = '''(ghu|ghs)_[a-zA-Z0-9]{36}'''
+tags = ["github", "app"]
+
+# Cloudflare API Token
+[[rules]]
+id = "cloudflare-api-token"
+description = "Cloudflare API Token"
+regex = '''[a-zA-Z0-9_-]{40}'''
+[rules.allowlist]
+paths = [
+  '''node_modules/''',
+  '''.git/''',
+]
+
+# JWT tokens (generic)
+[[rules]]
+id = "jwt-token"
+description = "JWT token"
+regex = '''eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+'''
+[rules.allowlist]
+description = "Allow test fixtures and examples"
+paths = [
+  '''tests/''',
+  '''test/''',
+  '''__tests__/''',
+  '''fixtures/''',
+  '''examples/''',
+  '''docs/''',
+]
+
+# Global allowlist for paths
+[allowlist]
+description = "Global patterns to ignore"
+paths = [
+  '''\.git/''',
+  '''node_modules/''',
+  '''pnpm-lock\.yaml''',
+  '''package-lock\.json''',
+  '''yarn\.lock''',
+  '''\.next/''',
+  '''dist/''',
+  '''build/''',
+  '''\.turbo/''',
+  '''coverage/''',
+  '''\.env\.example$''', # .env.example is safe
+  '''\.gitleaks\.toml$''', # This file itself
+]
+
+# Files with known false positives
+files = [
+  '''tests/fixtures/''',
+  '''docs/adr/''',
+  '''CLAUDE\.md''',
+]
+
+# Regexes for known safe patterns
+regexes = [
+  '''EXAMPLE''', # Strings containing EXAMPLE are safe
+  '''example\.com''', # Example domains
+  '''your-api-key-here''', # Placeholder text
+  '''INSERT_YOUR_.*_HERE''', # Common placeholder pattern
+  '''<YOUR_.*>''', # Another placeholder pattern
+  '''xxx''', # Placeholder secrets
+]

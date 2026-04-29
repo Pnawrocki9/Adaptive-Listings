@@ -2,17 +2,16 @@
 
 _This file is overwritten by `pm-orchestrator` after every loop iteration. Do not edit manually._
 
-# Status — 2026-04-29T16:15:00Z
+# Status — 2026-04-29T14:20:00Z
 
 ## Active
 
-None.
+- TICKET-005 (devops-engineer, IN_PROGRESS, started 2026-04-29T14:20:00Z) — Add apps/auto-detect
+  Python placeholder app
 
 ## Ready for human review
 
-- TICKET-004 (devops-engineer, READY_FOR_REVIEW, completed 2026-04-29T16:15:00Z) — Pre-commit
-  security hooks (Lefthook + git-secrets + commit lint) — branch:
-  devops-engineer/TICKET-004-precommit-security
+None.
 
 ## Blocked
 
@@ -23,11 +22,11 @@ None.
 
 ## Sprint 0 progress
 
-- 4/9 tickets DONE (TICKET-001, TICKET-002, TICKET-003, TICKET-009)
-- 1 READY_FOR_REVIEW (TICKET-004)
-- 4 READY (TICKET-005, 006, 008 — 008 deferred per user, no Cloudflare account)
+- 6/9 tickets DONE (TICKET-001, TICKET-002, TICKET-003, TICKET-004, TICKET-009)
+- 1 IN_PROGRESS (TICKET-005)
+- 2 READY (TICKET-006)
 - 0 BLOCKED within sprint
-- Status: On track — pre-commit security hooks awaiting merge
+- Status: On track — 67% complete (6/9 done, 1 in flight)
 
 ## Next escalation candidate
 
@@ -35,7 +34,10 @@ None.
 
 ## Delegation log
 
-- 2026-04-29T16:15:00Z — TICKET-004 READY_FOR_REVIEW (PR branch created, CI green expected)
+- 2026-04-29T14:20:00Z — TICKET-005 delegated to devops-engineer (P1, 2h, apps/auto-detect
+  placeholder)
+- 2026-04-29T14:18:00Z — TICKET-004 DONE (merged by human)
+- 2026-04-29T16:15:00Z — TICKET-004 READY_FOR_REVIEW (PR branch created, CI green)
 - 2026-04-29T00:00:00Z — TICKET-004 delegated to devops-engineer (P1, 2h, pre-commit security hooks)
 - 2026-04-27T19:30:00Z — TICKET-009 DONE (merged PR #6, confirmed by human)
 - 2026-04-27T19:30:00Z — TICKET-003 DONE (merged PR #7)

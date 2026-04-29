@@ -24,7 +24,7 @@ updates.
 
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 4    | 1       | 4     | 0       |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 5    | 0       | 4     | 0       |
 | 1      | 2     | Ingest baseline + event schema                                       | 10      | 0    | 0       | 0     | 10      |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
@@ -85,12 +85,14 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-004
   title: Pre-commit security hooks (Lefthook + git-secrets + commit lint)
   agent: devops-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 2
   depends_on: [TICKET-001]
   assigned_to: devops-engineer
   started_at: '2026-04-29T00:00:00Z'
+  completed_at: '2026-04-29T16:15:00Z'
+  pr: 'devops-engineer/TICKET-004-precommit-security'
   spec: backlog/sprint-0/TICKET-004.md
 
 - id: TICKET-005
@@ -334,11 +336,12 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Currently in flight
 
-- TICKET-004 (devops-engineer, started 2026-04-29T00:00:00Z) — Pre-commit security hooks
+None.
 
 ## Awaiting human review
 
-None.
+- TICKET-004 (devops-engineer, completed 2026-04-29T16:15:00Z) — Pre-commit security hooks (branch:
+  devops-engineer/TICKET-004-precommit-security)
 
 ## Recent merges
 

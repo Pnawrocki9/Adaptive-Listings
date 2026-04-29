@@ -35,13 +35,21 @@ Three integration tiers:
 
 Founders: Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO).
 
-The full architectural and business design is in `docs/MASTER_DESIGN.md`. **Read that file before
-making any architectural decision.**
-
 ## How this repo is run
 
 This is an agent-orchestrated codebase. Most code is written by specialized Claude Code subagents
 coordinated by a PM agent. Humans review PRs and make architectural calls.
+
+The full architectural and business design is in docs/MASTER_DESIGN.md (currently v1.1 — read the
+changelog at top for what's new in this version).
+
+Repository scale (current target):
+
+- 10 apps (apps/ingest, apps/control-plane, apps/decision-api, plus 7 Modal Python apps)
+- 10 packages (packages/sdk through packages/platform-templates)
+
+Three integration tiers (Observer / Augment / Native), four regions (EU/US/UK/UAE), 12-week MVP
+timeline.
 
 Read these in order before doing anything:
 
@@ -58,26 +66,50 @@ Read these in order before doing anything:
    changes here.
 2. **`backlog/sprint-N/TICKET-XXX.md`** files — each ticket has acceptance criteria, context, and
    agent assignment.
-3. **PR descriptions** — when a worker finishes, they open a PR. The PM agent reads PRs and runs
-   validation.
+3. **PR descriptions** — when a worker finishes, they open a PR. The PM agent reads PRs, runs
+   validation, AND VERIFIES CI IS GREEN (gh pr checks <pr-number> --watch) before marking
+   READY_FOR_REVIEW. CI green is non-negotiable.
 4. **`backlog/HANDOFFS.md`** — when one worker's output is input to another, handoff notes go here.
 
 The `.claude/hooks/` scripts (notably `SubagentStop`) read the queue after each subagent finishes
 and surface the next command to the human or PM agent.
 
+## Lessons from Paczka 1 (apply to all work)
+
+These are codified in CONVENTIONS_PATCH.md. Highlights:
+
+1. **Always verify CI green before READY_FOR_REVIEW.** PM-orchestrator MUST run
+   `gh pr checks <pr-number> --watch` and wait for completion before marking any ticket ready. Local
+   tests passing ≠ CI passing.
+
+2. **Run prettier on every file you edit, every time.** Even if you ran prettier earlier in the
+   session, re-run on every file you touch. CI format check is strict.
+
+3. **Check repo-config dependencies BEFORE PR.** If your workflow needs Code Scanning, secrets, or
+   branch protection rules, verify they exist or escalate via backlog/ESCALATIONS.md before opening
+   the PR.
+
+4. **Python packaging gotchas:**
+   - `pyproject.toml` build-backend MUST be `setuptools.build_meta` (NOT
+     `setuptools.backends.legacy` — that does not exist)
+   - Every Python app needs `__init__.py` in src/ (even if empty)
+
+5. **pnpm version is in `package.json`, not in CI.** Don't put `version:` in `pnpm/action-setup@v4`
+   step.
+
 ## The 9 agents
 
-| Agent                 | Role                                                                             | Model  |
-| --------------------- | -------------------------------------------------------------------------------- | ------ |
-| `pm-orchestrator`     | Reads backlog, delegates to workers, validates output, updates queue             | sonnet |
-| `architect`           | Designs interfaces between modules, writes ADRs, resolves cross-cutting concerns | sonnet |
-| `sdk-engineer`        | Builds `@estalara/sdk` (Preact + Shadow DOM, vanilla TS)                         | sonnet |
-| `backend-engineer`    | Cloudflare Workers ingest, Next.js control plane, Postgres/Supabase              | sonnet |
-| `data-engineer`       | ClickHouse schemas, Redpanda pipelines, ETL jobs                                 | sonnet |
-| `ml-engineer`         | Intent engine, embeddings, archetype space, Modal serverless ML                  | sonnet |
-| `devops-engineer`     | Terraform, CI/CD, multi-region deploy, observability                             | sonnet |
-| `qa-engineer`         | E2E tests, integration tests, load tests, accessibility                          | sonnet |
-| `compliance-engineer` | DPIA, ROPA, privacy policy, GDPR/CCPA/UAE PDPL implementation                    | sonnet |
+| Agent                 | Role                                                                                                                                                                                                          | Model  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `pm-orchestrator`     | Reads backlog, delegates to workers, validates output, updates queue                                                                                                                                          | sonnet |
+| `architect`           | Designs interfaces between modules, writes ADRs, resolves cross-cutting concerns                                                                                                                              | sonnet |
+| `sdk-engineer`        | Builds `@estalara/sdk` (Preact + Shadow DOM, vanilla TS)                                                                                                                                                      | sonnet |
+| `backend-engineer`    | Cloudflare Workers ingest, Next.js control plane (dashboard + API including Magic Link onboarding wizard), Postgres/Supabase, and the Auto-Onboarding HTTP API layer                                          | sonnet |
+| `data-engineer`       | ClickHouse schemas, Redpanda pipelines, ETL jobs, and the daily continuous schema validation cron (drift detection per tenant, per Master Design B.6)                                                         | sonnet |
+| `ml-engineer`         | Intent engine, embeddings, archetype space, adaptation engine, the auto-detect Vision pipeline (apps/auto-detect, Claude Sonnet 4.6 Vision), and the platform templates library (packages/platform-templates) | sonnet |
+| `devops-engineer`     | Terraform, CI/CD, multi-region deploy, observability                                                                                                                                                          | sonnet |
+| `qa-engineer`         | E2E tests, integration tests, load tests, accessibility                                                                                                                                                       | sonnet |
+| `compliance-engineer` | DPIA, ROPA, privacy policy, GDPR/CCPA/UAE PDPL implementation                                                                                                                                                 | sonnet |
 
 Each agent is defined in `.claude/agents/<name>.md`.
 
@@ -105,6 +137,10 @@ Piotr has 2h/day for review. Agents have wide autonomy within limits:
 - A test reveals a security issue
 - They're about to add >€100/mo to recurring costs
 - A bumped dependency has breaking changes
+- A workflow they're adding requires repo configuration that doesn't exist (Code Scanning, Secrets,
+  Branch protection) — escalate BEFORE opening PR, not after CI fails
+- They notice the agent count or repository structure documented in CLAUDE.md is stale relative to
+  current state (e.g., "we have 11 apps now but CLAUDE says 10")
 
 **The PM agent escalates to human when:**
 
@@ -112,6 +148,8 @@ Piotr has 2h/day for review. Agents have wide autonomy within limits:
 - A ticket has been blocked >24h
 - Sprint velocity is <50% of planned
 - Test coverage drops below 70% on a module
+- A worker has signaled "ready" but CI isn't green after 3 retry attempts — the worker is stuck on
+  something they can't fix alone
 
 ## Tech stack reference (decided, do not re-litigate)
 
@@ -139,7 +177,8 @@ Conventional Commits: `<type>(<scope>): <subject>`
 
 Types: `feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`
 
-Scopes: `sdk`, `ingest`, `control-plane`, `intent`, `adapt`, `data`, `infra`, `compliance`, `qa`
+Scopes: `sdk`, `ingest`, `control-plane`, `intent`, `adapt`, `auto-detect`, `data`, `infra`,
+`compliance`, `qa`
 
 Every commit must reference a ticket: `feat(ingest): add event validation [TICKET-042]`
 

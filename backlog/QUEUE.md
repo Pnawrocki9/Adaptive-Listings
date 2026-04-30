@@ -24,8 +24,8 @@ updates.
 
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 8    | 1       | 0     | 0       |
-| 1      | 2     | Ingest baseline + event schema                                       | 10      | 0    | 0       | 0     | 10      |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 8    | 0       | 1     | 0       |
+| 1      | 2     | Ingest baseline + event schema                                       | 10      | 1    | 0       | 0     | 9       |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
 | 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 0    | 0       | 0     | 10      |
@@ -168,10 +168,12 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-010
   title: ADR-0003 Event schema design and versioning strategy (already drafted)
   agent: architect
-  status: BLOCKED
+  status: DONE
   priority: P0
   estimated_hours: 2
   depends_on: [TICKET-009]
+  started_at: '2026-04-29T19:00:00Z'
+  completed_at: '2026-04-30T00:00:00Z'
   spec: backlog/sprint-1/TICKET-010.md
 
 - id: TICKET-011
@@ -352,11 +354,11 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Currently in flight
 
-- TICKET-007 (architect, IN_PROGRESS, started 2026-04-29T17:30:00Z)
+- (None)
 
 ## Awaiting human review
 
-- (None)
+- TICKET-010 (architect, ratified ADR-0003, ready for merge)
 
 ## Recent merges
 

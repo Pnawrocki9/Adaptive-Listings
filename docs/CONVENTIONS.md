@@ -149,6 +149,11 @@ one-paragraph summary.
 
 ## Schemas (this is the big one)
 
+The event schema design and versioning strategy are formalized in
+[ADR-0003](./adr/0003-event-schema-and-versioning.md). Read it before changing or adding any event
+schema. Key rule: **only additive changes within a major `schema_version`** — adding new event
+types, optional fields, or enum values is fine; removing/renaming/retyping requires a new ADR.
+
 Every cross-module data structure is defined in **one place** as a Zod schema:
 
 ```typescript

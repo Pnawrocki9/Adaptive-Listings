@@ -2,40 +2,36 @@
 
 _This file is overwritten by `pm-orchestrator` after every loop iteration. Do not edit manually._
 
-# Status — 2026-04-30T21:30:00Z
+# Status — 2026-04-30T22:00:00Z
 
 ## Active
 
-- (None — TICKET-010 merged in PR #16; awaiting next delegation)
+- TICKET-011 (architect, READY_FOR_REVIEW, started 2026-04-30T21:30:00Z) — Zod schemas v1 in
+  `@estalara/shared`: envelope + 33 events across 10 categories, 74 vitest cases passing, build +
+  lint + typecheck clean. PR pending on push.
 
 ## Ready for human review
 
-- (None)
-
-## Ready to delegate
-
-- **TICKET-011** (architect, P0, 6h) — Zod schemas in packages/shared for all 30+ event types.
-  Dependency TICKET-010 is DONE. Pure schema work, no vendor dependency, not blocked by open
-  escalation. Spec: backlog/sprint-1/TICKET-011.md
+- TICKET-011 (PR TBD on push)
 
 ## Blocked
 
-- TICKET-012 through TICKET-019 (Sprint 1) — chain on TICKET-011
-- TICKET-014, TICKET-015, TICKET-020 — additionally blocked by open vendor-account escalation
-- TICKET-021 through TICKET-029 (Sprint 2) — depend on Sprint 1 completion
+- TICKET-012, TICKET-013 (Sprint 1) — unblock once TICKET-011 PR merges
+- TICKET-014..019 (Sprint 1) — chain on TICKET-011 + (014/015/020) vendor escalation
+- TICKET-020..029 (Sprint 2) — depend on Sprint 1 completion
 
 ## Sprint 0 progress
 
-- 9/9 tickets closed (TICKET-001..009; PR #14 merged)
+- 9/9 tickets closed
 - Status: **Complete** — 100%
 
 ## Sprint 1 progress
 
 - 1/10 DONE (TICKET-010)
-- 0 IN_PROGRESS
-- 1 READY (TICKET-011)
-- 8 BLOCKED — TICKET-012..019 chain on TICKET-011
-- Status: **Unblocked** — schema implementation is the critical-path next pick
+- 1 IN_PROGRESS (TICKET-011, awaiting merge)
+- 0 READY
+- 8 BLOCKED — TICKET-012..019 chain on TICKET-011 PR merge
+- Status: **Critical-path PR open** — TICKET-011 PR merge unblocks 4 tickets immediately
 
 ## Open escalations
 

@@ -15,6 +15,57 @@ agent needs to do with it. **Files:** <list of relevant files / artifacts>
 
 ---
 
+## TICKET-011 → TICKET-012, TICKET-014
+
+**From:** architect  
+**To:** backend-engineer (TICKET-012), data-engineer (TICKET-014)  
+**Date:** 2026-04-30T22:00:00Z
+
+**Summary:**
+
+Event schemas v1 implemented in `@estalara/shared` per ADR-0003 and Master Design C.1. Common
+envelope (`EventEnvelopeSchema`) plus 33 per-type event schemas across all 10 categories, assembled
+into a discriminated union (`EventSchema`). 74 vitest cases covering parse success, missing-required
+failures, enum / range / length boundaries, and discriminator routing. zod ^3.23.8 added as a
+runtime dep on `@estalara/shared`. Re-exported from the package root, so any consumer can
+`import { EventSchema, EVENT_TYPES } from '@estalara/shared'`.
+
+**Action required:**
+
+For TICKET-012 (backend-engineer, Cloudflare Worker ingest):
+
+1. `import { EventSchema } from '@estalara/shared'` in the worker
+2. Validate every incoming POST body with `EventSchema.safeParse(...)` before publishing to Redpanda
+3. Strict envelope: reject on parse failure with HTTP 400 + zod issue list
+4. Lenient payload: don't add per-type guard rails beyond what `EventSchema` enforces (additive
+   evolution per ADR-0003)
+5. Tag failed parses with structured logs (use `packages/shared/observability` logger) so we can
+   detect SDK-side regressions
+
+For TICKET-014 (data-engineer, ClickHouse table DDL):
+
+1. The canonical `events` table stores `payload` as ZSTD-compressed JSON String per ADR-0003
+2. Mirror the envelope columns 1:1 (event_id UUID, tenant_id UUID, session_id String, ts DateTime64,
+   region LowCardinality(String), consent_state LowCardinality(String), schema_version UInt8, type
+   LowCardinality(String), payload String, listing_id Nullable(String), archetype_hint
+   Nullable(String))
+3. Build per-type materialized views projecting payload JSON keys into typed columns (one view per
+   high-traffic event type — start with `page.view`, `chat.message.sent`, `inquiry.completed`)
+4. Use `EVENT_TYPES` from `@estalara/shared` as the source of truth when generating DDL or fixtures
+
+**Files:**
+
+- `packages/shared/src/schemas/event.ts` (envelope)
+- `packages/shared/src/schemas/events/*.ts` (10 category files)
+- `packages/shared/src/schemas/events/index.ts` (`EventSchema` discriminated union, `EVENT_TYPES`
+  tuple)
+- `packages/shared/src/schemas/index.ts` (public re-export)
+- `packages/shared/src/index.ts` (top-level re-export)
+- `docs/adr/0003-event-schema-and-versioning.md` (spec)
+- `docs/MASTER_DESIGN.md` (section C.1 — event taxonomy)
+
+---
+
 ## TICKET-009 → TICKET-014 (ClickHouse)
 
 **From:** devops-engineer  

@@ -20,11 +20,18 @@ binding = "KV_API_KEYS"
 id = "PLACEHOLDER_KV_API_KEYS_ID"
 preview_id = "PLACEHOLDER_KV_API_KEYS_PREVIEW_ID"
 
-# Durable Objects binding for rate limiting
+# Durable Objects binding for per-tenant rate limiting (TICKET-013).
+# `class_name` matches the export from src/index.ts. No `script_name` — the class lives in this
+# same Worker, not an external one.
 [[durable_objects.bindings]]
 name = "RATE_LIMITER"
 class_name = "RateLimiter"
-script_name = "estalara-ingest"
+
+# DO migrations — required when introducing or renaming DO classes. Increment `tag` when schema
+# changes; keep historical entries so already-deployed environments can fast-forward.
+[[migrations]]
+tag = "v1"
+new_classes = ["RateLimiter"]
 
 # Development environment (local wrangler dev)
 [env.dev]

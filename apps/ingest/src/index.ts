@@ -11,7 +11,6 @@
  * Modal stream consumer (TICKET-015).
  *
  * Out of scope here (handled by other tickets):
- * - Durable Object rate limiting (TICKET-013)
  * - Structured Sentry / OTel spans on hot path (TICKET-018)
  * - Idempotent batch dedup (TICKET-019)
  *
@@ -31,6 +30,12 @@ const handler: ExportedHandler<Env> = {
 };
 
 export default withSentry(handler);
+
+/**
+ * Re-exported so Cloudflare can register the binding declared in `wrangler.toml`. The DO runtime
+ * imports the class by name from the Worker's exports.
+ */
+export { RateLimiter } from './rate-limiter.js';
 
 /** Re-export `Env` for tests and downstream typing. */
 export type { Env } from './types.js';

@@ -2,41 +2,55 @@
 
 _This file is overwritten by `pm-orchestrator` after every loop iteration. Do not edit manually._
 
-# Status — 2026-04-30T00:00:00Z
+# Status — 2026-04-30T21:30:00Z
 
 ## Active
 
-- (None)
+- (None — TICKET-010 merged in PR #16; awaiting next delegation)
 
 ## Ready for human review
 
-- TICKET-010 — ADR-0003 ratified (ACCEPTED), CONVENTIONS.md cross-referenced, README index added
+- (None)
+
+## Ready to delegate
+
+- **TICKET-011** (architect, P0, 6h) — Zod schemas in packages/shared for all 30+ event types.
+  Dependency TICKET-010 is DONE. Pure schema work, no vendor dependency, not blocked by open
+  escalation. Spec: backlog/sprint-1/TICKET-011.md
 
 ## Blocked
 
-- TICKET-011 through TICKET-019 (Sprint 1) — TICKET-010 PR merge unblocks TICKET-011, then cascades
-- TICKET-020 through TICKET-029 (Sprint 2) — depend on Sprint 1 completion
+- TICKET-012 through TICKET-019 (Sprint 1) — chain on TICKET-011
+- TICKET-014, TICKET-015, TICKET-020 — additionally blocked by open vendor-account escalation
+- TICKET-021 through TICKET-029 (Sprint 2) — depend on Sprint 1 completion
 
 ## Sprint 0 progress
 
-- 9/9 tickets effectively closed (TICKET-001..009; TICKET-008 merged PR #14)
-- Status: **Complete** — 100%, ready to roll into Sprint 1
+- 9/9 tickets closed (TICKET-001..009; PR #14 merged)
+- Status: **Complete** — 100%
 
 ## Sprint 1 progress
 
-- 1/10 tickets DONE (TICKET-010)
+- 1/10 DONE (TICKET-010)
 - 0 IN_PROGRESS
-- 9 BLOCKED — TICKET-011 unblocked once TICKET-010 PR merges, then cascades
-- Status: **Started** — critical-path ADR ratified, schema implementation can proceed
+- 1 READY (TICKET-011)
+- 8 BLOCKED — TICKET-012..019 chain on TICKET-011
+- Status: **Unblocked** — schema implementation is the critical-path next pick
+
+## Open escalations
+
+- 2026-04-27 — Vendor account creation (Supabase, ClickHouse, Modal, Redpanda, Upstash). Affects
+  TICKET-009 (already DONE), TICKET-014, TICKET-015, TICKET-020. Does NOT block TICKET-011.
 
 ## Next escalation candidate
 
-None.
+None pending; existing vendor escalation remains open.
 
 ## Delegation log
 
-- 2026-04-30T00:00:00Z — **TICKET-010 DONE** (ADR-0003 ACCEPTED, CONVENTIONS.md updated, README
-  index)
+- 2026-04-30T21:12:50Z — **TICKET-010 MERGED** (PR #16) — ADR-0003 ACCEPTED, CONVENTIONS.md
+  cross-reference, README ADR index
+- 2026-04-30T20:47:19Z — Master Design v1.2 MERGED (PR #15)
 - 2026-04-29T19:00:00Z — TICKET-010 delegated to architect (P0, 2h, Sprint 1 begins)
 - 2026-04-29T17:50:00Z — TICKET-007 DONE (merged PR #12)
 - 2026-04-29T17:30:00Z — TICKET-007 delegated to architect (P2, 1h, update docs for 10+10 structure)

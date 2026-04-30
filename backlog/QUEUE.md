@@ -25,7 +25,7 @@ updates.
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
 | 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 8    | 0       | 1     | 0       |
-| 1      | 2     | Ingest baseline + event schema                                       | 10      | 1    | 0       | 0     | 9       |
+| 1      | 2     | Ingest baseline + event schema                                       | 10      | 1    | 0       | 1     | 8       |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
 | 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 0    | 0       | 0     | 10      |
@@ -173,13 +173,14 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
   estimated_hours: 2
   depends_on: [TICKET-009]
   started_at: '2026-04-29T19:00:00Z'
-  completed_at: '2026-04-30T00:00:00Z'
+  completed_at: '2026-04-30T21:12:50Z'
+  pr: '#16'
   spec: backlog/sprint-1/TICKET-010.md
 
 - id: TICKET-011
   title: Zod schemas in packages/shared for all event types (envelope + 30 type schemas)
   agent: architect
-  status: BLOCKED
+  status: READY
   priority: P0
   estimated_hours: 6
   depends_on: [TICKET-010]
@@ -358,10 +359,17 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Awaiting human review
 
-- TICKET-010 (architect, ratified ADR-0003, ready for merge)
+- (None)
 
 ## Recent merges
 
+- 2026-04-30T21:12Z — TICKET-010 (PR #16): Ratify ADR-0003 event schema and versioning by architect
+  - Status ACCEPTED 2026-04-29; ADR index README added; CONVENTIONS.md Schemas section
+    cross-references ADR-0003 with additive-only rule. Sprint 1 unblocks: TICKET-011 → READY.
+- 2026-04-30T20:47Z — Master Design v1.2 (PR #15): Strategic upgrade post Sprint 0 by architect
+  - Adds K (Internal Ops Panel), D.5 (Continuous Detection Quality), R (Innovation Roadmap + Patent
+    Strategy); extends E.3 with CATE, B.5.4 predictive drift, O.6 ML model risks; renumbers K-Q →
+    L-Q + new R between Q and S. 1662 → 2276 lines.
 - 2026-04-29T17:08Z — TICKET-006 (PR #11): Add packages/platform-templates TS placeholder by
   devops-engineer
   - TypeScript package with Zod schemas for platform fingerprints, Layer 3 of Auto-Onboarding

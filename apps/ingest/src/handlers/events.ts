@@ -15,6 +15,7 @@ import { Hono } from 'hono';
 
 import type { Env } from '../types.js';
 import { authenticateRequest } from '../auth.js';
+import { checkRateLimit } from '../rate-limiter.js';
 import { pushToRedpanda } from '../redpanda-producer.js';
 import { mapCountryToRegion } from '../region.js';
 
@@ -75,7 +76,25 @@ events.post('/', async (c) => {
     return c.json({ error: 'batch_too_large', limit: MAX_BATCH_SIZE }, 413);
   }
 
-  // 4. Validate + enrich each event
+  // 4. Per-tenant rate limit (sliding-window via Durable Object). Whole-batch decision: a batch
+  //    that pushes the windowed total over the limit is rejected entirely (we don't accept a
+  //    partial subset — the client would have to track per-event acceptance, complicating SDKs).
+  const rate = await checkRateLimit(c.env.RATE_LIMITER, auth.tenant_id, eventsField.length);
+  if (!rate.allowed) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((rate.reset_at - Date.now()) / 1000));
+    c.header('Retry-After', String(retryAfterSeconds));
+    return c.json(
+      {
+        error: 'rate_limited',
+        limit: rate.limit,
+        remaining: rate.remaining,
+        reset_at: rate.reset_at,
+      },
+      429,
+    );
+  }
+
+  // 5. Validate + enrich each event
   const region = mapCountryToRegion(c.req.header('CF-IPCountry'));
   const ingestReceivedAt = Date.now();
   const tenantId = auth.tenant_id;

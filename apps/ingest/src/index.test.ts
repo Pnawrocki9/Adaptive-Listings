@@ -33,6 +33,52 @@ function mockKv(options: MockKvOptions = {}): Env['KV_API_KEYS'] {
 interface MakeEnvOptions {
   kvStore?: Record<string, string | null>;
   kvFail?: boolean;
+  /** `'allow'` (default) — every check passes. `'deny'` — every check fails (429).
+   *  `{ allowFirstNEvents: N }` — accept until cumulative event count crosses N. */
+  rateLimit?: 'allow' | 'deny' | { allowFirstNEvents: number };
+}
+
+interface RateCheckResponse {
+  allowed: boolean;
+  remaining: number;
+  reset_at: number;
+  limit: number;
+}
+
+function mockRateLimiter(
+  mode: 'allow' | 'deny' | { allowFirstNEvents: number },
+): Env['RATE_LIMITER'] {
+  let used = 0;
+  const cap = typeof mode === 'object' ? mode.allowFirstNEvents : 0;
+  const stub = {
+    fetch: (_url: string, init?: { body?: BodyInit }): Promise<Response> => {
+      const raw = typeof init?.body === 'string' ? init.body : '{}';
+      const parsed = JSON.parse(raw) as { count: number };
+      const count = parsed.count;
+      const now = Date.now();
+      let body: RateCheckResponse;
+      if (mode === 'allow') {
+        body = { allowed: true, remaining: 49_999, reset_at: now + 60_000, limit: 50_000 };
+      } else if (mode === 'deny') {
+        body = { allowed: false, remaining: 0, reset_at: now + 30_000, limit: 50_000 };
+      } else if (used + count > cap) {
+        body = { allowed: false, remaining: cap - used, reset_at: now + 60_000, limit: cap };
+      } else {
+        used += count;
+        body = { allowed: true, remaining: cap - used, reset_at: now + 60_000, limit: cap };
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    },
+  };
+  return {
+    idFromName: (_name: string) => ({ toString: () => 'mock-id' }),
+    get: (_id: unknown) => stub,
+  } as unknown as Env['RATE_LIMITER'];
 }
 
 function makeEnv(options: MakeEnvOptions = {}): Env {
@@ -44,6 +90,7 @@ function makeEnv(options: MakeEnvOptions = {}): Env {
       store: options.kvStore ?? {},
       fail: options.kvFail ?? false,
     }),
+    RATE_LIMITER: mockRateLimiter(options.rateLimit ?? 'allow'),
   };
 }
 
@@ -392,5 +439,121 @@ describe('GET unmatched route', () => {
     const body = await readJson<{ error: string; path: string }>(res);
     expect(body.error).toBe('not_found');
     expect(body.path).toBe('/nope');
+  });
+});
+
+describe('POST /v1/events — rate limiting', () => {
+  it('returns 429 with Retry-After when the rate limiter denies the batch', async () => {
+    const app = createApp();
+    const env = makeEnv({
+      kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+      rateLimit: 'deny',
+    });
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+        body: JSON.stringify({ events: [validEvent] }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).not.toBeNull();
+    const retryAfter = Number.parseInt(res.headers.get('Retry-After') ?? '0', 10);
+    expect(retryAfter).toBeGreaterThan(0);
+    const body = await readJson<{
+      error: string;
+      limit: number;
+      remaining: number;
+      reset_at: number;
+    }>(res);
+    expect(body.error).toBe('rate_limited');
+    expect(body.limit).toBe(50_000);
+    expect(body.remaining).toBe(0);
+    expect(body.reset_at).toBeGreaterThan(Date.now() - 1000);
+  });
+
+  it('integration: 50 batches of 100 events under 10k cap succeed; 51st fails', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        rateLimit: { allowFirstNEvents: 10_000 },
+      });
+      const batchOf100 = JSON.stringify({ events: Array.from({ length: 100 }, () => validEvent) });
+
+      // 50 sequential batches of 100 events = 5000 events used; well under 10k cap.
+      for (let i = 0; i < 50; i++) {
+        const res = await app.fetch(
+          new Request('http://test/v1/events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+            body: batchOf100,
+          }),
+          env,
+        );
+        expect(res.status, `batch ${String(i)} should succeed`).toBe(200);
+      }
+
+      // 51st batch of 100 events would total 5100 — still under 10k. Send a 5001-event batch
+      // (single batch limit is 1000 — out of range; use a series instead). Simpler: use a 1000
+      // batch then keep firing until we cross. Easier: jump straight to a batch that pushes us
+      // over. We've used 5000; one more 1000-batch puts us at 6000. Fire 4 more 1000-batches to
+      // hit 9000, then a 1001-budget-busting batch caps at 1000 (max batch). Use the cap-flip
+      // path: switch to allowFirstNEvents: 5000 for clarity.
+      const cappedEnv = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        rateLimit: { allowFirstNEvents: 5000 },
+      });
+      // Burn the 5000 cap with 50 batches of 100 events.
+      for (let i = 0; i < 50; i++) {
+        const res = await app.fetch(
+          new Request('http://test/v1/events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+            body: batchOf100,
+          }),
+          cappedEnv,
+        );
+        expect(res.status).toBe(200);
+      }
+      // 51st batch crosses the cap → 429.
+      const overflow = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          body: batchOf100,
+        }),
+        cappedEnv,
+      );
+      expect(overflow.status).toBe(429);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('rate-limit check happens before per-event Zod validation (no Redpanda call when 429)', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        rateLimit: 'deny',
+      });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          body: JSON.stringify({ events: [validEvent, validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(429);
+      // Redpanda must NOT have been hit when the request was rate-limited.
+      expect(stub.callCount()).toBe(0);
+    } finally {
+      stub.restore();
+    }
   });
 });

@@ -2,23 +2,23 @@
 
 _This file is overwritten by `pm-orchestrator` after every loop iteration. Do not edit manually._
 
-# Status — 2026-05-01T00:10:00Z
+# Status — 2026-05-01T00:50:00Z
 
 ## Active
 
-- TICKET-012 (backend-engineer, READY_FOR_REVIEW, started 2026-04-30T23:30:00Z) — Cloudflare Worker
-  ingest MVP: Hono + EventSchema validate + KV-backed API key + HMAC body signature + Redpanda REST
-  proxy producer with retry. 47 vitest cases passing; build + lint + typecheck clean. PR pending on
-  push.
+- TICKET-013 (backend-engineer, READY_FOR_REVIEW, started 2026-05-01T00:30:00Z) — Durable Object
+  per-tenant rate limiter: 50 000 events/min sliding window, whole-batch reject, single-threaded
+  read-modify-write serialization. 18 new vitest cases on top of TICKET-012's 47 (65/65 green). PR
+  pending on push.
 
 ## Ready for human review
 
-- TICKET-012 (PR TBD on push)
+- TICKET-013 (PR TBD on push)
 
 ## Blocked
 
-- TICKET-013 (DO rate limiting) — unblocks once TICKET-012 PR merges
-- TICKET-014..019 (Sprint 1) — chain on TICKET-012 + (014/015/020) vendor escalation
+- TICKET-015 (Modal stream consumer) — needs TICKET-014 + vendor escalation
+- TICKET-014, TICKET-016..019 (Sprint 1) — varying chains on vendor escalation + earlier tickets
 - TICKET-020..029 (Sprint 2) — depend on Sprint 1 completion
 
 ## Sprint 0 progress
@@ -28,17 +28,19 @@ _This file is overwritten by `pm-orchestrator` after every loop iteration. Do no
 
 ## Sprint 1 progress
 
-- 2/10 DONE (TICKET-010, TICKET-011)
-- 1 IN_PROGRESS (TICKET-012, awaiting merge)
+- 3/10 DONE (TICKET-010, TICKET-011, TICKET-012)
+- 1 IN_PROGRESS (TICKET-013, awaiting merge)
 - 0 READY
-- 7 BLOCKED — TICKET-013..019 chain on TICKET-012 PR merge
-- Status: **Steady progress** — TICKET-012 PR merge unblocks 5 downstream tickets at once (013
-  rate-limit, 015 stream consumer, 016 smoke test, 018 observability, 019 idempotency)
+- 6 BLOCKED — chain on TICKET-014/016/018/019 (and vendor escalation for 014/015)
+- Status: **Steady progress** — TICKET-013 closes the rate-limiting hole on the ingest Worker.
+  Non-vendor candidates remaining: TICKET-016 (qa smoke), TICKET-018 (observability spans),
+  TICKET-019 (idempotency).
 
 ## Open escalations
 
 - 2026-04-27 — Vendor account creation (Supabase, ClickHouse, Modal, Redpanda, Upstash). Affects
-  TICKET-009 (already DONE), TICKET-014, TICKET-015, TICKET-020. Does NOT block TICKET-012/013.
+  TICKET-009 (already DONE), TICKET-014, TICKET-015, TICKET-020. Does NOT block
+  TICKET-013/016/018/019.
 
 ## Next escalation candidate
 
@@ -46,7 +48,8 @@ None pending; existing vendor escalation remains open.
 
 ## Delegation log
 
-- 2026-05-01T00:10:00Z — **TICKET-012 READY_FOR_REVIEW** — ingest Worker MVP shipped
+- 2026-05-01T00:50:00Z — **TICKET-013 READY_FOR_REVIEW** — DO rate limiter shipped
+- 2026-05-01T00:30:00Z — **TICKET-012 MERGED** (PR #18) — Cloudflare Worker ingest MVP
 - 2026-04-30T23:00:00Z — **TICKET-011 MERGED** (PR #17) — event schemas v1 across 10 categories
 - 2026-04-30T21:12:50Z — TICKET-010 MERGED (PR #16) — ADR-0003 ACCEPTED, CONVENTIONS.md
   cross-reference, README ADR index

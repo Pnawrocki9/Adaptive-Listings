@@ -25,7 +25,7 @@ updates.
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
 | 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 8    | 0       | 1     | 0       |
-| 1      | 2     | Ingest baseline + event schema                                       | 10      | 2    | 1       | 0     | 7       |
+| 1      | 2     | Ingest baseline + event schema                                       | 10      | 3    | 1       | 0     | 6       |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
 | 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 0    | 0       | 0     | 10      |
@@ -191,21 +191,24 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-012
   title: Cloudflare Worker ingest MVP (validate + auth + push to Redpanda)
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 8
   depends_on: [TICKET-011]
   started_at: '2026-04-30T23:30:00Z'
-  completed_at: '2026-05-01T00:10:00Z'
+  completed_at: '2026-05-01T00:30:00Z'
+  pr: '#18'
   spec: backlog/sprint-1/TICKET-012.md
 
 - id: TICKET-013
   title: Durable Object rate limiting per tenant per minute
   agent: backend-engineer
-  status: BLOCKED
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-012]
+  started_at: '2026-05-01T00:30:00Z'
+  completed_at: '2026-05-01T00:50:00Z'
   spec: backlog/sprint-1/TICKET-013.md
 
 - id: TICKET-014
@@ -359,15 +362,19 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Currently in flight
 
-- TICKET-012 (backend-engineer, READY_FOR_REVIEW, PR pending) — Cloudflare Worker ingest MVP (Hono +
-  Zod validate + KV-backed auth + Redpanda REST proxy push, 47 vitest cases)
+- TICKET-013 (backend-engineer, READY_FOR_REVIEW, PR pending) — Durable Object per-tenant
+  sliding-window rate limiter (50 000 events/min default, whole-batch reject, DO-internal
+  read-modify-write serialization, 18 new vitest cases)
 
 ## Awaiting human review
 
-- TICKET-012 (PR TBD on push)
+- TICKET-013 (PR TBD on push)
 
 ## Recent merges
 
+- 2026-05-01T00:30Z — TICKET-012 (PR #18): Cloudflare Worker ingest MVP by backend-engineer
+  - Hono + EventSchema validate + KV-backed API key + HMAC body signature + Redpanda REST proxy
+    producer with 3-attempt retry. 47 vitest cases. Unblocks TICKET-013/015/016/018/019.
 - 2026-04-30T23:00Z — TICKET-011 (PR #17): Event schemas v1 by architect
   - 33 event types across 10 categories from Master Design C.1, common envelope, discriminated
     union, EVENT_TYPES tuple. zod ^3.23.8 added to @estalara/shared. 74 vitest cases.

@@ -25,7 +25,7 @@ updates.
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
 | 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 8    | 0       | 1     | 0       |
-| 1      | 2     | Ingest baseline + event schema                                       | 10      | 1    | 0       | 1     | 8       |
+| 1      | 2     | Ingest baseline + event schema                                       | 10      | 1    | 1       | 0     | 8       |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
 | 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 0    | 0       | 0     | 10      |
@@ -180,10 +180,12 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-011
   title: Zod schemas in packages/shared for all event types (envelope + 30 type schemas)
   agent: architect
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 6
   depends_on: [TICKET-010]
+  started_at: '2026-04-30T21:30:00Z'
+  completed_at: '2026-04-30T22:00:00Z'
   spec: backlog/sprint-1/TICKET-011.md
 
 - id: TICKET-012
@@ -355,11 +357,11 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Currently in flight
 
-- (None)
+- TICKET-011 (architect, READY_FOR_REVIEW, PR pending) — Zod schemas v1 (33 events, 74 tests)
 
 ## Awaiting human review
 
-- (None)
+- TICKET-011 (PR TBD on push)
 
 ## Recent merges
 

@@ -1,14 +1,16 @@
 /**
  * @estalara/shared — Shared Zod schemas and TypeScript types used across all Estalara services.
  *
- * Full schema implementation in TICKET-002 (backend-engineer / data-engineer).
- * This module exports the SHARED_VERSION constant as a placeholder.
+ * Event schemas (envelope + 33 event types across 10 categories) are defined in `./schemas/`
+ * per ADR-0003 (`docs/adr/0003-event-schema-and-versioning.md`) and Master Design C.1.
  *
- * All cross-module data structures must be defined here as Zod schemas
- * and re-exported as both the schema and the inferred TypeScript type.
+ * Use `EventSchema` (a discriminated union) at every validation boundary: SDK → ingest worker →
+ * Redpanda → Modal stream consumer → ClickHouse projection.
  *
  * @module @estalara/shared
  */
+
+export * from './schemas/index.js';
 
 /** Current shared package version string. */
 export const SHARED_VERSION = '0.0.0' as const;

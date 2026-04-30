@@ -1,0 +1,55 @@
+/**
+ * Cross-listing journey events. Master Design C.1 row 8.
+ *
+ * Throughput: 1–10 per session.
+ *
+ * @module @estalara/shared/schemas/events/cross-listing
+ */
+
+import { z } from 'zod';
+
+import { EventEnvelopeSchema } from '../event.js';
+
+/**
+ * `listing.next` — user navigated from one listing detail page to another.
+ *
+ * @example { type: 'listing.next', payload: { from_listing_id: 'l_42', to_listing_id: 'l_43', via: 'next_button' } }
+ */
+export const ListingNextPayloadSchema = z.object({
+  from_listing_id: z.string().min(1),
+  to_listing_id: z.string().min(1),
+  via: z.enum(['next_button', 'related', 'search_results', 'gallery']).optional(),
+});
+export const ListingNextEventSchema = EventEnvelopeSchema.extend({
+  type: z.literal('listing.next'),
+  payload: ListingNextPayloadSchema,
+});
+export type ListingNextEvent = z.infer<typeof ListingNextEventSchema>;
+
+/**
+ * `listing.compared` — listing added to a side-by-side compare view.
+ *
+ * @example { type: 'listing.compared', payload: { listing_ids: ['l_42', 'l_43', 'l_44'] } }
+ */
+export const ListingComparedPayloadSchema = z.object({
+  listing_ids: z.array(z.string().min(1)).min(2).max(6),
+});
+export const ListingComparedEventSchema = EventEnvelopeSchema.extend({
+  type: z.literal('listing.compared'),
+  payload: ListingComparedPayloadSchema,
+});
+export type ListingComparedEvent = z.infer<typeof ListingComparedEventSchema>;
+
+/**
+ * `listing.bookmarked` — listing saved to favorites / shortlist.
+ *
+ * @example { type: 'listing.bookmarked', payload: { collection: 'shortlist' } }
+ */
+export const ListingBookmarkedPayloadSchema = z.object({
+  collection: z.string().optional(),
+});
+export const ListingBookmarkedEventSchema = EventEnvelopeSchema.extend({
+  type: z.literal('listing.bookmarked'),
+  payload: ListingBookmarkedPayloadSchema,
+});
+export type ListingBookmarkedEvent = z.infer<typeof ListingBookmarkedEventSchema>;

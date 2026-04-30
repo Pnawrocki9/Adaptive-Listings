@@ -104,9 +104,15 @@ importers:
 
   apps/ingest:
     dependencies:
+      "@estalara/shared":
+        specifier: workspace:*
+        version: link:../../packages/shared
       "@sentry/cloudflare":
         specifier: ^10.50.0
         version: 10.50.0(@cloudflare/workers-types@4.20260425.1)
+      hono:
+        specifier: ^4.6.14
+        version: 4.12.16
     devDependencies:
       "@cloudflare/workers-types":
         specifier: ^4.0.0
@@ -4179,6 +4185,13 @@ packages:
       {
         integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==,
       }
+
+  hono@4.12.16:
+    resolution:
+      {
+        integrity: sha512-jN0ZewiNAWSe5khM3EyCmBb250+b40wWbwNILNfEvq84VREWwOIkuUsFONk/3i3nqkz7Oe1PcpM2mwQEK2L9Kg==,
+      }
+    engines: { node: ">=16.9.0" }
 
   https-proxy-agent@5.0.1:
     resolution:
@@ -8721,6 +8734,8 @@ snapshots:
       function-bind: 1.1.2
 
   help-me@5.0.0: {}
+
+  hono@4.12.16: {}
 
   https-proxy-agent@5.0.1:
     dependencies:

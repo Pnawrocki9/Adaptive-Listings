@@ -8,6 +8,17 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ENVIRONMENT = "development"
+# Redpanda HTTP REST proxy (Pandaproxy). Override per-env below.
+REDPANDA_REST_URL = "http://localhost:8082"
+REDPANDA_TOPIC_EVENTS = "events"
+
+# KV namespace for API key → tenant lookup (replaces with Postgres in Sprint 2 / TICKET-021).
+# `id` is set per-environment via Terraform (infra/terraform/cloudflare/) and Doppler-injected
+# at deploy time. The `preview_id` is used by `wrangler dev`.
+[[kv_namespaces]]
+binding = "KV_API_KEYS"
+id = "PLACEHOLDER_KV_API_KEYS_ID"
+preview_id = "PLACEHOLDER_KV_API_KEYS_PREVIEW_ID"
 
 # Durable Objects binding for rate limiting
 [[durable_objects.bindings]]
@@ -18,12 +29,12 @@ script_name = "estalara-ingest"
 # Development environment (local wrangler dev)
 [env.dev]
 name = "estalara-ingest-dev"
-vars = { ENVIRONMENT = "development" }
+vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "http://localhost:8082", REDPANDA_TOPIC_EVENTS = "events" }
 
 # Staging environment (auto-deploy on merge to main)
 [env.staging]
 name = "estalara-ingest-staging"
-vars = { ENVIRONMENT = "staging" }
+vars = { ENVIRONMENT = "staging", REDPANDA_TOPIC_EVENTS = "events-staging" }
 
 [[env.staging.routes]]
 pattern = "ingest-staging.estalara.io/*"
@@ -32,7 +43,7 @@ zone_name = "estalara.io"
 # Production environment (manual deploy with human approval)
 [env.production]
 name = "estalara-ingest-production"
-vars = { ENVIRONMENT = "production" }
+vars = { ENVIRONMENT = "production", REDPANDA_TOPIC_EVENTS = "events" }
 
 [[env.production.routes]]
 pattern = "ingest.estalara.io/*"

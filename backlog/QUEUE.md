@@ -25,7 +25,7 @@ updates.
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
 | 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 8    | 0       | 1     | 0       |
-| 1      | 2     | Ingest baseline + event schema                                       | 10      | 1    | 1       | 0     | 8       |
+| 1      | 2     | Ingest baseline + event schema                                       | 10      | 2    | 1       | 0     | 7       |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
 | 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 0    | 0       | 0     | 10      |
@@ -191,10 +191,12 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-012
   title: Cloudflare Worker ingest MVP (validate + auth + push to Redpanda)
   agent: backend-engineer
-  status: BLOCKED
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 8
   depends_on: [TICKET-011]
+  started_at: '2026-04-30T23:30:00Z'
+  completed_at: '2026-05-01T00:10:00Z'
   spec: backlog/sprint-1/TICKET-012.md
 
 - id: TICKET-013
@@ -357,14 +359,18 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Currently in flight
 
-- TICKET-011 (architect, READY_FOR_REVIEW, PR pending) — Zod schemas v1 (33 events, 74 tests)
+- TICKET-012 (backend-engineer, READY_FOR_REVIEW, PR pending) — Cloudflare Worker ingest MVP (Hono +
+  Zod validate + KV-backed auth + Redpanda REST proxy push, 47 vitest cases)
 
 ## Awaiting human review
 
-- TICKET-011 (PR TBD on push)
+- TICKET-012 (PR TBD on push)
 
 ## Recent merges
 
+- 2026-04-30T23:00Z — TICKET-011 (PR #17): Event schemas v1 by architect
+  - 33 event types across 10 categories from Master Design C.1, common envelope, discriminated
+    union, EVENT_TYPES tuple. zod ^3.23.8 added to @estalara/shared. 74 vitest cases.
 - 2026-04-30T21:12Z — TICKET-010 (PR #16): Ratify ADR-0003 event schema and versioning by architect
   - Status ACCEPTED 2026-04-29; ADR index README added; CONVENTIONS.md Schemas section
     cross-references ADR-0003 with additive-only rule. Sprint 1 unblocks: TICKET-011 → READY.

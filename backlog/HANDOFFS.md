@@ -66,6 +66,74 @@ For TICKET-014 (data-engineer, ClickHouse table DDL):
 
 ---
 
+## TICKET-012 → TICKET-013, TICKET-015, TICKET-016, TICKET-018, TICKET-019
+
+**From:** backend-engineer  
+**To:** backend-engineer (TICKET-013), data-engineer (TICKET-015), qa-engineer (TICKET-016),
+devops-engineer (TICKET-018), backend-engineer (TICKET-019)  
+**Date:** 2026-05-01T00:00:00Z
+
+**Summary:**
+
+Cloudflare Worker ingest MVP shipped in `apps/ingest/`. Hono-based, p95 < 50 ms target.
+`POST /v1/events` validates batches against `EventSchema` from `@estalara/shared`, authenticates via
+`X-Estalara-API-Key` (KV lookup of `api_key:<token>` → `{tenant_id, scopes, hmac_secret?}`) with
+optional `X-Estalara-Signature: hmac-sha256:<hex>` for server-side adapters, enriches each event
+with server-side `tenant_id`, `region` (from `CF-IPCountry`), `ingest_received_at`, and pushes to
+Redpanda via the HTTP REST proxy (Pandaproxy) with 3-attempt exponential backoff (100ms, 500ms,
+2500ms). 47 vitest cases covering auth (missing/unknown/kv-error/HMAC paths), body shape (400/413),
+happy path with rejection reporting, and Redpanda 5xx/4xx/network failure.
+
+**Action required:**
+
+For TICKET-013 (backend-engineer, Durable Object rate limiting):
+
+1. Add a `RateLimiter` Durable Object. The DO binding `RATE_LIMITER` is already declared in
+   `apps/ingest/wrangler.toml` (placeholder — `class_name` matches).
+2. Wire the limiter into `events.post('/')` after auth, before parse — ID by `tenant_id` to keep the
+   buckets per-tenant. Suggested: 100 req/min per tenant on Tier 1, configurable later.
+3. On rate-limit hit, return 429 with `Retry-After`. Don't read body; rate-limit decisions must
+   happen before JSON.parse to keep abusive-traffic cost low.
+
+For TICKET-015 (data-engineer, Modal stream consumer):
+
+1. Subscribe to topic `events` (or `events-staging`) on Redpanda. Records are JSON-encoded events
+   with the envelope plus server-side fields (`tenant_id`, `region`, `ingest_received_at`).
+2. Validate each record again with `EventSchema` (defense-in-depth — should be a no-op in steady
+   state), then batch-insert to ClickHouse.
+
+For TICKET-016 (qa-engineer, ingest smoke test):
+
+1. End-to-end smoke: `wrangler dev` + curl with a real test API key seeded into KV. Verify 200 shape
+   (`accepted`, `rejected`, `batch_id`).
+2. Negative path: missing key → 401, malformed event → 200 with rejection reported.
+
+For TICKET-018 (devops-engineer, observability):
+
+1. The Worker already wraps with `withSentry` (`apps/ingest/src/observability.ts`). Add structured
+   span instrumentation around: auth lookup, Zod parse, Redpanda push (3 separate spans).
+2. Tag spans with `tenant_id` (after auth), batch size, accepted/rejected counts.
+
+For TICKET-019 (backend-engineer, idempotency):
+
+1. Use `event.event_id` (UUIDv7) as idempotency key. Suggested: 24h Redis TTL via Upstash binding.
+2. Dedup decisions happen post-validate, pre-push. Skip duplicates silently from `accepted` count.
+
+**Files:**
+
+- `apps/ingest/src/index.ts` (Hono entry-point + `withSentry` wrapping)
+- `apps/ingest/src/router.ts` (Hono routes: `/health`, `/v1/events`, 404, 500)
+- `apps/ingest/src/handlers/events.ts` (`POST /v1/events` logic)
+- `apps/ingest/src/auth.ts` (`authenticateRequest`, `computeHmacSha256Hex` helper)
+- `apps/ingest/src/redpanda-producer.ts` (REST proxy producer with retry + abort)
+- `apps/ingest/src/region.ts` (CF-IPCountry → region mapper)
+- `apps/ingest/src/types.ts` (`Env` shared bindings)
+- `apps/ingest/wrangler.toml` (`KV_API_KEYS` binding placeholder, REDPANDA env vars per env)
+- ADR-0003 (`docs/adr/0003-event-schema-and-versioning.md`)
+- Master Design C.2 (ingestion strategy), I.2 (backend stack)
+
+---
+
 ## TICKET-009 → TICKET-014 (ClickHouse)
 
 **From:** devops-engineer  

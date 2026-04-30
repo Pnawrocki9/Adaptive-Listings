@@ -1,34 +1,396 @@
+/**
+ * Integration tests for the ingest Worker. We exercise the Hono app by calling `app.fetch`
+ * directly; the bindings are mocked so tests stay in plain Node (no `wrangler dev`, no
+ * `@cloudflare/vitest-pool-workers`).
+ */
+
 import { describe, expect, it } from 'vitest';
 
-import handler from './index.js';
+import { createApp } from './router.js';
+import type { Env } from './types.js';
 
-describe('estalara-ingest', () => {
-  it('exports a fetch handler', () => {
-    expect(typeof handler.fetch).toBe('function');
+interface MockKvOptions {
+  /** Map of `api_key:<token>` → JSON string (or `null` if not present). */
+  store?: Record<string, string | null>;
+  /** When `true`, every `get()` rejects (simulates KV outage). */
+  fail?: boolean;
+}
+
+function mockKv(options: MockKvOptions = {}): Env['KV_API_KEYS'] {
+  const store = options.store ?? {};
+  return {
+    get(key: string): Promise<string | null> {
+      if (options.fail) return Promise.reject(new Error('kv_failure_test'));
+      return Promise.resolve(store[key] ?? null);
+    },
+    put: () => Promise.resolve(),
+    delete: () => Promise.resolve(),
+    list: () => Promise.resolve({ keys: [], list_complete: true } as never),
+    getWithMetadata: () => Promise.resolve({ value: null, metadata: null } as never),
+  } as unknown as Env['KV_API_KEYS'];
+}
+
+interface MakeEnvOptions {
+  kvStore?: Record<string, string | null>;
+  kvFail?: boolean;
+}
+
+function makeEnv(options: MakeEnvOptions = {}): Env {
+  return {
+    ENVIRONMENT: 'test',
+    REDPANDA_REST_URL: 'http://mock-redpanda',
+    REDPANDA_TOPIC_EVENTS: 'events',
+    KV_API_KEYS: mockKv({
+      store: options.kvStore ?? {},
+      fail: options.kvFail ?? false,
+    }),
+  };
+}
+
+/**
+ * Parse a Response body as a known JSON shape. Single-source-of-truth for the `as T` cast that
+ * tests need.
+ */
+async function readJson<T>(res: Response): Promise<T> {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- assert caller's expected shape
+  return (await res.json()) as T;
+}
+
+/**
+ * Stub global `fetch` for the duration of a single test. Returns the original after the test.
+ */
+function stubFetch(behavior: 'ok' | 'error_5xx' | 'error_4xx' | 'network_failure'): {
+  restore: () => void;
+  callCount: () => number;
+} {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (..._args: Parameters<typeof fetch>): Promise<Response> => {
+    calls++;
+    if (behavior === 'network_failure') return Promise.reject(new Error('network_failure_test'));
+    if (behavior === 'error_5xx') return Promise.resolve(new Response('boom', { status: 503 }));
+    if (behavior === 'error_4xx') return Promise.resolve(new Response('bad', { status: 400 }));
+    return Promise.resolve(
+      new Response(JSON.stringify({ offsets: [{ partition: 0, offset: 0 }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/vnd.kafka.v2+json' },
+      }),
+    );
+  };
+  return {
+    restore: () => {
+      globalThis.fetch = original;
+    },
+    callCount: () => calls,
+  };
+}
+
+const validEvent = {
+  event_id: '01928f00-7000-7000-8000-123456789abc',
+  tenant_id: '01928f00-7000-7000-8000-aaaaaaaaaaaa',
+  session_id: 'a'.repeat(40),
+  ts: 1714180000000,
+  region: 'eu' as const,
+  consent_state: 'legitimate-interest' as const,
+  schema_version: 1 as const,
+  type: 'page.view',
+  payload: {
+    url: 'https://example.com/listing/1',
+    viewport: { width: 1440, height: 900 },
+    device_class: 'desktop' as const,
+  },
+};
+
+const VALID_KEY_RECORD = JSON.stringify({
+  tenant_id: 'tenant-uuid-1',
+  scopes: ['write:events'],
+});
+
+describe('GET /health', () => {
+  it('returns 200 with service metadata', async () => {
+    const app = createApp();
+    const env = makeEnv();
+    const res = await app.fetch(new Request('http://test/health'), env);
+    expect(res.status).toBe(200);
+    const body = await readJson<{ status: string; service: string; environment: string }>(res);
+    expect(body.status).toBe('ok');
+    expect(body.service).toBe('estalara-ingest');
+    expect(body.environment).toBe('test');
+  });
+});
+
+describe('POST /v1/events — auth', () => {
+  it('rejects with 401 when API key is missing', async () => {
+    const app = createApp();
+    const env = makeEnv();
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ events: [validEvent] }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(401);
+    const body = await readJson<{ reason: string }>(res);
+    expect(body.reason).toBe('missing_key');
   });
 
-  it('returns 200 with service metadata for any request', async () => {
-    const request = new Request('https://ingest.estalara.io/v1/events', {
-      method: 'POST',
-    });
+  it('rejects with 401 when API key is unknown', async () => {
+    const app = createApp();
+    const env = makeEnv({ kvStore: {} });
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Estalara-API-Key': 'never-issued',
+        },
+        body: JSON.stringify({ events: [validEvent] }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(401);
+    const body = await readJson<{ reason: string }>(res);
+    expect(body.reason).toBe('unknown_key');
+  });
 
-    const env = { ENVIRONMENT: 'test' };
-    // The placeholder handler ignores ExecutionContext; cast to satisfy the type signature
-    const ctx = {
-      waitUntil(_promise: Promise<unknown>): void {
-        /* no-op in tests */
-      },
-      passThroughOnException(): void {
-        /* no-op in tests */
-      },
-    } as unknown as ExecutionContext;
+  it('returns 401 when KV lookup fails', async () => {
+    const app = createApp();
+    const env = makeEnv({ kvFail: true });
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Estalara-API-Key': 'any',
+        },
+        body: JSON.stringify({ events: [validEvent] }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(401);
+    const body = await readJson<{ reason: string }>(res);
+    expect(body.reason).toBe('kv_error');
+  });
+});
 
-    const response = await handler.fetch(request, env, ctx);
-    const body: unknown = await response.json();
-    const meta = body as Record<string, string>;
+describe('POST /v1/events — body shape', () => {
+  it('returns 400 when body is not JSON', async () => {
+    const app = createApp();
+    const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'POST',
+        headers: { 'X-Estalara-API-Key': 'k1' },
+        body: 'not-json',
+      }),
+      env,
+    );
+    expect(res.status).toBe(400);
+    const body = await readJson<{ error: string }>(res);
+    expect(body.error).toBe('invalid_json');
+  });
 
-    expect(response.status).toBe(200);
-    expect(meta.service).toBe('estalara-ingest');
-    expect(meta.status).toBe('placeholder');
+  it('returns 400 when events field missing', async () => {
+    const app = createApp();
+    const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+        body: JSON.stringify({ no_events: 'here' }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when events is empty', async () => {
+    const app = createApp();
+    const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+        body: JSON.stringify({ events: [] }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(400);
+    const body = await readJson<{ error: string }>(res);
+    expect(body.error).toBe('events_empty');
+  });
+
+  it('returns 413 when batch exceeds 1000 events', async () => {
+    const app = createApp();
+    const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+    const tooMany = Array.from({ length: 1001 }, () => validEvent);
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+        body: JSON.stringify({ events: tooMany }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(413);
+  });
+
+  it('returns 413 when Content-Length is over 1MB', async () => {
+    const app = createApp();
+    const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Estalara-API-Key': 'k1',
+          'Content-Length': '5000000',
+        },
+        body: JSON.stringify({ events: [validEvent] }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(413);
+  });
+});
+
+describe('POST /v1/events — happy path', () => {
+  it('accepts a valid batch, enriches events, returns 200', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Estalara-API-Key': 'k1',
+            'CF-IPCountry': 'GB',
+          },
+          body: JSON.stringify({ events: [validEvent, validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      const body = await readJson<{ accepted: number; rejected: number; batch_id: string }>(res);
+      expect(body.accepted).toBe(2);
+      expect(body.rejected).toBe(0);
+      expect(body.batch_id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(stub.callCount()).toBe(1);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('reports rejected events individually with index + errors', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const malformed = { ...validEvent, type: 'totally-unknown-type' };
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          body: JSON.stringify({ events: [validEvent, malformed, validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      const body = await readJson<{
+        accepted: number;
+        rejected: number;
+        errors: { index: number }[];
+      }>(res);
+      expect(body.accepted).toBe(2);
+      expect(body.rejected).toBe(1);
+      expect(body.errors).toHaveLength(1);
+      expect(body.errors[0]?.index).toBe(1);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('skips Redpanda when every event is rejected', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          body: JSON.stringify({ events: [{ totally: 'wrong shape' }] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      const body = await readJson<{ accepted: number; rejected: number }>(res);
+      expect(body.accepted).toBe(0);
+      expect(body.rejected).toBe(1);
+      expect(stub.callCount()).toBe(0);
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+describe('POST /v1/events — Redpanda failure', () => {
+  it('returns 503 when Redpanda exhausts all retries', async () => {
+    const stub = stubFetch('error_5xx');
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(503);
+      const body = await readJson<{ error: string; attempts: number }>(res);
+      expect(body.error).toBe('redpanda_unavailable');
+      expect(body.attempts).toBe(3);
+    } finally {
+      stub.restore();
+    }
+  }, 20_000); // backoff 100+500+2500 ms = ~3.1s of real waits
+
+  it('returns 503 with attempts=1 on terminal 4xx', async () => {
+    const stub = stubFetch('error_4xx');
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(503);
+      const body = await readJson<{ attempts: number }>(res);
+      expect(body.attempts).toBe(1);
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+describe('GET unmatched route', () => {
+  it('returns 404 with structured body', async () => {
+    const app = createApp();
+    const env = makeEnv();
+    const res = await app.fetch(new Request('http://test/nope'), env);
+    expect(res.status).toBe(404);
+    const body = await readJson<{ error: string; path: string }>(res);
+    expect(body.error).toBe('not_found');
+    expect(body.path).toBe('/nope');
   });
 });

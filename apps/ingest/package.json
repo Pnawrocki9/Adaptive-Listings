@@ -19,6 +19,8 @@
     "wrangler": "^3.0.0"
   },
   "dependencies": {
-    "@sentry/cloudflare": "^10.50.0"
+    "@estalara/shared": "workspace:*",
+    "@sentry/cloudflare": "^10.50.0",
+    "hono": "^4.6.14"
   }
 }

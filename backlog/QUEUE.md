@@ -253,10 +253,11 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-018
   title: Ingest observability (OTel traces + Sentry + structured logs)
   agent: devops-engineer
-  status: READY
+  status: IN_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-012, TICKET-003]
+  pr: '#22'
   spec: backlog/sprint-1/TICKET-018.md
 
 - id: TICKET-019

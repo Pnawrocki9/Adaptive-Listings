@@ -66,7 +66,7 @@ MVP testing).
 
 ---
 
-## RESOLVED — GitHub Actions CI workflow fails immediately with "workflow file issue" on all branches
+## OPEN — GitHub Actions CI workflow fails immediately with "workflow file issue" on all branches
 
 **Filed by:** backend-engineer **Date:** 2026-05-01T10:50:00Z **Affects:** All tickets — TICKET-025
 (and previously TICKET-012, TICKET-013, all main merges) **Type:** other (repo-config)
@@ -101,8 +101,23 @@ infrastructure issue is not caused by agent code.
 4. Try triggering a workflow run manually from the GitHub Actions UI to see the actual error message
 5. If needed, devops-engineer should review and fix `.github/workflows/ci.yml`
 
-**Resolution:** Root cause confirmed: GitHub Actions does not support `secrets` context in job-level
-`if` conditions. The `doppler-verify` job's `if: ${{ secrets.DOPPLER_TOKEN_DEV != '' }}` caused the
-entire workflow to be rejected at validation time (0 jobs, 0s). Fixed in PR #21: moved check to
-step-level `if`, added `continue-on-error: true`. Also added `ci` scope and `[ESCALATION]` reference
-to commitlint. Resolved 2026-05-01.
+**Partial fix history:**
+
+- PR #21 (2026-05-01): Fixed `secrets` in job-level `if` condition (`doppler-verify` job)
+- PR #22 (2026-05-01): Fixed `secrets` in workflow-level `env:` block (`TURBO_TOKEN`, `TURBO_TEAM`
+  in `ci.yml`; `CLOUDFLARE_ACCOUNT_ID` in `deploy-staging.yml`)
+
+**CI still fails after both fixes.** 30 runs total across all branches, 0 successes. The API returns
+`total_count: 0` jobs and `billable: {}` — nothing runs. The exact error message is only visible in
+the GitHub Actions UI (navigate to Actions → select any failed run → see the banner).
+
+**Required human action:** Navigate to GitHub repo → Actions → select a failed run → read the banner
+message that says "This run likely failed because of a workflow file issue." The SPECIFIC error text
+below that banner will identify the remaining root cause. The agent cannot see this message via the
+GitHub API. Possible remaining issues:
+
+- Missing `permissions:` block required by a repo or org policy
+- A GitHub Actions feature (required workflows, environment protection) blocking the run
+- A third workflow validation error not yet identified
+
+**Resolution:** Pending human investigation.

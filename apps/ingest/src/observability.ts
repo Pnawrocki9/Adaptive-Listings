@@ -32,6 +32,18 @@ export interface ObservabilityEnv {
   ENVIRONMENT?: string;
   /** Git SHA injected at build time for release tagging. */
   GIT_SHA?: string;
+  /**
+   * OTLP HTTP exporter endpoint for OTel traces.
+   * e.g. `https://otlp-gateway-prod-eu-west-0.grafana.net/otlp`
+   * Absent = no-op exporter (graceful degradation).
+   */
+  OTEL_EXPORTER_URL?: string;
+  /**
+   * Comma-separated `key=value` pairs forwarded as HTTP headers to the OTLP
+   * exporter. Used for Grafana Cloud authentication.
+   * e.g. `Authorization=Basic <base64>`
+   */
+  OTEL_EXPORTER_HEADERS?: string;
 }
 
 /**

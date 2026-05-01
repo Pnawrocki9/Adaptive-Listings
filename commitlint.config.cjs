@@ -44,6 +44,7 @@ module.exports = {
         'adapt', // apps/adaptation-engine
         'data', // data-engineer work
         'infra', // devops-engineer work
+        'ci', // CI/CD workflow files
         'compliance', // compliance-engineer work
         'qa', // qa-engineer work
         'agents', // .claude/ agent definitions
@@ -92,12 +93,12 @@ module.exports = {
             return [false, 'Subject is required'];
           }
 
-          // Check for [TICKET-NNN] pattern
-          const ticketPattern = /\[TICKET-\d+\]/;
+          // Check for [TICKET-NNN] or [ESCALATION] reference
+          const ticketPattern = /\[TICKET-\d+\]|\[ESCALATION\]/;
           if (!ticketPattern.test(subject)) {
             return [
               false,
-              'Commit message must include [TICKET-XXX] reference. Example: feat(ingest): add validation [TICKET-042]',
+              'Commit message must include [TICKET-XXX] or [ESCALATION] reference. Example: feat(ingest): add validation [TICKET-042]',
             ];
           }
 

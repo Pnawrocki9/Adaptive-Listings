@@ -66,7 +66,7 @@ MVP testing).
 
 ---
 
-## OPEN — GitHub Actions CI workflow fails immediately with "workflow file issue" on all branches
+## RESOLVED — GitHub Actions CI workflow fails immediately with "workflow file issue" on all branches
 
 **Filed by:** backend-engineer **Date:** 2026-05-01T10:50:00Z **Affects:** All tickets — TICKET-025
 (and previously TICKET-012, TICKET-013, all main merges) **Type:** other (repo-config)
@@ -101,4 +101,8 @@ infrastructure issue is not caused by agent code.
 4. Try triggering a workflow run manually from the GitHub Actions UI to see the actual error message
 5. If needed, devops-engineer should review and fix `.github/workflows/ci.yml`
 
-**Resolution:** <awaiting human action>
+**Resolution:** Root cause confirmed: GitHub Actions does not support `secrets` context in job-level
+`if` conditions. The `doppler-verify` job's `if: ${{ secrets.DOPPLER_TOKEN_DEV != '' }}` caused the
+entire workflow to be rejected at validation time (0 jobs, 0s). Fixed in PR #21: moved check to
+step-level `if`, added `continue-on-error: true`. Also added `ci` scope and `[ESCALATION]` reference
+to commitlint. Resolved 2026-05-01.

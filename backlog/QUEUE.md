@@ -1,6 +1,6 @@
 # Backlog Queue
 
-**Updated 2026-04-27 with Paczka 2 contents.** This file replaces `backlog/QUEUE.md` from Paczka 1.
+**Updated 2026-05-01 by pm-orchestrator.** This file replaces the 2026-04-27 version.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -24,9 +24,9 @@ updates.
 
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 8    | 0       | 1     | 0       |
-| 1      | 2     | Ingest baseline + event schema                                       | 10      | 3    | 1       | 0     | 6       |
-| 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 0       | 0     | 10      |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 9    | 0       | 0     | 0       |
+| 1      | 2     | Ingest baseline + event schema                                       | 10      | 5    | 0       | 3     | 2       |
+| 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 1       | 0     | 9       |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
 | 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 0    | 0       | 0     | 10      |
 | 4      | 6     | Intent ontology v1 + Modal scaffolding                               | tbd     | —    | —       | —     | tbd     |
@@ -43,7 +43,7 @@ updates.
 
 Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 ship in Paczka 3.
 
-## Active sprint: Sprint 0 — Foundation
+## Active sprint: Sprint 0 — Foundation (COMPLETE)
 
 ```yaml
 - id: TICKET-001
@@ -137,13 +137,13 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-008
   title: Cloudflare account setup + Wrangler Terraform module
   agent: devops-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-001, TICKET-002]
   assigned_to: devops-engineer
   started_at: '2026-04-29T18:00:00Z'
-  completed_at: '2026-04-29T18:30:00Z'
+  completed_at: '2026-04-29T16:29:05Z'
   pr: '#14'
   spec: backlog/sprint-0/TICKET-008.md
 
@@ -162,7 +162,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
   spec: backlog/sprint-0/TICKET-009.md
 ```
 
-## Sprint 1 — Ingest baseline + event schema (BLOCKED on Sprint 0)
+## Sprint 1 — Ingest baseline + event schema
 
 ```yaml
 - id: TICKET-010
@@ -180,12 +180,13 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-011
   title: Zod schemas in packages/shared for all event types (envelope + 30 type schemas)
   agent: architect
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 6
   depends_on: [TICKET-010]
   started_at: '2026-04-30T21:30:00Z'
-  completed_at: '2026-04-30T22:00:00Z'
+  completed_at: '2026-04-30T21:45:29Z'
+  pr: '#17'
   spec: backlog/sprint-1/TICKET-011.md
 
 - id: TICKET-012
@@ -203,12 +204,13 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-013
   title: Durable Object rate limiting per tenant per minute
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-012]
   started_at: '2026-05-01T00:30:00Z'
-  completed_at: '2026-05-01T00:50:00Z'
+  completed_at: '2026-04-30T22:39:52Z'
+  pr: '#19'
   spec: backlog/sprint-1/TICKET-013.md
 
 - id: TICKET-014
@@ -218,6 +220,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-009, TICKET-011]
+  blocked_by: vendor-accounts-escalation
   spec: backlog/sprint-1/TICKET-014.md
 
 - id: TICKET-015
@@ -250,7 +253,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-018
   title: Ingest observability (OTel traces + Sentry + structured logs)
   agent: devops-engineer
-  status: BLOCKED
+  status: READY
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-012, TICKET-003]
@@ -259,14 +262,14 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-019
   title: HTTP error handling + idempotency contract (event_id deduplication)
   agent: backend-engineer
-  status: BLOCKED
+  status: READY
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-012]
   spec: backlog/sprint-1/TICKET-019.md
 ```
 
-## Sprint 2 — Postgres + tenant auth + dashboard skeleton (BLOCKED)
+## Sprint 2 — Postgres + tenant auth + dashboard skeleton
 
 ```yaml
 - id: TICKET-020
@@ -276,6 +279,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-009]
+  blocked_by: vendor-accounts-escalation
   spec: backlog/sprint-2/TICKET-020.md
 
 - id: TICKET-021
@@ -317,10 +321,14 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-025
   title: apps/control-plane Next.js skeleton + Tailwind + shadcn/ui setup
   agent: backend-engineer
-  status: BLOCKED
+  status: IN_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-001, TICKET-002]
+  assigned_to: backend-engineer
+  started_at: '2026-05-01T00:00:00Z'
+  completed_at: '2026-05-01T12:50:00Z'
+  pr: '#20'
   spec: backlog/sprint-2/TICKET-025.md
 
 - id: TICKET-026
@@ -362,20 +370,23 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Currently in flight
 
-- TICKET-013 (backend-engineer, READY_FOR_REVIEW, PR pending) — Durable Object per-tenant
-  sliding-window rate limiter (50 000 events/min default, whole-batch reject, DO-internal
-  read-modify-write serialization, 18 new vitest cases)
+(none)
 
 ## Awaiting human review
 
-- TICKET-013 (PR TBD on push)
+- TICKET-025 (PR #20) — Next.js 15 + Tailwind v4 + shadcn/ui skeleton for apps/control-plane. Local:
+  24 tests passing, build clean, prettier clean. CI infrastructure has a pre-existing "workflow file
+  issue" (affects all branches since Sprint 0 — see ESCALATIONS.md).
 
 ## Recent merges
 
+- 2026-04-30T22:39Z — TICKET-013 (PR #19): Durable Object rate limiting by backend-engineer
+  - Per-tenant sliding-window rate limiter (50 000 events/min default), whole-batch reject,
+    DO-internal read-modify-write serialization, 18 vitest cases. Unblocks TICKET-018/019.
 - 2026-05-01T00:30Z — TICKET-012 (PR #18): Cloudflare Worker ingest MVP by backend-engineer
   - Hono + EventSchema validate + KV-backed API key + HMAC body signature + Redpanda REST proxy
     producer with 3-attempt retry. 47 vitest cases. Unblocks TICKET-013/015/016/018/019.
-- 2026-04-30T23:00Z — TICKET-011 (PR #17): Event schemas v1 by architect
+- 2026-04-30T21:45Z — TICKET-011 (PR #17): Event schemas v1 by architect
   - 33 event types across 10 categories from Master Design C.1, common envelope, discriminated
     union, EVENT_TYPES tuple. zod ^3.23.8 added to @estalara/shared. 74 vitest cases.
 - 2026-04-30T21:12Z — TICKET-010 (PR #16): Ratify ADR-0003 event schema and versioning by architect
@@ -387,19 +398,15 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
     L-Q + new R between Q and S. 1662 → 2276 lines.
 - 2026-04-29T17:08Z — TICKET-006 (PR #11): Add packages/platform-templates TS placeholder by
   devops-engineer
-  - TypeScript package with Zod schemas for platform fingerprints, Layer 3 of Auto-Onboarding
-    detection pipeline, brings monorepo to 10 packages
 - 2026-04-29T16:50Z — TICKET-005 (PR #10): Add apps/auto-detect Python placeholder by
   devops-engineer
-  - Modal-deployed service for AI Vision-powered schema detection, brings monorepo to 10 apps
 - 2026-04-29T14:18Z — TICKET-004 (branch devops-engineer/TICKET-004-precommit-security): Pre-commit
   security hooks by devops-engineer
+- 2026-04-29T16:29Z — TICKET-008 (PR #14): Cloudflare Terraform module + Wrangler config by
+  devops-engineer
 - 2026-04-27T19:30Z — TICKET-009 (PR #6): Vendor account stubs Terraform skeleton by devops-engineer
 - 2026-04-27T19:30Z — TICKET-003 (PR #7): Sentry + OTel baseline by devops-engineer
 - 2026-04-27T07:30Z — TICKET-002 (PR #4 + PR #5): Doppler integration + secrets management baseline
   by devops-engineer
-  - Secrets management via Doppler, CI integration, hard cap on CI verification loop
 - 2026-04-26T18:15Z — TICKET-001 (PR #2): Bootstrap monorepo (Turborepo + pnpm + tooling) by
   devops-engineer
-  - Monorepo foundation with all 9 packages + 9 apps (10+10 after Sprint 0 completes via
-    TICKET-005/006)

@@ -63,3 +63,42 @@ Without these accounts, downstream tickets are blocked:
 MVP testing).
 
 **Resolution:** <awaiting human action>
+
+---
+
+## OPEN — GitHub Actions CI workflow fails immediately with "workflow file issue" on all branches
+
+**Filed by:** backend-engineer **Date:** 2026-05-01T10:50:00Z **Affects:** All tickets — TICKET-025
+(and previously TICKET-012, TICKET-013, all main merges) **Type:** other (repo-config)
+
+**Description:**
+
+Every CI run since Sprint 0 completes in 0s with status `failure` and reason "This run likely failed
+because of a workflow file issue." This includes pushes to `main` after merging TICKET-012 and
+TICKET-013 (both previously marked DONE). The workflow file at `.github/workflows/ci.yml` appears
+syntactically valid locally, so the issue is likely one of:
+
+1. A required GitHub Actions secret (`TURBO_TOKEN`, `TURBO_TEAM`, or `GITHUB_TOKEN` permissions) is
+   misconfigured or missing at the repo/org level
+2. The `if: ${{ secrets.DOPPLER_TOKEN_DEV != '' }}` expression in the `doppler-verify` job uses a
+   secrets context in a way that GitHub Actions flags as invalid at the workflow level
+3. A GitHub Actions runner or org-level policy is blocking the workflow
+
+All agent code (TICKET-012, 013, 025) passes local tests, typecheck, build, and prettier. The CI
+infrastructure issue is not caused by agent code.
+
+**Required action:**
+
+1. Navigate to GitHub repo Settings → Actions → General and verify workflow permissions are set to
+   "Read and write permissions"
+2. Check if required secrets (`TURBO_TOKEN`, `TURBO_TEAM`) are set under Settings → Secrets and
+   variables → Actions
+3. Verify that the `if: ${{ secrets.DOPPLER_TOKEN_DEV != '' }}` guard in `doppler-verify` job is
+   valid — this expression references `secrets` context which is not available in `if` conditions at
+   the job level without `${{ secrets.NAME }}` wrapping. The correct form is:
+   `if: ${{ secrets.DOPPLER_TOKEN_DEV != '' }}` which _should_ work but may fail for some org
+   configurations
+4. Try triggering a workflow run manually from the GitHub Actions UI to see the actual error message
+5. If needed, devops-engineer should review and fix `.github/workflows/ci.yml`
+
+**Resolution:** <awaiting human action>

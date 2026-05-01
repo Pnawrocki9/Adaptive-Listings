@@ -1,8 +1,8 @@
 # Observability Runbook — Estalara Adaptive Listings
 
 **Owner:** devops-engineer  
-**Last updated:** 2026-04-27  
-**Related tickets:** TICKET-003
+**Last updated:** 2026-05-01  
+**Related tickets:** TICKET-003, TICKET-018
 
 ---
 
@@ -33,6 +33,63 @@ Every span, log line, and Sentry event carries these fields. **Never omit `servi
 | `tenant_id`       | Application code (when request is tenant-scoped) | `uuid-v4`      |
 | `trace_id`        | W3C `traceparent` header, propagated end-to-end  | (hex string)   |
 | `request_id`      | `EstalaraError.request_id` or HTTP middleware    | `uuid-v4`      |
+
+---
+
+## Ingest Worker observability (TICKET-018)
+
+The ingest Worker emits spans via `@microlabs/otel-cf-workers` (the standard OTel SDK is not
+compatible with Cloudflare Workers). Every `POST /v1/events` request creates a span with these
+custom attributes:
+
+| Attribute                      | Type    | Description                               |
+| ------------------------------ | ------- | ----------------------------------------- |
+| `estalara.tenant_id`           | string  | Authenticated tenant UUID                 |
+| `estalara.batch_size`          | integer | Number of events in the batch             |
+| `estalara.region`              | string  | Region derived from `CF-IPCountry` header |
+| `estalara.validation_failures` | integer | Events that failed `EventSchema` parsing  |
+| `estalara.rate_limited`        | boolean | `true` if the batch was rate-limited      |
+
+### How to find an ingest request in traces
+
+1. Open Grafana → Explore → select **Tempo** datasource.
+2. Search by tag: `estalara.tenant_id = "<uuid>"` or `service.name = "estalara-ingest"`.
+3. Filter by time range matching when the request was received.
+4. Click a trace to see the full span tree including auth, rate-limit check, validation, and push.
+
+### How to search ingest logs
+
+Logs are emitted as structured JSON via Pino to Cloudflare's log pipeline (Workers Logpush → Grafana
+Loki).
+
+1. Open Grafana → Explore → select **Loki** datasource.
+2. Query: `{service_name="apps/ingest"}` — returns all ingest logs.
+3. Filter by tenant: `{service_name="apps/ingest"} | json | tenant_id = "<uuid>"`.
+4. Find failures: `{service_name="apps/ingest"} | json | level = "error"`.
+
+Key log events:
+
+| `msg` field            | Level | When emitted                                |
+| ---------------------- | ----- | ------------------------------------------- |
+| `events_accepted`      | info  | Batch successfully pushed to Redpanda       |
+| `rate_limited`         | warn  | Batch rejected by rate limiter              |
+| `auth_failed`          | warn  | API key missing or HMAC verification failed |
+| `redpanda_push_failed` | error | All retry attempts to Redpanda exhausted    |
+| `body_too_large`       | warn  | Request body exceeds 1 MB limit             |
+
+### Grafana dashboard
+
+Import `infra/observability/dashboards/ingest.json` into Grafana (Dashboards → Import → Upload
+JSON). The dashboard requires a Prometheus and a Tempo datasource configured in Grafana Cloud.
+
+Panels:
+
+1. **Request Rate** — req/s over time
+2. **Latency Histogram** — p50 / p95 / p99 in ms
+3. **Error Rate** — 4xx + 5xx as a percentage of total requests
+4. **p95 Latency by Tenant** — per-tenant breakdown for SLO tracking
+5. **Rate-Limit Rejections** — 429 responses per second
+6. **Schema-Failure Rate** — fraction of events that fail `EventSchema` validation
 
 ---
 
@@ -160,16 +217,15 @@ docker run --rm -p 4317:4317 -p 4318:4318 \
   --config /etc/otel-collector.yaml
 ```
 
-Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` in your service environment to send
+Set `OTEL_EXPORTER_URL=http://localhost:4318/v1/traces` in your service environment to send
 telemetry to the local collector.
-
-Sprint 1 will wire the Tempo and Prometheus exporters.
 
 ---
 
 ## Runbook — "I see no traces"
 
-1. Check `OTEL_EXPORTER_OTLP_ENDPOINT` is set in the service's env.
+1. Check `OTEL_EXPORTER_URL` is set in the service's env (ingest uses this var; not the generic
+   `OTEL_EXPORTER_OTLP_ENDPOINT`).
 2. Verify the OTel Collector is running and healthy: `curl http://localhost:13133`.
 3. Confirm `GIT_SHA` is set — used as the release tag in Sentry and as the tracer version.
 4. In Cloudflare Workers, confirm the `nodejs_compat` compatibility flag is enabled in

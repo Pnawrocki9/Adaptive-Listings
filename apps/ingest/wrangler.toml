@@ -11,6 +11,11 @@ ENVIRONMENT = "development"
 # Redpanda HTTP REST proxy (Pandaproxy). Override per-env below.
 REDPANDA_REST_URL = "http://localhost:8082"
 REDPANDA_TOPIC_EVENTS = "events"
+# Observability (TICKET-018) — secrets injected by Doppler at deploy time.
+# SENTRY_DSN_INGEST and OTEL_EXPORTER_HEADERS must be set as Worker secrets
+# (wrangler secret put) — never put real DSNs or auth tokens in plain vars.
+OTEL_EXPORTER_URL = ""
+OTEL_EXPORTER_HEADERS = ""
 
 # KV namespace for API key → tenant lookup (replaces with Postgres in Sprint 2 / TICKET-021).
 # `id` is set per-environment via Terraform (infra/terraform/cloudflare/) and Doppler-injected
@@ -36,12 +41,12 @@ new_classes = ["RateLimiter"]
 # Development environment (local wrangler dev)
 [env.dev]
 name = "estalara-ingest-dev"
-vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "http://localhost:8082", REDPANDA_TOPIC_EVENTS = "events" }
+vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "http://localhost:8082", REDPANDA_TOPIC_EVENTS = "events", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 # Staging environment (auto-deploy on merge to main)
 [env.staging]
 name = "estalara-ingest-staging"
-vars = { ENVIRONMENT = "staging", REDPANDA_TOPIC_EVENTS = "events-staging" }
+vars = { ENVIRONMENT = "staging", REDPANDA_TOPIC_EVENTS = "events-staging", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 [[env.staging.routes]]
 pattern = "ingest-staging.estalara.io/*"
@@ -50,7 +55,7 @@ zone_name = "estalara.io"
 # Production environment (manual deploy with human approval)
 [env.production]
 name = "estalara-ingest-production"
-vars = { ENVIRONMENT = "production", REDPANDA_TOPIC_EVENTS = "events" }
+vars = { ENVIRONMENT = "production", REDPANDA_TOPIC_EVENTS = "events", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 [[env.production.routes]]
 pattern = "ingest.estalara.io/*"
@@ -58,3 +63,6 @@ zone_name = "estalara.io"
 
 # Production configuration is managed via Terraform in infra/terraform/cloudflare/
 # Secrets are managed via Doppler — never commit .env files
+# Secrets set via `wrangler secret put`:
+#   SENTRY_DSN_INGEST      — Sentry DSN for ingest project
+#   OTEL_EXPORTER_HEADERS  — Authorization header for Grafana Cloud OTLP

@@ -22,6 +22,7 @@ import { Hono } from 'hono';
 
 import type { Env } from '../types.js';
 import { authenticateRequest } from '../auth.js';
+import { logger } from '../observability/logger.js';
 import { checkRateLimit } from '../rate-limiter.js';
 import { pushToRedpanda } from '../redpanda-producer.js';
 import { mapCountryToRegion } from '../region.js';
@@ -110,7 +111,7 @@ events.post('/', async (c) => {
       400,
     );
   }
-  const eventsField = body.events;
+  const eventsField = (body).events;
   if (!Array.isArray(eventsField)) {
     return c.json(
       errorBody(requestId, 'validation_failed', "'events' field must be an array"),
@@ -135,12 +136,24 @@ events.post('/', async (c) => {
     );
   }
 
-  // 4. Per-tenant rate limit (sliding-window via Durable Object). Whole-batch decision: a batch
-  //    that pushes the windowed total over the limit is rejected entirely (we don't accept a
-  //    partial subset — the client would have to track per-event acceptance, complicating SDKs).
-  const rate = await checkRateLimit(c.env.RATE_LIMITER, auth.tenant_id, eventsField.length);
+  // 4. Per-tenant rate limit
+  const rate = await checkRateLimit(c.env.RATE_LIMITER, tenantId, eventsField.length);
   if (!rate.allowed) {
     const retryAfterSeconds = Math.max(1, Math.ceil((rate.reset_at - Date.now()) / 1000));
+    span?.setAttributes({
+      'estalara.tenant_id': tenantId,
+      'estalara.batch_size': eventsField.length,
+      'estalara.rate_limited': true,
+    });
+    logger.warn(
+      {
+        tenant_id: tenantId,
+        batch_size: eventsField.length,
+        remaining: rate.remaining,
+        reset_at: rate.reset_at,
+      },
+      'rate_limited',
+    );
     c.header('Retry-After', String(retryAfterSeconds));
     return c.json(
       errorBody(
@@ -167,7 +180,6 @@ events.post('/', async (c) => {
       rejected.push({ index: i, errors: parsed.error.flatten() });
       continue;
     }
-    // Server-side overrides — these fields are not trusted from the client.
     validated.push({
       ...parsed.data,
       tenant_id: tenantId,
@@ -181,6 +193,15 @@ events.post('/', async (c) => {
   if (validated.length > 0) {
     const push = await pushToRedpanda(validated, c.env);
     if (!push.ok) {
+      logger.error(
+        {
+          tenant_id: tenantId,
+          batch_size: eventsField.length,
+          attempts: push.attempts,
+          upstream_status: push.status,
+        },
+        'redpanda_push_failed',
+      );
       return c.json(
         errorBody(requestId, 'redpanda_unavailable', 'Failed to publish events to message bus', {
           attempts: push.attempts,
@@ -190,6 +211,18 @@ events.post('/', async (c) => {
       );
     }
   }
+
+  logger.info(
+    {
+      tenant_id: tenantId,
+      batch_id: batchId,
+      batch_size: eventsField.length,
+      accepted: validated.length,
+      rejected: rejected.length,
+      region,
+    },
+    'events_accepted',
+  );
 
   return c.json(
     {

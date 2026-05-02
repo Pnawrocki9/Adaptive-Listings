@@ -17,10 +17,13 @@ import type { RedpandaProducerEnv } from './redpanda-producer.js';
  * - Redpanda REST proxy config
  * - Rate-limiter config (`RATE_LIMIT_PER_MIN`)
  * - KV namespace binding for API key lookup (replaces with Postgres in Sprint 2)
+ * - KV namespace binding for idempotency key deduplication (TICKET-019, 24h TTL)
  * - Durable Object namespace binding for the per-tenant rate limiter (TICKET-013)
  */
 export interface Env extends ObservabilityEnv, RedpandaProducerEnv, RateLimiterEnv {
   ENVIRONMENT: string;
   KV_API_KEYS: KVNamespace;
+  /** Batch-level idempotency cache. Key: `idem:<Idempotency-Key>`. TTL: 24h. */
+  KV_IDEMPOTENCY: KVNamespace;
   RATE_LIMITER: DurableObjectNamespace;
 }

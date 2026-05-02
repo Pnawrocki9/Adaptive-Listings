@@ -7,29 +7,33 @@
  *
  * `GET /health` returns liveness for uptime checks.
  *
- * Latency target: p95 < 50ms in production. Bundle stays small (<100 KB) — heavy work is in the
- * Modal stream consumer (TICKET-015).
+ * Latency target: p95 < 50ms in production. Bundle stays <200 KB after observability.
  *
- * Out of scope here (handled by other tickets):
- * - Structured Sentry / OTel spans on hot path (TICKET-018)
- * - Idempotent batch dedup (TICKET-019)
+ * Observability stack (TICKET-018):
+ * - OTel spans via `@microlabs/otel-cf-workers` — wraps the entire handler at the outermost layer
+ * - Sentry error capture via `@sentry/cloudflare` — wraps the Hono app fetch
+ * - Structured logs via Pino (see `./observability/logger.ts`)
  *
  * @module apps/ingest/src/index
  */
 
-import type { ExportedHandler } from '@cloudflare/workers-types';
+import { instrument } from '@microlabs/otel-cf-workers';
 
 import { withSentry } from './observability.js';
+import { otelConfig } from './observability/spans.js';
 import { createApp } from './router.js';
-import type { Env } from './types.js';
 
 const app = createApp();
 
-const handler: ExportedHandler<Env> = {
-  fetch: (request, env, ctx) => app.fetch(request, env, ctx),
-};
+/**
+ * The Hono app is wrapped first with Sentry (innermost), then with OTel
+ * `instrument()` (outermost).  OTel creates the root span for the entire
+ * request lifecycle; Sentry operates inside that span so the Sentry transaction
+ * trace_id matches the OTel trace_id.
+ */
+const sentryWrapped = withSentry({ fetch: (request, env, ctx) => app.fetch(request, env, ctx) });
 
-export default withSentry(handler);
+export default instrument(sentryWrapped, otelConfig);
 
 /**
  * Re-exported so Cloudflare can register the binding declared in `wrangler.toml`. The DO runtime

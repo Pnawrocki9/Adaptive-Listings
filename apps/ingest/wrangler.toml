@@ -11,6 +11,10 @@ ENVIRONMENT = "development"
 # Redpanda HTTP REST proxy (Pandaproxy). Override per-env below.
 REDPANDA_REST_URL = "http://localhost:8082"
 REDPANDA_TOPIC_EVENTS = "events"
+# Observability (TICKET-018) — secrets injected by Doppler at deploy time.
+# SENTRY_DSN_INGEST and OTEL_EXPORTER_HEADERS must be set as Worker secrets.
+OTEL_EXPORTER_URL = ""
+OTEL_EXPORTER_HEADERS = ""
 
 # KV namespace for API key → tenant lookup (replaces with Postgres in Sprint 2 / TICKET-021).
 # `id` is set per-environment via Terraform (infra/terraform/cloudflare/) and Doppler-injected
@@ -19,6 +23,15 @@ REDPANDA_TOPIC_EVENTS = "events"
 binding = "KV_API_KEYS"
 id = "PLACEHOLDER_KV_API_KEYS_ID"
 preview_id = "PLACEHOLDER_KV_API_KEYS_PREVIEW_ID"
+
+# KV namespace for idempotency key deduplication (TICKET-019).
+# Stores batch responses keyed by `idem:<Idempotency-Key>` with a 24-hour TTL.
+# One KV entry per ingest batch (not per event) to keep write costs bounded.
+# `id` is provisioned via Terraform (infra/terraform/cloudflare/); Doppler injects at deploy time.
+[[kv_namespaces]]
+binding = "KV_IDEMPOTENCY"
+id = "PLACEHOLDER_KV_IDEMPOTENCY_ID"
+preview_id = "PLACEHOLDER_KV_IDEMPOTENCY_PREVIEW_ID"
 
 # Durable Objects binding for per-tenant rate limiting (TICKET-013).
 # `class_name` matches the export from src/index.ts. No `script_name` — the class lives in this
@@ -36,12 +49,12 @@ new_classes = ["RateLimiter"]
 # Development environment (local wrangler dev)
 [env.dev]
 name = "estalara-ingest-dev"
-vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "http://localhost:8082", REDPANDA_TOPIC_EVENTS = "events" }
+vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "http://localhost:8082", REDPANDA_TOPIC_EVENTS = "events", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 # Staging environment (auto-deploy on merge to main)
 [env.staging]
 name = "estalara-ingest-staging"
-vars = { ENVIRONMENT = "staging", REDPANDA_TOPIC_EVENTS = "events-staging" }
+vars = { ENVIRONMENT = "staging", REDPANDA_TOPIC_EVENTS = "events-staging", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 [[env.staging.routes]]
 pattern = "ingest-staging.estalara.io/*"
@@ -50,7 +63,7 @@ zone_name = "estalara.io"
 # Production environment (manual deploy with human approval)
 [env.production]
 name = "estalara-ingest-production"
-vars = { ENVIRONMENT = "production", REDPANDA_TOPIC_EVENTS = "events" }
+vars = { ENVIRONMENT = "production", REDPANDA_TOPIC_EVENTS = "events", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 [[env.production.routes]]
 pattern = "ingest.estalara.io/*"
@@ -58,3 +71,6 @@ zone_name = "estalara.io"
 
 # Production configuration is managed via Terraform in infra/terraform/cloudflare/
 # Secrets are managed via Doppler — never commit .env files
+# Secrets set via `wrangler secret put`:
+#   SENTRY_DSN_INGEST      — Sentry DSN for ingest project
+#   OTEL_EXPORTER_HEADERS  — Authorization header for Grafana Cloud OTLP

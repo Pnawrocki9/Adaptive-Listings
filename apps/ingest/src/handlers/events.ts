@@ -3,6 +3,12 @@
  * `EventSchema` (from `@estalara/shared`), enriches with server-side annotations, pushes to
  * Redpanda. Per ADR-0003: envelope is validated strictly, payload is per-type discriminated.
  *
+ * All error responses use the canonical shape (TICKET-019):
+ *   `{ error: { code, message, request_id, details? } }`
+ *
+ * Observability (TICKET-018):
+ * - OTel span attributes set on the active span created by `@microlabs/otel-cf-workers`
+ *
  * Limits (Master Design C.2 + ticket spec):
  * - Max 1MB request body
  * - Max 1000 events per batch
@@ -10,6 +16,7 @@
  * @module apps/ingest/src/handlers/events
  */
 
+import { trace } from '@opentelemetry/api';
 import { EventSchema } from '@estalara/shared';
 import { Hono } from 'hono';
 
@@ -27,9 +34,28 @@ interface RejectedEvent {
   errors: unknown;
 }
 
+function errorBody(
+  requestId: string,
+  code: string,
+  message: string,
+  details?: Record<string, unknown>,
+) {
+  return {
+    error: {
+      code,
+      message,
+      request_id: requestId,
+      ...(details !== undefined ? { details } : {}),
+    },
+  };
+}
+
 export const events = new Hono<{ Bindings: Env }>();
 
 events.post('/', async (c) => {
+  const span = trace.getActiveSpan();
+  const requestId = (c.get('requestId' as never) as string | undefined) ?? crypto.randomUUID();
+
   // 1. Auth — read API key + signature headers + body together (we need raw body for HMAC)
   const apiKey = c.req.header('X-Estalara-API-Key');
   const signature = c.req.header('X-Estalara-Signature');
@@ -37,43 +63,76 @@ events.post('/', async (c) => {
   // 2. Body size check (early reject via Content-Length, then re-check after read)
   const contentLength = c.req.header('Content-Length');
   if (contentLength && Number.parseInt(contentLength, 10) > MAX_BODY_BYTES) {
-    return c.json({ error: 'body_too_large', limit_bytes: MAX_BODY_BYTES }, 413);
+    return c.json(
+      errorBody(requestId, 'payload_too_large', 'Request body exceeds 1 MB limit', {
+        limit_bytes: MAX_BODY_BYTES,
+      }),
+      413,
+    );
   }
 
   let rawBody: string;
   try {
     rawBody = await c.req.text();
   } catch {
-    return c.json({ error: 'body_unreadable' }, 400);
+    return c.json(errorBody(requestId, 'validation_failed', 'Request body is unreadable'), 400);
   }
   if (rawBody.length > MAX_BODY_BYTES) {
-    return c.json({ error: 'body_too_large', limit_bytes: MAX_BODY_BYTES }, 413);
+    return c.json(
+      errorBody(requestId, 'payload_too_large', 'Request body exceeds 1 MB limit', {
+        limit_bytes: MAX_BODY_BYTES,
+      }),
+      413,
+    );
   }
 
   const auth = await authenticateRequest(apiKey, signature, rawBody, c.env.KV_API_KEYS);
   if (!auth.ok) {
-    return c.json({ error: 'unauthorized', reason: auth.reason }, 401);
+    return c.json(
+      errorBody(requestId, 'unauthorized', 'Authentication failed', { reason: auth.reason }),
+      401,
+    );
   }
+
+  const tenantId = auth.tenant_id;
+  span?.setAttribute('estalara.tenant_id', tenantId);
 
   // 3. Parse JSON
   let body: unknown;
   try {
     body = JSON.parse(rawBody);
   } catch {
-    return c.json({ error: 'invalid_json' }, 400);
+    return c.json(errorBody(requestId, 'validation_failed', 'Request body is not valid JSON'), 400);
   }
   if (typeof body !== 'object' || body === null || !('events' in body)) {
-    return c.json({ error: 'events_field_required' }, 400);
+    return c.json(
+      errorBody(requestId, 'validation_failed', "Request body must contain an 'events' array"),
+      400,
+    );
   }
   const eventsField = body.events;
   if (!Array.isArray(eventsField)) {
-    return c.json({ error: 'events_must_be_array' }, 400);
+    return c.json(
+      errorBody(requestId, 'validation_failed', "'events' field must be an array"),
+      400,
+    );
   }
   if (eventsField.length === 0) {
-    return c.json({ error: 'events_empty' }, 400);
+    return c.json(
+      errorBody(requestId, 'validation_failed', "'events' array must not be empty"),
+      400,
+    );
   }
   if (eventsField.length > MAX_BATCH_SIZE) {
-    return c.json({ error: 'batch_too_large', limit: MAX_BATCH_SIZE }, 413);
+    return c.json(
+      errorBody(
+        requestId,
+        'payload_too_large',
+        `Batch exceeds ${String(MAX_BATCH_SIZE)}-event limit`,
+        { limit: MAX_BATCH_SIZE },
+      ),
+      413,
+    );
   }
 
   // 4. Per-tenant rate limit (sliding-window via Durable Object). Whole-batch decision: a batch
@@ -84,12 +143,12 @@ events.post('/', async (c) => {
     const retryAfterSeconds = Math.max(1, Math.ceil((rate.reset_at - Date.now()) / 1000));
     c.header('Retry-After', String(retryAfterSeconds));
     return c.json(
-      {
-        error: 'rate_limited',
-        limit: rate.limit,
-        remaining: rate.remaining,
-        reset_at: rate.reset_at,
-      },
+      errorBody(
+        requestId,
+        'rate_limited',
+        'Rate limit exceeded — retry after the indicated window',
+        { limit: rate.limit, remaining: rate.remaining, reset_at: rate.reset_at },
+      ),
       429,
     );
   }
@@ -97,7 +156,6 @@ events.post('/', async (c) => {
   // 5. Validate + enrich each event
   const region = mapCountryToRegion(c.req.header('CF-IPCountry'));
   const ingestReceivedAt = Date.now();
-  const tenantId = auth.tenant_id;
 
   const validated: Record<string, unknown>[] = [];
   const rejected: RejectedEvent[] = [];
@@ -118,17 +176,16 @@ events.post('/', async (c) => {
     });
   }
 
-  // 5. Push to Redpanda (skip if everything was rejected)
+  // 6. Push to Redpanda (skip if everything was rejected)
   const batchId = crypto.randomUUID();
   if (validated.length > 0) {
     const push = await pushToRedpanda(validated, c.env);
     if (!push.ok) {
       return c.json(
-        {
-          error: 'redpanda_unavailable',
+        errorBody(requestId, 'redpanda_unavailable', 'Failed to publish events to message bus', {
           attempts: push.attempts,
           ...(push.status !== undefined ? { upstream_status: push.status } : {}),
-        },
+        }),
         503,
       );
     }

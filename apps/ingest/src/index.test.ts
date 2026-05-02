@@ -90,6 +90,7 @@ function makeEnv(options: MakeEnvOptions = {}): Env {
       store: options.kvStore ?? {},
       fail: options.kvFail ?? false,
     }),
+    KV_IDEMPOTENCY: mockKv(),
     RATE_LIMITER: mockRateLimiter(options.rateLimit ?? 'allow'),
   };
 }
@@ -179,8 +180,9 @@ describe('POST /v1/events — auth', () => {
       env,
     );
     expect(res.status).toBe(401);
-    const body = await readJson<{ reason: string }>(res);
-    expect(body.reason).toBe('missing_key');
+    const body = await readJson<{ error: { code: string; details?: { reason: string } } }>(res);
+    expect(body.error.code).toBe('unauthorized');
+    expect(body.error.details?.reason).toBe('missing_key');
   });
 
   it('rejects with 401 when API key is unknown', async () => {
@@ -198,8 +200,9 @@ describe('POST /v1/events — auth', () => {
       env,
     );
     expect(res.status).toBe(401);
-    const body = await readJson<{ reason: string }>(res);
-    expect(body.reason).toBe('unknown_key');
+    const body = await readJson<{ error: { code: string; details?: { reason: string } } }>(res);
+    expect(body.error.code).toBe('unauthorized');
+    expect(body.error.details?.reason).toBe('unknown_key');
   });
 
   it('returns 401 when KV lookup fails', async () => {
@@ -217,8 +220,9 @@ describe('POST /v1/events — auth', () => {
       env,
     );
     expect(res.status).toBe(401);
-    const body = await readJson<{ reason: string }>(res);
-    expect(body.reason).toBe('kv_error');
+    const body = await readJson<{ error: { code: string; details?: { reason: string } } }>(res);
+    expect(body.error.code).toBe('unauthorized');
+    expect(body.error.details?.reason).toBe('kv_error');
   });
 });
 
@@ -235,8 +239,8 @@ describe('POST /v1/events — body shape', () => {
       env,
     );
     expect(res.status).toBe(400);
-    const body = await readJson<{ error: string }>(res);
-    expect(body.error).toBe('invalid_json');
+    const body = await readJson<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('validation_failed');
   });
 
   it('returns 400 when events field missing', async () => {
@@ -265,8 +269,8 @@ describe('POST /v1/events — body shape', () => {
       env,
     );
     expect(res.status).toBe(400);
-    const body = await readJson<{ error: string }>(res);
-    expect(body.error).toBe('events_empty');
+    const body = await readJson<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('validation_failed');
   });
 
   it('returns 413 when batch exceeds 1000 events', async () => {
@@ -400,9 +404,9 @@ describe('POST /v1/events — Redpanda failure', () => {
         env,
       );
       expect(res.status).toBe(503);
-      const body = await readJson<{ error: string; attempts: number }>(res);
-      expect(body.error).toBe('redpanda_unavailable');
-      expect(body.attempts).toBe(3);
+      const body = await readJson<{ error: { code: string; details?: { attempts: number } } }>(res);
+      expect(body.error.code).toBe('redpanda_unavailable');
+      expect(body.error.details?.attempts).toBe(3);
     } finally {
       stub.restore();
     }
@@ -422,8 +426,8 @@ describe('POST /v1/events — Redpanda failure', () => {
         env,
       );
       expect(res.status).toBe(503);
-      const body = await readJson<{ attempts: number }>(res);
-      expect(body.attempts).toBe(1);
+      const body = await readJson<{ error: { details?: { attempts: number } } }>(res);
+      expect(body.error.details?.attempts).toBe(1);
     } finally {
       stub.restore();
     }
@@ -436,9 +440,9 @@ describe('GET unmatched route', () => {
     const env = makeEnv();
     const res = await app.fetch(new Request('http://test/nope'), env);
     expect(res.status).toBe(404);
-    const body = await readJson<{ error: string; path: string }>(res);
-    expect(body.error).toBe('not_found');
-    expect(body.path).toBe('/nope');
+    const body = await readJson<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('not_found');
+    expect(body.error.message).toContain('/nope');
   });
 });
 
@@ -462,15 +466,12 @@ describe('POST /v1/events — rate limiting', () => {
     const retryAfter = Number.parseInt(res.headers.get('Retry-After') ?? '0', 10);
     expect(retryAfter).toBeGreaterThan(0);
     const body = await readJson<{
-      error: string;
-      limit: number;
-      remaining: number;
-      reset_at: number;
+      error: { code: string; details?: { limit: number; remaining: number; reset_at: number } };
     }>(res);
-    expect(body.error).toBe('rate_limited');
-    expect(body.limit).toBe(50_000);
-    expect(body.remaining).toBe(0);
-    expect(body.reset_at).toBeGreaterThan(Date.now() - 1000);
+    expect(body.error.code).toBe('rate_limited');
+    expect(body.error.details?.limit).toBe(50_000);
+    expect(body.error.details?.remaining).toBe(0);
+    expect(body.error.details?.reset_at).toBeGreaterThan(Date.now() - 1000);
   });
 
   it('integration: 50 batches of 100 events under 10k cap succeed; 51st fails', async () => {

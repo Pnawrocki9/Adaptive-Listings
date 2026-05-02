@@ -78,6 +78,16 @@ function mockKv(store: Record<string, string | null> = {}): Env['KV_API_KEYS'] {
   } as unknown as Env['KV_API_KEYS'];
 }
 
+function mockIdempotencyKv(): Env['KV_IDEMPOTENCY'] {
+  return {
+    get: () => Promise.resolve(null),
+    put: () => Promise.resolve(),
+    delete: () => Promise.resolve(),
+    list: () => Promise.resolve({ keys: [], list_complete: true } as never),
+    getWithMetadata: () => Promise.resolve({ value: null, metadata: null } as never),
+  } as unknown as Env['KV_IDEMPOTENCY'];
+}
+
 function mockRateLimiterAllow(): Env['RATE_LIMITER'] {
   const stub = {
     fetch: () => {
@@ -145,6 +155,7 @@ describe('events handler — OTel span attributes (AC2)', () => {
         REDPANDA_REST_URL: 'http://mock-redpanda',
         REDPANDA_TOPIC_EVENTS: 'events',
         KV_API_KEYS: mockKv({ 'api_key:k1': VALID_KEY_RECORD }),
+        KV_IDEMPOTENCY: mockIdempotencyKv(),
         RATE_LIMITER: mockRateLimiterAllow(),
       };
 
@@ -200,6 +211,7 @@ describe('events handler — OTel span attributes (AC2)', () => {
       REDPANDA_REST_URL: 'http://mock-redpanda',
       REDPANDA_TOPIC_EVENTS: 'events',
       KV_API_KEYS: mockKv({ 'api_key:k1': VALID_KEY_RECORD }),
+      KV_IDEMPOTENCY: mockIdempotencyKv(),
       RATE_LIMITER: rateLimiterDeny,
     };
 
@@ -235,6 +247,7 @@ describe('events handler — OTel span attributes (AC2)', () => {
         REDPANDA_REST_URL: 'http://mock-redpanda',
         REDPANDA_TOPIC_EVENTS: 'events',
         KV_API_KEYS: mockKv({ 'api_key:k1': VALID_KEY_RECORD }),
+        KV_IDEMPOTENCY: mockIdempotencyKv(),
         RATE_LIMITER: mockRateLimiterAllow(),
       };
 

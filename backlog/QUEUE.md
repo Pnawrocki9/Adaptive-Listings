@@ -263,10 +263,11 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-019
   title: HTTP error handling + idempotency contract (event_id deduplication)
   agent: backend-engineer
-  status: READY
+  status: IN_REVIEW
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-012]
+  pr: '#23'
   spec: backlog/sprint-1/TICKET-019.md
 ```
 

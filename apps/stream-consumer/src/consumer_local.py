@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import clickhouse_connect
 from kafka import KafkaConsumer
@@ -52,7 +52,7 @@ def _parse_ch_url(url: str) -> tuple[str, int]:
 
 def _ms_to_dt(ms: object) -> datetime:
     ts = int(ms) if ms else 0
-    return datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc)
+    return datetime.fromtimestamp(ts / 1000.0, tz=UTC)
 
 
 def _event_to_row(event: dict) -> list:

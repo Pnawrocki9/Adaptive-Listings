@@ -230,10 +230,15 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-015
   title: Stream consumer Modal scaffold (Redpanda subscribe → ClickHouse insert)
   agent: data-engineer
-  status: BLOCKED
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 6
   depends_on: [TICKET-014, TICKET-012]
+  started_at: '2026-05-03T00:00:00Z'
+  pr: '#28'
+  note: >
+    25/25 unit tests pass locally. ClickHouse Cloud credentials pending vendor-accounts-escalation —
+    integration test and Modal deploy blocked until CLICKHOUSE_HOST et al. are provisioned.
   spec: backlog/sprint-1/TICKET-015.md
 
 - id: TICKET-016

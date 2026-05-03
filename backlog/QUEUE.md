@@ -235,10 +235,12 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-016
   title: End-to-end smoke test (curl ingest → ClickHouse query)
   agent: qa-engineer
-  status: BLOCKED
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-015]
+  started_at: '2026-05-03T00:00:00Z'
+  pr: '#26'
   spec: backlog/sprint-1/TICKET-016.md
 
 - id: TICKET-017

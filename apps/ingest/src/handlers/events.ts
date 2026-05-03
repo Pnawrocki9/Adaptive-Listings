@@ -111,7 +111,7 @@ events.post('/', async (c) => {
       400,
     );
   }
-  const eventsField = (body).events;
+  const eventsField = body.events;
   if (!Array.isArray(eventsField)) {
     return c.json(
       errorBody(requestId, 'validation_failed', "'events' field must be an array"),
@@ -211,6 +211,14 @@ events.post('/', async (c) => {
       );
     }
   }
+
+  span?.setAttributes({
+    'estalara.tenant_id': tenantId,
+    'estalara.batch_size': eventsField.length,
+    'estalara.region': region,
+    'estalara.validation_failures': rejected.length,
+    'estalara.rate_limited': false,
+  });
 
   logger.info(
     {

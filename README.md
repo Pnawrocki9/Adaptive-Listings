@@ -177,18 +177,24 @@ git push origin v1.2.3
 
 See `docs/runbooks/` for incident response, rollback procedures, and SLO definitions.
 
-Terraform infrastructure is in `infra/terraform/`. Apply via:
+Terraform infrastructure is in `infra/terraform/`. Modules are organised per vendor. Apply via:
 
 ```bash
-# Staging (automatic via CI on merge)
-cd infra/terraform/staging
-terragrunt apply
+# Select environment workspace first (eu / us / uk / uae)
+cd infra/terraform/supabase
+terraform workspace select eu
 
-# Production (human-gated)
-cd infra/terraform/production
-terragrunt plan   # review
-terragrunt apply  # requires approval
+# Apply a specific vendor module (e.g. Supabase)
+terraform apply \
+  -var="supabase_access_token=$(doppler secrets get SUPABASE_ACCESS_TOKEN --plain)" \
+  -var="organization_id=$(doppler secrets get SUPABASE_ORG_ID --plain)" \
+  -var="db_password=$(doppler secrets get SUPABASE_DB_PASSWORD --plain)"
+
+# Validate all modules at once
+cd infra/terraform && ./validate-all.sh
 ```
+
+See `infra/README.md` for the full provisioning runbook and cost breakdown per vendor.
 
 ---
 

@@ -236,33 +236,29 @@ jobs:
   clickhouse-smoke:
     name: ClickHouse migrations smoke
     runs-on: ubuntu-latest
-    # Only run when ClickHouse infra files change — migrations are slow to boot.
-    if: |
-      github.event_name == 'pull_request' &&
-      contains(toJson(github.event.pull_request.labels.*.name), 'data') ||
-      github.event_name == 'push'
     services:
       clickhouse:
         image: clickhouse/clickhouse-server:latest
         ports:
           - 8123:8123
-        options: >-
-          --health-cmd "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"
-          --health-interval 5s
-          --health-timeout 10s
-          --health-retries 12
-          --health-start-period 15s
     steps:
       - uses: actions/checkout@v4
 
+      - name: Wait for ClickHouse
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8123/ping && break
+            echo "  waiting... ($i/30)"
+            sleep 3
+          done
+          curl -sf http://localhost:8123/ping
+
       - name: Apply migrations (LOCAL=1 → MergeTree)
         run: |
-          chmod +x infra/clickhouse/scripts/migrate.sh
           LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
             ./infra/clickhouse/scripts/migrate.sh
 
       - name: Run smoke test
         run: |
-          chmod +x infra/clickhouse/scripts/smoke-test.sh
           LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
             ./infra/clickhouse/scripts/smoke-test.sh

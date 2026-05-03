@@ -1,0 +1,32 @@
+name: "estalara_clickhouse"
+version: "1.0.0"
+config-version: 2
+
+# Profile name must match a key in profiles.yml (or profiles.yml.example for dev).
+profile: "estalara_clickhouse"
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  estalara_clickhouse:
+    # Default: materialise as ClickHouse table. Override per-model as needed.
+    +materialized: table
+    +schema: default
+
+    # Aggregation / rollup models go here once Sprint 4 adds them.
+    # analytics:
+    #   +materialized: materialized_view
+
+vars:
+  # Default TTL used in models that reference it.
+  default_ttl_months: 13

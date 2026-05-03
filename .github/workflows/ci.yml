@@ -231,3 +231,34 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: "false"
+
+  # ── ClickHouse migrations smoke test ─────────────────────────────────────
+  clickhouse-smoke:
+    name: ClickHouse migrations smoke
+    runs-on: ubuntu-latest
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:latest
+        ports:
+          - 8123:8123
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for ClickHouse
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8123/ping && break
+            echo "  waiting... ($i/30)"
+            sleep 3
+          done
+          curl -sf http://localhost:8123/ping
+
+      - name: Apply migrations (LOCAL=1 → MergeTree)
+        run: |
+          LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
+            ./infra/clickhouse/scripts/migrate.sh
+
+      - name: Run smoke test
+        run: |
+          LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
+            ./infra/clickhouse/scripts/smoke-test.sh

@@ -4,11 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "estalara-stream-consumer"
-version = "0.0.0"
+version = "0.1.0"
 description = "Estalara stream-consumer — Modal serverless Python service"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "confluent-kafka>=2.5",
+  "clickhouse-connect>=0.8",
+  "pydantic>=2.0",
+  "modal>=0.73",
+  "structlog>=24.0",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -17,7 +23,12 @@ dev = [
   "mypy>=1.9.0",
   "ruff>=0.4.0",
   "black>=24.0.0",
+  "freezegun>=1.4.0",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
 
 [tool.black]
 line-length = 100
@@ -26,6 +37,8 @@ target-version = ["py312"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 
 [tool.mypy]
@@ -37,3 +50,6 @@ ignore_missing_imports = true
 testpaths = ["src"]
 python_files = ["test_*.py", "*_test.py"]
 asyncio_mode = "auto"
+markers = [
+  "integration: requires docker-compose services (skip with '-m not integration')",
+]

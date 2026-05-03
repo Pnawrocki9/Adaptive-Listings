@@ -216,11 +216,15 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-014
   title: ClickHouse table DDL + first migration (events table partitioned)
   agent: data-engineer
-  status: BLOCKED
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-009, TICKET-011]
-  blocked_by: vendor-accounts-escalation
+  started_at: '2026-05-03T00:00:00Z'
+  pr: '#27'
+  note: >
+    DDL + scripts production-ready. ClickHouse Cloud credentials pending vendor-accounts-escalation
+    — cannot test against live cluster until provisioned. CI smoke test uses LOCAL=1 MergeTree mode.
   spec: backlog/sprint-1/TICKET-014.md
 
 - id: TICKET-015

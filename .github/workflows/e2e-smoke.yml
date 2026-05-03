@@ -1,0 +1,111 @@
+name: E2E Smoke Test
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC nightly
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: ingest → clickhouse smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Start Docker services
+        working-directory: tests/e2e
+        run: docker compose up -d --build
+
+      - name: Wait for ClickHouse
+        run: |
+          echo "Waiting for ClickHouse..."
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8123/ping && echo " ClickHouse ready" && break
+            echo "  attempt $i/30..."
+            sleep 3
+          done
+          curl -sf http://localhost:8123/ping || (echo "ClickHouse never became ready" && exit 1)
+
+      - name: Wait for Redpanda
+        run: |
+          echo "Waiting for Redpanda..."
+          for i in $(seq 1 30); do
+            docker compose -f tests/e2e/docker-compose.yml exec -T redpanda \
+              rpk cluster info --brokers=redpanda:9092 2>/dev/null && \
+              echo " Redpanda ready" && break
+            echo "  attempt $i/30..."
+            sleep 3
+          done
+
+      - name: Seed API key in wrangler local KV
+        working-directory: apps/ingest
+        run: |
+          pnpm exec wrangler kv key put \
+            --local \
+            --namespace-id=PLACEHOLDER_KV_API_KEYS_PREVIEW_ID \
+            "api_key:pk_test_smoke" \
+            '{"tenant_id":"a0000000-0000-0000-0000-000000000001","scopes":["write:events"]}'
+        env:
+          CI: "true"
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Start wrangler dev (background)
+        working-directory: apps/ingest
+        run: |
+          pnpm exec wrangler dev \
+            --port 8787 \
+            --var REDPANDA_REST_URL:http://localhost:18082 \
+            --var ENVIRONMENT:e2e \
+            --no-bundle=false \
+            &
+          echo $! > /tmp/wrangler.pid
+        env:
+          CI: "true"
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Wait for wrangler dev
+        run: |
+          echo "Waiting for wrangler dev..."
+          for i in $(seq 1 40); do
+            curl -sf http://localhost:8787/health && echo " wrangler dev ready" && break
+            echo "  attempt $i/40..."
+            sleep 2
+          done
+          curl -sf http://localhost:8787/health || \
+            (echo "wrangler dev never became ready" && cat /tmp/wrangler.pid && exit 1)
+
+      - name: Run E2E smoke test
+        run: pnpm e2e:smoke
+        env:
+          INGEST_URL: http://localhost:8787
+          CLICKHOUSE_URL: http://localhost:8123
+          API_KEY: pk_test_smoke
+
+      - name: Teardown
+        if: always()
+        run: |
+          kill "$(cat /tmp/wrangler.pid)" 2>/dev/null || true
+          docker compose -f tests/e2e/docker-compose.yml down --volumes --remove-orphans
+
+      - name: Notify Slack on failure
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_E2E_WEBHOOK_URL }}
+        run: |
+          curl -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\"🚨 E2E Smoke FAILED — <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|view run>\"}"

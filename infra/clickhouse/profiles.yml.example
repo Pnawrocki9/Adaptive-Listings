@@ -1,0 +1,45 @@
+# dbt connection profiles for estalara_clickhouse.
+#
+# Copy this file to ~/.dbt/profiles.yml (or infra/clickhouse/profiles.yml, which
+# is .gitignored) and fill in the real credentials from Doppler.
+#
+# Doppler secrets used:
+#   CLICKHOUSE_HOST, CLICKHOUSE_PORT, CLICKHOUSE_USER,
+#   CLICKHOUSE_PASSWORD, CLICKHOUSE_DATABASE
+#
+# Run via Doppler in CI:
+#   doppler run -- dbt run --profiles-dir infra/clickhouse
+#
+# Docs: https://docs.getdbt.com/docs/core/connect-data-platform/clickhouse-setup
+
+estalara_clickhouse:
+  target: clickhouse_cloud
+
+  outputs:
+    # ── Production / Staging (ClickHouse Cloud) ────────────────────────────
+    clickhouse_cloud:
+      type: clickhouse
+      host: "{{ env_var('CLICKHOUSE_HOST') }}"
+      port: "{{ env_var('CLICKHOUSE_PORT', '8443') | int }}"
+      user: "{{ env_var('CLICKHOUSE_USER') }}"
+      password: "{{ env_var('CLICKHOUSE_PASSWORD') }}"
+      database: "{{ env_var('CLICKHOUSE_DATABASE', 'default') }}"
+      schema: default
+      secure: true
+      verify: true
+      connect_timeout: 10
+      send_receive_timeout: 300
+
+    # ── Local Docker (for development and CI smoke tests) ─────────────────
+    local:
+      type: clickhouse
+      host: localhost
+      port: 8123
+      user: default
+      password: ''
+      database: default
+      schema: default
+      secure: false
+      verify: false
+      connect_timeout: 10
+      send_receive_timeout: 60

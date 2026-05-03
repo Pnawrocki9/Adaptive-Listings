@@ -1,0 +1,795 @@
+[
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000001",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259200000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "page.view",
+    "listing_id": "listing-warsaw-001",
+    "payload": {
+      "url": "https://example.com/properties/listing-warsaw-001",
+      "viewport": { "width": 1440, "height": 900 },
+      "device_class": "desktop"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000002",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259201000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "page.view",
+    "listing_id": "listing-warsaw-002",
+    "payload": {
+      "url": "https://example.com/properties/listing-warsaw-002",
+      "viewport": { "width": 1440, "height": 900 },
+      "device_class": "desktop"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000003",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259202000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "page.view",
+    "listing_id": "listing-warsaw-003",
+    "payload": {
+      "url": "https://example.com/properties/listing-warsaw-003",
+      "referrer": "https://example.com/search",
+      "viewport": { "width": 1440, "height": 900 },
+      "device_class": "desktop"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000004",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259203000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "page.view",
+    "listing_id": "listing-warsaw-004",
+    "payload": {
+      "url": "https://example.com/properties/listing-warsaw-004",
+      "viewport": { "width": 390, "height": 844 },
+      "device_class": "mobile"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000005",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259204000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "page.view",
+    "listing_id": "listing-warsaw-005",
+    "payload": {
+      "url": "https://example.com/properties/listing-warsaw-005",
+      "viewport": { "width": 1280, "height": 800 },
+      "device_class": "desktop"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000006",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259205000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "page.view",
+    "listing_id": "listing-krakow-001",
+    "payload": {
+      "url": "https://example.com/properties/listing-krakow-001",
+      "viewport": { "width": 768, "height": 1024 },
+      "device_class": "tablet"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000007",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259206000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "page.view",
+    "listing_id": "listing-krakow-002",
+    "payload": {
+      "url": "https://example.com/properties/listing-krakow-002",
+      "viewport": { "width": 768, "height": 1024 },
+      "device_class": "tablet"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000008",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259207000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "page.view",
+    "listing_id": "listing-krakow-003",
+    "payload": {
+      "url": "https://example.com/properties/listing-krakow-003",
+      "referrer": "https://google.com/search",
+      "viewport": { "width": 768, "height": 1024 },
+      "device_class": "tablet"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000009",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259208000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "page.view",
+    "listing_id": "listing-krakow-004",
+    "payload": {
+      "url": "https://example.com/properties/listing-krakow-004",
+      "viewport": { "width": 1920, "height": 1080 },
+      "device_class": "desktop"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000010",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259209000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "page.view",
+    "listing_id": "listing-krakow-005",
+    "payload": {
+      "url": "https://example.com/properties/listing-krakow-005",
+      "viewport": { "width": 1920, "height": 1080 },
+      "device_class": "desktop"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000011",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259210000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "photo.opened",
+    "listing_id": "listing-warsaw-001",
+    "payload": {
+      "photo_id": "p_w001_001",
+      "position": 0,
+      "total": 18,
+      "category": "exterior"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000012",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259211000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "photo.opened",
+    "listing_id": "listing-warsaw-001",
+    "payload": {
+      "photo_id": "p_w001_002",
+      "position": 1,
+      "total": 18,
+      "category": "living_room"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000013",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259212000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "photo.opened",
+    "listing_id": "listing-warsaw-001",
+    "payload": {
+      "photo_id": "p_w001_003",
+      "position": 2,
+      "total": 18,
+      "category": "kitchen"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000014",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259213000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "photo.opened",
+    "listing_id": "listing-warsaw-002",
+    "payload": {
+      "photo_id": "p_w002_001",
+      "position": 0,
+      "total": 12,
+      "category": "exterior"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000015",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259214000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "photo.opened",
+    "listing_id": "listing-warsaw-002",
+    "payload": {
+      "photo_id": "p_w002_002",
+      "position": 1,
+      "total": 12,
+      "category": "bedroom"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000016",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259215000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "photo.opened",
+    "listing_id": "listing-krakow-001",
+    "payload": {
+      "photo_id": "p_k001_001",
+      "position": 0,
+      "total": 24,
+      "category": "exterior"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000017",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259216000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "photo.opened",
+    "listing_id": "listing-krakow-001",
+    "payload": {
+      "photo_id": "p_k001_002",
+      "position": 1,
+      "total": 24,
+      "category": "living_room"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000018",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259217000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "photo.opened",
+    "listing_id": "listing-krakow-002",
+    "payload": {
+      "photo_id": "p_k002_001",
+      "position": 0,
+      "total": 15
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000019",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259218000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "photo.opened",
+    "listing_id": "listing-krakow-002",
+    "payload": {
+      "photo_id": "p_k002_002",
+      "position": 1,
+      "total": 15,
+      "category": "bathroom"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000020",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259219000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "photo.opened",
+    "listing_id": "listing-krakow-003",
+    "payload": {
+      "photo_id": "p_k003_001",
+      "position": 0,
+      "total": 9,
+      "category": "exterior"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000021",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259220000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "scroll.depth",
+    "listing_id": "listing-warsaw-001",
+    "payload": {
+      "pct": 25,
+      "viewport_height": 900,
+      "page_height": 4200
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000022",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259221000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "scroll.depth",
+    "listing_id": "listing-warsaw-001",
+    "payload": {
+      "pct": 50,
+      "viewport_height": 900,
+      "page_height": 4200
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000023",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259222000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "scroll.depth",
+    "listing_id": "listing-warsaw-002",
+    "payload": {
+      "pct": 75,
+      "viewport_height": 900,
+      "page_height": 3600
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000024",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259223000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "scroll.depth",
+    "listing_id": "listing-warsaw-002",
+    "payload": {
+      "pct": 90
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000025",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259224000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "scroll.depth",
+    "listing_id": "listing-warsaw-003",
+    "payload": {
+      "pct": 100,
+      "viewport_height": 900,
+      "page_height": 5100
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000026",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259225000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "scroll.depth",
+    "listing_id": "listing-krakow-001",
+    "payload": {
+      "pct": 25,
+      "viewport_height": 1024,
+      "page_height": 3800
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000027",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259226000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "scroll.depth",
+    "listing_id": "listing-krakow-001",
+    "payload": {
+      "pct": 50,
+      "viewport_height": 1024,
+      "page_height": 3800
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000028",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259227000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "scroll.depth",
+    "listing_id": "listing-krakow-002",
+    "payload": {
+      "pct": 75
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000029",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259228000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "scroll.depth",
+    "listing_id": "listing-krakow-002",
+    "payload": {
+      "pct": 90,
+      "viewport_height": 1024,
+      "page_height": 4500
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000030",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259229000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "scroll.depth",
+    "listing_id": "listing-krakow-003",
+    "payload": {
+      "pct": 100,
+      "viewport_height": 1024,
+      "page_height": 2900
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000031",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259230000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "chat.message.sent",
+    "listing_id": "listing-warsaw-001",
+    "payload": {
+      "message": "Looking for 3-bed near international schools, is this one close?",
+      "char_count": 64,
+      "locale": "en-GB"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000032",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259231000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "chat.message.sent",
+    "listing_id": "listing-warsaw-001",
+    "payload": {
+      "message": "Is there parking available for two cars?",
+      "char_count": 39,
+      "locale": "en-GB"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000033",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259232000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "chat.message.sent",
+    "listing_id": "listing-warsaw-001",
+    "payload": {
+      "message": "What is the commute time to the city center?",
+      "char_count": 43,
+      "locale": "en-GB"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000034",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259233000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "chat.message.sent",
+    "listing_id": "listing-warsaw-002",
+    "payload": {
+      "message": "Does this have a balcony with south exposure?",
+      "char_count": 45,
+      "locale": "en-GB"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000035",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259234000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "chat.message.sent",
+    "listing_id": "listing-warsaw-002",
+    "payload": {
+      "message": "What floor is this apartment on?",
+      "char_count": 31,
+      "locale": "en-GB"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000036",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259235000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "chat.message.sent",
+    "listing_id": "listing-krakow-001",
+    "payload": {
+      "message": "My budget is max 500 000 PLN, do you have anything in that range?",
+      "char_count": 64,
+      "locale": "pl-PL"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000037",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259236000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "chat.message.sent",
+    "listing_id": "listing-krakow-001",
+    "payload": {
+      "message": "Is the building pet friendly?",
+      "char_count": 28,
+      "locale": "pl-PL"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000038",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259237000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "chat.message.sent",
+    "listing_id": "listing-krakow-002",
+    "payload": {
+      "message": "When can I schedule a viewing?",
+      "char_count": 29,
+      "locale": "pl-PL"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000039",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259238000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "chat.message.sent",
+    "listing_id": "listing-krakow-002",
+    "payload": {
+      "message": "Is there a gym or fitness center in the building?",
+      "char_count": 48,
+      "locale": "pl-PL"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000040",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259239000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "chat.message.sent",
+    "listing_id": "listing-krakow-003",
+    "payload": {
+      "message": "How many square meters is the terrace?",
+      "char_count": 37,
+      "locale": "pl-PL"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000041",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259240000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "inquiry.started",
+    "listing_id": "listing-warsaw-001",
+    "payload": {
+      "form_variant": "contact_v2"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000042",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259241000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "inquiry.started",
+    "listing_id": "listing-warsaw-002",
+    "payload": {
+      "form_variant": "contact_v2"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000043",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259242000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "inquiry.started",
+    "listing_id": "listing-warsaw-003",
+    "payload": {}
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000044",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259243000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "inquiry.started",
+    "listing_id": "listing-krakow-001",
+    "payload": {
+      "form_variant": "contact_v1"
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000045",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259244000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "inquiry.started",
+    "listing_id": "listing-krakow-002",
+    "payload": {}
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000046",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259245000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "page.exit",
+    "listing_id": "listing-warsaw-001",
+    "payload": {
+      "url": "https://example.com/properties/listing-warsaw-001",
+      "dwell_ms": 45200,
+      "scrolled_max_pct": 100
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000047",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259246000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "page.exit",
+    "listing_id": "listing-warsaw-002",
+    "payload": {
+      "url": "https://example.com/properties/listing-warsaw-002",
+      "dwell_ms": 28100,
+      "scrolled_max_pct": 75
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000048",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "aaaa000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259247000,
+    "region": "eu",
+    "consent_state": "consented",
+    "schema_version": 1,
+    "type": "page.exit",
+    "listing_id": "listing-warsaw-003",
+    "payload": {
+      "url": "https://example.com/properties/listing-warsaw-003",
+      "dwell_ms": 12500,
+      "scrolled_max_pct": 50
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000049",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259248000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "page.exit",
+    "listing_id": "listing-krakow-001",
+    "payload": {
+      "url": "https://example.com/properties/listing-krakow-001",
+      "dwell_ms": 38700,
+      "scrolled_max_pct": 90
+    }
+  },
+  {
+    "event_id": "e0000000-0000-0000-0000-000000000050",
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "session_id": "bbbb000000000000000000000000000000000000000000000000000000000001",
+    "ts": 1746259249000,
+    "region": "eu",
+    "consent_state": "legitimate-interest",
+    "schema_version": 1,
+    "type": "page.exit",
+    "listing_id": "listing-krakow-002",
+    "payload": {
+      "url": "https://example.com/properties/listing-krakow-002",
+      "dwell_ms": 19300,
+      "scrolled_max_pct": 60
+    }
+  }
+]

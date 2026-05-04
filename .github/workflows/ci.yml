@@ -36,7 +36,6 @@ jobs:
         uses: dopplerhq/cli-action@v3
 
       - name: Verify Doppler auth
-        if: ${{ secrets.DOPPLER_TOKEN_DEV != '' }}
         run: doppler me
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}

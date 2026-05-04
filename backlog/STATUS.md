@@ -2,7 +2,7 @@
 
 _This file is overwritten by `pm-orchestrator` after every loop iteration. Do not edit manually._
 
-# Status — 2026-05-04T08:45:00Z
+# Status — 2026-05-04T09:10:00Z
 
 ## Active
 
@@ -10,10 +10,10 @@ _This file is overwritten by `pm-orchestrator` after every loop iteration. Do no
 
 ## Ready for human review
 
-- **PR #31** (`fix(ci): build shared package before ingest deploy [ESCALATION]`) — adds
-  `pnpm --filter @estalara/shared build` step before ingest build in `deploy-staging.yml`. CI: "no
-  checks reported" (pre-existing workflow-file-issue). Change is trivially correct; needs human
-  merge.
+- **PR #31** (`fix(ci): build shared package before ingest deploy [ESCALATION]`) — MERGED ✓
+- **PR #32** (`fix(ci): disable auto deploy staging until infrastructure is ready [ESCALATION]`) —
+  switches deploy-staging.yml trigger to `workflow_dispatch`. Evidence: Deploy Staging fired and
+  failed 43s after PR #31 merged. PM-validated. Needs human merge.
 
 ## Blocked
 

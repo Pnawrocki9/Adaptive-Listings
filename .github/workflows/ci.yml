@@ -248,7 +248,7 @@ jobs:
           - 8123:8123
         env:
           CLICKHOUSE_USER: default
-          CLICKHOUSE_PASSWORD: ""
+          CLICKHOUSE_PASSWORD: clickhouse
     steps:
       - uses: actions/checkout@v4
 
@@ -262,11 +262,15 @@ jobs:
           curl -sf http://localhost:8123/ping
 
       - name: Apply migrations (LOCAL=1 → MergeTree)
+        env:
+          CLICKHOUSE_PASSWORD: clickhouse
         run: |
           LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
             ./infra/clickhouse/scripts/migrate.sh
 
       - name: Run smoke test
+        env:
+          CLICKHOUSE_PASSWORD: clickhouse
         run: |
           LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
             ./infra/clickhouse/scripts/smoke-test.sh

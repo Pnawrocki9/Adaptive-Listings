@@ -49,23 +49,38 @@ _ch_exec() {
   fi
 }
 
-_apply_file() {
-  local file="$1"
-  local sql
-  if [ "$LOCAL" = "1" ]; then
-    # Replace ReplicatedMergeTree with MergeTree for local single-node Docker.
-    sql="$(sed 's/ReplicatedMergeTree/MergeTree/g' "${file}")"
-  else
-    sql="$(cat "${file}")"
-  fi
+_ch_send() {
+  # Send a single SQL statement via HTTP. Reads from stdin.
   if [ -n "$CH_PASS" ]; then
-    echo "${sql}" | curl -sSf "${CLICKHOUSE_URL}" \
+    curl -sSf "${CLICKHOUSE_URL}" \
       -u "${CH_USER}:${CH_PASS}" \
       --data-binary @-
   else
-    echo "${sql}" | curl -sSf "${CLICKHOUSE_URL}" \
+    curl -sSf "${CLICKHOUSE_URL}" \
       --data-binary @-
   fi
+}
+
+_apply_file() {
+  local file="$1"
+  local content
+  if [ "$LOCAL" = "1" ]; then
+    # Replace ReplicatedMergeTree with MergeTree for local single-node Docker.
+    content="$(sed 's/ReplicatedMergeTree/MergeTree/g' "${file}")"
+  else
+    content="$(cat "${file}")"
+  fi
+  # ClickHouse HTTP processes one query per request. Split the file on statement
+  # boundaries (lines ending with ";") and execute each statement individually.
+  local stmt=""
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[[:space:]]*-- ]] && continue  # skip comment-only lines
+    stmt+="${line}"$'\n'
+    if [[ "$line" =~ \;[[:space:]]*$ ]]; then
+      printf '%s' "$stmt" | _ch_send
+      stmt=""
+    fi
+  done <<< "$content"
 }
 
 for f in "${MIGRATIONS_DIR}"/*.sql; do

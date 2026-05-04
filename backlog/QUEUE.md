@@ -1,6 +1,6 @@
 # Backlog Queue
 
-**Updated 2026-05-04T10:58Z by pm-orchestrator.** CI escalation resolved — CI green on main.
+**Updated 2026-05-04T15:15Z by pm-orchestrator.** TICKET-017 + TICKET-020 READY_FOR_REVIEW.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -25,8 +25,8 @@ updates.
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
 | 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 9    | 0       | 0     | 0       |
-| 1      | 2     | Ingest baseline + event schema                                       | 10      | 10   | 0       | 0     | 0       |
-| 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 1    | 0       | 0     | 9       |
+| 1      | 2     | Ingest baseline + event schema                                       | 10      | 9    | 0       | 0     | 0       |
+| 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 1    | 0       | 0     | 8       |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
 | 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 0    | 0       | 0     | 10      |
 | 4      | 6     | Intent ontology v1 + Modal scaffolding                               | tbd     | —    | —       | —     | tbd     |
@@ -252,10 +252,13 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-017
   title: Ingest load test 10K req/s (k6 scripts)
   agent: qa-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 4
   depends_on: [TICKET-016]
+  assigned_to: qa-engineer
+  started_at: '2026-05-04T12:00:00Z'
+  pr: '#37'
   spec: backlog/sprint-1/TICKET-017.md
 
 - id: TICKET-018
@@ -287,11 +290,13 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-020
   title: Drizzle ORM setup + migrations folder structure + tooling
   agent: backend-engineer
-  status: BLOCKED
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-009]
-  blocked_by: vendor-accounts-escalation
+  assigned_to: backend-engineer
+  started_at: '2026-05-04T12:00:00Z'
+  pr: '#36'
   spec: backlog/sprint-2/TICKET-020.md
 
 - id: TICKET-021
@@ -385,7 +390,8 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Awaiting human review
 
-(none — Sprint 1 complete, Sprint 2 blocked on vendor accounts)
+- TICKET-017 (PR #37) — k6 ingest load tests (baseline + stress). CI green, PM-validated.
+- TICKET-020 (PR #36) — Drizzle ORM setup in packages/db/. CI green, PM-validated.
 
 ## Recent merges
 

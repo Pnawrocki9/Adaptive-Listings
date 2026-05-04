@@ -2,7 +2,12 @@
 
 _This file is overwritten by `pm-orchestrator` after every loop iteration. Do not edit manually._
 
-# Status — 2026-05-04T09:10:00Z
+# Status — 2026-05-04T10:58:00Z
+
+## 🎉 CI escalation RESOLVED
+
+PR #34 merged. CI is now **green on main** (run #25315111966, `completed success`). The GitHub
+Actions workflow-file-issue escalation is closed.
 
 ## Active
 
@@ -10,58 +15,38 @@ _This file is overwritten by `pm-orchestrator` after every loop iteration. Do no
 
 ## Ready for human review
 
-- **PR #31** (`fix(ci): build shared package before ingest deploy [ESCALATION]`) — MERGED ✓
-- **PR #32** (`fix(ci): disable auto deploy staging until infrastructure is ready [ESCALATION]`) —
-  switches deploy-staging.yml trigger to `workflow_dispatch`. Evidence: Deploy Staging fired and
-  failed 43s after PR #31 merged. PM-validated. Needs human merge.
+- **PR #32** (`fix(ci): disable auto deploy staging`) — MERGED ✓ (already on main)
+- All Sprint 1 + recent CI fix PRs merged.
 
-## Blocked
+## LOOP STOPPED — 1 open escalation remains
 
-- TICKET-017 (qa-engineer) — status **READY**, held from delegation until GitHub Actions CI
-  escalation is resolved. Does NOT require vendor accounts.
-- TICKET-020 through TICKET-029 (except TICKET-025 DONE) — all Sprint 2 Postgres/auth tickets
-  blocked by `vendor-accounts-escalation`
+### Vendor Account Creation (`vendor-accounts-escalation`)
 
-## Sprint 0 progress — COMPLETE
+**Blocks:** TICKET-020 through TICKET-029 (entire Postgres/auth path of Sprint 2)
 
-- 9/9 tickets DONE
+**Action needed:** Create Supabase, ClickHouse Cloud, Modal, Redpanda Cloud, and Upstash accounts;
+store credentials in Doppler. Full runbook: `docs/runbooks/vendor-accounts.md`. ~2–3h, free tiers.
 
-## Sprint 1 progress — COMPLETE ✓
+## Next delegation (as soon as vendor escalation is resolved or bypassed)
 
-- 10/10 tickets DONE
-- Delivered: Zod event schemas (74 tests), Cloudflare ingest Worker (47 tests), Durable Object rate
-  limiter (18 tests), ClickHouse DDL + migrations, Modal stream consumer (25 tests), E2E smoke test
-  (Docker stack), OTel/Sentry observability, error handling + idempotency.
+**TICKET-017** — Ingest load test 10K req/s (qa-engineer, 4h, Sprint 1, no vendor dependencies)
 
-## Sprint 2 progress — 1/10
+Sprint 1 dependency (TICKET-016) is DONE. CI is now green. This ticket is unblocked by the vendor
+accounts escalation and was only held pending CI being green.
 
-- 1 DONE: TICKET-025 (control-plane Next.js skeleton, PR #20)
-- 9 BLOCKED: all Postgres/auth tickets depend on Supabase vendor account
-  (vendor-accounts-escalation)
+**TICKET-020** — Drizzle ORM setup (backend-engineer, Sprint 2 critical path entry) — needs
+Supabase.
 
-## Open escalations — LOOP STOPPED — human action required
+## Sprint 0 — COMPLETE (9/9)
 
-### 1. Vendor Account Creation (vendor-accounts-escalation)
+## Sprint 1 — COMPLETE ✓ (10/10)
 
-**Blocks:** TICKET-020–029 (entire Postgres/auth path of Sprint 2) **Action needed:** Create
-Supabase, ClickHouse Cloud, Modal, Redpanda Cloud, Upstash accounts; store credentials in Doppler.
-Full runbook in `docs/runbooks/vendor-accounts.md`. Estimated: 2–3 hours, no immediate payment
-required (all have free tiers).
+Delivered: event schemas, ingest Worker, DO rate limiter, ClickHouse DDL, Modal stream consumer, E2E
+smoke test, OTel/Sentry observability, error handling + idempotency.
 
-### 2. GitHub Actions CI workflow fails on all branches (ci-workflow-escalation)
+## Sprint 2 — 1/10
 
-**Affects:** All tickets — `ci.yml` fails at 0s with "workflow file issue"; never executes a single
-job. **Status:** 2 partial fixes merged (PR #21, #22) but CI still fails. 30+ runs, 0 successes.
-**Action needed:** Navigate GitHub repo → Actions → any failed run → read the specific error banner
-below "This run likely failed because of a workflow file issue." The exact sub-message identifies
-the remaining root cause (agents cannot read it via GitHub API). See `backlog/ESCALATIONS.md` for
-full details.
+- DONE: TICKET-025 (control-plane skeleton)
+- BLOCKED (9): depend on Supabase vendor account
 
-## Next action
-
-- Once CI escalation resolved (or accepted): delegate TICKET-017 to `qa-engineer` (k6 load tests, 4h
-  estimate, no vendor dependencies).
-- Once vendor accounts provisioned: entire Sprint 2 auth chain unblocks — TICKET-020 is the critical
-  path entry.
-
-`NEXT: Human attention needed — see backlog/ESCALATIONS.md (2 open escalations).`
+`NEXT: Human attention needed — see backlog/ESCALATIONS.md (1 open escalation: vendor accounts).`

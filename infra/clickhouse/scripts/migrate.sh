@@ -51,22 +51,20 @@ _ch_exec() {
 
 _apply_file() {
   local file="$1"
+  local sql
   if [ "$LOCAL" = "1" ]; then
     # Replace ReplicatedMergeTree with MergeTree for local single-node Docker.
-    # sed streams the substitution so no temp file is needed.
-    local sql
     sql="$(sed 's/ReplicatedMergeTree/MergeTree/g' "${file}")"
+  else
+    sql="$(cat "${file}")"
+  fi
+  if [ -n "$CH_PASS" ]; then
     echo "${sql}" | curl -sSf "${CLICKHOUSE_URL}" \
+      -u "${CH_USER}:${CH_PASS}" \
       --data-binary @-
   else
-    if [ -n "$CH_PASS" ]; then
-      curl -sSf "${CLICKHOUSE_URL}" \
-        -u "${CH_USER}:${CH_PASS}" \
-        --data-binary @"${file}"
-    else
-      curl -sSf "${CLICKHOUSE_URL}" \
-        --data-binary @"${file}"
-    fi
+    echo "${sql}" | curl -sSf "${CLICKHOUSE_URL}" \
+      --data-binary @-
   fi
 }
 

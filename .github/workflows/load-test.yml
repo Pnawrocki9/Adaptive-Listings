@@ -1,0 +1,114 @@
+name: Load Test (k6 ingest)
+
+# IMPORTANT: workflow_dispatch only — load tests are expensive and should NEVER
+# run automatically on push or pull_request. Trigger manually after coordinating
+# with the devops-engineer for staging capacity.
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Test scenario to run"
+        required: true
+        type: choice
+        options:
+          - baseline
+          - stress
+        default: baseline
+      target:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - local
+        default: staging
+
+jobs:
+  load-test:
+    name: k6 load test (${{ inputs.scenario }} → ${{ inputs.target }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install k6 from the official k6 apt repository
+      - name: Install k6
+        run: |
+          sudo gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update --quiet
+          sudo apt-get install -y k6
+
+      # Resolve the ingest URL based on the target environment.
+      # For local target: spin up a mock server (useful for CI smoke only, not real perf).
+      # For staging target: use the INGEST_STAGING_URL secret.
+      - name: Resolve target URL
+        id: resolve-url
+        run: |
+          if [ "${{ inputs.target }}" = "staging" ]; then
+            echo "INGEST_URL=${{ secrets.INGEST_STAGING_URL }}" >> "$GITHUB_ENV"
+          else
+            # Local target: use localhost placeholder. The test will fail unless
+            # a local service is available, which is not the case in CI.
+            # This path is provided for documentation purposes only.
+            echo "INGEST_URL=http://localhost:8787" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run k6 baseline
+        if: inputs.scenario == 'baseline'
+        env:
+          K6_TEST_API_KEY: ${{ secrets.K6_TEST_API_KEY }}
+          K6_TENANT_ID: ${{ secrets.K6_TENANT_ID }}
+        run: |
+          k6 run \
+            --out json=k6-results.json \
+            tests/load/k6-ingest-baseline.js \
+            2>&1 | tee k6-summary.txt
+        # Do not fail the workflow if thresholds are missed — we want the artifact
+        # even on failure so engineers can investigate. CI status is informational.
+        continue-on-error: true
+
+      - name: Run k6 stress
+        if: inputs.scenario == 'stress'
+        env:
+          K6_TEST_API_KEY: ${{ secrets.K6_TEST_API_KEY }}
+          K6_TENANT_ID: ${{ secrets.K6_TENANT_ID }}
+        run: |
+          k6 run \
+            --out json=k6-results.json \
+            tests/load/k6-ingest-stress.js \
+            2>&1 | tee k6-summary.txt
+        # Stress test is expected to break things — never fail the workflow.
+        continue-on-error: true
+
+      # Upload results as artifacts for 30-day retention.
+      # Artifact name includes run ID so parallel runs don't overwrite each other.
+      - name: Upload k6 results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-results-${{ inputs.scenario }}-${{ github.run_id }}
+          path: |
+            k6-results.json
+            k6-summary.txt
+            stress-summary.txt
+          retention-days: 30
+          if-no-files-found: warn
+
+      # Print a short summary to the job log for quick visibility in the GitHub UI.
+      - name: Print summary
+        if: always()
+        run: |
+          echo "## k6 Load Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Scenario:** \`${{ inputs.scenario }}\`  " >> "$GITHUB_STEP_SUMMARY"
+          echo "**Target:** \`${{ inputs.target }}\`  " >> "$GITHUB_STEP_SUMMARY"
+          echo "**Run ID:** \`${{ github.run_id }}\`  " >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f k6-summary.txt ]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -60 k6-summary.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "_No summary file generated — check the run log._" >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -51,12 +51,14 @@ _ch_exec() {
 
 _ch_send() {
   # Send a single SQL statement via HTTP. Reads from stdin.
+  # --fail-with-body: fail on HTTP errors but still print the response body so
+  # CI logs show the ClickHouse error message rather than just the exit code.
   if [ -n "$CH_PASS" ]; then
-    curl -sSf "${CLICKHOUSE_URL}" \
+    curl -sS --fail-with-body "${CLICKHOUSE_URL}" \
       -u "${CH_USER}:${CH_PASS}" \
       --data-binary @-
   else
-    curl -sSf "${CLICKHOUSE_URL}" \
+    curl -sS --fail-with-body "${CLICKHOUSE_URL}" \
       --data-binary @-
   fi
 }

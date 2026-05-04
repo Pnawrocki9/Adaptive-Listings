@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — Vendor Account Creation Required for 5 Infrastructure Providers
+## RESOLVED — Vendor Account Creation Required for 5 Infrastructure Providers
 
 **Filed by:** devops-engineer  
 **Date:** 2026-04-27T14:00:00Z  
@@ -62,7 +62,13 @@ Without these accounts, downstream tickets are blocked:
 **Cost commitment:** All vendors have free tiers or trial credits (no immediate payment required for
 MVP testing).
 
-**Resolution:** <awaiting human action>
+**Resolution:** Resolved 2026-05-04 by Piotr. All 5 vendor accounts created and credentials stored
+in Doppler dev config. Secrets confirmed present: SUPABASE_ACCESS_TOKEN, SUPABASE_ORG_ID,
+SUPABASE_DB_PASSWORD, CLICKHOUSE_API_KEY_ID, CLICKHOUSE_API_KEY_SECRET, CLICKHOUSE_ORG_ID,
+MODAL_TOKEN_ID, MODAL_TOKEN_SECRET, REDPANDA_BROKERS, REDPANDA_SASL_USERNAME,
+REDPANDA_SASL_PASSWORD, REDPANDA_SASL_MECHANISM, REDPANDA_TLS, UPSTASH_API_KEY, UPSTASH_EMAIL.
+Unblocks TICKET-020 (Drizzle/Supabase), TICKET-014/015 (ClickHouse/Modal — already DONE with local
+stubs). Sprint 2 Postgres/auth chain is now unblocked.
 
 ---
 

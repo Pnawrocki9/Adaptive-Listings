@@ -1,11 +1,14 @@
 /**
- * @estalara/db — Drizzle ORM schemas and migrations for Supabase Postgres.
+ * @estalara/db — Drizzle ORM client and schemas for Supabase Postgres.
  *
- * Full implementation in TICKET-009 (backend-engineer).
- * This module exports the DB_VERSION constant as a placeholder.
+ * Primary export: {@link createClient} — call this once per process and pass
+ * the resulting {@link Database} instance to your services.
+ *
+ * Schema tables are added in TICKET-021+.
  *
  * @module @estalara/db
  */
 
-/** Current db package version string. */
-export const DB_VERSION = '0.0.0' as const;
+export { createClient } from './client.js';
+export type { ClientOptions, Database } from './client.js';
+export * from './schema/index.js';

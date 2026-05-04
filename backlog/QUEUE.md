@@ -287,11 +287,11 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-020
   title: Drizzle ORM setup + migrations folder structure + tooling
   agent: backend-engineer
-  status: BLOCKED
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-009]
-  blocked_by: vendor-accounts-escalation
+  pr: feat(db):/drizzle-orm-setup-TICKET-020
   spec: backlog/sprint-2/TICKET-020.md
 
 - id: TICKET-021

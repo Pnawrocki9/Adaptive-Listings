@@ -302,3 +302,39 @@ For TICKET-033 (ml-engineer):
 - `.github/workflows/ci.yml` (auto-detect added to Python test matrix)
 
 ---
+
+## TICKET-020 → TICKET-021, TICKET-022, TICKET-023, TICKET-029
+
+**From:** backend-engineer **To:** backend-engineer **Date:** 2026-05-03T00:00:00Z
+
+**Summary:** Drizzle ORM set up in `packages/db`. `createClient()` exported from
+`packages/db/src/client.ts`, supporting both direct (transaction mode, port 5432) and pooled
+(session mode, port 6543) connections. `drizzle.config.ts` ready for `drizzle-kit` commands.
+`migrations/` folder exists (`.gitkeep`). Root `package.json` wired with `db:generate`,
+`db:migrate`, `db:studio`, `db:push:dev` scripts. All downstream tickets (021/022/023/029) can now
+add schema files to `packages/db/src/schema/`, re-export from the barrel `index.ts`, and run
+`pnpm db:generate` + `pnpm db:migrate`.
+
+**Action required:**
+
+For TICKET-021 and downstream:
+
+1. Add a schema file at `packages/db/src/schema/<table-name>.ts` using `pgTable` from
+   `drizzle-orm/pg-core`.
+2. Re-export from `packages/db/src/schema/index.ts`.
+3. Run `pnpm db:generate` to generate the SQL migration file.
+4. Add RLS policies to the generated migration file before applying.
+5. Run `pnpm db:migrate` to apply (requires `DATABASE_URL_DIRECT` env var).
+
+**Files:**
+
+- `packages/db/src/client.ts`
+- `packages/db/src/index.ts`
+- `packages/db/src/schema/index.ts`
+- `packages/db/drizzle.config.ts`
+- `packages/db/scripts/migrate.ts`
+- `packages/db/scripts/seed.ts`
+- `packages/db/migrations/.gitkeep`
+- `packages/db/README.md`
+
+---

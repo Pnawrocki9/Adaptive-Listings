@@ -45,7 +45,6 @@ _ch_exec() {
       --data-binary "${sql}"
   else
     curl -sSf "${CLICKHOUSE_URL}" \
-      --user "${CH_USER}:" \
       --data-binary "${sql}"
   fi
 }
@@ -58,7 +57,6 @@ _apply_file() {
     local sql
     sql="$(sed 's/ReplicatedMergeTree/MergeTree/g' "${file}")"
     echo "${sql}" | curl -sSf "${CLICKHOUSE_URL}" \
-      --user "${CH_USER}:" \
       --data-binary @-
   else
     if [ -n "$CH_PASS" ]; then
@@ -67,7 +65,6 @@ _apply_file() {
         --data-binary @"${file}"
     else
       curl -sSf "${CLICKHOUSE_URL}" \
-        --user "${CH_USER}:" \
         --data-binary @"${file}"
     fi
   fi

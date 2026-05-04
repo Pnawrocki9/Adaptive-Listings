@@ -1,6 +1,6 @@
 # Backlog Queue
 
-**Updated 2026-05-04 by pm-orchestrator.** This file replaces the 2026-05-01 version.
+**Updated 2026-05-04T10:58Z by pm-orchestrator.** CI escalation resolved — CI green on main.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 

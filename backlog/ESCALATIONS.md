@@ -66,7 +66,7 @@ MVP testing).
 
 ---
 
-## OPEN — GitHub Actions CI workflow fails immediately with "workflow file issue" on all branches
+## RESOLVED — GitHub Actions CI workflow fails immediately with "workflow file issue" on all branches
 
 **Filed by:** backend-engineer **Date:** 2026-05-01T10:50:00Z **Affects:** All tickets — TICKET-025
 (and previously TICKET-012, TICKET-013, all main merges) **Type:** other (repo-config)
@@ -120,4 +120,11 @@ GitHub API. Possible remaining issues:
 - A GitHub Actions feature (required workflows, environment protection) blocking the run
 - A third workflow validation error not yet identified
 
-**Resolution:** Pending human investigation.
+**Resolution:** Resolved 2026-05-04 via PR #34. Root cause:
+`if: ${{ secrets.DOPPLER_TOKEN_DEV != '' }}` on a step-level `if` is invalid in GitHub Actions
+(secrets context not available there), causing the workflow to fail at parse time before any jobs
+were queued. Fix: removed the invalid `if` condition (job has `continue-on-error: true` so
+doppler-verify is non-blocking). Additional fixes in the same PR: build @estalara/shared before
+lint, add `permissions: pull-requests: read` to gitleaks-scan, auto-detect placeholder test,
+ClickHouse auth (CLICKHOUSE_PASSWORD env var + per-statement execution + UInt64 type fix). CI now
+green on main: `completed success` run #25315111966.

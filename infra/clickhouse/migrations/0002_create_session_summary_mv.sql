@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS session_summary
 
     -- Aggregated session features
     ended_at         SimpleAggregateFunction(max,     DateTime64(3, 'UTC')),
-    page_count       SimpleAggregateFunction(sum,     UInt32),
+    page_count       SimpleAggregateFunction(sum,     UInt64),
     listing_ids_seen AggregateFunction(uniq,          String),
     has_chat         SimpleAggregateFunction(max,     UInt8),
     has_inquiry      SimpleAggregateFunction(max,     UInt8),

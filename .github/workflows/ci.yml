@@ -36,7 +36,6 @@ jobs:
         uses: dopplerhq/cli-action@v3
 
       - name: Verify Doppler auth
-        if: ${{ secrets.DOPPLER_TOKEN_DEV != '' }}
         run: doppler me
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
@@ -60,6 +59,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @estalara/shared build
 
       - name: Lint
         run: pnpm turbo run lint
@@ -221,6 +223,9 @@ jobs:
   gitleaks-scan:
     name: Gitleaks secrets scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -241,6 +246,9 @@ jobs:
         image: clickhouse/clickhouse-server:latest
         ports:
           - 8123:8123
+        env:
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: clickhouse
     steps:
       - uses: actions/checkout@v4
 
@@ -254,11 +262,15 @@ jobs:
           curl -sf http://localhost:8123/ping
 
       - name: Apply migrations (LOCAL=1 → MergeTree)
+        env:
+          CLICKHOUSE_PASSWORD: clickhouse
         run: |
           LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
             ./infra/clickhouse/scripts/migrate.sh
 
       - name: Run smoke test
+        env:
+          CLICKHOUSE_PASSWORD: clickhouse
         run: |
           LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
             ./infra/clickhouse/scripts/smoke-test.sh

@@ -45,32 +45,44 @@ _ch_exec() {
       --data-binary "${sql}"
   else
     curl -sSf "${CLICKHOUSE_URL}" \
-      --user "${CH_USER}:" \
       --data-binary "${sql}"
+  fi
+}
+
+_ch_send() {
+  # Send a single SQL statement via HTTP. Reads from stdin.
+  # --fail-with-body: fail on HTTP errors but still print the response body so
+  # CI logs show the ClickHouse error message rather than just the exit code.
+  if [ -n "$CH_PASS" ]; then
+    curl -sS --fail-with-body "${CLICKHOUSE_URL}" \
+      -u "${CH_USER}:${CH_PASS}" \
+      --data-binary @-
+  else
+    curl -sS --fail-with-body "${CLICKHOUSE_URL}" \
+      --data-binary @-
   fi
 }
 
 _apply_file() {
   local file="$1"
+  local content
   if [ "$LOCAL" = "1" ]; then
     # Replace ReplicatedMergeTree with MergeTree for local single-node Docker.
-    # sed streams the substitution so no temp file is needed.
-    local sql
-    sql="$(sed 's/ReplicatedMergeTree/MergeTree/g' "${file}")"
-    echo "${sql}" | curl -sSf "${CLICKHOUSE_URL}" \
-      --user "${CH_USER}:" \
-      --data-binary @-
+    content="$(sed 's/ReplicatedMergeTree/MergeTree/g' "${file}")"
   else
-    if [ -n "$CH_PASS" ]; then
-      curl -sSf "${CLICKHOUSE_URL}" \
-        -u "${CH_USER}:${CH_PASS}" \
-        --data-binary @"${file}"
-    else
-      curl -sSf "${CLICKHOUSE_URL}" \
-        --user "${CH_USER}:" \
-        --data-binary @"${file}"
-    fi
+    content="$(cat "${file}")"
   fi
+  # ClickHouse HTTP processes one query per request. Split the file on statement
+  # boundaries (lines ending with ";") and execute each statement individually.
+  local stmt=""
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[[:space:]]*-- ]] && continue  # skip comment-only lines
+    stmt+="${line}"$'\n'
+    if [[ "$line" =~ \;[[:space:]]*$ ]]; then
+      printf '%s' "$stmt" | _ch_send
+      stmt=""
+    fi
+  done <<< "$content"
 }
 
 for f in "${MIGRATIONS_DIR}"/*.sql; do

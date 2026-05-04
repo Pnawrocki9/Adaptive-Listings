@@ -26,7 +26,7 @@ _ch_query() {
   if [ -n "$CH_PASS" ]; then
     curl -sSf "${CLICKHOUSE_URL}" -u "${CH_USER}:${CH_PASS}" --data-binary "${sql}"
   else
-    curl -sSf "${CLICKHOUSE_URL}" --user "${CH_USER}:" --data-binary "${sql}"
+    curl -sSf "${CLICKHOUSE_URL}" --data-binary "${sql}"
   fi
 }
 

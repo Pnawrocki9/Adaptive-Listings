@@ -17,7 +17,11 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "turbo run clean && rm -rf node_modules",
-    "e2e:smoke": "pnpm --filter @estalara/e2e-smoke test"
+    "e2e:smoke": "pnpm --filter @estalara/e2e-smoke test",
+    "db:generate": "pnpm --filter @estalara/db exec drizzle-kit generate",
+    "db:migrate": "pnpm --filter @estalara/db exec tsx scripts/migrate.ts",
+    "db:studio": "pnpm --filter @estalara/db exec drizzle-kit studio",
+    "db:push:dev": "pnpm --filter @estalara/db exec drizzle-kit push"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.0.0",

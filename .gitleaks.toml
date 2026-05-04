@@ -135,11 +135,14 @@ tags = ["github", "app"]
 id = "cloudflare-api-token"
 description = "Cloudflare API Token"
 regex = '''[a-zA-Z0-9_-]{40}'''
+entropy = 3.0
 [rules.allowlist]
 paths = [
   '''node_modules/''',
   '''.git/''',
 ]
+# k6 official GPG fingerprint used in apt installation instructions
+regexes = ['''C5AD17C747E3415A3642D57D77C6C491D6AC1D69''']
 
 # JWT tokens (generic)
 [[rules]]

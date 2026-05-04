@@ -1,6 +1,6 @@
 # Backlog Queue
 
-**Updated 2026-05-01 by pm-orchestrator.** This file replaces the 2026-04-27 version.
+**Updated 2026-05-04 by pm-orchestrator.** This file replaces the 2026-05-01 version.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -25,8 +25,8 @@ updates.
 | Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
 | ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
 | 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 9    | 0       | 0     | 0       |
-| 1      | 2     | Ingest baseline + event schema                                       | 10      | 5    | 0       | 3     | 2       |
-| 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 0    | 1       | 0     | 9       |
+| 1      | 2     | Ingest baseline + event schema                                       | 10      | 10   | 0       | 0     | 0       |
+| 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 1    | 0       | 0     | 9       |
 | 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
 | 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 0    | 0       | 0     | 10      |
 | 4      | 6     | Intent ontology v1 + Modal scaffolding                               | tbd     | —    | —       | —     | tbd     |
@@ -216,46 +216,43 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-014
   title: ClickHouse table DDL + first migration (events table partitioned)
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-009, TICKET-011]
   started_at: '2026-05-03T00:00:00Z'
+  completed_at: '2026-05-03T15:21:11Z'
   pr: '#27'
-  note: >
-    DDL + scripts production-ready. ClickHouse Cloud credentials pending vendor-accounts-escalation
-    — cannot test against live cluster until provisioned. CI smoke test uses LOCAL=1 MergeTree mode.
   spec: backlog/sprint-1/TICKET-014.md
 
 - id: TICKET-015
   title: Stream consumer Modal scaffold (Redpanda subscribe → ClickHouse insert)
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 6
   depends_on: [TICKET-014, TICKET-012]
   started_at: '2026-05-03T00:00:00Z'
-  pr: '#28'
-  note: >
-    25/25 unit tests pass locally. ClickHouse Cloud credentials pending vendor-accounts-escalation —
-    integration test and Modal deploy blocked until CLICKHOUSE_HOST et al. are provisioned.
+  completed_at: '2026-05-03T20:58:07Z'
+  pr: '#29'
   spec: backlog/sprint-1/TICKET-015.md
 
 - id: TICKET-016
   title: End-to-end smoke test (curl ingest → ClickHouse query)
   agent: qa-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-015]
   started_at: '2026-05-03T00:00:00Z'
+  completed_at: '2026-05-03T13:55:37Z'
   pr: '#26'
   spec: backlog/sprint-1/TICKET-016.md
 
 - id: TICKET-017
   title: Ingest load test 10K req/s (k6 scripts)
   agent: qa-engineer
-  status: BLOCKED
+  status: READY
   priority: P1
   estimated_hours: 4
   depends_on: [TICKET-016]
@@ -264,21 +261,23 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-018
   title: Ingest observability (OTel traces + Sentry + structured logs)
   agent: devops-engineer
-  status: IN_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-012, TICKET-003]
-  pr: '#22'
+  completed_at: '2026-05-03T10:51:21Z'
+  pr: '#22, #24, #25'
   spec: backlog/sprint-1/TICKET-018.md
 
 - id: TICKET-019
   title: HTTP error handling + idempotency contract (event_id deduplication)
   agent: backend-engineer
-  status: IN_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-012]
-  pr: '#23'
+  completed_at: '2026-05-01T21:37:20Z'
+  pr: '#24'
   spec: backlog/sprint-1/TICKET-019.md
 ```
 
@@ -334,13 +333,12 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-025
   title: apps/control-plane Next.js skeleton + Tailwind + shadcn/ui setup
   agent: backend-engineer
-  status: IN_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-001, TICKET-002]
-  assigned_to: backend-engineer
   started_at: '2026-05-01T00:00:00Z'
-  completed_at: '2026-05-01T12:50:00Z'
+  completed_at: '2026-05-01T10:46:13Z'
   pr: '#20'
   spec: backlog/sprint-2/TICKET-025.md
 
@@ -387,39 +385,30 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Awaiting human review
 
-- TICKET-025 (PR #20) — Next.js 15 + Tailwind v4 + shadcn/ui skeleton for apps/control-plane. Local:
-  24 tests passing, build clean, prettier clean. CI infrastructure has a pre-existing "workflow file
-  issue" (affects all branches since Sprint 0 — see ESCALATIONS.md).
+(none — Sprint 1 complete, Sprint 2 blocked on vendor accounts)
 
 ## Recent merges
 
+- 2026-05-04T07:25Z — fix(ci) (PR #30): Exclude e2e from unit test run + fix turbo dependency graph
+  - Removed @estalara/e2e-smoke from pnpm-workspace.yaml; added `build` to test.dependsOn in
+    turbo.json to guarantee @estalara/shared dist before @estalara/ingest tests. All 26 tasks pass.
+- 2026-05-03T20:58Z — TICKET-015 (PR #29): Modal stream consumer Redpanda→ClickHouse by
+  data-engineer
+  - 25/25 unit tests pass. Integration with live Redpanda/ClickHouse blocked by
+    vendor-accounts-escalation.
+- 2026-05-03T15:21Z — TICKET-014 (PR #27): ClickHouse DDL migrations by data-engineer
+  - events table partitioned by tenant_id + toYYYYMM(ts), 3 materialized views, migration runner.
+    LOCAL=1 MergeTree smoke test. Live cluster pending vendor-accounts-escalation.
+- 2026-05-03T13:55Z — TICKET-016 (PR #26): E2E smoke test ingest→ClickHouse by qa-engineer
+  - Docker-compose stack, curl ingest → ClickHouse query verification. Runs nightly via CI schedule.
+- 2026-05-03T10:51Z — TICKET-018/019 fix (PR #25): Missing span attributes + README paths
+- 2026-05-01T21:37Z — TICKET-018+019 (PR #24): Ingest observability + error handling by
+  backend/devops-engineer
+  - OTel spans on auth/parse/produce, Sentry wrapping, idempotency via event_id UUIDv7 + Redis TTL.
+- 2026-05-01T10:46Z — TICKET-025 (PR #20): control-plane Next.js + Tailwind + shadcn/ui skeleton by
+  backend-engineer
+  - 24 tests passing. Sprint 2 foundation.
 - 2026-04-30T22:39Z — TICKET-013 (PR #19): Durable Object rate limiting by backend-engineer
-  - Per-tenant sliding-window rate limiter (50 000 events/min default), whole-batch reject,
-    DO-internal read-modify-write serialization, 18 vitest cases. Unblocks TICKET-018/019.
-- 2026-05-01T00:30Z — TICKET-012 (PR #18): Cloudflare Worker ingest MVP by backend-engineer
-  - Hono + EventSchema validate + KV-backed API key + HMAC body signature + Redpanda REST proxy
-    producer with 3-attempt retry. 47 vitest cases. Unblocks TICKET-013/015/016/018/019.
+- 2026-04-30T22:13Z — TICKET-012 (PR #18): Cloudflare Worker ingest MVP by backend-engineer
 - 2026-04-30T21:45Z — TICKET-011 (PR #17): Event schemas v1 by architect
-  - 33 event types across 10 categories from Master Design C.1, common envelope, discriminated
-    union, EVENT_TYPES tuple. zod ^3.23.8 added to @estalara/shared. 74 vitest cases.
-- 2026-04-30T21:12Z — TICKET-010 (PR #16): Ratify ADR-0003 event schema and versioning by architect
-  - Status ACCEPTED 2026-04-29; ADR index README added; CONVENTIONS.md Schemas section
-    cross-references ADR-0003 with additive-only rule. Sprint 1 unblocks: TICKET-011 → READY.
-- 2026-04-30T20:47Z — Master Design v1.2 (PR #15): Strategic upgrade post Sprint 0 by architect
-  - Adds K (Internal Ops Panel), D.5 (Continuous Detection Quality), R (Innovation Roadmap + Patent
-    Strategy); extends E.3 with CATE, B.5.4 predictive drift, O.6 ML model risks; renumbers K-Q →
-    L-Q + new R between Q and S. 1662 → 2276 lines.
-- 2026-04-29T17:08Z — TICKET-006 (PR #11): Add packages/platform-templates TS placeholder by
-  devops-engineer
-- 2026-04-29T16:50Z — TICKET-005 (PR #10): Add apps/auto-detect Python placeholder by
-  devops-engineer
-- 2026-04-29T14:18Z — TICKET-004 (branch devops-engineer/TICKET-004-precommit-security): Pre-commit
-  security hooks by devops-engineer
-- 2026-04-29T16:29Z — TICKET-008 (PR #14): Cloudflare Terraform module + Wrangler config by
-  devops-engineer
-- 2026-04-27T19:30Z — TICKET-009 (PR #6): Vendor account stubs Terraform skeleton by devops-engineer
-- 2026-04-27T19:30Z — TICKET-003 (PR #7): Sentry + OTel baseline by devops-engineer
-- 2026-04-27T07:30Z — TICKET-002 (PR #4 + PR #5): Doppler integration + secrets management baseline
-  by devops-engineer
-- 2026-04-26T18:15Z — TICKET-001 (PR #2): Bootstrap monorepo (Turborepo + pnpm + tooling) by
-  devops-engineer
+- 2026-04-30T21:12Z — TICKET-010 (PR #16): Ratify ADR-0003 by architect

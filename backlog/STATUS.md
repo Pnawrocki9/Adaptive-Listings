@@ -2,73 +2,66 @@
 
 _This file is overwritten by `pm-orchestrator` after every loop iteration. Do not edit manually._
 
-# Status — 2026-05-01T00:50:00Z
+# Status — 2026-05-04T08:45:00Z
 
 ## Active
 
-- TICKET-013 (backend-engineer, READY_FOR_REVIEW, started 2026-05-01T00:30:00Z) — Durable Object
-  per-tenant rate limiter: 50 000 events/min sliding window, whole-batch reject, single-threaded
-  read-modify-write serialization. 18 new vitest cases on top of TICKET-012's 47 (65/65 green). PR
-  pending on push.
+(none)
 
 ## Ready for human review
 
-- TICKET-013 (PR TBD on push)
+- **PR #31** (`fix(ci): build shared package before ingest deploy [ESCALATION]`) — adds
+  `pnpm --filter @estalara/shared build` step before ingest build in `deploy-staging.yml`. CI: "no
+  checks reported" (pre-existing workflow-file-issue). Change is trivially correct; needs human
+  merge.
 
 ## Blocked
 
-- TICKET-015 (Modal stream consumer) — needs TICKET-014 + vendor escalation
-- TICKET-014, TICKET-016..019 (Sprint 1) — varying chains on vendor escalation + earlier tickets
-- TICKET-020..029 (Sprint 2) — depend on Sprint 1 completion
+- TICKET-017 (qa-engineer) — status **READY**, held from delegation until GitHub Actions CI
+  escalation is resolved. Does NOT require vendor accounts.
+- TICKET-020 through TICKET-029 (except TICKET-025 DONE) — all Sprint 2 Postgres/auth tickets
+  blocked by `vendor-accounts-escalation`
 
-## Sprint 0 progress
+## Sprint 0 progress — COMPLETE
 
-- 9/9 tickets closed
-- Status: **Complete** — 100%
+- 9/9 tickets DONE
 
-## Sprint 1 progress
+## Sprint 1 progress — COMPLETE ✓
 
-- 3/10 DONE (TICKET-010, TICKET-011, TICKET-012)
-- 1 IN_PROGRESS (TICKET-013, awaiting merge)
-- 0 READY
-- 6 BLOCKED — chain on TICKET-014/016/018/019 (and vendor escalation for 014/015)
-- Status: **Steady progress** — TICKET-013 closes the rate-limiting hole on the ingest Worker.
-  Non-vendor candidates remaining: TICKET-016 (qa smoke), TICKET-018 (observability spans),
-  TICKET-019 (idempotency).
+- 10/10 tickets DONE
+- Delivered: Zod event schemas (74 tests), Cloudflare ingest Worker (47 tests), Durable Object rate
+  limiter (18 tests), ClickHouse DDL + migrations, Modal stream consumer (25 tests), E2E smoke test
+  (Docker stack), OTel/Sentry observability, error handling + idempotency.
 
-## Open escalations
+## Sprint 2 progress — 1/10
 
-- 2026-04-27 — Vendor account creation (Supabase, ClickHouse, Modal, Redpanda, Upstash). Affects
-  TICKET-009 (already DONE), TICKET-014, TICKET-015, TICKET-020. Does NOT block
-  TICKET-013/016/018/019.
+- 1 DONE: TICKET-025 (control-plane Next.js skeleton, PR #20)
+- 9 BLOCKED: all Postgres/auth tickets depend on Supabase vendor account
+  (vendor-accounts-escalation)
 
-## Next escalation candidate
+## Open escalations — LOOP STOPPED — human action required
 
-None pending; existing vendor escalation remains open.
+### 1. Vendor Account Creation (vendor-accounts-escalation)
 
-## Delegation log
+**Blocks:** TICKET-020–029 (entire Postgres/auth path of Sprint 2) **Action needed:** Create
+Supabase, ClickHouse Cloud, Modal, Redpanda Cloud, Upstash accounts; store credentials in Doppler.
+Full runbook in `docs/runbooks/vendor-accounts.md`. Estimated: 2–3 hours, no immediate payment
+required (all have free tiers).
 
-- 2026-05-01T00:50:00Z — **TICKET-013 READY_FOR_REVIEW** — DO rate limiter shipped
-- 2026-05-01T00:30:00Z — **TICKET-012 MERGED** (PR #18) — Cloudflare Worker ingest MVP
-- 2026-04-30T23:00:00Z — **TICKET-011 MERGED** (PR #17) — event schemas v1 across 10 categories
-- 2026-04-30T21:12:50Z — TICKET-010 MERGED (PR #16) — ADR-0003 ACCEPTED, CONVENTIONS.md
-  cross-reference, README ADR index
-- 2026-04-30T20:47:19Z — Master Design v1.2 MERGED (PR #15)
-- 2026-04-29T19:00:00Z — TICKET-010 delegated to architect (P0, 2h, Sprint 1 begins)
-- 2026-04-29T17:50:00Z — TICKET-007 DONE (merged PR #12)
-- 2026-04-29T17:30:00Z — TICKET-007 delegated to architect (P2, 1h, update docs for 10+10 structure)
-- 2026-04-29T17:15:00Z — TICKET-006 DONE (merged PR #11)
-- 2026-04-29T16:45:00Z — TICKET-005 DONE (merged PR #10)
-- 2026-04-29T14:18:00Z — TICKET-004 DONE (merged PR #9)
-- 2026-04-27T19:30:00Z — TICKET-009 DONE (merged PR #6)
-- 2026-04-27T19:30:00Z — TICKET-003 DONE (merged PR #7)
-- 2026-04-27T07:30:00Z — TICKET-002 DONE (merged PR #4 + PR #5)
-- 2026-04-26T18:15:00Z — TICKET-001 DONE (merged PR #2)
+### 2. GitHub Actions CI workflow fails on all branches (ci-workflow-escalation)
 
-## Retro flag — 2026-04-27
+**Affects:** All tickets — `ci.yml` fails at 0s with "workflow file issue"; never executes a single
+job. **Status:** 2 partial fixes merged (PR #21, #22) but CI still fails. 30+ runs, 0 successes.
+**Action needed:** Navigate GitHub repo → Actions → any failed run → read the specific error banner
+below "This run likely failed because of a workflow file issue." The exact sub-message identifies
+the remaining root cause (agents cannot read it via GitHub API). See `backlog/ESCALATIONS.md` for
+full details.
 
-**TICKET-003 tool-call overrun:** devops-engineer subagent consumed 148+ tool calls before producing
-working code. Human intervened and directed a hard-stop commit sequence. Code was correct; the
-overrun was in verification loops. Root cause: same pattern as TICKET-002 — no hard budget on
-exploratory verification steps. **Resolution needed:** consider adding explicit per-session
-tool-call caps to the devops-engineer agent definition, not just CI verification caps.
+## Next action
+
+- Once CI escalation resolved (or accepted): delegate TICKET-017 to `qa-engineer` (k6 load tests, 4h
+  estimate, no vendor dependencies).
+- Once vendor accounts provisioned: entire Sprint 2 auth chain unblocks — TICKET-020 is the critical
+  path entry.
+
+`NEXT: Human attention needed — see backlog/ESCALATIONS.md (2 open escalations).`

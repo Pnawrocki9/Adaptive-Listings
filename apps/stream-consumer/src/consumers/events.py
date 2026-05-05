@@ -23,13 +23,40 @@ from typing import Any
 
 import structlog
 from confluent_kafka import Consumer, KafkaError, Message, Producer
+from opentelemetry import trace
+from opentelemetry.context import Context
+from opentelemetry.propagate import extract
 from pydantic import ValidationError
 
 from src.clickhouse_client import ClickHouseClient
 from src.models.event import EventEnvelope
 from src.redpanda_client import build_consumer, build_producer, is_fatal
 
+_tracer = trace.get_tracer(__name__)
+
 log = structlog.get_logger(__name__)
+
+def _extract_trace_context(msg: Message) -> Context:
+    """Extract W3C trace context from Kafka message headers.
+
+    Header values arriving via Pandaproxy are base64-encoded bytes; decode to str
+    before passing to the OTel extractor so the W3C propagator can parse them.
+    Returns an empty context if no traceparent header is present.
+    """
+    carrier: dict[str, str] = {}
+    raw_headers = msg.headers()
+    if raw_headers:
+        for header_key, header_value in raw_headers:
+            try:
+                carrier[header_key] = (
+                    header_value.decode("utf-8")
+                    if isinstance(header_value, bytes)
+                    else str(header_value)
+                )
+            except (UnicodeDecodeError, AttributeError):
+                pass
+    return extract(carrier)
+
 
 BATCH_MAX_SIZE: int = 5000
 BATCH_MAX_WAIT_S: float = 5.0
@@ -177,7 +204,19 @@ def run_consumer(
                     break
                 should_flush = False
             else:
-                parsed = _parse_message(msg)
+                ctx = _extract_trace_context(msg)
+                with _tracer.start_as_current_span(
+                    "consume_event",
+                    context=ctx,
+                    kind=trace.SpanKind.CONSUMER,
+                    attributes={
+                        "messaging.system": "kafka",
+                        "messaging.destination": msg.topic(),
+                        "messaging.kafka.partition": msg.partition(),
+                        "messaging.kafka.offset": msg.offset(),
+                    },
+                ):
+                    parsed = _parse_message(msg)
                 if parsed is None:
                     metrics.schema_failures += 1
                     should_flush = False

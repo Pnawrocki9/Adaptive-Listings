@@ -95,8 +95,8 @@ export { EventEnvelopeBaseSchema };
  * PII-validated event envelope. Use this for all ingest validation.
  * Per-event schemas use EventEnvelopeBaseSchema.extend() internally.
  */
-export const EventEnvelopeSchema = EventEnvelopeBaseSchema.superRefine((data, ctx) =>
-  { noPii(data.payload, ctx, ['payload']); },
-);
+export const EventEnvelopeSchema = EventEnvelopeBaseSchema.superRefine((data, ctx) => {
+  noPii(data.payload, ctx, ['payload']);
+});
 
 export type EventEnvelope = z.infer<typeof EventEnvelopeSchema>;

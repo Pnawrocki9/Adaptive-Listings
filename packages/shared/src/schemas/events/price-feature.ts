@@ -8,7 +8,7 @@
 
 import { z } from 'zod';
 
-import { EventEnvelopeSchema } from '../event.js';
+import { EventEnvelopeBaseSchema } from '../event.js';
 
 /**
  * `price.hovered` — pointer dwelled on the listing's price element ≥500ms.
@@ -20,7 +20,7 @@ export const PriceHoveredPayloadSchema = z.object({
   currency: z.string().length(3),
   dwell_ms: z.number().int().nonnegative().optional(),
 });
-export const PriceHoveredEventSchema = EventEnvelopeSchema.extend({
+export const PriceHoveredEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('price.hovered'),
   payload: PriceHoveredPayloadSchema,
 });
@@ -35,7 +35,7 @@ export const PriceComparedPayloadSchema = z.object({
   against_listing_id: z.string().min(1),
   delta_pct: z.number().optional(),
 });
-export const PriceComparedEventSchema = EventEnvelopeSchema.extend({
+export const PriceComparedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('price.compared'),
   payload: PriceComparedPayloadSchema,
 });
@@ -50,7 +50,7 @@ export const FeatureExpandedPayloadSchema = z.object({
   feature: z.string().min(1),
   label: z.string().optional(),
 });
-export const FeatureExpandedEventSchema = EventEnvelopeSchema.extend({
+export const FeatureExpandedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('feature.expanded'),
   payload: FeatureExpandedPayloadSchema,
 });
@@ -67,7 +67,7 @@ export const MortgageCalcUsedPayloadSchema = z.object({
   monthly_payment: z.number().nonnegative().optional(),
   interest_rate_pct: z.number().nonnegative().optional(),
 });
-export const MortgageCalcUsedEventSchema = EventEnvelopeSchema.extend({
+export const MortgageCalcUsedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('mortgage_calc.used'),
   payload: MortgageCalcUsedPayloadSchema,
 });

@@ -8,7 +8,7 @@
 
 import { z } from 'zod';
 
-import { EventEnvelopeSchema } from '../event.js';
+import { EventEnvelopeBaseSchema } from '../event.js';
 
 /**
  * `scroll.depth` — emitted at 10/25/50/75/90% scroll depth thresholds.
@@ -20,7 +20,7 @@ export const ScrollDepthPayloadSchema = z.object({
   viewport_height: z.number().int().positive().optional(),
   page_height: z.number().int().positive().optional(),
 });
-export const ScrollDepthEventSchema = EventEnvelopeSchema.extend({
+export const ScrollDepthEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('scroll.depth'),
   payload: ScrollDepthPayloadSchema,
 });
@@ -35,7 +35,7 @@ export const MouseDwellPayloadSchema = z.object({
   element: z.string().min(1),
   dwell_ms: z.number().int().nonnegative(),
 });
-export const MouseDwellEventSchema = EventEnvelopeSchema.extend({
+export const MouseDwellEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('mouse.dwell'),
   payload: MouseDwellPayloadSchema,
 });
@@ -50,7 +50,7 @@ export const MouseRageClickPayloadSchema = z.object({
   element: z.string().min(1),
   click_count: z.number().int().min(3),
 });
-export const MouseRageClickEventSchema = EventEnvelopeSchema.extend({
+export const MouseRageClickEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('mouse.rage_click'),
   payload: MouseRageClickPayloadSchema,
 });
@@ -64,7 +64,7 @@ export type MouseRageClickEvent = z.infer<typeof MouseRageClickEventSchema>;
 export const MouseExitIntentPayloadSchema = z.object({
   dwell_ms: z.number().int().nonnegative(),
 });
-export const MouseExitIntentEventSchema = EventEnvelopeSchema.extend({
+export const MouseExitIntentEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('mouse.exit_intent'),
   payload: MouseExitIntentPayloadSchema,
 });

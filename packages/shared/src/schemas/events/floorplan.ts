@@ -8,7 +8,7 @@
 
 import { z } from 'zod';
 
-import { EventEnvelopeSchema } from '../event.js';
+import { EventEnvelopeBaseSchema } from '../event.js';
 
 /**
  * `floorplan.opened` — floorplan modal / inline view shown for the first time in a session.
@@ -18,7 +18,7 @@ import { EventEnvelopeSchema } from '../event.js';
 export const FloorplanOpenedPayloadSchema = z.object({
   source: z.enum(['gallery_button', 'inline_link', 'sidebar', 'auto']).optional(),
 });
-export const FloorplanOpenedEventSchema = EventEnvelopeSchema.extend({
+export const FloorplanOpenedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('floorplan.opened'),
   payload: FloorplanOpenedPayloadSchema,
 });
@@ -32,7 +32,7 @@ export type FloorplanOpenedEvent = z.infer<typeof FloorplanOpenedEventSchema>;
 export const FloorplanZoomPayloadSchema = z.object({
   zoom_level: z.number().positive(),
 });
-export const FloorplanZoomEventSchema = EventEnvelopeSchema.extend({
+export const FloorplanZoomEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('floorplan.zoom'),
   payload: FloorplanZoomPayloadSchema,
 });
@@ -46,7 +46,7 @@ export type FloorplanZoomEvent = z.infer<typeof FloorplanZoomEventSchema>;
 export const FloorplanDwellPayloadSchema = z.object({
   dwell_ms: z.number().int().nonnegative(),
 });
-export const FloorplanDwellEventSchema = EventEnvelopeSchema.extend({
+export const FloorplanDwellEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('floorplan.dwell'),
   payload: FloorplanDwellPayloadSchema,
 });

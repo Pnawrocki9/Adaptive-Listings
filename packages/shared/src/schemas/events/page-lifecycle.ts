@@ -8,7 +8,7 @@
 
 import { z } from 'zod';
 
-import { EventEnvelopeSchema } from '../event.js';
+import { EventEnvelopeBaseSchema } from '../event.js';
 
 /** Device form factor inferred client-side from viewport + UA hints. */
 export const DeviceClassSchema = z.enum(['mobile', 'tablet', 'desktop']);
@@ -41,7 +41,7 @@ export const PageViewPayloadSchema = z.object({
   viewport: ViewportSchema,
   device_class: DeviceClassSchema,
 });
-export const PageViewEventSchema = EventEnvelopeSchema.extend({
+export const PageViewEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('page.view'),
   payload: PageViewPayloadSchema,
 });
@@ -61,7 +61,7 @@ export const PageExitPayloadSchema = z.object({
   dwell_ms: z.number().int().nonnegative(),
   scrolled_max_pct: z.number().min(0).max(100).optional(),
 });
-export const PageExitEventSchema = EventEnvelopeSchema.extend({
+export const PageExitEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('page.exit'),
   payload: PageExitPayloadSchema,
 });
@@ -75,7 +75,7 @@ export type PageExitEvent = z.infer<typeof PageExitEventSchema>;
 export const TabVisiblePayloadSchema = z.object({
   hidden_for_ms: z.number().int().nonnegative().optional(),
 });
-export const TabVisibleEventSchema = EventEnvelopeSchema.extend({
+export const TabVisibleEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('tab.visible'),
   payload: TabVisiblePayloadSchema,
 });
@@ -89,7 +89,7 @@ export type TabVisibleEvent = z.infer<typeof TabVisibleEventSchema>;
 export const TabHiddenPayloadSchema = z.object({
   visible_for_ms: z.number().int().nonnegative().optional(),
 });
-export const TabHiddenEventSchema = EventEnvelopeSchema.extend({
+export const TabHiddenEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('tab.hidden'),
   payload: TabHiddenPayloadSchema,
 });

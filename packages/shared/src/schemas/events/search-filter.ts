@@ -8,7 +8,7 @@
 
 import { z } from 'zod';
 
-import { EventEnvelopeSchema } from '../event.js';
+import { EventEnvelopeBaseSchema } from '../event.js';
 
 /**
  * `search.query` — user submitted a free-text search.
@@ -19,7 +19,7 @@ export const SearchQueryPayloadSchema = z.object({
   query: z.string().min(1).max(500),
   results_count: z.number().int().nonnegative().optional(),
 });
-export const SearchQueryEventSchema = EventEnvelopeSchema.extend({
+export const SearchQueryEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('search.query'),
   payload: SearchQueryPayloadSchema,
 });
@@ -34,7 +34,7 @@ export const FilterAppliedPayloadSchema = z.object({
   facet: z.string().min(1),
   value: z.union([z.string(), z.number(), z.boolean()]),
 });
-export const FilterAppliedEventSchema = EventEnvelopeSchema.extend({
+export const FilterAppliedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('filter.applied'),
   payload: FilterAppliedPayloadSchema,
 });
@@ -48,7 +48,7 @@ export type FilterAppliedEvent = z.infer<typeof FilterAppliedEventSchema>;
 export const FilterRemovedPayloadSchema = z.object({
   facet: z.string().min(1),
 });
-export const FilterRemovedEventSchema = EventEnvelopeSchema.extend({
+export const FilterRemovedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('filter.removed'),
   payload: FilterRemovedPayloadSchema,
 });
@@ -62,7 +62,7 @@ export type FilterRemovedEvent = z.infer<typeof FilterRemovedEventSchema>;
 export const SortChangedPayloadSchema = z.object({
   sort_by: z.string().min(1),
 });
-export const SortChangedEventSchema = EventEnvelopeSchema.extend({
+export const SortChangedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('sort.changed'),
   payload: SortChangedPayloadSchema,
 });

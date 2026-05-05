@@ -22,7 +22,11 @@
 
 import type { Context, MiddlewareHandler } from 'hono';
 
+import type { ErrorCode, ErrorResponseBody } from '@estalara/shared';
 import type { EstalaraError } from '@estalara/shared/observability';
+
+/** Re-exported so other ingest modules can keep importing from this file. */
+export type { ErrorCode, ErrorResponseBody };
 
 /**
  * Duck-type guard for `EstalaraError`. Using `instanceof` fails across ESM
@@ -38,16 +42,6 @@ function isEstalaraError(err: unknown): err is Pick<EstalaraError, 'code' | 'mes
     'name' in err &&
     (err as Record<string, unknown>).name === 'EstalaraError'
   );
-}
-
-/** The canonical error response shape for every ingest error path. */
-export interface ErrorResponseBody {
-  error: {
-    code: string;
-    message: string;
-    request_id: string;
-    details?: Record<string, unknown>;
-  };
 }
 
 /** All error codes the ingest service can emit and their HTTP statuses. */

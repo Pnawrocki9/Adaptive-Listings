@@ -11,6 +11,7 @@
  */
 
 export * from './schemas/index.js';
+export * from './errors.js';
 
 /** Current shared package version string. */
 export const SHARED_VERSION = '0.0.0' as const;

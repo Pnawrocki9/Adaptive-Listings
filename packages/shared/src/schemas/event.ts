@@ -16,6 +16,8 @@
 
 import { z } from 'zod';
 
+import { noPii } from './pii-blacklist.js';
+
 /** Geographic regions Estalara deploys to. */
 export const RegionSchema = z.enum(['eu', 'us', 'uk', 'uae']);
 export type Region = z.infer<typeof RegionSchema>;
@@ -52,7 +54,7 @@ export type ConsentState = z.infer<typeof ConsentStateSchema>;
  *   payload: { url: 'https://example.com/listing/1', viewport: { width: 1440, height: 900 }, device_class: 'desktop' }
  * }
  */
-export const EventEnvelopeSchema = z.object({
+const EventEnvelopeBaseSchema = z.object({
   /** UUIDv7 generated client-side at event creation. */
   event_id: z.string().uuid(),
 
@@ -86,5 +88,15 @@ export const EventEnvelopeSchema = z.object({
   /** Server-side annotation written by the intent engine. SDK MUST NOT set this. */
   archetype_hint: z.string().optional(),
 });
+
+export { EventEnvelopeBaseSchema };
+
+/**
+ * PII-validated event envelope. Use this for all ingest validation.
+ * Per-event schemas use EventEnvelopeBaseSchema.extend() internally.
+ */
+export const EventEnvelopeSchema = EventEnvelopeBaseSchema.superRefine((data, ctx) =>
+  { noPii(data.payload, ctx, ['payload']); },
+);
 
 export type EventEnvelope = z.infer<typeof EventEnvelopeSchema>;

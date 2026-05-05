@@ -8,7 +8,7 @@
 
 import { z } from 'zod';
 
-import { EventEnvelopeSchema } from '../event.js';
+import { EventEnvelopeBaseSchema } from '../event.js';
 
 /**
  * `photo.opened` — gallery / lightbox opened on a specific photo.
@@ -21,7 +21,7 @@ export const PhotoOpenedPayloadSchema = z.object({
   total: z.number().int().positive().optional(),
   category: z.string().optional(),
 });
-export const PhotoOpenedEventSchema = EventEnvelopeSchema.extend({
+export const PhotoOpenedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('photo.opened'),
   payload: PhotoOpenedPayloadSchema,
 });
@@ -37,7 +37,7 @@ export const PhotoGalleryNextPayloadSchema = z.object({
   to_photo_id: z.string().min(1),
   direction: z.enum(['forward', 'backward']).optional(),
 });
-export const PhotoGalleryNextEventSchema = EventEnvelopeSchema.extend({
+export const PhotoGalleryNextEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('photo.gallery.next'),
   payload: PhotoGalleryNextPayloadSchema,
 });
@@ -52,7 +52,7 @@ export const PhotoZoomedPayloadSchema = z.object({
   photo_id: z.string().min(1),
   zoom_level: z.number().positive(),
 });
-export const PhotoZoomedEventSchema = EventEnvelopeSchema.extend({
+export const PhotoZoomedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('photo.zoomed'),
   payload: PhotoZoomedPayloadSchema,
 });
@@ -68,7 +68,7 @@ export const PhotoDwellPayloadSchema = z.object({
   dwell_ms: z.number().int().nonnegative(),
   category: z.string().optional(),
 });
-export const PhotoDwellEventSchema = EventEnvelopeSchema.extend({
+export const PhotoDwellEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('photo.dwell'),
   payload: PhotoDwellPayloadSchema,
 });

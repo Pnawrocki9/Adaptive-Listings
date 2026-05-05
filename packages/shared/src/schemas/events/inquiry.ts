@@ -9,7 +9,7 @@
 
 import { z } from 'zod';
 
-import { EventEnvelopeSchema } from '../event.js';
+import { EventEnvelopeBaseSchema } from '../event.js';
 
 /**
  * `inquiry.started` — user opened the contact / inquiry form.
@@ -19,7 +19,7 @@ import { EventEnvelopeSchema } from '../event.js';
 export const InquiryStartedPayloadSchema = z.object({
   form_variant: z.string().optional(),
 });
-export const InquiryStartedEventSchema = EventEnvelopeSchema.extend({
+export const InquiryStartedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('inquiry.started'),
   payload: InquiryStartedPayloadSchema,
 });
@@ -41,7 +41,7 @@ export const InquiryCompletedPayloadSchema = z.object({
   timeline: z.enum(['0-3m', '3-6m', '6-12m', '12m+']).optional(),
   message_length: z.number().int().nonnegative().optional(),
 });
-export const InquiryCompletedEventSchema = EventEnvelopeSchema.extend({
+export const InquiryCompletedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('inquiry.completed'),
   payload: InquiryCompletedPayloadSchema,
 });
@@ -56,7 +56,7 @@ export const TourRequestedPayloadSchema = z.object({
   mode: z.enum(['in_person', 'virtual', 'video_call']),
   requested_date: z.string().optional(),
 });
-export const TourRequestedEventSchema = EventEnvelopeSchema.extend({
+export const TourRequestedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('tour.requested'),
   payload: TourRequestedPayloadSchema,
 });

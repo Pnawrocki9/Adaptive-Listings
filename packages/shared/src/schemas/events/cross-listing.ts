@@ -8,7 +8,7 @@
 
 import { z } from 'zod';
 
-import { EventEnvelopeSchema } from '../event.js';
+import { EventEnvelopeBaseSchema } from '../event.js';
 
 /**
  * `listing.next` — user navigated from one listing detail page to another.
@@ -20,7 +20,7 @@ export const ListingNextPayloadSchema = z.object({
   to_listing_id: z.string().min(1),
   via: z.enum(['next_button', 'related', 'search_results', 'gallery']).optional(),
 });
-export const ListingNextEventSchema = EventEnvelopeSchema.extend({
+export const ListingNextEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('listing.next'),
   payload: ListingNextPayloadSchema,
 });
@@ -34,7 +34,7 @@ export type ListingNextEvent = z.infer<typeof ListingNextEventSchema>;
 export const ListingComparedPayloadSchema = z.object({
   listing_ids: z.array(z.string().min(1)).min(2).max(6),
 });
-export const ListingComparedEventSchema = EventEnvelopeSchema.extend({
+export const ListingComparedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('listing.compared'),
   payload: ListingComparedPayloadSchema,
 });
@@ -48,7 +48,7 @@ export type ListingComparedEvent = z.infer<typeof ListingComparedEventSchema>;
 export const ListingBookmarkedPayloadSchema = z.object({
   collection: z.string().optional(),
 });
-export const ListingBookmarkedEventSchema = EventEnvelopeSchema.extend({
+export const ListingBookmarkedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('listing.bookmarked'),
   payload: ListingBookmarkedPayloadSchema,
 });

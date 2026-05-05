@@ -8,7 +8,7 @@
 
 import { z } from 'zod';
 
-import { EventEnvelopeSchema } from '../event.js';
+import { EventEnvelopeBaseSchema } from '../event.js';
 import { DeviceClassSchema, ViewportSchema } from './page-lifecycle.js';
 
 /**
@@ -45,7 +45,7 @@ export const SessionStartedPayloadSchema = z.object({
   timezone_offset_minutes: z.number().int().optional(),
   user_agent_class: z.string().optional(),
 });
-export const SessionStartedEventSchema = EventEnvelopeSchema.extend({
+export const SessionStartedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('session.started'),
   payload: SessionStartedPayloadSchema,
 });

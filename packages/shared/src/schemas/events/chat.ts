@@ -9,7 +9,7 @@
 
 import { z } from 'zod';
 
-import { EventEnvelopeSchema } from '../event.js';
+import { EventEnvelopeBaseSchema } from '../event.js';
 
 /**
  * `chat.opened` — user opened the chat widget.
@@ -19,7 +19,7 @@ import { EventEnvelopeSchema } from '../event.js';
 export const ChatOpenedPayloadSchema = z.object({
   trigger: z.enum(['cta_click', 'auto_prompt', 'inline_link']).optional(),
 });
-export const ChatOpenedEventSchema = EventEnvelopeSchema.extend({
+export const ChatOpenedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('chat.opened'),
   payload: ChatOpenedPayloadSchema,
 });
@@ -40,7 +40,7 @@ export const ChatMessageSentPayloadSchema = z.object({
   char_count: z.number().int().nonnegative().optional(),
   locale: z.string().min(2).max(10).optional(),
 });
-export const ChatMessageSentEventSchema = EventEnvelopeSchema.extend({
+export const ChatMessageSentEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('chat.message.sent'),
   payload: ChatMessageSentPayloadSchema,
 });
@@ -63,7 +63,7 @@ export const ChatIntentDetectedPayloadSchema = z.object({
   model: z.string().min(1).optional(),
   source_event_id: z.string().uuid().optional(),
 });
-export const ChatIntentDetectedEventSchema = EventEnvelopeSchema.extend({
+export const ChatIntentDetectedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('chat.intent.detected'),
   payload: ChatIntentDetectedPayloadSchema,
 });

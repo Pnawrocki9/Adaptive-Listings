@@ -31,6 +31,8 @@ _image = (
         "clickhouse-connect>=0.8",
         "pydantic>=2.0",
         "structlog>=24.0",
+        "opentelemetry-api>=1.20",
+        "opentelemetry-sdk>=1.20",
     )
     .add_local_python_source("src")
 )

@@ -12,6 +12,8 @@
  * @module apps/ingest/src/redpanda-producer
  */
 
+import { context, propagation } from '@opentelemetry/api';
+
 /** Bindings the producer needs from `env`. */
 export interface RedpandaProducerEnv {
   REDPANDA_REST_URL: string;
@@ -69,8 +71,27 @@ export async function pushToRedpanda(
   const timeoutMs = options.timeoutMs ?? 4000;
 
   const url = `${env.REDPANDA_REST_URL.replace(/\/$/, '')}/topics/${env.REDPANDA_TOPIC_EVENTS}`;
+
+  // Inject W3C trace context into a carrier and encode as Pandaproxy record headers.
+  // btoa() is required — Pandaproxy JSON format expects base64-encoded header values.
+  // try/catch guards against environments where OTel is not fully configured (including partial
+  // test mocks of @opentelemetry/api that do not expose propagation).
+  const carrier: Record<string, string> = {};
+  try {
+    propagation.inject(context.active(), carrier);
+  } catch {
+    // no-op: OTel propagation not available in this environment
+  }
+  const traceHeaders = Object.entries(carrier).map(([key, value]) => ({
+    key,
+    value: btoa(value),
+  }));
+
   const body = JSON.stringify({
-    records: records.map((value) => ({ value })),
+    records: records.map((value) => ({
+      value,
+      ...(traceHeaders.length > 0 ? { headers: traceHeaders } : {}),
+    })),
   });
   const headers = buildHeaders(env);
 

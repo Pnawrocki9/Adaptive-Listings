@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { propagation } from '@opentelemetry/api';
+import { describe, expect, it, vi } from 'vitest';
 
 import { pushToRedpanda } from './redpanda-producer.js';
 import type { RedpandaProducerEnv } from './redpanda-producer.js';
@@ -137,5 +138,61 @@ describe('pushToRedpanda', () => {
     );
     expect(result.ok).toBe(true);
     expect(observedAuth).toMatch(/^Basic /);
+  });
+});
+
+describe('pushToRedpanda — OTel trace context propagation', () => {
+  const TRACEPARENT = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+
+  it('injects traceparent into every Kafka record header when a span is active', async () => {
+    const injectSpy = vi.spyOn(propagation, 'inject').mockImplementation((_ctx, carrier) => {
+      (carrier as Record<string, string>).traceparent = TRACEPARENT;
+    });
+
+    let capturedBody = '';
+    const fetchImpl = ((_url: string, init?: RequestInit): Promise<Response> => {
+      capturedBody = (init?.body as string | null | undefined) ?? '';
+      return Promise.resolve(
+        new Response(JSON.stringify({ offsets: [{ partition: 0, offset: 0 }] }), { status: 200 }),
+      );
+    }) as typeof fetch;
+
+    await pushToRedpanda([{ type: 'page.view' }, { type: 'scroll.depth' }], env, {
+      fetchImpl,
+      backoffMs: NO_BACKOFF,
+    });
+    injectSpy.mockRestore();
+
+    const parsed = JSON.parse(capturedBody) as {
+      records: { value: unknown; headers?: { key: string; value: string }[] }[];
+    };
+
+    // Both records must carry the header
+    for (const record of parsed.records) {
+      const tp = record.headers?.find((h) => h.key === 'traceparent');
+      expect(tp).toBeDefined();
+      expect(atob(tp?.value ?? '')).toBe(TRACEPARENT);
+    }
+  });
+
+  it('omits headers entirely when no span context is injected (OTel no-op)', async () => {
+    // Default propagation.inject with no SDK registered is a no-op → empty carrier
+    let capturedBody = '';
+    const fetchImpl = ((_url: string, init?: RequestInit): Promise<Response> => {
+      capturedBody = (init?.body as string | null | undefined) ?? '';
+      return Promise.resolve(
+        new Response(JSON.stringify({ offsets: [{ partition: 0, offset: 0 }] }), { status: 200 }),
+      );
+    }) as typeof fetch;
+
+    await pushToRedpanda([{ type: 'page.view' }], env, {
+      fetchImpl,
+      backoffMs: NO_BACKOFF,
+    });
+
+    const parsed = JSON.parse(capturedBody) as {
+      records: { value: unknown; headers?: unknown[] }[];
+    };
+    expect(parsed.records[0]?.headers).toBeUndefined();
   });
 });

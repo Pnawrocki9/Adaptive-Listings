@@ -167,6 +167,18 @@ describe('GET /health', () => {
   });
 });
 
+describe('security headers', () => {
+  it('includes required security headers on all responses', async () => {
+    const app = createApp();
+    const env = makeEnv();
+    const res = await app.fetch(new Request('http://test/health'), env);
+    expect(res.headers.get('strict-transport-security')).toContain('max-age=63072000');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin');
+    expect(res.headers.get('permissions-policy')).not.toBeNull();
+  });
+});
+
 describe('POST /v1/events — auth', () => {
   it('rejects with 401 when API key is missing', async () => {
     const app = createApp();

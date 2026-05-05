@@ -93,12 +93,12 @@ module.exports = {
             return [false, 'Subject is required'];
           }
 
-          // Check for [TICKET-NNN] or [ESCALATION] reference
-          const ticketPattern = /\[TICKET-\d+\]|\[ESCALATION\]/;
+          // Check for [TICKET-NNN], [TICKET-FIX-NNN], [TICKET-INFRA-NNN], or [ESCALATION] reference
+          const ticketPattern = /\[TICKET-(?:FIX-|INFRA-)?\d+\]|\[ESCALATION\]/;
           if (!ticketPattern.test(subject)) {
             return [
               false,
-              'Commit message must include [TICKET-XXX] or [ESCALATION] reference. Example: feat(ingest): add validation [TICKET-042]',
+              'Commit message must include [TICKET-XXX], [TICKET-FIX-XXX], [TICKET-INFRA-XXX], or [ESCALATION] reference. Example: feat(ingest): add validation [TICKET-042]',
             ];
           }
 

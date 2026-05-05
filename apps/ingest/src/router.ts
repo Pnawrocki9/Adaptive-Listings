@@ -3,9 +3,10 @@
  * `index.ts` re-exports this.
  *
  * Middleware registration order (outermost → innermost):
- * 1. `errorHandler` — sets `request_id` in context + `X-Request-ID` response header.
- * 2. `idempotency` — reads `Idempotency-Key` header; returns cached response on hit.
- * 3. Route handlers (health, events).
+ * 1. `secureHeaders` — sets HSTS, nosniff, Referrer-Policy, Permissions-Policy on every response.
+ * 2. `errorHandler` — sets `request_id` in context + `X-Request-ID` response header.
+ * 3. `idempotency` — reads `Idempotency-Key` header; returns cached response on hit.
+ * 4. Route handlers (health, events).
  *
  * `app.onError(handleError)` formats any thrown error into the canonical JSON shape.
  *
@@ -13,6 +14,7 @@
  */
 
 import { Hono } from 'hono';
+import { secureHeaders } from 'hono/secure-headers';
 
 import type { Env } from './types.js';
 import { events } from './handlers/events.js';
@@ -22,6 +24,22 @@ import { idempotency } from './middleware/idempotency.js';
 export function createApp(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
 
+  app.use(
+    '*',
+    secureHeaders({
+      strictTransportSecurity: 'max-age=63072000; includeSubDomains; preload',
+      xContentTypeOptions: 'nosniff',
+      referrerPolicy: 'strict-origin-when-cross-origin',
+      permissionsPolicy: {
+        camera: [],
+        microphone: [],
+        geolocation: [],
+        payment: [],
+      },
+      contentSecurityPolicy: false as never,
+      xFrameOptions: false,
+    }),
+  );
   app.use('*', errorHandler);
   app.use('/v1/events/*', idempotency);
 

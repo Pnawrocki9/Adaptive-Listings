@@ -5,7 +5,12 @@ export default defineConfig({
   out: './migrations',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL_DIRECT ?? process.env.DATABASE_URL ?? '',
+    // Use service-role / direct connection for schema generation — never the pooled anon URL.
+    url:
+      process.env.DATABASE_URL_ADMIN ??
+      process.env.DATABASE_URL_DIRECT ??
+      process.env.DATABASE_URL ??
+      '',
   },
   verbose: true,
   strict: true,

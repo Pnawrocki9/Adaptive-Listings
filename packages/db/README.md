@@ -3,11 +3,39 @@
 Drizzle ORM client and schema library for the Estalara Adaptive Listings monorepo. Targets Supabase
 Postgres with pgBouncer connection pooling.
 
+## Client usage
+
+### Tenant queries (RLS enforced)
+
+```typescript
+import { createTenantClient } from '@estalara/db';
+const db = createTenantClient(jwtToken); // pass tenant JWT for RLS
+```
+
+Uses `DATABASE_URL` (pooled pgBouncer, port 6543). Row Level Security is **enforced** — each query
+sees only the calling tenant's data. Always pass the tenant's JWT so Supabase RLS policies can read
+`auth.jwt()` claims.
+
+### Admin / migration operations (RLS bypassed)
+
+```typescript
+import { createAdminClient } from '@estalara/db';
+const db = createAdminClient(); // service role — never use in tenant API routes
+```
+
+Uses `DATABASE_URL_ADMIN` (direct connection, port 5432, service role). Row Level Security is
+**bypassed**. Use only for migrations, seeding, and master admin operations. Never expose this
+client to the control plane tenant dashboard or any tenant-facing route.
+
+---
+
 ## Overview
 
 This package provides:
 
-- `createClient(url, options?)` — typed Drizzle client factory
+- `createTenantClient(jwtToken?)` — RLS-enforced client for tenant API routes
+- `createAdminClient()` — service-role client for migrations and admin ops
+- `createClient(url, options?)` — low-level factory (prefer the named clients above)
 - `drizzle.config.ts` — drizzle-kit configuration for code generation and Studio
 - `scripts/migrate.ts` — migration runner for CI and local dev
 - `src/schema/` — schema barrel; downstream tickets add table definitions here

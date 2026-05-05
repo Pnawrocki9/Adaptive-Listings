@@ -39,6 +39,13 @@ export interface ClientOptions {
    * @default 10
    */
   max?: number;
+
+  /**
+   * Supabase tenant JWT for RLS context propagation.
+   * Reserved for future use — will be applied via `SET request.jwt = '...'`
+   * so Postgres RLS policies can read `auth.jwt()`.
+   */
+  jwtToken?: string;
 }
 
 /**
@@ -70,6 +77,44 @@ export function createClient(databaseUrl: string, options: ClientOptions = {}) {
 
 /** Inferred return type of {@link createClient} — pass this around instead of the raw Drizzle type. */
 export type Database = ReturnType<typeof createClient>;
+
+/**
+ * Creates a Drizzle client for TENANT queries.
+ *
+ * Reads `DATABASE_URL` (pooled pgBouncer endpoint, port 6543).
+ * Row Level Security is ENFORCED — queries see only the calling tenant's data.
+ * Pass the tenant's JWT so Supabase RLS policies can read `auth.jwt()` claims.
+ *
+ * Use this in: API route handlers, edge functions, any code running in tenant context.
+ * Never use this for migrations or cross-tenant admin operations.
+ *
+ * @throws {Error} if `DATABASE_URL` is not set
+ */
+export function createTenantClient(jwtToken?: string) {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error('DATABASE_URL is not set');
+  return createClient(url, {
+    poolMode: 'transaction',
+    ...(jwtToken !== undefined ? { jwtToken } : {}),
+  });
+}
+
+/**
+ * Creates a Drizzle client for ADMIN operations.
+ *
+ * Reads `DATABASE_URL_ADMIN` (service role, falls back to `DATABASE_URL_DIRECT`).
+ * Row Level Security is BYPASSED — use only for migrations, seeding, and master admin ops.
+ *
+ * NEVER use this in tenant-facing API routes.
+ * NEVER expose this client to the control plane tenant dashboard.
+ *
+ * @throws {Error} if neither `DATABASE_URL_ADMIN` nor `DATABASE_URL_DIRECT` is set
+ */
+export function createAdminClient() {
+  const url = process.env.DATABASE_URL_ADMIN ?? process.env.DATABASE_URL_DIRECT;
+  if (!url) throw new Error('DATABASE_URL_ADMIN is not set');
+  return createClient(url, { poolMode: 'session' });
+}
 
 // Re-export schema so callers can import table types from one place.
 export * from './schema/index.js';

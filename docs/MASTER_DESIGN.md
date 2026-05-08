@@ -1,6 +1,19 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 1.2 (Master Design Document) | **Data:** 30 kwietnia 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 1.4 (Master Design Document — revised with Investor Quiz + Profile Mode forward-compat) | **Data:** 5 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v1.4 (5 May 2026 — Security & Operational Excellence hardening + Investor Quiz + Profile Mode forward-compat):**
+- ✨ Nowa sekcja **V "Security Architecture & Cybersecurity"** — kompleksowa specyfikacja zabezpieczeń: authentication & session security, API security, OWASP Top 10 coverage, secrets management, supply chain security, database security, frontend SDK security, threat modeling, security testing, compliance certifications roadmap (SOC 2, ISO 27001), bug bounty program
+- ✨ Nowa sekcja **W "Operational Excellence — DR, Monitoring, Deployment"** — Disaster Recovery & Business Continuity (RPO/RTO targets), Incident Response Plan (sev levels, on-call, post-mortems, status page), SLO/SLI definitions z error budgets, observability strategy, deployment & rollback playbooks, cost controls & abuse prevention (DoW protection), data governance, multi-tenant isolation testing
+- ✨ Nowa podsekcja **E.4 "Investor Quiz Widget"** — opt-in 2-pytaniowy quiz (cel zakupu: personal/investment, horyzont: ≤3mo/>1yr) jako Bayesian prior dla Intent Engine; sticky widget + post-3-listings prompt; decay logic (10-20 min) pozwalająca behavioral signals dominować z czasem; 6 nowych ticketów (TICKET-QUIZ-001 do QUIZ-006)
+- ✨ Nowa podsekcja **U.10 "Investor Quiz back-office"** — per-tenant toggle (`/dashboard/quiz`), agency analytics dashboard (`/dashboard/quiz/analytics`) z funnel + answer distribution + conversion lift, Master Admin Fleet View extension; 3 dodatkowe tickety (QUIZ-003, QUIZ-004, QUIZ-007)
+- 🔮 Nowa podsekcja **U.11 "Profile Mode (Identified Buyers)"** — POST-MVP feature (Sprint 12+); forward-compatibility checklist dla MVP; Master Admin globalna flaga "Profile Mode beta" + zewnętrzny approval workflow (Notion+DPA, nie w systemie); 4 forward-compat action items w Sprint 2/4/8 (`consent_records` table, `Estalara.identify()` SDK stub, fair-housing linter); pełna spec w osobnym Year-2 strategic doc
+- 🔧 Sprint 1.5 hardening tickets — 5 fix-ticketów ukończonych (TICKET-FIX-001 do FIX-005): OTel context propagation, canonical error format, security response headers, Drizzle role separation, PII blacklist
+- 📝 Cross-references — wszystkie sekcje (B, D, D.5, E, F, H, J, K, T, U, V) zaktualizowane o referencje do V, W, Quiz, i Profile Mode forward-compat
+
+**Changelog v1.3 (5 May 2026 — Demo Mode v5 + Agency Registration + Master Admin):**
+- ✨ Nowa sekcja **T "Demo Mode v5 — Built-In Feature for Sales & Validation"** — kompletna specyfikacja Demo Mode jako integralnej funkcji produktu (2 funkcje: Mock-up Toggle + Side Panel), sprint mapping, 7 ticketów, acceptance criteria dla wszystkich ticketów
+- ✨ Nowa sekcja **U "Agency Registration Flow & Master Admin"** — decyzje architektoniczne zatwierdzone przez Piotra: approval-required onboarding, Stripe + invoice billing, RBAC z trzema rolami, osobny `admin.estalara.com`, Master Admin oversight Demo Mode ON/OFF per tenant
 
 **Changelog v1.2 (30 April 2026 — Post Sprint 0 strategic upgrade):**
 - ✨ Nowa sekcja **K "Internal Operations Panel (Estalara Staff Only)"** — RBAC, monitoring + intervention dla staff Estalara
@@ -1135,6 +1148,189 @@ Wagi konfigurowalne per tenant (np. Idealista enterprise stawia większą wagę 
 #### E.3.3. Cross-reference D.5 + R.2
 
 Mechanizmy CATE estimation feed do D.5 confirmation rate (post-adaptation behavior validation) i są fundamentem Innowacji R.2 (Causal A/B Framework — patent angle). Implementacja w Sprint 8.
+
+---
+
+### E.4. Investor Quiz Widget — opt-in self-declared intent
+
+> **Decyzja produktowa (Piotr Nawrocki, 5 maja 2026):** dodajemy opt-in 2-pytaniowy quiz jako **opcjonalny, per-tenant toggle** w back-office agencji. Quiz jest dobrowolny, transparentny, i działa równolegle z behavioral detection — nie zastępuje go.
+
+#### E.4.1. Filozofia — dlaczego opt-in zamiast obowiązkowo
+
+Standardowy Adaptive Listings polega wyłącznie na behavioral signals (Section D — Intent Engine). Działa świetnie po 30-90 sek przeglądania, ale **w pierwszych 30 sek mamy zimny start** — system nie ma jeszcze wystarczająco danych żeby spersonalizować widok.
+
+Quiz daje agencji opcjonalne narzędzie żeby **skrócić cold-start** dla buyerów którzy chcą szybko dostać dopasowane wyniki. Kluczowe założenia:
+
+1. **Opt-in, nie obowiązkowo** — buyer zawsze może zignorować quiz i przeglądać normalnie
+2. **Per-tenant toggle** — agencja decyduje czy quiz jest aktywny na jej stronie
+3. **Bayesian prior, nie hard lock** — odpowiedzi quizowe są silnym wstępnym sygnałem dla Intent Engine, ale behavioral signals z biegiem czasu mogą skorygować profil
+4. **Zero dark patterns** — brak modal-spam, brak "Are you sure you want to leave?", brak "X to skip" które blokują widok
+
+#### E.4.2. Dwa pytania — dlaczego te i tylko te
+
+Po analizie design partnerów (Idealista, Engel & Völkers Marbella) zidentyfikowaliśmy **dwa pytania o najwyższym signal-to-noise ratio** dla early archetype detection:
+
+**Pytanie 1: Cel zakupu**
+> "What brings you here today? / Co Cię tu przyprowadza?"
+> 
+> ○ **Looking for a home for myself or my family** *(własny)*
+> ○ **Exploring as an investment opportunity** *(inwestycyjny)*
+
+**Pytanie 2: Horyzont czasowy**
+> "When are you hoping to make a decision? / Kiedy planujesz podjąć decyzję?"
+> 
+> ○ **Within the next 3 months** *(≤3 mies.)*
+> ○ **More than a year from now / Just exploring** *(>1 rok)*
+
+**Dlaczego nie więcej pytań?** Każde dodatkowe pytanie redukuje completion rate o ~15-25% (industry data dla onboarding flows). Dwa pytania mają completion rate ~75-85% (za design partnerami z marketingu B2C SaaS), pięć pytań — ~30%. Mniej pytań = więcej completed quizzes = więcej priors dla Intent Engine.
+
+**Dlaczego te a nie inne (np. budżet, lokalizacja)?** Budżet i lokalizacja są już *implicit* w buyer's URL i selected listings. Cel + horyzont są **najsilniejsze różnicujące cechy archetype** które NIE są inferowalne z URL — buyer "Investor + 3mo" ma drastycznie inny intent niż "Family + 1yr" przeglądający te same listingi.
+
+#### E.4.3. Mapping odpowiedzi → archetype prior
+
+```typescript
+// packages/intent-engine/src/quiz-mapping.ts
+type QuizAnswers = {
+  purpose: 'personal' | 'investment';
+  horizon: 'short' | 'long';  // ≤3 mies. vs >1 rok
+};
+
+type ArchetypePrior = {
+  archetype_id: string;
+  prior_weight: number;      // 0.0 - 1.0, multiplier on default uniform prior
+  decay_minutes: number;     // jak długo prior dominuje nad behavioral signals
+};
+
+const QUIZ_TO_PRIOR: Record<string, ArchetypePrior> = {
+  'personal+short': { 
+    archetype_id: 'urgent_family_buyer', 
+    prior_weight: 0.85, 
+    decay_minutes: 10 
+  },
+  'personal+long': { 
+    archetype_id: 'aspirational_browser', 
+    prior_weight: 0.75, 
+    decay_minutes: 15 
+  },
+  'investment+short': { 
+    archetype_id: 'active_investor', 
+    prior_weight: 0.90, 
+    decay_minutes: 8 
+  },
+  'investment+long': { 
+    archetype_id: 'passive_capital_seeker', 
+    prior_weight: 0.70, 
+    decay_minutes: 20 
+  },
+};
+```
+
+**Bayesian update — formal definition:**
+
+```
+P(archetype | session_data) ∝ P(session_data | archetype) × P(archetype)
+
+Without quiz:  P(archetype) = uniform across all archetypes (1/N)
+With quiz:     P(archetype) = QUIZ_TO_PRIOR weighted distribution
+
+After T minutes of behavioral data:
+  effective_prior_weight(t) = prior_weight × max(0, 1 - t/decay_minutes)
+  
+Po decay_minutes minut: prior_weight → 0, behavioral signals dominate fully
+```
+
+Innymi słowy: w pierwszych ~10 min od quiz completion, system jest "stronnie nastawiony" na archetype z quizu. Z każdą minutą prior słabnie liniowo, a behavioral signals zyskują wagę. Po 10-20 min (zależnie od archetype): quiz jest tylko historycznym sygnałem, system działa normalnie na podstawie zachowania.
+
+**Edge case — quiz vs behavioral mismatch:**
+Jeśli quiz mówi `personal+short` (urgent_family_buyer) a w pierwszych 5 min user przegląda 8 inwestycyjnych listingów, browse na ROI page, scroll na yield calculator → system wykrywa **strong behavioral contradiction** i logs metric `quiz_behavioral_mismatch=true`. Po 5 min: behavioral wygrywa, archetype switch do `active_investor`. Quiz answer pozostaje w session metadata dla analytics (E.4.7 — agency stats).
+
+#### E.4.4. Widget UX — sticky + triggered prompt
+
+Zgodnie z decyzją (B+D combo):
+
+**A. Sticky widget (od pierwszej sekundy)**
+```
+                                          ┌────────────────────────────┐
+                                          │ 🎯 Find your perfect match │
+                                          │    in 2 questions →        │
+                                          │                       [×]  │
+                                          └────────────────────────────┘
+                                          Bottom-right, 320px wide
+                                          Subtle shadow, brand-tinted
+```
+- Default position: bottom-right corner (mobile + desktop)
+- Dismissible przez `[×]` — set `localStorage.estalara_quiz_dismissed=true` (24h)
+- Click → expands quiz inline (Shadow DOM, doesn't navigate away)
+
+**B. Triggered prompt (post-3-listings event)**
+- Po `listing.view` event count ≥ 3 w sesji AND user nie kliknął quiz AND nie dismissed:
+- Wyświetl drugi sticky w innym kolorze: "Saved time on browsing? Get personalized matches in 2 quick questions."
+- Trigger TYLKO RAZ na sesję — jeśli user dismiss, no more prompts
+
+**Kluczowe UX zasady:**
+- Brak modal blokujących widok
+- Brak entry-time popups (np. "Wait 3 sec → modal") — to jest dark pattern
+- Brak countdown timers, exit-intent popups, bait-and-switch buttons
+- Quiz widget zawsze dismissable jednym klikiem
+- ARIA-compliant (focus trap w expanded state, escape key zamyka, screen reader friendly)
+
+#### E.4.5. Quiz lifecycle — events tracked
+
+```typescript
+// packages/shared/src/schemas/events/quiz.ts
+const QuizPayloadSchema = z.object({
+  quiz_id: z.literal('investor_intent_v1'),
+  step: z.enum(['shown', 'started', 'q1_answered', 'q2_answered', 'completed', 'dismissed']),
+  
+  // Anonimowe — zero PII (per TICKET-FIX-005 PII blacklist)
+  answers: z.object({
+    purpose: z.enum(['personal', 'investment']).optional(),
+    horizon: z.enum(['short', 'long']).optional(),
+  }).optional(),
+  
+  // Opcjonalne UX metrics
+  trigger: z.enum(['sticky', 'prompt_after_3_listings', 'manual']).optional(),
+  time_to_complete_ms: z.number().int().min(0).optional(),
+});
+
+export const QuizEventSchema = EventEnvelopeBaseSchema.extend({
+  type: z.literal('quiz.event'),
+  payload: QuizPayloadSchema,
+});
+```
+
+**6 trackowanych stanów:**
+- `shown` — widget renderowany (impression)
+- `started` — user kliknął expand
+- `q1_answered` — pytanie 1 odpowiedziane
+- `q2_answered` — pytanie 2 odpowiedziane (after this: prior aktywny w Intent Engine)
+- `completed` — quiz fully completed (oba pytania) — primary success metric
+- `dismissed` — user kliknął `[×]` lub abandoned po `started`
+
+#### E.4.6. Privacy & GDPR considerations
+
+- **Brak PII w quiz payload** — tylko enum values (purpose, horizon). Nie zbieramy email, name, ani niczego osobowego
+- **No tracking cookies** — quiz state w localStorage TYLKO dla dismissal tracking (24h TTL)
+- **Consent layer** — quiz nie wymaga consent dla GDPR (no PII, no profiling z personal data) ALE jest część `consent_state: 'analytics'` jeśli tenant ma cookie banner. Default: quiz visible przed consent (legitimate interest — service improvement)
+- **Right to erasure** — quiz answers powiązane są z session_id (anonimowy fingerprint hash). Erasure session_id usuwa też quiz history
+
+#### E.4.7. Cross-reference D + E + U
+
+- **Section D (Intent Engine)** — Section D.2 (signals) rozszerzone o `self_declared_intent` jako new signal source. Quiz priors implementowane w `intent-engine/src/bayesian-prior.ts`
+- **Section D.5 (Detection Quality Score)** — quiz answers jako **third ground truth source** (alongside post-adaptation confirmation rate i form completions). Tenant DQS reflektuje `quiz_completion_rate` jako leading indicator
+- **Section E (Adaptation Engine)** — adaptation logic używa archetype output bez modyfikacji; quiz wpływa na *which* archetype, nie na *how to adapt*
+- **Section U (Master Admin / Agency Back Office)** — toggle quizu w `/dashboard/quiz` (per-tenant), statystyki w `/dashboard/quiz/analytics`. Master Admin widzi adoption rate quizu w fleet view (`/admin/tenants` — kolumna `quiz_enabled`)
+
+#### E.4.8. Sprint mapping (quiz tickets)
+
+| Sprint | Ticket | Deliverable |
+|---|---|---|
+| Sprint 4 | TICKET-QUIZ-001 | Quiz widget SDK component (Preact + Shadow DOM, sticky + triggered) |
+| Sprint 4 | TICKET-QUIZ-002 | Quiz event schema + Bayesian prior implementation w Intent Engine |
+| Sprint 5 | TICKET-QUIZ-003 | Per-tenant toggle w back office (`/dashboard/quiz` config page) |
+| Sprint 5 | TICKET-QUIZ-004 | Agency analytics dashboard (`/dashboard/quiz/analytics`) — completion rate, archetype distribution, conversion lift |
+| Sprint 6 | TICKET-QUIZ-005 | Quiz mismatch detection + alerts (behavioral contradiction logging dla DQS feed) |
+| Sprint 7 | TICKET-QUIZ-006 | A/B test: quiz on/off cohort comparison (causal lift via E.3.1 framework) |
 
 ---
 
@@ -2275,3 +2471,2177 @@ Estalara Adaptive Listings jest projektowany jako **vertically-specialized, embe
 *Dokument przygotowany na bazie analizy 35+ źródeł zewnętrznych (Anthropic, OpenAI, Cloudflare, EDPB, ICO, CNIL, UAE Data Office, Mutiny, Optimizely, Dynamic Yield, Segment, Drift/Intercom, ClickHouse, Supabase, Vercel, Cloudflare, Modal, RunPod, pgvector benchmarks, Pinecone, Cohere, BGE) — wszystkie konkretne stwierdzenia są oparte na cytowanych linkach. Stan prawny i pricingowy aktualny na 25 kwietnia 2026.*
 
 *Wersja 1.1 (26 kwietnia 2026): rozszerzono o sekcje B.4–B.7 dotyczące auto-onboardingu i self-healing schema validation — odpowiedź na pytanie "jak zminimalizować friction onboarding klienta do <5 min".*
+---
+
+## U. Agency Registration Flow & Master Admin Panel
+
+> **Decyzje architektoniczne zatwierdzone przez Piotra Nawrockiego (CEO) — 5 maja 2026:**
+> - U1: Rejestracja agencji = **approval-required** (nie self-serve)
+> - U2: Płatności = **Stripe + Invoice** (Stripe dla kart, manual invoice dla enterprise)
+> - U3: SDK generation flow = **public API key + gotowy `<script>` snippet** w back office
+> - U4: Master admin auth = **RBAC** (superadmin / ops / readonly)
+> - U5: Master admin lokalizacja = **`/admin/*` routes w `adaptive.estalara.com`** z middleware RBAC (nie osobny app)
+
+---
+
+### U.1. Dwupanelowa architektura dostępu
+
+System ma dwa logicznie odrębne obszary dostępu w **jednej aplikacji** (`apps/control-plane`, domena `adaptive.estalara.com`):
+
+```
+adaptive.estalara.com
+│
+├── /dashboard/*          ← AGENCY PANEL (każda agencja widzi tylko swoje dane)
+│   ├── /dashboard        Overview, analytics
+│   ├── /dashboard/demo   Demo Mode toggle + settings
+│   ├── /dashboard/sdk    SDK Integration + snippet generator
+│   ├── /dashboard/billing Billing, plan, invoices
+│   └── /dashboard/config  Configuration, archetypes
+│
+└── /admin/*              ← MASTER ADMIN PANEL (tylko role estalara:*)
+    ├── /admin            Fleet overview — wszystkie agencje
+    ├── /admin/tenants    Lista + zarządzanie agencjami
+    ├── /admin/tenants/:id Szczegóły jednej agencji
+    ├── /admin/registrations Pending approvals
+    ├── /admin/demo-sessions Aktywne Demo Mode sessions
+    ├── /admin/billing    Revenue dashboard (MRR, ARR, churn)
+    └── /admin/alerts     Alerts center
+```
+
+**Middleware Next.js** (`apps/control-plane/src/middleware.ts`) blokuje `/admin/*`:
+```typescript
+// Tylko użytkownicy z JWT claim role: 'estalara:superadmin' | 'estalara:ops' | 'estalara:readonly'
+// Redirect → /login dla agencji które trafią na /admin/*
+// IP allowlist opcjonalnie dla dodatkowego bezpieczeństwa (Cloudflare WAF rule)
+```
+
+**Dlaczego jeden app, nie dwa:**
+- `apps/control-plane` już istnieje z Next.js 15, Supabase Auth, Tailwind, shadcn/ui
+- RBAC przez JWT claims wystarczy do separacji — nie ma potrzeby osobnego deploymentu
+- Szybszy development w Sprint 3; można wyekstrahować do osobnego app post-Series A jeśli zajdzie potrzeba
+
+---
+
+### U.2. RBAC — Role i uprawnienia
+
+#### U.2.1. Role agencji (tenant-scoped)
+
+```typescript
+type AgencyRole = 
+  | 'agency:owner'    // Pełen dostęp do konta agencji, billing, team management
+  | 'agency:admin'    // Konfiguracja, SDK, analytics — bez billing
+  | 'agency:viewer'   // Read-only: analytics, archetypes
+```
+
+JWT claim dla agencji: `{ tenant_id: "uuid", role: "agency:owner" }`
+
+#### U.2.2. Role Master Admin (Estalara staff)
+
+```typescript
+type EstalaraRole =
+  | 'estalara:superadmin'  // Pełen dostęp: billing, konfiguracja systemu, user management
+  | 'estalara:ops'         // Monitoring, support, impersonation, demo oversight
+  | 'estalara:readonly'    // Tylko odczyt: analytics, fleet overview, audit logs
+```
+
+JWT claim dla staff: `{ estalara_staff: true, role: "estalara:superadmin" }`
+
+**Przypisanie ról (decyzja Piotra):**
+- `estalara:superadmin` — Piotr Nawrocki, Rafał Palak PhD
+- `estalara:ops` — Customer Success, Senior Engineers
+- `estalara:readonly` — Sales, Marketing, Auditors
+
+#### U.2.3. Schema Supabase Auth
+
+```typescript
+// packages/db/src/schema/users.ts
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey(),               // Supabase Auth user ID
+  email: text('email').notNull().unique(),
+  
+  // Dla agencji:
+  tenant_id: uuid('tenant_id').references(() => tenants.id),
+  agency_role: text('agency_role'),          // agency:owner | agency:admin | agency:viewer
+  
+  // Dla staff Estalara:
+  estalara_staff: boolean('estalara_staff').default(false),
+  estalara_role: text('estalara_role'),      // estalara:superadmin | estalara:ops | estalara:readonly
+  
+  created_at: timestamp('created_at').defaultNow(),
+  last_login_at: timestamp('last_login_at'),
+  mfa_enabled: boolean('mfa_enabled').default(false),  // Mandatory dla estalara_staff
+});
+```
+
+---
+
+### U.3. Agency Registration Flow (Approval-Required)
+
+Rejestracja agencji jest **dwuetapowa**: agencja składa wniosek → Master Admin zatwierdza → konto aktywne.
+
+#### U.3.1. Etap 1 — Wniosek agencji
+
+**URL:** `adaptive.estalara.com/register`
+
+**Formularz rejestracyjny:**
+```
+┌─────────────────────────────────────────────────────┐
+│  Get started with Estalara Adaptive Listings        │
+│  ─────────────────────────────────────────────────  │
+│                                                     │
+│  Agency name *          [Marbella Premium Realty  ] │
+│  Website URL *          [https://marbella-prem... ] │
+│  Your name *            [Carlos García            ] │
+│  Work email *           [carlos@marbella-prem...  ] │
+│  Phone (optional)       [+34 ...                  ] │
+│  Country *              [Spain ▼                  ] │
+│  Listings volume        [○ <100  ● 100–1000  ○ 1k+]│
+│  How did you hear?      [Google ▼                  ] │
+│                                                     │
+│  [Create account →]                                 │
+│                                                     │
+│  Already have an account? [Log in]                  │
+└─────────────────────────────────────────────────────┘
+```
+
+**Po kliknięciu "Create account":**
+1. System tworzy rekord w tabeli `tenant_registrations` ze statusem `pending`
+2. Agencja dostaje email: "Dziękujemy za rejestrację — rozpatrzymy wniosek w ciągu 24h"
+3. Slack notification do `#estalara-registrations`: nowy wniosek z nazwą agencji, URL, kraj, volume
+4. Master Admin widzi wniosek w `/admin/registrations`
+
+#### U.3.2. Schema `tenant_registrations`
+
+```typescript
+// packages/db/src/schema/registrations.ts
+export const tenantRegistrations = pgTable('tenant_registrations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  
+  // Dane z formularza
+  agency_name: text('agency_name').notNull(),
+  website_url: text('website_url').notNull(),
+  contact_name: text('contact_name').notNull(),
+  contact_email: text('contact_email').notNull(),
+  contact_phone: text('contact_phone'),
+  country: text('country').notNull(),
+  listings_volume: text('listings_volume'),  // '<100' | '100-1000' | '1000+'
+  referral_source: text('referral_source'),
+  
+  // Status approval
+  status: text('status').notNull().default('pending'),
+  // 'pending' | 'approved' | 'rejected' | 'needs_info'
+  
+  // Po approval
+  tenant_id: uuid('tenant_id').references(() => tenants.id),  // Tworzony przy approval
+  approved_by: uuid('approved_by').references(() => users.id),
+  approved_at: timestamp('approved_at'),
+  rejection_reason: text('rejection_reason'),
+  
+  // Metadata
+  ip_address: text('ip_address'),
+  user_agent: text('user_agent'),
+  created_at: timestamp('created_at').defaultNow(),
+  updated_at: timestamp('updated_at').defaultNow(),
+});
+```
+
+#### U.3.3. Etap 2 — Master Admin approval
+
+**W `/admin/registrations`:**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ Pending Registrations (3)                                           │
+│ ─────────────────────────────────────────────────────────────────── │
+│                                                                     │
+│ Marbella Premium Realty     Spain    100–1000    2h ago    [Review] │
+│ Warsaw Luxury Homes         Poland   <100        5h ago    [Review] │
+│ Dubai Properties LLC        UAE      1000+       1d ago    [Review] │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Widok `/admin/registrations/:id`:**
+- Dane z formularza
+- Auto-check: czy website_url jest dostępny, czy jest na nim system CMS (wykryte przez auto-detect)
+- Przyciski: `[Approve]` `[Request more info]` `[Reject]`
+- Przy Approve: wybór initial plan (Free / Observer / Augment / Native), opcjonalny trial period
+
+**Po zatwierdzeniu:**
+1. System tworzy rekord w tabeli `tenants` (aktywny tenant)
+2. Tworzy konto użytkownika dla contact_email z rolą `agency:owner`
+3. Agencja dostaje email z linkiem aktywacyjnym (set password + MFA setup)
+4. Tenant pojawia się w Fleet Overview
+
+#### U.3.4. Etap 3 — Pierwsze logowanie agencji
+
+Po kliknięciu linku aktywacyjnego:
+1. Agencja ustawia hasło + MFA (TOTP)
+2. Przekierowanie do `adaptive.estalara.com/dashboard`
+3. Onboarding wizard:
+   - Krok 1: "Wklej URL swojej strony" → auto-detect schema (B.4 — Magic Link flow)
+   - Krok 2: "Skopiuj SDK snippet" → `/dashboard/sdk`
+   - Krok 3: "Wklej w `<head>` swojej strony"
+4. System zaczyna nasłuchiwać na eventy z domeny agencji
+
+---
+
+### U.4. SDK Generation Flow
+
+**URL:** `adaptive.estalara.com/dashboard/sdk`
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  SDK Integration                                        │
+│  ─────────────────────────────────────────────────────  │
+│                                                         │
+│  Your Public API Key                                    │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │ est_live_marbella_abc123xyz                       │  │
+│  │                                [Copy] [Rotate]   │  │
+│  └───────────────────────────────────────────────────┘  │
+│                                                         │
+│  Integration Snippet                                    │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │ <!-- Estalara Adaptive Listings -->               │  │
+│  │ <script                                           │  │
+│  │   src="https://cdn.estalara.com/sdk/v1.js"       │  │
+│  │   data-api-key="est_live_marbella_abc123xyz"      │  │
+│  │   data-tier="observer"                            │  │
+│  │   async>                                          │  │
+│  │ </script>                                         │  │
+│  │                                          [Copy]   │  │
+│  └───────────────────────────────────────────────────┘  │
+│                                                         │
+│  Add this to the <head> of every page on your site.    │
+│                                                         │
+│  SDK Status                                             │
+│  ○ Not detected yet — paste the snippet and reload     │
+│  ✓ marbella-premium.com — Active (last seen 2min ago)  │
+│                                                         │
+│  [Download WordPress Plugin]  [View documentation]     │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**SDK Status** jest aktualizowany przez ingest worker — gdy pierwsze eventy dotrą z domeny agencji, status zmienia się z "Not detected yet" na "Active".
+
+---
+
+### U.5. Master Admin Fleet View
+
+**URL:** `adaptive.estalara.com/admin/tenants`
+
+Kolumny tabeli Fleet Overview (rozszerzone o decyzje P1–P5):
+
+| Kolumna | Źródło | Opis |
+|---|---|---|
+| Agency | `tenants.name` | Nazwa agencji |
+| Status | `tenants.status` | `active` / `suspended` / `trial` |
+| Plan | `tenants.plan` | Free / Observer / Augment / Native |
+| SDK | `events` (ClickHouse) | `live` / `silent` / `not_installed` |
+| **Demo Mode** | `demo_sessions` | `OFF` / `🟡 ON — mockup` / `🟠 ON — production` |
+| Last seen | `events.ts` | Timestamp ostatniego eventu |
+| MRR | `billing` | Miesięczny przychód |
+| Registered | `tenants.created_at` | Data zatwierdzenia rejestracji |
+| Actions | — | `[View]` `[Impersonate]` `[Suspend]` |
+
+**Demo Mode kolumna — szczegóły:**
+- `OFF` — Demo Mode nieaktywny
+- `🟡 ON — mockup` — agencja ma aktywny Demo Mode na mock-up page (nie ma SDK na produkcji)
+- `🟠 ON — production` — agencja ma aktywny Demo Mode na produkcyjnej domenie
+- Kliknięcie → `/admin/demo-sessions` filtrowane po tenant
+
+**Alert: Demo Mode active >7 days** — automatyczny alert w Alerts Center gdy tenant ma Demo Mode aktywny dłużej niż 7 dni. Interpretacja: agencja może mieć problem z wdrożeniem SDK na produkcji (utknęła na mocku). Akcja: Customer Success team kontaktuje się proaktywnie.
+
+---
+
+### U.6. Master Admin Demo Sessions View
+
+**URL:** `adaptive.estalara.com/admin/demo-sessions`
+
+Real-time widok wszystkich aktywnych Demo Mode sessions:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ Active Demo Sessions (2)                                            │
+│ ─────────────────────────────────────────────────────────────────── │
+│                                                                     │
+│ Marbella Premium   mockup      British Retiree   Active 14 min  [X] │
+│ Warsaw Luxury      production  Polish Family     Active 3h 22m  [X] │
+│                                                                     │
+│ ─────────────────────────────────────────────────────────────────── │
+│ Demo Sessions — Last 30 days                         [Export CSV]   │
+│                                                                     │
+│ DATE        AGENCY              SCOPE       DURATION  PERSONAS      │
+│ 2026-05-04  Dubai Properties    production  42 min    Gulf Investor  │
+│ 2026-05-03  Marbella Premium    mockup      8 min     3 switches     │
+│ ...                                                                 │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Master Admin może:**
+- Wymusić zakończenie Demo Session dla dowolnego tenanta (`[X]` → `POST /api/admin/demo-sessions/:id/revoke`)
+- Eksportować historię demo sessions (CSV) do analizy sales effectiveness
+- Filtrować po scope (mockup / production), dacie, agencji
+
+---
+
+### U.7. Billing & Subscriptions
+
+#### U.7.1. Stripe + Invoice (decyzja P2)
+
+**Stripe** obsługuje:
+- Automatyczne cykliczne płatności (miesięczne / roczne) kartą kredytową
+- Webhooks: `payment_succeeded`, `payment_failed`, `subscription.updated`, `subscription.canceled`
+- Stripe Customer Portal dla agencji (self-serve zmiany planu, aktualizacja karty)
+
+**Manual Invoice** obsługuje:
+- Tier 3 Native i enterprise — płatność przelewem
+- System generuje fakturę PDF (przez Stripe Invoice lub zewnętrzny system księgowy)
+- Master Admin manualnie potwierdza wpłatę i aktywuje plan w `/admin/tenants/:id`
+
+#### U.7.2. Subscription states
+
+```typescript
+type SubscriptionStatus = 
+  | 'trial'           // 14-dniowy trial (opcjonalny przy approval)
+  | 'active'          // Płacąca agencja
+  | 'past_due'        // Płatność się nie powiodła, grace period 7 dni
+  | 'suspended'       // Po grace period — SDK wyłączony, back office read-only
+  | 'canceled'        // Konto anulowane — dane retencja 90 dni
+```
+
+#### U.7.3. Master Admin Revenue Dashboard (`/admin/billing`)
+
+Dostępny tylko dla `estalara:superadmin`:
+- MRR (Monthly Recurring Revenue) z trendem
+- ARR (Annual Run Rate)
+- Churn rate (ostatnie 30/90 dni)
+- Cohort analysis (retencja po 1/3/6 miesiącach)
+- Upcoming renewals i at-risk accounts (`past_due`)
+- Export do CSV / integracja z zewnętrznym BI
+
+---
+
+### U.8. Impersonation (Support Tool)
+
+Master Admin z rolą `estalara:ops` lub `estalara:superadmin` może zalogować się jako dowolna agencja:
+
+**Flow:**
+1. `/admin/tenants/:id` → przycisk `[Impersonate]`
+2. System generuje krótkotrwały JWT (15 min) z `{ tenant_id, impersonated_by: admin_user_id }`
+3. Admin widzi back office dokładnie tak jak agencja
+4. Żółty banner: "⚠️ Impersonating Marbella Premium — [Exit impersonation]"
+5. Wszystkie akcje wykonane podczas impersonation są logowane w `staff_audit_log` z `impersonated_by`
+
+**Ograniczenia:**
+- Impersonation nie pozwala na zmianę hasła / MFA agencji
+- Billing actions podczas impersonation wymagają dodatkowego potwierdzenia (eskalacja do superadmin)
+- Session timeout impersonation: 15 minut (nie extendable)
+
+---
+
+### U.9. Audit Log (staff)
+
+Wszystkie akcje Master Admin są logowane w tabeli `staff_audit_log`:
+
+```typescript
+export const staffAuditLog = pgTable('staff_audit_log', {
+  id: uuid('id').primaryKey(),
+  admin_user_id: uuid('admin_user_id').notNull(),
+  action: text('action').notNull(),
+  // 'tenant.approved' | 'tenant.suspended' | 'demo.force_stopped' | 
+  // 'impersonation.started' | 'subscription.changed' | ...
+  target_tenant_id: uuid('target_tenant_id'),
+  payload: jsonb('payload'),               // Szczegóły akcji
+  ip_address: text('ip_address'),
+  created_at: timestamp('created_at').defaultNow(),
+});
+// append-only, brak DELETE/UPDATE przez RLS
+// retention: 7 lat (compliance requirement)
+```
+
+---
+
+### U.10. Investor Quiz — opt-in self-declared intent feature (back-office side)
+
+> **Cross-reference:** Pełna specyfikacja widget UX, mapping odpowiedzi do priors, i events tracking — patrz **Section E.4**. Ta podsekcja opisuje wyłącznie back-office (per-tenant toggle + analytics).
+
+#### U.10.1. Per-tenant Quiz Toggle (`/dashboard/quiz`)
+
+Każda agencja decyduje czy quiz inwestora jest aktywny na jej stronie. Domyślnie: **OFF** (agencja musi explicit włączyć).
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 🎯 Investor Intent Quiz                                         │
+│ ─────────────────────────────────────────────────────────────── │
+│                                                                 │
+│ Help your buyers find their match faster with 2 quick questions │
+│ Show a sticky widget asking purpose (personal/investment) and   │
+│ horizon (≤3 months / >1 year). Answers boost personalization    │
+│ accuracy from the very first listing view.                      │
+│                                                                 │
+│ ┌─────────────────────────────────────────────────────────┐     │
+│ │ Quiz status                              [  OFF  ●  ]   │     │
+│ └─────────────────────────────────────────────────────────┘     │
+│                                                                 │
+│ ── Display options ─────────────────────────────────────        │
+│ ☑ Sticky widget (always visible, bottom-right corner)           │
+│ ☑ Trigger prompt after 3 listings viewed                        │
+│ ☐ Show on listing detail pages only (hide on home/search)       │
+│                                                                 │
+│ ── Localization ────────────────────────────────────────        │
+│ Question language        [ English ▼ ]                          │
+│                          (PL, ES, AR, FR, DE coming Sprint 7)   │
+│                                                                 │
+│ ── Brand styling ───────────────────────────────────────        │
+│ Widget accent color      [ #2563EB ]  (inherits brand tokens)   │
+│ Widget icon              [ 🎯 ▼ ]                                │
+│                                                                 │
+│ [Cancel]                                  [Save & Activate]     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Konfiguracja zapisywana w `tenants.config.quiz`:**
+```typescript
+type QuizConfig = {
+  enabled: boolean;
+  display: {
+    sticky_widget: boolean;
+    trigger_after_n_listings: number | null;  // null = disabled
+    show_on_detail_pages_only: boolean;
+  };
+  localization: {
+    language: 'en' | 'pl' | 'es' | 'ar' | 'fr' | 'de';
+  };
+  styling: {
+    accent_color: string;       // hex, inherits brand tokens default
+    icon: string;               // emoji or icon ID
+  };
+  updated_by: string;            // user_id
+  updated_at: Date;
+};
+```
+
+#### U.10.2. Quiz Analytics Dashboard (`/dashboard/quiz/analytics`)
+
+Agencja widzi statystyki skuteczności quizu w czasie rzeczywistym:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 🎯 Quiz Analytics — Last 30 days                                │
+│ ─────────────────────────────────────────────────────────────── │
+│                                                                 │
+│ ┌──────────────┬──────────────┬──────────────┬──────────────┐   │
+│ │ Impressions  │ Started      │ Completed    │ Conversion+  │   │
+│ │   12,847     │   3,206      │   2,439      │    +18.4%    │   │
+│ │              │ 25.0% rate   │ 76.1% rate   │ vs no-quiz   │   │
+│ └──────────────┴──────────────┴──────────────┴──────────────┘   │
+│                                                                 │
+│ ── Funnel ────────────────────────────────────────────────      │
+│ Shown    ████████████████████████████████████████  12,847       │
+│ Started  ██████████                                  3,206  25% │
+│ Q1 done  █████████                                   2,890  90% │
+│ Q2 done  ████████                                    2,439  84% │
+│                                                                 │
+│ ── Answer distribution ────────────────────────────────         │
+│ Personal × Short (≤3mo):       ████████  31% (758)              │
+│ Personal × Long  (>1yr):       █████     19% (462)              │
+│ Investment × Short (≤3mo):     ███████   28% (683)              │
+│ Investment × Long (>1yr):      ███████   22% (536)              │
+│                                                                 │
+│ ── Conversion lift by answer combination ─────────────          │
+│ Personal × Short:    +24.1% inquiry rate vs control             │
+│ Investment × Short:  +31.2% inquiry rate vs control             │
+│ Personal × Long:     +12.8% inquiry rate vs control             │
+│ Investment × Long:   +8.4% inquiry rate vs control              │
+│                                                                 │
+│ ── Quiz vs behavioral mismatch rate ──────────────────          │
+│ 14.2% of completed quizzes had behavioral signals               │
+│ contradicting answers within 5 minutes.                         │
+│ Most common: "Personal" → behavioral indicates investment.      │
+│                                                                 │
+│ [Export CSV]  [Compare cohorts]  [View as graph]                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Metryki wyliczane real-time z ClickHouse `events` table:**
+
+| Metric | Definition | Source |
+|---|---|---|
+| **Impressions** | Count of `quiz.event` z `step='shown'` | events |
+| **Started** | Count z `step='started'` | events |
+| **Completed** | Count z `step='completed'` | events |
+| **Completion rate** | Completed / Started | derived |
+| **Conversion lift** | Inquiry rate quiz-completed vs no-quiz cohort | join with `inquiry.completed` |
+| **Answer distribution** | Group by (purpose, horizon) | events |
+| **Mismatch rate** | % sessions z `quiz_behavioral_mismatch=true` flag | events |
+
+**Drill-down filters:**
+- Date range (last 7 / 30 / 90 days, custom)
+- Device type (desktop / mobile / tablet)
+- Trigger source (sticky / prompt / manual)
+- Listing category (residential / commercial / land)
+- Geographic region (jeśli tenant ma multi-region listings)
+
+**Export:** CSV download z agregowanymi statystykami (zero PII — tylko enum values + counts).
+
+#### U.10.3. Master Admin oversight (Fleet View extension)
+
+W `/admin/tenants` Fleet Overview dodajemy kolumnę:
+
+| Column | Source | Values |
+|---|---|---|
+| **Quiz** | `tenants.config.quiz.enabled` | `OFF` / `🟢 ON — N% completion` |
+
+Pozwala Master Adminowi szybko zidentyfikować:
+- Tenants którzy mają quiz wyłączony mimo wysokiego SDK traffic (sales opportunity — "włącz quiz, +18% conversion")
+- Tenants z bardzo niskim completion rate (<30%) — może źle skonfigurowany trigger lub brand styling
+
+#### U.10.4. Sprint mapping (back-office quiz tickets)
+
+Patrz Section E.4.8 dla pełnej listy quiz ticketów. Tickety wpływające na back-office:
+
+- **TICKET-QUIZ-003** (Sprint 5): Per-tenant toggle `/dashboard/quiz` config page (U.10.1)
+- **TICKET-QUIZ-004** (Sprint 5): Agency analytics dashboard `/dashboard/quiz/analytics` (U.10.2)
+- **TICKET-QUIZ-007** (Sprint 6): Master Admin Fleet View column dla quiz status (U.10.3)
+
+---
+
+### U.11. Profile Mode (Identified Buyers) — POST-MVP feature, forward-compatibility only
+
+> **Status:** **Deferred to post-MVP roadmap (Sprint 12+).** Ta podsekcja NIE definiuje ticketów do implementacji w Sprint 0-7. Definiuje wyłącznie **forward-compatibility constraints** dla bieżącej architektury — tak żebyśmy nie zablokowali tej funkcjonalności podczas budowania MVP.
+>
+> **Decyzja produktowa (Piotr Nawrocki, 5 maja 2026):**
+> - Profile Mode jako **Tier-agnostic feature** — toggle dostępny dla wszystkich tierów po aktywacji przez Master Admin
+> - **Globalna flaga "Profile Mode beta"** w `/admin/tenants/:id` — jednoklikowy toggle Master Admin
+> - **Approval workflow ZEWNĘTRZNY** (Notion + email + DPA review) — proces nie zaszyty w systemie IT
+> - **Wdrożenie:** dopiero po MVP retrospective (Sprint 12+), z pełnym kontekstem real customer needs
+
+#### U.11.1. Co to jest Profile Mode
+
+Domyślnie Estalara Adaptive Listings jest **anonymous-first**:
+- Buyer nie zostawia śladu między sesjami
+- Behavioral signals + opcjonalny quiz (E.4) tworzą session-scoped archetype
+- Sesja kończy się — profile znika
+- Cross-tenant aggregations (Sekcja F) używają tylko anonymized, k-anonymized, DP-protected data
+
+**Profile Mode (opt-in per tenant po Master Admin approval)** dodaje warstwę **identified buyers**:
+- Buyer wypełnia registration form (email, imię, telefon optional, preferences)
+- Granular consent: contact (phone/email), behavior tracking, team sharing
+- Profile zapisany **tylko per-tenant** (RLS scoped) — Idealista NIE WIDZI buyer profiles z Otodom
+- Agencja może później do buyera zadzwonić z znajomością preferencji
+
+**Co Profile Mode NIE zmienia:**
+- Cross-tenant archetype aggregations (Sekcja F) NIGDY nie używają identified data
+- Profile data NIGDY nie wychodzi poza tenant boundaries
+- Anonymous mode pozostaje default — Profile Mode wymaga explicit buyer consent
+
+#### U.11.2. Dlaczego post-MVP (uzasadnienie deferreal)
+
+1. **YAGNI w MVP** — większość agencji w pilot phase będzie testować anonymous-first proposition. Profile Mode jest add-on dla power users
+2. **Legal complexity** — wymaga custom DPA per tenant, fair-housing review, GDPR Art. 22 (automated decision-making) consent flow. To jest 2-4 tygodnie legal work per pierwszy customer — nie chcemy tego w Sprint 0-7
+3. **Spec może się zmienić** — po 6 miesiącach real customer feedback wiemy więcej o tym **co konkretnie** agencje chcą zbierać (czy email + phone wystarczy, czy potrzebują budget range, family size, etc.)
+4. **Cross-tenant intelligence path** — przed Profile Mode warto zbudować **Estalara Insights** (Sekcja U.13.5) jako standalone product. Insights używa wyłącznie aggregated anonymous data — zero legal risk
+
+#### U.11.3. Forward-compatibility — co MUSI respektować obecna architektura
+
+To jest **architectural checklist** dla każdego ticketu w Sprint 0-7. Każda decyzja powinna pass tych 6 testów:
+
+**Test 1 — Tenant isolation strict from day 1**
+- ✅ RLS na każdej tabeli z tenant_id (już designed w Sekcji J)
+- ✅ Drizzle role separation `createTenantClient` vs `createAdminClient` (TICKET-FIX-004 ✅)
+- ✅ ClickHouse tenant_id partition key (Sekcja A.4)
+- ✅ Cross-tenant queries TYLKO przez admin client + audit log
+- **Implication dla Profile Mode:** dodanie `agency_profiles` table w Sprint 12+ wymaga tylko nowych RLS policies, nie refactoring
+
+**Test 2 — Encryption-ready column architecture**
+- ✅ pgcrypto extension dostępny w Supabase (zero infra setup needed)
+- ✅ Column-level encryption pattern documented w Sekcji V.8.1 (`users.mfa_backup_codes` używa już bcrypt)
+- ✅ `DB_COLUMN_ENCRYPTION_KEY` w Doppler scope dla future use
+- **Implication dla Profile Mode:** `agency_profiles.email`, `phone`, `full_name` będą encrypted columns od dnia 1 — bez migracji
+
+**Test 3 — Consent tracking primitives**
+- ⚠️ **Action item dla Sprint 2 TICKET-021:** dodać generic `consent_records` table (tenant_id, subject_id, consent_type, granted_at, revoked_at, ip_address, user_agent, tos_version)
+- ✅ Już planowane dla cookie consent / behavioral tracking opt-in (Sekcja H)
+- **Implication dla Profile Mode:** ta sama tabela obsłuży `consent_type='profile_creation'`, `consent_type='phone_contact'`, etc.
+
+**Test 4 — Session ↔ identity bridge**
+- ✅ Session model w Sekcji D.3 ma `session_id` (anonymous fingerprint hash)
+- ⚠️ **Action item dla Sprint 4 SDK ticket:** SDK musi mieć optional `Estalara.identify(profile_id)` API stub — placeholder, nic nie robi w MVP, ale API exists
+- **Implication dla Profile Mode:** w Sprint 12+ `identify()` zaczyna linkować session → profile. Brak stub'u w MVP = breaking change w SDK API later
+
+**Test 5 — Anonymous-first global archetype training**
+- ✅ Archetype Update Job (Sekcja F.2) już używa anonymized data tylko
+- ✅ Differential privacy, k-anonymity ≥50, no tenant_id w training data
+- ✅ Code path explicitly excludes any future identified data
+- **Implication dla Profile Mode:** profile data NIGDY nie feed do global archetypes — ten constraint jest zapisany w F.2 documentation jako invariant
+
+**Test 6 — Fair-housing linter ready**
+- ✅ Już planowany w Sekcji E.3.2 (weighted objective: `brand_safety_score`)
+- ✅ Sprint 8+ implementation
+- **Implication dla Profile Mode:** linter musi być gotowy ZANIM Profile Mode aktywny u pierwszego customer — bez tego ryzyko Fair Housing Act violation
+
+#### U.11.4. Co BĘDZIE w Sprint 12+ (placeholder spec)
+
+Pełna specyfikacja będzie w **osobnym dokumencie** napisanym po Sprint 7 retrospective. Wstępny scope:
+
+**Master Admin side (`/admin/tenants/:id`):**
+- Toggle "Profile Mode beta" (default OFF)
+- Wymaga external approval flow done (audit log captures who, when, DPA reference)
+- Audit log entry przy każdej zmianie
+
+**Agency side (`/dashboard/profile-mode`):**
+- Konfiguracja registration form fields (email, name, phone, budget, location, etc.)
+- Granular consent text editor (per-tenant brand voice)
+- Privacy policy template auto-generator
+- Lead export (CSV, JSON, CRM webhook)
+
+**SDK side:**
+- Registration form widget (Preact + Shadow DOM, sticky, dismissable)
+- `Estalara.identify(profile_id)` API
+- Session linking
+- Profile-aware adaptation (Intent Engine używa profile preferences jako stronger prior niż quiz)
+
+**Data architecture:**
+- `agency_profiles` table (per-tenant, encrypted PII columns, RLS)
+- `agency_profile_sessions` linking table
+- `consent_records` extension dla profile consents
+- Indexes dla agency analytics queries
+
+**Compliance:**
+- Custom DPA template (Estalara processor, agency controller)
+- Fair-housing linter integration (E.3.2)
+- GDPR Art. 22 explicit consent flow dla automated personalization
+- Right to access/erasure self-service portal dla buyers
+
+**Estimated scope:** 15-20 ticketów, 2-3 sprinty (Sprint 12-14).
+
+#### U.11.5. Estalara Insights (parallel path, also post-MVP)
+
+**Cross-tenant intelligence as standalone product** — zero legal risk because uses only aggregated anonymous data:
+
+- "Top 10 conversion patterns dla luxury Spain coastal" reports
+- "Buyer archetype trends Q1 2027" industry reports
+- "Adaptation effectiveness benchmarks" by region/property type
+- API access for banks, REITs, large brokerages
+
+**Pricing:** $5k-50k/year per subscription (separate from Adaptive Listings).
+
+**Why parallel to Profile Mode:** Insights NIE potrzebuje identified data, więc może iść first (Sprint 10+). Insights revenue stream sam w sobie justifies network effect inwestycji.
+
+Pełna spec w **Year 2 strategic document** — out of scope dla Master Design v1.4.
+
+#### U.11.6. Action items dla obecnych sprintów
+
+Te punkty MUSZĄ być uwzględnione w MVP żeby Profile Mode było viable post-MVP bez breaking changes:
+
+| Sprint | Ticket | Action item |
+|---|---|---|
+| Sprint 2 | TICKET-021 | Dodać generic `consent_records` table do schema (T3 forward-compat) |
+| Sprint 4 | SDK ticket | Dodać `Estalara.identify()` stub do SDK API (no-op, but exported) |
+| Sprint 8 | TICKET-FAIR-001 (new) | Fair-housing linter MVP — gate dla Profile Mode aktywacji |
+| Documentation | Sekcja F.2 | Add invariant: "global archetype training NEVER uses identified data, even if Profile Mode active" |
+
+Te 4 punkty to suma "kosztu" forward-compatibility w MVP. Każdy z nich jest <1 dnia pracy — łączny narzut <1 sprint, dystrybuowany. Akceptowalne.
+
+#### U.11.7. Cross-references
+
+- **Sekcja F (Data Network Effect):** Profile Mode RESPECTS F's anonymous-first architecture — identified data nigdy nie feed do global archetypes (invariant)
+- **Sekcja H (Compliance):** Profile Mode wymaga custom DPA per tenant; Sekcja H już covers GDPR principles dla anonymous mode, future doc covers identified mode
+- **Sekcja J (Multi-Tenancy):** RLS policies wystarczające dla `agency_profiles` extension — bez refactoringu
+- **Sekcja V (Security):** column-level encryption już designed (V.8.1) — Profile Mode użyje istniejącego patternu
+- **Sekcja E.3.2 (Multi-objective optimization):** `brand_safety_score` (fair-housing linter) MUST be live before first Profile Mode activation
+
+---
+
+### U.12. Sprint mapping
+
+| Sprint | Ticket | Deliverable |
+|---|---|---|
+| Sprint 2 | TICKET-021 | Postgres schema — dodać `tenant_registrations`, `users` z rolami, `staff_audit_log`, **`consent_records`** (forward-compat dla Profile Mode U.11.6) |
+| Sprint 3 | TICKET-ADM-001 | `/register` page + approval flow + Slack notification |
+| Sprint 3 | TICKET-ADM-002 | `/admin/registrations` — pending approvals view |
+| Sprint 3 | TICKET-ADM-003 | `/admin/tenants` — Fleet Overview z Demo Mode kolumną |
+| Sprint 3 | TICKET-ADM-004 | `/admin/demo-sessions` — real-time demo oversight |
+| Sprint 4 | TICKET-ADM-005 | `/dashboard/sdk` — SDK snippet generator + SDK Status |
+| Sprint 4 | TICKET-ADM-006 | Stripe integration — subscriptions + webhooks |
+| Sprint 4 | TICKET-SDK-IDENTIFY | SDK `Estalara.identify()` API stub (no-op, forward-compat dla Profile Mode U.11.6) |
+| Sprint 5 | TICKET-ADM-007 | `/admin/billing` — Revenue Dashboard (superadmin only) |
+| Sprint 5 | TICKET-ADM-008 | Impersonation tool |
+| Sprint 5 | TICKET-QUIZ-003 | Per-tenant Quiz Toggle — `/dashboard/quiz` config page (U.10.1) |
+| Sprint 5 | TICKET-QUIZ-004 | Quiz Analytics Dashboard — `/dashboard/quiz/analytics` (U.10.2) |
+| Sprint 6 | TICKET-ADM-009 | Manual Invoice flow (Tier 3 enterprise) |
+| Sprint 6 | TICKET-QUIZ-007 | Master Admin Fleet View — quiz status column (U.10.3) |
+| Sprint 8 | TICKET-FAIR-001 | Fair-housing linter MVP (gate dla Profile Mode aktywacji, E.3.2 + U.11.6) |
+| **Sprint 12+** | **PROF-001 do PROF-020** | **Profile Mode pełna implementacja — separate spec doc, post-MVP** |
+
+---
+
+### U.13. Cross-references
+
+- **Sekcja E.4 (Investor Quiz Widget):** pełna specyfikacja widget UX, Bayesian prior mapping, events tracking, sprint mapping. U.10 opisuje wyłącznie back-office; E.4 jest source of truth dla logiki personalizacji
+- **Sekcja D.5 (Detection Quality Score):** quiz completion rate i quiz-behavioral mismatch rate jako leading indicators DQS — feed do dashboard `/admin/data-quality`
+- **Sekcja F (Data Network Effect):** Profile Mode (U.11) RESPECTS anonymous-first architecture — identified data nigdy nie feed do global archetypes (invariant zapisany w F.2)
+- **Sekcja J (Multi-Tenancy):** `tenants` tabela i RLS policies — rozszerzone o `registration_id`, `approved_by`, `status`, `config.quiz` (per-tenant Quiz config), `profile_mode_enabled` (Master Admin gated boolean dla U.11)
+- **Sekcja K (Internal Ops Panel):** Section U rozszerza i uszczegółowia Section K — U jest source of truth dla master admin design
+- **Sekcja T (Demo Mode):** Demo Mode toggle dostępny po approval (U.3.3); Master Admin oversight Demo Mode opisany w U.5 i U.6
+- **Sekcja V (Security):** column-level encryption pattern (V.8.1) reused dla `agency_profiles` w Sprint 12+
+- **Sekcja O (Roadmap):** Sprint 2 TICKET-021 musi uwzględnić nowe tabele z U.2.3, U.3.2, oraz `consent_records` z U.11.6
+
+
+---
+
+## V. Security Architecture & Cybersecurity
+
+> **Decyzja architektoniczna (Piotr Nawrocki, 5 maja 2026):** Estalara Adaptive Listings buduje fundament bezpieczeństwa od dnia 1 — nie jako "compliance check-box" ale jako warunek wejścia w segment enterprise (Idealista, Otodom, Rightmove). Każdy enterprise klient w Year 1 zażąda security questionnaire — musimy mieć na to gotową odpowiedź.
+
+### V.1. Security philosophy & threat model
+
+#### V.1.1. Trust boundaries
+
+System ma **pięć warstw zaufania** — każda granica wymaga eksplicytnej walidacji:
+
+```
+┌─ Untrusted: public internet (buyers on agency websites) ─────────────┐
+│                                                                       │
+│  ┌─ Semi-trusted: SDK on third-party domain ──────────────────────┐  │
+│  │  - Origin validated, HMAC-signed payloads, rate-limited        │  │
+│  │  - No access to tenant secrets                                 │  │
+│  │  - Cannot read tenant config                                   │  │
+│  │                                                                 │  │
+│  │  ┌─ Tenant-trusted: agency staff (adaptive.estalara.com) ──┐  │  │
+│  │  │  - Authenticated via Supabase Auth + MFA                 │  │  │
+│  │  │  - JWT scoped to single tenant_id                        │  │  │
+│  │  │  - RLS enforces row-level isolation                      │  │  │
+│  │  │                                                          │  │  │
+│  │  │  ┌─ Estalara-trusted: staff (/admin/*) ──────────────┐   │  │  │
+│  │  │  │  - RBAC: superadmin/ops/readonly                  │   │  │  │
+│  │  │  │  - MFA mandatory + IP allowlist (post-MVP)        │   │  │  │
+│  │  │  │  - All actions audit-logged                       │   │  │  │
+│  │  │  │                                                    │   │  │  │
+│  │  │  │  ┌─ Infra-trusted: backend service-role ─────┐    │   │  │  │
+│  │  │  │  │  - Bypass RLS dla migracji/admin ops       │    │   │  │  │
+│  │  │  │  │  - Never exposed to tenant API routes      │    │   │  │  │
+│  │  │  │  └────────────────────────────────────────────┘    │   │  │  │
+│  │  │  └────────────────────────────────────────────────────┘   │  │  │
+│  │  └────────────────────────────────────────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+#### V.1.2. STRIDE threat model
+
+| Threat | Attack scenario | Mitigation |
+|---|---|---|
+| **Spoofing** | Atakujący podszywa się pod tenant API key | HMAC signing per request (V.4.2), origin validation, rate limit per tenant |
+| **Tampering** | MITM modyfikuje event payload w tranzycie | TLS 1.3 mandatory, HMAC integrity check, idempotency keys (TICKET-019) |
+| **Repudiation** | Tenant zaprzecza akcjom administracyjnym | `staff_audit_log` append-only, 7 lat retencji, `tenants_audit_log` per-tenant |
+| **Information Disclosure** | Buyer A widzi dane buyera B (cross-session) | Session-scoped fingerprint hash z HMAC + tenant_secret + day_bucket; RLS na poziomie DB; no PII w events (TICKET-FIX-005) |
+| **Denial of Service** | Bot pętla wysyła 1M eventów/min do Ingest | Rate limiting Durable Objects (TICKET-013), Cloudflare DDoS protection, per-tenant cost limits (V.10) |
+| **Elevation of Privilege** | Tenant user uzyskuje master admin role | Separate JWT claims (`tenant_id` vs `estalara_staff`), middleware RBAC walidacja, MFA dla staff, sudo mode dla destruktywnych akcji |
+
+#### V.1.3. Critical assets — co chronimy
+
+| Asset | Why critical | Tier |
+|---|---|---|
+| **Buyer behavioral data** | GDPR/CCPA personal data; reputation risk on breach | T1 (najwyższy) |
+| **Tenant API keys** | Bypass uwierzytelniania, cross-tenant impersonation | T1 |
+| **Master admin credentials** | Full-fleet access | T1 |
+| **Stripe webhook signing secret** | Fraudulent billing manipulation | T1 |
+| **Tenant config (brand tokens, schemas)** | Reputation if defaced; competitive intel | T2 |
+| **ML model weights** | Trade secret, competitive moat | T2 |
+| **Audit logs** | Regulatory compliance, incident investigation | T2 |
+| **Anonymized archetype embeddings** | Data network effect (DP-protected) | T3 |
+
+---
+
+### V.2. Authentication & Session Security
+
+#### V.2.1. Password policy (Supabase Auth)
+
+```typescript
+// packages/db/src/auth/password-policy.ts
+export const PASSWORD_POLICY = {
+  min_length: 12,                          // NIST SP 800-63B current best practice
+  max_length: 128,                         // prevent algorithmic DoS
+  require_breach_check: true,              // HaveIBeenPwned k-anonymity API
+  disallow_common_passwords: true,         // top 10k blacklist (zxcvbn dictionary)
+  disallow_user_attributes_match: true,    // password ≠ email/name fragments
+  history_count: 5,                        // last 5 passwords cannot be reused
+  expiry_days: null,                       // NIST: no forced rotation (modern standard)
+};
+```
+
+**HaveIBeenPwned integration:** SHA-1 prefix lookup (k-anonymity), nigdy nie wysyłamy pełnego hasha. Implementowane jako Supabase Auth hook lub middleware przy signup/password-change.
+
+#### V.2.2. JWT & session management
+
+| Claim | Wartość | Komentarz |
+|---|---|---|
+| `iss` | `https://adaptive.estalara.com` | Audience-scoped issuer |
+| `aud` | tenant_id LUB `estalara:staff` | Single audience per token |
+| `sub` | user_id (UUID) | Subject |
+| `tenant_id` | UUID (dla agency users) | Used by RLS auth.jwt() |
+| `agency_role` | `agency:owner | agency:admin | agency:viewer` | RBAC enforcement |
+| `estalara_staff` | boolean | `true` only for staff |
+| `estalara_role` | `estalara:superadmin | estalara:ops | estalara:readonly` | Staff RBAC |
+| `mfa_verified` | boolean | True jeśli MFA passed w bieżącej sesji |
+| `iat`, `exp`, `jti` | standard | jti dla revocation list |
+
+**Session TTLs:**
+- Access token: **15 min** (krótkie żeby ograniczyć blast radius przy kradzieży)
+- Refresh token: **7 dni** dla agency users; **24h** dla `estalara:*` staff
+- Idle timeout: **1h** dla `/admin/*` (per K.7), **8h** dla `/dashboard/*`
+- Absolute session timeout: **8h** staff, **30 dni** agency
+
+**Token revocation:** Supabase Auth supports JTI-based revocation list w Postgres. Dodajemy `revoked_tokens` tabelę z TTL = max(refresh_token TTL). Middleware sprawdza JTI przy każdym request do `/admin/*` i destruktywnych akcjach.
+
+**Refresh token rotation:** Każde użycie refresh token wymienia go na nowy (one-time use). Kradzież wykryta → all-sessions invalidate.
+
+#### V.2.3. Brute-force protection
+
+- **Account lockout:** 5 nieudanych prób w 15 min → 30-min lockout, eskalacja do ops alert po 10 lockoutach z różnych IP w 1h (możliwy credential stuffing attack)
+- **Cloudflare Turnstile** na `/login` i `/register` (invisible challenge dla legitimate users, hard challenge dla suspicious patterns)
+- **Geographic anomaly detection:** Login z innego kraju niż last_login → wymaganie MFA + email notification ("New device login from {city, country}")
+- **Failed login telemetry:** wszystkie wysyłane do `auth_events` table → aggregacja w Sentry + Slack `#estalara-security` alert dla anomalii
+
+#### V.2.4. Multi-Factor Authentication (MFA)
+
+| Persona | MFA wymagane | Method |
+|---|---|---|
+| `agency:viewer` | Optional (rekomendowane) | TOTP |
+| `agency:admin` | **Mandatory** od MVP | TOTP (Google Authenticator, Authy, 1Password) |
+| `agency:owner` | **Mandatory** od MVP — billing access | TOTP + backup codes |
+| `estalara:readonly` | **Mandatory** | TOTP |
+| `estalara:ops` | **Mandatory** | TOTP + WebAuthn (Sprint 9 hardening) |
+| `estalara:superadmin` | **Mandatory** | TOTP + **WebAuthn hardware key** od Sprint 9 |
+
+**Backup codes:** 10 jednorazowych kodów generowanych przy MFA setup, encrypted-at-rest w `users.mfa_backup_codes` (bcrypt-hashed).
+
+#### V.2.5. Sudo mode dla destruktywnych operacji
+
+Dla operacji wysokiego ryzyka — usunięcie konta agencji, force-suspend tenant, wyłączenie MFA dla staff member, zmiana super-admin permissions, master admin impersonation — wymagamy **re-authentication w ostatnich 5 minutach** (sudo mode timer):
+
+```typescript
+// apps/control-plane/src/middleware/sudo-mode.ts
+export async function requireSudoMode(req: Request) {
+  const lastAuth = await db.query.users.findFirst({
+    where: eq(users.id, req.user.id),
+    columns: { last_sudo_auth_at: true }
+  });
+  
+  if (!lastAuth?.last_sudo_auth_at || 
+      Date.now() - lastAuth.last_sudo_auth_at > 5 * 60 * 1000) {
+    throw new HTTPError(403, 'sudo_mode_required', 
+      'This action requires recent re-authentication. Please confirm your password.');
+  }
+}
+```
+
+#### V.2.6. Just-in-Time (JIT) elevated access
+
+Dla `estalara:ops` impersonation tenant accountu (Section U.8) — wymagamy **JIT approval workflow**:
+
+1. Ops klika "Impersonate Marbella Premium" → system tworzy `pending_impersonation` request
+2. Drugi superadmin (Piotr lub Rafał) musi approve w `#estalara-security` Slack channel (lub w `/admin/jit-approvals`)
+3. Po approval, ops dostaje 15-min impersonation token (single-use)
+4. Wszystkie akcje podczas impersonation oznaczone w `staff_audit_log` z `impersonation_request_id`
+5. Tenant dostaje email notification w ciągu 24h: "Estalara support team accessed your account on {date}. Reason: {reason}. If this was unexpected, contact security@estalara.com immediately."
+
+**Compliance note:** JIT + tenant notification spełnia GDPR Art. 5(1)(a) "lawfulness, fairness, transparency" dla legitimate interest impersonation.
+
+---
+
+### V.3. API Security
+
+#### V.3.1. Rate limiting strategy (multi-layered)
+
+| Layer | Where | Limits | Enforcement |
+|---|---|---|---|
+| **L1: Cloudflare WAF** | Edge, before Workers | Generic DDoS, suspicious patterns | Auto-block IP |
+| **L2: Per-tenant ingest** | Ingest Worker (Durable Objects, TICKET-013) | 1000 events/sec/tenant baseline; tier-scaled | 429 + retry-after |
+| **L3: Per-IP for unauthenticated** | Control Plane middleware | 60 req/min per IP for `/login`, `/register` | 429 + Cloudflare Turnstile |
+| **L4: Per-user for authenticated** | Control Plane middleware | 600 req/min per user_id (any endpoint) | 429 |
+| **L5: Per-endpoint critical paths** | Control Plane middleware | `/api/admin/impersonate`: 10/hour; `/api/billing/*`: 30/min | 429 + Sentry alert |
+
+**Implementation:** Upstash Redis dla L3-L5 (sliding window), Cloudflare Durable Objects dla L2 (już zaimplementowane).
+
+#### V.3.2. Request signing (HMAC)
+
+**Ingest endpoint** (już zaimplementowane w TICKET-012):
+```
+HMAC-SHA-256(secret_api_key, timestamp + ":" + body_hash)
+```
+
+**Webhook endpoints (Stripe, future integrations):**
+- Stripe webhook secret (per environment) sprawdzane w middleware
+- Replay protection: timestamp ± 5 min tolerance, nonce z body hash w Redis (TTL = 10 min)
+- Signature header: `x-estalara-signature`, body hash: SHA-256
+
+**Admin destructive actions:**
+- HMAC signing wymagane dla: tenant suspend, billing changes, impersonation, force-stop demo
+- Sygnowane przez session JWT + nonce → middleware weryfikuje przed wykonaniem
+- Idempotency keys (TICKET-019) dla każdej destruktywnej akcji
+
+#### V.3.3. Input validation
+
+**Wszystkie inputs walidowane przez Zod schemas** (już praktykowane w `packages/shared`):
+- Event envelope (TICKET-011) z PII blacklist (TICKET-FIX-005)
+- API request bodies — każda route handler używa `.safeParse()` przed processingiem
+- Path parameters — UUID format validation
+- Query parameters — explicit schema, nie blank `z.string()`
+
+**Output sanitization:**
+- DOMPurify dla user-generated content w archetype names, listing titles
+- Escape sequences w SQL queries — NIGDY raw SQL, zawsze parameterized przez Drizzle
+- LLM output sanitization — prompts zwracane do user UI przepuszczane przez DOMPurify (XSS prevention)
+
+#### V.3.4. CORS configuration
+
+```typescript
+// apps/control-plane/src/middleware/cors.ts
+const ALLOWED_ORIGINS = {
+  production: [
+    'https://adaptive.estalara.com',
+    'https://app.estalara.com',
+  ],
+  staging: ['https://staging.adaptive.estalara.com'],
+  development: ['http://localhost:3000', 'http://localhost:3001'],
+};
+
+// Ingest endpoint (cdn.estalara.com SDK calls):
+// Origin validated against tenant.allowed_origins config
+// Wildcard ('*') NEVER allowed — explicit allowlist tylko
+```
+
+**SDK CDN (cdn.estalara.com):**
+- Public access (każda strona klienta może załadować SDK)
+- CORS `Access-Control-Allow-Origin: *` ale TYLKO dla `/sdk/*.js` static assets
+- Ingest endpoint validuje origin per tenant config
+
+#### V.3.5. API key lifecycle
+
+```typescript
+// packages/db/src/schema/api_keys.ts
+export const apiKeys = pgTable('api_keys', {
+  id: uuid('id').primaryKey(),
+  tenant_id: uuid('tenant_id').notNull().references(() => tenants.id),
+  
+  type: text('type').notNull(),                  // 'public' | 'secret'
+  prefix: text('prefix').notNull(),              // 'est_live_' | 'est_test_' | 'est_secret_'
+  hashed_key: text('hashed_key').notNull(),      // bcrypt or argon2id
+  last_4: text('last_4').notNull(),              // dla wyświetlania w UI
+  
+  scopes: text('scopes').array().notNull(),      // ['read:events', 'write:adaptations']
+  allowed_origins: text('allowed_origins').array(),
+  
+  created_by: uuid('created_by').references(() => users.id),
+  created_at: timestamp('created_at').defaultNow(),
+  expires_at: timestamp('expires_at'),           // optional TTL
+  last_used_at: timestamp('last_used_at'),
+  rotated_at: timestamp('rotated_at'),
+  revoked_at: timestamp('revoked_at'),
+  revoke_reason: text('revoke_reason'),
+});
+```
+
+**1-click rotation flow:**
+1. Agency owner klika "Rotate API Key" w `/dashboard/sdk`
+2. System generuje new key, ustawia `rotated_at` na old key
+3. Old key działa przez 24h grace period (`revoked_at = now + 24h`)
+4. SDK na produkcyjnej stronie powinien w tym czasie zostać zaktualizowany
+5. Po 24h old key zwraca 401, alerty Slack do ops
+
+**Automatic detection of leaked keys:**
+- GitGuardian / TruffleHog scanner monitoruje GitHub i pastebin sites
+- Wykryty key automatycznie revoked + email do tenant + ops alert
+
+#### V.3.6. Idempotency
+
+Idempotency keys (TICKET-019) wymagane dla:
+- POST `/v1/events` (ingest) — already implemented
+- POST `/api/admin/tenants/:id/suspend`
+- POST `/api/admin/demo-sessions/:id/revoke`
+- POST `/api/billing/subscriptions` (Stripe sync)
+- DELETE wszystkie destruktywne ops
+
+Header: `Idempotency-Key: <uuid v4>`. Cached response w Redis TTL 24h. Ten sam key + różne body = 409 Conflict.
+
+---
+
+### V.4. OWASP Top 10 (2021) — coverage matrix
+
+| OWASP # | Risk | Mitigation w Estalara |
+|---|---|---|
+| **A01:2021** Broken Access Control | RLS in Postgres (per-tenant), middleware RBAC, JWT claim validation, sudo mode dla destructive ops |
+| **A02:2021** Cryptographic Failures | TLS 1.3 mandatory, HSTS preload (TICKET-FIX-003), Argon2id dla passwords, AES-256 at rest, Stripe-managed PCI tokens (no card storage) |
+| **A03:2021** Injection | Parameterized queries via Drizzle (no raw SQL), Zod validation on all inputs, DOMPurify on output, escape user content w LLM prompts |
+| **A04:2021** Insecure Design | Threat modeling (V.1.2), security review per epic, design partner security questionnaires |
+| **A05:2021** Security Misconfiguration | secureHeaders middleware (TICKET-FIX-003), CSP for Control Plane (V.5), no default credentials, infrastructure-as-code (Terraform) |
+| **A06:2021** Vulnerable Components | Dependabot, Renovate, `pnpm audit` w CI, `pip-audit` for Python, monthly security review (V.7.3) |
+| **A07:2021** Authentication Failures | MFA mandatory dla staff, brute-force protection, password policy z HaveIBeenPwned check, session timeout, JIT elevated access |
+| **A08:2021** Data Integrity Failures | Subresource Integrity (SRI) na CDN'owanym SDK, signed releases (SLSA provenance), HMAC integrity checks na requests |
+| **A09:2021** Logging & Monitoring Failures | OTel distributed tracing (TICKET-FIX-001), `staff_audit_log` 7yr retention, Sentry, security events to Slack `#estalara-security` |
+| **A10:2021** Server-Side Request Forgery (SSRF) | URL allowlist dla outbound requests (auto-detect Puppeteer service), DNS validation, no internal network access from public services |
+
+---
+
+### V.5. Web security headers (Control Plane)
+
+#### V.5.1. Headers stack dla `adaptive.estalara.com`
+
+```typescript
+// apps/control-plane/src/middleware.ts
+export const securityHeaders = {
+  // Strict Transport Security — wymuś HTTPS na 2 lata, włącz preload
+  'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
+  
+  // Content Security Policy — restrykcyjne, no inline scripts
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "script-src 'self' 'nonce-{NONCE}' https://js.stripe.com",
+    "style-src 'self' 'unsafe-inline'", // Tailwind requires for now; migrate to CSS modules Sprint 6
+    "img-src 'self' data: https://*.supabase.co https://*.estalara.com",
+    "font-src 'self'",
+    "connect-src 'self' https://*.supabase.co https://api.stripe.com https://o4505.ingest.sentry.io",
+    "frame-src https://js.stripe.com",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",          // anti-clickjacking
+    "block-all-mixed-content",
+    "upgrade-insecure-requests",
+  ].join('; '),
+  
+  // Anti-clickjacking
+  'X-Frame-Options': 'DENY',
+  
+  // MIME-type sniffing
+  'X-Content-Type-Options': 'nosniff',
+  
+  // Referrer policy
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  
+  // Permissions Policy (formerly Feature-Policy)
+  'Permissions-Policy': [
+    'camera=()', 'microphone=()', 'geolocation=()', 
+    'payment=(self "https://js.stripe.com")',
+    'usb=()', 'fullscreen=(self)', 'autoplay=()',
+  ].join(', '),
+  
+  // Cross-Origin policies
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Resource-Policy': 'same-site',
+};
+```
+
+**Nonce strategy:** Każdy server-rendered response generuje cryptographic nonce, embedded w CSP `script-src` i w każdym `<script>` tagu. Brak `unsafe-inline`, brak `unsafe-eval`.
+
+#### V.5.2. SDK CDN (cdn.estalara.com) headers
+
+Inne headers (SDK ma być embeddable w cudze strony):
+
+```typescript
+{
+  'Cache-Control': 'public, max-age=31536000, immutable',  // long cache dla versioned URLs
+  'Cross-Origin-Resource-Policy': 'cross-origin',           // allow cross-origin embedding
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': null,  // brak CSP dla static assets
+}
+```
+
+#### V.5.3. Subresource Integrity (SRI)
+
+SDK loader generated dla każdego tenanta zawiera SRI hash:
+
+```html
+<script async 
+        src="https://cdn.estalara.com/sdk/v1.2.3/estalara.min.js"
+        integrity="sha384-{hash}"
+        crossorigin="anonymous"
+        data-tenant="est_live_marbella_abc123">
+</script>
+```
+
+SDK Snippet Generator (`/dashboard/sdk`) automatycznie wstawia aktualny SRI hash. Build pipeline computuje hash przy każdej release.
+
+---
+
+### V.6. Secrets Management
+
+#### V.6.1. Doppler — single source of truth
+
+Wszystkie secrets w Doppler, environments: `dev` / `staging` / `prod`. Brak `.env` plików w repo (gitleaks w pre-commit hook).
+
+**Secret categories i rotation policy:**
+
+| Category | Examples | Rotation cadence | Rotation method |
+|---|---|---|---|
+| Database credentials | `DATABASE_URL`, `DATABASE_URL_ADMIN` | 90 dni | Supabase Dashboard → service role rotate |
+| API keys (provider) | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `STRIPE_SECRET_KEY` | 180 dni LUB on suspected breach | Provider dashboard + Doppler update |
+| JWT signing keys | `SUPABASE_JWT_SECRET` | 365 dni LUB on breach | Supabase Auth → JWT settings |
+| HMAC tenant secrets | `tenants.hmac_secret` (per-tenant) | 1-click w dashboard, max 90 dni | UI w `/dashboard/sdk` → Rotate |
+| Webhook signing secrets | `STRIPE_WEBHOOK_SECRET` | On breach only | Stripe dashboard regenerate |
+| Internal service-to-service | OTel collector token, Sentry DSN | 365 dni | Doppler → all environments |
+
+#### V.6.2. Secrets scanning
+
+| Layer | Tool | When |
+|---|---|---|
+| Pre-commit | `gitleaks` (Lefthook hook) | Local dev, every commit |
+| CI | `gitleaks` workflow | Every PR + merge to main |
+| Supply chain | GitGuardian dla GitHub | 24/7 monitoring private repos |
+| Production logs | Custom regex w Pino serializer | Real-time log scrubbing |
+| Dependencies | `pnpm audit` + `pip-audit` | CI + weekly cron |
+
+**Secret detected w git history:**
+1. Trigger immediate rotation (Doppler + provider dashboard)
+2. `git-filter-repo` removal z historii (force push)
+3. Notify all developers do re-clone
+4. Post-mortem: jak doszło, czy CI hook zadziałał
+
+#### V.6.3. Environment isolation
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ dev — local development, hobby/test API keys             │
+│   - Cloudflare Workers preview deployments               │
+│   - Supabase dev project (separate from prod data)       │
+│   - Anthropic dev API key (low rate limit)               │
+├──────────────────────────────────────────────────────────┤
+│ staging — pre-prod testing, real schema, fake data       │
+│   - Vercel preview branches                              │
+│   - Supabase staging project                             │
+│   - Stripe test mode keys                                │
+├──────────────────────────────────────────────────────────┤
+│ prod — production, real customer data                    │
+│   - Mandatory MFA dla developers z prod write access     │
+│   - Audit log każdego prod-write access                  │
+│   - 4-eyes principle dla destructive ops                 │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Brak shared secrets między environments.** Brak access do prod z laptopów developerów (CLI tools czytają tylko z dev/staging).
+
+---
+
+### V.7. Supply Chain Security
+
+#### V.7.1. Dependency management
+
+**TypeScript / Node:**
+```json
+// .github/dependabot.yml
+{
+  "version": 2,
+  "updates": [
+    {
+      "package-ecosystem": "npm",
+      "directory": "/",
+      "schedule": { "interval": "weekly", "day": "monday" },
+      "groups": {
+        "security": { "patterns": ["*"], "applies-to": "security-updates" },
+        "patch": { "update-types": ["patch"] },
+        "minor": { "update-types": ["minor"] }
+      },
+      "open-pull-requests-limit": 5,
+      "reviewers": ["Pnawrocki9"],
+      "labels": ["dependencies"]
+    },
+    {
+      "package-ecosystem": "github-actions",
+      "directory": "/",
+      "schedule": { "interval": "weekly" }
+    }
+  ]
+}
+```
+
+**Python:** Renovate Bot z group strategy (security PRs auto-merged dla patch versions).
+
+#### V.7.2. Software Bill of Materials (SBOM)
+
+Generated for every release:
+```yaml
+# .github/workflows/sbom.yml
+- name: Generate SBOM
+  uses: anchore/sbom-action@v0
+  with:
+    format: cyclonedx-json
+    output-file: sbom-${{ github.sha }}.cdx.json
+- name: Upload SBOM artifact
+  uses: actions/upload-artifact@v4
+  with:
+    name: sbom
+    path: sbom-*.cdx.json
+    retention-days: 365
+```
+
+SBOM dla każdej Vercel/Cloudflare release zachowywana 1 rok dla compliance audits.
+
+#### V.7.3. Container image scanning
+
+Modal Functions używają container images. Scanowanie przed deployment:
+```yaml
+- name: Scan image with Trivy
+  uses: aquasecurity/trivy-action@master
+  with:
+    image-ref: 'estalara/auto-detect:${{ github.sha }}'
+    severity: 'CRITICAL,HIGH'
+    exit-code: '1'  # fail build on high-severity findings
+```
+
+#### V.7.4. Signed releases & provenance
+
+SLSA Level 3 provenance attestations dla:
+- Cloudflare Workers production deploys
+- Vercel production deploys
+- Modal function image builds
+- npm package publishes (`@estalara/sdk`, `@estalara/react`)
+
+```yaml
+# Use sigstore + cosign for signing
+- name: Sign artifact
+  uses: sigstore/cosign-installer@v3
+- run: cosign sign-blob --bundle artifact.bundle artifact.tar.gz
+```
+
+#### V.7.5. Vendor risk assessment
+
+Quarterly review:
+- SOC 2 Type II reports — Anthropic, OpenAI, Stripe, Cloudflare, Vercel, Supabase, Sentry, Modal
+- Sub-processor list — published na status.estalara.com (GDPR Art. 28 transparency)
+- Changes in vendor terms — automated monitoring (Klaus.ai, Termly, lub manual quarterly)
+
+---
+
+### V.8. Database Security
+
+#### V.8.1. Encryption
+
+| Layer | Method | Key management |
+|---|---|---|
+| **At rest** (Postgres) | AES-256-GCM (Supabase native) | AWS KMS managed by Supabase |
+| **At rest** (ClickHouse) | AES-256 disk encryption | ClickHouse Cloud managed |
+| **At rest** (column-level) | pgcrypto dla `users.mfa_backup_codes`, `tenants.hmac_secret` | App-level, key w Doppler `DB_COLUMN_ENCRYPTION_KEY` |
+| **In transit** | TLS 1.3 mandatory | Supabase + ClickHouse Cloud certs |
+| **Tenant-tier 3 (enterprise)** | Customer-Managed Keys (CMK) opt-in Year 2 | AWS KMS w tenant's account, cross-account role |
+
+#### V.8.2. Row Level Security (RLS) — testing
+
+**TICKET-FIX-004 already separated `createTenantClient` (RLS enforced) vs `createAdminClient` (RLS bypass).** 
+
+**Automated isolation tests w CI** (Sprint 2 enhancement do TICKET-021):
+
+```typescript
+// packages/db/src/__tests__/rls-isolation.test.ts
+describe('RLS tenant isolation', () => {
+  it('tenant A cannot SELECT rows owned by tenant B', async () => {
+    const tenantA_db = createTenantClient(tenantA_jwt);
+    const result = await tenantA_db.select().from(listings_metadata)
+      .where(eq(listings_metadata.tenant_id, tenantB_uuid));
+    expect(result).toHaveLength(0);  // RLS hides tenant B's rows
+  });
+  
+  it('tenant A cannot INSERT row with tenant_id = B', async () => {
+    const tenantA_db = createTenantClient(tenantA_jwt);
+    await expect(
+      tenantA_db.insert(listings_metadata).values({
+        tenant_id: tenantB_uuid, /* ... */
+      })
+    ).rejects.toThrow(/policy|permission/i);
+  });
+  
+  it('admin client bypasses RLS', async () => {
+    const admin_db = createAdminClient();
+    const result = await admin_db.select().from(listings_metadata);
+    expect(result.length).toBeGreaterThan(0);  // sees everything
+  });
+});
+```
+
+#### V.8.3. Database audit logging
+
+PostgreSQL `pgaudit` extension (Supabase): logs DDL, role changes, sensitive table access.
+
+```sql
+-- Enable pgaudit (Supabase Dashboard → Database → Extensions)
+CREATE EXTENSION IF NOT EXISTS pgaudit;
+ALTER SYSTEM SET pgaudit.log = 'ddl, role, write';
+ALTER SYSTEM SET pgaudit.log_relation = on;
+SELECT pg_reload_conf();
+```
+
+Audit logs streamed do ClickHouse `db_audit_log` tabela, 7-year retention dla compliance.
+
+#### V.8.4. Connection pooling & prepared statements
+
+- **PgBouncer (Supavisor)** — already w stack
+- Transaction mode dla pooled connections (port 6543) — używane przez `createTenantClient`
+- Session mode dla long-lived ops — używane przez `createAdminClient`
+- **Statement timeout:** 30s dla tenant queries, 5min dla admin/migrations
+- **Connection limits per tenant:** Max 100 concurrent connections per tenant API key (anti-noisy-neighbor)
+
+#### V.8.5. Backup & restore
+
+Patrz Section W.1 (Disaster Recovery) dla pełnych RPO/RTO targets. Skrótowo:
+- Postgres: continuous WAL backup (PITR), 7-day retention dla MVP, 30-day dla enterprise tier
+- ClickHouse: daily snapshots, 30-day retention
+- Quarterly restore drill (W.1.5) — testowane w staging
+
+---
+
+### V.9. Frontend SDK Security
+
+SDK wstrzykuje się w **cudze strony klientów** — security threats są asymetryczne (klient nie kontroluje co dzieje się na ich stronie).
+
+#### V.9.1. Sandbox & isolation
+
+- **Shadow DOM (open mode)** dla wszystkich UI elements (już zaplanowane w B.2)
+- Brak dostępu do `window.parent.X` properties z host page (read-only przez `Estalara.identify()` API)
+- `postMessage` z origin validation:
+  ```typescript
+  window.addEventListener('message', (e) => {
+    if (e.origin !== 'https://cdn.estalara.com') return;
+    // process message
+  });
+  ```
+
+#### V.9.2. CSP-friendly distribution
+
+SDK loader nie używa `eval`, `new Function()`, ani inline event handlers — zgodne z restrictive CSP klientów. Wymagany CSP klienta:
+```
+script-src cdn.estalara.com 'self' 'wasm-unsafe-eval'
+connect-src ingest.estalara.com 'self'
+```
+
+Documented w SDK integration guide. Magic Link onboarding pomaga klientom auto-update CSP (przez WordPress plugin gdy applicable).
+
+#### V.9.3. Prototype pollution protection
+
+```typescript
+// packages/sdk/src/utils/safe-merge.ts
+export function safeMerge<T extends object>(target: T, source: object): T {
+  for (const key of Object.keys(source)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+    // safe merge logic
+  }
+  return target;
+}
+```
+
+Wszystkie merge ops (config, brand tokens) używają `safeMerge`. Audit `Object.assign` calls w PR review.
+
+#### V.9.4. Anti-clickjacking dla SDK widgets
+
+- SDK widgets renderowane w Shadow DOM nie mogą być iframed — sprawdzamy `window.top !== window` i logujemy alert
+- Brak click-jacking-vulnerable actions (np. "Confirm purchase") w SDK UI — wszystkie destructive flows na `adaptive.estalara.com`
+
+#### V.9.5. Telemetry sanitization
+
+SDK NIE WYSYŁA do ingest:
+- Hashed/raw passwords (form fields type=password)
+- Credit card data (PCI scope)
+- Authorization headers, cookies (browser-blocked)
+- URL fragments (#hash) zawierające `password`, `token`, `secret`, `api_key`
+- Local storage / sessionStorage values
+
+Już enforced przez TICKET-FIX-005 (PII blacklist) na poziomie Zod validation w ingest.
+
+---
+
+### V.10. Cost Controls & Abuse Prevention (Denial of Wallet)
+
+**Zagrożenie:** Złośliwy lub buggy SDK wysyła pętlę 1M eventów/min → triggeruje Anthropic / OpenAI calls → bill $50k/dzień.
+
+#### V.10.1. Per-tenant spending limits
+
+```typescript
+// packages/db/src/schema/billing_limits.ts
+export const billingLimits = pgTable('billing_limits', {
+  tenant_id: uuid('tenant_id').primaryKey(),
+  
+  // Hard caps (events budget per tier)
+  max_events_per_day: integer('max_events_per_day').notNull(),
+  max_llm_calls_per_day: integer('max_llm_calls_per_day').notNull(),
+  max_llm_spend_usd_per_day: decimal('max_llm_spend_usd_per_day').notNull(),
+  
+  // Soft alerts (% of cap)
+  alert_threshold_percent: integer('alert_threshold_percent').default(80),
+  
+  // Action when exceeded
+  exceed_action: text('exceed_action').default('throttle'),  // 'throttle' | 'block' | 'alert_only'
+});
+```
+
+**Per-tier defaults:**
+
+| Tier | Events/day | LLM calls/day | LLM spend/day USD |
+|---|---|---|---|
+| Free | 5,000 | 0 | $0 |
+| Observer | 200,000 | 1,000 | $5 |
+| Augment | 1,000,000 | 10,000 | $50 |
+| Native | unlimited (custom contract) | custom | custom |
+
+#### V.10.2. Real-time anomaly detection
+
+Cloudflare Worker z Durable Object per tenant tracks rolling 1-min event volume. **Sudden spike >10x baseline** = circuit breaker:
+- Throttle events to baseline rate
+- Slack alert do `#estalara-ops`
+- Email do tenant owner: "Unusual traffic detected on your site. We've throttled to protect against abuse. [Review](link)"
+- Anthropic/OpenAI calls SUSPENDED dla tego tenanta przez 1h cooldown
+
+#### V.10.3. Circuit breaker dla zewnętrznych API
+
+```python
+# apps/llm-gateway/src/circuit_breaker.py
+from circuitbreaker import circuit
+
+@circuit(failure_threshold=5, recovery_timeout=60, expected_exception=AnthropicError)
+async def call_claude(prompt: str) -> str:
+    return await anthropic_client.messages.create(...)
+```
+
+Open circuit po 5 failures w 60s → fallback do simpler heuristic adaptation. Closed po 60s recovery.
+
+#### V.10.4. Cost monitoring dashboard
+
+`/admin/billing/spend` — real-time view:
+- Total LLM spend per provider (Anthropic, OpenAI) z trendem 7-day
+- Top 10 tenants by LLM spend
+- Anomalies: tenants z >2σ deviation od ich baseline
+- Forecast: projected month-end spend, alert jeśli >budget
+
+---
+
+### V.11. Security Testing & Validation
+
+#### V.11.1. Test pyramid (security-specific)
+
+| Layer | Tests | Frequency | Gate |
+|---|---|---|---|
+| **Unit** | Authorization logic, input validators, crypto helpers | CI per PR | Block merge on fail |
+| **Integration** | RLS isolation (V.8.2), MFA flow, JWT validation | CI per PR | Block merge on fail |
+| **E2E** | Full auth flows, impersonation, password reset | Nightly + per-PR | Warn on fail |
+| **DAST (OWASP ZAP)** | Auth bypass, injection, XSS, CSRF on staging | Weekly cron | Slack alert on findings |
+| **SAST (Semgrep)** | Static analysis dla insecure patterns | CI per PR | Warn on fail |
+| **Dependency scanning** | `pnpm audit`, `pip-audit`, Trivy, GitGuardian | CI + 24/7 monitoring | Block on critical |
+| **Penetration testing** | External pentest firm | Annually + post-major-release | Triage all findings |
+| **Bug bounty** | HackerOne lub Intigriti | Continuous (post-Series A) | Triage SLA per severity |
+
+#### V.11.2. Penetration testing schedule
+
+- **Year 1 H2:** First external pentest (post-MVP, before first enterprise customer) — budget ~$15k, vendor: Cure53 or Bishop Fox
+- **Year 2 H1:** Second pentest (after Series A) — budget ~$25k
+- **Continuous:** Bug bounty program launched Q3 2026 — budget $5-50k/year
+
+**Scope:** SDK injection vectors, SSO/auth flows, RLS isolation, admin panel, billing integration.
+
+#### V.11.3. Security review process
+
+Każdy PR z security implications wymaga:
+- Code review przez senior engineer (Rafał lub designated security champion)
+- Threat model update dla new features
+- Security test cases w PR description
+- For sensitive changes (auth, billing, RLS): 2-osobowy approval
+
+---
+
+### V.12. Compliance Certifications Roadmap
+
+**Decyzja:** Inwestujemy w SOC 2 Type II w Year 1 jako blocker dla US enterprise klientów (Zillow, Realtor.com), ISO 27001 w Year 2 dla EU enterprise.
+
+#### V.12.1. SOC 2 Type II — timeline
+
+| Quarter | Milestone | Cost | Deliverable |
+|---|---|---|---|
+| **Q3 2026** | Engage Vanta lub Drata (compliance automation) | $15k/year | Continuous monitoring setup |
+| **Q3 2026** | SOC 2 Type I audit (point-in-time) | $30k | Letter of attestation |
+| **Q1-Q2 2027** | 6-month observation window | — | Evidence collection |
+| **Q3 2027** | SOC 2 Type II audit | $60k | Final report |
+
+**Trust Service Criteria:** Security (mandatory), Availability, Confidentiality. Skip Processing Integrity i Privacy dla MVP — możemy dodać Year 2.
+
+#### V.12.2. ISO 27001 — Year 2
+
+Po SOC 2 Type II, dodajemy ISO 27001 dla EU enterprise:
+- Implement Information Security Management System (ISMS) — większość zarobu już zrobiona dla SOC 2
+- Statement of Applicability (SoA) — Annex A controls
+- External audit przez akredytowanego auditora (BSI, DNV, lub TÜV) — ~$40k
+- Annual surveillance audit ($15k) + 3-year recertification ($25k)
+
+#### V.12.3. Other certifications (deferred)
+
+- **PCI DSS:** Nie obejmuje nas direct — Stripe Tokenization (PCI Level 1) handles card data. Zachowujemy PCI SAQ-A self-assessment annual.
+- **HIPAA:** Brak applicability (real estate ≠ healthcare).
+- **FedRAMP:** Skip dla MVP (US gov customers nie są target).
+
+---
+
+### V.13. Cyber Insurance
+
+**Recommendation:** Cyber liability insurance od dnia 1 — wymóg wielu enterprise klientów (Idealista MSA explicitly requires).
+
+| Coverage | Limit | Provider candidates |
+|---|---|---|
+| Data breach response (forensics, notifications, credit monitoring) | $5M | Coalition, At-Bay, Beazley |
+| Business interruption | $2M | Same |
+| Regulatory fines (GDPR, CCPA) | $5M | Cyber-specific extension |
+| E&O / professional liability | $2M | Hiscox, Travelers |
+
+**Premium estimate:** $8-15k/year dla startup at MVP stage (3-person team, no real customer data yet). Skaluje się z ARR.
+
+**Decision required from Piotr:** zapewnij cyber insurance przed pierwszym enterprise customer signed.
+
+---
+
+### V.14. Bug Bounty Program (post-Series A)
+
+Launch Q3 2026 (po pierwszych 10-20 paying customers):
+
+```yaml
+program:
+  platform: HackerOne (preferowany — większy researcher pool)
+  scope:
+    - "*.estalara.com"
+    - "cdn.estalara.com (SDK)"
+    - "@estalara/sdk npm package"
+  out_of_scope:
+    - "*.estalara.app (tenant subdomains)"
+    - "Third-party services (Stripe, Anthropic)"
+    - "Social engineering, physical attacks"
+  rewards:
+    critical: $5000-$15000   # auth bypass, RCE, data leak
+    high:     $1000-$5000    # privilege escalation, stored XSS
+    medium:   $250-$1000     # CSRF, IDOR, info disclosure
+    low:      $50-$250       # missing security headers, version disclosure
+  triage_sla:
+    initial_response: 24h
+    triage_decision: 5 days
+    resolution: 90 days for critical, 180 for high
+```
+
+Annual budget: $25-75k initially.
+
+---
+
+### V.15. Cross-references
+
+- **Section H (Compliance)** — V uzupełnia o technical security; H pozostaje source of truth dla privacy regulations
+- **Section J (Multi-tenancy)** — V.8 rozszerza J o explicit RLS testing strategy
+- **Section K (Internal Ops)** — V.2.6 (sudo mode) i V.2.5 (JIT impersonation) rozszerzają K.7
+- **Section O.1 (Technical risks)** — V.10 (Cost controls) mityguje "DoW attack" risk
+- **Section U (Master Admin)** — V.2 i V.3 są implementacją security wymagań Section U
+- **Section W (Operational Excellence)** — komplementarne; V to "what we secure", W to "how we operate it"
+
+
+---
+
+## W. Operational Excellence — DR, Monitoring, Deployment
+
+> **Filozofia:** Section V opisuje *co* chronimy, Section W opisuje *jak operujemy*. To jest sekcja, którą będzie czytać każdy enterprise customer w due diligence — i każdy on-call engineer o 3 nad ranem.
+
+### W.1. Disaster Recovery & Business Continuity
+
+#### W.1.1. RPO/RTO targets per data store
+
+| Data store | RPO (max data loss) | RTO (max downtime) | Strategy |
+|---|---|---|---|
+| **Postgres (Supabase)** | 5 min (PITR) | 1h | Continuous WAL → S3, hot standby w region paired |
+| **ClickHouse Cloud** | 1h | 4h | Daily snapshots + replicated zones |
+| **pgvector embeddings** | 24h | 4h | Daily logical backup do S3, regenerable z events |
+| **Redpanda Kafka** | 24h | 2h | Multi-AZ replication, message retention 7 dni |
+| **R2 / S3 storage** | 0 (eventually consistent) | 30 min | Cloudflare R2 native multi-region |
+| **Cloudflare Workers code** | 0 | 5 min | Wrangler deploy z any region |
+| **Vercel deployments** | 0 | 5 min | Git-based, instant rollback |
+
+**Tier-specific SLAs:**
+- Free / Observer: best-effort, 99.5% uptime
+- Augment: 99.9% uptime, RTO 2h, RPO 30 min
+- Native (enterprise): 99.95% uptime, RTO 1h, RPO 5 min, dedicated DR runbook
+
+#### W.1.2. Backup strategy per data store
+
+**Postgres (Supabase):**
+- Continuous WAL backup (Point-in-Time Recovery — PITR)
+- Daily full backup retained 7 dni (MVP), 30 dni (Augment+), 90 dni (Native)
+- Weekly cross-region backup do AWS S3 (eu-west-1 ↔ eu-central-1)
+- **Encryption at rest:** AES-256 (S3 SSE-KMS)
+
+**ClickHouse Cloud:**
+- Daily snapshots (ClickHouse Cloud native)
+- Retention: 30 dni (default)
+- Cross-region replication dla Native tier (Year 2 feature)
+
+**pgvector:**
+- Daily `pg_dump` logical backup
+- Embeddings są regenerowane z source events (ClickHouse) jeśli backup fails
+
+**Source code & infrastructure-as-code:**
+- GitHub repo private (Pnawrocki9/Adaptive-Listings)
+- Mirror do GitLab (passive backup) raz dziennie
+- Terraform state w S3 z versioning + state lock w DynamoDB
+
+#### W.1.3. Multi-region failover strategy
+
+**Active-Active (default):**
+- Cloudflare Workers automatycznie route do najbliższego POP
+- Read replicas w paired regions: EU primary (Frankfurt) + EU read replica (Dublin)
+- Write traffic w primary region only — failover wymaga manual promotion
+
+**Failover triggers (W.1.4):**
+- Region complete outage (>15 min)
+- Data corruption detected w primary
+- Compliance event (e.g., region-specific legal injunction)
+
+**Failover playbook (manual, runbook w Notion):**
+1. Confirm outage z Cloudflare/Supabase status pages
+2. Promote read replica → primary (Supabase Dashboard or `pg_ctl promote`)
+3. Update Doppler `DATABASE_URL` → new primary endpoint
+4. Re-deploy apps z new env (Vercel/Cloudflare auto)
+5. Monitor lag, validate writes succeed
+6. Public communication via status.estalara.com
+
+**Estimated failover time:** 30-60 min manual w MVP, target 5 min automated w Year 2.
+
+#### W.1.4. Disaster scenarios & response
+
+| Scenario | Likelihood | Impact | Response |
+|---|---|---|---|
+| Cloudflare global outage | Low (1-2/year) | High | Failover do Vercel Edge dla Ingest (architecture allows); SDK CDN fallback do AWS CloudFront |
+| Supabase region down | Low (rare) | Critical | Promote read replica; document in runbook |
+| Anthropic API outage | Medium (occasional) | Medium | LiteLLM router → OpenAI fallback (already configured); circuit breaker (V.10.3) |
+| Stripe outage | Low | Medium | Queue billing events w Redpanda, replay when Stripe back; tenants don't see disruption |
+| Data corruption (logical bug) | Low | Critical | PITR to before-corruption timestamp; communicate data window lost |
+| Ransomware on developer laptop | Low | Medium | No prod credentials on laptops; MFA mandatory; can't escalate to prod |
+| GitHub repo compromise | Very Low | Critical | Force-push protection, signed commits, immediate revoke + restore from backup mirror |
+| Insider threat (rogue admin) | Very Low | Critical | Audit log review weekly; 4-eyes principle dla destructive ops; offboarding checklist |
+
+#### W.1.5. Restore drill schedule
+
+**Quarterly disaster recovery drill** (mandatory, calendar-blocked):
+- Q1: Postgres PITR restore w staging — verify <1h RTO
+- Q2: ClickHouse snapshot restore — verify queryable after restore
+- Q3: Cross-region failover (full stack) — chaos engineering
+- Q4: Tabletop exercise — simulated breach + comms drill
+
+**Drill report:** posted in Notion, sent do board jako quarterly metric. Failed drill = blocker dla next sprint until issue resolved.
+
+---
+
+### W.2. Incident Response Plan
+
+#### W.2.1. Severity levels
+
+| Severity | Definition | Examples | Response time | Communication |
+|---|---|---|---|---|
+| **SEV-1** | Critical: data loss, security breach, complete outage | Master DB down, breach detected, zero ingest events 30+ min | 15 min | Status page red, all-hands Slack ping, customer email if >1h |
+| **SEV-2** | Major: feature broken, partial outage, performance regression | Demo Mode broken, single region down, p99 latency >5s | 30 min | Status page yellow, engineering Slack |
+| **SEV-3** | Minor: degraded UX, single tenant impact | Specific archetype detection failing, dashboard slow | 4h | Internal Slack only |
+| **SEV-4** | Cosmetic: typos, minor UI issues | Misaligned button, 404 on edge case | Next sprint | None |
+
+#### W.2.2. On-call rotation
+
+**MVP (3-person team):**
+- Rafał (CTO) — primary on-call dla wszystkich SEV-1/SEV-2 (24/7)
+- Piotr (CEO) — secondary on-call (escalation only)
+- Krystian (CPO) — domain expert escalation (ML/data quality issues)
+
+**Post-Series A (target by Q4 2026):**
+- 5+ engineers w rotation (1 week shifts)
+- Primary + Secondary always on-call
+- PagerDuty / Opsgenie integration
+
+#### W.2.3. Incident workflow
+
+```
+1. DETECTION
+   - Sentry alert / Grafana threshold / customer report / status check
+   ↓
+2. TRIAGE
+   - On-call assesses severity (SEV-1/2/3/4)
+   - Creates incident channel: #incident-{date}-{slug}
+   - Updates status.estalara.com if SEV-1/2
+   ↓
+3. RESPONSE
+   - Identify root cause (use OTel traces, logs)
+   - Mitigate first (rollback, throttle, failover) — fix later
+   - Document timeline w incident channel
+   ↓
+4. RESOLUTION
+   - Validate mitigation (metrics return to baseline)
+   - Update status page green
+   - Send customer communication (if SEV-1)
+   ↓
+5. POST-MORTEM (within 5 business days)
+   - Blameless review meeting (all engineers)
+   - Document w Notion: timeline, root cause, contributing factors, action items
+   - Public post-mortem dla SEV-1 (on blog) — builds trust
+```
+
+#### W.2.4. Post-mortem template
+
+```markdown
+# Post-mortem: <incident-name>
+
+**Date of incident:** YYYY-MM-DD HH:MM UTC
+**Severity:** SEV-1 / SEV-2 / SEV-3
+**Duration:** <X> minutes
+**Authors:** <on-call engineer>, <reviewer>
+
+## Summary
+<1-paragraph executive summary>
+
+## Impact
+- Affected services: ...
+- Affected tenants: <X> tenants, <Y>% of total traffic
+- Data loss: yes/no, scope
+- Revenue impact: $<X>
+
+## Timeline (UTC)
+- HH:MM — Detection: <how was it detected>
+- HH:MM — Triage: <severity declared>
+- HH:MM — Mitigation: <what was done>
+- HH:MM — Resolution: <validation>
+
+## Root Cause
+<technical analysis — what actually broke>
+
+## Contributing Factors
+1. ...
+2. ...
+
+## What went well
+- ...
+
+## What went poorly
+- ...
+
+## Action items (with owners + due dates)
+| Action | Owner | Due | Priority |
+|---|---|---|---|
+| Add monitoring for X | @Rafal | Sprint+1 | High |
+| Update runbook for Y | @Piotr | Sprint+2 | Med |
+
+## Lessons learned
+<reusable knowledge for the team>
+```
+
+#### W.2.5. Status page
+
+`https://status.estalara.com` (Atlassian Statuspage lub Cachet self-hosted):
+- Real-time component status (Ingest API, Control Plane, SDK CDN, Demo Mode, Auto-Detect)
+- Incident history (last 90 days)
+- Subscriber email/SMS notifications dla customers
+- Uptime metrics per component (90-day rolling)
+
+**Auto-update integration:**
+- Sentry → Statuspage incident creation (SEV-1 only)
+- Grafana → Statuspage component degradation (SEV-2)
+- Manual: on-call updates dla SEV-1 communications
+
+---
+
+### W.3. SLO/SLI definitions
+
+#### W.3.1. Service Level Objectives
+
+| Service | SLI | SLO | Error budget (per 30 days) |
+|---|---|---|---|
+| **Ingest API** | Availability (HTTP 2xx/5xx ratio) | 99.95% | 21.6 min downtime |
+| **Ingest API** | p99 latency | <100 ms | 1% requests can exceed |
+| **Control Plane API** | Availability | 99.9% | 43.2 min downtime |
+| **Decision API** | Availability | 99.9% | 43.2 min |
+| **Decision API** | p99 latency | <200 ms | 1% can exceed |
+| **SDK CDN** | Availability | 99.99% | 4.3 min downtime |
+| **Auto-Detect Service** | Success rate | 95% | 5% can fail (graceful fallback) |
+| **Demo Mode** | Availability | 99.5% | 3.6h downtime |
+
+#### W.3.2. Error budget policy
+
+**If SLO breached w 30-day window:**
+- Engineering team **freezes new feature work** until SLO restored
+- Post-mortem dla każdego event który "spalił" >25% budget
+- Quarterly SLO review — adjust targets jeśli systematically unmet
+
+**Grace period dla MVP:** First 90 dni post-launch, SLOs są aspirational (no freeze policy). Po stabilization, freeze policy active.
+
+#### W.3.3. Synthetic monitoring
+
+**Checkly (or Pingdom)** — 24/7 synthetic checks z 5 regionów:
+
+```typescript
+// Critical user journeys monitored every 1-5 min
+const checks = [
+  { name: 'ingest-healthz', url: 'https://ingest.estalara.com/healthz', interval: '1m' },
+  { name: 'control-plane-login', flow: 'login-flow.spec.ts', interval: '5m' },
+  { name: 'sdk-cdn-availability', url: 'https://cdn.estalara.com/sdk/v1.js', interval: '1m' },
+  { name: 'demo-mode-end-to-end', flow: 'demo-flow.spec.ts', interval: '15m' },
+  { name: 'auto-detect-pipeline', flow: 'auto-detect.spec.ts', interval: '1h' },
+];
+```
+
+Failed check → Sentry alert → on-call notification.
+
+---
+
+### W.4. Observability Strategy
+
+#### W.4.1. Three pillars
+
+**Logs (Pino + Grafana Loki):**
+- Structured JSON, ISO timestamps, request_id correlation
+- Log levels: trace/debug/info/warn/error/fatal
+- PII redaction w Pino serializer (TICKET-FIX-005 enforces na ingest layer)
+- Retention: 30 dni hot, 1 rok cold storage (S3 Glacier)
+
+**Metrics (OpenTelemetry + Grafana):**
+- Pre-built dashboards: per-service (ingest, control-plane, intent-engine), per-tenant fleet, business KPIs
+- Custom metrics: events/sec, LLM cost/hour, archetype detection accuracy
+- Alert rules: PromQL-based, paged via Grafana OnCall
+
+**Traces (OpenTelemetry):**
+- Distributed tracing across SDK → Ingest → Kafka → Modal (TICKET-FIX-001 ✅)
+- W3C Trace Context propagation
+- Tail-based sampling: 100% errors, 10% successful traces, 1% latency outliers
+- Backend: Grafana Tempo (cost-efficient) lub Honeycomb (Year 2 dla deeper analysis)
+
+#### W.4.2. Critical dashboards
+
+1. **Real-time Operations** — events/sec, error rate, p99 latency, alert count
+2. **Per-tenant Health** — DQS, SDK status, archetype quality (per K.3.2)
+3. **Business KPIs** — MRR, active tenants, conversions per tenant, top archetypes
+4. **Cost Center** — daily LLM spend, infra costs, cost per tenant per visit
+5. **Security Events** — failed logins, MFA failures, anomalous traffic, audit log activity
+
+#### W.4.3. Distributed tracing — what to instrument
+
+**Already instrumented (post TICKET-FIX-001):**
+- ✅ SDK → Ingest Worker (auto via @microlabs/otel-cf-workers)
+- ✅ Ingest → Redpanda (W3C traceparent in Kafka headers)
+- ✅ Redpanda → Modal stream-consumer (extract + child span)
+
+**Sprint 2-4 additions:**
+- Control Plane API → Postgres (auto via Drizzle instrumentation)
+- Modal → Anthropic / OpenAI (manual span around LLM calls)
+- Modal → ClickHouse insert (batch metrics)
+- Modal → pgvector queries (similarity search latency)
+
+#### W.4.4. Log retention & PII redaction
+
+```typescript
+// packages/shared/src/observability/log-redactor.ts
+const PII_PATTERNS = [
+  /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i,           // email
+  /\b\d{3}-\d{2}-\d{4}\b/,                                  // SSN-like
+  /\b(?:\d{4}[\s-]?){3}\d{4}\b/,                            // credit card
+  /\b\+?[1-9]\d{1,14}\b/,                                   // phone
+];
+
+export function redactPII(message: string): string {
+  let redacted = message;
+  for (const pattern of PII_PATTERNS) {
+    redacted = redacted.replace(pattern, '[REDACTED]');
+  }
+  return redacted;
+}
+```
+
+Pino custom serializer applies redactPII na każdym log message. Tested w `packages/shared/__tests__/log-redactor.test.ts`.
+
+---
+
+### W.5. Deployment & Rollback
+
+#### W.5.1. Deployment strategy per service
+
+| Service | Strategy | Tool | Rollback time |
+|---|---|---|---|
+| **Cloudflare Workers (ingest)** | Atomic version swap | Wrangler | 30 sec (revert version) |
+| **Vercel (control-plane)** | Atomic deployment | Vercel CLI | 30 sec (promote previous) |
+| **Modal Functions** | Versioned deployment | Modal CLI | 1 min (deploy previous) |
+| **Database migrations** | Forward-only, backwards-compatible | Drizzle Kit | Manual rollback only |
+| **SDK CDN** | Versioned URLs (v1.2.3 immutable) | Wrangler R2 | Update SRI hash w generator |
+
+#### W.5.2. Canary deployment dla critical services
+
+**Ingest Worker** — najbardziej krytyczny, najbardziej traffic:
+- Cloudflare Workers Routes z weighted routing
+- 5% traffic → new version, 95% → stable
+- Monitor 15 min: error rate, p99 latency, schema validation failures
+- Auto-rollback jeśli regression >5% lub error rate >0.1%
+- Po pass: 25% → 50% → 100% over 1h
+
+**Decision API** (Sprint 5+):
+- Same canary strategy, dodatkowo DQS comparison
+- 24h canary period (longer due to ML quality variance)
+- Auto-rollback jeśli DQS drops >2 percentage points (per O.6 mitigation)
+
+#### W.5.3. Database migration strategy
+
+**Always backwards-compatible:**
+1. Add new column (NULL allowed)
+2. Deploy code that writes to both old + new
+3. Backfill old rows
+4. Deploy code that reads from new
+5. Drop old column (separate migration, separate deploy)
+
+**Never:**
+- Drop columns w same migration as code change
+- Rename columns (always: add new, migrate, drop old)
+- Change column types in-place (always: new column, migrate, drop)
+
+**Migration testing:**
+- Each migration tested w staging z prod-size data sample
+- Migration timing tracked — alerts dla slow migrations (>5 min)
+- Quarterly: full migration replay test on backup
+
+#### W.5.4. Rollback playbook
+
+**Immediate rollback (one command):**
+```bash
+# Workers
+wrangler deployments list
+wrangler rollback <deployment-id>
+
+# Vercel  
+vercel rollback <deployment-url>
+
+# Modal
+modal deploy --version <previous-version>
+```
+
+**Database rollback:** Manual, requires careful data review. Generally: write forward fix instead of true rollback.
+
+**Post-rollback:**
+- Sentry alerts confirmed cleared
+- Status page updated
+- Slack post-mortem channel created
+- Action item: prevent recurrence
+
+#### W.5.5. Feature flags
+
+**PostHog feature flags** — gradual rollout:
+
+```typescript
+// Example: roll out new archetype model
+if (await posthog.isFeatureEnabled('archetype-v2', tenantId)) {
+  return await archetypeEngineV2.match(intent);
+} else {
+  return await archetypeEngineV1.match(intent);
+}
+```
+
+**Flag types:**
+- **Release flags** — feature on/off, deleted after rollout
+- **Operational flags** — kill switches dla expensive features (e.g., disable LLM if cost spike)
+- **Permission flags** — feature visibility per tier
+- **Experiment flags** — A/B testing with assignment tracking
+
+**Hygiene:** Quarterly review removes stale flags (>90 days post-rollout).
+
+---
+
+### W.6. Multi-tenant Isolation Testing
+
+#### W.6.1. Automated isolation tests w CI
+
+Patrz V.8.2 dla code examples. Każda migration adding tenant-scoped table requires accompanying RLS isolation test.
+
+#### W.6.2. Noisy neighbor mitigation
+
+**Per-tenant resource quotas:**
+- Connection pool: max 100 concurrent connections per tenant API key
+- Query timeout: 30s default (15s for read-heavy queries)
+- Rate limits per V.3.1 (Layer 2)
+- Cost limits per V.10.1
+
+**Detection:**
+- Tenant consuming >5x their fair share → Slack alert
+- Consistent abuse → CSM outreach + tier upgrade conversation
+
+#### W.6.3. Fuzzing authentication & authorization
+
+```typescript
+// packages/shared/__tests__/auth-fuzz.test.ts
+import { fc } from 'fast-check';
+
+describe('JWT fuzzing', () => {
+  it('rejects all JWT permutations except valid', () => {
+    fc.assert(fc.property(
+      fc.string(), 
+      (randomToken) => {
+        expect(verifyJwt(randomToken)).toBeNull();
+      }
+    ), { numRuns: 10000 });
+  });
+});
+```
+
+Run weekly w CI (cron) — finds edge cases human tests miss.
+
+---
+
+### W.7. Data Governance
+
+#### W.7.1. PII inventory
+
+| Field | Storage | Classification | Retention | DSR coverage |
+|---|---|---|---|---|
+| Buyer fingerprint hash | ClickHouse `events.session_id` | Pseudonymous (technical identifier) | 13 months | DSR by session_id |
+| Buyer chat transcripts | ClickHouse `chat_events.payload` (PII-redacted) | Personal (after redaction: low) | 90 dni | DSR by session_id |
+| Tenant user emails | Postgres `users.email` | PII (email) | Active + 30 dni post-cancellation | Self-service deletion |
+| Tenant user names | Postgres `users.full_name` | PII | Same | Same |
+| Stripe customer ID | Postgres `tenants.stripe_customer_id` | Pseudonymous | Active + 7 lat (tax compliance) | Anonymized after retention |
+| Audit logs | Postgres `staff_audit_log`, `tenant_audit_log` | Internal | 7 lat | Retained even after DSR (legal basis) |
+
+#### W.7.2. Data classification
+
+| Class | Definition | Examples | Encryption | Access |
+|---|---|---|---|---|
+| **Public** | Intentionally publicly accessible | Marketing site, SDK CDN | TLS in transit only | Anyone |
+| **Internal** | Estalara internal use | Internal docs, design specs | TLS + at-rest | Estalara staff |
+| **Confidential** | Tenant business data | Tenant config, listings, analytics | TLS + at-rest + RLS | Tenant + authorized staff |
+| **Restricted** | PII, secrets | User passwords, MFA secrets, audit logs, Stripe data | TLS + at-rest + column-level encryption | Strictly RBAC + audit |
+
+#### W.7.3. Right to erasure (GDPR Art. 17) — technical implementation
+
+**Postgres:** Standard `DELETE` + cascading FK constraints.
+
+**ClickHouse:** Tricky — ClickHouse supports lightweight deletes (`ALTER TABLE ... DELETE WHERE`) but not transactional. Strategy:
+1. DSR endpoint marks `session_id` w `dsr_deletion_queue` table
+2. Daily cron (Modal job) executes `ALTER TABLE events DELETE WHERE session_id IN (...)` w ClickHouse
+3. Confirmation email do user once deletion confirmed (typowo <48h)
+
+**pgvector embeddings:** Re-generated z events (which are deleted), so will fade naturally w 30 dni. Manual purge available na request.
+
+**Audit logs:** Retained per legal basis (GDPR Art. 17(3)(b) — for legal claims). Documented w Privacy Policy.
+
+#### W.7.4. Data lineage tracking
+
+System diagram tracking where data flows:
+```
+SDK (browser) → Cloudflare Workers (ingest)
+              ↓
+              Redpanda Kafka
+              ↓
+              Modal stream-consumer
+              ↓ ↓
+        ClickHouse  pgvector
+              ↓ ↓
+        Modal archetype-job (daily)
+              ↓
+        Global archetype space (DP-anonymized)
+```
+
+Documented w Section A diagram + this section. Maintained as we add new data flows.
+
+---
+
+### W.8. Cost Management & FinOps
+
+#### W.8.1. Per-service cost monitoring
+
+**Daily spend dashboard** (`/admin/costs`):
+- Cloudflare (Workers + R2 + Durable Objects)
+- Vercel (compute + bandwidth)
+- Supabase (DB + Auth + Storage)
+- ClickHouse Cloud
+- Modal (compute + GPU)
+- Anthropic API (per model)
+- OpenAI API (embeddings + fallback)
+- Sentry, Doppler, GitHub, etc.
+
+**Cost per tenant:** Daily aggregation showing margin per tier (Section N alignment).
+
+#### W.8.2. Budget alerts
+
+```yaml
+budgets:
+  daily:
+    total: $250        # alert if exceeded by 20%
+    anthropic: $100    # circuit breaker if >150% (V.10.3)
+    openai: $50
+  monthly:
+    total: $7500       # MVP budget
+    target_growth: 10% MoM until pilot revenue
+```
+
+Alerts: Slack `#estalara-finance` + email do Piotra.
+
+#### W.8.3. Reserved capacity (Year 2)
+
+- Anthropic: prepaid usage credits (reduces marginal cost ~10%)
+- Cloudflare: Workers Unbound subscription (reduces per-req cost at scale)
+- Supabase: Team plan upgrade (when >$1k/mo on Pay-as-you-go)
+
+---
+
+### W.9. Sprint mapping — Operational tickets
+
+| Sprint | Ticket | Deliverable |
+|---|---|---|
+| Sprint 2 | TICKET-OPS-001 | Status page setup (status.estalara.com) |
+| Sprint 2 | TICKET-OPS-002 | Sentry alert rules (SEV-1/2/3 routing) |
+| Sprint 3 | TICKET-OPS-003 | Grafana dashboards: Real-time Ops, Per-tenant Health |
+| Sprint 3 | TICKET-OPS-004 | Synthetic monitoring (Checkly or Pingdom) |
+| Sprint 3 | TICKET-OPS-005 | PII log redactor (Pino serializer) |
+| Sprint 4 | TICKET-OPS-006 | Per-tenant cost limits + circuit breaker (V.10) |
+| Sprint 4 | TICKET-OPS-007 | Disaster recovery runbook (Notion) + first quarterly drill |
+| Sprint 5 | TICKET-OPS-008 | Canary deployment dla Ingest Worker |
+| Sprint 5 | TICKET-OPS-009 | RLS isolation tests (V.8.2) |
+| Sprint 6 | TICKET-OPS-010 | DSR automation (Right to erasure) |
+
+---
+
+### W.10. Cross-references
+
+- **Section H (Compliance)** — W.7 (Data Governance) implementuje H.1 GDPR requirements
+- **Section J (Multi-tenancy)** — W.6 testuje J's RLS design
+- **Section K (Internal Ops)** — W.4 (Observability) feeds K.3.4 Global ML Health
+- **Section O (Risks)** — W.1 (DR) mityguje O.5 vendor reliance, W.5 (Deployment) mityguje O.1 deployment risks
+- **Section V (Security)** — komplementarne; V to "what we secure", W to "how we operate it"
+
+---
+
+## X. Sprint 1.5 — Hardening Mini-Sprint (Completed 5 May 2026)
+
+> **Context:** Po Sprint 1 audit kodu wykazał 5 luk security/observability które wymagały naprawy **przed** rozszerzaniem systemu. Ten mini-sprint zaadresował wszystkie z nich. Wszystkie commity zmergowane do `main`, CI zielone.
+
+### X.1. Completed fix-tickets
+
+| Ticket | Commit | Branch | Description |
+|---|---|---|---|
+| **TICKET-FIX-001** | `ff2760f` | `fix/otel-context-propagation` | OTel W3C Trace Context propagation through Kafka headers (Ingest → Redpanda → Modal stream-consumer). 7 Python tests + 2 TypeScript tests. |
+| **TICKET-FIX-002** | `efa8f0f` | `fix/canonical-error-shared` | Promote `ErrorResponseBody` type + `errorBody()` helper z `apps/ingest` do `packages/shared/src/errors.ts`. Single source of truth dla całej aplikacji. |
+| **TICKET-FIX-003** | `8446bb9` | `fix/ingest-security-headers` | Hono `secureHeaders` middleware na Ingest Worker — HSTS preload, nosniff, Referrer-Policy, Permissions-Policy. |
+| **TICKET-FIX-004** | `d34bf9c` | `fix/drizzle-role-separation` | Two Drizzle clients: `createTenantClient` (RLS enforced) + `createAdminClient` (service role). Environment vars: `DATABASE_URL` + `DATABASE_URL_ADMIN`. |
+| **TICKET-FIX-005** | `e163f94` | `fix/pii-blacklist-zod` | Zod `superRefine` validator rejecting PII fields (email, phone, name, address, ip, ssn, etc.) w event payloads. 23 test cases. GDPR Art. 5(1)(c) data minimization. |
+
+### X.2. Side benefits
+
+- **commitlint regex extended** — accepts `[TICKET-FIX-NNN]` and `[TICKET-INFRA-NNN]` formats
+- **`pnpm install` for `packages/db`** — pre-existing missing dependency caught and fixed
+- **224 new tests** — 78 → 101 shared, 113 → 115 ingest, 4 → 8 db, plus 7 Python OTel tests
+- **CI green** post-merge: Lint ✅, Typecheck ✅, Test (Node 22) ✅, 7× Test (Python) ✅, Format ✅, Gitleaks ✅, ClickHouse migrations smoke ✅, Build ✅
+
+### X.3. Lessons learned
+
+1. **Zod `superRefine` returns `ZodEffects`, not `ZodObject`** — breaks `.extend()`. Solution: rename base schema, apply superRefine separately. (TICKET-FIX-005)
+2. **Vitest mock proxies throw on undefined property access** — optional chaining can't intercept. Solution: try/catch around OTel calls. (TICKET-FIX-001)
+3. **Cherry-picking same commit across branches creates duplicate history** — git's ORT merge strategy resolves automatically when diffs are identical. (Multiple branches sharing commitlint fix)
+4. **`pnpm install` not run after dependency added to `package.json`** — pre-existing typecheck failure. Caught when typechecking after adding new code. (TICKET-FIX-004)
+
+### X.4. Outcome
+
+System **ready for Sprint 2** (TICKET-021 Postgres schema + remaining 7 tickets). Foundation hardened against:
+- Cross-tenant data leakage (RLS enforced via Drizzle separation)
+- PII compliance violations (Zod blocks at validation layer)
+- XSS/clickjacking (security headers enforced)
+- Distributed debugging blind spots (OTel propagation works end-to-end)
+- Inconsistent error responses (canonical format shared)
+
+**Next step:** Section U Sprint 2 ticket — TICKET-021 must include new tables from U.2.3 (`users` with RBAC roles), U.3.2 (`tenant_registrations`), and U.9 (`staff_audit_log`).
+

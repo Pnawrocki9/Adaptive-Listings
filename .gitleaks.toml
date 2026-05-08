@@ -182,6 +182,7 @@ paths = [
 files = [
   '''tests/fixtures/''',
   '''docs/adr/''',
+  '''docs/MASTER_DESIGN\.md''',
   '''CLAUDE\.md''',
 ]
 

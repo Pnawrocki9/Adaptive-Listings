@@ -7,5 +7,9 @@
  * @module @estalara/db/schema
  */
 
-// No schema files yet — added in TICKET-021+.
-// Example: export * from './tenants.js';
+export * from './tenants.js';
+export * from './tenant_registrations.js';
+export * from './users.js';
+export * from './api_keys.js';
+export * from './staff_audit_log.js';
+export * from './consent_records.js';

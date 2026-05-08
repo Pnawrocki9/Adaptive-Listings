@@ -1,35 +1,40 @@
 /**
- * Estalara decision API Cloudflare Worker — placeholder.
+ * Estalara decision API Cloudflare Worker.
  *
- * Full implementation in TICKET-011 (backend-engineer).
+ * Routes:
+ *   POST /api/adapt   — adaptation decision endpoint (TICKET-024)
+ *   GET  /api/health  — liveness check
+ *
+ * Sprint 5+ will add:
+ *   - Upstash Redis cache layer
+ *   - Modal intent-engine fallback on cache miss
+ *   - Tenant DB validation (TICKET-031)
+ *
  * p95 latency targets: <80ms (cached path), <2000ms (LLM path)
- *
- * Responsibilities:
- * - Accept adaptation decision requests from the SDK
- * - Check Upstash Redis for cached archetype decisions
- * - Fall through to Modal intent-engine on cache miss
- * - Return adaptation directives to the SDK
  */
+
+import { handleAdaptRequest } from './app/api/adapt/route.js';
+import { handleHealthRequest } from './app/api/health/route.js';
 
 export interface Env {
   ENVIRONMENT: string;
 }
 
-/** Placeholder fetch handler — returns 200 with service metadata. */
 export default {
-  // eslint-disable-next-line @typescript-eslint/require-await -- placeholder; no async ops yet (TICKET-011)
-  async fetch(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-    return new Response(
-      JSON.stringify({
-        service: 'estalara-decision-api',
-        version: '0.0.0',
-        status: 'placeholder',
-        environment: env.ENVIRONMENT,
-      }),
-      {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      },
+  async fetch(request: Request, _env: Env, _ctx: ExecutionContext): Promise<Response> {
+    const { pathname } = new URL(request.url);
+
+    if (pathname === '/api/adapt' && request.method === 'POST') {
+      return handleAdaptRequest(request);
+    }
+
+    if (pathname === '/api/health' && request.method === 'GET') {
+      return handleHealthRequest();
+    }
+
+    return Response.json(
+      { error: { code: 'not_found', message: `No route for ${request.method} ${pathname}` } },
+      { status: 404 },
     );
   },
 } satisfies ExportedHandler<Env>;

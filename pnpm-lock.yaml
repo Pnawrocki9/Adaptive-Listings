@@ -154,6 +154,10 @@ importers:
         version: 2.1.9(@types/node@22.19.17)(jsdom@26.1.0)(lightningcss@1.32.0)(terser@5.46.2)
 
   apps/decision-api:
+    dependencies:
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
     devDependencies:
       "@cloudflare/workers-types":
         specifier: ^4.0.0

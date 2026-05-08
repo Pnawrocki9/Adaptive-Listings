@@ -58,6 +58,9 @@ importers:
       "@estalara/auth":
         specifier: workspace:*
         version: link:../../packages/auth
+      "@estalara/db":
+        specifier: workspace:*
+        version: link:../../packages/db
       "@opentelemetry/sdk-trace-node":
         specifier: ^2.7.0
         version: 2.7.0(@opentelemetry/api@1.9.1)

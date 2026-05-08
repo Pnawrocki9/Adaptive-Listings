@@ -22,7 +22,7 @@ import type Stripe from 'stripe';
 
 import { createAdminClient, tenants } from '@estalara/db';
 
-import { constructWebhookEvent } from '@/lib/stripe';
+import { constructWebhookEvent, stripePriceToPlan } from '@/lib/stripe';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // Raw body is required for Stripe signature verification — do not parse as JSON.
@@ -82,19 +82,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 type AdminDb = ReturnType<typeof createAdminClient>;
-
-/**
- * Map a Stripe price ID to an Estalara plan name.
- * Falls back to 'observer' for unrecognised price IDs.
- */
-export function stripePriceToPlan(priceId: string): string {
-  const map: Record<string, string> = {
-    [process.env.STRIPE_PRICE_OBSERVER ?? '']: 'observer',
-    [process.env.STRIPE_PRICE_AUGMENT ?? '']: 'augment',
-    [process.env.STRIPE_PRICE_NATIVE ?? '']: 'native',
-  };
-  return map[priceId] ?? 'observer';
-}
 
 async function handleSubscriptionChange(db: AdminDb, subscription: Stripe.Subscription) {
   const customerId = subscription.customer as string;

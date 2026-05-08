@@ -61,6 +61,7 @@ describe('constructWebhookEvent', () => {
 
 describe('stripePriceToPlan', () => {
   beforeEach(() => {
+    vi.resetModules();
     vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_fake');
     vi.stubEnv('STRIPE_WEBHOOK_SECRET', 'whsec_fake');
     vi.stubEnv('STRIPE_PRICE_OBSERVER', 'price_observer_abc');
@@ -69,14 +70,14 @@ describe('stripePriceToPlan', () => {
   });
 
   it('maps known price IDs to the correct plan', async () => {
-    const { stripePriceToPlan } = await import('../../app/api/webhooks/stripe/route.js');
+    const { stripePriceToPlan } = await import('../stripe.js');
     expect(stripePriceToPlan('price_observer_abc')).toBe('observer');
     expect(stripePriceToPlan('price_augment_xyz')).toBe('augment');
     expect(stripePriceToPlan('price_native_def')).toBe('native');
   });
 
   it('defaults to observer for an unknown price ID', async () => {
-    const { stripePriceToPlan } = await import('../../app/api/webhooks/stripe/route.js');
+    const { stripePriceToPlan } = await import('../stripe.js');
     expect(stripePriceToPlan('price_unknown_999')).toBe('observer');
   });
 });

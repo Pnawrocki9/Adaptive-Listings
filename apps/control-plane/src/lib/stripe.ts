@@ -32,3 +32,17 @@ export function constructWebhookEvent(payload: string | Buffer, signature: strin
   if (!secret) throw new Error('STRIPE_WEBHOOK_SECRET is not set');
   return stripe.webhooks.constructEvent(payload, signature, secret);
 }
+
+/**
+ * Map a Stripe price ID to an Estalara plan name.
+ * Falls back to 'observer' for unrecognised price IDs.
+ * Env vars: STRIPE_PRICE_OBSERVER, STRIPE_PRICE_AUGMENT, STRIPE_PRICE_NATIVE
+ */
+export function stripePriceToPlan(priceId: string): string {
+  const map: Record<string, string> = {
+    [process.env.STRIPE_PRICE_OBSERVER ?? '']: 'observer',
+    [process.env.STRIPE_PRICE_AUGMENT ?? '']: 'augment',
+    [process.env.STRIPE_PRICE_NATIVE ?? '']: 'native',
+  };
+  return map[priceId] ?? 'observer';
+}

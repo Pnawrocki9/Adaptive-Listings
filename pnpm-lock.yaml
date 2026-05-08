@@ -91,6 +91,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      drizzle-orm:
+        specifier: ^0.44.0
+        version: 0.44.7(@cloudflare/workers-types@4.20260425.1)(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(postgres@3.4.9)
       lucide-react:
         specifier: ^0.511.0
         version: 0.511.0(react@19.2.5)
@@ -109,6 +112,9 @@ importers:
       react-hook-form:
         specifier: ^7.56.4
         version: 7.74.0(react@19.2.5)
+      stripe:
+        specifier: ^22.1.1
+        version: 22.1.1(@types/node@22.19.17)
       tailwind-merge:
         specifier: ^3.3.0
         version: 3.5.0
@@ -7870,6 +7876,18 @@ packages:
       }
     engines: { node: ">=14.16" }
 
+  stripe@22.1.1:
+    resolution:
+      {
+        integrity: sha512-cmodIYP27tBkJ8G7DuGgWw0PFuemlFZbuF3Wwr1TrjFjUa3T7NIgCe6TVwX8BO2ynu+xtTuDGfHafNDCPt9lXA==,
+      }
+    engines: { node: ">=18" }
+    peerDependencies:
+      "@types/node": ">=18"
+    peerDependenciesMeta:
+      "@types/node":
+        optional: true
+
   styled-jsx@5.1.6:
     resolution:
       {
@@ -13070,6 +13088,10 @@ snapshots:
   strip-json-comments@3.1.1: {}
 
   strip-json-comments@5.0.3: {}
+
+  stripe@22.1.1(@types/node@22.19.17):
+    optionalDependencies:
+      "@types/node": 22.19.17
 
   styled-jsx@5.1.6(@babel/core@7.29.0)(react@19.2.5):
     dependencies:

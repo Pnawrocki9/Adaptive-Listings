@@ -3,6 +3,25 @@
 Drizzle ORM client and schema library for the Estalara Adaptive Listings monorepo. Targets Supabase
 Postgres with pgBouncer connection pooling.
 
+## Schema overview
+
+Six core tables added in TICKET-021:
+
+| Table                  | Description                                                                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `tenants`              | Agency accounts — plan, status, brand/quiz config, Profile Mode gate (U.11)                                     |
+| `tenant_registrations` | Inbound sign-up requests pending admin approval (U.3 onboarding flow)                                           |
+| `users`                | RBAC for agency staff (`agency:owner/admin/viewer`) and Estalara employees (`estalara:superadmin/ops/readonly`) |
+| `api_keys`             | Public/secret API keys with scopes, rotation, and revocation tracking (V.3.5)                                   |
+| `staff_audit_log`      | Append-only audit log of all Estalara admin actions — 7-year retention (U.9, V.5)                               |
+| `consent_records`      | Generic consent tracking (anonymous, no PII) — forward-compatible with Profile Mode (U.11.6)                    |
+
+RLS policies are documented in `src/schema/rls-policies.sql` and must be applied manually in the
+Supabase Dashboard after table creation. `staff_audit_log` and `tenant_registrations` are exempt
+from RLS (accessed via service role only).
+
+---
+
 ## Client usage
 
 ### Tenant queries (RLS enforced)

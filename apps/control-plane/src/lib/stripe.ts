@@ -11,14 +11,23 @@
 
 import Stripe from 'stripe';
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('STRIPE_SECRET_KEY is not set');
-}
+// Lazy singleton — do NOT initialize at module load time.
+// next build imports route modules without env vars present; throwing here
+// breaks the build. The client is created on first use instead.
+let _stripe: Stripe | undefined;
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2026-04-22.dahlia',
-  typescript: true,
-});
+/**
+ * Return the Stripe client, initializing it on first call.
+ * Throws if STRIPE_SECRET_KEY is missing at call time.
+ */
+export function getStripe(): Stripe {
+  if (!_stripe) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) throw new Error('STRIPE_SECRET_KEY is not set');
+    _stripe = new Stripe(key, { apiVersion: '2026-04-22.dahlia', typescript: true });
+  }
+  return _stripe;
+}
 
 /**
  * Verify a Stripe webhook signature and return the typed event.
@@ -30,7 +39,7 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 export function constructWebhookEvent(payload: string | Buffer, signature: string): Stripe.Event {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) throw new Error('STRIPE_WEBHOOK_SECRET is not set');
-  return stripe.webhooks.constructEvent(payload, signature, secret);
+  return getStripe().webhooks.constructEvent(payload, signature, secret);
 }
 
 /**

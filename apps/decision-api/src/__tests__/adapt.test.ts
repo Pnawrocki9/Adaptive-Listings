@@ -5,9 +5,16 @@
 
 import { describe, expect, it } from 'vitest';
 
+import type { AdaptResponse, Directive } from '../app/api/adapt/route.js';
 import { handleAdaptRequest } from '../app/api/adapt/route.js';
 import { handleHealthRequest } from '../app/api/health/route.js';
-import type { Directive } from '../app/api/adapt/route.js';
+
+// Helper: parse a Response body as a known shape without `as` casts
+// (which Prettier may strip in some configurations).
+async function parseBody<T>(res: Response): Promise<T> {
+  const raw: unknown = await res.json();
+  return raw as T;
+}
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -38,7 +45,7 @@ describe('POST /api/adapt — archetype routing', () => {
       makeAdaptRequest({ ...BASE_BODY, archetype_hint: 'investor' }),
     );
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await parseBody<AdaptResponse>(res);
     expect(body.archetype).toBe('investor');
     expect(body.confidence).toBeGreaterThanOrEqual(0.8);
     const slots = body.directives.map((d: Directive) => d.slot);
@@ -53,7 +60,7 @@ describe('POST /api/adapt — archetype routing', () => {
       makeAdaptRequest({ ...BASE_BODY, archetype_hint: 'family' }),
     );
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await parseBody<AdaptResponse>(res);
     expect(body.archetype).toBe('family');
     const headline = body.directives.find((d: Directive) => d.slot === 'hero_headline');
     expect(headline?.value).toContain('family');
@@ -62,7 +69,7 @@ describe('POST /api/adapt — archetype routing', () => {
   it('no hint → returns neutral directives', async () => {
     const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY));
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await parseBody<AdaptResponse>(res);
     expect(body.archetype).toBe('neutral');
     expect(body.session_id).toBe(BASE_BODY.session_id);
     expect(body.ttl_seconds).toBeGreaterThan(0);
@@ -72,7 +79,7 @@ describe('POST /api/adapt — archetype routing', () => {
     const res = await handleAdaptRequest(
       makeAdaptRequest({ ...BASE_BODY, archetype_hint: 'invest_opportunity' }),
     );
-    const body = await res.json();
+    const body = await parseBody<AdaptResponse>(res);
     expect(body.archetype).toBe('investor');
   });
 });
@@ -85,7 +92,7 @@ describe('POST /api/adapt — validation', () => {
       makeAdaptRequest({ session_id: 'sess_x', page_type: 'home' }),
     );
     expect(res.status).toBe(400);
-    const body = await res.json();
+    const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('validation_failed');
   });
 
@@ -108,7 +115,7 @@ describe('POST /api/adapt — auth', () => {
   it('missing Authorization header → 401', async () => {
     const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY, ''));
     expect(res.status).toBe(401);
-    const body = await res.json();
+    const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('unauthorized');
   });
 
@@ -124,7 +131,7 @@ describe('GET /api/health', () => {
   it('returns 200 with status ok', async () => {
     const res = handleHealthRequest();
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await parseBody<{ status: string; service: string }>(res);
     expect(body.status).toBe('ok');
     expect(body.service).toBe('decision-api');
   });

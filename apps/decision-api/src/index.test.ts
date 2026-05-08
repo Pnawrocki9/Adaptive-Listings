@@ -13,6 +13,11 @@ const ctx = {
 
 const env = { ENVIRONMENT: 'test' };
 
+async function parseBody<T>(res: Response): Promise<T> {
+  const raw: unknown = await res.json();
+  return raw as T;
+}
+
 describe('estalara-decision-api', () => {
   it('exports a fetch handler', () => {
     expect(typeof handler.fetch).toBe('function');
@@ -22,7 +27,7 @@ describe('estalara-decision-api', () => {
     const req = new Request('https://api.estalara.io/api/health');
     const res = await handler.fetch(req, env, ctx);
     expect(res.status).toBe(200);
-    const body = (await res.json());
+    const body = await parseBody<{ status: string }>(res);
     expect(body.status).toBe('ok');
   });
 

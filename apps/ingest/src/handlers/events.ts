@@ -96,6 +96,8 @@ events.post('/', async (c) => {
   }
 
   const tenantId = auth.tenant_id;
+  // Make tenant_id available to any Hono middleware/handler downstream via context.
+  c.set('tenantId' as never, tenantId);
   span?.setAttribute('estalara.tenant_id', tenantId);
 
   // 3. Parse JSON

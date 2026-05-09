@@ -67,7 +67,9 @@ export default function MockupListingsPage() {
             {REGIONS.map(({ value, label }) => (
               <button
                 key={value}
-                onClick={() => { setRegion(value); }}
+                onClick={() => {
+                  setRegion(value);
+                }}
                 className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
                   region === value
                     ? 'bg-gray-900 text-white'
@@ -87,7 +89,9 @@ export default function MockupListingsPage() {
             {PRICE_SEGMENTS.map(({ value, label }) => (
               <button
                 key={value}
-                onClick={() => { setPriceSegment(value); }}
+                onClick={() => {
+                  setPriceSegment(value);
+                }}
                 className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
                   priceSegment === value
                     ? 'bg-gray-900 text-white'

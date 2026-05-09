@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { POST as revokePost } from './route';
 import { POST as sessionsPost } from '../../route';
-import { sessionStore } from '../../_store';
+import { sessionStore } from '../../store';
 
 async function parseBody<T>(res: Response): Promise<T> {
   const raw: unknown = await res.json();

@@ -11,7 +11,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import { sessionStore } from '../../_store.js';
+import { sessionStore } from '../../store.js';
 
 export async function POST(
   req: NextRequest,

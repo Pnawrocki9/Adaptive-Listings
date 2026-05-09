@@ -12,8 +12,11 @@ export default defineConfig({
     poolOptions: {
       forks: {
         singleFork: true,
+        isolate: true,
       },
     },
+    // Serialise test files to avoid concurrent vi.stubEnv() interference
+    fileParallelism: false,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

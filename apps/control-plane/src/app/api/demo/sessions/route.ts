@@ -19,7 +19,7 @@ import type { NextRequest } from 'next/server';
 
 import type { DemoDuration, DemoScope, DemoVisibility } from '@estalara/shared';
 
-import { sessionStore } from '@/lib/demo-session-store.js';
+import { sessionStore } from '@/lib/demo-session-store';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

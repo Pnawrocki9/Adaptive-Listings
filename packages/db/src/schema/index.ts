@@ -13,3 +13,4 @@ export * from './users.js';
 export * from './api_keys.js';
 export * from './staff_audit_log.js';
 export * from './consent_records.js';
+export * from './demo_sessions.js';

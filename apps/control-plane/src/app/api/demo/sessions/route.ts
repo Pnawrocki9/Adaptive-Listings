@@ -46,13 +46,13 @@ function signDemoJwt(payload: Record<string, unknown>): string {
   return `${signingInput}.${b64url(sig)}`;
 }
 
-export function sha256hex(s: string): string {
+function sha256hex(s: string): string {
   return crypto.createHash('sha256').update(s).digest('hex');
 }
 
 // ─── Duration helpers ─────────────────────────────────────────────────────────
 
-export function expiresAtForDuration(duration: DemoDuration): Date {
+function expiresAtForDuration(duration: DemoDuration): Date {
   const now = new Date();
   if (duration === '24h') now.setHours(now.getHours() + 24);
   else if (duration === '7d') now.setDate(now.getDate() + 7);

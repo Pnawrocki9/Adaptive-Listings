@@ -184,6 +184,7 @@ files = [
   '''docs/adr/''',
   '''docs/MASTER_DESIGN\.md''',
   '''CLAUDE\.md''',
+  '''packages/sdk/src/__tests__/''',
 ]
 
 # Regexes for known safe patterns

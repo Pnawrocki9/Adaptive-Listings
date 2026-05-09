@@ -5,18 +5,9 @@ export default defineConfig({
     globals: false,
     environment: 'node',
     include: ['src/**/*.test.ts'],
-    // client.test.ts uses vi.resetModules() + vi.stubEnv() + dynamic imports.
-    // Under parallel Vitest workers these env stubs can leak across test files.
-    // singleFork isolates the entire package in one forked process, eliminating the race.
+    // Use forks pool for process-level isolation (good practice for env manipulation).
+    // No longer need singleFork/fileParallelism — test now uses vi.mock() at module level.
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        singleFork: true,
-        isolate: true,
-      },
-    },
-    // Serialise test files to avoid concurrent vi.stubEnv() interference
-    fileParallelism: false,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

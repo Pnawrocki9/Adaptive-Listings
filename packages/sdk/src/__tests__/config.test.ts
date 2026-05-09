@@ -9,13 +9,13 @@ function makeDataset(attrs: Record<string, string>): Record<string, string | und
 
 describe('readConfig', () => {
   it('reads data-api-key from the script dataset', () => {
-    const dataset = makeDataset({ apiKey: 'est_live_abc123' });
+    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_abc123' });
     const cfg = readConfig({ dataset });
-    expect(cfg.apiKey).toBe('est_live_abc123');
+    expect(cfg.apiKey).toBe('EXAMPLE_api_key_abc123');
   });
 
   it('uses DEFAULT_CONFIG values for missing attributes', () => {
-    const dataset = makeDataset({ apiKey: 'est_live_xyz' });
+    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz' });
     const cfg = readConfig({ dataset });
     expect(cfg.ingestUrl).toBe(DEFAULT_CONFIG.ingestUrl);
     expect(cfg.tier).toBe(DEFAULT_CONFIG.tier);
@@ -25,7 +25,7 @@ describe('readConfig', () => {
 
   it('reads data-tier, data-debug, data-ingest-url when provided', () => {
     const dataset = makeDataset({
-      apiKey: 'est_live_xyz',
+      apiKey: 'EXAMPLE_api_key_xyz',
       tier: 'augment',
       debug: 'true',
       ingestUrl: 'https://custom.ingest.example.com/v1/events',

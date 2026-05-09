@@ -1,1 +1,3 @@
 docs/MASTER_DESIGN.md
+pnpm-lock.yaml
+*.lock

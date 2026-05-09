@@ -19,6 +19,16 @@ const nextConfig = {
   },
   // Transpile monorepo packages for App Router
   transpilePackages: ['@estalara/shared', '@estalara/auth', '@estalara/db'],
+  // Allow Unsplash images for demo mockup listings
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+        pathname: '/**',
+      },
+    ],
+  },
 };
 
 export default nextConfig;

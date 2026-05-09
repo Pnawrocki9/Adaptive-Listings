@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { GET, POST } from './route';
-import { sessionStore } from './store';
+import { sessionStore } from '@/lib/demo-session-store';
 
 async function parseBody<T>(res: Response): Promise<T> {
   const raw: unknown = await res.json();

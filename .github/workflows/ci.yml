@@ -118,7 +118,7 @@ jobs:
         run: pnpm turbo run build --filter='./packages/*'
 
       - name: Run tests
-        run: pnpm turbo run test --filter='./packages/*' --filter='@estalara/ingest' --filter='@estalara/decision-api'
+        run: pnpm turbo run test --filter='./packages/*' --filter='@estalara/ingest' --filter='@estalara/decision-api' --filter='@estalara/control-plane'
 
   test-python:
     name: Test (Python)

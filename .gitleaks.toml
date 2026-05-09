@@ -176,15 +176,13 @@ paths = [
   '''coverage/''',
   '''\.env\.example$''', # .env.example is safe
   '''\.gitleaks\.toml$''', # This file itself
-]
-
-# Files with known false positives
-files = [
+  # Test fixtures and docs with intentional fake values
   '''tests/fixtures/''',
   '''docs/adr/''',
   '''docs/MASTER_DESIGN\.md''',
   '''CLAUDE\.md''',
   '''packages/sdk/src/__tests__/''',
+  '''packages/db/src/__tests__/''',
 ]
 
 # Regexes for known safe patterns

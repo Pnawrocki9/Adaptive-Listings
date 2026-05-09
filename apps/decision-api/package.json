@@ -18,6 +18,11 @@
     "vitest": "*",
     "wrangler": "^3.0.0"
   },
+  "turbo": {
+    "build": {
+      "outputs": []
+    }
+  },
   "dependencies": {
     "zod": "^3.23.8"
   }

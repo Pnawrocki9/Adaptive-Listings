@@ -18,6 +18,11 @@
     "vitest": "*",
     "wrangler": "^3.0.0"
   },
+  "turbo": {
+    "build": {
+      "outputs": []
+    }
+  },
   "dependencies": {
     "@estalara/shared": "workspace:*",
     "@microlabs/otel-cf-workers": "1.0.0-rc.52",

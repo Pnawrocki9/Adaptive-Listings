@@ -14,7 +14,11 @@ import { readConfig } from './core/config.js';
 import { dispatchEvents, collectPageView } from './core/events.js';
 import { getOrCreateSession, incrementPageCount } from './core/session.js';
 import { setupObservers } from './core/observer.js';
+import { createShadowHost } from './ui/shadow-host.js';
+import { renderQuizTrigger, isQuizDismissed } from './ui/quiz-trigger.js';
+import { renderQuizWidget } from './ui/quiz-widget.js';
 import type { CollectedEvent } from './core/events.js';
+import type { QuizWidgetConfig } from './ui/quiz-widget.js';
 
 /** Current SDK version string. */
 export const SDK_VERSION = '0.0.0' as const;
@@ -24,6 +28,9 @@ const eventQueue: CollectedEvent[] = [];
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
 const BATCH_INTERVAL_MS = 5_000;
+
+/** Number of listing views required before showing the quiz trigger. */
+const QUIZ_TRIGGER_THRESHOLD = 3;
 
 /**
  * Main SDK initialization — called automatically when DOM is ready.
@@ -45,12 +52,55 @@ async function init(): Promise<void> {
     // 4. Collect initial page.view event
     eventQueue.push(collectPageView());
 
-    // 5. Set up behavioral observers
-    const cleanupObservers = setupObservers(config, (event) => {
+    // 5. Initialize Shadow DOM host for UI elements (fails silently in SSR)
+    const shadowHost = createShadowHost();
+
+    const quizConfig: QuizWidgetConfig = {
+      accentColor: script.dataset.accentColor ?? '#2563EB',
+      language: script.dataset.language === 'pl' ? 'pl' : 'en',
+    };
+
+    let listingViewCount = 0;
+    let quizTriggered = false;
+
+    // 6. Set up behavioral observers, wiring listing view count for quiz
+    const cleanupObservers = setupObservers(config, (event: CollectedEvent) => {
       eventQueue.push(event);
+
+      if (event.type === 'listing.viewed' && shadowHost && !quizTriggered && !isQuizDismissed()) {
+        listingViewCount++;
+        if (listingViewCount >= QUIZ_TRIGGER_THRESHOLD) {
+          quizTriggered = true;
+          renderQuizTrigger(
+            shadowHost.root,
+            { accentColor: quizConfig.accentColor, icon: '🎯', language: quizConfig.language },
+            () => {
+              renderQuizWidget(
+                shadowHost.root,
+                quizConfig,
+                (answers) => {
+                  eventQueue.push({
+                    type: 'quiz.event',
+                    payload: {
+                      step: 'completed',
+                      answers,
+                      trigger: 'prompt_after_3_listings',
+                    },
+                    ts: Date.now(),
+                  });
+                },
+                () => {
+                  // dismissed — reset so it can show again next session
+                  quizTriggered = false;
+                },
+              );
+            },
+          );
+        }
+      }
     });
 
-    // 6. Flush events on interval and page unload
+    // 7. Flush events on interval and page unload
     async function flush(): Promise<void> {
       if (eventQueue.length === 0) return;
       const batch = eventQueue.splice(0);
@@ -77,6 +127,7 @@ async function init(): Promise<void> {
     (window as Window & { __estalaraTeardown?: () => void }).__estalaraTeardown = () => {
       if (flushTimer) clearInterval(flushTimer);
       cleanupObservers();
+      shadowHost?.destroy();
     };
   } catch (err) {
     // SDK initialization failed — log in debug mode, never propagate

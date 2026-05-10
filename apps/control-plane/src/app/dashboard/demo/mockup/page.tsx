@@ -122,6 +122,9 @@ export default function MockupListingsPage() {
               key={listing.slug}
               href={`/dashboard/demo/mockup/listings/${listing.slug}`}
               className="group overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 transition-all hover:shadow-md hover:ring-gray-300"
+              data-estalara-listing
+              data-listing-id={listing.slug}
+              data-estalara-cta="view-details"
             >
               {/* Image */}
               <div className="relative h-52 overflow-hidden bg-gray-100">

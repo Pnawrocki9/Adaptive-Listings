@@ -1,59 +1,57 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Estalara SDK Test Page</title>
-  <!-- SDK loaded from dist/ — data-api-key is required for init -->
-  <script
-    src="/dist/estalara-sdk.iife.js"
-    data-api-key="EXAMPLE_test_key_abc123"
-    data-tier="observer"
-    data-debug="true"
-    data-ingest-url="http://localhost:4444/mock-ingest"
-  ></script>
-</head>
-<body>
-  <h1>Test Listings Page</h1>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Estalara SDK Test Page</title>
+    <!-- SDK loaded from dist/ — data-api-key is required for init -->
+    <script
+      src="/dist/estalara-sdk.iife.js"
+      data-api-key="EXAMPLE_test_key_abc123"
+      data-tier="observer"
+      data-debug="true"
+      data-ingest-url="http://localhost:4444/mock-ingest"
+    ></script>
+  </head>
+  <body>
+    <h1>Test Listings Page</h1>
 
-  <!-- Mock listing cards with data-listing-id -->
-  <div class="listing-card" data-estalara-listing data-listing-id="listing-001">
-    <h2>Marbella Villa</h2>
-    <p>€1,250,000</p>
-  </div>
-  <div class="listing-card" data-estalara-listing data-listing-id="listing-002">
-    <h2>Algarve Apartment</h2>
-    <p>€320,000</p>
-  </div>
-  <div class="listing-card" data-estalara-listing data-listing-id="listing-003">
-    <h2>Tuscany Farmhouse</h2>
-    <p>€850,000</p>
-  </div>
+    <!-- Mock listing cards with data-listing-id -->
+    <div class="listing-card" data-estalara-listing data-listing-id="listing-001">
+      <h2>Marbella Villa</h2>
+      <p>€1,250,000</p>
+    </div>
+    <div class="listing-card" data-estalara-listing data-listing-id="listing-002">
+      <h2>Algarve Apartment</h2>
+      <p>€320,000</p>
+    </div>
+    <div class="listing-card" data-estalara-listing data-listing-id="listing-003">
+      <h2>Tuscany Farmhouse</h2>
+      <p>€850,000</p>
+    </div>
 
-  <!-- Mock CTA button -->
-  <button class="estalara-cta" data-estalara-cta="book-viewing">
-    Book a Viewing
-  </button>
+    <!-- Mock CTA button -->
+    <button class="estalara-cta" data-estalara-cta="book-viewing">Book a Viewing</button>
 
-  <!-- Capture ingest requests for testing -->
-  <script>
-    window.__capturedRequests = [];
+    <!-- Capture ingest requests for testing -->
+    <script>
+      window.__capturedRequests = [];
 
-    // Intercept fetch to capture ingest calls
-    const originalFetch = window.fetch;
-    window.fetch = function(url, options) {
-      if (typeof url === 'string' && url.includes('mock-ingest')) {
-        try {
-          window.__capturedRequests.push({
-            url: url,
-            body: JSON.parse((options && options.body) || '{}'),
-          });
-        } catch (e) {
-          window.__capturedRequests.push({ url: url, body: {} });
+      // Intercept fetch to capture ingest calls
+      const originalFetch = window.fetch;
+      window.fetch = function (url, options) {
+        if (typeof url === 'string' && url.includes('mock-ingest')) {
+          try {
+            window.__capturedRequests.push({
+              url: url,
+              body: JSON.parse((options && options.body) || '{}'),
+            });
+          } catch (e) {
+            window.__capturedRequests.push({ url: url, body: {} });
+          }
+          return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
         }
-        return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
-      }
-      return originalFetch.apply(this, arguments);
-    };
-  </script>
-</body>
+        return originalFetch.apply(this, arguments);
+      };
+    </script>
+  </body>
 </html>

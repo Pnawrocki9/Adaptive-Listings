@@ -21,6 +21,7 @@ export default tseslint.config(
       '**/*.config.mjs',
       'scripts/check-bundle-size.ts',
       'packages/sdk/scripts/**',
+      'packages/sdk/e2e/*.js',
       'apps/control-plane/next.config.ts',
     ],
   },

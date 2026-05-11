@@ -33,7 +33,7 @@ updates.
 | 4      | 6     | Intent ontology v1 + Modal scaffolding                               | tbd     | —    | —       | —     | tbd     |
 | 5      | 7     | LLM gateway + intent extraction from chat                            | tbd     | —    | —       | —     | tbd     |
 | 6      | 8     | Embeddings + archetype matching + decision API                       | 3       | 3    | 0       | 0     | 0       |
-| 7      | 9     | Decision API real logic + adaptation playbooks                       | 2       | 0    | 1       | 0     | 1       |
+| 7      | 9     | Decision API real logic + adaptation playbooks                       | 2       | 1    | 1       | 0     | 0       |
 | 8      | 10    | A/B holdout framework + analytics dashboard                          | tbd     | —    | —       | —     | tbd     |
 | 9      | 11    | DPIA + ROPA + DSR + fair-housing + continuous validation             | tbd     | —    | —       | —     | tbd     |
 | 10     | 12    | Multi-region deploy + observability + load tests                     | tbd     | —    | —       | —     | tbd     |
@@ -595,27 +595,31 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-ADP-001
   title: Decision API real logic — replace GET /api/adapt stub with full decision tree
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P0
   estimated_hours: 10
   depends_on: [TICKET-ARCH-001, TICKET-EMB-001, TICKET-DB-001]
   assigned_to: backend-engineer
   started_at: '2026-05-11T00:00:00Z'
+  completed_at: '2026-05-11T20:36:18Z'
+  pr: '#67'
   spec: backlog/sprint-7/TICKET-ADP-001.md
 
 - id: TICKET-ADP-003
   title: Adaptation playbooks — pre-computed directives for all 18 archetypes
   agent: sdk-engineer
-  status: BLOCKED
+  status: IN_PROGRESS
   priority: P0
   estimated_hours: 8
   depends_on: [TICKET-ADP-001]
+  assigned_to: sdk-engineer
+  started_at: '2026-05-11T20:36:18Z'
   spec: backlog/sprint-7/TICKET-ADP-003.md
 ```
 
 ## Currently in flight
 
-- TICKET-ADP-001 (backend-engineer, IN_PROGRESS, started 2026-05-11T00:00Z)
+- TICKET-ADP-003 (sdk-engineer, IN_PROGRESS, started 2026-05-11T20:36:18Z)
 
 ## Awaiting human review
 

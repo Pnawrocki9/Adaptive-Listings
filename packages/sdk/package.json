@@ -10,6 +10,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./playbooks": {
+      "import": "./dist/core/playbooks/index.js",
+      "types": "./dist/core/playbooks/index.d.ts"
     }
   },
   "files": [

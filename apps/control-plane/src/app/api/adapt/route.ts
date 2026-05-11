@@ -24,7 +24,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { errorBody, ErrorCode } from '@estalara/shared';
 import type { AdaptationDirectives, TextDirective, ArchetypeId } from '@estalara/shared';
-import { getPlaybook } from './playbook-stub.js';
+import { getPlaybook } from './playbook-stub';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

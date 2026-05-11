@@ -43,7 +43,7 @@ export type ArchetypeId =
  *
  * Matches elements via `[data-estalara-slot="<slot>"]`.
  */
-export type TextDirective = {
+export interface TextDirective {
   type: 'text';
   /** Matches `[data-estalara-slot="<slot>"]` on the host page. */
   slot: string;
@@ -52,14 +52,14 @@ export type TextDirective = {
   archetype: ArchetypeId;
   /** Confidence score 0–1 from the intent engine. */
   confidence: number;
-};
+}
 
 /**
  * Tier 1 class directive — adds/removes CSS classes on a matched element.
  *
  * Matches elements via `selector` (e.g. `[data-estalara-listing-id="123"]`).
  */
-export type ClassDirective = {
+export interface ClassDirective {
   type: 'class';
   /** CSS selector identifying the target element. */
   selector: string;
@@ -70,14 +70,14 @@ export type ClassDirective = {
   archetype: ArchetypeId;
   /** Confidence score 0–1 from the intent engine. */
   confidence: number;
-};
+}
 
 /**
  * Full adaptation directive response returned by `GET /api/adapt`.
  *
  * The SDK reads this and applies each directive to the host page DOM.
  */
-export type AdaptationDirectives = {
+export interface AdaptationDirectives {
   session_id: string;
   archetype: ArchetypeId | 'neutral';
   /** Intent confidence 0–1. */
@@ -97,4 +97,4 @@ export type AdaptationDirectives = {
   source: 'playbook' | 'llm_tweaked' | 'llm_full' | 'default';
   /** ISO 8601 timestamp of when this response was generated. */
   generated_at: string;
-};
+}

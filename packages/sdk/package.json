@@ -1,7 +1,6 @@
 {
   "name": "@estalara/sdk",
   "version": "0.0.0",
-  "private": true,
   "type": "module",
   "description": "Estalara adaptive listings core embeddable SDK",
   "main": "./dist/index.js",
@@ -16,6 +15,10 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
   "scripts": {
     "build": "tsup",
     "build:check": "node scripts/check-bundle-size.js",

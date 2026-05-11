@@ -183,6 +183,10 @@ paths = [
   '''CLAUDE\.md''',
   '''packages/sdk/src/__tests__/''',
   '''packages/db/src/__tests__/''',
+  # Drizzle-generated migration files use long auto-generated identifier names
+  '''packages/db/migrations/''',
+  # DB schema files contain long table/index names that match the cloudflare-api-token regex
+  '''packages/db/src/schema/''',
 ]
 
 # Regexes for known safe patterns

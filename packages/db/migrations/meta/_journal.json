@@ -15,6 +15,13 @@
       "when": 1778351847223,
       "tag": "0001_tidy_quasar",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778505243524,
+      "tag": "0002_goofy_spencer_smythe",
+      "breakpoints": true
     }
   ]
 }

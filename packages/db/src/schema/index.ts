@@ -14,3 +14,5 @@ export * from './api_keys.js';
 export * from './staff_audit_log.js';
 export * from './consent_records.js';
 export * from './demo_sessions.js';
+export * from './archetype_embeddings.js';
+export * from './session_embeddings.js';

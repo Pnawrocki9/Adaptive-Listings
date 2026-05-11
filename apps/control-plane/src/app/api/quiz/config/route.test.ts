@@ -1,5 +1,16 @@
 import { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@estalara/db', () => ({
+  createAdminClient: vi.fn(),
+  tenants: { id: 'id', quizConfig: 'quiz_config', updatedAt: 'updated_at' },
+}));
+
+vi.mock('drizzle-orm', () => ({
+  eq: vi.fn((col: unknown, val: unknown) => ({ col, val })),
+}));
+
+import { createAdminClient } from '@estalara/db';
 
 import { GET, POST } from './route';
 
@@ -25,18 +36,50 @@ function makePostRequest(body: unknown, tenantId?: string): NextRequest {
   });
 }
 
+/** Minimal stateful DB mock that simulates quiz_config reads/writes per tenant. */
+function makeDbMock(initial: Record<string, unknown> = {}) {
+  let stored = { ...initial };
+  return {
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi
+            .fn()
+            .mockImplementation(() =>
+              Promise.resolve(Object.keys(stored).length > 0 ? [{ quizConfig: stored }] : []),
+            ),
+        }),
+      }),
+    }),
+    update: vi.fn().mockReturnValue({
+      set: vi.fn().mockImplementation((values: { quizConfig: Record<string, unknown> }) => {
+        stored = { ...values.quizConfig };
+        return {
+          where: vi.fn().mockResolvedValue([]),
+        };
+      }),
+    }),
+  };
+}
+
 beforeEach(() => {
-  // Each test runs with a fresh tenant ID — no cross-test state leakage
+  vi.clearAllMocks();
 });
 
 describe('GET /api/quiz/config', () => {
-  it('returns default config when no config has been saved', () => {
-    const res = GET(makeGetRequest('tenant-fresh-001'));
+  it('returns default config when tenant has no stored config', async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+    );
+    const res = await GET(makeGetRequest('tenant-fresh-001'));
     expect(res.status).toBe(200);
   });
 
   it('default config has expected shape', async () => {
-    const res = GET(makeGetRequest('tenant-fresh-002'));
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+    );
+    const res = await GET(makeGetRequest('tenant-fresh-002'));
     const body = await parseBody<{
       enabled: boolean;
       trigger_after_n_listings: number;
@@ -57,6 +100,9 @@ describe('POST /api/quiz/config', () => {
   });
 
   it('updates config fields and returns updated config', async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+    );
     const res = await POST(
       makePostRequest(
         { enabled: true, language: 'pl', trigger_after_n_listings: 5 },
@@ -85,14 +131,21 @@ describe('POST /api/quiz/config', () => {
   });
 
   it('partial update preserves unset fields', async () => {
-    // First set a full config
+    // Shared DB mock — state persists between the two POST calls
+    const dbMock = makeDbMock({});
+    vi.mocked(createAdminClient).mockReturnValue(
+      dbMock as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    // First POST: set full config
     await POST(
       makePostRequest(
         { enabled: true, language: 'pl', trigger_after_n_listings: 7, sticky_widget: true },
         'tenant-partial-001',
       ),
     );
-    // Then update only enabled
+
+    // Second POST: update only enabled — the mock SELECT now returns the stored config
     const res = await POST(makePostRequest({ enabled: false }, 'tenant-partial-001'));
     const body = await parseBody<{
       enabled: boolean;

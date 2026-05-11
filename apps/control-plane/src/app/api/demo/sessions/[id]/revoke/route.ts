@@ -3,15 +3,15 @@
  *
  * Auth: x-tenant-id required. Tenant must own the session.
  *
- * // TODO Sprint 5: update demo_sessions table via createAdminClient()
- *
  * @module apps/control-plane/src/app/api/demo/sessions/[id]/revoke/route
  */
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import { sessionStore } from '@/lib/demo-session-store';
+import { and, eq } from 'drizzle-orm';
+
+import { createAdminClient, demoSessions } from '@estalara/db';
 
 export async function POST(
   req: NextRequest,
@@ -26,14 +26,6 @@ export async function POST(
   }
 
   const { id: sessionId } = await params;
-  const session = sessionStore.get(sessionId);
-
-  if (session?.tenantId !== tenantId) {
-    return NextResponse.json(
-      { error: { code: 'not_found', message: 'Demo session not found' } },
-      { status: 404 },
-    );
-  }
 
   let reason = 'user_stopped';
   try {
@@ -43,8 +35,27 @@ export async function POST(
     // body is optional
   }
 
-  session.revokedAt = new Date().toISOString();
-  session.revokeReason = reason;
+  try {
+    const db = createAdminClient();
 
-  return NextResponse.json({ revoked: true, session_id: sessionId });
+    const updated = await db
+      .update(demoSessions)
+      .set({ revokedAt: new Date(), revokeReason: reason })
+      .where(and(eq(demoSessions.id, sessionId), eq(demoSessions.tenantId, tenantId)))
+      .returning({ id: demoSessions.id });
+
+    if (updated.length === 0) {
+      return NextResponse.json(
+        { error: { code: 'not_found', message: 'Demo session not found' } },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({ revoked: true, session_id: sessionId });
+  } catch {
+    return NextResponse.json(
+      { error: { code: 'internal_error', message: 'Failed to revoke demo session' } },
+      { status: 500 },
+    );
+  }
 }

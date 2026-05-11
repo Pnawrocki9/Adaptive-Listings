@@ -1,14 +1,14 @@
 /**
  * Intent Engine — Bayesian archetype classifier.
  *
- * Archetypes: 'investor' | 'family' | 'neutral'
+ * Archetypes: 18 fine-grained buyer/investor personas
  *
  * Prior sources (in decreasing strength):
  *   1. Quiz answers (explicit self-declaration, full likelihood applied)
  *   2. Behavioral signals (implicit, multiplied by BEHAVIORAL_DAMPING)
  *      - Scroll depth, listing views, CTA clicks, etc.
  *
- * Decay: probabilities move toward the uniform distribution (1/3 each) at the
+ * Decay: probabilities move toward the uniform distribution (1/18 each) at the
  * configured rate per minute. Without new evidence the classifier loses
  * confidence and returns to neutral over time.
  *
@@ -19,16 +19,74 @@
  * @module @estalara/sdk/core/intent
  */
 
-export type Archetype = 'investor' | 'family' | 'neutral';
+export type Archetype =
+  // Investors
+  | 'yield_hunter'
+  | 'vacation_rental_investor'
+  | 'flip_investor'
+  | 'portfolio_builder'
+  | 'golden_visa_buyer'
+  | 'commercial_investor'
+  // Own use
+  | 'family_buyer'
+  | 'first_time_buyer'
+  | 'upsizer'
+  | 'downsizer'
+  | 'luxury_buyer'
+  | 'remote_worker'
+  // Special / cross-border
+  | 'lifestyle_expat'
+  | 'retiree_relocator'
+  | 'diaspora_buyer'
+  | 'second_home_buyer'
+  | 'student_parent'
+  // Fallback
+  | 'neutral';
 
-export interface ArchetypeProbabilities {
-  /** Probability the visitor is an investor. */
-  investor: number;
-  /** Probability the visitor is a personal/family buyer. */
-  family: number;
-  /** Probability the visitor is undecided / browsing. */
-  neutral: number;
-}
+/** Ordered list of all archetype names — used for iteration and uniform distribution. */
+export const ARCHETYPE_NAMES: readonly Archetype[] = [
+  'yield_hunter',
+  'vacation_rental_investor',
+  'flip_investor',
+  'portfolio_builder',
+  'golden_visa_buyer',
+  'commercial_investor',
+  'family_buyer',
+  'first_time_buyer',
+  'upsizer',
+  'downsizer',
+  'luxury_buyer',
+  'remote_worker',
+  'lifestyle_expat',
+  'retiree_relocator',
+  'diaspora_buyer',
+  'second_home_buyer',
+  'student_parent',
+  'neutral',
+];
+
+/** Archetypes in the investor group — used for mismatch detection. */
+export const INVESTOR_ARCHETYPES = new Set<Archetype>([
+  'yield_hunter',
+  'vacation_rental_investor',
+  'flip_investor',
+  'portfolio_builder',
+  'golden_visa_buyer',
+  'commercial_investor',
+]);
+
+/** Archetypes in the own-use group — used for mismatch detection. */
+export const OWN_USE_ARCHETYPES = new Set<Archetype>([
+  'family_buyer',
+  'first_time_buyer',
+  'upsizer',
+  'downsizer',
+  'luxury_buyer',
+  'remote_worker',
+]);
+
+/** One probability value per archetype; values must sum to 1.0. */
+export type ArchetypeProbabilities = Record<Archetype, number>;
 
 export interface IntentState {
   archetype: Archetype;
@@ -44,38 +102,156 @@ export interface IntentState {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Base prior — before any evidence is observed. */
+/**
+ * Base prior — before any evidence is observed.
+ *
+ * Distribution rationale:
+ *   6 investor archetypes × 0.04 = 0.24
+ *   6 own-use archetypes  × 0.04 = 0.24
+ *   5 special archetypes  × 0.03 = 0.15
+ *   neutral                       = 0.37 (default before signals)
+ *   Total                         = 1.00
+ */
 const BASE_PRIOR: ArchetypeProbabilities = {
-  investor: 0.25,
-  family: 0.35,
-  neutral: 0.4,
+  // Investors (each 0.04)
+  yield_hunter: 0.04,
+  vacation_rental_investor: 0.04,
+  flip_investor: 0.04,
+  portfolio_builder: 0.04,
+  golden_visa_buyer: 0.04,
+  commercial_investor: 0.04,
+  // Own use (each 0.04)
+  family_buyer: 0.04,
+  first_time_buyer: 0.04,
+  upsizer: 0.04,
+  downsizer: 0.04,
+  luxury_buyer: 0.04,
+  remote_worker: 0.04,
+  // Special (each 0.03)
+  lifestyle_expat: 0.03,
+  retiree_relocator: 0.03,
+  diaspora_buyer: 0.03,
+  second_home_buyer: 0.03,
+  student_parent: 0.03,
+  // Fallback
+  neutral: 0.37,
 };
 
-/**
- * Quiz answer likelihoods — P(answer | archetype).
- *
- * These are applied multiplicatively to the current prior and renormalized,
- * yielding a strong posterior shift toward the indicated archetype.
- */
+/** Quiz answer likelihoods — P(answer | archetype). */
 const QUIZ_LIKELIHOODS = {
-  purpose_investment: { investor: 0.85, family: 0.05, neutral: 0.1 },
-  purpose_personal: { investor: 0.1, family: 0.75, neutral: 0.15 },
-  horizon_short: { investor: 0.6, family: 0.25, neutral: 0.15 },
-  horizon_long: { investor: 0.2, family: 0.5, neutral: 0.3 },
+  purpose_investment: {
+    yield_hunter: 0.8,
+    vacation_rental_investor: 0.7,
+    flip_investor: 0.65,
+    portfolio_builder: 0.75,
+    golden_visa_buyer: 0.6,
+    commercial_investor: 0.55,
+    family_buyer: 0.05,
+    first_time_buyer: 0.05,
+    upsizer: 0.08,
+    downsizer: 0.05,
+    luxury_buyer: 0.15,
+    remote_worker: 0.05,
+    lifestyle_expat: 0.1,
+    retiree_relocator: 0.08,
+    diaspora_buyer: 0.2,
+    second_home_buyer: 0.25,
+    student_parent: 0.05,
+    neutral: 0.1,
+  },
+  purpose_personal: {
+    yield_hunter: 0.05,
+    vacation_rental_investor: 0.08,
+    flip_investor: 0.05,
+    portfolio_builder: 0.05,
+    golden_visa_buyer: 0.1,
+    commercial_investor: 0.03,
+    family_buyer: 0.75,
+    first_time_buyer: 0.7,
+    upsizer: 0.65,
+    downsizer: 0.6,
+    luxury_buyer: 0.5,
+    remote_worker: 0.55,
+    lifestyle_expat: 0.6,
+    retiree_relocator: 0.65,
+    diaspora_buyer: 0.5,
+    second_home_buyer: 0.4,
+    student_parent: 0.7,
+    neutral: 0.15,
+  },
+  horizon_short: {
+    yield_hunter: 0.55,
+    vacation_rental_investor: 0.5,
+    flip_investor: 0.8,
+    portfolio_builder: 0.45,
+    golden_visa_buyer: 0.6,
+    commercial_investor: 0.45,
+    family_buyer: 0.35,
+    first_time_buyer: 0.4,
+    upsizer: 0.35,
+    downsizer: 0.3,
+    luxury_buyer: 0.35,
+    remote_worker: 0.5,
+    lifestyle_expat: 0.55,
+    retiree_relocator: 0.35,
+    diaspora_buyer: 0.45,
+    second_home_buyer: 0.4,
+    student_parent: 0.6,
+    neutral: 0.2,
+  },
+  horizon_long: {
+    yield_hunter: 0.6,
+    vacation_rental_investor: 0.55,
+    flip_investor: 0.2,
+    portfolio_builder: 0.7,
+    golden_visa_buyer: 0.55,
+    commercial_investor: 0.6,
+    family_buyer: 0.5,
+    first_time_buyer: 0.45,
+    upsizer: 0.5,
+    downsizer: 0.55,
+    luxury_buyer: 0.55,
+    remote_worker: 0.4,
+    lifestyle_expat: 0.5,
+    retiree_relocator: 0.6,
+    diaspora_buyer: 0.5,
+    second_home_buyer: 0.55,
+    student_parent: 0.3,
+    neutral: 0.3,
+  },
 } as const;
 
 /**
- * Behavioral signal likelihoods — multiplicative weights applied (after damping)
- * to the current prior.
- *
- * Values > 1.0 favor the archetype; values < 1.0 disfavor it.
+ * Build a likelihood object with all archetypes at 1.0 (no information),
+ * overriding specific archetypes for targeted behavioral signals.
+ */
+function makeLikelihood(overrides: Partial<ArchetypeProbabilities>): ArchetypeProbabilities {
+  const baseline = Object.fromEntries(
+    ARCHETYPE_NAMES.map((k) => [k, 1.0]),
+  ) as ArchetypeProbabilities;
+  return { ...baseline, ...overrides };
+}
+
+/**
+ * Behavioral signal likelihoods — multiplicative weights applied (after damping).
+ * Values > 1.0 favor the archetype; < 1.0 disfavor it; 1.0 = no information.
  */
 const SIGNAL_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
-  'scroll.depth': { investor: 1.05, family: 1.05, neutral: 0.95 },
-  'listing.viewed': { investor: 1.1, family: 1.1, neutral: 0.9 },
-  'cta.clicked': { investor: 1.15, family: 1.08, neutral: 0.85 },
-  // quiz.event is a no-op at the behavioral layer — the quiz prior path is the strong update
-  'quiz.event': { investor: 1.0, family: 1.0, neutral: 1.0 },
+  'scroll.depth': makeLikelihood({ neutral: 0.95 }),
+  'listing.viewed': makeLikelihood({
+    yield_hunter: 1.08,
+    portfolio_builder: 1.1,
+    neutral: 0.92,
+  }),
+  'cta.clicked': makeLikelihood({
+    yield_hunter: 1.15,
+    flip_investor: 1.12,
+    portfolio_builder: 1.1,
+    luxury_buyer: 1.08,
+    neutral: 0.85,
+  }),
+  // quiz.event is a no-op at the behavioral layer — quiz prior path is the strong update
+  'quiz.event': makeLikelihood({}),
 };
 
 /** How much to dampen behavioral likelihoods relative to quiz likelihoods. */
@@ -87,40 +263,42 @@ const DEFAULT_DECAY_RATE = 0.02;
 /** Confidence multiplier when the quiz has been answered (capped at 1.0). */
 const QUIZ_CONFIDENCE_BONUS = 1.2;
 
-/** Probability assigned to each archetype under the uniform distribution. */
-const UNIFORM_PROB = 1 / 3;
+/** Uniform probability per archetype = 1 / 18. */
+const UNIFORM_PROB = 1 / ARCHETYPE_NAMES.length;
+
+// ─── Mismatch detection constants ────────────────────────────────────────────
+
+/** Minimum behavioral signals required before a mismatch can be reported. */
+const MISMATCH_MIN_SIGNALS = 3;
+
+/** Opposing group probability threshold to flag a mismatch. */
+const MISMATCH_OPPOSING_THRESHOLD = 0.4;
+
+/** Confidence gap threshold — behavioral top confidence vs quiz archetype probability. */
+const MISMATCH_GAP_THRESHOLD = 0.3;
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 function isFiniteProbs(probs: ArchetypeProbabilities): boolean {
-  return (
-    Number.isFinite(probs.investor) &&
-    Number.isFinite(probs.family) &&
-    Number.isFinite(probs.neutral)
-  );
+  return ARCHETYPE_NAMES.every((k) => Number.isFinite(probs[k]));
 }
 
 function uniform(): ArchetypeProbabilities {
-  return { investor: UNIFORM_PROB, family: UNIFORM_PROB, neutral: UNIFORM_PROB };
+  return Object.fromEntries(
+    ARCHETYPE_NAMES.map((k) => [k, UNIFORM_PROB]),
+  ) as ArchetypeProbabilities;
 }
 
-/**
- * Multiplicative Bayesian update: posterior ∝ prior × likelihood, then normalize.
- */
 function applyLikelihood(
   prior: ArchetypeProbabilities,
   likelihood: ArchetypeProbabilities,
 ): ArchetypeProbabilities {
-  return normalize({
-    investor: prior.investor * likelihood.investor,
-    family: prior.family * likelihood.family,
-    neutral: prior.neutral * likelihood.neutral,
-  });
+  const product = Object.fromEntries(
+    ARCHETYPE_NAMES.map((k) => [k, prior[k] * likelihood[k]]),
+  ) as ArchetypeProbabilities;
+  return normalize(product);
 }
 
-/**
- * Compute confidence, applying the quiz bonus when quiz_answered is true.
- */
 function withConfidenceBonus(rawConfidence: number, quizAnswered: boolean): number {
   if (!quizAnswered) return rawConfidence;
   return Math.min(rawConfidence * QUIZ_CONFIDENCE_BONUS, 1.0);
@@ -130,33 +308,25 @@ function withConfidenceBonus(rawConfidence: number, quizAnswered: boolean): numb
 
 /**
  * Normalize probabilities to sum to 1.0.
- *
- * Edge cases:
- *   - NaN / Infinity values → uniform distribution
- *   - Zero or negative sum → uniform distribution
- *   - Negative individual values → clamped to 0 before summing
- *
- * Exported for testing.
+ * Degenerate inputs (NaN, zero sum, negatives) fall back to the uniform distribution.
  */
 export function normalize(probs: ArchetypeProbabilities): ArchetypeProbabilities {
   if (!isFiniteProbs(probs)) return uniform();
-  const i = Math.max(0, probs.investor);
-  const f = Math.max(0, probs.family);
-  const n = Math.max(0, probs.neutral);
-  const sum = i + f + n;
+  let sum = 0;
+  for (const k of ARCHETYPE_NAMES) {
+    sum += Math.max(0, probs[k]);
+  }
   if (sum <= 0 || !Number.isFinite(sum)) return uniform();
-  return { investor: i / sum, family: f / sum, neutral: n / sum };
+  return Object.fromEntries(
+    ARCHETYPE_NAMES.map((k) => [k, Math.max(0, probs[k]) / sum]),
+  ) as ArchetypeProbabilities;
 }
 
 /**
  * Derive archetype and confidence from a probability distribution.
  *
- * Tie-break order: neutral > family > investor — matching the BASE_PRIOR ranking
- * so a fully-decayed state classifies as 'neutral' rather than an arbitrary
- * archetype.
- *
- * Confidence = max(probs). The quiz bonus (if applicable) is layered on
- * separately by the state-update functions.
+ * Tie-break: 'neutral' wins equal-probability contests so fully-decayed
+ * states classify as 'neutral' rather than an arbitrary archetype.
  */
 export function classifyFromProbabilities(probs: ArchetypeProbabilities): {
   archetype: Archetype;
@@ -164,20 +334,16 @@ export function classifyFromProbabilities(probs: ArchetypeProbabilities): {
 } {
   let archetype: Archetype = 'neutral';
   let maxProb = probs.neutral;
-  if (probs.family > maxProb) {
-    archetype = 'family';
-    maxProb = probs.family;
-  }
-  if (probs.investor > maxProb) {
-    archetype = 'investor';
-    maxProb = probs.investor;
+  for (const k of ARCHETYPE_NAMES) {
+    if (probs[k] > maxProb) {
+      archetype = k;
+      maxProb = probs[k];
+    }
   }
   return { archetype, confidence: maxProb };
 }
 
-/**
- * Initialize intent state with BASE_PRIOR probabilities.
- */
+/** Initialize intent state with BASE_PRIOR probabilities. */
 export function initIntentState(): IntentState {
   const probabilities = { ...BASE_PRIOR };
   const { archetype, confidence } = classifyFromProbabilities(probabilities);
@@ -197,7 +363,7 @@ export function initIntentState(): IntentState {
  * Applies the two likelihoods sequentially:
  *   P(A | quiz) ∝ P(purpose | A) × P(horizon | A) × P(A)
  *
- * Sets `quiz_answered = true`, which enables the confidence bonus for all
+ * Sets `quiz_answered = true`, enabling the confidence bonus for all
  * future updates. signal_count is preserved.
  */
 export function applyQuizPrior(
@@ -232,12 +398,8 @@ export function applyQuizPrior(
  *
  * The raw signal likelihood is dampened by BEHAVIORAL_DAMPING (default 0.3),
  * so a single behavioral event has a much smaller effect than a quiz answer.
- * Multiple signals accumulate.
- *
  * Unknown event types return the state unchanged (same reference,
  * signal_count is NOT incremented).
- *
- * @param _payload reserved for future context-specific updates (e.g. yield_pct on listing.viewed)
  */
 export function applyBehavioralSignal(
   state: IntentState,
@@ -247,12 +409,9 @@ export function applyBehavioralSignal(
   const rawLikelihood = SIGNAL_LIKELIHOODS[eventType];
   if (!rawLikelihood) return state;
 
-  // Linear damping toward 1.0 — small deviations stay small, large deviations shrink
-  const dampedLikelihood: ArchetypeProbabilities = {
-    investor: 1 + (rawLikelihood.investor - 1) * BEHAVIORAL_DAMPING,
-    family: 1 + (rawLikelihood.family - 1) * BEHAVIORAL_DAMPING,
-    neutral: 1 + (rawLikelihood.neutral - 1) * BEHAVIORAL_DAMPING,
-  };
+  const dampedLikelihood = Object.fromEntries(
+    ARCHETYPE_NAMES.map((k) => [k, 1 + (rawLikelihood[k] - 1) * BEHAVIORAL_DAMPING]),
+  ) as ArchetypeProbabilities;
 
   const probabilities = applyLikelihood(state.probabilities, dampedLikelihood);
   const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
@@ -267,28 +426,52 @@ export function applyBehavioralSignal(
   };
 }
 
+/**
+ * Apply temporal decay toward the uniform distribution.
+ *
+ * decayFactor = clamp(decayRate × elapsedMinutes, 0, 1)
+ * Each probability is linearly interpolated toward UNIFORM_PROB by decayFactor.
+ *
+ * elapsedMs <= 0 returns the state unchanged.
+ */
+export function applyDecay(
+  state: IntentState,
+  elapsedMs: number,
+  decayRate: number = DEFAULT_DECAY_RATE,
+): IntentState {
+  if (elapsedMs <= 0) return state;
+
+  const elapsedMin = elapsedMs / 60_000;
+  const rawFactor = decayRate * elapsedMin;
+  const decayFactor = Math.min(Math.max(rawFactor, 0), 1);
+  const keep = 1 - decayFactor;
+
+  const decayed = Object.fromEntries(
+    ARCHETYPE_NAMES.map((k) => [k, state.probabilities[k] * keep + UNIFORM_PROB * decayFactor]),
+  ) as ArchetypeProbabilities;
+
+  const probabilities = normalize(decayed);
+  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+
+  return {
+    archetype,
+    confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
+    probabilities,
+    signal_count: state.signal_count,
+    last_updated_at: Date.now(),
+    quiz_answered: state.quiz_answered,
+  };
+}
+
 // ─── Mismatch detection ───────────────────────────────────────────────────────
 
-/** Minimum behavioral signals required before a mismatch can be reported. */
-const MISMATCH_MIN_SIGNALS = 3;
-
-/** Behavioral probability threshold for the opposing archetype to flag a mismatch. */
-const MISMATCH_OPPOSING_THRESHOLD = 0.4;
-
-/** Confidence gap threshold — behavioral top archetype confidence vs quiz archetype probability. */
-const MISMATCH_GAP_THRESHOLD = 0.3;
-
-/**
- * Mismatch event — logged when quiz answers contradict behavioral signals.
- * Feeds Detection Quality Score (DQS) for archetype accuracy improvement.
- */
+/** Mismatch event — logged when quiz answers contradict behavioral signals. */
 export interface MismatchEvent {
   session_id: string;
   quiz_archetype: Archetype;
   behavioral_archetype: Archetype;
   /** behavioral top-archetype confidence minus quiz archetype's behavioral probability. */
   confidence_gap: number;
-  /** How many behavioral signals accumulated before the mismatch was detected. */
   signal_count: number;
   ts: number;
 }
@@ -300,10 +483,10 @@ export interface MismatchEvent {
  *   - signal_count < 3 (insufficient evidence)
  *   - quiz and behavioral archetypes agree
  *
- * Mismatch fires when any of these conditions holds:
- *   1. Quiz declared 'investor' but behavioral signals assign >0.4 probability to 'family'
- *   2. Quiz declared 'family' but behavioral signals assign >0.4 probability to 'investor'
- *   3. Confidence gap (behavioral_confidence - quiz_archetype_behavioral_prob) > 0.3
+ * Mismatch fires when:
+ *   1. Quiz says investor group but behavioral signals favour own-use group (sum > 0.4)
+ *   2. Quiz says own-use group but behavioral signals favour investor group (sum > 0.4)
+ *   3. Confidence gap (behavioral_confidence − quiz_archetype_prob) > 0.3
  */
 export function detectMismatch(
   quizArchetype: Archetype,
@@ -318,9 +501,21 @@ export function detectMismatch(
   const behavioralConfidence = behavioralState.confidence;
   const confidence_gap = behavioralConfidence - quizArchetypeProb;
 
+  const quizIsInvestor = INVESTOR_ARCHETYPES.has(quizArchetype);
+  const quizIsOwnUse = OWN_USE_ARCHETYPES.has(quizArchetype);
+
+  let investorGroupProb = 0;
+  let ownUseGroupProb = 0;
+  for (const a of INVESTOR_ARCHETYPES) {
+    investorGroupProb += probs[a];
+  }
+  for (const a of OWN_USE_ARCHETYPES) {
+    ownUseGroupProb += probs[a];
+  }
+
   const opposingArchetypeHigh =
-    (quizArchetype === 'investor' && probs.family > MISMATCH_OPPOSING_THRESHOLD) ||
-    (quizArchetype === 'family' && probs.investor > MISMATCH_OPPOSING_THRESHOLD);
+    (quizIsInvestor && ownUseGroupProb > MISMATCH_OPPOSING_THRESHOLD) ||
+    (quizIsOwnUse && investorGroupProb > MISMATCH_OPPOSING_THRESHOLD);
 
   const gapHigh = confidence_gap > MISMATCH_GAP_THRESHOLD;
 
@@ -339,7 +534,6 @@ export function detectMismatch(
 /**
  * Calculate behavioral-only intent state from a signal history.
  * Starts from BASE_PRIOR and applies only behavioral signals — no quiz prior.
- * Used to compare against the quiz-declared archetype for mismatch detection.
  */
 export function calculateBehavioralOnlyState(
   signalHistory: { eventType: string; payload?: Record<string, unknown> }[],
@@ -349,45 +543,4 @@ export function calculateBehavioralOnlyState(
     state = applyBehavioralSignal(state, signal.eventType, signal.payload);
   }
   return state;
-}
-
-/**
- * Apply temporal decay toward the uniform distribution.
- *
- * decayFactor = clamp(decayRate × elapsedMinutes, 0, 1)
- *
- * Each probability is linearly interpolated toward UNIFORM_PROB by decayFactor.
- * The interpolation preserves the sum (still 1.0 up to floating-point error),
- * but we renormalize at the end for safety.
- *
- * elapsedMs <= 0 returns the state unchanged.
- */
-export function applyDecay(
-  state: IntentState,
-  elapsedMs: number,
-  decayRate: number = DEFAULT_DECAY_RATE,
-): IntentState {
-  if (elapsedMs <= 0) return state;
-
-  const elapsedMin = elapsedMs / 60_000;
-  const rawFactor = decayRate * elapsedMin;
-  const decayFactor = Math.min(Math.max(rawFactor, 0), 1);
-  const keep = 1 - decayFactor;
-
-  const probabilities = normalize({
-    investor: state.probabilities.investor * keep + UNIFORM_PROB * decayFactor,
-    family: state.probabilities.family * keep + UNIFORM_PROB * decayFactor,
-    neutral: state.probabilities.neutral * keep + UNIFORM_PROB * decayFactor,
-  });
-
-  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
-
-  return {
-    archetype,
-    confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
-    probabilities,
-    signal_count: state.signal_count,
-    last_updated_at: Date.now(),
-    quiz_answered: state.quiz_answered,
-  };
 }

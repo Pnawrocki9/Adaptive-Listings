@@ -36,17 +36,38 @@ export interface BehavioralFingerprint {
 }
 
 /**
- * Pre-computed heuristic archetype reference vectors.
+ * Pre-computed heuristic archetype reference vectors (7-dimensional).
  *
- * Each row has 7 values, in the same order as `fingerprintToVector` output:
- *   [listing_views, scroll_depth, cta_clicks, duration, page_count,
- *    investment_ratio, family_ratio]
+ * Order: [listing_views, scroll_depth, cta_clicks, duration, page_count,
+ *         investment_ratio, family_ratio]
  *
- * Values are in [0, 1] (already normalized).
+ * Values are in [0, 1]. Row semantics:
+ *   Investors   — high investment_signal_ratio, moderate-high CTA
+ *   Own-use     — high family_signal_ratio, longer sessions
+ *   Special     — mixed signals, moderate both ratios
  */
-const ARCHETYPE_HEURISTIC_VECTORS: Record<Archetype, readonly number[]> = {
-  investor: [0.3, 0.5, 0.7, 0.4, 0.3, 0.9, 0.1],
-  family: [0.5, 0.6, 0.4, 0.6, 0.5, 0.1, 0.9],
+const ARCHETYPE_HEURISTIC_VECTORS: Record<string, readonly number[]> = {
+  // Investors
+  yield_hunter: [0.3, 0.5, 0.8, 0.4, 0.3, 0.95, 0.05],
+  vacation_rental_investor: [0.4, 0.5, 0.7, 0.5, 0.4, 0.8, 0.1],
+  flip_investor: [0.5, 0.6, 0.6, 0.5, 0.5, 0.85, 0.05],
+  portfolio_builder: [0.8, 0.4, 0.7, 0.3, 0.7, 0.9, 0.05],
+  golden_visa_buyer: [0.3, 0.6, 0.5, 0.6, 0.4, 0.7, 0.1],
+  commercial_investor: [0.4, 0.5, 0.6, 0.5, 0.4, 0.85, 0.05],
+  // Own use
+  family_buyer: [0.5, 0.6, 0.4, 0.7, 0.5, 0.05, 0.95],
+  first_time_buyer: [0.6, 0.7, 0.3, 0.8, 0.6, 0.05, 0.8],
+  upsizer: [0.4, 0.6, 0.5, 0.6, 0.4, 0.1, 0.75],
+  downsizer: [0.3, 0.5, 0.3, 0.5, 0.3, 0.05, 0.7],
+  luxury_buyer: [0.3, 0.7, 0.6, 0.7, 0.3, 0.3, 0.5],
+  remote_worker: [0.4, 0.6, 0.4, 0.6, 0.5, 0.15, 0.55],
+  // Special
+  lifestyle_expat: [0.5, 0.7, 0.4, 0.8, 0.6, 0.2, 0.5],
+  retiree_relocator: [0.4, 0.6, 0.3, 0.7, 0.4, 0.15, 0.6],
+  diaspora_buyer: [0.4, 0.5, 0.5, 0.6, 0.4, 0.4, 0.4],
+  second_home_buyer: [0.4, 0.6, 0.5, 0.6, 0.4, 0.5, 0.35],
+  student_parent: [0.5, 0.5, 0.3, 0.5, 0.4, 0.05, 0.7],
+  // Fallback
   neutral: [0.2, 0.4, 0.2, 0.3, 0.2, 0.4, 0.4],
 } as const;
 
@@ -156,7 +177,7 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 /**
- * Heuristic archetype match using cosine similarity against the three
+ * Heuristic archetype match using cosine similarity against the 18
  * pre-computed archetype reference vectors.
  *
  * Returns `argmax_archetype cos_sim(fingerprint, archetype_ref)` along with

@@ -42,3 +42,32 @@ export interface DemoTokenPayload {
   /** Unix timestamp (seconds) — standard JWT exp claim. */
   exp: number;
 }
+
+// ─── Quiz mismatch types ──────────────────────────────────────────────────────
+
+/** How strongly the quiz answer contradicts the behavioral signals. */
+export type MismatchSeverity = 'low' | 'medium' | 'high';
+
+/** Persisted record of a quiz-vs-behavior mismatch for DQS analysis. */
+export interface QuizMismatchRecord {
+  session_id: string;
+  quiz_archetype: string;
+  behavioral_archetype: string;
+  confidence_gap: number;
+  severity: MismatchSeverity;
+  signal_count: number;
+  ts: number;
+}
+
+/**
+ * Classify mismatch severity from confidence gap.
+ *
+ * gap > 0.5 → high (behavioral and quiz strongly disagree)
+ * gap > 0.3 → medium
+ * gap ≤ 0.3 → low
+ */
+export function classifyMismatchSeverity(confidenceGap: number): MismatchSeverity {
+  if (confidenceGap > 0.5) return 'high';
+  if (confidenceGap > 0.3) return 'medium';
+  return 'low';
+}

@@ -18,7 +18,13 @@ import { createShadowHost } from './ui/shadow-host.js';
 import { renderQuizTrigger, isQuizDismissed } from './ui/quiz-trigger.js';
 import { renderQuizWidget } from './ui/quiz-widget.js';
 import { fetchDirectives, applyDirectives } from './core/adapt.js';
-import { applyBehavioralSignal, applyQuizPrior, initIntentState } from './core/intent.js';
+import {
+  applyBehavioralSignal,
+  applyQuizPrior,
+  calculateBehavioralOnlyState,
+  detectMismatch,
+  initIntentState,
+} from './core/intent.js';
 import type { CollectedEvent } from './core/events.js';
 import type { IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
@@ -82,9 +88,15 @@ async function init(): Promise<void> {
     let listingViewCount = 0;
     let quizTriggered = false;
 
+    // Signal history — accumulated pre-quiz behavioral events for mismatch detection
+    const signalHistory: { eventType: string; payload?: Record<string, unknown> }[] = [];
+
     // 6. Set up behavioral observers, wiring listing view count for quiz
     const cleanupObservers = setupObservers(config, (event: CollectedEvent) => {
       eventQueue.push(event);
+
+      // Record signal before quiz is answered (for mismatch detection)
+      signalHistory.push({ eventType: event.type, payload: event.payload });
 
       // Update Bayesian intent state from this behavioral signal
       currentIntentState = applyBehavioralSignal(currentIntentState, event.type, event.payload);
@@ -123,6 +135,26 @@ async function init(): Promise<void> {
                     },
                     ts: Date.now(),
                   });
+
+                  // Mismatch detection — compare quiz archetype against behavioral-only evidence
+                  const behavioralOnlyState = calculateBehavioralOnlyState(signalHistory);
+                  const mismatch = detectMismatch(
+                    currentIntentState.archetype,
+                    behavioralOnlyState,
+                    currentSession.sessionId,
+                  );
+                  if (mismatch) {
+                    eventQueue.push({
+                      type: 'quiz.mismatch',
+                      payload: {
+                        quiz_archetype: mismatch.quiz_archetype,
+                        behavioral_archetype: mismatch.behavioral_archetype,
+                        confidence_gap: mismatch.confidence_gap,
+                        signal_count: mismatch.signal_count,
+                      },
+                      ts: Date.now(),
+                    });
+                  }
                 },
                 () => {
                   // dismissed — reset so it can show again next session

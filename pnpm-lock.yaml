@@ -271,6 +271,9 @@ importers:
 
   packages/sdk:
     devDependencies:
+      '@estalara/shared':
+        specifier: workspace:^
+        version: link:../shared
       '@playwright/test':
         specifier: ^1.59.1
         version: 1.59.1

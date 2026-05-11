@@ -108,7 +108,7 @@ function logDecisionAsync(
     `INSERT INTO adaptation_decisions ` +
     `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, ts) ` +
     `VALUES ('${escape(sessionId)}', '${escape(tenantId)}', '${escape(archetype)}', ` +
-    `${confidence}, ${similarity}, '${escape(source)}', ${tier}, ${directiveCount}, '${ts}')`;
+    `${String(confidence)}, ${String(similarity)}, '${escape(source)}', ${String(tier)}, ${String(directiveCount)}, '${ts}')`;
 
   fetch(clickhouseUrl, {
     method: 'POST',
@@ -217,7 +217,7 @@ export function GET(req: NextRequest): NextResponse {
     archetype: archetypeId,
     confidence,
     similarity,
-    tier: tier as 1 | 2 | 3,
+    tier,
     directives,
     source,
     generated_at: new Date().toISOString(),

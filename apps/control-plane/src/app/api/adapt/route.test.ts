@@ -291,7 +291,12 @@ describe('GET /api/adapt — integration', () => {
 
 describe('GET /api/adapt — validation errors', () => {
   it('missing session_id → 400 with canonical error format', async () => {
-    const { session_id: _, ...withoutSessionId } = VALID_PARAMS;
+    const withoutSessionId = {
+      archetype: VALID_PARAMS.archetype,
+      confidence: VALID_PARAMS.confidence,
+      similarity: VALID_PARAMS.similarity,
+      tier: VALID_PARAMS.tier,
+    };
     const res = GET(makeRequest(withoutSessionId));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string; message: string; request_id: string } }>(
@@ -304,7 +309,12 @@ describe('GET /api/adapt — validation errors', () => {
   });
 
   it('missing archetype → 400', async () => {
-    const { archetype: _, ...withoutArchetype } = VALID_PARAMS;
+    const withoutArchetype = {
+      session_id: VALID_PARAMS.session_id,
+      confidence: VALID_PARAMS.confidence,
+      similarity: VALID_PARAMS.similarity,
+      tier: VALID_PARAMS.tier,
+    };
     const res = GET(makeRequest(withoutArchetype));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
@@ -312,7 +322,12 @@ describe('GET /api/adapt — validation errors', () => {
   });
 
   it('missing confidence → 400', async () => {
-    const { confidence: _, ...withoutConfidence } = VALID_PARAMS;
+    const withoutConfidence = {
+      session_id: VALID_PARAMS.session_id,
+      archetype: VALID_PARAMS.archetype,
+      similarity: VALID_PARAMS.similarity,
+      tier: VALID_PARAMS.tier,
+    };
     const res = GET(makeRequest(withoutConfidence));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
@@ -320,7 +335,12 @@ describe('GET /api/adapt — validation errors', () => {
   });
 
   it('missing similarity → 400', async () => {
-    const { similarity: _, ...withoutSimilarity } = VALID_PARAMS;
+    const withoutSimilarity = {
+      session_id: VALID_PARAMS.session_id,
+      archetype: VALID_PARAMS.archetype,
+      confidence: VALID_PARAMS.confidence,
+      tier: VALID_PARAMS.tier,
+    };
     const res = GET(makeRequest(withoutSimilarity));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
@@ -328,7 +348,12 @@ describe('GET /api/adapt — validation errors', () => {
   });
 
   it('missing tier → 400', async () => {
-    const { tier: _, ...withoutTier } = VALID_PARAMS;
+    const withoutTier = {
+      session_id: VALID_PARAMS.session_id,
+      archetype: VALID_PARAMS.archetype,
+      confidence: VALID_PARAMS.confidence,
+      similarity: VALID_PARAMS.similarity,
+    };
     const res = GET(makeRequest(withoutTier));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);

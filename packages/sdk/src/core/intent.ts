@@ -267,6 +267,90 @@ export function applyBehavioralSignal(
   };
 }
 
+// ─── Mismatch detection ───────────────────────────────────────────────────────
+
+/** Minimum behavioral signals required before a mismatch can be reported. */
+const MISMATCH_MIN_SIGNALS = 3;
+
+/** Behavioral probability threshold for the opposing archetype to flag a mismatch. */
+const MISMATCH_OPPOSING_THRESHOLD = 0.4;
+
+/** Confidence gap threshold — behavioral top archetype confidence vs quiz archetype probability. */
+const MISMATCH_GAP_THRESHOLD = 0.3;
+
+/**
+ * Mismatch event — logged when quiz answers contradict behavioral signals.
+ * Feeds Detection Quality Score (DQS) for archetype accuracy improvement.
+ */
+export interface MismatchEvent {
+  session_id: string;
+  quiz_archetype: Archetype;
+  behavioral_archetype: Archetype;
+  /** behavioral top-archetype confidence minus quiz archetype's behavioral probability. */
+  confidence_gap: number;
+  /** How many behavioral signals accumulated before the mismatch was detected. */
+  signal_count: number;
+  ts: number;
+}
+
+/**
+ * Detect if quiz-declared archetype contradicts behavioral signals.
+ *
+ * Returns null when:
+ *   - signal_count < 3 (insufficient evidence)
+ *   - quiz and behavioral archetypes agree
+ *
+ * Mismatch fires when any of these conditions holds:
+ *   1. Quiz declared 'investor' but behavioral signals assign >0.4 probability to 'family'
+ *   2. Quiz declared 'family' but behavioral signals assign >0.4 probability to 'investor'
+ *   3. Confidence gap (behavioral_confidence - quiz_archetype_behavioral_prob) > 0.3
+ */
+export function detectMismatch(
+  quizArchetype: Archetype,
+  behavioralState: IntentState,
+  sessionId: string,
+): MismatchEvent | null {
+  if (behavioralState.signal_count < MISMATCH_MIN_SIGNALS) return null;
+  if (quizArchetype === behavioralState.archetype) return null;
+
+  const probs = behavioralState.probabilities;
+  const quizArchetypeProb = probs[quizArchetype];
+  const behavioralConfidence = behavioralState.confidence;
+  const confidence_gap = behavioralConfidence - quizArchetypeProb;
+
+  const opposingArchetypeHigh =
+    (quizArchetype === 'investor' && probs.family > MISMATCH_OPPOSING_THRESHOLD) ||
+    (quizArchetype === 'family' && probs.investor > MISMATCH_OPPOSING_THRESHOLD);
+
+  const gapHigh = confidence_gap > MISMATCH_GAP_THRESHOLD;
+
+  if (!opposingArchetypeHigh && !gapHigh) return null;
+
+  return {
+    session_id: sessionId,
+    quiz_archetype: quizArchetype,
+    behavioral_archetype: behavioralState.archetype,
+    confidence_gap,
+    signal_count: behavioralState.signal_count,
+    ts: Date.now(),
+  };
+}
+
+/**
+ * Calculate behavioral-only intent state from a signal history.
+ * Starts from BASE_PRIOR and applies only behavioral signals — no quiz prior.
+ * Used to compare against the quiz-declared archetype for mismatch detection.
+ */
+export function calculateBehavioralOnlyState(
+  signalHistory: { eventType: string; payload?: Record<string, unknown> }[],
+): IntentState {
+  let state = initIntentState();
+  for (const signal of signalHistory) {
+    state = applyBehavioralSignal(state, signal.eventType, signal.payload);
+  }
+  return state;
+}
+
 /**
  * Apply temporal decay toward the uniform distribution.
  *

@@ -1,7 +1,7 @@
 # Backlog Queue
 
-**Updated 2026-05-05T01:30Z by pm-orchestrator.** TICKET-031 merged — Sprint 3 SDK Tier 1 core
-complete.
+**Updated 2026-05-11T00:00Z by pm-orchestrator.** Sprint 7 Phase 1 initiated — ADP-001 and ADP-003
+queued. Sprint 6 prerequisites (ARCH-001, EMB-001, DB-001) confirmed DONE on main.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -32,8 +32,8 @@ updates.
 | 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 1    | 0       | 0     | 9       |
 | 4      | 6     | Intent ontology v1 + Modal scaffolding                               | tbd     | —    | —       | —     | tbd     |
 | 5      | 7     | LLM gateway + intent extraction from chat                            | tbd     | —    | —       | —     | tbd     |
-| 6      | 8     | Embeddings + archetype matching + decision API                       | tbd     | —    | —       | —     | tbd     |
-| 7      | 9     | SDK Tier 2 Augment + adaptation directives                           | tbd     | —    | —       | —     | tbd     |
+| 6      | 8     | Embeddings + archetype matching + decision API                       | 3       | 3    | 0       | 0     | 0       |
+| 7      | 9     | Decision API real logic + adaptation playbooks                       | 2       | 0    | 1       | 0     | 1       |
 | 8      | 10    | A/B holdout framework + analytics dashboard                          | tbd     | —    | —       | —     | tbd     |
 | 9      | 11    | DPIA + ROPA + DSR + fair-housing + continuous validation             | tbd     | —    | —       | —     | tbd     |
 | 10     | 12    | Multi-region deploy + observability + load tests                     | tbd     | —    | —       | —     | tbd     |
@@ -553,9 +553,69 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
   spec: backlog/sprint-3/TICKET-045.md
 ```
 
+## Sprint 6 — Embeddings + archetype matching + decision API (DONE)
+
+```yaml
+- id: TICKET-ARCH-001
+  title: Expand archetype ontology — 3 → 18 archetypes
+  agent: ml-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 4
+  completed_at: '2026-05-11T00:00:00Z'
+  commit: f0aca06
+  spec: (inline — merged directly to main)
+
+- id: TICKET-EMB-001
+  title: Embeddings pipeline — pgvector + fingerprint matching
+  agent: ml-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 6
+  depends_on: [TICKET-ARCH-001]
+  completed_at: '2026-05-11T00:00:00Z'
+  commit: be4e366
+  spec: (inline — merged directly to main)
+
+- id: TICKET-DB-001
+  title: Replace API stubs with real Drizzle DB queries in control-plane
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 4
+  depends_on: [TICKET-EMB-001]
+  completed_at: '2026-05-11T00:00:00Z'
+  commit: c69ee9c
+  spec: (inline — merged directly to main)
+```
+
+## Sprint 7 — Decision API real logic + adaptation playbooks (ACTIVE)
+
+```yaml
+- id: TICKET-ADP-001
+  title: Decision API real logic — replace GET /api/adapt stub with full decision tree
+  agent: backend-engineer
+  status: IN_PROGRESS
+  priority: P0
+  estimated_hours: 10
+  depends_on: [TICKET-ARCH-001, TICKET-EMB-001, TICKET-DB-001]
+  assigned_to: backend-engineer
+  started_at: '2026-05-11T00:00:00Z'
+  spec: backlog/sprint-7/TICKET-ADP-001.md
+
+- id: TICKET-ADP-003
+  title: Adaptation playbooks — pre-computed directives for all 18 archetypes
+  agent: sdk-engineer
+  status: BLOCKED
+  priority: P0
+  estimated_hours: 8
+  depends_on: [TICKET-ADP-001]
+  spec: backlog/sprint-7/TICKET-ADP-003.md
+```
+
 ## Currently in flight
 
-(none)
+- TICKET-ADP-001 (backend-engineer, IN_PROGRESS, started 2026-05-11T00:00Z)
 
 ## Awaiting human review
 
@@ -563,6 +623,11 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Recent merges
 
+- 2026-05-11T00:00Z — TICKET-ARCH-001 (commit f0aca06): Expand archetype ontology — 3 → 18
+  archetypes
+- 2026-05-11T00:00Z — TICKET-EMB-001 (commit be4e366): Embeddings pipeline — pgvector + fingerprint
+  matching
+- 2026-05-11T00:00Z — TICKET-DB-001 (commit c69ee9c): Replace API stubs with real Drizzle DB queries
 - 2026-05-05T01:25Z — TICKET-031 (PR #50): SDK Tier 1 core — config, session, events, observer
   - config reader, SHA-256 session fingerprint, event dispatch, scroll/intersection/click observers.
   - Fixed .gitleaks.toml: moved false-positive paths from invalid `files` key to `paths` in global

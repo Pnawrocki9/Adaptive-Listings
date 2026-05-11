@@ -183,6 +183,8 @@ paths = [
   '''CLAUDE\.md''',
   '''packages/sdk/src/__tests__/''',
   '''packages/db/src/__tests__/''',
+  # Drizzle-generated migration files use long auto-generated identifier names
+  '''packages/db/migrations/''',
 ]
 
 # Regexes for known safe patterns

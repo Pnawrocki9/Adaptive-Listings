@@ -18,7 +18,9 @@ import { createShadowHost } from './ui/shadow-host.js';
 import { renderQuizTrigger, isQuizDismissed } from './ui/quiz-trigger.js';
 import { renderQuizWidget } from './ui/quiz-widget.js';
 import { fetchDirectives, applyDirectives } from './core/adapt.js';
+import { applyBehavioralSignal, applyQuizPrior, initIntentState } from './core/intent.js';
 import type { CollectedEvent } from './core/events.js';
+import type { IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
 
 /** Current SDK version string. */
@@ -53,6 +55,9 @@ async function init(): Promise<void> {
     // 4. Collect initial page.view event
     eventQueue.push(collectPageView());
 
+    // 4a. Initialize Bayesian intent state (BASE_PRIOR → neutral)
+    let currentIntentState: IntentState = initIntentState();
+
     // 4b. Fetch personalization directives from Decision API (Tier 1+ feature)
     if (config.decisionApiUrl) {
       const response = await fetchDirectives(config, currentSession, 'listing_list');
@@ -81,6 +86,9 @@ async function init(): Promise<void> {
     const cleanupObservers = setupObservers(config, (event: CollectedEvent) => {
       eventQueue.push(event);
 
+      // Update Bayesian intent state from this behavioral signal
+      currentIntentState = applyBehavioralSignal(currentIntentState, event.type, event.payload);
+
       if (event.type === 'listing.viewed' && shadowHost && !quizTriggered && !isQuizDismissed()) {
         listingViewCount++;
         if (listingViewCount >= QUIZ_TRIGGER_THRESHOLD) {
@@ -93,12 +101,25 @@ async function init(): Promise<void> {
                 shadowHost.root,
                 quizConfig,
                 (answers) => {
+                  // Apply strong quiz prior to intent state
+                  currentIntentState = applyQuizPrior(
+                    currentIntentState,
+                    answers.purpose,
+                    answers.horizon,
+                  );
+                  if (config.debug) {
+                    console.log(
+                      `[Estalara] Quiz → archetype=${currentIntentState.archetype} confidence=${String(currentIntentState.confidence)}`,
+                    );
+                  }
                   eventQueue.push({
                     type: 'quiz.event',
                     payload: {
                       step: 'completed',
                       answers,
                       trigger: 'prompt_after_3_listings',
+                      archetype: currentIntentState.archetype,
+                      confidence: currentIntentState.confidence,
                     },
                     ts: Date.now(),
                   });

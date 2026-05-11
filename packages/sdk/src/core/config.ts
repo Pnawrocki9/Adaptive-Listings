@@ -9,6 +9,8 @@ export interface SdkConfig {
   /** Derived from API key prefix (optional override via data-tenant-id). */
   tenantId?: string;
   ingestUrl: string;
+  /** Decision API base URL — read from data-decision-url. Omit to disable directives. */
+  decisionApiUrl?: string;
   tier: 'observer' | 'augment' | 'native';
   debug: boolean;
   consentState: 'consented' | 'legitimate_interest' | 'opted_out';
@@ -42,10 +44,12 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
       : DEFAULT_CONFIG.consentState;
 
   const tenantId = script.dataset.tenantId;
+  const decisionApiUrl = script.dataset.decisionUrl;
 
   return {
     apiKey,
     ...(tenantId !== undefined ? { tenantId } : {}),
+    ...(decisionApiUrl !== undefined ? { decisionApiUrl } : {}),
     ingestUrl: script.dataset.ingestUrl ?? DEFAULT_CONFIG.ingestUrl,
     tier,
     debug: script.dataset.debug === 'true',

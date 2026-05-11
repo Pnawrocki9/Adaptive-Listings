@@ -22,6 +22,7 @@ export default function MockupLayout({ children }: { children: React.ReactNode }
         data-tier="observer"
         data-debug="true"
         data-ingest-url="/api/demo/ingest"
+        data-decision-url="/api/adapt"
         data-accent-color="#2563EB"
       />
     </div>

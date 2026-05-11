@@ -401,15 +401,47 @@ module (to be built in ADP-003) lives in `packages/sdk/src/core/playbooks/`. Res
 
 ## TICKET-ADP-001 → TICKET-ADP-003
 
-**From:** backend-engineer **To:** sdk-engineer **Date:** (to be filled by backend-engineer when
-ADP-001 PR merges) **Summary:** (to be filled by backend-engineer) **Action required:** After
-ADP-001 merges, sdk-engineer should:
+**From:** backend-engineer **To:** sdk-engineer **Date:** 2026-05-11T20:36:18Z **Summary:** ADP-001
+merged via PR #67. Decision API is live at `GET /api/adapt` with the full 4-branch decision tree.
+New types are in `packages/shared/src/directives.ts` (exported from `@estalara/shared`). A stub
+`getPlaybook()` exists in `packages/sdk/src/core/playbooks/index.ts` that returns empty playbooks —
+ADP-003 replaces this with the real 18-archetype registry. The control-plane route imports from a
+local `playbook-stub.ts` co-located in the adapt directory — ADP-003 replaces that import with the
+real SDK playbooks.
 
-1. Replace the `getPlaybook` stub in `apps/control-plane/src/app/api/adapt/route.ts` with real
-   import
-2. Build all 18 playbook files in `packages/sdk/src/core/playbooks/archetypes/`
-3. Add `@estalara/sdk` workspace dep to control-plane and add `playbooks` subpath export to SDK
-4. Run integration tests against the real Decision API route **Files:** (to be filled by
-   backend-engineer)
+**Action required for sdk-engineer (ADP-003):**
+
+1. Build all 18 playbook files in `packages/sdk/src/core/playbooks/archetypes/` per the spec in
+   `backlog/sprint-7/TICKET-ADP-003.md`.
+2. Replace `packages/sdk/src/core/playbooks/index.ts` stub with the real `PlaybookRegistry`
+   exporting `getPlaybook()` and `getAllPlaybooks()`.
+3. Replace `packages/sdk/src/core/playbooks/types.ts` (does not exist yet — create it) with the
+   `PlaybookEntry`, `SlotDirective`, `ListingClassRule` types.
+4. For the control-plane integration:
+   - Add `"@estalara/sdk": "workspace:*"` to `apps/control-plane/package.json` dependencies.
+   - Add a `"./playbooks"` subpath export to `packages/sdk/package.json` exports pointing to the
+     built playbooks index:
+     `"./playbooks": { "import": "./dist/core/playbooks/index.js", "types": "./dist/core/playbooks/index.d.ts" }`.
+   - Ensure `packages/sdk/tsup.config.ts` (or tsup configuration) includes
+     `src/core/playbooks/index.ts` as a separate entry so it gets compiled.
+   - Update `apps/control-plane/src/app/api/adapt/route.ts` to replace:
+     `import { getPlaybook } from './playbook-stub';` with:
+     `import { getPlaybook } from '@estalara/sdk/playbooks';`
+   - Delete `apps/control-plane/src/app/api/adapt/playbook-stub.ts` (it's a stub).
+5. Run `pnpm install` after adding the workspace dependency.
+6. Write integration tests verifying the Decision API + real playbooks produce correct directives
+   for yield_hunter (confidence=0.75, similarity=0.90), family_buyer (confidence=0.80,
+   similarity=0.88), lifestyle_expat (confidence=0.70, similarity=0.95).
+
+**Files produced by ADP-001:**
+
+- `packages/shared/src/directives.ts` — `ArchetypeId`, `TextDirective`, `ClassDirective`,
+  `AdaptationDirectives` interfaces
+- `packages/shared/src/index.ts` — added `directives.js` re-export
+- `packages/sdk/src/core/playbooks/index.ts` — STUB to be replaced by ADP-003
+- `apps/control-plane/src/app/api/adapt/route.ts` — real GET /api/adapt handler
+- `apps/control-plane/src/app/api/adapt/playbook-stub.ts` — temporary stub, DELETE in ADP-003
+- `apps/control-plane/src/app/api/adapt/route.test.ts` — 25 tests
+- `infra/clickhouse/migrations/0003_create_adaptation_decisions.sql` — analytics table DDL
 
 ---

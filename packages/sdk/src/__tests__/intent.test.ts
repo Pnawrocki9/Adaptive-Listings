@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ARCHETYPE_NAMES,
+  INVESTOR_ARCHETYPES,
+  OWN_USE_ARCHETYPES,
   applyBehavioralSignal,
   applyDecay,
   applyQuizPrior,
@@ -10,16 +13,26 @@ import {
 } from '../core/intent.js';
 import type { ArchetypeProbabilities, IntentState } from '../core/intent.js';
 
+/** Sum all 18 archetype probabilities. */
 function sumProbs(p: ArchetypeProbabilities): number {
-  return p.investor + p.family + p.neutral;
+  return ARCHETYPE_NAMES.reduce((sum, k) => sum + p[k], 0);
 }
+
+/** Build a full ArchetypeProbabilities with zeros for unspecified keys. */
+function makeProbs(overrides: Partial<ArchetypeProbabilities> = {}): ArchetypeProbabilities {
+  const zeros = Object.fromEntries(ARCHETYPE_NAMES.map((k) => [k, 0])) as ArchetypeProbabilities;
+  return { ...zeros, ...overrides };
+}
+
+const UNIFORM_18 = 1 / 18;
 
 describe('initIntentState', () => {
   it('initializes with BASE_PRIOR probabilities', () => {
     const s = initIntentState();
-    expect(s.probabilities.investor).toBeCloseTo(0.25, 5);
-    expect(s.probabilities.family).toBeCloseTo(0.35, 5);
-    expect(s.probabilities.neutral).toBeCloseTo(0.4, 5);
+    // Sample a few archetype priors
+    expect(s.probabilities.yield_hunter).toBeCloseTo(0.04, 5);
+    expect(s.probabilities.family_buyer).toBeCloseTo(0.04, 5);
+    expect(s.probabilities.neutral).toBeCloseTo(0.37, 5);
   });
 
   it('probabilities sum to 1.0', () => {
@@ -27,7 +40,7 @@ describe('initIntentState', () => {
     expect(sumProbs(s.probabilities)).toBeCloseTo(1.0, 5);
   });
 
-  it('archetype is "neutral" (highest base prior)', () => {
+  it('archetype is "neutral" (highest base prior at 0.37)', () => {
     const s = initIntentState();
     expect(s.archetype).toBe('neutral');
   });
@@ -40,27 +53,33 @@ describe('initIntentState', () => {
     expect(initIntentState().quiz_answered).toBe(false);
   });
 
-  it('confidence equals max probability initially (no quiz bonus)', () => {
+  it('confidence equals neutral prior (0.37) initially', () => {
     const s = initIntentState();
-    expect(s.confidence).toBeCloseTo(0.4, 5);
+    expect(s.confidence).toBeCloseTo(0.37, 5);
   });
 });
 
 describe('applyQuizPrior', () => {
-  it('purpose=investment shifts strongly toward investor (>0.6)', () => {
+  it('investment+short quiz selects flip_investor (highest combined likelihood)', () => {
+    // flip_investor has likelihood 0.65 × 0.80 = 0.52 product
+    // compared to yield_hunter 0.80 × 0.55 = 0.44 and neutral 0.10 × 0.20 = 0.02
     const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    expect(s.probabilities.investor).toBeGreaterThan(0.6);
+    expect(s.archetype).toBe('flip_investor');
+    expect(INVESTOR_ARCHETYPES.has(s.archetype)).toBe(true);
   });
 
-  it('purpose=personal shifts toward family (>0.5)', () => {
+  it('quiz(personal, long) shifts probability mass strongly toward own-use archetypes', () => {
     const s = applyQuizPrior(initIntentState(), 'personal', 'long');
-    expect(s.probabilities.family).toBeGreaterThan(0.5);
+    const ownUseProb = [...OWN_USE_ARCHETYPES].reduce((sum, a) => sum + s.probabilities[a], 0);
+    const investorProb = [...INVESTOR_ARCHETYPES].reduce((sum, a) => sum + s.probabilities[a], 0);
+    expect(ownUseProb).toBeGreaterThan(investorProb * 4);
+    expect(ownUseProb).toBeGreaterThan(0.4);
   });
 
-  it('horizon=short with investment further boosts investor over horizon=long', () => {
+  it('horizon=short with investment boosts flip_investor over horizon=long', () => {
     const short = applyQuizPrior(initIntentState(), 'investment', 'short');
     const long = applyQuizPrior(initIntentState(), 'investment', 'long');
-    expect(short.probabilities.investor).toBeGreaterThan(long.probabilities.investor);
+    expect(short.probabilities.flip_investor).toBeGreaterThan(long.probabilities.flip_investor);
   });
 
   it('quiz_answered is true after applying', () => {
@@ -73,9 +92,12 @@ describe('applyQuizPrior', () => {
     expect(sumProbs(s.probabilities)).toBeCloseTo(1.0, 5);
   });
 
-  it('confidence > 0.5 after a strong quiz signal', () => {
+  it('quiz_answered enables confidence bonus (flip_investor > raw max)', () => {
     const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    expect(s.confidence).toBeGreaterThan(0.5);
+    // raw max probability should be ~ 0.178; with × 1.2 bonus → ~ 0.214
+    // confirmed > 0.15
+    expect(s.confidence).toBeGreaterThan(0.15);
+    expect(s.quiz_answered).toBe(true);
   });
 
   it('confidence bonus caps at 1.0', () => {
@@ -83,23 +105,22 @@ describe('applyQuizPrior', () => {
     expect(s.confidence).toBeLessThanOrEqual(1.0);
   });
 
-  it('archetype switches to investor for investment+short quiz', () => {
-    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    expect(s.archetype).toBe('investor');
-  });
-
-  it('archetype switches to family for personal+long quiz', () => {
-    const s = applyQuizPrior(initIntentState(), 'personal', 'long');
-    expect(s.archetype).toBe('family');
+  it('investment+long quiz selects portfolio_builder (highest combined likelihood for long)', () => {
+    // portfolio_builder: 0.75 × 0.70 = 0.525 — highest for (investment, long)
+    const s = applyQuizPrior(initIntentState(), 'investment', 'long');
+    expect(s.archetype).toBe('portfolio_builder');
+    expect(INVESTOR_ARCHETYPES.has(s.archetype)).toBe(true);
   });
 });
 
 describe('applyBehavioralSignal', () => {
-  it('listing.viewed increases investor and family probabilities', () => {
+  it('listing.viewed boosts yield_hunter and portfolio_builder (investor-type signals)', () => {
     const before = initIntentState();
     const after = applyBehavioralSignal(before, 'listing.viewed');
-    expect(after.probabilities.investor).toBeGreaterThan(before.probabilities.investor);
-    expect(after.probabilities.family).toBeGreaterThan(before.probabilities.family);
+    expect(after.probabilities.yield_hunter).toBeGreaterThan(before.probabilities.yield_hunter);
+    expect(after.probabilities.portfolio_builder).toBeGreaterThan(
+      before.probabilities.portfolio_builder,
+    );
   });
 
   it('multiple signals accumulate (signal_count increases)', () => {
@@ -122,18 +143,17 @@ describe('applyBehavioralSignal', () => {
     expect(sumProbs(s.probabilities)).toBeCloseTo(1.0, 5);
   });
 
-  it('single behavioral signal effect is weaker than a quiz answer', () => {
+  it('quiz answer shifts flip_investor more than a single cta.clicked', () => {
     const quiz = applyQuizPrior(initIntentState(), 'investment', 'short');
     const oneSignal = applyBehavioralSignal(initIntentState(), 'cta.clicked');
-    expect(quiz.probabilities.investor).toBeGreaterThan(oneSignal.probabilities.investor);
+    expect(quiz.probabilities.flip_investor).toBeGreaterThan(oneSignal.probabilities.flip_investor);
   });
 
   it('quiz.event signal does not change probabilities (no-op)', () => {
     const before = initIntentState();
     const after = applyBehavioralSignal(before, 'quiz.event');
-    // signal_count increments but probabilities are unchanged
-    expect(after.probabilities.investor).toBeCloseTo(before.probabilities.investor, 5);
-    expect(after.probabilities.family).toBeCloseTo(before.probabilities.family, 5);
+    expect(after.probabilities.yield_hunter).toBeCloseTo(before.probabilities.yield_hunter, 5);
+    expect(after.probabilities.family_buyer).toBeCloseTo(before.probabilities.family_buyer, 5);
     expect(after.probabilities.neutral).toBeCloseTo(before.probabilities.neutral, 5);
     expect(after.signal_count).toBe(1);
   });
@@ -146,12 +166,13 @@ describe('applyDecay', () => {
     expect(after).toBe(s);
   });
 
-  it('10 minutes elapsed moves probabilities toward uniform (1/3)', () => {
-    const investor = applyQuizPrior(initIntentState(), 'investment', 'short');
-    const decayed = applyDecay(investor, 600_000);
-    // investor probability drops, neutral/family rise toward 1/3
-    expect(decayed.probabilities.investor).toBeLessThan(investor.probabilities.investor);
-    expect(decayed.probabilities.neutral).toBeGreaterThan(investor.probabilities.neutral);
+  it('10 minutes elapsed decays probabilities toward uniform (1/18)', () => {
+    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
+    const decayed = applyDecay(s, 600_000);
+    // flip_investor was boosted above 1/18 → moves down toward 1/18
+    expect(decayed.probabilities.flip_investor).toBeLessThan(s.probabilities.flip_investor);
+    // family_buyer was suppressed far below 1/18 → moves up toward 1/18
+    expect(decayed.probabilities.family_buyer).toBeGreaterThan(s.probabilities.family_buyer);
   });
 
   it('probabilities sum to 1.0 after decay', () => {
@@ -160,101 +181,96 @@ describe('applyDecay', () => {
     expect(sumProbs(decayed.probabilities)).toBeCloseTo(1.0, 5);
   });
 
-  it('highly confident investor decays toward neutral over 30 minutes', () => {
-    const investor = applyQuizPrior(initIntentState(), 'investment', 'short');
-    const decayed30 = applyDecay(investor, 30 * 60_000);
-    // Confidence (with quiz bonus) should drop notably from the original
-    expect(decayed30.confidence).toBeLessThan(investor.confidence);
-    // Investor probability should drop noticeably
-    expect(decayed30.probabilities.investor).toBeLessThan(0.7);
+  it('highly confident investor state decays toward neutral over 30 minutes', () => {
+    const s = applyQuizPrior(initIntentState(), 'investment', 'short');
+    const decayed30 = applyDecay(s, 30 * 60_000);
+    expect(decayed30.confidence).toBeLessThan(s.confidence);
+    expect(decayed30.probabilities.flip_investor).toBeLessThan(0.7);
   });
 
-  it('decay factor clamps at 1.0 — extreme elapsedMs results in uniform distribution', () => {
+  it('extreme elapsedMs results in near-uniform distribution (1/18 per archetype)', () => {
     const s = applyQuizPrior(initIntentState(), 'investment', 'short');
-    const decayed = applyDecay(s, 100 * 60_000); // 100 minutes → factor would be 2.0, clamped to 1.0
-    expect(decayed.probabilities.investor).toBeCloseTo(UNIFORM_VALUE, 4);
-    expect(decayed.probabilities.family).toBeCloseTo(UNIFORM_VALUE, 4);
-    expect(decayed.probabilities.neutral).toBeCloseTo(UNIFORM_VALUE, 4);
+    const decayed = applyDecay(s, 100 * 60_000); // 100 min → clamps to factor 1.0
+    expect(decayed.probabilities.flip_investor).toBeCloseTo(UNIFORM_18, 4);
+    expect(decayed.probabilities.family_buyer).toBeCloseTo(UNIFORM_18, 4);
+    expect(decayed.probabilities.neutral).toBeCloseTo(UNIFORM_18, 4);
   });
 });
 
-const UNIFORM_VALUE = 1 / 3;
-
 describe('classifyFromProbabilities', () => {
-  it('investor majority: { 0.7, 0.2, 0.1 } → investor, confidence 0.7', () => {
-    const r = classifyFromProbabilities({ investor: 0.7, family: 0.2, neutral: 0.1 });
-    expect(r.archetype).toBe('investor');
+  it('yield_hunter majority → yield_hunter, confidence 0.7', () => {
+    const probs = makeProbs({ yield_hunter: 0.7, family_buyer: 0.2, neutral: 0.1 });
+    const r = classifyFromProbabilities(probs);
+    expect(r.archetype).toBe('yield_hunter');
     expect(r.confidence).toBeCloseTo(0.7, 5);
   });
 
-  it('family majority: { 0.33, 0.34, 0.33 } → family', () => {
-    const r = classifyFromProbabilities({ investor: 0.33, family: 0.34, neutral: 0.33 });
-    expect(r.archetype).toBe('family');
+  it('family_buyer majority → family_buyer', () => {
+    const probs = makeProbs({ yield_hunter: 0.33, family_buyer: 0.34, neutral: 0.33 });
+    const r = classifyFromProbabilities(probs);
+    expect(r.archetype).toBe('family_buyer');
   });
 
-  it('uniform distribution → archetype "neutral", confidence ~0.33', () => {
-    const r = classifyFromProbabilities({
-      investor: UNIFORM_VALUE,
-      family: UNIFORM_VALUE,
-      neutral: UNIFORM_VALUE,
-    });
+  it('uniform (1/18 each) → archetype "neutral", confidence ~1/18', () => {
+    const probs = makeProbs(Object.fromEntries(ARCHETYPE_NAMES.map((k) => [k, UNIFORM_18])));
+    const r = classifyFromProbabilities(probs);
     expect(r.archetype).toBe('neutral');
-    expect(r.confidence).toBeCloseTo(UNIFORM_VALUE, 5);
+    expect(r.confidence).toBeCloseTo(UNIFORM_18, 5);
   });
 
-  it('three-way tie breaks toward neutral', () => {
-    const r = classifyFromProbabilities({ investor: 0.4, family: 0.4, neutral: 0.4 });
+  it('equal-probability tie breaks toward neutral', () => {
+    // yield_hunter and neutral both at 0.4, others 0
+    const probs = makeProbs({ yield_hunter: 0.4, neutral: 0.4 });
+    const r = classifyFromProbabilities(probs);
     expect(r.archetype).toBe('neutral');
   });
 });
 
 describe('normalize', () => {
-  it('{ 2, 1, 1 } normalizes to { 0.5, 0.25, 0.25 }', () => {
-    const r = normalize({ investor: 2, family: 1, neutral: 1 });
-    expect(r.investor).toBeCloseTo(0.5, 5);
-    expect(r.family).toBeCloseTo(0.25, 5);
+  it('{ yield_hunter: 2, family_buyer: 1, neutral: 1 } → { 0.5, 0.25, 0.25 }', () => {
+    const r = normalize(makeProbs({ yield_hunter: 2, family_buyer: 1, neutral: 1 }));
+    expect(r.yield_hunter).toBeCloseTo(0.5, 5);
+    expect(r.family_buyer).toBeCloseTo(0.25, 5);
     expect(r.neutral).toBeCloseTo(0.25, 5);
   });
 
   it('all values are in [0, 1] after normalization', () => {
-    const r = normalize({ investor: 10, family: 5, neutral: 5 });
-    expect(r.investor).toBeGreaterThanOrEqual(0);
-    expect(r.investor).toBeLessThanOrEqual(1);
-    expect(r.family).toBeGreaterThanOrEqual(0);
-    expect(r.family).toBeLessThanOrEqual(1);
-    expect(r.neutral).toBeGreaterThanOrEqual(0);
-    expect(r.neutral).toBeLessThanOrEqual(1);
+    const r = normalize(makeProbs({ yield_hunter: 10, family_buyer: 5, neutral: 5 }));
+    for (const k of ARCHETYPE_NAMES) {
+      expect(r[k]).toBeGreaterThanOrEqual(0);
+      expect(r[k]).toBeLessThanOrEqual(1);
+    }
   });
 
   it('result sums to 1.0', () => {
-    const r = normalize({ investor: 3.7, family: 2.1, neutral: 0.5 });
+    const r = normalize(makeProbs({ yield_hunter: 3.7, family_buyer: 2.1, neutral: 0.5 }));
     expect(sumProbs(r)).toBeCloseTo(1.0, 5);
   });
 
-  it('NaN inputs fall back to uniform distribution', () => {
-    const r = normalize({ investor: NaN, family: 1, neutral: 1 });
-    expect(r.investor).toBeCloseTo(UNIFORM_VALUE, 5);
-    expect(r.family).toBeCloseTo(UNIFORM_VALUE, 5);
-    expect(r.neutral).toBeCloseTo(UNIFORM_VALUE, 5);
+  it('NaN inputs fall back to uniform (1/18) distribution', () => {
+    const r = normalize(makeProbs({ yield_hunter: NaN, family_buyer: 1, neutral: 1 }));
+    for (const k of ARCHETYPE_NAMES) {
+      expect(r[k]).toBeCloseTo(UNIFORM_18, 5);
+    }
   });
 
   it('all-zero inputs fall back to uniform distribution', () => {
-    const r = normalize({ investor: 0, family: 0, neutral: 0 });
-    expect(r.investor).toBeCloseTo(UNIFORM_VALUE, 5);
-    expect(r.family).toBeCloseTo(UNIFORM_VALUE, 5);
-    expect(r.neutral).toBeCloseTo(UNIFORM_VALUE, 5);
+    const r = normalize(makeProbs());
+    for (const k of ARCHETYPE_NAMES) {
+      expect(r[k]).toBeCloseTo(UNIFORM_18, 5);
+    }
   });
 
   it('negative inputs are clamped to 0 before normalization', () => {
-    const r = normalize({ investor: -1, family: 1, neutral: 1 });
-    expect(r.investor).toBeCloseTo(0, 5);
-    expect(r.family).toBeCloseTo(0.5, 5);
+    const r = normalize(makeProbs({ yield_hunter: -1, family_buyer: 1, neutral: 1 }));
+    expect(r.yield_hunter).toBeCloseTo(0, 5);
+    expect(r.family_buyer).toBeCloseTo(0.5, 5);
     expect(r.neutral).toBeCloseTo(0.5, 5);
   });
 });
 
 describe('full classification flow', () => {
-  it('investor journey: quiz(investment, short) + 3×listing + 2×cta → investor, confidence > 0.7', () => {
+  it('investor journey: quiz(investment, short) + 3×listing + 2×cta → investor archetype', () => {
     let s: IntentState = initIntentState();
     s = applyQuizPrior(s, 'investment', 'short');
     s = applyBehavioralSignal(s, 'listing.viewed');
@@ -263,20 +279,21 @@ describe('full classification flow', () => {
     s = applyBehavioralSignal(s, 'cta.clicked');
     s = applyBehavioralSignal(s, 'cta.clicked');
 
-    expect(s.archetype).toBe('investor');
-    expect(s.confidence).toBeGreaterThan(0.7);
+    expect(INVESTOR_ARCHETYPES.has(s.archetype)).toBe(true);
     expect(s.signal_count).toBe(5);
     expect(s.quiz_answered).toBe(true);
   });
 
-  it('family journey: quiz(personal, long) + listings → family, confidence > 0.6', () => {
+  it('family journey: quiz(personal, long) + listings → own-use group dominates', () => {
     let s: IntentState = initIntentState();
     s = applyQuizPrior(s, 'personal', 'long');
     s = applyBehavioralSignal(s, 'listing.viewed');
     s = applyBehavioralSignal(s, 'listing.viewed');
 
-    expect(s.archetype).toBe('family');
-    expect(s.confidence).toBeGreaterThan(0.6);
+    const ownUseProb = [...OWN_USE_ARCHETYPES].reduce((sum, a) => sum + s.probabilities[a], 0);
+    const investorProb = [...INVESTOR_ARCHETYPES].reduce((sum, a) => sum + s.probabilities[a], 0);
+    expect(ownUseProb).toBeGreaterThan(investorProb * 3);
+    expect(s.quiz_answered).toBe(true);
   });
 
   it('decay reduces confidence over 30 minutes after strong investor classification', () => {

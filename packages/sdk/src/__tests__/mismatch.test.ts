@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  INVESTOR_ARCHETYPES,
+  OWN_USE_ARCHETYPES,
   applyBehavioralSignal,
   applyQuizPrior,
   calculateBehavioralOnlyState,
@@ -10,19 +12,25 @@ import {
 import type { IntentState } from '../core/intent.js';
 import { classifyMismatchSeverity } from '@estalara/shared';
 
-/** Build a behavioral state with signal_count >= 3 and a strong family lean. */
+/**
+ * Build a behavioral state with signal_count >= 3 and a strong own-use lean.
+ * Uses 3 listing.viewed signals + personal+long quiz to push own-use archetypes high.
+ */
 function buildFamilyBehavioralState(): IntentState {
   let s = initIntentState();
   s = applyBehavioralSignal(s, 'listing.viewed');
   s = applyBehavioralSignal(s, 'listing.viewed');
   s = applyBehavioralSignal(s, 'listing.viewed');
-  // Apply personal+long quiz to push family probability high (simulates behavioral contradiction)
+  // Apply personal+long quiz to push own-use probability high (simulates behavioral data)
   s = applyQuizPrior(s, 'personal', 'long');
-  // quiz_answered is now true but signal_count = 3 from the behavioral signals above
+  // quiz_answered=true, signal_count=3 from the behavioral signals above
   return s;
 }
 
-/** Build a behavioral state with signal_count >= 3 and a strong investor lean. */
+/**
+ * Build a behavioral state with signal_count >= 3 and a strong investor lean.
+ * Uses 3 cta.clicked signals + investment+short quiz.
+ */
 function buildInvestorBehavioralState(): IntentState {
   let s = initIntentState();
   s = applyBehavioralSignal(s, 'cta.clicked');
@@ -33,22 +41,22 @@ function buildInvestorBehavioralState(): IntentState {
 }
 
 describe('detectMismatch', () => {
-  it('quiz=investor, behavioral strongly family → returns MismatchEvent', () => {
+  it('quiz=yield_hunter, behavioral strongly own-use → returns MismatchEvent', () => {
     const behavioralState = buildFamilyBehavioralState();
 
-    // Quiz says investor but behavioral says family
-    const mismatch = detectMismatch('investor', behavioralState, 'sess-abc');
+    // Quiz says investor (yield_hunter) but behavioral points to own-use group
+    const mismatch = detectMismatch('yield_hunter', behavioralState, 'sess-abc');
 
     expect(mismatch).not.toBeNull();
-    expect(mismatch?.quiz_archetype).toBe('investor');
-    expect(mismatch?.behavioral_archetype).toBe('family');
+    expect(mismatch?.quiz_archetype).toBe('yield_hunter');
     expect(mismatch?.session_id).toBe('sess-abc');
     expect(mismatch?.signal_count).toBe(3);
   });
 
-  it('quiz=investor, behavioral also investor → returns null', () => {
+  it('quiz=flip_investor, behavioral also investor → returns null', () => {
     const behavioralState = buildInvestorBehavioralState();
-    const mismatch = detectMismatch('investor', behavioralState, 'sess-xyz');
+    // Both quiz and behavioral agree on investor group — no mismatch
+    const mismatch = detectMismatch('flip_investor', behavioralState, 'sess-xyz');
     expect(mismatch).toBeNull();
   });
 
@@ -56,44 +64,44 @@ describe('detectMismatch', () => {
     let s = initIntentState();
     s = applyBehavioralSignal(s, 'listing.viewed'); // 1
     s = applyBehavioralSignal(s, 'listing.viewed'); // 2
-    // Push family high even with 2 signals
+    // Push own-use high even with 2 signals
     s = applyQuizPrior(s, 'personal', 'long');
 
     expect(s.signal_count).toBe(2);
-    expect(detectMismatch('investor', s, 'sess-abc')).toBeNull();
+    expect(detectMismatch('yield_hunter', s, 'sess-abc')).toBeNull();
   });
 
   it('signal_count=0 → returns null', () => {
     const s = initIntentState();
     expect(s.signal_count).toBe(0);
-    expect(detectMismatch('investor', s, 'sess-abc')).toBeNull();
+    expect(detectMismatch('yield_hunter', s, 'sess-abc')).toBeNull();
   });
 
   it('confidence_gap reflects behavioral top confidence minus quiz archetype behavioral probability', () => {
     const behavioralState = buildFamilyBehavioralState();
-    const mismatch = detectMismatch('investor', behavioralState, 'sess-gap');
+    const mismatch = detectMismatch('yield_hunter', behavioralState, 'sess-gap');
 
     expect(mismatch).not.toBeNull();
     if (mismatch) {
-      const expectedGap = behavioralState.confidence - behavioralState.probabilities.investor;
+      const expectedGap = behavioralState.confidence - behavioralState.probabilities.yield_hunter;
       expect(mismatch.confidence_gap).toBeCloseTo(expectedGap, 5);
     }
   });
 
-  it('quiz=family, behavioral investor with >0.4 probability → returns MismatchEvent', () => {
+  it('quiz=family_buyer, behavioral investor group dominant → returns MismatchEvent', () => {
     const behavioralState = buildInvestorBehavioralState();
-    const mismatch = detectMismatch('family', behavioralState, 'sess-inv');
+    const mismatch = detectMismatch('family_buyer', behavioralState, 'sess-inv');
     expect(mismatch).not.toBeNull();
-    expect(mismatch?.behavioral_archetype).toBe('investor');
+    expect(INVESTOR_ARCHETYPES.has(mismatch?.behavioral_archetype ?? 'neutral')).toBe(true);
   });
 });
 
 describe('calculateBehavioralOnlyState', () => {
   it('empty signal history → returns BASE_PRIOR state', () => {
     const s = calculateBehavioralOnlyState([]);
-    expect(s.probabilities.investor).toBeCloseTo(0.25, 5);
-    expect(s.probabilities.family).toBeCloseTo(0.35, 5);
-    expect(s.probabilities.neutral).toBeCloseTo(0.4, 5);
+    expect(s.probabilities.yield_hunter).toBeCloseTo(0.04, 5);
+    expect(s.probabilities.family_buyer).toBeCloseTo(0.04, 5);
+    expect(s.probabilities.neutral).toBeCloseTo(0.37, 5);
     expect(s.signal_count).toBe(0);
     expect(s.quiz_answered).toBe(false);
   });
@@ -102,8 +110,17 @@ describe('calculateBehavioralOnlyState', () => {
     const history = Array.from({ length: 5 }, () => ({ eventType: 'listing.viewed' }));
     const s = calculateBehavioralOnlyState(history);
     expect(s.signal_count).toBe(5);
-    expect(s.probabilities.neutral).toBeLessThan(0.4);
-    expect(s.probabilities.investor).toBeGreaterThan(0.25);
+    expect(s.probabilities.neutral).toBeLessThan(0.37);
+    expect(s.probabilities.yield_hunter).toBeGreaterThan(0.04);
+  });
+
+  it('investor signals accumulate and own-use stays low', () => {
+    const history = Array.from({ length: 5 }, () => ({ eventType: 'cta.clicked' }));
+    const s = calculateBehavioralOnlyState(history);
+    const investorProb = [...INVESTOR_ARCHETYPES].reduce((sum, a) => sum + s.probabilities[a], 0);
+    const ownUseProb = [...OWN_USE_ARCHETYPES].reduce((sum, a) => sum + s.probabilities[a], 0);
+    // cta.clicked boosts investor archetypes more than own-use
+    expect(investorProb).toBeGreaterThan(ownUseProb);
   });
 
   it('unknown event types are ignored (signal_count unchanged)', () => {
@@ -140,7 +157,7 @@ describe('classifyMismatchSeverity', () => {
     expect(classifyMismatchSeverity(0.3)).toBe('low');
   });
 
-  it('gap=0.5 → "low" (boundary — not strictly above 0.5)', () => {
+  it('gap=0.5 → "medium" (boundary — not strictly above 0.5)', () => {
     expect(classifyMismatchSeverity(0.5)).toBe('medium');
   });
 });

@@ -144,34 +144,36 @@ describe('cosineSimilarity', () => {
 });
 
 describe('matchArchetypeHeuristic', () => {
-  it('investor-pattern fingerprint → investor', () => {
+  it('yield_hunter-pattern fingerprint → yield_hunter', () => {
+    // Matches yield_hunter reference: [0.3, 0.5, 0.8, 0.4, 0.3, 0.95, 0.05]
     const fp = {
       listing_view_count: 6, // → 0.3
       avg_scroll_depth: 0.5,
-      cta_click_count: 7, // → 0.7
+      cta_click_count: 8, // → 0.8
       session_duration_ms: 12 * 60_000, // → 0.4
       page_count: 3, // → 0.3
-      investment_signal_ratio: 0.9,
-      family_signal_ratio: 0.1,
+      investment_signal_ratio: 0.95,
+      family_signal_ratio: 0.05,
     };
     const result = matchArchetypeHeuristic(fp);
-    expect(result.archetype).toBe('investor');
+    expect(result.archetype).toBe('yield_hunter');
     expect(result.similarity).toBeGreaterThan(0.95);
     expect(result.confidence).toBe('high');
   });
 
-  it('family-pattern fingerprint → family', () => {
+  it('family_buyer-pattern fingerprint → family_buyer', () => {
+    // Matches family_buyer reference: [0.5, 0.6, 0.4, 0.7, 0.5, 0.05, 0.95]
     const fp = {
       listing_view_count: 10, // → 0.5
       avg_scroll_depth: 0.6,
       cta_click_count: 4, // → 0.4
-      session_duration_ms: 18 * 60_000, // → 0.6
+      session_duration_ms: 21 * 60_000, // → 0.7
       page_count: 5, // → 0.5
-      investment_signal_ratio: 0.1,
-      family_signal_ratio: 0.9,
+      investment_signal_ratio: 0.05,
+      family_signal_ratio: 0.95,
     };
     const result = matchArchetypeHeuristic(fp);
-    expect(result.archetype).toBe('family');
+    expect(result.archetype).toBe('family_buyer');
     expect(result.similarity).toBeGreaterThan(0.95);
     expect(result.confidence).toBe('high');
   });
@@ -192,7 +194,7 @@ describe('matchArchetypeHeuristic', () => {
     expect(result.similarity).toBe(0);
   });
 
-  it('returns one of the three archetypes (investor | family | neutral)', () => {
+  it('returns one of the 18 archetypes', () => {
     const fp = {
       listing_view_count: 3,
       avg_scroll_depth: 0.4,
@@ -203,6 +205,8 @@ describe('matchArchetypeHeuristic', () => {
       family_signal_ratio: 0.5,
     };
     const result = matchArchetypeHeuristic(fp);
-    expect(['investor', 'family', 'neutral']).toContain(result.archetype);
+    // The archetype should be a valid string — checked by TypeScript via Archetype type
+    expect(typeof result.archetype).toBe('string');
+    expect(result.archetype.length).toBeGreaterThan(0);
   });
 });

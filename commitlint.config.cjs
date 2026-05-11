@@ -95,7 +95,7 @@ module.exports = {
 
           // Check for [TICKET-NNN], [TICKET-FIX-NNN], [TICKET-INFRA-NNN], [TICKET-DEMO-NNN], [TICKET-ADM-NNN], [TICKET-QUIZ-NNN], [TICKET-DB-NNN], [TICKET-EMB-NNN], or [ESCALATION] reference
           const ticketPattern =
-            /\[TICKET-(?:FIX-|INFRA-|DEMO-|ADM-|QUIZ-|DB-|EMB-)?\d+\]|\[ESCALATION\]/;
+            /\[TICKET-(?:FIX-|INFRA-|DEMO-|ADM-|QUIZ-|DB-|EMB-|ARCH-)?\d+\]|\[ESCALATION\]/;
           if (!ticketPattern.test(subject)) {
             return [
               false,

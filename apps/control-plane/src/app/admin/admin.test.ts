@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { MOCK_REGISTRATIONS } from './registrations/page';
-import { MOCK_TENANTS } from './tenants/page';
-import { MOCK_DEMO_SESSIONS } from './demo-sessions/page';
+import { MOCK_REGISTRATIONS } from './registrations/mock-data';
+import { MOCK_TENANTS } from './tenants/mock-data';
+import { MOCK_DEMO_SESSIONS } from './demo-sessions/mock-data';
 
 describe('Admin mock data — registrations', () => {
   it('has at least one registration', () => {

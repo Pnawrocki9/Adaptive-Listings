@@ -18,7 +18,7 @@ export default defineConfig([
   },
   // ESM build — for npm consumers
   {
-    entry: ['src/index.ts'],
+    entry: ['src/index.ts', 'src/core/playbooks/index.ts'],
     format: ['esm'],
     outDir: 'dist',
     dts: true,

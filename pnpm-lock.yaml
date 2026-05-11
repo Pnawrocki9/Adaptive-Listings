@@ -62,6 +62,9 @@ importers:
       '@estalara/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@estalara/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@estalara/shared':
         specifier: workspace:*
         version: link:../../packages/shared

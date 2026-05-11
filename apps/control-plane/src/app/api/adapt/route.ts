@@ -24,7 +24,8 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { errorBody, ErrorCode } from '@estalara/shared';
 import type { AdaptationDirectives, TextDirective, ArchetypeId } from '@estalara/shared';
-import { getPlaybook } from './playbook-stub';
+import { getPlaybook } from '@estalara/sdk/playbooks';
+import type { SlotDirective } from '@estalara/sdk/playbooks';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -63,11 +64,11 @@ function runDecisionTree(
   // Fetch playbook (stub in ADP-001; real data in ADP-003)
   const playbook = getPlaybook(archetypeId);
 
-  // Convert playbook slots → TextDirectives
-  const directives: TextDirective[] = playbook.slots.map((s) => ({
+  // Convert playbook slots → TextDirectives (use English locale as canonical value)
+  const directives: TextDirective[] = playbook.slots.map((s: SlotDirective) => ({
     type: 'text' as const,
     slot: s.slot,
-    value: s.value,
+    value: s.en,
     archetype: archetypeId,
     confidence,
   }));

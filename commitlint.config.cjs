@@ -50,6 +50,10 @@ module.exports = {
         'agents', // .claude/ agent definitions
         'deps', // dependency updates
         'repo', // repo-wide changes
+        'pm', // pm-orchestrator queue/backlog updates
+        'shared', // packages/shared
+        'db', // packages/db
+        'backlog', // backlog management only
       ],
     ],
 
@@ -93,13 +97,15 @@ module.exports = {
             return [false, 'Subject is required'];
           }
 
-          // Check for [TICKET-NNN], [TICKET-FIX-NNN], [TICKET-INFRA-NNN], [TICKET-DEMO-NNN], [TICKET-ADM-NNN], [TICKET-QUIZ-NNN], [TICKET-DB-NNN], [TICKET-EMB-NNN], or [ESCALATION] reference
+          // Check for [TICKET-NNN], [TICKET-FIX-NNN], [TICKET-INFRA-NNN], [TICKET-DEMO-NNN],
+          // [TICKET-ADM-NNN], [TICKET-QUIZ-NNN], [TICKET-DB-NNN], [TICKET-EMB-NNN],
+          // [TICKET-ARCH-NNN], [TICKET-ADP-NNN], or [ESCALATION] reference
           const ticketPattern =
-            /\[TICKET-(?:FIX-|INFRA-|DEMO-|ADM-|QUIZ-|DB-|EMB-|ARCH-)?\d+\]|\[ESCALATION\]/;
+            /\[TICKET-(?:FIX-|INFRA-|DEMO-|ADM-|QUIZ-|DB-|EMB-|ARCH-|ADP-)?\d+\]|\[ESCALATION\]/;
           if (!ticketPattern.test(subject)) {
             return [
               false,
-              'Commit message must include [TICKET-XXX], [TICKET-FIX-XXX], [TICKET-INFRA-XXX], [TICKET-DEMO-XXX], [TICKET-ADM-XXX], [TICKET-QUIZ-XXX], [TICKET-DB-XXX], [TICKET-EMB-XXX], or [ESCALATION] reference. Example: feat(ingest): add validation [TICKET-042]',
+              'Commit message must include [TICKET-XXX], [TICKET-FIX-XXX], [TICKET-INFRA-XXX], [TICKET-DEMO-XXX], [TICKET-ADM-XXX], [TICKET-QUIZ-XXX], [TICKET-DB-XXX], [TICKET-EMB-XXX], [TICKET-ARCH-XXX], [TICKET-ADP-XXX], or [ESCALATION] reference. Example: feat(ingest): add validation [TICKET-042]',
             ];
           }
 

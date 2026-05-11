@@ -338,3 +338,78 @@ For TICKET-021 and downstream:
 - `packages/db/README.md`
 
 ---
+
+## Sprint 7 Phase 1 — Architect review
+
+**From:** pm-orchestrator (architect role) **To:** backend-engineer (TICKET-ADP-001), sdk-engineer
+(TICKET-ADP-003) **Date:** 2026-05-11T00:00:00Z **Summary:** Pre-implementation findings for Sprint
+7 Phase 1. No blockers found.
+
+### Finding 1 — Canonical ArchetypeId source
+
+`Archetype` type is defined in `packages/sdk/src/core/intent.ts` (18 values + 'neutral' fallback).
+In `packages/shared/src/directives.ts`, the `ArchetypeId` type MUST be declared as an inline union
+(copy the 18 + 1 values verbatim). Do NOT import from `packages/sdk` — that would create a circular
+workspace dependency (`shared` → `sdk` while `sdk` already depends on `shared` implicitly through
+the event types). Keeping `ArchetypeId` inline in `directives.ts` is the correct pattern.
+
+### Finding 2 — ClickHouse migration location
+
+Confirmed: `infra/clickhouse/migrations/`. Existing files are `0001_create_events.sql` and
+`0002_create_session_summary_mv.sql`. New file must be `0003_create_adaptation_decisions.sql`. The
+migration runner substitutes `MergeTree` for `ReplicatedMergeTree` in CI (see comment in
+0001_create_events.sql). Use `MergeTree()` in the new migration.
+
+### Finding 3 — errorBody canonical helper
+
+Confirmed: `errorBody()` in `packages/shared/src/errors.ts` is the canonical helper. Import it as:
+`import { errorBody, ErrorCode } from '@estalara/shared'`.
+
+### Finding 4 — GET /api/adapt does not exist yet
+
+The route at `apps/control-plane/src/app/api/adapt/route.ts` does NOT exist. TICKET-042 wired the
+SDK to call `/api/adapt` but the route was never created (the stub referenced in the briefing was
+from PR #42 which created a different stub). Backend-engineer must create the directory and file
+from scratch.
+
+### Finding 5 — control-plane cannot import @estalara/sdk currently
+
+`apps/control-plane/package.json` does NOT include `@estalara/sdk` as a dependency. The playbooks
+module (to be built in ADP-003) lives in `packages/sdk/src/core/playbooks/`. Resolution:
+
+- For ADP-001: backend-engineer creates a minimal LOCAL stub for `getPlaybook()` inside
+  `apps/control-plane/` (co-located with the route file). This avoids the dependency issue entirely.
+- For ADP-003: sdk-engineer builds the real playbooks in `packages/sdk/src/core/playbooks/` AND adds
+  `@estalara/sdk` as a workspace dependency to `apps/control-plane/package.json`, then updates the
+  control-plane route to import from `@estalara/sdk` using a deep import path
+  `@estalara/sdk/playbooks` (add this to SDK `exports` in `package.json`), OR the sdk-engineer moves
+  the stub replacement inline. The preferred approach: add the `playbooks` subpath export to
+  `packages/sdk/package.json` so control-plane can do
+  `import { getPlaybook } from '@estalara/sdk/playbooks'`.
+
+### Finding 6 — No conflicts with existing code
+
+- `packages/shared/src/directives.ts` is a new file — no conflicts.
+- `infra/clickhouse/migrations/0003_*` is new — no conflicts.
+- `apps/control-plane/src/app/api/adapt/route.ts` is new (directory does not exist) — no conflicts.
+- `packages/sdk/src/core/playbooks/` is new — no conflicts (adapt.ts uses
+  `fetchDirectives`/`applyDirectives` which remain untouched).
+
+### No blockers. Backend-engineer may proceed with TICKET-ADP-001.
+
+---
+
+## TICKET-ADP-001 → TICKET-ADP-003
+
+**From:** backend-engineer **To:** sdk-engineer **Date:** (to be filled by backend-engineer when
+ADP-001 PR merges) **Summary:** (to be filled by backend-engineer) **Action required:** After
+ADP-001 merges, sdk-engineer should:
+
+1. Replace the `getPlaybook` stub in `apps/control-plane/src/app/api/adapt/route.ts` with real
+   import
+2. Build all 18 playbook files in `packages/sdk/src/core/playbooks/archetypes/`
+3. Add `@estalara/sdk` workspace dep to control-plane and add `playbooks` subpath export to SDK
+4. Run integration tests against the real Decision API route **Files:** (to be filled by
+   backend-engineer)
+
+---

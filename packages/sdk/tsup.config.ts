@@ -16,9 +16,9 @@ export default defineConfig([
     tsconfig: './tsconfig.dts.json',
     outExtension: () => ({ js: '.iife.js' }),
   },
-  // ESM build — for npm consumers
+  // ESM build — for npm consumers (SDK core, unbundled tree-shakeable)
   {
-    entry: ['src/index.ts', 'src/core/playbooks/index.ts'],
+    entry: ['src/index.ts'],
     format: ['esm'],
     outDir: 'dist',
     dts: true,
@@ -28,6 +28,19 @@ export default defineConfig([
     platform: 'browser',
     bundle: false,
     splitting: false,
+    tsconfig: './tsconfig.dts.json',
+  },
+  // Playbooks subpath export — bundled so all archetype imports are resolved
+  {
+    entry: { 'core/playbooks/index': 'src/core/playbooks/index.ts' },
+    format: ['esm'],
+    outDir: 'dist',
+    dts: true,
+    sourcemap: true,
+    clean: false,
+    target: 'es2020',
+    platform: 'browser',
+    bundle: true,
     tsconfig: './tsconfig.dts.json',
   },
 ]);

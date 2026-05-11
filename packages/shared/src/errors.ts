@@ -81,3 +81,24 @@ export function errorBody(args: {
     },
   };
 }
+
+/**
+ * Build a canonical {@link ErrorResponseBody} for database operation failures.
+ *
+ * Extracts the error message from the caught value (if it is an `Error` instance)
+ * or falls back to a generic message. Uses {@link ErrorCode.INTERNAL_ERROR} so
+ * callers do not need to import `ErrorCode` separately.
+ *
+ * @param err       - The caught value from a try/catch block.
+ * @param requestId - Optional correlation ID (defaults to 'unknown').
+ */
+export function dbErrorResponse(err: unknown, requestId = 'unknown'): ErrorResponseBody {
+  const message = err instanceof Error ? err.message : 'Database operation failed';
+  return {
+    error: {
+      code: ErrorCode.INTERNAL_ERROR,
+      message: `Internal database error: ${message}`,
+      request_id: requestId,
+    },
+  };
+}

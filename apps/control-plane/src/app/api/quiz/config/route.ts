@@ -2,8 +2,7 @@
  * GET/POST /api/quiz/config — quiz widget configuration per tenant.
  *
  * Auth: x-tenant-id header required for POST.
- * MVP stub — config stored in-memory per tenant.
- * TODO Sprint 5: persist to tenants.quiz_config JSONB via createAdminClient().
+ * Persists to tenants.quiz_config JSONB column via createAdminClient().
  *
  * @module apps/control-plane/src/app/api/quiz/config/route
  */
@@ -11,6 +10,9 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+
+import { createAdminClient, tenants } from '@estalara/db';
+import { eq } from 'drizzle-orm';
 
 export interface QuizConfig {
   enabled: boolean;
@@ -28,9 +30,6 @@ const DEFAULT_CONFIG: QuizConfig = {
   accent_color: '#2563EB',
 };
 
-// In-memory store keyed by tenant_id
-const configStore = new Map<string, QuizConfig>();
-
 const QuizConfigSchema = z.object({
   enabled: z.boolean().optional(),
   trigger_after_n_listings: z.number().int().min(1).max(10).optional(),
@@ -39,10 +38,24 @@ const QuizConfigSchema = z.object({
   accent_color: z.string().optional(),
 });
 
-export function GET(req: NextRequest): NextResponse {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   const tenantId = req.headers.get('x-tenant-id') ?? 'default';
-  const config = configStore.get(tenantId) ?? DEFAULT_CONFIG;
-  return NextResponse.json(config);
+
+  try {
+    const db = createAdminClient();
+    const rows = await db
+      .select({ quizConfig: tenants.quizConfig })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .limit(1);
+
+    const stored = (rows[0]?.quizConfig ?? {}) as Partial<QuizConfig>;
+    const config = { ...DEFAULT_CONFIG, ...stored };
+    return NextResponse.json(config);
+  } catch {
+    // Fallback to defaults if DB unavailable
+    return NextResponse.json(DEFAULT_CONFIG);
+  }
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -66,10 +79,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const current = configStore.get(tenantId) ?? { ...DEFAULT_CONFIG };
-  // current fills all required fields; parsed.data overrides only the provided ones
-  const updated = { ...current, ...parsed.data } as QuizConfig;
-  configStore.set(tenantId, updated);
+  try {
+    const db = createAdminClient();
 
-  return NextResponse.json(updated);
+    // Read current config from DB
+    const rows = await db
+      .select({ quizConfig: tenants.quizConfig })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .limit(1);
+
+    const stored = (rows[0]?.quizConfig ?? {}) as Partial<QuizConfig>;
+    const current = { ...DEFAULT_CONFIG, ...stored };
+    // current fills all required fields; parsed.data overrides only the provided ones
+    const updated = { ...current, ...parsed.data } as QuizConfig;
+
+    // Persist to DB
+    await db
+      .update(tenants)
+      .set({ quizConfig: updated, updatedAt: new Date() })
+      .where(eq(tenants.id, tenantId));
+
+    return NextResponse.json(updated);
+  } catch {
+    return NextResponse.json({ error: 'Failed to update quiz configuration' }, { status: 500 });
+  }
 }

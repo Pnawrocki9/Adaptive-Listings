@@ -7,8 +7,6 @@
  * JWT signing uses Node.js built-in crypto (HS256) — no external JWT library.
  * Secret: DEMO_MODE_JWT_SECRET env var.
  *
- * // TODO Sprint 5: persist sessions to demo_sessions table via createAdminClient()
- *
  * @module apps/control-plane/src/app/api/demo/sessions/route
  */
 
@@ -17,9 +15,11 @@ import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import type { DemoDuration, DemoScope, DemoVisibility } from '@estalara/shared';
+import { and, desc, gt } from 'drizzle-orm';
 
-import { sessionStore } from '@/lib/demo-session-store';
+import type { DemoDuration, DemoScope, DemoVisibility } from '@estalara/shared';
+import { createAdminClient, demoSessions } from '@estalara/db';
+import { eq } from 'drizzle-orm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,6 +76,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 401 },
     );
   }
+
+  // Use x-user-id from middleware (set by dashboard auth); fall back to a placeholder
+  const createdBy = req.headers.get('x-user-id') ?? '00000000-0000-0000-0000-000000000000';
 
   let body: ActivateBody;
   try {
@@ -150,20 +153,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ? `https://listings.example.com?demo=${encodeURIComponent(token)}`
       : undefined;
 
-  sessionStore.set(sessionId, {
-    id: sessionId,
-    tenantId,
-    scope,
-    visibility,
-    duration,
-    tokenHash,
-    shareableLink: shareableUrl ?? null,
-    createdAt: new Date().toISOString(),
-    expiresAt: exp.toISOString(),
-    revokedAt: null,
-    revokeReason: null,
-    productionDomain: production_domain ?? null,
-  });
+  try {
+    const db = createAdminClient();
+    await db.insert(demoSessions).values({
+      id: sessionId,
+      tenantId,
+      scope,
+      visibility,
+      duration,
+      tokenHash,
+      shareableLink: shareableUrl ?? null,
+      createdBy,
+      expiresAt: exp,
+      productionDomain: production_domain ?? null,
+    });
+  } catch {
+    return NextResponse.json(
+      { error: { code: 'internal_error', message: 'Failed to create demo session' } },
+      { status: 500 },
+    );
+  }
 
   return NextResponse.json(
     {
@@ -178,7 +187,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   );
 }
 
-export function GET(req: NextRequest): NextResponse {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   const tenantId = req.headers.get('x-tenant-id');
   if (!tenantId) {
     return NextResponse.json(
@@ -187,19 +196,43 @@ export function GET(req: NextRequest): NextResponse {
     );
   }
 
-  const sessions = [...sessionStore.values()]
-    .filter((s) => s.tenantId === tenantId)
-    .map((s) => ({
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  try {
+    const db = createAdminClient();
+    const rows = await db
+      .select({
+        id: demoSessions.id,
+        scope: demoSessions.scope,
+        visibility: demoSessions.visibility,
+        duration: demoSessions.duration,
+        shareableLink: demoSessions.shareableLink,
+        createdAt: demoSessions.createdAt,
+        expiresAt: demoSessions.expiresAt,
+        revokedAt: demoSessions.revokedAt,
+      })
+      .from(demoSessions)
+      .where(and(eq(demoSessions.tenantId, tenantId), gt(demoSessions.createdAt, thirtyDaysAgo)))
+      .orderBy(desc(demoSessions.createdAt));
+
+    const sessions = rows.map((s) => ({
       id: s.id,
       scope: s.scope,
       visibility: s.visibility,
       duration: s.duration,
-      created_at: s.createdAt,
-      expires_at: s.expiresAt,
-      revoked_at: s.revokedAt,
-      is_active: s.revokedAt === null && new Date(s.expiresAt) > new Date(),
+      created_at: s.createdAt.toISOString(),
+      expires_at: s.expiresAt.toISOString(),
+      revoked_at: s.revokedAt?.toISOString() ?? null,
+      is_active: s.revokedAt === null && s.expiresAt > new Date(),
       shareable_link: s.shareableLink,
     }));
 
-  return NextResponse.json({ tenant_id: tenantId, sessions });
+    return NextResponse.json({ tenant_id: tenantId, sessions });
+  } catch {
+    return NextResponse.json(
+      { error: { code: 'internal_error', message: 'Failed to list demo sessions' } },
+      { status: 500 },
+    );
+  }
 }

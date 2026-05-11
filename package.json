@@ -21,9 +21,13 @@
     "db:generate": "pnpm --filter @estalara/db exec drizzle-kit generate",
     "db:migrate": "pnpm --filter @estalara/db exec tsx scripts/migrate.ts",
     "db:studio": "pnpm --filter @estalara/db exec drizzle-kit studio",
-    "db:push:dev": "pnpm --filter @estalara/db exec drizzle-kit push"
+    "db:push:dev": "pnpm --filter @estalara/db exec drizzle-kit push",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "@commitlint/cli": "^19.0.0",
     "@commitlint/config-conventional": "^19.0.0",
     "@eslint/js": "^9.39.4",

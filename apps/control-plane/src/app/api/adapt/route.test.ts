@@ -2,19 +2,28 @@
  * Tests for GET /api/adapt — Decision API real logic.
  *
  * Coverage:
- *   - Decision tree: all 4 branches
+ *   - Decision tree: all 4 branches (with and without LLM gateway)
  *   - AdaptationDirectives shape validation
  *   - Valid GET request → correct AdaptationDirectives
  *   - Missing/invalid params → 400 with canonical error format
+ *   - LLM gateway integration (mocked)
  *
- * Handler is called directly — no HTTP server needed.
+ * Handler is now async — all GET() calls must be awaited.
  */
 
 import { NextRequest } from 'next/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { z } from 'zod';
 
+// Mock the LLM gateway module — by default returns null (no API key in test env)
+vi.mock('@/lib/llm-gateway', () => ({
+  callLlmGateway: vi.fn().mockResolvedValue(null),
+}));
+
 import { GET } from './route';
+import { callLlmGateway } from '@/lib/llm-gateway';
+
+const mockCallLlmGateway = vi.mocked(callLlmGateway);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,15 +76,27 @@ const AdaptationDirectivesSchema = z.object({
   similarity: z.number().min(0).max(1),
   tier: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   directives: z.array(z.union([TextDirectiveSchema, ClassDirectiveSchema])),
-  source: z.enum(['playbook', 'llm_tweaked', 'llm_full', 'default']),
+  source: z.enum([
+    'playbook',
+    'llm_tweaked',
+    'llm_full',
+    'default',
+    'playbook_fallback_llm_capped',
+    'playbook_fallback_llm_unavailable',
+  ]),
   generated_at: z.string().datetime(),
 });
 
-// ─── Unit: decision tree branches ────────────────────────────────────────────
+// ─── Unit: decision tree branches (gateway mocked to return null) ─────────────
 
-describe('GET /api/adapt — decision tree branches', () => {
+describe('GET /api/adapt — decision tree branches (gateway null → fallback)', () => {
+  beforeEach(() => {
+    mockCallLlmGateway.mockClear();
+    mockCallLlmGateway.mockResolvedValue(null);
+  });
+
   it('Branch 1: confidence <= 0.6 → source: default, directives: []', async () => {
-    const res = GET(
+    const res = await GET(
       makeRequest({
         ...VALID_PARAMS,
         confidence: '0.5',
@@ -90,7 +111,7 @@ describe('GET /api/adapt — decision tree branches', () => {
   });
 
   it('Branch 1 edge: confidence exactly 0.6 → source: default', async () => {
-    const res = GET(
+    const res = await GET(
       makeRequest({
         ...VALID_PARAMS,
         confidence: '0.6',
@@ -102,8 +123,8 @@ describe('GET /api/adapt — decision tree branches', () => {
     expect(body.source).toBe('default');
   });
 
-  it('Branch 2: confidence > 0.6, similarity > 0.85 → source: playbook', async () => {
-    const res = GET(
+  it('Branch 2: confidence > 0.6, similarity > 0.85 → source: playbook (no gateway call)', async () => {
+    const res = await GET(
       makeRequest({
         ...VALID_PARAMS,
         confidence: '0.75',
@@ -113,12 +134,98 @@ describe('GET /api/adapt — decision tree branches', () => {
     expect(res.status).toBe(200);
     const body = await parseBody<Record<string, unknown>>(res);
     expect(body.source).toBe('playbook');
-    // Stub returns empty slots — directives will be []
     expect(Array.isArray(body.directives)).toBe(true);
+    // Gateway should NOT be called for high-similarity branch
+    expect(mockCallLlmGateway).not.toHaveBeenCalled();
   });
 
-  it('Branch 3: confidence > 0.6, 0.6 < similarity <= 0.85 → source: llm_tweaked', async () => {
-    const res = GET(
+  it('Branch 3: confidence > 0.6, 0.6 < similarity <= 0.85 → calls gateway, falls back to playbook on null', async () => {
+    const res = await GET(
+      makeRequest({
+        ...VALID_PARAMS,
+        confidence: '0.80',
+        similarity: '0.75',
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    // Gateway returned null → fallback source
+    expect(body.source).toBe('playbook_fallback_llm_unavailable');
+    expect(Array.isArray(body.directives)).toBe(true);
+    expect(mockCallLlmGateway).toHaveBeenCalledOnce();
+  });
+
+  it('Branch 3 edge: similarity exactly 0.85 → calls gateway', async () => {
+    const res = await GET(
+      makeRequest({
+        ...VALID_PARAMS,
+        confidence: '0.80',
+        similarity: '0.85',
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(body.source).toBe('playbook_fallback_llm_unavailable');
+    expect(mockCallLlmGateway).toHaveBeenCalledOnce();
+  });
+
+  it('Branch 4: confidence > 0.6, similarity <= 0.6 → calls gateway, returns empty directives on null', async () => {
+    const res = await GET(
+      makeRequest({
+        ...VALID_PARAMS,
+        confidence: '0.80',
+        similarity: '0.45',
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(body.source).toBe('playbook_fallback_llm_unavailable');
+    expect(Array.isArray(body.directives)).toBe(true);
+    expect(mockCallLlmGateway).toHaveBeenCalledOnce();
+  });
+
+  it('Branch 4 edge: similarity exactly 0.6 → calls gateway', async () => {
+    const res = await GET(
+      makeRequest({
+        ...VALID_PARAMS,
+        confidence: '0.80',
+        similarity: '0.6',
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(body.source).toBe('playbook_fallback_llm_unavailable');
+    expect(mockCallLlmGateway).toHaveBeenCalledOnce();
+  });
+});
+
+// ─── Unit: decision tree branches (gateway returns directives) ─────────────────
+
+describe('GET /api/adapt — decision tree branches (gateway returns directives)', () => {
+  const mockDirectives = [
+    {
+      type: 'text' as const,
+      slot: 'headline',
+      value: 'Yield-optimized investment',
+      archetype: 'yield_hunter' as const,
+      confidence: 0.8,
+    },
+  ];
+
+  beforeEach(() => {
+    mockCallLlmGateway.mockClear();
+    mockCallLlmGateway.mockResolvedValue({
+      directives: mockDirectives,
+      model: 'claude-haiku-4-5' as const,
+      tokens_in: 200,
+      tokens_out: 50,
+      cost_usd: 0.0001,
+      latency_ms: 300,
+    });
+  });
+
+  it('Branch 3 with gateway success → source: llm_tweaked, directives from gateway', async () => {
+    const res = await GET(
       makeRequest({
         ...VALID_PARAMS,
         confidence: '0.80',
@@ -129,23 +236,11 @@ describe('GET /api/adapt — decision tree branches', () => {
     const body = await parseBody<Record<string, unknown>>(res);
     expect(body.source).toBe('llm_tweaked');
     expect(Array.isArray(body.directives)).toBe(true);
+    expect((body.directives as unknown[]).length).toBeGreaterThan(0);
   });
 
-  it('Branch 3 edge: similarity exactly 0.85 → source: llm_tweaked', async () => {
-    const res = GET(
-      makeRequest({
-        ...VALID_PARAMS,
-        confidence: '0.80',
-        similarity: '0.85',
-      }),
-    );
-    expect(res.status).toBe(200);
-    const body = await parseBody<Record<string, unknown>>(res);
-    expect(body.source).toBe('llm_tweaked');
-  });
-
-  it('Branch 4: confidence > 0.6, similarity <= 0.6 → source: llm_full, directives: []', async () => {
-    const res = GET(
+  it('Branch 4 with gateway success → source: llm_full, directives from gateway', async () => {
+    const res = await GET(
       makeRequest({
         ...VALID_PARAMS,
         confidence: '0.80',
@@ -156,28 +251,61 @@ describe('GET /api/adapt — decision tree branches', () => {
     const body = await parseBody<Record<string, unknown>>(res);
     expect(body.source).toBe('llm_full');
     expect(Array.isArray(body.directives)).toBe(true);
-    expect((body.directives as unknown[]).length).toBe(0);
+    expect((body.directives as unknown[]).length).toBeGreaterThan(0);
   });
 
-  it('Branch 4 edge: similarity exactly 0.6 → source: llm_full', async () => {
-    const res = GET(
+  it('gateway is called with correct archetypeId and similarity', async () => {
+    await GET(
+      makeRequest({
+        ...VALID_PARAMS,
+        archetype: 'family_buyer',
+        confidence: '0.80',
+        similarity: '0.75',
+      }),
+    );
+    expect(mockCallLlmGateway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        archetypeId: 'family_buyer',
+        confidence: 0.8,
+        similarity: 0.75,
+      }),
+    );
+  });
+
+  it('Haiku selected for medium similarity (0.6 < sim <= 0.85)', async () => {
+    await GET(
       makeRequest({
         ...VALID_PARAMS,
         confidence: '0.80',
-        similarity: '0.6',
+        similarity: '0.75',
       }),
     );
-    expect(res.status).toBe(200);
-    const body = await parseBody<Record<string, unknown>>(res);
-    expect(body.source).toBe('llm_full');
+    // The gateway mock captures the call — the model selection happens inside the gateway
+    expect(mockCallLlmGateway).toHaveBeenCalledOnce();
+  });
+
+  it('Sonnet selected for low similarity (sim <= 0.6)', async () => {
+    await GET(
+      makeRequest({
+        ...VALID_PARAMS,
+        confidence: '0.80',
+        similarity: '0.50',
+      }),
+    );
+    expect(mockCallLlmGateway).toHaveBeenCalledOnce();
   });
 });
 
 // ─── Unit: AdaptationDirectives Zod schema validation ────────────────────────
 
 describe('GET /api/adapt — AdaptationDirectives schema validation', () => {
+  beforeEach(() => {
+    mockCallLlmGateway.mockClear();
+    mockCallLlmGateway.mockResolvedValue(null);
+  });
+
   it('valid request → response matches AdaptationDirectives schema', async () => {
-    const res = GET(makeRequest(VALID_PARAMS));
+    const res = await GET(makeRequest(VALID_PARAMS));
     expect(res.status).toBe(200);
     const body = await parseBody<unknown>(res);
     const parsed = AdaptationDirectivesSchema.safeParse(body);
@@ -185,19 +313,19 @@ describe('GET /api/adapt — AdaptationDirectives schema validation', () => {
   });
 
   it('session_id is echoed back in response', async () => {
-    const res = GET(makeRequest({ ...VALID_PARAMS, session_id: 'my-test-session-123' }));
+    const res = await GET(makeRequest({ ...VALID_PARAMS, session_id: 'my-test-session-123' }));
     const body = await parseBody<Record<string, unknown>>(res);
     expect(body.session_id).toBe('my-test-session-123');
   });
 
   it('archetype is echoed back in response', async () => {
-    const res = GET(makeRequest({ ...VALID_PARAMS, archetype: 'family_buyer' }));
+    const res = await GET(makeRequest({ ...VALID_PARAMS, archetype: 'family_buyer' }));
     const body = await parseBody<Record<string, unknown>>(res);
     expect(body.archetype).toBe('family_buyer');
   });
 
   it('confidence and similarity are echoed as numbers', async () => {
-    const res = GET(makeRequest({ ...VALID_PARAMS, confidence: '0.82', similarity: '0.91' }));
+    const res = await GET(makeRequest({ ...VALID_PARAMS, confidence: '0.82', similarity: '0.91' }));
     const body = await parseBody<Record<string, unknown>>(res);
     expect(typeof body.confidence).toBe('number');
     expect(typeof body.similarity).toBe('number');
@@ -206,14 +334,14 @@ describe('GET /api/adapt — AdaptationDirectives schema validation', () => {
   });
 
   it('tier is echoed as a number (not string)', async () => {
-    const res = GET(makeRequest({ ...VALID_PARAMS, tier: '2' }));
+    const res = await GET(makeRequest({ ...VALID_PARAMS, tier: '2' }));
     const body = await parseBody<Record<string, unknown>>(res);
     expect(body.tier).toBe(2);
     expect(typeof body.tier).toBe('number');
   });
 
   it('generated_at is a valid ISO 8601 datetime', async () => {
-    const res = GET(makeRequest(VALID_PARAMS));
+    const res = await GET(makeRequest(VALID_PARAMS));
     const body = await parseBody<Record<string, unknown>>(res);
     expect(typeof body.generated_at).toBe('string');
     expect(() => new Date(body.generated_at as string)).not.toThrow();
@@ -224,8 +352,13 @@ describe('GET /api/adapt — AdaptationDirectives schema validation', () => {
 // ─── Integration: valid GET request → correct AdaptationDirectives ────────────
 
 describe('GET /api/adapt — integration', () => {
+  beforeEach(() => {
+    mockCallLlmGateway.mockClear();
+    mockCallLlmGateway.mockResolvedValue(null);
+  });
+
   it('yield_hunter + high confidence + high similarity → 200 AdaptationDirectives', async () => {
-    const res = GET(
+    const res = await GET(
       makeRequest({
         session_id: 'integ-sess-001',
         archetype: 'yield_hunter',
@@ -246,7 +379,7 @@ describe('GET /api/adapt — integration', () => {
   });
 
   it('family_buyer + high confidence + high similarity → 200 with playbook source', async () => {
-    const res = GET(
+    const res = await GET(
       makeRequest({
         session_id: 'integ-sess-002',
         archetype: 'family_buyer',
@@ -262,7 +395,7 @@ describe('GET /api/adapt — integration', () => {
   });
 
   it('lifestyle_expat + high confidence + high similarity → 200', async () => {
-    const res = GET(
+    const res = await GET(
       makeRequest({
         session_id: 'integ-sess-003',
         archetype: 'lifestyle_expat',
@@ -279,7 +412,7 @@ describe('GET /api/adapt — integration', () => {
 
   it('all tier values (1, 2, 3) are accepted', async () => {
     for (const tier of ['1', '2', '3'] as const) {
-      const res = GET(makeRequest({ ...VALID_PARAMS, tier }));
+      const res = await GET(makeRequest({ ...VALID_PARAMS, tier }));
       expect(res.status).toBe(200);
       const body = await parseBody<Record<string, unknown>>(res);
       expect(body.tier).toBe(parseInt(tier, 10));
@@ -297,7 +430,7 @@ describe('GET /api/adapt — validation errors', () => {
       similarity: VALID_PARAMS.similarity,
       tier: VALID_PARAMS.tier,
     };
-    const res = GET(makeRequest(withoutSessionId));
+    const res = await GET(makeRequest(withoutSessionId));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string; message: string; request_id: string } }>(
       res,
@@ -315,7 +448,7 @@ describe('GET /api/adapt — validation errors', () => {
       similarity: VALID_PARAMS.similarity,
       tier: VALID_PARAMS.tier,
     };
-    const res = GET(makeRequest(withoutArchetype));
+    const res = await GET(makeRequest(withoutArchetype));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('VALIDATION_ERROR');
@@ -328,7 +461,7 @@ describe('GET /api/adapt — validation errors', () => {
       similarity: VALID_PARAMS.similarity,
       tier: VALID_PARAMS.tier,
     };
-    const res = GET(makeRequest(withoutConfidence));
+    const res = await GET(makeRequest(withoutConfidence));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('VALIDATION_ERROR');
@@ -341,7 +474,7 @@ describe('GET /api/adapt — validation errors', () => {
       confidence: VALID_PARAMS.confidence,
       tier: VALID_PARAMS.tier,
     };
-    const res = GET(makeRequest(withoutSimilarity));
+    const res = await GET(makeRequest(withoutSimilarity));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('VALIDATION_ERROR');
@@ -354,65 +487,114 @@ describe('GET /api/adapt — validation errors', () => {
       confidence: VALID_PARAMS.confidence,
       similarity: VALID_PARAMS.similarity,
     };
-    const res = GET(makeRequest(withoutTier));
+    const res = await GET(makeRequest(withoutTier));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
   it('confidence = 1.5 (out of range) → 400', async () => {
-    const res = GET(makeRequest({ ...VALID_PARAMS, confidence: '1.5' }));
+    const res = await GET(makeRequest({ ...VALID_PARAMS, confidence: '1.5' }));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
   it('confidence = -0.1 (negative) → 400', async () => {
-    const res = GET(makeRequest({ ...VALID_PARAMS, confidence: '-0.1' }));
+    const res = await GET(makeRequest({ ...VALID_PARAMS, confidence: '-0.1' }));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
   it('confidence = "not-a-number" → 400', async () => {
-    const res = GET(makeRequest({ ...VALID_PARAMS, confidence: 'not-a-number' }));
+    const res = await GET(makeRequest({ ...VALID_PARAMS, confidence: 'not-a-number' }));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
   it('similarity = 2.0 (out of range) → 400', async () => {
-    const res = GET(makeRequest({ ...VALID_PARAMS, similarity: '2.0' }));
+    const res = await GET(makeRequest({ ...VALID_PARAMS, similarity: '2.0' }));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
   it('tier = 4 (invalid) → 400', async () => {
-    const res = GET(makeRequest({ ...VALID_PARAMS, tier: '4' }));
+    const res = await GET(makeRequest({ ...VALID_PARAMS, tier: '4' }));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
   it('tier = 0 (invalid) → 400', async () => {
-    const res = GET(makeRequest({ ...VALID_PARAMS, tier: '0' }));
+    const res = await GET(makeRequest({ ...VALID_PARAMS, tier: '0' }));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
   it('completely empty params → 400', async () => {
-    const res = GET(makeRequest({}));
+    const res = await GET(makeRequest({}));
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
   it('400 response includes request_id for correlation', async () => {
-    const res = GET(makeRequest({}));
+    const res = await GET(makeRequest({}));
     const body = await parseBody<{ error: { request_id: string } }>(res);
     expect(typeof body.error.request_id).toBe('string');
     expect(body.error.request_id.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── LLM gateway unit tests ───────────────────────────────────────────────────
+
+describe('LLM gateway integration in route.ts', () => {
+  it('gateway returns null with no API key → fallback source returned', async () => {
+    mockCallLlmGateway.mockResolvedValue(null);
+    const res = await GET(
+      makeRequest({
+        ...VALID_PARAMS,
+        confidence: '0.80',
+        similarity: '0.75', // medium → Haiku branch
+      }),
+    );
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(body.source).toBe('playbook_fallback_llm_unavailable');
+    expect(res.status).toBe(200);
+  });
+
+  it('gateway returns directives → they appear in response', async () => {
+    mockCallLlmGateway.mockResolvedValue({
+      directives: [
+        {
+          type: 'text' as const,
+          slot: 'headline',
+          value: 'LLM-optimized headline',
+          archetype: 'yield_hunter' as const,
+          confidence: 0.85,
+        },
+      ],
+      model: 'claude-haiku-4-5' as const,
+      tokens_in: 150,
+      tokens_out: 40,
+      cost_usd: 0.00005,
+      latency_ms: 250,
+    });
+
+    const res = await GET(
+      makeRequest({
+        ...VALID_PARAMS,
+        confidence: '0.80',
+        similarity: '0.75',
+      }),
+    );
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(body.source).toBe('llm_tweaked');
+    const directives = body.directives as { value: string }[];
+    expect(directives.some((d) => d.value === 'LLM-optimized headline')).toBe(true);
   });
 });

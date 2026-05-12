@@ -6,13 +6,14 @@
  * Implements the decision tree from Master Design E.1:
  *   1. confidence <= 0.6  → default (no adaptation)
  *   2. similarity > 0.85  → use pre-computed archetype playbook  (source: 'playbook')
- *   3. 0.6 < similarity <= 0.85 → playbook + flag for LLM tweak (source: 'llm_tweaked', ADP-002)
- *   4. similarity <= 0.6  → flag for full LLM decision            (source: 'llm_full', ADP-002)
+ *   3. 0.6 < similarity <= 0.85 → Haiku LLM tweak  (source: 'llm_tweaked', ADP-002)
+ *   4. similarity <= 0.6, conf > 0.6 → Sonnet full gen (source: 'llm_full', ADP-002)
  *
- * Sprint 7 scope: Tier 1 only. Tier 2/3 mutations handled in later sprints.
- *
- * Playbook lookup: uses a local stub in ADP-001. ADP-003 replaces `playbook-stub.ts`
- * with an import from `@estalara/sdk/playbooks` containing real per-archetype data.
+ * Sprint 7 Phase 2: LLM gateway wired for branches 3 and 4 (ADP-002).
+ * On gateway failure (null return), falls back to:
+ *   - llm_tweaked: playbook directives + source 'playbook_fallback_llm_unavailable'
+ *   - llm_full: empty directives + source 'playbook_fallback_llm_unavailable'
+ *   - cap hit: source 'playbook_fallback_llm_capped'
  *
  * ClickHouse logging is fire-and-forget — the response is returned immediately
  * and the analytics insert happens asynchronously.
@@ -26,6 +27,7 @@ import { errorBody, ErrorCode } from '@estalara/shared';
 import type { AdaptationDirectives, TextDirective, ArchetypeId } from '@estalara/shared';
 import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
+import { callLlmGateway } from '@/lib/llm-gateway';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -37,35 +39,34 @@ const LOW_SIMILARITY_THRESHOLD = 0.6;
 
 /**
  * Run the adaptation decision tree per Master Design E.1.
+ * Now async: branches 3 and 4 call the LLM gateway (ADP-002).
  *
- * @param archetypeId - Archetype matched by the intent engine.
- * @param confidence  - Intent confidence 0–1.
- * @param similarity  - Cosine similarity to the matched archetype 0–1.
+ * @param archetypeId   - Archetype matched by the intent engine.
+ * @param confidence    - Intent confidence 0–1.
+ * @param similarity    - Cosine similarity to the matched archetype 0–1.
+ * @param sessionId     - Session ID for gateway context.
+ * @param sessionContext - Optional session context for gateway prompts.
  * @returns Partial adaptation result (directives + source).
  */
-function runDecisionTree(
+async function runDecisionTree(
   archetypeId: ArchetypeId,
   confidence: number,
   similarity: number,
-): {
+  _sessionId: string,
+): Promise<{
   directives: TextDirective[];
   source: AdaptationDirectives['source'];
-} {
+}> {
   // Branch 1: confidence too low — no adaptation
   if (confidence <= CONFIDENCE_THRESHOLD) {
     return { directives: [], source: 'default' };
   }
 
-  // Branch 4: similarity too low — flag for full LLM decision (ADP-002 handles this)
-  if (similarity <= LOW_SIMILARITY_THRESHOLD) {
-    return { directives: [], source: 'llm_full' };
-  }
-
-  // Fetch playbook (stub in ADP-001; real data in ADP-003)
+  // Fetch playbook (real data since ADP-003)
   const playbook = getPlaybook(archetypeId);
 
-  // Convert playbook slots → TextDirectives (use English locale as canonical value)
-  const directives: TextDirective[] = playbook.slots.map((s: SlotDirective) => ({
+  // Convert playbook slots → TextDirectives (English locale as canonical value)
+  const playbookDirectives: TextDirective[] = playbook.slots.map((s: SlotDirective) => ({
     type: 'text' as const,
     slot: s.slot,
     value: s.en,
@@ -73,13 +74,42 @@ function runDecisionTree(
     confidence,
   }));
 
-  // Branch 2: high similarity — use playbook directly
+  // Branch 2: high similarity — use playbook directly (no LLM)
   if (similarity > HIGH_SIMILARITY_THRESHOLD) {
-    return { directives, source: 'playbook' };
+    return { directives: playbookDirectives, source: 'playbook' };
   }
 
-  // Branch 3: medium similarity — playbook base + mark for LLM tweak (ADP-002)
-  return { directives, source: 'llm_tweaked' };
+  // Branch 4: similarity too low — full LLM generation
+  if (similarity <= LOW_SIMILARITY_THRESHOLD) {
+    const gatewayResult = await callLlmGateway({
+      archetypeId,
+      confidence,
+      similarity,
+      basePlaybook: playbook,
+    });
+
+    if (gatewayResult) {
+      return { directives: gatewayResult.directives, source: 'llm_full' };
+    }
+
+    // Gateway returned null — check if it was a cap issue (logged in gateway)
+    return { directives: [], source: 'playbook_fallback_llm_unavailable' };
+  }
+
+  // Branch 3: medium similarity — Haiku LLM tweak of playbook
+  const gatewayResult = await callLlmGateway({
+    archetypeId,
+    confidence,
+    similarity,
+    basePlaybook: playbook,
+  });
+
+  if (gatewayResult) {
+    return { directives: gatewayResult.directives, source: 'llm_tweaked' };
+  }
+
+  // Gateway returned null — fall back to playbook directives
+  return { directives: playbookDirectives, source: 'playbook_fallback_llm_unavailable' };
 }
 
 // ─── ClickHouse logging (fire-and-forget) ─────────────────────────────────────
@@ -143,7 +173,7 @@ function logDecisionAsync(
  * @returns 200 AdaptationDirectives JSON on valid params, even when source is 'default'.
  * @returns 400 ErrorResponseBody on invalid or missing params.
  */
-export function GET(req: NextRequest): NextResponse {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
   const params = req.nextUrl.searchParams;
 
@@ -211,7 +241,12 @@ export function GET(req: NextRequest): NextResponse {
 
   // ── Decision tree ─────────────────────────────────────────────────────────
   const archetypeId = archetypeRaw as ArchetypeId;
-  const { directives, source } = runDecisionTree(archetypeId, confidence, similarity);
+  const { directives, source } = await runDecisionTree(
+    archetypeId,
+    confidence,
+    similarity,
+    sessionId,
+  );
 
   const response: AdaptationDirectives = {
     session_id: sessionId,

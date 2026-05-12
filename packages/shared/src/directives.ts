@@ -89,12 +89,20 @@ export interface AdaptationDirectives {
   /** Empty when source is 'default' or 'llm_full'. */
   directives: (TextDirective | ClassDirective)[];
   /**
-   * - `playbook`    — static pre-computed playbook, high-confidence match
-   * - `llm_tweaked` — playbook base + pending LLM refinement (ADP-002)
-   * - `llm_full`    — full LLM decision pending (ADP-002)
-   * - `default`     — confidence too low, no adaptation
+   * - `playbook`                         — static pre-computed playbook, high-confidence match
+   * - `llm_tweaked`                      — playbook directives tweaked by Haiku LLM (ADP-002)
+   * - `llm_full`                         — full directive generation by Sonnet LLM (ADP-002)
+   * - `default`                          — confidence too low, no adaptation
+   * - `playbook_fallback_llm_capped`     — LLM spend cap hit, fell back to playbook
+   * - `playbook_fallback_llm_unavailable`— LLM unavailable or error, fell back to playbook
    */
-  source: 'playbook' | 'llm_tweaked' | 'llm_full' | 'default';
+  source:
+    | 'playbook'
+    | 'llm_tweaked'
+    | 'llm_full'
+    | 'default'
+    | 'playbook_fallback_llm_capped'
+    | 'playbook_fallback_llm_unavailable';
   /** ISO 8601 timestamp of when this response was generated. */
   generated_at: string;
 }

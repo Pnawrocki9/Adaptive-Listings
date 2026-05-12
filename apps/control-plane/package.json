@@ -13,6 +13,7 @@
     "clean": "rm -rf .next"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
     "@estalara/auth": "workspace:*",
     "@estalara/db": "workspace:*",
     "@estalara/sdk": "workspace:*",

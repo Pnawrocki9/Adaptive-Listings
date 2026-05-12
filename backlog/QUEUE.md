@@ -1,7 +1,7 @@
 # Backlog Queue
 
-**Updated 2026-05-11T06:00Z by pm-orchestrator.** Sprint 7 Phase 2 initiated — ADP-004, ADP-002,
-DQS-001 queued. Phase 1 (ADP-001, ADP-003) confirmed DONE on main @ ecf5d4b.
+**Updated 2026-05-12T08:30Z by pm-orchestrator.** Sprint 7 Phase 2 in progress — ADP-004 DONE
+(merged @ 82f0e42). ADP-002 and DQS-001 IN_PROGRESS in parallel.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -33,7 +33,7 @@ updates.
 | 4      | 6     | Intent ontology v1 + Modal scaffolding                               | tbd     | —    | —       | —     | tbd     |
 | 5      | 7     | LLM gateway + intent extraction from chat                            | tbd     | —    | —       | —     | tbd     |
 | 6      | 8     | Embeddings + archetype matching + decision API                       | 3       | 3    | 0       | 0     | 0       |
-| 7      | 9     | Decision API real logic + adaptation playbooks                       | 2       | 1    | 1       | 0     | 0       |
+| 7      | 9     | Decision API real logic + adaptation playbooks                       | 5       | 3    | 2       | 0     | 0       |
 | 8      | 10    | A/B holdout framework + analytics dashboard                          | tbd     | —    | —       | —     | tbd     |
 | 9      | 11    | DPIA + ROPA + DSR + fair-housing + continuous validation             | tbd     | —    | —       | —     | tbd     |
 | 10     | 12    | Multi-region deploy + observability + load tests                     | tbd     | —    | —       | —     | tbd     |
@@ -622,44 +622,53 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-ADP-004
   title: SDK Tier 1 DOM mutations — full applyDirectives() implementation
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 10
   depends_on: [TICKET-ADP-003]
   assigned_to: sdk-engineer
-  started_at: '2026-05-11T06:00:00Z'
+  started_at: '2026-05-12T06:00:00Z'
+  completed_at: '2026-05-12T21:33:43Z'
   pr: '#69'
+  commit: 82f0e42
   spec: backlog/sprint-7/TICKET-ADP-004.md
 
 - id: TICKET-ADP-002
   title: LiteLLM gateway — Haiku/Sonnet routing for Decision API
   agent: backend-engineer
-  status: BLOCKED
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-ADP-004]
+  assigned_to: backend-engineer
+  started_at: '2026-05-12T08:30:00Z'
   spec: backlog/sprint-7/TICKET-ADP-002.md
 
 - id: TICKET-DQS-001
   title: Convergence metrics — DqsTracker + session.quality.snapshot + ClickHouse DDL
   agent: data-engineer
-  status: BLOCKED
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-ADP-004]
+  assigned_to: data-engineer
+  started_at: '2026-05-12T08:30:00Z'
   spec: backlog/sprint-7/TICKET-DQS-001.md
 ```
 
 ## Currently in flight
 
-(none — waiting for human to merge PR #69 to unblock ADP-002 and DQS-001)
+- TICKET-ADP-002 (backend-engineer, IN_PROGRESS, started 2026-05-12T08:30:00Z)
+- TICKET-DQS-001 (data-engineer, IN_PROGRESS, started 2026-05-12T08:30:00Z)
 
 ## Awaiting human review
 
-- TICKET-ADP-004 (PR #69) — CI green, AC verified
+(none)
 
 ## Recent merges
 
+- 2026-05-12T21:33:43Z — TICKET-ADP-004 (PR #69, commit 82f0e42): SDK Tier 1 DOM mutations — full
+  applyDirectives() implementation
 - 2026-05-11T00:00Z — TICKET-ARCH-001 (commit f0aca06): Expand archetype ontology — 3 → 18
   archetypes
 - 2026-05-11T00:00Z — TICKET-EMB-001 (commit be4e366): Embeddings pipeline — pgvector + fingerprint

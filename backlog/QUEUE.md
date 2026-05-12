@@ -622,12 +622,13 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-ADP-004
   title: SDK Tier 1 DOM mutations — full applyDirectives() implementation
   agent: sdk-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 10
   depends_on: [TICKET-ADP-003]
   assigned_to: sdk-engineer
   started_at: '2026-05-11T06:00:00Z'
+  pr: '#69'
   spec: backlog/sprint-7/TICKET-ADP-004.md
 
 - id: TICKET-ADP-002
@@ -651,11 +652,11 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Currently in flight
 
-- TICKET-ADP-004 (sdk-engineer, IN_PROGRESS, started 2026-05-11T06:00:00Z)
+(none — waiting for human to merge PR #69 to unblock ADP-002 and DQS-001)
 
 ## Awaiting human review
 
-(none)
+- TICKET-ADP-004 (PR #69) — CI green, AC verified
 
 ## Recent merges
 

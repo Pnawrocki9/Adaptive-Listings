@@ -14,6 +14,17 @@ export * from './schemas/index.js';
 export * from './errors.js';
 export * from './demo.js';
 export * from './directives.js';
+export type {
+  TenantSiteSchema,
+  PageType,
+  SelectorStrategy,
+  CardFieldMappings,
+  DataExtractorsPerCard,
+  SlotSelectors,
+  ArchetypeHint,
+  IndexSchema,
+  DetailSchema,
+} from './tenant-site-schema.js';
 
 /** Current shared package version string. */
 export const SHARED_VERSION = '0.0.0' as const;

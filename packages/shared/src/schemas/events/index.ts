@@ -59,6 +59,7 @@ import {
   TourRequestedEventSchema,
 } from './inquiry.js';
 import { SessionStartedEventSchema } from './device-context.js';
+import { SessionQualitySnapshotEventSchema } from './session-quality.js';
 
 export * from './page-lifecycle.js';
 export * from './mouse-scroll.js';
@@ -70,10 +71,11 @@ export * from './chat.js';
 export * from './cross-listing.js';
 export * from './inquiry.js';
 export * from './device-context.js';
+export * from './session-quality.js';
 
 /**
- * `EventSchema` — the canonical discriminated union over all 33 Estalara event types
- * (10 categories from Master Design C.1). Use this for runtime validation at every boundary.
+ * `EventSchema` — the canonical discriminated union over all 34 Estalara event types
+ * (10 categories from Master Design C.1, plus session quality / DQS — TICKET-DQS-001).
  *
  * Adding a new event type:
  *   1. Define payload + extended event schemas in the appropriate category file
@@ -124,6 +126,8 @@ export const EventSchema = z.discriminatedUnion('type', [
   TourRequestedEventSchema,
   // device / context (1)
   SessionStartedEventSchema,
+  // session quality / DQS (1) — TICKET-DQS-001
+  SessionQualitySnapshotEventSchema,
 ]);
 export type Event = z.infer<typeof EventSchema>;
 
@@ -162,5 +166,7 @@ export const EVENT_TYPES = [
   'inquiry.completed',
   'tour.requested',
   'session.started',
+  // DQS — TICKET-DQS-001
+  'session.quality.snapshot',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];

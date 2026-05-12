@@ -1,7 +1,7 @@
 # Backlog Queue
 
-**Updated 2026-05-11T00:00Z by pm-orchestrator.** Sprint 7 Phase 1 initiated — ADP-001 and ADP-003
-queued. Sprint 6 prerequisites (ARCH-001, EMB-001, DB-001) confirmed DONE on main.
+**Updated 2026-05-11T06:00Z by pm-orchestrator.** Sprint 7 Phase 2 initiated — ADP-004, ADP-002,
+DQS-001 queued. Phase 1 (ADP-001, ADP-003) confirmed DONE on main @ ecf5d4b.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -608,18 +608,50 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-ADP-003
   title: Adaptation playbooks — pre-computed directives for all 18 archetypes
   agent: sdk-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P0
   estimated_hours: 8
   depends_on: [TICKET-ADP-001]
   assigned_to: sdk-engineer
   started_at: '2026-05-11T20:36:18Z'
+  completed_at: '2026-05-11T22:00:00Z'
+  pr: '#68'
+  commit: ecf5d4b
   spec: backlog/sprint-7/TICKET-ADP-003.md
+
+- id: TICKET-ADP-004
+  title: SDK Tier 1 DOM mutations — full applyDirectives() implementation
+  agent: sdk-engineer
+  status: IN_PROGRESS
+  priority: P0
+  estimated_hours: 10
+  depends_on: [TICKET-ADP-003]
+  assigned_to: sdk-engineer
+  started_at: '2026-05-11T06:00:00Z'
+  spec: backlog/sprint-7/TICKET-ADP-004.md
+
+- id: TICKET-ADP-002
+  title: LiteLLM gateway — Haiku/Sonnet routing for Decision API
+  agent: backend-engineer
+  status: BLOCKED
+  priority: P1
+  estimated_hours: 8
+  depends_on: [TICKET-ADP-004]
+  spec: backlog/sprint-7/TICKET-ADP-002.md
+
+- id: TICKET-DQS-001
+  title: Convergence metrics — DqsTracker + session.quality.snapshot + ClickHouse DDL
+  agent: data-engineer
+  status: BLOCKED
+  priority: P1
+  estimated_hours: 8
+  depends_on: [TICKET-ADP-004]
+  spec: backlog/sprint-7/TICKET-DQS-001.md
 ```
 
 ## Currently in flight
 
-- TICKET-ADP-003 (sdk-engineer, IN_PROGRESS, started 2026-05-11T20:36:18Z)
+- TICKET-ADP-004 (sdk-engineer, IN_PROGRESS, started 2026-05-11T06:00:00Z)
 
 ## Awaiting human review
 

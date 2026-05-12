@@ -17,7 +17,12 @@ import { setupObservers } from './core/observer.js';
 import { createShadowHost } from './ui/shadow-host.js';
 import { renderQuizTrigger, isQuizDismissed } from './ui/quiz-trigger.js';
 import { renderQuizWidget } from './ui/quiz-widget.js';
-import { fetchDirectives, applyDirectives } from './core/adapt.js';
+import {
+  fetchDirectives,
+  applyDirectives,
+  setEventQueueRef,
+  resetAdaptState,
+} from './core/adapt.js';
 import {
   applyBehavioralSignal,
   applyQuizPrior,
@@ -28,6 +33,7 @@ import {
 import type { CollectedEvent } from './core/events.js';
 import type { IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
+import type { ArchetypeId } from '@estalara/shared';
 
 /** Current SDK version string. */
 export const SDK_VERSION = '0.0.0' as const;
@@ -35,6 +41,9 @@ export const SDK_VERSION = '0.0.0' as const;
 /** Event queue flushed every BATCH_INTERVAL_MS or on page unload. */
 const eventQueue: CollectedEvent[] = [];
 let flushTimer: ReturnType<typeof setInterval> | null = null;
+
+// Wire event queue into adapt module for adapt.applied / adapt.skipped event logging
+setEventQueueRef(eventQueue);
 
 const BATCH_INTERVAL_MS = 5_000;
 
@@ -54,7 +63,8 @@ async function init(): Promise<void> {
     // 2. Read configuration from data-* attributes
     const config = readConfig({ dataset: script.dataset });
 
-    // 3. Initialize anonymous session
+    // 3. Initialize anonymous session (reset idempotency state for new session)
+    resetAdaptState();
     const session = await getOrCreateSession();
     const currentSession = incrementPageCount(session);
 
@@ -68,7 +78,11 @@ async function init(): Promise<void> {
     if (config.decisionApiUrl) {
       const response = await fetchDirectives(config, currentSession, 'listing_list');
       if (response) {
-        applyDirectives(response.directives);
+        applyDirectives(response.directives, {
+          archetypeId: response.archetype as ArchetypeId,
+          confidence: response.confidence,
+          sessionId: currentSession.sessionId,
+        });
         if (config.debug) {
           console.log(
             `[Estalara] Archetype: ${response.archetype} (${String(response.confidence)})`,

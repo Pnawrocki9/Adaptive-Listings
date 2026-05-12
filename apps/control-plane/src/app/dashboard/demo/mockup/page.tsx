@@ -123,6 +123,7 @@ export default function MockupListingsPage() {
               href={`/dashboard/demo/mockup/listings/${listing.slug}`}
               className="group overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 transition-all hover:shadow-md hover:ring-gray-300"
               data-estalara-listing
+              data-estalara-listing-id={listing.slug}
               data-listing-id={listing.slug}
               data-estalara-cta="view-details"
             >
@@ -146,7 +147,13 @@ export default function MockupListingsPage() {
               {/* Content */}
               <div className="p-4">
                 <div className="mb-1 flex items-start justify-between gap-2">
-                  <h2 className="line-clamp-2 text-sm font-semibold text-gray-900 group-hover:text-blue-600">
+                  <h2
+                    data-estalara-slot="headline"
+                    data-estalara-yield={String(listing.yield_pct ?? '')}
+                    data-estalara-bedrooms={String(listing.bedrooms)}
+                    data-estalara-area={String(listing.area_m2)}
+                    className="line-clamp-2 text-sm font-semibold text-gray-900 group-hover:text-blue-600"
+                  >
                     {listing.title}
                   </h2>
                   <span className="shrink-0 text-base font-bold text-gray-900">
@@ -178,6 +185,22 @@ export default function MockupListingsPage() {
                     </span>
                   )}
                 </div>
+
+                {/* Feature section slot — adapted by Estalara personalization engine */}
+                <div data-estalara-slot="feature-section" className="mt-2 text-xs text-gray-400">
+                  Property Highlights
+                </div>
+
+                {/* CTA slot */}
+                <button
+                  data-estalara-slot="cta"
+                  className="mt-3 w-full rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                  onClick={(e) => {
+                    e.preventDefault();
+                  }}
+                >
+                  View Listing
+                </button>
               </div>
             </Link>
           ))}

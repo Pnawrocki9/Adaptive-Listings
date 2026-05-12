@@ -445,3 +445,129 @@ real SDK playbooks.
 - `infra/clickhouse/migrations/0003_create_adaptation_decisions.sql` — analytics table DDL
 
 ---
+
+## Sprint 7 Phase 2 — Architect review
+
+**From:** pm-orchestrator (architect role) **To:** sdk-engineer (ADP-004), backend-engineer
+(ADP-002), data-engineer (DQS-001) **Date:** 2026-05-11T06:00:00Z **Summary:** Pre-implementation
+findings for Sprint 7 Phase 2.
+
+### Finding A1 — adapt.ts local Directive type is misaligned with shared directives.ts
+
+`packages/sdk/src/core/adapt.ts` defines a LOCAL `Directive` interface (lines 13-18) with:
+
+- `slot: string`
+- `type: 'text' | 'order' | 'visibility' | 'class'`
+- `value: string | string[]`
+
+`packages/shared/src/directives.ts` defines `TextDirective` and `ClassDirective` which are
+structurally different:
+
+- `TextDirective` has `slot`, `value` (string), `archetype`, `confidence`
+- `ClassDirective` has `selector` (NOT `slot`), `add[]`, `remove[]`, `archetype`, `confidence`
+
+The current `applyDirectives()` in adapt.ts operates on local `Directive[]` and handles
+ClassDirective via `directive.slot` (wrong) and `directive.value as string[]` (wrong). ADP-004 must
+replace the function signature to accept `(TextDirective | ClassDirective)[]` (imported from
+`@estalara/shared`) and implement correct logic per each type. The local `Directive` interface
+should be removed or kept only for legacy internal use with a deprecation comment.
+
+### Finding A2 — AdaptResponse in adapt.ts uses local Directive, not AdaptationDirectives from shared
+
+`fetchDirectives()` returns `AdaptResponse` which has `directives: Directive[]`. After ADP-004's
+work, `fetchDirectives()` should return the shared `AdaptationDirectives` type (or the response
+should be unwrapped to pass `directives: (TextDirective | ClassDirective)[]` to
+`applyDirectives()`). The safest path: keep `fetchDirectives()` returning a local response type with
+the correct directive union, and have `applyDirectives()` accept
+`(TextDirective | ClassDirective)[]`. This avoids renaming the entire response type. Confirm the
+Decision API now returns `AdaptationDirectives` shape per ADP-001 — the SDK `fetchDirectives()` must
+accept that response shape.
+
+### Finding A3 — Event queue for adapt.applied/adapt.skipped events
+
+`packages/sdk/src/core/events.ts` exposes `CollectedEvent` type and `dispatchEvents()` function. The
+module-level event collection works via a queue flushed on 5s interval in
+`packages/sdk/src/index.ts`. ADP-004 needs to push `adapt.applied` and `adapt.skipped` events into
+this same queue. sdk-engineer must import the event queue from `packages/sdk/src/index.ts` (or
+expose a `queueEvent()` helper in events.ts) to push into the flush cycle. Do NOT create a separate
+flush timer.
+
+### Finding A4 — Idempotency Set must survive session resets
+
+The idempotency `Set<string>` used to track applied directive fingerprints must be reset when
+`getOrCreateSession()` returns a fresh session (i.e., `sessionStorage` has no stored session or a
+new tab is opened). sdk-engineer should either: (a) tie the Set lifetime to the session by exporting
+a `resetAdaptState()` function from adapt.ts that clears the Set, called from session initialization
+in `src/index.ts`, OR (b) key the fingerprint Set on session_id so it auto-invalidates across
+sessions.
+
+### Finding A5 — DOM ready guard interacts with DOMContentLoaded listener leak
+
+The DOM-ready guard (queue directives if `document.readyState === 'loading'`) must use a one-time
+event listener (`{ once: true }` option on addEventListener) to avoid accumulating listeners across
+multiple `applyDirectives()` calls before DOM is ready.
+
+### Finding A6 — DQS-001 session integration point
+
+`packages/sdk/src/index.ts` wires the session, event queue, and observer together. DqsTracker from
+DQS-001 should be instantiated once in `src/index.ts` (not in dqs.ts itself). The 5th-event trigger
+should hook into the event dispatch path — data-engineer should add a counter in the existing event
+queue flush logic rather than adding a second observer. Concrete integration: add
+`onEventDispatched?: (count: number) => void` callback to the `SdkConfig` or expose a module-level
+counter in events.ts.
+
+### Finding A7 — commitlint DQS- prefix missing
+
+`commitlint.config.cjs` at line 104 has regex:
+`/\[TICKET-(?:FIX-|INFRA-|DEMO-|ADM-|QUIZ-|DB-|EMB-|ARCH-|ADP-)?\d+\]|\[ESCALATION\]/` DQS- prefix
+is NOT present. DQS-001 FIRST commit must add `DQS-` to this regex. If this is not done first, ALL
+DQS-001 commits will fail CI commitlint check.
+
+### Finding A8 — ADP-002 ClickHouse cost-cap query
+
+ADP-002 needs to query ClickHouse rolling 24h `cost_usd` sum for the circuit breaker. The existing
+ClickHouse client pattern is in `apps/ingest/` or `infra/clickhouse/`. Check how TICKET-014/015
+wired the ClickHouse HTTP client — backend-engineer should reuse the same pattern rather than
+introducing a new HTTP client library.
+
+### No blockers. sdk-engineer may proceed with ADP-004. ADP-002 and DQS-001 wait for ADP-004 merge.
+
+---
+
+## TICKET-ADP-003 → TICKET-ADP-004, TICKET-ADP-002, TICKET-DQS-001
+
+**From:** sdk-engineer (ADP-003) **To:** sdk-engineer (ADP-004), backend-engineer (ADP-002),
+data-engineer (DQS-001) **Date:** 2026-05-11T22:00:00Z **Summary:** ADP-003 merged via PR #68
+(commit ecf5d4b). 18 archetype playbooks are live in `packages/sdk/src/core/playbooks/archetypes/`.
+The `./playbooks` subpath export is wired in `packages/sdk/package.json` and tsup.config.ts. The
+control-plane Decision API now imports from `@estalara/sdk/playbooks` (stub deleted).
+
+**Action required for ADP-004 (sdk-engineer):**
+
+- `applyDirectives()` at `packages/sdk/src/core/adapt.ts:70` has incomplete implementation with
+  wrong ClassDirective handling (see Architect Finding A1). Full spec in ticket brief.
+- Archetype playbook slot values are in e.g. `yield-hunter.ts` under `slots[]` — use these as the
+  expected test values in E2E assertions.
+
+**Action required for ADP-002 (backend-engineer):**
+
+- `PlaybookEntry` type is exported from `@estalara/sdk/playbooks`. Import it for the
+  `LlmGatewayInput.basePlaybook` type.
+- The Decision API route at `apps/control-plane/src/app/api/adapt/route.ts` is the wiring point.
+
+**Action required for DQS-001 (data-engineer):**
+
+- Read `packages/sdk/src/core/events.ts` for the event queue integration point.
+- The ArchetypeId type lives in `packages/shared/src/directives.ts` — import from there, not sdk.
+
+**Files produced by ADP-003:**
+
+- `packages/sdk/src/core/playbooks/archetypes/*.ts` — 18 archetype playbook files
+- `packages/sdk/src/core/playbooks/index.ts` — PlaybookRegistry with getPlaybook(),
+  getAllPlaybooks()
+- `packages/sdk/src/core/playbooks/types.ts` — PlaybookEntry, SlotDirective, ListingClassRule types
+- `packages/sdk/tsup.config.ts` — playbooks subpath entry added
+- `packages/sdk/package.json` — ./playbooks subpath export added
+- `apps/control-plane/src/app/api/adapt/route.ts` — updated to import from @estalara/sdk/playbooks
+
+---

@@ -10,46 +10,135 @@
       data-tier="observer"
       data-debug="true"
       data-ingest-url="http://localhost:4444/mock-ingest"
+      data-decision-url="http://localhost:4444/mock-decision"
     ></script>
   </head>
   <body>
     <h1>Test Listings Page</h1>
 
-    <!-- Mock listing cards with data-listing-id -->
-    <div class="listing-card" data-estalara-listing data-listing-id="listing-001">
-      <h2>Marbella Villa</h2>
+    <!-- Mock listing cards with data-listing-id and Estalara slot attributes -->
+    <div
+      class="listing-card"
+      data-estalara-listing
+      data-estalara-listing-id="listing-001"
+      data-listing-id="listing-001"
+    >
+      <h2
+        data-estalara-slot="headline"
+        data-estalara-yield="5.2"
+        data-estalara-bedrooms="4"
+        data-estalara-area="380"
+      >
+        Marbella Villa
+      </h2>
+      <div data-estalara-slot="feature-section">Property Highlights</div>
       <p>€1,250,000</p>
+      <button data-estalara-slot="cta">View Listing</button>
     </div>
-    <div class="listing-card" data-estalara-listing data-listing-id="listing-002">
-      <h2>Algarve Apartment</h2>
+    <div
+      class="listing-card"
+      data-estalara-listing
+      data-estalara-listing-id="listing-002"
+      data-listing-id="listing-002"
+    >
+      <h2
+        data-estalara-slot="headline"
+        data-estalara-yield="6.1"
+        data-estalara-bedrooms="2"
+        data-estalara-area="95"
+      >
+        Algarve Apartment
+      </h2>
+      <div data-estalara-slot="feature-section">Property Highlights</div>
       <p>€320,000</p>
+      <button data-estalara-slot="cta">View Listing</button>
     </div>
-    <div class="listing-card" data-estalara-listing data-listing-id="listing-003">
-      <h2>Tuscany Farmhouse</h2>
+    <div
+      class="listing-card"
+      data-estalara-listing
+      data-estalara-listing-id="listing-003"
+      data-listing-id="listing-003"
+    >
+      <h2
+        data-estalara-slot="headline"
+        data-estalara-yield=""
+        data-estalara-bedrooms="5"
+        data-estalara-area="450"
+      >
+        Tuscany Farmhouse
+      </h2>
+      <div data-estalara-slot="feature-section">Property Highlights</div>
       <p>€850,000</p>
+      <button data-estalara-slot="cta">View Listing</button>
     </div>
 
     <!-- Mock CTA button -->
     <button class="estalara-cta" data-estalara-cta="book-viewing">Book a Viewing</button>
 
-    <!-- Capture ingest requests for testing -->
+    <!-- Capture ingest and decision API requests for testing -->
     <script>
       window.__capturedRequests = [];
+      window.__adaptApplied = false;
 
-      // Intercept fetch to capture ingest calls
-      const originalFetch = window.fetch;
+      // Intercept fetch to capture ingest calls and mock decision API
+      var originalFetch = window.fetch;
       window.fetch = function (url, options) {
-        if (typeof url === 'string' && url.includes('mock-ingest')) {
+        var urlStr = typeof url === 'string' ? url : String(url);
+
+        if (urlStr.includes('mock-ingest')) {
           try {
             window.__capturedRequests.push({
-              url: url,
+              url: urlStr,
               body: JSON.parse((options && options.body) || '{}'),
             });
           } catch (e) {
-            window.__capturedRequests.push({ url: url, body: {} });
+            window.__capturedRequests.push({ url: urlStr, body: {} });
           }
           return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
         }
+
+        // Mock decision API: return yield_hunter directives
+        if (urlStr.includes('mock-decision')) {
+          var mockResponse = {
+            session_id: 'test-session-001',
+            archetype: 'yield_hunter',
+            confidence: 0.9,
+            similarity: 0.92,
+            tier: 1,
+            source: 'playbook',
+            generated_at: new Date().toISOString(),
+            directives: [
+              {
+                type: 'text',
+                slot: 'headline',
+                value: 'Rental Yield: {yield}% | Great Investment',
+                archetype: 'yield_hunter',
+                confidence: 0.9,
+              },
+              {
+                type: 'text',
+                slot: 'feature-section',
+                value: 'Investment Performance',
+                archetype: 'yield_hunter',
+                confidence: 0.9,
+              },
+              {
+                type: 'text',
+                slot: 'cta',
+                value: 'View ROI Analysis',
+                archetype: 'yield_hunter',
+                confidence: 0.9,
+              },
+            ],
+          };
+          return Promise.resolve(
+            new Response(JSON.stringify(mockResponse), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
+
         return originalFetch.apply(this, arguments);
       };
     </script>

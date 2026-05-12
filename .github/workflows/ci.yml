@@ -296,6 +296,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared package (required by SDK DTS build)
+        run: pnpm --filter=@estalara/shared build
+
       - name: Build SDK
         run: pnpm --filter=@estalara/sdk build
 

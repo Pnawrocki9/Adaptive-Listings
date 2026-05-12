@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
-import { fetchDirectives, applyDirectives } from '../core/adapt.js';
-import type { AdaptResponse, Directive } from '../core/adapt.js';
+import {
+  fetchDirectives,
+  applyDirectives,
+  resetAdaptState,
+  setEventQueueRef,
+} from '../core/adapt.js';
+import type { AdaptResponse } from '../core/adapt.js';
 import type { SdkConfig } from '../core/config.js';
 import type { SessionState } from '../core/session.js';
+import type { TextDirective, ClassDirective } from '@estalara/shared';
+import type { CollectedEvent } from '../core/events.js';
 
 const BASE_CONFIG: SdkConfig = {
   apiKey: 'EXAMPLE_api_key',
@@ -25,15 +32,41 @@ const MOCK_RESPONSE: AdaptResponse = {
   archetype: 'investor',
   confidence: 0.87,
   directives: [
-    { slot: 'hero_headline', type: 'text', value: 'High-yield investment opportunities' },
-    { slot: 'cta_label', type: 'text', value: 'View ROI analysis' },
-  ],
+    {
+      type: 'text',
+      slot: 'hero_headline',
+      value: 'High-yield investment opportunities',
+      archetype: 'yield_hunter',
+      confidence: 0.87,
+    },
+    {
+      type: 'text',
+      slot: 'cta_label',
+      value: 'View ROI analysis',
+      archetype: 'yield_hunter',
+      confidence: 0.87,
+    },
+  ] as TextDirective[],
   ttl_seconds: 300,
 };
 
+/** Shared event queue for tests that need to verify adapt events. */
+let testEventQueue: CollectedEvent[];
+
+beforeEach(() => {
+  testEventQueue = [];
+  setEventQueueRef(testEventQueue);
+  resetAdaptState();
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
+  resetAdaptState();
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// fetchDirectives
+// ─────────────────────────────────────────────────────────────────────────────
 
 describe('fetchDirectives', () => {
   it('returns null when decisionApiUrl is not set', async () => {
@@ -107,65 +140,399 @@ describe('fetchDirectives', () => {
   });
 });
 
-describe('applyDirectives', () => {
-  it('sets textContent on matching slot elements', () => {
+// ─────────────────────────────────────────────────────────────────────────────
+// applyDirectives — TextDirective
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('applyDirectives — TextDirective', () => {
+  it('sets textContent on matching slot elements (no placeholders)', () => {
     const el = document.createElement('h1');
     el.setAttribute('data-estalara-slot', 'hero_headline');
     document.body.appendChild(el);
 
-    const directives: Directive[] = [
-      { slot: 'hero_headline', type: 'text', value: 'Find your dream home' },
+    const directives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'hero_headline',
+        value: 'Find your dream home',
+        archetype: 'yield_hunter',
+        confidence: 0.9,
+      },
     ];
-    applyDirectives(directives);
+    applyDirectives(directives, {
+      archetypeId: 'yield_hunter',
+      confidence: 0.9,
+      sessionId: 'sess-001',
+    });
 
     expect(el.textContent).toBe('Find your dream home');
     document.body.removeChild(el);
   });
 
-  it('adds CSS classes for class directives', () => {
-    const el = document.createElement('div');
-    el.setAttribute('data-estalara-slot', 'highlight');
+  it('interpolates {bedrooms} placeholder from data-estalara-bedrooms attribute', () => {
+    const el = document.createElement('h2');
+    el.setAttribute('data-estalara-slot', 'headline');
+    el.setAttribute('data-estalara-bedrooms', '4');
     document.body.appendChild(el);
 
-    const directives: Directive[] = [
-      { slot: 'highlight', type: 'class', value: ['investment-badge', 'featured'] },
+    const directives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: '{bedrooms}BR Family Home',
+        archetype: 'family_buyer',
+        confidence: 0.85,
+      },
     ];
-    applyDirectives(directives);
+    applyDirectives(directives, {
+      archetypeId: 'family_buyer',
+      confidence: 0.85,
+      sessionId: 'sess-002',
+    });
 
-    expect(el.classList.contains('investment-badge')).toBe(true);
-    expect(el.classList.contains('featured')).toBe(true);
+    expect(el.textContent).toBe('4BR Family Home');
     document.body.removeChild(el);
   });
 
+  it('leaves {unknown_token} literal when attribute is missing, emits adapt.skipped warning', () => {
+    const el = document.createElement('h2');
+    el.setAttribute('data-estalara-slot', 'headline');
+    // intentionally NO data-estalara-unknown-token attribute
+    document.body.appendChild(el);
+
+    const directives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Hello {unknown_token} World',
+        archetype: 'family_buyer',
+        confidence: 0.8,
+      },
+    ];
+    applyDirectives(directives, {
+      archetypeId: 'family_buyer',
+      confidence: 0.8,
+      sessionId: 'sess-003',
+    });
+
+    expect(el.textContent).toBe('Hello {unknown_token} World');
+
+    const skipEvents = testEventQueue.filter((e) => e.type === 'adapt.skipped');
+    expect(skipEvents.length).toBeGreaterThan(0);
+    const reasons = skipEvents.map((e) => e.payload.reason);
+    expect(reasons).toContain('unresolved_token_unknown_token');
+
+    document.body.removeChild(el);
+  });
+
+  it('handles {school_rating} → data-estalara-school-rating (kebab conversion)', () => {
+    const el = document.createElement('h2');
+    el.setAttribute('data-estalara-slot', 'headline');
+    el.setAttribute('data-estalara-school-rating', '9.2');
+    document.body.appendChild(el);
+
+    const directives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Near {school_rating}/10 rated schools',
+        archetype: 'family_buyer',
+        confidence: 0.8,
+      },
+    ];
+    applyDirectives(directives, {
+      archetypeId: 'family_buyer',
+      confidence: 0.8,
+      sessionId: 'sess-004',
+    });
+
+    expect(el.textContent).toBe('Near 9.2/10 rated schools');
+    document.body.removeChild(el);
+  });
+
+  it('emits adapt.skipped when slot has no matching elements', () => {
+    const directives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'nonexistent_slot_xyz',
+        value: 'ignored',
+        archetype: 'yield_hunter',
+        confidence: 0.9,
+      },
+    ];
+    expect(() => {
+      applyDirectives(directives, {
+        archetypeId: 'yield_hunter',
+        confidence: 0.9,
+        sessionId: 'sess-005',
+      });
+    }).not.toThrow();
+
+    const skipEvents = testEventQueue.filter((e) => e.type === 'adapt.skipped');
+    expect(skipEvents.length).toBeGreaterThan(0);
+    const reasons = skipEvents.map((e) => e.payload.reason);
+    expect(reasons).toContain('no_slot_elements');
+  });
+
+  it('emits adapt.applied event for successful application', () => {
+    const el = document.createElement('h1');
+    el.setAttribute('data-estalara-slot', 'headline');
+    document.body.appendChild(el);
+
+    const directives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Great Rental Property',
+        archetype: 'yield_hunter',
+        confidence: 0.9,
+      },
+    ];
+    applyDirectives(directives, {
+      archetypeId: 'yield_hunter',
+      confidence: 0.9,
+      sessionId: 'sess-006',
+    });
+
+    const appliedEvents = testEventQueue.filter((e) => e.type === 'adapt.applied');
+    expect(appliedEvents.length).toBe(1);
+    const firstEvent = appliedEvents[0];
+    expect(firstEvent).toBeDefined();
+    const payload = firstEvent!.payload;
+    expect(payload.slot_or_selector).toBe('headline');
+    expect(payload.archetype).toBe('yield_hunter');
+
+    document.body.removeChild(el);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// applyDirectives — ClassDirective
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('applyDirectives — ClassDirective', () => {
+  it('adds and removes CSS classes in correct order (add wins)', () => {
+    const el = document.createElement('div');
+    el.setAttribute('data-estalara-listing-id', 'villa-001');
+    el.classList.add('estalara-suppress'); // pre-existing class to be removed
+    document.body.appendChild(el);
+
+    const directives: ClassDirective[] = [
+      {
+        type: 'class',
+        selector: '[data-estalara-listing-id]',
+        add: ['estalara-boost', 'featured'],
+        remove: ['estalara-suppress'],
+        archetype: 'yield_hunter',
+        confidence: 0.9,
+      },
+    ];
+    applyDirectives(directives, {
+      archetypeId: 'yield_hunter',
+      confidence: 0.9,
+      sessionId: 'sess-007',
+    });
+
+    expect(el.classList.contains('estalara-boost')).toBe(true);
+    expect(el.classList.contains('featured')).toBe(true);
+    expect(el.classList.contains('estalara-suppress')).toBe(false);
+
+    document.body.removeChild(el);
+  });
+
+  it('rejects disallowed selector (.tenant-class) and emits adapt.skipped, no DOM mutation', () => {
+    const el = document.createElement('div');
+    el.classList.add('tenant-class');
+    document.body.appendChild(el);
+
+    const directives: ClassDirective[] = [
+      {
+        type: 'class',
+        selector: '.tenant-class', // disallowed — not [data-estalara-*]
+        add: ['injected'],
+        remove: [],
+        archetype: 'yield_hunter',
+        confidence: 0.9,
+      },
+    ];
+    applyDirectives(directives, {
+      archetypeId: 'yield_hunter',
+      confidence: 0.9,
+      sessionId: 'sess-008',
+    });
+
+    // No class mutation should have happened
+    expect(el.classList.contains('injected')).toBe(false);
+
+    const skipEvents = testEventQueue.filter((e) => e.type === 'adapt.skipped');
+    expect(skipEvents.length).toBeGreaterThan(0);
+    const reasons = skipEvents.map((e) => e.payload.reason);
+    expect(reasons).toContain('disallowed_selector');
+
+    document.body.removeChild(el);
+  });
+
+  it('rejects #id selector as disallowed', () => {
+    const directives: ClassDirective[] = [
+      {
+        type: 'class',
+        selector: '#some-id',
+        add: ['foo'],
+        remove: [],
+        archetype: 'yield_hunter',
+        confidence: 0.9,
+      },
+    ];
+    applyDirectives(directives, {
+      archetypeId: 'yield_hunter',
+      confidence: 0.9,
+      sessionId: 'sess-009',
+    });
+
+    const skipEvents = testEventQueue.filter((e) => e.type === 'adapt.skipped');
+    expect(skipEvents.length).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Idempotency
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('applyDirectives — idempotency', () => {
+  it('applies TextDirective only once even when called twice with same directive', () => {
+    const el = document.createElement('h1');
+    el.setAttribute('data-estalara-slot', 'headline');
+    el.textContent = 'Original';
+    document.body.appendChild(el);
+
+    const directives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Adapted Headline',
+        archetype: 'yield_hunter',
+        confidence: 0.9,
+      },
+    ];
+    const ctx = { archetypeId: 'yield_hunter' as const, confidence: 0.9, sessionId: 'sess-010' };
+
+    applyDirectives(directives, ctx);
+    // Change the DOM text directly to verify second call doesn't re-apply
+    el.textContent = 'Manually changed';
+    applyDirectives(directives, ctx);
+
+    // Second call must be skipped — text stays as manually changed
+    expect(el.textContent).toBe('Manually changed');
+
+    // Event should only be emitted once
+    const appliedEvents = testEventQueue.filter((e) => e.type === 'adapt.applied');
+    expect(appliedEvents).toHaveLength(1);
+
+    document.body.removeChild(el);
+  });
+
+  it('resetAdaptState() allows re-application after reset', () => {
+    const el = document.createElement('h1');
+    el.setAttribute('data-estalara-slot', 'headline');
+    el.textContent = 'Original';
+    document.body.appendChild(el);
+
+    const directives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Adapted Headline',
+        archetype: 'yield_hunter',
+        confidence: 0.9,
+      },
+    ];
+    const ctx = { archetypeId: 'yield_hunter' as const, confidence: 0.9, sessionId: 'sess-011' };
+
+    applyDirectives(directives, ctx);
+    expect(el.textContent).toBe('Adapted Headline');
+
+    el.textContent = 'Reset text';
+    resetAdaptState();
+    testEventQueue.length = 0; // clear events for clean count
+
+    applyDirectives(directives, ctx);
+    // After reset, the directive must be re-applied
+    expect(el.textContent).toBe('Adapted Headline');
+
+    const appliedEvents = testEventQueue.filter((e) => e.type === 'adapt.applied');
+    expect(appliedEvents).toHaveLength(1);
+
+    document.body.removeChild(el);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Edge cases
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('applyDirectives — edge cases', () => {
   it('handles empty directives array without throwing', () => {
     expect(() => {
       applyDirectives([]);
     }).not.toThrow();
   });
 
-  it('ignores directives for unknown slots gracefully', () => {
-    const directives: Directive[] = [
-      { slot: 'nonexistent_slot_xyz', type: 'text', value: 'ignored' },
-    ];
-    expect(() => {
-      applyDirectives(directives);
-    }).not.toThrow();
+  it('returns early in non-browser environments', () => {
+    const originalDocument = globalThis.document;
+    vi.stubGlobal('document', undefined);
+    try {
+      expect(() => {
+        applyDirectives([
+          {
+            type: 'text' as const,
+            slot: 'test',
+            value: 'hello',
+            archetype: 'yield_hunter' as const,
+            confidence: 0.9,
+          },
+        ]);
+      }).not.toThrow();
+    } finally {
+      // Restore document so subsequent tests have DOM access
+      vi.stubGlobal('document', originalDocument);
+    }
   });
 
-  it('handles order and visibility directive types without throwing', () => {
-    const directives: Directive[] = [
+  it('does not throw for order and visibility directive types (unsupported — silently ignored)', () => {
+    // Cast as unknown to test future-compat; these types are not yet implemented
+    const directives = [
       { slot: 'listing_grid', type: 'order', value: ['id3', 'id1', 'id2'] },
       { slot: 'promo_banner', type: 'visibility', value: 'hidden' },
-    ];
+    ] as unknown as (TextDirective | ClassDirective)[];
     expect(() => {
       applyDirectives(directives);
     }).not.toThrow();
   });
 
-  it('returns early in non-browser environments', () => {
-    vi.stubGlobal('document', undefined);
-    expect(() => {
-      applyDirectives([{ slot: 'test', type: 'text', value: 'hello' }]);
-    }).not.toThrow();
+  it('applies directives to multiple matching elements', () => {
+    const els = [0, 1, 2].map(() => {
+      const el = document.createElement('h2');
+      el.setAttribute('data-estalara-slot', 'card-headline');
+      document.body.appendChild(el);
+      return el;
+    });
+
+    applyDirectives(
+      [
+        {
+          type: 'text' as const,
+          slot: 'card-headline',
+          value: 'Batch Updated',
+          archetype: 'yield_hunter' as const,
+          confidence: 0.85,
+        },
+      ],
+      { archetypeId: 'yield_hunter', confidence: 0.85, sessionId: 'sess-012' },
+    );
+
+    els.forEach((el) => {
+      expect(el.textContent).toBe('Batch Updated');
+    });
+    els.forEach((el) => document.body.removeChild(el));
   });
 });

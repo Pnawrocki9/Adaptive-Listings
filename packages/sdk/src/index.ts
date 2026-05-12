@@ -30,10 +30,14 @@ import {
   detectMismatch,
   initIntentState,
 } from './core/intent.js';
+import { DqsTracker } from './core/dqs.js';
 import type { CollectedEvent } from './core/events.js';
 import type { IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
 import type { ArchetypeId } from '@estalara/shared';
+
+/** How many intent-engine updates between automatic DQS snapshots. */
+const DQS_SNAPSHOT_INTERVAL = 5;
 
 /** Current SDK version string. */
 export const SDK_VERSION = '0.0.0' as const;
@@ -73,6 +77,29 @@ async function init(): Promise<void> {
 
     // 4a. Initialize Bayesian intent state (BASE_PRIOR → neutral)
     let currentIntentState: IntentState = initIntentState();
+
+    // 4b-dqs. Initialize per-session DQS tracker (TICKET-DQS-001)
+    const dqsTracker = new DqsTracker(currentSession.sessionId);
+    let dqsUpdateCount = 0;
+
+    /** Push a session.quality.snapshot event into the queue. */
+    function flushDqsSnapshot(): void {
+      const snap = dqsTracker.snapshot();
+      eventQueue.push({
+        type: 'session.quality.snapshot',
+        payload: snap as unknown as Record<string, unknown>,
+        ts: Date.now(),
+      });
+    }
+
+    /** Call after every intent-engine update — emits snapshot every DQS_SNAPSHOT_INTERVAL calls. */
+    function onIntentUpdate(archetype: ArchetypeId | 'neutral', confidence: number): void {
+      dqsTracker.update(archetype, confidence);
+      dqsUpdateCount += 1;
+      if (dqsUpdateCount % DQS_SNAPSHOT_INTERVAL === 0) {
+        flushDqsSnapshot();
+      }
+    }
 
     // 4b. Fetch personalization directives from Decision API (Tier 1+ feature)
     if (config.decisionApiUrl) {
@@ -114,6 +141,7 @@ async function init(): Promise<void> {
 
       // Update Bayesian intent state from this behavioral signal
       currentIntentState = applyBehavioralSignal(currentIntentState, event.type, event.payload);
+      onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
 
       if (event.type === 'listing.viewed' && shadowHost && !quizTriggered && !isQuizDismissed()) {
         listingViewCount++;
@@ -133,6 +161,7 @@ async function init(): Promise<void> {
                     answers.purpose,
                     answers.horizon,
                   );
+                  onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
                   if (config.debug) {
                     console.log(
                       `[Estalara] Quiz → archetype=${currentIntentState.archetype} confidence=${String(currentIntentState.confidence)}`,
@@ -190,12 +219,20 @@ async function init(): Promise<void> {
 
     flushTimer = setInterval(() => void flush(), BATCH_INTERVAL_MS);
 
-    // Flush remaining events before page unload (keepalive fetch)
+    // Flush remaining events before page unload (keepalive fetch).
+    // Also emit a final DQS snapshot on session end if at least one update has occurred.
+    function handleSessionEnd(): void {
+      if (dqsUpdateCount > 0) flushDqsSnapshot();
+      void flush();
+    }
+
     window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') void flush();
+      if (document.visibilityState === 'hidden') handleSessionEnd();
     });
 
-    window.addEventListener('beforeunload', () => void flush());
+    window.addEventListener('beforeunload', () => {
+      handleSessionEnd();
+    });
 
     if (config.debug) {
       console.log(`[Estalara] SDK ${SDK_VERSION} initialized`, {
@@ -209,6 +246,7 @@ async function init(): Promise<void> {
       if (flushTimer) clearInterval(flushTimer);
       cleanupObservers();
       shadowHost?.destroy();
+      dqsTracker.reset();
     };
   } catch (err) {
     // SDK initialization failed — log in debug mode, never propagate

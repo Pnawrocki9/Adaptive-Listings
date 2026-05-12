@@ -99,13 +99,14 @@ module.exports = {
 
           // Check for [TICKET-NNN], [TICKET-FIX-NNN], [TICKET-INFRA-NNN], [TICKET-DEMO-NNN],
           // [TICKET-ADM-NNN], [TICKET-QUIZ-NNN], [TICKET-DB-NNN], [TICKET-EMB-NNN],
-          // [TICKET-ARCH-NNN], [TICKET-ADP-NNN], [TICKET-DQS-NNN], or [ESCALATION] reference
+          // [TICKET-ARCH-NNN], [TICKET-ADP-NNN], [TICKET-DQS-NNN], [TICKET-AUTO-NNN],
+          // or [ESCALATION] reference
           const ticketPattern =
-            /\[TICKET-(?:FIX-|INFRA-|DEMO-|ADM-|QUIZ-|DB-|EMB-|ARCH-|ADP-|DQS-)?\d+\]|\[ESCALATION\]/;
+            /\[TICKET-(?:FIX-|INFRA-|DEMO-|ADM-|QUIZ-|DB-|EMB-|ARCH-|ADP-|DQS-|AUTO-)?\d+\]|\[ESCALATION\]/;
           if (!ticketPattern.test(subject)) {
             return [
               false,
-              'Commit message must include [TICKET-XXX], [TICKET-FIX-XXX], [TICKET-INFRA-XXX], [TICKET-DEMO-XXX], [TICKET-ADM-XXX], [TICKET-QUIZ-XXX], [TICKET-DB-XXX], [TICKET-EMB-XXX], [TICKET-ARCH-XXX], [TICKET-ADP-XXX], [TICKET-DQS-XXX], or [ESCALATION] reference. Example: feat(ingest): add validation [TICKET-042]',
+              'Commit message must include [TICKET-XXX], [TICKET-FIX-XXX], [TICKET-INFRA-XXX], [TICKET-DEMO-XXX], [TICKET-ADM-XXX], [TICKET-QUIZ-XXX], [TICKET-DB-XXX], [TICKET-EMB-XXX], [TICKET-ARCH-XXX], [TICKET-ADP-XXX], [TICKET-DQS-XXX], [TICKET-AUTO-XXX], or [ESCALATION] reference. Example: feat(ingest): add validation [TICKET-042]',
             ];
           }
 

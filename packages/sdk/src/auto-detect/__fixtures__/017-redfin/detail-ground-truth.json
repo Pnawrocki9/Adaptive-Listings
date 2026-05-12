@@ -1,0 +1,19 @@
+{
+  "platform_name": "Redfin",
+  "platform_id": "017-redfin",
+  "url_pattern_example": "https://www.redfin.com/CA/San-Francisco/123-Main-St-94105/home/12345678",
+  "slot_selectors": {
+    "headline": { "primary": "h1[class*='street-address']", "type": "text" },
+    "description": { "primary": "div[class*='remarks'] p", "type": "text" },
+    "cta_primary": { "primary": "button[class*='contactBtn']", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "div[class*='price']", "type": "currency", "currency": "USD" },
+    "bedrooms": { "primary": "div[class*='beds'] span", "type": "number" },
+    "bathrooms": { "primary": "div[class*='baths'] span", "type": "number" },
+    "area": { "primary": "div[class*='sqft'] span", "type": "number", "unit": "sqft" }
+  },
+  "similar_listings_section": "section[class*='SimilarHomes']",
+  "detection_technique": "css_modules",
+  "detection_confidence": 0.8
+}

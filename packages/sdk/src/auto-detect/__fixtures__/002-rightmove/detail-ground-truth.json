@@ -1,0 +1,19 @@
+{
+  "platform_name": "Rightmove",
+  "platform_id": "002-rightmove",
+  "url_pattern_example": "https://www.rightmove.co.uk/properties/123456789",
+  "slot_selectors": {
+    "headline": { "primary": "h1.property-header-title", "type": "text" },
+    "description": { "primary": "div[data-testid='truncated_text_container'] p", "type": "text" },
+    "cta_primary": { "primary": "button[data-testid='contact-agent-btn']", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "div[data-testid='price'] p", "type": "currency", "currency": "GBP" },
+    "bedrooms": { "primary": "span[data-testid='beds']", "type": "number" },
+    "bathrooms": { "primary": "span[data-testid='baths']", "type": "number" },
+    "area": { "primary": "div[data-testid='area']", "type": "number", "unit": "sqft" }
+  },
+  "similar_listings_section": "section[data-testid='similar-properties']",
+  "detection_technique": "data_attributes",
+  "detection_confidence": 0.92
+}

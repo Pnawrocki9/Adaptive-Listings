@@ -29,6 +29,7 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:corpus": "vitest run --reporter=verbose --config vitest.corpus.config.ts",
     "test:e2e": "pnpm build && playwright test",
     "clean": "rm -rf dist"
   },

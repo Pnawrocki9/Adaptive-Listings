@@ -1,0 +1,22 @@
+{
+  "platform_name": "app.estalara.com",
+  "platform_id": "000-app-estalara",
+  "url_pattern_example": "https://app.estalara.com/listings",
+  "listing_card_selector": "[data-estalara-listing-id]",
+  "container_selector": "[data-estalara-slot='listing-grid']",
+  "listing_count_expected": 12,
+  "card_field_mappings": {
+    "headline": { "primary": "[data-estalara-slot='headline']", "type": "text" },
+    "price": { "primary": "[data-estalara-slot='price']", "type": "currency", "currency": "EUR" },
+    "image": { "primary": "[data-estalara-slot='photo']", "type": "url" },
+    "bedrooms": { "primary": "[data-estalara-slot='bedrooms']", "type": "number" },
+    "area": { "primary": "[data-estalara-slot='area']", "type": "number", "unit": "sqm" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "[data-estalara-slot='price']", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "[data-estalara-slot='bedrooms']", "type": "number" },
+    "area_sqm": { "primary": "[data-estalara-slot='area']", "type": "number", "unit": "sqm" }
+  },
+  "detection_technique": "data_estalara",
+  "detection_confidence": 1.0
+}

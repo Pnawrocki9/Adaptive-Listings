@@ -1,0 +1,24 @@
+{
+  "platform_name": "RE/MAX",
+  "platform_id": "009-remax",
+  "url_pattern_example": "https://www.remax.com/realestateandhomes-detail/123-Main-St/12345678",
+  "slot_selectors": {
+    "headline": { "primary": "h1[data-testid='pdp-address']", "type": "text" },
+    "description": { "primary": "p[data-testid='pdp-description']", "type": "text" },
+    "cta_primary": { "primary": "button[data-testid='contact-agent-btn']", "type": "text" }
+  },
+  "data_extractors": {
+    "price": {
+      "primary": "div[data-testid='pdp-price'] span",
+      "type": "currency",
+      "currency": "USD",
+      "json_ld_path": "offers.price"
+    },
+    "bedrooms": { "primary": "span[data-testid='pdp-beds']", "type": "number" },
+    "bathrooms": { "primary": "span[data-testid='pdp-baths']", "type": "number" },
+    "area": { "primary": "span[data-testid='pdp-sqft']", "type": "number", "unit": "sqft" }
+  },
+  "similar_listings_section": "section[data-testid='similar-homes']",
+  "detection_technique": "mui",
+  "detection_confidence": 0.88
+}

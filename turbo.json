@@ -24,6 +24,11 @@
     },
     "clean": {
       "cache": false
+    },
+    "test:corpus": {
+      "dependsOn": ["^build"],
+      "outputs": ["corpus-report.json"],
+      "cache": false
     }
   }
 }

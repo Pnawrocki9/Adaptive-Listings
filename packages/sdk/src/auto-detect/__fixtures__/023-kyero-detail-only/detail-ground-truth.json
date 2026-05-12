@@ -1,0 +1,38 @@
+{
+  "platform_name": "Kyero (detail variant)",
+  "platform_id": "023-kyero-detail-only",
+  "url_pattern_example": "https://www.kyero.com/en/property/villa-costa-blanca-98765",
+  "slot_selectors": {
+    "headline": { "primary": "h1.property-title", "type": "text" },
+    "description": { "primary": "div.property-full-description p", "type": "text" },
+    "cta_primary": { "primary": "button.enquire-now-btn", "type": "text" }
+  },
+  "data_extractors": {
+    "price": {
+      "primary": "span.property-price",
+      "type": "currency",
+      "currency": "EUR",
+      "json_ld_path": "offers.price"
+    },
+    "bedrooms": {
+      "primary": "span.property-beds",
+      "type": "number",
+      "json_ld_path": "numberOfRooms"
+    },
+    "bathrooms": { "primary": "span.property-baths", "type": "number" },
+    "area": {
+      "primary": "span.property-size",
+      "type": "number",
+      "unit": "sqm",
+      "json_ld_path": "floorSize.value"
+    },
+    "year_built": {
+      "primary": "span.property-year",
+      "type": "number",
+      "json_ld_path": "yearBuilt"
+    }
+  },
+  "similar_listings_section": "section.similar-properties",
+  "detection_technique": "json_ld",
+  "detection_confidence": 0.95
+}

@@ -1,0 +1,22 @@
+{
+  "platform_name": "Zyprus",
+  "platform_id": "020-zyprus",
+  "url_pattern_example": "https://www.zyprus.com/properties-for-sale/limassol/",
+  "listing_card_selector": "div.field--name-field-listing-image",
+  "container_selector": "div.view-content",
+  "listing_count_expected": 16,
+  "card_field_mappings": {
+    "headline": { "primary": "div.field--name-title a", "type": "text" },
+    "price": { "primary": "div.field--name-field-price span", "type": "currency", "currency": "EUR" },
+    "image": { "primary": "img.field__item", "type": "url" },
+    "bedrooms": { "primary": "div.field--name-field-bedrooms span", "type": "number" },
+    "area": { "primary": "div.field--name-field-area span", "type": "number", "unit": "sqm" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "div.field--name-field-price span", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "div.field--name-field-bedrooms span", "type": "number" },
+    "area_sqm": { "primary": "div.field--name-field-area span", "type": "number", "unit": "sqm" }
+  },
+  "detection_technique": "drupal_php",
+  "detection_confidence": 0.88
+}

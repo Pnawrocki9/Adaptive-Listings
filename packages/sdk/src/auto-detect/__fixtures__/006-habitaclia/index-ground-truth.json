@@ -1,0 +1,22 @@
+{
+  "platform_name": "Habitaclia",
+  "platform_id": "006-habitaclia",
+  "url_pattern_example": "https://www.habitaclia.com/comprar-piso-barcelona.htm",
+  "listing_card_selector": "article.js-list-item",
+  "container_selector": "div#list-items",
+  "listing_count_expected": 20,
+  "card_field_mappings": {
+    "headline": { "primary": "h3.list-item-title a", "type": "text" },
+    "price": { "primary": "span.item-price", "type": "currency", "currency": "EUR" },
+    "image": { "primary": "img.item-image", "type": "url" },
+    "bedrooms": { "primary": "span.item-detail-char.room", "type": "number" },
+    "area": { "primary": "span.item-detail-char.surface", "type": "number", "unit": "sqm" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "span.item-price", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "span.item-detail-char.room", "type": "number" },
+    "area_sqm": { "primary": "span.item-detail-char.surface", "type": "number", "unit": "sqm" }
+  },
+  "detection_technique": "article_tag",
+  "detection_confidence": 0.85
+}

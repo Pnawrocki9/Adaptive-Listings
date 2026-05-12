@@ -1,0 +1,22 @@
+{
+  "platform_name": "Zoopla",
+  "platform_id": "003-zoopla",
+  "url_pattern_example": "https://www.zoopla.co.uk/for-sale/property/london/",
+  "listing_card_selector": "div[data-testid='listing-container']",
+  "container_selector": "div[data-testid='regular-listings']",
+  "listing_count_expected": 25,
+  "card_field_mappings": {
+    "headline": { "primary": "h2[data-testid='listing-title']", "type": "text" },
+    "price": { "primary": "p[data-testid='listing-price']", "type": "currency", "currency": "GBP" },
+    "image": { "primary": "img[data-testid='listing-photo']", "type": "url" },
+    "bedrooms": { "primary": "span[data-testid='beds-label']", "type": "number" },
+    "area": { "primary": "span[data-testid='floor-area']", "type": "number", "unit": "sqft" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "p[data-testid='listing-price']", "type": "currency", "currency": "GBP" },
+    "bedrooms": { "primary": "span[data-testid='beds-label']", "type": "number" },
+    "area_sqm": { "primary": "span[data-testid='floor-area']", "type": "number", "unit": "sqft" }
+  },
+  "detection_technique": "data_attributes",
+  "detection_confidence": 0.92
+}

@@ -1,0 +1,19 @@
+{
+  "platform_name": "OLX PL",
+  "platform_id": "011-olx-pl",
+  "url_pattern_example": "https://www.olx.pl/d/oferta/mieszkanie-2-pokoje-123456.html",
+  "slot_selectors": {
+    "headline": { "primary": "h4[data-testid='ad-title']", "type": "text" },
+    "description": { "primary": "div[data-testid='ad-description'] p", "type": "text" },
+    "cta_primary": { "primary": "button[data-testid='contact-button']", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "div[data-testid='ad-price-container'] h3", "type": "currency", "currency": "PLN" },
+    "bedrooms": { "primary": "p[data-testid='rooms-label'] strong", "type": "number" },
+    "bathrooms": { "primary": "p[data-testid='bathrooms-label'] strong", "type": "number" },
+    "area": { "primary": "p[data-testid='surface-label'] strong", "type": "number", "unit": "sqm" }
+  },
+  "similar_listings_section": "div[data-testid='similar-ads']",
+  "detection_technique": "data_attributes",
+  "detection_confidence": 0.92
+}

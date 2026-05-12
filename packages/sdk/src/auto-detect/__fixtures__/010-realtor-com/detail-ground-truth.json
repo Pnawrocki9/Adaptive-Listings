@@ -1,0 +1,24 @@
+{
+  "platform_name": "Realtor.com",
+  "platform_id": "010-realtor-com",
+  "url_pattern_example": "https://www.realtor.com/realestateandhomes-detail/123-Main-St_New-York_NY_10001_M12345-67890",
+  "slot_selectors": {
+    "headline": { "primary": "h1[data-testid='ldp-address']", "type": "text" },
+    "description": { "primary": "div[data-testid='ldp-property-description'] p", "type": "text" },
+    "cta_primary": { "primary": "button[data-testid='ldp-contact-agent']", "type": "text" }
+  },
+  "data_extractors": {
+    "price": {
+      "primary": "div[data-testid='ldp-price'] span",
+      "type": "currency",
+      "currency": "USD",
+      "json_ld_path": "offers.price"
+    },
+    "bedrooms": { "primary": "li[data-testid='ldp-beds']", "type": "number" },
+    "bathrooms": { "primary": "li[data-testid='ldp-baths']", "type": "number" },
+    "area": { "primary": "li[data-testid='ldp-sqft']", "type": "number", "unit": "sqft" }
+  },
+  "similar_listings_section": "section[data-testid='similar-homes']",
+  "detection_technique": "data_attributes",
+  "detection_confidence": 0.92
+}

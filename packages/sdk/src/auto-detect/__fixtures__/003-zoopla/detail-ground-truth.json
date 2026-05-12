@@ -1,0 +1,19 @@
+{
+  "platform_name": "Zoopla",
+  "platform_id": "003-zoopla",
+  "url_pattern_example": "https://www.zoopla.co.uk/for-sale/details/123456789",
+  "slot_selectors": {
+    "headline": { "primary": "h1[data-testid='address']", "type": "text" },
+    "description": { "primary": "div[data-testid='listing-description'] p", "type": "text" },
+    "cta_primary": { "primary": "button[data-testid='contact-agent-btn']", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "p[data-testid='price']", "type": "currency", "currency": "GBP" },
+    "bedrooms": { "primary": "span[data-testid='beds-label']", "type": "number" },
+    "bathrooms": { "primary": "span[data-testid='baths-label']", "type": "number" },
+    "area": { "primary": "div[data-testid='floor-area-value']", "type": "number", "unit": "sqft" }
+  },
+  "similar_listings_section": "section[data-testid='similar-properties']",
+  "detection_technique": "data_attributes",
+  "detection_confidence": 0.92
+}

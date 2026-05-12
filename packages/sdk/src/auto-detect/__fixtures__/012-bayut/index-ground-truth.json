@@ -1,0 +1,22 @@
+{
+  "platform_name": "Bayut",
+  "platform_id": "012-bayut",
+  "url_pattern_example": "https://www.bayut.com/to-rent/property/dubai/",
+  "listing_card_selector": "div[data-cy='listing-item']",
+  "container_selector": "div[data-cy='listings-container']",
+  "listing_count_expected": 25,
+  "card_field_mappings": {
+    "headline": { "primary": "h2[class*='title']", "type": "text" },
+    "price": { "primary": "span[class*='price']", "type": "currency", "currency": "AED" },
+    "image": { "primary": "img[class*='ListingImage']", "type": "url" },
+    "bedrooms": { "primary": "span[aria-label*='Beds']", "type": "number" },
+    "area": { "primary": "span[aria-label*='Area']", "type": "number", "unit": "sqft" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "span[class*='price']", "type": "currency", "currency": "AED" },
+    "bedrooms": { "primary": "span[aria-label*='Beds']", "type": "number" },
+    "area_sqm": { "primary": "span[aria-label*='Area']", "type": "number", "unit": "sqft" }
+  },
+  "detection_technique": "data_attributes",
+  "detection_confidence": 0.92
+}

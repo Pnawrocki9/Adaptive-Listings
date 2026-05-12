@@ -1,0 +1,22 @@
+{
+  "platform_name": "Engel & Voelkers",
+  "platform_id": "015-engelvoelkers",
+  "url_pattern_example": "https://www.engelvoelkers.com/en/search/?q=&pageSize=18&businessArea=residential&sortOrder=DESC",
+  "listing_card_selector": "div[class*='SearchResultCard']",
+  "container_selector": "div[class*='SearchResultGrid']",
+  "listing_count_expected": 18,
+  "card_field_mappings": {
+    "headline": { "primary": "h2[class*='title']", "type": "text" },
+    "price": { "primary": "div[class*='price']", "type": "currency", "currency": "EUR" },
+    "image": { "primary": "img[class*='Image']", "type": "url" },
+    "bedrooms": { "primary": "span[class*='rooms']", "type": "number" },
+    "area": { "primary": "span[class*='area']", "type": "number", "unit": "sqm" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "div[class*='price']", "type": "currency", "currency": "EUR", "allows_poa": true },
+    "bedrooms": { "primary": "span[class*='rooms']", "type": "number" },
+    "area_sqm": { "primary": "span[class*='area']", "type": "number", "unit": "sqm" }
+  },
+  "detection_technique": "css_in_js",
+  "detection_confidence": 0.75
+}

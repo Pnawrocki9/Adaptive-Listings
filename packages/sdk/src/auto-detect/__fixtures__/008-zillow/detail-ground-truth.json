@@ -1,0 +1,24 @@
+{
+  "platform_name": "Zillow",
+  "platform_id": "008-zillow",
+  "url_pattern_example": "https://www.zillow.com/homedetails/123-Main-St/12345678_zpid/",
+  "slot_selectors": {
+    "headline": { "primary": "h1[data-testid='home-details-summary-headline']", "type": "text" },
+    "description": { "primary": "div[data-testid='home-description-expanded-content'] p", "type": "text" },
+    "cta_primary": { "primary": "button[data-testid='contact-agent-cta']", "type": "text" }
+  },
+  "data_extractors": {
+    "price": {
+      "primary": "span[data-testid='price']",
+      "type": "currency",
+      "currency": "USD",
+      "json_ld_path": "offers.price"
+    },
+    "bedrooms": { "primary": "span[data-testid='bed-bath-beyond-spec-bed']", "type": "number" },
+    "bathrooms": { "primary": "span[data-testid='bed-bath-beyond-spec-bath']", "type": "number" },
+    "area": { "primary": "span[data-testid='sqft']", "type": "number", "unit": "sqft" }
+  },
+  "similar_listings_section": "div[data-testid='similar-homes']",
+  "detection_technique": "data_attributes",
+  "detection_confidence": 0.92
+}

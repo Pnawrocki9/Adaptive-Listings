@@ -1,0 +1,22 @@
+{
+  "platform_name": "OLX PL",
+  "platform_id": "011-olx-pl",
+  "url_pattern_example": "https://www.olx.pl/nieruchomosci/mieszkania/sprzedaz/warszawa/",
+  "listing_card_selector": "div[data-testid='l-card']",
+  "container_selector": "div[data-testid='listing-grid']",
+  "listing_count_expected": 40,
+  "card_field_mappings": {
+    "headline": { "primary": "h6[data-testid='ad-card-title']", "type": "text" },
+    "price": { "primary": "p[data-testid='ad-price']", "type": "currency", "currency": "PLN" },
+    "image": { "primary": "img[data-testid='photo']", "type": "url" },
+    "bedrooms": { "primary": "span[data-testid='rooms-value']", "type": "number" },
+    "area": { "primary": "span[data-testid='surface-value']", "type": "number", "unit": "sqm" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "p[data-testid='ad-price']", "type": "currency", "currency": "PLN" },
+    "bedrooms": { "primary": "span[data-testid='rooms-value']", "type": "number" },
+    "area_sqm": { "primary": "span[data-testid='surface-value']", "type": "number", "unit": "sqm" }
+  },
+  "detection_technique": "data_attributes",
+  "detection_confidence": 0.92
+}

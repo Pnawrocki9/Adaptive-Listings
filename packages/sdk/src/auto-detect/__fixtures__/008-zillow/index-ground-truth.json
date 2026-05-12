@@ -1,0 +1,22 @@
+{
+  "platform_name": "Zillow",
+  "platform_id": "008-zillow",
+  "url_pattern_example": "https://www.zillow.com/homes/for_sale/San-Francisco-CA/",
+  "listing_card_selector": "div[data-testid='property-card']",
+  "container_selector": "ul[data-testid='property-list-container']",
+  "listing_count_expected": 40,
+  "card_field_mappings": {
+    "headline": { "primary": "address[data-testid='property-card-addr']", "type": "text" },
+    "price": { "primary": "span[data-testid='price']", "type": "currency", "currency": "USD" },
+    "image": { "primary": "img[data-testid='property-card-img']", "type": "url" },
+    "bedrooms": { "primary": "span[data-testid='beds']", "type": "number" },
+    "area": { "primary": "span[data-testid='sqft']", "type": "number", "unit": "sqft" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "span[data-testid='price']", "type": "currency", "currency": "USD" },
+    "bedrooms": { "primary": "span[data-testid='beds']", "type": "number" },
+    "area_sqm": { "primary": "span[data-testid='sqft']", "type": "number", "unit": "sqft" }
+  },
+  "detection_technique": "data_attributes",
+  "detection_confidence": 0.92
+}

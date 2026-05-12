@@ -1,0 +1,19 @@
+{
+  "platform_name": "Coldwell Banker",
+  "platform_id": "013-coldwell-banker",
+  "url_pattern_example": "https://www.coldwellbanker.com/homes-for-sale/listing/123456789",
+  "slot_selectors": {
+    "headline": { "primary": "h1[data-testid='property-address']", "type": "text" },
+    "description": { "primary": "div[data-testid='property-description'] p", "type": "text" },
+    "cta_primary": { "primary": "button[data-testid='contact-agent']", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "div[data-testid='property-price'] span", "type": "currency", "currency": "USD" },
+    "bedrooms": { "primary": "span[data-testid='property-beds']", "type": "number" },
+    "bathrooms": { "primary": "span[data-testid='property-baths']", "type": "number" },
+    "area": { "primary": "span[data-testid='property-sqft']", "type": "number", "unit": "sqft" }
+  },
+  "similar_listings_section": "section[data-testid='similar-properties']",
+  "detection_technique": "mui",
+  "detection_confidence": 0.88
+}

@@ -1,0 +1,22 @@
+{
+  "platform_name": "Redfin",
+  "platform_id": "017-redfin",
+  "url_pattern_example": "https://www.redfin.com/city/30749/CA/San-Francisco",
+  "listing_card_selector": "div[class*='HomeCard']",
+  "container_selector": "div[class*='HomeCardsContainer']",
+  "listing_count_expected": 20,
+  "card_field_mappings": {
+    "headline": { "primary": "div[class*='homeAddress']", "type": "text" },
+    "price": { "primary": "span[class*='homecardV2Price']", "type": "currency", "currency": "USD" },
+    "image": { "primary": "img[class*='homeImage']", "type": "url" },
+    "bedrooms": { "primary": "span[class*='beds']", "type": "number" },
+    "area": { "primary": "span[class*='sqft']", "type": "number", "unit": "sqft" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "span[class*='homecardV2Price']", "type": "currency", "currency": "USD" },
+    "bedrooms": { "primary": "span[class*='beds']", "type": "number" },
+    "area_sqm": { "primary": "span[class*='sqft']", "type": "number", "unit": "sqft" }
+  },
+  "detection_technique": "css_modules",
+  "detection_confidence": 0.8
+}

@@ -1,0 +1,25 @@
+{
+  "platform_name": "Lucas Fox",
+  "platform_id": "022-lucas-fox",
+  "url_pattern_example": "https://www.lucasfox.com/property/barcelona-penthouse-12345/",
+  "is_offplan": true,
+  "slot_selectors": {
+    "headline": { "primary": "h1[class*='PropertyTitle']", "type": "text" },
+    "description": { "primary": "div[class*='Description'] p", "type": "text" },
+    "cta_primary": { "primary": "button[class*='RequestInfo']", "type": "text" }
+  },
+  "data_extractors": {
+    "price": {
+      "primary": "div[class*='price']",
+      "type": "currency",
+      "currency": "EUR",
+      "secondary_currency": "AED"
+    },
+    "bedrooms": { "primary": "span[class*='bedrooms']", "type": "number" },
+    "bathrooms": { "primary": "span[class*='bathrooms']", "type": "number" },
+    "area": { "primary": "span[class*='area']", "type": "number", "unit": "sqm" }
+  },
+  "similar_listings_section": "section[class*='RelatedProperties']",
+  "detection_technique": "css_in_js",
+  "detection_confidence": 0.75
+}

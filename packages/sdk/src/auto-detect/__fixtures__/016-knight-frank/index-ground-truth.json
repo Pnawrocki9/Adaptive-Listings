@@ -1,0 +1,22 @@
+{
+  "platform_name": "Knight Frank",
+  "platform_id": "016-knight-frank",
+  "url_pattern_example": "https://www.knightfrank.com/residential/property/for-sale/in-london",
+  "listing_card_selector": "div[class*='PropertyCard']",
+  "container_selector": "div[class*='PropertyList']",
+  "listing_count_expected": 12,
+  "card_field_mappings": {
+    "headline": { "primary": "h2[class*='address']", "type": "text" },
+    "price": { "primary": "span[class*='price']", "type": "currency", "currency": "GBP" },
+    "image": { "primary": "img[class*='image']", "type": "url" },
+    "bedrooms": { "primary": "span[class*='bedrooms']", "type": "number" },
+    "area": { "primary": "span[class*='area']", "type": "number", "unit": "sqft" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "span[class*='price']", "type": "currency", "currency": "GBP" },
+    "bedrooms": { "primary": "span[class*='bedrooms']", "type": "number" },
+    "area_sqm": { "primary": "span[class*='area']", "type": "number", "unit": "sqft" }
+  },
+  "detection_technique": "angular",
+  "detection_confidence": 0.7
+}

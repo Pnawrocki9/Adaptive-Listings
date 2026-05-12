@@ -1,0 +1,22 @@
+{
+  "platform_name": "Realtor.com",
+  "platform_id": "010-realtor-com",
+  "url_pattern_example": "https://www.realtor.com/realestateandhomes-search/New-York_NY",
+  "listing_card_selector": "div[data-testid='property-card']",
+  "container_selector": "div[data-testid='srp-property-list']",
+  "listing_count_expected": 20,
+  "card_field_mappings": {
+    "headline": { "primary": "div[data-testid='card-address']", "type": "text" },
+    "price": { "primary": "div[data-testid='card-price']", "type": "currency", "currency": "USD" },
+    "image": { "primary": "img[data-testid='card-img']", "type": "url" },
+    "bedrooms": { "primary": "li[data-testid='card-bed']", "type": "number" },
+    "area": { "primary": "li[data-testid='card-sqft']", "type": "number", "unit": "sqft" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "div[data-testid='card-price']", "type": "currency", "currency": "USD" },
+    "bedrooms": { "primary": "li[data-testid='card-bed']", "type": "number" },
+    "area_sqm": { "primary": "li[data-testid='card-sqft']", "type": "number", "unit": "sqft" }
+  },
+  "detection_technique": "data_attributes",
+  "detection_confidence": 0.92
+}

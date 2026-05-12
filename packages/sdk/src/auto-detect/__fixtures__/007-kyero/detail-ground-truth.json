@@ -1,0 +1,24 @@
+{
+  "platform_name": "Kyero",
+  "platform_id": "007-kyero",
+  "url_pattern_example": "https://www.kyero.com/en/property/12345678",
+  "slot_selectors": {
+    "headline": { "primary": "h1.property-title", "type": "text" },
+    "description": { "primary": "div.property-description p", "type": "text" },
+    "cta_primary": { "primary": "button.contact-agent", "type": "text" }
+  },
+  "data_extractors": {
+    "price": {
+      "primary": "span.property-price",
+      "type": "currency",
+      "currency": "EUR",
+      "json_ld_path": "offers.price"
+    },
+    "bedrooms": { "primary": "span.property-beds", "type": "number" },
+    "bathrooms": { "primary": "span.property-baths", "type": "number" },
+    "area": { "primary": "span.property-size", "type": "number", "unit": "sqm" }
+  },
+  "similar_listings_section": "section.similar-properties",
+  "detection_technique": "json_ld",
+  "detection_confidence": 0.95
+}

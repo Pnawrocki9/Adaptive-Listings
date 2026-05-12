@@ -1,0 +1,22 @@
+{
+  "platform_name": "Rightmove",
+  "platform_id": "002-rightmove",
+  "url_pattern_example": "https://www.rightmove.co.uk/property-for-sale/find.html",
+  "listing_card_selector": "div[data-testid='propertyCard']",
+  "container_selector": "div[data-testid='properties-container']",
+  "listing_count_expected": 25,
+  "card_field_mappings": {
+    "headline": { "primary": "h2.propertyCard-title a", "type": "text" },
+    "price": { "primary": "div[data-testid='price'] span", "type": "currency", "currency": "GBP" },
+    "image": { "primary": "img.propertyCard-img", "type": "url" },
+    "bedrooms": { "primary": "span[data-testid='beds']", "type": "number" },
+    "area": { "primary": "span[data-testid='size']", "type": "number", "unit": "sqft" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "div[data-testid='price'] span", "type": "currency", "currency": "GBP" },
+    "bedrooms": { "primary": "span[data-testid='beds']", "type": "number" },
+    "area_sqm": { "primary": "span[data-testid='size']", "type": "number", "unit": "sqft" }
+  },
+  "detection_technique": "data_attributes",
+  "detection_confidence": 0.92
+}

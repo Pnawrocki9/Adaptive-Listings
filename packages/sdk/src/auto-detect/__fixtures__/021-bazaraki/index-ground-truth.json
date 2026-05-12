@@ -1,0 +1,22 @@
+{
+  "platform_name": "Bazaraki",
+  "platform_id": "021-bazaraki",
+  "url_pattern_example": "https://www.bazaraki.com/real-estate/houses-and-villas-for-sale/",
+  "listing_card_selector": "div.advert",
+  "container_selector": "div#catalog-listing",
+  "listing_count_expected": 20,
+  "card_field_mappings": {
+    "headline": { "primary": "a.advert-title", "type": "text" },
+    "price": { "primary": "div.advert-price", "type": "currency", "currency": "EUR", "price_format": "dot_thousands" },
+    "image": { "primary": "img.advert-image", "type": "url" },
+    "bedrooms": { "primary": "span.advert-beds", "type": "number" },
+    "area": { "primary": "span.advert-area", "type": "number", "unit": "sqm" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "div.advert-price", "type": "currency", "currency": "EUR", "price_format": "dot_thousands" },
+    "bedrooms": { "primary": "span.advert-beds", "type": "number" },
+    "area_sqm": { "primary": "span.advert-area", "type": "number", "unit": "sqm" }
+  },
+  "detection_technique": "drupal_php",
+  "detection_confidence": 0.88
+}

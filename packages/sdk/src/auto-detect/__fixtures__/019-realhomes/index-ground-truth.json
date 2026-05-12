@@ -1,0 +1,22 @@
+{
+  "platform_name": "RealHomes (WordPress)",
+  "platform_id": "019-realhomes",
+  "url_pattern_example": "https://example-realhomes.com/properties/",
+  "listing_card_selector": "article.property",
+  "container_selector": "div.properties-list",
+  "listing_count_expected": 10,
+  "card_field_mappings": {
+    "headline": { "primary": "h3.rh_prop_card__title a", "type": "text" },
+    "price": { "primary": "span.rh_prop_card__price", "type": "currency", "currency": "EUR" },
+    "image": { "primary": "img.rh_prop_card__image", "type": "url" },
+    "bedrooms": { "primary": "li.rh_prop_card__meta_beds span", "type": "number" },
+    "area": { "primary": "li.rh_prop_card__meta_area span", "type": "number", "unit": "sqm" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "span.rh_prop_card__price", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "li.rh_prop_card__meta_beds span", "type": "number" },
+    "area_sqm": { "primary": "li.rh_prop_card__meta_area span", "type": "number", "unit": "sqm" }
+  },
+  "detection_technique": "wordpress",
+  "detection_confidence": 0.9
+}

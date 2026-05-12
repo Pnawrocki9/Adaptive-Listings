@@ -1,0 +1,22 @@
+{
+  "platform_name": "Lucas Fox",
+  "platform_id": "022-lucas-fox",
+  "url_pattern_example": "https://www.lucasfox.com/properties-for-sale/barcelona/",
+  "listing_card_selector": "div[class*='PropertyCard']",
+  "container_selector": "div[class*='PropertiesGrid']",
+  "listing_count_expected": 12,
+  "card_field_mappings": {
+    "headline": { "primary": "h3[class*='title']", "type": "text" },
+    "price": { "primary": "div[class*='price']", "type": "currency", "currency": "EUR" },
+    "image": { "primary": "img[class*='thumbnail']", "type": "url" },
+    "bedrooms": { "primary": "span[class*='bedrooms']", "type": "number" },
+    "area": { "primary": "span[class*='area']", "type": "number", "unit": "sqm" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "div[class*='price']", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "span[class*='bedrooms']", "type": "number" },
+    "area_sqm": { "primary": "span[class*='area']", "type": "number", "unit": "sqm" }
+  },
+  "detection_technique": "css_in_js",
+  "detection_confidence": 0.75
+}

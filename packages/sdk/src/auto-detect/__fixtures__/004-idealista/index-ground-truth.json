@@ -1,0 +1,22 @@
+{
+  "platform_name": "Idealista",
+  "platform_id": "004-idealista",
+  "url_pattern_example": "https://www.idealista.com/venta-viviendas/madrid/",
+  "listing_card_selector": "article.item",
+  "container_selector": "section#main-content",
+  "listing_count_expected": 30,
+  "card_field_mappings": {
+    "headline": { "primary": "a.item-link span", "type": "text" },
+    "price": { "primary": "span.item-price", "type": "currency", "currency": "EUR" },
+    "image": { "primary": "img.item-multimedia-image", "type": "url" },
+    "bedrooms": { "primary": "span.item-detail[data-rooms]", "type": "number" },
+    "area": { "primary": "span.item-detail[data-area]", "type": "number", "unit": "sqm" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "span.item-price", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "span.item-detail[data-rooms]", "type": "number" },
+    "area_sqm": { "primary": "span.item-detail[data-area]", "type": "number", "unit": "sqm" }
+  },
+  "detection_technique": "article_tag",
+  "detection_confidence": 0.85
+}

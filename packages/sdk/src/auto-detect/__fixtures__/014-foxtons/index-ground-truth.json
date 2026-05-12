@@ -1,0 +1,22 @@
+{
+  "platform_name": "Foxtons",
+  "platform_id": "014-foxtons",
+  "url_pattern_example": "https://www.foxtons.co.uk/properties-for-sale/?search_type=buy&location=London",
+  "listing_card_selector": "div.MuiPaper-root[data-testid='property-card']",
+  "container_selector": "div[data-testid='property-list']",
+  "listing_count_expected": 20,
+  "card_field_mappings": {
+    "headline": { "primary": "h2[data-testid='property-address']", "type": "text" },
+    "price": { "primary": "span[data-testid='property-price']", "type": "currency", "currency": "GBP" },
+    "image": { "primary": "img[data-testid='property-image']", "type": "url" },
+    "bedrooms": { "primary": "span[data-testid='beds-value']", "type": "number" },
+    "area": { "primary": "span[data-testid='size-value']", "type": "number", "unit": "sqft" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "span[data-testid='property-price']", "type": "currency", "currency": "GBP" },
+    "bedrooms": { "primary": "span[data-testid='beds-value']", "type": "number" },
+    "area_sqm": { "primary": "span[data-testid='size-value']", "type": "number", "unit": "sqft" }
+  },
+  "detection_technique": "mui",
+  "detection_confidence": 0.88
+}

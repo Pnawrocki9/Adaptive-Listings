@@ -1,0 +1,19 @@
+{
+  "platform_name": "Habitaclia",
+  "platform_id": "006-habitaclia",
+  "url_pattern_example": "https://www.habitaclia.com/piso-en-barcelona-12345678.htm",
+  "slot_selectors": {
+    "headline": { "primary": "h1.property-title", "type": "text" },
+    "description": { "primary": "div.description-text p", "type": "text" },
+    "cta_primary": { "primary": "a.contact-btn", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "span.price-value", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "span.char-value.rooms", "type": "number" },
+    "bathrooms": { "primary": "span.char-value.bathrooms", "type": "number" },
+    "area": { "primary": "span.char-value.surface", "type": "number", "unit": "sqm" }
+  },
+  "similar_listings_section": "section.related-listings",
+  "detection_technique": "article_tag",
+  "detection_confidence": 0.85
+}

@@ -1,0 +1,19 @@
+{
+  "platform_name": "Houzez (WordPress)",
+  "platform_id": "018-houzez",
+  "url_pattern_example": "https://example-houzez.com/property/three-bed-villa/",
+  "slot_selectors": {
+    "headline": { "primary": "h1.page-title", "type": "text" },
+    "description": { "primary": "div.property-description-wrap p", "type": "text" },
+    "cta_primary": { "primary": "a.btn-property-contact", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "div.price-wrap span.houzez-price", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "li.houzez-beds strong", "type": "number" },
+    "bathrooms": { "primary": "li.houzez-baths strong", "type": "number" },
+    "area": { "primary": "li.houzez-property-size strong", "type": "number", "unit": "sqm" }
+  },
+  "similar_listings_section": "div.similar-properties-section",
+  "detection_technique": "wordpress",
+  "detection_confidence": 0.9
+}

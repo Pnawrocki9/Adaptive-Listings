@@ -1,0 +1,22 @@
+{
+  "platform_name": "OnTheMarket",
+  "platform_id": "005-onthemarket",
+  "url_pattern_example": "https://www.onthemarket.com/for-sale/property/london/",
+  "listing_card_selector": "article.block",
+  "container_selector": "ul.listings",
+  "listing_count_expected": 24,
+  "card_field_mappings": {
+    "headline": { "primary": "h2.block-title a", "type": "text" },
+    "price": { "primary": "span.price", "type": "currency", "currency": "GBP" },
+    "image": { "primary": "img.thumbnail", "type": "url" },
+    "bedrooms": { "primary": "li.bedrooms span", "type": "number" },
+    "area": { "primary": "li.floor-area span", "type": "number", "unit": "sqft" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "span.price", "type": "currency", "currency": "GBP" },
+    "bedrooms": { "primary": "li.bedrooms span", "type": "number" },
+    "area_sqm": { "primary": "li.floor-area span", "type": "number", "unit": "sqft" }
+  },
+  "detection_technique": "article_tag",
+  "detection_confidence": 0.85
+}

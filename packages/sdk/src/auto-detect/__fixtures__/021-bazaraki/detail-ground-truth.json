@@ -1,0 +1,24 @@
+{
+  "platform_name": "Bazaraki",
+  "platform_id": "021-bazaraki",
+  "url_pattern_example": "https://www.bazaraki.com/adv/12345678_villa-in-limassol/",
+  "slot_selectors": {
+    "headline": { "primary": "h1.advert-title-container", "type": "text" },
+    "description": { "primary": "div.advert-description p", "type": "text" },
+    "cta_primary": { "primary": "a.send-message-btn", "type": "text" }
+  },
+  "data_extractors": {
+    "price": {
+      "primary": "div.advert-price",
+      "type": "currency",
+      "currency": "EUR",
+      "price_format": "dot_thousands"
+    },
+    "bedrooms": { "primary": "span.advert-details-beds", "type": "number" },
+    "bathrooms": { "primary": "span.advert-details-baths", "type": "number" },
+    "area": { "primary": "span.advert-details-area", "type": "number", "unit": "sqm" }
+  },
+  "similar_listings_section": "section.similar-ads",
+  "detection_technique": "drupal_php",
+  "detection_confidence": 0.88
+}

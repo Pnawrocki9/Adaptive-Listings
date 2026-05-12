@@ -1,0 +1,20 @@
+{
+  "platform_name": "app.estalara.com",
+  "platform_id": "000-app-estalara",
+  "url_pattern_example": "https://app.estalara.com/listings/abc123",
+  "h1_is_price": true,
+  "slot_selectors": {
+    "headline": { "primary": "[data-estalara-slot='headline']", "type": "text" },
+    "description": { "primary": "[data-estalara-slot='description']", "type": "text" },
+    "cta_primary": { "primary": "[data-estalara-slot='cta']", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "[data-estalara-slot='price']", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "[data-estalara-slot='bedrooms']", "type": "number" },
+    "bathrooms": { "primary": "[data-estalara-slot='bathrooms']", "type": "number" },
+    "area": { "primary": "[data-estalara-slot='area']", "type": "number", "unit": "sqm" }
+  },
+  "similar_listings_section": "[data-estalara-slot='similar-listings']",
+  "detection_technique": "data_estalara",
+  "detection_confidence": 1.0
+}

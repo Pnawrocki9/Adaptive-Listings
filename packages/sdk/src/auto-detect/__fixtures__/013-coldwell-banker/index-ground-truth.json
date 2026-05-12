@@ -1,0 +1,22 @@
+{
+  "platform_name": "Coldwell Banker",
+  "platform_id": "013-coldwell-banker",
+  "url_pattern_example": "https://www.coldwellbanker.com/homes-for-sale/New-York-NY",
+  "listing_card_selector": "div.MuiPaper-root[data-testid='listing-card']",
+  "container_selector": "div[data-testid='property-results']",
+  "listing_count_expected": 20,
+  "card_field_mappings": {
+    "headline": { "primary": "div[data-testid='property-card-address']", "type": "text" },
+    "price": { "primary": "div[data-testid='property-card-price']", "type": "currency", "currency": "USD" },
+    "image": { "primary": "img[data-testid='property-card-image']", "type": "url" },
+    "bedrooms": { "primary": "span[data-testid='property-card-beds']", "type": "number" },
+    "area": { "primary": "span[data-testid='property-card-sqft']", "type": "number", "unit": "sqft" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "div[data-testid='property-card-price']", "type": "currency", "currency": "USD" },
+    "bedrooms": { "primary": "span[data-testid='property-card-beds']", "type": "number" },
+    "area_sqm": { "primary": "span[data-testid='property-card-sqft']", "type": "number", "unit": "sqft" }
+  },
+  "detection_technique": "mui",
+  "detection_confidence": 0.88
+}

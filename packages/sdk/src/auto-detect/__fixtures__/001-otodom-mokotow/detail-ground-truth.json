@@ -1,0 +1,19 @@
+{
+  "platform_name": "Otodom",
+  "platform_id": "001-otodom-mokotow",
+  "url_pattern_example": "https://www.otodom.pl/pl/oferta/mieszkanie-mokotow-ID123456",
+  "slot_selectors": {
+    "headline": { "primary": "h1[data-cy='adPageAdTitle']", "type": "text" },
+    "description": { "primary": "div[data-cy='adPageAdDescription']", "type": "text" },
+    "cta_primary": { "primary": "button[data-cy='ad-contact-btn']", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "strong[data-cy='adPageHeaderPrice']", "type": "currency", "currency": "PLN" },
+    "bedrooms": { "primary": "[aria-label='Liczba pokoi'] strong", "type": "number" },
+    "bathrooms": { "primary": "[aria-label='Liczba łazienek'] strong", "type": "number" },
+    "area": { "primary": "[aria-label='Powierzchnia'] strong", "type": "number", "unit": "sqm" }
+  },
+  "similar_listings_section": "section[data-cy='similar-ads-section']",
+  "detection_technique": "data_attributes",
+  "detection_confidence": 0.92
+}

@@ -1,0 +1,19 @@
+{
+  "platform_name": "RealHomes (WordPress)",
+  "platform_id": "019-realhomes",
+  "url_pattern_example": "https://example-realhomes.com/property/luxury-villa-3bed/",
+  "slot_selectors": {
+    "headline": { "primary": "h1.rh_page_title", "type": "text" },
+    "description": { "primary": "div.rh_content p", "type": "text" },
+    "cta_primary": { "primary": "a.rh_btn-primary", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "div.rh_prop_price span", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "li.rh_prop_detail__beds span", "type": "number" },
+    "bathrooms": { "primary": "li.rh_prop_detail__baths span", "type": "number" },
+    "area": { "primary": "li.rh_prop_detail__area span", "type": "number", "unit": "sqm" }
+  },
+  "similar_listings_section": "section.rh_section__similar_properties",
+  "detection_technique": "wordpress",
+  "detection_confidence": 0.9
+}

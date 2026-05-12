@@ -1,0 +1,19 @@
+{
+  "platform_name": "Idealista",
+  "platform_id": "004-idealista",
+  "url_pattern_example": "https://www.idealista.com/inmueble/123456789/",
+  "slot_selectors": {
+    "headline": { "primary": "h1.main-info__title", "type": "text" },
+    "description": { "primary": "div.adCommentsLanguage p", "type": "text" },
+    "cta_primary": { "primary": "a.contact-form-btn", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "span.info-data-price", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "div.info-features span[aria-label*='dormitor']", "type": "number" },
+    "bathrooms": { "primary": "div.info-features span[aria-label*='baño']", "type": "number" },
+    "area": { "primary": "div.info-features span[aria-label*='metros']", "type": "number", "unit": "sqm" }
+  },
+  "similar_listings_section": "section.similar-ads",
+  "detection_technique": "article_tag",
+  "detection_confidence": 0.85
+}

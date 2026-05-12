@@ -1,0 +1,19 @@
+{
+  "platform_name": "Foxtons",
+  "platform_id": "014-foxtons",
+  "url_pattern_example": "https://www.foxtons.co.uk/property-for-sale/mayfair-london-W1K-123456.html",
+  "slot_selectors": {
+    "headline": { "primary": "h1[data-testid='property-title']", "type": "text" },
+    "description": { "primary": "div[data-testid='property-description'] p", "type": "text" },
+    "cta_primary": { "primary": "button[data-testid='enquire-button']", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "span[data-testid='price-tag']", "type": "currency", "currency": "GBP" },
+    "bedrooms": { "primary": "span[data-testid='bedrooms-value']", "type": "number" },
+    "bathrooms": { "primary": "span[data-testid='bathrooms-value']", "type": "number" },
+    "area": { "primary": "span[data-testid='floorarea-value']", "type": "number", "unit": "sqft" }
+  },
+  "similar_listings_section": "section[data-testid='similar-properties']",
+  "detection_technique": "mui",
+  "detection_confidence": 0.88
+}

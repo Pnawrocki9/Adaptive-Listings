@@ -1,0 +1,19 @@
+{
+  "platform_name": "Zyprus",
+  "platform_id": "020-zyprus",
+  "url_pattern_example": "https://www.zyprus.com/property/villa-limassol-12345",
+  "slot_selectors": {
+    "headline": { "primary": "h1.page-header", "type": "text" },
+    "description": { "primary": "div.field--name-body p", "type": "text" },
+    "cta_primary": { "primary": "a.field--name-field-contact-agent", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "div.field--name-field-price span.field__item", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "div.field--name-field-bedrooms span.field__item", "type": "number" },
+    "bathrooms": { "primary": "div.field--name-field-bathrooms span.field__item", "type": "number" },
+    "area": { "primary": "div.field--name-field-area span.field__item", "type": "number", "unit": "sqm" }
+  },
+  "similar_listings_section": "div.field--name-field-similar-properties",
+  "detection_technique": "drupal_php",
+  "detection_confidence": 0.88
+}

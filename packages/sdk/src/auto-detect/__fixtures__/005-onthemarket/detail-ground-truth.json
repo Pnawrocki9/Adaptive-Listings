@@ -1,0 +1,19 @@
+{
+  "platform_name": "OnTheMarket",
+  "platform_id": "005-onthemarket",
+  "url_pattern_example": "https://www.onthemarket.com/details/123456789/",
+  "slot_selectors": {
+    "headline": { "primary": "h1.property-title", "type": "text" },
+    "description": { "primary": "div.property-description p", "type": "text" },
+    "cta_primary": { "primary": "a.contact-agent-btn", "type": "text" }
+  },
+  "data_extractors": {
+    "price": { "primary": "div.price-block span.price", "type": "currency", "currency": "GBP" },
+    "bedrooms": { "primary": "li.bedrooms span", "type": "number" },
+    "bathrooms": { "primary": "li.bathrooms span", "type": "number" },
+    "area": { "primary": "li.floor-area span", "type": "number", "unit": "sqft" }
+  },
+  "similar_listings_section": "section.similar-properties",
+  "detection_technique": "article_tag",
+  "detection_confidence": 0.85
+}

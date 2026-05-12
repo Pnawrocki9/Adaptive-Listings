@@ -1,0 +1,22 @@
+{
+  "platform_name": "Kyero",
+  "platform_id": "007-kyero",
+  "url_pattern_example": "https://www.kyero.com/en/buy/andalucia/",
+  "listing_card_selector": "div.PropertyCard",
+  "container_selector": "div.property-list",
+  "listing_count_expected": 20,
+  "card_field_mappings": {
+    "headline": { "primary": "h2.PropertyCard__title a", "type": "text" },
+    "price": { "primary": "span.PropertyCard__price", "type": "currency", "currency": "EUR" },
+    "image": { "primary": "img.PropertyCard__image", "type": "url" },
+    "bedrooms": { "primary": "span.PropertyCard__beds", "type": "number" },
+    "area": { "primary": "span.PropertyCard__size", "type": "number", "unit": "sqm" }
+  },
+  "data_extractors_per_card": {
+    "price": { "primary": "span.PropertyCard__price", "type": "currency", "currency": "EUR" },
+    "bedrooms": { "primary": "span.PropertyCard__beds", "type": "number" },
+    "area_sqm": { "primary": "span.PropertyCard__size", "type": "number", "unit": "sqm" }
+  },
+  "detection_technique": "json_ld",
+  "detection_confidence": 0.95
+}

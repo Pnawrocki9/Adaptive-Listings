@@ -87,7 +87,7 @@ async function init(): Promise<void> {
       const snap = dqsTracker.snapshot();
       eventQueue.push({
         type: 'session.quality.snapshot',
-        payload: snap,
+        payload: snap as unknown as Record<string, unknown>,
         ts: Date.now(),
       });
     }
@@ -230,7 +230,9 @@ async function init(): Promise<void> {
       if (document.visibilityState === 'hidden') handleSessionEnd();
     });
 
-    window.addEventListener('beforeunload', () => { handleSessionEnd(); });
+    window.addEventListener('beforeunload', () => {
+      handleSessionEnd();
+    });
 
     if (config.debug) {
       console.log(`[Estalara] SDK ${SDK_VERSION} initialized`, {

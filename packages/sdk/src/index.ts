@@ -272,6 +272,10 @@ export function identify(_profileId: string): void {
   // No-op stub — forward-compat for Profile Mode (U.11, Sprint 12+)
 }
 
+// ─── Auto-detect sub-module ────────────────────────────────────────────────────
+export type { DetectionResult } from './auto-detect/index.js';
+export { detectSiteSchema } from './auto-detect/index.js';
+
 // Auto-initialize when DOM is ready
 if (typeof document !== 'undefined') {
   if (document.readyState === 'loading') {

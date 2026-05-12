@@ -73,6 +73,36 @@ export interface ClassDirective {
 }
 
 /**
+ * SPRINT 8 HOOK: ReorderDirective
+ * Full DOM implementation in Sprint 8 (A/B framework + re-ranking).
+ * Defined here so Decision API can include it in AdaptationDirectives without a breaking change.
+ *
+ * Requires `IndexSchema.reorder_capable === true` and a valid `container_selector` on the tenant
+ * site schema. The SDK reads `container_selector` + `item_selector` to reorder child nodes,
+ * applying the sorted `scores` array (highest score first), optionally pinning the top N cards.
+ */
+export interface ReorderDirective {
+  type: 'reorder';
+  /** CSS selector for the grid/list container — mirrors `IndexSchema.container_selector`. */
+  container_selector: string;
+  /** CSS selector for individual listing card elements within the container. */
+  item_selector: string;
+  /** Scoring algorithm used to rank cards — currently only archetype affinity. */
+  score_function: 'archetype_affinity';
+  /** Ordered list of listing IDs with their affinity scores (descending). */
+  scores: {
+    listing_id: string;
+    score: number;
+  }[];
+  /** Pin the top N highest-scoring cards regardless of their original position. */
+  pin_top_n?: number;
+  /** Archetype ID that produced these scores. */
+  archetype: string;
+  /** Confidence score 0–1 from the intent engine. */
+  confidence: number;
+}
+
+/**
  * Full adaptation directive response returned by `GET /api/adapt`.
  *
  * The SDK reads this and applies each directive to the host page DOM.
@@ -87,7 +117,7 @@ export interface AdaptationDirectives {
   /** Integration tier the caller declared. */
   tier: 1 | 2 | 3;
   /** Empty when source is 'default' or 'llm_full'. */
-  directives: (TextDirective | ClassDirective)[];
+  directives: (TextDirective | ClassDirective | ReorderDirective)[];
   /**
    * - `playbook`                         — static pre-computed playbook, high-confidence match
    * - `llm_tweaked`                      — playbook directives tweaked by Haiku LLM (ADP-002)

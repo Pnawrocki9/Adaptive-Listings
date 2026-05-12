@@ -43,4 +43,18 @@ export default defineConfig([
     bundle: true,
     tsconfig: './tsconfig.dts.json',
   },
+  // Auto-detect subpath export — detection pipeline + types
+  {
+    entry: { 'auto-detect/pipeline': 'src/auto-detect/pipeline.ts' },
+    format: ['esm'],
+    outDir: 'dist',
+    dts: true,
+    sourcemap: true,
+    clean: false,
+    target: 'es2020',
+    // node — server-side usage (Next.js API route); DOMParser injected by jsdom in tests
+    platform: 'node',
+    bundle: true,
+    tsconfig: './tsconfig.dts.json',
+  },
 ]);

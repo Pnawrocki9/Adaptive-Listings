@@ -8,16 +8,19 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ENVIRONMENT = "development"
+# ADAPT_API_KEY is a secret — set via: wrangler secret put ADAPT_API_KEY
+# LLM_DAILY_CAP_USD is non-sensitive; override per environment below if needed.
+LLM_DAILY_CAP_USD = "1.00"
 
 # Development environment (local wrangler dev)
 [env.dev]
 name = "estalara-decision-api-dev"
-vars = { ENVIRONMENT = "development" }
+vars = { ENVIRONMENT = "development", LLM_DAILY_CAP_USD = "1.00" }
 
 # Staging environment (auto-deploy on merge to main)
 [env.staging]
 name = "estalara-decision-api-staging"
-vars = { ENVIRONMENT = "staging" }
+vars = { ENVIRONMENT = "staging", LLM_DAILY_CAP_USD = "1.00" }
 
 [[env.staging.routes]]
 pattern = "api-staging.estalara.io/*"
@@ -26,7 +29,7 @@ zone_name = "estalara.io"
 # Production environment (manual deploy with human approval)
 [env.production]
 name = "estalara-decision-api-production"
-vars = { ENVIRONMENT = "production" }
+vars = { ENVIRONMENT = "production", LLM_DAILY_CAP_USD = "1.00" }
 
 [[env.production.routes]]
 pattern = "api.estalara.io/*"

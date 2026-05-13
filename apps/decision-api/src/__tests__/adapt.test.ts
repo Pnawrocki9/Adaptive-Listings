@@ -5,11 +5,13 @@
  * Includes A/B holdout integration tests (TICKET-AB-001 AC-5 and AC-6).
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import type { AdaptResponse, Directive } from '../app/api/adapt/route.js';
 import { handleAdaptRequest } from '../app/api/adapt/route.js';
 import { handleHealthRequest } from '../app/api/health/route.js';
+import type { Env } from '../index.js';
+import { recordSpend, resetTenantSpend } from '../lib/llm-gateway.js';
 
 // Helper: parse a Response body as a known shape without `as` casts
 // (which Prettier may strip in some configurations).
@@ -21,6 +23,10 @@ async function parseBody<T>(res: Response): Promise<T> {
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
 const BEARER = 'Bearer est_live_test_key';
+const TENANT_ID = '550e8400-e29b-41d4-a716-446655440000';
+
+/** Minimal env — ADAPT_API_KEY unset → presence-only auth. */
+const EMPTY_ENV: Env = { ENVIRONMENT: 'test' };
 
 function makeAdaptRequest(body: Record<string, unknown>, auth = BEARER): Request {
   return new Request('https://api.estalara.io/api/adapt', {
@@ -34,7 +40,7 @@ function makeAdaptRequest(body: Record<string, unknown>, auth = BEARER): Request
 }
 
 const BASE_BODY = {
-  tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+  tenant_id: TENANT_ID,
   session_id: 'sess_abc123',
   page_type: 'listing_list',
 };
@@ -45,6 +51,7 @@ describe('POST /api/adapt — archetype routing', () => {
   it('investor hint → returns investor directives', async () => {
     const res = await handleAdaptRequest(
       makeAdaptRequest({ ...BASE_BODY, archetype_hint: 'investor' }),
+      EMPTY_ENV,
     );
     expect(res.status).toBe(200);
     const body = await parseBody<AdaptResponse>(res);
@@ -60,6 +67,7 @@ describe('POST /api/adapt — archetype routing', () => {
   it('family hint → returns family directives', async () => {
     const res = await handleAdaptRequest(
       makeAdaptRequest({ ...BASE_BODY, archetype_hint: 'family' }),
+      EMPTY_ENV,
     );
     expect(res.status).toBe(200);
     const body = await parseBody<AdaptResponse>(res);
@@ -69,7 +77,7 @@ describe('POST /api/adapt — archetype routing', () => {
   });
 
   it('no hint → returns neutral directives', async () => {
-    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY));
+    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY), EMPTY_ENV);
     expect(res.status).toBe(200);
     const body = await parseBody<AdaptResponse>(res);
     expect(body.archetype).toBe('neutral');
@@ -80,6 +88,7 @@ describe('POST /api/adapt — archetype routing', () => {
   it('partial hint match — "invest_opportunity" → investor', async () => {
     const res = await handleAdaptRequest(
       makeAdaptRequest({ ...BASE_BODY, archetype_hint: 'invest_opportunity' }),
+      EMPTY_ENV,
     );
     const body = await parseBody<AdaptResponse>(res);
     expect(body.archetype).toBe('investor');
@@ -92,6 +101,7 @@ describe('POST /api/adapt — validation', () => {
   it('missing tenant_id → 400', async () => {
     const res = await handleAdaptRequest(
       makeAdaptRequest({ session_id: 'sess_x', page_type: 'home' }),
+      EMPTY_ENV,
     );
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
@@ -101,12 +111,16 @@ describe('POST /api/adapt — validation', () => {
   it('invalid tenant_id (not UUID) → 400', async () => {
     const res = await handleAdaptRequest(
       makeAdaptRequest({ ...BASE_BODY, tenant_id: 'not-a-uuid' }),
+      EMPTY_ENV,
     );
     expect(res.status).toBe(400);
   });
 
   it('invalid page_type → 400', async () => {
-    const res = await handleAdaptRequest(makeAdaptRequest({ ...BASE_BODY, page_type: 'checkout' }));
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({ ...BASE_BODY, page_type: 'checkout' }),
+      EMPTY_ENV,
+    );
     expect(res.status).toBe(400);
   });
 });
@@ -115,15 +129,84 @@ describe('POST /api/adapt — validation', () => {
 
 describe('POST /api/adapt — auth', () => {
   it('missing Authorization header → 401', async () => {
-    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY, ''));
+    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY, ''), EMPTY_ENV);
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('unauthorized');
   });
 
   it('Bearer with empty token → 401', async () => {
-    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY, 'Bearer '));
+    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY, 'Bearer '), EMPTY_ENV);
     expect(res.status).toBe(401);
+  });
+
+  it('ADAPT_API_KEY set and matching token → 200', async () => {
+    const env: Env = { ENVIRONMENT: 'test', ADAPT_API_KEY: 'sk_test_secret_key' };
+    const res = await handleAdaptRequest(
+      makeAdaptRequest(BASE_BODY, 'Bearer sk_test_secret_key'),
+      env,
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('ADAPT_API_KEY set and wrong token → 401', async () => {
+    const env: Env = { ENVIRONMENT: 'test', ADAPT_API_KEY: 'sk_test_secret_key' };
+    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY, 'Bearer wrong_key'), env);
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('unauthorized');
+  });
+
+  it('ADAPT_API_KEY unset → presence-only auth (any non-empty token passes)', async () => {
+    const res = await handleAdaptRequest(
+      makeAdaptRequest(BASE_BODY, 'Bearer any_random_token'),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+  });
+});
+
+// ─── LLM cap ─────────────────────────────────────────────────────────────────
+
+describe('POST /api/adapt — LLM daily cap', () => {
+  afterEach(() => {
+    resetTenantSpend(TENANT_ID);
+  });
+
+  it('cap not exceeded → source is "playbook"', async () => {
+    const env: Env = { ENVIRONMENT: 'test', LLM_DAILY_CAP_USD: '1.00' };
+    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY), env);
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    expect(body.source).toBe('playbook');
+  });
+
+  it('cap exceeded → source is "playbook_fallback_llm_capped"', async () => {
+    // Simulate the tenant having already spent $1.00 today.
+    recordSpend(TENANT_ID, 4_000_000); // 4M tokens × $0.00000025 = $1.00
+
+    const env: Env = { ENVIRONMENT: 'test', LLM_DAILY_CAP_USD: '1.00' };
+    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY), env);
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    expect(body.source).toBe('playbook_fallback_llm_capped');
+  });
+
+  it('cap exceeded still returns valid adapt directives', async () => {
+    // Simulate spend over cap.
+    recordSpend(TENANT_ID, 5_000_000);
+
+    const env: Env = { ENVIRONMENT: 'test', LLM_DAILY_CAP_USD: '1.00' };
+    const res = await handleAdaptRequest(
+      // holdout_pct=0 guarantees treatment (non-holdout) so directives are non-empty
+      makeAdaptRequest({ ...BASE_BODY, archetype_hint: 'investor', holdout_pct: 0 }),
+      env,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    expect(body.archetype).toBe('investor');
+    expect(body.directives.length).toBeGreaterThan(0);
+    expect(body.source).toBe('playbook_fallback_llm_capped');
   });
 });
 
@@ -149,6 +232,7 @@ describe('POST /api/adapt — A/B holdout (TICKET-AB-001)', () => {
         consent_state: 'opted_out',
         consent_mode_enabled: true,
       }),
+      EMPTY_ENV,
     );
     expect(res.status).toBe(200);
     const body = await parseBody<AdaptResponse>(res);
@@ -163,6 +247,7 @@ describe('POST /api/adapt — A/B holdout (TICKET-AB-001)', () => {
         consent_state: 'unknown',
         consent_mode_enabled: true,
       }),
+      EMPTY_ENV,
     );
     expect(res.status).toBe(200);
     const body = await parseBody<AdaptResponse>(res);
@@ -176,6 +261,7 @@ describe('POST /api/adapt — A/B holdout (TICKET-AB-001)', () => {
         consent_state: 'granted',
         consent_mode_enabled: true,
       }),
+      EMPTY_ENV,
     );
     expect(res.status).toBe(200);
     const body = await parseBody<AdaptResponse>(res);
@@ -184,7 +270,7 @@ describe('POST /api/adapt — A/B holdout (TICKET-AB-001)', () => {
 
   it('AC-6: no consent fields → holdout_group boolean is present (consent mode disabled)', async () => {
     // Default: consent_mode_enabled is false, so assignment always proceeds
-    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY));
+    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY), EMPTY_ENV);
     expect(res.status).toBe(200);
     const body = await parseBody<AdaptResponse>(res);
     expect(typeof body.holdout_group).toBe('boolean');
@@ -199,6 +285,7 @@ describe('POST /api/adapt — A/B holdout (TICKET-AB-001)', () => {
         consent_state: 'granted',
         consent_mode_enabled: true,
       }),
+      EMPTY_ENV,
     );
     expect(res.status).toBe(200);
     const body = await parseBody<AdaptResponse>(res);
@@ -216,6 +303,7 @@ describe('POST /api/adapt — A/B holdout (TICKET-AB-001)', () => {
         consent_state: 'granted',
         consent_mode_enabled: true,
       }),
+      EMPTY_ENV,
     );
     expect(res.status).toBe(200);
     const body = await parseBody<AdaptResponse>(res);
@@ -231,8 +319,8 @@ describe('POST /api/adapt — A/B holdout (TICKET-AB-001)', () => {
       consent_mode_enabled: true,
     };
 
-    const res1 = await handleAdaptRequest(makeAdaptRequest(requestBody));
-    const res2 = await handleAdaptRequest(makeAdaptRequest(requestBody));
+    const res1 = await handleAdaptRequest(makeAdaptRequest(requestBody), EMPTY_ENV);
+    const res2 = await handleAdaptRequest(makeAdaptRequest(requestBody), EMPTY_ENV);
 
     const body1 = await parseBody<AdaptResponse>(res1);
     const body2 = await parseBody<AdaptResponse>(res2);

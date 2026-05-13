@@ -4,8 +4,13 @@
  * MVP stub: returns deterministic directives based on archetype_hint.
  * Real ML inference (Modal intent-engine) is wired in Sprint 5 (TICKET-031).
  *
- * Auth: presence-only check on Authorization: Bearer header.
- * DB lookups for tenant validation are deferred to Sprint 5.
+ * Auth:
+ *   - When ADAPT_API_KEY env var is set: Bearer token must match exactly.
+ *   - When ADAPT_API_KEY is unset (local dev / tests): presence-only auth is used.
+ *
+ * LLM cap:
+ *   - When per-tenant daily spend exceeds LLM_DAILY_CAP_USD (default $1.00),
+ *     the response source is set to 'playbook_fallback_llm_capped'.
  *
  * A/B holdout assignment: TICKET-AB-001.
  * - Deterministic HMAC-SHA-256 hash on (tenant_id, session_id).
@@ -20,6 +25,8 @@
 import { z } from 'zod';
 
 import { assignHoldout, DEFAULT_HOLDOUT_PCT } from '../../../lib/ab-assignment.js';
+import type { Env } from '../../../index.js';
+import { isDailyCapExceeded } from '../../../lib/llm-gateway.js';
 
 // ─── Request / response types ─────────────────────────────────────────────────
 
@@ -56,12 +63,21 @@ export interface Directive {
   value: string | string[];
 }
 
+export type AdaptResponseSource =
+  | 'playbook'
+  | 'llm'
+  | 'cache'
+  | 'playbook_fallback_llm_capped'
+  | 'playbook_fallback_llm_timeout';
+
 export interface AdaptResponse {
   session_id: string;
   archetype: string;
   confidence: number;
   directives: Directive[];
   ttl_seconds: number;
+  /** Origin of the response — useful for observability and client-side analytics. */
+  source: AdaptResponseSource;
   /**
    * A/B holdout assignment. Present when the session was assigned (consent granted).
    * Absent when assignment was skipped (opted-out / unknown consent).
@@ -108,7 +124,16 @@ export function detectArchetype(hint?: string): ArchetypeResult {
   return { archetype: 'neutral', directives: NEUTRAL_DIRECTIVES, confidence: 0.5 };
 }
 
-// ─── Request handler ──────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Default daily LLM cap in USD when LLM_DAILY_CAP_USD is not configured. */
+const DEFAULT_DAILY_CAP_USD = 1.0;
+
+function parseDailyCap(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_DAILY_CAP_USD;
+  const parsed = parseFloat(raw);
+  return isNaN(parsed) || parsed <= 0 ? DEFAULT_DAILY_CAP_USD : parsed;
+}
 
 function errorResponse(code: string, message: string, status: number, details?: unknown): Response {
   return Response.json(
@@ -117,12 +142,34 @@ function errorResponse(code: string, message: string, status: number, details?: 
   );
 }
 
-export async function handleAdaptRequest(request: Request): Promise<Response> {
-  // 1. Auth — presence-only in MVP (tenant DB lookup deferred to Sprint 5)
+// ─── Request handler ──────────────────────────────────────────────────────────
+
+/**
+ * Handles POST /api/adapt.
+ *
+ * @param request - The incoming Request object.
+ * @param env     - Cloudflare Worker environment bindings.
+ *                  Pass `{}` in tests to use presence-only auth (ADAPT_API_KEY unset).
+ */
+export async function handleAdaptRequest(
+  request: Request,
+  env: Env = {} as Env,
+): Promise<Response> {
+  // 1. Auth
   const auth = request.headers.get('Authorization') ?? request.headers.get('authorization');
-  if (!auth?.startsWith('Bearer ') || auth.slice(7).trim() === '') {
+  const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+
+  if (!token) {
     return errorResponse('unauthorized', 'Authorization: Bearer <key> header is required', 401);
   }
+
+  if (env.ADAPT_API_KEY !== undefined && env.ADAPT_API_KEY !== '') {
+    // Strict validation: token must match the configured key exactly.
+    if (token !== env.ADAPT_API_KEY) {
+      return errorResponse('unauthorized', 'Invalid API key', 401);
+    }
+  }
+  // If ADAPT_API_KEY is unset, presence-only auth is used (token non-empty is sufficient).
 
   // 2. Parse body
   let rawBody: unknown;
@@ -165,12 +212,19 @@ export async function handleAdaptRequest(request: Request): Promise<Response> {
     ? { archetype: 'neutral', directives: NEUTRAL_DIRECTIVES, confidence: 0.5 }
     : detectArchetype(archetype_hint);
 
+  // 6. LLM cap check.
+  const dailyCapUsd = parseDailyCap(env.LLM_DAILY_CAP_USD);
+  const capExceeded = isDailyCapExceeded(tenant_id, dailyCapUsd);
+
+  const source: AdaptResponseSource = capExceeded ? 'playbook_fallback_llm_capped' : 'playbook';
+
   const body: AdaptResponse = {
     session_id,
     archetype,
     confidence,
     directives: isHoldout ? [] : directives,
     ttl_seconds: 300,
+    source,
     // AC-3: holdout_group is absent when assignment was skipped.
     ...(assignment.skipped ? {} : { holdout_group: assignment.holdout_group }),
   };

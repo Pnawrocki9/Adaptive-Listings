@@ -75,13 +75,24 @@ const ClassDirectiveSchema = z.object({
   confidence: z.number().min(0).max(1),
 });
 
+const ReorderDirectiveSchema = z.object({
+  type: z.literal('reorder'),
+  container_selector: z.string(),
+  item_selector: z.string(),
+  score_function: z.literal('archetype_affinity'),
+  scores: z.array(z.object({ listing_id: z.string(), score: z.number() })),
+  pin_top_n: z.number().optional(),
+  archetype: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+
 const AdaptationDirectivesSchema = z.object({
   session_id: z.string(),
   archetype: z.string(),
   confidence: z.number().min(0).max(1),
   similarity: z.number().min(0).max(1),
   tier: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-  directives: z.array(z.union([TextDirectiveSchema, ClassDirectiveSchema])),
+  directives: z.array(z.union([TextDirectiveSchema, ClassDirectiveSchema, ReorderDirectiveSchema])),
   source: z.enum([
     'playbook',
     'llm_tweaked',
@@ -757,5 +768,112 @@ describe('POST /api/adapt — AdaptationDirectives response shape', () => {
     const body = await parseBody<Record<string, unknown>>(res);
     expect(typeof body.generated_at).toBe('string');
     expect(new Date(body.generated_at as string).getTime()).not.toBeNaN();
+  });
+});
+
+// ─── POST /api/adapt — ReorderDirective ──────────────────────────────────────
+
+describe('POST /api/adapt — ReorderDirective', () => {
+  beforeEach(() => {
+    mockCallLlmGateway.mockClear();
+    mockCallLlmGateway.mockResolvedValue(null);
+  });
+
+  it('POST with listing_ids returns ReorderDirective for est_demo_tenant', async () => {
+    const body = {
+      ...VALID_POST_BODY,
+      listing_ids: ['listing-a', 'listing-b', 'listing-c'],
+    };
+    const res = await POST(makePostRequest(body, 'Bearer demo_key'));
+    expect(res.status).toBe(200);
+    const resBody = await parseBody<Record<string, unknown>>(res);
+    const directives = resBody.directives as { type: string }[];
+    const reorderDirectives = directives.filter((d) => d.type === 'reorder');
+    expect(reorderDirectives.length).toBe(1);
+
+    const rd = reorderDirectives[0] as {
+      type: string;
+      container_selector: string;
+      item_selector: string;
+      score_function: string;
+      scores: { listing_id: string; score: number }[];
+      archetype: string;
+      confidence: number;
+    };
+    expect(rd.container_selector).toBe('[data-estalara-listings-grid]');
+    expect(rd.item_selector).toBe('[data-estalara-listing-id]');
+    expect(rd.score_function).toBe('archetype_affinity');
+    expect(rd.scores).toHaveLength(3);
+    expect(rd.archetype).toBe('yield_hunter');
+    // Validate schema
+    const parsed = ReorderDirectiveSchema.safeParse(rd);
+    expect(parsed.success).toBe(true);
+  });
+
+  it('POST without listing_ids returns no ReorderDirective', async () => {
+    const res = await POST(makePostRequest(VALID_POST_BODY, 'Bearer demo_key'));
+    expect(res.status).toBe(200);
+    const resBody = await parseBody<Record<string, unknown>>(res);
+    const directives = resBody.directives as { type: string }[];
+    const reorderDirectives = directives.filter((d) => d.type === 'reorder');
+    expect(reorderDirectives.length).toBe(0);
+  });
+
+  it('POST with empty listing_ids array returns no ReorderDirective', async () => {
+    const body = {
+      ...VALID_POST_BODY,
+      listing_ids: [],
+    };
+    const res = await POST(makePostRequest(body, 'Bearer demo_key'));
+    expect(res.status).toBe(200);
+    const resBody = await parseBody<Record<string, unknown>>(res);
+    const directives = resBody.directives as { type: string }[];
+    const reorderDirectives = directives.filter((d) => d.type === 'reorder');
+    expect(reorderDirectives.length).toBe(0);
+  });
+
+  it('POST with reorder_capable=false tenant (non-demo) returns no ReorderDirective', async () => {
+    const body = {
+      tenant_id: 'some_other_tenant',
+      session_id: 'sess-reorder-004',
+      page_type: 'listing_list' as const,
+      archetype_hint: 'yield_hunter',
+      confidence: 0.8,
+      similarity: 0.9,
+      listing_ids: ['listing-x', 'listing-y'],
+    };
+    const res = await POST(makePostRequest(body, 'Bearer demo_key'));
+    expect(res.status).toBe(200);
+    const resBody = await parseBody<Record<string, unknown>>(res);
+    const directives = resBody.directives as { type: string }[];
+    const reorderDirectives = directives.filter((d) => d.type === 'reorder');
+    expect(reorderDirectives.length).toBe(0);
+  });
+
+  it('ReorderDirective scores are sorted descending', async () => {
+    const body = {
+      ...VALID_POST_BODY,
+      listing_ids: ['alpha', 'beta', 'gamma'],
+    };
+    const res = await POST(makePostRequest(body, 'Bearer demo_key'));
+    const resBody = await parseBody<Record<string, unknown>>(res);
+    const directives = resBody.directives as { type: string }[];
+    const rd = directives.find((d) => d.type === 'reorder') as {
+      scores: { listing_id: string; score: number }[];
+    };
+    expect(rd).toBeDefined();
+    const scores = rd.scores.map((s) => s.score);
+    for (let i = 0; i < scores.length - 1; i++) {
+      expect(scores[i]!).toBeGreaterThanOrEqual(scores[i + 1]!);
+    }
+  });
+
+  it('listing_ids over max (101) → 400 validation error', async () => {
+    const body = {
+      ...VALID_POST_BODY,
+      listing_ids: Array.from({ length: 101 }, (_, i) => `listing-${String(i)}`),
+    };
+    const res = await POST(makePostRequest(body, 'Bearer demo_key'));
+    expect(res.status).toBe(400);
   });
 });

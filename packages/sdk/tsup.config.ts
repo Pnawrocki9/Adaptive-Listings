@@ -57,4 +57,24 @@ export default defineConfig([
     bundle: true,
     tsconfig: './tsconfig.dts.json',
   },
+  // AI Vision subpath export — SERVER-SIDE ONLY, never bundled with browser SDK.
+  // Loaded via dynamic import from POST /api/detect in apps/control-plane.
+  // @anthropic-ai/sdk is marked external — provided by control-plane at runtime.
+  {
+    entry: {
+      'auto-detect/techniques/ai-vision': 'src/auto-detect/techniques/ai-vision.ts',
+    },
+    format: ['esm'],
+    outDir: 'dist',
+    dts: true,
+    sourcemap: true,
+    clean: false,
+    target: 'es2022',
+    platform: 'node',
+    bundle: true,
+    // @anthropic-ai/sdk is NOT a dep of packages/sdk — mark as external so tsup
+    // does not attempt to bundle it. The control-plane provides it at runtime.
+    external: ['@anthropic-ai/sdk'],
+    tsconfig: './tsconfig.dts.json',
+  },
 ]);

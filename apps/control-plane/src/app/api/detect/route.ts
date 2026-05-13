@@ -164,6 +164,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   let result: DetectionResult;
   try {
     result = await detectSiteSchema(html, url, tenantId);
+
+    // ── AI Vision fallback (Technique 11) ───────────────────────────────────
+    // Called server-side only when all deterministic techniques return null.
+    // Rate limiting (max 1 call per tenant per 24 h) is enforced via the
+    // tenant_site_schemas table — check that table before this handler is called
+    // or add a guard here when rate-limiting middleware is available (Sprint 8).
+    if (result.schema === null && process.env.ANTHROPIC_API_KEY) {
+      try {
+        const aiVisionModule = (await import('@estalara/sdk/auto-detect/ai-vision')) as {
+          detectAiVision: (html: string, url: string) => Promise<typeof result | null>;
+        };
+        const aiResult = await aiVisionModule.detectAiVision(html, url);
+        if (aiResult) {
+          result = {
+            ...aiResult,
+            schema: aiResult.schema ? { ...aiResult.schema, tenant_id: tenantId } : null,
+          };
+        }
+      } catch (aiErr) {
+        // AI Vision failure must not block the response.
+        console.error(
+          '[detect] AI Vision fallback failed:',
+          aiErr instanceof Error ? aiErr.message : aiErr,
+        );
+      }
+    }
   } catch (err) {
     if (isNotImplementedError(err)) {
       return NextResponse.json(

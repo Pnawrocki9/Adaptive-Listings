@@ -18,6 +18,10 @@
     "./auto-detect": {
       "import": "./dist/auto-detect/pipeline.js",
       "types": "./dist/auto-detect/pipeline.d.ts"
+    },
+    "./auto-detect/ai-vision": {
+      "import": "./dist/auto-detect/techniques/ai-vision.js",
+      "types": "./dist/auto-detect/techniques/ai-vision.d.ts"
     }
   },
   "files": [

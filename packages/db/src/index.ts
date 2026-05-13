@@ -9,6 +9,6 @@
  * @module @estalara/db
  */
 
-export { createClient, createTenantClient, createAdminClient } from './client.js';
-export type { ClientOptions, Database } from './client.js';
+export { createClient, createTenantClient, createAdminClient, withJwt } from './client.js';
+export type { ClientOptions, Database, TenantDatabase } from './client.js';
 export * from './schema/index.js';

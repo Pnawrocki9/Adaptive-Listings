@@ -82,75 +82,61 @@ export interface DataExtractorsPerCard {
   is_offplan?: SelectorStrategy;
 }
 
-/**
- * Augment slot selectors for a listing detail page.
- *
- * Each entry maps a logical slot name to a CSS selector strategy.
- * Slot names align with Tier 2 Augment `data-estalara-slot` values.
- */
+/** Named slot selectors for adaptation on detail pages. */
 export interface SlotSelectors {
   headline?: SelectorStrategy;
-  subheadline?: SelectorStrategy;
-  description?: SelectorStrategy;
+  tagline?: SelectorStrategy;
   cta_primary?: SelectorStrategy;
   cta_secondary?: SelectorStrategy;
-  feature_section?: SelectorStrategy;
-  ai_topics?: SelectorStrategy;
-  tagline?: SelectorStrategy;
+  description?: SelectorStrategy;
+  features_list?: SelectorStrategy;
 }
 
 /**
- * A contextual hint that nudges archetype classification for this tenant's site.
+ * Archetype hint derived from site-level signals (market, property type, price tier).
  *
- * For example: a site that exclusively shows off-plan Dubai properties provides
- * a strong boost toward `golden_visa_buyer` and `yield_hunter`.
+ * Applied during Session-level archetype classification to boost priors for this tenant.
  */
 export interface ArchetypeHint {
-  /**
-   * Archetype to boost.
-   *
-   * Accepts any of the known `ArchetypeId` literals for IDE autocomplete, plus any
-   * future string extension. `string & {}` preserves autocomplete while satisfying
-   * @typescript-eslint/no-redundant-type-constituents (plain `ArchetypeId | string` is rejected).
-   */
-  archetype_id: ArchetypeId | (string & {});
-  /** Human-readable description of the signal that triggered this hint. */
+  archetype_id: ArchetypeId;
   signal: string;
-  /** Additive confidence boost (0.0 – 1.0) applied before classification. */
   confidence_boost: number;
 }
 
-/**
- * Schema describing the listing index page (search results / grid view).
- *
- * Sprint 8 hooks:
- *   - `container_selector`        — consumed by `ReorderDirective` to scope DOM reordering
- *   - `data_extractors_per_card`  — consumed by the re-ranking engine for affinity scoring
- */
+/** Schema describing the listing index / search results page. */
 export interface IndexSchema {
-  /** URL path patterns that identify this page as an index page (glob or regex string). */
+  /** URL path patterns that identify this page as an index / search results page. */
   url_patterns: string[];
-  /** CSS selector that matches individual listing card elements. */
+  /**
+   * CSS selector that matches a single listing card in the grid.
+   *
+   * The detection engine verifies ≥3 elements match before using this selector.
+   */
   listing_card_selector: string;
   /**
-   * CSS selector for the grid / list container that wraps all cards.
+   * CSS selector for the container that wraps all listing cards.
    *
-   * SPRINT 8 HOOK: Required by `ReorderDirective.container_selector` for DOM reordering.
-   * Populated by the detection engine; consumed by the A/B re-ranking framework in Sprint 8.
+   * Required for `ReorderDirective` (Sprint 8). When not available, `reorder_capable`
+   * is set to `false`.
    */
   container_selector?: string;
-  /** Approximate number of listing cards expected per page (used for confidence validation). */
-  listing_count_expected?: number;
-  /** Field-level extraction strategies for display-layer adaptation (Tier 2 Augment). */
+  /** Per-card field extraction for display-level adaptation (headline, photo, etc.). */
   card_field_mappings: CardFieldMappings;
   /**
-   * Per-card numeric/boolean extractors for Decision API re-ranking (Sprint 8).
+   * Per-card data extractors that feed the re-ranking algorithm.
    *
-   * SPRINT 8 HOOK: populated by the detection engine, not yet consumed by Decision API.
+   * SPRINT 8 HOOK: populated by the detection engine, consumed by the re-ranking
+   * engine when computing scores for `ReorderDirective`.
    */
   data_extractors_per_card: DataExtractorsPerCard;
   /** Whether the page exposes sort controls (relevance / price / date). */
   sort_options_available?: boolean;
+  /**
+   * Expected number of listing cards on a typical page load.
+   * Populated by the detection engine from observed card count during analysis.
+   * Used for drift detection: if live count falls below 50% of this value, flag schema rot.
+   */
+  listing_count_expected?: number;
   /**
    * Whether this page's card order can be mutated by `ReorderDirective`.
    *

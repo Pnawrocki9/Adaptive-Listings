@@ -28,7 +28,12 @@ vi.mock('drizzle-orm', () => ({
   isNull: vi.fn((a: unknown) => ({ op: 'isNull', a })),
 }));
 
+vi.mock('@estalara/auth', () => ({
+  requireTenantAccess: vi.fn(),
+}));
+
 import { createAdminClient } from '@estalara/db';
+import { requireTenantAccess } from '@estalara/auth';
 
 import { GET, POST } from './route';
 
@@ -39,26 +44,35 @@ async function parseBody<T>(res: Response): Promise<T> {
 
 const TENANT_ID = '550e8400-e29b-41d4-a716-446655440099';
 
+const TENANT_CLAIMS = {
+  sub: 'user-001',
+  email: 'user@example.com',
+  tenant_id: TENANT_ID,
+  agency_role: 'agency:viewer' as const,
+  estalara_staff: false as const,
+  mfa_verified: false,
+};
+
 const VALID_BODY = {
   scope: 'mockup',
   visibility: 'self',
   duration: 'session',
 } as const;
 
-function makePostRequest(body: Record<string, unknown>, tenantId = TENANT_ID): NextRequest {
+function makePostRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest('http://localhost/api/demo/sessions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(tenantId ? { 'x-tenant-id': tenantId } : {}),
+      Authorization: 'Bearer test_token',
     },
     body: JSON.stringify(body),
   });
 }
 
-function makeGetRequest(tenantId = TENANT_ID): NextRequest {
+function makeGetRequest(): NextRequest {
   return new NextRequest('http://localhost/api/demo/sessions', {
-    headers: tenantId ? { 'x-tenant-id': tenantId } : {},
+    headers: { Authorization: 'Bearer test_token' },
   });
 }
 
@@ -88,9 +102,8 @@ beforeEach(() => {
 
 describe('POST /api/demo/sessions', () => {
   it('valid body → 201 with token and session_id', async () => {
-    vi.mocked(createAdminClient).mockReturnValue(
-      makeInsertDbMock() as unknown as ReturnType<typeof createAdminClient>,
-    );
+    vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
+    vi.mocked(createAdminClient).mockReturnValue(makeInsertDbMock());
     const res = await POST(makePostRequest(VALID_BODY));
     expect(res.status).toBe(201);
     const body = await parseBody<{ session_id: string; token: string; expires_at: string }>(res);
@@ -100,14 +113,18 @@ describe('POST /api/demo/sessions', () => {
     expect(typeof body.expires_at).toBe('string');
   });
 
-  it('missing x-tenant-id → 401', async () => {
-    const res = await POST(makePostRequest(VALID_BODY, ''));
+  it('missing/invalid JWT → 401', async () => {
+    vi.mocked(requireTenantAccess).mockRejectedValue(
+      new Error('Unauthorized: no valid authentication token'),
+    );
+    const res = await POST(makePostRequest(VALID_BODY));
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('unauthorized');
   });
 
   it('scope=production without production_domain → 400', async () => {
+    vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
     const res = await POST(
       makePostRequest({ scope: 'production', visibility: 'self', duration: 'session' }),
     );
@@ -118,9 +135,8 @@ describe('POST /api/demo/sessions', () => {
   });
 
   it('scope=production with domain → 201', async () => {
-    vi.mocked(createAdminClient).mockReturnValue(
-      makeInsertDbMock() as unknown as ReturnType<typeof createAdminClient>,
-    );
+    vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
+    vi.mocked(createAdminClient).mockReturnValue(makeInsertDbMock());
     const res = await POST(
       makePostRequest({
         scope: 'production',
@@ -134,10 +150,9 @@ describe('POST /api/demo/sessions', () => {
 });
 
 describe('GET /api/demo/sessions', () => {
-  it('valid x-tenant-id → 200 with sessions array', async () => {
-    vi.mocked(createAdminClient).mockReturnValue(
-      makeSelectDbMock([]) as unknown as ReturnType<typeof createAdminClient>,
-    );
+  it('valid JWT → 200 with sessions array', async () => {
+    vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
+    vi.mocked(createAdminClient).mockReturnValue(makeSelectDbMock([]));
     const res = await GET(makeGetRequest());
     expect(res.status).toBe(200);
     const body = await parseBody<{ tenant_id: string; sessions: unknown[] }>(res);
@@ -145,8 +160,11 @@ describe('GET /api/demo/sessions', () => {
     expect(Array.isArray(body.sessions)).toBe(true);
   });
 
-  it('missing x-tenant-id → 401', async () => {
-    const res = await GET(makeGetRequest(''));
+  it('missing/invalid JWT → 401', async () => {
+    vi.mocked(requireTenantAccess).mockRejectedValue(
+      new Error('Unauthorized: no valid authentication token'),
+    );
+    const res = await GET(makeGetRequest());
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('unauthorized');

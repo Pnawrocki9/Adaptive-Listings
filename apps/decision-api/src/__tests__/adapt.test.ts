@@ -93,6 +93,22 @@ describe('POST /api/adapt — archetype routing', () => {
     const body = await parseBody<AdaptResponse>(res);
     expect(body.archetype).toBe('investor');
   });
+
+  it('directives carry archetype and confidence fields', async () => {
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({ ...BASE_BODY, archetype_hint: 'investor' }),
+    );
+    const body = await parseBody<AdaptResponse>(res);
+    const headline = body.directives.find((d: Directive) => d.slot === 'hero_headline');
+    expect(headline?.archetype).toBe('investor');
+    expect(typeof headline?.confidence).toBe('number');
+  });
+
+  it('response includes source: playbook', async () => {
+    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY));
+    const body = await parseBody<AdaptResponse>(res);
+    expect(body.source).toBe('playbook');
+  });
 });
 
 // ─── Validation errors ────────────────────────────────────────────────────────

@@ -61,6 +61,8 @@ export interface Directive {
   slot: string;
   type: DirectiveType;
   value: string | string[];
+  archetype: string;
+  confidence: number;
 }
 
 export type AdaptResponseSource =
@@ -87,19 +89,22 @@ export interface AdaptResponse {
 
 // ─── Stub directive sets ──────────────────────────────────────────────────────
 
-const INVESTOR_DIRECTIVES: Directive[] = [
+/** Base directive shape before archetype/confidence are threaded in from detectArchetype(). */
+type DirectiveBase = Pick<Directive, 'slot' | 'type' | 'value'>;
+
+const INVESTOR_DIRECTIVES_BASE: DirectiveBase[] = [
   { slot: 'hero_headline', type: 'text', value: 'High-yield investment properties' },
   { slot: 'cta_text', type: 'text', value: 'View ROI Analysis' },
   { slot: 'listing_order', type: 'order', value: ['yield_high', 'price_asc'] },
 ];
 
-const FAMILY_DIRECTIVES: Directive[] = [
+const FAMILY_DIRECTIVES_BASE: DirectiveBase[] = [
   { slot: 'hero_headline', type: 'text', value: 'Find your perfect family home' },
   { slot: 'cta_text', type: 'text', value: 'Book a Family Viewing' },
   { slot: 'listing_order', type: 'order', value: ['schools_nearby', 'bedrooms_desc'] },
 ];
 
-const NEUTRAL_DIRECTIVES: Directive[] = [
+const NEUTRAL_DIRECTIVES_BASE: DirectiveBase[] = [
   { slot: 'hero_headline', type: 'text', value: 'Discover your next property' },
   { slot: 'cta_text', type: 'text', value: 'Explore Listings' },
   { slot: 'listing_order', type: 'order', value: ['featured', 'recent'] },
@@ -113,15 +118,38 @@ interface ArchetypeResult {
   confidence: number;
 }
 
+/** Thread archetype + confidence from the detection result into each directive. */
+function toDirectives(bases: DirectiveBase[], archetype: string, confidence: number): Directive[] {
+  return bases.map((d) => ({ ...d, archetype, confidence }));
+}
+
 export function detectArchetype(hint?: string): ArchetypeResult {
   const h = (hint ?? '').toLowerCase();
   if (h === 'investor' || h.includes('invest')) {
-    return { archetype: 'investor', directives: INVESTOR_DIRECTIVES, confidence: 0.9 };
+    const archetype = 'investor';
+    const confidence = 0.9;
+    return {
+      archetype,
+      confidence,
+      directives: toDirectives(INVESTOR_DIRECTIVES_BASE, archetype, confidence),
+    };
   }
   if (h === 'family' || h.includes('family')) {
-    return { archetype: 'family', directives: FAMILY_DIRECTIVES, confidence: 0.9 };
+    const archetype = 'family';
+    const confidence = 0.9;
+    return {
+      archetype,
+      confidence,
+      directives: toDirectives(FAMILY_DIRECTIVES_BASE, archetype, confidence),
+    };
   }
-  return { archetype: 'neutral', directives: NEUTRAL_DIRECTIVES, confidence: 0.5 };
+  const archetype = 'neutral';
+  const confidence = 0.5;
+  return {
+    archetype,
+    confidence,
+    directives: toDirectives(NEUTRAL_DIRECTIVES_BASE, archetype, confidence),
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -209,7 +237,11 @@ export async function handleAdaptRequest(
   const isHoldout = !assignment.skipped && assignment.holdout_group;
 
   const { archetype, directives, confidence } = isHoldout
-    ? { archetype: 'neutral', directives: NEUTRAL_DIRECTIVES, confidence: 0.5 }
+    ? {
+        archetype: 'neutral',
+        directives: toDirectives(NEUTRAL_DIRECTIVES_BASE, 'neutral', 0.5),
+        confidence: 0.5,
+      }
     : detectArchetype(archetype_hint);
 
   // 6. LLM cap check.

@@ -1,18 +1,21 @@
 /**
- * Tests for GET /api/adapt — Decision API real logic.
+ * Tests for GET /api/adapt and POST /api/adapt — Decision API real logic.
  *
  * Coverage:
+ *   - Auth gate: missing header → 401, wrong key → 401, correct key → 200
+ *   - Auth gate: ADAPT_API_KEY unset → presence-only (empty → 401, non-empty → 200)
  *   - Decision tree: all 4 branches (with and without LLM gateway)
  *   - AdaptationDirectives shape validation
  *   - Valid GET request → correct AdaptationDirectives
  *   - Missing/invalid params → 400 with canonical error format
  *   - LLM gateway integration (mocked)
+ *   - POST: presence-only auth, Zod validation, 200 with AdaptationDirectives
  *
- * Handler is now async — all GET() calls must be awaited.
+ * Handler is now async — all GET() and POST() calls must be awaited.
  */
 
 import { NextRequest } from 'next/server';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod';
 
 // Mock the LLM gateway module — by default returns null (no API key in test env)
@@ -20,7 +23,12 @@ vi.mock('@/lib/llm-gateway', () => ({
   callLlmGateway: vi.fn().mockResolvedValue(null),
 }));
 
-import { GET } from './route';
+// Mock @estalara/auth — getAuthClaims returns null (no JWT in most GET tests)
+vi.mock('@estalara/auth', () => ({
+  getAuthClaims: vi.fn().mockResolvedValue(null),
+}));
+
+import { GET, POST } from './route';
 import { callLlmGateway } from '@/lib/llm-gateway';
 
 const mockCallLlmGateway = vi.mocked(callLlmGateway);
@@ -32,14 +40,20 @@ async function parseBody<T>(res: Response): Promise<T> {
   return raw as T;
 }
 
-function makeRequest(params: Record<string, string>, tenantId = 'tenant-abc'): NextRequest {
+function makeRequest(
+  params: Record<string, string>,
+  tenantId = 'tenant-abc',
+  authHeader: string | null = 'Bearer test_key',
+): NextRequest {
   const url = new URL('http://localhost/api/adapt');
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v);
   }
-  return new NextRequest(url, {
-    headers: tenantId ? { 'x-tenant-id': tenantId } : {},
-  });
+  const headers: Record<string, string> = tenantId ? { 'x-tenant-id': tenantId } : {};
+  if (authHeader !== null) {
+    headers.Authorization = authHeader;
+  }
+  return new NextRequest(url, { headers });
 }
 
 const VALID_PARAMS = {
@@ -85,6 +99,73 @@ const AdaptationDirectivesSchema = z.object({
     'playbook_fallback_llm_unavailable',
   ]),
   generated_at: z.string().datetime(),
+});
+
+// ─── Auth gate tests ──────────────────────────────────────────────────────────
+
+describe('GET /api/adapt — auth gate', () => {
+  beforeEach(() => {
+    mockCallLlmGateway.mockClear();
+    mockCallLlmGateway.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('missing Authorization header → 401 AUTH_REQUIRED', async () => {
+    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', null));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('AUTH_REQUIRED');
+    expect(body.error.message).toContain('Authorization');
+  });
+
+  it('empty Bearer token → 401 AUTH_REQUIRED', async () => {
+    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer '));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('AUTH_REQUIRED');
+  });
+
+  it('wrong key when ADAPT_API_KEY is set → 401 FORBIDDEN', async () => {
+    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer wrong_key'));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('FORBIDDEN');
+    expect(body.error.message).toContain('Invalid API key');
+  });
+
+  it('correct key when ADAPT_API_KEY is set → 200', async () => {
+    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer test_adapt_key'));
+    expect(res.status).toBe(200);
+  });
+
+  it('ADAPT_API_KEY unset + empty token → 401 (presence-only: empty token rejected)', async () => {
+    vi.stubEnv('ADAPT_API_KEY', '');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer '));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('AUTH_REQUIRED');
+  });
+
+  it('ADAPT_API_KEY unset + non-empty token → 200 (presence-only auth)', async () => {
+    vi.stubEnv('ADAPT_API_KEY', '');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer any_token_will_do'));
+    expect(res.status).toBe(200);
+  });
+
+  it('auth error response includes request_id', async () => {
+    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', null));
+    const body = await parseBody<{ error: { request_id: string } }>(res);
+    expect(typeof body.error.request_id).toBe('string');
+    expect(body.error.request_id.length).toBeGreaterThan(0);
+  });
 });
 
 // ─── Unit: decision tree branches (gateway mocked to return null) ─────────────
@@ -596,5 +677,160 @@ describe('LLM gateway integration in route.ts', () => {
     expect(body.source).toBe('llm_tweaked');
     const directives = body.directives as { value: string }[];
     expect(directives.some((d) => d.value === 'LLM-optimized headline')).toBe(true);
+  });
+});
+
+// ─── POST /api/adapt — demo-mode endpoint ────────────────────────────────────
+
+const VALID_POST_BODY = {
+  tenant_id: 'est_demo_tenant',
+  session_id: 'sess-post-001',
+  page_type: 'listing_list' as const,
+  archetype_hint: 'yield_hunter',
+  confidence: 0.8,
+  similarity: 0.9,
+};
+
+function makePostRequest(body: Record<string, unknown>, authHeader?: string): NextRequest {
+  return new NextRequest('http://localhost/api/adapt', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(authHeader !== undefined ? { Authorization: authHeader } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+describe('POST /api/adapt — presence-only auth', () => {
+  beforeEach(() => {
+    mockCallLlmGateway.mockClear();
+    mockCallLlmGateway.mockResolvedValue(null);
+  });
+
+  it('missing Authorization header → 401', async () => {
+    const res = await POST(makePostRequest(VALID_POST_BODY));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: string }>(res);
+    expect(body.error).toContain('Unauthorized');
+  });
+
+  it('empty Bearer token → 401', async () => {
+    const res = await POST(makePostRequest(VALID_POST_BODY, 'Bearer '));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: string }>(res);
+    expect(body.error).toContain('Unauthorized');
+  });
+
+  it('valid Authorization: Bearer demo_key → 200 with AdaptationDirectives', async () => {
+    const res = await POST(makePostRequest(VALID_POST_BODY, 'Bearer demo_key'));
+    expect(res.status).toBe(200);
+    const body = await parseBody<unknown>(res);
+    const parsed = AdaptationDirectivesSchema.safeParse(body);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.session_id).toBe('sess-post-001');
+      expect(parsed.data.archetype).toBe('yield_hunter');
+      expect(parsed.data.source).toBe('playbook'); // high similarity → playbook
+    }
+  });
+});
+
+describe('POST /api/adapt — Zod validation', () => {
+  beforeEach(() => {
+    mockCallLlmGateway.mockClear();
+    mockCallLlmGateway.mockResolvedValue(null);
+  });
+
+  it('missing tenant_id → 400', async () => {
+    const noTenant = {
+      session_id: VALID_POST_BODY.session_id,
+      page_type: VALID_POST_BODY.page_type,
+    };
+    const res = await POST(makePostRequest(noTenant, 'Bearer demo_key'));
+    expect(res.status).toBe(400);
+    const body = await parseBody<{ error: string }>(res);
+    expect(body.error).toContain('Validation failed');
+  });
+
+  it('missing session_id → 400', async () => {
+    const noSession = {
+      tenant_id: VALID_POST_BODY.tenant_id,
+      page_type: VALID_POST_BODY.page_type,
+    };
+    const res = await POST(makePostRequest(noSession, 'Bearer demo_key'));
+    expect(res.status).toBe(400);
+  });
+
+  it('invalid page_type → 400', async () => {
+    const res = await POST(
+      makePostRequest({ ...VALID_POST_BODY, page_type: 'invalid_type' }, 'Bearer demo_key'),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('confidence out of range → 400', async () => {
+    const res = await POST(
+      makePostRequest({ ...VALID_POST_BODY, confidence: 1.5 }, 'Bearer demo_key'),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('similarity out of range → 400', async () => {
+    const res = await POST(
+      makePostRequest({ ...VALID_POST_BODY, similarity: -0.1 }, 'Bearer demo_key'),
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/adapt — AdaptationDirectives response shape', () => {
+  beforeEach(() => {
+    mockCallLlmGateway.mockClear();
+    mockCallLlmGateway.mockResolvedValue(null);
+  });
+
+  it('archetype_hint absent → defaults to neutral archetype', async () => {
+    const noHint = {
+      tenant_id: VALID_POST_BODY.tenant_id,
+      session_id: VALID_POST_BODY.session_id,
+      page_type: VALID_POST_BODY.page_type,
+      confidence: VALID_POST_BODY.confidence,
+      similarity: VALID_POST_BODY.similarity,
+    };
+    const res = await POST(makePostRequest(noHint, 'Bearer demo_key'));
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(body.archetype).toBe('neutral');
+  });
+
+  it('confidence and similarity absent → default 0.5', async () => {
+    const noScores = {
+      tenant_id: VALID_POST_BODY.tenant_id,
+      session_id: VALID_POST_BODY.session_id,
+      page_type: VALID_POST_BODY.page_type,
+    };
+    const res = await POST(makePostRequest(noScores, 'Bearer demo_key'));
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    // confidence <= 0.6 → default (no adaptation)
+    expect(body.source).toBe('default');
+    expect(body.confidence).toBeCloseTo(0.5);
+    expect(body.similarity).toBeCloseTo(0.5);
+  });
+
+  it('response matches AdaptationDirectives schema', async () => {
+    const res = await POST(makePostRequest(VALID_POST_BODY, 'Bearer demo_key'));
+    expect(res.status).toBe(200);
+    const body = await parseBody<unknown>(res);
+    const parsed = AdaptationDirectivesSchema.safeParse(body);
+    expect(parsed.success).toBe(true);
+  });
+
+  it('generated_at is a valid ISO datetime', async () => {
+    const res = await POST(makePostRequest(VALID_POST_BODY, 'Bearer demo_key'));
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(typeof body.generated_at).toBe('string');
+    expect(new Date(body.generated_at as string).getTime()).not.toBeNaN();
   });
 });

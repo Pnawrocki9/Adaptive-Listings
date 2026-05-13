@@ -15,6 +15,12 @@
  *   - llm_full: empty directives + source 'playbook_fallback_llm_unavailable'
  *   - cap hit: source 'playbook_fallback_llm_capped'
  *
+ * POST /api/adapt
+ *
+ * Demo-mode adaptation endpoint. Accepts a JSON body with archetype hint,
+ * confidence, similarity, and session context. Requires a non-empty
+ * Authorization: Bearer header (presence-only auth for demo mode).
+ *
  * ClickHouse logging is fire-and-forget — the response is returned immediately
  * and the analytics insert happens asynchronously.
  *
@@ -23,17 +29,30 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { z } from 'zod';
 import { errorBody, ErrorCode } from '@estalara/shared';
 import type { AdaptationDirectives, TextDirective, ArchetypeId } from '@estalara/shared';
 import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
+import { getAuthClaims } from '@estalara/auth';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CONFIDENCE_THRESHOLD = 0.6;
 const HIGH_SIMILARITY_THRESHOLD = 0.85;
 const LOW_SIMILARITY_THRESHOLD = 0.6;
+
+// ─── POST body schema ─────────────────────────────────────────────────────────
+
+const AdaptPostBodySchema = z.object({
+  tenant_id: z.string().min(1),
+  session_id: z.string().min(1),
+  page_type: z.enum(['listing_list', 'listing_detail', 'home', 'search']),
+  archetype_hint: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  similarity: z.number().min(0).max(1).optional(),
+});
 
 // ─── Decision logic ───────────────────────────────────────────────────────────
 
@@ -45,7 +64,6 @@ const LOW_SIMILARITY_THRESHOLD = 0.6;
  * @param confidence    - Intent confidence 0–1.
  * @param similarity    - Cosine similarity to the matched archetype 0–1.
  * @param sessionId     - Session ID for gateway context.
- * @param sessionContext - Optional session context for gateway prompts.
  * @returns Partial adaptation result (directives + source).
  */
 async function runDecisionTree(
@@ -158,7 +176,7 @@ function logDecisionAsync(
   });
 }
 
-// ─── Route handler ────────────────────────────────────────────────────────────
+// ─── GET handler ──────────────────────────────────────────────────────────────
 
 /**
  * GET /api/adapt
@@ -175,6 +193,33 @@ function logDecisionAsync(
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
+
+  // ── Auth gate — same pattern as decision-api Worker ───────────────────────
+  const auth = req.headers.get('Authorization') ?? req.headers.get('authorization');
+  const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!token) {
+    return NextResponse.json(
+      errorBody({
+        code: ErrorCode.AUTH_REQUIRED,
+        message: 'Authorization: Bearer <key> header is required',
+        requestId,
+      }),
+      { status: 401 },
+    );
+  }
+  const adaptApiKey = process.env.ADAPT_API_KEY;
+  if (adaptApiKey && token !== adaptApiKey) {
+    return NextResponse.json(
+      errorBody({
+        code: ErrorCode.FORBIDDEN,
+        message: 'Invalid API key',
+        requestId,
+      }),
+      { status: 401 },
+    );
+  }
+  // When ADAPT_API_KEY is unset: presence-only auth (non-empty token is sufficient — backward compat with dev)
+
   const params = req.nextUrl.searchParams;
 
   // ── Parameter validation ──────────────────────────────────────────────────
@@ -260,7 +305,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   };
 
   // ── Fire-and-forget ClickHouse analytics log ──────────────────────────────
-  const tenantId = req.headers.get('x-tenant-id') ?? 'unknown';
+  // Prefer JWT-verified tenant_id; fall back to x-tenant-id for SDK calls without JWT.
+  const tenantId =
+    (await getAuthClaims(req))?.tenant_id ?? req.headers.get('x-tenant-id') ?? 'unknown';
   logDecisionAsync(
     sessionId,
     tenantId,
@@ -269,6 +316,92 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     similarity,
     source,
     tier,
+    directives.length,
+  );
+
+  return NextResponse.json(response, { status: 200 });
+}
+
+// ─── POST handler ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/adapt
+ *
+ * Demo-mode adaptation endpoint. Accepts a JSON body and returns AdaptationDirectives.
+ * Requires a non-empty Authorization: Bearer header (presence-only check for demo mode).
+ *
+ * Body:
+ *   tenant_id      — required, string
+ *   session_id     — required, string
+ *   page_type      — required, 'listing_list'|'listing_detail'|'home'|'search'
+ *   archetype_hint — optional, ArchetypeId (defaults to 'neutral')
+ *   confidence     — optional, float 0–1 (defaults to 0.5)
+ *   similarity     — optional, float 0–1 (defaults to 0.5)
+ *
+ * @returns 200 AdaptationDirectives JSON.
+ * @returns 400 on Zod validation failure.
+ * @returns 401 if Authorization header is missing or empty.
+ */
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Presence-only auth — demo mode requires a non-empty Bearer token
+  const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+  if (!token) {
+    return NextResponse.json(
+      { error: 'Unauthorized: Authorization: Bearer <token> required' },
+      {
+        status: 401,
+      },
+    );
+  }
+
+  let rawBody: unknown;
+  try {
+    rawBody = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const parsed = AdaptPostBodySchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Validation failed', details: parsed.error.flatten() },
+      { status: 400 },
+    );
+  }
+
+  const body = parsed.data;
+  const archetypeId = (body.archetype_hint ?? 'neutral') as ArchetypeId;
+  const confidence = body.confidence ?? 0.5;
+  const similarity = body.similarity ?? 0.5;
+
+  const { directives, source } = await runDecisionTree(
+    archetypeId,
+    confidence,
+    similarity,
+    body.session_id,
+  );
+
+  const response: AdaptationDirectives = {
+    session_id: body.session_id,
+    archetype: archetypeId,
+    confidence,
+    similarity,
+    tier: 1,
+    directives,
+    source,
+    generated_at: new Date().toISOString(),
+  };
+
+  // Fire-and-forget ClickHouse log using tenant_id from body
+  logDecisionAsync(
+    body.session_id,
+    body.tenant_id,
+    archetypeId,
+    confidence,
+    similarity,
+    source,
+    1,
     directives.length,
   );
 

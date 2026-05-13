@@ -12,7 +12,7 @@ describe('detectSiteSchema pipeline', () => {
     expect(result.schema).toBeNull();
     expect(result.technique).toBe('ai_vision');
     expect(result.confidence).toBe(0);
-    expect(result.warnings.some((w) => w.includes('AUTO-004'))).toBe(true);
+    expect(result.warnings.some((w) => w.includes('AI Vision'))).toBe(true);
   });
 
   it('injects tenantId into the detected schema', async () => {

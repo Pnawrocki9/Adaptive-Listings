@@ -28,6 +28,13 @@ import { detectDataAttributes } from './techniques/data-attributes.js';
 import { detectMuiComponents } from './techniques/mui-components.js';
 import { detectArticleTag } from './techniques/article-tag.js';
 import { detectCssModules } from './techniques/css-modules.js';
+import { detectCssInJs } from './techniques/css-in-js.js';
+import { detectAngular } from './techniques/angular.js';
+import { detectWordPress } from './techniques/wordpress.js';
+import { detectDrupalPhp } from './techniques/drupal-php.js';
+// Technique 11 — AI Vision — NOT imported here. Uses @anthropic-ai/sdk (Node.js only)
+// and must never be bundled into the browser SDK.
+// Called server-side from POST /api/detect when this function returns schema: null.
 import { extractArchetypeHints } from './archetype-hints.js';
 
 /** Result returned by `detectSiteSchema`. */
@@ -78,7 +85,11 @@ export async function detectSiteSchema(
     detectMuiComponents, //   0.88 — Material UI franchise portals
     detectArticleTag, //      0.85 — semantic article elements
     detectCssModules, //      0.82 — CSS Modules prefix patterns
-    // AUTO-004 adds: detectCssInJs, detectAngular, detectWordPress, detectDrupalPhp, detectAiVision
+    detectCssInJs, //         0.75 — styled-components/Emotion prefix patterns
+    detectAngular, //         0.70 — Angular structural detection
+    detectWordPress, //       0.90 — WordPress theme classes (Houzez/RealHomes)
+    detectDrupalPhp, //       0.88 — Drupal BEM + PHP classic
+    // Technique 11 — AI Vision — called server-side by POST /api/detect, not here
   ] as const;
 
   for (const technique of techniques) {
@@ -115,7 +126,7 @@ export async function detectSiteSchema(
     technique: 'ai_vision',
     warnings: [
       ...accumulatedWarnings,
-      'No deterministic technique matched — AI Vision fallback not yet implemented (AUTO-004)',
+      'No deterministic technique matched confidence threshold — AI Vision fallback should be invoked server-side.',
     ],
   };
 }

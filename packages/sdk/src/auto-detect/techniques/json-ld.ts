@@ -16,6 +16,7 @@ import type {
   SlotSelectors,
 } from '@estalara/shared';
 import type { DetectionResult } from '../pipeline.js';
+import { inferContainerSelector } from '../utils/container.js';
 
 /** Schema.org @type values that indicate real estate content. */
 const REAL_ESTATE_TYPES = new Set([
@@ -137,27 +138,33 @@ function detectJsonLdSync(html: string, url: string): DetectionResult | null {
     type: 'url',
   };
 
+  const bedroomsStrategy: SelectorStrategy = {
+    primary: '[itemprop="numberOfRooms"]',
+    fallbacks: ['[class*="beds"]', '[class*="Beds"]', '[class*="bedroom"]', '[class*="rooms"]'],
+    json_ld_path: 'numberOfRooms',
+    type: 'number',
+  };
+
+  const areaStrategy: SelectorStrategy = {
+    primary: '[itemprop="floorSize"]',
+    fallbacks: ['[class*="area"]', '[class*="size"]', '[class*="sqm"]', '[class*="floor"]'],
+    json_ld_path: 'floorSize.value',
+    type: 'number',
+    unit: 'sqm',
+  };
+
   const cardFieldMappings: CardFieldMappings = {
     headline: addressStrategy,
     price: priceStrategy,
     image: imageStrategy,
+    bedrooms: bedroomsStrategy,
+    area: areaStrategy,
   };
 
   const dataExtractors: DataExtractorsPerCard = {
     price: priceStrategy,
-    bedrooms: {
-      primary: '[itemprop="numberOfRooms"]',
-      fallbacks: ['[class*="beds"]', '[class*="Beds"]', '[class*="bedroom"]'],
-      json_ld_path: 'numberOfRooms',
-      type: 'number',
-    },
-    area_sqm: {
-      primary: '[itemprop="floorSize"]',
-      fallbacks: ['[class*="area"]', '[class*="size"]', '[class*="sqm"]'],
-      json_ld_path: 'floorSize.value',
-      type: 'number',
-      unit: 'sqm',
-    },
+    bedrooms: bedroomsStrategy,
+    area_sqm: areaStrategy,
   };
 
   // For ItemList index pages, try to derive a listing card selector.
@@ -193,6 +200,9 @@ function detectJsonLdSync(html: string, url: string): DetectionResult | null {
     },
   };
 
+  const firstCardEl = doc.querySelector(listingCardSelector);
+  const containerSelector = inferContainerSelector(firstCardEl);
+
   const indexSchema: TenantSiteSchema['index_schema'] = {
     url_patterns: indexPatterns,
     listing_card_selector: listingCardSelector,
@@ -201,6 +211,7 @@ function detectJsonLdSync(html: string, url: string): DetectionResult | null {
     reorder_capable: false,
   };
   if (itemCount !== undefined) indexSchema.listing_count_expected = itemCount;
+  if (containerSelector !== null) indexSchema.container_selector = containerSelector;
 
   const schema: TenantSiteSchema = {
     tenant_id: 'pending',

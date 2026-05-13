@@ -78,17 +78,22 @@ export async function detectSiteSchema(
   const accumulatedWarnings: string[] = [];
 
   // Techniques in priority order — first confident match wins.
+  //
+  // WordPress / Drupal precede article-tag and css-modules: their generator-meta
+  // and body-class markers are unambiguous, and WordPress themes (RealHomes uses
+  // `article.property`) would otherwise be misdetected by the article-tag
+  // technique's class-based fallback.
   const techniques = [
     detectDataEstalara, //    1.0 — own sites, immediate return
     detectJsonLd, //          0.95 — structured data bypass
     detectDataAttributes, //  0.92 — stable test attributes
     detectMuiComponents, //   0.88 — Material UI franchise portals
+    detectWordPress, //       0.90 — WordPress theme classes (Houzez/RealHomes)
+    detectDrupalPhp, //       0.88 — Drupal BEM + PHP classic
     detectArticleTag, //      0.85 — semantic article elements
     detectCssModules, //      0.82 — CSS Modules prefix patterns
     detectCssInJs, //         0.75 — styled-components/Emotion prefix patterns
     detectAngular, //         0.70 — Angular structural detection
-    detectWordPress, //       0.90 — WordPress theme classes (Houzez/RealHomes)
-    detectDrupalPhp, //       0.88 — Drupal BEM + PHP classic
     // Technique 11 — AI Vision — called server-side by POST /api/detect, not here
   ] as const;
 

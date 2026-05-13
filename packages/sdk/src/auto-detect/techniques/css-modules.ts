@@ -21,6 +21,7 @@ import type {
   SlotSelectors,
 } from '@estalara/shared';
 import type { DetectionResult } from '../pipeline.js';
+import { inferContainerSelector } from '../utils/container.js';
 
 /**
  * CSS Modules class pattern:
@@ -328,6 +329,10 @@ function detectCssModulesSync(html: string, url: string): DetectionResult | null
         data_extractors_per_card: known.dataExtractors,
         // CSS modules selectors may drift on redeploy — disable reorder.
         reorder_capable: false,
+        ...(() => {
+          const cs = inferContainerSelector(cards[0] ?? null);
+          return cs !== null ? { container_selector: cs } : {};
+        })(),
       },
       detail_schema: {
         url_patterns: detailPatterns,
@@ -413,6 +418,10 @@ function detectCssModulesSync(html: string, url: string): DetectionResult | null
         card_field_mappings: cardFieldMappings,
         data_extractors_per_card: dataExtractors,
         reorder_capable: false,
+        ...(() => {
+          const cs = inferContainerSelector(cards[0] ?? null);
+          return cs !== null ? { container_selector: cs } : {};
+        })(),
       },
       detail_schema: {
         url_patterns: detailPatterns,

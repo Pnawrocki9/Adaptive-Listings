@@ -18,6 +18,7 @@ import type {
   SlotSelectors,
 } from '@estalara/shared';
 import type { DetectionResult } from '../pipeline.js';
+import { inferContainerSelector } from '../utils/container.js';
 
 /** Known stable article class patterns in priority order. */
 const ARTICLE_PATTERNS: {
@@ -243,6 +244,7 @@ function detectArticleTagSync(html: string, url: string): DetectionResult | null
         pattern.cardFieldMappings,
         pattern.dataExtractors,
         matched.length,
+        matched[0] ?? null,
       );
       return {
         schema,
@@ -274,6 +276,7 @@ function detectArticleTagSync(html: string, url: string): DetectionResult | null
         cardFieldMappings,
         dataExtractors,
         matched.length,
+        firstMatch,
       );
       return {
         schema,
@@ -297,6 +300,7 @@ function detectArticleTagSync(html: string, url: string): DetectionResult | null
       cardFieldMappings,
       dataExtractors,
       qualifying.length,
+      firstQualifying,
     );
     return {
       schema,
@@ -317,7 +321,9 @@ function buildSchema(
   cardFieldMappings: CardFieldMappings,
   dataExtractors: DataExtractorsPerCard,
   count: number,
+  firstCard?: Element | null,
 ): TenantSiteSchema {
+  const containerSelector = inferContainerSelector(firstCard ?? null);
   const slotSelectors: SlotSelectors = {
     headline: {
       primary: 'h1',
@@ -349,6 +355,7 @@ function buildSchema(
       card_field_mappings: cardFieldMappings,
       data_extractors_per_card: dataExtractors,
       reorder_capable: true,
+      ...(containerSelector !== null ? { container_selector: containerSelector } : {}),
     },
     detail_schema: {
       url_patterns: detailPatterns,

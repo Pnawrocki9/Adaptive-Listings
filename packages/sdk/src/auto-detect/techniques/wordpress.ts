@@ -28,6 +28,7 @@ import type {
   SlotSelectors,
 } from '@estalara/shared';
 import type { DetectionResult } from '../pipeline.js';
+import { inferContainerSelector } from '../utils/container.js';
 
 /** Minimum qualifying card count. */
 const MIN_CARD_COUNT = 2;
@@ -260,6 +261,7 @@ function detectWordPressSync(html: string, url: string): DetectionResult | null 
         themeSpec.dataExtractors,
         cards.length,
         themeSpec.confidence,
+        cards[0] ?? null,
       );
       return {
         schema,
@@ -289,6 +291,7 @@ function detectWordPressSync(html: string, url: string): DetectionResult | null 
         dataExtractors,
         cards.length,
         0.8,
+        cards[0] ?? null,
       );
       return {
         schema,
@@ -449,7 +452,9 @@ function buildSchema(
   dataExtractors: DataExtractorsPerCard,
   count: number,
   confidence: number,
+  firstCard?: Element | null,
 ): TenantSiteSchema {
+  const containerSelector = inferContainerSelector(firstCard ?? null);
   const slotSelectors: SlotSelectors = {
     headline: {
       primary: 'h1.entry-title, h1',
@@ -482,6 +487,7 @@ function buildSchema(
       card_field_mappings: cardFieldMappings,
       data_extractors_per_card: dataExtractors,
       reorder_capable: true,
+      ...(containerSelector !== null ? { container_selector: containerSelector } : {}),
     },
     detail_schema: {
       url_patterns: detailPatterns,

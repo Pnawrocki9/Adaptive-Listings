@@ -18,6 +18,11 @@ next-env.d.ts
 coverage/
 .nyc_output/
 
+# Test artifacts
+test-results/
+playwright-report/
+packages/sdk/corpus-report.json
+
 # Environment files — use Doppler, never commit secrets
 .env
 .env.local

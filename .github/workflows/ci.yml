@@ -278,6 +278,43 @@ jobs:
           LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
             ./infra/clickhouse/scripts/smoke-test.sh
 
+  # ── Auto-Detection corpus gate (TICKET-AUTO-005) ─────────────────────────
+  # Runs detectSiteSchema against 24 synthetic platform fixtures and asserts
+  # pooled precision >= 95% and recall >= 80%. Uploads corpus-report.json as a
+  # build artifact so reviewers can inspect per-platform metrics.
+  corpus-gate:
+    name: Auto-Detection corpus gate
+    runs-on: ubuntu-latest
+    env:
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @estalara/shared build
+
+      - name: Run corpus CI gate
+        run: pnpm --filter @estalara/sdk test:corpus
+
+      - name: Upload corpus report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-report
+          path: packages/sdk/corpus-report.json
+          retention-days: 14
+
   # ── SDK E2E tests (Playwright + Chromium) ────────────────────────────────
   sdk-e2e:
     name: SDK E2E tests

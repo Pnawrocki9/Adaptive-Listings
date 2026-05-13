@@ -8,3 +8,4 @@
 
 export type { DetectionResult } from './pipeline.js';
 export { detectSiteSchema } from './pipeline.js';
+export { extractArchetypeHints } from './archetype-hints.js';

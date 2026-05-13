@@ -28,6 +28,7 @@ import { detectDataAttributes } from './techniques/data-attributes.js';
 import { detectMuiComponents } from './techniques/mui-components.js';
 import { detectArticleTag } from './techniques/article-tag.js';
 import { detectCssModules } from './techniques/css-modules.js';
+import { extractArchetypeHints } from './archetype-hints.js';
 
 /** Result returned by `detectSiteSchema`. */
 export interface DetectionResult {
@@ -92,9 +93,16 @@ export async function detectSiteSchema(
     }
 
     if (result !== null && result.confidence >= MIN_CONFIDENCE) {
+      let finalSchema: TenantSiteSchema | null = null;
+      if (result.schema) {
+        finalSchema = { ...result.schema, tenant_id: tenantId };
+        // Populate archetype hints from site-level signals (TICKET-AUTO-007).
+        // Hints seed the Intent Engine's archetype priors at session start.
+        finalSchema.archetype_hints = extractArchetypeHints(finalSchema, html, url);
+      }
       return {
         ...result,
-        schema: result.schema ? { ...result.schema, tenant_id: tenantId } : null,
+        schema: finalSchema,
         warnings: [...accumulatedWarnings, ...result.warnings],
       };
     }

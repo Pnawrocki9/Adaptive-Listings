@@ -39,6 +39,9 @@ import type { ArchetypeId } from '@estalara/shared';
 /** How many intent-engine updates between automatic DQS snapshots. */
 const DQS_SNAPSHOT_INTERVAL = 5;
 
+/** Re-fetch directives from Decision API every N behavioral signals. */
+const REFETCH_SIGNAL_INTERVAL = 5;
+
 /** Current SDK version string. */
 export const SDK_VERSION = '0.0.0' as const;
 
@@ -101,21 +104,31 @@ async function init(): Promise<void> {
       }
     }
 
-    // 4b. Fetch personalization directives from Decision API (Tier 1+ feature)
-    if (config.decisionApiUrl) {
-      const response = await fetchDirectives(config, currentSession, 'listing_list');
-      if (response) {
-        applyDirectives(response.directives, {
-          archetypeId: response.archetype as ArchetypeId,
-          confidence: response.confidence,
+    /** Re-fetch directives and apply them with the latest intent state. */
+    async function refreshDirectives(): Promise<void> {
+      if (!config.decisionApiUrl) return;
+      const resp = await fetchDirectives(
+        config,
+        currentSession,
+        'listing_list',
+        currentIntentState,
+      );
+      if (resp) {
+        resetAdaptState();
+        applyDirectives(resp.directives, {
+          archetypeId: resp.archetype as ArchetypeId,
+          confidence: resp.confidence,
           sessionId: currentSession.sessionId,
         });
         if (config.debug) {
-          console.log(
-            `[Estalara] Archetype: ${response.archetype} (${String(response.confidence)})`,
-          );
+          console.log(`[Estalara] Archetype: ${resp.archetype} (${String(resp.confidence)})`);
         }
       }
+    }
+
+    // 4b. Fetch personalization directives from Decision API (Tier 1+ feature)
+    if (config.decisionApiUrl) {
+      await refreshDirectives();
     }
 
     // 5. Initialize Shadow DOM host for UI elements (fails silently in SSR)
@@ -140,8 +153,17 @@ async function init(): Promise<void> {
       signalHistory.push({ eventType: event.type, payload: event.payload });
 
       // Update Bayesian intent state from this behavioral signal
+      const prevSignalCount = currentIntentState.signal_count;
       currentIntentState = applyBehavioralSignal(currentIntentState, event.type, event.payload);
       onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+
+      // Re-fetch directives every REFETCH_SIGNAL_INTERVAL behavioral signals
+      if (
+        currentIntentState.signal_count > prevSignalCount &&
+        currentIntentState.signal_count % REFETCH_SIGNAL_INTERVAL === 0
+      ) {
+        void refreshDirectives();
+      }
 
       if (event.type === 'listing.viewed' && shadowHost && !quizTriggered && !isQuizDismissed()) {
         listingViewCount++;
@@ -198,6 +220,9 @@ async function init(): Promise<void> {
                       ts: Date.now(),
                     });
                   }
+
+                  // Re-fetch directives with quiz-updated archetype confidence
+                  void refreshDirectives();
                 },
                 () => {
                   // dismissed — reset so it can show again next session

@@ -10,6 +10,8 @@ import {
 import type { AdaptResponse } from '../core/adapt.js';
 import type { SdkConfig } from '../core/config.js';
 import type { SessionState } from '../core/session.js';
+import { initIntentState } from '../core/intent.js';
+import type { IntentState } from '../core/intent.js';
 import type { TextDirective, ClassDirective } from '@estalara/shared';
 import type { CollectedEvent } from '../core/events.js';
 
@@ -213,7 +215,7 @@ describe('fetchDirectives', () => {
     expect(requestInit.body as string).not.toContain('api_key');
   });
 
-  it('sends archetypeHint in request body when provided', async () => {
+  it('sends archetype_hint, confidence, and similarity from intentState in request body', async () => {
     const mockFetch = vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -227,14 +229,43 @@ describe('fetchDirectives', () => {
       decisionApiUrl: 'https://decision.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
-    await fetchDirectives(config, SESSION, 'listing_detail', 'family_buyer');
+    const intentState: IntentState = {
+      ...initIntentState(),
+      archetype: 'family_buyer',
+      confidence: 0.72,
+    };
+    await fetchDirectives(config, SESSION, 'listing_detail', intentState);
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/adapt'),
-      expect.objectContaining({
-        body: expect.stringContaining('family_buyer') as unknown,
+    const [, requestInit] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
+    const body = JSON.parse(requestInit.body as string) as Record<string, unknown>;
+    expect(body.archetype_hint).toBe('family_buyer');
+    expect(body.confidence).toBe(0.72);
+    // similarity = probabilities[archetype] — base prior for family_buyer is 0.04
+    expect(typeof body.similarity).toBe('number');
+    expect(body.similarity).toBeGreaterThan(0);
+  });
+
+  it('sends no archetype fields when intentState is omitted', async () => {
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(MOCK_RESPONSE),
       }),
     );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    await fetchDirectives(config, SESSION, 'listing_list');
+
+    const [, requestInit] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
+    const body = JSON.parse(requestInit.body as string) as Record<string, unknown>;
+    expect(body.archetype_hint).toBeUndefined();
+    expect(body.confidence).toBeUndefined();
+    expect(body.similarity).toBeUndefined();
   });
 });
 

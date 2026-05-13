@@ -78,6 +78,8 @@ export interface DataExtractorsPerCard {
   price_per_sqm?: SelectorStrategy;
   property_type?: SelectorStrategy;
   has_pool?: SelectorStrategy;
+  has_live_session?: SelectorStrategy;
+  is_offplan?: SelectorStrategy;
 }
 
 /** Named slot selectors for adaptation on detail pages. */
@@ -96,11 +98,9 @@ export interface SlotSelectors {
  * Applied during Session-level archetype classification to boost priors for this tenant.
  */
 export interface ArchetypeHint {
-  archetype: ArchetypeId;
-  /** Boost factor 0.0 – 1.0 applied to the prior for this archetype. */
-  boost: number;
-  /** Human-readable reason for this hint (e.g. 'high price tier'). */
-  reason?: string;
+  archetype_id: ArchetypeId;
+  signal: string;
+  confidence_boost: number;
 }
 
 /** Schema describing the listing index / search results page. */

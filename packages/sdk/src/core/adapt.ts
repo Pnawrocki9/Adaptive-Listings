@@ -194,7 +194,8 @@ function runApply(directives: (TextDirective | ClassDirective)[], context?: Appl
 
 /**
  * Fetch adaptation directives from the Decision API.
- * Returns null if Decision API is unavailable or config.decisionApiUrl is not set.
+ * Returns null if Decision API is unavailable, config.decisionApiUrl is not set,
+ * or config.tenantId is not set (tenant_id is required by the Decision API).
  */
 export async function fetchDirectives(
   config: SdkConfig,
@@ -203,12 +204,13 @@ export async function fetchDirectives(
   archetypeHint?: string,
 ): Promise<AdaptResponse | null> {
   if (!config.decisionApiUrl) return null;
+  if (!config.tenantId) return null;
 
   try {
     const body: Record<string, unknown> = {
+      tenant_id: config.tenantId,
       session_id: session.sessionId,
       page_type: pageType,
-      api_key: config.apiKey,
     };
     if (archetypeHint !== undefined) {
       body.archetype_hint = archetypeHint;
@@ -216,7 +218,10 @@ export async function fetchDirectives(
 
     const res = await fetch(`${config.decisionApiUrl}/adapt`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
       body: JSON.stringify(body),
     });
 

@@ -74,13 +74,27 @@ describe('fetchDirectives', () => {
     expect(result).toBeNull();
   });
 
+  it('returns null when tenantId is not set', async () => {
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      // tenantId intentionally omitted
+    };
+    const result = await fetchDirectives(config, SESSION, 'listing_list');
+    expect(result).toBeNull();
+  });
+
   it('returns null on network error (fails silently)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.reject(new Error('network error'))),
     );
 
-    const config: SdkConfig = { ...BASE_CONFIG, decisionApiUrl: 'https://decision.estalara.com' };
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
     expect(result).toBeNull();
   });
@@ -96,7 +110,11 @@ describe('fetchDirectives', () => {
       ),
     );
 
-    const config: SdkConfig = { ...BASE_CONFIG, decisionApiUrl: 'https://decision.estalara.com' };
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
     expect(result).toBeNull();
   });
@@ -112,11 +130,87 @@ describe('fetchDirectives', () => {
       ),
     );
 
-    const config: SdkConfig = { ...BASE_CONFIG, decisionApiUrl: 'https://decision.estalara.com' };
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
     expect(result).not.toBeNull();
     expect(result?.archetype).toBe('investor');
     expect(result?.directives).toHaveLength(2);
+  });
+
+  it('sends Authorization: Bearer header with apiKey', async () => {
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(MOCK_RESPONSE),
+      }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    await fetchDirectives(config, SESSION, 'listing_list');
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/adapt'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: `Bearer ${config.apiKey}`,
+        }) as unknown,
+      }),
+    );
+  });
+
+  it('sends tenant_id in request body', async () => {
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(MOCK_RESPONSE),
+      }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId,
+    };
+    await fetchDirectives(config, SESSION, 'listing_list');
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/adapt'),
+      expect.objectContaining({
+        body: expect.stringContaining(tenantId) as unknown,
+      }),
+    );
+  });
+
+  it('does not send api_key in request body', async () => {
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(MOCK_RESPONSE),
+      }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    await fetchDirectives(config, SESSION, 'listing_list');
+
+    const [, requestInit] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
+    expect(requestInit).toBeDefined();
+    expect(requestInit.body as string).not.toContain('api_key');
   });
 
   it('sends archetypeHint in request body when provided', async () => {
@@ -128,7 +222,11 @@ describe('fetchDirectives', () => {
     );
     vi.stubGlobal('fetch', mockFetch);
 
-    const config: SdkConfig = { ...BASE_CONFIG, decisionApiUrl: 'https://decision.estalara.com' };
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
     await fetchDirectives(config, SESSION, 'listing_detail', 'family_buyer');
 
     expect(mockFetch).toHaveBeenCalledWith(

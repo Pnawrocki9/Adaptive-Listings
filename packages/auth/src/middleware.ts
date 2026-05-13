@@ -9,9 +9,10 @@
  *  1. `Authorization: Bearer <token>` header
  *  2. `sb-access-token` cookie (Supabase SSR session cookie)
  *
- * In all cases the JWT payload is parsed but NOT cryptographically verified
- * here — Supabase validates the signature. This module only extracts and
- * type-checks the custom claims injected by custom_access_token_hook.
+ * JWT signatures are verified with HMAC-SHA-256 using the `SUPABASE_JWT_SECRET`
+ * environment variable. If the secret is absent or the signature is invalid,
+ * the token is rejected (fail-secure). No external JWT library is used —
+ * verification is performed via the Web Crypto API (`crypto.subtle`).
  *
  * @module @estalara/auth/middleware
  */
@@ -52,19 +53,73 @@ function extractRawToken(req: Request): string | null {
   return null;
 }
 
+// ─── Base64url helpers ─────────────────────────────────────────────────────
+
 /**
- * Decode the payload portion of a JWT without verifying the signature.
- * Supabase has already verified the token; we trust the payload at this layer.
+ * Decode a base64url-encoded string to a plain string (UTF-8 safe for ASCII
+ * JWT payloads).
  */
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
+function base64urlToString(input: string): string {
+  const base64 = input.replace(/-/g, '+').replace(/_/g, '/');
+  // Add padding if needed.
+  const padded = base64 + '=='.slice(0, (4 - (base64.length % 4)) % 4);
+  return atob(padded);
+}
+
+/**
+ * Decode a base64url-encoded string to a Uint8Array.
+ * Used for the raw signature bytes.
+ */
+function base64urlToUint8Array(input: string): Uint8Array {
+  const binary = base64urlToString(input);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+// ─── JWT verification ──────────────────────────────────────────────────────
+
+/**
+ * Verify the HMAC-SHA-256 signature on a JWT and return the decoded payload.
+ *
+ * Returns `null` (fail-secure) when:
+ *  - `SUPABASE_JWT_SECRET` is not set
+ *  - The token does not have exactly three dot-separated parts
+ *  - The signature does not match
+ *  - Anything throws (e.g. malformed base64, JSON parse failure)
+ *
+ * Does NOT check `exp` / `nbf` — expiry enforcement is the caller's
+ * responsibility.
+ */
+async function verifyAndDecodeJwtPayload(token: string): Promise<Record<string, unknown> | null> {
+  const secret = process.env.SUPABASE_JWT_SECRET;
+  if (!secret) return null;
+
   const parts = token.split('.');
   if (parts.length !== 3) return null;
+
+  const [header, payload, sig] = parts as [string, string, string];
+
   try {
-    const payload = parts[1];
-    if (!payload) return null;
-    // Normalise base64url → base64
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const decoded = atob(base64);
+    const keyBytes = new TextEncoder().encode(secret);
+    const key = await crypto.subtle.importKey(
+      'raw',
+      keyBytes,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify'],
+    );
+
+    const signingInput = `${header}.${payload}`;
+    const signingInputBytes = new TextEncoder().encode(signingInput);
+    const sigBytes = base64urlToUint8Array(sig);
+
+    const valid = await crypto.subtle.verify('HMAC', key, sigBytes, signingInputBytes);
+    if (!valid) return null;
+
+    const decoded = base64urlToString(payload);
     return JSON.parse(decoded) as Record<string, unknown>;
   } catch {
     return null;
@@ -74,18 +129,21 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 // ─── Public guards ─────────────────────────────────────────────────────────
 
 /**
- * Extract and decode JWT claims from the request.
- * Returns `null` if no valid token is found or claims cannot be parsed.
+ * Extract and verify JWT claims from the request.
+ *
+ * The JWT signature is verified with HMAC-SHA-256 against `SUPABASE_JWT_SECRET`.
+ * Returns `null` if no valid token is found, the signature is invalid, or
+ * the claims cannot be parsed.
  */
-export function getAuthClaims(req: Request): Promise<AuthClaims | null> {
+export async function getAuthClaims(req: Request): Promise<AuthClaims | null> {
   const token = extractRawToken(req);
-  if (!token) return Promise.resolve(null);
-  const payload = decodeJwtPayload(token);
-  if (!payload) return Promise.resolve(null);
+  if (!token) return null;
+  const payload = await verifyAndDecodeJwtPayload(token);
+  if (!payload) return null;
   try {
-    return Promise.resolve(extractClaims(payload));
+    return extractClaims(payload);
   } catch {
-    return Promise.resolve(null);
+    return null;
   }
 }
 

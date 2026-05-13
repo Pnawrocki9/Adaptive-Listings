@@ -11,6 +11,7 @@ import type { SessionState } from './session.js';
 import type { SdkConfig } from './config.js';
 import type { TextDirective, ClassDirective, ArchetypeId } from '@estalara/shared';
 import type { CollectedEvent } from './events.js';
+import type { IntentState } from './intent.js';
 
 /**
  * @deprecated Use TextDirective or ClassDirective from @estalara/shared instead.
@@ -196,12 +197,16 @@ function runApply(directives: (TextDirective | ClassDirective)[], context?: Appl
  * Fetch adaptation directives from the Decision API.
  * Returns null if Decision API is unavailable, config.decisionApiUrl is not set,
  * or config.tenantId is not set (tenant_id is required by the Decision API).
+ *
+ * @param intentState - Current Bayesian intent state; threads archetype_hint, confidence,
+ *   and similarity (raw archetype probability) into the request body so the Decision API
+ *   can skip its own classification and serve directives immediately.
  */
 export async function fetchDirectives(
   config: SdkConfig,
   session: SessionState,
   pageType: 'listing_list' | 'listing_detail' | 'home' | 'search',
-  archetypeHint?: string,
+  intentState?: IntentState,
 ): Promise<AdaptResponse | null> {
   if (!config.decisionApiUrl) return null;
   if (!config.tenantId) return null;
@@ -212,8 +217,10 @@ export async function fetchDirectives(
       session_id: session.sessionId,
       page_type: pageType,
     };
-    if (archetypeHint !== undefined) {
-      body.archetype_hint = archetypeHint;
+    if (intentState !== undefined) {
+      body.archetype_hint = intentState.archetype;
+      body.confidence = intentState.confidence;
+      body.similarity = intentState.probabilities[intentState.archetype];
     }
 
     const res = await fetch(`${config.decisionApiUrl}/adapt`, {

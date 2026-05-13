@@ -544,3 +544,90 @@ export function calculateBehavioralOnlyState(
   }
   return state;
 }
+
+// ─── Archetype hint priors (TICKET-AUTO-007) ─────────────────────────────────
+
+/**
+ * Maximum aggregate boost summed across all hints for a single archetype.
+ *
+ * Mirrors the cap enforced by `extractArchetypeHints` in `@estalara/sdk/auto-detect`
+ * so the Intent Engine never overcommits to a site-level prior — behavioral and quiz
+ * evidence must remain able to dominate.
+ */
+const HINT_MAX_BOOST_PER_ARCHETYPE = 0.3;
+
+/**
+ * Shape of a single hint accepted by `applyArchetypeHints`.
+ *
+ * `archetype_id` is widened to `string` to accept upstream hint payloads — unknown
+ * values are silently dropped inside `applyArchetypeHints` rather than producing a
+ * type error at the call site. The SDK structurally accepts `ArchetypeHint` from
+ * `@estalara/shared` without importing it (avoids tightening the public surface).
+ */
+export interface ArchetypeHintLike {
+  archetype_id: string;
+  confidence_boost: number;
+  signal?: string;
+}
+
+/**
+ * Apply site-level archetype hints as Bayesian prior boosts.
+ *
+ * Called **once** at session start when a `TenantSiteSchema` is available — typically
+ * before any behavioral signal has been processed. For each hint the corresponding
+ * archetype's prior probability is increased by `hint.confidence_boost`; the resulting
+ * distribution is re-normalized so probabilities sum to 1.0.
+ *
+ * Multiple hints targeting the same archetype are **summed** and **capped** at
+ * `HINT_MAX_BOOST_PER_ARCHETYPE` (0.30). Non-finite or non-positive boosts are
+ * ignored. Hints whose `archetype_id` is not a known archetype are silently dropped.
+ *
+ * The returned state is a fresh immutable object; the input is never mutated.
+ * `signal_count` and `quiz_answered` are preserved.
+ *
+ * @param state - Current intent state (typically the result of `initIntentState()`).
+ * @param hints - Site-level hints from `extractArchetypeHints` (may be empty).
+ */
+export function applyArchetypeHints(
+  state: IntentState,
+  hints: readonly ArchetypeHintLike[],
+): IntentState {
+  if (hints.length === 0) return state;
+
+  // Sum + cap boosts per archetype (defensive — extractArchetypeHints already caps,
+  // but we don't trust upstream callers and this guarantees the invariant).
+  const cumulativeBoost = Object.fromEntries(ARCHETYPE_NAMES.map((k) => [k, 0])) as Record<
+    Archetype,
+    number
+  >;
+
+  const knownArchetypes = new Set<string>(ARCHETYPE_NAMES);
+
+  for (const hint of hints) {
+    if (!knownArchetypes.has(hint.archetype_id)) continue;
+    if (!Number.isFinite(hint.confidence_boost)) continue;
+    if (hint.confidence_boost <= 0) continue;
+    const archetype = hint.archetype_id as Archetype;
+    cumulativeBoost[archetype] = Math.min(
+      cumulativeBoost[archetype] + hint.confidence_boost,
+      HINT_MAX_BOOST_PER_ARCHETYPE,
+    );
+  }
+
+  // Build boosted probabilities, then normalize to sum to 1.0.
+  const boosted = Object.fromEntries(
+    ARCHETYPE_NAMES.map((k) => [k, state.probabilities[k] + cumulativeBoost[k]]),
+  ) as ArchetypeProbabilities;
+
+  const probabilities = normalize(boosted);
+  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+
+  return {
+    archetype,
+    confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
+    probabilities,
+    signal_count: state.signal_count,
+    last_updated_at: Date.now(),
+    quiz_answered: state.quiz_answered,
+  };
+}

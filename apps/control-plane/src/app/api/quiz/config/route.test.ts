@@ -92,14 +92,18 @@ describe('GET /api/quiz/config', () => {
 
   it('returns default config when tenant has no stored config', async () => {
     vi.mocked(getAuthClaims).mockResolvedValue(TENANT_CLAIMS);
-    vi.mocked(createAdminClient).mockReturnValue(makeDbMock({}));
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+    );
     const res = await GET(makeGetRequest(TENANT_ID));
     expect(res.status).toBe(200);
   });
 
   it('default config has expected shape', async () => {
     vi.mocked(getAuthClaims).mockResolvedValue(TENANT_CLAIMS);
-    vi.mocked(createAdminClient).mockReturnValue(makeDbMock({}));
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+    );
     const res = await GET(makeGetRequest(TENANT_ID));
     const body = await parseBody<{
       enabled: boolean;
@@ -125,7 +129,9 @@ describe('POST /api/quiz/config', () => {
 
   it('updates config fields and returns updated config', async () => {
     vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
-    vi.mocked(createAdminClient).mockReturnValue(makeDbMock({}));
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+    );
     const res = await POST(
       makePostRequest({ enabled: true, language: 'pl', trigger_after_n_listings: 5 }),
     );
@@ -156,7 +162,9 @@ describe('POST /api/quiz/config', () => {
     vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
     // Shared DB mock — state persists between the two POST calls
     const dbMock = makeDbMock({});
-    vi.mocked(createAdminClient).mockReturnValue(dbMock);
+    vi.mocked(createAdminClient).mockReturnValue(
+      dbMock as unknown as ReturnType<typeof createAdminClient>,
+    );
 
     // First POST: set full config
     await POST(

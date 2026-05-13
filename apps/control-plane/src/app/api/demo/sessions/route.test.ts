@@ -103,7 +103,9 @@ beforeEach(() => {
 describe('POST /api/demo/sessions', () => {
   it('valid body → 201 with token and session_id', async () => {
     vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
-    vi.mocked(createAdminClient).mockReturnValue(makeInsertDbMock());
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeInsertDbMock() as unknown as ReturnType<typeof createAdminClient>,
+    );
     const res = await POST(makePostRequest(VALID_BODY));
     expect(res.status).toBe(201);
     const body = await parseBody<{ session_id: string; token: string; expires_at: string }>(res);
@@ -136,7 +138,9 @@ describe('POST /api/demo/sessions', () => {
 
   it('scope=production with domain → 201', async () => {
     vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
-    vi.mocked(createAdminClient).mockReturnValue(makeInsertDbMock());
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeInsertDbMock() as unknown as ReturnType<typeof createAdminClient>,
+    );
     const res = await POST(
       makePostRequest({
         scope: 'production',
@@ -152,7 +156,9 @@ describe('POST /api/demo/sessions', () => {
 describe('GET /api/demo/sessions', () => {
   it('valid JWT → 200 with sessions array', async () => {
     vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
-    vi.mocked(createAdminClient).mockReturnValue(makeSelectDbMock([]));
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeSelectDbMock([]) as unknown as ReturnType<typeof createAdminClient>,
+    );
     const res = await GET(makeGetRequest());
     expect(res.status).toBe(200);
     const body = await parseBody<{ tenant_id: string; sessions: unknown[] }>(res);

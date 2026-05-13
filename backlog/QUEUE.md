@@ -1,7 +1,8 @@
 # Backlog Queue
 
-**Updated 2026-05-12T08:30Z by pm-orchestrator.** Sprint 7 Phase 2 in progress — ADP-004 DONE
-(merged @ 82f0e42). ADP-002 and DQS-001 IN_PROGRESS in parallel.
+**Updated 2026-05-13T12:00Z by pm-orchestrator.** Sprint 7.5 COMPLETE (7/7 AUTO tickets DONE).
+Sprint 7 COMPLETE (all 5 ADP + DQS tickets DONE). Sprint 8 ACTIVE — escalations resolved by Piotr
+2026-05-13. TICKET-AB-001 delegated to backend-engineer.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -33,8 +34,9 @@ updates.
 | 4      | 6     | Intent ontology v1 + Modal scaffolding                               | tbd     | —    | —       | —     | tbd     |
 | 5      | 7     | LLM gateway + intent extraction from chat                            | tbd     | —    | —       | —     | tbd     |
 | 6      | 8     | Embeddings + archetype matching + decision API                       | 3       | 3    | 0       | 0     | 0       |
-| 7      | 9     | Decision API real logic + adaptation playbooks                       | 5       | 3    | 2       | 0     | 0       |
-| 8      | 10    | A/B holdout framework + analytics dashboard                          | tbd     | —    | —       | —     | tbd     |
+| 7      | 9     | Decision API real logic + adaptation playbooks                       | 5       | 5    | 0       | 0     | 0       |
+| 7.5    | 9.5   | Auto-Detection Engine                                                | 7       | 7    | 0       | 0     | 0       |
+| 8      | 10    | A/B holdout + re-ranking + agency answers                            | 6       | 0    | 1       | 1     | 4       |
 | 9      | 11    | DPIA + ROPA + DSR + fair-housing + continuous validation             | tbd     | —    | —       | —     | tbd     |
 | 10     | 12    | Multi-region deploy + observability + load tests                     | tbd     | —    | —       | —     | tbd     |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
@@ -589,7 +591,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
   spec: (inline — merged directly to main)
 ```
 
-## Sprint 7 — Decision API real logic + adaptation playbooks (ACTIVE)
+## Sprint 7 — Decision API real logic + adaptation playbooks (COMPLETE)
 
 ```yaml
 - id: TICKET-ADP-001
@@ -636,30 +638,307 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-ADP-002
   title: LiteLLM gateway — Haiku/Sonnet routing for Decision API
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-ADP-004]
   assigned_to: backend-engineer
   started_at: '2026-05-12T08:30:00Z'
+  completed_at: '2026-05-13T00:00:00Z'
+  pr: '#70'
+  commit: e9ccde4
   spec: backlog/sprint-7/TICKET-ADP-002.md
 
 - id: TICKET-DQS-001
   title: Convergence metrics — DqsTracker + session.quality.snapshot + ClickHouse DDL
   agent: data-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-ADP-004]
   assigned_to: data-engineer
   started_at: '2026-05-12T08:30:00Z'
+  completed_at: '2026-05-13T00:00:00Z'
+  pr: '#71'
+  commit: 7678aa3
   spec: backlog/sprint-7/TICKET-DQS-001.md
+```
+
+## Sprint 7.5 — Auto-Detection Engine (COMPLETE)
+
+```yaml
+- id: TICKET-AUTO-001
+  title: Auto-detection corpus — 24 platform fixtures + CI gate skeleton
+  agent: qa-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 6
+  completed_at: '2026-05-13T00:00:00Z'
+  pr: '#72'
+  commit: 7400d63
+  spec: docs/specs/SPRINT_7_5_SPEC.md
+
+- id: TICKET-AUTO-002
+  title: TenantSiteSchema types + detection pipeline skeleton
+  agent: sdk-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 6
+  depends_on: [TICKET-AUTO-001]
+  completed_at: '2026-05-13T00:00:00Z'
+  pr: '#73'
+  commit: 76c2c88
+  spec: docs/specs/SPRINT_7_5_SPEC.md
+
+- id: TICKET-AUTO-003
+  title: Auto-detection techniques 1–6 (deterministic pipeline)
+  agent: sdk-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 8
+  depends_on: [TICKET-AUTO-002]
+  completed_at: '2026-05-13T00:00:00Z'
+  pr: '#74'
+  commit: f6f4e15
+  spec: docs/specs/SPRINT_7_5_SPEC.md
+
+- id: TICKET-AUTO-004
+  title: Auto-detection techniques 7–11 + price parser + Detection Preview API + UI skeleton
+  agent: sdk-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 10
+  depends_on: [TICKET-AUTO-003]
+  completed_at: '2026-05-13T00:00:00Z'
+  pr: '#77'
+  commit: eb463ab
+  spec: docs/specs/SPRINT_7_5_SPEC.md
+  note: AUTO-006 backend + UI skeleton bundled into this PR per Piotr approval (2026-05-13)
+
+- id: TICKET-AUTO-005
+  title: Corpus CI gate — precision/recall validation (100%/100% on own corpus)
+  agent: qa-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 8
+  depends_on: [TICKET-AUTO-004]
+  completed_at: '2026-05-13T00:00:00Z'
+  pr: '#79'
+  commit: cfecf50
+  spec: docs/specs/SPRINT_7_5_SPEC.md
+
+- id: TICKET-AUTO-006
+  title: Detection Preview UI + tenant_site_schemas table
+  agent: backend-engineer
+  status: DONE
+  priority: P1
+  estimated_hours: 6
+  depends_on: [TICKET-AUTO-002]
+  completed_at: '2026-05-13T00:00:00Z'
+  pr: '#77'
+  commit: eb463ab
+  spec: docs/specs/SPRINT_7_5_SPEC.md
+  note: |
+    Bundled into AUTO-004 PR (#77) per Piotr approval.
+    Three carve-outs deferred to TICKET-AUTO-006-POLISH (P2, BACKLOG):
+    - Screenshot capture + colored-box overlay
+    - Manual inline selector editing
+    - Explicit "Save & activate" button (server-side auto-upsert already works)
+
+- id: TICKET-AUTO-007
+  title: Archetype hints from site structure — Bayesian prior seeding
+  agent: ml-engineer
+  status: DONE
+  priority: P1
+  estimated_hours: 8
+  depends_on: [TICKET-AUTO-003]
+  completed_at: '2026-05-13T00:00:00Z'
+  pr: '#76'
+  commit: 5c36aaf
+  spec: docs/specs/SPRINT_7_5_SPEC.md
+```
+
+## Polish / Carve-out tickets (BACKLOG)
+
+```yaml
+- id: TICKET-AUTO-006-POLISH
+  title:
+    Detection Preview UI — screenshot overlay + manual selector editing + Save & activate button
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P2
+  estimated_hours: 4
+  depends_on: [TICKET-AUTO-006]
+  notes: |
+    Three carve-outs from AUTO-006 that were deferred at Piotr's approval (2026-05-13):
+    1. Screenshot capture + colored-box overlay (page.tsx:387 comment "visual overlay available
+       after AUTO-004" — that condition is now met, just needs wiring).
+    2. Manual inline selector editing (currently alert() at page.tsx:346).
+    3. Explicit "Save & activate" button (currently alert() at page.tsx:356).
+       Note: server-side auto-upsert already persists schemas (route.ts:222-247), so
+       only the explicit user-action UX is missing.
+    Non-blocking for Sprint 8. Schedule after Sprint 8 or as filler if a Sprint 8 slot opens.
+```
+
+## Sprint 8 — A/B holdout + re-ranking + agency answers (ACTIVE)
+
+**Status:** ACTIVE as of 2026-05-13. Escalations resolved by Piotr. TICKET-AB-001 IN_PROGRESS.
+TICKET-REORDER-001 READY (unblocked per fair-housing resolution). TICKET-FAIR-001 CANCELLED.
+TICKET-NATIVE-001 deferred to MVP launch.
+
+**Sprint 8 entry condition:** Sprint 7 DONE + Sprint 7.5 DONE. Both satisfied as of 2026-05-13.
+
+```yaml
+- id: TICKET-AB-001
+  title: A/B holdout framework — consent-aware 10% holdout + Thompson sampling bandit
+  agent: backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-05-13T12:00:00Z'
+  priority: P0
+  estimated_hours: 10
+  depends_on: [TICKET-DQS-001, TICKET-ADP-002]
+  spec: backlog/sprint-8/TICKET-AB-001.md
+  notes: |
+    Implements Master Design E.3 + E.3.1 + E.3.2.
+    Core: assign sessions to treatment/holdout (default 10%) at Decision API layer.
+    Consent-aware: holdout assignment must respect existing consent_state field on events.
+    Fair-housing constraint: holdout assignment MUST NOT segment by protected characteristics
+    (race, national origin, family status per FHA). Assignment is purely random, keyed on
+    session_id hash. TICKET-FAIR-001 is CANCELLED — not required at this stage.
+    Produces: holdout_group boolean on adaptation_decisions ClickHouse table.
+    Thompson sampling bandit: select best adaptation variant per archetype based on
+    rolling conversion lift (multi-armed bandit, Thompson sampling per Master Design E.3).
+    Regression detection: if archetype X has stat-significant drop over 7 days → auto-pause
+    + Sentry alert.
+
+- id: TICKET-REORDER-001
+  title: ReorderDirective implementation — listing grid re-ranking per archetype
+  agent: sdk-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 10
+  depends_on: [TICKET-AUTO-002, TICKET-ADP-004]
+  notes: |
+    Unblocked 2026-05-13 — archetypes are behavioral, not demographic; no FAIR-001 needed at this stage.
+    Implements Master Design B.9.2 + E.2 (feature highlight order).
+    ReorderDirective stub is already in packages/shared/src/directives.ts (Sprint 7.5 hook).
+    container_selector + data_extractors_per_card + reorder_capable are in TenantSiteSchema.
+    SDK applyDirectives() must handle ReorderDirective: read container_selector, query
+    child nodes, sort by archetype-specific score (passed in the directive), re-inject into DOM.
+    similar_listings_selector (DetailSchema) enables "Properties you might also like" injection
+    on detail pages — include as a stretch goal in this ticket or split to REORDER-002.
+    Requires: corpus CI gate stays green after DOM reorder changes (rerun pnpm test:corpus).
+
+- id: TICKET-AGENCY-001
+  title: Agency answers — per-listing FAQ with RAG-powered suggested replies
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P1
+  estimated_hours: 8
+  depends_on: [TICKET-ADP-001]
+  notes: |
+    Implements Master Design E.2 chat.suggested_reply row: "Claude Haiku 4.5 + RAG over
+    tenant FAQ + listing data + intent context".
+    Backend: POST /api/tenants/:id/answers — CRUD for per-listing Q&A pairs stored in Postgres.
+    RAG pipeline: at adapt time, retrieve top-3 FAQ answers (pgvector cosine similarity on
+    question embedding vs intent vector), inject into Haiku 4.5 prompt as context.
+    Dashboard UI: /dashboard/listings/:id/answers — agency staff adds/edits FAQ entries.
+    Placeholder resolution: answers feed Level 2 in the E.6 placeholder resolution order
+    (already typed in MASTER_DESIGN_PATCH_v1_5.md as "Agency-provided answers per listing").
+    Produces: answers table schema migration + /api/answers route + dashboard page.
+
+- id: TICKET-FAIR-001
+  title: Fair-housing linter MVP — gate for Profile Mode activation (U.11.6)
+  agent: compliance-engineer
+  status: CANCELLED
+  priority: P1
+  estimated_hours: 6
+  depends_on: [TICKET-AB-001]
+  cancelled_at: '2026-05-13'
+  cancelled_by: Piotr Nawrocki
+  cancel_reason: |
+    Not required at this stage — archetype space is purely behavioral, no protected-class signals
+    collected. Re-open if demographic or proxy-demographic signals are ever proposed for the
+    archetype space. See ESCALATIONS.md resolution for full rationale and the binding caveat.
+  notes: |
+    Required by Master Design U.11.6 and E.3.2 (brand_safety_score in multi-objective
+    optimization). Must be live before first Profile Mode activation (Sprint 12+).
+    Linter validates adaptation directives against fair-housing rules:
+    - US: FHA protected classes (race, color, religion, national origin, sex, disability,
+      familial status) — no steering, no discriminatory framing in headlines/features.
+    - UK: Equality Act 2010 protected characteristics.
+    - EU: anti-discrimination directives.
+    Implementation: rule-based keyword + semantic classifier on generated text directives.
+    Output: brand_safety_score (0.0–1.0) fed into multi-objective optimization (E.3.2).
+    CI gate: adaptation playbook tests must pass fair-housing lint before merge.
+    IMPORTANT: compliance-engineer must escalate if linter rules conflict with any existing
+    playbook content — do not silently modify playbooks.
+
+- id: TICKET-AB-004
+  title: Analytics dashboard — conversion lift + archetype breakdown + holdout comparison
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P1
+  estimated_hours: 8
+  depends_on: [TICKET-AB-001, TICKET-DQS-001]
+  notes: |
+    Implements the dashboard mockup in Master Design Q.3 (Idealista Week 1 view).
+    Data source: ClickHouse adaptation_decisions table (from TICKET-ADP-001 migration) +
+    DQS session snapshots (from TICKET-DQS-001).
+    Required panels:
+    - Traffic summary (tracked sessions, adapted impressions, holdout impressions, p95 latency)
+    - Buyer archetype breakdown (top 10 of N detected, % of traffic)
+    - Conversion lift vs holdout (photo engagement, time-on-listing, inquiry started,
+      inquiry completed, tour requested)
+    - Top-performing adaptation types
+    - Anomaly feed (auto-paused archetypes with regression detected)
+    Route: /dashboard/analytics (new page in control-plane).
+    Uses DQS data already shipped in TICKET-DQS-001 — no new ClickHouse DDL needed.
+
+- id: TICKET-NATIVE-001
+  title: app.estalara.com Adaptive Listings native integration (Tier 3 data-estalara-* attributes)
+  agent: sdk-engineer
+  status: BLOCKED
+  block_reason: |
+    Deferred to MVP launch — requires CTO/CPO scheduling on the SvelteKit side. Will be scheduled
+    separately. Decision by Piotr Nawrocki 2026-05-13.
+  priority: P1
+  estimated_hours: 6
+  depends_on: [TICKET-REORDER-001]
+  notes: |
+    Implements Master Design B.9 + B.9.3.
+    Rafał (CTO) adds data-estalara-* attributes to SvelteKit components (ListingCard.svelte,
+    detail page). This ticket wires the SDK init in +layout.svelte and validates the full
+    Tier 3 Native flow against the corpus CI gate (000-app-estalara fixture).
+    Key edge case: H1 = price on detail pages (B.9.1) — SDK must handle tagline slot above H1.
+    AI Topics reordering (B.9.2): ReorderDirective drives tag reorder per archetype
+    (yield_hunter → Rental/ROI/Transport first; family_buyer → Schools/Parks first).
+    Live Session CTA per archetype: archetype-specific CTA text injected via TextDirective.
+    NOTE: CTO/CPO approval required on slot mapping before implementation starts. Flag in
+    ticket spec when authored.
+
+- id: TICKET-CAUSAL-001
+  title: Causal inference framework — CATE estimation + HTE per archetype (R.2 patent angle)
+  agent: ml-engineer
+  status: BACKLOG
+  priority: P2
+  estimated_hours: 12
+  depends_on: [TICKET-AB-001]
+  notes: |
+    Implements Master Design E.3.1 + R.2.
+    T-Learner / X-Learner (EconML) + causal forests (DoWhy) for CATE estimation.
+    Auto-pause archetypes where CATE_CTR ~= 0% after 1000+ sessions (saves 20-30% LLM cost).
+    Sequential hypothesis testing (Wald SPRT) for early stopping.
+    Tech stack: EconML (Microsoft), DoWhy, PyMC for long-tail archetypes.
+    Modal Python app — runs as offline daily batch job.
+    P2 priority: do not start until AB-001 has real holdout data (minimum 2 weeks in production).
+    Feeds D.5 confirmation rate dashboard.
 ```
 
 ## Currently in flight
 
-- TICKET-ADP-002 (backend-engineer, IN_PROGRESS, started 2026-05-12T08:30:00Z)
-- TICKET-DQS-001 (data-engineer, IN_PROGRESS, started 2026-05-12T08:30:00Z)
+- TICKET-AB-001 (backend-engineer, IN_PROGRESS, started 2026-05-13T12:00Z) — A/B holdout framework
 
 ## Awaiting human review
 
@@ -667,6 +946,22 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 
 ## Recent merges
 
+- 2026-05-13T00:00:00Z — TICKET-AUTO-005 (PR #79, commit cfecf50): corpus CI gate — precision/recall
+  validation for 24 platforms
+- 2026-05-13T00:00:00Z — TICKET-AUTO-004 + AUTO-006 (PR #77, commit eb463ab): auto-detect techniques
+  7-11 + price parser + Detection Preview UI skeleton
+- 2026-05-13T00:00:00Z — TICKET-AUTO-007 (PR #76, commit 5c36aaf): archetype hints from site
+  structure — Bayesian prior seeding
+- 2026-05-13T00:00:00Z — TICKET-AUTO-003 (PR #74, commit f6f4e15): auto-detection techniques 1–6 —
+  deterministic pipeline
+- 2026-05-13T00:00:00Z — TICKET-AUTO-002 (PR #73, commit 76c2c88): TenantSiteSchema types +
+  detection pipeline skeleton
+- 2026-05-13T00:00:00Z — TICKET-AUTO-001 (PR #72, commit 7400d63): auto-detection corpus — 24
+  fixtures + CI gate skeleton
+- 2026-05-13T00:00:00Z — TICKET-DQS-001 (PR #71, commit 7678aa3): convergence metrics — DQS
+  per-session tracking
+- 2026-05-13T00:00:00Z — TICKET-ADP-002 (PR #70, commit e9ccde4): LiteLLM gateway — Haiku/Sonnet
+  routing
 - 2026-05-12T21:33:43Z — TICKET-ADP-004 (PR #69, commit 82f0e42): SDK Tier 1 DOM mutations — full
   applyDirectives() implementation
 - 2026-05-11T00:00Z — TICKET-ARCH-001 (commit f0aca06): Expand archetype ontology — 3 → 18

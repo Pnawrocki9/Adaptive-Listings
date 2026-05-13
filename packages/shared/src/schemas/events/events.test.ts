@@ -52,9 +52,10 @@ const envelope = {
 const ev = <T extends string, P>(type: T, payload: P) => ({ ...envelope, type, payload });
 
 describe('EVENT_TYPES tuple', () => {
-  it('has exactly 34 unique event type literals', () => {
-    expect(EVENT_TYPES.length).toBe(34);
-    expect(new Set<string>(EVENT_TYPES).size).toBe(34);
+  it('has exactly 35 unique event type literals', () => {
+    // 34 original + 1 ab.assignment (TICKET-AB-001)
+    expect(EVENT_TYPES.length).toBe(35);
+    expect(new Set<string>(EVENT_TYPES).size).toBe(35);
   });
 });
 

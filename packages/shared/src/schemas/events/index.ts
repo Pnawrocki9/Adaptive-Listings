@@ -60,6 +60,7 @@ import {
 } from './inquiry.js';
 import { SessionStartedEventSchema } from './device-context.js';
 import { SessionQualitySnapshotEventSchema } from './session-quality.js';
+import { AbAssignmentEventSchema } from './ab-assignment.js';
 
 export * from './page-lifecycle.js';
 export * from './mouse-scroll.js';
@@ -72,10 +73,12 @@ export * from './cross-listing.js';
 export * from './inquiry.js';
 export * from './device-context.js';
 export * from './session-quality.js';
+export * from './ab-assignment.js';
 
 /**
- * `EventSchema` — the canonical discriminated union over all 34 Estalara event types
- * (10 categories from Master Design C.1, plus session quality / DQS — TICKET-DQS-001).
+ * `EventSchema` — the canonical discriminated union over all 35 Estalara event types
+ * (10 categories from Master Design C.1, plus session quality / DQS — TICKET-DQS-001,
+ * plus A/B holdout assignment — TICKET-AB-001).
  *
  * Adding a new event type:
  *   1. Define payload + extended event schemas in the appropriate category file
@@ -128,6 +131,8 @@ export const EventSchema = z.discriminatedUnion('type', [
   SessionStartedEventSchema,
   // session quality / DQS (1) — TICKET-DQS-001
   SessionQualitySnapshotEventSchema,
+  // A/B holdout assignment (1) — TICKET-AB-001
+  AbAssignmentEventSchema,
 ]);
 export type Event = z.infer<typeof EventSchema>;
 
@@ -168,5 +173,7 @@ export const EVENT_TYPES = [
   'session.started',
   // DQS — TICKET-DQS-001
   'session.quality.snapshot',
+  // A/B holdout — TICKET-AB-001
+  'ab.assignment',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];

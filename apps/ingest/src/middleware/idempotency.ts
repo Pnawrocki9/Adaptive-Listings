@@ -17,6 +17,12 @@
  *   documented in the runbook and is acceptable for at-least-once delivery.
  * - Only 2xx responses are cached.  Error responses are NOT cached so clients
  *   can retry after fixing their request without waiting for TTL expiry.
+ * - The KV key is scoped per tenant using a short hash of the raw
+ *   `X-Estalara-API-Key` header (SHA-256, first 8 bytes → 16 hex chars).
+ *   This prevents cross-tenant collisions when two tenants send the same
+ *   `Idempotency-Key` value.  When no API key header is present the prefix
+ *   falls back to `'anon'`.  The hash is computed before authentication runs,
+ *   so it is purely discriminating — not a security mechanism.
  *
  * Key format (RFC 8959 recommendation): 32–128 ASCII printable characters
  * (`0x20–0x7e`).  Keys outside this range are rejected with 400.
@@ -40,6 +46,18 @@ const CACHE_TTL_SECONDS = 86_400;
 
 /** KV key prefix to avoid collisions with other namespaces. */
 const KV_PREFIX = 'idem:';
+
+/**
+ * Returns a 16-character lowercase hex string derived from the first 8 bytes
+ * of the SHA-256 digest of `input`.  Used to build a tenant-discriminating
+ * prefix from the raw API key without requiring a KV lookup.
+ */
+async function shortHash(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf).slice(0, 8))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
 
 /** Shape stored in KV per idempotency key. */
 interface CachedEntry {
@@ -98,7 +116,14 @@ export const idempotency: MiddlewareHandler<{ Bindings: IdempotencyBindings }> =
     );
   }
 
-  const kvKey = `${KV_PREFIX}${key}`;
+  // Scope the KV key to the tenant so two tenants with the same
+  // Idempotency-Key value cannot collide.  Full auth has not run yet at this
+  // point, so we derive a discriminating prefix from the raw API key header
+  // using a short SHA-256 hash (first 8 bytes → 16 hex chars).  This is NOT
+  // a security mechanism — it is purely a namespace separator.
+  const rawApiKey = c.req.header('X-Estalara-API-Key') ?? c.req.header('x-estalara-api-key') ?? '';
+  const tenantPrefix = rawApiKey ? await shortHash(rawApiKey) : 'anon';
+  const kvKey = `${KV_PREFIX}${tenantPrefix}:${key}`;
 
   // Cache hit → return cached response.
   const cached = await c.env.KV_IDEMPOTENCY.get<CachedEntry>(kvKey, 'json');

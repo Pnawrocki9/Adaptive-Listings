@@ -8,6 +8,9 @@
  * - No Idempotency-Key header → middleware is a no-op
  * - Concurrent requests with the same key (best-effort last-writer-wins)
  * - Non-2xx responses are NOT cached (errors are retriable)
+ * - Tenant scoping: same Idempotency-Key + different API keys → different KV entries
+ * - Tenant scoping: same Idempotency-Key + same API key → deduplicated (cache hit)
+ * - No API key header → 'anon' prefix used (no collision with keyed tenants)
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -25,6 +28,23 @@ import type { IdempotencyBindings } from './idempotency.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Mirrors the private `shortHash` function in idempotency.ts so tests can
+ * compute the expected KV key without exposing it as a public export.
+ */
+async function shortHash(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf).slice(0, 8))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/** Returns the expected KV key for a given API key and idempotency key. */
+async function expectedKvKey(apiKey: string, idempKey: string): Promise<string> {
+  const prefix = apiKey ? await shortHash(apiKey) : 'anon';
+  return `idem:${prefix}:${idempKey}`;
+}
 
 interface KvStore {
   data: Map<string, string>;
@@ -64,6 +84,9 @@ function buildApp(_store: KvStore, handlerStatus = 200): Hono<TestEnv> {
   );
   return app;
 }
+
+/** Default API key used by tests that don't exercise tenant-scoping. */
+const TEST_API_KEY = 'pk_live_testkey0000000000000000000000';
 
 function makeEnv(store: KvStore): IdempotencyBindings {
   return { KV_IDEMPOTENCY: buildKv(store) };
@@ -128,12 +151,13 @@ describe('idempotency middleware — cache miss', () => {
     await app.fetch(
       new Request('http://test/test', {
         method: 'POST',
-        headers: { 'Idempotency-Key': VALID_KEY },
+        headers: { 'Idempotency-Key': VALID_KEY, 'X-Estalara-API-Key': TEST_API_KEY },
       }),
       makeEnv(store),
     );
-    // KV should now have an entry for this key
-    expect(store.data.has(`idem:${VALID_KEY}`)).toBe(true);
+    // KV should now have a tenant-scoped entry for this key
+    const expected = await expectedKvKey(TEST_API_KEY, VALID_KEY);
+    expect(store.data.has(expected)).toBe(true);
   });
 });
 
@@ -147,7 +171,7 @@ describe('idempotency middleware — cache hit', () => {
     const first = await app.fetch(
       new Request('http://test/test', {
         method: 'POST',
-        headers: { 'Idempotency-Key': VALID_KEY },
+        headers: { 'Idempotency-Key': VALID_KEY, 'X-Estalara-API-Key': TEST_API_KEY },
       }),
       env,
     );
@@ -156,11 +180,11 @@ describe('idempotency middleware — cache hit', () => {
 
     const firstBody = await first.json();
 
-    // Second request — should hit cache
+    // Second request — same key + same API key → should hit cache
     const second = await app.fetch(
       new Request('http://test/test', {
         method: 'POST',
-        headers: { 'Idempotency-Key': VALID_KEY },
+        headers: { 'Idempotency-Key': VALID_KEY, 'X-Estalara-API-Key': TEST_API_KEY },
       }),
       env,
     );
@@ -246,12 +270,12 @@ describe('idempotency middleware — non-2xx responses not cached', () => {
     await app.fetch(
       new Request('http://test/test', {
         method: 'POST',
-        headers: { 'Idempotency-Key': VALID_KEY },
+        headers: { 'Idempotency-Key': VALID_KEY, 'X-Estalara-API-Key': TEST_API_KEY },
       }),
       env,
     );
-    // Error response must NOT be cached
-    expect(store.data.has(`idem:${VALID_KEY}`)).toBe(false);
+    // Error response must NOT be cached — KV store should remain empty
+    expect(store.data.size).toBe(0);
   });
 });
 
@@ -261,19 +285,19 @@ describe('idempotency middleware — concurrent requests (best-effort)', () => {
     const app = buildApp(store);
     const env = makeEnv(store);
 
-    // Fire two concurrent requests with the same key
+    // Fire two concurrent requests with the same key and same API key
     const [res1, res2] = await Promise.all([
       app.fetch(
         new Request('http://test/test', {
           method: 'POST',
-          headers: { 'Idempotency-Key': VALID_KEY },
+          headers: { 'Idempotency-Key': VALID_KEY, 'X-Estalara-API-Key': TEST_API_KEY },
         }),
         env,
       ),
       app.fetch(
         new Request('http://test/test', {
           method: 'POST',
-          headers: { 'Idempotency-Key': VALID_KEY },
+          headers: { 'Idempotency-Key': VALID_KEY, 'X-Estalara-API-Key': TEST_API_KEY },
         }),
         env,
       ),
@@ -283,7 +307,117 @@ describe('idempotency middleware — concurrent requests (best-effort)', () => {
     expect(res1.status).toBe(200);
     expect(res2.status).toBe(200);
 
-    // Cache should contain an entry after at least one request completed
-    expect(store.data.has(`idem:${VALID_KEY}`)).toBe(true);
+    // Cache should contain a tenant-scoped entry after at least one request completed
+    const expected = await expectedKvKey(TEST_API_KEY, VALID_KEY);
+    expect(store.data.has(expected)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tenant scoping
+// ---------------------------------------------------------------------------
+
+describe('idempotency middleware — tenant scoping', () => {
+  it('different API keys with the same Idempotency-Key produce different KV entries', async () => {
+    const store: KvStore = { data: new Map() };
+    const app = buildApp(store);
+    const env = makeEnv(store);
+
+    const apiKeyA = 'pk_live_tenantA0000000000000000000000';
+    const apiKeyB = 'pk_live_tenantB0000000000000000000000';
+
+    // First tenant's request
+    await app.fetch(
+      new Request('http://test/test', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': VALID_KEY, 'X-Estalara-API-Key': apiKeyA },
+      }),
+      env,
+    );
+
+    // Second tenant's request — same Idempotency-Key, different API key
+    await app.fetch(
+      new Request('http://test/test', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': VALID_KEY, 'X-Estalara-API-Key': apiKeyB },
+      }),
+      env,
+    );
+
+    // Both tenants must have separate KV entries
+    const keyA = await expectedKvKey(apiKeyA, VALID_KEY);
+    const keyB = await expectedKvKey(apiKeyB, VALID_KEY);
+
+    expect(keyA).not.toBe(keyB);
+    expect(store.data.has(keyA)).toBe(true);
+    expect(store.data.has(keyB)).toBe(true);
+    // Each tenant's response is stored independently — no shared entry
+    expect(store.data.size).toBe(2);
+  });
+
+  it('same API key + same Idempotency-Key returns deduplicated cache hit', async () => {
+    const store: KvStore = { data: new Map() };
+    const app = buildApp(store);
+    const env = makeEnv(store);
+
+    // First request — populates cache
+    const first = await app.fetch(
+      new Request('http://test/test', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': VALID_KEY, 'X-Estalara-API-Key': TEST_API_KEY },
+      }),
+      env,
+    );
+    const firstBody = await first.json();
+
+    // Second request — same key + same API key → must be a cache hit
+    const second = await app.fetch(
+      new Request('http://test/test', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': VALID_KEY, 'X-Estalara-API-Key': TEST_API_KEY },
+      }),
+      env,
+    );
+
+    expect(second.headers.get('Idempotency-Replay')).toBe('true');
+    const secondBody = await second.json();
+    expect(secondBody).toEqual(firstBody);
+    // Only one KV entry should exist
+    expect(store.data.size).toBe(1);
+  });
+
+  it('request without API key uses anon prefix and does not collide with keyed tenant', async () => {
+    const store: KvStore = { data: new Map() };
+    const app = buildApp(store);
+    const env = makeEnv(store);
+
+    // Keyed tenant request
+    await app.fetch(
+      new Request('http://test/test', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': VALID_KEY, 'X-Estalara-API-Key': TEST_API_KEY },
+      }),
+      env,
+    );
+
+    // Anonymous request (no API key header) — same Idempotency-Key
+    const anonRes = await app.fetch(
+      new Request('http://test/test', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': VALID_KEY },
+      }),
+      env,
+    );
+
+    // Anonymous request must NOT receive the keyed tenant's cached response
+    expect(anonRes.headers.get('Idempotency-Replay')).toBeNull();
+
+    // Two separate KV entries must exist — one for the keyed tenant, one for anon
+    const keyedEntry = await expectedKvKey(TEST_API_KEY, VALID_KEY);
+    const anonEntry = await expectedKvKey('', VALID_KEY);
+
+    expect(store.data.has(keyedEntry)).toBe(true);
+    expect(store.data.has(anonEntry)).toBe(true);
+    expect(store.data.size).toBe(2);
   });
 });

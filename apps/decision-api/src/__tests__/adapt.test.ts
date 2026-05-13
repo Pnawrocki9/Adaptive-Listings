@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { AdaptResponse, Directive } from '../app/api/adapt/route.js';
-import { handleAdaptRequest } from '../app/api/adapt/route.js';
+import { detectArchetype, handleAdaptRequest } from '../app/api/adapt/route.js';
 import { handleHealthRequest } from '../app/api/health/route.js';
 import type { Env } from '../index.js';
 import { recordSpend, resetTenantSpend } from '../lib/llm-gateway.js';
@@ -342,5 +342,105 @@ describe('POST /api/adapt — A/B holdout (TICKET-AB-001)', () => {
     const body2 = await parseBody<AdaptResponse>(res2);
 
     expect(body1.holdout_group).toBe(body2.holdout_group);
+  });
+});
+
+// ─── confidence / similarity passthrough (TICKET-FIX-015) ────────────────────
+
+describe('POST /api/adapt — confidence + similarity passthrough (TICKET-FIX-015)', () => {
+  it('high confidence (>=0.6) + archetype_hint → archetype and confidence preserved from SDK', async () => {
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        archetype_hint: 'investor',
+        confidence: 0.85,
+        similarity: 0.9,
+        holdout_pct: 0, // guarantee treatment so directives are non-empty
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    expect(body.archetype).toBe('investor');
+    // Confidence must reflect the value the SDK computed, not the stub's 0.9.
+    expect(body.confidence).toBe(0.85);
+    // Similarity must be forwarded as-is.
+    expect(body.similarity).toBe(0.9);
+    // Directives must be non-empty (treatment session).
+    expect(body.directives.length).toBeGreaterThan(0);
+  });
+
+  it('low confidence (<0.6) → falls back to stub detection, ignores hint confidence', async () => {
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        archetype_hint: 'investor',
+        confidence: 0.3,
+        holdout_pct: 0,
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    // Stub still resolves 'investor' via keyword match, but confidence is stub's 0.9.
+    expect(body.archetype).toBe('investor');
+    expect(body.confidence).toBe(0.9);
+    // similarity absent because it was not sent.
+    expect(body.similarity).toBeUndefined();
+  });
+
+  it('no confidence / similarity → existing behaviour unchanged (backward compat)', async () => {
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({ ...BASE_BODY, archetype_hint: 'family' }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    expect(body.archetype).toBe('family');
+    expect(body.confidence).toBe(0.9);
+    expect(body.similarity).toBeUndefined();
+  });
+
+  it('similarity in response is absent when not sent', async () => {
+    const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY), EMPTY_ENV);
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    expect(body.similarity).toBeUndefined();
+  });
+});
+
+// ─── detectArchetype unit tests (TICKET-FIX-015) ─────────────────────────────
+
+describe('detectArchetype — confidence bypass logic (TICKET-FIX-015)', () => {
+  it('confidence=0.85, hint="investor" → archetype investor, confidence=0.85', () => {
+    const result = detectArchetype('investor', 0.85, 0.9);
+    expect(result.archetype).toBe('investor');
+    expect(result.confidence).toBe(0.85);
+    expect(result.directives.length).toBeGreaterThan(0);
+  });
+
+  it('confidence=0.6 (boundary) + hint → bypasses stub', () => {
+    const result = detectArchetype('family', 0.6);
+    expect(result.archetype).toBe('family');
+    expect(result.confidence).toBe(0.6);
+  });
+
+  it('confidence=0.59 (below boundary) → stub takes over', () => {
+    const result = detectArchetype('investor', 0.59);
+    // Stub keyword match still gives investor, but at stub confidence 0.9.
+    expect(result.archetype).toBe('investor');
+    expect(result.confidence).toBe(0.9);
+  });
+
+  it('confidence=0.85 with empty hint → stub takes over (neutral)', () => {
+    const result = detectArchetype('', 0.85);
+    expect(result.archetype).toBe('neutral');
+    expect(result.confidence).toBe(0.5);
+  });
+
+  it('confidence undefined → stub takes over unchanged', () => {
+    const result = detectArchetype('investor');
+    expect(result.archetype).toBe('investor');
+    expect(result.confidence).toBe(0.9);
   });
 });

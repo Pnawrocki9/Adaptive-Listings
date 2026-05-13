@@ -26,6 +26,7 @@ import type {
   SlotSelectors,
 } from '@estalara/shared';
 import type { DetectionResult } from '../pipeline.js';
+import { inferContainerSelector } from '../utils/container.js';
 
 /** Stable class keyword fragments to search for (Angular attributes excluded). */
 const STABLE_CLASS_KEYWORDS = [
@@ -106,6 +107,7 @@ function detectAngularSync(html: string, url: string): DetectionResult | null {
       keyword,
       currency,
       qualifyingCount,
+      candidates[0] ?? null,
     );
 
     return {
@@ -142,6 +144,7 @@ function detectAngularSync(html: string, url: string): DetectionResult | null {
       'price',
       currency,
       structuralQualifyingCount,
+      structuralCandidates[0] ?? null,
     );
     return {
       schema,
@@ -200,7 +203,9 @@ function buildSchema(
   keywordHint: string,
   currency: 'EUR' | 'USD' | 'GBP' | 'PLN' | 'AED',
   qualifyingCount: number,
+  firstCard?: Element | null,
 ): TenantSiteSchema {
+  const containerSelector = inferContainerSelector(firstCard ?? null);
   const cardFieldMappings: CardFieldMappings = {
     headline: {
       primary: `h2[class*='${keywordHint}'], h3[class*='${keywordHint}']`,
@@ -284,6 +289,7 @@ function buildSchema(
       card_field_mappings: cardFieldMappings,
       data_extractors_per_card: dataExtractors,
       reorder_capable: true,
+      ...(containerSelector !== null ? { container_selector: containerSelector } : {}),
     },
     detail_schema: {
       url_patterns: detailPatterns,

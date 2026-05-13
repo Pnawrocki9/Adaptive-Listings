@@ -28,6 +28,7 @@ import type {
   SlotSelectors,
 } from '@estalara/shared';
 import type { DetectionResult } from '../pipeline.js';
+import { inferContainerSelector } from '../utils/container.js';
 
 /**
  * styled-components pattern: `ComponentName-sc-<8-hex>-<number>`
@@ -200,6 +201,10 @@ function detectCssInJsSync(html: string, url: string): DetectionResult | null {
         data_extractors_per_card: dataExtractors,
         // CSS-in-JS selectors may drift on redeploy — disable reorder.
         reorder_capable: false,
+        ...(() => {
+          const cs = inferContainerSelector(doc.querySelector(cardSelector));
+          return cs !== null ? { container_selector: cs } : {};
+        })(),
       },
       detail_schema: {
         url_patterns: detailPatterns,

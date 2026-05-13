@@ -17,6 +17,7 @@ import type {
   SlotSelectors,
 } from '@estalara/shared';
 import type { DetectionResult } from '../pipeline.js';
+import { inferContainerSelector } from '../utils/container.js';
 
 /** MUI card element tags to check in priority order. */
 const MUI_CARD_SELECTORS = [
@@ -173,6 +174,10 @@ function detectMuiComponentsSync(html: string, url: string): DetectionResult | n
       card_field_mappings: cardFieldMappings,
       data_extractors_per_card: dataExtractors,
       reorder_capable: true,
+      ...(() => {
+        const cs = inferContainerSelector(doc.querySelector(matchedSelector));
+        return cs !== null ? { container_selector: cs } : {};
+      })(),
     },
     detail_schema: {
       url_patterns: detailPatterns,

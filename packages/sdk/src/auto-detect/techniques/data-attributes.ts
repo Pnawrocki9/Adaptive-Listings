@@ -25,6 +25,7 @@ import type {
   SlotSelectors,
 } from '@estalara/shared';
 import type { DetectionResult } from '../pipeline.js';
+import { inferContainerSelector } from '../utils/container.js';
 
 interface PatternSpec {
   selector: string;
@@ -239,35 +240,53 @@ const PATTERNS: PatternSpec[] = [
     },
   },
 
-  // Generic property-card — Rightmove variant / generic portals
+  // Generic property-card — Rightmove variant / Zillow / Realtor / generic portals.
+  // Fallbacks intentionally cover the most common variants of each field name
+  // (`addr`/`address`, `price`/`card-price`, `sqft`/`size`, `bed`/`card-bed`) so
+  // a single PATTERN entry serves Zillow (`property-card-addr`, `sqft`),
+  // Realtor.com (`card-address`, `card-sqft`, `card-bed`, `card-price`),
+  // and generic UK portals.
   {
     selector: "[data-testid='property-card']",
     source: 'data_testid',
     cardFieldMappings: {
       headline: {
         primary: '[data-testid*="address"]',
-        fallbacks: ['h2', 'h3'],
+        fallbacks: ['[data-testid*="addr"]', 'address', 'h2', 'h3', '[class*="address"]'],
         type: 'text',
       },
       price: {
         primary: "[data-testid='property-price']",
-        fallbacks: ["span[data-testid='price']", '[class*="price"]'],
+        fallbacks: [
+          "span[data-testid='price']",
+          "[data-testid='card-price']",
+          '[data-testid*="price"]',
+          '[class*="price"]',
+        ],
         type: 'currency',
         currency: 'GBP',
       },
       image: {
         primary: "[data-testid='property-image']",
-        fallbacks: ['img'],
+        fallbacks: ['[data-testid*="img"]', 'img'],
         type: 'url',
       },
       bedrooms: {
         primary: "[data-testid='beds-value']",
-        fallbacks: ["[data-testid='beds']", '[data-testid*="bed"]'],
+        fallbacks: ["[data-testid='beds']", '[data-testid*="bed"]', '[class*="beds"]'],
         type: 'number',
       },
       area: {
         primary: "[data-testid='size-value']",
-        fallbacks: ["[data-testid='size']"],
+        fallbacks: [
+          "[data-testid='size']",
+          "[data-testid='sqft']",
+          '[data-testid*="sqft"]',
+          '[data-testid*="size"]',
+          '[data-testid*="surface"]',
+          '[class*="sqft"]',
+          '[class*="area"]',
+        ],
         type: 'number',
         unit: 'sqft',
       },
@@ -275,18 +294,31 @@ const PATTERNS: PatternSpec[] = [
     dataExtractors: {
       price: {
         primary: "[data-testid='property-price']",
-        fallbacks: ["span[data-testid='price']"],
+        fallbacks: [
+          "span[data-testid='price']",
+          "[data-testid='card-price']",
+          '[data-testid*="price"]',
+          '[class*="price"]',
+        ],
         type: 'currency',
         currency: 'GBP',
       },
       bedrooms: {
         primary: "[data-testid='beds-value']",
-        fallbacks: ["[data-testid='beds']"],
+        fallbacks: ["[data-testid='beds']", '[data-testid*="bed"]', '[class*="beds"]'],
         type: 'number',
       },
       area_sqm: {
         primary: "[data-testid='size-value']",
-        fallbacks: ["[data-testid='size']"],
+        fallbacks: [
+          "[data-testid='size']",
+          "[data-testid='sqft']",
+          '[data-testid*="sqft"]',
+          '[data-testid*="size"]',
+          '[data-testid*="surface"]',
+          '[class*="sqft"]',
+          '[class*="area"]',
+        ],
         type: 'number',
         unit: 'sqft',
       },
@@ -347,45 +379,66 @@ const PATTERNS: PatternSpec[] = [
     },
   },
 
-  // Zillow / generic — data-testid="property-card" (duplicate handled by entry above,
-  // this entry covers the Zillow-specific price selector variant).
+  // OLX-style — data-testid='l-card' (Polish + generic classifieds variant).
   {
     selector: "[data-testid='l-card']",
     source: 'data_testid',
     cardFieldMappings: {
       headline: {
         primary: '[data-testid*="title"]',
-        fallbacks: ['h3', 'h2'],
+        fallbacks: ['h3', 'h2', '[data-testid*="ad-card-title"]'],
         type: 'text',
       },
       price: {
         primary: "[data-testid='price']",
-        fallbacks: ['[class*="price"]'],
+        fallbacks: ['[data-testid*="price"]', "[data-testid='ad-price']", '[class*="price"]'],
         type: 'currency',
         currency: 'PLN',
       },
       image: {
         primary: 'img',
-        fallbacks: [],
+        fallbacks: ['[data-testid*="photo"]', '[data-testid*="img"]'],
         type: 'url',
       },
       bedrooms: {
         primary: "[data-testid='rooms-value']",
-        fallbacks: ['[class*="rooms"]'],
+        fallbacks: ['[data-testid*="rooms"]', '[class*="rooms"]'],
         type: 'number',
+      },
+      area: {
+        primary: "[data-testid='surface-value']",
+        fallbacks: [
+          '[data-testid*="surface"]',
+          "[data-testid='area-value']",
+          '[data-testid*="area"]',
+          '[class*="area"]',
+        ],
+        type: 'number',
+        unit: 'sqm',
       },
     },
     dataExtractors: {
       price: {
         primary: "[data-testid='price']",
-        fallbacks: [],
+        fallbacks: ['[data-testid*="price"]', "[data-testid='ad-price']", '[class*="price"]'],
         type: 'currency',
         currency: 'PLN',
       },
       bedrooms: {
         primary: "[data-testid='rooms-value']",
-        fallbacks: [],
+        fallbacks: ['[data-testid*="rooms"]', '[class*="rooms"]'],
         type: 'number',
+      },
+      area_sqm: {
+        primary: "[data-testid='surface-value']",
+        fallbacks: [
+          '[data-testid*="surface"]',
+          "[data-testid='area-value']",
+          '[data-testid*="area"]',
+          '[class*="area"]',
+        ],
+        type: 'number',
+        unit: 'sqm',
       },
     },
   },
@@ -451,6 +504,10 @@ function detectDataAttributesSync(html: string, url: string): DetectionResult | 
         card_field_mappings: pattern.cardFieldMappings,
         data_extractors_per_card: pattern.dataExtractors,
         reorder_capable: true,
+        ...(() => {
+          const cs = inferContainerSelector(cards[0] ?? null);
+          return cs !== null ? { container_selector: cs } : {};
+        })(),
       },
       detail_schema: {
         url_patterns: detailPatterns,

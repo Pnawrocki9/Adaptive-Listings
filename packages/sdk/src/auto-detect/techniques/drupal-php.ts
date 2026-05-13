@@ -37,6 +37,7 @@ import type {
   SlotSelectors,
 } from '@estalara/shared';
 import type { DetectionResult } from '../pipeline.js';
+import { inferContainerSelector } from '../utils/container.js';
 
 /** Minimum qualifying card count. */
 const MIN_CARD_COUNT = 2;
@@ -320,6 +321,7 @@ function detectDrupalPhpSync(html: string, url: string): DetectionResult | null 
       0.85,
       'php_classic',
       'php',
+      cards[0] ?? null,
     );
 
     return {
@@ -457,6 +459,7 @@ function tryDrupalSchema(
       0.9,
       'drupal',
       'drupal',
+      cards[0] ?? null,
     );
 
     return {
@@ -485,7 +488,9 @@ function buildSchema(
   confidence: number,
   detectionSource: 'drupal' | 'php_classic',
   frameworkHint: 'drupal' | 'php',
+  firstCard?: Element | null,
 ): TenantSiteSchema {
+  const containerSelector = inferContainerSelector(firstCard ?? null);
   const slotSelectors: SlotSelectors = {
     headline: {
       primary: 'h1',
@@ -518,6 +523,7 @@ function buildSchema(
       card_field_mappings: cardFieldMappings,
       data_extractors_per_card: dataExtractors,
       reorder_capable: true,
+      ...(containerSelector !== null ? { container_selector: containerSelector } : {}),
     },
     detail_schema: {
       url_patterns: detailPatterns,

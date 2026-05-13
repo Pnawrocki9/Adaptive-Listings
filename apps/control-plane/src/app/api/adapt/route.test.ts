@@ -2,6 +2,8 @@
  * Tests for GET /api/adapt and POST /api/adapt — Decision API real logic.
  *
  * Coverage:
+ *   - Auth gate: missing header → 401, wrong key → 401, correct key → 200
+ *   - Auth gate: ADAPT_API_KEY unset → presence-only (empty → 401, non-empty → 200)
  *   - Decision tree: all 4 branches (with and without LLM gateway)
  *   - AdaptationDirectives shape validation
  *   - Valid GET request → correct AdaptationDirectives
@@ -13,7 +15,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod';
 
 // Mock the LLM gateway module — by default returns null (no API key in test env)
@@ -38,14 +40,20 @@ async function parseBody<T>(res: Response): Promise<T> {
   return raw as T;
 }
 
-function makeRequest(params: Record<string, string>, tenantId = 'tenant-abc'): NextRequest {
+function makeRequest(
+  params: Record<string, string>,
+  tenantId = 'tenant-abc',
+  authHeader: string | null = 'Bearer test_key',
+): NextRequest {
   const url = new URL('http://localhost/api/adapt');
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v);
   }
-  return new NextRequest(url, {
-    headers: tenantId ? { 'x-tenant-id': tenantId } : {},
-  });
+  const headers: Record<string, string> = tenantId ? { 'x-tenant-id': tenantId } : {};
+  if (authHeader !== null) {
+    headers.Authorization = authHeader;
+  }
+  return new NextRequest(url, { headers });
 }
 
 const VALID_PARAMS = {
@@ -91,6 +99,73 @@ const AdaptationDirectivesSchema = z.object({
     'playbook_fallback_llm_unavailable',
   ]),
   generated_at: z.string().datetime(),
+});
+
+// ─── Auth gate tests ──────────────────────────────────────────────────────────
+
+describe('GET /api/adapt — auth gate', () => {
+  beforeEach(() => {
+    mockCallLlmGateway.mockClear();
+    mockCallLlmGateway.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('missing Authorization header → 401 AUTH_REQUIRED', async () => {
+    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', null));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('AUTH_REQUIRED');
+    expect(body.error.message).toContain('Authorization');
+  });
+
+  it('empty Bearer token → 401 AUTH_REQUIRED', async () => {
+    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer '));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('AUTH_REQUIRED');
+  });
+
+  it('wrong key when ADAPT_API_KEY is set → 401 FORBIDDEN', async () => {
+    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer wrong_key'));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('FORBIDDEN');
+    expect(body.error.message).toContain('Invalid API key');
+  });
+
+  it('correct key when ADAPT_API_KEY is set → 200', async () => {
+    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer test_adapt_key'));
+    expect(res.status).toBe(200);
+  });
+
+  it('ADAPT_API_KEY unset + empty token → 401 (presence-only: empty token rejected)', async () => {
+    vi.stubEnv('ADAPT_API_KEY', '');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer '));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('AUTH_REQUIRED');
+  });
+
+  it('ADAPT_API_KEY unset + non-empty token → 200 (presence-only auth)', async () => {
+    vi.stubEnv('ADAPT_API_KEY', '');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer any_token_will_do'));
+    expect(res.status).toBe(200);
+  });
+
+  it('auth error response includes request_id', async () => {
+    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', null));
+    const body = await parseBody<{ error: { request_id: string } }>(res);
+    expect(typeof body.error.request_id).toBe('string');
+    expect(body.error.request_id.length).toBeGreaterThan(0);
+  });
 });
 
 // ─── Unit: decision tree branches (gateway mocked to return null) ─────────────

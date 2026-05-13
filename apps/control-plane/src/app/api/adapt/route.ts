@@ -193,6 +193,33 @@ function logDecisionAsync(
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
+
+  // ── Auth gate — same pattern as decision-api Worker ───────────────────────
+  const auth = req.headers.get('Authorization') ?? req.headers.get('authorization');
+  const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!token) {
+    return NextResponse.json(
+      errorBody({
+        code: ErrorCode.AUTH_REQUIRED,
+        message: 'Authorization: Bearer <key> header is required',
+        requestId,
+      }),
+      { status: 401 },
+    );
+  }
+  const adaptApiKey = process.env.ADAPT_API_KEY;
+  if (adaptApiKey && token !== adaptApiKey) {
+    return NextResponse.json(
+      errorBody({
+        code: ErrorCode.FORBIDDEN,
+        message: 'Invalid API key',
+        requestId,
+      }),
+      { status: 401 },
+    );
+  }
+  // When ADAPT_API_KEY is unset: presence-only auth (non-empty token is sufficient — backward compat with dev)
+
   const params = req.nextUrl.searchParams;
 
   // ── Parameter validation ──────────────────────────────────────────────────

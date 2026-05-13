@@ -1,7 +1,10 @@
 /**
  * GET/POST /api/quiz/config — quiz widget configuration per tenant.
  *
- * Auth: x-tenant-id header required for POST.
+ * Auth: JWT-verified tenant claims required.
+ *   GET  — requires valid JWT (getAuthClaims); falls back to defaults if missing.
+ *   POST — requires agency:viewer or higher (requireTenantAccess).
+ *
  * Persists to tenants.quiz_config JSONB column via createAdminClient().
  *
  * @module apps/control-plane/src/app/api/quiz/config/route
@@ -12,6 +15,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { createAdminClient, tenants } from '@estalara/db';
+import { getAuthClaims, requireTenantAccess } from '@estalara/auth';
 import { eq } from 'drizzle-orm';
 
 export interface QuizConfig {
@@ -39,7 +43,15 @@ const QuizConfigSchema = z.object({
 });
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const tenantId = req.headers.get('x-tenant-id') ?? 'default';
+  const claims = await getAuthClaims(req);
+  if (!claims) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const tenantId = claims.tenant_id;
+  if (!tenantId) {
+    return NextResponse.json({ error: 'Unauthorized: no tenant_id in claims' }, { status: 401 });
+  }
 
   try {
     const db = createAdminClient();
@@ -59,10 +71,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const tenantId = req.headers.get('x-tenant-id');
-  if (!tenantId) {
-    return NextResponse.json({ error: 'x-tenant-id header required' }, { status: 401 });
+  let claims;
+  try {
+    claims = await requireTenantAccess(req, 'agency:viewer');
+  } catch {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  const tenantId = claims.tenant_id;
 
   let body: unknown;
   try {

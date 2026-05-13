@@ -9,6 +9,9 @@ import Script from 'next/script';
  * Loads the Estalara SDK IIFE so personalization runs during demos.
  * Events are routed to /api/demo/ingest (stub, Sprint 5 wires real pipeline).
  *
+ * data-decision-url="/api" — the SDK appends "/adapt" itself, so the final
+ * fetch target becomes /api/adapt (not /api/adapt/adapt).
+ *
  * @module apps/control-plane/src/app/dashboard/demo/mockup/layout
  */
 export default function MockupLayout({ children }: { children: React.ReactNode }) {
@@ -19,10 +22,11 @@ export default function MockupLayout({ children }: { children: React.ReactNode }
         src="/api/sdk"
         strategy="afterInteractive"
         data-api-key="est_demo_mockup"
+        data-tenant-id="est_demo_tenant"
         data-tier="observer"
         data-debug="true"
         data-ingest-url="/api/demo/ingest"
-        data-decision-url="/api/adapt"
+        data-decision-url="/api"
         data-accent-color="#2563EB"
       />
     </div>

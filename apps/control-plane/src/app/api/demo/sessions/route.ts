@@ -2,7 +2,7 @@
  * POST /api/demo/sessions — activate Demo Mode (create new session)
  * GET  /api/demo/sessions — list demo sessions for tenant (last 30 days)
  *
- * Auth: x-tenant-id header required for both endpoints.
+ * Auth: JWT-verified tenant claims required for both endpoints (agency:viewer minimum).
  *
  * JWT signing uses Node.js built-in crypto (HS256) — no external JWT library.
  * Secret: DEMO_MODE_JWT_SECRET env var.
@@ -19,6 +19,7 @@ import { and, desc, gt } from 'drizzle-orm';
 
 import type { DemoDuration, DemoScope, DemoVisibility } from '@estalara/shared';
 import { createAdminClient, demoSessions } from '@estalara/db';
+import { requireTenantAccess } from '@estalara/auth';
 import { eq } from 'drizzle-orm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -69,13 +70,17 @@ const VALID_DURATIONS: DemoDuration[] = ['session', '24h', '7d'];
 // ─── Route handlers ───────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const tenantId = req.headers.get('x-tenant-id');
-  if (!tenantId) {
+  let claims;
+  try {
+    claims = await requireTenantAccess(req, 'agency:viewer');
+  } catch {
     return NextResponse.json(
-      { error: { code: 'unauthorized', message: 'x-tenant-id header is required' } },
+      { error: { code: 'unauthorized', message: 'Valid JWT with tenant access is required' } },
       { status: 401 },
     );
   }
+
+  const tenantId = claims.tenant_id;
 
   // Use x-user-id from middleware (set by dashboard auth); fall back to a placeholder
   const createdBy = req.headers.get('x-user-id') ?? '00000000-0000-0000-0000-000000000000';
@@ -188,13 +193,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const tenantId = req.headers.get('x-tenant-id');
-  if (!tenantId) {
+  let claims;
+  try {
+    claims = await requireTenantAccess(req, 'agency:viewer');
+  } catch {
     return NextResponse.json(
-      { error: { code: 'unauthorized', message: 'x-tenant-id header is required' } },
+      { error: { code: 'unauthorized', message: 'Valid JWT with tenant access is required' } },
       { status: 401 },
     );
   }
+
+  const tenantId = claims.tenant_id;
 
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);

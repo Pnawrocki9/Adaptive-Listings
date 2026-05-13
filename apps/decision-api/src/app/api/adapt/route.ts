@@ -7,12 +7,19 @@
  * Auth: presence-only check on Authorization: Bearer header.
  * DB lookups for tenant validation are deferred to Sprint 5.
  *
+ * A/B holdout assignment: TICKET-AB-001.
+ * - Deterministic HMAC-SHA-256 hash on (tenant_id, session_id).
+ * - Consent-aware: sessions with opted_out/unknown/none consent are skipped.
+ * - Fair-housing safe: no user attributes, only (tenant_id, session_id).
+ *
  * Edge-compatible — no Node.js APIs.
  *
  * @module apps/decision-api/src/app/api/adapt/route
  */
 
 import { z } from 'zod';
+
+import { assignHoldout, DEFAULT_HOLDOUT_PCT } from '../../../lib/ab-assignment.js';
 
 // ─── Request / response types ─────────────────────────────────────────────────
 
@@ -23,6 +30,22 @@ const AdaptRequestSchema = z.object({
   archetype_hint: z.string().optional(),
   page_type: z.enum(['listing_list', 'listing_detail', 'home', 'search']),
   listing_ids: z.array(z.string()).optional(),
+  /**
+   * Consent state from the session. Used for A/B holdout consent gating.
+   * Accepts the existing ConsentState values plus 'opted_out' | 'unknown' for
+   * the A/B layer (these map to the skip condition in AC-3 of TICKET-AB-001).
+   */
+  consent_state: z.string().optional(),
+  /**
+   * Whether the tenant has consent mode enabled.
+   * When true, sessions with non-granted consent states are skipped for A/B assignment.
+   */
+  consent_mode_enabled: z.boolean().optional(),
+  /**
+   * Holdout percentage override. If omitted, the default (0.10) is used.
+   * Must be in [0, 1].
+   */
+  holdout_pct: z.number().min(0).max(1).optional(),
 });
 
 type DirectiveType = 'text' | 'order' | 'visibility' | 'class';
@@ -39,6 +62,11 @@ export interface AdaptResponse {
   confidence: number;
   directives: Directive[];
   ttl_seconds: number;
+  /**
+   * A/B holdout assignment. Present when the session was assigned (consent granted).
+   * Absent when assignment was skipped (opted-out / unknown consent).
+   */
+  holdout_group?: boolean;
 }
 
 // ─── Stub directive sets ──────────────────────────────────────────────────────
@@ -110,15 +138,41 @@ export async function handleAdaptRequest(request: Request): Promise<Response> {
     return errorResponse('validation_failed', 'Invalid request body', 400, parsed.error.flatten());
   }
 
-  const { session_id, archetype_hint } = parsed.data;
-  const { archetype, directives, confidence } = detectArchetype(archetype_hint);
+  const {
+    tenant_id,
+    session_id,
+    archetype_hint,
+    consent_state,
+    consent_mode_enabled,
+    holdout_pct,
+  } = parsed.data;
+
+  // 4. A/B holdout assignment (AC-1, AC-2, AC-3 — TICKET-AB-001).
+  const assignment = await assignHoldout({
+    tenant_id,
+    session_id,
+    // exactOptionalPropertyTypes: only set consent_state when it's a string
+    ...(consent_state !== undefined ? { consent_state } : {}),
+    consent_mode_enabled: consent_mode_enabled ?? false,
+    holdout_pct: holdout_pct ?? DEFAULT_HOLDOUT_PCT,
+  });
+
+  // 5. Archetype detection and directive selection.
+  //    Holdout sessions receive no adaptation directives (default experience).
+  const isHoldout = !assignment.skipped && assignment.holdout_group;
+
+  const { archetype, directives, confidence } = isHoldout
+    ? { archetype: 'neutral', directives: NEUTRAL_DIRECTIVES, confidence: 0.5 }
+    : detectArchetype(archetype_hint);
 
   const body: AdaptResponse = {
     session_id,
     archetype,
     confidence,
-    directives,
+    directives: isHoldout ? [] : directives,
     ttl_seconds: 300,
+    // AC-3: holdout_group is absent when assignment was skipped.
+    ...(assignment.skipped ? {} : { holdout_group: assignment.holdout_group }),
   };
 
   return Response.json(body, { status: 200 });

@@ -192,6 +192,8 @@ paths = [
   '''packages/db/src/__tests__/''',
   '''apps/control-plane/src/lib/__tests__/''',
   '''apps/control-plane/src/__tests__/''',
+  '''apps/decision-api/src/lib/__tests__/''',
+  '''apps/decision-api/src/__tests__/''',
   # Drizzle-generated migration files use long auto-generated identifier names
   '''packages/db/migrations/''',
   # DB schema files contain long table/index names that match the cloudflare-api-token regex

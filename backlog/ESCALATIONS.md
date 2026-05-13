@@ -128,3 +128,79 @@ doppler-verify is non-blocking). Additional fixes in the same PR: build @estalar
 lint, add `permissions: pull-requests: read` to gitleaks-scan, auto-detect placeholder test,
 ClickHouse auth (CLICKHOUSE_PASSWORD env var + per-statement execution + UInt64 type fix). CI now
 green on main: `completed success` run #25315111966.
+
+---
+
+## RESOLVED — Sprint 8 spec doc needed before architect can write ticket files
+
+**Filed by:** pm-orchestrator **Date:** 2026-05-13T10:00:00Z **Affects:** TICKET-AB-001,
+TICKET-REORDER-001, TICKET-AGENCY-001, TICKET-FAIR-001, TICKET-AB-004, TICKET-NATIVE-001,
+TICKET-CAUSAL-001 **Type:** scope **resolved_at:** 2026-05-13 **resolved_by:** Piotr Nawrocki
+
+**Description:**
+
+Sprint 7 and Sprint 7.5 are both DONE as of 2026-05-13. Sprint 8 ticket skeletons have been added to
+QUEUE.md under "Sprint 8 — A/B holdout + re-ranking + agency answers + fair-housing linter" with
+agent assignments, estimated hours, dependencies, and scope notes. However, no formal
+`docs/specs/SPRINT_8_SPEC.md` exists yet (analogous to `docs/specs/SPRINT_7_5_SPEC.md`).
+
+Architect agent cannot write the full ticket markdown files (under `backlog/sprint-8/`) without a
+human-reviewed spec doc that resolves the two open scope questions below.
+
+**Open questions requiring human decision before spec is written:**
+
+1. **Fair-housing linter scope for re-ranking (TICKET-REORDER-001 + TICKET-FAIR-001 conflict).** The
+   Master Design (E.3.2) requires `brand_safety_score` from the fair-housing linter as one of five
+   inputs to the multi-objective optimization score. But the ReorderDirective re-sorts listing cards
+   on a search results grid. This raises a genuine fair-housing question: does re-ranking listings
+   per archetype constitute "steering" under the US Fair Housing Act (FHA) or UK Equality Act? If a
+   `yield_hunter` archetype sees investment-yielding listings ranked first, and that archetype
+   correlates with a protected class, we have a legal exposure. The compliance-engineer has not yet
+   assessed this. **Decision needed:** (a) permit re-ranking with a linter gate, or (b) restrict
+   re-ranking to non-protected signals only (price, size, location), or (c) defer REORDER-001 to
+   Sprint 9 until compliance assessment is complete.
+
+2. **NATIVE-001 CTO/CPO dependency.** TICKET-NATIVE-001 (app.estalara.com Tier 3 integration)
+   requires Rafal (CTO) to add `data-estalara-*` attributes to SvelteKit components and Krystian
+   (CPO) to approve the slot mapping. This is human engineering work that agents cannot perform.
+   **Decision needed:** (a) who schedules this human work, (b) whether NATIVE-001 is in Sprint 8 or
+   a dedicated CTO sprint, (c) whether the SDK side of NATIVE-001 (sdk-engineer wiring the init and
+   corpus fixture) can proceed before CTO adds the attributes.
+
+**Required action:**
+
+1. Piotr reviews the two open questions above and provides direction.
+2. Architect agent writes `docs/specs/SPRINT_8_SPEC.md` incorporating that direction plus the
+   skeleton ticket scopes already in QUEUE.md.
+3. Piotr reviews and approves the spec doc.
+4. PM-orchestrator promotes Sprint 8 tickets from BACKLOG to READY and begins delegation.
+
+**Suggested first-mover once spec is approved:** TICKET-AB-001 (no internal Sprint 8 dependencies,
+unblocks AB-004 and FAIR-001) in parallel with TICKET-REORDER-001 (if fair-housing question is
+resolved). TICKET-CAUSAL-001 is P2 and should not start until AB-001 has 2+ weeks of real holdout
+data in production.
+
+**Resolution:**
+
+Both open questions resolved by Piotr Nawrocki on 2026-05-13:
+
+1. **Fair-housing / REORDER-001:** REORDER-001 is **unblocked**. No FAIR-001 linter is needed at
+   this stage. Rationale: Estalara does not collect demographic data. Archetypes are derived
+   exclusively from behavioral signals (scroll depth, chat intent, dwell time, click patterns) —
+   they are behavioral clusters, not demographic categories. No protected-class identity attaches to
+   a session. Re-ranking listings to fit a buyer's expressed behavioral intent (e.g., `yield_hunter`
+   reading rental-yield content → surface high-yield listings first) is not steering under
+   FHA/Equality Act/UAE PDPL definitions, which all anchor on protected characteristics (race,
+   religion, family status, national origin, gender, disability). Because none of those signals
+   enter the archetype space, the legal premise of "steering" does not apply. **IMPORTANT CAVEAT
+   (binding on all future agents):** This determination holds only as long as the archetype space
+   remains purely behavioral. If any agent proposes adding a demographic or proxy-demographic signal
+   to an archetype — including zip-code priors, name analysis, photo analysis, or any signal that
+   acts as a proxy for race, religion, family status, national origin, gender, or disability — this
+   decision MUST be re-litigated via a new escalation before that signal enters any model or
+   pipeline. TICKET-FAIR-001 is CANCELLED as a result (not required at this stage).
+
+2. **NATIVE-001 CTO/CPO dependency:** TICKET-NATIVE-001 is **deferred to MVP launch**. Tier 3 Native
+   components require Rafal (CTO) and Krystian (CPO) scheduling on the SvelteKit side. That work is
+   sequenced for the launch window, not Sprint 8. The SDK side does not proceed speculatively — it
+   would create rework risk. NATIVE-001 remains BLOCKED with updated reason.

@@ -18,14 +18,26 @@ import { handleHealthRequest } from './app/api/health/route.js';
 
 export interface Env {
   ENVIRONMENT: string;
+  /**
+   * Optional API key for the adapt endpoint.
+   * When set, every request's Bearer token must match this value exactly.
+   * When absent (local dev / tests), presence-only auth is used.
+   */
+  ADAPT_API_KEY?: string;
+  /**
+   * Per-tenant daily LLM spend cap in USD.
+   * Defaults to '1.00' when not set.
+   * Example: '0.50' for $0.50/day per tenant.
+   */
+  LLM_DAILY_CAP_USD?: string;
 }
 
 export default {
-  async fetch(request: Request, _env: Env, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const { pathname } = new URL(request.url);
 
     if (pathname === '/api/adapt' && request.method === 'POST') {
-      return handleAdaptRequest(request);
+      return handleAdaptRequest(request, env);
     }
 
     if (pathname === '/api/health' && request.method === 'GET') {

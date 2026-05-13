@@ -53,6 +53,18 @@ const AdaptRequestSchema = z.object({
    * Must be in [0, 1].
    */
   holdout_pct: z.number().min(0).max(1).optional(),
+  /**
+   * Archetype confidence score from the SDK intent engine (0–1).
+   * When >= 0.6 and archetype_hint is a non-empty string, the hint is used as-is
+   * without falling back to stub detection. Values below 0.6 or absent cause
+   * the stub classifier to run as before. [TICKET-FIX-015]
+   */
+  confidence: z.number().min(0).max(1).optional(),
+  /**
+   * Embedding cosine similarity from the SDK intent engine (0–1).
+   * Passed through to the response for observability. [TICKET-FIX-015]
+   */
+  similarity: z.number().min(0).max(1).optional(),
 });
 
 type DirectiveType = 'text' | 'order' | 'visibility' | 'class';
@@ -85,6 +97,11 @@ export interface AdaptResponse {
    * Absent when assignment was skipped (opted-out / unknown consent).
    */
   holdout_group?: boolean;
+  /**
+   * Embedding cosine similarity forwarded from the SDK intent engine.
+   * Present when the SDK included it in the request. [TICKET-FIX-015]
+   */
+  similarity?: number;
 }
 
 // ─── Stub directive sets ──────────────────────────────────────────────────────
@@ -123,32 +140,70 @@ function toDirectives(bases: DirectiveBase[], archetype: string, confidence: num
   return bases.map((d) => ({ ...d, archetype, confidence }));
 }
 
-export function detectArchetype(hint?: string): ArchetypeResult {
-  const h = (hint ?? '').toLowerCase();
-  if (h === 'investor' || h.includes('invest')) {
-    const archetype = 'investor';
-    const confidence = 0.9;
+/**
+ * Detect the archetype for a session.
+ *
+ * When `confidence` is >= 0.6 and `hint` is a non-empty string the SDK has
+ * already produced a high-confidence signal; trust it directly and skip the
+ * stub classifier so the real score is preserved in the response.
+ *
+ * When `confidence` is absent or < 0.6, fall through to the stub keyword
+ * matcher (existing behaviour — no regression for callers that omit the field).
+ *
+ * @param hint       - Archetype hint string (e.g. "investor", "family").
+ * @param confidence - Optional confidence score from the SDK intent engine (0–1).
+ * @param similarity - Optional cosine similarity (passed-through, not used here).
+ */
+export function detectArchetype(
+  hint?: string,
+  confidence?: number,
+  _similarity?: number,
+): ArchetypeResult {
+  // High-confidence SDK signal: use hint as-is, preserve the provided score.
+  if (confidence !== undefined && confidence >= 0.6 && hint && hint.trim().length > 0) {
+    const archetype = hint.trim().toLowerCase();
+    // Build directives from the matching playbook when available; neutral otherwise.
+    let bases: DirectiveBase[];
+    if (archetype === 'investor' || archetype.includes('invest')) {
+      bases = INVESTOR_DIRECTIVES_BASE;
+    } else if (archetype === 'family' || archetype.includes('family')) {
+      bases = FAMILY_DIRECTIVES_BASE;
+    } else {
+      bases = NEUTRAL_DIRECTIVES_BASE;
+    }
     return {
       archetype,
       confidence,
-      directives: toDirectives(INVESTOR_DIRECTIVES_BASE, archetype, confidence),
+      directives: toDirectives(bases, archetype, confidence),
+    };
+  }
+
+  // Stub keyword-based fallback (original logic).
+  const h = (hint ?? '').toLowerCase();
+  if (h === 'investor' || h.includes('invest')) {
+    const archetype = 'investor';
+    const conf = 0.9;
+    return {
+      archetype,
+      confidence: conf,
+      directives: toDirectives(INVESTOR_DIRECTIVES_BASE, archetype, conf),
     };
   }
   if (h === 'family' || h.includes('family')) {
     const archetype = 'family';
-    const confidence = 0.9;
+    const conf = 0.9;
     return {
       archetype,
-      confidence,
-      directives: toDirectives(FAMILY_DIRECTIVES_BASE, archetype, confidence),
+      confidence: conf,
+      directives: toDirectives(FAMILY_DIRECTIVES_BASE, archetype, conf),
     };
   }
   const archetype = 'neutral';
-  const confidence = 0.5;
+  const conf = 0.5;
   return {
     archetype,
-    confidence,
-    directives: toDirectives(NEUTRAL_DIRECTIVES_BASE, archetype, confidence),
+    confidence: conf,
+    directives: toDirectives(NEUTRAL_DIRECTIVES_BASE, archetype, conf),
   };
 }
 
@@ -220,6 +275,8 @@ export async function handleAdaptRequest(
     consent_state,
     consent_mode_enabled,
     holdout_pct,
+    confidence: inputConfidence,
+    similarity: inputSimilarity,
   } = parsed.data;
 
   // 4. A/B holdout assignment (AC-1, AC-2, AC-3 — TICKET-AB-001).
@@ -242,7 +299,7 @@ export async function handleAdaptRequest(
         directives: toDirectives(NEUTRAL_DIRECTIVES_BASE, 'neutral', 0.5),
         confidence: 0.5,
       }
-    : detectArchetype(archetype_hint);
+    : detectArchetype(archetype_hint, inputConfidence, inputSimilarity);
 
   // 6. LLM cap check.
   const dailyCapUsd = parseDailyCap(env.LLM_DAILY_CAP_USD);
@@ -259,6 +316,8 @@ export async function handleAdaptRequest(
     source,
     // AC-3: holdout_group is absent when assignment was skipped.
     ...(assignment.skipped ? {} : { holdout_group: assignment.holdout_group }),
+    // Forward similarity from SDK intent engine when provided. [TICKET-FIX-015]
+    ...(inputSimilarity !== undefined ? { similarity: inputSimilarity } : {}),
   };
 
   return Response.json(body, { status: 200 });

@@ -697,4 +697,274 @@ the stub.
 
 ---
 
-<!-- FOLLOW-025+ appended by retrospective-analyst for subsequent tickets -->
+## FOLLOW-025 — Add variant_index field to TextDirective (shared contract)
+
+- **source_retro:** RETRO-004
+- **source_ticket:** TICKET-046
+- **recommended_sprint:** 9 (must land in same PR as FOLLOW-007 Thompson wiring)
+- **recommended_agent:** architect + backend-engineer
+- **priority:** P1
+- **estimated_hours:** 1
+- **scope:** `packages/shared/src/directives.ts:46` `TextDirective` interface has no `variant_index`
+  field. Even once FOLLOW-007 lands the Thompson sampling logic, there is no on-wire contract slot
+  to transport the selected variant index from Decision API to SDK. Add `variant_index?: 0 | 1 | 2`
+  with JSDoc explaining: optional (Tier 1 = absent), default = 0, consumed by SDK to index
+  `slot.variants.en[]`. Perform Rule G scan:
+  `grep -rn 'TextDirective' packages/ apps/ --include='*.ts'` and verify all inline mocks/fixtures
+  compile (no new required field — additive only — but the SDK applyTextDirective fingerprint must
+  also widen, which is FOLLOW-028).
+- **ac:**
+  1. `TextDirective.variant_index?: 0 | 1 | 2` added with JSDoc comment
+  2. Rule G grep run; report any inline mock locations
+  3. SDK `applyTextDirective()` selects `slot.variants.en[variant_index ?? 0]` if variants present;
+     falls back to `slot.en` otherwise
+  4. Test: `TextDirective.variant_index === 2` renders variants.en[2] when present
+  5. Bundled with FOLLOW-007 PR — do not promote standalone
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-026 — Implement E.6 placeholder resolution levels 1-3
+
+- **source_retro:** RETRO-004
+- **source_ticket:** TICKET-046
+- **recommended_sprint:** 9
+- **recommended_agent:** sdk-engineer + ml-engineer
+- **priority:** P1
+- **estimated_hours:** 4
+- **scope:** Master Design v1.6 E.6 describes a 7-level placeholder resolution hierarchy. The
+  shipped code (`packages/sdk/src/core/adapt.ts:87-100` `interpolatePlaceholders()`) only checks
+  level 4 (DOM attribute). Tokens like `{key_luxury_feature}`, `{distance_to_university}`,
+  `{yield}`, `{income}` appear in 20+ slot strings + copy_templates but rarely surface as DOM
+  attributes on real host pages. Implement at least levels 1-3: (1) LLM-provided value from
+  `AdaptResponse.placeholder_values` map, (2) tenant override map from
+  `tenants.placeholder_overrides`, (3) DOM attribute (current behavior). Levels 4-7 deferred to
+  Sprint 10. Block DESC-001 + NATIVE-001 on this.
+- **ac:**
+  1. `interpolatePlaceholders()` reads from a passed-in `PlaceholderContext` (LLM map, tenant map,
+     DOM element) in that priority order
+  2. `AdaptResponse` carries optional `placeholder_values?: Record<string, string>` field
+  3. Decision API populates `placeholder_values` when listingContext is present (RAG output threads
+     in)
+  4. SDK emits `adapt.skipped {reason: unresolved_token_<name>}` only when all three levels miss
+  5. Tests: 3 fixtures — (a) LLM-provided wins over tenant + DOM, (b) tenant wins over DOM, (c) DOM
+     wins when no other source — assert resolved string in each case
+  6. Integration: family-buyer headline `{bedrooms}BR Family Home — {school_rating} School District`
+     renders correctly on a page with NO data-estalara-bedrooms attribute when listingContext
+     provides bedrooms
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-027 — Use copy_template.en as seed in Sonnet prompt
+
+- **source_retro:** RETRO-004
+- **source_ticket:** TICKET-046
+- **recommended_sprint:** 9
+- **recommended_agent:** ml-engineer
+- **priority:** P1
+- **estimated_hours:** 1.5
+- **scope:** Master Design v1.6 E.7 describes `copy_template.en` as "seed text for Sonnet
+  generation". `buildSonnetPrompt()` at `apps/control-plane/src/lib/llm-gateway.ts:215-239` does NOT
+  reference `basePlaybook.copy_template.en`. Add a "Seed description (refine for this buyer):" block
+  to the prompt below the listingContext block, gated behind `tier !== 1` (Tier 1 path will use
+  template directly via DESC-001's `template_fallback` source). Without this, TICKET-DESC-001 cannot
+  meet its AC that "Sonnet refines copy_template" — Sonnet currently invents from scratch.
+- **ac:**
+  1. `buildSonnetPrompt()` includes
+     `\nSeed description (refine for this buyer):\n${basePlaybook.copy_template.en}\n` when
+     `tier !== 1`
+  2. Haiku prompt also seeds with first 50 words of `copy_template.en` (light touch)
+  3. Test: prompt-string snapshot for yield_hunter at tier=2 includes the copy_template substring
+  4. MOCK_PLAYBOOK in `llm-gateway.test.ts` updated to include `variants` (currently missing) to
+     unblock testing
+  5. Token budget verified: full prompt + 150-word copy_template still fits under Anthropic's
+     context window with 512 max_tokens response
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-028 — Widen SDK applyTextDirective fingerprint to include variant_index
+
+- **source_retro:** RETRO-004
+- **source_ticket:** TICKET-046
+- **recommended_sprint:** 9 (lands with FOLLOW-007)
+- **recommended_agent:** sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** `applyTextDirective()` at `packages/sdk/src/core/adapt.ts:116` fingerprints
+  `text:${slotName}:${archetypeId}`. Once `variant_index` is on TextDirective (FOLLOW-025), two
+  TextDirectives with the same slot+archetype but different variant_index will collide on the
+  idempotency set, and the second will be silently skipped. Widen the fingerprint to include
+  variant_index. Additionally, cache the selected variant_index per session_id in `sessionStorage`
+  so refresh-on-intent-update (RETRO-003 FOLLOW-020 scope) does not pick a NEW variant mid-session.
+- **ac:**
+  1. Fingerprint changed to `text:${slot}:${archetype}:${variant_index ?? 0}`
+  2. `sessionStorage` cache: key `estalara_variant:${session_id}:${archetype}:${slot}`, value =
+     variant_index, TTL = session length (clear on session reset)
+  3. Test: same session → identical variant_index across 3 refreshes even if server returns
+     different indices on each call
+  4. Test: distinct sessions → independent variant selection
+  5. No regression in existing applyTextDirective tests
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-029 — Strengthen variants assertion in playbooks.test.ts
+
+- **source_retro:** RETRO-004
+- **source_ticket:** TICKET-046
+- **recommended_sprint:** 8
+- **recommended_agent:** qa-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** `packages/sdk/src/__tests__/playbooks.test.ts:97-98` asserts only that
+  `headline.variants.en.length >= 3`. A future PR could ship `variants.en: ['x', '', 'x']` and the
+  test would pass. Extend the assertion: (a) each variant non-empty (length > 5), (b) no two
+  variants in the same slot are byte-identical, (c) each variant has balanced `{token}` braces (no
+  unmatched `{` or `}`), (d) variants list does not contain trailing whitespace.
+- **ac:**
+  1. New it.each block covering all 17 non-neutral archetypes
+  2. Asserts: length > 5, unique within slot, balanced braces, no trailing whitespace
+  3. Fails on any deliberately-broken fixture (write a test of the test if needed)
+  4. CI runs in `pnpm test` (not skipped)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-030 — Token-coverage contract test for placeholder resolution
+
+- **source_retro:** RETRO-004
+- **source_ticket:** TICKET-046
+- **recommended_sprint:** 9 (gates FOLLOW-026 + DESC-001 sign-off)
+- **recommended_agent:** qa-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** Every non-neutral archetype's `copy_template.en` + `slots[].en` +
+  `slots[].variants.en[]` contains 1-3 `{token}` placeholders. New tokens introduced by PR #92
+  include `{key_luxury_feature}`, `{distance_to_university}`, `{university}`. There is no central
+  registry of which tokens the placeholder pipeline must support. Build a test that: (1) extracts
+  every unique `{token}` from every archetype string, (2) compares against a canonical resolver
+  registry (`packages/shared/src/placeholders.ts:RESOLVABLE_TOKENS` — create this file), (3) fails
+  if any token is unregistered. The registry per-token documents: source level (1=LLM, 2=tenant
+  override, 3=DOM, 4-7=future), expected data type, fallback string.
+- **ac:**
+  1. New file `packages/shared/src/placeholders.ts` exports `RESOLVABLE_TOKENS` record
+  2. New test `packages/sdk/src/__tests__/placeholder-coverage.test.ts` extracts tokens from all 17
+     non-neutral archetypes
+  3. Assertion: every extracted token appears in `RESOLVABLE_TOKENS`
+  4. Test runs in `pnpm test` CI gate
+  5. Documentation: registry inline-JSDoc explains source priority for each token
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-031 — Thread locale through AdaptRequest + EN→PL→ES fallback
+
+- **source_retro:** RETRO-004
+- **source_ticket:** TICKET-046
+- **recommended_sprint:** 10
+- **recommended_agent:** backend-engineer + sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** `SlotDirective` has optional `pl?` / `es?` locale overrides and `variants.{pl?, es?}`
+  arrays, but the Decision API at `apps/control-plane/src/app/api/adapt/route.ts:107` reads `s.en`
+  directly with no locale awareness. No archetype currently fills the PL/ES fields, but the shipping
+  shape means once they ARE filled (Sprint 10 i18n work), the wiring won't exist. Thread
+  `locale?: 'en' | 'pl' | 'es'` through `AdaptRequestSchema`, then select `s[locale] ?? s.en` and
+  `variants[locale]?.[i] ?? variants.en[i] ?? s.en`. EN is canonical default; PL/ES fall back to EN
+  per E.6 §2.
+- **ac:**
+  1. `AdaptRequestSchema.locale` added (optional, default 'en')
+  2. SDK passes `config.locale` (existing SDK config field) into `fetchDirectives()` body
+  3. Decision API selects slot value by locale with EN fallback
+  4. Tests: 3 cases — `locale: 'en'`, `locale: 'pl'` with PL override present, `locale: 'pl'` with
+     no PL override → falls back to EN
+  5. Documentation: locale fallback chain in MASTER_DESIGN.md E.2
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-032 — Status notes on MASTER_DESIGN.md E.6 and E.7
+
+- **source_retro:** RETRO-004
+- **source_ticket:** TICKET-046
+- **recommended_sprint:** 8 (combine with TICKET-ARCH-MD-001 if scheduled together)
+- **recommended_agent:** architect
+- **priority:** P2
+- **estimated_hours:** 0.5
+- **scope:** Master Design v1.6 added sections E.6 (Placeholder Resolution Order, 7-level hierarchy)
+  and E.7 (Long-form Description Pipeline) — but no code implements either. A reader of the doc
+  today would assume both work. Add inline "Implementation status: scaffold only" notes referencing
+  FOLLOW-026 (E.6) and FOLLOW-002 / FOLLOW-027 (E.7). When wiring lands, remove the notes and bump
+  doc version. Coordinate with TICKET-ARCH-MD-001 (B.8/B.9 patch) to combine into one architect MD
+  pass.
+- **ac:**
+  1. MASTER_DESIGN.md E.6 has a status note pointing to FOLLOW-026
+  2. MASTER_DESIGN.md E.7 has a status note pointing to FOLLOW-002 + FOLLOW-027
+  3. Doc version bumped (v1.7 or next per ARCH-MD-001 coordination)
+  4. Changelog entry added at top
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-033 — Extend lint test to assert variants.en.length >= 3 per headline
+
+- **source_retro:** RETRO-004
+- **source_ticket:** TICKET-046
+- **recommended_sprint:** 8 (fold into TICKET-LINT-ARCHETYPE-001 if still open)
+- **recommended_agent:** sdk-engineer
+- **priority:** P3
+- **estimated_hours:** 0.5
+- **scope:** TICKET-LINT-ARCHETYPE-001 (`backlog/sprint-8/TICKET-LINT-ARCHETYPE-001.md`, from
+  FOLLOW-004) lints `copy_template.en.length > 50` on every non-neutral archetype. It does NOT
+  assert `headline.variants.en.length >= 3`. The type-system also doesn't enforce this — only the
+  current test does. If a new archetype is added with 0 or 1 variants, the type-check passes and
+  only the existing `playbooks.test.ts:97-98` assertion would catch it. Strengthen by adding the
+  variant-count assertion to TICKET-LINT-ARCHETYPE-001's existing test suite, OR ship a sibling
+  assertion in `playbooks.test.ts`.
+- **ac:**
+  1. New it.each assertion: every non-neutral archetype's `headline` slot has
+     `variants.en.length >= 3`
+  2. Same it.each: every variant string length > 5
+  3. Located in either `playbooks.test.ts` (sibling) or LINT-ARCHETYPE-001's test file (combined)
+  4. CI runs in `pnpm test`
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-034 — Fair-housing compliance audit of variants + copy_templates
+
+- **source_retro:** RETRO-004
+- **source_ticket:** TICKET-046
+- **recommended_sprint:** 8 (BLOCKS US-region pilot)
+- **recommended_agent:** compliance-engineer
+- **priority:** P0
+- **estimated_hours:** 3
+- **scope:** PR #92 shipped 17 `copy_template.en` strings + 51 variant strings (3 per non-neutral
+  headline). Several invoke familial status as a value proposition: `family_buyer` variants mention
+  "Family Home", "growing families", "schools & parks", "children"; `student_parent` copy_template
+  describes an HMO/rental-to-child model with parent purchase intent; `retiree_relocator`,
+  `lifestyle_expat`, `diaspora_buyer` may also touch protected-class signals (age, national origin).
+  Under HUD Fair Housing Act ad-content guidance (1968 + 1988 amendment + 2024 disparate-impact
+  rule), serving these descriptions to a SEGMENT of users (which archetype routing does) could be
+  construed as steering. Audit: (1) review every shipped string against HUD's discriminatory-ad
+  examples list, (2) produce a per-archetype US-region eligibility matrix
+  (`compliance/us-region-archetype-matrix.md`), (3) flag any string requiring rewrite, (4) document
+  the legal interpretation in an ADR. This is NOT introduced by PR #92 alone (the archetypes
+  themselves predate it) but PR #92 STRENGTHENED the protected-class language, raising the bar.
+- **ac:**
+  1. Compliance review document `compliance/fair-housing-pr92-audit-2026-05.md` exists
+  2. Per-archetype eligibility matrix:
+     `{archetype, headline_variants_eligible[], copy_template_eligible, regions_eligible[]}`
+  3. Any flagged string has a proposed rewrite (no behavioral change to archetype routing — only
+     wording)
+  4. ADR `docs/adr/ADR-NNN-fair-housing-archetype-copy.md` documents the legal interpretation +
+     binding constraints
+  5. CEO + compliance-engineer sign-off recorded in ESCALATIONS.md
+  6. BLOCKS any US-region pilot or marketing demo until signed off
+- **promoted_to_queue:** false
+
+---
+
+<!-- FOLLOW-035+ appended by retrospective-analyst for subsequent tickets -->

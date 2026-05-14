@@ -817,4 +817,409 @@ the new patterns above need ≥2 retros each before promotion. Rules A–H remai
 
 ---
 
-<!-- RETRO-004 and beyond will be appended here by the retrospective-analyst agent -->
+## RETRO-004 — TICKET-046 (playbook variants + copy_template) — 2026-05-14
+
+**Note:** Deep re-analysis of TICKET-046 / PR #92. RETRO-001 (the original retro) was authored
+before RETRO-002 (AB-001) and RETRO-003 (REORDER-001) surfaced the dominant "Rule H" pattern.
+RETRO-004 re-examines PR #92 with that lens — and with knowledge of how `variant_index` is (not)
+propagated by AB-001, how `listingContext` actually flows through the LLM gateway, and how Master
+Design v1.6's E.6/E.7 sections map (or fail to map) onto shipped code. Findings here are explicitly
+things RETRO-001 missed or under-scoped, plus repeating patterns that should strengthen Rule H or be
+codified as a separate Rule.
+
+### 1. Summary of change
+
+- **PR:** #92 (merged 2026-05-14, commit `b6368b6`)
+- **Files changed:** ~30 (+817 / -40) — confirmed against RETRO-001 §1
+- **Modules touched:** SDK playbooks (17 non-neutral archetypes + types + tests), control-plane
+  `llm-gateway.ts`, control-plane `llm-gateway.test.ts` MOCK_PLAYBOOK, demo mockup page,
+  `docs/MASTER_DESIGN.md` v1.4 → v1.6 (E.6/E.7 added)
+- **Key contracts changed (re-confirmed + additions RETRO-001 missed):**
+  - `PlaybookEntry.copy_template` — ADDED as REQUIRED field (`copy_template: { en; pl?; es? }`) —
+    breaking: yes for any inline `PlaybookEntry` mock (Rule G hit; only `MOCK_PLAYBOOK` in
+    `llm-gateway.test.ts` updated)
+  - `SlotDirective.variants` — ADDED as OPTIONAL field
+    (`variants?: { en: string[]; pl?: string[]; es?: string[] }`) — breaking: no
+  - Slot rename: `feature-section` → `feature` in `yield-hunter.ts` and `llm-gateway.ts` Sonnet
+    prompt — breaking: yes for any consumer hard-coding the old name (Rule F evidence)
+  - Master Design **E.6 (Placeholder Resolution Order, 7-level hierarchy)** — ADDED v1.6 — there is
+    NO corresponding code change implementing the 7-level hierarchy; `interpolatePlaceholders()` in
+    `packages/sdk/src/core/adapt.ts:87` still only checks one source (`data-estalara-<token>` DOM
+    attribute) → RETRO-001 did not flag this as a Rule H instance
+  - Master Design **E.7 (Long-form Description Pipeline)** — ADDED v1.6 — no endpoint, no Modal job,
+    no Redis cache shipped (RETRO-001 §3a flagged this as FOLLOW-002; still open)
+  - `TextDirective` in `packages/shared/src/directives.ts:46` — UNCHANGED — does NOT carry
+    `variant_index`, even though E.3 (v1.6) declares it will (RETRO-001 §3a flagged the seed gap but
+    did NOT call out the missing field on the shared type itself — required for FOLLOW-001/007 to
+    even type-check)
+  - `MOCK_PLAYBOOK` in `apps/control-plane/src/lib/__tests__/llm-gateway.test.ts:48` — partially
+    updated: `copy_template.en` added, BUT the mock's headline slot does NOT include `variants`
+    (slot is type-valid since `variants` is optional, but the mock is now non-representative of any
+    real non-neutral archetype shipped in this PR) — RETRO-001 missed this divergence
+
+### 2. Verification in PR
+
+(Re-confirms RETRO-001 §2 with one correction.)
+
+- Test files changed: `packages/sdk/src/__tests__/playbooks.test.ts` (path corrected — RETRO-001
+  listed `packages/sdk/src/core/playbooks/__tests__/playbooks.test.ts`; actual file is one level up
+  at `packages/sdk/src/__tests__/playbooks.test.ts`). 18 archetypes × ~6 invariants. Two new
+  assertions are particularly load-bearing:
+  - `playbooks.test.ts:97-98`: every non-neutral archetype's `headline` slot has
+    `variants.en.length >= 3`
+  - `playbooks.test.ts:103-104`: every non-neutral archetype has `copy_template.en.length > 50`
+- Assertions: ~108 confirmed.
+- Coverage delta (SDK playbooks module): RETRO-001 claimed "~40% → ~95%" — re-confirmed.
+- CI checks: passed at merge — re-confirmed via QUEUE.md recent-merges.
+- **NOT verified by tests (RETRO-001 missed these — added here):**
+  - `variants.en[]` is never read by any production code path. The single integration test in
+    `playbooks.test.ts:178 simulateDecisionTree()` maps `playbook.slots.map(s => s.en)` — index 0
+    only — and the production routes (`apps/control-plane/src/app/api/adapt/route.ts:104` and
+    `apps/decision-api/src/app/api/adapt/route.ts`) do the same. There is no test that asserts a
+    `variants.en[i]` value is ever returned in an `AdaptResponse.directives[].value`.
+  - `copy_template.en` is never read outside the test that asserts its existence. No production
+    route consumes it.
+  - Placeholder substitution against E.6's 7-level hierarchy is not tested anywhere — the SDK still
+    has only the DOM-attribute branch.
+
+### 3. Discovered gaps
+
+#### 3a. Logic gaps
+
+- **Rule H instance #3 at the SDK contract layer — `variant_index` not on `TextDirective`.**
+  RETRO-001 FOLLOW-001 focused on bandit DB seeding and "Decision API always returns
+  variant_index=0". But RETRO-001 did NOT flag that `packages/shared/src/directives.ts:46`
+  (`TextDirective`) has NO `variant_index` field at all. Even if FOLLOW-007 lands and the bandit is
+  wired, the shared type cannot transport the index from Decision API to SDK without a new field —
+  which is a breaking shared-type change requiring Rule G handling (mock scan). This is a
+  pre-existing gap that compounds Rule H: not only is the runtime not wired, the on-wire contract
+  cannot transport the selected index. → FOLLOW-025 (P1, architect + backend-engineer, 1h —
+  pre-design the field as `variant_index?: 0 | 1 | 2` on `TextDirective` with a default of `0`, ship
+  in same PR that wires FOLLOW-007, do Rule G scan).
+- **Rule H instance #4 at the placeholder layer — E.6 7-level hierarchy is doc-only.** Master Design
+  v1.6 E.6 (added in this same PR via doc changes) describes a 7-level placeholder resolution order
+  (LLM-provided value → tenant override → `ListingContext` → DOM attribute → fallback → …). The
+  shipped code at `packages/sdk/src/core/adapt.ts:87-100` checks ONLY the DOM-attribute path
+  (`data-estalara-<token>`). Tokens like `{yield}`, `{income}`, `{key_feature}`,
+  `{key_luxury_feature}`, `{school_rating}`, `{distance_to_university}`, `{university}` appear in
+  20+ slot strings and copy*template strings; if a host page does not happen to attach all of those
+  as data attributes, the SDK emits `adapt.skipped {reason:
+  unresolved_token*<name>}`and leaves the literal`{token}`visible on the page. RETRO-001 did NOT mention this. Severity: P1 — visible user-facing brokenness on any host page that doesn't fully wire data attributes. The new`{key_luxury_feature}`token (luxury-buyer) and`{distance_to_university}`token (student-parent) are particularly unlikely to appear as DOM attributes on real estate sites. → FOLLOW-026 (P1, sdk-engineer + ml-engineer, 4h — implement at least levels 1–3 of E.6: LLM-provided value (read from`listingContext`if request includes it), tenant override map (from`tenants.placeholder_overrides`),
+  DOM attribute (current behavior). Levels 4–7 deferred to Sprint 10.)
+- **Rule H instance #5 at the LLM gateway layer — `copy_template` is NOT used as a seed in Sonnet
+  prompt.** Master Design v1.6 E.7 explicitly says "copy_template.en is the seed text for Sonnet
+  generation (Tier 2 / Tier 3)". The current `buildSonnetPrompt()` at
+  `apps/control-plane/src/lib/llm-gateway.ts:215-239` references `basePlaybook.description`,
+  `basePlaybook.signals`, and `sessionContext` — but NEVER includes `basePlaybook.copy_template.en`
+  in the prompt. The Haiku prompt similarly ignores `copy_template`. So even once
+  `GET /api/adapt/description` (FOLLOW-002) is built, the existing `/api/adapt` Sonnet path will
+  generate descriptions from scratch rather than refining the curated 100–150-word template.
+  RETRO-001 §3a flagged the missing endpoint but did NOT flag that the EXISTING gateway also fails
+  to use the seed. → FOLLOW-027 (P1, ml-engineer, 1.5h — add
+  `Seed description:\n${basePlaybook.copy_template.en}\nRefine this for the buyer based on the signals above`
+  block to `buildSonnetPrompt()`, gate behind `tier !== 1` so Tier 1 paths don't waste tokens).
+- **Variant selection has zero per-session stickiness even at the SDK layer.**
+  `applyTextDirective()` at `packages/sdk/src/core/adapt.ts:103-136` fingerprints on
+  `text:${slotName}:${archetypeId}` — it has no slot for variant_index. Once FOLLOW-007 lands and
+  the server returns different `variant_index` values, the SDK's idempotency check would
+  (incorrectly) skip a second directive that differs only in variant. Combined with the
+  `resetAdaptState()` in `refreshDirectives()` (RETRO-003 FOLLOW-020), this means the SDK has TWO
+  independent paths to render-flicker variants. → FOLLOW-028 (P2, sdk-engineer, 1h — once
+  variant_index lands on TextDirective, widen the fingerprint to
+  `text:${slot}:${archetype}:${variant_index ?? 0}` AND cache the picked variant_index in
+  `sessionStorage` keyed on session_id so refreshes return the same index).
+- **`feature-section` rename has no contract test.** RETRO-001 FOLLOW-003 / TICKET-SLOT-CONTRACT-001
+  was promoted to address this. Confirmed: ticket spec exists at
+  `backlog/sprint-8/TICKET-SLOT-CONTRACT-001.md`. Status: still READY (not DONE). Until the contract
+  test is merged, the same bug class can recur — particularly if a new Tier-3 slot (e.g. `body`,
+  `subhead`) is added without simultaneously updating the Sonnet prompt's "Available slots" line.
+  Not a new gap — but worth marking that **the Rule H pattern's process safeguard (FOLLOW-024) and
+  the Rule F safeguard (FOLLOW-003 / TICKET-SLOT-CONTRACT-001) are BOTH still open** as of this
+  retro.
+
+#### 3b. Code bugs
+
+- **`MOCK_PLAYBOOK` in `apps/control-plane/src/lib/__tests__/llm-gateway.test.ts:48` does not carry
+  `variants`.** The mock's `slots: [{ slot: 'headline', en: '...' }]` is a valid `PlaybookEntry`
+  (since `variants` is optional) — but it does not exercise the gateway's behavior with `variants`
+  present. When FOLLOW-027 lands and Sonnet starts seeing the variants array via the prompt, this
+  mock will no longer cover the realistic path. Severity P3 (latent; bites at FOLLOW-027 merge
+  time). Flag for visibility — fold into FOLLOW-027 AC.
+- **`neutral.ts` has `copy_template: { en: '' }` — empty string passes type check but violates the
+  lint intent of FOLLOW-004.** The promoted ticket TICKET-LINT-ARCHETYPE-001
+  (`backlog/sprint-8/TICKET-LINT-ARCHETYPE-001.md`) lints "non-neutral archetypes must have
+  copy_template.en.length > 50" — confirmed by `playbooks.test.ts:104`. So neutral is correctly
+  excluded. However, the empty string in neutral means if a future code path uses
+  `getPlaybook('neutral').copy_template.en` as fallback for tenants without an archetype-mapped
+  template, that fallback renders an empty description. RETRO-001 did not flag this. Severity P3
+  (latent; depends on Sprint 9 DESC-001 behavior).
+- **The `feature-section` → `feature` rename touched two places (`yield-hunter.ts` slot,
+  `llm-gateway.ts` Sonnet prompt) — but RETRO-001's verification grep
+  (`grep -rn "feature-section" packages/sdk/src/core/playbooks/ apps/control-plane/src/`) was NOT
+  run repo-wide.** Re-running the grep on the WHOLE repo
+  (`grep -rn "feature-section" /home/user/Adaptive-Listings/packages/ /home/user/Adaptive-Listings/apps/ --include="*.ts" --include="*.tsx" --include="*.md" 2>/dev/null`)
+  returns 0 matches in code but presumably non-zero in older RETROSPECTIVES.md / ESCALATIONS.md /
+  docs/adr/ references (informational). Verified clean in code paths. No bug.
+
+#### 3c. Test coverage gaps
+
+- **No test asserts that `variants.en[i]` for `i in {0,1,2}` produces a valid TextDirective shape.**
+  `playbooks.test.ts:97-98` asserts the array has length ≥ 3 — but does NOT assert each element is a
+  non-empty string, contains balanced `{token}` braces, or differs from siblings. A future PR could
+  ship `variants: { en: ['Headline A', '', 'Headline A'] }` and the test would pass. → FOLLOW-029
+  (P2, qa-engineer, 1h — extend the assertion to
+  `each(v => v.length > 5 && /^\S/.test(v) && !duplicates(variants.en))`).
+- **No test asserts the placeholder substitution path for `copy_template`.** Every non-neutral
+  archetype's `copy_template.en` contains 1–3 `{token}` placeholders (e.g. `{yield}`, `{bedrooms}`,
+  `{key_feature}`, `{key_luxury_feature}`, `{school_rating}`, `{distance_to_university}`,
+  `{university}`, `{income}`). When DESC-001 lands and renders these templates, the unresolved-token
+  failure mode (current `interpolatePlaceholders` behavior) will silently leave `{tokens}` visible.
+  No test today catches this. → FOLLOW-030 (P2, qa-engineer, 1.5h — extract all `{token}` names from
+  every archetype's `copy_template.en` and `slots[].en` + `slots[].variants.en[]`, build a
+  REQUIRED_TOKENS set, and assert every token appears in a documented placeholder-source table once
+  E.6 implementation lands). Blocks meaningful FOLLOW-026 + FOLLOW-002 sign-off.
+- **No regression test for the locale-fallback path.** `SlotDirective` has `pl?` / `es?` overrides
+  and `variants.{pl?, es?}` — no archetype currently fills them, but there is no test asserting "if
+  `pl` is absent, fall back to `en`". The Decision API at
+  `apps/control-plane/src/app/api/adapt/route.ts:107` reads `s.en` directly, never consulting `pl`
+  or `es`. So if a tenant configures `locale: 'pl'`, they silently get English. Severity P2 —
+  RETRO-001 missed entirely. → FOLLOW-031 (P2, backend-engineer + sdk-engineer, 2h, Sprint 10 —
+  thread `locale` through `AdaptRequest` body, fall back EN → PL → ES per E.6 §2 vocabulary).
+- **No test asserts that the `MOCK_PLAYBOOK` in llm-gateway.test.ts is structurally compatible with
+  every real archetype shipped in this PR.** A trivial guard would be:
+  `import yieldHunterPlaybook; expect(MOCK_PLAYBOOK satisfies PlaybookEntry; yieldHunterPlaybook satisfies PlaybookEntry)`.
+  The current setup means a future required-field addition to `PlaybookEntry` only breaks the test
+  if the author remembers to update the mock. Severity P3. Flag — not creating a follow-up; Rule G
+  already enforces the scan obligation.
+
+#### 3d. Documentation gaps
+
+- **Master Design v1.6 E.6 (placeholder resolution) and E.7 (description pipeline) are doc-only —
+  RETRO-001 did not call out the doc/code divergence.** RETRO-001 §3d said "Master Design updated to
+  v1.6 in PR #93" but did not check that the E.6/E.7 sections describe behavior that has no
+  implementation. The shipped v1.6 doc body now claims "placeholder tokens are resolved using a
+  7-level hierarchy" — a reader of the doc would assume this works. Severity P2 — misleading for any
+  agent picking up DESC-001 or any onboarding engineer. → FOLLOW-032 (P2, architect, 0.5h — add an
+  "Implementation status: scaffold/doc only — see FOLLOW-002, FOLLOW-026, FOLLOW-027 for runtime
+  wiring" note inline to E.6 and E.7).
+- **`packages/sdk/src/core/playbooks/types.ts:29` comment says "Minimum 3 variants required on
+  headline slots for non-neutral archetypes."** This is enforced ONLY by the test at
+  `playbooks.test.ts:97-98` — there is no TypeScript-level or Zod-level enforcement. A new archetype
+  author who skips the test invariant could silently ship 1 variant and pass type-check. RETRO-001
+  missed this. Severity P3 — same shape as FOLLOW-004 / TICKET-LINT-ARCHETYPE-001, which is now
+  promoted. Verify FOLLOW-004 spec actually checks variants count, not just `copy_template.en` —
+  reading `backlog/sprint-8/TICKET-LINT-ARCHETYPE-001.md` confirms it only lints
+  `copy_template.en length > 50`. So the variants-count invariant has no lint at all. → FOLLOW-033
+  (P3, sdk-engineer, 0.5h — extend TICKET-LINT-ARCHETYPE-001's assertion set OR add a sibling
+  assertion that headline slots have `variants.en.length >= 3`).
+
+### 4. Cascading impact
+
+#### 4a. Current sprint tickets affected
+
+- **TICKET-SLOT-CONTRACT-001 (Sprint 8, READY, from FOLLOW-003):** Still open. Until it merges, the
+  Rule F invariant is enforced only by manual review. RETRO-004 confirms the spec is correct as
+  written but flags that the test should ALSO assert no slot name in any archetype contains a hyphen
+  or underscore (more general guard than just `feature-section`).
+- **TICKET-LINT-ARCHETYPE-001 (Sprint 8, READY, from FOLLOW-004):** Should be extended with the
+  variants-count invariant per FOLLOW-033, OR FOLLOW-033 should ship as a separate ticket. PM
+  decides at sprint planning.
+- **TICKET-ARCH-MD-001 (Sprint 8, READY, from FOLLOW-005):** Bumps Master Design to v1.7 with
+  B.8/B.9 patches. Coordinate with FOLLOW-032 (E.6/E.7 status notes) — both touch MASTER_DESIGN.md;
+  combine into one architect pass if possible. Add as a note to TICKET-ARCH-MD-001 spec.
+- **TICKET-RETRO-001 (Sprint 8, DONE):** The learning loop infrastructure that this very RETRO-004
+  exercises. Confirmed working — RETRO-004 found 5 NEW gaps that RETRO-001 missed, validating the
+  premise that deeper re-analysis with cross-retro context produces stronger findings.
+
+#### 4b. Future sprint tickets affected
+
+- **TICKET-DESC-001 (Sprint 9, BACKLOG, P1):** Three NEW dependencies surfaced by RETRO-004:
+  1. **FOLLOW-026 (E.6 placeholder resolution)** — DESC-001 cannot meaningfully render
+     `copy_template.en` until placeholder substitution covers at least levels 1–3. Without it, the
+     Tier 1 path returns descriptions with literal `{yield}` / `{bedrooms}` etc. visible to users.
+  2. **FOLLOW-027 (`copy_template` as Sonnet seed)** — DESC-001 spec at
+     `backlog/sprint-9/TICKET-DESC-001.md` says "Sonnet 4.6 generates description from
+     copy_template.en seed" — but the current Sonnet prompt does not use `copy_template` at all.
+     DESC-001 must either build a NEW dedicated description-generation prompt OR FOLLOW-027 must
+     land first so the canonical seed pattern exists.
+  3. **FOLLOW-030 (token coverage test)** — without it, DESC-001 ships with no contract for what
+     placeholder tokens the pipeline must support.
+- **TICKET-BANDIT-VARIANTS (post-Sprint 10, from FOLLOW-001, to be folded into FOLLOW-007):**
+  FOLLOW-025 (TextDirective.variant_index field) must land in the SAME PR as the variant_index
+  propagation work — separating them creates a typecheck cliff. Update FOLLOW-007 AC to include
+  FOLLOW-025.
+- **TICKET-VAL-001 (Sprint 9, BACKLOG, P1) — continuous schema validation cron:** No direct impact
+  on playbook changes. Clean.
+- **TICKET-NATIVE-001 (BLOCKED):** The Native app at `app.estalara.com` would render
+  `copy_template.en` text directly. Same placeholder gap (FOLLOW-026) blocks it. Update
+  TICKET-NATIVE-001's `depends_on` to include FOLLOW-026 alongside FOLLOW-018.
+- **TICKET-CAUSAL-001 (Sprint 8 BACKLOG, P2):** CATE analysis on variants is impossible until
+  FOLLOW-007 + FOLLOW-025 ship — already noted in RETRO-002 §4b. RETRO-004 confirms.
+- **Future i18n tickets (no current spec):** FOLLOW-031 (locale fallback for `pl`/`es`) is a
+  prerequisite. Without it, every non-English-locale rollout will silently serve English copy.
+
+#### 4c. Contracts changed
+
+- **`PlaybookEntry.copy_template` required field** — re-confirmed Rule G hit. Inline-mock scan
+  (`grep -rn "PlaybookEntry" packages/ apps/ --include="*.ts"`) shows the field is satisfied
+  everywhere it's constructed: `MOCK_PLAYBOOK` in llm-gateway test plus 18 archetype files (17
+  non-neutral + neutral). No other inline-mock sites exist. **Confirmed clean** — RETRO-001 was
+  correct on this axis.
+- **`SlotDirective.variants` optional field** — additive; no downstream breakage. Consumed by ZERO
+  non-test files in `packages/` or `apps/` (re-confirmed with grep). The field exists purely as data
+  awaiting FOLLOW-007 to wire it. **Rule H instance reaffirmed** — RETRO-001 §3a marked this as
+  "bandit variant selection not wired" but did not connect it to Rule H because Rule H was promoted
+  in RETRO-002 AFTER RETRO-001 was written. This retro retroactively logs PR #92 as the FIRST Rule H
+  occurrence in the codebase (the variant_index gap), with AB-001 / REORDER-001 as instances #2 and
+  #3.
+- **Master Design v1.6 E.6/E.7 doc-only contract** — NEW cross-cutting concern: the Master Design
+  document now describes behavior that NO code implements. This is a new type of contract
+  divergence: doc-as-spec divergence. Different from Rule H (which is symbol-as-spec divergence) —
+  but the same root cause: ship the description ahead of the implementation. See Section 5 for
+  candidate Rule promotion.
+
+#### 4d. Architectural assumptions affected
+
+- **Master Design v1.6 E.3 + E.6 + E.7 assume a placeholder-resolution pipeline + variant-selection
+  pipeline + description pipeline all coexist.** Shipped state: none of the three pipelines is
+  wired. The architecture (4 layers: data → selection → resolution → render) is sound; only the data
+  layer (variants + copy_template + E.6 doc) shipped. This is now the **largest single Rule H
+  occurrence in the codebase** (5 instances inside one PR + 1 doc section): variants, copy_template,
+  TextDirective.variant_index, E.6 hierarchy, E.7 endpoint, E.7 Modal job.
+- **The fair-housing escalation (ESCALATIONS.md, 2026-05-13)** flagged earlier in RETRO-002 §4d /
+  RETRO-003 §4d does NOT directly bind PR #92 — variants and copy_template are text-only and
+  behavior-anchored. HOWEVER: the new `student-parent` archetype's `copy_template.en` contains
+  `{university}` and `{distance_to_university}` placeholders + describes an HMO/rental-to-child
+  model. The `family_buyer` headline variant
+  `'Spacious {bedrooms}-Bedroom Home Near Top-Rated Schools'` and copy_template mention "growing
+  families", "children", "primary school rated outstanding". These are familial-status
+  protected-class references under the US Fair Housing Act (1968 + 1988 amendment). Under HUD
+  ad-content guidance, descriptions and headlines that segment-and-show by familial status to a
+  SUBSET of viewers (which is what archetype routing does) COULD be construed as steering. **This is
+  a pre-existing concern** (the playbook archetypes themselves have always been segmented; this PR
+  added new copy that strengthens the language) — but RETRO-001 did NOT raise it. RETRO-004 raises
+  it here for visibility; compliance review recommended before any US-region pilot. → FOLLOW-034
+  (P0, compliance-engineer, 3h — review the 17 shipped `copy_template.en` strings and 51 variant
+  strings against HUD Fair Housing ad-content guidance for protected-class steering signals;
+  document a decision matrix per archetype for which variants are US-region-eligible).
+- **Tier model:** `copy_template` is described in the type comment as "(a) fallback for Tier 1 in
+  GET /api/adapt/description (b) seed text for Sonnet generation (Tier 2 / Tier 3)". The TIER-1 vs
+  TIER-2/3 split is now a hardcoded assumption in 17 playbook entries. Once FOLLOW-016 (RETRO-003)
+  decides whether tier is billing-label vs directive-filter, that decision must be reflected in
+  whether Tier 1 tenants are even served `copy_template` directly OR fall back to the listing's
+  original description. Coordinate with FOLLOW-016. Not blocking — fold into the tier-semantics ADR
+  proposed by FOLLOW-016.
+
+### 5. New lesson candidates
+
+- **Pattern: "Schema/scaffold complete, runtime wiring deferred — no test asserts the wiring exists"
+  (Rule H).** RETRO-001 + RETRO-002 + RETRO-003 = 3 retros, ≥7 instances. RETRO-004 adds FIVE MORE
+  instances inside the same PR (variants array, copy_template field, TextDirective lacking
+  variant_index, E.6 hierarchy doc-only, E.7 pipeline doc-only). **Rule H stands; further
+  strengthening already proposed via FOLLOW-024 (RETRO-003).** RETRO-004 adds a refinement: Rule H
+  should treat **doc-only Master Design sections that describe runtime behavior** as ALSO
+  triggering. Recommend amending Rule H §1 from "non-test file imports the new symbol" to ALSO cover
+  "new MASTER_DESIGN.md section describing runtime behavior must reference a TICKET-NNN or
+  FOLLOW-NNN with `recommended_sprint: <number>` in the same PR." This is a Rule H amendment, NOT a
+  new rule.
+- **Pattern: "Master Design section describes runtime behavior with NO code implementing it"** —
+  seen specifically in PR #92's v1.6 E.6 + E.7. Count: 1 retro, 2 doc instances. **Threshold: 2 NOT
+  YET met as a separate pattern.** However, this is genuinely a SUB-CASE of Rule H §3 ("dated
+  deferral + FOLLOW-NNN stub"). PR #92 added E.6 and E.7 to the Master Design but did NOT add
+  FOLLOW-NNN stubs for them in the same commit (RETRO-001 retroactively added FOLLOW-002 for E.7;
+  E.6 has NO follow-up to this day — RETRO-004 creates FOLLOW-026). Recommend AMENDING Rule H to
+  explicitly cover Master Design sections rather than promoting a new rule. Promotion deferred.
+- **Pattern: "Mock object in tests carries fewer fields than real instances of the type"** — seen in
+  RETRO-004 only (`MOCK_PLAYBOOK` lacks `variants`). Count: 1 retro. **Threshold: 2 NOT YET met.**
+  Track. Note: this overlaps Rule G but in the opposite direction (Rule G is about REQUIRED fields
+  being missed; this is about OPTIONAL fields being absent from mocks even though every real
+  instance includes them, making the mock non-representative).
+- **Pattern: "Required token in playbook string has no documented data source"** — seen in RETRO-004
+  only (e.g. `{key_luxury_feature}` in luxury-buyer; `{distance_to_university}` in student-parent).
+  Count: 1 retro. **Threshold: 2 NOT YET met.** Track. If a future ticket adds new placeholder
+  tokens without a registry of resolvers, promote to Rule I "Every placeholder token must be
+  registered in a central resolver table."
+
+**No new rule promoted in this retro.** Rule H continues to absorb the dominant pattern. The "Master
+Design doc-only spec" sub-pattern is recommended for Rule H amendment, not as a separate Rule, per
+the threshold logic. Rules A–H remain canonical.
+
+### 6. Follow-ups
+
+- FOLLOW-025: Add `variant_index?: 0 | 1 | 2` to `TextDirective` in
+  `packages/shared/src/directives.ts` ahead of FOLLOW-007 wiring; perform Rule G mock-scan; document
+  field semantics in JSDoc (architect + backend-engineer, 1h, P1, Sprint 9)
+- FOLLOW-026: Implement E.6 placeholder resolution levels 1–3 in
+  `packages/sdk/src/core/adapt.ts:interpolatePlaceholders()` — LLM-provided value, tenant override
+  map, DOM attribute fallback (sdk-engineer + ml-engineer, 4h, P1, Sprint 9 — unblocks DESC-001 and
+  NATIVE-001)
+- FOLLOW-027: Add `copy_template.en` as seed text to `buildSonnetPrompt()` in
+  `apps/control-plane/src/lib/llm-gateway.ts`; gate behind `tier !== 1` (ml-engineer, 1.5h, P1,
+  Sprint 9 — required by DESC-001)
+- FOLLOW-028: Widen SDK applyTextDirective fingerprint to include `variant_index` AND cache
+  variant_index in sessionStorage keyed on session_id (sdk-engineer, 1h, P2, Sprint 9 — lands with
+  FOLLOW-007)
+- FOLLOW-029: Strengthen `playbooks.test.ts:97-98` variants assertion — each variant non-empty,
+  non-duplicate, balanced braces (qa-engineer, 1h, P2, Sprint 8)
+- FOLLOW-030: Token-coverage contract test — extract every `{token}` from playbook slots +
+  copy_templates, assert each appears in a documented resolver table (qa-engineer, 1.5h, P2, Sprint
+  9 — gates FOLLOW-026 + DESC-001 sign-off)
+- FOLLOW-031: Thread `locale` through `AdaptRequest` body + add EN→PL→ES fallback in playbook slot
+  selection (backend-engineer + sdk-engineer, 2h, P2, Sprint 10)
+- FOLLOW-032: Add "Implementation status: scaffold only — see FOLLOW-NNN" notes to MASTER_DESIGN.md
+  E.6 and E.7 (architect, 0.5h, P2, Sprint 8 — combine with TICKET-ARCH-MD-001 if scheduled
+  together)
+- FOLLOW-033: Extend TICKET-LINT-ARCHETYPE-001 (or add sibling test) to assert every non-neutral
+  archetype's headline slot has `variants.en.length >= 3` (sdk-engineer, 0.5h, P3, Sprint 8 — fold
+  into LINT-ARCHETYPE-001 if not yet merged)
+- FOLLOW-034: Compliance review — audit 17 `copy_template.en` strings + 51 variant strings against
+  HUD Fair Housing ad-content guidance for protected-class steering (familial status, schools,
+  catchment, student/parent framing); document per-archetype US-region eligibility matrix
+  (compliance-engineer, 3h, P0, Sprint 8 — BLOCKS US-region pilot)
+
+### 7. Cross-references
+
+- **RETRO-001 (TICKET-046, original retro of this PR):** RETRO-004 is the deep re-analysis pass.
+  RETRO-001 §3a captured the variant_index wiring gap (FOLLOW-001) and the copy_template pipeline
+  gap (FOLLOW-002) but UNDER-COUNTED the Rule H surface — RETRO-004 finds 5 more instances inside
+  the same PR (FOLLOW-025, FOLLOW-026, FOLLOW-027, plus the two doc-only Master Design sections
+  E.6/E.7). RETRO-001 also did not flag the LLM gateway's failure to USE `copy_template` as a seed
+  (FOLLOW-027) — that gap was masked by the assumption that "endpoint missing = pipeline missing,"
+  whereas the EXISTING gateway also fails to use the field. RETRO-001 also did not flag the locale
+  fallback hole (FOLLOW-031) or the placeholder coverage gap (FOLLOW-030). RETRO-001 also did not
+  raise the fair-housing risk for the new family/student-parent variant copy (FOLLOW-034). Net:
+  RETRO-004 adds 10 follow-ups on top of RETRO-001's original 5. The learning loop is correctly
+  surfacing depth that the first pass missed.
+- **RETRO-002 (TICKET-AB-001):** Rule H was promoted here. RETRO-004's findings strengthen Rule H
+  with 5 more instances. FOLLOW-025 (variant_index on TextDirective) is a PREREQUISITE for RETRO-002
+  FOLLOW-007 (Thompson sampling wiring) — combine in same PR. RETRO-002 FOLLOW-006 (ab.assignment
+  event emission) is unrelated to PR #92's content but shares the same shape.
+- **RETRO-003 (TICKET-REORDER-001):** Rule H instance #3 (REORDER-001's `listing_ids` field on
+  decision-api) is structurally identical to PR #92's variants field — both shipped declared but
+  unwired. RETRO-003 FOLLOW-024 (Rule H hard pre-merge gate) would have caught PR #92's gaps if it
+  had existed at merge time. **Strong argument for prioritizing FOLLOW-024 in Sprint 8.** RETRO-003
+  FOLLOW-016 (tier-as-billing-label vs tier-as-directive-filter) needs to be resolved before
+  FOLLOW-002 / DESC-001 can decide whether Tier 1 tenants are served `copy_template.en` directly or
+  whether the listing's original description is preferred — fold into FOLLOW-016 spec.
+- **CONVENTIONS_PATCH.md Rule F (slot names):** Re-confirmed by this PR. `feature-section` →
+  `feature` rename was caught and fixed; no new violations introduced.
+- **CONVENTIONS_PATCH.md Rule G (breaking type changes):** Re-confirmed by this PR. `copy_template`
+  required field was correctly propagated to the only inline mock (`MOCK_PLAYBOOK` in
+  llm-gateway.test.ts). No regression.
+- **CONVENTIONS_PATCH.md Rule H (schema scaffold + deferred wiring):** **PR #92 is retroactively
+  logged as the chronologically FIRST Rule H occurrence** (variants + copy_template wired only at
+  the data layer). Rule H promoted in RETRO-002 with PR #80 as evidence; RETRO-004 establishes that
+  PR #92 (merged the same day as #80) actually contained the same pattern but RETRO-001 framed it as
+  a discrete "wiring gap" rather than a recurring class. Rule H now has documented evidence in 4
+  retros (RETRO-001, RETRO-002, RETRO-003, RETRO-004) and ≥12 distinct instances. The pattern's
+  recurrence at this density confirms that FOLLOW-024 (hard pre-merge gate) is correctly P1 and
+  should land in Sprint 8 not later.
+- **ESCALATIONS.md (Fair-housing resolution, 2026-05-13):** RETRO-002 and RETRO-003 both noted the
+  caveat binds REORDER-001 scoring (FOLLOW-019). RETRO-004 surfaces a NEW fair-housing concern at
+  the COPY layer — the new family/student-parent variants and copy_templates explicitly invoke
+  familial status as a value proposition. This is upstream of REORDER-001 (which only ranks
+  listings, not text) and was not previously flagged. → FOLLOW-034 (P0, blocks US-region pilot).
+
+---
+
+<!-- RETRO-005 and beyond will be appended here by the retrospective-analyst agent -->

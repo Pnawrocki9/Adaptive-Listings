@@ -211,7 +211,7 @@ Both open questions resolved by Piotr Nawrocki on 2026-05-13:
 
 ---
 
-## OPEN — Fair-housing risk in copy_template strings (US-region pilot blocker)
+## RESOLVED — Fair-housing risk in copy_template strings (US-region pilot blocker)
 
 **Filed by:** retrospective-analyst (RETRO-004) **Date:** 2026-05-14 **Affects:** TICKET-046,
 TICKET-DESC-001, Sprint 11 pilot launch **Type:** compliance
@@ -254,3 +254,26 @@ lifestyle outcomes. This is a distinct exposure from the reorder decision:
 this is resolved. The `GET /api/adapt/description` endpoint (TICKET-DESC-001, Sprint 9) and any
 SDK-side copy rendering must gate on `tenant.region !== 'us'` OR require compliance sign-off. →
 tracked as FOLLOW-034 in `backlog/FOLLOW_UPS.md`.
+
+**Resolution:** Resolved 2026-05-14 by Piotr Nawrocki (CEO).
+
+The system does NOT limit access to listings or information. Every buyer receives the same complete
+set of listings — the copy_template and variant strings adjust only the PRESENTATION framing of the
+same underlying property data, not which properties are shown or hidden. This is equivalent to a
+travel site displaying "family-friendly amenities" vs "business-travel essentials" for the same
+hotel room: the framing differs, the access does not.
+
+HUD fair-housing advertising guidance prohibits copy that EXCLUDES or DISCOURAGES protected classes
+from accessing listings. Because Estalara serves all listings to all sessions (no filtering by
+archetype at the listing-selection layer), the copy layer presents no gatekeeping exposure. The
+archetype system is purely behavioral (scroll depth, dwell time, intent signals); no protected-class
+identity enters the signal space (binding constraint from 2026-05-13 resolution above). Presenting
+the same property in a yield-focused framing vs a family-amenity framing to different behavioral
+clusters does not constitute steering under FHA/HUD advertising rules.
+
+Binding constraint going forward: copy_template and variant strings MUST NOT reference protected
+characteristics explicitly (race, religion, gender, disability, national origin, family status,
+national origin). Behavioral framing only (investment return, space utility, commute time, lifestyle
+fit). Agents writing or editing copy strings must follow this constraint.
+
+FOLLOW-034 is CANCELLED — no compliance audit or region gate required.

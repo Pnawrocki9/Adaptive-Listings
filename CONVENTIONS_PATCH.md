@@ -204,23 +204,21 @@ Mock API routes are allowed only when (3) is satisfied AND the route file's head
 the target follow-up ID (e.g. `// MVP stub — replaced by FOLLOW-014`). The reviewer MUST verify the
 follow-up exists before approving.
 
-**Verification:**
+**Hard gate (CI + pre-push):** `scripts/check-rule-h.sh` runs as a blocking CI job (`rule-h` in
+`.github/workflows/ci.yml`) and as a `pre-push` lefthook. Exit code 1 = PR blocked. The script
+checks:
+
+1. Any API route file changed in the PR that contains `MVP stub` / `mock data` /
+   `real impl in TICKET-` MUST include a `FOLLOW-NNN` reference, and that stub MUST exist in
+   `backlog/FOLLOW_UPS.md`. No FOLLOW-NNN → CI fails.
+2. Any newly created `lib/*.ts` file MUST have at least one non-test importer in `apps/` or
+   `packages/`. Zero importers → CI fails.
+
+Run locally before pushing:
 
 ```bash
-# For every new exported symbol in this PR, find the consumer:
-for symbol in $(git diff main...HEAD --name-only | xargs grep -h "^export " | awk '{print $3}' | sort -u); do
-  count=$(grep -rln "$symbol" apps/ packages/ --include="*.ts" --include="*.tsx" \
-    | grep -v "__tests__" | grep -v "node_modules" | grep -v "/dist/" | wc -l)
-  if [ "$count" -lt 2 ]; then
-    echo "WARN: $symbol has only $count importer(s) (defining file only?). Add a consumer or a FOLLOW-NNN."
-  fi
-done
+bash scripts/check-rule-h.sh origin/main
 ```
-
-Also: PM-orchestrator MUST grep for the substring `MVP stub` / `mock` / `placeholder` /
-`real impl in TICKET-` in any new route file in `apps/control-plane/src/app/api/` and verify each
-occurrence has a matching `FOLLOW-NNN` reference in `backlog/FOLLOW_UPS.md` before marking
-READY_FOR_REVIEW.
 
 ---
 

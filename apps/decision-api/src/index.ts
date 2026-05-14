@@ -46,6 +46,27 @@ export interface Env {
   REDPANDA_REST_USERNAME?: string;
   /** Optional HTTP Basic-Auth password for the Redpanda REST proxy. */
   REDPANDA_REST_PASSWORD?: string;
+  /**
+   * Upstash Redis REST URL for schema caching. [TICKET-AB-011]
+   * Example: 'https://us1-xxxx.upstash.io'
+   * When absent, the Redis cache layer is skipped.
+   */
+  UPSTASH_REDIS_URL?: string;
+  /**
+   * Upstash Redis REST token. [TICKET-AB-011]
+   * Required when UPSTASH_REDIS_URL is set.
+   */
+  UPSTASH_REDIS_TOKEN?: string;
+  /**
+   * Control-plane internal schema API URL. [TICKET-AB-011]
+   * Example: 'https://app.estalara.com/api/internal/schema'
+   * GET with ?tenant_id=<id> → TenantSiteSchema | null
+   */
+  SCHEMA_API_URL?: string;
+  /**
+   * Bearer token for authenticating internal schema API calls. [TICKET-AB-011]
+   */
+  SCHEMA_API_TOKEN?: string;
 }
 
 export default {

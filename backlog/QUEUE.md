@@ -943,7 +943,7 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
     separately. Decision by Piotr Nawrocki 2026-05-13.
   priority: P1
   estimated_hours: 6
-  depends_on: [TICKET-REORDER-001]
+  depends_on: [TICKET-REORDER-001, TICKET-AB-011]
   notes: |
     Implements Master Design B.9 + B.9.3.
     Rafał (CTO) adds data-estalara-* attributes to SvelteKit components (ListingCard.svelte,

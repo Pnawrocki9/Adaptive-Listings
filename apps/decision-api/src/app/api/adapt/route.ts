@@ -39,6 +39,7 @@ import {
   getTenantSchema,
   buildReorderDirective,
   type ReorderDirective,
+  type TenantSchemaEnv,
 } from '../../../lib/reorder.js';
 
 // ─── Request / response types ─────────────────────────────────────────────────
@@ -365,11 +366,18 @@ export async function handleAdaptRequest(
 
   // 7. ReorderDirective — emitted for non-holdout sessions with listing_ids. [TICKET-AB-009]
   //    Holdout sessions always receive empty reorderDirectives.
-  //    getTenantSchema() returns null for unknown tenants (FOLLOW-018 will add real DB lookup).
+  //    getTenantSchema() now does Redis cache + SCHEMA_API_URL fallback. [TICKET-AB-011]
   const listingIds = parsed.data.listing_ids;
   let reorderDirective: ReorderDirective | null = null;
   if (!isHoldout && listingIds && listingIds.length > 0) {
-    const tenantSchema = getTenantSchema(tenant_id);
+    // Build TenantSchemaEnv omitting undefined values (exactOptionalPropertyTypes).
+    const schemaEnv: TenantSchemaEnv = {};
+    if (env.UPSTASH_REDIS_URL !== undefined) schemaEnv.UPSTASH_REDIS_URL = env.UPSTASH_REDIS_URL;
+    if (env.UPSTASH_REDIS_TOKEN !== undefined)
+      schemaEnv.UPSTASH_REDIS_TOKEN = env.UPSTASH_REDIS_TOKEN;
+    if (env.SCHEMA_API_URL !== undefined) schemaEnv.SCHEMA_API_URL = env.SCHEMA_API_URL;
+    if (env.SCHEMA_API_TOKEN !== undefined) schemaEnv.SCHEMA_API_TOKEN = env.SCHEMA_API_TOKEN;
+    const tenantSchema = await getTenantSchema(tenant_id, schemaEnv);
     if (tenantSchema?.reorder_capable) {
       reorderDirective = buildReorderDirective(tenantSchema, listingIds, archetype, confidence);
     }

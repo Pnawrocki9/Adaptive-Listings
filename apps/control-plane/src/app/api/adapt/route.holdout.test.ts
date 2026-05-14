@@ -166,6 +166,9 @@ describe('GET /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET-
 // ─── Smoke tests — POST /api/adapt ────────────────────────────────────────────
 
 describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET-AB-007)', () => {
+  // TICKET-AB-010 update: holdout_group is now computed server-side by assignHoldout().
+  // The ClickHouse INSERT only fires for treatment-arm sessions (holdout_pct=0.0 → guaranteed
+  // treatment). Holdout and skipped sessions return early without a ClickHouse INSERT.
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123/');
@@ -176,46 +179,67 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     vi.unstubAllGlobals();
   });
 
-  it('smoke: holdout_group=true in POST body → INSERT includes holdout_group=1', async () => {
+  it('smoke: treatment arm (holdout_pct=0.0) → INSERT includes holdout_group=0', async () => {
     const capture = captureFetchBody();
 
-    const res = await POST(makePostRequest({ ...VALID_POST_BODY, holdout_group: true }));
+    // holdout_pct=0.0 → 100% treatment, consent_mode_enabled=false → no skip
+    const res = await POST(
+      makePostRequest({ ...VALID_POST_BODY, holdout_pct: 0.0, consent_mode_enabled: false }),
+    );
 
     expect(res.status).toBe(200);
     const body = capture.getLastBody();
     expect(body).not.toBeNull();
     expect(body).toContain('holdout_group');
-    expect(body).toMatch(/1, '.*'/);
-  });
-
-  it('smoke: holdout_group=false in POST body → INSERT includes holdout_group=0', async () => {
-    const capture = captureFetchBody();
-
-    const res = await POST(makePostRequest({ ...VALID_POST_BODY, holdout_group: false }));
-
-    expect(res.status).toBe(200);
-    const body = capture.getLastBody();
-    expect(body).not.toBeNull();
-    expect(body).toContain('holdout_group');
+    // Treatment arm logs holdout_group=0
     expect(body).toMatch(/0, '.*'/);
   });
 
-  it('smoke: holdout_group absent → INSERT defaults to holdout_group=0', async () => {
+  it('smoke: holdout arm (holdout_pct=1.0) → no ClickHouse INSERT (returns early)', async () => {
     const capture = captureFetchBody();
 
-    const res = await POST(makePostRequest(VALID_POST_BODY));
+    // holdout_pct=1.0 → 100% holdout → route returns early, no ClickHouse log
+    const res = await POST(
+      makePostRequest({ ...VALID_POST_BODY, holdout_pct: 1.0, consent_mode_enabled: false }),
+    );
 
     expect(res.status).toBe(200);
-    const body = capture.getLastBody();
-    expect(body).not.toBeNull();
-    expect(body).toContain('holdout_group');
-    expect(body).toMatch(/0, '.*'/);
+    const resBody = (await res.json()) as Record<string, unknown>;
+    expect(resBody.holdout_group).toBe(true);
+    // captureFetchBody captures the LAST fetch call — for holdout path that's the
+    // ab.assignment event fetch (not ClickHouse). The ClickHouse INSERT is skipped.
+    // We verify the response structure rather than the ClickHouse body here.
+    expect(Array.isArray(resBody.directives)).toBe(true);
+    expect((resBody.directives as unknown[]).length).toBe(0);
+    // Confirm no ClickHouse INSERT was made (body will be JSON for Redpanda, not SQL)
+    const fetchBody = capture.getLastBody() ?? '';
+    expect(fetchBody).not.toMatch(/INSERT INTO adaptation_decisions/);
   });
 
-  it('INSERT query contains the exact holdout_group field name', async () => {
+  it('smoke: consent skipped → no ClickHouse INSERT (no holdout_group field)', async () => {
     const capture = captureFetchBody();
 
-    await POST(makePostRequest(VALID_POST_BODY));
+    const res = await POST(
+      makePostRequest({
+        ...VALID_POST_BODY,
+        consent_state: 'opted_out',
+        consent_mode_enabled: true,
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const resBody = (await res.json()) as Record<string, unknown>;
+    expect(resBody.holdout_group).toBeUndefined();
+    const fetchBody = capture.getLastBody() ?? '';
+    expect(fetchBody).not.toMatch(/INSERT INTO adaptation_decisions/);
+  });
+
+  it('INSERT query contains the exact holdout_group field name (treatment arm)', async () => {
+    const capture = captureFetchBody();
+
+    await POST(
+      makePostRequest({ ...VALID_POST_BODY, holdout_pct: 0.0, consent_mode_enabled: false }),
+    );
 
     const body = capture.getLastBody() ?? '';
     // Column list

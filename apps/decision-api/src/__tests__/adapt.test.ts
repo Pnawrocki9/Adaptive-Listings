@@ -708,23 +708,38 @@ describe('POST /api/adapt — ReorderDirective (TICKET-AB-009)', () => {
 // through buildReorderDirective (Rule H: no orphaned exports).
 
 describe('reorder.ts — getTenantSchema + buildReorderDirective', () => {
-  it('getTenantSchema: est_demo_tenant → reorder_capable schema', async () => {
+  // getTenantSchema is now async (TICKET-AB-011: Redis cache + API fallback).
+  // Tests stub global fetch to avoid real network calls.
+
+  beforeEach(() => {
+    // Default: no Redis/API configured → only demo tenant works without fetch stubs.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: null }), { status: 200 })),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('getTenantSchema: est_demo_tenant → reorder_capable schema (no network call)', async () => {
     const { getTenantSchema } = await import('../lib/reorder.js');
-    const schema = getTenantSchema('est_demo_tenant');
+    const schema = await getTenantSchema('est_demo_tenant', {});
     expect(schema).not.toBeNull();
     expect(schema?.reorder_capable).toBe(true);
     expect(typeof schema?.container_selector).toBe('string');
   });
 
-  it('getTenantSchema: unknown UUID → null', async () => {
+  it('getTenantSchema: unknown UUID + no env → null (no SCHEMA_API_URL configured)', async () => {
     const { getTenantSchema } = await import('../lib/reorder.js');
-    const schema = getTenantSchema('550e8400-e29b-41d4-a716-446655440000');
+    const schema = await getTenantSchema('550e8400-e29b-41d4-a716-446655440000', {});
     expect(schema).toBeNull();
   });
 
   it('buildReorderDirective: produces directive with scores sorted descending', async () => {
     const { getTenantSchema, buildReorderDirective } = await import('../lib/reorder.js');
-    const schema = getTenantSchema('est_demo_tenant');
+    const schema = await getTenantSchema('est_demo_tenant', {});
     expect(schema).not.toBeNull();
     const directive = buildReorderDirective(schema!, ['id-a', 'id-b', 'id-c'], 'investor', 0.85);
     expect(directive).not.toBeNull();
@@ -740,7 +755,7 @@ describe('reorder.ts — getTenantSchema + buildReorderDirective', () => {
 
   it('buildReorderDirective: deterministic — same inputs → same ordering on every call', async () => {
     const { getTenantSchema, buildReorderDirective } = await import('../lib/reorder.js');
-    const schema = getTenantSchema('est_demo_tenant');
+    const schema = await getTenantSchema('est_demo_tenant', {});
     const ids = ['listing-abc', 'listing-xyz', 'listing-123'];
     const d1 = buildReorderDirective(schema!, ids, 'investor', 0.85);
     const d2 = buildReorderDirective(schema!, ids, 'investor', 0.85);
@@ -750,7 +765,7 @@ describe('reorder.ts — getTenantSchema + buildReorderDirective', () => {
 
   it('buildReorderDirective: all scores are in [0, 1)', async () => {
     const { getTenantSchema, buildReorderDirective } = await import('../lib/reorder.js');
-    const schema = getTenantSchema('est_demo_tenant');
+    const schema = await getTenantSchema('est_demo_tenant', {});
     const ids = ['a', 'b', 'c', 'd', 'e'];
     const d = buildReorderDirective(schema!, ids, 'family', 0.85);
     expect(d?.scores).toHaveLength(5);

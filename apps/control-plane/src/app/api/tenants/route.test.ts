@@ -34,27 +34,6 @@ vi.mock('@estalara/db', () => ({
 // Mock bandit-seed to avoid its own DB calls in these integration tests.
 vi.mock('@/lib/bandit-seed', () => ({
   seedBanditWeightsForTenant: vi.fn().mockResolvedValue(undefined),
-  CANONICAL_ARCHETYPES: [
-    'yield_hunter',
-    'vacation_rental_investor',
-    'flip_investor',
-    'portfolio_builder',
-    'golden_visa_buyer',
-    'commercial_investor',
-    'family_buyer',
-    'first_time_buyer',
-    'upsizer',
-    'downsizer',
-    'luxury_buyer',
-    'remote_worker',
-    'lifestyle_expat',
-    'retiree_relocator',
-    'diaspora_buyer',
-    'second_home_buyer',
-    'student_parent',
-    'neutral',
-  ],
-  CANONICAL_ARCHETYPE_COUNT: 18,
 }));
 
 import { seedBanditWeightsForTenant } from '@/lib/bandit-seed';

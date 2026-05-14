@@ -951,3 +951,52 @@ the stub.
 ---
 
 <!-- FOLLOW-035+ appended by retrospective-analyst for subsequent tickets -->
+
+## FOLLOW-035 — Replace mock lift data with real ClickHouse reads in /api/dashboard/analytics/lift
+
+- **source_retro:** TICKET-AB-007 (data-engineer stub reference)
+- **source_ticket:** TICKET-AB-004
+- **recommended_sprint:** 9 (coordinate with FOLLOW-009 regression job)
+- **recommended_agent:** backend-engineer
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** `apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts` falls back to
+  `buildMockLiftRows()` when ClickHouse is unreachable. This mock data is deterministic and never
+  reflects real holdout measurements. Once TICKET-AB-007 is live (holdout_group now written to
+  ClickHouse), the mock fallback should be replaced with an empty-state response
+  (`dqsUnavailable: true, rows: []`) rather than fabricated data. The fabricated data misleads the
+  analytics dashboard in development and staging environments where ClickHouse is reachable but has
+  zero real rows.
+- **ac:**
+  - [ ] `buildMockLiftRows()` removed from `lift/route.ts`
+  - [ ] On ClickHouse query failure or empty result: return `{ dqsUnavailable: true, rows: [] }`
+  - [ ] Dashboard page renders "Holdout data not yet available" banner when `dqsUnavailable: true`
+  - [ ] Integration test covers both empty-result and error paths
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-036 — Expose CANONICAL_ARCHETYPES from shared package (single source of truth)
+
+- **source_retro:** TICKET-AB-006 (data-engineer — archetype list duplication)
+- **source_ticket:** TICKET-AB-006
+- **recommended_sprint:** 9
+- **recommended_agent:** architect + backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** `apps/control-plane/src/lib/bandit-seed.ts` exports `CANONICAL_ARCHETYPES` which
+  duplicates the `ArchetypeId` type from `packages/shared/src/directives.ts`. The canonical list
+  exists in three places: the type, the `0005_seed_archetype_embeddings.sql` migration, and the
+  bandit-seed lib. This follow-up moves the list to `packages/shared/src/archetypes.ts` as a
+  `const CANONICAL_ARCHETYPE_IDS` array, and updates all consumers to import from there. Keeps the
+  `ArchetypeId` type derived from the array.
+- **ac:**
+  - [ ] `packages/shared/src/archetypes.ts` exports
+        `CANONICAL_ARCHETYPE_IDS: readonly ArchetypeId[]`
+  - [ ] `ArchetypeId` derived: `type ArchetypeId = typeof CANONICAL_ARCHETYPE_IDS[number]`
+  - [ ] `bandit-seed.ts` imports from `@estalara/shared` instead of declaring inline
+  - [ ] `0007_seed_ab_bandit_weights.sql` keeps explicit list (SQL cannot import TS) — add comment
+  - [ ] All tests pass without changes
+- **promoted_to_queue:** false
+
+---

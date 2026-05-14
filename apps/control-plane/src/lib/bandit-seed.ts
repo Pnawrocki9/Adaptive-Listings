@@ -18,8 +18,11 @@ import { createAdminClient, abBanditWeights } from '@estalara/db';
  * Canonical archetype identifiers for Thompson sampling bandit seeding.
  * Mirrors `ArchetypeId` in `packages/shared/src/directives.ts`.
  * Keep in sync with the shared type when adding new archetypes.
+ *
+ * FOLLOW-036 will move this to packages/shared/src/archetypes.ts as the single
+ * source of truth. Until then, kept as a module-private constant.
  */
-export const CANONICAL_ARCHETYPES = [
+const CANONICAL_ARCHETYPES = [
   'yield_hunter',
   'vacation_rental_investor',
   'flip_investor',
@@ -39,8 +42,6 @@ export const CANONICAL_ARCHETYPES = [
   'student_parent',
   'neutral',
 ] as const;
-
-export const CANONICAL_ARCHETYPE_COUNT = CANONICAL_ARCHETYPES.length;
 
 /**
  * Seeds 18 `ab_bandit_weights` rows for a newly created tenant.

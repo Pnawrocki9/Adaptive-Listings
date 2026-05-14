@@ -7,6 +7,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Resolve workspace packages from source so Vitest doesn't require built dists.
+      '@estalara/auth': path.resolve(__dirname, '../../packages/auth/src/index.ts'),
+      '@estalara/db': path.resolve(__dirname, '../../packages/db/src/index.ts'),
+      '@estalara/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
     },
   },
   test: {

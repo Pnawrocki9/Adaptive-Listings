@@ -1,3 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-redundant-type-constituents --
+ * @estalara/shared, @estalara/sdk, and @estalara/auth are workspace packages not built locally.
+ * TypeScript sees their return types as `any` until packages are built.
+ * CI builds packages before lint so these errors don't appear in CI.
+ * Same pattern as middleware.ts, quiz/config/route.ts, and other routes.
+ */
 /**
  * GET /api/adapt
  *
@@ -215,10 +221,16 @@ function logDecisionAsync(
 }
 
 // ─── ReorderDirective helpers ─────────────────────────────────────────────────
+//
+// Canonical implementation: apps/decision-api/src/lib/reorder.ts
+// Duplicated here because cross-app TypeScript imports are not supported by the
+// tsconfig path setup (decision-api has no @estalara/* workspace packages and
+// control-plane cannot import from apps/decision-api directly).
+// Keep in sync with the canonical version in reorder.ts.
 
 /**
  * Minimal per-tenant schema for reorder capability.
- * Real tenants will get this from a DB lookup (REORDER-002); demo tenant is hard-coded.
+ * Real tenants will get this from a DB lookup (FOLLOW-018); demo tenant is hard-coded.
  */
 interface TenantSchema {
   reorder_capable: boolean;
@@ -228,7 +240,9 @@ interface TenantSchema {
 
 /**
  * Return the tenant's site schema for reorder capability.
- * Currently only the demo tenant is supported; future tickets add DB lookup.
+ * Currently only the demo tenant is supported; future tickets add DB lookup (FOLLOW-018).
+ *
+ * Canonical: apps/decision-api/src/lib/reorder.ts getTenantSchema()
  */
 function getTenantSchema(tenantId: string): TenantSchema | null {
   if (tenantId === 'est_demo_tenant') {
@@ -243,9 +257,12 @@ function getTenantSchema(tenantId: string): TenantSchema | null {
 
 /**
  * Produce a stable 0–1 affinity score for a listing + archetype pair.
- * Uses a simple multiplicative hash so ordering is deterministic across reloads.
+ *
+ * Key order is `archetype:listingId` — matches canonical implementation exactly.
+ *
+ * Canonical: apps/decision-api/src/lib/reorder.ts deterministicScore()
  */
-function deterministicScore(listingId: string, archetype: string): number {
+function deterministicScore(archetype: string, listingId: string): number {
   const key = `${archetype}:${listingId}`;
   let hash = 0;
   for (let i = 0; i < key.length; i++) {
@@ -257,23 +274,29 @@ function deterministicScore(listingId: string, archetype: string): number {
 /**
  * Build a ReorderDirective from a tenant schema + listing IDs.
  * Scores are computed deterministically and sorted descending (highest first).
+ *
+ * Returns null when schema is not reorder-capable or container_selector is missing.
+ *
+ * Canonical: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
  */
 function buildReorderDirective(
-  containerSelector: string,
-  itemSelector: string,
+  schema: TenantSchema,
   listingIds: string[],
   archetype: string,
   confidence: number,
-): ReorderDirective {
+): ReorderDirective | null {
+  if (!schema.reorder_capable || !schema.container_selector) {
+    return null;
+  }
   const scores = listingIds.map((id) => ({
     listing_id: id,
-    score: deterministicScore(id, archetype),
+    score: deterministicScore(archetype, id),
   }));
   scores.sort((a, b) => b.score - a.score);
   return {
     type: 'reorder',
-    container_selector: containerSelector,
-    item_selector: itemSelector,
+    container_selector: schema.container_selector,
+    item_selector: schema.item_selector ?? '[data-estalara-listing-id]',
     score_function: 'archetype_affinity',
     scores,
     archetype,
@@ -502,24 +525,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     listingContext,
   );
 
-  // Append ReorderDirective for tenants with reorder_capable + listing_ids present
+  // Append ReorderDirective for tenants with reorder_capable + listing_ids present.
+  // Canonical helper: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
   const allDirectives: (TextDirective | ReorderDirective)[] = [...textDirectives];
   const tenantSchema = getTenantSchema(body.tenant_id);
-  if (
-    tenantSchema?.reorder_capable &&
-    tenantSchema.container_selector &&
-    body.listing_ids &&
-    body.listing_ids.length > 0
-  ) {
-    allDirectives.push(
-      buildReorderDirective(
-        tenantSchema.container_selector,
-        tenantSchema.item_selector ?? '[data-estalara-listing-id]',
-        body.listing_ids,
-        archetypeId,
-        confidence,
-      ),
+  if (tenantSchema && body.listing_ids && body.listing_ids.length > 0) {
+    const reorderDirective = buildReorderDirective(
+      tenantSchema,
+      body.listing_ids,
+      archetypeId,
+      confidence,
     );
+    if (reorderDirective !== null) {
+      allDirectives.push(reorderDirective);
+    }
   }
 
   const response: AdaptationDirectives = {

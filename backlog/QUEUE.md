@@ -1061,9 +1061,10 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
     Feeds D.5 confirmation rate dashboard.
 ```
 
-## Sprint 8.5 — A/B wiring sprint — Wave 1 COMPLETE (PR #106 + #107)
+## Sprint 8.5 — A/B wiring sprint — Wave 1 COMPLETE (PR #106 + #107), Wave 2 READY_FOR_REVIEW (PR #108)
 
-**Status:** Wave 1 COMPLETE as of 2026-05-14. All 3 Wave 1 tickets DONE.
+**Status:** Wave 1 COMPLETE as of 2026-05-14. Wave 2 (AB-008 + AB-009) READY_FOR_REVIEW as of
+2026-05-14.
 
 ```yaml
 - id: TICKET-AB-005
@@ -1104,6 +1105,28 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
   commit: 1d21f7d354
   spec: backlog/sprint-9/TICKET-AB-007.md
   promoted_from: FOLLOW-010
+
+- id: TICKET-AB-008
+  title: Replace mock /api/ab/weights with real Drizzle SELECT
+  agent: backend-engineer
+  status: READY_FOR_REVIEW
+  priority: P0
+  estimated_hours: 3
+  depends_on: [TICKET-AB-006, TICKET-AB-007]
+  pr: '#108'
+  spec: backlog/sprint-9/TICKET-AB-008.md
+  promoted_from: FOLLOW-014
+
+- id: TICKET-AB-009
+  title: Wire ReorderDirective into production decision-api Worker
+  agent: backend-engineer
+  status: READY_FOR_REVIEW
+  priority: P0
+  estimated_hours: 4
+  depends_on: [TICKET-REORDER-001, TICKET-AB-001]
+  pr: '#108'
+  spec: backlog/sprint-9/TICKET-AB-009.md
+  promoted_from: FOLLOW-015
 ```
 
 ## Sprint 9 — DPIA + DSR + consent + description pipeline (BACKLOG)

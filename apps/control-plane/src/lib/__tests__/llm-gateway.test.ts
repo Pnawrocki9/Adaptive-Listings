@@ -54,6 +54,7 @@ const MOCK_PLAYBOOK = {
   },
   feature_priority: ['rental_yield'],
   signals: ['views_yield_data', 'clicks_rental_calculator'],
+  copy_template: { en: 'Yield-focused investment property with strong rental returns.' },
 };
 
 const BASE_INPUT = {

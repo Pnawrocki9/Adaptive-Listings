@@ -39,6 +39,9 @@ edit.
 | `backlog/ESCALATIONS.md`         | any agent (append); human (resolve)                   | Issues that need human decisions                  |
 | `backlog/HANDOFFS.md`            | producing agent (append); pm + consuming agent (read) | Notes when one ticket's output is another's input |
 | `backlog/sprint-N/TICKET-XXX.md` | architect (create); pm + workers (update)             | Individual ticket spec                            |
+| `backlog/RETROSPECTIVES.md`      | retrospective-analyst (append); pm + workers (read)   | Per-ticket learning log (RETRO-NNN entries)       |
+| `backlog/FOLLOW_UPS.md`          | retrospective-analyst (append); pm (promote)          | Stub tickets from retro findings                  |
+| `CONVENTIONS_PATCH.md`           | retrospective-analyst (append when ≥2 retros agree)   | Permanent rules growing from learnings            |
 | `docs/INTERFACES.md`             | architect                                             | Index of cross-module contracts                   |
 | `docs/adr/NNNN-*.md`             | architect                                             | Architecture Decision Records                     |
 
@@ -81,6 +84,47 @@ edit.
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+## The retrospective loop (learning loop)
+
+After every PR is merged, the PM spawns a second subagent that runs in parallel with the next
+ticket. This is the self-improving learning loop:
+
+```
+  PR merged (human)
+       │
+       ▼
+  pm-orchestrator:
+  ticket → DONE
+       │
+       ├──── pick next ticket (continues normal flow above)
+       │
+       └──── spawn retrospective-analyst (Opus 4.7)
+                    │
+                    ├── reads last 5 RETROSPECTIVES.md entries
+                    ├── diffs merged PR (gh pr diff N | head -1000)
+                    ├── greps all changed symbols in codebase
+                    ├── checks QUEUE.md for adjacent ticket impacts
+                    ├── checks MASTER_DESIGN.md alignment
+                    │
+                    ▼
+             writes RETRO-NNN → backlog/RETROSPECTIVES.md
+             writes FOLLOW-NNN stubs → backlog/FOLLOW_UPS.md
+             writes Rule X → CONVENTIONS_PATCH.md (only if same
+               pattern appeared in ≥2 prior retros)
+                    │
+                    ▼
+             pm-orchestrator reads retro summary:
+             - if cascading impact on IN_PROGRESS ticket:
+               → comment on that PR, coordinate with worker
+             - at next sprint planning:
+               → promote FOLLOW_UPS stubs to real tickets
+```
+
+**Why this matters:** Each retro reads the prior 5 retros before analyzing. Over time the agent
+recognizes recurring patterns (naming inconsistencies, missing test contracts, incomplete type
+wiring) and codifies them as permanent Rules. By Sprint 10, workers receive a Rule list that catches
+the most common mistake categories before they're made — not after PR review.
 
 ## The autonomy boundary
 

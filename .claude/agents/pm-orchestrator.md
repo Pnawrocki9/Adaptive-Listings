@@ -192,7 +192,33 @@ When you see a ticket merged (PR closed and merged):
 - Move ticket to `DONE` in QUEUE.md
 - Set `completed_at: <ISO timestamp>`
 - Update sprint progress
-- Pick next ticket
+
+### 7. Spawn retrospective (learning loop)
+
+After every ticket transitions to DONE (PR merged), immediately invoke the retrospective analyst:
+
+> Use the `retrospective-analyst` subagent for TICKET-XXX (PR #N, merged commit `<sha7>`). Read
+> `backlog/sprint-N/TICKET-XXX.md`, run `gh pr diff N | head -1000`, and read the latest 5 entries
+> from `backlog/RETROSPECTIVES.md`. Produce one RETRO-NNN entry following the 7-section template in
+> your agent definition. Generate FOLLOW-UPS stubs in `backlog/FOLLOW_UPS.md` for any gap that needs
+> a new ticket. Codify a new Rule in `CONVENTIONS_PATCH.md` ONLY if the same finding pattern
+> appeared in ≥2 prior retros.
+
+Wait for retrospective-analyst to finish (SubagentStop hook re-invokes you).
+
+After retro completes:
+
+- Read the final line of its output (the summary line starting `RETRO-NNN complete.`)
+- If it reports cascading impacts on any IN_PROGRESS ticket: add a comment on that ticket's PR
+  noting the impact, so the worker can address it before marking READY_FOR_REVIEW
+- At next sprint planning: read `backlog/FOLLOW_UPS.md`, promote high-priority stubs to
+  `backlog/sprint-N/TICKET-NNN.md` and add them to QUEUE.md as BACKLOG or READY
+
+Then pick the next ticket.
+
+**Note:** Retrospective runs ASYNC — it does not block the next ticket from starting if there are no
+cascading impacts on currently IN_PROGRESS tickets. If the retro finds a critical gap in an
+IN_PROGRESS ticket, pause that ticket until the impact is understood.
 
 ## Critical rules
 
@@ -285,6 +311,6 @@ Every response you produce ends with one of these explicit next actions:
 - `NEXT: Use the <agent> subagent on TICKET-XXX.`
 - `NEXT: Wait for human review on PR #N. CI green, AC verified.`
 - `NEXT: Human attention needed — see backlog/ESCALATIONS.md entry #M.`
-- `NEXT: Sprint complete. Run sprint retrospective.`
+- `NEXT: Sprint complete. Run sprint retrospective. (Per-ticket retros already captured in backlog/RETROSPECTIVES.md — sprint retro consolidates them.)`
 
 This makes the SubagentStop hook's job trivial: it just prints the NEXT line.

@@ -3,6 +3,8 @@
  *
  * MVP stub: returns deterministic directives based on archetype_hint.
  * Real ML inference (Modal intent-engine) is wired in Sprint 5 (TICKET-031).
+ * ReorderDirective emission is tracked in FOLLOW-015.
+ * Thompson sampling variant selection is tracked in FOLLOW-007.
  *
  * Auth:
  *   - When ADAPT_API_KEY env var is set: Bearer token must match exactly.
@@ -16,6 +18,7 @@
  * - Deterministic HMAC-SHA-256 hash on (tenant_id, session_id).
  * - Consent-aware: sessions with opted_out/unknown/none consent are skipped.
  * - Fair-housing safe: no user attributes, only (tenant_id, session_id).
+ * - ab.assignment event emitted fire-and-forget: TICKET-AB-005 / FOLLOW-006.
  *
  * Edge-compatible — no Node.js APIs.
  *

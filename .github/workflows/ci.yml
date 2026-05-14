@@ -315,6 +315,21 @@ jobs:
           path: packages/sdk/corpus-report.json
           retention-days: 14
 
+  # ── Rule H hard gate: schema scaffolds must have runtime consumers ────────
+  rule-h:
+    name: Rule H — schema scaffold wiring
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch for diff
+        run: git fetch origin main --depth=50
+
+      - name: Run Rule H check
+        run: bash scripts/check-rule-h.sh origin/main
+
   # ── SDK E2E tests (Playwright + Chromium) ────────────────────────────────
   sdk-e2e:
     name: SDK E2E tests

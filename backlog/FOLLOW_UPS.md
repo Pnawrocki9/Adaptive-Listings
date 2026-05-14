@@ -693,7 +693,10 @@ the stub.
   - [ ] Smoke test: re-run the verification command against PR #91's changes; the new symbols
         (`getTenantSchema`, `deterministicScore`, `buildReorderDirective`, `TenantSchema`) and the
         `listing_ids` schema field SHOULD have been caught
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+- **implemented:** 2026-05-14 — `scripts/check-rule-h.sh` + CI job `rule-h` in
+  `.github/workflows/ci.yml` + `pre-push` lefthook in `lefthook.yml`. Hard exit-1 gate active.
+  CONVENTIONS_PATCH.md Rule H updated to reference the CI script instead of the advisory WARN grep.
 
 ---
 
@@ -933,37 +936,17 @@ the stub.
 
 ---
 
-## FOLLOW-034 — Fair-housing compliance audit of variants + copy_templates
+## FOLLOW-034 — ~~Fair-housing compliance audit of variants + copy_templates~~ CANCELLED
 
 - **source_retro:** RETRO-004
 - **source_ticket:** TICKET-046
-- **recommended_sprint:** 8 (BLOCKS US-region pilot)
-- **recommended_agent:** compliance-engineer
-- **priority:** P0
-- **estimated_hours:** 3
-- **scope:** PR #92 shipped 17 `copy_template.en` strings + 51 variant strings (3 per non-neutral
-  headline). Several invoke familial status as a value proposition: `family_buyer` variants mention
-  "Family Home", "growing families", "schools & parks", "children"; `student_parent` copy_template
-  describes an HMO/rental-to-child model with parent purchase intent; `retiree_relocator`,
-  `lifestyle_expat`, `diaspora_buyer` may also touch protected-class signals (age, national origin).
-  Under HUD Fair Housing Act ad-content guidance (1968 + 1988 amendment + 2024 disparate-impact
-  rule), serving these descriptions to a SEGMENT of users (which archetype routing does) could be
-  construed as steering. Audit: (1) review every shipped string against HUD's discriminatory-ad
-  examples list, (2) produce a per-archetype US-region eligibility matrix
-  (`compliance/us-region-archetype-matrix.md`), (3) flag any string requiring rewrite, (4) document
-  the legal interpretation in an ADR. This is NOT introduced by PR #92 alone (the archetypes
-  themselves predate it) but PR #92 STRENGTHENED the protected-class language, raising the bar.
-- **ac:**
-  1. Compliance review document `compliance/fair-housing-pr92-audit-2026-05.md` exists
-  2. Per-archetype eligibility matrix:
-     `{archetype, headline_variants_eligible[], copy_template_eligible, regions_eligible[]}`
-  3. Any flagged string has a proposed rewrite (no behavioral change to archetype routing — only
-     wording)
-  4. ADR `docs/adr/ADR-NNN-fair-housing-archetype-copy.md` documents the legal interpretation +
-     binding constraints
-  5. CEO + compliance-engineer sign-off recorded in ESCALATIONS.md
-  6. BLOCKS any US-region pilot or marketing demo until signed off
+- **status:** CANCELLED — 2026-05-14 by Piotr Nawrocki (CEO)
 - **promoted_to_queue:** false
+- **cancellation_reason:** The system does not limit access to listings. All buyers receive the same
+  complete set of listings; copy_template and variant strings adjust presentation framing only, not
+  which listings are shown. This is not FHA advertising steering. The 2026-05-13 behavioral
+  determination extends to the copy layer. See ESCALATIONS.md for full resolution rationale and the
+  binding constraint (copy strings must not reference protected characteristics explicitly).
 
 ---
 

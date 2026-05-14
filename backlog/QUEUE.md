@@ -1,10 +1,10 @@
 # Backlog Queue
 
-**Updated 2026-05-14T16:40Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
-5/6 DONE: TICKET-AB-001 (PR #80), TICKET-REORDER-001 (PR #91), TICKET-046 (PR #92),
-TICKET-AGENCY-001 (PR #97), TICKET-AB-004 (PR #99). Sprint 3 TICKET-037 DONE (PR #98), TICKET-038
-READY. 3 retroactive retros pending (AB-001, REORDER-001, TICKET-046). Sprint 9 spec files added (6
-tickets). Sprint 2.5 spec files added (6 tickets). TICKET-035 CANCELLED. Vendor escalation resolved.
+**Updated 2026-05-14T20:00Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
+COMPLETE: AB-001 (PR #80), REORDER-001 (PR #91), TICKET-046 (PR #92), AGENCY-001 (PR #97), AB-004
+(PR #99), ARCH-003 (PR #95). FIX-013..019 (PR #85-90) DONE. Sprint 3 TICKET-037 DONE (PR #98),
+TICKET-038 READY. Sprint 9 spec files added (6 tickets). Sprint 2.5 spec files added (6 tickets).
+TICKET-035 CANCELLED. Vendor escalation resolved.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -38,7 +38,7 @@ updates.
 | 6      | 8     | Embeddings + archetype matching + decision API                       | 3       | 3    | 0       | 0     | 0       |
 | 7      | 9     | Decision API real logic + adaptation playbooks                       | 5       | 5    | 0       | 0     | 0       |
 | 7.5    | 9.5   | Auto-Detection Engine                                                | 7       | 7    | 0       | 0     | 0       |
-| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 9       | 5    | 0       | 1     | 1       |
+| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 16      | 13   | 0       | 0     | 0       |
 | 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 0    | 0       | 0     | 6       |
 | 10     | 12    | Multi-region deploy + observability + load tests                     | tbd     | —    | —       | —     | tbd     |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
@@ -789,12 +789,11 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
     Non-blocking for Sprint 8. Schedule after Sprint 8 or as filler if a Sprint 8 slot opens.
 ```
 
-## Sprint 8 — A/B holdout + re-ranking + agency answers + variants + retro loop (ACTIVE)
+## Sprint 8 — A/B holdout + re-ranking + agency answers + variants + retro loop (COMPLETE)
 
-**Status:** ACTIVE as of 2026-05-14. TICKET-AB-001 DONE (PR #80). TICKET-REORDER-001 DONE (PR #91).
-TICKET-046 variants DONE (PR #92). TICKET-ARCH-003 retro loop READY_FOR_REVIEW (PR #95).
-TICKET-AGENCY-001 + TICKET-AB-004 unblocked → READY. TICKET-FAIR-001 CANCELLED. TICKET-NATIVE-001
-deferred to MVP launch.
+**Status:** COMPLETE as of 2026-05-14. 6/6 core tickets DONE + 7 FIX tickets DONE (PR #85-90).
+AB-001 (PR #80), REORDER-001 (PR #91), TICKET-046 (PR #92), AGENCY-001 (PR #97), AB-004 (PR #99),
+ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL-001 BACKLOG.
 
 **Sprint 8 entry condition:** Sprint 7 DONE + Sprint 7.5 DONE. Both satisfied as of 2026-05-13.
 
@@ -961,18 +960,88 @@ deferred to MVP launch.
 - id: TICKET-ARCH-003
   title: Per-ticket retrospective learning loop + /retro slash command
   agent: architect
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 6
   depends_on: []
   pr: '#95'
-  branch: claude/verify-playbook-templates-fH5Zq
+  completed_at: '2026-05-14T14:21:36Z'
   spec: backlog/sprint-8/TICKET-RETRO-001.md
   notes: |
     Creates retrospective-analyst agent (Opus 4.7), backlog/RETROSPECTIVES.md,
     backlog/FOLLOW_UPS.md, CONVENTIONS_PATCH.md. PM Step 7 auto-spawns analyst after each
     ticket DONE. /retro slash command for manual retroactive invocation. Seeds RETRO-001
-    (TICKET-046 analysis). CI green required before merge.
+    (TICKET-046 analysis).
+
+- id: TICKET-FIX-013
+  title: JWT signature verification — HMAC-SHA-256 verify before trusting payload
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 3
+  pr: '#86'
+  completed_at: '2026-05-14T00:00:00Z'
+  spec: backlog/sprint-8/TICKET-FIX-013.md
+
+- id: TICKET-FIX-014
+  title: Tenant header spoofing — derive tenant_id from verified JWT, not x-tenant-id header
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 3
+  pr: '#87'
+  completed_at: '2026-05-14T00:00:00Z'
+  spec: backlog/sprint-8/TICKET-FIX-014.md
+
+- id: TICKET-FIX-015
+  title: SDK ↔ decision-api contract — AdaptRequestSchema accepts confidence/similarity
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 2
+  pr: '#85'
+  completed_at: '2026-05-14T00:00:00Z'
+  spec: backlog/sprint-8/TICKET-FIX-015.md
+
+- id: TICKET-FIX-016
+  title: Demo mockup page non-functional — fix POST /api/adapt demo endpoint
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 3
+  pr: '#87'
+  completed_at: '2026-05-14T00:00:00Z'
+  spec: backlog/sprint-8/TICKET-FIX-016.md
+
+- id: TICKET-FIX-017
+  title: Auth gate on GET /api/adapt — require API key before serving directives
+  agent: backend-engineer
+  status: DONE
+  priority: P1
+  estimated_hours: 2
+  pr: '#90'
+  completed_at: '2026-05-14T00:00:00Z'
+  spec: backlog/sprint-8/TICKET-FIX-017.md
+
+- id: TICKET-FIX-018
+  title: Wire RLS JWT token in createTenantClient — enforce row-level security
+  agent: backend-engineer
+  status: DONE
+  priority: P1
+  estimated_hours: 3
+  pr: '#89'
+  completed_at: '2026-05-14T00:00:00Z'
+  spec: backlog/sprint-8/TICKET-FIX-018.md
+
+- id: TICKET-FIX-019
+  title: Idempotency cache key must include tenant_id — scope dedup per tenant
+  agent: backend-engineer
+  status: DONE
+  priority: P1
+  estimated_hours: 2
+  pr: '#88'
+  completed_at: '2026-05-14T00:00:00Z'
+  spec: backlog/sprint-8/TICKET-FIX-019.md
 
 - id: TICKET-CAUSAL-001
   title: Causal inference framework — CATE estimation + HTE per archetype (R.2 patent angle)
@@ -990,6 +1059,53 @@ deferred to MVP launch.
     Modal Python app — runs as offline daily batch job.
     P2 priority: do not start until AB-001 has real holdout data (minimum 2 weeks in production).
     Feeds D.5 confirmation rate dashboard.
+```
+
+## Sprint 8.5 — A/B wiring sprint (P0 follow-ups from RETRO-002/003)
+
+**Status:** ACTIVE as of 2026-05-14. Promoted from FOLLOW-006, FOLLOW-008, FOLLOW-010. Wave 1
+(parallel): TICKET-AB-006 (data-engineer) + TICKET-AB-005 (backend-engineer). TICKET-AB-007 starts
+after TICKET-AB-006.
+
+```yaml
+- id: TICKET-AB-005
+  title: Emit ab.assignment event from decision-api on every non-skipped assignment
+  agent: backend-engineer
+  status: READY_FOR_REVIEW
+  priority: P0
+  estimated_hours: 3
+  depends_on: [TICKET-AB-001]
+  pr: '#106'
+  spec: backlog/sprint-9/TICKET-AB-005.md
+  promoted_from: FOLLOW-006
+  notes: |
+    PR #106 has Build(control-plane) + Test(Node22) failures that are pre-existing on main
+    (z-test.js missing import). Fixed in PR #107. Merge #107 first, then rebase #106 before merge.
+
+- id: TICKET-AB-006
+  title: Seed ab_bandit_weights — 18 archetype rows × variant='default' per tenant
+  agent: data-engineer
+  status: READY_FOR_REVIEW
+  priority: P0
+  estimated_hours: 2
+  depends_on: [TICKET-AB-001]
+  pr: '#107'
+  spec: backlog/sprint-9/TICKET-AB-006.md
+  promoted_from: FOLLOW-008
+  notes: |
+    CI all green (only Doppler optional fail expected). Also fixes pre-existing Build(control-plane)
+    via z-test.js import fix. Merge this BEFORE PR #106.
+
+- id: TICKET-AB-007
+  title: Wire holdout_group into ClickHouse adaptation_decisions insert path
+  agent: data-engineer
+  status: READY_FOR_REVIEW
+  priority: P0
+  estimated_hours: 3
+  depends_on: [TICKET-AB-006]
+  pr: '#107'
+  spec: backlog/sprint-9/TICKET-AB-007.md
+  promoted_from: FOLLOW-010
 ```
 
 ## Sprint 9 — DPIA + DSR + consent + description pipeline (BACKLOG)
@@ -1107,14 +1223,14 @@ resolved):**
 
 ## Currently in flight
 
-(none — TICKET-ARCH-003 awaiting human review/merge at PR #95)
-
-## Awaiting human review
-
-- TICKET-ARCH-003 (PR #95) — retrospective learning loop + /retro command
+(none — Sprint 8 COMPLETE)
 
 ## Recent merges
 
+- 2026-05-14T14:21:36Z — TICKET-ARCH-003 (PR #95): per-ticket retrospective learning loop + /retro
+  slash command; retrospective-analyst agent (Opus 4.7); RETRO-001 seeded
+- 2026-05-14T00:00:00Z — TICKET-ARCH-002 (PR #93): Master Design bumped to v1.6; architectural
+  updates applied to MASTER_DESIGN.md
 - 2026-05-14T00:00:00Z — TICKET-046 (PR #92, commit b6368b6): 18 archetypes × 3 variants +
   copy_template; fixes feature-section → feature slot name
 - 2026-05-14T00:00:00Z — TICKET-REORDER-001 (PR #91, commit 40650aa): ReorderDirective DOM reorder +

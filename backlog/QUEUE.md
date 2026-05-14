@@ -487,12 +487,13 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-037
   title: SDK Shadow DOM mount + Tier 1 sidebar widget
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 8
   depends_on: [TICKET-031]
   spec: backlog/sprint-3/TICKET-037.md
   pr: '#98'
+  merged_at: '2026-05-14'
 
 - id: TICKET-038
   title: SDK tsup build + bundle size gate (<40KB gzip)

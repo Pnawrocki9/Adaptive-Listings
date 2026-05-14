@@ -142,10 +142,12 @@ paths = [
   '''.git/''',
   '''HANDOFF\.md''',
   '''backlog/HANDOFFS\.md''',
+  '''backlog/QUEUE\.md''',
   '''packages/sdk/src/auto-detect/__fixtures__/''',
 ]
 # k6 official GPG fingerprint used in apt installation instructions
 # Transcript filenames (date-slug format, e.g. 2026-05-12-15-49-14-estalara-sprint7-corpus)
+# Branch names in QUEUE.md branch: field match [a-zA-Z0-9_-]{40} (false positive)
 regexes = [
   '''C5AD17C747E3415A3642D57D77C6C491D6AC1D69''',
   '''mnt/transcripts/''',

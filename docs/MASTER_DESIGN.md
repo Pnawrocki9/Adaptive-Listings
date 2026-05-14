@@ -1,6 +1,13 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 1.4 (Master Design Document — revised with Investor Quiz + Profile Mode forward-compat) | **Data:** 5 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 1.6 (Master Design Document — Adaptation Engine extensions: variants, placeholder resolution, description pipeline) | **Data:** 14 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v1.6 (14 May 2026 — Adaptation Engine extensions after PR #92 / TICKET-046):**
+- 🔄 Rozszerzona sekcja **E.2** — dodano blok "Definicje terminów" (slot, wariant, copy_template, ListingContext) oraz "Implementacja 3 wariantów per slot" z przykładem `yield_hunter`. Slot `feature-section` (bug w `yield-hunter.ts` przed PR #92) ustandaryzowany do `feature`.
+- 🔄 Rozszerzona sekcja **E.3** — dodano paragraf opisujący selekcję wariantu przez Thompson sampling per `(tenant_id, archetype, variant)` w `ab_bandit_weights`; `winningVariant` indeksuje `slots[i].variants.en[]`; `TextDirective` dostaje `variant_index` (post-Sprint 10, TICKET-BANDIT-VARIANTS).
+- ✨ Nowa podsekcja **E.5 (Reserved)** — placeholder utrzymujący numerację stabilną dla przyszłych wstawek.
+- ✨ Nowa podsekcja **E.6 "Placeholder Resolution Order"** — 7-poziomowa hierarchia źródeł danych dla `{token}` placeholderów (wklejone z `MASTER_DESIGN_PATCH_v1_5.md`). Foundation dla E.7.
+- ✨ Nowa podsekcja **E.7 "Long-form Description Pipeline"** — Tier gating (1 = static fallback, 2 = AI 72h, 3 = AI 48h), endpoint `GET /api/adapt/description`, Redis cache key, Modal job dla Sonnet 4.6, invalidation. Implementacja: TICKET-DESC-001, Sprint 9.
 
 **Changelog v1.4 (5 May 2026 — Security & Operational Excellence hardening + Investor Quiz + Profile Mode forward-compat):**
 - ✨ Nowa sekcja **V "Security Architecture & Cybersecurity"** — kompleksowa specyfikacja zabezpieczeń: authentication & session security, API security, OWASP Top 10 coverage, secrets management, supply chain security, database security, frontend SDK security, threat modeling, security testing, compliance certifications roadmap (SOC 2, ISO 27001), bug bounty program
@@ -1106,11 +1113,40 @@ Roadmap accuracy z konkretnymi milestone'ami:
 
 | Element | Strategia | Uzasadnienie |
 |---|---|---|
-| **Headline rewrite** | Template + slot filling (95% przypadków), LLM rewrite tylko dla edge cases | Predictable, brand-safe, taniej. Templates: 50–100 archetypów x 3 wariantów per language |
+| **Headline rewrite** | Template + slot filling (95% przypadków), LLM rewrite tylko dla edge cases | Predictable, brand-safe, taniej. Templates: 18 archetypów × 3 warianty per slot per language (E.2.1) |
 | **Feature highlight order** | Pure ranking model (gradient boosted on intent×feature interaction) | Deterministyczne, A/B testable, brak halucynacji |
 | **Photo re-ranking** | CLIP-style scoring photos vs intent vector + tenant hard rules ("first photo must show exterior") | Computer vision na zdjęciach raz przy ingest property, intent-photo dot product przy serve |
 | **Chat suggested replies** | Claude Haiku 4.5 + RAG (tenant's FAQ + listing data + intent context) | Conversational quality wymaga LLM; Haiku 4.5 wystarczająco dobre |
-| **Long-form copy (description)** | Claude Sonnet 4.6 — tylko Tier 3 Native, async pre-generation, cached | Sonnet 4.6 jakość warte ceny dla flagship feature, ale cache'ujemy bo description rzadko się zmienia |
+| **Long-form copy (description)** | Claude Sonnet 4.6 + `copy_template.en` fallback — Tier 2 + Tier 3, async, Redis-cached | Sonnet 4.6 jakość warte ceny dla flagship feature, cache TTL per Tier. Pełna spec: E.7 |
+
+#### E.2.1. Definicje terminów stosowanych w tej sekcji
+
+- **slot** — pozycja DOM identyfikowana przez `data-estalara-slot="<name>"`. Trzy kanoniczne wartości: `headline`, `cta`, `feature`.
+  > **Nota historyczna:** wartość `feature-section` używana wcześniej w `yield-hunter.ts` była błędem naming-conventionowym (SDK query selector nie pasował do dokumentacji deweloperskiej, slot `feature` nigdy nie aktywował się dla tego archetypu). Ustandaryzowano do `feature` w PR #92 / TICKET-046 (PLAYBOOK-001).
+- **wariant** — alternatywna kopia dla tego samego slotu, służąca A/B testowaniu przez bandit (E.3). NIE mylić z locale. Min 3 warianty per slot `headline` per archetype. Zaimplementowane w polu `SlotDirective.variants.{en|pl|es}[]` (`packages/sdk/src/core/playbooks/types.ts`).
+- **copy_template** — statyczny ~130–150-słowowy opis nieruchomości per archetype; jednocześnie (a) Tier 1 fallback gdy nie generujemy AI description oraz (b) seed promptu Sonneta dla Tier 2/3 (E.7). Pole `PlaybookEntry.copy_template.{en|pl?|es?}`.
+- **ListingContext** — dane listingu (cena, yield%, sypialnie, m², miasto, …) dostarczone przez AGENCY-001 (Level 2) lub enrichment APIs (Level 5), używane przez SDK `interpolatePlaceholders()` oraz wstrzykiwane do promptu LLM gateway jako kontekst.
+
+#### E.2.2. Implementacja 3 wariantów per slot
+
+Każdy `SlotDirective.variants.en[]` zawiera ≥3 alternatywy. `variants.en[0]` jest aliasem `slots[i].en` (default copy). Przykład dla `yield_hunter` (headline):
+
+```typescript
+// packages/sdk/src/core/playbooks/archetypes/yield-hunter.ts
+{
+  slot: 'headline',
+  en: 'Rental Yield: {yield}% | Gross Income: {income}/yr',
+  variants: {
+    en: [
+      'Rental Yield: {yield}% | Gross Income: {income}/yr',                 // variant_0 (default)
+      'Investment Property — {yield}% Gross Yield, Tenant in Place',         // variant_1
+      'Passive Income: {income}/yr — Cash-Flow Positive from Day One',       // variant_2
+    ],
+  },
+}
+```
+
+Selekcja wariantu przez Thompson sampling bandit (E.3) — seed `Beta(1,1)` per `(tenant_id, archetype, variant_index)` w tabeli `ab_bandit_weights` (PR #80). Reward signal (`inquiry.completed`, `time_on_listing`) propaguje się wstecz przez session events i aktualizuje rozkład Beta per wariant.
 
 ### E.3. A/B testing & learning loop
 
@@ -1118,6 +1154,22 @@ Roadmap accuracy z konkretnymi milestone'ami:
 - **Multi-armed bandit** (Thompson sampling) dla wyboru wariantu adaptacji per archetype — automatycznie alokuje ruch do najlepiej konwertujących adaptacji.
 - **Conversion feedback loop**: gdy `inquiry.completed` event przychodzi, propagujemy reward signal wstecz przez session events i aktualizujemy archetype embeddings (offline, daily batch).
 - **Detekcja regresji**: jeśli archetype X ma stat-significant drop w conversion przez 7 dni — auto-pause adaptacji dla tego archetype, alert do Estalara team.
+
+#### E.3.0. Variant selection mechanics (z playbooków)
+
+Bandit nie generuje wariantów — konsumuje już istniejące w `PlaybookEntry.slots[i].variants.{en|pl|es}` (E.2.2). Per request do Decision API:
+
+1. Decision API ustala `(tenant_id, archetype_id)` i wybiera ścieżkę `source = 'playbook'` (sim > 0.85, confidence > threshold).
+2. Per każdy slot z `variants` ≥ 2 — pobiera rozkład Beta z `ab_bandit_weights WHERE tenant_id = ? AND archetype = ? AND variant_index IN (0..N-1)`.
+3. Thompson sample: dla każdego variantu losuje `θ_i ~ Beta(α_i, β_i)`, wybiera `argmax θ`.
+4. `winningVariant` indeksuje `slots[i].variants.en[winningVariant]`; result wraca jako `TextDirective` z polem `variant_index: number` dla downstream attribution.
+5. Po zarejestrowaniu `inquiry.completed` (lub innego conversion eventu z `adaptation_decisions` ClickHouse) — async batch job aktualizuje `α` (success) lub `β` (no-conversion) per wybrany wariant.
+
+Implementacja w dwóch fazach:
+- **Faza 1 (Sprint 8, TICKET-AB-001):** bandit infrastructure + holdout assignment + `variant_index` column w `adaptation_decisions`. Zawsze wybiera `variant_index = 0` (default), bo playbook variants nie były jeszcze wyeksponowane do decision API.
+- **Faza 2 (post-Sprint 10, TICKET-BANDIT-VARIANTS):** podłączenie Thompson sampling do realnych wariantów z playbooków (PR #92). Wymaga: (a) seedowania `ab_bandit_weights` rowsami per variant per archetype przy first-use, (b) eksposure `variants` w response shape Decision API, (c) feedback loop dopisany do `adaptation_decisions`.
+
+Cross-reference: E.2.2 (gdzie warianty są zdefiniowane), E.3.1 (CATE per wariant, nie tylko per archetype), E.3.2 (variant score wchodzi do multi-objective optimization).
 
 #### E.3.1. Causal inference framework (extends standard A/B)
 
@@ -1331,6 +1383,95 @@ export const QuizEventSchema = EventEnvelopeBaseSchema.extend({
 | Sprint 5 | TICKET-QUIZ-004 | Agency analytics dashboard (`/dashboard/quiz/analytics`) — completion rate, archetype distribution, conversion lift |
 | Sprint 6 | TICKET-QUIZ-005 | Quiz mismatch detection + alerts (behavioral contradiction logging dla DQS feed) |
 | Sprint 7 | TICKET-QUIZ-006 | A/B test: quiz on/off cohort comparison (causal lift via E.3.1 framework) |
+
+---
+
+### E.5. (Reserved)
+
+Numerację zarezerwowano dla przyszłej podsekcji. Nie usuwać — krzyżowe referencje z innych dokumentów (TICKET-ARCH-002 spec, plan v1.6) zakładają stabilność numeracji E.6 / E.7.
+
+---
+
+### E.6. Placeholder Resolution Order (Locked Architecture)
+
+Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adaptowanym tekście, sprawdza źródła danych w ustalonej hierarchii. Każdy level degraduje do następnego.
+
+| Level | Źródło                                     | Przykład                       | Pewność |
+| ----- | ------------------------------------------ | ------------------------------ | ------- |
+| **1** | `data-estalara-*` atrybuty (manual)        | `data-estalara-price="488168"` | 1.0     |
+| **2** | Agency-provided answers per listing        | Agent odpowiada: "yield: 6.2%" | 0.95    |
+| **3** | Auto-extracted z DOM via `data_extractors` | CSS selector → "€488,168"      | 0.85    |
+| **4** | Computed metrics                           | price/area_sqm → price_per_sqm | 0.80    |
+| **5** | Cached enrichments z external APIs         | school_rating, walkability     | 0.75    |
+| **6** | LLM generation (Haiku 4.5 / Sonnet 4.6)    | Generates missing copy         | 0.60    |
+| **7** | Skip directive                             | Placeholder usunięty z tekstu  | —       |
+
+**Zasada:** każdy level jest próbowany tylko jeśli poprzedni zwrócił `null`. Level 6 (LLM) kosztuje ~$0.001 per placeholder — cache agresywnie per listing per archetype.
+
+**Cross-reference:** Level 6 dla long-form description NIE idzie przez raw LiteLLM call — przechodzi przez pipeline opisany w E.7 (cache key + Tier gating + Modal async job). Inne placeholdery (np. krótki copy w slotach `headline`/`cta`/`feature`) używają LiteLLM bezpośrednio przez gateway `apps/control-plane/src/lib/llm-gateway.ts` (Haiku 4.5 / Sonnet 4.6 routing).
+
+---
+
+### E.7. Long-form Description Pipeline (Tier 2 + Tier 3)
+
+Opis nieruchomości (`description`) dopasowany do archetypu kupującego. Dostępny dla Tier 2 Augment i Tier 3 Native. Tier 1 Observer (read-only, brak DOM slotu na pełną description) dostaje statyczny `PlaybookEntry.copy_template.en` jako fallback.
+
+#### E.7.1. Tier gating
+
+| Tier | Source                                        | Cache TTL | max_tokens | Priority |
+| ---- | --------------------------------------------- | --------- | ---------- | -------- |
+| 1    | `copy_template.en` (static, no cache)         | —         | —          | —        |
+| 2    | Sonnet 4.6 AI-generated, Redis-cached         | **72h**   | 450        | normal   |
+| 3    | Sonnet 4.6 AI-generated, Redis-cached         | **48h**   | 600        | high     |
+
+#### E.7.2. Endpoint contract
+
+```
+GET /api/adapt/description
+Query: listing_id (required), archetype (required), tier (required), locale (optional, default 'en')
+Auth:  Bearer JWT (jak dla /api/adapt)
+Returns: {
+  description: string,
+  source: 'ai_cached' | 'ai_generated' | 'template_fallback',
+  locale: string,
+  generated_at: string  // ISO 8601
+}
+```
+
+#### E.7.3. Flow
+
+1. **Tier 1** → natychmiast `{ description: copy_template.en, source: 'template_fallback' }`. Brak Redis lookup, brak Modal enqueue.
+2. **Tier 2 / Tier 3** → Redis lookup `desc:{tenant_id}:{listing_id}:{archetype}:{locale}`:
+   - **Cache hit** → `{ description: <cached>, source: 'ai_cached' }`.
+   - **Cache miss** → zwróć `{ description: copy_template.en, source: 'template_fallback' }` natychmiast + enqueue Modal job async. Następne żądanie (po typowo ~3–8s) trafi `ai_cached`.
+3. **Modal job** `apps/modal/generate_description.py`:
+   - Input: `{ tenant_id, listing_id, archetype, locale, tier, listing_context, copy_template_en }`.
+   - Model: `claude-sonnet-4-6`.
+   - Prompt: `copy_template.en` jako starting point + ListingContext (E.2.1) + `playbook.description` + `playbook.signals`.
+   - Tier 2 prompt: zwięzły (~100 słów), focus na 2–3 kluczowe cechy per archetype.
+   - Tier 3 prompt: pełny (~150 słów), może zawierać szczegóły ROI / lifestyle / investment metrics.
+   - Fallback: jeśli Sonnet zwróci `null` lub pusty string → użyj `copy_template.en` (nie zapisuj do cache, retry przy następnym żądaniu).
+   - Output: Redis `SET desc:{tenant_id}:{listing_id}:{archetype}:{locale}` z TTL per Tier.
+
+#### E.7.4. Cache invalidation
+
+`listing.updated` event z Redpanda (`apps/ingest`) → consumer w `apps/control-plane` wywołuje `Redis DEL desc:{tenant_id}:{listing_id}:*` (wildcard delete via SCAN + DEL). Następne żądanie regeneruje opis.
+
+#### E.7.5. Strategia kosztowa
+
+- **Lazy generation, NIE eager.** Nie generujemy przy `listing.indexed` — tylko gdy buyer faktycznie patrzy na listing z Tier 2/3 SDK.
+- **Koszt:** Sonnet × 450–600 tokenów = ~$0.006–0.009 per opis × (unique listing × unique archetype × unique locale).
+- **Estymacja przy 10k unique listings × 18 archetypów × 1 locale = 180k cached opisów = ~$1k jednorazowo + invalidations.** Realnie: tylko Top 5–10 archetypów per tenant trafia cache, więc ~5–10k opisów per tenant per lokalizację = ~$30–90/mo per większy tenant.
+- **Tier 1 zero AI cost** — `copy_template.en` jest statyczny.
+
+#### E.7.6. Implementation owner & ticket
+
+**TICKET-DESC-001** — Sprint 9 (GDPR-adjacent timing; Sonnet aktywny, Redis dostępny). Owner: backend-engineer (endpoint + Redis client + invalidation consumer) + ml-engineer (Modal job + prompt engineering). Acceptance:
+- `GET /api/adapt/description` returns expected shape per Tier.
+- Tier 1 latency p95 < 50ms (no I/O).
+- Tier 2/3 latency p95 < 100ms (cache hit) lub < 150ms (cache miss + fallback path).
+- Modal job p95 < 8s (Sonnet inference + Redis SET).
+- Cache invalidation działa: po `listing.updated` event następne `GET` zwraca `ai_generated` (cold) lub `ai_cached` (po Modal completion).
 
 ---
 

@@ -1,9 +1,9 @@
 # Backlog Queue
 
-**Updated 2026-05-14T21:35Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
+**Updated 2026-05-14T23:45Z by backend-engineer.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
 COMPLETE. Sprint 8.5 COMPLETE: AB-005 (PR #106), AB-006+007 (PR #107), AB-008+009 (PR #108). Sprint
-3 TICKET-037 DONE (PR #98), TICKET-038 READY. Remaining P0 follow-ups: FOLLOW-017 (holdout gating
-control-plane POST) + FOLLOW-018 (getTenantSchema DB lookup).
+8.5 Wave 3: AB-010+011 READY_FOR_REVIEW (PR #109). Sprint 3 TICKET-037 DONE (PR #98), TICKET-038
+READY. P0 follow-ups FOLLOW-017+018 resolved via AB-010+011.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -1133,20 +1133,22 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
 - id: TICKET-AB-010
   title: holdout gating + consent skip on control-plane POST /api/adapt
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 2
   depends_on: [TICKET-AB-005, TICKET-AB-009]
+  pr: '#109'
   spec: backlog/sprint-9/TICKET-AB-010.md
   promoted_from: FOLLOW-017
 
 - id: TICKET-AB-011
   title: getTenantSchema() real DB lookup + Redis cache (replace est_demo_tenant hardcode)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-AB-010]
+  pr: '#109'
   spec: backlog/sprint-9/TICKET-AB-011.md
   promoted_from: FOLLOW-018
 ```

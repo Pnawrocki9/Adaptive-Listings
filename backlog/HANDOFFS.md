@@ -671,3 +671,28 @@ present in decision-api Worker). `reorder.ts` helpers are already importable fro
 - `apps/control-plane/src/app/api/adapt/route.ts` — duplicate reorder helpers, eslint-disable banner
 
 ---
+
+## TICKET-AB-010, TICKET-AB-011 → TICKET-NATIVE-001
+
+**From:** backend-engineer **To:** sdk-engineer (NATIVE-001) **Date:** 2026-05-14T23:45:00Z
+
+**Summary:** AB-010 added holdout gating to the control-plane `POST /api/adapt` handler.
+`assignHoldout()` now runs at handler entry — consent-skipped sessions return empty directives
+without `holdout_group`; holdout sessions return empty directives with `holdout_group: true`;
+treatment sessions build directives as before. AB-011 replaced the `est_demo_tenant` hardcode in
+`getTenantSchema()` with real DB lookup (`tenant_site_schemas` via Drizzle) + 5-min Upstash Redis
+cache (`schema:{tenantId}`). Decision-api uses Redis HTTP + new internal endpoint
+`GET /api/internal/schema?tenant_id=<id>` as DB fallback. Control-plane and decision-api are now in
+sync. TICKET-NATIVE-001 is unblocked.
+
+**Files:**
+
+- `packages/shared/src/ab-holdout.ts` — new: assignHoldout() for cross-app use
+- `apps/control-plane/src/app/api/adapt/route.ts` — holdout gate at POST entry
+- `apps/control-plane/src/lib/tenant-schema.ts` — new: getTenantSchema() with DB + Redis
+- `apps/control-plane/src/lib/ab-events.ts` — new: publishAbAssignmentEvent() for control-plane
+- `apps/control-plane/src/app/api/internal/schema/route.ts` — new: internal schema endpoint
+- `apps/decision-api/src/lib/reorder.ts` — getTenantSchema() now async, Redis + API fallback
+- `apps/decision-api/src/index.ts` — added UPSTASH_REDIS_URL, SCHEMA_API_URL, SCHEMA_API_TOKEN
+
+---

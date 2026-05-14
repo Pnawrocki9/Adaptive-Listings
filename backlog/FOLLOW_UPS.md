@@ -139,4 +139,252 @@ the stub.
 
 ---
 
-<!-- FOLLOW-006+ appended by retrospective-analyst for subsequent tickets -->
+## FOLLOW-006 — Emit ab.assignment event from decision-api on every assignment
+
+- **source_retro:** RETRO-002
+- **source_ticket:** TICKET-AB-001
+- **recommended_sprint:** 8 (immediate)
+- **recommended_agent:** backend-engineer
+- **priority:** P0
+- **estimated_hours:** 3
+- **scope:** `AbAssignmentEventSchema` is fully wired into the shared event registry and the adapt
+  route returns `holdout_group` in the HTTP response — but no producer ever pushes the
+  `ab.assignment` event into the ingest pipeline. This follow-up adds the producer call inside
+  `apps/decision-api/src/app/api/adapt/route.ts` after the `assignHoldout()` call: build the
+  envelope (use `EventEnvelopeBaseSchema` defaults from `packages/shared`), publish to the Redpanda
+  topic `estalara.events` via the existing ingest worker producer (or its decision-api equivalent —
+  check `apps/ingest/` for the canonical producer pattern). MUST NOT block the HTTP response —
+  fire-and-forget with try/catch + Sentry capture on producer error.
+- **ac:**
+  - [ ] `apps/decision-api/src/app/api/adapt/route.ts` emits an `ab.assignment` event when
+        `assignment.skipped === false`
+  - [ ] Event payload validates against `AbAssignmentPayloadSchema`
+  - [ ] Emission is non-blocking (does not delay the 200 response) — wrapped in `void` or background
+        promise with error capture
+  - [ ] Integration test mounts the route, asserts the producer (mocked) was called once per
+        successful assignment, zero times when skipped
+  - [ ] Skipped assignments (consent opted-out) do NOT emit an event (per AC-3 of AB-001)
+  - [ ] Sentry tag added: `ab_assignment_emit_failed` for producer error path
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-007 — Wire Thompson sampling into adapt hot path (supersedes FOLLOW-001)
+
+- **source_retro:** RETRO-002 (folds in FOLLOW-001 from RETRO-001)
+- **source_ticket:** TICKET-AB-001 (+ TICKET-046)
+- **recommended_sprint:** 9
+- **recommended_agent:** backend-engineer (decision-api side) + sdk-engineer (SDK side)
+- **priority:** P0
+- **estimated_hours:** 6
+- **scope:** `apps/decision-api/src/lib/bandit.ts` (Thompson sampling + Beta utilities) is exported
+  and unit-tested but imported by ZERO non-test files. Adapt route uses keyword matching with no
+  consultation of `ab_bandit_weights`. This follow-up wires the full path: (1) decision-api reads
+  `ab_bandit_weights` rows for the resolved archetype on each non-holdout request, (2) calls
+  `thompsonSample(arms)` to pick the variant, (3) returns `variant_index: 0|1|2` in `AdaptResponse`,
+  (4) SDK `TextDirective` propagates `variant_index` through to `applyDirectives()` which selects
+  `slot.variants.en[variant_index]` with fallback to `slot.en`, (5) ClickHouse
+  `adaptation_decisions` logs `variant_index` for the feedback loop, (6) per-session stickiness
+  (cache `variant_index` in Redis keyed on `session_id` with TTL = session length) to avoid
+  mid-session flicker. **This subsumes RETRO-001 FOLLOW-001 — do NOT promote FOLLOW-001 as a
+  separate ticket; mark it folded.**
+- **ac:**
+  - [ ] Decision API reads `ab_bandit_weights` filtered by `(tenant_id, archetype, paused=false)` on
+        each non-holdout request
+  - [ ] `thompsonSample()` is called with the resulting `BanditArm[]`
+  - [ ] `AdaptResponse.variant_index: 0 | 1 | 2` added (optional; absent for holdout)
+  - [ ] SDK `TextDirective` honors `variant_index` with `slot.en` fallback
+  - [ ] Redis (Upstash) caches `(tenant_id, session_id) → variant_index` with 30-minute TTL for
+        session stickiness
+  - [ ] ClickHouse `adaptation_decisions.variant_index` column added (migration) and populated
+  - [ ] Integration test: same session → same `variant_index` across 10 repeated requests
+  - [ ] Latency budget unchanged: p95 < 100ms on the decision API hot path (load test)
+  - [ ] **FOLLOW-001 explicitly marked as folded into this ticket** in FOLLOW_UPS.md
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-008 — Seed ab_bandit_weights with 18 archetype rows × variant='default' per tenant
+
+- **source_retro:** RETRO-002
+- **source_ticket:** TICKET-AB-001
+- **recommended_sprint:** 8 (immediate)
+- **recommended_agent:** data-engineer
+- **priority:** P0
+- **estimated_hours:** 2
+- **scope:** The `ab_bandit_weights` table has zero rows for every tenant. Without seed data the
+  Thompson sampling layer (FOLLOW-007) has no arms to sample. This follow-up: (1) adds a backfill
+  SQL migration that INSERTs 18 rows × variant='default' per existing tenant with Beta(1,1) priors,
+  (2) adds an on-tenant-create hook (in the tenant signup flow or a Drizzle `afterInsert` trigger)
+  that seeds the same rows for any future tenant. Note: FOLLOW-007 will later expand seed to 3
+  variants per archetype; this ticket establishes the seeding mechanism with just 'default' to
+  unblock dashboard.
+- **ac:**
+  - [ ] Migration `packages/db/migrations/0007_seed_ab_bandit_weights.sql` inserts 18 rows for every
+        existing tenant (idempotent via `ON CONFLICT DO NOTHING`)
+  - [ ] On-tenant-create hook seeds 18 rows on new tenant creation (test with fixture)
+  - [ ] Archetype list pulled from canonical source (packages/shared archetype ontology) — not
+        hardcoded twice
+  - [ ] Test: after `createTenant()` fixture,
+        `SELECT COUNT(*) FROM ab_bandit_weights WHERE     tenant_id = ?` returns 18
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-009 — Regression-detection scheduled job (auto-pause underperforming archetypes)
+
+- **source_retro:** RETRO-002
+- **source_ticket:** TICKET-AB-001
+- **recommended_sprint:** 9 (or 10 — needs DQS conversion signals fully populated)
+- **recommended_agent:** data-engineer
+- **priority:** P1
+- **estimated_hours:** 6
+- **scope:** AC-7 of TICKET-AB-001 (regression detection + Sentry alert + auto-pause) was scoped but
+  not implemented. `shouldAutoPause()` exists as a pure function in
+  `apps/decision-api/src/lib/ab-assignment.ts` but is never called. This follow-up builds a daily
+  Modal cron at `apps/data-quality/src/crons/ab_regression_detection.py` that: (1) queries
+  ClickHouse for `(archetype, holdout_group, cta_clicked)` aggregates over the rolling 7-day window,
+  (2) for each archetype calls `shouldAutoPause()`, (3) when true → UPDATE
+  `ab_bandit_weights SET paused=true WHERE tenant_id=? AND archetype=?` AND emit Sentry warning with
+  severity `warning` and tags `{tenant_id, archetype, p_value, lift_pp}`. Idempotent — re-runs do
+  not flap-flop (only flip false→true; resume is human-initiated via the dashboard endpoint).
+- **ac:**
+  - [ ] Modal cron `apps/data-quality/src/crons/ab_regression_detection.py` runs daily 03:00 UTC
+  - [ ] Query:
+        `SELECT archetype, holdout_group, COUNT(*), SUM(cta_clicked) FROM     adaptation_decisions WHERE assigned_at >= now() - INTERVAL 7 DAY GROUP BY 1, 2`
+  - [ ] Calls Python-port or HTTP-call to `shouldAutoPause()` for each archetype
+  - [ ] Postgres UPDATE sets `paused=true` only when test fires
+  - [ ] Sentry warning emitted with structured tags
+  - [ ] Idempotent: re-run on same day does not duplicate alerts
+  - [ ] Unit test: 3 archetypes (1 should pause, 1 shouldn't, 1 below minimum N) → exactly 1 UPDATE
+        and 1 Sentry call
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-010 — Wire holdout_group into ClickHouse adaptation_decisions insert path
+
+- **source_retro:** RETRO-002
+- **source_ticket:** TICKET-AB-001
+- **recommended_sprint:** 8 (immediate)
+- **recommended_agent:** data-engineer
+- **priority:** P0
+- **estimated_hours:** 3
+- **scope:** The ClickHouse migration adds the `holdout_group Boolean` column to
+  `adaptation_decisions`, but the writer that populates `adaptation_decisions` (either the
+  stream-consumer or a decision-api inline insert) was not updated to include the field. As a result
+  every row has `holdout_group=false` (the column default) regardless of actual assignment. The
+  AB-004 dashboard's Panel 1 (`Adapted vs Holdout impressions`) and Panel 3
+  (`Conversion lift vs holdout`) will read all-zeros for the holdout bucket. This follow-up
+  identifies the writer (audit `apps/stream-consumer/` and `apps/decision-api/`), adds
+  `holdout_group` to the INSERT statement, and verifies end-to-end with a smoke test.
+- **ac:**
+  - [ ] Audit + identify the `adaptation_decisions` writer code path
+  - [ ] INSERT statement includes `holdout_group` from the assignment result
+  - [ ] Smoke test: simulate adapt request with `consent_state='granted'` (forces non-skip); assert
+        ClickHouse row has `holdout_group ∈ {true, false}` matching response
+  - [ ] Documentation: add comment in the writer pointing back to TICKET-AB-001
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-011 — Replace Math.random() session IDs in ab-assignment fraction tests
+
+- **source_retro:** RETRO-002
+- **source_ticket:** TICKET-AB-001
+- **recommended_sprint:** backlog (when convenient)
+- **recommended_agent:** qa-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** Fraction tests at `apps/decision-api/src/lib/__tests__/ab-assignment.test.ts:79,92`
+  generate session_ids via template literal + loop index — but the test runner could still flake if
+  `Math.random()`-based code paths are added later. Replace any non-deterministic test data sources
+  with a seeded mulberry32 PRNG to make CI fully reproducible. Add a property-based test
+  (fast-check) that runs the determinism assertion across 100 random session_id pairs.
+- **ac:**
+  - [ ] No `Math.random()` in any ab-assignment.test.ts assertion
+  - [ ] Seeded PRNG (`mulberry32(seed)`) used for any random data
+  - [ ] fast-check property test added for determinism (same session → same group on 100 random
+        pairs)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-012 — Add implementation-status note to MASTER_DESIGN.md E.3 pending bandit wiring
+
+- **source_retro:** RETRO-002
+- **source_ticket:** TICKET-AB-001
+- **recommended_sprint:** 8
+- **recommended_agent:** architect
+- **priority:** P2
+- **estimated_hours:** 0.5
+- **scope:** Master Design sections E.3, E.3.1, E.3.2 describe Thompson sampling variant selection
+  as if active. Implementation has shipped only the schema + pure-function libraries — selection is
+  unwired (see FOLLOW-007). Until FOLLOW-007 lands, MASTER_DESIGN.md should carry an inline status
+  note next to E.3 referencing FOLLOW-007 and noting the bandit is in "scaffold-only" mode. When
+  FOLLOW-007 lands, remove the note and bump the doc version.
+- **ac:**
+  - [ ] MASTER_DESIGN.md E.3 contains a status note ("Implementation status: scaffold only — see
+        FOLLOW-007 for runtime wiring")
+  - [ ] Changelog entry added at top
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-013 — Unify SKIP_CONSENT_STATES with ConsentStateSchema (ADR + code)
+
+- **source_retro:** RETRO-002
+- **source_ticket:** TICKET-AB-001 (+ TICKET-GDPR-004 alignment)
+- **recommended_sprint:** 9 (coordinate with GDPR-004 kickoff)
+- **recommended_agent:** compliance-engineer + backend-engineer
+- **priority:** P1
+- **estimated_hours:** 2
+- **scope:** `apps/decision-api/src/lib/ab-assignment.ts` defines a separate
+  `SKIP_CONSENT_STATES = {'opted_out', 'unknown', 'none'}` vocabulary while the canonical
+  `ConsentStateSchema` in `packages/shared/src/schemas/` uses
+  `'none' | 'session-only' | 'legitimate-interest' | 'consented'`. The two sets overlap only on
+  `'none'`. Before TICKET-GDPR-004 extends the consent-aware skip pattern to the full
+  personalization gate, this divergence MUST be resolved. Write an ADR documenting the canonical
+  consent vocabulary, then refactor `ab-assignment.ts` to use the canonical type instead of the
+  loose `string` + literal-set workaround.
+- **ac:**
+  - [ ] ADR `docs/adr/ADR-NNN-consent-state-vocabulary.md` written and approved
+  - [ ] `SKIP_CONSENT_STATES` replaced with the canonical type
+  - [ ] `AdaptRequestSchema.consent_state` uses `ConsentStateSchema` (or a documented subset)
+  - [ ] All AB-001 + future GDPR-004 tests pass against the unified vocabulary
+  - [ ] Linked from MASTER_DESIGN.md consent section
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-014 — Replace mock /api/ab/weights with real Drizzle reads (AB-004 dependency)
+
+- **source_retro:** RETRO-002
+- **source_ticket:** TICKET-AB-001 (+ TICKET-AB-004 cascade)
+- **recommended_sprint:** 8 (immediate — blocks any pilot dashboard viewing)
+- **recommended_agent:** backend-engineer
+- **priority:** P0
+- **estimated_hours:** 3
+- **scope:** `apps/control-plane/src/app/api/ab/weights/route.ts` is a deterministic mock that was
+  supposed to be replaced by TICKET-AB-004 per the route's own header comment ("Real Drizzle DB
+  queries (packages/db abBanditWeights table) will replace this in TICKET-AB-004"). AB-004 merged
+  (PR #99) but never touched this file. Result: the analytics dashboard's Anomaly Feed (Panel 5) and
+  any holdout-derived metric renders fabricated data. This follow-up: (1) replaces
+  `buildMockWeights()` with a real Drizzle SELECT against `abBanditWeights` scoped by the JWT
+  `tenant_id`, (2) updates the route's auth to use the same JWT pattern as the sibling
+  `/api/tenants/:id/bandit/weights/:archetype` PATCH route, (3) adds an integration test that seeds
+  2 rows and asserts the response shape, (4) removes the mock generator functions entirely.
+- **ac:**
+  - [ ] `route.ts` uses `createTenantClient(jwt).rls(tx => tx.select().from(abBanditWeights)…)`
+  - [ ] Auth: Bearer JWT required; tenant_id from JWT claim, NOT from header
+  - [ ] Optional `?archetype=` query filter preserved
+  - [ ] Mock helpers `buildMockWeights`, `seededRandom`, `hash` deleted
+  - [ ] Integration test seeds 3 rows (2 active, 1 paused) and asserts response includes all 3
+  - [ ] No regression in the existing `route.test.ts` (rewrite tests to match the new shape)
+  - [ ] After this lands, FOLLOW-008 seed must already be in place OR the route gracefully handles
+        zero rows (empty array) — verify in test
+- **promoted_to_queue:** false
+
+---
+
+<!-- FOLLOW-015+ appended by retrospective-analyst for subsequent tickets -->

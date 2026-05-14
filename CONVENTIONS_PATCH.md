@@ -152,4 +152,76 @@ pnpm typecheck
 
 ---
 
-<!-- Rule H+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->
+## Rule H — Schema scaffold MUST ship with at least one runtime-wired consumer
+
+**Pattern:** Adding a database table, event schema, or library module without wiring it into a
+production request path — leaving the new surface as dead code at runtime while tests pass in
+isolation. The downstream consumer ticket then merges assuming the wiring exists, compounding the
+gap. Symptoms include: schema file + unit tests + zero non-test importers, OR Zod event schema
+registered in the event union but no producer call site, OR mock API route shipped with a comment
+"real implementation in TICKET-X" but TICKET-X never replaces the mock.
+
+**Evidence:**
+
+- RETRO-001 / TICKET-046 (PR #92): `PlaybookEntry.variants[]` shipped + `ab_bandit_weights.variant`
+  column present, but Decision API never selects between variants (`variant_index` always 0;
+  variant_0/1/2 seed rows never inserted). → FOLLOW-001.
+- RETRO-001 / TICKET-046 (PR #92): `PlaybookEntry.copy_template.en` field added to all 17
+  non-neutral archetypes, but `GET /api/adapt/description` endpoint, Modal
+  `generate_description.py`, and the Redis cache layer described in Master Design E.7 do not exist —
+  `copy_template` is unreachable. → FOLLOW-002.
+- RETRO-002 / TICKET-AB-001 (PR #80): `AbAssignmentEventSchema` registered in shared event union but
+  no producer call emits the event from the adapt route. → FOLLOW-006.
+- RETRO-002 / TICKET-AB-001 (PR #80): `apps/decision-api/src/lib/bandit.ts` exports
+  `thompsonSample()` + Beta utilities, fully unit-tested, but imported by zero non-test files. The
+  adapt route still uses keyword `detectArchetype()`. → FOLLOW-007.
+- RETRO-002 / TICKET-AB-001 (PR #80): `ab_bandit_weights` Postgres table created with RLS but zero
+  rows seeded for the 18 archetypes — table is schema-only. → FOLLOW-008.
+- RETRO-002 / TICKET-AB-001 (PR #80): ClickHouse `adaptation_decisions.holdout_group` column
+  migration applied, but the writer that populates `adaptation_decisions` was not updated; every row
+  takes the column default `false`. → FOLLOW-010.
+- RETRO-002 / TICKET-AB-001 → TICKET-AB-004 cascade: `/api/ab/weights` shipped as a mock with a
+  comment "real Drizzle queries will replace this in TICKET-AB-004", but AB-004 (PR #99) merged
+  without touching the file. The analytics dashboard now renders fabricated data. → FOLLOW-014.
+
+**Rule:** Every ticket that adds a new schema, Zod type, exported library module, DB table, or
+event-union member MUST include at least one of the following in the same PR:
+
+1. **A production consumer call site** — at minimum, one non-test file in `apps/` imports the new
+   symbol and uses it on a hot path. Verified by
+   `grep -rn '<symbol_name>' apps/ --include='*.ts' | grep -v __tests__ | grep -v node_modules`.
+   Must return ≥1 match outside the defining file.
+2. **An integration test that proves end-to-end wiring** — for event schemas: a test that mounts the
+   producing route and asserts the event reached a mock consumer. For library modules: a test that
+   imports through the consuming route, not the module directly. For DB tables: a test that asserts
+   seed/insert via the consuming code, not a raw INSERT.
+3. **An explicit, dated deferral in the ticket spec + a corresponding FOLLOW-NNN stub created in the
+   same PR.** If wiring genuinely cannot land in this ticket, the deferral must be written into the
+   AC list (NOT only the context body) and a follow-up stub must be added to `backlog/FOLLOW_UPS.md`
+   in the same commit, with `recommended_sprint` set to the next sprint.
+
+Mock API routes are allowed only when (3) is satisfied AND the route file's header comment includes
+the target follow-up ID (e.g. `// MVP stub — replaced by FOLLOW-014`). The reviewer MUST verify the
+follow-up exists before approving.
+
+**Verification:**
+
+```bash
+# For every new exported symbol in this PR, find the consumer:
+for symbol in $(git diff main...HEAD --name-only | xargs grep -h "^export " | awk '{print $3}' | sort -u); do
+  count=$(grep -rln "$symbol" apps/ packages/ --include="*.ts" --include="*.tsx" \
+    | grep -v "__tests__" | grep -v "node_modules" | grep -v "/dist/" | wc -l)
+  if [ "$count" -lt 2 ]; then
+    echo "WARN: $symbol has only $count importer(s) (defining file only?). Add a consumer or a FOLLOW-NNN."
+  fi
+done
+```
+
+Also: PM-orchestrator MUST grep for the substring `MVP stub` / `mock` / `placeholder` /
+`real impl in TICKET-` in any new route file in `apps/control-plane/src/app/api/` and verify each
+occurrence has a matching `FOLLOW-NNN` reference in `backlog/FOLLOW_UPS.md` before marking
+READY_FOR_REVIEW.
+
+---
+
+<!-- Rule I+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->

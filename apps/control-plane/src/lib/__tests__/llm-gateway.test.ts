@@ -184,6 +184,132 @@ describe('callLlmGateway — circuit breaker', () => {
   });
 });
 
+describe('callLlmGateway — listingContext injection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [{ total: '0' }] }),
+    });
+  });
+
+  afterEach(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+    vi.restoreAllMocks();
+  });
+
+  it('Haiku prompt contains listing context block when listingContext is non-empty', async () => {
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Yield headline',
+        archetype: 'yield_hunter',
+        confidence: 0.8,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: { yield: '6.5%', location: 'Marbella' },
+    });
+
+    expect(mockCreate).toHaveBeenCalledOnce();
+    const callArg = mockCreate.mock.calls[0]?.[0] as { messages: { content: string }[] };
+    const prompt: string = callArg.messages[0]?.content ?? '';
+    expect(prompt).toContain('Listing context (agency-provided):');
+    expect(prompt).toContain('yield: 6.5%');
+    expect(prompt).toContain('location: Marbella');
+    expect(prompt).toContain('Use this data to fill placeholder tokens');
+  });
+
+  it('Haiku prompt does NOT contain context block when listingContext is absent', async () => {
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Plain headline',
+        archetype: 'yield_hunter',
+        confidence: 0.8,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    await callLlmGateway({ ...BASE_INPUT, similarity: 0.75 });
+
+    const callArg = mockCreate.mock.calls[0]?.[0] as { messages: { content: string }[] };
+    const prompt: string = callArg.messages[0]?.content ?? '';
+    expect(prompt).not.toContain('Listing context (agency-provided):');
+  });
+
+  it('Haiku prompt does NOT contain context block when listingContext is empty object', async () => {
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Plain headline',
+        archetype: 'yield_hunter',
+        confidence: 0.8,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    await callLlmGateway({ ...BASE_INPUT, similarity: 0.75, listingContext: {} });
+
+    const callArg = mockCreate.mock.calls[0]?.[0] as { messages: { content: string }[] };
+    const prompt: string = callArg.messages[0]?.content ?? '';
+    expect(prompt).not.toContain('Listing context (agency-provided):');
+  });
+
+  it('Sonnet prompt contains listing context block when listingContext is non-empty', async () => {
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Full gen headline',
+        archetype: 'yield_hunter',
+        confidence: 0.75,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.5,
+      listingContext: { yield: '7.2%', bedrooms: '3' },
+    });
+
+    const callArg = mockCreate.mock.calls[0]?.[0] as { messages: { content: string }[] };
+    const prompt: string = callArg.messages[0]?.content ?? '';
+    expect(prompt).toContain('Listing context (agency-provided):');
+    expect(prompt).toContain('yield: 7.2%');
+    expect(prompt).toContain('bedrooms: 3');
+    expect(prompt).toContain('Use this data to fill placeholder tokens');
+  });
+
+  it('Sonnet prompt does NOT contain context block when listingContext is absent', async () => {
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Full gen headline',
+        archetype: 'yield_hunter',
+        confidence: 0.75,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    await callLlmGateway({ ...BASE_INPUT, similarity: 0.5 });
+
+    const callArg = mockCreate.mock.calls[0]?.[0] as { messages: { content: string }[] };
+    const prompt: string = callArg.messages[0]?.content ?? '';
+    expect(prompt).not.toContain('Listing context (agency-provided):');
+  });
+});
+
 describe('callLlmGateway — response shape', () => {
   beforeEach(() => {
     vi.clearAllMocks();

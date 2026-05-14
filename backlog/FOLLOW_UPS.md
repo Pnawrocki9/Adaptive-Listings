@@ -387,4 +387,314 @@ the stub.
 
 ---
 
-<!-- FOLLOW-015+ appended by retrospective-analyst for subsequent tickets -->
+## FOLLOW-015 — Wire ReorderDirective into the production decision-api Worker route
+
+- **source_retro:** RETRO-003
+- **source_ticket:** TICKET-REORDER-001
+- **recommended_sprint:** 8 (immediate)
+- **recommended_agent:** backend-engineer
+- **priority:** P0
+- **estimated_hours:** 4
+- **scope:** The Worker decision-api route at `apps/decision-api/src/app/api/adapt/route.ts:39`
+  accepts `listing_ids: z.array(z.string()).optional()` but never consumes it and never emits a
+  ReorderDirective. Only the control-plane mock POST at
+  `apps/control-plane/src/app/api/adapt/route.ts` produces reorders, and only for `est_demo_tenant`.
+  In any production wiring where the SDK points `decisionApiUrl` at the Worker, reorder will
+  silently never happen. This follow-up: (1) port the `getTenantSchema()` +
+  `buildReorderDirective()` + `deterministicScore()` helpers from control-plane into a shared
+  internal library (proposed `apps/decision-api/src/lib/reorder.ts` and/or
+  `packages/shared/src/reorder-builder.ts`), (2) call it from the Worker adapt route AFTER the
+  existing holdout gate (holdout sessions must NOT receive ReorderDirectives — see FOLLOW-017), (3)
+  unify the `listing_ids` validation schema between the two routes (current divergence:
+  control-plane max 100 + string max 64, decision-api no max). Note: this exposes the demo-tenant
+  hardcode issue to the production route — temporary safeguard is to keep the demo-only check until
+  FOLLOW-018 lands, then remove both gates together.
+- **ac:**
+  - [ ] `apps/decision-api/src/app/api/adapt/route.ts` consumes `listing_ids` and emits a
+        ReorderDirective when tenant is reorder-capable AND assignment is non-holdout
+  - [ ] Shared helper module created (location agreed by architect) — both the Worker route and the
+        control-plane POST import from it (no code duplication)
+  - [ ] `listing_ids` Zod schema is identical in both routes (max 100, string max 64)
+  - [ ] Holdout-arm sessions receive NO ReorderDirective (integration test asserts)
+  - [ ] Integration test: full POST → response includes ReorderDirective with sorted scores
+  - [ ] Latency budget unchanged: p95 < 100ms on the decision-api hot path
+  - [ ] Rule H verification command returns ≥1 non-test consumer of every new exported symbol
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-016 — Honor `tier` in POST /api/adapt response (accept tier in body)
+
+- **source_retro:** RETRO-003
+- **source_ticket:** TICKET-REORDER-001
+- **recommended_sprint:** 8
+- **recommended_agent:** backend-engineer
+- **priority:** P1
+- **estimated_hours:** 1
+- **scope:** `AdaptPostBodySchema` at `apps/control-plane/src/app/api/adapt/route.ts:54` does not
+  accept a `tier` field, and the response hardcodes `tier: 1` at line 505 — even when appending a
+  ReorderDirective, which per Master Design is a Tier 2 Augment capability. This follow-up: (1) add
+  `tier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional()` to `AdaptPostBodySchema`,
+  (2) return `body.tier ?? 1` in the response, (3) update the SDK to send `tier` from `config.tier`
+  (already a known SDK config field), (4) document in CLAUDE.md whether `tier` is purely a
+  billing/analytics label or whether the SDK should filter directives by tier (current behavior: no
+  filter — explicit decision needed). Folds in the "tier-vs-directive-type relationship"
+  architectural question from RETRO-003 §4d.
+- **ac:**
+  - [ ] POST accepts optional `tier` in body, validates {1, 2, 3}
+  - [ ] Response `tier` field reflects request value (default 1 when absent)
+  - [ ] SDK `fetchDirectives()` sends `config.tier` if defined
+  - [ ] Decision recorded in CLAUDE.md or ADR: tier = billing-label OR tier = directive-filter
+  - [ ] Existing tests pass; new test asserts tier round-trip
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-017 — Add holdout gating + consent skip to control-plane POST /api/adapt
+
+- **source_retro:** RETRO-003
+- **source_ticket:** TICKET-REORDER-001 (+ TICKET-AB-001 cross-reference)
+- **recommended_sprint:** 8 (immediate)
+- **recommended_agent:** backend-engineer
+- **priority:** P0
+- **estimated_hours:** 2
+- **scope:** The control-plane POST at `apps/control-plane/src/app/api/adapt/route.ts:431` has NO
+  holdout assignment and NO consent gating. The Worker decision-api route enforces both (lines
+  282–302). With the demo POST now emitting ReorderDirectives, the demo experience bypasses the
+  entire A/B framework — any session routed through POST receives reorders regardless of holdout-arm
+  assignment. This follow-up: (1) import `assignHoldout()` from
+  `apps/decision-api/src/lib/ab-assignment.ts` (or its shared library equivalent after FOLLOW-015
+  consolidates), (2) call it BEFORE building any directives, (3) when `holdout_group === true` OR
+  consent-state is in SKIP_CONSENT_STATES, return an empty `directives` array with
+  `source: 'default'` and OMIT `holdout_group` per AB-001 AC-3 when skipped, (4) emit
+  `ab.assignment` event per AB-001 FOLLOW-006 (this should be implemented in the same shared
+  library, not duplicated).
+- **ac:**
+  - [ ] Control-plane POST calls `assignHoldout()` with
+        `(tenant_id, session_id, consent_state,     consent_mode_enabled, holdout_pct)` from request
+        body
+  - [ ] Holdout-arm session → response.directives is empty, source is 'default', holdout_group: true
+  - [ ] Skipped-consent session → response.directives is empty, no holdout_group field
+  - [ ] Active-treatment session → response.directives includes ReorderDirective (if
+        reorder-capable)
+  - [ ] `ab.assignment` event emitted via shared producer (depends on FOLLOW-006 landing or being
+        folded in)
+  - [ ] Integration test: 100 sessions, ~10% have empty directives (matching default holdout_pct),
+        90% have non-empty
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-018 — Replace getTenantSchema() hardcoded demo tenant with DB lookup
+
+- **source_retro:** RETRO-003
+- **source_ticket:** TICKET-REORDER-001
+- **recommended_sprint:** 9
+- **recommended_agent:** sdk-engineer + backend-engineer
+- **priority:** P2
+- **estimated_hours:** 4
+- **scope:** `getTenantSchema()` at `apps/control-plane/src/app/api/adapt/route.ts:214` matches the
+  literal `'est_demo_tenant'` and returns `null` for any other tenant. This is acknowledged scaffold
+  per the ticket-spec notes ("Real tenants will get this from a DB lookup (REORDER-002)") but no
+  FOLLOW-NNN existed for it until now. This follow-up: (1) replace the literal match with a Drizzle
+  SELECT against the tenant config table populated by auto-detect output, reading
+  `IndexSchema.{container_selector, item_selector, reorder_capable}` per Master Design B.5/B.6, (2)
+  add a 5-minute Redis cache to avoid per-request DB hits, (3) gracefully return `null` (no reorder)
+  when the tenant has no `IndexSchema` row OR `reorder_capable === false`, (4) test against both the
+  demo tenant (still works) and a fresh tenant from a fixture. **Unblocks TICKET-NATIVE-001.**
+- **ac:**
+  - [ ] `getTenantSchema()` reads from Drizzle `tenants.auto_detected_schema` (or equivalent column
+        per Master Design B.5)
+  - [ ] Redis cache: 5-min TTL keyed on `tenant_id`; cache invalidation on `tenant.schema_updated`
+        event
+  - [ ] Fallback to `null` (no reorder) on DB miss or `reorder_capable: false`
+  - [ ] Demo tenant continues to work (backward compat)
+  - [ ] Integration test seeds 2 tenants (one reorder-capable, one not) and asserts the directive
+        presence/absence
+  - [ ] TICKET-NATIVE-001's `depends_on` updated to include FOLLOW-018 at PM sprint planning
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-019 — Real archetype-affinity scoring (replace deterministicScore hash)
+
+- **source_retro:** RETRO-003
+- **source_ticket:** TICKET-REORDER-001
+- **recommended_sprint:** 9
+- **recommended_agent:** ml-engineer
+- **priority:** P1
+- **estimated_hours:** 6
+- **scope:** `deterministicScore()` at `apps/control-plane/src/app/api/adapt/route.ts:229` is
+  `((hash * 31 + charCode) >>> 0) % 10000 / 10000` over the string `${archetype}:${listing_id}` —
+  i.e. a stable hash with no semantic meaning. The directive field is labeled
+  `score_function: 'archetype_affinity'` but the score has no relationship to archetype affinity.
+  This follow-up: (1) introduce a real scoring source — either an ML-precomputed
+  `tenant_listings.archetype_scores` lookup table (offline Modal job pulls listing features +
+  archetype embeddings → cosine similarity → write back) OR an inline embedding-similarity call
+  (slower, more flexible), (2) add a `score_function` enum expansion so future scoring families
+  coexist (`'engagement_blend'`, `'recency_weighted'`), (3) emit a fallback to
+  `deterministicScore()` when no precomputed score exists for a listing (cold-start). **BINDING
+  FAIR-HOUSING CAVEAT** (per ESCALATIONS.md 2026-05-13): the scoring features must remain purely
+  behavioral. NO zip-code priors, NO school-district priors, NO photo-content analysis that could
+  proxy demographics, NO name-based features. Compliance review required before merge.
+- **ac:**
+  - [ ] Score source: precomputed table OR inline embedding job (architect chooses)
+  - [ ] Cold-start fallback: deterministicScore() when no precomputed score
+  - [ ] `score_function` Zod literal expanded to a union; default remains `'archetype_affinity'`
+  - [ ] **Fair-housing compliance check signed off by compliance-engineer BEFORE merge** (no
+        proxy-demographic features in input vector)
+  - [ ] Determinism test: same (archetype, listing_id, listing_features) → same score
+  - [ ] Score response matches the SDK's `archetype_hint` (archetype mismatch assertion)
+  - [ ] AC for AB-004 panel: CTR-lift now measurable against meaningful treatment, not noise
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-020 — Move resetAdaptState() out of per-refresh path (prevent re-reorder flicker)
+
+- **source_retro:** RETRO-003
+- **source_ticket:** TICKET-REORDER-001
+- **recommended_sprint:** 8
+- **recommended_agent:** sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** `packages/sdk/src/index.ts:126` calls `resetAdaptState()` before every
+  `applyDirectives()` call in `refreshDirectives()`. This clears the `appliedFingerprints` set,
+  including the reorder fingerprint `reorder:${container_selector}:${archetype}`. When intent
+  confidence drifts mid-session and the archetype flips (e.g. `neutral` → `yield_hunter`), the
+  reorder runs AGAIN — visible flicker for the user. Unit test at
+  `packages/sdk/src/__tests__/adapt.test.ts:786` exercises idempotency WITHOUT calling
+  `resetAdaptState()`, so the realistic SDK call sequence is untested. This follow-up: (1) remove
+  `resetAdaptState()` from the per-refresh path, OR scope the reorder fingerprint to session-only
+  (`reorder:${sessionId}:${container_selector}`) so refreshes with new archetype still hit the
+  dedupe, (2) also widen the fingerprint to include `pin_top_n` so config changes invalidate the
+  dedupe correctly, (3) add a test that simulates a session where intent updates trigger 3 refreshes
+  and asserts the DOM is only reordered once.
+- **ac:**
+  - [ ] Reorder fingerprint scoped to session or refresh policy changed (architect decides)
+  - [ ] `pin_top_n` included in the fingerprint
+  - [ ] Test: 3 successive refreshes within same session → exactly 1 reorder application
+  - [ ] Test: distinct sessions → distinct fingerprints (no cross-session leak)
+  - [ ] No regression in existing 6 ReorderDirective unit tests
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-021 — Corpus regression test for ReorderDirective on reorder_capable fixtures
+
+- **source_retro:** RETRO-003
+- **source_ticket:** TICKET-REORDER-001
+- **recommended_sprint:** 8 or 9
+- **recommended_agent:** qa-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** The TICKET-REORDER-001 ticket notes promised "corpus CI gate stays green after DOM
+  reorder changes (rerun pnpm test:corpus)" — but the PR added no corpus test that applies a
+  ReorderDirective. This follow-up: extend `packages/sdk/src/auto-detect/__tests__/corpus.test.ts`
+  (or add `packages/sdk/src/__tests__/corpus-reorder.test.ts`) to: (1) iterate every corpus fixture
+  with `IndexSchema.reorder_capable === true`, (2) load the fixture into JSDOM, (3) build a
+  synthetic ReorderDirective using the fixture's detected `container_selector` and `item_selector`,
+  (4) call `applyDirectives()` with it, (5) assert zero `adapt.skipped` events on these fixtures.
+  Fixtures where `reorder_capable === false` are skipped (control group). This catches
+  schema-detector drift that would break reorder in production.
+- **ac:**
+  - [ ] New corpus test runs against all `reorder_capable: true` fixtures (currently: wordpress,
+        article-tag, mui-components, angular, drupal-php, data-attributes per
+        auto-detect/techniques/)
+  - [ ] Zero `adapt.skipped` events on any reorder-capable fixture
+  - [ ] `reorder_capable: false` fixtures explicitly excluded (not silently skipped)
+  - [ ] Test runs in `pnpm test:corpus` (or `pnpm test` if no separate corpus gate)
+  - [ ] CI passes on the existing 15+ corpus fixtures
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-022 — End-to-end integration test: SDK → POST → DOM reorder
+
+- **source_retro:** RETRO-003
+- **source_ticket:** TICKET-REORDER-001
+- **recommended_sprint:** 9
+- **recommended_agent:** qa-engineer
+- **priority:** P2
+- **estimated_hours:** 3
+- **scope:** Both ends of the reorder pipeline are unit-tested in isolation
+  (`packages/sdk/src/__tests__/adapt.test.ts` for the DOM apply,
+  `apps/control-plane/src/app/api/adapt/route.test.ts` for the server). No test verifies the full
+  SDK → POST → DOM round-trip. This follow-up: (1) MSW-based test in the SDK that spins up a mock
+  server returning a ReorderDirective with known scores, (2) JSDOM grid fixture with 10 cards, (3)
+  call `fetchDirectives()` → `applyDirectives()` → assert the DOM order matches the server's score
+  order, (4) also assert the SDK actually sent the card IDs in the request body (catches a
+  regression where `fetchDirectives()`'s `[data-estalara-listing-id]` collection breaks), (5) add an
+  assertion at the demo-page level that `data-estalara-listings-grid` exists on the mockup page
+  (prevents silent regression of the demo).
+- **ac:**
+  - [ ] MSW mock server in test setup returns deterministic ReorderDirective
+  - [ ] Request body assertion: `listing_ids` field is present and matches DOM
+  - [ ] DOM-order assertion: post-apply order matches server-provided sorted scores
+  - [ ] Demo-page test: `apps/control-plane/src/app/dashboard/demo/mockup/page.tsx` contains
+        `data-estalara-listings-grid`
+  - [ ] Test file location: `packages/sdk/src/__tests__/reorder-e2e.test.ts`
+  - [ ] No flakes across 50 successive runs
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-023 — Documentation pass: ReorderDirective JSDoc + Master Design status notes
+
+- **source_retro:** RETRO-003
+- **source_ticket:** TICKET-REORDER-001
+- **recommended_sprint:** 8 or 9
+- **recommended_agent:** architect
+- **priority:** P3
+- **estimated_hours:** 0.5
+- **scope:** Three documentation gaps from RETRO-003 §3d, all addressable in one pass: (1)
+  `packages/shared/src/directives.ts:76` still says "SPRINT 8 HOOK: ReorderDirective. Full DOM
+  implementation in Sprint 8" — implementation HAS shipped; update the docstring to point at the SDK
+  consumer and at FOLLOW-018/FOLLOW-019 for the remaining wiring gaps, (2) `docs/MASTER_DESIGN.md`
+  E.2 and B.9.2 describe reorder as available to all reorder-capable tenants — add an inline status
+  note: "Implementation status: demo tenant only as of 2026-05-14. Full per-tenant lookup pending
+  FOLLOW-018; real archetype-affinity scoring pending FOLLOW-019.", (3) add a one-line comment in
+  `packages/sdk/src/index.ts:139` explaining why the sidebar's text-only filter intentionally drops
+  ReorderDirectives (sidebar is Tier 1 read-only).
+- **ac:**
+  - [ ] `packages/shared/src/directives.ts` ReorderDirective JSDoc updated
+  - [ ] `docs/MASTER_DESIGN.md` E.2 + B.9.2 status notes added; changelog entry at top
+  - [ ] `packages/sdk/src/index.ts:139` filter comment added
+  - [ ] Master Design version bumped to v1.7 (or next appropriate)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-024 — Promote Rule H verification from advisory to hard pre-merge gate
+
+- **source_retro:** RETRO-003
+- **source_ticket:** TICKET-REORDER-001 (process-improvement follow-up)
+- **recommended_sprint:** 8
+- **recommended_agent:** architect
+- **priority:** P1
+- **estimated_hours:** 0.5
+- **scope:** Rule H (schema scaffold + deferred wiring) has now triggered in three consecutive
+  retros (RETRO-001 variant_index, RETRO-002 bandit + ab.assignment + seed + ClickHouse writer +
+  mock weights route, RETRO-003 `listing_ids` on decision-api + hardcoded demo tenant). The rule's
+  "Verification" section currently lists a grep command with `WARN:` output — i.e. advisory only.
+  Despite the rule being in place, the same pattern recurred in REORDER-001. This follow-up: (1)
+  edit `docs/AGENT_WORKFLOW.md` to add an explicit step in the PM-orchestrator's
+  pre-READY_FOR_REVIEW checklist: "Run Rule H verification grep. Any new exported symbol with only
+  the defining file as importer MUST have a corresponding FOLLOW-NNN stub OR the wiring must land in
+  this PR. No exceptions.", (2) edit CONVENTIONS_PATCH.md Rule H's "Verification" section to change
+  `WARN:` to `BLOCK:` and add "Fail the PR review if any symbol fails this check without a paired
+  FOLLOW-NNN.", (3) audit the PM-orchestrator agent definition (`.claude/agents/pm-orchestrator.md`)
+  to ensure this step is executed automatically.
+- **ac:**
+  - [ ] `docs/AGENT_WORKFLOW.md` updated with the explicit Rule H verification step
+  - [ ] `CONVENTIONS_PATCH.md` Rule H Verification section escalated from WARN to BLOCK
+  - [ ] `.claude/agents/pm-orchestrator.md` updated to call the Rule H verification before
+        READY_FOR_REVIEW transition
+  - [ ] Smoke test: re-run the verification command against PR #91's changes; the new symbols
+        (`getTenantSchema`, `deterministicScore`, `buildReorderDirective`, `TenantSchema`) and the
+        `listing_ids` schema field SHOULD have been caught
+- **promoted_to_queue:** false
+
+---
+
+<!-- FOLLOW-025+ appended by retrospective-analyst for subsequent tickets -->

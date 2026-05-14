@@ -23,6 +23,7 @@ context_files:
   - docs/MASTER_DESIGN.md#section-A
   - docs/adr/0003-event-schema.md
 labels: [ingest, api, p0]
+retro_completed: false
 ---
 
 # TICKET-042: Implement event ingestion endpoint
@@ -157,6 +158,12 @@ Files the agent must read before starting. Always include relevant MASTER_DESIGN
 ### `labels`
 
 Free-form tags for filtering and reporting.
+
+### `retro_completed`
+
+Boolean. Set to `true` by pm-orchestrator after the `retrospective-analyst` has produced the
+RETRO-NNN entry for this ticket in `backlog/RETROSPECTIVES.md`. Default: `false`. Only relevant for
+tickets that are `DONE`. PM sets this after step 7 of its loop completes.
 
 ## Sizing guidance
 

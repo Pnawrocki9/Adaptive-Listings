@@ -1043,6 +1043,23 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
   completed_at: '2026-05-14T00:00:00Z'
   spec: backlog/sprint-8/TICKET-FIX-019.md
 
+- id: TICKET-AB-005
+  title: Emit ab.assignment event from decision-api adapt route
+  agent: backend-engineer
+  status: READY_FOR_REVIEW
+  priority: P0
+  estimated_hours: 3
+  depends_on: [TICKET-AB-001]
+  started_at: '2026-05-14T20:30:00Z'
+  pr: '#106'
+  spec: backlog/sprint-8/TICKET-AB-005.md
+  notes: |
+    Promoted from FOLLOW-006 (RETRO-002). Wires ab.assignment event emission into
+    decision-api adapt route. Fire-and-forget, non-blocking, Sentry tag on error.
+    New files: apps/decision-api/src/lib/redpanda-producer.ts,
+               apps/decision-api/src/lib/ab-events.ts.
+    85 tests pass. TypeScript + lint clean.
+
 - id: TICKET-CAUSAL-001
   title: Causal inference framework — CATE estimation + HTE per archetype (R.2 patent angle)
   agent: ml-engineer
@@ -1256,6 +1273,10 @@ resolved):**
 ## Currently in flight
 
 (none — Sprint 8 COMPLETE)
+
+## Awaiting human review
+
+- TICKET-AB-005 (PR #106) — emit ab.assignment event from decision-api adapt route
 
 ## Recent merges
 

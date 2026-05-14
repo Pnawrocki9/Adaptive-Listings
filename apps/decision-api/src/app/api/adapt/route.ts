@@ -3,6 +3,8 @@
  *
  * MVP stub: returns deterministic directives based on archetype_hint.
  * Real ML inference (Modal intent-engine) is wired in Sprint 5 (TICKET-031).
+ * ReorderDirective emission is tracked in FOLLOW-015.
+ * Thompson sampling variant selection is tracked in FOLLOW-007.
  *
  * Auth:
  *   - When ADAPT_API_KEY env var is set: Bearer token must match exactly.
@@ -16,6 +18,7 @@
  * - Deterministic HMAC-SHA-256 hash on (tenant_id, session_id).
  * - Consent-aware: sessions with opted_out/unknown/none consent are skipped.
  * - Fair-housing safe: no user attributes, only (tenant_id, session_id).
+ * - ab.assignment event emitted fire-and-forget: TICKET-AB-005 / FOLLOW-006.
  *
  * Edge-compatible — no Node.js APIs.
  *
@@ -25,6 +28,7 @@
 import { z } from 'zod';
 
 import { assignHoldout, DEFAULT_HOLDOUT_PCT } from '../../../lib/ab-assignment.js';
+import { publishAbAssignmentEvent } from '../../../lib/ab-events.js';
 import type { Env } from '../../../index.js';
 import { isDailyCapExceeded } from '../../../lib/llm-gateway.js';
 
@@ -288,6 +292,43 @@ export async function handleAdaptRequest(
     consent_mode_enabled: consent_mode_enabled ?? false,
     holdout_pct: holdout_pct ?? DEFAULT_HOLDOUT_PCT,
   });
+
+  // 4b. Emit ab.assignment event (fire-and-forget — MUST NOT delay the HTTP response).
+  //     Only emitted when assignment was NOT skipped (consent granted or consent mode disabled).
+  //     Sentry tag `ab_assignment_emit_failed` on producer error.
+  const redpandaUrl = env.REDPANDA_REST_URL;
+  if (!assignment.skipped && redpandaUrl) {
+    void (async () => {
+      try {
+        await publishAbAssignmentEvent({
+          session_id,
+          tenant_id,
+          holdout_group: assignment.holdout_group,
+          holdout_pct: holdout_pct ?? DEFAULT_HOLDOUT_PCT,
+          assigned_at: assignment.assigned_at,
+          env: {
+            REDPANDA_REST_URL: redpandaUrl,
+            REDPANDA_TOPIC_EVENTS: env.REDPANDA_TOPIC_EVENTS ?? 'estalara.events',
+            ...(env.REDPANDA_REST_USERNAME !== undefined
+              ? { REDPANDA_REST_USERNAME: env.REDPANDA_REST_USERNAME }
+              : {}),
+            ...(env.REDPANDA_REST_PASSWORD !== undefined
+              ? { REDPANDA_REST_PASSWORD: env.REDPANDA_REST_PASSWORD }
+              : {}),
+          },
+        });
+      } catch (err) {
+        // Non-fatal — capture in Sentry when available but never block the response path.
+        // Sentry is injected globally in Cloudflare Workers; the interface is typed explicitly
+        // to avoid unsafe-member-access lint errors while keeping the call site clean.
+        interface GlobalSentry {
+          captureException: (err: unknown, opts: unknown) => void;
+        }
+        const gSentry = (globalThis as { Sentry?: GlobalSentry }).Sentry;
+        gSentry?.captureException(err, { tags: { ab_assignment_emit_failed: true } });
+      }
+    })();
+  }
 
   // 5. Archetype detection and directive selection.
   //    Holdout sessions receive no adaptation directives (default experience).

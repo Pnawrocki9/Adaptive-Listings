@@ -4,6 +4,7 @@
  *
  * Includes A/B holdout integration tests (TICKET-AB-001 AC-5 and AC-6).
  * Includes ab.assignment event emission tests (TICKET-AB-005).
+ * Includes ReorderDirective integration tests (TICKET-AB-009).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -610,5 +611,159 @@ describe('POST /api/adapt — ab.assignment event emission (TICKET-AB-005)', () 
     await Promise.resolve();
 
     expect(res.status).toBe(200);
+  });
+});
+
+// ─── ReorderDirective integration tests (TICKET-AB-009) ───────────────────────
+
+/**
+ * The demo tenant 'est_demo_tenant' is the only reorder-capable tenant in the MVP
+ * stub. The TENANT_ID UUID used elsewhere is NOT reorder-capable (getTenantSchema
+ * returns null for real UUIDs until FOLLOW-018 adds DB lookup).
+ *
+ * To test ReorderDirective emission we override tenant_id to 'est_demo_tenant'.
+ * Note: 'est_demo_tenant' is not a UUID so we can't use z.string().uuid() — the
+ * Zod schema has z.string().uuid() for tenant_id, so we need to use the TENANT_ID
+ * UUID for the request but check that reorderDirectives is always [] for it, then
+ * test the demo tenant path by calling buildReorderDirective directly from the lib.
+ */
+describe('POST /api/adapt — ReorderDirective (TICKET-AB-009)', () => {
+  it('non-holdout session with listing_ids — reorderDirectives is present in response', async () => {
+    // UUID tenant won't be reorder-capable (no schema), so reorderDirectives = []
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        listing_ids: ['listing-a', 'listing-b', 'listing-c'],
+        holdout_pct: 0,
+        consent_state: 'granted',
+        consent_mode_enabled: true,
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    // reorderDirectives is always present as an array (possibly empty)
+    expect(Array.isArray(body.reorderDirectives)).toBe(true);
+  });
+
+  it('no listing_ids → reorderDirectives is [] (empty array)', async () => {
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        holdout_pct: 0,
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    expect(body.reorderDirectives).toEqual([]);
+  });
+
+  it('holdout session with listing_ids → reorderDirectives is [] (holdout gets no adaptation)', async () => {
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        listing_ids: ['a', 'b', 'c'],
+        holdout_pct: 1.0,
+        consent_state: 'granted',
+        consent_mode_enabled: true,
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    expect(body.holdout_group).toBe(true);
+    expect(body.reorderDirectives).toEqual([]);
+  });
+
+  it('listing_ids Zod schema: up to 100 strings, each max 64 chars — accepted', async () => {
+    const ids = Array.from({ length: 100 }, (_, i) => `listing-${String(i).padStart(3, '0')}`);
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        listing_ids: ids,
+        holdout_pct: 0,
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('listing_ids Zod schema: 101 strings → 400 validation error', async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `listing-${String(i)}`);
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        listing_ids: ids,
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+// ─── reorder.ts unit tests (TICKET-AB-009) ────────────────────────────────────
+//
+// deterministicScore is an internal (non-exported) function tested indirectly
+// through buildReorderDirective (Rule H: no orphaned exports).
+
+describe('reorder.ts — getTenantSchema + buildReorderDirective', () => {
+  it('getTenantSchema: est_demo_tenant → reorder_capable schema', async () => {
+    const { getTenantSchema } = await import('../lib/reorder.js');
+    const schema = getTenantSchema('est_demo_tenant');
+    expect(schema).not.toBeNull();
+    expect(schema?.reorder_capable).toBe(true);
+    expect(typeof schema?.container_selector).toBe('string');
+  });
+
+  it('getTenantSchema: unknown UUID → null', async () => {
+    const { getTenantSchema } = await import('../lib/reorder.js');
+    const schema = getTenantSchema('550e8400-e29b-41d4-a716-446655440000');
+    expect(schema).toBeNull();
+  });
+
+  it('buildReorderDirective: produces directive with scores sorted descending', async () => {
+    const { getTenantSchema, buildReorderDirective } = await import('../lib/reorder.js');
+    const schema = getTenantSchema('est_demo_tenant');
+    expect(schema).not.toBeNull();
+    const directive = buildReorderDirective(schema!, ['id-a', 'id-b', 'id-c'], 'investor', 0.85);
+    expect(directive).not.toBeNull();
+    const d = directive!;
+    expect(d.type).toBe('reorder');
+    expect(d.score_function).toBe('archetype_affinity');
+    expect(d.scores).toHaveLength(3);
+    // Scores must be descending.
+    for (let i = 0; i < d.scores.length - 1; i++) {
+      expect(d.scores[i]!.score).toBeGreaterThanOrEqual(d.scores[i + 1]!.score);
+    }
+  });
+
+  it('buildReorderDirective: deterministic — same inputs → same ordering on every call', async () => {
+    const { getTenantSchema, buildReorderDirective } = await import('../lib/reorder.js');
+    const schema = getTenantSchema('est_demo_tenant');
+    const ids = ['listing-abc', 'listing-xyz', 'listing-123'];
+    const d1 = buildReorderDirective(schema!, ids, 'investor', 0.85);
+    const d2 = buildReorderDirective(schema!, ids, 'investor', 0.85);
+    expect(d1?.scores.map((s) => s.listing_id)).toEqual(d2?.scores.map((s) => s.listing_id));
+    expect(d1?.scores.map((s) => s.score)).toEqual(d2?.scores.map((s) => s.score));
+  });
+
+  it('buildReorderDirective: all scores are in [0, 1)', async () => {
+    const { getTenantSchema, buildReorderDirective } = await import('../lib/reorder.js');
+    const schema = getTenantSchema('est_demo_tenant');
+    const ids = ['a', 'b', 'c', 'd', 'e'];
+    const d = buildReorderDirective(schema!, ids, 'family', 0.85);
+    expect(d?.scores).toHaveLength(5);
+    for (const s of d?.scores ?? []) {
+      expect(s.score).toBeGreaterThanOrEqual(0);
+      expect(s.score).toBeLessThan(1);
+    }
+  });
+
+  it('buildReorderDirective: non-reorder-capable schema → null', async () => {
+    const { buildReorderDirective } = await import('../lib/reorder.js');
+    const schema = { reorder_capable: false };
+    const directive = buildReorderDirective(schema, ['a', 'b'], 'neutral', 0.5);
+    expect(directive).toBeNull();
   });
 });

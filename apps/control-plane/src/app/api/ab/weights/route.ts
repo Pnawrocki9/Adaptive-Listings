@@ -1,3 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return --
+ * @estalara/auth and @estalara/db are workspace packages not built locally.
+ * TypeScript sees their return types as `any` until packages are built.
+ * CI builds packages before lint so these errors don't appear in CI.
+ * Same pattern as middleware.ts, quiz/config/route.ts, and other routes.
+ */
 /**
  * GET /api/ab/weights
  *
@@ -7,19 +13,22 @@
  *
  * Used by the TICKET-AB-004 analytics dashboard (Anomaly feed panel).
  *
- * Auth: reads x-tenant-id header injected by Next.js middleware for /dashboard/* routes.
+ * Auth: Bearer JWT required. tenant_id extracted from verified JWT claims — NOT from header.
  *
  * Query params:
  *   archetype: filter by archetype label (optional)
  *
- * MVP stub: returns deterministic mock data keyed on tenant_id.
- * Real Drizzle DB queries (packages/db abBanditWeights table) will replace this in TICKET-AB-004.
+ * Reads real rows from ab_bandit_weights (seeded by TICKET-AB-006/007, PR #107).
  *
  * @module apps/control-plane/src/app/api/ab/weights/route
  */
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getAuthClaims } from '@estalara/auth';
+import { createTenantClient } from '@estalara/db';
+import { abBanditWeights } from '@estalara/db';
+import { eq, and } from 'drizzle-orm';
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
@@ -45,81 +54,86 @@ export interface AbWeightsResponse {
   generated_at: string;
 }
 
-// ─── Mock data generation ─────────────────────────────────────────────────────
-
-const MOCK_ARCHETYPES = ['investor', 'family_buyer', 'yield_hunter', 'neutral'] as const;
-const MOCK_VARIANTS = ['control', 'headline_v1', 'photo_order_v2'] as const;
-
-/** Deterministic integer hash of a string. */
-function hash(s: string): number {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) + h + (s.charCodeAt(i) | 0)) | 0;
-  }
-  return Math.abs(h);
-}
-
-/** Seeded pseudo-random in [0, 1). */
-function seededRandom(seed: number): number {
-  const x = Math.sin(seed + 1) * 10000;
-  return x - Math.floor(x);
-}
-
-function buildMockWeights(tenantId: string, archetypeFilter?: string): BanditWeightRow[] {
-  const seed = hash(tenantId);
-  const rows: BanditWeightRow[] = [];
-  let idx = 0;
-
-  for (const archetype of MOCK_ARCHETYPES) {
-    if (archetypeFilter && archetype !== archetypeFilter) {
-      idx += MOCK_VARIANTS.length;
-      continue;
-    }
-    for (const variant of MOCK_VARIANTS) {
-      const rowSeed = seed + idx;
-      const alpha = 1 + Math.floor(seededRandom(rowSeed) * 99);
-      const beta = 1 + Math.floor(seededRandom(rowSeed + 1) * 99);
-      const paused = seededRandom(rowSeed + 2) < 0.05; // 5% chance of being paused
-      rows.push({
-        tenant_id: tenantId,
-        archetype,
-        variant,
-        alpha,
-        beta,
-        estimated_rate: Math.round((alpha / (alpha + beta)) * 10000) / 10000,
-        paused,
-        updated_at: new Date(
-          Date.now() - Math.floor(seededRandom(rowSeed + 3) * 86400000),
-        ).toISOString(),
-      });
-      idx++;
-    }
-  }
-
-  return rows;
-}
-
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-export function GET(req: NextRequest): NextResponse {
-  const tenantId = req.headers.get('x-tenant-id');
-  if (!tenantId) {
+/**
+ * GET /api/ab/weights
+ *
+ * @returns 200 AbWeightsResponse on success.
+ * @returns 401 when no valid Bearer JWT or JWT lacks tenant_id.
+ * @returns 500 on DB error.
+ */
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  // Auth: tenant_id from verified JWT claims — NEVER from x-tenant-id header (TICKET-FIX-014).
+  const claims = await getAuthClaims(req);
+  if (!claims || !('tenant_id' in claims) || !claims.tenant_id) {
     return NextResponse.json(
-      { error: { code: 'unauthorized', message: 'x-tenant-id header is required' } },
+      {
+        error: { code: 'unauthorized', message: 'Valid Bearer JWT with tenant_id claim required' },
+      },
       { status: 401 },
     );
   }
 
+  const tenantId: string = claims.tenant_id;
   const archetypeFilter = req.nextUrl.searchParams.get('archetype') ?? undefined;
 
-  const rows = buildMockWeights(tenantId, archetypeFilter);
+  // DATABASE_URL may not be set in dev/CI — graceful empty response.
+  if (!process.env.DATABASE_URL) {
+    const response: AbWeightsResponse = {
+      tenant_id: tenantId,
+      rows: [],
+      total: 0,
+      generated_at: new Date().toISOString(),
+    };
+    return NextResponse.json(response, { status: 200 });
+  }
 
-  const response: AbWeightsResponse = {
-    tenant_id: tenantId,
-    rows,
-    total: rows.length,
-    generated_at: new Date().toISOString(),
-  };
+  try {
+    const rawToken =
+      req.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') ??
+      req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ??
+      '';
+    const db = createTenantClient(rawToken || undefined);
 
-  return NextResponse.json(response, { status: 200 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- package types not compiled; any is safe here since db.rls enforces the DB type at runtime
+    const dbRows: any[] = await db.rls((tx: any) => {
+      const conditions = [eq(abBanditWeights.tenantId, tenantId)];
+      if (archetypeFilter) {
+        conditions.push(eq(abBanditWeights.archetype, archetypeFilter));
+      }
+      return tx
+        .select()
+        .from(abBanditWeights)
+        .where(conditions.length === 1 ? conditions[0] : and(...conditions));
+    });
+
+    const rows: BanditWeightRow[] = dbRows.map((r) => ({
+      tenant_id: r.tenantId as string,
+      archetype: r.archetype as string,
+      variant: r.variant as string,
+      alpha: r.alpha as number,
+      beta: r.beta as number,
+      estimated_rate:
+        Math.round(((r.alpha as number) / ((r.alpha as number) + (r.beta as number))) * 10000) /
+        10000,
+      paused: r.paused as boolean,
+      updated_at: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : (r.updatedAt as string),
+    }));
+
+    const response: AbWeightsResponse = {
+      tenant_id: tenantId,
+      rows,
+      total: rows.length,
+      generated_at: new Date().toISOString(),
+    };
+
+    return NextResponse.json(response, { status: 200 });
+  } catch (err: unknown) {
+    console.error('[ab/weights] DB error:', err instanceof Error ? err.message : err);
+    return NextResponse.json(
+      { error: { code: 'internal_error', message: 'Failed to fetch bandit weights' } },
+      { status: 500 },
+    );
+  }
 }

@@ -3,7 +3,7 @@
  *
  * MVP stub: returns deterministic directives based on archetype_hint.
  * Real ML inference (Modal intent-engine) is wired in Sprint 5 (TICKET-031).
- * ReorderDirective emission is tracked in FOLLOW-015.
+ * ReorderDirective emission wired in TICKET-AB-009.
  * Thompson sampling variant selection is tracked in FOLLOW-007.
  *
  * Auth:
@@ -20,6 +20,10 @@
  * - Fair-housing safe: no user attributes, only (tenant_id, session_id).
  * - ab.assignment event emitted fire-and-forget: TICKET-AB-005 / FOLLOW-006.
  *
+ * ReorderDirective: TICKET-AB-009.
+ * - Emitted when listing_ids is present, session is non-holdout, and tenant is reorder_capable.
+ * - Helpers live in apps/decision-api/src/lib/reorder.ts (canonical location).
+ *
  * Edge-compatible — no Node.js APIs.
  *
  * @module apps/decision-api/src/app/api/adapt/route
@@ -31,6 +35,11 @@ import { assignHoldout, DEFAULT_HOLDOUT_PCT } from '../../../lib/ab-assignment.j
 import { publishAbAssignmentEvent } from '../../../lib/ab-events.js';
 import type { Env } from '../../../index.js';
 import { isDailyCapExceeded } from '../../../lib/llm-gateway.js';
+import {
+  getTenantSchema,
+  buildReorderDirective,
+  type ReorderDirective,
+} from '../../../lib/reorder.js';
 
 // ─── Request / response types ─────────────────────────────────────────────────
 
@@ -40,7 +49,7 @@ const AdaptRequestSchema = z.object({
   /** Optional archetype signal — from quiz E.4 or URL params. */
   archetype_hint: z.string().optional(),
   page_type: z.enum(['listing_list', 'listing_detail', 'home', 'search']),
-  listing_ids: z.array(z.string()).optional(),
+  listing_ids: z.array(z.string().max(64)).max(100).optional(),
   /**
    * Consent state from the session. Used for A/B holdout consent gating.
    * Accepts the existing ConsentState values plus 'opted_out' | 'unknown' for
@@ -106,6 +115,12 @@ export interface AdaptResponse {
    * Present when the SDK included it in the request. [TICKET-FIX-015]
    */
   similarity?: number;
+  /**
+   * ReorderDirective list — emitted when listing_ids is provided, the session is
+   * non-holdout, and the tenant is reorder_capable. Empty array otherwise.
+   * [TICKET-AB-009]
+   */
+  reorderDirectives: ReorderDirective[];
 }
 
 // ─── Stub directive sets ──────────────────────────────────────────────────────
@@ -348,6 +363,18 @@ export async function handleAdaptRequest(
 
   const source: AdaptResponseSource = capExceeded ? 'playbook_fallback_llm_capped' : 'playbook';
 
+  // 7. ReorderDirective — emitted for non-holdout sessions with listing_ids. [TICKET-AB-009]
+  //    Holdout sessions always receive empty reorderDirectives.
+  //    getTenantSchema() returns null for unknown tenants (FOLLOW-018 will add real DB lookup).
+  const listingIds = parsed.data.listing_ids;
+  let reorderDirective: ReorderDirective | null = null;
+  if (!isHoldout && listingIds && listingIds.length > 0) {
+    const tenantSchema = getTenantSchema(tenant_id);
+    if (tenantSchema?.reorder_capable) {
+      reorderDirective = buildReorderDirective(tenantSchema, listingIds, archetype, confidence);
+    }
+  }
+
   const body: AdaptResponse = {
     session_id,
     archetype,
@@ -359,6 +386,8 @@ export async function handleAdaptRequest(
     ...(assignment.skipped ? {} : { holdout_group: assignment.holdout_group }),
     // Forward similarity from SDK intent engine when provided. [TICKET-FIX-015]
     ...(inputSimilarity !== undefined ? { similarity: inputSimilarity } : {}),
+    // ReorderDirective list — empty array for holdout or non-reorder-capable tenants.
+    reorderDirectives: reorderDirective !== null ? [reorderDirective] : [],
   };
 
   return Response.json(body, { status: 200 });

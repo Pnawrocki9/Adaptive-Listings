@@ -858,7 +858,7 @@ describe('POST /api/adapt — ReorderDirective', () => {
     const res = await POST(makePostRequest(body, 'Bearer demo_key'));
     const resBody = await parseBody<Record<string, unknown>>(res);
     const directives = resBody.directives as { type: string }[];
-    const rd = directives.find((d) => d.type === 'reorder') as {
+    const rd = directives.find((d) => d.type === 'reorder') as unknown as {
       scores: { listing_id: string; score: number }[];
     };
     expect(rd).toBeDefined();

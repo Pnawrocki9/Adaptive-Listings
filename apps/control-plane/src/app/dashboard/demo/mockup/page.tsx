@@ -116,7 +116,7 @@ export default function MockupListingsPage() {
           No listings match your filters. Try broadening your search.
         </div>
       ) : (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3" data-estalara-listings-grid>
           {filtered.map((listing) => (
             <Link
               key={listing.slug}

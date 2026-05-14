@@ -9,7 +9,12 @@
 
 import type { SessionState } from './session.js';
 import type { SdkConfig } from './config.js';
-import type { TextDirective, ClassDirective, ArchetypeId } from '@estalara/shared';
+import type {
+  TextDirective,
+  ClassDirective,
+  ReorderDirective,
+  ArchetypeId,
+} from '@estalara/shared';
 import type { CollectedEvent } from './events.js';
 import type { IntentState } from './intent.js';
 
@@ -28,8 +33,8 @@ export interface AdaptResponse {
   session_id: string;
   archetype: string;
   confidence: number;
-  /** Raw directives from the Decision API. Cast to (TextDirective | ClassDirective)[] for applyDirectives(). */
-  directives: (TextDirective | ClassDirective)[];
+  /** Raw directives from the Decision API. Cast to (TextDirective | ClassDirective | ReorderDirective)[] for applyDirectives(). */
+  directives: (TextDirective | ClassDirective | ReorderDirective)[];
   ttl_seconds: number;
 }
 
@@ -168,16 +173,86 @@ function applyClassDirective(directive: ClassDirective, context?: ApplyContext):
   }
 }
 
+/**
+ * Apply a single ReorderDirective — reorders child card elements within a container
+ * by archetype affinity score (highest first). Optionally pins the top N cards.
+ *
+ * Fail-safe: missing container or empty card list emits adapt.skipped and returns.
+ * Idempotent: same container+archetype fingerprint is skipped on repeat calls.
+ */
+function applyReorderDirective(directive: ReorderDirective, context?: ApplyContext): void {
+  const container = document.querySelector<HTMLElement>(directive.container_selector);
+  if (!container) {
+    pushEvent({
+      type: 'adapt.skipped',
+      payload: { reason: 'no_container', slot_or_selector: directive.container_selector },
+      ts: Date.now(),
+    });
+    return;
+  }
+
+  const cards = Array.from(container.querySelectorAll<HTMLElement>(directive.item_selector));
+  if (cards.length === 0) {
+    pushEvent({
+      type: 'adapt.skipped',
+      payload: { reason: 'no_cards', slot_or_selector: directive.item_selector },
+      ts: Date.now(),
+    });
+    return;
+  }
+
+  // Idempotency: same container+archetype is skipped on repeat calls
+  const fingerprint = `reorder:${directive.container_selector}:${directive.archetype}`;
+  if (appliedFingerprints.has(fingerprint)) return;
+  appliedFingerprints.add(fingerprint);
+
+  const scoreMap = new Map(directive.scores.map((s) => [s.listing_id, s.score]));
+
+  // Sort cards descending by score; cards with no listing-id match go to end (-Infinity)
+  const sorted = [...cards].sort((a, b) => {
+    const idA = a.getAttribute('data-estalara-listing-id');
+    const idB = b.getAttribute('data-estalara-listing-id');
+    const scoreA = idA !== null ? (scoreMap.get(idA) ?? -Infinity) : -Infinity;
+    const scoreB = idB !== null ? (scoreMap.get(idB) ?? -Infinity) : -Infinity;
+    return scoreB - scoreA;
+  });
+
+  if (directive.pin_top_n !== undefined && directive.pin_top_n > 0) {
+    const topCards = sorted.slice(0, directive.pin_top_n);
+    const restCards = sorted.slice(directive.pin_top_n);
+    container.prepend(...topCards);
+    container.append(...restCards);
+  } else {
+    container.append(...sorted);
+  }
+
+  if (context) {
+    pushEvent({
+      type: 'adapt.applied',
+      payload: {
+        slot_or_selector: directive.container_selector,
+        archetype: context.archetypeId,
+        confidence: context.confidence,
+      },
+      ts: Date.now(),
+    });
+  }
+}
+
 /** Inner directive processing — called when DOM is guaranteed ready. */
-function runApply(directives: (TextDirective | ClassDirective)[], context?: ApplyContext): void {
+function runApply(
+  directives: (TextDirective | ClassDirective | ReorderDirective)[],
+  context?: ApplyContext,
+): void {
   try {
     for (const directive of directives) {
       try {
         if (directive.type === 'text') {
           applyTextDirective(directive, context);
+        } else if (directive.type === 'reorder') {
+          applyReorderDirective(directive, context);
         } else {
           // directive.type === 'class'
-          // 'order' and 'visibility' are Tier 2 (Sprint 8) — ClassDirective handled here
           applyClassDirective(directive, context);
         }
       } catch {
@@ -223,6 +298,16 @@ export async function fetchDirectives(
       body.similarity = intentState.probabilities[intentState.archetype];
     }
 
+    // Collect visible listing IDs for ReorderDirective scoring (max 50)
+    const listingIds: string[] = [];
+    if (typeof document !== 'undefined') {
+      document.querySelectorAll<HTMLElement>('[data-estalara-listing-id]').forEach((el) => {
+        const id = el.getAttribute('data-estalara-listing-id');
+        if (id && listingIds.length < 50) listingIds.push(id);
+      });
+    }
+    if (listingIds.length > 0) body.listing_ids = listingIds;
+
     const res = await fetch(`${config.decisionApiUrl}/adapt`, {
       method: 'POST',
       headers: {
@@ -244,21 +329,22 @@ export async function fetchDirectives(
 /**
  * Apply adaptation directives to the page DOM.
  *
- * Accepts the shared TextDirective | ClassDirective union from @estalara/shared.
+ * Accepts the shared TextDirective | ClassDirective | ReorderDirective union from @estalara/shared.
  * Never throws — designed to be resilient on third-party host pages.
  *
  * Features:
  * - TextDirective: replaces textContent with optional {token} placeholder interpolation
  * - ClassDirective: adds/removes CSS classes; selector must match [data-estalara-*]
+ * - ReorderDirective: reorders listing card elements by archetype affinity score
  * - Idempotency: same directive fingerprint is skipped on repeat calls
  * - DOM-ready guard: if DOM is still loading, defers application to DOMContentLoaded
  * - Event logging: emits adapt.applied / adapt.skipped into the SDK event queue
  *
- * @param directives - Array of TextDirective or ClassDirective from @estalara/shared
+ * @param directives - Array of TextDirective, ClassDirective, or ReorderDirective from @estalara/shared
  * @param context    - Optional session context for event attribution
  */
 export function applyDirectives(
-  directives: (TextDirective | ClassDirective)[],
+  directives: (TextDirective | ClassDirective | ReorderDirective)[],
   context?: ApplyContext,
 ): void {
   if (typeof document === 'undefined') return;

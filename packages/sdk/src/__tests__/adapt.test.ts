@@ -12,7 +12,7 @@ import type { SdkConfig } from '../core/config.js';
 import type { SessionState } from '../core/session.js';
 import { initIntentState } from '../core/intent.js';
 import type { IntentState } from '../core/intent.js';
-import type { TextDirective, ClassDirective } from '@estalara/shared';
+import type { TextDirective, ClassDirective, ReorderDirective } from '@estalara/shared';
 import type { CollectedEvent } from '../core/events.js';
 
 const BASE_CONFIG: SdkConfig = {
@@ -663,5 +663,209 @@ describe('applyDirectives — edge cases', () => {
       expect(el.textContent).toBe('Batch Updated');
     });
     els.forEach((el) => document.body.removeChild(el));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// applyDirectives — ReorderDirective
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Build a minimal grid fixture: container + N card divs each with data-estalara-listing-id. */
+function buildGrid(ids: string[]): { container: HTMLElement; cards: HTMLElement[] } {
+  const container = document.createElement('div');
+  container.setAttribute('data-estalara-listings-grid', '');
+  const cards = ids.map((id) => {
+    const card = document.createElement('div');
+    card.setAttribute('data-estalara-listing-id', id);
+    card.textContent = id;
+    container.appendChild(card);
+    return card;
+  });
+  document.body.appendChild(container);
+  return { container, cards };
+}
+
+function getCardOrder(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('[data-estalara-listing-id]')).map(
+    (el) => el.getAttribute('data-estalara-listing-id') ?? '',
+  );
+}
+
+describe('applyDirectives — ReorderDirective', () => {
+  it('reorders DOM cards by score descending', () => {
+    const { container } = buildGrid(['listing-a', 'listing-b', 'listing-c']);
+
+    const directive: ReorderDirective = {
+      type: 'reorder',
+      container_selector: '[data-estalara-listings-grid]',
+      item_selector: '[data-estalara-listing-id]',
+      score_function: 'archetype_affinity',
+      scores: [
+        { listing_id: 'listing-a', score: 0.3 },
+        { listing_id: 'listing-b', score: 0.9 },
+        { listing_id: 'listing-c', score: 0.6 },
+      ],
+      archetype: 'yield_hunter',
+      confidence: 0.8,
+    };
+    applyDirectives([directive], {
+      archetypeId: 'yield_hunter',
+      confidence: 0.8,
+      sessionId: 'r-001',
+    });
+
+    expect(getCardOrder(container)).toEqual(['listing-b', 'listing-c', 'listing-a']);
+    document.body.removeChild(container);
+  });
+
+  it('cards without listing_id go to the end', () => {
+    const container = document.createElement('div');
+    container.setAttribute('data-estalara-listings-grid', '');
+    // Card with id
+    const withId = document.createElement('div');
+    withId.setAttribute('data-estalara-listing-id', 'listing-x');
+    container.appendChild(withId);
+    // Card without id
+    const withoutId = document.createElement('div');
+    withoutId.setAttribute('data-estalara-other', 'true');
+    container.appendChild(withoutId);
+    document.body.appendChild(container);
+
+    const directive: ReorderDirective = {
+      type: 'reorder',
+      container_selector: '[data-estalara-listings-grid]',
+      item_selector: '[data-estalara-listing-id], [data-estalara-other]',
+      score_function: 'archetype_affinity',
+      scores: [{ listing_id: 'listing-x', score: 0.7 }],
+      archetype: 'yield_hunter',
+      confidence: 0.8,
+    };
+    applyDirectives([directive], {
+      archetypeId: 'yield_hunter',
+      confidence: 0.8,
+      sessionId: 'r-002',
+    });
+
+    const children = Array.from(container.children) as HTMLElement[];
+    // listing-x should come before the one without id
+    expect(children[0]?.getAttribute('data-estalara-listing-id')).toBe('listing-x');
+    document.body.removeChild(container);
+  });
+
+  it('pin_top_n pins top N cards regardless of original order', () => {
+    const { container } = buildGrid(['listing-1', 'listing-2', 'listing-3', 'listing-4']);
+
+    const directive: ReorderDirective = {
+      type: 'reorder',
+      container_selector: '[data-estalara-listings-grid]',
+      item_selector: '[data-estalara-listing-id]',
+      score_function: 'archetype_affinity',
+      scores: [
+        { listing_id: 'listing-1', score: 0.2 },
+        { listing_id: 'listing-2', score: 0.5 },
+        { listing_id: 'listing-3', score: 0.9 },
+        { listing_id: 'listing-4', score: 0.7 },
+      ],
+      pin_top_n: 2,
+      archetype: 'yield_hunter',
+      confidence: 0.8,
+    };
+    applyDirectives([directive], {
+      archetypeId: 'yield_hunter',
+      confidence: 0.8,
+      sessionId: 'r-003',
+    });
+
+    const order = getCardOrder(container);
+    // Top 2 by score: listing-3 (0.9), listing-4 (0.7) should be first
+    expect(order[0]).toBe('listing-3');
+    expect(order[1]).toBe('listing-4');
+    document.body.removeChild(container);
+  });
+
+  it('idempotency: second call with same archetype/container is a no-op', () => {
+    const { container } = buildGrid(['listing-p', 'listing-q', 'listing-r']);
+
+    const directive: ReorderDirective = {
+      type: 'reorder',
+      container_selector: '[data-estalara-listings-grid]',
+      item_selector: '[data-estalara-listing-id]',
+      score_function: 'archetype_affinity',
+      scores: [
+        { listing_id: 'listing-p', score: 0.1 },
+        { listing_id: 'listing-q', score: 0.8 },
+        { listing_id: 'listing-r', score: 0.5 },
+      ],
+      archetype: 'yield_hunter',
+      confidence: 0.8,
+    };
+    const ctx = { archetypeId: 'yield_hunter' as const, confidence: 0.8, sessionId: 'r-004' };
+
+    applyDirectives([directive], ctx);
+    const orderAfterFirst = getCardOrder(container);
+
+    // Manually change the DOM order
+    container.prepend(container.lastElementChild!);
+    const orderAfterManual = getCardOrder(container);
+    expect(orderAfterManual).not.toEqual(orderAfterFirst);
+
+    // Second applyDirectives call must be a no-op due to idempotency
+    applyDirectives([directive], ctx);
+    expect(getCardOrder(container)).toEqual(orderAfterManual);
+
+    document.body.removeChild(container);
+  });
+
+  it('missing container → emits adapt.skipped with reason no_container', () => {
+    const directive: ReorderDirective = {
+      type: 'reorder',
+      container_selector: '[data-estalara-nonexistent-container]',
+      item_selector: '[data-estalara-listing-id]',
+      score_function: 'archetype_affinity',
+      scores: [{ listing_id: 'listing-z', score: 0.9 }],
+      archetype: 'yield_hunter',
+      confidence: 0.8,
+    };
+    expect(() => {
+      applyDirectives([directive], {
+        archetypeId: 'yield_hunter',
+        confidence: 0.8,
+        sessionId: 'r-005',
+      });
+    }).not.toThrow();
+
+    const skipEvents = testEventQueue.filter((e) => e.type === 'adapt.skipped');
+    expect(skipEvents.length).toBeGreaterThan(0);
+    expect(skipEvents.map((e) => e.payload.reason)).toContain('no_container');
+  });
+
+  it('empty item list → emits adapt.skipped with reason no_cards', () => {
+    const container = document.createElement('div');
+    container.setAttribute('data-estalara-listings-grid', '');
+    // Container exists but has no matching item elements
+    document.body.appendChild(container);
+
+    const directive: ReorderDirective = {
+      type: 'reorder',
+      container_selector: '[data-estalara-listings-grid]',
+      item_selector: '[data-estalara-listing-id]',
+      score_function: 'archetype_affinity',
+      scores: [],
+      archetype: 'yield_hunter',
+      confidence: 0.8,
+    };
+    expect(() => {
+      applyDirectives([directive], {
+        archetypeId: 'yield_hunter',
+        confidence: 0.8,
+        sessionId: 'r-006',
+      });
+    }).not.toThrow();
+
+    const skipEvents = testEventQueue.filter((e) => e.type === 'adapt.skipped');
+    expect(skipEvents.length).toBeGreaterThan(0);
+    expect(skipEvents.map((e) => e.payload.reason)).toContain('no_cards');
+
+    document.body.removeChild(container);
   });
 });

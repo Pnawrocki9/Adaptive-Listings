@@ -31,7 +31,12 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { errorBody, ErrorCode } from '@estalara/shared';
-import type { AdaptationDirectives, TextDirective, ArchetypeId } from '@estalara/shared';
+import type {
+  AdaptationDirectives,
+  TextDirective,
+  ReorderDirective,
+  ArchetypeId,
+} from '@estalara/shared';
 import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
@@ -52,6 +57,7 @@ const AdaptPostBodySchema = z.object({
   archetype_hint: z.string().optional(),
   confidence: z.number().min(0).max(1).optional(),
   similarity: z.number().min(0).max(1).optional(),
+  listing_ids: z.array(z.string().max(64)).max(100).optional(),
 });
 
 // ─── Decision logic ───────────────────────────────────────────────────────────
@@ -174,6 +180,73 @@ function logDecisionAsync(
     // Analytics failures must not surface to callers
     console.error('[adapt] ClickHouse log failed:', err instanceof Error ? err.message : err);
   });
+}
+
+// ─── ReorderDirective helpers ─────────────────────────────────────────────────
+
+/**
+ * Minimal per-tenant schema for reorder capability.
+ * Real tenants will get this from a DB lookup (REORDER-002); demo tenant is hard-coded.
+ */
+interface TenantSchema {
+  reorder_capable: boolean;
+  container_selector?: string;
+  item_selector?: string;
+}
+
+/**
+ * Return the tenant's site schema for reorder capability.
+ * Currently only the demo tenant is supported; future tickets add DB lookup.
+ */
+function getTenantSchema(tenantId: string): TenantSchema | null {
+  if (tenantId === 'est_demo_tenant') {
+    return {
+      reorder_capable: true,
+      container_selector: '[data-estalara-listings-grid]',
+      item_selector: '[data-estalara-listing-id]',
+    };
+  }
+  return null;
+}
+
+/**
+ * Produce a stable 0–1 affinity score for a listing + archetype pair.
+ * Uses a simple multiplicative hash so ordering is deterministic across reloads.
+ */
+function deterministicScore(listingId: string, archetype: string): number {
+  const key = `${archetype}:${listingId}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0; // unsigned 32-bit
+  }
+  return (hash % 10000) / 10000;
+}
+
+/**
+ * Build a ReorderDirective from a tenant schema + listing IDs.
+ * Scores are computed deterministically and sorted descending (highest first).
+ */
+function buildReorderDirective(
+  containerSelector: string,
+  itemSelector: string,
+  listingIds: string[],
+  archetype: string,
+  confidence: number,
+): ReorderDirective {
+  const scores = listingIds.map((id) => ({
+    listing_id: id,
+    score: deterministicScore(id, archetype),
+  }));
+  scores.sort((a, b) => b.score - a.score);
+  return {
+    type: 'reorder',
+    container_selector: containerSelector,
+    item_selector: itemSelector,
+    score_function: 'archetype_affinity',
+    scores,
+    archetype,
+    confidence,
+  };
 }
 
 // ─── GET handler ──────────────────────────────────────────────────────────────
@@ -375,12 +448,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const confidence = body.confidence ?? 0.5;
   const similarity = body.similarity ?? 0.5;
 
-  const { directives, source } = await runDecisionTree(
+  const { directives: textDirectives, source } = await runDecisionTree(
     archetypeId,
     confidence,
     similarity,
     body.session_id,
   );
+
+  // Append ReorderDirective for tenants with reorder_capable + listing_ids present
+  const allDirectives: (TextDirective | ReorderDirective)[] = [...textDirectives];
+  const tenantSchema = getTenantSchema(body.tenant_id);
+  if (
+    tenantSchema?.reorder_capable &&
+    tenantSchema.container_selector &&
+    body.listing_ids &&
+    body.listing_ids.length > 0
+  ) {
+    allDirectives.push(
+      buildReorderDirective(
+        tenantSchema.container_selector,
+        tenantSchema.item_selector ?? '[data-estalara-listing-id]',
+        body.listing_ids,
+        archetypeId,
+        confidence,
+      ),
+    );
+  }
 
   const response: AdaptationDirectives = {
     session_id: body.session_id,
@@ -388,7 +481,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     confidence,
     similarity,
     tier: 1,
-    directives,
+    directives: allDirectives,
     source,
     generated_at: new Date().toISOString(),
   };
@@ -402,7 +495,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     similarity,
     source,
     1,
-    directives.length,
+    allDirectives.length,
   );
 
   return NextResponse.json(response, { status: 200 });

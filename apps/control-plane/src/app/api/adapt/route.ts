@@ -41,6 +41,7 @@ import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
 import { getAuthClaims } from '@estalara/auth';
+import { retrieveListingContext } from '@/lib/rag-retrieval';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,13 @@ const AdaptPostBodySchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
   similarity: z.number().min(0).max(1).optional(),
   listing_ids: z.array(z.string().max(64)).max(100).optional(),
+  /** Single listing ID for RAG context retrieval (TICKET-AGENCY-001). */
+  listing_id: z.string().max(256).optional(),
+  /**
+   * Session intent vector (1536-dim). Passed by the intent engine for RAG similarity lookup.
+   * When absent, RAG step is skipped and listingContext defaults to {}.
+   */
+  intent_vector: z.array(z.number()).max(2048).optional(),
 });
 
 // ─── Decision logic ───────────────────────────────────────────────────────────
@@ -65,11 +73,13 @@ const AdaptPostBodySchema = z.object({
 /**
  * Run the adaptation decision tree per Master Design E.1.
  * Now async: branches 3 and 4 call the LLM gateway (ADP-002).
+ * TICKET-AGENCY-001: accepts precomputed `listingContext` for RAG injection.
  *
- * @param archetypeId   - Archetype matched by the intent engine.
- * @param confidence    - Intent confidence 0–1.
- * @param similarity    - Cosine similarity to the matched archetype 0–1.
- * @param sessionId     - Session ID for gateway context.
+ * @param archetypeId    - Archetype matched by the intent engine.
+ * @param confidence     - Intent confidence 0–1.
+ * @param similarity     - Cosine similarity to the matched archetype 0–1.
+ * @param sessionId      - Session ID for gateway context.
+ * @param listingContext - Agency FAQ answers from RAG retrieval (may be empty).
  * @returns Partial adaptation result (directives + source).
  */
 async function runDecisionTree(
@@ -77,6 +87,7 @@ async function runDecisionTree(
   confidence: number,
   similarity: number,
   _sessionId: string,
+  listingContext: Record<string, string> = {},
 ): Promise<{
   directives: TextDirective[];
   source: AdaptationDirectives['source'];
@@ -110,6 +121,7 @@ async function runDecisionTree(
       confidence,
       similarity,
       basePlaybook: playbook,
+      listingContext,
     });
 
     if (gatewayResult) {
@@ -126,6 +138,7 @@ async function runDecisionTree(
     confidence,
     similarity,
     basePlaybook: playbook,
+    listingContext,
   });
 
   if (gatewayResult) {
@@ -448,11 +461,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const confidence = body.confidence ?? 0.5;
   const similarity = body.similarity ?? 0.5;
 
+  // TICKET-AGENCY-001: RAG retrieval — fetch top-3 FAQ answers for this listing.
+  // Fail-open: retrieveListingContext never throws; returns {} on any failure.
+  const listingContext = await retrieveListingContext(
+    body.tenant_id,
+    body.listing_id ?? null,
+    body.intent_vector ?? null,
+  );
+
   const { directives: textDirectives, source } = await runDecisionTree(
     archetypeId,
     confidence,
     similarity,
     body.session_id,
+    listingContext,
   );
 
   // Append ReorderDirective for tenants with reorder_capable + listing_ids present

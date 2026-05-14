@@ -31,6 +31,13 @@ export interface LlmGatewayInput {
     recentEvents?: string[];
     quizAnswers?: { purpose: string; horizon: string };
   };
+  /**
+   * Agency-curated listing metadata, keyed by field name.
+   * Populated by RAG retrieval in the adapt route (TICKET-AGENCY-001).
+   * When non-empty, prompt builders append a "Listing context" block that
+   * instructs the LLM to substitute placeholder tokens (e.g. `{yield}`).
+   */
+  listingContext?: Record<string, string>;
 }
 
 export interface LlmGatewayOutput {
@@ -160,8 +167,21 @@ function logLlmCallAsync(params: {
 // Prompt builders
 // ---------------------------------------------------------------------------
 
+function buildListingContextBlock(listingContext: Record<string, string>): string {
+  const entries = Object.entries(listingContext);
+  if (entries.length === 0) return '';
+  const lines = entries.map(([k, v]) => `${k}: ${v}`).join('\n');
+  return (
+    `\nListing context (agency-provided):\n` +
+    `${lines}\n` +
+    `Use this data to fill placeholder tokens in copy (e.g., replace {yield} with the\n` +
+    `value from "yield" context key). If a key is missing, omit the token rather than\n` +
+    `guessing.\n`
+  );
+}
+
 function buildHaikuPrompt(input: LlmGatewayInput): string {
-  const { archetypeId, basePlaybook, sessionContext } = input;
+  const { archetypeId, basePlaybook, sessionContext, listingContext } = input;
   const baseDirectivesJson = JSON.stringify(
     basePlaybook.slots.map((s) => ({
       type: 'text',
@@ -174,26 +194,35 @@ function buildHaikuPrompt(input: LlmGatewayInput): string {
 
   const signals = basePlaybook.signals.slice(0, 5).join(', ');
   const recentEvents = sessionContext?.recentEvents?.slice(0, 5).join(', ') ?? 'none';
+  const contextBlock =
+    listingContext && Object.keys(listingContext).length > 0
+      ? buildListingContextBlock(listingContext)
+      : '';
 
   return (
     `You are an AI adapting real estate listing descriptions for a specific buyer archetype.\n` +
     `Archetype: ${archetypeId} — ${basePlaybook.description}\n` +
     `Signals: ${signals}\n` +
     `Current directives (JSON): ${baseDirectivesJson}\n` +
-    `Buyer's recent actions: ${recentEvents}\n\n` +
-    `Return a JSON array of TextDirective objects that improve upon the current directives.\n` +
+    `Buyer's recent actions: ${recentEvents}\n` +
+    contextBlock +
+    `\nReturn a JSON array of TextDirective objects that improve upon the current directives.\n` +
     `Keep slot names unchanged. Output JSON only, no explanation.\n` +
     `Schema: [{"type":"text","slot":"<slot>","value":"<value>","archetype":"${archetypeId}","confidence":<float>}]`
   );
 }
 
 function buildSonnetPrompt(input: LlmGatewayInput): string {
-  const { archetypeId, basePlaybook, sessionContext } = input;
+  const { archetypeId, basePlaybook, sessionContext, listingContext } = input;
   const signals = basePlaybook.signals.slice(0, 8).join(', ');
   const recentEvents = sessionContext?.recentEvents?.slice(0, 5).join(', ') ?? 'none';
   const quizAnswers = sessionContext?.quizAnswers
     ? `purpose: ${sessionContext.quizAnswers.purpose}, horizon: ${sessionContext.quizAnswers.horizon}`
     : 'not provided';
+  const contextBlock =
+    listingContext && Object.keys(listingContext).length > 0
+      ? buildListingContextBlock(listingContext)
+      : '';
 
   return (
     `You are an AI generating real estate listing adaptations for a specific buyer archetype.\n` +
@@ -201,8 +230,9 @@ function buildSonnetPrompt(input: LlmGatewayInput): string {
     `Signals that define this archetype: ${signals}\n` +
     `Available slots: headline, cta, feature\n` +
     `Buyer's recent actions: ${recentEvents}\n` +
-    `Quiz answers: ${quizAnswers}\n\n` +
-    `Generate 2-3 TextDirective objects that would resonate with this buyer.\n` +
+    `Quiz answers: ${quizAnswers}\n` +
+    contextBlock +
+    `\nGenerate 2-3 TextDirective objects that would resonate with this buyer.\n` +
     `Output JSON only.\n` +
     `Schema: [{"type":"text","slot":"<slot>","value":"<value>","archetype":"${archetypeId}","confidence":<float>}]`
   );

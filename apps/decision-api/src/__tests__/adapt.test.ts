@@ -573,7 +573,6 @@ describe('POST /api/adapt — ab.assignment event emission (TICKET-AB-005)', () 
 
     expect(publishSpy).toHaveBeenCalledTimes(1);
 
-     
     const callArg: Record<string, unknown> = publishSpy.mock.calls[0]?.[0] as Record<
       string,
       unknown

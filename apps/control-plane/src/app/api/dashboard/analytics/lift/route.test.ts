@@ -11,7 +11,7 @@ import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import type { LiftResponse } from './route.js';
-import { zTest } from './route.js';
+import { zTest } from '../../../../../lib/z-test.js';
 
 // ─── Mock @estalara/auth ───────────────────────────────────────────────────────
 

@@ -1,8 +1,10 @@
 # Backlog Queue
 
-**Updated 2026-05-13T12:00Z by pm-orchestrator.** Sprint 7.5 COMPLETE (7/7 AUTO tickets DONE).
-Sprint 7 COMPLETE (all 5 ADP + DQS tickets DONE). Sprint 8 ACTIVE — escalations resolved by Piotr
-2026-05-13. TICKET-AB-001 delegated to backend-engineer.
+**Updated 2026-05-14T22:00Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
+PARTIALLY DONE (3/6 core tickets DONE): TICKET-AB-001 (PR #80), TICKET-REORDER-001 (PR #91),
+TICKET-046 (PR #92). TICKET-ARCH-003 learning loop READY_FOR_REVIEW (PR #95). TICKET-AGENCY-001 +
+TICKET-AB-004 unblocked → READY. Sprint 3 TICKET-037 + TICKET-038 unblocked (TICKET-031 DONE since
+PR #50). Vendor escalation resolved (all 5 vendors active since Sprint 1+).
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -29,14 +31,14 @@ updates.
 | 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 9    | 0       | 0     | 0       |
 | 1      | 2     | Ingest baseline + event schema                                       | 10      | 10   | 0       | 0     | 0       |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 10   | 0       | 0     | 0       |
-| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 0     | 6       |
-| 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 1    | 0       | 0     | 9       |
+| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 1     | 5       |
+| 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 1    | 0       | 2     | 7       |
 | 4      | 6     | Intent ontology v1 + Modal scaffolding                               | tbd     | —    | —       | —     | tbd     |
 | 5      | 7     | LLM gateway + intent extraction from chat                            | tbd     | —    | —       | —     | tbd     |
 | 6      | 8     | Embeddings + archetype matching + decision API                       | 3       | 3    | 0       | 0     | 0       |
 | 7      | 9     | Decision API real logic + adaptation playbooks                       | 5       | 5    | 0       | 0     | 0       |
 | 7.5    | 9.5   | Auto-Detection Engine                                                | 7       | 7    | 0       | 0     | 0       |
-| 8      | 10    | A/B holdout + re-ranking + agency answers                            | 6       | 0    | 1       | 1     | 4       |
+| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 9       | 3    | 0       | 3     | 1       |
 | 9      | 11    | DPIA + ROPA + DSR + fair-housing + continuous validation             | tbd     | —    | —       | —     | tbd     |
 | 10     | 12    | Multi-region deploy + observability + load tests                     | tbd     | —    | —       | —     | tbd     |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
@@ -407,7 +409,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-030
   title: Magic Link onboarding wizard UI (NEW v1.1)
   agent: backend-engineer
-  status: BLOCKED
+  status: READY
   priority: P0
   estimated_hours: 8
   depends_on: [TICKET-024, TICKET-025]
@@ -476,7 +478,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-037
   title: SDK Shadow DOM mount + Tier 1 sidebar widget
   agent: sdk-engineer
-  status: BLOCKED
+  status: READY
   priority: P0
   estimated_hours: 8
   depends_on: [TICKET-031]
@@ -485,7 +487,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-038
   title: SDK tsup build + bundle size gate (<40KB gzip)
   agent: sdk-engineer
-  status: BLOCKED
+  status: READY
   priority: P0
   estimated_hours: 4
   depends_on: [TICKET-031]
@@ -780,11 +782,12 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
     Non-blocking for Sprint 8. Schedule after Sprint 8 or as filler if a Sprint 8 slot opens.
 ```
 
-## Sprint 8 — A/B holdout + re-ranking + agency answers (ACTIVE)
+## Sprint 8 — A/B holdout + re-ranking + agency answers + variants + retro loop (ACTIVE)
 
-**Status:** ACTIVE as of 2026-05-13. Escalations resolved by Piotr. TICKET-AB-001 IN_PROGRESS.
-TICKET-REORDER-001 READY (unblocked per fair-housing resolution). TICKET-FAIR-001 CANCELLED.
-TICKET-NATIVE-001 deferred to MVP launch.
+**Status:** ACTIVE as of 2026-05-14. TICKET-AB-001 DONE (PR #80). TICKET-REORDER-001 DONE (PR #91).
+TICKET-046 variants DONE (PR #92). TICKET-ARCH-003 retro loop READY_FOR_REVIEW (PR #95).
+TICKET-AGENCY-001 + TICKET-AB-004 unblocked → READY. TICKET-FAIR-001 CANCELLED. TICKET-NATIVE-001
+deferred to MVP launch.
 
 **Sprint 8 entry condition:** Sprint 7 DONE + Sprint 7.5 DONE. Both satisfied as of 2026-05-13.
 
@@ -792,12 +795,15 @@ TICKET-NATIVE-001 deferred to MVP launch.
 - id: TICKET-AB-001
   title: A/B holdout framework — consent-aware 10% holdout + Thompson sampling bandit
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-05-13T12:00:00Z'
+  completed_at: '2026-05-14T00:00:00Z'
   priority: P0
   estimated_hours: 10
   depends_on: [TICKET-DQS-001, TICKET-ADP-002]
+  pr: '#80'
+  commit: 0e5cc0c
   spec: backlog/sprint-8/TICKET-AB-001.md
   notes: |
     Implements Master Design E.3 + E.3.1 + E.3.2.
@@ -815,7 +821,10 @@ TICKET-NATIVE-001 deferred to MVP launch.
 - id: TICKET-REORDER-001
   title: ReorderDirective implementation — listing grid re-ranking per archetype
   agent: sdk-engineer
-  status: READY
+  status: DONE
+  completed_at: '2026-05-14T00:00:00Z'
+  pr: '#91'
+  commit: 40650aa
   priority: P0
   estimated_hours: 10
   depends_on: [TICKET-AUTO-002, TICKET-ADP-004]
@@ -830,10 +839,26 @@ TICKET-NATIVE-001 deferred to MVP launch.
     on detail pages — include as a stretch goal in this ticket or split to REORDER-002.
     Requires: corpus CI gate stays green after DOM reorder changes (rerun pnpm test:corpus).
 
+- id: TICKET-046
+  title: Playbook variants — 3 copy variants + copy_template for all 18 archetypes
+  agent: sdk-engineer
+  status: DONE
+  completed_at: '2026-05-14T00:00:00Z'
+  pr: '#92'
+  commit: b6368b6
+  priority: P0
+  estimated_hours: 8
+  depends_on: [TICKET-ADP-003]
+  notes: |
+    Adds SlotDirective.variants (3 copy alternatives per slot for A/B) and
+    PlaybookEntry.copy_template (static ~150-word description fallback per archetype).
+    Fixes feature-section → feature slot name in yield-hunter + llm-gateway.ts prompt.
+    18 archetypes × 3 variants + copy_template.en. All 17 non-neutral archetypes complete.
+
 - id: TICKET-AGENCY-001
   title: Agency answers — per-listing FAQ with RAG-powered suggested replies
   agent: backend-engineer
-  status: BACKLOG
+  status: READY
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-ADP-001]
@@ -878,7 +903,7 @@ TICKET-NATIVE-001 deferred to MVP launch.
 - id: TICKET-AB-004
   title: Analytics dashboard — conversion lift + archetype breakdown + holdout comparison
   agent: backend-engineer
-  status: BACKLOG
+  status: READY
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-AB-001, TICKET-DQS-001]
@@ -918,6 +943,22 @@ TICKET-NATIVE-001 deferred to MVP launch.
     NOTE: CTO/CPO approval required on slot mapping before implementation starts. Flag in
     ticket spec when authored.
 
+- id: TICKET-ARCH-003
+  title: Per-ticket retrospective learning loop + /retro slash command
+  agent: architect
+  status: READY_FOR_REVIEW
+  priority: P0
+  estimated_hours: 6
+  depends_on: []
+  pr: '#95'
+  branch: claude/verify-playbook-templates-fH5Zq
+  spec: backlog/sprint-8/TICKET-RETRO-001.md
+  notes: |
+    Creates retrospective-analyst agent (Opus 4.7), backlog/RETROSPECTIVES.md,
+    backlog/FOLLOW_UPS.md, CONVENTIONS_PATCH.md. PM Step 7 auto-spawns analyst after each
+    ticket DONE. /retro slash command for manual retroactive invocation. Seeds RETRO-001
+    (TICKET-046 analysis). CI green required before merge.
+
 - id: TICKET-CAUSAL-001
   title: Causal inference framework — CATE estimation + HTE per archetype (R.2 patent angle)
   agent: ml-engineer
@@ -938,14 +979,32 @@ TICKET-NATIVE-001 deferred to MVP launch.
 
 ## Currently in flight
 
-- TICKET-AB-001 (backend-engineer, IN_PROGRESS, started 2026-05-13T12:00Z) — A/B holdout framework
+(none — TICKET-ARCH-003 awaiting human review/merge at PR #95)
 
 ## Awaiting human review
 
-(none)
+- TICKET-ARCH-003 (PR #95) — retrospective learning loop + /retro command
 
 ## Recent merges
 
+- 2026-05-14T00:00:00Z — TICKET-046 (PR #92, commit b6368b6): 18 archetypes × 3 variants +
+  copy_template; fixes feature-section → feature slot name
+- 2026-05-14T00:00:00Z — TICKET-REORDER-001 (PR #91, commit 40650aa): ReorderDirective DOM reorder +
+  listing grid re-ranking per archetype
+- 2026-05-14T00:00:00Z — TICKET-FIX-019 (PR #88): ingest idempotency KV key scoped to tenant
+- 2026-05-14T00:00:00Z — TICKET-FIX-018 (PR #89): JWT token in createTenantClient for RLS
+  enforcement
+- 2026-05-14T00:00:00Z — TICKET-FIX-017 (PR #90): API key auth gate on GET /api/adapt
+- 2026-05-14T00:00:00Z — TICKET-FIX-014 + FIX-016 (PR #87): JWT tenant auth + demo POST endpoint
+- 2026-05-14T00:00:00Z — TICKET-FIX-013 (PR #86): JWT HMAC-SHA-256 signature verification
+- 2026-05-14T00:00:00Z — TICKET-FIX-015 (PR #85): AdaptRequestSchema accepts confidence/similarity
+- 2026-05-14T00:00:00Z — TICKET-FIX-010 (PRs #83, #84): IntentState wired into fetchDirectives +
+  auth header alignment
+- 2026-05-14T00:00:00Z — TICKET-FIX-012 (PR #82): real API key validation + per-tenant LLM daily
+  spend cap
+- 2026-05-14T00:00:00Z — TICKET-FIX-011 (PR #81): seed 18 archetype rows in archetype_embeddings
+- 2026-05-14T00:00:00Z — TICKET-AB-001 (PR #80, commit 0e5cc0c): A/B holdout + Thompson sampling
+  bandit
 - 2026-05-13T00:00:00Z — TICKET-AUTO-005 (PR #79, commit cfecf50): corpus CI gate — precision/recall
   validation for 24 platforms
 - 2026-05-13T00:00:00Z — TICKET-AUTO-004 + AUTO-006 (PR #77, commit eb463ab): auto-detect techniques

@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — Vendor Account Creation Required for 5 Infrastructure Providers
+## RESOLVED — Vendor Account Creation Required for 5 Infrastructure Providers
 
 **Filed by:** devops-engineer  
 **Date:** 2026-04-27T14:00:00Z  
@@ -62,7 +62,11 @@ Without these accounts, downstream tickets are blocked:
 **Cost commitment:** All vendors have free tiers or trial credits (no immediate payment required for
 MVP testing).
 
-**Resolution:** <awaiting human action>
+**Resolution:** Resolved 2026-05-14 by pm-orchestrator audit. All 5 vendor accounts (Supabase,
+ClickHouse Cloud, Modal, Redpanda Cloud, Upstash) have been active since Sprint 1+ — confirmed by
+active tables in Supabase, ClickHouse DDL applied (TICKET-014, PR merged), Modal Python skeleton
+running (TICKET-015), Redpanda consumer deployed (stream-consumer app), Upstash Redis active
+(session cache). No human action required; this escalation was stale.
 
 ---
 

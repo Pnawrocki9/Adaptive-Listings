@@ -3,15 +3,32 @@
  * No HTTP server — handlers are called directly with mock Requests.
  *
  * Includes A/B holdout integration tests (TICKET-AB-001 AC-5 and AC-6).
+ * Includes ab.assignment event emission tests (TICKET-AB-005).
  */
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AdaptResponse, Directive } from '../app/api/adapt/route.js';
 import { detectArchetype, handleAdaptRequest } from '../app/api/adapt/route.js';
 import { handleHealthRequest } from '../app/api/health/route.js';
 import type { Env } from '../index.js';
 import { recordSpend, resetTenantSpend } from '../lib/llm-gateway.js';
+import { z } from 'zod';
+import * as abEvents from '../lib/ab-events.js';
+
+/**
+ * Inline replica of AbAssignmentPayloadSchema from @estalara/shared — used here because
+ * @estalara/shared is not yet a dependency of decision-api and the shared package does not
+ * export the sub-path. This replica is intentionally kept in sync with the canonical schema
+ * (packages/shared/src/schemas/events/ab-assignment.ts). [TICKET-AB-005]
+ */
+const AbAssignmentPayloadSchema = z.object({
+  session_id: z.string().min(1),
+  tenant_id: z.string().uuid(),
+  holdout_group: z.boolean(),
+  holdout_pct: z.number().min(0).max(1),
+  assigned_at: z.string().datetime(),
+});
 
 // Helper: parse a Response body as a known shape without `as` casts
 // (which Prettier may strip in some configurations).
@@ -442,5 +459,157 @@ describe('detectArchetype — confidence bypass logic (TICKET-FIX-015)', () => {
     const result = detectArchetype('investor');
     expect(result.archetype).toBe('investor');
     expect(result.confidence).toBe(0.9);
+  });
+});
+
+// ─── ab.assignment event emission (TICKET-AB-005) ────────────────────────────
+
+/**
+ * Redpanda env stub — triggers the emission path in handleAdaptRequest.
+ * The actual HTTP call is intercepted via vi.spyOn on publishAbAssignmentEvent.
+ */
+const REDPANDA_ENV: Env = {
+  ENVIRONMENT: 'test',
+  REDPANDA_REST_URL: 'https://pandaproxy.test.example.com',
+  REDPANDA_TOPIC_EVENTS: 'estalara.events',
+};
+
+describe('POST /api/adapt — ab.assignment event emission (TICKET-AB-005)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- vi.spyOn generic is wider than the real overload here
+  let publishSpy: any;
+
+  beforeEach(() => {
+    // Spy on publishAbAssignmentEvent so we can assert call count and capture args
+    // without making real HTTP calls to Redpanda.
+    publishSpy = vi
+      .spyOn(abEvents, 'publishAbAssignmentEvent')
+      .mockResolvedValue({ ok: true, attempts: 1 });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('consent_state=granted + holdout_pct=0.5 → producer called exactly once per adapt call', async () => {
+    const CALLS = 10;
+    for (let i = 0; i < CALLS; i++) {
+      await handleAdaptRequest(
+        makeAdaptRequest({
+          ...BASE_BODY,
+          session_id: `session_granted_${String(i).padStart(26, '0')}`,
+          consent_state: 'granted',
+          consent_mode_enabled: true,
+          holdout_pct: 0.5,
+        }),
+        REDPANDA_ENV,
+      );
+    }
+
+    // Allow any microtasks / fire-and-forget promises to settle.
+    await Promise.resolve();
+
+    expect(publishSpy).toHaveBeenCalledTimes(CALLS);
+  });
+
+  it('consent_state=opted_out → producer called zero times', async () => {
+    await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        consent_state: 'opted_out',
+        consent_mode_enabled: true,
+        holdout_pct: 0.5,
+      }),
+      REDPANDA_ENV,
+    );
+
+    await Promise.resolve();
+
+    expect(publishSpy).toHaveBeenCalledTimes(0);
+  });
+
+  it('consent_state=unknown → producer called zero times', async () => {
+    await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        consent_state: 'unknown',
+        consent_mode_enabled: true,
+      }),
+      REDPANDA_ENV,
+    );
+
+    await Promise.resolve();
+
+    expect(publishSpy).toHaveBeenCalledTimes(0);
+  });
+
+  it('REDPANDA_REST_URL absent → producer NOT called (env guard)', async () => {
+    await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        consent_state: 'granted',
+        consent_mode_enabled: true,
+      }),
+      EMPTY_ENV, // no REDPANDA_REST_URL
+    );
+
+    await Promise.resolve();
+
+    expect(publishSpy).toHaveBeenCalledTimes(0);
+  });
+
+  it('payload passed to producer validates against AbAssignmentPayloadSchema', async () => {
+    await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        session_id: 'payload_validation_session_padded_00',
+        consent_state: 'granted',
+        consent_mode_enabled: true,
+        holdout_pct: 0.1,
+      }),
+      REDPANDA_ENV,
+    );
+
+    await Promise.resolve();
+
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+
+     
+    const callArg: Record<string, unknown> = publishSpy.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(callArg).toBeDefined();
+
+    // Validate the payload sub-object against the canonical schema shape.
+    const result = AbAssignmentPayloadSchema.safeParse({
+      session_id: callArg.session_id,
+      tenant_id: callArg.tenant_id,
+      holdout_group: callArg.holdout_group,
+      holdout_pct: callArg.holdout_pct,
+      assigned_at: callArg.assigned_at,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.tenant_id).toBe(TENANT_ID);
+      expect(result.data.holdout_pct).toBe(0.1);
+      expect(typeof result.data.holdout_group).toBe('boolean');
+    }
+  });
+
+  it('producer error is swallowed — response is still 200', async () => {
+    publishSpy.mockRejectedValue(new Error('redpanda_unreachable'));
+
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        consent_state: 'granted',
+        consent_mode_enabled: true,
+      }),
+      REDPANDA_ENV,
+    );
+
+    await Promise.resolve();
+
+    expect(res.status).toBe(200);
   });
 });

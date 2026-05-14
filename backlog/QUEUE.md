@@ -1,10 +1,10 @@
 # Backlog Queue
 
-**Updated 2026-05-14T20:00Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
-COMPLETE: AB-001 (PR #80), REORDER-001 (PR #91), TICKET-046 (PR #92), AGENCY-001 (PR #97), AB-004
-(PR #99), ARCH-003 (PR #95). FIX-013..019 (PR #85-90) DONE. Sprint 3 TICKET-037 DONE (PR #98),
-TICKET-038 READY. Sprint 9 spec files added (6 tickets). Sprint 2.5 spec files added (6 tickets).
-TICKET-035 CANCELLED. Vendor escalation resolved.
+**Updated 2026-05-14T20:50Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
+COMPLETE. Sprint 8.5 Wave 1 COMPLETE: AB-005 (PR #106), AB-006+007 (PR #107). Sprint 3 TICKET-037
+DONE (PR #98), TICKET-038 READY. Sprint 8.5 Wave 2 IN_PROGRESS: AB-008 (FOLLOW-014)
+
+- AB-009 (FOLLOW-015) delegated to backend-engineer (równolegle).
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -1043,23 +1043,6 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
   completed_at: '2026-05-14T00:00:00Z'
   spec: backlog/sprint-8/TICKET-FIX-019.md
 
-- id: TICKET-AB-005
-  title: Emit ab.assignment event from decision-api adapt route
-  agent: backend-engineer
-  status: READY_FOR_REVIEW
-  priority: P0
-  estimated_hours: 3
-  depends_on: [TICKET-AB-001]
-  started_at: '2026-05-14T20:30:00Z'
-  pr: '#106'
-  spec: backlog/sprint-8/TICKET-AB-005.md
-  notes: |
-    Promoted from FOLLOW-006 (RETRO-002). Wires ab.assignment event emission into
-    decision-api adapt route. Fire-and-forget, non-blocking, Sentry tag on error.
-    New files: apps/decision-api/src/lib/redpanda-producer.ts,
-               apps/decision-api/src/lib/ab-events.ts.
-    85 tests pass. TypeScript + lint clean.
-
 - id: TICKET-CAUSAL-001
   title: Causal inference framework — CATE estimation + HTE per archetype (R.2 patent angle)
   agent: ml-engineer
@@ -1076,83 +1059,49 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
     Modal Python app — runs as offline daily batch job.
     P2 priority: do not start until AB-001 has real holdout data (minimum 2 weeks in production).
     Feeds D.5 confirmation rate dashboard.
-
-- id: TICKET-AB-006
-  title: Seed ab_bandit_weights — 18 archetype rows per tenant
-  agent: data-engineer
-  status: READY_FOR_REVIEW
-  priority: P0
-  estimated_hours: 2
-  depends_on: [TICKET-AB-001]
-  pr: '#107'
-  branch: data-engineer/TICKET-AB-006-007-bandit-seed-and-holdout-wiring
-  started_at: '2026-05-14T20:00:00Z'
-  notes: |
-    Fixes zero-row ab_bandit_weights table so Thompson sampling has arms to pick from.
-    Migration 0007_seed_ab_bandit_weights.sql + on-tenant-create hook in POST /api/tenants.
-    Archetype list from packages/shared/src/directives.ts ArchetypeId.
-    Unblocks FOLLOW-014 (real Drizzle reads for /api/ab/weights).
-
-- id: TICKET-AB-007
-  title: Wire holdout_group into ClickHouse adaptation_decisions INSERT
-  agent: data-engineer
-  status: READY_FOR_REVIEW
-  priority: P0
-  estimated_hours: 3
-  depends_on: [TICKET-AB-001]
-  pr: '#107'
-  branch: data-engineer/TICKET-AB-006-007-bandit-seed-and-holdout-wiring
-  started_at: '2026-05-14T20:00:00Z'
-  notes: |
-    Every adaptation_decisions INSERT now includes holdout_group from assignHoldout() result.
-    Previously all rows defaulted to false — AB-004 dashboard panels 1+3 always read zeros
-    for holdout bucket. Writer is logDecisionAsync() in apps/control-plane/src/app/api/adapt/route.ts.
-    Unblocks FOLLOW-009 regression job and AB-004 dashboard panels 1+3.
 ```
 
-## Sprint 8.5 — A/B wiring sprint (P0 follow-ups from RETRO-002/003)
+## Sprint 8.5 — A/B wiring sprint — Wave 1 COMPLETE (PR #106 + #107)
 
-**Status:** ACTIVE as of 2026-05-14. Promoted from FOLLOW-006, FOLLOW-008, FOLLOW-010. Wave 1
-(parallel): TICKET-AB-006 (data-engineer) + TICKET-AB-005 (backend-engineer). TICKET-AB-007 starts
-after TICKET-AB-006.
+**Status:** Wave 1 COMPLETE as of 2026-05-14. All 3 Wave 1 tickets DONE.
 
 ```yaml
 - id: TICKET-AB-005
   title: Emit ab.assignment event from decision-api on every non-skipped assignment
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-AB-001]
   pr: '#106'
+  completed_at: '2026-05-14T20:45:17Z'
+  commit: 6d78af72fc
   spec: backlog/sprint-9/TICKET-AB-005.md
   promoted_from: FOLLOW-006
-  notes: |
-    PR #106 has Build(control-plane) + Test(Node22) failures that are pre-existing on main
-    (z-test.js missing import). Fixed in PR #107. Merge #107 first, then rebase #106 before merge.
 
 - id: TICKET-AB-006
   title: Seed ab_bandit_weights — 18 archetype rows × variant='default' per tenant
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 2
   depends_on: [TICKET-AB-001]
   pr: '#107'
+  completed_at: '2026-05-14T20:37:06Z'
+  commit: 1d21f7d354
   spec: backlog/sprint-9/TICKET-AB-006.md
   promoted_from: FOLLOW-008
-  notes: |
-    CI all green (only Doppler optional fail expected). Also fixes pre-existing Build(control-plane)
-    via z-test.js import fix. Merge this BEFORE PR #106.
 
 - id: TICKET-AB-007
   title: Wire holdout_group into ClickHouse adaptation_decisions insert path
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-AB-006]
   pr: '#107'
+  completed_at: '2026-05-14T20:37:06Z'
+  commit: 1d21f7d354
   spec: backlog/sprint-9/TICKET-AB-007.md
   promoted_from: FOLLOW-010
 ```

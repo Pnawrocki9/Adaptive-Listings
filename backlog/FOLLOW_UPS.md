@@ -484,7 +484,8 @@ the stub.
         folded in)
   - [ ] Integration test: 100 sessions, ~10% have empty directives (matching default holdout_pct),
         90% have non-empty
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+- **promoted_as:** TICKET-AB-010 (`backlog/sprint-9/TICKET-AB-010.md`)
 
 ---
 
@@ -515,7 +516,8 @@ the stub.
   - [ ] Integration test seeds 2 tenants (one reorder-capable, one not) and asserts the directive
         presence/absence
   - [ ] TICKET-NATIVE-001's `depends_on` updated to include FOLLOW-018 at PM sprint planning
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+- **promoted_as:** TICKET-AB-011 (`backlog/sprint-9/TICKET-AB-011.md`)
 
 ---
 

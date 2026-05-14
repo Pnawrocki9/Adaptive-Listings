@@ -868,11 +868,12 @@ deferred to MVP launch.
 - id: TICKET-AGENCY-001
   title: Agency answers — per-listing FAQ with RAG-powered suggested replies
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-ADP-001]
-  pr: backend-engineer/TICKET-AGENCY-001-agency-answers-rag
+  pr: '#97'
+  merged_at: '2026-05-14'
   notes: |
     Implements Master Design E.2 chat.suggested_reply row: "Claude Haiku 4.5 + RAG over
     tenant FAQ + listing data + intent context".

@@ -639,3 +639,35 @@ includes the Redpanda env bindings and optional `PushOptions` for test mocking.
 - `apps/decision-api/src/__tests__/adapt.test.ts` — 9 new TICKET-AB-005 integration tests
 
 ---
+
+## TICKET-AB-008, TICKET-AB-009 → FOLLOW-017 (holdout gating on control-plane POST)
+
+**From:** backend-engineer **To:** backend-engineer **Date:** 2026-05-14T23:10:00Z
+
+**Summary:** AB-008 replaced mock `/api/ab/weights` with real Drizzle SELECT from
+`ab_bandit_weights`. Auth via `getAuthClaims()` JWT — `tenant_id` from verified claim
+(TICKET-FIX-014 compliant). Optional `?archetype=` filter supported. Mock helpers deleted. AB-009
+wired `ReorderDirective` into the `decision-api` Worker adapt route. Canonical helpers live at
+`apps/decision-api/src/lib/reorder.ts` (`getTenantSchema`, `buildReorderDirective`). The
+control-plane adapt route duplicates the helpers with a comment pointing to the canonical source
+(cross-app TS imports not supported). `listing_ids` Zod schema is now identical in both routes:
+`z.array(z.string().max(64)).max(100).optional()`. Holdout sessions always receive
+`reorderDirectives: []`. Demo tenant (`est_demo_tenant`) backward compat preserved. 17 new tests in
+`adapt.test.ts`.
+
+**Action for FOLLOW-017:** Import `assignHoldout()` + `publishAbAssignmentEvent()` into
+`apps/control-plane/src/app/api/adapt/route.ts` POST handler to add holdout gating (currently only
+present in decision-api Worker). `reorder.ts` helpers are already importable from
+`apps/decision-api/src/lib/reorder.ts`.
+
+**Files:**
+
+- `apps/decision-api/src/lib/reorder.ts` — NEW canonical module: `getTenantSchema`,
+  `buildReorderDirective`
+- `apps/decision-api/src/app/api/adapt/route.ts` — imports reorder.ts, emits ReorderDirective
+- `apps/decision-api/src/__tests__/adapt.test.ts` — 17 new TICKET-AB-009 integration tests
+- `apps/control-plane/src/app/api/ab/weights/route.ts` — real Drizzle reads, JWT auth
+- `apps/control-plane/src/app/api/ab/weights/route.test.ts` — full rewrite with mocked DB
+- `apps/control-plane/src/app/api/adapt/route.ts` — duplicate reorder helpers, eslint-disable banner
+
+---

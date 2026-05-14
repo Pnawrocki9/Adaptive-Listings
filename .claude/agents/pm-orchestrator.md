@@ -209,16 +209,30 @@ Wait for retrospective-analyst to finish (SubagentStop hook re-invokes you).
 After retro completes:
 
 - Read the final line of its output (the summary line starting `RETRO-NNN complete.`)
-- If it reports cascading impacts on any IN_PROGRESS ticket: add a comment on that ticket's PR
-  noting the impact, so the worker can address it before marking READY_FOR_REVIEW
-- At next sprint planning: read `backlog/FOLLOW_UPS.md`, promote high-priority stubs to
-  `backlog/sprint-N/TICKET-NNN.md` and add them to QUEUE.md as BACKLOG or READY
+- **Critical-gap path:** if the retro reports a P0 logic gap, a security issue, or a contract break
+  that affects shipped code, append an entry to `backlog/ESCALATIONS.md` with severity, the
+  RETRO-NNN reference, and the suggested mitigation. Do NOT proceed to the next ticket until a human
+  resolves the escalation.
+- **Cascading-impact path (non-critical):** if the retro reports cascading impacts on any
+  IN_PROGRESS ticket, add a comment on that ticket's PR noting the impact and the source retro, so
+  the worker can address it before marking READY_FOR_REVIEW. Pipeline continues — next ticket can
+  still start.
+- **Sprint-planning path:** at next sprint planning, read `backlog/FOLLOW_UPS.md`, promote
+  high-priority stubs to `backlog/sprint-N/TICKET-NNN.md` and add them to QUEUE.md as BACKLOG or
+  READY (you are the only agent that writes to QUEUE.md).
 
 Then pick the next ticket.
 
-**Note:** Retrospective runs ASYNC — it does not block the next ticket from starting if there are no
-cascading impacts on currently IN_PROGRESS tickets. If the retro finds a critical gap in an
-IN_PROGRESS ticket, pause that ticket until the impact is understood.
+**Async by default, sync only on critical gap.** Retrospective runs ASYNC — it does not block the
+next ticket from starting in the normal case. The only synchronous path is the critical-gap path
+above (P0 logic gap, security issue, or contract break), which writes to ESCALATIONS.md and pauses
+the pipeline until the human resolves.
+
+**Rule promotion threshold.** The retrospective-analyst promotes a finding to a permanent Rule in
+`CONVENTIONS_PATCH.md` only when the same pattern has appeared in ≥2 prior retros
+(`RULE_PROMOTION_THRESHOLD = 2`). If you observe Rule churn (Rules being added then proven
+ineffective), raise the threshold to 3 by editing the constant in
+`.claude/agents/retrospective-analyst.md`.
 
 ## Critical rules
 

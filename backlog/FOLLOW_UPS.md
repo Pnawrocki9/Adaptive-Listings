@@ -76,6 +76,8 @@ the stub.
 - **recommended_agent:** qa-engineer
 - **priority:** P1
 - **estimated_hours:** 2
+- **promoted_to_queue:** true
+- **promoted_as:** TICKET-SLOT-CONTRACT-001 (`backlog/sprint-8/TICKET-SLOT-CONTRACT-001.md`)
 - **scope:** The `feature-section` bug (TICKET-046) existed because `llm-gateway.ts` hardcoded slot
   names in the Sonnet prompt independently from `archetypes/*.ts` slot definitions. This test
   extracts all slot names declared in playbook files, extracts all slot names referenced in
@@ -88,7 +90,8 @@ the stub.
   - [ ] Test reads `llm-gateway.ts` and extracts slot names from the Sonnet prompt string
   - [ ] Assertion: `playbookSlots` set equals `promptSlots` set (symmetric difference = empty)
   - [ ] Test runs in `pnpm test` CI gate (not skipped)
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+- **promoted_as:** TICKET-SLOT-CONTRACT-001 (`backlog/sprint-8/TICKET-SLOT-CONTRACT-001.md`)
 
 ---
 
@@ -109,7 +112,8 @@ the stub.
   - [ ] `playbooks.test.ts`: new `it.each` assertion covering all 17 non-neutral archetypes
   - [ ] Assertion: `entry.copy_template.en.length > 50` (catches empty strings and stubs)
   - [ ] CI gate: test runs in `pnpm test` (not skipped, not `.skip`)
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+- **promoted_as:** TICKET-LINT-ARCHETYPE-001 (`backlog/sprint-8/TICKET-LINT-ARCHETYPE-001.md`)
 
 ---
 
@@ -130,7 +134,8 @@ the stub.
   - [ ] Section B.8 content present in the document body under Auto-Onboarding
   - [ ] Section B.9 content present in the document body under Continuous Validation
   - [ ] Changelog entry added at top of MASTER_DESIGN.md
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+- **promoted_as:** TICKET-ARCH-MD-001 (`backlog/sprint-8/TICKET-ARCH-MD-001.md`)
 
 ---
 

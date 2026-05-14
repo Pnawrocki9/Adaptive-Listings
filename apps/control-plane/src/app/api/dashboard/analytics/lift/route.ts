@@ -25,7 +25,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getAuthClaims } from '@estalara/auth';
-import { zTest } from '../../../../../lib/z-test.js';
+import { zTest } from '@/lib/z-test';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 

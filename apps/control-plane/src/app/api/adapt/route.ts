@@ -66,6 +66,17 @@ const AdaptPostBodySchema = z.object({
    * When absent, RAG step is skipped and listingContext defaults to {}.
    */
   intent_vector: z.array(z.number()).max(2048).optional(),
+  /**
+   * A/B holdout assignment result from the caller (decision-api Worker or SDK).
+   * When provided, this value is logged to ClickHouse adaptation_decisions.
+   * Populated from assignHoldout() — see TICKET-AB-001 (PR #80).
+   */
+  holdout_group: z.boolean().optional(),
+  /**
+   * Holdout percentage used at assignment time. Used with holdout_group for
+   * context in ClickHouse analytics.
+   */
+  holdout_pct: z.number().min(0).max(1).optional(),
 });
 
 // ─── Decision logic ───────────────────────────────────────────────────────────
@@ -160,6 +171,13 @@ function logDecisionAsync(
   source: string,
   tier: number,
   directiveCount: number,
+  /**
+   * A/B holdout assignment result.
+   * Populated from assignHoldout() — see TICKET-AB-001 (PR #80).
+   * Defaults to false when the caller did not include a holdout assignment
+   * (e.g. opted-out sessions, or routes not yet wired to assignHoldout).
+   */
+  holdoutGroup = false,
 ): void {
   // Fire-and-forget — never awaited, never blocks the response.
   // No-op when CLICKHOUSE_URL is not configured.
@@ -174,9 +192,10 @@ function logDecisionAsync(
 
   const query =
     `INSERT INTO adaptation_decisions ` +
-    `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, ts) ` +
+    `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, holdout_group, ts) ` +
     `VALUES ('${escape(sessionId)}', '${escape(tenantId)}', '${escape(archetype)}', ` +
-    `${String(confidence)}, ${String(similarity)}, '${escape(source)}', ${String(tier)}, ${String(directiveCount)}, '${ts}')`;
+    `${String(confidence)}, ${String(similarity)}, '${escape(source)}', ${String(tier)}, ${String(directiveCount)}, ` +
+    `${holdoutGroup ? '1' : '0'}, '${ts}')`;
 
   fetch(clickhouseUrl, {
     method: 'POST',
@@ -314,6 +333,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const confidenceRaw = params.get('confidence');
   const similarityRaw = params.get('similarity');
   const tierRaw = params.get('tier');
+  // Optional: holdout assignment passed by the caller (decision-api Worker).
+  // Populated from assignHoldout() — see TICKET-AB-001 (PR #80).
+  const holdoutGroupRaw = params.get('holdout_group');
+  const holdoutGroup =
+    holdoutGroupRaw === 'true' ? true : holdoutGroupRaw === 'false' ? false : false;
 
   if (!sessionId || !archetypeRaw || confidenceRaw === null || similarityRaw === null || !tierRaw) {
     return NextResponse.json(
@@ -403,6 +427,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     source,
     tier,
     directives.length,
+    holdoutGroup,
   );
 
   return NextResponse.json(response, { status: 200 });
@@ -508,7 +533,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     generated_at: new Date().toISOString(),
   };
 
-  // Fire-and-forget ClickHouse log using tenant_id from body
+  // Fire-and-forget ClickHouse log using tenant_id from body.
+  // holdout_group passed from the caller's assignHoldout() result — see TICKET-AB-001 (PR #80).
   logDecisionAsync(
     body.session_id,
     body.tenant_id,
@@ -518,6 +544,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     source,
     1,
     allDirectives.length,
+    body.holdout_group ?? false,
   );
 
   return NextResponse.json(response, { status: 200 });

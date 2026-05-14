@@ -22,6 +22,13 @@ vi.mock('@estalara/sdk/auto-detect', () => ({
   detectSiteSchema: vi.fn(),
 }));
 
+// Mock the dynamic AI-vision import inside detect/route.ts.
+// Without this, Vite fails to resolve the dynamic '@estalara/sdk/auto-detect/ai-vision'
+// import at transform time (package not built in test env).
+vi.mock('@estalara/sdk/auto-detect/ai-vision', () => ({
+  detectAiVision: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock('@estalara/db', () => ({
   createAdminClient: vi.fn(),
   tenantSiteSchemas: {

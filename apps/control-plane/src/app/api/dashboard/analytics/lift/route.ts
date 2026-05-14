@@ -25,7 +25,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getAuthClaims } from '@estalara/auth';
-import { zTest } from '../../../../../lib/z-test.js';
+import { zTest } from '@/lib/z-test';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -224,7 +224,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let dqsUnavailable = false;
 
   if (chRows === null) {
-    // No ClickHouse configured or query failed — use mock data
+    // No ClickHouse configured or query failed — use mock data (FOLLOW-035 will replace with empty-state)
     rows = buildMockLiftRows(tenantId);
     dqsUnavailable = false;
   } else if (chRows.length === 0) {

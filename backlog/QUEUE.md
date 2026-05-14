@@ -1059,6 +1059,38 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
     Modal Python app — runs as offline daily batch job.
     P2 priority: do not start until AB-001 has real holdout data (minimum 2 weeks in production).
     Feeds D.5 confirmation rate dashboard.
+
+- id: TICKET-AB-006
+  title: Seed ab_bandit_weights — 18 archetype rows per tenant
+  agent: data-engineer
+  status: READY_FOR_REVIEW
+  priority: P0
+  estimated_hours: 2
+  depends_on: [TICKET-AB-001]
+  pr: '#107'
+  branch: data-engineer/TICKET-AB-006-007-bandit-seed-and-holdout-wiring
+  started_at: '2026-05-14T20:00:00Z'
+  notes: |
+    Fixes zero-row ab_bandit_weights table so Thompson sampling has arms to pick from.
+    Migration 0007_seed_ab_bandit_weights.sql + on-tenant-create hook in POST /api/tenants.
+    Archetype list from packages/shared/src/directives.ts ArchetypeId.
+    Unblocks FOLLOW-014 (real Drizzle reads for /api/ab/weights).
+
+- id: TICKET-AB-007
+  title: Wire holdout_group into ClickHouse adaptation_decisions INSERT
+  agent: data-engineer
+  status: READY_FOR_REVIEW
+  priority: P0
+  estimated_hours: 3
+  depends_on: [TICKET-AB-001]
+  pr: '#107'
+  branch: data-engineer/TICKET-AB-006-007-bandit-seed-and-holdout-wiring
+  started_at: '2026-05-14T20:00:00Z'
+  notes: |
+    Every adaptation_decisions INSERT now includes holdout_group from assignHoldout() result.
+    Previously all rows defaulted to false — AB-004 dashboard panels 1+3 always read zeros
+    for holdout bucket. Writer is logDecisionAsync() in apps/control-plane/src/app/api/adapt/route.ts.
+    Unblocks FOLLOW-009 regression job and AB-004 dashboard panels 1+3.
 ```
 
 ## Sprint 8.5 — A/B wiring sprint (P0 follow-ups from RETRO-002/003)

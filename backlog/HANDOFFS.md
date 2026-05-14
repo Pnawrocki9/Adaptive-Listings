@@ -571,3 +571,43 @@ control-plane Decision API now imports from `@estalara/sdk/playbooks` (stub dele
 - `apps/control-plane/src/app/api/adapt/route.ts` — updated to import from @estalara/sdk/playbooks
 
 ---
+
+## TICKET-AB-006, TICKET-AB-007 → FOLLOW-009, FOLLOW-014, TICKET-AB-004 (panels 1+3)
+
+**From:** data-engineer **To:** backend-engineer (FOLLOW-014), data-engineer (FOLLOW-009) **Date:**
+2026-05-14T21:00:00Z **PR:** #107
+
+**Summary:**
+
+TICKET-AB-006 seeds `ab_bandit_weights` with 18 rows × `variant='default'` × `Beta(1,1)` per tenant.
+Migration `0007_seed_ab_bandit_weights.sql` backfills existing tenants. New `POST /api/tenants`
+route seeds new tenants at creation time via `seedBanditWeightsForTenant()` in
+`apps/control-plane/src/lib/bandit-seed.ts`.
+
+TICKET-AB-007 wires `holdout_group` into every `adaptation_decisions` ClickHouse INSERT.
+`logDecisionAsync()` in `apps/control-plane/src/app/api/adapt/route.ts` now accepts a `holdoutGroup`
+parameter (default `false`). GET accepts `?holdout_group=true|false`; POST body accepts
+`holdout_group: boolean`. The column was added by TICKET-AB-001 migration
+`0006_adaptation_decisions_holdout.sql` but was never populated — this PR fixes that.
+
+**Action required:**
+
+- **FOLLOW-014** (backend-engineer): Replace mock `GET /api/ab/weights` with real Drizzle SELECT
+  from `abBanditWeights`. The seed rows are now present so the query will return data. See
+  `apps/control-plane/src/app/api/ab/weights/route.ts`.
+
+- **FOLLOW-009** (data-engineer): Build the regression-detection cron
+  `apps/data-quality/src/crons/ab_regression_detection.py`. Can now query
+  `SELECT holdout_group, COUNT(*) FROM adaptation_decisions` and get meaningful results.
+
+- **AB-004 dashboard** (backend-engineer): Panel 1 (Adapted vs Holdout) and Panel 3 (Conversion lift
+  vs holdout) will now read real data once live traffic flows. Verify in staging.
+
+**Files produced:**
+
+- `packages/db/migrations/0007_seed_ab_bandit_weights.sql`
+- `apps/control-plane/src/lib/bandit-seed.ts` — `seedBanditWeightsForTenant(tenantId)`
+- `apps/control-plane/src/app/api/tenants/route.ts` — `POST /api/tenants` with seed hook
+- `apps/control-plane/src/app/api/adapt/route.ts` — `logDecisionAsync()` + GET/POST changes
+
+---

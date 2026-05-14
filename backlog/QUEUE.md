@@ -1,10 +1,9 @@
 # Backlog Queue
 
-**Updated 2026-05-14T20:50Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
-COMPLETE. Sprint 8.5 Wave 1 COMPLETE: AB-005 (PR #106), AB-006+007 (PR #107). Sprint 3 TICKET-037
-DONE (PR #98), TICKET-038 READY. Sprint 8.5 Wave 2 IN_PROGRESS: AB-008 (FOLLOW-014)
-
-- AB-009 (FOLLOW-015) delegated to backend-engineer (równolegle).
+**Updated 2026-05-14T21:20Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
+COMPLETE. Sprint 8.5 COMPLETE: AB-005 (PR #106), AB-006+007 (PR #107), AB-008+009 (PR #108). Sprint
+3 TICKET-037 DONE (PR #98), TICKET-038 READY. Remaining P0 follow-ups: FOLLOW-017 (holdout gating
+control-plane POST) + FOLLOW-018 (getTenantSchema DB lookup).
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -1061,10 +1060,9 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
     Feeds D.5 confirmation rate dashboard.
 ```
 
-## Sprint 8.5 — A/B wiring sprint — Wave 1 COMPLETE (PR #106 + #107), Wave 2 READY_FOR_REVIEW (PR #108)
+## Sprint 8.5 — A/B wiring sprint — COMPLETE (5/5 DONE across PR #106 + #107 + #108)
 
-**Status:** Wave 1 COMPLETE as of 2026-05-14. Wave 2 (AB-008 + AB-009) READY_FOR_REVIEW as of
-2026-05-14.
+**Status:** COMPLETE as of 2026-05-14. All 5 tickets DONE across 3 PRs.
 
 ```yaml
 - id: TICKET-AB-005
@@ -1107,24 +1105,28 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
   promoted_from: FOLLOW-010
 
 - id: TICKET-AB-008
-  title: Replace mock /api/ab/weights with real Drizzle SELECT
+  title: Replace mock /api/ab/weights with real Drizzle reads
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 3
-  depends_on: [TICKET-AB-006, TICKET-AB-007]
+  depends_on: [TICKET-AB-006]
   pr: '#108'
+  completed_at: '2026-05-14T21:16:31Z'
+  commit: 08d46d94d3
   spec: backlog/sprint-9/TICKET-AB-008.md
   promoted_from: FOLLOW-014
 
 - id: TICKET-AB-009
-  title: Wire ReorderDirective into production decision-api Worker
+  title: Wire ReorderDirective into production decision-api Worker route
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 4
-  depends_on: [TICKET-REORDER-001, TICKET-AB-001]
+  depends_on: []
   pr: '#108'
+  completed_at: '2026-05-14T21:16:31Z'
+  commit: 08d46d94d3
   spec: backlog/sprint-9/TICKET-AB-009.md
   promoted_from: FOLLOW-015
 ```

@@ -165,7 +165,8 @@ the stub.
         successful assignment, zero times when skipped
   - [ ] Skipped assignments (consent opted-out) do NOT emit an event (per AC-3 of AB-001)
   - [ ] Sentry tag added: `ab_assignment_emit_failed` for producer error path
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+- **promoted_as:** TICKET-AB-005 (`backlog/sprint-9/TICKET-AB-005.md`)
 
 ---
 
@@ -227,7 +228,8 @@ the stub.
         hardcoded twice
   - [ ] Test: after `createTenant()` fixture,
         `SELECT COUNT(*) FROM ab_bandit_weights WHERE     tenant_id = ?` returns 18
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+- **promoted_as:** TICKET-AB-006 (`backlog/sprint-9/TICKET-AB-006.md`)
 
 ---
 
@@ -284,7 +286,8 @@ the stub.
   - [ ] Smoke test: simulate adapt request with `consent_state='granted'` (forces non-skip); assert
         ClickHouse row has `holdout_group ∈ {true, false}` matching response
   - [ ] Documentation: add comment in the writer pointing back to TICKET-AB-001
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+- **promoted_as:** TICKET-AB-007 (`backlog/sprint-9/TICKET-AB-007.md`)
 
 ---
 

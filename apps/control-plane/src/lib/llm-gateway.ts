@@ -199,7 +199,7 @@ function buildSonnetPrompt(input: LlmGatewayInput): string {
     `You are an AI generating real estate listing adaptations for a specific buyer archetype.\n` +
     `Archetype: ${archetypeId} — ${basePlaybook.description}\n` +
     `Signals that define this archetype: ${signals}\n` +
-    `Available slots: headline, feature-section, cta\n` +
+    `Available slots: headline, cta, feature\n` +
     `Buyer's recent actions: ${recentEvents}\n` +
     `Quiz answers: ${quizAnswers}\n\n` +
     `Generate 2-3 TextDirective objects that would resonate with this buyer.\n` +

@@ -186,8 +186,8 @@ export default function MockupListingsPage() {
                   )}
                 </div>
 
-                {/* Feature section slot — adapted by Estalara personalization engine */}
-                <div data-estalara-slot="feature-section" className="mt-2 text-xs text-gray-400">
+                {/* Feature slot — adapted by Estalara personalization engine */}
+                <div data-estalara-slot="feature" className="mt-2 text-xs text-gray-400">
                   Property Highlights
                 </div>
 

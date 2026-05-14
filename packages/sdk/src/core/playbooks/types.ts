@@ -23,6 +23,16 @@ export interface SlotDirective {
   pl?: string;
   /** Spanish locale override. */
   es?: string;
+  /**
+   * A/B copy variants for this slot. Index 0 mirrors `en` (default).
+   * The multi-armed bandit (E.3) selects among indices per (tenant, archetype).
+   * Minimum 3 variants required on headline slots for non-neutral archetypes.
+   */
+  variants?: {
+    en: string[];
+    pl?: string[];
+    es?: string[];
+  };
 }
 
 /**
@@ -64,4 +74,15 @@ export interface PlaybookEntry {
   description: string;
   /** Behavioral and quiz signals strongly associated with this archetype. */
   signals: string[];
+  /**
+   * Static ~100-150 word property description template used as:
+   * (a) fallback for Tier 1 in GET /api/adapt/description
+   * (b) seed text for Sonnet generation (Tier 2 / Tier 3)
+   * May contain `{variable}` placeholders resolved from listing context.
+   */
+  copy_template: {
+    en: string;
+    pl?: string;
+    es?: string;
+  };
 }

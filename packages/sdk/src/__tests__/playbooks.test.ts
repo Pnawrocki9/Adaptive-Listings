@@ -73,6 +73,37 @@ describe('playbook data completeness — non-neutral archetypes', () => {
     expect(playbook.slots.length).toBeGreaterThan(0);
   });
 
+  it.each(nonNeutralArchetypes)('%s has exactly 3 slots (headline, cta, feature)', (archetype) => {
+    const playbook = getPlaybook(archetype);
+    expect(playbook.slots.length).toBe(3);
+    const slotNames = playbook.slots.map((s) => s.slot);
+    expect(slotNames).toContain('headline');
+    expect(slotNames).toContain('cta');
+    expect(slotNames).toContain('feature');
+  });
+
+  it.each(nonNeutralArchetypes)('%s slot names use canonical values only', (archetype) => {
+    const playbook = getPlaybook(archetype);
+    const allowedSlots = ['headline', 'cta', 'feature'];
+    for (const slot of playbook.slots) {
+      expect(allowedSlots).toContain(slot.slot);
+    }
+  });
+
+  it.each(nonNeutralArchetypes)('%s headline slot has at least 3 copy variants', (archetype) => {
+    const playbook = getPlaybook(archetype);
+    const headline = playbook.slots.find((s) => s.slot === 'headline');
+    expect(headline).toBeDefined();
+    expect(headline?.variants).toBeDefined();
+    expect(headline?.variants?.en.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it.each(nonNeutralArchetypes)('%s has a non-empty English copy_template', (archetype) => {
+    const playbook = getPlaybook(archetype);
+    expect(playbook.copy_template).toBeDefined();
+    expect(playbook.copy_template.en.length).toBeGreaterThan(50);
+  });
+
   it.each(nonNeutralArchetypes)(
     '%s listing_rules has boost_class and suppress_class',
     (archetype) => {

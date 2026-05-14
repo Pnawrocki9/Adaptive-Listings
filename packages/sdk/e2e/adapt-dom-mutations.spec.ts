@@ -54,7 +54,7 @@ test.describe('SDK Adapt DOM Mutations', () => {
     expect(errors).toHaveLength(0);
   });
 
-  test('feature-section slot textContent changes to "Investment Performance"', async ({ page }) => {
+  test('feature slot textContent changes to "Investment Performance"', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (err) => {
       errors.push(err.message);
@@ -63,7 +63,7 @@ test.describe('SDK Adapt DOM Mutations', () => {
     await page.goto('http://localhost:4444/');
     await page.waitForTimeout(1200);
 
-    const featureSections = await page.locator('[data-estalara-slot="feature-section"]').all();
+    const featureSections = await page.locator('[data-estalara-slot="feature"]').all();
     expect(featureSections.length).toBeGreaterThan(0);
 
     let adaptedCount = 0;

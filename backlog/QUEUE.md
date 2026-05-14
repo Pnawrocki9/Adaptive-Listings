@@ -1,13 +1,14 @@
 # Backlog Queue
 
-**Updated 2026-05-14T23:00Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
+**Updated 2026-05-14T23:30Z by backend-engineer.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
 PARTIALLY DONE (3/6 core tickets DONE): TICKET-AB-001 (PR #80), TICKET-REORDER-001 (PR #91),
-TICKET-046 (PR #92). TICKET-ARCH-003 learning loop READY_FOR_REVIEW (PR #95). TICKET-AGENCY-001 +
-TICKET-AB-004 unblocked → READY. Sprint 3 TICKET-037 + TICKET-038 unblocked (TICKET-031 DONE since
-PR #50). Sprint 9 spec files added (6 tickets: GDPR-001/002/003/004 + DESC-001 + VAL-001). Sprint
-2.5 spec files added (6 tickets: TICKET-030/032/033/034/035/036). TICKET-035 marked CANCELLED
-(superseded by TICKET-VAL-001 — shorter dependency chain). Vendor escalation resolved (all 5 vendors
-active since Sprint 1+).
+TICKET-046 (PR #92). TICKET-ARCH-003 learning loop READY_FOR_REVIEW (PR #95). TICKET-AB-004
+READY_FOR_REVIEW (branch backend-engineer/TICKET-AB-004-analytics-dashboard, commit bc86633, gh CLI
+unavailable — PM to open PR). TICKET-AGENCY-001 still READY. Sprint 3 TICKET-037 + TICKET-038
+unblocked (TICKET-031 DONE since PR #50). Sprint 9 spec files added (6 tickets:
+GDPR-001/002/003/004 + DESC-001 + VAL-001). Sprint 2.5 spec files added (6 tickets:
+TICKET-030/032/033/034/035/036). TICKET-035 marked CANCELLED (superseded by TICKET-VAL-001). Vendor
+escalation resolved (all 5 vendors active since Sprint 1+).
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -41,7 +42,7 @@ updates.
 | 6      | 8     | Embeddings + archetype matching + decision API                       | 3       | 3    | 0       | 0     | 0       |
 | 7      | 9     | Decision API real logic + adaptation playbooks                       | 5       | 5    | 0       | 0     | 0       |
 | 7.5    | 9.5   | Auto-Detection Engine                                                | 7       | 7    | 0       | 0     | 0       |
-| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 9       | 3    | 0       | 3     | 1       |
+| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 9       | 3    | 0       | 4     | 1       |
 | 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 0    | 0       | 0     | 6       |
 | 10     | 12    | Multi-region deploy + observability + load tests                     | tbd     | —    | —       | —     | tbd     |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
@@ -914,10 +915,12 @@ deferred to MVP launch.
 - id: TICKET-AB-004
   title: Analytics dashboard — conversion lift + archetype breakdown + holdout comparison
   agent: backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-AB-001, TICKET-DQS-001]
+  branch: backend-engineer/TICKET-AB-004-analytics-dashboard
+  commit: bc86633
   notes: |
     Implements the dashboard mockup in Master Design Q.3 (Idealista Week 1 view).
     Data source: ClickHouse adaptation_decisions table (from TICKET-ADP-001 migration) +
@@ -931,6 +934,9 @@ deferred to MVP launch.
     - Anomaly feed (auto-paused archetypes with regression detected)
     Route: /dashboard/analytics (new page in control-plane).
     Uses DQS data already shipped in TICKET-DQS-001 — no new ClickHouse DDL needed.
+    Implementation: 9 files added/modified. 125 tests pass (net +44 vs baseline).
+    vitest.config.ts source aliases fixed 7 pre-existing test failures.
+    gh CLI not available in environment — PR must be opened by PM via git push.
 
 - id: TICKET-NATIVE-001
   title: app.estalara.com Adaptive Listings native integration (Tier 3 data-estalara-* attributes)

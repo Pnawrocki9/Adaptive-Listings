@@ -3,14 +3,16 @@
  *
  * Canonical location: apps/decision-api/src/lib/reorder.ts
  *
- * The control-plane adapt POST route imports from this module.
- * Cross-app TS imports are not supported by the tsconfig path setup, so the
- * control-plane duplicates these helpers with a reference comment pointing here.
- * See apps/control-plane/src/app/api/adapt/route.ts for the duplication note.
+ * The control-plane adapt POST route has a parallel implementation in
+ * apps/control-plane/src/lib/tenant-schema.ts (TICKET-AB-011).
+ * Cross-app TS imports are not supported by the tsconfig path setup, so
+ * control-plane maintains its own copy pointing back here.
  *
- * Design note:
- *   getTenantSchema() keeps the est_demo_tenant hardcode for backward compatibility.
- *   Real DB lookup is tracked in FOLLOW-018 (separate ticket).
+ * TICKET-AB-011: getTenantSchema() now performs a real lookup:
+ *   1. Upstash Redis cache at `schema:{tenantId}` (5-min TTL)
+ *   2. SCHEMA_API_URL (control-plane internal API) on cache miss
+ *   3. null on any error (never throws — fail-open)
+ *   Demo tenant always returns DEMO_SCHEMA for backward compat.
  *
  * @module apps/decision-api/src/lib/reorder
  */
@@ -20,12 +22,41 @@
 /**
  * Minimal per-tenant schema for reorder capability.
  * Mirrors the fields consumed from TenantSiteSchema.IndexSchema in packages/shared.
- * Real tenants will get this from a DB lookup (FOLLOW-018); demo tenant is hard-coded.
  */
 export interface TenantSiteSchema {
   reorder_capable: boolean;
   container_selector?: string;
   item_selector?: string;
+}
+
+/**
+ * Environment bindings consumed by getTenantSchema().
+ * Added to Cloudflare Worker Env in TICKET-AB-011.
+ */
+export interface TenantSchemaEnv {
+  /**
+   * Upstash Redis REST URL.
+   * Example: 'https://us1-xxxx.upstash.io'
+   * When absent, cache layer is skipped and every request hits the schema API.
+   */
+  UPSTASH_REDIS_URL?: string;
+  /**
+   * Upstash Redis REST token (Bearer).
+   * Required when UPSTASH_REDIS_URL is set and the database is password-protected.
+   */
+  UPSTASH_REDIS_TOKEN?: string;
+  /**
+   * Control-plane internal schema lookup URL.
+   * Example: 'https://app.estalara.com/api/internal/schema'
+   * GET request with `?tenant_id=<id>` returns TenantSiteSchema | null as JSON.
+   * When absent, DB fallback is skipped (demo tenant still works).
+   */
+  SCHEMA_API_URL?: string;
+  /**
+   * Shared secret for authenticating internal schema API calls.
+   * Sent as `Authorization: Bearer <token>` header.
+   */
+  SCHEMA_API_TOKEN?: string;
 }
 
 /**
@@ -62,24 +93,117 @@ const DEMO_SCHEMA: TenantSiteSchema = {
   item_selector: '[data-estalara-listing-id]',
 };
 
+// ─── Cache TTL ────────────────────────────────────────────────────────────────
+
+const CACHE_TTL_SECONDS = 300; // 5 minutes
+
+// ─── Upstash Redis helpers ────────────────────────────────────────────────────
+
+async function redisGet(key: string, env: TenantSchemaEnv): Promise<string | null> {
+  const url = env.UPSTASH_REDIS_URL;
+  if (!url) return null;
+  try {
+    const res = await fetch(`${url.replace(/\/$/, '')}/get/${encodeURIComponent(key)}`, {
+      headers: env.UPSTASH_REDIS_TOKEN
+        ? { Authorization: `Bearer ${env.UPSTASH_REDIS_TOKEN}` }
+        : {},
+    });
+    if (!res.ok) return null;
+    const json: { result?: string | null } = await res.json();
+    return json.result ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function redisSet(
+  key: string,
+  value: string,
+  ttlSeconds: number,
+  env: TenantSchemaEnv,
+): Promise<void> {
+  const url = env.UPSTASH_REDIS_URL;
+  if (!url) return;
+  try {
+    await fetch(
+      `${url.replace(/\/$/, '')}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}?EX=${String(ttlSeconds)}`,
+      {
+        method: 'GET',
+        headers: env.UPSTASH_REDIS_TOKEN
+          ? { Authorization: `Bearer ${env.UPSTASH_REDIS_TOKEN}` }
+          : {},
+      },
+    );
+  } catch {
+    // Fire-and-forget — cache write failures must not surface to callers.
+  }
+}
+
+// ─── Schema API fallback ──────────────────────────────────────────────────────
+
+async function fetchSchemaFromApi(
+  tenantId: string,
+  env: TenantSchemaEnv,
+): Promise<TenantSiteSchema | null> {
+  const apiUrl = env.SCHEMA_API_URL;
+  if (!apiUrl) return null;
+  try {
+    const url = `${apiUrl.replace(/\/$/, '')}?tenant_id=${encodeURIComponent(tenantId)}`;
+    const res = await fetch(url, {
+      headers: env.SCHEMA_API_TOKEN ? { Authorization: `Bearer ${env.SCHEMA_API_TOKEN}` } : {},
+    });
+    if (!res.ok) return null;
+    const data: TenantSiteSchema | null = await res.json();
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
  * Return the tenant's site schema for reorder capability.
  *
- * Currently only the demo tenant is supported.
- * Real DB lookup is tracked in FOLLOW-018.
- *
- * Backward compat: est_demo_tenant always returns DEMO_SCHEMA.
+ * Resolution order (TICKET-AB-011):
+ *   1. 'est_demo_tenant' → DEMO_SCHEMA (no cache/API — backward compat)
+ *   2. Upstash Redis cache at `schema:{tenantId}` (5-min TTL)
+ *   3. SCHEMA_API_URL fallback (control-plane internal endpoint)
+ *   4. null on any error (never throws — log + return null)
  *
  * @param tenantId - The tenant UUID (or 'est_demo_tenant' for the demo).
+ * @param env      - Worker environment bindings with optional Redis/API config.
  * @returns TenantSiteSchema if the tenant is reorder-capable, null otherwise.
  */
-export function getTenantSchema(tenantId: string): TenantSiteSchema | null {
+export async function getTenantSchema(
+  tenantId: string,
+  env: TenantSchemaEnv = {},
+): Promise<TenantSiteSchema | null> {
+  // Backward compat: demo tenant always returns the hard-coded demo schema.
   if (tenantId === 'est_demo_tenant') {
     return DEMO_SCHEMA;
   }
-  return null;
+
+  const cacheKey = `schema:${tenantId}`;
+
+  // 1. Check Redis cache
+  try {
+    const cached = await redisGet(cacheKey, env);
+    if (cached !== null) {
+      const parsed = JSON.parse(cached) as TenantSiteSchema | null;
+      return parsed;
+    }
+  } catch {
+    // Cache read failure — fall through to API
+  }
+
+  // 2. API fallback
+  const schema = await fetchSchemaFromApi(tenantId, env);
+
+  // 3. Populate cache (fire-and-forget)
+  void redisSet(cacheKey, JSON.stringify(schema), CACHE_TTL_SECONDS, env);
+
+  return schema;
 }
 
 /**

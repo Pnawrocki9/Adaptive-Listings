@@ -1,9 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-redundant-type-constituents --
- * @estalara/shared, @estalara/sdk, and @estalara/auth are workspace packages not built locally.
- * TypeScript sees their return types as `any` until packages are built.
- * CI builds packages before lint so these errors don't appear in CI.
- * Same pattern as middleware.ts, quiz/config/route.ts, and other routes.
- */
 /**
  * GET /api/adapt
  *
@@ -43,11 +37,14 @@ import type {
   ReorderDirective,
   ArchetypeId,
 } from '@estalara/shared';
+import { assignHoldout, DEFAULT_HOLDOUT_PCT } from '@estalara/shared';
 import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
 import { getAuthClaims } from '@estalara/auth';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
+import { publishAbAssignmentEvent } from '@/lib/ab-events';
+import { getTenantSchema as getTenantSchemaFromDb } from '@/lib/tenant-schema';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -80,9 +77,21 @@ const AdaptPostBodySchema = z.object({
   holdout_group: z.boolean().optional(),
   /**
    * Holdout percentage used at assignment time. Used with holdout_group for
-   * context in ClickHouse analytics.
+   * context in ClickHouse analytics and for server-side assignHoldout().
+   * [TICKET-AB-010]
    */
   holdout_pct: z.number().min(0).max(1).optional(),
+  /**
+   * Consent state from the session. Used for A/B holdout consent gating.
+   * [TICKET-AB-010]
+   */
+  consent_state: z.string().optional(),
+  /**
+   * Whether the tenant has consent mode enabled.
+   * When true, sessions with non-granted consent states are skipped for A/B assignment.
+   * [TICKET-AB-010]
+   */
+  consent_mode_enabled: z.boolean().optional(),
 });
 
 // ─── Decision logic ───────────────────────────────────────────────────────────
@@ -227,32 +236,20 @@ function logDecisionAsync(
 // tsconfig path setup (decision-api has no @estalara/* workspace packages and
 // control-plane cannot import from apps/decision-api directly).
 // Keep in sync with the canonical version in reorder.ts.
+//
+// getTenantSchema() is now provided by @/lib/tenant-schema (TICKET-AB-011):
+//   - Redis cache at `schema:{tenantId}` (5-min TTL)
+//   - Falls back to tenant_site_schemas DB table
+//   - Demo tenant still returns hard-coded DEMO_SCHEMA for backward compat
 
 /**
  * Minimal per-tenant schema for reorder capability.
- * Real tenants will get this from a DB lookup (FOLLOW-018); demo tenant is hard-coded.
+ * Mirrors TenantSiteSchemaMin from @/lib/tenant-schema.
  */
 interface TenantSchema {
   reorder_capable: boolean;
   container_selector?: string;
   item_selector?: string;
-}
-
-/**
- * Return the tenant's site schema for reorder capability.
- * Currently only the demo tenant is supported; future tickets add DB lookup (FOLLOW-018).
- *
- * Canonical: apps/decision-api/src/lib/reorder.ts getTenantSchema()
- */
-function getTenantSchema(tenantId: string): TenantSchema | null {
-  if (tenantId === 'est_demo_tenant') {
-    return {
-      reorder_capable: true,
-      container_selector: '[data-estalara-listings-grid]',
-      item_selector: '[data-estalara-listing-id]',
-    };
-  }
-  return null;
 }
 
 /**
@@ -505,6 +502,70 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const body = parsed.data;
+
+  // ── A/B holdout gate (TICKET-AB-010) ─────────────────────────────────────
+  // Run before any directive building. Returns early with empty directives
+  // when the session is held-out or consent-skipped.
+  const assignment = await assignHoldout({
+    tenant_id: body.tenant_id,
+    session_id: body.session_id,
+    ...(body.consent_state !== undefined ? { consent_state: body.consent_state } : {}),
+    consent_mode_enabled: body.consent_mode_enabled ?? false,
+    holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
+  });
+
+  if (assignment.skipped) {
+    // AC-3: consent skip → no adaptation, no holdout_group field.
+    return NextResponse.json({
+      session_id: body.session_id,
+      archetype: 'neutral',
+      confidence: 0.5,
+      similarity: body.similarity ?? 0.5,
+      tier: 1,
+      directives: [],
+      reorderDirectives: [],
+      source: 'default' as const,
+      generated_at: new Date().toISOString(),
+    });
+  }
+
+  if (assignment.holdout_group) {
+    // AC-2: holdout → no adaptation, emit ab.assignment event fire-and-forget.
+    void publishAbAssignmentEvent({
+      session_id: body.session_id,
+      tenant_id: body.tenant_id,
+      holdout_group: true,
+      holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
+      assigned_at: assignment.assigned_at,
+    }).catch((e: unknown) => {
+      console.error('[adapt POST] ab.assignment emit failed', e instanceof Error ? e.message : e);
+    });
+
+    return NextResponse.json({
+      session_id: body.session_id,
+      archetype: 'neutral',
+      confidence: 0.5,
+      similarity: body.similarity ?? 0.5,
+      tier: 1,
+      directives: [],
+      reorderDirectives: [],
+      source: 'default' as const,
+      holdout_group: true,
+      generated_at: new Date().toISOString(),
+    });
+  }
+
+  // Treatment arm: emit ab.assignment event and continue building directives.
+  void publishAbAssignmentEvent({
+    session_id: body.session_id,
+    tenant_id: body.tenant_id,
+    holdout_group: false,
+    holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
+    assigned_at: assignment.assigned_at,
+  }).catch((e: unknown) => {
+    console.error('[adapt POST] ab.assignment emit failed', e instanceof Error ? e.message : e);
+  });
+
   const archetypeId = (body.archetype_hint ?? 'neutral') as ArchetypeId;
   const confidence = body.confidence ?? 0.5;
   const similarity = body.similarity ?? 0.5;
@@ -526,9 +587,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   );
 
   // Append ReorderDirective for tenants with reorder_capable + listing_ids present.
-  // Canonical helper: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
+  // TICKET-AB-011: getTenantSchema now does real DB lookup + Redis cache.
+  // Canonical decision-api helper: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
   const allDirectives: (TextDirective | ReorderDirective)[] = [...textDirectives];
-  const tenantSchema = getTenantSchema(body.tenant_id);
+  const tenantSchema = await getTenantSchemaFromDb(body.tenant_id);
   if (tenantSchema && body.listing_ids && body.listing_ids.length > 0) {
     const reorderDirective = buildReorderDirective(
       tenantSchema,
@@ -553,7 +615,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   };
 
   // Fire-and-forget ClickHouse log using tenant_id from body.
-  // holdout_group passed from the caller's assignHoldout() result — see TICKET-AB-001 (PR #80).
   logDecisionAsync(
     body.session_id,
     body.tenant_id,
@@ -563,7 +624,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     source,
     1,
     allDirectives.length,
-    body.holdout_group ?? false,
+    false, // treatment arm — not holdout
   );
 
   return NextResponse.json(response, { status: 200 });

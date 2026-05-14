@@ -14,6 +14,7 @@ export * from './schemas/index.js';
 export * from './errors.js';
 export * from './demo.js';
 export * from './directives.js';
+export * from './ab-holdout.js';
 export type {
   TenantSiteSchema,
   PageType,

@@ -208,3 +208,49 @@ Both open questions resolved by Piotr Nawrocki on 2026-05-13:
    components require Rafal (CTO) and Krystian (CPO) scheduling on the SvelteKit side. That work is
    sequenced for the launch window, not Sprint 8. The SDK side does not proceed speculatively — it
    would create rework risk. NATIVE-001 remains BLOCKED with updated reason.
+
+---
+
+## OPEN — Fair-housing risk in copy_template strings (US-region pilot blocker)
+
+**Filed by:** retrospective-analyst (RETRO-004) **Date:** 2026-05-14 **Affects:** TICKET-046,
+TICKET-DESC-001, Sprint 11 pilot launch **Type:** compliance
+
+**Description:** RETRO-004 surfaced that multiple `copy_template.en` strings introduced in PR #92
+(TICKET-046) contain protected-class (familial-status) value propositions. Specifically,
+`family_buyer` and `student_parent` archetype templates describe lifestyle outcomes tied to
+household composition — language that, while not using protected-class terms directly, could be
+construed as steering under FHA (US) if served to sessions that could be profiled as family
+households.
+
+Examples (from PR #92 merged copy):
+
+- `family_buyer.copy_template.en` — references "family-friendly", "school catchment areas", "family
+  space" etc. as the primary value proposition surfaced to that archetype
+- `student_parent.copy_template.en` — references proximity to universities as a primary hook
+
+The 2026-05-13 fair-housing resolution (above) determined that archetype = behavioral, not
+demographic. That determination holds — but it applies to the _routing/reordering_ layer, not the
+_copy layer_. The copy_template strings are surfaced to buyers and explicitly market familial
+lifestyle outcomes. This is a distinct exposure from the reorder decision:
+
+- Reorder: "which listings appear first" — ruled non-steering because no protected class attaches
+- Copy: "what language is served to a behavioral cluster" — if the cluster correlates with family
+  status, serving family-marketing copy may constitute illegal steering under HUD guidance on
+  advertising, even if the archetype signal is behavioral
+
+**Required action:**
+
+1. **Piotr / compliance-engineer review** — confirm whether the 2026-05-13 ruling extends to the
+   copy layer or whether a separate assessment is needed.
+2. If a separate assessment IS needed: compliance-engineer runs a fair-housing copy audit on all 17
+   non-neutral `copy_template.en` strings (focus: family_buyer, student_parent, diaspora_buyer,
+   retiree_relocator) before any US-region pilot tenant is onboarded.
+3. If the 2026-05-13 ruling DOES extend (behavioral copy = not steering): mark this resolved, add a
+   binding note that copy strings must not reference protected characteristics explicitly (race,
+   religion, gender, disability, national origin, family status) — behavioral framing only.
+
+**Impact if unresolved:** `copy_template.en` strings MUST NOT be served to US-region sessions until
+this is resolved. The `GET /api/adapt/description` endpoint (TICKET-DESC-001, Sprint 9) and any
+SDK-side copy rendering must gate on `tenant.region !== 'us'` OR require compliance sign-off. →
+tracked as FOLLOW-034 in `backlog/FOLLOW_UPS.md`.

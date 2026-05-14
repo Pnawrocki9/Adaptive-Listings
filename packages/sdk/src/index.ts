@@ -109,6 +109,10 @@ async function init(): Promise<void> {
     /** Confidence threshold above which the sidebar widget becomes visible. */
     const SIDEBAR_SHOW_THRESHOLD = 0.6;
 
+    // Declared here (null) so refreshDirectives() can reference it without TDZ error.
+    // Assigned to the actual widget after createShadowHost() runs below (step 5a).
+    let sidebar: SidebarWidgetController | null = null;
+
     /** Re-fetch directives and apply them with the latest intent state. */
     async function refreshDirectives(): Promise<void> {
       if (!config.decisionApiUrl) return;
@@ -168,7 +172,6 @@ async function init(): Promise<void> {
     // 5a. Mount Tier 1 Observer sidebar widget inside the Shadow DOM.
     // The widget is initially hidden; it becomes visible after the first
     // refreshDirectives() call that returns a non-neutral archetype (confidence ≥ 0.6).
-    let sidebar: SidebarWidgetController | null = null;
     if (shadowHost) {
       sidebar = createSidebarWidget(shadowHost.root, {
         accentColor: quizConfig.accentColor,

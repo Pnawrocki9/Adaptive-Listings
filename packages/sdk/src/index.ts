@@ -17,6 +17,8 @@ import { setupObservers } from './core/observer.js';
 import { createShadowHost } from './ui/shadow-host.js';
 import { renderQuizTrigger, isQuizDismissed } from './ui/quiz-trigger.js';
 import { renderQuizWidget } from './ui/quiz-widget.js';
+import { createSidebarWidget } from './ui/sidebar-widget.js';
+import type { SidebarWidgetController } from './ui/sidebar-widget.js';
 import {
   fetchDirectives,
   applyDirectives,
@@ -104,6 +106,13 @@ async function init(): Promise<void> {
       }
     }
 
+    /** Confidence threshold above which the sidebar widget becomes visible. */
+    const SIDEBAR_SHOW_THRESHOLD = 0.6;
+
+    // Declared here (null) so refreshDirectives() can reference it without TDZ error.
+    // Assigned to the actual widget after createShadowHost() runs below (step 5a).
+    let sidebar: SidebarWidgetController | null = null;
+
     /** Re-fetch directives and apply them with the latest intent state. */
     async function refreshDirectives(): Promise<void> {
       if (!config.decisionApiUrl) return;
@@ -123,6 +132,27 @@ async function init(): Promise<void> {
         if (config.debug) {
           console.log(`[Estalara] Archetype: ${resp.archetype} (${String(resp.confidence)})`);
         }
+
+        // Update the sidebar when confidence meets the threshold.
+        // Extract text directives for the preview panel.
+        if (sidebar && resp.confidence >= SIDEBAR_SHOW_THRESHOLD) {
+          const textDirectives = resp.directives
+            .filter((d) => d.type === 'text')
+            .map((d) => ({
+              slot: 'slot' in d ? d.slot : '',
+              text: 'value' in d && typeof d.value === 'string' ? d.value : '',
+            }));
+
+          const state = {
+            archetype: resp.archetype,
+            confidence: resp.confidence,
+            signalCount: currentIntentState.signal_count,
+            directives: textDirectives.length > 0 ? textDirectives : undefined,
+          };
+
+          // show() on first reveal, update() on subsequent calls
+          sidebar.show(state);
+        }
       }
     }
 
@@ -138,6 +168,23 @@ async function init(): Promise<void> {
       accentColor: script.dataset.accentColor ?? '#2563EB',
       language: script.dataset.language === 'pl' ? 'pl' : 'en',
     };
+
+    // 5a. Mount Tier 1 Observer sidebar widget inside the Shadow DOM.
+    // The widget is initially hidden; it becomes visible after the first
+    // refreshDirectives() call that returns a non-neutral archetype (confidence ≥ 0.6).
+    if (shadowHost) {
+      sidebar = createSidebarWidget(shadowHost.root, {
+        accentColor: quizConfig.accentColor,
+        language: quizConfig.language,
+        onClose: () => {
+          eventQueue.push({
+            type: 'sidebar.closed',
+            payload: {},
+            ts: Date.now(),
+          });
+        },
+      });
+    }
 
     let listingViewCount = 0;
     let quizTriggered = false;
@@ -270,6 +317,7 @@ async function init(): Promise<void> {
     (window as Window & { __estalaraTeardown?: () => void }).__estalaraTeardown = () => {
       if (flushTimer) clearInterval(flushTimer);
       cleanupObservers();
+      sidebar?.destroy();
       shadowHost?.destroy();
       dqsTracker.reset();
     };

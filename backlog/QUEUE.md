@@ -866,10 +866,11 @@ deferred to MVP launch.
 - id: TICKET-AGENCY-001
   title: Agency answers — per-listing FAQ with RAG-powered suggested replies
   agent: backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-ADP-001]
+  pr: backend-engineer/TICKET-AGENCY-001-agency-answers-rag
   notes: |
     Implements Master Design E.2 chat.suggested_reply row: "Claude Haiku 4.5 + RAG over
     tenant FAQ + listing data + intent context".
@@ -880,6 +881,7 @@ deferred to MVP launch.
     Placeholder resolution: answers feed Level 2 in the E.6 placeholder resolution order
     (already typed in MASTER_DESIGN_PATCH_v1_5.md as "Agency-provided answers per listing").
     Produces: answers table schema migration + /api/answers route + dashboard page.
+    Completed 2026-05-14: all AC items done, 213/213 tests passing, lint/typecheck/build green.
 
 - id: TICKET-FAIR-001
   title: Fair-housing linter MVP — gate for Profile Mode activation (U.11.6)

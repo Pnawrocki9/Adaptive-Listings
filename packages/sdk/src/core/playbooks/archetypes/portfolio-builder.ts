@@ -4,8 +4,19 @@ export const portfolioBuilderPlaybook: PlaybookEntry = {
   archetype: 'portfolio_builder',
   description: 'Experienced investor scaling a multi-property portfolio',
   slots: [
-    { slot: 'headline', en: 'Portfolio Addition — {bedrooms}BR | {yield}% Yield' },
+    {
+      slot: 'headline',
+      en: 'Portfolio Addition — {bedrooms}BR | {yield}% Yield',
+      variants: {
+        en: [
+          'Portfolio Addition — {bedrooms}BR | {yield}% Yield',
+          'Scalable Asset — {bedrooms}BR, {yield}% Yield, Management Available',
+          'Multi-Property Play — Bulk Discount Available | {yield}% Return',
+        ],
+      },
+    },
     { slot: 'cta', en: 'Request Bulk Enquiry' },
+    { slot: 'feature', en: 'Portfolio Metrics' },
   ],
   listing_rules: {
     boost_if: [
@@ -30,4 +41,7 @@ export const portfolioBuilderPlaybook: PlaybookEntry = {
     'quiz:investment+long',
     'returns_multiple_times',
   ],
+  copy_template: {
+    en: 'A {bedrooms}-bedroom investment property delivering {yield}% yield — sized and priced as a natural addition to a growing residential portfolio. Multiple units are available within the same development, making this suitable for block acquisition with a negotiated bulk discount. A professional management company already operates the building, enabling seamless integration with an existing portfolio without additional operational overhead. Clean legal status with no outstanding charges. Title deed is unencumbered and ready for immediate transfer. For portfolio builders targeting scale and operational simplicity, this development offers the combination of yield, management infrastructure, and bulk availability that makes meaningful portfolio growth achievable without proportional increases in management time.',
+  },
 };

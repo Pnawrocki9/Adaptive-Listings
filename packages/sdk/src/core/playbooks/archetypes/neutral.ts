@@ -13,4 +13,5 @@ export const neutralPlaybook: PlaybookEntry = {
   },
   feature_priority: [],
   signals: [],
+  copy_template: { en: '' },
 };

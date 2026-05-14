@@ -1,10 +1,13 @@
 # Backlog Queue
 
-**Updated 2026-05-14T22:00Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
+**Updated 2026-05-14T23:00Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
 PARTIALLY DONE (3/6 core tickets DONE): TICKET-AB-001 (PR #80), TICKET-REORDER-001 (PR #91),
 TICKET-046 (PR #92). TICKET-ARCH-003 learning loop READY_FOR_REVIEW (PR #95). TICKET-AGENCY-001 +
 TICKET-AB-004 unblocked → READY. Sprint 3 TICKET-037 + TICKET-038 unblocked (TICKET-031 DONE since
-PR #50). Vendor escalation resolved (all 5 vendors active since Sprint 1+).
+PR #50). Sprint 9 spec files added (6 tickets: GDPR-001/002/003/004 + DESC-001 + VAL-001). Sprint
+2.5 spec files added (6 tickets: TICKET-030/032/033/034/035/036). TICKET-035 marked CANCELLED
+(superseded by TICKET-VAL-001 — shorter dependency chain). Vendor escalation resolved (all 5 vendors
+active since Sprint 1+).
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -31,7 +34,7 @@ updates.
 | 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 9    | 0       | 0     | 0       |
 | 1      | 2     | Ingest baseline + event schema                                       | 10      | 10   | 0       | 0     | 0       |
 | 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 10   | 0       | 0     | 0       |
-| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 1     | 5       |
+| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 1     | 4       |
 | 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 1    | 0       | 2     | 7       |
 | 4      | 6     | Intent ontology v1 + Modal scaffolding                               | tbd     | —    | —       | —     | tbd     |
 | 5      | 7     | LLM gateway + intent extraction from chat                            | tbd     | —    | —       | —     | tbd     |
@@ -39,7 +42,7 @@ updates.
 | 7      | 9     | Decision API real logic + adaptation playbooks                       | 5       | 5    | 0       | 0     | 0       |
 | 7.5    | 9.5   | Auto-Detection Engine                                                | 7       | 7    | 0       | 0     | 0       |
 | 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 9       | 3    | 0       | 3     | 1       |
-| 9      | 11    | DPIA + ROPA + DSR + fair-housing + continuous validation             | tbd     | —    | —       | —     | tbd     |
+| 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 0    | 0       | 0     | 6       |
 | 10     | 12    | Multi-region deploy + observability + load tests                     | tbd     | —    | —       | —     | tbd     |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
 
@@ -443,13 +446,18 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
   spec: backlog/sprint-2.5/TICKET-034.md
 
 - id: TICKET-035
-  title: Continuous schema validation cron (drift detection per tenant)
+  title: Continuous schema validation cron (SUPERSEDED by TICKET-VAL-001)
   agent: data-engineer
-  status: BLOCKED
+  status: CANCELLED
   priority: P1
-  estimated_hours: 8
+  estimated_hours: 0
   depends_on: [TICKET-034]
   spec: backlog/sprint-2.5/TICKET-035.md
+  notes: |
+    Duplicate scope with TICKET-VAL-001 (Sprint 9). Canonical implementation lives there
+    because its dependency chain (TICKET-AUTO-006 only, DONE) is shorter and unblocked
+    sooner than the Sprint 2.5 chain (030 → 032 → 033 → 034 → 035, ~30h prerequisite).
+    Decision: Piotr 2026-05-14. Spec file retained for reference but ticket = CANCELLED.
 
 - id: TICKET-036
   title: Pre-built platform templates (MLS, Zillow-style, custom)
@@ -975,6 +983,119 @@ deferred to MVP launch.
     Modal Python app — runs as offline daily batch job.
     P2 priority: do not start until AB-001 has real holdout data (minimum 2 weeks in production).
     Feeds D.5 confirmation rate dashboard.
+```
+
+## Sprint 9 — DPIA + DSR + consent + description pipeline (BACKLOG)
+
+**Status:** BACKLOG as of 2026-05-14. Spec files written by architect into `backlog/sprint-9/`.
+Sprint 9 is the MVP compliance gate: GDPR-001 (DPIA/ROPA), GDPR-002 (DSR endpoints), GDPR-004
+(consent propagation) are P0 and must land before any EU pilot tenant signup. DESC-001 (long-form
+description pipeline per Master Design E.7) and VAL-001 (schema validation cron) are P1.
+
+**Cross-reference TICKET-VAL-001 ↔ TICKET-035 (Sprint 2.5):** Both tickets implement identical
+continuous schema validation cron scope per Master Design B.6. **Canonical implementation lives in
+TICKET-VAL-001 (Sprint 9)** — it depends only on TICKET-AUTO-006 (DONE) and is unblocked
+immediately. TICKET-035 in Sprint 2.5 is a duplicate stub; when Sprint 2.5 starts, TICKET-035 should
+be marked CANCELLED with a pointer to TICKET-VAL-001 (decision: Piotr 2026-05-14, prefer
+TICKET-VAL-001 because Sprint 9 dependency chain is shorter and unblocked sooner).
+
+**Open questions captured during spec authoring (resolve at sprint start, see ESCALATIONS.md if not
+resolved):**
+
+1. GDPR-004 `consent_state` column on ClickHouse `events` table — verify TICKET-014 DDL for whether
+   the column already exists; if not, engineer writes a migration.
+2. DESC-001 `source: 'ai_generated'` value — Master Design E.7.2 lists this as a possible response
+   source, but the E.7.3 flow shows the endpoint always returns either `template_fallback` (cache
+   miss) or `ai_cached` (cache hit). Spec uses only those two values. Confirm Master Design
+   interpretation before implementation.
+3. GDPR-004 tenant region storage — `tenants.brand_config` JSONB vs explicit `region` column.
+   Engineer must verify before writing the `consent_required` default-by-region logic.
+4. VAL-001 `sample_listing_url` in `tenant_site_schemas.schema` JSONB — verify TICKET-AUTO-006 PR
+   diff for exact JSONB structure.
+5. GDPR-003 agent split — docs portion (`lia-template.md`) stays with compliance-engineer; CRUD +
+   Drizzle table portion reassign to backend-engineer.
+
+```yaml
+- id: TICKET-GDPR-001
+  title: DPIA + ROPA documents (EU/UK/CA/UAE)
+  agent: compliance-engineer
+  status: BACKLOG
+  priority: P0
+  estimated_hours: 8
+  depends_on: []
+  spec: backlog/sprint-9/TICKET-GDPR-001.md
+  notes: |
+    docs/compliance/dpia.md + ropa.md covering all 4 jurisdictions.
+    Unblocks GDPR-002/003/004 (defines retention scope, lawful basis, consent strategy).
+    Requires Piotr sign-off before merge.
+
+- id: TICKET-GDPR-002
+  title: DSR endpoints (access / erase / portability)
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P0
+  estimated_hours: 8
+  depends_on: [TICKET-GDPR-001]
+  spec: backlog/sprint-9/TICKET-GDPR-002.md
+  notes: |
+    POST /api/dsr/access, /api/dsr/erase, /api/dsr/portability.
+    Token-validated, cascades delete across Postgres + ClickHouse + Redis.
+    24h delay window for revocation (dsr_tokens table).
+
+- id: TICKET-GDPR-003
+  title: Cookie-less behavioral fingerprinting LIA template + tenant_compliance_records
+  agent: compliance-engineer + backend-engineer
+  status: BACKLOG
+  priority: P1
+  estimated_hours: 4
+  depends_on: [TICKET-GDPR-001]
+  spec: backlog/sprint-9/TICKET-GDPR-003.md
+  notes: |
+    Split: docs (lia-template.md) → compliance-engineer; CRUD API + Drizzle table →
+    backend-engineer. Open question 5 above.
+
+- id: TICKET-GDPR-004
+  title: Consent state propagation (SDK → ingest → ClickHouse → Decision API gate)
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P0
+  estimated_hours: 6
+  depends_on: [TICKET-GDPR-001, TICKET-041]
+  spec: backlog/sprint-9/TICKET-GDPR-004.md
+  notes: |
+    Extends TICKET-AB-001 consent-aware skip pattern to full personalization gate.
+    Adds consent_required boolean to tenants table (default true for EU regions).
+    Decision API returns default directives if consent_state !== 'granted'.
+
+- id: TICKET-DESC-001
+  title: Long-form description pipeline (Tier 2/3, Redis-cached, Sonnet 4.6 async)
+  agent: backend-engineer + ml-engineer
+  status: BACKLOG
+  priority: P1
+  estimated_hours: 8
+  depends_on: [TICKET-AGENCY-001, TICKET-046]
+  spec: backlog/sprint-9/TICKET-DESC-001.md
+  notes: |
+    Promoted from FOLLOW-002 (RETRO-001). Per Master Design E.7.
+    Tier 1 → copy_template.en static. Tier 2 → 72h TTL Redis cache, max_tokens 450.
+    Tier 3 → 48h TTL, max_tokens 600, priority high.
+    Modal job apps/llm-gateway/src/jobs/generate_description.py.
+    listing.updated → Redis DEL desc:{tenant_id}:{listing_id}:*
+
+- id: TICKET-VAL-001
+  title: Continuous schema validation cron (drift detection per tenant)
+  agent: data-engineer
+  status: BACKLOG
+  priority: P1
+  estimated_hours: 8
+  depends_on: [TICKET-AUTO-006]
+  spec: backlog/sprint-9/TICKET-VAL-001.md
+  notes: |
+    CANONICAL implementation. Supersedes Sprint 2.5 TICKET-035 (mark that CANCELLED).
+    Daily Modal cron at apps/data-quality/src/crons/schema_validation.py.
+    Re-runs deterministic detection against live tenant pages, diffs vs stored schema,
+    emits schema_drift_detected event + Sentry alert if drift detected.
+    Writes schema_validation_history Postgres table row per run.
 ```
 
 ## Currently in flight

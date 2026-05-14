@@ -611,3 +611,31 @@ parameter (default `false`). GET accepts `?holdout_group=true|false`; POST body 
 - `apps/control-plane/src/app/api/adapt/route.ts` — `logDecisionAsync()` + GET/POST changes
 
 ---
+
+## TICKET-AB-005 → TICKET-AB-012 (FOLLOW-017)
+
+**From:** backend-engineer **To:** backend-engineer **Date:** 2026-05-14T20:45:00Z
+
+**Summary:** ab.assignment event emission wired into the decision-api adapt route. The producer
+helper lives at `apps/decision-api/src/lib/ab-events.ts` (`publishAbAssignmentEvent`), which
+delegates to the new `apps/decision-api/src/lib/redpanda-producer.ts` (mirrors the ingest worker
+producer). The call in `route.ts` is fire-and-forget (void IIFE + try/catch + Sentry tag
+`ab_assignment_emit_failed`). Guarded by `env.REDPANDA_REST_URL` presence. Skipped assignments
+(opted_out / unknown / none consent with consent_mode_enabled=true) never emit an event. 9 new
+integration tests verify call-count per scenario and payload schema conformance.
+
+**Action required for FOLLOW-017 (holdout gating on control-plane POST /api/adapt):**
+
+Import and reuse `publishAbAssignmentEvent` from `apps/decision-api/src/lib/ab-events.ts`. Do NOT
+duplicate the envelope construction logic. The function accepts `AbAssignmentEventArgs` which
+includes the Redpanda env bindings and optional `PushOptions` for test mocking.
+
+**Files:**
+
+- `apps/decision-api/src/app/api/adapt/route.ts` — emission wired at step 4b
+- `apps/decision-api/src/lib/ab-events.ts` — `publishAbAssignmentEvent` helper (new file)
+- `apps/decision-api/src/lib/redpanda-producer.ts` — edge-compatible producer (new file)
+- `apps/decision-api/src/index.ts` — Env interface extended with Redpanda bindings
+- `apps/decision-api/src/__tests__/adapt.test.ts` — 9 new TICKET-AB-005 integration tests
+
+---

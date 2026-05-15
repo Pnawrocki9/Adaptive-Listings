@@ -3,13 +3,15 @@
 **Wersja:** 1.7 (Master Design Document — Cold Start Protection redesign for description pipeline) | **Data:** 15 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
 
 **Changelog v1.7 (15 May 2026 — Cold Start Protection for adaptation pipeline):**
-- 🔄 **Sekcja E.7 przeprojektowana.** Pierwszy buyer dla każdej pary `(listing, archetype)` widzi **oryginalne copy agenta** (`source: 'original_agent_copy'`), a nie statyczny template. Sonnet job uruchamia się w tle i serwuje adaptowaną wersję od drugiego buyera tego archetypu (`source: 'ai_cached'`). Cache miss zawsze zwraca oryginał, nigdy template.
-- 🔄 **`copy_template.en` przestaje być renderowany do usera.** Templates są obecnie wyłącznie **seedami promptu** dla Sonneta (SEED 2 w nowym 3-seed prompcie: oryginał agenta + Opus template + listing_context). Zostały przepisane przez Opus 4.7 — patrz `docs/specs/cold-start-archetype-templates-v1.md`.
-- 🔄 **`source` enum:** dodano `'original_agent_copy'`, usunięto `'template_fallback'`. `'ai_generated'` pozostaje formalnie zarezerwowany (nieużywany — wartość `'ai_cached'` pokrywa wszystkie udane cache writes).
+
+- 🔄 **Sekcja E.7 przeprojektowana.** Pierwszy buyer dla każdej pary `(listing, archetype)` widzi **oryginalne copy agenta** (`source: 'original_agent_copy'`), a nie statyczny template. Sonnet job uruchamia się w tle i serwuje adaptowaną wersję od drugiego buyera tego archetypu (`source: 'ai_cached'`). Cache miss z istniejącym oryginałem zwraca oryginał, nigdy template.
+- 🔄 **`copy_template` przestaje być renderowany do usera w standardowym flow.** Templates są **seedami promptu** dla Sonneta (SEED 2 w 3-seed prompcie: oryginał agenta + Opus template + listing_context). Wyjątek: edge case gdy `listing.description` jest pusty — wtedy template renderuje się bezpośrednio jako `source: 'template_fallback'`, z placeholderami rozwiązanymi z `listing_context`.
+- ✨ **Templates trójjęzyczne (EN + PL + ES).** Każdy z 18 archetypów ma trzy locale-natywne wersje (54 templates łącznie), pisane od zera w kontekście lokalnego rynku (Bezpieczny Kredyt 2% w PL, Non-Lucrative Visa w ES post-Golden-Visa-repeal, VFT/VUT licensing dla STR, etc.). Patrz `docs/specs/cold-start-archetype-templates-v1.md`.
+- 🔄 **`source` enum (final):** trzy wartości używane: `'ai_cached'` (cache hit), `'original_agent_copy'` (cache miss, oryginał istnieje), `'template_fallback'` (cache miss, brak oryginału). `'ai_generated'` zarezerwowany formalnie, nieużywany.
 - 🔄 **Tier 1 nie używa `/api/adapt/description`.** Tier 1 = Observer = no DOM mutation; endpoint zarezerwowany dla Tier 2/3.
-- ✨ **Nowa sekcja E.7.7 "Cold Start Protection"** — pełna specyfikacja flow, three-seed prompt, invariants, observability metric.
-- ✨ **7 nowych ticketów (TICKET-COLD-001 do TICKET-COLD-007)** zastępują dotychczasowy TICKET-DESC-001. Modal job z PR #112 (commit b55c025) wymaga zmiany kontraktu payload o pole `original_agent_copy`.
-- 📝 Pełna spec: `docs/specs/cold-start-protection-v1.md` (impl plan) + `docs/specs/cold-start-archetype-templates-v1.md` (18 templates).
+- ✨ **Nowa sekcja E.7.7 "Cold Start Protection"** — pełna specyfikacja flow (z dwiema ścieżkami cache-miss), two-branch three-seed prompt, invariants (factual, voice, length, token), observability.
+- ✨ **7 nowych ticketów (TICKET-COLD-001 do TICKET-COLD-007)** zastępują dotychczasowy TICKET-DESC-001. Modal job z PR #112 (commit b55c025) wymaga zmiany kontraktu payload o pole `original_agent_copy` (string, dozwolony pusty).
+- 📝 Pełna spec: `docs/specs/cold-start-protection-v1.md` (impl plan) + `docs/specs/cold-start-archetype-templates-v1.md` (54 templates).
 
 **Changelog v1.6 (14 May 2026 — Adaptation Engine extensions after PR #92 / TICKET-046):**
 - 🔄 Rozszerzona sekcja **E.2** — dodano blok "Definicje terminów" (slot, wariant, copy_template, ListingContext) oraz "Implementacja 3 wariantów per slot" z przykładem `yield_hunter`. Slot `feature-section` (bug w `yield-hunter.ts` przed PR #92) ustandaryzowany do `feature`.
@@ -1429,11 +1431,13 @@ Opis nieruchomości (`description`) dopasowany do archetypu kupującego. Dostęp
 
 #### E.7.1. Tier gating
 
-| Tier | Cache hit              | Cache miss / cold start                                          | TTL    | max_tokens |
-| ---- | ---------------------- | ---------------------------------------------------------------- | ------ | ---------- |
-| 1    | (endpoint not exposed) | (endpoint not exposed — Tier 1 is read-only)                     | —      | —          |
-| 2    | `ai_cached`            | `original_agent_copy` + enqueue Sonnet job (background)          | **72h** | 450        |
-| 3    | `ai_cached`            | `original_agent_copy` + enqueue Sonnet job (background)          | **48h** | 600        |
+| Tier | Cache hit              | Cache miss + agent original obecny                      | Cache miss + brak oryginału (edge case)               | TTL     | max_tokens |
+| ---- | ---------------------- | ------------------------------------------------------- | ----------------------------------------------------- | ------- | ---------- |
+| 1    | (endpoint not exposed) | (endpoint not exposed — Tier 1 is read-only)            | (endpoint not exposed)                                | —       | —          |
+| 2    | `ai_cached`            | `original_agent_copy` + enqueue Sonnet job (background) | `template_fallback` (Opus template, placeholders rozwiązane) + enqueue Sonnet job z pustym SEED 1 | **72h** | 450        |
+| 3    | `ai_cached`            | `original_agent_copy` + enqueue Sonnet job (background) | `template_fallback` + enqueue Sonnet job z pustym SEED 1 | **48h** | 600        |
+
+Templates istnieją w trzech locale (EN/PL/ES). Endpoint wybiera template w żądanym locale, z fallbackiem na EN gdy locale nie jest authored (np. żądanie `fr` dla archetypu który nie ma autorskiego FR template).
 
 #### E.7.2. Endpoint contract
 
@@ -1443,26 +1447,31 @@ Query: listing_id (required), archetype (required), tier (required, ≥2), local
 Auth:  Bearer JWT (jak dla /api/adapt)
 Returns: {
   description: string,
-  source: 'ai_cached' | 'original_agent_copy',
+  source: 'ai_cached' | 'original_agent_copy' | 'template_fallback',
   locale: string,
-  generated_at: string  // ISO 8601 — Sonnet completion ts (ai_cached) or listing.updated_at (original_agent_copy)
+  generated_at: string  // ISO 8601 — Sonnet completion ts (ai_cached) lub listing.updated_at (original_agent_copy / template_fallback)
 }
 Errors:
   400 — tier === 1
   404 — listing not found
 ```
 
-`source: 'ai_generated'` jest formalnie zarezerwowany (legacy compat), ale realnie nie wraca z endpointu: każdy udany cache write skutkuje `'ai_cached'` przy następnym żądaniu.
+`source: 'ai_generated'` jest formalnie zarezerwowany (legacy compat), ale realnie nie wraca z endpointu: każdy udany cache write skutkuje `'ai_cached'` przy następnym żądaniu. `'template_fallback'` po przeprojektowaniu (v1.7) ma węższe znaczenie niż w v1.6 — wraca wyłącznie gdy `listing.description` jest pusty.
 
 #### E.7.3. Flow (Cold Start Protection)
 
 1. **Tier 1** → 400 "description endpoint not available for Tier 1". Sidebar widget Tier 1 renderuje listing z DOM hosta bez ingerencji.
 2. **Tier 2 / Tier 3** → Redis lookup `desc:{tenant_id}:{listing_id}:{archetype}:{locale}`:
    - **Cache hit** → `{ description: cached.text, source: 'ai_cached', generated_at: cached.generated_at }`.
-   - **Cache miss** (pierwsza wizyta dla tej pary `(listing, archetype)`, nowy archetyp, lub wygasły TTL):
+   - **Cache miss + agent original obecny** (`listing.description` non-empty):
      - Zwróć **`{ description: listing.description, source: 'original_agent_copy', generated_at: listing.updated_at }`** — oryginalne copy agenta z bazy.
      - Asynchronicznie wyemituj zdarzenie na topic `estalara.descriptions` z payloadem trzech seedów (E.7.7).
      - Następny buyer tego archetypu (po typowo ~3–8s) trafi cache hit.
+   - **Cache miss + brak oryginału** (edge case — `listing.description` pusty/null):
+     - Endpoint resolves placeholders w `PlaybookEntry.copy_template[locale]` (z fallbackiem na `.en`) względem `listing.fields`.
+     - Zwróć **`{ description: resolved_template, source: 'template_fallback', generated_at: listing.updated_at }`**.
+     - Wyemituj zdarzenie na `estalara.descriptions` z trzema seedami (SEED 1 = pusty string).
+     - Sonnet generuje wtedy z samego template + listing_context (branch 4.2 w spec'u). Następny buyer trafi cache hit.
 3. **Modal job** `apps/llm-gateway/src/jobs/generate_description.py`:
    - Input payload (kontrakt v1.7): `{ tenant_id, listing_id, archetype, locale, tier, cache_key, original_agent_copy, copy_template, listing_context, ttl_seconds }`.
    - Model: `claude-sonnet-4-6`.
@@ -1486,24 +1495,32 @@ Errors:
 Dotychczasowy TICKET-DESC-001 zostaje zastąpiony przez **7 ticketów (TICKET-COLD-001 do TICKET-COLD-007)** rozdzielonych między owner'ów. PM orchestrator generuje je z `docs/specs/cold-start-protection-v1.md` §6 przy planowaniu sprint'a. Modal job z PR #112 (commit b55c025) wymaga zmiany kontraktu payload (COLD-002).
 
 Acceptance dla całego pakietu:
-- Pierwszy buyer dla pary `(listing, archetype)` zwraca `source: 'original_agent_copy'` i `description === listing.description`.
-- Drugi buyer tego archetypu (po typowo ~3–8s) zwraca `source: 'ai_cached'` z treścią Sonneta zachowującą wszystkie fakty z `listing.description`.
-- Tier 1 zwraca 400 dla `/api/adapt/description`.
-- `listing.updated` invalidacja działa: po update'cie pierwszy buyer każdego archetypu znów dostaje `original_agent_copy` (świeży tekst agenta).
-- Modal job p95 < 8s (Sonnet inference + Redis SET).
-- Endpoint p95: < 100ms (cache hit), < 150ms (cache miss path — Postgres fetch + Redpanda produce).
 
-#### E.7.7. Cold Start Protection — three-seed Sonnet prompt
+- Pierwszy buyer dla pary `(listing, archetype)` gdy `listing.description` istnieje zwraca `source: 'original_agent_copy'` i `description === listing.description`.
+- Pierwszy buyer gdy `listing.description` pusty zwraca `source: 'template_fallback'` z Opus template w żądanym locale, placeholderami rozwiązanymi z `listing_context`.
+- Drugi buyer tego archetypu (po typowo ~3–8s) zwraca `source: 'ai_cached'` z treścią Sonneta — zachowującą wszystkie fakty z `listing.description` gdy ten istniał, albo opartą wyłącznie na template + context w przeciwnym razie.
+- Templates są dostępne we wszystkich trzech locale (EN/PL/ES) dla wszystkich 18 archetypów (54 templates łącznie).
+- Tier 1 zwraca 400 dla `/api/adapt/description`.
+- `listing.updated` invalidacja działa: po update'cie pierwszy buyer każdego archetypu znów dostaje `original_agent_copy` (świeży tekst agenta) lub `template_fallback` (jeśli agent skasował description).
+- Modal job p95 < 8s (Sonnet inference + Redis SET).
+- Endpoint p95: < 100ms (cache hit), < 150ms (cache miss path — Postgres fetch + Redpanda produce + opcjonalna resolucja placeholderów).
+
+#### E.7.7. Cold Start Protection — two-branch three-seed Sonnet prompt
 
 Sonnet otrzymuje trzy wyraźnie oznaczone seedy, w jasno określonej hierarchii priorytetów:
 
-| Seed | Źródło                                    | Rola w prompcie                                                  | Priorytet faktyczny |
-| ---- | ----------------------------------------- | ---------------------------------------------------------------- | ------------------- |
-| 1    | `listing.description` (oryginał agenta)   | Source of truth — żaden fakt nie może być sprzeczny z tym seedem | **HIGH** — fakty    |
-| 2    | `PlaybookEntry.copy_template.en` (Opus)   | Voice/rhythm pattern dla danego archetypu                        | **HIGH** — styl     |
-| 3    | `listing_context` (structured fields)     | Dodatkowe fakty (placeholders); nigdy nie wymyśla wartości       | **MEDIUM** — fakty  |
+| Seed | Źródło                                            | Rola w prompcie                                                  | Priorytet faktyczny |
+| ---- | ------------------------------------------------- | ---------------------------------------------------------------- | ------------------- |
+| 1    | `listing.description` (oryginał agenta)           | Source of truth — żaden fakt nie może być sprzeczny z tym seedem | **HIGH** — fakty    |
+| 2    | `PlaybookEntry.copy_template[locale]` (Opus 4.7) | Voice/rhythm pattern dla danego archetypu i locale               | **HIGH** — styl     |
+| 3    | `listing_context` (structured fields)             | Dodatkowe fakty (placeholders); nigdy nie wymyśla wartości       | **MEDIUM** — fakty  |
 
-System prompt jednoznacznie ustala kontrakt: "rewrite an estate agent's original property description so it resonates with a specific buyer archetype. Preserve every factual claim in the agent's original. Adopt the voice, rhythm, and emphasis of the provided archetype pattern. Surface property facts most relevant to this archetype's motivations." Pełna treść promptu — `docs/specs/cold-start-protection-v1.md` §4.
+Prompt ma dwa branche zależnie od obecności SEED 1:
+
+- **Branch 4.1 (standard).** SEED 1 non-empty. System prompt: "rewrite an estate agent's original property description so it resonates with a specific buyer archetype. Preserve every factual claim in the agent's original. Adopt the voice, rhythm, and emphasis of the provided archetype pattern. Surface property facts most relevant to this archetype's motivations."
+- **Branch 4.2 (missing original).** SEED 1 empty. System prompt: "The agent has not supplied an original description for this listing. Generate a property description grounded strictly in the archetype voice pattern and the structured listing context provided. Do not invent any property feature, price, yield, or other claim not present in the listing context."
+
+Pełna treść obu promptów — `docs/specs/cold-start-protection-v1.md` §4. Locale Sonneta zawsze zgodne z `locale` żądania (EN/PL/ES), niezależnie od locale w którym SEED 2 jest authored — jeśli locale request nie ma autorskiego template, używamy `.en` jako voice seed ale instrukcji output'u w `{locale}`.
 
 **Invariants (testowalne):**
 
@@ -1514,7 +1531,10 @@ System prompt jednoznacznie ustala kontrakt: "rewrite an estate agent's original
 
 **Observability (TICKET-COLD-005):**
 
-ClickHouse `description_calls` (lub rozszerzenie `llm_calls`) loguje per request: `tenant_id, listing_id, archetype, locale, source, latency_ms, cache_age_seconds (dla ai_cached)`. Grafana panel: `% requests served as original_agent_copy` per tenant z 24h rolling window. Wysokie wartości (>40% sustained) wskazują na: (a) bardzo świeże listingi, (b) rozdrobnioną dystrybucję archetypów per listing, lub (c) degradację Modal job → on-call alert.
+ClickHouse `description_calls` (lub rozszerzenie `llm_calls`) loguje per request: `tenant_id, listing_id, archetype, locale, source, latency_ms, cache_age_seconds (dla ai_cached)`. Grafana panele:
+
+- `% requests served as original_agent_copy` per tenant z 24h rolling window. Wysokie wartości (>40% sustained) wskazują na: (a) bardzo świeże listingi, (b) rozdrobnioną dystrybucję archetypów per listing, lub (c) degradację Modal job → on-call alert.
+- `% requests served as template_fallback` per tenant z 24h rolling window. Wysokie wartości (>5% sustained) wskazują na tenant'a, który nie dostarcza `listing.description` w payload'ach — wymaga interwencji onboardingowej (Auto-Detect / Magic Link wizard nie wykrył pola description).
 
 **Co Cold Start Protection daje biznesowo:**
 

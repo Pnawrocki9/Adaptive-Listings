@@ -1257,16 +1257,16 @@ resolved):**
     Tier 3 → 48h TTL, max_tokens 600, priority high.
     Modal job apps/llm-gateway/src/jobs/generate_description.py.
     listing.updated → Redis DEL desc:{tenant_id}:{listing_id}:*
-    ml PR: '#112'
+    backend PR: pending (branch: backend-engineer/TICKET-DESC-001-description-pipeline)
+    ml-engineer PR: pending (Modal job, separate PR)
 
 - id: TICKET-VAL-001
   title: Continuous schema validation cron (drift detection per tenant)
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-AUTO-006]
-  pr: '#110'
   spec: backlog/sprint-9/TICKET-VAL-001.md
   notes: |
     CANONICAL implementation. Supersedes Sprint 2.5 TICKET-035 (mark that CANCELLED).
@@ -1274,7 +1274,6 @@ resolved):**
     Re-runs deterministic detection against live tenant pages, diffs vs stored schema,
     emits schema_drift_detected event + Sentry alert if drift detected.
     Writes schema_validation_history Postgres table row per run.
-    FOLLOW-037 (TICKET-VAL-002 site health dashboard) added to FOLLOW_UPS.md.
 ```
 
 ## Currently in flight

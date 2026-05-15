@@ -1006,27 +1006,29 @@ the stub.
 
 ---
 
-## FOLLOW-037 — Site health dashboard panel reading schema_validation_history (TICKET-VAL-002)
+## FOLLOW-037 — Migrate listing.updated cache invalidation to stream-consumer (Option B)
 
-- **source_retro:** TICKET-VAL-001 (data-engineer — schema validation cron)
-- **source_ticket:** TICKET-VAL-001
+- **source_retro:** TICKET-DESC-001
+- **source_ticket:** TICKET-DESC-001
 - **recommended_sprint:** 10
-- **recommended_agent:** backend-engineer
+- **recommended_agent:** data-engineer + backend-engineer
 - **priority:** P2
-- **estimated_hours:** 4
-- **scope:** The `schema_validation_history` Postgres table written by the daily validation cron
-  (TICKET-VAL-001) has no UI consumer. This follow-up adds the `/dashboard/site-health` page in
-  `apps/control-plane` that reads the most recent validation run per tenant-domain pair and
-  displays: coverage score, drift status, failed selectors, and a sparkline of historical health
-  over the last 30 days. Explicitly deferred from TICKET-VAL-001 per spec.
+- **estimated_hours:** 3
+- **scope:** TICKET-DESC-001 implemented cache invalidation via Option A (HTTP endpoint
+  `POST /api/webhooks/listing-updated`). Option B — reading `listing.updated` directly from the
+  Redpanda topic `estalara.events` in `apps/stream-consumer` — is architecturally cleaner and does
+  not require an additional internal HTTP call. This follow-up migrates to Option B: add a
+  `listing.updated` consumer handler in `apps/stream-consumer/src/consumers/events.py` that calls
+  the Upstash Redis wildcard delete pattern. Keep the HTTP webhook endpoint as a fallback (manual
+  trigger for ops). Document the decommission plan for the webhook endpoint.
 - **ac:**
-  - [ ] `/dashboard/site-health` route in `apps/control-plane/src/app/dashboard/site-health/`
-  - [ ] GET `/api/tenants/:id/schema-health` endpoint — reads `schema_validation_history` via
-        Drizzle, returns last 30 days of rows
-  - [ ] Dashboard panel: coverage score badge, drift indicator, failed selector list, 30-day
-        sparkline
-  - [ ] RLS enforced: tenant can only read their own rows
-  - [ ] Tests: API route returns correct shape; UI renders drift badge when `drift_detected = true`
+  - [ ] `apps/stream-consumer/src/consumers/events.py` handles `listing.updated` event type
+  - [ ] On receipt, calls Redis SCAN + DEL for `desc:{tenant_id}:{listing_id}:*`
+  - [ ] Idempotent — running twice for the same event is safe (DEL on missing key = no-op)
+  - [ ] Unit test: mock Redis SCAN to return 3 keys, assert DEL called with all 3
+  - [ ] Integration test: publish `listing.updated` to Redpanda, assert Redis keys deleted
+  - [ ] `POST /api/webhooks/listing-updated` kept as manual ops trigger (not decommissioned)
+  - [ ] ADR or PR note explaining the migration from Option A to Option B
 - **promoted_to_queue:** false
 
 ---

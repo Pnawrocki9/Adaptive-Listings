@@ -45,6 +45,7 @@ HTTP request retries. The job is idempotent (last-write-wins on Redis SET).
 - `apps/llm-gateway/src/jobs/generate_description.py` — Modal job
 - `apps/llm-gateway/src/jobs/test_generate_description.py` — pytest tests (14 cases)
 - `apps/llm-gateway/pyproject.toml` — updated with runtime deps (anthropic, httpx, modal, etc.)
+- PR: #112
 
 ---
 

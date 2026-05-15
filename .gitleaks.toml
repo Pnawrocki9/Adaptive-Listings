@@ -144,6 +144,10 @@ paths = [
   '''backlog/HANDOFFS\.md''',
   '''backlog/QUEUE\.md''',
   '''packages/sdk/src/auto-detect/__fixtures__/''',
+  # Python test files use long descriptive method names (test_empty_selectors_list_returns_empty_dict
+  # etc.) whose substrings of exactly 40 chars trigger this rule as false positives.
+  '''apps/.*/src/.*/test_.*\.py''',
+  '''apps/.*/src/.*_test\.py''',
 ]
 # k6 official GPG fingerprint used in apt installation instructions
 # Transcript filenames (date-slug format, e.g. 2026-05-12-15-49-14-estalara-sprint7-corpus)

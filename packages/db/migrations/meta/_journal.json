@@ -29,6 +29,13 @@
       "when": 1747180800000,
       "tag": "0006_answers",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1747526400000,
+      "tag": "0008_schema_validation_history",
+      "breakpoints": true
     }
   ]
 }

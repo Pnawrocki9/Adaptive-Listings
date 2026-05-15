@@ -1032,3 +1032,61 @@ the stub.
 - **promoted_to_queue:** false
 
 ---
+
+## FOLLOW-038 — E.6 Placeholder Resolution Level 6 (LLM) hallucination in slot-level templates
+
+**Priority:** P1 **Status:** OPEN **Discovered:** 2026-05-15 (Piotr review of TICKET-DESC-PIVOT-001
+v1.7.1) **Source ticket:** TICKET-DESC-PIVOT-001 (review observation, NOT in original scope)
+**Estimated:** 4-6h **Suggested owner:** sdk-engineer + ml-engineer **Suggested model:** Opus 4.7
+xhigh (analogiczny do DESC-PIVOT-001)
+
+### Problem
+
+E.6 Placeholder Resolution Order Level 6 (LLM generation) może wymyślać liczby w slot-level
+templates (headlines, CTAs) gdy placeholder nie ma danych w Level 1-5.
+
+Przykład: yield_hunter CTA "View this {yield}% yield opportunity"
+
+- Level 1-5: brak danych dla yield
+- Level 6: Haiku 4.5 generuje "6.5%" → halucynacja
+- Level 7 (skip): "View this yield opportunity" → broken text
+
+W v1.7.1 zabezpieczyliśmy long-form description przed halucynacjami przez WHITELIST RULES w Sonnet
+system prompt + audit trail. Slot-level templates używające E.6 Level 6 fallback NIE MAJĄ
+równoważnej ochrony.
+
+### Możliwe rozwiązania
+
+1. Skip-on-missing-data: Level 6 NIE jest fallback dla numerycznych placeholderów — schodzi
+   bezpośrednio do Level 7 (skip slot lub usuń placeholder)
+2. Whitelist-aware LLM prompt: Level 6 LLM dostaje WHITELIST RULES analogiczne do Sonnet description
+   prompt — może generować text uzupełniający, ale NIE liczby
+3. Slot meta-flag: Slot templates dostają `requires_data: ['yield']` — jeśli `yield` nie jest w
+   whitelist (Level 1-5), cały slot jest skipped przez SDK
+
+### Acceptance criteria (high-level)
+
+- Definicja listy "numerycznych placeholderów" (analogicznie do FORBIDDEN_PLACEHOLDERS w
+  template-purity.test.ts)
+- Mechanism preventing LLM (Haiku/Sonnet) from inventing numeric values w slot context
+- Test analogiczny do test_hallucination_resistance dla slot resolution
+- Dokumentacja zmiany w Master Design E.6
+
+### Why P1 (nie P0)
+
+Nie blokuje obecnego MVP — voice patterns w description są zabezpieczone. Slot-level halucynacje
+mogą wystąpić tylko gdy:
+
+- Tenant ma data_extractors które nie pokrywają wszystkich placeholderów slotów
+- I E.6 schodzi do Level 6 LLM fallback
+- I LLM wymyśla liczbę
+
+Zaadresować PRZED pierwszym EU pilot tenantem.
+
+### Cross-references
+
+- TICKET-DESC-PIVOT-001 v1.7.1 (rozwiązany problem dla description)
+- Master Design E.6 Placeholder Resolution Order
+- Master Design E.7.5 Anti-hallucination guard-rails (wzorzec do replikacji)
+
+---

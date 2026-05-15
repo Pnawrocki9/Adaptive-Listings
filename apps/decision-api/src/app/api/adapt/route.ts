@@ -14,6 +14,11 @@
  *   - When per-tenant daily spend exceeds LLM_DAILY_CAP_USD (default $1.00),
  *     the response source is set to 'playbook_fallback_llm_capped'.
  *
+ * Consent gate: TICKET-GDPR-004.
+ * - Fires before A/B assignment when tenant.consent_required is true.
+ * - Sessions with consent_state != 'granted' receive neutral directives immediately.
+ * - No ab_assignment event emitted for gated sessions.
+ *
  * A/B holdout assignment: TICKET-AB-001.
  * - Deterministic HMAC-SHA-256 hash on (tenant_id, session_id).
  * - Consent-aware: sessions with opted_out/unknown/none consent are skipped.
@@ -33,6 +38,7 @@ import { z } from 'zod';
 
 import { assignHoldout, DEFAULT_HOLDOUT_PCT } from '../../../lib/ab-assignment.js';
 import { publishAbAssignmentEvent } from '../../../lib/ab-events.js';
+import { consentGate } from '../../../lib/consent-gate.js';
 import type { Env } from '../../../index.js';
 import { isDailyCapExceeded } from '../../../lib/llm-gateway.js';
 import {
@@ -52,16 +58,28 @@ const AdaptRequestSchema = z.object({
   page_type: z.enum(['listing_list', 'listing_detail', 'home', 'search']),
   listing_ids: z.array(z.string().max(64)).max(100).optional(),
   /**
-   * Consent state from the session. Used for A/B holdout consent gating.
-   * Accepts the existing ConsentState values plus 'opted_out' | 'unknown' for
-   * the A/B layer (these map to the skip condition in AC-3 of TICKET-AB-001).
+   * Consent state from the session. Tightened from z.string().optional() in
+   * TICKET-GDPR-004. Callers that omit the field receive the 'unknown' default,
+   * which triggers the consent gate for tenants that require consent.
+   * Backward-compatible: existing callers omitting the field get 'unknown'.
+   *
+   * 'granted'  — explicit consent; personalization permitted.
+   * 'denied'   — explicit denial; neutral directives returned.
+   * 'unknown'  — no signal (safe default: treated as non-granted).
    */
-  consent_state: z.string().optional(),
+  consent_state: z.enum(['granted', 'denied', 'unknown']).default('unknown'),
   /**
    * Whether the tenant has consent mode enabled.
    * When true, sessions with non-granted consent states are skipped for A/B assignment.
    */
   consent_mode_enabled: z.boolean().optional(),
+  /**
+   * Whether the tenant requires explicit consent before personalization.
+   * Corresponds to tenants.consent_required (added TICKET-GDPR-004).
+   * The SDK/control-plane passes this from the tenant config at request time.
+   * Defaults to true (conservative) when not provided.
+   */
+  consent_required: z.boolean().default(true),
   /**
    * Holdout percentage override. If omitted, the default (0.10) is used.
    * Must be in [0, 1].
@@ -294,22 +312,48 @@ export async function handleAdaptRequest(
     archetype_hint,
     consent_state,
     consent_mode_enabled,
+    consent_required,
     holdout_pct,
     confidence: inputConfidence,
     similarity: inputSimilarity,
   } = parsed.data;
 
-  // 4. A/B holdout assignment (AC-1, AC-2, AC-3 — TICKET-AB-001).
+  // 4. Consent gate (TICKET-GDPR-004).
+  //    Must run BEFORE A/B assignment. When a tenant requires consent and the
+  //    session has not granted it, return neutral directives immediately.
+  //    No ab_assignment event is emitted for gated sessions.
+  const gate = consentGate({ consentRequired: consent_required, consentState: consent_state });
+  if (gate.gated) {
+    const gatedBody: AdaptResponse = {
+      session_id,
+      archetype: 'neutral',
+      confidence: 0.5,
+      directives: [],
+      ttl_seconds: 300,
+      source: 'playbook',
+      // holdout_group absent: session was not assigned (gated before A/B step)
+      reorderDirectives: [],
+      ...(inputSimilarity !== undefined ? { similarity: inputSimilarity } : {}),
+    };
+    return Response.json(gatedBody, { status: 200 });
+  }
+
+  // 5. A/B holdout assignment (AC-1, AC-2, AC-3 — TICKET-AB-001).
+  //    Only reached when the consent gate is open (consent_required=false OR
+  //    consent_state='granted').
   const assignment = await assignHoldout({
     tenant_id,
     session_id,
-    // exactOptionalPropertyTypes: only set consent_state when it's a string
-    ...(consent_state !== undefined ? { consent_state } : {}),
+    // Pass consent_state through for A/B's own skip logic (opted_out/none/unknown).
+    // 'unknown' and 'denied' are covered by the consent gate above for consent_required
+    // tenants, but A/B still needs to see it for non-consent_required tenants where
+    // consent_mode_enabled may independently block assignment.
+    consent_state,
     consent_mode_enabled: consent_mode_enabled ?? false,
     holdout_pct: holdout_pct ?? DEFAULT_HOLDOUT_PCT,
   });
 
-  // 4b. Emit ab.assignment event (fire-and-forget — MUST NOT delay the HTTP response).
+  // 5b. Emit ab.assignment event (fire-and-forget — MUST NOT delay the HTTP response).
   //     Only emitted when assignment was NOT skipped (consent granted or consent mode disabled).
   //     Sentry tag `ab_assignment_emit_failed` on producer error.
   const redpandaUrl = env.REDPANDA_REST_URL;
@@ -346,7 +390,7 @@ export async function handleAdaptRequest(
     })();
   }
 
-  // 5. Archetype detection and directive selection.
+  // 6. Archetype detection and directive selection.
   //    Holdout sessions receive no adaptation directives (default experience).
   const isHoldout = !assignment.skipped && assignment.holdout_group;
 
@@ -358,13 +402,13 @@ export async function handleAdaptRequest(
       }
     : detectArchetype(archetype_hint, inputConfidence, inputSimilarity);
 
-  // 6. LLM cap check.
+  // 7. LLM cap check.
   const dailyCapUsd = parseDailyCap(env.LLM_DAILY_CAP_USD);
   const capExceeded = isDailyCapExceeded(tenant_id, dailyCapUsd);
 
   const source: AdaptResponseSource = capExceeded ? 'playbook_fallback_llm_capped' : 'playbook';
 
-  // 7. ReorderDirective — emitted for non-holdout sessions with listing_ids. [TICKET-AB-009]
+  // 8. ReorderDirective — emitted for non-holdout sessions with listing_ids. [TICKET-AB-009]
   //    Holdout sessions always receive empty reorderDirectives.
   //    getTenantSchema() now does Redis cache + SCHEMA_API_URL fallback. [TICKET-AB-011]
   const listingIds = parsed.data.listing_ids;

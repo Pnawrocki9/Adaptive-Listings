@@ -5,6 +5,7 @@
  * Includes A/B holdout integration tests (TICKET-AB-001 AC-5 and AC-6).
  * Includes ab.assignment event emission tests (TICKET-AB-005).
  * Includes ReorderDirective integration tests (TICKET-AB-009).
+ * Includes consent gate integration tests (TICKET-GDPR-004).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -57,10 +58,18 @@ function makeAdaptRequest(body: Record<string, unknown>, auth = BEARER): Request
   });
 }
 
+/**
+ * BASE_BODY sets consent_required=false and consent_state='granted' so that
+ * existing routing/auth/LLM-cap/reorder tests are not affected by the
+ * consent gate added in TICKET-GDPR-004. Gate-specific tests use their own
+ * bodies that set consent_required=true explicitly.
+ */
 const BASE_BODY = {
   tenant_id: TENANT_ID,
   session_id: 'sess_abc123',
   page_type: 'listing_list',
+  consent_required: false,
+  consent_state: 'granted',
 };
 
 // ─── Archetype routing ────────────────────────────────────────────────────────
@@ -259,26 +268,30 @@ describe('GET /api/health', () => {
 // ─── A/B holdout integration (TICKET-AB-001 AC-5, AC-6) ──────────────────────
 
 describe('POST /api/adapt — A/B holdout (TICKET-AB-001)', () => {
-  it('AC-5: opted-out session receives default response with no holdout_group field', async () => {
+  it('AC-5: denied-consent session (consent_required=true) receives neutral response with no holdout_group field', async () => {
     const res = await handleAdaptRequest(
       makeAdaptRequest({
         ...BASE_BODY,
-        consent_state: 'opted_out',
+        consent_state: 'denied',
+        consent_required: true,
         consent_mode_enabled: true,
       }),
       EMPTY_ENV,
     );
     expect(res.status).toBe(200);
     const body = await parseBody<AdaptResponse>(res);
-    // No adaptation when opted out
+    // No adaptation when consent denied for consent_required tenant
     expect(body.holdout_group).toBeUndefined();
+    expect(body.archetype).toBe('neutral');
+    expect(body.directives).toHaveLength(0);
   });
 
-  it('AC-5: unknown consent receives default response with no holdout_group field', async () => {
+  it('AC-5: unknown consent (consent_required=true) receives neutral response with no holdout_group field', async () => {
     const res = await handleAdaptRequest(
       makeAdaptRequest({
         ...BASE_BODY,
         consent_state: 'unknown',
+        consent_required: true,
         consent_mode_enabled: true,
       }),
       EMPTY_ENV,
@@ -286,6 +299,8 @@ describe('POST /api/adapt — A/B holdout (TICKET-AB-001)', () => {
     expect(res.status).toBe(200);
     const body = await parseBody<AdaptResponse>(res);
     expect(body.holdout_group).toBeUndefined();
+    expect(body.archetype).toBe('neutral');
+    expect(body.directives).toHaveLength(0);
   });
 
   it('AC-6: granted consent → holdout_group boolean is present in response', async () => {
@@ -302,8 +317,9 @@ describe('POST /api/adapt — A/B holdout (TICKET-AB-001)', () => {
     expect(typeof body.holdout_group).toBe('boolean');
   });
 
-  it('AC-6: no consent fields → holdout_group boolean is present (consent mode disabled)', async () => {
-    // Default: consent_mode_enabled is false, so assignment always proceeds
+  it('AC-6: consent_required=false → holdout_group boolean is present (consent gate disabled)', async () => {
+    // BASE_BODY has consent_required=false so the gate is open regardless of consent_state.
+    // consent_mode_enabled is absent so A/B assignment always proceeds.
     const res = await handleAdaptRequest(makeAdaptRequest(BASE_BODY), EMPTY_ENV);
     expect(res.status).toBe(200);
     const body = await parseBody<AdaptResponse>(res);
@@ -512,11 +528,13 @@ describe('POST /api/adapt — ab.assignment event emission (TICKET-AB-005)', () 
     expect(publishSpy).toHaveBeenCalledTimes(CALLS);
   });
 
-  it('consent_state=opted_out → producer called zero times', async () => {
+  it('consent_state=denied + consent_required=true → producer called zero times (consent gate)', async () => {
+    // The consent gate fires before A/B assignment, so no producer call.
     await handleAdaptRequest(
       makeAdaptRequest({
         ...BASE_BODY,
-        consent_state: 'opted_out',
+        consent_state: 'denied',
+        consent_required: true,
         consent_mode_enabled: true,
         holdout_pct: 0.5,
       }),
@@ -528,11 +546,13 @@ describe('POST /api/adapt — ab.assignment event emission (TICKET-AB-005)', () 
     expect(publishSpy).toHaveBeenCalledTimes(0);
   });
 
-  it('consent_state=unknown → producer called zero times', async () => {
+  it('consent_state=unknown + consent_required=true → producer called zero times (consent gate)', async () => {
+    // The consent gate fires before A/B assignment, so no producer call.
     await handleAdaptRequest(
       makeAdaptRequest({
         ...BASE_BODY,
         consent_state: 'unknown',
+        consent_required: true,
         consent_mode_enabled: true,
       }),
       REDPANDA_ENV,
@@ -780,5 +800,120 @@ describe('reorder.ts — getTenantSchema + buildReorderDirective', () => {
     const schema = { reorder_capable: false };
     const directive = buildReorderDirective(schema, ['a', 'b'], 'neutral', 0.5);
     expect(directive).toBeNull();
+  });
+});
+
+// ─── Consent gate integration tests (TICKET-GDPR-004) ─────────────────────────
+
+describe('POST /api/adapt — consent gate (TICKET-GDPR-004)', () => {
+  it('AC-3/4: consent_required=true + consent_state=unknown → neutral directives, no holdout_group', async () => {
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        consent_state: 'unknown',
+        consent_required: true,
+        archetype_hint: 'investor',
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    // Consent gate fires: no personalization
+    expect(body.archetype).toBe('neutral');
+    expect(body.confidence).toBe(0.5);
+    expect(body.directives).toHaveLength(0);
+    expect(body.holdout_group).toBeUndefined();
+    expect(body.reorderDirectives).toEqual([]);
+  });
+
+  it('AC-3/4: consent_required=true + consent_state=denied → neutral directives, no holdout_group', async () => {
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        consent_state: 'denied',
+        consent_required: true,
+        archetype_hint: 'family',
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    expect(body.archetype).toBe('neutral');
+    expect(body.directives).toHaveLength(0);
+    expect(body.holdout_group).toBeUndefined();
+  });
+
+  it('AC-5: consent_required=true + consent_state=granted → archetype-specific directives returned', async () => {
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        consent_state: 'granted',
+        consent_required: true,
+        archetype_hint: 'investor',
+        holdout_pct: 0,
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    // Gate is open: personalization proceeds
+    expect(body.archetype).toBe('investor');
+    expect(body.directives.length).toBeGreaterThan(0);
+    expect(typeof body.holdout_group).toBe('boolean');
+  });
+
+  it('AC-6 backward compat: no consent_state in request → defaults to unknown, gate applies for consent_required tenant', async () => {
+    // Omit consent_state; Zod default gives 'unknown'.
+    // consent_required=true so gate fires.
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        tenant_id: TENANT_ID,
+        session_id: 'sess_no_consent_state',
+        page_type: 'listing_list',
+        consent_required: true,
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    expect(body.archetype).toBe('neutral');
+    expect(body.directives).toHaveLength(0);
+    expect(body.holdout_group).toBeUndefined();
+  });
+
+  it('consent_required=false + consent_state=unknown → gate does NOT fire, normal flow', async () => {
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        consent_state: 'unknown',
+        consent_required: false,
+        archetype_hint: 'investor',
+        holdout_pct: 0,
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    // Gate open: personalization proceeds
+    expect(body.archetype).toBe('investor');
+    expect(body.directives.length).toBeGreaterThan(0);
+  });
+
+  it('AC-7 A/B holdout skip still works: consent_required=false, consent_mode_enabled=true, consent_state=unknown → skipped', async () => {
+    // consent_required=false → consent gate does NOT fire.
+    // consent_mode_enabled=true + consent_state='unknown' → A/B assignment skipped.
+    const res = await handleAdaptRequest(
+      makeAdaptRequest({
+        ...BASE_BODY,
+        consent_state: 'unknown',
+        consent_required: false,
+        consent_mode_enabled: true,
+      }),
+      EMPTY_ENV,
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<AdaptResponse>(res);
+    // A/B skipped → holdout_group absent
+    expect(body.holdout_group).toBeUndefined();
   });
 });

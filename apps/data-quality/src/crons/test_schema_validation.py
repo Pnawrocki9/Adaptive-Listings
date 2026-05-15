@@ -283,9 +283,13 @@ class TestRunValidation:
         assert len(insert_calls) == 1
 
         # Verify the call args contain error string and drift_detected=False
+        # execute(sql, (tenant_id, domain, coverage_score, failed_selectors,
+        #               total_selectors, matched_selectors, drift_detected, error))
+        # indices:          0           1         2               3
+        #                   4               5            6            7
         insert_args = insert_calls[0][0][1]
-        assert insert_args[7] is False  # drift_detected
-        assert "fetch_failed: timeout" in (insert_args[8] or "")  # error
+        assert insert_args[6] is False  # drift_detected
+        assert "fetch_failed: timeout" in (insert_args[7] or "")  # error
 
     def test_drift_detected_emits_sentry_and_redpanda(self) -> None:
         """When drift is detected, Sentry capture_message and Redpanda emit are called."""
@@ -398,7 +402,9 @@ class TestRunValidation:
         insert_calls = [c for c in execute_calls if "INSERT INTO schema_validation_history" in str(c)]
         assert len(insert_calls) == 1
         insert_args = insert_calls[0][0][1]
-        assert "fetch_failed: HTTP 404" in (insert_args[8] or "")
+        # execute args: (tenant_id, domain, coverage_score, failed_selectors,
+        #                total_selectors, matched_selectors, drift_detected, error)
+        assert "fetch_failed: HTTP 404" in (insert_args[7] or "")
 
 
 # ---------------------------------------------------------------------------

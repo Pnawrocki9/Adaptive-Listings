@@ -7,10 +7,20 @@ Flow:
      generate_description.spawn() for each message (fire-and-forget).
   3. generate_description() calls Anthropic Sonnet 4.6 directly (NOT via llm-gateway.ts —
      this is Python, independent of the TypeScript control-plane).
-  4. On success, writes {"text": "...", "generated_at": "<ISO>"} as a JSON string to Upstash
-     Redis at key desc:{tenant_id}:{listing_id}:{archetype}:{locale} with tier-specific TTL.
+  4. On success, writes {"text": "...", "generated_at": "<ISO>", "verified_facts_used": [...]}
+     as a JSON string to Upstash Redis at key
+     desc:{tenant_id}:{listing_id}:{archetype}:{locale} with tier-specific TTL.
   5. On empty response or exception, does NOT write to Redis; the next HTTP request will
      trigger another attempt (idempotent by design).
+
+v1.7.1 — WHITELIST guard-rails:
+  The Sonnet system prompt enforces a strict WHITELIST rule set that prevents the model
+  from inventing numbers, names, percentages, distances or other quantitative facts that
+  are not present in either (a) original_description (agent's text) or (b) listing_context
+  (structured property data). Sonnet emits a <verified_facts_used> JSON block at the end
+  of its output; we strip it out, store it alongside the description in Redis, and
+  forward it to ClickHouse for the anti-hallucination audit trail
+  (description_generations.verified_facts_used Array(String)).
 
 Redis source values (defined in backend's DescriptionResponseSchema):
   - "template_fallback" — returned by the HTTP endpoint on cache miss (no write here).
@@ -30,6 +40,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -133,15 +144,12 @@ TTL_TIER_3: int = 172800  # 48 hours
 
 app = modal.App("estalara-description-generator")
 
-_image = (
-    modal.Image.debian_slim(python_version="3.12")
-    .pip_install(
-        "anthropic>=0.28",
-        "httpx>=0.27",
-        "confluent-kafka>=2.4",
-        "sentry-sdk>=2.0",
-        "structlog>=24.0",
-    )
+_image = modal.Image.debian_slim(python_version="3.12").pip_install(
+    "anthropic>=0.28",
+    "httpx>=0.27",
+    "confluent-kafka>=2.4",
+    "sentry-sdk>=2.0",
+    "structlog>=24.0",
 )
 
 
@@ -169,15 +177,20 @@ def generate_description(event: dict[str, Any]) -> None:
 
     Args:
         event: Payload dict with fields:
-            tenant_id (str)        — required
-            listing_id (str)       — required
-            archetype (str)        — required
-            cache_key (str)        — required; Redis key to write
-            locale (str)           — optional, default "en"
-            tier (int)             — optional, default 2
-            copy_template (str)    — optional; seed text from PlaybookEntry.copy_template.en
-            listing_context (dict) — optional; listing key-value pairs for factual grounding
-            ttl_seconds (int)      — optional; overrides tier-derived default
+            tenant_id (str)            — required
+            listing_id (str)           — required
+            archetype (str)            — required
+            cache_key (str)            — required; Redis key to write
+            original_description (str) — required (v1.7.1); agent's original copy
+                                         (may be empty string but the key must be present)
+            locale (str)               — optional, default "en"
+            tier (int)                 — optional, default 2
+            copy_template (str)        — optional; seed text from
+                                         PlaybookEntry.copy_template.en. Now parsed for
+                                         "VOICE PATTERN:" / "HARD RULES:" sections.
+            listing_context (dict)     — optional; listing key-value pairs for factual
+                                         grounding
+            ttl_seconds (int)          — optional; overrides tier-derived default
     """
     tenant_id: str = event["tenant_id"]
     listing_id: str = event["listing_id"]
@@ -186,6 +199,8 @@ def generate_description(event: dict[str, Any]) -> None:
     tier: int = int(event.get("tier", 2))
     copy_template: str = event.get("copy_template", "")
     listing_context: dict[str, Any] = event.get("listing_context", {})
+    # v1.7.1: original_description is the agent's factual source. Required key (may be "").
+    original_description: str = event["original_description"]
     cache_key: str = event["cache_key"]
     default_ttl = TTL_TIER_2 if tier == 2 else TTL_TIER_3
     ttl_seconds: int = int(event.get("ttl_seconds", default_ttl))
@@ -200,7 +215,14 @@ def generate_description(event: dict[str, Any]) -> None:
     )
 
     try:
-        description = _generate_with_sonnet(archetype, copy_template, listing_context, tier, locale)
+        description, verified_facts = _generate_with_sonnet(
+            archetype=archetype,
+            copy_template=copy_template,
+            listing_context=listing_context,
+            tier=tier,
+            locale=locale,
+            original_description=original_description,
+        )
     except Exception as exc:
         log.error(
             "generate_description.sonnet_error tenant=%s listing=%s error=%s",
@@ -221,13 +243,142 @@ def generate_description(event: dict[str, Any]) -> None:
         # Do not write to Redis.
         return
 
-    _write_to_redis(cache_key, description, ttl_seconds)
-    log.info("generate_description.done cache_key=%s ttl=%d", cache_key, ttl_seconds)
+    _write_to_redis(cache_key, description, ttl_seconds, verified_facts)
+    log.info(
+        "generate_description.done cache_key=%s ttl=%d verified_facts_count=%d",
+        cache_key,
+        ttl_seconds,
+        len(verified_facts),
+    )
 
 
 # ---------------------------------------------------------------------------
-# Sonnet 4.6 generation
+# Sonnet 4.6 generation — v1.7.1 WHITELIST anti-hallucination prompt
 # ---------------------------------------------------------------------------
+#
+# The system prompt is parameterised on {archetype} and {locale}. It enforces
+# that Sonnet may only emit facts present in either original_description
+# (agent's text) or listing_context (structured data). It also requires Sonnet
+# to emit a trailing <verified_facts_used> JSON block so we can persist the
+# audit trail to ClickHouse.
+
+_SONNET_SYSTEM_PROMPT_TEMPLATE: str = """\
+You are an expert real-estate copywriter writing adaptive listing descriptions
+for a specific buyer archetype: {archetype}.
+
+You will receive:
+- archetype_voice_pattern: instructions on how this archetype's copy should sound
+- archetype_hard_rules: what you must NEVER write for this archetype
+- original_description: agent's original listing copy (factual source of truth)
+- listing_context: structured property data (also factual source of truth)
+- locale: {locale} (en/pl/es)
+
+WHITELIST RULES — DO NOT VIOLATE:
+
+1. The ONLY sources of facts you may write about are:
+   (a) original_description — agent's text
+   (b) listing_context — structured property data
+
+2. You MUST NOT mention numbers, ratings, distances, percentages, prices, dates,
+   names of schools/hospitals/companies, or any specific quantitative or named
+   facts unless they appear explicitly in (a) or (b).
+
+3. Generic positive descriptors WITHOUT numbers are permitted:
+   ALLOWED:  "attractive yield", "strong rental demand", "spacious garden",
+             "well-connected", "established neighbourhood"
+   FORBIDDEN: "yield of 6.2%", "above 95% occupancy", "300m from Tube",
+             "Ofsted Outstanding", "Knight Frank managed"
+
+4. If voice_pattern asks you to "lead with cashflow" but no yield/income data
+   exists in verified facts, use generic positive cashflow language. Do not
+   invent numbers.
+
+5. At the end of your response, output a separate JSON block listing the verified
+   facts you actually used:
+
+   <verified_facts_used>
+   ["bedrooms: 3", "location: Marbella Old Town", "garden: yes", "epc: B"]
+   </verified_facts_used>
+
+6. Do not include the <verified_facts_used> block in the description text. The
+   description text and audit block are returned separately.
+
+7. Target length: ~140 words for the description body.
+
+8. Write in {locale} (en/pl/es). Match the linguistic register of the
+   archetype_voice_pattern, which is provided in {locale}.
+
+Now write the description following archetype_voice_pattern and archetype_hard_rules,
+respecting the WHITELIST RULES above."""
+
+
+# Regex used by _parse_verified_facts. Compiled once at module load.
+_VERIFIED_FACTS_PATTERN: re.Pattern[str] = re.compile(
+    r"\s*<verified_facts_used>\s*(.*?)\s*</verified_facts_used>\s*",
+    re.DOTALL,
+)
+
+
+def _parse_copy_template_sections(copy_template: str) -> tuple[str, str]:
+    """
+    Parse a structured copy_template string into (voice_pattern, hard_rules).
+
+    The v1.7.1 copy_template format is:
+
+        VOICE PATTERN:
+        <how this archetype's copy should sound>
+
+        HARD RULES:
+        <what to never write for this archetype>
+
+    If the markers are not present, the entire copy_template is returned as the
+    voice_pattern and hard_rules is empty (backwards compatible with older
+    playbook entries).
+
+    Args:
+        copy_template: Raw seed text from PlaybookEntry.copy_template.en.
+
+    Returns:
+        Tuple of (voice_pattern, hard_rules), each stripped of whitespace.
+    """
+    if "VOICE PATTERN:" in copy_template and "HARD RULES:" in copy_template:
+        parts = copy_template.split("HARD RULES:", 1)
+        voice = parts[0].replace("VOICE PATTERN:", "").strip()
+        rules = parts[1].strip()
+        return voice, rules
+    return copy_template.strip(), ""
+
+
+def _parse_verified_facts(sonnet_output: str) -> tuple[str, list[str]]:
+    """
+    Strip the <verified_facts_used>...</verified_facts_used> block from Sonnet output.
+
+    Returns:
+        Tuple of (description_text, verified_facts_list).
+
+        - description_text is sonnet_output with the audit block removed, stripped.
+        - verified_facts_list is the parsed JSON array of strings inside the block.
+
+        If no audit block is found, returns (sonnet_output.strip(), []).
+        If the audit block exists but contains malformed JSON or a non-list value,
+        returns the cleaned description and an empty facts list.
+    """
+    match = _VERIFIED_FACTS_PATTERN.search(sonnet_output)
+    if not match:
+        return sonnet_output.strip(), []
+
+    description = sonnet_output[: match.start()] + sonnet_output[match.end() :]
+    description = description.strip()
+
+    facts_raw = match.group(1).strip()
+    try:
+        facts = json.loads(facts_raw)
+        if not isinstance(facts, list):
+            facts = []
+    except (json.JSONDecodeError, ValueError):
+        facts = []
+
+    return description, facts
 
 
 def _generate_with_sonnet(
@@ -235,24 +386,40 @@ def _generate_with_sonnet(
     copy_template: str,
     listing_context: dict[str, Any],
     tier: int,
-    locale: str,
-) -> str:
+    locale: str = "en",
+    original_description: str = "",
+) -> tuple[str, list[str]]:
     """
     Call Anthropic Sonnet 4.6 to generate a buyer-adapted listing description.
+
+    v1.7.1 — Uses the WHITELIST system prompt that forbids Sonnet from inventing
+    any number, name, or quantitative fact not present in either
+    original_description or listing_context. Sonnet appends a
+    <verified_facts_used> JSON block that we strip out and return separately.
 
     Tier 2 targets ~100 words (max_tokens=450).
     Tier 3 targets ~150 words (max_tokens=600).
 
     Args:
-        archetype:       One of the 18 archetype IDs (e.g. "yield_hunter").
-        copy_template:   Seed text from PlaybookEntry.copy_template.en.
-        listing_context: Key-value pairs from the listing (bedrooms, price, etc.).
-        tier:            Integration tier (2 or 3).
-        locale:          Target locale code (e.g. "en", "pl", "es").
+        archetype:            One of the 18 archetype IDs (e.g. "yield_hunter").
+        copy_template:        Seed text from PlaybookEntry.copy_template.en.
+                              May contain "VOICE PATTERN:" / "HARD RULES:" sections.
+        listing_context:      Key-value pairs from the listing (bedrooms, price, etc.).
+                              Factual source of truth for Sonnet.
+        tier:                 Integration tier (2 or 3).
+        locale:               Target locale code (e.g. "en", "pl", "es").
+        original_description: Agent's original listing copy. Factual source of truth.
+                              May be an empty string when no agent copy exists.
 
     Returns:
-        Generated description text, stripped of leading/trailing whitespace.
-        Empty string if Anthropic returns an empty or whitespace-only content block.
+        Tuple of (description_text, verified_facts_used).
+
+        - description_text is the body of the description, stripped of the audit
+          block. Empty string if Anthropic returns no content; in that case the
+          caller MUST NOT write to Redis.
+        - verified_facts_used is a list of strings parsed from the
+          <verified_facts_used> JSON block. Empty list if the block is missing
+          or malformed.
 
     Raises:
         anthropic.APIError: on API-level errors (rate limit, auth, server error).
@@ -262,46 +429,45 @@ def _generate_with_sonnet(
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
     max_tokens = 600 if tier >= 3 else 450
-    target_words = 150 if tier >= 3 else 100
 
-    archetype_guidance = _ARCHETYPE_GUIDANCE.get(
-        archetype,
-        "Write a balanced property description for a motivated buyer.",
-    )
+    voice_pattern, hard_rules = _parse_copy_template_sections(copy_template)
 
-    system_prompt = (
-        "You are a real estate copywriter specialising in buyer-persona-adapted descriptions. "
-        "Write compelling property descriptions tailored to a specific buyer archetype. "
-        "Be specific, vivid, and highlight features most relevant to the archetype. "
-        "Output ONLY the description text — no introductory phrases, no meta-commentary, "
-        "no labels, no quotation marks."
+    # Fall back to the archetype guidance dictionary when the playbook does not
+    # provide a structured voice pattern. This keeps older playbook entries
+    # working until they are migrated to the VOICE PATTERN / HARD RULES format.
+    if not voice_pattern:
+        voice_pattern = _ARCHETYPE_GUIDANCE.get(
+            archetype,
+            "Write a balanced property description for a motivated buyer.",
+        )
+
+    system_prompt = _SONNET_SYSTEM_PROMPT_TEMPLATE.format(
+        archetype=archetype,
+        locale=locale,
     )
 
     user_prompt_parts: list[str] = [
-        f"Archetype: {archetype}",
-        f"Locale: {locale}",
+        f"archetype: {archetype}",
+        f"locale: {locale}",
         "",
-        f"Copywriting focus for this archetype:\n{archetype_guidance}",
-    ]
-
-    if copy_template:
-        user_prompt_parts += [
-            "",
-            "Seed description (refine and adapt for this buyer persona — keep factual details, "
-            "reshape framing and emphasis):",
-            copy_template,
-        ]
-
-    if listing_context:
-        user_prompt_parts += [
-            "",
-            "Property context (use these facts; do NOT invent facts not present here):",
-            json.dumps(listing_context, indent=2),
-        ]
-
-    user_prompt_parts += [
+        "archetype_voice_pattern:",
+        voice_pattern,
         "",
-        f"Write a ~{target_words}-word property description for a {archetype} buyer.",
+        "archetype_hard_rules:",
+        hard_rules if hard_rules else "(none provided)",
+        "",
+        "original_description:",
+        original_description if original_description else "(empty)",
+        "",
+        "listing_context (JSON):",
+        json.dumps(listing_context, indent=2) if listing_context else "{}",
+        "",
+        (
+            "Write the description for this archetype following the WHITELIST RULES. "
+            "Remember: do not invent numbers, ratings, distances, percentages, prices, "
+            "dates, or proper names that are not in original_description or "
+            "listing_context. Finish with the <verified_facts_used> JSON block."
+        ),
     ]
 
     user_prompt = "\n".join(user_prompt_parts)
@@ -317,7 +483,10 @@ def _generate_with_sonnet(
     if response.content and hasattr(response.content[0], "text"):
         raw_text = response.content[0].text
 
-    return raw_text.strip()
+    if not raw_text.strip():
+        return "", []
+
+    return _parse_verified_facts(raw_text)
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +494,12 @@ def _generate_with_sonnet(
 # ---------------------------------------------------------------------------
 
 
-def _write_to_redis(cache_key: str, description: str, ttl_seconds: int) -> None:
+def _write_to_redis(
+    cache_key: str,
+    description: str,
+    ttl_seconds: int,
+    verified_facts: list[str] | None = None,
+) -> None:
     """
     Write a generated description to Upstash Redis via the REST pipeline endpoint.
 
@@ -333,17 +507,24 @@ def _write_to_redis(cache_key: str, description: str, ttl_seconds: int) -> None:
     to avoid URL-encoding issues with long description text containing special chars.
 
     Stored value format (JSON string):
-        {"text": "<description>", "generated_at": "<ISO 8601 UTC>"}
+        {
+            "text": "<description>",
+            "generated_at": "<ISO 8601 UTC>",
+            "verified_facts_used": ["bedrooms: 3", "location: Marbella", ...]
+        }
 
     The backend HTTP endpoint reads this JSON on cache hit:
       - Returns "text" as the description field in the API response.
       - Returns "generated_at" as the generated_at timestamp.
+      - May propagate "verified_facts_used" for audit / debugging consumers.
       - Sets source: "ai_cached" (NOT "ai_generated" — see module docstring).
 
     Args:
-        cache_key:   Redis key, e.g. "desc:tenant123:listing456:yield_hunter:en".
-        description: AI-generated description text.
-        ttl_seconds: Key expiry in seconds (259200 for Tier 2, 172800 for Tier 3).
+        cache_key:      Redis key, e.g. "desc:tenant123:listing456:yield_hunter:en".
+        description:    AI-generated description text.
+        ttl_seconds:    Key expiry in seconds (259200 for Tier 2, 172800 for Tier 3).
+        verified_facts: Audit list of facts Sonnet self-reported as used.
+                        Defaults to an empty list when absent.
 
     Raises:
         httpx.HTTPStatusError: if the Upstash REST API returns a non-2xx response.
@@ -355,6 +536,7 @@ def _write_to_redis(cache_key: str, description: str, ttl_seconds: int) -> None:
         {
             "text": description,
             "generated_at": datetime.now(UTC).isoformat(),
+            "verified_facts_used": verified_facts if verified_facts is not None else [],
         }
     )
 
@@ -455,8 +637,17 @@ def consume_description_requests() -> None:
                 consumer.commit(asynchronous=False)
                 continue
 
-            # Validate required fields before dispatching
-            required = {"tenant_id", "listing_id", "archetype", "cache_key"}
+            # Validate required fields before dispatching.
+            # v1.7.1: original_description is required (may be "" but the key must
+            # be present) so Sonnet can apply the WHITELIST rules with a known
+            # factual source.
+            required = {
+                "tenant_id",
+                "listing_id",
+                "archetype",
+                "cache_key",
+                "original_description",
+            }
             missing = required - set(event.keys())
             if missing:
                 log.warning(

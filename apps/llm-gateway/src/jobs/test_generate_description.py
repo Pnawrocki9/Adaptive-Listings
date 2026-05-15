@@ -24,6 +24,15 @@ Test plan (per TICKET-DESC-001 AC item 10 and Python test requirements):
   TC-12 generate_description uses cache_key from event directly.
   TC-13 TTL constants match documented values (72h / 48h).
   TC-14 All 18 archetypes have guidance entries.
+
+v1.7.1 additional tests (TICKET-DESC-PIVOT-001):
+
+  TC-15 test_hallucination_resistance — Sonnet must not invent numbers/names when
+        verified facts are minimal.
+  TC-16 test_verified_facts_extraction — _parse_verified_facts strips the audit
+        block and returns the JSON list.
+  TC-17 test_verified_facts_missing_falls_back_gracefully — missing audit block
+        yields description + empty facts list (no crash).
 """
 
 from __future__ import annotations
@@ -49,6 +58,7 @@ from jobs.generate_description import (
     TTL_TIER_3,
     _ARCHETYPE_GUIDANCE,
     _generate_with_sonnet,
+    _parse_verified_facts,
     _write_to_redis,
 )
 
@@ -65,6 +75,7 @@ _BASE_EVENT: dict[str, Any] = {
     "tier": 2,
     "copy_template": "This income-producing property has a 6.2% gross yield.",
     "listing_context": {"bedrooms": 3, "price": 350000, "yield_pct": 6.2},
+    "original_description": "3-bed property with sitting tenant in central area.",
     "ttl_seconds": 259200,
 }
 
@@ -87,19 +98,26 @@ def _run_job(event: dict[str, Any]) -> None:
 
     log = logging.getLogger(__name__)
 
-    tenant_id: str = event["tenant_id"]
-    listing_id: str = event["listing_id"]
     archetype: str = event["archetype"]
     locale: str = event.get("locale", "en")
     tier: int = int(event.get("tier", 2))
     copy_template: str = event.get("copy_template", "")
     listing_context: dict[str, Any] = event.get("listing_context", {})
+    # v1.7.1: original_description is required (may be empty string).
+    original_description: str = event["original_description"]
     cache_key: str = event["cache_key"]
     default_ttl = TTL_TIER_2 if tier == 2 else TTL_TIER_3
     ttl_seconds: int = int(event.get("ttl_seconds", default_ttl))
 
     try:
-        description = _generate_with_sonnet(archetype, copy_template, listing_context, tier, locale)
+        description, verified_facts = _generate_with_sonnet(
+            archetype=archetype,
+            copy_template=copy_template,
+            listing_context=listing_context,
+            tier=tier,
+            locale=locale,
+            original_description=original_description,
+        )
     except Exception as exc:
         log.error("test_job.sonnet_error error=%s", str(exc))
         return
@@ -107,7 +125,7 @@ def _run_job(event: dict[str, Any]) -> None:
     if not description:
         return
 
-    _write_to_redis(cache_key, description, ttl_seconds)
+    _write_to_redis(cache_key, description, ttl_seconds, verified_facts)
 
 
 # ---------------------------------------------------------------------------
@@ -485,3 +503,107 @@ def test_all_archetypes_have_guidance() -> None:
     """Every archetype in the 18-archetype registry must have a guidance entry."""
     missing = _EXPECTED_ARCHETYPES - set(_ARCHETYPE_GUIDANCE.keys())
     assert not missing, f"Missing archetype guidance for: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# TC-15: Hallucination resistance — WHITELIST RULES (v1.7.1)
+# ---------------------------------------------------------------------------
+
+
+def test_hallucination_resistance() -> None:
+    """When verified facts are minimal, Sonnet must not invent numbers or names."""
+    import re
+
+    minimal_original = "3-bed flat in Madrid"
+    minimal_context = {"bedrooms": 3, "location": {"city": "Madrid"}}
+
+    yield_hunter_voice = """
+    VOICE PATTERN: Lead with cashflow language. Frame all features in cashflow terms.
+    HARD RULES: No yield %, no occupancy %, no ADR unless in verified_facts.
+    """
+
+    mock_response = MagicMock()
+    mock_response.content = [
+        MagicMock(
+            text=(
+                "\n    A Madrid apartment positioned for income-focused investors. "
+                "With three bedrooms\n    in a city with established rental demand, "
+                "the unit fits a cashflow strategy\n    without aspirational framing. "
+                "Rental yield is attractive in this market type.\n    "
+                "Position: income asset rather than lifestyle purchase.\n\n"
+                "    <verified_facts_used>\n"
+                '    ["bedrooms: 3", "location: Madrid"]\n'
+                "    </verified_facts_used>\n    "
+            )
+        )
+    ]
+
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        mock_anthropic_cls.return_value = mock_client
+
+        result = _generate_with_sonnet(
+            archetype="yield_hunter",
+            copy_template=yield_hunter_voice,
+            original_description=minimal_original,
+            listing_context=minimal_context,
+            tier=2,
+            locale="en",
+        )
+
+    description, verified_facts = result
+
+    forbidden_patterns = [
+        r"\d+\.\d+%",
+        r"\d+% (occupancy|yield)",
+        r"€\d+",
+        r"\d+ sqm",
+        r"Ofsted",
+        r"Airbnb",
+    ]
+    for pattern in forbidden_patterns:
+        assert not re.search(
+            pattern, description, re.IGNORECASE
+        ), f"Hallucinated forbidden pattern '{pattern}' in: {description}"
+
+    assert isinstance(verified_facts, list)
+    assert "bedrooms: 3" in verified_facts
+    assert "location: Madrid" in verified_facts
+
+
+# ---------------------------------------------------------------------------
+# TC-16: Verified-facts audit-block extraction (v1.7.1)
+# ---------------------------------------------------------------------------
+
+
+def test_verified_facts_extraction() -> None:
+    """Parser must extract <verified_facts_used> block correctly."""
+    # _parse_verified_facts is imported at module top.
+    sonnet_output = """
+    Description text here without facts block in body.
+
+    <verified_facts_used>
+    ["bedrooms: 3", "location: Marbella", "garden: yes"]
+    </verified_facts_used>
+    """
+
+    description, facts = _parse_verified_facts(sonnet_output)
+    assert "Description text here" in description
+    assert "<verified_facts_used>" not in description
+    assert facts == ["bedrooms: 3", "location: Marbella", "garden: yes"]
+
+
+# ---------------------------------------------------------------------------
+# TC-17: Verified-facts block missing — graceful fallback (v1.7.1)
+# ---------------------------------------------------------------------------
+
+
+def test_verified_facts_missing_falls_back_gracefully() -> None:
+    """If Sonnet forgets the audit block, response still works (facts=[])."""
+    # _parse_verified_facts is imported at module top.
+    sonnet_output = "Just a description, no audit block."
+
+    description, facts = _parse_verified_facts(sonnet_output)
+    assert description == "Just a description, no audit block."
+    assert facts == []

@@ -716,3 +716,60 @@ sync. TICKET-NATIVE-001 is unblocked.
 - `apps/decision-api/src/index.ts` — added UPSTASH_REDIS_URL, SCHEMA_API_URL, SCHEMA_API_TOKEN
 
 ---
+
+## TICKET-GDPR-001 → TICKET-GDPR-002, TICKET-GDPR-003, TICKET-GDPR-004
+
+**From:** compliance-engineer **To:** backend-engineer (GDPR-002, GDPR-004) + compliance-engineer
+(GDPR-003 docs portion) **Date:** 2026-05-15T00:00:00Z
+
+**Summary:** DPIA v1.0 produced at `docs/compliance/dpia.md`; ROPA v1.0 produced at
+`docs/compliance/ropa.md`. Both cover all four operational jurisdictions (EU GDPR, UK GDPR + PECR,
+CCPA/CPRA, UAE PDPL + DIFC). The authoritative retention schedule table is at the top of `ropa.md`
+and uses exact Postgres and ClickHouse table names (`session_embeddings`, `consent_records`,
+`adaptation_decisions`, `llm_calls`, `ab_bandit_weights`, `archetype_embeddings`, `staff_audit_log`,
+`answers`). Compliance README at `docs/compliance/README.md`. Cross-module interface registry at
+`docs/INTERFACES.md`. CI gate script at `scripts/check-compliance-docs.sh`. IMPORTANT: This PR
+requires Piotr Nawrocki sign-off before merge; GDPR-002/003/004 must not merge before GDPR-001 is
+approved by Piotr.
+
+**Action required:**
+
+GDPR-002 (backend-engineer — DSR endpoints):
+
+- Use retention periods from `ropa.md` retention table (top of file) as the authoritative source for
+  deletion cascade TTLs.
+- The DSR endpoint spec: `POST /api/v1/dsr/:tenant_id` with `type`, `identifier`, `requester_proof`,
+  `jurisdiction`.
+- Deletion cascade must cover: `session_embeddings` (Postgres), `consent_records` (Postgres — retain
+  record, mark as revoked), `adaptation_decisions` (ClickHouse — delete rows by session_id),
+  `llm_calls` (ClickHouse), Upstash Redis (delete session key), Modal caches.
+- DSR token table is `dsr_tokens`; tokens expire 30 days after resolution.
+- Audit every DSR action in `staff_audit_log`.
+
+GDPR-003 (compliance-engineer — LIA template docs):
+
+- Produce `docs/compliance/lia-template.md` using the LI analysis framework documented in DPIA
+  Section 3 (Necessity and Proportionality) and Section 3.4 (CNIL June 2025 guidance).
+- The template must cover the three-part LI balancing test per ICO guidance: (1) legitimate interest
+  identified, (2) necessity test, (3) balancing test.
+
+GDPR-004 (backend-engineer — consent state propagation):
+
+- Use the mode definitions from DPIA Section 7 (Consent Strategy) for the consent decision tree.
+- Mode A = session_only (ePrivacy 5(3)(b) strictly necessary); Mode B = consented (explicit CMP
+  record); Mode C = legitimate_interest (narrow use cases only).
+- Add `consent_required` boolean to `tenants` table (default `true` for EU/UK/UAE regions).
+- Decision API must return default non-personalized directives if `consent_state !== 'consented'`
+  for tenants that have set `consent_required = true`.
+
+**Files:**
+
+- `docs/compliance/dpia.md` — DPIA v1.0 (10 sections, 5 risks, 4 jurisdictions)
+- `docs/compliance/ropa.md` — ROPA v1.0 (12 processing activities, 11 sub-processors, authoritative
+  retention table)
+- `docs/compliance/README.md` — Compliance document index
+- `docs/INTERFACES.md` — Cross-module interface registry (new)
+- `scripts/check-compliance-docs.sh` — CI gate script (jurisdiction grep checks, retention table
+  completeness, sub-processor completeness)
+
+---

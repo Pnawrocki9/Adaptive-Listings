@@ -11,6 +11,9 @@ import { test, expect } from '@playwright/test';
 test.describe('SDK Adapt DOM Mutations', () => {
   test.beforeEach(async ({ page }) => {
     // Wait a bit longer for SDK to init and fetch directives
+    await page.addInitScript(() => {
+      localStorage.setItem('estalara_consent', 'granted');
+    });
     await page.goto('http://localhost:4444/');
     // SDK fetches directives asynchronously — wait for up to 3s
     await page.waitForTimeout(1000);
@@ -30,6 +33,9 @@ test.describe('SDK Adapt DOM Mutations', () => {
     });
 
     // Re-navigate to ensure fresh SDK init
+    await page.addInitScript(() => {
+      localStorage.setItem('estalara_consent', 'granted');
+    });
     await page.goto('http://localhost:4444/');
     await page.waitForTimeout(1200);
 
@@ -60,6 +66,9 @@ test.describe('SDK Adapt DOM Mutations', () => {
       errors.push(err.message);
     });
 
+    await page.addInitScript(() => {
+      localStorage.setItem('estalara_consent', 'granted');
+    });
     await page.goto('http://localhost:4444/');
     await page.waitForTimeout(1200);
 
@@ -84,6 +93,9 @@ test.describe('SDK Adapt DOM Mutations', () => {
       errors.push(err.message);
     });
 
+    await page.addInitScript(() => {
+      localStorage.setItem('estalara_consent', 'granted');
+    });
     await page.goto('http://localhost:4444/');
     await page.waitForTimeout(1200);
 

@@ -61,6 +61,7 @@ import {
 import { SessionStartedEventSchema } from './device-context.js';
 import { SessionQualitySnapshotEventSchema } from './session-quality.js';
 import { AbAssignmentEventSchema } from './ab-assignment.js';
+import { ConsentGrantedEventSchema, ConsentDeniedEventSchema } from './consent.js';
 
 export * from './page-lifecycle.js';
 export * from './mouse-scroll.js';
@@ -74,11 +75,13 @@ export * from './inquiry.js';
 export * from './device-context.js';
 export * from './session-quality.js';
 export * from './ab-assignment.js';
+export * from './consent.js';
 
 /**
- * `EventSchema` — the canonical discriminated union over all 35 Estalara event types
+ * `EventSchema` — the canonical discriminated union over all 37 Estalara event types
  * (10 categories from Master Design C.1, plus session quality / DQS — TICKET-DQS-001,
- * plus A/B holdout assignment — TICKET-AB-001).
+ * plus A/B holdout assignment — TICKET-AB-001,
+ * plus consent audit — TICKET-041).
  *
  * Adding a new event type:
  *   1. Define payload + extended event schemas in the appropriate category file
@@ -133,6 +136,9 @@ export const EventSchema = z.discriminatedUnion('type', [
   SessionQualitySnapshotEventSchema,
   // A/B holdout assignment (1) — TICKET-AB-001
   AbAssignmentEventSchema,
+  // consent audit (2) — TICKET-041
+  ConsentGrantedEventSchema,
+  ConsentDeniedEventSchema,
 ]);
 export type Event = z.infer<typeof EventSchema>;
 
@@ -175,5 +181,8 @@ export const EVENT_TYPES = [
   'session.quality.snapshot',
   // A/B holdout — TICKET-AB-001
   'ab.assignment',
+  // consent audit — TICKET-041
+  'consent.granted',
+  'consent.denied',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];

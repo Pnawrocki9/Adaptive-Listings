@@ -21,6 +21,8 @@ const BASE_CONFIG: SdkConfig = {
   tier: 'observer',
   debug: false,
   consentState: 'legitimate_interest',
+  language: 'en',
+  accentColor: '#6c5ce7',
 };
 
 const SESSION: SessionState = {

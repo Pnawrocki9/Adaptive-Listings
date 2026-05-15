@@ -1261,10 +1261,11 @@ resolved):**
 - id: TICKET-VAL-001
   title: Continuous schema validation cron (drift detection per tenant)
   agent: data-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-AUTO-006]
+  pr: '#110'
   spec: backlog/sprint-9/TICKET-VAL-001.md
   notes: |
     CANONICAL implementation. Supersedes Sprint 2.5 TICKET-035 (mark that CANCELLED).
@@ -1272,6 +1273,7 @@ resolved):**
     Re-runs deterministic detection against live tenant pages, diffs vs stored schema,
     emits schema_drift_detected event + Sentry alert if drift detected.
     Writes schema_validation_history Postgres table row per run.
+    FOLLOW-037 (TICKET-VAL-002 site health dashboard) added to FOLLOW_UPS.md.
 ```
 
 ## Currently in flight

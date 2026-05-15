@@ -1,3 +1,10 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access --
+ * @estalara/sdk is a workspace package not built locally.
+ * TypeScript sees PlaybookEntry.copy_template as `any` until packages are built.
+ * CI builds packages before lint so these errors don't appear in CI.
+ * Same pattern as ab/weights/route.ts, dashboard/analytics/summary/route.ts, and other routes.
+ */
+
 /**
  * GET /api/adapt/description
  *
@@ -189,9 +196,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const playbook = getPlaybook(archetypeId);
   const templateText =
     localeCode === 'pl'
-      ? (playbook.copy_template.pl ?? playbook.copy_template.en)
+      ? playbook.copy_template.pl
       : localeCode === 'es'
-        ? (playbook.copy_template.es ?? playbook.copy_template.en)
+        ? playbook.copy_template.es
         : playbook.copy_template.en;
 
   // ── Tier 1: return template immediately, no Redis, no Modal ──────────────

@@ -204,6 +204,9 @@ paths = [
   '''packages/db/migrations/''',
   # DB schema files contain long table/index names that match the cloudflare-api-token regex
   '''packages/db/src/schema/''',
+  # ClickHouse migration filenames and comments contain long identifiers (table names, column names)
+  # that match the cloudflare-api-token regex as false positives.
+  '''infra/clickhouse/migrations/''',
 ]
 
 # Regexes for known safe patterns

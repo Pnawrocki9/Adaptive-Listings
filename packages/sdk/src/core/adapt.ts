@@ -8,6 +8,7 @@
  */
 
 import type { SessionState } from './session.js';
+import { getConsentState } from './session.js';
 import type { SdkConfig } from './config.js';
 import type {
   TextDirective,
@@ -307,6 +308,13 @@ export async function fetchDirectives(
       });
     }
     if (listingIds.length > 0) body.listing_ids = listingIds;
+
+    // Map SDK consent state to the Decision API enum ('granted' | 'denied' | 'unknown').
+    // 'pending' has no equivalent — the SDK gate in index.ts halts before calling
+    // fetchDirectives when consent is pending, so this branch is unreachable in practice.
+    // Sending 'unknown' for 'pending' is the safe conservative default.
+    const sdkConsent = getConsentState();
+    body.consent_state = sdkConsent === 'pending' ? 'unknown' : sdkConsent;
 
     const res = await fetch(`${config.decisionApiUrl}/adapt`, {
       method: 'POST',

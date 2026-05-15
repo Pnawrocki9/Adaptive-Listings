@@ -10,6 +10,7 @@ import {
 import type { AdaptResponse } from '../core/adapt.js';
 import type { SdkConfig } from '../core/config.js';
 import type { SessionState } from '../core/session.js';
+import * as sessionModule from '../core/session.js';
 import { initIntentState } from '../core/intent.js';
 import type { IntentState } from '../core/intent.js';
 import type { TextDirective, ClassDirective, ReorderDirective } from '@estalara/shared';
@@ -268,6 +269,73 @@ describe('fetchDirectives', () => {
     expect(body.archetype_hint).toBeUndefined();
     expect(body.confidence).toBeUndefined();
     expect(body.similarity).toBeUndefined();
+  });
+
+  it('sends consent_state: "granted" when getConsentState returns "granted"', async () => {
+    vi.spyOn(sessionModule, 'getConsentState').mockReturnValue('granted');
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(MOCK_RESPONSE),
+      }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    await fetchDirectives(config, SESSION, 'listing_list');
+
+    const [, requestInit] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
+    const body = JSON.parse(requestInit.body as string) as Record<string, unknown>;
+    expect(body.consent_state).toBe('granted');
+  });
+
+  it('sends consent_state: "denied" when getConsentState returns "denied"', async () => {
+    vi.spyOn(sessionModule, 'getConsentState').mockReturnValue('denied');
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(MOCK_RESPONSE),
+      }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    await fetchDirectives(config, SESSION, 'listing_list');
+
+    const [, requestInit] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
+    const body = JSON.parse(requestInit.body as string) as Record<string, unknown>;
+    expect(body.consent_state).toBe('denied');
+  });
+
+  it('sends consent_state: "unknown" when getConsentState returns "pending"', async () => {
+    vi.spyOn(sessionModule, 'getConsentState').mockReturnValue('pending');
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(MOCK_RESPONSE),
+      }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    await fetchDirectives(config, SESSION, 'listing_list');
+
+    const [, requestInit] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
+    const body = JSON.parse(requestInit.body as string) as Record<string, unknown>;
+    // 'pending' maps to 'unknown' — the conservative safe default for the Decision API gate
+    expect(body.consent_state).toBe('unknown');
   });
 });
 

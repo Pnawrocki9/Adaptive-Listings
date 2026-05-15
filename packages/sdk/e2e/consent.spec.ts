@@ -95,7 +95,9 @@ test.describe('Consent banner — TICKET-041', () => {
     expect(captured.length).toBeGreaterThan(0);
 
     // Must contain a page.view or consent.granted event
-    interface CapturedRequest { body: { events: { type: string }[] } }
+    interface CapturedRequest {
+      body: { events: { type: string }[] };
+    }
     const allEventTypes = (captured as CapturedRequest[]).flatMap((r) =>
       r.body.events.map((e) => e.type),
     );
@@ -149,7 +151,9 @@ test.describe('Consent banner — TICKET-041', () => {
       () => (window as unknown as Record<string, unknown[]>).__capturedRequests,
     );
 
-    interface CapturedReq { body: { events: { type: string }[] } }
+    interface CapturedReq {
+      body: { events: { type: string }[] };
+    }
     const allEventTypes = (captured as CapturedReq[]).flatMap((r) =>
       r.body.events.map((e) => e.type),
     );

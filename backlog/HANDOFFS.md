@@ -15,6 +15,29 @@ agent needs to do with it. **Files:** <list of relevant files / artifacts>
 
 ---
 
+## TICKET-DESC-001 (ML) → backend integration
+
+**From:** ml-engineer **To:** backend-engineer **Date:** 2026-05-15T00:00:00Z
+
+**Summary:** Modal async job at `apps/llm-gateway/src/jobs/generate_description.py`. Polls the
+`estalara.descriptions` Redpanda topic every 30s, calls Anthropic Sonnet 4.6, and writes
+`{"text": "...", "generated_at": "<ISO>"}` to Redis at
+`desc:{tenant_id}:{listing_id}:{archetype}:{locale}`. TTL: 259200s (Tier 2), 172800s (Tier 3). On
+Sonnet error or empty response, Redis is not written. Idempotent (last-write-wins).
+
+**Action required:** `GET /api/adapt/description` reads the Redis key above. Cache hit: return
+`source: "ai_cached"`, `description: value.text`, `generated_at: value.generated_at`. Cache miss:
+return `copy_template.en` as `source: "template_fallback"`, then fire-and-forget publish to
+`estalara.descriptions`. Note: `source: "ai_generated"` is NOT valid per Master Design E.7.3.
+
+**Files:**
+
+- `apps/llm-gateway/src/jobs/generate_description.py` — Modal job (PR #112)
+- `apps/llm-gateway/src/jobs/test_generate_description.py` — 14 pytest test cases
+- `apps/llm-gateway/pyproject.toml` — added anthropic, httpx, modal, confluent-kafka, sentry-sdk
+
+---
+
 ## TICKET-011 → TICKET-012, TICKET-014
 
 **From:** architect  

@@ -1257,6 +1257,7 @@ resolved):**
     Tier 3 → 48h TTL, max_tokens 600, priority high.
     Modal job apps/llm-gateway/src/jobs/generate_description.py.
     listing.updated → Redis DEL desc:{tenant_id}:{listing_id}:*
+    ml PR: '#112'
 
 - id: TICKET-VAL-001
   title: Continuous schema validation cron (drift detection per tenant)

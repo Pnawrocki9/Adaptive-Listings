@@ -15,26 +15,23 @@ agent needs to do with it. **Files:** <list of relevant files / artifacts>
 
 ---
 
-## TICKET-DESC-001 (ML) → backend integration
+## TICKET-041 → TICKET-GDPR-004
 
-**From:** ml-engineer **To:** backend-engineer **Date:** 2026-05-15T00:00:00Z
+**From:** sdk-engineer **To:** backend-engineer **Date:** 2026-05-15T08:00:00Z
 
-**Summary:** Modal async job at `apps/llm-gateway/src/jobs/generate_description.py`. Polls the
-`estalara.descriptions` Redpanda topic every 30s, calls Anthropic Sonnet 4.6, and writes
-`{"text": "...", "generated_at": "<ISO>"}` to Redis at
-`desc:{tenant_id}:{listing_id}:{archetype}:{locale}`. TTL: 259200s (Tier 2), 172800s (Tier 3). On
-Sonnet error or empty response, Redis is not written. Idempotent (last-write-wins).
+**Summary:** Consent banner ships in `packages/sdk`. `consent.granted` / `consent.denied` events are
+emitted to the event queue and flushed to ingest even when consent is denied (compliance audit
+trail). `getConsentState()` and `setConsentState()` are exported from `session.ts`. The consent
+state key is `estalara_consent` in `localStorage`. The `ConsentGrantedEventSchema` and
+`ConsentDeniedEventSchema` are registered in the shared `EventSchema` discriminated union.
+TICKET-GDPR-004 (server-side consent gate) can now rely on these events flowing through ingest to
+ClickHouse.
 
-**Action required:** `GET /api/adapt/description` reads the Redis key above. Cache hit: return
-`source: "ai_cached"`, `description: value.text`, `generated_at: value.generated_at`. Cache miss:
-return `copy_template.en` as `source: "template_fallback"`, then fire-and-forget publish to
-`estalara.descriptions`. Note: `source: "ai_generated"` is NOT valid per Master Design E.7.3.
+**Action required:** TICKET-GDPR-004 should gate server-side processing on `consent_state` field in
+the event envelope. No SDK changes needed for that gate.
 
-**Files:**
-
-- `apps/llm-gateway/src/jobs/generate_description.py` — Modal job (PR #112)
-- `apps/llm-gateway/src/jobs/test_generate_description.py` — 14 pytest test cases
-- `apps/llm-gateway/pyproject.toml` — added anthropic, httpx, modal, confluent-kafka, sentry-sdk
+**Files:** `packages/sdk/src/ui/consent-banner.ts`, `packages/sdk/src/core/session.ts`,
+`packages/shared/src/schemas/events/consent.ts`
 
 ---
 

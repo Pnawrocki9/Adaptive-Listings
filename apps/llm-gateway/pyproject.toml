@@ -8,7 +8,14 @@ version = "0.0.0"
 description = "Estalara llm-gateway — Modal serverless Python service"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "anthropic>=0.28",
+  "httpx>=0.27",
+  "confluent-kafka>=2.4",
+  "modal>=0.73",
+  "sentry-sdk>=2.0",
+  "structlog>=24.0",
+]
 
 [project.optional-dependencies]
 dev = [

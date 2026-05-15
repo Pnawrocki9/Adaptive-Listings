@@ -1,6 +1,24 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 1.7 (Master Design Document — Cold Start Protection redesign for description pipeline) | **Data:** 15 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 1.7.1 (Master Design Document — Description pipeline pivot: original-first + anti-hallucination guard-rails) | **Data:** 15 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v1.7.1 (15 May 2026 — Description pipeline pivot + anti-hallucination guard-rails):**
+
+- 🔄 Sekcja **E.7 "Long-form Description Pipeline"** przepisana w dwóch wymiarach:
+  - **Original-first behavior:** Tier 2/3 cache miss → endpoint zwraca `source: 'original'` z `description: null`, SDK NIE rusza DOM (agent's original copy zostaje widoczne dla buyera 1). AI-adapted copy pojawia się dopiero dla buyera N+1 (cache hit po Modal job). Powód: archetypal templates wstawione w miejsce realnego opisu agenta na pierwszej wizycie wyglądają sztucznie i mogą się kłócić faktograficznie z resztą strony.
+  - **Anti-hallucination guard-rails:** Templates przepisane jako pure voice/framing patterns (zero konkretnych liczb, zero hardcoded "faktów"). Sonnet system prompt dostaje strict whitelist — pisze TYLKO o faktach z `original_description` lub `listing_context`. Audit trail przez `<verified_facts_used>` parsowany do ClickHouse.
+- ✨ **Endpoint contract change**: `GET /api/adapt/description` zostaje dla Tier 1 (sidebar widget, zwraca `copy_template`). Dla Tier 2/3 nowy `POST /api/adapt/description` z body `{ listing_id, archetype, tier, locale, original_description, listing_context }`. POST jest potrzebny, bo `original_description` może być długie (kilkaset–kilka tysięcy znaków).
+- ✨ Nowa wartość w `source` enum: `'original'`. Schema: `'template_fallback' | 'ai_cached' | 'original'`.
+- ✨ Nowe pole `verified_facts_used: Array(String)` w response (Tier 2/3 ai_cached) i w ClickHouse `description_generations`. Audit trail które fakty Sonnet faktycznie użył.
+- 🔄 Templates `copy_template.en/pl/es` w 18 archetypach przepisane jako structured voice patterns (sekcje `VOICE PATTERN:` + `HARD RULES:`). Zero placeholderów liczbowych (`{yield}`, `{occupancy_rate}`, `{adr}`, `{wault}` itp.). CI gate `template-purity.test.ts` blokuje regresje.
+- 🔄 Modal job `apps/llm-gateway/src/jobs/generate_description.py`:
+  - Przyjmuje `original_description` w event payload, używa jako faktograficzny seed.
+  - System prompt zawiera WHITELIST RULES (Appendix B spec'u TICKET-DESC-PIVOT-001).
+  - Parsuje `<verified_facts_used>` z output Sonneta i zwraca jako osobne pole.
+- 🔄 SDK (TICKET-DESC-001 scope) na Tier 2/3 ekstraktuje oryginalny opis z DOM przez `tenant.data_extractors.description` selektor, wysyła w POST body. Na `source: 'original'` zostawia DOM. Na `source: 'ai_cached'` podmienia.
+- ✨ Nowa subsekcja **E.7.5 "Anti-hallucination guard-rails"** — formalne reguły whitelistu i polityka audit trail.
+- 📝 Reguła w `CONVENTIONS_PATCH.md`: "AI-adapted display copy never replaces agent's original on first view" + "AI-generated content uses strict fact whitelist + audit trail".
+- 🔧 Decyzje Piotra (locked 2026-05-15): templates BEZ liczb / whitelist tylko original+context / generic positive claims OK ("attractive yield" bez liczby) / audit trail w metadata.
 
 **Changelog v1.7 (15 May 2026 — Cold Start Protection for adaptation pipeline):**
 
@@ -1423,124 +1441,167 @@ Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adapto
 
 ---
 
-### E.7. Long-form Description Pipeline (Tier 2 + Tier 3) — Cold Start Protection
+### E.7. Long-form Description Pipeline (v1.7.1 — original-first + anti-hallucination)
 
-Opis nieruchomości (`description`) dopasowany do archetypu kupującego. Dostępny dla Tier 2 Augment i Tier 3 Native. **Cold Start Protection (v1.7 redesign):** pierwszy buyer dla pary `(listing, archetype)` widzi **oryginalne copy agenta**, nie statyczny template. Sonnet generuje adaptację w tle i serwuje ją od drugiego buyera tego archetypu. Statyczny `PlaybookEntry.copy_template.en` istnieje wyłącznie jako voice-pattern seed dla Sonneta — **nigdy nie jest renderowany do buyera.**
+**Fundamentalna zasada:** AI-adapted copy NIGDY nie wypiera agentowego oryginału na pierwszej wizycie buyera. Dopiero gdy Sonnet skończy generację (w tle, dla konkretnej kombinacji listing × archetype × locale), kolejny buyer w tej samej kombinacji dostaje wersję zoptymalizowaną. Dodatkowo: Sonnet NIGDY nie zmyśla faktów (liczb, nazw, ratings) których nie ma w `original_description` ani `listing_context`.
 
-**Tier 1 Observer** nie używa tego endpointu — pozostaje read-only i nie podmienia description w DOM hosta.
+#### E.7.1. Endpoint contract
 
-#### E.7.1. Tier gating
+| Method | Path                     | Tier | Body / Query                                                                          | Purpose                                                       |
+| ------ | ------------------------ | ---- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| GET    | `/api/adapt/description` | 1    | `?listing_id&archetype&locale`                                                        | Zwraca `copy_template[locale]` dla sidebar widget             |
+| POST   | `/api/adapt/description` | 2, 3 | `{listing_id, archetype, tier, locale, original_description, listing_context}`        | Cache lookup; hit → `ai_cached`; miss → `original` + enqueue Modal |
 
-| Tier | Cache hit              | Cache miss + agent original obecny                      | Cache miss + brak oryginału (edge case)               | TTL     | max_tokens |
-| ---- | ---------------------- | ------------------------------------------------------- | ----------------------------------------------------- | ------- | ---------- |
-| 1    | (endpoint not exposed) | (endpoint not exposed — Tier 1 is read-only)            | (endpoint not exposed)                                | —       | —          |
-| 2    | `ai_cached`            | `original_agent_copy` + enqueue Sonnet job (background) | `template_fallback` (Opus template, placeholders rozwiązane) + enqueue Sonnet job z pustym SEED 1 | **72h** | 450        |
-| 3    | `ai_cached`            | `original_agent_copy` + enqueue Sonnet job (background) | `template_fallback` + enqueue Sonnet job z pustym SEED 1 | **48h** | 600        |
+#### E.7.2. Response schema
 
-Templates istnieją w trzech locale (EN/PL/ES). Endpoint wybiera template w żądanym locale, z fallbackiem na EN gdy locale nie jest authored (np. żądanie `fr` dla archetypu który nie ma autorskiego FR template).
-
-#### E.7.2. Endpoint contract
-
-```
-GET /api/adapt/description
-Query: listing_id (required), archetype (required), tier (required, ≥2), locale (optional, default 'en')
-Auth:  Bearer JWT (jak dla /api/adapt)
-Returns: {
-  description: string,
-  source: 'ai_cached' | 'original_agent_copy' | 'template_fallback',
-  locale: string,
-  generated_at: string  // ISO 8601 — Sonnet completion ts (ai_cached) lub listing.updated_at (original_agent_copy / template_fallback)
+```json
+{
+  "description": "string | null",
+  "source": "template_fallback" | "ai_cached" | "original",
+  "locale": "en" | "pl" | "es",
+  "generated_at": "ISO 8601 | null",
+  "verified_facts_used": ["bedrooms: 3", "location: Madrid"]
 }
-Errors:
-  400 — tier === 1
-  404 — listing not found
 ```
 
-`source: 'ai_generated'` jest formalnie zarezerwowany (legacy compat), ale realnie nie wraca z endpointu: każdy udany cache write skutkuje `'ai_cached'` przy następnym żądaniu. `'template_fallback'` po przeprojektowaniu (v1.7) ma węższe znaczenie niż w v1.6 — wraca wyłącznie gdy `listing.description` jest pusty.
+- `template_fallback` — tylko Tier 1. `description = copy_template[locale]` (voice pattern wyświetlony as-is w sidebar widget). `generated_at = now()`. `verified_facts_used` omitted.
+- `ai_cached` — Tier 2/3 cache hit. `description = <Sonnet text>`. `generated_at = <Redis-stored timestamp>`. `verified_facts_used = <parsed from Sonnet audit block>`.
+- `original` — Tier 2/3 cache miss. `description = null`. `generated_at = null`. SDK NIE rusza DOM. `verified_facts_used` omitted.
 
-#### E.7.3. Flow (Cold Start Protection)
+#### E.7.3. Redis cache
 
-1. **Tier 1** → 400 "description endpoint not available for Tier 1". Sidebar widget Tier 1 renderuje listing z DOM hosta bez ingerencji.
-2. **Tier 2 / Tier 3** → Redis lookup `desc:{tenant_id}:{listing_id}:{archetype}:{locale}`:
-   - **Cache hit** → `{ description: cached.text, source: 'ai_cached', generated_at: cached.generated_at }`.
-   - **Cache miss + agent original obecny** (`listing.description` non-empty):
-     - Zwróć **`{ description: listing.description, source: 'original_agent_copy', generated_at: listing.updated_at }`** — oryginalne copy agenta z bazy.
-     - Asynchronicznie wyemituj zdarzenie na topic `estalara.descriptions` z payloadem trzech seedów (E.7.7).
-     - Następny buyer tego archetypu (po typowo ~3–8s) trafi cache hit.
-   - **Cache miss + brak oryginału** (edge case — `listing.description` pusty/null):
-     - Endpoint resolves placeholders w `PlaybookEntry.copy_template[locale]` (z fallbackiem na `.en`) względem `listing.fields`.
-     - Zwróć **`{ description: resolved_template, source: 'template_fallback', generated_at: listing.updated_at }`**.
-     - Wyemituj zdarzenie na `estalara.descriptions` z trzema seedami (SEED 1 = pusty string).
-     - Sonnet generuje wtedy z samego template + listing_context (branch 4.2 w spec'u). Następny buyer trafi cache hit.
-3. **Modal job** `apps/llm-gateway/src/jobs/generate_description.py`:
-   - Input payload (kontrakt v1.7): `{ tenant_id, listing_id, archetype, locale, tier, cache_key, original_agent_copy, copy_template, listing_context, ttl_seconds }`.
-   - Model: `claude-sonnet-4-6`.
-   - Three-seed prompt — patrz E.7.7.
-   - Fallback: jeśli Sonnet zwróci `null` lub pusty string → NIE zapisuj do cache. Następny request ponownie wraca `original_agent_copy` i ponownie enqueue'uje job (idempotent retry).
-   - Output: Redis `SET desc:{tenant_id}:{listing_id}:{archetype}:{locale}` z TTL per Tier.
+- **Key:** `desc:{tenant_id}:{listing_id}:{archetype}:{locale}`
+- **Value:** JSON `{"text": "<Sonnet output>", "generated_at": "<ISO>", "verified_facts_used": [...]}`
+- **TTL:** Tier 2 = 72h (259200s), Tier 3 = 48h (172800s)
+- **Invalidation:** `listing.updated` Redpanda event → SCAN+DEL `desc:{tenant_id}:{listing_id}:*`
 
-#### E.7.4. Cache invalidation
+#### E.7.4. Modal job payload (v1.7.1)
 
-`listing.updated` event z Redpanda (`apps/ingest`) → consumer w `apps/control-plane` wywołuje `Redis DEL desc:{tenant_id}:{listing_id}:*` (wildcard delete via SCAN + DEL). Następny request po inwalidacji wraca `original_agent_copy` (z nową treścią agenta) i enqueue'uje regenerację. To kluczowy moment Cold Start Protection: gdy agent zmienia opis, pierwszy buyer każdego archetypu widzi nową wersję agenta — nigdy nie-zsynchronizowanego template fallback.
+```json
+{
+  "tenant_id": "string",
+  "listing_id": "string",
+  "archetype": "string",
+  "locale": "en|pl|es",
+  "tier": 2,
+  "cache_key": "desc:...",
+  "copy_template": "string (voice pattern + hard rules, NOT marketing copy)",
+  "original_description": "string (factual seed from agent — REQUIRED in v1.7+)",
+  "listing_context": { "bedrooms": 3, "location": { "city": "Madrid" } },
+  "ttl_seconds": 259200
+}
+```
 
-#### E.7.5. Strategia kosztowa
+Sonnet system prompt: WHITELIST RULES (patrz E.7.5). NIE zmyślaj faktów, których nie ma w `original_description` ani `listing_context`.
 
-- **Lazy generation, NIE eager.** Generujemy tylko gdy buyer faktycznie patrzy na listing z Tier 2/3 SDK.
-- **Koszt:** Sonnet × 450–600 tokenów = ~$0.006–0.009 per opis × (unique listing × unique archetype × unique locale).
-- **Estymacja przy 10k unique listings × 18 archetypów × 1 locale = 180k cached opisów = ~$1k jednorazowo + invalidations.** Realnie: tylko Top 5–10 archetypów per tenant trafia cache, więc ~5–10k opisów per tenant per lokalizację = ~$30–90/mo per większy tenant.
-- **Cold Start Protection nie zwiększa kosztu** — liczba `enqueue` calls = liczba unique `(listing, archetype)` par × 1 (z pominięciem retries po cache expiry). Identycznie jak w starym flow.
+#### E.7.5. Anti-hallucination guard-rails
 
-#### E.7.6. Implementation owner & tickets
+**Cel:** AI-generated copy nigdy nie wprowadza faktów nieistniejących w whitelist. Halucynacje w opisach nieruchomości to ryzyko reputacyjne i prawne (UK/EU misrepresentation laws).
 
-Dotychczasowy TICKET-DESC-001 zostaje zastąpiony przez **7 ticketów (TICKET-COLD-001 do TICKET-COLD-007)** rozdzielonych między owner'ów. PM orchestrator generuje je z `docs/specs/cold-start-protection-v1.md` §6 przy planowaniu sprint'a. Modal job z PR #112 (commit b55c025) wymaga zmiany kontraktu payload (COLD-002).
+**WHITELIST RULES (w Sonnet system prompt):**
 
-Acceptance dla całego pakietu:
+1. Sonnet pisze TYLKO o faktach z dwóch źródeł:
+   - (a) `original_description` — tekst agenta
+   - (b) `listing_context` — structured property data w payloadzie
+2. Sonnet NIE WOLNO wymieniać liczb, ratings, distances, percentages, prices, dates, names of schools/hospitals/companies, ani innych specyficznych quantitative lub named facts, chyba że są w (a) lub (b).
+3. Generic positive descriptors BEZ liczb są dozwolone:
+   - **ALLOWED:** "attractive yield", "strong rental demand", "spacious garden", "well-connected", "established neighbourhood"
+   - **FORBIDDEN:** "yield of 6.2%", "above 95% occupancy", "300m from Tube", "Ofsted Outstanding", "Knight Frank managed"
+4. Voice pattern może mówić "lead with cashflow" — jeśli brak yield/income w whitelist, Sonnet używa generic positive cashflow language ("attractive rental yield"). NIE wymyśla "6.2%".
+5. Sonnet zwraca audit block `<verified_facts_used>[...]</verified_facts_used>` na końcu odpowiedzi — lista faktów które faktycznie użył. Block jest stripowany z description text i zapisywany osobno do ClickHouse.
 
-- Pierwszy buyer dla pary `(listing, archetype)` gdy `listing.description` istnieje zwraca `source: 'original_agent_copy'` i `description === listing.description`.
-- Pierwszy buyer gdy `listing.description` pusty zwraca `source: 'template_fallback'` z Opus template w żądanym locale, placeholderami rozwiązanymi z `listing_context`.
-- Drugi buyer tego archetypu (po typowo ~3–8s) zwraca `source: 'ai_cached'` z treścią Sonneta — zachowującą wszystkie fakty z `listing.description` gdy ten istniał, albo opartą wyłącznie na template + context w przeciwnym razie.
-- Templates są dostępne we wszystkich trzech locale (EN/PL/ES) dla wszystkich 18 archetypów (54 templates łącznie).
-- Tier 1 zwraca 400 dla `/api/adapt/description`.
-- `listing.updated` invalidacja działa: po update'cie pierwszy buyer każdego archetypu znów dostaje `original_agent_copy` (świeży tekst agenta) lub `template_fallback` (jeśli agent skasował description).
-- Modal job p95 < 8s (Sonnet inference + Redis SET).
-- Endpoint p95: < 100ms (cache hit), < 150ms (cache miss path — Postgres fetch + Redpanda produce + opcjonalna resolucja placeholderów).
+**Template format (zmiana z v1.6):**
 
-#### E.7.7. Cold Start Protection — two-branch three-seed Sonnet prompt
+Templates `copy_template[locale]` w 18 archetype playbooks NIE są już marketing copy. Każdy template to structured string z dwiema sekcjami:
 
-Sonnet otrzymuje trzy wyraźnie oznaczone seedy, w jasno określonej hierarchii priorytetów:
+```
+VOICE PATTERN:
+<jak archetype'owe copy ma brzmieć — tone, lead-with priority, frame,
+closer, lexicon preferred / lexicon avoid; ~80-120 słów>
 
-| Seed | Źródło                                            | Rola w prompcie                                                  | Priorytet faktyczny |
-| ---- | ------------------------------------------------- | ---------------------------------------------------------------- | ------------------- |
-| 1    | `listing.description` (oryginał agenta)           | Source of truth — żaden fakt nie może być sprzeczny z tym seedem | **HIGH** — fakty    |
-| 2    | `PlaybookEntry.copy_template[locale]` (Opus 4.7) | Voice/rhythm pattern dla danego archetypu i locale               | **HIGH** — styl     |
-| 3    | `listing_context` (structured fields)             | Dodatkowe fakty (placeholders); nigdy nie wymyśla wartości       | **MEDIUM** — fakty  |
+HARD RULES:
+<czego NIGDY nie wolno pisać dla tego archetypu, w kontekście anti-hallucination;
+~30-50 słów>
+```
 
-Prompt ma dwa branche zależnie od obecności SEED 1:
+Modal job parsuje obie sekcje przed przekazaniem Sonnetowi (jako `voice_pattern` i `hard_rules` parametry user prompta).
 
-- **Branch 4.1 (standard).** SEED 1 non-empty. System prompt: "rewrite an estate agent's original property description so it resonates with a specific buyer archetype. Preserve every factual claim in the agent's original. Adopt the voice, rhythm, and emphasis of the provided archetype pattern. Surface property facts most relevant to this archetype's motivations."
-- **Branch 4.2 (missing original).** SEED 1 empty. System prompt: "The agent has not supplied an original description for this listing. Generate a property description grounded strictly in the archetype voice pattern and the structured listing context provided. Do not invent any property feature, price, yield, or other claim not present in the listing context."
+**CI gate:** `template-purity.test.ts` blokuje merge jeśli którykolwiek `copy_template[locale]` zawiera placeholder z listy zakazanych (yield, occupancy_rate, adr, wault, ltv, schools_rating, broadband_speed, distance_*, etc. — pełna lista w teście).
 
-Pełna treść obu promptów — `docs/specs/cold-start-protection-v1.md` §4. Locale Sonneta zawsze zgodne z `locale` żądania (EN/PL/ES), niezależnie od locale w którym SEED 2 jest authored — jeśli locale request nie ma autorskiego template, używamy `.en` jako voice seed ale instrukcji output'u w `{locale}`.
+**Audit trail w ClickHouse:** Tabela `description_generations` dostaje kolumnę `verified_facts_used: Array(String)`. Każda generacja loguje listę faktów. Master Admin oraz audytorzy mogą później sprawdzić "co Sonnet faktycznie użył dla listing X archetype Y locale Z".
 
-**Invariants (testowalne):**
+#### E.7.6. Flow diagrams
 
-1. **Factual invariant.** Output Sonneta nie może zawierać liczbowych faktów (bedrooms, price, yield, lease length) różnych od SEED 1 ∪ SEED 3. Walidacja: regex extraction liczb z output'u i SEED'ów; mismatch → log + nie zapisuj do cache.
-2. **Voice invariant.** Output dla `yield_hunter` powinien zawierać >= 3 metryki numeryczne. Output dla `family_buyer` powinien zawierać >= 1 wzmiankę o szkołach/dzieciach. Walidacja heurystyczna w testach Sonneta (TICKET-COLD-006).
-3. **Length invariant.** Output 80–180 słów (Tier 2: target 100, Tier 3: target 150). Outside range → log + nie zapisuj do cache.
-4. **Token invariant.** Output nie zawiera raw `{token}` literals (Sonnet musi je rozwiązać lub usunąć).
+**Tier 2/3 cache miss (buyer 1):**
 
-**Observability (TICKET-COLD-005):**
+```
+SDK extracts original from DOM via tenant.data_extractors.description
+  → POST /api/adapt/description { original_description: "...", listing_context, ... }
+  → Endpoint: Redis GET miss
+    → Enqueue Modal job (with original_description + copy_template voice pattern)
+    → Return { description: null, source: "original" }
+  → SDK: leaves DOM untouched (agent's original copy stays visible)
+  → [async] Modal job:
+      Sonnet(voice_pattern + hard_rules + original + context)
+      → parse <verified_facts_used>
+      → Redis SET { text, generated_at, verified_facts_used }
+      → expires in 72h (Tier 2) / 48h (Tier 3)
+      → ClickHouse INSERT description_generations
+```
 
-ClickHouse `description_calls` (lub rozszerzenie `llm_calls`) loguje per request: `tenant_id, listing_id, archetype, locale, source, latency_ms, cache_age_seconds (dla ai_cached)`. Grafana panele:
+**Tier 2/3 cache hit (buyer N+1):**
 
-- `% requests served as original_agent_copy` per tenant z 24h rolling window. Wysokie wartości (>40% sustained) wskazują na: (a) bardzo świeże listingi, (b) rozdrobnioną dystrybucję archetypów per listing, lub (c) degradację Modal job → on-call alert.
-- `% requests served as template_fallback` per tenant z 24h rolling window. Wysokie wartości (>5% sustained) wskazują na tenant'a, który nie dostarcza `listing.description` w payload'ach — wymaga interwencji onboardingowej (Auto-Detect / Magic Link wizard nie wykrył pola description).
+```
+Same POST as buyer 1
+  → Endpoint: Redis GET hit
+  → Return { description: "<AI>", source: "ai_cached", generated_at: "...",
+            verified_facts_used: [...] }
+  → SDK: replaces DOM [data-estalara-slot="description"] with AI text
+```
 
-**Co Cold Start Protection daje biznesowo:**
+**Different archetype (separate cache key):**
 
-- **Zero "synthetic looking" pages.** Pierwszy buyer dowolnej listingu zawsze widzi tekst agenta — copy ma kontekst, fakty i ton agencji.
-- **Lift mierzalny.** Drugi+ buyer widzi adapted version. Można puścić A/B (5% trafficu serwowanego `original_agent_copy` mimo cache hit) i zmierzyć rzeczywisty lift adaptacji — wartość, którą sprzedajemy agencjom.
-- **Trust z agencjami.** Agencja może w każdej chwili rzucić okiem na pierwsze wyświetlenie listingu i zobaczyć dokładnie swój tekst, nie generowany. Buduje zaufanie w fazie pilot.
+```
+Cache is per-(listing, archetype, locale), not per-listing.
+Buyer 1 of yield_hunter → cache miss → original
+Buyer 1 of family_buyer (same listing) → separate cache miss → original
+Each Modal job generates copy independently.
+```
+
+**Tier 1 — separate path (sidebar widget):**
+
+```
+SDK calls GET /api/adapt/description?listing_id=X&archetype=Y&tier=1&locale=en
+  → Endpoint: lookup playbook, return copy_template.en (voice pattern as-is)
+  → Return { description: "<voice pattern>", source: "template_fallback", generated_at: now() }
+  → SDK: renders in sidebar widget (read-only, side-by-side with agent's
+         original in main DOM — koegzystencja, nie zastępowanie)
+```
+
+#### E.7.7. Pre-warming (post-MVP, follow-up TICKET-PREWARM-001)
+
+Aby zniwelować "buyer 1 zawsze widzi oryginał" przy listingu który jest hit dla wielu archetypów, można na `listing.created` enqueue'ować Modal job dla TOP-5 archetypów najczęstszych dla regionu tenanta.
+
+- **Cost:** $0.05–$0.15 per listing (5 generations × $0.01–$0.03)
+- **Decision:** out of Sprint 9 scope, ewentualnie Sprint 11+ jako tuning
+- **Trigger:** gdy mamy >100 listingów per tenant per region z dystrybucją archetypów
+
+#### E.7.8. Cost model
+
+- Sonnet 4.6: ~$0.01–$0.03 per generation
+- Modal: ~$0.001 per cold start, ~$0.0003 per warm
+- Redis: marginal (set/get)
+- ClickHouse: marginal (audit insert)
+
+**Per listing × archetype × locale (unique cache key):** ~$0.02 average per first buyer trigger. Cache hit = $0. Heavy listings (50+ archetypes hit) ≈ $1/listing maximum, w praktyce 3-5 archetypes/listing.
+
+#### E.7.9. Cross-references
+
+- **E.6 (Placeholder Resolution Order):** v1.7.1 nie używa E.6 dla long-form copy. Templates nie zawierają placeholderów. Placeholdery pozostają w użyciu dla short slotów (tagline, headline, CTA) per E.2.
+- **B.4 (TenantConfig):** `data_extractors.description` jest źródłem CSS selector dla SDK do ekstrakcji `original_description` z DOM.
+- **D.5 (Detection Quality):** archetype confidence > 0.6 jest warunkiem wywołania endpointu (per E.1 decision tree).
+- **K.3 (Internal Ops):** `description_generations` tabela ClickHouse dostępna w Internal Ops dla auditu halucynacji per tenant.
+- **V.4 (Threat Modeling):** halucynacja w copy = misrepresentation risk (V.4.3 reputational threats). Whitelist rules są mitigation control.
 
 ---
 

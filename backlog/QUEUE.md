@@ -520,11 +520,12 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-041
   title: Consent banner component (GDPR/CCPA)
   agent: sdk-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 6
   depends_on: [TICKET-037]
   spec: backlog/sprint-3/TICKET-041.md
+  pr: '#113'
 
 - id: TICKET-042
   title: Decision API integration in SDK (fetch adapt directives)

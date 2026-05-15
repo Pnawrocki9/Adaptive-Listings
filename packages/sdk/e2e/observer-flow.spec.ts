@@ -6,6 +6,9 @@ import { test, expect } from '@playwright/test';
 
 test.describe('SDK Observer Flow', () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('estalara_consent', 'granted');
+    });
     await page.goto('http://localhost:4444/');
     await page.waitForTimeout(500);
   });

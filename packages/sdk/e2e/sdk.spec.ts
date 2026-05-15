@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Estalara SDK', () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('estalara_consent', 'granted');
+    });
     await page.goto('http://localhost:4444/');
     // Wait for SDK to initialize
     await page.waitForTimeout(500);
@@ -10,6 +13,9 @@ test.describe('Estalara SDK', () => {
   test('SDK initializes without throwing', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
+    await page.addInitScript(() => {
+      localStorage.setItem('estalara_consent', 'granted');
+    });
     await page.goto('http://localhost:4444/');
     await page.waitForTimeout(500);
     expect(errors).toHaveLength(0);

@@ -14,6 +14,21 @@ export interface SdkConfig {
   tier: 'observer' | 'augment' | 'native';
   debug: boolean;
   consentState: 'consented' | 'legitimate_interest' | 'opted_out';
+  /**
+   * UI language for the consent banner and quiz widget.
+   * Read from data-language attribute. Defaults to 'en'.
+   */
+  language: 'en' | 'pl';
+  /**
+   * URL for the tenant's privacy policy — shown as a "Learn more" link in the consent banner.
+   * Read from data-privacy-url attribute. Optional.
+   */
+  privacyPolicyUrl?: string;
+  /**
+   * Brand accent color for consent banner and quiz widget buttons.
+   * Read from data-accent-color attribute. Defaults to '#6c5ce7'.
+   */
+  accentColor: string;
 }
 
 export const DEFAULT_CONFIG: Omit<SdkConfig, 'apiKey'> = {
@@ -21,6 +36,8 @@ export const DEFAULT_CONFIG: Omit<SdkConfig, 'apiKey'> = {
   tier: 'observer',
   debug: false,
   consentState: 'legitimate_interest',
+  language: 'en',
+  accentColor: '#6c5ce7',
 };
 
 /**
@@ -46,13 +63,23 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
   const tenantId = script.dataset.tenantId;
   const decisionApiUrl = script.dataset.decisionUrl;
 
+  const rawLanguage = script.dataset.language;
+  const language: SdkConfig['language'] = rawLanguage === 'pl' ? 'pl' : DEFAULT_CONFIG.language;
+
+  const privacyPolicyUrl = script.dataset.privacyUrl;
+
+  const accentColor = script.dataset.accentColor ?? DEFAULT_CONFIG.accentColor;
+
   return {
     apiKey,
     ...(tenantId !== undefined ? { tenantId } : {}),
     ...(decisionApiUrl !== undefined ? { decisionApiUrl } : {}),
+    ...(privacyPolicyUrl !== undefined ? { privacyPolicyUrl } : {}),
     ingestUrl: script.dataset.ingestUrl ?? DEFAULT_CONFIG.ingestUrl,
     tier,
     debug: script.dataset.debug === 'true',
     consentState,
+    language,
+    accentColor,
   };
 }

@@ -12,9 +12,15 @@
 
 import { readConfig } from './core/config.js';
 import { dispatchEvents, collectPageView } from './core/events.js';
-import { getOrCreateSession, incrementPageCount } from './core/session.js';
+import {
+  getOrCreateSession,
+  incrementPageCount,
+  getConsentState,
+  setConsentState,
+} from './core/session.js';
 import { setupObservers } from './core/observer.js';
 import { createShadowHost } from './ui/shadow-host.js';
+import { renderConsentBanner } from './ui/consent-banner.js';
 import { renderQuizTrigger, isQuizDismissed } from './ui/quiz-trigger.js';
 import { renderQuizWidget } from './ui/quiz-widget.js';
 import { createSidebarWidget } from './ui/sidebar-widget.js';
@@ -71,6 +77,68 @@ async function init(): Promise<void> {
 
     // 2. Read configuration from data-* attributes
     const config = readConfig({ dataset: script.dataset });
+
+    // 3a. Consent gate — MUST run before any data collection (TICKET-041, GDPR/CCPA).
+    //     Create the shadow host early so we have a ShadowRoot to render the banner in.
+    const earlyHost = createShadowHost();
+
+    const consentState = getConsentState();
+
+    if (consentState === 'denied') {
+      // User previously declined — halt SDK entirely, no events dispatched.
+      // The shadow host is destroyed to avoid leaving a DOM node.
+      earlyHost?.destroy();
+      return;
+    }
+
+    if (consentState === 'pending') {
+      if (earlyHost) {
+        // Show banner and wait for the user's decision.
+        // Returns true if consent was granted, false if denied.
+        const granted = await new Promise<boolean>((resolve) => {
+          renderConsentBanner(earlyHost.root, {
+            language: config.language,
+            accentColor: config.accentColor,
+            ...(config.privacyPolicyUrl !== undefined
+              ? { privacyPolicyUrl: config.privacyPolicyUrl }
+              : {}),
+            onGranted: () => {
+              setConsentState('granted');
+              // Consent audit event — compliance audit trail, dispatched unconditionally.
+              eventQueue.push({
+                type: 'consent.granted',
+                payload: { language: config.language, method: 'banner' },
+                ts: Date.now(),
+              });
+              resolve(true);
+            },
+            onDenied: () => {
+              setConsentState('denied');
+              // Consent audit event — dispatched even when consent is denied.
+              eventQueue.push({
+                type: 'consent.denied',
+                payload: { language: config.language, method: 'banner' },
+                ts: Date.now(),
+              });
+              resolve(false);
+            },
+          });
+        });
+
+        if (!granted) {
+          // User declined — flush the consent.denied audit event, then halt.
+          if (eventQueue.length > 0) {
+            const batch = eventQueue.splice(0);
+            const auditSession = await getOrCreateSession();
+            await dispatchEvents(batch, config, auditSession);
+          }
+          earlyHost.destroy();
+          return;
+        }
+      }
+      // If earlyHost is null (SSR/non-browser), treat as granted and continue.
+    }
+    // consentState === 'granted' (or earlyHost is null in non-browser env) — proceed.
 
     // 3. Initialize anonymous session (reset idempotency state for new session)
     resetAdaptState();
@@ -161,12 +229,13 @@ async function init(): Promise<void> {
       await refreshDirectives();
     }
 
-    // 5. Initialize Shadow DOM host for UI elements (fails silently in SSR)
-    const shadowHost = createShadowHost();
+    // 5. Reuse the Shadow DOM host created in step 3a (consent gate).
+    //    earlyHost was created before consent check and is already attached to <body>.
+    const shadowHost = earlyHost;
 
     const quizConfig: QuizWidgetConfig = {
-      accentColor: script.dataset.accentColor ?? '#2563EB',
-      language: script.dataset.language === 'pl' ? 'pl' : 'en',
+      accentColor: config.accentColor,
+      language: config.language,
     };
 
     // 5a. Mount Tier 1 Observer sidebar widget inside the Shadow DOM.

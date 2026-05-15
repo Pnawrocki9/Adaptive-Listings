@@ -1,6 +1,6 @@
 # Backlog Queue
 
-**Updated 2026-05-14T22:00Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
+**Updated 2026-05-15T08:00Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
 COMPLETE. Sprint 8.5 COMPLETE: AB-005 (PR #106), AB-006+007 (PR #107), AB-008+009 (PR #108). Sprint
 8.5 Wave 3: AB-010+011 READY_FOR_REVIEW (PR #109). Sprint 3 TICKET-037 DONE (PR #98), TICKET-038
 READY. P0 follow-ups FOLLOW-017+018 resolved via AB-010+011.
@@ -520,7 +520,7 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-041
   title: Consent banner component (GDPR/CCPA)
   agent: sdk-engineer
-  status: BLOCKED
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 6
   depends_on: [TICKET-037]
@@ -1157,9 +1157,13 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
   promoted_from: FOLLOW-018
 ```
 
-## Sprint 9 — DPIA + DSR + consent + description pipeline (BACKLOG)
+## Sprint 9 — DPIA + DSR + consent + description pipeline (ACTIVE)
 
-**Status:** BACKLOG as of 2026-05-14. Spec files written by architect into `backlog/sprint-9/`.
+**Status:** ACTIVE as of 2026-05-15. Wave A started: GDPR-001 (compliance-engineer), VAL-001
+(data-engineer), TICKET-041 (sdk-engineer), DESC-001 (backend-engineer + ml-engineer) — all
+IN_PROGRESS in parallel. Wave B (GDPR-002, GDPR-003, GDPR-004) starts after GDPR-001 merges.
+
+**Status was:** BACKLOG as of 2026-05-14. Spec files written by architect into `backlog/sprint-9/`.
 Sprint 9 is the MVP compliance gate: GDPR-001 (DPIA/ROPA), GDPR-002 (DSR endpoints), GDPR-004
 (consent propagation) are P0 and must land before any EU pilot tenant signup. DESC-001 (long-form
 description pipeline per Master Design E.7) and VAL-001 (schema validation cron) are P1.
@@ -1191,7 +1195,7 @@ resolved):**
 - id: TICKET-GDPR-001
   title: DPIA + ROPA documents (EU/UK/CA/UAE)
   agent: compliance-engineer
-  status: BACKLOG
+  status: IN_PROGRESS
   priority: P0
   estimated_hours: 8
   depends_on: []
@@ -1242,7 +1246,7 @@ resolved):**
 - id: TICKET-DESC-001
   title: Long-form description pipeline (Tier 2/3, Redis-cached, Sonnet 4.6 async)
   agent: backend-engineer + ml-engineer
-  status: BACKLOG
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-AGENCY-001, TICKET-046]
@@ -1257,7 +1261,7 @@ resolved):**
 - id: TICKET-VAL-001
   title: Continuous schema validation cron (drift detection per tenant)
   agent: data-engineer
-  status: BACKLOG
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-AUTO-006]

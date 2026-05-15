@@ -1204,7 +1204,8 @@ resolved):**
   pr: '#111'
   spec: backlog/sprint-9/TICKET-GDPR-001.md
   notes: |
-    docs/compliance/dpia.md + ropa.md covering all 4 jurisdictions.
+    docs/compliance/dpia.md + ropa.md — Piotr's versions (replaced agent draft).
+    Covers EU GDPR, UK GDPR, CCPA/CPRA, UAE PDPL.
     Unblocks GDPR-002/003/004 (defines retention scope, lawful basis, consent strategy).
     ⚠️ Requires Piotr sign-off before merge — compliance gate for EU pilot.
 

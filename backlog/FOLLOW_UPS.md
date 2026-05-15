@@ -1005,3 +1005,28 @@ the stub.
 - **promoted_to_queue:** false
 
 ---
+
+## FOLLOW-037 — Site health dashboard panel reading schema_validation_history (TICKET-VAL-002)
+
+- **source_retro:** TICKET-VAL-001 (data-engineer — schema validation cron)
+- **source_ticket:** TICKET-VAL-001
+- **recommended_sprint:** 10
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 4
+- **scope:** The `schema_validation_history` Postgres table written by the daily validation cron
+  (TICKET-VAL-001) has no UI consumer. This follow-up adds the `/dashboard/site-health` page in
+  `apps/control-plane` that reads the most recent validation run per tenant-domain pair and
+  displays: coverage score, drift status, failed selectors, and a sparkline of historical health
+  over the last 30 days. Explicitly deferred from TICKET-VAL-001 per spec.
+- **ac:**
+  - [ ] `/dashboard/site-health` route in `apps/control-plane/src/app/dashboard/site-health/`
+  - [ ] GET `/api/tenants/:id/schema-health` endpoint — reads `schema_validation_history` via
+        Drizzle, returns last 30 days of rows
+  - [ ] Dashboard panel: coverage score badge, drift indicator, failed selector list, 30-day
+        sparkline
+  - [ ] RLS enforced: tenant can only read their own rows
+  - [ ] Tests: API route returns correct shape; UI renders drift badge when `drift_detected = true`
+- **promoted_to_queue:** false
+
+---

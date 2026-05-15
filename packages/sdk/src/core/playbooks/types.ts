@@ -75,14 +75,34 @@ export interface PlaybookEntry {
   /** Behavioral and quiz signals strongly associated with this archetype. */
   signals: string[];
   /**
-   * Static ~100-150 word property description template used as:
-   * (a) fallback for Tier 1 in GET /api/adapt/description
-   * (b) seed text for Sonnet generation (Tier 2 / Tier 3)
-   * May contain `{variable}` placeholders resolved from listing context.
+   * Structured voice pattern for the AI description pipeline (Cold Start Protection,
+   * Master Design E.7.7). Three locales required for all archetypes.
+   *
+   * Each locale value is a structured string with two sections:
+   *   VOICE PATTERN: instructions on HOW to write for this archetype — tone, lead-with
+   *     priority, frame, closer, lexicon preferred/avoided (~80-120 words)
+   *   HARD RULES: anti-hallucination constraints — what NEVER to write for this archetype
+   *     (~30-50 words)
+   *
+   * Used by `apps/llm-gateway/src/jobs/generate_description.py`:
+   *   - Modal job parses both sections and passes them to Sonnet as separate parameters.
+   *   - Voice pattern = voice/framing seed (SEED 2) in the three-seed prompt.
+   *
+   * For Tier 1 sidebar widget: `copy_template[locale]` is returned as-is
+   * (source: 'template_fallback') — the voice pattern is displayed directly.
+   * For Tier 2/3: on cache miss, the endpoint returns source: 'original' and enqueues
+   * a Modal job that uses copy_template as Sonnet's style guide, NOT as literal output.
+   *
+   * IMPORTANT: Zero numeric placeholders — no {yield}, {occupancy_rate}, {adr},
+   * {bedrooms}, {price}, etc. The copy_template describes voice, not content.
+   * CI gate: template-purity.test.ts enforces this invariant.
+   *
+   * @see docs/specs/TICKET-DESC-PIVOT-001-v1.7.1.md Appendix A
+   * @see docs/specs/cold-start-protection-v1.md §2
    */
   copy_template: {
     en: string;
-    pl?: string;
-    es?: string;
+    pl: string;
+    es: string;
   };
 }

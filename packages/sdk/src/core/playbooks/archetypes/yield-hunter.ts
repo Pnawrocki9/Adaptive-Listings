@@ -38,6 +38,20 @@ export const yieldHunterPlaybook: PlaybookEntry = {
     'quiz:investment+long',
   ],
   copy_template: {
-    en: 'This income-producing property is built for investors who measure success in yield, not lifestyle features. With {yield}% gross return and estimated annual rental income of {income}, the numbers stack from day one. A sitting tenant on a rolling contract minimises void risk and provides immediate cash flow. Price per square metre is competitive relative to the local average, with scope to renegotiate lease terms at renewal. A professional management company is available for fully hands-off ownership. Capital growth is supported by strong local rental demand and improving area infrastructure. For yield-focused investors, this is a straightforward, low-friction income asset that performs consistently regardless of wider market sentiment.',
+    en: `VOICE PATTERN:
+Write analytically, numbers-first, and dismissive of lifestyle framing. Lead with cashflow language where data permits — tenant demand patterns, void risk, occupancy stability. Frame every feature in cashflow terms: a garden is outdoor amenity that supports family-tenant retention, not "a place for children to play". The closer should position the property as an income asset on a balance sheet, not a lifestyle purchase. Preferred lexicon: cashflow, yield, tenant demand, occupancy, ROI, defensible, cycle-resistant, gross/net, void risk, management overhead. Avoid: dream, perfect for, family-friendly, charming, your forever home, character. Keep sentences declarative and short; let the asset speak in financial language.
+
+HARD RULES:
+Never invent a yield percentage, occupancy percentage, ADR, or income figure unless it is supplied in verified_facts. "Attractive yield" is acceptable; "6.2% gross yield" is forbidden unless verified. Never quote a price per square metre. Never claim a tenant is in place.`,
+    pl: `VOICE PATTERN:
+Pisz analitycznie, liczbami, bez emocji "domu marzeń". Prowadź narracją cashflow tam, gdzie dane na to pozwalają — popyt najemców, stabilność obłożenia, ryzyko pustostanu. Każdą cechę interpretuj finansowo: ogród to udogodnienie zwiększające retencję rodzinnego najemcy, nie "miejsce dla dzieci". Zamknięcie pozycjonuj jako aktywo dochodowe w bilansie, nie zakup lifestyle'owy. Słownictwo preferowane: cashflow, rentowność, popyt najemców, obłożenie, ROI, odporność na cykl, brutto/netto, ryzyko pustostanu. Unikać: marzenie, idealny dla, rodzinny, urokliwy, wymarzony dom. Krótkie, oznajmujące zdania. W kontekście PL możesz odnosić się do realiów: najem długoterminowy, popyt najemców w Krakowie/Warszawie/Wrocławiu, presja czynszowa.
+
+HARD RULES:
+Nie wymyślaj rentowności, obłożenia, ADR ani rocznego przychodu, jeśli nie ma ich w verified_facts. "Atrakcyjna rentowność" — tak; "6,2% brutto" — zabronione bez weryfikacji. Nie cytuj ceny za m². Nie twierdź, że najemca jest na miejscu.`,
+    es: `VOICE PATTERN:
+Escribe de forma analítica, con lenguaje numérico y sin apelar al estilo de vida. Lidera con cashflow cuando los datos lo permitan — demanda de inquilinos, estabilidad de ocupación, riesgo de vacancia. Encuadra cada elemento en términos de rentabilidad: una terraza es un atributo que mejora la retención del inquilino, no "un lugar para disfrutar el sol". El cierre debe posicionar la propiedad como activo de renta en balance, no como compra emocional. Léxico preferido: cashflow, rentabilidad, demanda locataria, ocupación, ROI, defendible, resistente al ciclo, bruto/neto, riesgo de vacancia. Evitar: sueño, perfecto para, hogar familiar, encantador, con encanto. Frases declarativas y breves. En contexto ES puedes referirte a realidades del mercado de alquiler residencial de larga duración, presión locataria en Madrid/Barcelona/Valencia.
+
+HARD RULES:
+Nunca inventes rentabilidad, ocupación, ADR ni ingreso anual si no figuran en verified_facts. "Rentabilidad atractiva" sí; "6,2% bruto" prohibido sin verificación. No cites precio por m². No afirmes que hay inquilino en plaza.`,
   },
 };

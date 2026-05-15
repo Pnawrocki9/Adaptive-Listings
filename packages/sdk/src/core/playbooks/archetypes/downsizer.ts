@@ -38,6 +38,20 @@ export const downsizerPlaybook: PlaybookEntry = {
     'clicks_accessibility_info',
   ],
   copy_template: {
-    en: 'For those ready to trade space for simplicity, this {bedrooms}-bedroom apartment delivers exactly what the next chapter of life demands. Lift access to all floors removes the daily negotiation with stairs. There is no garden to maintain — just a private balcony for morning coffee. The service charge covers building maintenance, cleaning of communal areas, and buildings insurance, creating predictable monthly costs. Heating is efficient and the property is double-glazed throughout. Shops, a pharmacy, and a GP surgery are all within a short, flat walk. The layout is practical rather than sprawling, designed for the way people actually live rather than for square footage metrics. For empty-nesters and retirees who want comfort without complexity, this property makes the transition genuinely appealing.',
+    en: `VOICE PATTERN:
+Write with dignity, practicality, and calm. The reader is at a life stage where simplicity is a value, not a compromise. Lead with right-sizing framing — single-level features, lift access, manageable maintenance — where layout data exists. Frame the home as the next chapter, not the one the reader has outgrown. The closer should position the move as freeing up time, capital and head-space, not as "downsizing your dreams". Preferred lexicon: right-sized, manageable, single-level, dignified, calm, predictable, low-maintenance, level access. Avoid: investment, scale, portfolio, family-sized, ambition, room to grow, expansive. Treat the reader as someone in their 60s who has done this before in other forms.
+
+HARD RULES:
+Never quote specific service charge figures, ground rent, or EPC ratings unless they are in verified_facts. "Efficient heating" or "predictable running costs" are acceptable; "EPC B rated, £180/month service charge" is forbidden unless explicitly verified.`,
+    pl: `VOICE PATTERN:
+Pisz z godnością, praktycznością i spokojem. Czytelnik wchodzi w etap, gdzie prostota jest wartością, a nie kompromisem. Prowadź narracją "right-sizing" — jednopoziomowy układ, winda, łatwa obsługa — jeśli są dane o układzie. Pokazuj nieruchomość jako kolejny rozdział, nie ten, z którego się wyrasta. Zamknięcie pozycjonuje przeprowadzkę jako uwolnienie czasu, kapitału i głowy, nie jako "rezygnację z marzeń". Słownictwo preferowane: właściwie dobrana wielkość, do ogarnięcia, jeden poziom, godna, spokojna, przewidywalny, niskie utrzymanie, dostępne. Unikać: inwestycja, skala, portfel, rodzinna wielkość, ambicja, miejsce do rośnięcia. W PL możesz odnosić się ogólnie do mieszkań w cichszych dzielnicach, blisko komunikacji i podstawowych usług.
+
+HARD RULES:
+Nigdy nie cytuj konkretnych kosztów eksploatacyjnych, czynszu administracyjnego ani klasy energetycznej, jeśli nie ma ich w verified_facts. "Efektywne ogrzewanie" lub "przewidywalne koszty utrzymania" — tak; "klasa energetyczna B, 380 zł/mies. czynszu administracyjnego" — zabronione bez weryfikacji.`,
+    es: `VOICE PATTERN:
+Escribe con dignidad, sentido práctico y calma. El lector está en una etapa donde la simplicidad es un valor, no una renuncia. Lidera con encuadre de "tamaño adecuado" — vivienda en una planta, ascensor, mantenimiento manejable — si hay datos de distribución. Presenta la vivienda como el próximo capítulo, no aquel del que se ha salido. El cierre posiciona la mudanza como liberación de tiempo, capital y carga mental, no como "renuncia a sueños". Léxico preferido: dimensión adecuada, manejable, en una planta, digno, sereno, predecible, bajo mantenimiento, accesible. Evitar: inversión, escala, cartera, dimensión familiar, ambición, espacio para crecer. En contexto ES la oferta de pisos accesibles con ascensor en zonas urbanas tranquilas es relevante — referencia genérica.
+
+HARD RULES:
+Nunca cites cifras concretas de comunidad, IBI ni certificación energética salvo en verified_facts. "Calefacción eficiente" o "costes de comunidad predecibles" sí; "certificación B, 180 €/mes de comunidad" prohibido sin verificación.`,
   },
 };

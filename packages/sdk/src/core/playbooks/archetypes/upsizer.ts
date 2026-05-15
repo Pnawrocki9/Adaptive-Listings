@@ -32,6 +32,20 @@ export const upsizerPlaybook: PlaybookEntry = {
     'compares_multiple_large_listings',
   ],
   copy_template: {
-    en: 'Everything your current home is not — and everything your next chapter demands. This {bedrooms}-bedroom property delivers the additional space that growing families and ambitious professionals consistently run out of. The {key_feature} was the deciding factor for the current owners when they bought; it will likely be yours too. Above-average square footage for the area means you stop feeling cramped within six months. The finish quality is high throughout, reducing the need for immediate renovation spend after purchase. The location scores well on every metric that matters for long-term ownership: transport, schools, amenities, and resale. For buyers who have outgrown their current home and want to make one move that lasts a decade, this property delivers.',
+    en: `VOICE PATTERN:
+Write practically, family-aware, and quietly optimistic. The reader has outgrown their current home and is making one move that needs to last. Lead with space flexibility and growth headroom where rooms data permits: a room that becomes the second child's bedroom, a study that becomes a teenager's space, a layout with capacity for the next ten years. Frame the home as the one where the next child has their own room, where weekends can host extended family. The closer positions the property as scope for the next decade, not the next two years. Preferred lexicon: room to grow, flexible, family-sized, scope, headroom, capacity, settled. Avoid: compact, efficient, low-maintenance, single, manageable downscale.
+
+HARD RULES:
+Never quote school ratings, secondary school names, or league-table positions unless they are in verified_facts. "Schools within easy reach" is acceptable if the location is in the agent description; "Outstanding secondary 800m away" or specific school names are forbidden unless verified.`,
+    pl: `VOICE PATTERN:
+Pisz praktycznie, ze świadomością rodziny, ze spokojnym optymizmem. Czytelnik wyrósł z obecnego mieszkania i robi jedną przeprowadzkę, która musi się "trzymać" przez lata. Prowadź narracją elastyczności i zapasu przestrzeni, jeśli są dane o pokojach: pokój, który stanie się sypialnią drugiego dziecka, gabinet, który stanie się przestrzenią dla nastolatka, układ z zapasem na kolejne dziesięć lat. Pokazuj dom jako miejsce, gdzie kolejne dziecko ma swój pokój, gdzie weekendy goszczą bliską rodzinę. Zamknięcie pozycjonuje nieruchomość jako "zapas miejsca na dekadę". Słownictwo preferowane: miejsce do rośnięcia, elastyczny, rodzinnej wielkości, zakres, zapas, pojemność, ustabilizowany. Unikać: kompaktowy, efektywny, niskie utrzymanie, pojedynczy. W PL możesz odnosić się ogólnie do dzielnic dobrze ocenianych przez rodziny — bez nazw szkół.
+
+HARD RULES:
+Nigdy nie cytuj ocen szkół, nazw konkretnych szkół ponadpodstawowych ani rankingów, jeśli nie są w verified_facts. "Szkoły w zasięgu spaceru" — tak, jeśli lokalizacja jest w opisie; "LO nr X z najlepszą zdawalnością" — zabronione bez weryfikacji.`,
+    es: `VOICE PATTERN:
+Escribe de forma práctica, con conciencia familiar, optimismo contenido. El lector ha superado su vivienda actual y hace una mudanza que debe durar. Lidera con flexibilidad de espacio y margen de crecimiento si los datos lo permiten: una habitación que se convertirá en el cuarto del segundo hijo, un despacho que será espacio adolescente, una distribución con capacidad para la próxima década. Presenta la vivienda como aquella donde el próximo hijo tiene su propia habitación, donde los fines de semana acogen a la familia extendida. El cierre la posiciona como margen para los próximos diez años. Léxico preferido: espacio para crecer, flexible, dimensión familiar, alcance, margen, capacidad, asentado. Evitar: compacto, eficiente, bajo mantenimiento, justo. En contexto ES referencia genérica a zonas residenciales bien valoradas por familias.
+
+HARD RULES:
+Nunca cites puntuaciones de colegios, nombres de institutos ni rankings salvo en verified_facts. "Colegios a un paseo" sí, si la ubicación está en la descripción; "Instituto X con nota Y" prohibido sin verificación.`,
   },
 };

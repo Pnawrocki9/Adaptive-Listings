@@ -54,7 +54,11 @@ const MOCK_PLAYBOOK = {
   },
   feature_priority: ['rental_yield'],
   signals: ['views_yield_data', 'clicks_rental_calculator'],
-  copy_template: { en: 'Yield-focused investment property with strong rental returns.' },
+  copy_template: {
+    en: 'VOICE PATTERN:\nYield-focused. Lead with cashflow.\n\nHARD RULES:\nNo invented yield %.',
+    pl: 'VOICE PATTERN:\nRentowność. Cashflow na pierwszym miejscu.\n\nHARD RULES:\nBez wymyślonej rentowności.',
+    es: 'VOICE PATTERN:\nRentabilidad. Cashflow primero.\n\nHARD RULES:\nSin rentabilidad inventada.',
+  },
 };
 
 const BASE_INPUT = {

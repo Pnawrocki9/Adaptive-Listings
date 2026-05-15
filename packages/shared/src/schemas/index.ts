@@ -10,3 +10,4 @@
 export * from './event.js';
 export * from './events/index.js';
 export * from './description.js';
+export * from './tenant-compliance.js';

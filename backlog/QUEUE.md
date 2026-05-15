@@ -1,6 +1,6 @@
 # Backlog Queue
 
-**Updated 2026-05-15T08:00Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
+**Updated 2026-05-15T09:15Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
 COMPLETE. Sprint 8.5 COMPLETE: AB-005 (PR #106), AB-006+007 (PR #107), AB-008+009 (PR #108). Sprint
 8.5 Wave 3: AB-010+011 READY_FOR_REVIEW (PR #109). Sprint 3 TICKET-037 DONE (PR #98), TICKET-038
 READY. P0 follow-ups FOLLOW-017+018 resolved via AB-010+011.
@@ -520,12 +520,13 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-041
   title: Consent banner component (GDPR/CCPA)
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 6
   depends_on: [TICKET-037]
   spec: backlog/sprint-3/TICKET-041.md
   pr: '#113'
+  completed_at: '2026-05-15T09:08:41Z'
 
 - id: TICKET-042
   title: Decision API integration in SDK (fetch adapt directives)
@@ -1196,15 +1197,16 @@ resolved):**
 - id: TICKET-GDPR-001
   title: DPIA + ROPA documents (EU/UK/CA/UAE)
   agent: compliance-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 8
   depends_on: []
+  pr: '#111'
   spec: backlog/sprint-9/TICKET-GDPR-001.md
   notes: |
     docs/compliance/dpia.md + ropa.md covering all 4 jurisdictions.
     Unblocks GDPR-002/003/004 (defines retention scope, lawful basis, consent strategy).
-    Requires Piotr sign-off before merge.
+    ⚠️ Requires Piotr sign-off before merge — compliance gate for EU pilot.
 
 - id: TICKET-GDPR-002
   title: DSR endpoints (access / erase / portability)
@@ -1247,43 +1249,33 @@ resolved):**
 - id: TICKET-DESC-001
   title: Long-form description pipeline (Tier 2/3, Redis-cached, Sonnet 4.6 async)
   agent: backend-engineer + ml-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-AGENCY-001, TICKET-046]
+  pr: '#112 (ml) + #114 (backend)'
+  completed_at: '2026-05-15T08:46:30Z'
   spec: backlog/sprint-9/TICKET-DESC-001.md
-  notes: |
-    Promoted from FOLLOW-002 (RETRO-001). Per Master Design E.7.
-    Tier 1 → copy_template.en static. Tier 2 → 72h TTL Redis cache, max_tokens 450.
-    Tier 3 → 48h TTL, max_tokens 600, priority high.
-    Modal job apps/llm-gateway/src/jobs/generate_description.py.
-    listing.updated → Redis DEL desc:{tenant_id}:{listing_id}:*
-    backend PR: pending (branch: backend-engineer/TICKET-DESC-001-description-pipeline)
-    ml-engineer PR: pending (Modal job, separate PR)
 
 - id: TICKET-VAL-001
   title: Continuous schema validation cron (drift detection per tenant)
   agent: data-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P1
   estimated_hours: 8
   depends_on: [TICKET-AUTO-006]
+  pr: '#110'
+  completed_at: '2026-05-15T08:04:23Z'
   spec: backlog/sprint-9/TICKET-VAL-001.md
-  notes: |
-    CANONICAL implementation. Supersedes Sprint 2.5 TICKET-035 (mark that CANCELLED).
-    Daily Modal cron at apps/data-quality/src/crons/schema_validation.py.
-    Re-runs deterministic detection against live tenant pages, diffs vs stored schema,
-    emits schema_drift_detected event + Sentry alert if drift detected.
-    Writes schema_validation_history Postgres table row per run.
 ```
 
 ## Currently in flight
 
-(none — Sprint 8 COMPLETE)
+(none)
 
 ## Awaiting human review
 
-- TICKET-AB-005 (PR #106) — emit ab.assignment event from decision-api adapt route
+- TICKET-GDPR-001 (PR #111) — DPIA + ROPA compliance docs ⚠️ requires Piotr sign-off before merge
 
 ## Recent merges
 

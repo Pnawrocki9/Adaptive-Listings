@@ -20,3 +20,4 @@ export * from './tenant_site_schemas.js';
 export * from './ab_bandit_weights.js';
 export * from './answers.js';
 export * from './schema_validation_history.js';
+export * from './tenant_compliance_records.js';

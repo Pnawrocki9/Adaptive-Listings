@@ -1,9 +1,10 @@
 # Backlog Queue
 
-**Updated 2026-05-15T09:15Z by pm-orchestrator.** Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8
-COMPLETE. Sprint 8.5 COMPLETE: AB-005 (PR #106), AB-006+007 (PR #107), AB-008+009 (PR #108). Sprint
-8.5 Wave 3: AB-010+011 READY_FOR_REVIEW (PR #109). Sprint 3 TICKET-037 DONE (PR #98), TICKET-038
-READY. P0 follow-ups FOLLOW-017+018 resolved via AB-010+011.
+**Updated 2026-05-16T00:00Z by pm-orchestrator.** Sprint 9 COMPLETE as of 2026-05-15: GDPR-001 (PR
+#111), GDPR-002 (PR #118), GDPR-003 (PR #116), GDPR-004 (PR #117), DESC-001 (PR #112+#114), VAL-001
+(PR #110) — all 6 DONE. DESC-PIVOT-001 (PR #115) merged. Sprint 7.5 COMPLETE. Sprint 7 COMPLETE.
+Sprint 8 COMPLETE. Sprint 8.5 COMPLETE. P0 follow-ups FOLLOW-039 (ClickHouse DSR erase) and
+FOLLOW-040 (Doppler CI) added for EU pilot gate.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -38,7 +39,7 @@ updates.
 | 7      | 9     | Decision API real logic + adaptation playbooks                       | 5       | 5    | 0       | 0     | 0       |
 | 7.5    | 9.5   | Auto-Detection Engine                                                | 7       | 7    | 0       | 0     | 0       |
 | 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 16      | 13   | 0       | 0     | 0       |
-| 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 0    | 0       | 0     | 6       |
+| 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 6    | 0       | 0     | 0       |
 | 10     | 12    | Multi-region deploy + observability + load tests                     | tbd     | —    | —       | —     | tbd     |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
 
@@ -1159,93 +1160,64 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
   promoted_from: FOLLOW-018
 ```
 
-## Sprint 9 — DPIA + DSR + consent + description pipeline (ACTIVE)
+## Sprint 9 — DPIA + DSR + consent + description pipeline (COMPLETE)
 
-**Status:** ACTIVE as of 2026-05-15. Wave A started: GDPR-001 (compliance-engineer), VAL-001
-(data-engineer), TICKET-041 (sdk-engineer), DESC-001 (backend-engineer + ml-engineer) — all
-IN_PROGRESS in parallel. Wave B (GDPR-002, GDPR-003, GDPR-004) starts after GDPR-001 merges.
-
-**Status was:** BACKLOG as of 2026-05-14. Spec files written by architect into `backlog/sprint-9/`.
-Sprint 9 is the MVP compliance gate: GDPR-001 (DPIA/ROPA), GDPR-002 (DSR endpoints), GDPR-004
-(consent propagation) are P0 and must land before any EU pilot tenant signup. DESC-001 (long-form
-description pipeline per Master Design E.7) and VAL-001 (schema validation cron) are P1.
-
-**Cross-reference TICKET-VAL-001 ↔ TICKET-035 (Sprint 2.5):** Both tickets implement identical
-continuous schema validation cron scope per Master Design B.6. **Canonical implementation lives in
-TICKET-VAL-001 (Sprint 9)** — it depends only on TICKET-AUTO-006 (DONE) and is unblocked
-immediately. TICKET-035 in Sprint 2.5 is a duplicate stub; when Sprint 2.5 starts, TICKET-035 should
-be marked CANCELLED with a pointer to TICKET-VAL-001 (decision: Piotr 2026-05-14, prefer
-TICKET-VAL-001 because Sprint 9 dependency chain is shorter and unblocked sooner).
-
-**Open questions captured during spec authoring (resolve at sprint start, see ESCALATIONS.md if not
-resolved):**
-
-1. GDPR-004 `consent_state` column on ClickHouse `events` table — verify TICKET-014 DDL for whether
-   the column already exists; if not, engineer writes a migration.
-2. DESC-001 `source: 'ai_generated'` value — Master Design E.7.2 lists this as a possible response
-   source, but the E.7.3 flow shows the endpoint always returns either `template_fallback` (cache
-   miss) or `ai_cached` (cache hit). Spec uses only those two values. Confirm Master Design
-   interpretation before implementation.
-3. GDPR-004 tenant region storage — `tenants.brand_config` JSONB vs explicit `region` column.
-   Engineer must verify before writing the `consent_required` default-by-region logic.
-4. VAL-001 `sample_listing_url` in `tenant_site_schemas.schema` JSONB — verify TICKET-AUTO-006 PR
-   diff for exact JSONB structure.
-5. GDPR-003 agent split — docs portion (`lia-template.md`) stays with compliance-engineer; CRUD +
-   Drizzle table portion reassign to backend-engineer.
+**Status:** COMPLETE as of 2026-05-15. All 6 tickets DONE. Wave A: GDPR-001 (PR #111), VAL-001 (PR
+#110), TICKET-041 (PR #113), DESC-001 (PR #112+#114). Wave B: GDPR-002 (PR #118), GDPR-003 (PR
+#116), GDPR-004 (PR #117). DESC-PIVOT-001 v1.7.1 (PR #115) also merged in Sprint 9 cycle.
 
 ```yaml
 - id: TICKET-GDPR-001
   title: DPIA + ROPA documents (EU/UK/CA/UAE)
   agent: compliance-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 8
   depends_on: []
   pr: '#111'
+  completed_at: '2026-05-15'
   spec: backlog/sprint-9/TICKET-GDPR-001.md
-  notes: |
-    docs/compliance/dpia.md + ropa.md — Piotr's versions (replaced agent draft).
-    Covers EU GDPR, UK GDPR, CCPA/CPRA, UAE PDPL.
-    Unblocks GDPR-002/003/004 (defines retention scope, lawful basis, consent strategy).
-    ⚠️ Requires Piotr sign-off before merge — compliance gate for EU pilot.
 
 - id: TICKET-GDPR-002
   title: DSR endpoints (access / erase / portability)
   agent: backend-engineer
-  status: BACKLOG
+  status: DONE
   priority: P0
   estimated_hours: 8
   depends_on: [TICKET-GDPR-001]
+  pr: '#118'
+  completed_at: '2026-05-15'
   spec: backlog/sprint-9/TICKET-GDPR-002.md
   notes: |
-    POST /api/dsr/access, /api/dsr/erase, /api/dsr/portability.
-    Token-validated, cascades delete across Postgres + ClickHouse + Redis.
-    24h delay window for revocation (dsr_tokens table).
+    OTP flow (6-digit, SHA-256 hash, 15min TTL), Resend email provider (noreply@contact.estalara.com).
+    dsr_verifications Drizzle table + migration 0011. ClickHouse dsr_audit_log migration 0009.
+    ⚠️ FOLLOW-039: ClickHouse hard deletion not yet wired — must fix before EU pilot (RODO Art. 17).
 
 - id: TICKET-GDPR-003
   title: Cookie-less behavioral fingerprinting LIA template + tenant_compliance_records
   agent: compliance-engineer + backend-engineer
-  status: BACKLOG
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: [TICKET-GDPR-001]
+  pr: '#116'
+  completed_at: '2026-05-15'
   spec: backlog/sprint-9/TICKET-GDPR-003.md
-  notes: |
-    Split: docs (lia-template.md) → compliance-engineer; CRUD API + Drizzle table →
-    backend-engineer. Open question 5 above.
 
 - id: TICKET-GDPR-004
   title: Consent state propagation (SDK → ingest → ClickHouse → Decision API gate)
   agent: backend-engineer
-  status: BACKLOG
+  status: DONE
   priority: P0
   estimated_hours: 6
   depends_on: [TICKET-GDPR-001, TICKET-041]
+  pr: '#117'
+  completed_at: '2026-05-15'
   spec: backlog/sprint-9/TICKET-GDPR-004.md
   notes: |
-    Extends TICKET-AB-001 consent-aware skip pattern to full personalization gate.
-    Adds consent_required boolean to tenants table (default true for EU regions).
-    Decision API returns default directives if consent_state !== 'granted'.
+    consent_required boolean on tenants table (migration 0010). consent-gate.ts pure function.
+    SDK fetchDirectives() now sends consent_state in body (fix commit in same PR).
+    z.enum(['granted','denied','unknown']).default('unknown') on AdaptRequestSchema.
 
 - id: TICKET-DESC-001
   title: Long-form description pipeline (Tier 2/3, Redis-cached, Sonnet 4.6 async)
@@ -1276,10 +1248,20 @@ resolved):**
 
 ## Awaiting human review
 
-- TICKET-GDPR-001 (PR #111) — DPIA + ROPA compliance docs ⚠️ requires Piotr sign-off before merge
+(none)
 
 ## Recent merges
 
+- 2026-05-15 — TICKET-GDPR-002 (PR #118): DSR endpoints — OTP flow + Resend email + ClickHouse audit
+  log; `dsr_verifications` table + Drizzle migration 0011
+- 2026-05-15 — TICKET-GDPR-003 (PR #116): LIA template v1.0 + `tenant_compliance_records` table +
+  GET/POST/DELETE CRUD API; `LiaRecordSchema` in packages/shared
+- 2026-05-15 — TICKET-GDPR-004 (PR #117): Consent state gate — `consentGate()` in decision-api +
+  `consent_required` on tenants + SDK `fetchDirectives()` sends consent_state; ClickHouse
+  `gate_reason` column (migration 0008); Drizzle migration 0010
+- 2026-05-15 — TICKET-GDPR-001 (PR #111): DPIA + ROPA — EU/UK/CCPA/UAE PDPL compliance docs
+- 2026-05-15 — TICKET-DESC-PIVOT-001 v1.7.1 (PR #115): 18 archetype voice patterns (EN/PL/ES) +
+  WHITELIST guard-rails in Modal job + `verified_facts_used` audit trail + MASTER_DESIGN v1.7.1
 - 2026-05-14T14:21:36Z — TICKET-ARCH-003 (PR #95): per-ticket retrospective learning loop + /retro
   slash command; retrospective-analyst agent (Opus 4.7); RETRO-001 seeded
 - 2026-05-14T00:00:00Z — TICKET-ARCH-002 (PR #93): Master Design bumped to v1.6; architectural

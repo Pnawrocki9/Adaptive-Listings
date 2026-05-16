@@ -1090,3 +1090,66 @@ Zaadresować PRZED pierwszym EU pilot tenantem.
 - Master Design E.7.5 Anti-hallucination guard-rails (wzorzec do replikacji)
 
 ---
+
+## FOLLOW-039 — ClickHouse hard deletion for DSR erase (RODO Art. 17)
+
+**Priority:** P0 **Status:** OPEN **Discovered:** 2026-05-15 (Piotr review PR #118, GDPR-002
+erase/route.ts) **Source ticket:** TICKET-GDPR-002 **Must fix before:** EU pilot tenant signup
+**Suggested owner:** backend-engineer + data-engineer **Estimated:** 4-6h
+
+### Problem
+
+`POST /api/dsr/erase` returns `clickhouse_deletion: "scheduled_in_24h"` but does NOT emit any
+Redpanda event and no consumer job exists. ClickHouse `adaptation_decisions`, `ab_assignments`, and
+`consent_state` per `session_id` are personal data. RODO Art. 17 (right to erasure) requires their
+deletion.
+
+### Rozwiązanie
+
+Emit Redpanda event `dsr.erase_requested { tenant_id, session_id, requested_at }` from the erase
+endpoint → `apps/stream-consumer` handler subscribes → executes
+`ALTER TABLE adaptation_decisions DELETE WHERE session_id = '...'` in ClickHouse (async, 24h window
+akceptowalny per RODO jeśli faktycznie zaplanowany).
+
+### Acceptance criteria (high-level)
+
+- [ ] `POST /api/dsr/erase` emits `dsr.erase_requested` event to Redpanda `estalara.dsr` topic
+- [ ] `apps/stream-consumer` consumer handles `dsr.erase_requested` and executes ClickHouse DELETE
+- [ ] Deleted tables: `adaptation_decisions`, `events`, `dsr_audit_log` rows WHERE
+      `session_id = requested session_id`
+- [ ] Consumer is idempotent (double-delivery of same event is safe)
+- [ ] Test: mock Redpanda producer in erase route — assert event emitted with correct payload
+- [ ] Test: stream-consumer unit test — assert ClickHouse DELETE executed per event
+
+### Cross-references
+
+- TICKET-GDPR-002 (PR #118) — erase endpoint
+- Master Design K.3 — retention policies
+- `docs/compliance/ropa.md` — retention section
+- ClickHouse `adaptation_decisions` (migration 0003), `events` (migration 0001)
+
+---
+
+## FOLLOW-040 — Doppler CI integration — DOPPLER_TOKEN in GitHub Secrets
+
+**Priority:** P1 **Status:** OPEN **Discovered:** pre-existing (every PR since Sprint 0) **Source
+ticket:** cross-cutting **Must fix before:** EU pilot (clean CI = professional impression for agency
+clients reviewing repo) **Suggested owner:** devops-engineer **Estimated:** 0.5h
+
+### Problem
+
+CI `Doppler verify (optional)` fails on every PR because `DOPPLER_TOKEN` is not in GitHub Secrets.
+It is marked `(optional)` so it does not block merges, but before EU pilot all CI checks should be
+green for a professional impression.
+
+### Rozwiązanie
+
+Add `DOPPLER_TOKEN` to GitHub repo secrets (Settings → Secrets → Actions). Token available in
+Doppler dashboard. Verify by re-running any recent CI workflow.
+
+### Acceptance criteria
+
+- [ ] `DOPPLER_TOKEN` added to GitHub Actions secrets
+- [ ] Next PR CI shows `Doppler verify (optional)` → pass
+
+---

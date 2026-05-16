@@ -197,6 +197,7 @@ paths = [
   '''packages/sdk/src/__tests__/''',
   '''packages/db/src/__tests__/''',
   '''apps/control-plane/src/lib/__tests__/''',
+  '''apps/control-plane/src/lib/email/__tests__/''',
   '''apps/control-plane/src/__tests__/''',
   '''apps/decision-api/src/lib/__tests__/''',
   '''apps/decision-api/src/__tests__/''',

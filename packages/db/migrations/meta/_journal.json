@@ -50,6 +50,13 @@
       "when": 1747699200000,
       "tag": "0010_tenant_consent_required",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778888634050,
+      "tag": "0011_aromatic_triton",
+      "breakpoints": true
     }
   ]
 }

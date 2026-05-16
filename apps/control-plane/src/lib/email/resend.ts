@@ -14,7 +14,7 @@
 
 import { Resend } from 'resend';
 
-const DEFAULT_FROM = 'Estalara <noreply@estalara.com>';
+const DEFAULT_FROM = 'Estalara <noreply@contact.estalara.com>';
 
 export interface SendEmailOptions {
   to: string;

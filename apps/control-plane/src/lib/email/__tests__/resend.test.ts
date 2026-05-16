@@ -42,7 +42,7 @@ describe('sendEmail', () => {
 
     expect(mockEmailsSend).toHaveBeenCalledOnce();
     expect(mockEmailsSend).toHaveBeenCalledWith({
-      from: 'Estalara <noreply@estalara.com>',
+      from: 'Estalara <noreply@contact.estalara.com>',
       to: 'buyer@example.com',
       subject: 'Your data request',
       html: '<p>Code: 042813</p>',
@@ -70,7 +70,7 @@ describe('sendEmail', () => {
     });
 
     expect(mockEmailsSend).toHaveBeenCalledWith(
-      expect.objectContaining({ from: 'Estalara <noreply@estalara.com>' }),
+      expect.objectContaining({ from: 'Estalara <noreply@contact.estalara.com>' }),
     );
   });
 

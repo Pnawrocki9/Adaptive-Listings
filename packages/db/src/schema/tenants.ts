@@ -39,6 +39,14 @@ export const tenants = pgTable(
     /** E.4 investor quiz configuration (questions, decay logic, Bayesian prior). */
     quizConfig: jsonb('quiz_config').default({}),
 
+    /**
+     * Whether personalization requires explicit consent for this tenant.
+     * Defaults to true (conservative). EU/UK tenants must keep this true.
+     * US/UAE tenants may set to false after compliance review.
+     * Added in TICKET-GDPR-004.
+     */
+    consentRequired: boolean('consent_required').notNull().default(true),
+
     // Profile Mode gate — U.11, POST-MVP, master-admin gated
     profileModeEnabled: boolean('profile_mode_enabled').notNull().default(false),
     profileModeEnabledAt: timestamp('profile_mode_enabled_at', { withTimezone: true }),

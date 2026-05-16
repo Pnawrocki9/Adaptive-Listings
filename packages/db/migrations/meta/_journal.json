@@ -43,6 +43,13 @@
       "when": 1747612800000,
       "tag": "0009_tenant_compliance_records",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1747699200000,
+      "tag": "0010_tenant_consent_required",
+      "breakpoints": true
     }
   ]
 }

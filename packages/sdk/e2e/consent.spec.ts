@@ -6,6 +6,13 @@
  * 2. Clicking Accept → banner disappears, events start flowing to ingest.
  * 3. Clicking Decline → banner disappears, no page.view or behavioral events dispatched.
  * 4. Returning after Accept → no banner shown, events flow immediately.
+ *
+ * NOTE — TICKET-GDPR-004 consent_state propagation:
+ * When the user accepts consent ('granted'), fetchDirectives() in core/adapt.ts now sends
+ * consent_state: 'granted' in the Decision API POST body. This prevents the EU gate in the
+ * Decision API from returning neutral directives for consented EU buyers.
+ * Mapping: SDK 'granted'→'granted', 'denied'→'denied', 'pending'→'unknown' (safe conservative).
+ * Unit-level coverage for this mapping is in packages/sdk/src/__tests__/adapt.test.ts.
  */
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { test, expect } from '@playwright/test';

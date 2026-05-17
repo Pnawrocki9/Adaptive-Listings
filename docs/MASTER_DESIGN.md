@@ -1,6 +1,182 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 1.7.1 (Master Design Document — Description pipeline pivot: original-first + anti-hallucination guard-rails) | **Data:** 15 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 1.8 (Master Design Document — Implementation Status Reconciliation) | **Data:** 16 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+> **READING ORDER (v1.8 update).** This document remains the canonical *strategic vision* + *target architecture*. As of 2026-05-16 a multi-agent audit was performed against the actual codebase. The audit findings — what is built, what is partial, what is design-only — are summarized in the new section **"Implementation Status Snapshot (2026-05-16)"** below the Executive Summary, and in detail in `AUDIT_REPORT_INVESTOR_READINESS.md`, `AUDIT_IMPLEMENTATION_MAP.md`, `AUDIT_RISK_MATRIX.md`, and `AUDIT_TEST_GAPS.md` at the repository root. Where this document and the audit disagree, the audit reflects reality at HEAD `398dc97`.
+
+**Changelog v1.8 (16 May 2026 — Implementation Status Reconciliation):**
+
+- 📊 **Added "Implementation Status Snapshot (2026-05-16)"** section directly after the Executive Summary. Snapshot is a per-feature audit verdict (`✅ Shipped`, `🟡 Partial`, `🟥 Design-Only`, `⛔ Blocked`) backed by file-level evidence from a multi-agent audit. See `AUDIT_REPORT_INVESTOR_READINESS.md` for the deep dive.
+- 📝 **Strategic vision in sections A–W remains intact and authoritative for direction.** Implementation deltas relative to v1.7.1 are NOT inlined into each section to preserve the strategic narrative; they are consolidated in the Snapshot section + the four root-level audit reports. Future ticket work should target closing the gaps in `AUDIT_REPORT_INVESTOR_READINESS.md` §11 (Recommendations).
+- 🔍 **Verified architectural drift documented in the Snapshot:**
+  - The four Modal Python services (`apps/intent-engine`, `apps/archetype-pipeline`, `apps/adaptation-engine`, `apps/auto-detect`) named as the differentiator's home in §A.1 are all 13–27-line placeholders. The real intent / archetype / adaptation logic currently lives in `packages/sdk/src/core/intent.ts` (in-browser Bayesian) + `apps/decision-api/src/lib/` + `apps/control-plane/src/app/api/adapt/route.ts`. **This is a documented architectural pivot from "Modal-hosted ML" to "TypeScript-edge + Modal-async-jobs", not yet a backlog gap.** §A.1 diagram has not been updated to reflect this; either the code must converge to the diagram (build Modal ML) or the diagram must converge to the code (acknowledge TS-edge engine).
+  - Two parallel `/api/adapt` endpoints exist — a Cloudflare Worker (`apps/decision-api`) returning 3 hard-coded archetype buckets (`investor`/`family`/`neutral`), and a Next.js route (`apps/control-plane`) returning the full 18-archetype playbook + LLM tweak/full. The SDK calls whichever URL the tenant configures. Route divergence is a tracked architectural risk.
+- 🟡 **Verified MVP-blockers (P0):**
+  - `packages/platform-templates/src/templates/index.ts` exports `[]` — Layer 3 of the Schema Discovery Pipeline (§B.5.3) is currently a no-op for every site. TICKET-032 still BLOCKED.
+  - Sprint 2.5 (Auto-Onboarding) — 4 of 6 tickets BLOCKED. Magic Link wizard (TICKET-030 READY), Vision Auto-Detect Modal (TICKET-033), Schema Discovery API (TICKET-034) not started. **Without these there is no path to the "self-serve onboarding in <60s" promised in §B.4.**
+  - DSR-erase does not hard-delete from ClickHouse — soft-delete audit log only. RODO Art. 17 non-compliance for any EU tenant (FOLLOW-039 P0).
+  - Doppler CI integration not wired (FOLLOW-040 P0) — staging deploys cannot inject secrets via CI.
+  - JWT spoofing / RLS bypass / tenant header spoof / auth gate gaps (FIX-013..019) were patched in Sprint 8, but only after the system had been running with these issues for weeks. Process risk codified in RETRO-002/003.
+- 🟢 **Verified strengths (no design gaps):**
+  - Ingest worker (§C) is production-shaped: Sentry+OTel double-wrap, HMAC tenant auth, durable-object rate limit, idempotency middleware, REST-proxy Redpanda producer with retries, 1 MB body cap, W3C trace propagation injected as base64 record headers. Substantial.
+  - GDPR posture (§H) is the strongest layer: DPIA v2.0 + ROPA + LIA template authored; `tenant_compliance_records` table + LIA CRUD API; DSR endpoints (initiate/access/erase/portability) with OTP / Resend / audit log; consent state gate at Decision API enforced *before* A/B assignment; `consent_required = true` by default on new tenants.
+  - SDK Tier 1 Observer (§B.1): production-shaped, Shadow DOM scope-isolated, 4-event behavioral observer (page.view / scroll.depth / listing.viewed / cta.clicked), Bayesian intent classifier in-browser, quiz widget, consent banner.
+  - A/B holdout + Thompson bandit (§E.3): 10% holdout enforced, HMAC(tenant_id, session_id) deterministic assignment, fair-housing-safe (no user attributes used). Bandit *math* shipped and tested; bandit-driven *variant selection per request* still open (FOLLOW-007).
+  - Continuous schema validation (§B.6): daily Modal cron at 02:00 UTC with drift detection, Redpanda emission to `estalara.schema`, Sentry 24h dedup. Real (526 LOC).
+  - Auto-Detection pipeline (SDK side, §B.5.1/5.2/5.4/5.5): 10 deterministic techniques in `packages/sdk/src/auto-detect/techniques/` + AI Vision fallback wired to Claude Sonnet 4.6 via `apps/control-plane/src/app/api/detect/route.ts`. 100/100 precision/recall on 24-platform corpus (CI gate).
+  - LLM description warmer (§E.7): real 668-line Modal job, anti-hallucination WHITELIST, `<verified_facts_used>` audit trail, full mock-based test coverage.
+- 📐 **Section renumbering preserved.** §A–§W structure unchanged from v1.7.1.
+
+---
+
+## Implementation Status Snapshot (2026-05-16)
+
+> This snapshot is a verdict on each Master Design promise as of HEAD `398dc97`, branch `audit/investor-readiness-master-design`. It is the *only* place in this document where implementation status is asserted; sections A–W speak in the present tense about the *target* architecture, not the current code.
+
+**Audit gate status at audit time:**
+
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | ✅ 17/17 packages pass |
+| `pnpm lint` | ✅ 0 errors, 3 unused-eslint-disable warnings |
+| `pnpm test` | ✅ 26/26 tasks pass (control-plane alone: 37 files / 367 tests) |
+| `pnpm build` | ✅ SDK IIFE 93.3 KB (Tier 1+2 budget §B.2: <40 KB → currently 93 KB, **over-budget**) |
+| SDK auto-detect corpus | ✅ 100% precision / 100% recall on 24 platforms |
+| `rule-h` CI gate (schema-without-consumer) | ✅ enforced |
+
+### §Snapshot.1 — Per-section verdict (collapsed)
+
+| § | Section | Verdict | Single-line reason |
+|---|---|---|---|
+| A.1 | Architektura diagram | 🟡 **Partial / Drifted** | 4 named Modal services are placeholders; real logic lives in TS edge + Modal async description job. Diagram describes intent, not code. |
+| A.2 | Multi-tenant model | ✅ **Shipped** | tenants table with RLS, JWT-injected tenant_id, slug-unique. |
+| A.3 | Multi-region | 🟥 **Design-only** | Region-routing code exists (`mapCountryToRegion`); only EU region actually provisioned. US/UK/UAE not deployed. |
+| B.1 | Integrator experience (Tier 1/2/3) | 🟡 **Partial** | Tier 1 substantial; Tier 2 mutation engine works but consumes only 3 of 18 archetype buckets via the Worker route; Tier 3 Native explicitly deferred (P.2). |
+| B.2 | SDK perf budget (<40 KB) | 🟥 **Over-budget** | IIFE = 93.3 KB. Decision: split Tier 1 vs Tier 2 entry points, or accept new budget and update §B.2. |
+| B.3 | Adapters (Intercom/Drift/Crisp/Idealista/Otodom) | 🟥 **Design-only** | No adapter code in the repo. |
+| B.4 | Auto-Onboarding (Magic Link / Auto-Detect / API Connect) | ⛔ **Blocked** | 4 of 6 Sprint-2.5 tickets BLOCKED. No tenant can self-serve onboard today. |
+| B.4.4 | Pre-Built Platform Templates Library (15 starters) | ⛔ **Blocked** | `templates: PlatformTemplate[] = []`. TICKET-032 BLOCKED. |
+| B.4.5 | WordPress Plugin | 🟥 **Design-only** | Not started. |
+| B.5 | Schema Discovery Pipeline (L1–L5) | 🟡 **Partial** | L1 (data-estalara-*), L2 (DOM heuristics), L4 (AI Vision), L5 (manual) work; L3 (platform templates) is no-op. |
+| B.6 | Continuous Schema Validation | ✅ **Shipped** | 526-LOC Modal cron with drift detection + Sentry dedup. |
+| B.7 | Onboarding metrics | 🟡 **Partial** | Some events emitted; no dashboard yet. |
+| C | Signal ingestion / event taxonomy | 🟡 **Partial** | Ingest worker substantial. SDK emits 8 of 37 declared event types; chat / photo / mortgage_calc / inquiry events are schema-only. |
+| D | Intent Engine (12-dim ontology) | 🟡 **Partial** | `packages/intent-ontology` is a 14-line version stub; real ontology lives in 3 inconsistent places (intent.ts: 18 archetypes; playbooks: 18; archetype_embeddings: 3). SDK Bayesian classifier real (rule-based, ~600 LOC); Modal intent-engine = 27-line placeholder. |
+| D.5 | Continuous Detection Quality | 🟥 **Design-only** | No DQS measurement code beyond the schema_validation cron. |
+| E.1–E.3 | Adaptation decision tree + A/B + bandit | 🟡 **Partial** | A/B holdout + Thompson math shipped + tested; variant *selection per request* not wired (always picks index 0). |
+| E.4 | Investor Quiz Widget | ✅ **Shipped** | quiz-widget.ts (269 LOC), quiz-trigger.ts, dashboard pages. |
+| E.6 | Placeholder Resolution Order (7-level) | 🟡 **Partial** | Only Level 1 (DOM attribute) implemented; Levels 2–7 fall through to literal `{token}` on-page (FOLLOW-026 P1). |
+| E.7 | Long-form Description Pipeline (v1.7.1 original-first) | ✅ **Shipped** | 668-LOC Modal Sonnet job with WHITELIST guard-rails + audit trail; `POST /api/adapt/description` wired; ClickHouse `description_generations_verified_facts` table. |
+| F | Data Network Effect (archetype embedding space) | 🟡 **Partial** | `archetype_embeddings` table exists but seeded with **3** archetypes (investor/family/neutral), not 18. |
+| G | Behavioral Fingerprinting | 🟡 **Partial** | Session-scoped IDs work; cross-listing per-tenant aggregation works; global DP aggregation = design-only. |
+| H | Compliance & Privacy (GDPR/AI Act/CCPA/UK/UAE) | ✅ **Shipped** | DPIA v2.0 + ROPA + LIA template + DSR endpoints + consent gate + tenant_compliance_records. One open P0: DSR-erase doesn't hard-delete ClickHouse (FOLLOW-039). |
+| I | Stack Technologiczny | ✅ **Locked** | Decisions stable, in-code. |
+| J | Multi-Tenancy Model | ✅ **Shipped** | tenants schema with TenantConfig fields including `auto_detected_schema`. |
+| K | Internal Operations Panel | 🟡 **Partial** | UI exists at `/admin/{registrations,demo-sessions,tenants}` but each page imports a local `mock-data.ts`. Not wired to live DB lists. |
+| L | Pricing Model | 🟥 **Design-only** | Three tiers defined; no checkout flow exists. |
+| M | Business Model & GTM | 🟥 **Design-only** | No GTM artifacts in code (expected — non-engineering). |
+| N | Costs & Unit Economics | 🟥 **Design-only** | LLM daily cap exists (`isDailyCapExceeded`); no per-tenant unit-economics dashboard. |
+| O | Risks & Mitigations | n/a | Strategic only. |
+| P.1 | 12-week MVP roadmap | 🟡 **Partial** | Sprints 0–9 mostly complete. Tygodnie 11–12 "Pilot launch prep" has no sprint folder yet. |
+| P.2 | What we don't build (Tier 3, UAE, FL) | ✅ **Honored** | All explicitly deferred items remain deferred. |
+| Q | User Stories / Data Flows | n/a | Strategic. |
+| R | Innovation Roadmap & Patents | 🟥 **Design-only** | No patent filings in repo; no innovation feature shipped under the R.1–R.6 banner specifically. |
+| S | Strategic conclusion | n/a | Strategic. |
+| T | Demo Mode v5 | 🟡 **Partial** | Code exists (`app/api/demo/*`, `/admin/demo-sessions`, demo mockup pages); design section heading missing from current TOC (likely silently absorbed in v1.4 renumber). |
+| U | Agency Registration + Master Admin | 🟡 **Partial** | Registration flow + Stripe webhook + JWT roles + admin layout: real. Master Admin Fleet View: partial (mock data). |
+| U.10 | Investor Quiz back-office | ✅ **Shipped** | Per-tenant toggle + analytics dashboard real. |
+| U.11 | Profile Mode (post-MVP) | 🟥 **Design-only** | Forward-compat checklist tracked; not active. |
+| V | Security Architecture | 🟡 **Partial** | JWT/RLS/HMAC/Sentry/OTel/Gitleaks/idempotency: shipped. SBOM, MFA enforcement, full CSP, formal threat model: design-only. P0 auth gaps (FIX-013..019) closed in Sprint 8 — but pattern of late-closure is a process risk. |
+| W | Operational Excellence | 🟥 **Design-only** | DR/SLO/error-budget config not in repo. One Grafana dashboard (ingest only) committed. OTel collector configured for `logging` exporter, not Tempo/Prometheus. |
+| X | Sprint 1.5 Hardening | ✅ **Closed** | FIX-001..005 merged. |
+
+### §Snapshot.2 — Architectural drift (read this before reading §A.1)
+
+The Master Design §A.1 diagram positions four distinct Modal Python services as the home of the intelligence layer: `intent-engine`, `archetype-pipeline`, `adaptation-engine`, `llm-gateway`. As of HEAD `398dc97`:
+
+- `apps/intent-engine/src/main.py` = 27 lines, returns `{"status": "placeholder"}`, version `0.0.0`
+- `apps/archetype-pipeline/src/main.py` = 22 lines, same pattern
+- `apps/adaptation-engine/src/main.py` = 22 lines, same pattern
+- `apps/auto-detect/src/main.py` = 13 lines, same pattern
+- `apps/llm-gateway/src/main.py` = 22 lines, *but* `apps/llm-gateway/src/jobs/generate_description.py` is a real 668-line Sonnet job
+- `apps/data-quality/src/main.py` = placeholder, *but* `apps/data-quality/src/crons/schema_validation.py` is a real 526-line cron
+
+The intelligence that does run is split across:
+- **In-browser:** `packages/sdk/src/core/intent.ts` (~600 LOC Bayesian classifier, 18 archetypes, 4 signal types)
+- **Edge Worker:** `apps/decision-api/src/lib/` (bandit, ab-assignment, consent-gate, reorder, llm-gateway client) + 3-bucket keyword classifier
+- **Next.js Edge route:** `apps/control-plane/src/app/api/adapt/route.ts` (18-archetype playbook lookup + LLM tweak/full branches + RAG retrieval + ClickHouse logging)
+- **Async Modal jobs:** `generate_description.py` + `schema_validation.py`
+
+This is a **pivot**, not a backlog gap. The team has converged on "TS at the edge + Python only for batch / async" as a more pragmatic stack. The Master Design has not yet been updated to acknowledge this. Two reconciliation paths are open:
+
+1. **Build the Modal apps.** Wire `intent-engine` to consume `chat.message.sent` + `events.session.*` and call Haiku 4.5 for chat NLP; wire `archetype-pipeline` to nightly cron the pgvector cosine matcher; wire `adaptation-engine` for batch playbook generation. Estimated 3–5 sprints.
+2. **Update the diagram.** Delete the four placeholder apps; re-label the responsibilities onto `apps/decision-api`, `apps/control-plane`, and the existing real Modal jobs. Estimated 0.5 sprint.
+
+Recommendation: pursue (1) for chat NLP only (real product gap — the SDK schema declares chat events but no SDK producer or server consumer exists), and pursue (2) for everything else.
+
+### §Snapshot.3 — Strategic intent vs current capability for *adaptive listings*
+
+The headline claim of this product is: *a real estate website can embed the SDK, the system detects buyer intent, and the listing content adapts per archetype in real time*. As of today:
+
+- **Can a tenant embed the SDK and see content adapt?** ✅ Yes — given they hand-code `data-estalara-slot="headline|feature|cta"` and `data-estalara-listing-id=…` attributes on their listing template. Tested via Playwright e2e (`packages/sdk/e2e/adapt-dom-mutations.spec.ts`).
+- **Does the adaptation use 18 differentiated archetypes?** 🟡 **Conditional.** If the tenant configures the SDK to call the Next.js `apps/control-plane` adapt route, yes (full 18-archetype playbook + LLM tweak). If they call the default Cloudflare Worker `apps/decision-api` route, **no** — 15 of 18 archetypes degrade to neutral. This route divergence is a structural debt item.
+- **Does the system detect intent without chat / without quiz?** 🟥 **Weakly.** The 4 captured signal types (page.view, scroll.depth, listing.viewed, cta.clicked) only meaningfully distinguish `yield_hunter`, `portfolio_builder`, and `neutral`. The other 15 archetypes have no behavioral discriminator wired. Without the quiz, the typical visitor stays in `neutral`.
+- **Does the bandit pick variants per request?** 🟥 **No.** Variant-index transport (FOLLOW-025/028) is open. Bandit currently picks index 0 always. The 3-variants-per-slot work in TICKET-046 is currently dead data.
+- **Does archetype affinity rank listing cards?** 🟥 **No.** `deterministicScore(archetype, listingId)` is a djb2 hash. Same archetype always gets the same order; no actual ranking model.
+- **Can an agency review/approve generated copy?** 🟥 **No.** Agency RAG (TICKET-AGENCY-001) lets the agency *seed* the LLM with FAQ data; there is no preview/approve UI before generated copy ships.
+- **Can analytics show conversion lift?** ✅ Yes — `/dashboard/analytics` Panel 3 surfaces per-archetype lift vs the 10% holdout with z-test.
+
+Net: an investor demo today shows a credible Tier 1 Observer + Tier 2 mutation flow for 3 archetypes with a working analytics tail. The 18-archetype, multi-variant, chat-driven, vector-matched experience promised in §D / §E is not yet what runs on real traffic.
+
+### §Snapshot.4 — Recommendation priorities (mirrors `AUDIT_REPORT_INVESTOR_READINESS.md` §11)
+
+**Immediate (1–2 weeks):**
+1. Wire `applyArchetypeHints()` in SDK init (already implemented + tested, just not called) — cheap win for cold-start.
+2. Hard-delete from ClickHouse in DSR-erase (FOLLOW-039) — closes the only EU compliance P0.
+3. Doppler CI wired (FOLLOW-040) — unblocks staging deploys.
+4. Pick one `/api/adapt` endpoint as the canonical one and retire the other; document the choice in an ADR.
+
+**Product proof (2–6 weeks):**
+5. Unblock Sprint 2.5 (TICKET-030/032/033/034) — without it, no zero-config onboarding demo possible.
+6. Seed all 18 archetypes into `archetype_embeddings` (currently 3).
+7. Add 8–12 more behavioral signal producers in the SDK (photo dwell, gallery interaction, mortgage_calc, inquiry_started, exit-intent) + corresponding `SIGNAL_LIKELIHOODS` entries — without these, 15 of 18 archetypes are undiscriminable from behavior.
+8. Wire bandit variant selection per request (FOLLOW-007/025/028).
+9. Replace `deterministicScore` with a real archetype-listing affinity (FOLLOW-019).
+
+**Investor confidence (6–12 weeks):**
+10. Implement chat NLP in `apps/intent-engine` (consume `chat.message.sent`, emit `chat.intent.detected`).
+11. End-to-end test of differentiator: synthetic behavioral trace → ingest → consumer → intent → adapt → DOM mutation → measured CTR lift (FOLLOW-022).
+12. Backfill RLS on `session_embeddings`, `tenant_site_schemas`, `ab_bandit_weights`, `schema_validation_history`, `archetype_embeddings`.
+13. Stand up at least one second region (US or UK) end-to-end on Terraform.
+14. Authorize SOC 2 Type I readiness work; SBOM + MFA enforcement + formal threat model.
+
+### §Snapshot.5 — Test posture summary
+
+- 102 TypeScript test files + 14 Python test files = **116 total**.
+- All vitest configs enforce 80% (libraries) / 70% (apps) line-branch-function-statement coverage as required by `CLAUDE.md`. Python apps have **no coverage gate** in CI.
+- 24-platform auto-detection corpus runs every PR at 100/100 precision/recall (real CI gate).
+- Playwright SDK e2e suite (4 specs) runs every PR; covers Tier 1 observer + Tier 2 DOM mutation + consent gate.
+- Multi-service `tests/e2e/smoke-ingest.test.ts` runs **nightly only** (not on PR).
+- Critical gap: **no end-to-end test of intent → archetype → adapt → DOM**.
+
+### §Snapshot.6 — Retro learning loop status
+
+- 4 deep retros in `backlog/RETROSPECTIVES.md` (RETRO-001..004).
+- 40 follow-ups generated (FOLLOW-001..040); ~32 still open.
+- 8 permanent rules in `CONVENTIONS_PATCH.md` (A–H); **Rule H** (no schema scaffold without runtime consumer) is enforced by a hard CI gate (`scripts/check-rule-h.sh`).
+- 2 P0 follow-ups added 2026-05-16: FOLLOW-039 (ClickHouse hard delete for DSR) and FOLLOW-040 (Doppler CI).
+
+### §Snapshot.7 — Documented architectural risks (high → low)
+
+1. **Two parallel `/api/adapt` endpoints** with subtly different behavior (Worker = 3 buckets, Next.js = 18 + LLM). Cross-app contract divergence flagged in RETRO-003 §4c.
+2. **Modal placeholder gap.** Four named services are 22-line stubs; intelligence lives in TS edge. Either rebuild or rebrand.
+3. **Single-region infrastructure** despite four-region marketing claim.
+4. **RLS coverage incomplete** on `session_embeddings`, `tenant_site_schemas`, `ab_bandit_weights`, `schema_validation_history`, `archetype_embeddings`.
+5. **Bandit is dead data.** `bandit.ts` not imported by any non-test file; `variant_index` not on the wire.
+6. **Sprint 2.5 is the structural bottleneck** — every later sprint completed except onboarding. The MVP entry point is unbuilt.
+7. **`packages/compliance` and `packages/intent-ontology` are empty scaffolds** despite being central in the architecture narrative. Real logic is spread across `apps/control-plane` + `packages/sdk`. Future agents reading the package READMEs will be misled.
+
+---
 
 **Changelog v1.7.1 (15 May 2026 — Description pipeline pivot + anti-hallucination guard-rails):**
 

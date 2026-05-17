@@ -222,4 +222,28 @@ bash scripts/check-rule-h.sh origin/main
 
 ---
 
+## Rule I — Wired-or-dead: every exported symbol must have a non-test importer
+
+**Pattern:** A ticket ships a new exported symbol (function, class, constant, type) with unit tests
+that import it directly, but zero non-test files in `apps/` or `packages/` import it. The symbol is
+effectively dead code at runtime; tests give a false sense of coverage.
+
+**Evidence:** Multiple RETRO entries (see Rule H evidence). Pattern is distinct from Rule H (which
+gates PR-diff additions); Rule I gates the whole codebase continuously via CI.
+
+**Rule:** A ticket CANNOT be marked DONE if its primary artifact has zero non-test importers. The
+reviewer MUST verify at least one non-test file imports the new symbol before approving. If only
+test files import it, the ticket reverts to IN_PROGRESS and a wire-up follow-up is required.
+
+**Hard gate (CI):** `scripts/check-rule-i.sh` runs as a blocking CI job (`rule-i` in
+`.github/workflows/ci.yml`) after lint, before tests. Exit code 1 = PR blocked. The script scans all
+`export` declarations in `packages/*/src` and `apps/*/src` (excluding test files) and fails if any
+exported symbol has zero non-test importers anywhere in the repo.
+
+Run locally before pushing:
+
+```bash
+bash scripts/check-rule-i.sh
+```
+
 <!-- Rule I+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->

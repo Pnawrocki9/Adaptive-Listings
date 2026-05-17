@@ -1,8 +1,10 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 1.8 (Master Design Document — Implementation Status Reconciliation) | **Data:** 16 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 1.9 (Master Design Document — Architecture Diagram Reconciliation, change A of 4) | **Data:** 17 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
 
 > **READING ORDER (v1.8 update).** This document remains the canonical *strategic vision* + *target architecture*. As of 2026-05-16 a multi-agent audit was performed against the actual codebase. The audit findings — what is built, what is partial, what is design-only — are summarized in the new section **"Implementation Status Snapshot (2026-05-16)"** below the Executive Summary, and in detail in `AUDIT_REPORT_INVESTOR_READINESS.md`, `AUDIT_IMPLEMENTATION_MAP.md`, `AUDIT_RISK_MATRIX.md`, and `AUDIT_TEST_GAPS.md` at the repository root. Where this document and the audit disagree, the audit reflects reality at HEAD `398dc97`.
+
+**Changelog v1.9-A (17 maja 2026):** §A.1 diagram updated — removed 3 deleted Modal stubs (`apps/archetype-pipeline`, `apps/adaptation-engine`, `apps/auto-detect`), added **TypeScript Edge Engine** as a 1st-class component (in-browser SDK intent classifier + edge holdout gate + canonical adapt route). Modal services list trimmed to the 4 that remain (`llm-gateway`, `data-quality`, `intent-engine` to-build, `stream-consumer`). See ADR-0004 (canonical adapt endpoint) and ADR-0005 (Modal apps disposition). This is change A of 4; sections §A.2 onward are untouched in this revision.
 
 **Changelog v1.8 (16 May 2026 — Implementation Status Reconciliation):**
 
@@ -271,6 +273,8 @@ Estalara Adaptive Listings to **embeddable AI layer + standalone SaaS** dla rynk
 
 ### A.1. Diagram komponentów (logical view)
 
+> **v1.9-A reconciliation note.** The intelligence layer is now a **TypeScript Edge Engine** rather than a fleet of Modal Python services. The three Modal stubs that were never built (`apps/archetype-pipeline`, `apps/adaptation-engine`, `apps/auto-detect`) were deleted in commits `1c53137` / `33b4675` / `da9f45f`; their responsibilities migrated to the SDK + Next.js edge + Cloudflare Worker triple (see ADR-0004 for the canonical adapt endpoint, ADR-0005 for the Modal apps disposition). The Auto-Detect Vision API still exists, but lives inside `apps/control-plane/src/app/api/detect/route.ts` rather than as a standalone Modal service.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  CLIENT WEBSITE (Idealista, agencja w Marbelli, custom Wordpress)   │
@@ -279,8 +283,12 @@ Estalara Adaptive Listings to **embeddable AI layer + standalone SaaS** dla rynk
 │  │  ├─ TIER 1 Observer:  widget overlay (sidebar / floating)    │   │
 │  │  ├─ TIER 2 Augment:   DOM mutations via declarative slots    │   │
 │  │  └─ TIER 3 Native:    <EstalaraListing/> full component      │   │
+│  │  ──────────────────────────────────────────────────────────  │   │
+│  │  TypeScript Edge Engine — component 1/3:                     │   │
+│  │  SDK intent classifier (in-browser Bayesian)                 │   │
+│  │  → packages/sdk/src/core/intent.ts                           │   │
 │  └─────────────┬────────────────────────────────────────────────┘   │
-└────────────────│─────────────────────────────────────────────────────┘
+└────────────────│────────────────────────────────────────────────────┘
                  │ HTTPS, batched events (every 2s or on flush)
                  │ + WebSocket for live chat / live adaptation
                  ▼
@@ -292,49 +300,47 @@ Estalara Adaptive Listings to **embeddable AI layer + standalone SaaS** dla rynk
 │  - Push to Redpanda Cloud (Kafka-compatible, multi-region)          │
 └────────────────┬────────────────────────────────────────────────────┘
                  │
-   ┌─────────────┼─────────────────┬────────────────────┐
-   ▼             ▼                 ▼                    ▼
-┌─────────┐ ┌──────────┐    ┌─────────────┐   ┌──────────────────┐
-│ClickHouse│ │ Postgres │    │Intent Engine│   │ Adaptation Engine│
-│ Cloud   │ │(Supabase │    │ (Modal +    │   │ (Modal + Claude  │
-│(events) │ │  per     │    │  Claude     │   │  Sonnet 4.6 +    │
-│         │ │  region) │    │  Haiku 4.5) │   │  templates)      │
-└─────────┘ └──────────┘    └──────┬──────┘   └──────────┬───────┘
-                                   │                     │
-                                   ▼                     ▼
-                            ┌──────────────────────────────────┐
-                            │   pgvector (per-tenant embedding │
-                            │   spaces) + global archetype     │
-                            │   embedding space (DP-protected) │
-                            └──────────────────────────────────┘
-                                   │
-                                   ▼
-                            ┌──────────────────────────────────┐
-                            │  Decision API (Next.js App Router│
-                            │  Edge Runtime, returns JSON      │
-                            │  adaptation directives in <80ms) │
-                            └──────────────────────────────────┘
-                                   │
-                                   ▼
-                            ┌──────────────────────────────────┐
-                            │  Control Plane (Next.js dashboard│
-                            │  on Vercel, per-tenant analytics,│
-                            │  config, white-label, billing)   │
-                            └──────────────────────────────────┘
-                                   ▲
-                                   │ uses
-                                   │
-                            ┌──────────────────────────────────┐
-                            │  Auto-Detection Service          │
-                            │  (Modal serverless, on-demand)   │
-                            │  - Puppeteer headless browser    │
-                            │  - Schema.org/microdata parser   │
-                            │  - Platform fingerprint matcher  │
-                            │  - Claude Sonnet 4.6 Vision API  │
-                            │  - Selector validator            │
-                            │  → Generates TenantSchemaMapping │
-                            │     (see B.4 / B.5)              │
-                            └──────────────────────────────────┘
+   ┌─────────────┼──────────────────────────┐
+   ▼             ▼                          ▼
+┌──────────┐ ┌──────────┐         ┌─────────────────────────────────┐
+│ClickHouse│ │ Postgres │         │  TypeScript Edge Engine —       │
+│ Cloud    │ │(Supabase │         │  components 2/3 + 3/3           │
+│(events)  │ │  per     │         │  ├─ Edge holdout gate           │
+│          │ │  region) │         │  │   (Cloudflare Worker,        │
+│          │ │          │         │  │   apps/decision-api —        │
+│          │ │          │         │  │   ADR-0004, edge-only)       │
+└──────────┘ └──────────┘         │  └─ Canonical adapt route       │
+                                  │      (Next.js,                  │
+                                  │      apps/control-plane —       │
+                                  │      ADR-0004)                  │
+                                  └────────────────┬────────────────┘
+                                                   │ uses
+                                                   ▼
+                                  ┌─────────────────────────────────┐
+                                  │  pgvector (per-tenant embedding │
+                                  │  spaces) + global archetype     │
+                                  │  embedding space (DP-protected) │
+                                  └────────────────┬────────────────┘
+                                                   │
+                                                   ▼
+                                  ┌─────────────────────────────────┐
+                                  │ Control Plane (Next.js dashboard│
+                                  │ on Vercel, per-tenant analytics,│
+                                  │ config, white-label, billing)   │
+                                  └─────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│  MODAL SERVICES (async jobs, off-the-edge)                          │
+│  ├─ apps/llm-gateway     — async Sonnet 4.6 job (description warmer)│
+│  ├─ apps/data-quality    — daily schema validation cron (§B.6)      │
+│  ├─ apps/intent-engine   — BUILD: cross-tab session persistence +   │
+│  │                         chat NLP (see ADR-0005)                  │
+│  └─ apps/stream-consumer — Redpanda consumer (ClickHouse fan-out)   │
+│                                                                     │
+│  Auto-Detect (Vision) now lives inside Next.js at                   │
+│    apps/control-plane/src/app/api/detect/route.ts                   │
+│    (the apps/auto-detect Modal stub was deleted — see ADR-0005).    │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### A.2. Multi-tenant model — kluczowa decyzja

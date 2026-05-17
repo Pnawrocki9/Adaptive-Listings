@@ -8,8 +8,6 @@ Templates).
 
 Implikacje dla aktualnej pracy:
 
-- Sprint 0 dostaje 1 dodatkowy app (apps/auto-detect/) i 1 dodatkowy package
-  (packages/platform-templates/) ponad to co zbuduje TICKET-001
 - Sprint 1-2 musi uwzględnić Auto-Detection Service, Schema Discovery Pipeline, Magic Link UI flow w
   dashboardzie
 - Sprint 5-6 dostaje Continuous Schema Validation + drift detection
@@ -45,7 +43,7 @@ changelog at top for what's new in this version).
 
 Repository scale (current target):
 
-- 10 apps (apps/ingest, apps/control-plane, apps/decision-api, plus 7 Modal Python apps)
+- 7 apps (apps/ingest, apps/control-plane, apps/decision-api, plus 4 Modal Python apps)
 - 10 packages (packages/sdk through packages/platform-templates)
 
 Three integration tiers (Observer / Augment / Native), four regions (EU/US/UK/UAE), 12-week MVP
@@ -123,17 +121,17 @@ These are codified in CONVENTIONS_PATCH.md. Highlights:
 
 ## The 9 agents
 
-| Agent                 | Role                                                                                                                                                                                                          | Model  |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| `pm-orchestrator`     | Reads backlog, delegates to workers, validates output, updates queue                                                                                                                                          | sonnet |
-| `architect`           | Designs interfaces between modules, writes ADRs, resolves cross-cutting concerns                                                                                                                              | sonnet |
-| `sdk-engineer`        | Builds `@estalara/sdk` (Preact + Shadow DOM, vanilla TS)                                                                                                                                                      | sonnet |
-| `backend-engineer`    | Cloudflare Workers ingest, Next.js control plane (dashboard + API including Magic Link onboarding wizard), Postgres/Supabase, and the Auto-Onboarding HTTP API layer                                          | sonnet |
-| `data-engineer`       | ClickHouse schemas, Redpanda pipelines, ETL jobs, and the daily continuous schema validation cron (drift detection per tenant, per Master Design B.6)                                                         | sonnet |
-| `ml-engineer`         | Intent engine, embeddings, archetype space, adaptation engine, the auto-detect Vision pipeline (apps/auto-detect, Claude Sonnet 4.6 Vision), and the platform templates library (packages/platform-templates) | sonnet |
-| `devops-engineer`     | Terraform, CI/CD, multi-region deploy, observability                                                                                                                                                          | sonnet |
-| `qa-engineer`         | E2E tests, integration tests, load tests, accessibility                                                                                                                                                       | sonnet |
-| `compliance-engineer` | DPIA, ROPA, privacy policy, GDPR/CCPA/UAE PDPL implementation                                                                                                                                                 | sonnet |
+| Agent                 | Role                                                                                                                                                                 | Model  |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `pm-orchestrator`     | Reads backlog, delegates to workers, validates output, updates queue                                                                                                 | sonnet |
+| `architect`           | Designs interfaces between modules, writes ADRs, resolves cross-cutting concerns                                                                                     | sonnet |
+| `sdk-engineer`        | Builds `@estalara/sdk` (Preact + Shadow DOM, vanilla TS)                                                                                                             | sonnet |
+| `backend-engineer`    | Cloudflare Workers ingest, Next.js control plane (dashboard + API including Magic Link onboarding wizard), Postgres/Supabase, and the Auto-Onboarding HTTP API layer | sonnet |
+| `data-engineer`       | ClickHouse schemas, Redpanda pipelines, ETL jobs, and the daily continuous schema validation cron (drift detection per tenant, per Master Design B.6)                | sonnet |
+| `ml-engineer`         | Intent engine, embeddings, archetype space, adaptation engine, and the platform templates library (packages/platform-templates)                                      | sonnet |
+| `devops-engineer`     | Terraform, CI/CD, multi-region deploy, observability                                                                                                                 | sonnet |
+| `qa-engineer`         | E2E tests, integration tests, load tests, accessibility                                                                                                              | sonnet |
+| `compliance-engineer` | DPIA, ROPA, privacy policy, GDPR/CCPA/UAE PDPL implementation                                                                                                        | sonnet |
 
 Each agent is defined in `.claude/agents/<name>.md`.
 

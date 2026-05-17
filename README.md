@@ -124,7 +124,7 @@ cd apps/intent-engine
 pytest src/ -v
 
 # Run all Python app tests (from repo root)
-for app in intent-engine adaptation-engine auto-detect llm-gateway stream-consumer archetype-pipeline data-quality; do
+for app in intent-engine llm-gateway stream-consumer data-quality; do
   echo "=== $app ==="
   (cd apps/$app && pip install -e ".[dev]" -q && python -m pytest src/ -v)
 done
@@ -204,16 +204,13 @@ See `docs/CONVENTIONS.md` for the canonical layout.
 
 ```
 .
-├── apps/                    # Deployable services (10 total)
+├── apps/                    # Deployable services (7 total)
 │   ├── ingest/              # Cloudflare Worker — event ingest
 │   ├── decision-api/        # Cloudflare Worker — adaptation decisions
 │   ├── control-plane/       # Next.js 15 App Router — dashboard + management API
-│   ├── auto-detect/         # Modal Python — AI Vision Auto-Detect (Master Design B.5)
 │   ├── intent-engine/       # Modal Python — buyer intent extraction
-│   ├── adaptation-engine/   # Modal Python — listing adaptation directives
 │   ├── llm-gateway/         # Modal Python — LiteLLM router
 │   ├── stream-consumer/     # Modal Python — Redpanda → ClickHouse
-│   ├── archetype-pipeline/  # Modal Python — daily archetype clustering
 │   └── data-quality/        # Modal Python — event validation
 ├── packages/                # Shared TypeScript libraries (10 total)
 │   ├── sdk/                 # Core embeddable SDK
@@ -256,23 +253,23 @@ Nine specialized Claude Code subagents, each with its own scope and quality bars
 
 ## Tech stack (decided — do not re-litigate)
 
-| Concern       | Technology                                                     |
-| ------------- | -------------------------------------------------------------- |
-| Monorepo      | Turborepo + pnpm                                               |
-| SDK           | TypeScript 5, Preact 10, tsup, Shadow DOM                      |
-| Edge ingest   | Cloudflare Workers + Durable Objects                           |
-| Control plane | Next.js 15 App Router on Vercel                                |
-| ML services   | Modal (Python 3.12) + Claude Sonnet 4.6 Vision for Auto-Detect |
-| Event bus     | Redpanda Cloud                                                 |
-| Postgres      | Supabase (multi-region, 4 projects)                            |
-| Event store   | ClickHouse Cloud                                               |
-| Vector store  | pgvector (MVP) → Qdrant (Y2)                                   |
-| Cache         | Upstash Redis (multi-region)                                   |
-| LLM           | Claude Haiku 4.5 + Sonnet 4.6 via LiteLLM                      |
-| Embeddings    | OpenAI text-embedding-3-small (MVP)                            |
-| Observability | Sentry + OpenTelemetry + Grafana Cloud                         |
-| Secrets       | Doppler                                                        |
-| IaC           | Terraform + Terragrunt                                         |
+| Concern       | Technology                                |
+| ------------- | ----------------------------------------- |
+| Monorepo      | Turborepo + pnpm                          |
+| SDK           | TypeScript 5, Preact 10, tsup, Shadow DOM |
+| Edge ingest   | Cloudflare Workers + Durable Objects      |
+| Control plane | Next.js 15 App Router on Vercel           |
+| ML services   | Modal (Python 3.12)                       |
+| Event bus     | Redpanda Cloud                            |
+| Postgres      | Supabase (multi-region, 4 projects)       |
+| Event store   | ClickHouse Cloud                          |
+| Vector store  | pgvector (MVP) → Qdrant (Y2)              |
+| Cache         | Upstash Redis (multi-region)              |
+| LLM           | Claude Haiku 4.5 + Sonnet 4.6 via LiteLLM |
+| Embeddings    | OpenAI text-embedding-3-small (MVP)       |
+| Observability | Sentry + OpenTelemetry + Grafana Cloud    |
+| Secrets       | Doppler                                   |
+| IaC           | Terraform + Terragrunt                    |
 
 ---
 

@@ -1,8 +1,10 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 1.9 (Master Design Document — Architecture Diagram Reconciliation, change A of 4) | **Data:** 17 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 1.9 (Master Design Document — Architecture Diagram Reconciliation, changes A–B of 4) | **Data:** 17 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
 
 > **READING ORDER (v1.8 update).** This document remains the canonical *strategic vision* + *target architecture*. As of 2026-05-16 a multi-agent audit was performed against the actual codebase. The audit findings — what is built, what is partial, what is design-only — are summarized in the new section **"Implementation Status Snapshot (2026-05-16)"** below the Executive Summary, and in detail in `AUDIT_REPORT_INVESTOR_READINESS.md`, `AUDIT_IMPLEMENTATION_MAP.md`, `AUDIT_RISK_MATRIX.md`, and `AUDIT_TEST_GAPS.md` at the repository root. Where this document and the audit disagree, the audit reflects reality at HEAD `398dc97`.
+
+**Changelog v1.9-B (17 maja 2026):** Retired false multi-region deployment claim. EU only (`eu-central-1`) is active today; US/UK/UAE deployment is post-seed roadmap (available on customer demand). Affected sections: §A.3 (Multi-region deployment — retitled "Region strategy" and reframed as EU-first today with post-seed expansion plan), §H (header retitled "Compliance & Privacy — Multi-Jurisdiction" to clarify the regulatory-readiness intent), §I.2 (Supabase row softened to remove "multi-region projects" claim), §L.2 (pricing rationale "multi-region z dnia 1" → "EU-first z dnia 1; multi-region post-seed"), §S (strategic summary "multi-region SaaS" reframed as "EU-first SaaS with multi-region roadmap"). §A.1 diagram and all vendor-capability descriptions (Redpanda, Upstash, R2 native features) untouched. This is change B of 4; sections §A.4 onward and other untouched material from v1.9-A remain unchanged.
 
 **Changelog v1.9-A (17 maja 2026):** §A.1 diagram updated — removed 3 deleted Modal stubs (`apps/archetype-pipeline`, `apps/adaptation-engine`, `apps/auto-detect`), added **TypeScript Edge Engine** as a 1st-class component (in-browser SDK intent classifier + edge holdout gate + canonical adapt route). Modal services list trimmed to the 4 that remain (`llm-gateway`, `data-quality`, `intent-engine` to-build, `stream-consumer`). See ADR-0004 (canonical adapt endpoint) and ADR-0005 (Modal apps disposition). This is change A of 4; sections §A.2 onward are untouched in this revision.
 
@@ -357,16 +359,20 @@ Trzy poziomy izolacji w jednej architekturze:
 
 Warto zauważyć, że Cloudflare wybrał TimescaleDB nad ClickHouse dla *operational analytics z małymi batch'ami pisanymi przez wiele klientów* — bo ClickHouse buforuje małe inserty na 400ms timer ([Cloudflare blog](https://blog.cloudflare.com/timescaledb-art/)). Dla naszego use case (high-volume events, append-only, bulk aggregation queries) ClickHouse Cloud jest właściwy — ale **agreguj na edge w 5-sekundowe batche przed wysłaniem do ClickHouse**, nie pisz event-by-event. ClickHouse Cloud charge ~$50/mo for hobby ale realistycznie mid-volume to $500–2000/mo ([G2 comparison](https://www.g2.com/compare/clickhouse-vs-timescale)).
 
-### A.3. Multi-region deployment (EU/US/UK/UAE)
+### A.3. Region strategy — EU-first today, multi-region post-seed
 
-| Region | Hosting | Postgres | ClickHouse | LLM endpoint | Compliance |
-|---|---|---|---|---|---|
-| **EU** (Frankfurt) | Vercel + Cloudflare fra1 | Supabase EU (Frankfurt) | ClickHouse Cloud EU | Claude przez AWS Bedrock eu-central-1 | GDPR primary |
-| **US** (Virginia) | Vercel iad1 + Cloudflare iad | Supabase US-East | ClickHouse Cloud US-East | Claude/OpenAI native | CCPA/CPRA |
-| **UK** (London) | Vercel lhr1 + Cloudflare lhr | Supabase EU (separate UK project for residency) | Logical separation w EU instance | Claude przez Bedrock eu-west-2 | UK GDPR |
-| **UAE** (Dubai) | Cloudflare dxb (no Vercel POP — fall back na fra1) | Postgres na AWS me-central-1 (Bahrain region najbliższy) | ClickHouse self-hosted on AWS me-central-1 lub EU instance dla MVP | Claude przez Bedrock (najbliższy: eu-central-1) | UAE PDPL Federal Decree-Law 45/2021 + DIFC |
+> **Honest framing (v1.9-B, 2026-05-17):** EU (Frankfurt, `eu-central-1`) is the only region active today. The architecture is *region-pluggable* — `mapCountryToRegion` is implemented and provider accounts (Supabase, ClickHouse Cloud, Cloudflare POPs) are multi-region-capable — but **US, UK, and UAE deployments are post-seed roadmap**, brought up on customer demand and funded by Series A. The table below describes the *target end-state*, not current production.
 
-**Routing strategy:** Edge ingest writes do najbliższego POP. Nightly batch ETL replikuje *anonimowe archetypy* (DP-protected) do globalnego archetype store. Surowe events i PII **NIGDY nie opuszczają regionu** zgodnie z data residency. Latency budget od user-event do ingest ACK: **<50ms p95 globally**.
+| Region | Status | Hosting | Postgres | ClickHouse | LLM endpoint | Compliance |
+|---|---|---|---|---|---|---|
+| **EU** (Frankfurt) | ✅ **Active today** (`eu-central-1`) | Vercel + Cloudflare fra1 | Supabase EU (Frankfurt) | ClickHouse Cloud EU | Claude przez AWS Bedrock eu-central-1 | GDPR primary |
+| **US** (Virginia) | 🗓️ **Post-seed, on-demand** | Vercel iad1 + Cloudflare iad | Supabase US-East | ClickHouse Cloud US-East | Claude/OpenAI native | CCPA/CPRA |
+| **UK** (London) | 🗓️ **Post-seed, on-demand** | Vercel lhr1 + Cloudflare lhr | Supabase EU (separate UK project for residency) | Logical separation w EU instance | Claude przez Bedrock eu-west-2 | UK GDPR |
+| **UAE** (Dubai) | 🗓️ **Post-seed, on-demand** | Cloudflare dxb (no Vercel POP — fall back na fra1) | Postgres na AWS me-central-1 (Bahrain region najbliższy) | ClickHouse self-hosted on AWS me-central-1 lub EU instance dla MVP | Claude przez Bedrock (najbliższy: eu-central-1) | UAE PDPL Federal Decree-Law 45/2021 + DIFC |
+
+**Current routing (EU-first):** All edge ingest, control plane, event store, and ML workloads run in EU today. Cloudflare Workers serve every POP globally, but writes terminate to the EU origin. Cross-tenant archetype aggregation (DP-protected) runs in the EU archetype store. Latency budget from user-event to ingest ACK: **<50ms p95 globally** (Cloudflare's global POP network) and **<150ms p95** for full adapt-response from non-EU geographies until additional regions are stood up.
+
+**Target routing (post-seed):** Edge ingest writes do najbliższego POP. Nightly batch ETL replikuje *anonimowe archetypy* (DP-protected) do globalnego archetype store. Surowe events i PII **NIGDY nie opuszczają regionu** zgodnie z data residency. This routing model is *designed-in* (region-routing code exists, see Snapshot row §A.3) but only activates once additional regions are provisioned.
 
 ---
 
@@ -1924,7 +1930,9 @@ Dla Mode B dokładamy:
 
 ---
 
-## H. Compliance & Privacy Multi-Region
+## H. Compliance & Privacy — Multi-Jurisdiction
+
+> **Note (v1.9-B):** This section describes regulatory readiness across jurisdictions our customers and prospects operate in (EU, US, UK, UAE, PL), not current multi-region deployment. EU (`eu-central-1`) is the only active region today; see §A.3 for region status. Compliance templates, DPIA, ROPA, and DPO appointments are pre-built for all jurisdictions so non-EU customer onboarding does not block on legal work.
 
 ### H.1. GDPR (EU) — pragmatyczny checklist
 
@@ -2007,7 +2015,7 @@ NIS2 dotyczy "essential" i "important entities" — Estalara prawdopodobnie nie 
 | Control plane API | **Next.js 15 App Router on Vercel** (już mamy) | Hono on Cloudflare, NestJS | Kontynuujemy istniejący stack, używamy Edge Runtime gdzie sensowne |
 | Worker tasks (intent enrichment, archetype updates) | **Modal** (serverless GPU/CPU) | Inngest (event workflows), AWS Lambda, Trigger.dev | Modal = Python-native, świetne dla ML serving (Modal $1.1B valuation 2025), GPU support, Oracle Cloud partnership for affordable GPU ([Introl analysis](https://introl.com/blog/serverless-gpu-platforms-runpod-modal-beam-comparison-guide-2025)). RunPod tańsze ale bardziej manual |
 | Real-time event bus | **Redpanda Cloud** (Kafka-compatible) | Confluent Kafka, AWS Kinesis ($0.014/shard-hour), Cloudflare Queues | Redpanda ma 10x lepszy single-node throughput niż Kafka, niższy ops overhead, multi-region |
-| Transactional DB | **Supabase (Postgres 16)** — multi-region projects | Neon (świetne branching ale słabsze RLS), self-hosted RDS | Supabase = Postgres + auth + RLS + realtime in one. RLS jest battle-tested dla multi-tenant ([Supabase RLS docs](https://supabase.com/docs/guides/database/postgres/row-level-security)) |
+| Transactional DB | **Supabase (Postgres 16)** — EU project active; additional regions on-demand (post-seed) | Neon (świetne branching ale słabsze RLS), self-hosted RDS | Supabase = Postgres + auth + RLS + realtime in one. RLS jest battle-tested dla multi-tenant ([Supabase RLS docs](https://supabase.com/docs/guides/database/postgres/row-level-security)) |
 | Event store | **ClickHouse Cloud** | TimescaleDB, Snowflake | ClickHouse 4.8x szybsze loading + 1.7x mniejszy disk niż konkurencja na dużych aggregations ([Tinybird](https://www.tinybird.co/blog/clickhouse-vs-timescaledb)). Trade-off: nie cool dla małych częstych pisów, więc batchujemy na edge |
 | Vector DB | **pgvector w Supabase** (do 5–10M wektorów), później **Qdrant Cloud** | Pinecone (drogi przy >10M), Weaviate (skomplikowany ops) | pgvectorscale (Timescale's extension) osiąga 471 QPS @ 99% recall na 50M vectors, conkurencyjne z Pinecone ([dev.to](https://dev.to/polliog/postgresql-as-a-vector-database-when-to-use-pgvector-vs-pinecone-vs-weaviate-4kfi)) |
 | Cache / session store | **Upstash Redis** (multi-region, pay-per-request) | Redis Cloud, Vercel KV | Multi-region replication, $0.20/100k commands, idealne dla intent vector cache |
@@ -2375,7 +2383,7 @@ FROM tenants t;
 | **Drift** | ~$2 500/mo entry ($30k/rok) | Conversational sales, B2B ([Social Intents](https://www.socialintents.com/blog/drift-vs-intercom/)) |
 | **Intercom** | $39/seat starting, $903/mo Advanced, scales to enterprise tens of thousands | Customer support primary ([Featurebase](https://www.featurebase.app/blog/intercom-pricing)) |
 
-**Nasze pricing rationale:** plasujemy Tier 2 niżej niż Mutiny/Dynamic Yield (specjalizacja vertical, nie general-purpose), Tier 3 enterprise konkurencyjnie z Dynamic Yield ale z unique value prop (real-estate vertical depth + multi-region z dnia 1).
+**Nasze pricing rationale:** plasujemy Tier 2 niżej niż Mutiny/Dynamic Yield (specjalizacja vertical, nie general-purpose), Tier 3 enterprise konkurencyjnie z Dynamic Yield ale z unique value prop (real-estate vertical depth + EU-first z dnia 1; US/UK/UAE deployment on-demand post-seed — multi-region jest *region-pluggable* w architekturze, nie *region-deployed* dziś).
 
 ### L.3. Enterprise dla portals (Idealista/Otodom/Zillow scale)
 
@@ -2901,7 +2909,7 @@ unless:
 
 ## S. Podsumowanie strategiczne i następne kroki
 
-Estalara Adaptive Listings jest projektowany jako **vertically-specialized, embeddable-first, multi-region SaaS**, który wykorzystuje **cztery** strategiczne dźwignie:
+Estalara Adaptive Listings jest projektowany jako **vertically-specialized, embeddable-first, EU-first SaaS** (z region-pluggable architekturą, multi-region deployment planowany post-seed — patrz §A.3), który wykorzystuje **cztery** strategiczne dźwignie:
 
 1. **Vertical depth** — real-estate-specific intent ontology (12 wymiarów, 50–500 archetypów) jest niemożliwa do skopiowania przez generic personalization (Mutiny, Dynamic Yield) bez 18+ miesięcy work.
 2. **Embeddable-first DX** — SDK <40KB, 3 tiery integracji, zero-touch start (jeden script tag) to przewaga vs stand-alone competitors.

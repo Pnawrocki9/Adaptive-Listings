@@ -1,8 +1,10 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 1.9 (Master Design Document — Architecture Diagram Reconciliation, changes A–B of 4) | **Data:** 17 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 1.9 (Master Design Document — Architecture Diagram Reconciliation, changes A–C of 4) | **Data:** 17 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
 
 > **READING ORDER (v1.8 update).** This document remains the canonical *strategic vision* + *target architecture*. As of 2026-05-16 a multi-agent audit was performed against the actual codebase. The audit findings — what is built, what is partial, what is design-only — are summarized in the new section **"Implementation Status Snapshot (2026-05-16)"** below the Executive Summary, and in detail in `AUDIT_REPORT_INVESTOR_READINESS.md`, `AUDIT_IMPLEMENTATION_MAP.md`, `AUDIT_RISK_MATRIX.md`, and `AUDIT_TEST_GAPS.md` at the repository root. Where this document and the audit disagree, the audit reflects reality at HEAD `398dc97`.
+
+**Changelog v1.9-C (17 maja 2026):** §B.2 SDK bundle budget updated — honest disclosure that current 93.3 KB IIFE exceeds <40 KB target. Added context (raw/gzip/brotli), explanation (single bundle includes Tier 1 + Tier 2), and remediation plan (split entry points, TICKET-038).
 
 **Changelog v1.9-B (17 maja 2026):** Retired false multi-region deployment claim. EU only (`eu-central-1`) is active today; US/UK/UAE deployment is post-seed roadmap (available on customer demand). Affected sections: §A.3 (Multi-region deployment — retitled "Region strategy" and reframed as EU-first today with post-seed expansion plan), §H (header retitled "Compliance & Privacy — Multi-Jurisdiction" to clarify the regulatory-readiness intent), §I.2 (Supabase row softened to remove "multi-region projects" claim), §L.2 (pricing rationale "multi-region z dnia 1" → "EU-first z dnia 1; multi-region post-seed"), §S (strategic summary "multi-region SaaS" reframed as "EU-first SaaS with multi-region roadmap"). §A.1 diagram and all vendor-capability descriptions (Redpanda, Upstash, R2 native features) untouched. This is change B of 4; sections §A.4 onward and other untouched material from v1.9-A remain unchanged.
 
@@ -429,6 +431,24 @@ import { EstalaraListing } from '@estalara/react';
 | Loading | **async + idle-callback dla non-critical work**, intersection observer dla "is listing visible" | Nie blokujemy LCP klienta |
 | CSP | Generujemy nonce per-load, dokumentujemy required `script-src cdn.estalara.io 'self' 'wasm-unsafe-eval'` (dla potencjalnego on-device modelu w przyszłości) | XSS mitigation, plus pomaga klientom z surową CSP |
 | API surface | Zdarzeniowy: `Estalara.on('intent-detected', cb)`, `Estalara.adapt(slot, directive)`, `Estalara.identify(hint)` (opt-in dla klientów którzy mają consent) | Inspiracja: Segment analytics.js + Intercom Messenger |
+
+> **v1.9-C update (2026-05-17):** Current build exceeds the original budget. Measured at HEAD
+> `398dc97` (post TICKET-ADP-004):
+>
+> - IIFE bundle (raw): **93.3 KB**
+> - Minified: ~72 KB (estimated)
+> - Gzipped: ~24 KB (estimated)
+> - Brotli: ~21 KB (estimated)
+>
+> The original <40 KB target was for the gzipped Tier 1 Observer only. The current build includes
+> Tier 1 + Tier 2 (DOM mutations + playbooks) in a single bundle.
+>
+> **Remediation plan:** Split into two entry points:
+>
+> - `@estalara/sdk/observer` — Tier 1 only, target ≤35 KB gzipped
+> - `@estalara/sdk/augment` — Tier 1 + Tier 2, target ≤75 KB gzipped
+>
+> Tracked as TICKET-038 (sdk-engineer, next up in STATUS.md).
 
 ### B.3. Adaptery do popularnych stacks
 

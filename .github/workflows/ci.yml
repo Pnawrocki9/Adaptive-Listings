@@ -91,6 +91,17 @@ jobs:
       - name: Typecheck
         run: pnpm turbo run typecheck
 
+  # ── Rule I hard gate: all exported symbols must have non-test importers ──
+  rule-i:
+    name: Rule I — wired-or-dead check
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rule I — wired-or-dead check
+        run: bash scripts/check-rule-i.sh
+
   # ── Unit / smoke tests ───────────────────────────────────────────────────
   test-node:
     name: Test (Node ${{ matrix.node-version }})

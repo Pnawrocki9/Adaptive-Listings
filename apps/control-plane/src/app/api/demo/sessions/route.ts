@@ -39,11 +39,21 @@ function b64url(buf: Buffer | string): string {
 }
 
 function signDemoJwt(payload: Record<string, unknown>): string {
-  const secret = process.env.DEMO_MODE_JWT_SECRET ?? 'demo_jwt_secret_dev';
+  const secret = process.env.DEMO_MODE_JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('DEMO_MODE_JWT_SECRET must be set in production');
+    }
+    // Development/test fallback — NOT safe for production
+    console.warn(
+      '[demo] DEMO_MODE_JWT_SECRET not set — using dev fallback. Set this env var before deploying.',
+    );
+  }
+  const jwtSecret = secret ?? 'dev-demo-secret-not-for-production';
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = b64url(JSON.stringify(payload));
   const signingInput = `${header}.${body}`;
-  const sig = crypto.createHmac('sha256', secret).update(signingInput).digest();
+  const sig = crypto.createHmac('sha256', jwtSecret).update(signingInput).digest();
   return `${signingInput}.${b64url(sig)}`;
 }
 

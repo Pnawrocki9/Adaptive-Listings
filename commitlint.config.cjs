@@ -103,9 +103,9 @@ module.exports = {
           // [TICKET-AB-NNN], [TICKET-REORDER-NNN], [TICKET-AGENCY-NNN],
           // [TICKET-GDPR-NNN], [TICKET-VAL-NNN], [TICKET-DESC-NNN], [TICKET-DESC-PIVOT-NNN],
           // [TICKET-CAUSAL-NNN], [TICKET-PROCESS-NNN], [TICKET-DECISIONS-NNN],
-          // or [ESCALATION] reference
+          // [TICKET-RLS-NNN], or [ESCALATION] reference
           const ticketPattern =
-            /\[TICKET-(?:FIX-|INFRA-|DEMO-|ADM-|QUIZ-|DB-|EMB-|ARCH-|ADP-|DQS-|AUTO-|AB-|REORDER-|AGENCY-|GDPR-|VAL-|DESC-PIVOT-|DESC-|CAUSAL-|PROCESS-|DECISIONS-)?\d+\]|\[ESCALATION\]/;
+            /\[TICKET-(?:FIX-|INFRA-|DEMO-|ADM-|QUIZ-|DB-|EMB-|ARCH-|ADP-|DQS-|AUTO-|AB-|REORDER-|AGENCY-|GDPR-|VAL-|DESC-PIVOT-|DESC-|CAUSAL-|PROCESS-|DECISIONS-|RLS-)?\d+[a-z]?\]|\[ESCALATION\]/;
           if (!ticketPattern.test(subject)) {
             return [
               false,

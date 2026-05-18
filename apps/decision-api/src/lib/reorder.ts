@@ -47,7 +47,7 @@ export interface TenantSchemaEnv {
   UPSTASH_REDIS_TOKEN?: string;
   /**
    * Control-plane internal schema lookup URL.
-   * Example: 'https://app.estalara.com/api/internal/schema'
+   * Example: 'https://admin.estalara.com/api/internal/schema'
    * GET request with `?tenant_id=<id>` returns TenantSiteSchema | null as JSON.
    * When absent, DB fallback is skipped (demo tenant still works).
    */

@@ -48,7 +48,7 @@ const TENANT_ID = '550e8400-e29b-41d4-a716-446655440000';
 const EMPTY_ENV: Env = { ENVIRONMENT: 'test' };
 
 function makeAdaptRequest(body: Record<string, unknown>, auth = BEARER): Request {
-  return new Request('https://api.estalara.io/api/adapt', {
+  return new Request('https://api.estalara.com/api/adapt', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

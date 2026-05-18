@@ -59,7 +59,7 @@ export interface Env {
   UPSTASH_REDIS_TOKEN?: string;
   /**
    * Control-plane internal schema API URL. [TICKET-AB-011]
-   * Example: 'https://app.estalara.com/api/internal/schema'
+   * Example: 'https://admin.estalara.com/api/internal/schema'
    * GET with ?tenant_id=<id> → TenantSiteSchema | null
    */
   SCHEMA_API_URL?: string;

@@ -27,5 +27,7 @@ export type {
   DetailSchema,
 } from './tenant-site-schema.js';
 
+export * from './domains.js';
+
 /** Current shared package version string. */
 export const SHARED_VERSION = '0.0.0' as const;

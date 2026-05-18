@@ -10,7 +10,7 @@ variable "cloudflare_account_id" {
 }
 
 variable "cloudflare_zone_id" {
-  description = "Cloudflare zone ID for estalara.io domain"
+  description = "Cloudflare zone ID for estalara.com domain"
   type        = string
 }
 

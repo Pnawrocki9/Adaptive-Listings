@@ -23,8 +23,8 @@ name = "estalara-decision-api-staging"
 vars = { ENVIRONMENT = "staging", LLM_DAILY_CAP_USD = "1.00" }
 
 [[env.staging.routes]]
-pattern = "api-staging.estalara.io/*"
-zone_name = "estalara.io"
+pattern = "api-staging.estalara.com/*"
+zone_name = "estalara.com"
 
 # Production environment (manual deploy with human approval)
 [env.production]
@@ -32,8 +32,8 @@ name = "estalara-decision-api-production"
 vars = { ENVIRONMENT = "production", LLM_DAILY_CAP_USD = "1.00" }
 
 [[env.production.routes]]
-pattern = "api.estalara.io/*"
-zone_name = "estalara.io"
+pattern = "api.estalara.com/*"
+zone_name = "estalara.com"
 
 # Production configuration is managed via Terraform in infra/terraform/cloudflare/
 # Secrets are managed via Doppler — never commit .env files

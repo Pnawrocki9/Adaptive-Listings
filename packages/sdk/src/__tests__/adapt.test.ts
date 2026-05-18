@@ -82,7 +82,7 @@ describe('fetchDirectives', () => {
   it('returns null when tenantId is not set', async () => {
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://api.estalara.com',
       // tenantId intentionally omitted
     };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
@@ -97,7 +97,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://api.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
@@ -117,7 +117,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://api.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
@@ -137,7 +137,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://api.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
@@ -157,7 +157,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://api.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -184,7 +184,7 @@ describe('fetchDirectives', () => {
     const tenantId = '550e8400-e29b-41d4-a716-446655440000';
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://api.estalara.com',
       tenantId,
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -208,7 +208,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://api.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -229,7 +229,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://api.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const intentState: IntentState = {
@@ -259,7 +259,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://api.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -283,7 +283,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://api.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -305,7 +305,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://api.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -327,7 +327,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://api.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     await fetchDirectives(config, SESSION, 'listing_list');

@@ -21,7 +21,7 @@ const agencyPayload = {
 
 const staffPayload = {
   sub: 'staff-uuid-001',
-  email: 'staff@estalara.io',
+  email: 'staff@estalara.com',
   estalara_staff: true,
   estalara_role: 'estalara:superadmin',
   mfa_verified: true,

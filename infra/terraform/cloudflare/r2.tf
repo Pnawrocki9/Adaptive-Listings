@@ -1,5 +1,5 @@
 # R2 bucket for SDK CDN
-# Hosts compiled SDK bundles (@estalara/sdk) served via cdn.estalara.io
+# Hosts compiled SDK bundles (@estalara/sdk) served via cdn.estalara.com
 
 resource "cloudflare_r2_bucket" "sdk_cdn" {
   account_id = var.cloudflare_account_id

@@ -57,8 +57,8 @@ name = "estalara-ingest-staging"
 vars = { ENVIRONMENT = "staging", REDPANDA_TOPIC_EVENTS = "events-staging", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 [[env.staging.routes]]
-pattern = "ingest-staging.estalara.io/*"
-zone_name = "estalara.io"
+pattern = "ingest-staging.estalara.com/*"
+zone_name = "estalara.com"
 
 # Production environment (manual deploy with human approval)
 [env.production]
@@ -66,8 +66,8 @@ name = "estalara-ingest-production"
 vars = { ENVIRONMENT = "production", REDPANDA_TOPIC_EVENTS = "events", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 [[env.production.routes]]
-pattern = "ingest.estalara.io/*"
-zone_name = "estalara.io"
+pattern = "ingest.estalara.com/*"
+zone_name = "estalara.com"
 
 # Production configuration is managed via Terraform in infra/terraform/cloudflare/
 # Secrets are managed via Doppler — never commit .env files

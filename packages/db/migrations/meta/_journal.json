@@ -24,38 +24,73 @@
       "breakpoints": true
     },
     {
+      "idx": 3,
+      "version": "7",
+      "when": 1778651038000,
+      "tag": "0003_tenant_site_schemas",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778692070000,
+      "tag": "0004_ab_bandit_weights",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778692087000,
+      "tag": "0005_seed_archetype_embeddings",
+      "breakpoints": true
+    },
+    {
       "idx": 6,
       "version": "7",
-      "when": 1747180800000,
+      "when": 1778771800000,
       "tag": "0006_answers",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778785145000,
+      "tag": "0007_seed_ab_bandit_weights",
       "breakpoints": true
     },
     {
       "idx": 8,
       "version": "7",
-      "when": 1747526400000,
+      "when": 1778824140000,
       "tag": "0008_schema_validation_history",
       "breakpoints": true
     },
     {
       "idx": 9,
       "version": "7",
-      "when": 1747612800000,
+      "when": 1778933567000,
       "tag": "0009_tenant_compliance_records",
       "breakpoints": true
     },
     {
       "idx": 10,
       "version": "7",
-      "when": 1747699200000,
+      "when": 1778934342000,
       "tag": "0010_tenant_consent_required",
       "breakpoints": true
     },
     {
       "idx": 11,
       "version": "7",
-      "when": 1778888634050,
+      "when": 1778935058000,
       "tag": "0011_aromatic_triton",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1779105600000,
+      "tag": "0012_rls_policies",
       "breakpoints": true
     }
   ]

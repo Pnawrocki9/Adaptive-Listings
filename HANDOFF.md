@@ -52,21 +52,43 @@ Status semantics:
 
 ---
 
-| Sprint               | Status         | PR / commit                                           |
-| -------------------- | -------------- | ----------------------------------------------------- |
-| Sprint 0             | CODE-COMPLETE  | #1–9                                                  |
-| Sprint 1             | CODE-COMPLETE  | #10–25                                                |
-| Sprint 1.5 hardening | CODE-COMPLETE  | FIX-001..005                                          |
-| Sprint 2             | CODE-COMPLETE  | #36–55                                                |
-| Sprint 2.5           | 🟡 BLOCKED     | TICKET-030 READY; 032–034, 036 BLOCKED; 035 CANCELLED |
-| Sprint 3             | 🟡 IN PROGRESS | TICKET-037 DONE (PR #98); TICKET-038 READY            |
-| Sprint 6             | CODE-COMPLETE  | commits f0aca06, be4e366, c69ee9c                     |
-| Sprint 7             | CODE-COMPLETE  | PR #67–71                                             |
-| Sprint 7.5           | CODE-COMPLETE  | PR #72–79; corpus 100%/100% on 24 platforms           |
-| **Sprint 8**         | CODE-COMPLETE  | PR #80, #91–92, #95, #97–99 — 6 tickets DONE          |
-| Sprint 9             | 📋 BACKLOG     | 6 tickets spec'ed, nie zaczęte                        |
-| Sprint 10            | 📋 TBD         |                                                       |
-| Sprint 11            | 📋 TBD         |                                                       |
+| Sprint                   | Status         | PR / commit                                           |
+| ------------------------ | -------------- | ----------------------------------------------------- |
+| Sprint 0                 | CODE-COMPLETE  | #1–9                                                  |
+| Sprint 1                 | CODE-COMPLETE  | #10–25                                                |
+| Sprint 1.5 hardening     | CODE-COMPLETE  | FIX-001..005                                          |
+| Sprint 2                 | CODE-COMPLETE  | #36–55                                                |
+| Sprint 2.5               | 🟡 BLOCKED     | TICKET-030 READY; 032–034, 036 BLOCKED; 035 CANCELLED |
+| Sprint 3                 | 🟡 IN PROGRESS | TICKET-037 DONE (PR #98); TICKET-038 READY            |
+| Sprint 6                 | CODE-COMPLETE  | commits f0aca06, be4e366, c69ee9c                     |
+| Sprint 7                 | CODE-COMPLETE  | PR #67–71                                             |
+| Sprint 7.5               | CODE-COMPLETE  | PR #72–79; corpus 100%/100% on 24 platforms           |
+| **Sprint 8**             | CODE-COMPLETE  | PR #80, #91–92, #95, #97–99 — 6 tickets DONE          |
+| **Phase 0.5 pre-flight** | CODE-COMPLETE  | RUNTIME-FIX-001..005 (e06da6e..b0339cd)               |
+| Sprint 9                 | 📋 BACKLOG     | 6 tickets spec'ed, nie zaczęte                        |
+| Sprint 10                | 📋 TBD         |                                                       |
+| Sprint 11                | 📋 TBD         |                                                       |
+
+## 2.6 — Phase 0.5 Pre-flight Complete (2026-05-18)
+
+Phase 0.5 pre-flight resolved all 12 blockers from `RUNTIME_READINESS_AUDIT.md`. System is now ready
+for Phase 1 minimum viable activation. Nothing has been deployed. No vendor has been activated.
+
+Next step: Phase 1 activation (Cloudflare Worker + Supabase migrations + Vercel + Doppler + DNS).
+See `docs/decisions/DECISIONS_2026-05-18_v2.md` for full Phase 1 scope.
+
+**Blockers cleared:**
+
+| Commit    | Ticket          | Blockers                                                    |
+| --------- | --------------- | ----------------------------------------------------------- |
+| `e06da6e` | RUNTIME-FIX-001 | B1 — canonical domain map (estalara.com propagated)         |
+| `c92da81` | RUNTIME-FIX-002 | B2 + B9 — migration journal repair + RLS policies migration |
+| `5d30b28` | RUNTIME-FIX-003 | B3 — SDK-ingest event schema contract reconciliation        |
+| `0942140` | RUNTIME-FIX-004 | B4 + B5 — Worker-safe logger + Redpanda no-bus guard        |
+| `b0339cd` | RUNTIME-FIX-005 | B7 + B8 + B11 + B12 — Vercel config + env + route gating    |
+
+**Bundle size note:** ingest Worker bundle is 1,255 KiB (gzip: 230 KiB) — above the 1 MB Cloudflare
+free tier. Requires Cloudflare Workers Paid ($5/mo). Within the authorized $200/mo budget.
 
 ---
 
@@ -321,34 +343,41 @@ PR → squash merge.
 
 ---
 
-## 12. Pierwszy task w nowej sesji
+## 12. Pierwszy task w nowej sesji — Phase 1 activation
 
-```bash
-# Sprawdź stan
-git log --oneline -10
-cat backlog/QUEUE.md | head -30
-```
+Next session starts **Phase 1 minimum viable activation**. All 12 pre-flight blockers are cleared.
+No code changes required before activating — follow this sequence in order:
 
-**Jeśli Sprint 8 P0 follow-ups nierozpoczęte (priorytet 1):**
+**(1) Activate Doppler** — wire all secrets from `docs/ops/DOPPLER_SECRETS_MATRIX.md` into Doppler
+project `estalara-adaptive-listings` config `prod`. Pay special attention to the Phase 1 minimum set
+(20 vars) listed at the bottom of that file.
 
-```
-PM spawns backend-engineer × 4 równolegle (FOLLOW-014, 015, 017, 018)
-PM spawns data-engineer × 3 równolegle (FOLLOW-006, 008, 010)
-```
+**(2) Activate Supabase** — run `drizzle-kit migrate` against the live Supabase project
+(`yhmivuqeqkmzpxpyrsvc`). This applies all 13 migrations (0000–0012) including the RLS policies
+migration added in RUNTIME-FIX-002. Verify via `SELECT * FROM pg_policies` that RLS policies are
+present on all CAT-A tables.
 
-Potem:
+**(3) Deploy Cloudflare Workers** — `wrangler deploy --env production` for `apps/ingest` and
+`apps/decision-api`. KV namespace IDs (currently `PLACEHOLDER_*`) must be replaced with real IDs
+from `wrangler kv namespace create` or `terraform apply` before deploying (blocker B6 docs).
 
-- sdk-engineer → TICKET-038 (tsup bundle gate, unblocks Sprint 3 łańcuch)
-- compliance-engineer → TICKET-GDPR-001 (DPIA + ROPA, żadnych zależności, może zacząć równolegle)
+**(4) Deploy Vercel** — connect Vercel project to repo, set root directory to `apps/control-plane`,
+configure env vars from Doppler (use Vercel↔Doppler integration or manual paste). Deploy
+`apps/control-plane`. `vercel.json` is already in place (RUNTIME-FIX-005).
 
-**PM musi też zaktualizować QUEUE.md** (te zmiany nie wylądowały tej sesji — branch protection
-uniemożliwił commit na main; każda zmiana wymagała oddzielnego PR):
+**(5) Configure DNS** — set CNAME records for:
 
-- TICKET-ARCH-003 → DONE (PR #95, commit `3e574b9`)
-- Sprint 8 header → COMPLETE (6/6 DONE)
-- "Currently in flight" → (none)
-- "Awaiting human review" → (none)
-- "Recent merges" → dodać PR #95–104
+- `cdn.estalara.com` → Cloudflare R2
+- `ingest.estalara.com` → Cloudflare Worker
+- `api.estalara.com` → Cloudflare Worker
+- `admin.estalara.com` → Vercel
+
+**(6) Smoke test** — one real browser session emits one event, event lands in Supabase, decision is
+produced, visible in logs.
+
+**Phase 1 acceptance criterion: 1 session → 1 event → 1 decision → visible in dashboard.**
+
+See `docs/decisions/DECISIONS_2026-05-18_v2.md` for full Phase 1 scope and rollback plan.
 
 ---
 

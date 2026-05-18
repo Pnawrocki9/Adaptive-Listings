@@ -1,8 +1,10 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 1.9 (Master Design Document — Architecture Diagram Reconciliation, changes A–C of 4) | **Data:** 17 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 1.9 (Master Design Document — Architecture Diagram Reconciliation, changes A–D of 4 (Phase 1 complete)) | **Data:** 17 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
 
 > **READING ORDER (v1.8 update).** This document remains the canonical *strategic vision* + *target architecture*. As of 2026-05-16 a multi-agent audit was performed against the actual codebase. The audit findings — what is built, what is partial, what is design-only — are summarized in the new section **"Implementation Status Snapshot (2026-05-16)"** below the Executive Summary, and in detail in `AUDIT_REPORT_INVESTOR_READINESS.md`, `AUDIT_IMPLEMENTATION_MAP.md`, `AUDIT_RISK_MATRIX.md`, and `AUDIT_TEST_GAPS.md` at the repository root. Where this document and the audit disagree, the audit reflects reality at HEAD `398dc97`.
+
+**Changelog v1.9-D (17 maja 2026):** Dodano §A.1.5 "TypeScript Edge Engine — runtime intelligence layer". Sekcja dokumentuje rzeczywisty runtime warstwy inteligencji adaptive: in-browser Bayesian classifier (~600 LOC), edge holdout gate (Cloudflare Worker), canonical adapt route (Next.js). Zawiera honest limitations dotyczące pokrycia sygnałów behawioralnych (4/37), bandit thompsonSample wiring (FOLLOW-007), cross-tab persistence (czekająca na apps/intent-engine), chat-driven adaptation (post-MVP roadmap).
 
 **Changelog v1.9-C (17 maja 2026):** §B.2 SDK bundle budget updated — honest disclosure that current 93.3 KB IIFE exceeds <40 KB target. Added context (raw/gzip/brotli), explanation (single bundle includes Tier 1 + Tier 2), and remediation plan (split entry points, TICKET-038).
 
@@ -346,6 +348,56 @@ Estalara Adaptive Listings to **embeddable AI layer + standalone SaaS** dla rynk
 │    (the apps/auto-detect Modal stub was deleted — see ADR-0005).    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+### A.1.5. TypeScript Edge Engine — runtime intelligence layer
+
+> Added in v1.9-D (2026-05-17). Documents the actual runtime home of adaptive intelligence as of HEAD `a0943a7`, complementing the §A.1 high-level diagram. Findings confirmed by AUDIT-001 (evidence-based code audit).
+
+Three components carry the adaptive intelligence at runtime. The Modal Python services described elsewhere in this document are either future work (intent-engine) or deleted (see ADR-0005). The TypeScript edge stack below is what ships today.
+
+#### Component 1: In-browser Bayesian intent classifier
+
+- **Location:** `packages/sdk/src/core/intent.ts`
+- **Size:** ~600 LOC of pure TypeScript, no external ML dependencies
+- **What it does:** Maintains a probability distribution over 18 archetypes per visitor session. Updates on every behavioral signal (page.view, scroll.depth, listing.viewed, cta.clicked — 4 of 37 declared signals actively emitted today). Uses Bayesian update with configurable priors (`BASE_PRIOR`) and signal likelihoods (`SIGNAL_LIKELIHOODS`).
+- **Confidence gating:** Sidebar widget hidden until `confidence >= 0.6` (`SIDEBAR_SHOW_THRESHOLD`). Cold start renders neutral — no premature adaptation.
+- **Decay:** Confidence drifts toward uniform distribution (1/18 per archetype) at `DEFAULT_DECAY_RATE = 0.02 / minute` without new evidence.
+- **Why in-browser:** Zero latency for intent updates, no PII leaves the device for classification, graceful degradation if network is unavailable.
+- **Limitation:** Loses state on tab close. Cross-tab persistence is the responsibility of `apps/intent-engine` (Modal — to be built, see ADR-0005).
+
+#### Component 2: Edge holdout gate
+
+- **Location:** `apps/decision-api` (Cloudflare Worker)
+- **What it does:** Receives adapt requests from the SDK, assigns holdout group deterministically via `HMAC(tenant_id, session_id)`, enforces consent gate, forwards non-holdout sessions to the canonical adapt route, returns `ReorderDirective` for listing card re-ranking.
+- **Latency target:** p95 <100ms (edge-only path, cached decision, no LLM, no RAG — see ADR-0004 for full SLA tiers).
+- **What it does NOT do:** Archetype classification. The 3-bucket keyword stub in this Worker is intentionally not used in production paths (see ADR-0004 for the canonical-route decision).
+
+#### Component 3: Canonical adapt route
+
+- **Location:** `apps/control-plane/src/app/api/adapt/route.ts`
+- **What it does:** Receives archetype + session context from the SDK, selects the appropriate playbook (18 archetypes defined, 6 production-grade today), optionally enriches via RAG (AGENCY-001 listing context retrieval), optionally rewrites copy via LiteLLM (Haiku 4.5 for speed, Sonnet 4.6 for quality), logs the adaptation decision to ClickHouse, returns `slot_copy` + `ReorderDirective` + `variant_index`.
+- **Latency targets (bifurcated — see ADR-0004):** Deterministic path p95 <300ms, RAG-enriched path p95 <800ms, LLM-rewrite path p95 <2000ms.
+- **What it does NOT do:** Holdout assignment (that is the edge holdout gate's responsibility — Component 2).
+
+#### Data flow (happy path)
+
+1. Visitor lands on listing page (e.g. app.estalara.com).
+2. SDK loads (IIFE, 93.3 KB measured at HEAD `a0943a7` — see §B.2 for remediation plan TICKET-038).
+3. In-browser classifier initializes with `BASE_PRIOR` (neutral mass = 0.37, all archetypes seeded).
+4. Behavioral signals update classifier in real-time via Bayesian update.
+5. On confidence threshold OR page-dwell timer: SDK calls edge holdout gate (Component 2).
+6. Edge gate: HMAC holdout assignment, consent check, forwards to canonical adapt route if non-holdout.
+7. Canonical adapt route: playbook selection, optional RAG enrichment, optional LLM rewrite, decision logged to ClickHouse, returns directives.
+8. SDK applies directives: reorders listing cards (if `ReorderDirective` + `container_selector` detected), updates slot copy (`data-estalara-slot` elements), fires outcome events back to ingest.
+9. ClickHouse records: `adaptation_decision`, archetype, `variant_index`, holdout flag, timestamp.
+10. Analytics dashboard surfaces: lift vs holdout (north-star: qualified inquiry rate per impression), per-archetype performance, signal coverage.
+
+#### Current limitations (honest, as of v1.9-D)
+
+- **Behavioral signal coverage:** Only 4 of 37 declared SDK behavioral signals are actively emitted today (page.view, scroll.depth, listing.viewed, cta.clicked). Behavioral discrimination is therefore strong for only 3 of 6 production archetypes without quiz assistance. Sprint 7.5 auto-detect work and quiz widget partially compensate.
+- **Bandit variant selection:** `thompsonSample()` is implemented but has no non-test callers in production code (FOLLOW-007). `variant_index` is always 0 in production traffic.
+- **Cross-tab intent persistence:** Requires `apps/intent-engine` (Modal Python — currently a 28-line placeholder, full implementation deferred per ADR-0005).
+- **Chat-driven adaptation:** `chat.message.sent` schema is defined but has zero SDK producers today. Chat integration with Estalara AI (app.estalara.com) is in the post-MVP roadmap; see the integration guide for app.estalara.com integration sequencing.
 
 ### A.2. Multi-tenant model — kluczowa decyzja
 

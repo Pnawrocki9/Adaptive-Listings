@@ -34,7 +34,8 @@ describe('collectScrollDepth', () => {
   it('returns an event with type="scroll.depth" and the correct depth', () => {
     const event = collectScrollDepth(50);
     expect(event.type).toBe('scroll.depth');
-    expect(event.payload.depth_percent).toBe(50);
+    // Field name is `pct` per ScrollDepthPayloadSchema — renamed from depth_percent (B3 fix)
+    expect(event.payload.pct).toBe(50);
   });
 });
 
@@ -51,7 +52,7 @@ describe('dispatchEvents', () => {
     mockFetch.mockReset();
   });
 
-  it('calls fetch with the correct URL and Authorization header', async () => {
+  it('calls fetch with the correct URL and X-Estalara-API-Key header', async () => {
     const events = [collectPageView()];
     await dispatchEvents(events, MOCK_CONFIG, MOCK_SESSION);
 
@@ -59,7 +60,8 @@ describe('dispatchEvents', () => {
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(MOCK_CONFIG.ingestUrl);
     const headers = init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe(`Bearer ${MOCK_CONFIG.apiKey}`);
+    // Canonical auth header — ingest Worker reads X-Estalara-API-Key (B3 fix)
+    expect(headers['X-Estalara-API-Key']).toBe(MOCK_CONFIG.apiKey);
     expect(headers['x-session-id']).toBe(MOCK_SESSION.sessionId);
   });
 

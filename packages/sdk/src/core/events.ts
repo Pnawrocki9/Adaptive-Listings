@@ -62,7 +62,10 @@ export async function dispatchEvents(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
+        // Canonical auth header — ingest Worker reads X-Estalara-API-Key only
+        // (apps/ingest/src/auth.ts:61). Authorization: Bearer was the old SDK
+        // pattern and caused 401 on every request (RUNTIME_READINESS_AUDIT B3).
+        'X-Estalara-API-Key': config.apiKey,
         'x-session-id': session.sessionId,
       },
       body: JSON.stringify(body),
@@ -78,23 +81,40 @@ export async function dispatchEvents(
 
 /** Collect a page.view event from the current browser context. */
 export function collectPageView(): CollectedEvent {
+  // Collect viewport dimensions (required by PageViewPayloadSchema).
+  // window.innerWidth/innerHeight are available in all modern browsers.
+  const viewport =
+    typeof window !== 'undefined'
+      ? { width: window.innerWidth, height: window.innerHeight }
+      : undefined;
+
+  // Only include url/referrer when they are non-empty valid strings.
+  // Empty strings fail z.string().url() validation (RUNTIME_READINESS_AUDIT B3).
+  const rawUrl = typeof location !== 'undefined' ? location.href : '';
+  const rawReferrer = typeof document !== 'undefined' ? document.referrer : '';
+
+  const payload: Record<string, unknown> = {
+    device_class:
+      typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 ? 'mobile' : 'desktop',
+  };
+  if (rawUrl) payload.url = rawUrl;
+  if (rawReferrer) payload.referrer = rawReferrer;
+  if (viewport) payload.viewport = viewport;
+
   return {
     type: 'page.view',
-    payload: {
-      url: typeof location !== 'undefined' ? location.href : '',
-      referrer: typeof document !== 'undefined' ? document.referrer : '',
-      device_class:
-        typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0 ? 'mobile' : 'desktop',
-    },
+    payload,
     ts: Date.now(),
   };
 }
 
 /** Collect a scroll.depth event at a given depth milestone. */
 export function collectScrollDepth(depthPercent: number): CollectedEvent {
+  // Field name is `pct` per ScrollDepthPayloadSchema in packages/shared/src/schemas/events/mouse-scroll.ts.
+  // The old name `depth_percent` caused every scroll event to be rejected (RUNTIME_READINESS_AUDIT B3).
   return {
     type: 'scroll.depth',
-    payload: { depth_percent: depthPercent },
+    payload: { pct: depthPercent },
     ts: Date.now(),
   };
 }

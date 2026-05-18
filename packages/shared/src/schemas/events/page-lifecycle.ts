@@ -24,6 +24,11 @@ export type Viewport = z.infer<typeof ViewportSchema>;
 /**
  * `page.view` — emitted on every distinct page navigation.
  *
+ * `viewport` is optional: browser SDK collects it via window.innerWidth/innerHeight when
+ * available, but non-browser environments (SSR, test harnesses) may omit it.
+ * `url` is optional for the same reason — non-browser environments may not have location.href.
+ * See RUNTIME_READINESS_AUDIT B3 fix (TICKET-RUNTIME-FIX-003).
+ *
  * @example
  * {
  *   type: 'page.view',
@@ -36,9 +41,9 @@ export type Viewport = z.infer<typeof ViewportSchema>;
  * }
  */
 export const PageViewPayloadSchema = z.object({
-  url: z.string().url(),
+  url: z.string().url().optional(),
   referrer: z.string().url().optional(),
-  viewport: ViewportSchema,
+  viewport: ViewportSchema.optional(),
   device_class: DeviceClassSchema,
 });
 export const PageViewEventSchema = EventEnvelopeBaseSchema.extend({

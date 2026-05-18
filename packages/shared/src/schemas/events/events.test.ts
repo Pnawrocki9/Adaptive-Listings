@@ -52,10 +52,13 @@ const envelope = {
 const ev = <T extends string, P>(type: T, payload: P) => ({ ...envelope, type, payload });
 
 describe('EVENT_TYPES tuple', () => {
-  it('has exactly 37 unique event type literals', () => {
+  it('has exactly 44 unique event type literals', () => {
     // 34 original + 1 ab.assignment (TICKET-AB-001) + 2 consent audit (TICKET-041)
-    expect(EVENT_TYPES.length).toBe(37);
-    expect(new Set<string>(EVENT_TYPES).size).toBe(37);
+    // + 7 SDK observability (TICKET-RUNTIME-FIX-003):
+    //   listing.viewed, cta.clicked, quiz.event, quiz.mismatch,
+    //   sidebar.closed, adapt.applied, adapt.skipped
+    expect(EVENT_TYPES.length).toBe(44);
+    expect(new Set<string>(EVENT_TYPES).size).toBe(44);
   });
 });
 

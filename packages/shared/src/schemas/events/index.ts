@@ -62,6 +62,10 @@ import { SessionStartedEventSchema } from './device-context.js';
 import { SessionQualitySnapshotEventSchema } from './session-quality.js';
 import { AbAssignmentEventSchema } from './ab-assignment.js';
 import { ConsentGrantedEventSchema, ConsentDeniedEventSchema } from './consent.js';
+import { ListingViewedEventSchema, CtaClickedEventSchema } from './listing-observe.js';
+import { QuizEventEventSchema, QuizMismatchEventSchema } from './quiz.js';
+import { SidebarClosedEventSchema } from './sidebar.js';
+import { AdaptAppliedEventSchema, AdaptSkippedEventSchema } from './adapt-events.js';
 
 export * from './page-lifecycle.js';
 export * from './mouse-scroll.js';
@@ -76,12 +80,19 @@ export * from './device-context.js';
 export * from './session-quality.js';
 export * from './ab-assignment.js';
 export * from './consent.js';
+export * from './listing-observe.js';
+export * from './quiz.js';
+export * from './sidebar.js';
+export * from './adapt-events.js';
 
 /**
- * `EventSchema` — the canonical discriminated union over all 37 Estalara event types
+ * `EventSchema` — the canonical discriminated union over all 44 Estalara event types
  * (10 categories from Master Design C.1, plus session quality / DQS — TICKET-DQS-001,
  * plus A/B holdout assignment — TICKET-AB-001,
- * plus consent audit — TICKET-041).
+ * plus consent audit — TICKET-041,
+ * plus SDK observability events — TICKET-RUNTIME-FIX-003:
+ *   listing.viewed, cta.clicked, quiz.event, quiz.mismatch,
+ *   sidebar.closed, adapt.applied, adapt.skipped).
  *
  * Adding a new event type:
  *   1. Define payload + extended event schemas in the appropriate category file
@@ -139,6 +150,17 @@ export const EventSchema = z.discriminatedUnion('type', [
   // consent audit (2) — TICKET-041
   ConsentGrantedEventSchema,
   ConsentDeniedEventSchema,
+  // listing observation (2) — TICKET-RUNTIME-FIX-003
+  ListingViewedEventSchema,
+  CtaClickedEventSchema,
+  // quiz interaction (2) — TICKET-RUNTIME-FIX-003
+  QuizEventEventSchema,
+  QuizMismatchEventSchema,
+  // sidebar UI (1) — TICKET-RUNTIME-FIX-003
+  SidebarClosedEventSchema,
+  // adaptation observability (2) — TICKET-RUNTIME-FIX-003
+  AdaptAppliedEventSchema,
+  AdaptSkippedEventSchema,
 ]);
 export type Event = z.infer<typeof EventSchema>;
 
@@ -184,5 +206,13 @@ export const EVENT_TYPES = [
   // consent audit — TICKET-041
   'consent.granted',
   'consent.denied',
+  // SDK observability — TICKET-RUNTIME-FIX-003
+  'listing.viewed',
+  'cta.clicked',
+  'quiz.event',
+  'quiz.mismatch',
+  'sidebar.closed',
+  'adapt.applied',
+  'adapt.skipped',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];

@@ -10,13 +10,13 @@ import { createTracer } from './tracer.js';
 import { EstalaraError } from './error.js';
 
 // ---------------------------------------------------------------------------
-// 1. createLogger — returns Pino with correct base tags
+// 1. createLogger — returns Worker-safe structured JSON logger with correct tags
 // ---------------------------------------------------------------------------
 
 describe('createLogger', () => {
-  it('returns a Pino logger with correct service base fields', () => {
+  it('returns a logger with correct service base fields', () => {
     const logger = createLogger('apps/test-service');
-    // Pino exposes bindings() on the instance which reflects the `base` config
+    // bindings() reflects the fields merged into every log line
     const bindings = logger.bindings();
     expect(bindings).toMatchObject({
       service: {
@@ -50,6 +50,74 @@ describe('createLogger', () => {
     const logger = createLogger('apps/test');
     expect(logger.level).toBe('warn');
     process.env.LOG_LEVEL = original;
+  });
+
+  it('emits structured JSON via console.log', () => {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    const logger = createLogger('apps/test-service');
+    logger.info({ tenant_id: 'abc' }, 'test message');
+    spy.mockRestore();
+
+    expect(lines).toHaveLength(1);
+    const parsed = JSON.parse(lines[0]!) as Record<string, unknown>;
+    expect(parsed.level).toBe('info');
+    expect(parsed.msg).toBe('test message');
+    expect(parsed.tenant_id).toBe('abc');
+    expect(typeof parsed.timestamp).toBe('string');
+  });
+
+  it('child() inherits parent bindings and adds extra fields', () => {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    const parent = createLogger('apps/test-service');
+    const child = parent.child({ request_id: 'req-001' });
+    child.warn({ status: 429 }, 'rate_limited');
+    spy.mockRestore();
+
+    expect(lines).toHaveLength(1);
+    const parsed = JSON.parse(lines[0]!) as Record<string, unknown>;
+    expect(parsed.level).toBe('warn');
+    expect(parsed.request_id).toBe('req-001');
+    expect(parsed.status).toBe(429);
+    expect(parsed.msg).toBe('rate_limited');
+  });
+
+  it('suppresses log lines below the configured level', () => {
+    const original = process.env.LOG_LEVEL;
+    process.env.LOG_LEVEL = 'warn';
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    const logger = createLogger('apps/test');
+    logger.debug({}, 'this should be suppressed');
+    logger.info({}, 'this should also be suppressed');
+    logger.warn({}, 'this should appear');
+    spy.mockRestore();
+    process.env.LOG_LEVEL = original;
+
+    expect(lines).toHaveLength(1);
+    const parsed = JSON.parse(lines[0]!) as Record<string, unknown>;
+    expect(parsed.level).toBe('warn');
+  });
+
+  it('handles message-only (no object) call signature', () => {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    const logger = createLogger('apps/test-service');
+    logger.info('bare message string');
+    spy.mockRestore();
+
+    expect(lines).toHaveLength(1);
+    const parsed = JSON.parse(lines[0]!) as Record<string, unknown>;
+    expect(parsed.msg).toBe('bare message string');
   });
 });
 

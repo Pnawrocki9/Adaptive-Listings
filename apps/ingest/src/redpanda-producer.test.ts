@@ -9,6 +9,12 @@ const env: RedpandaProducerEnv = {
   REDPANDA_TOPIC_EVENTS: 'events',
 };
 
+/** Env with no Redpanda URL — simulates Phase 1 Supabase-only mode. */
+const envNoBus: RedpandaProducerEnv = {
+  REDPANDA_REST_URL: '',
+  REDPANDA_TOPIC_EVENTS: 'events',
+};
+
 const NO_BACKOFF = [0, 0, 0] as const;
 
 function fetchOk(): typeof fetch {
@@ -138,6 +144,42 @@ describe('pushToRedpanda', () => {
     );
     expect(result.ok).toBe(true);
     expect(observedAuth).toMatch(/^Basic /);
+  });
+});
+
+describe('pushToRedpanda — no-bus guard (Phase 1 mode)', () => {
+  it('returns ok with attempts=0 when REDPANDA_REST_URL is empty string', async () => {
+    let fetchCalled = false;
+    const result = await pushToRedpanda([{ type: 'page.view' }], envNoBus, {
+      fetchImpl: (): Promise<Response> => {
+        fetchCalled = true;
+        return Promise.resolve(new Response('', { status: 200 }));
+      },
+      backoffMs: [0, 0, 0],
+    });
+    expect(result).toEqual({ ok: true, attempts: 0 });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it('returns ok with attempts=0 when REDPANDA_REST_URL is absent (undefined)', async () => {
+    const envUndefined: RedpandaProducerEnv = {
+      REDPANDA_TOPIC_EVENTS: 'events',
+      // REDPANDA_REST_URL intentionally omitted
+    };
+    let fetchCalled = false;
+    const result = await pushToRedpanda([{ type: 'scroll.depth' }], envUndefined, {
+      fetchImpl: (): Promise<Response> => {
+        fetchCalled = true;
+        return Promise.resolve(new Response('', { status: 200 }));
+      },
+    });
+    expect(result).toEqual({ ok: true, attempts: 0 });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it('still returns ok with attempts=0 on empty batch even when URL is absent', async () => {
+    const result = await pushToRedpanda([], envNoBus, {});
+    expect(result).toEqual({ ok: true, attempts: 0 });
   });
 });
 

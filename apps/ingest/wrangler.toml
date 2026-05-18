@@ -8,8 +8,10 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ENVIRONMENT = "development"
-# Redpanda HTTP REST proxy (Pandaproxy). Override per-env below.
-REDPANDA_REST_URL = "http://localhost:8082"
+# Redpanda HTTP REST proxy (Pandaproxy). Empty = no-bus guard active (Phase 1 mode).
+# Set to the Pandaproxy URL when Redpanda is activated in Phase 3.
+# TODO(RUNTIME-FIX-004): Set to real URL when Redpanda is activated in Phase 3.
+REDPANDA_REST_URL = ""
 REDPANDA_TOPIC_EVENTS = "events"
 # Observability (TICKET-018) — secrets injected by Doppler at deploy time.
 # SENTRY_DSN_INGEST and OTEL_EXPORTER_HEADERS must be set as Worker secrets.
@@ -49,12 +51,12 @@ new_classes = ["RateLimiter"]
 # Development environment (local wrangler dev)
 [env.dev]
 name = "estalara-ingest-dev"
-vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "http://localhost:8082", REDPANDA_TOPIC_EVENTS = "events", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
+vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 # Staging environment (auto-deploy on merge to main)
 [env.staging]
 name = "estalara-ingest-staging"
-vars = { ENVIRONMENT = "staging", REDPANDA_TOPIC_EVENTS = "events-staging", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
+vars = { ENVIRONMENT = "staging", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events-staging", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 [[env.staging.routes]]
 pattern = "ingest-staging.estalara.com/*"
@@ -63,7 +65,7 @@ zone_name = "estalara.com"
 # Production environment (manual deploy with human approval)
 [env.production]
 name = "estalara-ingest-production"
-vars = { ENVIRONMENT = "production", REDPANDA_TOPIC_EVENTS = "events", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
+vars = { ENVIRONMENT = "production", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 [[env.production.routes]]
 pattern = "ingest.estalara.com/*"

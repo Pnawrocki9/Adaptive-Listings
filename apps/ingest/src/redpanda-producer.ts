@@ -13,10 +13,18 @@
  */
 
 import { context, propagation } from '@opentelemetry/api';
+import { logger } from './observability/logger.js';
 
 /** Bindings the producer needs from `env`. */
 export interface RedpandaProducerEnv {
-  REDPANDA_REST_URL: string;
+  /**
+   * HTTP REST proxy base URL (Pandaproxy). When absent or empty the producer
+   * returns `{ ok: true, attempts: 0 }` immediately — Phase 1 Supabase-only
+   * mode per DECISIONS_2026-05-18_v2.
+   *
+   * TODO(RUNTIME-FIX-004): Remove this guard when Redpanda is activated in Phase 3.
+   */
+  REDPANDA_REST_URL?: string;
   REDPANDA_TOPIC_EVENTS: string;
   /** Optional HTTP basic-auth for the REST proxy. Omit for unauthenticated dev clusters. */
   REDPANDA_REST_USERNAME?: string;
@@ -66,11 +74,27 @@ export async function pushToRedpanda(
 ): Promise<PushResult> {
   if (records.length === 0) return { ok: true, attempts: 0 };
 
+  // No-bus guard: when REDPANDA_REST_URL is absent or empty we are operating in
+  // Phase 1 (Supabase-only mode per DECISIONS_2026-05-18_v2). Events are already
+  // persisted by the caller; we skip the publish step and return ok so the
+  // Worker returns HTTP 200 to the SDK instead of 503.
+  // TODO(RUNTIME-FIX-004): Remove this guard when Redpanda is activated in Phase 3.
+  if (!env.REDPANDA_REST_URL) {
+    logger.warn(
+      { record_count: records.length },
+      'redpanda_skipped: REDPANDA_REST_URL not configured (Phase 1 Supabase-only mode)',
+    );
+    return { ok: true, attempts: 0 };
+  }
+
   const fetchImpl = options.fetchImpl ?? fetch;
   const backoff = options.backoffMs ?? DEFAULT_BACKOFF_MS;
   const timeoutMs = options.timeoutMs ?? 4000;
 
-  const url = `${env.REDPANDA_REST_URL.replace(/\/$/, '')}/topics/${env.REDPANDA_TOPIC_EVENTS}`;
+  // env.REDPANDA_REST_URL is guaranteed non-empty here — the no-bus guard above
+  // has already returned if it was absent or empty.
+  const restUrl = env.REDPANDA_REST_URL;
+  const url = `${restUrl.replace(/\/$/, '')}/topics/${env.REDPANDA_TOPIC_EVENTS}`;
 
   // Inject W3C trace context into a carrier and encode as Pandaproxy record headers.
   // btoa() is required — Pandaproxy JSON format expects base64-encoded header values.

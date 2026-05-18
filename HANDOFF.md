@@ -37,18 +37,33 @@ SaaS w 3 tierach (Observer $499/mo, Augment $1999/mo, Native $7500+/mo). Produkt
 
 ## 2. Stan sprintów (2026-05-14 koniec dnia)
 
+## 2.5 — Status Reclassification (Council 2.5 amendment, 2026-05-18)
+
+Sprints labeled "DONE" below are CODE-COMPLETE (merged + CI green) but **never activated in any
+runtime environment**. All vendor accounts opened, zero services running. First runtime activation
+is Phase 1 of the revised plan (see docs/decisions/DECISIONS_2026-05-18_v2.md).
+
+Status semantics:
+
+- **CODE-COMPLETE** — Code merged to main, CI passes, unit tests green. Has NOT been verified
+  against real vendors.
+- **ACTIVATED** — Service deployed and reachable, smoke test passes end-to-end.
+- **VERIFIED** — Service hardened, observability/rollback in place, RLS enforced.
+
+---
+
 | Sprint               | Status         | PR / commit                                           |
 | -------------------- | -------------- | ----------------------------------------------------- |
-| Sprint 0             | ✅ DONE        | #1–9                                                  |
-| Sprint 1             | ✅ DONE        | #10–25                                                |
-| Sprint 1.5 hardening | ✅ DONE        | FIX-001..005                                          |
-| Sprint 2             | ✅ DONE        | #36–55                                                |
+| Sprint 0             | CODE-COMPLETE  | #1–9                                                  |
+| Sprint 1             | CODE-COMPLETE  | #10–25                                                |
+| Sprint 1.5 hardening | CODE-COMPLETE  | FIX-001..005                                          |
+| Sprint 2             | CODE-COMPLETE  | #36–55                                                |
 | Sprint 2.5           | 🟡 BLOCKED     | TICKET-030 READY; 032–034, 036 BLOCKED; 035 CANCELLED |
 | Sprint 3             | 🟡 IN PROGRESS | TICKET-037 DONE (PR #98); TICKET-038 READY            |
-| Sprint 6             | ✅ DONE        | commits f0aca06, be4e366, c69ee9c                     |
-| Sprint 7             | ✅ DONE        | PR #67–71                                             |
-| Sprint 7.5           | ✅ DONE        | PR #72–79; corpus 100%/100% on 24 platforms           |
-| **Sprint 8**         | ✅ **DONE**    | PR #80, #91–92, #95, #97–99 — 6 tickets DONE          |
+| Sprint 6             | CODE-COMPLETE  | commits f0aca06, be4e366, c69ee9c                     |
+| Sprint 7             | CODE-COMPLETE  | PR #67–71                                             |
+| Sprint 7.5           | CODE-COMPLETE  | PR #72–79; corpus 100%/100% on 24 platforms           |
+| **Sprint 8**         | CODE-COMPLETE  | PR #80, #91–92, #95, #97–99 — 6 tickets DONE          |
 | Sprint 9             | 📋 BACKLOG     | 6 tickets spec'ed, nie zaczęte                        |
 | Sprint 10            | 📋 TBD         |                                                       |
 | Sprint 11            | 📋 TBD         |                                                       |

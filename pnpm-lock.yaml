@@ -246,6 +246,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@types/node':
+        specifier: '*'
+        version: 22.19.17
       drizzle-orm:
         specifier: ^0.44.0
         version: 0.44.7(@cloudflare/workers-types@4.20260425.1)(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(postgres@3.4.9)

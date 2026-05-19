@@ -46,7 +46,7 @@ class_name = "RateLimiter"
 # changes; keep historical entries so already-deployed environments can fast-forward.
 [[migrations]]
 tag = "v1"
-new_classes = ["RateLimiter"]
+new_sqlite_classes = ["RateLimiter"]
 
 # Development environment (local wrangler dev)
 [env.dev]
@@ -70,6 +70,20 @@ vars = { ENVIRONMENT = "production", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVEN
 [[env.production.routes]]
 pattern = "ingest.estalara.com/*"
 zone_name = "estalara.com"
+
+[[env.production.kv_namespaces]]
+binding = "KV_API_KEYS"
+id = "523aafacf2d54201a33631d62ba801e3"
+preview_id = "523aafacf2d54201a33631d62ba801e3"
+
+[[env.production.kv_namespaces]]
+binding = "KV_IDEMPOTENCY"
+id = "0603c2833a7a46e2890fb885319d813c"
+preview_id = "0603c2833a7a46e2890fb885319d813c"
+
+[[env.production.durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
 
 # Production configuration is managed via Terraform in infra/terraform/cloudflare/
 # Secrets are managed via Doppler — never commit .env files

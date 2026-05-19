@@ -292,6 +292,13 @@ importers:
         version: 2.1.9(@types/node@22.19.17)(jsdom@26.1.0)(lightningcss@1.32.0)(terser@5.46.2)
 
   packages/sdk:
+    dependencies:
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.10)(tsx@4.21.0)(typescript@5.9.3)
+      typescript:
+        specifier: '*'
+        version: 5.9.3
     devDependencies:
       '@estalara/shared':
         specifier: workspace:^
@@ -299,12 +306,6 @@ importers:
       '@playwright/test':
         specifier: ^1.59.1
         version: 1.59.1
-      tsup:
-        specifier: ^8.5.1
-        version: 8.5.1(jiti@2.6.1)(postcss@8.5.10)(tsx@4.21.0)(typescript@5.9.3)
-      typescript:
-        specifier: '*'
-        version: 5.9.3
       vitest:
         specifier: '*'
         version: 2.1.9(@types/node@22.19.17)(jsdom@26.1.0)(lightningcss@1.32.0)(terser@5.46.2)

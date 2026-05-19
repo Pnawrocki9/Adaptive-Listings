@@ -114,7 +114,7 @@ async function verifyAndDecodeJwtPayload(token: string): Promise<Record<string, 
 
     const signingInput = `${header}.${payload}`;
     const signingInputBytes = new TextEncoder().encode(signingInput);
-    const sigBytes = base64urlToUint8Array(sig);
+    const sigBytes = base64urlToUint8Array(sig) as Uint8Array<ArrayBuffer>;
 
     const valid = await crypto.subtle.verify('HMAC', key, sigBytes, signingInputBytes);
     if (!valid) return null;

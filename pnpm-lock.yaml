@@ -224,6 +224,9 @@ importers:
 
   packages/auth:
     dependencies:
+      '@types/node':
+        specifier: '*'
+        version: 22.19.17
       typescript:
         specifier: '*'
         version: 5.9.3

@@ -32,6 +32,7 @@
     "vitest": "*"
   },
   "dependencies": {
+    "@types/node": "*",
     "typescript": "*",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/sdk-trace-base": "^2.7.0",

@@ -21,8 +21,10 @@
     "test": "vitest run",
     "clean": "rm -rf dist"
   },
+  "dependencies": {
+    "typescript": "*"
+  },
   "devDependencies": {
-    "typescript": "*",
     "vitest": "*"
   }
 }

@@ -1,6 +1,6 @@
 # HANDOFF — Estalara Adaptive Listings
 
-**Data:** 2026-05-19 | **Wersja:** 4.0 | **Repo:** `github.com/Pnawrocki9/Adaptive-Listings`
+**Data:** 2026-05-19 | **Wersja:** 4.1 | **Repo:** `github.com/Pnawrocki9/Adaptive-Listings`
 
 ---
 
@@ -48,7 +48,58 @@ Secrets:         Doppler (project: estalara-adaptive-listings, config: prd)
 
 ---
 
-## 3. LIVE URLs (Phase 1 — aktywne)
+## 3. AI Council — Procedura
+
+**Lokalizacja:** `~/ai-council/` (osobne repo, Python, `.venv`)
+
+**Architektura:**
+
+- 3 krytycy działają równolegle:
+  - `critic_architecture.md` → Claude (architektura, bezpieczeństwo)
+  - `critic_innovation.md` → ChatGPT (innowacyjność, rynek)
+  - `critic_repo.md` → Kimi (code review, repo quality)
+- 1 orchestrator: ChatGPT → tworzy `decision_memo.md`
+- 1 writer: Claude → tworzy `writer_output.md` (implementacja lub pytania blokujące)
+
+**Uruchomienie:**
+
+```bash
+cd ~/ai-council
+source .venv/bin/activate
+python council.py --task "OPIS ZADANIA" --context-file /ścieżka/do/kontekstu.md
+```
+
+**Wyświetlenie ostatniej sesji:**
+
+```bash
+cd ~/ai-council && bash council-latest.sh
+```
+
+**Sesje zapisywane w:** `~/ai-council/sessions/YYYYMMDD_HHMMSS/`
+
+- `debate_log.md` — outputs wszystkich 3 krytyków
+- `decision_memo.md` — decyzja orchestratora
+- `writer_output.md` — output Claude Writer
+
+**Kiedy uruchamiać:**
+
+- **Council Checkpoint** — przed każdą fazą (Phase 1, 2, 3...)
+- **Strategiczne decyzje** — nowe funkcje, zmiany architektury, pivoty
+- **Code review milestone** — po ukończeniu dużego sprintu
+- **Przed demo** — walidacja gotowości
+
+**Checkpointy dotychczasowe:**
+
+- Council Checkpoint 2.5 (2026-05-18) — strategic re-frame, D1-D8 locked, Phase 1 vendor activation
+  plan
+- Council Checkpoint 3 — PENDING (po Phase 1 complete)
+
+**WAŻNE:** Writer Agent NIE implementuje kodu jeśli `APPROVED_TO_IMPLEMENT=true` nie jest w Decision
+Memo. Jeśli nie approved — zadaje tylko pytania blokujące.
+
+---
+
+## 4. LIVE URLs (Phase 1 — aktywne)
 
 | Serwis                 | URL                                                              | Status            |
 | ---------------------- | ---------------------------------------------------------------- | ----------------- |
@@ -67,7 +118,7 @@ curl https://estalara-decision-api-production.piotr-fb2.workers.dev/api/health
 
 ---
 
-## 4. Phase 1 — Vendor Activation (COMPLETE ✅)
+## 5. Phase 1 — Vendor Activation (COMPLETE ✅)
 
 ### Decyzje strategiczne (Council Checkpoint 2.5)
 
@@ -88,75 +139,43 @@ b0339cd | RUNTIME-FIX-005: Vercel config + env discipline + Phase 1 route gating
 
 ### Phase 1 — Step-by-step (DONE)
 
-**Step 1: Doppler ✅**
+**Step 1: Doppler ✅** — config: `prd`, 20+ sekretów, git email naprawiony na `piotr@time2show.com`
 
-- Project: `estalara-adaptive-listings`, config: `prd`
-- 20+ sekretów skonfigurowanych
-- Git email naprawiony na `piotr@time2show.com` (commit 89f4d4f)
+**Step 2: Supabase ✅** — pooler: `aws-0-eu-west-3.pooler.supabase.com:5432`, 13 migracji, 15 tabel,
+RLS na 10 CAT-A tabelach
 
-**Step 2: Supabase ✅**
-
-- Project: `yhmivuqeqkmzpxpyrsvc`
-- Pooler hostname: `aws-0-eu-west-3.pooler.supabase.com:5432`
-- 13 migracji zastosowanych, 15 tabel stworzonych
-- RLS aktywne na 10 CAT-A tabelach
-
-**Step 3: Cloudflare Workers ✅**
-
-- KV namespaces: API_KEYS=`523aafacf2d54201a33631d62ba801e3`,
-  IDEMPOTENCY=`0603c2833a7a46e2890fb885319d813c`
-- Wrangler: `new_sqlite_classes` (free plan wymóg)
-- workers.dev subdomain: `piotr-fb2.workers.dev`
+**Step 3: Cloudflare Workers ✅** — KV: API_KEYS=`523aafacf2d54201a33631d62ba801e3`,
+IDEMPOTENCY=`0603c2833a7a46e2890fb885319d813c`, workers.dev: `piotr-fb2.workers.dev`
 
 **Step 4: Vercel Control Plane ✅**
 
 - Project ID: `prj_rUx2U8EnAqyRAwpPK40ypMEzAdPO`
-- Root Directory: `apps/control-plane`
-- **WAŻNE — NPM_CONFIG_PRODUCTION=false** w Vercel env vars (Production + Preview) — bez tego Vercel
-  pomija devDependencies i build failuje
+- **WAŻNE:** `NPM_CONFIG_PRODUCTION=false` w Vercel env vars (Production + Preview)
 - Install Command override: `cd ../.. && pnpm install --frozen-lockfile --prod=false`
 
-**Build fixes (commity na main):** | Commit | Fix | |--------|-----| | d51b1a8 | typescript →
-dependencies (shared, db, auth) | | 10301fb | tsconfig.build.json exclude tests + @types/node + DOM
-lib (auth) | | 9946a4e | @types/node + ES2022 lib (db) | | 78a8e38 | @types/node + DOM lib (shared)
-| | 6aae6a8 | tsup → dependencies (sdk) |
+**Build fixes:** | Commit | Fix | |--------|-----| | d51b1a8 | typescript → dependencies (shared,
+db, auth) | | 10301fb | tsconfig.build.json exclude tests + @types/node + DOM lib (auth) | | 9946a4e
+| @types/node + ES2022 lib (db) | | 78a8e38 | @types/node + DOM lib (shared) | | 6aae6a8 | tsup →
+dependencies (sdk) |
 
-**Step 5: Smoke Test ✅** Pipeline end-to-end verified — `accepted:1, rejected:0`:
+**Step 5: Smoke Test ✅** — `accepted:1, rejected:0`
 
 ```bash
 ADAPT_API_KEY=$(doppler secrets get ADAPT_API_KEY --plain) && \
 curl -X POST https://estalara-ingest-production.piotr-fb2.workers.dev/v1/events \
   -H "Content-Type: application/json" \
   -H "X-Estalara-API-Key: $ADAPT_API_KEY" \
-  -d '{"events":[{
-    "event_id":"550e8400-e29b-41d4-a716-446655440000",
-    "session_id":"550e8400-e29b-41d4-a716-446655440001",
-    "tenant_id":"550e8400-e29b-41d4-a716-446655440002",
-    "type":"page.view",
-    "ts":1747656000000,
-    "region":"eu",
-    "consent_state":"consented",
-    "schema_version":1,
-    "payload":{"url":"https://app.estalara.com/listings/test","referrer":"https://google.com","device_class":"desktop"}
-  }]}'
+  -d '{"events":[{"event_id":"550e8400-e29b-41d4-a716-446655440000","session_id":"550e8400-e29b-41d4-a716-446655440001","tenant_id":"550e8400-e29b-41d4-a716-446655440002","type":"page.view","ts":1747656000000,"region":"eu","consent_state":"consented","schema_version":1,"payload":{"url":"https://app.estalara.com/listings/test","referrer":"https://google.com","device_class":"desktop"}}]}'
 ```
 
-**Uwaga o autentykacji:**
+**Uwaga o autentykacji:** Header: `X-Estalara-API-Key`, KV key format: `api_key:<token>` (z
+prefixem!)
 
-- Header: `X-Estalara-API-Key` (NIE `X-API-Key`)
-- KV key format: `api_key:<token>` (z prefixem!)
-- KV value format: `{"tenant_id":"...","scopes":["write:events"],"active":true}`
-
-**Step 6: DNS ✅ (w propagacji)**
-
-- Rekordy dodane w OVH Manager dla domeny `estalara.com`
-- `ingest.estalara.com` → `estalara-ingest-production.piotr-fb2.workers.dev`
-- `api.estalara.com` → `estalara-decision-api-production.piotr-fb2.workers.dev`
-- Typ: CNAME, TTL: 3600
+**Step 6: DNS ✅ (w propagacji)** — OVH CNAME: `ingest.estalara.com` + `api.estalara.com`
 
 ---
 
-## 5. Stan sprintów (2026-05-19)
+## 6. Stan sprintów (2026-05-19)
 
 | Sprint                 | Status     | Uwagi                                              |
 | ---------------------- | ---------- | -------------------------------------------------- |
@@ -169,52 +188,41 @@ curl -X POST https://estalara-ingest-production.piotr-fb2.workers.dev/v1/events 
 
 ---
 
-## 6. Następne kroki (priorytet)
+## 7. Następne kroki (priorytet)
 
-### Immediate (przed następną sesją)
+### Immediate
 
-1. **Zresetuj hasło Supabase DB** — hasło `OliLeo4435OliLeo4435` było widoczne w terminal history.
-   Idź do Supabase Dashboard → Settings → Database → Reset password. Potem zaktualizuj DATABASE_URL
-   i DATABASE_URL_DIRECT w Doppler.
+1. **Zresetuj hasło Supabase DB** — hasło było widoczne w terminal history. Supabase Dashboard →
+   Settings → Database → Reset password. Potem zaktualizuj `DATABASE_URL` i `DATABASE_URL_DIRECT` w
+   Doppler.
 
 2. **Sprawdź DNS propagację** (po ~1-24h):
 
 ```bash
-nslookup ingest.estalara.com
-nslookup api.estalara.com
-curl https://ingest.estalara.com/health
-curl https://api.estalara.com/api/health
+nslookup ingest.estalara.com && curl https://ingest.estalara.com/health
 ```
 
-3. **Council Checkpoint 3** — review Phase 1 results, plan Phase 2
+3. **Council Checkpoint 3** — uruchom AI Council z task "Review Phase 1 results, plan Phase 2
+   activation scope"
 
 ### Sprint 8 remaining
 
-**REORDER-001 — Per-archetype listing re-ranking** (sdk-engineer, Sonnet 4.6)
+**REORDER-001** (sdk-engineer, Sonnet 4.6) — ReorderDirective w DOM, per-archetype scoring, pierwszy
+A/B experiment. Hooki gotowe: `container_selector`, `data_extractors_per_card`, `ReorderDirective`
+stub w `packages/shared/src/directives.ts`
 
-- Implementacja `ReorderDirective` w DOM
-- Per-archetype scoring function dla listing cards
-- Pierwszy A/B experiment: re-ranking vs control
-- Hooki już gotowe: `container_selector`, `data_extractors_per_card`, `ReorderDirective` type stub w
-  `packages/shared/src/directives.ts`
-
-**AGENCY-001 — Agency-provided answers etap A** (backend-engineer, Sonnet 4.6)
-
-- Agency dostarcza pre-computed answers per listing (yield%, szkoły, etc.)
-- Level 2 w placeholder resolution order
-- Endpoint POST /api/agency/answers + storage w Postgres
+**AGENCY-001** (backend-engineer, Sonnet 4.6) — Agency pre-computed answers per listing, Level 2 w
+placeholder resolution, endpoint POST /api/agency/answers
 
 ### Phase 2 (po Council Checkpoint 3)
 
-- Aktywacja Redpanda (event bus) — svc: `estalara-ingest`, SASL/SCRAM-SHA-256
-- Aktywacja ClickHouse Cloud (event store)
-- Aktywacja Modal (stream consumer / ML)
-- Custom domeny w Cloudflare + Vercel (cdn.estalara.com, admin.estalara.com)
+- Aktywacja Redpanda, ClickHouse, Modal
+- Custom domeny (cdn.estalara.com, admin.estalara.com)
 - Demo na app.estalara.com (NATIVE-001 z Rafałem)
 
 ---
 
-## 7. Kluczowe decyzje architektoniczne (locked)
+## 8. Kluczowe decyzje architektoniczne (locked)
 
 ### Placeholder resolution order
 
@@ -228,28 +236,20 @@ curl https://api.estalara.com/api/health
 7. Skip directive (usuń placeholder)
 ```
 
-### app.estalara.com integration (Sprint 8 — NATIVE-001)
+### app.estalara.com integration (NATIVE-001)
 
 - Framework: **SvelteKit** (nie Next.js!)
 - H1 = cena (nie tytuł) → dodaj `[data-estalara-slot='tagline']` powyżej H1
-- AI Topics tags = reorder target per archetype
-- Live Session CTA = `[data-estalara-slot='cta-live']`
-- **NATIVE-001 odroczone** do MVP launch — CTO/CPO muszą dodać atrybuty ręcznie
+- **NATIVE-001 odroczone** do MVP launch
 
 ---
 
-## 8. CI/CD i workflow
-
-**CI:** GitHub Actions, wszystkie joby zielone. Corpus CI gate (`pnpm test:corpus`) blokuje merge
-jeśli precision <95%.
+## 9. CI/CD i workflow
 
 **Vercel deploy — WAŻNA LEKCJA:**
 
 - `NPM_CONFIG_PRODUCTION=false` MUSI być w Vercel env vars
-- Bez tego Vercel pomija devDependencies (tsc, tsup, @types/node) i build failuje
 - Install Command override: `cd ../.. && pnpm install --frozen-lockfile --prod=false`
-- Turbo wykrywa się automatycznie → Build Command:
-  `cd ../.. && pnpm turbo run build --filter=@estalara/control-plane`
 
 **pm-orchestrator workflow:**
 
@@ -261,13 +261,12 @@ jeśli precision <95%.
 **Kluczowe reguły CI:**
 
 - `@estalara/shared` MUSI być zbudowany przed lint i testami
-- Po merge PR z nowym SDK subpath → `pnpm --filter @estalara/sdk build` + verify dist/
-- GitHub Actions spending limit może cicho blokować CI → sprawdź Settings → Billing
 - Corpus CI gate: precision ≥95%, recall ≥80% (aktualnie 100%/100%)
+- GitHub Actions spending limit może cicho blokować CI
 
 ---
 
-## 9. Model selection
+## 10. Model selection
 
 | Kontekst                                        | Model             |
 | ----------------------------------------------- | ----------------- |
@@ -279,64 +278,47 @@ jeśli precision <95%.
 
 ---
 
-## 10. Czego unikać
+## 11. Czego unikać
 
 **Git:**
 
-- NIE: `git rebase` gdy PR ma konflikty → pętla nieskończona
-- TAK: `git reset --soft origin/main && git add . && git commit && git push --force-with-lease`
-- Git user.email MUSI być `piotr@time2show.com` (GitHub primary email) — inaczej Vercel blokuje
-  deploy
+- NIE: `git rebase` gdy PR ma konflikty → TAK: `git reset --soft origin/main`
+- Git user.email MUSI być `piotr@time2show.com`
 
 **Vercel:**
 
-- NIE: deploy bez `NPM_CONFIG_PRODUCTION=false` w env vars
-- NIE: `--cwd` flag w Vercel CLI z root repo (duplikuje path)
-- TAK: `cd apps/control-plane && npx vercel deploy --prod`
+- NIE: deploy bez `NPM_CONFIG_PRODUCTION=false`
+- NIE: `--cwd` flag w Vercel CLI z root repo
 
 **Cloudflare KV:**
 
-- NIE: `--binding` razem z `--namespace-id` (mutually exclusive)
-- NIE: bez `--remote` flag (zapisuje lokalnie)
-- TAK: `wrangler kv key put --namespace-id=ID --remote "api_key:TOKEN" 'JSON'`
+- NIE: `--binding` razem z `--namespace-id`
+- NIE: bez `--remote` flag
 - KV key format: `api_key:<token>` (z prefixem!)
 
 **Detection Engine:**
 
-- NIE: pełny CSS-in-JS hash jako selector (zmienia się przy deploy)
-- TAK: partial match `[class*='SearchResultCard']`
-- NIE: `null` dla "Price on request"
-- TAK: wartość `'POA'`
-
-**Agent workflow:**
-
-- NIE: dwa agenty na tym samym pliku jednocześnie
-- TAK: `git status` przed każdym commitem agenta
-- NIE: merge Sprint 7.5+ bez zielonego corpus CI gate
+- NIE: pełny CSS-in-JS hash → TAK: `[class*='keyword']`
+- NIE: `null` dla POA → TAK: wartość `'POA'`
 
 ---
 
-## 11. Kluczowe pliki
+## 12. Kluczowe pliki
 
-| Plik                                                   | Co zawiera                                           |
-| ------------------------------------------------------ | ---------------------------------------------------- |
-| `docs/MASTER_DESIGN.md`                                | Architektura v1.4 (4647+ linii)                      |
-| `docs/specs/SPRINT_7_5_SPEC.md`                        | Kompletny spec Auto-Detection Engine                 |
-| `docs/specs/MASTER_DESIGN_PATCH_v1_5.md`               | Patch B.8, B.9, E.6, Y do wklejenia przez architekta |
-| `HANDOFF.md`                                           | Ten plik (v4.0)                                      |
-| `backlog/QUEUE.md`                                     | Status wszystkich ticketów                           |
-| `packages/sdk/src/core/intent.ts`                      | Bayesian Intent Engine (18 archetypów)               |
-| `packages/sdk/src/core/adapt.ts`                       | fetchDirectives + applyDirectives + re-fetch loop    |
-| `packages/sdk/src/auto-detect/`                        | Detection techniques + fixtures + corpus test        |
-| `packages/shared/src/directives.ts`                    | ReorderDirective stub (Sprint 8 hook)                |
-| `packages/shared/src/schemas/events/page-lifecycle.ts` | Event schemas (page.view wymaga device_class!)       |
-| `apps/ingest/src/auth.ts`                              | Auth middleware — KV format `api_key:<token>`        |
-| `apps/control-plane/`                                  | Next.js control plane (Vercel)                       |
-| `apps/decision-api/`                                   | Cloudflare Worker decision endpoint                  |
+| Plik                                                   | Co zawiera                                     |
+| ------------------------------------------------------ | ---------------------------------------------- |
+| `docs/MASTER_DESIGN.md`                                | Architektura v1.4                              |
+| `HANDOFF.md`                                           | Ten plik (v4.1)                                |
+| `backlog/QUEUE.md`                                     | Status wszystkich ticketów                     |
+| `packages/sdk/src/core/intent.ts`                      | Bayesian Intent Engine (18 archetypów)         |
+| `packages/shared/src/directives.ts`                    | ReorderDirective stub                          |
+| `packages/shared/src/schemas/events/page-lifecycle.ts` | Event schemas (page.view wymaga device_class!) |
+| `apps/ingest/src/auth.ts`                              | Auth middleware — KV format `api_key:<token>`  |
+| `~/ai-council/`                                        | AI Council — Python, osobne repo               |
 
 ---
 
-## 12. Infrastruktura — podsumowanie
+## 13. Infrastruktura — podsumowanie
 
 | Vendor             | Status      | Uwagi                                      |
 | ------------------ | ----------- | ------------------------------------------ |
@@ -352,5 +334,5 @@ jeśli precision <95%.
 
 ---
 
-_Wygenerowano: 2026-05-19 | Sesja: Phase 1 Vendor Activation Complete — smoke test passed_
-_Poprzedni HANDOFF: v3.0 (2026-05-13)_
+_Wygenerowano: 2026-05-19 | Wersja: 4.1 — dodano sekcję AI Council_ _Poprzedni HANDOFF: v4.0
+(2026-05-19)_

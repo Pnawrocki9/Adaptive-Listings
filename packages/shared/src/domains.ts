@@ -25,7 +25,7 @@ export const INGEST_URL = `https://${INGEST_DOMAIN}` as const;
 export const INGEST_ENV = 'ESTALARA_INGEST_URL' as const;
 
 /** Decision API Worker (Cloudflare Workers) */
-export const DECISION_API_DOMAIN = 'api.estalara.com' as const;
+export const DECISION_API_DOMAIN = 'decision.estalara.com' as const;
 export const DECISION_API_URL = `https://${DECISION_API_DOMAIN}` as const;
 export const DECISION_API_ENV = 'ESTALARA_DECISION_API_URL' as const;
 
@@ -39,5 +39,5 @@ export const CONTROL_PLANE_ENV = 'NEXT_PUBLIC_CONTROL_PLANE_URL' as const;
  * e.g. ingest-staging.estalara.com, api-staging.estalara.com
  */
 export const INGEST_STAGING_DOMAIN = 'ingest-staging.estalara.com' as const;
-export const DECISION_API_STAGING_DOMAIN = 'api-staging.estalara.com' as const;
+export const DECISION_API_STAGING_DOMAIN = 'decision-staging.estalara.com' as const;
 export const CDN_STAGING_DOMAIN = 'cdn-staging.estalara.com' as const;

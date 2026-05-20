@@ -24,7 +24,7 @@ describe('estalara-decision-api', () => {
   });
 
   it('GET /api/health returns 200', async () => {
-    const req = new Request('https://api.estalara.com/api/health');
+    const req = new Request('https://decision.estalara.com/api/health');
     const res = await handler.fetch(req, env, ctx);
     expect(res.status).toBe(200);
     const body = await parseBody<{ status: string }>(res);
@@ -32,7 +32,7 @@ describe('estalara-decision-api', () => {
   });
 
   it('unknown route returns 404', async () => {
-    const req = new Request('https://api.estalara.com/v1/adapt', { method: 'POST' });
+    const req = new Request('https://decision.estalara.com/v1/adapt', { method: 'POST' });
     const res = await handler.fetch(req, env, ctx);
     expect(res.status).toBe(404);
   });

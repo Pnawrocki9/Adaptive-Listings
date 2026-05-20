@@ -23,7 +23,7 @@ name = "estalara-decision-api-staging"
 vars = { ENVIRONMENT = "staging", LLM_DAILY_CAP_USD = "1.00" }
 
 [[env.staging.routes]]
-pattern = "api-staging.estalara.com/*"
+pattern = "decision-staging.estalara.com/*"
 zone_name = "estalara.com"
 
 # Production environment (manual deploy with human approval)
@@ -32,7 +32,7 @@ name = "estalara-decision-api-production"
 vars = { ENVIRONMENT = "production", LLM_DAILY_CAP_USD = "1.00" }
 
 [[env.production.routes]]
-pattern = "api.estalara.com/*"
+pattern = "decision.estalara.com/*"
 zone_name = "estalara.com"
 
 # Production configuration is managed via Terraform in infra/terraform/cloudflare/

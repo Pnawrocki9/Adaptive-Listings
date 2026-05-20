@@ -1,8 +1,16 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 1.9 (Master Design Document — Architecture Diagram Reconciliation, changes A–D of 4 (Phase 1 complete)) | **Data:** 17 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 2.0 (Sprint 7.5 Auto-Detection reconciliation + Document Governance Policy) | **Data:** 20 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
 
 > **READING ORDER (v1.8 update).** This document remains the canonical *strategic vision* + *target architecture*. As of 2026-05-16 a multi-agent audit was performed against the actual codebase. The audit findings — what is built, what is partial, what is design-only — are summarized in the new section **"Implementation Status Snapshot (2026-05-16)"** below the Executive Summary, and in detail in `AUDIT_REPORT_INVESTOR_READINESS.md`, `AUDIT_IMPLEMENTATION_MAP.md`, `AUDIT_RISK_MATRIX.md`, and `AUDIT_TEST_GAPS.md` at the repository root. Where this document and the audit disagree, the audit reflects reality at HEAD `398dc97`.
+
+**Changelog v2.0 (20 maja 2026 — Sprint 7.5 reconciliation + Document Governance Policy):**
+
+- 🔄 **§Snapshot.1 row B.5 updated** — Schema Discovery Pipeline. Previously "🟡 Partial — L1/L2/L4/L5 work; L3 platform templates no-op". Now reflects Sprint 7.5 reality: 11 deterministic auto-detect techniques on `main` (data-estalara, json-ld, data-attributes, mui-components, article-tag, css-modules, css-in-js, angular, wordpress, drupal-php) + AI Vision fallback wired end-to-end via `apps/control-plane/src/app/api/detect/route.ts`. Corpus CI gate 100/100 precision/recall on 24 platforms (240/240 samples) since 2026-05-13. The only production blocker is `ANTHROPIC_API_KEY` empty in Doppler (dev/stg/prd) — a config issue, not a code gap. L3 (platform templates) remains no-op but de facto replaced by L1+L2 coverage.
+- 🔄 **§Snapshot.1 row B.4 disambiguation** — Auto-Onboarding remains ⛔ Blocked, but the row text now explicitly distinguishes "Auto-Onboarding UI flow" (Sprint 2.5 — Magic Link wizard, Vision Modal, Schema Discovery API; UI BLOCKED) from "Auto-Detection Engine itself" (Sprint 7.5 — see §B.5, Mostly Shipped). Multiple prior sessions conflated the two.
+- ✨ **Added §Y "Document Governance Policy"** (new top-level section, appended after §X "Sprint 1.5 Hardening Mini-Sprint"). Codifies how Master_Design stays in sync with `CLAUDE.md`, `AGENT_WORKFLOW.md`, subagent prompts, audit reports. Eliminates "stale version reference" as a class of problem. References `docs/ops/OPERATING_PRINCIPLES.md` v1.1.
+- ✨ **Referenced `docs/ops/OPERATING_PRINCIPLES.md` v1.1** from §Snapshot.1 introduction. Operating Principles are the 5 fundamental rules every session applies; codified after the 2026-05-20 anti-pattern (6-hour POC duplicated existing repo code).
+- 📝 **Anti-pattern of record (2026-05-20):** A session spent 6 hours building `estalara-demo-v0.3.x` (6 versions, 1245 lines JS) that duplicated functionality already shipped in `packages/sdk/src/auto-detect/techniques/` (4,329 LOC, 11 techniques, 100/100 corpus precision). Root cause: `CLAUDE.md` in repo root pointed to "Master Design v1.1 (2026-04-26)" while actual MD was v1.9 from 2026-05-17, and the session booted from the stale mental model and never recovered. Operating Principles v1.1 + this version's §Y Document Governance Policy are the structural fix.
 
 **Changelog v1.9-D (17 maja 2026):** Dodano §A.1.5 "TypeScript Edge Engine — runtime intelligence layer". Sekcja dokumentuje rzeczywisty runtime warstwy inteligencji adaptive: in-browser Bayesian classifier (~600 LOC), edge holdout gate (Cloudflare Worker), canonical adapt route (Next.js). Zawiera honest limitations dotyczące pokrycia sygnałów behawioralnych (4/37), bandit thompsonSample wiring (FOLLOW-007), cross-tab persistence (czekająca na apps/intent-engine), chat-driven adaptation (post-MVP roadmap).
 
@@ -62,10 +70,10 @@
 | B.1 | Integrator experience (Tier 1/2/3) | 🟡 **Partial** | Tier 1 substantial; Tier 2 mutation engine works but consumes only 3 of 18 archetype buckets via the Worker route; Tier 3 Native explicitly deferred (P.2). |
 | B.2 | SDK perf budget (<40 KB) | 🟥 **Over-budget** | IIFE = 93.3 KB. Decision: split Tier 1 vs Tier 2 entry points, or accept new budget and update §B.2. |
 | B.3 | Adapters (Intercom/Drift/Crisp/Idealista/Otodom) | 🟥 **Design-only** | No adapter code in the repo. |
-| B.4 | Auto-Onboarding (Magic Link / Auto-Detect / API Connect) | ⛔ **Blocked** | 4 of 6 Sprint-2.5 tickets BLOCKED. No tenant can self-serve onboard today. |
+| B.4 | Auto-Onboarding UI (Magic Link wizard / Auto-Detect Modal / API Connect) | ⛔ **Blocked** | 4 of 6 Sprint-2.5 UI tickets BLOCKED (TICKET-030 READY, TICKET-033/034 not started). No tenant can self-serve onboard today. **Note:** Auto-Detection Engine itself = §B.5 = Mostly Shipped per Sprint 7.5; this row is about onboarding UI specifically. Multiple prior sessions conflated the two. |
 | B.4.4 | Pre-Built Platform Templates Library (15 starters) | ⛔ **Blocked** | `templates: PlatformTemplate[] = []`. TICKET-032 BLOCKED. |
 | B.4.5 | WordPress Plugin | 🟥 **Design-only** | Not started. |
-| B.5 | Schema Discovery Pipeline (L1–L5) | 🟡 **Partial** | L1 (data-estalara-*), L2 (DOM heuristics), L4 (AI Vision), L5 (manual) work; L3 (platform templates) is no-op. |
+| B.5 | Schema Discovery Pipeline (L1–L5) | 🟢 **Mostly Shipped** | L1+L2 = 11 deterministic auto-detect techniques on `main` (corpus CI 100/100 on 24 platforms, 240/240 samples since 2026-05-13). L4 AI Vision wired end-to-end (`packages/sdk/src/auto-detect/techniques/ai-vision.ts` 364 LOC + `apps/control-plane/src/app/api/detect/route.ts:175` dynamic import + `callAnthropic()`). L3 (platform templates) remains no-op but de facto replaced by L1+L2 coverage. **Production blocker:** `ANTHROPIC_API_KEY` empty in Doppler (dev/stg/prd). |
 | B.6 | Continuous Schema Validation | ✅ **Shipped** | 526-LOC Modal cron with drift detection + Sentry dedup. |
 | B.7 | Onboarding metrics | 🟡 **Partial** | Some events emitted; no dashboard yet. |
 | C | Signal ingestion / event taxonomy | 🟡 **Partial** | Ingest worker substantial. SDK emits 8 of 37 declared event types; chat / photo / mortgage_calc / inquiry events are schema-only. |
@@ -5177,4 +5185,64 @@ System **ready for Sprint 2** (TICKET-021 Postgres schema + remaining 7 tickets)
 - Inconsistent error responses (canonical format shared)
 
 **Next step:** Section U Sprint 2 ticket — TICKET-021 must include new tables from U.2.3 (`users` with RBAC roles), U.3.2 (`tenant_registrations`), and U.9 (`staff_audit_log`).
+
+---
+
+## Y. Document Governance Policy
+
+> **Added in v2.0 (2026-05-20).** This section codifies how Master_Design stays in sync with the documents that reference it, so that the entire project's institutional memory remains coherent. It is the structural counterpart to `docs/ops/OPERATING_PRINCIPLES.md` Rule 2.
+
+### Y.1 — Version metadata lives in content, not filenames
+
+The Master_Design file is `docs/MASTER_DESIGN.md` — always, with no version suffix. Version is on line 3 in `**Wersja:** X.Y` format. Date is on the same line.
+
+Filenames that contain version numbers (e.g. `MASTER_DESIGN_v1_4.md`, `MASTER_DESIGN_PATCH_v1_5.md`) are **historical snapshots**, NOT references. Active documents (CLAUDE.md, AGENT_WORKFLOW.md, subagent prompts) must never link to versioned filenames — they link to `docs/MASTER_DESIGN.md` and rely on the version being current in content.
+
+This rule eliminates the "stale version reference" class of bug at the structural level. Before this rule existed, `CLAUDE.md` in repo root referenced "Master Design v1.1 (2026-04-26)" while the actual Master_Design was at v1.9 from 2026-05-17 — a 1-month-stale mental model that every Claude Code session booted from. The 2026-05-20 anti-pattern (6-hour POC duplicating existing code) was a direct consequence.
+
+### Y.2 — Update propagation (Definition of Done requirement)
+
+Every Master_Design update (any version bump — patch, minor, or major) MUST include review of the following documents. If any of them reference content that changed in Master_Design, they must be updated in the same PR or as an immediate follow-up commit.
+
+**Propagation checklist (canonical list — this is the single source of truth):**
+
+| # | Document | What to check |
+|---|---|---|
+| 1 | `CLAUDE.md` (repo root) | Does it reference section names (e.g. §B.5, §Snapshot.1) that were renamed? Does it carry implicit version assumptions? (Note: per Y.1, CLAUDE.md does NOT carry explicit version numbers — but it may reference section structure.) |
+| 2 | `docs/AGENT_WORKFLOW.md` | Does the process described depend on Master_Design section structure (e.g. "read §B.5 before doing auto-detect work")? If a referenced section moved, fix the reference. |
+| 3 | `.claude/agents/*.md` (all subagent prompts) | Each subagent reads Master_Design as part of its boot context. If section names changed, prompts may break. Audit all prompts for hardcoded section references. |
+| 4 | `backlog/QUEUE.md` | If sprint counts, sprint themes, or ticket states changed in Master_Design Snapshot.1, QUEUE.md must reflect the same. |
+| 5 | `backlog/STATUS.md` | If Snapshot.1 state changed, bump STATUS.md date and re-verify "(none — all sprints through N complete)" claims. |
+| 6 | `AUDIT_*.md` (repo root) | Audit reports cite specific Snapshot.1 verdicts. If a verdict changed (e.g. 🟡 Partial → 🟢 Mostly Shipped), the audit's narrative may also need adjustment. |
+| 7 | `docs/ops/OPERATING_PRINCIPLES.md` | If §Y (this section) changed materially, Operating Principles Appendix B (which points here) should be reviewed for whether the pointer still makes sense. |
+
+`docs/ops/OPERATING_PRINCIPLES.md` Appendix B links here rather than duplicating the list, so the list above is the only place this checklist lives. That structural choice is itself an application of Master_Design = single source of truth (Operating Principle 1).
+
+### Y.3 — Snapshot.1 freshness policy
+
+§Snapshot.1 is the only section in this document that asserts current implementation state. Sections A–U and §V–§X describe target architecture, strategic vision, and historical milestones; only §Snapshot.1 says "what is built today."
+
+For Snapshot.1 to be trustworthy:
+
+- It MUST be re-verified after every sprint completion (not just "every major version bump")
+- The date in its header (e.g. "Implementation Status Snapshot (2026-05-XX)") IS the ground-truth marker — if the snapshot date is older than 7 days, sessions should assume drift and verify against repo before relying on snapshot claims
+- When repo reality contradicts Snapshot.1, repo wins. Update Snapshot.1 in the same PR as the work that caused the drift, or open a dedicated reconciliation PR within 24 hours
+- Snapshot.1 entries should cite file paths and line counts where possible, so that future verification is mechanical (`git show main:packages/...`) rather than interpretive
+
+### Y.4 — Relationship to OPERATING_PRINCIPLES.md
+
+`docs/ops/OPERATING_PRINCIPLES.md` (the 5 fundamental rules) and this section (Document Governance Policy) are complementary:
+
+- OPERATING_PRINCIPLES.md tells **a session** what to do (read Master_Design first, verify before claiming, apply reflexive thinking, etc.)
+- This section (§Y) tells **the documentation system** what to do (where versions live, what propagates, how Snapshot.1 stays fresh)
+
+Operating Principle 1 (Master_Design = SoT) is enforceable because §Y makes the document structurally trustworthy. Operating Principle 2 (continuous synchronization) is enforceable because §Y.2 provides the checklist.
+
+If these two documents drift from each other, treat that as a P0 bug — they exist as a tightly-coupled pair.
+
+### Y.5 — Changelog of this section
+
+- **v2.0 (2026-05-20):** Section established. Codifies structural fixes for the 2026-05-20 anti-pattern (POC duplicating shipped code due to stale CLAUDE.md reference).
+
+---
 

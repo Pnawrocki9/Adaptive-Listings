@@ -1,22 +1,5 @@
 # Estalara Adaptive Listings — Claude Code Project Context
 
-## ⚠️ Master Design v1.1 update (2026-04-26)
-
-Master Design został zaktualizowany do v1.1 — dodane sekcje B.4 do B.7 dotyczące Auto-Onboarding
-(Magic Link, AI Vision Auto-Detect, Schema Discovery, Continuous Validation, Pre-Built Platform
-Templates).
-
-Implikacje dla aktualnej pracy:
-
-- Sprint 1-2 musi uwzględnić Auto-Detection Service, Schema Discovery Pipeline, Magic Link UI flow w
-  dashboardzie
-- Sprint 5-6 dostaje Continuous Schema Validation + drift detection
-- Każdy ticket dotykający TenantConfig MUSI uwzględnić nowe pole `auto_detected_schema`
-
-Pełen changelog na początku docs/MASTER_DESIGN.md.
-
----
-
 This file is loaded automatically into every Claude Code session in this repo. Read it first.
 
 ## What we're building
@@ -38,8 +21,9 @@ Founders: Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD
 This is an agent-orchestrated codebase. Most code is written by specialized Claude Code subagents
 coordinated by a PM agent. Humans review PRs and make architectural calls.
 
-The full architectural and business design is in docs/MASTER_DESIGN.md (currently v1.1 — read the
-changelog at top for what's new in this version).
+The full architectural and business design is in `docs/MASTER_DESIGN.md` — the canonical source of
+truth for project state, architecture, and roadmap. Version + date are in the first lines of that
+file. Read §Snapshot.1 before any non-trivial task (per OPERATING_PRINCIPLES Rule 1).
 
 Repository scale (current target):
 
@@ -51,10 +35,13 @@ timeline.
 
 Read these in order before doing anything:
 
-1. `docs/AGENT_WORKFLOW.md` — how the PM agent coordinates worker agents
-2. `docs/CONVENTIONS.md` — coding style, commit conventions, branch naming
-3. `docs/TICKET_FORMAT.md` — how tickets are structured
-4. `backlog/QUEUE.md` — current state of work, who's doing what
+1. `docs/MASTER_DESIGN.md` §Snapshot.1 — current implementation status (single source of truth per
+   OPERATING_PRINCIPLES Rule 1)
+2. `docs/ops/OPERATING_PRINCIPLES.md` — the 5 fundamental rules every session applies
+3. `docs/AGENT_WORKFLOW.md` — how the PM agent coordinates worker agents
+4. `docs/CONVENTIONS.md` — coding style, commit conventions, branch naming
+5. `docs/TICKET_FORMAT.md` — how tickets are structured
+6. `backlog/QUEUE.md` — current state of work, who's doing what
 
 ## How agents communicate
 
@@ -79,6 +66,31 @@ and surface the next command to the human or PM agent.
    tickets at sprint planning.
 7. **`CONVENTIONS_PATCH.md`** (repo root) — permanent rules growing from retro findings. A pattern
    must appear in ≥2 retros to be codified. Takes precedence over prose in CLAUDE.md.
+8. **`docs/ops/OPERATING_PRINCIPLES.md`** — the 5 fundamental rules every session applies
+   (Master_Design = SoT, continuous propagation, AI Council before important tickets, reflexive 2x,
+   verify-not-guess). Established 2026-05-20 after a 6-hour POC session duplicated existing repo
+   code due to reliance on stale `CLAUDE.md` (pre-patch) and userMemories instead of Master_Design
+   §Snapshot.1.
+
+## Document Versioning Policy
+
+This file (`CLAUDE.md`) does NOT contain Master_Design version numbers. The reason: when a
+supporting document carries an explicit version reference, it drifts the moment Master_Design is
+bumped, and every session that boots from it gets a stale mental model. This pattern caused the
+2026-05-20 anti-pattern (6-hour POC duplicating shipped code).
+
+Operative rules:
+
+- The Master_Design file is always `docs/MASTER_DESIGN.md`. Version lives in the first lines as
+  `**Wersja:** X.Y`.
+- Filenames with version numbers (e.g. `MASTER_DESIGN_v1_4.md`) are historical snapshots, NOT
+  references. Never link to them.
+- Every session reads `docs/MASTER_DESIGN.md` §Snapshot.1 before non-trivial tasks (Operating
+  Principle 1).
+- When Master_Design is updated, this file's content does NOT need version sync — only structural
+  references if section names change.
+- The canonical propagation checklist (which documents to review on every Master_Design update)
+  lives in Master_Design §Y.2.
 
 ## Per-ticket retrospective loop
 

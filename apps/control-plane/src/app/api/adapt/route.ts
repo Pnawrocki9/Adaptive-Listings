@@ -30,7 +30,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { errorBody, ErrorCode } from '@estalara/shared';
+import { errorBody, ErrorCode, computeCosineSimilarity } from '@estalara/shared';
 import type {
   AdaptationDirectives,
   TextDirective,
@@ -45,6 +45,11 @@ import { getAuthClaims } from '@estalara/auth';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { publishAbAssignmentEvent } from '@/lib/ab-events';
 import { getTenantSchema as getTenantSchemaFromDb } from '@/lib/tenant-schema';
+import {
+  fetchListingEmbeddings,
+  fetchArchetypeEmbedding,
+  LISTING_EMBEDDING_BATCH_LIMIT,
+} from '@/lib/embedding-lookup';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -253,8 +258,9 @@ interface TenantSchema {
 }
 
 /**
- * Produce a stable 0–1 affinity score for a listing + archetype pair.
+ * Produce a stable 0–1 affinity score for a listing + archetype pair via djb2.
  *
+ * Fallback used when archetype or listing embeddings are unavailable (FOLLOW-019).
  * Key order is `archetype:listingId` — matches canonical implementation exactly.
  *
  * Canonical: apps/decision-api/src/lib/reorder.ts deterministicScore()
@@ -269,10 +275,50 @@ function deterministicScore(archetype: string, listingId: string): number {
 }
 
 /**
- * Build a ReorderDirective from a tenant schema + listing IDs.
- * Scores are computed deterministically and sorted descending (highest first).
+ * Compute the affinity score for a single (archetype, listing) pair.
  *
- * Returns null when schema is not reorder-capable or container_selector is missing.
+ * Mirror of the canonical implementation in apps/decision-api/src/lib/reorder.ts
+ * (FOLLOW-019). Uses cosine similarity when both embeddings are present and
+ * dimension-matched; falls back to djb2 hash otherwise.
+ */
+function affinityScore(
+  archetype: string,
+  listingId: string,
+  archetypeEmbedding: number[] | null,
+  listingEmbedding: number[] | null,
+): number {
+  if (
+    archetypeEmbedding !== null &&
+    listingEmbedding !== null &&
+    archetypeEmbedding.length > 0 &&
+    archetypeEmbedding.length === listingEmbedding.length
+  ) {
+    try {
+      return computeCosineSimilarity(archetypeEmbedding, listingEmbedding);
+    } catch (err) {
+      console.debug(
+        `[adapt/reorder] cosine similarity failed for (${archetype}, ${listingId}) — falling back to djb2:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  } else {
+    console.debug(
+      `[adapt/reorder] embedding missing for (${archetype}, ${listingId}) — falling back to djb2`,
+    );
+  }
+  return deterministicScore(archetype, listingId);
+}
+
+/**
+ * Build a ReorderDirective from a tenant schema + listing IDs.
+ *
+ * Scoring (FOLLOW-019):
+ *   - Cosine similarity when archetype + listing embeddings are present and
+ *     dimension-matched.
+ *   - djb2 fallback per-listing when either is missing.
+ *
+ * Sorted descending (highest first). Returns null when schema is not
+ * reorder-capable or container_selector is missing.
  *
  * Canonical: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
  */
@@ -281,13 +327,15 @@ function buildReorderDirective(
   listingIds: string[],
   archetype: string,
   confidence: number,
+  archetypeEmbedding: number[] | null = null,
+  listingEmbeddings: Map<string, number[] | null> | null = null,
 ): ReorderDirective | null {
   if (!schema.reorder_capable || !schema.container_selector) {
     return null;
   }
   const scores = listingIds.map((id) => ({
     listing_id: id,
-    score: deterministicScore(archetype, id),
+    score: affinityScore(archetype, id, archetypeEmbedding, listingEmbeddings?.get(id) ?? null),
   }));
   scores.sort((a, b) => b.score - a.score);
   return {
@@ -588,15 +636,46 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Append ReorderDirective for tenants with reorder_capable + listing_ids present.
   // TICKET-AB-011: getTenantSchema now does real DB lookup + Redis cache.
+  // FOLLOW-019: real affinity via cosine(archetype_embedding, listing_embedding) with
+  // djb2 fallback per-listing when an embedding is missing. Batched lookups are
+  // skipped when listing_ids exceeds LISTING_EMBEDDING_BATCH_LIMIT (latency guard).
   // Canonical decision-api helper: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
   const allDirectives: (TextDirective | ReorderDirective)[] = [...textDirectives];
   const tenantSchema = await getTenantSchemaFromDb(body.tenant_id);
   if (tenantSchema && body.listing_ids && body.listing_ids.length > 0) {
+    // Fetch embeddings in parallel — fail-open: any error → null → djb2 fallback.
+    let archetypeEmbedding: number[] | null = null;
+    let listingEmbeddings: Map<string, number[] | null> | null = null;
+
+    if (body.listing_ids.length <= LISTING_EMBEDDING_BATCH_LIMIT) {
+      try {
+        const [archEmb, listEmbs] = await Promise.all([
+          fetchArchetypeEmbedding(archetypeId),
+          fetchListingEmbeddings(body.tenant_id, body.listing_ids),
+        ]);
+        archetypeEmbedding = archEmb;
+        listingEmbeddings = listEmbs;
+      } catch (err) {
+        console.error(
+          '[adapt POST] embedding lookup failed — falling back to djb2 for all:',
+          err instanceof Error ? err.message : err,
+        );
+      }
+    } else {
+      console.warn(
+        `[adapt POST] listing_ids.length=${String(body.listing_ids.length)} exceeds ` +
+          `LISTING_EMBEDDING_BATCH_LIMIT=${String(LISTING_EMBEDDING_BATCH_LIMIT)} — ` +
+          `falling back to djb2 for whole batch (latency guard).`,
+      );
+    }
+
     const reorderDirective = buildReorderDirective(
       tenantSchema,
       body.listing_ids,
       archetypeId,
       confidence,
+      archetypeEmbedding,
+      listingEmbeddings,
     );
     if (reorderDirective !== null) {
       allDirectives.push(reorderDirective);

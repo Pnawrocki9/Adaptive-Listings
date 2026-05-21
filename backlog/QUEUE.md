@@ -1325,7 +1325,8 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: TICKET-AUTO-006-POLISH
   title: Detection Preview + Save & Activate (trust moment for demo)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
+  pr: '#125'
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-030]
@@ -1333,8 +1334,12 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
   spec: backlog/sprint-9.5/TICKET-AUTO-006-POLISH.md
   notes: |
     Preview UI shows detected fields with selectors + confidence + sample values. "Save & Activate"
-    button writes to tenant_site_schemas (canonical store), updates onboarding_status, generates
-    snippet. Manual selector editing OUT OF SCOPE (no visual editor).
+    button writes to tenant_site_schemas (canonical store), updates tenant status to active, generates
+    SDK snippet. Manual selector editing OUT OF SCOPE (no visual editor).
+    PR #125 opened. All 474 local tests pass. 0 ESLint errors in new files (with built packages).
+    Pre-commit hooks pass. CI blocked by GitHub Actions billing issue (all jobs fail with
+    'spending limit' error) — pre-existing infrastructure issue, not caused by this PR.
+    ESCALATION: GitHub Actions billing needs to be resolved for CI to run.
 
 - id: FOLLOW-018
   title: Replace est_demo_tenant hardcode with real tenant schema lookup in adapt route

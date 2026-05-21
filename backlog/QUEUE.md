@@ -1358,18 +1358,24 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: FOLLOW-019
   title: Replace deterministicScore djb2 hash with real archetype-listing affinity
   agent: ml-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: []
   model: opus-4.7-xhigh
   spec: backlog/sprint-9.5/FOLLOW-019.md
+  pr: '#123'
   notes: |
-    Current deterministicScore(archetype, listing_id) = djb2 hash (no real affinity model).
-    Replace with cosine similarity between archetype_embeddings and listing_embeddings
-    (both pgvector). Listing embeddings computed at ingest from tenant_site_schemas extracted
-    fields. Falls back to djb2 if either embedding missing (graceful degradation). Opus 4.7
-    xhigh per memory edit ML/algo rule.
+    Cosine similarity now drives archetype-listing affinity in both
+    apps/decision-api/src/lib/reorder.ts (canonical) and the duplicate helpers
+    in apps/control-plane/src/app/api/adapt/route.ts. djb2 fallback preserved
+    per-listing for graceful degradation (null embedding, dim mismatch, lookup
+    error, or >50 listing batch latency guard). New `listing_embeddings` table
+    (1024-dim pgvector, RLS-isolated) + migration 0013 + POST /api/listings/embed
+    seeding endpoint (1024-dim OpenAI text-embedding-3-small upsert). Tests:
+    11 cosine math + 9 affinity-scoring + 13 embed-route + existing reorder
+    tests all green. Lint, typecheck, build, prettier check all clean.
+    Opus 4.7 xhigh per memory edit ML/algo rule.
 ```
 
 **Parallel pre-flight (devops-engineer, no main lane):**

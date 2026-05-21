@@ -37,6 +37,15 @@ vi.mock('@estalara/sdk/playbooks', () => ({
   })),
 }));
 
+// Mock bandit-query — POST handler now calls getBanditArms (FOLLOW-007)
+vi.mock('@/lib/bandit-query', () => ({
+  getBanditArms: vi.fn().mockResolvedValue([
+    { variant: 'control', alpha: 1, beta: 1, paused: false },
+    { variant: 'v1', alpha: 1, beta: 1, paused: false },
+    { variant: 'v2', alpha: 1, beta: 1, paused: false },
+  ]),
+}));
+
 import { GET, POST } from './route.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────

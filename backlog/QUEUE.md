@@ -1,10 +1,17 @@
 # Backlog Queue
 
-**Updated 2026-05-16T00:00Z by pm-orchestrator.** Sprint 9 COMPLETE as of 2026-05-15: GDPR-001 (PR
-#111), GDPR-002 (PR #118), GDPR-003 (PR #116), GDPR-004 (PR #117), DESC-001 (PR #112+#114), VAL-001
-(PR #110) — all 6 DONE. DESC-PIVOT-001 (PR #115) merged. Sprint 7.5 COMPLETE. Sprint 7 COMPLETE.
-Sprint 8 COMPLETE. Sprint 8.5 COMPLETE. P0 follow-ups FOLLOW-039 (ClickHouse DSR erase) and
-FOLLOW-040 (Doppler CI) added for EU pilot gate.
+**Updated 2026-05-21T12:00Z by pm-orchestrator.** Sprint 9.5 (MVP Demo Readiness) defined and OPEN.
+Sprint 9 COMPLETE as of 2026-05-15: GDPR-001 (PR #111), GDPR-002 (PR #118), GDPR-003 (PR #116),
+GDPR-004 (PR #117), DESC-001 (PR #112+#114), VAL-001 (PR #110) — all 6 DONE. DESC-PIVOT-001 (PR
+#115) merged. Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8 COMPLETE. Sprint 8.5 COMPLETE. Sprint
+2.5 SUPERSEDED — TICKET-030 + TICKET-033 promoted to Sprint 9.5, TICKET-032 superseded by Sprint 7.5
+auto-detect, TICKET-034/036 deferred (Q5 decision 2026-05-21), TICKET-035 already CANCELLED. P0
+follow-ups: FOLLOW-039 (ClickHouse DSR erase) deferred to Sprint 11 (Q7 decision 2026-05-21 — no EU
+traffic in 4-6 weeks); FOLLOW-040 (Doppler CI) parallel pre-flight for Sprint 9.5. Krok A document
+governance reset merged (PR #119, Master_Design v2.0, docs/ops/OPERATING_PRINCIPLES.md v1.1) —
+Operating Principles now active for all sessions. ANTHROPIC_API_KEY activated in Doppler dev/stg/prd
+2026-05-21 (Krok B) — AI Vision fully operational. Krok C AI Council Checkpoint completed 2026-05-21
+with APPROVED_TO_IMPLEMENT pending final Sprint 9.5 ticket spec writes.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -40,6 +47,7 @@ updates.
 | 7.5    | 9.5   | Auto-Detection Engine                                                | 7       | 7    | 0       | 0     | 0       |
 | 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 16      | 13   | 0       | 0     | 0       |
 | 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 6    | 0       | 0     | 0       |
+| 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)        | 6       | 0    | 0       | 4     | 2       |
 | 10     | 12    | Multi-region deploy + observability + load tests                     | tbd     | —    | —       | —     | tbd     |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
 
@@ -1241,6 +1249,138 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
   completed_at: '2026-05-15T08:04:23Z'
   spec: backlog/sprint-9/TICKET-VAL-001.md
 ```
+
+## Sprint 9.5 — MVP Demo Readiness (onboarding activation + bandit + scoring) (OPEN)
+
+**Sprint goal:** Make the zero-config onboarding promise demoable end-to-end on `app.estalara.com`
+(Tier 3 Native, locked 2026-05-12), then on any new tenant via Magic Link. Complete the bandit
+optimization wire-up and replace the placeholder archetype-affinity hash so the demo narrative
+includes honest live optimization. Output: investor demo where (a) admin pastes URL → auto-detects
+schema (Sprint 7.5 engine, AI Vision active per Krok B) → previews → activates → snippet generated,
+(b) embedded site receives adaptive directives via canonical adapt endpoint (ADR-0004), (c) bandit
+selects variants per (tenant, archetype) using Thompson sampling, (d) listing cards reorder by real
+archetype-listing affinity (not djb2 hash).
+
+**Scope decisions (Piotr 2026-05-21, post AI Council Checkpoint):**
+
+- Q4: Demo target = `app.estalara.com` (Tier 3 Native + Magic Link first; falls back to manual attrs
+  only if Magic Link fails). `000-app-estalara` fixture confirmed in corpus
+  (`packages/sdk/src/auto-detect/__fixtures__/000-app-estalara/`), detection_source=`data_estalara`,
+  technique already in 11-technique cascade. Magic Link will hit Level 1 detection with confidence
+  ≥0.99, zero AI Vision cost.
+- Q5: TICKET-032 stays BLOCKED in Sprint 2.5 (cleanup deferred). Not blocking demo.
+- Q6: Full narrative — bandit + real scoring included. FOLLOW-007 + FOLLOW-019 in scope.
+- Q7: EU pilot not in 4-6 weeks. FOLLOW-039 (ClickHouse DSR hard-delete) deferred to Sprint 11.
+
+**Adapt endpoint:** Per ADR-0004 (2026-05-17), canonical =
+`apps/control-plane/src/app/api/adapt/route.ts`. All Sprint 9.5 work targets this endpoint, not
+`apps/decision-api` Worker.
+
+**Schema persistence:** Per Sprint 7.5 + AUTO-003/004, canonical = `tenant_site_schemas` table
+(`packages/db/src/schema/tenant_site_schemas.ts`). `tenants.auto_detected_schema` field referenced
+in Master_Design §J.3 does NOT exist in current schema — that section is stale (cleanup follow-up).
+
+```yaml
+- id: TICKET-033
+  title: Schema Discovery API endpoint (POST /api/detect tenant-scoped wrapper)
+  agent: backend-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 4
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-9.5/TICKET-033.md
+  notes: |
+    Wraps existing Sprint 7.5 auto-detection engine (apps/control-plane/src/app/api/detect/route.ts:175
+    + packages/sdk/src/auto-detect/techniques/*). Adds tenant-scoping via JWT, SSRF protection,
+    idempotency, persistence to tenant_site_schemas (Postgres), structured response for wizard UI.
+    NOT a rebuild of detection — only a tenant-aware HTTP API in front of it.
+
+- id: TICKET-030
+  title: Magic Link onboarding wizard UI (paste URL → detect → preview → snippet)
+  agent: backend-engineer
+  status: BLOCKED
+  priority: P0
+  estimated_hours: 5
+  depends_on: [TICKET-033]
+  model: sonnet-4.6
+  spec: backlog/sprint-9.5/TICKET-030.md
+  notes: |
+    Originally Sprint 2.5 READY, promoted to Sprint 9.5. UI calls TICKET-033 API. States:
+    idle, analyzing, detected, needs_review, failed. No mocks — real API wiring. Wired to
+    real tenant_site_schemas write via TICKET-033. Generates real SDK snippet with tenant API key.
+
+- id: TICKET-AUTO-006-POLISH
+  title: Detection Preview + Save & Activate (trust moment for demo)
+  agent: backend-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 3
+  depends_on: [TICKET-030]
+  model: sonnet-4.6
+  spec: backlog/sprint-9.5/TICKET-AUTO-006-POLISH.md
+  notes: |
+    Preview UI shows detected fields with selectors + confidence + sample values. "Save & Activate"
+    button writes to tenant_site_schemas (canonical store), updates onboarding_status, generates
+    snippet. Manual selector editing OUT OF SCOPE (no visual editor).
+
+- id: FOLLOW-018
+  title: Replace est_demo_tenant hardcode with real tenant schema lookup in adapt route
+  agent: backend-engineer
+  status: BLOCKED
+  priority: P0
+  estimated_hours: 3
+  depends_on: [TICKET-033, TICKET-AUTO-006-POLISH]
+  model: sonnet-4.6
+  spec: backlog/sprint-9.5/FOLLOW-018.md
+  notes: |
+    apps/control-plane/src/app/api/adapt/route.ts currently reads schema for est_demo_tenant only.
+    Replace with tenant_site_schemas lookup keyed on authenticated tenant_id. Add Redis cache
+    with bounded TTL + invalidation on schema activation. Without this, newly onboarded tenants
+    cannot drive adapt path → demo breaks after snippet generation.
+
+- id: FOLLOW-007
+  title: Wire Thompson sampling bandit into live adapt path per (tenant, archetype, variant)
+  agent: ml-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 4
+  depends_on: []
+  model: opus-4.7-xhigh
+  spec: backlog/sprint-9.5/FOLLOW-007.md
+  notes: |
+    thompsonSample() implemented (packages/sdk + ab_bandit_weights table) but has zero
+    non-test callers per Rule I check. Wire into canonical adapt route variant selection
+    per Master_Design §E.3.0 Phase 2. Read Beta(α,β) from ab_bandit_weights, sample, select
+    variant_index, log to ClickHouse adaptation_decisions. Async feedback loop on inquiry.completed
+    updates Beta distribution. Opus 4.7 xhigh per memory edit ML/algo rule.
+
+- id: FOLLOW-019
+  title: Replace deterministicScore djb2 hash with real archetype-listing affinity
+  agent: ml-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 4
+  depends_on: []
+  model: opus-4.7-xhigh
+  spec: backlog/sprint-9.5/FOLLOW-019.md
+  notes: |
+    Current deterministicScore(archetype, listing_id) = djb2 hash (no real affinity model).
+    Replace with cosine similarity between archetype_embeddings and listing_embeddings
+    (both pgvector). Listing embeddings computed at ingest from tenant_site_schemas extracted
+    fields. Falls back to djb2 if either embedding missing (graceful degradation). Opus 4.7
+    xhigh per memory edit ML/algo rule.
+```
+
+**Parallel pre-flight (devops-engineer, no main lane):**
+
+- FOLLOW-040 — Doppler CI hygiene (DOPPLER_TOKEN in GitHub Actions secrets, ~30 min, Sonnet 4.6).
+  Must complete before Sprint 9.5 demo staging.
+
+**Deferred to Sprint 11 (per Q7 2026-05-21):**
+
+- FOLLOW-039 (ClickHouse DSR hard-delete) — non-negotiable BEFORE any EU pilot traffic but no EU
+  traffic in 4-6 weeks per Piotr's call.
 
 ## Currently in flight
 

@@ -1284,12 +1284,13 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: TICKET-033
   title: Schema Discovery API endpoint (POST /api/detect tenant-scoped wrapper)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: []
   model: sonnet-4.6
   spec: backlog/sprint-9.5/TICKET-033.md
+  pr: '#121'
   notes: |
     Wraps existing Sprint 7.5 auto-detection engine (apps/control-plane/src/app/api/detect/route.ts:175
     + packages/sdk/src/auto-detect/techniques/*). Adds tenant-scoping via JWT, SSRF protection,
@@ -1348,7 +1349,7 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
   depends_on: []
   model: opus-4.7-xhigh
   spec: backlog/sprint-9.5/FOLLOW-007.md
-  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/122
+  pr: '#122'
   notes: |
     thompsonSample() implemented (packages/sdk + ab_bandit_weights table) but has zero
     non-test callers per Rule I check. Wire into canonical adapt route variant selection
@@ -1381,12 +1382,13 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: FOLLOW-019
   title: Replace deterministicScore djb2 hash with real archetype-listing affinity
   agent: ml-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: []
   model: opus-4.7-xhigh
   spec: backlog/sprint-9.5/FOLLOW-019.md
+  pr: '#123'
   notes: |
     Current deterministicScore(archetype, listing_id) = djb2 hash (no real affinity model).
     Replace with cosine similarity between archetype_embeddings and listing_embeddings

@@ -67,7 +67,8 @@ vi.mock('@estalara/auth', () => ({
 import { detectSiteSchema } from '@estalara/sdk/auto-detect';
 import { createAdminClient } from '@estalara/db';
 import { getAuthClaims } from '@estalara/auth';
-import { POST, checkSsrf, SsrfBlockedError } from './route';
+import { POST } from './route';
+import { checkSsrf, SsrfBlockedError } from '@/lib/ssrf';
 import type { DetectionResult } from '@estalara/sdk/auto-detect';
 import type { TenantSiteSchema } from '@estalara/shared';
 
@@ -412,7 +413,8 @@ describe('POST /api/detect — request validation', () => {
 describe('POST /api/detect — fetch failures', () => {
   it('fetch throws network error → 400 FETCH_FAILED', async () => {
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchError('connection refused');
 
     const res = await POST(makeRequest({ url: 'https://example.com' }));
@@ -424,7 +426,8 @@ describe('POST /api/detect — fetch failures', () => {
 
   it('fetch returns 404 → 400 FETCH_FAILED', async () => {
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchNon2xx(404);
 
     const res = await POST(makeRequest({ url: 'https://example.com/missing' }));
@@ -435,7 +438,8 @@ describe('POST /api/detect — fetch failures', () => {
 
   it('fetch returns 500 → 400 FETCH_FAILED', async () => {
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchNon2xx(500);
 
     const res = await POST(makeRequest({ url: 'https://example.com' }));
@@ -452,7 +456,8 @@ describe('POST /api/detect — fetch failures', () => {
 describe('POST /api/detect — detection engine not implemented', () => {
   it('detectSiteSchema throws "Not implemented" → 501 DETECTION_NOT_IMPLEMENTED', async () => {
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchSuccess();
     mockDetectSiteSchema.mockRejectedValue(
       new Error('Not implemented — detection techniques ship in AUTO-003 and AUTO-004'),
@@ -470,7 +475,8 @@ describe('POST /api/detect — detection engine not implemented', () => {
 
   it('detectSiteSchema throws "Not Implemented" (capitalised) → 501', async () => {
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchSuccess();
     mockDetectSiteSchema.mockRejectedValue(new Error('Not Implemented'));
 
@@ -502,7 +508,8 @@ describe('POST /api/detect — 60-second cache guard (TICKET-033)', () => {
         updatedAt: thirtySecondsAgo,
       },
     ]);
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
 
     const res = await POST(makeRequest({ url: 'https://example.com/listings' }));
     expect(res.status).toBe(200);
@@ -541,7 +548,8 @@ describe('POST /api/detect — 60-second cache guard (TICKET-033)', () => {
         updatedAt: ninetySecondsAgo,
       },
     ]);
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -558,7 +566,8 @@ describe('POST /api/detect — 60-second cache guard (TICKET-033)', () => {
   it('no cached row → runs detection normally', async () => {
     const db = makeDbMock();
     db.limit.mockResolvedValue([]); // no row
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -578,7 +587,8 @@ describe('POST /api/detect — 60-second cache guard (TICKET-033)', () => {
 describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
   it('valid result with non-null schema → 200 + wizard response + DB upsert called', async () => {
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -623,7 +633,8 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
 
   it('fields[] includes detail_schema slot_selectors', async () => {
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -638,36 +649,39 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
   });
 
   it('fields[] deduplicates by name (index schema takes precedence)', async () => {
-    // Build a schema where the same field name appears in both index and detail schemas
+    // Build a schema where the same field name appears in both index and detail schemas.
+    // 'headline' exists in both CardFieldMappings and SlotSelectors — use it to test dedup.
     const schemaWithDupe: TenantSiteSchema = {
       ...VALID_SCHEMA,
       detail_schema: {
         ...VALID_SCHEMA.detail_schema,
         slot_selectors: {
-          // 'price' also appears in card_field_mappings — should be deduplicated
-          price: { primary: '.detail-price', fallbacks: [], type: 'currency' as const },
+          // 'headline' also appears in card_field_mappings — should be deduplicated
+          headline: { primary: '.detail-headline', fallbacks: [], type: 'text' as const },
         },
       },
     };
     const resultWithDupe: DetectionResult = { ...VALID_RESULT, schema: schemaWithDupe };
 
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(resultWithDupe);
 
     const res = await POST(makeRequest({ url: 'https://example.com' }));
     const body = await parseBody<{ fields: { name: string; selector: string }[] }>(res);
 
-    const priceFields = body.fields.filter((f) => f.name === 'price');
-    expect(priceFields).toHaveLength(1);
+    const headlineFields = body.fields.filter((f) => f.name === 'headline');
+    expect(headlineFields).toHaveLength(1);
     // Index schema (card_field_mappings) takes precedence
-    expect(priceFields[0]?.selector).toBe('[data-estalara-price]');
+    expect(headlineFields[0]?.selector).toBe('[data-estalara-headline]');
   });
 
   it('valid result with null schema → 200, null body shape', async () => {
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchSuccess();
     const nullResult: DetectionResult = {
       schema: null,
@@ -703,7 +717,8 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
   it('DB failure does not block the 200 response', async () => {
     const db = makeDbMock();
     db.onConflictDoUpdate.mockRejectedValue(new Error('DB connection failed'));
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -714,7 +729,8 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
 
   it('tenant_id from JWT is used (not from body)', async () => {
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -736,7 +752,8 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
 describe('POST /api/detect — unexpected errors', () => {
   it('detectSiteSchema throws unexpected error → 500 INTERNAL_ERROR', async () => {
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+     
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
     mockFetchSuccess();
     mockDetectSiteSchema.mockRejectedValue(new Error('Segfault in WASM'));
 

@@ -11,14 +11,12 @@
  * The Beta distribution is approximated using the Johnk method (ratio of
  * two gamma variates) which is computable without external libraries.
  *
- * Canonical implementation: `packages/shared/src/bandit.ts`. This file is a
- * verbatim duplicate so the decision-api Worker can ship without depending
- * on `@estalara/shared` (Cloudflare Worker bundle constraint — same reason
- * `apps/decision-api/src/lib/reorder.ts` duplicates `ReorderDirective`).
- * Any change here MUST be applied to `packages/shared/src/bandit.ts`
- * simultaneously. See FOLLOW-007.
+ * Shared module so both `apps/decision-api` (Worker) and `apps/control-plane`
+ * (Next.js) can import the same algorithm without cross-app imports.
+ * See FOLLOW-007 for the wiring story. `apps/decision-api/src/lib/bandit.ts`
+ * re-exports from this module to preserve its public surface.
  *
- * @module apps/decision-api/src/lib/bandit
+ * @module @estalara/shared/bandit
  */
 
 /**
@@ -86,7 +84,7 @@ export function sampleBeta(alpha: number, beta: number): number {
  * Samples from Gamma(shape, 1) using Marsaglia-Tsang method (valid for shape ≥ 1)
  * or Ahrens-Dieter for shape < 1.
  */
-function sampleGamma(shape: number): number {
+export function sampleGamma(shape: number): number {
   if (shape < 1) {
     // Ahrens-Dieter: Gamma(shape) = Gamma(shape + 1) * U^(1/shape)
     return sampleGamma(shape + 1) * Math.pow(Math.random(), 1 / shape);

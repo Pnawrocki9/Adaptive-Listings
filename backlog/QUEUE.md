@@ -1357,6 +1357,28 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
     variant_index, log to ClickHouse adaptation_decisions. Async feedback loop on inquiry.completed
     updates Beta distribution. Opus 4.7 xhigh per memory edit ML/algo rule.
 
+    PR #122 — Implementation complete:
+      - packages/shared/src/bandit.ts (canonical) + apps/decision-api/src/lib/bandit.ts
+        (byte-identical Worker-bundle copy, sync requirement documented).
+      - apps/control-plane/src/lib/bandit-query.ts: getBanditArms() + auto-seed (control/v1/v2,
+        Beta(1,1)) via onConflictDoNothing.
+      - apps/control-plane/src/app/api/adapt/route.ts (POST): thompsonSample()-driven variant
+        selection, response.variant field, ClickHouse logDecisionAsync carries variant.
+      - apps/control-plane/src/app/api/adapt/feedback/route.ts: POST /api/adapt/feedback,
+        202 fire-and-forget, updateBanditArm via onConflictDoUpdate.
+      - infra/clickhouse/migrations/0010_adaptation_decisions_variant.sql: ALTER TABLE adds
+        variant LowCardinality(String) DEFAULT 'control'.
+      - Tests: 12 + 21 + 9 = 42 new control-plane tests. decision-api bandit.test.ts (16 tests)
+        REMAIN GREEN — public surface unchanged.
+      - JS/TS CI: all green (Test Node 22, Typecheck, Lint, Build, Format, Gitleaks, SDK E2E,
+        ClickHouse migrations smoke, Auto-Detection corpus gate, Vercel, Rule H).
+      - Pre-existing CI baseline failures NOT caused by this PR:
+          - Rule I — wired-or-dead check: 92 dead symbols (was 96 on main; this PR reduced
+            count by 4 — my new bandit/getBanditArms/etc. are all wired).
+          - 7× Test (Python) failures: missing apps/{auto-detect,archetype-pipeline,...}
+            directories (scaffolding TBD).
+          - Doppler verify: missing token (marked optional in workflow).
+
 - id: FOLLOW-019
   title: Replace deterministicScore djb2 hash with real archetype-listing affinity
   agent: ml-engineer

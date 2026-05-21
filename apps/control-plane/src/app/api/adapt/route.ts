@@ -37,7 +37,7 @@ import type {
   ReorderDirective,
   ArchetypeId,
 } from '@estalara/shared';
-import { assignHoldout, DEFAULT_HOLDOUT_PCT } from '@estalara/shared';
+import { assignHoldout, DEFAULT_HOLDOUT_PCT, thompsonSample } from '@estalara/shared';
 import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
@@ -45,6 +45,7 @@ import { getAuthClaims } from '@estalara/auth';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { publishAbAssignmentEvent } from '@/lib/ab-events';
 import { getTenantSchema as getTenantSchemaFromDb } from '@/lib/tenant-schema';
+import { getBanditArms } from '@/lib/bandit-query';
 import {
   fetchListingEmbeddings,
   fetchArchetypeEmbedding,
@@ -198,6 +199,12 @@ function logDecisionAsync(
    * (e.g. opted-out sessions, or routes not yet wired to assignHoldout).
    */
   holdoutGroup = false,
+  /**
+   * Thompson sampling bandit variant selected for this request.
+   * Defaults to 'control' when bandit was not consulted (e.g. confidence below
+   * threshold, holdout/consent skip path). See FOLLOW-007.
+   */
+  variant = 'control',
 ): void {
   // Fire-and-forget — never awaited, never blocks the response.
   // No-op when CLICKHOUSE_URL is not configured.
@@ -212,10 +219,10 @@ function logDecisionAsync(
 
   const query =
     `INSERT INTO adaptation_decisions ` +
-    `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, holdout_group, ts) ` +
+    `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, holdout_group, variant, ts) ` +
     `VALUES ('${escape(sessionId)}', '${escape(tenantId)}', '${escape(archetype)}', ` +
     `${String(confidence)}, ${String(similarity)}, '${escape(source)}', ${String(tier)}, ${String(directiveCount)}, ` +
-    `${holdoutGroup ? '1' : '0'}, '${ts}')`;
+    `${holdoutGroup ? '1' : '0'}, '${escape(variant)}', '${ts}')`;
 
   fetch(clickhouseUrl, {
     method: 'POST',
@@ -634,6 +641,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     listingContext,
   );
 
+  // ── FOLLOW-007: Thompson sampling variant selection ───────────────────────
+  // Query bandit arms for (tenant_id, archetype) and sample a variant.
+  // Auto-seeds 3 arms (control, v1, v2) with Beta(1, 1) on first request.
+  // When all arms are paused (or DB unavailable), defaults to 'control'.
+  const banditArms = await getBanditArms(body.tenant_id, archetypeId);
+  const selectedVariant = thompsonSample(banditArms) ?? 'control';
+
   // Append ReorderDirective for tenants with reorder_capable + listing_ids present.
   // TICKET-AB-011: getTenantSchema now does real DB lookup + Redis cache.
   // FOLLOW-019: real affinity via cosine(archetype_embedding, listing_embedding) with
@@ -690,6 +704,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     tier: 1,
     directives: allDirectives,
     source,
+    variant: selectedVariant,
     generated_at: new Date().toISOString(),
   };
 
@@ -704,6 +719,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     1,
     allDirectives.length,
     false, // treatment arm — not holdout
+    selectedVariant,
   );
 
   return NextResponse.json(response, { status: 200 });

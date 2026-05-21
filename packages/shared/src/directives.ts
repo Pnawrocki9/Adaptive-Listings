@@ -133,6 +133,23 @@ export interface AdaptationDirectives {
     | 'default'
     | 'playbook_fallback_llm_capped'
     | 'playbook_fallback_llm_unavailable';
+  /**
+   * Thompson sampling bandit variant selected for this request (FOLLOW-007).
+   *
+   * Populated on the canonical `POST /api/adapt` path after `thompsonSample()`
+   * draws from the Beta posteriors stored in `ab_bandit_weights` for the
+   * `(tenant_id, archetype)` pair. Defaults to `'control'` when:
+   *   - the bandit returned `null` (all arms paused)
+   *   - the route is GET (legacy callers, no bandit wiring yet)
+   *   - the session is held-out / consent-skipped / below confidence threshold
+   *
+   * The SDK echoes this value back in `POST /api/adapt/feedback` so the
+   * server can update the matching `(tenant_id, archetype, variant)` arm.
+   *
+   * Optional for backward compatibility — existing GET callers continue to
+   * work without a variant field.
+   */
+  variant?: string;
   /** ISO 8601 timestamp of when this response was generated. */
   generated_at: string;
 }

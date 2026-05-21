@@ -1284,13 +1284,14 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: TICKET-033
   title: Schema Discovery API endpoint (POST /api/detect tenant-scoped wrapper)
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 4
   depends_on: []
   model: sonnet-4.6
   spec: backlog/sprint-9.5/TICKET-033.md
   pr: '#121'
+  completed_at: '2026-05-21'
   notes: |
     Wraps existing Sprint 7.5 auto-detection engine (apps/control-plane/src/app/api/detect/route.ts:175
     + packages/sdk/src/auto-detect/techniques/*). Adds tenant-scoping via JWT, SSRF protection,
@@ -1303,7 +1304,7 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: TICKET-030
   title: Magic Link onboarding wizard UI (paste URL → detect → preview → snippet)
   agent: backend-engineer
-  status: BLOCKED
+  status: IN_PROGRESS
   priority: P0
   estimated_hours: 5
   depends_on: [TICKET-033]

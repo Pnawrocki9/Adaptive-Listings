@@ -277,3 +277,167 @@ describe('buildReorderDirective()', () => {
     expect(result!.item_selector).toBe('[data-estalara-listing-id]');
   });
 });
+
+// ─── FOLLOW-019: affinity scoring (cosine + djb2 fallback) ────────────────────
+
+describe('buildReorderDirective() — FOLLOW-019 affinity scoring', () => {
+  const SCHEMA = {
+    reorder_capable: true,
+    container_selector: '[grid]',
+    item_selector: '[card]',
+  };
+
+  /**
+   * Compute the djb2 deterministic score externally so we can assert equality
+   * with the fallback path (same algorithm as deterministicScore in reorder.ts).
+   */
+  function djb2(archetype: string, listingId: string): number {
+    const key = `${archetype}:${listingId}`;
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) {
+      hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+    }
+    return (hash % 10000) / 10000;
+  }
+
+  /**
+   * Compute cosine externally — mirrors computeCosineSimilarity in reorder.ts.
+   */
+  function cosine(a: number[], b: number[]): number {
+    let dot = 0;
+    let mA = 0;
+    let mB = 0;
+    for (let i = 0; i < a.length; i++) {
+      const ai = a[i] ?? 0;
+      const bi = b[i] ?? 0;
+      dot += ai * bi;
+      mA += ai * ai;
+      mB += bi * bi;
+    }
+    return dot / (Math.sqrt(mA) * Math.sqrt(mB));
+  }
+
+  it('AC-3: uses cosine similarity when both embeddings present', () => {
+    const archetypeEmb = [1, 0, 0];
+    const listingEmbs = new Map<string, number[] | null>([
+      ['a', [1, 0, 0]], // cosine = 1.0
+      ['b', [0, 1, 0]], // cosine = 0.0
+      ['c', [-1, 0, 0]], // cosine = -1.0
+    ]);
+
+    const result = buildReorderDirective(
+      SCHEMA,
+      ['a', 'b', 'c'],
+      'investor',
+      0.9,
+      archetypeEmb,
+      listingEmbs,
+    );
+
+    expect(result).not.toBeNull();
+    const byId = Object.fromEntries(result!.scores.map((s) => [s.listing_id, s.score]));
+    expect(byId.a).toBeCloseTo(1.0, 10);
+    expect(byId.b).toBeCloseTo(0.0, 10);
+    expect(byId.c).toBeCloseTo(-1.0, 10);
+
+    // Top-ranked must be 'a' (highest cosine).
+    expect(result!.scores[0]!.listing_id).toBe('a');
+    expect(result!.scores[result!.scores.length - 1]!.listing_id).toBe('c');
+  });
+
+  it('AC-4: falls back to djb2 when listing embedding is null', () => {
+    const archetypeEmb = [1, 0, 0];
+    const listingEmbs = new Map<string, number[] | null>([['a', null]]);
+
+    const result = buildReorderDirective(SCHEMA, ['a'], 'investor', 0.9, archetypeEmb, listingEmbs);
+
+    expect(result!.scores[0]!.score).toBeCloseTo(djb2('investor', 'a'), 10);
+  });
+
+  it('AC-4: falls back to djb2 when archetype embedding is null', () => {
+    const listingEmbs = new Map<string, number[] | null>([['a', [1, 0, 0]]]);
+
+    const result = buildReorderDirective(SCHEMA, ['a'], 'investor', 0.9, null, listingEmbs);
+
+    expect(result!.scores[0]!.score).toBeCloseTo(djb2('investor', 'a'), 10);
+  });
+
+  it('AC-4: falls back to djb2 when embedding map missing for a listing', () => {
+    const archetypeEmb = [1, 0, 0];
+    // Map present but does not contain entry for 'b'.
+    const listingEmbs = new Map<string, number[] | null>([['a', [1, 0, 0]]]);
+
+    const result = buildReorderDirective(
+      SCHEMA,
+      ['a', 'b'],
+      'investor',
+      0.9,
+      archetypeEmb,
+      listingEmbs,
+    );
+
+    const byId = Object.fromEntries(result!.scores.map((s) => [s.listing_id, s.score]));
+    expect(byId.a).toBeCloseTo(1.0, 10); // cosine
+    expect(byId.b).toBeCloseTo(djb2('investor', 'b'), 10); // djb2
+  });
+
+  it('AC-4: falls back to djb2 on dimension mismatch (no throw)', () => {
+    const archetypeEmb = [1, 0, 0];
+    const listingEmbs = new Map<string, number[] | null>([['a', [1, 0]]]);
+
+    const result = buildReorderDirective(SCHEMA, ['a'], 'investor', 0.9, archetypeEmb, listingEmbs);
+
+    expect(result!.scores[0]!.score).toBeCloseTo(djb2('investor', 'a'), 10);
+  });
+
+  it('djb2 fallback is deterministic across calls', () => {
+    const r1 = buildReorderDirective(SCHEMA, ['x', 'y'], 'family', 0.8);
+    const r2 = buildReorderDirective(SCHEMA, ['x', 'y'], 'family', 0.8);
+    expect(r1!.scores).toEqual(r2!.scores);
+  });
+
+  it('AC-5: graceful degradation — empty embedding map → all djb2 scores, no throw', () => {
+    const result = buildReorderDirective(SCHEMA, ['a', 'b', 'c'], 'neutral', 0.7, null, new Map());
+
+    expect(result).not.toBeNull();
+    expect(result!.scores).toHaveLength(3);
+    // All scores match djb2 (since both embeddings effectively null).
+    for (const { listing_id, score } of result!.scores) {
+      expect(score).toBeCloseTo(djb2('neutral', listing_id), 10);
+    }
+  });
+
+  it('cosine values can exceed djb2 0–1 range — sort still correct', () => {
+    const archetypeEmb = [0.5, 0.5, 0.5];
+    const listingEmbs = new Map<string, number[] | null>([
+      // identical (cosine = 1.0)
+      ['high', [0.5, 0.5, 0.5]],
+      // orthogonal (cosine = 0.0)
+      ['mid', [0.5, -0.5, 0]],
+    ]);
+
+    const result = buildReorderDirective(
+      SCHEMA,
+      ['high', 'mid'],
+      'investor',
+      0.9,
+      archetypeEmb,
+      listingEmbs,
+    );
+
+    expect(result!.scores[0]!.listing_id).toBe('high');
+    expect(result!.scores[0]!.score).toBeGreaterThan(result!.scores[1]!.score);
+  });
+
+  it('signature is backwards compatible — old 4-arg calls still work', () => {
+    // No embedding args → djb2 for everything.
+    const result = buildReorderDirective(SCHEMA, ['a', 'b'], 'investor', 0.9);
+    expect(result).not.toBeNull();
+    expect(result!.scores).toHaveLength(2);
+    for (const { listing_id, score } of result!.scores) {
+      expect(score).toBeCloseTo(djb2('investor', listing_id), 10);
+    }
+    // Suppress unused-var warning in this test file.
+    void cosine;
+  });
+});

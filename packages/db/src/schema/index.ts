@@ -16,6 +16,7 @@ export * from './consent_records.js';
 export * from './demo_sessions.js';
 export * from './archetype_embeddings.js';
 export * from './session_embeddings.js';
+export * from './listing_embeddings.js';
 export * from './tenant_site_schemas.js';
 export * from './ab_bandit_weights.js';
 export * from './answers.js';

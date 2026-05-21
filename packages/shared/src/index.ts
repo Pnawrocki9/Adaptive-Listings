@@ -16,6 +16,7 @@ export * from './demo.js';
 export * from './directives.js';
 export * from './ab-holdout.js';
 export * from './bandit.js';
+export * from './embeddings.js';
 export type {
   TenantSiteSchema,
   PageType,

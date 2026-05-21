@@ -1284,7 +1284,7 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: TICKET-033
   title: Schema Discovery API endpoint (POST /api/detect tenant-scoped wrapper)
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P0
   estimated_hours: 4
   depends_on: []
@@ -1342,7 +1342,7 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: FOLLOW-007
   title: Wire Thompson sampling bandit into live adapt path per (tenant, archetype, variant)
   agent: ml-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P0
   estimated_hours: 4
   depends_on: []
@@ -1358,7 +1358,7 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: FOLLOW-019
   title: Replace deterministicScore djb2 hash with real archetype-listing affinity
   agent: ml-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P0
   estimated_hours: 4
   depends_on: []

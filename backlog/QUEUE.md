@@ -1304,16 +1304,22 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: TICKET-030
   title: Magic Link onboarding wizard UI (paste URL → detect → preview → snippet)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 5
   depends_on: [TICKET-033]
   model: sonnet-4.6
   spec: backlog/sprint-9.5/TICKET-030.md
+  pr: '#124'
   notes: |
     Originally Sprint 2.5 READY, promoted to Sprint 9.5. UI calls TICKET-033 API. States:
     idle, analyzing, detected, needs_review, failed. No mocks — real API wiring. Wired to
-    real tenant_site_schemas write via TICKET-033. Generates real SDK snippet with tenant API key.
+    real tenant_site_schemas write via TICKET-033. DetectionPreview stub included (real impl
+    is TICKET-AUTO-006-POLISH). Page at /dashboard/onboarding/detect (protected by dashboard
+    auth middleware). 11 tests (all 6 AC + 5 edge cases). All JS/TS CI green: Test Node 22,
+    Typecheck, Lint, Format, Build (control-plane), Vercel, Rule H, SDK E2E. Pre-existing
+    failures not caused by this PR: Rule I (93 violations pre-date this PR), Test (Python)
+    (infra scaffolding), Doppler verify (optional).
 
 - id: TICKET-AUTO-006-POLISH
   title: Detection Preview + Save & Activate (trust moment for demo)

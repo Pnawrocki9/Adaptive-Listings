@@ -45,9 +45,25 @@
 
 ---
 
-## Implementation Status Snapshot (2026-05-16)
+## Implementation Status Snapshot (2026-05-21)
 
-> This snapshot is a verdict on each Master Design promise as of HEAD `398dc97`, branch `audit/investor-readiness-master-design`. It is the *only* place in this document where implementation status is asserted; sections A–W speak in the present tense about the *target* architecture, not the current code.
+> This snapshot is a verdict on each Master Design promise as of HEAD `main` (post-Krok A merge PR
+> #119). It is the _only_ place in this document where implementation status is asserted; sections
+> A–W speak in the present tense about the _target_ architecture, not the current code.
+>
+> **Updates 2026-05-21:** Sprint 9 COMPLETE (all 6 GDPR tickets DONE). Sprint 7.5 COMPLETE
+> (auto-detection 100/100 corpus, AI Vision wired). Krok A merged (PR #119) — Master_Design v2.0 +
+> Operating Principles v1.1 + CLAUDE.md sync. Krok B completed — `ANTHROPIC_API_KEY` activated in
+> Doppler dev/stg/prd, AI Vision fully operational. Krok C AI Council Checkpoint completed —
+> Sprint 9.5 (MVP Demo Readiness) defined and OPEN with 6 tickets: TICKET-033 (Schema Discovery
+> API), TICKET-030 (Magic Link wizard UI), TICKET-AUTO-006-POLISH (Preview + Save & Activate),
+> FOLLOW-018 (real tenant schema lookup), FOLLOW-007 (Thompson sampling wire-up, Opus 4.7 xhigh),
+> FOLLOW-019 (real archetype-listing affinity, Opus 4.7 xhigh). Sprint 2.5 SUPERSEDED —
+> TICKET-030/033 promoted to Sprint 9.5, TICKET-034/036 deferred, TICKET-032 cleanup deferred.
+> FOLLOW-039 (ClickHouse DSR hard-delete) deferred to Sprint 11 per Q7 2026-05-21 (no EU pilot in
+> 4-6 weeks). Per OP §Y.3, this Snapshot.1 will be re-verified at Sprint 9.5 completion. Per
+> Operating Principles Rule 1, this snapshot is the SoT for "what is built today" — sections A–W
+> remain target architecture.
 
 **Audit gate status at audit time:**
 

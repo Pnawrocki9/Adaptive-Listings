@@ -207,11 +207,11 @@ export async function getTenantSchema(
 }
 
 /**
- * Produce a stable 0–1 affinity score for a listing + archetype pair.
+ * Produce a stable 0–1 affinity score for a listing + archetype pair via djb2-style hash.
  *
- * Uses a multiplicative hash (djb2-style) so the ordering is deterministic
- * across reloads and workers. The key is `archetype:listingId` to ensure
- * different archetypes produce different orderings for the same set of listings.
+ * Used as the fallback when archetype or listing embeddings are unavailable
+ * (FOLLOW-019). The key is `archetype:listingId` to ensure different
+ * archetypes produce different orderings for the same set of listings.
  *
  * Not exported — an internal implementation detail of {@link buildReorderDirective}.
  * Test coverage is provided via buildReorderDirective integration tests.
@@ -230,25 +230,121 @@ function deterministicScore(archetype: string, listingId: string): number {
 }
 
 /**
+ * Cosine similarity between two equal-length numeric vectors.
+ *
+ * Mirror of {@link computeCosineSimilarity} in `@estalara/shared/embeddings`.
+ * Duplicated here because the decision-api Cloudflare Worker bundle does not
+ * include workspace packages at runtime (see top-of-file note). Keep both
+ * implementations in sync (FOLLOW-019).
+ *
+ * Returns a float in [-1, 1]. Throws RangeError on length mismatch or
+ * zero-magnitude input — callers must guard for these cases.
+ *
+ * @internal
+ */
+function computeCosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) {
+    throw new RangeError(
+      `[reorder] Vectors must have equal length (got ${String(a.length)} and ${String(b.length)})`,
+    );
+  }
+  if (a.length === 0) {
+    throw new RangeError('[reorder] Vectors must be non-empty');
+  }
+  let dot = 0;
+  let sumA = 0;
+  let sumB = 0;
+  for (let i = 0; i < a.length; i++) {
+    const ai = a[i] ?? 0;
+    const bi = b[i] ?? 0;
+    dot += ai * bi;
+    sumA += ai * ai;
+    sumB += bi * bi;
+  }
+  const magA = Math.sqrt(sumA);
+  const magB = Math.sqrt(sumB);
+  if (magA === 0 || magB === 0) {
+    throw new RangeError('[reorder] Zero-magnitude vector — cosine similarity is undefined');
+  }
+  return dot / (magA * magB);
+}
+
+/**
+ * Compute the affinity score for a single (archetype, listing) pair.
+ *
+ * Resolution order (FOLLOW-019):
+ *   1. If both `archetypeEmbedding` and `listingEmbedding` are non-null and
+ *      have matching dimensions → cosine similarity.
+ *   2. Otherwise → djb2 fallback. Logs at debug level for observability.
+ *
+ * Cosine similarity is in [-1, 1] — sort still works because we sort
+ * descending. The score field on the wire is documented as a float; consumers
+ * should not assume [0, 1] anymore.
+ *
+ * @internal
+ */
+function affinityScore(
+  archetype: string,
+  listingId: string,
+  archetypeEmbedding: number[] | null,
+  listingEmbedding: number[] | null,
+): number {
+  if (
+    archetypeEmbedding !== null &&
+    listingEmbedding !== null &&
+    archetypeEmbedding.length > 0 &&
+    archetypeEmbedding.length === listingEmbedding.length
+  ) {
+    try {
+      return computeCosineSimilarity(archetypeEmbedding, listingEmbedding);
+    } catch (err) {
+      // Zero-magnitude or other math edge case — fall through to djb2.
+      console.debug(
+        `[reorder] cosine similarity failed for (${archetype}, ${listingId}) — falling back to djb2:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  } else {
+    console.debug(
+      `[reorder] embedding missing for (${archetype}, ${listingId}) — falling back to djb2`,
+    );
+  }
+  return deterministicScore(archetype, listingId);
+}
+
+/**
  * Build a ReorderDirective from a tenant schema + listing IDs.
  *
- * Scores are computed deterministically via {@link deterministicScore} and
- * sorted descending (highest first).
+ * Scoring (FOLLOW-019):
+ *   - When `archetypeEmbedding` and `listingEmbeddings[id]` are both non-null
+ *     → cosine similarity (true archetype-listing affinity).
+ *   - When either is null → falls back to djb2 hash (graceful degradation).
+ *     This is per-listing — a partially populated `listingEmbeddings` map
+ *     will mix cosine and djb2 scores across the same directive.
+ *
+ * Scores are sorted descending (highest first).
  *
  * Returns null when the tenant schema is not reorder-capable or the
  * container_selector is missing.
  *
- * @param schema      - The tenant site schema (from {@link getTenantSchema}).
- * @param listingIds  - Array of listing ID strings to score and sort.
- * @param archetype   - The detected archetype for this session.
- * @param confidence  - Intent confidence 0–1 (passed through to the directive).
- * @returns           A ReorderDirective, or null if schema is not capable.
+ * @param schema             - The tenant site schema (from {@link getTenantSchema}).
+ * @param listingIds         - Array of listing ID strings to score and sort.
+ * @param archetype          - The detected archetype for this session.
+ * @param confidence         - Intent confidence 0–1 (passed through to the directive).
+ * @param archetypeEmbedding - Optional 1024-dim archetype embedding. When omitted
+ *                             or null, every score falls back to djb2.
+ * @param listingEmbeddings  - Optional map of listing_id → embedding vector.
+ *                             Missing entries (or null values) trigger djb2 fallback
+ *                             for that specific listing.
+ * @returns                  A ReorderDirective, or null if schema is not capable.
  */
 export function buildReorderDirective(
   schema: TenantSiteSchema,
   listingIds: string[],
   archetype: string,
   confidence: number,
+  archetypeEmbedding: number[] | null = null,
+  listingEmbeddings: Map<string, number[] | null> | null = null,
 ): ReorderDirective | null {
   if (!schema.reorder_capable || !schema.container_selector) {
     return null;
@@ -256,7 +352,7 @@ export function buildReorderDirective(
 
   const scores = listingIds.map((id) => ({
     listing_id: id,
-    score: deterministicScore(archetype, id),
+    score: affinityScore(archetype, id, archetypeEmbedding, listingEmbeddings?.get(id) ?? null),
   }));
   scores.sort((a, b) => b.score - a.score);
 

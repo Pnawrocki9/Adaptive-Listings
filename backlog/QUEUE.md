@@ -1304,13 +1304,14 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: TICKET-030
   title: Magic Link onboarding wizard UI (paste URL → detect → preview → snippet)
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 5
   depends_on: [TICKET-033]
   model: sonnet-4.6
   spec: backlog/sprint-9.5/TICKET-030.md
   pr: '#124'
+  completed_at: '2026-05-21'
   notes: |
     Originally Sprint 2.5 READY, promoted to Sprint 9.5. UI calls TICKET-033 API. States:
     idle, analyzing, detected, needs_review, failed. No mocks — real API wiring. Wired to
@@ -1324,7 +1325,7 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: TICKET-AUTO-006-POLISH
   title: Detection Preview + Save & Activate (trust moment for demo)
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-030]

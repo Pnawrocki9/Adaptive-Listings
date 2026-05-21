@@ -1296,6 +1296,9 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
     + packages/sdk/src/auto-detect/techniques/*). Adds tenant-scoping via JWT, SSRF protection,
     idempotency, persistence to tenant_site_schemas (Postgres), structured response for wizard UI.
     NOT a rebuild of detection — only a tenant-aware HTTP API in front of it.
+    PR #121 open. Node.js CI all green (Test, Typecheck, Lint, Format, Build, Vercel, Rule H).
+    Pre-existing failures: Rule I (96 violations pre-date this PR), Test (Python) (infra issue),
+    Doppler verify (optional).
 
 - id: TICKET-030
   title: Magic Link onboarding wizard UI (paste URL → detect → preview → snippet)

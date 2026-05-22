@@ -1345,7 +1345,7 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: FOLLOW-018
   title: Replace est_demo_tenant hardcode with real tenant schema lookup in adapt route
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-033, TICKET-AUTO-006-POLISH]

@@ -23,6 +23,7 @@
     "db:studio": "pnpm --filter @estalara/db exec drizzle-kit studio",
     "db:push:dev": "pnpm --filter @estalara/db exec drizzle-kit push",
     "seed:archetypes": "pnpm exec tsx apps/control-plane/scripts/seed-archetypes.mts",
+    "seed:listings": "pnpm exec tsx apps/control-plane/scripts/seed-estalara-listings.mts",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm build && changeset publish"

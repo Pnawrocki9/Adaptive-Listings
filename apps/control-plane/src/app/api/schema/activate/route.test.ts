@@ -49,6 +49,16 @@ vi.mock('@/lib/tenant-schema', () => ({
   invalidateTenantSchemaCache: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('@/lib/seed-listing-embeddings', () => ({
+  seedListingEmbeddingsForActivation: vi.fn().mockResolvedValue({
+    tenant_id: 'tenant-abc',
+    attempted: 0,
+    succeeded: 0,
+    failed: 0,
+    skipped_reason: 'INTERNAL_API_SECRET not configured',
+  }),
+}));
+
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((col: unknown, val: unknown) => ({ col, val, op: 'eq' })),
   and: vi.fn((...args: unknown[]) => ({ args, op: 'and' })),
@@ -67,11 +77,13 @@ vi.mock('@estalara/auth', () => ({
 import { createAdminClient } from '@estalara/db';
 import { getAuthClaims } from '@estalara/auth';
 import { invalidateTenantSchemaCache } from '@/lib/tenant-schema';
+import { seedListingEmbeddingsForActivation } from '@/lib/seed-listing-embeddings';
 import { POST } from './route';
 
 const mockCreateAdminClient = vi.mocked(createAdminClient);
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
 const mockInvalidateTenantSchemaCache = vi.mocked(invalidateTenantSchemaCache);
+const mockSeedListingEmbeddings = vi.mocked(seedListingEmbeddingsForActivation);
 
 // ── Default auth claims ────────────────────────────────────────────────────────
 
@@ -281,7 +293,7 @@ describe('POST /api/schema/activate — activation flow', () => {
   it('(a) upserts tenant_site_schemas row, (b) updates tenant status to active, (c) returns non-empty api_key', async () => {
     const db = makeDbMock({ existingKey: null });
 
-    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+    mockCreateAdminClient.mockReturnValue(db);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
@@ -306,7 +318,7 @@ describe('POST /api/schema/activate — activation flow', () => {
   it('when no active public key exists, generates a new key starting with est_pub_', async () => {
     const db = makeDbMock({ existingKey: null });
 
-    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+    mockCreateAdminClient.mockReturnValue(db);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
@@ -337,7 +349,7 @@ describe('POST /api/schema/activate — activation flow', () => {
     };
     const db = makeDbMock({ existingKey });
 
-    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+    mockCreateAdminClient.mockReturnValue(db);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
@@ -351,7 +363,7 @@ describe('POST /api/schema/activate — activation flow', () => {
   it('tenant_id in response matches the JWT claim', async () => {
     const db = makeDbMock({ existingKey: null });
 
-    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+    mockCreateAdminClient.mockReturnValue(db);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
@@ -369,7 +381,7 @@ describe('POST /api/schema/activate — cache invalidation (FOLLOW-018)', () => 
   it('calls invalidateTenantSchemaCache with tenantId before returning 200 (new key path)', async () => {
     const db = makeDbMock({ existingKey: null });
 
-    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+    mockCreateAdminClient.mockReturnValue(db);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
@@ -393,7 +405,7 @@ describe('POST /api/schema/activate — cache invalidation (FOLLOW-018)', () => 
     };
     const db = makeDbMock({ existingKey });
 
-    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+    mockCreateAdminClient.mockReturnValue(db);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
@@ -408,8 +420,64 @@ describe('POST /api/schema/activate — cache invalidation (FOLLOW-018)', () => 
 
     const db = makeDbMock({ existingKey: null });
 
-    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+    mockCreateAdminClient.mockReturnValue(db);
 
+    const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
+    expect(res.status).toBe(200);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Listing embedding seed trigger on activation — FOLLOW-046
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('POST /api/schema/activate — listing embedding seed trigger (FOLLOW-046)', () => {
+  it('calls seedListingEmbeddingsForActivation after a successful activation (new key path)', async () => {
+    const db = makeDbMock({ existingKey: null });
+    mockCreateAdminClient.mockReturnValue(db);
+
+    const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
+    expect(res.status).toBe(200);
+
+    // Allow the fire-and-forget promise to settle before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockSeedListingEmbeddings).toHaveBeenCalledOnce();
+    expect(mockSeedListingEmbeddings).toHaveBeenCalledWith('tenant-abc', MINIMAL_SCHEMA);
+  });
+
+  it('calls seedListingEmbeddingsForActivation after a successful activation (existing key path)', async () => {
+    const existingKey = {
+      id: 'key-uuid-003',
+      tenantId: 'tenant-abc',
+      type: 'public',
+      prefix: 'est_pub_',
+      hashedKey: 'somehash2',
+      last4: 'cc44',
+      scopes: ['read:events'],
+      revokedAt: null,
+      expiresAt: null,
+      createdAt: new Date(),
+    };
+    const db = makeDbMock({ existingKey });
+    mockCreateAdminClient.mockReturnValue(db);
+
+    const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
+    expect(res.status).toBe(200);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockSeedListingEmbeddings).toHaveBeenCalledOnce();
+    expect(mockSeedListingEmbeddings).toHaveBeenCalledWith('tenant-abc', MINIMAL_SCHEMA);
+  });
+
+  it('returns 200 even when seedListingEmbeddingsForActivation rejects (fire-and-forget — never blocks response)', async () => {
+    mockSeedListingEmbeddings.mockRejectedValueOnce(new Error('OpenAI quota exhausted'));
+
+    const db = makeDbMock({ existingKey: null });
+    mockCreateAdminClient.mockReturnValue(db);
+
+    // Must still return 200 — the embed trigger is fire-and-forget.
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
   });

@@ -49,6 +49,8 @@ export const ErrorCode = {
   CONFLICT: 'CONFLICT',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+  /** Returned when a staff JWT (tenant_id: null) calls a tenant-scoped endpoint. */
+  STAFF_TENANT_CONTEXT_MISSING: 'STAFF_TENANT_CONTEXT_MISSING',
 } as const;
 
 /** Union of canonical {@link ErrorCode} values. */

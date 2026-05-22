@@ -42,6 +42,7 @@ import type {
   SelectorStrategy,
 } from '@estalara/shared';
 import type { DetectField } from '@estalara/shared';
+import { errorBody, ErrorCode } from '@estalara/shared';
 import { checkSsrf, SsrfBlockedError } from '@/lib/ssrf';
 
 // ─── Request schema ───────────────────────────────────────────────────────────
@@ -209,9 +210,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // For tenant users, use their tenant_id directly.
-  // For Estalara staff (tenant_id is null on StaffClaims), fall back to a sentinel.
-  const tenantId: string = claims.tenant_id ?? 'estalara_staff';
+  // Staff JWTs carry tenant_id: null — they must not call tenant-scoped endpoints.
+  // Returning a sentinel string would silently write 'estalara_staff' into a uuid column.
+  if (!claims.tenant_id) {
+    return NextResponse.json(
+      errorBody({
+        code: ErrorCode.STAFF_TENANT_CONTEXT_MISSING,
+        message: 'Staff callers cannot use the tenant detect API',
+        requestId,
+      }),
+      { status: 403 },
+    );
+  }
+  const tenantId = claims.tenant_id;
 
   // ── Parse + validate body ─────────────────────────────────────────────────
   let body: unknown;

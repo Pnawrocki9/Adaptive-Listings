@@ -49,7 +49,7 @@ updates.
 | 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 16      | 13   | 0       | 0     | 0       |
 | 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 6    | 0       | 0     | 0       |
 | 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)        | 6       | 6    | 0       | 0     | 0       |
-| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 0    | 0       | 9     | 0       |
+| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 0    | 5       | 4     | 0       |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
@@ -1458,7 +1458,7 @@ same agent handles both.
 - id: FOLLOW-041
   title: SDK feedback ping on outcome events (closes bandit feedback loop)
   agent: sdk-engineer + backend-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P0
   estimated_hours: 4
   depends_on: [FOLLOW-042]
@@ -1473,7 +1473,7 @@ same agent handles both.
 - id: FOLLOW-042
   title: Add variant field to SDK AdaptResponse + thread through applyDirectives
   agent: sdk-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P0
   estimated_hours: 2
   depends_on: []
@@ -1487,7 +1487,7 @@ same agent handles both.
 - id: FOLLOW-043
   title: Compute archetype embedding vectors (Modal job or one-shot Node script)
   agent: ml-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P0
   estimated_hours: 3
   depends_on: []
@@ -1502,7 +1502,7 @@ same agent handles both.
 - id: FOLLOW-055
   title: End-to-end integration test detect→activate→adapt→SDK
   agent: qa-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P0
   estimated_hours: 5
   depends_on: []
@@ -1533,7 +1533,7 @@ same agent handles both.
 - id: FOLLOW-047
   title: Reject null tenant_id with 403 (STAFF_TENANT_CONTEXT_MISSING) from detect + activate
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 1
   depends_on: []
@@ -1561,8 +1561,8 @@ same agent handles both.
 
 - id: FOLLOW-052
   title: Mirror-code byte-identity CI check — scripts/check-mirror-files.sh (Rule J enforcement)
-  agent: qa-engineer + devops-engineer
-  status: READY
+  agent: devops-engineer
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 1.5
   depends_on: []

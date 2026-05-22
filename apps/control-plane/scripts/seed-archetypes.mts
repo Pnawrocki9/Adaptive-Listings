@@ -1,93 +1,139 @@
 /**
- * scripts/seed-archetype-embeddings.ts — one-shot archetype embedding seeder.
+ * scripts/seed-archetypes.mts — one-shot archetype embedding seeder.
  *
  * Purpose:
  *   `packages/db/migrations/0005_seed_archetype_embeddings.sql` inserts 18
  *   canonical archetype rows with `embedding = NULL`. Without a populated
  *   vector, `fetchArchetypeEmbedding()` returns null for every archetype and
- *   the cosine-affinity path in the adapt route (FOLLOW-019) silently falls
- *   back to djb2 deterministic scoring for every listing.
+ *   the cosine-affinity path in the adapt route silently falls back to djb2.
  *
- *   This script reads each archetype's `description` column, calls OpenAI
- *   `text-embedding-3-small` at 1024 dimensions (Matryoshka — matches the
- *   listing_embeddings table), and UPDATEs the row with the resulting vector.
+ *   This script reads each archetype's description, calls OpenAI
+ *   `text-embedding-3-small` at 1024 dims, and writes the result back.
+ *
+ * Connection:
+ *   Uses Supabase PostgREST (HTTP) with the service_role key — no direct
+ *   Postgres connection required. service_role bypasses all RLS policies per
+ *   Supabase design. The Supabase direct host is IPv6-only and unreachable
+ *   from GitHub Actions and many CI environments.
+ *
+ * Credentials (in priority order):
+ *   1. SUPABASE_SERVICE_ROLE_KEY + SUPABASE_URL — explicit, fastest
+ *   2. SUPABASE_ACCESS_TOKEN — Management API fetches the service_role key
  *
  * Refresh cadence:
  *   MVP:      one-shot manual run after any archetype description change.
  *             Trigger:  `pnpm seed:archetypes`
  *   Post-MVP: daily Modal cron in apps/archetype-pipeline (future FOLLOW-NNN).
- *             That job will re-embed any rows whose description has changed
- *             since the last run AND any rows with embedding IS NULL.
  *
  * Idempotency:
- *   The script SELECTs only WHERE embedding IS NULL. Re-running with all rows
- *   populated is a no-op (logs "nothing to seed").
+ *   The script only touches rows WHERE embedding IS NULL. Re-running with all
+ *   rows populated is a no-op (logs "nothing to seed").
  *
  * Failure handling:
- *   Per-archetype OpenAI / DB errors are logged and skipped — the script does
- *   not abort the whole batch on a single failure. Exit code is 0 if at least
- *   one row was updated, 1 if every attempt failed.
- *
- * Environment:
- *   OPENAI_API_KEY        — required (text-embedding-3-small)
- *   DATABASE_URL_ADMIN    — preferred (service role, direct connection, port 5432)
- *   DATABASE_URL_DIRECT   — fallback (same effect; legacy var name)
+ *   Per-archetype errors are logged and skipped. Exit 1 only if every
+ *   attempted row failed.
  *
  * Usage:
  *   pnpm seed:archetypes
- *
- *   # or directly via the control-plane workspace (which carries openai + @estalara/db):
- *   pnpm --filter @estalara/control-plane exec tsx ../../scripts/seed-archetype-embeddings.ts
- *
- * Verification after run:
- *   SELECT COUNT(*) FROM archetype_embeddings WHERE embedding IS NOT NULL;
- *   -- must return 18
  */
 
-import { eq, isNull } from 'drizzle-orm';
 import OpenAI from 'openai';
-
-import { archetypeEmbeddings, createAdminClient } from '@estalara/db';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Estalara-standard embedding dimensionality for archetype + listing vectors. */
+const PROJECT_REF = 'yhmivuqeqkmzpxpyrsvc';
+const SUPABASE_URL_DEFAULT = `https://${PROJECT_REF}.supabase.co`;
 const ARCHETYPE_EMBEDDING_DIM = 1024;
-
-/** OpenAI embeddings model. Held constant — Matryoshka truncation at 1024 dims. */
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 
 // ─── OpenAI helper ────────────────────────────────────────────────────────────
 
-let _openaiClient: OpenAI | null = null;
+let _openai: OpenAI | null = null;
 
-function getOpenAIClient(): OpenAI {
-  if (_openaiClient) return _openaiClient;
+function getOpenAI(): OpenAI {
+  if (_openai) return _openai;
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error('[seed-archetypes] OPENAI_API_KEY is not set');
-  }
-  _openaiClient = new OpenAI({ apiKey });
-  return _openaiClient;
+  if (!apiKey) throw new Error('[seed-archetypes] OPENAI_API_KEY is not set');
+  _openai = new OpenAI({ apiKey });
+  return _openai;
 }
 
-async function embedDescription(text: string): Promise<number[]> {
-  const client = getOpenAIClient();
-  const response = await client.embeddings.create({
+async function embedText(text: string): Promise<number[]> {
+  const res = await getOpenAI().embeddings.create({
     model: EMBEDDING_MODEL,
     input: text,
     dimensions: ARCHETYPE_EMBEDDING_DIM,
   });
-  const embedding = response.data[0]?.embedding;
-  if (!embedding) {
-    throw new Error('OpenAI returned no embedding data');
-  }
-  if (embedding.length !== ARCHETYPE_EMBEDDING_DIM) {
+  const vec = res.data[0]?.embedding;
+  if (!vec) throw new Error('OpenAI returned no embedding data');
+  if (vec.length !== ARCHETYPE_EMBEDDING_DIM)
+    throw new Error(`Unexpected embedding length: ${String(vec.length)}`);
+  return vec;
+}
+
+// ─── Supabase PostgREST helpers ───────────────────────────────────────────────
+
+async function getServiceRoleKey(): Promise<string> {
+  // Prefer an explicit key — skip the Management API round-trip.
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) return process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const token = process.env.SUPABASE_ACCESS_TOKEN;
+  if (!token)
+    throw new Error('[seed-archetypes] Set SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ACCESS_TOKEN');
+
+  const res = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_REF}/api-keys`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok)
     throw new Error(
-      `Unexpected embedding length: ${String(embedding.length)} (wanted ${String(ARCHETYPE_EMBEDDING_DIM)})`,
+      `[seed-archetypes] Management API error ${String(res.status)}: ${await res.text()}`,
     );
-  }
-  return embedding;
+
+  const keys = (await res.json()) as Array<{ name: string; api_key: string }>;
+  const srKey = keys.find((k) => k.name === 'service_role')?.api_key;
+  if (!srKey) throw new Error('[seed-archetypes] service_role key not found in API response');
+  return srKey;
+}
+
+function restHeaders(serviceRoleKey: string): Record<string, string> {
+  return {
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+    'Content-Type': 'application/json',
+    Prefer: 'return=minimal',
+  };
+}
+
+interface ArchetypeRow {
+  archetype_name: string;
+  description: string;
+}
+
+async function fetchPendingRows(baseUrl: string, srKey: string): Promise<ArchetypeRow[]> {
+  const url = `${baseUrl}/rest/v1/archetype_embeddings?embedding=is.null&select=archetype_name,description`;
+  const res = await fetch(url, { headers: restHeaders(srKey) });
+  if (!res.ok)
+    throw new Error(`[seed-archetypes] SELECT failed ${String(res.status)}: ${await res.text()}`);
+  return res.json() as Promise<ArchetypeRow[]>;
+}
+
+async function updateEmbedding(
+  baseUrl: string,
+  srKey: string,
+  archetypeName: string,
+  embedding: number[],
+): Promise<void> {
+  const url = `${baseUrl}/rest/v1/archetype_embeddings?archetype_name=eq.${encodeURIComponent(archetypeName)}`;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: restHeaders(srKey),
+    // pgvector accepts the array as a JSON string in the format "[x,y,z,...]"
+    body: JSON.stringify({ embedding: `[${embedding.join(',')}]` }),
+  });
+  if (!res.ok)
+    throw new Error(
+      `[seed-archetypes] PATCH failed for ${archetypeName} ${String(res.status)}: ${await res.text()}`,
+    );
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -99,29 +145,10 @@ interface SeedResult {
 }
 
 async function seedArchetypeEmbeddings(): Promise<SeedResult> {
-  // Prefer explicit DATABASE_URL_ADMIN / DATABASE_URL_DIRECT; fall back to
-  // constructing a direct Postgres URL from SUPABASE_DB_PASSWORD (available in
-  // Doppler dev/stg/prd configs).
-  if (!process.env.DATABASE_URL_ADMIN && !process.env.DATABASE_URL_DIRECT) {
-    const pw = process.env.SUPABASE_DB_PASSWORD;
-    if (!pw) {
-      throw new Error(
-        '[seed-archetypes] Set DATABASE_URL_ADMIN, DATABASE_URL_DIRECT, or SUPABASE_DB_PASSWORD',
-      );
-    }
-    process.env.DATABASE_URL_ADMIN = `postgresql://postgres:${encodeURIComponent(pw)}@db.yhmivuqeqkmzpxpyrsvc.supabase.co:5432/postgres`;
-  }
+  const srKey = await getServiceRoleKey();
+  const baseUrl = (process.env.SUPABASE_URL ?? SUPABASE_URL_DEFAULT).replace(/\/$/, '');
 
-  const db = createAdminClient();
-
-  // SELECT only rows whose vector has not been computed yet (idempotent).
-  const pending = await db
-    .select({
-      archetypeName: archetypeEmbeddings.archetypeName,
-      description: archetypeEmbeddings.description,
-    })
-    .from(archetypeEmbeddings)
-    .where(isNull(archetypeEmbeddings.embedding));
+  const pending = await fetchPendingRows(baseUrl, srKey);
 
   if (pending.length === 0) {
     console.log('[seed-archetypes] nothing to seed — all archetypes already embedded.');
@@ -134,30 +161,22 @@ async function seedArchetypeEmbeddings(): Promise<SeedResult> {
   let failed = 0;
 
   for (const row of pending) {
-    const { archetypeName, description } = row;
     try {
-      const embedding = await embedDescription(description);
-
-      // Visual sanity log — first 4 dims rounded to 4 decimals.
+      const embedding = await embedText(row.description);
       const preview = embedding
         .slice(0, 4)
         .map((n) => n.toFixed(4))
         .join(', ');
-      console.log(`[seed] ${archetypeName} → vector[0..3]: [${preview}, ...]`);
+      console.log(`[seed] ${row.archetype_name} → vector[0..3]: [${preview}, ...]`);
 
-      await db
-        .update(archetypeEmbeddings)
-        .set({ embedding })
-        .where(eq(archetypeEmbeddings.archetypeName, archetypeName));
-
+      await updateEmbedding(baseUrl, srKey, row.archetype_name, embedding);
       succeeded += 1;
     } catch (err) {
       failed += 1;
       console.error(
-        `[seed-archetypes] FAILED for ${archetypeName}:`,
+        `[seed-archetypes] FAILED for ${row.archetype_name}:`,
         err instanceof Error ? err.message : err,
       );
-      // Continue to next archetype — never abort the whole batch.
     }
   }
 
@@ -169,7 +188,6 @@ async function seedArchetypeEmbeddings(): Promise<SeedResult> {
 
 // ─── Entrypoint ───────────────────────────────────────────────────────────────
 
-// Only run when invoked directly (not when imported by tests).
 const isMain =
   typeof process !== 'undefined' &&
   Array.isArray(process.argv) &&
@@ -180,7 +198,6 @@ const isMain =
 if (isMain) {
   seedArchetypeEmbeddings()
     .then((result) => {
-      // Exit 1 only if every attempted row failed AND at least one was attempted.
       const allFailed = result.attempted > 0 && result.succeeded === 0;
       process.exit(allFailed ? 1 : 0);
     })
@@ -193,4 +210,4 @@ if (isMain) {
     });
 }
 
-export { seedArchetypeEmbeddings, embedDescription, ARCHETYPE_EMBEDDING_DIM, EMBEDDING_MODEL };
+export { seedArchetypeEmbeddings, embedText, ARCHETYPE_EMBEDDING_DIM, EMBEDDING_MODEL };

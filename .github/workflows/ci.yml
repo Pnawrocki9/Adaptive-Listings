@@ -341,6 +341,16 @@ jobs:
       - name: Run Rule H check
         run: bash scripts/check-rule-h.sh origin/main
 
+  # ── Rule J hard gate: mirror-code pairs must stay in sync ───────────────
+  rule-j:
+    name: Rule J — mirror-code sync check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check mirror-file byte identity
+        run: bash scripts/check-mirror-files.sh
+
   # ── SDK E2E tests (Playwright + Chromium) ────────────────────────────────
   sdk-e2e:
     name: SDK E2E tests

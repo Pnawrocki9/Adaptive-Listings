@@ -1,0 +1,13 @@
+[
+  {
+    "canonical": "packages/shared/src/bandit.ts",
+    "mirror": "apps/decision-api/src/lib/bandit.ts",
+    "strip_comments": true
+  },
+  {
+    "canonical": "apps/control-plane/src/app/api/adapt/route.ts",
+    "mirror": "apps/decision-api/src/lib/reorder.ts",
+    "strip_comments": false,
+    "note": "Mirror covers helpers only — full byte comparison is not required; function-signature comparison instead. Canonical helpers checked: deterministicScore, affinityScore, buildReorderDirective."
+  }
+]

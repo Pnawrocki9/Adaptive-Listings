@@ -1562,17 +1562,19 @@ same agent handles both.
 - id: FOLLOW-052
   title: Mirror-code byte-identity CI check — scripts/check-mirror-files.sh (Rule J enforcement)
   agent: devops-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 1.5
   depends_on: []
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-052.md
+  pr: '#TBD'
   notes: |
     Two mirrored file pairs: apps/decision-api/src/lib/bandit.ts (mirror of packages/shared/src/bandit.ts)
     and apps/decision-api/src/lib/reorder.ts. PR descriptions say byte-identical but no CI enforces
     this. Add check-mirror-files.sh + JSON manifest + GitHub Actions job rule-j + lefthook pre-push.
     Promotes Rule J pattern enforcement (CONVENTIONS_PATCH.md).
+    Bandit drift fixed: sampleGamma now export function in mirror to match canonical.
 
 - id: FOLLOW-061
   title: Add Snapshot.1 re-verification to sprint-close checklist in AGENT_WORKFLOW.md

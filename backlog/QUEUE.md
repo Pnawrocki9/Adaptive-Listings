@@ -49,7 +49,7 @@ updates.
 | 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 16      | 13   | 0       | 0     | 0       |
 | 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 6    | 0       | 0     | 0       |
 | 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)        | 6       | 6    | 0       | 0     | 0       |
-| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 0    | 5       | 4     | 0       |
+| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 0    | 0       | 3     | 0       |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
@@ -1458,12 +1458,13 @@ same agent handles both.
 - id: FOLLOW-041
   title: SDK feedback ping on outcome events (closes bandit feedback loop)
   agent: sdk-engineer + backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: [FOLLOW-042]
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-041.md
+  pr: '#127'
   notes: |
     Must ship in same PR as FOLLOW-042. POST /api/adapt/feedback exists server-side but
     no SDK consumer fires the ping on outcome events. Without this, ab_bandit_weights never
@@ -1473,12 +1474,13 @@ same agent handles both.
 - id: FOLLOW-042
   title: Add variant field to SDK AdaptResponse + thread through applyDirectives
   agent: sdk-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 2
   depends_on: []
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-042.md
+  pr: '#127'
   notes: |
     Must ship in same PR as FOLLOW-041. Adds variant?: string to packages/sdk/src/core/adapt.ts
     AdaptResponse interface. Rule G mock-scan obligation applies — grep MOCK_RESPONSE in
@@ -1487,12 +1489,13 @@ same agent handles both.
 - id: FOLLOW-043
   title: Compute archetype embedding vectors (Modal job or one-shot Node script)
   agent: ml-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 3
   depends_on: []
   model: opus-4.7-xhigh
   spec: backlog/sprint-10/FOLLOW-043.md
+  pr: '#131'
   notes: |
     0005_seed_archetype_embeddings.sql inserts 18 rows with embedding=NULL. No Modal job exists.
     fetchArchetypeEmbedding() returns null for all archetypes → cosine path unreachable → djb2
@@ -1502,12 +1505,13 @@ same agent handles both.
 - id: FOLLOW-055
   title: End-to-end integration test detect→activate→adapt→SDK
   agent: qa-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 5
   depends_on: []
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-055.md
+  pr: '#130'
   notes: |
     Playwright spec at tests/e2e/sprint-9-5-demo.spec.ts. Mocks: Anthropic AI Vision
     (deterministic), OpenAI embeddings (fixed vectors). Asserts: snippet renders with valid
@@ -1533,12 +1537,13 @@ same agent handles both.
 - id: FOLLOW-047
   title: Reject null tenant_id with 403 (STAFF_TENANT_CONTEXT_MISSING) from detect + activate
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 1
   depends_on: []
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-047.md
+  pr: '#129'
   notes: |
     Both apps/control-plane/src/app/api/detect/route.ts:214 and
     apps/control-plane/src/app/api/schema/activate/route.ts:97 fall back to 'estalara_staff'
@@ -1562,12 +1567,13 @@ same agent handles both.
 - id: FOLLOW-052
   title: Mirror-code byte-identity CI check — scripts/check-mirror-files.sh (Rule J enforcement)
   agent: devops-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 1.5
   depends_on: []
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-052.md
+  pr: '#128'
   notes: |
     Two mirrored file pairs: apps/decision-api/src/lib/bandit.ts (mirror of packages/shared/src/bandit.ts)
     and apps/decision-api/src/lib/reorder.ts. PR descriptions say byte-identical but no CI enforces
@@ -1596,7 +1602,11 @@ same agent handles both.
 
 ## Awaiting human review
 
-(none)
+- PR #127 — FOLLOW-041 + FOLLOW-042: SDK variant field + feedback ping (sdk-engineer, CI green)
+- PR #128 — FOLLOW-052: Mirror-code byte-identity CI check — Rule J (devops-engineer, CI green)
+- PR #129 — FOLLOW-047: Reject null tenant_id with 403 (backend-engineer, CI green)
+- PR #130 — FOLLOW-055: E2E integration test detect→activate→adapt→SDK (qa-engineer, CI green)
+- PR #131 — FOLLOW-043: Archetype embedding vectors seed script (ml-engineer, CI green)
 
 ## Recent merges
 

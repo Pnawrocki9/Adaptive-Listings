@@ -99,8 +99,17 @@ interface SeedResult {
 }
 
 async function seedArchetypeEmbeddings(): Promise<SeedResult> {
+  // Prefer explicit DATABASE_URL_ADMIN / DATABASE_URL_DIRECT; fall back to
+  // constructing a direct Postgres URL from SUPABASE_DB_PASSWORD (available in
+  // Doppler dev/stg/prd configs).
   if (!process.env.DATABASE_URL_ADMIN && !process.env.DATABASE_URL_DIRECT) {
-    throw new Error('[seed-archetypes] Neither DATABASE_URL_ADMIN nor DATABASE_URL_DIRECT is set');
+    const pw = process.env.SUPABASE_DB_PASSWORD;
+    if (!pw) {
+      throw new Error(
+        '[seed-archetypes] Set DATABASE_URL_ADMIN, DATABASE_URL_DIRECT, or SUPABASE_DB_PASSWORD',
+      );
+    }
+    process.env.DATABASE_URL_ADMIN = `postgresql://postgres:${encodeURIComponent(pw)}@db.yhmivuqeqkmzpxpyrsvc.supabase.co:5432/postgres`;
   }
 
   const db = createAdminClient();

@@ -1502,18 +1502,22 @@ same agent handles both.
 - id: FOLLOW-055
   title: End-to-end integration test detect→activate→adapt→SDK
   agent: qa-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 5
   depends_on: []
   model: sonnet-4.6
+  pr: '#130'
   spec: backlog/sprint-10/FOLLOW-055.md
   notes: |
-    Playwright spec at tests/e2e/sprint-9-5-demo.spec.ts. Mocks: Anthropic AI Vision
-    (deterministic), OpenAI embeddings (fixed vectors). Asserts: snippet renders with valid
-    data-tenant-id + data-api-key; adapt response carries non-empty variant; DOM reorder uses
-    cosine math (not djb2) when embeddings seeded; feedback ping fires (gated on FOLLOW-041).
-    Runs in CI on every PR to control-plane / sdk.
+    Vitest integration spec at tests/e2e/sprint-9-5-demo.spec.ts. 5 static contract
+    tests always run in CI (fixture schema, ReorderDirective sort, TextDirective DOM
+    mutation, score descending invariant, grid builder). 5 E2E steps (detect, activate,
+    adapt, DOM mutation, feedback ping) guarded by NEXT_PUBLIC_TEST_E2E=true — call
+    real Next.js handlers when server is up. Decision: vitest not Playwright because
+    tests/e2e workspace has no Next.js dep; DOM mutation tested via JSDOM per escalation
+    path in FOLLOW-055 spec. CI green (Format, Lint, Typecheck, Test Node 22, SDK E2E,
+    Rule H, ClickHouse, Gitleaks all pass). Ignoring: Doppler, Rule I, Python tests.
 
 - id: FOLLOW-046
   title: Automate listing embedding seeding (tenant activation trigger + 000-app-estalara backfill)

@@ -22,6 +22,7 @@
     "db:migrate": "pnpm --filter @estalara/db exec tsx scripts/migrate.ts",
     "db:studio": "pnpm --filter @estalara/db exec drizzle-kit studio",
     "db:push:dev": "pnpm --filter @estalara/db exec drizzle-kit push",
+    "seed:archetypes": "pnpm --filter @estalara/control-plane exec tsx ../../scripts/seed-archetype-embeddings.ts",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm build && changeset publish"

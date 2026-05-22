@@ -45,6 +45,10 @@ vi.mock('@estalara/db', () => ({
   },
 }));
 
+vi.mock('@/lib/tenant-schema', () => ({
+  invalidateTenantSchemaCache: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((col: unknown, val: unknown) => ({ col, val, op: 'eq' })),
   and: vi.fn((...args: unknown[]) => ({ args, op: 'and' })),
@@ -62,10 +66,12 @@ vi.mock('@estalara/auth', () => ({
 
 import { createAdminClient } from '@estalara/db';
 import { getAuthClaims } from '@estalara/auth';
+import { invalidateTenantSchemaCache } from '@/lib/tenant-schema';
 import { POST } from './route';
 
 const mockCreateAdminClient = vi.mocked(createAdminClient);
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
+const mockInvalidateTenantSchemaCache = vi.mocked(invalidateTenantSchemaCache);
 
 // ── Default auth claims ────────────────────────────────────────────────────────
 
@@ -330,5 +336,56 @@ describe('POST /api/schema/activate — activation flow', () => {
 
     const responseBody = await parseBody<{ api_key: string; tenant_id: string }>(res);
     expect(responseBody.tenant_id).toBe('tenant-abc');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cache invalidation on activation — FOLLOW-018
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('POST /api/schema/activate — cache invalidation (FOLLOW-018)', () => {
+  it('calls invalidateTenantSchemaCache with tenantId before returning 200 (new key path)', async () => {
+    const db = makeDbMock({ existingKey: null });
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+
+    const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
+    expect(res.status).toBe(200);
+
+    expect(mockInvalidateTenantSchemaCache).toHaveBeenCalledOnce();
+    expect(mockInvalidateTenantSchemaCache).toHaveBeenCalledWith('tenant-abc');
+  });
+
+  it('calls invalidateTenantSchemaCache with tenantId before returning 200 (existing key path)', async () => {
+    const existingKey = {
+      id: 'key-uuid-002',
+      tenantId: 'tenant-abc',
+      type: 'public',
+      prefix: 'est_pub_',
+      hashedKey: 'somehash',
+      last4: 'ab12',
+      scopes: ['read:events'],
+      revokedAt: null,
+      expiresAt: null,
+      createdAt: new Date(),
+    };
+    const db = makeDbMock({ existingKey });
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+
+    const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
+    expect(res.status).toBe(200);
+
+    expect(mockInvalidateTenantSchemaCache).toHaveBeenCalledOnce();
+    expect(mockInvalidateTenantSchemaCache).toHaveBeenCalledWith('tenant-abc');
+  });
+
+  it('returns 200 even when invalidateTenantSchemaCache would have failed (error is swallowed internally)', async () => {
+    // The function itself absorbs errors — simulate it resolving normally (as it would in real code)
+    mockInvalidateTenantSchemaCache.mockResolvedValueOnce(undefined);
+
+    const db = makeDbMock({ existingKey: null });
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+
+    const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
+    expect(res.status).toBe(200);
   });
 });

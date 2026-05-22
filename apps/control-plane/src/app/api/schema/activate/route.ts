@@ -27,6 +27,7 @@ import { eq, and, isNull, or, gt, desc } from 'drizzle-orm';
 import { createAdminClient, tenantSiteSchemas, tenants, apiKeys } from '@estalara/db';
 import { getAuthClaims } from '@estalara/auth';
 import type { TenantSiteSchema } from '@estalara/shared';
+import { invalidateTenantSchemaCache } from '@/lib/tenant-schema';
 
 // ─── Request schema ───────────────────────────────────────────────────────────
 
@@ -187,6 +188,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // Cast through ApiKey to get typed fields; existingKeys is typed as ApiKey[] by Drizzle.
       const existing = existingKeys[0];
       const displayKey = existing.prefix + '...' + existing.last4;
+      // Bust the Redis cache so the next adapt request sees the freshly activated schema.
+      await invalidateTenantSchemaCache(tenantId);
       return NextResponse.json({ api_key: displayKey, tenant_id: tenantId }, { status: 200 });
     }
 
@@ -204,6 +207,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       scopes: ['read:events'],
     });
 
+    // Bust the Redis cache so the next adapt request sees the freshly activated schema.
+    await invalidateTenantSchemaCache(tenantId);
     // Return the raw key — it is only visible once.
     return NextResponse.json({ api_key: rawKey, tenant_id: tenantId }, { status: 200 });
   } catch (err) {

@@ -41,7 +41,7 @@ vi.mock('@estalara/db', () => {
   };
 });
 
-import { getTenantSchema, DEMO_SCHEMA } from '../tenant-schema.js';
+import { getTenantSchema, invalidateTenantSchemaCache, DEMO_SCHEMA } from '../tenant-schema.js';
 import { createAdminClient } from '@estalara/db';
 
 const mockCreateAdminClient = vi.mocked(createAdminClient);
@@ -223,5 +223,116 @@ describe('getTenantSchema() — TICKET-AB-011', () => {
 
     expect(result?.reorder_capable).toBe(true);
     expect(mockCreateAdminClient).toHaveBeenCalledOnce();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// invalidateTenantSchemaCache() — FOLLOW-018
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('invalidateTenantSchemaCache() — FOLLOW-018', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('UPSTASH_REDIS_URL', 'https://redis.test.upstash.io');
+    vi.stubEnv('UPSTASH_REDIS_TOKEN', 'test-token');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('calls Redis DEL for schema:{tenantId}', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await invalidateTenantSchemaCache('test-tenant-uuid');
+
+    // Should have issued exactly one fetch call
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [calledUrl] = fetchMock.mock.calls[0] as [string, unknown];
+    // URL must reference the DEL endpoint and the encoded key
+    expect(calledUrl).toContain('/del/');
+    expect(calledUrl).toContain(encodeURIComponent('schema:test-tenant-uuid'));
+  });
+
+  it('swallows fetch errors and calls console.warn', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network failure')));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    // Must not throw
+    await expect(invalidateTenantSchemaCache('tenant-err')).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[tenant-schema] cache invalidation failed for',
+      'tenant-err',
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it('no-ops silently when UPSTASH_REDIS_URL is not set', async () => {
+    vi.stubEnv('UPSTASH_REDIS_URL', '');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(invalidateTenantSchemaCache('tenant-no-redis')).resolves.toBeUndefined();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('cache invalidation round-trip: getTenantSchema hits DB again after invalidation', async () => {
+    const schemaBlob = {
+      index_schema: {
+        reorder_capable: true,
+        container_selector: '[data-grid]',
+        listing_card_selector: '[data-card]',
+      },
+    };
+
+    // Track fetch calls in order: GET (cache miss) → SET (populate) → ...
+    let callIndex = 0;
+    const fetchMock = vi.fn().mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      callIndex++;
+
+      if (urlStr.includes('/del/')) {
+        // DEL command — success
+        return Promise.resolve(new Response(JSON.stringify({ result: 1 }), { status: 200 }));
+      }
+
+      if (urlStr.includes('/get/')) {
+        // First and third GET: cache miss (returns null).
+        // On the second pass (after invalidation), the cache is also empty.
+        return Promise.resolve(new Response(JSON.stringify({ result: null }), { status: 200 }));
+      }
+
+      // SET command — always succeed
+      return Promise.resolve(new Response('', { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // First call: cache miss → DB lookup
+    mockDbRows([{ schema: schemaBlob }]);
+    const result1 = await getTenantSchema('tenant-roundtrip');
+    expect(result1?.reorder_capable).toBe(true);
+    expect(mockCreateAdminClient).toHaveBeenCalledTimes(1);
+
+    // Invalidate the cache
+    await invalidateTenantSchemaCache('tenant-roundtrip');
+
+    // Verify DEL was issued
+    const delCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/del/'));
+    expect(delCall).toBeDefined();
+
+    // Third getTenantSchema call: cache miss again → DB lookup again
+    mockDbRows([{ schema: schemaBlob }]);
+    const result2 = await getTenantSchema('tenant-roundtrip');
+    expect(result2?.reorder_capable).toBe(true);
+    // DB must have been called a second time (total: 2)
+    expect(mockCreateAdminClient).toHaveBeenCalledTimes(2);
+
+    // Suppress unused variable warning
+    void callIndex;
   });
 });

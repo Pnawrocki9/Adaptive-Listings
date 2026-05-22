@@ -29,6 +29,22 @@ export interface SdkConfig {
    * Read from data-accent-color attribute. Defaults to '#6c5ce7'.
    */
   accentColor: string;
+  /**
+   * Outcome event names that trigger a feedback ping to the bandit.
+   * Defaults to `['inquiry.completed']`. Configure via data-feedback-events (comma-separated).
+   */
+  feedbackEvents?: string[];
+  /**
+   * When true, also post `converted: false` on session expiry (page hidden after ≥30s dwell).
+   * Increases noise but helps cold archetypes learn faster. Default: false (opt-in only).
+   * Configure via data-feedback-converted-false="true".
+   */
+  feedbackConvertedFalse?: boolean;
+  /**
+   * Explicit feedback endpoint URL. Derived automatically from decisionApiUrl if absent.
+   * Format: `https://<host>/api/adapt/feedback`.
+   */
+  feedbackUrl?: string;
 }
 
 export const DEFAULT_CONFIG: Omit<SdkConfig, 'apiKey'> = {

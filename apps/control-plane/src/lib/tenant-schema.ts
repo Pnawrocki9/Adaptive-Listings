@@ -89,6 +89,22 @@ async function redisSet(key: string, value: string, ttlSeconds: number): Promise
   }
 }
 
+/**
+ * Delete a key from Upstash Redis via the REST API.
+ * Uses the DEL command. No-op when UPSTASH_REDIS_URL is not set.
+ * Errors are propagated to the caller.
+ */
+async function redisDelete(key: string): Promise<void> {
+  const url = process.env.UPSTASH_REDIS_URL;
+  const token = process.env.UPSTASH_REDIS_TOKEN;
+  if (!url) return;
+
+  await fetch(`${url.replace(/\/$/, '')}/del/${encodeURIComponent(key)}`, {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+}
+
 // ─── DB lookup ────────────────────────────────────────────────────────────────
 
 /**
@@ -179,4 +195,27 @@ export async function getTenantSchema(tenantId: string): Promise<TenantSiteSchem
   void redisSet(cacheKey, cacheValue, CACHE_TTL_SECONDS);
 
   return schema;
+}
+
+// ─── Cache invalidation ───────────────────────────────────────────────────────
+
+/**
+ * Delete the Upstash Redis cache entry for a tenant's schema.
+ *
+ * Fires a DEL command against key `schema:{tenantId}`. Should be called
+ * after a tenant's schema is activated so that the next adapt request
+ * re-queries the DB and gets the freshly activated schema.
+ *
+ * This function never throws — it swallows all errors and emits a
+ * `console.warn` on failure, so the caller's success path is never
+ * interrupted by a cache invalidation error.
+ *
+ * @param tenantId - The tenant UUID whose cached schema should be evicted.
+ */
+export async function invalidateTenantSchemaCache(tenantId: string): Promise<void> {
+  try {
+    await redisDelete(`schema:${tenantId}`);
+  } catch (err) {
+    console.warn('[tenant-schema] cache invalidation failed for', tenantId, err);
+  }
 }

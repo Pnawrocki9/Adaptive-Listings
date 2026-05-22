@@ -26,4 +26,4 @@ jobs:
       - name: Seed archetype embeddings
         run: doppler run --config dev -- pnpm seed:archetypes
         env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}

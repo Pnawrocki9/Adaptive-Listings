@@ -2,6 +2,8 @@ pre-push:
   commands:
     rule-h:
       run: bash scripts/check-rule-h.sh origin/main
+    rule-j:
+      run: bash scripts/check-mirror-files.sh
 
 pre-commit:
   parallel: true

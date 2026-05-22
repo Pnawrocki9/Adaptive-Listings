@@ -1583,6 +1583,7 @@ same agent handles both.
     and apps/decision-api/src/lib/reorder.ts. PR descriptions say byte-identical but no CI enforces
     this. Add check-mirror-files.sh + JSON manifest + GitHub Actions job rule-j + lefthook pre-push.
     Promotes Rule J pattern enforcement (CONVENTIONS_PATCH.md).
+    Bandit drift fixed: sampleGamma now export function in mirror to match canonical.
 
 - id: FOLLOW-061
   title: Add Snapshot.1 re-verification to sprint-close checklist in AGENT_WORKFLOW.md

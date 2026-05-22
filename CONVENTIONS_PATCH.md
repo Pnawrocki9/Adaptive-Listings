@@ -289,14 +289,17 @@ The PR adding a new mirrored file MUST also add the pair to `mirror-files.json` 
 strategy. PRs that touch one side of a mirrored pair MUST touch the other side in the same commit —
 failing CI on a one-sided edit is the entire point.
 
+**Hard gate (CI + pre-push):** `scripts/check-mirror-files.sh` runs as a blocking CI job (`rule-j`
+in `.github/workflows/ci.yml`) and as a `pre-push` lefthook. Exit code 1 = PR blocked. The manifest
+`scripts/mirror-files.json` declares each pair and the comparison strategy (`strip_comments: true`
+for byte-equivalent after comment stripping; `strip_comments: false` for function-signature subset
+check when the mirror covers helpers only).
+
 **Verification:**
 
 ```bash
 bash scripts/check-mirror-files.sh
 # Must return exit 0
 ```
-
-Implementation tracked in FOLLOW-052 (Sprint 10). Until landed, the rule is enforced by manual
-review against the manifest stub at `scripts/mirror-files.json`.
 
 <!-- Rule J+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->

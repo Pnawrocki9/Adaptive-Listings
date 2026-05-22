@@ -1326,12 +1326,12 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
   title: Detection Preview + Save & Activate (trust moment for demo)
   agent: backend-engineer
   status: READY_FOR_REVIEW
-  pr: '#125'
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-030]
   model: sonnet-4.6
   spec: backlog/sprint-9.5/TICKET-AUTO-006-POLISH.md
+  pr: '#125'
   notes: |
     Preview UI shows detected fields with selectors + confidence + sample values. "Save & Activate"
     button writes to tenant_site_schemas (canonical store), updates tenant status to active, generates

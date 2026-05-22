@@ -20,6 +20,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build @estalara/db
+        run: pnpm --filter @estalara/db build
+
       - name: Install Doppler CLI
         uses: dopplerhq/cli-action@v3
 

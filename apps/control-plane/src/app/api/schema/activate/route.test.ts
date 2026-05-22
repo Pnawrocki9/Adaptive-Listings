@@ -229,8 +229,8 @@ describe('POST /api/schema/activate — JWT authentication', () => {
       sub: 'staff-user-001',
       email: 'staff@estalara.com',
       tenant_id: null,
-      agency_role: 'agency:admin' as const,
       estalara_staff: true as const,
+      estalara_role: 'estalara:ops' as const,
       mfa_verified: true,
     });
 
@@ -280,7 +280,8 @@ describe('POST /api/schema/activate — request validation', () => {
 describe('POST /api/schema/activate — activation flow', () => {
   it('(a) upserts tenant_site_schemas row, (b) updates tenant status to active, (c) returns non-empty api_key', async () => {
     const db = makeDbMock({ existingKey: null });
-    mockCreateAdminClient.mockReturnValue(db);
+
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
@@ -304,7 +305,8 @@ describe('POST /api/schema/activate — activation flow', () => {
 
   it('when no active public key exists, generates a new key starting with est_pub_', async () => {
     const db = makeDbMock({ existingKey: null });
-    mockCreateAdminClient.mockReturnValue(db);
+
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
@@ -334,7 +336,8 @@ describe('POST /api/schema/activate — activation flow', () => {
       createdAt: new Date(),
     };
     const db = makeDbMock({ existingKey });
-    mockCreateAdminClient.mockReturnValue(db);
+
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
@@ -347,7 +350,8 @@ describe('POST /api/schema/activate — activation flow', () => {
 
   it('tenant_id in response matches the JWT claim', async () => {
     const db = makeDbMock({ existingKey: null });
-    mockCreateAdminClient.mockReturnValue(db);
+
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
@@ -364,7 +368,8 @@ describe('POST /api/schema/activate — activation flow', () => {
 describe('POST /api/schema/activate — cache invalidation (FOLLOW-018)', () => {
   it('calls invalidateTenantSchemaCache with tenantId before returning 200 (new key path)', async () => {
     const db = makeDbMock({ existingKey: null });
-    mockCreateAdminClient.mockReturnValue(db);
+
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
@@ -387,7 +392,8 @@ describe('POST /api/schema/activate — cache invalidation (FOLLOW-018)', () => 
       createdAt: new Date(),
     };
     const db = makeDbMock({ existingKey });
-    mockCreateAdminClient.mockReturnValue(db);
+
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
@@ -401,7 +407,8 @@ describe('POST /api/schema/activate — cache invalidation (FOLLOW-018)', () => 
     mockInvalidateTenantSchemaCache.mockResolvedValueOnce(undefined);
 
     const db = makeDbMock({ existingKey: null });
-    mockCreateAdminClient.mockReturnValue(db);
+
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);

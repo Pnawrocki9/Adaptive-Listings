@@ -1533,11 +1533,12 @@ same agent handles both.
 - id: FOLLOW-047
   title: Reject null tenant_id with 403 (STAFF_TENANT_CONTEXT_MISSING) from detect + activate
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 1
   depends_on: []
   model: sonnet-4.6
+  pr: '#129'
   spec: backlog/sprint-10/FOLLOW-047.md
   notes: |
     Both apps/control-plane/src/app/api/detect/route.ts:214 and

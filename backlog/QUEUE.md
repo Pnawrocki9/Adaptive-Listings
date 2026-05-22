@@ -1534,7 +1534,8 @@ same agent handles both.
 - id: FOLLOW-046
   title: Automate listing embedding seeding (tenant activation trigger + 000-app-estalara backfill)
   agent: data-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
+  pr: '#132'
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-043]
@@ -1545,6 +1546,9 @@ same agent handles both.
     FOLLOW-043 seeds archetype vectors. Wire listing.updated consumer OR daily backfill cron
     that calls POST /api/listings/embed per listing. Backfill the 000-app-estalara fixture.
     MUST ship after FOLLOW-043. Consider combining into one PR if same agent handles both.
+    DONE: fire-and-forget trigger wired in POST /api/schema/activate; DEMO_LISTING_MANIFEST
+    (12 listings) seeds on demo tenant activation; pnpm seed:listings backfill script added.
+    506 tests pass. CI green (Lint, Typecheck, Build, Test Node 22, Rule H/J all pass).
 
 - id: FOLLOW-047
   title: Reject null tenant_id with 403 (STAFF_TENANT_CONTEXT_MISSING) from detect + activate

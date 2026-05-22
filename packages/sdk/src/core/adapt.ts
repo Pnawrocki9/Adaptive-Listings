@@ -19,6 +19,83 @@ import type {
 import type { CollectedEvent } from './events.js';
 import type { IntentState } from './intent.js';
 
+// ---------------------------------------------------------------------------
+// Session-level variant cache (sessionStorage, cleared on tab close)
+// ---------------------------------------------------------------------------
+
+const SESSION_VARIANT_KEY_PREFIX = 'estalara_variant:';
+
+function cacheVariant(sessionId: string, variant: string): void {
+  try {
+    sessionStorage.setItem(`${SESSION_VARIANT_KEY_PREFIX}${sessionId}`, variant);
+  } catch {
+    // No-op: sessionStorage unavailable (SSR / privacy mode / storage full)
+  }
+}
+
+function getCachedVariant(sessionId: string): string | null {
+  try {
+    return sessionStorage.getItem(`${SESSION_VARIANT_KEY_PREFIX}${sessionId}`);
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Feedback ping (fire-and-forget POST to /api/adapt/feedback)
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive the feedback URL from the adapt endpoint base URL.
+ * Replaces the `/adapt` path suffix with `/adapt/feedback`.
+ * Falls back to config.feedbackUrl if present.
+ */
+function deriveFeedbackUrl(config: SdkConfig): string | null {
+  if (config.feedbackUrl) return config.feedbackUrl;
+  if (!config.decisionApiUrl) return null;
+  // decisionApiUrl = "https://example.com" and fetch goes to decisionApiUrl + "/adapt"
+  // feedback endpoint lives at decisionApiUrl + "/api/adapt/feedback"
+  return `${config.decisionApiUrl}/api/adapt/feedback`;
+}
+
+/**
+ * Post a conversion signal to the feedback endpoint. Fire-and-forget — never awaited,
+ * never throws. Network errors are logged to console.warn only.
+ */
+function postFeedbackPing(
+  config: SdkConfig,
+  sessionId: string,
+  archetype: string,
+  variant: string,
+  converted: boolean,
+): void {
+  const feedbackUrl = deriveFeedbackUrl(config);
+  if (!feedbackUrl || !config.tenantId) return;
+
+  const body = JSON.stringify({
+    session_id: sessionId,
+    tenant_id: config.tenantId,
+    archetype,
+    variant,
+    converted,
+  });
+
+  // Intentionally not awaited — fire and forget
+  fetch(feedbackUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body,
+  }).catch((err: unknown) => {
+    console.warn(
+      '[estalara] feedback ping failed:',
+      err instanceof Error ? err.message : String(err),
+    );
+  });
+}
+
 /**
  * @deprecated Use TextDirective or ClassDirective from @estalara/shared instead.
  * Kept for backward compatibility with existing consumers.
@@ -37,6 +114,12 @@ export interface AdaptResponse {
   /** Raw directives from the Decision API. Cast to (TextDirective | ClassDirective | ReorderDirective)[] for applyDirectives(). */
   directives: (TextDirective | ClassDirective | ReorderDirective)[];
   ttl_seconds: number;
+  /**
+   * Thompson sampling variant selected by the server for this session.
+   * Echo back in the feedback ping.
+   * Optional — absent when the session is in the holdout arm or the server is legacy.
+   */
+  variant?: string;
 }
 
 /** Context passed to applyDirectives for event logging and idempotency. */
@@ -56,6 +139,9 @@ const appliedFingerprints = new Set<string>();
 /** Reference to the SDK event queue, set via setEventQueueRef(). */
 let _eventQueue: CollectedEvent[] | null = null;
 
+/** Tracks whether the outcome event listener has already been registered for the current session. */
+let _feedbackListenerRegistered = false;
+
 /**
  * Wire the SDK event queue into this module so adapt events flow through
  * the standard 5s batch flush. Call this once from src/index.ts.
@@ -70,6 +156,64 @@ export function setEventQueueRef(queue: CollectedEvent[]): void {
  */
 export function resetAdaptState(): void {
   appliedFingerprints.clear();
+  _feedbackListenerRegistered = false;
+}
+
+/**
+ * Register the outcome event listener for feedback pings.
+ *
+ * Listens for `config.feedbackEvents` (default: `['inquiry.completed']`) on
+ * `document`. When fired for a session that has a cached variant in sessionStorage,
+ * POSTs `{ session_id, tenant_id, archetype, variant, converted: true }` to the
+ * feedback endpoint. Fire-and-forget — never blocks the outcome event.
+ *
+ * Guards against double-registration per session with `_feedbackListenerRegistered`.
+ *
+ * @internal — called from fetchDirectives() after a successful adapt response with a variant.
+ */
+function registerFeedbackListener(config: SdkConfig, sessionId: string, archetype: string): void {
+  if (_feedbackListenerRegistered) return;
+  if (typeof document === 'undefined') return;
+
+  _feedbackListenerRegistered = true;
+
+  const outcomeEvents = config.feedbackEvents ?? ['inquiry.completed'];
+
+  const handleOutcome = (event: Event): void => {
+    // Only fire if this document event matches one of our outcome event names
+    if (!outcomeEvents.includes(event.type)) return;
+
+    const variant = getCachedVariant(sessionId);
+    if (!variant) return;
+
+    postFeedbackPing(config, sessionId, archetype, variant, /* converted= */ true);
+  };
+
+  for (const eventName of outcomeEvents) {
+    document.addEventListener(eventName, handleOutcome);
+  }
+
+  // Optional: converted=false on session expiry (dwell ≥30s + page hidden), opt-in only.
+  if (config.feedbackConvertedFalse === true) {
+    let dwellStart = Date.now();
+
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState === 'hidden') {
+        const dwell = Date.now() - dwellStart;
+        if (dwell >= 30_000) {
+          const variant = getCachedVariant(sessionId);
+          if (variant) {
+            postFeedbackPing(config, sessionId, archetype, variant, /* converted= */ false);
+          }
+        }
+      } else {
+        // Tab became visible again — reset dwell clock
+        dwellStart = Date.now();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -328,7 +472,16 @@ export async function fetchDirectives(
     if (!res.ok) return null;
 
     const data: unknown = await res.json();
-    return data as AdaptResponse;
+    const response = data as AdaptResponse;
+
+    // FOLLOW-042: cache variant in sessionStorage for the feedback ping
+    if (response.variant) {
+      cacheVariant(session.sessionId, response.variant);
+      // FOLLOW-041: register outcome event listener to fire the feedback ping
+      registerFeedbackListener(config, session.sessionId, response.archetype);
+    }
+
+    return response;
   } catch {
     return null;
   }

@@ -1470,6 +1470,8 @@ same agent handles both.
     no SDK consumer fires the ping on outcome events. Without this, ab_bandit_weights never
     updates from real traffic and Thompson sampling stays at uniform Beta(1,1) prior forever.
     SDK must cache the served variant in sessionStorage and POST on inquiry.completed.
+    Implemented: sessionStorage cache, registerFeedbackListener, postFeedbackPing,
+    feedbackEvents/feedbackUrl/feedbackConvertedFalse config fields. 11 new tests.
 
 - id: FOLLOW-042
   title: Add variant field to SDK AdaptResponse + thread through applyDirectives
@@ -1485,6 +1487,8 @@ same agent handles both.
     Must ship in same PR as FOLLOW-041. Adds variant?: string to packages/sdk/src/core/adapt.ts
     AdaptResponse interface. Rule G mock-scan obligation applies — grep MOCK_RESPONSE in
     packages/sdk/src/__tests__/adapt.test.ts before PR.
+    Implemented: variant?: string on AdaptResponse with JSDoc, MOCK_RESPONSE updated with
+    variant:'control'. Rule G scan found only 1 mock object — updated. 3 new variant tests.
 
 - id: FOLLOW-043
   title: Compute archetype embedding vectors (Modal job or one-shot Node script)

@@ -53,6 +53,7 @@ const MOCK_RESPONSE: AdaptResponse = {
     },
   ] as TextDirective[],
   ttl_seconds: 300,
+  variant: 'control',
 };
 
 /** Shared event queue for tests that need to verify adapt events. */
@@ -937,5 +938,378 @@ describe('applyDirectives — ReorderDirective', () => {
     expect(skipEvents.map((e) => e.payload.reason)).toContain('no_cards');
 
     document.body.removeChild(container);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FOLLOW-042 — variant field on AdaptResponse
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('fetchDirectives — FOLLOW-042 variant field', () => {
+  it('returns AdaptResponse with variant present when server sends variant: "v1"', async () => {
+    const responseWithVariant: AdaptResponse = {
+      ...MOCK_RESPONSE,
+      variant: 'v1',
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(responseWithVariant),
+        }),
+      ),
+    );
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    const result = await fetchDirectives(config, SESSION, 'listing_list');
+    expect(result).not.toBeNull();
+    expect(result?.variant).toBe('v1');
+  });
+
+  it('returns AdaptResponse with variant: "v2" when server sends variant: "v2"', async () => {
+    const responseWithV2: AdaptResponse = {
+      ...MOCK_RESPONSE,
+      variant: 'v2',
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(responseWithV2),
+        }),
+      ),
+    );
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    const result = await fetchDirectives(config, SESSION, 'listing_list');
+    expect(result?.variant).toBe('v2');
+  });
+
+  it('returns AdaptResponse with variant undefined when server omits the field', async () => {
+    const responseNoVariant: AdaptResponse = {
+      session_id: MOCK_RESPONSE.session_id,
+      archetype: MOCK_RESPONSE.archetype,
+      confidence: MOCK_RESPONSE.confidence,
+      directives: MOCK_RESPONSE.directives,
+      ttl_seconds: MOCK_RESPONSE.ttl_seconds,
+      // variant intentionally absent
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(responseNoVariant),
+        }),
+      ),
+    );
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    const result = await fetchDirectives(config, SESSION, 'listing_list');
+    expect(result).not.toBeNull();
+    expect(result?.variant).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FOLLOW-041 — session-level variant cache + feedback ping
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('fetchDirectives — FOLLOW-041 variant sessionStorage cache', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('caches variant in sessionStorage after fetchDirectives returns variant', async () => {
+    const responseWithVariant: AdaptResponse = {
+      ...MOCK_RESPONSE,
+      session_id: 'TEST_SESSION',
+      variant: 'v1',
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(responseWithVariant),
+        }),
+      ),
+    );
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    const session: SessionState = { ...SESSION, sessionId: 'TEST_SESSION' };
+
+    await fetchDirectives(config, session, 'listing_list');
+
+    expect(sessionStorage.getItem('estalara_variant:TEST_SESSION')).toBe('v1');
+  });
+
+  it('does not cache variant when server omits the variant field', async () => {
+    const responseNoVariant: AdaptResponse = {
+      session_id: 'TEST_SESSION_NO_VAR',
+      archetype: MOCK_RESPONSE.archetype,
+      confidence: MOCK_RESPONSE.confidence,
+      directives: MOCK_RESPONSE.directives,
+      ttl_seconds: MOCK_RESPONSE.ttl_seconds,
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(responseNoVariant),
+        }),
+      ),
+    );
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    const session: SessionState = { ...SESSION, sessionId: 'TEST_SESSION_NO_VAR' };
+
+    await fetchDirectives(config, session, 'listing_list');
+
+    expect(sessionStorage.getItem('estalara_variant:TEST_SESSION_NO_VAR')).toBeNull();
+  });
+});
+
+describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('POSTs feedback ping with correct body when inquiry.completed fires after variant cached', async () => {
+    const sessionId = 'FEEDBACK_SESSION_001';
+    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
+    const archetype = 'investor';
+
+    const responseWithVariant: AdaptResponse = {
+      ...MOCK_RESPONSE,
+      session_id: sessionId,
+      archetype,
+      variant: 'v1',
+    };
+
+    // First fetch call = fetchDirectives; subsequent calls = feedback ping
+    const mockFetch = vi.fn();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(responseWithVariant),
+    });
+    // Feedback ping response (fire-and-forget, body not checked by SDK)
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 202 });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId,
+    };
+    const session: SessionState = { ...SESSION, sessionId };
+
+    await fetchDirectives(config, session, 'listing_list');
+
+    // Dispatch the outcome event — listener should POST the feedback ping
+    document.dispatchEvent(new Event('inquiry.completed'));
+
+    // Wait a tick for the fire-and-forget fetch to be called
+    await Promise.resolve();
+
+    // Verify feedback ping was fired
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    const [feedbackUrl, feedbackInit] = mockFetch.mock.calls[1] as [string, RequestInit];
+    expect(feedbackUrl).toContain('/api/adapt/feedback');
+    expect(feedbackInit.method).toBe('POST');
+
+    const body = JSON.parse(feedbackInit.body as string) as Record<string, unknown>;
+    expect(body.session_id).toBe(sessionId);
+    expect(body.tenant_id).toBe(tenantId);
+    expect(body.archetype).toBe(archetype);
+    expect(body.variant).toBe('v1');
+    expect(body.converted).toBe(true);
+  });
+
+  it('does not fire feedback ping when no variant is cached', async () => {
+    const responseNoVariant: AdaptResponse = {
+      session_id: 'NO_VAR_SESSION',
+      archetype: 'investor',
+      confidence: 0.87,
+      directives: MOCK_RESPONSE.directives,
+      ttl_seconds: 300,
+      // variant absent
+    };
+
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(responseNoVariant),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    const session: SessionState = { ...SESSION, sessionId: 'NO_VAR_SESSION' };
+
+    await fetchDirectives(config, session, 'listing_list');
+    document.dispatchEvent(new Event('inquiry.completed'));
+
+    await Promise.resolve();
+
+    // Only the fetchDirectives call — no feedback ping
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses config.feedbackEvents when specified', async () => {
+    const sessionId = 'CUSTOM_EVENT_SESSION';
+    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
+
+    const responseWithVariant: AdaptResponse = {
+      ...MOCK_RESPONSE,
+      session_id: sessionId,
+      variant: 'v1',
+    };
+
+    const mockFetch = vi.fn();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(responseWithVariant),
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 202 });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId,
+      feedbackEvents: ['tour.requested'],
+    };
+    const session: SessionState = { ...SESSION, sessionId };
+
+    await fetchDirectives(config, session, 'listing_list');
+
+    // Default event should NOT trigger ping when feedbackEvents overrides it
+    document.dispatchEvent(new Event('inquiry.completed'));
+    await Promise.resolve();
+    expect(mockFetch).toHaveBeenCalledTimes(1); // only fetchDirectives
+
+    // Custom event SHOULD trigger ping
+    document.dispatchEvent(new Event('tour.requested'));
+    await Promise.resolve();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    const [, feedbackInit] = mockFetch.mock.calls[1] as [string, RequestInit];
+    const body = JSON.parse(feedbackInit.body as string) as Record<string, unknown>;
+    expect(body.variant).toBe('v1');
+    expect(body.converted).toBe(true);
+  });
+
+  it('uses config.feedbackUrl when specified instead of deriving from decisionApiUrl', async () => {
+    const sessionId = 'FEEDBACK_URL_SESSION';
+    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
+    const customFeedbackUrl = 'https://custom-feedback.example.com/feedback';
+
+    const responseWithVariant: AdaptResponse = {
+      ...MOCK_RESPONSE,
+      session_id: sessionId,
+      variant: 'v1',
+    };
+
+    const mockFetch = vi.fn();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(responseWithVariant),
+    });
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 202 });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId,
+      feedbackUrl: customFeedbackUrl,
+    };
+    const session: SessionState = { ...SESSION, sessionId };
+
+    await fetchDirectives(config, session, 'listing_list');
+    document.dispatchEvent(new Event('inquiry.completed'));
+    await Promise.resolve();
+
+    const [feedbackUrl] = mockFetch.mock.calls[1] as [string, RequestInit];
+    expect(feedbackUrl).toBe(customFeedbackUrl);
+  });
+
+  it('does not throw when feedback ping fails (fire-and-forget, network error swallowed)', async () => {
+    const sessionId = 'FAIL_PING_SESSION';
+    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
+
+    const responseWithVariant: AdaptResponse = {
+      ...MOCK_RESPONSE,
+      session_id: sessionId,
+      variant: 'v1',
+    };
+
+    const mockFetch = vi.fn();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(responseWithVariant),
+    });
+    // Feedback ping fails with network error
+    mockFetch.mockRejectedValueOnce(new Error('network failure'));
+    vi.stubGlobal('fetch', mockFetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId,
+    };
+    const session: SessionState = { ...SESSION, sessionId };
+
+    await fetchDirectives(config, session, 'listing_list');
+
+    // Dispatch outcome and wait for microtask resolution
+    document.dispatchEvent(new Event('inquiry.completed'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Must not throw; console.warn is called with the error message
+    expect(warnSpy).toHaveBeenCalledWith('[estalara] feedback ping failed:', 'network failure');
+
+    warnSpy.mockRestore();
   });
 });

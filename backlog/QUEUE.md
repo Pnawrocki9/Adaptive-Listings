@@ -49,7 +49,7 @@ updates.
 | 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 16      | 13   | 0       | 0     | 0       |
 | 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 6    | 0       | 0     | 0       |
 | 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)        | 6       | 6    | 0       | 0     | 0       |
-| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 1    | 1       | 2     | 0       |
+| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 1    | 0       | 2     | 0       |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
@@ -1534,12 +1534,13 @@ same agent handles both.
 - id: FOLLOW-046
   title: Automate listing embedding seeding (tenant activation trigger + 000-app-estalara backfill)
   agent: data-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-043]
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-046.md
+  pr: '#132'
   notes: |
     Promoted from P2 to P1 — without listing embeddings, cosine affinity stays no-op even after
     FOLLOW-043 seeds archetype vectors. Wire listing.updated consumer OR daily backfill cron

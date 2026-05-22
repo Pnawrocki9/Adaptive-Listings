@@ -5,6 +5,8 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 30_000,
     reporters: ['verbose'],
-    include: ['**/*.test.ts'],
+    // *.spec.ts added for the demo integration spec (FOLLOW-055)
+    include: ['**/*.test.ts', '**/*.spec.ts'],
+    environment: 'jsdom',
   },
 });

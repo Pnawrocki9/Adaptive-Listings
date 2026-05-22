@@ -62,6 +62,9 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
+      // DOM types (DOMParser, Document, HTMLElement) are error-typed in test files
+      // that use jsdom environment without explicit dom lib in tsconfig.
+      '@typescript-eslint/no-unsafe-argument': 'off',
     },
   },
 

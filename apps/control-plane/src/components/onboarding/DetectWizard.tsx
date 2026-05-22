@@ -25,7 +25,7 @@
  */
 
 import { useState } from 'react';
-import type { DetectField } from '@estalara/shared';
+import type { DetectField, TenantSiteSchema } from '@estalara/shared';
 import { DetectionPreview } from './DetectionPreview';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -257,7 +257,7 @@ export function DetectWizard() {
       {/* State: detected — render DetectionPreview (TICKET-AUTO-006-POLISH) */}
       {state.status === 'detected' && (
         <DetectionPreview
-          schema={state.schema}
+          schema={state.schema as TenantSiteSchema}
           fields={state.fields}
           detection_source={state.detection_source}
           detection_confidence={state.detection_confidence}

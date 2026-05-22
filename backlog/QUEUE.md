@@ -1505,6 +1505,9 @@ same agent handles both.
     fetchArchetypeEmbedding() returns null for all archetypes → cosine path unreachable → djb2
     always wins. Script: scripts/seed-archetype-embeddings.ts calling OpenAI
     text-embedding-3-small at 1024 dims, then UPDATEs each row. Opus 4.7 xhigh per ML/algo rule.
+    PR #131: script + pnpm seed:archetypes + integration test (8/8 pass) +
+    apps/control-plane/src/lib/__tests__/embedding-lookup.test.ts.
+    After merge: run `pnpm seed:archetypes` against dev/staging DB to unblock cosine path.
 
 - id: FOLLOW-055
   title: End-to-end integration test detect→activate→adapt→SDK

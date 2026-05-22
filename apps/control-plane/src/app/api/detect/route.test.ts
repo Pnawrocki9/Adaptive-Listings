@@ -257,6 +257,24 @@ describe('POST /api/detect — JWT authentication (TICKET-033)', () => {
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('FETCH_FAILED');
   });
+
+  it('staff JWT (tenant_id: null) → 403 STAFF_TENANT_CONTEXT_MISSING', async () => {
+    mockGetAuthClaims.mockResolvedValue({
+      sub: 'staff-user-001',
+      email: 'staff@estalara.com',
+      tenant_id: null,
+      estalara_staff: true as const,
+      estalara_role: 'estalara:ops' as const,
+      mfa_verified: true,
+    });
+
+    const res = await POST(makeRequest({ url: 'https://example.com' }));
+    expect(res.status).toBe(403);
+
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('STAFF_TENANT_CONTEXT_MISSING');
+    expect(typeof body.error.message).toBe('string');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

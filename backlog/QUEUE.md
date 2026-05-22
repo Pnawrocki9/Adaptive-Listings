@@ -1546,6 +1546,7 @@ same agent handles both.
   estimated_hours: 1
   depends_on: []
   model: sonnet-4.6
+  pr: '#129'
   spec: backlog/sprint-10/FOLLOW-047.md
   pr: '#129'
   notes: |

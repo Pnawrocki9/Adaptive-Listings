@@ -27,6 +27,7 @@ import { eq, and, isNull, or, gt, desc } from 'drizzle-orm';
 import { createAdminClient, tenantSiteSchemas, tenants, apiKeys } from '@estalara/db';
 import { getAuthClaims } from '@estalara/auth';
 import type { TenantSiteSchema } from '@estalara/shared';
+import { errorBody, ErrorCode } from '@estalara/shared';
 import { invalidateTenantSchemaCache } from '@/lib/tenant-schema';
 
 // ─── Request schema ───────────────────────────────────────────────────────────
@@ -85,6 +86,8 @@ async function hashKey(rawKey: string): Promise<string> {
  * @returns 500 for unexpected errors
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const requestId = crypto.randomUUID();
+
   // ── JWT authentication ────────────────────────────────────────────────────
   const claims = await getAuthClaims(req);
   if (!claims) {
@@ -99,7 +102,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const tenantId: string = claims.tenant_id ?? 'estalara_staff';
+  // Staff JWTs carry tenant_id: null — they must not call tenant-scoped endpoints.
+  // Returning a sentinel string would silently write 'estalara_staff' into a uuid column.
+  if (!claims.tenant_id) {
+    return NextResponse.json(
+      errorBody({
+        code: ErrorCode.STAFF_TENANT_CONTEXT_MISSING,
+        message: 'Staff callers cannot use the tenant schema activate API',
+        requestId,
+      }),
+      { status: 403 },
+    );
+  }
+  const tenantId = claims.tenant_id;
 
   // ── Parse + validate body ─────────────────────────────────────────────────
   let body: unknown;

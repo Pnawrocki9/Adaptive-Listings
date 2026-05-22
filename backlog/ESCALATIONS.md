@@ -21,6 +21,23 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — GitHub Actions billing prevents CI from running on PR #125
+
+**Filed by:** backend-engineer **Date:** 2026-05-21T21:40:00Z **Affects:** TICKET-AUTO-006-POLISH,
+PR #125 **Type:** other
+
+**Description:** All CI jobs for PR #125 fail immediately (2-4s) with "The job was not started
+because recent account payments have failed or your spending limit needs to be increased." This is a
+GitHub Actions billing/quota issue. All local checks pass: 474 tests, 0 ESLint errors in new files,
+prettier unchanged. The code is production-ready but CI cannot validate it.
+
+**Required action:** Resolve GitHub Actions billing so CI can run on PR #125. Once CI is green, PM
+can merge and mark TICKET-AUTO-006-POLISH DONE.
+
+**Resolution:**
+
+---
+
 ## RESOLVED — Vendor Account Creation Required for 5 Infrastructure Providers
 
 **Filed by:** devops-engineer  

@@ -1345,17 +1345,21 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: FOLLOW-018
   title: Replace est_demo_tenant hardcode with real tenant schema lookup in adapt route
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-033, TICKET-AUTO-006-POLISH]
   model: sonnet-4.6
   spec: backlog/sprint-9.5/FOLLOW-018.md
+  pr: '#126'
   notes: |
     apps/control-plane/src/app/api/adapt/route.ts currently reads schema for est_demo_tenant only.
     Replace with tenant_site_schemas lookup keyed on authenticated tenant_id. Add Redis cache
     with bounded TTL + invalidation on schema activation. Without this, newly onboarded tenants
     cannot drive adapt path → demo breaks after snippet generation.
+    PR #126 opened. All 481 tests pass (7 new). CI: Test (Node 22), Typecheck, Lint, Format check,
+    Build, Build (control-plane), Vercel all green. Baseline failures (Doppler, Rule I, Python tests)
+    are pre-existing infrastructure issues unrelated to this change.
 
 - id: FOLLOW-007
   title: Wire Thompson sampling bandit into live adapt path per (tenant, archetype, variant)

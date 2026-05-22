@@ -1153,3 +1153,485 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - [ ] Next PR CI shows `Doppler verify (optional)` → pass
 
 ---
+
+## FOLLOW-041 — SDK feedback ping on outcome events (closes bandit feedback loop)
+
+- **source_retro:** RETRO-005
+- **source_ticket:** FOLLOW-007 / PR #122
+- **recommended_sprint:** 10
+- **recommended_agent:** sdk-engineer + backend-engineer
+- **priority:** P0
+- **estimated_hours:** 4
+- **scope:** `POST /api/adapt/feedback` exists server-side but no SDK code path POSTs to it. Wire
+  the SDK to fire a feedback ping when an outcome event (`inquiry.completed`, `inquiry.started`,
+  configurable per tenant) is observed for a session that previously received an adapt response with
+  a `variant` field. Endpoint expects `{ session_id, tenant_id, archetype, variant, converted }`;
+  SDK must cache the served variant per session (sessionStorage keyed on session_id) to echo it
+  back. Without this, the bandit Beta(α,β) parameters never update from real traffic and Thompson
+  sampling converges to its uniform prior forever. **This is the consumer half of the half-wire
+  RETRO-005 §3 flagged.**
+- **ac:**
+  - [ ] SDK caches `variant` (returned in AdaptResponse) keyed on `session_id` in sessionStorage
+  - [ ] On outcome event (configurable list, default `inquiry.completed`), SDK POSTs to
+        `/api/adapt/feedback` with `converted: true` and the cached variant
+  - [ ] On session expiry / no-conversion timeout, SDK MAY POST `converted: false` (configurable —
+        document trade-off in spec)
+  - [ ] Bandit weights end-to-end test: simulate 100 sessions, assert `ab_bandit_weights.alpha`
+        increased for the served variant
+  - [ ] FOLLOW-042 must merge in the same PR (consumer-side `variant` field on AdaptResponse)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-042 — Add `variant` field to SDK AdaptResponse + thread through applyDirectives
+
+- **source_retro:** RETRO-005
+- **source_ticket:** FOLLOW-007 / PR #122
+- **recommended_sprint:** 10
+- **recommended_agent:** sdk-engineer
+- **priority:** P0
+- **estimated_hours:** 2
+- **scope:** Add `variant?: string` to `packages/sdk/src/core/adapt.ts:AdaptResponse` interface
+  (matches the new server-side `AdaptationDirectives.variant` field added by PR #122). Thread it
+  through to the directive renderer so future per-variant copy can be served. Lands in same PR as
+  FOLLOW-041 since the SDK feedback ping needs the cached variant. Rule G mock-scan obligation
+  applies (every test that constructs an inline `AdaptResponse` mock must be updated; current count
+  is at least `packages/sdk/src/__tests__/adapt.test.ts:35 MOCK_RESPONSE`).
+- **ac:**
+  - [ ] `AdaptResponse.variant?: string` added to `packages/sdk/src/core/adapt.ts`
+  - [ ] All inline `AdaptResponse` mocks updated (Rule G compliance — pre-PR grep documented)
+  - [ ] `applyDirectives()` reads `variant` and exposes it to outcome-event callbacks
+  - [ ] Test asserts variant propagates from `fetchDirectives()` response → into the SDK's outcome
+        callback payload
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-043 — Compute and store archetype embedding vectors (unblock FOLLOW-019 cosine path)
+
+- **source_retro:** RETRO-005
+- **source_ticket:** FOLLOW-019 / PR #123
+- **recommended_sprint:** 10
+- **recommended_agent:** ml-engineer
+- **priority:** P0
+- **estimated_hours:** 3
+- **scope:** `packages/db/migrations/0005_seed_archetype_embeddings.sql` inserts 18 archetype rows
+  with `embedding = NULL`. The seed comment says "filled in by the Modal daily job" — but no such
+  job exists. `apps/control-plane/src/lib/embedding-lookup.ts:fetchArchetypeEmbedding()` correctly
+  returns null for every archetype, which means PR #123's cosine path is unreachable in production
+  today and `affinityScore()` always falls back to djb2. Build a one-shot script (Node-based,
+  runnable via `pnpm` or a Modal job) that reads each archetype's `description` column, calls OpenAI
+  `text-embedding-3-small` at 1024 dims, and UPDATEs the row. Document the refresh cadence (one-shot
+  for MVP; daily Modal cron later).
+- **ac:**
+  - [ ] Runnable script at `scripts/seed-archetype-embeddings.ts` (or Modal equivalent)
+  - [ ] After running: `SELECT COUNT(*) FROM archetype_embeddings WHERE embedding IS NOT NULL` = 18
+  - [ ] Integration test: assert `fetchArchetypeEmbedding('family_buyer')` returns a 1024-dim
+        non-null vector after seed
+  - [ ] Sprint 9.5 PR #123 adapt-route test reproduces with real embeddings (mock removed)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-044 — Replace duplicate DetectApiResponse with shared DetectResponse type
+
+- **source_retro:** RETRO-005
+- **source_ticket:** TICKET-030 / PR #124
+- **recommended_sprint:** 10
+- **recommended_agent:** sdk-engineer (frontend lane)
+- **priority:** P2
+- **estimated_hours:** 0.5
+- **scope:** PR #121 added `DetectResponseSchema` to `packages/shared/src/schemas/detect.ts` "for
+  consumption by TICKET-030". PR #124 then ignored it and declared a duplicate `DetectApiResponse`
+  interface at `apps/control-plane/src/components/onboarding/DetectWizard.tsx:39-49`. Two shapes for
+  the same contract waiting to drift. Fix: replace the inline interface with an import of
+  `DetectResponse` from `@estalara/shared`, and add a Zod safeParse at the fetch boundary so runtime
+  drift is caught.
+- **ac:**
+  - [ ] `DetectApiResponse` interface deleted from `DetectWizard.tsx`
+  - [ ] `import type { DetectResponse } from '@estalara/shared'` and consume it as the response type
+  - [ ] At fetch boundary, `DetectResponseSchema.safeParse(json)` guards against drift; on
+        parse-fail render the `failed` state with a generic message
+  - [ ] Test asserts the parse-fail path renders the error UI
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-045 — Decide fate of apps/decision-api/src/lib/bandit.ts duplicate
+
+- **source_retro:** RETRO-005
+- **source_ticket:** FOLLOW-007 / PR #122
+- **recommended_sprint:** 10
+- **recommended_agent:** architect
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** ADR-0004 names `apps/control-plane/src/app/api/adapt/route.ts` as the canonical adapt
+  endpoint. PR #122 wires Thompson sampling into the canonical route only, keeping
+  `apps/decision-api/src/lib/bandit.ts` as a byte-identical Worker-bundle copy with no current
+  caller in `apps/decision-api/src/app/api/adapt/route.ts` (which still uses keyword
+  `detectArchetype`). Decide: (a) delete the Worker-side duplicate + add ADR-0006 stating
+  control-plane is the sole canonical path, OR (b) keep the duplicate as rollback insurance and
+  document the activation criteria + sync test. Both options OK; the **silent middle ground where
+  the file exists with no documented role** is what fails Rule I gracefully.
+- **ac:**
+  - [ ] Decision documented in a short ADR (ADR-0006)
+  - [ ] If keep: FOLLOW-052 (mirror-sync CI gate) MUST land first
+  - [ ] If delete: `apps/decision-api/src/lib/bandit.ts` + tests removed; Rule I check passes
+        without exception
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-046 — Automate listing embedding seeding for new tenants
+
+- **source_retro:** RETRO-005
+- **source_ticket:** FOLLOW-019 / PR #123
+- **recommended_sprint:** 11
+- **recommended_agent:** data-engineer + backend-engineer
+- **priority:** P1
+- **estimated_hours:** 4
+- **scope:** PR #123 ships `POST /api/listings/embed` and the consumer-side
+  `fetchListingEmbeddings()`, but no automation invokes the embed endpoint when a tenant gets
+  onboarded. The natural flow (onboarding wizard knows the listing-card selector; some pipeline
+  enumerates listings; each fires an embed request) is unbuilt. For Sprint 9.5 demo this is
+  acceptable (manual ops), but for any real tenant rollout the adapt path silently degrades to djb2
+  affinity until someone runs the seed script. Wire either a `listing.updated` event consumer that
+  fires the embed call, or a daily backfill cron that walks `tenant_site_schemas` and enumerates
+  listings via the stored selector.
+- **ac:**
+  - [ ] Event-driven OR cron-driven seeding path implemented
+  - [ ] Test: simulate a new tenant + 5 listings, assert `listing_embeddings` populated within N
+        seconds
+  - [ ] Master Design §E.x section added describing the seeding model
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-047 — Reject staff caller (`claims.tenant_id === null`) cleanly from detect + activate
+
+- **source_retro:** RETRO-005
+- **source_ticket:** TICKET-033 / PR #121 + TICKET-AUTO-006-POLISH / PR #125
+- **recommended_sprint:** 10
+- **recommended_agent:** backend-engineer
+- **priority:** P1
+- **estimated_hours:** 1
+- **scope:** Both `apps/control-plane/src/app/api/detect/route.ts:214` and
+  `apps/control-plane/src/app/api/schema/activate/route.ts:97` fall back to `'estalara_staff'`
+  string sentinel when `claims.tenant_id` is null. The downstream Drizzle write into a `uuid` column
+  throws `invalid input syntax`. Detect swallows the error in a catch block (no UX signal); activate
+  returns 500 with the raw error in the response message (info disclosure). Replace the fallback
+  with an explicit `return 403 STAFF_TENANT_CONTEXT_MISSING` so the route fails cleanly.
+- **ac:**
+  - [ ] Both routes return 403 when `claims.tenant_id === null` (or `=== undefined`)
+  - [ ] Error code `STAFF_TENANT_CONTEXT_MISSING` documented
+  - [ ] Tests assert the 403 path for both routes
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-048 — Tie POST /api/schema/activate to the prior detect call
+
+- **source_retro:** RETRO-005
+- **source_ticket:** TICKET-AUTO-006-POLISH / PR #125
+- **recommended_sprint:** 10
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** Activate trusts the body `schema` (and `schema.domain`) without verifying it came from
+  a recent `POST /api/detect` for the same tenant. An authenticated admin could activate an
+  arbitrary schema. Add: detect returns a `detect_request_id` (already in the response — add to the
+  persisted row); activate requires this id in the body and validates the tuple
+  `(tenant_id, detect_request_id, domain)` matches a recent detect record.
+- **ac:**
+  - [ ] `detect_request_id` column added to `tenant_site_schemas` (Drizzle migration 0014)
+  - [ ] `POST /api/schema/activate` body schema requires `detect_request_id` (UUID v4)
+  - [ ] Mismatched / stale (>10 min) id → 400 `STALE_DETECT_REQUEST`
+  - [ ] Wizard UI updated to pass the id from detect → activate
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-049 — Idempotency on POST /api/schema/activate
+
+- **source_retro:** RETRO-005
+- **source_ticket:** TICKET-AUTO-006-POLISH / PR #125
+- **recommended_sprint:** 10
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** Double-click on "Save & Activate" while the network is slow can generate two public API
+  keys (if the prior one was revoked between activations) or generate two audit-log rows. Accept an
+  `Idempotency-Key` header (UUID supplied by the wizard), dedup within 60s, return the same response
+  for repeat calls.
+- **ac:**
+  - [ ] `Idempotency-Key` header (UUID v4) accepted, optional
+  - [ ] In-memory or Redis-backed dedup with 60s window
+  - [ ] Test asserts two concurrent identical requests with same key produce one DB write
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-050 — Document Redis read-replica staleness vs cache invalidation ordering
+
+- **source_retro:** RETRO-005
+- **source_ticket:** FOLLOW-018 / PR #126
+- **recommended_sprint:** 10
+- **recommended_agent:** architect + backend-engineer
+- **priority:** P3 today, P1 at multi-region rollout
+- **estimated_hours:** 2
+- **scope:** PR #126 invalidates `schema:{tenantId}` after DB write before returning 200. On a
+  single-region Upstash (current state) the race is sub-millisecond. The moment a second region's
+  read-replica comes online (Master Design A.3 roadmap), the SDK's first adapt request
+  post-activation may hit a stale cache replica. Write an ADR documenting the trade-offs
+  (read-through with version stamp vs DEL-then-write vs versioned key). Add a test that simulates
+  configurable replica lag and asserts the adapt path's behavior under stale read.
+- **ac:**
+  - [ ] ADR-0007 written + reviewed
+  - [ ] Configurable replica-lag test in `tenant-schema.test.ts`
+  - [ ] Master Design §A.3 multi-region rollout note: do not deploy second region until this ADR's
+        recommended pattern is implemented
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-051 — Replace presence-only Bearer on POST /api/adapt/feedback with proper auth
+
+- **source_retro:** RETRO-005
+- **source_ticket:** FOLLOW-007 / PR #122
+- **recommended_sprint:** 10
+- **recommended_agent:** compliance-engineer + backend-engineer
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** When `ADAPT_API_KEY` is unset (current state in dev/stg Doppler configs), the feedback
+  endpoint accepts any non-empty Bearer token. The endpoint mutates `ab_bandit_weights` directly. An
+  attacker hitting the route from any origin can flood `converted: false` to bias the bandit.
+  Replace with a tenant-scoped HMAC signature or a signed SDK ping (signed using the tenant's public
+  API key). Document threat model in Master Design §V.
+- **ac:**
+  - [ ] Auth scheme replaced (HMAC signature or signed JWT)
+  - [ ] Tenant-scoped: a feedback ping carries a tenant_id, server validates the signature matches
+        that tenant's secret
+  - [ ] Master Design §V security note added
+  - [ ] Test asserts adversarial bandit poisoning is blocked
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-052 — Mirror-code byte-identity CI check (promote Rule J)
+
+- **source_retro:** RETRO-005 (proposed Rule J)
+- **source_ticket:** FOLLOW-007 + FOLLOW-019 / PRs #122, #123
+- **recommended_sprint:** 10
+- **recommended_agent:** qa-engineer + devops-engineer
+- **priority:** P1
+- **estimated_hours:** 1.5
+- **scope:** Two pairs of mirrored files exist in the repo and grow:
+  `apps/decision-api/src/lib/bandit.ts` (mirror of `packages/shared/src/bandit.ts`) and
+  `apps/decision-api/src/lib/reorder.ts` (mirror of helpers duplicated in
+  `apps/control-plane/src/app/api/adapt/route.ts`). PR descriptions say "byte-identical" but no CI
+  enforces this. Add `scripts/check-mirror-files.sh` that compares declared pairs (config in a JSON
+  manifest) byte-for-byte (or strips comments/JSDoc and compares ASTs for the more tolerant version)
+  and fails CI on drift. Promotes the candidate Rule J pattern enforcement.
+- **ac:**
+  - [ ] `scripts/check-mirror-files.sh` implemented + manifest file with declared pairs
+  - [ ] `.github/workflows/ci.yml` gates on it (job `rule-j`)
+  - [ ] Pre-push lefthook calls it
+  - [ ] Rule J entry in `CONVENTIONS_PATCH.md` (already added in RETRO-005)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-053 — Reconcile detection_confidence values across AI Vision fallback path
+
+- **source_retro:** RETRO-005
+- **source_ticket:** TICKET-033 / PR #121
+- **recommended_sprint:** 11
+- **recommended_agent:** backend-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** In the AI Vision fallback path
+  (`apps/control-plane/src/app/api/detect/route.ts:335-354`), `result.confidence` is reassigned but
+  `result.schema.detection_confidence` is left at the pre-fallback value. The cache stores the
+  denormalized `detectionConfidence` (post-fallback) AND the JSON schema's `detection_confidence`
+  (pre-fallback). Subsequent cache hits return inconsistent values to the wizard. Fix: ensure the AI
+  Vision branch updates BOTH the JSON `schema.detection_confidence` and the denormalized
+  `detectionConfidence` column.
+- **ac:**
+  - [ ] AI Vision branch overwrites `schema.detection_confidence` with `result.confidence`
+  - [ ] Test asserts cached row's JSON confidence === denormalized column after AI Vision path
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-054 — Use SDK_CDN_URL constant in buildSnippet() + decide versioned snippet URL
+
+- **source_retro:** RETRO-005
+- **source_ticket:** TICKET-AUTO-006-POLISH / PR #125
+- **recommended_sprint:** 10
+- **recommended_agent:** frontend-engineer + architect
+- **priority:** P2
+- **estimated_hours:** 0.5
+- **scope:** `buildSnippet()` in
+  `apps/control-plane/src/components/onboarding/DetectionPreview.tsx:97` hardcodes
+  `https://cdn.estalara.com/sdk.js`. The shared package `packages/shared/src/domains.ts:16` exports
+  `SDK_CDN_DOMAIN` and `SDK_CDN_URL` constants for exactly this purpose. Master Design §V.5.2
+  references a versioned path (`/sdk/v1.2.3/estalara.min.js`). Decide on the canonical URL
+  (versioned vs unversioned) and reference it from the constant. Without this, every tenant snippet
+  generated this sprint will silently 404 if the CDN structure changes.
+- **ac:**
+  - [ ] Snippet uses `SDK_CDN_URL` (and a version constant if versioned)
+  - [ ] Decision documented in `packages/shared/src/domains.ts` JSDoc
+  - [ ] Master Design §V.5.2 reconciled with the actual snippet URL
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-055 — End-to-end integration test for the demo flow
+
+- **source_retro:** RETRO-005
+- **source_ticket:** Sprint 9.5 closing test gap
+- **recommended_sprint:** 10
+- **recommended_agent:** qa-engineer
+- **priority:** P0
+- **estimated_hours:** 5
+- **scope:** The sprint's whole-product promise is "investor demo works end-to-end" but no test
+  verifies the assembly: `POST /api/detect` → `POST /api/schema/activate` → SDK loaded with
+  generated snippet → `POST /api/adapt` returns `variant` and ReorderDirective → SDK applies DOM
+  mutation → ReorderDirective uses cosine math (mock embeddings) → feedback ping fires
+  (post-FOLLOW-041). Write a Playwright spec that runs the full chain against a local stack (or
+  Vercel Preview).
+- **ac:**
+  - [ ] Spec at `tests/e2e/sprint-9-5-demo.spec.ts`
+  - [ ] Mocks: Anthropic AI Vision (deterministic), OpenAI embeddings (fixed vectors)
+  - [ ] Assert: snippet renders with valid `data-tenant-id` + `data-api-key`
+  - [ ] Assert: adapt response carries a non-empty `variant`
+  - [ ] Assert: DOM reorder happens AND the order matches cosine (not djb2) when embeddings are
+        seeded
+  - [ ] Assert: feedback ping POSTs with the right body (gated by FOLLOW-041)
+  - [ ] Runs in CI on every PR to control-plane / sdk / decision-api
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-056 — Extend auto-detect corpus to exercise SSRF + cache guard at route layer
+
+- **source_retro:** RETRO-005
+- **source_ticket:** TICKET-033 / PR #121
+- **recommended_sprint:** 11
+- **recommended_agent:** qa-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** Current corpus runs against local HTML fixtures. PR #121's SSRF guard + route cache
+  guard run on the URL boundary. Add a route-layer fixture suite that exercises: blocked URLs
+  (private IPs, bare hostnames) and cache-hit (DB pre-populated with a 30s-old row). Independent of
+  the corpus precision/recall gate.
+- **ac:**
+  - [ ] New fixture file at `tests/integration/api-detect-route.spec.ts`
+  - [ ] All SSRF block paths exercised
+  - [ ] Cache hit / cache miss / cache stale all covered
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-057 — Test asserts activate route status filter (no silent suspended → active)
+
+- **source_retro:** RETRO-005
+- **source_ticket:** TICKET-AUTO-006-POLISH / PR #125
+- **recommended_sprint:** 10
+- **recommended_agent:** qa-engineer
+- **priority:** P2
+- **estimated_hours:** 0.5
+- **scope:** The activate route's `.where(...)` includes `eq(tenants.status, 'pending')` to prevent
+  revival of suspended tenants. The existing test only asserts `set` was called with
+  `status: 'active'`, not the WHERE clause. Add: assert the update call payload includes the
+  `pending` filter; assert revival of a suspended tenant is a no-op.
+- **ac:**
+  - [ ] Test exists in `route.test.ts`
+  - [ ] Assertion against the exact predicate
+  - [ ] Fold into FOLLOW-055 PR if convenient
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-058 — Concurrency / race test for the 60-second cache guard
+
+- **source_retro:** RETRO-005
+- **source_ticket:** TICKET-033 / PR #121
+- **recommended_sprint:** 11
+- **recommended_agent:** qa-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** Fire N parallel identical `POST /api/detect` calls, assert only one runs the detection
+  pipeline (proves the cache + DB lookup prevents quota burst). Currently no test exercises this;
+  the race window between request N and N+1 both missing cache → both running detection → both
+  writing is real.
+- **ac:**
+  - [ ] Test fires 10 parallel identical requests
+  - [ ] Asserts `detectSiteSchema` mock called ≤1 time (or document the actual race tolerance)
+  - [ ] If race is tolerated, add `SELECT ... FOR UPDATE` or advisory lock to serialize
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-059 — Read DEL response from Upstash to catch cache key typos
+
+- **source_retro:** RETRO-005
+- **source_ticket:** FOLLOW-018 / PR #126
+- **recommended_sprint:** 11
+- **recommended_agent:** backend-engineer
+- **priority:** P3
+- **estimated_hours:** 0.5
+- **scope:** Upstash DEL returns `{result: 1}` for "key existed" or `{result: 0}` for "key did not
+  exist". `redisDelete()` discards the response. A typo in the cache key (e.g. `schemas:` vs
+  `schema:`) would silently no-op DEL on every activation and the unit test would still pass. Read
+  the result, log a `console.warn` on `result: 0` for fresh activations (a true cache miss is
+  suspicious right after a successful set).
+- **ac:**
+  - [ ] `redisDelete()` reads response and logs unexpected `result: 0`
+  - [ ] Test asserts the log path fires for the typo case
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-060 — Document POST /api/adapt/feedback + POST /api/listings/embed in Master Design
+
+- **source_retro:** RETRO-005
+- **source_ticket:** FOLLOW-007 + FOLLOW-019 / PRs #122, #123
+- **recommended_sprint:** 10
+- **recommended_agent:** architect
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** Two new endpoints shipped in Sprint 9.5 are absent from Master Design:
+  `POST /api/adapt/feedback` (bandit feedback loop — should live under §E.3) and
+  `POST /api/listings/embed` (listing embedding ingest — should live under §F or §E.2). Document
+  shape, auth, SDK trigger expectations, latency budget, error codes.
+- **ac:**
+  - [ ] §E.3.1 amended with feedback endpoint contract
+  - [ ] §F or §E amended with embed endpoint contract
+  - [ ] Master Design version bumped
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-061 — Enforce OP §Y.3 Snapshot.1 re-verification at sprint close
+
+- **source_retro:** RETRO-005
+- **source_ticket:** process gap (not a ticket)
+- **recommended_sprint:** 10
+- **recommended_agent:** architect + pm-orchestrator
+- **priority:** P1
+- **estimated_hours:** 0.5
+- **scope:** Operating Principles §Y.3 (per OPERATING_PRINCIPLES.md v1.1) requires Snapshot.1
+  re-verification at sprint close. Sprint 9.5 violated this — rows B.4 and J went stale. Add the
+  re-verification as the last item on the PM-orchestrator sprint-close checklist; codify in
+  `docs/AGENT_WORKFLOW.md`. RETRO-005 §7 Edits M-1..M-6 satisfy the obligation for Sprint 9.5
+  retroactively, but the process gap must be closed for Sprint 10+.
+- **ac:**
+  - [ ] Sprint-close checklist updated in `docs/AGENT_WORKFLOW.md`
+  - [ ] PM-orchestrator agent prompt amended to include "verify Snapshot.1 still matches reality
+        before closing sprint"
+  - [ ] Single-source-of-truth note added: Snapshot.1 update is part of the merge ritual, not a
+        separate ticket
+- **promoted_to_queue:** false
+
+---

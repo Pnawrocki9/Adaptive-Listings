@@ -246,4 +246,57 @@ Run locally before pushing:
 bash scripts/check-rule-i.sh
 ```
 
-<!-- Rule I+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->
+## Rule J — Mirror-code sync gate for cross-runtime duplicates
+
+**Pattern:** A piece of business logic must run in two runtimes (Cloudflare Worker bundle and
+Next.js Edge / Node) that cannot share a workspace package at runtime. The codebase responds by
+duplicating the file in both `apps/decision-api/src/lib/<x>.ts` and either `packages/shared/src/` or
+`apps/control-plane/src/`. The PR description says "kept in sync" or "byte-identical" but no CI gate
+enforces this. The next person to patch one side and forget the other introduces silent divergence
+that only manifests when one runtime hits a code path the other doesn't have. Tests on each side
+pass independently because they exercise the local copy.
+
+**Evidence:**
+
+- RETRO-003 / TICKET-REORDER-001 (PR #91): `buildReorderDirective()` reorder logic mirrored between
+  `apps/decision-api/src/lib/reorder.ts` and `apps/control-plane/src/app/api/adapt/route.ts` with no
+  enforcement (FOLLOW-015 wired the Worker side later, but the duplication itself was unaddressed).
+- RETRO-005 / FOLLOW-007 (PR #122): `thompsonSample()` / `sampleBeta()` / `updateBanditArm()`
+  duplicated between `packages/shared/src/bandit.ts` (canonical) and
+  `apps/decision-api/src/lib/bandit.ts` (byte-identical Worker copy). PR description explicitly
+  documents the "sync requirement" but ships no CI gate.
+- RETRO-005 / FOLLOW-019 (PR #123): cosine math + `buildReorderDirective()` + `affinityScore()`
+  duplicated between `apps/decision-api/src/lib/reorder.ts` and
+  `apps/control-plane/src/app/api/adapt/route.ts`. Pattern repeats within the same sprint, twice.
+
+**Rule:** Every file in `apps/decision-api/src/lib/` that is documented as a mirror of another file
+(canonical source declared in a top-of-file JSDoc comment) MUST be enforced by a CI gate that fails
+on byte (or AST) drift. A `MIRROR_FILES` manifest lives at `scripts/mirror-files.json` declaring the
+pairs; `scripts/check-mirror-files.sh` reads the manifest, compares the file pairs, and fails CI on
+mismatch.
+
+Allowed strategies for keeping the manifest small:
+
+1. **Byte-identical:** strictly identical file contents (fastest check; brittle to JSDoc edits).
+2. **AST-equivalent:** compares stripped AST (TypeScript compiler API) — allows JSDoc, comment, and
+   whitespace divergence; requires the actual exported symbols + bodies to match.
+3. **Snapshot-tested:** both files' exported behavior is exercised by a single shared test fixture
+   suite (`packages/shared/__tests__/cross-runtime/*.test.ts`) that imports each and asserts
+   byte-identical outputs across N input cases — useful when type signatures differ slightly but
+   semantics must match (e.g., Worker has no `Buffer`, Node does).
+
+The PR adding a new mirrored file MUST also add the pair to `mirror-files.json` and choose a
+strategy. PRs that touch one side of a mirrored pair MUST touch the other side in the same commit —
+failing CI on a one-sided edit is the entire point.
+
+**Verification:**
+
+```bash
+bash scripts/check-mirror-files.sh
+# Must return exit 0
+```
+
+Implementation tracked in FOLLOW-052 (Sprint 10). Until landed, the rule is enforced by manual
+review against the manifest stub at `scripts/mirror-files.json`.
+
+<!-- Rule J+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->

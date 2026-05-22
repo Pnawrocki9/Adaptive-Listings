@@ -1,17 +1,18 @@
 # Backlog Queue
 
-**Updated 2026-05-21T12:00Z by pm-orchestrator.** Sprint 9.5 (MVP Demo Readiness) defined and OPEN.
-Sprint 9 COMPLETE as of 2026-05-15: GDPR-001 (PR #111), GDPR-002 (PR #118), GDPR-003 (PR #116),
-GDPR-004 (PR #117), DESC-001 (PR #112+#114), VAL-001 (PR #110) — all 6 DONE. DESC-PIVOT-001 (PR
-#115) merged. Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8 COMPLETE. Sprint 8.5 COMPLETE. Sprint
-2.5 SUPERSEDED — TICKET-030 + TICKET-033 promoted to Sprint 9.5, TICKET-032 superseded by Sprint 7.5
-auto-detect, TICKET-034/036 deferred (Q5 decision 2026-05-21), TICKET-035 already CANCELLED. P0
-follow-ups: FOLLOW-039 (ClickHouse DSR erase) deferred to Sprint 11 (Q7 decision 2026-05-21 — no EU
-traffic in 4-6 weeks); FOLLOW-040 (Doppler CI) parallel pre-flight for Sprint 9.5. Krok A document
-governance reset merged (PR #119, Master_Design v2.0, docs/ops/OPERATING_PRINCIPLES.md v1.1) —
-Operating Principles now active for all sessions. ANTHROPIC_API_KEY activated in Doppler dev/stg/prd
-2026-05-21 (Krok B) — AI Vision fully operational. Krok C AI Council Checkpoint completed 2026-05-21
-with APPROVED_TO_IMPLEMENT pending final Sprint 9.5 ticket spec writes.
+**Updated 2026-05-22T00:00Z by pm-orchestrator.** Sprint 9.5 COMPLETE as of 2026-05-22 (6 PRs
+merged: #121, #122, #123, #124, #125, #126). Sprint 10 (Close the bandit loop + real embeddings +
+e2e test) defined and OPEN. Sprint 9 COMPLETE as of 2026-05-15: GDPR-001 (PR #111), GDPR-002 (PR
+#118), GDPR-003 (PR #116), GDPR-004 (PR #117), DESC-001 (PR #112+#114), VAL-001 (PR #110) — all 6
+DONE. DESC-PIVOT-001 (PR #115) merged. Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8 COMPLETE.
+Sprint 8.5 COMPLETE. Sprint 2.5 SUPERSEDED — TICKET-030 + TICKET-033 promoted to Sprint 9.5,
+TICKET-032 superseded by Sprint 7.5 auto-detect, TICKET-034/036 deferred (Q5 decision 2026-05-21),
+TICKET-035 already CANCELLED. P0 follow-ups: FOLLOW-039 (ClickHouse DSR erase) deferred to Sprint 11
+(Q7 decision 2026-05-21 — no EU traffic in 4-6 weeks); FOLLOW-040 (Doppler CI) parallel pre-flight
+for Sprint 9.5. Krok A document governance reset merged (PR #119, Master_Design v2.0,
+docs/ops/OPERATING_PRINCIPLES.md v1.1) — Operating Principles now active for all sessions.
+ANTHROPIC_API_KEY activated in Doppler dev/stg/prd 2026-05-21 (Krok B) — AI Vision fully
+operational.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -47,8 +48,8 @@ updates.
 | 7.5    | 9.5   | Auto-Detection Engine                                                | 7       | 7    | 0       | 0     | 0       |
 | 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 16      | 13   | 0       | 0     | 0       |
 | 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 6    | 0       | 0     | 0       |
-| 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)        | 6       | 0    | 0       | 4     | 2       |
-| 10     | 12    | Multi-region deploy + observability + load tests                     | tbd     | —    | —       | —     | tbd     |
+| 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)        | 6       | 6    | 0       | 0     | 0       |
+| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 0    | 0       | 9     | 0       |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
@@ -1250,7 +1251,13 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
   spec: backlog/sprint-9/TICKET-VAL-001.md
 ```
 
-## Sprint 9.5 — MVP Demo Readiness (onboarding activation + bandit + scoring) (OPEN)
+## Sprint 9.5 — MVP Demo Readiness (onboarding activation + bandit + scoring) (COMPLETE)
+
+**Status:** COMPLETE as of 2026-05-22. 6/6 tickets DONE across 6 PRs (#121, #122, #123, #124, #125,
+#126). Auto-Onboarding UI end-to-end demoable. Bandit variant selection wired into canonical adapt
+route. Cosine archetype-listing affinity wired with djb2 fallback. Open gaps tracked in RETRO-005 →
+Sprint 10: FOLLOW-041/042 (SDK feedback ping + variant consumer), FOLLOW-043 (archetype embeddings
+NULL → cosine unreachable), FOLLOW-046 (listing embedding auto-seed), FOLLOW-055 (e2e test).
 
 **Sprint goal:** Make the zero-config onboarding promise demoable end-to-end on `app.estalara.com`
 (Tier 3 Native, locked 2026-05-12), then on any new tenant via Magic Link. Complete the bandit
@@ -1345,13 +1352,14 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: FOLLOW-018
   title: Replace est_demo_tenant hardcode with real tenant schema lookup in adapt route
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 3
   depends_on: [TICKET-033, TICKET-AUTO-006-POLISH]
   model: sonnet-4.6
   spec: backlog/sprint-9.5/FOLLOW-018.md
   pr: '#126'
+  completed_at: '2026-05-22'
   notes: |
     apps/control-plane/src/app/api/adapt/route.ts currently reads schema for est_demo_tenant only.
     Replace with tenant_site_schemas lookup keyed on authenticated tenant_id. Add Redis cache
@@ -1364,13 +1372,14 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: FOLLOW-007
   title: Wire Thompson sampling bandit into live adapt path per (tenant, archetype, variant)
   agent: ml-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 4
   depends_on: []
   model: opus-4.7-xhigh
   spec: backlog/sprint-9.5/FOLLOW-007.md
   pr: '#122'
+  completed_at: '2026-05-21'
   notes: |
     thompsonSample() implemented (packages/sdk + ab_bandit_weights table) but has zero
     non-test callers per Rule I check. Wire into canonical adapt route variant selection
@@ -1403,13 +1412,14 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - id: FOLLOW-019
   title: Replace deterministicScore djb2 hash with real archetype-listing affinity
   agent: ml-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 4
   depends_on: []
   model: opus-4.7-xhigh
   spec: backlog/sprint-9.5/FOLLOW-019.md
   pr: '#123'
+  completed_at: '2026-05-21'
   notes: |
     Cosine similarity now drives archetype-listing affinity in both
     apps/decision-api/src/lib/reorder.ts (canonical) and the duplicate helpers
@@ -1433,6 +1443,153 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - FOLLOW-039 (ClickHouse DSR hard-delete) — non-negotiable BEFORE any EU pilot traffic but no EU
   traffic in 4-6 weeks per Piotr's call.
 
+## Sprint 10 — Close the bandit loop + real embeddings + e2e test (OPEN)
+
+**Sprint goal:** "Close the bandit loop, make cosine affinity real end-to-end (archetype + listing
+vectors both seeded), and verify the demo end-to-end in CI."
+
+**Entry condition:** Sprint 9.5 COMPLETE ✓ (2026-05-22).
+
+**Dependency note:** FOLLOW-046 must ship after FOLLOW-043 (archetype embedding vectors needed first
+before listing embedding seeding makes cosine affinity real). Consider combining into one PR if the
+same agent handles both.
+
+```yaml
+- id: FOLLOW-041
+  title: SDK feedback ping on outcome events (closes bandit feedback loop)
+  agent: sdk-engineer + backend-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 4
+  depends_on: [FOLLOW-042]
+  model: sonnet-4.6
+  spec: backlog/sprint-10/FOLLOW-041.md
+  notes: |
+    Must ship in same PR as FOLLOW-042. POST /api/adapt/feedback exists server-side but
+    no SDK consumer fires the ping on outcome events. Without this, ab_bandit_weights never
+    updates from real traffic and Thompson sampling stays at uniform Beta(1,1) prior forever.
+    SDK must cache the served variant in sessionStorage and POST on inquiry.completed.
+
+- id: FOLLOW-042
+  title: Add variant field to SDK AdaptResponse + thread through applyDirectives
+  agent: sdk-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 2
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-10/FOLLOW-042.md
+  notes: |
+    Must ship in same PR as FOLLOW-041. Adds variant?: string to packages/sdk/src/core/adapt.ts
+    AdaptResponse interface. Rule G mock-scan obligation applies — grep MOCK_RESPONSE in
+    packages/sdk/src/__tests__/adapt.test.ts before PR.
+
+- id: FOLLOW-043
+  title: Compute archetype embedding vectors (Modal job or one-shot Node script)
+  agent: ml-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 3
+  depends_on: []
+  model: opus-4.7-xhigh
+  spec: backlog/sprint-10/FOLLOW-043.md
+  notes: |
+    0005_seed_archetype_embeddings.sql inserts 18 rows with embedding=NULL. No Modal job exists.
+    fetchArchetypeEmbedding() returns null for all archetypes → cosine path unreachable → djb2
+    always wins. Script: scripts/seed-archetype-embeddings.ts calling OpenAI
+    text-embedding-3-small at 1024 dims, then UPDATEs each row. Opus 4.7 xhigh per ML/algo rule.
+
+- id: FOLLOW-055
+  title: End-to-end integration test detect→activate→adapt→SDK
+  agent: qa-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 5
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-10/FOLLOW-055.md
+  notes: |
+    Playwright spec at tests/e2e/sprint-9-5-demo.spec.ts. Mocks: Anthropic AI Vision
+    (deterministic), OpenAI embeddings (fixed vectors). Asserts: snippet renders with valid
+    data-tenant-id + data-api-key; adapt response carries non-empty variant; DOM reorder uses
+    cosine math (not djb2) when embeddings seeded; feedback ping fires (gated on FOLLOW-041).
+    Runs in CI on every PR to control-plane / sdk.
+
+- id: FOLLOW-046
+  title: Automate listing embedding seeding (tenant activation trigger + 000-app-estalara backfill)
+  agent: data-engineer + backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-043]
+  model: sonnet-4.6
+  spec: backlog/sprint-10/FOLLOW-046.md
+  notes: |
+    Promoted from P2 to P1 — without listing embeddings, cosine affinity stays no-op even after
+    FOLLOW-043 seeds archetype vectors. Wire listing.updated consumer OR daily backfill cron
+    that calls POST /api/listings/embed per listing. Backfill the 000-app-estalara fixture.
+    MUST ship after FOLLOW-043. Consider combining into one PR if same agent handles both.
+
+- id: FOLLOW-047
+  title: Reject null tenant_id with 403 (STAFF_TENANT_CONTEXT_MISSING) from detect + activate
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 1
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-10/FOLLOW-047.md
+  notes: |
+    Both apps/control-plane/src/app/api/detect/route.ts:214 and
+    apps/control-plane/src/app/api/schema/activate/route.ts:97 fall back to 'estalara_staff'
+    string sentinel when claims.tenant_id is null → uuid parse error → 500. Replace with
+    explicit 403 STAFF_TENANT_CONTEXT_MISSING.
+
+- id: FOLLOW-051
+  title: Replace presence-only Bearer on POST /api/adapt/feedback with proper tenant-scoped auth
+  agent: compliance-engineer + backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-10/FOLLOW-051.md
+  notes: |
+    When ADAPT_API_KEY is unset, feedback endpoint accepts any non-empty Bearer token and mutates
+    ab_bandit_weights directly → adversarial bandit poisoning possible. Replace with tenant-scoped
+    HMAC signature. Document threat model in Master Design §V.
+
+- id: FOLLOW-052
+  title: Mirror-code byte-identity CI check — scripts/check-mirror-files.sh (Rule J enforcement)
+  agent: qa-engineer + devops-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 1.5
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-10/FOLLOW-052.md
+  notes: |
+    Two mirrored file pairs: apps/decision-api/src/lib/bandit.ts (mirror of packages/shared/src/bandit.ts)
+    and apps/decision-api/src/lib/reorder.ts. PR descriptions say byte-identical but no CI enforces
+    this. Add check-mirror-files.sh + JSON manifest + GitHub Actions job rule-j + lefthook pre-push.
+    Promotes Rule J pattern enforcement (CONVENTIONS_PATCH.md).
+
+- id: FOLLOW-061
+  title: Add Snapshot.1 re-verification to sprint-close checklist in AGENT_WORKFLOW.md
+  agent: architect
+  status: READY
+  priority: P1
+  estimated_hours: 0.5
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-10/FOLLOW-061.md
+  notes: |
+    OP §Y.3 requires Snapshot.1 re-verification at sprint close. Sprint 9.5 violated this —
+    rows B.4 and J went stale. Add re-verification as the last step on PM-orchestrator
+    sprint-close checklist. Codify in docs/AGENT_WORKFLOW.md. RETRO-005 §7 Edits M-1..M-6
+    satisfy the obligation for Sprint 9.5 retroactively.
+```
+
 ## Currently in flight
 
 (none)
@@ -1443,6 +1600,21 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 
 ## Recent merges
 
+- 2026-05-22 — FOLLOW-018 (PR #126): Real tenant schema lookup + cache invalidation on activation;
+  `invalidateTenantSchemaCache()` wired into activate path; Upstash Redis bounded TTL
+- 2026-05-22 — TICKET-AUTO-006-POLISH (PR #125): Detection Preview + Save & Activate — schema
+  activation + tenant promotion to `active` + SDK snippet generation
+- 2026-05-21 — TICKET-030 (PR #124): Magic Link onboarding wizard UI —
+  `idle → analyzing → detected | needs_review | failed` state machine; real API wiring (no mocks);
+  11 tests
+- 2026-05-21 — FOLLOW-019 (PR #123): Replace deterministicScore djb2 hash with cosine similarity;
+  `listing_embeddings` pgvector table (migration 0013) + `POST /api/listings/embed` admin endpoint;
+  djb2 fallback preserved per-listing
+- 2026-05-21 — FOLLOW-007 (PR #122): Wire Thompson sampling bandit — canonical
+  `packages/shared/src/bandit.ts`; `POST /api/adapt/feedback` fire-and-forget;
+  `adaptation_decisions.variant` ClickHouse column (migration 0010); 42 new tests
+- 2026-05-21 — TICKET-033 (PR #121): Schema Discovery API — JWT + SSRF + 60s cache + wizard
+  response; persists to `tenant_site_schemas`; `DetectResponseSchema` in `@estalara/shared`
 - 2026-05-15 — TICKET-GDPR-002 (PR #118): DSR endpoints — OTP flow + Resend email + ClickHouse audit
   log; `dsr_verifications` table + Drizzle migration 0011
 - 2026-05-15 — TICKET-GDPR-003 (PR #116): LIA template v1.0 + `tenant_compliance_records` table +

@@ -1222,4 +1222,542 @@ the threshold logic. Rules A–H remain canonical.
 
 ---
 
-<!-- RETRO-005 and beyond will be appended here by the retrospective-analyst agent -->
+## RETRO-005 — Sprint 9.5 (MVP Demo Readiness — Auto-Onboarding M1 + Bandit + Scoring) — 2026-05-22
+
+**Scope:** Sprint-level retrospective bundling 6 merged PRs (#121, #122, #123, #124, #125, #126).
+Sprint 9.5 was the "MVP demo readiness" sprint — the explicit goal in the QUEUE preamble was to make
+the zero-config onboarding promise demoable end-to-end on `app.estalara.com`, then on any new tenant
+via Magic Link, AND to wire bandit variant selection + real archetype-listing affinity so the demo
+narrative includes "honest live optimization." This retro evaluates whether the shipped surface
+delivers on that promise. Spoiler: the wire is closer than at the start of the sprint, but at least
+three of the six PRs ship as **producer-only half-wires** that the demo script will silently degrade
+through without surfacing the failure to the operator.
+
+### 1. Summary of change
+
+| PR   | Ticket                 | Title                                                                 | Files | +/−         | Merged                       |
+| ---- | ---------------------- | --------------------------------------------------------------------- | ----- | ----------- | ---------------------------- |
+| #121 | TICKET-033             | Schema Discovery API — JWT + SSRF + wizard response                   | 6     | +885 / −102 | 2026-05-21 19:57Z, `a413f27` |
+| #122 | FOLLOW-007             | Wire Thompson sampling bandit into adapt path                         | 15    | +1374 / −3  | 2026-05-21 19:56Z, `306cc6e` |
+| #123 | FOLLOW-019             | Real archetype-listing affinity — cosine similarity replaces djb2     | 15    | +1305 / −24 | 2026-05-21 19:48Z, `0b01cfe` |
+| #124 | TICKET-030             | Magic Link onboarding wizard UI                                       | 5     | +705 / −2   | 2026-05-21 20:31Z, `141d31a` |
+| #125 | TICKET-AUTO-006-POLISH | Detection Preview + Save & Activate (schema activation + SDK snippet) | 7     | +1143 / −19 | 2026-05-22 08:17Z, `ca244a6` |
+| #126 | FOLLOW-018             | Real tenant schema lookup — cache invalidation on activation          | 5     | +218 / −2   | 2026-05-22 09:46Z, `acb8bb7` |
+
+**Cumulative:** 53 files changed, +5,630 / −152 across the sprint. Three new top-level routes
+(`POST /api/detect` hardened, `POST /api/schema/activate` new, `POST /api/adapt/feedback` new,
+`POST /api/listings/embed` new), one new dashboard page (`/dashboard/onboarding/detect`), two new
+pgvector tables (`listing_embeddings` migration 0013; archetype_embeddings was already present), one
+ClickHouse column (`adaptation_decisions.variant`), and one new Zod schema (`DetectResponseSchema`
+in `@estalara/shared`).
+
+**Per-PR one-sentence summaries:**
+
+- **PR #121 (TICKET-033):** Wraps the existing Sprint 7.5 detection engine in a JWT-authenticated,
+  SSRF-protected, 60-second-cached HTTP API with a flattened "wizard-ready" response and persists
+  results to `tenant_site_schemas` (`apps/control-plane/src/app/api/detect/route.ts:175-435`).
+- **PR #122 (FOLLOW-007):** Adds the canonical `packages/shared/src/bandit.ts`, wires
+  `getBanditArms()` + `thompsonSample()` into the **control-plane** POST adapt route
+  (`apps/control-plane/src/app/api/adapt/route.ts:648-649`), and creates a new fire-and-forget
+  `POST /api/adapt/feedback` endpoint that increments Beta(α, β) on conversion signals.
+- **PR #123 (FOLLOW-019):** Introduces the `listing_embeddings` pgvector table + a Drizzle schema +
+  the `POST /api/listings/embed` admin endpoint, and replaces the djb2 hash with cosine similarity
+  in `buildReorderDirective()` (both `apps/control-plane/src/app/api/adapt/route.ts:280-360` and the
+  duplicate in `apps/decision-api/src/lib/reorder.ts`) — djb2 retained as a per-listing fallback
+  when embeddings are unavailable.
+- **PR #124 (TICKET-030):** Adds `/dashboard/onboarding/detect` (Server Component) and the
+  `<DetectWizard>` client component with the `idle → analyzing → detected | needs_review | failed`
+  state machine, plus a stub `<DetectionPreview>`.
+- **PR #125 (TICKET-AUTO-006-POLISH):** Replaces the `<DetectionPreview>` stub with the full
+  field-table UI, adds `POST /api/schema/activate` that upserts the schema, promotes `tenant.status`
+  from `pending → active`, and looks up or generates a public API key — the response feeds the SDK
+  `<script>` snippet displayed to the operator.
+- **PR #126 (FOLLOW-018 follow-up):** Adds `invalidateTenantSchemaCache()` and calls it from the
+  activation path so the next adapt request after activation doesn't read stale Redis data.
+
+### 2. Verification in PRs
+
+- Test files added/changed: 12 (across the 6 PRs).
+- New assertions: ~135 (38 for detect route, 42 for bandit/feedback, 33 for cosine/embed/affinity,
+  11 for DetectWizard, 10 for DetectionPreview, 9 for activate, 7 for cache invalidation).
+- Coverage delta: control-plane went from 367 → 481 tests (per PR #126 final count).
+- CI checks: TypeScript/JS lanes green across all PRs. Pre-existing failures **not** caused by this
+  sprint: Rule I baseline (92 dead symbols — actually decreased by 4 due to PR #122 wiring); Python
+  test scaffolding gaps; Doppler verify (optional). PR #125 was merged with **all GitHub Actions
+  billing-blocked** (escalation logged in `backlog/ESCALATIONS.md`); the human merged on the
+  strength of 474 local tests + clean pre-commit hooks. PR #122 / #123 / #126 all ran on resumed
+  billing.
+- **NOT verified by tests** (load-bearing gaps — see section 3):
+  - No SDK-level test asserts the `variant` field returned by `POST /api/adapt` is propagated back
+    to `POST /api/adapt/feedback` on outcome events. The SDK ships zero code paths that call
+    `/api/adapt/feedback`; the bandit feedback loop has a producer endpoint with no consumer.
+  - No test asserts that `archetype_embeddings` has a non-null `embedding` for any of the 18
+    archetypes. The seed migration `0005_seed_archetype_embeddings.sql` inserts 18 rows with
+    `embedding = NULL`. `fetchArchetypeEmbedding()` returns null for all 18 archetypes in production
+    today → cosine path is unreachable → djb2 fallback always wins. The integration test
+    `route.variant.test.ts:107` mocks `getBanditArms()` directly so this gap is masked.
+  - No integration test exercises `POST /api/detect` → `POST /api/schema/activate` →
+    `POST /api/adapt` end-to-end against a real tenant_id. All three routes are tested with isolated
+    mocks; the cross-route flow (which the demo depends on) is exercised only by manual QA.
+  - PR #125 was merged with CI billing-blocked. The "all 474 local tests pass" claim was not
+    independently re-verified by the PM under green CI before the merge button was pressed.
+
+### 3. Wiring Audit
+
+This sprint produces multiple HALF_WIRE_P (producer-only) findings that mirror the Rule H pattern
+codified in RETRO-002 and re-confirmed in RETRO-003 and RETRO-004. Rule H now hits **5 retros in a
+row** and continues to be the dominant failure mode.
+
+- **HALF_WIRE_P** — `route:POST /api/adapt/feedback` — producer at
+  `apps/control-plane/src/app/api/adapt/feedback/route.ts:111` (FOLLOW-007 / PR #122) — **no
+  consumer** found anywhere in `packages/sdk/src/`. `grep -rn "adapt/feedback" packages/sdk/src/`
+  returns 0 matches. The Beta(α,β) update math is wired, the auth gate works, the DB upsert works —
+  but the SDK never POSTs to the endpoint when an outcome event (inquiry / CTA click) fires.
+  Conversion signals from real traffic will never reach `ab_bandit_weights`, so Thompson sampling
+  converges to its uniform Beta(1,1) prior forever. Priority **P0** for the demo narrative
+  (FOLLOW-007 spec said "the SDK side of the feedback loop is out of scope for this ticket" — but
+  without the consumer, the bandit story is mechanically untestable in the live demo) → FOLLOW-041.
+- **HALF_WIRE_P** — `field:AdaptationDirectives.variant` — producer at
+  `apps/control-plane/src/app/api/adapt/route.ts:701` (PR #122 sets `variant: selectedVariant`) —
+  **no SDK consumer**. `packages/sdk/src/core/adapt.ts:33-50` (the `AdaptResponse` interface) does
+  not include a `variant` field; `applyDirectives()` never reads it. The SDK cannot render different
+  copy per variant and cannot echo the variant back on the feedback ping (which is the other end of
+  FOLLOW-041). Combined with the FOLLOW-007 producer gap, the bandit pipeline is half-wired in both
+  directions: **server picks a variant but tells no one; SDK has no slot to receive it**. Priority
+  **P0** → FOLLOW-042.
+- **HALF_WIRE_P** — `table:archetype_embeddings.embedding` — producer migration at
+  `packages/db/migrations/0005_seed_archetype_embeddings.sql:5` seeds 18 rows with
+  `embedding = NULL` — **no producer** populates the actual 1024-dim vectors. PR #123 adds
+  `fetchArchetypeEmbedding()` as a consumer (`apps/control-plane/src/lib/embedding-lookup.ts:42`)
+  and the function correctly returns `null` for any archetype with a null embedding, falling back to
+  djb2 in `affinityScore()`. So FOLLOW-019's headline claim ("real archetype-listing affinity —
+  cosine similarity replaces djb2 hash") is **functionally a no-op in production today**: every
+  adapt request degrades to djb2 because the archetype side of the cosine math has no data. The seed
+  comment at line 3 of the migration explicitly says "embedding is NULL — the 1024-dim vector is
+  filled in by the Modal daily job" — but **no such Modal job exists**
+  (`grep -rn "archetype_embedding" apps/*-pipeline/` returns 0 results outside placeholder files).
+  Priority **P0** for the FOLLOW-019 demo narrative → FOLLOW-043.
+- **HALF_WIRE_C** — `schema:DetectResponseSchema` (Zod) — consumer was advertised in PR #121's
+  description ("added to `packages/shared/src/schemas/detect.ts` ... for consumption by TICKET-030")
+  — **PR #124 declares its own duplicate `DetectApiResponse` interface** at
+  `apps/control-plane/src/components/onboarding/DetectWizard.tsx:39-49` instead of importing
+  `DetectResponse` from `@estalara/shared`. The shared Zod schema has 0 non-test importers and is
+  dead. This isn't a runtime break — both shapes coincide today — but the next field added to either
+  side will silently drift. Priority **P2** (contract-drift latent) → FOLLOW-044.
+- **DEAD_CODE candidate** — `apps/decision-api/src/lib/bandit.ts` — RETRO-002 §3a noted this had
+  zero non-test importers in the Worker route. PR #122 wired the canonical copy in
+  `packages/shared/src/bandit.ts` into the **control-plane** adapt route per ADR-0004. The
+  decision-api `apps/decision-api/src/lib/bandit.ts` is now KEPT as a "byte-identical copy" per PR
+  #122 description, but it remains imported by **only** its own test file
+  (`apps/decision-api/src/lib/__tests__/bandit.test.ts`). The decision-api adapt route
+  (`apps/decision-api/src/app/api/adapt/route.ts`) was not updated to call `thompsonSample()`. Since
+  ADR-0004 explicitly names the control-plane route as canonical, this is **DEAD_CODE by design** —
+  but the rationale for keeping it is "future Worker rollback" with no documented rollback plan.
+  Priority **P2** (documentation + decision needed) → FOLLOW-045.
+- **HALF_WIRE_P** — `route:POST /api/listings/embed` — producer for `listing_embeddings.embedding`
+  vectors at `apps/control-plane/src/app/api/listings/embed/route.ts:1-207` (PR #123). The consumer
+  side (`fetchListingEmbeddings()`) exists and is called from the adapt POST route. But no
+  automation invokes `POST /api/listings/embed` on tenant onboarding or listing creation. The PR
+  description says "operator calls `POST /api/listings/embed` per listing (with
+  `INTERNAL_API_SECRET` for headless scripts)" — i.e., manual ops only. For the demo this is
+  acceptable; for any real tenant rollout the gap will materialize as "FOLLOW-019 looks live in unit
+  tests but degrades to djb2 in prod because nobody runs the seed script." Priority **P1**
+  (demo-safe via manual ops; pilot-unsafe) → FOLLOW-046.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **`'estalara_staff'` sentinel writes into a `uuid` column.** Both
+  `apps/control-plane/src/app/api/detect/route.ts:214` and
+  `apps/control-plane/src/app/api/schema/activate/route.ts:97` fall back to the literal string
+  `'estalara_staff'` as `tenantId` when `claims.tenant_id` is null. `tenant_site_schemas.tenant_id`
+  is typed `uuid` with an FK to `tenants.id` (`packages/db/src/schema/tenant_site_schemas.ts:25`).
+  An Estalara staff caller hitting either endpoint will not get a clean 4xx; the route will throw a
+  Postgres `invalid input syntax for type uuid` error → the catch block returns 500 `INTERNAL_ERROR`
+  from activate or "DB failure must not block the response" silent-swallow from detect, leaving the
+  operator with no UX signal that staff-mode is unsupported. Severity **P1**: not blocking the demo
+  (staff doesn't use Magic Link) but the silent-swallow path on detect means the cache write fails
+  for staff and the next call re-runs detection, burning AI Vision quota — and any error in
+  `console.error` is invisible in the wizard. → FOLLOW-047.
+- **`POST /api/schema/activate` trusts body `schema.domain` without cross-validation.** The route
+  reads `schemaValue.domain` at `apps/control-plane/src/app/api/schema/activate/route.ts:132` and
+  upserts directly on `(tenantId, domain)`. An authenticated admin could supply an `ActivateRequest`
+  whose `schema.domain` differs from the domain that was just detected (different from the original
+  URL the operator typed in the wizard). The wizard always feeds the activate route with the
+  freshly-detected schema, so the bug is latent today — but the contract has no integrity guarantee
+  linking activation to a specific detect call. Severity **P2**: any attacker who has a JWT cannot
+  escalate, but a confused operator workflow could activate a schema for `unrelated.com` against
+  tenant X if they paste-edit the schema JSON. → FOLLOW-048.
+- **No idempotency / replay guard on `POST /api/schema/activate`.** Activating twice for the same
+  `(tenant, domain)` is a no-op on the upsert (good) but a NEW api_keys row may be generated if the
+  previous one was revoked between activations. The route does not check for in-flight duplicates or
+  use a request_id; a double-click on "Save & Activate" while the network is slow could create two
+  public API keys (both valid, both displayed `prefix...last4` after the first one becomes
+  `existingKeys[0]`). Severity **P2** → FOLLOW-049.
+- **Cache invalidation race window.** PR #126 (FOLLOW-018) invalidates the Redis cache **after** the
+  DB write but **before** returning 200 to the client. If the SDK fires its first `POST /api/adapt`
+  request the millisecond after the wizard receives the activation 200, and Redis replication /
+  read-replica lag is non-zero, the adapt route's `getTenantSchema()` could still hit a populated
+  cache key on a replica that hasn't received the DEL. Upstash is single-region today so the race is
+  sub-millisecond, but **as soon as US/UK regions come online (Master Design A.3 roadmap), this
+  becomes a real bug**. Severity **P3** today, **P1** at multi-region. → FOLLOW-050.
+- **`POST /api/adapt/feedback` accepts presence-only Bearer in dev/test mode.** When `ADAPT_API_KEY`
+  is unset (which is the case in every Doppler config the auditor checked except prd — and prd
+  hasn't been verified), any non-empty token is accepted. The endpoint mutates `ab_bandit_weights`
+  directly. An attacker hitting `/api/adapt/feedback` from any origin can flood `converted: false`
+  for `(tenant, archetype, control)` to bias the bandit against the control arm — adversarial bandit
+  poisoning. Severity **P1** for any pilot that exposes control-plane to the internet → FOLLOW-051.
+
+#### 4b. Code bugs not caught
+
+- **`tenantSchemaCache` invalidation has a typo-prone REST API surface.**
+  `apps/control-plane/src/lib/tenant-schema.ts:103-107` issues `GET /del/<key>` against Upstash.
+  Upstash REST accepts both `GET /del/<key>` and `POST /del/<key>` for the DEL command (the GET-form
+  is documented for simple commands). This works. However, the `redisSet` helper at line 75 uses
+  `POST /set/<key>` with the value in the body. The mismatch (GET for DEL, POST for SET) is
+  internally consistent but undocumented in the file — a future contributor adding a
+  `redisGetAndDel` helper will need to know the verb convention. Severity **P3** → no FOLLOW-UP;
+  flag for inline doc fix at next touch.
+- **`affinityScore()` and `buildReorderDirective()` duplicate logic across two files.** Per ADR the
+  decision-api Worker cannot import workspace packages at runtime, so PR #123 mirrors the cosine
+  math + per-listing fallback in **both** `apps/decision-api/src/lib/reorder.ts` and
+  `apps/control-plane/src/app/api/adapt/route.ts:280-360`. PR #122 does the same for bandit
+  (`apps/decision-api/src/lib/bandit.ts` byte-identical to `packages/shared/src/bandit.ts`). The PR
+  descriptions acknowledge the duplication and call out "byte-identical" / "sync requirement" but
+  **no test or CI gate enforces the byte-identity**. Severity **P1** the next time someone patches
+  one and forgets the other — RETRO-003 §3a already flagged this in REORDER-001 context and the
+  pattern has now repeated twice in one sprint. → FOLLOW-052.
+- **`POST /api/detect` cache guard uses denormalized `detectionConfidence` from the cached row but
+  the wizard response uses `result.confidence` for fresh runs.** Lines 287-288 vs lines 428-429 of
+  `apps/control-plane/src/app/api/detect/route.ts`: cached responses fill `detection_confidence`
+  from `cachedRow.detectionConfidence` (denormalized stored value), fresh responses use
+  `result.confidence` (returned by the detection engine). If a tenant runs detect, the engine
+  returns `confidence=0.87`, the DB is written with `0.87`, then 30s later the cache hit returns
+  `0.87` — this is fine. But the schema _inside_ the cached row was written with
+  `detection_confidence` denormalized from `schema.detection_confidence`, which is set BEFORE the AI
+  Vision fallback potentially overwrites `result.confidence`. In the AI Vision fallback path (lines
+  335-354), `result` is reassigned but `result.schema.detection_confidence` is the pre-fallback
+  value while `result.confidence` is the post-fallback value. The cache stores the pre-fallback
+  `detection_confidence` AND the post-fallback `detectionConfidence` denorm column. Subsequent cache
+  hits return inconsistent header values. Severity **P3** (only visible to operators reading raw
+  responses; not user-facing) → FOLLOW-053.
+- **`activateError` state in DetectionPreview never clears on retry.** `DetectionPreview.tsx` shows
+  the error in a `role="alert"` block when `activateError !== null` (lines 244-251), but the only
+  way to clear it is to land in the activated state. If the operator clicks "Save & Activate" → 500
+  → "Save & Activate" again → 200, the prior error message hangs around in the DOM between the
+  second click and the response. Severity **P3** UX nit → fold into FOLLOW-054.
+- **`buildSnippet()` hardcodes `https://cdn.estalara.com/sdk.js`** at
+  `apps/control-plane/src/components/onboarding/DetectionPreview.tsx:97` — but
+  `packages/shared/src/domains.ts:16` exports `SDK_CDN_DOMAIN` and `SDK_CDN_URL` constants
+  specifically to avoid hardcoding. Per CLAUDE.md "Quality bars" + the shared package's purpose,
+  this should use the constant. Master Design §V.5.2 also references a versioned path
+  (`/sdk/v1.2.3/estalara.min.js`) while the snippet ships `/sdk.js` (unversioned). Severity **P2** —
+  if the CDN structure changes, every tenant snippet generated by Sprint 9.5's activation flow will
+  silently 404. → FOLLOW-054.
+
+#### 4c. Test coverage gaps
+
+- **Zero integration test covers the demo flow end-to-end** (detect → activate → snippet → SDK loads
+  → `POST /api/adapt` returns `variant` → SDK applies). Each of the six PRs unit-tests its slice in
+  isolation with heavy mocking. The sprint's whole-product promise is "investor demo works
+  end-to-end" but no test verifies the assembly. Severity **P0** for the actual investor demo
+  confidence → FOLLOW-055.
+- **No corpus regression test exercises the AI Vision fallback path with the new SSRF guard.** PR
+  #121's SSRF guard runs BEFORE the cache guard and BEFORE the detection pipeline. The Sprint 7.5
+  100/100 corpus runs against `packages/sdk/src/auto-detect/__fixtures__/*.html` files locally — not
+  against URLs. So the corpus CI gate doesn't exercise SSRF blocking and doesn't exercise the
+  route-level cache guard. Any regression in either is invisible to the green corpus signal.
+  Severity **P2** → FOLLOW-056.
+- **No test asserts `tenant.status` transitions only `pending → active`, never
+  `suspended → active`.** The activate route at
+  `apps/control-plane/src/app/api/schema/activate/route.ts:170-173` uses
+  `.where(and(eq(tenants.id, tenantId), eq(tenants.status, 'pending')))` — correct guard — but the
+  test at `route.test.ts:296` only asserts `set` was called with `status: 'active'`, not the WHERE
+  clause. If a future refactor drops the `pending` filter, a suspended tenant could be silently
+  re-activated. Severity **P2** → FOLLOW-057.
+- **No load test for `POST /api/detect` 60-second cache.** The cache guard is intended to prevent
+  burst-clicking the wizard's "Detect" button from blowing AI Vision daily quota. There is no test
+  that the cache actually prevents N concurrent identical requests from issuing N AI Vision calls.
+  The Drizzle select returns a single row when one exists, but the race window between request N and
+  request N+1 (both miss the cache, both run detection, both write, second overwrites first) is real
+  and unmeasured. Severity **P2** → FOLLOW-058.
+- **PR #126 (FOLLOW-018) cache invalidation test mocks both fetch and DB at the unit level**, so the
+  test does not exercise actual Upstash semantics. Specifically, the assertion at
+  `tenant-schema.test.ts:267` checks that the URL contains `/del/<encoded-key>` — but Upstash's DEL
+  command can return `{result: 1}` for "key existed" or `{result: 0}` for "key did not exist". The
+  route doesn't read the result. So a wrong key (e.g. `schemas:` instead of `schema:`, plural typo)
+  would silently no-op DEL on every activation and the unit test would still pass. Severity **P3** →
+  FOLLOW-059.
+
+#### 4d. Documentation gaps
+
+- **Master Design §Snapshot.1 row B.4 still says "⛔ Blocked — 4 of 6 Sprint-2.5 UI tickets
+  BLOCKED."** This is stale as of 2026-05-22: TICKET-030, TICKET-033, and TICKET-AUTO-006-POLISH are
+  all DONE per QUEUE.md Sprint 9.5 section. The Snapshot's update note at lines 54-66 was written
+  before Sprint 9.5 merged. Required edit specified in §7 below.
+- **Master Design §Snapshot.1 row J still says "✅ Shipped — tenants schema with TenantConfig fields
+  including `auto_detected_schema`."** This is **incorrect**: `tenants` table never had an
+  `auto_detected_schema` column (verified via
+  `grep -n auto_detected_schema packages/db/src/schema/tenants.ts` → 0 matches). The canonical store
+  is `tenant_site_schemas` (a separate table). The QUEUE preamble for Sprint 9.5 explicitly flagged
+  this: "_`tenants.auto_detected_schema` field referenced in Master_Design §J.3 does NOT exist in
+  current schema — that section is stale (cleanup follow-up)._" Sprint 9.5 hardened the contract
+  around `tenant_site_schemas` (PR #121 caches there, PR #125 activates there, PR #126 invalidates
+  there) but the documentation was not updated. Required edits specified in §7.
+- **Master Design §Snapshot.4 priority #5** says "Unblock Sprint 2.5 (TICKET-030/032/033/034) —
+  without it, no zero-config onboarding demo possible." TICKET-030 + TICKET-033 are now DONE;
+  TICKET-032 + TICKET-034 are deferred per Q5 decision 2026-05-21. The priority list is stale.
+- **`POST /api/adapt/feedback` is undocumented in MASTER_DESIGN.md.** No mention in §E.3.0 or §E.3.1
+  of the SDK-side feedback contract. The endpoint exists but the doc is silent on its shape, auth,
+  or expected SDK trigger. → FOLLOW-060.
+- **No ADR for `'estalara_staff'` sentinel or the activate-route trust model.** Decisions like "we
+  accept any non-empty Bearer when `ADAPT_API_KEY` is unset" need an ADR or at minimum a Master
+  Design §V security note. Currently the only reference is a code comment.
+- **`packages/shared/src/domains.ts:SDK_CDN_URL` exists but is not referenced from the
+  buildSnippet() function in DetectionPreview.tsx.** Documentation gap → code gap, covered in
+  FOLLOW-054.
+
+### 5. Cross-PR consistency checks
+
+- **PR #121 and PR #124 ship a contract — `DetectResponseSchema` vs `DetectApiResponse` — twice.**
+  PR #121's commit message says "for consumption by TICKET-030." PR #124 then declares its own
+  duplicate interface instead of importing the Zod-derived type. Both PRs passed CI in isolation. A
+  reviewer reading both diffs in sequence would have caught it; the PM/reviewer didn't because they
+  reviewed PRs separately. → FOLLOW-044.
+- **PR #122 and PR #123 both ship duplicate code in `apps/decision-api/src/lib/` (bandit + reorder)
+  alongside their canonical `packages/shared/` or `apps/control-plane/` location**, with no CI
+  enforcement of byte-identity. Pattern repeated. → FOLLOW-052.
+- **PR #122 introduces `AdaptationDirectives.variant?: string` (server side) and PR #124 + PR #125
+  don't reference it on the client side.** The SDK is the consumer of `AdaptationDirectives` but
+  Sprint 9.5 didn't touch the SDK at all. The SDK was last updated in Sprint 9 (TICKET-041 consent
+  banner, PR #113). Result: server now generates per-variant signals that no client receives. The
+  "variant" string is a free-form `'control'|'v1'|'v2'` contract with no shared enum, no exhaustive
+  switch, no SDK consumer. → FOLLOW-042 also covers this; cross-flagging here for visibility.
+- **PR #123 ships `listing_embeddings` with the assumption that someone will seed the data, and PR
+  #125 ships activation with no automation to call `POST /api/listings/embed` post-activate.** The
+  natural workflow ("operator pastes URL → detects → activates → embeddings auto-seed for every
+  detected listing") is broken by design — there's no listing enumeration in the wizard, no event
+  that fires "tenant now has listings X, Y, Z; embed them." A different ticket would need to bridge
+  `tenant_site_schemas` (which knows the listing-card selector) → some listing ingest pipeline →
+  `POST /api/listings/embed`. Sprint 9.5 silently assumes this exists. → FOLLOW-046.
+- **PR #121 (`DetectRequestSchema`) only accepts `{ url }`; PR #125 (`ActivateRequestSchema`)
+  accepts `{ schema }`.** The two routes are designed to be called sequentially from the same
+  wizard, but no `detect_request_id` or `schema_id` ties them together. The activate route trusts
+  that the body `schema` came from a recent detect call, but nothing prevents an attacker with a JWT
+  from POSTing an arbitrary `TenantSiteSchema` to activate. Severity overlaps with 4a — FOLLOW-048.
+
+### 6. Patterns vs prior retros
+
+- **Rule H ("schema/scaffold complete, runtime wiring deferred")** — **5 retros in a row**
+  (RETRO-001, RETRO-002, RETRO-003, RETRO-004, RETRO-005). RETRO-005 adds at least 4 new HALF_WIRE
+  instances (`/api/adapt/feedback` producer with no SDK consumer; `AdaptationDirectives.variant`
+  field with no SDK consumer; `archetype_embeddings.embedding` NULLs with no populator;
+  `listing_embeddings` consumer wired but no automated producer for tenant data). Rule H is already
+  canonical; this retro REINFORCES that **FOLLOW-024 (Rule H hard pre-merge gate enhancement)** must
+  land before the next sprint, or this pattern will continue to dominate retros. The
+  `scripts/check-rule-i.sh` script (already a CI gate) caught zero of the Sprint 9.5 half-wires
+  because **all 4 new half-wires are at the cross-route / cross-service contract layer**, not the
+  within-module exported-symbol layer that Rule I checks.
+- **Pattern: "Duplicate logic across decision-api Worker and control-plane Next.js with no CI
+  byte-identity enforcement"** — appeared in RETRO-003 §3a (REORDER-001 mirror code), now repeats
+  twice in RETRO-005 (PR #122 bandit, PR #123 reorder). Count: **2 retros, 3 instances**.
+  **Threshold MET.** Candidate for Rule promotion. Proposed as **Rule J — Mirror-Code Sync Gate** in
+  CONVENTIONS_PATCH.md (see end of this retro).
+- **Pattern: "PR ships a producer-only HTTP endpoint without an SDK or scheduled-job consumer in the
+  same sprint"** — appeared in RETRO-002 (FOLLOW-006 ab.assignment never emitted from SDK,
+  FOLLOW-007 thompsonSample never called), now repeats in RETRO-005 (`/api/adapt/feedback`). This is
+  a SUB-CASE of Rule H specifically for HTTP endpoints. Count: **2 retros, 3 instances.**
+  **Threshold MET** but already covered by Rule H — recommend **AMENDING** Rule H to add the
+  explicit HTTP endpoint sub-case rather than spawning Rule K. See section "Rule promotion."
+- **Pattern: "Sprint Snapshot row in MASTER_DESIGN.md goes stale immediately after sprint closes"**
+  — RETRO-004 §3d flagged Master Design §E.6 / §E.7 as doc-only; now §Snapshot.1 row B.4 + row J are
+  stale after Sprint 9.5. Count: **2 retros, 2-3 instances.** **Threshold MET** if we count
+  §Snapshot rows as the same class as §E.6/§E.7. However: Snapshot.1 has an explicit "re-verified at
+  Sprint completion" rule per OP §Y.3 — so the failure mode here is _the rule wasn't followed for
+  Sprint 9.5_. Add this as a process check, not a new rule. → FOLLOW-061.
+- **Pattern: "CI billing / infra issue lets a PR merge with no green CI signal"** — PR #125 merged
+  with all GitHub Actions billing-blocked. This is a NEW pattern not seen in prior retros. Count:
+  **1 retro, 1 instance.** **Threshold NOT YET met.** Track. Rule A explicitly says "verify CI green
+  before READY_FOR_REVIEW" — Sprint 9.5 violated this for one PR on the strength of local tests. If
+  it recurs, promote to a Rule A amendment.
+
+### 7. Master_Design updates
+
+The following edits are proposed for `docs/MASTER_DESIGN.md`. They are written as exact old → new
+replacements and are applied at the end of this retro (Section A — Edits applied).
+
+**Edit M-1 — §Snapshot.1 row B.4 (line 89):**
+
+- **Old:**
+  `| B.4 | Auto-Onboarding UI (Magic Link wizard / Auto-Detect Modal / API Connect) | ⛔ **Blocked** | 4 of 6 Sprint-2.5 UI tickets BLOCKED (TICKET-030 READY, TICKET-033/034 not started). No tenant can self-serve onboard today. **Note:** Auto-Detection Engine itself = §B.5 = Mostly Shipped per Sprint 7.5; this row is about onboarding UI specifically. Multiple prior sessions conflated the two. |`
+- **New:**
+  `| B.4 | Auto-Onboarding UI (Magic Link wizard / Auto-Detect Modal / API Connect) | 🟢 **Mostly Shipped** | Sprint 9.5 merged 2026-05-22: TICKET-033 (PR #121, `POST
+  /api/detect`JWT+SSRF+wizard response), TICKET-030 (PR #124,`/dashboard/onboarding/detect`wizard UI), TICKET-AUTO-006-POLISH (PR #125, Detection Preview +`POST
+  /api/schema/activate`+ SDK snippet), FOLLOW-018 (PR #126, real tenant schema lookup + cache invalidation). Operator can paste URL → detect → preview → activate → receive snippet end-to-end. **Open gaps:** (a) Magic-Link email flow not yet shipped (TICKET-040 BLOCKED in Sprint 3 — current path requires existing dashboard auth, not a one-click email link); (b) listing-side embedding seeding has no automation (FOLLOW-046 — adapt path degrades to djb2 affinity until operators manually call`POST
+  /api/listings/embed`); (c) no end-to-end integration test of detect → activate → adapt (FOLLOW-055). **Note:** Auto-Detection Engine itself = §B.5 = Mostly Shipped per Sprint 7.5. |`
+
+**Edit M-2 — §Snapshot.1 row J (line 106):**
+
+- **Old:**
+  `| J | Multi-Tenancy Model | ✅ **Shipped** | tenants schema with TenantConfig fields including `auto_detected_schema`. |`
+- **New:**
+  `| J | Multi-Tenancy Model | ✅ **Shipped** | `tenants`Postgres table with RLS + JWT-scoped tenant_id. Detected site schemas are persisted in the dedicated`tenant_site_schemas`table (one row per`(tenant_id,
+  domain)`), not on `tenants`itself. Master Design §J.3 still describes a`data_schema:
+  TenantSchemaMapping`field inline on TenantConfig — that section is documentation-level only; the actual store is the standalone table. (Sprint 9.5 PR #121 / #125 / #126 hardened the contract around`tenant_site_schemas`.) |`
+
+**Edit M-3 — §Snapshot.1 row E.1–E.3 (line 98):**
+
+- **Old:**
+  `| E.1–E.3 | Adaptation decision tree + A/B + bandit | 🟡 **Partial** | A/B holdout + Thompson math shipped + tested; variant *selection per request* not wired (always picks index 0). |`
+- **New:**
+  `| E.1–E.3 | Adaptation decision tree + A/B + bandit | 🟡 **Partial** | A/B holdout + Thompson sampling math shipped + tested + **wired into canonical `POST
+  /api/adapt`** (Sprint 9.5 PR #122, FOLLOW-007). Server now selects a `variant` per (tenant, archetype) request and includes it in the response body. **Two half-wires remain:** (1) The SDK (`AdaptResponse`in`packages/sdk/src/core/adapt.ts`) does not have a `variant`field on its consumer interface → can't render different copy per variant (FOLLOW-042). (2)`POST
+  /api/adapt/feedback`exists server-side but no SDK code path POSTs to it on conversion →`ab_bandit_weights` will never update from real traffic; Thompson sampling stays at the uniform Beta(1,1) prior (FOLLOW-041). Decision-api Worker (`apps/decision-api/src/app/api/adapt/route.ts`) still on keyword path — by design per ADR-0004 (canonical = control-plane). |`
+
+**Edit M-4 — §Snapshot.1 row F (line 102):**
+
+- **Old:**
+  `| F | Data Network Effect (archetype embedding space) | 🟡 **Partial** | `archetype_embeddings` table exists but seeded with **3** archetypes (investor/family/neutral), not 18. |`
+- **New:**
+  `| F | Data Network Effect (archetype embedding space) | 🟡 **Partial** | `archetype_embeddings`table seeded with all **18** archetypes (migration`0005_seed_archetype_embeddings.sql`, post-Sprint 8). However, every row's `embedding`column is **NULL** — the migration comment says "filled in by the Modal daily job" but no such job exists. Sprint 9.5 FOLLOW-019 (PR #123) added cosine-similarity affinity scoring that reads`archetype_embeddings.embedding`via`fetchArchetypeEmbedding()`; when the column is NULL the code correctly falls back to djb2. Net effect: **cosine path is unreachable in production today; FOLLOW-019's headline claim "real archetype-listing affinity replaces djb2" is functionally a no-op until the archetype embedding vectors are computed.** Wiring task tracked in FOLLOW-043. The new `listing_embeddings` table (migration 0013) is wired but seeding is manual — FOLLOW-046. |`
+
+**Edit M-5 — §Snapshot.1 update note (line 54-66, the "Updates 2026-05-21" prose):**
+
+Insert a new sentence at the end of the existing block:
+
+- **Add after the existing sentence ending "...per Operating Principles Rule 1, this snapshot is the
+  SoT for "what is built today" — sections A–W remain target architecture.":**
+  `**Update 2026-05-22 (Sprint 9.5 close):** Sprint 9.5 COMPLETE — 6 PRs merged (#121, #122, #123, #124, #125, #126). Auto-Onboarding UI end-to-end demoable on `app.estalara.com` and any new tenant (paste URL → detect → preview → activate → snippet). Bandit variant selection wired in canonical adapt route. Cosine archetype-listing affinity wired with djb2 fallback. **Open gaps surfaced by RETRO-005 that affect demo narrative honesty:** FOLLOW-041 (SDK feedback ping), FOLLOW-042 (SDK variant consumer), FOLLOW-043 (archetype embedding vectors NULL → cosine unreachable), FOLLOW-046 (listing embedding auto-seed), FOLLOW-055 (end-to-end integration test). Per OP §Y.3 the next Snapshot.1 re-verification is at Sprint 10 completion.`
+
+**Edit M-6 — §Snapshot.4 priority #5 (line 172):**
+
+- **Old:**
+  `5. Unblock Sprint 2.5 (TICKET-030/032/033/034) — without it, no zero-config onboarding demo possible.`
+- **New:**
+  `5. ~~Unblock Sprint 2.5 (TICKET-030/032/033/034)~~ **Sprint 9.5 closed 2026-05-22.** TICKET-030 + TICKET-033 + TICKET-AUTO-006-POLISH merged. TICKET-032 + TICKET-034 deferred per Q5 2026-05-21 (auto-detect already covers L1/L2/L4; L3 templates non-blocking). Next priority for end-to-end demo: FOLLOW-041 + FOLLOW-042 (close the bandit loop) and FOLLOW-043 (seed real archetype embeddings so cosine affinity is more than placeholder).`
+
+These edits are applied in Section "Edits applied" at the end of RETRO-005.
+
+### 8. Follow-ups
+
+(Each appended as a stub to `backlog/FOLLOW_UPS.md` in this commit. Numbering continues from
+FOLLOW-040.)
+
+- **FOLLOW-041** — SDK feedback ping on outcome events — `POST /api/adapt/feedback` is wired
+  server-side but no SDK consumer fires the ping (sdk-engineer + backend-engineer, 4h, **P0**,
+  Sprint 10)
+- **FOLLOW-042** — Add `variant?: string` to SDK `AdaptResponse` + thread through
+  `applyDirectives()` so SDK can echo variant on feedback and (future) render per-variant copy
+  (sdk-engineer, 2h, **P0**, Sprint 10 — must land with FOLLOW-041 in the same PR)
+- **FOLLOW-043** — Compute archetype embedding vectors — extend `0005_seed_archetype_embeddings`
+  data path with a runnable script (Modal job or one-shot Node script) that reads each archetype's
+  description and calls OpenAI `text-embedding-3-small` at 1024 dims, then UPDATEs the row
+  (ml-engineer, 3h, **P0**, Sprint 10 — unblocks FOLLOW-019's cosine path)
+- **FOLLOW-044** — Replace `DetectApiResponse` inline interface in `DetectWizard.tsx` with imported
+  `DetectResponse` from `@estalara/shared`; add a Zod runtime guard at fetch-response boundary
+  (sdk-engineer, 0.5h, **P2**, Sprint 10)
+- **FOLLOW-045** — Decide fate of `apps/decision-api/src/lib/bandit.ts` — keep as Worker rollback
+  insurance with documented sync test, OR delete and add ADR-0006 stating control-plane is sole
+  canonical path (architect, 1h, **P2**, Sprint 10)
+- **FOLLOW-046** — Automate listing embedding seeding — emit a `listing.created` / `listing.updated`
+  event from the tenant's listing ingest path (or a backfill cron) that calls
+  `POST /api/listings/embed` per listing (data-engineer + backend-engineer, 4h, **P1**, Sprint 11 —
+  only pilot-blocking, not demo-blocking)
+- **FOLLOW-047** — Reject `claims.tenant_id === null` (staff caller) with a clean 403 from
+  `/api/detect` and `/api/schema/activate` instead of falling back to `'estalara_staff'` sentinel →
+  uuid parse error → 500 (backend-engineer, 1h, **P1**, Sprint 10)
+- **FOLLOW-048** — Tie `POST /api/schema/activate` to the prior detect call: have detect return a
+  `detect_request_id`, store it as a column on `tenant_site_schemas`, require it in the activate
+  request body, validate the (tenant_id, detect_request_id, domain) tuple (backend-engineer, 2h,
+  **P2**, Sprint 10)
+- **FOLLOW-049** — Idempotency on `POST /api/schema/activate` — accept an `Idempotency-Key` header,
+  dedup within 60s, return the same response for repeat calls (backend-engineer, 1.5h, **P2**,
+  Sprint 10)
+- **FOLLOW-050** — Document and address Redis read-replica staleness vs cache invalidation ordering
+  — proposed ADR + an integration test that simulates DEL → adapt path with a configurable replica
+  lag (architect + backend-engineer, 2h, **P1** at multi-region rollout, **P3** today; Sprint 10 —
+  block US/UK region deploy until resolved)
+- **FOLLOW-051** — Replace presence-only Bearer with a tenant-scoped HMAC or signed SDK ping on
+  `POST /api/adapt/feedback`; document threat model in V (compliance-engineer + backend-engineer,
+  3h, **P1**, Sprint 10 — blocks any external pilot exposing the feedback endpoint)
+- **FOLLOW-052** — Mirror-code byte-identity CI check — `scripts/check-mirror-files.sh` that
+  compares `apps/decision-api/src/lib/{bandit,reorder}.ts` against their canonical sources and fails
+  CI on drift (qa-engineer + devops-engineer, 1.5h, **P1**, Sprint 10) — promotes the candidate Rule
+  J pattern enforcement
+- **FOLLOW-053** — Make `detect_confidence` consistent across AI-Vision-fallback path — ensure
+  `detectionConfidence` denormalised column and `schema.detection_confidence` JSON value never
+  disagree post-fallback (backend-engineer, 1h, **P3**, Sprint 11)
+- **FOLLOW-054** — Use `SDK_CDN_URL` constant in `buildSnippet()`; decide on versioned vs
+  unversioned snippet URL; align with Master Design §V.5.2 (frontend + architect, 0.5h, **P2**,
+  Sprint 10 — block any tenant onboarding before CDN URL is correct)
+- **FOLLOW-055** — End-to-end integration test for the demo flow — detect → activate → adapt →
+  assert `variant` field present → assert ReorderDirective uses cosine (mock embeddings) → assert
+  SDK applyDirectives mutates DOM (qa-engineer, 5h, **P0**, Sprint 10 — gates investor demo
+  confidence)
+- **FOLLOW-056** — Extend auto-detect corpus to include a URL-based fixture path that exercises SSRF
+  guard + cache guard at the route layer (qa-engineer, 2h, **P2**, Sprint 11)
+- **FOLLOW-057** — Test asserts activate route WHERE clause includes `status: 'pending'` filter;
+  prevent silent revival of `suspended` tenants (qa-engineer, 0.5h, **P2**, Sprint 10 — fold into
+  FOLLOW-055 PR if convenient)
+- **FOLLOW-058** — Concurrency / race test for the 60-second cache guard — fire N parallel identical
+  requests, assert only one runs detection (qa-engineer, 1.5h, **P2**, Sprint 11)
+- **FOLLOW-059** — Read DEL response from Upstash and log/alert on result=0 (key didn't exist) to
+  catch typos in cache key naming (backend-engineer, 0.5h, **P3**, Sprint 11)
+- **FOLLOW-060** — Document `POST /api/adapt/feedback` contract in Master Design §E.3 (shape, auth,
+  expected SDK trigger, latency budget) — also document `POST /api/listings/embed` (architect, 1h,
+  **P2**, Sprint 10)
+- **FOLLOW-061** — Enforce OP §Y.3 Snapshot.1 re-verification at every sprint close — add as the
+  last step of the PM-orchestrator sprint-close checklist; this retro's Edits M-1..M-6 satisfy the
+  obligation for Sprint 9.5 retroactively (architect + pm-orchestrator, 0.5h, **P1**, Sprint 10
+  process change)
+
+### 9. Cross-references
+
+- **RETRO-001 (TICKET-046):** Originated FOLLOW-001 (variant_index wiring) and FOLLOW-002
+  (copy_template pipeline). FOLLOW-007 (Sprint 9.5 PR #122) closes part of FOLLOW-001 but the SDK
+  side (now FOLLOW-042) remains. RETRO-001's "variant_index" hypothesis morphed into "variant" (free
+  string) at implementation — RETRO-004 §3a proposed `variant_index?: 0|1|2` as FOLLOW-025; PR #122
+  chose a different contract (`variant: string`). This is a tactical divergence but FOLLOW-025
+  should be either retired or its spec updated to match what shipped.
+- **RETRO-002 (TICKET-AB-001):** Rule H was promoted here. Every Sprint 9.5 PR is graded against it.
+  RETRO-005 confirms Rule H is the dominant pattern still. FOLLOW-006 (ab.assignment event emission)
+  was closed by Sprint 8.5 PR #106; FOLLOW-007 closed (with caveats) by Sprint 9.5 PR #122;
+  FOLLOW-008 closed by Sprint 8.5 PR #107; FOLLOW-010 closed by Sprint 8.5 PR #107; FOLLOW-014
+  closed by Sprint 8.5 PR #108. The Sprint 8 → Sprint 9.5 chain has steadily closed RETRO-002's gaps
+  — good. The new gaps in RETRO-005 are structurally similar (the producer ships before the
+  consumer).
+- **RETRO-003 (TICKET-REORDER-001):** FOLLOW-015 (decision-api ReorderDirective) and FOLLOW-019
+  (real archetype affinity) both shipped this sprint — FOLLOW-015 in Sprint 8.5 PR #108, FOLLOW-019
+  in Sprint 9.5 PR #123. The duplication concern RETRO-003 raised is now amplified (bandit + reorder
+  both mirrored) — promoted to Rule J candidate.
+- **RETRO-004 (TICKET-046 deep re-analysis):** FOLLOW-025 (variant_index on TextDirective) was
+  superseded by PR #122's choice of `variant: string` on AdaptationDirectives. FOLLOW-028 (SDK
+  fingerprint widening) is contingent on FOLLOW-042 landing. FOLLOW-031 (locale fallback) and
+  FOLLOW-034 (fair-housing audit) are unaffected by Sprint 9.5. The "Master Design section describes
+  runtime behavior with NO code implementing it" pattern from RETRO-004 §5 — now reinforced by
+  §Snapshot.1 row J / B.4 staleness in RETRO-005 §4d. FOLLOW-061 addresses the process gap.
+- **CONVENTIONS_PATCH.md Rule H:** Re-confirmed by 4 new instances this sprint. Pattern is endemic;
+  CI Rule I gate insufficient at the cross-service contract layer (it checks within- module exports,
+  not cross-route HTTP contracts).
+- **CONVENTIONS_PATCH.md Rule A:** Violated once this sprint (PR #125 merged with CI
+  billing-blocked). Single instance; tracked but not promoted to amendment yet.
+- **CONVENTIONS_PATCH.md proposed Rule J — Mirror-Code Sync Gate:** Promoted in this retro (see next
+  section).
+
+### 10. Rule promotion
+
+**New Rule J — Mirror-Code Sync Gate** is appended to `CONVENTIONS_PATCH.md` in this commit.
+Threshold met: pattern appeared in **RETRO-003** (FOLLOW-015 reorder logic mirror) and **RETRO-005**
+(PR #122 bandit mirror, PR #123 reorder mirror). Both retros explicitly flag the duplication as
+"byte-identical" or "kept in sync" with no CI enforcement.
+
+### Edits applied (Section A)
+
+This retrospective directly modifies `docs/MASTER_DESIGN.md` per Edits M-1 through M-6 specified in
+§7. Hashes of original sections preserved in this entry. Applied 2026-05-22 by
+retrospective-analyst.
+
+---
+
+<!-- RETRO-006 and beyond will be appended here by the retrospective-analyst agent -->

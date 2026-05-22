@@ -1568,7 +1568,7 @@ same agent handles both.
   depends_on: []
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-052.md
-  pr: '#TBD'
+  pr: '#128'
   notes: |
     Two mirrored file pairs: apps/decision-api/src/lib/bandit.ts (mirror of packages/shared/src/bandit.ts)
     and apps/decision-api/src/lib/reorder.ts. PR descriptions say byte-identical but no CI enforces

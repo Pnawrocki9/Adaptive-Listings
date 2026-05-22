@@ -49,7 +49,7 @@ updates.
 | 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 16      | 13   | 0       | 0     | 0       |
 | 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 6    | 0       | 0     | 0       |
 | 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)        | 6       | 6    | 0       | 0     | 0       |
-| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 0    | 0       | 3     | 0       |
+| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 1    | 1       | 2     | 0       |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
@@ -1493,13 +1493,14 @@ same agent handles both.
 - id: FOLLOW-043
   title: Compute archetype embedding vectors (Modal job or one-shot Node script)
   agent: ml-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 3
   depends_on: []
   model: opus-4.7-xhigh
   spec: backlog/sprint-10/FOLLOW-043.md
   pr: '#131'
+  completed_at: '2026-05-22'
   notes: |
     0005_seed_archetype_embeddings.sql inserts 18 rows with embedding=NULL. No Modal job exists.
     fetchArchetypeEmbedding() returns null for all archetypes → cosine path unreachable → djb2
@@ -1532,8 +1533,8 @@ same agent handles both.
 
 - id: FOLLOW-046
   title: Automate listing embedding seeding (tenant activation trigger + 000-app-estalara backfill)
-  agent: data-engineer + backend-engineer
-  status: READY
+  agent: data-engineer
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-043]

@@ -22,7 +22,7 @@
     "db:migrate": "pnpm --filter @estalara/db exec tsx scripts/migrate.ts",
     "db:studio": "pnpm --filter @estalara/db exec drizzle-kit studio",
     "db:push:dev": "pnpm --filter @estalara/db exec drizzle-kit push",
-    "seed:archetypes": "pnpm --filter @estalara/control-plane exec tsx ../../scripts/seed-archetype-embeddings.ts",
+    "seed:archetypes": "pnpm exec tsx apps/control-plane/scripts/seed-archetypes.mts",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm build && changeset publish"
@@ -39,6 +39,7 @@
     "eslint-import-resolver-typescript": "^3.6.0",
     "lefthook": "^1.6.0",
     "prettier": "^3.3.0",
+    "tsx": "^4.21.0",
     "turbo": "^2.3.0",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.59.0",

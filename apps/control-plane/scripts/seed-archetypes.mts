@@ -165,7 +165,8 @@ const isMain =
   typeof process !== 'undefined' &&
   Array.isArray(process.argv) &&
   process.argv[1] !== undefined &&
-  process.argv[1].endsWith('seed-archetype-embeddings.ts');
+  (process.argv[1].endsWith('seed-archetypes.mts') ||
+    process.argv[1].endsWith('seed-archetypes.ts'));
 
 if (isMain) {
   seedArchetypeEmbeddings()

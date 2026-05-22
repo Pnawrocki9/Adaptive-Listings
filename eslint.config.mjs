@@ -20,7 +20,7 @@ export default tseslint.config(
       '**/*.config.cjs',
       '**/*.config.mjs',
       'scripts/check-bundle-size.ts',
-      'scripts/seed-archetype-embeddings.ts',
+      'apps/control-plane/scripts/**',
       'packages/sdk/scripts/**',
       'packages/sdk/e2e/*.js',
       'apps/control-plane/next.config.ts',

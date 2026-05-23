@@ -1103,15 +1103,29 @@ describe('fetchDirectives — FOLLOW-041 variant sessionStorage cache', () => {
 });
 
 describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => {
+  // Stub crypto.subtle so HMAC resolves synchronously (as a microtask Promise),
+  // making test timing deterministic. FOLLOW-051: without this stub, the platform's
+  // SubtleCrypto implementation may schedule the result as an I/O macrotask,
+  // causing the fetch() call to land in the NEXT test's execution window.
+
   beforeEach(() => {
     sessionStorage.clear();
+    // Stub importKey and sign to return Promises that resolve within the current
+    // microtask queue. The actual HMAC value is irrelevant for these tests.
+    const fakeKey = {} as CryptoKey;
+    const fakeSigBytes = new Uint8Array(32).fill(0xaa); // 64 hex chars of 'aa'
+
+    vi.spyOn(crypto.subtle, 'importKey').mockResolvedValue(fakeKey);
+
+    vi.spyOn(crypto.subtle, 'sign').mockResolvedValue(fakeSigBytes.buffer);
   });
 
   afterEach(() => {
     sessionStorage.clear();
+    vi.restoreAllMocks();
   });
 
-  it('POSTs feedback ping with correct body when inquiry.completed fires after variant cached', async () => {
+  it('POSTs feedback ping with correct body and HMAC signature when inquiry.completed fires', async () => {
     const sessionId = 'FEEDBACK_SESSION_001';
     const tenantId = '550e8400-e29b-41d4-a716-446655440000';
     const archetype = 'investor';
@@ -1145,7 +1159,12 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
     // Dispatch the outcome event — listener should POST the feedback ping
     document.dispatchEvent(new Event('inquiry.completed'));
 
-    // Wait a tick for the fire-and-forget fetch to be called
+    // FOLLOW-051: postFeedbackPing now awaits HMAC-SHA256 before calling fetch.
+    // A single Promise.resolve() tick is insufficient; flush via setTimeout macrotask.
+    // FOLLOW-051: flush mocked crypto.subtle chain (importKey → sign → .then(fetch)).
+    // Each awaited Promise.resolve() drains one layer of the microtask queue.
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve();
 
     // Verify feedback ping was fired
@@ -1154,6 +1173,11 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
     const [feedbackUrl, feedbackInit] = mockFetch.mock.calls[1] as [string, RequestInit];
     expect(feedbackUrl).toContain('/api/adapt/feedback');
     expect(feedbackInit.method).toBe('POST');
+
+    // FOLLOW-051: verify X-Estalara-Signature header is present (HMAC signed).
+    // Crypto is mocked to return 0xaa*32 → 'aa'.repeat(32) hex string.
+    const headers = feedbackInit.headers as Record<string, string>;
+    expect(headers['X-Estalara-Signature']).toMatch(/^[0-9a-f]{64}$/);
 
     const body = JSON.parse(feedbackInit.body as string) as Record<string, unknown>;
     expect(body.session_id).toBe(sessionId);
@@ -1189,6 +1213,10 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
     await fetchDirectives(config, session, 'listing_list');
     document.dispatchEvent(new Event('inquiry.completed'));
 
+    // FOLLOW-051: flush mocked crypto.subtle chain (importKey → sign → .then(fetch)).
+    // Each awaited Promise.resolve() drains one layer of the microtask queue.
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve();
 
     // Only the fetchDirectives call — no feedback ping
@@ -1225,11 +1253,19 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
 
     // Default event should NOT trigger ping when feedbackEvents overrides it
     document.dispatchEvent(new Event('inquiry.completed'));
+    // FOLLOW-051: flush mocked crypto.subtle chain (importKey → sign → .then(fetch)).
+    // Each awaited Promise.resolve() drains one layer of the microtask queue.
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve();
     expect(mockFetch).toHaveBeenCalledTimes(1); // only fetchDirectives
 
     // Custom event SHOULD trigger ping
     document.dispatchEvent(new Event('tour.requested'));
+    // FOLLOW-051: flush mocked crypto.subtle chain (importKey → sign → .then(fetch)).
+    // Each awaited Promise.resolve() drains one layer of the microtask queue.
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve();
     expect(mockFetch).toHaveBeenCalledTimes(2);
 
@@ -1268,6 +1304,10 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
 
     await fetchDirectives(config, session, 'listing_list');
     document.dispatchEvent(new Event('inquiry.completed'));
+    // FOLLOW-051: flush mocked crypto.subtle chain (importKey → sign → .then(fetch)).
+    // Each awaited Promise.resolve() drains one layer of the microtask queue.
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve();
 
     const [feedbackUrl] = mockFetch.mock.calls[1] as [string, RequestInit];
@@ -1303,9 +1343,12 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
 
     await fetchDirectives(config, session, 'listing_list');
 
-    // Dispatch outcome and wait for microtask resolution
+    // Dispatch outcome and flush all async work (HMAC + fetch rejection + catch).
     document.dispatchEvent(new Event('inquiry.completed'));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // FOLLOW-051: flush mocked crypto.subtle chain: importKey (tick 1) → sign (tick 2)
+    // → .then(fetch) (tick 3) → fetch rejects (tick 4) → .catch(warn) (tick 5).
+    // Six ticks provides buffer for platform microtask scheduling variance.
+    for (let i = 0; i < 6; i++) await Promise.resolve();
 
     // Must not throw; console.warn is called with the error message
     expect(warnSpy).toHaveBeenCalledWith('[estalara] feedback ping failed:', 'network failure');

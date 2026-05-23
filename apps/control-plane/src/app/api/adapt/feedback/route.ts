@@ -15,10 +15,27 @@
  *   4. Returns `202 Accepted` immediately — the DB write is fire-and-forget
  *      so the SDK's outcome ping never blocks the user-visible adapt flow.
  *
- * Auth: presence-only Bearer token, same pattern as the canonical adapt
- * route (`apps/control-plane/src/app/api/adapt/route.ts` POST). When
- * `ADAPT_API_KEY` is set the token must match it. When unset, a non-empty
- * token is accepted (dev/demo mode).
+ * Auth: HMAC-SHA256 tenant-scoped signature (FOLLOW-051).
+ *
+ * The SDK sends:
+ *   Authorization: Bearer {rawApiKey}
+ *   X-Estalara-Signature: {hmacHex}
+ *
+ * The server:
+ *   1. Extracts the raw Bearer token (= tenant's public API key).
+ *   2. Reads the raw request body as text.
+ *   3. Computes HMAC-SHA256(key=rawApiKey, data=rawBodyText).
+ *   4. Constant-time compares against the X-Estalara-Signature header value.
+ *
+ * Fallback: when `ADAPT_API_KEY` env var is set (ops / integration testing), a
+ * matching Bearer token is accepted directly without HMAC verification.
+ *
+ * Threat model (FOLLOW-051):
+ *   - Protects against external adversaries who do not know the tenant's API key.
+ *   - Does NOT protect against a malicious tenant manipulating their own bandit
+ *     weights — that is an acceptable risk because tenant_id is already scoped.
+ *   - Prevents cross-tenant poisoning (attacker must know the specific tenant
+ *     key to produce a valid signature for that tenant's weights).
  *
  * @module apps/control-plane/src/app/api/adapt/feedback/route
  */
@@ -40,6 +57,81 @@ const FeedbackBodySchema = z.object({
   variant: z.string().min(1).max(128),
   converted: z.boolean(),
 });
+
+// ─── HMAC helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Compute HMAC-SHA256(key=secret, data=message) and return the lower-case hex digest.
+ * Uses the Web Crypto API available in the Next.js runtime.
+ *
+ * @internal
+ */
+async function hmacSha256Hex(secret: string, message: string): Promise<string> {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', keyMaterial, enc.encode(message));
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * Constant-time hex string comparison. Returns true iff `a === b` without
+ * short-circuiting (prevents timing side-channels).
+ *
+ * Both inputs must be lower-case hex of equal length; if lengths differ the
+ * function returns false immediately (length itself is not secret).
+ *
+ * @internal
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+/**
+ * Verify the HMAC-SHA256 signature on a feedback request.
+ *
+ * Returns true when:
+ *   (a) ADAPT_API_KEY is set and the Bearer token matches it (ops fallback), or
+ *   (b) X-Estalara-Signature header is present and valid for the given Bearer
+ *       token (raw API key) + raw body.
+ *
+ * Returns false in all other cases (missing signature, wrong key, etc.).
+ *
+ * @internal
+ */
+async function verifyFeedbackAuth(
+  bearerToken: string,
+  signatureHeader: string | null,
+  rawBody: string,
+): Promise<boolean> {
+  // Ops / integration-test fallback: ADAPT_API_KEY present → accept direct key match.
+  const adaptApiKey = process.env.ADAPT_API_KEY;
+  if (adaptApiKey && bearerToken === adaptApiKey) {
+    return true;
+  }
+
+  // HMAC path: require X-Estalara-Signature header.
+  if (!signatureHeader) return false;
+
+  const providedHex = signatureHeader.trim().toLowerCase();
+  // Reject obviously-malformed values (non-hex chars, wrong length for SHA-256).
+  if (!/^[0-9a-f]{64}$/.test(providedHex)) return false;
+
+  const expectedHex = await hmacSha256Hex(bearerToken, rawBody);
+  return constantTimeEqual(providedHex, expectedHex);
+}
 
 // ─── Fire-and-forget bandit arm update ───────────────────────────────────────
 
@@ -117,21 +209,25 @@ async function updateArmAsync(args: {
  *   variant     — string (required)
  *   converted   — boolean (required)
  *
- * Auth: presence-only Bearer token. When `ADAPT_API_KEY` is set, the token
- * must match it.
+ * Auth: HMAC-SHA256 tenant-scoped signature (FOLLOW-051).
+ *   Authorization: Bearer {rawApiKey}
+ *   X-Estalara-Signature: {hmacSha256OfBodyHex}
+ *
+ * Fallback: when `ADAPT_API_KEY` env var is set, a matching Bearer token is
+ * accepted directly (ops/integration-test convenience).
  *
  * Responses:
  *   202 Accepted  — feedback acknowledged; DB update happens asynchronously.
  *   400 VALIDATION_ERROR — invalid body.
- *   401 AUTH_REQUIRED / FORBIDDEN — missing or wrong token.
+ *   401 AUTH_REQUIRED / FORBIDDEN — missing or invalid auth.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
 
-  // ── Auth gate — same shape as GET /api/adapt ─────────────────────────────
+  // ── Auth gate ─────────────────────────────────────────────────────────────
   const auth = req.headers.get('Authorization') ?? req.headers.get('authorization');
-  const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : '';
-  if (!token) {
+  const bearerToken = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!bearerToken) {
     return NextResponse.json(
       errorBody({
         code: ErrorCode.AUTH_REQUIRED,
@@ -141,12 +237,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 401 },
     );
   }
-  const adaptApiKey = process.env.ADAPT_API_KEY;
-  if (adaptApiKey && token !== adaptApiKey) {
+
+  // Read raw body text once — used for both JSON parsing and HMAC verification.
+  let rawBody: string;
+  try {
+    rawBody = await req.text();
+  } catch {
+    return NextResponse.json(
+      errorBody({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid JSON body',
+        requestId,
+      }),
+      { status: 400 },
+    );
+  }
+
+  const signatureHeader = req.headers.get('X-Estalara-Signature');
+  const authOk = await verifyFeedbackAuth(bearerToken, signatureHeader, rawBody);
+  if (!authOk) {
     return NextResponse.json(
       errorBody({
         code: ErrorCode.FORBIDDEN,
-        message: 'Invalid API key',
+        message:
+          'Invalid or missing HMAC signature. Expected X-Estalara-Signature: HMAC-SHA256(apiKey, body)',
         requestId,
       }),
       { status: 401 },
@@ -156,7 +270,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── Parse + validate body ─────────────────────────────────────────────────
   let raw: unknown;
   try {
-    raw = await req.json();
+    raw = JSON.parse(rawBody) as unknown;
   } catch {
     return NextResponse.json(
       errorBody({

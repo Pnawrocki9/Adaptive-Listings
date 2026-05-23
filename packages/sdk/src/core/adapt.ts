@@ -59,8 +59,42 @@ function deriveFeedbackUrl(config: SdkConfig): string | null {
 }
 
 /**
+ * Compute HMAC-SHA256(key=secret, data=message) and return the lower-case hex digest.
+ *
+ * Uses the Web Crypto API available in modern browsers. Returns null in
+ * environments where SubtleCrypto is unavailable (e.g. very old browsers or SSR
+ * without polyfill) so callers can fall back gracefully.
+ *
+ * @internal
+ */
+async function computeHmacSha256Hex(secret: string, message: string): Promise<string | null> {
+  try {
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      enc.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const sig = await crypto.subtle.sign('HMAC', keyMaterial, enc.encode(message));
+    return Array.from(new Uint8Array(sig))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Post a conversion signal to the feedback endpoint. Fire-and-forget — never awaited,
  * never throws. Network errors are logged to console.warn only.
+ *
+ * Auth scheme (FOLLOW-051): the request body is HMAC-SHA256-signed with the
+ * tenant's public API key as the secret. The hex digest is sent in the
+ * `X-Estalara-Signature` header. When SubtleCrypto is unavailable (rare legacy
+ * environments), the ping is skipped to avoid sending an unsigned request that
+ * the server would reject.
  */
 function postFeedbackPing(
   config: SdkConfig,
@@ -80,20 +114,30 @@ function postFeedbackPing(
     converted,
   });
 
-  // Intentionally not awaited — fire and forget
-  fetch(feedbackUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body,
-  }).catch((err: unknown) => {
-    console.warn(
-      '[estalara] feedback ping failed:',
-      err instanceof Error ? err.message : String(err),
-    );
-  });
+  // Sign and send — async, fire-and-forget.
+  computeHmacSha256Hex(config.apiKey, body)
+    .then((signatureHex) => {
+      if (signatureHex === null) {
+        // SubtleCrypto unavailable — skip ping rather than send unsigned request.
+        console.warn('[estalara] feedback ping skipped: SubtleCrypto unavailable');
+        return;
+      }
+      return fetch(feedbackUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+          'X-Estalara-Signature': signatureHex,
+        },
+        body,
+      });
+    })
+    .catch((err: unknown) => {
+      console.warn(
+        '[estalara] feedback ping failed:',
+        err instanceof Error ? err.message : String(err),
+      );
+    });
 }
 
 /**

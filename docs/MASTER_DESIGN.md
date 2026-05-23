@@ -3988,6 +3988,49 @@ HMAC-SHA-256(secret_api_key, timestamp + ":" + body_hash)
 - Sygnowane przez session JWT + nonce → middleware weryfikuje przed wykonaniem
 - Idempotency keys (TICKET-019) dla każdej destruktywnej akcji
 
+**POST /api/adapt/feedback — bandit feedback endpoint (FOLLOW-051, shipped Sprint 10):**
+
+`POST /api/adapt/feedback` mutates `ab_bandit_weights` directly (Thompson sampling Beta
+parameters). Without request signing, any party knowing only that the endpoint exists can flood
+`converted: false` for a `(tenant, archetype, variant)` triple and bias sampling against the
+control arm (adversarial bandit poisoning).
+
+Scheme: HMAC-SHA256 of the raw request body, keyed by the tenant's public API key.
+
+```
+// SDK (packages/sdk/src/core/adapt.ts):
+const body = JSON.stringify({ session_id, tenant_id, archetype, variant, converted });
+const sig  = HMAC-SHA256(config.apiKey, body);   // hex digest
+fetch(feedbackUrl, {
+  headers: {
+    Authorization:        `Bearer ${config.apiKey}`,
+    'X-Estalara-Signature': sig,
+  },
+  body,
+});
+
+// Server (apps/control-plane/src/app/api/adapt/feedback/route.ts):
+const bearerToken = authHeader.slice(7);           // raw API key
+const rawBody     = await req.text();
+const expected    = HMAC-SHA256(bearerToken, rawBody);
+assert constantTimeEqual(provided, expected);
+```
+
+Threat model:
+- **Prevents:** external adversaries who do not know the tenant's API key from poisoning bandit
+  weights. Cross-tenant poisoning is blocked: an attacker must know the specific tenant key to
+  produce a valid signature for that tenant's `ab_bandit_weights` rows.
+- **Does not prevent:** a malicious tenant manipulating their own weights — the `tenant_id` in
+  the body is from the same scope as the key. This is an accepted risk (tenant_id already scoped;
+  a tenant poisoning their own bandit merely degrades their own personalization).
+- **Ops fallback:** when `ADAPT_API_KEY` env var is set, a matching Bearer token is accepted
+  without HMAC verification. Used for integration tests and manual operations.
+
+No timestamp / replay protection on this endpoint — the bandit update is idempotent
+(replaying a `converted: true` just increments alpha again; at-most-ε impact given
+Thompson sampling convergence). Replay protection would require Redis nonce storage and
+adds latency to a fire-and-forget path; deferred to post-MVP if replay attacks observed.
+
 #### V.3.3. Input validation
 
 **Wszystkie inputs walidowane przez Zod schemas** (już praktykowane w `packages/shared`):

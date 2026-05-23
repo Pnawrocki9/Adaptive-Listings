@@ -49,7 +49,7 @@ updates.
 | 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 16      | 13   | 0       | 0     | 0       |
 | 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 6    | 0       | 0     | 0       |
 | 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)        | 6       | 6    | 0       | 0     | 0       |
-| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 2    | 2       | 1     | 0       |
+| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 2    | 0       | 1     | 0       |
 | 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
@@ -1571,7 +1571,8 @@ same agent handles both.
 - id: FOLLOW-051
   title: Replace presence-only Bearer on POST /api/adapt/feedback with proper tenant-scoped auth
   agent: compliance-engineer + backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
+  pr: '#133'
   priority: P1
   estimated_hours: 3
   depends_on: []
@@ -1602,7 +1603,8 @@ same agent handles both.
 - id: FOLLOW-061
   title: Add Snapshot.1 re-verification to sprint-close checklist in AGENT_WORKFLOW.md
   agent: architect
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
+  pr: '#134'
   priority: P1
   estimated_hours: 0.5
   depends_on: []

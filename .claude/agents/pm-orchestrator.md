@@ -236,8 +236,8 @@ ineffective), raise the threshold to 3 by editing the constant in
 
 ### 8. Sprint close (execute when all sprint tickets are DONE or deferred)
 
-Follow the sprint-close checklist in `docs/AGENT_WORKFLOW.md §Sprint-close checklist`. The
-four steps are:
+Follow the sprint-close checklist in `docs/AGENT_WORKFLOW.md §Sprint-close checklist`. The four
+steps are:
 
 1. Verify all DONE tickets have retrospectives.
 2. Promote P0/P1 FOLLOW_UPS stubs to the next sprint's backlog.
@@ -247,9 +247,9 @@ four steps are:
    - Confirm file existence and claimed line counts
    - Confirm status verdict matches HEAD reality
    - Update stale rows; bump Master Design version; add changelog entry
-   - This step is required by Master Design §Y.3 and Operating Principles Rule 2. Skipping it is
-     a process violation. Sprint 9.5 skipped it; rows B.4 and J went stale and required
-     retroactive correction (RETRO-005 §7 Edits M-1..M-6). That must not repeat.
+   - This step is required by Master Design §Y.3 and Operating Principles Rule 2. Skipping it is a
+     process violation. Sprint 9.5 skipped it; rows B.4 and J went stale and required retroactive
+     correction (RETRO-005 §7 Edits M-1..M-6). That must not repeat.
 
 Do not declare a sprint closed until step 4 is complete.
 

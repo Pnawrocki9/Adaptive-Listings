@@ -199,8 +199,8 @@ execute the following steps in order before marking the sprint closed:
    `backlog/RETROSPECTIVES.md`. If any are missing, spawn the retrospective-analyst before
    proceeding.
 
-2. **Promote FOLLOW_UPS stubs.** Read `backlog/FOLLOW_UPS.md`. Promote all P0 and P1 stubs that
-   are not yet `promoted_to_queue: true` to the next sprint's backlog. Create ticket files and add
+2. **Promote FOLLOW_UPS stubs.** Read `backlog/FOLLOW_UPS.md`. Promote all P0 and P1 stubs that are
+   not yet `promoted_to_queue: true` to the next sprint's backlog. Create ticket files and add
    QUEUE.md entries.
 
 3. **Update sprint progress in QUEUE.md.** Mark the sprint section with final DONE/DEFERRED counts.

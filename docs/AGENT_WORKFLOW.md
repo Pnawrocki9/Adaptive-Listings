@@ -190,6 +190,36 @@ The PM agent runs autonomously between your sessions, picking up tickets and val
 you return, you primarily process its output (review + merge + escalations) rather than writing
 prompts.
 
+## Sprint-close checklist
+
+When the PM orchestrator determines a sprint is complete (all tickets DONE or explicitly deferred),
+execute the following steps in order before marking the sprint closed:
+
+1. **Verify all DONE tickets have retrospectives.** Every merged PR must have a RETRO-NNN entry in
+   `backlog/RETROSPECTIVES.md`. If any are missing, spawn the retrospective-analyst before
+   proceeding.
+
+2. **Promote FOLLOW_UPS stubs.** Read `backlog/FOLLOW_UPS.md`. Promote all P0 and P1 stubs that are
+   not yet `promoted_to_queue: true` to the next sprint's backlog. Create ticket files and add
+   QUEUE.md entries.
+
+3. **Update sprint progress in QUEUE.md.** Mark the sprint section with final DONE/DEFERRED counts.
+   Set `completed_at` on the sprint block.
+
+4. **Re-verify Snapshot.1 (MANDATORY — process violation to skip).** For every row in
+   `docs/MASTER_DESIGN.md §Snapshot.1`, spot-check the verdict against current `HEAD`:
+   - Grep for key symbols cited in the row (function names, file paths, table names)
+   - Check that cited files still exist at the claimed line counts
+   - Verify status claims (`Shipped`, `Mostly Shipped`, `Partial`, `Design-Only`, `Blocked`) match
+     current codebase reality
+   - Update any stale rows inline (same PR is fine; open a dedicated reconciliation PR if large)
+   - Bump Master Design version and add a changelog entry for any row that changed
+   - This obligation comes from Master Design §Y.3 and Operating Principles Rule 2 (continuous
+     synchronization). Skipping it is a process violation that caused Sprint 9.5 rows B.4 and J to
+     go stale (retroactively fixed by RETRO-005 §7 Edits M-1..M-6).
+
+After all four steps pass, the sprint is closed.
+
 ## Failure modes and recovery
 
 ### "An agent is stuck in a loop"

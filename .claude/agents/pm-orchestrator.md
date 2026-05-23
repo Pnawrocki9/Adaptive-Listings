@@ -234,6 +234,25 @@ the pipeline until the human resolves.
 ineffective), raise the threshold to 3 by editing the constant in
 `.claude/agents/retrospective-analyst.md`.
 
+### 8. Sprint close (execute when all sprint tickets are DONE or deferred)
+
+Follow the sprint-close checklist in `docs/AGENT_WORKFLOW.md §Sprint-close checklist`. The four
+steps are:
+
+1. Verify all DONE tickets have retrospectives.
+2. Promote P0/P1 FOLLOW_UPS stubs to the next sprint's backlog.
+3. Update sprint progress in QUEUE.md.
+4. **Re-verify Snapshot.1 (MANDATORY).** For every row in `docs/MASTER_DESIGN.md §Snapshot.1`:
+   - Grep for the key symbols cited in the row (file paths, function names, table names)
+   - Confirm file existence and claimed line counts
+   - Confirm status verdict matches HEAD reality
+   - Update stale rows; bump Master Design version; add changelog entry
+   - This step is required by Master Design §Y.3 and Operating Principles Rule 2. Skipping it is a
+     process violation. Sprint 9.5 skipped it; rows B.4 and J went stale and required retroactive
+     correction (RETRO-005 §7 Edits M-1..M-6). That must not repeat.
+
+Do not declare a sprint closed until step 4 is complete.
+
 ## Critical rules
 
 - **Never write code yourself.** If you find yourself wanting to edit a `.ts` or `.py` file, stop

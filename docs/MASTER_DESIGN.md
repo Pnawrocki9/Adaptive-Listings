@@ -1,8 +1,20 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 2.1 (Sprint 9.5 close — MVP Demo Readiness reconciliation per RETRO-005) | **Data:** 22 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 2.2 (Sprint 10 — process: Snapshot.1 re-verification added to sprint-close checklist per FOLLOW-061) | **Data:** 23 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
 
 > **READING ORDER (v1.8 update).** This document remains the canonical *strategic vision* + *target architecture*. As of 2026-05-16 a multi-agent audit was performed against the actual codebase. The audit findings — what is built, what is partial, what is design-only — are summarized in the new section **"Implementation Status Snapshot (2026-05-16)"** below the Executive Summary, and in detail in `AUDIT_REPORT_INVESTOR_READINESS.md`, `AUDIT_IMPLEMENTATION_MAP.md`, `AUDIT_RISK_MATRIX.md`, and `AUDIT_TEST_GAPS.md` at the repository root. Where this document and the audit disagree, the audit reflects reality at HEAD `398dc97`.
+
+**Changelog v2.2 (23 maja 2026 — Sprint 10, FOLLOW-061):**
+
+- 📝 **§Snapshot.1 forward reference updated** — replaced "Per OP §Y.3 the next Snapshot.1
+  re-verification is at Sprint 10 completion" with an explicit pointer to the sprint-close
+  checklist in `docs/AGENT_WORKFLOW.md` where the obligation is now structurally enforced.
+- 📝 **`docs/AGENT_WORKFLOW.md` updated** — added "Sprint-close checklist" section with four
+  mandatory steps, the last being Snapshot.1 re-verification per §Y.3. This closes the process
+  gap that caused Sprint 9.5 rows B.4 and J to go stale (RETRO-005 §7 Edits M-1..M-6).
+- 📝 **`.claude/agents/pm-orchestrator.md` updated** — added step 8 "Sprint close" with
+  Snapshot.1 re-verification as a mandatory sub-step, so the PM orchestrator executes it
+  automatically at every sprint close.
 
 **Changelog v2.1 (22 maja 2026 — Sprint 9.5 close, RETRO-005 reconciliation):**
 
@@ -96,8 +108,9 @@
 > honesty:** FOLLOW-041 (SDK feedback ping), FOLLOW-042 (SDK variant consumer), FOLLOW-043
 > (archetype embedding vectors NULL → cosine path unreachable), FOLLOW-046 (listing embedding
 > auto-seed), FOLLOW-055 (end-to-end integration test). See RETRO-005 §3 for the wiring audit
-> findings and §7 for the Master Design edits applied. Per OP §Y.3 the next Snapshot.1
-> re-verification is at Sprint 10 completion.
+> findings and §7 for the Master Design edits applied. Sprint 10 Snapshot.1
+> re-verification will be performed at sprint close per the mandatory checklist in
+> `docs/AGENT_WORKFLOW.md §Sprint-close checklist` (step 4), installed by FOLLOW-061.
 
 **Audit gate status at audit time:**
 

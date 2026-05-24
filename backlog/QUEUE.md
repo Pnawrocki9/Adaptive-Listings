@@ -1,21 +1,25 @@
 # Backlog Queue
 
-**Updated 2026-05-23T00:00Z by pm-orchestrator.** Sprint 10 COMPLETE as of 2026-05-23 (8 PRs merged:
-#127, #128, #129, #130, #131, #132, #133, #134). RETRO-006 written; Master Design bumped to v2.3;
-Rule H amendment applied (CONVENTIONS_PATCH.md). Sprint 11 (Pilot readiness — seed CI, demo CI, HMAC
-compat, ClickHouse GDPR, Doppler CI hygiene) OPEN with 9 tickets. Sprint 9.5 COMPLETE (2026-05-22, 6
-PRs: #121, #122, #123, #124, #125, #126). Sprint 9 COMPLETE as of 2026-05-15: GDPR-001 (PR #111),
-GDPR-002 (PR #118), GDPR-003 (PR #116), GDPR-004 (PR #117), DESC-001 (PR #112+#114), VAL-001 (PR
-#110) — all 6 DONE. DESC-PIVOT-001 (PR #115) merged. Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint
-8 COMPLETE. Sprint 8.5 COMPLETE. Sprint 2.5 SUPERSEDED — TICKET-030 + TICKET-033 promoted to Sprint
-9.5, TICKET-032 superseded by Sprint 7.5 auto-detect, TICKET-034/036 deferred (Q5 decision
-2026-05-21), TICKET-035 already CANCELLED. **P1 pilot-blockers (Sprint 11):** FOLLOW-063
-(archetype-embedding auto-seed CI), FOLLOW-068 (demo-integration CI), FOLLOW-069 (HMAC compat test),
-FOLLOW-039 (ClickHouse DSR hard-delete — EU pilot gate, no longer deferrable), FOLLOW-040 (Doppler
-CI hygiene). Krok A document governance reset merged (PR #119, Master_Design v2.0,
-docs/ops/OPERATING_PRINCIPLES.md v1.1) — Operating Principles now active for all sessions.
-ANTHROPIC_API_KEY activated in Doppler dev/stg/prd 2026-05-21 (Krok B) — AI Vision fully
-operational.
+**Updated 2026-05-24T00:00Z by pm-orchestrator.** Sprint 11 COMPLETE as of 2026-05-24 (5 P1
+pilot-blockers merged: #135 FOLLOW-063, #136 FOLLOW-069, #137 FOLLOW-068, #138 FOLLOW-040, #139
+FOLLOW-039). RETRO-007 written; Master Design bumped to v2.5; AI Council Checkpoint 2026-05-24
+approved Sprint 12 as "controlled pilot launch on app.estalara.com". Sprint 12 OPEN — 10 tickets
+across 3 lanes (Lane A hardening, Lane B pilot onboarding, Lane C ROI instrumentation). Sprint 10
+COMPLETE as of 2026-05-23 (8 PRs merged: #127, #128, #129, #130, #131, #132, #133, #134). RETRO-006
+written; Master Design bumped to v2.3; Rule H amendment applied (CONVENTIONS_PATCH.md). Sprint 9.5
+COMPLETE (2026-05-22, 6 PRs: #121, #122, #123, #124, #125, #126). Sprint 9 COMPLETE as of
+2026-05-15: GDPR-001 (PR #111), GDPR-002 (PR #118), GDPR-003 (PR #116), GDPR-004 (PR #117), DESC-001
+(PR #112+#114), VAL-001 (PR #110) — all 6 DONE. DESC-PIVOT-001 (PR #115) merged. Sprint 7.5
+COMPLETE. Sprint 7 COMPLETE. Sprint 8 COMPLETE. Sprint 8.5 COMPLETE. Sprint 2.5 SUPERSEDED —
+TICKET-030 + TICKET-033 promoted to Sprint 9.5, TICKET-032 superseded by Sprint 7.5 auto-detect,
+TICKET-034/036 deferred (Q5 decision 2026-05-21), TICKET-035 already CANCELLED. **Sprint 11 P1
+pilot-blockers DONE:** FOLLOW-063 (archetype-embedding auto-seed CI, PR #135), FOLLOW-068
+(demo-integration CI, PR #137), FOLLOW-069 (HMAC compat test, PR #136), FOLLOW-039 (ClickHouse DSR
+hard-delete — EU pilot gate cleared, PR #139), FOLLOW-040 (Doppler CI hygiene, PR #138). **Sprint 12
+pilot target:** app.estalara.com, EU region, free pilot, primary metric CTA lift. Krok A document
+governance reset merged (PR #119, Master_Design v2.0, docs/ops/OPERATING_PRINCIPLES.md v1.1) —
+Operating Principles now active for all sessions. ANTHROPIC_API_KEY activated in Doppler dev/stg/prd
+2026-05-21 (Krok B) — AI Vision fully operational.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -37,23 +41,24 @@ updates.
 
 ## Sprint progress
 
-| Sprint | Weeks | Theme                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
-| ------ | ----- | -------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability) | 9       | 9    | 0       | 0     | 0       |
-| 1      | 2     | Ingest baseline + event schema                                       | 10      | 10   | 0       | 0     | 0       |
-| 2      | 3     | Postgres + tenant auth + dashboard skeleton                          | 10      | 10   | 0       | 0     | 0       |
-| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                  | 6       | 0    | 0       | 1     | 4       |
-| 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                  | 10      | 2    | 0       | 1     | 7       |
-| 4      | 6     | Intent ontology v1 + Modal scaffolding                               | tbd     | —    | —       | —     | tbd     |
-| 5      | 7     | LLM gateway + intent extraction from chat                            | tbd     | —    | —       | —     | tbd     |
-| 6      | 8     | Embeddings + archetype matching + decision API                       | 3       | 3    | 0       | 0     | 0       |
-| 7      | 9     | Decision API real logic + adaptation playbooks                       | 5       | 5    | 0       | 0     | 0       |
-| 7.5    | 9.5   | Auto-Detection Engine                                                | 7       | 7    | 0       | 0     | 0       |
-| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 16      | 13   | 0       | 0     | 0       |
-| 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 6    | 0       | 0     | 0       |
-| 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)        | 6       | 6    | 0       | 0     | 0       |
-| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 9    | 0       | 0     | 0       |
-| 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)     | 9       | 0    | 5       | 4     | 0       |
+| Sprint | Weeks | Theme                                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
+| ------ | ----- | ------------------------------------------------------------------------------------ | ------- | ---- | ------- | ----- | ------- |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability)                 | 9       | 9    | 0       | 0     | 0       |
+| 1      | 2     | Ingest baseline + event schema                                                       | 10      | 10   | 0       | 0     | 0       |
+| 2      | 3     | Postgres + tenant auth + dashboard skeleton                                          | 10      | 10   | 0       | 0     | 0       |
+| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                                  | 6       | 0    | 0       | 1     | 4       |
+| 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                                  | 10      | 2    | 0       | 1     | 7       |
+| 4      | 6     | Intent ontology v1 + Modal scaffolding                                               | tbd     | —    | —       | —     | tbd     |
+| 5      | 7     | LLM gateway + intent extraction from chat                                            | tbd     | —    | —       | —     | tbd     |
+| 6      | 8     | Embeddings + archetype matching + decision API                                       | 3       | 3    | 0       | 0     | 0       |
+| 7      | 9     | Decision API real logic + adaptation playbooks                                       | 5       | 5    | 0       | 0     | 0       |
+| 7.5    | 9.5   | Auto-Detection Engine                                                                | 7       | 7    | 0       | 0     | 0       |
+| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop                    | 16      | 13   | 0       | 0     | 0       |
+| 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline                       | 6       | 6    | 0       | 0     | 0       |
+| 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)                        | 6       | 6    | 0       | 0     | 0       |
+| 10     | 12    | Close the bandit loop + real embeddings + e2e test                                   | 9       | 9    | 0       | 0     | 0       |
+| 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                     | 9       | 5    | 0       | 4     | 0       |
+| 12     | 14    | Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI) | 10      | 0    | 0       | 10    | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -1633,28 +1638,32 @@ same agent handles both.
     satisfy the obligation for Sprint 9.5 retroactively.
 ```
 
-## Sprint 11 — Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse) (OPEN)
+## Sprint 11 — Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse) (COMPLETE)
 
 **Sprint goal:** "Close all pilot-blockers: seed CI gate, demo CI verification, HMAC security
 closure, ClickHouse GDPR erasure, Doppler CI hygiene."
 
 **Entry condition:** Sprint 10 COMPLETE ✓ (2026-05-23).
 
-**Pilot-blocker subset (P1, must close before any pilot tenant onboard):** FOLLOW-063, FOLLOW-068,
-FOLLOW-069. **EU pilot gate (P1, non-negotiable before EU traffic):** FOLLOW-039. **P1 ops
-hygiene:** FOLLOW-040.
+**Status:** COMPLETE as of 2026-05-24. 5 P1 pilot-blockers DONE (PRs #135, #136, #137, #138, #139).
+4 P2 quality items carry forward (FOLLOW-065/071 READY; FOLLOW-073/074 promoted to Sprint 12 P2
+carry-over).
+
+**Pilot-blocker subset (P1, must close before any pilot tenant onboard):** FOLLOW-063 ✅, FOLLOW-068
+✅, FOLLOW-069 ✅. **EU pilot gate (P1, non-negotiable before EU traffic):** FOLLOW-039 ✅. **P1 ops
+hygiene:** FOLLOW-040 ✅.
 
 ```yaml
 - id: FOLLOW-063
   title: archetype_embeddings auto-seed in CI (NOT NULL invariant)
   agent: devops-engineer + ml-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 3
   depends_on: []
   assigned_to: devops-engineer
   started_at: '2026-05-23T12:00:00Z'
-  completed_at: '2026-05-24T00:00:00Z'
+  completed_at: '2026-05-24'
   branch: devops-engineer/FOLLOW-063-seed-ci
   pr: '#135'
   model: sonnet-4.6
@@ -1672,13 +1681,13 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-068
   title: demo-integration CI job — NEXT_PUBLIC_TEST_E2E=true + demo DB fixtures
   agent: qa-engineer + devops-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: []
   assigned_to: qa-engineer
   started_at: '2026-05-23T12:00:00Z'
-  completed_at: '2026-05-24T00:00:00Z'
+  completed_at: '2026-05-24'
   branch: qa-engineer/FOLLOW-068-demo-ci
   pr: '#137'
   model: sonnet-4.6
@@ -1698,13 +1707,13 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-069
   title: HMAC compat test SDK↔server + Bearer-only rejection regression test
   agent: qa-engineer + backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 2
   depends_on: []
   assigned_to: qa-engineer
   started_at: '2026-05-23T12:00:00Z'
-  completed_at: '2026-05-24T12:00:00Z'
+  completed_at: '2026-05-24'
   branch: qa-engineer/FOLLOW-069-hmac-compat
   pr: '#136'
   model: sonnet-4.6
@@ -1720,12 +1729,13 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-039
   title: ClickHouse DSR hard-delete — Art.17 erasure on adaptation_decisions + events tables
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 5
   depends_on: []
   assigned_to: data-engineer
   started_at: '2026-05-23T12:00:00Z'
+  completed_at: '2026-05-24'
   branch: data-engineer/FOLLOW-039-clickhouse-dsr
   pr: '#139'
   model: opus-4.7-xhigh
@@ -1749,12 +1759,13 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-040
   title: Doppler CI hygiene — DOPPLER_TOKEN in GitHub Actions
   agent: devops-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 1
   depends_on: []
   assigned_to: devops-engineer
   started_at: '2026-05-23T12:00:00Z'
+  completed_at: '2026-05-24'
   branch: devops-engineer/FOLLOW-040-doppler-ci
   model: sonnet-4.6
   spec: backlog/sprint-11/FOLLOW-040.md
@@ -1824,21 +1835,220 @@ hygiene:** FOLLOW-040.
     seed step CI-enforced) and FOLLOW-040 (Doppler hygiene).
 ```
 
+## Sprint 12 — Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI) (OPEN)
+
+**Sprint goal:** "Controlled pilot launch on app.estalara.com. Lane A hardening completes
+pilot-critical infrastructure (ClickHouse DSR integration test, cron auth, demo CI fail-loud, DSR
+alerting). Lane B onboards app.estalara.com via Magic Link + shadow mode. Lane C measures CTA lift +
+inquiry starts vs holdout."
+
+**Entry condition:** Sprint 11 COMPLETE ✓ (2026-05-24). AI Council Checkpoint ✓ (2026-05-24).
+
+**Sprint sequencing:** Lane A is gated — must complete before Lane B activates real-tenant
+adaptation. Lane C can run in parallel with Lane B during shadow period.
+
+**Pilot decisions (Piotr 2026-05-24):** Target = app.estalara.com (own domain). Free pilot (no
+billing infra needed). EU region (FOLLOW-081 infrastructure test; full compliance already verified).
+Incident owner = Piotr Nawrocki. Primary metric = CTA lift. Secondary metric = inquiry starts.
+VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
+
+```yaml
+# LANE A — Pilot-critical hardening (P1, must complete before Lane B activation)
+
+- id: FOLLOW-081
+  title: ClickHouse mutation-poll integration test against system.mutations
+  agent: data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-039]
+  model: opus-4.7-xhigh
+  spec: backlog/sprint-12/FOLLOW-081.md
+  notes: |
+    From RETRO-007. The Vercel-Cron /api/dsr/mutation-poll handler (shipped by FOLLOW-039)
+    polls ClickHouse system.mutations to detect erasure completion and update Postgres state.
+    No integration test verifies this contract against a real ClickHouse instance — only unit
+    mocks of the poll function. Add an integration test that spins up a ClickHouse container,
+    issues an ALTER TABLE ... DELETE WHERE, then asserts the poller detects completion within SLA.
+    Blocks EU pilot confidence in the erasure flow. Opus 4.7 xhigh — async ClickHouse mutation
+    semantics require careful reasoning about system.mutations schema + timing.
+
+- id: FOLLOW-079
+  title:
+    Tighten demo-integration.yml — flip soft-skips to fail-loud, add to required branch protection
+  agent: devops-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 1
+  depends_on: [FOLLOW-040]
+  model: sonnet-4.6
+  spec: backlog/sprint-12/FOLLOW-079.md
+  notes: |
+    From RETRO-007. After ESC-009 + FOLLOW-040 escalation secrets are provisioned (DOPPLER_TOKEN_DEV
+    + E2E_BEARER_TOKEN), the demo-integration CI job currently soft-skips with exit 0. This means
+    the E2E test can silently not run. After secrets land: (1) remove the soft-skip guard, (2) make
+    the job fail-loud on test failure, (3) add demo-integration to required status checks in branch
+    protection. This is a process hardening ticket — no application code changes.
+
+- id: FOLLOW-075
+  title: Require VERCEL_CRON_SECRET on /api/dsr/mutation-poll endpoint
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 1
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-12/FOLLOW-075.md
+  notes: |
+    From RETRO-007. The /api/dsr/mutation-poll Vercel Cron endpoint (FOLLOW-039 PR #139) does not
+    yet validate the VERCEL_CRON_SECRET header. Any unauthenticated caller can trigger a poll cycle,
+    wasting ClickHouse queries and potentially masking real mutation state. Add Authorization header
+    check using VERCEL_CRON_SECRET (provisioned 2026-05-24 in Vercel + Doppler). Compliance joint
+    ownership — DSR endpoint hardening is also a compliance concern.
+
+- id: FOLLOW-078
+  title: DSR failure alerting — PagerDuty or Sentry alert on stuck/failed mutations
+  agent: compliance-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 1.5
+  depends_on: [FOLLOW-039]
+  model: sonnet-4.6
+  spec: backlog/sprint-12/FOLLOW-078.md
+  notes: |
+    From RETRO-007. FOLLOW-039 implements retry-with-backoff (3 retries max) but on permanent failure
+    silently leaves the dsr_clickhouse_mutations row in `failed` state. A regulator reviewing our DSR
+    process would expect an alert. Wire Sentry alert (or PagerDuty if available) on permanent failure
+    after max retries. DevOps joint ownership for alert routing.
+
+# LANE B — Pilot onboarding on app.estalara.com (P1, blocked until Lane A complete)
+
+- id: TICKET-PILOT-001
+  title:
+    Onboard app.estalara.com — SDK install, schema activation via Magic Link wizard, run in shadow
+    mode 3-5 days
+  agent: sdk-engineer + backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-081, FOLLOW-079, FOLLOW-075, FOLLOW-078]
+  model: sonnet-4.6
+  spec: backlog/sprint-12/TICKET-PILOT-001.md
+  notes: |
+    Lane A must be fully DONE before this ticket activates. Steps: (1) install @estalara/sdk
+    snippet on app.estalara.com (Tier 3 Native path via data-estalara-* attributes already built
+    per TICKET-NATIVE-001 scope; wiring in SvelteKit +layout.svelte). (2) Run Magic Link wizard
+    to activate tenant schema (000-app-estalara fixture already in corpus with detection_source=
+    data_estalara, confidence ≥0.99). (3) Start in shadow mode (adaptation runs but directives
+    not injected) for 3-5 days to collect baseline behavioral data. (4) Generate and verify SDK
+    snippet for production embed.
+
+- id: TICKET-PILOT-002
+  title: Activation runbook + go/no-go checklist + incident response procedure
+  agent: architect
+  status: READY
+  priority: P1
+  estimated_hours: 2
+  depends_on: [TICKET-PILOT-001]
+  model: sonnet-4.6
+  spec: backlog/sprint-12/TICKET-PILOT-002.md
+  notes: |
+    Document: (1) go/no-go checklist (Lane A complete, shadow mode ≥3 days, FOLLOW-081 integration
+    test green, CTA baseline captured, incident owner confirmed). (2) Activation procedure (flip
+    shadow → live, verify first adaptation directive served, check Sentry for errors). (3) Incident
+    response (rollback = remove SDK snippet OR set tenant.active=false; escalation path to Piotr
+    as incident owner). Lives in docs/ops/PILOT_RUNBOOK.md.
+
+# LANE C — Pilot ROI instrumentation (P1, can start in parallel with Lane B)
+
+- id: TICKET-PILOT-003
+  title: CTA lift dashboard — baseline vs adapted, holdout comparison, conversion funnel
+  agent: data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  model: opus-4.7-xhigh
+  spec: backlog/sprint-12/TICKET-PILOT-003.md
+  notes: |
+    Primary pilot metric. Build dashboard panel in /dashboard/analytics showing: (1) CTA click
+    rate — adapted sessions vs holdout sessions (10% holdout already wired via TICKET-AB-001).
+    (2) Time-on-listing comparison. (3) Inquiry started rate. (4) Conversion funnel (page.view →
+    listing.viewed → cta.clicked → inquiry.started → inquiry.completed). Data source: ClickHouse
+    adaptation_decisions table (holdout_group boolean) + events table (cta.clicked, inquiry.*).
+    Requires: both adapted and holdout sessions emitting cta.clicked events with same schema.
+    Opus 4.7 xhigh — statistical correctness of lift calculation requires careful reasoning.
+
+- id: TICKET-PILOT-004
+  title: Inquiry starts tracking — event mapping from app.estalara.com forms, dashboard panel
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 2
+  depends_on: [TICKET-PILOT-001]
+  model: sonnet-4.6
+  spec: backlog/sprint-12/TICKET-PILOT-004.md
+  notes: |
+    Secondary pilot metric. Map app.estalara.com inquiry form submission to inquiry.started SDK
+    event. Verify event flows through ingest → ClickHouse. Add "Inquiry starts" panel to CTA
+    dashboard (alongside TICKET-PILOT-003). Requires: identifying the inquiry form selector in
+    the 000-app-estalara site schema (or adding it to the fixture if missing).
+
+# P2 carry-over from Sprint 11
+
+- id: FOLLOW-073
+  title: Master Design §V.3.3 threat model for INTERNAL_API_SECRET + key rotation runbook
+  agent: compliance-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-11/FOLLOW-073.md
+  notes: |
+    Carry-over from Sprint 11. INTERNAL_API_SECRET (used for service-to-service auth, e.g. ingest →
+    decision-api) has no documented threat model or rotation procedure. §V.3.2 covers
+    `POST /api/adapt/feedback` HMAC; §V.3.3 should cover INTERNAL_API_SECRET symmetrically.
+
+- id: FOLLOW-074
+  title: README "Local development setup" section with required Doppler keys + seed scripts
+  agent: architect
+  status: READY
+  priority: P2
+  estimated_hours: 1
+  depends_on: [FOLLOW-040, FOLLOW-063]
+  model: sonnet-4.6
+  spec: backlog/sprint-11/FOLLOW-074.md
+  notes: |
+    Carry-over from Sprint 11. Fresh repo pull today gives a broken cosine path with no diagnostic
+    output. Add one-shot README section listing required `doppler login`, env keys, and
+    `pnpm seed:archetypes` + `pnpm seed:listings`. FOLLOW-040 (Doppler) and FOLLOW-063 (seed CI)
+    are now DONE so this can be written with concrete runbook steps.
+```
+
 ## Currently in flight
 
-- FOLLOW-063 — devops-engineer — branch `devops-engineer/FOLLOW-063-seed-ci` — started 2026-05-23
-- FOLLOW-068 — qa-engineer — branch `qa-engineer/FOLLOW-068-demo-ci` — started 2026-05-23
-- FOLLOW-069 — qa-engineer — branch `qa-engineer/FOLLOW-069-hmac-compat` — started 2026-05-23
-- FOLLOW-039 — data-engineer — branch `data-engineer/FOLLOW-039-clickhouse-dsr` — started 2026-05-23
-- FOLLOW-040 — devops-engineer — branch `devops-engineer/FOLLOW-040-doppler-ci` — READY_FOR_REVIEW
-  pr #138
+(none — Sprint 12 just opened 2026-05-24; all tickets READY, no agent assigned yet)
 
 ## Awaiting human review
 
-(none — Sprint 10 fully merged 2026-05-23)
+(none — Sprint 11 P1 pilot-blockers fully merged 2026-05-24)
 
 ## Recent merges
 
+- 2026-05-24 — FOLLOW-039 (PR #139): ClickHouse DSR hard-delete — Art. 17 erasure on
+  adaptation_decisions + events + llm_calls + session_quality; Vercel-Cron poller + 3-retry backoff;
+  dsr_clickhouse_mutations Postgres operational state table; EU pilot gate cleared; Master Design
+  v2.4 + §H.1.1 added
+- 2026-05-24 — FOLLOW-068 (PR #137): demo-integration CI job — NEXT_PUBLIC_TEST_E2E=true; soft-skip
+  until DOPPLER_TOKEN + E2E_BEARER_TOKEN provisioned (ESC-009 carry-forward); E2E_BEARER_TOKEN
+  beforeAll() precheck added
+- 2026-05-24 — FOLLOW-063 (PR #135): archetype-embeddings-not-null CI precheck +
+  post-migrate-seed.yml idempotent auto-seed; both soft-skip until DOPPLER_TOKEN_DEV provisioned
+- 2026-05-24 — FOLLOW-069 (PR #136): HMAC compat test SDK↔server (byte-identical hex digest
+  assertion across N key/body pairs) + Bearer-only rejection regression test; closes RETRO-006 LG-3
+- 2026-05-24 — FOLLOW-040 (PR #138): Doppler service token + doppler-run wrapper; DOPPLER_TOKEN as
+  GitHub Actions secret; coordinate with FOLLOW-063 seed step
 - 2026-05-23 — FOLLOW-051 (PR #133): HMAC-SHA256 tenant-scoped auth on POST /api/adapt/feedback;
   X-Estalara-Signature header; constant-time compare; ADAPT_API_KEY ops fallback; threat model
   documented in Master Design §V.3.2

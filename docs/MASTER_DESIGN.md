@@ -1,6 +1,15 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 2.4 (Sprint 11 close — all 5 P1 pilot-blockers DONE; FOLLOW-039 ClickHouse DSR hard-delete shipped, RODO Art. 17 fully compliant for EU pilot; §H.1.1 erasure semantics added; CI seed/demo/HMAC gates structurally present; RETRO-007 surfaced 11 follow-ups; awaiting ESC-009 + FOLLOW-040 escalation for operational enforcement) | **Data:** 24 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 2.5 (Sprint 12 OPEN — controlled pilot launch on app.estalara.com approved by AI Council Checkpoint 2026-05-24; Lane A hardening P1 (FOLLOW-081 ClickHouse integration test, FOLLOW-079 demo CI fail-loud, FOLLOW-075 cron auth, FOLLOW-078 DSR alerting) + Lane B pilot onboarding + Lane C ROI instrumentation; primary metric CTA lift; secondary metric inquiry starts; EU region; VERCEL_CRON_SECRET provisioned) | **Data:** 24 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v2.5 (24 maja 2026 — Sprint 12 open, pilot launch on app.estalara.com):**
+
+- ✅ **Sprint 12 OPEN** — AI Council Checkpoint 2026-05-24 approved "controlled pilot launch on app.estalara.com" as Sprint 12 scope. Session: `~/ai-council/sessions/20260524_224944`. Decision memo: `docs/ai-council/CHECKPOINT_2026-05-24_SPRINT_12.md`.
+- 🚀 **Three-lane structure:** Lane A (pilot-critical hardening — FOLLOW-081 ClickHouse integration test, FOLLOW-079 demo CI fail-loud, FOLLOW-075 VERCEL_CRON_SECRET enforcement, FOLLOW-078 DSR failure alerting) gates Lane B (app.estalara.com onboarding via Magic Link + shadow mode). Lane C (CTA lift dashboard + inquiry starts tracking) runs in parallel with Lane B.
+- 🎯 **Pilot parameters locked:** Target = app.estalara.com (own domain). Free pilot (no billing infrastructure needed). EU region (infrastructure verified via FOLLOW-081; full multi-jurisdiction compliance deferred). Incident owner = Piotr Nawrocki. Primary metric = CTA lift. Secondary metric = inquiry starts. VERCEL_CRON_SECRET provisioned in Vercel + Doppler 2026-05-24.
+- 🔄 **§Snapshot.1 update** — Sprint 12 OPEN entry appended to Updates block. Snapshot.1 date updated to 2026-05-24.
+- 🔄 **§Snapshot.4 priority #1** — Sprint 12 definition replaces Sprint 11 CLOSED notice.
+- 📐 **No new ADR.** Sprint 12 uses existing canonical adapt endpoint (ADR-0004).
 
 > **READING ORDER (v1.8 update).** This document remains the canonical *strategic vision* + *target architecture*. As of 2026-05-16 a multi-agent audit was performed against the actual codebase. The audit findings — what is built, what is partial, what is design-only — are summarized in the new section **"Implementation Status Snapshot (2026-05-16)"** below the Executive Summary, and in detail in `AUDIT_REPORT_INVESTOR_READINESS.md`, `AUDIT_IMPLEMENTATION_MAP.md`, `AUDIT_RISK_MATRIX.md`, and `AUDIT_TEST_GAPS.md` at the repository root. Where this document and the audit disagree, the audit reflects reality at HEAD `398dc97`.
 
@@ -161,7 +170,7 @@
 
 ---
 
-## Implementation Status Snapshot (2026-05-23)
+## Implementation Status Snapshot (2026-05-24)
 
 > This snapshot is a verdict on each Master Design promise as of HEAD `main` (post-Krok A merge PR
 > #119). It is the _only_ place in this document where implementation status is asserted; sections
@@ -226,6 +235,8 @@
 > from Sprint 11 (FOLLOW-065/071/073/074) remain READY. Per OP §Y.3 and the
 > AGENT_WORKFLOW.md sprint-close checklist, the next Snapshot.1 re-verification is at Sprint
 > 12 completion.
+>
+> **Update 2026-05-24 (Sprint 12 OPEN — AI Council Checkpoint):** Sprint 12 OPEN — controlled pilot launch on app.estalara.com. AI Council Checkpoint session `~/ai-council/sessions/20260524_224944` approved sprint scope. Three-lane structure: **Lane A** (pilot-critical hardening — FOLLOW-081 ClickHouse integration test against system.mutations, FOLLOW-079 demo-integration fail-loud after ESC-009 unblock, FOLLOW-075 VERCEL_CRON_SECRET enforcement on `/api/dsr/mutation-poll`, FOLLOW-078 DSR failure alerting) gates **Lane B** (TICKET-PILOT-001 app.estalara.com SDK install + Magic Link activation + shadow mode, TICKET-PILOT-002 activation runbook). **Lane C** (TICKET-PILOT-003 CTA lift dashboard, TICKET-PILOT-004 inquiry starts tracking) runs in parallel with Lane B. **Pilot parameters:** free pilot on own domain, EU region, incident owner = Piotr Nawrocki, VERCEL_CRON_SECRET provisioned. P2 carry-over: FOLLOW-073 (INTERNAL_API_SECRET threat model), FOLLOW-074 (README local dev setup). Per OP §Y.3, Snapshot.1 re-verification at Sprint 12 completion.
 
 **Audit gate status at audit time:**
 
@@ -325,7 +336,7 @@ Net: an investor demo today shows a credible Tier 1 Observer + Tier 2 mutation f
 ### §Snapshot.4 — Recommendation priorities (mirrors `AUDIT_REPORT_INVESTOR_READINESS.md` §11)
 
 **Immediate (1–2 weeks):**
-1. ~~**Sprint 11 (OPEN 2026-05-23): close 3 pilot-blockers (FOLLOW-063 seed CI, FOLLOW-068 demo CI, FOLLOW-069 HMAC compat) + FOLLOW-039 EU GDPR gate.**~~ **Sprint 11 CLOSED 2026-05-24** — all 5 P1 pilot-blockers DONE (FOLLOW-063 PR #135, FOLLOW-068 PR #137, FOLLOW-069 PR #136, FOLLOW-039 PR #139, FOLLOW-040 PR #138). EU pilot gate cleared; Master Design v2.4 + §H.1.1 added. **Next priority:** ESC-009 + FOLLOW-040 escalation (Piotr ~20 min) → unlocks operational enforcement of the 3 new CI jobs. Then Sprint 12 priorities from RETRO-007 §5b: FOLLOW-081 (P1 ClickHouse Cloud integration test for mutation-poll — blocks EU pilot confidence), FOLLOW-078 (P2 DSR failure alerting — regulator-visible), FOLLOW-079 (P2 tighten demo-integration soft-skips after unblock), FOLLOW-075 (P2 VERCEL_CRON_SECRET enforcement), FOLLOW-073 (P2 INTERNAL_API_SECRET threat model carry-over from RETRO-006).
+1. ~~**Sprint 11 (OPEN 2026-05-23): close 3 pilot-blockers (FOLLOW-063 seed CI, FOLLOW-068 demo CI, FOLLOW-069 HMAC compat) + FOLLOW-039 EU GDPR gate.**~~ ~~**Sprint 11 CLOSED 2026-05-24** — all 5 P1 pilot-blockers DONE.~~ **Sprint 12 OPEN (2026-05-24) — controlled pilot launch on app.estalara.com.** AI Council Checkpoint approved 2026-05-24. Lane A (pilot-critical hardening, P1, gates Lane B): FOLLOW-081 (ClickHouse mutation-poll integration test against system.mutations — EU pilot confidence blocker), FOLLOW-079 (demo-integration fail-loud after ESC-009 unblock), FOLLOW-075 (VERCEL_CRON_SECRET enforcement on /api/dsr/mutation-poll — VERCEL_CRON_SECRET provisioned 2026-05-24), FOLLOW-078 (DSR failure alerting — regulator-visible at pilot). Lane B (app.estalara.com onboarding, P1, blocked until Lane A): TICKET-PILOT-001 (SDK install + Magic Link activation + 3-5 days shadow mode), TICKET-PILOT-002 (activation runbook + go/no-go checklist + incident response). Lane C (ROI instrumentation, P1, parallel with Lane B): TICKET-PILOT-003 (CTA lift dashboard with holdout comparison), TICKET-PILOT-004 (inquiry starts tracking + event mapping). P2 carry-over: FOLLOW-073 (INTERNAL_API_SECRET threat model), FOLLOW-074 (README local dev setup). Pilot target: app.estalara.com. Free pilot. EU region. Incident owner: Piotr Nawrocki. Primary metric: CTA lift. Secondary: inquiry starts.
 2. Wire `applyArchetypeHints()` in SDK init (already implemented + tested, just not called) — cheap win for cold-start.
 3. ~~Hard-delete from ClickHouse in DSR-erase (FOLLOW-039)~~ **PROMOTED TO SPRINT 11 P1 as item 1 above.**
 4. ~~Doppler CI wired (FOLLOW-040)~~ **PROMOTED TO SPRINT 11 P1 as item 1 above.**

@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — DOPPLER_TOKEN_DEV secret must be provisioned in GitHub Actions [FOLLOW-040]
+## RESOLVED — DOPPLER_TOKEN_DEV secret must be provisioned in GitHub Actions [FOLLOW-040]
 
 **Filed by:** devops-engineer **Date:** 2026-05-24T00:00:00Z **Affects:** FOLLOW-040, FOLLOW-063,
 FOLLOW-068, FOLLOW-039 **Type:** repo-config
@@ -55,7 +55,64 @@ The token has NOT been created yet. Until it is provisioned in GitHub Actions se
 
 **Do NOT create a production-scope token.** Production secrets remain Vercel-only per §V.6.3.
 
-**Resolution:**
+**Resolution:** Resolved 2026-05-24. CI run on PR #141 (FOLLOW-079) confirms DOPPLER_TOKEN_DEV is
+present and authenticates: the `check-creds` step in `demo-integration` prints "DB credentials
+available — full E2E run." and Doppler injects all infra-level secrets. The `doppler-verify` job
+also passes. Token is live.
+
+---
+
+## OPEN — ESC-010: Doppler dev config missing control-plane Supabase env vars (demo-integration fails health check)
+
+**Filed by:** devops-engineer **Date:** 2026-05-24T00:00:00Z **Affects:** FOLLOW-079,
+demo-integration CI job **Type:** repo-config
+
+**Description:**
+
+After FOLLOW-079 flipped `demo-integration` to fail-loud, the first CI run (PR #141 run
+26373294307) confirmed:
+
+- DOPPLER_TOKEN_DEV is present (ESC previously OPEN is now RESOLVED)
+- Doppler injects infra-level secrets: MODAL_TOKEN_ID/SECRET, CLICKHOUSE_*, REDPANDA_*, UPSTASH_*,
+  SUPABASE_ACCESS_TOKEN, SUPABASE_ORG_ID, SUPABASE_DB_PASSWORD, OPENAI_API_KEY, ANTHROPIC_API_KEY,
+  CLOUDFLARE_*, VERCEL_CRON_SECRET
+
+BUT the Next.js control-plane dev server returns HTTP 500 on every health-check poll across all 40
+attempts (120 s total). The 500 indicates the server starts but cannot connect to Supabase because
+the app-level connection env vars are missing from the Doppler `dev` config. The infra org-level
+secrets (access token, org ID, DB password) are present but are not the same as the per-project
+runtime connection strings that Next.js needs.
+
+Missing keys (confirmed absent from Doppler `dev` secrets download):
+
+- `DATABASE_URL` — Postgres connection string (postgres://... to the Supabase project)
+- `NEXT_PUBLIC_SUPABASE_URL` — https://<project-ref>.supabase.co
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` — project anon/public key
+- `SUPABASE_SERVICE_ROLE_KEY` — server-side service role key
+- `JWT_SECRET` — used for tenant-scoped JWT verification
+
+**Required action (Piotr — ~15 minutes):**
+
+1. Open [Supabase dashboard](https://supabase.com/dashboard) → project used for dev/staging.
+2. Go to Project Settings → API. Copy:
+   - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
+   - anon public key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - service_role key → `SUPABASE_SERVICE_ROLE_KEY`
+3. Go to Project Settings → Database → Connection string (URI mode). Copy:
+   - Connection string → `DATABASE_URL` (use the "Session mode" pooler or direct URI)
+4. Set `JWT_SECRET` — this is the secret used to sign tenant JWTs. If it lives in Vercel env,
+   copy the same value.
+5. Add all 5 keys to Doppler `dev` config:
+   [Doppler dashboard](https://dashboard.doppler.com) → project `estalara-adaptive-listings` →
+   config `dev` → Add secret (×5).
+6. Re-run the `demo-integration` workflow on PR #141 or any branch to confirm the health check
+   passes (401 response from /api/adapt means DB connected + JWT gate active = healthy).
+
+**Impact if unresolved:** `demo-integration` job will fail on every PR touching control-plane, SDK,
+or e2e tests. The fail-loud mode (FOLLOW-079) is now active so this is a blocking CI failure, not a
+soft-skip.
+
+**Resolution:** (pending — awaiting Piotr action)
 
 ---
 

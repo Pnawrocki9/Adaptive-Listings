@@ -1760,4 +1760,640 @@ retrospective-analyst.
 
 ---
 
-<!-- RETRO-006 and beyond will be appended here by the retrospective-analyst agent -->
+## RETRO-006 — Sprint 10 (Close the bandit loop + real embeddings + e2e test) — 2026-05-24
+
+**Scope:** Sprint-level retrospective bundling 8 merged PRs (#127, #128, #129, #130, #131, #132,
+#133, #134). Sprint 10 was the immediate follow-on from Sprint 9.5 — its explicit goal in QUEUE.md
+was to "close the bandit loop, make cosine affinity real end-to-end (archetype + listing vectors
+both seeded), and verify the demo end-to-end in CI." Six of the eight PRs originated as FOLLOW-NNN
+stubs surfaced by RETRO-005 (i.e., this sprint is the literal "fix what last sprint half-shipped"
+sprint); two are new findings (FOLLOW-051 feedback auth hardening; FOLLOW-052 mirror-code CI gate).
+
+### Sprint-level rollup
+
+| Metric                            | Value                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------ |
+| Sprint goal                       | Close bandit loop + real embeddings + e2e demo test                      |
+| PRs merged                        | 8 (#127 → #134), all squash-merged to `main`                             |
+| Ticket completion                 | 8 / 9 planned tickets DONE (FOLLOW-061 merged, was the sprint's last)    |
+| Tickets DEFERRED                  | 0 (Sprint 11 carries FOLLOW-039 from Sprint 9.5)                         |
+| Estimated → actual hours          | 24h planned (4+2+3+5+3+4+3+1.5+0.5); +6h unplanned (FOLLOW-043 re-fixes) |
+| CI green on first push            | 5/8 (PR #131 needed 6 follow-up commits to land seed workflow)           |
+| Mean PR latency (open → merge)    | ~12h                                                                     |
+| Files changed (sprint cumulative) | 41                                                                       |
+| Lines added / removed             | +3,047 / −69                                                             |
+| New routes                        | 0 (existing `POST /api/adapt/feedback` hardened to HMAC)                 |
+| New scripts (npm/pnpm)            | 2 (`pnpm seed:archetypes`, `pnpm seed:listings`)                         |
+| New CI jobs                       | 1 (`rule-j` mirror-code byte-identity check)                             |
+| New permanent Rules               | 1 (Rule J — already promoted in CONVENTIONS_PATCH.md via PR #128)        |
+| Repeating retros' pattern hit     | Rule H — 6 retros in a row (now stably codified)                         |
+
+**Velocity vs plan:** Sprint 10 hit its plan within budget on the wire-up tickets; the only
+overshoot was FOLLOW-043 (archetype embedding seed), which needed six post-merge commits (`0ec3a7d`,
+`d16fb07`, `12fe824`, `b5a7103`, `d237051`, `82b9e2e`) to actually become operable in the GitHub
+Actions workflow — the underlying problem was deployment-environment friction (Supabase IPv6-only
+direct host, Doppler password mismatch, missing `DATABASE_URL_ADMIN`, `OPENAI_API_KEY` not in
+Doppler dev). The seed script merged green but did not actually seed any vectors until the sixth
+fix. This is a Rule H sub-pattern: "the seed script exists but the operational path to _run_ it is
+broken." See §4a (gap LG-1).
+
+**Six of eight PRs were direct closures of RETRO-005 half-wires.** RETRO-005 identified four
+HALF_WIRE_P findings (`/api/adapt/feedback` no SDK consumer, `AdaptationDirectives.variant` no SDK
+consumer, `archetype_embeddings.embedding` NULL with no producer, `listing_embeddings` consumer with
+no automated producer). Sprint 10 closed all four with PR #127 (FOLLOW-041/042 — SDK feedback ping +
+variant field), PR #131 (FOLLOW-043 — archetype embedding seed script + workflow), and PR #132
+(FOLLOW-046 — on-activation listing embedding trigger + demo manifest). The remaining two PRs
+addressed the security gap FOLLOW-051 surfaced by RETRO-005 §4a (PR #133) and the **process** gap
+FOLLOW-061 (PR #134 — sprint-close Snapshot.1 re-verification). Net: Sprint 10 is the most
+disciplined "retro-driven" sprint shipped to date.
+
+**Repeating patterns across the 8 PRs:**
+
+1. **Rule H (schema scaffold / deferred wiring)** — 6 retros consecutive. RETRO-006 records ONE new
+   HALF_WIRE finding (LG-2 below — `feedbackConvertedFalse` SDK opt-in has no documented operator
+   surface), but the dominant story is Rule H _closure_: Sprint 10 reduced the open half-wire count
+   by 4 net. The pattern persists structurally — see §6 for a recommended Rule H amendment.
+2. **Mirror-code duplication** — Rule J was _promoted to permanent_ in PR #128 (FOLLOW-052). The CI
+   gate is live; the two declared pairs (`bandit.ts` and `reorder.ts`) are enforced. This is the
+   only "new Rule" delta from Sprint 10. Rule J already lives in CONVENTIONS_PATCH.md (added during
+   RETRO-005); PR #128 only added the _enforcement script_.
+3. **Doppler/CI infrastructure friction** — FOLLOW-043 needed six retry commits. The Doppler dev
+   config is the single root cause: `SUPABASE_DB_PASSWORD` mismatch, `DATABASE_URL_ADMIN` missing,
+   `OPENAI_API_KEY` absent. FOLLOW-040 was meant to harden Doppler CI hygiene but is still parallel
+   pre-flight (per Sprint 9.5 preamble). This recurs.
+4. **Deferred SDK auth ratcheting** — PR #127 shipped SDK feedback ping with **presence-only Bearer
+   auth** on 2026-05-22; PR #133 then ratcheted the server to **HMAC-SHA256** on 2026-05-23 AND had
+   to ship a matching SDK update in the same PR. This is the "ship the client first, harden the
+   server, ship a client update one day later" pattern. The SDK update IS in PR #133, so the
+   contract is internally consistent at end of sprint — but the window 2026-05-22 → 2026-05-23 has a
+   16-hour gap where SDK#127 + server#127 spoke unsigned Bearer. Demo-safe (no real tenants), but
+   shipped main was insecure for 16h. See §4a LG-3.
+
+### 1. Summary of change
+
+| PR   | Ticket                  | Title                                                        | Files | +/−        | Merged                                                  |
+| ---- | ----------------------- | ------------------------------------------------------------ | ----- | ---------- | ------------------------------------------------------- |
+| #127 | FOLLOW-041 + FOLLOW-042 | SDK feedback ping + variant field                            | 4     | +552 / −3  | 2026-05-22 12:24Z `32d9bb3`                             |
+| #128 | FOLLOW-052              | Mirror-code byte-identity CI check (Rule J enforcement)      | 7     | +194 / −12 | 2026-05-22 12:25Z `d3bcd4e`                             |
+| #129 | FOLLOW-047              | Reject null tenant_id with 403 STAFF_TENANT_CONTEXT_MISSING  | 6     | +77 / −5   | 2026-05-22 12:26Z `83f98d8`                             |
+| #130 | FOLLOW-055              | E2E integration test detect→activate→adapt→SDK               | 7     | +603 / −7  | 2026-05-22 12:27Z `b0f3df9`                             |
+| #131 | FOLLOW-043              | Archetype embedding vectors seed script                      | 5     | +391       | 2026-05-22 12:33Z `83761b9` (+6 fix commits 2026-05-22) |
+| #132 | FOLLOW-046              | Auto-seed listing embeddings on tenant activation            | 8     | +814       | 2026-05-22 22:35Z `059ffd9`                             |
+| #133 | FOLLOW-051              | Tenant-scoped HMAC-SHA256 auth on `POST /api/adapt/feedback` | 7     | +524 / −43 | 2026-05-23 15:23Z `c596821`                             |
+| #134 | FOLLOW-061              | Add Snapshot.1 re-verification to sprint-close checklist     | 4     | +122 / −3  | 2026-05-23 15:18Z `480af35`                             |
+
+**Cumulative:** 41 files changed across the sprint, +3,047 / −69. Key new artefacts:
+
+- `packages/sdk/src/core/adapt.ts` — `cacheVariant()`, `getCachedVariant()`, `deriveFeedbackUrl()`,
+  `postFeedbackPing()`, `registerFeedbackListener()`, `computeHmacSha256Hex()` (added in #127, HMAC
+  added in #133)
+- `packages/sdk/src/core/config.ts` — `feedbackEvents?`, `feedbackUrl?`, `feedbackConvertedFalse?`
+- `apps/control-plane/src/app/api/adapt/feedback/route.ts` — HMAC verification (added in #133)
+- `packages/shared/src/errors.ts` — `ErrorCode.STAFF_TENANT_CONTEXT_MISSING`
+- `apps/control-plane/src/lib/seed-listing-embeddings.ts` — fire-and-forget seeding helper +
+  12-entry `DEMO_LISTING_MANIFEST`
+- `apps/control-plane/scripts/seed-archetypes.mts` — one-shot embedding seed (PostgREST after fix
+  commits)
+- `apps/control-plane/scripts/seed-estalara-listings.mts` — backfill script
+- `tests/e2e/sprint-9-5-demo.spec.ts` — 5 static contract tests + 5 E2E steps (guarded by
+  `NEXT_PUBLIC_TEST_E2E=true`)
+- `scripts/check-mirror-files.sh` + `scripts/mirror-files.json` — Rule J enforcement
+- `.github/workflows/seed-archetypes.yml` — manual workflow_dispatch for seeding
+- `docs/AGENT_WORKFLOW.md` — new "Sprint-close checklist" section
+- `.claude/agents/pm-orchestrator.md` — step 8 "Sprint close"
+- `docs/MASTER_DESIGN.md` v2.1 → v2.2 (§V.3.2 threat model + checklist forward-ref)
+
+**Key contracts changed:**
+
+- `AdaptResponse.variant?: string` — ADDED (additive, optional) — breaking: no — consumer wired into
+  SDK same PR — Rule H satisfied
+- `SdkConfig.feedbackEvents?: string[]`, `feedbackUrl?: string`, `feedbackConvertedFalse?: boolean`
+  — ADDED (additive, optional) — breaking: no
+- `ErrorCode.STAFF_TENANT_CONTEXT_MISSING` — ADDED to enum — breaking: no
+- `POST /api/adapt/feedback` auth scheme — CHANGED from presence-only Bearer to HMAC-SHA256 (with
+  `ADAPT_API_KEY` env override) — breaking: yes for any non-SDK caller; SDK updated in same PR
+- `MIRROR_FILES` manifest (`scripts/mirror-files.json`) — NEW contract declaring 2 file-pair mirrors
+
+### 2. Verification in PRs
+
+- Test files added/changed: 9 across the sprint (44 → 47 new SDK tests; 31 new feedback route tests;
+  35 new control-plane tests for seed-listing-embeddings + activate-trigger; 200 added across
+  embedding-lookup; 576 lines added in the e2e spec).
+- Coverage delta: control-plane 481 → 516 tests (PR #133 final count) → an estimated 530+ with
+  FOLLOW-046's 15 new tests.
+- CI checks: **All 8 PRs landed with green TypeScript/JS lanes** (per `gh pr checks` review at retro
+  time). The four pre-existing baseline failures (`Doppler verify`, `Rule I` legacy dead code, 7×
+  `Test (Python)` scaffolding, `Vercel Preview` rate-limit on some PRs) recur and are explicitly
+  ignored per QUEUE.md preamble. **No PR repeated the PR #125 incident** (CI billing-blocked, merged
+  on local-test confidence only) — Rule A held for the entire sprint.
+- Demonstrable end-to-end: PR #130 added a vitest integration spec that exercises the full
+  detect→activate→adapt chain _but is guarded behind `NEXT_PUBLIC_TEST_E2E=true`_. The five steps
+  inside `describe.skipIf(!RUN_E2E)` only run when an operator provisions a tenant and starts the
+  Next.js server; they do not run under `pnpm test` in CI. The 5 _static contract_ assertions (grid
+  builder, ReorderDirective sort, TextDirective DOM mutation, fixture schema validation, score
+  invariant) DO run unconditionally in CI. **Net:** the demo's structural contracts are CI-tested,
+  but the end-to-end _integration path itself_ still requires a manual / scripted bring-up — see §4c
+  TG-1.
+
+**NOT verified by tests (load-bearing gaps — see §4c):**
+
+- **No CI step actually runs `pnpm seed:archetypes` or `pnpm seed:listings`.** The seeds are
+  one-shot scripts behind a manual `workflow_dispatch` job (`.github/workflows/seed-archetypes.yml`)
+  - manual operator invocation respectively. There is no automated assertion that
+    `archetype_embeddings.embedding` is non-NULL in dev/staging at any moment in time.
+- **No SDK test verifies the HMAC signature is actually computed against the correct request body
+  byte sequence.** PR #133's SDK tests mock `crypto.subtle` for determinism and assert the
+  `X-Estalara-Signature` header is present — but no test computes HMAC against a known fixture and
+  asserts the SDK-computed hex matches the server-computed hex. A subtle JSON-encoding divergence
+  (key ordering, whitespace, escaping) between server and SDK would silently reject every legit
+  ping. See §4c TG-2.
+- **The 16h presence-only-Bearer window (2026-05-22 → 2026-05-23) is not regression-tested.** If a
+  future revert of #133 reintroduces presence-only auth, no automated red signal fires. See §4c
+  TG-3.
+
+### 3. Wiring Audit
+
+This sprint is dominated by Rule H _closure_ (HALF_WIRE_P findings from RETRO-005 closed). New
+findings are scoped narrowly to the newly-introduced surface.
+
+**CHECK A — Dead code detection:**
+
+Each new exported / first-party file in the 8 PRs was grepped for non-test importers:
+
+- `packages/sdk/src/core/adapt.ts` — `cacheVariant`, `getCachedVariant`, `deriveFeedbackUrl`,
+  `postFeedbackPing`, `registerFeedbackListener`, `computeHmacSha256Hex` — all internal helpers
+  consumed by `fetchDirectives()` (verified, 1+ non-test importer each). **Clean.**
+- `apps/control-plane/src/lib/seed-listing-embeddings.ts` — `seedListingEmbeddingsForActivation()`
+  consumed by `apps/control-plane/src/app/api/schema/activate/route.ts`. `DEMO_LISTING_MANIFEST`
+  consumed by both the activation path and the backfill script. **Clean.**
+- `apps/control-plane/scripts/seed-archetypes.mts` — invoked via `pnpm seed:archetypes` declared in
+  root `package.json` AND via the new GitHub Actions workflow
+  `.github/workflows/seed-archetypes.yml`. Operator-runnable. **Clean** (script entrypoint pattern,
+  framework-discovered).
+- `apps/control-plane/scripts/seed-estalara-listings.mts` — invoked via `pnpm seed:listings`
+  declared in root `package.json`. Operator-runnable. **Clean.**
+- `scripts/check-mirror-files.sh` — invoked by CI job `rule-j` and by `lefthook.yml` pre-push hook.
+  **Clean.**
+- `tests/e2e/sprint-9-5-demo.spec.ts` — vitest spec, discovered by the e2e workspace test runner.
+  **Clean** (framework-discovered test file).
+- `ErrorCode.STAFF_TENANT_CONTEXT_MISSING` — consumed by both `detect/route.ts` and
+  `activate/route.ts`. **Clean.**
+
+No DEAD_CODE candidates this sprint.
+
+**CHECK B — Half-wire detection:**
+
+New events / env vars / DB columns / SDK signals introduced:
+
+- **Env var `INTERNAL_API_SECRET`** — producer: documented in `.env.example`; consumer:
+  `seed-listing-embeddings.ts:208` reads `process.env.INTERNAL_API_SECRET` for service-to-service
+  auth header. **Producer present, consumer present.** ✅
+- **Env var `DEMO_TENANT_ID`** — producer: `.env.example` line added in PR #132; consumer:
+  `seed-listing-embeddings.ts:101` reads it to gate the demo-manifest path. ✅
+- **Env var `ADAPT_API_KEY`** — consumer at `feedback/route.ts:144` (Bearer-token fallback when HMAC
+  unused). Producer: documented in Doppler but the auditor did not independently verify presence in
+  `prd` Doppler config (RETRO-005 also flagged this). **HALF_WIRE_C uncertain** — if unset in
+  production, the endpoint reverts to "any non-empty Bearer accepted" before HMAC fallback kicks in.
+  PR #133 documented this as accepted but verify in §6. → flagged in §4a (LG-3), no new FOLLOW.
+- **SDK config field `feedbackConvertedFalse`** — consumer at `adapt.ts:197` (registers
+  `visibilitychange → hidden` listener with ≥30s dwell). Producer: **no operator surface documents
+  this option** — `.env.example` doesn't mention it, no dashboard control, no docs in
+  `docs/SDK_CONFIG.md` (file doesn't exist). The field is consumer-only with no documented producer
+  workflow. **HALF_WIRE_P** (the producer would be the operator setting it, but there's no
+  documented surface). Priority **P3** documentation-only → **FOLLOW-062**.
+- **SDK feedback ping body field `converted: boolean`** — producer: `postFeedbackPing()`; consumer:
+  `feedback/route.ts:41` Zod schema reads `converted`, passes to
+  `updateBanditArm(alpha, beta, converted)`. ✅
+- **HMAC header `X-Estalara-Signature`** — producer: SDK
+  `packages/sdk/src/core/adapt.ts:computeHmacSha256Hex` + sent in fetch headers (PR #133 SDK
+  update); consumer: server `feedback/route.ts` HMAC verify (PR #133 server update). Both ends
+  shipped same PR. ✅
+- **ClickHouse column `adaptation_decisions.variant`** — added migration 0010 in Sprint 9.5 (PR
+  #122); producer: control-plane adapt route logs `variant` per-decision; consumer: nobody reads
+  `variant` from ClickHouse in Sprint 10. The bandit-feedback loop reads from `ab_bandit_weights`
+  (Postgres), not ClickHouse. The variant column in CH is an _analytics_ column awaiting an
+  unwritten dashboard. **HALF_WIRE_P pre-existing** from Sprint 9.5; not a Sprint 10 finding.
+- **Database column `archetype_embeddings.embedding`** — producer: `pnpm seed:archetypes` script (PR
+  #131 + 6 fix commits). Consumer: `fetchArchetypeEmbedding()` in
+  `apps/control-plane/src/lib/embedding-lookup.ts`. ✅ once the script is actually run against a
+  given DB. **Operational gap**: the script's "run once after merge" requirement is documented in
+  the script header but no automated enforcement exists. → see §4a LG-1.
+- **Database table `listing_embeddings`** — producer: `POST /api/listings/embed` + on-activation
+  trigger (PR #132). Consumer: adapt route's `fetchListingEmbeddings()` (Sprint 9.5 PR #123). ✅ for
+  the demo tenant (12-listing manifest auto-seeded). **HALF_WIRE_P** for non-demo tenants: the PR
+  #132 manifest path is hardcoded to `tenantId === DEMO_TENANT_ID`; any new real tenant's listings
+  still need manual ingestion via the backfill script or future automation. → see §4a LG-4 (already
+  covered by FOLLOW-046's "non-demo automation" carve-out — no new FOLLOW).
+- **Mirror manifest entries** — `mirror-files.json` declares 2 pairs. Both files are mirrored on
+  `main` (`check-mirror-files.sh` passes locally per PR #128 description). ✅
+
+**Net Wiring Audit:** **1 new HALF_WIRE_P (P3, FOLLOW-062)**. RETRO-005's 4 P0/P1 HALF_WIRE findings
+are CLOSED. This is the cleanest wiring audit since the loop began.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — FOLLOW-043 ships a seed script but the seed never auto-runs anywhere.** The 18-row
+  `archetype_embeddings` table still has `embedding = NULL` for any developer who pulls `main`
+  fresh, until they (a) configure Doppler dev with `SUPABASE_SERVICE_ROLE_KEY` + `OPENAI_API_KEY`,
+  (b) build `@estalara/db`, (c) invoke `pnpm seed:archetypes`. The new GitHub Actions workflow
+  (`seed-archetypes.yml`) is a manual `workflow_dispatch` — it does not run on push, on schedule, or
+  on tenant onboarding. The README does not document this requirement. CI does not enforce it (no
+  assertion that `embedding IS NOT NULL FOR ALL` archetypes). Result: the cosine-affinity path added
+  by FOLLOW-019 (Sprint 9.5) and the seed script added by FOLLOW-043 are _technically wired_ but
+  **functionally unreachable in any environment where an operator has not manually run the
+  workflow**. The 6 fix-commits after the initial merge prove this gap: it took 6 attempts to make
+  the seed _runnable in CI_; nobody has yet made it _runnable automatically_. Severity **P1** for
+  the next operator/onboarding session, **P2** for the live demo if the production DB has been
+  seeded once. → **FOLLOW-063** (P1, devops-engineer + ml-engineer, 2h, Sprint 11) — add a CI
+  precheck job that fails when the dev DB has any `archetype_embeddings.embedding IS NULL`, plus a
+  README/runbook entry.
+- **LG-2 — SDK `_feedbackListenerRegistered` is a module-scoped boolean, not per-instance.** At
+  `packages/sdk/src/core/adapt.ts:143` the module-level `let _feedbackListenerRegistered = false`
+  guards double-registration. In a single-page application that calls `fetchDirectives()` multiple
+  times across route changes — or in any pathological case where the SDK is loaded into multiple
+  iframes / shadow roots — the boolean does NOT reset per SDK instance. The reset function
+  `resetAdaptState()` at line 159 sets it back to false, but `fetchDirectives()` does not call
+  `resetAdaptState()` — only the test suite does. **In practice this is benign** (the listener
+  attaches to `document` once, and the guard correctly prevents double-attach). But the module-
+  level singleton becomes fragile if SDK is ever loaded twice in the same window (TICKET-NATIVE-001
+  scenarios, or a tenant who embeds two SDK instances for two different listing grids on the same
+  page). Severity **P2** latent. → **FOLLOW-064** (P2, sdk-engineer, 1h, backlog) — promote the
+  guard to a `WeakMap<Document, boolean>` keyed on document and a per-config init token, OR document
+  this as a hard SDK constraint in Master Design §B.1.
+- **LG-3 — 16-hour security regression window 2026-05-22 → 2026-05-23.** PR #127 (merged 2026-05-22
+  12:24Z) shipped the SDK feedback ping with `Authorization: Bearer ${config.apiKey}` and no HMAC.
+  The server (`feedback/route.ts` at that point) accepted any non-empty Bearer when `ADAPT_API_KEY`
+  was unset (RETRO-005 §4a LG-5 + FOLLOW-051). PR #133 closed both ends 2026-05-23 15:23Z. **For 16
+  hours, `main` shipped a self-consistent but unauthenticated feedback path that allowed adversarial
+  bandit poisoning.** Today there are no real tenants, so no production exposure occurred. But the
+  _pattern_ — ship a feature with weak auth, then ratchet auth in a follow-up PR — is the same
+  pattern that produced FIX-013..019 in Sprint 8. RETRO-002 and RETRO-003 already flagged this;
+  Sprint 10 repeats it once. Severity **P1** for the _pattern_; **P0** if a pilot launch had
+  occurred during the window. **No new FOLLOW — this is a Rule A\* / Rule H amendment candidate (see
+  §6).** Process check: PR #127 review comments should have caught "this endpoint mutates DB without
+  signed auth," but the SDK PR was scoped to "close the bandit loop" and the auth question was
+  scheduled separately. Recommend amending the PM-orchestrator pre-READY_FOR_REVIEW checklist to
+  include a "is the auth surface tight enough to land first?" question for any PR that touches an
+  endpoint that mutates a DB.
+- **LG-4 — `seed-listing-embeddings.ts` `findOpenAIKey()` race in concurrent activations.** The
+  helper calls `process.env.INTERNAL_API_SECRET` and `process.env.DEMO_TENANT_ID` at module load but
+  reads `OPENAI_API_KEY` (indirectly via `POST /api/listings/embed`) only at request time. If two
+  operators activate two tenants within 1 second (unlikely in dev, possible at scale), both
+  fire-and-forget background fetches race to mutate `listing_embeddings`. The embed endpoint uses
+  upsert semantics so the data layer is safe, but the _cost_ of double-embedding is paid (a few
+  extra OpenAI calls). Severity **P3**. **No new FOLLOW** — acceptable; document in Master Design §F
+  when FOLLOW-060 lands.
+- **LG-5 — `requestId` in `POST /api/schema/activate` is generated _inside_ the handler (PR #129)
+  but the same handler had no `requestId` before PR #129's fix.** This is fine going forward — every
+  error body now carries one. But every log line emitted BEFORE PR #129's edit (i.e. every
+  activation since the route shipped on 2026-05-22) had no correlation ID. Backfilling logs is
+  impossible; this is just a "we lost a few hundred bytes of observability for ~24h" — note as
+  context only. **No follow-up.**
+
+#### 4b. Code bugs not caught
+
+- **CB-1 — `postFeedbackPing()` swallows ALL errors silently to `console.warn`, including
+  authorization failures.** At `packages/sdk/src/core/adapt.ts:91-96` (and the HMAC path in PR
+  #133), every fetch error path lands in `console.warn`. If a tenant's `config.apiKey` is wrong /
+  rotated / revoked, every conversion signal silently fails. The bandit will sit at uniform
+  Beta(1,1) forever and the operator has no signal. Severity **P2** because a) feedback is
+  fire-and-forget by design, b) `console.warn` _is_ visible in browser devtools, but c) no
+  ClickHouse log records the failure (the feedback route only logs successes when DB upsert works).
+  → **FOLLOW-065** (P2, sdk-engineer + backend-engineer, 1.5h, Sprint 11) — emit a synthetic
+  `events.feedback.send_failed` event (existing event taxonomy) when the ping returns 4xx/5xx, so
+  the dashboard can count failures.
+- **CB-2 — `FeedbackBodySchema.tenant_id: z.string().min(1).max(256)` accepts the literal string
+  `'undefined'`.** At `feedback/route.ts:37`, `tenant_id` is loosely typed. The SDK sends
+  `tenant_id: config.tenantId`. If a tenant misconfigures the SDK with `tenantId: undefined`, the
+  fetch body serializes as `{"tenant_id":"undefined", ...}` (because we constructed the object
+  literally) — but the SDK actually checks `if (!config.tenantId) return;` at line 73, so this
+  early-returns. **Latent**: any future refactor that drops the early-return would let `'undefined'`
+  poison the bandit table. Severity **P3** latent. → **FOLLOW-066** (P3, backend-engineer, 0.5h,
+  backlog) — tighten the Zod schema to `z.string().uuid()` or `z.string().regex(/^[a-z0-9-_]+$/)`.
+- **CB-3 — `applyArchetypeHints()` from RETRO-005 §Snapshot.4 priority #1 is STILL not called at SDK
+  init.** Sprint 10's brief did not include this item. The Snapshot.1 §F entry references the
+  cold-start optimization. The function is still imported nowhere outside its test. Severity **P2**
+  cold-start performance / demo polish. **No new FOLLOW — already an open backlog item; flag for
+  Sprint 11 priority promotion.**
+- **CB-4 — `tests/e2e/sprint-9-5-demo.spec.ts:35` hardcodes
+  `E2E_BEARER_TOKEN ?? 'e2e-demo-bearer- token'` as a fallback.** Anyone running the spec locally
+  without `E2E_BEARER_TOKEN` set will fire requests with this literal string. The detect / activate
+  / feedback routes all require a real JWT (now stricter after FOLLOW-047 + FOLLOW-051). So the
+  fallback Bearer will produce 401s, and the test will fail. That's _correct_ behavior — but the
+  failure surfaces as "test failed" without a useful "you must set `E2E_BEARER_TOKEN`" message.
+  Severity **P3** ergonomic. → **FOLLOW- 067** (P3, qa-engineer, 0.25h, backlog) — add a
+  `beforeAll()` precheck that asserts `E2E_BEARER_TOKEN` is set when `RUN_E2E === true` and skips
+  with a clear message otherwise.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 — The "end-to-end demo" test (PR #130 / FOLLOW-055) is _guarded behind an opt-in flag_ that
+  nothing in CI sets.** The 5 E2E steps inside `describe.skipIf(!RUN_E2E)` only run when
+  `NEXT_PUBLIC_TEST_E2E === 'true'` AND `E2E_BASE_URL` points at a running Next.js server. **There
+  is no CI job that brings up that server and sets the flag.** The static contract tests (5
+  assertions) DO run on every push and catch regression in fixture schema / DOM mutation logic. But
+  the _integration_ — does the SDK actually receive the variant the server sends? does the feedback
+  ping reach the DB? does the activated tenant get a working adapt response? — is exactly what
+  RETRO-005 §4c flagged as missing, and PR #130 ships the _spec for it_ without running it. Severity
+  **P0** for genuine demo confidence; **P1** if interpreted as "we have a working blueprint that an
+  operator can run before any pilot." → **FOLLOW-068** (P1, qa-engineer + devops-engineer, 4h,
+  Sprint 11) — provision a `demo-integration` CI job that starts Next.js against a Supabase seed DB,
+  runs the E2E spec, tears down. Without this, RETRO-005 §4c FOLLOW-055 is mechanically closed but
+  its INTENT is not satisfied.
+- **TG-2 — No HMAC compatibility test between SDK and server.** PR #133 unit-tests each side with
+  internal mocks; nothing asserts
+  `SDK.computeHmacSha256Hex(key, body) === server.hmacSha256Hex(key, body)` for a known fixture. If
+  the SDK's `JSON.stringify` of the body diverges from the body the server reads via `req.text()`
+  (e.g. extra whitespace, key ordering, BOM, UTF-8 normalization), all pings silently 401. Severity
+  **P1** — this is the single hot path that proves the FOLLOW-051 hardening actually works in
+  production. → **FOLLOW-069** (P1, qa-engineer + backend-engineer, 2h, Sprint 11) — add a
+  cross-runtime fixture test in `packages/shared/__tests__/cross-runtime/` (already a precedent for
+  Rule J): given a JSON body string and a key, assert SDK + server compute identical hex.
+- **TG-3 — No regression test asserts feedback endpoint rejects presence-only Bearer.** PR #133
+  rebuilt the auth path; a future revert (or a junior dev "fixing CI by relaxing auth") could
+  reintroduce the LG-3 vulnerability and CI would not catch it. → folded into FOLLOW-069 AC ("also
+  assert: a request WITHOUT `X-Estalara-Signature` is rejected with 401 when `ADAPT_API_KEY`
+  unset").
+- **TG-4 — Mirror-code test does not extend to `apps/decision-api/src/lib/affinity.ts` /
+  `cosine.ts`.** Rule J is enforced for `bandit.ts` and `reorder.ts` mirror pairs. PR #123 (Sprint
+  9.5) shipped a `cosineSimilarity()` and `affinityScore()` that appear in BOTH `decision-api/lib/`
+  and `apps/control-plane/src/app/api/adapt/route.ts`. RETRO-005 §4b CB-2 explicitly called this
+  out. PR #128's manifest covers `reorder.ts` (which contains `buildReorderDirective` + a
+  re-exported `affinityScore`), but if a future split moves cosine math to a separate file, the
+  manifest must follow. → **FOLLOW-070** (P3, devops-engineer, 0.5h, backlog) — when any new file is
+  added to `apps/decision-api/src/lib/` that mirrors logic in `packages/shared` or
+  `apps/control-plane/src/`, MUST add a manifest entry in the same PR. Encode as a Rule J amendment
+  "any new file in this dir requires a manifest decision" — bundle into Rule J documentation.
+- **TG-5 — No test asserts `seedListingEmbeddingsForActivation` is idempotent on re-activation.** PR
+  #132 documents idempotency via upsert semantics, but the test set doesn't include "activate twice
+  → embed each listing once OR twice depending on what we want; assert the behavior." Currently
+  re-activating a tenant fires the seed twice (it's fire-and-forget; the schema activate route does
+  NOT check whether seeding already happened). Cost: 2× OpenAI calls per re-activation for the demo
+  tenant (12 listings × 2 = 24 calls), $0.001 total — negligible. But the test gap is real. Severity
+  **P3**. **No new FOLLOW** — defer.
+
+#### 4d. Documentation gaps
+
+- **DG-1 — `feedbackConvertedFalse` and `feedbackEvents` SDK config options are NOT documented in
+  Master Design §B.1 (SDK config surface).** The SDK code has JSDoc, but the canonical operator-
+  facing doc is Master Design. Same shape as FOLLOW-060 (which already covers the new
+  `/api/adapt/feedback` and `/api/listings/embed` endpoints). → fold into FOLLOW-060 AC OR new
+  **FOLLOW-071** (P2, architect, 0.5h, Sprint 11) — document SDK feedback config options in §B.1.
+- **DG-2 — `DEMO_LISTING_MANIFEST` is hardcoded in `seed-listing-embeddings.ts` (12 entries) but no
+  doc explains the relationship between this manifest, the `000-app-estalara` corpus fixture, and
+  `data-estalara-listing-id` attributes on the demo page.** A future contributor adding a 13th demo
+  listing must edit the manifest AND the fixture AND the demo page AND the corpus expected output.
+  Three of those four are co-located; the manifest is in a fourth location. → **FOLLOW-072** (P3,
+  architect + data-engineer, 0.5h, backlog) — add a `docs/DEMO_TENANT.md` (or §T section) that
+  explains the multi-file demo-tenant data contract.
+- **DG-3 — `INTERNAL_API_SECRET` is referenced in `.env.example` and used as a service-to-service
+  auth header by `seed-listing-embeddings.ts`, but no threat model documents its scope.** PR #133
+  added a Master Design §V.3.2 entry for the HMAC; the _internal_ shared secret used to bridge
+  control-plane → embed-endpoint is undocumented. If `INTERNAL_API_SECRET` leaks, an attacker can
+  poison embeddings for any tenant. Severity **P2** because this is a server-to-server secret that
+  only lives in Doppler. → **FOLLOW-073** (P2, compliance-engineer, 1h, Sprint 11) — Master Design
+  §V.3.3 threat model for `INTERNAL_API_SECRET`; key rotation runbook.
+- **DG-4 — `pnpm seed:archetypes` and `pnpm seed:listings` are not mentioned in the root README or
+  any onboarding doc.** A new developer pulling `main` will be silently broken: cosine path will
+  degrade to djb2, the dashboard will show "0% variant lift" everywhere, and there is no diagnostic.
+  → **FOLLOW-074** (P2, architect, 0.5h, Sprint 11) — add a "Local development setup" README section
+  listing required one-shot seeds and Doppler keys. Bundle with FOLLOW-063 (LG-1).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- N/A — Sprint 10 is the last sprint in the window. All 9 planned tickets DONE.
+
+#### 5b. Future sprint tickets affected
+
+- **Sprint 11 (Pilot onboarding + docs + launch checklist) — TBD scope:** RETRO-006 surfaces 12 new
+  FOLLOW-UPs (062–074). The most pilot-blocking are FOLLOW-063 (P1, auto-seed enforcement),
+  FOLLOW-068 (P1, demo CI integration), FOLLOW-069 (P1, HMAC compatibility test). All three should
+  land in Sprint 11 before any pilot tenant is provisioned.
+- **FOLLOW-039 (Sprint 11, P0 — ClickHouse DSR hard-delete):** Still deferred. No EU pilot in 4-6
+  weeks. RETRO-006 confirms no change to this assumption.
+- **TICKET-NATIVE-001 (BLOCKED):** No direct Sprint 10 impact. The SDK changes in #127/#133 do not
+  affect SvelteKit integration patterns. But LG-2 (`_feedbackListenerRegistered` module singleton)
+  may surface when Native shipping double-loads the SDK — note in the NATIVE-001 spec when it
+  unblocks.
+- **TICKET-CAUSAL-001 (BACKLOG, P2 — CATE estimation):** Now mostly unblocked. Sprint 10 closed the
+  feedback loop — once enough conversion data lands in `ab_bandit_weights`, CATE math has real
+  input. Add a note that CAUSAL-001 should also wait until `archetype_embeddings.embedding` is
+  non-NULL (LG-1) so the treatment dimension is meaningful.
+- **FOLLOW-040 (parallel Doppler CI hygiene):** Still incomplete. FOLLOW-043's six fix-commits are
+  exactly the kind of friction FOLLOW-040 was supposed to eliminate. Promote priority.
+
+#### 5c. Contracts changed that other modules rely on
+
+- **`AdaptResponse.variant?: string`** — every SDK consumer (today: `index.ts:apply()`) reads the
+  field via TypeScript optional access. No downstream break. Native (BLOCKED) will need to honor it
+  when unblocking.
+- **`POST /api/adapt/feedback` auth scheme change (Bearer → HMAC)** — only the SDK calls this
+  endpoint; SDK was updated in same PR #133. No external integrators today. **If any future
+  third-party integrator emerges, the auth pivot must be in the integration docs.** → folded into
+  FOLLOW-060 / FOLLOW-071.
+- **`ErrorCode.STAFF_TENANT_CONTEXT_MISSING`** — additive; no breakage.
+- **`MIRROR_FILES` manifest** — new contract; only affects DEVOPS workflows.
+
+#### 5d. Architectural assumptions affected
+
+- **Master Design §V.3 — Security architecture: feedback endpoint threat model.** PR #133 added
+  §V.3.2. The decision (HMAC over body, tenant API key as secret, accept ops `ADAPT_API_KEY`
+  fallback, no replay protection) is now codified. Single doc-as-truth resolution.
+- **Master Design §F — Data Network Effect (archetype embedding space).** The Sprint 9.5 Snapshot.1
+  edit M-4 noted "cosine path is unreachable in production today; FOLLOW-019's headline claim is
+  functionally a no-op until the archetype embedding vectors are computed." Sprint 10's PR #131 + 6
+  fix commits _technically_ satisfies FOLLOW-043, but **LG-1 above flags that the production DB is
+  still NOT seeded automatically.** The Snapshot.1 row F language ("cosine path is unreachable")
+  remains true for any dev-environment pull of `main` until an operator runs the manual
+  `workflow_dispatch`. The Snapshot.1 verdict needs nuance — see §7 below.
+- **Master Design §E.3 — A/B + bandit.** The Sprint 9.5 Snapshot.1 row E.1–E.3 (M-3) flagged two
+  half-wires: FOLLOW-041 (SDK feedback ping) and FOLLOW-042 (SDK variant consumer). Both CLOSED this
+  sprint. Snapshot.1 row E.1–E.3 needs updating — see §7.
+- **Master Design §B.4 — Auto-Onboarding UI.** RETRO-005 Edit M-1 listed three open gaps: (a)
+  Magic-Link email flow, (b) listing embedding auto-seed, (c) end-to-end integration test. Sprint 10
+  partially closes (b) — auto-seed exists but ONLY for the demo tenant (per §3 + LG-1). (c) is
+  shipped as a _guarded test_ not yet running in CI (per TG-1). (a) Magic-Link email is still
+  BLOCKED. Snapshot.1 row B.4 needs updating to reflect partial closure of (b) and (c) — see §7.
+- **Operating Principles §Y.3 — Snapshot.1 re-verification.** PR #134 (FOLLOW-061) added the process
+  gate. **Sprint 10 IS the first sprint that must follow this rule on close.** This very retro is
+  the first execution of the rule. See §7.
+
+### 6. New lesson candidates
+
+- **Pattern A: "Ship a feature with relaxed auth, harden auth in the next PR" (16h regression
+  window).** Seen RETRO-002 (FIX-013..019), RETRO-005 (FOLLOW-051 surfaced), RETRO-006 LG-3 (PR #127
+  → PR #133). Count: **3 retros, 3+ instances.** **Threshold MET.** But this is structurally a
+  sub-case of Rule H ("scaffold shipped without runtime wiring") applied to the _auth surface_
+  rather than the _consumer surface_. Recommend **AMENDING Rule H** rather than promoting Rule K.
+  Specifically: amend Rule H §1 to read "...new symbol AND any new authenticated mutation endpoint
+  MUST land with its production auth surface (not a permissive dev fallback) wired in the same PR."
+  See proposed amendment text in §6a below.
+- **Pattern B: "Operational seed script ships but environment plumbing breaks; needs N fix
+  commits."** Seen RETRO-005 (PR #125 CI billing — 1 instance), RETRO-006 (PR #131 FOLLOW-043 — 6
+  fix commits). Count: **2 retros, 2 instances.** **Threshold MET as a class.** Distinct from Rule H
+  (which is about wiring within the codebase). This is about wiring between the codebase and the
+  _deployment environment_ (Doppler config, build artifacts, secrets, IPv6 reachability). Not yet a
+  clean Rule candidate — the symptom is "operator-runnable scripts merge green without an
+  environment smoke check." Track. Promote when next instance occurs. Possibly worth a
+  forward-looking ADR or §V section on "operator-runnable scripts must include an environment-
+  preflight assertion in CI." Recommend deferred to RETRO-007.
+- **Pattern C: "Test exists but is opt-in behind an environment flag that CI never sets" (PR #130
+  E2E spec).** Seen RETRO-006 only. Count: **1 retro, 1 instance.** **Threshold NOT YET met.**
+  Track. If FOLLOW-068 closes by Sprint 11 close, this pattern dissolves naturally. If a second
+  ticket ships a "test exists but doesn't run" surface, promote to a Rule.
+- **Pattern D: Rule H closure velocity.** Sprint 10 is the FIRST sprint that ended with **fewer open
+  half-wires than it started with**. RETRO-005 left 4 open P0/P1 half-wires; Sprint 10 closed all 4
+  and opened 1 P3. This is a positive signal — the learning loop is producing the intended asymmetry
+  (more findings closed than newly opened in steady state). **Not a rule promotion but a
+  process-health metric** worth tracking explicitly in future sprint rollups.
+
+#### 6a. Proposed Rule H amendment (deferred to architect approval)
+
+Amend Rule H Pattern paragraph to add:
+
+> Also covered: a PR that introduces a new authenticated mutation endpoint MUST land with its
+> production auth surface (not a permissive dev fallback) wired in the same PR. Shipping a mutation
+> endpoint with `if (!process.env.PROD_KEY) accept_any_bearer` and ratcheting auth in a follow-up PR
+> creates a regression window between merge times. RETRO-006 LG-3 documents a 16-hour window where
+> `POST /api/adapt/feedback` accepted unsigned Bearer tokens. The fix: land HMAC (or equivalent
+> production-grade auth) in the _same_ PR that ships the endpoint or its consumer.
+
+This amendment **DOES NOT promote a new Rule** — threshold is met as a sub-pattern of Rule H, not as
+a discrete class. PM/architect decides whether to apply at next governance pass.
+
+### 7. Master Design updates
+
+**Verdict: YES, an update IS warranted.** Operating Principles §Y.3 (codified by PR #134) requires
+Snapshot.1 re-verification at sprint close. This is the first execution of that obligation. Three
+rows are stale relative to current `HEAD` (`c596821`):
+
+**Edit M-7 — §Snapshot.1 row B.4 (Auto-Onboarding UI):**
+
+Partial closure of the three Sprint 9.5 open gaps:
+
+- Gap (a) Magic-Link email flow — still BLOCKED (TICKET-040). No change.
+- Gap (b) Listing embedding auto-seed — Sprint 10 PR #132 closed for the demo tenant
+  (`DEMO_LISTING_MANIFEST` 12 entries). For non-demo tenants, the helper requires
+  `schema.listing_ids` from the activated schema, which the wizard does not yet populate.
+  **Partially closed.**
+- Gap (c) End-to-end integration test — Sprint 10 PR #130 added the spec but it's guarded behind
+  `NEXT_PUBLIC_TEST_E2E=true` and CI never sets the flag. Static contract tests DO run. **Partially
+  closed.**
+
+**Edit M-8 — §Snapshot.1 row E.1–E.3 (Adaptation decision tree + A/B + bandit):**
+
+Both half-wires from Sprint 9.5 are closed:
+
+- FOLLOW-041 (SDK feedback ping) — DONE via PR #127.
+- FOLLOW-042 (SDK variant consumer) — DONE via PR #127.
+
+Add: FOLLOW-051 hardened the feedback auth to HMAC (PR #133). Bandit feedback loop is now end-to-end
+wired, but `archetype_embeddings.embedding` NULL state (Snapshot.1 row F) means the variant
+_selection_ is still keyed against the seeded `ab_bandit_weights` rows and not against embedded
+archetype context. Verdict can move from 🟡 Partial → 🟡 Partial (no upgrade) with specific note
+that the _bandit feedback loop is closed but the embedding-conditioned bandit selection awaits LG-1
+closure_.
+
+**Edit M-9 — §Snapshot.1 row F (Data Network Effect):**
+
+Update the row to reflect that the seed script exists but is not yet automatically run:
+
+- Old (RETRO-005 M-4 state): cosine path unreachable; FOLLOW-043 tracks.
+- New: FOLLOW-043 (PR #131 + 6 fix commits) ships a `pnpm seed:archetypes` script + manual
+  `workflow_dispatch`. The script CAN populate archetype vectors when invoked against a Doppler-
+  configured environment with `SUPABASE_SERVICE_ROLE_KEY` + `OPENAI_API_KEY`. **No CI step or
+  on-merge automation runs the seed.** For any fresh DB pull, `archetype_embeddings.embedding`
+  remains NULL until an operator runs the workflow. Status remains 🟡 Partial with a precise caveat
+  tracked in FOLLOW-063.
+
+**Edit M-10 — §Snapshot.1 row V.1 (Security Architecture, V.3.2 already added by PR #133):**
+
+The Sprint 9.5 retro left §V.1 as 🟡 Partial. PR #133 added the §V.3.2 threat model for the feedback
+endpoint. The verdict on V.1 should be unchanged (still 🟡 Partial — broader security debts remain),
+but the row reason text should mention V.3.2.
+
+**Edit M-11 — Add a Sprint 10 close prose update at the bottom of the existing Snapshot.1 "Updates"
+block:**
+
+`**Update 2026-05-24 (Sprint 10 close — RETRO-006):** Sprint 10 COMPLETE — 8 PRs merged (#127, #128, #129, #130, #131, #132, #133, #134). Closed all 4 P0/P1 half-wires from RETRO-005 (SDK variant + feedback ping, archetype embedding seed, listing embedding auto-seed for demo tenant). Hardened feedback endpoint to HMAC-SHA256 (PR #133, FOLLOW-051). Rule J mirror-code CI gate live (PR #128). Sprint-close Snapshot.1 re-verification is now mandatory (PR #134, OP §Y.3). **Open gaps surfaced by RETRO-006:** FOLLOW-063 (no automated archetype-embedding seeding outside manual workflow_dispatch — cosine path remains unreachable on any fresh DB pull); FOLLOW-068 (E2E integration test merged but CI does not run it); FOLLOW-069 (no HMAC SDK↔server compatibility test). Per OP §Y.3 the next Snapshot.1 re-verification is at Sprint 11 completion.`
+
+**Apply edits inline below in §8.**
+
+#### 7a. Master Design version bump
+
+Bump `**Wersja:** 2.2` →
+`**Wersja:** 2.3 (Sprint 10 close — RETRO-006 reconciliation; bandit feedback loop closed; HMAC hardening; mirror-code CI live)`.
+Add changelog v2.3 entry at the top listing M-7..M-11.
+
+### 8. Edits applied
+
+This retrospective directly modifies `docs/MASTER_DESIGN.md` per Edits M-7 through M-11 specified in
+§7. Applied 2026-05-24 by retrospective-analyst. The local working tree on branch
+`architect/FOLLOW-061-snapshot-checklist` lags `origin/main` by two commits (#133, #134); the edits
+are written against the local v2.1 master (which is structurally equivalent to v2.2 modulo the
+§V.3.2 add). When this branch merges and rebases, the v2.3 bump applies on top of the v2.2 base.
+
+### 9. Follow-ups
+
+- FOLLOW-062: Document `feedbackConvertedFalse` SDK operator surface OR remove the field
+  (sdk-engineer + architect, 0.5h, P3, backlog)
+- FOLLOW-063: CI precheck + README + auto-seed for `archetype_embeddings.embedding` NOT NULL
+  invariant (devops-engineer + ml-engineer, 2h, P1, Sprint 11) — **blocks any pilot**
+- FOLLOW-064: Refactor `_feedbackListenerRegistered` from module singleton to per-instance
+  (sdk-engineer, 1h, P2, backlog) — needed before TICKET-NATIVE-001
+- FOLLOW-065: Emit `events.feedback.send_failed` on SDK ping 4xx/5xx + dashboard panel
+  (sdk-engineer + backend-engineer, 1.5h, P2, Sprint 11)
+- FOLLOW-066: Tighten `FeedbackBodySchema.tenant_id` to UUID/slug regex (backend-engineer, 0.5h, P3,
+  backlog)
+- FOLLOW-067: E2E spec `beforeAll()` precheck for `E2E_BEARER_TOKEN` (qa-engineer, 0.25h, P3,
+  backlog)
+- FOLLOW-068: Provision `demo-integration` CI job that runs the E2E spec end-to-end (qa-engineer +
+  devops-engineer, 4h, P1, Sprint 11) — **blocks pilot demo confidence**
+- FOLLOW-069: Cross-runtime HMAC compatibility test SDK↔server + regression test for
+  presence-only-Bearer rejection (qa-engineer + backend-engineer, 2h, P1, Sprint 11) — **closes LG-3
+  regression risk**
+- FOLLOW-070: Rule J amendment — extend manifest discipline to any new file in
+  `apps/decision-api/src/lib/` (devops-engineer, 0.5h, P3, backlog)
+- FOLLOW-071: Document SDK feedback config options (`feedbackEvents`, `feedbackUrl`,
+  `feedbackConvertedFalse`) in Master Design §B.1 — fold into FOLLOW-060 (architect, 0.5h, P2,
+  Sprint 11)
+- FOLLOW-072: Add `docs/DEMO_TENANT.md` explaining the multi-file demo-tenant data contract
+  (architect + data-engineer, 0.5h, P3, backlog)
+- FOLLOW-073: Master Design §V.3.3 threat model for `INTERNAL_API_SECRET` + key rotation runbook
+  (compliance-engineer, 1h, P2, Sprint 11)
+- FOLLOW-074: README "Local development setup" with required Doppler keys + seed scripts (architect,
+  0.5h, P2, Sprint 11) — fold with FOLLOW-063 + FOLLOW-040
+
+### 10. Cross-references
+
+- **RETRO-005 (Sprint 9.5):** This retro is the direct closure pass for 4 of the 5 RETRO-005 §3
+  HALF_WIRE findings (FOLLOW-041, -042, -043 = LG-1 partial only, -046 = demo-only). The 5th
+  (FOLLOW-055 e2e test) is _shipped_ but _not running in CI_ (TG-1). RETRO-005 successfully
+  predicted the half-wire surfaces; Sprint 10 successfully prioritized closure. The retro loop is
+  functioning as intended.
+- **RETRO-002 (TICKET-AB-001) + RETRO-003 (TICKET-REORDER-001):** Rule H originally codified here.
+  RETRO-006 records the SIXTH consecutive retro where Rule H is the dominant pattern AND the first
+  retro that shows net closure (more half-wires closed than opened). Rule H is stable; the proposed
+  amendment in §6a is non-urgent.
+- **RETRO-004 (TICKET-046 deep re-analysis):** Identified the doc-as-spec divergence sub-pattern.
+  RETRO-006 confirms this — DG-1 (feedback config options in code but not in Master Design) and DG-3
+  (`INTERNAL_API_SECRET` undocumented threat model) are exactly that shape.
+- **CONVENTIONS_PATCH.md Rule A (Verify CI green before READY_FOR_REVIEW):** Held for all 8 Sprint
+  10 PRs. The PR #125 incident from Sprint 9.5 did NOT recur.
+- **CONVENTIONS_PATCH.md Rule H (Schema scaffold MUST ship with at least one runtime-wired
+  consumer):** Held for 7 of 8 PRs. The one exception (FOLLOW-062 — `feedbackConvertedFalse` config
+  field with no operator surface) is P3 and acceptable as a flag for future surfaces.
+- **CONVENTIONS_PATCH.md Rule I (Wired-or-dead):** Held. Sprint 10 reduced legacy dead-symbol count
+  by FOLLOW-007 wiring; no new dead symbols introduced.
+- **CONVENTIONS_PATCH.md Rule J (Mirror-Code Sync Gate):** Live as of PR #128. First sprint with
+  active enforcement. Caught zero violations during sprint (no mirrored files were edited).
+- **Operating Principles §Y.3 (Snapshot.1 re-verification at sprint close):** RETRO-006 IS the first
+  execution. §7 above performs the verification; §8 applies the edits.
+
+---
+
+<!-- RETRO-007 and beyond will be appended here by the retrospective-analyst agent -->

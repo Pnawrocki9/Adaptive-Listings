@@ -1635,3 +1635,341 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **promoted_to_queue:** false
 
 ---
+
+## FOLLOW-062 — Document or remove `feedbackConvertedFalse` SDK config field
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-041 / PR #127
+- **recommended_sprint:** backlog
+- **recommended_agent:** sdk-engineer + architect
+- **priority:** P3
+- **estimated_hours:** 0.5
+- **scope:** `SdkConfig.feedbackConvertedFalse?: boolean` (optional) opts the SDK into firing
+  `converted: false` feedback pings on session expiry (`visibilitychange → hidden` after ≥30s
+  dwell). The consumer at `packages/sdk/src/core/adapt.ts:197` works correctly. But no operator-
+  facing surface documents it: `.env.example` doesn't mention it, no dashboard control, no Master
+  Design §B.1 entry, no `docs/SDK_CONFIG.md` (file doesn't exist). The field is consumer-only with
+  no documented producer workflow. Either document it as a first-class opt-in (with the math
+  rationale: why ≥30s dwell, why visibilitychange-hidden vs blur, what bandit-poisoning vector this
+  opens) OR remove it from `SdkConfig` and the listener registration logic.
+- **ac:**
+  - [ ] Decision recorded in CLAUDE.md or new ADR: keep + document OR remove
+  - [ ] If keep: Master Design §B.1 documents the field, the dwell threshold, the bandit semantics
+  - [ ] If remove: delete from `SdkConfig` + `registerFeedbackListener()` branch + JSDoc + the
+        single test that exercises it
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-063 — CI precheck + README + auto-seed for archetype_embeddings.embedding NOT NULL
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-043 / PR #131 (+ 6 fix commits)
+- **recommended_sprint:** 11
+- **recommended_agent:** devops-engineer + ml-engineer
+- **priority:** P1
+- **estimated_hours:** 2
+- **scope:** RETRO-006 LG-1 documents that PR #131's `pnpm seed:archetypes` script is technically
+  shipped but functionally unrunnable until an operator: (a) configures Doppler dev with
+  `SUPABASE_SERVICE_ROLE_KEY` + `OPENAI_API_KEY`, (b) runs `pnpm build` on `@estalara/db`, (c)
+  invokes the manual `workflow_dispatch` job OR runs the script locally. The GitHub Actions workflow
+  `seed-archetypes.yml` is opt-in. CI does not enforce that
+  `archetype_embeddings.embedding IS NOT NULL FOR ALL`. Result: every fresh DB pull silently
+  degrades the cosine-affinity path to djb2 — exactly the Sprint 9.5 RETRO-005 §3 HALF_WIRE_P that
+  FOLLOW-043 was supposed to close. Three actions: (1) add a CI job `embed-precheck` that connects
+  to the configured dev DB and asserts
+  `SELECT COUNT(*) FROM archetype_embeddings WHERE embedding IS NULL = 0`, FAIL on mismatch, (2)
+  document the seed requirement in the root README "Local development setup" section, (3) wire an
+  idempotent on-deploy hook (Vercel build step or post-migrate Supabase trigger) that runs the seed
+  once if any row has `embedding IS NULL`. Coordinate with FOLLOW-040 (Doppler CI hygiene).
+- **ac:**
+  - [ ] CI job `embed-precheck` exists and runs on every push to `main`
+  - [ ] Job fails when `archetype_embeddings.embedding IS NULL` for any archetype
+  - [ ] README section "Local development setup" lists `pnpm seed:archetypes` as a required
+        first-run step
+  - [ ] On-deploy hook (Vercel build or equivalent) auto-runs the seed if NULL rows exist
+  - [ ] Idempotent: re-runs are no-ops when all rows are populated
+  - [ ] Smoke test: drop one row's embedding, run the hook, assert it repopulates
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-064 — Refactor `_feedbackListenerRegistered` from module singleton to per-instance
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-041 / PR #127
+- **recommended_sprint:** backlog (pre-NATIVE-001)
+- **recommended_agent:** sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** `packages/sdk/src/core/adapt.ts:143` declares `let _feedbackListenerRegistered = false`
+  at module scope. The guard correctly prevents double-listener-attach on a single page load, but
+  the module-level singleton becomes fragile if the SDK is ever loaded twice in the same window
+  (TICKET-NATIVE-001 SvelteKit scenarios; tenants embedding two SDKs for two grids on the same page;
+  iframe-wrapped tenant experiences). Promote the guard to a `WeakMap<Document, boolean>` keyed on
+  the document OR a per-config init token, OR document this as a hard SDK constraint in Master
+  Design §B.1 with a runtime assertion ("SDK must not be loaded twice in same window").
+- **ac:**
+  - [ ] Decision: refactor to WeakMap OR document hard constraint with runtime assertion
+  - [ ] If refactor: per-instance guard verified by test that calls `fetchDirectives` twice with
+        different configs and asserts each attaches once
+  - [ ] If constraint: assertion fires when window already has `__estalara_sdk_loaded`
+  - [ ] Master Design §B.1 entry added either way
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-065 — Emit `events.feedback.send_failed` on SDK ping 4xx/5xx + dashboard panel
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-041 / PR #127 + FOLLOW-051 / PR #133
+- **recommended_sprint:** 11
+- **recommended_agent:** sdk-engineer + backend-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** RETRO-006 CB-1: `postFeedbackPing()` swallows ALL errors to `console.warn`, including
+  401/403 (HMAC invalid, key rotated, key revoked). When a tenant's `config.apiKey` is wrong, every
+  conversion signal silently fails forever and the bandit sits at uniform Beta(1,1) with no signal.
+  Fix: when fetch returns non-2xx OR throws, emit a synthetic ingest event
+  `events.feedback.send_failed` with payload `{status, error_message, retry_count}`. The event
+  reaches ClickHouse via the existing ingest pipeline, then the AB-004 analytics dashboard adds a
+  "Feedback ping health" panel showing per-tenant failure rate. Threshold-based alert: >10% failure
+  over rolling 1h → tenant-level Sentry warning.
+- **ac:**
+  - [ ] SDK emits `events.feedback.send_failed` on 4xx/5xx response or network throw
+  - [ ] Zod schema `FeedbackSendFailedPayloadSchema` added to `packages/shared/src/schemas/events/`
+  - [ ] Event flows through ingest → ClickHouse (smoke test)
+  - [ ] AB-004 dashboard adds "Feedback ping health" panel
+  - [ ] Sentry tag `feedback_ping_failure_rate` for >10% rolling 1h
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-066 — Tighten `FeedbackBodySchema.tenant_id` to UUID/slug regex
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-007 (Sprint 9.5) + FOLLOW-041 / PR #127
+- **recommended_sprint:** backlog
+- **recommended_agent:** backend-engineer
+- **priority:** P3
+- **estimated_hours:** 0.5
+- **scope:** RETRO-006 CB-2: `FeedbackBodySchema.tenant_id: z.string().min(1).max(256)` at
+  `apps/control-plane/src/app/api/adapt/feedback/route.ts:37` accepts the literal string
+  `'undefined'` or any garbage that satisfies min/max length. The SDK currently early-returns when
+  `config.tenantId` is falsy, so the loose schema is latent — but any future refactor that drops the
+  early-return lets `'undefined'` poison the `ab_bandit_weights` table (a row keyed
+  `tenant_id='undefined'` would silently accumulate). Tighten the Zod schema to `z.string().uuid()`
+  to match the Postgres `tenants.id` column type, OR `z.string().regex(/^[a-z0-9_-]+$/)` for slug
+  compatibility.
+- **ac:**
+  - [ ] `FeedbackBodySchema.tenant_id` regex tightened (decision: UUID or slug)
+  - [ ] Test: `tenant_id: 'undefined'` → 400 VALIDATION_ERROR
+  - [ ] Test: real UUID/slug → 202 Accepted
+  - [ ] Same tightening applied to `archetype` (currently `z.string().min(1).max(128)`)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-067 — E2E spec `beforeAll()` precheck for E2E_BEARER_TOKEN
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-055 / PR #130
+- **recommended_sprint:** backlog
+- **recommended_agent:** qa-engineer
+- **priority:** P3
+- **estimated_hours:** 0.25
+- **scope:** `tests/e2e/sprint-9-5-demo.spec.ts:35` falls back to a hardcoded
+  `'e2e-demo-bearer- token'` literal when `E2E_BEARER_TOKEN` is unset. Now that FOLLOW-047 +
+  FOLLOW-051 tighten auth, the fallback always 401s and the E2E test fails with a generic assertion
+  error. Add a `beforeAll()` precheck that, when `RUN_E2E === true`, asserts `E2E_BEARER_TOKEN` is
+  set and skips with `console.warn('[e2e] skipping — set E2E_BEARER_TOKEN to run the demo flow')`
+  otherwise.
+- **ac:**
+  - [ ] `beforeAll()` hook checks `RUN_E2E` + `E2E_BEARER_TOKEN`
+  - [ ] Skip with informative message when token missing
+  - [ ] Test still runs when both env vars present
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-068 — Provision `demo-integration` CI job that runs the E2E spec end-to-end
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-055 / PR #130
+- **recommended_sprint:** 11
+- **recommended_agent:** qa-engineer + devops-engineer
+- **priority:** P1 (blocks pilot demo confidence)
+- **estimated_hours:** 4
+- **scope:** RETRO-006 TG-1 documents that PR #130's E2E spec is guarded behind
+  `NEXT_PUBLIC_TEST_E2E=true` and CI never sets the flag — so the integration test exists but
+  doesn't run. This closes the RETRO-005 §4c FOLLOW-055 ticket _mechanically_ but not _in intent_.
+  Provision a `demo-integration` CI job in `.github/workflows/ci.yml` that: (1) sets up a
+  short-lived Supabase project (or seeded local supabase via `supabase start`), (2) runs migrations
+  - seed scripts (`pnpm seed:archetypes` + `pnpm seed:listings`), (3) starts `pnpm dev` for the
+    control-plane app, (4) waits for `/api/ping` healthcheck, (5) runs the E2E spec with
+    `NEXT_PUBLIC_TEST_E2E=true`, (6) tears down. Job runs nightly or on `[ci-demo]` PR label to
+    avoid blowing CI minutes on every push.
+- **ac:**
+  - [ ] `demo-integration` job exists in `.github/workflows/ci.yml`
+  - [ ] Job sets up Supabase + seeds + starts Next.js + runs E2E spec
+  - [ ] All 5 E2E steps from `sprint-9-5-demo.spec.ts` pass under the job
+  - [ ] Job runs nightly OR on PR with `ci-demo` label
+  - [ ] Job tears down resources within 15 min to keep CI cost bounded
+  - [ ] Failure surfaces a `demo-integration` GitHub status check
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-069 — Cross-runtime HMAC compatibility test SDK↔server + presence-only rejection regression test
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-051 / PR #133
+- **recommended_sprint:** 11
+- **recommended_agent:** qa-engineer + backend-engineer
+- **priority:** P1 (closes LG-3 regression risk)
+- **estimated_hours:** 2
+- **scope:** RETRO-006 TG-2 + TG-3: PR #133 unit-tests SDK and server HMAC paths in isolation; no
+  test asserts they compute identical hex against the same body + key. A future divergence in
+  `JSON.stringify` semantics, UTF-8 normalization, or key encoding would silently 401 every legit
+  ping. Plus: a future revert of #133 could reintroduce LG-3 (presence-only Bearer) and CI would not
+  catch it. Add a cross-runtime fixture test in
+  `packages/shared/__tests__/cross-runtime/feedback-hmac.test.ts` (precedent: Rule J cross-runtime
+  pattern) that: (1) imports SDK's `computeHmacSha256Hex` AND server's `hmacSha256Hex`, (2) for 5
+  known body+key fixtures, asserts identical lower-case hex output, (3) asserts the feedback route
+  REJECTS a request with valid Bearer but missing `X-Estalara-Signature` header when `ADAPT_API_KEY`
+  is unset. Regression-tests both the cross-runtime contract AND the auth-floor.
+- **ac:**
+  - [ ] New file `packages/shared/__tests__/cross-runtime/feedback-hmac.test.ts`
+  - [ ] Imports both SDK and server HMAC helpers
+  - [ ] 5+ fixture inputs (key, body) assert identical hex
+  - [ ] Regression assertion: presence-only Bearer rejected with 401 when `ADAPT_API_KEY` unset
+  - [ ] Test runs in `pnpm test` (not skipped, not guarded)
+  - [ ] If SDK and server diverge on JSON.stringify whitespace (test catches it), refactor SDK to
+        send the canonical body string the server reads via req.text()
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-070 — Rule J amendment: any new file in apps/decision-api/src/lib/ requires manifest decision
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-052 / PR #128
+- **recommended_sprint:** backlog
+- **recommended_agent:** devops-engineer
+- **priority:** P3
+- **estimated_hours:** 0.5
+- **scope:** RETRO-006 TG-4: Rule J is enforced for the two declared pairs (`bandit.ts` and
+  `reorder.ts`), but no rule covers future files added to `apps/decision-api/src/lib/`. If a
+  contributor adds `apps/decision-api/src/lib/cosine.ts` or `affinity.ts` (splitting reorder), the
+  manifest does NOT auto-extend. Add a Rule J amendment: any new file in
+  `apps/decision-api/src/lib/` MUST be either (a) added to `mirror-files.json` as a mirrored pair
+  with a strategy, (b) explicitly marked "no mirror — Worker-only" with a top-of-file comment, or
+  (c) PR blocked. CI can enforce via a grep on the diff: new files in that dir must appear in the
+  manifest OR contain the comment marker.
+- **ac:**
+  - [ ] CONVENTIONS_PATCH.md Rule J Pattern paragraph amended with the "new file requires manifest
+        decision" rule
+  - [ ] `scripts/check-mirror-files.sh` enhanced: scan new files in `apps/decision-api/src/lib/`
+        diff; require manifest entry OR `// MIRROR: none — Worker-only` header
+  - [ ] Test: PR adding an undeclared `apps/decision-api/src/lib/foo.ts` fails Rule J check
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-071 — Document SDK feedback config options in Master Design §B.1 (fold into FOLLOW-060)
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-041 / PR #127
+- **recommended_sprint:** 11
+- **recommended_agent:** architect
+- **priority:** P2
+- **estimated_hours:** 0.5
+- **scope:** RETRO-006 DG-1: `SdkConfig.feedbackEvents`, `SdkConfig.feedbackUrl`, and
+  `SdkConfig.feedbackConvertedFalse` are JSDoc-documented in code but absent from Master Design §B.1
+  (SDK config surface). FOLLOW-060 already covers the new `/api/adapt/feedback` and
+  `/api/listings/embed` endpoint documentation. Bundle SDK config option docs into the same Master
+  Design pass.
+- **ac:**
+  - [ ] Master Design §B.1 lists `feedbackEvents`, `feedbackUrl`, `feedbackConvertedFalse` with
+        types, defaults, examples
+  - [ ] Cross-reference §E.3 (bandit) for the feedback loop semantics
+  - [ ] Folded into FOLLOW-060 PR if not yet merged; otherwise separate small PR
+  - [ ] Master Design version bumped
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-072 — Add docs/DEMO_TENANT.md explaining the multi-file demo-tenant data contract
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-046 / PR #132
+- **recommended_sprint:** backlog
+- **recommended_agent:** architect + data-engineer
+- **priority:** P3
+- **estimated_hours:** 0.5
+- **scope:** RETRO-006 DG-2: `DEMO_LISTING_MANIFEST` (12 entries) in
+  `apps/control-plane/src/lib/seed-listing-embeddings.ts` must stay in sync with: (a) the
+  `000-app-estalara` corpus fixture HTML, (b) `data-estalara-listing-id` attributes on the
+  `/dashboard/demo/mockup/` page, (c) any future demo automation. Four-location data contract with
+  zero documentation. Add `docs/DEMO_TENANT.md` (or extend Master Design §T) with: full listing
+  manifest, fixture HTML locations, demo page locations, "how to add a 13th demo listing" procedure.
+- **ac:**
+  - [ ] `docs/DEMO_TENANT.md` exists
+  - [ ] Lists all 4 files that must stay in sync (with paths + line ranges)
+  - [ ] "How to add a demo listing" runbook section
+  - [ ] Linked from Master Design §T
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-073 — Master Design §V.3.3 threat model for INTERNAL_API_SECRET + key rotation runbook
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-046 / PR #132
+- **recommended_sprint:** 11
+- **recommended_agent:** compliance-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** RETRO-006 DG-3: PR #132 introduces a server-to-server shared secret
+  `INTERNAL_API_SECRET` used by `seed-listing-embeddings.ts` to authenticate against
+  `POST /api/listings/embed`. The secret lives in Doppler but has no documented threat model. If it
+  leaks, an attacker can poison embeddings for any tenant. PR #133 added §V.3.2 for the HMAC; add
+  §V.3.3 for `INTERNAL_API_SECRET`: scope (only server-to-server, never SDK), rotation procedure,
+  failure mode if leaked, key length requirements.
+- **ac:**
+  - [ ] Master Design §V.3.3 added
+  - [ ] Threat model: scope, rotation, leak response
+  - [ ] Key length requirement documented (min 32 bytes)
+  - [ ] Rotation runbook entry (3 steps: rotate Doppler key, restart services, audit recent
+        embeddings)
+  - [ ] Master Design version bumped
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-074 — README "Local development setup" with required Doppler keys + seed scripts
+
+- **source_retro:** RETRO-006
+- **source_ticket:** FOLLOW-043 / PR #131 (+ 6 fix commits)
+- **recommended_sprint:** 11
+- **recommended_agent:** architect
+- **priority:** P2
+- **estimated_hours:** 0.5
+- **scope:** RETRO-006 DG-4: `pnpm seed:archetypes` and `pnpm seed:listings` are not mentioned in
+  the root README or any onboarding doc. The seed-archetypes script has a 6-commit history of
+  environment-setup pain (Doppler keys, IPv6, build artifacts). A new developer pulling `main`
+  experiences silent breakage (cosine path → djb2 fallback, "0% variant lift" everywhere) with no
+  diagnostic. Add a README "Local development setup" section listing: required Doppler keys
+  (`SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`), required one-shot seeds
+  (`pnpm seed:archetypes`, `pnpm seed:listings`), required build artifacts (`pnpm build`),
+  troubleshooting "why is my cosine path returning the same scores."
+- **ac:**
+  - [ ] Root README has "Local development setup" section
+  - [ ] Lists 3+ required Doppler keys
+  - [ ] Lists 2 required seed scripts with example commands
+  - [ ] Lists required `pnpm build` steps for `@estalara/db`
+  - [ ] Troubleshooting subsection
+  - [ ] Coordinate with FOLLOW-063 (CI precheck) + FOLLOW-040 (Doppler hygiene)
+- **promoted_to_queue:** false
+
+---

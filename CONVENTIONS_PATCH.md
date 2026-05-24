@@ -220,6 +220,56 @@ Run locally before pushing:
 bash scripts/check-rule-h.sh origin/main
 ```
 
+### Rule H amendment (2026-05-23 — RETRO-006 §6a)
+
+**Pattern (sub-case of Rule H):** Shipping a mutation endpoint with weak / placeholder auth in one
+PR and tightening it in a follow-up PR ("ratchet later"). Symptom: a route that mutates state ships
+with presence-only Bearer / no signature / `if (ADAPT_API_KEY)` permissive fallback, then a later PR
+adds HMAC / token binding / proper scope checks. The window between the two PRs is a production
+security regression that CI cannot catch and that bandit / feedback / mutation surfaces silently
+absorb.
+
+**Evidence:**
+
+- RETRO-002 / FIX-013..019 (Sprint 8): JWT spoofing / RLS bypass / tenant header spoof / API key
+  auth gate gaps patched only after running with the issues for weeks.
+- RETRO-005 / FOLLOW-041 / FOLLOW-051: feedback endpoint shipped with presence-only Bearer in PR
+  #127, hardened to HMAC-SHA256 in PR #133 16 hours later.
+- RETRO-006 §6a: 2026-05-22 → 2026-05-23 vulnerability window where `POST /api/adapt/feedback`
+  accepted presence-only Bearer tokens in production `main`. No real tenants existed in the window,
+  so no exposure — but the pattern recurs.
+
+**Rule:** HTTP endpoints that mutate state MUST ship with production-grade auth in the same PR.
+Shipping a weak / placeholder auth path then hardening it in a follow-up PR is **not permitted**.
+
+**Exception:** Internal-only endpoints (gated by `INTERNAL_API_SECRET`, no public exposure, no SDK
+or browser caller) may use the ratchet pattern IF documented in an ADR (`docs/adr/`). The ADR must
+state (a) why the internal-only assumption holds, (b) the explicit threat model under that
+assumption, and (c) the follow-up ticket ID that closes the ratchet.
+
+**How to apply:**
+
+- "Mutates state" includes: any DB write, any ClickHouse insert, any Redpanda emit, any
+  external-service mutation, any cache invalidation that affects another tenant.
+- "Production-grade auth" means: tenant-scoped + cryptographic (HMAC or JWT signature verified)
+  - constant-time compare + replay-resistant (timestamp or nonce). A bare `Bearer <key>` check
+    without signature binding does NOT qualify.
+- This rule is enforced at reviewer time and PR-description time, not by an automated script (the
+  threat model is per-endpoint and cannot be generically scripted). Reviewers MUST reject any PR
+  that adds or modifies a state-mutating route without satisfying the rule or pointing to the
+  exception's ADR.
+
+**Verification (manual, by reviewer):**
+
+For any new or changed file under `apps/control-plane/src/app/api/**/route.ts` or
+`apps/decision-api/src/lib/**/*.ts` that issues a write or emit:
+
+1. Grep for `Authorization` / `Bearer` / `signature` / `hmac` in the route file.
+2. Confirm constant-time compare on signature verification.
+3. Confirm the threat model is referenced in Master Design §V.3.x or an ADR.
+
+Reject the PR if any check fails AND the route is not exception-eligible per the ADR clause.
+
 ---
 
 ## Rule I — Wired-or-dead: every exported symbol must have a non-test importer

@@ -1,15 +1,18 @@
 # Backlog Queue
 
-**Updated 2026-05-22T00:00Z by pm-orchestrator.** Sprint 9.5 COMPLETE as of 2026-05-22 (6 PRs
-merged: #121, #122, #123, #124, #125, #126). Sprint 10 (Close the bandit loop + real embeddings +
-e2e test) defined and OPEN. Sprint 9 COMPLETE as of 2026-05-15: GDPR-001 (PR #111), GDPR-002 (PR
-#118), GDPR-003 (PR #116), GDPR-004 (PR #117), DESC-001 (PR #112+#114), VAL-001 (PR #110) — all 6
-DONE. DESC-PIVOT-001 (PR #115) merged. Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8 COMPLETE.
-Sprint 8.5 COMPLETE. Sprint 2.5 SUPERSEDED — TICKET-030 + TICKET-033 promoted to Sprint 9.5,
-TICKET-032 superseded by Sprint 7.5 auto-detect, TICKET-034/036 deferred (Q5 decision 2026-05-21),
-TICKET-035 already CANCELLED. P0 follow-ups: FOLLOW-039 (ClickHouse DSR erase) deferred to Sprint 11
-(Q7 decision 2026-05-21 — no EU traffic in 4-6 weeks); FOLLOW-040 (Doppler CI) parallel pre-flight
-for Sprint 9.5. Krok A document governance reset merged (PR #119, Master_Design v2.0,
+**Updated 2026-05-23T00:00Z by pm-orchestrator.** Sprint 10 COMPLETE as of 2026-05-23 (8 PRs merged:
+#127, #128, #129, #130, #131, #132, #133, #134). RETRO-006 written; Master Design bumped to v2.3;
+Rule H amendment applied (CONVENTIONS_PATCH.md). Sprint 11 (Pilot readiness — seed CI, demo CI, HMAC
+compat, ClickHouse GDPR, Doppler CI hygiene) OPEN with 9 tickets. Sprint 9.5 COMPLETE (2026-05-22, 6
+PRs: #121, #122, #123, #124, #125, #126). Sprint 9 COMPLETE as of 2026-05-15: GDPR-001 (PR #111),
+GDPR-002 (PR #118), GDPR-003 (PR #116), GDPR-004 (PR #117), DESC-001 (PR #112+#114), VAL-001 (PR
+#110) — all 6 DONE. DESC-PIVOT-001 (PR #115) merged. Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint
+8 COMPLETE. Sprint 8.5 COMPLETE. Sprint 2.5 SUPERSEDED — TICKET-030 + TICKET-033 promoted to Sprint
+9.5, TICKET-032 superseded by Sprint 7.5 auto-detect, TICKET-034/036 deferred (Q5 decision
+2026-05-21), TICKET-035 already CANCELLED. **P1 pilot-blockers (Sprint 11):** FOLLOW-063
+(archetype-embedding auto-seed CI), FOLLOW-068 (demo-integration CI), FOLLOW-069 (HMAC compat test),
+FOLLOW-039 (ClickHouse DSR hard-delete — EU pilot gate, no longer deferrable), FOLLOW-040 (Doppler
+CI hygiene). Krok A document governance reset merged (PR #119, Master_Design v2.0,
 docs/ops/OPERATING_PRINCIPLES.md v1.1) — Operating Principles now active for all sessions.
 ANTHROPIC_API_KEY activated in Doppler dev/stg/prd 2026-05-21 (Krok B) — AI Vision fully
 operational.
@@ -49,8 +52,8 @@ updates.
 | 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop    | 16      | 13   | 0       | 0     | 0       |
 | 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 6    | 0       | 0     | 0       |
 | 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)        | 6       | 6    | 0       | 0     | 0       |
-| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 2    | 0       | 1     | 0       |
-| 11     | 13    | Pilot onboarding + docs + launch checklist                           | tbd     | —    | —       | —     | tbd     |
+| 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 9    | 0       | 0     | 0       |
+| 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)     | 9       | 0    | 0       | 9     | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -1443,7 +1446,7 @@ in Master_Design §J.3 does NOT exist in current schema — that section is stal
 - FOLLOW-039 (ClickHouse DSR hard-delete) — non-negotiable BEFORE any EU pilot traffic but no EU
   traffic in 4-6 weeks per Piotr's call.
 
-## Sprint 10 — Close the bandit loop + real embeddings + e2e test (OPEN)
+## Sprint 10 — Close the bandit loop + real embeddings + e2e test (COMPLETE)
 
 **Sprint goal:** "Close the bandit loop, make cosine affinity real end-to-end (archetype + listing
 vectors both seeded), and verify the demo end-to-end in CI."
@@ -1458,13 +1461,14 @@ same agent handles both.
 - id: FOLLOW-041
   title: SDK feedback ping on outcome events (closes bandit feedback loop)
   agent: sdk-engineer + backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 4
   depends_on: [FOLLOW-042]
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-041.md
   pr: '#127'
+  completed_at: '2026-05-22'
   notes: |
     Must ship in same PR as FOLLOW-042. POST /api/adapt/feedback exists server-side but
     no SDK consumer fires the ping on outcome events. Without this, ab_bandit_weights never
@@ -1476,13 +1480,14 @@ same agent handles both.
 - id: FOLLOW-042
   title: Add variant field to SDK AdaptResponse + thread through applyDirectives
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 2
   depends_on: []
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-042.md
   pr: '#127'
+  completed_at: '2026-05-22'
   notes: |
     Must ship in same PR as FOLLOW-041. Adds variant?: string to packages/sdk/src/core/adapt.ts
     AdaptResponse interface. Rule G mock-scan obligation applies — grep MOCK_RESPONSE in
@@ -1513,14 +1518,14 @@ same agent handles both.
 - id: FOLLOW-055
   title: End-to-end integration test detect→activate→adapt→SDK
   agent: qa-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 5
   depends_on: []
   model: sonnet-4.6
   pr: '#130'
   spec: backlog/sprint-10/FOLLOW-055.md
-  pr: '#130'
+  completed_at: '2026-05-22'
   notes: |
     Vitest integration spec at tests/e2e/sprint-9-5-demo.spec.ts. 5 static contract
     tests always run in CI (fixture schema, ReorderDirective sort, TextDirective DOM
@@ -1554,14 +1559,14 @@ same agent handles both.
 - id: FOLLOW-047
   title: Reject null tenant_id with 403 (STAFF_TENANT_CONTEXT_MISSING) from detect + activate
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 1
   depends_on: []
   model: sonnet-4.6
   pr: '#129'
   spec: backlog/sprint-10/FOLLOW-047.md
-  pr: '#129'
+  completed_at: '2026-05-22'
   notes: |
     Both apps/control-plane/src/app/api/detect/route.ts:214 and
     apps/control-plane/src/app/api/schema/activate/route.ts:97 fall back to 'estalara_staff'
@@ -1571,13 +1576,14 @@ same agent handles both.
 - id: FOLLOW-051
   title: Replace presence-only Bearer on POST /api/adapt/feedback with proper tenant-scoped auth
   agent: compliance-engineer + backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 3
   depends_on: []
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-051.md
   pr: '#133'
+  completed_at: '2026-05-23'
   notes: |
     When ADAPT_API_KEY is unset, feedback endpoint accepts any non-empty Bearer token and mutates
     ab_bandit_weights directly → adversarial bandit poisoning possible. Replaced with tenant-scoped
@@ -1594,13 +1600,14 @@ same agent handles both.
 - id: FOLLOW-052
   title: Mirror-code byte-identity CI check — scripts/check-mirror-files.sh (Rule J enforcement)
   agent: devops-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 1.5
   depends_on: []
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-052.md
   pr: '#128'
+  completed_at: '2026-05-22'
   notes: |
     Two mirrored file pairs: apps/decision-api/src/lib/bandit.ts (mirror of packages/shared/src/bandit.ts)
     and apps/decision-api/src/lib/reorder.ts. PR descriptions say byte-identical but no CI enforces
@@ -1611,13 +1618,14 @@ same agent handles both.
 - id: FOLLOW-061
   title: Add Snapshot.1 re-verification to sprint-close checklist in AGENT_WORKFLOW.md
   agent: architect
-  status: READY_FOR_REVIEW
+  status: DONE
   pr: '#134'
   priority: P1
   estimated_hours: 0.5
   depends_on: []
   model: sonnet-4.6
   spec: backlog/sprint-10/FOLLOW-061.md
+  completed_at: '2026-05-23'
   notes: |
     OP §Y.3 requires Snapshot.1 re-verification at sprint close. Sprint 9.5 violated this —
     rows B.4 and J went stale. Add re-verification as the last step on PM-orchestrator
@@ -1625,20 +1633,187 @@ same agent handles both.
     satisfy the obligation for Sprint 9.5 retroactively.
 ```
 
+## Sprint 11 — Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse) (OPEN)
+
+**Sprint goal:** "Close all pilot-blockers: seed CI gate, demo CI verification, HMAC security
+closure, ClickHouse GDPR erasure, Doppler CI hygiene."
+
+**Entry condition:** Sprint 10 COMPLETE ✓ (2026-05-23).
+
+**Pilot-blocker subset (P1, must close before any pilot tenant onboard):** FOLLOW-063, FOLLOW-068,
+FOLLOW-069. **EU pilot gate (P1, non-negotiable before EU traffic):** FOLLOW-039. **P1 ops
+hygiene:** FOLLOW-040.
+
+```yaml
+- id: FOLLOW-063
+  title: archetype_embeddings auto-seed in CI (NOT NULL invariant)
+  agent: devops-engineer + ml-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-11/FOLLOW-063.md
+  notes: |
+    PILOT-BLOCKING. `pnpm seed:archetypes` (FOLLOW-043 PR #131) is a one-shot script — no CI
+    step or on-merge automation runs it. Result: fresh DB pull → `archetype_embeddings.embedding`
+    NULL → cosine path falls back to djb2 silently. Add CI precheck (fail build if any
+    archetype_embeddings row has NULL embedding on staging/prod) + post-migration seed step +
+    README "Local development setup" pointer. Bundle with FOLLOW-074 (architect README).
+
+- id: FOLLOW-068
+  title: demo-integration CI job — NEXT_PUBLIC_TEST_E2E=true + demo DB fixtures
+  agent: qa-engineer + devops-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-11/FOLLOW-068.md
+  notes: |
+    PILOT-BLOCKING. PR #130 (FOLLOW-055) shipped the E2E spec guarded behind
+    NEXT_PUBLIC_TEST_E2E=true, but CI never sets the flag. The detect→activate→adapt→SDK chain
+    has never run unattended. Provision a `demo-integration` CI job that brings up Next.js +
+    seeded demo DB and runs the E2E spec end-to-end. Decision gate: this is what makes the
+    investor-demo path CI-verified vs human-driven.
+
+- id: FOLLOW-069
+  title: HMAC compat test SDK↔server + Bearer-only rejection regression test
+  agent: qa-engineer + backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 2
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-11/FOLLOW-069.md
+  notes: |
+    Closes RETRO-006 LG-3. PR #133 hardened POST /api/adapt/feedback to HMAC-SHA256 — but no
+    cross-runtime test confirms SDK Web Crypto HMAC and server Node Crypto HMAC produce
+    identical signatures for the same key+body. Adds (a) shared fixture suite that asserts
+    byte-identical hex digests across N (key, body) pairs, and (b) a regression test that posts
+    a presence-only Bearer token (no signature) and asserts 401 — guards against accidental
+    reintroduction of the 2026-05-22 → 2026-05-23 vulnerability window.
+
+- id: FOLLOW-039
+  title: ClickHouse DSR hard-delete — Art.17 erasure on adaptation_decisions + events tables
+  agent: data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 5
+  depends_on: []
+  model: opus-4.7-xhigh
+  spec: backlog/sprint-11/FOLLOW-039.md
+  notes: |
+    EU PILOT GATE — non-negotiable before any EU tenant onboard. Today `dsr_erase()` writes an
+    audit log but does NOT issue DELETE / ALTER TABLE ... DELETE WHERE on ClickHouse
+    `adaptation_decisions` or the events store. RODO Art. 17 erasure right is therefore
+    non-compliant for any EU tenant. Implement ALTER TABLE ... DELETE WHERE session_id IN (...)
+    on both tables with mutation status tracked + retry-on-failure + DSR audit row updated only
+    after ClickHouse mutation acknowledges. Opus 4.7 xhigh — compliance edge cases require
+    careful reasoning about idempotency, partial failure, and async mutation semantics.
+
+- id: FOLLOW-040
+  title: Doppler CI hygiene — DOPPLER_TOKEN in GitHub Actions
+  agent: devops-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 1
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-11/FOLLOW-040.md
+  notes: |
+    Originally P0 parallel pre-flight for Sprint 9.5; still incomplete. Surfaced 6 fix-commits
+    for FOLLOW-043 (PR #131) — env plumbing breaks operator workflows. Add DOPPLER_TOKEN as
+    GitHub Actions secret + `doppler run -- pnpm <cmd>` wrapper in CI workflows. Coordinate with
+    FOLLOW-063 (which needs Doppler-injected DB creds in the seed CI step).
+
+- id: FOLLOW-065
+  title: Emit events.feedback.send_failed on SDK ping 4xx/5xx + dashboard panel
+  agent: sdk-engineer + backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-11/FOLLOW-065.md
+  notes: |
+    From RETRO-006 §4. Today SDK feedback ping failures (HMAC mismatch, 401, 5xx) are silent.
+    Add synthetic event emission on non-2xx response + Grafana panel surfacing rate. Closes
+    one of the "demo passes but bandit not updating" silent-failure modes.
+
+- id: FOLLOW-071
+  title: Document SDK feedback config options in Master Design §B.1
+  agent: architect
+  status: READY
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-11/FOLLOW-071.md
+  notes: |
+    From RETRO-006 §6. SDK config fields `feedbackEvents`, `feedbackUrl`, `feedbackConvertedFalse`
+    introduced by PR #127 are not in Master Design §B.1 surface table. Fold with FOLLOW-060.
+
+- id: FOLLOW-073
+  title: Master Design §V.3.3 threat model for INTERNAL_API_SECRET + key rotation runbook
+  agent: compliance-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  model: sonnet-4.6
+  spec: backlog/sprint-11/FOLLOW-073.md
+  notes: |
+    From RETRO-006 §4. INTERNAL_API_SECRET (used for service-to-service auth, e.g. ingest →
+    decision-api) has no documented threat model or rotation procedure. §V.3.2 covers
+    `POST /api/adapt/feedback` HMAC; §V.3.3 should cover INTERNAL_API_SECRET symmetrically.
+
+- id: FOLLOW-074
+  title: README "Local development setup" section with required Doppler keys + seed scripts
+  agent: architect
+  status: READY
+  priority: P2
+  estimated_hours: 1
+  depends_on: [FOLLOW-040, FOLLOW-063]
+  model: sonnet-4.6
+  spec: backlog/sprint-11/FOLLOW-074.md
+  notes: |
+    From RETRO-006 §6. Fresh repo pull today gives a broken cosine path with no diagnostic
+    output. Add one-shot README section listing required `doppler login`, env keys, and
+    `pnpm seed:archetypes` + `pnpm seed:listings`. Bundle with FOLLOW-063 (which will make the
+    seed step CI-enforced) and FOLLOW-040 (Doppler hygiene).
+```
+
 ## Currently in flight
 
-(none)
+(none — Sprint 11 ready to start; pm-orchestrator picks next ticket)
 
 ## Awaiting human review
 
-- PR #127 — FOLLOW-041 + FOLLOW-042: SDK variant field + feedback ping (sdk-engineer, CI green)
-- PR #128 — FOLLOW-052: Mirror-code byte-identity CI check — Rule J (devops-engineer, CI green)
-- PR #129 — FOLLOW-047: Reject null tenant_id with 403 (backend-engineer, CI green)
-- PR #130 — FOLLOW-055: E2E integration test detect→activate→adapt→SDK (qa-engineer, CI green)
-- PR #131 — FOLLOW-043: Archetype embedding vectors seed script (ml-engineer, CI green)
+(none — Sprint 10 fully merged 2026-05-23)
 
 ## Recent merges
 
+- 2026-05-23 — FOLLOW-051 (PR #133): HMAC-SHA256 tenant-scoped auth on POST /api/adapt/feedback;
+  X-Estalara-Signature header; constant-time compare; ADAPT_API_KEY ops fallback; threat model
+  documented in Master Design §V.3.2
+- 2026-05-23 — FOLLOW-061 (PR #134): Snapshot.1 re-verification added to sprint-close checklist in
+  `docs/AGENT_WORKFLOW.md` + `.claude/agents/pm-orchestrator.md` step 8; OP §Y.3 now structurally
+  enforced
+- 2026-05-22 — FOLLOW-046 (PR #132): Automate listing embedding seeding — fire-and-forget trigger in
+  POST /api/schema/activate; DEMO_LISTING_MANIFEST seeds 12 listings on demo tenant activation
+- 2026-05-22 — FOLLOW-043 (PR #131 + 6 fix-commits): Archetype embedding vectors seed script —
+  scripts/seed-archetype-embeddings.ts; pnpm seed:archetypes + workflow_dispatch action; manual
+  one-shot only (CI auto-seed tracked as FOLLOW-063)
+- 2026-05-22 — FOLLOW-055 (PR #130): E2E integration test detect→activate→adapt→SDK; 5 static
+  contract tests in CI + 5 E2E steps guarded by NEXT_PUBLIC_TEST_E2E=true (CI activation tracked as
+  FOLLOW-068)
+- 2026-05-22 — FOLLOW-047 (PR #129): Reject null tenant_id with 403 STAFF_TENANT_CONTEXT_MISSING on
+  detect + activate routes
+- 2026-05-22 — FOLLOW-052 (PR #128): Mirror-code byte-identity CI check — scripts/check-mirror-
+  files.sh + JSON manifest + rule-j CI job + lefthook pre-push (Rule J live)
+- 2026-05-22 — FOLLOW-041 + FOLLOW-042 (PR #127): SDK feedback ping on outcome events + variant
+  field on AdaptResponse; closes bandit feedback loop
 - 2026-05-22 — FOLLOW-018 (PR #126): Real tenant schema lookup + cache invalidation on activation;
   `invalidateTenantSchemaCache()` wired into activate path; Upstash Redis bounded TTL
 - 2026-05-22 — TICKET-AUTO-006-POLISH (PR #125): Detection Preview + Save & Activate — schema

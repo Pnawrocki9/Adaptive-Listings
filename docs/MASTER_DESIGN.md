@@ -1,8 +1,40 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 2.2 (Sprint 10 — process: Snapshot.1 re-verification added to sprint-close checklist per FOLLOW-061) | **Data:** 23 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 2.3 (Sprint 10 close — RETRO-006 reconciliation; bandit feedback loop closed; HMAC hardening; mirror-code CI live; Sprint 11 OPEN — pilot readiness) | **Data:** 23 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
 
 > **READING ORDER (v1.8 update).** This document remains the canonical *strategic vision* + *target architecture*. As of 2026-05-16 a multi-agent audit was performed against the actual codebase. The audit findings — what is built, what is partial, what is design-only — are summarized in the new section **"Implementation Status Snapshot (2026-05-16)"** below the Executive Summary, and in detail in `AUDIT_REPORT_INVESTOR_READINESS.md`, `AUDIT_IMPLEMENTATION_MAP.md`, `AUDIT_RISK_MATRIX.md`, and `AUDIT_TEST_GAPS.md` at the repository root. Where this document and the audit disagree, the audit reflects reality at HEAD `398dc97`.
+
+**Changelog v2.3 (24 maja 2026 — Sprint 10 close, RETRO-006 reconciliation):**
+
+- 🔄 **§Snapshot.1 row B.4 updated** — Auto-Onboarding UI: gap (b) listing-embedding seeding
+  partially closed via PR #132 (FOLLOW-046 — DEMO_LISTING_MANIFEST seeds demo tenant on
+  activation). Non-demo tenant auto-seed still pending. Gap (c) e2e integration test partially
+  closed via PR #130 (FOLLOW-055 — spec shipped, opt-in behind `NEXT_PUBLIC_TEST_E2E=true`, CI does
+  not yet run it). Gap (a) Magic-Link email still BLOCKED (TICKET-040).
+- 🔄 **§Snapshot.1 row E.1–E.3 updated** — Both Sprint 9.5 half-wires CLOSED: FOLLOW-041 (SDK
+  feedback ping, PR #127), FOLLOW-042 (SDK variant consumer, PR #127). Feedback endpoint auth
+  hardened to HMAC-SHA256 in PR #133 (FOLLOW-051). Bandit feedback loop end-to-end wired. Note:
+  the bandit *selection* is still keyed against seeded `ab_bandit_weights` rows; cosine-affinity
+  conditioning on archetype embeddings awaits FOLLOW-063 (LG-1 closure).
+- 🔄 **§Snapshot.1 row F updated** — FOLLOW-043 (PR #131 + 6 fix commits) ships
+  `pnpm seed:archetypes` script and a manual `workflow_dispatch` GitHub Action. The script CAN
+  populate archetype vectors. **No CI step or on-merge automation runs the seed automatically.**
+  For any fresh DB pull, `archetype_embeddings.embedding` remains NULL until an operator runs the
+  workflow — same effective state as Sprint 9.5 close, with an operator-runnable remedy. FOLLOW-063
+  tracks the auto-seed enforcement.
+- 🔄 **§Snapshot.1 row V.1 updated** — PR #133 added §V.3.2 threat model for `POST
+  /api/adapt/feedback` (HMAC-SHA256 tenant-scoped signing). Broader §V.1 verdict unchanged
+  (🟡 Partial — SBOM, MFA enforcement, full CSP still design-only); the §V.3.2 reference is the
+  delta.
+- 🔄 **§Snapshot.1 prose update** added at the bottom of the existing Updates block covering
+  Sprint 10 close.
+- 📐 **CONVENTIONS_PATCH.md Rule J is LIVE** — PR #128 (FOLLOW-052) shipped `scripts/check-mirror-
+  files.sh` + JSON manifest + `rule-j` CI job + pre-push lefthook. Mirror-code byte-identity is
+  now hard-gated for `bandit.ts` and `reorder.ts` pairs.
+- 📐 **OP §Y.3 (Snapshot.1 re-verification at sprint close) is LIVE** — PR #134 (FOLLOW-061)
+  codified the obligation in `docs/AGENT_WORKFLOW.md` Sprint-close checklist + the PM-orchestrator
+  agent prompt. RETRO-006 §7 is the first execution.
+- 📝 **No new ADR.** ADR-0004 (canonical adapt endpoint) and existing ADRs still apply.
 
 **Changelog v2.2 (23 maja 2026 — Sprint 10, FOLLOW-061):**
 
@@ -15,6 +47,7 @@
 - 📝 **`.claude/agents/pm-orchestrator.md` updated** — added step 8 "Sprint close" with
   Snapshot.1 re-verification as a mandatory sub-step, so the PM orchestrator executes it
   automatically at every sprint close.
+- 📐 **§V.3.2 added (PR #133)** — Threat model for `POST /api/adapt/feedback` HMAC-SHA256 auth.
 
 **Changelog v2.1 (22 maja 2026 — Sprint 9.5 close, RETRO-005 reconciliation):**
 
@@ -80,7 +113,7 @@
 
 ---
 
-## Implementation Status Snapshot (2026-05-22)
+## Implementation Status Snapshot (2026-05-23)
 
 > This snapshot is a verdict on each Master Design promise as of HEAD `main` (post-Krok A merge PR
 > #119). It is the _only_ place in this document where implementation status is asserted; sections
@@ -109,8 +142,26 @@
 > (archetype embedding vectors NULL → cosine path unreachable), FOLLOW-046 (listing embedding
 > auto-seed), FOLLOW-055 (end-to-end integration test). See RETRO-005 §3 for the wiring audit
 > findings and §7 for the Master Design edits applied. Sprint 10 Snapshot.1
-> re-verification will be performed at sprint close per the mandatory checklist in
+> re-verification was performed at sprint close per the mandatory checklist in
 > `docs/AGENT_WORKFLOW.md §Sprint-close checklist` (step 4), installed by FOLLOW-061.
+>
+> **Update 2026-05-23 (Sprint 10 close — RETRO-006; Sprint 11 OPEN):** Sprint 10 COMPLETE — 8 PRs
+> merged (#127, #128, #129, #130, #131, #132, #133, #134). Closed all 4 P0/P1 half-wires from
+> RETRO-005 (SDK variant + feedback ping, archetype embedding seed, listing embedding auto-seed
+> for demo tenant). Hardened feedback endpoint to HMAC-SHA256 (PR #133, FOLLOW-051). Rule J
+> mirror-code CI gate live (PR #128, FOLLOW-052). Sprint-close Snapshot.1 re-verification is now
+> mandatory (PR #134, FOLLOW-061, OP §Y.3). **Open gaps surfaced by RETRO-006:** FOLLOW-063 (no
+> automated archetype-embedding seeding outside manual `workflow_dispatch` — cosine path remains
+> unreachable on any fresh DB pull until an operator runs the seed); FOLLOW-068 (E2E integration
+> test merged but CI does not run it — guarded behind `NEXT_PUBLIC_TEST_E2E=true`); FOLLOW-069
+> (no cross-runtime HMAC compatibility test between SDK and server); FOLLOW-073 (no Master Design
+> threat model for `INTERNAL_API_SECRET`). See RETRO-006 §3 for the wiring audit and §7 for the
+> Master Design edits applied. **Sprint 11 OPEN (2026-05-23) — 9 tickets, theme: Pilot
+> readiness.** Three P1 pilot-blockers (FOLLOW-063 seed CI, FOLLOW-068 demo CI, FOLLOW-069 HMAC
+> compat test) + FOLLOW-039 (ClickHouse DSR hard-delete — EU pilot gate, non-negotiable) +
+> FOLLOW-040 (Doppler CI hygiene) + 4 P2 quality items (FOLLOW-065/071/073/074). Per OP §Y.3 and
+> the AGENT_WORKFLOW.md sprint-close checklist, the next Snapshot.1 re-verification is at Sprint
+> 11 completion.
 
 **Audit gate status at audit time:**
 
@@ -133,7 +184,7 @@
 | B.1 | Integrator experience (Tier 1/2/3) | 🟡 **Partial** | Tier 1 substantial; Tier 2 mutation engine works but consumes only 3 of 18 archetype buckets via the Worker route; Tier 3 Native explicitly deferred (P.2). |
 | B.2 | SDK perf budget (<40 KB) | 🟥 **Over-budget** | IIFE = 93.3 KB. Decision: split Tier 1 vs Tier 2 entry points, or accept new budget and update §B.2. |
 | B.3 | Adapters (Intercom/Drift/Crisp/Idealista/Otodom) | 🟥 **Design-only** | No adapter code in the repo. |
-| B.4 | Auto-Onboarding UI (Magic Link wizard / Auto-Detect Modal / API Connect) | 🟢 **Mostly Shipped** | Sprint 9.5 merged 2026-05-22: TICKET-033 (PR #121, `POST /api/detect` JWT+SSRF+wizard response), TICKET-030 (PR #124, `/dashboard/onboarding/detect` wizard UI), TICKET-AUTO-006-POLISH (PR #125, Detection Preview + `POST /api/schema/activate` + SDK snippet), FOLLOW-018 (PR #126, real tenant schema lookup + cache invalidation). Operator can paste URL → detect → preview → activate → receive snippet end-to-end. **Open gaps (RETRO-005):** (a) Magic-Link email flow not yet shipped (TICKET-040 BLOCKED in Sprint 3 — current path requires existing dashboard auth, not a one-click email link); (b) listing-side embedding seeding has no automation (FOLLOW-046 — adapt path degrades to djb2 affinity until operators manually call `POST /api/listings/embed`); (c) no end-to-end integration test of detect → activate → adapt (FOLLOW-055). **Note:** Auto-Detection Engine itself = §B.5 = Mostly Shipped per Sprint 7.5. |
+| B.4 | Auto-Onboarding UI (Magic Link wizard / Auto-Detect Modal / API Connect) | 🟢 **Mostly Shipped** | Sprint 9.5 merged 2026-05-22: TICKET-033 (PR #121, `POST /api/detect` JWT+SSRF+wizard response), TICKET-030 (PR #124, `/dashboard/onboarding/detect` wizard UI), TICKET-AUTO-006-POLISH (PR #125, Detection Preview + `POST /api/schema/activate` + SDK snippet), FOLLOW-018 (PR #126, real tenant schema lookup + cache invalidation). Operator can paste URL → detect → preview → activate → receive snippet end-to-end. **Sprint 10 partial closure (RETRO-006):** (b) demo-tenant listing-embedding seeding wired on activation via PR #132 (FOLLOW-046, `DEMO_LISTING_MANIFEST` 12 entries auto-seeded when `tenantId === DEMO_TENANT_ID`); non-demo tenants still need manual `POST /api/listings/embed`; (c) e2e integration spec shipped via PR #130 (FOLLOW-055) — guarded behind `NEXT_PUBLIC_TEST_E2E=true`, CI does not yet run it (FOLLOW-068 tracks the CI job). **Remaining open gaps:** (a) Magic-Link email flow still BLOCKED (TICKET-040). **Note:** Auto-Detection Engine itself = §B.5 = Mostly Shipped per Sprint 7.5. |
 | B.4.4 | Pre-Built Platform Templates Library (15 starters) | ⛔ **Blocked** | `templates: PlatformTemplate[] = []`. TICKET-032 BLOCKED. |
 | B.4.5 | WordPress Plugin | 🟥 **Design-only** | Not started. |
 | B.5 | Schema Discovery Pipeline (L1–L5) | 🟢 **Mostly Shipped** | L1+L2 = 11 deterministic auto-detect techniques on `main` (corpus CI 100/100 on 24 platforms, 240/240 samples since 2026-05-13). L4 AI Vision wired end-to-end (`packages/sdk/src/auto-detect/techniques/ai-vision.ts` 364 LOC + `apps/control-plane/src/app/api/detect/route.ts:175` dynamic import + `callAnthropic()`). L3 (platform templates) remains no-op but de facto replaced by L1+L2 coverage. **Production blocker:** `ANTHROPIC_API_KEY` empty in Doppler (dev/stg/prd). |
@@ -142,11 +193,11 @@
 | C | Signal ingestion / event taxonomy | 🟡 **Partial** | Ingest worker substantial. SDK emits 8 of 37 declared event types; chat / photo / mortgage_calc / inquiry events are schema-only. |
 | D | Intent Engine (12-dim ontology) | 🟡 **Partial** | `packages/intent-ontology` is a 14-line version stub; real ontology lives in 3 inconsistent places (intent.ts: 18 archetypes; playbooks: 18; archetype_embeddings: 3). SDK Bayesian classifier real (rule-based, ~600 LOC); Modal intent-engine = 27-line placeholder. |
 | D.5 | Continuous Detection Quality | 🟥 **Design-only** | No DQS measurement code beyond the schema_validation cron. |
-| E.1–E.3 | Adaptation decision tree + A/B + bandit | 🟡 **Partial** | A/B holdout + Thompson sampling math shipped + tested + **wired into canonical `POST /api/adapt`** (Sprint 9.5 PR #122, FOLLOW-007). Server now selects a `variant` per (tenant, archetype) request and includes it in the response body. **Two half-wires remain (RETRO-005):** (1) The SDK (`AdaptResponse` in `packages/sdk/src/core/adapt.ts`) does not have a `variant` field on its consumer interface → can't render different copy per variant (FOLLOW-042). (2) `POST /api/adapt/feedback` exists server-side but no SDK code path POSTs to it on conversion → `ab_bandit_weights` will never update from real traffic; Thompson sampling stays at the uniform Beta(1,1) prior (FOLLOW-041). Decision-api Worker (`apps/decision-api/src/app/api/adapt/route.ts`) still on keyword path — by design per ADR-0004 (canonical = control-plane). |
+| E.1–E.3 | Adaptation decision tree + A/B + bandit | 🟡 **Partial** | A/B holdout + Thompson sampling math shipped + tested + **wired into canonical `POST /api/adapt`** (Sprint 9.5 PR #122, FOLLOW-007). Server selects a `variant` per (tenant, archetype) request and includes it in the response body. **Sprint 10 closed both Sprint 9.5 half-wires:** (1) SDK `AdaptResponse.variant?: string` field added in PR #127 (FOLLOW-042); (2) SDK feedback ping consumer at `packages/sdk/src/core/adapt.ts:postFeedbackPing()` POSTs to `/api/adapt/feedback` on outcome events in PR #127 (FOLLOW-041). PR #133 (FOLLOW-051) hardened the feedback endpoint from presence-only Bearer to HMAC-SHA256 tenant-scoped signing — threat model documented in §V.3.2. **Bandit feedback loop is end-to-end wired.** Remaining limitation: the bandit *selection* keys against `ab_bandit_weights` rows (Beta priors) without consulting `archetype_embeddings.embedding` for archetype context — that depends on FOLLOW-063 (LG-1 — automated archetype seed enforcement) to make the cosine path reachable. Decision-api Worker (`apps/decision-api/src/app/api/adapt/route.ts`) still on keyword path — by design per ADR-0004 (canonical = control-plane). |
 | E.4 | Investor Quiz Widget | ✅ **Shipped** | quiz-widget.ts (269 LOC), quiz-trigger.ts, dashboard pages. |
 | E.6 | Placeholder Resolution Order (7-level) | 🟡 **Partial** | Only Level 1 (DOM attribute) implemented; Levels 2–7 fall through to literal `{token}` on-page (FOLLOW-026 P1). |
 | E.7 | Long-form Description Pipeline (v1.7.1 original-first) | ✅ **Shipped** | 668-LOC Modal Sonnet job with WHITELIST guard-rails + audit trail; `POST /api/adapt/description` wired; ClickHouse `description_generations_verified_facts` table. |
-| F | Data Network Effect (archetype embedding space) | 🟡 **Partial** | `archetype_embeddings` table seeded with all **18** archetypes (migration `0005_seed_archetype_embeddings.sql`, post-Sprint 8). However, every row's `embedding` column is **NULL** — the migration comment says "filled in by the Modal daily job" but no such job exists. Sprint 9.5 FOLLOW-019 (PR #123) added cosine-similarity affinity scoring that reads `archetype_embeddings.embedding` via `fetchArchetypeEmbedding()`; when the column is NULL the code correctly falls back to djb2. Net effect: **cosine path is unreachable in production today; FOLLOW-019's headline claim "real archetype-listing affinity replaces djb2" is functionally a no-op until the archetype embedding vectors are computed.** Wiring task tracked in FOLLOW-043. The new `listing_embeddings` table (migration 0013) is wired but seeding is manual — FOLLOW-046. |
+| F | Data Network Effect (archetype embedding space) | 🟡 **Partial** | `archetype_embeddings` table seeded with all **18** archetypes (migration `0005_seed_archetype_embeddings.sql`, post-Sprint 8). Sprint 10 FOLLOW-043 (PR #131 + 6 fix commits) ships `pnpm seed:archetypes` script (uses Supabase PostgREST + `service_role` key per fix commit `82b9e2e` — Supabase direct host is IPv6-only, unreachable from GitHub Actions) and a manual `workflow_dispatch` GitHub Action (`.github/workflows/seed-archetypes.yml`). When invoked against a Doppler-configured environment with `SUPABASE_SERVICE_ROLE_KEY` + `OPENAI_API_KEY`, the script populates all 18 vectors with OpenAI `text-embedding-3-small` at 1024 dims; cost <$0.001. **No CI step or on-merge automation runs the seed automatically.** For any fresh DB pull, `archetype_embeddings.embedding` remains NULL until an operator runs the workflow — the cosine path that FOLLOW-019 (Sprint 9.5 PR #123) wired still falls back to djb2 by default. FOLLOW-063 (RETRO-006 LG-1) tracks the auto-seed enforcement + README runbook. The `listing_embeddings` table (migration 0013) is wired and PR #132 (FOLLOW-046) auto-seeds the 12-listing demo manifest on activation; non-demo tenants still need manual `POST /api/listings/embed` (FOLLOW-046 carve-out). |
 | G | Behavioral Fingerprinting | 🟡 **Partial** | Session-scoped IDs work; cross-listing per-tenant aggregation works; global DP aggregation = design-only. |
 | H | Compliance & Privacy (GDPR/AI Act/CCPA/UK/UAE) | ✅ **Shipped** | DPIA v2.0 + ROPA + LIA template + DSR endpoints + consent gate + tenant_compliance_records. One open P0: DSR-erase doesn't hard-delete ClickHouse (FOLLOW-039). |
 | I | Stack Technologiczny | ✅ **Locked** | Decisions stable, in-code. |
@@ -165,7 +216,7 @@
 | U | Agency Registration + Master Admin | 🟡 **Partial** | Registration flow + Stripe webhook + JWT roles + admin layout: real. Master Admin Fleet View: partial (mock data). |
 | U.10 | Investor Quiz back-office | ✅ **Shipped** | Per-tenant toggle + analytics dashboard real. |
 | U.11 | Profile Mode (post-MVP) | 🟥 **Design-only** | Forward-compat checklist tracked; not active. |
-| V | Security Architecture | 🟡 **Partial** | JWT/RLS/HMAC/Sentry/OTel/Gitleaks/idempotency: shipped. SBOM, MFA enforcement, full CSP, formal threat model: design-only. P0 auth gaps (FIX-013..019) closed in Sprint 8 — but pattern of late-closure is a process risk. |
+| V | Security Architecture | 🟡 **Partial** | JWT/RLS/HMAC/Sentry/OTel/Gitleaks/idempotency: shipped. SBOM, MFA enforcement, full CSP, formal threat model: design-only. P0 auth gaps (FIX-013..019) closed in Sprint 8 — but pattern of late-closure is a process risk. Sprint 10 PR #133 (FOLLOW-051) added `§V.3.2` threat model for `POST /api/adapt/feedback` HMAC-SHA256 tenant-scoped signing; `INTERNAL_API_SECRET` (server-to-server shared secret used by PR #132 listing-embedding seeder) is undocumented — FOLLOW-073 tracks the §V.3.3 add. RETRO-006 LG-3 records a 16h regression window (2026-05-22 → 2026-05-23) where the feedback endpoint accepted presence-only Bearer; demo-safe (no real tenants) but pattern is the same shape as the FIX-013..019 late-closure risk. |
 | W | Operational Excellence | 🟥 **Design-only** | DR/SLO/error-budget config not in repo. One Grafana dashboard (ingest only) committed. OTel collector configured for `logging` exporter, not Tempo/Prometheus. |
 | X | Sprint 1.5 Hardening | ✅ **Closed** | FIX-001..005 merged. |
 
@@ -210,13 +261,14 @@ Net: an investor demo today shows a credible Tier 1 Observer + Tier 2 mutation f
 ### §Snapshot.4 — Recommendation priorities (mirrors `AUDIT_REPORT_INVESTOR_READINESS.md` §11)
 
 **Immediate (1–2 weeks):**
-1. Wire `applyArchetypeHints()` in SDK init (already implemented + tested, just not called) — cheap win for cold-start.
-2. Hard-delete from ClickHouse in DSR-erase (FOLLOW-039) — closes the only EU compliance P0.
-3. Doppler CI wired (FOLLOW-040) — unblocks staging deploys.
-4. Pick one `/api/adapt` endpoint as the canonical one and retire the other; document the choice in an ADR.
+1. **Sprint 11 (OPEN 2026-05-23): close 3 pilot-blockers (FOLLOW-063 seed CI, FOLLOW-068 demo CI, FOLLOW-069 HMAC compat) + FOLLOW-039 EU GDPR gate.** Without all four, no pilot tenant can be onboarded (fresh DB cosine path NULL; demo integration not CI-verified; HMAC drift untested; ClickHouse DSR-erase non-compliant for EU). Sprint 11 also includes FOLLOW-040 (Doppler CI) and 4 P2 quality items (FOLLOW-065/071/073/074).
+2. Wire `applyArchetypeHints()` in SDK init (already implemented + tested, just not called) — cheap win for cold-start.
+3. ~~Hard-delete from ClickHouse in DSR-erase (FOLLOW-039)~~ **PROMOTED TO SPRINT 11 P1 as item 1 above.**
+4. ~~Doppler CI wired (FOLLOW-040)~~ **PROMOTED TO SPRINT 11 P1 as item 1 above.**
+5. Pick one `/api/adapt` endpoint as the canonical one and retire the other; document the choice in an ADR.
 
 **Product proof (2–6 weeks):**
-5. ~~Unblock Sprint 2.5 (TICKET-030/032/033/034)~~ **Sprint 9.5 closed 2026-05-22.** TICKET-030 + TICKET-033 + TICKET-AUTO-006-POLISH merged. TICKET-032 + TICKET-034 deferred per Q5 2026-05-21 (auto-detect already covers L1/L2/L4; L3 templates non-blocking). Next priority for end-to-end demo: FOLLOW-041 + FOLLOW-042 (close the bandit loop) and FOLLOW-043 (seed real archetype embeddings so cosine affinity is more than placeholder).
+5. ~~Unblock Sprint 2.5 (TICKET-030/032/033/034)~~ **Sprint 9.5 closed 2026-05-22.** TICKET-030 + TICKET-033 + TICKET-AUTO-006-POLISH merged. TICKET-032 + TICKET-034 deferred per Q5 2026-05-21 (auto-detect already covers L1/L2/L4; L3 templates non-blocking). ~~Next priority: FOLLOW-041 + FOLLOW-042 (close the bandit loop) and FOLLOW-043 (seed real archetype embeddings).~~ **Sprint 10 closed 2026-05-24** — FOLLOW-041/042 merged (PR #127), FOLLOW-043 merged (PR #131 + 6 ops fixes), FOLLOW-046 merged for demo tenant (PR #132), FOLLOW-051 HMAC hardening (PR #133), Rule J live (PR #128), sprint-close checklist live (PR #134). **Next priority surfaces from RETRO-006:** FOLLOW-063 (P1 — auto-seed enforcement, fresh DB pulls today still have NULL archetype embeddings until manual workflow); FOLLOW-068 (P1 — CI job that actually runs the E2E spec end-to-end, currently opt-in); FOLLOW-069 (P1 — cross-runtime HMAC compatibility test).
 6. Seed all 18 archetypes into `archetype_embeddings` (currently 3).
 7. Add 8–12 more behavioral signal producers in the SDK (photo dwell, gallery interaction, mortgage_calc, inquiry_started, exit-intent) + corresponding `SIGNAL_LIKELIHOODS` entries — without these, 15 of 18 archetypes are undiscriminable from behavior.
 8. Wire bandit variant selection per request (FOLLOW-007/025/028).

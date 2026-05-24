@@ -1973,3 +1973,295 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **promoted_to_queue:** false
 
 ---
+
+## FOLLOW-075 — Require VERCEL_CRON_SECRET on /api/dsr/mutation-poll; reject 401 if unset
+
+- **source_retro:** RETRO-007
+- **source_ticket:** FOLLOW-039 / PR #139
+- **recommended_sprint:** 12
+- **recommended_agent:** backend-engineer + compliance-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** RETRO-007 LG-1: `apps/control-plane/src/app/api/dsr/mutation-poll/route.ts` accepts the
+  `x-vercel-cron-signature` header as the auth gate when `VERCEL_CRON_SECRET` is set, but the
+  fallback when the env var is absent currently permits any caller. In any environment without the
+  secret (dev, Vercel preview deployments without cron config), an attacker who finds the public
+  route URL can manually trigger the poll loop. Worst-case is bounded (the route only updates
+  `dsr_clickhouse_mutations.status` from `pending` → `done`/`failed` based on what
+  `system.mutations` actually says — no privilege escalation), but the pattern matches the Rule H
+  amendment shape: mutation endpoint with a permissive fallback. Fix: require `VERCEL_CRON_SECRET`
+  on all environments; reject 401 if unset; document in Master Design §V.3.4.
+- **ac:**
+  - [ ] `mutation-poll/route.ts` returns 401 when `VERCEL_CRON_SECRET` env is unset
+  - [ ] `VERCEL_CRON_SECRET` added to `.env.example` with documentation
+  - [ ] Test asserts 401 when env unset
+  - [ ] Test asserts 401 when env set but header signature mismatches
+  - [ ] Test asserts 200 when header signature matches
+  - [ ] Master Design §V.3.4 documents the threat model
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-076 — Cleanup cron for dsr_clickhouse_mutations (90-day TTL after status='done')
+
+- **source_retro:** RETRO-007
+- **source_ticket:** FOLLOW-039 / PR #139
+- **recommended_sprint:** backlog
+- **recommended_agent:** data-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** RETRO-007 LG-2: `dsr_clickhouse_mutations` (Drizzle migration 0014) is an operational
+  state table — each DSR erase request inserts 4 rows (one per PII table). At pilot scale (50 erases
+  × 4 rows × N tenants), the table grows unbounded. The DSR audit_log itself is retained per Art.
+  17(3)(b) legal-claims need, but the operational state table does not carry the same legal weight.
+  Add a cleanup cron (Vercel Cron + Next.js handler OR Modal Python cron) that archives or deletes
+  rows where `status='done' AND completed_at < NOW() - INTERVAL '90 days'`. Negligible cost today
+  (zero pilot tenants); long-term hygiene.
+- **ac:**
+  - [ ] Cleanup cron implementation (Vercel Cron preferred for consistency with mutation-poll)
+  - [ ] Cron registered in `vercel.json` with daily schedule
+  - [ ] Test asserts only `status='done' AND completed_at < 90d ago` rows are removed
+  - [ ] `failed` rows NEVER removed (retained for compliance audit)
+  - [ ] Documented in Master Design §H.1.1 retention table
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-077 — Test asserts Sentry dsr_erase_clickhouse_mutation_failed tag fires on terminal failure
+
+- **source_retro:** RETRO-007
+- **source_ticket:** FOLLOW-039 / PR #139
+- **recommended_sprint:** backlog
+- **recommended_agent:** qa-engineer + compliance-engineer
+- **priority:** P3
+- **estimated_hours:** 0.5
+- **scope:** RETRO-007 LG-3: PR #139 documents "Final terminal failure flips the parent
+  `dsr_audit_log` row to `clickhouse_mutation_status = 'failed'` and fires Sentry
+  `dsr_erase_clickhouse_mutation_failed: true`." The unit suite mocks ClickHouse HTTP 500 and
+  asserts the operational row flips to `failed`, but does NOT assert the Sentry emission. If a
+  refactor drops the `Sentry.captureException` call in `_finalise.ts`, no test catches it. Add a
+  test that mocks Sentry, runs the terminal-failure path, asserts the tag was set.
+- **ac:**
+  - [ ] Test in `apps/control-plane/src/app/api/dsr/mutation-poll/_finalise.test.ts` (or adjacent)
+  - [ ] Mocks Sentry SDK, asserts `setTag('dsr_erase_clickhouse_mutation_failed', true)` called
+  - [ ] Asserts on the terminal failure path only (not on transient retries)
+  - [ ] Asserts `captureException` called with the ALTER TABLE error
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-078 — DSR failure alerting: dashboard panel + weekly digest + Sentry escalation policy
+
+- **source_retro:** RETRO-007
+- **source_ticket:** FOLLOW-039 / PR #139
+- **recommended_sprint:** 12
+- **recommended_agent:** compliance-engineer + devops-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** RETRO-007 LG-4: Sprint 11 PR #139 fires a single Sentry event when a DSR ClickHouse
+  mutation terminally fails, but no PagerDuty/on-call escalation, no DSR-specific dashboard, and no
+  per-tenant alert. For an EU pilot this is a regulator-visible gap (RODO Art. 17 requires "without
+  undue delay" — typically interpreted as 30 days). Add: (a) Grafana dashboard panel surfacing DSR
+  mutations stuck in `failed` state (count + tenant breakdown + age); (b) weekly digest email to
+  compliance-engineer + Piotr listing any non-zero failed counts; (c) Sentry alert escalation policy
+  `dsr_erase_clickhouse_mutation_failed` → on-call rotation if count > 0 in 24h.
+- **ac:**
+  - [ ] Grafana panel `DSR ClickHouse Mutation Failures` exists
+  - [ ] Panel shows count + tenant_id breakdown + age of oldest failed mutation
+  - [ ] Weekly digest cron sends email to ops + compliance
+  - [ ] Sentry alert policy escalates `dsr_erase_clickhouse_mutation_failed:true` events to on-call
+        after 24h if not resolved
+  - [ ] Runbook entry in `docs/runbooks/dsr-mutation-failure.md`
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-079 — Tighten demo-integration.yml soft-skips after FOLLOW-040 unblocks
+
+- **source_retro:** RETRO-007
+- **source_ticket:** FOLLOW-068 / PR #137
+- **recommended_sprint:** 12
+- **recommended_agent:** qa-engineer + devops-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** RETRO-007 CB-1: `demo-integration.yml` ships with TWO layered soft-skips —
+  `DOPPLER_TOKEN_DEV` absence (correct, mergeable without secret) AND Next.js 5xx response (defeats
+  the purpose). Once FOLLOW-040 escalation provisions `DOPPLER_TOKEN_DEV`, flip the inner gates to
+  fail-loud on push:main: (a) Remove the `continue-on-error: true` from the demo-integration job;
+  (b) Add `demo-integration` to the required-checks list in branch protection; (c) Keep the
+  `DOPPLER_TOKEN_DEV` soft-skip on PRs only (so forked PRs do not break); (d) Add health-check gate:
+  if Next.js returns 5xx after `DOPPLER_TOKEN_DEV` is present, FAIL the job (real env-plumbing bug).
+  This closes the "soft-skip inception" pattern.
+- **ac:**
+  - [ ] `continue-on-error: true` removed from `demo-integration` job on push:main runs
+  - [ ] Server-health gate fails loud (non-zero exit) when DOPPLER token present but server 5xx
+  - [ ] `demo-integration` added to required checks in branch protection
+  - [ ] PRs from forks continue to soft-skip cleanly
+  - [ ] First push:main run after FOLLOW-040 unblock asserts E2E spec actually executes
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-080 — Widen commitlint.config.cjs FOLLOW regex to [FOLLOW-N(a-z)?] for TICKET parity
+
+- **source_retro:** RETRO-007
+- **source_ticket:** FOLLOW-063 / PR #135
+- **recommended_sprint:** backlog
+- **recommended_agent:** devops-engineer
+- **priority:** P3
+- **estimated_hours:** 0.25
+- **scope:** RETRO-007 CB-2: PR #135 widened the commitlint regex to accept `[FOLLOW-\d+]` but used
+  numeric-only matching. The TICKET-style pattern accepts `\d+[a-z]?` (so `[TICKET-039a]` for a
+  follow-up to TICKET-039 is valid). Today no FOLLOW has a letter suffix, but the gap is latent —
+  when retro analysts split a FOLLOW into FOLLOW-039a/b, commitlint will reject the commit. Change
+  `\[FOLLOW-\d+\]` to `\[FOLLOW-\d+[a-z]?\]` for parity.
+- **ac:**
+  - [ ] `commitlint.config.cjs` regex widened to `\[FOLLOW-\d+[a-z]?\]`
+  - [ ] Test fixture: commit message with `[FOLLOW-039a]` passes commitlint
+  - [ ] Test fixture: commit message with `[FOLLOW-039]` continues to pass
+  - [ ] No regression on `[TICKET-XXX]` patterns
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-081 — ClickHouse Cloud integration test for mutation-poll poll+retry+Sentry path
+
+- **source_retro:** RETRO-007
+- **source_ticket:** FOLLOW-039 / PR #139
+- **recommended_sprint:** 12
+- **recommended_agent:** qa-engineer + data-engineer
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** RETRO-007 TG-1: `mutation-poll/route.ts` polling + retry + Sentry integration is
+  unit-tested but not integration-tested against a real ClickHouse instance. The unit suite mocks
+  the ClickHouse HTTP response and cannot exercise: (a) real `system.mutations` async semantics
+  (`is_done=0` → `is_done=1` transitions over time), (b) ClickHouse Cloud-specific error formats,
+  (c) partition-level mutation scheduling, (d) the exponential-backoff retry path under real cloud
+  latency. Without this test, a regression in the poll loop only surfaces when a real EU DSR erase
+  occurs — by definition the worst time. Add a new spec `tests/e2e/dsr-erasure.spec.ts` that
+  connects to a real ClickHouse Cloud test instance (or a self-managed CH in CI), inserts test rows
+  tagged with a unique session_id, fires the erase API, polls until status terminal, asserts
+  deletion. Guard behind `RUN_CLICKHOUSE_INTEGRATION=true` flag — match the FOLLOW-068 pattern but
+  with a separate workflow for ClickHouse Cloud creds. Block EU pilot until this test runs green in
+  CI.
+- **ac:**
+  - [ ] `tests/e2e/dsr-erasure.spec.ts` created
+  - [ ] Spec inserts test rows in `events` + `adaptation_decisions` + `llm_calls` +
+        `session_quality` tagged with unique session_id
+  - [ ] Spec calls `POST /api/dsr/erase` for that session_id
+  - [ ] Spec polls until `dsr_clickhouse_mutations.status='done'` (or failure with diagnostic)
+  - [ ] Spec asserts SELECT against each of 4 tables returns 0 rows for that session_id
+  - [ ] Spec asserts retry path: HTTP 500 → exponential backoff → success
+  - [ ] New workflow `.github/workflows/clickhouse-integration.yml` (push:main only, soft-skip
+        without `CLICKHOUSE_TEST_URL` secret)
+  - [ ] EU pilot launch gated on this workflow being green at least once
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-082 — End-to-end HMAC test with REAL SDK body construction + REAL server route handler
+
+- **source_retro:** RETRO-007
+- **source_ticket:** FOLLOW-069 / PR #136
+- **recommended_sprint:** 12
+- **recommended_agent:** qa-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** RETRO-007 TG-2: FOLLOW-069 cross-runtime HMAC test (PR #136) covers 12 fixture pairs
+  but uses static strings on both sides. In production, the SDK builds
+  `JSON.stringify({ tenant_id, session_id, archetype, variant, converted, timestamp })`. The server
+  reads `req.text()`. If a future change adds middleware that mutates the body (Sentry breadcrumb
+  hook, OTel span attribute extractor, any request wrapper that consumes-and-restreams), the HMAC
+  will silently fail and every conversion ping returns 401. Add an end-to-end HMAC test that: (a)
+  uses the REAL SDK `postFeedbackPing()` code path, (b) intercepts via fetch mock, (c) feeds the
+  captured body + signature to the REAL server route handler (mocked-DB), and (d) asserts signature
+  verification passes. Catches middleware-induced body-mutation regressions.
+- **ac:**
+  - [ ] Test in `packages/sdk/__tests__/integration/feedback-hmac-roundtrip.test.ts` (or adjacent)
+  - [ ] Test calls real `postFeedbackPing()` with a fake-converted event
+  - [ ] Captures the outgoing fetch body + headers via fetch mock
+  - [ ] Calls the real `feedback/route.ts` POST handler with the captured payload
+  - [ ] Asserts HMAC verification returns 200
+  - [ ] Asserts body received by server byte-equals body sent by SDK
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-083 — Document .prettierignore + .gitleaks.toml test-fixture exemption rationale
+
+- **source_retro:** RETRO-007
+- **source_ticket:** FOLLOW-069 fix commit 9ca058e + 318c9fa
+- **recommended_sprint:** 12
+- **recommended_agent:** architect
+- **priority:** P3
+- **estimated_hours:** 0.5
+- **scope:** RETRO-007 DG-1: Sprint 11 added `backlog/RETROSPECTIVES.md` to `.prettierignore` and
+  added a path-keyed gitleaks allowlist for cross-runtime HMAC test fixtures. Both are necessary
+  infrastructure but neither is documented in any agent-facing doc. A future agent running
+  `pnpm prettier --write backlog/RETROSPECTIVES.md` "to be helpful" will fight the exemption without
+  understanding why. Same for HMAC test fixture key conventions (`tenant_api_key_*` /
+  `tenant_test_key_*` / `mock_*` are the gitleaks-safe prefixes). Add rationale to `CONTRIBUTING.md`
+  (or create it) and link from `.prettierignore` / `.gitleaks.toml` headers.
+- **ac:**
+  - [ ] `CONTRIBUTING.md` (create if missing) has "Test fixture naming conventions for gitleaks
+        compatibility" section
+  - [ ] `.prettierignore` header comment explains why each entry is exempt
+  - [ ] `.gitleaks.toml` allowlist has inline comment pointing to CONTRIBUTING.md section
+  - [ ] CLAUDE.md links to CONTRIBUTING.md
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-084 — docs/runbooks/vercel-cron-dependencies.md (Vercel Pro plan + cron paths + failure mode)
+
+- **source_retro:** RETRO-007
+- **source_ticket:** FOLLOW-039 / PR #139
+- **recommended_sprint:** 12
+- **recommended_agent:** architect + devops-engineer
+- **priority:** P2
+- **estimated_hours:** 0.5
+- **scope:** RETRO-007 DG-2: PR #139 registers `/api/dsr/mutation-poll` as a Vercel Cron at 5-min
+  intervals (`vercel.json:7`). Vercel Cron requires the Pro plan (Hobby does NOT support cron). If
+  the deployment account is on Hobby, the cron silently does not fire and DSR mutations never
+  complete — but `dsr_audit_log` will show the erase as "initiated" forever, a regulator-visible
+  compliance gap. No documentation surfaces this dependency. Create
+  `docs/runbooks/vercel-cron-dependencies.md` listing: (a) required plan for cron functionality, (b)
+  all registered cron paths and their schedules, (c) failure mode if the plan is downgraded, (d) how
+  to verify cron is firing (Vercel dashboard → Crons → Last execution).
+- **ac:**
+  - [ ] Runbook file created at `docs/runbooks/vercel-cron-dependencies.md`
+  - [ ] Lists required Vercel plan (Pro)
+  - [ ] Lists all cron paths from `vercel.json` with schedules
+  - [ ] Explains failure mode: "cron silently does not fire; DSR audit row stays in 'initiated'
+        state indefinitely"
+  - [ ] Verification step: how to check last cron execution in Vercel dashboard
+  - [ ] Link added from Master Design §H.1.1 and §W.7
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-085 — Consolidate ESC-009 + FOLLOW-040 escalation into single Sprint 11 unblock checklist
+
+- **source_retro:** RETRO-007
+- **source_ticket:** ESC-009 + FOLLOW-040 (Sprint 11 escalations)
+- **recommended_sprint:** 12
+- **recommended_agent:** pm-orchestrator
+- **priority:** P3
+- **estimated_hours:** 0.25
+- **scope:** RETRO-007 DG-3: ESC-009 (E2E_BEARER_TOKEN provisioning, filed by qa-engineer in PR
+  #137) and the FOLLOW-040 escalation (DOPPLER_TOKEN_DEV provisioning, filed by devops-engineer in
+  PR #138) are TWO SEPARATE ESCALATIONS.md entries but share the same root (Piotr provisioning
+  GitHub Actions secrets). Reading both, an operator might think they are two separate ~10 minute
+  tasks. In reality both must complete to unlock CI enforcement of FOLLOW-063 / FOLLOW-068 /
+  FOLLOW-039. Consolidate into a single "Sprint 11 pilot-readiness unblock checklist" entry in
+  ESCALATIONS.md OR cross-link them explicitly so the operator knows to do both in one sitting.
+- **ac:**
+  - [ ] Either consolidate (one new entry, mark the two existing ones RESOLVED with pointer) OR
+        cross-link (each entry mentions the other in "See also")
+  - [ ] Checklist explicitly lists: (1) Doppler service token → DOPPLER_TOKEN_DEV secret, (2) E2E
+        JWT generation → E2E_BEARER_TOKEN secret, (3) tenant UUID → E2E_TENANT_ID var
+  - [ ] Total estimated time annotated (~20 min for all three)
+  - [ ] Order-of-operations specified
+- **promoted_to_queue:** false
+
+---

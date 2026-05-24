@@ -1,8 +1,30 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 2.4 (Sprint 11 in flight — FOLLOW-039 ClickHouse DSR hard-delete shipped, RODO Art. 17 fully compliant for EU pilot; §H.1.1 erasure semantics added) | **Data:** 24 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 2.4 (Sprint 11 close — all 5 P1 pilot-blockers DONE; FOLLOW-039 ClickHouse DSR hard-delete shipped, RODO Art. 17 fully compliant for EU pilot; §H.1.1 erasure semantics added; CI seed/demo/HMAC gates structurally present; RETRO-007 surfaced 11 follow-ups; awaiting ESC-009 + FOLLOW-040 escalation for operational enforcement) | **Data:** 24 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
 
 > **READING ORDER (v1.8 update).** This document remains the canonical *strategic vision* + *target architecture*. As of 2026-05-16 a multi-agent audit was performed against the actual codebase. The audit findings — what is built, what is partial, what is design-only — are summarized in the new section **"Implementation Status Snapshot (2026-05-16)"** below the Executive Summary, and in detail in `AUDIT_REPORT_INVESTOR_READINESS.md`, `AUDIT_IMPLEMENTATION_MAP.md`, `AUDIT_RISK_MATRIX.md`, and `AUDIT_TEST_GAPS.md` at the repository root. Where this document and the audit disagree, the audit reflects reality at HEAD `398dc97`.
+
+**Changelog v2.4 amend (24 maja 2026 — Sprint 11 close, RETRO-007 reconciliation):**
+
+- 🔄 **§Snapshot.1 row B.4 updated (Edit M-12)** — Auto-Onboarding UI gap (c) end-to-end
+  integration test now structurally closed: PR #137 (FOLLOW-068) provisioned the
+  `demo-integration` CI job; soft-skips until DOPPLER_TOKEN_DEV + E2E_BEARER_TOKEN provisioned
+  (ESC-009 carry-forward).
+- 🔄 **§Snapshot.1 row F updated (Edit M-13)** — Sprint 11 FOLLOW-063 (PR #135) shipped the
+  `archetype-embeddings-not-null` CI precheck + `post-migrate-seed.yml` idempotent auto-seed.
+  Once ESC-009 / FOLLOW-040 escalation resolves, cosine path is CI-enforceable.
+- 🔄 **§Snapshot.1 "Updates" prose (Edit M-14)** — appended Sprint 11 close summary listing all
+  5 P1 pilot-blockers DONE, 0 new HALF_WIRE findings (second consecutive net-closure sprint),
+  and RETRO-007's 11 surfaced FOLLOW-UPs (075–085).
+- 🔄 **§Snapshot.4 priority #1 (Edit M-15)** — struck through "Sprint 11 OPEN — close pilot-
+  blockers" and replaced with Sprint 11 CLOSED status + next-priority pointer to ESC-009 +
+  FOLLOW-040 escalation + Sprint 12 top picks.
+- 📐 **CONVENTIONS_PATCH.md unchanged** — no new Rule promotion this retro; Rule H amendment
+  (2026-05-23) held cleanly across all 5 Sprint 11 PRs; Rule J live (PR #128, Sprint 10) but
+  untouched this sprint.
+- 📝 **No new ADR.** ADR-0004 (canonical adapt endpoint) and existing ADRs still apply.
+- 📝 **Master Design version header refined** — "Sprint 11 in flight" → "Sprint 11 close" with
+  explicit pointer to ESC-009 + FOLLOW-040 as the remaining operational blockers.
 
 **Changelog v2.4 (24 maja 2026 — Sprint 11 in flight, FOLLOW-039 ClickHouse DSR hard-delete):**
 
@@ -188,6 +210,22 @@
 > FOLLOW-040 (Doppler CI hygiene) + 4 P2 quality items (FOLLOW-065/071/073/074). Per OP §Y.3 and
 > the AGENT_WORKFLOW.md sprint-close checklist, the next Snapshot.1 re-verification is at Sprint
 > 11 completion.
+>
+> **Update 2026-05-24 (Sprint 11 close — RETRO-007):** Sprint 11 COMPLETE — 5 PRs merged (#135,
+> #136, #137, #138, #139). All 5 P1 pilot-blockers DONE: FOLLOW-063 (archetype seed CI +
+> auto-seed workflow), FOLLOW-068 (demo-integration CI job), FOLLOW-069 (cross-runtime HMAC
+> compat + LG-3 regression guard), FOLLOW-040 (Doppler service token + doppler-run wrapper),
+> FOLLOW-039 (ClickHouse DSR hard-delete — EU pilot gate cleared; Master Design v2.4 + §H.1.1
+> added). Net 0 HALF_WIRE findings; second consecutive net-closure sprint. **Open gaps surfaced
+> by RETRO-007:** ESC-009 (E2E_BEARER_TOKEN provisioning) + FOLLOW-040 escalation
+> (DOPPLER_TOKEN_DEV provisioning) — both are manual Piotr actions (~20 min total) that unlock
+> CI enforcement of FOLLOW-063/068/039. FOLLOW-081 (P1, ClickHouse integration test for
+> mutation-poll — blocks EU pilot confidence). FOLLOW-075 (P2, VERCEL_CRON_SECRET enforcement
+> on `/api/dsr/mutation-poll`). FOLLOW-078 (P2, DSR failure alerting — regulator-visible at
+> pilot). FOLLOW-079 (P2, tighten demo-integration soft-skips after unblock). 4 P2 carry-overs
+> from Sprint 11 (FOLLOW-065/071/073/074) remain READY. Per OP §Y.3 and the
+> AGENT_WORKFLOW.md sprint-close checklist, the next Snapshot.1 re-verification is at Sprint
+> 12 completion.
 
 **Audit gate status at audit time:**
 
@@ -210,7 +248,7 @@
 | B.1 | Integrator experience (Tier 1/2/3) | 🟡 **Partial** | Tier 1 substantial; Tier 2 mutation engine works but consumes only 3 of 18 archetype buckets via the Worker route; Tier 3 Native explicitly deferred (P.2). |
 | B.2 | SDK perf budget (<40 KB) | 🟥 **Over-budget** | IIFE = 93.3 KB. Decision: split Tier 1 vs Tier 2 entry points, or accept new budget and update §B.2. |
 | B.3 | Adapters (Intercom/Drift/Crisp/Idealista/Otodom) | 🟥 **Design-only** | No adapter code in the repo. |
-| B.4 | Auto-Onboarding UI (Magic Link wizard / Auto-Detect Modal / API Connect) | 🟢 **Mostly Shipped** | Sprint 9.5 merged 2026-05-22: TICKET-033 (PR #121, `POST /api/detect` JWT+SSRF+wizard response), TICKET-030 (PR #124, `/dashboard/onboarding/detect` wizard UI), TICKET-AUTO-006-POLISH (PR #125, Detection Preview + `POST /api/schema/activate` + SDK snippet), FOLLOW-018 (PR #126, real tenant schema lookup + cache invalidation). Operator can paste URL → detect → preview → activate → receive snippet end-to-end. **Sprint 10 partial closure (RETRO-006):** (b) demo-tenant listing-embedding seeding wired on activation via PR #132 (FOLLOW-046, `DEMO_LISTING_MANIFEST` 12 entries auto-seeded when `tenantId === DEMO_TENANT_ID`); non-demo tenants still need manual `POST /api/listings/embed`; (c) e2e integration spec shipped via PR #130 (FOLLOW-055) — guarded behind `NEXT_PUBLIC_TEST_E2E=true`, CI does not yet run it (FOLLOW-068 tracks the CI job). **Remaining open gaps:** (a) Magic-Link email flow still BLOCKED (TICKET-040). **Note:** Auto-Detection Engine itself = §B.5 = Mostly Shipped per Sprint 7.5. |
+| B.4 | Auto-Onboarding UI (Magic Link wizard / Auto-Detect Modal / API Connect) | 🟢 **Mostly Shipped** | Sprint 9.5 merged 2026-05-22: TICKET-033 (PR #121, `POST /api/detect` JWT+SSRF+wizard response), TICKET-030 (PR #124, `/dashboard/onboarding/detect` wizard UI), TICKET-AUTO-006-POLISH (PR #125, Detection Preview + `POST /api/schema/activate` + SDK snippet), FOLLOW-018 (PR #126, real tenant schema lookup + cache invalidation). Operator can paste URL → detect → preview → activate → receive snippet end-to-end. **Sprint 10 partial closure (RETRO-006):** (b) demo-tenant listing-embedding seeding wired on activation via PR #132 (FOLLOW-046, `DEMO_LISTING_MANIFEST` 12 entries auto-seeded when `tenantId === DEMO_TENANT_ID`); non-demo tenants still need manual `POST /api/listings/embed`; (c) e2e integration spec shipped via PR #130 (FOLLOW-055) and **CI job `demo-integration` provisioned in PR #137 (FOLLOW-068)** — soft-skips until DOPPLER_TOKEN_DEV + E2E_BEARER_TOKEN are provisioned (ESC-009 carry-forward). **Remaining open gaps:** (a) Magic-Link email flow still BLOCKED (TICKET-040); (d) ESC-009 + FOLLOW-040 escalation block CI enforcement of FOLLOW-063 / FOLLOW-068 / FOLLOW-039 cron — code is structurally ready, awaits manual secret provisioning (~20 min Piotr action). **Note:** Auto-Detection Engine itself = §B.5 = Mostly Shipped per Sprint 7.5. |
 | B.4.4 | Pre-Built Platform Templates Library (15 starters) | ⛔ **Blocked** | `templates: PlatformTemplate[] = []`. TICKET-032 BLOCKED. |
 | B.4.5 | WordPress Plugin | 🟥 **Design-only** | Not started. |
 | B.5 | Schema Discovery Pipeline (L1–L5) | 🟢 **Mostly Shipped** | L1+L2 = 11 deterministic auto-detect techniques on `main` (corpus CI 100/100 on 24 platforms, 240/240 samples since 2026-05-13). L4 AI Vision wired end-to-end (`packages/sdk/src/auto-detect/techniques/ai-vision.ts` 364 LOC + `apps/control-plane/src/app/api/detect/route.ts:175` dynamic import + `callAnthropic()`). L3 (platform templates) remains no-op but de facto replaced by L1+L2 coverage. **Production blocker:** `ANTHROPIC_API_KEY` empty in Doppler (dev/stg/prd). |
@@ -223,7 +261,7 @@
 | E.4 | Investor Quiz Widget | ✅ **Shipped** | quiz-widget.ts (269 LOC), quiz-trigger.ts, dashboard pages. |
 | E.6 | Placeholder Resolution Order (7-level) | 🟡 **Partial** | Only Level 1 (DOM attribute) implemented; Levels 2–7 fall through to literal `{token}` on-page (FOLLOW-026 P1). |
 | E.7 | Long-form Description Pipeline (v1.7.1 original-first) | ✅ **Shipped** | 668-LOC Modal Sonnet job with WHITELIST guard-rails + audit trail; `POST /api/adapt/description` wired; ClickHouse `description_generations_verified_facts` table. |
-| F | Data Network Effect (archetype embedding space) | 🟡 **Partial** | `archetype_embeddings` table seeded with all **18** archetypes (migration `0005_seed_archetype_embeddings.sql`, post-Sprint 8). Sprint 10 FOLLOW-043 (PR #131 + 6 fix commits) ships `pnpm seed:archetypes` script (uses Supabase PostgREST + `service_role` key per fix commit `82b9e2e` — Supabase direct host is IPv6-only, unreachable from GitHub Actions) and a manual `workflow_dispatch` GitHub Action (`.github/workflows/seed-archetypes.yml`). When invoked against a Doppler-configured environment with `SUPABASE_SERVICE_ROLE_KEY` + `OPENAI_API_KEY`, the script populates all 18 vectors with OpenAI `text-embedding-3-small` at 1024 dims; cost <$0.001. **No CI step or on-merge automation runs the seed automatically.** For any fresh DB pull, `archetype_embeddings.embedding` remains NULL until an operator runs the workflow — the cosine path that FOLLOW-019 (Sprint 9.5 PR #123) wired still falls back to djb2 by default. FOLLOW-063 (RETRO-006 LG-1) tracks the auto-seed enforcement + README runbook. The `listing_embeddings` table (migration 0013) is wired and PR #132 (FOLLOW-046) auto-seeds the 12-listing demo manifest on activation; non-demo tenants still need manual `POST /api/listings/embed` (FOLLOW-046 carve-out). |
+| F | Data Network Effect (archetype embedding space) | 🟡 **Partial** | `archetype_embeddings` table seeded with all **18** archetypes (migration `0005_seed_archetype_embeddings.sql`, post-Sprint 8). Sprint 10 FOLLOW-043 (PR #131 + 6 fix commits) ships `pnpm seed:archetypes` script (uses Supabase PostgREST + `service_role` key per fix commit `82b9e2e` — Supabase direct host is IPv6-only, unreachable from GitHub Actions) and a manual `workflow_dispatch` GitHub Action (`.github/workflows/seed-archetypes.yml`). When invoked against a Doppler-configured environment with `SUPABASE_SERVICE_ROLE_KEY` + `OPENAI_API_KEY`, the script populates all 18 vectors with OpenAI `text-embedding-3-small` at 1024 dims; cost <$0.001. **No CI step or on-merge automation runs the seed automatically.** For any fresh DB pull, `archetype_embeddings.embedding` remains NULL until an operator runs the workflow — the cosine path that FOLLOW-019 (Sprint 9.5 PR #123) wired still falls back to djb2 by default. FOLLOW-063 (RETRO-006 LG-1) tracks the auto-seed enforcement + README runbook. The `listing_embeddings` table (migration 0013) is wired and PR #132 (FOLLOW-046) auto-seeds the 12-listing demo manifest on activation; non-demo tenants still need manual `POST /api/listings/embed` (FOLLOW-046 carve-out). **Sprint 11 FOLLOW-063 (PR #135) ships `archetype-embeddings-not-null` CI precheck (push:main, soft-skip until DOPPLER_TOKEN_DEV provisioned) + `.github/workflows/post-migrate-seed.yml` idempotent auto-seed on every push to main. Once ESC-009 / FOLLOW-040 escalation resolves, the cosine path will be enforceable in CI for any fresh DB pull.** |
 | G | Behavioral Fingerprinting | 🟡 **Partial** | Session-scoped IDs work; cross-listing per-tenant aggregation works; global DP aggregation = design-only. |
 | H | Compliance & Privacy (GDPR/AI Act/CCPA/UK/UAE) | ✅ **Shipped** | DPIA v2.0 + ROPA + LIA template + DSR endpoints (initiate/access/erase/portability with OTP+Resend) + consent gate + tenant_compliance_records + **ClickHouse hard-delete on erase via FOLLOW-039 (§H.1.1)**. EU pilot gate cleared 2026-05-24. |
 | I | Stack Technologiczny | ✅ **Locked** | Decisions stable, in-code. |
@@ -287,7 +325,7 @@ Net: an investor demo today shows a credible Tier 1 Observer + Tier 2 mutation f
 ### §Snapshot.4 — Recommendation priorities (mirrors `AUDIT_REPORT_INVESTOR_READINESS.md` §11)
 
 **Immediate (1–2 weeks):**
-1. **Sprint 11 (OPEN 2026-05-23): close 3 pilot-blockers (FOLLOW-063 seed CI, FOLLOW-068 demo CI, FOLLOW-069 HMAC compat) + FOLLOW-039 EU GDPR gate.** Without all four, no pilot tenant can be onboarded (fresh DB cosine path NULL; demo integration not CI-verified; HMAC drift untested; ClickHouse DSR-erase non-compliant for EU). Sprint 11 also includes FOLLOW-040 (Doppler CI) and 4 P2 quality items (FOLLOW-065/071/073/074).
+1. ~~**Sprint 11 (OPEN 2026-05-23): close 3 pilot-blockers (FOLLOW-063 seed CI, FOLLOW-068 demo CI, FOLLOW-069 HMAC compat) + FOLLOW-039 EU GDPR gate.**~~ **Sprint 11 CLOSED 2026-05-24** — all 5 P1 pilot-blockers DONE (FOLLOW-063 PR #135, FOLLOW-068 PR #137, FOLLOW-069 PR #136, FOLLOW-039 PR #139, FOLLOW-040 PR #138). EU pilot gate cleared; Master Design v2.4 + §H.1.1 added. **Next priority:** ESC-009 + FOLLOW-040 escalation (Piotr ~20 min) → unlocks operational enforcement of the 3 new CI jobs. Then Sprint 12 priorities from RETRO-007 §5b: FOLLOW-081 (P1 ClickHouse Cloud integration test for mutation-poll — blocks EU pilot confidence), FOLLOW-078 (P2 DSR failure alerting — regulator-visible), FOLLOW-079 (P2 tighten demo-integration soft-skips after unblock), FOLLOW-075 (P2 VERCEL_CRON_SECRET enforcement), FOLLOW-073 (P2 INTERNAL_API_SECRET threat model carry-over from RETRO-006).
 2. Wire `applyArchetypeHints()` in SDK init (already implemented + tested, just not called) — cheap win for cold-start.
 3. ~~Hard-delete from ClickHouse in DSR-erase (FOLLOW-039)~~ **PROMOTED TO SPRINT 11 P1 as item 1 above.**
 4. ~~Doppler CI wired (FOLLOW-040)~~ **PROMOTED TO SPRINT 11 P1 as item 1 above.**

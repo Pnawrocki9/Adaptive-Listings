@@ -1810,13 +1810,13 @@ disciplined "retro-driven" sprint shipped to date.
 **Repeating patterns across the 8 PRs:**
 
 1. **Rule H (schema scaffold / deferred wiring)** — 6 retros consecutive. RETRO-006 records ONE new
-   HALF_WIRE finding (LG-2 below — `feedbackConvertedFalse` SDK opt-in has no documented operator
-   surface), but the dominant story is Rule H _closure_: Sprint 10 reduced the open half-wire count
+   HALF*WIRE finding (LG-2 below — `feedbackConvertedFalse` SDK opt-in has no documented operator
+   surface), but the dominant story is Rule H \_closure*: Sprint 10 reduced the open half-wire count
    by 4 net. The pattern persists structurally — see §6 for a recommended Rule H amendment.
 2. **Mirror-code duplication** — Rule J was _promoted to permanent_ in PR #128 (FOLLOW-052). The CI
    gate is live; the two declared pairs (`bandit.ts` and `reorder.ts`) are enforced. This is the
-   only "new Rule" delta from Sprint 10. Rule J already lives in CONVENTIONS_PATCH.md (added during
-   RETRO-005); PR #128 only added the _enforcement script_.
+   only "new Rule" delta from Sprint 10. Rule J already lives in CONVENTIONS*PATCH.md (added during
+   RETRO-005); PR #128 only added the \_enforcement script*.
 3. **Doppler/CI infrastructure friction** — FOLLOW-043 needed six retry commits. The Doppler dev
    config is the single root cause: `SUPABASE_DB_PASSWORD` mismatch, `DATABASE_URL_ADMIN` missing,
    `OPENAI_API_KEY` absent. FOLLOW-040 was meant to harden Doppler CI hygiene but is still parallel
@@ -2371,8 +2371,8 @@ are written against the local v2.1 master (which is structurally equivalent to v
 ### 10. Cross-references
 
 - **RETRO-005 (Sprint 9.5):** This retro is the direct closure pass for 4 of the 5 RETRO-005 §3
-  HALF_WIRE findings (FOLLOW-041, -042, -043 = LG-1 partial only, -046 = demo-only). The 5th
-  (FOLLOW-055 e2e test) is _shipped_ but _not running in CI_ (TG-1). RETRO-005 successfully
+  HALF*WIRE findings (FOLLOW-041, -042, -043 = LG-1 partial only, -046 = demo-only). The 5th
+  (FOLLOW-055 e2e test) is \_shipped* but _not running in CI_ (TG-1). RETRO-005 successfully
   predicted the half-wire surfaces; Sprint 10 successfully prioritized closure. The retro loop is
   functioning as intended.
 - **RETRO-002 (TICKET-AB-001) + RETRO-003 (TICKET-REORDER-001):** Rule H originally codified here.

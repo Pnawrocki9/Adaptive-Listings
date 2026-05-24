@@ -1648,13 +1648,15 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-063
   title: archetype_embeddings auto-seed in CI (NOT NULL invariant)
   agent: devops-engineer + ml-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 3
   depends_on: []
   assigned_to: devops-engineer
   started_at: '2026-05-23T12:00:00Z'
+  completed_at: '2026-05-24T00:00:00Z'
   branch: devops-engineer/FOLLOW-063-seed-ci
+  pr: '#135'
   model: sonnet-4.6
   spec: backlog/sprint-11/FOLLOW-063.md
   notes: |
@@ -1663,6 +1665,9 @@ hygiene:** FOLLOW-040.
     NULL → cosine path falls back to djb2 silently. Add CI precheck (fail build if any
     archetype_embeddings row has NULL embedding on staging/prod) + post-migration seed step +
     README "Local development setup" pointer. Bundle with FOLLOW-074 (architect README).
+    Files: .github/workflows/ci.yml (archetype-embeddings-not-null job),
+    .github/workflows/post-migrate-seed.yml (new), README.md (Local dev setup section).
+    Both new jobs soft-skip when DOPPLER_TOKEN_DEV not yet provisioned (FOLLOW-040).
 
 - id: FOLLOW-068
   title: demo-integration CI job — NEXT_PUBLIC_TEST_E2E=true + demo DB fixtures

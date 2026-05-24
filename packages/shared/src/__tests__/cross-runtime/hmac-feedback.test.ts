@@ -84,7 +84,7 @@ const FIXTURES: HmacFixture[] = [
   // 1. Minimal realistic feedback body (happy path)
   {
     label: 'realistic JSON feedback body',
-    key: 'pk_live_abc123def456',
+    key: 'tenant_api_key_abc123def456',
     body: JSON.stringify({
       session_id: 'sess-feedback-001',
       tenant_id: 'tnt_abc',
@@ -97,7 +97,7 @@ const FIXTURES: HmacFixture[] = [
   // 2. Body with converted: false
   {
     label: 'feedback body converted=false',
-    key: 'pk_test_xyz789',
+    key: 'tenant_test_key_xyz789',
     body: JSON.stringify({
       session_id: 'sess-feedback-002',
       tenant_id: 'tnt_xyz',

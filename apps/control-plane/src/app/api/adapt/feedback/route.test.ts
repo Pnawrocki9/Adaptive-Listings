@@ -239,7 +239,7 @@ describe('POST /api/adapt/feedback — auth gate', () => {
     // If it starts failing, a mutation-endpoint auth regression has been introduced.
     vi.stubEnv('ADAPT_API_KEY', '');
     // Send a valid-looking Bearer token but deliberately omit X-Estalara-Signature.
-    const res = await POST(makePostRequest(VALID_BODY, 'Bearer pk_live_realkey', null));
+    const res = await POST(makePostRequest(VALID_BODY, 'Bearer tenant_api_key_realkey', null));
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('FORBIDDEN');

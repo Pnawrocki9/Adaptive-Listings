@@ -382,7 +382,9 @@ export function buildResponseFromRaw(
   };
 }
 
-// ─── Mock data (dev / CI fallback) ──────────────────────────────────────────────
+// ─── Mock data (dev / CI fallback) — replaced by FOLLOW-086 ────────────────────
+// MVP stub — FOLLOW-086 replaces mock fallback with real ClickHouse queries once
+// CLICKHOUSE_URL is available in Vercel preview + dev environments.
 
 /** Deterministic integer hash of a string. */
 function hash(s: string): number {

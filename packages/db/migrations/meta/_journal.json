@@ -99,6 +99,13 @@
       "when": 1779494400000,
       "tag": "0013_listing_embeddings",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1779840000000,
+      "tag": "0014_dsr_clickhouse_mutations",
+      "breakpoints": true
     }
   ]
 }

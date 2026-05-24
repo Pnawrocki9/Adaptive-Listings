@@ -12,9 +12,15 @@
  *      - DELETE FROM session_embeddings WHERE session_id AND tenant_id
  *      - DELETE FROM consent_records WHERE session_id
  *   5. Redis DEL session:{session_id}:* (fire-and-forget).
- *   6. Return 200 { deleted_at, clickhouse_deletion }.
- *
- * ClickHouse deletion is a follow-up (Redpanda event — post-MVP scope).
+ *   6. **NEW (FOLLOW-039 — RODO Art. 17 hard-delete):**
+ *      For each ClickHouse PII table (events, adaptation_decisions, llm_calls,
+ *      session_quality) issue an `ALTER TABLE ... DELETE WHERE session_id IN (...)`
+ *      mutation and persist a `dsr_clickhouse_mutations` Postgres row tracking
+ *      its state. The `/api/dsr/mutation-poll` Vercel Cron polls `system.mutations`
+ *      and finalises the audit log.
+ *   7. Idempotency: re-running for an already-erased session inspects
+ *      `dsr_clickhouse_mutations` and returns current status without reissuing.
+ *   8. Return 200 { deleted_at, clickhouse_deletion: { status, mutations: [...] } }.
  *
  * @module apps/control-plane/src/app/api/dsr/erase/route
  */
@@ -28,9 +34,15 @@ import {
   dsrVerifications,
   sessionEmbeddings,
   consentRecords,
+  dsrClickhouseMutations,
 } from '@estalara/db';
 import { hashOtp } from '@/lib/dsr-otp';
 import { writeDsrAuditLog } from '../_clickhouse';
+import {
+  DSR_CLICKHOUSE_TABLES,
+  issueEraseMutation,
+  readClickHouseConfig,
+} from '@/lib/clickhouse-dsr';
 
 // ─── Request schema ────────────────────────────────────────────────────────────
 
@@ -76,6 +88,145 @@ async function deleteSessionFromRedis(sessionId: string): Promise<void> {
   } while (cursor !== '0');
 }
 
+// ─── ClickHouse hard-delete (FOLLOW-039) ─────────────────────────────────────
+
+interface MutationSummary {
+  table: string;
+  status: 'pending' | 'in_progress' | 'done' | 'failed' | 'reused';
+  mutation_id: string | null;
+}
+
+/**
+ * Issue ALTER TABLE mutations against every PII-bearing ClickHouse table for
+ * the given (tenant_id, session_id) and persist tracking rows.
+ *
+ * Idempotency: if existing non-terminal rows already exist in
+ * `dsr_clickhouse_mutations` for this (tenant, session) we return their
+ * current statuses without reissuing. If all rows are 'done' we report
+ * 'reused' so callers can short-circuit cleanly.
+ *
+ * On a CLICKHOUSE_URL=unset environment (dev / CI) this is a structured no-op
+ * that returns `[{ table, status: 'no_op', ... }]` rows so tests can exercise
+ * the route end-to-end.
+ *
+ * Errors per-table are caught and recorded as 'failed' rows; the poller will
+ * retry. The function never throws — the DSR endpoint must remain 200-OK
+ * after this step in order to honour the data subject's request.
+ */
+async function issueClickHouseEraseMutations(args: {
+  db: ReturnType<typeof createAdminClient>;
+  dsrVerificationId: string;
+  tenantId: string;
+  sessionId: string;
+}): Promise<{
+  overallStatus: 'pending' | 'done' | 'failed' | 'no_data';
+  mutations: MutationSummary[];
+}> {
+  const cfg = readClickHouseConfig();
+
+  // Idempotency check — look up any existing mutation rows for this
+  // (tenant, session).
+  const existing = await args.db
+    .select()
+    .from(dsrClickhouseMutations)
+    .where(
+      and(
+        eq(dsrClickhouseMutations.tenantId, args.tenantId),
+        eq(dsrClickhouseMutations.sessionId, args.sessionId),
+      ),
+    );
+
+  if (existing.length > 0) {
+    const allDone = existing.every((r) => r.status === 'done');
+    const anyFailed = existing.some((r) => r.status === 'failed');
+    const status: 'pending' | 'done' | 'failed' | 'no_data' = allDone
+      ? 'done'
+      : anyFailed
+        ? 'failed'
+        : 'pending';
+    return {
+      overallStatus: status,
+      mutations: existing.map((r) => ({
+        table: r.tableName,
+        status: 'reused' as const,
+        mutation_id: r.mutationId || null,
+      })),
+    };
+  }
+
+  // No prior rows — issue fresh mutations.
+  const summaries: MutationSummary[] = [];
+
+  // When ClickHouse is not configured (dev / CI), persist 'done' no-op rows
+  // so the audit chain remains consistent and idempotency works on replay.
+  if (!cfg) {
+    for (const { table, column } of DSR_CLICKHOUSE_TABLES) {
+      await args.db.insert(dsrClickhouseMutations).values({
+        dsrVerificationId: args.dsrVerificationId,
+        tenantId: args.tenantId,
+        sessionId: args.sessionId,
+        tableName: table,
+        mutationId: '',
+        status: 'done',
+        retryCount: 0,
+        completedAt: new Date(),
+        alterSql: `-- CLICKHOUSE_URL unset; no-op for table ${table}.${column}`,
+      });
+      summaries.push({ table, status: 'done', mutation_id: null });
+    }
+    return { overallStatus: 'done', mutations: summaries };
+  }
+
+  for (const { table, column } of DSR_CLICKHOUSE_TABLES) {
+    try {
+      const result = await issueEraseMutation(cfg, {
+        table,
+        column,
+        sessionIds: [args.sessionId],
+      });
+      await args.db.insert(dsrClickhouseMutations).values({
+        dsrVerificationId: args.dsrVerificationId,
+        tenantId: args.tenantId,
+        sessionId: args.sessionId,
+        tableName: table,
+        mutationId: result.mutationId ?? '',
+        status: 'pending',
+        retryCount: 0,
+        alterSql: result.alterSql,
+      });
+      summaries.push({ table, status: 'pending', mutation_id: result.mutationId });
+    } catch (err: unknown) {
+      const reason = err instanceof Error ? err.message : String(err);
+      await args.db.insert(dsrClickhouseMutations).values({
+        dsrVerificationId: args.dsrVerificationId,
+        tenantId: args.tenantId,
+        sessionId: args.sessionId,
+        tableName: table,
+        mutationId: '',
+        status: 'failed',
+        retryCount: 0,
+        lastFailedReason: reason.slice(0, 1000),
+        alterSql: `-- ALTER TABLE issue failed: ${reason.slice(0, 200)}`,
+      });
+      summaries.push({ table, status: 'failed', mutation_id: null });
+      console.error(
+        `[dsr/erase] ClickHouse mutation for table ${table} failed:`,
+        reason.slice(0, 500),
+      );
+    }
+  }
+
+  // Overall status: 'pending' as long as at least one mutation is non-terminal.
+  const anyFailed = summaries.some((s) => s.status === 'failed');
+  const anyPending = summaries.some((s) => s.status === 'pending');
+  const overall: 'pending' | 'done' | 'failed' | 'no_data' = anyPending
+    ? 'pending'
+    : anyFailed
+      ? 'failed'
+      : 'done';
+  return { overallStatus: overall, mutations: summaries };
+}
+
 // ─── POST handler ──────────────────────────────────────────────────────────────
 
 /**
@@ -83,7 +234,7 @@ async function deleteSessionFromRedis(sessionId: string): Promise<void> {
  *
  * Body: `{ token: string }` — the 6-digit OTP.
  *
- * @returns 200 `{ deleted_at: string, clickhouse_deletion: string }` on success.
+ * @returns 200 `{ deleted_at, clickhouse_deletion: { status, mutations } }` on success.
  * @returns 400 on invalid body.
  * @returns 401 when OTP is expired or already used.
  * @returns 404 when OTP is not found or wrong type.
@@ -176,7 +327,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.error('[dsr/erase] Redis DEL failed:', err instanceof Error ? err.message : err);
   });
 
+  // ── ClickHouse hard-delete (FOLLOW-039 — RODO Art. 17) ────────────────────
+  // Awaited (not fire-and-forget) so the response reflects mutation issuance.
+  // Per Master Design §H.1, the controller has 1 month to fulfill erasure —
+  // async mutation status is acceptable, so we return 'pending' immediately.
+  let clickhouseDeletion: {
+    status: 'pending' | 'done' | 'failed' | 'no_data';
+    mutations: MutationSummary[];
+  };
+  try {
+    const result = await issueClickHouseEraseMutations({
+      db,
+      dsrVerificationId: record.id,
+      tenantId: record.tenantId,
+      sessionId: record.sessionId,
+    });
+    clickhouseDeletion = { status: result.overallStatus, mutations: result.mutations };
+  } catch (err: unknown) {
+    // Mutation-issuance must NOT fail the DSR request. Log and record
+    // 'failed' for downstream visibility.
+    console.error(
+      '[dsr/erase] ClickHouse hard-delete orchestration failed:',
+      err instanceof Error ? err.message : err,
+    );
+    clickhouseDeletion = { status: 'failed', mutations: [] };
+  }
+
   // ── Audit log (fire-and-forget) ────────────────────────────────────────────
+  // We persist the audit row immediately. The poller will later update the
+  // clickhouse_mutation_* columns once mutations resolve.
   void writeDsrAuditLog({
     tenant_id: record.tenantId,
     session_id: record.sessionId,
@@ -195,8 +374,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   return NextResponse.json(
     {
       deleted_at: now.toISOString(),
-      // ClickHouse deletion via Redpanda event is post-MVP scope.
-      clickhouse_deletion: 'scheduled_in_24h',
+      clickhouse_deletion: clickhouseDeletion,
     },
     { status: 200 },
   );

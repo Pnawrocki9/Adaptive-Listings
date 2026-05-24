@@ -23,3 +23,4 @@ export * from './answers.js';
 export * from './schema_validation_history.js';
 export * from './tenant_compliance_records.js';
 export * from './dsr_verifications.js';
+export * from './dsr_clickhouse_mutations.js';

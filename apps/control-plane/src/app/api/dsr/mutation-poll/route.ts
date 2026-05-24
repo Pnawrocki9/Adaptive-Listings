@@ -21,8 +21,10 @@
  * Auth: protected by `CRON_SECRET` header per Vercel Cron security guidance
  * (https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs).
  * Vercel injects `Authorization: Bearer ${CRON_SECRET}` automatically for
- * cron-triggered invocations. Falls back to allow unauthenticated invocations
- * when CRON_SECRET is unset (dev / CI).
+ * cron-triggered invocations.
+ *
+ * Returns 401 if CRON_SECRET env var is not set (infrastructure misconfiguration)
+ * or if the Authorization header does not match.
  *
  * Retry-on-failure (Acceptance Criteria):
  *   - When system.mutations.latest_failed_reason is non-empty, we increment
@@ -67,7 +69,9 @@ const MAX_ROWS_PER_RUN = 200;
 
 function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // unconfigured — local dev / CI
+  // Reject when CRON_SECRET is not set — unconfigured secret is an
+  // infrastructure misconfiguration, not a valid dev/CI bypass.
+  if (!secret) return false;
   const authHeader = req.headers.get('authorization');
   return authHeader === `Bearer ${secret}`;
 }

@@ -53,7 +53,7 @@ updates.
 | 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline       | 6       | 6    | 0       | 0     | 0       |
 | 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)        | 6       | 6    | 0       | 0     | 0       |
 | 10     | 12    | Close the bandit loop + real embeddings + e2e test                   | 9       | 9    | 0       | 0     | 0       |
-| 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)     | 9       | 0    | 0       | 9     | 0       |
+| 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)     | 9       | 0    | 5       | 4     | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -1648,10 +1648,13 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-063
   title: archetype_embeddings auto-seed in CI (NOT NULL invariant)
   agent: devops-engineer + ml-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 3
   depends_on: []
+  assigned_to: devops-engineer
+  started_at: '2026-05-23T12:00:00Z'
+  branch: devops-engineer/FOLLOW-063-seed-ci
   model: sonnet-4.6
   spec: backlog/sprint-11/FOLLOW-063.md
   notes: |
@@ -1664,10 +1667,13 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-068
   title: demo-integration CI job — NEXT_PUBLIC_TEST_E2E=true + demo DB fixtures
   agent: qa-engineer + devops-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 4
   depends_on: []
+  assigned_to: qa-engineer
+  started_at: '2026-05-23T12:00:00Z'
+  branch: qa-engineer/FOLLOW-068-demo-ci
   model: sonnet-4.6
   spec: backlog/sprint-11/FOLLOW-068.md
   notes: |
@@ -1680,10 +1686,13 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-069
   title: HMAC compat test SDK↔server + Bearer-only rejection regression test
   agent: qa-engineer + backend-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 2
   depends_on: []
+  assigned_to: qa-engineer
+  started_at: '2026-05-23T12:00:00Z'
+  branch: qa-engineer/FOLLOW-069-hmac-compat
   model: sonnet-4.6
   spec: backlog/sprint-11/FOLLOW-069.md
   notes: |
@@ -1697,10 +1706,13 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-039
   title: ClickHouse DSR hard-delete — Art.17 erasure on adaptation_decisions + events tables
   agent: data-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 5
   depends_on: []
+  assigned_to: data-engineer
+  started_at: '2026-05-23T12:00:00Z'
+  branch: data-engineer/FOLLOW-039-clickhouse-dsr
   model: opus-4.7-xhigh
   spec: backlog/sprint-11/FOLLOW-039.md
   notes: |
@@ -1715,10 +1727,13 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-040
   title: Doppler CI hygiene — DOPPLER_TOKEN in GitHub Actions
   agent: devops-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 1
   depends_on: []
+  assigned_to: devops-engineer
+  started_at: '2026-05-23T12:00:00Z'
+  branch: devops-engineer/FOLLOW-040-doppler-ci
   model: sonnet-4.6
   spec: backlog/sprint-11/FOLLOW-040.md
   notes: |
@@ -1786,7 +1801,11 @@ hygiene:** FOLLOW-040.
 
 ## Currently in flight
 
-(none — Sprint 11 ready to start; pm-orchestrator picks next ticket)
+- FOLLOW-063 — devops-engineer — branch `devops-engineer/FOLLOW-063-seed-ci` — started 2026-05-23
+- FOLLOW-068 — qa-engineer — branch `qa-engineer/FOLLOW-068-demo-ci` — started 2026-05-23
+- FOLLOW-069 — qa-engineer — branch `qa-engineer/FOLLOW-069-hmac-compat` — started 2026-05-23
+- FOLLOW-039 — data-engineer — branch `data-engineer/FOLLOW-039-clickhouse-dsr` — started 2026-05-23
+- FOLLOW-040 — devops-engineer — branch `devops-engineer/FOLLOW-040-doppler-ci` — started 2026-05-23
 
 ## Awaiting human review
 

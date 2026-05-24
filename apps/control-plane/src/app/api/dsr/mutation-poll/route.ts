@@ -296,7 +296,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     } catch (err: unknown) {
       // Defensive — never let one row break the whole poll.
       Sentry.captureException(err, {
-        tags: { dsr_erase_clickhouse_mutation_poll_unexpected: 'true' },
+        tags: { dsr_erase_poll_row_error: 'true' },
         extra: { row_id: row.id, table: row.tableName },
       });
     }

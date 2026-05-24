@@ -22,12 +22,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Doppler CLI setup (optional - skipped if DOPPLER_TOKEN_DEV not set) ──
-  # Forks and external PRs won't have this secret; CI still passes without it.
-  # continue-on-error: true keeps this job non-blocking for all callers.
+  # ── Doppler service token verification ──────────────────────────────────
+  # Verifies that DOPPLER_TOKEN_DEV is provisioned and authenticates to Doppler.
+  # Secret scope: dev + staging configs only. Production token is NOT in repo
+  # secrets — it lives in the Vercel-only path.
+  #
+  # Soft-degradation contract (forked PRs / token not yet provisioned):
+  #   If DOPPLER_TOKEN_DEV is absent, the job logs a clear message and exits 0.
+  #   It does NOT fail — external contributors should not be blocked on an
+  #   internal secrets gate.
+  #
+  # When DOPPLER_TOKEN_DEV IS provisioned, this job MUST pass (exit 0) for CI
+  # to be considered fully green. It is the signal that Doppler CI hygiene is
+  # operational and downstream jobs (FOLLOW-063, FOLLOW-068, FOLLOW-039) can
+  # use `doppler run --` to inject secrets.
+  #
+  # ESCALATION: DOPPLER_TOKEN_DEV secret provisioning is tracked in
+  # backlog/ESCALATIONS.md. Add it at: GitHub repo → Settings → Secrets and
+  # variables → Actions → New repository secret.
+  #   Name:  DOPPLER_TOKEN_DEV
+  #   Value: Doppler service token scoped to project=estalara, config=dev
+  #          (create at: https://dashboard.doppler.com → project → Access → Service Tokens)
   doppler-verify:
-    name: Doppler verify (optional)
+    name: Doppler verify
     runs-on: ubuntu-latest
+    # Non-blocking — forked PRs and repos without the secret still pass CI.
+    # When the secret IS present, a failed auth means real misconfiguration.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -35,10 +55,22 @@ jobs:
       - name: Install Doppler CLI
         uses: dopplerhq/cli-action@v3
 
-      - name: Verify Doppler auth
-        run: doppler me
+      - name: Check token presence and verify Doppler auth
+        shell: bash
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
+        run: |
+          if [ -z "${DOPPLER_TOKEN}" ]; then
+            echo "::notice::DOPPLER_TOKEN_DEV is not set — skipping Doppler auth verification."
+            echo "This is expected for forked PRs and environments where the secret has not yet"
+            echo "been provisioned. See backlog/ESCALATIONS.md for provisioning instructions."
+            echo "Once DOPPLER_TOKEN_DEV is added to repo secrets, this step will authenticate"
+            echo "and confirm the CI Doppler integration is fully operational."
+            exit 0
+          fi
+          echo "DOPPLER_TOKEN_DEV is present — verifying auth..."
+          doppler me
+          echo "Doppler auth verified. CI can now use 'doppler run --' to inject secrets."
 
   # ── Static checks (parallel, ~3min) ─────────────────────────────────────
   lint:

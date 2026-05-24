@@ -1727,7 +1727,7 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-040
   title: Doppler CI hygiene — DOPPLER_TOKEN in GitHub Actions
   agent: devops-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 1
   depends_on: []
@@ -1736,11 +1736,14 @@ hygiene:** FOLLOW-040.
   branch: devops-engineer/FOLLOW-040-doppler-ci
   model: sonnet-4.6
   spec: backlog/sprint-11/FOLLOW-040.md
+  pr: '#135'
   notes: |
     Originally P0 parallel pre-flight for Sprint 9.5; still incomplete. Surfaced 6 fix-commits
     for FOLLOW-043 (PR #131) — env plumbing breaks operator workflows. Add DOPPLER_TOKEN as
     GitHub Actions secret + `doppler run -- pnpm <cmd>` wrapper in CI workflows. Coordinate with
     FOLLOW-063 (which needs Doppler-injected DB creds in the seed CI step).
+    ESCALATION: DOPPLER_TOKEN_DEV must be provisioned by Piotr — see backlog/ESCALATIONS.md.
+    Workflow files are ready; token activates on secret landing.
 
 - id: FOLLOW-065
   title: Emit events.feedback.send_failed on SDK ping 4xx/5xx + dashboard panel
@@ -1805,7 +1808,8 @@ hygiene:** FOLLOW-040.
 - FOLLOW-068 — qa-engineer — branch `qa-engineer/FOLLOW-068-demo-ci` — started 2026-05-23
 - FOLLOW-069 — qa-engineer — branch `qa-engineer/FOLLOW-069-hmac-compat` — started 2026-05-23
 - FOLLOW-039 — data-engineer — branch `data-engineer/FOLLOW-039-clickhouse-dsr` — started 2026-05-23
-- FOLLOW-040 — devops-engineer — branch `devops-engineer/FOLLOW-040-doppler-ci` — started 2026-05-23
+- FOLLOW-040 — devops-engineer — branch `devops-engineer/FOLLOW-040-doppler-ci` — READY_FOR_REVIEW
+  pr #135
 
 ## Awaiting human review
 

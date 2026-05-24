@@ -93,6 +93,54 @@ If any of these are missing from Doppler `dev` config, request access from Piotr
 
 ---
 
+## Local development setup
+
+After cloning and running `pnpm install`, complete these one-time steps before starting the dev
+server. Skipping them leaves the cosine-affinity adaptation path silently broken (it falls back to
+djb2 hash scoring with no error output).
+
+### 1. Authenticate Doppler
+
+```bash
+# Install Doppler CLI: https://docs.doppler.com/docs/install-cli
+doppler login
+doppler setup   # select project: estalara / config: dev
+```
+
+Required secrets the dev config provides:
+
+| Key                         | Used by                                       |
+| --------------------------- | --------------------------------------------- |
+| `SUPABASE_URL`              | Drizzle DB client + seed scripts              |
+| `SUPABASE_SERVICE_ROLE_KEY` | Seed scripts (bypasses RLS)                   |
+| `OPENAI_API_KEY`            | `pnpm seed:archetypes` + `pnpm seed:listings` |
+| `DATABASE_URL`              | Drizzle migrations (direct Postgres)          |
+
+### 2. Seed archetype embeddings (one-shot, idempotent)
+
+```bash
+doppler run -- pnpm seed:archetypes
+```
+
+This calls OpenAI `text-embedding-3-small` for each of the 18 canonical archetype descriptions and
+writes the 1024-dim vectors into `archetype_embeddings`. The script is idempotent — re-running with
+all rows already populated is a no-op ("nothing to seed" log, exit 0).
+
+**Why this matters:** `apps/control-plane/src/lib/embedding-lookup.ts` returns `null` for any
+archetype whose `embedding` column is NULL, which silently degrades the entire adaptation chain to
+the djb2 deterministic hash path. The cosine-affinity differentiator (Master Design §F.3) is
+unreachable until this step runs.
+
+### 3. Seed listing embeddings (optional for local dev, required for demo)
+
+```bash
+doppler run -- pnpm seed:listings
+```
+
+Embeds the 12 demo listings. Skip if you are not running the full demo flow locally.
+
+---
+
 ## Development
 
 ```bash

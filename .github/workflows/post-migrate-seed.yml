@@ -1,0 +1,71 @@
+# post-migrate-seed.yml
+#
+# Runs automatically on every push to main. Checks whether any
+# `archetype_embeddings` rows still have NULL embeddings and, if so, runs
+# `pnpm seed:archetypes` to populate them.
+#
+# Design notes:
+#   - Idempotent: the seed script is a no-op when all rows are already
+#     populated (exits 0 with "nothing to seed" log).
+#   - Soft-skip when DOPPLER_TOKEN is unavailable: if DOPPLER_TOKEN_DEV is not
+#     yet provisioned (FOLLOW-040 lands separately), the job sets
+#     continue-on-error: true and logs a clear message rather than failing the
+#     post-merge pipeline.  The job is present so it activates the moment
+#     FOLLOW-040 lands and the secret is added to GitHub.
+#   - Does NOT run on pull_request events — it requires real staging DB
+#     credentials and a real OPENAI_API_KEY, which must not be exposed on
+#     untrusted forks.
+#   - The manual workflow_dispatch entry in seed-archetypes.yml is retained as
+#     the operator override.
+
+name: Post-migrate seed archetype embeddings
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  seed-archetypes:
+    name: Seed archetype embeddings (if any NULL)
+    runs-on: ubuntu-latest
+    # Soft-skip until DOPPLER_TOKEN_DEV is provisioned (FOLLOW-040).
+    # Remove continue-on-error once FOLLOW-040 is merged and the secret exists.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @estalara/db
+        run: pnpm --filter @estalara/db build
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      - name: Check if DOPPLER_TOKEN_DEV is available
+        id: doppler-check
+        run: |
+          if [ -z "$DOPPLER_TOKEN" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "[post-migrate-seed] DOPPLER_TOKEN_DEV not set — skipping seed step."
+            echo "Set the DOPPLER_TOKEN_DEV GitHub Actions secret once FOLLOW-040 lands."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
+
+      - name: Seed archetype embeddings (idempotent)
+        if: steps.doppler-check.outputs.skip == 'false'
+        run: doppler run --config dev -- pnpm seed:archetypes
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}

@@ -265,6 +265,84 @@ jobs:
       - name: Check formatting
         run: pnpm exec prettier --check .
 
+  # ── Archetype embeddings NOT NULL precheck ───────────────────────────────
+  # Connects to the staging DB and fails the build if any row in
+  # `archetype_embeddings` has `embedding IS NULL`.
+  #
+  # Runs on push to main only (not on pull_request) — requires real staging DB
+  # credentials. Do NOT add this to the pull_request trigger.
+  #
+  # Soft-skip policy (FOLLOW-040):
+  #   If DOPPLER_TOKEN_DEV is not yet provisioned as a GitHub Actions secret,
+  #   the job sets continue-on-error: true and logs a clear message rather than
+  #   blocking the build. The job MUST remain present so it activates the
+  #   moment FOLLOW-040 lands and the secret is added.
+  archetype-embeddings-not-null:
+    name: Archetype embeddings NOT NULL check
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Soft-skip until DOPPLER_TOKEN_DEV is provisioned (FOLLOW-040).
+    # Remove continue-on-error once FOLLOW-040 is merged and the secret exists.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @estalara/db
+        run: pnpm --filter @estalara/db build
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      - name: Check if DOPPLER_TOKEN_DEV is available
+        id: doppler-check
+        run: |
+          if [ -z "$DOPPLER_TOKEN" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "[archetype-embeddings-not-null] DOPPLER_TOKEN_DEV not set — soft-skipping."
+            echo "Set DOPPLER_TOKEN_DEV GitHub Actions secret once FOLLOW-040 lands."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
+
+      - name: Assert no NULL embeddings in archetype_embeddings
+        if: steps.doppler-check.outputs.skip == 'false'
+        run: |
+          doppler run --config dev -- node --input-type=module <<'EOF'
+          import { createAdminClient } from '@estalara/db';
+          import { isNull } from 'drizzle-orm';
+          import { archetypeEmbeddings } from '@estalara/db';
+
+          const db = createAdminClient();
+          const nullRows = await db
+            .select({ archetypeName: archetypeEmbeddings.archetypeName })
+            .from(archetypeEmbeddings)
+            .where(isNull(archetypeEmbeddings.embedding));
+
+          if (nullRows.length > 0) {
+            const names = nullRows.map(r => r.archetypeName).join(', ');
+            console.error(
+              `[archetype-embeddings-not-null] FAIL: ${nullRows.length} archetype(s) have NULL embedding: ${names}`
+            );
+            console.error('Run: pnpm seed:archetypes  (or trigger the seed-archetypes workflow)');
+            process.exit(1);
+          }
+          console.log(`[archetype-embeddings-not-null] PASS: all archetype embeddings populated.`);
+          EOF
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
+
   # ── Security: Gitleaks scan ──────────────────────────────────────────────
   gitleaks-scan:
     name: Gitleaks secrets scan

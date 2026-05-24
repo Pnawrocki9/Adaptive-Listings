@@ -2265,3 +2265,20 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **promoted_to_queue:** false
 
 ---
+
+## FOLLOW-086 — Replace CTA lift mock data with real ClickHouse queries
+
+- **source_ticket:** TICKET-PILOT-003
+- **recommended_sprint:** 12 post-pilot (once CLICKHOUSE_URL provisioned in dev/CI)
+- **recommended_agent:** data-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** /api/pilot/cta-lift currently falls back to deterministic mock data when CLICKHOUSE_URL
+  is absent (CI / dev). Once the ClickHouse Cloud instance is accessible from Vercel preview
+  deployments, replace the mock fallback with real query execution. The query structure
+  (parameterised fetch-based ClickHouse HTTP) is already in place.
+- **ac:**
+  - [ ] Remove mock fallback entirely (or gate it on explicit `?mock=1` param for demo mode)
+  - [ ] Verify real queries return the expected response schema with actual pilot traffic
+  - [ ] Add integration test (similar to FOLLOW-081) that verifies the query against a real
+        ClickHouse instance

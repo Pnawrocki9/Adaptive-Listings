@@ -145,10 +145,12 @@ export function setupObservers(
 
   const inquirySubmitSelector = options.inquirySubmitSelector;
   if (inquirySubmitSelector && config.consentState !== 'opted_out') {
+    // Capture as a const string for TypeScript narrowing inside the nested function.
+    const resolvedSelector: string = inquirySubmitSelector;
     function onInquirySubmitClick(e: MouseEvent): void {
       try {
         const target = e.target as HTMLElement | null;
-        const submitBtn = target?.closest(inquirySubmitSelector) as HTMLElement | null;
+        const submitBtn = target?.closest(resolvedSelector) as HTMLElement | null;
         if (!submitBtn) return;
 
         onEvent({

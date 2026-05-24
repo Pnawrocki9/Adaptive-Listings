@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.0 **Date:** 2026-05-15 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.1 **Date:** 2026-05-24 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -738,10 +738,16 @@ is responsible for verifying the identity of the requestor.
    session-level records associated with the identifier and delivers via the tenant's verified
    channel (one-time download link, OTP-protected).
 6. For **Erasure**: the worker executes a cascade deletion across all in-region stores: Postgres
-   (`session_embeddings`, `consent_records`, `engagement_scores`, `answers`), ClickHouse
-   (`adaptation_decisions`, `llm_calls`), Upstash Redis (cache invalidation), Modal (any cached
-   embeddings). The archetype contribution log is updated to exclude the session from any future
-   global archetype training (Mode B sessions only).
+   (`session_embeddings`, `consent_records`, `engagement_scores`, `answers`) synchronously inside a
+   single transaction, ClickHouse (`events`, `adaptation_decisions`, `llm_calls`, `session_quality`)
+   asynchronously via `ALTER TABLE ... DELETE WHERE session_id IN (...)` mutations whose status is
+   tracked in the Postgres operational table `dsr_clickhouse_mutations` and polled every 5 minutes
+   by the Vercel Cron handler `/api/dsr/mutation-poll`, Upstash Redis (fire-and-forget SCAN + DEL of
+   `session:{session_id}:*`), Modal (any cached embeddings). The archetype contribution log is
+   updated to exclude the session from any future global archetype training (Mode B sessions only).
+   Mutation retries: up to 3 attempts with exponential backoff (1 min / 5 min / 30 min); permanent
+   failures fire Sentry alerts tagged `dsr_erase_clickhouse_mutation_failed`. See Master Design
+   §H.1.1 for the data inventory and detailed flow.
 7. For **Rectification**: limited applicability given the pseudonymous nature of the data; primarily
    covers correction of consent record state.
 8. For **Restriction**: the session is flagged as "restricted" and excluded from further adaptation
@@ -833,6 +839,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | ------- | ---------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1.0     | 2026-05-15 | Compliance Engineering | Initial DPIA. Five risks identified and assessed. Jurisdictional addenda for EU, UK, US (CCPA), UAE PDPL + DIFC.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 2.0     | 2026-05-15 | Compliance Engineering | Comprehensive update reflecting Time2Show, Inc. as the operating entity with EU establishment via Polish-resident CEO. UODO confirmed as Lead Supervisory Authority on one-stop-shop basis. EU Art. 27 representative not required (Art. 3(1) basis); UK Art. 27 representative appointment in progress. External DPO appointment in progress (CEO structurally excluded per CJEU C-453/21). DPF integrated as primary EU→US transfer mechanism with SCCs as contractual fallback. Joint Controller Analysis classifying Engagement Score as Sole Controllership. Consent withdrawal SLAs clarified (24h session downgrade, 7d archetype quarantine). Engagement Score added to DSR erasure cascade. CCPA applicability threshold analysis added. AI Act FRIA threshold analysis appendix added. Production status updated to "hybrid pilot deployment". |
+| 2.1     | 2026-05-24 | Data Engineering       | Section 8 (Data Subject Rights) — Erasure flow updated to reflect FOLLOW-039 implementation: synchronous Postgres delete + asynchronous ClickHouse `ALTER TABLE ... DELETE WHERE` mutations across `events`, `adaptation_decisions`, `llm_calls`, `session_quality`; status tracked in new Postgres operational table `dsr_clickhouse_mutations`; Vercel Cron `/api/dsr/mutation-poll` polls every 5 min; retries 3× with exponential backoff; Sentry alert on permanent failure. Cross-reference Master Design §H.1.1 for the canonical erasure flow + data inventory. Pre-2.1 the DPIA cited a "daily cron" erasure design that had not been built; that gap is now closed and EU pilot is unblocked.                                                                                                                                                  |
 
 ---
 

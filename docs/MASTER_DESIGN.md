@@ -1,8 +1,34 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 2.3 (Sprint 10 close — RETRO-006 reconciliation; bandit feedback loop closed; HMAC hardening; mirror-code CI live; Sprint 11 OPEN — pilot readiness) | **Data:** 23 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 2.4 (Sprint 11 in flight — FOLLOW-039 ClickHouse DSR hard-delete shipped, RODO Art. 17 fully compliant for EU pilot; §H.1.1 erasure semantics added) | **Data:** 24 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
 
 > **READING ORDER (v1.8 update).** This document remains the canonical *strategic vision* + *target architecture*. As of 2026-05-16 a multi-agent audit was performed against the actual codebase. The audit findings — what is built, what is partial, what is design-only — are summarized in the new section **"Implementation Status Snapshot (2026-05-16)"** below the Executive Summary, and in detail in `AUDIT_REPORT_INVESTOR_READINESS.md`, `AUDIT_IMPLEMENTATION_MAP.md`, `AUDIT_RISK_MATRIX.md`, and `AUDIT_TEST_GAPS.md` at the repository root. Where this document and the audit disagree, the audit reflects reality at HEAD `398dc97`.
+
+**Changelog v2.4 (24 maja 2026 — Sprint 11 in flight, FOLLOW-039 ClickHouse DSR hard-delete):**
+
+- ✅ **§H.1 row "Data Subject Rights" updated** — was a TBD-style entry citing a
+  hypothetical `DELETE /v1/sessions/{session_id}` endpoint that did not exist.
+  Now describes the actual three-endpoint OTP flow (`initiate` / `access` /
+  `erase` / `portability`) and the synchronous Postgres delete +
+  asynchronous ClickHouse `ALTER TABLE ... DELETE WHERE` flow shipped by
+  FOLLOW-039.
+- ✅ **§H.1.1 added** — "Realistic erasure semantics (Art. 17, FOLLOW-039)"
+  documents the data inventory (4 erased tables, 2 retained tables), the
+  Vercel-Cron polling pattern (`/api/dsr/mutation-poll`, every 5 min), the
+  retry-with-exponential-backoff strategy (1 min → 5 min → 30 min, max 3
+  retries), idempotency via the new `dsr_clickhouse_mutations` Postgres
+  operational table, and SLA reasoning.
+- ✅ **§W.7.3 updated** — pre-FOLLOW-039 wording described a "daily cron"
+  design that did not match the codebase. Now references §H.1.1 as the
+  authoritative flow and clarifies retention for both audit tables.
+- 🔄 **§Snapshot.1 row H updated** — RODO Art. 17 ClickHouse hard-delete P0
+  open item closed. EU pilot gate now passable.
+- 📦 **New artefacts:** `apps/control-plane/src/lib/clickhouse-dsr.ts` (SQL
+  builder + poll + retry helpers), `apps/control-plane/src/app/api/dsr/mutation-poll/route.ts`
+  (Vercel Cron handler), `infra/clickhouse/migrations/0011_dsr_audit_log_clickhouse_mutation.sql`
+  (audit-log columns), `packages/db/migrations/0014_dsr_clickhouse_mutations.sql`
+  + Drizzle schema (operational state table), Vercel Cron registered in
+  `apps/control-plane/vercel.json`.
 
 **Changelog v2.3 (24 maja 2026 — Sprint 10 close, RETRO-006 reconciliation):**
 
@@ -98,7 +124,7 @@
 - 🟡 **Verified MVP-blockers (P0):**
   - `packages/platform-templates/src/templates/index.ts` exports `[]` — Layer 3 of the Schema Discovery Pipeline (§B.5.3) is currently a no-op for every site. TICKET-032 still BLOCKED.
   - Sprint 2.5 (Auto-Onboarding) — 4 of 6 tickets BLOCKED. Magic Link wizard (TICKET-030 READY), Vision Auto-Detect Modal (TICKET-033), Schema Discovery API (TICKET-034) not started. **Without these there is no path to the "self-serve onboarding in <60s" promised in §B.4.**
-  - DSR-erase does not hard-delete from ClickHouse — soft-delete audit log only. RODO Art. 17 non-compliance for any EU tenant (FOLLOW-039 P0).
+  - ~~DSR-erase does not hard-delete from ClickHouse — soft-delete audit log only. RODO Art. 17 non-compliance for any EU tenant (FOLLOW-039 P0).~~ **CLOSED 2026-05-24 by FOLLOW-039** — see §H.1.1 for the shipped erasure flow.
   - Doppler CI integration not wired (FOLLOW-040 P0) — staging deploys cannot inject secrets via CI.
   - JWT spoofing / RLS bypass / tenant header spoof / auth gate gaps (FIX-013..019) were patched in Sprint 8, but only after the system had been running with these issues for weeks. Process risk codified in RETRO-002/003.
 - 🟢 **Verified strengths (no design gaps):**
@@ -199,7 +225,7 @@
 | E.7 | Long-form Description Pipeline (v1.7.1 original-first) | ✅ **Shipped** | 668-LOC Modal Sonnet job with WHITELIST guard-rails + audit trail; `POST /api/adapt/description` wired; ClickHouse `description_generations_verified_facts` table. |
 | F | Data Network Effect (archetype embedding space) | 🟡 **Partial** | `archetype_embeddings` table seeded with all **18** archetypes (migration `0005_seed_archetype_embeddings.sql`, post-Sprint 8). Sprint 10 FOLLOW-043 (PR #131 + 6 fix commits) ships `pnpm seed:archetypes` script (uses Supabase PostgREST + `service_role` key per fix commit `82b9e2e` — Supabase direct host is IPv6-only, unreachable from GitHub Actions) and a manual `workflow_dispatch` GitHub Action (`.github/workflows/seed-archetypes.yml`). When invoked against a Doppler-configured environment with `SUPABASE_SERVICE_ROLE_KEY` + `OPENAI_API_KEY`, the script populates all 18 vectors with OpenAI `text-embedding-3-small` at 1024 dims; cost <$0.001. **No CI step or on-merge automation runs the seed automatically.** For any fresh DB pull, `archetype_embeddings.embedding` remains NULL until an operator runs the workflow — the cosine path that FOLLOW-019 (Sprint 9.5 PR #123) wired still falls back to djb2 by default. FOLLOW-063 (RETRO-006 LG-1) tracks the auto-seed enforcement + README runbook. The `listing_embeddings` table (migration 0013) is wired and PR #132 (FOLLOW-046) auto-seeds the 12-listing demo manifest on activation; non-demo tenants still need manual `POST /api/listings/embed` (FOLLOW-046 carve-out). |
 | G | Behavioral Fingerprinting | 🟡 **Partial** | Session-scoped IDs work; cross-listing per-tenant aggregation works; global DP aggregation = design-only. |
-| H | Compliance & Privacy (GDPR/AI Act/CCPA/UK/UAE) | ✅ **Shipped** | DPIA v2.0 + ROPA + LIA template + DSR endpoints + consent gate + tenant_compliance_records. One open P0: DSR-erase doesn't hard-delete ClickHouse (FOLLOW-039). |
+| H | Compliance & Privacy (GDPR/AI Act/CCPA/UK/UAE) | ✅ **Shipped** | DPIA v2.0 + ROPA + LIA template + DSR endpoints (initiate/access/erase/portability with OTP+Resend) + consent gate + tenant_compliance_records + **ClickHouse hard-delete on erase via FOLLOW-039 (§H.1.1)**. EU pilot gate cleared 2026-05-24. |
 | I | Stack Technologiczny | ✅ **Locked** | Decisions stable, in-code. |
 | J | Multi-Tenancy Model | ✅ **Shipped** | `tenants` Postgres table with RLS + JWT-scoped tenant_id. Detected site schemas are persisted in the dedicated `tenant_site_schemas` table (one row per `(tenant_id, domain)`), not on `tenants` itself. Master Design §J.3 still describes a `data_schema: TenantSchemaMapping` field inline on TenantConfig — that section is documentation-level only; the actual store is the standalone table. (Sprint 9.5 PR #121 / #125 / #126 hardened the contract around `tenant_site_schemas`.) |
 | K | Internal Operations Panel | 🟡 **Partial** | UI exists at `/admin/{registrations,demo-sessions,tenants}` but each page imports a local `mock-data.ts`. Not wired to live DB lists. |
@@ -2137,10 +2163,75 @@ Dla Mode B dokładamy:
 | ePrivacy consent | Mode A: strictly necessary exemption. Mode B: wymaga consent collected by tenant (Estalara dostarcza Consent Helper jako optional component) |
 | DPIA | Estalara robi DPIA dla całego produktu (template + worked example) → tenant adoptuje + customizes per swoje use case. Required dla "systematic monitoring of behavior" wg GDPR Art. 35.3.c |
 | ROPA (Art. 30) | Auto-generated from configuration: per-tenant ROPA entry available do downloadu z dashboardu |
-| Data Subject Rights | API endpoint `DELETE /v1/sessions/{session_id}` + bulk export — buyer może żądać deletion przez tenant |
+| Data Subject Rights | Tenant admin initiates DSR via `POST /api/dsr/initiate` (JWT-scoped). Data subject receives one-time-passcode via Resend, then submits to `POST /api/dsr/access` / `POST /api/dsr/erase` / `GET /api/dsr/portability`. Erase performs synchronous Postgres delete + async ClickHouse `ALTER TABLE ... DELETE WHERE session_id IN (...)` mutation across `events`, `adaptation_decisions`, `llm_calls`, `session_quality` (FOLLOW-039). Mutation status tracked in Postgres `dsr_clickhouse_mutations` + polled by Vercel Cron `/api/dsr/mutation-poll` every 5 min; the DSR audit log row is finalised only when every per-table mutation acknowledges `is_done = 1`. 30-day SLA met comfortably under typical ClickHouse Cloud mutation completion (minutes). |
 | Transfers | EU data stays w EU; US-based tenants → SCC + supplementary measures (Schrems II); transfer impact assessment template |
 | DPO | Estalara appointuje DPO w EU (preferowany Polska — najtańszy, native do założycieli) |
 | Breach notification | 72h SLA — Sentry + custom incident playbook, pre-templated notification do supervisory authorities |
+
+#### H.1.1. Realistic erasure semantics (Art. 17, FOLLOW-039)
+
+ClickHouse does NOT support transactional row-level DELETE. The realistic erasure flow is:
+
+1. **Synchronous Postgres delete** — `POST /api/dsr/erase` deletes
+   `session_embeddings` + `consent_records` rows for the verified `session_id`
+   inside a transaction.
+2. **Asynchronous ClickHouse mutations** — for each PII-bearing,
+   session-scoped ClickHouse table the endpoint issues an
+   `ALTER TABLE ... DELETE WHERE session_id IN (...)` statement. The canonical
+   inventory (`apps/control-plane/src/lib/clickhouse-dsr.ts`
+   `DSR_CLICKHOUSE_TABLES`) covers:
+
+   | Table                  | Why erased                                  |
+   | ---------------------- | ------------------------------------------- |
+   | `events`               | full behavioral event payloads + chat       |
+   | `adaptation_decisions` | archetype + confidence per session          |
+   | `llm_calls`            | LLM cost rows linked to the session         |
+   | `session_quality`      | per-session DQS / convergence metrics       |
+
+   Intentionally not erased:
+
+   | Table                          | Why retained                                                     |
+   | ------------------------------ | ---------------------------------------------------------------- |
+   | `dsr_audit_log`                | GDPR Art. 17(3)(b) — legal claims retention (documented in P.P.) |
+   | `description_generations`      | listing-scoped, no `session_id` column                           |
+
+   Materialized views (`events_5min_rollup`, `session_summary`) reference data
+   already removed by the underlying table mutations and re-converge on the
+   next ClickHouse merge cycle.
+
+3. **Mutation tracking** — every issued ALTER TABLE writes one row to the
+   Postgres `dsr_clickhouse_mutations` operational table (one row per
+   (DSR verification, ClickHouse table) tuple) with status `pending` and
+   the resolved `mutation_id` (read back from `system.mutations`).
+4. **Polling** — the Vercel Cron `GET /api/dsr/mutation-poll` runs every 5
+   minutes, queries `system.mutations` for each non-terminal row, and
+   advances state: `pending → in_progress → done` (when `is_done = 1` and
+   `latest_failed_reason` empty), or `pending → failed` (when
+   `latest_failed_reason` non-empty).
+5. **Retry-on-failure** — failed rows are reissued up to 3 times with
+   exponential backoff (1 min → 5 min → 30 min). After the 3rd consecutive
+   failure the row stays terminal `failed`, the parent `dsr_audit_log`
+   ClickHouse row is updated to `clickhouse_mutation_status = 'failed'`,
+   and Sentry captures an error tagged
+   `dsr_erase_clickhouse_mutation_failed: true`.
+6. **Audit log finalisation** — only when every row for a given
+   `dsr_verification_id` reaches a terminal state does the poller update
+   the corresponding `dsr_audit_log` ClickHouse row's
+   `clickhouse_mutation_id` (CSV of per-table mutation_ids),
+   `clickhouse_mutation_status` (aggregate), and
+   `clickhouse_mutation_completed_at`.
+7. **Idempotency** — re-running `POST /api/dsr/erase` for an already-erased
+   session inspects existing `dsr_clickhouse_mutations` rows; if any
+   non-terminal row exists, the endpoint returns the current status
+   without reissuing. If all rows are `done`, the response reports
+   `status: 'done'` with mutations marked `reused`.
+
+Practical timing: ClickHouse Cloud completes typical mutations on session
+row volumes (≤ thousands) within seconds; the GDPR 30-day window provides
+more than 99.999% headroom. Per Master Design §H.1, the endpoint returns
+HTTP 200 with `clickhouse_deletion: { status, mutations[] }` immediately
+after mutations are ISSUED, not after they complete — `system.mutations`
+is the source of truth for completion.
 
 ### H.2. AI Act (EU) — defensive classification
 
@@ -5238,16 +5329,30 @@ Run weekly w CI (cron) — finds edge cases human tests miss.
 
 #### W.7.3. Right to erasure (GDPR Art. 17) — technical implementation
 
-**Postgres:** Standard `DELETE` + cascading FK constraints.
+> **Updated 2026-05-24 (FOLLOW-039)** — pre-FOLLOW-039 the ClickHouse step was
+> a documented daily-cron design that had not yet been built. The current
+> implementation issues the mutations synchronously on `POST /api/dsr/erase`
+> and polls via Vercel Cron; see §H.1.1 for the authoritative flow.
 
-**ClickHouse:** Tricky — ClickHouse supports lightweight deletes (`ALTER TABLE ... DELETE WHERE`) but not transactional. Strategy:
-1. DSR endpoint marks `session_id` w `dsr_deletion_queue` table
-2. Daily cron (Modal job) executes `ALTER TABLE events DELETE WHERE session_id IN (...)` w ClickHouse
-3. Confirmation email do user once deletion confirmed (typowo <48h)
+**Postgres:** Synchronous `DELETE` + cascading FK constraints inside a
+`db.transaction()` block (`sessionEmbeddings`, `consentRecords`).
 
-**pgvector embeddings:** Re-generated z events (which are deleted), so will fade naturally w 30 dni. Manual purge available na request.
+**ClickHouse:** `ALTER TABLE ... DELETE WHERE session_id IN (...)` issued
+per PII-bearing table on the same request that handled the OTP. Mutation IDs
+are captured from `system.mutations` and tracked in the Postgres
+`dsr_clickhouse_mutations` operational table. A 5-minute Vercel Cron
+(`/api/dsr/mutation-poll`) advances each row to `done`/`failed` and finalises
+the audit log. Retries: 3 attempts with exponential backoff. See §H.1.1 for
+the full flow + data inventory.
 
-**Audit logs:** Retained per legal basis (GDPR Art. 17(3)(b) — for legal claims). Documented w Privacy Policy.
+**pgvector embeddings:** `session_embeddings` deleted synchronously in the
+same Postgres transaction as `session_id` removal. Listing-level embeddings
+(`listing_embeddings`) are not session-scoped and are unaffected.
+
+**Audit logs:** `dsr_audit_log` (ClickHouse) retained per legal basis (GDPR
+Art. 17(3)(b) — for legal claims). Documented in Privacy Policy.
+`dsr_clickhouse_mutations` (Postgres) retained for 7 years as the audit trail
+of the erasure performed; not subject to DSR erasure itself.
 
 #### W.7.4. Data lineage tracking
 

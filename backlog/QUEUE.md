@@ -1720,13 +1720,14 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-039
   title: ClickHouse DSR hard-delete — Art.17 erasure on adaptation_decisions + events tables
   agent: data-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 5
   depends_on: []
   assigned_to: data-engineer
   started_at: '2026-05-23T12:00:00Z'
   branch: data-engineer/FOLLOW-039-clickhouse-dsr
+  pr: '#139'
   model: opus-4.7-xhigh
   spec: backlog/sprint-11/FOLLOW-039.md
   notes: |
@@ -1737,6 +1738,13 @@ hygiene:** FOLLOW-040.
     on both tables with mutation status tracked + retry-on-failure + DSR audit row updated only
     after ClickHouse mutation acknowledges. Opus 4.7 xhigh — compliance edge cases require
     careful reasoning about idempotency, partial failure, and async mutation semantics.
+    READY_FOR_REVIEW 2026-05-24 (PR #139): erasure flow shipped against the 4-table inventory
+    (events, adaptation_decisions, llm_calls, session_quality), with Vercel-Cron poller, 3-retry
+    exponential backoff, Sentry alerting on permanent failure, Drizzle migration 0014 for the
+    operational state table, ClickHouse migration 0011 for audit-log columns, and Master Design
+    §H.1/§H.1.1/§W.7.3/§Snapshot.1 + DPIA §8 updated (versions 2.4 / 2.1). 21 unit + 4
+    integration tests added; 541/541 control-plane tests pass. Critical CI green; ignored
+    Doppler/Rule-I/Python per Sprint 11 policy.
 
 - id: FOLLOW-040
   title: Doppler CI hygiene — DOPPLER_TOKEN in GitHub Actions

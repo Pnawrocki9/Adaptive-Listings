@@ -83,6 +83,14 @@ vi.mock('@estalara/db', () => ({
     grantedAt: 'granted_at',
     revokedAt: 'revoked_at',
   },
+  // FOLLOW-039 — used by POST /api/dsr/erase for idempotency lookup + INSERT.
+  dsrClickhouseMutations: {
+    id: 'id',
+    tenantId: 'tenant_id',
+    sessionId: 'session_id',
+    status: 'status',
+    tableName: 'table_name',
+  },
   eq: vi.fn((col: unknown, val: unknown) => ({ col, val, _op: 'eq' })),
   and: vi.fn((...args: unknown[]) => ({ args, _op: 'and' })),
 }));
@@ -417,8 +425,12 @@ describe('POST /api/dsr/erase', () => {
 
   it('returns 200 and deletes session data for a valid OTP', async () => {
     const validRecord = makeValidRecord('erase');
-    mockSelect.mockReturnValueOnce(buildChain([validRecord]));
+    // FOLLOW-039: second select is the idempotency check against
+    // dsr_clickhouse_mutations — return empty so the route issues fresh
+    // (no-op when CLICKHOUSE_URL is unset) mutation rows.
+    mockSelect.mockReturnValueOnce(buildChain([validRecord])).mockReturnValueOnce(buildChain([]));
     mockUpdate.mockReturnValue(buildChain([]));
+    mockInsert.mockReturnValue(buildChain([]));
     mockTransaction.mockImplementation((fn: (tx: unknown) => Promise<void>) => {
       const txMock = { delete: vi.fn().mockReturnValue(buildChain([])) };
       return fn(txMock);
@@ -429,9 +441,15 @@ describe('POST /api/dsr/erase', () => {
     const res = await POST(req);
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { deleted_at: string; clickhouse_deletion: string };
+    // FOLLOW-039: clickhouse_deletion is now an object { status, mutations[] }
+    // not the legacy 'scheduled_in_24h' literal.
+    const body = (await res.json()) as {
+      deleted_at: string;
+      clickhouse_deletion: { status: string; mutations: unknown[] };
+    };
     expect(body).toHaveProperty('deleted_at');
-    expect(body.clickhouse_deletion).toBe('scheduled_in_24h');
+    expect(body.clickhouse_deletion).toHaveProperty('status');
+    expect(body.clickhouse_deletion).toHaveProperty('mutations');
     expect(mockTransaction).toHaveBeenCalledOnce();
   });
 });

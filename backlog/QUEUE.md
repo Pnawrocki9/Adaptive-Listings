@@ -58,7 +58,7 @@ updates.
 | 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)                        | 6       | 6    | 0       | 0     | 0       |
 | 10     | 12    | Close the bandit loop + real embeddings + e2e test                                   | 9       | 9    | 0       | 0     | 0       |
 | 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                     | 9       | 5    | 0       | 4     | 0       |
-| 12     | 14    | Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI) | 10      | 0    | 0       | 10    | 0       |
+| 12     | 14    | Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI) | 10      | 0    | 6       | 4     | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -1858,10 +1858,13 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 - id: FOLLOW-081
   title: ClickHouse mutation-poll integration test against system.mutations
   agent: data-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-039]
+  assigned_to: data-engineer
+  started_at: '2026-05-24T12:00:00Z'
+  branch: data-engineer/FOLLOW-081-clickhouse-integration-test
   model: opus-4.7-xhigh
   spec: backlog/sprint-12/FOLLOW-081.md
   notes: |
@@ -1877,10 +1880,13 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
   title:
     Tighten demo-integration.yml — flip soft-skips to fail-loud, add to required branch protection
   agent: devops-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 1
   depends_on: [FOLLOW-040]
+  assigned_to: devops-engineer
+  started_at: '2026-05-24T12:00:00Z'
+  branch: devops-engineer/FOLLOW-079-demo-ci-failloud
   model: sonnet-4.6
   spec: backlog/sprint-12/FOLLOW-079.md
   notes: |
@@ -1893,10 +1899,13 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 - id: FOLLOW-075
   title: Require VERCEL_CRON_SECRET on /api/dsr/mutation-poll endpoint
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 1
   depends_on: []
+  assigned_to: backend-engineer
+  started_at: '2026-05-24T12:00:00Z'
+  branch: backend-engineer/FOLLOW-075-cron-secret
   model: sonnet-4.6
   spec: backlog/sprint-12/FOLLOW-075.md
   notes: |
@@ -1909,10 +1918,13 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 - id: FOLLOW-078
   title: DSR failure alerting — PagerDuty or Sentry alert on stuck/failed mutations
   agent: compliance-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 1.5
   depends_on: [FOLLOW-039]
+  assigned_to: compliance-engineer
+  started_at: '2026-05-24T12:00:00Z'
+  branch: compliance-engineer/FOLLOW-078-dsr-alerting
   model: sonnet-4.6
   spec: backlog/sprint-12/FOLLOW-078.md
   notes: |
@@ -1964,10 +1976,13 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 - id: TICKET-PILOT-003
   title: CTA lift dashboard — baseline vs adapted, holdout comparison, conversion funnel
   agent: data-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 4
   depends_on: []
+  assigned_to: data-engineer
+  started_at: '2026-05-24T12:00:00Z'
+  branch: data-engineer/TICKET-PILOT-003-cta-lift-dashboard
   model: opus-4.7-xhigh
   spec: backlog/sprint-12/TICKET-PILOT-003.md
   notes: |
@@ -1982,10 +1997,13 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 - id: TICKET-PILOT-004
   title: Inquiry starts tracking — event mapping from app.estalara.com forms, dashboard panel
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 2
   depends_on: [TICKET-PILOT-001]
+  assigned_to: backend-engineer
+  started_at: '2026-05-24T12:00:00Z'
+  branch: backend-engineer/TICKET-PILOT-004-inquiry-tracking
   model: sonnet-4.6
   spec: backlog/sprint-12/TICKET-PILOT-004.md
   notes: |
@@ -2028,7 +2046,23 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 
 ## Currently in flight
 
-(none — Sprint 12 just opened 2026-05-24; all tickets READY, no agent assigned yet)
+### Lane A — Pilot-critical hardening
+
+- FOLLOW-081 — data-engineer — branch `data-engineer/FOLLOW-081-clickhouse-integration-test` —
+  started 2026-05-24 (opus-4.7-xhigh)
+- FOLLOW-079 — devops-engineer — branch `devops-engineer/FOLLOW-079-demo-ci-failloud` — started
+  2026-05-24
+- FOLLOW-075 — backend-engineer — branch `backend-engineer/FOLLOW-075-cron-secret` — started
+  2026-05-24
+- FOLLOW-078 — compliance-engineer — branch `compliance-engineer/FOLLOW-078-dsr-alerting` — started
+  2026-05-24
+
+### Lane C — ROI instrumentation (parallel)
+
+- TICKET-PILOT-003 — data-engineer — branch `data-engineer/TICKET-PILOT-003-cta-lift-dashboard` —
+  started 2026-05-24 (opus-4.7-xhigh)
+- TICKET-PILOT-004 — backend-engineer — branch `backend-engineer/TICKET-PILOT-004-inquiry-tracking`
+  — started 2026-05-24
 
 ## Awaiting human review
 

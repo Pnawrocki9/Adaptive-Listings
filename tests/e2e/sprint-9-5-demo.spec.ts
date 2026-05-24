@@ -189,8 +189,25 @@ const results: StepResults = {
 // ─── Test suite ───────────────────────────────────────────────────────────────
 
 describe.skipIf(!RUN_E2E)('Demo flow: detect → activate → adapt → SDK DOM mutation @e2e', () => {
-  // Fail fast if the server is not reachable before any step runs.
+  // Fail fast with actionable errors before any HTTP step runs (FOLLOW-067).
+  // Checks (in order):
+  //   1. E2E_BEARER_TOKEN is present — without it every authenticated request
+  //      returns 401 and the test suite hangs on confusing failures.
+  //   2. Next.js dev server is reachable at BASE_URL.
   beforeAll(async () => {
+    // ── Precheck 1: E2E_BEARER_TOKEN ─────────────────────────────────────
+    const tokenProvided = TEST_BEARER !== 'e2e-demo-bearer-token';
+    if (!tokenProvided) {
+      throw new Error(
+        'E2E_BEARER_TOKEN is not set (falling back to placeholder "e2e-demo-bearer-token"). ' +
+          'Every authenticated request will return 401. ' +
+          'Set E2E_BEARER_TOKEN to a valid JWT for the E2E demo tenant before running with ' +
+          'NEXT_PUBLIC_TEST_E2E=true. ' +
+          'In CI: add the E2E_BEARER_TOKEN GitHub Actions secret (see backlog/ESCALATIONS.md ESC-009).',
+      );
+    }
+
+    // ── Precheck 2: Next.js server reachable ─────────────────────────────
     const ping = await fetch(`${BASE_URL}/api/adapt`, { method: 'GET' }).catch(() => null);
     if (!ping) {
       throw new Error(

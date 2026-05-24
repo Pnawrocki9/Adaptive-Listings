@@ -1698,13 +1698,15 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-069
   title: HMAC compat test SDK↔server + Bearer-only rejection regression test
   agent: qa-engineer + backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 2
   depends_on: []
   assigned_to: qa-engineer
   started_at: '2026-05-23T12:00:00Z'
+  completed_at: '2026-05-24T12:00:00Z'
   branch: qa-engineer/FOLLOW-069-hmac-compat
+  pr: '#136'
   model: sonnet-4.6
   spec: backlog/sprint-11/FOLLOW-069.md
   notes: |

@@ -1,3 +1,8 @@
 docs/MASTER_DESIGN.md
+# Append-only agent-generated retrospective log. Each entry is written by the
+# retrospective-analyst subagent which cannot run prettier interactively. Long
+# analysis lines (>100 chars) appear intentionally in retro content (inline code
+# spans, table cells, quoted file paths). Exempt from auto-wrap enforcement.
+backlog/RETROSPECTIVES.md
 pnpm-lock.yaml
 *.lock

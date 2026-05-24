@@ -228,6 +228,22 @@ describe('POST /api/adapt/feedback — auth gate', () => {
     const res = await POST(makePostRequest(VALID_BODY, `Bearer ${apiKey}`, sig));
     expect(res.status).toBe(401);
   });
+
+  it('rejects presence-only Bearer (LG-3 regression guard)', async () => {
+    // Regression guard: 2026-05-22 → 2026-05-23 production window where POST
+    // /api/adapt/feedback accepted a presence-only Bearer token without requiring
+    // an X-Estalara-Signature header.  RETRO-006 §3 LG-3; CONVENTIONS_PATCH.md
+    // Rule H amendment (2026-05-23).
+    //
+    // This test MUST remain in the default test run with no env-flag gating.
+    // If it starts failing, a mutation-endpoint auth regression has been introduced.
+    vi.stubEnv('ADAPT_API_KEY', '');
+    // Send a valid-looking Bearer token but deliberately omit X-Estalara-Signature.
+    const res = await POST(makePostRequest(VALID_BODY, 'Bearer tenant_api_key_realkey', null));
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
 });
 
 // ─── Body validation ─────────────────────────────────────────────────────────

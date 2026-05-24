@@ -332,3 +332,43 @@ national origin). Behavioral framing only (investment return, space utility, com
 fit). Agents writing or editing copy strings must follow this constraint.
 
 FOLLOW-034 is CANCELLED — no compliance audit or region gate required.
+
+---
+
+## OPEN — ESC-009: Provision E2E_BEARER_TOKEN GitHub Actions secret for demo-integration CI job
+
+**Filed by:** qa-engineer **Date:** 2026-05-24T00:00:00Z **Affects:** FOLLOW-068, PR
+`qa-engineer/FOLLOW-068-demo-ci` **Type:** other
+
+**Description:** The `demo-integration` CI job (`.github/workflows/demo-integration.yml`) runs the
+detect → activate → adapt → SDK E2E spec with a live Next.js server. Steps 1–3 of the spec POST to
+authenticated routes (`/api/detect`, `/api/schema/activate`, `/api/adapt`) using a Bearer token
+drawn from the `E2E_BEARER_TOKEN` environment variable. The spec's `beforeAll()` precheck
+(FOLLOW-067, bundled into FOLLOW-068) fails fast with an actionable error if the token is absent, so
+the job will not produce 401-hang failures — but it also cannot run the integration steps without
+the token.
+
+The token must be a valid JWT signed by `JWT_SECRET` for the demo/canary E2E tenant
+(`E2E_TENANT_ID`, defaulting to `est_test_e2e_tenant`). It should be long-lived (or auto-rotated)
+and scoped read-write to that tenant only.
+
+Additionally, `E2E_TENANT_ID` (the canary tenant's Postgres UUID) should be set as a GitHub Actions
+variable (`vars.E2E_TENANT_ID`) so the workflow can pass it to the spec without hardcoding.
+
+**Required action:**
+
+1. DevOps/Piotr: generate a long-lived E2E JWT for the `est_test_e2e_tenant` / `tnt_canary_eu` demo
+   tenant (or whichever tenant UUID is used for canary).
+2. Add it to GitHub Actions repository secrets as `E2E_BEARER_TOKEN`.
+3. Add the tenant UUID to GitHub Actions repository variables as `E2E_TENANT_ID`.
+4. After adding, re-run the `demo-integration` workflow on the PR branch to confirm the E2E steps
+   execute (rather than soft-skipping due to missing DOPPLER_TOKEN_DEV — note: the DOPPLER soft-skip
+   is a separate gate; the E2E_BEARER_TOKEN precheck is the inner gate within the E2E describe
+   block).
+
+**Note:** The demo-integration job also requires `DOPPLER_TOKEN_DEV` (tracked separately as
+FOLLOW-040). Until FOLLOW-040 lands, the job soft-skips with exit 0 before the spec even runs.
+Provisioning `E2E_BEARER_TOKEN` now is still recommended so it is ready the moment FOLLOW-040
+unblocks the job.
+
+**Resolution:** (pending — awaiting DevOps/Piotr action)

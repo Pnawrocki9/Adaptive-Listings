@@ -1672,13 +1672,15 @@ hygiene:** FOLLOW-040.
 - id: FOLLOW-068
   title: demo-integration CI job — NEXT_PUBLIC_TEST_E2E=true + demo DB fixtures
   agent: qa-engineer + devops-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 4
   depends_on: []
   assigned_to: qa-engineer
   started_at: '2026-05-23T12:00:00Z'
+  completed_at: '2026-05-24T00:00:00Z'
   branch: qa-engineer/FOLLOW-068-demo-ci
+  pr: '#137'
   model: sonnet-4.6
   spec: backlog/sprint-11/FOLLOW-068.md
   notes: |
@@ -1687,6 +1689,11 @@ hygiene:** FOLLOW-040.
     has never run unattended. Provision a `demo-integration` CI job that brings up Next.js +
     seeded demo DB and runs the E2E spec end-to-end. Decision gate: this is what makes the
     investor-demo path CI-verified vs human-driven.
+    PR #137: workflow added + test:e2e script + E2E_BEARER_TOKEN beforeAll() precheck +
+    soft-skip when DOPPLER_TOKEN or DB creds missing. ESC-009 filed for E2E_BEARER_TOKEN
+    GitHub Actions secret. Critical CI green (Rule-I/Python pre-existing ignored per Sprint 11
+    policy). Demo-integration job passes (soft-skip with exit 0 — full activation after
+    FOLLOW-040 + ESC-009).
 
 - id: FOLLOW-069
   title: HMAC compat test SDK↔server + Bearer-only rejection regression test

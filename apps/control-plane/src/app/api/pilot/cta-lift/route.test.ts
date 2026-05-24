@@ -13,7 +13,7 @@
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-import { parseWindowDays, buildResponseFromRaw, type CtaLiftResponse } from './route-helpers.js';
+import { parseWindowDays, buildResponseFromRaw, type CtaLiftResponse } from './route-helpers';
 
 // ─── Mock @estalara/auth ─────────────────────────────────────────────────────
 

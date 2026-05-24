@@ -36,7 +36,7 @@ import {
   type ChFunnelCounts,
   type ChRawData,
   type FunnelStage,
-} from './route-helpers.js';
+} from './route-helpers';
 
 // ─── ClickHouse access ─────────────────────────────────────────────────────────
 

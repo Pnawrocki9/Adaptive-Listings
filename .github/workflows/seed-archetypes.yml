@@ -30,3 +30,28 @@ jobs:
         run: doppler run --config dev -- pnpm seed:archetypes
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
+
+      - name: Assert no NULL embeddings in archetype_embeddings
+        run: |
+          doppler run --config dev -- node --input-type=module <<'EOF'
+          import { createAdminClient } from '@estalara/db';
+          import { isNull } from 'drizzle-orm';
+          import { archetypeEmbeddings } from '@estalara/db';
+
+          const db = createAdminClient();
+          const nullRows = await db
+            .select({ archetypeName: archetypeEmbeddings.archetypeName })
+            .from(archetypeEmbeddings)
+            .where(isNull(archetypeEmbeddings.embedding));
+
+          if (nullRows.length > 0) {
+            const names = nullRows.map(r => r.archetypeName).join(', ');
+            console.error(
+              `[archetype-embeddings-not-null] FAIL: ${nullRows.length} archetype(s) have NULL embedding: ${names}`
+            );
+            process.exit(1);
+          }
+          console.log(`[archetype-embeddings-not-null] PASS: all archetype embeddings populated.`);
+          EOF
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}

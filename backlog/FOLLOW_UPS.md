@@ -2406,3 +2406,25 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] After ESC-010: demo-integration CI job fails loud (no soft-skip) on any test failure
   - [ ] demo-integration added to required status checks in branch protection settings
 - **promoted_to_queue:** false
+
+---
+
+## FOLLOW-091 — Replace inquiry-starts mock data with real ClickHouse query once pilot ClickHouse is live
+
+- **source_retro:** TICKET-PILOT-004
+- **source_ticket:** TICKET-PILOT-004
+- **recommended_sprint:** 13
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** `apps/control-plane/src/app/api/pilot/inquiry-starts/route.ts` uses a deterministic
+  seeded-random mock for `buildMockResponse` when `CLICKHOUSE_URL` is not configured. Once the pilot
+  ClickHouse instance is live and receiving events from app.estalara.com, the mock path should be
+  removed and the real ClickHouse query validated end-to-end against actual `inquiry.started` +
+  `adaptation_decisions` rows.
+- **ac:**
+  - [ ] CLICKHOUSE_URL configured in Vercel for the pilot environment
+  - [ ] Manually verify `GET /api/pilot/inquiry-starts` returns real rows from ClickHouse
+  - [ ] Remove `buildMockResponse` from route (or keep as fallback with explicit log warning)
+  - [ ] Add an integration test seeding ClickHouse rows + asserting correct rate computation
+- **promoted_to_queue:** false

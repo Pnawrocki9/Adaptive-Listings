@@ -281,40 +281,47 @@ jobs:
     name: Archetype embeddings NOT NULL check
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    # Soft-skip until DOPPLER_TOKEN_DEV is provisioned (FOLLOW-040).
-    # Remove continue-on-error once FOLLOW-040 is merged and the secret exists.
+    # Soft-skip until DOPPLER_TOKEN_DEV is provisioned (FOLLOW-040 + FOLLOW-079).
+    # Remove continue-on-error once both follow-ups are resolved and the secret exists.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
+      # Early token check — must run before any install/build steps so that a
+      # missing secret causes a clean skip (exit 0) rather than a build failure.
+      - name: Check if DOPPLER_TOKEN_DEV is available
+        id: doppler-check
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
+        run: |
+          if [ -z "${DOPPLER_TOKEN}" ]; then
+            echo "::notice::DOPPLER_TOKEN_DEV not set — soft-skipping archetype-embeddings check."
+            echo "Set DOPPLER_TOKEN_DEV GitHub Actions secret once FOLLOW-040 + FOLLOW-079 land."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: pnpm/action-setup@v4
+        if: steps.doppler-check.outputs.skip == 'false'
 
       - uses: actions/setup-node@v4
+        if: steps.doppler-check.outputs.skip == 'false'
         with:
           node-version: "22"
           cache: "pnpm"
 
       - name: Install dependencies
+        if: steps.doppler-check.outputs.skip == 'false'
         run: pnpm install --frozen-lockfile
 
       - name: Build @estalara/db
+        if: steps.doppler-check.outputs.skip == 'false'
         run: pnpm --filter @estalara/db build
 
       - name: Install Doppler CLI
+        if: steps.doppler-check.outputs.skip == 'false'
         uses: dopplerhq/cli-action@v3
-
-      - name: Check if DOPPLER_TOKEN_DEV is available
-        id: doppler-check
-        run: |
-          if [ -z "$DOPPLER_TOKEN" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "[archetype-embeddings-not-null] DOPPLER_TOKEN_DEV not set — soft-skipping."
-            echo "Set DOPPLER_TOKEN_DEV GitHub Actions secret once FOLLOW-040 lands."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
 
       - name: Assert no NULL embeddings in archetype_embeddings
         if: steps.doppler-check.outputs.skip == 'false'

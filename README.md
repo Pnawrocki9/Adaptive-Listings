@@ -50,16 +50,46 @@ cd adaptive-listings
 pnpm install
 ```
 
-Secrets are managed via **Doppler** — never stored in `.env` files. For local development:
+Secrets are managed via **Doppler** — never stored in `.env` files.
+
+### Local development setup (one-time)
 
 ```bash
-# Install Doppler CLI: https://docs.doppler.com/docs/install-cli
+# 1. Install Doppler CLI: https://docs.doppler.com/docs/install-cli
 doppler login
-doppler setup   # select estalara / development project
 
-# Run any command with secrets injected
+# 2. Link this repo to the Doppler project
+doppler setup
+# Select: project = estalara, config = dev
+
+# 3. Verify auth
+doppler me
+
+# 4. Run any command with secrets injected
 doppler run -- pnpm dev
+
+# 5. Seed archetype embeddings (required for cosine-affinity path, §F.3)
+#    Skip if you only need static contract tests.
+doppler run -- pnpm seed:archetypes
+
+# 6. (Optional) Seed demo listing embeddings for the investor demo path
+doppler run -- pnpm seed:listings
 ```
+
+Required Doppler secrets for a functional dev environment:
+
+| Key                         | Purpose                                                             |
+| --------------------------- | ------------------------------------------------------------------- |
+| `DATABASE_URL`              | Supabase Postgres connection (PostgREST)                            |
+| `DATABASE_URL_ADMIN`        | Direct Supabase connection (bypasses RLS; seed scripts)             |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role auth (seed scripts)                           |
+| `OPENAI_API_KEY`            | Embedding generation (`pnpm seed:archetypes`, `pnpm seed:listings`) |
+| `ANTHROPIC_API_KEY`         | AI Vision auto-detect + LLM gateway                                 |
+| `UPSTASH_REDIS_REST_URL`    | Upstash Redis cache                                                 |
+| `UPSTASH_REDIS_REST_TOKEN`  | Upstash Redis auth                                                  |
+
+If any of these are missing from Doppler `dev` config, request access from Piotr or add them via the
+[Doppler dashboard](https://dashboard.doppler.com).
 
 ---
 

@@ -21,6 +21,44 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — DOPPLER_TOKEN_DEV secret must be provisioned in GitHub Actions [FOLLOW-040]
+
+**Filed by:** devops-engineer **Date:** 2026-05-24T00:00:00Z **Affects:** FOLLOW-040, FOLLOW-063,
+FOLLOW-068, FOLLOW-039 **Type:** repo-config
+
+**Description:**
+
+FOLLOW-040 has wired the Doppler CI integration into `.github/workflows/ci.yml`. The workflow
+installs the Doppler CLI and uses `doppler run --` for secret injection. The `doppler-verify` job
+performs a soft-skip when `DOPPLER_TOKEN_DEV` is absent (so CI is not broken), but it must have the
+token to pass as a real green check.
+
+The token has NOT been created yet. Until it is provisioned in GitHub Actions secrets:
+
+- The `doppler-verify` job soft-skips (logs a clear message, exits 0) on every PR.
+- FOLLOW-063 (seed CI), FOLLOW-068 (demo CI), FOLLOW-039 (ClickHouse DSR) will soft-skip any step
+  that requires `doppler run --` with injected DB / API key credentials.
+
+**Required action (Piotr — ~10 minutes):**
+
+1. Go to [Doppler dashboard](https://dashboard.doppler.com) → project `estalara` → config `dev` →
+   Access → Service Tokens → Create service token.
+   - Name: `ci-github-actions`
+   - Config: `dev` (NOT staging, NOT prod)
+   - Expiry: none (or 1 year) — rotate on breach per V.6.1 policy
+2. Copy the token value (shown only once).
+3. Go to GitHub repo → Settings → Secrets and variables → Actions → New repository secret.
+   - Name: `DOPPLER_TOKEN_DEV`
+   - Value: (paste the token)
+4. Trigger a CI run on any open PR (or push to a devops-engineer branch) — the `doppler-verify` job
+   should now show "Doppler auth verified" instead of the soft-skip message.
+
+**Do NOT create a production-scope token.** Production secrets remain Vercel-only per §V.6.3.
+
+**Resolution:**
+
+---
+
 ## OPEN — GitHub Actions billing prevents CI from running on PR #125
 
 **Filed by:** backend-engineer **Date:** 2026-05-21T21:40:00Z **Affects:** TICKET-AUTO-006-POLISH,

@@ -4274,6 +4274,37 @@ SDK Snippet Generator (`/dashboard/sdk`) automatycznie wstawia aktualny SRI hash
 
 Wszystkie secrets w Doppler, environments: `dev` / `staging` / `prod`. Brak `.env` plików w repo (gitleaks w pre-commit hook).
 
+**CI injection pattern (FOLLOW-040, 2026-05-24):**
+
+GitHub Actions uses a repo-level secret `DOPPLER_TOKEN_DEV` (service token scoped to
+`config=dev`). Workflows that need injected secrets install the Doppler CLI via
+`dopplerhq/cli-action@v3` and wrap commands with `doppler run --`:
+
+```yaml
+- name: Install Doppler CLI
+  uses: dopplerhq/cli-action@v3
+
+- name: Run with secrets
+  run: doppler run -- pnpm seed:archetypes
+  env:
+    DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
+```
+
+Soft-degradation contract: if `DOPPLER_TOKEN_DEV` is absent (forked PR, external
+contributor), the workflow logs a clear message and continues — it does not fail with a
+cryptic error. The `doppler-verify` job in `ci.yml` is the canonical health check; it
+passes green when the token is present and auth succeeds, and soft-skips when absent.
+
+**Token scoping:**
+
+| Token | Scope | Location |
+|---|---|---|
+| `DOPPLER_TOKEN_DEV` | project=estalara, config=dev | GitHub Actions repo secret |
+| Production token | project=estalara, config=prod | Vercel environment variable ONLY — NOT in GitHub |
+
+Production secrets never enter GitHub Actions. Staging deploys read from `config=dev`
+(same token) because staging config mirrors dev for non-prod secrets.
+
 **Secret categories i rotation policy:**
 
 | Category | Examples | Rotation cadence | Rotation method |

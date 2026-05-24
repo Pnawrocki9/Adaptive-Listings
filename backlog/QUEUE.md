@@ -1736,7 +1736,7 @@ hygiene:** FOLLOW-040.
   branch: devops-engineer/FOLLOW-040-doppler-ci
   model: sonnet-4.6
   spec: backlog/sprint-11/FOLLOW-040.md
-  pr: '#135'
+  pr: '#138'
   notes: |
     Originally P0 parallel pre-flight for Sprint 9.5; still incomplete. Surfaced 6 fix-commits
     for FOLLOW-043 (PR #131) — env plumbing breaks operator workflows. Add DOPPLER_TOKEN as
@@ -1809,7 +1809,7 @@ hygiene:** FOLLOW-040.
 - FOLLOW-069 — qa-engineer — branch `qa-engineer/FOLLOW-069-hmac-compat` — started 2026-05-23
 - FOLLOW-039 — data-engineer — branch `data-engineer/FOLLOW-039-clickhouse-dsr` — started 2026-05-23
 - FOLLOW-040 — devops-engineer — branch `devops-engineer/FOLLOW-040-doppler-ci` — READY_FOR_REVIEW
-  pr #135
+  pr #138
 
 ## Awaiting human review
 

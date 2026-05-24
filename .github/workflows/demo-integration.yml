@@ -7,21 +7,28 @@ name: Demo integration
 #   - pull_request:  any PR touching control-plane, SDK, or e2e tests (and this file)
 #   - push: main
 #
-# Soft-skip strategy (FOLLOW-040 / FOLLOW-068):
-#   If DOPPLER_TOKEN is not available the job cannot inject DB credentials and
-#   therefore cannot start Next.js with a live Supabase connection.  Rather than
-#   blocking CI, the job detects the missing secret and exits 0 with a clear
-#   diagnostic.  The check-secret step is the gate; all subsequent steps use
-#   `if: env.HAS_CREDS == 'true'` so they are skipped cleanly.
-#   Remove the soft-skip once FOLLOW-040 lands and DOPPLER_TOKEN_DEV is confirmed
-#   present in GitHub Actions secrets.
+# Fail-loud strategy (FOLLOW-079):
+#   DOPPLER_TOKEN_DEV and E2E_BEARER_TOKEN are required. If either is absent the
+#   job fails immediately with a clear diagnostic. This job should catch real
+#   regressions in the detect→activate→adapt→SDK chain — silent passes hide bugs.
 #
-# Secret required:
-#   E2E_BEARER_TOKEN — pre-signed JWT for the demo/canary E2E tenant (tnt_canary_eu).
-#   The token authenticates Steps 1-3 in tests/e2e/sprint-9-5-demo.spec.ts.
-#   If this secret is not yet provisioned the spec's beforeAll() fails fast with
-#   an actionable error message (FOLLOW-067 bundled here).
-#   Provisioning request: see backlog/ESCALATIONS.md ESC-009.
+#   DOPPLER_TOKEN_DEV was provisioned in GitHub Actions secrets by FOLLOW-040.
+#   E2E_BEARER_TOKEN provisioning request: see backlog/ESCALATIONS.md ESC-009.
+#
+# Branch protection:
+#   This job should be added to required status checks in GitHub:
+#   Settings → Branches → Branch protection rules → main →
+#   "Demo integration (detect → activate → adapt → SDK)"
+#   This is a manual action for Piotr — do NOT add it via Terraform/API.
+#
+# Secrets required:
+#   DOPPLER_TOKEN_DEV — Doppler service token (project=estalara, config=dev).
+#                       Used to inject DATABASE_URL, SUPABASE_* keys, JWT_SECRET
+#                       into the Next.js dev server.
+#   E2E_BEARER_TOKEN  — pre-signed JWT for the demo/canary E2E tenant (tnt_canary_eu).
+#                       The token authenticates Steps 1-3 in
+#                       tests/e2e/sprint-9-5-demo.spec.ts.
+#                       The spec's beforeAll() fails fast if this token is absent.
 
 on:
   push:
@@ -52,21 +59,23 @@ jobs:
       # ── Check whether DB credentials are available ───────────────────────
       # DOPPLER_TOKEN_DEV gates DB credential injection.  Without it the Next.js
       # server cannot connect to Supabase and the test would hang on 503s.
-      # Soft-skip until FOLLOW-040 provisions the secret in CI.
-      - name: Check DB credentials availability
+      # Fail loud: if the secret is absent, CI is misconfigured — exit 1 so the
+      # problem is surfaced immediately instead of silently skipping real checks.
+      - name: Check DB credentials availability (fail-loud)
         id: check-creds
         run: |
           if [ -n "$DOPPLER_TOKEN" ]; then
-            echo "HAS_CREDS=true" >> "$GITHUB_ENV"
             echo "DB credentials available — full E2E run."
           else
-            echo "HAS_CREDS=false" >> "$GITHUB_ENV"
-            echo "::notice title=demo-integration soft-skip::DOPPLER_TOKEN not set — skipping full E2E run. This is expected until FOLLOW-040 provisions the secret. Static contract tests still run via the standard test-node job."
+            echo "::error title=demo-integration misconfigured::DOPPLER_TOKEN_DEV not set — CI misconfigured; check GitHub Actions secrets."
+            echo "Add DOPPLER_TOKEN_DEV at: GitHub repo → Settings → Secrets and variables → Actions."
+            echo "Value: Doppler service token scoped to project=estalara, config=dev."
+            exit 1
           fi
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
 
-      # ── Node + pnpm setup (always, even for soft-skip path) ──────────────
+      # ── Node + pnpm setup ─────────────────────────────────────────────────
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
@@ -79,7 +88,6 @@ jobs:
 
       # ── Build packages required by the spec ──────────────────────────────
       - name: Build @estalara/shared
-        if: env.HAS_CREDS == 'true'
         run: pnpm --filter @estalara/shared build
         env:
           TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
@@ -87,11 +95,9 @@ jobs:
 
       # ── Install Doppler CLI and inject DB env vars ────────────────────────
       - name: Install Doppler CLI
-        if: env.HAS_CREDS == 'true'
         uses: dopplerhq/cli-action@v3
 
       - name: Export DB env vars via Doppler
-        if: env.HAS_CREDS == 'true'
         run: doppler secrets download --no-file --format env --config dev >> "$GITHUB_ENV"
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
@@ -100,16 +106,14 @@ jobs:
       # The server must be running and responding non-500 before vitest
       # executes.  We poll /api/adapt: 401 = auth gate (DB connected, server
       # healthy), 200/405 = also healthy.  500 = server started but DB not
-      # reachable (missing env vars in this Doppler config — soft-skip).
+      # reachable (missing env vars in Doppler dev config).
       - name: Start Next.js dev server
-        if: env.HAS_CREDS == 'true'
         run: pnpm --filter @estalara/control-plane dev &
         env:
           NEXT_PUBLIC_TEST_E2E: "true"
           PORT: "3000"
 
-      - name: Wait for Next.js to be ready (health check)
-        if: env.HAS_CREDS == 'true'
+      - name: Wait for Next.js to be ready (health check — fail-loud)
         run: |
           echo "Waiting for Next.js on http://localhost:3000 …"
           LAST_STATUS="000"
@@ -118,83 +122,29 @@ jobs:
             LAST_STATUS="$STATUS"
             if [ "$STATUS" = "401" ] || [ "$STATUS" = "405" ] || [ "$STATUS" = "200" ]; then
               echo "Next.js ready (HTTP $STATUS) after ${i}×3 s"
-              echo "SERVER_HEALTHY=true" >> "$GITHUB_ENV"
               exit 0
             fi
             echo "  attempt $i/40 — HTTP $STATUS — waiting 3 s …"
             sleep 3
           done
-          # Server is up but never returned a healthy status code (likely DB
-          # connection error from missing Doppler keys like DATABASE_URL,
-          # NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY).
-          # Soft-skip rather than fail — this is an env plumbing gap, not a
-          # code regression. Full E2E activation tracked as FOLLOW-068 + ESC-009.
-          echo "SERVER_HEALTHY=false" >> "$GITHUB_ENV"
-          echo "::warning title=demo-integration server not healthy::Next.js returned HTTP $LAST_STATUS after 120s. Likely cause: Doppler dev config missing DATABASE_URL / NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY. Soft-skipping E2E run. Full activation requires ESC-009 + FOLLOW-040."
+          echo "::error title=demo-integration server not healthy::Next.js returned HTTP $LAST_STATUS after 120 s."
+          echo "Likely cause: Doppler 'dev' config is missing one or more of:"
+          echo "  DATABASE_URL, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,"
+          echo "  SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET"
+          echo "Verify the Doppler dev config contains all control-plane env vars."
+          exit 1
 
       # ── Run the demo E2E spec ─────────────────────────────────────────────
       # NEXT_PUBLIC_TEST_E2E=true unlocks the 5 integration steps.
       # E2E_BEARER_TOKEN authenticates calls to /api/detect, /api/schema/activate,
       # and /api/adapt.  The spec's beforeAll() fails fast with an actionable error
-      # if the token is absent (FOLLOW-067 bundled into this ticket).
+      # if the token is absent.
       # E2E_TENANT_ID targets the demo/canary tenant seeded with DEMO_LISTING_MANIFEST
       # fixtures (FOLLOW-046 auto-seeds on activation).
       - name: Run demo integration spec
-        if: env.HAS_CREDS == 'true' && env.SERVER_HEALTHY == 'true'
         run: pnpm --filter @estalara/e2e-smoke test:e2e tests/e2e/sprint-9-5-demo.spec.ts
         env:
           NEXT_PUBLIC_TEST_E2E: "true"
           E2E_BASE_URL: "http://localhost:3000"
           E2E_BEARER_TOKEN: ${{ secrets.E2E_BEARER_TOKEN }}
           E2E_TENANT_ID: ${{ vars.E2E_TENANT_ID || 'est_test_e2e_tenant' }}
-
-      # ── Server-unhealthy soft-skip notice ─────────────────────────────────
-      - name: Soft-skip notice (server not healthy — env plumbing incomplete)
-        if: env.HAS_CREDS == 'true' && env.SERVER_HEALTHY == 'false'
-        run: |
-          echo ""
-          echo "=================================================="
-          echo "  demo-integration: SOFT-SKIP (server unhealthy)"
-          echo "=================================================="
-          echo ""
-          echo "  Reason: Next.js dev server started but did not return 401/200/405"
-          echo "  on /api/adapt after 120 s."
-          echo ""
-          echo "  Most likely cause: Doppler 'dev' config is missing the"
-          echo "  control-plane app-level env vars required to connect to Supabase:"
-          echo "    - DATABASE_URL"
-          echo "    - NEXT_PUBLIC_SUPABASE_URL"
-          echo "    - NEXT_PUBLIC_SUPABASE_ANON_KEY"
-          echo "    - SUPABASE_SERVICE_ROLE_KEY"
-          echo "    - JWT_SECRET"
-          echo ""
-          echo "  To activate the full E2E run:"
-          echo "    1. Add the above keys to Doppler 'dev' config (FOLLOW-040)."
-          echo "    2. Add E2E_BEARER_TOKEN GitHub Actions secret (ESC-009)."
-          echo "    3. Re-run this workflow."
-          echo ""
-          echo "  This job exits 0 and does NOT block CI green."
-          echo "=================================================="
-
-      # ── Soft-skip summary ─────────────────────────────────────────────────
-      - name: Soft-skip notice (credentials unavailable)
-        if: env.HAS_CREDS == 'false'
-        run: |
-          echo ""
-          echo "=================================================="
-          echo "  demo-integration: SOFT-SKIP"
-          echo "=================================================="
-          echo ""
-          echo "  Reason: DOPPLER_TOKEN_DEV secret not available in this CI context."
-          echo "  Impact: The detect→activate→adapt→SDK E2E steps did NOT run."
-          echo "          Static contract tests (5 always-run tests) still execute"
-          echo "          in the standard 'test-node' CI job."
-          echo ""
-          echo "  To activate the full E2E run:"
-          echo "    1. Ensure FOLLOW-040 (Doppler CI hygiene) is merged."
-          echo "    2. Add DOPPLER_TOKEN_DEV to GitHub Actions secrets."
-          echo "    3. Add E2E_BEARER_TOKEN to GitHub Actions secrets"
-          echo "       (see backlog/ESCALATIONS.md ESC-009)."
-          echo ""
-          echo "  This job exits 0 and does NOT block CI green."
-          echo "=================================================="

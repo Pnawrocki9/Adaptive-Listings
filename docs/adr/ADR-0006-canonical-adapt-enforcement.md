@@ -2,16 +2,19 @@
 
 ## Status
 
-PROPOSED — 2026-05-25 (**CEO-ratified 2026-05-25**; flips to ACCEPTED on FOLLOW-105 substep 1b).
-**APPROVED_TO_IMPLEMENT: true.**
+ACCEPTED — 2026-05-25 (**CEO-ratified 2026-05-25**). **APPROVED_TO_IMPLEMENT: true.**
+
+> Flipped PROPOSED → ACCEPTED by FOLLOW-105 substep 1b–1d (branch
+> `feat/follow-105-1bcd-canonical-adapt-enforcement`), which landed the implementation: snippet
+> `data-decision-url` fix, `adapt_decision_id`, SDK Zod validation, Worker `410 Gone` + structured
+> logging, the live-wins ADR-0004 contract update, and the CI Rule H drift/410 gate.
 
 Follow-on to **ADR-0004** (Canonical /api/adapt Endpoint, ACCEPTED 2026-05-17). ADR-0004 remains in
 force; this ADR does not supersede it — it adds the runtime-enforcement decision ADR-0004 deferred,
 and brings forward the Worker deprecation review.
 
 > **CEO ratified all former `DECISION NEEDED` items 2026-05-25** (Worker disposition = phased;
-> contract reconciliation = live-wins). Status stays PROPOSED only until FOLLOW-105 substep 1b lands
-> the implementation, then → ACCEPTED. Tracked by FOLLOW-105 (Sprint 13a Lane A, P0).
+> contract reconciliation = live-wins). Tracked by FOLLOW-105 (Sprint 13a Lane A, P0).
 
 ## Context
 
@@ -106,8 +109,17 @@ This is a §Snapshot.7 risk #1 item (dual `/api/adapt`) and AI Council Ticket 4 
 - Implementation files: `packages/sdk/src/core/config.ts`, `packages/sdk/src/core/adapt.ts`, the
   snippet generator (to be located), `apps/decision-api/src/app/api/adapt/route.ts`,
   `apps/control-plane/src/app/api/adapt/route.ts`.
-- On ACCEPTED: update this status, set ADR-0004 status note to reference ADR-0006 as the enforcing
-  follow-on, flip Master Design §Snapshot.7 risk #1 OPEN → RESOLVED, and add this ADR to the index.
+- On ACCEPTED (actioned by FOLLOW-105 substep 1b/1c):
+  - ✅ Status flipped to ACCEPTED (above).
+  - ✅ ADR-0004 status note now references ADR-0006 as the enforcing follow-on (ADR-0004 §Status).
+  - ✅ This ADR's index row updated to ACCEPTED in `docs/adr/README.md`.
+  - ⏳ Master Design §Snapshot.7 risk #1 (dual `/api/adapt`) flips **OPEN → RESOLVED on PR merge** —
+    the PM actions this when the FOLLOW-105 PR merges (not flipped in this PR per the phased-spawn
+    STOP discipline).
+- **Stale hostname correction (FOLLOW-105):** §Decision 3 above drafted the 410 body `canonical` as
+  `https://control-plane.estalara.com/api/adapt`. That hostname is STALE — the live control-plane
+  host is `admin.estalara.com` (`packages/shared/src/domains.ts` `CONTROL_PLANE_URL`). The shipped
+  410 body uses `https://admin.estalara.com/api/adapt`.
 - Cross-references: ADR-0004 (canonical decision), ADR-0005 (Modal apps disposition),
   `docs/MASTER_DESIGN.md` §B.9 / §C.1 / §C.4 / §Snapshot.7.
 

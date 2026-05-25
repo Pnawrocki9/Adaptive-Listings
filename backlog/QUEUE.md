@@ -41,24 +41,24 @@ updates.
 
 ## Sprint progress
 
-| Sprint | Weeks | Theme                                                                                | Tickets | DONE | IN_PROG | READY | BLOCKED |
-| ------ | ----- | ------------------------------------------------------------------------------------ | ------- | ---- | ------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability)                 | 9       | 9    | 0       | 0     | 0       |
-| 1      | 2     | Ingest baseline + event schema                                                       | 10      | 10   | 0       | 0     | 0       |
-| 2      | 3     | Postgres + tenant auth + dashboard skeleton                                          | 10      | 10   | 0       | 0     | 0       |
-| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                                  | 6       | 0    | 0       | 1     | 4       |
-| 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                                  | 10      | 2    | 0       | 1     | 7       |
-| 4      | 6     | Intent ontology v1 + Modal scaffolding                                               | tbd     | —    | —       | —     | tbd     |
-| 5      | 7     | LLM gateway + intent extraction from chat                                            | tbd     | —    | —       | —     | tbd     |
-| 6      | 8     | Embeddings + archetype matching + decision API                                       | 3       | 3    | 0       | 0     | 0       |
-| 7      | 9     | Decision API real logic + adaptation playbooks                                       | 5       | 5    | 0       | 0     | 0       |
-| 7.5    | 9.5   | Auto-Detection Engine                                                                | 7       | 7    | 0       | 0     | 0       |
-| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop                    | 16      | 13   | 0       | 0     | 0       |
-| 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline                       | 6       | 6    | 0       | 0     | 0       |
-| 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)                        | 6       | 6    | 0       | 0     | 0       |
-| 10     | 12    | Close the bandit loop + real embeddings + e2e test                                   | 9       | 9    | 0       | 0     | 0       |
-| 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                     | 9       | 5    | 0       | 4     | 0       |
-| 12     | 14    | Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI) | 10      | 0    | 0       | 10    | 0       |
+| Sprint | Weeks | Theme                                                                                                                     | Tickets | DONE | IN_PROG | READY | BLOCKED |
+| ------ | ----- | ------------------------------------------------------------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability)                                                      | 9       | 9    | 0       | 0     | 0       |
+| 1      | 2     | Ingest baseline + event schema                                                                                            | 10      | 10   | 0       | 0     | 0       |
+| 2      | 3     | Postgres + tenant auth + dashboard skeleton                                                                               | 10      | 10   | 0       | 0     | 0       |
+| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                                                                       | 6       | 0    | 0       | 1     | 4       |
+| 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                                                                       | 10      | 2    | 0       | 1     | 7       |
+| 4      | 6     | Intent ontology v1 + Modal scaffolding                                                                                    | tbd     | —    | —       | —     | tbd     |
+| 5      | 7     | LLM gateway + intent extraction from chat (Haiku 4.5 real-time + Sonnet 4.6 batch — decyzja 2026-05-25, patrz FOLLOW-087) | tbd     | —    | —       | —     | tbd     |
+| 6      | 8     | Embeddings + archetype matching + decision API                                                                            | 3       | 3    | 0       | 0     | 0       |
+| 7      | 9     | Decision API real logic + adaptation playbooks                                                                            | 5       | 5    | 0       | 0     | 0       |
+| 7.5    | 9.5   | Auto-Detection Engine                                                                                                     | 7       | 7    | 0       | 0     | 0       |
+| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop                                                         | 16      | 13   | 0       | 0     | 0       |
+| 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline                                                            | 6       | 6    | 0       | 0     | 0       |
+| 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)                                                             | 6       | 6    | 0       | 0     | 0       |
+| 10     | 12    | Close the bandit loop + real embeddings + e2e test                                                                        | 9       | 9    | 0       | 0     | 0       |
+| 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                                                          | 9       | 5    | 0       | 4     | 0       |
+| 12     | 14    | Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI)                                      | 10      | 0    | 0       | 9     | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -1838,9 +1838,10 @@ hygiene:** FOLLOW-040 ✅.
 ## Sprint 12 — Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI) (OPEN)
 
 **Sprint goal:** "Controlled pilot launch on app.estalara.com. Lane A hardening completes
-pilot-critical infrastructure (ClickHouse DSR integration test, cron auth, demo CI fail-loud, DSR
-alerting). Lane B onboards app.estalara.com via Magic Link + shadow mode. Lane C measures CTA lift +
-inquiry starts vs holdout."
+pilot-critical infrastructure (ClickHouse DSR integration test, cron auth, DSR alerting). Lane B
+onboards app.estalara.com via Magic Link + shadow mode. Lane C measures CTA lift + inquiry starts vs
+holdout. Note: demo-integration fail-loud (FOLLOW-079) cancelled 2026-05-25 — split into
+FOLLOW-088/089/090 (Sprint 13 P2 candidates; blocked on ESC-010 for demo-integration component)."
 
 **Entry condition:** Sprint 11 COMPLETE ✓ (2026-05-24). AI Council Checkpoint ✓ (2026-05-24).
 
@@ -1881,22 +1882,26 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
   title:
     Tighten demo-integration.yml — flip soft-skips to fail-loud, add to required branch protection
   agent: devops-engineer
-  status: READY_FOR_REVIEW
+  status: CANCELLED
   priority: P1
   estimated_hours: 1
   depends_on: [FOLLOW-040]
   assigned_to: devops-engineer
   started_at: '2026-05-24T12:00:00Z'
+  cancelled_at: '2026-05-25'
+  replaced_by: [FOLLOW-088, FOLLOW-089, FOLLOW-090]
   pr: '#141'
   branch: devops-engineer/FOLLOW-079-demo-ci-failloud
   model: sonnet-4.6
   spec: backlog/sprint-12/FOLLOW-079.md
   notes: |
-    From RETRO-007. After ESC-009 + FOLLOW-040 escalation secrets are provisioned (DOPPLER_TOKEN_DEV
-    + E2E_BEARER_TOKEN), the demo-integration CI job currently soft-skips with exit 0. This means
-    the E2E test can silently not run. After secrets land: (1) remove the soft-skip guard, (2) make
-    the job fail-loud on test failure, (3) add demo-integration to required status checks in branch
-    protection. This is a process hardening ticket — no application code changes.
+    CANCELLED 2026-05-25 by pm-orchestrator — ticket triggered 3 independent enforcement
+    mechanisms (Rule I 105 violations, Python CI matrix directory bug, demo-integration ESC-010
+    blocked) that are not all ready to merge simultaneously. PR #141 closed; branch preserved.
+    Replaced by: FOLLOW-088 (prettier format fix, P2), FOLLOW-089 (Python CI matrix fix, P2),
+    FOLLOW-090 (Rule I unblock + demo-integration fail-loud after ESC-010, P2) — Sprint 13.
+    Original scope: After ESC-009 + FOLLOW-040 secrets provisioned, remove demo-integration
+    soft-skip guard, make fail-loud, add to required status checks in branch protection.
 
 - id: FOLLOW-075
   title: Require VERCEL_CRON_SECRET on /api/dsr/mutation-poll endpoint
@@ -2061,9 +2066,6 @@ _(all Sprint 12 tickets are now READY_FOR_REVIEW — no active agents)_
 - FOLLOW-081 — PR #143 — CI green — ClickHouse integration test (3 scenarios, soft-skip without
   CLICKHOUSE_URL) — note: agent used fetch-based helpers (not @clickhouse/client) matching
   production code pattern; full E2E ACs (4-table, retry path, GH workflow) deferred to qa-engineer
-- FOLLOW-079 — PR #141 — CI green (critical checks) — demo-integration fail-loud conversion done;
-  demo-integration job FAILS expectedly pending ESC-010 (5 Doppler dev secrets) + ESC-009
-  (E2E_BEARER_TOKEN) — human action required before job turns green
 - FOLLOW-075 — PR #142 — CI green — CRON_SECRET auth hardened (returns 401 when unset), .env.example
   updated, ≥3 auth unit tests added
 - FOLLOW-078 — PR #145 — CI green — stuck mutation detection + Sentry captureMessage(warning) added

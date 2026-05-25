@@ -2282,3 +2282,127 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] Verify real queries return the expected response schema with actual pilot traffic
   - [ ] Add integration test (similar to FOLLOW-081) that verifies the query against a real
         ClickHouse instance
+
+---
+
+## FOLLOW-087 — Implement chat NLP in apps/intent-engine (real-time Haiku 4.5 + batch Sonnet 4.6)
+
+- **source_retro:** Decyzja modelowa 2026-05-25 (rozmowa z CEO — przegląd intent detection)
+- **source_ticket:** Master Design §Snapshot.4 priority #10 + §C.3 v2.6
+- **recommended_sprint:** Sprint 13 (po Sprint 12 pilot launch)
+- **recommended_agent:** ml-engineer
+- **priority:** P1
+- **estimated_hours:** 12
+- **scope:** `apps/intent-engine/src/main.py` to 27-liniowy placeholder zwracający
+  `{"status": "placeholder"}`. Zaimplementować dwutierowy pipeline chat NLP zgodnie z §C.3 v2.6:
+
+  **Ścieżka real-time (<500ms):**
+  - Konsumuje `chat.message.sent` z Redpanda topic `estalara.events`
+  - Wywołuje **Claude Haiku 4.5** (`claude-haiku-4-5-20251001`) via LiteLLM — structured output
+    schema = 12-dim intent vector (§D.1): purchase_purpose, urgency, budget_band, family_stage,
+    geo_priority, feature_priority, cross_border, finance_complexity, decision_role, risk_appetite,
+    emotional_state, tax_aware
+  - Emituje `chat.intent.detected` event z extracted intent dimensions + archetype confidence update
+  - Fallback do Sonnet 4.6 gdy `detect_language_mix(message) = true` AND `haiku_confidence < 0.6`
+
+  **Ścieżka batch enrichment (6h cron, async):**
+  - Modal cron co 6h: re-process pełnego kontekstu konwersacji (wszystkie wiadomości sesji)
+  - Wywołuje **Claude Sonnet 4.6** (`claude-sonnet-4-6`) via LiteLLM — wyższa accuracy na
+    wieloturowych konwersacjach i mixed-language input (EN/PL/ES)
+  - Aktualizuje archetype priors w Redis i ClickHouse
+  - Kalibruje `SIGNAL_LIKELIHOODS` dla chat signals w agregacie (cross-tenant, DP-protected, k-anon
+    ≥50)
+
+  **Uwaga architekturyczna:** oba tiery używają identycznego output schema (12-dim intent vector).
+  Model jest parametrem konfiguracyjnym w Doppler — NIE hardcoded:
+  - `INTENT_REALTIME_MODEL=claude-haiku-4-5-20251001`
+  - `INTENT_BATCH_MODEL=claude-sonnet-4-6`
+
+- **ac:**
+  - [ ] `apps/intent-engine/src/main.py` konsumuje `chat.message.sent` z Redpanda
+  - [ ] Real-time path wywołuje `INTENT_REALTIME_MODEL` (Haiku 4.5), p95 latency <500ms (load test)
+  - [ ] Output schema: 12-dim intent vector per §D.1 (structured JSON z confidence scores per
+        dimension)
+  - [ ] `chat.intent.detected` event emitowany do `estalara.events` z intent dimensions
+  - [ ] SDK `packages/sdk/src/core/intent.ts` konsumuje `chat.intent.detected` analogicznie do
+        `quiz.event` (strong prior update, nie behavioral damping)
+  - [ ] Batch cron 6h wywołuje `INTENT_BATCH_MODEL` (Sonnet 4.6), async, bez latency constraint
+  - [ ] `INTENT_REALTIME_MODEL` + `INTENT_BATCH_MODEL` dodane do `.env.example` i Doppler
+        dev/stg/prd
+  - [ ] Mixed-language fallback: automatyczne przełączenie na Sonnet 4.6 gdy język mieszany +
+        confidence <0.6
+  - [ ] Cross-modal validation: `disagreement_rate` (behavioral vs chat NLP archetype) <15% w test
+        fixtures (§D.5.1)
+  - [ ] Unit test: mock Haiku 4.5 → assert poprawne mapowanie 12 wymiarów na archetype probabilities
+  - [ ] Integration test: Redpanda `chat.message.sent` → intent-engine → Redis update →
+        `POST /api/adapt` zwraca inny archetype niż przed chat eventem
+  - [ ] `apps/control-plane` dodaje `/api/chat-intent` endpoint — bridge z app.estalara.com
+        core-master (per DECISIONS_2026-05-18 Phase 2B)
+  - [ ] Fair-housing check: output schema nie zawiera proxy-demographic features (per ESCALATIONS.md
+        2026-05-13)
+
+- **promoted_to_queue:** false
+- **depends_on:** FOLLOW-040 (Doppler CI unblock), FOLLOW-063 (archetype embeddings not-null w CI)
+- **blocks:** DECISIONS_2026-05-18 Phase 2B (shadow mode chat classifier on app.estalara.com)
+
+---
+
+## FOLLOW-088 — Format check drift fix: prettier on backlog/ESCALATIONS.md + pre-commit scope
+
+- **source_ticket:** FOLLOW-079 (CANCELLED 2026-05-25) / pm-orchestrator split decision
+- **recommended_sprint:** Sprint 13
+- **recommended_agent:** devops-engineer
+- **priority:** P2
+- **estimated_hours:** 0.5
+- **scope:** `backlog/ESCALATIONS.md` failed CI `prettier --check`. Run `prettier --write` on the
+  file and any other markdown that has drifted. Optionally widen the lefthook pre-commit prettier
+  scope to include `backlog/**/*.md` to prevent future drift.
+- **ac:**
+  - [ ] `backlog/ESCALATIONS.md` passes `pnpm exec prettier --check .`
+  - [ ] CI Format check passes on a new PR targeting main
+  - [ ] (optional) lefthook pre-commit scope includes `backlog/**/*.md`
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-089 — Python CI matrix fix: remove or create apps/adaptation-engine directory
+
+- **source_ticket:** FOLLOW-079 (CANCELLED 2026-05-25) / pm-orchestrator split decision
+- **recommended_sprint:** Sprint 13
+- **recommended_agent:** devops-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** `.github/workflows/ci.yml` Python test matrix references `apps/adaptation-engine` as a
+  working directory but that directory does not exist in the repo. All `Test (Python)` CI jobs fail
+  immediately with `No such file or directory`. Either remove the matrix entry (if the app is not
+  yet created) or create the Python app scaffold with the correct `pyproject.toml`. Audit every
+  other Python app listed in the matrix to confirm its directory exists.
+- **ac:**
+  - [ ] All `Test (Python)` CI jobs either pass or are correctly removed from the matrix
+  - [ ] No Python CI job references a working directory that does not exist
+  - [ ] If scaffold created: `pip install -e ".[dev]"` succeeds in the new directory
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-090 — Rule I unblock: architectural review of 105 SDK exports + demo-integration fail-loud
+
+- **source_ticket:** FOLLOW-079 (CANCELLED 2026-05-25) / pm-orchestrator split decision
+- **recommended_sprint:** Sprint 13
+- **recommended_agent:** architect + sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 4
+- **blocked_on:** ESC-010 (5 Doppler dev secrets) for the demo-integration component
+- **scope:** Rule I (wired-or-dead check) reports 105 symbols with zero non-test importers across
+  `packages/sdk` and `packages/shared` (e.g., `generateSessionId`, `SDK_VERSION`,
+  `ConsentBannerOptions`, `ShadowHost`, `QuizTriggerConfig`, `PII_BLACKLIST`). Each must be
+  classified: (a) future public API → keep + add explicit FOLLOW-NNN deferral stub comment so Rule I
+  allowlists it, or (b) dead code → delete. The demo-integration CI job (FOLLOW-079's original
+  scope) is the second component: after ESC-010 is resolved, remove the soft-skip exit-0 guard, make
+  the job fail-loud on test failure, and add it to required status checks in branch protection.
+- **ac:**
+  - [ ] Architectural decision doc (or inline comments) classifies each of the 105 symbols
+  - [ ] Rule I check passes on CI (violations deleted or deferred with explicit FOLLOW-NNN stubs)
+  - [ ] After ESC-010: demo-integration CI job fails loud (no soft-skip) on any test failure
+  - [ ] demo-integration added to required status checks in branch protection settings
+- **promoted_to_queue:** false

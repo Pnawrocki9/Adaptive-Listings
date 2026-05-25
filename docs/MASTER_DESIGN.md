@@ -1,11 +1,19 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 2.5 (Sprint 12 OPEN — controlled pilot launch on app.estalara.com approved by AI Council Checkpoint 2026-05-24; Lane A hardening P1 (FOLLOW-081 ClickHouse integration test, FOLLOW-079 demo CI fail-loud, FOLLOW-075 cron auth, FOLLOW-078 DSR alerting) + Lane B pilot onboarding + Lane C ROI instrumentation; primary metric CTA lift; secondary metric inquiry starts; EU region; VERCEL_CRON_SECRET provisioned) | **Data:** 24 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 2.6 (Sprint 12 OPEN — chat NLP model selection decision; controlled pilot launch on app.estalara.com approved by AI Council Checkpoint 2026-05-24; Lane A hardening P1 (FOLLOW-081 ClickHouse integration test, FOLLOW-075 cron auth, FOLLOW-078 DSR alerting; FOLLOW-079 demo CI fail-loud CANCELLED 2026-05-25 → split FOLLOW-088/089/090 Sprint 13) + Lane B pilot onboarding + Lane C ROI instrumentation; primary metric CTA lift; secondary metric inquiry starts; EU region; VERCEL_CRON_SECRET provisioned) | **Data:** 25 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v2.6 (25 maja 2026 — chat NLP model selection decision):**
+
+- ✅ **§C.3 zaktualizowane** — dwutierowa architektura modeli dla chat NLP: Haiku 4.5 (`claude-haiku-4-5-20251001`) dla real-time (<500ms per wiadomość) + Sonnet 4.6 (`claude-sonnet-4-6`) dla batch enrichment (6h async, pełny kontekst konwersacji). Uzasadnienie: latency budget real-time path wyklucza Sonnet; batch path nie ma limitu czasowego — Sonnet daje wyższą accuracy na wieloturowych konwersacjach i mixed-language input (EN/PL/ES). Oba modele używają identycznego output schema (12-dim intent vector §D.1). Model jest parametrem konfiguracyjnym (`INTENT_REALTIME_MODEL`, `INTENT_BATCH_MODEL`), nie hardcoded.
+- ✅ **§D.2 zaktualizowane** — dodano dwa nowe wiersze "Chat NLP real-time" i "Chat NLP batch enrichment" do tabeli model serving.
+- ✅ **§I.3 zaktualizowane** — "Intent extraction z chatu" rozdzielone na dwa wiersze (real-time / batch enrichment).
+- 📋 **FOLLOW-087 dodane** do `backlog/FOLLOW_UPS.md` — stub implementacji chat NLP w `apps/intent-engine` z zablokowaną decyzją modelową. Rekomendowany Sprint 13 (po Sprint 12 pilot launch).
+- 🔄 **Snapshot.1 row D bez zmian** — decyzja modelowa nie zmienia statusu implementacji (`apps/intent-engine` = 27-line placeholder). Status zmieni się gdy FOLLOW-087 wyląduje.
 
 **Changelog v2.5 (24 maja 2026 — Sprint 12 open, pilot launch on app.estalara.com):**
 
 - ✅ **Sprint 12 OPEN** — AI Council Checkpoint 2026-05-24 approved "controlled pilot launch on app.estalara.com" as Sprint 12 scope. Session: `~/ai-council/sessions/20260524_224944`. Decision memo: `docs/ai-council/CHECKPOINT_2026-05-24_SPRINT_12.md`.
-- 🚀 **Three-lane structure:** Lane A (pilot-critical hardening — FOLLOW-081 ClickHouse integration test, FOLLOW-079 demo CI fail-loud, FOLLOW-075 VERCEL_CRON_SECRET enforcement, FOLLOW-078 DSR failure alerting) gates Lane B (app.estalara.com onboarding via Magic Link + shadow mode). Lane C (CTA lift dashboard + inquiry starts tracking) runs in parallel with Lane B.
+- 🚀 **Three-lane structure:** Lane A (pilot-critical hardening — FOLLOW-081 ClickHouse integration test, FOLLOW-075 VERCEL_CRON_SECRET enforcement, FOLLOW-078 DSR failure alerting; ~~FOLLOW-079 demo CI fail-loud CANCELLED 2026-05-25~~ → split FOLLOW-088/089/090 Sprint 13 P2) gates Lane B (app.estalara.com onboarding via Magic Link + shadow mode). Lane C (CTA lift dashboard + inquiry starts tracking) runs in parallel with Lane B.
 - 🎯 **Pilot parameters locked:** Target = app.estalara.com (own domain). Free pilot (no billing infrastructure needed). EU region (infrastructure verified via FOLLOW-081; full multi-jurisdiction compliance deferred). Incident owner = Piotr Nawrocki. Primary metric = CTA lift. Secondary metric = inquiry starts. VERCEL_CRON_SECRET provisioned in Vercel + Doppler 2026-05-24.
 - 🔄 **§Snapshot.1 update** — Sprint 12 OPEN entry appended to Updates block. Snapshot.1 date updated to 2026-05-24.
 - 🔄 **§Snapshot.4 priority #1** — Sprint 12 definition replaces Sprint 11 CLOSED notice.
@@ -236,7 +244,9 @@
 > AGENT_WORKFLOW.md sprint-close checklist, the next Snapshot.1 re-verification is at Sprint
 > 12 completion.
 >
-> **Update 2026-05-24 (Sprint 12 OPEN — AI Council Checkpoint):** Sprint 12 OPEN — controlled pilot launch on app.estalara.com. AI Council Checkpoint session `~/ai-council/sessions/20260524_224944` approved sprint scope. Three-lane structure: **Lane A** (pilot-critical hardening — FOLLOW-081 ClickHouse integration test against system.mutations, FOLLOW-079 demo-integration fail-loud after ESC-009 unblock, FOLLOW-075 VERCEL_CRON_SECRET enforcement on `/api/dsr/mutation-poll`, FOLLOW-078 DSR failure alerting) gates **Lane B** (TICKET-PILOT-001 app.estalara.com SDK install + Magic Link activation + shadow mode, TICKET-PILOT-002 activation runbook). **Lane C** (TICKET-PILOT-003 CTA lift dashboard, TICKET-PILOT-004 inquiry starts tracking) runs in parallel with Lane B. **Pilot parameters:** free pilot on own domain, EU region, incident owner = Piotr Nawrocki, VERCEL_CRON_SECRET provisioned. P2 carry-over: FOLLOW-073 (INTERNAL_API_SECRET threat model), FOLLOW-074 (README local dev setup). Per OP §Y.3, Snapshot.1 re-verification at Sprint 12 completion.
+> **Update 2026-05-25 (FOLLOW-079 CANCELLED — split into Sprint 13 P2):** FOLLOW-079 (demo-integration fail-loud) cancelled per pm-orchestrator decision — triggered Rule I (105 violations), Python CI matrix bug, and ESC-010 blocked simultaneously. Split into FOLLOW-088 (prettier format fix), FOLLOW-089 (Python CI matrix fix), FOLLOW-090 (Rule I unblock + demo-integration after ESC-010). Lane A reduced to 3 active P1 tickets: FOLLOW-081, FOLLOW-075, FOLLOW-078. Sprint 12 active: 9 tickets + 1 cancelled.
+
+**Update 2026-05-24 (Sprint 12 OPEN — AI Council Checkpoint):** Sprint 12 OPEN — controlled pilot launch on app.estalara.com. AI Council Checkpoint session `~/ai-council/sessions/20260524_224944` approved sprint scope. Three-lane structure: **Lane A** (pilot-critical hardening — FOLLOW-081 ClickHouse integration test against system.mutations, ~~FOLLOW-079 demo-integration fail-loud (CANCELLED 2026-05-25)~~, FOLLOW-075 VERCEL_CRON_SECRET enforcement on `/api/dsr/mutation-poll`, FOLLOW-078 DSR failure alerting) gates **Lane B** (TICKET-PILOT-001 app.estalara.com SDK install + Magic Link activation + shadow mode, TICKET-PILOT-002 activation runbook). **Lane C** (TICKET-PILOT-003 CTA lift dashboard, TICKET-PILOT-004 inquiry starts tracking) runs in parallel with Lane B. **Pilot parameters:** free pilot on own domain, EU region, incident owner = Piotr Nawrocki, VERCEL_CRON_SECRET provisioned. P2 carry-over: FOLLOW-073 (INTERNAL_API_SECRET threat model), FOLLOW-074 (README local dev setup). Per OP §Y.3, Snapshot.1 re-verification at Sprint 12 completion.
 
 **Audit gate status at audit time:**
 
@@ -336,7 +346,7 @@ Net: an investor demo today shows a credible Tier 1 Observer + Tier 2 mutation f
 ### §Snapshot.4 — Recommendation priorities (mirrors `AUDIT_REPORT_INVESTOR_READINESS.md` §11)
 
 **Immediate (1–2 weeks):**
-1. ~~**Sprint 11 (OPEN 2026-05-23): close 3 pilot-blockers (FOLLOW-063 seed CI, FOLLOW-068 demo CI, FOLLOW-069 HMAC compat) + FOLLOW-039 EU GDPR gate.**~~ ~~**Sprint 11 CLOSED 2026-05-24** — all 5 P1 pilot-blockers DONE.~~ **Sprint 12 OPEN (2026-05-24) — controlled pilot launch on app.estalara.com.** AI Council Checkpoint approved 2026-05-24. Lane A (pilot-critical hardening, P1, gates Lane B): FOLLOW-081 (ClickHouse mutation-poll integration test against system.mutations — EU pilot confidence blocker), FOLLOW-079 (demo-integration fail-loud after ESC-009 unblock), FOLLOW-075 (VERCEL_CRON_SECRET enforcement on /api/dsr/mutation-poll — VERCEL_CRON_SECRET provisioned 2026-05-24), FOLLOW-078 (DSR failure alerting — regulator-visible at pilot). Lane B (app.estalara.com onboarding, P1, blocked until Lane A): TICKET-PILOT-001 (SDK install + Magic Link activation + 3-5 days shadow mode), TICKET-PILOT-002 (activation runbook + go/no-go checklist + incident response). Lane C (ROI instrumentation, P1, parallel with Lane B): TICKET-PILOT-003 (CTA lift dashboard with holdout comparison), TICKET-PILOT-004 (inquiry starts tracking + event mapping). P2 carry-over: FOLLOW-073 (INTERNAL_API_SECRET threat model), FOLLOW-074 (README local dev setup). Pilot target: app.estalara.com. Free pilot. EU region. Incident owner: Piotr Nawrocki. Primary metric: CTA lift. Secondary: inquiry starts.
+1. ~~**Sprint 11 (OPEN 2026-05-23): close 3 pilot-blockers (FOLLOW-063 seed CI, FOLLOW-068 demo CI, FOLLOW-069 HMAC compat) + FOLLOW-039 EU GDPR gate.**~~ ~~**Sprint 11 CLOSED 2026-05-24** — all 5 P1 pilot-blockers DONE.~~ **Sprint 12 OPEN (2026-05-24) — controlled pilot launch on app.estalara.com.** AI Council Checkpoint approved 2026-05-24. Lane A (pilot-critical hardening, P1, gates Lane B): FOLLOW-081 (ClickHouse mutation-poll integration test against system.mutations — EU pilot confidence blocker), ~~FOLLOW-079 (demo-integration fail-loud — CANCELLED 2026-05-25, split into FOLLOW-088/089/090 Sprint 13 P2)~~, FOLLOW-075 (VERCEL_CRON_SECRET enforcement on /api/dsr/mutation-poll — VERCEL_CRON_SECRET provisioned 2026-05-24), FOLLOW-078 (DSR failure alerting — regulator-visible at pilot). Lane B (app.estalara.com onboarding, P1, blocked until Lane A): TICKET-PILOT-001 (SDK install + Magic Link activation + 3-5 days shadow mode), TICKET-PILOT-002 (activation runbook + go/no-go checklist + incident response). Lane C (ROI instrumentation, P1, parallel with Lane B): TICKET-PILOT-003 (CTA lift dashboard with holdout comparison), TICKET-PILOT-004 (inquiry starts tracking + event mapping). P2 carry-over: FOLLOW-073 (INTERNAL_API_SECRET threat model), FOLLOW-074 (README local dev setup). Pilot target: app.estalara.com. Free pilot. EU region. Incident owner: Piotr Nawrocki. Primary metric: CTA lift. Secondary: inquiry starts.
 2. Wire `applyArchetypeHints()` in SDK init (already implemented + tested, just not called) — cheap win for cold-start.
 3. ~~Hard-delete from ClickHouse in DSR-erase (FOLLOW-039)~~ **PROMOTED TO SPRINT 11 P1 as item 1 above.**
 4. ~~Doppler CI wired (FOLLOW-040)~~ **PROMOTED TO SPRINT 11 P1 as item 1 above.**
@@ -1362,9 +1372,10 @@ type EstalaraEvent = {
 ### C.3. NLP na chacie
 
 Dla `chat.message.sent`:
-- **Real-time intent extraction** — Claude Haiku 4.5 ($1/$5 per MTok), structured output schema dla 12 wymiarów intentu (patrz D.4)
-- Latency target: **<500ms** od message send do intent vector update
-- Batch enrichment co 6h: re-process konwersacji w pełnym kontekście dla lepszych embeddings (offline)
+- **Real-time intent extraction** — **Claude Haiku 4.5** (`claude-haiku-4-5-20251001`), structured output schema dla 12 wymiarów intentu (patrz D.4). Latency target: **<500ms** od message send do intent vector update. Haiku 4.5 jest właściwym wyborem dla real-time: typowy czas odpowiedzi 100–300ms, koszt $1/$5 per MTok.
+- **Batch enrichment co 6h** — **Claude Sonnet 4.6** (`claude-sonnet-4-6`), re-process pełnego kontekstu konwersacji dla lepszych embeddings i kalibracji archetype priors. Bez ograniczenia latency — async Modal job. Sonnet 4.6 daje zauważalnie wyższą accuracy na wieloturowych konwersacjach i mixed-language input (EN/PL/ES). Koszt $3/$15 per MTok.
+- **Uzasadnienie dwutierowego podejścia:** real-time path wymaga <500ms — Sonnet 4.6 nie mieści się wygodnie przy złożonych promptach. Batch path nie ma ograniczenia czasowego — tu lepsza jakość (Sonnet) przynosi lepsze archetype priors dla następnego dnia. Oba modele używają identycznego output schema (12-dim intent vector), wybór modelu jest parametrem konfiguracyjnym per-path (`INTENT_REALTIME_MODEL`, `INTENT_BATCH_MODEL` w Doppler).
+- **Multilingual edge case:** przy wiadomościach mieszanych językowo (PL+EN w jednej sesji) real-time fallback do Sonnet 4.6 gdy `detect_language_mix(message) = true` i `haiku_confidence < 0.6` (do zaimplementowania w `apps/intent-engine` — patrz FOLLOW-087).
 
 ---
 
@@ -1401,6 +1412,8 @@ Każdy wymiar ma **confidence score** (0–1). Adaptation engine zachowuje się 
 | **On-device (SDK)** | Małe heurystyki + lookup table (top-100 najczęstszych patternów) | <10ms | $0 |
 | **Edge inference** (Cloudflare Workers AI) | Embedding model: BGE-M3 (open weights, MIT) self-hosted lub Workers AI built-in | 50–80ms | ~$0.02 |
 | **Server-side fast** (Modal serverless GPU) | Custom fine-tuned Llama 3.1 8B na real-estate intent classification (planowane Y2; Y1 używamy Haiku 4.5) | 150–300ms | ~$0.50 (Haiku 4.5) |
+| **Chat NLP real-time** (`apps/intent-engine`) | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) — structured intent extraction per wiadomość | <500ms | ~$0.002–0.005 / wiadomość |
+| **Chat NLP batch enrichment** (`apps/intent-engine`, 6h cron) | Claude Sonnet 4.6 (`claude-sonnet-4-6`) — re-process pełnego kontekstu konwersacji | async (bez limitu) | ~$0.01–0.03 / konwersacja |
 | **Server-side deep** (Modal + Claude Sonnet 4.6) | Złożone decyzje adaptacji, content rewrite, multi-step reasoning | 800–2000ms | ~$8–12 (Sonnet 4.6) |
 
 **Decyzja kluczowa: w MVP NIE fine-tunujemy własnego LLM-a.** Używamy Claude Haiku 4.5 dla 90% przypadków ($1/$5 per MTok) ([Anthropic](https://www.anthropic.com/news/claude-haiku-4-5)) i Sonnet 4.6 dla skomplikowanych sytuacji ($3/$15 per MTok). Per-token economics zaczynają faworyzować self-hosted dopiero powyżej ~15M embeddingów/miesiąc ([zUdyog analysis](https://www.zudyog.com/blog/embedding-models-comparison-guide)).
@@ -2360,7 +2373,8 @@ NIS2 dotyczy "essential" i "important entities" — Estalara prawdopodobnie nie 
 
 | Use case | Provider | Model | Koszt |
 |---|---|---|---|
-| Intent extraction z chatu | Anthropic | **Claude Haiku 4.5** | $1/$5 per MTok ([Anthropic](https://www.anthropic.com/news/claude-haiku-4-5)) |
+| Intent extraction z chatu (real-time, <500ms) | Anthropic | **Claude Haiku 4.5** (`claude-haiku-4-5-20251001`) | $1/$5 per MTok — real-time per-message path |
+| Intent extraction z chatu (batch enrichment, 6h async) | Anthropic | **Claude Sonnet 4.6** (`claude-sonnet-4-6`) | $3/$15 per MTok — pełny kontekst konwersacji, wyższa accuracy dla multilingual |
 | Adaptation reasoning (złożone) | Anthropic | **Claude Sonnet 4.6** | $3/$15 per MTok |
 | Headline rewrite (Tier 3 premium) | Anthropic / OpenAI fallback | Sonnet 4.6 / GPT-5.2 | Sonnet $3/$15, GPT-5.2 $1.75/$14 ([IntuitionLabs](https://intuitionlabs.ai/articles/ai-api-pricing-comparison-grok-gemini-openai-claude)) |
 | Embeddings | OpenAI | **text-embedding-3-small @ 1024 dim** | $0.02/MTok |

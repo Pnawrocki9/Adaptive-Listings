@@ -32,10 +32,20 @@ const SESSION: SessionState = {
   pageCount: 1,
 };
 
+// FOLLOW-105 §F.5: the SDK now validates adapt responses against the canonical
+// AdaptationDirectives Zod schema (core/adapt-schema.ts). This fixture must therefore
+// carry every REQUIRED field of that contract (adapt_decision_id, similarity, tier,
+// source, generated_at) and a valid archetype enum value (`yield_hunter`, not the
+// pre-FOLLOW-105 placeholder `investor` which was never a real ArchetypeId).
 const MOCK_RESPONSE: AdaptResponse = {
+  adapt_decision_id: '11111111-1111-4111-8111-111111111111',
   session_id: 'abc123def456',
-  archetype: 'investor',
+  archetype: 'yield_hunter',
   confidence: 0.87,
+  similarity: 0.9,
+  tier: 1,
+  source: 'playbook',
+  generated_at: '2026-05-25T00:00:00.000Z',
   directives: [
     {
       type: 'text',
@@ -143,7 +153,7 @@ describe('fetchDirectives', () => {
     };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
     expect(result).not.toBeNull();
-    expect(result?.archetype).toBe('investor');
+    expect(result?.archetype).toBe('yield_hunter');
     expect(result?.directives).toHaveLength(2);
   });
 
@@ -998,14 +1008,10 @@ describe('fetchDirectives — FOLLOW-042 variant field', () => {
   });
 
   it('returns AdaptResponse with variant undefined when server omits the field', async () => {
-    const responseNoVariant: AdaptResponse = {
-      session_id: MOCK_RESPONSE.session_id,
-      archetype: MOCK_RESPONSE.archetype,
-      confidence: MOCK_RESPONSE.confidence,
-      directives: MOCK_RESPONSE.directives,
-      ttl_seconds: MOCK_RESPONSE.ttl_seconds,
-      // variant intentionally absent
-    };
+    // Spread the (now schema-valid) MOCK_RESPONSE and strip `variant` so the
+    // response still satisfies the required AdaptationDirectives contract.
+    const { variant: _omit, ...responseNoVariant } = MOCK_RESPONSE;
+    void _omit;
 
     vi.stubGlobal(
       'fetch',
@@ -1071,12 +1077,11 @@ describe('fetchDirectives — FOLLOW-041 variant sessionStorage cache', () => {
   });
 
   it('does not cache variant when server omits the variant field', async () => {
+    const { variant: _omitVar, ...rest } = MOCK_RESPONSE;
+    void _omitVar;
     const responseNoVariant: AdaptResponse = {
+      ...rest,
       session_id: 'TEST_SESSION_NO_VAR',
-      archetype: MOCK_RESPONSE.archetype,
-      confidence: MOCK_RESPONSE.confidence,
-      directives: MOCK_RESPONSE.directives,
-      ttl_seconds: MOCK_RESPONSE.ttl_seconds,
     };
 
     vi.stubGlobal(
@@ -1128,7 +1133,7 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
   it('POSTs feedback ping with correct body and HMAC signature when inquiry.completed fires', async () => {
     const sessionId = 'FEEDBACK_SESSION_001';
     const tenantId = '550e8400-e29b-41d4-a716-446655440000';
-    const archetype = 'investor';
+    const archetype = 'yield_hunter';
 
     const responseWithVariant: AdaptResponse = {
       ...MOCK_RESPONSE,
@@ -1188,12 +1193,11 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
   });
 
   it('does not fire feedback ping when no variant is cached', async () => {
+    const { variant: _omitV, ...restNoVar } = MOCK_RESPONSE;
+    void _omitV;
     const responseNoVariant: AdaptResponse = {
+      ...restNoVar,
       session_id: 'NO_VAR_SESSION',
-      archetype: 'investor',
-      confidence: 0.87,
-      directives: MOCK_RESPONSE.directives,
-      ttl_seconds: 300,
       // variant absent
     };
 

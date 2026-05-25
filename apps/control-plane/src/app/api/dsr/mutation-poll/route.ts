@@ -43,9 +43,10 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { and, eq, inArray, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, lte, or } from 'drizzle-orm';
 import * as Sentry from '@sentry/nextjs';
 import { createAdminClient, dsrClickhouseMutations } from '@estalara/db';
+import type { DsrClickhouseMutation } from '@estalara/db';
 import {
   computeNextRetryAt,
   issueEraseMutation,
@@ -306,11 +307,46 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // Detect stuck mutations (pending/in_progress for >1 hour)
+  let stuckCount = 0;
+  try {
+    const oneHourAgo = new Date(Date.now() - 60 * 60_000);
+    const stuckRows: DsrClickhouseMutation[] = await db
+      .select()
+      .from(dsrClickhouseMutations)
+      .where(
+        and(
+          inArray(dsrClickhouseMutations.status, ['pending', 'in_progress']),
+          lt(dsrClickhouseMutations.updatedAt, oneHourAgo),
+        ),
+      );
+    stuckCount = stuckRows.length;
+    for (const stuck of stuckRows) {
+      const hoursSince = (Date.now() - stuck.updatedAt.getTime()) / 3_600_000;
+      Sentry.captureMessage(
+        `DSR ClickHouse mutation stuck: ${stuck.tableName} row ${stuck.id} not advanced in ${hoursSince.toFixed(1)}h`,
+        {
+          level: 'warning',
+          tags: { dsr_mutation_stuck: 'true' },
+          extra: {
+            row_id: stuck.id,
+            table_name: stuck.tableName,
+            session_id: stuck.sessionId,
+            tenant_id: stuck.tenantId,
+            hours_since_update: hoursSince.toFixed(2),
+          },
+        },
+      );
+    }
+  } catch (err: unknown) {
+    Sentry.captureException(err, { tags: { dsr_stuck_check_error: 'true' } });
+  }
+
   // Finalise dsr_audit_log rows for verifications whose mutations all reached
   // a terminal state in this run.
   for (const verificationId of verificationsToFinalise) {
     await maybeFinaliseAuditLog(db, cfg, verificationId);
   }
 
-  return NextResponse.json({ polled, advanced });
+  return NextResponse.json({ polled, advanced, stuck: stuckCount });
 }

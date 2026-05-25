@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.1 **Date:** 2026-05-24 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.2 **Date:** 2026-05-24 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -762,6 +762,14 @@ is responsible for verifying the identity of the requestor.
 - Consent withdrawal: session downgrade within 24 hours; archetype contribution quarantine within 7
   days.
 
+**Erasure failure alerting:** Permanent failures of ClickHouse erasure mutations (after 3 retry
+attempts with exponential backoff) trigger a Sentry error tagged
+`dsr_erase_clickhouse_mutation_failed`. Mutations that remain in `pending` or `in_progress` status
+for more than one hour without advancing trigger a Sentry warning tagged `dsr_mutation_stuck`.
+Incident owner: Piotr Nawrocki (asi.piotr@gmail.com). Response SLA: 5 minutes for permanent
+failures; 30 minutes for stuck mutations. Full runbook and Sentry alert rule configuration:
+`docs/ops/DSR_ALERTING.md`.
+
 **Engagement Score in DSR cascade:** The `engagement_scores` table is included in the erasure
 cascade because the Engagement Score is per-session pseudonymous personal data under Time2Show's
 sole controllership. Erasure removes the score together with the underlying `session_embeddings`
@@ -840,6 +848,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 1.0     | 2026-05-15 | Compliance Engineering | Initial DPIA. Five risks identified and assessed. Jurisdictional addenda for EU, UK, US (CCPA), UAE PDPL + DIFC.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 2.0     | 2026-05-15 | Compliance Engineering | Comprehensive update reflecting Time2Show, Inc. as the operating entity with EU establishment via Polish-resident CEO. UODO confirmed as Lead Supervisory Authority on one-stop-shop basis. EU Art. 27 representative not required (Art. 3(1) basis); UK Art. 27 representative appointment in progress. External DPO appointment in progress (CEO structurally excluded per CJEU C-453/21). DPF integrated as primary EU→US transfer mechanism with SCCs as contractual fallback. Joint Controller Analysis classifying Engagement Score as Sole Controllership. Consent withdrawal SLAs clarified (24h session downgrade, 7d archetype quarantine). Engagement Score added to DSR erasure cascade. CCPA applicability threshold analysis added. AI Act FRIA threshold analysis appendix added. Production status updated to "hybrid pilot deployment". |
 | 2.1     | 2026-05-24 | Data Engineering       | Section 8 (Data Subject Rights) — Erasure flow updated to reflect FOLLOW-039 implementation: synchronous Postgres delete + asynchronous ClickHouse `ALTER TABLE ... DELETE WHERE` mutations across `events`, `adaptation_decisions`, `llm_calls`, `session_quality`; status tracked in new Postgres operational table `dsr_clickhouse_mutations`; Vercel Cron `/api/dsr/mutation-poll` polls every 5 min; retries 3× with exponential backoff; Sentry alert on permanent failure. Cross-reference Master Design §H.1.1 for the canonical erasure flow + data inventory. Pre-2.1 the DPIA cited a "daily cron" erasure design that had not been built; that gap is now closed and EU pilot is unblocked.                                                                                                                                                  |
+| 2.2     | 2026-05-24 | Compliance Engineering | Section 8 (Data Subject Rights) — Added "Erasure failure alerting" paragraph documenting FOLLOW-078 stuck mutation detection: `dsr_mutation_stuck` Sentry warning fires when a `pending`/`in_progress` mutation has not advanced in >1 hour; `dsr_erase_clickhouse_mutation_failed` Sentry error fires on permanent failure. Incident owner and 5-minute response SLA documented. Runbook: `docs/ops/DSR_ALERTING.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ---
 

@@ -418,7 +418,7 @@ unblocks the job.
 
 ---
 
-## OPEN — ESC-011: GitHub Actions not starting any runs — FOLLOW-105 Wave-1 PR #149 cannot get CI green
+## RESOLVED — ESC-011: GitHub Actions not starting any runs — FOLLOW-105 Wave-1 PR #149 cannot get CI green
 
 **Filed by:** pm-orchestrator **Date:** 2026-05-25T20:30:00Z **Affects:** FOLLOW-105 Wave 1 (PR
 #149, `feat/follow-105-1bcd-canonical-adapt-enforcement`) and ALL subsequent PRs **Type:**
@@ -471,4 +471,12 @@ but this blocks the documented merge gate for #149 and every future PR until Act
    `architect/FOLLOW-105-...`) so push-CI fires regardless of the pull_request trigger. PM can
    rename/re-push #149's branch on request.
 
-**Resolution:** (pending — awaiting account-owner action on Actions minutes/billing)
+**Resolution:** RESOLVED 2026-05-25. Two compounding causes, both addressed: (1) **branch-name /
+trigger mismatch** — the `feat/**` branch matched neither the `push` allowlist nor (anomalously) the
+`pull_request` trigger; renaming to `architect/FOLLOW-105-canonical-adapt-enforcement` (PR #150,
+supersedes #149) put it on the reliable push-CI path. (2) **Actions budget** — the account owner
+bumped the GitHub Actions budget and pushed a retrigger commit (`09adfd6`). CI now runs; PR #150 is
+green on every real merge gate (Build, Build control-plane, Typecheck, Lint, Test Node 22, SDK E2E,
+rule-h, rule-j, Format, corpus, ClickHouse, Doppler, Gitleaks). **Lasting fix:** future PR branches
+must use the `<agent>/<ticket>-<slug>` convention (CLAUDE.md) so push-CI fires regardless of the
+pull_request trigger.

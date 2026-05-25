@@ -2130,12 +2130,13 @@ min Piotr action).
 - id: FOLLOW-105
   title: Canonical /api/adapt ADR + enforce one production path (ADR-0006)
   agent: architect + backend-engineer + sdk-engineer
-  status: IN_PROGRESS # substep 1a DONE (PR #148 merged); Wave 1 (1b/1c/1d) IN_PROGRESS as single comprehensive PR
+  status: READY_FOR_REVIEW # 1a DONE (PR #148); Wave 1 (1b/1c/1d) PR #150 — all real CI gates GREEN, awaiting human merge
   priority: P0
   estimated_hours: 15-18
   depends_on: []
   model: opus-4.7-xhigh
-  branch: feat/follow-105-1bcd-canonical-adapt-enforcement
+  branch: architect/FOLLOW-105-canonical-adapt-enforcement
+  pr: '#150' # supersedes #149 (renamed feat/→architect/ for push-CI; ESC-011)
   spec: docs/adr/ADR-0006-canonical-adapt-enforcement.md + docs/audits/FOLLOW-105-1a-sdk-audit.md
   notes: |
     Substep 1a DONE (PR #148 merged). Wave 1 NOW: substeps 1b+1c+1d as single comprehensive PR
@@ -2345,18 +2346,20 @@ IN_PROGRESS.**
 - **FOLLOW-105 substep 1a — DONE (PR #148 merged 2026-05-25T15:08Z).** Read-only SDK config +
   runtime audit. Output: `docs/audits/FOLLOW-105-1a-sdk-audit.md`. Surfaced 5 findings (3 BLOCKERS +
   2 RISKS + 1 INFO), not just 1 — scope expansion confirmed and CEO-ratified.
-- **FOLLOW-105 Wave 1 (substeps 1b + 1c + 1d) — PR #149 OPEN; code-complete + locally validated;
-  CI-green UNVERIFIABLE (ESC-011).** Branch: `feat/follow-105-1bcd-canonical-adapt-enforcement`. All
-  substeps done: buildSnippet fix (F.1), demo mockup fix (F.2), DECISION_API_URL deprecation (F.3),
-  Worker 410 Gone + structured logging (1c/F.4), SDK Zod validation (F.5), adapt_decision_id UUID
-  (F.6 partial), ADR-0004 contract replaced + ADR-0006 ACCEPTED, CI Rule H adapt gate (1d). Local
-  validation green: build/typecheck/tests (except env-only e2e-smoke), prettier --check, rule-h
-  (incl. new adapt gates), rule-j. **NOT marked READY_FOR_REVIEW** — GitHub Actions has started zero
-  runs since 2026-05-25T15:08Z, so CI-green cannot be confirmed on-platform (**ESC-011** — likely
-  account Actions-minutes/billing limit; account-owner action required). Architectural finding:
-  Worker `/api/adapt` was the sole Worker `ab.assignment` emitter → full 410 per ADR-0006 §Decision
-  3; decision-api lib layer now orphaned (FOLLOW-107 removal scope).
-- **Wave 2 (FOLLOW-097 + FOLLOW-106) — BLOCKED** until Wave 1 PR #149 merges.
+- **FOLLOW-105 Wave 1 (substeps 1b + 1c + 1d) — READY_FOR_REVIEW (PR #150, all real CI gates
+  GREEN).** Branch: `architect/FOLLOW-105-canonical-adapt-enforcement` (renamed from `feat/...` per
+  CEO so the reliable push-CI trigger fires; ESC-011 also resolved by CEO bumping the Actions
+  budget). All substeps done: buildSnippet fix (F.1), demo mockup fix (F.2), DECISION_API_URL
+  deprecation (F.3), Worker 410 Gone + structured logging (1c/F.4), SDK Zod validation (F.5),
+  adapt_decision_id UUID (F.6 partial), ADR-0004 contract replaced + ADR-0006 ACCEPTED, CI Rule H
+  adapt gate (1d). **CI green on every merge gate**: Build, Build (control-plane), Typecheck, Lint,
+  Test (Node 22), SDK E2E, Rule H (incl. new adapt drift + Worker-410 gates), Rule J, Format,
+  corpus, ClickHouse smoke, Doppler, Gitleaks. Rule I / Vercel / Python tests are pre-existing-red
+  and non-blocking (per #146/#148 merge history; Rule I tracked by FOLLOW-090). Architectural
+  finding: Worker `/api/adapt` was the sole Worker `ab.assignment` emitter → full 410 per ADR-0006
+  §Decision 3; decision-api lib layer now orphaned (FOLLOW-107 removal scope). **On merge:** PM
+  flips §Snapshot.7 risk #1 OPEN→RESOLVED + spawns retrospective-analyst; Wave 2 unblocks.
+- **Wave 2 (FOLLOW-097 + FOLLOW-106) — BLOCKED** until Wave 1 PR #150 merges.
 - **Wave 3 (FOLLOW-094 + FOLLOW-098 + FOLLOW-093) — BLOCKED** until Wave 2 merges.
 
 CEO ratified Decision 4C (add adapt_decision_id, defer explainability_id → FOLLOW-108), Decision 5A
@@ -2365,15 +2368,15 @@ FOLLOW-105 estimate 8-10h → 15-18h. FOLLOW-108 + FOLLOW-109 stubs added for Sp
 (`backlog/FOLLOW_UPS.md`). Remaining pre-merge human action for Wave 1 CI gates: provision
 DOPPLER_TOKEN_DEV (ESC-010) + E2E_BEARER_TOKEN (ESC-009).
 
-## Awaiting human review (1 PR — blocked on ESC-011)
+## Awaiting human review (1 PR — READY)
 
-- **PR #149 — FOLLOW-105 Wave 1** (`feat/follow-105-1bcd-canonical-adapt-enforcement`).
-  Code-complete, PM-validated locally against all acceptance criteria; CI cannot run (ESC-011 —
-  GitHub Actions has started no runs since 15:08Z, likely an account Actions-minutes/billing limit).
-  **Blocked from READY_FOR_REVIEW until the account owner restores Actions** and the real merge
-  gates (Build, Build control-plane, Format, corpus, ClickHouse smoke, Doppler, Test-Node, rule-h,
-  rule-j) report green. Vercel / Rule I / Python-test checks are pre-existing-red and non-blocking
-  per the #146/#148 merge history.
+- **PR #150 — FOLLOW-105 Wave 1** (`architect/FOLLOW-105-canonical-adapt-enforcement`) —
+  **READY_FOR_REVIEW.** PM-validated against all acceptance criteria; **every real CI merge gate is
+  green** (Build, Build control-plane, Typecheck, Lint, Test Node 22, SDK E2E, rule-h, rule-j,
+  Format, corpus, ClickHouse smoke, Doppler, Gitleaks). Vercel / Rule I / Python-test reds are
+  pre-existing and non-blocking per #146/#148. Supersedes closed PR #149 (branch renamed for
+  push-CI; ESC-011 resolved). Awaiting human merge. On merge → §Snapshot.7 risk #1 RESOLVED, retro
+  spawned, Wave 2 unblocks.
 
 ## Recent merges
 

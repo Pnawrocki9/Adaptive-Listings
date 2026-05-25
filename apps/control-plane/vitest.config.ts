@@ -32,6 +32,10 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    // Integration tests (*.integration.test.ts) hit live external services
+    // (ClickHouse) and are run via the dedicated vitest.integration.config.ts.
+    // Never let the standard suite pick them up.
+    exclude: ['**/node_modules/**', '**/dist/**', '**/*.integration.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

@@ -9,6 +9,7 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:integration:clickhouse": "vitest run --config vitest.integration.config.ts",
     "start": "next start",
     "clean": "rm -rf .next"
   },

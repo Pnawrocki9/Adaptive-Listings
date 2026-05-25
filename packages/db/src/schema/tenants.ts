@@ -47,6 +47,14 @@ export const tenants = pgTable(
      */
     consentRequired: boolean('consent_required').notNull().default(true),
 
+    /**
+     * Pilot freeze guard — set to true by TICKET-PILOT-001 on the shadow→live flip.
+     * When true, the adapt route emits a non-blocking structured warning if any
+     * Lane C feature flag is active, protecting the CTA-lift measurement window.
+     * Default false (normal operating state). Added in FOLLOW-106.
+     */
+    pilotFrozen: boolean('pilot_frozen').notNull().default(false),
+
     // Profile Mode gate — U.11, POST-MVP, master-admin gated
     profileModeEnabled: boolean('profile_mode_enabled').notNull().default(false),
     profileModeEnabledAt: timestamp('profile_mode_enabled_at', { withTimezone: true }),

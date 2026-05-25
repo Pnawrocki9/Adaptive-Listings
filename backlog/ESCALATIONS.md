@@ -21,6 +21,43 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — commitlint ticket-reference rule rejects the `TICKET-PILOT-` prefix [TICKET-PILOT-003]
+
+**Filed by:** data-engineer **Date:** 2026-05-24T00:00:00Z **Affects:** TICKET-PILOT-003 (and any
+other `TICKET-PILOT-NNN` Sprint 12 pilot tickets) **Type:** repo-config
+
+**Description:**
+
+The `ticket-reference` custom rule in `commitlint.config.cjs` enforces an allow-list of ticket
+prefixes. Sprint 12 introduced the `TICKET-PILOT-NNN` family (see `backlog/sprint-12/`), but the
+regex on line ~110 does not include a `PILOT-` alternative:
+
+```js
+/\[TICKET-(?:FIX-|INFRA-|...|RUNTIME-FIX-)?\d+[a-z]?\]|\[FOLLOW-\d+\]|\[ESCALATION\]/;
+```
+
+As a result the commit-msg hook rejects a well-formed message such as
+`feat(data): add CTA-lift dashboard with holdout comparison [TICKET-PILOT-003]`.
+
+I cannot edit `commitlint.config.cjs` from the data-engineer lane (it is a repo-wide config file),
+and skipping hooks (`--no-verify`) is disallowed by the operating rules. The TICKET-PILOT-003 work
+is otherwise complete: 26 new tests pass, full control-plane suite (568 tests) green, typecheck and
+lint clean.
+
+**Required action (devops-engineer or PM — ~2 minutes):**
+
+Add `PILOT-` to the `ticketPattern` alternation in `commitlint.config.cjs`:
+
+```js
+/\[TICKET-(?:FIX-|INFRA-|DEMO-|ADM-|QUIZ-|DB-|EMB-|ARCH-|ADP-|DQS-|AUTO-|AB-|REORDER-|AGENCY-|GDPR-|VAL-|DESC-PIVOT-|DESC-|CAUSAL-|PROCESS-|DECISIONS-|RLS-|RUNTIME-AUDIT-|RUNTIME-FIX-|PILOT-)?\d+[a-z]?\]|\[FOLLOW-\d+\]|\[ESCALATION\]/;
+```
+
+Then the TICKET-PILOT-003 commit can be created and the PR opened.
+
+**Resolution:**
+
+---
+
 ## OPEN — DOPPLER_TOKEN_DEV secret must be provisioned in GitHub Actions [FOLLOW-040]
 
 **Filed by:** devops-engineer **Date:** 2026-05-24T00:00:00Z **Affects:** FOLLOW-040, FOLLOW-063,

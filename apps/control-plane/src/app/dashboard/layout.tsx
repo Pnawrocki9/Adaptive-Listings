@@ -5,6 +5,8 @@
  *   - Investor Quiz     /dashboard/quiz
  *   - Demo Mode         /dashboard/demo/mockup
  *   - Site Detection    /dashboard/detection   (AUTO-006)
+ *   - Analytics         /dashboard/analytics
+ *   - Pilot Dashboard   /dashboard/pilot       (TICKET-PILOT-003)
  *
  * @module apps/control-plane/src/app/dashboard/layout
  */
@@ -83,6 +85,25 @@ const NAV_LINKS = [
         aria-hidden="true"
       >
         <path d="M15.5 2A1.5 1.5 0 0014 3.5v13a1.5 1.5 0 003 0v-13A1.5 1.5 0 0015.5 2zM9.5 6A1.5 1.5 0 008 7.5v9a1.5 1.5 0 003 0v-9A1.5 1.5 0 009.5 6zM3.5 10A1.5 1.5 0 002 11.5v5a1.5 1.5 0 003 0v-5A1.5 1.5 0 003.5 10z" />
+      </svg>
+    ),
+  },
+  {
+    href: '/dashboard/pilot',
+    label: 'Pilot Dashboard',
+    icon: (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 20 20"
+        fill="currentColor"
+        className="h-4 w-4"
+        aria-hidden="true"
+      >
+        <path
+          fillRule="evenodd"
+          d="M10 1a1 1 0 011 1v1.07A7.002 7.002 0 0116.93 9H18a1 1 0 110 2h-1.07A7.002 7.002 0 0111 16.93V18a1 1 0 11-2 0v-1.07A7.002 7.002 0 013.07 11H2a1 1 0 110-2h1.07A7.002 7.002 0 019 3.07V2a1 1 0 011-1zm0 5a4 4 0 100 8 4 4 0 000-8zm0 2.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3z"
+          clipRule="evenodd"
+        />
       </svg>
     ),
   },

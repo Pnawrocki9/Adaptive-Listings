@@ -6,9 +6,12 @@ documented here.
 
 ## Index
 
-| ADR                                                                     | Status   | Date       | Summary                                                                                     |
-| ----------------------------------------------------------------------- | -------- | ---------- | ------------------------------------------------------------------------------------------- |
-| [0003-event-schema-and-versioning](0003-event-schema-and-versioning.md) | ACCEPTED | 2026-04-29 | Event envelope, per-type schemas, versioning strategy (additive-only within major version). |
+| ADR                                                                             | Status   | Date       | Summary                                                                                     |
+| ------------------------------------------------------------------------------- | -------- | ---------- | ------------------------------------------------------------------------------------------- |
+| [0003-event-schema-and-versioning](0003-event-schema-and-versioning.md)         | ACCEPTED | 2026-04-29 | Event envelope, per-type schemas, versioning strategy (additive-only within major version). |
+| [ADR-0004-canonical-adapt-endpoint](ADR-0004-canonical-adapt-endpoint.md)       | ACCEPTED | 2026-05-17 | control-plane `/api/adapt` is canonical; Worker is edge holdout gate only.                  |
+| [ADR-0005-modal-apps-disposition](ADR-0005-modal-apps-disposition.md)           | ACCEPTED | —          | Modal placeholder apps disposition; intelligence lives in TS edge + async jobs.             |
+| [ADR-0006-canonical-adapt-enforcement](ADR-0006-canonical-adapt-enforcement.md) | PROPOSED | 2026-05-25 | Runtime enforcement of ADR-0004: SDK targeting, Worker disposition, CI guard (FOLLOW-105).  |
 
 ## How to use ADRs
 

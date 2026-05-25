@@ -2582,6 +2582,9 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] Unit tests for each new observer type in `observer.test.ts`
   - [ ] Bundle size delta <5KB gzip (new observers are lightweight, no new deps)
   - [ ] Auto-detect corpus CI tests still green (no regression)
+  - [ ] **FREEZE-ISOLATION:** changing SDK event emission is pilot-tenant-affecting → MUST NOT ship
+        to the pilot tenant during the CTA-lift measurement window. Land before the window opens or
+        after it closes (per `docs/ops/PILOT_FREEZE_RULE.md`; Sprint 13b PROHIBITED-mid-window).
 - **promoted_to_queue:** false
 - **depends_on:** none (independent)
 
@@ -2708,6 +2711,10 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] SDK uses control-plane route → full 18-archetype playbook available
   - [ ] Shadow mode test: SDK loaded, zero DOM mutations, analytics events flowing
   - [ ] `photos` + `listings-grid` ReorderDirective: code comment pointing to FOLLOW-104
+  - [ ] **FREEZE-ISOLATION:** this IS the pilot tenant's DOM adaptation → it DEFINES "adapted". MUST
+        land BEFORE the CTA-lift measurement window opens, or AFTER it closes — never mid-window
+        (changing what "adapted" means mid-window invalidates the lift). Per
+        `docs/ops/PILOT_FREEZE_RULE.md` (Sprint 13b PROHIBITED-mid-window).
 - **promoted_to_queue:** false
 - **depends_on:** TICKET-PILOT-001 (SDK snippet embed in app.estalara.com — only required change on
   Rafał's side)
@@ -2820,13 +2827,20 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **recommended_agent:** architect + backend-engineer + sdk-engineer
 - **priority:** P0 (gates Lane B pilot launch — without this, pilot adaptation behavior is
   ambiguous)
-- **estimated_hours:** 6
-- **note (2026-05-25):** The AI Council framed this as "write ADR-0005: Canonical /api/adapt." On
-  audit, the canonical-route DECISION already exists as **ADR-0004**
-  (`Canonical /api/adapt Endpoint`, control-plane = canonical; Worker 3-bucket "intentionally not
-  used in production"), and ADR-0005 is already taken (`Modal Apps Disposition`). Per CEO decision
-  2026-05-25, this ticket authors **ADR-0006 "Canonical /api/adapt Enforcement"** as a follow-on to
-  ADR-0004 — the decision is re-affirmed; the NEW content is enforcement + retirement + CI guard.
+- **estimated_hours:** 8-10 (revised from 6 per AI Council `20260525_143939` risk #6 — Worker
+  retire/proxy + SDK config audit + CI Rule H/J gate exceed the original 6h)
+- **substeps (AI Council split):** 1a SDK config/runtime audit (READ-ONLY — locate the snippet
+  generator via `grep buildSnippet`, confirm the deployed app.estalara.com snippet writes the
+  control-plane host into `data-decision-url`) → 1b ADR-0006 PROPOSED→ACCEPTED → 1c Worker
+  `/api/adapt` disposition (retire / proxy / hard-fail) → 1d CI Rule H/J regression gate. On done:
+  flip Master Design §Snapshot.7 risk #1 OPEN→RESOLVED.
+- **note (2026-05-25):** ADR-0006 draft is at `docs/adr/ADR-0006-canonical-adapt-enforcement.md`
+  (PROPOSED). The AI Council framed this as "write ADR-0005: Canonical /api/adapt." On audit, the
+  canonical-route DECISION already exists as **ADR-0004** (`Canonical /api/adapt Endpoint`,
+  control-plane = canonical; Worker 3-bucket "intentionally not used in production"), and ADR-0005
+  is already taken (`Modal Apps Disposition`). Per CEO decision 2026-05-25, this ticket authors
+  **ADR-0006 "Canonical /api/adapt Enforcement"** as a follow-on to ADR-0004 — the decision is
+  re-affirmed; the NEW content is enforcement + retirement + CI guard.
 - **scope:** Worker `/api/adapt` (`apps/decision-api`) uses a 3-bucket keyword classifier with a
   dead bandit; Next.js `/api/adapt` (`apps/control-plane`) uses the 18-archetype playbook + LLM +
   RAG. ADR-0004 already names control-plane canonical, but nothing ENFORCES it — the SDK pilot

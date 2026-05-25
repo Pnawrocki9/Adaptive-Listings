@@ -1,6 +1,16 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 2.9 (FOLLOW-105 P0 canonical /api/adapt enforcement added to Sprint 13 Lane A; ADR-0006 follow-on to ADR-0004; Sprint 12 CLOSED + Sprint 13 OPEN three-track per v2.8) | **Data:** 25 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 2.10 (AI Council ratified Track 1 first WITH CHANGES, APPROVED_TO_IMPLEMENT=false; Sprint 13 split into 13a (correctness + pilot launch) / 13b (intent build); four Phase-0 spec artifacts authored; FOLLOW-105 substep split + estimate 6h→8-10h; FOLLOW-099/103 freeze-isolation) | **Data:** 25 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v2.10 (25 maja 2026 — AI Council ratification-with-changes; Sprint 13a/13b split; Phase-0 specs):** AI Council session `20260525_143939` ratified "Track 1 first" **with changes** and set `APPROVED_TO_IMPLEMENT=false` — only no-code spec/audit work proceeds until blocking questions B1–B8 close (B1/B2/B3/B7 gate coding). Changes applied:
+
+- 🔀 **Sprint 13 split into 13a + 13b.** ~63.5h / 14 tickets is not review-safe under Piotr's ~2h/day capacity. **13a** = Lane A correctness + canonical-route enforcement (5 tickets) + Lane B pilot launch (3 tickets). **13b** = Lane C Adaptive Listings v1.0 intent build (6 tickets), parallel ONLY under the hard-isolation freeze rule.
+- 📄 **Four Phase-0 spec artifacts authored** (no-code, for CEO ratification): `docs/specs/PILOT_CTA_LIFT_METRIC_v1.md` (B1/B5/B7), `docs/ops/PILOT_FREEZE_RULE.md` (B2), `docs/ops/PILOT_RUNBOOK.md` skeleton (B4/B6; TICKET-PILOT-002 completes), `docs/adr/ADR-0006-canonical-adapt-enforcement.md` (B3, PROPOSED).
+- 🧊 **Hard-isolation freeze rule.** FOLLOW-099 (SDK event emission) + FOLLOW-103 (app.estalara.com DOM adaptation) touch the pilot tenant directly → PROHIBITED during the CTA-lift measurement window (must land before it opens or after it closes). FOLLOW-087/100/101 = shadow-only; FOLLOW-102 = mergeable (tenant-gated off).
+- 🛠️ **FOLLOW-105 substep split + estimate 6h→8-10h** (AI Council risk #6): 1a SDK config/runtime audit → 1b ADR-0006 ACCEPTED → 1c Worker disposition → 1d CI Rule H/J gate.
+- 🔎 **CTA-lift ground truth confirmed (B7):** canonical = `events.cta.clicked` ⨝ `adaptation_decisions` on `session_id`, window on `ad.ts` (`apps/control-plane/src/app/api/pilot/cta-lift/route.ts`); the `dashboard/analytics/lift` path (`dqs_events` on `assigned_at`) is non-canonical → FOLLOW-093 reconciles.
+- 🔄 **§Snapshot.7 risk #1** annotated: dual `/api/adapt` resolution gated on FOLLOW-105 + ADR-0006.
+- 🔄 **Snapshot.1 unchanged** — Phase-0 is no-code; status moves when Sprint 13a/13b implementation lands.
 
 **Changelog v2.9 (25 maja 2026 — FOLLOW-105 P0 canonical /api/adapt added to Sprint 13 Lane A):** AI Council Ticket 4 P0 (route divergence) recommended by session 20260525_132514 added to Sprint 13 per CEO ratification 2026-05-25. Worker /api/adapt (3-bucket) vs control-plane /api/adapt (18-archetype + LLM) divergence is a pilot blocker — without an enforced canonical path, the SDK could silently target the 3-bucket path and the pilot would not exercise the 18-archetype playbook. NOTE: the canonical DECISION already exists as ADR-0004 (control-plane = canonical) and ADR-0005 is already taken (Modal Apps Disposition); per CEO decision FOLLOW-105 writes **ADR-0006 "Canonical /api/adapt Enforcement"** as a follow-on to ADR-0004 (re-affirm + enforce), retires/proxies the non-canonical Worker route, adds a CI Rule H regression, and flips §Snapshot.7 risk #1 OPEN→RESOLVED. opus-4.7-xhigh — architectural decision. Sprint 13 Lane A now 5 tickets (~63.5h total sprint).
 
@@ -273,6 +283,8 @@
 > AGENT_WORKFLOW.md sprint-close checklist, the next Snapshot.1 re-verification is at Sprint
 > 12 completion.
 >
+> **Update 2026-05-25 (AI Council ratified Track 1 with changes — Sprint 13a/13b split, Phase-0 specs):** AI Council `20260525_143939` set `APPROVED_TO_IMPLEMENT=false` — no-code spec/audit only until B1–B8 close. Sprint 13 split into 13a (correctness + pilot launch) / 13b (intent build, hard-isolation). Four Phase-0 specs authored (`PILOT_CTA_LIFT_METRIC_v1.md`, `PILOT_FREEZE_RULE.md`, `PILOT_RUNBOOK.md`, `ADR-0006`). FOLLOW-099/103 frozen mid-measurement-window (pilot-tenant-affecting). FOLLOW-105 6h→8-10h + substep split. §Snapshot.7 risk #1 resolution gated on FOLLOW-105 + ADR-0006.
+>
 > **Update 2026-05-25 (FOLLOW-105 added — canonical /api/adapt P0):** Sprint 13 Lane A expanded with FOLLOW-105 (P0, 6h, opus-4.7-xhigh) — route-divergence resolution gate added before Lane B pilot launch. Authors ADR-0006 ("Canonical /api/adapt Enforcement", follow-on to ADR-0004; ADR-0005 is already Modal Apps Disposition), enforces SDK→control-plane targeting, retires/proxies the Worker route, adds a CI Rule H guard. Lane A now 5 tickets; sprint ~63.5h.
 >
 > **Update 2026-05-25 (Sprint 12 CLOSED — Sprint 13 OPEN, three-track):** Sprint 12 closed with Lane A hardening + Lane C ROI instrumentation shipped (PRs #142–#146); Lane B pilot onboarding (TICKET-PILOT-001/002) deferred to Sprint 13 because RETRO-008/009 found the Lane C dashboards fabricate metrics on ClickHouse error (Rule K.2) and `inquiry.started` never fires in prod. The pilot did NOT launch. Sprint 13 opens three-track per CEO decision: Lane A correctness (FOLLOW-094/098/093/097) → Lane B pilot launch (PILOT-001/092/PILOT-002, blocked until Lane A) → Lane C intent v1.0 (FOLLOW-099/100/087/101/102/103, parallel with Lane B). RETRO-SPRINT-12 written. Two pre-spawn human actions outstanding: provision DOPPLER_TOKEN_DEV (ESC-010) + E2E_BEARER_TOKEN (ESC-009) secrets, and an AI Council Checkpoint on Track 1 vs Track 2 ordering.
@@ -421,7 +433,7 @@ Net: an investor demo today shows a credible Tier 1 Observer + Tier 2 mutation f
 
 ### §Snapshot.7 — Documented architectural risks (high → low)
 
-1. **Two parallel `/api/adapt` endpoints** with subtly different behavior (Worker = 3 buckets, Next.js = 18 + LLM). Cross-app contract divergence flagged in RETRO-003 §4c.
+1. **Two parallel `/api/adapt` endpoints** with subtly different behavior (Worker = 3 buckets, Next.js = 18 + LLM). Cross-app contract divergence flagged in RETRO-003 §4c. **Resolution gated on FOLLOW-105 + ADR-0006 (Sprint 13a Lane A, P0)** — runtime enforcement that the SDK targets the canonical control-plane path + CI guard against re-divergence; flips this risk OPEN→RESOLVED on merge.
 2. **Modal placeholder gap.** Four named services are 22-line stubs; intelligence lives in TS edge. Either rebuild or rebrand.
 3. **Single-region infrastructure** despite four-region marketing claim.
 4. **RLS coverage incomplete** on `session_embeddings`, `tenant_site_schemas`, `ab_bandit_weights`, `schema_validation_history`, `archetype_embeddings`.

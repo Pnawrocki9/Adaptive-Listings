@@ -66,7 +66,8 @@ updates.
 | 10     | 12    | Close the bandit loop + real embeddings + e2e test                                                                        | 9       | 9    | 0       | 0     | 0       |
 | 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                                                          | 9       | 5    | 0       | 4     | 0       |
 | 12     | 14    | Pilot launch on app.estalara.com — COMPLETE (Lane A + Lane C; Lane B → Sprint 13)                                         | 7       | 5    | 0       | 2     | 0       |
-| 13     | 15    | Adaptive Listings v1.0 — correctness → pilot launch → intent build (Lane A/B/C)                                           | 14      | 0    | 0       | 8     | 6       |
+| 13a    | 15    | Correctness + pilot launch (Lane A correctness gate + Lane B pilot launch)                                                | 8       | 0    | 0       | 5     | 3       |
+| 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                               | 6       | 0    | 0       | 3     | 3       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -2039,26 +2040,26 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
     are now DONE so this can be written with concrete runbook steps.
 ```
 
-## Sprint 13 — Adaptive Listings v1.0 — correctness → pilot launch → intent build (OPEN)
+## Sprint 13a — Correctness + pilot launch (OPEN)
 
-**Sprint goal:** "Launch the controlled pilot on app.estalara.com for real, then build the Adaptive
-Listings v1.0 intent coverage. Lane A makes the pilot dashboards honest (no fabricated metrics, real
-producer→consumer paths). Lane B onboards app.estalara.com and runs shadow mode, blocked until Lane
-A is green. Lane C builds the 18-archetype intent detection (behavioral observers
+**Sprint goal:** "Launch the controlled pilot on app.estalara.com for real. Lane A makes the pilot
+dashboards honest (no fabricated metrics, real producer→consumer paths) and enforces one canonical
+adapt path. Lane B onboards app.estalara.com and runs shadow mode, blocked until Lane A is green."
 
-- chat NLP) in parallel with the Lane B shadow window."
+**Entry condition:** Sprint 12 COMPLETE ✓ (2026-05-25). AI Council (session `20260525_143939`)
+**ratified Track 1 first with changes** — `APPROVED_TO_IMPLEMENT=false`: only no-code spec/audit
+work proceeds until blocking questions B1–B8 close (B1/B2/B3/B7 gate coding). Phase-0 spec artifacts
+authored 2026-05-25: `docs/specs/PILOT_CTA_LIFT_METRIC_v1.md`, `docs/ops/PILOT_FREEZE_RULE.md`,
+`docs/ops/PILOT_RUNBOOK.md`, `docs/adr/ADR-0006-canonical-adapt-enforcement.md` (PROPOSED).
 
-**Entry condition:** Sprint 12 COMPLETE ✓ (2026-05-25). **Pending AI Council Checkpoint** on Track 1
-(pilot-first) vs Track 2 (intent-first) ordering before Lane C spawns — see ESCALATIONS / sprint
-preamble.
-
-**Sprint sequencing:** Lane A first (correctness gates the pilot). Lane B blocked until Lane A DONE.
-Lane C can run in parallel with Lane B during the 3–5 day shadow window. FOLLOW-087 (Lane C) cannot
-reach green CI until ESC-010 (`DOPPLER_TOKEN_DEV`) + ESC-009 (`E2E_BEARER_TOKEN`) secrets are
-provisioned (~20 min Piotr action).
+**Sprint sequencing:** Lane A first (correctness + canonical-route enforcement gate the pilot). Lane
+B blocked until Lane A DONE. FOLLOW-105's runtime route verification and several Lane A CI gates
+require ESC-010 (`DOPPLER_TOKEN_DEV`) + ESC-009 (`E2E_BEARER_TOKEN`) secrets to be provisioned (~20
+min Piotr action).
 
 ```yaml
-# LANE A — Dashboard correctness (P1, from RETRO-008/009; must complete before Lane B go-live)
+# LANE A — Dashboard correctness + canonical-route enforcement (P0/P1, from RETRO-008/009 + AI
+# Council Ticket 4; must complete before Lane B go-live)
 
 - id: FOLLOW-094
   title: cta-lift route must fail loud on ClickHouse error + expose data provenance (Rule K.2)
@@ -2125,19 +2126,25 @@ provisioned (~20 min Piotr action).
   agent: architect + backend-engineer + sdk-engineer
   status: READY
   priority: P0
-  estimated_hours: 6
+  estimated_hours: 8-10
   depends_on: []
   model: opus-4.7-xhigh
-  spec: (to author at spawn — backlog/sprint-13/FOLLOW-105.md)
+  spec: docs/adr/ADR-0006-canonical-adapt-enforcement.md (PROPOSED; full ticket spec at spawn)
   notes: |
     AI Council session 20260525_132514 Ticket 4 P0 — route divergence kills product story.
     Must resolve before TICKET-PILOT-001 launches or pilot may silently fall back to 3-bucket
-    Worker behavior instead of 18-archetype control-plane behavior. opus-4.7-xhigh — architect
-    decision requires evaluating both paths' contracts, retirement risk, and CI enforcement
-    strategy. NOTE: canonical DECISION already exists as ADR-0004; ADR-0005 is taken (Modal Apps
-    Disposition). Per CEO 2026-05-25 this ticket writes ADR-0006 "Canonical /api/adapt Enforcement"
-    as a follow-on to ADR-0004, NOT a new ADR-0005. The new content is enforcement + Worker
-    retire/proxy + CI Rule H guard + §Snapshot.7 risk #1 OPEN→RESOLVED.
+    Worker behavior instead of 18-archetype control-plane behavior. NOTE: canonical DECISION
+    already exists as ADR-0004; ADR-0005 is taken (Modal Apps Disposition). Per CEO 2026-05-25 this
+    ticket writes ADR-0006 "Canonical /api/adapt Enforcement" (follow-on to ADR-0004), NOT a new
+    ADR-0005. Estimate revised 6h→8-10h (AI Council risk #6 — route retire/proxy + config audit +
+    CI gate exceed 6h). Substeps:
+      1a. SDK config/runtime audit (READ-ONLY) — locate the snippet generator (grep buildSnippet),
+          confirm the deployed app.estalara.com snippet writes the control-plane host into
+          data-decision-url; SDK reads it at config.ts:80 → adapt.ts:507 fetch(decisionApiUrl+/adapt).
+      1b. ADR-0006 → ACCEPTED (currently PROPOSED).
+      1c. Worker /api/adapt disposition: retire (preferred) / proxy / hard-fail (ADR-0006 §Decision 3).
+      1d. CI Rule H/J regression gate against route divergence + response-contract drift.
+    On done: flip Master Design §Snapshot.7 risk #1 OPEN→RESOLVED. opus-4.7-xhigh — architectural.
 
 # LANE B — Pilot onboarding on app.estalara.com (P1, BLOCKED until Lane A complete)
 
@@ -2190,8 +2197,31 @@ provisioned (~20 min Piotr action).
     check (dashboard shows data_source: 'clickhouse', not 'mock') for the PRIMARY metric — otherwise
     the runbook could green-light a pilot whose lift number is fabricated. Lives in
     docs/ops/PILOT_RUNBOOK.md.
+```
 
-# LANE C — Adaptive Listings v1.0 intent build (parallel with Lane B during shadow window)
+## Sprint 13b — Adaptive Listings v1.0 intent build (OPEN)
+
+**Sprint goal:** "Build the 18-archetype intent coverage (behavioral observers + chat NLP) per §D.6.
+Runs in parallel with the Lane B shadow window ONLY under hard isolation, so the pilot CTA-lift
+signal is never contaminated."
+
+**Hard-isolation rule (AI Council `20260525_143939` + `docs/ops/PILOT_FREEZE_RULE.md`):** no change
+to pilot-tenant runtime behavior, event schema, dashboard semantics, or DOM during the CTA-lift
+measurement window.
+
+- **FOLLOW-099 + FOLLOW-103 touch the pilot tenant directly** (099 changes SDK event emission; 103
+  _is_ app.estalara.com DOM adaptation) → **PROHIBITED mid-window**; must land before the window
+  opens or after it closes, never during.
+- **FOLLOW-087 / FOLLOW-100 / FOLLOW-101 = SHADOW-ONLY** — predictions to a separate namespace, no
+  UX effect (enables post-pilot disagreement-rate analysis).
+- **FOLLOW-102 = mergeable** — tenant-gated OFF for the pilot tenant.
+
+**Note:** FOLLOW-087 cannot reach green CI until ESC-010 (`DOPPLER_TOKEN_DEV`) + ESC-009
+(`E2E_BEARER_TOKEN`) are provisioned.
+
+```yaml
+# LANE C — Adaptive Listings v1.0 intent build (13b; parallel with Lane B shadow window ONLY under
+# the hard-isolation freeze rule — see docs/ops/PILOT_FREEZE_RULE.md)
 
 - id: FOLLOW-099
   title: SDK behavioral observers + payload schemas (5 new event types)
@@ -2206,6 +2236,8 @@ provisioned (~20 min Piotr action).
     photo.dwell, feature.expanded, mortgage_calc.used, filter.applied (facet+value),
     inquiry.started. Payload-aware dispatch through dispatchEvents(). Bundle delta <5KB gzip.
     Foundation for §D.6 Coverage Matrix.
+    FREEZE: pilot-tenant-affecting (changes SDK event emission) → must NOT ship to the pilot tenant
+    during the CTA-lift measurement window (Sprint 13b hard-isolation rule / PILOT_FREEZE_RULE.md).
 
 - id: FOLLOW-100
   title: SIGNAL_LIKELIHOODS all 18 archetypes + CHAT_INTENT_LIKELIHOODS + applyChatIntentPrior()
@@ -2277,21 +2309,26 @@ provisioned (~20 min Piotr action).
     5 TextDirective slots with zero manual markers; 18×5=90 directive coverage assertion; SDK uses
     control-plane route (full 18-archetype playbook). photos + listings-grid ReorderDirective deferred
     → FOLLOW-104.
+    FREEZE: this IS the pilot tenant's DOM adaptation → must land BEFORE the measurement window opens
+    (it defines "adapted") or AFTER it closes; never mid-window (Sprint 13b hard-isolation rule).
 ```
 
 ## Currently in flight
 
-\_(Sprint 13 OPEN but not yet spawned — pm-orchestrator paused pending (a) DOPPLER_TOKEN_DEV +
-E2E_BEARER_TOKEN secret provisioning and (b) AI Council Checkpoint on Track 1 vs Track 2 ordering.
-No active agents. Lane A now contains 5 tickets including FOLLOW-105 (P0 — canonical /api/adapt ADR
-
-- enforcement, ADR-0006).)\_
+_Sprint 13a/13b OPEN, no agents spawned._ AI Council (`20260525_143939`) ratified Track 1 first with
+changes — `APPROVED_TO_IMPLEMENT=false`. Only no-code spec/audit work proceeds until blocking
+questions B1–B8 close. Phase-0 spec artifacts authored 2026-05-25:
+`docs/specs/PILOT_CTA_LIFT_METRIC_v1.md`, `docs/ops/PILOT_FREEZE_RULE.md`,
+`docs/ops/PILOT_RUNBOOK.md`, `docs/adr/ADR-0006-canonical-adapt-enforcement.md`. Sprint 13a Lane A =
+5 tickets (FOLLOW-105 P0 + 094/098/093/097). Pre-spawn human actions: provision DOPPLER_TOKEN_DEV
+(ESC-010) + E2E_BEARER_TOKEN (ESC-009); CEO ratifies the `DECISION NEEDED` markers in the four specs
+(closes B1–B8).
 
 ## Awaiting human review (0 PRs)
 
-_(No PRs in flight. Next on spawn: Sprint 13 Lane A — FOLLOW-105 (P0 canonical /api/adapt ADR) +
-FOLLOW-094 + FOLLOW-098 + FOLLOW-093 (bundled, cta-lift/inquiry routes) in parallel with FOLLOW-097
-(SDK init).)_
+_No PRs in flight._ On `APPROVED_TO_IMPLEMENT=true`, first Lane A wave: FOLLOW-105 substep 1a
+(read-only SDK config/runtime audit) + the bundled FOLLOW-094/093/098 (cta-lift/inquiry routes) in
+parallel with FOLLOW-097 (SDK init).
 
 ## Recent merges
 

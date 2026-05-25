@@ -66,7 +66,7 @@ updates.
 | 10     | 12    | Close the bandit loop + real embeddings + e2e test                                                                        | 9       | 9    | 0       | 0     | 0       |
 | 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                                                          | 9       | 5    | 0       | 4     | 0       |
 | 12     | 14    | Pilot launch on app.estalara.com — COMPLETE (Lane A + Lane C; Lane B → Sprint 13)                                         | 7       | 5    | 0       | 2     | 0       |
-| 13     | 15    | Adaptive Listings v1.0 — correctness → pilot launch → intent build (Lane A/B/C)                                           | 13      | 0    | 0       | 7     | 6       |
+| 13     | 15    | Adaptive Listings v1.0 — correctness → pilot launch → intent build (Lane A/B/C)                                           | 14      | 0    | 0       | 8     | 6       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -2120,6 +2120,25 @@ provisioned (~20 min Piotr action).
     at init; add a test that drives the real init path. SDK-side, independent of the route fixes —
     safe to run in parallel with FOLLOW-094/093/098.
 
+- id: FOLLOW-105
+  title: Canonical /api/adapt ADR + enforce one production path (ADR-0006)
+  agent: architect + backend-engineer + sdk-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 6
+  depends_on: []
+  model: opus-4.7-xhigh
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-105.md)
+  notes: |
+    AI Council session 20260525_132514 Ticket 4 P0 — route divergence kills product story.
+    Must resolve before TICKET-PILOT-001 launches or pilot may silently fall back to 3-bucket
+    Worker behavior instead of 18-archetype control-plane behavior. opus-4.7-xhigh — architect
+    decision requires evaluating both paths' contracts, retirement risk, and CI enforcement
+    strategy. NOTE: canonical DECISION already exists as ADR-0004; ADR-0005 is taken (Modal Apps
+    Disposition). Per CEO 2026-05-25 this ticket writes ADR-0006 "Canonical /api/adapt Enforcement"
+    as a follow-on to ADR-0004, NOT a new ADR-0005. The new content is enforcement + Worker
+    retire/proxy + CI Rule H guard + §Snapshot.7 risk #1 OPEN→RESOLVED.
+
 # LANE B — Pilot onboarding on app.estalara.com (P1, BLOCKED until Lane A complete)
 
 - id: TICKET-PILOT-001
@@ -2262,14 +2281,17 @@ provisioned (~20 min Piotr action).
 
 ## Currently in flight
 
-_(Sprint 13 OPEN but not yet spawned — pm-orchestrator paused pending (a) DOPPLER_TOKEN_DEV +
+\_(Sprint 13 OPEN but not yet spawned — pm-orchestrator paused pending (a) DOPPLER_TOKEN_DEV +
 E2E_BEARER_TOKEN secret provisioning and (b) AI Council Checkpoint on Track 1 vs Track 2 ordering.
-No active agents.)_
+No active agents. Lane A now contains 5 tickets including FOLLOW-105 (P0 — canonical /api/adapt ADR
+
+- enforcement, ADR-0006).)\_
 
 ## Awaiting human review (0 PRs)
 
-_(No PRs in flight. Next on spawn: Sprint 13 Lane A — FOLLOW-094 + FOLLOW-098 + FOLLOW-093 (bundled,
-cta-lift/inquiry routes) in parallel with FOLLOW-097 (SDK init).)_
+_(No PRs in flight. Next on spawn: Sprint 13 Lane A — FOLLOW-105 (P0 canonical /api/adapt ADR) +
+FOLLOW-094 + FOLLOW-098 + FOLLOW-093 (bundled, cta-lift/inquiry routes) in parallel with FOLLOW-097
+(SDK init).)_
 
 ## Recent merges
 

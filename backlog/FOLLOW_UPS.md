@@ -2810,3 +2810,47 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **promoted_to_queue:** false
 - **depends_on:** FOLLOW-103 (TextDirective slot coverage + corpus fixture) + TICKET-PILOT-001 (SDK
   embed live on app.estalara.com)
+
+---
+
+## FOLLOW-105 — Canonical /api/adapt ADR + enforce one production path
+
+- **source:** AI Council session 20260525_132514 (Ticket 4, P0) + CEO ratification 2026-05-25
+- **recommended_sprint:** 13
+- **recommended_agent:** architect + backend-engineer + sdk-engineer
+- **priority:** P0 (gates Lane B pilot launch — without this, pilot adaptation behavior is
+  ambiguous)
+- **estimated_hours:** 6
+- **note (2026-05-25):** The AI Council framed this as "write ADR-0005: Canonical /api/adapt." On
+  audit, the canonical-route DECISION already exists as **ADR-0004**
+  (`Canonical /api/adapt Endpoint`, control-plane = canonical; Worker 3-bucket "intentionally not
+  used in production"), and ADR-0005 is already taken (`Modal Apps Disposition`). Per CEO decision
+  2026-05-25, this ticket authors **ADR-0006 "Canonical /api/adapt Enforcement"** as a follow-on to
+  ADR-0004 — the decision is re-affirmed; the NEW content is enforcement + retirement + CI guard.
+- **scope:** Worker `/api/adapt` (`apps/decision-api`) uses a 3-bucket keyword classifier with a
+  dead bandit; Next.js `/api/adapt` (`apps/control-plane`) uses the 18-archetype playbook + LLM +
+  RAG. ADR-0004 already names control-plane canonical, but nothing ENFORCES it — the SDK pilot
+  config does not provably target control-plane, so the pilot could silently fall back to 3-bucket
+  behavior even after Lane C intent v1.0 ships. Must be resolved before TICKET-PILOT-001 launches.
+  a. Write **ADR-0006: "Canonical /api/adapt Enforcement"** (follow-on to ADR-0004) — re-affirm
+  control-plane as the production path (18-archetype + playbook + LLM), Worker as demo/internal
+  only; document the enforcement mechanism + the retire-vs-proxy decision for the Worker route. b.
+  Verify the SDK default target points to control-plane (NOT Worker) in the pilot snippet config. c.
+  Retire, proxy, or explicitly mark internal/demo the Worker `/api/adapt` route (retire-vs-proxy is
+  decided as part of the ADR-0006 work). d. Add a CI test asserting the SDK→control-plane contract
+  (Rule H — no schema divergence between Worker and control-plane response shapes). e. Update Master
+  Design §B.9 + §C.1 + §C.4 to reflect the canonical path + enforcement. f. Update §Snapshot.7 risk
+  #1 (dual `/api/adapt`) from OPEN to RESOLVED after merge.
+- **ac:**
+  - [ ] ADR-0006 written, reviewed, merged (follow-on to ADR-0004; no collision with ADR-0005)
+  - [ ] SDK pilot config (`apps/control-plane/src/lib/sdk-snippet.ts`) targets the canonical
+        endpoint
+  - [ ] Non-canonical Worker `/api/adapt` either retired (preferred), proxied to canonical, or
+        marked `/api/internal/adapt` with an explicit demo-only comment
+  - [ ] CI test: SDK request schema matches the canonical `/api/adapt` response schema (no drift)
+  - [ ] Rule H regression test: no duplicated adapt logic between Worker and control-plane unless an
+        explicit demo carve-out
+  - [ ] Master Design §B.9/§C.1/§C.4 + §Snapshot.7 updated
+  - [ ] §Snapshot.4 priority adjusted: dual `/api/adapt` risk RESOLVED
+- **promoted_to_queue:** true
+- **depends_on:** [] (independent — can run in parallel with FOLLOW-094/098/093/097)

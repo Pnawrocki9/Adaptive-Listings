@@ -2560,7 +2560,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-## FOLLOW-092A — SDK behavioral observers + payload schemas
+## FOLLOW-099 — SDK behavioral observers + payload schemas
 
 - **source:** AI Council Checkpoint 2026-05-25 / v2.7 planning session
 - **recommended_sprint:** Sprint 13
@@ -2575,7 +2575,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - `inquiry.started` — observer on inquiry form focus/open Each event: Zod schema validation
     through existing `dispatchEvents()` pipeline. Payload-aware dispatch: `filter.applied` with
     `facet=bedrooms_min` and `facet=price_max` produce distinct payloads that SIGNAL_LIKELIHOODS
-    (FOLLOW-092B) can discriminate differently.
+    (FOLLOW-100) can discriminate differently.
 - **ac:**
   - [ ] 5 new observer types emitting validated events through `dispatchEvents()`
   - [ ] `filter.applied` payload includes `facet` and `value` fields
@@ -2587,7 +2587,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-## FOLLOW-092B — SIGNAL_LIKELIHOODS all 18 archetypes + CHAT_INTENT_LIKELIHOODS + applyChatIntentPrior()
+## FOLLOW-100 — SIGNAL_LIKELIHOODS all 18 archetypes + CHAT_INTENT_LIKELIHOODS + applyChatIntentPrior()
 
 - **source:** AI Council Checkpoint 2026-05-25 / v2.7 planning session
 - **recommended_sprint:** Sprint 13
@@ -2595,7 +2595,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **priority:** P1
 - **estimated_hours:** 8
 - **scope:** In `packages/sdk/src/core/intent.ts`:
-  1. Add `SIGNAL_LIKELIHOODS` entries for all new event types from FOLLOW-092A with per-archetype
+  1. Add `SIGNAL_LIKELIHOODS` entries for all new event types from FOLLOW-099 with per-archetype
      weights per §D.6 Coverage Matrix. Payload-aware: `filter.applied` likelihoods differ by
      `payload.facet` value (e.g. `bedrooms_min` → family_buyer; `price_max=low` → first_time_buyer).
   2. Add `CHAT_INTENT_LIKELIHOODS` constant — 12-dim intent vector dimension → archetype weight
@@ -2615,11 +2615,11 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] Fixture sessions in `intent.test.ts` for each new event type
   - [ ] `quiz.mismatch` emitted when quiz_archetype ≠ chat_archetype (both confidence > 0.5)
 - **promoted_to_queue:** false
-- **depends_on:** FOLLOW-092A
+- **depends_on:** FOLLOW-099
 
 ---
 
-## FOLLOW-093 — chat.intent.detected → Bayesian prior bridge in SDK intent.ts
+## FOLLOW-101 — chat.intent.detected → Bayesian prior bridge in SDK intent.ts
 
 - **source:** AI Council Checkpoint 2026-05-25 / v2.7 planning session
 - **recommended_sprint:** Sprint 13
@@ -2631,7 +2631,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   1. SDK observer in `packages/sdk/src/index.ts` listens for `chat.intent.detected` events (via
      ingest callback or WebSocket, delivery mechanism TBD in FOLLOW-087)
   2. Calls `applyChatIntentPrior(state, event.payload.intent_dimensions)` (implemented in
-     FOLLOW-092B)
+     FOLLOW-100)
   3. If `event.payload.confidence > 0.7` → strong prior (weight = `QUIZ_CONFIDENCE_BONUS`)
   4. If quiz already answered: `detectMismatch(quiz_archetype, chat_archetype)` → emit
      `quiz.mismatch`
@@ -2645,12 +2645,12 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] Test: quiz=family_buyer + chat=yield_hunter → `quiz.mismatch` emitted
   - [ ] Contract test validates `chat.intent.detected` payload shape matches §C.4 spec
 - **promoted_to_queue:** false
-- **depends_on:** FOLLOW-087 (stable chat.intent.detected schema) + FOLLOW-092B
-  (applyChatIntentPrior function)
+- **depends_on:** FOLLOW-087 (stable chat.intent.detected schema) + FOLLOW-100 (applyChatIntentPrior
+  function)
 
 ---
 
-## FOLLOW-094 — Quiz ON/OFF toggle (SdkConfig + Supabase tenants table + dashboard)
+## FOLLOW-102 — Quiz ON/OFF toggle (SdkConfig + Supabase tenants table + dashboard)
 
 - **source:** AI Council Checkpoint 2026-05-25 / v2.7 planning session
 - **recommended_sprint:** Sprint 13
@@ -2680,7 +2680,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-## FOLLOW-095 — app.estalara.com DOM adaptation (AI Vision + corpus fixture + 5-slot TextDirective coverage)
+## FOLLOW-103 — app.estalara.com DOM adaptation (AI Vision + corpus fixture + 5-slot TextDirective coverage)
 
 - **source:** AI Council Checkpoint 2026-05-25 / v2.7 planning session
 - **recommended_sprint:** Sprint 13
@@ -2698,7 +2698,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
      all 18 archetypes × 5 slots = 90 directive assertions
   4. **SDK config check**: verify SDK on app.estalara.com uses control-plane route (full
      18-archetype playbook), NOT Worker route (3 hard-coded buckets)
-  - `photos` and `listings-grid` ReorderDirective: explicit deferral comment → FOLLOW-096
+  - `photos` and `listings-grid` ReorderDirective: explicit deferral comment → FOLLOW-104
 - **ac:**
   - [ ] Corpus fixture `000-app-estalara`: 100% precision/recall for 5 slots in corpus test
   - [ ] AI Vision or L1–L4 detects `headline`, `description`, `features`, `cta-primary`, `cta-live`
@@ -2707,7 +2707,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
         `POST /api/adapt`
   - [ ] SDK uses control-plane route → full 18-archetype playbook available
   - [ ] Shadow mode test: SDK loaded, zero DOM mutations, analytics events flowing
-  - [ ] `photos` + `listings-grid` ReorderDirective: code comment pointing to FOLLOW-096
+  - [ ] `photos` + `listings-grid` ReorderDirective: code comment pointing to FOLLOW-104
 - **promoted_to_queue:** false
 - **depends_on:** TICKET-PILOT-001 (SDK snippet embed in app.estalara.com — only required change on
   Rafał's side)

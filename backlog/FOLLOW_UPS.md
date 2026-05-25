@@ -2908,18 +2908,22 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **priority:** P3
 - **estimated_hours:** 1
 - **model:** sonnet-4.6
-- **scope:** a. Verify Worker `/api/adapt` monitoring shows zero traffic over a 7+ day window since
-  the FOLLOW-105 Phase 1 (410 Gone) deployment. b. Remove
-  `apps/decision-api/src/app/api/adapt/route.ts` and related handler code. c. Update CI Rule H to
-  assert no `/api/adapt` route exists in `apps/decision-api/`. d. Update Master Design §Snapshot.7
-  risk #1 OPEN → RESOLVED (final state).
+- **scope:** a. Verify Worker `/api/adapt` shows zero traffic over a 7+ day window via the
+  structured monitor from FOLLOW-111 (Wave 1 shipped only a `console.warn`, not a queryable signal —
+  FOLLOW-111 builds the actual monitor, so this ticket depends on it). b. Remove
+  `apps/decision-api/src/app/api/adapt/route.ts` and the now-orphaned decision-api lib layer
+  (`ab-assignment`, `ab-events`, `consent-gate`, `llm-gateway`, `reorder` — unreachable since the
+  Wave 1 410). c. Update CI Rule H to assert no `/api/adapt` route exists in `apps/decision-api/`.
+  d. Confirm §Snapshot.7 risk #1 stays RESOLVED (already flipped by FOLLOW-105) + fix the stale
+  `control-plane.estalara.com` literal still in ADR-0006 §Decision 3 prose (live host is
+  `admin.estalara.com`).
 - **ac:**
-  - [ ] 7+ day monitoring shows zero hits on Worker `/api/adapt`
-  - [ ] Handler code removed
+  - [ ] 7+ day FOLLOW-111 monitor shows zero hits on Worker `/api/adapt`
+  - [ ] Handler + orphaned decision-api lib layer removed
   - [ ] CI Rule H asserts retirement
-  - [ ] Master Design updated
+  - [ ] ADR-0006 §Decision 3 stale host literal corrected
 - **promoted_to_queue:** false (Sprint 14, not yet in queue)
-- **depends_on:** [FOLLOW-105]
+- **depends_on:** [FOLLOW-105, FOLLOW-111]
 
 ---
 
@@ -2970,3 +2974,100 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] Unit tests per schema: valid, missing required field, type mismatch, extra fields allowed
 - **promoted_to_queue:** false (Sprint 14, not yet in queue)
 - **depends_on:** [FOLLOW-105]
+
+---
+
+## FOLLOW-110 — Log adapt_decision_id on the POST skip + holdout arms (correlation parity)
+
+- **source_retro:** RETRO-010
+- **source_ticket:** FOLLOW-105
+- **recommended_sprint:** 14
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** The control-plane `POST /api/adapt` route
+  (`apps/control-plane/src/app/api/adapt/route.ts`) generates one `adaptDecisionId` per request and
+  returns it in ALL four response arms (GET, POST skip, POST holdout, POST treatment), but only
+  calls `logDecisionAsync(...)` on the GET arm and the POST treatment arm. The skip (consent) and
+  holdout arms return the id in the body and then `return` without logging — so every held-out or
+  consent-skipped session has an `adapt_decision_id` on the wire with NO correlatable
+  `adaptation_decisions` row. Add `logDecisionAsync` calls (with the held-out/skip context:
+  `holdout_group=true` / skip marker, empty directives) to both arms. Acceptance: a held-out request
+  produces a ClickHouse row whose `adapt_decision_id` matches the response body.
+- **ac:**
+  - [ ] POST holdout arm calls `logDecisionAsync` with the same `adaptDecisionId` it returns
+  - [ ] POST skip arm calls `logDecisionAsync` (or a documented decision to NOT log skip, with
+        rationale)
+  - [ ] Test asserts body `adapt_decision_id` == logged ClickHouse row value for the holdout arm
+- **promoted_to_queue:** false
+- **depends_on:** [FOLLOW-105]
+
+---
+
+## FOLLOW-111 — Structured zero-traffic monitor for the deprecated Worker /api/adapt (gates FOLLOW-107)
+
+- **source_retro:** RETRO-010
+- **source_ticket:** FOLLOW-105
+- **recommended_sprint:** 14
+- **recommended_agent:** devops-engineer + backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** Wave 1 shipped the Worker `/api/adapt` 410 handler with a `console.warn` as the SOLE
+  signal gating FOLLOW-107's "7+ day zero-traffic" retirement decision — but there is no structured
+  sink, query, or threshold. Wire the deprecation log to a queryable destination (Cloudflare Workers
+  Logpush to ClickHouse/R2, or a Sentry metric/breadcrumb with a tag) and define the exact query +
+  7-day zero-hit threshold FOLLOW-107 will evaluate. Without this, FOLLOW-107 cannot be evidenced.
+- **ac:**
+  - [ ] 410 calls emit to a structured, queryable sink (not just `console.warn`)
+  - [ ] A documented query + threshold ("0 hits over 7 days") that FOLLOW-107 references
+  - [ ] FOLLOW-107 `depends_on` updated to include this stub
+- **promoted_to_queue:** false
+- **depends_on:** [FOLLOW-105]
+
+---
+
+## FOLLOW-112 — Live-contract test: real /api/adapt response through adaptResponseSchema.parse()
+
+- **source_retro:** RETRO-010
+- **source_ticket:** FOLLOW-105
+- **recommended_sprint:** 14
+- **recommended_agent:** qa-engineer + sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** `scripts/check-adapt-schema-drift.cjs` asserts STRUCTURAL field-set equality between
+  the SDK `adaptResponseSchema` (`packages/sdk/src/core/adapt-schema.ts`) and `AdaptationDirectives`
+  (`packages/shared/src/directives.ts`), but nothing proves VALUE-level conformance. Add a test that
+  invokes the actual control-plane `/api/adapt` route handler (mocked DB/ClickHouse) and feeds its
+  real response body through `adaptResponseSchema.parse()`, asserting no throw — catching value-type
+  drift (e.g. server emits `confidence` as a string) that the structural gate and hand-written
+  fixtures miss.
+- **ac:**
+  - [ ] Test mounts the real control-plane `/api/adapt` GET + POST handlers (mocked datastore)
+  - [ ] Each real response body is parsed by `adaptResponseSchema.parse()` with no throw
+  - [ ] Covers GET, POST treatment, POST holdout, POST skip arms
+- **promoted_to_queue:** false
+- **depends_on:** [FOLLOW-105]
+
+---
+
+## FOLLOW-113 — Harden ci.yml so off-convention branches don't silently run zero CI (ESC-011)
+
+- **source_retro:** RETRO-010
+- **source_ticket:** FOLLOW-105
+- **recommended_sprint:** 14
+- **recommended_agent:** devops-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** ESC-011: PR #149 was on a `feat/...` branch, which matches neither `ci.yml`'s
+  `push.branches` agent-prefix allowlist nor the `pull_request` trigger (no PR-to-main existed yet)
+  → zero CI runs, so CI-green was unverifiable. Either (a) add a `push` trigger on
+  `branches: ['**']` with path filters so any branch gets CI, or (b) add a fast-failing repo-policy
+  check / `pre-push` hook that rejects a non-agent-prefixed branch with a clear "rename to
+  `<agent>/<ticket>-...` to get CI" message. The current working branch
+  `feat/follow-105-1a-sdk-audit` is itself an instance of this foot-gun.
+- **ac:**
+  - [ ] A branch with a non-agent prefix either runs CI or fails fast with an actionable message
+  - [ ] The fix is documented in CONVENTIONS.md branch-naming section
+  - [ ] Verified by pushing a test branch with a `feat/` prefix (CI runs or pre-push blocks)
+- **promoted_to_queue:** false
+- **depends_on:** []

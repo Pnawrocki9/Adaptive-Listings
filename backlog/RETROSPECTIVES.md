@@ -3487,4 +3487,337 @@ No implementation status changed materially this sprint relative to the pre-exis
 
 ---
 
-<!-- RETRO-010 and beyond will be appended here by the retrospective-analyst agent -->
+## RETRO-010 — FOLLOW-105 Wave 1 (canonical /api/adapt enforcement, ADR-0006) — 2026-05-25
+
+### 1. Summary of change
+
+- **PR:** #150 (merged 2026-05-25, squash commit `bf0585d`; superseded the ESC-011-blocked PR #149)
+- **Files changed:** 29 (+1,399 / −1,382 — the large deletion is the Worker `/api/adapt` handler +
+  its `adapt.test.ts` suite collapsing from 960 → ~120 lines)
+- **Modules touched:** SDK (`packages/sdk`), control-plane (`apps/control-plane`),
+  decision-api (`apps/decision-api`), shared (`packages/shared`), docs (ADR-0004/0006/README,
+  MASTER_DESIGN), configs (CI scripts `check-adapt-schema-drift.{sh,cjs}`, `check-rule-h.sh`,
+  `pnpm-lock.yaml`, ClickHouse migration 0012), backlog (QUEUE/FOLLOW_UPS/ESCALATIONS), and
+  CONVENTIONS_PATCH.md (Rule H amendment).
+- **Key contracts changed:**
+  - `AdaptationDirectives.adapt_decision_id: string` (`packages/shared/src/directives.ts`) — **added,
+    required** — breaking: **yes** for any inline mock/fixture of the type (Rule G class — see §4).
+  - `packages/sdk/src/core/adapt-schema.ts` — **new** `adaptResponseSchema` (Zod `.passthrough()`)
+    replacing the unchecked `as AdaptResponse` cast in `adapt.ts` — breaking: no (internal), but it
+    makes `adapt_decision_id` a runtime-required field on every adapt response the SDK accepts.
+  - `buildSnippet(tenantId, apiKey)` (`DetectionPreview.tsx`) — now **exported** + emits
+    `data-decision-url="${CONTROL_PLANE_URL}/api"` — breaking: no (additive attribute); **this is the
+    BLOCKER fix** — previously the wizard snippet omitted `data-decision-url`, and the SDK guard
+    `if (!config.decisionApiUrl) return null` silently disabled adaptation for every wizard-onboarded
+    tenant.
+  - `POST/GET /api/adapt` (control-plane) — every response arm (GET, POST skip, POST holdout, POST
+    treatment) now returns `adapt_decision_id` — breaking: no (additive field).
+  - `POST /api/adapt` (decision-api Worker) — **replaced with `410 Gone`** + structured logging —
+    breaking: **yes** for any live caller of the Worker route (intended; ADR-0004 §2 already forbade
+    production use).
+  - `DECISION_API_URL` (`packages/shared/src/domains.ts`) — `@deprecated` — breaking: no.
+  - ClickHouse `adaptation_decisions.adapt_decision_id` column (migration 0012) — added with `''`
+    default — breaking: no (additive).
+
+### 2. Verification done in PR
+
+- Test files changed/added: `packages/sdk/src/__tests__/adapt-schema.test.ts` (new),
+  `packages/sdk/src/__tests__/adapt-canonical-url.integration.test.ts` (new),
+  `packages/sdk/src/__tests__/adapt.test.ts` (9 fixtures repaired), `apps/decision-api/.../adapt.test.ts`
+  (rewritten to 410-only — 960→~120 lines), `DetectionPreview.test.tsx` (buildSnippet assertions),
+  `mockup/layout.test.tsx` (new), `packages/sdk/e2e/fixtures/index.html` (mock adapt response gained
+  `adapt_decision_id`).
+- Assertions added: ~50 (adaptResponseSchema valid/missing/mismatch/out-of-enum/passthrough +
+  Sentry+null path; canonical-URL integration `snippet→readConfig→fetchDirectives` resolves to
+  `https://admin.estalara.com/api/adapt`; buildSnippet emits absolute https decision-url ending `/api`;
+  Worker 410 status + body shape + canonical host + no-archetype-selection + structured-logging-fires).
+- Coverage delta: net positive on SDK (`adapt-schema.ts` exhaustively covered) and DetectionPreview;
+  decision-api adapt suite shrank (no logic left to test beyond the 410 contract).
+- CI checks: **green at merge** on all real merge gates (Build, control-plane build, typecheck, lint,
+  Test Node 22, SDK E2E, `rule-h` incl. the two new adapt gates, `rule-j`, format, corpus, ClickHouse,
+  Doppler, Gitleaks). Pre-existing-red Rule I / Vercel Preview / Python lanes remain non-blocking per
+  QUEUE.md preamble. **Caveat:** CI was only obtained after ESC-011 was resolved (branch rename +
+  Actions-budget bump) — see §4 PF-1; the `feat/...` PR #149 ran **zero** CI for hours.
+
+**NOT verified by tests (load-bearing gaps — see §4):**
+
+- No test asserts the **POST skip/holdout arms LOG `adapt_decision_id` to ClickHouse** — they return it
+  in the body but never call `logDecisionAsync` (LG-1). The cross-correlation story is body-only on
+  those arms.
+- No test exercises a **live (non-mock) adapt response** through the SDK Zod schema against the real
+  control-plane route — drift is gated structurally by `check-adapt-schema-drift.cjs` (field-set
+  equality) but value-level contract conformance is only checked against hand-written fixtures.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- `packages/sdk/src/core/adapt-schema.ts` (new) — `adaptResponseSchema` is imported and used by
+  `packages/sdk/src/core/adapt.ts` (`fetchDirectives` parse path). Verified non-test importer present.
+  **Clean.**
+- `buildSnippet` (`DetectionPreview.tsx`) now `export`ed — consumed by the component itself + the test;
+  the export was added purely for unit testing. Component is a Next.js client component reached from the
+  onboarding wizard. **Clean** (false-positive class: component used in JSX, not via named import chain).
+- `apps/decision-api/src/app/api/adapt/route.ts` (`handleAdaptRequest`) — still wired into the Worker
+  `index.ts` router (returns 410). **Clean as wired**, BUT it is now the sole reason the decision-api
+  lib layer is retained — see HALF_WIRE note below and §4 LG-2.
+- CI scripts `check-adapt-schema-drift.{sh,cjs}`, `check-rule-h.sh` extension — invoked by the `rule-h`
+  CI job + pre-push lefthook (framework/config-discovered). **Clean.**
+
+**Orphaned-by-this-merge (DEAD_CODE, already owned by FOLLOW-107):** the decision-api lib layer
+`apps/decision-api/src/lib/{ab-assignment,ab-events,consent-gate,llm-gateway,reorder}.*` lost its sole
+production consumer when the Worker `/api/adapt` handler became a 410 stub. These are now
+production-unreachable (Rule I violations). **Not emitting a new FOLLOW** — FOLLOW-107 (Sprint 14)
+already owns their removal — but see §4 LG-2: FOLLOW-107's current scope text names the route file and
+the libs in prose, which is adequate. The Rule I CI lane is (correctly) pre-existing-red and tracks
+these until FOLLOW-107 lands.
+
+**CHECK B — Half-wire detection:**
+
+- **DB column `adaptation_decisions.adapt_decision_id` (ClickHouse, migration 0012)** — producer:
+  `logDecisionAsync(...)` on the GET arm and the POST **treatment** arm of the control-plane route;
+  consumer: no read path yet (future audit/cross-correlation; the body `adapt_decision_id` is the
+  primary artifact). Producer-present, no immediate reader → **HALF_WIRE_P**. Priority **P3** (the
+  column is an intentionally written-for-future-read audit artifact, same disposition as RETRO-007's
+  `dsr_audit_log.clickhouse_mutation_status`). → no FOLLOW; accept. **Asymmetry note:** the POST skip
+  and holdout arms return `adapt_decision_id` in the body but DO NOT write it to ClickHouse — so for
+  held-out / consent-skipped sessions there is no row to correlate against. Tracked as LG-1 → FOLLOW-110.
+- **Response field `adapt_decision_id` (SDK side)** — producer: control-plane route (all arms);
+  consumer: SDK `adaptResponseSchema` requires it (else `.parse()` throws → `null`). Both ends shipped
+  same PR. ✅ Wired. The E2E browser fixture was the one missing consumer-mock and was fixed in-PR.
+- **Worker `/api/adapt` 410 structured log** — producer: `console.warn('[decision-api] DEPRECATED ...')`
+  on every call; consumer: **a human reading logs / the FOLLOW-107 zero-traffic decision** — there is no
+  automated 7-day zero-traffic monitor or alert. This is the *sole* signal gating FOLLOW-107 retirement,
+  yet it is an unstructured-destination `console.warn` with no dashboard, query, or threshold defined.
+  **HALF_WIRE_P** (signal emitted, no consumer wired to act on it). Priority **P2** because FOLLOW-107's
+  go/no-go literally depends on it. → **FOLLOW-111**.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — `adapt_decision_id` logging asymmetry on the skip/holdout arms.** The control-plane
+  POST route generates one `adaptDecisionId` per request and returns it in all four arms, but
+  `logDecisionAsync(...)` is only called on the GET arm and the POST **treatment** arm. The **skip**
+  (consent) and **holdout** arms return the id in the body and then `return` without logging. Result:
+  for every held-out or consent-skipped session there is an `adapt_decision_id` on the wire with **no
+  corresponding `adaptation_decisions` row** to correlate against. This directly undercuts the
+  cross-correlation rationale documented in the `AdaptationDirectives.adapt_decision_id` JSDoc, and it
+  matters for FOLLOW-108 (explainability_id) and the pilot's audit story — holdout is exactly the arm
+  the CTA-lift comparison (TICKET-PILOT-003) leans on. → **FOLLOW-110** (P2).
+- **LG-2 (P3) — FOLLOW-107 scope adequacy.** FOLLOW-107 names `apps/decision-api/src/app/api/adapt/route.ts`
+  and lists the orphaned libs (`ab-assignment/ab-events/consent-gate/llm-gateway/reorder`) in its prose
+  scope, but its AC list only says "Handler code removed" — it does not enumerate the lib files as
+  explicit ACs, so a future agent could remove the route and leave the libs as Rule I red. Minor; folded
+  as a one-line AC addition recommendation rather than a new stub (see §7 note). Also: FOLLOW-107's
+  zero-traffic AC ("7+ day monitoring shows zero hits") has **no defined monitor** — that is LG-3/FOLLOW-111.
+- **LG-3 (P2) — the 410 zero-traffic signal has no monitor.** FOLLOW-107's gating AC assumes a 7-day
+  zero-traffic observation exists, but Wave 1 shipped only a `console.warn`. Without a structured sink
+  (Cloudflare Workers Logpush → a queryable destination, or a Sentry breadcrumb/metric) and a defined
+  query/threshold, FOLLOW-107 cannot be evidenced and will either stall or be approved on a guess. →
+  **FOLLOW-111** (P2).
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P3) — stale host string survives in ADR-0006 prose.** ADR-0006 §Decision 3 still drafts the
+  canonical host as `control-plane.estalara.com`; the live host is `admin.estalara.com` (CONTROL_PLANE_URL).
+  The code shipped correctly (the 410 body + snippet + tests all use `admin.estalara.com`), and the PR
+  commit messages + code comments call out the staleness — but the ADR body itself was annotated rather
+  than corrected in one spot. Low risk (a future reader could copy the wrong host from the ADR). → no
+  FOLLOW; fold a one-line correction into FOLLOW-107's doc-update AC (it already touches §Snapshot.7).
+- **CB-2 (none functional).** The Zod-required-field regression (E2E fixture missing `adapt_decision_id`
+  → `adaptedCount=0` → 2 Playwright specs red) was a *real* bug, caught only by CI (not by the vitest
+  unit suite, which had its own fixtures repaired separately). It was fixed in-PR (fixture gained the
+  field). It is recorded here as the headline test-process finding — see §4c TG-1 + §6 Pattern.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1, process) — making a response field newly-required (Zod / strict typing) is not covered by
+  a repo-wide fixture sweep, and vitest unit suites cannot catch a browser-only E2E fixture.** This merge
+  required updating mocks in THREE independent places for one field: (a) 9 vitest fixtures in
+  `adapt.test.ts`, (b) the new `adapt-schema.test.ts` fixtures, and (c) the Playwright browser fixture
+  `e2e/fixtures/index.html`. Only (c) was missed initially and only CI (not local vitest) caught it. This
+  is **Rule G's exact pattern** (breaking type change → grep all inline mocks) extended to a surface Rule
+  G's verification command (`pnpm typecheck`) does NOT reach: an HTML/JS string fixture is not typechecked.
+  I confirmed via grep that **no other adapt-response mock currently omits `adapt_decision_id`** — the
+  only browser adapt mock is `e2e/fixtures/index.html` (now fixed) and the `consent`/`adapt-dom-mutations`
+  specs reuse that fixture rather than defining their own. So no residual fixture gap exists today. →
+  prevention captured as a Rule G amendment recommendation in §6 (NOT promoted — see §10) and a sweep AC
+  folded into FOLLOW-109.
+- **TG-2 (P2) — no live-contract test for the SDK Zod schema.** `check-adapt-schema-drift.cjs` asserts
+  field-set equality between `adaptResponseSchema` and `AdaptationDirectives` (structural). But no test
+  feeds an **actual** control-plane `/api/adapt` response (real route handler, mocked DB) through
+  `adaptResponseSchema.parse()` to prove value-level conformance. A value-type drift (e.g. server sends
+  `confidence` as a string) would pass the structural gate and the hand-written fixtures, then fail only
+  in a real browser. → **FOLLOW-112** (P2).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — ADR-0006 host staleness (= CB-1).** Fold correction into FOLLOW-107. No separate stub.
+- **DG-2 (P3) — the `data-decision-url` "host + `/api`, SDK appends `/adapt`" convention is documented
+  only in code comments** (`DetectionPreview.tsx`, `mockup/layout.tsx`) and not in any tenant-facing
+  install doc or Master Design SDK-config surface table. TICKET-PILOT-001 (manual SDK install on
+  app.estalara.com) and any future external tenant snippet will re-derive this and can get it wrong
+  (bare host → `/adapt` → 404; relative `/api` → resolves against tenant origin → wrong host). Same
+  config-surface-documentation class as RETRO-009 DG-1 / FOLLOW-071. → fold into FOLLOW-071 family sweep
+  (no new stub); flagged for TICKET-PILOT-001 in §5a.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-097 (Sprint 13a, READY — Wave 2):** thread `inquiry_submit_selector` into SDK
+  `setupObservers`. Not directly affected by the adapt-response change, but it touches the SAME SDK init
+  path (`packages/sdk/src/index.ts`) that the canonical-URL `readConfig` flow runs through. Low coupling;
+  no spec change needed.
+- **FOLLOW-106 (Sprint 13a, READY — Wave 2):** `tenants.pilot_frozen` flag, with a runtime check in "the
+  SDK adapt route." That check must be added to the **canonical control-plane** `/api/adapt`
+  (`apps/control-plane/.../route.ts`) — NOT the Worker route, which is now 410. FOLLOW-106's scope text
+  says "the SDK adapt route" ambiguously; **PM should confirm FOLLOW-106 targets the control-plane route**
+  post-FOLLOW-105. Flagged.
+- **TICKET-PILOT-001 (Sprint 13b Lane B, READY, gated behind Lane A):** **Most affected.** The pilot SDK
+  install on app.estalara.com must use `data-decision-url="https://admin.estalara.com/api"` (host + `/api`,
+  SDK appends `/adapt`). PILOT-001's spec predates this convention. Two concrete risks: (1) if the install
+  omits `data-decision-url`, adaptation is silently off (the exact BLOCKER this PR fixed for the *wizard*
+  path — but PILOT-001 is a *manual* `+layout.svelte` install, a different code path the wizard fix does
+  NOT cover); (2) wrong form (bare host or relative path) → 404 or wrong-origin. **PM action: add an
+  explicit AC to PILOT-001 requiring the absolute `${CONTROL_PLANE_URL}/api` decision-url and a smoke
+  assertion that the first adapt response is a 200 from `admin.estalara.com/api/adapt`.** This pairs with
+  the still-open FOLLOW-097 inquiry-selector threading (RETRO-009) — both are "the manual pilot install
+  must wire SDK config that the wizard/tests exercise but the hand-written install does not."
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-107 (Sprint 14):** depends on a zero-traffic monitor that does not exist yet (LG-3 → FOLLOW-111
+  is its prerequisite). FOLLOW-107 should `depends_on: [FOLLOW-111]`. Its AC list should enumerate the
+  orphaned lib files (LG-2) and correct the ADR-0006 host string (CB-1/DG-1).
+- **FOLLOW-108 (Sprint 14, explainability_id):** inherits the LG-1 logging-asymmetry decision — when it
+  wires `explainability_id` to the audit trail, it must decide whether holdout/skip arms also persist a
+  correlatable row, or the audit trail will have body-only ids with no backing row for those arms.
+  FOLLOW-110 (this retro) should land before or with FOLLOW-108.
+- **FOLLOW-109 (Sprint 14, SDK Zod rollout):** the direct extension of this PR's `adapt-schema.ts`
+  pattern. Its AC should absorb the §4c TG-1 fixture-sweep lesson (every browser/E2E mock of each newly
+  Zod-validated response must be updated, not just vitest fixtures) and the TG-2 live-contract test idea.
+- **FOLLOW-103 / FOLLOW-104 (Lane C, app.estalara.com DOM adaptation + ReorderDirective):** these consume
+  the adapt response `directives[]` array shape via the SDK. The Zod `adaptResponseSchema` uses
+  `.passthrough()` and validates the directive discriminated union (text/class/reorder) — so FOLLOW-103/104
+  directives WILL validate as long as they conform to the existing `TextDirective`/`ReorderDirective`
+  shapes. **No breaking impact**, but FOLLOW-103/104 authors must know: any NEW directive `type` they add
+  must be added to `directiveSchema` (the discriminated union in `adapt-schema.ts`) or the SDK Zod parse
+  will reject the whole response and return `null` (silently disabling ALL adaptation, not just the new
+  directive). This is a sharp edge the `.passthrough()` at the top level does NOT protect against (the
+  union is strict on `type`). Flagged for FOLLOW-103/104 specs.
+
+#### 5c. Contracts changed that other modules rely on
+
+- **`AdaptationDirectives` gained a required `adapt_decision_id`.** Any module constructing this type
+  inline (control-plane route arms, SDK fixtures, any future Modal/worker producer) must set it. Verified:
+  the only producer is the control-plane route (all arms set it); the only validating consumer is the SDK
+  schema (requires it); all repo fixtures now include it.
+- **Worker `decision.estalara.com/api/adapt` now returns 410.** Any external integration still pointing at
+  the Worker host breaks (intended). `DECISION_API_URL` is `@deprecated`; snippet generators must use
+  `CONTROL_PLANE_URL`. The buildSnippet fix enforces this for the wizard path; PILOT-001 manual install is
+  the remaining unguarded path (§5a).
+
+#### 5d. Architectural assumptions affected
+
+- **Master Design §Snapshot.7 risk #1 (dual `/api/adapt`) — flipped OPEN → RESOLVED** by this merge (per
+  QUEUE.md preamble + ADR-0006 ACCEPTED). The architecture now has ONE production adapt path
+  (control-plane, 18-archetype + playbook + LLM + RAG); the Worker path is a 410 stub pending FOLLOW-107
+  physical removal. This is now Master_Design-as-truth: any reintroduction of archetype-selection logic
+  into the Worker is a Rule H-amendment (2026-05-25) CI violation.
+- **ADR-0004 → ADR-0006 chain:** ADR-0004's draft response contract was replaced "live wins" with the
+  actual `AdaptationDirectives` field table; `explainability_id` is documented as `[DEFERRED to
+  FOLLOW-108]`. The ADR corpus now reflects shipped reality rather than the original design draft — a
+  healthy doc-as-truth reconciliation.
+
+### 6. New lesson candidates
+
+- **Pattern — "Newly-required response field breaks browser/E2E string fixtures that typecheck cannot
+  reach."** This is a **direct extension of the existing Rule G** (breaking type change → grep all inline
+  mocks). Rule G's *verification* is `pnpm typecheck`, which catches TS inline mocks but NOT (a) HTML/JS
+  string fixtures (`e2e/fixtures/index.html`), (b) JSON fixture files, or (c) any mock that lives outside
+  the type system (Playwright `route.fulfill({ body: JSON.stringify(...) })`). Seen in: **RETRO-010 (this)**.
+  Prior Rule G evidence: RETRO-001/TICKET-046 (`MOCK_PLAYBOOK` TS inline mock — typecheck-caught). The
+  *new sub-case* (out-of-typesystem string/JSON fixture, CI-E2E-caught only) is distinct. **Count for this
+  specific sub-case: 1.** Threshold (2) NOT met. Do NOT amend Rule G yet. If it recurs (e.g. FOLLOW-109's
+  broader Zod rollout produces the same fixture-miss), promote a Rule G amendment: "When a field becomes
+  required on a type that any SDK API response is built from, the grep sweep MUST include `*.html`, `*.json`,
+  and Playwright `route.fulfill` bodies — typecheck does not cover these." Tracked here for the next retro.
+- **Pattern — "CI-trigger branch-prefix allowlist silently yields zero CI for off-convention branches"
+  (process).** ESC-011: PR #149 was on `feat/...`, which matches neither `ci.yml`'s `push.branches`
+  agent-prefix allowlist nor (because no PR-to-main existed at that moment, and `pull_request.branches`
+  only fires for PRs targeting main) the `pull_request` trigger → **zero CI runs**, so CI-green was
+  unverifiable and the ticket could not be marked READY. Fixed by renaming to `architect/FOLLOW-105-...`.
+  Seen in: **RETRO-010 (this) — FIRST occurrence in the retro corpus** (grep of RETROSPECTIVES.md for
+  branch-naming/CI-trigger findings returned nothing prior). **Count: 1.** Threshold (2) NOT met. Do NOT
+  promote a rule. → **FOLLOW-113** (P2) hardens this structurally regardless (it is a latent foot-gun: the
+  current working branch `feat/follow-105-1a-sdk-audit` is itself an example of a branch that gets no push
+  CI). If a second branch-naming/CI-trigger incident occurs, promote a Rule: "all working branches MUST use
+  an agent prefix (`<agent>/<ticket>-...`); CI push-trigger allowlists only those prefixes by design — a
+  `feat/`/`fix/` branch will run zero CI until a PR-to-main is opened."
+
+### 7. Follow-ups
+
+- **FOLLOW-110** (P2, backend-engineer, 1.5h, Sprint 14): log `adapt_decision_id` on the POST skip +
+  holdout arms (call `logDecisionAsync` with the held-out/skip context) so every returned id has a
+  correlatable `adaptation_decisions` row. Closes LG-1. Sequence before/with FOLLOW-108.
+- **FOLLOW-111** (P2, devops-engineer + backend-engineer, 2h, Sprint 14): wire the Worker `/api/adapt` 410
+  `console.warn` to a structured, queryable sink (Cloudflare Workers Logpush or a Sentry metric) and define
+  the 7-day zero-traffic query + threshold that FOLLOW-107 retirement depends on. Closes LG-3; prerequisite
+  for FOLLOW-107.
+- **FOLLOW-112** (P2, qa-engineer + sdk-engineer, 1.5h, Sprint 14): live-contract test — feed an actual
+  control-plane `/api/adapt` response (real route handler, mocked DB) through `adaptResponseSchema.parse()`
+  to prove value-level (not just structural) conformance. Closes TG-2.
+- **FOLLOW-113** (P2, devops-engineer, 1h, Sprint 14): harden the `ci.yml` trigger so off-convention
+  branches do not silently run zero CI — either add a `branches: ['**']` push trigger with path filters, or
+  a lightweight `pre-push` / repo-policy check that fails fast on a non-agent-prefixed branch with a clear
+  "rename to `<agent>/...` to get CI" message. Closes the ESC-011 process gap.
+- **Note (no stub):** PM should (a) add an AC to **FOLLOW-107** enumerating the orphaned decision-api lib
+  files + the ADR-0006 host-string correction, and set `depends_on: [FOLLOW-111]`; (b) confirm **FOLLOW-106**
+  targets the control-plane route (not the 410 Worker); (c) add a `data-decision-url` AC to
+  **TICKET-PILOT-001** (§5a); (d) fold DG-2 into the FOLLOW-071 SDK-config-surface doc sweep.
+
+### 8. Cross-references
+
+- **RETRO-001 (TICKET-046, Rule G origin):** RETRO-010 §4c TG-1 is the next instance of the Rule G class
+  (breaking required-field change → mock sweep), in a new sub-form (out-of-typesystem string/JSON/E2E
+  fixtures that `pnpm typecheck` cannot catch). Tracked as a Rule G amendment candidate (§6, threshold not
+  met).
+- **RETRO-009 (TICKET-PILOT-004):** Same SDK init / "manual pilot install must wire config the
+  wizard+tests exercise but the hand install does not" cascade onto TICKET-PILOT-001. RETRO-009's FOLLOW-097
+  (inquiry-selector threading) and RETRO-010's §5a `data-decision-url` AC are sibling PILOT-001
+  prerequisites — PM should bundle them into the PILOT-001 readiness checklist. RETRO-009 DG-1 and
+  RETRO-010 DG-2 are the same SDK-config-surface documentation gap (FOLLOW-071 family).
+- **RETRO-002 / RETRO-003 (Rule H origin) + Rule H amendment (2026-05-25):** This PR SHIPPED the Rule H
+  amendment it is governed by (adapt schema-drift gate + Worker 410/no-archetype-selection gate). The
+  amendment held: the Worker route is 410, the SDK schema field-set equals `AdaptationDirectives`, and
+  `check-adapt-schema-drift` + `check-rule-h.sh` enforce both in the `rule-h` CI lane. The decision-api lib
+  orphaning is a known Rule I red owned by FOLLOW-107 (not a new violation introduced here).
+- **RETRO-007 (Sprint 11):** §3 HALF_WIRE_P disposition for the `adapt_decision_id` ClickHouse column
+  mirrors RETRO-007's `dsr_audit_log.clickhouse_mutation_status` "written-for-future-read audit artifact"
+  P3 accept-no-FOLLOW reasoning.
+
+### 9. Rule promotion
+
+**No new Rule promotion this retro.** Two candidate patterns surfaced (§6), both at count 1 (threshold 2
+not met):
+
+1. **Rule G out-of-typesystem-fixture amendment** — count 1 (RETRO-010). Rule G's TS-inline-mock case is
+   from RETRO-001; the string/JSON/E2E-fixture sub-case is new this retro. Track; promote a Rule G
+   amendment if FOLLOW-109's Zod rollout reproduces it.
+2. **CI-trigger branch-prefix allowlist (ESC-011)** — count 1 (RETRO-010, first in corpus). Track; promote
+   a branch-naming rule if a second incident occurs. FOLLOW-113 hardens it structurally regardless.
+
+The **Rule H amendment (2026-05-25)** that this PR ships is itself the codification of the FOLLOW-105
+finding class — it was authored as part of this work (≥2-retro threshold satisfied by the ADR-0004/0006
++ substep-1a-audit evidence chain), so no further rule is needed for the canonical-adapt-drift pattern.
+
+### 10. Cross-references summary (for PM-orchestrator)
+
+Related to RETRO-001 (Rule G), RETRO-002/003 (Rule H + amendment shipped here), RETRO-007 (audit-column
+HALF_WIRE_P disposition), RETRO-009 (PILOT-001 manual-install config cascade + FOLLOW-071 doc-surface gap).
+
+---
+
+<!-- RETRO-011 and beyond will be appended here by the retrospective-analyst agent -->

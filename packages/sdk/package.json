@@ -1,6 +1,6 @@
 {
   "name": "@estalara/sdk",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "Estalara adaptive listings core embeddable SDK",
   "main": "./dist/index.js",

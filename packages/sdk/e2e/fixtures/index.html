@@ -101,6 +101,7 @@
         // Mock decision API: return yield_hunter directives
         if (urlStr.includes('mock-decision')) {
           var mockResponse = {
+            adapt_decision_id: '00000000-0000-4000-8000-000000000001',
             session_id: 'test-session-001',
             archetype: 'yield_hunter',
             confidence: 0.9,

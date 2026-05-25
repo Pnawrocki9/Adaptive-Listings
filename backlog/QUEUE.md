@@ -2126,7 +2126,7 @@ min Piotr action).
 - id: FOLLOW-105
   title: Canonical /api/adapt ADR + enforce one production path (ADR-0006)
   agent: architect + backend-engineer + sdk-engineer
-  status: READY
+  status: IN_PROGRESS # substep 1a (read-only audit) IN_PROGRESS since 2026-05-25; 1b/1c/1d BLOCKED pending CEO review
   priority: P0
   estimated_hours: 8-10
   depends_on: []
@@ -2335,15 +2335,23 @@ measurement window.
 
 ## Currently in flight
 
-_Sprint 13a/13b OPEN, no agents spawned yet._ **CEO ratified all `DECISION NEEDED` markers
-2026-05-25 → `APPROVED_TO_IMPLEMENT=true`** (B1–B8 closed). Phase-0 specs RATIFIED
-(`docs/specs/PILOT_CTA_LIFT_METRIC_v1.md`, `docs/ops/PILOT_FREEZE_RULE.md`,
-`docs/ops/PILOT_RUNBOOK.md`, `docs/adr/ADR-0006-canonical-adapt-enforcement.md`). Sprint 13a Lane A
-= **6 tickets** (FOLLOW-105 P0
+**Sprint 13a Lane A — PHASED spawn (Scenario A, CEO decision 2026-05-25). Phase 1 IN_PROGRESS.**
 
-- FOLLOW-106 P2 + 094/098/093/097); ~26.5–28.5h with Lane B. Remaining pre-spawn human action:
-  provision DOPPLER_TOKEN_DEV (ESC-010) + E2E_BEARER_TOKEN (ESC-009). Agent spawn for Lane A comes
-  in the next instruction.
+- **FOLLOW-105 substep 1a — IN_PROGRESS (since 2026-05-25).** Read-only SDK config + runtime audit.
+  Branch: `feat/follow-105-1a-sdk-audit`. Agent: architect (sonnet, audit-only). Output:
+  `docs/audits/FOLLOW-105-1a-sdk-audit.md`. **[BLOCKER] surfaced:** `buildSnippet()`
+  (`DetectionPreview.tsx:97`) emits no `data-decision-url`, so every wizard-onboarded tenant has
+  adaptation silently disabled (SDK `adapt.ts:475` returns null). PR tagged `[BLOCKER]`, awaiting
+  CEO review of audit findings.
+- **Phase 2 BLOCKED pending CEO review** of the 1a audit findings: substeps 1b/1c/1d +
+  FOLLOW-106/094/098/093/097. PM will NOT spawn Phase 2 until CEO issues the next instruction.
+
+CEO ratified all `DECISION NEEDED` markers 2026-05-25 → `APPROVED_TO_IMPLEMENT=true` (B1–B8 closed).
+Phase-0 specs RATIFIED (`docs/specs/PILOT_CTA_LIFT_METRIC_v1.md`, `docs/ops/PILOT_FREEZE_RULE.md`,
+`docs/ops/PILOT_RUNBOOK.md`, `docs/adr/ADR-0006-canonical-adapt-enforcement.md`). Sprint 13a Lane A
+= **6 tickets** (FOLLOW-105 P0 + FOLLOW-106 P2 + 094/098/093/097); ~26.5–28.5h with Lane B.
+Remaining pre-spawn human action before Phase 2: provision DOPPLER_TOKEN_DEV (ESC-010) +
+E2E_BEARER_TOKEN (ESC-009).
 
 ## Awaiting human review (0 PRs)
 

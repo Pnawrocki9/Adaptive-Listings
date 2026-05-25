@@ -1,6 +1,6 @@
 # Backlog Queue
 
-**Updated 2026-05-24T00:00Z by pm-orchestrator.** Sprint 11 COMPLETE as of 2026-05-24 (5 P1
+**Updated 2026-05-25T11:15Z by pm-orchestrator.** Sprint 11 COMPLETE as of 2026-05-24 (5 P1
 pilot-blockers merged: #135 FOLLOW-063, #136 FOLLOW-069, #137 FOLLOW-068, #138 FOLLOW-040, #139
 FOLLOW-039). RETRO-007 written; Master Design bumped to v2.5; AI Council Checkpoint 2026-05-24
 approved Sprint 12 as "controlled pilot launch on app.estalara.com". Sprint 12 OPEN — 10 tickets
@@ -58,7 +58,7 @@ updates.
 | 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)                                                             | 6       | 6    | 0       | 0     | 0       |
 | 10     | 12    | Close the bandit loop + real embeddings + e2e test                                                                        | 9       | 9    | 0       | 0     | 0       |
 | 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                                                          | 9       | 5    | 0       | 4     | 0       |
-| 12     | 14    | Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI)                                      | 10      | 0    | 0       | 9     | 0       |
+| 12     | 14    | Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI)                                      | 10      | 5    | 0       | 4     | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -1859,12 +1859,13 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 - id: FOLLOW-081
   title: ClickHouse mutation-poll integration test against system.mutations
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-039]
   assigned_to: data-engineer
   started_at: '2026-05-24T12:00:00Z'
+  completed_at: '2026-05-25'
   pr: '#143'
   branch: data-engineer/FOLLOW-081-clickhouse-integration-test
   model: opus-4.7-xhigh
@@ -1906,12 +1907,13 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 - id: FOLLOW-075
   title: Require VERCEL_CRON_SECRET on /api/dsr/mutation-poll endpoint
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 1
   depends_on: []
   assigned_to: backend-engineer
   started_at: '2026-05-24T12:00:00Z'
+  completed_at: '2026-05-25'
   pr: '#142'
   branch: backend-engineer/FOLLOW-075-cron-secret
   model: sonnet-4.6
@@ -1926,12 +1928,13 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 - id: FOLLOW-078
   title: DSR failure alerting — PagerDuty or Sentry alert on stuck/failed mutations
   agent: compliance-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 1.5
   depends_on: [FOLLOW-039]
   assigned_to: compliance-engineer
   started_at: '2026-05-24T12:00:00Z'
+  completed_at: '2026-05-25'
   pr: '#145'
   branch: compliance-engineer/FOLLOW-078-dsr-alerting
   model: sonnet-4.6
@@ -1985,12 +1988,13 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 - id: TICKET-PILOT-003
   title: CTA lift dashboard — baseline vs adapted, holdout comparison, conversion funnel
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: []
   assigned_to: data-engineer
   started_at: '2026-05-24T12:00:00Z'
+  completed_at: '2026-05-25'
   pr: '#146'
   branch: data-engineer/TICKET-PILOT-003-cta-lift-dashboard
   model: opus-4.7-xhigh
@@ -2007,12 +2011,13 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 - id: TICKET-PILOT-004
   title: Inquiry starts tracking — event mapping from app.estalara.com forms, dashboard panel
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 2
   depends_on: [TICKET-PILOT-001]
   assigned_to: backend-engineer
   started_at: '2026-05-24T12:00:00Z'
+  completed_at: '2026-05-25'
   pr: '#144'
   branch: backend-engineer/TICKET-PILOT-004-inquiry-tracking
   model: sonnet-4.6
@@ -2059,28 +2064,24 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 
 _(all Sprint 12 tickets are now READY_FOR_REVIEW — no active agents)_
 
-## Awaiting human review (6 PRs)
+## Awaiting human review (0 PRs)
 
-### Lane A — Pilot-critical hardening
-
-- FOLLOW-081 — PR #143 — CI green — ClickHouse integration test (3 scenarios, soft-skip without
-  CLICKHOUSE_URL) — note: agent used fetch-based helpers (not @clickhouse/client) matching
-  production code pattern; full E2E ACs (4-table, retry path, GH workflow) deferred to qa-engineer
-- FOLLOW-075 — PR #142 — CI green — CRON_SECRET auth hardened (returns 401 when unset), .env.example
-  updated, ≥3 auth unit tests added
-- FOLLOW-078 — PR #145 — CI green — stuck mutation detection + Sentry captureMessage(warning) added
-  to GET /api/dsr/mutation-poll; DSR_ALERTING.md + DPIA §8 update; commitlint PILOT- prefix fix
-
-### Lane C — ROI instrumentation
-
-- TICKET-PILOT-003 — PR #146 — CI green — CTA lift dashboard + two-proportion z-test lib +
-  /api/pilot/cta-lift route + /dashboard/pilot page; 26 tests; FOLLOW-086 stub added; route-helpers
-  extraction fix applied (Next.js 15 route segment type constraint)
-- TICKET-PILOT-004 — PR #144 — CI green — inquiry starts tracking: SDK observer, /api/pilot/inquiry-
-  starts route, dashboard panel coordinated with TICKET-PILOT-003; ≥6 tests
+_(Lane A complete, Lane C complete — no PRs in flight. Next: TICKET-PILOT-001 Lane B activation.)_
 
 ## Recent merges
 
+- 2026-05-25 — TICKET-PILOT-003 (PR #146): CTA lift dashboard — /api/pilot/cta-lift + two-proportion
+  z-test lib (pilot-stats.ts) + conversion funnel + by-archetype table + /dashboard/pilot unified
+  page (merged with TICKET-PILOT-004 union); FOLLOW-086 stub; 26 tests
+- 2026-05-25 — TICKET-PILOT-004 (PR #144): Inquiry starts tracking — SDK observer for
+  inquiry.started, /api/pilot/inquiry-starts route, InquiryStartsPanel; FOLLOW-091 stub; 9 tests
+- 2026-05-25 — FOLLOW-078 (PR #145): DSR failure alerting — stuck mutation detection (>1h pending)
+  - Sentry captureMessage(warning) with row metadata; DSR_ALERTING.md + DPIA §8 update; commitlint
+    PILOT- prefix fix; 11 tests
+- 2026-05-25 — FOLLOW-075 (PR #142): CRON_SECRET auth hardened on /api/dsr/mutation-poll — returns
+  401 when CRON_SECRET unset; .env.example updated; ≥3 auth unit tests
+- 2026-05-25 — FOLLOW-081 (PR #143): ClickHouse mutation-poll integration test — 3 scenarios
+  (pending→done, not-found, idempotent retry); soft-skip without CLICKHOUSE_URL
 - 2026-05-24 — FOLLOW-039 (PR #139): ClickHouse DSR hard-delete — Art. 17 erasure on
   adaptation_decisions + events + llm_calls + session_quality; Vercel-Cron poller + 3-retry backoff;
   dsr_clickhouse_mutations Postgres operational state table; EU pilot gate cleared; Master Design

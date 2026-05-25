@@ -106,6 +106,13 @@
       "when": 1779840000000,
       "tag": "0014_dsr_clickhouse_mutations",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1748304000000,
+      "tag": "0015_pilot_frozen",
+      "breakpoints": true
     }
   ]
 }

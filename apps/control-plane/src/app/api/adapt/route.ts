@@ -51,12 +51,96 @@ import {
   fetchArchetypeEmbedding,
   LISTING_EMBEDDING_BATCH_LIMIT,
 } from '@/lib/embedding-lookup';
+import { createAdminClient, tenants } from '@estalara/db';
+import { eq } from 'drizzle-orm';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CONFIDENCE_THRESHOLD = 0.6;
 const HIGH_SIMILARITY_THRESHOLD = 0.85;
 const LOW_SIMILARITY_THRESHOLD = 0.6;
+
+// ─── Pilot freeze guard (FOLLOW-106) ─────────────────────────────────────────
+
+/**
+ * Lane C feature flags that must not be silently active while the pilot tenant
+ * is in the measurement window (`pilot_frozen = true`).
+ *
+ * Each flag key maps to a path inside the `quizConfig` JSONB column. New Lane C
+ * flags (e.g. `tenants.quiz_enabled` from FOLLOW-102, intent-engine toggles from
+ * FOLLOW-087/100/101) should be added here as they land. The check is intentionally
+ * conservative — unknown/undefined values are treated as inactive (flag absent = safe).
+ *
+ * Per PILOT_FREEZE_RULE.md §Decision 3 and Master Design v3.0: this warning is
+ * NON-BLOCKING. It never changes the response or throws; it is purely observability.
+ */
+const LANE_C_FLAG_KEYS = [
+  'lane_c_active', // generic escape-hatch flag — any explicitly set sentinel
+  'intent_engine_enabled', // FOLLOW-087/100/101 — chat NLP intent bridge
+  'quiz_enabled', // FOLLOW-102 — quiz widget ON/OFF toggle
+  'shadow_mode_override', // explicit shadow-mode bypass flag
+] as const;
+
+/**
+ * Reads the tenant record from Postgres and emits a structured warning (via
+ * `console.warn`) when `pilot_frozen = true` AND any Lane C feature flag is
+ * active in `quizConfig`.
+ *
+ * Failure modes:
+ *   - DB unavailable / query error → silently no-ops (warning omitted, never throws).
+ *   - `tenantId` is `'unknown'` or empty → skipped (no query issued).
+ *
+ * This function is fire-and-forget: callers do NOT await it. It must never
+ * block or alter the HTTP response.
+ *
+ * @param tenantId  - Tenant UUID resolved from JWT or request header.
+ * @param requestId - Per-request UUID for log correlation.
+ */
+function checkPilotFrozenAsync(tenantId: string, requestId: string): void {
+  if (!tenantId || tenantId === 'unknown') return;
+
+  // Fire-and-forget — never awaited, never surfaces to callers.
+  void (async () => {
+    try {
+      const db = createAdminClient();
+      const rows = await db
+        .select({
+          pilotFrozen: tenants.pilotFrozen,
+          quizConfig: tenants.quizConfig,
+        })
+        .from(tenants)
+        .where(eq(tenants.id, tenantId))
+        .limit(1);
+
+      const row = rows[0];
+      if (!row?.pilotFrozen) return;
+
+      // pilot_frozen = true — check for any active Lane C flag.
+      const cfg = (row.quizConfig ?? {}) as Record<string, unknown>;
+      const activeFlags = LANE_C_FLAG_KEYS.filter((key) => cfg[key] === true);
+
+      if (activeFlags.length > 0) {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            event: 'pilot_frozen_lane_c_active',
+            tenant_id: tenantId,
+            request_id: requestId,
+            active_lane_c_flags: activeFlags,
+            message:
+              'Tenant has pilot_frozen=true but Lane C feature flags are active. ' +
+              'This may contaminate the CTA-lift measurement window. ' +
+              'Per PILOT_FREEZE_RULE.md, Lane C features must be gated OFF while ' +
+              'the measurement window is open. This warning is non-blocking.',
+          }),
+        );
+      }
+    } catch (err: unknown) {
+      // Analytics/observability failures must never surface to callers.
+      console.error('[adapt] pilot_frozen check failed:', err instanceof Error ? err.message : err);
+    }
+  })();
+}
 
 // ─── POST body schema ─────────────────────────────────────────────────────────
 
@@ -504,6 +588,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // Prefer JWT-verified tenant_id; fall back to x-tenant-id for SDK calls without JWT.
   const tenantId =
     (await getAuthClaims(req))?.tenant_id ?? req.headers.get('x-tenant-id') ?? 'unknown';
+
+  // ── Pilot freeze guard (FOLLOW-106) — non-blocking, fire-and-forget ────────
+  checkPilotFrozenAsync(tenantId, requestId);
+
   logDecisionAsync(
     sessionId,
     tenantId,
@@ -570,6 +658,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const body = parsed.data;
+
+  // ── Pilot freeze guard (FOLLOW-106) — non-blocking, fire-and-forget ────────
+  // Emits a structured warning if pilot_frozen=true AND any Lane C feature flag
+  // is active. Must run as early as possible so the warning precedes any response.
+  checkPilotFrozenAsync(body.tenant_id, crypto.randomUUID());
 
   // FOLLOW-105 / ADR-0006 §Decision 4C: stable per-decision UUID. Generated once
   // per request and returned in EVERY response arm (skip, holdout, treatment) and

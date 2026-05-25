@@ -81,3 +81,33 @@ which remains the separate QA/canary tenant.)
 - `docs/specs/PILOT_CTA_LIFT_METRIC_v1.md` (defines the measurement window).
 - `docs/ops/PILOT_RUNBOOK.md` (go/no-go + abort).
 - QUEUE.md Sprint 13b Lane C (freeze-sequencing note on FOLLOW-099/103).
+
+## Implementation — `pilot_frozen` column and runtime warning (FOLLOW-106)
+
+**DB column:** `packages/db/src/schema/tenants.ts` —
+`pilotFrozen: boolean('pilot_frozen').notNull().default(false)`. Migration:
+`packages/db/migrations/0015_pilot_frozen.sql`.
+
+**Runtime warning:** `apps/control-plane/src/app/api/adapt/route.ts` — function
+`checkPilotFrozenAsync()`. Runs fire-and-forget on every call to `GET /api/adapt` and
+`POST /api/adapt`. When `pilot_frozen = true` AND any of the Lane C feature flags listed in
+`LANE_C_FLAG_KEYS` is set to `true` in `tenants.quizConfig`, emits a structured `console.warn` JSON
+log with `event: "pilot_frozen_lane_c_active"` and `active_lane_c_flags: [...]`.
+
+The warning is **non-blocking** — it never alters the response or throws. It is purely
+observability: operators monitor Vercel/Sentry logs for this event during the measurement window.
+
+Lane C flags currently checked (expand as new Lane C features land):
+
+- `lane_c_active` — generic escape-hatch sentinel
+- `intent_engine_enabled` — FOLLOW-087/100/101 (chat NLP intent bridge)
+- `quiz_enabled` — FOLLOW-102 (quiz widget ON/OFF toggle)
+- `shadow_mode_override` — explicit shadow-mode bypass flag
+
+**Set the flag:** TICKET-PILOT-001 step 5 — on shadow→live flip, execute:
+
+```sql
+UPDATE tenants SET pilot_frozen = true WHERE id = '<pilot-tenant-uuid>';
+```
+
+or via the Supabase dashboard / `PATCH /api/tenants/:id` once that endpoint supports the column.

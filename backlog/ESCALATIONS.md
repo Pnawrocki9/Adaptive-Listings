@@ -415,3 +415,68 @@ Provisioning `E2E_BEARER_TOKEN` now is still recommended so it is ready the mome
 unblocks the job.
 
 **Resolution:** (pending — awaiting DevOps/Piotr action)
+
+---
+
+## RESOLVED — ESC-011: GitHub Actions not starting any runs — FOLLOW-105 Wave-1 PR #149 cannot get CI green
+
+**Filed by:** pm-orchestrator **Date:** 2026-05-25T20:30:00Z **Affects:** FOLLOW-105 Wave 1 (PR
+#149, `feat/follow-105-1bcd-canonical-adapt-enforcement`) and ALL subsequent PRs **Type:**
+repo-config / account
+
+**Description:** PR #149 (FOLLOW-105 Wave 1) was opened and pushed, but the GitHub Actions `CI`
+workflow created **zero runs** for it. Diagnosis:
+
+- The CI workflow is `active` (not disabled) — confirmed via `gh workflow list`.
+- There have been **no workflow runs of any kind across the whole repo since 2026-05-25T15:08:45Z**
+  (the #148 merge-to-main push). My PR was created well after that and got nothing.
+- `ci.yml` `on.push.branches` only matches `main` + agent-prefixed branches (`sdk-engineer/**`,
+  `architect/**`, …). A `feat/**` branch like #149's does NOT match the push trigger — but the
+  `on.pull_request → main` trigger should still fire (it DID for #148's
+  `feat/follow-105-1a-sdk-audit` branch at 14:54).
+- Close/reopen of #149 (to re-fire the `pull_request` event) produced **no new run**.
+
+**Most likely cause:** a **GitHub Actions minutes / billing limit** reached on the `Pnawrocki9`
+personal account after 15:08 (workflows stay "active" but GitHub silently stops starting new runs),
+or a transient GitHub Actions incident. Only the account owner can confirm/resolve.
+
+**Impact:** Per CLAUDE.md, PM cannot mark a ticket READY_FOR_REVIEW until CI is green. With Actions
+not running, CI-green is unverifiable on the platform. PM has validated locally instead (see below),
+but this blocks the documented merge gate for #149 and every future PR until Actions runs again.
+
+**Local validation already performed (substitute evidence while Actions is down):**
+
+- `pnpm turbo run build typecheck test`: all pass except `@estalara/e2e-smoke` (needs a live ingest
+  Worker at 127.0.0.1:8787 — environmental; pre-existing-red on merged PRs #146/#148 too).
+- `pnpm exec prettier --check` on all changed files: clean.
+- `bash scripts/check-rule-h.sh` (incl. the new adapt gates): pass.
+- `bash scripts/check-mirror-files.sh` (Rule J): pass (ran in pre-push).
+- `bash scripts/check-rule-i.sh`: 114 violations — **pre-existing-red (107 at base, FOLLOW-090),
+  non-blocking** (merged PRs #146/#148 also have rule-i red). +7 from this PR: +3 decision-api libs
+  orphaned by the ratified Worker-410 (owned by FOLLOW-107) + ~4 new test-only/util exports.
+
+**Required action (account owner / Piotr):**
+
+1. Check GitHub → Settings → Billing → Actions usage for the `Pnawrocki9` account; raise the
+   spending limit or wait for the monthly reset if minutes are exhausted. (Or confirm a GH
+   incident.)
+2. Once Actions runs again, re-trigger #149 (push an empty commit, or close/reopen) and confirm the
+   real merge gates are green: Build, Build (control-plane), Format check, Auto-Detection corpus
+   gate, ClickHouse migrations smoke, Doppler verify, Test (Node), rule-h, rule-j. (Vercel, Rule I,
+   and Python tests are pre-existing-red and non-blocking per the #146/#148 merge history.)
+3. **Convention note:** #149 uses branch `feat/follow-105-1bcd-...` per the spawn instruction, which
+   does NOT match the `push`-trigger agent-prefix allowlist in `ci.yml`. The repo's reliable CI path
+   is push-triggered on agent-prefixed branches (CLAUDE.md branch-naming =
+   `<agent>/<ticket>-<slug>`). Recommend future PR branches use an agent prefix (e.g.
+   `architect/FOLLOW-105-...`) so push-CI fires regardless of the pull_request trigger. PM can
+   rename/re-push #149's branch on request.
+
+**Resolution:** RESOLVED 2026-05-25. Two compounding causes, both addressed: (1) **branch-name /
+trigger mismatch** — the `feat/**` branch matched neither the `push` allowlist nor (anomalously) the
+`pull_request` trigger; renaming to `architect/FOLLOW-105-canonical-adapt-enforcement` (PR #150,
+supersedes #149) put it on the reliable push-CI path. (2) **Actions budget** — the account owner
+bumped the GitHub Actions budget and pushed a retrigger commit (`09adfd6`). CI now runs; PR #150 is
+green on every real merge gate (Build, Build control-plane, Typecheck, Lint, Test Node 22, SDK E2E,
+rule-h, rule-j, Format, corpus, ClickHouse, Doppler, Gitleaks). **Lasting fix:** future PR branches
+must use the `<agent>/<ticket>-<slug>` convention (CLAUDE.md) so push-CI fires regardless of the
+pull_request trigger.

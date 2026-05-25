@@ -90,6 +90,43 @@ for file in $new_lib_files; do
   done
 done
 
+# ── Adapt sub-case (FOLLOW-105 / ADR-0006 §Decision 4) ───────────────────────
+# Gate 1: SDK adapt-schema must not drift from the canonical AdaptationDirectives
+#         contract. Gate 2: the Worker /api/adapt route must be retired (410 Gone,
+#         no archetype-selection logic) — ADR-0004 §2 / ADR-0006 §Decision 3.
+echo ""
+echo "=== Rule H check: canonical /api/adapt enforcement ==="
+
+# Gate 1 — adapt-response schema drift (delegates to the Node comparator).
+if bash "$ROOT/scripts/check-adapt-schema-drift.sh"; then
+  echo "OK:   adapt-response schema in sync with AdaptationDirectives."
+else
+  echo "FAIL: SDK adapt-schema drifted from the canonical AdaptationDirectives contract."
+  FAILURES=$((FAILURES + 1))
+fi
+
+# Gate 2 — Worker /api/adapt must be retired (or absent). If the route file still
+# exists it MUST return 410 and MUST NOT carry archetype-selection logic. Comments
+# are stripped first so a JSDoc note describing the *removed* logic does not trip
+# the gate (the retirement doc legitimately names detectArchetype).
+worker_adapt="apps/decision-api/src/app/api/adapt/route.ts"
+if [[ -f "$worker_adapt" ]]; then
+  worker_code=$(node -e "const fs=require('fs');process.stdout.write(fs.readFileSync(process.argv[1],'utf8').replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/[^\n]*/g,''))" "$worker_adapt")
+  if echo "$worker_code" | grep -qE "detectArchetype|_DIRECTIVES\b"; then
+    echo "FAIL: $worker_adapt still contains archetype-selection logic"
+    echo "      (detectArchetype / *_DIRECTIVES). ADR-0004 §2 forbids it in production;"
+    echo "      ADR-0006 §Decision 3 retires this route to 410 Gone."
+    FAILURES=$((FAILURES + 1))
+  elif ! echo "$worker_code" | grep -qE "410"; then
+    echo "FAIL: $worker_adapt exists but does not return 410 Gone (ADR-0006 §Decision 3)."
+    FAILURES=$((FAILURES + 1))
+  else
+    echo "OK:   $worker_adapt is retired (410 Gone, no archetype-selection logic)."
+  fi
+else
+  echo "OK:   $worker_adapt absent — Worker adapt route fully retired (FOLLOW-107)."
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 if [[ "$FAILURES" -gt 0 ]]; then

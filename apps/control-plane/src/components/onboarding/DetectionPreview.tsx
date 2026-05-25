@@ -20,6 +20,7 @@
 import { useState } from 'react';
 import type { TenantSiteSchema } from '@estalara/shared';
 import type { DetectField } from '@estalara/shared';
+import { CONTROL_PLANE_URL } from '@estalara/shared';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -92,9 +93,27 @@ function confidenceBadgeClass(confidence: number): string {
 
 /**
  * Build the SDK snippet string from a tenant ID and API key.
+ *
+ * Emits `data-decision-url` pointing at the canonical control-plane host
+ * (`CONTROL_PLANE_URL` = https://admin.estalara.com). This is REQUIRED: the SDK
+ * treats a missing `data-decision-url` as "directives disabled" and never calls
+ * the adapt endpoint (see packages/sdk/src/core/adapt.ts guard `if (!config.decisionApiUrl) return null`).
+ * Omitting it silently disables adaptation for every onboarded tenant — the
+ * [BLOCKER] found in FOLLOW-105 substep 1a audit (§A / §F.1).
+ *
+ * We use `CONTROL_PLANE_URL` (NOT `DECISION_API_URL`, which names the deprecated
+ * Cloudflare Worker `decision.estalara.com`).
+ *
+ * IMPORTANT (path convention): the SDK appends `/adapt` itself
+ * (`fetch(\`${'$'}{config.decisionApiUrl}/adapt\`)` in core/adapt.ts), and the canonical
+ * route lives at `/api/adapt`. We therefore emit `${'$'}{CONTROL_PLANE_URL}/api` so the
+ * final fetch target resolves to `https://admin.estalara.com/api/adapt` — the same
+ * convention the demo mockup uses (`data-decision-url="/api"` → `/api/adapt`).
+ * Emitting the bare host (`https://admin.estalara.com`) would resolve to
+ * `https://admin.estalara.com/adapt`, which 404s. [FOLLOW-105]
  */
-function buildSnippet(tenantId: string, apiKey: string): string {
-  return `<script\n  src="https://cdn.estalara.com/sdk.js"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n></script>`;
+export function buildSnippet(tenantId: string, apiKey: string): string {
+  return `<script\n  src="https://cdn.estalara.com/sdk.js"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"\n></script>`;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

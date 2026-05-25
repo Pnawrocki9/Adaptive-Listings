@@ -2920,3 +2920,53 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] Master Design updated
 - **promoted_to_queue:** false (Sprint 14, not yet in queue)
 - **depends_on:** [FOLLOW-105]
+
+---
+
+## FOLLOW-108 — Add explainability_id field to adapt response (audit trail link)
+
+- **source:** FOLLOW-105 audit F.6 + CEO ratification 2026-05-25 (Decision 4C)
+- **recommended_sprint:** 14
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 4
+- **model:** sonnet-4.6
+- **scope:** Add `explainability_id` field to the `AdaptationDirectives` response shape
+  (`packages/shared/src/directives.ts`); wire to audit trail infrastructure (TBD per pilot
+  retrospective findings). ADR-0004 specified both `adapt_decision_id` and `explainability_id`;
+  FOLLOW-105 substep 1b ships `adapt_decision_id` only and marks `explainability_id` as
+  `[DEFERRED to FOLLOW-108]` in the ADR-0004 contract block. This ticket implements the deferred
+  field and connects it to the provenance audit trail (per Master Design §E.1).
+- **ac:**
+  - [ ] `explainability_id` added to `AdaptationDirectives` and returned by the control-plane
+        `/api/adapt` route
+  - [ ] Field wired to the audit-trail/provenance infrastructure (design confirmed against pilot
+        retrospective findings)
+  - [ ] ADR-0004 contract block updated: `explainability_id` moves from `[DEFERRED]` to live
+  - [ ] SDK Zod schema (`packages/sdk/src/core/adapt-schema.ts`) extended to accept the new field
+- **promoted_to_queue:** false (Sprint 14, not yet in queue)
+- **depends_on:** [FOLLOW-105, pilot retrospective]
+
+---
+
+## FOLLOW-109 — Promote SDK Zod validation to all internal API client schemas
+
+- **source:** FOLLOW-105 audit F.5 expansion — adapt-response validation lands in the FOLLOW-105 PR;
+  broader rollout deferred
+- **recommended_sprint:** 14
+- **recommended_agent:** sdk-engineer
+- **priority:** P3
+- **estimated_hours:** 3
+- **model:** sonnet-4.6
+- **scope:** Extend the Zod-validation pattern introduced for the adapt response in FOLLOW-105
+  (`packages/sdk/src/core/adapt-schema.ts`, replacing the `data as AdaptResponse` cast at
+  `adapt.ts:519`) to all other SDK→control-plane API calls (telemetry, events, schema endpoints).
+  Each client response is parsed against a Zod schema derived from the canonical `@estalara/shared`
+  type, with graceful null/Sentry handling on parse failure.
+- **ac:**
+  - [ ] Zod schemas added for every SDK→control-plane response shape (telemetry, events, schema)
+  - [ ] All `data as X` casts in the SDK API clients replaced with `schema.parse(data)`
+  - [ ] Parse-failure path logs to Sentry (if available) + degrades gracefully (no crash)
+  - [ ] Unit tests per schema: valid, missing required field, type mismatch, extra fields allowed
+- **promoted_to_queue:** false (Sprint 14, not yet in queue)
+- **depends_on:** [FOLLOW-105]

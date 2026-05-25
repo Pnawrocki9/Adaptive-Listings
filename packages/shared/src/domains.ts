@@ -26,6 +26,13 @@ export const INGEST_ENV = 'ESTALARA_INGEST_URL' as const;
 
 /** Decision API Worker (Cloudflare Workers) */
 export const DECISION_API_DOMAIN = 'decision.estalara.com' as const;
+/**
+ * @deprecated Names the deprecated Cloudflare Worker (`decision.estalara.com`),
+ * whose `/api/adapt` handler is being retired (ADR-0006 §Decision 3, FOLLOW-105).
+ * Do NOT use this constant to target the adapt endpoint in any snippet generator
+ * or SDK config — use `CONTROL_PLANE_URL` (canonical `admin.estalara.com`) instead.
+ * Will be removed in FOLLOW-107 (Sprint 14) once the Worker is fully retired.
+ */
 export const DECISION_API_URL = `https://${DECISION_API_DOMAIN}` as const;
 export const DECISION_API_ENV = 'ESTALARA_DECISION_API_URL' as const;
 

@@ -1,32 +1,36 @@
 # Backlog Queue
 
-**Updated 2026-05-25T18:00Z by pm-orchestrator.** **Sprint 13 OPEN** — three-track structure: Lane A
-(correctness fixes from RETRO-008/009) → Lane B (pilot launch on app.estalara.com, blocked until
-Lane A) → Lane C (Adaptive Listings v1.0 intent build, parallel with Lane B during shadow window).
-See the Sprint 13 section below. **Sprint 12 COMPLETE as of 2026-05-25** — Lane A hardening
-(FOLLOW-081/075/078) + Lane C ROI instrumentation (PILOT-003/004) merged across PRs #142–#146; Lane
-B (TICKET-PILOT-001/002 pilot onboarding) DEFERRED to Sprint 13 because RETRO-008/009 surfaced P1
-dashboard-correctness blockers that gate go-live; FOLLOW-079 CANCELLED (split into
-FOLLOW-088/089/090). RETRO-SPRINT-12 written; Master Design bumped to v2.8. Sprint 11 COMPLETE as of
-2026-05-24 (5 P1 pilot-blockers merged: #135 FOLLOW-063, #136 FOLLOW-069, #137 FOLLOW-068, #138
-FOLLOW-040, #139 FOLLOW-039). RETRO-007 written; Master Design bumped to v2.5; AI Council Checkpoint
-2026-05-24 approved Sprint 12 as "controlled pilot launch on app.estalara.com". Sprint 12 COMPLETE —
-Lane A hardening + Lane C ROI instrumentation merged; Lane B pilot onboarding deferred to Sprint 13.
-Sprint 10 COMPLETE as of 2026-05-23 (8 PRs merged: #127, #128, #129, #130, #131, #132, #133, #134).
-RETRO-006 written; Master Design bumped to v2.3; Rule H amendment applied (CONVENTIONS_PATCH.md).
-Sprint 9.5 COMPLETE (2026-05-22, 6 PRs: #121, #122, #123, #124, #125, #126). Sprint 9 COMPLETE as of
-2026-05-15: GDPR-001 (PR #111), GDPR-002 (PR #118), GDPR-003 (PR #116), GDPR-004 (PR #117), DESC-001
-(PR #112+#114), VAL-001 (PR #110) — all 6 DONE. DESC-PIVOT-001 (PR #115) merged. Sprint 7.5
-COMPLETE. Sprint 7 COMPLETE. Sprint 8 COMPLETE. Sprint 8.5 COMPLETE. Sprint 2.5 SUPERSEDED —
-TICKET-030 + TICKET-033 promoted to Sprint 9.5, TICKET-032 superseded by Sprint 7.5 auto-detect,
-TICKET-034/036 deferred (Q5 decision 2026-05-21), TICKET-035 already CANCELLED. **Sprint 11 P1
-pilot-blockers DONE:** FOLLOW-063 (archetype-embedding auto-seed CI, PR #135), FOLLOW-068
-(demo-integration CI, PR #137), FOLLOW-069 (HMAC compat test, PR #136), FOLLOW-039 (ClickHouse DSR
-hard-delete — EU pilot gate cleared, PR #139), FOLLOW-040 (Doppler CI hygiene, PR #138). **Sprint 12
-pilot target:** app.estalara.com, EU region, free pilot, primary metric CTA lift. Krok A document
-governance reset merged (PR #119, Master_Design v2.0, docs/ops/OPERATING_PRINCIPLES.md v1.1) —
-Operating Principles now active for all sessions. ANTHROPIC_API_KEY activated in Doppler dev/stg/prd
-2026-05-21 (Krok B) — AI Vision fully operational.
+**Updated 2026-05-25T19:30Z by pm-orchestrator.** **Phase 2 Wave 1 spawned** — PR #148 (substep 1a
+audit) merged; FOLLOW-105 substeps 1b/1c/1d now IN_PROGRESS as one comprehensive PR on branch
+`feat/follow-105-1bcd-canonical-adapt-enforcement` (Scenario D sequential). Wave 2 (FOLLOW-097+106)
+and Wave 3 (FOLLOW-094/098/093) BLOCKED until each prior wave merges. **Sprint 13 OPEN** —
+three-track structure: Lane A (correctness fixes from RETRO-008/009) → Lane B (pilot launch on
+app.estalara.com, blocked until Lane A) → Lane C (Adaptive Listings v1.0 intent build, parallel with
+Lane B during shadow window). See the Sprint 13 section below. **Sprint 12 COMPLETE as of
+2026-05-25** — Lane A hardening (FOLLOW-081/075/078) + Lane C ROI instrumentation (PILOT-003/004)
+merged across PRs #142–#146; Lane B (TICKET-PILOT-001/002 pilot onboarding) DEFERRED to Sprint 13
+because RETRO-008/009 surfaced P1 dashboard-correctness blockers that gate go-live; FOLLOW-079
+CANCELLED (split into FOLLOW-088/089/090). RETRO-SPRINT-12 written; Master Design bumped to v2.8.
+Sprint 11 COMPLETE as of 2026-05-24 (5 P1 pilot-blockers merged: #135 FOLLOW-063, #136 FOLLOW-069,
+#137 FOLLOW-068, #138 FOLLOW-040, #139 FOLLOW-039). RETRO-007 written; Master Design bumped to v2.5;
+AI Council Checkpoint 2026-05-24 approved Sprint 12 as "controlled pilot launch on
+app.estalara.com". Sprint 12 COMPLETE — Lane A hardening + Lane C ROI instrumentation merged; Lane B
+pilot onboarding deferred to Sprint 13. Sprint 10 COMPLETE as of 2026-05-23 (8 PRs merged: #127,
+#128, #129, #130, #131, #132, #133, #134). RETRO-006 written; Master Design bumped to v2.3; Rule H
+amendment applied (CONVENTIONS_PATCH.md). Sprint 9.5 COMPLETE (2026-05-22, 6 PRs: #121, #122, #123,
+#124, #125, #126). Sprint 9 COMPLETE as of 2026-05-15: GDPR-001 (PR #111), GDPR-002 (PR #118),
+GDPR-003 (PR #116), GDPR-004 (PR #117), DESC-001 (PR #112+#114), VAL-001 (PR #110) — all 6 DONE.
+DESC-PIVOT-001 (PR #115) merged. Sprint 7.5 COMPLETE. Sprint 7 COMPLETE. Sprint 8 COMPLETE. Sprint
+8.5 COMPLETE. Sprint 2.5 SUPERSEDED — TICKET-030 + TICKET-033 promoted to Sprint 9.5, TICKET-032
+superseded by Sprint 7.5 auto-detect, TICKET-034/036 deferred (Q5 decision 2026-05-21), TICKET-035
+already CANCELLED. **Sprint 11 P1 pilot-blockers DONE:** FOLLOW-063 (archetype-embedding auto-seed
+CI, PR #135), FOLLOW-068 (demo-integration CI, PR #137), FOLLOW-069 (HMAC compat test, PR #136),
+FOLLOW-039 (ClickHouse DSR hard-delete — EU pilot gate cleared, PR #139), FOLLOW-040 (Doppler CI
+hygiene, PR #138). **Sprint 12 pilot target:** app.estalara.com, EU region, free pilot, primary
+metric CTA lift. Krok A document governance reset merged (PR #119, Master_Design v2.0,
+docs/ops/OPERATING_PRINCIPLES.md v1.1) — Operating Principles now active for all sessions.
+ANTHROPIC_API_KEY activated in Doppler dev/stg/prd 2026-05-21 (Krok B) — AI Vision fully
+operational.
 
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
@@ -66,7 +70,7 @@ updates.
 | 10     | 12    | Close the bandit loop + real embeddings + e2e test                                                                        | 9       | 9    | 0       | 0     | 0       |
 | 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                                                          | 9       | 5    | 0       | 4     | 0       |
 | 12     | 14    | Pilot launch on app.estalara.com — COMPLETE (Lane A + Lane C; Lane B → Sprint 13)                                         | 7       | 5    | 0       | 2     | 0       |
-| 13a    | 15    | Correctness + pilot launch (Lane A correctness gate + Lane B pilot launch) — RATIFIED, ready to spawn                     | 9       | 0    | 0       | 6     | 3       |
+| 13a    | 15    | Correctness + pilot launch (Lane A correctness gate + Lane B pilot launch) — Phase 2 Wave 1 IN_PROGRESS (Scenario D seq)  | 9       | 0    | 1       | 0     | 8       |
 | 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                               | 6       | 0    | 0       | 3     | 3       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
@@ -2066,7 +2070,7 @@ min Piotr action).
 - id: FOLLOW-094
   title: cta-lift route must fail loud on ClickHouse error + expose data provenance (Rule K.2)
   agent: data-engineer + backend-engineer
-  status: READY
+  status: BLOCKED # Wave 3 — sequential (Scenario D). Blocked until Wave 2 (FOLLOW-097+106) merges
   priority: P1
   estimated_hours: 3
   depends_on: []
@@ -2081,7 +2085,7 @@ min Piotr action).
 - id: FOLLOW-098
   title: inquiry-starts route must fail loud on ClickHouse error + expose data provenance (Rule K.2)
   agent: backend-engineer
-  status: READY
+  status: BLOCKED # Wave 3 — sequential (Scenario D). Blocked until Wave 2 (FOLLOW-097+106) merges
   priority: P2
   estimated_hours: 1.5
   depends_on: []
@@ -2094,7 +2098,7 @@ min Piotr action).
 - id: FOLLOW-093
   title: Reconcile the two CTA-lift query paths onto one schema vocabulary
   agent: data-engineer
-  status: READY
+  status: BLOCKED # Wave 3 — sequential (Scenario D). Blocked until Wave 2 (FOLLOW-097+106) merges
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -2110,7 +2114,7 @@ min Piotr action).
 - id: FOLLOW-097
   title: Thread detected inquiry_submit_selector into SDK setupObservers() at init
   agent: sdk-engineer + backend-engineer
-  status: READY
+  status: BLOCKED # Wave 2 — sequential (Scenario D). Blocked until Wave 1 (FOLLOW-105) merges
   priority: P1
   estimated_hours: 2
   depends_on: []
@@ -2126,32 +2130,33 @@ min Piotr action).
 - id: FOLLOW-105
   title: Canonical /api/adapt ADR + enforce one production path (ADR-0006)
   agent: architect + backend-engineer + sdk-engineer
-  status: IN_PROGRESS # substep 1a (read-only audit) IN_PROGRESS since 2026-05-25; 1b/1c/1d BLOCKED pending CEO review
+  status: READY_FOR_REVIEW # 1a DONE (PR #148); Wave 1 (1b/1c/1d) PR #150 — all real CI gates GREEN, awaiting human merge
   priority: P0
-  estimated_hours: 8-10
+  estimated_hours: 15-18
   depends_on: []
   model: opus-4.7-xhigh
-  spec: docs/adr/ADR-0006-canonical-adapt-enforcement.md (PROPOSED; full ticket spec at spawn)
+  branch: architect/FOLLOW-105-canonical-adapt-enforcement
+  pr: '#150' # supersedes #149 (renamed feat/→architect/ for push-CI; ESC-011)
+  spec: docs/adr/ADR-0006-canonical-adapt-enforcement.md + docs/audits/FOLLOW-105-1a-sdk-audit.md
   notes: |
-    AI Council session 20260525_132514 Ticket 4 P0 — route divergence kills product story.
-    Must resolve before TICKET-PILOT-001 launches or pilot may silently fall back to 3-bucket
-    Worker behavior instead of 18-archetype control-plane behavior. NOTE: canonical DECISION
-    already exists as ADR-0004; ADR-0005 is taken (Modal Apps Disposition). Per CEO 2026-05-25 this
-    ticket writes ADR-0006 "Canonical /api/adapt Enforcement" (follow-on to ADR-0004), NOT a new
-    ADR-0005. Estimate revised 6h→8-10h (AI Council risk #6 — route retire/proxy + config audit +
-    CI gate exceed 6h). Substeps:
-      1a. SDK config/runtime audit (READ-ONLY) — locate the snippet generator (grep buildSnippet),
-          confirm the deployed app.estalara.com snippet writes the control-plane host into
-          data-decision-url; SDK reads it at config.ts:80 → adapt.ts:507 fetch(decisionApiUrl+/adapt).
-      1b. ADR-0006 → ACCEPTED (currently PROPOSED).
-      1c. Worker /api/adapt disposition: retire (preferred) / proxy / hard-fail (ADR-0006 §Decision 3).
-      1d. CI Rule H/J regression gate against route divergence + response-contract drift.
-    On done: flip Master Design §Snapshot.7 risk #1 OPEN→RESOLVED. opus-4.7-xhigh — architectural.
+    Substep 1a DONE (PR #148 merged). Wave 1 NOW: substeps 1b+1c+1d as single comprehensive PR
+    (Scenario D — sequential). Scope includes: buildSnippet fix (F.1), demo mockup fix (F.2),
+    DECISION_API_URL deprecation (F.3), Worker 410 Gone + structured logging (F.4), SDK Zod
+    validation (F.5), adapt_decision_id UUID (F.6 partial — explainability_id deferred to
+    FOLLOW-108). ADR-0006 flips PROPOSED → ACCEPTED on merge. ADR-0004 contract block entirely
+    replaced (live wins). Wave 2 (FOLLOW-097 + FOLLOW-106) BLOCKED until this PR merges; Wave 3
+    (FOLLOW-094/098/093) BLOCKED until Wave 2 merges.
+    Estimate 8-10h → 15-18h (1b expanded scope + adapt_decision_id + Zod validation; 1c Worker
+    410 Gone + structured logging; 1d CI Rule H/J extension) per CEO ratification 2026-05-25
+    (Decisions 4C/5A/6D). NOTE: ADR-0006 §Decision 3 hardcodes `control-plane.estalara.com` in the
+    410 body, but the live constant is CONTROL_PLANE_URL=`https://admin.estalara.com` — use the
+    constant, not the stale ADR literal. On done: flip Master Design §Snapshot.7 risk #1
+    OPEN→RESOLVED. opus-4.7-xhigh — architectural.
 
 - id: FOLLOW-106
   title: Add tenants.pilot_frozen runtime flag for measurement-window protection
   agent: backend-engineer
-  status: READY
+  status: BLOCKED # Wave 2 — sequential (Scenario D). Blocked until Wave 1 (FOLLOW-105) merges
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -2335,29 +2340,43 @@ measurement window.
 
 ## Currently in flight
 
-**Sprint 13a Lane A — PHASED spawn (Scenario A, CEO decision 2026-05-25). Phase 1 IN_PROGRESS.**
+**Sprint 13a Lane A — Phase 2 spawn (Scenario D Sequential, CEO decision 2026-05-25). Wave 1
+IN_PROGRESS.**
 
-- **FOLLOW-105 substep 1a — IN_PROGRESS (since 2026-05-25).** Read-only SDK config + runtime audit.
-  Branch: `feat/follow-105-1a-sdk-audit`. Agent: architect (sonnet, audit-only). Output:
-  `docs/audits/FOLLOW-105-1a-sdk-audit.md`. **[BLOCKER] surfaced:** `buildSnippet()`
-  (`DetectionPreview.tsx:97`) emits no `data-decision-url`, so every wizard-onboarded tenant has
-  adaptation silently disabled (SDK `adapt.ts:475` returns null). PR tagged `[BLOCKER]`, awaiting
-  CEO review of audit findings.
-- **Phase 2 BLOCKED pending CEO review** of the 1a audit findings: substeps 1b/1c/1d +
-  FOLLOW-106/094/098/093/097. PM will NOT spawn Phase 2 until CEO issues the next instruction.
+- **FOLLOW-105 substep 1a — DONE (PR #148 merged 2026-05-25T15:08Z).** Read-only SDK config +
+  runtime audit. Output: `docs/audits/FOLLOW-105-1a-sdk-audit.md`. Surfaced 5 findings (3 BLOCKERS +
+  2 RISKS + 1 INFO), not just 1 — scope expansion confirmed and CEO-ratified.
+- **FOLLOW-105 Wave 1 (substeps 1b + 1c + 1d) — READY_FOR_REVIEW (PR #150, all real CI gates
+  GREEN).** Branch: `architect/FOLLOW-105-canonical-adapt-enforcement` (renamed from `feat/...` per
+  CEO so the reliable push-CI trigger fires; ESC-011 also resolved by CEO bumping the Actions
+  budget). All substeps done: buildSnippet fix (F.1), demo mockup fix (F.2), DECISION_API_URL
+  deprecation (F.3), Worker 410 Gone + structured logging (1c/F.4), SDK Zod validation (F.5),
+  adapt_decision_id UUID (F.6 partial), ADR-0004 contract replaced + ADR-0006 ACCEPTED, CI Rule H
+  adapt gate (1d). **CI green on every merge gate**: Build, Build (control-plane), Typecheck, Lint,
+  Test (Node 22), SDK E2E, Rule H (incl. new adapt drift + Worker-410 gates), Rule J, Format,
+  corpus, ClickHouse smoke, Doppler, Gitleaks. Rule I / Vercel / Python tests are pre-existing-red
+  and non-blocking (per #146/#148 merge history; Rule I tracked by FOLLOW-090). Architectural
+  finding: Worker `/api/adapt` was the sole Worker `ab.assignment` emitter → full 410 per ADR-0006
+  §Decision 3; decision-api lib layer now orphaned (FOLLOW-107 removal scope). **On merge:** PM
+  flips §Snapshot.7 risk #1 OPEN→RESOLVED + spawns retrospective-analyst; Wave 2 unblocks.
+- **Wave 2 (FOLLOW-097 + FOLLOW-106) — BLOCKED** until Wave 1 PR #150 merges.
+- **Wave 3 (FOLLOW-094 + FOLLOW-098 + FOLLOW-093) — BLOCKED** until Wave 2 merges.
 
-CEO ratified all `DECISION NEEDED` markers 2026-05-25 → `APPROVED_TO_IMPLEMENT=true` (B1–B8 closed).
-Phase-0 specs RATIFIED (`docs/specs/PILOT_CTA_LIFT_METRIC_v1.md`, `docs/ops/PILOT_FREEZE_RULE.md`,
-`docs/ops/PILOT_RUNBOOK.md`, `docs/adr/ADR-0006-canonical-adapt-enforcement.md`). Sprint 13a Lane A
-= **6 tickets** (FOLLOW-105 P0 + FOLLOW-106 P2 + 094/098/093/097); ~26.5–28.5h with Lane B.
-Remaining pre-spawn human action before Phase 2: provision DOPPLER_TOKEN_DEV (ESC-010) +
-E2E_BEARER_TOKEN (ESC-009).
+CEO ratified Decision 4C (add adapt_decision_id, defer explainability_id → FOLLOW-108), Decision 5A
+(include SDK Zod validation in 1b), Decision 6D (sequential FOLLOW-105 → Wave 2 → Wave 3).
+FOLLOW-105 estimate 8-10h → 15-18h. FOLLOW-108 + FOLLOW-109 stubs added for Sprint 14
+(`backlog/FOLLOW_UPS.md`). Remaining pre-merge human action for Wave 1 CI gates: provision
+DOPPLER_TOKEN_DEV (ESC-010) + E2E_BEARER_TOKEN (ESC-009).
 
-## Awaiting human review (0 PRs)
+## Awaiting human review (1 PR — READY)
 
-_No PRs in flight._ First Lane A wave on spawn: FOLLOW-105 substep 1a (read-only SDK config/runtime
-audit) + FOLLOW-106 (pilot_frozen migration) + the bundled FOLLOW-094/093/098 (cta-lift/inquiry
-routes) in parallel with FOLLOW-097 (SDK init).
+- **PR #150 — FOLLOW-105 Wave 1** (`architect/FOLLOW-105-canonical-adapt-enforcement`) —
+  **READY_FOR_REVIEW.** PM-validated against all acceptance criteria; **every real CI merge gate is
+  green** (Build, Build control-plane, Typecheck, Lint, Test Node 22, SDK E2E, rule-h, rule-j,
+  Format, corpus, ClickHouse smoke, Doppler, Gitleaks). Vercel / Rule I / Python-test reds are
+  pre-existing and non-blocking per #146/#148. Supersedes closed PR #149 (branch renamed for
+  push-CI; ESC-011 resolved). Awaiting human merge. On merge → §Snapshot.7 risk #1 RESOLVED, retro
+  spawned, Wave 2 unblocks.
 
 ## Recent merges
 

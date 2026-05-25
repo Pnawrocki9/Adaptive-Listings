@@ -4,6 +4,11 @@
 
 Accepted — 2026-05-17
 
+> **Runtime enforcement:** see **ADR-0006** (Canonical /api/adapt Enforcement, ACCEPTED 2026-05-25),
+> the enforcing follow-on to this ADR. ADR-0006 implements the SDK-targeting guarantee, the Worker
+> `410 Gone` retirement, the CI regression gate, and the live-wins contract reconciliation that this
+> ADR deferred. This ADR remains in force; ADR-0006 does not supersede it.
+
 ## Context
 
 The repository currently contains two parallel `/api/adapt` endpoints with significantly different
@@ -70,7 +75,45 @@ edge-compatible:
   response. No reliance on Next.js middleware chain order.
 - SDK MUST treat response as opaque JSON, parsing only the documented fields.
 
-Documented response contract (canonical):
+### Canonical response contract
+
+> Updated 2026-05-25 (FOLLOW-105 substep 1b) to reflect live implementation per ADR-0006 §Decision 5
+> (live wins). Original draft contract preserved in §Historical Note for git history reference.
+
+The canonical response is the `AdaptationDirectives` type, defined in
+`packages/shared/src/directives.ts` — the single source of truth for the `/api/adapt` response
+shape. The control-plane route (`apps/control-plane/src/app/api/adapt/route.ts`) returns exactly
+this shape on both the GET and POST paths. The SDK validates every response against a mirror Zod
+schema (`packages/sdk/src/core/adapt-schema.ts`); CI Rule H asserts the two stay in sync (ADR-0006
+§Decision 4).
+
+| Field               | Type                                                                                                                              | Notes                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `adapt_decision_id` | string (uuid)                                                                                                                     | Stable per-decision UUID (FOLLOW-105 / ADR-0006 §Decision 4C); cross-correlates the ClickHouse row. |
+| `session_id`        | string                                                                                                                            | Session identifier echoed from the request.                                                         |
+| `archetype`         | `ArchetypeId \| 'neutral'`                                                                                                        | One of the 18 archetype IDs or the `'neutral'` fallback.                                            |
+| `confidence`        | number (0–1)                                                                                                                      | Intent confidence.                                                                                  |
+| `similarity`        | number (0–1)                                                                                                                      | Cosine similarity to the matched archetype.                                                         |
+| `tier`              | `1 \| 2 \| 3`                                                                                                                     | Integration tier the caller declared.                                                               |
+| `directives`        | `(TextDirective \| ClassDirective \| ReorderDirective)[]`                                                                         | Empty when `source` is `'default'` or `'llm_full'` with no output.                                  |
+| `source`            | `'playbook' \| 'llm_tweaked' \| 'llm_full' \| 'default' \| 'playbook_fallback_llm_capped' \| 'playbook_fallback_llm_unavailable'` | Origin of the response.                                                                             |
+| `variant`           | string (optional)                                                                                                                 | Thompson-sampling bandit variant (FOLLOW-007); echoed back in the feedback ping.                    |
+| `generated_at`      | string (ISO 8601)                                                                                                                 | Server generation timestamp.                                                                        |
+
+Holdout-arm POST responses additionally carry a `holdout_group: boolean` field (not part of the
+formal `AdaptationDirectives` type; the SDK schema allows it via `.passthrough()`).
+
+**Deferred field:** `explainability_id` (a link to a provenance audit trail) was in the original
+draft contract below but is **[DEFERRED to FOLLOW-108, Sprint 14]** — it is NOT implemented and is
+NOT part of the live `AdaptationDirectives` type. FOLLOW-105 substep 1b ships `adapt_decision_id`
+only.
+
+### Historical Note — original draft contract (superseded)
+
+The draft contract documented in the original 2026-05-17 ADR is preserved here for git-history
+reference. It did NOT match the shipped implementation (the FOLLOW-105 substep 1a audit found total
+drift — only `archetype` matched by name; see `docs/audits/FOLLOW-105-1a-sdk-audit.md` §D). Per
+ADR-0006 §Decision 5 ("live wins"), the live `AdaptationDirectives` shape above is authoritative.
 
 - `adapt_decision_id`: string (uuid)
 - `archetype`: string (one of 18 known IDs)

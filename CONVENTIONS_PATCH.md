@@ -270,6 +270,46 @@ For any new or changed file under `apps/control-plane/src/app/api/**/route.ts` o
 
 Reject the PR if any check fails AND the route is not exception-eligible per the ADR clause.
 
+### Rule H amendment (2026-05-25 — FOLLOW-105 / ADR-0006: canonical /api/adapt enforcement)
+
+**Pattern (sub-case of Rule H):** Two divergent surfaces for the same logical contract drift apart
+silently. Two concrete shapes here: (1) the Cloudflare Worker
+`apps/decision-api/src/app/api/adapt/route.ts` re-introduces production archetype-selection logic
+(`detectArchetype()` + the `INVESTOR/FAMILY/NEUTRAL` directive buckets) that ADR-0004 §2 forbade,
+silently downgrading the pilot to a 3-bucket fallback; (2) the SDK adapt-response validator
+(`packages/sdk/src/core/adapt-schema.ts` → `adaptResponseSchema`) drifts from the canonical
+`AdaptationDirectives` contract (`packages/shared/src/directives.ts`), so the SDK either rejects
+valid live responses or silently accepts a shape the server no longer sends.
+
+**Evidence:**
+
+- FOLLOW-105 substep 1a audit (`docs/audits/FOLLOW-105-1a-sdk-audit.md` §C/§D/§F.5): total drift
+  between the ADR-0004 documented contract and the live `AdaptationDirectives` (only `archetype`
+  matched by name); the SDK parsed responses with an unchecked `as AdaptResponse` cast.
+- ADR-0004 §2 / ADR-0006 §Decision 3: the Worker 3-bucket `detectArchetype()` "MUST NOT be called
+  for archetype selection in production"; ADR-0006 retires the Worker `/api/adapt` to `410 Gone`.
+
+**Rule (ADR-0006 §Decision 4):** Two hard gates, run inside the existing `rule-h` CI job and the
+`pre-push` lefthook:
+
+1. **Adapt schema drift** — the SDK `adaptResponseSchema` top-level field SET MUST equal the
+   `AdaptationDirectives` interface field SET. Any missing/extra/renamed field fails CI. (Value
+   types are validated at runtime by Zod; the gate is structural.)
+2. **Worker `/api/adapt` is retired** — `apps/decision-api/src/app/api/adapt/route.ts` (if present)
+   MUST return `410` and MUST NOT contain `detectArchetype` / `*_DIRECTIVES` archetype-selection
+   logic. (Absent entirely is also acceptable — FOLLOW-107 Phase-2 retirement.)
+
+**Hard gate (CI + pre-push):** `scripts/check-adapt-schema-drift.sh` (gate 1, delegating to
+`scripts/check-adapt-schema-drift.cjs`) and an extension of `scripts/check-rule-h.sh` that runs gate
+1 and inlines gate 2. Exit code 1 = PR blocked.
+
+Run locally before pushing:
+
+```bash
+bash scripts/check-adapt-schema-drift.sh
+bash scripts/check-rule-h.sh origin/main
+```
+
 ---
 
 ## Rule I — Wired-or-dead: every exported symbol must have a non-test importer

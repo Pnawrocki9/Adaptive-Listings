@@ -1,11 +1,12 @@
 # Pilot CTA-Lift Measurement Spec v1
 
-**Status:** DRAFT for CEO ratification — 2026-05-25. Answers AI Council blocking questions **B1**
-(metric design), **B5** (traffic exclusion), **B7** (query-path ground truth). Source: AI Council
-session `20260525_143939`.
+**Status:** RATIFIED — 2026-05-25 (CEO Piotr Nawrocki ratified all `DECISION NEEDED` markers).
+**APPROVED_TO_IMPLEMENT: true.** Answers AI Council blocking questions **B1** (metric design),
+**B5** (traffic exclusion), **B7** (query-path ground truth). Source: AI Council session
+`20260525_143939`.
 
-> This spec **documents what is already wired** and marks only the values that require a CEO
-> decision. Items tagged `DECISION NEEDED` must be resolved before any live CTA-lift readout.
+> This spec **documents what is already wired** plus the CEO-ratified measurement values. All former
+> `DECISION NEEDED` markers are resolved below.
 
 ## 1. What "CTA lift" means
 
@@ -52,30 +53,30 @@ pilot route (`events.cta.clicked` on `ad.ts`) is ground truth.** FOLLOW-093 reco
 analytics/lift route onto this vocabulary (or marks it superseded) and is a Lane A gate before any
 readout.
 
-## 4. Attribution & thresholds — `DECISION NEEDED`
+## 4. Attribution & thresholds — RATIFIED
 
-- **Attribution window:** currently per-session within `window_days` (no per-event decay).
-  `DECISION NEEDED`: confirm per-session attribution and the default window (recommend 14 days for
-  the first readout).
-- **Minimum sample before readout:** code enforces ≥30 per arm for significance. `DECISION NEEDED`:
-  set a higher **readout** floor (recommend ≥ 200 adapted sessions AND ≥ 30 holdout sessions before
-  any lift is reported externally), so a "significant" badge on tiny n is never published.
-- **Multiple-window discipline:** `DECISION NEEDED`: fix one primary window for the headline number
-  (recommend 14d) to avoid window-shopping.
+- **Attribution window (B1-a):** **per-session, 14-day primary window.** No per-event decay; a
+  session counts in the numerator if it fired ≥1 `cta.clicked` within the 14-day window. 14d is the
+  fixed primary window for the headline number (no window-shopping); `{7, 30}` remain available for
+  diagnostics only.
+- **Readout sample floor (B1-b):** **≥300 adapted sessions AND ≥30 holdout sessions — HARD guard,
+  both required.** No lift is reported (internally or externally) until BOTH thresholds are met.
+  This is stricter than the code's `MIN_SAMPLE_PER_ARM = 30` significance guard; the readout floor
+  is a separate, higher gate so a "significant" badge on small n is never published.
 
-## 5. Traffic exclusion (answers B5) — `DECISION NEEDED`
+## 5. Traffic exclusion (answers B5) — RATIFIED
 
-The numerator/denominator must exclude non-buyer traffic. Today there is **no** internal/QA/bot
-exclusion in the query. `DECISION NEEDED`, options to specify:
+The numerator/denominator exclude non-buyer traffic via three ratified filters:
 
-- Internal staff sessions (by IP allowlist, a `data-estalara-internal` flag, or a known
-  session-tag).
-- QA/E2E sessions (the `E2E_TENANT_ID` / canary tenant is already separate — confirm it is never the
-  pilot tenant).
-- Bots (no bot detection wired today — decide whether to add a filter or accept noise for v1).
-
-Until an exclusion mechanism is specified + implemented, the readout MUST carry a caveat that counts
-include unfiltered traffic.
+- **Internal staff:** sessions carrying the cookie/header `x-estalara-internal: true` are excluded.
+- **QA/E2E:** `tenant_id != E2E_TENANT_ID` filter (existing infrastructure — the canary/E2E tenant
+  is separate from the pilot tenant; confirm during TICKET-PILOT-001 that the pilot tenant id is
+  never `E2E_TENANT_ID`).
+- **Bots:** a basic User-Agent regex in **SDK init** blocks `Googlebot`, `bingbot`, `Slurp`,
+  `DuckDuckBot`, `AhrefsBot`, `SemrushBot`, `MJ12bot`. **Bot detection runs BEFORE any event
+  emission** (no event is dispatched for a matched UA) — implemented as part of FOLLOW-099 (see its
+  AC). Operational verification (≥99% known bots/internal excluded) is a runbook go/no-go gate
+  (`docs/ops/PILOT_RUNBOOK.md` §2).
 
 ## 6. Data provenance (hard dependency on FOLLOW-094)
 
@@ -86,11 +87,11 @@ real-vs-mock must be distinguishable (`data_source: 'mock' | 'clickhouse'`), and
 failed query must surface an error + Sentry, never fabricate. This spec's numbers are only
 meaningful against `data_source: 'clickhouse'`.
 
-## 7. Open decisions summary (for CEO)
+## 7. Ratified decisions summary (CEO 2026-05-25)
 
-| ID   | Decision             | Recommended default                                                                     |
-| ---- | -------------------- | --------------------------------------------------------------------------------------- |
-| B1-a | Attribution window   | per-session, 14-day primary                                                             |
-| B1-b | Readout sample floor | ≥200 adapted + ≥30 holdout sessions                                                     |
-| B5   | Traffic exclusion    | exclude internal + QA tenant; bots deferred to v2 with caveat                           |
-| B7   | Ground-truth query   | pilot route (`events.cta.clicked` on `ad.ts`); analytics/lift superseded via FOLLOW-093 |
+| ID   | Decision             | RATIFIED value                                                                                |
+| ---- | -------------------- | --------------------------------------------------------------------------------------------- |
+| B1-a | Attribution window   | per-session, 14-day primary window (fixed; 7/30 diagnostic only)                              |
+| B1-b | Readout sample floor | ≥300 adapted **AND** ≥30 holdout sessions — HARD guard, both required                         |
+| B5   | Traffic exclusion    | `x-estalara-internal: true` excluded; `tenant_id != E2E_TENANT_ID`; bot UA regex pre-emission |
+| B7   | Ground-truth query   | pilot route (`events.cta.clicked` on `ad.ts`); analytics/lift superseded via FOLLOW-093       |

@@ -66,7 +66,7 @@ updates.
 | 10     | 12    | Close the bandit loop + real embeddings + e2e test                                                                        | 9       | 9    | 0       | 0     | 0       |
 | 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                                                          | 9       | 5    | 0       | 4     | 0       |
 | 12     | 14    | Pilot launch on app.estalara.com — COMPLETE (Lane A + Lane C; Lane B → Sprint 13)                                         | 7       | 5    | 0       | 2     | 0       |
-| 13a    | 15    | Correctness + pilot launch (Lane A correctness gate + Lane B pilot launch)                                                | 8       | 0    | 0       | 5     | 3       |
+| 13a    | 15    | Correctness + pilot launch (Lane A correctness gate + Lane B pilot launch) — RATIFIED, ready to spawn                     | 9       | 0    | 0       | 6     | 3       |
 | 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                               | 6       | 0    | 0       | 3     | 3       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
@@ -2047,10 +2047,12 @@ dashboards honest (no fabricated metrics, real producer→consumer paths) and en
 adapt path. Lane B onboards app.estalara.com and runs shadow mode, blocked until Lane A is green."
 
 **Entry condition:** Sprint 12 COMPLETE ✓ (2026-05-25). AI Council (session `20260525_143939`)
-**ratified Track 1 first with changes** — `APPROVED_TO_IMPLEMENT=false`: only no-code spec/audit
-work proceeds until blocking questions B1–B8 close (B1/B2/B3/B7 gate coding). Phase-0 spec artifacts
-authored 2026-05-25: `docs/specs/PILOT_CTA_LIFT_METRIC_v1.md`, `docs/ops/PILOT_FREEZE_RULE.md`,
-`docs/ops/PILOT_RUNBOOK.md`, `docs/adr/ADR-0006-canonical-adapt-enforcement.md` (PROPOSED).
+ratified Track 1 first with changes; **CEO Piotr Nawrocki ratified all `DECISION NEEDED` markers
+2026-05-25 → `APPROVED_TO_IMPLEMENT=true`.** Blocking questions B1–B8 closed. Phase-0 spec artifacts
+RATIFIED: `docs/specs/PILOT_CTA_LIFT_METRIC_v1.md`, `docs/ops/PILOT_FREEZE_RULE.md`,
+`docs/ops/PILOT_RUNBOOK.md` (measurement-quality gates),
+`docs/adr/ADR-0006-canonical-adapt-enforcement.md` (PROPOSED, CEO-ratified — flips to ACCEPTED on
+FOLLOW-105 substep 1b). **Lane A ready to spawn.**
 
 **Sprint sequencing:** Lane A first (correctness + canonical-route enforcement gate the pilot). Lane
 B blocked until Lane A DONE. FOLLOW-105's runtime route verification and several Lane A CI gates
@@ -2146,6 +2148,22 @@ min Piotr action).
       1d. CI Rule H/J regression gate against route divergence + response-contract drift.
     On done: flip Master Design §Snapshot.7 risk #1 OPEN→RESOLVED. opus-4.7-xhigh — architectural.
 
+- id: FOLLOW-106
+  title: Add tenants.pilot_frozen runtime flag for measurement-window protection
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  model: sonnet-4.6
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-106.md)
+  notes: |
+    CEO ratification 2026-05-25 (PILOT_FREEZE_RULE.md Decision 3). Migration: tenants.pilot_frozen
+    boolean DEFAULT false; update packages/db/src/schema/tenants.ts; adapt route logs a prophylactic
+    (non-blocking) warning if a Lane C feature flag is on while pilot_frozen=true; TICKET-PILOT-001
+    sets pilot_frozen=true on shadow→live flip. Migration applied to dev/stg/prd. Independent —
+    parallel with FOLLOW-094/098/093/097/105.
+
 # LANE B — Pilot onboarding on app.estalara.com (P1, BLOCKED until Lane A complete)
 
 - id: TICKET-PILOT-001
@@ -2156,17 +2174,19 @@ min Piotr action).
   status: BLOCKED
   priority: P1
   estimated_hours: 4
-  depends_on: [FOLLOW-094, FOLLOW-098, FOLLOW-093, FOLLOW-097]
+  depends_on: [FOLLOW-094, FOLLOW-098, FOLLOW-093, FOLLOW-097, FOLLOW-105, FOLLOW-106]
   model: sonnet-4.6
   spec: backlog/sprint-12/TICKET-PILOT-001.md
   notes: |
     Deferred from Sprint 12 Lane B. depends_on updated 2026-05-25 — dropped CANCELLED FOLLOW-079;
-    now gated on Sprint 13 Lane A (correctness) being DONE rather than Sprint 12 Lane A hardening
-    (already complete). Steps: (1) install @estalara/sdk snippet on app.estalara.com (Tier 3 Native
-    path via data-estalara-* attributes; wiring in SvelteKit +layout.svelte). (2) Run Magic Link
-    wizard to activate tenant schema (000-app-estalara fixture, detection_source=data_estalara,
-    confidence ≥0.99). (3) Shadow mode (adaptation runs, directives not injected) 3-5 days for
-    baseline. (4) Generate + verify SDK snippet for production embed.
+    gated on the full Sprint 13a Lane A (correctness + FOLLOW-105 canonical-route enforcement +
+    FOLLOW-106 pilot_frozen flag) being DONE. Steps: (1) install @estalara/sdk snippet on
+    app.estalara.com (Tier 3 Native path via data-estalara-* attributes; wiring in SvelteKit
+    +layout.svelte). (2) Run Magic Link wizard to activate tenant schema (000-app-estalara fixture,
+    detection_source=data_estalara, confidence ≥0.99). (3) Shadow mode (adaptation runs, directives
+    not injected) 3-5 days for baseline. (4) Generate + verify SDK snippet for production embed.
+    (5) Set tenants.pilot_frozen=true on the shadow→live flip (FOLLOW-106) — opens the measurement
+    window per PILOT_FREEZE_RULE.md.
 
 - id: FOLLOW-092
   title: Verify cta.clicked producer→ClickHouse path is live for the pilot tenant
@@ -2315,20 +2335,21 @@ measurement window.
 
 ## Currently in flight
 
-_Sprint 13a/13b OPEN, no agents spawned._ AI Council (`20260525_143939`) ratified Track 1 first with
-changes — `APPROVED_TO_IMPLEMENT=false`. Only no-code spec/audit work proceeds until blocking
-questions B1–B8 close. Phase-0 spec artifacts authored 2026-05-25:
-`docs/specs/PILOT_CTA_LIFT_METRIC_v1.md`, `docs/ops/PILOT_FREEZE_RULE.md`,
-`docs/ops/PILOT_RUNBOOK.md`, `docs/adr/ADR-0006-canonical-adapt-enforcement.md`. Sprint 13a Lane A =
-5 tickets (FOLLOW-105 P0 + 094/098/093/097). Pre-spawn human actions: provision DOPPLER_TOKEN_DEV
-(ESC-010) + E2E_BEARER_TOKEN (ESC-009); CEO ratifies the `DECISION NEEDED` markers in the four specs
-(closes B1–B8).
+_Sprint 13a/13b OPEN, no agents spawned yet._ **CEO ratified all `DECISION NEEDED` markers
+2026-05-25 → `APPROVED_TO_IMPLEMENT=true`** (B1–B8 closed). Phase-0 specs RATIFIED
+(`docs/specs/PILOT_CTA_LIFT_METRIC_v1.md`, `docs/ops/PILOT_FREEZE_RULE.md`,
+`docs/ops/PILOT_RUNBOOK.md`, `docs/adr/ADR-0006-canonical-adapt-enforcement.md`). Sprint 13a Lane A
+= **6 tickets** (FOLLOW-105 P0
+
+- FOLLOW-106 P2 + 094/098/093/097); ~26.5–28.5h with Lane B. Remaining pre-spawn human action:
+  provision DOPPLER_TOKEN_DEV (ESC-010) + E2E_BEARER_TOKEN (ESC-009). Agent spawn for Lane A comes
+  in the next instruction.
 
 ## Awaiting human review (0 PRs)
 
-_No PRs in flight._ On `APPROVED_TO_IMPLEMENT=true`, first Lane A wave: FOLLOW-105 substep 1a
-(read-only SDK config/runtime audit) + the bundled FOLLOW-094/093/098 (cta-lift/inquiry routes) in
-parallel with FOLLOW-097 (SDK init).
+_No PRs in flight._ First Lane A wave on spawn: FOLLOW-105 substep 1a (read-only SDK config/runtime
+audit) + FOLLOW-106 (pilot_frozen migration) + the bundled FOLLOW-094/093/098 (cta-lift/inquiry
+routes) in parallel with FOLLOW-097 (SDK init).
 
 ## Recent merges
 

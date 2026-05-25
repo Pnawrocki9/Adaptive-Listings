@@ -2585,6 +2585,11 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] **FREEZE-ISOLATION:** changing SDK event emission is pilot-tenant-affecting → MUST NOT ship
         to the pilot tenant during the CTA-lift measurement window. Land before the window opens or
         after it closes (per `docs/ops/PILOT_FREEZE_RULE.md`; Sprint 13b PROHIBITED-mid-window).
+  - [ ] **BOT DETECTION (CEO ratified 2026-05-25, B5):** implement a User-Agent regex filter in SDK
+        init that blocks event emission for `Googlebot`, `bingbot`, `Slurp`, `DuckDuckBot`,
+        `AhrefsBot`, `SemrushBot`, `MJ12bot`. The filter MUST run **before any event emission** (no
+        event dispatched for a matched UA). Add unit tests covering each bot UA + edge cases
+        (case-insensitive, partial match).
 - **promoted_to_queue:** false
 - **depends_on:** none (independent)
 
@@ -2868,3 +2873,50 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] §Snapshot.4 priority adjusted: dual `/api/adapt` risk RESOLVED
 - **promoted_to_queue:** true
 - **depends_on:** [] (independent — can run in parallel with FOLLOW-094/098/093/097)
+
+---
+
+## FOLLOW-106 — Add tenants.pilot_frozen runtime flag for measurement-window protection
+
+- **source:** AI Council session `20260525_143939` + CEO ratification 2026-05-25
+  (`docs/ops/PILOT_FREEZE_RULE.md` Decision 3)
+- **recommended_sprint:** 13a (Lane A)
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **model:** sonnet-4.6
+- **scope:** a. Migration: add boolean column `tenants.pilot_frozen DEFAULT false`. b. Update the
+  tenants schema in `packages/db/src/schema/tenants.ts`. c. Runtime check: when the SDK adapt route
+  serves a request for a tenant where `pilot_frozen = true`, log a warning if Lane C feature flags
+  are enabled (prophylactic, does NOT block the request). d. `TICKET-PILOT-001` sets
+  `pilot_frozen = true` on the shadow→live flip.
+- **ac:**
+  - [ ] Migration applied to all 3 Doppler configs (dev/stg/prd)
+  - [ ] Schema definition includes the column with default
+  - [ ] TICKET-PILOT-001 acceptance updated to require `pilot_frozen = true`
+  - [ ] Documentation cross-reference in `docs/ops/PILOT_FREEZE_RULE.md` updated
+- **promoted_to_queue:** true
+- **depends_on:** [] (independent — can run in parallel with FOLLOW-094/098/093/097/105)
+
+---
+
+## FOLLOW-107 — Remove deprecated Worker /api/adapt handler after observed zero traffic (Phase 2 retire)
+
+- **source:** ADR-0006 Phase 2 (CEO ratification 2026-05-25)
+- **recommended_sprint:** 14
+- **recommended_agent:** backend-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **model:** sonnet-4.6
+- **scope:** a. Verify Worker `/api/adapt` monitoring shows zero traffic over a 7+ day window since
+  the FOLLOW-105 Phase 1 (410 Gone) deployment. b. Remove
+  `apps/decision-api/src/app/api/adapt/route.ts` and related handler code. c. Update CI Rule H to
+  assert no `/api/adapt` route exists in `apps/decision-api/`. d. Update Master Design §Snapshot.7
+  risk #1 OPEN → RESOLVED (final state).
+- **ac:**
+  - [ ] 7+ day monitoring shows zero hits on Worker `/api/adapt`
+  - [ ] Handler code removed
+  - [ ] CI Rule H asserts retirement
+  - [ ] Master Design updated
+- **promoted_to_queue:** false (Sprint 14, not yet in queue)
+- **depends_on:** [FOLLOW-105]

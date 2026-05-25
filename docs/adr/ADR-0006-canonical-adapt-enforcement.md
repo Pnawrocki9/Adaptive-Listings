@@ -2,14 +2,16 @@
 
 ## Status
 
-PROPOSED — 2026-05-25
+PROPOSED — 2026-05-25 (**CEO-ratified 2026-05-25**; flips to ACCEPTED on FOLLOW-105 substep 1b).
+**APPROVED_TO_IMPLEMENT: true.**
 
 Follow-on to **ADR-0004** (Canonical /api/adapt Endpoint, ACCEPTED 2026-05-17). ADR-0004 remains in
 force; this ADR does not supersede it — it adds the runtime-enforcement decision ADR-0004 deferred,
 and brings forward the Worker deprecation review.
 
-> **Draft for ratification.** Items marked `DECISION NEEDED` are open and must be resolved before
-> this ADR moves to ACCEPTED. Tracked by FOLLOW-105 (Sprint 13a Lane A, P0).
+> **CEO ratified all former `DECISION NEEDED` items 2026-05-25** (Worker disposition = phased;
+> contract reconciliation = live-wins). Status stays PROPOSED only until FOLLOW-105 substep 1b lands
+> the implementation, then → ACCEPTED. Tracked by FOLLOW-105 (Sprint 13a Lane A, P0).
 
 ## Context
 
@@ -50,21 +52,25 @@ This is a §Snapshot.7 risk #1 item (dual `/api/adapt`) and AI Council Ticket 4 
    control-plane host into `data-decision-url`. A generated snippet that points anywhere else is a
    bug. FOLLOW-105 substep 1a audits the generator + the deployed app.estalara.com snippet to
    confirm the live value.
-3. **Worker `/api/adapt` disposition — `DECISION NEEDED`** (this ADR picks one, bringing forward the
-   ADR-0004 §Consequences 30-day review now due ~2026-06-16):
-   - (a) **Retire** the Worker `/api/adapt` route entirely (preferred — removes the divergence
-     surface; Worker keeps only the edge holdout gate / telemetry relay).
-   - (b) **Proxy** the Worker route to the canonical control-plane endpoint (keeps the edge URL but
-     removes the 3-bucket logic).
-   - (c) **Hard-fail** archetype-selection calls at the Worker (`410`/explicit error) while leaving
-     the holdout gate intact.
+3. **Worker `/api/adapt` disposition — RATIFIED: phased retirement** (brings forward the ADR-0004
+   §Consequences 30-day review, originally due ~2026-06-16):
+   - **Phase 1 (this ADR, FOLLOW-105): hard-fail with `410 Gone` + structured logging** (option 3c).
+     Worker `/api/adapt` returns `410 Gone` with body
+     `{ error: 'deprecated', canonical: 'https://control-plane.estalara.com/api/adapt', since: '2026-05-25' }`
+     and logs each call with a stack trace (internal callers) or User-Agent (external callers) so
+     any residual traffic source is identifiable.
+   - **Phase 2 (FOLLOW-107, Sprint 14, P3, ~1h): full retirement** (option 3a) after a 7-day
+     monitoring window confirms zero traffic to Worker `/api/adapt`.
+   - **If traffic is observed during Phase 1:** Phase 2 is deferred, the source is identified, and a
+     proxy (option 3b) is considered as a last resort.
 4. **CI guard.** Add a regression gate (extend Rule H / Rule J — `scripts/check-rule-h.sh`,
    `scripts/check-mirror-files.sh`, `CONVENTIONS_PATCH.md`) asserting: (i) no production caller
    reaches Worker `detectArchetype()` for archetype selection, and (ii) the SDK→canonical request
    schema does not drift from the canonical `/api/adapt` response contract.
-5. **Contract reconciliation — `DECISION NEEDED`.** Reconcile the live control-plane response field
-   names with the ADR-0004 documented contract (or update ADR-0004's contract block to match
-   reality, whichever the architect rules correct), so the "stable contract" claim is true.
+5. **Contract reconciliation — RATIFIED: live wins.** Update the ADR-0004 contract block to match
+   the live control-plane response (live implementation wins over draft documentation). Add a
+   revision note to ADR-0004: _"Updated 2026-05-25 to reflect live implementation; original draft
+   contract preserved in git history."_ This update is part of FOLLOW-105 substep 1b.
 
 ## Consequences
 
@@ -104,3 +110,15 @@ This is a §Snapshot.7 risk #1 item (dual `/api/adapt`) and AI Council Ticket 4 
   follow-on, flip Master Design §Snapshot.7 risk #1 OPEN → RESOLVED, and add this ADR to the index.
 - Cross-references: ADR-0004 (canonical decision), ADR-0005 (Modal apps disposition),
   `docs/MASTER_DESIGN.md` §B.9 / §C.1 / §C.4 / §Snapshot.7.
+
+### Rollback procedure
+
+If FOLLOW-105 enforcement causes a production incident:
+
+1. **Immediate (5 min):** revert the FOLLOW-105 PR via `git revert` + redeploy.
+2. **Worker side:** re-enable the `/api/adapt` handler from the previous commit.
+3. **SDK side:** the snippet generator emits the previous host (control-plane was already correct —
+   rollback only restores the Worker as a fallback).
+4. **CI Rule H/J:** temporarily disable the FOLLOW-105 substep-1d gate until root cause is
+   identified.
+5. **Incident retrospective:** required within 48h; identify the gap in ADR-0006 testing.

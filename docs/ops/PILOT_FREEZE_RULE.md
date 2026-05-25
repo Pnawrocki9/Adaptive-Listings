@@ -1,7 +1,7 @@
 # Pilot Freeze Rule
 
-**Status:** DRAFT for CEO ratification — 2026-05-25. Answers AI Council blocking question **B2**.
-Source: AI Council session `20260525_143939`.
+**Status:** RATIFIED — 2026-05-25 (CEO Piotr Nawrocki). **APPROVED_TO_IMPLEMENT: true.** Answers AI
+Council blocking question **B2**. Source: AI Council session `20260525_143939`.
 
 ## Purpose
 
@@ -22,10 +22,11 @@ merge-discipline + tenant-gating using existing primitives (`packages/db/src/sch
 - `tenants.brandConfig` / `tenants.quizConfig` (jsonb) — per-tenant config blobs.
 - `tenants.consentRequired` (boolean).
 
-`DECISION NEEDED`: whether to add a `tenants.pilot_frozen` (or a `config.pilot` jsonb key) for an
-explicit runtime guard, or rely purely on merge-discipline for the v1 window. Recommendation: rely
-on merge-discipline + a documented checklist for v1 (cheapest), add a flag only if a Lane C change
-genuinely needs to ship to the pilot tenant mid-window.
+**RATIFIED (Decision 3):** add an explicit `tenants.pilot_frozen` boolean runtime guard — tracked as
+**FOLLOW-106** (Sprint 13a Lane A, P2, ~2h). TICKET-PILOT-001 sets `pilot_frozen = true` on the
+shadow→live flip; the adapt route logs a prophylactic warning (non-blocking) if a Lane C feature
+flag is enabled while `pilot_frozen = true`. Merge-discipline + the §below PR checklist remain the
+primary control; the flag is the runtime backstop.
 
 ## Classification of Sprint 13b (Lane C) work
 
@@ -54,14 +55,26 @@ genuinely needs to ship to the pilot tenant mid-window.
 5. **No observer changes** affecting existing `cta.clicked` / `inquiry.started` emission unless
    covered by an isolation test proving no behavior change for the pilot tenant.
 
-## `DECISION NEEDED`
+## Ratified decisions (CEO 2026-05-25)
 
-- **Sign-off authority per category:** who approves a "mergeable" Lane C change touching the pilot
-  tenant, and who can declare the measurement window open/closed (recommend: Piotr as incident
-  owner).
-- **Exact pilot tenant id** (the app.estalara.com tenant UUID) — to scope the gate precisely and
-  confirm it is distinct from `DEMO_TENANT_ID` / `E2E_TENANT_ID`.
-- Whether to add an explicit `pilot_frozen` runtime flag (see "Available enforcement primitives").
+**Decision 1 — Sign-off authority per category:**
+
+- **Open / close the measurement window:** **Piotr ONLY** (incident owner).
+- **Abort decision:** **Piotr ONLY.**
+- **Mergeable Lane C change during the window:** **Piotr OR Rafał**, with a written PR checklist
+  enforcing all 4 checks: (1) event schema unchanged, (2) no DOM change on the pilot tenant, (3) no
+  dashboard semantic change, (4) gated OFF for the pilot tenant.
+- **Shadow-only changes:** pm-orchestrator + agent autonomy (no human sign-off required).
+
+**Decision 2 — Pilot tenant identity:** the pilot tenant **= `DEMO_TENANT_ID`** (env var). The
+current label "demo" is **historical** — this is the production app.estalara.com tenant. The UUID is
+discoverable post-PILOT-001 via
+`SELECT id, slug, status FROM tenants WHERE id = current_setting('app.demo_tenant_id')`. Demo and
+pilot purposes converge on a single tenant by design. (Confirm it is distinct from `E2E_TENANT_ID`,
+which remains the separate QA/canary tenant.)
+
+**Decision 3 — `pilot_frozen` runtime flag:** RATIFIED — add it. Tracked as **FOLLOW-106** (see
+"Available enforcement primitives" above).
 
 ## Cross-references
 

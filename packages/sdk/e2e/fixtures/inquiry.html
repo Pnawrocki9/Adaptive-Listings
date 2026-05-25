@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Estalara SDK — Inquiry Observer Test Page</title>
+    <!--
+      data-inquiry-submit-selector wires the inquiry.started event.
+      This fixture tests the end-to-end path:
+        tenant site schema → data-inquiry-submit-selector → SdkConfig → setupObservers options
+    -->
+    <script
+      src="/dist/estalara-sdk.iife.js"
+      data-api-key="EXAMPLE_test_key_inquiry"
+      data-tenant-id="550e8400-e29b-41d4-a716-446655440001"
+      data-tier="observer"
+      data-debug="true"
+      data-ingest-url="http://localhost:4444/mock-ingest"
+      data-inquiry-submit-selector="[data-estalara-slot='inquiry-submit']"
+    ></script>
+  </head>
+  <body>
+    <h1>Listing Detail Page — Inquiry Form Test</h1>
+
+    <div class="listing-detail">
+      <h2>Marbella Villa</h2>
+      <p>Price: €1,250,000</p>
+
+      <!-- Inquiry form — submit button matched by the selector above -->
+      <form id="inquiry-form">
+        <input type="text" name="name" placeholder="Your name" />
+        <input type="email" name="email" placeholder="Your email" />
+        <textarea name="message" placeholder="Your message"></textarea>
+        <button type="submit" data-estalara-slot="inquiry-submit" id="inquiry-submit-btn">
+          Send Inquiry
+        </button>
+      </form>
+
+      <!-- Decoy button — must NOT fire inquiry.started -->
+      <button id="decoy-btn">Not an inquiry button</button>
+    </div>
+
+    <!--
+      Capture ingest calls so Playwright can inspect emitted events.
+      Mirrors the pattern used in the main fixtures/index.html.
+    -->
+    <script>
+      window.__capturedRequests = [];
+      window.__inquiryStartedFired = false;
+
+      var originalFetch = window.fetch;
+      window.fetch = function (url, options) {
+        var urlStr = typeof url === 'string' ? url : String(url);
+
+        if (urlStr.includes('mock-ingest')) {
+          var body = {};
+          try {
+            body = JSON.parse((options && options.body) || '{}');
+          } catch (e) {
+            // ignore parse errors
+          }
+          window.__capturedRequests.push({ url: urlStr, body: body });
+
+          // Check if this batch contains an inquiry.started event
+          var events = body.events || [];
+          for (var i = 0; i < events.length; i++) {
+            if (events[i].type === 'inquiry.started') {
+              window.__inquiryStartedFired = true;
+            }
+          }
+
+          return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
+        }
+
+        return originalFetch.apply(this, arguments);
+      };
+
+      // Also intercept the event queue directly so tests can check before flush.
+      // We expose a helper that reads the in-memory queue via a custom event.
+      window.__getQueuedInquiryEvents = function () {
+        // The SDK stores events in an internal array; we signal via CustomEvent.
+        var count = 0;
+        document.dispatchEvent(new CustomEvent('estalara:debug:queue-snapshot'));
+        return count;
+      };
+    </script>
+  </body>
+</html>

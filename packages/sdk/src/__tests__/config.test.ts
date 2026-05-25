@@ -46,4 +46,19 @@ describe('readConfig', () => {
     const cfg = readConfig({ dataset });
     expect(cfg.tier).toBe(DEFAULT_CONFIG.tier);
   });
+
+  it('reads data-inquiry-submit-selector when provided', () => {
+    const dataset = makeDataset({
+      apiKey: 'EXAMPLE_api_key_xyz',
+      inquirySubmitSelector: "[data-estalara-slot='inquiry-submit']",
+    });
+    const cfg = readConfig({ dataset });
+    expect(cfg.inquirySubmitSelector).toBe("[data-estalara-slot='inquiry-submit']");
+  });
+
+  it('omits inquirySubmitSelector from config when attribute is absent', () => {
+    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz' });
+    const cfg = readConfig({ dataset });
+    expect(cfg.inquirySubmitSelector).toBeUndefined();
+  });
 });

@@ -26,7 +26,14 @@ createServer((req, res) => {
     return;
   }
 
-  const url = req.url === '/' ? '/e2e/fixtures/index.html' : req.url;
+  // Map root and named fixture shortcuts to the e2e/fixtures/ directory.
+  let url = req.url ?? '/';
+  if (url === '/') {
+    url = '/e2e/fixtures/index.html';
+  } else if (/^\/[^/]+\.html$/.test(url)) {
+    // Top-level .html requests (e.g. /inquiry.html) are served from e2e/fixtures/
+    url = `/e2e/fixtures${url}`;
+  }
   const filePath = join(ROOT, url);
 
   if (!existsSync(filePath)) {

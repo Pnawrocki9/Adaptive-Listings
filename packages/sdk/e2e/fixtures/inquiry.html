@@ -25,8 +25,16 @@
       <h2>Marbella Villa</h2>
       <p>Price: €1,250,000</p>
 
-      <!-- Inquiry form — submit button matched by the selector above -->
-      <form id="inquiry-form">
+      <!--
+        Inquiry form — submit button matched by the selector above.
+        onsubmit="return false" prevents the default GET navigation so the page
+        does not reload: the SDK queues inquiry.started on click, and the 5s
+        batch flush must run in the SAME document for the mock-ingest capture
+        to observe it. In production the SDK never calls preventDefault (it must
+        not block a tenant's real form); the beforeunload keepalive flush covers
+        the real navigation path. This fixture isolates the click→event wiring.
+      -->
+      <form id="inquiry-form" onsubmit="return false;">
         <input type="text" name="name" placeholder="Your name" />
         <input type="email" name="email" placeholder="Your email" />
         <textarea name="message" placeholder="Your message"></textarea>

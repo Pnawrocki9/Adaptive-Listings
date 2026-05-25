@@ -13,9 +13,10 @@
 
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DetectionPreview } from './DetectionPreview';
+import { DetectionPreview, buildSnippet } from './DetectionPreview';
 import type { DetectionPreviewProps } from './DetectionPreview';
 import type { TenantSiteSchema } from '@estalara/shared';
+import { CONTROL_PLANE_URL } from '@estalara/shared';
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -289,4 +290,41 @@ describe('DetectionPreview', () => {
 
     vi.useRealTimers();
   }, 10000);
+
+  // ── FOLLOW-105 §F.1 — buildSnippet emits the canonical data-decision-url ──
+  describe('buildSnippet — FOLLOW-105 canonical /api/adapt enforcement', () => {
+    const TENANT = '550e8400-e29b-41d4-a716-446655440000';
+    const KEY = 'est_pub_test123';
+
+    it('emits data-tenant-id, data-api-key, AND data-decision-url', () => {
+      const snippet = buildSnippet(TENANT, KEY);
+      expect(snippet).toContain(`data-tenant-id="${TENANT}"`);
+      expect(snippet).toContain(`data-api-key="${KEY}"`);
+      expect(snippet).toContain('data-decision-url=');
+    });
+
+    it('data-decision-url ends with "/api" so the SDK-appended "/adapt" yields "/api/adapt"', () => {
+      const snippet = buildSnippet(TENANT, KEY);
+      const match = /data-decision-url="([^"]+)"/.exec(snippet);
+      expect(match).not.toBeNull();
+      const url = match?.[1] ?? '';
+      expect(url.endsWith('/api')).toBe(true);
+      // The SDK appends "/adapt" (core/adapt.ts) → canonical control-plane endpoint.
+      expect(`${url}/adapt`).toBe(`${CONTROL_PLANE_URL}/api/adapt`);
+      expect(`${url}/adapt`).toBe('https://admin.estalara.com/api/adapt');
+    });
+
+    it('data-decision-url is an ABSOLUTE control-plane URL (not a relative path)', () => {
+      const snippet = buildSnippet(TENANT, KEY);
+      const match = /data-decision-url="([^"]+)"/.exec(snippet);
+      const url = match?.[1] ?? '';
+      // Absolute https:// — a relative "/api" would resolve against the TENANT's
+      // own domain when the snippet is embedded externally, silently misrouting
+      // adapt requests. [FOLLOW-105 §F.1 / §F.2]
+      expect(url.startsWith('https://')).toBe(true);
+      expect(url.startsWith('/')).toBe(false);
+      // Must NOT name the deprecated Cloudflare Worker.
+      expect(url).not.toContain('decision.estalara.com');
+    });
+  });
 });

@@ -112,7 +112,7 @@ function confidenceBadgeClass(confidence: number): string {
  * Emitting the bare host (`https://admin.estalara.com`) would resolve to
  * `https://admin.estalara.com/adapt`, which 404s. [FOLLOW-105]
  */
-function buildSnippet(tenantId: string, apiKey: string): string {
+export function buildSnippet(tenantId: string, apiKey: string): string {
   return `<script\n  src="https://cdn.estalara.com/sdk.js"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"\n></script>`;
 }
 

@@ -302,6 +302,9 @@ importers:
       typescript:
         specifier: '*'
         version: 5.9.3
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
     devDependencies:
       '@estalara/shared':
         specifier: workspace:^

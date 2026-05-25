@@ -5,6 +5,7 @@
  *   - Scroll depth tracking (25/50/75/100% milestones)
  *   - IntersectionObserver for listing card impressions
  *   - Click tracking on CTA buttons
+ *   - Click tracking on inquiry submit button (inquiry.started)
  *
  * Returns a cleanup function to remove all listeners.
  *
@@ -17,9 +18,20 @@ import { collectScrollDepth } from './events.js';
 
 const SCROLL_MILESTONES = [25, 50, 75, 100] as const;
 
+export interface ObserverOptions {
+  /**
+   * CSS selector for the inquiry form submit button (e.g.
+   * `[data-estalara-slot='inquiry-submit']`).  When provided, a click on the
+   * matched element emits an `inquiry.started` event.  Sourced from the
+   * tenant's detected site schema (`inquiry_submit_selector`).
+   */
+  inquirySubmitSelector?: string;
+}
+
 export function setupObservers(
   config: SdkConfig,
   onEvent: (event: CollectedEvent) => void,
+  options: ObserverOptions = {},
 ): () => void {
   const cleanupFns: (() => void)[] = [];
 
@@ -121,6 +133,41 @@ export function setupObservers(
   cleanupFns.push(() => {
     document.removeEventListener('click', onCtaClick);
   });
+
+  // ─── Inquiry submit click tracking ────────────────────────────────────────
+  //
+  // Emits `inquiry.started` when the user clicks the inquiry form submit
+  // button identified by `options.inquirySubmitSelector`.  Only wired when
+  // the selector is present (detail pages on app.estalara.com) and the
+  // tenant has not opted out of tracking.
+  //
+  // Gate: skipped when consent_state is 'opted_out'.
+
+  const inquirySubmitSelector = options.inquirySubmitSelector;
+  if (inquirySubmitSelector && config.consentState !== 'opted_out') {
+    // Capture as a const string for TypeScript narrowing inside the nested function.
+    const resolvedSelector: string = inquirySubmitSelector;
+    function onInquirySubmitClick(e: MouseEvent): void {
+      try {
+        const target = e.target as HTMLElement | null;
+        const submitBtn = target?.closest(resolvedSelector) as HTMLElement | null;
+        if (!submitBtn) return;
+
+        onEvent({
+          type: 'inquiry.started',
+          payload: { form_variant: 'contact_v2' },
+          ts: Date.now(),
+        });
+      } catch {
+        // Swallow — never propagate
+      }
+    }
+
+    document.addEventListener('click', onInquirySubmitClick);
+    cleanupFns.push(() => {
+      document.removeEventListener('click', onInquirySubmitClick);
+    });
+  }
 
   if (config.debug) {
     console.log('[Estalara] Observers active');

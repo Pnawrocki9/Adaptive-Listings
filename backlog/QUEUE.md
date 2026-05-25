@@ -58,7 +58,7 @@ updates.
 | 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)                        | 6       | 6    | 0       | 0     | 0       |
 | 10     | 12    | Close the bandit loop + real embeddings + e2e test                                   | 9       | 9    | 0       | 0     | 0       |
 | 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                     | 9       | 5    | 0       | 4     | 0       |
-| 12     | 14    | Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI) | 10      | 0    | 1       | 9     | 0       |
+| 12     | 14    | Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI) | 10      | 0    | 0       | 10    | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -1921,12 +1921,13 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 - id: FOLLOW-078
   title: DSR failure alerting — PagerDuty or Sentry alert on stuck/failed mutations
   agent: compliance-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 1.5
   depends_on: [FOLLOW-039]
   assigned_to: compliance-engineer
   started_at: '2026-05-24T12:00:00Z'
+  pr: '#145'
   branch: compliance-engineer/FOLLOW-078-dsr-alerting
   model: sonnet-4.6
   spec: backlog/sprint-12/FOLLOW-078.md
@@ -2051,9 +2052,7 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
 
 ## Currently in flight
 
-### Lane A — Pilot-critical hardening
-
-- FOLLOW-078 — PR #145 — pushed 2026-05-24, CI running
+_(all Sprint 12 tickets are now READY_FOR_REVIEW — no active agents)_
 
 ## Awaiting human review (6 PRs)
 
@@ -2067,13 +2066,14 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
   (E2E_BEARER_TOKEN) — human action required before job turns green
 - FOLLOW-075 — PR #142 — CI green — CRON_SECRET auth hardened (returns 401 when unset), .env.example
   updated, ≥3 auth unit tests added
-- FOLLOW-078 — PR #145 — CI pending (pushed 2026-05-24) — stuck mutation detection + Sentry alerting
-  - DSR_ALERTING.md + DPIA §8 update + commitlint PILOT- prefix fix
+- FOLLOW-078 — PR #145 — CI green — stuck mutation detection + Sentry captureMessage(warning) added
+  to GET /api/dsr/mutation-poll; DSR_ALERTING.md + DPIA §8 update; commitlint PILOT- prefix fix
 
 ### Lane C — ROI instrumentation
 
-- TICKET-PILOT-003 — PR #146 — CI running — CTA lift dashboard + two-proportion z-test lib +
-  /api/pilot/cta-lift route + /dashboard/pilot page; 26 tests; FOLLOW-086 stub added
+- TICKET-PILOT-003 — PR #146 — CI green — CTA lift dashboard + two-proportion z-test lib +
+  /api/pilot/cta-lift route + /dashboard/pilot page; 26 tests; FOLLOW-086 stub added; route-helpers
+  extraction fix applied (Next.js 15 route segment type constraint)
 - TICKET-PILOT-004 — PR #144 — CI green — inquiry starts tracking: SDK observer, /api/pilot/inquiry-
   starts route, dashboard panel coordinated with TICKET-PILOT-003; ≥6 tests
 

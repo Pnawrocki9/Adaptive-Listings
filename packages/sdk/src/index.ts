@@ -261,95 +261,108 @@ async function init(): Promise<void> {
     // Signal history — accumulated pre-quiz behavioral events for mismatch detection
     const signalHistory: { eventType: string; payload?: Record<string, unknown> }[] = [];
 
-    // 6. Set up behavioral observers, wiring listing view count for quiz
-    const cleanupObservers = setupObservers(config, (event: CollectedEvent) => {
-      eventQueue.push(event);
+    // 6. Set up behavioral observers, wiring listing view count for quiz.
+    //    Pass inquirySubmitSelector from config so the inquiry click observer
+    //    actually registers — fixes the RETRO-008/RETRO-009 bug where
+    //    inquiry.started never fired in production because the options argument
+    //    was omitted at the call site (FOLLOW-097).
+    const cleanupObservers = setupObservers(
+      config,
+      (event: CollectedEvent) => {
+        eventQueue.push(event);
 
-      // Record signal before quiz is answered (for mismatch detection)
-      signalHistory.push({ eventType: event.type, payload: event.payload });
+        // Record signal before quiz is answered (for mismatch detection)
+        signalHistory.push({ eventType: event.type, payload: event.payload });
 
-      // Update Bayesian intent state from this behavioral signal
-      const prevSignalCount = currentIntentState.signal_count;
-      currentIntentState = applyBehavioralSignal(currentIntentState, event.type, event.payload);
-      onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+        // Update Bayesian intent state from this behavioral signal
+        const prevSignalCount = currentIntentState.signal_count;
+        currentIntentState = applyBehavioralSignal(currentIntentState, event.type, event.payload);
+        onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
 
-      // Re-fetch directives every REFETCH_SIGNAL_INTERVAL behavioral signals
-      if (
-        currentIntentState.signal_count > prevSignalCount &&
-        currentIntentState.signal_count % REFETCH_SIGNAL_INTERVAL === 0
-      ) {
-        void refreshDirectives();
-      }
+        // Re-fetch directives every REFETCH_SIGNAL_INTERVAL behavioral signals
+        if (
+          currentIntentState.signal_count > prevSignalCount &&
+          currentIntentState.signal_count % REFETCH_SIGNAL_INTERVAL === 0
+        ) {
+          void refreshDirectives();
+        }
 
-      if (event.type === 'listing.viewed' && shadowHost && !quizTriggered && !isQuizDismissed()) {
-        listingViewCount++;
-        if (listingViewCount >= QUIZ_TRIGGER_THRESHOLD) {
-          quizTriggered = true;
-          renderQuizTrigger(
-            shadowHost.root,
-            { accentColor: quizConfig.accentColor, icon: '🎯', language: quizConfig.language },
-            () => {
-              renderQuizWidget(
-                shadowHost.root,
-                quizConfig,
-                (answers) => {
-                  // Apply strong quiz prior to intent state
-                  currentIntentState = applyQuizPrior(
-                    currentIntentState,
-                    answers.purpose,
-                    answers.horizon,
-                  );
-                  onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
-                  if (config.debug) {
-                    console.log(
-                      `[Estalara] Quiz → archetype=${currentIntentState.archetype} confidence=${String(currentIntentState.confidence)}`,
+        if (event.type === 'listing.viewed' && shadowHost && !quizTriggered && !isQuizDismissed()) {
+          listingViewCount++;
+          if (listingViewCount >= QUIZ_TRIGGER_THRESHOLD) {
+            quizTriggered = true;
+            renderQuizTrigger(
+              shadowHost.root,
+              { accentColor: quizConfig.accentColor, icon: '🎯', language: quizConfig.language },
+              () => {
+                renderQuizWidget(
+                  shadowHost.root,
+                  quizConfig,
+                  (answers) => {
+                    // Apply strong quiz prior to intent state
+                    currentIntentState = applyQuizPrior(
+                      currentIntentState,
+                      answers.purpose,
+                      answers.horizon,
                     );
-                  }
-                  eventQueue.push({
-                    type: 'quiz.event',
-                    payload: {
-                      step: 'completed',
-                      answers,
-                      trigger: 'prompt_after_3_listings',
-                      archetype: currentIntentState.archetype,
-                      confidence: currentIntentState.confidence,
-                    },
-                    ts: Date.now(),
-                  });
-
-                  // Mismatch detection — compare quiz archetype against behavioral-only evidence
-                  const behavioralOnlyState = calculateBehavioralOnlyState(signalHistory);
-                  const mismatch = detectMismatch(
-                    currentIntentState.archetype,
-                    behavioralOnlyState,
-                    currentSession.sessionId,
-                  );
-                  if (mismatch) {
+                    onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+                    if (config.debug) {
+                      console.log(
+                        `[Estalara] Quiz → archetype=${currentIntentState.archetype} confidence=${String(currentIntentState.confidence)}`,
+                      );
+                    }
                     eventQueue.push({
-                      type: 'quiz.mismatch',
+                      type: 'quiz.event',
                       payload: {
-                        quiz_archetype: mismatch.quiz_archetype,
-                        behavioral_archetype: mismatch.behavioral_archetype,
-                        confidence_gap: mismatch.confidence_gap,
-                        signal_count: mismatch.signal_count,
+                        step: 'completed',
+                        answers,
+                        trigger: 'prompt_after_3_listings',
+                        archetype: currentIntentState.archetype,
+                        confidence: currentIntentState.confidence,
                       },
                       ts: Date.now(),
                     });
-                  }
 
-                  // Re-fetch directives with quiz-updated archetype confidence
-                  void refreshDirectives();
-                },
-                () => {
-                  // dismissed — reset so it can show again next session
-                  quizTriggered = false;
-                },
-              );
-            },
-          );
+                    // Mismatch detection — compare quiz archetype against behavioral-only evidence
+                    const behavioralOnlyState = calculateBehavioralOnlyState(signalHistory);
+                    const mismatch = detectMismatch(
+                      currentIntentState.archetype,
+                      behavioralOnlyState,
+                      currentSession.sessionId,
+                    );
+                    if (mismatch) {
+                      eventQueue.push({
+                        type: 'quiz.mismatch',
+                        payload: {
+                          quiz_archetype: mismatch.quiz_archetype,
+                          behavioral_archetype: mismatch.behavioral_archetype,
+                          confidence_gap: mismatch.confidence_gap,
+                          signal_count: mismatch.signal_count,
+                        },
+                        ts: Date.now(),
+                      });
+                    }
+
+                    // Re-fetch directives with quiz-updated archetype confidence
+                    void refreshDirectives();
+                  },
+                  () => {
+                    // dismissed — reset so it can show again next session
+                    quizTriggered = false;
+                  },
+                );
+              },
+            );
+          }
         }
-      }
-    });
+      },
+      // Thread inquiry_submit_selector from tenant site schema → SdkConfig → observer options.
+      // This was the root cause of inquiry.started never firing in production (FOLLOW-097).
+      // Build options object conditionally to satisfy exactOptionalPropertyTypes strictness.
+      config.inquirySubmitSelector !== undefined
+        ? { inquirySubmitSelector: config.inquirySubmitSelector }
+        : {},
+    );
 
     // 7. Flush events on interval and page unload
     async function flush(): Promise<void> {

@@ -30,6 +30,13 @@ export interface SdkConfig {
    */
   accentColor: string;
   /**
+   * CSS selector for the inquiry form submit button detected from the tenant site schema.
+   * Sourced from `inquiry_submit_selector` in the activated tenant config.
+   * When present, a click on the matched element emits an `inquiry.started` event.
+   * Read from data-inquiry-submit-selector attribute on the script tag.
+   */
+  inquirySubmitSelector?: string;
+  /**
    * Outcome event names that trigger a feedback ping to the bandit.
    * Defaults to `['inquiry.completed']`. Configure via data-feedback-events (comma-separated).
    */
@@ -86,11 +93,16 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
 
   const accentColor = script.dataset.accentColor ?? DEFAULT_CONFIG.accentColor;
 
+  // CSS selector for the inquiry form submit button — sourced from the tenant site schema
+  // (inquiry_submit_selector field) and surfaced via data-inquiry-submit-selector attribute.
+  const inquirySubmitSelector = script.dataset.inquirySubmitSelector;
+
   return {
     apiKey,
     ...(tenantId !== undefined ? { tenantId } : {}),
     ...(decisionApiUrl !== undefined ? { decisionApiUrl } : {}),
     ...(privacyPolicyUrl !== undefined ? { privacyPolicyUrl } : {}),
+    ...(inquirySubmitSelector !== undefined ? { inquirySubmitSelector } : {}),
     ingestUrl: script.dataset.ingestUrl ?? DEFAULT_CONFIG.ingestUrl,
     tier,
     debug: script.dataset.debug === 'true',

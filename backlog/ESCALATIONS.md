@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — commitlint ticket-reference rule rejects the `TICKET-PILOT-` prefix [TICKET-PILOT-003]
+## RESOLVED — commitlint ticket-reference rule rejects the `TICKET-PILOT-` prefix [TICKET-PILOT-003]
 
 **Filed by:** data-engineer **Date:** 2026-05-24T00:00:00Z **Affects:** TICKET-PILOT-003 (and any
 other `TICKET-PILOT-NNN` Sprint 12 pilot tickets) **Type:** repo-config
@@ -54,11 +54,14 @@ Add `PILOT-` to the `ticketPattern` alternation in `commitlint.config.cjs`:
 
 Then the TICKET-PILOT-003 commit can be created and the PR opened.
 
-**Resolution:**
+**Resolution:** Resolved 2026-05-25 by pm-orchestrator. `PILOT-` was added to the `ticketPattern`
+alternation in `commitlint.config.cjs`; the fix landed alongside PR #145 (FOLLOW-078). All
+`[TICKET-PILOT-NNN]` commit subjects now pass the commit-msg hook (verified: PRs #143–#146 merged
+with PILOT-prefixed commits).
 
 ---
 
-## OPEN — DOPPLER_TOKEN_DEV secret must be provisioned in GitHub Actions [FOLLOW-040]
+## OPEN — ESC-010: DOPPLER_TOKEN_DEV secret must be provisioned in GitHub Actions [FOLLOW-040]
 
 **Filed by:** devops-engineer **Date:** 2026-05-24T00:00:00Z **Affects:** FOLLOW-040, FOLLOW-063,
 FOLLOW-068, FOLLOW-039 **Type:** repo-config
@@ -96,7 +99,7 @@ The token has NOT been created yet. Until it is provisioned in GitHub Actions se
 
 ---
 
-## OPEN — GitHub Actions billing prevents CI from running on PR #125
+## RESOLVED — GitHub Actions billing prevents CI from running on PR #125
 
 **Filed by:** backend-engineer **Date:** 2026-05-21T21:40:00Z **Affects:** TICKET-AUTO-006-POLISH,
 PR #125 **Type:** other
@@ -109,7 +112,10 @@ prettier unchanged. The code is production-ready but CI cannot validate it.
 **Required action:** Resolve GitHub Actions billing so CI can run on PR #125. Once CI is green, PM
 can merge and mark TICKET-AUTO-006-POLISH DONE.
 
-**Resolution:**
+**Resolution:** Resolved 2026-05-25 by pm-orchestrator. GitHub Actions billing has been restored —
+CI has run green on PRs #142–#146 (Sprint 12) since this was filed. PR #125 (TICKET-AUTO-006-POLISH)
+is stale and should be rebased + re-validated independently if the carve-out work is still wanted;
+the billing block itself no longer applies.
 
 ---
 

@@ -1,13 +1,20 @@
 # Backlog Queue
 
-**Updated 2026-05-25T11:15Z by pm-orchestrator.** Sprint 11 COMPLETE as of 2026-05-24 (5 P1
-pilot-blockers merged: #135 FOLLOW-063, #136 FOLLOW-069, #137 FOLLOW-068, #138 FOLLOW-040, #139
-FOLLOW-039). RETRO-007 written; Master Design bumped to v2.5; AI Council Checkpoint 2026-05-24
-approved Sprint 12 as "controlled pilot launch on app.estalara.com". Sprint 12 OPEN — 10 tickets
-across 3 lanes (Lane A hardening, Lane B pilot onboarding, Lane C ROI instrumentation). Sprint 10
-COMPLETE as of 2026-05-23 (8 PRs merged: #127, #128, #129, #130, #131, #132, #133, #134). RETRO-006
-written; Master Design bumped to v2.3; Rule H amendment applied (CONVENTIONS_PATCH.md). Sprint 9.5
-COMPLETE (2026-05-22, 6 PRs: #121, #122, #123, #124, #125, #126). Sprint 9 COMPLETE as of
+**Updated 2026-05-25T18:00Z by pm-orchestrator.** **Sprint 13 OPEN** — three-track structure: Lane A
+(correctness fixes from RETRO-008/009) → Lane B (pilot launch on app.estalara.com, blocked until
+Lane A) → Lane C (Adaptive Listings v1.0 intent build, parallel with Lane B during shadow window).
+See the Sprint 13 section below. **Sprint 12 COMPLETE as of 2026-05-25** — Lane A hardening
+(FOLLOW-081/075/078) + Lane C ROI instrumentation (PILOT-003/004) merged across PRs #142–#146; Lane
+B (TICKET-PILOT-001/002 pilot onboarding) DEFERRED to Sprint 13 because RETRO-008/009 surfaced P1
+dashboard-correctness blockers that gate go-live; FOLLOW-079 CANCELLED (split into
+FOLLOW-088/089/090). RETRO-SPRINT-12 written; Master Design bumped to v2.8. Sprint 11 COMPLETE as of
+2026-05-24 (5 P1 pilot-blockers merged: #135 FOLLOW-063, #136 FOLLOW-069, #137 FOLLOW-068, #138
+FOLLOW-040, #139 FOLLOW-039). RETRO-007 written; Master Design bumped to v2.5; AI Council Checkpoint
+2026-05-24 approved Sprint 12 as "controlled pilot launch on app.estalara.com". Sprint 12 COMPLETE —
+Lane A hardening + Lane C ROI instrumentation merged; Lane B pilot onboarding deferred to Sprint 13.
+Sprint 10 COMPLETE as of 2026-05-23 (8 PRs merged: #127, #128, #129, #130, #131, #132, #133, #134).
+RETRO-006 written; Master Design bumped to v2.3; Rule H amendment applied (CONVENTIONS_PATCH.md).
+Sprint 9.5 COMPLETE (2026-05-22, 6 PRs: #121, #122, #123, #124, #125, #126). Sprint 9 COMPLETE as of
 2026-05-15: GDPR-001 (PR #111), GDPR-002 (PR #118), GDPR-003 (PR #116), GDPR-004 (PR #117), DESC-001
 (PR #112+#114), VAL-001 (PR #110) — all 6 DONE. DESC-PIVOT-001 (PR #115) merged. Sprint 7.5
 COMPLETE. Sprint 7 COMPLETE. Sprint 8 COMPLETE. Sprint 8.5 COMPLETE. Sprint 2.5 SUPERSEDED —
@@ -58,7 +65,8 @@ updates.
 | 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)                                                             | 6       | 6    | 0       | 0     | 0       |
 | 10     | 12    | Close the bandit loop + real embeddings + e2e test                                                                        | 9       | 9    | 0       | 0     | 0       |
 | 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                                                          | 9       | 5    | 0       | 4     | 0       |
-| 12     | 14    | Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI)                                      | 10      | 5    | 0       | 4     | 0       |
+| 12     | 14    | Pilot launch on app.estalara.com — COMPLETE (Lane A + Lane C; Lane B → Sprint 13)                                         | 7       | 5    | 0       | 2     | 0       |
+| 13     | 15    | Adaptive Listings v1.0 — correctness → pilot launch → intent build (Lane A/B/C)                                           | 13      | 0    | 0       | 7     | 6       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -1835,7 +1843,7 @@ hygiene:** FOLLOW-040 ✅.
     seed step CI-enforced) and FOLLOW-040 (Doppler hygiene).
 ```
 
-## Sprint 12 — Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI) (OPEN)
+## Sprint 12 — Pilot launch on app.estalara.com (Lane A hardening + Lane B onboarding + Lane C ROI) (COMPLETE)
 
 **Sprint goal:** "Controlled pilot launch on app.estalara.com. Lane A hardening completes
 pilot-critical infrastructure (ClickHouse DSR integration test, cron auth, DSR alerting). Lane B
@@ -1945,43 +1953,14 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
     process would expect an alert. Wire Sentry alert (or PagerDuty if available) on permanent failure
     after max retries. DevOps joint ownership for alert routing.
 
-# LANE B — Pilot onboarding on app.estalara.com (P1, blocked until Lane A complete)
-
-- id: TICKET-PILOT-001
-  title:
-    Onboard app.estalara.com — SDK install, schema activation via Magic Link wizard, run in shadow
-    mode 3-5 days
-  agent: sdk-engineer + backend-engineer
-  status: READY
-  priority: P1
-  estimated_hours: 4
-  depends_on: [FOLLOW-081, FOLLOW-079, FOLLOW-075, FOLLOW-078]
-  model: sonnet-4.6
-  spec: backlog/sprint-12/TICKET-PILOT-001.md
-  notes: |
-    Lane A must be fully DONE before this ticket activates. Steps: (1) install @estalara/sdk
-    snippet on app.estalara.com (Tier 3 Native path via data-estalara-* attributes already built
-    per TICKET-NATIVE-001 scope; wiring in SvelteKit +layout.svelte). (2) Run Magic Link wizard
-    to activate tenant schema (000-app-estalara fixture already in corpus with detection_source=
-    data_estalara, confidence ≥0.99). (3) Start in shadow mode (adaptation runs but directives
-    not injected) for 3-5 days to collect baseline behavioral data. (4) Generate and verify SDK
-    snippet for production embed.
-
-- id: TICKET-PILOT-002
-  title: Activation runbook + go/no-go checklist + incident response procedure
-  agent: architect
-  status: READY
-  priority: P1
-  estimated_hours: 2
-  depends_on: [TICKET-PILOT-001]
-  model: sonnet-4.6
-  spec: backlog/sprint-12/TICKET-PILOT-002.md
-  notes: |
-    Document: (1) go/no-go checklist (Lane A complete, shadow mode ≥3 days, FOLLOW-081 integration
-    test green, CTA baseline captured, incident owner confirmed). (2) Activation procedure (flip
-    shadow → live, verify first adaptation directive served, check Sentry for errors). (3) Incident
-    response (rollback = remove SDK snippet OR set tenant.active=false; escalation path to Piotr
-    as incident owner). Lives in docs/ops/PILOT_RUNBOOK.md.
+# LANE B — Pilot onboarding on app.estalara.com — MOVED TO SPRINT 13 (Phase 2)
+# TICKET-PILOT-001 + TICKET-PILOT-002 deferred to Sprint 13 Lane B on 2026-05-25 (pm-orchestrator).
+# Reason: RETRO-008/009 surfaced P1 dashboard-correctness blockers (FOLLOW-092/093/094/097) in the
+# Lane C instrumentation that must land before shadow-mode go-live, or the pilot's go/no-go metrics
+# could display fabricated success. Pilot launch is now the headline of Sprint 13, gated behind
+# Sprint 13 Lane A (correctness). Specs remain at backlog/sprint-12/TICKET-PILOT-001.md +
+# TICKET-PILOT-002.md; re-pointed under Sprint 13 below. TICKET-PILOT-001 depends_on updated to drop
+# the CANCELLED FOLLOW-079.
 
 # LANE C — Pilot ROI instrumentation (P1, can start in parallel with Lane B)
 
@@ -2060,13 +2039,237 @@ VERCEL_CRON_SECRET provisioned in Vercel + Doppler.
     are now DONE so this can be written with concrete runbook steps.
 ```
 
+## Sprint 13 — Adaptive Listings v1.0 — correctness → pilot launch → intent build (OPEN)
+
+**Sprint goal:** "Launch the controlled pilot on app.estalara.com for real, then build the Adaptive
+Listings v1.0 intent coverage. Lane A makes the pilot dashboards honest (no fabricated metrics, real
+producer→consumer paths). Lane B onboards app.estalara.com and runs shadow mode, blocked until Lane
+A is green. Lane C builds the 18-archetype intent detection (behavioral observers
+
+- chat NLP) in parallel with the Lane B shadow window."
+
+**Entry condition:** Sprint 12 COMPLETE ✓ (2026-05-25). **Pending AI Council Checkpoint** on Track 1
+(pilot-first) vs Track 2 (intent-first) ordering before Lane C spawns — see ESCALATIONS / sprint
+preamble.
+
+**Sprint sequencing:** Lane A first (correctness gates the pilot). Lane B blocked until Lane A DONE.
+Lane C can run in parallel with Lane B during the 3–5 day shadow window. FOLLOW-087 (Lane C) cannot
+reach green CI until ESC-010 (`DOPPLER_TOKEN_DEV`) + ESC-009 (`E2E_BEARER_TOKEN`) secrets are
+provisioned (~20 min Piotr action).
+
+```yaml
+# LANE A — Dashboard correctness (P1, from RETRO-008/009; must complete before Lane B go-live)
+
+- id: FOLLOW-094
+  title: cta-lift route must fail loud on ClickHouse error + expose data provenance (Rule K.2)
+  agent: data-engineer + backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  model: sonnet-4.6
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-094.md)
+  notes: |
+    RETRO-008 CB-1. Separate "CLICKHOUSE_URL unset → legitimate dev/CI mock" from "CLICKHOUSE_URL
+    set but query failed → must surface error + Sentry, never fabricate significant lift". Expose
+    data_source: 'mock' | 'clickhouse' on the response. Bundle with FOLLOW-093 (same cta-lift route
+    — sequence together to avoid merge conflicts) and pair with FOLLOW-098 (inquiry-starts sibling).
+
+- id: FOLLOW-098
+  title: inquiry-starts route must fail loud on ClickHouse error + expose data provenance (Rule K.2)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 1.5
+  depends_on: []
+  model: sonnet-4.6
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-098.md)
+  notes: |
+    RETRO-009. Same Rule K.2 treatment as FOLLOW-094, applied to /api/pilot/inquiry-starts. Sequence
+    alongside FOLLOW-094 so both pilot routes get identical fail-loud + provenance behavior.
+
+- id: FOLLOW-093
+  title: Reconcile the two CTA-lift query paths onto one schema vocabulary
+  agent: data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  model: sonnet-4.6
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-093.md)
+  notes: |
+    RETRO-008. /api/pilot/cta-lift (events.cta.clicked on adaptation_decisions.ts) vs
+    /api/dashboard/analytics/lift (dqs_events.cta_clicked on assigned_at) report divergent numbers.
+    Verify canonical column (ts vs assigned_at) from the migration, fix the wrong route, document
+    both + /dashboard/pilot in the Master Design route inventory. Touches the cta-lift route —
+    sequence after FOLLOW-094.
+
+- id: FOLLOW-097
+  title: Thread detected inquiry_submit_selector into SDK setupObservers() at init
+  agent: sdk-engineer + backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 2
+  depends_on: []
+  model: sonnet-4.6
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-097.md)
+  notes: |
+    RETRO-009 HALF_WIRE_P. setupObservers(config, onEvent) never passes the options object, so
+    inquirySubmitSelector is always undefined → inquiry.started never fires in prod (only in unit
+    tests). Plumb the selector from SDK config / activated tenant site schema into the options arg
+    at init; add a test that drives the real init path. SDK-side, independent of the route fixes —
+    safe to run in parallel with FOLLOW-094/093/098.
+
+# LANE B — Pilot onboarding on app.estalara.com (P1, BLOCKED until Lane A complete)
+
+- id: TICKET-PILOT-001
+  title:
+    Onboard app.estalara.com — SDK install, schema activation via Magic Link wizard, run in shadow
+    mode 3-5 days
+  agent: sdk-engineer + backend-engineer
+  status: BLOCKED
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-094, FOLLOW-098, FOLLOW-093, FOLLOW-097]
+  model: sonnet-4.6
+  spec: backlog/sprint-12/TICKET-PILOT-001.md
+  notes: |
+    Deferred from Sprint 12 Lane B. depends_on updated 2026-05-25 — dropped CANCELLED FOLLOW-079;
+    now gated on Sprint 13 Lane A (correctness) being DONE rather than Sprint 12 Lane A hardening
+    (already complete). Steps: (1) install @estalara/sdk snippet on app.estalara.com (Tier 3 Native
+    path via data-estalara-* attributes; wiring in SvelteKit +layout.svelte). (2) Run Magic Link
+    wizard to activate tenant schema (000-app-estalara fixture, detection_source=data_estalara,
+    confidence ≥0.99). (3) Shadow mode (adaptation runs, directives not injected) 3-5 days for
+    baseline. (4) Generate + verify SDK snippet for production embed.
+
+- id: FOLLOW-092
+  title: Verify cta.clicked producer→ClickHouse path is live for the pilot tenant
+  agent: data-engineer
+  status: BLOCKED
+  priority: P1
+  estimated_hours: 2
+  depends_on: [TICKET-PILOT-001]
+  model: sonnet-4.6
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-092.md)
+  notes: |
+    RETRO-008 HALF_WIRE_C. Confirm SDK on app.estalara.com emits cta.clicked, ingest writes the rows
+    to ClickHouse events for the pilot tenant, and adaptation_decisions has matching session_id rows
+    with holdout_group set. Gates treating the cta-lift dashboard as authoritative. Run during the
+    TICKET-PILOT-001 shadow window.
+
+- id: TICKET-PILOT-002
+  title: Activation runbook + go/no-go checklist + incident response procedure
+  agent: architect
+  status: BLOCKED
+  priority: P1
+  estimated_hours: 2
+  depends_on: [TICKET-PILOT-001, FOLLOW-092]
+  model: sonnet-4.6
+  spec: backlog/sprint-12/TICKET-PILOT-002.md
+  notes: |
+    Deferred from Sprint 12 Lane B. Go/no-go checklist must include the RETRO-008 §5a data-provenance
+    check (dashboard shows data_source: 'clickhouse', not 'mock') for the PRIMARY metric — otherwise
+    the runbook could green-light a pilot whose lift number is fabricated. Lives in
+    docs/ops/PILOT_RUNBOOK.md.
+
+# LANE C — Adaptive Listings v1.0 intent build (parallel with Lane B during shadow window)
+
+- id: FOLLOW-099
+  title: SDK behavioral observers + payload schemas (5 new event types)
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 8
+  depends_on: []
+  model: sonnet-4.6
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-099.md)
+  notes: |
+    photo.dwell, feature.expanded, mortgage_calc.used, filter.applied (facet+value),
+    inquiry.started. Payload-aware dispatch through dispatchEvents(). Bundle delta <5KB gzip.
+    Foundation for §D.6 Coverage Matrix.
+
+- id: FOLLOW-100
+  title: SIGNAL_LIKELIHOODS all 18 archetypes + CHAT_INTENT_LIKELIHOODS + applyChatIntentPrior()
+  agent: sdk-engineer
+  status: BLOCKED
+  priority: P1
+  estimated_hours: 8
+  depends_on: [FOLLOW-099]
+  model: opus-4.7-xhigh
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-100.md)
+  notes: |
+    Likelihood calibration + Bayesian prior math → opus-4.7-xhigh. Per §D.1.1 + §D.6. Target:
+    ≥13/18 archetypes reach 🟢 Full coverage. Payload-aware (filter.applied likelihoods differ by
+    facet value). Thresholds calibrated on synthetic session fixtures (feeds §D.7).
+
+- id: FOLLOW-087
+  title: Chat NLP in apps/intent-engine (Haiku 4.5 real-time + Sonnet 4.6 batch)
+  agent: ml-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 12
+  depends_on: [FOLLOW-040, FOLLOW-063]
+  model: opus-4.7-xhigh
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-087.md)
+  notes: |
+    Code deps (FOLLOW-040/063) are DONE, but this CANNOT reach green CI until ESC-010
+    (DOPPLER_TOKEN_DEV) + ESC-009 (E2E_BEARER_TOKEN) secrets are provisioned. Two-tier pipeline per
+    §C.3 v2.6, identical 12-dim output schema, model as Doppler config (INTENT_REALTIME_MODEL /
+    INTENT_BATCH_MODEL). opus-4.7-xhigh — async semantics + structured-output accuracy.
+
+- id: FOLLOW-101
+  title: chat.intent.detected → Bayesian prior bridge in SDK intent.ts
+  agent: ml-engineer + sdk-engineer
+  status: BLOCKED
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-087, FOLLOW-100]
+  model: opus-4.7-xhigh
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-101.md)
+  notes: |
+    Double-gated (needs stable chat.intent.detected schema from FOLLOW-087 + applyChatIntentPrior
+    from FOLLOW-100). SDK consumes chat.intent.detected, applies strong prior, detectMismatch vs quiz
+    prior → quiz.mismatch. Last item in Lane C.
+
+- id: FOLLOW-102
+  title: Quiz ON/OFF toggle (SdkConfig + Supabase tenants.quiz_enabled + dashboard)
+  agent: sdk-engineer + backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  model: sonnet-4.6
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-102.md)
+  notes: |
+    Per §B.1. SdkConfig.quiz.enabled + trigger_after_n_listings; Supabase tenants.quiz_enabled as
+    primary SoT (migration 0015); dashboard toggle; snippet generator. Independent — any slot.
+
+- id: FOLLOW-103
+  title: app.estalara.com DOM adaptation — corpus fixture + AI Vision slots + 5-slot coverage
+  agent: ml-engineer + sdk-engineer
+  status: BLOCKED
+  priority: P1
+  estimated_hours: 4
+  depends_on: [TICKET-PILOT-001]
+  model: sonnet-4.6
+  spec: (to author at spawn — backlog/sprint-13/FOLLOW-103.md)
+  notes: |
+    Per §E.2.3. Corpus fixture 000-app-estalara; AI Vision (L5, ANTHROPIC_API_KEY in Doppler) detects
+    5 TextDirective slots with zero manual markers; 18×5=90 directive coverage assertion; SDK uses
+    control-plane route (full 18-archetype playbook). photos + listings-grid ReorderDirective deferred
+    → FOLLOW-104.
+```
+
 ## Currently in flight
 
-_(all Sprint 12 tickets are now READY_FOR_REVIEW — no active agents)_
+_(Sprint 13 OPEN but not yet spawned — pm-orchestrator paused pending (a) DOPPLER_TOKEN_DEV +
+E2E_BEARER_TOKEN secret provisioning and (b) AI Council Checkpoint on Track 1 vs Track 2 ordering.
+No active agents.)_
 
 ## Awaiting human review (0 PRs)
 
-_(Lane A complete, Lane C complete — no PRs in flight. Next: TICKET-PILOT-001 Lane B activation.)_
+_(No PRs in flight. Next on spawn: Sprint 13 Lane A — FOLLOW-094 + FOLLOW-098 + FOLLOW-093 (bundled,
+cta-lift/inquiry routes) in parallel with FOLLOW-097 (SDK init).)_
 
 ## Recent merges
 

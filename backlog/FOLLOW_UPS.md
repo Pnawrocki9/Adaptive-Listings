@@ -2776,3 +2776,37 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] Test asserts a query failure with `CLICKHOUSE_URL` set does NOT return fabricated
         counts/lift
 - **promoted_to_queue:** false
+
+---
+
+## FOLLOW-104 — ReorderDirective for app.estalara.com `photos` + `listings-grid` slots
+
+- **source:** Master Design v2.7 §D.7 + §E.2.3 deferral (referenced but no stub existed until v2.8
+  cleanup)
+- **recommended_sprint:** Sprint 14 (post intent-v1.0; after TextDirective coverage is live)
+- **recommended_agent:** sdk-engineer + ml-engineer
+- **priority:** P2
+- **estimated_hours:** 6
+- **scope:** §E.2.3 maps two app.estalara.com slots to `ReorderDirective` and explicitly defers them
+  to FOLLOW-104: `photos` (photo gallery — CLIP-style intent×photo scoring per §E.2) and
+  `listings-grid` (listing-card container re-ranking per archetype, per §B.9.2 / §E.2). Both are
+  deferred from FOLLOW-103 (which ships only the 5 TextDirective slots). The Adaptive Listings v1.0
+  fallback (§D.7 rule 5) is TextDirective-only with no reordering. This ticket wires
+  `ReorderDirective` for those two slots once the TextDirective path is proven in the pilot:
+  1. Confirm AI Vision / L1–L5 detects the `photos` gallery container and the `listings-grid` card
+     container selectors on app.estalara.com (extend the `000-app-estalara` corpus fixture from
+     FOLLOW-103).
+  2. Wire `ReorderDirective` emission per archetype in the control-plane adapt route (photo order +
+     card order scored against the session intent vector).
+  3. SDK `applyDirectives()` already handles `ReorderDirective` (TICKET-REORDER-001 PR #91) — verify
+     it applies cleanly to the SvelteKit DOM without flicker (see FOLLOW-020 reset-path note).
+  4. Corpus regression test stays green (FOLLOW-021 pattern).
+- **ac:**
+  - [ ] `photos` + `listings-grid` selectors detected for `000-app-estalara` fixture
+  - [ ] `POST /api/adapt` returns a `ReorderDirective` for both slots per archetype (non-neutral)
+  - [ ] SDK applies photo + grid reorder on app.estalara.com without layout flicker
+  - [ ] Corpus CI gate stays green; no TextDirective regression from FOLLOW-103
+  - [ ] §E.2.3 + §D.7 status flipped from ⏳ deferred to ✅ shipped
+- **promoted_to_queue:** false
+- **depends_on:** FOLLOW-103 (TextDirective slot coverage + corpus fixture) + TICKET-PILOT-001 (SDK
+  embed live on app.estalara.com)

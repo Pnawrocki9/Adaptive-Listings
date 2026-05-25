@@ -3428,4 +3428,63 @@ Rule H amendment does not apply.
 
 ---
 
+## RETRO-SPRINT-12 — Sprint 12 (Controlled pilot launch on app.estalara.com — Lane A hardening + Lane B onboarding + Lane C ROI) — 2026-05-25
+
+**Scope:** Sprint-level retrospective for Sprint 12, written at sprint close by pm-orchestrator (per OP §Y.3). Sprint 12 was the "controlled pilot launch" sprint approved by the AI Council Checkpoint 2026-05-24. Three-lane structure: Lane A (pilot-critical hardening, gates Lane B), Lane B (app.estalara.com onboarding via Magic Link + shadow mode), Lane C (CTA-lift + inquiry-starts ROI instrumentation, parallel with Lane B). This is the **third execution** of OP §Y.3 (Snapshot.1 re-verification at sprint close, after RETRO-006 and RETRO-007).
+
+**Outcome in one line:** Lane A and Lane C shipped in full; Lane B (the actual pilot onboarding) was deliberately deferred to Sprint 13 because RETRO-008/009 surfaced P1 correctness blockers in the very dashboards Lane C shipped — the pilot's go/no-go metrics could display fabricated success. Closing Sprint 12 on instrumentation+hardening and re-opening pilot launch as the headline of Sprint 13 (gated behind a correctness lane) is the safer path.
+
+### Sprint-level rollup
+
+| Metric | Value |
+| --- | --- |
+| Sprint goal | Controlled pilot launch on app.estalara.com (Lane A hardening → Lane B onboarding; Lane C ROI in parallel) |
+| PRs merged | 5 (#142 FOLLOW-075, #143 FOLLOW-081, #144 TICKET-PILOT-004, #145 FOLLOW-078, #146 TICKET-PILOT-003) |
+| Ticket completion | Lane A 3/3 DONE (FOLLOW-081/075/078); Lane C 2/2 DONE (PILOT-003/004); Lane B 0/2 (PILOT-001/002 DEFERRED → Sprint 13) |
+| Tickets CANCELLED | 1 (FOLLOW-079 demo-integration fail-loud → split into FOLLOW-088/089/090) |
+| Tickets DEFERRED | 2 (TICKET-PILOT-001, TICKET-PILOT-002 → Sprint 13 Lane B) |
+| Per-ticket retros | RETRO-008 (PILOT-003), RETRO-009 (PILOT-004) |
+| P1 correctness blockers surfaced | 4 (FOLLOW-092, FOLLOW-093, FOLLOW-094, FOLLOW-097) — gate pilot go-live |
+| Pilot actually launched? | **No** — shadow-mode onboarding (Lane B) did not start |
+| Master_Design version | v2.7 → v2.8 (Sprint 12 CLOSED, Sprint 13 OPEN with pilot launch + intent build) |
+| New ADRs | 0 |
+| New permanent Rules | 0 (Rule K.2 already promoted by RETRO-008) |
+
+### What went well
+
+1. **EU pilot infrastructure is genuinely hardened.** Lane A closed the DSR erasure confidence gap end-to-end: ClickHouse mutation-poll integration test against `system.mutations` (FOLLOW-081 PR #143), CRON_SECRET 401 enforcement on the poll endpoint (FOLLOW-075 PR #142), and Sentry alerting on stuck/failed mutations (FOLLOW-078 PR #145). The regulator-visible "erase initiated but never completes" failure mode now alerts.
+2. **ROI instrumentation shipped.** Both pilot metrics have dashboards: CTA-lift with two-proportion z-test + conversion funnel + by-archetype table (PILOT-003 PR #146) and inquiry-starts tracking (PILOT-004 PR #144), unified on `/dashboard/pilot`.
+3. **The retro loop caught the trap before launch.** RETRO-008/009 found that both pilot dashboards fabricate plausible (and statistically-significant) data on ClickHouse error/absence, and that `inquiry.started` never fires in production (selector not threaded into SDK init). Catching this at sprint close — rather than after a pilot showed fake success — is the loop working as designed.
+
+### What to fix (carried into Sprint 13 Lane A — correctness)
+
+1. **Dashboards must stop fabricating metrics (CB-1 class, Rule K.2).** FOLLOW-094 (cta-lift) + FOLLOW-098 (inquiry-starts): separate "ClickHouse unset → legitimate dev/CI mock" from "ClickHouse set but query failed → must surface error + Sentry, never fabricate." Expose `data_source` provenance. These are launch blockers, not polish.
+2. **`inquiry.started` is a Rule-H half-wire that Rule I's CI gate misses.** FOLLOW-097: the symbol is imported (so Rule I is satisfied) but the new conditional branch is dead because `setupObservers(config, onEvent)` never passes the `options` object carrying `inquirySubmitSelector`. The secondary pilot metric produces zero prod events today. New sub-form of the half-wire pattern: dead branch, not zero-importer symbol.
+3. **Two divergent CTA-lift query paths.** FOLLOW-093: `/api/pilot/cta-lift` (joins `events.cta.clicked` on `adaptation_decisions.ts`) vs `/api/dashboard/analytics/lift` (joins `dqs_events.cta_clicked` on `assigned_at`) will report different numbers for the same tenant/window. Reconcile onto one schema vocabulary before the metric is treated as authoritative.
+4. **Producer→consumer not verified live.** FOLLOW-092: confirm `cta.clicked` actually lands in ClickHouse for the pilot tenant once TICKET-PILOT-001 runs — the dashboard cannot be trusted until the producer path is observed end-to-end.
+
+### FOLLOW-079 cancellation — lessons
+
+FOLLOW-079 ("flip demo-integration soft-skips to fail-loud, add to branch protection") was cancelled mid-sprint (PR #141 closed unmerged) because a single 1-hour ticket simultaneously tripped **three independent enforcement mechanisms** that were not all ready to merge together:
+
+- Rule I (wired-or-dead) reported 105 zero-importer symbols across `packages/sdk` + `packages/shared`.
+- The Python CI matrix referenced a non-existent `apps/adaptation-engine` directory → every `Test (Python)` job failed.
+- The demo-integration fail-loud step is blocked on ESC-010 (`DOPPLER_TOKEN_DEV`) + ESC-009 (`E2E_BEARER_TOKEN`) secrets that are still unprovisioned.
+
+**Lesson (LG):** a "tighten the gate" ticket is deceptively small — flipping a soft-skip to fail-loud surfaces every latent failure the soft-skip was masking. These should be scoped as **discovery tickets** ("inventory what fails when the gate is enforced") rather than 1-hour fixes, and split per failure mechanism up front. The correct decomposition (FOLLOW-088 prettier, FOLLOW-089 Python matrix, FOLLOW-090 Rule I + demo-integration after ESC-010) was only visible *after* attempting the merge. Codifying as a soft pattern; not yet a Rule (single occurrence).
+
+**Lesson (process):** the unprovisioned secrets (ESC-009/010) have now blocked CI enforcement across three sprints (FOLLOW-040/063/068 soft-skip, FOLLOW-079 cancellation, and now FOLLOW-087 in Sprint 13 cannot reach green CI). The ~20-minute manual provisioning is on the critical path and should be done before Sprint 13 Lane C starts.
+
+### Snapshot.1 re-verification (OP §Y.3)
+
+No implementation status changed materially this sprint relative to the pre-existing Snapshot.1 verdicts — Lane A hardened existing compliance infrastructure (row H already ✅ Shipped) and Lane C added dashboards (row B.7/§D.9 observability, still 🟡 Partial pending real ClickHouse traffic). Intent detection (row D) remains 3 behaviorally-discriminable archetypes; the §D.6 13/18 coverage is a post-FOLLOW-099/100 projection, not current state. Snapshot.1 will move when Sprint 13 Lane C (FOLLOW-099/100) lands. No Snapshot.1 edits required at this close.
+
+### Cross-references
+
+- **RETRO-008 / RETRO-009 (per-ticket, PILOT-003/004):** source of the 4 P1 correctness blockers (FOLLOW-092/093/094/097/098) now forming Sprint 13 Lane A.
+- **RETRO-007 (Sprint 11):** the EU pilot gate (FOLLOW-039) it cleared is what made Sprint 12's Lane A hardening meaningful; the ESC-009/FOLLOW-040 secret-provisioning gap it flagged is still open and still blocking.
+- **CONVENTIONS_PATCH.md Rule K.2:** promoted by RETRO-008; FOLLOW-094/098 are its enforcement on the two pilot routes.
+
+---
+
 <!-- RETRO-010 and beyond will be appended here by the retrospective-analyst agent -->

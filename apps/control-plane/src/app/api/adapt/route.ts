@@ -205,6 +205,12 @@ function logDecisionAsync(
    * threshold, holdout/consent skip path). See FOLLOW-007.
    */
   variant = 'control',
+  /**
+   * Stable per-decision UUID (FOLLOW-105 / ADR-0006 §Decision 4C). Logged so a
+   * response body's `adapt_decision_id` can be cross-correlated with this row.
+   * Defaults to '' for legacy callers (matches the migration 0012 column default).
+   */
+  adaptDecisionId = '',
 ): void {
   // Fire-and-forget — never awaited, never blocks the response.
   // No-op when CLICKHOUSE_URL is not configured.
@@ -219,10 +225,10 @@ function logDecisionAsync(
 
   const query =
     `INSERT INTO adaptation_decisions ` +
-    `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, holdout_group, variant, ts) ` +
+    `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, holdout_group, variant, adapt_decision_id, ts) ` +
     `VALUES ('${escape(sessionId)}', '${escape(tenantId)}', '${escape(archetype)}', ` +
     `${String(confidence)}, ${String(similarity)}, '${escape(source)}', ${String(tier)}, ${String(directiveCount)}, ` +
-    `${holdoutGroup ? '1' : '0'}, '${escape(variant)}', '${ts}')`;
+    `${holdoutGroup ? '1' : '0'}, '${escape(variant)}', '${escape(adaptDecisionId)}', '${ts}')`;
 
   fetch(clickhouseUrl, {
     method: 'POST',
@@ -478,7 +484,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     sessionId,
   );
 
+  // FOLLOW-105 / ADR-0006 §Decision 4C: stable per-decision UUID, returned in the
+  // body and logged to ClickHouse for cross-correlation.
+  const adaptDecisionId = crypto.randomUUID();
+
   const response: AdaptationDirectives = {
+    adapt_decision_id: adaptDecisionId,
     session_id: sessionId,
     archetype: archetypeId,
     confidence,
@@ -503,6 +514,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     tier,
     directives.length,
     holdoutGroup,
+    'control',
+    adaptDecisionId,
   );
 
   return NextResponse.json(response, { status: 200 });
@@ -558,6 +571,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const body = parsed.data;
 
+  // FOLLOW-105 / ADR-0006 §Decision 4C: stable per-decision UUID. Generated once
+  // per request and returned in EVERY response arm (skip, holdout, treatment) and
+  // logged to ClickHouse so a response body can be cross-correlated with its row.
+  const adaptDecisionId = crypto.randomUUID();
+
   // ── A/B holdout gate (TICKET-AB-010) ─────────────────────────────────────
   // Run before any directive building. Returns early with empty directives
   // when the session is held-out or consent-skipped.
@@ -572,6 +590,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (assignment.skipped) {
     // AC-3: consent skip → no adaptation, no holdout_group field.
     return NextResponse.json({
+      adapt_decision_id: adaptDecisionId,
       session_id: body.session_id,
       archetype: 'neutral',
       confidence: 0.5,
@@ -597,6 +616,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
 
     return NextResponse.json({
+      adapt_decision_id: adaptDecisionId,
       session_id: body.session_id,
       archetype: 'neutral',
       confidence: 0.5,
@@ -697,6 +717,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const response: AdaptationDirectives = {
+    adapt_decision_id: adaptDecisionId,
     session_id: body.session_id,
     archetype: archetypeId,
     confidence,
@@ -720,6 +741,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     allDirectives.length,
     false, // treatment arm — not holdout
     selectedVariant,
+    adaptDecisionId,
   );
 
   return NextResponse.json(response, { status: 200 });

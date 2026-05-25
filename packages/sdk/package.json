@@ -43,7 +43,8 @@
   },
   "dependencies": {
     "tsup": "^8.5.1",
-    "typescript": "*"
+    "typescript": "*",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@estalara/shared": "workspace:^",

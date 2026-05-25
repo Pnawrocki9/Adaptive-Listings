@@ -18,6 +18,7 @@ import type {
 } from '@estalara/shared';
 import type { CollectedEvent } from './events.js';
 import type { IntentState } from './intent.js';
+import { adaptResponseSchema } from './adapt-schema.js';
 
 // ---------------------------------------------------------------------------
 // Session-level variant cache (sessionStorage, cleared on tab close)
@@ -152,18 +153,36 @@ export interface Directive {
 }
 
 export interface AdaptResponse {
+  /**
+   * Stable per-decision UUID returned by the canonical `/api/adapt` route
+   * (FOLLOW-105 / ADR-0006 §Decision 4C). Mirrors `AdaptationDirectives.adapt_decision_id`.
+   */
+  adapt_decision_id: string;
   session_id: string;
   archetype: string;
   confidence: number;
+  /** Cosine similarity to the matched archetype 0–1. */
+  similarity: number;
+  /** Integration tier echoed by the server. */
+  tier: 1 | 2 | 3;
   /** Raw directives from the Decision API. Cast to (TextDirective | ClassDirective | ReorderDirective)[] for applyDirectives(). */
   directives: (TextDirective | ClassDirective | ReorderDirective)[];
-  ttl_seconds: number;
+  /** Origin of the response (playbook / llm_* / default / fallback). */
+  source: string;
+  /** ISO 8601 timestamp of when the server generated this response. */
+  generated_at: string;
   /**
    * Thompson sampling variant selected by the server for this session.
    * Echo back in the feedback ping.
    * Optional — absent when the session is in the holdout arm or the server is legacy.
    */
   variant?: string;
+  /**
+   * @deprecated The live canonical `/api/adapt` route does not return `ttl_seconds`
+   * (FOLLOW-105 §D.4). Kept optional for backward compatibility with any legacy
+   * caller that still reads it; do not rely on it being present.
+   */
+  ttl_seconds?: number;
 }
 
 /** Context passed to applyDirectives for event logging and idempotency. */
@@ -516,7 +535,22 @@ export async function fetchDirectives(
     if (!res.ok) return null;
 
     const data: unknown = await res.json();
-    const response = data as AdaptResponse;
+
+    // FOLLOW-105 §F.5 / ADR-0006 §Decision 5A: validate the response against the
+    // canonical AdaptationDirectives shape instead of an unchecked cast. On parse
+    // failure (missing required field, type mismatch, out-of-enum archetype, …),
+    // report to Sentry when available and return null gracefully — never throw.
+    let response: AdaptResponse;
+    try {
+      // `.passthrough()` keeps unknown server fields; `.parse()` throws on a
+      // structural mismatch. The validated shape is a superset of AdaptResponse.
+      response = adaptResponseSchema.parse(data) as unknown as AdaptResponse;
+    } catch (err) {
+      const gSentry = (globalThis as { Sentry?: { captureException?: (e: unknown) => void } })
+        .Sentry;
+      gSentry?.captureException?.(err);
+      return null;
+    }
 
     // FOLLOW-042: cache variant in sessionStorage for the feedback ping
     if (response.variant) {

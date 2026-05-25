@@ -108,6 +108,16 @@ export interface ReorderDirective {
  * The SDK reads this and applies each directive to the host page DOM.
  */
 export interface AdaptationDirectives {
+  /**
+   * Stable per-decision UUID generated server-side on the canonical `/api/adapt`
+   * route (FOLLOW-105 / ADR-0006 §Decision 4C). Returned in BOTH the adapted and
+   * the holdout response bodies, and logged into the ClickHouse `adaptation_decisions`
+   * insert so a response can be cross-correlated with its analytics row.
+   *
+   * NOTE: this is distinct from `explainability_id` (a link to a provenance audit
+   * trail), which is DEFERRED to FOLLOW-108 (Sprint 14) and is NOT part of this type.
+   */
+  adapt_decision_id: string;
   session_id: string;
   archetype: ArchetypeId | 'neutral';
   /** Intent confidence 0–1. */

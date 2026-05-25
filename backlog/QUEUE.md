@@ -1,19 +1,21 @@
 # Backlog Queue
 
-**Updated 2026-05-25T21:30Z by pm-orchestrator.** **Phase 2 Wave 1 MERGED** — FOLLOW-105 (PR #150,
+**Updated 2026-05-26 by pm-orchestrator.** **Phase 2 Wave 1 MERGED** — FOLLOW-105 (PR #150,
 `bf0585d`) DONE: canonical `/api/adapt` enforced, ADR-0006 ACCEPTED, Worker 410 Gone, §Snapshot.7
-risk #1 RESOLVED. **Wave 2 (FOLLOW-097 + FOLLOW-106) now READY** (not yet spawned — awaiting CEO
-go). Wave 3 (FOLLOW-094/098/093) still BLOCKED until Wave 2 merges. retrospective-analyst spawned on
-PR #150. **Sprint 13 OPEN** — three-track structure: Lane A (correctness fixes from RETRO-008/009) →
-Lane B (pilot launch on app.estalara.com, blocked until Lane A) → Lane C (Adaptive Listings v1.0
-intent build, parallel with Lane B during shadow window). See the Sprint 13 section below. **Sprint
-12 COMPLETE as of 2026-05-25** — Lane A hardening (FOLLOW-081/075/078) + Lane C ROI instrumentation
-(PILOT-003/004) merged across PRs #142–#146; Lane B (TICKET-PILOT-001/002 pilot onboarding) DEFERRED
-to Sprint 13 because RETRO-008/009 surfaced P1 dashboard-correctness blockers that gate go-live;
-FOLLOW-079 CANCELLED (split into FOLLOW-088/089/090). RETRO-SPRINT-12 written; Master Design bumped
-to v2.8. Sprint 11 COMPLETE as of 2026-05-24 (5 P1 pilot-blockers merged: #135 FOLLOW-063, #136
-FOLLOW-069, #137 FOLLOW-068, #138 FOLLOW-040, #139 FOLLOW-039). RETRO-007 written; Master Design
-bumped to v2.5; AI Council Checkpoint 2026-05-24 approved Sprint 12 as "controlled pilot launch on
+risk #1 RESOLVED. **Wave 2 (FOLLOW-097 + FOLLOW-106) READY_FOR_REVIEW** — FOLLOW-097 PR #151
+(`02da69d`) and FOLLOW-106 PR #152 (`bb3b086`) both PM-validated, all real CI gates green (only
+pre-existing-red Python/Rule-I/Vercel remain). Awaiting human merge. Wave 3 (FOLLOW-094/098/093)
+still BLOCKED until Wave 2 merges. retrospective-analyst spawned on PR #150. **Sprint 13 OPEN** —
+three-track structure: Lane A (correctness fixes from RETRO-008/009) → Lane B (pilot launch on
+app.estalara.com, blocked until Lane A) → Lane C (Adaptive Listings v1.0 intent build, parallel with
+Lane B during shadow window). See the Sprint 13 section below. **Sprint 12 COMPLETE as of
+2026-05-25** — Lane A hardening (FOLLOW-081/075/078) + Lane C ROI instrumentation (PILOT-003/004)
+merged across PRs #142–#146; Lane B (TICKET-PILOT-001/002 pilot onboarding) DEFERRED to Sprint 13
+because RETRO-008/009 surfaced P1 dashboard-correctness blockers that gate go-live; FOLLOW-079
+CANCELLED (split into FOLLOW-088/089/090). RETRO-SPRINT-12 written; Master Design bumped to v2.8.
+Sprint 11 COMPLETE as of 2026-05-24 (5 P1 pilot-blockers merged: #135 FOLLOW-063, #136 FOLLOW-069,
+#137 FOLLOW-068, #138 FOLLOW-040, #139 FOLLOW-039). RETRO-007 written; Master Design bumped to v2.5;
+AI Council Checkpoint 2026-05-24 approved Sprint 12 as "controlled pilot launch on
 app.estalara.com". Sprint 12 COMPLETE — Lane A hardening + Lane C ROI instrumentation merged; Lane B
 pilot onboarding deferred to Sprint 13. Sprint 10 COMPLETE as of 2026-05-23 (8 PRs merged: #127,
 #128, #129, #130, #131, #132, #133, #134). RETRO-006 written; Master Design bumped to v2.3; Rule H
@@ -2114,7 +2116,7 @@ min Piotr action).
 - id: FOLLOW-097
   title: Thread detected inquiry_submit_selector into SDK setupObservers() at init
   agent: sdk-engineer + backend-engineer
-  status: IN_PROGRESS # Wave 2 spawned 2026-05-25; branch sdk-engineer/FOLLOW-097-inquiry-selector-sdk-init
+  status: READY_FOR_REVIEW # PR #151 — all real CI gates green on 02da69d (SDK E2E fixed 2026-05-26); PM-validated
   started_at: '2026-05-25T22:00:00Z'
   priority: P1
   estimated_hours: 2
@@ -2158,7 +2160,7 @@ min Piotr action).
 - id: FOLLOW-106
   title: Add tenants.pilot_frozen runtime flag for measurement-window protection
   agent: backend-engineer
-  status: IN_PROGRESS # Wave 2 spawned 2026-05-25; branch backend-engineer/FOLLOW-106-pilot-frozen-flag
+  status: READY_FOR_REVIEW # PR #152 — all real CI gates green on bb3b086 (2026-05-26); PM-validated. Operator must still apply migration 0015 to dev/stg/prd via Doppler.
   started_at: '2026-05-25T22:00:00Z'
   priority: P2
   estimated_hours: 2

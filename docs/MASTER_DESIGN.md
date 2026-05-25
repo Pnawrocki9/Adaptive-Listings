@@ -1,6 +1,23 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 2.6 (Sprint 12 OPEN — chat NLP model selection decision; controlled pilot launch on app.estalara.com approved by AI Council Checkpoint 2026-05-24; Lane A hardening P1 (FOLLOW-081 ClickHouse integration test, FOLLOW-075 cron auth, FOLLOW-078 DSR alerting; FOLLOW-079 demo CI fail-loud CANCELLED 2026-05-25 → split FOLLOW-088/089/090 Sprint 13) + Lane B pilot onboarding + Lane C ROI instrumentation; primary metric CTA lift; secondary metric inquiry starts; EU region; VERCEL_CRON_SECRET provisioned) | **Data:** 25 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 2.7 (Sprint 12 OPEN — Adaptive Listings v1.0 Sprint 13-14 plan; full intent detection for reachable archetypes on app.estalara.com; AI Council Checkpoint 2026-05-25 REVISE → approved after blocking questions resolved; FOLLOW-092A/092B/093/094/095 stubs added; ANTHROPIC_API_KEY confirmed in Doppler) | **Data:** 25 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v2.7 (25 maja 2026 — Adaptive Listings v1.0 Sprint 13-14 plan):**
+
+- ✅ **§D.6 dodane** — Archetype Coverage Matrix: 18 archetypów × 3 źródła sygnałów (behavioral/quiz/chat NLP), status 🟢/🟡/🔴 per archetype. 5 archetypów (commercial_investor, diaspora_buyer, student_parent, golden_visa_buyer, retiree_relocator) oznaczone 🔴 None — residential app.estalara.com nie ma behavioral signals dla tych archetypów (chat-only path).
+- ✅ **§D.1.1 dodane** — Mapowanie 12-dim intent vector → archetype posterior update. Specyfikacja `CHAT_INTENT_LIKELIHOODS` + `applyChatIntentPrior()` function. Schema TBD pending FOLLOW-087.
+- ✅ **§D.7 dodane** — Confidence & Fallback Policy: thresholds, source weighting, conflict handling, neutral fallback. Thresholds TBD pending FOLLOW-092B calibration.
+- ✅ **§D.8 dodane** — Privacy & Consent dla behavioral/chat signals (photo.dwell, mortgage_calc.used, chat NLP personalization = anonymized behavioral per DECISIONS D3, nie PII).
+- ✅ **§D.9 dodane** — Observability Requirements dla intent pipeline (signal-received → posterior-updated → archetype-selected → directive-applied).
+- ✅ **§C.1 zaktualizowane** — dodana kolumna "SDK Producer Status" (✅ Active / 🔧 Schema-only / 📋 Planned) do tabeli signal taxonomy.
+- ✅ **§C.4 dodane** — Intent Pipeline Event Contracts (behavioral event schemas, chat.intent.detected = TBD pending FOLLOW-087).
+- ✅ **§B.1 zaktualizowane** — quiz ON/OFF toggle dokumentacja: `SdkConfig.quiz.enabled`, `trigger_after_n_listings`, Supabase `tenants.quiz_enabled` jako primary SoT.
+- ✅ **§E.2.3 dodane** — app.estalara.com Slot Mapping: 5 TextDirective slotów (headline, description, features, cta-primary, cta-live). AI Vision (L5) + `ANTHROPIC_API_KEY` już w Doppler → zero ręcznych markerów. photos/listings-grid ReorderDirective deferred → FOLLOW-096.
+- ✅ **§B.5 zaktualizowane** — usunięty stały wpis o `ANTHROPIC_API_KEY` blokerze. Potwierdzone w Doppler 2026-05-25.
+- ✅ **§Snapshot.4 zaktualizowane** — priorytety #7–#12 zastąpione spójnym Sprint 13-14 feature set (FOLLOW-092A/092B/093/094/095/087).
+- 📋 **FOLLOW-092A/092B/093/094/095 dodane** do `backlog/FOLLOW_UPS.md` — pięć nowych stubów Sprint 13-14.
+- 🔄 **Snapshot.1 bez zmian** — implementacja nie zmieniła się. Status zmieni się gdy FOLLOW-092A/B wylądują.
+- 🔄 **Nota: FOLLOW-088/089/090** (z FOLLOW-079 cancellation) = format fix, Python CI fix, Rule I unblock — nie mylić z nowym feature set.
 
 **Changelog v2.6 (25 maja 2026 — chat NLP model selection decision):**
 
@@ -272,7 +289,7 @@
 | B.4 | Auto-Onboarding UI (Magic Link wizard / Auto-Detect Modal / API Connect) | 🟢 **Mostly Shipped** | Sprint 9.5 merged 2026-05-22: TICKET-033 (PR #121, `POST /api/detect` JWT+SSRF+wizard response), TICKET-030 (PR #124, `/dashboard/onboarding/detect` wizard UI), TICKET-AUTO-006-POLISH (PR #125, Detection Preview + `POST /api/schema/activate` + SDK snippet), FOLLOW-018 (PR #126, real tenant schema lookup + cache invalidation). Operator can paste URL → detect → preview → activate → receive snippet end-to-end. **Sprint 10 partial closure (RETRO-006):** (b) demo-tenant listing-embedding seeding wired on activation via PR #132 (FOLLOW-046, `DEMO_LISTING_MANIFEST` 12 entries auto-seeded when `tenantId === DEMO_TENANT_ID`); non-demo tenants still need manual `POST /api/listings/embed`; (c) e2e integration spec shipped via PR #130 (FOLLOW-055) and **CI job `demo-integration` provisioned in PR #137 (FOLLOW-068)** — soft-skips until DOPPLER_TOKEN_DEV + E2E_BEARER_TOKEN are provisioned (ESC-009 carry-forward). **Remaining open gaps:** (a) Magic-Link email flow still BLOCKED (TICKET-040); (d) ESC-009 + FOLLOW-040 escalation block CI enforcement of FOLLOW-063 / FOLLOW-068 / FOLLOW-039 cron — code is structurally ready, awaits manual secret provisioning (~20 min Piotr action). **Note:** Auto-Detection Engine itself = §B.5 = Mostly Shipped per Sprint 7.5. |
 | B.4.4 | Pre-Built Platform Templates Library (15 starters) | ⛔ **Blocked** | `templates: PlatformTemplate[] = []`. TICKET-032 BLOCKED. |
 | B.4.5 | WordPress Plugin | 🟥 **Design-only** | Not started. |
-| B.5 | Schema Discovery Pipeline (L1–L5) | 🟢 **Mostly Shipped** | L1+L2 = 11 deterministic auto-detect techniques on `main` (corpus CI 100/100 on 24 platforms, 240/240 samples since 2026-05-13). L4 AI Vision wired end-to-end (`packages/sdk/src/auto-detect/techniques/ai-vision.ts` 364 LOC + `apps/control-plane/src/app/api/detect/route.ts:175` dynamic import + `callAnthropic()`). L3 (platform templates) remains no-op but de facto replaced by L1+L2 coverage. **Production blocker:** `ANTHROPIC_API_KEY` empty in Doppler (dev/stg/prd). |
+| B.5 | Schema Discovery Pipeline (L1–L5) | 🟢 **Mostly Shipped** | L1+L2 = 11 deterministic auto-detect techniques on `main` (corpus CI 100/100 on 24 platforms, 240/240 samples since 2026-05-13). L4 AI Vision wired end-to-end (`packages/sdk/src/auto-detect/techniques/ai-vision.ts` 364 LOC + `apps/control-plane/src/app/api/detect/route.ts:175` dynamic import + `callAnthropic()`). L3 (platform templates) remains no-op but de facto replaced by L1+L2 coverage. `ANTHROPIC_API_KEY` confirmed in Doppler dev/stg/prd (2026-05-25) — AI Vision (L5) fully operational. Open gap: corpus fixture missing for `app.estalara.com` (FOLLOW-095). |
 | B.6 | Continuous Schema Validation | ✅ **Shipped** | 526-LOC Modal cron with drift detection + Sentry dedup. |
 | B.7 | Onboarding metrics | 🟡 **Partial** | Some events emitted; no dashboard yet. |
 | C | Signal ingestion / event taxonomy | 🟡 **Partial** | Ingest worker substantial. SDK emits 8 of 37 declared event types; chat / photo / mortgage_calc / inquiry events are schema-only. |
@@ -355,16 +372,20 @@ Net: an investor demo today shows a credible Tier 1 Observer + Tier 2 mutation f
 **Product proof (2–6 weeks):**
 5. ~~Unblock Sprint 2.5 (TICKET-030/032/033/034)~~ **Sprint 9.5 closed 2026-05-22.** TICKET-030 + TICKET-033 + TICKET-AUTO-006-POLISH merged. TICKET-032 + TICKET-034 deferred per Q5 2026-05-21 (auto-detect already covers L1/L2/L4; L3 templates non-blocking). ~~Next priority: FOLLOW-041 + FOLLOW-042 (close the bandit loop) and FOLLOW-043 (seed real archetype embeddings).~~ **Sprint 10 closed 2026-05-24** — FOLLOW-041/042 merged (PR #127), FOLLOW-043 merged (PR #131 + 6 ops fixes), FOLLOW-046 merged for demo tenant (PR #132), FOLLOW-051 HMAC hardening (PR #133), Rule J live (PR #128), sprint-close checklist live (PR #134). **Next priority surfaces from RETRO-006:** FOLLOW-063 (P1 — auto-seed enforcement, fresh DB pulls today still have NULL archetype embeddings until manual workflow); FOLLOW-068 (P1 — CI job that actually runs the E2E spec end-to-end, currently opt-in); FOLLOW-069 (P1 — cross-runtime HMAC compatibility test).
 6. Seed all 18 archetypes into `archetype_embeddings` (currently 3).
-7. Add 8–12 more behavioral signal producers in the SDK (photo dwell, gallery interaction, mortgage_calc, inquiry_started, exit-intent) + corresponding `SIGNAL_LIKELIHOODS` entries — without these, 15 of 18 archetypes are undiscriminable from behavior.
-8. Wire bandit variant selection per request (FOLLOW-007/025/028).
-9. Replace `deterministicScore` with a real archetype-listing affinity (FOLLOW-019).
+7. **FOLLOW-092A** (Sprint 13, sdk-engineer, ~8h) — SDK behavioral observers: `photo.dwell`, `feature.expanded`, `mortgage_calc.used`, `filter.applied` (facet+value), `inquiry.started`. Payload-aware dispatch. Bundle delta <5KB gzip.
+8. **FOLLOW-092B** (Sprint 13, sdk-engineer, ~8h, depends on FOLLOW-092A) — `SIGNAL_LIKELIHOODS` dla wszystkich 18 archetypów + `CHAT_INTENT_LIKELIHOODS` + `applyChatIntentPrior()`. ≥13/18 archetypów osiąga 🟢 Full coverage.
+9. **FOLLOW-093** (Sprint 13, ml-engineer + sdk-engineer, ~4h, depends on FOLLOW-087 + FOLLOW-092B) — `chat.intent.detected` → SDK Bayesian prior bridge. Mismatch detection między quiz prior a chat prior.
+10. **FOLLOW-094** (Sprint 13, sdk-engineer + backend-engineer, ~3h) — Quiz ON/OFF toggle: `SdkConfig.quiz.enabled`, Supabase `tenants.quiz_enabled` jako primary SoT, dashboard toggle, snippet generator.
+11. **FOLLOW-095** (Sprint 13, ml-engineer + sdk-engineer, ~4h) — app.estalara.com DOM adaptation: corpus fixture `000-app-estalara`, AI Vision slot detection (ANTHROPIC_API_KEY już w Doppler), TextDirective coverage test 18×5=90 directives.
+12. **FOLLOW-087** (Sprint 13, ml-engineer, ~12h, depends on FOLLOW-040/063) — `apps/intent-engine` chat NLP: Haiku 4.5 real-time + Sonnet 4.6 batch enrichment. Schema `chat.intent.detected` stabilizuje FOLLOW-093.
 
 **Investor confidence (6–12 weeks):**
-10. Implement chat NLP in `apps/intent-engine` (consume `chat.message.sent`, emit `chat.intent.detected`).
-11. End-to-end test of differentiator: synthetic behavioral trace → ingest → consumer → intent → adapt → DOM mutation → measured CTR lift (FOLLOW-022).
-12. Backfill RLS on `session_embeddings`, `tenant_site_schemas`, `ab_bandit_weights`, `schema_validation_history`, `archetype_embeddings`.
-13. Stand up at least one second region (US or UK) end-to-end on Terraform.
-14. Authorize SOC 2 Type I readiness work; SBOM + MFA enforcement + formal threat model.
+13. Wire bandit variant selection per request (FOLLOW-007/025/028).
+14. Replace `deterministicScore` with a real archetype-listing affinity (FOLLOW-019).
+15. End-to-end test of differentiator: synthetic behavioral trace → ingest → consumer → intent → adapt → DOM mutation → measured CTR lift (FOLLOW-022).
+16. Backfill RLS on `session_embeddings`, `tenant_site_schemas`, `ab_bandit_weights`, `schema_validation_history`, `archetype_embeddings`.
+17. Stand up at least one second region (US or UK) end-to-end on Terraform.
+18. Authorize SOC 2 Type I readiness work; SBOM + MFA enforcement + formal threat model.
 
 ### §Snapshot.5 — Test posture summary
 
@@ -664,6 +685,28 @@ Warto zauważyć, że Cloudflare wybrał TimescaleDB nad ClickHouse dla *operati
 ```
 
 SDK wykrywa `data-estalara-slot` atrybuty i może je *augmentować* (re-rank, replace text via LLM rewrite, reorder children) **bez ruszania reszty DOM-u**.
+
+**Quiz ON/OFF toggle (SdkConfig.quiz):**
+
+```typescript
+// packages/sdk/src/core/types.ts — SdkConfig
+interface SdkConfig {
+  tenantId: string;
+  tier: 'observer' | 'augment' | 'native';
+  region: 'eu' | 'us' | 'uk' | 'uae';
+  decisionApiUrl?: string;          // control-plane route = full 18-archetype playbook
+  quiz?: {
+    enabled: boolean;               // default: true
+    trigger_after_n_listings?: number; // default: 3
+  };
+}
+```
+
+- `quiz.enabled = true` (default) — quiz widget renderowany po N listing views (N = `trigger_after_n_listings`, default 3)
+- `quiz.enabled = false` — quiz widget całkowicie wyłączony; intent detection bazuje wyłącznie na sygnałach behawioralnych + chat NLP
+- **Source of truth:** Supabase `tenants.quiz_enabled boolean DEFAULT true` — dashboard toggle i snippet generator czytają z Supabase przez `PATCH /api/tenants/:id`
+- **Rationale:** Tenanci z wysoką jakością chat coverage (np. app.estalara.com z full AI chat) — quiz może być zbędny i UX-invasive. Tenanci bez chatu — quiz jest kluczowym źródłem sygnału (patrz §D.6)
+- **Implementation:** FOLLOW-094 (Sprint 13, sdk-engineer + backend-engineer)
 
 **Tier 3 Native — React/Vue/vanilla component:**
 
@@ -1349,18 +1392,21 @@ type EstalaraEvent = {
 
 **Pełne kategorie eventów:**
 
-| Kategoria | Przykładowe eventy | Throughput / sesja |
-|---|---|---|
-| **Page lifecycle** | `page.view`, `page.exit`, `tab.visible`, `tab.hidden` | 5–15 |
-| **Mouse/scroll behavioral** | `scroll.depth` (10/25/50/75/90%), `mouse.dwell` (per element ≥500ms), `mouse.rage_click`, `mouse.exit_intent` | 50–500 (sampled) |
-| **Photo interactions** | `photo.opened`, `photo.gallery.next`, `photo.zoomed`, `photo.dwell` (per photo) | 10–100 |
-| **Floorplan engagement** | `floorplan.opened`, `floorplan.zoom`, `floorplan.dwell` | 0–20 |
-| **Price/feature focus** | `price.hovered`, `price.compared`, `feature.expanded`, `mortgage_calc.used` | 5–30 |
-| **Search/filter behavior** | `search.query`, `filter.applied`, `filter.removed`, `sort.changed` | 5–50 |
-| **Chat (NLP target)** | `chat.opened`, `chat.message.sent` (text), `chat.intent.detected` (server-side after NLP) | 0–30 |
-| **Cross-listing journey** | `listing.next`, `listing.compared`, `listing.bookmarked` | 1–10 |
-| **Inquiry / conversion** | `inquiry.started`, `inquiry.completed`, `tour.requested` | 0–3 |
-| **Device/context** | One-time per session: device class, viewport, language, IP-derived country/city, time-of-day | 1 |
+SDK Producer Status legend: ✅ Active (SDK emituje, SIGNAL_LIKELIHOODS wired) | 🔧 Schema-only (Zod schema istnieje, brak SDK observera) | 📋 Planned (brak schematu, zadeklarowane w architekturze)
+
+| Kategoria | Przykładowe eventy | Throughput / sesja | SDK Producer Status |
+|---|---|---|---|
+| **Page lifecycle** | `page.view`, `page.exit`, `tab.visible`, `tab.hidden` | 5–15 | ✅ Active |
+| **Mouse/scroll behavioral** | `scroll.depth` (10/25/50/75/90%), `mouse.dwell`, `mouse.rage_click`, `mouse.exit_intent` | 50–500 (sampled) | ✅ Active (`scroll.depth`) / 🔧 Schema-only (rest) |
+| **Photo interactions** | `photo.opened`, `photo.gallery.next`, `photo.zoomed`, `photo.dwell` (per photo) | 10–100 | 🔧 Schema-only → ✅ Active after FOLLOW-092A |
+| **Floorplan engagement** | `floorplan.opened`, `floorplan.zoom`, `floorplan.dwell` | 0–20 | 📋 Planned |
+| **Price/feature focus** | `price.hovered`, `price.compared`, `feature.expanded`, `mortgage_calc.used` | 5–30 | 🔧 Schema-only → ✅ Active after FOLLOW-092A |
+| **Search/filter behavior** | `search.query`, `filter.applied`, `filter.removed`, `sort.changed` | 5–50 | 🔧 Schema-only → ✅ Active (`filter.applied`) after FOLLOW-092A |
+| **Inquiry / conversion** | `inquiry.started`, `inquiry.completed`, `tour.requested` | 0–3 | 🔧 Schema-only → ✅ Active (`inquiry.started`) after FOLLOW-092A |
+| **Chat (NLP target)** | `chat.opened`, `chat.message.sent`, `chat.intent.detected` (server-side) | 0–30 | 🔧 Schema-only → ✅ Active after FOLLOW-087 + FOLLOW-093 |
+| **Quiz signals** | `quiz.event`, `quiz.mismatch` | 0–2 | ✅ Active |
+| **Cross-listing journey** | `listing.viewed`, `listing.next`, `listing.compared`, `listing.bookmarked` | 1–10 | ✅ Active (`listing.viewed`) / 📋 Planned (rest) |
+| **Device/context** | One-time per session: device class, viewport, language, IP country/city, time-of-day | 1 | ✅ Active |
 
 ### C.2. Ingestion rate i strategia
 
@@ -1376,6 +1422,51 @@ Dla `chat.message.sent`:
 - **Batch enrichment co 6h** — **Claude Sonnet 4.6** (`claude-sonnet-4-6`), re-process pełnego kontekstu konwersacji dla lepszych embeddings i kalibracji archetype priors. Bez ograniczenia latency — async Modal job. Sonnet 4.6 daje zauważalnie wyższą accuracy na wieloturowych konwersacjach i mixed-language input (EN/PL/ES). Koszt $3/$15 per MTok.
 - **Uzasadnienie dwutierowego podejścia:** real-time path wymaga <500ms — Sonnet 4.6 nie mieści się wygodnie przy złożonych promptach. Batch path nie ma ograniczenia czasowego — tu lepsza jakość (Sonnet) przynosi lepsze archetype priors dla następnego dnia. Oba modele używają identycznego output schema (12-dim intent vector), wybór modelu jest parametrem konfiguracyjnym per-path (`INTENT_REALTIME_MODEL`, `INTENT_BATCH_MODEL` w Doppler).
 - **Multilingual edge case:** przy wiadomościach mieszanych językowo (PL+EN w jednej sesji) real-time fallback do Sonnet 4.6 gdy `detect_language_mix(message) = true` i `haiku_confidence < 0.6` (do zaimplementowania w `apps/intent-engine` — patrz FOLLOW-087).
+
+### C.4. Intent Pipeline Event Contracts
+
+Kontrakty eventów kluczowe dla połączenia `apps/intent-engine` (FOLLOW-087) z SDK (FOLLOW-093).
+
+**`chat.intent.detected` — emitowany przez `apps/intent-engine` po NLP:**
+
+```typescript
+// TBD pending FOLLOW-087 — schema stabilizuje FOLLOW-093
+type ChatIntentDetectedPayload = {
+  intent_dimensions: ChatIntentDimensions;  // 12-dim structured vector (§D.1)
+  archetype_hint: Archetype;                // top archetype prediction
+  confidence: number;                       // 0–1 combined confidence
+  model_used: 'haiku-4.5' | 'sonnet-4.6';  // which model produced this
+  source: 'realtime' | 'batch';
+};
+
+type ChatIntentDimensions = {
+  purchase_purpose?: string;
+  urgency?: string;
+  budget_band?: string;
+  family_stage?: string;
+  geo_priority?: string;
+  feature_priority?: string;
+  cross_border?: string;
+  finance_complexity?: string;
+  decision_role?: string;
+  risk_appetite?: string;
+  emotional_state?: string;
+  tax_aware?: boolean;
+};
+```
+
+**Behavioral posterior diagnostics (emitowane przez SDK, dla observability):**
+
+```typescript
+type PosteriorUpdatedPayload = {
+  trigger: 'behavioral' | 'quiz' | 'chat_intent';
+  archetype_selected: Archetype;
+  confidence: number;
+  signal_counts: { behavioral: number; quiz: number; chat: number };
+};
+```
+
+> **Implementation note:** `chat.intent.detected` schema jest finalizowana w FOLLOW-087. FOLLOW-093 może nie startować przed stabilizacją schematu. Kontrakt powyżej jest propozycją — może ulec zmianie.
 
 ---
 
@@ -1404,6 +1495,38 @@ Intent Vector (per session, updated continuously):
 ```
 
 Każdy wymiar ma **confidence score** (0–1). Adaptation engine zachowuje się tylko gdy *combined confidence > threshold* (default 0.6).
+
+#### D.1.1. Mapowanie 12-dim intent vector → archetype posterior update
+
+Gdy `chat.intent.detected` event dotrze do SDK, wywoływana jest `applyChatIntentPrior(state, intentDimensions)` — parallel do `applyQuizPrior()`. Chat intent jest traktowany jak silny prior (NIE behaviorally damped, weight = `QUIZ_CONFIDENCE_BONUS`).
+
+**`CHAT_INTENT_LIKELIHOODS` — mapping reguł (do zaimplementowania w `packages/sdk/src/core/intent.ts`, FOLLOW-092B):**
+
+```
+purchase_purpose=investment        → yield_hunter:0.7, vacation_rental_investor:0.6, flip_investor:0.6, portfolio_builder:0.7, golden_visa_buyer:0.5, commercial_investor:0.5
+purchase_purpose=second_home       → second_home_buyer:0.85, lifestyle_expat:0.4
+purchase_purpose=vacation_rental   → vacation_rental_investor:0.9
+purchase_purpose=retirement        → retiree_relocator:0.85, downsizer:0.5
+purchase_purpose=relocation        → lifestyle_expat:0.7, remote_worker:0.6, retiree_relocator:0.4
+cross_border=foreign_buyer         → golden_visa_buyer:0.7, lifestyle_expat:0.6, diaspora_buyer:0.4
+cross_border=expat_returning       → diaspora_buyer:0.85
+family_stage=young_family          → family_buyer:0.8, student_parent:0.4
+family_stage=established_family    → family_buyer:0.7, upsizer:0.5
+family_stage=empty_nester          → downsizer:0.75, retiree_relocator:0.3
+family_stage=retiree               → retiree_relocator:0.85, downsizer:0.6
+finance_complexity=investment_vehicle → yield_hunter:0.6, golden_visa_buyer:0.6, commercial_investor:0.5
+finance_complexity=standard_mortgage  → first_time_buyer:0.7, family_buyer:0.4
+urgency=0-3mo + purchase_purpose=investment → flip_investor:0.8
+urgency=12mo+ + purchase_purpose=investment → portfolio_builder:0.7
+geo_priority=school_district       → family_buyer:0.7, student_parent:0.6
+feature_priority=workspace         → remote_worker:0.85
+budget_band=comfortable + purchase_purpose=primary → luxury_buyer:0.6
+tax_aware=true                     → yield_hunter:0.4, golden_visa_buyer:0.5, vacation_rental_investor:0.4
+```
+
+**Mismatch detection:** jeśli `quiz.event` już odpowiedziano i `chat_archetype ≠ quiz_archetype` z confidence > 0.5 obydwóch — SDK emituje `quiz.mismatch` event i wybiera źródło z wyższym combined confidence.
+
+> **Schema:** TBD pending FOLLOW-087. `CHAT_INTENT_LIKELIHOODS` powyżej to propozycja do weryfikacji przy implementacji FOLLOW-092B.
 
 ### D.2. Architektura model serving
 
@@ -1586,6 +1709,93 @@ Roadmap accuracy z konkretnymi milestone'ami:
 
 ---
 
+### D.6. Archetype Coverage Matrix — Adaptive Listings v1.0 (reachable archetypes on app.estalara.com)
+
+Trzy źródła sygnałów: **Behavioral** (SDK observers) / **Quiz** (2-question opt-in widget) / **Chat NLP** (12-dim intent vector, FOLLOW-087+092). Status: 🟢 Full (≥2 discriminating sources) / 🟡 Partial (1 source) / 🔴 None (no behavioral source for this tenant) / ⚪ Chat-only (chat NLP only, no behavioral signal on residential app.estalara.com).
+
+| Archetype | Behavioral signals (SIGNAL_LIKELIHOODS) | Quiz discrimination | Chat NLP discrimination | Status (post FOLLOW-092A/B) |
+|---|---|---|---|---|
+| `yield_hunter` | `listing.viewed` + `cta.clicked` (✅ active) | investment purpose | `purchase_purpose=investment`, `tax_aware=true` | 🟢 Full |
+| `vacation_rental_investor` | `filter.applied(type=holiday)` + `feature.expanded(yield/STR)` | investment + short horizon | `purchase_purpose=vacation_rental` | 🟢 Full |
+| `flip_investor` | `price.compared` + `filter.applied(facet=renovation)` | investment + short horizon | `purchase_purpose=investment` + `urgency=0-3mo` | 🟢 Full |
+| `portfolio_builder` | `listing.viewed(many)` + `cta.clicked` | investment + long horizon | `purchase_purpose=investment` + `urgency=12mo+` | 🟢 Full |
+| `golden_visa_buyer` | `feature.expanded(legal/visa)` | investment purpose | `cross_border=foreign_buyer` + `finance_complexity=investment_vehicle` | ⚪ Chat-only |
+| `commercial_investor` | `filter.applied(type=commercial)` | investment + long horizon | `purchase_purpose=investment` + `feature_priority=commercial` | ⚪ Chat-only |
+| `family_buyer` | `filter.applied(facet=bedrooms_min≥3)` + `mortgage_calc.used` | personal + long horizon | `purchase_purpose=primary` + `family_stage=young/established` | 🟢 Full |
+| `first_time_buyer` | `mortgage_calc.used` + `filter.applied(facet=price_max=low)` | personal + short/medium | `purchase_purpose=primary` + `finance_complexity=standard_mortgage` | 🟢 Full |
+| `upsizer` | `filter.applied(facet=bedrooms_min=large)` | personal + medium | `purchase_purpose=primary` + `family_stage=established_family` | 🟢 Full |
+| `downsizer` | `filter.applied(facet=bedrooms_max=small)` + `feature.expanded(accessibility)` | personal + long | `purchase_purpose=primary` + `family_stage=empty_nester` | 🟢 Full |
+| `luxury_buyer` | `cta.clicked(high-price)` + `photo.dwell` | personal + any | `budget_band=comfortable` + `feature_priority=luxury` | 🟢 Full |
+| `remote_worker` | `feature.expanded(home_office/internet)` | personal + short | `feature_priority=workspace` | 🟢 Full |
+| `lifestyle_expat` | `feature.expanded(expat/international)` | personal + long | `cross_border=expat` + `geo_priority=lifestyle` | 🟢 Full |
+| `retiree_relocator` | `feature.expanded(accessibility/climate)` | personal + long | `family_stage=retiree` | ⚪ Chat-only |
+| `diaspora_buyer` | *(cross-tenant, future)* | any | `cross_border=expat_returning` | ⚪ Chat-only |
+| `second_home_buyer` | `listing.viewed(tourist_area)` + `photo.dwell` | personal + medium | `purchase_purpose=second_home` | 🟢 Full |
+| `student_parent` | `filter.applied(near_university)` | any | `geo_priority=school_district` + `family_stage=young_family` | ⚪ Chat-only |
+| `neutral` | fallback (low combined confidence) | — | low confidence | 🟢 Always |
+
+**Coverage summary post FOLLOW-092A/B:** 13/18 🟢 Full, 5/18 ⚪ Chat-only (residential app.estalara.com lacks behavioral filters for commercial/diaspora/student/golden_visa/retiree). Chat-only archetypes require `chat.intent.detected` from FOLLOW-087+092 to function.
+
+**Note:** ⚪ Chat-only archetypes will serve `neutral` playbook if chat NLP is unavailable or quiz is OFF.
+
+---
+
+### D.7. Confidence & Fallback Policy
+
+> **Thresholds TBD:** Concrete values are pending FOLLOW-092B calibration on synthetic session fixtures. The policy structure is locked; numbers are placeholders.
+
+| Signal source | Weight | Notes |
+|---|---|---|
+| Behavioral (SIGNAL_LIKELIHOODS) | `BEHAVIORAL_DAMPING = 0.3` × likelihood | Soft signal — gradual accumulation |
+| Quiz (`applyQuizPrior`) | `QUIZ_CONFIDENCE_BONUS = 1.2` | Strong prior — explicit self-declaration |
+| Chat NLP (`applyChatIntentPrior`) | `QUIZ_CONFIDENCE_BONUS = 1.2` (when `chat_confidence > 0.7`) | Strong prior — treated same weight as quiz |
+
+**Fallback rules:**
+1. If `combined_confidence < 0.6` → serve `neutral` playbook, no DOM mutation
+2. If `quiz.enabled = false` AND no chat events → rely on behavioral only; `neutral` archetype likely until ≥5 behavioral signals
+3. If `quiz_archetype ≠ chat_archetype` (mismatch, both confidence > 0.5) → use source with higher combined confidence; emit `quiz.mismatch`
+4. If `chat.intent.detected` not available (FOLLOW-087 not yet shipped) → behavioral + quiz only; chat-only archetypes serve `neutral`
+5. ReorderDirective (photos, listings-grid): deferred → FOLLOW-096; fallback = TextDirective only
+
+**Source-labeling:** Adaptation decisions sourced from chat-only (⚪) archetypes should be tagged `source: 'chat_only'` in `PosteriorUpdatedPayload` for observability.
+
+---
+
+### D.8. Privacy & Consent for Behavioral and Chat Signals
+
+Per `DECISIONS_2026-05-18 §D3` (Privacy-by-design: Adaptive Listings collects ZERO PII):
+
+| Signal type | PII? | Basis | Notes |
+|---|---|---|---|
+| `photo.dwell`, `feature.expanded`, `mortgage_calc.used`, `filter.applied`, `inquiry.started` | No | Legitimate interest (behavioral telemetry, non-reversible session ID) | Anonymized — session_id = HMAC(tenant_id, anon_seed) |
+| `chat.intent.detected` (12-dim vector) | No | Legitimate interest | Dimensions only (purpose, urgency, etc.) — raw chat text stays in core-master, never flows to Adaptive Listings |
+| Quiz answers | No | Legitimate interest | Aggregated per session, no link to email/identity |
+| Cross-tenant behavioral aggregation (future) | No | Anonymized aggregate only — DP-protected per §F |  |
+
+**Cross-system DSR:** core-master handles email/chat deletion. Adaptive Listings has no PII to delete. For session behavioral data deletion: `tenant_id + session_id` hard-delete in ClickHouse per FOLLOW-039 flow.
+
+> Full GDPR/CCPA/UAE PDPL compliance spec: §H.
+
+---
+
+### D.9. Observability Requirements for Intent Pipeline
+
+Every intent decision MUST be traceable end-to-end for debugging and conversion attribution.
+
+| Stage | Event / log | Owner |
+|---|---|---|
+| Signal received | `signal_received` log entry (signal type, payload summary, session_id) | SDK |
+| Posterior updated | `posterior_updated` event (trigger source, archetype_selected, confidence, signal_counts) | SDK |
+| Archetype selected | `archetype_selected` log (archetype, confidence, source: behavioral/quiz/chat/mixed) | SDK |
+| Directive selected | `directive_selected` log (slot, directive_type, variant_index) | SDK |
+| Slot matched | `slot_matched` log (slot name, element selector, match method: auto-detect L1–L5) | SDK |
+| Directive applied | `directive_applied` event (slot, old_text_hash, new_text_hash) | SDK |
+| Directive skipped | `directive_skipped` log (slot, reason: low_confidence/slot_not_found/reorder_deferred) | SDK |
+
+These events are consumed by TICKET-PILOT-003 (CTA lift dashboard) and feed the conversion attribution pipeline.
+
+---
+
 ## E. Adaptation Engine
 
 ### E.1. Decision tree (logiczny, nie ML)
@@ -1647,6 +1857,27 @@ Każdy `SlotDirective.variants.en[]` zawiera ≥3 alternatywy. `variants.en[0]` 
 ```
 
 Selekcja wariantu przez Thompson sampling bandit (E.3) — seed `Beta(1,1)` per `(tenant_id, archetype, variant_index)` w tabeli `ab_bandit_weights` (PR #80). Reward signal (`inquiry.completed`, `time_on_listing`) propaguje się wstecz przez session events i aktualizuje rozkład Beta per wariant.
+
+#### E.2.3. app.estalara.com Slot Mapping (Adaptive Listings v1.0)
+
+Docelowe DOM sloty dla adaptacji na `app.estalara.com` (SvelteKit frontend). **Nie wymagają ręcznych `data-estalara-slot` markerów** — AI Vision (L5, `ai-vision.ts` 364 LOC, ANTHROPIC_API_KEY w Doppler od 2026-05-25) wykrywa strukturę automatycznie podczas onboardingu przez `POST /api/detect`.
+
+| Slot name | Element type | Playbook field | Directive type | Status |
+|---|---|---|---|---|
+| `headline` | `<h1>`/`<h2>` listing title | `slots.headline.en` | TextDirective | v1.0 |
+| `description` | property description text | `copy_template.en` (AI-warmed, E.7) | TextDirective | v1.0 |
+| `features` | features list (`<ul>`) | `slots.features.en` | TextDirective | v1.0 |
+| `cta-primary` | primary CTA button | `slots.cta.en` | TextDirective | v1.0 |
+| `cta-live` | LIVE session join button | `slots.cta_live.en` | TextDirective | v1.0 (DECISIONS D4 metric #5) |
+| `listings-grid` | listing cards container | — | ReorderDirective | ⏳ FOLLOW-096 (deferred) |
+| `photos` | photo gallery | — | ReorderDirective | ⏳ FOLLOW-096 (deferred) |
+
+**Implementation notes:**
+- `app.estalara.com` frontend code: zero zmian wymaganych (poza SDK snippet embed w TICKET-PILOT-001)
+- Corpus fixture: `packages/sdk/src/auto-detect/__tests__/corpus/000-app-estalara/` — CI regression dla 5 TextDirective slotów
+- SDK config: `decisionApiUrl` musi wskazywać na control-plane route (pełny 18-archetype playbook), NIE Worker route (3 hard-coded buckets)
+- TextDirective coverage test: `POST /api/adapt` dla 18 archetypów × 5 slotów = 90 non-empty directives
+- Implementation: FOLLOW-095 (Sprint 13, ml-engineer + sdk-engineer, ~4h)
 
 ### E.3. A/B testing & learning loop
 

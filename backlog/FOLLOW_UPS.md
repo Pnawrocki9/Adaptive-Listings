@@ -2428,3 +2428,351 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] Remove `buildMockResponse` from route (or keep as fallback with explicit log warning)
   - [ ] Add an integration test seeding ClickHouse rows + asserting correct rate computation
 - **promoted_to_queue:** false
+
+---
+
+## FOLLOW-092 — Verify `cta.clicked` event flow is live for the pilot tenant before activating cta-lift dashboard
+
+- **source_retro:** RETRO-008
+- **source_ticket:** TICKET-PILOT-003
+- **recommended_sprint:** 12 (gates pilot go-live — sequence with TICKET-PILOT-001)
+- **recommended_agent:** data-engineer
+- **priority:** P1
+- **estimated_hours:** 2
+- **scope:** `GET /api/pilot/cta-lift` consumes `events.type = 'cta.clicked'` joined to
+  `adaptation_decisions.holdout_group` on `(tenant_id, session_id)`. The producer (SDK `cta.clicked`
+  emission → ingest → ClickHouse `events`) is established for the pilot tenant only when
+  TICKET-PILOT-001 runs. Confirm the full producer→consumer path is live and the `events` table
+  actually receives `cta.clicked` rows for the pilot tenant before the dashboard is treated as
+  authoritative. This is the HALF_WIRE_C finding from RETRO-008 §3.
+- **ac:**
+  - [ ] Confirm SDK on app.estalara.com emits `cta.clicked` for `data-estalara-cta` elements
+  - [ ] Confirm ingest writes `cta.clicked` rows into ClickHouse `events` for the pilot tenant_id
+  - [ ] Confirm `adaptation_decisions` has matching `session_id` rows with `holdout_group` set
+  - [ ] Run `GET /api/pilot/cta-lift?window_days=7` against real data and confirm non-mock counts
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-093 — Reconcile the two CTA-lift query paths (pilot/cta-lift vs analytics/lift) onto one schema vocabulary
+
+- **source_retro:** RETRO-008
+- **source_ticket:** TICKET-PILOT-003
+- **recommended_sprint:** 12
+- **recommended_agent:** data-engineer
+- **priority:** P1
+- **estimated_hours:** 4
+- **scope:** Two control-plane routes compute adapted-vs-holdout CTA lift with divergent schema
+  vocabularies. New `apps/control-plane/src/app/api/pilot/cta-lift/route.ts` joins
+  `events.type = 'cta.clicked'` (canonical, per `packages/shared/.../events/index.ts:211`) on
+  `adaptation_decisions.ts`. Pre-existing
+  `apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts:99` joins
+  `dqs_events.event_type = 'cta_clicked'` on `adaptation_decisions.assigned_at`. They will report
+  different CTA-lift numbers for the same tenant/window. Determine the canonical
+  table/column/event-name set (verify against the ClickHouse `adaptation_decisions` migration: `ts`
+  vs `assigned_at`), fix the wrong route, and document both routes plus the new `/dashboard/pilot`
+  page in the Master Design route inventory. Note: TICKET-PILOT-003 spec said `/dashboard/analytics`
+  but shipped `/dashboard/pilot` — record the location decision.
+- **ac:**
+  - [ ] Verified canonical column name on `adaptation_decisions` (`ts` vs `assigned_at`) from the
+        migration
+  - [ ] Both routes use the same event-name (`cta.clicked`) and the same table/column vocabulary
+  - [ ] A test or doc asserts the two routes return consistent CTA-lift for an identical fixture
+  - [ ] Master Design route inventory lists `/api/pilot/cta-lift` + `/dashboard/pilot` and the
+        analytics/lift route
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-094 — cta-lift route must fail loud on ClickHouse error and expose data provenance (not serve fabricated lift)
+
+- **source_retro:** RETRO-008
+- **source_ticket:** TICKET-PILOT-003
+- **recommended_sprint:** 12 (BEFORE pilot go-live; sequence ahead of FOLLOW-086)
+- **recommended_agent:** data-engineer + backend-engineer
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** `route.ts:GET` does `fetchCtaLiftRaw(...).catch(() => null)` then
+  `raw ?? buildMockRaw(...)`. With `CLICKHOUSE_URL` set in prod, ANY query failure (HTTP 5xx,
+  malformed SQL, schema drift, auth) is swallowed and the route serves `buildMockRaw()` — which is
+  engineered to show a statistically significant CTA lift. The pilot's PRIMARY go/no-go metric can
+  therefore display fabricated success with HTTP 200 and no error signal (a test even asserts this:
+  `route.test.ts:524`). Separate the "ClickHouse not configured" path (legitimate dev/CI mock) from
+  the "ClickHouse configured but failed" path (must surface an error, log to Sentry, and NOT
+  silently fabricate). Expose data provenance on the response so reviewers/go-no-go can distinguish
+  mock from real.
+- **ac:**
+  - [ ] When `CLICKHOUSE_URL` is set and a query throws → 5xx (or 200 with explicit
+        `error`/`degraded` flag) + Sentry capture; never silently return `buildMockRaw`
+  - [ ] Mock fallback only when `CLICKHOUSE_URL` is unset (dev/CI), and the response carries
+        `data_source: 'mock' | 'clickhouse'` (or an `X-Data-Source` header)
+  - [ ] Dashboard renders a visible "mock data" indicator when `data_source === 'mock'`
+  - [ ] Test asserts a query failure with `CLICKHOUSE_URL` set does NOT return fabricated
+        significant lift
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-095 — Import CtaLiftResponse types into page.tsx instead of re-declaring (prevent contract drift)
+
+- **source_retro:** RETRO-008
+- **source_ticket:** TICKET-PILOT-003
+- **recommended_sprint:** backlog
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** `apps/control-plane/src/app/dashboard/pilot/page.tsx:85` hand-declares
+  `CtaLiftResponse`, `PilotSummary`, `FunnelRow`, `ArchetypeRow`, `PilotConfidence` as duplicates of
+  the server route's exported types in `./api/pilot/cta-lift/route-helpers`. If the route response
+  shape changes, the page types drift silently — the same duplicate-interface contract-drift class
+  as RETRO-005 `DetectApiResponse` (FOLLOW-044). Import the types from a shared location
+  (route-helpers is server-only, so extract the public response types into a client-importable
+  module if needed).
+- **ac:**
+  - [ ] `page.tsx` imports `CtaLiftResponse` (and the four sub-types) rather than re-declaring them
+  - [ ] No client/server boundary violation introduced by the import (extract types to a `.types.ts`
+        if required)
+  - [ ] `tsc` fails if the route response shape and the page-consumed shape diverge
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-096 — Cross-implementation parity test for the two-proportion z-test (pilot-stats vs decision-api)
+
+- **source_retro:** RETRO-008
+- **source_ticket:** TICKET-PILOT-003
+- **recommended_sprint:** backlog
+- **recommended_agent:** qa-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** The repo now has two independent two-proportion z-test implementations:
+  `apps/control-plane/src/lib/pilot-stats.ts:twoProportionZTest` (A&S 7.1.26 erf) and
+  `apps/decision-api/src/lib/ab-assignment.ts:twoProportionZTestPValue` (A&S 26.2.17 CDF). Both are
+  individually correct but use different approximations and have no parity guard. Add a shared
+  fixture set and assert the two agree to a tolerance (e.g. 1e-4) so a future edit to one cannot
+  silently diverge from the other. (See RETRO-008 §6 and Rule K.)
+- **ac:**
+  - [ ] Shared fixture array of `(c_a, n_a, c_b, n_b)` cases spanning
+        significant/n.s./small-n/zero-se
+  - [ ] Test asserts both implementations agree within tolerance on every fixture
+  - [ ] Test documents the n≥30 (pilot) vs n>0 (decision-api regression) guard difference explicitly
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-092A — SDK behavioral observers + payload schemas
+
+- **source:** AI Council Checkpoint 2026-05-25 / v2.7 planning session
+- **recommended_sprint:** Sprint 13
+- **recommended_agent:** sdk-engineer
+- **priority:** P1
+- **estimated_hours:** 8
+- **scope:** Add 5 new observers in `packages/sdk/src/core/observer.ts`:
+  - `photo.dwell` — IntersectionObserver + timer per photo, threshold 2000ms
+  - `feature.expanded` — click observer on expandable sections with `data-feature` attr
+  - `mortgage_calc.used` — click/input observer on `data-estalara-slot="mortgage"` elements
+  - `filter.applied` — observer on search/filter form submissions, capture facet+value pairs
+  - `inquiry.started` — observer on inquiry form focus/open Each event: Zod schema validation
+    through existing `dispatchEvents()` pipeline. Payload-aware dispatch: `filter.applied` with
+    `facet=bedrooms_min` and `facet=price_max` produce distinct payloads that SIGNAL_LIKELIHOODS
+    (FOLLOW-092B) can discriminate differently.
+- **ac:**
+  - [ ] 5 new observer types emitting validated events through `dispatchEvents()`
+  - [ ] `filter.applied` payload includes `facet` and `value` fields
+  - [ ] Unit tests for each new observer type in `observer.test.ts`
+  - [ ] Bundle size delta <5KB gzip (new observers are lightweight, no new deps)
+  - [ ] Auto-detect corpus CI tests still green (no regression)
+- **promoted_to_queue:** false
+- **depends_on:** none (independent)
+
+---
+
+## FOLLOW-092B — SIGNAL_LIKELIHOODS all 18 archetypes + CHAT_INTENT_LIKELIHOODS + applyChatIntentPrior()
+
+- **source:** AI Council Checkpoint 2026-05-25 / v2.7 planning session
+- **recommended_sprint:** Sprint 13
+- **recommended_agent:** sdk-engineer
+- **priority:** P1
+- **estimated_hours:** 8
+- **scope:** In `packages/sdk/src/core/intent.ts`:
+  1. Add `SIGNAL_LIKELIHOODS` entries for all new event types from FOLLOW-092A with per-archetype
+     weights per §D.6 Coverage Matrix. Payload-aware: `filter.applied` likelihoods differ by
+     `payload.facet` value (e.g. `bedrooms_min` → family_buyer; `price_max=low` → first_time_buyer).
+  2. Add `CHAT_INTENT_LIKELIHOODS` constant — 12-dim intent vector dimension → archetype weight
+     mappings per §D.1.1. e.g.
+     `purchase_purpose=investment → yield_hunter:0.7, portfolio_builder:0.7`.
+  3. Add `applyChatIntentPrior(state: IntentState, dimensions: ChatIntentDimensions): IntentState`
+     function — parallel to `applyQuizPrior()`. Weight = `QUIZ_CONFIDENCE_BONUS` when
+     `chat_confidence > 0.7`. Triggers `detectMismatch()` if quiz prior already set.
+  4. Wire `applyBehavioralSignal()` to handle `payload.facet` and `payload.feature` — different
+     likelihoods per facet value, not just per event type.
+- **ac:**
+  - [ ] `SIGNAL_LIKELIHOODS`: all 18 archetypes have ≥1 discriminating signal entry
+  - [ ] `CHAT_INTENT_LIKELIHOODS` constant exported from `intent.ts`
+  - [ ] `applyChatIntentPrior(state, chatIntentDimensions)` implemented + tests analogous to
+        `applyQuizPrior` tests
+  - [ ] Coverage Matrix §D.6: ≥13/18 archetypes reach 🟢 Full after this ticket
+  - [ ] Fixture sessions in `intent.test.ts` for each new event type
+  - [ ] `quiz.mismatch` emitted when quiz_archetype ≠ chat_archetype (both confidence > 0.5)
+- **promoted_to_queue:** false
+- **depends_on:** FOLLOW-092A
+
+---
+
+## FOLLOW-093 — chat.intent.detected → Bayesian prior bridge in SDK intent.ts
+
+- **source:** AI Council Checkpoint 2026-05-25 / v2.7 planning session
+- **recommended_sprint:** Sprint 13
+- **recommended_agent:** ml-engineer + sdk-engineer
+- **priority:** P1
+- **estimated_hours:** 4
+- **scope:** When `apps/intent-engine` (FOLLOW-087) emits `chat.intent.detected` to the ingest
+  pipeline, the SDK must consume it and apply as a strong prior update:
+  1. SDK observer in `packages/sdk/src/index.ts` listens for `chat.intent.detected` events (via
+     ingest callback or WebSocket, delivery mechanism TBD in FOLLOW-087)
+  2. Calls `applyChatIntentPrior(state, event.payload.intent_dimensions)` (implemented in
+     FOLLOW-092B)
+  3. If `event.payload.confidence > 0.7` → strong prior (weight = `QUIZ_CONFIDENCE_BONUS`)
+  4. If quiz already answered: `detectMismatch(quiz_archetype, chat_archetype)` → emit
+     `quiz.mismatch`
+  5. Emits `posterior_updated` observability event (see §D.9)
+- **ac:**
+  - [ ] SDK consumes `chat.intent.detected` events from ingest pipeline
+  - [ ] `applyChatIntentPrior()` called with payload dimensions
+  - [ ] Mismatch detection works between quiz prior and chat prior
+  - [ ] Test: session with 3 behavioral events + 1 `chat.intent.detected` with
+        `purchase_purpose=investment` → yield_hunter confidence > 0.7
+  - [ ] Test: quiz=family_buyer + chat=yield_hunter → `quiz.mismatch` emitted
+  - [ ] Contract test validates `chat.intent.detected` payload shape matches §C.4 spec
+- **promoted_to_queue:** false
+- **depends_on:** FOLLOW-087 (stable chat.intent.detected schema) + FOLLOW-092B
+  (applyChatIntentPrior function)
+
+---
+
+## FOLLOW-094 — Quiz ON/OFF toggle (SdkConfig + Supabase tenants table + dashboard)
+
+- **source:** AI Council Checkpoint 2026-05-25 / v2.7 planning session
+- **recommended_sprint:** Sprint 13
+- **recommended_agent:** sdk-engineer + backend-engineer
+- **priority:** P2
+- **estimated_hours:** 3
+- **scope:**
+  1. Add `SdkConfig.quiz?: { enabled: boolean; trigger_after_n_listings?: number }` to
+     `packages/sdk/src/core/types.ts` (default: `{ enabled: true, trigger_after_n_listings: 3 }`)
+  2. When `quiz.enabled === false`: `renderQuizTrigger()` never called; quiz widget not rendered;
+     zero `quiz.event` events emitted
+  3. Dashboard toggle ON/OFF in tenant settings page (`apps/control-plane`)
+  4. **Supabase primary SoT**: migration `packages/db/migrations/0015_quiz_enabled.sql` adding
+     `quiz_enabled boolean DEFAULT true` to `tenants` table. Dashboard and snippet generator read
+     from Supabase via `PATCH /api/tenants/:id`
+  5. SDK snippet generator includes `quiz: { enabled: false }` in generated code when toggle=OFF
+- **ac:**
+  - [ ] `SdkConfig.quiz.enabled = false` → zero quiz widget renders, zero quiz events in 100 listing
+        views
+  - [ ] `SdkConfig.quiz.enabled = true` (default) → behavior unchanged vs current
+  - [ ] Dashboard toggle writes to `tenants.quiz_enabled` via `PATCH /api/tenants/:id`
+  - [ ] Snippet generator adds `quiz: { enabled: false }` when Supabase toggle=OFF
+  - [ ] Migration `0015_quiz_enabled.sql` exists and passes `DEFAULT true` verification test
+  - [ ] Fallback behavior documented when quiz=OFF and chat NLP unavailable: neutral playbook
+- **promoted_to_queue:** false
+- **depends_on:** none (independent)
+
+---
+
+## FOLLOW-095 — app.estalara.com DOM adaptation (AI Vision + corpus fixture + 5-slot TextDirective coverage)
+
+- **source:** AI Council Checkpoint 2026-05-25 / v2.7 planning session
+- **recommended_sprint:** Sprint 13
+- **recommended_agent:** ml-engineer + sdk-engineer
+- **priority:** P1
+- **estimated_hours:** 4
+- **scope:** AI Vision (L5, `packages/sdk/src/auto-detect/techniques/ai-vision.ts` 364 LOC) is fully
+  implemented. `ANTHROPIC_API_KEY` confirmed in Doppler dev/stg/prd (2026-05-25). No manual
+  `data-estalara-slot` markers needed in app.estalara.com SvelteKit code.
+  1. **Corpus fixture**: add `packages/sdk/src/auto-detect/__tests__/corpus/000-app-estalara/` with
+     HTML snapshot of app.estalara.com listing page — for CI regression testing only
+  2. **Slot mapping verification**: confirm auto-detect L1–L5 correctly maps 5 TextDirective slots:
+     `headline`, `description`, `features`, `cta-primary`, `cta-live` without manual markers
+  3. **TextDirective coverage test**: assert `POST /api/adapt` returns non-empty TextDirective for
+     all 18 archetypes × 5 slots = 90 directive assertions
+  4. **SDK config check**: verify SDK on app.estalara.com uses control-plane route (full
+     18-archetype playbook), NOT Worker route (3 hard-coded buckets)
+  - `photos` and `listings-grid` ReorderDirective: explicit deferral comment → FOLLOW-096
+- **ac:**
+  - [ ] Corpus fixture `000-app-estalara`: 100% precision/recall for 5 slots in corpus test
+  - [ ] AI Vision or L1–L4 detects `headline`, `description`, `features`, `cta-primary`, `cta-live`
+        without manual markers
+  - [ ] TextDirective coverage: 18 archetypes × 5 slots = 90 non-empty directives from
+        `POST /api/adapt`
+  - [ ] SDK uses control-plane route → full 18-archetype playbook available
+  - [ ] Shadow mode test: SDK loaded, zero DOM mutations, analytics events flowing
+  - [ ] `photos` + `listings-grid` ReorderDirective: code comment pointing to FOLLOW-096
+- **promoted_to_queue:** false
+- **depends_on:** TICKET-PILOT-001 (SDK snippet embed in app.estalara.com — only required change on
+  Rafał's side)
+
+---
+
+## FOLLOW-097 — Thread detected inquiry_submit_selector into SDK setupObservers() at init (inquiry.started never emitted in prod)
+
+- **source_retro:** RETRO-009
+- **source_ticket:** TICKET-PILOT-004
+- **recommended_sprint:** 12 (gates the secondary pilot metric — sequence with TICKET-PILOT-001)
+- **recommended_agent:** sdk-engineer + backend-engineer
+- **priority:** P1
+- **estimated_hours:** 2
+- **scope:** TICKET-PILOT-004 added `ObserverOptions.inquirySubmitSelector` and an `inquiry.started`
+  emission path in `packages/sdk/src/core/observer.ts:146-170`, but the sole production caller
+  `setupObservers(config, onEvent)` at `packages/sdk/src/index.ts:265` passes only two arguments —
+  the `options` object is never supplied, so `inquirySubmitSelector` is always `undefined` and the
+  inquiry listener is never registered. The detected `inquiry_submit_selector` (present in the
+  `000-app-estalara` fixture and the tenant site schema) is never read into `ObserverOptions` at
+  runtime. As a result `inquiry.started` fires only in unit tests; zero events reach ingest →
+  ClickHouse in prod, and `GET /api/pilot/inquiry-starts` reads against a source that never
+  produces. Plumb the selector from the SDK config / activated tenant site schema into the
+  `setupObservers` `options` argument at init, and add a test that exercises the real init path (not
+  a direct-injected selector). This is the HALF_WIRE_P finding from RETRO-009 §3 (a Rule H half-wire
+  that Rule I's CI gate does not catch because the symbol is imported and only the new conditional
+  branch is dead).
+- **ac:**
+  - [ ] SDK init reads `inquiry_submit_selector` (from SDK config / activated tenant site schema)
+        and passes it as `setupObservers(config, onEvent, { inquirySubmitSelector })`
+  - [ ] A test drives the real SDK init path and asserts `inquiry.started` is emitted on
+        inquiry-submit click when the tenant schema carries the selector (fails if `index.ts` omits
+        the option)
+  - [ ] A contract test asserts the SDK-emitted `inquiry.started` payload validates against
+        `InquiryStartedEventSchema` from `@estalara/shared`
+  - [ ] Manually confirm `inquiry.started` rows land in ClickHouse `events` for the pilot tenant
+        during shadow mode (coordinate with TICKET-PILOT-001)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-098 — inquiry-starts route must fail loud on ClickHouse error and expose data provenance (Rule K.2)
+
+- **source_retro:** RETRO-009
+- **source_ticket:** TICKET-PILOT-004
+- **recommended_sprint:** 12 (sequence alongside FOLLOW-094, the cta-lift sibling fix)
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** `apps/control-plane/src/app/api/pilot/inquiry-starts/route.ts:617-622` returns
+  `buildMockResponse()` whenever `CLICKHOUSE_URL` is unset OR any ClickHouse call fails
+  (`fetchFromClickHouse(...).catch(() => null)`). In any browser-reachable env where the pilot
+  ClickHouse var is missing (e.g. Vercel preview), or when a configured query throws, the dashboard
+  renders plausible, deterministic, fabricated inquiry counts and a fake lift badge with no
+  provenance signal. This is the same CONVENTIONS_PATCH.md Rule K.2 violation as RETRO-008 CB-1 /
+  FOLLOW-094 (cta-lift), applied to the secondary pilot metric. Separate "ClickHouse not configured"
+  (legitimate dev/CI mock) from "configured but failed" (must surface error + Sentry), and expose
+  data provenance on the response. Sequence with FOLLOW-094 so both pilot routes get identical
+  treatment.
+- **ac:**
+  - [ ] When `CLICKHOUSE_URL` is set and a query throws → error status (or 200 with explicit
+        `error`/`degraded` flag) + Sentry capture; never silently return `buildMockResponse`
+  - [ ] Mock fallback only when `CLICKHOUSE_URL` is unset; response carries
+        `data_source: 'mock' | 'clickhouse'` (or `X-Data-Source` header)
+  - [ ] Dashboard renders a visible "sample data" indicator when `data_source === 'mock'`
+  - [ ] Test asserts a query failure with `CLICKHOUSE_URL` set does NOT return fabricated
+        counts/lift
+- **promoted_to_queue:** false

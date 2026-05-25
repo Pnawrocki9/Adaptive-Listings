@@ -3017,4 +3017,415 @@ Rule H amendment does not apply.
 
 ---
 
-<!-- RETRO-008 and beyond will be appended here by the retrospective-analyst agent -->
+## RETRO-008 — TICKET-PILOT-003 (CTA lift dashboard with holdout comparison) — 2026-05-25
+
+### 1. Summary of change
+
+- **PR:** #146 (merged 2026-05-25 11:39 UTC, commit `6f0fbe1`)
+- **Files changed:** 8 (+1,509 / −20)
+- **Modules touched:** control-plane (API route + dashboard page + lib), configs (commitlint),
+  docs/ops (ESCALATIONS.md). No SDK / ingest / decision-api / shared / data-engine code touched.
+- **Key contracts changed:**
+  - `GET /api/pilot/cta-lift?window_days=<7|14|30>` — new route — breaking: no (additive)
+  - `@/lib/pilot-stats` exports `twoProportionZTest`, `classifyConfidence`, `relativeLiftPct`,
+    `normalCDF`, `MIN_SAMPLE_PER_ARM`, `type PilotConfidence` — new — breaking: no
+  - `./route-helpers` exports `CtaLiftResponse`, `PilotSummary`, `FunnelRow`, `ArchetypeRow`,
+    `FUNNEL_STAGES`, `parseWindowDays`, `buildResponseFromRaw`, `ChRawData` family — new — breaking: no
+  - `/dashboard/pilot` page — modified (union-merged with TICKET-PILOT-004 content) — breaking: no
+  - `commitlint.config.cjs` — `PILOT-` ticket prefix added to allow-list — breaking: no
+
+### 2. Verification done in PR
+
+- Test files changed: `pilot-stats.test.ts` (new, 14 cases), `route.test.ts` (new, 12 cases) — 26 total.
+- Assertions added: ~60 across both files.
+- Coverage delta: `pilot-stats.ts` is exhaustively covered (every branch: n<30, se=0, equal rates,
+  known-significant fixture p≈0.00072, null-on-zero-holdout, both arms). `route-helpers.ts`
+  `buildResponseFromRaw` covered for summary/funnel/archetype assembly, missing-stage zeroing, sort
+  order. `route.ts` GET covered for 401 (no JWT, staff-without-tenant), mock path, ClickHouse path
+  with bound params assertion, all-zero rows, and the fail→mock fallback. Estimate ≥85% on the three
+  new files.
+- CI checks: passed (merged to main; PR squashed 4 commits including the route-helpers split fix and
+  the extension-less import fix).
+- **Statistical-correctness verdict:** `twoProportionZTest` is mathematically correct — pooled
+  proportion `pPool=(p1·n1+p2·n2)/(n1+n2)`, pooled SE, two-tailed `2·(1−Φ(z))`, n≥30 guard, se=0
+  guard. The A&S 7.1.26 erf approximation (max error 1.5e-7) is appropriate for a dashboard p-value.
+  The canonical fixture (0.15 vs 0.10, n=1000) yields p≈0.00072 as asserted. No statistical defect
+  found. (See §4a for a divergence-from-sibling-implementation note — not a correctness bug.)
+
+### 3. Wiring Audit
+
+- **DEAD_CODE** — none. Every new file/symbol has a non-test runtime consumer:
+  `pilot-stats.ts` → consumed by `route-helpers.ts`; `route-helpers.ts` → consumed by `route.ts` and
+  `page.tsx` (via duplicate interface, see §4a); `route.ts` GET → Next.js file-based route (framework
+  discovery, false-positive suppressed); `page.tsx` → Next.js page route; `/dashboard/pilot` nav link
+  → wired in `layout.tsx`. `normalCDF`/`MIN_SAMPLE_PER_ARM` are exported and consumed by tests +
+  internal callers.
+- **HALF_WIRE_C** — `event_type:cta.clicked` (consumer side of the producer/consumer test). The
+  cta-lift query CONSUMES `events.type = 'cta.clicked'` joined to `adaptation_decisions.holdout_group`
+  on `(tenant_id, session_id)`. Producer of `cta.clicked` events is the SDK (`packages/shared`
+  schema literal exists, `listing-observe.ts:59`), but the SDK→ingest→ClickHouse `events` wiring for
+  `cta.clicked` on the pilot tenant is established by TICKET-PILOT-001 (still READY, not yet run). At
+  merge time the consumer query exists with no verified live producer feeding the `events` table for
+  the pilot tenant. This is partially mitigated because the route silently falls back to mock data on
+  empty/failed queries (see §4b CB-1) — which is itself the more dangerous finding. Priority **P1**
+  (data wiring completes at PILOT-001 activation; not a code defect) → FOLLOW-092.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — Third parallel two-proportion z-test implementation in the repo, and second parallel
+  CTA-lift query path.** This PR adds `@/lib/pilot-stats.twoProportionZTest`. There is already
+  `apps/decision-api/src/lib/ab-assignment.ts:148 twoProportionZTestPValue` (RETRO-002, Rule J/CI
+  manifest scope) and the older `apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts`
+  (which computes the very same adapted-vs-holdout CTA lift). The two z-tests use different erf/CDF
+  approximations (A&S 7.1.26 vs A&S 26.2.17) — both valid, but they will not be byte-identical and
+  there is no cross-check test. This is the same "duplicate stats/logic across decision-api and
+  control-plane" pattern flagged in RETRO-003 (§reorder/affinity dup), RETRO-005 (PR #122/#123 bandit
+  + reorder mirrors → Rule J), and RETRO-006 (Rule J promoted permanent). See §6.
+- **LG-2 (P1) — Schema-convention divergence between the two CTA-lift query paths.** New
+  `cta-lift/route.ts` joins `events.type = 'cta.clicked'` (dotted, canonical per
+  `packages/shared/src/schemas/events/index.ts:211`) on `adaptation_decisions.ts`. The pre-existing
+  `analytics/lift/route.ts:99` joins `dqs_events.event_type = 'cta_clicked'` (underscored, different
+  table) on `adaptation_decisions.assigned_at`. Same business metric, two different
+  table/column/event-name vocabularies. The new route uses the canonical event name and a `ts`
+  column; the old route uses a non-canonical `cta_clicked` against a `dqs_events` table and
+  `assigned_at`. At least one of these is querying a stale or wrong source. Whichever is correct, the
+  two dashboards (`/dashboard/analytics` lift panel vs `/dashboard/pilot` summary) will report
+  divergent CTA-lift numbers for the same tenant/window. → FOLLOW-093.
+- **LG-3 (P3) — `adaptation_decisions.ts` column assumption is unverified against the ClickHouse
+  migration.** The new query filters/joins on `ad.ts` and uses `anyHeavy(holdout_group)` per session
+  in the funnel subquery. The DSR code references `adaptation_decisions` but the column ddl
+  (`ts` vs `assigned_at`, presence of `archetype`/`holdout_group`) is not co-located with this PR and
+  was not asserted by a test (mock path bypasses real SQL). The `analytics/lift` route uses
+  `assigned_at` for the same table — these cannot both be right. → folded into FOLLOW-093.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P1) — Mock fallback masks ClickHouse query failures on the PRIMARY pilot metric.**
+  `route.ts:GET` does `const raw = await fetchCtaLiftRaw(...).catch(() => null); const data = raw ??
+  buildMockRaw(...)`. `fetchCtaLiftRaw` returns `null` only when `CLICKHOUSE_URL` is unset; on any
+  query failure (HTTP 500, malformed SQL, auth error, schema drift) it THROWS, the `.catch(()=>null)`
+  swallows it, and the route serves `buildMockRaw()` — which is deliberately engineered to show a
+  realistic, statistically significant CTA lift. In production with `CLICKHOUSE_URL` set, a broken
+  query therefore returns fabricated "significant lift" on the pilot's primary success metric with a
+  200 status and no error signal. A test even asserts this behavior (`route.test.ts:524 'falls back
+  to mock data when ClickHouse query fails'`). For a dashboard whose entire purpose is the go/no-go
+  ROI decision, silently fabricated success data is the highest-severity finding in this retro. This
+  is the same "swallow errors silently → fall back to a plausible-looking default" class as RETRO-006
+  CB-1 (`postFeedbackPing` swallows all errors → bandit sits at uniform). → FOLLOW-094 (P1).
+- **CB-2 (P2) — Mock fallback is indistinguishable from real data on the wire.** The `CtaLiftResponse`
+  has no `data_source`/`is_mock` flag and no `X-Data-Source` header. A reviewer (or Piotr at go/no-go)
+  cannot tell whether the numbers shown came from ClickHouse or `buildMockRaw`. FOLLOW-086 defers
+  removal of the mock entirely, but until then the response is ambiguous. → folded into FOLLOW-094.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — No test asserts the actual SQL text/structure of the three ClickHouse queries.** The
+  ClickHouse-path test stubs `fetch` and only asserts the bound `param_tenant_id` / `param_window_days`
+  query-string params and that JSONEachRow lines parse. It never asserts the SELECT/JOIN/event-name
+  shape, so the `events.type='cta.clicked'` vs `assigned_at` vs `ts` divergence (LG-2/LG-3) is
+  invisible to CI. A snapshot test of the emitted SQL would have surfaced the convention mismatch.
+- **TG-2 (P3) — No test asserts the page-level union wiring** (that all four panels render and that
+  `windowDays` drives both `/api/pilot/cta-lift` and `/api/pilot/inquiry-starts`). The page.tsx merge
+  was a manual add/add conflict resolution; a component/RTL test would guard the union. Low severity —
+  the wiring was verified by manual read in this retro (§4d / §5a) and is correct.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — Master Design does not document the `/api/pilot/cta-lift` route or the
+  `/dashboard/pilot` page.** Pilot ROI instrumentation (Lane C) is a shipped surface but absent from
+  §Snapshot.1 / route inventory. Folds naturally into the existing route-inventory follow-ups
+  (FOLLOW-060 family). → folded into FOLLOW-093 acceptance (note the dual-route situation when
+  documenting).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-004 (DONE, PR #144)** — shares `page.tsx`. The union merge is correct: `page.tsx`
+  renders `SummaryPanel` (PILOT-003) → `InquiryStartsPanel` (PILOT-004) → `FunnelPanel` (003) →
+  `ArchetypePanel` (003), all four wired; the single `windowDays` state drives both fetch calls in one
+  `useEffect` with a shared `cancelled` guard. Both panels have independent loading flags
+  (`ctaLoading` / `inquiryLoading`). No regression to PILOT-004. Verified by direct read of
+  `page.tsx:508-610`.
+- **TICKET-PILOT-001 (READY)** — provides the live `cta.clicked` event flow (SDK→ingest→ClickHouse)
+  and `CLICKHOUSE_URL` provisioning that the cta-lift route consumes. Until PILOT-001 runs, the route
+  serves mock data; combined with CB-1, the pilot dashboard can show fabricated lift before any real
+  traffic exists. PILOT-001's go/no-go (PILOT-002 runbook) must include "verify cta-lift is reading
+  real ClickHouse data, not mock."
+- **TICKET-PILOT-002 (READY, runbook)** — the go/no-go checklist must add a mock-vs-real data
+  verification step for the primary metric (consequence of CB-1/CB-2).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-086 (Sprint 12 post-pilot, P2)** — directly continues this work (replace mock with real
+  queries). CB-1 elevates the urgency: the mock should fail loud (or expose `is_mock`) BEFORE pilot
+  go-live, not "post-pilot." Recommend FOLLOW-094 be sequenced ahead of / merged into FOLLOW-086.
+- **FOLLOW-091 (inquiry-starts mock → real)** — sibling of FOLLOW-086 for the PILOT-004 panel; same
+  mock-masking risk class. The two should be addressed together when `CLICKHOUSE_URL` lands.
+
+#### 5c. Contracts changed that other modules rely on
+
+- No existing consumer relied on a changed contract (all additions). BUT `page.tsx` re-declares the
+  `CtaLiftResponse` / `PilotSummary` / `FunnelRow` / `ArchetypeRow` / `PilotConfidence` interfaces as
+  hand-written duplicates instead of importing them from `./route-helpers` (server route). If the
+  route response shape changes, the page types silently drift — exactly the duplicate-interface
+  contract-drift class flagged in RETRO-005 (`DetectApiResponse` dup → FOLLOW-044) and codified in the
+  Rule G / Rule I family. → FOLLOW-095 (P2).
+
+#### 5d. Architectural assumptions affected
+
+- **Spec-vs-implementation location divergence.** TICKET-PILOT-003 spec (QUEUE.md:2003 and
+  `backlog/sprint-12/TICKET-PILOT-003.md`) says "Build dashboard panel in **/dashboard/analytics**."
+  The implementation shipped at **/dashboard/pilot** (a new page, unified with PILOT-004). This is a
+  reasonable product decision (a dedicated pilot dashboard separate from the general analytics page)
+  but it diverges from the written spec and was not recorded as a decision. Two consequences: (1) the
+  pre-existing `/dashboard/analytics` lift panel (`analytics/lift/route.ts`) now coexists with the new
+  pilot dashboard, both claiming CTA lift (see LG-2); (2) anyone following the spec to find the panel
+  looks in the wrong place. → noted in FOLLOW-093.
+
+### 6. New lesson candidates
+
+- **Pattern: "A new module re-implements a statistical/business computation that already exists in
+  another package, with no cross-implementation parity test, producing divergent numbers for the same
+  metric."** Seen in: this retro (LG-1: third z-test + second cta-lift path), RETRO-002 (consent-
+  vocabulary divergence between AB-001 and GDPR-004), RETRO-003 (`affinityScore`/`buildReorderDirective`
+  duplicated across two files), RETRO-005 (PR #122/#123 bandit + reorder mirrors; duplicate
+  `DetectApiResponse`), RETRO-006 (Rule J promoted permanent for mirror-code).
+  - Threshold to promote: 2 occurrences — current count: **5 prior + this = 6**. THRESHOLD MET.
+  - **However:** Rule J already covers "mirror-code sync gate for cross-runtime duplicates" and Rule I
+    covers "wired-or-dead." The specific new wrinkle here is **intra-runtime duplicate business logic
+    that is NOT a cross-runtime mirror** (both implementations are TypeScript, both server-side, but in
+    different packages: control-plane vs decision-api, and two routes within control-plane). Rule J's
+    "byte-identical cross-runtime" framing does not cleanly apply. This is rule-worthy as a Rule J
+    extension. → Rule K appended (see §9).
+- **Pattern: "Error/empty path silently substitutes plausible-looking default data instead of failing
+  loud, hiding broken wiring."** Seen in: this retro (CB-1 mock fallback on query failure), RETRO-006
+  (CB-1 `postFeedbackPing` swallows all errors → uniform bandit), RETRO-005 §4 (several producer-only
+  half-wires "the demo script will silently degrade").
+  - Threshold: 2 — current count: **2 prior + this = 3**. THRESHOLD MET, but the existing Rule H
+    ("schema scaffold must ship with a runtime-wired consumer") and the §3 HALF_WIRE machinery already
+    target the wiring-completeness side. The distinct new element is "fallback masks a runtime
+    failure." Given two strong prior instances and a P1 finding here, this is also rule-worthy. Folded
+    into Rule K as a second clause (fail-loud on data-source failure for decision-grade surfaces).
+
+### 7. Follow-ups
+
+- FOLLOW-092: Verify `cta.clicked` event flow (SDK→ingest→ClickHouse `events`) is live for the pilot
+  tenant before activating the cta-lift dashboard (data-engineer + sdk-engineer, 2h, **P1**)
+- FOLLOW-093: Reconcile the two CTA-lift query paths — `pilot/cta-lift` (events.type/`ts`) vs
+  `analytics/lift` (dqs_events.event_type/`assigned_at`); pick the canonical table/column/event-name
+  vocabulary, fix the wrong one, document the route inventory (data-engineer, 4h, **P1**)
+- FOLLOW-094: Make the cta-lift route fail loud on ClickHouse error and expose data provenance
+  (`is_mock`/`data_source`) instead of silently serving fabricated significant lift (data-engineer +
+  backend-engineer, 3h, **P1**)
+- FOLLOW-095: Import `CtaLiftResponse` & sibling types into `page.tsx` from `./route-helpers` instead
+  of re-declaring them, to prevent contract drift (backend-engineer, 1h, **P2**)
+- FOLLOW-096: Cross-implementation parity test for the two-proportion z-test
+  (`@/lib/pilot-stats.twoProportionZTest` vs `decision-api ab-assignment.twoProportionZTestPValue`) —
+  shared fixture set, assert agreement to a tolerance (qa-engineer, 2h, **P2**)
+
+### 8. Cross-references
+
+- Related to RETRO-002: introduced the first `twoProportionZTestPValue` (decision-api) and the
+  consent-vocabulary divergence pattern; this retro adds the third z-test and a fresh schema-vocabulary
+  divergence (LG-2).
+- Related to RETRO-005 / RETRO-006: mirror-code / duplicate-interface / duplicate-business-logic
+  pattern that produced Rule I and Rule J; this retro extends it to intra-runtime cross-package
+  duplication (Rule K).
+- Related to RETRO-006 CB-1: the silent-error-swallow → plausible-default class (here CB-1 mock
+  fallback on the primary pilot metric).
+
+---
+
+## RETRO-009 — TICKET-PILOT-004 (Inquiry starts tracking) — 2026-05-25
+
+### 1. Summary of change
+
+- **PR:** #144 (merged 2026-05-25 ~08:52 UTC / 10:52 +0200, commit `10917dc`)
+- **Files changed:** 7 (+1,090 / −0)
+- **Modules touched:** SDK (`packages/sdk`), control-plane (`apps/control-plane`), configs (auto-detect
+  fixture), backlog (FOLLOW_UPS.md)
+- **Key contracts changed:**
+  - `ObserverOptions` — new exported interface in `packages/sdk/src/core/observer.ts` with optional
+    `inquirySubmitSelector` — added — breaking: no
+  - `setupObservers(config, onEvent, options?)` — gained optional 3rd arg `options: ObserverOptions = {}`
+    — changed — breaking: no (defaulted)
+  - `InquiryStartsResponse` / `DailyBreakdownRow` — new exported interfaces in `inquiry-starts/route.ts` —
+    added — breaking: no
+  - `GET /api/pilot/inquiry-starts?window_days=<1..90>` — new route — breaking: no
+  - `inquiry.started` SDK event — now emitted conditionally from the observer (the wire is incomplete —
+    see §3)
+  - `000-app-estalara/detail-ground-truth.json` — added `inquiry_form_selector` + `inquiry_submit_selector`
+    fields — additive
+  - NOTE: `dashboard/pilot/page.tsx` was created in this PR but **overwritten by PR #146** (TICKET-PILOT-003)
+    union merge. The live file holds all 4 panels (Summary + InquiryStarts + Funnel + Archetype). The diff
+    for `10917dc` shows the PILOT-004-only single-panel version; the merged-state file is the union. This was
+    a manual add/add conflict resolution (verified correct in RETRO-008 §5a).
+
+### 2. Verification done in PR
+
+- Test files changed: `packages/sdk/src/__tests__/observer-inquiry.test.ts` (new, 7 tests),
+  `apps/control-plane/src/app/api/pilot/inquiry-starts/route.test.ts` (new, 9 tests)
+- Assertions added: ~40 across 16 tests (SDK: emit/payload=`contact_v2`/consent-gate/no-selector/timestamp/
+  click-scope/cleanup; API: two 401 paths, top-level shape, zero-data shape, daily-row shape, lift null|number,
+  `total = adapted + holdout` invariant, default window=30, mock determinism)
+- Coverage delta: positive on both new files; exact % unknown. **Gap:** the SDK test injects the selector
+  DIRECTLY into `setupObservers`, so it cannot detect that the production init path never supplies it (see §3).
+- CI checks: passed (per QUEUE.md merge record; corpus gate 100/100). A TS-narrowing fix (`resolvedSelector`
+  const capture) landed as a 2nd commit on the PR.
+
+### 3. Wiring Audit
+
+- **HALF_WIRE_P** — `sdk_event:inquiry.started` — producer at `packages/sdk/src/core/observer.ts:156`
+  (inside `onInquirySubmitClick`, guarded by `if (inquirySubmitSelector && config.consentState !== 'opted_out')`)
+  — the producer code path is **never reached in production**: the sole runtime caller
+  `setupObservers(config, (event) => {...})` at `packages/sdk/src/index.ts:265` (call closes at `index.ts:352`)
+  passes only TWO arguments, so `options` defaults to `{}`, `inquirySubmitSelector` is always `undefined`, and
+  the inquiry click-listener is never registered. The detected `inquiry_submit_selector`
+  (`000-app-estalara/detail-ground-truth.json:19`) is never read into `ObserverOptions` by any non-test code.
+  Net effect: `inquiry.started` fires only in unit tests; zero events reach ingest → ClickHouse in prod.
+  priority **P1** → FOLLOW-097
+
+  Classification rationale: scored **HALF_WIRE_P** (producer exists in code but is never triggered), not P0
+  HALF_WIRE_C, because the API consumer (`GET /api/pilot/inquiry-starts`) does not crash on missing data — it
+  falls back to deterministic mock data — so nothing breaks at runtime; the feature silently delivers no real
+  signal. It is the SDK producer wire that is missing at init. This is a **Rule H** half-wire (event scaffold
+  shipped without a runtime-reachable producer) and a **sub-case that Rule I's CI gate does NOT catch**, because
+  `setupObservers` and `ObserverOptions` ARE imported and used — only the new conditional parameter branch is
+  dead. (See §6 for the lesson-candidate analysis.)
+
+- **DEAD_CODE (CHECK A):** none. `inquiry-starts/route.ts` is consumed by `page.tsx` (fetch on
+  `/api/pilot/inquiry-starts`); the `observer.ts` change is reached via `index.ts:265`; `ObserverOptions` is
+  used in the `setupObservers` signature; `InquiryStartsResponse`/`DailyBreakdownRow` are exported and consumed
+  by the route + test. `page.tsx` is a Next.js file-based route — framework-discovered, false-positive
+  suppressed.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, central):** `inquiry_submit_selector` from the tenant site schema is never plumbed
+  detection → schema store → SDK config → `ObserverOptions.inquirySubmitSelector`. The feature chain has a
+  missing middle link at SDK init. TICKET-PILOT-001 (Lane B, READY) will hit this: its spec wires the SDK into
+  app.estalara.com `+layout.svelte` but says nothing about threading the inquiry selector into `setupObservers`.
+  Without an explicit fix, PILOT-001 installs the SDK and the secondary pilot metric reads empty/mock forever.
+- **LG-2 (P3):** `payload.form_variant` is hardcoded to the literal `'contact_v2'` (`observer.ts:158`)
+  regardless of which form fired or what the schema says. Acceptable for a single-form pilot; would mislabel
+  all inquiries for multi-form tenants. Flag for post-pilot.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P2): inquiry-starts route renders mock data in a real browser when `CLICKHOUSE_URL` is absent, with
+  no provenance flag.** `route.ts:617-622` returns `buildMockResponse()` whenever `CLICKHOUSE_URL` is unset OR
+  any ClickHouse call fails (`fetchFromClickHouse(...).catch(() => null)`). On a Vercel preview (or any env
+  missing the pilot ClickHouse var), the dashboard shows plausible, deterministic, fabricated inquiry counts and
+  a fake lift badge with no `data_source`/`is_mock` signal. This is the **same class as RETRO-008 CB-1**
+  (`cta-lift/route.ts`) and is **already codified as CONVENTIONS_PATCH.md Rule K.2** (decision-grade surfaces
+  must fail loud / expose provenance). FOLLOW-094 fixes the cta-lift route only; the inquiry-starts route needs
+  the same treatment. → FOLLOW-098 (P2)
+- Not a Rule H violation: the route IS consumed and FOLLOW-091 + the `// MVP stub — replaced by FOLLOW-091`
+  header comment satisfy the Rule H mock-deferral clause. CB-1 is a Rule K.2 / UX-trust bug, distinct from
+  wiring.
+
+#### 4c. Test coverage gaps
+
+- **TG-1:** No test exercises the production init path emitting `inquiry.started`. `observer-inquiry.test.ts`
+  injects the selector directly, so it cannot fail when `index.ts` omits it (LG-1 is invisible to CI). A test
+  that drives the real SDK init (or asserts `setupObservers` receives a non-empty `options.inquirySubmitSelector`
+  when the tenant schema carries one) would have caught it. → folded into FOLLOW-097 AC.
+- **TG-2:** No test asserts the SDK-emitted `inquiry.started` payload validates against
+  `InquiryStartedEventSchema` from `@estalara/shared`. The schema accepts `{ form_variant: 'contact_v2' }`
+  (`form_variant` is `z.string().optional()` — verified at `packages/shared/src/schemas/events/inquiry.ts:19`),
+  so it is currently fine, but a contract test pinning SDK emission to the shared Zod schema would prevent drift.
+  → folded into FOLLOW-097 AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3):** SDK `ObserverOptions` / `inquirySubmitSelector` is not in Master Design §B.1 SDK-config
+  surface table — same omission class as FOLLOW-071 (`feedbackEvents`/`feedbackUrl`) and RETRO-008 DG-1. Fold
+  into the existing SDK-config-surface documentation sweep (FOLLOW-071 family) rather than a new stub.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 12, READY, `depends_on: [TICKET-PILOT-004]`):** Directly affected and the
+  highest-impact cascade. Activation must thread the detected `inquiry_submit_selector` into the SDK
+  `setupObservers` `options` at init, or the secondary pilot metric is dead on arrival. FOLLOW-097 is the
+  prerequisite fix; PILOT-001 should depend on it or absorb it. **PM action recommended.**
+- **TICKET-PILOT-002 (Sprint 12, READY, go/no-go runbook):** The go/no-go checklist must add
+  "`inquiry.started` events observed in ClickHouse during shadow mode" — symmetric to the cta-lift mock-vs-real
+  check RETRO-008 §5a required for the PRIMARY metric. Otherwise the runbook green-lights a pilot whose
+  secondary metric silently reports mock/zero.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-091 (Sprint 13, P2 — inquiry-starts mock → real):** Now COUPLED to FOLLOW-097. Replacing the mock
+  is pointless until the producer actually emits `inquiry.started`. FOLLOW-091 AC should gain the precondition
+  "FOLLOW-097 shipped and `inquiry.started` rows present in ClickHouse for the pilot tenant."
+- **FOLLOW-086 (Sprint 12 post-pilot, P2 — cta-lift mock → real):** Sibling stub; FOLLOW-098 (this retro's
+  inquiry-starts fail-loud fix) should be sequenced alongside FOLLOW-094 (cta-lift fail-loud) — both are Rule K.2
+  remediation for the two pilot routes.
+
+#### 5c. Contracts changed that other modules rely on
+
+- `setupObservers` gained an optional 3rd param — backward compatible; the only non-test caller
+  (`index.ts:265`) passes 2 args and is unaffected.
+- `inquiry.started` was ALREADY a registered event in `packages/shared/src/schemas/events/index.ts:198`
+  (EVENT_TYPES union) and is referenced by `cta-lift/route.ts` (funnel stage + weight maps) and
+  `cta-lift/route-helpers.ts:25`. So ingest validation and downstream consumers were ready before this PR —
+  only the SDK emission wire is missing.
+
+#### 5d. Architectural assumptions affected
+
+- Master Design §B.9 (Tier 3 Native on app.estalara.com) assumes the SDK reads the detected site schema and
+  wires behavioral observers accordingly. The current SDK init consumes NO per-tenant schema selectors into
+  `ObserverOptions` (the inquiry selector is the first such field), so the "detected schema drives runtime SDK
+  behavior" assumption is only partially realized. No Master Design edit needed beyond DG-1's config-surface
+  documentation.
+
+### 6. New lesson candidates
+
+- **Pattern A — "Conditional code path keyed on a new function parameter that the sole production caller never
+  supplies" (Rule-H half-wire that escapes the Rule-I CI gate).** The symbol IS imported and used; only the new
+  `if (param) { ... }` branch is dead because no non-test caller passes the param.
+  - Seen in: RETRO-009 (this — `inquirySubmitSelector`). Prior Rule-H half-wires (FOLLOW-006 ab.assignment
+    unproduced, FOLLOW-007 `thompsonSample` zero-importer, FOLLOW-041/042 SDK variant consumer) were the
+    "symbol with zero non-test importers" form, which Rule I's CI gate DOES catch. The parameter-branch
+    sub-case is distinct.
+  - Threshold to promote: 2 — current count for this **specific sub-case: 1**. Do NOT codify yet. If it
+    recurs, the right home is a Rule I extension: "a newly added optional parameter whose body is gated by
+    `if (param)` must have ≥1 non-test call site supplying it." Tracked here for the next retro.
+- **Pattern B — "Browser-reachable GET route renders deterministic mock data with no provenance flag when its
+  datastore env var is absent."** Seen in: RETRO-009 (this — `inquiry-starts/route.ts`) AND RETRO-008
+  (`cta-lift/route.ts`).
+  - Count: 2 (RETRO-008 + RETRO-009). Threshold met — **but this pattern is ALREADY codified as Rule K.2**
+    (promoted by RETRO-008). No new rule needed; RETRO-009 records the inquiry-starts route as a fresh Rule K.2
+    instance and emits FOLLOW-098 to remediate it. (Confirming the loop: Rule K.2 was promoted one retro ago and
+    already catches this finding — the system is working as intended.)
+
+### 7. Follow-ups
+
+- FOLLOW-097: Thread the detected `inquiry_submit_selector` into SDK `setupObservers(options)` at init + add a
+  production-path test (sdk-engineer + backend-engineer, 2h, priority **P1**)
+- FOLLOW-098: Apply Rule K.2 to `inquiry-starts/route.ts` — fail loud on ClickHouse error when `CLICKHOUSE_URL`
+  is set, expose `data_source`/`is_mock`, dashboard "sample data" banner (backend-engineer, 1.5h, priority
+  **P2**)
+
+### 8. Cross-references
+
+- **RETRO-008 (TICKET-PILOT-003, sibling pilot ticket, same `page.tsx`):** Shares Pattern B
+  (mock-in-browser); RETRO-008 promoted Rule K.2 which now catches this retro's CB-1. RETRO-008's FOLLOW-094
+  (cta-lift fail-loud) and this retro's FOLLOW-098 (inquiry-starts fail-loud) are siblings and should be
+  sequenced together. RETRO-008 verified the `page.tsx` union merge is correct (no PILOT-004 regression).
+- **RETRO-001 / RETRO-002 (Rule H evidence chain — FOLLOW-001/006/007/008/010/014):** The next instance of the
+  half-wire pattern, in a new sub-form (dead conditional branch vs. zero-importer symbol).
+- **RETRO-005 (FOLLOW-041/042 — SDK variant consumer half-wire):** Same module (`packages/sdk`), same failure
+  mode (SDK feature shipped but not wired into the runtime init path).
+- **RETRO-006 §6 / FOLLOW-071 (SDK config surface not in Master Design §B.1):** DG-1 folds into that open sweep.
+
+---
+
+<!-- RETRO-010 and beyond will be appended here by the retrospective-analyst agent -->

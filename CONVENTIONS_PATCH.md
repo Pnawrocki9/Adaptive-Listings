@@ -352,4 +352,71 @@ bash scripts/check-mirror-files.sh
 # Must return exit 0
 ```
 
-<!-- Rule J+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->
+## Rule K — No duplicate business logic without a parity gate; decision-grade surfaces fail loud
+
+This rule has two clauses, each independently meeting the ≥2-retro promotion threshold.
+
+### K.1 — Intra-runtime duplicate business logic requires a parity test
+
+**Pattern:** A new module re-implements a statistical or business computation that already exists
+elsewhere in the repo — but, unlike a Rule J cross-runtime mirror, both copies run in the SAME
+runtime (e.g. two TypeScript modules in different packages, or two API routes within the same app).
+Because Rule J's "byte-identical cross-runtime mirror" framing does not apply, no gate catches the
+divergence. The two implementations drift in approximation, schema vocabulary, or guard thresholds
+and silently report different numbers for the same metric.
+
+**Evidence:** RETRO-008 (third `twoProportionZTest` in `apps/control-plane/src/lib/pilot-stats.ts`
+alongside `apps/decision-api/src/lib/ab-assignment.ts:twoProportionZTestPValue`; AND a second
+CTA-lift query path in `pilot/cta-lift/route.ts` alongside `analytics/lift/route.ts` with divergent
+event-name/column vocabularies), RETRO-002 (consent-vocabulary divergence between AB-001 and
+GDPR-004), RETRO-003 (`affinityScore` / `buildReorderDirective` duplicated across two files),
+RETRO-005 (duplicate `DetectApiResponse` interface → FOLLOW-044).
+
+**Rule:** Before adding a function/route that computes a metric or business value, grep for an
+existing implementation (`twoProportionZTest`, `lift`, `affinityScore`, the metric name). If one
+exists you MUST either (a) import/reuse it, or (b) if a separate implementation is genuinely
+required (different runtime, different guard semantics), add a shared-fixture parity test asserting
+the two agree to a tolerance, and reference the sibling implementation in a top-of-file JSDoc. The
+same applies to schema vocabulary: two routes querying the same logical metric MUST use the same
+table/column/event-name (the canonical event names live in
+`packages/shared/src/schemas/events/index.ts`).
+
+**Verification:**
+
+```bash
+# Before adding a metric computation, confirm no sibling exists unparametered:
+grep -rn "twoProportionZTest\|<metric-name>" packages/ apps/ --include="*.ts" | grep -v node_modules | grep -v "\.test\."
+# If two implementations exist, a parity test must reference both.
+```
+
+### K.2 — Decision-grade surfaces must fail loud, never fabricate
+
+**Pattern:** A code path swallows an error or empty result and substitutes plausible-looking default
+data (a mock, a uniform prior, a neutral response) instead of failing loud. The broken wiring is
+hidden because the surface returns HTTP 200 with believable numbers. On a surface that drives a
+human or automated decision (a go/no-go dashboard, a bandit reward signal), fabricated data is worse
+than an error.
+
+**Evidence:** RETRO-008 (CB-1: `pilot/cta-lift/route.ts` catches ANY ClickHouse failure and serves
+`buildMockRaw()` which is engineered to show significant lift — on the pilot's PRIMARY go/no-go
+metric), RETRO-006 (CB-1: `postFeedbackPing()` swallows all errors to `console.warn` → bandit sits
+at uniform with no signal), RETRO-005 (§4: producer-only half-wires the demo script "silently
+degrades").
+
+**Rule:** Distinguish "dependency not configured" (legitimate dev/CI fallback to mock is OK) from
+"dependency configured but failed" (MUST surface). When a backing store URL/secret IS set and the
+query throws, the handler MUST NOT silently return mock/default data — it must return an error
+status (or a 200 carrying an explicit `error`/`degraded`/`data_source` flag) and capture to Sentry.
+Any mock/default fallback MUST be observable on the wire (`data_source`/`is_mock` field or header)
+so reviewers and go/no-go checks can tell fabricated data from real.
+
+**Verification:**
+
+```bash
+# A .catch(() => <fallback>) on a data fetch is a smell — verify it gates on "unconfigured", not "failed":
+grep -rn "catch(() =>" apps/ --include="*.ts" | grep -v node_modules | grep -v "\.test\."
+# Decision-grade route responses should expose provenance:
+grep -rn "data_source\|is_mock\|X-Data-Source" apps/control-plane/src --include="*.ts" | grep -v node_modules
+```
+
+<!-- Rule K+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->

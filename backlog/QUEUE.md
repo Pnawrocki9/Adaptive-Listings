@@ -70,7 +70,7 @@ updates.
 | 10     | 12    | Close the bandit loop + real embeddings + e2e test                                                                        | 9       | 9    | 0       | 0     | 0       |
 | 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                                                          | 9       | 5    | 0       | 4     | 0       |
 | 12     | 14    | Pilot launch on app.estalara.com — COMPLETE (Lane A + Lane C; Lane B → Sprint 13)                                         | 7       | 5    | 0       | 2     | 0       |
-| 13a    | 15    | Correctness + pilot launch (Lane A correctness gate + Lane B pilot launch) — Wave 1 DONE; Wave 2 READY (Scenario D seq)   | 9       | 1    | 0       | 2     | 6       |
+| 13a    | 15    | Correctness + pilot launch (Lane A correctness gate + Lane B pilot launch) — Wave 1 DONE; Wave 2 IN_PROGRESS (Scenario D) | 9       | 1    | 2       | 0     | 6       |
 | 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                               | 6       | 0    | 0       | 3     | 3       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
@@ -2114,7 +2114,8 @@ min Piotr action).
 - id: FOLLOW-097
   title: Thread detected inquiry_submit_selector into SDK setupObservers() at init
   agent: sdk-engineer + backend-engineer
-  status: READY # Wave 2 UNBLOCKED — Wave 1 (FOLLOW-105 PR #150) merged 2026-05-25
+  status: IN_PROGRESS # Wave 2 spawned 2026-05-25; branch sdk-engineer/FOLLOW-097-inquiry-selector-sdk-init
+  started_at: '2026-05-25T22:00:00Z'
   priority: P1
   estimated_hours: 2
   depends_on: []
@@ -2157,7 +2158,8 @@ min Piotr action).
 - id: FOLLOW-106
   title: Add tenants.pilot_frozen runtime flag for measurement-window protection
   agent: backend-engineer
-  status: READY # Wave 2 UNBLOCKED — Wave 1 (FOLLOW-105 PR #150) merged 2026-05-25
+  status: IN_PROGRESS # Wave 2 spawned 2026-05-25; branch backend-engineer/FOLLOW-106-pilot-frozen-flag
+  started_at: '2026-05-25T22:00:00Z'
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -2193,6 +2195,16 @@ min Piotr action).
     not injected) 3-5 days for baseline. (4) Generate + verify SDK snippet for production embed.
     (5) Set tenants.pilot_frozen=true on the shadow→live flip (FOLLOW-106) — opens the measurement
     window per PILOT_FREEZE_RULE.md.
+    ACCEPTANCE ADDITION (RETRO-010 finding #3, CEO 2026-05-25 — canonical-URL safeguard for the
+    MANUAL install path, which the FOLLOW-105 buildSnippet wizard fix does NOT cover):
+      - [ ] The SvelteKit `+layout.svelte` SDK snippet MUST include
+            `data-decision-url="${CONTROL_PLANE_URL}/api"` (absolute host; the SDK appends `/adapt` →
+            `https://admin.estalara.com/api/adapt`). A bare host 404s; a relative `/api` resolves
+            against the tenant origin (wrong). Never omit it (omission silently disables adaptation).
+      - [ ] Smoke assertion: `GET https://admin.estalara.com/api/adapt` returns 200 (NOT 410) for the
+            pilot tenant — confirms the SDK reaches the canonical control-plane route, not the
+            deprecated Worker. NOTE: spec file backlog/sprint-12/TICKET-PILOT-001.md does not yet
+            exist; author it at Lane B spawn and carry these two ACs forward.
 
 - id: FOLLOW-092
   title: Verify cta.clicked producer→ClickHouse path is live for the pilot tenant
@@ -2351,9 +2363,15 @@ awaiting CEO go).**
   OPEN→RESOLVED. retrospective-analyst spawned on PR #150. Follow-ons: FOLLOW-107 (Worker handler
   removal, Sprint 14, after 7-day zero-traffic window), FOLLOW-108 (explainability_id), FOLLOW-109
   (SDK Zod rollout).
-- **Wave 2 (FOLLOW-097 + FOLLOW-106) — READY.** Unblocked by the PR #150 merge. NOT yet spawned — PM
-  awaiting CEO go-ahead (per instruction). Both independent of each other (sdk-engineer +
-  backend-engineer respectively); can run in parallel.
+- **Wave 2 — IN_PROGRESS (spawned 2026-05-25, parallel, CEO go-ahead).**
+  - **FOLLOW-097** (sdk-engineer, sonnet-4.6) — branch
+    `sdk-engineer/FOLLOW-097-inquiry-selector-sdk-init`. Thread `inquiry_submit_selector` from
+    tenant schema → SDK config → `setupObservers()` so `inquiry.started` fires in prod
+    (RETRO-008/009). E2E + SPA race-condition tests.
+  - **FOLLOW-106** (backend-engineer, sonnet-4.6) — branch
+    `backend-engineer/FOLLOW-106-pilot-frozen-flag`. `tenants.pilot_frozen` migration + schema +
+    runtime warn in the **control-plane** adapt route (NOT the 410 Worker — RETRO-010 finding #2) +
+    dev/stg/prd apply.
 - **Wave 3 (FOLLOW-094 + FOLLOW-098 + FOLLOW-093) — BLOCKED** until Wave 2 merges.
 
 CEO ratified Decision 4C (add adapt_decision_id, defer explainability_id → FOLLOW-108), Decision 5A

@@ -19,6 +19,11 @@ const TENANT_ID = '550e8400-e29b-41d4-a716-446655440002';
 
 vi.mock('@estalara/auth', () => ({
   getAuthClaims: vi.fn(),
+  // isTenantClaims: returns true when claims has estalara_staff=false and a string tenant_id.
+  // Mirrors the real implementation so that the auth guard in the route works correctly.
+  isTenantClaims: vi.fn((claims: Record<string, unknown>) => {
+    return claims.estalara_staff === false && typeof claims.tenant_id === 'string';
+  }),
 }));
 
 import { getAuthClaims } from '@estalara/auth';

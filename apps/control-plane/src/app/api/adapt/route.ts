@@ -77,7 +77,7 @@ const LOW_SIMILARITY_THRESHOLD = 0.6;
 const LANE_C_FLAG_KEYS = [
   'lane_c_active', // generic escape-hatch flag — any explicitly set sentinel
   'intent_engine_enabled', // FOLLOW-087/100/101 — chat NLP intent bridge
-  'quiz_enabled', // FOLLOW-102 — quiz widget ON/OFF toggle
+  'enabled', // FOLLOW-102 — quiz widget ON/OFF toggle (QuizConfig writes cfg.enabled, not cfg.quiz_enabled)
   'shadow_mode_override', // explicit shadow-mode bypass flag
 ] as const;
 

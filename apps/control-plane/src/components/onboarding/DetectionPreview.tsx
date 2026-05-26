@@ -92,7 +92,7 @@ function confidenceBadgeClass(confidence: number): string {
 }
 
 /**
- * Build the SDK snippet string from a tenant ID and API key.
+ * Build the SDK snippet string from a tenant ID, API key, and optional inquiry selector.
  *
  * Emits `data-decision-url` pointing at the canonical control-plane host
  * (`CONTROL_PLANE_URL` = https://admin.estalara.com). This is REQUIRED: the SDK
@@ -111,9 +111,22 @@ function confidenceBadgeClass(confidence: number): string {
  * convention the demo mockup uses (`data-decision-url="/api"` → `/api/adapt`).
  * Emitting the bare host (`https://admin.estalara.com`) would resolve to
  * `https://admin.estalara.com/adapt`, which 404s. [FOLLOW-105]
+ *
+ * @param inquirySubmitSelector - CSS selector for the inquiry form submit button,
+ *   sourced from `TenantSiteSchema.inquiry_submit_selector`. When null / undefined the
+ *   `data-inquiry-submit-selector` attribute is omitted entirely from the snippet so
+ *   that tenants who copy-paste the tag don't get a blank attribute value. [FOLLOW-114]
  */
-export function buildSnippet(tenantId: string, apiKey: string): string {
-  return `<script\n  src="https://cdn.estalara.com/sdk.js"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"\n></script>`;
+export function buildSnippet(
+  tenantId: string,
+  apiKey: string,
+  inquirySubmitSelector?: string | null,
+): string {
+  const inquiryAttr: string =
+    inquirySubmitSelector != null
+      ? `\n  data-inquiry-submit-selector="${inquirySubmitSelector}"`
+      : '';
+  return `<script\n  src="https://cdn.estalara.com/sdk.js"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"${inquiryAttr}\n></script>`;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -153,7 +166,12 @@ export function DetectionPreview({
 
   // Use tenant_id from the activate response (authoritative), falling back to the prop.
   const snippetTenantId = activated !== null ? activated.tenant_id : tenantId;
-  const snippet = activated !== null ? buildSnippet(snippetTenantId, activated.api_key) : '';
+  // Pass inquiry_submit_selector from the detected schema so tenants who copy this snippet
+  // get a script tag that already wires up the inquiry click observer. [FOLLOW-114]
+  const snippet =
+    activated !== null
+      ? buildSnippet(snippetTenantId, activated.api_key, schema.inquiry_submit_selector)
+      : '';
 
   async function handleActivate(): Promise<void> {
     setActivating(true);

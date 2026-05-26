@@ -234,4 +234,17 @@ export interface TenantSiteSchema {
    * Used by the continuous drift detection cron (Sprint 8 / B.6) to flag schema rot.
    */
   validation_health?: number;
+  /**
+   * CSS selector for the inquiry form submit button detected from the tenant site.
+   *
+   * Populated by the Auto-Detection Engine (AUTO-003 / AUTO-004) from the tenant's
+   * live markup. When present, the SDK wires a click observer on this element to
+   * emit an `inquiry.started` event.
+   *
+   * Emitted as `data-inquiry-submit-selector` in the onboarding SDK snippet
+   * (see DetectionPreview.buildSnippet). Omitted from the snippet when null / undefined.
+   *
+   * FOLLOW-097 / FOLLOW-114.
+   */
+  inquiry_submit_selector?: string | null;
 }

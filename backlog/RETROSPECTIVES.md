@@ -3820,4 +3820,586 @@ HALF_WIRE_P disposition), RETRO-009 (PILOT-001 manual-install config cascade + F
 
 ---
 
-<!-- RETRO-011 and beyond will be appended here by the retrospective-analyst agent -->
+## RETRO-011 — FOLLOW-097 (thread inquiry_submit_selector into setupObservers at init) — 2026-05-26
+
+### 1. Summary of change
+
+- **PR:** #151 (merged 2026-05-25 22:38 UTC / 2026-05-26 00:38 +0200, commit `3cf05ee`; squash of 2
+  commits — the core fix + an e2e-fixture navigation fix)
+- **Files changed:** 6 (+350 / −82). Net logic delta is tiny; the −82/+94 in `index.ts` is almost
+  entirely a re-indent of the existing `setupObservers` callback body, not behavior change.
+- **Modules touched:** SDK (`packages/sdk`) only — `src/core/config.ts`, `src/index.ts`, plus tests
+  (`__tests__/config.test.ts`, `e2e/inquiry-observer.spec.ts`, `e2e/fixtures/inquiry.html`,
+  `e2e/serve.js`). No control-plane / ingest / decision-api / shared / data-engine code touched.
+- **Key contracts changed:**
+  - `SdkConfig.inquirySubmitSelector?: string` (`packages/sdk/src/core/config.ts:38`) — **added,
+    optional** — breaking: no.
+  - `readConfig()` now reads `data-inquiry-submit-selector` off the script dataset
+    (`config.ts:98`, conditional-spread per `exactOptionalPropertyTypes`) — additive — breaking: no.
+  - `setupObservers(config, onEvent, options)` call site (`index.ts:357-365`) — now passes the 3rd
+    `options` arg `{ inquirySubmitSelector }` (built conditionally) — **this is the fix**; the
+    `ObserverOptions` / `setupObservers` signatures themselves are unchanged from RETRO-009 (PR #144).
+  - `e2e/serve.js` — routes top-level `*.html` to `e2e/fixtures/` — test infra — breaking: no.
+
+### 2. Verification done in PR
+
+- Test files changed: `config.test.ts` (+2 unit tests: reads selector from dataset; omits field when
+  attribute absent), `inquiry-observer.spec.ts` (new Playwright spec, 4 tests: init-without-error,
+  `inquiry.started` fires on submit click, `form_variant: contact_v2` payload + decoy-button non-fire,
+  SPA race — button injected after init still fires via the delegated `document` click listener),
+  `inquiry.html` (new fixture), `serve.js` (fixture routing).
+- Assertions added: ~15 (2 unit + ~13 across the 4 e2e tests).
+- Coverage delta: positive on `config.ts` (new field read + fallback both covered). **Crucially, this
+  PR closes RETRO-009 TG-1** — `inquiry-observer.spec.ts` drives the REAL SDK init path (script tag →
+  `readConfig` → `setupObservers` options), so the production wire that the RETRO-009 unit test could
+  not reach (it injected the selector directly into `setupObservers`) is now exercised end-to-end.
+- CI checks: passed at merge per QUEUE.md (PR #151 on `3cf05ee`, all real Lane A merge gates green;
+  pre-existing-red Rule I / Vercel / Python lanes non-blocking per QUEUE.md preamble). The 2nd commit
+  (`onsubmit="return false"` on the fixture form) fixed 2 e2e tests that were red because a `type=submit`
+  button in an action-less form triggered a real navigation, tearing down the in-memory event queue
+  before the 5s batch flush — a fixture defect, not an SDK defect.
+- **SDK-internal wire verdict:** the `data-inquiry-submit-selector` → `SdkConfig.inquirySubmitSelector`
+  → `setupObservers(options)` → `onInquirySubmitClick` listener chain is now COMPLETE and tested. The
+  RETRO-008/009 HALF_WIRE_P (options arg omitted at the sole call site) is **resolved at the SDK layer.**
+  See §3 for the residual one-hop-downstream half-wire this surfaced.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- `SdkConfig.inquirySubmitSelector` (new field) — consumed by `index.ts:362-363` (read into the
+  `setupObservers` options) → `observer.ts:146` (`options.inquirySubmitSelector`). Non-test consumer
+  present. **Clean.**
+- `readConfig` change — `readConfig` is called at `index.ts:79` (SDK init). **Clean.**
+- `e2e/serve.js` fixture routing — invoked by the Playwright webServer config. Test infra,
+  framework-discovered. **Clean.**
+- No new files with zero non-test importers. **CHECK A clean.**
+
+**CHECK B — Half-wire detection:**
+
+- **HALF_WIRE_C** — `script_attribute:data-inquiry-submit-selector` (equivalently
+  `SdkConfig.inquirySubmitSelector`) — **the SDK consumer now exists with NO production producer of
+  the attribute.** This PR correctly wires the *consumer* side (the SDK reads
+  `script.dataset.inquirySubmitSelector` and registers the click observer when present), but NO
+  production code path ever emits `data-inquiry-submit-selector` onto the SDK `<script>` tag. Searches:
+  - Consumer: `packages/sdk/src/core/config.ts:98` reads it; `index.ts:362` threads it;
+    `observer.ts:146` registers the listener. ✅ present.
+  - Producer: `grep -rn 'data-inquiry-submit-selector' apps/ packages/ --include=*.ts --include=*.tsx
+    --include=*.svelte` filtered to non-test, non-e2e, non-comment lines returns **ZERO matches**. The
+    onboarding-wizard snippet generator `buildSnippet(tenantId, apiKey)`
+    (`apps/control-plane/src/components/onboarding/DetectionPreview.tsx:115`) emits only
+    `data-tenant-id`, `data-api-key`, `data-decision-url` — NOT the inquiry selector. The demo mockup
+    `apps/control-plane/src/app/dashboard/demo/mockup/layout.tsx:38` likewise omits it. And
+    `grep inquiry_submit_selector apps/control-plane` returns **zero** — the detected
+    `inquiry_submit_selector` (present in the schema fixture
+    `auto-detect/__fixtures__/000-app-estalara/detail-ground-truth.json:19` and persisted to the
+    `tenant_site_schemas.schema` JSONB by the activation route) is **never read out into any snippet or
+    rendered `<script>` tag.**
+
+  Net effect: after FOLLOW-097, `inquiry.started` fires in unit tests AND in the new e2e fixture
+  (which hand-writes the attribute), but **still never fires for a real onboarded tenant**, because the
+  attribute that the now-correct SDK consumer depends on is emitted by nobody. The half-wire that
+  RETRO-009 located at the SDK init call site has simply **moved one hop downstream** to the
+  schema→snippet link. A consumer expecting data that never arrives → **HALF_WIRE_C, priority P0**
+  (per the agent-spec rationale: a consumer reading config that no producer sets is silently broken at
+  runtime — here, silently zero `inquiry.started` events in production, exactly the RETRO-009 symptom
+  the ticket set out to cure). → **FOLLOW-114**.
+
+  Severity nuance: this does NOT crash (the SDK `if (inquirySubmitSelector && ...)` guard simply skips
+  registration when the field is absent, and the downstream `/api/pilot/inquiry-starts` route falls
+  back to mock data). So nothing throws — but the *business* consequence is identical to the original
+  bug: the secondary pilot metric reads empty/mock forever unless the producer link is built. P0 is
+  assigned because TICKET-PILOT-001 (the pilot launch) depends on FOLLOW-097 and would otherwise ship
+  believing the inquiry wire is closed when it is not.
+
+- **No other new event type / env var / DB column / topic** introduced by this PR. CHECK B otherwise
+  clean.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P0, central) — the schema→snippet producer link is missing (see §3 HALF_WIRE_C).** Two
+  concrete sub-paths both lack it: (a) the **wizard** path — `buildSnippet()` must read the activated
+  tenant's `tenant_site_schemas.schema.inquiry_submit_selector` and emit
+  `data-inquiry-submit-selector="<sel>"` when present; (b) the **manual pilot install** path
+  (TICKET-PILOT-001's SvelteKit `+layout.svelte`) must hand-write the same attribute. Neither exists.
+  → **FOLLOW-114** (covers the wizard/generator side) + an explicit PILOT-001 AC (§5a) for the manual
+  side. This is the **third instance** of the "manual/generated install must wire SDK config that the
+  wizard + tests exercise but the real install path does not" class (RETRO-009 LG-1 inquiry-selector;
+  RETRO-010 §5a `data-decision-url`). See §6.
+- **LG-2 (P3) — `payload.form_variant` is still hardcoded `'contact_v2'`** (`observer.ts:158`),
+  unchanged by this PR. Already flagged as RETRO-009 LG-2 (acceptable for a single-form pilot; would
+  mislabel inquiries for multi-form tenants). No new action — folded reference only; the original
+  post-pilot disposition stands.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P3, test-infra, already fixed in-PR) — the e2e fixture's submit button triggered a real
+  navigation.** A `type=submit` button inside an action-less `<form>` reloaded the page on click,
+  tearing down the event queue before the 5s flush; 2 e2e tests went red and were fixed by adding
+  `onsubmit="return false"` to the fixture (2nd commit). Recorded because it is a recurring e2e-fixture
+  foot-gun (navigation resets in-memory SDK state), not because it is open. The SDK itself correctly
+  does NOT call `preventDefault` (it must never block a tenant's real inquiry form); production
+  navigation is covered by the `beforeunload` keepalive flush. No FOLLOW.
+- **CB-2 (none functional).** No functional defect introduced by the SDK change.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — there is no test that the PRODUCED snippet carries `data-inquiry-submit-selector`.**
+  The e2e fixture hand-writes the attribute, so the e2e suite proves "IF the attribute is present, the
+  SDK fires" — but nothing asserts that any production generator (`buildSnippet`, the activation flow,
+  or the PILOT-001 layout) actually emits it. This is exactly why the §3 HALF_WIRE_C is invisible to
+  the green CI on this PR: the test substitutes for the missing producer. A `buildSnippet` unit test
+  asserting the attribute is emitted when the activated schema carries the selector would have surfaced
+  LG-1. → folded into **FOLLOW-114** AC. (Direct structural parallel to RETRO-010 §4c TG-1 / RETRO-009
+  TG-1: "the test injects the value the production path omits.")
+- **TG-2 (P2) — no contract test pins the SDK-emitted `inquiry.started` payload to
+  `InquiryStartedEventSchema` from `@estalara/shared`.** RETRO-009 TG-2 folded this into FOLLOW-097's
+  AC, but the merged PR did not add it (the e2e asserts `form_variant: contact_v2` against a literal,
+  not against the Zod schema). Still currently safe (`form_variant` is `z.string().optional()`), but
+  the drift guard RETRO-009 asked for was not delivered. → **FOLLOW-115** (P2).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — `inquirySubmitSelector` / `data-inquiry-submit-selector` is still absent from the
+  Master Design §B.1 SDK-config-surface table** (and the SDK install/snippet docs). Same omission class
+  as RETRO-009 DG-1 (`ObserverOptions`), RETRO-010 DG-2 (`data-decision-url` convention), FOLLOW-071
+  family. Master Design changelog v3.1 *narrates* the FOLLOW-097 fix but the config-surface table is not
+  updated. → fold into the FOLLOW-071 SDK-config-surface doc sweep (no new stub).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 13b Lane B, BLOCKED, `depends_on` includes FOLLOW-097) — MOST AFFECTED.**
+  PILOT-001 lists FOLLOW-097 as a dependency precisely to close the inquiry wire, but per §3 the wire is
+  only half-closed: the SDK reads the attribute, nobody emits it. PILOT-001's manual SvelteKit
+  `+layout.svelte` install will install the SDK and the secondary pilot metric (`inquiry.started` →
+  `/api/pilot/inquiry-starts`) will read empty/mock unless the install hand-writes
+  `data-inquiry-submit-selector="<selector from 000-app-estalara schema>"`. **PM action: add an explicit
+  AC to PILOT-001** — symmetric to the RETRO-010 `data-decision-url` AC already added — requiring the
+  `+layout.svelte` snippet to emit `data-inquiry-submit-selector` (value from the activated
+  `000-app-estalara` schema, `"[data-estalara-slot='inquiry-submit']"`) AND a shadow-mode smoke
+  assertion that `inquiry.started` rows land in ClickHouse for the pilot tenant. This pairs with the
+  existing RETRO-010 `data-decision-url` AC — both are the same "manual install must wire config the
+  wizard+tests exercise" cascade.
+- **TICKET-PILOT-002 (go/no-go runbook, BLOCKED) — the runbook's "inquiry.started observed in
+  ClickHouse during shadow mode" check (added by RETRO-009 §5a) is now MORE load-bearing**, because it
+  is the only gate that would catch the §3 HALF_WIRE_C before go-live. Confirm it is in the runbook.
+- **Wave 3 (FOLLOW-094 / FOLLOW-098 / FOLLOW-093, all READY) — not affected by this SDK change.** They
+  touch the pilot dashboard routes (control-plane), not the SDK. FOLLOW-098 (inquiry-starts fail-loud +
+  provenance) is *thematically* linked: once it ships, a dashboard showing mock inquiry data will at
+  least be labeled as mock — which would make the §3 half-wire visible to a human at go/no-go (a
+  defense-in-depth mitigation, not a fix). No spec change to Wave 3.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-091 (inquiry-starts mock → real):** still COUPLED to the inquiry producer chain (RETRO-009
+  §5b). Now precisely blocked: replacing the mock is pointless until FOLLOW-114 closes the schema→snippet
+  producer link AND PILOT-001 emits the attribute. FOLLOW-091's precondition should read "FOLLOW-097 +
+  FOLLOW-114 shipped and `inquiry.started` rows present in ClickHouse for the pilot tenant."
+- **FOLLOW-114 (this retro):** the producer-side completion of FOLLOW-097; should land before
+  TICKET-PILOT-001 go-live (or PILOT-001 must absorb the manual-install half).
+
+#### 5c. Contracts changed that other modules rely on
+
+- `SdkConfig` gained an optional field — backward compatible; no existing consumer relied on a changed
+  contract. The `setupObservers` signature is unchanged (the 3rd param was already added in PR #144).
+- `inquiry.started` was already a registered `@estalara/shared` event (`events/index.ts` EVENT_TYPES,
+  `events/inquiry.ts` schema) and is already consumed by `cta-lift/route.ts` (funnel stage) and
+  `inquiry-starts/route.ts`. Ingest validation + downstream consumers were ready before this PR — only
+  the SDK→attribute producer wire (now §3 HALF_WIRE_C) remains.
+
+#### 5d. Architectural assumptions affected
+
+- **Master Design §B.9 (Tier 3 Native, detected-schema-drives-runtime-SDK-behavior assumption):**
+  RETRO-009 §5d noted this assumption was "only partially realized" because the SDK consumed no
+  per-tenant schema selectors. After FOLLOW-097 the SDK *can* consume the inquiry selector — but the
+  detection→activation→snippet pipeline still does not surface ANY detected selector onto the rendered
+  `<script>` tag (verified: `inquiry_submit_selector` is persisted to `tenant_site_schemas.schema` but
+  never read back into a snippet). So the assumption remains only partially realized: the **runtime
+  consumer** is built, the **schema→runtime producer** is not. FOLLOW-114 is the first ticket that
+  would actually close that loop for one selector. No Master Design edit beyond DG-1's config-surface
+  table.
+
+### 6. New lesson candidates
+
+- **Pattern — "A manually-written or generated install/snippet path must wire an SDK config value that
+  the unit/e2e tests and the wizard exercise, but the real install path omits — so the feature passes
+  CI yet is dead in production."** This is the dominant finding of this retro (§3 / §4a LG-1 / §4c
+  TG-1). Occurrences:
+  - RETRO-009 LG-1 — `inquiry_submit_selector` not threaded into `setupObservers` at init (the SDK call
+    site); test injected it directly.
+  - RETRO-010 §5a / TICKET-PILOT-001 AC — `data-decision-url` not emitted by the manual `+layout.svelte`
+    install (the wizard `buildSnippet` fix did not cover the manual path).
+  - RETRO-011 (this) — `data-inquiry-submit-selector` not emitted by ANY snippet generator; e2e fixture
+    hand-writes it.
+  - **Count: 3 distinct retros (009, 010, 011). THRESHOLD (2) MET.** All three are the same root failure
+    mode: **the test/fixture supplies the very config the production install path omits, so green CI
+    masks a dead wire.** This is adjacent to but NOT covered by existing rules: Rule H is "schema
+    scaffold must ship a runtime-wired consumer" (consumer side); Rule I's CI gate catches zero-importer
+    symbols but NOT a config field that IS imported yet is never *produced* by an install path; Rule G is
+    about breaking-type mock sweeps. The distinct, now-thrice-seen element is **"verify the production
+    producer emits the value, not just that the consumer reads it — a test that injects the value is not
+    evidence the install path supplies it."** → **PROMOTED as Rule L** (see §9).
+- **Pattern — e2e fixture navigation tears down in-memory SDK state (CB-1).** Count: 1 (this retro).
+  Threshold not met. Track; if a second e2e flush-vs-navigation flake occurs, codify "e2e inquiry/form
+  fixtures must `return false` / `preventDefault` on submit so the batch flush completes in-document."
+
+### 7. Follow-ups
+
+- **FOLLOW-114** (P0, backend-engineer + sdk-engineer, 2h, Sprint 13b — before TICKET-PILOT-001
+  go-live): close the schema→snippet producer link for `inquiry_submit_selector`. Make `buildSnippet`
+  (and any other rendered SDK `<script>` generator) read the activated tenant's
+  `tenant_site_schemas.schema.inquiry_submit_selector` and emit `data-inquiry-submit-selector="<sel>"`
+  when present; add a `buildSnippet` unit test asserting the attribute is emitted (closes §3 HALF_WIRE_C
+  + §4a LG-1 + §4c TG-1). Coordinate with the TICKET-PILOT-001 manual-install AC (§5a) so both the
+  wizard and the SvelteKit paths emit it.
+- **FOLLOW-115** (P2, qa-engineer + sdk-engineer, 1h, Sprint 14): contract test pinning the SDK-emitted
+  `inquiry.started` payload to `InquiryStartedEventSchema` from `@estalara/shared` (RETRO-009 TG-2 was
+  folded into FOLLOW-097 but not delivered; carry it forward). Closes §4c TG-2.
+- **Note (no stub):** PM should (a) add a `data-inquiry-submit-selector` AC to **TICKET-PILOT-001**
+  (§5a), symmetric to the existing RETRO-010 `data-decision-url` AC; (b) fold DG-1 into the FOLLOW-071
+  SDK-config-surface doc sweep; (c) update **FOLLOW-091**'s precondition to require FOLLOW-114 (§5b).
+
+### 8. Cross-references
+
+- **RETRO-008 / RETRO-009 (the bug this PR fixes):** FOLLOW-097 resolves the RETRO-009 HALF_WIRE_P
+  (options arg omitted at the `setupObservers` call site) and closes RETRO-009 TG-1 (production-path
+  e2e). RETRO-009 TG-2 (Zod contract test) was folded into FOLLOW-097's AC but NOT delivered → carried
+  forward as FOLLOW-115. RETRO-009 LG-2 (`form_variant` hardcode) is unchanged → §4a LG-2.
+- **RETRO-010 (FOLLOW-105 Wave 1, sibling Wave-2 ticket on the same SDK init path):** RETRO-010 §5a
+  explicitly predicted this — "the manual pilot install must wire SDK config that the wizard/tests
+  exercise but the hand-written install does not," pairing the `data-decision-url` gap with the
+  FOLLOW-097 inquiry-selector threading. RETRO-011 confirms the prediction one level deeper: even with
+  FOLLOW-097 merged, the attribute producer is absent. The two `TICKET-PILOT-001` ACs
+  (`data-decision-url` + `data-inquiry-submit-selector`) are siblings — bundle into the PILOT-001
+  readiness checklist. RETRO-010 DG-2 + RETRO-011 DG-1 are the same FOLLOW-071 config-surface doc gap.
+- **Rule H / Rule I lineage (RETRO-002/003):** §3 HALF_WIRE_C is the next instance — a config field that
+  IS imported/consumed (so Rule I's zero-importer CI gate does NOT fire) yet has NO production producer.
+  Rule L (§9) extends the half-wire family to cover the producer-absence sub-case for install/snippet
+  paths.
+
+### 9. Rule promotion
+
+**One new Rule promoted — Rule L** (the "manual/generated install must produce the config its consumer
+reads" pattern, seen in RETRO-009, RETRO-010, RETRO-011 — count 3, threshold 2 met). Appended to
+`CONVENTIONS_PATCH.md`. The FOLLOW-115 (Zod-contract) and e2e-navigation patterns remain at count 1 —
+NOT promoted.
+
+### 10. Cross-references summary (for PM-orchestrator)
+
+Related to RETRO-008/009 (bug origin — HALF_WIRE_P now resolved at SDK layer, moved downstream to a
+HALF_WIRE_C producer gap), RETRO-010 (sibling Wave-2 SDK-init / manual-install cascade — prediction
+confirmed), RETRO-002/003 (Rule H/I half-wire lineage; Rule L promoted here). New follow-ups:
+FOLLOW-114 (P0), FOLLOW-115 (P2).
+
+---
+
+## RETRO-012 — FOLLOW-106 (tenants.pilot_frozen runtime flag + Lane C measurement-window warning) — 2026-05-26
+
+### 1. Summary of change
+
+- **PR:** #152 (merged 2026-05-25 22:38 UTC / 2026-05-26 00:38 +0200, commit `b83e6c0`)
+- **Files changed:** 6 (+215 / −0). All additive; zero deletions.
+- **Modules touched:** control-plane (`apps/control-plane/src/app/api/adapt/route.ts`), shared DB
+  package (`packages/db` — schema + migration + journal), docs (`docs/ops/PILOT_FREEZE_RULE.md`),
+  backlog (`backlog/sprint-12/TICKET-PILOT-001.md` authored). **No SDK / ingest / decision-api /
+  data-engine code touched.**
+- **Key contracts changed:**
+  - `tenants.pilotFrozen` (`packages/db/src/schema/tenants.ts:56`) — `boolean('pilot_frozen').notNull().default(false)`
+    — **added** — breaking: no (defaulted column, inherits existing `tenant_isolation` RLS, no new policy).
+  - Migration `packages/db/migrations/0015_pilot_frozen.sql` — `ALTER TABLE tenants ADD COLUMN IF NOT
+    EXISTS pilot_frozen boolean NOT NULL DEFAULT false` (idempotent, forward-only) — additive.
+  - `LANE_C_FLAG_KEYS` const + `checkPilotFrozenAsync(tenantId, requestId)` function
+    (`adapt/route.ts:78,99`) — **new, module-private** (not exported) — breaking: no.
+  - `GET /api/adapt` + `POST /api/adapt` — gained a fire-and-forget `checkPilotFrozenAsync(...)` call;
+    response contract **unchanged** (warning is observability-only, never alters the body) — breaking: no.
+  - Structured log event `pilot_frozen_lane_c_active` (`console.warn` JSON) — new observability signal.
+  - `TICKET-PILOT-001.md` authored under `backlog/sprint-12/` (was absent per QUEUE.md note); AC §5/§DoD
+    includes setting `pilot_frozen=true` on the shadow→live flip.
+
+### 2. Verification done in PR
+
+- Test files changed: **none.** No unit test was added for `checkPilotFrozenAsync()` or the
+  `LANE_C_FLAG_KEYS` filter logic.
+- Assertions added: **0.**
+- Coverage delta: **negative** for the control-plane adapt route — net-new branch logic (pilot-frozen
+  read + Lane C flag filter + warn) shipped with zero direct test. The control-plane `apps/*` ≥70% bar
+  is not measured per-function, but this is an explicit gap (see §4c TG-1).
+- CI checks: green at merge on all real Lane A merge gates per QUEUE.md (`b83e6c0`); pre-existing-red
+  Rule I / Vercel Preview / Python lanes non-blocking per QUEUE.md preamble. **No migration was run in
+  CI** (no DB creds in sandbox; `IF NOT EXISTS` makes it idempotent). Local typecheck `@estalara/db` +
+  `@estalara/control-plane` reported PASS by the implementing agent (per PR body) — not independently
+  re-verified here.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- `tenants.pilotFrozen` (new Drizzle column) — consumed by `adapt/route.ts:108` (`select({ pilotFrozen:
+  tenants.pilotFrozen })`) and read at `:116` (`row?.pilotFrozen`). Non-test consumer present. **Clean.**
+- `checkPilotFrozenAsync` (new module-private fn) — invoked at `adapt/route.ts:593` (GET arm) and `:665`
+  (POST arm). Two non-test call sites. **Clean.**
+- `LANE_C_FLAG_KEYS` (new const) — consumed by `checkPilotFrozenAsync` at `:120` (`.filter(...)`).
+  **Clean.**
+- Migration `0015_pilot_frozen.sql` + `_journal.json` idx-15 entry — discovered by the drizzle migrator
+  (`packages/db/scripts/migrate.ts`), config/framework-driven, not import-reached. **Clean** (false-positive
+  class suppressed). No new exported symbol, no new file with zero non-test importers. **CHECK A clean.**
+
+**CHECK B — Half-wire detection:**
+
+- **HALF_WIRE_C** — `quizConfig_flag:{lane_c_active, intent_engine_enabled, quiz_enabled,
+  shadow_mode_override}` — the four `LANE_C_FLAG_KEYS` are **consumed** by `checkPilotFrozenAsync`
+  (`adapt/route.ts:120` filters `cfg[key] === true` out of `tenants.quizConfig`) but **NO producer ever
+  writes any of these keys into `quizConfig`.** Searches:
+  - Consumer: `adapt/route.ts:78-81` (the const) + `:120` (the filter). ✅ present.
+  - Producer: the sole writer of `tenants.quizConfig` is `apps/control-plane/src/app/api/quiz/config/route.ts`
+    (POST handler), whose `QuizConfigSchema` accepts ONLY `enabled`, `trigger_after_n_listings`,
+    `sticky_widget`, `language`, `accent_color` — **none of the four Lane C flag keys.** A repo grep for
+    `lane_c_active` / `intent_engine_enabled` / `quiz_enabled` / `shadow_mode_override` as written values
+    (outside `adapt/route.ts` itself) returns **zero producers.** `quiz_enabled` is conceptually adjacent
+    to the quiz-config `enabled` field but is a DIFFERENT key (the warning checks `cfg.quiz_enabled`, the
+    quiz route writes `cfg.enabled`) — so even the one plausibly-existing flag is not actually produced
+    under the key the consumer reads.
+  - Net effect: `checkPilotFrozenAsync` will, for the foreseeable future, find `activeFlags.length === 0`
+    on every call and **never emit the `pilot_frozen_lane_c_active` warning** — even if a Lane C feature
+    IS active — because the feature-on state is recorded under different keys (or not in `quizConfig` at
+    all). The guardrail is wired consumer-side only.
+  - **Severity disposition: P2 (NOT the spec-default P0 for HALF_WIRE_C).** The agent-spec assigns P0 to
+    HALF_WIRE_C because "a consumer expecting data that never arrives is silently broken at runtime (NPE,
+    undefined branch, missing config at boot)." Here the consumer is **defensively null-safe by design**:
+    `cfg[key] === true` treats absent/undefined as inactive (the JSDoc explicitly documents "unknown =
+    inactive = safe"), the whole function is fire-and-forget and try/caught, and it **cannot break the
+    adapt response.** Nothing throws; no branch goes undefined. The failure mode is a **silently-inert
+    safety net**, not a runtime break — the same business-consequence class as RETRO-011's HALF_WIRE_C
+    but without the runtime-fragility that motivates P0. It is downgraded to P2 because (a) it breaks
+    nothing, and (b) the keys are forward-looking placeholders for FOLLOW-087/100/101/102 features that
+    have not landed — by intent the producers do not exist yet. The risk is **false reassurance**: an
+    operator at go/no-go may believe the measurement-window guard is armed when it is silently disarmed.
+    → **FOLLOW-117** (P2): align the consumer keys with real producers (or document the contract the Lane
+    C implementers must honor) + add a test proving the warning fires when a flag is set.
+- **No new event type, env var, Redpanda topic, or SDK signal** introduced. The new DB column
+  (`pilot_frozen`) is fully wired (producer = TICKET-PILOT-001 manual `UPDATE` per spec §5 / consumer =
+  `checkPilotFrozenAsync`); its producer is a documented human/operator action, not code, which is the
+  intended design (PILOT_FREEZE_RULE.md Decision 3) — **not a half-wire** (analogous to RETRO-010's
+  operator-set disposition).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, central) — the Lane C warning's flag keys have no producers (see §3 HALF_WIRE_C).** The
+  guardrail is consumer-only; `quiz_enabled` (read) vs `enabled` (the key the quiz route actually writes)
+  is a concrete key-mismatch even for the one Lane C feature that exists today. → FOLLOW-117.
+- **LG-2 (P3) — dev/stg schema drift: migration 0015 applied to prd only.** Per the QUEUE.md FOLLOW-106
+  notes + this task's context, `0015_pilot_frozen.sql` was applied to **prd** but NOT **dev** or **stg**
+  because `DATABASE_URL_ADMIN` is unset in Doppler for those configs (no admin DB creds; same root cause
+  as RETRO-006/007 Doppler-credential findings). Judged not a pilot blocker (pilot runs against prd) —
+  correct. But the drift is now real: `tenants` in dev/stg lacks `pilot_frozen` while the Drizzle schema
+  (`tenants.ts`) and any code/test that `select`s `tenants.pilotFrozen` assumes it exists. Cascading risk
+  is bounded today (the only reader is `checkPilotFrozenAsync`, which is try/caught and would log
+  `pilot_frozen check failed` rather than crash on an "undefined column" Postgres error against dev/stg)
+  — but (i) a future migration with `idx > 15` applied to dev/stg will replay 0015 first (idempotent
+  `IF NOT EXISTS` makes that safe), and (ii) any future integration test or local-dev flow pointed at
+  dev/stg that reads `pilot_frozen` will hit a Postgres `column does not exist` error. → **FOLLOW-116**
+  (backfill dev/stg once `DATABASE_URL_ADMIN` is provisioned; tracks with ESC-010).
+- **LG-3 (P3) — migration journal timestamp regression.** `_journal.json` idx-15 carries
+  `"when": 1748304000000` (≈ 2025-05-27), which is EARLIER than idx-14's `1779840000000` (≈ 2026). Drizzle
+  orders migrations by `idx`, so the apply order is correct and this is not a functional bug (the PR body
+  flagged it as advisory #3). But a backdated `when` is a latent foot-gun for any tooling that sorts or
+  reports migrations chronologically, and for human readers diffing the journal. Cosmetic, forward-only
+  migration already merged — **no FOLLOW** (a journal rewrite of a merged migration is riskier than the
+  cosmetic defect); noted for awareness. If a future migration tool relies on `when`, revisit.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P2) — per-request tenant SELECT added to the hot adapt path with no caching.**
+  `checkPilotFrozenAsync` issues a fresh `createAdminClient()` + `SELECT pilot_frozen, quiz_config FROM
+  tenants WHERE id=...` on **every** GET and POST `/api/adapt` call. It is fire-and-forget so it does not
+  add to the p95 response latency budget (<100ms) on the critical path, and it mirrors the existing
+  `logDecisionAsync` fire-and-forget pattern — but it is an **extra DB round-trip + connection per adapt
+  request** for a value (`pilot_frozen`) that changes at most once per pilot (the shadow→live flip). On a
+  high-traffic tenant this is wasted DB load every request to read a near-constant flag. The PR body
+  itself flagged this as advisory #2. Not a correctness bug; an efficiency/scaling concern. → folded into
+  FOLLOW-117 as an optional AC (cache the tenant flag, e.g. short-TTL in-memory or Upstash) rather than a
+  separate stub.
+- **CB-2 (none functional).** The fire-and-forget `void (async () => {...})()` is correctly try/caught
+  and cannot reject unhandled; `createAdminClient()` throwing (e.g. dev/stg missing creds) is caught and
+  logged. No unhandled-rejection or response-blocking defect.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — zero tests for `checkPilotFrozenAsync` / the Lane C flag filter.** Net-new branch logic
+  (pilot_frozen read → flag filter → structured warn) shipped with no unit test. The warning's exact
+  trigger condition (`pilot_frozen=true` AND ≥1 flag `=== true`), the absent=safe behavior, the
+  `tenantId==='unknown'` short-circuit, and the DB-error swallow are all unverified. A test that mocks
+  `createAdminClient` to return `{ pilotFrozen: true, quizConfig: { quiz_enabled: true } }` and asserts a
+  `pilot_frozen_lane_c_active` warn fires would BOTH cover this logic AND surface the §3 HALF_WIRE_C (it
+  would force the author to confront which key a real producer sets). → folded into **FOLLOW-117** AC.
+  (Same structural parallel as RETRO-011 TG-1 / RETRO-010 TG-1: "a test would have surfaced the dead
+  producer wire.")
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — `tenants.pilot_frozen` is well-documented in PILOT_FREEZE_RULE.md (this PR added the
+  Implementation cross-reference) but the `LANE_C_FLAG_KEYS` → producer contract is NOT documented for
+  the Lane C implementers (FOLLOW-087/100/101/102).** The adapt-route JSDoc says "New Lane C flags …
+  should be added here as they land," but there is no reciprocal note in the FOLLOW-102 (quiz_enabled) or
+  FOLLOW-087/100/101 (intent_engine_enabled) specs telling those implementers they must write the flag
+  into `tenants.quizConfig` under the EXACT key the warning reads. Without that, the keys drift (as
+  `quiz_enabled` vs `enabled` already shows). → folded into FOLLOW-117 (document the contract) — no
+  separate doc stub.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 13b Lane B, BLOCKED, `depends_on` includes FOLLOW-106) — DIRECTLY
+  AFFECTED.** This PR **authored** PILOT-001's spec file (previously absent) and added the
+  `pilot_frozen=true` flip to its AC §5/DoD — so the FOLLOW-106 dependency is now satisfied at the
+  schema+route level. **Two carry-forward cautions for PILOT-001 execution:** (1) the flip must run
+  `UPDATE tenants SET pilot_frozen=true WHERE id='<pilot-uuid>'` **against prd** (the only env where
+  migration 0015 is applied — LG-2); against dev/stg it would error `column does not exist`. (2) Per §3
+  HALF_WIRE_C, the `pilot_frozen` guard will **silently never warn** during the measurement window unless
+  FOLLOW-117 aligns the Lane C flag producers — so the operator should NOT treat "no
+  `pilot_frozen_lane_c_active` log" as evidence that no Lane C feature is active. PM should note this in
+  the PILOT-001 / PILOT-002 go/no-go runbook (symmetric to the RETRO-009/011 "inquiry.started observed in
+  ClickHouse" check).
+- **TICKET-PILOT-002 (go/no-go runbook, BLOCKED):** the runbook should add a manual Lane-C-off
+  verification step rather than relying on the (currently inert) `pilot_frozen` warning. Defense-in-depth,
+  not a code fix.
+- **Wave 3 (FOLLOW-094 / FOLLOW-098 / FOLLOW-093, all READY, Scenario D sequential) — NOT affected by
+  this merge.** They touch the pilot dashboard cta-lift + inquiry-starts routes (Rule K.2 fail-loud), not
+  the adapt route or the tenants schema. No spec change. (They DO share the broader "pilot measurement
+  integrity" theme — FOLLOW-098's provenance work and this retro's pilot_frozen guard are complementary
+  layers protecting the same CTA-lift window — but no direct coupling.)
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-102 (quiz_enabled ON/OFF toggle), FOLLOW-087 / FOLLOW-100 / FOLLOW-101 (intent-engine
+  toggles):** these are the named-but-unbuilt PRODUCERS for three of the four `LANE_C_FLAG_KEYS`. When
+  they land, each implementer MUST write its on-state into `tenants.quizConfig` under the exact key the
+  warning reads (`quiz_enabled`, `intent_engine_enabled`) — or extend `LANE_C_FLAG_KEYS` to match the key
+  they actually use. FOLLOW-117 should either (a) own this alignment now (documenting the contract) or
+  (b) be referenced as a precondition note in each of those specs. **Highest cascade value of this retro.**
+- **TICKET-PILOT-001 (covered in §5a)** — the consumer of the `pilot_frozen` write.
+
+#### 5c. Contracts changed that other modules rely on
+
+- `tenants` table gained `pilot_frozen` (Drizzle `pilotFrozen`). Any module doing `SELECT *` or
+  constructing a full `tenants` row inline must tolerate the new NOT-NULL-defaulted column (defaulted, so
+  inserts that omit it are fine). Verified: the only reader is `adapt/route.ts`; no inline full-row
+  `tenants` mock in the repo omits a required field because the column is defaulted. **No Rule G sweep
+  needed** (the column is optional-at-insert by virtue of its default).
+- `tenants.quizConfig` now has TWO independent readers with DIFFERENT key vocabularies: `quiz/config`
+  route (reads `enabled`, etc. — the QuizConfig shape) and `adapt/route.ts` `checkPilotFrozenAsync`
+  (reads `lane_c_active`/`intent_engine_enabled`/`quiz_enabled`/`shadow_mode_override`). The JSONB column
+  is now an **untyped multi-tenant flag bag with no shared schema** — a drift surface (LG-1/DG-1). Future
+  writers/readers of `quizConfig` should converge on a documented key set.
+
+#### 5d. Architectural assumptions affected
+
+- **PILOT_FREEZE_RULE.md Decision 3 (measurement-window protection)** assumed the runtime guard would
+  surface Lane-C-active contamination. The guard is **architecturally present but operationally inert**
+  until producers exist (§3). The design intent (non-blocking observability) is correctly realized; the
+  *coverage* (which flags are actually observable) is the gap. No Master Design edit needed — the
+  PILOT_FREEZE_RULE.md Implementation section this PR added is accurate about the mechanism; it should
+  gain a one-line caveat (folded into FOLLOW-117) that the flag set is forward-looking.
+- **Multi-region / multi-config schema parity** (Master Design infra model assumes dev/stg/prd schemas
+  track): LG-2 is a concrete, currently-accepted violation. The accepted-risk rationale (pilot is prd-only)
+  is sound for THIS pilot, but the parity assumption is dented until FOLLOW-116 backfills.
+
+### 6. New lesson candidates
+
+- **Pattern — "A consumer-side guard/check reads feature-flag keys from a shared JSONB bag that no
+  producer writes (consumer-only half-wire), so the guard is silently inert."** This is §3 / §4a LG-1.
+  - Relation to prior retros: this is a **HALF_WIRE_C of the same family** as RETRO-011 (`data-inquiry-
+    submit-selector` consumed by the SDK, produced by nobody) and RETRO-009 (`inquirySubmitSelector`
+    options arg). RETRO-011 PROMOTED **Rule L** for the install/snippet sub-case ("verify the production
+    producer emits the value, not just that the consumer reads it — a test that injects the value is not
+    evidence the install path supplies it"). **Rule L already covers this finding conceptually** — the
+    FOLLOW-106 Lane C flags are the same "consumer reads config a producer must supply, no producer
+    exists, and there is no test forcing the producer to exist" pattern, just in a server-side JSONB-flag
+    context rather than an SDK `<script>` attribute context. **No NEW rule needed** — RETRO-012 is a fresh
+    Rule L instance (server-side feature-flag variant). FOLLOW-117 is the Rule-L-style remediation
+    (align producer + add the test that would have caught it). The system is working as intended: Rule L,
+    promoted one retro ago, already names this class.
+  - Count of the broad "consumer reads a value no producer sets" class: now 3+ (RETRO-009, 011, 012).
+    Rule L holds. The server-side-JSONB-flag sub-form is **count 1** within Rule L — if it recurs (e.g. a
+    future flag-bag reader with no writer), consider a Rule L amendment naming JSONB flag bags explicitly.
+- **Pattern — "Migration applied to prd but not dev/stg due to missing `DATABASE_URL_ADMIN` in Doppler."**
+  Seen in: RETRO-012 (this, schema drift) and is the SAME ROOT CAUSE documented in RETRO-006 / RETRO-007
+  (`DATABASE_URL_ADMIN` missing / Doppler credential gaps, lines ~1795/1821 of this file). Count of the
+  `DATABASE_URL_ADMIN`-missing root cause: ≥2 across retros. **However this is an ENVIRONMENT/OPS
+  provisioning gap (a missing Doppler secret), not a code anti-pattern an agent can be ruled against** —
+  there is no grep-able code convention that would prevent it; the fix is "provision the secret"
+  (ESC-010 / FOLLOW-116). A CONVENTIONS_PATCH Rule codifies code/process patterns agents control; a
+  missing infra credential is not in that class. **No rule promotion** — tracked operationally via
+  FOLLOW-116 + ESC-010. (Recorded here so the pattern is visible if it recurs and someone later wants a
+  process rule like "every migration PR must record per-config apply status in QUEUE.md" — which FOLLOW-106
+  actually DID do well; that good practice could itself be codified if a future migration PR omits it.)
+
+### 7. Follow-ups
+
+- **FOLLOW-116** (P3, devops-engineer + data-engineer, 1h, Sprint 13b/backlog): backfill migration 0015
+  (`pilot_frozen`) to dev + stg once `DATABASE_URL_ADMIN` is provisioned in Doppler for those configs
+  (tracks with ESC-010). Closes LG-2 / the dev↔stg↔prd schema-parity drift. Low priority — not a pilot
+  blocker (pilot is prd-only) — but required before any dev/stg integration test or local-dev flow reads
+  `tenants.pilot_frozen`.
+- **FOLLOW-117** (P2, backend-engineer, 1.5h, Sprint 13b — before TICKET-PILOT-001 go-live): close the
+  Lane C flag-key producer gap (§3 HALF_WIRE_C). Either (a) align `LANE_C_FLAG_KEYS` with the keys real
+  producers actually write (today: reconcile `quiz_enabled` vs the quiz route's `enabled`), and/or (b)
+  document in the FOLLOW-102 / FOLLOW-087/100/101 specs + PILOT_FREEZE_RULE.md the exact `quizConfig` key
+  each Lane C implementer must set; AND add a `checkPilotFrozenAsync` unit test that mocks a frozen tenant
+  with an active flag and asserts the `pilot_frozen_lane_c_active` warning fires (closes TG-1). Optional
+  AC: cache the per-request `pilot_frozen` lookup to drop the hot-path DB round-trip (CB-1).
+
+### 8. Cross-references
+
+- **RETRO-011 (FOLLOW-097, immediately prior; promoted Rule L):** RETRO-012 §3 HALF_WIRE_C is the next
+  instance of the Rule L "consumer reads a value no production producer supplies, and a test injecting the
+  value masks the dead wire" class — here server-side (`quizConfig` flag bag) rather than SDK-side
+  (`<script>` attribute). Rule L already governs it; FOLLOW-117 is the Rule-L remediation.
+- **RETRO-010 (FOLLOW-105 Wave 1):** §5a explicitly predicted FOLLOW-106 must target the **control-plane**
+  `/api/adapt` route (not the 410 Worker) and asked the PM to confirm it. **Confirmed resolved:** this PR
+  added `checkPilotFrozenAsync` to `apps/control-plane/src/app/api/adapt/route.ts` (the canonical route),
+  NOT the decision-api Worker (correctly left as 410). RETRO-010's flag is closed.
+- **RETRO-009 / RETRO-008 (pilot measurement integrity):** the `pilot_frozen` guard and FOLLOW-098's
+  inquiry-starts fail-loud/provenance work are complementary layers protecting the same CTA-lift
+  measurement window; this retro's HALF_WIRE_C means the guard layer is currently inert (FOLLOW-117).
+- **RETRO-006 / RETRO-007 (`DATABASE_URL_ADMIN` / Doppler credential gaps):** LG-2's dev/stg drift shares
+  their root cause; tracked via FOLLOW-116 + ESC-010 (ops, not a codifiable rule).
+- **RETRO-002 / RETRO-003 (Rule H / Rule I half-wire lineage):** §3 HALF_WIRE_C is a config-bag variant
+  that Rule I's zero-importer CI gate does NOT catch (the keys ARE referenced — in the consumer) — the
+  same Rule-I blind spot RETRO-009/010/011 documented; Rule L is the codified mitigation.
+
+### 9. Rule promotion
+
+**No new Rule promotion this retro.** Two candidate patterns surfaced (§6):
+
+1. **Consumer-only feature-flag half-wire (server-side JSONB bag).** Already covered by **Rule L**
+   (promoted by RETRO-011 one retro ago). RETRO-012 is a fresh Rule L instance, not a new rule. The
+   server-side-JSONB sub-form is count 1 within Rule L — amend Rule L only if it recurs.
+2. **Migration applied to prd but not dev/stg (`DATABASE_URL_ADMIN` missing).** Root cause seen ≥2× (RETRO-
+   006/007/012) BUT it is an infra-provisioning gap (a missing Doppler secret), not a code/process
+   anti-pattern an agent can be ruled against — no grep-able verification exists. **Not promoted**; tracked
+   via FOLLOW-116 + ESC-010. (A future *process* rule — "migration PRs must record per-config apply status"
+   — is not warranted because FOLLOW-106 already did this correctly in QUEUE.md.)
+
+The Rule-promotion threshold (2 occurrences of a *codifiable* pattern) is not met for any NEW rule.
+
+### 10. Cross-references summary (for PM-orchestrator)
+
+Related to RETRO-011 (Rule L instance — server-side flag-bag half-wire), RETRO-010 (confirmed FOLLOW-106
+correctly targets the control-plane route, not the 410 Worker), RETRO-008/009 (pilot measurement-integrity
+layer), RETRO-006/007 (`DATABASE_URL_ADMIN` drift root cause). New follow-ups: FOLLOW-116 (P3, dev/stg
+migration backfill), FOLLOW-117 (P2, Lane C flag producer alignment + test). No rule promoted.
+
+---
+
+<!-- RETRO-013 and beyond will be appended here by the retrospective-analyst agent -->
+<!-- NOTE: RETRO-012 (PR #152 / FOLLOW-106) consumed FOLLOW numbers 116-117 — next free FOLLOW is 118. -->
+
+

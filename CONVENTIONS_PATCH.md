@@ -459,4 +459,42 @@ grep -rn "catch(() =>" apps/ --include="*.ts" | grep -v node_modules | grep -v "
 grep -rn "data_source\|is_mock\|X-Data-Source" apps/control-plane/src --include="*.ts" | grep -v node_modules
 ```
 
-<!-- Rule K+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->
+## Rule L — Verify the production install/snippet path PRODUCES the config a consumer reads — a test that injects the value is not evidence
+
+**Pattern:** A feature wires an SDK/runtime _consumer_ of a config value (an `<script>`
+data-attribute, an env var, a per-tenant schema field) and ships with green CI because the unit/e2e
+tests and/or the wizard inject the value directly — but the real production
+install/snippet/generator path never PRODUCES it. The consumer is correct; the producer is absent.
+Net effect is identical to a dead feature: the value is always `undefined` in prod, so the code path
+silently never runs. This is a HALF*WIRE_C that Rule I's zero-importer CI gate does NOT catch,
+because the consuming symbol \_is* imported and used — only the production producer is missing.
+
+**Evidence:** RETRO-009 (`inquiry_submit_selector` not threaded into `setupObservers` at the SDK
+init call site; the unit test injected it directly), RETRO-010 (§5a — `data-decision-url` not
+emitted by the manual `+layout.svelte` install; the wizard `buildSnippet` fix did not cover the
+manual path), RETRO-011 (`data-inquiry-submit-selector` emitted by NO snippet generator; the e2e
+fixture hand-writes it, so green CI masked a dead wire even after FOLLOW-097 "fixed" the SDK
+consumer).
+
+**Rule:** When a feature adds a runtime consumer of a config value, you MUST also verify — and add a
+test asserting — that the production path that builds the install snippet / sets the env var /
+renders the `<script>` tag actually EMITS that value (sourced from the activated tenant schema /
+config store, not a literal). A test that injects the value into the consumer directly proves only
+"if present, it works" — it is NOT evidence the install path supplies it. Both the wizard/generated
+path AND any manual install path (e.g. a hand-written `+layout.svelte`) must emit it; if a manual
+path exists, add an explicit AC to the install ticket. Treat a consumed-but-never-produced config
+field as P0 when a launch ticket depends on it.
+
+**Verification:**
+
+```bash
+# For each data-* attribute / config field the SDK consumer reads, confirm a NON-TEST producer emits it:
+grep -rn "data-inquiry-submit-selector\|data-decision-url\|data-feedback-events" apps/ packages/ \
+  --include="*.ts" --include="*.tsx" --include="*.svelte" \
+  | grep -v node_modules | grep -v "\.test\." | grep -v "\.spec\." | grep -v "/e2e/" | grep -v "//"
+# The snippet generator must read the value from the schema store, not omit it:
+grep -rn "buildSnippet\|inquiry_submit_selector" apps/control-plane/src --include="*.ts" --include="*.tsx" \
+  | grep -v "\.test\."
+```
+
+<!-- Rule M+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->

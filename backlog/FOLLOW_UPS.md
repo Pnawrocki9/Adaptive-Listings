@@ -3071,3 +3071,128 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] Verified by pushing a test branch with a `feat/` prefix (CI runs or pre-push blocks)
 - **promoted_to_queue:** false
 - **depends_on:** []
+
+## FOLLOW-114 — Emit data-inquiry-submit-selector from the SDK snippet generator (close the schema→snippet producer link)
+
+- **source_retro:** RETRO-011
+- **source_ticket:** FOLLOW-097
+- **recommended_sprint:** 13b (before TICKET-PILOT-001 go-live)
+- **recommended_agent:** backend-engineer + sdk-engineer
+- **priority:** P0
+- **estimated_hours:** 2
+- **scope:** RETRO-011 §3 HALF*WIRE_C. FOLLOW-097 wired the SDK \_consumer*
+  (`SdkConfig.inquirySubmitSelector` → `setupObservers` → `inquiry.started` listener), but NO
+  production code emits the `data-inquiry-submit-selector` attribute onto the rendered SDK
+  `<script>` tag — `buildSnippet(tenantId, apiKey)`
+  (`apps/control-plane/src/components/onboarding/DetectionPreview.tsx:115`) emits only
+  `data-tenant-id` / `data-api-key` / `data-decision-url`, and `inquiry_submit_selector` (persisted
+  to `tenant_site_schemas.schema` JSONB) is read back into a snippet nowhere. Result:
+  `inquiry.started` still never fires for a real onboarded tenant (the original RETRO-008/009
+  symptom). Make `buildSnippet` (and any other rendered `<script>` generator, e.g. demo
+  `mockup/layout.tsx`) read the activated tenant's `schema.inquiry_submit_selector` and emit
+  `data-inquiry-submit-selector="<sel>"` when present (omit when absent). Pair with the
+  TICKET-PILOT-001 manual-install AC (the SvelteKit `+layout.svelte` path the wizard does not
+  cover).
+- **ac:**
+  - [ ] `buildSnippet` emits `data-inquiry-submit-selector="<sel>"` when the activated tenant schema
+        carries `inquiry_submit_selector`, and omits the attribute when absent
+  - [ ] A `buildSnippet` unit test asserts the attribute is present/absent for both cases (closes
+        RETRO-011 §4c TG-1 — a test that proves the PRODUCER emits it, not just that the consumer
+        reads it)
+  - [ ] The detected `inquiry_submit_selector` flows tenant schema store → snippet → SDK config →
+        observer registration, verified by an integration/e2e assertion driving the real generated
+        snippet
+  - [ ] TICKET-PILOT-001 manual `+layout.svelte` install carries the same attribute
+        (cross-referenced AC)
+- **promoted_to_queue:** false
+- **depends_on:** [FOLLOW-097]
+
+## FOLLOW-115 — Contract test: SDK-emitted inquiry.started payload validates against InquiryStartedEventSchema
+
+- **source_retro:** RETRO-011
+- **source_ticket:** FOLLOW-097
+- **recommended_sprint:** 14
+- **recommended_agent:** qa-engineer + sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** RETRO-009 TG-2 was folded into FOLLOW-097's AC but the merged PR #151 did not deliver
+  it — the e2e asserts `form_variant: contact_v2` against a string literal, not against the shared
+  Zod schema. Add a contract test that feeds the SDK-emitted `inquiry.started` payload (from
+  `observer.ts` `onInquirySubmitClick`) through `InquiryStartedEventSchema` from `@estalara/shared`
+  (`packages/shared/src/schemas/events/inquiry.ts`) and asserts it parses. Prevents silent drift
+  between the SDK producer payload shape and the ingest-side validation schema. Currently safe
+  (`form_variant` is `z.string().optional()`), so this is drift-prevention, not a live bug.
+- **ac:**
+  - [ ] A test imports `InquiryStartedEventSchema` and `.parse()`s the SDK `inquiry.started` payload
+        shape
+  - [ ] The test fails if the SDK payload gains/renames a field the schema rejects
+  - [ ] Runs in the existing SDK or shared test suite (no new CI lane)
+- **promoted_to_queue:** false
+- **depends_on:** [FOLLOW-097]
+
+## FOLLOW-116 — Backfill migration 0015 (`pilot_frozen`) to dev + stg configs
+
+- **source_retro:** RETRO-012
+- **source_ticket:** FOLLOW-106
+- **recommended_sprint:** 13b (or backlog)
+- **recommended_agent:** devops-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** Migration `packages/db/migrations/0015_pilot_frozen.sql` was applied to **prd** only;
+  **dev** and **stg** were skipped because `DATABASE_URL_ADMIN` is not set in Doppler for those
+  configs (no admin DB credentials — same root cause as RETRO-006/007 and ESC-010). This leaves
+  `tenants` in dev/stg without the `pilot_frozen` column while the Drizzle schema
+  (`packages/db/src/schema/tenants.ts`) and any code/test that selects `tenants.pilotFrozen` assumes
+  it exists. Not a pilot blocker (the pilot runs against prd), but required before any dev/stg
+  integration test or local-dev flow reads `pilot_frozen`. Once `DATABASE_URL_ADMIN` is provisioned
+  for dev + stg (tracks with ESC-010), run the idempotent (`IF NOT EXISTS`) migration against both.
+  Coordinate with ESC-010 so this is done in the same credential-provisioning pass.
+- **ac:**
+  - [ ] `DATABASE_URL_ADMIN` is set in Doppler for the `dev` and `stg` configs (or ESC-010 closed)
+  - [ ] `doppler run --project estalara --config dev -- pnpm db:migrate` applies 0015 to dev (no
+        error)
+  - [ ] `doppler run --project estalara --config stg -- pnpm db:migrate` applies 0015 to stg (no
+        error)
+  - [ ] `tenants.pilot_frozen` confirmed present (DEFAULT false) in dev and stg
+  - [ ] Schema parity dev ↔ stg ↔ prd verified (no remaining unapplied migrations on dev/stg)
+- **promoted_to_queue:** false
+- **depends_on:** [ESC-010]
+
+## FOLLOW-117 — Wire Lane C feature-flag producers to the `pilot_frozen` warning (close consumer-only half-wire)
+
+- **source_retro:** RETRO-012
+- **source_ticket:** FOLLOW-106
+- **recommended_sprint:** 13b (before TICKET-PILOT-001 go-live)
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** `checkPilotFrozenAsync()` in `apps/control-plane/src/app/api/adapt/route.ts` reads four
+  Lane C flag keys (`lane_c_active`, `intent_engine_enabled`, `quiz_enabled`,
+  `shadow_mode_override`) out of `tenants.quizConfig`, but NO producer writes any of them — the sole
+  `quizConfig` writer (`apps/control-plane/src/app/api/quiz/config/route.ts`) persists only
+  `enabled`/`trigger_after_n_listings`/ `sticky_widget`/`language`/`accent_color`. The
+  measurement-window guard is therefore consumer-only and silently inert: it will never emit the
+  `pilot_frozen_lane_c_active` warning even when a Lane C feature is active (RETRO-012 §3
+  HALF_WIRE_C — a Rule L instance, server-side flag-bag variant). Note the concrete key mismatch:
+  the guard reads `cfg.quiz_enabled` while the quiz route writes `cfg.enabled`. Fix the producer
+  side AND add the test that would have caught it. This is a P2 (not P0) half-wire because the
+  consumer is defensively null-safe (absent = inactive = safe) and fire-and-forget, so nothing
+  breaks at runtime — the risk is false reassurance at go/no-go.
+- **ac:**
+  - [ ] `LANE_C_FLAG_KEYS` is reconciled with the keys real producers actually write (resolve
+        `quiz_enabled` vs the quiz route's `enabled`), OR the producers are updated to write the
+        exact keys the guard reads
+  - [ ] The contract ("Lane C implementers MUST set `<key>` in `tenants.quizConfig`") is documented
+        in `docs/ops/PILOT_FREEZE_RULE.md` and referenced in the FOLLOW-102 (quiz_enabled) and
+        FOLLOW-087/100/101 (intent_engine_enabled) specs
+  - [ ] A unit test mocks `createAdminClient` to return
+        `{ pilotFrozen: true, quizConfig: { <flag>: true } }` and asserts a
+        `pilot_frozen_lane_c_active` `console.warn` fires (closes RETRO-012 TG-1)
+  - [ ] A unit test asserts the warning does NOT fire when `pilotFrozen=false` or when no Lane C
+        flag is set
+  - [ ] (Optional) The per-request `pilot_frozen` lookup is cached (short-TTL in-memory or Upstash)
+        to drop the hot-path DB round-trip on `/api/adapt` (RETRO-012 CB-1)
+- **promoted_to_queue:** false
+- **depends_on:** []
+
+<!-- next free FOLLOW number: 118 (FOLLOW-116/117 consumed by RETRO-012 / PR #152 / FOLLOW-106) -->

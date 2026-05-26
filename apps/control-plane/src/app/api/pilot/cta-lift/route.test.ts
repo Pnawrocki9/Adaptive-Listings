@@ -7,6 +7,10 @@
  * CLICKHOUSE_URL and stubbing fetch with canned JSONEachRow responses
  * (equivalent to mocking the @clickhouse/client driver).
  *
+ * Rule K.2 fail-loud paths (FOLLOW-094):
+ *   - CLICKHOUSE_URL set + query fails → HTTP 500, no mock fallback, Sentry alert.
+ *   - CLICKHOUSE_URL unset → HTTP 200 mock with data_source: 'mock'.
+ *
  * @module apps/control-plane/src/app/api/pilot/cta-lift/route.test
  */
 
@@ -25,6 +29,16 @@ vi.mock('@estalara/auth', () => ({
 
 import { getAuthClaims } from '@estalara/auth';
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
+
+// ─── Mock @sentry/nextjs ─────────────────────────────────────────────────────
+
+vi.mock('@sentry/nextjs', () => ({
+  captureException: vi.fn(),
+  captureMessage: vi.fn(),
+}));
+
+import * as Sentry from '@sentry/nextjs';
+const mockCaptureException = vi.mocked(Sentry.captureException);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -161,6 +175,7 @@ describe('GET /api/pilot/cta-lift', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.CLICKHOUSE_URL;
+    mockCaptureException.mockReset();
   });
 
   afterEach(() => {
@@ -191,7 +206,7 @@ describe('GET /api/pilot/cta-lift', () => {
     expect(res.status).toBe(401);
   });
 
-  it('parses window_days into the response (mock path, no ClickHouse)', async () => {
+  it('returns mock with data_source: mock when CLICKHOUSE_URL is unset', async () => {
     authAsTenant();
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest('30'));
@@ -202,9 +217,13 @@ describe('GET /api/pilot/cta-lift', () => {
     // mock path produces a populated, well-formed funnel + archetype array
     expect(body.funnel).toHaveLength(5);
     expect(body.by_archetype.length).toBeGreaterThan(0);
+    // Rule K.2: provenance field must say 'mock' when no ClickHouse configured
+    expect(body.data_source).toBe('mock');
+    // Sentry must NOT be called — unset CLICKHOUSE_URL is not an error
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
-  it('by_archetype rows carry the full shape', async () => {
+  it('by_archetype rows carry the full shape (mock path)', async () => {
     authAsTenant();
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest('7'));
@@ -222,9 +241,11 @@ describe('GET /api/pilot/cta-lift', () => {
     const volumes = body.by_archetype.map((a) => a.n_adapted);
     const sorted = [...volumes].sort((a, b) => b - a);
     expect(volumes).toEqual(sorted);
+    // Provenance: no ClickHouse configured → data_source must be 'mock'.
+    expect(body.data_source).toBe('mock');
   });
 
-  it('returns all-zero summary when ClickHouse responds with no rows', async () => {
+  it('returns all-zero summary with data_source: clickhouse when ClickHouse responds with no rows', async () => {
     authAsTenant();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
     // Empty JSONEachRow body for all three queries. A fresh Response per call —
@@ -250,9 +271,11 @@ describe('GET /api/pilot/cta-lift', () => {
     expect(body.funnel).toHaveLength(5);
     expect(body.funnel.every((f) => f.adapted_count === 0 && f.holdout_count === 0)).toBe(true);
     expect(body.by_archetype).toHaveLength(0);
+    // Provenance: real ClickHouse configured → data_source must be 'clickhouse'.
+    expect(body.data_source).toBe('clickhouse');
   });
 
-  it('parses ClickHouse JSONEachRow rows when CLICKHOUSE_URL is set', async () => {
+  it('returns data_source: clickhouse when CLICKHOUSE_URL is set and query succeeds', async () => {
     authAsTenant();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
@@ -290,6 +313,8 @@ describe('GET /api/pilot/cta-lift', () => {
     expect(body.summary.holdout_cta_rate).toBeCloseTo(0.1, 4);
     expect(body.summary.is_significant).toBe(true);
     expect(body.by_archetype[0]!.archetype).toBe('investor');
+    // Provenance: real ClickHouse configured and succeeded.
+    expect(body.data_source).toBe('clickhouse');
 
     // tenant_id must be bound as a query param, never interpolated into SQL.
     const firstCallUrl = String((fetchMock.mock.calls[0] as unknown[])[0]);
@@ -297,20 +322,51 @@ describe('GET /api/pilot/cta-lift', () => {
     expect(firstCallUrl).toContain('param_window_days=14');
   });
 
-  it('falls back to mock data when ClickHouse query fails', async () => {
+  // ─── Rule K.2 fail-loud paths (FOLLOW-094) ────────────────────────────────
+
+  it('returns HTTP 500 and calls Sentry when CLICKHOUSE_URL is set but query fails', async () => {
     authAsTenant();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation(() => Promise.resolve(new Response('boom', { status: 500 }))),
+      vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(new Response('Internal error', { status: 500 }))),
     );
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest('7'));
-    expect(res.status).toBe(200);
-    const body = await parseBody<CtaLiftResponse>(res);
-    // Mock fallback produces a populated funnel.
-    expect(body.funnel).toHaveLength(5);
-    expect(body.by_archetype.length).toBeGreaterThan(0);
+
+    // Rule K.2: must not silently fall back to mock — caller gets HTTP 500.
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('clickhouse_query_failed');
+    expect(body.error.message).toContain('ClickHouse');
+
+    // Sentry must have been notified.
+    expect(mockCaptureException).toHaveBeenCalledOnce();
+    const [, extras] = mockCaptureException.mock.calls[0] as [
+      unknown,
+      { tags: Record<string, string>; extra: Record<string, unknown> },
+    ];
+    expect(extras.tags.cta_lift_clickhouse_error).toBe('true');
+    expect(extras.extra.tenant_id).toBe(TENANT_ID);
+  });
+
+  it('returns HTTP 500 when CLICKHOUSE_URL is set but fetch rejects (network error)', async () => {
+    authAsTenant();
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest('14'));
+
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('clickhouse_query_failed');
+    expect(body.error.message).toContain('ECONNREFUSED');
+
+    // Sentry must have been notified.
+    expect(mockCaptureException).toHaveBeenCalledOnce();
   });
 });

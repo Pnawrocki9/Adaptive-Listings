@@ -72,6 +72,8 @@ export interface CtaLiftResponse {
   funnel: FunnelRow[];
   by_archetype: ArchetypeRow[];
   generated_at: string;
+  /** Indicates whether data came from ClickHouse or the deterministic dev/CI mock. */
+  data_source: 'clickhouse' | 'mock';
 }
 
 // ─── Internal ClickHouse row shapes (re-exported for route.ts) ───────────────
@@ -131,6 +133,7 @@ export function buildResponseFromRaw(
   tenantId: string,
   windowDays: number,
   raw: ChRawData,
+  dataSource: 'clickhouse' | 'mock' = 'clickhouse',
 ): CtaLiftResponse {
   // ── Summary ──
   const adaptedGroup = armRow(raw.groups, 0);
@@ -208,5 +211,6 @@ export function buildResponseFromRaw(
     funnel,
     by_archetype: byArchetype,
     generated_at: new Date().toISOString(),
+    data_source: dataSource,
   };
 }

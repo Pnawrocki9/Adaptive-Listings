@@ -1,3 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access --
+ * @estalara/auth is a workspace package resolved from source in Vitest but not built locally.
+ * TypeScript sees it as `any` until packages are built (CI builds them before lint).
+ * Same pattern as pilot/inquiry-starts/route.ts and other routes that import from @estalara/auth.
+ */
 /**
  * GET /api/pilot/cta-lift
  *
@@ -26,6 +31,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { getAuthClaims } from '@estalara/auth';
 import {
   FUNNEL_STAGES,
@@ -91,8 +97,9 @@ async function chQuery<T>(
  *   2. archetype counts — same, split by archetype
  *   3. funnel counts    — distinct sessions per event-type stage per arm
  *
- * Returns null when CLICKHOUSE_URL is unset; throws on query failure (the
- * caller catches and falls back to mock data).
+ * Returns null when CLICKHOUSE_URL is unset (dev / CI — not an error).
+ * Throws on query failure when CLICKHOUSE_URL is set (caller must NOT fall back
+ * to mock in that case — Rule K.2 fail-loud).
  */
 async function fetchCtaLiftRaw(tenantId: string, windowDays: number): Promise<ChRawData | null> {
   const baseUrl = process.env.CLICKHOUSE_URL;
@@ -307,8 +314,10 @@ function buildMockRaw(tenantId: string, windowDays: number): ChRawData {
 /**
  * GET /api/pilot/cta-lift
  *
- * @returns 200 CtaLiftResponse on success.
+ * @returns 200 CtaLiftResponse on success (with data_source provenance field).
  * @returns 401 when no valid tenant JWT is present.
+ * @returns 500 when CLICKHOUSE_URL is set but the ClickHouse query fails
+ *   (Rule K.2 — fail loud; never silently fall back to mock in production).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const claims = await getAuthClaims(req);
@@ -324,9 +333,42 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const tenantId: string = claims.tenant_id;
   const windowDays = parseWindowDays(req.nextUrl.searchParams.get('window_days'));
 
-  const raw = await fetchCtaLiftRaw(tenantId, windowDays).catch(() => null);
-  const data = raw ?? buildMockRaw(tenantId, windowDays);
+  // Rule K.2 — fail loud.
+  // When CLICKHOUSE_URL is set, a query failure is a real production error: surface
+  // it as HTTP 500 + Sentry alert. Never silently fall back to mock data in that
+  // case — callers cannot distinguish real from synthetic metrics.
+  // When CLICKHOUSE_URL is unset (dev / CI), return mock with provenance field.
+  const clickhouseConfigured = Boolean(process.env.CLICKHOUSE_URL);
 
-  const response = buildResponseFromRaw(tenantId, windowDays, data);
+  if (!clickhouseConfigured) {
+    const data = buildMockRaw(tenantId, windowDays);
+    const response = buildResponseFromRaw(tenantId, windowDays, data, 'mock');
+    return NextResponse.json(response, { status: 200 });
+  }
+
+  let raw: ChRawData | null;
+  try {
+    raw = await fetchCtaLiftRaw(tenantId, windowDays);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    Sentry.captureException(err, {
+      tags: { cta_lift_clickhouse_error: 'true' },
+      extra: { tenant_id: tenantId, window_days: windowDays },
+    });
+    return NextResponse.json(
+      {
+        error: {
+          code: 'clickhouse_query_failed',
+          message: `ClickHouse query failed: ${message}`,
+        },
+      },
+      { status: 500 },
+    );
+  }
+
+  // raw is null only when CLICKHOUSE_URL is unset — already handled above.
+  // Treat null as empty (no data) to satisfy the type without a non-null assertion.
+  const data: ChRawData = raw ?? { groups: [], archetypes: [], funnel: [] };
+  const response = buildResponseFromRaw(tenantId, windowDays, data, 'clickhouse');
   return NextResponse.json(response, { status: 200 });
 }

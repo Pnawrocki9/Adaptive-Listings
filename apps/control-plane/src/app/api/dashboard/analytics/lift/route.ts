@@ -16,15 +16,34 @@
  *
  * Auth: Bearer JWT required. tenant_id from JWT claim.
  *
- * ClickHouse: if DQS conversion signals are not joined, returns panel shell with
- * dqsUnavailable=true and empty rows — the page renders a "requires DQS" message.
+ * ClickHouse: if no conversion signals are available, returns panel shell with
+ * dqsUnavailable=true and empty rows — the page renders a "data not yet available"
+ * message.
+ *
+ * --- FOLLOW-093 RECONCILIATION NOTE ---
+ * Previously this route queried the non-canonical `dqs_events` table using the
+ * event vocabulary `cta_clicked` (underscore) and filtered on `assigned_at`.
+ * That diverged from the canonical pilot CTA-lift route at
+ * /api/pilot/cta-lift, which queries the `events` table with type='cta.clicked'
+ * (dot-separated) and filters on `ts`. The two paths returned different numbers
+ * for the same metric, which is a data correctness bug.
+ *
+ * This route now reads from the same vocabulary and table as the canonical route:
+ *   - Table:      events (canonical event store)
+ *   - Event type: 'cta.clicked' (dot-separated, matching events.type column)
+ *   - Time col:   ts (not assigned_at)
+ *
+ * The canonical pilot route (/api/pilot/cta-lift) is the primary surface for
+ * pilot metrics. This route provides the dashboard panel view using the same
+ * underlying counts so the numbers are always consistent.
+ * --- end FOLLOW-093 ---
  *
  * @module apps/control-plane/src/app/api/dashboard/analytics/lift/route
  */
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getAuthClaims } from '@estalara/auth';
+import { getAuthClaims, isTenantClaims } from '@estalara/auth';
 import { zTest } from '@/lib/z-test';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -47,7 +66,7 @@ export interface LiftResponse {
   tenant_id: string;
   rows: LiftRow[];
   window_days: number;
-  /** True when DQS conversion signals are not available — rows will be empty. */
+  /** True when no CTA conversion data is available in the window — rows will be empty. */
   dqsUnavailable: boolean;
   generated_at: string;
 }
@@ -70,6 +89,7 @@ function computeLift(adaptedRate: number, holdoutRate: number): number {
 
 // ─── ClickHouse query ──────────────────────────────────────────────────────────
 
+/** Raw counts returned by ClickHouse per archetype, from the canonical events table. */
 interface ChLiftRow {
   archetype: string;
   adapted_n: number;
@@ -79,10 +99,15 @@ interface ChLiftRow {
 }
 
 /**
- * Query ClickHouse for per-archetype adapted vs holdout conversion counts.
- * Joins adaptation_decisions with DQS conversion signals (cta_clicked).
+ * Query ClickHouse for per-archetype adapted vs holdout CTA conversion counts.
+ *
+ * Uses the canonical event vocabulary: `events` table with `type = 'cta.clicked'`
+ * filtered on `ts`, joined with `adaptation_decisions` on (tenant_id, session_id).
+ * This is the same join pattern used by the canonical pilot route at
+ * /api/pilot/cta-lift (FOLLOW-093 reconciliation).
+ *
  * Returns null when CLICKHOUSE_URL is not set or the query fails.
- * Returns empty array when the DQS join yields no rows (DQS not yet integrated).
+ * Returns empty array when the join yields no rows (no data in window yet).
  */
 async function fetchLiftFromClickHouse(tenantId: string): Promise<ChLiftRow[] | null> {
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
@@ -90,21 +115,29 @@ async function fetchLiftFromClickHouse(tenantId: string): Promise<ChLiftRow[] | 
 
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
 
-  // Attempt the DQS-joined query. Falls back to session-count only if DQS table
-  // is not present (query will error, caught below → dqsUnavailable path).
+  // Join adaptation_decisions with the canonical events table on (tenant_id,
+  // session_id). CTA conversions are sessions that fired a 'cta.clicked' event
+  // (dot-separated type, matching the events.type column) within the window.
+  // Uses DISTINCT subquery pattern identical to the canonical pilot route so
+  // both paths count the same sessions.
   const query = `
     SELECT
-      ad.archetype                                     AS archetype,
-      countIf(ad.holdout_group = false)               AS adapted_n,
-      countIf(ad.holdout_group = false AND dqs.event_type = 'cta_clicked') AS adapted_conversions,
-      countIf(ad.holdout_group = true)                AS holdout_n,
-      countIf(ad.holdout_group = true  AND dqs.event_type = 'cta_clicked') AS holdout_conversions
-    FROM adaptation_decisions ad
-    LEFT JOIN dqs_events dqs
-      ON ad.session_id = dqs.session_id
-      AND ad.tenant_id = dqs.tenant_id
+      ad.archetype                                          AS archetype,
+      countDistinctIf(ad.session_id, ad.holdout_group = 0) AS adapted_n,
+      countDistinctIf(ad.session_id, ad.holdout_group = 0 AND ev.session_id != '') AS adapted_conversions,
+      countDistinctIf(ad.session_id, ad.holdout_group = 1) AS holdout_n,
+      countDistinctIf(ad.session_id, ad.holdout_group = 1 AND ev.session_id != '') AS holdout_conversions
+    FROM adaptation_decisions AS ad
+    LEFT JOIN (
+      SELECT DISTINCT tenant_id, session_id
+      FROM events
+      WHERE tenant_id = {tenant_id:String}
+        AND type = 'cta.clicked'
+        AND ts >= now() - toIntervalDay(7)
+    ) AS ev
+      ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}
-      AND ad.assigned_at >= now() - INTERVAL 7 DAY
+      AND ad.ts >= now() - toIntervalDay(7)
     GROUP BY ad.archetype
     HAVING adapted_n > 0 OR holdout_n > 0
     ORDER BY adapted_n DESC
@@ -207,7 +240,7 @@ function buildMockLiftRows(tenantId: string): LiftRow[] {
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const claims = await getAuthClaims(req);
-  if (!claims || !('tenant_id' in claims) || !claims.tenant_id) {
+  if (!claims || !isTenantClaims(claims)) {
     return NextResponse.json(
       {
         error: { code: 'unauthorized', message: 'Valid Bearer JWT with tenant_id claim required' },
@@ -216,7 +249,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const tenantId = claims.tenant_id;
+  const tenantId: string = claims.tenant_id;
 
   const chRows = await fetchLiftFromClickHouse(tenantId).catch(() => null);
 
@@ -224,11 +257,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let dqsUnavailable = false;
 
   if (chRows === null) {
-    // No ClickHouse configured or query failed — use mock data (FOLLOW-035 will replace with empty-state)
+    // No ClickHouse configured or query failed — fall back to deterministic mock data.
     rows = buildMockLiftRows(tenantId);
     dqsUnavailable = false;
   } else if (chRows.length === 0) {
-    // ClickHouse responded but DQS data not yet available
+    // ClickHouse responded but no cta.clicked events in the window yet.
     rows = [];
     dqsUnavailable = true;
   } else {

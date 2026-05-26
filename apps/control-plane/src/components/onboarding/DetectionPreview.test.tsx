@@ -310,6 +310,7 @@ describe('DetectionPreview', () => {
       const url = match?.[1] ?? '';
       expect(url.endsWith('/api')).toBe(true);
       // The SDK appends "/adapt" (core/adapt.ts) → canonical control-plane endpoint.
+      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions -- CONTROL_PLANE_URL is string; @estalara/shared unresolvable in lint context
       expect(`${url}/adapt`).toBe(`${CONTROL_PLANE_URL}/api/adapt`);
       expect(`${url}/adapt`).toBe('https://admin.estalara.com/api/adapt');
     });
@@ -325,6 +326,99 @@ describe('DetectionPreview', () => {
       expect(url.startsWith('/')).toBe(false);
       // Must NOT name the deprecated Cloudflare Worker.
       expect(url).not.toContain('decision.estalara.com');
+    });
+  });
+
+  // ── FOLLOW-114 — buildSnippet emits data-inquiry-submit-selector ──────────
+  describe('buildSnippet — FOLLOW-114 inquiry_submit_selector in snippet', () => {
+    const TENANT = '550e8400-e29b-41d4-a716-446655440000';
+    const KEY = 'est_pub_test123';
+    const SELECTOR = "[data-estalara-slot='inquiry-submit']";
+
+    it('includes data-inquiry-submit-selector when selector is provided', () => {
+      const snippet = buildSnippet(TENANT, KEY, SELECTOR);
+      expect(snippet).toContain('data-inquiry-submit-selector="' + SELECTOR + '"');
+    });
+
+    it('omits data-inquiry-submit-selector when called with two args (no selector)', () => {
+      const snippet = buildSnippet(TENANT, KEY);
+      expect(snippet).not.toContain('data-inquiry-submit-selector');
+    });
+
+    it('omits data-inquiry-submit-selector when selector is null', () => {
+      const snippet = buildSnippet(TENANT, KEY, null);
+      expect(snippet).not.toContain('data-inquiry-submit-selector');
+    });
+
+    it('omits data-inquiry-submit-selector when selector is undefined (explicit)', () => {
+      const snippet = buildSnippet(TENANT, KEY, undefined);
+      expect(snippet).not.toContain('data-inquiry-submit-selector');
+    });
+  });
+
+  // ── FOLLOW-114 — DetectionPreview threads schema.inquiry_submit_selector ──
+  describe('DetectionPreview — FOLLOW-114 snippet includes inquiry selector from schema', () => {
+    it('renders snippet with data-inquiry-submit-selector when schema has inquiry_submit_selector', async () => {
+      const schemaWithSelector: TenantSiteSchema = {
+        ...MOCK_SCHEMA,
+        inquiry_submit_selector: "[data-estalara-slot='inquiry-submit']",
+      };
+      mockFetchActivate({ api_key: 'est_pub_key1', tenant_id: 'tid-1' });
+
+      render(<DetectionPreview {...BASE_PROPS} schema={schemaWithSelector} />);
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: /save & activate/i }));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /copy snippet/i })).toBeInTheDocument();
+      });
+
+      // The pre/code block must contain the inquiry selector attribute.
+      // Use a regex to match across the rendered text nodes.
+      const codeEl = document.querySelector('code');
+      expect(codeEl?.textContent).toContain('data-inquiry-submit-selector=');
+      expect(codeEl?.textContent).toContain("[data-estalara-slot='inquiry-submit']");
+    });
+
+    it('renders snippet WITHOUT data-inquiry-submit-selector when schema has inquiry_submit_selector as null', async () => {
+      const schemaWithoutSelector: TenantSiteSchema = {
+        ...MOCK_SCHEMA,
+        inquiry_submit_selector: null,
+      };
+      mockFetchActivate({ api_key: 'est_pub_key2', tenant_id: 'tid-2' });
+
+      render(<DetectionPreview {...BASE_PROPS} schema={schemaWithoutSelector} />);
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: /save & activate/i }));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /copy snippet/i })).toBeInTheDocument();
+      });
+
+      const codeEl = document.querySelector('code');
+      expect(codeEl?.textContent).not.toContain('data-inquiry-submit-selector');
+    });
+
+    it('renders snippet WITHOUT data-inquiry-submit-selector when schema has no inquiry_submit_selector field', async () => {
+      // MOCK_SCHEMA has no inquiry_submit_selector — field is absent
+      mockFetchActivate({ api_key: 'est_pub_key3', tenant_id: 'tid-3' });
+
+      render(<DetectionPreview {...BASE_PROPS} />);
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: /save & activate/i }));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /copy snippet/i })).toBeInTheDocument();
+      });
+
+      const codeEl = document.querySelector('code');
+      expect(codeEl?.textContent).not.toContain('data-inquiry-submit-selector');
     });
   });
 });

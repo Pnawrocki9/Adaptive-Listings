@@ -92,7 +92,7 @@ function confidenceBadgeClass(confidence: number): string {
 }
 
 /**
- * Build the SDK snippet string from a tenant ID and API key.
+ * Build the SDK snippet string from a tenant ID, API key, and optional inquiry selector.
  *
  * Emits `data-decision-url` pointing at the canonical control-plane host
  * (`CONTROL_PLANE_URL` = https://admin.estalara.com). This is REQUIRED: the SDK
@@ -111,9 +111,23 @@ function confidenceBadgeClass(confidence: number): string {
  * convention the demo mockup uses (`data-decision-url="/api"` → `/api/adapt`).
  * Emitting the bare host (`https://admin.estalara.com`) would resolve to
  * `https://admin.estalara.com/adapt`, which 404s. [FOLLOW-105]
+ *
+ * @param inquirySubmitSelector - CSS selector for the inquiry form submit button,
+ *   sourced from `TenantSiteSchema.inquiry_submit_selector`. When null / undefined the
+ *   `data-inquiry-submit-selector` attribute is omitted entirely from the snippet so
+ *   that tenants who copy-paste the tag don't get a blank attribute value. [FOLLOW-114]
  */
-export function buildSnippet(tenantId: string, apiKey: string): string {
-  return `<script\n  src="https://cdn.estalara.com/sdk.js"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"\n></script>`;
+export function buildSnippet(
+  tenantId: string,
+  apiKey: string,
+  inquirySubmitSelector?: string | null,
+): string {
+  const inquiryAttr: string =
+    inquirySubmitSelector != null
+      ? `\n  data-inquiry-submit-selector="${inquirySubmitSelector}"`
+      : '';
+  // eslint-disable-next-line @typescript-eslint/restrict-template-expressions -- CONTROL_PLANE_URL is string but @estalara/shared resolves as any in lint context
+  return `<script\n  src="https://cdn.estalara.com/sdk.js"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"${inquiryAttr}\n></script>`;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -153,7 +167,20 @@ export function DetectionPreview({
 
   // Use tenant_id from the activate response (authoritative), falling back to the prop.
   const snippetTenantId = activated !== null ? activated.tenant_id : tenantId;
-  const snippet = activated !== null ? buildSnippet(snippetTenantId, activated.api_key) : '';
+  // Extract inquiry_submit_selector as a typed local so buildSnippet receives the correct
+  // type. The @typescript-eslint unsafe rules fire here because @estalara/shared is not
+  // resolved during lint (the package builds to dist/ which CI doesn't rebuild before lint).
+  // The field is correctly typed as `string | null | undefined` in TenantSiteSchema.
+  // [FOLLOW-114]
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- @estalara/shared unresolvable in lint context; typed in TenantSiteSchema
+  const inquirySelector: string | null | undefined = schema.inquiry_submit_selector as
+    | string
+    | null
+    | undefined;
+  // Pass inquiry_submit_selector from the detected schema so tenants who copy this snippet
+  // get a script tag that already wires up the inquiry click observer. [FOLLOW-114]
+  const snippet =
+    activated !== null ? buildSnippet(snippetTenantId, activated.api_key, inquirySelector) : '';
 
   async function handleActivate(): Promise<void> {
     setActivating(true);
@@ -163,6 +190,7 @@ export function DetectionPreview({
       const res = await fetch('/api/schema/activate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- schema is TenantSiteSchema but @estalara/shared unresolvable in lint context
         body: JSON.stringify({ schema }),
       });
 
@@ -238,6 +266,7 @@ export function DetectionPreview({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
+            {/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument -- DetectField from @estalara/shared unresolvable in lint context; all accesses are correctly typed in the interface */}
             {fields.map((field) => (
               <tr key={field.name}>
                 <td className="px-4 py-3 font-mono text-xs text-gray-900">{field.name}</td>
@@ -253,6 +282,7 @@ export function DetectionPreview({
                 </td>
               </tr>
             ))}
+            {/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */}
           </tbody>
         </table>
       </div>

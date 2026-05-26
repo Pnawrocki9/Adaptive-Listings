@@ -23,6 +23,7 @@
  *   daily_breakdown        { date: string; adapted: number; holdout: number }[]
  *   window_days            number
  *   generated_at           string   (ISO)
+ *   data_source            'clickhouse' | 'mock'
  *
  * Auth: Bearer JWT required. tenant_id from JWT claim.
  *
@@ -31,11 +32,16 @@
  * CLICKHOUSE_URL is not set (dev / CI) the route falls back to deterministic
  * mock data so the dashboard renders in all environments.
  *
+ * Rule K.2 — fail loud: when CLICKHOUSE_URL is set but a query fails, return
+ * HTTP 500 and capture the error in Sentry. Never silently fall back to mock
+ * data when a real ClickHouse is configured.
+ *
  * @module apps/control-plane/src/app/api/pilot/inquiry-starts/route
  */
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { getAuthClaims } from '@estalara/auth';
 
 // ─── Response types ────────────────────────────────────────────────────────────
@@ -63,6 +69,11 @@ export interface InquiryStartsResponse {
   daily_breakdown: DailyBreakdownRow[];
   window_days: number;
   generated_at: string;
+  /**
+   * Provenance field (Rule K.2). 'clickhouse' when data came from a live
+   * ClickHouse query; 'mock' when CLICKHOUSE_URL is not set (dev / CI).
+   */
+  data_source: 'clickhouse' | 'mock';
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -129,8 +140,10 @@ interface ClickHouseResult {
  * Query ClickHouse for adapted vs holdout inquiry starts.
  *
  * Uses parameterised query params (`{param_tenant_id:String}`) — no string
- * concatenation of user-supplied values.  Returns null when ClickHouse is
- * unavailable or the query fails.
+ * concatenation of user-supplied values.
+ *
+ * Returns null when CLICKHOUSE_URL is not set (dev / CI — caller uses mock data).
+ * Throws when CLICKHOUSE_URL is set but the query fails (Rule K.2 — fail loud).
  */
 async function fetchFromClickHouse(
   tenantId: string,
@@ -139,98 +152,102 @@ async function fetchFromClickHouse(
   const cfg = readClickHouseConfig();
   if (!cfg) return null;
 
-  try {
-    // ── Aggregate query ──────────────────────────────────────────────────
-    const aggQuery = `
-      SELECT
-        ad.holdout_group                                    AS is_holdout,
-        countIf(e.type = 'inquiry.started')                AS inquiry_starts,
-        count(DISTINCT ad.session_id)                      AS total_sessions
-      FROM adaptation_decisions ad
-      LEFT JOIN events e
-        ON ad.session_id = e.session_id
-        AND ad.tenant_id = e.tenant_id
-        AND e.type = 'inquiry.started'
-      WHERE ad.tenant_id = {tenant_id:String}
-        AND ad.assigned_at >= now() - INTERVAL {window_days:UInt8} DAY
-      GROUP BY ad.holdout_group
-      FORMAT JSONEachRow
-    `.trim();
+  // ── Aggregate query ──────────────────────────────────────────────────
+  const aggQuery = `
+    SELECT
+      ad.holdout_group                                    AS is_holdout,
+      countIf(e.type = 'inquiry.started')                AS inquiry_starts,
+      count(DISTINCT ad.session_id)                      AS total_sessions
+    FROM adaptation_decisions ad
+    LEFT JOIN events e
+      ON ad.session_id = e.session_id
+      AND ad.tenant_id = e.tenant_id
+      AND e.type = 'inquiry.started'
+    WHERE ad.tenant_id = {tenant_id:String}
+      AND ad.assigned_at >= now() - INTERVAL {window_days:UInt8} DAY
+    GROUP BY ad.holdout_group
+    FORMAT JSONEachRow
+  `.trim();
 
-    const aggUrl = new URL(cfg.url);
-    aggUrl.searchParams.set('query', aggQuery);
-    aggUrl.searchParams.set('param_tenant_id', tenantId);
-    aggUrl.searchParams.set('param_window_days', String(windowDays));
+  const aggUrl = new URL(cfg.url);
+  aggUrl.searchParams.set('query', aggQuery);
+  aggUrl.searchParams.set('param_tenant_id', tenantId);
+  aggUrl.searchParams.set('param_window_days', String(windowDays));
 
-    const aggRes = await fetch(aggUrl.toString(), {
-      method: 'GET',
-      headers: { ...authHeaders(cfg), 'Content-Type': 'text/plain' },
-    });
-    if (!aggRes.ok) return null;
-
-    const aggText = await aggRes.text();
-    const aggRows: ChAggRow[] = aggText
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => {
-        const row = JSON.parse(line) as Record<string, unknown>;
-        return {
-          // eslint-disable-next-line @typescript-eslint/no-base-to-string -- coercing JSON primitive safely
-          is_holdout: String(row.is_holdout ?? '0') as '0' | '1',
-          inquiry_starts: Number(row.inquiry_starts ?? 0),
-          total_sessions: Number(row.total_sessions ?? 0),
-        };
-      });
-
-    // ── Daily breakdown query ────────────────────────────────────────────
-    const dailyQuery = `
-      SELECT
-        toDate(e.ts)                                        AS date,
-        countIf(ad.holdout_group = false AND e.type = 'inquiry.started') AS adapted,
-        countIf(ad.holdout_group = true  AND e.type = 'inquiry.started') AS holdout
-      FROM adaptation_decisions ad
-      LEFT JOIN events e
-        ON ad.session_id = e.session_id
-        AND ad.tenant_id = e.tenant_id
-        AND e.type = 'inquiry.started'
-      WHERE ad.tenant_id = {tenant_id:String}
-        AND ad.assigned_at >= now() - INTERVAL {window_days:UInt8} DAY
-      GROUP BY date
-      ORDER BY date ASC
-      FORMAT JSONEachRow
-    `.trim();
-
-    const dailyUrl = new URL(cfg.url);
-    dailyUrl.searchParams.set('query', dailyQuery);
-    dailyUrl.searchParams.set('param_tenant_id', tenantId);
-    dailyUrl.searchParams.set('param_window_days', String(windowDays));
-
-    const dailyRes = await fetch(dailyUrl.toString(), {
-      method: 'GET',
-      headers: { ...authHeaders(cfg), 'Content-Type': 'text/plain' },
-    });
-    if (!dailyRes.ok) return null;
-
-    const dailyText = await dailyRes.text();
-    const dailyRows: ChDailyRow[] = dailyText
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => {
-        const row = JSON.parse(line) as Record<string, unknown>;
-        return {
-          // eslint-disable-next-line @typescript-eslint/no-base-to-string -- coercing JSON primitive safely
-          date: String(row.date ?? ''),
-          adapted: Number(row.adapted ?? 0),
-          holdout: Number(row.holdout ?? 0),
-        };
-      });
-
-    return { aggRows, dailyRows };
-  } catch {
-    return null;
+  const aggRes = await fetch(aggUrl.toString(), {
+    method: 'GET',
+    headers: { ...authHeaders(cfg), 'Content-Type': 'text/plain' },
+  });
+  if (!aggRes.ok) {
+    throw new Error(
+      `ClickHouse agg query failed: HTTP ${String(aggRes.status)} ${aggRes.statusText}`,
+    );
   }
+
+  const aggText = await aggRes.text();
+  const aggRows: ChAggRow[] = aggText
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const row = JSON.parse(line) as Record<string, unknown>;
+      return {
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- coercing JSON primitive safely
+        is_holdout: String(row.is_holdout ?? '0') as '0' | '1',
+        inquiry_starts: Number(row.inquiry_starts ?? 0),
+        total_sessions: Number(row.total_sessions ?? 0),
+      };
+    });
+
+  // ── Daily breakdown query ────────────────────────────────────────────
+  const dailyQuery = `
+    SELECT
+      toDate(e.ts)                                        AS date,
+      countIf(ad.holdout_group = false AND e.type = 'inquiry.started') AS adapted,
+      countIf(ad.holdout_group = true  AND e.type = 'inquiry.started') AS holdout
+    FROM adaptation_decisions ad
+    LEFT JOIN events e
+      ON ad.session_id = e.session_id
+      AND ad.tenant_id = e.tenant_id
+      AND e.type = 'inquiry.started'
+    WHERE ad.tenant_id = {tenant_id:String}
+      AND ad.assigned_at >= now() - INTERVAL {window_days:UInt8} DAY
+    GROUP BY date
+    ORDER BY date ASC
+    FORMAT JSONEachRow
+  `.trim();
+
+  const dailyUrl = new URL(cfg.url);
+  dailyUrl.searchParams.set('query', dailyQuery);
+  dailyUrl.searchParams.set('param_tenant_id', tenantId);
+  dailyUrl.searchParams.set('param_window_days', String(windowDays));
+
+  const dailyRes = await fetch(dailyUrl.toString(), {
+    method: 'GET',
+    headers: { ...authHeaders(cfg), 'Content-Type': 'text/plain' },
+  });
+  if (!dailyRes.ok) {
+    throw new Error(
+      `ClickHouse daily query failed: HTTP ${String(dailyRes.status)} ${dailyRes.statusText}`,
+    );
+  }
+
+  const dailyText = await dailyRes.text();
+  const dailyRows: ChDailyRow[] = dailyText
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const row = JSON.parse(line) as Record<string, unknown>;
+      return {
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- coercing JSON primitive safely
+        date: String(row.date ?? ''),
+        adapted: Number(row.adapted ?? 0),
+        holdout: Number(row.holdout ?? 0),
+      };
+    });
+
+  return { aggRows, dailyRows };
 }
 
 // ─── Response builder from ClickHouse result ──────────────────────────────────
@@ -271,6 +288,7 @@ function buildResponseFromClickHouse(
     daily_breakdown: chResult.dailyRows,
     window_days: windowDays,
     generated_at: new Date().toISOString(),
+    data_source: 'clickhouse' as const,
   };
 }
 
@@ -326,6 +344,7 @@ function buildMockResponse(tenantId: string, windowDays: number): InquiryStartsR
     daily_breakdown: dailyBreakdown,
     window_days: windowDays,
     generated_at: new Date().toISOString(),
+    data_source: 'mock' as const,
   };
 }
 
@@ -336,6 +355,9 @@ function buildMockResponse(tenantId: string, windowDays: number): InquiryStartsR
  *
  * @returns 200 InquiryStartsResponse on success.
  * @returns 401 when no valid JWT or tenant_id claim is missing.
+ * @returns 500 when CLICKHOUSE_URL is set but the ClickHouse query fails
+ *   (Rule K.2 — fail loud; never silently fall back to mock when a real
+ *   ClickHouse is configured).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const claims = await getAuthClaims(req);
@@ -354,7 +376,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const tenantId = claims.tenant_id;
   const windowDays = clampWindowDays(req.nextUrl.searchParams.get('window_days'));
 
-  const chResult = await fetchFromClickHouse(tenantId, windowDays).catch(() => null);
+  // fetchFromClickHouse returns null when CLICKHOUSE_URL is not set (dev / CI).
+  // It throws when CLICKHOUSE_URL is set but the query fails (Rule K.2).
+  let chResult: ClickHouseResult | null;
+  try {
+    chResult = await fetchFromClickHouse(tenantId, windowDays);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'ClickHouse query failed (unknown error)';
+    Sentry.captureException(err, {
+      tags: { route: 'pilot/inquiry-starts', tenant_id: tenantId },
+    });
+    return NextResponse.json(
+      {
+        error: {
+          code: 'clickhouse_error',
+          message,
+        },
+      },
+      { status: 500 },
+    );
+  }
 
   const response =
     chResult !== null

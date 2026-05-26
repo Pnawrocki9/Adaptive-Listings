@@ -310,7 +310,6 @@ describe('DetectionPreview', () => {
       const url = match?.[1] ?? '';
       expect(url.endsWith('/api')).toBe(true);
       // The SDK appends "/adapt" (core/adapt.ts) → canonical control-plane endpoint.
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions -- CONTROL_PLANE_URL is string; @estalara/shared unresolvable in lint context
       expect(`${url}/adapt`).toBe(`${CONTROL_PLANE_URL}/api/adapt`);
       expect(`${url}/adapt`).toBe('https://admin.estalara.com/api/adapt');
     });

@@ -185,6 +185,19 @@ function makeDbMock() {
   return { insert, values, onConflictDoUpdate, select, from, where, limit };
 }
 
+/** Type alias for the mock DB shape (the vi.mock() of createAdminClient never calls real Drizzle). */
+type DbMock = ReturnType<typeof makeDbMock>;
+
+/**
+ * Wire a db mock into the mocked createAdminClient factory.
+ * Cast is intentional: the mock only implements the methods called by route.ts,
+ * not the full PostgresJsDatabase interface — this is safe because createAdminClient
+ * is fully replaced by vi.mock('@estalara/db').
+ */
+function withDbMock(db: DbMock) {
+  mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+}
+
 /** Mock global fetch to return a successful HTML response. */
 function mockFetchSuccess(html = '<html><body>Test</body></html>') {
   vi.stubGlobal(
@@ -432,7 +445,7 @@ describe('POST /api/detect — fetch failures', () => {
   it('fetch throws network error → 400 FETCH_FAILED', async () => {
     const db = makeDbMock();
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchError('connection refused');
 
     const res = await POST(makeRequest({ url: 'https://example.com' }));
@@ -445,7 +458,7 @@ describe('POST /api/detect — fetch failures', () => {
   it('fetch returns 404 → 400 FETCH_FAILED', async () => {
     const db = makeDbMock();
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchNon2xx(404);
 
     const res = await POST(makeRequest({ url: 'https://example.com/missing' }));
@@ -457,7 +470,7 @@ describe('POST /api/detect — fetch failures', () => {
   it('fetch returns 500 → 400 FETCH_FAILED', async () => {
     const db = makeDbMock();
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchNon2xx(500);
 
     const res = await POST(makeRequest({ url: 'https://example.com' }));
@@ -475,7 +488,7 @@ describe('POST /api/detect — detection engine not implemented', () => {
   it('detectSiteSchema throws "Not implemented" → 501 DETECTION_NOT_IMPLEMENTED', async () => {
     const db = makeDbMock();
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     mockDetectSiteSchema.mockRejectedValue(
       new Error('Not implemented — detection techniques ship in AUTO-003 and AUTO-004'),
@@ -494,7 +507,7 @@ describe('POST /api/detect — detection engine not implemented', () => {
   it('detectSiteSchema throws "Not Implemented" (capitalised) → 501', async () => {
     const db = makeDbMock();
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     mockDetectSiteSchema.mockRejectedValue(new Error('Not Implemented'));
 
@@ -527,7 +540,7 @@ describe('POST /api/detect — 60-second cache guard (TICKET-033)', () => {
       },
     ]);
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
 
     const res = await POST(makeRequest({ url: 'https://example.com/listings' }));
     expect(res.status).toBe(200);
@@ -567,7 +580,7 @@ describe('POST /api/detect — 60-second cache guard (TICKET-033)', () => {
       },
     ]);
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -585,7 +598,7 @@ describe('POST /api/detect — 60-second cache guard (TICKET-033)', () => {
     const db = makeDbMock();
     db.limit.mockResolvedValue([]); // no row
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -606,7 +619,7 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
   it('valid result with non-null schema → 200 + wizard response + DB upsert called', async () => {
     const db = makeDbMock();
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -652,7 +665,7 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
   it('fields[] includes detail_schema slot_selectors', async () => {
     const db = makeDbMock();
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -683,7 +696,7 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
 
     const db = makeDbMock();
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(resultWithDupe);
 
@@ -699,7 +712,7 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
   it('valid result with null schema → 200, null body shape', async () => {
     const db = makeDbMock();
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     const nullResult: DetectionResult = {
       schema: null,
@@ -736,7 +749,7 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
     const db = makeDbMock();
     db.onConflictDoUpdate.mockRejectedValue(new Error('DB connection failed'));
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -748,7 +761,7 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
   it('tenant_id from JWT is used (not from body)', async () => {
     const db = makeDbMock();
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -774,7 +787,7 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
     };
 
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(resultWithSelector);
 
@@ -790,7 +803,7 @@ describe('POST /api/detect — wizard response shape (TICKET-033)', () => {
   it('schema without inquiry_submit_selector does not emit empty string (TG-1 guard)', async () => {
     // VALID_SCHEMA has no inquiry_submit_selector — the response must not have "" in it
     const db = makeDbMock();
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
 
@@ -811,7 +824,7 @@ describe('POST /api/detect — unexpected errors', () => {
   it('detectSiteSchema throws unexpected error → 500 INTERNAL_ERROR', async () => {
     const db = makeDbMock();
 
-    mockCreateAdminClient.mockReturnValue(db);
+    withDbMock(db);
     mockFetchSuccess();
     mockDetectSiteSchema.mockRejectedValue(new Error('Segfault in WASM'));
 

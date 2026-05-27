@@ -1,10 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument --
- * ESLint's TypeScript project-service cannot fully resolve the path-aliased
- * types imported from cta-lift/route-helpers (via @/lib/pilot-stats) during
- * lint-only runs — the same pattern as route.ts files that import
- * @estalara/auth.  Types ARE correct; TypeScript tsc --noEmit passes.
- * CI builds packages before lint, which resolves all aliases correctly.
- */
 'use client';
 
 /**
@@ -42,11 +35,11 @@ import { useEffect, useState } from 'react';
 // Import canonical response types from route-helpers to avoid local duplicate
 // interface drift (the root cause tracked by FOLLOW-122).
 
-import type { CtaLiftResponse } from '../api/pilot/cta-lift/route-helpers';
+import type { CtaLiftResponse } from '../../api/pilot/cta-lift/route-helpers';
 import type {
   InquiryStartsResponse,
   DailyBreakdownRow,
-} from '../api/pilot/inquiry-starts/route-helpers';
+} from '../../api/pilot/inquiry-starts/route-helpers';
 
 // Re-export the PilotConfidence type for use in sub-components without re-importing.
 type PilotConfidence = 'not_significant' | '90%' | '95%';

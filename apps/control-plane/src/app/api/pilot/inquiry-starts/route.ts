@@ -43,38 +43,13 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { getAuthClaims } from '@estalara/auth';
+import type { DailyBreakdownRow, InquiryStartsResponse } from './route-helpers';
 
-// ─── Response types ────────────────────────────────────────────────────────────
+// ─── Response types (re-exported from route-helpers for backward compat) ───────
+// Canonical definitions live in route-helpers.ts so client components can import
+// them without pulling in @estalara/auth (which is only built in CI).
 
-export interface DailyBreakdownRow {
-  date: string;
-  adapted: number;
-  holdout: number;
-}
-
-export interface InquiryStartsResponse {
-  tenant_id: string;
-  total_inquiry_starts: number;
-  adapted_count: number;
-  holdout_count: number;
-  /** Inquiry start rate for adapted arm (inquiry_starts / sessions). 0 when no adapted sessions. */
-  adapted_rate: number;
-  /** Inquiry start rate for holdout arm. 0 when no holdout sessions. */
-  holdout_rate: number;
-  /**
-   * Lift percentage: (adapted_rate - holdout_rate) / holdout_rate * 100.
-   * null when either arm has fewer than 30 inquiry starts (insufficient data).
-   */
-  lift_pct: number | null;
-  daily_breakdown: DailyBreakdownRow[];
-  window_days: number;
-  generated_at: string;
-  /**
-   * Provenance field (Rule K.2). 'clickhouse' when data came from a live
-   * ClickHouse query; 'mock' when CLICKHOUSE_URL is not set (dev / CI).
-   */
-  data_source: 'clickhouse' | 'mock';
-}
+export type { DailyBreakdownRow, InquiryStartsResponse } from './route-helpers';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

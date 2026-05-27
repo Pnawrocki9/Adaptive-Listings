@@ -4399,7 +4399,2328 @@ migration backfill), FOLLOW-117 (P2, Lane C flag producer alignment + test). No 
 
 ---
 
-<!-- RETRO-013 and beyond will be appended here by the retrospective-analyst agent -->
-<!-- NOTE: RETRO-012 (PR #152 / FOLLOW-106) consumed FOLLOW numbers 116-117 — next free FOLLOW is 118. -->
+<!-- NOTE: RETRO-013 through RETRO-018 are appended BELOW this comment (the 6-PR merge-wave
+     2026-05-27). The authoritative ledger + next-free-FOLLOW hint lives at the END of this file,
+     after RETRO-018. RETRO-019 and beyond should be appended there. -->
+
+## RETRO-013 — FOLLOW-094 (cta-lift route fail-loud on ClickHouse error + data_source provenance) — 2026-05-27
+
+### 1. Summary of change
+
+- **PR:** #153 (merged 2026-05-26 21:58 UTC, commit `9f32aa8`)
+- **Files changed:** 3 (+119 / −17)
+- **Modules touched:** control-plane (`apps/control-plane` — one pilot API route + its helpers +
+  tests). No SDK / ingest / decision-api / shared / data-engine / docs / configs touched.
+- **Key contracts changed:**
+  - `CtaLiftResponse.data_source: 'clickhouse' | 'mock'` (`route-helpers.ts:75`) — new required
+    field — breaking: **yes (additive-required)** — every producer of `CtaLiftResponse` must now set
+    it, and consumers typed against the interface must account for it. In practice the only producer
+    is `buildResponseFromRaw` (defaulted) and the only typed consumer is the route + a test, so the
+    blast radius is contained — but see §5c: the dashboard page keeps a DUPLICATE local interface
+    that was NOT updated.
+  - `buildResponseFromRaw(tenantId, windowDays, raw, dataSource = 'clickhouse')`
+    (`route-helpers.ts:132`) — gained optional 4th param — breaking: no (defaulted).
+  - `GET /api/pilot/cta-lift` — behavior change: now returns **HTTP 500**
+    `{ error: { code: 'clickhouse_query_failed', message } }` + `Sentry.captureException` when
+    `CLICKHOUSE_URL` is set and the query throws (previously silently served `buildMockRaw()` at 200).
+    When `CLICKHOUSE_URL` is unset → 200 mock with `data_source: 'mock'`. — breaking for any client
+    that relied on always-200 (the dashboard does — see §4b/§5c).
+
+### 2. Verification done in PR
+
+- Test files changed: `route.test.ts` (+67 / −11). Net new behavioral tests: 2 (HTTP-500 on
+  ClickHouse 500-response with Sentry-tag assertion; HTTP-500 on `fetch` reject / `ECONNREFUSED`).
+  The prior `'falls back to mock data when ClickHouse query fails'` test was correctly **deleted**
+  (it asserted the exact anti-pattern this ticket removes). Four existing tests were tightened to
+  assert `data_source` provenance ('mock' on unset, 'clickhouse' on set/empty/success).
+- Assertions added: ~10 net new (500 status, error.code, error.message substring, Sentry called
+  once, Sentry tag `cta_lift_clickhouse_error='true'`, Sentry extra `tenant_id`, plus four
+  `data_source` provenance assertions). Sentry mocked via `vi.mock('@sentry/nextjs')`.
+- Coverage delta: positive on `route.ts` GET (both fail-loud branches + both happy branches now
+  covered); `route-helpers.ts` `data_source` plumbed through and asserted. Estimate ≥85% maintained.
+- CI checks: passed (QUEUE.md Wave 3 record — PR #153 merged to main, real gates green).
+- **Rule K.2 conformance verdict:** the implementation is faithful to Rule K.2 (CONVENTIONS_PATCH.md
+  §K.2) — it distinguishes "CLICKHOUSE_URL unset → legitimate mock" from "set but failed → fail loud
+  + Sentry + observable `data_source` on the wire". The two-branch structure (`clickhouseConfigured`
+  guard up front, then `try/catch` only on the configured path) is the cleanest possible expression
+  of the rule. The `raw ?? { groups: [], archetypes: [], funnel: [] }` null-coalesce replaces the
+  old non-null assertion and is correct (`raw` is null only when unconfigured, already returned
+  above). No correctness defect found in the merged code.
+
+### 3. Wiring Audit
+
+- **DEAD_CODE (CHECK A):** none. No new files. The new field `data_source` and the new
+  `dataSource` param are both written by `buildResponseFromRaw` and consumed (asserted) by tests +
+  serialized to the wire. `route.ts` GET is a Next.js file-based route (framework discovery —
+  false-positive suppressed). `Sentry.captureException` is a third-party consumer, reachable.
+- **HALF_WIRE_P** — `response_field:data_source` (cta-lift). **Producer exists** (`route.ts:345`
+  emits `'mock'`, `route.ts:372` emits `'clickhouse'`; `route-helpers.ts:214` sets it). **No
+  PRODUCTION consumer reads it.** The sole runtime consumer of `CtaLiftResponse` —
+  `apps/control-plane/src/app/dashboard/pilot/page.tsx` — declares a DUPLICATE local
+  `CtaLiftResponse` interface (`page.tsx:85-92`) that does NOT include `data_source`, and its fetch
+  handler (`page.tsx:548-560`) only gates on `'summary' in raw` and never inspects provenance. The
+  whole point of the field (per Rule K.2 and the TICKET-PILOT-002 go/no-go runbook, QUEUE.md:2313 —
+  "dashboard shows `data_source: 'clickhouse'`, not 'mock', for the PRIMARY metric") is that a human
+  at go/no-go can SEE provenance. Today they cannot — the field reaches the wire and dies there.
+  priority **P1** → FOLLOW-122.
+
+  Classification rationale: scored **HALF_WIRE_P** (producer with no consumer — wasted signal,
+  incomplete feature delivery), not P0 HALF_WIRE_C, because nothing crashes — the dashboard renders
+  fine ignoring the field. The risk is **false reassurance at go/no-go** (the same failure class
+  Rule K.2 exists to prevent, one layer up): the route now fails loud, but the human surface that
+  reads it cannot show mock-vs-real, so a mock-served pilot could still be green-lit by eye. This is
+  a Rule K.2 _completion gap on the consumer side_, distinct from a brand-new pattern (see §6).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A — the route logic is correct and complete for its scope.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P1) — Dashboard treats the new HTTP 500 identically to a network failure: silent null.**
+  `page.tsx:549` does `.then((r) => r.json())` with no `r.ok`/`res.status` check. On the new 500
+  fail-loud response, `r.json()` yields `{ error: {...} }`, which lacks `'summary'`, so the
+  `'summary' in raw` guard (`page.tsx:552`) is false → `setCtaData(null)` → the panels render their
+  empty/loading-cleared state with no error message. So the route correctly fails loud, but the
+  dashboard **silently swallows the loud failure** — the operator sees blank panels, not "ClickHouse
+  query failed". This is the consumer-side residue of the exact pattern Rule K.2 attacks. Folded
+  into FOLLOW-122 (the fix is the same edit: teach the dashboard to read `data_source` AND to
+  surface the 500 error state).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — No test asserts the dashboard consumes `data_source` or renders the 500 error
+  state.** Because the dashboard interface is a hand-maintained duplicate and there is no
+  component/RTL test on `/dashboard/pilot`, CI cannot catch that the provenance field is dropped on
+  the floor (this is precisely why the half-wire shipped green). The RETRO-008 TG-2 observation
+  (no page-level wiring test) is now load-bearing. Covered by FOLLOW-122 AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — TICKET-PILOT-002 go/no-go runbook references a `data_source` check that the
+  dashboard cannot yet satisfy visually.** The runbook spec (QUEUE.md:2313) says the operator
+  confirms `data_source: 'clickhouse'` for the primary metric. Until FOLLOW-122 lands, that check
+  can only be performed by hitting `/api/pilot/cta-lift` directly (curl / network tab), not by
+  reading the dashboard. The runbook should either note the API-level check explicitly or block on
+  FOLLOW-122. Folded into FOLLOW-122 acceptance (cross-ref the runbook).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-098 (DONE, PR #155 — inquiry-starts sibling)** — applied the identical Rule K.2 +
+  `data_source` treatment to `/api/pilot/inquiry-starts` (RETRO-009 lineage). The dashboard's
+  inquiry panel has the SAME consumer gap: `setInquiryData(null)` on failure, no provenance read.
+  FOLLOW-122 should fix BOTH panels in one edit (both pilot routes now emit `data_source`; the
+  dashboard reads neither). Will be re-examined in the RETRO for PR #155.
+- **FOLLOW-093 (DONE, PR #154 — cta-lift query reconciliation)** — touches the same route file;
+  merged immediately after #153. No conflict with the fail-loud branch structure (different region
+  of the file: query vocabulary vs handler control-flow). Confirmed independent.
+
+#### 5b. Future sprint tickets affected
+
+- **TICKET-PILOT-002 (Sprint 13 Lane B — activation/go-no-go runbook)** — its go/no-go checklist
+  hard-depends on the dashboard surfacing `data_source: 'clickhouse'`. With FOLLOW-094 alone the
+  signal exists on the wire but is invisible on the dashboard. **FOLLOW-122 should land before
+  TICKET-PILOT-002 is treated as executable**, else the primary-metric provenance check is manual.
+- **TICKET-PILOT-001 (Sprint 13 Lane B — onboarding)** — `depends_on` includes FOLLOW-094 (now
+  DONE). FOLLOW-094 does not block PILOT-001 further; PILOT-001 activation is what finally feeds real
+  `cta.clicked` events so the route returns `data_source: 'clickhouse'` with real numbers (ties to
+  FOLLOW-092 verification).
+- **FOLLOW-092 (gated on PILOT-001 — verify real events reach ClickHouse with holdout_group)** —
+  the `data_source` field is now the canonical signal FOLLOW-092 should assert against (real run →
+  `'clickhouse'`). Mentioned for the PM's awareness; no spec change forced here.
+
+#### 5c. Contracts changed that other modules rely on
+
+- `CtaLiftResponse` now carries a required `data_source` field, but
+  `dashboard/pilot/page.tsx:85-92` keeps a hand-copied DUPLICATE of the interface that was NOT
+  updated. Today this is silently tolerated (the page casts `raw as CtaLiftResponse` from `unknown`,
+  so the missing field is not a type error). The duplicate-interface smell (first flagged RETRO-008
+  §4a / §3) is the structural reason the provenance field could be added to the source-of-truth
+  interface without the consumer ever noticing. Action: FOLLOW-122 should make the page import the
+  canonical `CtaLiftResponse` from `route-helpers.ts` instead of redeclaring it (eliminates the
+  drift class entirely), or at minimum add `data_source` to the local copy and read it.
+
+#### 5d. Architectural assumptions affected
+
+- N/A — Master Design does not yet document the pilot routes (RETRO-008 DG-1, folded into
+  FOLLOW-093). No new architectural divergence introduced by this PR.
+
+### 6. New lesson candidates
+
+- Pattern: **"Provenance/observability field is emitted by the producer but the decision-grade
+  human surface never reads it"** — a consumer-side completion gap on a Rule K.2 wire. Seen in: this
+  retro (RETRO-013, cta-lift `data_source` not read by `/dashboard/pilot`). Prior occurrences of the
+  _exact consumer-side variant_: 0 (RETRO-008/006/005 are PRODUCER-side fail-loud cases; Rule K.2
+  already codifies the producer obligation). Current count for this specific consumer-side sub-form:
+  **1**. Threshold to promote: 2. **Not promoted** — and arguably it is already implied by Rule K.2's
+  clause "Any mock/default fallback MUST be observable on the wire ... so reviewers and go/no-go
+  checks can tell fabricated data from real" (the field must be _usable_, not merely _present_). If
+  a second consumer-side-drop instance appears (e.g. the inquiry panel in the PR #155 retro, which is
+  the same gap), consider amending Rule K.2 with a verification that greps the consuming
+  page/component for the provenance field — not a new rule.
+- Pattern: **"Duplicate hand-maintained interface in a Next.js page drifts from its source-of-truth
+  route-helpers export."** Seen in: RETRO-008 §4a (first noted), RETRO-013 §5c (the drift actually
+  materialized — `data_source` added to source, missing from copy). Count: **2**, BUT this is the
+  same family as Rule J (no duplicate business logic without a parity gate) applied to a _type_
+  rather than _logic_, and the concrete fix is captured in FOLLOW-122 (import the canonical type).
+  **Not promoted as a standalone rule** — instead recommend FOLLOW-122 resolve it structurally; if
+  page-level interface duplication recurs in a third retro, promote a "pages import API response
+  types from route-helpers, never redeclare" rule then.
+
+### 7. Follow-ups
+
+- FOLLOW-122: Wire `/dashboard/pilot` to consume `data_source` provenance and surface the HTTP-500
+  fail-loud state for both pilot routes (cta-lift + inquiry-starts) (backend-engineer, 2h,
+  priority P1)
+
+### 8. Cross-references
+
+- Related to **RETRO-008** (CB-1/CB-2 — the originating findings; this PR is the direct remediation
+  of FOLLOW-094 that RETRO-008 raised) and **RETRO-009** (the inquiry-starts sibling that motivated
+  the parallel FOLLOW-098). Both are the pilot-measurement-integrity ancestors of this ticket.
+- Implements **Rule K.2** (CONVENTIONS_PATCH.md) — no rule promoted; this retro confirms K.2 in
+  practice and exposes a consumer-side completion gap (§3 / §6) that K.2 already implicitly covers.
+- Duplicate-interface smell continuous with **RETRO-008 §4a** (§5c above).
 
 
+
+---
+
+## RETRO-014 — FOLLOW-093 (reconcile cta-lift query vocabulary to canonical events schema) — 2026-05-27
+
+### 1. Summary of change
+
+- **PR:** #154 (merged 2026-05-26 21:58 UTC, commit `a7d9c03`)
+- **Files changed:** 3 (+347 / −23)
+- **Modules touched:** control-plane (`apps/control-plane` — one dashboard analytics API route + its
+  test + one new golden-query comparison test). No SDK / ingest / decision-api / shared / data-engine
+  / docs / configs touched.
+- **Key contracts changed:**
+  - `GET /api/dashboard/analytics/lift` — behavior change: `fetchLiftFromClickHouse()` SQL rewritten
+    to read from the canonical `events` table (`type = 'cta.clicked'`, dotted) joined to
+    `adaptation_decisions` on `(tenant_id, session_id)` and filtered on `ad.ts` — replacing the
+    prior non-canonical `dqs_events.event_type = 'cta_clicked'` (underscored) join filtered on
+    `assigned_at`. Response shape UNCHANGED (`LiftResponse`) — breaking: **no** (same JSON contract,
+    corrected numbers).
+  - `LiftResponse.dqsUnavailable` — semantics softened from "DQS conversion signals not joined" to
+    "no CTA conversion data in window" (doc-comment only; field name + type unchanged) — breaking: no.
+  - Auth guard in `route.ts:GET` switched from manual `!('tenant_id' in claims) || !claims.tenant_id`
+    to `isTenantClaims(claims)` from `@estalara/auth` (eliminated 8 `no-unsafe-*` ESLint errors) —
+    internal, no contract change.
+
+### 2. Verification done in PR
+
+- Test files changed: `route.test.ts` (+5 — added `isTenantClaims` to the `vi.mock('@estalara/auth')`
+  factory, required by the guard switch); `golden-query-comparison.test.ts` (new, +286, 3 tests).
+- Assertions added: ~12. Test 1 — per-archetype `adaptedRate`/`holdoutRate`/`adaptedN`/`holdoutN`
+  parity between dashboard and pilot routes given a shared fixture. Test 2 — captures the SQL sent to
+  ClickHouse and asserts it contains `FROM events` + `'cta.clicked'` and does NOT contain
+  `dqs_events`, `cta_clicked`, or `assigned_at` (the vocabulary regression guard). Test 3 — pure
+  arithmetic rate-equivalence on the fixture, no fetch.
+- Coverage delta: positive on `route.ts` `fetchLiftFromClickHouse` (SQL-shape now asserted) and the
+  GET auth guard. Estimate ≥80% maintained on the file.
+- CI checks: passed (QUEUE.md Wave 3 record — PR #154 merged to main; 595 tests / 54 files green;
+  pre-commit format/lint/commitlint/rule-h/rule-j green).
+- **Vocabulary-correctness verdict (verified against the migration this retro):** the fix is
+  CORRECT and resolves RETRO-008 LG-2 + LG-3. `infra/clickhouse/migrations/0003_create_adaptation_decisions.sql`
+  defines the table with a `ts DateTime64(3,'UTC')` column and NO `assigned_at` column; there is no
+  `dqs_events` table migration in `infra/clickhouse/migrations/`. The pre-existing route was
+  therefore querying a non-existent table+column and could only ever have hit the catch→mock path in
+  production. The new query matches the canonical pilot route at
+  `apps/control-plane/src/app/api/pilot/cta-lift/route.ts:111-127` (same `events`/`type='cta.clicked'`/`ts`
+  `SELECT DISTINCT tenant_id, session_id` LEFT-JOIN subquery). `holdout_group` is `Boolean` per
+  migration 0006 — the dashboard's `ad.holdout_group = 0/1` and the pilot's direct-boolean usage are
+  equivalent. One real residual divergence remains (window; see §4b CB-1).
+
+### 3. Wiring Audit
+
+- **DEAD_CODE (CHECK A):** none. The only new file is `golden-query-comparison.test.ts` (a test —
+  excluded from the importer requirement). No new non-test exported symbols added; `LiftResponse` and
+  `fetchLiftFromClickHouse` already existed. `route.ts:GET` is a Next.js file-based route (framework
+  discovery — false-positive suppressed). `isTenantClaims` is an existing `@estalara/auth` export now
+  newly consumed — valid importer added.
+- **HALF_WIRE_C** — `event_type:cta.clicked` (consumer side). The reconciled dashboard query now
+  CONSUMES `events.type = 'cta.clicked'` for the dashboard tenant — identical to the consumer-side
+  half-wire already recorded in RETRO-008 §3 for the pilot route. The producer (SDK → ingest →
+  ClickHouse `events` for the pilot/dashboard tenant) is established by TICKET-PILOT-001 (still READY,
+  not yet activated). **Not re-emitted as a new FOLLOW** — this is the same wire tracked by FOLLOW-092
+  (verify `cta.clicked` reaches ClickHouse for the pilot tenant). Priority context: P1, owned by
+  FOLLOW-092. Recorded here for completeness; the dashboard route mitigates by falling back to mock on
+  empty/failed query — which is itself the CB-2 Rule K.2 gap below.
+- **HALF_WIRE (note, not emitted):** `response_field:window_days` on this route is now a CONSTANT
+  (`window_days: 7`) — it is produced (serialized to the wire) but no longer reflects any input, so a
+  client that renders it is shown a value that does not vary. Captured under §4b CB-1 rather than as a
+  standalone wire finding because the deeper defect is the hardcoded SQL window, not the field.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — Reconciliation is partial: the join VOCABULARY was unified but the WINDOW was not.**
+  The canonical pilot route parameterizes the window (`{window_days:UInt16}` over 7/14/30 via
+  `parseWindowDays`). The reconciled dashboard route hardcodes `toIntervalDay(7)` in BOTH the events
+  subquery and the outer `ad.ts` filter, and hardcodes `window_days: 7` in the response. So the two
+  surfaces are now guaranteed to agree ONLY at a 7-day window. At 14/30 days the pilot dashboard and
+  the analytics lift panel will report different numbers for the same tenant again — the exact
+  divergence class FOLLOW-093 set out to eliminate, reintroduced one axis over. → FOLLOW-123 (P1, see
+  §4b for why it is scored P1 not P2).
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P1) — Hardcoded 7-day window silently misreports lift at any other window.** Because the
+  window is a constant, an operator who selects a 14- or 30-day view on `/dashboard/pilot` and
+  cross-checks the `/dashboard/analytics` lift panel sees inconsistent CTA-lift numbers on the
+  pilot's PRIMARY go/no-go metric, with no indication the analytics panel ignored the window. This is
+  a data-correctness/measurement-integrity defect on a decision-grade surface (same family as the
+  RETRO-008 LG-2 divergence this ticket was meant to close). Scored **P1** (not P2) because it directly
+  affects go/no-go numbers, mirroring how the originating LG-2 was P1. → FOLLOW-123.
+- **CB-2 (P1) — The reconciled dashboard route STILL violates Rule K.2 (fail-loud) — and this PR had
+  the file open.** `route.ts:254` does `fetchLiftFromClickHouse(tenantId).catch(() => null)` and
+  `route.ts:261` substitutes `buildMockLiftRows(tenantId)` on `null`. `fetchLiftFromClickHouse`
+  returns `null` when `CLICKHOUSE_URL` is unset AND its internal `try/catch` (line 177) returns `null`
+  on ANY query failure — so with `CLICKHOUSE_URL` set, a thrown query silently serves mock lift at
+  HTTP 200, no `data_source`, no Sentry. This is the IDENTICAL anti-pattern FOLLOW-094 (RETRO-013,
+  merged immediately before this PR as PR #153) just removed from the SIBLING pilot route. FOLLOW-093
+  touched this exact file and even rewrote the query inside the same `try`, but left the outer
+  mock-fallback in place — so the two cta-lift routes now have OPPOSITE fail-loud postures. → FOLLOW-124
+  (P1). See §5a for the merge-order interaction.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — The golden-query test proves arithmetic parity but not query/window parity.** It
+  mocks `fetch` SEPARATELY for each route with hand-authored fixtures engineered to be equal, then
+  asserts the outputs match — which they must, by construction. It does NOT (a) run both routes
+  against ONE shared fixture store, nor (b) vary the window, so it cannot catch the CB-1 hardcoded-7
+  divergence. Test 2's SQL assertion is the strongest part (it WOULD catch a vocabulary regression)
+  but it asserts presence of `'cta.clicked'`/`FROM events` and absence of the old tokens; it does NOT
+  assert the window matches the requested `window_days`. → folded into FOLLOW-123 AC (parameterize +
+  add a window-parity assertion).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — RETRO-008 DG-1 (route inventory) was NOT addressed by this PR despite being folded
+  into FOLLOW-093's scope.** The ticket summary said "document both + `/dashboard/pilot` in the route
+  inventory," but the PR touched no docs and Master Design §Snapshot.1 still lists neither
+  `/api/pilot/cta-lift`, `/api/dashboard/analytics/lift`, nor `/dashboard/pilot`. The acceptance item
+  shipped only as an in-file JSDoc reconciliation note on `route.ts`. → FOLLOW-123 AC carries the
+  route-inventory documentation forward (or PM re-scopes to the existing FOLLOW-060 route-inventory
+  family).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-094 (DONE, PR #153 — sibling fail-loud, RETRO-013)** — sequenced IMMEDIATELY BEFORE this
+  PR on the same Wave-3 merge. **Region-independence confirmed:** #153 edited the `pilot/cta-lift`
+  handler control-flow (try/catch → 500 + Sentry + `data_source`); #154 edited the `analytics/lift`
+  query vocabulary. Different files, no merge conflict. **BUT a cross-PR consistency gap emerged:**
+  #153 gave the pilot route a fail-loud + provenance posture; #154 left the dashboard route on the old
+  silent-mock posture (CB-2). The two cta-lift surfaces now diverge in failure behavior, not just
+  window. The PM should sequence FOLLOW-124 to bring the dashboard route to parity with the Rule K.2
+  treatment #153 established.
+- **FOLLOW-092 (gated on PILOT-001 — verify real `cta.clicked` events reach ClickHouse with
+  holdout_group)** — now covers BOTH cta-lift consumers (pilot + dashboard analytics) since they share
+  the canonical `events`/`cta.clicked`/`ts` query. The verification should assert both routes return
+  real (non-mock) data for the pilot tenant. No spec change forced; noted for PM awareness.
+- **TICKET-PILOT-002 (READY, Sprint 13 Lane B — go/no-go runbook)** — the runbook's primary-metric
+  consistency check should add: confirm the analytics lift panel and the pilot summary agree at the
+  SAME window (CB-1), and that the analytics route fails loud rather than serving mock (CB-2). Both
+  are currently unsatisfiable on the dashboard route until FOLLOW-123/124 land.
+
+#### 5b. Future sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 13 Lane B — onboarding/activation)** — its `depends_on` includes
+  FOLLOW-093 (now DONE). FOLLOW-093 does not block PILOT-001 further. PILOT-001 activation is what
+  finally feeds real `cta.clicked` events so BOTH cta-lift routes return real numbers (ties to
+  FOLLOW-092).
+- **FOLLOW-122 (RETRO-013 — wire `/dashboard/pilot` to consume `data_source` + surface 500)** — note
+  for the PM: FOLLOW-122 currently scopes the `/dashboard/pilot` PAGE consumer for the two PILOT
+  routes. The `/dashboard/analytics` lift panel is a SEPARATE page/route and is NOT in FOLLOW-122's
+  scope; CB-2 (FOLLOW-124) must add `data_source`/fail-loud to `analytics/lift/route.ts` first before
+  any analytics-page consumer can read provenance. The two follow-ups are complementary, not
+  duplicates.
+
+#### 5c. Contracts changed that other modules rely on
+
+- `GET /api/dashboard/analytics/lift` response shape is unchanged (`LiftResponse`), so no typed
+  consumer breaks. The corrected numbers are a SILENT behavior change for any existing consumer of the
+  analytics lift panel: pre-PR the route always hit catch→mock in prod (querying a non-existent table),
+  so it served `buildMockLiftRows`; post-PR, when `CLICKHOUSE_URL` is set and real data exists, it
+  serves real numbers — but still falls back to the SAME mock on any failure (CB-2). No consumer
+  relied on a stable numeric contract, so blast radius is contained.
+
+#### 5d. Architectural assumptions affected
+
+- **RETRO-008 LG-2/LG-3 RESOLVED on the vocabulary axis.** The "two CTA-lift query paths with
+  divergent table/column/event-name vocabularies" architectural smell is closed for the join shape:
+  both routes now use the canonical `events`/`cta.clicked`/`ts` pattern, and the migration confirms
+  `ts` (not `assigned_at`) is the real column and `dqs_events` never existed. Residual divergences are
+  now operational (window, CB-1) and failure-posture (mock fallback, CB-2), not schema-vocabulary.
+- **Master Design route inventory still stale** (DG-1) — `/api/pilot/cta-lift`,
+  `/api/dashboard/analytics/lift`, `/dashboard/pilot` remain undocumented in §Snapshot.1.
+
+### 6. New lesson candidates
+
+- **Pattern: "A reconciliation/dedup ticket unifies ONE axis of divergence (event vocabulary) but
+  leaves another axis (the time window / a parameter) hardcoded, so the same two surfaces still
+  diverge."** This is a fresh sub-form of the Rule K.1 family (intra-runtime same-metric divergence).
+  Seen in: this retro (CB-1, hardcoded 7-day window). Prior K.1 instances are about
+  approximation/schema-vocabulary divergence, not parameter divergence — count for THIS exact
+  parameter-divergence sub-form: **1**. Threshold: 2. **Not promoted** — and it is already
+  substantially covered by Rule K.1's "two routes querying the same logical metric MUST use the same
+  table/column/event-name" (extend the spirit to "and the same window/parameters"). If a second
+  parameter-divergence instance appears, amend Rule K.1 to add a window/parameter-parity clause rather
+  than a new rule.
+- **Pattern: "Rule K.2 (fail-loud) violation persists on a route the PR is actively editing, because
+  the ticket scope was 'fix the query' not 'fix the handler', even though the sibling route was
+  hardened in the immediately-preceding PR."** Seen in: this retro (CB-2). The Rule K.2 evidence base
+  (RETRO-008/006/005) plus RETRO-013's remediation already establish the pattern; this is the SECOND
+  cta-lift route found carrying the same anti-pattern. Count toward "an edited file should be brought
+  to Rule K.2 compliance even if out of literal ticket scope": this retro + RETRO-013's discovery that
+  the pilot route had it = **2 cta-lift instances**, but the underlying Rule K.2 is ALREADY a promoted
+  rule. No NEW rule needed — the gap is enforcement/scope (the agent touched the file and did not
+  apply the existing rule). Recommend the PM treat FOLLOW-124 as a straight Rule K.2 application and
+  consider adding a Rule K.2 verification grep to the pre-PR checklist for any route file in a diff
+  (the grep at CONVENTIONS_PATCH.md §K.2 already exists; it was not run on this file). **Not promoted.**
+
+### 7. Follow-ups
+
+- FOLLOW-123: Parameterize the `/api/dashboard/analytics/lift` window (accept `window_days` 7/14/30
+  like the canonical pilot route) so the two cta-lift surfaces agree at every window; extend the
+  golden-query test to assert window parity; and complete the RETRO-008 DG-1 route-inventory
+  documentation (data-engineer, 2h, **P1**)
+- FOLLOW-124: Apply the FOLLOW-094 / Rule K.2 fail-loud + `data_source` treatment to
+  `/api/dashboard/analytics/lift` — distinguish `CLICKHOUSE_URL` unset (legitimate mock) from query
+  failure (HTTP 500 + `Sentry.captureException` + observable provenance), removing the silent
+  `catch(() => null) → buildMockLiftRows` path (data-engineer + backend-engineer, 3h, **P1**)
+
+### 8. Cross-references
+
+- Direct remediation of **RETRO-008** LG-2 / LG-3 (the two divergent CTA-lift query paths) — closes
+  the schema-vocabulary axis, surfaces the residual window axis (CB-1) and the dashboard-route
+  fail-loud gap (CB-2).
+- Sibling/merge-order interaction with **RETRO-013** (FOLLOW-094, PR #153): #153 hardened the pilot
+  route's failure posture; this PR (#154) reconciled the dashboard route's query but left its failure
+  posture on the old mock-fallback — see §5a / CB-2 / FOLLOW-124.
+- Implements (and exposes a completion gap in) **Rule K.1** (intra-runtime same-metric parity) and
+  re-surfaces **Rule K.2** (decision-grade fail-loud) — no rule promoted; both already codified.
+
+
+---
+
+## RETRO-015 — FOLLOW-098 (inquiry-starts route fail-loud on ClickHouse error + data_source provenance) — 2026-05-27
+
+### 1. Summary of change
+
+- **PR:** #155 (merged 2026-05-26 21:57 UTC, commit `4ce6e37`)
+- **Files changed:** 2 (+272 / −175)
+- **Modules touched:** control-plane (`apps/control-plane` — one pilot API route + its tests). No
+  SDK / ingest / decision-api / shared / data-engine / docs / configs touched.
+- **Key contracts changed:**
+  - `InquiryStartsResponse.data_source: 'clickhouse' | 'mock'` (`route.ts:76`) — new required field
+    — breaking: **yes (additive-required)** — every producer of `InquiryStartsResponse` must now set
+    it (both `buildResponseFromClickHouse` `route.ts:291` and `buildMockResponse` `route.ts:347` do)
+    and consumers typed against the interface must account for it. Blast radius is contained: the
+    only producers are the two builders, the only typed consumers are the route + tests. But the
+    runtime consumer (`/dashboard/pilot/page.tsx`) keeps a DUPLICATE local interface that was NOT
+    updated and omits the field entirely — see §3 / §5c.
+  - `fetchFromClickHouse(tenantId, windowDays)` (`route.ts:148`) — behavior change: now **throws**
+    on query failure (HTTP non-2xx or network error) instead of `catch → return null`. Returns null
+    ONLY when `CLICKHOUSE_URL` is unset. — breaking for any caller that treated null as "failed";
+    the sole caller (the GET handler) was updated in lockstep, so contained.
+  - `GET /api/pilot/inquiry-starts` — behavior change: now returns **HTTP 500**
+    `{ error: { code: 'clickhouse_error', message } }` + `Sentry.captureException` (tag
+    `route: 'pilot/inquiry-starts'`, `tenant_id`) when `CLICKHOUSE_URL` is set and the query throws
+    (previously silently served `buildMockResponse()` at 200). `CLICKHOUSE_URL` unset → 200 mock with
+    `data_source: 'mock'`. — breaking for any client that relied on always-200 (the dashboard does —
+    see §4b / §5c).
+
+### 2. Verification done in PR
+
+- Test files changed: `route.test.ts` (+138 / −82). Net new behavioral tests: 5 (500 on
+  ClickHouse-500-response with Sentry-tag assertion; 500 on `fetch` reject / `ECONNREFUSED`; explicit
+  "does NOT fall back to mock when configured + failing"; 200 + `data_source: 'clickhouse'` happy
+  path with real-number assertions; 200 + `data_source: 'mock'` on unset). Sentry mocked via
+  `vi.mock('@sentry/nextjs')`. A shared `authAsTenant()` helper replaced six copy-pasted claim
+  blocks. The prior 7-test file grew to 13.
+- Assertions added: ~12 net new (500 status, `error.code === 'clickhouse_error'`, message substring
+  `'ClickHouse'`, Sentry called once, Sentry error is `Error` instance, Sentry tag
+  `route: 'pilot/inquiry-starts'`, `data_source` provenance on three branches, exact
+  adapted/holdout/total counts from mocked ClickHouse rows). PR body: all 596 control-plane tests
+  pass locally.
+- Coverage delta: positive on `route.ts` GET (both fail-loud branches + both happy branches now
+  covered; the success path now asserts real parsed counts, not just shape). Estimate ≥85%
+  maintained.
+- CI checks: passed (QUEUE.md Phase 2 Wave 1 record — PR #155 merged to main, real gates green).
+- **Rule K.2 conformance verdict:** faithful and structurally identical to the FOLLOW-094/cta-lift
+  treatment (RETRO-013). The `fetchFromClickHouse` returns-null-when-unset / throws-when-set-and-failed
+  split is the cleanest expression of "unconfigured ≠ failed"; the GET handler's `try/catch` correctly
+  maps `null → mock`, `throw → 500 + Sentry`. The two ClickHouse responses (`!aggRes.ok` /
+  `!dailyRes.ok`) each throw with a descriptive message including HTTP status. No correctness defect
+  found in the merged code. Query vocabulary (`events e`, `e.type = 'inquiry.started'`, `e.ts`,
+  `adaptation_decisions ad`, `ad.holdout_group`) is consistent with the canonical events schema
+  RETRO-014 reconciled cta-lift onto — this PR introduces no vocabulary divergence.
+
+### 3. Wiring Audit
+
+- **DEAD_CODE (CHECK A):** none. No new files. New field `data_source` is written by both response
+  builders and serialized to the wire; new throw-paths in `fetchFromClickHouse` are reachable from
+  the GET handler. `route.ts` GET is a Next.js file-based route (framework discovery —
+  false-positive suppressed). `Sentry.captureException` is a third-party consumer, reachable.
+- **HALF_WIRE_P** — `response_field:data_source` (inquiry-starts). **Producer exists**
+  (`route.ts:291` emits `'clickhouse'`, `route.ts:347` emits `'mock'`). **No PRODUCTION consumer
+  reads it.** The sole runtime consumer — `apps/control-plane/src/app/dashboard/pilot/page.tsx` —
+  declares a DUPLICATE local `InquiryStartsData` interface (`page.tsx:40-49`) that does NOT include
+  `data_source`, and its fetch handler (`page.tsx:521-546`) maps the raw body field-by-field through
+  `Number(d.x ?? 0)` without ever reading provenance. The field reaches the wire and dies there.
+  priority **P1** → **FOLLOW-122** (already open from RETRO-013; its title, scope and ACs explicitly
+  name BOTH pilot panels — see §6 / §7; no new stub emitted).
+- **HALF_WIRE_C (consumer expects data that can now never arrive in the shape it assumes):** the same
+  consumer at `page.tsx:521-546` calls `.then((r) => r.json())` with **no `r.ok` / `r.status`
+  check**. On the new HTTP-500 fail-loud body `{ error: { code, message } }`, the field-by-field
+  mapper coerces every metric via `Number(d.total_inquiry_starts ?? 0)` etc. → it renders a panel of
+  **all zeros** (NOT null, unlike the cta-lift sibling whose `'summary' in raw` guard at least nulls
+  out). This is strictly worse than the cta-lift case: a loud 500 is silently rendered as a
+  plausible "zero inquiries" panel at go/no-go. Classified within FOLLOW-122 scope (its AC already
+  requires "no fabricated numbers rendered" on non-2xx and a visible error banner) — flagged here as
+  a distinct, more severe consumer-side residue than RETRO-013 §4b CB-1. No separate stub; FOLLOW-122
+  AC tightened-by-reference (see §7).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A — the route logic is correct and complete for its scope.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P1) — Dashboard inquiry panel renders fabricated zeros on the new HTTP 500.**
+  `page.tsx:521-546` never checks `r.ok`; on a 500 it parses `{ error: {...} }` and the
+  `Number(d.<metric> ?? 0)` mapper produces a fully-populated all-zeros `InquiryStartsData`. So the
+  route correctly fails loud, but the dashboard renders "0 inquiry starts" as if real — false
+  reassurance, the exact failure class Rule K.2 attacks, one layer up and harder to spot than a blank
+  panel. This is the inquiry-starts analogue of RETRO-013 CB-1, but more dangerous (zeros, not null).
+  Folded into FOLLOW-122 (same edit: read `data_source`, gate on `res.ok`, surface error state).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — No page-level test asserts the inquiry panel reads `data_source` or refuses to
+  render numbers on a non-2xx.** Same root cause as RETRO-013 TG-1 and RETRO-008 TG-2: the dashboard
+  interface is a hand-maintained duplicate and there is no component/RTL test on `/dashboard/pilot`,
+  so CI cannot catch the dropped provenance field or the fabricated-zeros bug. Covered by FOLLOW-122
+  AC (which already requires the RTL test for both panels).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — TICKET-PILOT-002 go/no-go runbook's `data_source: 'clickhouse'` check is
+  unsatisfiable on the dashboard for the SECONDARY (inquiry-starts) metric too.** Until FOLLOW-122
+  lands, an operator can only confirm inquiry-starts provenance by hitting the API directly. Already
+  captured under FOLLOW-122 DG cross-reference (RETRO-013 DG-1); noted here for the second metric.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-094 (DONE, PR #153 — cta-lift twin)** — this PR is the deliberate sibling, applying the
+  identical Rule K.2 + `data_source` treatment to the second pilot route. Both pilot routes now have
+  identical fail-loud + provenance posture (goal achieved). The two now share an identical
+  consumer-side gap on the same page — FOLLOW-122 fixes both in one edit. Confirmed independent of
+  this PR's diff region.
+- **FOLLOW-091 (OPEN, P2 — replace inquiry-starts mock with real ClickHouse query)** — PARTIALLY
+  advanced by this PR: FOLLOW-091's intent ("remove the silent mock path; validate the real query
+  end-to-end") is now half-done — the silent-on-failure path is gone and `data_source` makes
+  mock-vs-real observable. FOLLOW-091's residual scope is now narrowed to (a) configure
+  `CLICKHOUSE_URL` in the pilot Vercel env, (b) the end-to-end integration test against real
+  `inquiry.started` + `adaptation_decisions` rows. PM should re-scope FOLLOW-091 accordingly (its AC
+  "keep mock as fallback with explicit log warning" is now obsolete — Rule K.2 supersedes it; mock is
+  legitimate ONLY on the unset-URL branch). No new stub; flagged for PM re-scope.
+
+#### 5b. Future sprint tickets affected
+
+- **TICKET-PILOT-002 (Sprint 13 Lane B — go/no-go runbook)** — `depends_on` includes FOLLOW-098 (now
+  DONE). As with cta-lift, the secondary-metric provenance signal now exists on the wire but is
+  invisible (and worse, fabricated as zeros) on the dashboard until FOLLOW-122. **FOLLOW-122 should
+  land before TICKET-PILOT-002 is treated as executable** — reinforced (not newly raised) here.
+- **FOLLOW-092 (gated on PILOT-001 — verify real events reach ClickHouse)** — `data_source` is now
+  the canonical signal for the inquiry-starts route too (real run → `'clickhouse'`). FOLLOW-092's
+  end-to-end check should assert `data_source === 'clickhouse'` on BOTH pilot routes once events flow.
+  No spec change forced; flagged for PM awareness.
+
+#### 5c. Contracts changed that other modules rely on
+
+- `InquiryStartsResponse` now carries a required `data_source` field, but
+  `dashboard/pilot/page.tsx:40-49` keeps a hand-copied DUPLICATE (`InquiryStartsData`) that omits it.
+  Tolerated today because the page maps from `unknown` field-by-field, so the missing field is not a
+  type error. This is the SAME duplicate-interface drift class flagged for cta-lift in RETRO-013 §5c
+  (and originally RETRO-008 §4a) — now materialized on BOTH pilot response types. FOLLOW-122 already
+  prescribes the structural fix (import canonical types from the route modules, delete both
+  duplicates). With this PR the duplicate-interface drift has now recurred on a second response type
+  in a third retro — see §6 promotion note.
+
+#### 5d. Architectural assumptions affected
+
+- N/A — Master Design still does not document the pilot routes (RETRO-008 DG-1, folded into
+  FOLLOW-093 / FOLLOW-123). No new architectural divergence introduced by this PR.
+
+### 6. New lesson candidates
+
+- Pattern: **"Provenance/observability field is emitted by the producer but the decision-grade human
+  surface never reads it (and swallows the paired fail-loud status)."** Seen in: RETRO-013 (cta-lift
+  `data_source` not read by `/dashboard/pilot`; 500 → silent null) and **now RETRO-015** (inquiry-starts
+  `data_source` not read; 500 → fabricated zeros). Count for this consumer-side sub-form: **2** —
+  threshold met. Per the explicit recommendation logged in RETRO-013 §6 ("if a second consumer-side-drop
+  instance appears … consider amending Rule K.2 with a verification that greps the consuming
+  page/component for the provenance field — not a new rule"), this retro **amends Rule K.2's
+  Verification section** with a consumer-side grep rather than promoting a standalone rule. The
+  obligation itself is already in K.2's prose ("Any mock/default fallback MUST be observable on the
+  wire … so reviewers and go/no-go checks can tell fabricated data from real" — which is only true if
+  the surface READS it). See §7 / CONVENTIONS_PATCH.md change. **Rule K.2 verification amended (not a
+  new rule).**
+- Pattern: **"Duplicate hand-maintained response interface in a Next.js page drifts from its
+  source-of-truth route export."** Seen in: RETRO-008 §4a (first noted), RETRO-013 §5c (cta-lift
+  `data_source` drift), **RETRO-015 §5c** (inquiry-starts `data_source` drift). Count: **3**. Despite
+  crossing threshold, NOT promoted as a standalone rule because the concrete structural fix for every
+  instance is already captured in FOLLOW-122 (pages import canonical types, delete duplicates), and a
+  rule would be premature before FOLLOW-122 demonstrates the fix shape. If interface duplication
+  appears in a NEW page (outside `/dashboard/pilot`) after FOLLOW-122 lands, promote a "pages import
+  API response types from the route module, never redeclare" rule then. **Not promoted — deferred to
+  post-FOLLOW-122.**
+
+### 7. Follow-ups
+
+- No NEW follow-up stub. The consumer-side HALF_WIRE_P + HALF_WIRE_C + CB-1 + TG-1 + DG-1 for the
+  inquiry-starts panel are ALL already in scope of **FOLLOW-122** (RETRO-013), whose title, scope and
+  ACs explicitly name the inquiry-starts panel alongside cta-lift. Emitting a second stub would
+  duplicate it. **Action for PM:** FOLLOW-122's existing AC "no fabricated numbers rendered on
+  non-2xx" must explicitly cover the inquiry panel's `Number(d.x ?? 0)` fabricated-zeros path (this
+  retro's CB-1 is more severe than RETRO-013's null case — the AC wording already covers it, but the
+  RTL test case for the inquiry panel must assert NO zero-metrics are rendered on a 500, distinct
+  from the cta-lift null assertion). No new number allocated; next-free FOLLOW remains 125.
+- Re-scope note (no stub): **FOLLOW-091** is partially satisfied by this PR — narrow its remaining AC
+  to env config + end-to-end integration test; drop the now-obsolete "keep mock as fallback with log
+  warning" AC (superseded by Rule K.2). Left to PM at sprint planning (§5a).
+
+### 8. Cross-references
+
+- Direct sibling of **RETRO-013** (FOLLOW-094, PR #153): identical Rule K.2 + `data_source` treatment
+  applied to the twin pilot route; both routes now share one consumer-side gap fixed by FOLLOW-122.
+- Lineage in **RETRO-009** (the inquiry-starts route + `InquiryStartsPanel` + FOLLOW-091 originated
+  there) and **RETRO-008** (the pilot-measurement-integrity ancestor that motivated FOLLOW-094/098 and
+  first flagged the duplicate-interface smell, §5c).
+- Implements **Rule K.2** (CONVENTIONS_PATCH.md) and triggers the second occurrence of its
+  consumer-side completion gap → Rule K.2 Verification section amended this retro (§6). Duplicate-interface
+  drift continuous with RETRO-008 §4a / RETRO-013 §5c (now count 3 — deferred to post-FOLLOW-122).
+
+## RETRO-016 — FOLLOW-117 (align pilot_frozen Lane C guard to read cfg.enabled) — 2026-05-27
+
+### 1. Summary of change
+
+- **PR:** #156 (merged 2026-05-26 21:57 UTC / 2026-05-26 23:57 +0200, commit `38a8393`)
+- **Files changed:** 2 (+221 / −1). One-line production fix + one new test file (220 lines).
+- **Modules touched:** control-plane only (`apps/control-plane/src/app/api/adapt/route.ts` +
+  new `apps/control-plane/src/app/api/adapt/route.pilot-frozen.test.ts`). **No SDK / ingest /
+  decision-api / data / db-schema / docs / config touched.** This is a pure correctness fix closing
+  RETRO-012 §3 HALF_WIRE_C / §4a LG-1 for the one Lane C key that has a live producer.
+- **Key contracts changed:**
+  - `LANE_C_FLAG_KEYS` (`adapt/route.ts:77` — module-private const) — entry `'quiz_enabled'`
+    replaced with `'enabled'` — breaking: no (the changed key was never produced under the old name,
+    so no behavior regression; this newly _activates_ a previously-inert branch). Not exported, so
+    no cross-module contract surface moved.
+  - No type/route/schema/migration change. The structured log event `pilot_frozen_lane_c_active`
+    (RETRO-012) is unchanged in shape; only its trigger condition for the quiz key now actually fires.
+
+### 2. Verification done in PR
+
+- Test files changed: **1 new** — `route.pilot-frozen.test.ts` (5 `it` blocks). Closes RETRO-012
+  TG-1 (the net-new guard branch shipped untested in PR #152).
+- Assertions added: **~9** across 5 cases — warn-fires on `pilotFrozen=true + enabled=true`; payload
+  `active_lane_c_flags` contains `'enabled'` and NOT `'quiz_enabled'` (an explicit regression assert
+  on the exact bug); silent on `enabled=false`, on `pilotFrozen=false`, and on empty `quizConfig`;
+  response always 200 (non-blocking per PILOT_FREEZE_RULE.md §Decision 3).
+- Coverage delta: **positive** for `adapt/route.ts` — the previously-zero-coverage
+  `checkPilotFrozenAsync` branch (pilot-frozen read → flag filter → warn) is now exercised end-to-end
+  via the real exported `POST` handler (not the private fn in isolation). Good practice: drives the
+  public route, mocking only external deps.
+- CI checks: PR body states all 597 control-plane tests pass locally; merged with all real Lane A
+  gates green per QUEUE.md (`38a8393`, Wave 3). **Caveat noted, not a defect:** commit used
+  `--no-verify` because the local lefthook lint reports ~94 pre-existing type errors in `route.ts`
+  from unbuilt workspace packages (`@estalara/shared`, `@estalara/db`); the agent verified via
+  `git stash` that the error count is identical before/after (95 lines either way → zero new), and
+  CI builds packages via Turborepo before linting so the gate passes. This matches the known
+  CI-gate-landscape memory (Rule I / Vercel / Python lanes pre-existing-red & non-blocking).
+  Acceptable, but `--no-verify` on a commit is a hook-bypass smell worth a standing note (§4d DG-1).
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- No new exported symbol and no new production file. The new file `route.pilot-frozen.test.ts` is a
+  test (Vitest auto-discovered), not import-reached production code — suppressed false-positive
+  class. The one-line change mutates an existing const consumed at `adapt/route.ts:120`. **CHECK A
+  clean.**
+
+**CHECK B — Half-wire detection:**
+
+- **Resolved (the target finding):** `quizConfig_flag:enabled` is now BOTH produced and consumed.
+  Producer = `apps/control-plane/src/app/api/quiz/config/route.ts` (`QuizConfigSchema` accepts
+  `enabled: z.boolean().optional()`, persisted to `tenants.quizConfig` via the POST handler,
+  verified `:37`/`:111`/`:116`). Consumer = `adapt/route.ts:120` (`LANE_C_FLAG_KEYS.filter(key =>
+cfg[key] === true)`, now reading `'enabled'`). The half-wire RETRO-012 flagged for THIS key is
+  **closed.** ✅
+- **NEW residual HALF_WIRE_C — the other three Lane C keys remain producer-less.** `LANE_C_FLAG_KEYS`
+  still contains `lane_c_active`, `intent_engine_enabled`, `shadow_mode_override`. Verified producer
+  search this retro:
+  `grep -rn "<key>" apps/ packages/ --include=*.ts --include=*.tsx --include=*.py | grep -v node_modules | grep -v /.next/ | grep -v .test. | grep -v adapt/route.ts`
+  returns **zero matches for all three.** They are consumed (the filter) but no producer writes any
+  of them into `tenants.quizConfig`. FOLLOW-117 fixed only the single key that had a live producer
+  today (`enabled`, the FOLLOW-102 quiz toggle) and explicitly did NOT touch the forward-looking
+  intent-engine / generic-escape-hatch / shadow-override keys. **Severity disposition: P2 (NOT the
+  spec-default P0),** for the identical reasons RETRO-012 §3 set this whole class to P2: the consumer
+  is defensively null-safe (`cfg[key] === true` treats absent/undefined as inactive — "unknown =
+  safe"), fire-and-forget, try/caught, and cannot break the adapt response. These three keys are
+  intentional placeholders for unbuilt features (FOLLOW-087/100/101 intent engine; the generic and
+  shadow-override sentinels have no owning ticket yet). The residual risk is the same **false
+  reassurance at go/no-go** for the intent-engine path. → **FOLLOW-125** (P2): reconcile the three
+  remaining keys with their real producers when those features land, or remove the dead placeholders
+  + document the producer contract. (Carries forward RETRO-012 FOLLOW-117 ACs that this PR did not
+  satisfy — see §4a LG-1, §7.)
+- No new event type, env var, DB column, Redpanda topic, or SDK signal introduced.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — FOLLOW-117 closed the title finding but only partially closed its own AC set.** The
+  RETRO-012 FOLLOW-117 stub had 5 ACs. This PR satisfied AC1 _for the quiz key only_
+  (`quiz_enabled`→`enabled`), AC3 (warn-fires test), and AC4 (silent-path test). It did **NOT**
+  satisfy: AC1 for the other three keys (still producer-less — §3), **AC2 (document the
+  `LANE_C_FLAG_KEYS`→producer contract in `docs/ops/PILOT_FREEZE_RULE.md` and cross-reference it in
+  the FOLLOW-087/100/101 specs)**, or AC5 (optional caching — §4b CB-1, deferred). The merged ticket
+  is marked DONE in QUEUE.md, so the unfinished ACs need an explicit successor stub or they fall
+  through the cracks. → **FOLLOW-125** (residual keys + contract doc), **FOLLOW-126** (hot-path cache,
+  carries RETRO-012 CB-1 forward). This is a recurrence of the RETRO-013/014/015 pattern where a
+  narrow fix correctly closes the headline bug but leaves sibling ACs from the source retro open.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P2, carried from RETRO-012, NOT a new bug) — the per-request uncached `SELECT pilot_frozen,
+quiz_config FROM tenants` on every `/api/adapt` GET+POST still stands.** FOLLOW-117 did not take
+  the optional caching AC, so the hot-path DB round-trip RETRO-012 flagged remains. It is
+  fire-and-forget (off the p95 critical path) so not a correctness defect, but now that the guard
+  can actually fire (post-fix) the read happens for real on every request to a near-constant flag.
+  → **FOLLOW-126** (P2). No NEW bug introduced by this PR.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — the new test injects the DB row directly; it does NOT drive the real `quiz/config`
+  PRODUCER path.** RETRO-012's prescription (echoed in the FOLLOW-117 stub) was a test "driving the
+  real config path." The shipped test mocks `createAdminClient` to return
+  `{ pilotFrozen: true, quizConfig: { enabled: true } }` — a hand-rolled fixture asserting "if the
+  row carries `enabled:true`, the guard fires." This is structurally the **consumer-injection**
+  pattern Rule L explicitly warns is "NOT evidence the producer supplies it." It is _mitigated_ here
+  because the assertion pins the EXACT key the producer writes (`enabled`, verified against
+  `QuizConfigSchema`), so a future producer-side rename to a different key would still be caught by
+  the §3 grep but NOT by this test. A stronger test would POST to `quiz/config` then GET `/api/adapt`
+  and assert the warn — proving the round-trip. Low severity (the key alignment is correct today and
+  schema-pinned); noted as the lingering Rule-L-shaped seam, not a blocker. Folded into FOLLOW-125
+  (add a producer-path integration assertion when reconciling the remaining keys). No separate stub.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — the `LANE_C_FLAG_KEYS`→producer contract is still undocumented (RETRO-012 DG-1
+  unresolved; FOLLOW-117 AC2 not done).** `PILOT_FREEZE_RULE.md` and the FOLLOW-087/100/101/102 specs
+  still lack the reciprocal note telling Lane C implementers which exact key to write into
+  `tenants.quizConfig`. The `quiz_enabled`→`enabled` drift this PR fixed is direct evidence the
+  contract needs writing down before the next implementer repeats it. → folded into FOLLOW-125.
+- **DG-2 (P3, advisory) — `--no-verify` commit-hook bypass is becoming routine in this repo** (used
+  here for the unbuilt-workspace lint-error baseline). It is justified per-commit, but a standing
+  pattern of bypassing the local lint gate erodes its value. No FOLLOW (this is a workflow/tooling
+  observation for PM, not a code gap); noted for awareness — a `turbo run build` prelint or a
+  documented lefthook skip rationale would remove the need.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (BLOCKED, `depends_on` includes FOLLOW-106) — POSITIVELY AFFECTED.** FOLLOW-117
+  was the named precondition "must land before TICKET-PILOT-001 go-live" (QUEUE.md FOLLOW-117 notes).
+  With the quiz key now armed, when PILOT-001 sets `pilot_frozen=true` at the shadow→live flip AND
+  the pilot tenant has the quiz widget on, the `pilot_frozen_lane_c_active` warning WILL fire — so
+  the go/no-go runbook can now (partially) rely on this signal for the quiz lane. **Carry-forward
+  caution:** it remains inert for the intent-engine / generic / shadow-override keys (§3), so the
+  RETRO-012 §5a runbook note ("do NOT treat 'no warning' as proof no Lane C feature is active") still
+  holds for those three lanes until FOLLOW-125 lands. The migration-status caveat (0015 applied to
+  prd only; dev/stg pending `DATABASE_URL_ADMIN`/ESC-010 — RETRO-012 LG-2) is **unchanged by this PR**
+  and does not bear on the guard's _correctness_ — the fix is env-agnostic; the flip just must run
+  against prd as already documented.
+- **TICKET-PILOT-002 (go/no-go runbook, BLOCKED):** the manual Lane-C-off verification step
+  RETRO-012 §5a recommended is still warranted as defense-in-depth for the three unwired keys; the
+  quiz lane now has an automated backstop in addition.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-102 (quiz toggle) — now the live, correctly-wired producer** for the `enabled` key; no
+  further action for the quiz lane. **FOLLOW-087/100/101 (intent-engine toggles)** remain the
+  unbuilt producers for `intent_engine_enabled`; when they land they MUST write that exact key into
+  `tenants.quizConfig` (or FOLLOW-125 must reconcile). This PR does not change their specs but
+  FOLLOW-125 should be referenced as their producer-contract precondition.
+
+#### 5c. Contracts changed that other modules rely on
+
+- N/A — the changed const is module-private and not exported; `tenants.quizConfig` shape is
+  unchanged (the fix aligns the READER to the existing writer, it does not move the writer). The
+  JSONB "untyped multi-tenant flag bag" drift surface RETRO-012 §5c flagged persists (two readers,
+  different vocabularies) but is now one key less divergent. No Rule G mock sweep needed.
+
+#### 5d. Architectural assumptions affected
+
+- N/A — implementation now matches the Master Design / PILOT_FREEZE_RULE.md §Decision 3 intent
+  (measurement-window guard is observability-only, non-blocking, fires when a Lane C feature is on).
+  The fix brings the code _closer_ to the documented design rather than diverging from it.
+
+### 6. New lesson candidates
+
+- Pattern: **"consumer reads a config value under a key no producer writes"** (server-side flag-bag
+  variant of Rule L) — seen in: RETRO-009, RETRO-011, RETRO-012 (counted at 3+), and now the
+  _residual_ of RETRO-016. **Already codified as Rule L.** RETRO-012 explicitly decided Rule L
+  covers this class and declined to mint a new rule; that decision stands. Current count is well past
+  threshold but the class is owned — **do NOT double-promote.** No new rule.
+- Pattern: **"a narrow fix closes the headline finding but leaves sibling ACs from the source retro
+  open, and the ticket is marked DONE"** — seen in: RETRO-013/014/015 (Rule K.2 routes deferring
+  consumer-side ACs to FOLLOW-122) and RETRO-016 (FOLLOW-117 deferring AC2/AC5 + 3 keys). Count ≥2,
+  but this is a **PM/process observation (incomplete-AC carry-forward), not a code anti-pattern with
+  a grep-able verification** — not a good fit for a CONVENTIONS_PATCH rule. Mitigation is procedural:
+  the retro emits successor stubs (done here: FOLLOW-125/126). No rule promoted.
+- Threshold to promote: 2 occurrences — Rule-L class is at 3+ but **already owned by Rule L**; the
+  carry-forward class is not code-rule-shaped. **Net: no promotion.**
+
+### 7. Follow-ups
+
+- **FOLLOW-125** (backend-engineer, 1.5h, P2): reconcile the three remaining producer-less
+  `LANE_C_FLAG_KEYS` (`lane_c_active`, `intent_engine_enabled`, `shadow_mode_override`) with real
+  producers or remove the dead placeholders; document the `LANE_C_FLAG_KEYS`→producer contract in
+  `PILOT_FREEZE_RULE.md` and cross-reference FOLLOW-087/100/101; add a producer-path integration
+  assertion (carries RETRO-012 FOLLOW-117 AC2 + the three-key remainder + TG-1).
+- **FOLLOW-126** (backend-engineer, 1.5h, P2): cache the per-request `pilot_frozen` tenant lookup on
+  the `/api/adapt` hot path (short-TTL in-memory or Upstash) to drop the now-live DB round-trip
+  (carries RETRO-012 CB-1 / FOLLOW-117 AC5).
+
+### 8. Cross-references
+
+- **Direct child of RETRO-012** (FOLLOW-106, PR #152) — this PR closes RETRO-012's §3 HALF_WIRE_C /
+  §4a LG-1 / §4c TG-1 for the one key with a live producer, and inherits the two unsatisfied
+  FOLLOW-117 ACs (now re-stubbed as FOLLOW-125/126). The migration-status (LG-2) and journal-timestamp
+  (LG-3) findings from RETRO-012 are untouched and unaffected by this fix.
+- **Rule L lineage:** RETRO-009 / RETRO-011 (SDK install-path producer-absence) — same anti-pattern
+  class, server-side flag-bag variant. Rule L owns it; not re-promoted.
+- **Carry-forward-AC sibling:** RETRO-013/014/015 (narrow fix, deferred sibling ACs → FOLLOW-122).
+
+---
+
+## RETRO-017 — FOLLOW-114 (emit data-inquiry-submit-selector in onboarding snippet) — 2026-05-27
+
+### 1. Summary of change
+
+- **PR:** #157 (merged 2026-05-26 21:58 UTC / 2026-05-26 23:58 +0200, commit `f882dae`; squash of 2
+  commits — the core fix + a CI-lint cleanup that removed an unnecessary type assertion and the
+  local-only eslint-disable comments).
+- **Files changed:** 3 (+128 / −4). `apps/control-plane/src/components/onboarding/DetectionPreview.tsx`
+  (+22/−4, the production fix), its `.test.tsx` sibling (+93, 7 unit + 3 integration tests), and
+  `packages/shared/src/tenant-site-schema.ts` (+13, the new typed field).
+- **Modules touched:** control-plane (onboarding wizard) + shared (`TenantSiteSchema` type). **No SDK
+  runtime / ingest / decision-api / data / db-migration / docs / config code touched** — the SDK
+  consumer side was already complete (FOLLOW-097, PR #151).
+- **Key contracts changed:**
+  - `TenantSiteSchema.inquiry_submit_selector?: string | null`
+    (`packages/shared/src/tenant-site-schema.ts:249`) — **added, optional** — breaking: no. The field
+    was already persisted in the `tenant_site_schemas.schema` JSONB at the DB level; this only adds the
+    TS type. (Note the `| null` variance vs. the SDK's `SdkConfig.inquirySubmitSelector?: string` —
+    see §4b CB-1.)
+  - `buildSnippet(tenantId, apiKey, inquirySubmitSelector?: string | null)`
+    (`DetectionPreview.tsx:115`) — **third param added, optional** — breaking: no (existing 2-arg
+    callers unaffected). Emits `data-inquiry-submit-selector="<sel>"` when the arg is a non-null
+    string; omits the attribute entirely when null/undefined.
+  - `DetectionPreview` call site (`DetectionPreview.tsx:173`) — now passes
+    `schema.inquiry_submit_selector` into `buildSnippet`. This is **the producer wire RETRO-011 §3
+    flagged as the missing HALF_WIRE_C** for the schema→snippet hop.
+
+### 2. Verification done in PR
+
+- Test files changed: **1** (`DetectionPreview.test.tsx`, +93). 7 new unit tests on `buildSnippet`
+  (selector present → attribute emitted; 2-arg call / explicit `null` / explicit `undefined` → attribute
+  omitted) + 3 new integration tests that `render(<DetectionPreview schema={...}/>)`, click
+  **Save & activate**, and assert the rendered `<code>` block does / does not contain
+  `data-inquiry-submit-selector=` for schema-with-selector / schema-null / schema-field-absent.
+- Assertions added: ~14 across 10 tests.
+- Coverage delta: positive on `DetectionPreview.tsx` (both `buildSnippet` branches + both call-site
+  branches covered). PR body reports 604 control-plane tests pass (up from 599).
+- **Rule L verdict — PASS for the schema→snippet hop.** The 3 integration tests drive the REAL
+  `buildSnippet()` via the rendered component and the activate flow (not a hand-written string), and
+  assert the attribute is present/absent based on the `schema` prop. This is exactly the Rule L
+  evidence RETRO-011 §4c TG-1 demanded ("a test that injects the value is not evidence"). The unit
+  tests additionally pin `buildSnippet` directly. ✅
+- CI checks: passed at merge per QUEUE.md (Wave-3 / Lane A, `f882dae`; pre-existing-red Rule I /
+  Vercel / Python lanes non-blocking per QUEUE preamble). The 2nd commit removed a
+  `no-unnecessary-type-assertion` cast and stale local-only eslint-disable directives that became
+  unused-directive errors in CI — a clean fix, no behavior change.
+
+### 3. Wiring Audit
+
+- **HALF_WIRE_C** — `schema_field:inquiry_submit_selector` (the upstream detection→schema producer) —
+  consumer now at `apps/control-plane/src/components/onboarding/DetectionPreview.tsx:173`
+  (`buildSnippet(..., schema.inquiry_submit_selector)`) — **NO production producer populates the field
+  on a real detected schema** — priority **P0** → **FOLLOW-127**.
+
+  Detail: this PR correctly closes the schema→snippet hop RETRO-011 flagged (and the SDK consumer chain
+  `data-inquiry-submit-selector` → `config.ts:99` → `index.ts:384` → `observer.ts:146` is verified
+  complete this retro). BUT the field `schema.inquiry_submit_selector` that `buildSnippet` now reads is
+  itself produced by **nobody** in production. Producer search this retro:
+  - `grep -rn "inquiry_submit_selector" apps/control-plane/src --include="*.ts" --include="*.tsx" | grep -v .test.`
+    returns ONLY the `DetectionPreview.tsx` consumer (lines 116/169/173) — the detect route
+    (`api/detect/route.ts`), the activate route (`api/schema/activate/route.ts`), and the
+    `tenant-schema.ts` lib never write it.
+  - `grep -rln "inquiry" apps/ --include="*.py" | grep -v .test.` (Modal/Python detection apps) →
+    **zero matches.**
+  - `grep -rn "inquiry_submit_selector" packages/sdk/src/auto-detect --include="*.ts"` (excluding
+    `__fixtures__` and tests) → **zero matches.** The auto-detect engine emits only
+    `index_schema.card_field_mappings` and `detail_schema.slot_selectors` (per
+    `api/detect/route.ts:119-141`); it never detects an inquiry submit selector.
+  - The ONLY place the field is set is the hand-authored fixture
+    `packages/sdk/src/auto-detect/__fixtures__/000-app-estalara/detail-ground-truth.json:19` and the
+    new test mocks in `DetectionPreview.test.tsx`.
+
+  Net effect: the FOLLOW-097 → FOLLOW-114 chain is now closed end-to-end **for the pilot tenant**
+  (whose `000-app-estalara` schema carries the selector via the fixture / a hand-set value), but for
+  ANY other onboarded tenant `schema.inquiry_submit_selector` is `undefined`, the snippet omits the
+  attribute, and `inquiry.started` still never fires. The half-wire RETRO-011 located at schema→snippet
+  is resolved; the residual has moved **one hop further upstream to detection→schema**. Consumer-reads-
+  data-never-produced ⇒ HALF_WIRE_C ⇒ **P0** (a launch metric depends on it; see §5). This is the same
+  Rule L anti-pattern class, now at the detection-engine layer.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P0, central) — detection never produces `inquiry_submit_selector` (see §3 HALF_WIRE_C).**
+  The auto-detection engine (deterministic L1–L10 + LLM fallback) extracts index-card and detail-slot
+  selectors but has no rule/heuristic to locate the inquiry-form submit button, and neither the
+  `/api/detect` nor `/api/schema/activate` route synthesizes or persists the field. So for a generic
+  tenant the value is structurally absent. → **FOLLOW-127** (detection-engine rule + persistence).
+  This is the third+ instance of the Rule L family (RETRO-009/010/011) extended to the
+  detection→schema producer; Rule L already owns it, so no re-promotion (see §6/§9).
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P3, type-variance, latent) — `| null` vs. `undefined`-only variance across the wire.**
+  `TenantSiteSchema.inquiry_submit_selector` is `string | null` (shared), `buildSnippet`'s param is
+  `string | null` (and uses `!= null` to coalesce both — correct), but `SdkConfig.inquirySubmitSelector`
+  is `string | undefined` (no `null`). The attribute is only emitted as a non-empty string so the SDK
+  never receives `null` or `""` over the wire today — but if a future producer ever wrote `null` into
+  the *snippet* (e.g. a refactor that drops the `!= null` guard), `data-inquiry-submit-selector="null"`
+  would become a literal selector and `document.querySelector("null")` would throw / never match. The
+  current guard makes this safe; flagged as a latent foot-gun, not an open defect. No FOLLOW (covered
+  by the `buildSnippet` unit tests + the empty-string-not-tested note in 4c).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — no test pins behavior for an empty-string `inquiry_submit_selector`.** Tests cover
+  non-empty-string / `null` / `undefined` / absent, but not `""`. With `!= null`, an empty string would
+  emit `data-inquiry-submit-selector=""`, the SDK guard `if (inquirySubmitSelector && ...)`
+  (`observer.ts:147`) would treat `""` as falsy and skip registration — benign, but undocumented and
+  untested. Low priority; fold into FOLLOW-127 (the detection producer should never emit `""`). No
+  separate stub.
+- **TG-2 (P2) — the SDK-emitted `inquiry.started` Zod-contract test (FOLLOW-115) is still open.**
+  RETRO-011 §4c TG-2 stubbed FOLLOW-115; unchanged by this PR. Once FOLLOW-127 makes the event fire for
+  real tenants, FOLLOW-115 becomes more load-bearing. No new stub (FOLLOW-115 already exists).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — `inquiry_submit_selector` / `data-inquiry-submit-selector` still absent from the
+  Master Design §B.1 SDK-config-surface table and the SDK install/snippet docs.** Same omission RETRO-011
+  DG-1 / RETRO-010 DG-2 flagged → fold into the FOLLOW-071 SDK-config-surface doc sweep. The new shared
+  `TenantSiteSchema` field is well-documented in code (TSDoc references FOLLOW-097/114), but the canonical
+  config-surface table is not updated. No new stub.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 13b Lane B, BLOCKED, gated by FOLLOW-114) — MOST AFFECTED, now UNBLOCKED
+  for the pilot tenant only.** FOLLOW-114 is in PILOT-001's `depends_on`; the wizard snippet path now
+  emits the attribute, so the WIZARD-onboarded pilot will fire `inquiry.started` IF the activated
+  `000-app-estalara` schema carries the selector. **PM action (carry-forward, not new):** PILOT-001 still
+  needs (i) the existing RETRO-011 §5a manual-install AC — the hand-written SvelteKit `+layout.svelte`
+  must emit `data-inquiry-submit-selector="[data-estalara-slot='inquiry-submit']"` (the wizard fix does
+  NOT cover the manual path; this pairs with the RETRO-010 `data-decision-url` AC); AND (ii) a shadow-mode
+  smoke assertion that `inquiry.started` rows land in ClickHouse. Confirm the pilot schema actually carries
+  the selector value (since detection won't produce it — §3) — for the pilot this must be set by hand or
+  via FOLLOW-127. The §3 HALF_WIRE_C does NOT block PILOT-001 *if* the pilot schema is hand-set, but it
+  DOES block any general-tenant onboarding.
+- **TICKET-PILOT-002 (go/no-go runbook, BLOCKED) — its "inquiry.started observed in ClickHouse during
+  shadow mode" gate (RETRO-009 §5a) remains the single check that would catch §3 before go-live.** Still
+  load-bearing; confirm present.
+- **FOLLOW-092 (inquiry-starts mock → real / shadow validation, BLOCKED on PILOT-001) — directly
+  COUPLED.** Replacing the inquiry-starts mock with real data is pointless until `inquiry.started`
+  actually flows. FOLLOW-092's precondition should read "FOLLOW-097 + FOLLOW-114 + FOLLOW-127 shipped (or
+  pilot schema hand-set) AND `inquiry.started` rows present in ClickHouse for the pilot tenant."
+- **Wave-3 dashboard fixes (FOLLOW-093/094/098, DONE/READY) — not affected by this control-plane wizard
+  change.** Thematically, FOLLOW-098 (inquiry-starts fail-loud + provenance, PR #155) means a dashboard
+  showing mock inquiry data is now LABELED as mock — a defense-in-depth that would surface §3 to a human
+  at go/no-go. No spec change.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-115 (P2, RETRO-011, Sprint 14):** the Zod-contract test for the SDK `inquiry.started` payload
+  — unchanged; becomes more meaningful once events fire for real tenants (post FOLLOW-127).
+- **FOLLOW-091 (inquiry-starts mock → real, backlog):** precondition now extends to FOLLOW-127 (detection
+  must populate the field) in addition to FOLLOW-097/114.
+- **FOLLOW-127 (this retro):** the detection→schema producer; should land before general-tenant
+  onboarding GA (not strictly before the single hand-set pilot, but before any self-serve onboarding).
+
+#### 5c. Contracts changed that other modules rely on
+
+- `TenantSiteSchema` gained an optional field — backward compatible; no existing consumer relied on a
+  changed contract. The `schema` JSONB already carried the key at the DB level, so persisted rows are
+  unaffected (the type now just describes reality). The SDK `SdkConfig`, `setupObservers`, `observer.ts`
+  contracts are unchanged (FOLLOW-097 already shipped them).
+- `inquiry.started` remains a registered `@estalara/shared` event consumed by `cta-lift/route.ts`
+  (funnel) and `inquiry-starts/route.ts`. Producers/consumers downstream of the attribute were ready
+  before this PR; only the detection→schema producer (§3) remains.
+
+#### 5d. Architectural assumptions affected
+
+- **Master Design §B.9 (detected-schema-drives-runtime-SDK-behavior):** RETRO-011 §5d called this
+  assumption "only partially realized — runtime consumer built, schema→runtime producer not." This PR
+  builds the schema→snippet producer (one half of the missing hop), so the loop is closed
+  schema→snippet→SDK→event. The remaining unrealized piece is **detection→schema** (§3): the engine that
+  is supposed to *fill* the schema with this selector does not. So §B.9 is now realized for the
+  *transport* of the field but not its *derivation*. FOLLOW-127 closes the loop fully. No Master Design
+  edit beyond DG-1's config-surface table.
+
+### 6. New lesson candidates
+
+- **Pattern (Rule L family) — "the production path that PRODUCES a config value the consumer reads is
+  absent; tests/fixtures inject it, so green CI masks a dead wire."** This retro is the **fourth**
+  occurrence (RETRO-009 SDK init call site; RETRO-010 manual `+layout.svelte`; RETRO-011 snippet
+  generator; RETRO-017 detection→schema). **Already codified as Rule L** (threshold met at RETRO-011;
+  evidence RETRO-009/010/011). This retro is fresh evidence at a NEW layer (the detection engine, one hop
+  upstream of the install snippet) — the lesson is that Rule L must be applied **transitively**: closing
+  consumer←producer at one hop can simply relocate the half-wire to producer←producer-of-the-producer.
+  **No re-promotion** (Rule L already owns the class); recommend a one-line Rule L evidence/scope note be
+  appended by a future retro IF a fifth transitive-relocation case appears. Count for the *transitive*
+  sub-variant alone: 1 (this retro) — below threshold; track.
+- No other repeating pattern surfaced this retro.
+
+### 7. Follow-ups
+
+- **FOLLOW-127** (P0, ml-engineer + backend-engineer, 4h, Sprint 13b/14 — before self-serve onboarding
+  GA): make the production detection→schema path PRODUCE `inquiry_submit_selector`. Add an
+  auto-detection rule/heuristic (deterministic selector probe for inquiry/contact form submit buttons,
+  LLM fallback) that populates `TenantSiteSchema.inquiry_submit_selector`, persist it through
+  `/api/detect` + `/api/schema/activate` into `tenant_site_schemas.schema`, and add a test that a
+  detected real-tenant schema (not a hand-set fixture) carries the field so `buildSnippet` emits the
+  attribute. Closes §3 HALF_WIRE_C + §4a LG-1; folds §4c TG-1 (never emit `""`). For the single pilot
+  tenant, the field may be hand-set as an interim unblock (note this in PILOT-001).
+
+### 8. Cross-references
+
+- **Direct child of RETRO-011 (FOLLOW-097, PR #151)** — RETRO-011 §3 flagged the schema→snippet
+  HALF_WIRE_C and stubbed FOLLOW-114 (this ticket); RETRO-011 promoted Rule L for exactly this
+  install/snippet sub-case. This PR closes that specific hop (Rule L PASS for schema→snippet, §2) and
+  surfaces the next-upstream residual (detection→schema, §3 → FOLLOW-127). The FOLLOW-097 → FOLLOW-114
+  chain is now end-to-end closed for the transport; FOLLOW-127 closes the derivation.
+- **RETRO-009/010 (Rule L lineage)** — same anti-pattern, earlier hops (SDK init call site; manual
+  install). Rule L owns the class; not re-promoted here.
+- **RETRO-013/014/015/016 (this merge wave)** — independent control-plane fixes (cta-lift / inquiry-starts
+  routes, pilot_frozen guard); no overlap with this SDK/onboarding change. RETRO-016 is the nearest
+  sibling Rule-L-family case (server-side flag-bag producer-absence variant), reinforcing that Rule L
+  recurs across layers.
+
+---
+
+## RETRO-018 — FOLLOW-118/119/120/121 (YELLOW audit Sprint 1: F-02 cold-start prior, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA) — 2026-05-27
+
+### 1. Summary of change
+
+- **PR:** #158 (merged 2026-05-27 14:16 UTC / 16:16 +0200, commit `6827305`). Branch
+  `claude/intelligent-dirac-3mBS1` — **NOT** an agent-prefix branch; this is the separate "YELLOW
+  audit" launch-readiness track with its own `F-NN` numbering (F-02/09/10/13/14), recorded in
+  QUEUE.md under reserved FOLLOW-118/119/120/121 so the queue stays the status SoT. Commit title
+  references `[TICKET-PILOT-001]` but the work is the YELLOW Sprint-1 bundle, not PILOT-001 itself.
+- **Files changed:** 9 (+201 / −17). 6 SDK (`index.ts`, `core/config.ts`, `core/adapt.ts`,
+  `ui/consent-banner.ts`, `ui/quiz-trigger.ts`, `ui/quiz-widget.ts`), 2 control-plane
+  (`api/adapt/route.ts`, `lib/llm-gateway.ts`), 1 docs (`compliance/dpia.md`, +111 docs-only).
+- **Modules touched:** SDK + control-plane (adapt route + llm-gateway) + docs (compliance). No
+  ingest / decision-api / data / db-migration / config touched. **Multi-concern bundled PR** — four
+  unrelated YELLOW items in one squash; analyzed per-item below.
+- **Key contracts changed:**
+  - `SdkConfig.language` — `'en' | 'pl'` → `'en' | 'pl' | 'es'` (`core/config.ts:21`) — widened —
+    breaking: no (additive union member; `readConfig` defaults unknown values to `'en'`). Same
+    widening mirrored on `ConsentBannerOptions.language`, `QuizTriggerConfig.language`,
+    `QuizWidgetConfig.language`.
+  - `runDecisionTree(...)` (`api/adapt/route.ts:209`) — signature changed: `_sessionId` (unused) →
+    `sessionId` + new `tenantId` + new `locale: 'en'|'pl'|'es' = 'en'` params inserted **before**
+    `listingContext` — module-private fn, not exported — breaking: no external surface, but
+    **positional-arg ordering is now load-bearing** (see §4b CB-1). Both call sites updated (GET
+    line 586, POST line 766).
+  - `AdaptPostBodySchema.locale: z.enum(['en','pl','es']).optional()` (`route.ts:187`) — added,
+    optional — breaking: no. Plus GET reads `?locale=` query param (`route.ts:510`).
+  - `LlmGatewayInput.sessionId?` / `LlmGatewayInput.tenantId?` (`lib/llm-gateway.ts:42-44`) — added,
+    optional — breaking: no. `logLlmCallAsync` now records `input.sessionId ?? 'unknown'` /
+    `input.tenantId ?? 'unknown'` instead of hardcoded `'unknown'`.
+  - `docs/compliance/dpia.md` §13.1 + §13.2 — appended LIA sections — docs-only, no code contract.
+
+### 2. Verification done in PR
+
+- Test files changed: **NONE.** Zero test files in the diff (verified `git show 6827305 --stat` — no
+  `*.test.ts` / `*.spec.ts`). This is the single largest verification gap of the merge: four
+  behavior changes shipped with no automated assertions. The PR "Test plan" is a manual checklist
+  (PL/ES copy, ClickHouse id grep, staging cold-start comparison) — none automated.
+- Assertions added: **0.**
+- Coverage delta: **negative** (net new branches in `runDecisionTree` locale selection,
+  `readConfig` es-branch, the F-02 try/catch block, and the llm-gateway id coalescing are all
+  uncovered).
+- CI checks: merged with Lane A gates green per QUEUE.md (`6827305`, marked DONE / CI green for all
+  four FOLLOW-118..121). Note the standing CI-gate-landscape caveat (Rule I / Vercel / Python lanes
+  pre-existing-red & non-blocking) — green here means the real merge gates passed, not full-suite.
+- **Rule L verdict:** the F-02 and F-10 wires DO connect real producers to real consumers in
+  production code (not test-injected), so they pass the Rule L producer-existence bar at the wire
+  level. But with zero tests, there is no Rule-L-style evidence that the wires behave correctly —
+  see §4c.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- F-02 imports `applyArchetypeHints` (`core/intent.ts:591`), `detectSiteSchema`
+  (`auto-detect/pipeline.ts:73`), `extractArchetypeHints` (`auto-detect/archetype-hints.ts:426`)
+  into `index.ts` and INVOKES all three in `init()` (lines 164/166/168). All three previously
+  existed and were exported via the `auto-detect` barrel + consumed by `api/detect/route.ts:339`
+  (`detectSiteSchema`) and `pipeline.ts:117` (`extractArchetypeHints`); `applyArchetypeHints` was
+  previously defined-but-uninvoked at init — **F-02 closes that latent dead-path** (the exact
+  "implemented but never invoked at init" class the audit was created to catch). No NEW production
+  symbol added that lacks a non-test importer. **CHECK A clean.**
+- F-09 Spanish `COPY.es` / `QUIZ_LABELS.es` / `QUIZ_CONTENT.es` objects are consumed by the same
+  language-switch render paths that already consume `.pl` (`renderConsentBanner` etc.) — live once a
+  tenant sets `data-language="es"`. Not dead.
+
+**CHECK B — Half-wire detection:**
+
+- **F-10 — `LlmGatewayInput.sessionId`/`tenantId`: PRODUCER + CONSUMER both present, wire complete.**
+  Producer = `runDecisionTree` passes `sessionId`/`tenantId` into BOTH `callLlmGateway(...)` calls
+  (`route.ts:249-250` and `:268-269`); consumer = `logLlmCallAsync({ sessionId: input.sessionId ??
+'unknown', ... })` (`llm-gateway.ts:392`). Verified `logLlmCallAsync` has exactly ONE call site
+  (`llm-gateway.ts:392`) and `callLlmGateway` (control-plane) has exactly TWO call sites, both in
+  `route.ts`, both now pass the ids. **No remaining `'unknown'` path in the control-plane adapt
+  flow.** ✅ (Caveat: the `?? 'unknown'` fallback still fires if a future caller omits the optional
+  fields — see §4b CB-2; and the separate `apps/decision-api/src/lib/llm-gateway.ts` is a DIFFERENT
+  gateway not touched here — out of scope, not a regression.)
+- **F-09 — `locale` field: PRODUCER + CONSUMER both present end-to-end.** SDK producer =
+  `fetchDirectives` adds `locale: config.language` to the POST body (`adapt.ts:502`); server
+  consumer = `AdaptPostBodySchema.locale` parses it (`route.ts:187`) → `runDecisionTree` selects
+  `(locale === 'pl' ? s.pl : locale === 'es' ? s.es : undefined) ?? s.en` (`route.ts:231`). GET path
+  also wired (`?locale=` query → `route.ts:510`). **Wire complete both transports.** ✅
+- **HALF_WIRE — documentation kind (F-13/F-14): the DPIA §13.1/§13.2 mandate consent-banner
+  disclosure strings that DO NOT EXIST in the SDK banner.** This is the central finding of this
+  retro and the precise "doc that describes a banner string that doesn't exist" pattern. Detail:
+  - DPIA §13.1 (consent-denial logging) requires the banner/Privacy Notice to state _"We record the
+    fact of your consent decision — including a denial — for compliance and debugging purposes. This
+    log is retained for 7 days..."_ — **mandatory before EU pilot go-live.**
+  - DPIA §13.2 (90-day cross-session fingerprint) requires the banner to state _"To remember your
+    preferences across visits, we store a pseudonymous identifier in your browser for up to 90 days.
+    This identifier rotates monthly and is deleted if you withdraw consent."_ — and explicitly: the
+    F-14 LIA **balancing test passes _only if_ this disclosure gap is remediated** ("conditional on
+    remediation of the consent banner disclosure gap"). The DPIA itself states the lawful basis is
+    not satisfied until the banner is updated.
+  - Actual shipped banner copy (`ui/consent-banner.ts:113-126`, all three locales) says only "We
+    personalize this page based on your browsing behavior." / "Personalizujemy tę stronę..." /
+    "Personalizamos esta página...". **Neither the denial-logging disclosure nor the 90-day
+    identifier disclosure exists in any locale.** The `consent.denied` event IS dispatched in
+    production (`index.ts:122`), so the §13.1 processing the LIA legitimizes is live while the
+    required disclosure is absent.
+  - Classification: a documented control (banner disclosure language) whose runtime counterpart is
+    not implemented — a **compliance HALF_WIRE_C** (the DPIA "consumer" expects a banner string the
+    SDK "producer" never renders), priority **P0** because the DPIA explicitly conditions the F-14
+    lawful basis on it and gates it "before EU pilot go-live" → **FOLLOW-128** (SDK banner copy) +
+    **FOLLOW-129** (tenant Privacy Notice template + DPO sign-off tracking). Note: F-13/F-14 were
+    scoped "Option B — documentation only, no code," which is internally consistent for *this PR*,
+    but the docs they added create a NEW code obligation that has no ticket and no
+    `depends_on`-before-go-live wire. The doc-only decision did not emit the implementation
+    successor — this retro emits it.
+- No new env var, DB column, Redpanda topic introduced. (F-10 writes existing ClickHouse columns
+  `session_id`/`tenant_id` with real values instead of literals — not a new column.)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, forward-looking cascade) — F-02 cold-start prior risks DOUBLE-APPLICATION when Lane C
+  FOLLOW-100/101 land.** `applyArchetypeHints` (`intent.ts:591`) additively boosts
+  `state.probabilities` per archetype then re-normalizes, mutating the same `IntentState` that
+  `applyQuizPrior` and the future `applyChatIntentPrior` (FOLLOW-100) compound onto. F-02 runs once
+  in `init()` and persists into `currentIntentState`, which all subsequent priors build on — correct
+  for a one-shot cold-start seed. The risk is twofold: (i) if FOLLOW-100/101's prior math
+  independently derives a site-structure signal, the site-type contribution is counted twice; (ii)
+  if `init()` re-runs on session resume (SDK re-mount / SPA route change), the hint boost is
+  re-applied to an already-boosted state. QUEUE.md FOLLOW-118 notes explicitly flag this ("confirm
+  no double-application of priors when Lane C lands") and TICKET-AUTO-007 overlaps conceptually.
+  Not a current bug (Lane C is BLOCKED/unbuilt; F-02 is the sole prior source today), but a
+  load-bearing integration constraint that MUST be encoded before FOLLOW-100/101 merge. →
+  **FOLLOW-130** (P1): document + test the prior-composition order (cold-start hint → quiz →
+  chat-intent) and assert idempotency of the F-02 seed across re-init. Cross-ref FOLLOW-100/101
+  specs as a precondition.
+- **LG-2 (P2) — F-02 runs `detectSiteSchema(document.documentElement.outerHTML, ...)` synchronously
+  in the init critical path (awaited) before the DQS tracker / first event.** It is try/caught so it
+  cannot throw, but it is `await`ed — a slow DOM serialization + detection on a large page delays
+  session init and the first behavioral event. The try/catch swallows failures silently (empty
+  catch), so a detection regression is invisible (no telemetry on hint-application rate). Per the
+  comment, AI Vision is excluded from the browser bundle so this is DOM-pattern-only (bounded), but
+  there is no timing guard and no observability. → folded into FOLLOW-130 (add a hint-applied
+  counter / debug signal so staging can verify the prior actually shifted — the PR's own manual test
+  plan item "compare currentIntentState distributions" is currently unobservable in prod).
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P2, latent) — `runDecisionTree` positional-arg ordering is now a foot-gun.** The signature
+  is `(archetypeId, confidence, similarity, sessionId, tenantId, locale, listingContext)` — seven
+  positional args, four of them `string`/`string`-union in a row (`sessionId, tenantId, locale`).
+  The POST call passes `body.session_id, body.tenant_id, body.locale ?? 'en', listingContext`
+  (correct); GET passes `sessionId, tenantId, locale` (correct, no listingContext → defaults `{}`).
+  But a future edit that transposes `sessionId`/`tenantId` would silently mis-attribute every
+  ClickHouse cost row (both are strings, TS won't catch it) and there is no test pinning the order.
+  No current defect (both sites verified correct this retro). → consider an options-object refactor;
+  folded into FOLLOW-131 (the F-10 attribution test) as a regression guard rather than a separate
+  stub.
+- **CB-2 (P3, latent) — the `?? 'unknown'` fallback in `logLlmCallAsync` is now the ONLY thing
+  preventing a crash if a caller omits the optional `sessionId`/`tenantId`.** Because the fields are
+  `optional` on `LlmGatewayInput`, the type system does not force callers to supply them; the
+  control-plane GET-path call site SETS `tenantId` from `getAuthClaims ?? x-tenant-id ?? 'unknown'`
+  — so a JWT-less, header-less SDK call STILL logs `tenantId: 'unknown'`. F-10's goal ("no more
+  'unknown'") is therefore achieved only for authenticated/header-bearing calls; anonymous SDK
+  adapt calls without `x-tenant-id` still produce `'unknown'` cost rows. Partial by design, but the
+  PR body claims unqualified "real identifiers instead of 'unknown'". → noted; FOLLOW-131 should
+  assert the `'unknown'` fallback is exercised only on the genuinely-anonymous path.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — ZERO tests for any of the four items.** This is the dominant gap. Concretely needed:
+  (a) F-09: a control-plane test asserting `runDecisionTree` returns `s.pl`/`s.es` when locale set
+  and falls back to `s.en` when a slot lacks the override (the `?? s.en` path — proves it can't
+  throw on a pl/es-less slot); (b) F-09 SDK: `readConfig` maps `data-language="es"` → `'es'` and
+  unknown → `'en'`; (c) F-10: `callLlmGateway` threads `sessionId`/`tenantId` into
+  `logLlmCallAsync` (the attribution wire — mock `logLlmCallAsync`, assert real ids passed); (d)
+  F-02: `init()` applies `applyArchetypeHints` to `currentIntentState` when `detectSiteSchema`
+  returns a schema, and is a no-op when detection throws/returns empty. → **FOLLOW-131** (P1, the
+  F-09/F-10 control-plane + SDK-config tests) + the F-02 idempotency test folded into FOLLOW-130.
+- **TG-2 (P2) — no test that the locale fallback chain is total.** `s.en` is the canonical slot
+  value (always present per the playbook contract, confirmed `route.ts:228` pre-change comment
+  "English locale as canonical value"), so `?? s.en` cannot yield `undefined` — but this invariant
+  ("every playbook slot has a non-empty `.en`") is unasserted. If a future playbook slot ships
+  without `.en`, every locale silently emits `undefined`. Fold into FOLLOW-131.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — the new `es` locale and `locale` adapt-route param are absent from Master Design
+  §B.1 SDK-config-surface table and the SDK install/snippet docs** (same config-surface omission
+  RETRO-010/011/017 repeatedly flag → FOLLOW-071 sweep). The `data-language="es"` option and the
+  `/api/adapt?locale=` contract are now live but undocumented in the canonical surface. Fold into the
+  existing FOLLOW-071 config-surface doc sweep; no new stub.
+- **DG-2 (P1, compliance) — the DPIA §13.1/§13.2 disclosure obligations are not reflected in any
+  tenant-facing artifact or the SDK banner** (the §3 HALF_WIRE). The DPIA records "DPO review
+  pending" and "Action owner: Compliance Engineering + SDK Engineer" with due "before EU pilot
+  go-live" but no ticket carries it. → FOLLOW-128/129 (see §7); this is the implementation half of
+  the doc-only Option B decision.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 13b Lane B, BLOCKED) — F-02/F-09/F-10 are net-positive launch-readiness
+  wires for it, but the §3 compliance HALF_WIRE is a NEW go-live BLOCKER for EU traffic.** The pilot
+  runs on app.estalara.com; if any pilot traffic is EU-resident, the DPIA's own text says the F-14
+  lawful basis for the 90-day fingerprint is NOT satisfied until the banner discloses it (§13.2
+  balancing test "passed only if the disclosure gap is remediated"). PM must treat FOLLOW-128 as a
+  PILOT-001 EU-go-live precondition (or scope the pilot to non-EU / non-fingerprint Mode A). This
+  is a compliance escalation candidate — flagging here per constraint 3 for PM to escalate.
+- **TICKET-PILOT-002 (go/no-go runbook, BLOCKED) — its go-live checklist must add a "consent banner
+  discloses §13.1 denial-logging + §13.2 90-day identifier (or pilot is Mode-A / non-EU)" gate.**
+  Currently no runbook item would catch the §3 gap before launch.
+- **Wave-3 / RETRO-013..017 siblings (DONE/READY) — F-09/F-10 both touch `api/adapt/route.ts`, the
+  SAME file FOLLOW-117 (RETRO-016, pilot_frozen guard) and the cta-lift/inquiry-starts vocabulary
+  work neighbor.** Verified the merged route is internally consistent: the locale selection (line
+  231), the F-10 attribution threading (lines 249/268), the pilot_frozen guard
+  (`checkPilotFrozenAsync`, post-merge still fires), and the fail-loud ClickHouse behavior all
+  coexist — the F-10 refactor MOVED the `tenantId` resolution EARLIER (GET line 508, was line ~608)
+  so it is available before `runDecisionTree`; the old later-block was deleted (verified in diff, no
+  duplicate `const tenantId`). The `checkPilotFrozenAsync(tenantId, ...)` call still receives the
+  (now earlier-resolved) `tenantId`. No conflict.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-100 / FOLLOW-101 (Lane C, BLOCKED, sdk/ml-engineer) — directly affected by F-02 (see §4a
+  LG-1).** Their prior math will compose with the F-02 cold-start seed. Their specs (to-author at
+  spawn) MUST reference the prior-composition order and the idempotency constraint so the site-type
+  contribution isn't double-counted. FOLLOW-130 is the precondition that documents this.
+- **TICKET-AUTO-007 (archetype hints from site structure, in QUEUE) — conceptual overlap with F-02.**
+  F-02 already invokes the `extractArchetypeHints` → `applyArchetypeHints` chain at SDK init; AUTO-007
+  must not build a second, divergent site-structure-prior path. Reconcile at AUTO-007 spawn.
+- **Remaining YELLOW Sprint 2-4 (F-01/04/05/06/07/08 + UX-01 + measurement dashboard) — outside the
+  FOLLOW-NNN system,** tracked on the root-owned YELLOW plan. FOLLOW-128/129 (banner disclosure) are
+  arguably YELLOW-track compliance items but are emitted here as FOLLOW-NNN because they are
+  retro-discovered go-live blockers; PM should reconcile whether they belong on the YELLOW plan or
+  the FOLLOW queue (avoid double-tracking).
+
+#### 5c. Contracts changed that other modules rely on
+
+- `SdkConfig.language` widened to include `'es'` — additive, backward compatible; all four consuming
+  UI types widened in lockstep (verified). No Rule G inline-mock sweep needed (union widening, not a
+  required-field add).
+- `runDecisionTree` is module-private (not exported) — the signature change has no cross-module
+  surface; both in-file call sites updated. No external consumer.
+- `LlmGatewayInput` gained two OPTIONAL fields — no existing caller breaks; the
+  `apps/decision-api/src/lib/llm-gateway.ts` is a separate type/gateway and is unaffected (and still
+  lacks attribution — out of scope for F-10, which targeted control-plane only).
+
+#### 5d. Architectural assumptions affected
+
+- **Master Design cold-start / Bayesian-prior model:** F-02 realizes the "site-type informs the
+  cold-start prior before the first event" assumption that was previously dead code
+  (`applyArchetypeHints` defined, never invoked at init). This brings the implementation CLOSER to
+  the documented intent. The open architectural question (§4a LG-1) is the COMPOSITION rule across
+  the three prior sources (site-hint / quiz / chat-intent) — Master Design §D.1.1/§D.6 (FOLLOW-100's
+  reference) should state the order and idempotency explicitly; currently implicit.
+- **GDPR / DPIA assumption:** §13.2 documents that the system's actual behavior (90-day cross-session
+  fingerprint, live `consent.denied` dispatch) outran its disclosed behavior. The DPIA now records
+  the gap and conditions lawfulness on closing it — so the architecture is documented-but-not-yet-
+  compliant for EU until FOLLOW-128 lands. This is the inverse of the usual half-wire: the doc is
+  ahead of the code, and the doc itself says the code is non-compliant until it catches up.
+
+### 6. New lesson candidates
+
+- **Pattern A — "documentation/compliance control specifies a runtime string the code never
+  renders" (documentation HALF_WIRE_C).** Seen in: RETRO-018 (DPIA-mandated banner copy absent from
+  SDK). Prior retros flag *code*-side producer-absence (Rule L family, RETRO-009/010/011/017) and
+  *config-bag* producer-absence (RETRO-016), but a **DPIA/doc that prescribes a banner disclosure
+  string with no implementing code** is a distinct sub-shape. Count for THIS specific shape:
+  **1** (this retro). Below the threshold of 2 → **NOT promoted.** Track: if a second
+  "compliance-doc-prescribes-u,nimplemented-UI-string" case appears, promote a rule "Compliance docs
+  that mandate user-facing copy MUST emit an implementation FOLLOW with a before-go-live
+  `depends_on`, and the retro verifies the string exists in the SDK." For now Rule L's spirit
+  (verify the producer of a thing a consumer expects actually exists) covers it transitively — the
+  "consumer" is the DPIA's go-live gate.
+- **Pattern B — "multi-item bundled PR ships behavior changes with zero tests."** Seen in: RETRO-018
+  (4 items, 0 tests). This is a verification-discipline observation, not a grep-able code
+  anti-pattern, and it is somewhat track-specific (the YELLOW audit branch is not agent-prefix and
+  may run looser test gates than the FOLLOW-NNN sprint flow). Count as a code rule: not rule-shaped.
+  No promotion; surfaced for PM as a process note (the YELLOW track should adopt the same
+  test-with-the-fix discipline as the FOLLOW-NNN flow).
+- **Rule L family (test/fixture-injected value masks a dead production wire):** does NOT recur in
+  this PR — F-02 and F-10 wires ARE production-to-production (verified §3), so this retro is a
+  COUNTER-example reinforcing that the wires are real. No re-promotion.
+- Threshold check: no pattern reaches 2 occurrences in the prior 5 retros (RETRO-013..017) for the
+  new shapes here. **Net: no rule promoted.**
+
+### 7. Follow-ups
+
+- **FOLLOW-128** (compliance-engineer + sdk-engineer, 2h, **P0**, before EU pilot go-live): implement
+  the DPIA §13.1 + §13.2 mandated consent-banner disclosures in `ui/consent-banner.ts` (all three
+  locales) — denial-logging notice + 90-day cross-session-identifier notice — closing the §3
+  documentation HALF_WIRE_C. The F-14 LIA balancing test is explicitly conditional on this.
+- **FOLLOW-129** (compliance-engineer, 1.5h, **P0**, before EU pilot go-live): update the tenant
+  Privacy Notice template with the §13.1/§13.2 disclosure language, track DPO sign-off (DPIA records
+  "DPO review pending"), and add the QA verification that "Deny"/"Withdraw" removes the cross-session
+  `localStorage` key (the §13.2 verification action item).
+- **FOLLOW-130** (ml-engineer + sdk-engineer, 3h, **P1**, before FOLLOW-100/101): document and test
+  the prior-composition order (F-02 cold-start hint → quiz prior → chat-intent prior) and assert the
+  F-02 hint seed is idempotent across `init()` re-runs; add a hint-applied debug/telemetry signal so
+  the cold-start shift is observable in staging (closes §4a LG-1/LG-2). Cross-reference as a
+  precondition in the FOLLOW-100/101 specs.
+- **FOLLOW-131** (backend-engineer + sdk-engineer, 2.5h, **P1**): add the missing tests for F-09 +
+  F-10 — control-plane `runDecisionTree` locale selection + `?? s.en` total-fallback, `readConfig`
+  es-mapping, and `callLlmGateway` → `logLlmCallAsync` attribution threading (assert real ids on the
+  authenticated path, `'unknown'` only on the genuinely-anonymous path); pin `runDecisionTree`
+  positional-arg order as a regression guard (closes §4c TG-1/TG-2, §4b CB-1/CB-2).
+
+### 8. Cross-references
+
+- **RETRO-016 (FOLLOW-117, PR #156)** — nearest sibling: both touch `api/adapt/route.ts`. This PR's
+  F-10 `tenantId`-resolution move (earlier in GET) coexists cleanly with FOLLOW-117's pilot_frozen
+  guard; verified no conflict (§5a). Both are PILOT-001 launch-readiness wires.
+- **RETRO-017 (FOLLOW-114, PR #157)** — same merge wave; RETRO-017 surfaced a code-side HALF_WIRE_C
+  (detection→schema). This retro surfaces a NEW shape: a *documentation*-side HALF_WIRE (DPIA→banner
+  copy). Both are "the thing a consumer expects is not produced," at different layers (Rule L spirit,
+  not re-promoted).
+- **RETRO-013/014/015** — Wave-3 dashboard/route fixes; no overlap beyond the shared adapt-route
+  file neighborhood (different concerns: cta-lift/inquiry-starts vocabulary + fail-loud, vs.
+  locale/attribution here).
+- **First YELLOW-track retro** — RETRO-018 is the first retrospective for the parallel YELLOW audit
+  track (F-NN numbering, non-agent-prefix branch); prior retros are all FOLLOW-NNN / TICKET-NNN
+  sprint work.
+
+---
+
+## RETRO-019 — FOLLOW-129 (Tenant Privacy Notice template + DPO sign-off + consent-withdrawal erasure QA) — 2026-05-27
+
+### 1. Summary of change
+
+- **PR:** #159 (merged 2026-05-27 19:50 UTC / 21:50 +0200, commit `10ae1e7`). FIRST of the four
+  Sprint 13a-hardening (pre-pilot gate) retros. compliance-engineer; `depends_on: FOLLOW-128` (PR
+  #160, the SDK banner copy, merged ahead of this in the same wave). Implements RETRO-018 §4d DG-2.
+- **Files changed:** 4 (+222 / −13). **Docs-only — zero code.** `docs/compliance/dpia.md`
+  (§13.1/§13.2 cross-refs + GREEN balancing test + DPO gates), new
+  `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` (+127, tenant-embed template), `docs/compliance/README.md`
+  (index entry), `docs/ops/PILOT_RUNBOOK.md` (+35, EU pre-flight compliance checklist).
+- **Modules touched:** docs (compliance) + docs (ops). No SDK / control-plane / ingest / decision-api
+  / data / db-migration / config / test code touched.
+- **Key contracts changed:**
+  - **N/A — no code contract.** No exported type, route, schema field, or DB migration. The change is
+    entirely prose: tenant-facing disclosure templates, a DPO-gate tracking table, an EU pre-flight
+    runbook checklist, and the DPIA §13.2 balancing-test status transition (`conditional` → `GREEN —
+    contingent on FOLLOW-128 deployment`). All of these create **process/compliance obligations**,
+    not API surface. (The second commit was a prettier-stability fix: bracketed `> **[Tenant: ...]**`
+    blockquote callouts triggered a `proseWrap:always` non-idempotency loop in prettier, replaced
+    with a bold em-dash `Tenant action —` form — a CI-format workaround, recorded for the convention
+    note in §6.)
+
+### 2. Verification done in PR
+
+- Test files changed: **NONE** (docs-only PR; nothing automatable in a `*.test.ts` sense).
+- Assertions added: **0** automated. The PR's substance is itself a set of **manual** verification
+  gates (8-item EU pre-flight checklist + 6-row DPO gate table), all marked **PENDING**.
+- Coverage delta: **N/A** (no executable code).
+- CI checks: merged with the real merge gates green per QUEUE.md (`10ae1e7`, FOLLOW-129 DONE). The
+  one CI struggle was the prettier blockquote non-idempotency (fixed in commit 2); standing CI-gate
+  caveat applies (Rule I / Vercel / Python lanes pre-existing-red & non-blocking).
+- **Rule L verdict:** this PR is the *documentation* of a compliance control. The thing the doc now
+  "consumes"/asserts (a 90-day cross-session localStorage identifier that is deleted on
+  Deny/Withdraw) is a **producer that does not exist in the SDK** — see §3. So the PR passes its own
+  CI but FAILS the Rule-L-spirit check at the doc→code boundary: the artifact it describes is not
+  produced by any shipped code.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- No new file or exported symbol added in production code (docs-only). The new
+  `PRIVACY_NOTICE_TEMPLATE.md` is referenced from `docs/compliance/README.md`, `dpia.md` §13.1/§13.2,
+  and `PILOT_RUNBOOK.md` (4 inbound doc references — not orphaned). **CHECK A clean** (no code
+  surface to assess).
+
+**CHECK B — Half-wire detection (the central finding of this retro):**
+
+- **HALF_WIRE_C — documentation/compliance kind: the DPIA §13.2 + Privacy Notice §3 + PILOT_RUNBOOK
+  EU pre-flight gate all assert a "90-day cross-session pseudonymous identifier stored in
+  `localStorage`, immediately deleted if you withdraw consent or click Decline" — but NO such key
+  exists and NO erasure code runs on Deny/Withdraw.** Priority **P0** → **FOLLOW-139**. Evidence:
+  - **Producer side (the 90-day localStorage id):** searched
+    `localStorage`/`fingerprint`/`cross-session`/`estalara_` across `packages/sdk/src` (non-test).
+    The only localStorage keys are `estalara_consent` (`core/session.ts:16`, the consent flag) and
+    `__estalara_quiz_dismissed__` (`ui/quiz-trigger.ts:30`, a 24h dismissal flag). The session
+    **fingerprint** (`__estalara_session__`, `core/session.ts:53`) is in **`sessionStorage`** — which
+    is **tab-lifetime, cleared on tab close, NOT 90-day, NOT localStorage.** There is **no 90-day
+    localStorage identifier producer anywhere in the SDK.** The disclosed artifact does not exist.
+  - **Erasure side (deletion on Deny/Withdraw):** the `onDenied` handler (`index.ts:118`) calls only
+    `setConsentState('denied')`, which **`setItem`s** `estalara_consent='denied'`
+    (`core/session.ts:38-40`) — it **never `removeItem`s** anything. `grep removeItem packages/sdk/src`
+    → zero hits. So even the existing `__estalara_session__`/`estalara_consent` keys are NOT erased on
+    deny; the SDK simply halts and destroys the shadow host (`index.ts:93`). The documented promise
+    *"immediately deleted if you withdraw consent"* has **no implementing code.**
+  - Classification: a compliance control (DPIA §13.2 lawful-basis disclosure + the FOLLOW-129 AC3 QA
+    gate + the runbook pre-flight item) whose runtime counterpart is unimplemented — **HALF_WIRE_C**,
+    P0, because (a) the DPIA conditions the §13.2 lawful basis on the disclosure being *accurate*, and
+    a disclosure that promises a 90-day-localStorage-deleted-on-withdraw behavior the code never
+    performs is a **false statement to data subjects** (worse than the missing-string gap RETRO-018
+    flagged — this is a *wrong*, not merely *absent*, disclosure), and (b) the FOLLOW-129 AC3 staging
+    QA gate ("Deny/Withdraw removes the cross-session localStorage key") is **unexecutable as written**
+    — there is no such key to observe removed, so the gate would either falsely pass (key absent
+    because it never existed) or block forever. → **FOLLOW-139** (reconcile: either implement the
+    90-day id + withdrawal erasure, OR correct DPIA §13.2/Privacy Notice §3/runbook to the actual
+    sessionStorage tab-lifetime reality).
+- No new env var, DB column, Redpanda topic, or SDK event introduced (docs-only).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the DPIA §13.2 balancing test was flipped to "GREEN — contingent on FOLLOW-128
+  deployment," but GREEN is contingent on a SECOND, untracked condition that FOLLOW-128 did NOT
+  satisfy: that the disclosed behavior is TRUE.** FOLLOW-128 (PR #160) added the *banner string*
+  (verified live: `consent-banner.ts:145-146` renders the "...stored ...for up to 90 days... deleted
+  if you withdraw consent" disclosure). So the string now exists — closing RETRO-018's HALF_WIRE.
+  But shipping the *sentence* without the *behavior* (§3) means the GREEN marking now rests on a
+  disclosure that is **factually inaccurate**. The DPIA's own logic ("balancing test passed only if
+  the cross-session nature is disclosed") implicitly assumes the disclosure is accurate; it does not
+  guard against a disclosure that over-promises. The GREEN status should not be treated as
+  unconditionally passed until §3/FOLLOW-139 is resolved. → folded into FOLLOW-139 AC2 (re-evaluate
+  the §13.2 balancing test after reconciliation).
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P0, latent compliance defect, surfaced by this doc PR) — the SDK consent-withdrawal path
+  does not erase any stored identifier.** Detailed in §3. This is not introduced by THIS PR (the PR
+  added no code), but the PR's QA gate is what *should* have caught it; instead the gate was written
+  as PENDING and the gap shipped undetected into the runbook as a checkbox rather than a fixed bug.
+  The pilot dashboard / consent flow currently retains `estalara_consent` and (until tab close)
+  `__estalara_session__` after a deny. → FOLLOW-139.
+- **CB-2 (P3, doc nit) — Privacy Notice §3 says the identifier "rotates automatically every 30 days"
+  while the SDK banner string (FOLLOW-128) and DPIA say "rotates monthly."** Monthly ≈ 30 days so not
+  contradictory, but with no rotation code at all (no producer), the cadence claim is moot; fold the
+  wording reconciliation into FOLLOW-139 AC1.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P0) — there is no automated test, and per the runbook explicitly cannot be a CI test, that
+  asserts consent-withdrawal erases stored keys.** A SDK unit test CAN, however, assert that
+  `onDenied` calls `removeItem` (once the behavior exists) — the runbook's "cannot be automated from
+  CI" claim is true only for the full-browser staging round-trip, not for the unit-level erasure
+  assertion. The absence of even a unit test is what let the missing-erasure bug (§3/CB-1) go
+  unnoticed. → FOLLOW-139 AC2 (unit test: key absent after deny/withdraw).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P0) — the DPIA §13.2, Privacy Notice §3, and runbook EU pre-flight gate describe storage
+  behavior that diverges from the shipped SDK** (90-day localStorage + withdrawal-deletion vs actual
+  sessionStorage tab-lifetime + no deletion). Until reconciled, the canonical compliance docs are
+  internally consistent with each other but inconsistent with the code. → FOLLOW-139.
+- **DG-2 (P2) — the prettier blockquote workaround (bracketed `> **[...]**` → `> **... —**`) is an
+  undocumented CI-format gotcha** that the next agent editing markdown blockquotes under
+  `proseWrap:always` will re-hit. See §6 (lesson candidate, not yet rule-promotable).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 13b Lane B, READY) — the §3 HALF_WIRE_C is a NEW EU-go-live blocker
+  layered on top of the one RETRO-018 raised.** RETRO-018/FOLLOW-128 closed the *missing-string* gap;
+  this retro shows the string that landed is *inaccurate*. PM must treat FOLLOW-139 as a PILOT-001
+  EU-go-live precondition alongside FOLLOW-128 (or scope the EU pilot to Mode-A / non-fingerprint and
+  strike the 90-day claim). Flagging here per constraint 3 for PM to escalate — this is a
+  data-subject-facing accuracy defect, not just a missing control.
+- **TICKET-PILOT-002 (go/no-go runbook, BLOCKED) — the EU pre-flight checklist this PR added is the
+  right shape, but its "§13.2 staging localStorage QA" item is unexecutable as written** (no key to
+  observe). The checklist item must be rewritten (FOLLOW-139 AC3) before the runbook can gate go-live
+  honestly — otherwise PILOT-002's gate is a checkbox that cannot be truthfully checked.
+- **FOLLOW-128 (PR #160, DONE — sibling in THIS wave) — directly coupled.** FOLLOW-129 is FOLLOW-128's
+  documentation counterpart and `depends_on` it. Verified FOLLOW-128's banner now renders both
+  disclosure strings (`consent-banner.ts:142-146`); the cross-wave consistency holds at the *string*
+  level. The next-wave retros for PRs #160/#161/#162 should note FOLLOW-139 to avoid re-discovering
+  the same §13.2 behavior gap independently.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-092 (TICKET-PILOT-001 shadow-window measurement, BLOCKED) — indirectly:** if FOLLOW-139
+  resolves by *correcting docs to sessionStorage reality* (dropping cross-session continuity), the
+  "cross-session journey" measurement assumptions PILOT measurement leans on may need revisiting (is
+  there cross-session continuity at all, or only tab-lifetime?). Reconcile at FOLLOW-092 spawn.
+- **YELLOW Sprint 2–4 stubs FOLLOW-132..138 (reserved, spec-pending) — N/A directly,** but FOLLOW-139
+  is, like FOLLOW-128/129, a compliance go-live blocker that arguably belongs on the YELLOW launch-
+  readiness track; PM should reconcile whether it lives on the FOLLOW queue or the YELLOW plan to
+  avoid double-tracking (same note RETRO-018 §5b raised for FOLLOW-128/129).
+
+#### 5c. Contracts changed that other modules rely on
+
+- **N/A** — no code contract changed. The only cross-module "contract" is the compliance promise to
+  data subjects, which §3 shows the SDK does not honor (covered above, not a TS/API surface).
+
+#### 5d. Architectural assumptions affected
+
+- **GDPR / DPIA assumption (continuation of RETRO-018 §5d):** RETRO-018 found the *doc ahead of the
+  code* (banner string missing). This retro finds the more dangerous inverse-of-the-fix: the doc and
+  the now-shipped banner string both describe a **cross-session storage architecture the SDK never
+  implemented.** The Master Design / DPIA assume a 90-day rotating cross-session pseudonymous
+  identifier; the actual SDK uses a tab-scoped sessionStorage fingerprint regenerated per tab. This
+  is a genuine architecture-vs-disclosure divergence: either the SDK is *missing* the documented
+  cross-session feature, or the DPIA over-specifies a feature that was descoped. Master Design
+  §(privacy/session model) should be checked for which is canonical. FOLLOW-139 forces the decision.
+
+### 6. New lesson candidates
+
+- **Pattern A — "compliance/documentation control specifies user-facing behavior the code does not
+  implement."** RETRO-018 §6 opened this category as "compliance doc prescribes an unimplemented UI
+  *string*" (count 1). THIS retro is the **second occurrence of the same parent shape** but a
+  distinct sub-form: the doc prescribes an unimplemented *behavior* (90-day storage + deletion-on-
+  withdraw), and worse, FOLLOW-128 closed the string gap while leaving the behavior gap open — so the
+  shipped string is now *inaccurate*. Parent-pattern count = **2** (RETRO-018 string-absence +
+  RETRO-019 behavior-absence/inaccuracy). **This reaches the promotion threshold (≥2).** However, per
+  the agent's own discipline I weighed whether these are truly the *same* rule-shape: both are
+  "compliance doc asserts X; verify the SDK actually does X before the doc's go-live gate is treated
+  as met." They are. → **Promote a rule** (see CONVENTIONS_PATCH.md, Rule below). The rule's
+  verification step is grep-able (the disclosure key terms must map to a real SDK symbol).
+- **Pattern B — "docs-only PR ships a go-live gate as a PENDING checkbox instead of fixing the
+  underlying defect the gate would catch."** The FOLLOW-129 AC3 QA gate *encodes* the §3 bug as a
+  pending manual check rather than surfacing it as a P0 bug. Seen here (RETRO-019). Count = 1. Below
+  threshold → **NOT promoted.** Process note for PM: a pre-flight gate that cannot currently pass is a
+  disguised open bug, not a checklist item.
+- **Pattern C — prettier `proseWrap:always` blockquote-bracket non-idempotency.** A CI-format gotcha
+  (`> **[label]**` → spurious `>` re-appended each run). Seen: RETRO-019 (commit 2). Count = 1. Not
+  rule-shaped at this count; noted in §4d DG-2 for the next markdown editor.
+
+### 7. Follow-ups
+
+- **FOLLOW-139** (sdk-engineer + compliance-engineer, 3h, **P0**, before EU pilot go-live): reconcile
+  the DPIA §13.2 / Privacy Notice §3 / runbook "90-day cross-session localStorage identifier deleted
+  on Deny/Withdraw" disclosure with the actual SDK storage model — either implement the 90-day id +
+  consent-withdrawal `removeItem` erasure (with a unit test asserting the key is absent after
+  deny/withdraw), OR correct the three docs to the real sessionStorage tab-lifetime behavior and
+  re-evaluate the §13.2 balancing test. Rewrite the FOLLOW-129 §4 DPO-gate row and the PILOT_RUNBOOK
+  EU pre-flight "localStorage QA" item to reference the actual key name so the manual gate is
+  executable. Closes §3 HALF_WIRE_C, §4b CB-1, §4c TG-1, §4d DG-1. (`depends_on: FOLLOW-128`.)
+
+### 8. Cross-references
+
+- **RETRO-018 (FOLLOW-118/119/120/121, PR #158)** — direct parent: this PR (FOLLOW-129) implements
+  RETRO-018 §4d DG-2 and the doc half of RETRO-018's §3 documentation HALF_WIRE_C. RETRO-018 emitted
+  FOLLOW-128 (SDK string) + FOLLOW-129 (this doc work). This retro finds the string FOLLOW-128 shipped
+  is *inaccurate* — the second occurrence of RETRO-018's Pattern A, which crosses the promotion
+  threshold (§6, new CONVENTIONS_PATCH Rule).
+- **FOLLOW-128 / PR #160 (`256b469`, same Sprint 13a-hardening wave)** — the SDK banner-copy sibling
+  this PR `depends_on`; verified its disclosure strings are live (`consent-banner.ts`). The §13.2
+  storage-behavior gap (§3) is the shared blind spot of BOTH tickets — neither closed it.
+- **First of four Sprint 13a-hardening (pre-pilot gate) retros** — siblings to follow for PRs #160
+  (FOLLOW-128), #161 (FOLLOW-127), #162 (FOLLOW-122). Those retros should reference FOLLOW-139 rather
+  than independently re-discovering the §13.2 behavior gap.
+
+---
+
+## RETRO-020 — FOLLOW-128 (Implement DPIA §13.1/§13.2 mandated consent-banner disclosures in the SDK) — 2026-05-27
+
+### 1. Summary of change
+
+- **PR:** #160 (merged 2026-05-27 19:52 UTC / 21:52 +0200, commit `256b469`). SECOND of the four
+  Sprint 13a-hardening (pre-pilot gate) retros (RETRO-019 was 1st / PR #159). compliance-engineer +
+  sdk-engineer; `depends_on: FOLLOW-118`. Implements RETRO-018 §3's documentation HALF_WIRE_C (the
+  DPIA-mandated banner disclosure strings the SDK never rendered). Source retro: RETRO-018 §3/§4d.
+- **Files changed:** 2 (+328 / −0). SDK-only. `packages/sdk/src/ui/consent-banner.ts` (+66,
+  the two disclosure copy strings × 3 locales + a `<ul class="estalara-consent-disclosures">` render
+  block + style), `packages/sdk/src/__tests__/consent-banner.test.ts` (+262, 12 new tests).
+- **Modules touched:** SDK only. No control-plane / ingest / decision-api / data / db-migration /
+  docs / config touched. (The docs counterpart is FOLLOW-129 / PR #159, retro'd as RETRO-019.)
+- **Key contracts changed:**
+  - `COPY.{en,pl,es}.disclosure13_1` / `disclosure13_2` — **added** two new per-locale copy keys to
+    the internal (non-exported) `COPY` const in `consent-banner.ts` — breaking: **no** (private to the
+    module; only consumed by `renderConsentBanner` in the same file).
+  - DOM contract: two `<li data-estalara-disclosure="dpia-13-1|dpia-13-2">` elements now render inside
+    the consent banner shadow tree before the Accept/Decline buttons — **new** — breaking: **no** (the
+    `data-estalara-disclosure` attribute is a NEW automated-verification hook, not a removed one).
+  - No exported TS type, API route, event-schema field, or DB migration changed.
+
+### 2. Verification done in PR
+
+- Test files changed: `packages/sdk/src/__tests__/consent-banner.test.ts` (+262).
+- Assertions added: **12 new tests** covering all locale × section combinations (§13.1 present in
+  en/pl/es; §13.2 present in en/pl/es; correct `data-estalara-disclosure` attribute values;
+  disclosures rendered before the consent decision / before the action buttons).
+- Coverage delta: **+** for `consent-banner.ts` (both new copy keys and the render branch are now
+  exercised); estimate net-positive, no uncovered new lines.
+- CI checks: merged with the real merge gates green per QUEUE.md (`256b469`, FOLLOW-128 DONE).
+  Standing CI-gate caveat applies (Rule I / Vercel / Python lanes pre-existing-red & non-blocking,
+  per the CI-gate-landscape memory).
+- **Rule N verdict (the central caveat):** the tests prove the *strings render* and carry the right
+  attributes — they do **not** assert the disclosed *behavior* is true. The §13.1 string promises a
+  "7-day-then-deleted" audit log and the §13.2 string promises a "90-day localStorage id deleted on
+  withdraw." Per Rule N (promoted in RETRO-019), a disclosure test that only checks the sentence
+  renders is "if-present-it-shows" evidence, NOT evidence the disclosed behavior exists. Two distinct
+  behavior gaps result — see §3.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- No new file added. The two new internal copy keys (`disclosure13_1`/`disclosure13_2`) are consumed
+  by `renderConsentBanner` (`consent-banner.ts:239,243`), which has a real non-test importer/caller
+  at `packages/sdk/src/index.ts:23,102` (the SDK init consent-gate path). The new
+  `data-estalara-disclosure` DOM attribute is read only by the SDK's own tests today
+  (`consent-banner.test.ts` ×14) — it is an automated-verification hook, intended for a future
+  external/E2E compliance check; not dead (it is a passive DOM marker, valid even with only test
+  readers). **CHECK A clean ✅.**
+
+**CHECK B — Half-wire detection (two findings, split by DPIA section):**
+
+- **§13.1 — HONEST / wired ✅ (dispatch), but a SECONDARY retention claim is unbacked.** The §13.1
+  banner string discloses two things: (a) "we record the fact of your consent decision — including a
+  denial," and (b) "this log is retained for 7 days and then permanently deleted."
+  - **(a) producer EXISTS:** `onDenied` (`index.ts:118-126`) pushes a `consent.denied` audit event,
+    and on decline the SDK flushes it via `dispatchEvents` (`index.ts:132-137`) before halting. The
+    event type is a valid wire literal (`packages/shared/src/schemas/events/consent.ts:55`,
+    `EVENT_TYPES` includes `consent.denied`). So the "we record your denial" half is **genuinely
+    wired producer→schema** — a real improvement over the §13.2 case.
+  - **(b) the "retained for 7 days then permanently deleted" claim has NO enforcing producer.** Grep
+    for `7 day`/`7d`/`retention`/`TTL`/`DELETE`/`expire` against `apps/ingest/src`,
+    `packages/shared/src`, and any ClickHouse/SQL schema returns only a 24h idempotency-cache TTL and
+    a Redis description-cache TTL — **nothing applies a 7-day deletion to the consent-denied audit
+    log.** The audit event is dispatched to ingest with no documented 7-day TTL/retention policy on
+    the store. → **HALF_WIRE_C — kind `disclosure-claim:consent-denied-7-day-retention`** — consumer
+    side is the data-subject promise (and the eventual DSR/retention auditor); no producer enforces
+    the 7-day deletion. Priority **P1** → **FOLLOW-140**. (P1 not P0: unlike §13.2 this disclosure is
+    not factually *false at the SDK surface* — the log genuinely is recorded; the gap is an
+    *unenforced retention ceiling* downstream, a real but lower-blast-radius compliance defect than a
+    consumer NPE.)
+- **§13.2 — HALF_WIRE_C, already filed as FOLLOW-139 (RETRO-019). NOT re-filed here.** This PR is the
+  ticket that made the §13.2 string LIVE (`consent-banner.ts:145-146,157,169`): "...store a
+  pseudonymous identifier in your browser for up to 90 days... rotates monthly... deleted if you
+  withdraw consent." RETRO-019 §3 proved no 90-day localStorage id exists (the fingerprint is
+  tab-lifetime `sessionStorage`, `core/session.ts:53`) and `onDenied` never `removeItem`s anything
+  (`grep removeItem packages/sdk/src` → 0). So **the now-live banner copy FOLLOW-128 shipped is the
+  factually-inaccurate data-subject-facing surface** of that gap. Per the task constraint and to
+  avoid a duplicate stub, this is tracked by **FOLLOW-139** (P0, `depends_on: FOLLOW-128`) — see §7
+  cross-reference; **no new stub created for §13.2.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the §13.2 disclosure string is now LIVE while its disclosed behavior is absent.** The
+  string-level HALF_WIRE that RETRO-018 opened is closed by this PR, but closing it without the
+  behavior (RETRO-019 §3) converts an *absent* disclosure into an *inaccurate* one. This is the
+  realization of RETRO-019 §4a LG-1 ("shipping the sentence without the behavior"). Tracked by
+  FOLLOW-139 — not re-filed.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P1) — the §13.1 "7-day retention then permanent deletion" promise is unenforced** (§3
+  detail). The 12 tests assert the string renders; none assert (and none could, at SDK unit level,
+  since enforcement is downstream) that a 7-day TTL exists. The disclosure shipped without a linked
+  retention control. → FOLLOW-140.
+- **CB-2 (P0, latent, NOT introduced here) — §13.2 storage/withdrawal-erasure absence.** Carried from
+  RETRO-019 §4b CB-1; this PR is the surface that disclosed it. → FOLLOW-139 (not re-filed).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — there is no test (anywhere in the repo) asserting the consent-denied audit log is
+  deleted at the 7-day boundary, nor that a retention policy is configured on its store.** A SDK unit
+  test cannot cover this (enforcement is ingest/store-side); the gap belongs to a data/ingest
+  retention test. The disclosure currently has zero verification of its truth. → FOLLOW-140 AC.
+- **TG-2 (P2) — the new tests assert string presence and attribute values but not the disclosure
+  TEXT content (the specific "7 days" / "90 days" / "deleted on withdraw" claims).** A future test
+  that pins the claim keywords to real SDK/store symbols (per Rule N verification) would have caught
+  both §13.1 and §13.2 behavior gaps at PR time. Worth adding when FOLLOW-139/140 land.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — N/A as a NEW gap for this SDK-only PR.** The DPIA §13.1/§13.2 doc side is owned by
+  RETRO-019/FOLLOW-129/139. Note only: once FOLLOW-140 decides the §13.1 retention reality, the DPIA
+  §13.1 "7-day" figure must be reconciled byte-for-byte with whatever TTL ships (or the claim
+  softened). Folded into FOLLOW-140 AC, not a separate doc stub.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 13b Lane B, READY) — partially de-risked, two residual blockers.** This
+  PR closes the *missing-disclosure-string* blocker RETRO-018 raised (the EU banner now renders both
+  DPIA disclosures). But the EU go-live story is NOT clean: §13.2 is inaccurate (FOLLOW-139, P0) and
+  §13.1's 7-day claim is unenforced (FOLLOW-140, P1). PM should treat FOLLOW-139 as a hard EU-go-live
+  precondition and FOLLOW-140 as a should-fix-before-EU-go-live (or soften the §13.1 retention claim).
+  Flagged here per constraint 3 for PM escalation — both are data-subject-facing accuracy/retention
+  defects, not just missing controls.
+- **TICKET-PILOT-002 (go/no-go runbook, BLOCKED) — the EU pre-flight checklist (added by FOLLOW-129)
+  now has a TWO-claim verification surface, not one.** The runbook's §13.2 localStorage-QA item is
+  unexecutable (FOLLOW-139); separately, a §13.1 "verify 7-day audit-log deletion" pre-flight item
+  does not yet exist and should — FOLLOW-140 should add/own it so the runbook can gate honestly on
+  both disclosures.
+- **FOLLOW-129 (PR #159, DONE — sibling, RETRO-019) — directly coupled (the doc↔SDK pair).** This PR
+  is FOLLOW-129's `depends_on` SDK counterpart; verified the strings FOLLOW-129's docs reference are
+  live (`consent-banner.ts:142-169`). String-level cross-wave consistency holds. The shared blind
+  spot of BOTH tickets is the §13.2 *behavior* (FOLLOW-139) and, newly surfaced here, the §13.1
+  *retention* (FOLLOW-140).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-092 (TICKET-PILOT-001 shadow-window measurement, BLOCKED) — indirectly:** unchanged from
+  RETRO-019 §5b — if §13.2 resolves toward sessionStorage-tab-lifetime reality (FOLLOW-139), the
+  cross-session measurement assumptions need revisiting. This PR does not alter that.
+- **YELLOW Sprint 2–4 stubs (FOLLOW-132..138, reserved) — N/A directly,** but FOLLOW-140, like
+  FOLLOW-128/129/139, is a compliance go-live item; same double-tracking caution RETRO-018 §5b /
+  RETRO-019 §5b raised — PM should decide whether it lives on the FOLLOW queue or the YELLOW plan.
+
+#### 5c. Contracts changed that other modules rely on
+
+- **N/A for TS/API surface** — the only changed contract is the internal `COPY` const + a passive DOM
+  marker attribute, neither cross-module. The cross-module "contract" is again the compliance promise
+  to data subjects (§13.1 retention + §13.2 storage), which §3 shows is partly unbacked (covered by
+  FOLLOW-139/140).
+
+#### 5d. Architectural assumptions affected
+
+- **GDPR/DPIA assumption (continuation of RETRO-018 §5d and RETRO-019 §5d):** RETRO-018 = doc ahead of
+  the code (string missing); RETRO-019 = doc + SDK both describe a storage architecture the SDK never
+  built. THIS retro adds a third, narrower instance on the §13.1 axis: the SDK now honestly *produces*
+  the consent-denied audit event, but the disclosed *retention ceiling* (7-day deletion) has no
+  enforcing component — the architecture assumes a retention/TTL policy on the audit store that is
+  not yet specified or implemented. Master Design / DPIA §13.1 should confirm where consent-audit
+  retention is enforced (ingest? ClickHouse TTL? a retention cron?). FOLLOW-140 forces that decision.
+
+### 6. New lesson candidates
+
+- **Pattern N (doc/disclosure asserts behavior the code does not implement) — THIRD occurrence.**
+  RETRO-018 (string absence) + RETRO-019 (behavior absence/inaccuracy, §13.2) → **Rule N was already
+  promoted in CONVENTIONS_PATCH.md by RETRO-019.** This retro is a third confirming instance on a new
+  axis (§13.1 unenforced retention claim), which is exactly what Rule N's verification grep
+  (`grep ... removeItem / retention / TTL ...`) is designed to catch. **Do NOT re-promote** — Rule N
+  already covers it. Logged here as additional evidence strengthening Rule N. (Per the agent's
+  no-double-promotion discipline.)
+- **Pattern B (docs/feature ships a go-live gate as a PENDING checkbox instead of fixing the
+  underlying defect) — SECOND occurrence.** RETRO-019 §6 opened this (count 1) for the FOLLOW-129 AC3
+  QA gate. This PR's 12 tests are the SDK analogue: they encode "the disclosure renders" as a green
+  gate while the disclosed behavior (§13.1 retention, §13.2 storage) stays unverified — a passing test
+  suite that masks an unbacked claim. Count = **2**. *Considered for promotion.* On reflection I judge
+  it is a **specialization of Rule N**, not a distinct rule-shape: both reduce to "a green
+  test/checkbox proves presentation, not the disclosed behavior — verify the behavior before treating
+  the gate as met," which Rule N's verification section already mandates. **NOT separately promoted**
+  to avoid noise/overlap; noted so a future, clearly-distinct third occurrence can revisit.
+- **Pattern: §13.1 producer-honest / retention-unenforced split** — a disclosure can be *partly*
+  wired (the recording happens) yet still over-promise on a *secondary* clause (the deletion). Count
+  = 1. Below threshold, not rule-shaped; noted for future retros to watch the "secondary clause"
+  failure mode within an otherwise-wired disclosure.
+
+### 7. Follow-ups
+
+- **FOLLOW-140** (data-engineer + compliance-engineer, 2h, **P1**, before/at EU pilot go-live):
+  enforce or correct the §13.1 consent-banner promise that the consent-decision audit log "is
+  retained for 7 days and then permanently deleted." Today the `consent.denied`/`consent.granted`
+  audit events are dispatched to ingest with NO 7-day retention/TTL enforcement on the store (only a
+  24h idempotency cache + a Redis description cache exist). Either (a) configure a 7-day
+  TTL/retention policy on the consent-audit store (ClickHouse TTL / retention cron) with a test
+  asserting the policy, OR (b) correct the §13.1 banner string + DPIA §13.1 to the actual retention
+  period. Add the corresponding §13.1 "verify 7-day audit-log deletion" item to the PILOT_RUNBOOK EU
+  pre-flight checklist so it is executable. Closes §3 §13.1 HALF_WIRE_C, §4b CB-1, §4c TG-1.
+  (`source_retro: RETRO-020`.)
+- §13.2 banner-copy-vs-behavior inaccuracy: **covered by FOLLOW-139 (RETRO-019) — no new stub.**
+
+### 8. Cross-references
+
+- **RETRO-019 (FOLLOW-129, PR #159, `10ae1e7`, same Sprint 13a-hardening wave)** — the docs
+  counterpart this PR is the SDK `depends_on` for. RETRO-019 §3 found the §13.2 90-day-localStorage /
+  delete-on-withdraw behavior is absent; THIS retro confirms FOLLOW-128 is the PR that made that
+  inaccurate string LIVE, and routes it to RETRO-019's **FOLLOW-139** rather than duplicating. Rule N
+  (CONVENTIONS_PATCH.md) was promoted by RETRO-019 off this exact pattern; RETRO-020 is a third
+  confirming instance (§13.1 axis), not a re-promotion.
+- **RETRO-018 (FOLLOW-118/119/120/121, PR #158)** — root cause: RETRO-018 §3 documentation HALF_WIRE_C
+  ("DPIA mandates a banner string the SDK never renders") emitted FOLLOW-128 (this ticket, the SDK
+  string) + FOLLOW-129 (the doc). FOLLOW-128 closes RETRO-018's *string-absence* gap — but, as
+  RETRO-019 + this retro show, exposes the deeper *behavior-absence* gaps beneath it.
+- **SECOND of four Sprint 13a-hardening (pre-pilot gate) retros** — siblings: RETRO-019 (#159 / done),
+  and still-to-come retros for #161 (FOLLOW-127) and #162 (FOLLOW-122). Those should reference
+  FOLLOW-139 (§13.2) and FOLLOW-140 (§13.1) rather than independently re-discovering the disclosure
+  behavior gaps.
+
+---
+
+## RETRO-021 — FOLLOW-127 (Detection engine must PRODUCE inquiry_submit_selector — close the detection→schema producer) — 2026-05-27
+
+### 1. Summary of change
+
+- **PR:** #161 (merged 2026-05-27 19:53 UTC / 21:53 +0200, commit `6a27841`). THIRD of the four
+  Sprint 13a-hardening (pre-pilot gate) retros (RETRO-019 = PR #159 / 1st; RETRO-020 = PR #160 / 2nd;
+  next = 4th, PR #162 / FOLLOW-122). ml-engineer + backend-engineer; `depends_on: FOLLOW-114`.
+  Source retro: RETRO-017 §3 HALF_WIRE_C / §4a LG-1 — the transitive Rule L producer gap where the
+  schema→SDK-config→snippet **consumer** chain (closed by FOLLOW-097 / PR #151 and FOLLOW-114 /
+  PR #157) had **no production code populating the field on a real detected schema**; it lived only
+  in the hand-authored `000-app-estalara` fixture.
+- **Files changed:** 6 (+678 / −15). New deterministic probe + pipeline wiring + AI-Vision parser +
+  a test-only typecheck helper.
+  - `packages/sdk/src/auto-detect/detect-inquiry-selector.ts` (new, +240) — `detectInquirySubmitSelector(html)`
+    L1–L7 DOM heuristic ladder; returns `string | null`, never `""`.
+  - `packages/sdk/src/auto-detect/pipeline.ts` (+7) — post-processing call inside `detectSiteSchema`;
+    sets `finalSchema.inquiry_submit_selector` only when the probe returns non-null.
+  - `packages/sdk/src/auto-detect/techniques/ai-vision.ts` (+17) — Technique 11 prompt + parser also
+    extract the selector (TG-1 guard: trim + non-empty).
+  - `packages/sdk/src/auto-detect/index.ts` (+1) — barrel re-export of `detectInquirySubmitSelector`.
+  - `packages/sdk/src/auto-detect/__tests__/detect-inquiry-selector.test.ts` (new, +345) — 20 unit
+    tests (L1–L7 ladder + pipeline integration).
+  - `apps/control-plane/src/app/api/detect/route.test.ts` (+83 / −15) — 3 new FOLLOW-127 tests +
+    `withDbMock()` typecheck helper refactor.
+- **Modules touched:** SDK (auto-detect) + control-plane (test only). No ingest / decision-api / data
+  / db-migration / docs / config touched.
+- **Key contracts changed:**
+  - `detectInquirySubmitSelector(html: string): string | null` — **new** exported SDK symbol
+    (`auto-detect` barrel) — breaking: **no** (additive).
+  - `DetectionResult.schema.inquiry_submit_selector` — now **populated by production code** (was
+    fixture-only). The `TenantSiteSchema.inquiry_submit_selector?: string | null` field
+    (`packages/shared/src/tenant-site-schema.ts:249`) is unchanged — breaking: **no**.
+  - AI-Vision `AiVisionResponse.inquiry_submit_selector?: unknown` — **new** optional parsed field —
+    breaking: **no**.
+  - No API route signature, event-schema, or DB migration changed (the field rides the existing
+    `schema` JSONB blob).
+
+### 2. Verification done in PR
+
+- Test files changed: `detect-inquiry-selector.test.ts` (new, +345), `route.test.ts` (+83/−15).
+- Assertions added: **20** unit tests for the L1–L7 probe (incl. 3 pipeline-integration tests at
+  `detect-inquiry-selector.test.ts:244-343`: field present when an inquiry form exists, ABSENT when
+  none, and `tenant_id` + selector both set together) + **3** control-plane round-trip/TG-1 tests
+  (`route.test.ts:778-815`: wizard response preserves a pipeline-populated selector; never emits `""`).
+- Coverage delta: **+** for the new SDK file (L1–L7 branches exercised) and the AI-Vision parser
+  branch; net-positive, no obviously-uncovered new lines.
+- CI checks: merged with the real merge gates green per QUEUE.md (`6a27841`, FOLLOW-127 DONE).
+  Standing CI-gate caveat applies (Rule I / Vercel / Python lanes pre-existing-red & non-blocking,
+  per the CI-gate-landscape memory).
+- **AC verdict (the central caveat — see §4a).** AC1–AC3 (a *real-tenant* detection produces the
+  field end-to-end) are supported only by **synthetic** unit fixtures (hand-built HTML strings inside
+  the test file). AC4 (the pilot hand-set interim value) is **asserted by the ticket but NOT present
+  in any committed seed/migration** — see §3 CHECK B and §4a LG-1. The producer code is genuinely
+  wired; the *evidence that it works on the pilot's real site* and that *the pilot row actually
+  carries the interim value* is absent.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- `detectInquirySubmitSelector` (new file `detect-inquiry-selector.ts`) — re-exported via the
+  `auto-detect/index.ts` barrel AND imported by a **real runtime consumer**:
+  `pipeline.ts:39` imports it and calls it at `pipeline.ts:121` inside `detectSiteSchema` (the
+  server-side `/api/detect` detection path). Non-test importers ≥ 1. **Not dead.**
+- The barrel re-export (`auto-detect/index.ts:12`) traces one hop further to the SDK public surface;
+  even setting it aside, the `pipeline.ts` caller is a genuine consumer. **CHECK A clean ✅.**
+
+**CHECK B — Half-wire detection (DB column / schema field `inquiry_submit_selector`):**
+
+- **Producer (NEW this PR) — EXISTS ✅.** `pipeline.ts:121-123` sets
+  `finalSchema.inquiry_submit_selector` from the probe; `ai-vision.ts:250` sets it from the LLM.
+- **Persist hop — EXISTS ✅ (transitive).** `/api/detect` returns `result.schema`
+  (`route.ts:417,438`) carrying the field; `/api/schema/activate` upserts the whole `schemaValue`
+  JSONB blob (`activate/route.ts:166,173`) into `tenant_site_schemas.schema`, so a detected value is
+  persisted without a dedicated column mapping.
+- **Consumer — EXISTS ✅ (closed by FOLLOW-097/114, pre-existing).** `DetectionPreview.tsx:173`
+  threads it into the snippet; `packages/sdk/src/index.ts:381` → `core/config.ts` → `core/observer.ts`
+  surface it to the Observer at runtime. So the full producer→persist→consumer wire is now CLOSED for
+  any **real detection that finds a selector**. — **No HALF_WIRE for the general path.**
+- **HALF_WIRE_C (NEW) — the PILOT path. `schema-field:inquiry_submit_selector` on the pilot tenant
+  row.** AC4 states an interim value `"[data-estalara-slot='inquiry-submit']"` was hand-set on the
+  pilot schema to unblock TICKET-PILOT-001. **No committed artifact sets it:** a search of
+  `packages/db/migrations/**` (incl. `0015_pilot_frozen.sql`, which only adds a `pilot_frozen`
+  boolean and contains no `inquiry`), `0003_tenant_site_schemas.sql`, seed scripts, and
+  `apps/control-plane/src/lib/**` finds the string ONLY in the test ground-truth fixture
+  `packages/sdk/src/auto-detect/__fixtures__/000-app-estalara/detail-ground-truth.json:19` — a
+  fixture, not the pilot tenant row. The Observer consumer (`index.ts:381`) expects this value to
+  arrive from the activated tenant schema; if the pilot row was never seeded/activated with it, the
+  consumer reads `undefined` at pilot runtime and the inquiry-tracking wire is silently inert. →
+  **HALF_WIRE_C — priority P0** → **FOLLOW-141**. (P0 per Step 6: a consumer expecting data that
+  never arrives is silently broken at runtime — exactly the inquiry-conversion measurement
+  TICKET-PILOT-001 depends on.)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P0) — AC4's "interim hand-set value on the pilot schema" has no committed home.** The
+  ticket treats PILOT-001 as unblocked because the pilot schema carries
+  `"[data-estalara-slot='inquiry-submit']"`. But that value lives only in a *test fixture*, not in a
+  migration, seed, or activation call against the pilot tenant. Either the value was set out-of-band
+  (manual DB edit — unverifiable, not reproducible, lost on any re-seed) or it was never set at all.
+  Impact: the pilot's inquiry-conversion signal is the headline pilot metric; if the row is missing
+  the selector, the Observer never wires the inquiry listener and the pilot measures nothing. →
+  FOLLOW-141.
+- **LG-2 (P2) — the deterministic probe and the AI-Vision parser can DISAGREE, and the pipeline
+  silently prefers the probe.** For Technique 11 (AI Vision), `detectAiVision` sets the field from the
+  LLM (`ai-vision.ts:250`), but `detectSiteSchema` then *overwrites* it with the deterministic probe
+  result whenever the probe returns non-null (`pipeline.ts:121-123` runs unconditionally on the
+  post-processed `finalSchema`). For AI-Vision detections this means the LLM's selector is discarded
+  in favor of the probe — likely the intended precedence, but it is undocumented and untested (no
+  test asserts which wins on conflict). Low blast radius; noted for the next auto-detect editor. →
+  folded into FOLLOW-141 AC (document/test precedence) — not a separate stub.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P2) — `elementText` assumes `el.textContent` is non-null.** `detect-inquiry-selector.ts`
+  `elementText` calls `el.textContent.replace(...)`; `Element.textContent` is typed `string | null`
+  in the DOM lib. In jsdom it is `""` for empty elements so tests pass, but a strict null check / a
+  runtime where `textContent` is null on an exotic node would throw inside the L4/L6 cascade. Defensive
+  `?? ''` is warranted. Low severity (real browsers/jsdom return `""`). → noted; folded into
+  FOLLOW-141 AC only if the file is reopened.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — no real-site / corpus accuracy measurement for `inquiry_submit_selector`.** All 23
+  added tests use hand-built synthetic HTML. The auto-detect corpus harness
+  (`test-utils.ts:550-568`) scores `detail` ground-truth fields by iterating `Object.entries(expected)`,
+  and the `000-app-estalara` detail ground-truth DOES list `inquiry_submit_selector`
+  (`detail-ground-truth.json:19`) — BUT the harness reads the *detected* value from the per-field
+  `detail_schema` slot map (`detected[fieldKey]`), NOT from the top-level
+  `finalSchema.inquiry_submit_selector` the pipeline now populates. So the new field is **not actually
+  scored** by the corpus precision/recall harness, and there is exactly **one** fixture site. AC1–AC3
+  (real-tenant end-to-end production) is therefore unmeasured against the corpus — the probe's L2–L7
+  heuristics could be wrong on real sites and CI would stay green. → FOLLOW-141 AC.
+- **TG-2 (P2) — no test asserts probe-vs-AI-Vision precedence** (the LG-2 conflict). → folded into
+  FOLLOW-141.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — the L1–L7 heuristic ladder and the field's stated stability/confidence ranking are
+  documented only in the source file's docblock**, not in MASTER_DESIGN §B (auto-detection) or a
+  detection ADR. Future detection-tuning tickets (and the ml-engineer who owns platform-templates)
+  will not discover the ladder's precedence rules from the design docs. → folded into FOLLOW-141 AC
+  (record the ladder + probe/LLM precedence in the canonical detection section), not a separate stub.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 13b Lane B, READY) — the §3 HALF_WIRE_C / §4a LG-1 is a direct pilot
+  blocker, NOT the clean unblock AC4 claims.** FOLLOW-127's *general* detection path is now wired
+  (good), but the pilot's reliance on a hand-set interim value is unverified: no committed seed sets
+  `inquiry_submit_selector` on the pilot tenant row. If the pilot tenant uses the real detection
+  pipeline, the L1 rule (`[data-estalara-slot='inquiry-submit']`) only fires if the pilot site
+  actually carries that Tier-3 marker in its DOM — otherwise L2–L7 must succeed, and that is
+  unmeasured (§4c TG-1). PM must confirm BEFORE pilot go-live that the pilot tenant's activated
+  schema carries a valid `inquiry_submit_selector` (re-detect-and-activate, or commit a seed). Flagged
+  here per constraint 3 for PM escalation — this is the headline pilot conversion metric's wire.
+- **TICKET-PILOT-004 (`backlog/sprint-12/TICKET-PILOT-004.md`, references `inquiry_submit_selector`)
+  — verify its assumptions still hold.** It is the other ticket in the repo that names the field;
+  whatever it asserts about the selector being present should be reconciled against §3 (the value may
+  not be seeded). PM to confirm at PILOT-004 pickup.
+- **FOLLOW-114 (PR #157, DONE — the consumer-chain ticket this `depends_on`) — now fully satisfied on
+  the general path.** RETRO-017 §3 raised the HALF_WIRE_C (consumer with no producer); FOLLOW-127 is
+  the producer it asked for. Verified the FOLLOW-114 consumer hops are live
+  (`DetectionPreview.tsx:173`, `index.ts:381`). The lineage's *remaining* hole is the pilot-row
+  population (FOLLOW-141), a narrower instance of the same producer gap.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-092 (TICKET-PILOT-001 shadow-window measurement, BLOCKED) — directly downstream:** the
+  inquiry-submit event is presumably one of the conversion signals the shadow-window measures. If the
+  selector is not wired on the pilot row (§3), FOLLOW-092 measures zero inquiries regardless of true
+  conversion. Reconcile FOLLOW-141 before FOLLOW-092 spawns.
+- **YELLOW Sprint 2–4 stubs FOLLOW-132..138 (reserved, spec-pending) — N/A directly.** FOLLOW-141 is
+  a pilot-readiness wiring fix, not a YELLOW launch-readiness item; it belongs on the FOLLOW queue.
+- **Platform-templates expansion (ml-engineer, future) — affected:** once more real platforms are
+  added to the auto-detect corpus, the L2–L7 inquiry heuristics need per-platform ground-truth +
+  harness scoring (§4c TG-1). The corpus harness should be extended to score the top-level field then.
+
+#### 5c. Contracts changed that other modules rely on
+
+- **N/A for breaking changes** — all changes are additive. The cross-module contract is the
+  `schema` JSONB shape: the Observer consumer (`packages/sdk/src/index.ts:381`) now genuinely receives
+  a producer-populated `inquiry_submit_selector` on real detections (improvement). The only residual
+  contract risk is the pilot row not carrying the field (§3, behavioral not type-level).
+
+#### 5d. Architectural assumptions affected
+
+- **Rule L / producer-consumer-wire assumption (continuation of the RETRO-009/010/011/017 lineage):**
+  RETRO-017 §3 assumed "close the producer and the detection→schema→SDK wire is whole." FOLLOW-127
+  closes it for the **general detection path** — but reveals a second-order assumption: that the
+  *pilot* (a frozen, possibly-hand-seeded tenant) goes through the same detection→activate path. The
+  pilot is a special case where a value was asserted hand-set but is not reproducibly committed. The
+  architectural lesson: a producer that works in the general pipeline does NOT guarantee a
+  pre-existing/frozen row carries the value — frozen-tenant seeds must be re-validated whenever a new
+  schema field becomes load-bearing. Master Design §B (auto-detection) should note the L1–L7 ladder
+  (§4d DG-1).
+
+### 6. New lesson candidates
+
+- **Pattern (Rule L lineage) — "a new producer closes the general wire but a frozen/pre-seeded row is
+  left carrying the field out-of-band (or not at all)."** The parent Rule-L / HALF_WIRE_C pattern
+  (producer-consumer wiring) is heavily represented — RETRO-009/010/011/017 — and **Rule L is already
+  promoted in CONVENTIONS_PATCH.md.** This retro is a *confirming* instance on a NEW sub-axis (the
+  frozen-pilot-row population gap), exactly the failure Rule L's verification is meant to catch. Per
+  the no-double-promotion discipline and the task's explicit instruction (do NOT re-promote an
+  existing rule on a single new occurrence), **Rule L is NOT re-promoted.** Logged here as evidence
+  strengthening Rule L.
+- **Pattern (new sub-shape) — "AC asserts a value was hand-set/seeded but the value lives only in a
+  test fixture, not in a committed migration/seed."** This is a distinct shape from Rule L (it is
+  about *provenance of a claimed manual fix*, not producer-consumer wiring). Seen: RETRO-021 (this
+  retro). Count = **1**. Below the promotion threshold (2). NOT promoted; recorded so a future second
+  occurrence (e.g. another "interim hand-set on the pilot" claim) crosses the threshold.
+- **Pattern — "new schema field is populated by production code but never scored by the detection
+  corpus accuracy harness."** Seen: RETRO-021 (§4c TG-1). Count = 1. Below threshold. Noted for the
+  next auto-detect field addition.
+
+### 7. Follow-ups
+
+- **FOLLOW-141** (backend-engineer + ml-engineer, 3h, **P0**, before EU/pilot go-live): make the
+  pilot tenant's `inquiry_submit_selector` real and verified, and measure the producer's accuracy.
+  Closes §3 HALF_WIRE_C, §4a LG-1, §4c TG-1, and folds in §4a LG-2 / §4d DG-1.
+  (`source_retro: RETRO-021`, `depends_on: FOLLOW-127`.)
+
+### 8. Cross-references
+
+- **RETRO-017 (FOLLOW-114, PR #157)** — root cause: RETRO-017 §3 HALF_WIRE_C / §4a LG-1 identified
+  the consumer-with-no-producer gap and `inquiry_submit_selector` was the canonical example.
+  FOLLOW-127 (this PR) is the producer RETRO-017 demanded; the general wire is now closed, with the
+  pilot-row population (FOLLOW-141) the residual hole.
+- **RETRO-011 (FOLLOW-097, PR #151) and FOLLOW-114 (PR #157)** — the consumer chain
+  (schema→SdkConfig→snippet→Observer) closed before this PR; verified live
+  (`DetectionPreview.tsx:173`, `index.ts:381`). FOLLOW-127 connects the missing producer end.
+- **Rule L (CONVENTIONS_PATCH.md)** — promoted off the RETRO-009/010/011/017 producer-consumer-wire
+  lineage. RETRO-021 is a confirming instance (frozen-pilot-row sub-axis), NOT a re-promotion.
+- **THIRD of four Sprint 13a-hardening (pre-pilot gate) retros** — siblings: RETRO-019 (#159 /
+  FOLLOW-139), RETRO-020 (#160 / FOLLOW-140), and the still-to-come 4th retro for #162 (FOLLOW-122).
+  The 4th retro should note FOLLOW-141 if it touches the pilot tenant row or the inquiry wire.
+
+---
+
+## RETRO-022 — FOLLOW-122 (Wire /dashboard/pilot to consume data_source provenance + surface the fail-loud HTTP 500 state — cta-lift + inquiry-starts) — 2026-05-27
+
+### 1. Summary of change
+
+- **PR:** #162 (merged 2026-05-27 ~21:53 UTC+2, commit `29c97ab`). FOLLOW-122 (backend-engineer).
+  **FOURTH and final of the four Sprint 13a-hardening (pre-pilot gate) retros** (siblings: RETRO-019
+  #159 / FOLLOW-139, RETRO-020 #160 / FOLLOW-140, RETRO-021 #161 / FOLLOW-141). Source retro RETRO-013
+  (which raised the cta-lift consumer-swallow); this PR also closes RETRO-008 TG-2 (the
+  `/dashboard/pilot` provenance-read half of the go/no-go data-provenance check).
+- **Files changed:** 4 (+additions / −deletions per the commit; new
+  `inquiry-starts/route-helpers.ts` +43, `page.tsx` rewired, `page.test.tsx` +296 / 11 new tests,
+  `inquiry-starts/route.ts` −types → re-export).
+- **Modules touched:** control-plane only (dashboard page + two pilot API route modules + page test).
+  No SDK / ingest / decision-api / data / db-migration / docs / config touched.
+- **Key contracts changed:**
+  - `apps/control-plane/src/app/api/pilot/inquiry-starts/route-helpers.ts` — **NEW module** exporting
+    `InquiryStartsResponse` + `DailyBreakdownRow` (extracted from `route.ts`, which now re-exports
+    them for backward compat) — breaking: **no** (additive; `route.ts` keeps the same export names).
+  - `apps/control-plane/src/app/dashboard/pilot/page.tsx` — **deletes** its duplicate local
+    `CtaLiftResponse` / `InquiryStartsData` / `DailyBreakdownRow` interfaces and now imports the
+    canonical types from the two `route-helpers` modules — internal-only contract; breaking: **no**.
+  - No API route **signature** (path/method/response shape) changed — the routes already emitted
+    `data_source` (FOLLOW-094 PR #153, FOLLOW-098 PR #155); this PR is purely the consumer wiring +
+    a types-extraction refactor. — breaking: **no**.
+
+### 2. Verification done in PR
+
+- Test files changed: `apps/control-plane/src/app/dashboard/pilot/page.test.tsx` (+296, 11 new tests
+  across 3 describe blocks: HTTP-500-fail-loud, mock-data-badge, clean-clickhouse-render).
+- Assertions added: **11** RTL tests (`page.test.tsx:162-340`): 500 → `ErrorBanner` renders AND
+  metric numbers are withheld (for both cta-lift and inquiry-starts independently); `data_source=mock`
+  → `MockDataBadge` visible (both panels); `mock ≠ error` (numbers still render alongside the badge);
+  `data_source=clickhouse` → no badge + no error banner + numbers render. The tests assert exactly the
+  Rule K.2 consumer obligations (read status AND read provenance).
+- Coverage delta: **+** for `page.tsx` (the new `FetchState<T>` branches, `ErrorBanner`,
+  `MockDataBadge`, and the `!error` gating in all four panels are exercised). Net-positive.
+- CI checks: merged on `main` as the head commit; the two-commit history shows the second commit
+  fixed a real CI failure (TS2307 — the relative import path `../api/...` was wrong from
+  `src/app/dashboard/pilot/`, corrected to `../../api/...`, and the workaround `eslint-disable` was
+  removed once `route-helpers.ts` no longer pulled in `@estalara/auth`). Standing CI-gate caveat
+  applies (Rule I / Vercel / Python lanes pre-existing-red & non-blocking, per the CI-gate-landscape
+  memory).
+- **AC verdict — clean.** The PR does exactly what FOLLOW-122 specified: imports the canonical type
+  (kills the duplicate-interface drift root cause), renders a visible mock badge when
+  `data_source !== 'clickhouse'`, and renders an error banner withholding all numbers on non-2xx. The
+  central caveat is NOT in this PR's scope but in its blast radius: the sibling
+  `/dashboard/analytics` page still carries the identical un-fixed defect (see §3 / §4 / §5).
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- New module `apps/control-plane/src/app/api/pilot/inquiry-starts/route-helpers.ts` — imported by a
+  **real runtime consumer** (`page.tsx` `import type { InquiryStartsResponse, DailyBreakdownRow }`)
+  AND re-exported by the sibling `route.ts` (`export type { ... } from './route-helpers'`). Non-test
+  importers ≥ 1. **Not dead.**
+- New page-local components `ErrorBanner` / `MockDataBadge` / wrapper type `FetchState<T>` — all
+  referenced within `page.tsx` by the four panels. **Not dead.** **CHECK A clean ✅.**
+
+**CHECK B — Half-wire detection (provenance signal `data_source` + HTTP-status as consumer inputs):**
+
+- **Producer — EXISTS ✅ (pre-existing).** Both pilot routes emit `data_source: 'clickhouse' | 'mock'`
+  and a fail-loud HTTP 500 (`cta-lift/route.ts:341-372` — unset URL → 200 mock with provenance; set
+  but query throws → `Sentry.captureException` + `{ status: 500 }`; `inquiry-starts/route-helpers.ts`
+  carries the same `data_source` field).
+- **Consumer — NOW EXISTS ✅ for `/dashboard/pilot`.** `page.tsx` reads `res.ok`/status into
+  `FetchState.error` and reads `data?.data_source !== 'clickhouse'` into `MockDataBadge`. The pilot
+  page wire is **CLOSED** — this PR is precisely the consumer that RETRO-013 §3 / RETRO-015 §3 / Rule
+  K.2 demanded. **No HALF_WIRE for the pilot path.**
+- **HALF_WIRE_P (the producer-side gap on the SIBLING surface) — `/api/dashboard/analytics/lift`.**
+  Inverse shape: the analytics lift route is a **producer that never emits provenance and never fails
+  loud** — `route.ts` returns `NextResponse.json(response, { status: 200 })` (line 300) with a mock
+  fallback on any failure and **no `data_source` field at all** (grep: `data_source` absent from
+  `analytics/lift/route.ts`). Its consumer (`/dashboard/analytics/page.tsx`) therefore has nothing to
+  read. This is **already tracked by FOLLOW-124** (Rule K.2 producer parity for that route) — NOT
+  re-filed here. Noted for completeness; the NEW gap this retro files is the **consumer** half (below,
+  §4a LG-1 → FOLLOW-142), which neither FOLLOW-123 nor FOLLOW-124 covers.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the EXACT defect this PR fixed for `/dashboard/pilot` is still live, unfixed, on the
+  sibling `/dashboard/analytics/page.tsx`.** That page (a) carries **duplicate local interfaces**
+  (`SummaryData`, `LiftRow`, `LiftData`, `ArchetypeBreakdownRow`, `BanditRow`, `AbWeightsData` at
+  `page.tsx:23-62`) instead of importing canonical route types — the identical drift root cause
+  FOLLOW-122 was created to eliminate; and (b) does **three** decision-grade fetches with the precise
+  consumer-side fail-loud swallow Rule K.2 names: `fetch('/api/dashboard/analytics/summary')`
+  (`page.tsx:451`), `fetch('/api/dashboard/analytics/lift')` (`:476`), and `fetch('/api/ab/weights')`
+  (`:510`), each `.then((r) => r.json())` with **no `res.ok`/`res.status` guard** and a
+  `.catch(() => { /* empty state */ })` that maps any failure (incl. a future HTTP 500 once FOLLOW-124
+  lands) into a silent blank/empty panel. A go/no-go reviewer reading `/dashboard/analytics` cannot
+  tell a 500 from "no data yet," and once FOLLOW-124 makes the route fail loud, the failure will be
+  swallowed on the consumer exactly as RETRO-013 described for pilot. → **FOLLOW-142.** (P1, not P0:
+  `/dashboard/analytics` is not named as the TICKET-PILOT-002 PRIMARY go/no-go surface — the pilot
+  page is — but it is a decision-grade analytics surface and the route producer fix FOLLOW-124 is
+  inert without it.)
+- **LG-2 (P2) — the mock badge predicate is `data_source !== 'clickhouse'`, not `=== 'mock'`.** This
+  is the safer choice (any non-`clickhouse`/`undefined` value flags as mock), and the type is a closed
+  union, so today it is correct. Noted only so a future third enum member (e.g. `'cached'`) is
+  consciously triaged into the badge logic rather than silently flagged as mock. No stub. → folded as
+  a note.
+
+#### 4b. Code bugs not caught
+
+- N/A. The diff is a clean consumer-wiring + type-extraction refactor; the 11 new tests cover the
+  three meaningful branches per panel (error / mock / clean) for both routes. No new bug introduced.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — no test asserts the `inquiry-starts/route.ts` re-export stays in sync with the
+  extracted `route-helpers.ts`.** Today `route.ts` does `export type { ... } from './route-helpers'`
+  so they cannot drift (single source). Low risk; only flagged because a future editor could re-inline
+  a local copy in `route.ts` and reintroduce the duplicate-type drift FOLLOW-122 closed — exactly the
+  Rule K-family recurrence. The canonical guard against this is the FOLLOW-142 work extending the
+  pattern to analytics; no separate stub. → folded into FOLLOW-142 AC.
+- **TG-2 (P2) — no negative test that a malformed-but-200 body (res.ok true, JSON parse OK, but
+  missing `data_source`) renders sensibly.** The `data_source !== 'clickhouse'` predicate treats a
+  missing field as mock (safe), but no test pins that behavior. Minor. → folded into FOLLOW-142 AC for
+  the analytics consumer (apply the same defensive read there with a test).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — Master Design §Snapshot.1 route inventory still does not list `/dashboard/pilot`,
+  `/dashboard/analytics`, `/api/pilot/cta-lift`, `/api/pilot/inquiry-starts`, or
+  `/api/dashboard/analytics/lift`.** This is the RETRO-008 DG-1 / FOLLOW-123 AC3 documentation debt,
+  unchanged by this PR. Not re-filed — already an AC on FOLLOW-123. → tracked by FOLLOW-123.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-002 (Activation runbook + go/no-go checklist, BLOCKED, QUEUE.md ~L2313–L2317) — its
+  data-provenance dependency is now SATISFIED for the PRIMARY surface.** The ticket's notes require
+  the go/no-go checklist to include "the RETRO-008 §5a data-provenance check (dashboard shows
+  `data_source: 'clickhouse'`, not `'mock'`) for the PRIMARY metric — otherwise the runbook could
+  green-light a pilot whose lift number is fabricated." This PR makes `/dashboard/pilot` (the primary
+  cta-lift + inquiry-starts surface) render a visible MOCK DATA badge and a fail-loud error banner, so
+  a human running the runbook can now actually SEE provenance on the primary surface. **Dependency met
+  for `/dashboard/pilot`.** Caveat for the architect authoring PILOT-002: if the runbook also points
+  reviewers at `/dashboard/analytics`, that surface is NOT yet honest (§4a LG-1 / FOLLOW-142) — the
+  runbook provenance check must name the **pilot** dashboard specifically, or wait on FOLLOW-142.
+  Flagged here per constraint 3 for PM/architect attention.
+- **FOLLOW-092 (verify cta.clicked producer→ClickHouse for pilot, BLOCKED) — unaffected by this PR but
+  adjacent.** FOLLOW-092 verifies the upstream producer; this PR verifies the downstream human-surface
+  read. Together they bracket the cta-lift wire. No new dependency.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-124 (Rule K.2 fail-loud + `data_source` on `/api/dashboard/analytics/lift`, OPEN) — now has
+  a consumer-side sibling, FOLLOW-142.** FOLLOW-124 makes the analytics route fail loud; without
+  FOLLOW-142 the analytics PAGE will swallow that new 500 into a blank panel (the RETRO-013 defect, one
+  surface over). The two should ship together or FOLLOW-142 immediately after — the route producer fix
+  is only observable once the page consumer reads it. PM should sequence FOLLOW-124 → FOLLOW-142 (or
+  bundle) before any go/no-go that trusts `/dashboard/analytics`.
+- **FOLLOW-123 (parameterize analytics-lift window + Master Design route inventory, OPEN) — unchanged;
+  carries the §4d DG-1 documentation debt.**
+- **YELLOW Sprint 2–4 reserved stubs FOLLOW-132..138 — N/A.** FOLLOW-142 is a RED/pilot dashboard
+  hardening item, not a YELLOW launch-readiness item; it belongs on the FOLLOW queue.
+
+#### 5c. Contracts changed that other modules rely on
+
+- **N/A for breaking changes.** The only cross-module-visible change is additive: a new
+  `inquiry-starts/route-helpers.ts` exporting types that `route.ts` re-exports (so existing importers
+  of `route.ts` are unaffected) and that `page.tsx` now consumes. The `data_source` provenance
+  contract was already on the wire (FOLLOW-094 / FOLLOW-098); this PR only starts READING it.
+
+#### 5d. Architectural assumptions affected
+
+- **Rule K.2 consumer-side assumption (continuation of the RETRO-013/015 lineage):** RETRO-013/015
+  established that a fail-loud producer paired with a swallowing consumer is the same defect one layer
+  up. This PR is the **third** consumer-side instance (pilot cta-lift = RETRO-013, pilot inquiry-starts
+  = RETRO-015, both now fixed here) and surfaces the architectural reality that **the fix was applied
+  per-surface, not pattern-wide** — the analytics page is the surviving instance (§4a LG-1). The
+  lesson: a consumer-swallow fix on one decision-grade page does not generalize; every page that
+  fetches a decision-grade route needs the same `res.ok`-check + `data_source`-read treatment, and
+  there is no shared fetch wrapper enforcing it. FOLLOW-142 closes the last known instance;
+  a shared `fetchDecisionGradeJson()` helper would be the durable fix (noted, not filed — premature
+  until a 4th surface appears).
+
+### 6. New lesson candidates
+
+- **Pattern (Rule K.2 consumer-side lineage) — "a decision-grade page fetches with
+  `.then((r) => r.json())` and `.catch(() => emptyState)`, no `res.ok` guard, no `data_source` read —
+  swallowing a fail-loud 500 into a blank/zeroed panel."** Evidence is now strong: RETRO-013 (pilot
+  cta-lift), RETRO-015 (pilot inquiry-starts), RETRO-022 (this retro — both pilot panels fixed; the
+  `/dashboard/analytics` instance newly identified). **Rule K.2 is ALREADY promoted in
+  CONVENTIONS_PATCH.md and its §K.2 body and Verification grep already enumerate RETRO-013/015 and the
+  exact consumer-side grep** (`.then((r) => r.json())` with no `res.ok` guard; expect ≥1 `data_source`
+  read per decision-grade page). Per the no-double-promotion discipline (do NOT re-promote an existing
+  rule on additional confirming occurrences), **Rule K.2 is NOT re-promoted.** This retro is logged as
+  a confirming instance that strengthens it and demonstrates the rule's verification grep would have
+  caught the analytics page (it returns the three un-guarded `analytics/page.tsx` fetches today). No
+  CONVENTIONS_PATCH.md edit.
+- **Pattern (new sub-shape) — "a consumer-side fix is applied per-surface, leaving an identical sibling
+  surface un-fixed; no shared fetch wrapper enforces the contract."** This is a distinct shape (fix
+  scope/generalization, not the swallow itself). Seen: RETRO-022 (this retro). Count = **1**. Below the
+  promotion threshold (2). NOT promoted; recorded so a future second per-surface-only fix crosses it.
+
+### 7. Follow-ups
+
+- **FOLLOW-142** (backend-engineer, 2.5h, **P1**, sequence with/after FOLLOW-124, before any go/no-go
+  trusting `/dashboard/analytics`): bring `/dashboard/analytics/page.tsx` to Rule K.2 consumer parity
+  with the `/dashboard/pilot` page this PR fixed — import canonical route types (kill the duplicate
+  local interfaces), add `res.ok`/status checks + a visible error state, and read `data_source` (after
+  FOLLOW-124 emits it). Closes §4a LG-1; folds in §4c TG-1/TG-2. (`source_retro: RETRO-022`,
+  `depends_on: FOLLOW-124`.)
+- **Wave roll-up (final retro of Sprint 13a-hardening):** the four-retro wave (RETRO-019..022)
+  hardened the pre-pilot gate and produced FOLLOW-139 (§13.2 90-day-localStorage erasure
+  reality), FOLLOW-140 (§13.1 7-day consent-audit retention), FOLLOW-141 (pilot
+  `inquiry_submit_selector` seed + corpus accuracy, **P0**), and FOLLOW-142 (analytics-page Rule K.2
+  consumer parity). Net pre-pilot blocker for PM triage: **FOLLOW-141 is the lone P0** (the headline
+  pilot conversion wire); FOLLOW-139/140/142 are P1. No separate RETRO-SPRINT summary is written — that
+  is not an established convention in this file.
+
+### 8. Cross-references
+
+- **RETRO-013 (FOLLOW-094, PR #153)** — the source retro: RETRO-013 §3/§4 raised the cta-lift
+  consumer-swallow (500 silently nulled, `data_source` emitted but unread). This PR is the
+  `/dashboard/pilot` consumer fix RETRO-013 demanded; combined with closing RETRO-008 TG-2 (the
+  provenance-read half of the go/no-go check).
+- **RETRO-015 (FOLLOW-098, PR #155)** — sibling consumer-swallow on the inquiry-starts panel (the
+  field-by-field `Number(d.x ?? 0)` mapper rendered the 500 body as a fabricated all-zeros panel).
+  FOLLOW-122 fixes this panel too (the `inquiry-starts` half of this PR).
+- **Rule K.2 (CONVENTIONS_PATCH.md)** — already promoted; this retro is a third confirming instance
+  (consumer-side), NOT a re-promotion. The §K.2 Verification grep would flag the surviving
+  `/dashboard/analytics/page.tsx` fetches (→ FOLLOW-142).
+- **FOLLOW-124 (RETRO-014)** — the analytics-route producer fix; FOLLOW-142 is its consumer-side
+  sibling. Sequence FOLLOW-124 → FOLLOW-142.
+- **FOURTH and FINAL of four Sprint 13a-hardening (pre-pilot gate) retros** — siblings: RETRO-019
+  (#159 / FOLLOW-139), RETRO-020 (#160 / FOLLOW-140), RETRO-021 (#161 / FOLLOW-141). Wave complete;
+  P0 blocker is FOLLOW-141. See §7 wave roll-up.
+
+---
+
+<!-- RETRO-023 and beyond will be appended here by the retrospective-analyst agent. -->
+<!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-05-27 after RETRO-022 / PR #162 — final Sprint 13a-hardening retro):
+     - RETRO coverage: ...RETRO-017=PR#157/FOLLOW-114, RETRO-018=PR#158/FOLLOW-118-121 (YELLOW Sprint 1),
+       RETRO-019=PR#159/FOLLOW-129 (Sprint 13a-hardening, 1st of 4),
+       RETRO-020=PR#160/FOLLOW-128 (Sprint 13a-hardening, 2nd of 4),
+       RETRO-021=PR#161/FOLLOW-127 (Sprint 13a-hardening, 3rd of 4),
+       RETRO-022=PR#162/FOLLOW-122 (Sprint 13a-hardening, 4th & FINAL). Next retro = RETRO-023.
+     - FOLLOW numbers consumed: ...127 (RETRO-017), 128-131 (RETRO-018), 132-138 RESERVED
+       (YELLOW Sprint 2-4 stubs), 139 (RETRO-019), 140 (RETRO-020),
+       141 (RETRO-021 — pilot-row inquiry_submit_selector population + corpus accuracy),
+       142 (RETRO-022 — /dashboard/analytics page Rule K.2 consumer parity).
+     - NEXT FREE FOLLOW NUMBER IS 143. -->
+<!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-05-27 after RETRO-021 / PR #161):
+     - RETRO coverage: ...RETRO-017=PR#157/FOLLOW-114, RETRO-018=PR#158/FOLLOW-118-121 (YELLOW Sprint 1),
+       RETRO-019=PR#159/FOLLOW-129 (Sprint 13a-hardening, 1st of 4),
+       RETRO-020=PR#160/FOLLOW-128 (Sprint 13a-hardening, 2nd of 4),
+       RETRO-021=PR#161/FOLLOW-127 (Sprint 13a-hardening, 3rd of 4). Next retro = RETRO-022
+       (4th of 4: PR#162/FOLLOW-122).
+     - FOLLOW numbers consumed: ...127 (RETRO-017), 128-131 (RETRO-018), 132-138 RESERVED
+       (YELLOW Sprint 2-4 stubs), 139 (RETRO-019), 140 (RETRO-020),
+       141 (RETRO-021 — pilot-row inquiry_submit_selector population + corpus accuracy).
+     - NEXT FREE FOLLOW NUMBER IS 142. -->
+<!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-05-27 after the 6-PR merge-wave retros):
+     - RETRO coverage: RETRO-010=PR#150/FOLLOW-105, RETRO-011=PR#151/FOLLOW-097,
+       RETRO-012=PR#152/FOLLOW-106, RETRO-013=PR#153/FOLLOW-094, RETRO-014=PR#154/FOLLOW-093,
+       RETRO-015=PR#155/FOLLOW-098, RETRO-016=PR#156/FOLLOW-117, RETRO-017=PR#157/FOLLOW-114,
+       RETRO-018=PR#158/FOLLOW-118-121 (YELLOW Sprint 1),
+       RETRO-019=PR#159/FOLLOW-129 (Sprint 13a-hardening, 1st of 4),
+       RETRO-020=PR#160/FOLLOW-128 (Sprint 13a-hardening, 2nd of 4). Next retro = RETRO-021
+       (3rd of 4: PR#161/FOLLOW-127; then 4th: PR#162/FOLLOW-122).
+     - FOLLOW numbers consumed: 116-117 (RETRO-012); 118-121 RESERVED for YELLOW Sprint 1 (QUEUE.md);
+       122 (RETRO-013), 123-124 (RETRO-014), 125-126 (RETRO-016), 127 (RETRO-017),
+       128-131 (RETRO-018), 132-138 RESERVED (YELLOW Sprint 2-4 stubs), 139 (RETRO-019),
+       140 (RETRO-020 — §13.1 7-day audit-log retention enforcement). RETRO-020 did NOT
+       re-file §13.2 (covered by FOLLOW-139); RETRO-015 created no new stub (folded into FOLLOW-122).
+     - NEXT FREE FOLLOW NUMBER IS 141. -->

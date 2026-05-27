@@ -441,14 +441,24 @@ than an error.
 `buildMockRaw()` which is engineered to show significant lift — on the pilot's PRIMARY go/no-go
 metric), RETRO-006 (CB-1: `postFeedbackPing()` swallows all errors to `console.warn` → bandit sits
 at uniform with no signal), RETRO-005 (§4: producer-only half-wires the demo script "silently
-degrades").
+degrades"). **Consumer-side completion gap (the producer fails loud but the human surface drops
+it):** RETRO-013 (cta-lift `data_source` emitted but `/dashboard/pilot` neither reads it nor checks
+`res.ok` → 500 silently nulled), RETRO-015 (inquiry-starts — same, but the field-by-field
+`Number(d.x ?? 0)` mapper renders the 500 body as a fabricated all-zeros panel; worse than null).
+This is why the rule below requires the field be READ, not merely present.
 
 **Rule:** Distinguish "dependency not configured" (legitimate dev/CI fallback to mock is OK) from
 "dependency configured but failed" (MUST surface). When a backing store URL/secret IS set and the
 query throws, the handler MUST NOT silently return mock/default data — it must return an error
 status (or a 200 carrying an explicit `error`/`degraded`/`data_source` flag) and capture to Sentry.
 Any mock/default fallback MUST be observable on the wire (`data_source`/`is_mock` field or header)
-so reviewers and go/no-go checks can tell fabricated data from real.
+so reviewers and go/no-go checks can tell fabricated data from real. **The provenance signal must be
+READ, not merely emitted:** the human/automated surface that consumes a fail-loud route MUST (a)
+check the response status (`res.ok` / `res.status`) and render a visible error state on a non-2xx
+instead of mapping the error body into default/zero values, and (b) read the `data_source`/`is_mock`
+field and visibly distinguish mock from real. A producer that fails loud paired with a consumer that
+swallows the failure (nulls it, or worse, coerces the error body to plausible zeros) is the same
+defect one layer up.
 
 **Verification:**
 
@@ -457,6 +467,11 @@ so reviewers and go/no-go checks can tell fabricated data from real.
 grep -rn "catch(() =>" apps/ --include="*.ts" | grep -v node_modules | grep -v "\.test\."
 # Decision-grade route responses should expose provenance:
 grep -rn "data_source\|is_mock\|X-Data-Source" apps/control-plane/src --include="*.ts" | grep -v node_modules
+# Consumer side (RETRO-013/015): for each decision-grade fetch in a page/component, confirm it checks
+# response status AND reads the provenance field. A .then((r) => r.json()) with no res.ok/res.status
+# guard ahead of it is a consumer-side fail-loud swallow:
+grep -rn "\.then((r) => r.json())\|\.then((res) => res.json())" apps/control-plane/src/app --include="*.tsx" | grep -v node_modules
+grep -rn "data_source" apps/control-plane/src/app/dashboard --include="*.tsx" | grep -v node_modules  # expect ≥1 read per decision-grade page
 ```
 
 ## Rule L — Verify the production install/snippet path PRODUCES the config a consumer reads — a test that injects the value is not evidence
@@ -497,4 +512,39 @@ grep -rn "buildSnippet\|inquiry_submit_selector" apps/control-plane/src --includ
   | grep -v "\.test\."
 ```
 
-<!-- Rule M+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->
+## Rule N — Compliance docs that disclose user-facing behavior MUST match shipped code before their go-live gate is satisfiable
+
+**Pattern:** A compliance/legal document (DPIA, Privacy Notice, consent banner copy, ROPA) asserts a
+specific user-facing behavior or string, but the SDK/app does not implement it — so a data-subject-
+facing disclosure is either absent or, worse, present-but-inaccurate. A doc-only PR that "closes"
+the gap by shipping the _prose_ without the _behavior_ makes the disclosure a false statement to
+data subjects and turns the linked go-live QA gate into an unexecutable checkbox.
+
+**Evidence:** RETRO-018 §3/§6 (DPIA mandated a consent-banner disclosure string the SDK never
+rendered — string ABSENCE), RETRO-019 §3/§4/§6 (DPIA §13.2 + Privacy Notice + the FOLLOW-128 banner
+string promise a "90-day cross-session `localStorage` identifier deleted on Deny/Withdraw," but the
+SDK stores a tab-lifetime `sessionStorage` fingerprint and never `removeItem`s on deny — behavior
+ABSENCE + inaccurate disclosure). Parent shape reached 2 occurrences.
+
+**Rule:** When a compliance doc, DPIA section, Privacy Notice paragraph, or consent-banner string
+asserts a concrete user-facing behavior (retention period, storage location/API, rotation cadence,
+deletion-on-withdrawal, a visible disclosure sentence), verify a real non-test SDK/app symbol
+implements it BEFORE the doc's go-live gate is treated as satisfiable. A doc-only PR introducing
+such an assertion MUST emit an implementation FOLLOW with a before-go-live `depends_on`, and its
+retro MUST confirm the disclosed behavior exists byte-for-byte (90-day vs tab-lifetime; localStorage
+vs sessionStorage). A pre-flight QA gate that references a key or behavior the code does not produce
+is a disguised P0 bug, not a checklist item — file it as a bug.
+
+**Verification:**
+
+```bash
+# Storage claims (retention / deletion / storage API) must resolve to real keys + removeItem on withdraw:
+grep -rn "localStorage\|sessionStorage\|removeItem\|setItem" packages/sdk/src --include="*.ts" \
+  | grep -v "\.test\." | grep -v "\.spec\."
+# Each disclosure SENTENCE the DPIA/Privacy Notice mandates must appear in the banner COPY constant:
+grep -rn "disclosure13_1\|disclosure13_2\|disclosure" packages/sdk/src/ui/consent-banner.ts | grep -v "\.test\."
+# If a doc says "deleted if you withdraw consent," there MUST be a removeItem on the onDenied/withdraw path:
+grep -rn "removeItem" packages/sdk/src --include="*.ts" | grep -v "\.test\."   # zero hits + such a claim = HALF_WIRE_C, P0
+```
+
+<!-- Rule O+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->

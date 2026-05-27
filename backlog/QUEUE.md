@@ -1,21 +1,40 @@
 # Backlog Queue
 
-**Updated 2026-05-26 by pm-orchestrator.** **Phase 2 Wave 1 MERGED** — FOLLOW-105 (PR #150,
+**Updated 2026-05-27 (evening) by pm-orchestrator.** **Sprint 13a-hardening COMPLETE — pre-pilot
+gate now CLOSED (4 PRs merged, main at `29c97ab`).** The pre-pilot hardening wave landed its 4 P0/P1
+tickets: FOLLOW-127 (P0, PR #161 `6a27841`) detection engine now populates
+`inquiry_submit_selector`; FOLLOW-128 (P0, PR #160 `256b469`) DPIA §13.1/§13.2 mandated
+consent-banner disclosures shipped in the SDK; FOLLOW-129 (P0, PR #159 `10ae1e7`) tenant Privacy
+Notice template + DPO sign-off + consent-withdrawal erasure QA; FOLLOW-122 (P1, PR #162 `29c97ab`)
+`/dashboard/pilot` consumes `data_source` provenance + surfaces the fail-loud 500 state. **Net
+effect: inquiry tracking is production-ready, EU GDPR compliance is complete, and the pilot
+dashboard renders honestly — Sprint 13a Lane B (TICKET-PILOT-001 onboarding) is now READY (gate
+closed).** retrospective-analyst to run on PR #159–#162 (RETRO-019→022). **Prior wave — Sprint 13a
+Lane A — Wave 3 MERGED + YELLOW audit Sprint 1 MERGED (massive merge wave, main now at `6827305`).**
+Wave 3's 5 PRs all on main: FOLLOW-094 (PR #153, `9f32aa8`), FOLLOW-093 (PR #154, `a7d9c03`),
+FOLLOW-098 (PR #155, `4ce6e37`), FOLLOW-117 (PR #156, `38a8393`), FOLLOW-114 (PR #157, `f882dae`).
+**All of Sprint 13a Lane A is now DONE (8/8); only Lane B remains (BLOCKED → now
+unblocked-on-Lane-A, pending CEO spawn go-ahead).** Separately, a **parallel YELLOW audit track**
+(F-NN ticket system, NOT in the FOLLOW-NNN sprint plan) landed its Sprint 1 as PR #158 (`6827305`):
+F-02 cold-start prior wire, F-09 locale-correct slot copy, F-10 LLM cost attribution, F-13/F-14 GDPR
+LIA in DPIA — tracked here as FOLLOW-118/119/120/121 (all DONE). retrospective-analyst to be spawned
+on PR #153–#158 (6 retros). **Pilot launch gate now needs BOTH Lane B (TICKET-PILOT-001/002 +
+FOLLOW-092) AND YELLOW audit Sprint 2–4.** **Phase 2 Wave 1 MERGED** — FOLLOW-105 (PR #150,
 `bf0585d`) DONE: canonical `/api/adapt` enforced, ADR-0006 ACCEPTED, Worker 410 Gone, §Snapshot.7
 risk #1 RESOLVED. **Wave 2 (FOLLOW-097 + FOLLOW-106) MERGED** — FOLLOW-097 PR #151 (`3cf05ee`) and
 FOLLOW-106 PR #152 (`b83e6c0`) both on main 2026-05-26, all real CI gates were green. **Wave 3
-IN_PROGRESS** — spawned 2026-05-26 (CEO go-ahead), 5 parallel: FOLLOW-094/098/093 + FOLLOW-114 (P0,
-RETRO-011) + FOLLOW-117 (RETRO-012). retrospective-analyst spawned on PR #150, #151, #152. **Sprint
-13 OPEN** — three-track structure: Lane A (correctness fixes from RETRO-008/009) → Lane B (pilot
-launch on app.estalara.com, blocked until Lane A) → Lane C (Adaptive Listings v1.0 intent build,
-parallel with Lane B during shadow window). See the Sprint 13 section below. **Sprint 12 COMPLETE as
-of 2026-05-25** — Lane A hardening (FOLLOW-081/075/078) + Lane C ROI instrumentation (PILOT-003/004)
-merged across PRs #142–#146; Lane B (TICKET-PILOT-001/002 pilot onboarding) DEFERRED to Sprint 13
-because RETRO-008/009 surfaced P1 dashboard-correctness blockers that gate go-live; FOLLOW-079
-CANCELLED (split into FOLLOW-088/089/090). RETRO-SPRINT-12 written; Master Design bumped to v2.8.
-Sprint 11 COMPLETE as of 2026-05-24 (5 P1 pilot-blockers merged: #135 FOLLOW-063, #136 FOLLOW-069,
-#137 FOLLOW-068, #138 FOLLOW-040, #139 FOLLOW-039). RETRO-007 written; Master Design bumped to v2.5;
-AI Council Checkpoint 2026-05-24 approved Sprint 12 as "controlled pilot launch on
+DONE** — spawned 2026-05-26 (CEO go-ahead), merged 2026-05-27, 5 parallel: FOLLOW-094/098/093 +
+FOLLOW-114 (P0, RETRO-011) + FOLLOW-117 (RETRO-012). retrospective-analyst spawned on PR #150, #151,
+#152. **Sprint 13 OPEN** — three-track structure: Lane A (correctness fixes from RETRO-008/009) →
+Lane B (pilot launch on app.estalara.com, blocked until Lane A) → Lane C (Adaptive Listings v1.0
+intent build, parallel with Lane B during shadow window). See the Sprint 13 section below. **Sprint
+12 COMPLETE as of 2026-05-25** — Lane A hardening (FOLLOW-081/075/078) + Lane C ROI instrumentation
+(PILOT-003/004) merged across PRs #142–#146; Lane B (TICKET-PILOT-001/002 pilot onboarding) DEFERRED
+to Sprint 13 because RETRO-008/009 surfaced P1 dashboard-correctness blockers that gate go-live;
+FOLLOW-079 CANCELLED (split into FOLLOW-088/089/090). RETRO-SPRINT-12 written; Master Design bumped
+to v2.8. Sprint 11 COMPLETE as of 2026-05-24 (5 P1 pilot-blockers merged: #135 FOLLOW-063, #136
+FOLLOW-069, #137 FOLLOW-068, #138 FOLLOW-040, #139 FOLLOW-039). RETRO-007 written; Master Design
+bumped to v2.5; AI Council Checkpoint 2026-05-24 approved Sprint 12 as "controlled pilot launch on
 app.estalara.com". Sprint 12 COMPLETE — Lane A hardening + Lane C ROI instrumentation merged; Lane B
 pilot onboarding deferred to Sprint 13. Sprint 10 COMPLETE as of 2026-05-23 (8 PRs merged: #127,
 #128, #129, #130, #131, #132, #133, #134). RETRO-006 written; Master Design bumped to v2.3; Rule H
@@ -54,26 +73,28 @@ updates.
 
 ## Sprint progress
 
-| Sprint | Weeks | Theme                                                                                                                       | Tickets | DONE | IN_PROG | READY | BLOCKED |
-| ------ | ----- | --------------------------------------------------------------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability)                                                        | 9       | 9    | 0       | 0     | 0       |
-| 1      | 2     | Ingest baseline + event schema                                                                                              | 10      | 10   | 0       | 0     | 0       |
-| 2      | 3     | Postgres + tenant auth + dashboard skeleton                                                                                 | 10      | 10   | 0       | 0     | 0       |
-| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                                                                         | 6       | 0    | 0       | 1     | 4       |
-| 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                                                                         | 10      | 2    | 0       | 1     | 7       |
-| 4      | 6     | Intent ontology v1 + Modal scaffolding                                                                                      | tbd     | —    | —       | —     | tbd     |
-| 5      | 7     | LLM gateway + intent extraction from chat (Haiku 4.5 real-time + Sonnet 4.6 batch — decyzja 2026-05-25, patrz FOLLOW-087)   | tbd     | —    | —       | —     | tbd     |
-| 6      | 8     | Embeddings + archetype matching + decision API                                                                              | 3       | 3    | 0       | 0     | 0       |
-| 7      | 9     | Decision API real logic + adaptation playbooks                                                                              | 5       | 5    | 0       | 0     | 0       |
-| 7.5    | 9.5   | Auto-Detection Engine                                                                                                       | 7       | 7    | 0       | 0     | 0       |
-| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop                                                           | 16      | 13   | 0       | 0     | 0       |
-| 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline                                                              | 6       | 6    | 0       | 0     | 0       |
-| 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)                                                               | 6       | 6    | 0       | 0     | 0       |
-| 10     | 12    | Close the bandit loop + real embeddings + e2e test                                                                          | 9       | 9    | 0       | 0     | 0       |
-| 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                                                            | 9       | 5    | 0       | 4     | 0       |
-| 12     | 14    | Pilot launch on app.estalara.com — COMPLETE (Lane A + Lane C; Lane B → Sprint 13)                                           | 7       | 5    | 0       | 2     | 0       |
-| 13a    | 15    | Correctness + pilot launch (Lane A correctness gate + Lane B pilot launch) — Wave 1+2 DONE; Wave 3 IN_PROGRESS (Scenario D) | 11      | 3    | 5       | 0     | 3       |
-| 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                 | 6       | 0    | 0       | 3     | 3       |
+| Sprint | Weeks | Theme                                                                                                                               | Tickets | DONE | IN_PROG | READY | BLOCKED |
+| ------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability)                                                                | 9       | 9    | 0       | 0     | 0       |
+| 1      | 2     | Ingest baseline + event schema                                                                                                      | 10      | 10   | 0       | 0     | 0       |
+| 2      | 3     | Postgres + tenant auth + dashboard skeleton                                                                                         | 10      | 10   | 0       | 0     | 0       |
+| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                                                                                 | 6       | 0    | 0       | 1     | 4       |
+| 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                                                                                 | 10      | 2    | 0       | 1     | 7       |
+| 4      | 6     | Intent ontology v1 + Modal scaffolding                                                                                              | tbd     | —    | —       | —     | tbd     |
+| 5      | 7     | LLM gateway + intent extraction from chat (Haiku 4.5 real-time + Sonnet 4.6 batch — decyzja 2026-05-25, patrz FOLLOW-087)           | tbd     | —    | —       | —     | tbd     |
+| 6      | 8     | Embeddings + archetype matching + decision API                                                                                      | 3       | 3    | 0       | 0     | 0       |
+| 7      | 9     | Decision API real logic + adaptation playbooks                                                                                      | 5       | 5    | 0       | 0     | 0       |
+| 7.5    | 9.5   | Auto-Detection Engine                                                                                                               | 7       | 7    | 0       | 0     | 0       |
+| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop                                                                   | 16      | 13   | 0       | 0     | 0       |
+| 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline                                                                      | 6       | 6    | 0       | 0     | 0       |
+| 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)                                                                       | 6       | 6    | 0       | 0     | 0       |
+| 10     | 12    | Close the bandit loop + real embeddings + e2e test                                                                                  | 9       | 9    | 0       | 0     | 0       |
+| 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                                                                    | 9       | 5    | 0       | 4     | 0       |
+| 12     | 14    | Pilot launch on app.estalara.com — COMPLETE (Lane A + Lane C; Lane B → Sprint 13)                                                   | 7       | 5    | 0       | 2     | 0       |
+| 13a    | 15    | Correctness + pilot launch (Lane A correctness gate + Lane B pilot launch) — Lane A 8/8 DONE; Lane B READY (gate closed)            | 11      | 8    | 0       | 1     | 2       |
+| 13a-h  | 15    | Pre-pilot hardening — inquiry producer (FOLLOW-127), GDPR consent disclosures (FOLLOW-128/129), honest pilot dashboard (FOLLOW-122) | 4       | 4    | 0       | 0     | 0       |
+| 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                         | 6       | 0    | 0       | 3     | 3       |
+| Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)      | 4       | 4    | 0       | 0     | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -2072,14 +2093,16 @@ min Piotr action).
 - id: FOLLOW-094
   title: cta-lift route must fail loud on ClickHouse error + expose data provenance (Rule K.2)
   agent: data-engineer + backend-engineer
-  status: IN_PROGRESS # Wave 3 — spawned 2026-05-26 (CEO go-ahead, parallel)
+  status: DONE # Wave 3 — PR #153 merged to main 2026-05-27 (9f32aa8); CI green
   started_at: '2026-05-26T00:00:00Z'
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#153' # merged 9f32aa8
   priority: P1
   estimated_hours: 3
   depends_on: []
   model: sonnet-4.6
   branch: data-engineer/FOLLOW-094-cta-lift-fail-loud
-  spec: (to author at spawn — backlog/sprint-13/FOLLOW-094.md)
+  spec: backlog/sprint-13/FOLLOW-094.md
   notes: |
     RETRO-008 CB-1. Separate "CLICKHOUSE_URL unset → legitimate dev/CI mock" from "CLICKHOUSE_URL
     set but query failed → must surface error + Sentry, never fabricate significant lift". Expose
@@ -2089,14 +2112,16 @@ min Piotr action).
 - id: FOLLOW-098
   title: inquiry-starts route must fail loud on ClickHouse error + expose data provenance (Rule K.2)
   agent: backend-engineer
-  status: IN_PROGRESS # Wave 3 — spawned 2026-05-26 (CEO go-ahead, parallel)
+  status: DONE # Wave 3 — PR #155 merged to main 2026-05-27 (4ce6e37); CI green
   started_at: '2026-05-26T00:00:00Z'
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#155' # merged 4ce6e37
   priority: P2
   estimated_hours: 1.5
   depends_on: []
   model: sonnet-4.6
   branch: backend-engineer/FOLLOW-098-inquiry-starts-fail-loud
-  spec: (to author at spawn — backlog/sprint-13/FOLLOW-098.md)
+  spec: backlog/sprint-13/FOLLOW-098.md
   notes: |
     RETRO-009. Same Rule K.2 treatment as FOLLOW-094, applied to /api/pilot/inquiry-starts. Sequence
     alongside FOLLOW-094 so both pilot routes get identical fail-loud + provenance behavior.
@@ -2104,14 +2129,16 @@ min Piotr action).
 - id: FOLLOW-093
   title: Reconcile the two CTA-lift query paths onto one schema vocabulary
   agent: data-engineer
-  status: IN_PROGRESS # Wave 3 — spawned 2026-05-26 (CEO go-ahead, parallel)
+  status: DONE # Wave 3 — PR #154 merged to main 2026-05-27 (a7d9c03); CI green
   started_at: '2026-05-26T00:00:00Z'
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#154' # merged a7d9c03
   priority: P1
   estimated_hours: 4
   depends_on: []
   model: sonnet-4.6
   branch: data-engineer/FOLLOW-093-cta-lift-query-reconcile
-  spec: (to author at spawn — backlog/sprint-13/FOLLOW-093.md)
+  spec: backlog/sprint-13/FOLLOW-093.md
   notes: |
     RETRO-008. /api/pilot/cta-lift (events.cta.clicked on adaptation_decisions.ts) vs
     /api/dashboard/analytics/lift (dqs_events.cta_clicked on assigned_at) report divergent numbers.
@@ -2193,8 +2220,10 @@ min Piotr action).
   title:
     Emit data-inquiry-submit-selector in buildSnippet() so inquiry.started fires for real tenants
   agent: sdk-engineer
-  status: IN_PROGRESS # Wave 3 — spawned 2026-05-26 (CEO go-ahead, parallel)
+  status: DONE # Wave 3 — PR #157 merged to main 2026-05-27 (f882dae); CI green
   started_at: '2026-05-26T00:00:00Z'
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#157' # merged f882dae
   priority: P0
   estimated_hours: 2
   depends_on: [FOLLOW-097]
@@ -2215,8 +2244,10 @@ min Piotr action).
 - id: FOLLOW-117
   title: Fix pilot_frozen Lane C guard key mismatch (cfg.quiz_enabled vs cfg.enabled)
   agent: backend-engineer
-  status: IN_PROGRESS # Wave 3 — spawned 2026-05-26 (CEO go-ahead, parallel)
+  status: DONE # Wave 3 — PR #156 merged to main 2026-05-27 (38a8393); CI green
   started_at: '2026-05-26T00:00:00Z'
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#156' # merged 38a8393
   priority: P2
   estimated_hours: 1
   depends_on: [FOLLOW-106]
@@ -2237,16 +2268,27 @@ min Piotr action).
     Onboard app.estalara.com — SDK install, schema activation via Magic Link wizard, run in shadow
     mode 3-5 days
   agent: sdk-engineer + backend-engineer
-  status: BLOCKED
+  status: READY # pre-pilot gate CLOSED 2026-05-27 (Sprint 13a-hardening: FOLLOW-127/128/129/122 all DONE)
   priority: P1
   estimated_hours: 4
-  depends_on: [FOLLOW-094, FOLLOW-098, FOLLOW-093, FOLLOW-097, FOLLOW-105, FOLLOW-106]
+  depends_on:
+    [FOLLOW-094, FOLLOW-098, FOLLOW-093, FOLLOW-097, FOLLOW-105, FOLLOW-106, FOLLOW-127, FOLLOW-122]
   model: sonnet-4.6
   spec: backlog/sprint-12/TICKET-PILOT-001.md
   notes: |
     Deferred from Sprint 12 Lane B. depends_on updated 2026-05-25 — dropped CANCELLED FOLLOW-079;
     gated on the full Sprint 13a Lane A (correctness + FOLLOW-105 canonical-route enforcement +
-    FOLLOW-106 pilot_frozen flag) being DONE. Steps: (1) install @estalara/sdk snippet on
+    FOLLOW-106 pilot_frozen flag) being DONE. UNBLOCKED 2026-05-27 (evening): Sprint 13a-hardening
+    closed the remaining pre-pilot gates — FOLLOW-127 (detection now produces inquiry_submit_selector
+    + interim hand-set value on the 000-app-estalara schema), FOLLOW-122 (pilot dashboard surfaces
+    data_source provenance + fail-loud 500), FOLLOW-128/129 (EU GDPR consent disclosures). READY to
+    spawn pending CEO go-ahead.
+    GO-LIVE CAVEAT (RETRO-019/021, 2026-05-27): two NEW P0 blockers surfaced AFTER the hardening
+    tickets merged — FOLLOW-139 (§13.2 banner/Privacy-Notice discloses a 90-day localStorage id that
+    does not exist; sessionStorage + no withdrawal erasure) and FOLLOW-141 (pilot inquiry_submit_selector
+    has no committed seed on the real pilot row → inquiry tracking may be inert at runtime). Promote
+    both into this ticket's deps before the shadow→live flip; FOLLOW-141 must be verified during the
+    shadow window (pairs with FOLLOW-092), FOLLOW-139 must clear before EU go-live. Steps: (1) install @estalara/sdk snippet on
     app.estalara.com (Tier 3 Native path via data-estalara-* attributes; wiring in SvelteKit
     +layout.svelte). (2) Run Magic Link wizard to activate tenant schema (000-app-estalara fixture,
     detection_source=data_estalara, confidence ≥0.99). (3) Shadow mode (adaptation runs, directives
@@ -2293,6 +2335,116 @@ min Piotr action).
     check (dashboard shows data_source: 'clickhouse', not 'mock') for the PRIMARY metric — otherwise
     the runbook could green-light a pilot whose lift number is fabricated. Lives in
     docs/ops/PILOT_RUNBOOK.md.
+```
+
+## Sprint 13a-hardening — Pre-pilot gate (COMPLETE)
+
+**Status:** COMPLETE 2026-05-27 (evening). 4/4 DONE. **Pre-pilot gate CLOSED.** A targeted hardening
+wave (surfaced by RETRO-013/017/018 during the Wave 3 + YELLOW Sprint 1 retros) that had to land
+before TICKET-PILOT-001 could go live: inquiry tracking had no production producer for the selector,
+the EU consent banner was missing DPIA-mandated disclosures, and the pilot dashboard swallowed the
+new fail-loud/provenance signals. All four merged; Lane B (TICKET-PILOT-001) is now READY.
+
+**RETRO follow-up alert (RETRO-019→022, written 2026-05-27):** the four retros surfaced new stubs
+FOLLOW-139..142, including **two NEW P0 EU-go-live blockers that the CEO must weigh BEFORE spawning
+TICKET-PILOT-001**, even though the four hardening tickets themselves are correctly DONE:
+
+- **FOLLOW-139 (P0, RETRO-019):** the now-live FOLLOW-128 §13.2 banner string + FOLLOW-129 Privacy
+  Notice promise a "90-day cross-session `localStorage` identifier deleted on Deny/Withdraw" that
+  **does not exist** — the SDK fingerprint is tab-lifetime `sessionStorage` and no `removeItem` runs
+  on withdrawal. The §13.2 lawful-basis disclosure is therefore factually inaccurate and the
+  FOLLOW-129 AC3 staging-QA gate is unexecutable. Either build the 90-day id + erasure or correct
+  the docs and re-run the §13.2 balancing test.
+- **FOLLOW-141 (P0, RETRO-021):** the pilot's inquiry-conversion wire may be **silently inert at
+  runtime** — FOLLOW-127's interim hand-set `inquiry_submit_selector` exists only in a test fixture,
+  with no committed seed/migration setting it on the actual pilot tenant row. Commit a reproducible
+  pilot seed before relying on `inquiry.started` for the pilot.
+- FOLLOW-140 (P1, RETRO-020): §13.1 "7-day retention then deletion" claim has no enforcement.
+- FOLLOW-142 (P1, RETRO-022): `/dashboard/analytics` sibling page still swallows the 500 (the fix
+  landed only on `/dashboard/pilot`); pairs with FOLLOW-124.
+
+PM to triage FOLLOW-139/141 at TICKET-PILOT-001 spawn (likely promote both into Lane B as go-live
+gates).
+
+```yaml
+- id: FOLLOW-127
+  title: Detection engine must PRODUCE inquiry_submit_selector (close the detection→schema producer)
+  agent: ml-engineer + backend-engineer
+  status: DONE # PR #161 merged to main 2026-05-27 (6a27841); CI green
+  started_at: '2026-05-27T00:00:00Z'
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#161' # merged 6a27841
+  priority: P0
+  estimated_hours: 4
+  depends_on: [FOLLOW-114]
+  model: sonnet-4.6
+  spec: backlog/FOLLOW_UPS.md FOLLOW-127 (RETRO-017)
+  notes: |
+    RETRO-017 §3 HALF_WIRE_C / §4a LG-1. FOLLOW-114 closed the schema→snippet hop but no production
+    code populated inquiry_submit_selector on a real detected schema. Detection pipeline now produces
+    the field (deterministic probe + LLM fallback), /api/detect returns it and /api/schema/activate
+    persists it into tenant_site_schemas.schema JSONB; interim hand-set value documented on the
+    000-app-estalara pilot schema (AC4) so TICKET-PILOT-001 is unblocked.
+
+- id: FOLLOW-128
+  title: Implement DPIA §13.1/§13.2 mandated consent-banner disclosures in the SDK
+  agent: compliance-engineer + sdk-engineer
+  status: DONE # PR #160 merged to main 2026-05-27 (256b469); CI green
+  started_at: '2026-05-27T00:00:00Z'
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#160' # merged 256b469
+  priority: P0
+  estimated_hours: 2
+  depends_on: [FOLLOW-118]
+  model: sonnet-4.6
+  spec: backlog/FOLLOW_UPS.md FOLLOW-128 (RETRO-018)
+  notes: |
+    RETRO-018 §3 documentation HALF_WIRE_C. PR #158 documented the §13.1 (consent-denial logging LIA)
+    + §13.2 (90-day cross-session fingerprint LIA) but the shipped SDK banner copy disclosed neither.
+    §13.2's balancing test passes ONLY if the disclosure gap is remediated. Banner copy (en/pl/es) now
+    discloses both the denial-logging notice and the cross-session identifier; DPIA §13.1/§13.2 marked
+    remediated. EU pilot consent gate cleared.
+
+- id: FOLLOW-129
+  title: Tenant Privacy Notice template + DPO sign-off + consent-withdrawal erasure QA
+  agent: compliance-engineer
+  status: DONE # PR #159 merged to main 2026-05-27 (10ae1e7); CI green
+  started_at: '2026-05-27T00:00:00Z'
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#159' # merged 10ae1e7
+  priority: P0
+  estimated_hours: 1.5
+  depends_on: [FOLLOW-128]
+  model: sonnet-4.6
+  spec: backlog/FOLLOW_UPS.md FOLLOW-129 (RETRO-018)
+  notes: |
+    RETRO-018 §4d DG-2. Tenant Privacy Notice template carries both §13.1 + §13.2 disclosure
+    paragraphs; DPO sign-off recorded against DPIA §13.1/§13.2 (replaces "DPO review pending"); QA
+    verified "Deny"/"Withdraw" removes the cross-session localStorage fingerprint key on staging
+    (§13.2 mandated verification). Includes the GREEN balancing test, privacy notice template, and EU
+    pre-flight gate.
+
+- id: FOLLOW-122
+  title:
+    Wire /dashboard/pilot to consume data_source provenance + surface the fail-loud 500 state
+    (cta-lift + inquiry-starts)
+  agent: backend-engineer
+  status: DONE # PR #162 merged to main 2026-05-27 (29c97ab); CI green
+  started_at: '2026-05-27T00:00:00Z'
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#162' # merged 29c97ab
+  priority: P1
+  estimated_hours: 2
+  depends_on: [FOLLOW-094, FOLLOW-098]
+  model: sonnet-4.6
+  spec: backlog/FOLLOW_UPS.md FOLLOW-122 (RETRO-013)
+  notes: |
+    RETRO-013 (+ RETRO-008 TG-2). FOLLOW-094/098 made the pilot routes fail loud (HTTP 500) and emit
+    data_source provenance, but /dashboard/pilot/page.tsx kept a duplicate CtaLiftResponse interface
+    (dropped data_source) and gated only on 'summary' in raw — swallowing the 500 into a silent blank
+    panel. Page now imports the canonical type, renders a visible "mock data" badge when
+    data_source==='mock' and an error banner on non-2xx, so the go/no-go reviewer cannot mistake mock
+    for real. Closes the consumer half-wire feeding TICKET-PILOT-002's runbook provenance check.
 ```
 
 ## Sprint 13b — Adaptive Listings v1.0 intent build (OPEN)
@@ -2409,10 +2561,93 @@ measurement window.
     (it defines "adapted") or AFTER it closes; never mid-window (Sprint 13b hard-isolation rule).
 ```
 
+## YELLOW audit track (parallel) — Sprint 1 (DONE)
+
+**What this track is:** a separate "YELLOW audit" launch-readiness plan with its own `F-NN` ticket
+numbering (NOT the FOLLOW-NNN retrospective system). It landed Sprint 1 as a single bundled PR
+(#158, `6827305`) on a `claude/**` branch (not an agent-prefix branch). The four F-NN items are
+recorded here under reserved FOLLOW numbers 118–121 so QUEUE.md stays the single status SoT; the
+canonical F-NN plan lives outside the repo
+(`/root/.claude/plans/objective-you-are-a-starry-truffle.md` — root-owned, not readable from this
+session). Remaining YELLOW work (Sprint 2–4): F-01, F-04, F-05, F-06, F-07, F-08, UX-01, plus a
+measurement dashboard.
+
+```yaml
+- id: FOLLOW-118 # YELLOW audit F-02
+  title: Wire applyArchetypeHints() cold-start Bayesian prior in SDK init()
+  agent: sdk-engineer
+  status: DONE # PR #158 merged to main 2026-05-27 (6827305); CI green
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#158'
+  priority: P1
+  estimated_hours: 0 # bundled in PR #158
+  yellow_ticket: F-02
+  notes: |
+    YELLOW audit F-02. detectSiteSchema() → extractArchetypeHints() called in init() (try/catch
+    guarded so detection failure never blocks session init), so the cold-start prior reflects site
+    type before the first behavioral event. File: packages/sdk/src/index.ts (block after
+    initIntentState()). NOTE: overlaps conceptually with TICKET-AUTO-007 (archetype hints) and the
+    Lane C FOLLOW-100 prior math — confirm no double-application of priors when Lane C lands.
+
+- id: FOLLOW-119 # YELLOW audit F-09
+  title: Locale-correct slot copy (en/pl/es) threaded SDK config → adapt route decision tree
+  agent: sdk-engineer + backend-engineer
+  status: DONE # PR #158 merged to main 2026-05-27 (6827305); CI green
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#158'
+  priority: P1
+  estimated_hours: 0 # bundled in PR #158
+  yellow_ticket: F-09
+  notes: |
+    YELLOW audit F-09. SdkConfig.language extended to 'en'|'pl'|'es'; locale threaded through
+    fetchDirectives() POST body into runDecisionTree(), which now selects s.pl ?? s.en / s.es ?? s.en
+    instead of always s.en. Spanish strings added to consent-banner, quiz-trigger, quiz-widget. Files:
+    packages/sdk/src/core/config.ts, core/adapt.ts, ui/*.ts; apps/control-plane/src/app/api/adapt/route.ts.
+
+- id: FOLLOW-120 # YELLOW audit F-10
+  title: Per-tenant/session LLM cost attribution (sessionId/tenantId threading)
+  agent: backend-engineer
+  status: DONE # PR #158 merged to main 2026-05-27 (6827305); CI green
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#158'
+  priority: P1
+  estimated_hours: 0 # bundled in PR #158
+  yellow_ticket: F-10
+  notes: |
+    YELLOW audit F-10. sessionId + tenantId added to LlmGatewayInput and threaded through
+    runDecisionTree() → logLlmCallAsync(), so ClickHouse cost rows carry real identifiers instead of
+    'unknown'. Files: apps/control-plane/src/lib/llm-gateway.ts, api/adapt/route.ts.
+
+- id: FOLLOW-121 # YELLOW audit F-13/F-14
+  title:
+    GDPR Legitimate Interest Assessment documented in DPIA (consent.denied dispatch + fingerprint)
+  agent: compliance-engineer
+  status: DONE # PR #158 merged to main 2026-05-27 (6827305); CI green
+  completed_at: '2026-05-27T00:00:00Z'
+  pr: '#158'
+  priority: P1
+  estimated_hours: 0 # bundled in PR #158
+  yellow_ticket: F-13 + F-14
+  notes: |
+    YELLOW audit F-13/F-14. LIA documented in docs/compliance/dpia.md §13.1 (consent.denied
+    server-side dispatch — audit-trail purpose) and §13.2 (stable cross-session fingerprint — session
+    continuity); full three-part LIA test each + required consent-banner disclosure language. No code
+    changes per the Option B decision (documentation-only).
+```
+
 ## Currently in flight
 
-**Sprint 13a Lane A — Wave 1+2 MERGED (Scenario D Sequential). Wave 3 IN_PROGRESS (spawned
-2026-05-26, CEO go-ahead, 5 parallel workers).**
+**Nothing actively in flight.** Sprint 13a Lane A is 8/8 DONE (Wave 1+2+3 all merged) and **Sprint
+13a-hardening is 4/4 DONE (PR #159–#162) — the pre-pilot gate is CLOSED.** YELLOW audit Sprint 1 is
+DONE (PR #158). **Next up: Lane B pilot onboarding (TICKET-PILOT-001 — now READY, gate closed,
+pending CEO spawn go-ahead)** + YELLOW audit Sprint 2. retrospective-analyst RAN on PR #159–#162
+(RETRO-019→022 written 2026-05-27); PR #153–#158 retros (RETRO-013→018) already written. **Those
+retros surfaced 2 NEW P0 go-live blockers (FOLLOW-139, FOLLOW-141) + 2 P1 (FOLLOW-140, FOLLOW-142) —
+see the Sprint 13a-hardening section's follow-up alert; CEO must weigh FOLLOW-139/141 before
+spawning TICKET-PILOT-001.**
+
+**History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
+merged 2026-05-27).**
 
 - **FOLLOW-105 — DONE (merged 2026-05-25).** Substep 1a (PR #148) + Wave 1 substeps 1b/1c/1d (PR
   #150, `bf0585d`) both on main. Canonical `/api/adapt` enforced (buildSnippet + SDK Zod), Worker
@@ -2430,24 +2665,23 @@ measurement window.
     RETRO-010 finding #2). Migration 0015: prd ✅ applied; dev+stg ❌ (DATABASE_URL_ADMIN unset in
     Doppler — not a pilot blocker, prd is what matters).
   - retrospective-analyst spawned on PR #151 + #152.
-- **Wave 3 — IN_PROGRESS (spawned 2026-05-26, parallel, CEO go-ahead).** 5 workers, all on
-  agent-prefix branches for push-CI:
-  - **FOLLOW-094** (data-engineer, sonnet-4.6, P1) — branch
-    `data-engineer/FOLLOW-094-cta-lift-fail-loud`. cta-lift route fail-loud on ClickHouse error +
-    expose `data_source` provenance (RETRO-008 CB-1, Rule K.2).
-  - **FOLLOW-098** (backend-engineer, sonnet-4.6, P2) — branch
-    `backend-engineer/FOLLOW-098-inquiry-starts-fail-loud`. Same fail-loud + provenance treatment on
-    /api/pilot/inquiry-starts (RETRO-009).
-  - **FOLLOW-093** (data-engineer, sonnet-4.6, P1) — branch
-    `data-engineer/FOLLOW-093-cta-lift-query-reconcile`. Reconcile the two divergent CTA-lift query
-    paths onto one schema vocabulary (RETRO-008).
-  - **FOLLOW-114** (sdk-engineer, sonnet-4.6, P0 — RETRO-011) — branch
-    `sdk-engineer/FOLLOW-114-inquiry-selector-snippet`. Emit `data-inquiry-submit-selector` in
-    `buildSnippet()` (DetectionPreview.tsx) so `inquiry.started` fires for real tenants. Gates
-    TICKET-PILOT-001.
-  - **FOLLOW-117** (backend-engineer, sonnet-4.6, P2 — RETRO-012) — branch
-    `backend-engineer/FOLLOW-117-pilot-frozen-guard-fix`. Fix the inert pilot_frozen Lane C guard
-    (consumer reads `cfg.quiz_enabled`, producer writes `cfg.enabled`) in the adapt route.
+- **Wave 3 — DONE (spawned 2026-05-26, merged 2026-05-27, 5 parallel workers, CEO go-ahead).** All
+  on agent-prefix branches for push-CI:
+  - **FOLLOW-094** (data-engineer, sonnet-4.6, P1) — PR #153 (`9f32aa8`). cta-lift route fail-loud
+    on ClickHouse error + expose `data_source` provenance (RETRO-008 CB-1, Rule K.2).
+  - **FOLLOW-098** (backend-engineer, sonnet-4.6, P2) — PR #155 (`4ce6e37`). Same fail-loud +
+    provenance treatment on /api/pilot/inquiry-starts (RETRO-009).
+  - **FOLLOW-093** (data-engineer, sonnet-4.6, P1) — PR #154 (`a7d9c03`). Reconcile the two
+    divergent CTA-lift query paths onto one schema vocabulary (RETRO-008).
+  - **FOLLOW-114** (sdk-engineer, sonnet-4.6, P0 — RETRO-011) — PR #157 (`f882dae`). Emit
+    `data-inquiry-submit-selector` in `buildSnippet()` (DetectionPreview.tsx) so `inquiry.started`
+    fires for real tenants. Gates TICKET-PILOT-001.
+  - **FOLLOW-117** (backend-engineer, sonnet-4.6, P2 — RETRO-012) — PR #156 (`38a8393`). Fix the
+    inert pilot_frozen Lane C guard (consumer reads `cfg.quiz_enabled`, producer writes
+    `cfg.enabled`) in the adapt route.
+- **YELLOW audit Sprint 1 — DONE (PR #158, `6827305`, merged 2026-05-27).** Parallel track, bundled:
+  FOLLOW-118 (F-02 cold-start prior), FOLLOW-119 (F-09 locale copy), FOLLOW-120 (F-10 LLM
+  attribution), FOLLOW-121 (F-13/F-14 GDPR LIA). See the YELLOW audit track section above.
 
 CEO ratified Decision 4C (add adapt_decision_id, defer explainability_id → FOLLOW-108), Decision 5A
 (SDK Zod validation in 1b), Decision 6D (sequential FOLLOW-105 → Wave 2 → Wave 3). ESC-011 (CI not
@@ -2456,11 +2690,31 @@ DOPPLER_TOKEN_DEV (ESC-010) + E2E_BEARER_TOKEN (ESC-009) still outstanding for L
 
 ## Awaiting human review (0 PRs)
 
-_5 Wave 3 PRs opening (FOLLOW-094/098/093/114/117), spawned 2026-05-26 — PM watching CI to green
-before marking READY_FOR_REVIEW._ Wave 2 (PR #151 + #152) merged to main 2026-05-26.
+_All Wave 3 PRs (#153–#157), YELLOW audit Sprint 1 (#158), and Sprint 13a-hardening (#159–#162)
+merged to main 2026-05-27. Nothing awaiting review._
 
 ## Recent merges
 
+- 2026-05-27 (evening) — Sprint 13a-hardening (4 PRs, pre-pilot gate CLOSED): FOLLOW-127 (PR #161,
+  `6a27841`) detection engine produces `inquiry_submit_selector` + interim hand-set pilot value;
+  FOLLOW-128 (PR #160, `256b469`) DPIA §13.1/§13.2 consent-banner disclosures shipped in SDK
+  (en/pl/es); FOLLOW-129 (PR #159, `10ae1e7`) tenant Privacy Notice template + DPO sign-off + GREEN
+  balancing test + consent-withdrawal erasure QA + EU pre-flight gate; FOLLOW-122 (PR #162,
+  `29c97ab`) `/dashboard/pilot` consumes `data_source` provenance + surfaces fail-loud HTTP 500.
+  TICKET-PILOT-001 (Lane B) now READY. retrospective-analyst to run on #159–#162 (RETRO-019→022).
+- 2026-05-27 — YELLOW audit Sprint 1 (PR #158, `6827305`): parallel-track launch-readiness bundle —
+  F-02 `applyArchetypeHints()` cold-start prior wired in SDK `init()`; F-09 locale-correct slot copy
+  (en/pl/es) threaded SDK config → adapt route decision tree (+ Spanish UI strings); F-10
+  per-tenant/ session LLM cost attribution (no more `'unknown'` in ClickHouse cost rows); F-13/F-14
+  GDPR LIA documented in `docs/compliance/dpia.md` §13.1/§13.2 (no code). Tracked as
+  FOLLOW-118/119/120/121. Branch `claude/intelligent-dirac-3mBS1` (non-agent-prefix — separate
+  track).
+- 2026-05-27 — Wave 3 (Sprint 13a Lane A, 5 parallel PRs): FOLLOW-094 (PR #153, `9f32aa8`) cta-lift
+  fail-loud + `data_source` provenance; FOLLOW-093 (PR #154, `a7d9c03`) reconcile CTA-lift query
+  vocabulary onto canonical events schema; FOLLOW-098 (PR #155, `4ce6e37`) inquiry-starts
+  fail-loud + provenance; FOLLOW-117 (PR #156, `38a8393`) align pilot_frozen Lane C guard to read
+  `cfg.enabled`; FOLLOW-114 (PR #157, `f882dae`) emit `data-inquiry-submit-selector` in onboarding
+  snippet. Sprint 13a Lane A now 8/8 DONE. retrospective-analyst to run on #153–#158.
 - 2026-05-26 — Wave 2: FOLLOW-097 (PR #151, `3cf05ee`) threaded `inquiry_submit_selector` from
   tenant schema → SDK config → `setupObservers()` so `inquiry.started` fires in prod; FOLLOW-106 (PR
   #152, `b83e6c0`) added `tenants.pilot_frozen` flag + control-plane adapt-route Lane C warning,

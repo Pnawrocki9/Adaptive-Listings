@@ -17,6 +17,7 @@ import {
   incrementPageCount,
   getConsentState,
   setConsentState,
+  eraseCrossSessionId,
 } from './core/session.js';
 import { setupObservers } from './core/observer.js';
 import { createShadowHost } from './ui/shadow-host.js';
@@ -89,6 +90,8 @@ async function init(): Promise<void> {
 
     if (consentState === 'denied') {
       // User previously declined — halt SDK entirely, no events dispatched.
+      // DPIA §13.2 / FOLLOW-139: ensure cross-session xid is absent on a denied session.
+      eraseCrossSessionId();
       // The shadow host is destroyed to avoid leaving a DOM node.
       earlyHost?.destroy();
       return;
@@ -117,6 +120,8 @@ async function init(): Promise<void> {
             },
             onDenied: () => {
               setConsentState('denied');
+              // DPIA §13.2 / FOLLOW-139: erase cross-session xid on consent denial.
+              eraseCrossSessionId();
               // Consent audit event — dispatched even when consent is denied.
               eventQueue.push({
                 type: 'consent.denied',

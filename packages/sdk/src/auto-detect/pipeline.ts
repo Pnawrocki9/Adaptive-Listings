@@ -36,6 +36,7 @@ import { detectDrupalPhp } from './techniques/drupal-php.js';
 // and must never be bundled into the browser SDK.
 // Called server-side from POST /api/detect when this function returns schema: null.
 import { extractArchetypeHints } from './archetype-hints.js';
+import { detectInquirySubmitSelector } from './detect-inquiry-selector.js';
 
 /** Result returned by `detectSiteSchema`. */
 export interface DetectionResult {
@@ -115,6 +116,12 @@ export async function detectSiteSchema(
         // Populate archetype hints from site-level signals (TICKET-AUTO-007).
         // Hints seed the Intent Engine's archetype priors at session start.
         finalSchema.archetype_hints = extractArchetypeHints(finalSchema, html, url);
+        // Populate inquiry_submit_selector via deterministic DOM probe (FOLLOW-127).
+        // Only set when a non-empty selector is found — never write "".
+        const inquirySelector = detectInquirySubmitSelector(html);
+        if (inquirySelector !== null) {
+          finalSchema.inquiry_submit_selector = inquirySelector;
+        }
       }
       return {
         ...result,

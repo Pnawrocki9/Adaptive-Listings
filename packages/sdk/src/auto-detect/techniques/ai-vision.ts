@@ -54,12 +54,15 @@ Return a JSON object matching this schema:
   "price_selector": "CSS selector for price within a card",
   "headline_selector": "CSS selector for property title/headline",
   "bedrooms_selector": "CSS selector for bedroom count (optional)",
+  "inquiry_submit_selector": "CSS selector for the inquiry/contact form submit button (optional — only when clearly identifiable)",
   "detection_confidence": 0.0-1.0
 }
 
 Rules:
 - Use stable selectors: data-* attributes > semantic tags > class-contains patterns
 - Never use CSS-in-JS hash classes (random strings like sc-abc123)
+- For inquiry_submit_selector: look for button[type=submit] inside a contact/inquiry/enquiry form.
+  Only include this field when you are highly confident; omit it entirely rather than guessing.
 - Return ONLY valid JSON, no explanation
 
 HTML (first 50KB):
@@ -75,6 +78,8 @@ interface AiVisionResponse {
   price_selector?: unknown;
   headline_selector?: unknown;
   bedrooms_selector?: unknown;
+  /** CSS selector for inquiry/contact form submit button (FOLLOW-127). */
+  inquiry_submit_selector?: unknown;
   detection_confidence?: unknown;
 }
 
@@ -146,6 +151,14 @@ export async function detectAiVision(html: string, url: string): Promise<Detecti
     typeof parsed.bedrooms_selector === 'string' ? parsed.bedrooms_selector : undefined;
   const containerSelector =
     typeof parsed.container_selector === 'string' ? parsed.container_selector : undefined;
+  // FOLLOW-127: extract inquiry submit selector from AI Vision response.
+  // Only accept a non-empty string; omit entirely (undefined) when absent or blank.
+  const rawInquirySelector =
+    typeof parsed.inquiry_submit_selector === 'string' ? parsed.inquiry_submit_selector : undefined;
+  const inquirySubmitSelector =
+    rawInquirySelector !== undefined && rawInquirySelector.trim().length > 0
+      ? rawInquirySelector.trim()
+      : undefined;
 
   const currency = inferCurrency(domain);
 
@@ -231,6 +244,10 @@ export async function detectAiVision(html: string, url: string): Promise<Detecti
       data_extractors: {},
     },
     archetype_hints: [],
+    // FOLLOW-127: only set inquiry_submit_selector when AI Vision returned a non-empty value.
+    // Never set it to "". Pipeline's detectInquirySubmitSelector also runs on the HTML as a
+    // deterministic safety net — here we capture what the LLM returned directly.
+    ...(inquirySubmitSelector ? { inquiry_submit_selector: inquirySubmitSelector } : {}),
   };
 
   return {

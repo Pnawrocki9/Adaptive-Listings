@@ -6,12 +6,13 @@ revision sections.
 
 ## Document Index
 
-| Document                                | File                  | Regulation                                                                        | Review Cadence                               | Status                              |
-| --------------------------------------- | --------------------- | --------------------------------------------------------------------------------- | -------------------------------------------- | ----------------------------------- |
-| Data Protection Impact Assessment       | `dpia.md`             | GDPR Art. 35; UK GDPR; UAE PDPL Art. 9; EDPB Guidelines 2/2023                    | Annual or on material processing change      | v1.0 — 2026-05-15                   |
-| Records of Processing Activities        | `ropa.md`             | GDPR Art. 30; UK GDPR Art. 30; UAE PDPL Art. 15; CCPA service provider disclosure | Annual or on material processing change      | v1.0 — 2026-05-15                   |
-| Legitimate Interest Assessment template | `lia-template.md`     | GDPR Art. 6(1)(f); ICO LIA guidance; CNIL June 2025 guidance                      | Per-tenant on Mode A/C activation            | Pending — TICKET-GDPR-003           |
-| Regulatory Watch                        | `REGULATORY_WATCH.md` | All active regulations                                                            | Continuous — updated on guidance publication | Pending — TICKET-GDPR-001 follow-up |
+| Document                                | File                         | Regulation                                                                        | Review Cadence                               | Status                              |
+| --------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------- | ----------------------------------- |
+| Data Protection Impact Assessment       | `dpia.md`                    | GDPR Art. 35; UK GDPR; UAE PDPL Art. 9; EDPB Guidelines 2/2023                    | Annual or on material processing change      | v2.2 — 2026-05-27                   |
+| Records of Processing Activities        | `ropa.md`                    | GDPR Art. 30; UK GDPR Art. 30; UAE PDPL Art. 15; CCPA service provider disclosure | Annual or on material processing change      | v1.0 — 2026-05-15                   |
+| Legitimate Interest Assessment template | `lia-template.md`            | GDPR Art. 6(1)(f); ICO LIA guidance; CNIL June 2025 guidance                      | Per-tenant on Mode A/C activation            | Pending — TICKET-GDPR-003           |
+| Privacy Notice Template (tenant-embed)  | `PRIVACY_NOTICE_TEMPLATE.md` | GDPR Art. 13/14; ePrivacy Art. 5(3); UK GDPR; CCPA § 1798.100(b)                  | On material processing change; DPO gated     | v1.0 — 2026-05-27 (FOLLOW-129)      |
+| Regulatory Watch                        | `REGULATORY_WATCH.md`        | All active regulations                                                            | Continuous — updated on guidance publication | Pending — TICKET-GDPR-001 follow-up |
 
 ## Sub-directories
 

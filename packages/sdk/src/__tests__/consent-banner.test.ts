@@ -1,10 +1,14 @@
 /**
  * Unit tests for TICKET-041 — consent banner and consent state management.
+ * Updated for FOLLOW-128 — DPIA §13.1/§13.2 mandatory disclosure strings.
  *
  * Tests cover:
  * - getConsentState() / setConsentState() localStorage-backed state transitions
  * - renderConsentBanner() DOM rendering and callback wiring
  * - SDK init halting when consent is denied
+ * - DPIA §13.1 denial-logging disclosure present in all 3 locales (EN/PL/ES)
+ * - DPIA §13.2 cross-session identifier disclosure present in all 3 locales (EN/PL/ES)
+ * - Disclosures rendered BEFORE consent decision (satisfies §13.2 balancing-test condition)
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -369,4 +373,262 @@ describe('renderConsentBanner', () => {
     );
     expect(declineBtn?._attrs['data-estalara-consent']).toBe('decline');
   });
+});
+
+// ─── FOLLOW-128: DPIA §13.1 / §13.2 disclosure assertions ────────────────────
+//
+// These tests verify that the mandated disclosure strings are present in every locale's
+// banner copy BEFORE the consent decision is made (satisfying the §13.2 balancing-test
+// condition documented in docs/compliance/dpia.md §13.2).
+//
+// §13.1 key facts: denial-logging audit log, 7-day retention.
+// §13.2 key facts: cross-session pseudonymous identifier, 90-day retention, monthly rotation.
+
+describe('renderConsentBanner — DPIA §13.1 denial-logging disclosure', () => {
+  let root: ShadowRoot;
+  const elements: MockElement[] = [];
+
+  beforeEach(() => {
+    elements.length = 0;
+    root = makeShadowRoot();
+    vi.stubGlobal('document', {
+      createElement: (tag: string) => {
+        const el = makeElement(tag);
+        elements.push(el);
+        return el;
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('localStorage', mockLocalStorage);
+  });
+
+  it('EN banner contains §13.1 denial-logging disclosure with 7-day retention', () => {
+    renderConsentBanner(root, {
+      language: 'en',
+      accentColor: '#6c5ce7',
+      onGranted: vi.fn(),
+      onDenied: vi.fn(),
+    });
+
+    const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-1');
+    expect(disclosure).toBeDefined();
+    const text = disclosure!.textContent ?? '';
+    // Must cover: consent decision record, denial, compliance/debugging purpose, 7-day retention
+    expect(text).toMatch(/consent decision/i);
+    expect(text).toMatch(/denial/i);
+    expect(text).toMatch(/7 days/i);
+    expect(text).toMatch(/deleted/i);
+  });
+
+  it('PL banner contains §13.1 denial-logging disclosure with 7-day retention', () => {
+    renderConsentBanner(root, {
+      language: 'pl',
+      accentColor: '#6c5ce7',
+      onGranted: vi.fn(),
+      onDenied: vi.fn(),
+    });
+
+    const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-1');
+    expect(disclosure).toBeDefined();
+    const text = disclosure!.textContent ?? '';
+    // Must cover: decision on consent (decyzji dotyczącej zgody), denial (odmowę), 7 days (7 dni)
+    expect(text).toMatch(/zgod/i);
+    expect(text).toMatch(/odmow/i);
+    expect(text).toMatch(/7 dni/i);
+    expect(text).toMatch(/usuwan/i);
+  });
+
+  it('ES banner contains §13.1 denial-logging disclosure with 7-day retention', () => {
+    renderConsentBanner(root, {
+      language: 'es',
+      accentColor: '#6c5ce7',
+      onGranted: vi.fn(),
+      onDenied: vi.fn(),
+    });
+
+    const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-1');
+    expect(disclosure).toBeDefined();
+    const text = disclosure!.textContent ?? '';
+    // Must cover: consentimiento decision, denegación, 7 días, eliminina/permanente
+    expect(text).toMatch(/consentimiento/i);
+    expect(text).toMatch(/denegaci/i);
+    expect(text).toMatch(/7 d/i);
+    expect(text).toMatch(/elimin/i);
+  });
+
+  it('§13.1 disclosure element uses data-estalara-disclosure="dpia-13-1" attribute', () => {
+    renderConsentBanner(root, {
+      language: 'en',
+      accentColor: '#6c5ce7',
+      onGranted: vi.fn(),
+      onDenied: vi.fn(),
+    });
+
+    const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-1');
+    expect(disclosure).toBeDefined();
+    expect(disclosure!._attrs['data-estalara-disclosure']).toBe('dpia-13-1');
+  });
+});
+
+describe('renderConsentBanner — DPIA §13.2 cross-session identifier disclosure', () => {
+  let root: ShadowRoot;
+  const elements: MockElement[] = [];
+
+  beforeEach(() => {
+    elements.length = 0;
+    root = makeShadowRoot();
+    vi.stubGlobal('document', {
+      createElement: (tag: string) => {
+        const el = makeElement(tag);
+        elements.push(el);
+        return el;
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('localStorage', mockLocalStorage);
+  });
+
+  it('EN banner contains §13.2 cross-session identifier disclosure with 90-day retention', () => {
+    renderConsentBanner(root, {
+      language: 'en',
+      accentColor: '#6c5ce7',
+      onGranted: vi.fn(),
+      onDenied: vi.fn(),
+    });
+
+    const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-2');
+    expect(disclosure).toBeDefined();
+    const text = disclosure!.textContent ?? '';
+    // Must cover: preferences across visits, pseudonymous identifier, 90 days, monthly rotation,
+    // deleted on consent withdrawal
+    expect(text).toMatch(/preferences/i);
+    expect(text).toMatch(/pseudonymous/i);
+    expect(text).toMatch(/90 days/i);
+    expect(text).toMatch(/monthly/i);
+    expect(text).toMatch(/withdraw/i);
+  });
+
+  it('PL banner contains §13.2 cross-session identifier disclosure with 90-day retention', () => {
+    renderConsentBanner(root, {
+      language: 'pl',
+      accentColor: '#6c5ce7',
+      onGranted: vi.fn(),
+      onDenied: vi.fn(),
+    });
+
+    const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-2');
+    expect(disclosure).toBeDefined();
+    const text = disclosure!.textContent ?? '';
+    // Must cover: preferencje, pseudonimowy identyfikator, 90 dni, miesiąc, wycofania zgody
+    expect(text).toMatch(/preferencj/i);
+    expect(text).toMatch(/pseudonimowy/i);
+    expect(text).toMatch(/90 dni/i);
+    expect(text).toMatch(/miesi/i);
+    expect(text).toMatch(/wycofan/i);
+  });
+
+  it('ES banner contains §13.2 cross-session identifier disclosure with 90-day retention', () => {
+    renderConsentBanner(root, {
+      language: 'es',
+      accentColor: '#6c5ce7',
+      onGranted: vi.fn(),
+      onDenied: vi.fn(),
+    });
+
+    const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-2');
+    expect(disclosure).toBeDefined();
+    const text = disclosure!.textContent ?? '';
+    // Must cover: preferencias, seudónimo, 90 días, mensualmente, retires/consent
+    expect(text).toMatch(/preferencias/i);
+    expect(text).toMatch(/seud/i);
+    expect(text).toMatch(/90 d/i);
+    expect(text).toMatch(/mensual/i);
+    expect(text).toMatch(/consentimiento/i);
+  });
+
+  it('§13.2 disclosure element uses data-estalara-disclosure="dpia-13-2" attribute', () => {
+    renderConsentBanner(root, {
+      language: 'en',
+      accentColor: '#6c5ce7',
+      onGranted: vi.fn(),
+      onDenied: vi.fn(),
+    });
+
+    const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-2');
+    expect(disclosure).toBeDefined();
+    expect(disclosure!._attrs['data-estalara-disclosure']).toBe('dpia-13-2');
+  });
+
+  it('§13.2 disclosure is rendered BEFORE consent buttons (pre-decision visibility)', () => {
+    // The disclosure list must appear in the banner's _children before the actions div,
+    // ensuring a visitor sees the disclosure before making a choice.
+    renderConsentBanner(root, {
+      language: 'en',
+      accentColor: '#6c5ce7',
+      onGranted: vi.fn(),
+      onDenied: vi.fn(),
+    });
+
+    // Banner div is the second shadow root child (index 1); first child is <style>
+    const rootChildren = (root as unknown as { _children: MockElement[] })._children;
+    const bannerDiv = rootChildren[1];
+    expect(bannerDiv).toBeDefined();
+
+    const bannerChildren = bannerDiv!._children;
+    // Expected order: <p class="estalara-consent-text">, <ul disclosures>, <div actions>
+    const ulIndex = bannerChildren.findIndex((c) => c.tagName === 'UL');
+    const actionsIndex = bannerChildren.findIndex(
+      (c) => c.tagName === 'DIV' && c.className === 'estalara-consent-actions',
+    );
+    expect(ulIndex).toBeGreaterThanOrEqual(0);
+    expect(actionsIndex).toBeGreaterThan(ulIndex);
+  });
+});
+
+describe('renderConsentBanner — disclosure completeness across all locales', () => {
+  let root: ShadowRoot;
+  const elements: MockElement[] = [];
+
+  beforeEach(() => {
+    elements.length = 0;
+    root = makeShadowRoot();
+    vi.stubGlobal('document', {
+      createElement: (tag: string) => {
+        const el = makeElement(tag);
+        elements.push(el);
+        return el;
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('localStorage', mockLocalStorage);
+  });
+
+  it.each(['en', 'pl', 'es'] as const)(
+    '%s locale renders both §13.1 and §13.2 disclosure elements',
+    (lang) => {
+      renderConsentBanner(root, {
+        language: lang,
+        accentColor: '#6c5ce7',
+        onGranted: vi.fn(),
+        onDenied: vi.fn(),
+      });
+
+      const d131 = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-1');
+      const d132 = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-2');
+
+      expect(d131).toBeDefined();
+      expect(d132).toBeDefined();
+      expect(d131!.textContent).toBeTruthy();
+      expect(d132!.textContent).toBeTruthy();
+    },
+  );
 });

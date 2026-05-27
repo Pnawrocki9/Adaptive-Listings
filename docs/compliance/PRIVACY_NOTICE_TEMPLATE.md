@@ -21,8 +21,8 @@ Non-compliance voids the DPA warranty for that tenant.
 
 ## 1. General Estalara Personalization Disclosure (mandatory for all tenants)
 
-> **[Tenant: insert this paragraph in your Privacy Policy under "Third-party services" or >
-> equivalent section.]**
+> **Tenant action —** insert this paragraph in your Privacy Policy under "Third-party services" or
+> an equivalent section.
 
 This website uses **Estalara Adaptive Listings**, a personalization service provided by Time2Show,
 Inc. (operating as Estalara), to adapt how property listings are displayed based on your browsing
@@ -42,8 +42,8 @@ below.
 > **Source:** DPIA §13.1 LIA — Audit Finding F-13. Lawful basis: GDPR Art. 6(1)(f) (legitimate
 > interest — operational accountability under Art. 5(2)). Added FOLLOW-129.
 
-> **[Tenant: insert this paragraph adjacent to your consent management / cookie notice >
-> description.]**
+> **Tenant action —** insert this paragraph adjacent to your consent management / cookie notice
+> description.
 
 If you decline the personalization consent prompt on this website, Estalara records the fact of your
 denial — a single binary signal ("consent declined") together with a pseudonymous session token — on
@@ -67,9 +67,9 @@ processing by submitting a data subject request to [tenant DSR contact].
 > interest — personalization continuity and conversion measurement). Balancing test GREEN contingent
 > on FOLLOW-128 banner deployment. Added FOLLOW-129.
 
-> **[Tenant: insert this paragraph if you have enabled cross-session (Mode B) journey tracking in >
-> your Estalara configuration. Also required to appear in the Estalara consent banner itself — see >
-> coordination note below.]**
+> **Tenant action —** insert this paragraph if you have enabled cross-session (Mode B) journey
+> tracking in your Estalara configuration. It must also appear in the Estalara consent banner itself
+> — see the coordination note below.
 
 To remember your listing preferences across separate visits, Estalara stores a pseudonymous
 identifier in your browser's local storage. This identifier is generated from general browser

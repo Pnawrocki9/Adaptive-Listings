@@ -499,6 +499,7 @@ export async function fetchDirectives(
       tenant_id: config.tenantId,
       session_id: session.sessionId,
       page_type: pageType,
+      locale: config.language,
     };
     if (intentState !== undefined) {
       body.archetype_hint = intentState.archetype;

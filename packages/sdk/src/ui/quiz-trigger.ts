@@ -9,7 +9,7 @@
 export interface QuizTriggerConfig {
   accentColor: string;
   icon: string;
-  language: 'en' | 'pl';
+  language: 'en' | 'pl' | 'es';
 }
 
 export const QUIZ_LABELS = {
@@ -19,6 +19,10 @@ export const QUIZ_LABELS = {
   },
   pl: {
     trigger: 'Znajdź dopasowanie w 2 pytaniach →',
+    dismiss: '×',
+  },
+  es: {
+    trigger: 'Encuentra tu coincidencia en 2 preguntas →',
     dismiss: '×',
   },
 };

@@ -18,7 +18,7 @@ export interface SdkConfig {
    * UI language for the consent banner and quiz widget.
    * Read from data-language attribute. Defaults to 'en'.
    */
-  language: 'en' | 'pl';
+  language: 'en' | 'pl' | 'es';
   /**
    * URL for the tenant's privacy policy — shown as a "Learn more" link in the consent banner.
    * Read from data-privacy-url attribute. Optional.
@@ -87,7 +87,8 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
   const decisionApiUrl = script.dataset.decisionUrl;
 
   const rawLanguage = script.dataset.language;
-  const language: SdkConfig['language'] = rawLanguage === 'pl' ? 'pl' : DEFAULT_CONFIG.language;
+  const language: SdkConfig['language'] =
+    rawLanguage === 'pl' ? 'pl' : rawLanguage === 'es' ? 'es' : DEFAULT_CONFIG.language;
 
   const privacyPolicyUrl = script.dataset.privacyUrl;
 

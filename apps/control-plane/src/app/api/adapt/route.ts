@@ -182,6 +182,11 @@ const AdaptPostBodySchema = z.object({
    * [TICKET-AB-010]
    */
   consent_mode_enabled: z.boolean().optional(),
+  /**
+   * Content locale for slot copy selection [F-09].
+   * Defaults to 'en'; slot falls back to English when no override exists for the locale.
+   */
+  locale: z.enum(['en', 'pl', 'es']).optional(),
 });
 
 // ─── Decision logic ───────────────────────────────────────────────────────────
@@ -194,7 +199,9 @@ const AdaptPostBodySchema = z.object({
  * @param archetypeId    - Archetype matched by the intent engine.
  * @param confidence     - Intent confidence 0–1.
  * @param similarity     - Cosine similarity to the matched archetype 0–1.
- * @param sessionId      - Session ID for gateway context.
+ * @param sessionId      - Session ID threaded to LLM gateway for cost attribution.
+ * @param tenantId       - Tenant ID threaded to LLM gateway for cost attribution.
+ * @param locale         - Content locale; slot copy falls back to 'en' when locale override absent.
  * @param listingContext - Agency FAQ answers from RAG retrieval (may be empty).
  * @returns Partial adaptation result (directives + source).
  */
@@ -202,7 +209,9 @@ async function runDecisionTree(
   archetypeId: ArchetypeId,
   confidence: number,
   similarity: number,
-  _sessionId: string,
+  sessionId: string,
+  tenantId: string,
+  locale: 'en' | 'pl' | 'es' = 'en',
   listingContext: Record<string, string> = {},
 ): Promise<{
   directives: TextDirective[];
@@ -216,11 +225,11 @@ async function runDecisionTree(
   // Fetch playbook (real data since ADP-003)
   const playbook = getPlaybook(archetypeId);
 
-  // Convert playbook slots → TextDirectives (English locale as canonical value)
+  // Convert playbook slots → TextDirectives; prefer locale override, fall back to English [F-09].
   const playbookDirectives: TextDirective[] = playbook.slots.map((s: SlotDirective) => ({
     type: 'text' as const,
     slot: s.slot,
-    value: s.en,
+    value: (locale === 'pl' ? s.pl : locale === 'es' ? s.es : undefined) ?? s.en,
     archetype: archetypeId,
     confidence,
   }));
@@ -238,6 +247,8 @@ async function runDecisionTree(
       similarity,
       basePlaybook: playbook,
       listingContext,
+      sessionId,
+      tenantId,
     });
 
     if (gatewayResult) {
@@ -255,6 +266,8 @@ async function runDecisionTree(
     similarity,
     basePlaybook: playbook,
     listingContext,
+    sessionId,
+    tenantId,
   });
 
   if (gatewayResult) {
@@ -492,6 +505,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const params = req.nextUrl.searchParams;
 
+  // ── Tenant + locale resolution (before decision tree for attribution) ─────
+  // Prefer JWT-verified tenant_id; fall back to x-tenant-id for SDK calls without JWT.
+  const tenantId: string =
+    (await getAuthClaims(req))?.tenant_id ?? req.headers.get('x-tenant-id') ?? 'unknown';
+  const rawLocale = params.get('locale');
+  const locale: 'en' | 'pl' | 'es' = rawLocale === 'pl' ? 'pl' : rawLocale === 'es' ? 'es' : 'en';
+
   // ── Parameter validation ──────────────────────────────────────────────────
   const sessionId = params.get('session_id');
   const archetypeRaw = params.get('archetype');
@@ -566,6 +586,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     confidence,
     similarity,
     sessionId,
+    tenantId,
+    locale,
   );
 
   // FOLLOW-105 / ADR-0006 §Decision 4C: stable per-decision UUID, returned in the
@@ -583,11 +605,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     source,
     generated_at: new Date().toISOString(),
   };
-
-  // ── Fire-and-forget ClickHouse analytics log ──────────────────────────────
-  // Prefer JWT-verified tenant_id; fall back to x-tenant-id for SDK calls without JWT.
-  const tenantId =
-    (await getAuthClaims(req))?.tenant_id ?? req.headers.get('x-tenant-id') ?? 'unknown';
 
   // ── Pilot freeze guard (FOLLOW-106) — non-blocking, fire-and-forget ────────
   checkPilotFrozenAsync(tenantId, requestId);
@@ -751,6 +768,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     confidence,
     similarity,
     body.session_id,
+    body.tenant_id,
+    body.locale ?? 'en',
     listingContext,
   );
 

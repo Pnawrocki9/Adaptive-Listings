@@ -15,7 +15,7 @@ export interface QuizAnswers {
 
 export interface QuizWidgetConfig {
   accentColor: string;
-  language: 'en' | 'pl';
+  language: 'en' | 'pl' | 'es';
 }
 
 export const QUIZ_CONTENT = {
@@ -45,6 +45,18 @@ export const QUIZ_CONTENT = {
     },
     cta: 'Znajdź dopasowanie',
     skip: 'Pomiń',
+  },
+  es: {
+    q1: {
+      question: '¿Qué te trae por aquí?',
+      answers: ['Busco una vivienda para mí o mi familia', 'Estoy explorando como inversión'],
+    },
+    q2: {
+      question: '¿Cuándo esperas tomar una decisión?',
+      answers: ['En los próximos 3 meses', 'En más de un año / Solo explorando'],
+    },
+    cta: 'Encontrar mi opción',
+    skip: 'Omitir',
   },
 };
 

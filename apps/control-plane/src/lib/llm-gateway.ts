@@ -38,6 +38,10 @@ export interface LlmGatewayInput {
    * instructs the LLM to substitute placeholder tokens (e.g. `{yield}`).
    */
   listingContext?: Record<string, string>;
+  /** Session ID for per-session LLM cost attribution in ClickHouse [F-10]. */
+  sessionId?: string;
+  /** Tenant ID for per-tenant LLM cost attribution in ClickHouse [F-10]. */
+  tenantId?: string;
 }
 
 export interface LlmGatewayOutput {
@@ -386,8 +390,8 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
 
     // Log to ClickHouse (fire-and-forget)
     logLlmCallAsync({
-      sessionId: 'unknown', // caller passes this in route.ts
-      tenantId: 'unknown',
+      sessionId: input.sessionId ?? 'unknown',
+      tenantId: input.tenantId ?? 'unknown',
       archetypeId: input.archetypeId,
       model,
       tokensIn,

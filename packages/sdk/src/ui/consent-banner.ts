@@ -11,7 +11,7 @@
 
 export interface ConsentBannerOptions {
   /** UI language for banner text. */
-  language: 'en' | 'pl';
+  language: 'en' | 'pl' | 'es';
   /** Accent color for the primary "Accept" button (hex, rgb, or CSS color). */
   accentColor: string;
   /** Optional URL for the tenant's privacy policy — shown as a "Learn more" link. */
@@ -121,6 +121,12 @@ const COPY = {
     accept: 'Akceptuj',
     decline: 'Odrzuć',
   },
+  es: {
+    text: 'Personalizamos esta página según tu comportamiento de navegación.',
+    learnMore: 'Más información ↗',
+    accept: 'Aceptar',
+    decline: 'Rechazar',
+  },
 } as const;
 
 /**
@@ -150,7 +156,11 @@ export function renderConsentBanner(
   banner.setAttribute('role', 'dialog');
   banner.setAttribute(
     'aria-label',
-    options.language === 'pl' ? 'Zgoda na personalizację' : 'Personalization consent',
+    options.language === 'pl'
+      ? 'Zgoda na personalizację'
+      : options.language === 'es'
+        ? 'Consentimiento de personalización'
+        : 'Personalization consent',
   );
   // Apply accent color via CSS custom property
   banner.style.setProperty('--estalara-accent', options.accentColor);

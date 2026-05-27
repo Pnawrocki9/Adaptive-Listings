@@ -990,6 +990,18 @@ days and is then permanently deleted."_ Tenants must include this disclosure bef
 Estalara on EU-resident traffic. **Action owner:** Compliance Engineering. **Due:** before EU pilot
 go-live.
 
+**Cross-reference — SDK implementation:** The banner copy and the `onDenied` callback that triggers
+the `consent.denied` dispatch are implemented in `packages/sdk/src/ui/consent-banner.ts`
+(`renderConsentBanner`). The disclosure strings for EN, PL, and ES locales are defined in the `COPY`
+constant in that file. The mandated disclosure sentence above must appear in those locale strings.
+**FOLLOW-128** owns the SDK code change to add the §13.1 disclosure sentence to the banner copy. The
+tenant-facing disclosure paragraph is in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §2.
+
+**DPO gate:** DPO review of this LIA is required before EU pilot go-live. Status: **PENDING** — DPO
+sign-off not yet received. Gate is tracked in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §4 (DPO
+Gate). The pilot runbook Go/No-Go checklist (`docs/ops/PILOT_RUNBOOK.md` §EU pre-flight) carries a
+corresponding gate item.
+
 ---
 
 ### 13.2 LIA — Stable Cross-Session Fingerprint (Audit Finding F-14)
@@ -1030,10 +1042,19 @@ listings). No raw fingerprint entropy is stored server-side; only the salted has
    consent banner currently does not explain this; visitors therefore cannot exercise meaningful
    informed objection. **The balancing test is passed only if the disclosure gap is remediated.**
 
-**Conclusion:** Processing is lawful under GDPR Art. 6(1)(f) (legitimate interests), **conditional
-on remediation of the consent banner disclosure gap**. The lawful basis is personalization
+   **Balancing test status: GREEN — contingent on FOLLOW-128 deployment.** FOLLOW-128 implements the
+   required disclosure strings in `packages/sdk/src/ui/consent-banner.ts` for EN, PL, and ES locales
+   (the three locales required for the EU pilot). Once FOLLOW-128 lands on `main` and the updated
+   SDK is deployed, the disclosure gap is closed and this balancing test transitions from
+   conditional to unconditionally passed. Until FOLLOW-128 is deployed, processing under this LIA
+   must be suspended or must operate under explicit consent (Mode B) rather than legitimate
+   interest. **This GREEN marking is contingent on FOLLOW-128 landing; it does not pre-authorize
+   deployment before FOLLOW-128 is in production.**
+
+**Conclusion:** Processing is lawful under GDPR Art. 6(1)(f) (legitimate interests), subject to
+FOLLOW-128 deployment (see balancing test status above). The lawful basis is personalization
 continuity and conversion measurement. The legitimate interest is not overridden by individual
-rights provided the cross-session nature is disclosed.
+rights once the cross-session nature is disclosed per FOLLOW-128.
 
 **Required consent banner update (mandatory before EU pilot go-live):** The Estalara consent banner
 and tenant Privacy Notice template must be updated to explicitly state, in plain language: _"To
@@ -1042,11 +1063,36 @@ to 90 days. This identifier rotates monthly and is deleted if you withdraw conse
 disclosure must appear in the consent banner — not only in the Privacy Policy — because the
 identifier is set at first page load before the visitor navigates to the policy.
 
-**Action owner:** Compliance Engineering (banner copy) + SDK Engineer (consent-withdrawal erasure
-verification). **Due:** before EU pilot go-live. **Verification:** QA engineer to confirm that
-clicking "Deny" or "Withdraw" removes the `localStorage` key on a staging session.
+**Cross-reference — SDK implementation:** The banner copy is implemented in
+`packages/sdk/src/ui/consent-banner.ts` (`COPY` constant, `renderConsentBanner` function).
+**FOLLOW-128** owns the code change to add the §13.2 cross-session disclosure sentence to the `COPY`
+locale strings for EN, PL, and ES. The tenant-facing disclosure paragraph is in
+`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §3.
+
+**Action owner:** Compliance Engineering (banner copy, DPIA/Privacy Notice docs) + SDK Engineer
+(consent-withdrawal `localStorage` erasure — FOLLOW-128). **Due:** before EU pilot go-live.
+
+**DPO gate:** DPO review of this LIA is required before EU pilot go-live. Status: **PENDING** — DPO
+sign-off not yet received. Gate is tracked in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §4 (DPO
+Gate).
+
+**Staging QA — tracked pending verification (owner: Compliance Engineering):** QA engineer must
+confirm that clicking "Deny" or "Withdraw" on a staging session removes the cross-session
+`localStorage` key (the key set by `renderConsentBanner`'s `onDenied` callback). This verification
+cannot be automated from CI because it requires a real browser session against the staging
+environment. It is a manual pre-flight gate: see `docs/ops/PILOT_RUNBOOK.md` §EU pre-flight,
+"consent disclosure and localStorage QA" gate item. Status: **PENDING** — awaiting FOLLOW-128
+deployment to staging.
 
 ---
 
 _Sections 13.1 and 13.2 added 2026-05-27 in response to Audit Findings F-13 and F-14 (Sprint 1 GDPR
-gate). Authored by Compliance Engineering. DPO review pending._
+gate). Authored by Compliance Engineering. Updated 2026-05-27 (FOLLOW-129): cross-references to
+`packages/sdk/src/ui/consent-banner.ts` and FOLLOW-128 added; §13.2 balancing test marked GREEN
+contingent on FOLLOW-128 deployment; privacy notice template created at
+`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md`; pilot runbook EU pre-flight gate added._
+
+_**DPO gate status: PENDING.** DPO sign-off on §13.1 and §13.2 LIAs has not yet been received. This
+is a hard gate before EU pilot go-live. DPO sign-off must be recorded by updating this note and the
+gate line in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §4. Responsible: Compliance Engineering
+(coordinate with external DPO-as-a-Service provider — contact: compliance@estalara.com)._

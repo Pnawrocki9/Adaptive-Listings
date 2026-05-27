@@ -29,6 +29,41 @@ AI Council session `20260525_143939`.
 - [ ] Sign-off authorities confirmed: **Piotr** (window open/close, abort decision) + **Rafał**
       (mergeable Lane C approvals per the 4-check PR checklist) — per
       `docs/ops/PILOT_FREEZE_RULE.md`.
+- [ ] **EU pre-flight: consent disclosure visible on banner for PL/EN/ES locales** — FOLLOW-128
+      deployed; banner shows both the §13.1 consent-denial audit sentence and the §13.2
+      cross-session identifier sentence in all three pilot locales. See §EU Pre-Flight below for
+      full checklist.
+
+## EU Pre-Flight Compliance Checklist (gates EU pilot go-live)
+
+> **Regulatory basis:** GDPR Art. 5(3), ePrivacy Directive Art. 5(3), UODO (Polish supervisory
+> authority). All items below must be DONE before app.estalara.com goes live for EU-resident
+> visitors. Owner: Compliance Engineering. Source: DPIA §13.1 + §13.2 (FOLLOW-129).
+
+- [ ] **FOLLOW-128 deployed to production.** `packages/sdk/src/ui/consent-banner.ts` COPY constant
+      carries the §13.1 denial-audit disclosure and the §13.2 cross-session identifier disclosure
+      for EN, PL, and ES locales. Verify by loading app.estalara.com in each locale and confirming
+      the disclosure sentences are visible on the consent banner.
+- [ ] **EU consent disclosure visible on banner for PL locale.** Banner text in Polish includes both
+      disclosure sentences (§13.1 denial audit and §13.2 cross-session identifier).
+- [ ] **EU consent disclosure visible on banner for EN locale.** Banner text in English includes
+      both disclosure sentences.
+- [ ] **EU consent disclosure visible on banner for ES locale.** Banner text in Spanish includes
+      both disclosure sentences.
+- [ ] **Privacy Notice template distributed to EU pilot tenant.** The tenant operating
+      app.estalara.com has received `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §2 and §3
+      paragraphs and has incorporated them into their public-facing Privacy Policy.
+- [ ] **DPO sign-off on DPIA §13.1 LIA received.** DPO has reviewed and approved the consent-denial
+      audit log legitimate interest assessment. Gate in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md`
+      §4 updated to DONE.
+- [ ] **DPO sign-off on DPIA §13.2 LIA received.** DPO has reviewed and approved the cross-session
+      identifier legitimate interest assessment. Gate in
+      `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §4 updated to DONE.
+- [ ] **§13.2 staging localStorage QA complete (owner: Compliance Engineering).** A QA engineer has
+      manually confirmed on a staging session that clicking "Deny" or "Withdraw" on the Estalara
+      consent banner removes the cross-session `localStorage` key set by `renderConsentBanner`'s
+      `onDenied` callback. This is a manual browser verification; it cannot be executed from CI.
+      Status: **PENDING** — awaiting FOLLOW-128 staging deployment.
 
 ## 2. Shadow-mode quality thresholds (answers B4) — RATIFIED
 

@@ -32,12 +32,15 @@ import {
   resetAdaptState,
 } from './core/adapt.js';
 import {
+  applyArchetypeHints,
   applyBehavioralSignal,
   applyQuizPrior,
   calculateBehavioralOnlyState,
   detectMismatch,
   initIntentState,
 } from './core/intent.js';
+import { detectSiteSchema } from './auto-detect/pipeline.js';
+import { extractArchetypeHints } from './auto-detect/archetype-hints.js';
 import { DqsTracker } from './core/dqs.js';
 import type { CollectedEvent } from './core/events.js';
 import type { IntentState } from './core/intent.js';
@@ -150,6 +153,25 @@ async function init(): Promise<void> {
 
     // 4a. Initialize Bayesian intent state (BASE_PRIOR → neutral)
     let currentIntentState: IntentState = initIntentState();
+
+    // 4a-f02. Apply site-level archetype hints as cold-start Bayesian prior [AUDIT-F02].
+    // detectSiteSchema runs DOM pattern analysis client-side; AI Vision is excluded from
+    // the browser bundle and is never called here.
+    try {
+      if (typeof document !== 'undefined') {
+        const html = document.documentElement.outerHTML;
+        const url = window.location.href;
+        const { schema } = await detectSiteSchema(html, url, config.tenantId ?? '');
+        if (schema) {
+          const hints = extractArchetypeHints(schema, html, url);
+          if (hints.length > 0) {
+            currentIntentState = applyArchetypeHints(currentIntentState, hints);
+          }
+        }
+      }
+    } catch {
+      // Non-critical — detection failure must never block session init.
+    }
 
     // 4b-dqs. Initialize per-session DQS tracker (TICKET-DQS-001)
     const dqsTracker = new DqsTracker(currentSession.sessionId);

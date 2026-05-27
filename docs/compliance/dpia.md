@@ -939,3 +939,114 @@ within an "essential service" interpretation.
 
 _This document is append-only. New risks are added as new sections. Existing sections are amended by
 appending a change note with version reference, not by modifying original text._
+
+---
+
+## 13. Legitimate Interest Assessments — Sprint 1 Findings (2026-05-27)
+
+### 13.1 LIA — Consent-Denied Audit Dispatch (Audit Finding F-13)
+
+**Finding summary (audit):** When a visitor denies consent via the Estalara consent banner, the SDK
+dispatches a lightweight server-side event (`consent.denied`) to the Estalara Ingest Worker. The
+audit flagged that this dispatch occurs without an explicit Legitimate Interest Assessment
+documenting the lawful basis, since the processing post-dates consent denial.
+
+**Processing activity:** Receipt and logging of a single boolean signal (`consent = denied`) tied to
+a pseudonymous session token (ephemeral; rotates on tab close). No behavioral signals, no archetype
+inference, no adaptation. The log record is retained for a maximum of 7 days, then deleted by the
+automated retention sweep. No cross-tenant access; no export outside the EU unless the ClickHouse
+cluster is configured in a non-EU region (documented separately in §4 of this DPIA).
+
+**Legitimate interest test (three-part):**
+
+1. **Purpose test — is there a legitimate interest?** Yes. Recording the consent decision is
+   necessary for: (a) audit-trail integrity — demonstrating to supervisory authorities that the SDK
+   correctly ceased data processing upon denial; (b) debugging — detecting SDK bugs where consent
+   state is not honoured; (c) fraud/abuse detection — identifying automated scripts that flood the
+   consent denial path to exhaust session quotas. These purposes are operational and directly serve
+   compliance obligations under GDPR Art. 5(2) (accountability principle).
+
+2. **Necessity test — is processing necessary for that purpose?** Yes. The minimal alternative —
+   logging consent denial in `localStorage` only — is insufficient for audit-trail purposes because
+   it is not available to Time2Show's compliance team and is erasable by the visitor without a
+   trace. A single server-side record of the denial timestamp and session token is the minimum
+   necessary to satisfy the accountability obligation.
+
+3. **Balancing test — does the legitimate interest override individual rights?** Yes, on balance.
+   The data processed is a binary signal (denied) and a pseudonymous session token with a 7-day TTL.
+   No content, no behavioral signal, no device fingerprint is included. The individual reasonable
+   expectation of a visitor is that a website will record the fact of consent denial for compliance
+   purposes; this is consistent with standard industry practice and the ICO / CNIL / UODO published
+   guidance on consent management platform logging. The residual privacy impact is minimal.
+
+**Conclusion:** Processing is lawful under GDPR Art. 6(1)(f) (legitimate interests). The lawful
+basis is operational accountability under Art. 5(2). No additional safeguards beyond the 7-day
+retention limit and pseudonymisation are required at this time.
+
+**Consent banner disclosure:** The Estalara Privacy Notice template (provided to tenants) must be
+updated to include the following sentence (or equivalent): _"We record the fact of your consent
+decision — including a denial — for compliance and debugging purposes. This log is retained for 7
+days and is then permanently deleted."_ Tenants must include this disclosure before enabling
+Estalara on EU-resident traffic. **Action owner:** Compliance Engineering. **Due:** before EU pilot
+go-live.
+
+---
+
+### 13.2 LIA — Stable Cross-Session Fingerprint (Audit Finding F-14)
+
+**Finding summary (audit):** The Estalara SDK implements Mode B (cross-session) fingerprinting for
+tenants who opt in to cross-listing journey tracking (§4.2 of this DPIA). In Mode B the session
+fingerprint persists for 90 days. The audit flagged that the consent banner copy does not explicitly
+disclose the cross-session nature of the identifier, creating a gap between the actual behavior and
+the disclosed behavior.
+
+**Processing activity:** The cross-session fingerprint is an HMAC of browser entropy attributes
+(canvas hash, AudioContext hash, screen/viewport/timezone/language, WebGL renderer) keyed by
+`tenant_secret` and a 30-day rotation bucket. The hash is stored in `localStorage` and transmitted
+with every ingest event. It enables the Estalara system to link listing views across separate
+browser sessions (e.g. a visitor who views a listing on day 1 and returns on day 14 to view related
+listings). No raw fingerprint entropy is stored server-side; only the salted hash.
+
+**Legitimate interest test (three-part):**
+
+1. **Purpose test — is there a legitimate interest?** Yes. Cross-session journey tracking serves:
+   (a) personalization continuity — without it, a returning visitor's archetype confidence resets to
+   the uniform prior on every new session, degrading adaptation quality; (b) conversion measurement
+   — the pilot lift experiment requires linking a listing-view event on day 1 to an inquiry event on
+   day 14 to compute time-lagged conversion; (c) fraud/abuse detection — repeated rapid re-visits
+   from the same device to inflate engagement metrics can only be detected across sessions.
+
+2. **Necessity test — is processing necessary for that purpose?** Yes for purposes (a)–(c). A
+   session-only identifier satisfies none of them: it resets on tab close. A user-authenticated
+   identifier would require a logged-in user, which is incompatible with Estalara's
+   anonymous-visitor architecture. A 90-day cross-session hash is the minimum viable identifier for
+   the stated purposes.
+
+3. **Balancing test — does the legitimate interest override individual rights?** Balanced, with
+   mitigations. The hash is pseudonymous (not directly re-identifiable without the `tenant_secret`),
+   rotates every 30 days (limiting staleness), and is cleared on explicit consent withdrawal
+   (erasure in `localStorage`). However, a 90-day cross-session identifier goes beyond what a
+   typical visitor would expect without disclosure. The gap identified in audit F-14 is that the
+   consent banner currently does not explain this; visitors therefore cannot exercise meaningful
+   informed objection. **The balancing test is passed only if the disclosure gap is remediated.**
+
+**Conclusion:** Processing is lawful under GDPR Art. 6(1)(f) (legitimate interests), **conditional
+on remediation of the consent banner disclosure gap**. The lawful basis is personalization
+continuity and conversion measurement. The legitimate interest is not overridden by individual
+rights provided the cross-session nature is disclosed.
+
+**Required consent banner update (mandatory before EU pilot go-live):** The Estalara consent banner
+and tenant Privacy Notice template must be updated to explicitly state, in plain language: _"To
+remember your preferences across visits, we store a pseudonymous identifier in your browser for up
+to 90 days. This identifier rotates monthly and is deleted if you withdraw consent."_ This
+disclosure must appear in the consent banner — not only in the Privacy Policy — because the
+identifier is set at first page load before the visitor navigates to the policy.
+
+**Action owner:** Compliance Engineering (banner copy) + SDK Engineer (consent-withdrawal erasure
+verification). **Due:** before EU pilot go-live. **Verification:** QA engineer to confirm that
+clicking "Deny" or "Withdraw" removes the `localStorage` key on a staging session.
+
+---
+
+_Sections 13.1 and 13.2 added 2026-05-27 in response to Audit Findings F-13 and F-14 (Sprint 1 GDPR
+gate). Authored by Compliance Engineering. DPO review pending._

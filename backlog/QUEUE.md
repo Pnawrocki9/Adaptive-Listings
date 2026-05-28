@@ -1,13 +1,30 @@
 # Backlog Queue
 
-**Updated 2026-05-28 by pm-orchestrator.** **Sprint 13a-hardening-v2 COMPLETE — 2/2 P0 EU go-live
-blockers DONE (PR #164 FOLLOW-139 at e4e37ac, PR #165 FOLLOW-141 at 19d11d2; both merged to main).
-FOLLOW-143 (wire getOrCreateCrossSessionId into init) + FOLLOW-144 (reconcile "rotates monthly" to
-90-day cadence across 5 disclosure surfaces) fixed inline in PR #164. RETRO-025 spawned on
-FOLLOW-143/144 inline fixes. FOLLOW-140/142 deferred Sprint 14.** Sprint 13a-hardening COMPLETE —
-pre-pilot gate CLOSED (4 PRs merged, main at `29c97ab`). The pre-pilot hardening wave landed its 4
-P0/P1 tickets: FOLLOW-127 (P0, PR #161 `6a27841`) detection engine now populates
-`inquiry_submit_selector`; FOLLOW-128 (P0, PR #160 `256b469`) DPIA §13.1/§13.2 mandated
+**Updated 2026-05-28 by pm-orchestrator.** **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra
+hardening) READY_FOR_REVIEW at PR #166 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).**
+Triggered by a 2026-05-28 diagnostic that proved the previous "Migration 0015: prd ✅ applied"
+bookkeeping was false — drizzle-kit silently generated 2025 timestamps for entries 15/16 (1-year
+year-drift, second occurrence after `c92da81`), Drizzle's migrator silently skipped them, and
+`migrate.ts` falsely printed "Migrations applied successfully." with zero applied. FOLLOW-149 lands:
+(A) journal `when`-values for entries 15/16 repaired to commit-timestamp-aligned 2026 values; (B)
+new CI gate `Migration journal monotonicity check` (passing, 7s) — fails on non-monotonic OR >7d
+commit-date drift; (C) `migrate.ts` now reports before/after/applied/pending counts AND exits
+non-zero with a loud warning when 0 applied but pending>0 (trap-killer); (D) migration 0015 applied
+to prd via isolated apply (see ESC-012) — `tenants.pilot_frozen` column verified present
+(boolean/default false), `drizzle.__drizzle_migrations` row id=17 hash matches. Migration 0016
+INTENTIONALLY NOT applied — its DO $ assertion requires the pilot tenant to exist, and Drizzle's
+single-transaction migrator would roll back 0015 alongside it. **ESC-012 OPEN**: `pnpm db:migrate`
+is no longer safe in tenant-less envs until TICKET-PILOT-001 either seeds the pilot tenant before
+migrate OR migration 0016's RAISE EXCEPTION is softened to NOTICE — data/backend engineers decide
+during TICKET-PILOT-001 planning. Rule O added to CONVENTIONS_PATCH.md. RETRO-025 (FOLLOW-143/144
+inline fixes) + RETRO-026 (FOLLOW-149) deferred until PR #166 merges. **Sprint 13a-hardening-v2
+COMPLETE — 2/2 P0 EU go-live blockers DONE (PR #164 FOLLOW-139 at e4e37ac, PR #165 FOLLOW-141 at
+19d11d2; both merged to main). FOLLOW-143 (wire getOrCreateCrossSessionId into init) + FOLLOW-144
+(reconcile "rotates monthly" to 90-day cadence across 5 disclosure surfaces) fixed inline in PR
+#164. RETRO-025 pending post-FOLLOW-149-merge. FOLLOW-140/142 deferred Sprint 14.** Sprint
+13a-hardening COMPLETE — pre-pilot gate CLOSED (4 PRs merged, main at `29c97ab`). The pre-pilot
+hardening wave landed its 4 P0/P1 tickets: FOLLOW-127 (P0, PR #161 `6a27841`) detection engine now
+populates `inquiry_submit_selector`; FOLLOW-128 (P0, PR #160 `256b469`) DPIA §13.1/§13.2 mandated
 consent-banner disclosures shipped in the SDK; FOLLOW-129 (P0, PR #159 `10ae1e7`) tenant Privacy
 Notice template + DPO sign-off + consent-withdrawal erasure QA; FOLLOW-122 (P1, PR #162 `29c97ab`)
 `/dashboard/pilot` consumes `data_source` provenance + surfaces the fail-loud 500 state. **Net

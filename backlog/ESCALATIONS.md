@@ -480,3 +480,45 @@ green on every real merge gate (Build, Build control-plane, Typecheck, Lint, Tes
 rule-h, rule-j, Format, corpus, ClickHouse, Doppler, Gitleaks). **Lasting fix:** future PR branches
 must use the `<agent>/<ticket>-<slug>` convention (CLAUDE.md) so push-CI fires regardless of the
 pull_request trigger.
+
+---
+
+## OPEN — ESC-012: `pnpm db:migrate` against any env will fail until pilot tenant exists [FOLLOW-149 / TICKET-PILOT-001]
+
+**Filed by:** devops-engineer **Date:** 2026-05-28T20:00:00Z **Affects:** any environment that runs
+`pnpm db:migrate` after FOLLOW-149's journal repair lands and before TICKET-PILOT-001 seeds the
+pilot tenant. Concretely: dev, staging, and any future region/tenant DB clone that has not yet had
+the pilot tenant `000-app-estalara` inserted. **Type:** sequencing / operational
+
+**Discovered during:** FOLLOW-149 Part D — applying migration 0015 to prd.
+
+**Description:** Drizzle's pg-core migrator wraps ALL pending migrations in a single transaction
+(`drizzle-orm/pg-core/dialect.js:60 `await
+session.transaction(...)`). Migration 0016 (`0016_pilot_inquiry_selector.sql`) ends with a `DO $$
+... RAISE
+EXCEPTION`guard that aborts when the pilot tenant`000-app-estalara`is missing. Pre-pilot prd had 0 tenants → running`pnpm
+db:migrate`raised inside the txn and rolled BOTH 0015 and 0016 back. To honour FOLLOW-149's explicit "do not apply 0016 in this ticket" instruction (and because 0016 requires a real tenant), I applied 0015 via a one-off, isolated`BEGIN/INSERT
+INTO drizzle.\_\_drizzle_migrations/COMMIT` mirror of the migrator's per-entry logic. **0015 is now
+applied on prd; 0016 remains pending.**
+
+The systemic issue this exposes: `pnpm db:migrate` is no longer a "safe to run anywhere" command.
+Any future invocation in dev / staging / a fresh region clone will hit the same 0016 raise and roll
+back any future entries 0017+ alongside it.
+
+**Required action (TICKET-PILOT-001 or earlier):** TICKET-PILOT-001 (Magic Link wizard
+`POST /api/tenants`) MUST seed the pilot tenant row BEFORE the operator runs any `pnpm db:migrate`
+that needs to pick up 0016+. Two equivalent paths:
+
+1. Make TICKET-PILOT-001's wizard step explicitly call db:migrate AFTER tenant creation, and
+   document the order in `docs/runbooks/pilot-onboarding.md` (does not exist yet — see FOLLOW stub).
+2. Edit migration 0016 to skip its `UPDATE`/`RAISE` block when the tenant row is absent (i.e. change
+   `RAISE EXCEPTION` to a `RAISE NOTICE` no-op). This is data-engineer's call; out of scope for
+   FOLLOW-149 because the ticket forbids editing migration SQL.
+
+**Workaround until then:** Operators running `pnpm db:migrate` against a tenant-less DB will see
+0016 fail loudly with the FOLLOW-141/FOLLOW-147 error message. Pending entries from 0017+ (none
+exist yet) would also roll back. Use the same isolated apply pattern I used for 0015 if any 0017+
+entry must land before the pilot exists. Long-term, this is brittle — pick path 1 or 2 above.
+
+**Resolution:** <pending — data-engineer + backend-engineer to decide between paths 1 and 2 during
+TICKET-PILOT-001 planning>

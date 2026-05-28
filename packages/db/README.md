@@ -178,6 +178,34 @@ from the repo root executes `scripts/migrate.ts` against the direct Postgres URL
 `drizzle-orm/postgres-js/migrator` which tracks applied migrations in the `__drizzle_migrations`
 table — it is idempotent and safe to run on every deploy.
 
+The runner reports honest counts (`applied`, `before`, `after`, `pending`, `journal entries`) and
+exits with code `2` when `pending > 0 && applied === 0` — the signature of the journal-ordering bug
+described in CONVENTIONS_PATCH.md Rule O. A green "Migrations applied successfully." line is emitted
+only when at least one entry was applied AND zero entries remain pending.
+
+## Migration journal integrity (Rule O — FOLLOW-149)
+
+`packages/db/migrations/meta/_journal.json` MUST be strictly monotonic on `when` AND every entry's
+`when` MUST be within 7 days of its SQL file's first-add git commit date. drizzle-kit has been
+observed emitting year-drifted (2025-instead-of-2026) `when` values on certain developer machines;
+Drizzle's migrator silently SKIPS out-of-order entries, so a year-drifted entry never applies and
+the runner used to print success regardless. See CONVENTIONS_PATCH.md Rule O for the full pattern
+and verification.
+
+The CI gate is `scripts/check-migration-journal.sh` (job `migration-journal` in
+`.github/workflows/ci.yml`). It runs a `--self-test` against four in-memory fixtures (monotonicity
+violation, year-drift, orphan entry, known-good) before validating the real journal. Run locally
+before pushing any migration change:
+
+```bash
+bash scripts/check-migration-journal.sh
+bash scripts/check-migration-journal.sh --self-test
+```
+
+If `pnpm db:generate` emits a journal entry with a year-drifted `when`, patch the `when` to
+`Math.floor(Date.now())` (ms since epoch) before committing. The CI gate's 7-day window will
+otherwise block the PR.
+
 ## Common gotchas
 
 ### `RETURNING` in pgBouncer mode

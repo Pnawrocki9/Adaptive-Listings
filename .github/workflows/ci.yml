@@ -383,6 +383,28 @@ jobs:
       - name: Check mirror-file byte identity
         run: bash scripts/check-mirror-files.sh
 
+  # ── Migration journal monotonicity + recency check (FOLLOW-149) ─────────
+  # Enforces _journal.json invariants:
+  #   1. Every entry's `when` is strictly > previous entry's `when` (drizzle
+  #      silently skips out-of-order entries — see FOLLOW-149 root cause).
+  #   2. Every entry's `when` is within 7 days of the matching SQL file's
+  #      first-add git commit date (catches drizzle-kit year-drift bug).
+  #   3. Entry count matches SQL file count.
+  # Self-test included in the script (--self-test flag).
+  migration-journal:
+    name: Migration journal monotonicity check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for `git log --diff-filter=A` per SQL file
+
+      - name: Run journal self-test (validates the gate itself)
+        run: bash scripts/check-migration-journal.sh --self-test
+
+      - name: Validate _journal.json
+        run: bash scripts/check-migration-journal.sh
+
   # ── SDK E2E tests (Playwright + Chromium) ────────────────────────────────
   sdk-e2e:
     name: SDK E2E tests

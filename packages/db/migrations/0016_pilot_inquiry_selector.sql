@@ -13,9 +13,13 @@
 --   schema->>'inquiry_submit_selector' is NULL or empty string, setting it to
 --   the canonical data-estalara-slot value '[data-estalara-slot=''inquiry-submit'']'.
 --
--- The pilot tenant is identified by slug = '000-app-estalara' (the canonical
--- fixture identifier used across the codebase). No UUID is hardcoded — the
--- subquery resolves the id at migration time against the live tenants table.
+-- Pilot tenant identification:
+--   Resolved at apply-time by slug = '000-app-estalara'. A pre-flight assertion
+--   (DO block below) verifies the slug exists and raises a loud exception if not,
+--   so a production apply against a differently-slugged tenant fails visibly rather
+--   than silently no-oping. PILOT_FREEZE_RULE.md references DEMO_TENANT_ID as the
+--   canonical env-var handle — both should resolve to the same row; the assertion
+--   catches divergence at apply-time.
 --
 -- Idempotency:
 --   The WHERE guard ensures this UPDATE is a no-op if the key already has a
@@ -27,6 +31,24 @@
 --   inserts the key even when the top-level object does not yet contain it.
 --
 -- Forward-only migration. FOLLOW-141.
+
+-- Pre-flight assertion: fail loudly if the pilot tenant slug is missing.
+-- Prevents a silent 0-row UPDATE on production if the slug was never seeded.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM tenants
+    WHERE slug = '000-app-estalara'
+      AND deleted_at IS NULL
+  ) THEN
+    RAISE EXCEPTION
+      'Migration 0016 aborted: tenant with slug "000-app-estalara" not found. '
+      'Verify the pilot tenant exists and its slug matches the fixture identifier. '
+      'If the production tenant uses a different slug, update this migration or seed '
+      'the tenant row before applying. (FOLLOW-141 / FOLLOW-147)';
+  END IF;
+END $$;
 
 UPDATE tenant_site_schemas
 SET schema = jsonb_set(

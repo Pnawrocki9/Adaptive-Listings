@@ -587,4 +587,68 @@ element that does not exist) would warrant a separate Rule O.
 
 **Evidence for this amendment:** RETRO-023 §3 HALF_WIRE_C / §4a LG-1 / §4d DG-1/DG-2/DG-3 / §6.
 
-<!-- Rule O+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->
+## Rule O — Migration journal monotonicity + recency
+
+**Pattern:** A Drizzle migration's `_journal.json` entry carries a `when` timestamp that is either
+(a) less-than-or-equal-to a previously-applied entry's `when` (monotonicity violation), or (b)
+year-drifted by drizzle-kit (e.g. 2025 instead of 2026, ~365 days delta vs the SQL file's commit
+date). Drizzle's pg-core migrator skips any entry whose `folderMillis` is `<=` the last applied
+entry's `created_at` — silently — and `packages/db/scripts/migrate.ts` (before FOLLOW-149) always
+printed "Migrations applied successfully." regardless of how many entries it skipped. Net effect:
+the migration was never applied to production but every bookkeeping signal said it was. The next
+deployment that read the new column got an "undefined column" Postgres error in tenant-facing
+traffic.
+
+**Evidence:**
+
+- 2026-05-18 — commit `c92da81` repaired entries 6, 8, 9, 10, 11 and added missing 3, 4, 5, 7, 12
+  (first instance: drizzle-kit emitted 2025-stamped `when`s while the local clock was on 2026; the
+  unrepaired journal would have silently no-op'd those migrations).
+- 2026-05-28 — FOLLOW-149 repaired entries 15 (`0015_pilot_frozen`, `when` was `1748304000000` ≈
+  2025-05-27 vs actual commit `b83e6c0` on 2026-05-25) and 16 (`0016_pilot_inquiry_selector`, `when`
+  was `1748736000000` ≈ 2025-06-01 vs actual commit `19d11d2` on 2026-05-28). Verified in prd:
+  `pilot_frozen` column was ABSENT from `tenants` table at session start despite a green
+  `pnpm db:migrate` run in a previous FOLLOW-106 wave.
+- Second-line root cause: silent-success in `packages/db/scripts/migrate.ts` (always printed success
+  even with 0 applied). Combined with bug 1, this hid the gap from every reviewer. The same script
+  now reports applied/before/after/pending counts and exits non-zero with a loud warning when
+  `pending > 0 && applied === 0`. See FOLLOW-149 PR.
+
+**Rule:** Every entry in `packages/db/migrations/meta/_journal.json` MUST satisfy:
+
+1. **Strict monotonic `when`** — `entries[i].when > entries[i-1].when` for every `i`. Drizzle
+   silently skips out-of-order entries; no automated downstream catches it.
+2. **Within MAX_DELTA_DAYS (7) of the SQL file commit date** —
+   `|entries[i].when/1000 - git_log_first_add_unix_seconds(entries[i].tag + '.sql')| <= 7 * 86400`.
+   Fallback: file mtime for newly-added (uncommitted) entries. This catches drizzle-kit's year-drift
+   bug at PR time.
+3. **One-to-one with SQL files** — `set(entries[*].tag) === set(basename(*.sql) without .sql)`. No
+   orphan entries, no orphan SQL files.
+
+**Verification (CI gate + pre-push lefthook):** `scripts/check-migration-journal.sh` runs as a
+blocking CI job (`migration-journal` in `.github/workflows/ci.yml`) on every push. The script
+includes a `--self-test` mode that exercises four in-memory fixtures (monotonic-violation,
+year-drift-violation, orphan-entry, known-good); CI invokes the self-test first so the gate's own
+correctness is provable on every run. Run locally before pushing:
+
+```bash
+bash scripts/check-migration-journal.sh             # validate the real journal
+bash scripts/check-migration-journal.sh --self-test # verify the gate itself works
+```
+
+**Companion guard (runtime, not gate):** `packages/db/scripts/migrate.ts` (the runner invoked by
+`pnpm db:migrate`) reports the actual applied/before/after/pending counts and exits with code 2 when
+`pending > 0 && applied === 0`. This is the trap-killer for the same defect once it has escaped CI
+(e.g. drift introduced by manual journal edits).
+
+**How to apply when you generate a new migration:**
+
+1. Run `pnpm db:generate`.
+2. Inspect the new entry in `_journal.json` — verify `when` is in the expected year, AFTER the
+   previous entry's `when`. If drizzle-kit emitted a 2025 (or other past-year) value, patch it to
+   `Math.floor(Date.now())` and push. Run `bash scripts/check-migration-journal.sh` locally before
+   committing.
+3. Commit the new SQL file AND the journal change in the same commit so the CI gate sees the
+   matching git-add date for the SQL file.
+
+<!-- Rule P+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->

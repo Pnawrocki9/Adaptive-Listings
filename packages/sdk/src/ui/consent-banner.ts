@@ -132,7 +132,7 @@ const BANNER_STYLE = `
  *
  * disclosure13_2 — DPIA §13.2: cross-session pseudonymous identifier notice.
  *   Source: dpia.md §13.2 "Required consent banner update" paragraph. Retention = 90 days,
- *   rotation = monthly. Must appear in the banner (not only in the Privacy Policy) because
+ *   refreshed every 90 days. Must appear in the banner (not only in the Privacy Policy) because
  *   the identifier is set at first page load before the visitor navigates to the policy.
  */
 const COPY = {

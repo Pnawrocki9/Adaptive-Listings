@@ -1036,7 +1036,7 @@ listings). No raw fingerprint entropy is stored server-side; only the salted has
 
 3. **Balancing test — does the legitimate interest override individual rights?** Balanced, with
    mitigations. The hash is pseudonymous (not directly re-identifiable without the `tenant_secret`),
-   rotates every 30 days (limiting staleness), and is cleared on explicit consent withdrawal
+   is refreshed every 90 days (limiting staleness), and is cleared on explicit consent withdrawal
    (erasure in `localStorage`). However, a 90-day cross-session identifier goes beyond what a
    typical visitor would expect without disclosure. The gap identified in audit F-14 is that the
    consent banner currently does not explain this; visitors therefore cannot exercise meaningful
@@ -1045,10 +1045,13 @@ listings). No raw fingerprint entropy is stored server-side; only the salted has
    **Balancing test status: GREEN — unconditionally passed as of FOLLOW-139.** FOLLOW-128
    implemented the required disclosure strings in `packages/sdk/src/ui/consent-banner.ts` for EN,
    PL, and ES locales (landed on `main` 2026-05-27). FOLLOW-139 implemented the matching SDK
-   enforcement: `localStorage` storage with 90-day TTL rotation and `eraseCrossSessionId()` called
-   on every consent-denied/withdrawal path in `packages/sdk/src/core/session.ts` and
-   `packages/sdk/src/index.ts`. The disclosure gap is closed and the erasure-on-withdrawal
-   obligation is implemented. This balancing test is now unconditionally passed.
+   enforcement: `localStorage` storage with 90-day TTL rotation, `getOrCreateCrossSessionId()`
+   called in `packages/sdk/src/index.ts` immediately after consent is granted (both on init when
+   consent is already 'granted' and in the `onGranted` callback when the user accepts the banner),
+   and `eraseCrossSessionId()` called on every consent-denied/withdrawal path in
+   `packages/sdk/src/core/session.ts` and `packages/sdk/src/index.ts`. The disclosure gap is closed
+   and the erasure-on-withdrawal obligation is implemented. This balancing test is now
+   unconditionally passed.
 
 **Conclusion:** Processing is lawful under GDPR Art. 6(1)(f) (legitimate interests). The lawful
 basis is personalization continuity and conversion measurement. The legitimate interest is not
@@ -1058,8 +1061,8 @@ localStorage identifier with erasure-on-withdrawal is implemented (FOLLOW-139).
 **Required consent banner update (mandatory before EU pilot go-live):** The Estalara consent banner
 and tenant Privacy Notice template must be updated to explicitly state, in plain language: _"To
 remember your preferences across visits, we store a pseudonymous identifier in your browser for up
-to 90 days. This identifier rotates monthly and is deleted if you withdraw consent."_ This
-disclosure must appear in the consent banner — not only in the Privacy Policy — because the
+to 90 days. This identifier is refreshed every 90 days and is deleted if you withdraw consent."_
+This disclosure must appear in the consent banner — not only in the Privacy Policy — because the
 identifier is set at first page load before the visitor navigates to the policy.
 
 **Cross-reference — SDK implementation:** The banner copy is implemented in
@@ -1095,8 +1098,10 @@ contingent on FOLLOW-128 deployment; privacy notice template created at
 `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md`; pilot runbook EU pre-flight gate added. Updated
 2026-05-28 (FOLLOW-139): §13.2 balancing test transitioned to unconditionally GREEN following
 implementation of `localStorage` 90-day TTL cross-session identifier with erasure-on-withdrawal in
-`packages/sdk/src/core/session.ts` (`getOrCreateCrossSessionId`, `eraseCrossSessionId`) and wiring
-into the consent-denied path in `packages/sdk/src/index.ts`._
+`packages/sdk/src/core/session.ts` (`getOrCreateCrossSessionId`, `eraseCrossSessionId`), wiring
+`getOrCreateCrossSessionId()` into the consent-granted path in `packages/sdk/src/index.ts` (called
+both on init when consent is already 'granted' and in the `onGranted` banner callback), and wiring
+`eraseCrossSessionId()` into the consent-denied path._
 
 _**DPO gate status: PENDING.** DPO sign-off on §13.1 and §13.2 LIAs has not yet been received. This
 is a hard gate before EU pilot go-live. DPO sign-off must be recorded by updating this note and the

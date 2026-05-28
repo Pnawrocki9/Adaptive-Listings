@@ -483,7 +483,7 @@ pull_request trigger.
 
 ---
 
-## OPEN — ESC-012: `pnpm db:migrate` against any env will fail until pilot tenant exists [FOLLOW-149 / TICKET-PILOT-001]
+## IN_PROGRESS — ESC-012: `pnpm db:migrate` against any env will fail until pilot tenant exists [FOLLOW-149 / TICKET-PILOT-001]
 
 **Filed by:** devops-engineer **Date:** 2026-05-28T20:00:00Z **Affects:** any environment that runs
 `pnpm db:migrate` after FOLLOW-149's journal repair lands and before TICKET-PILOT-001 seeds the
@@ -520,5 +520,10 @@ that needs to pick up 0016+. Two equivalent paths:
 exist yet) would also roll back. Use the same isolated apply pattern I used for 0015 if any 0017+
 entry must land before the pilot exists. Long-term, this is brittle — pick path 1 or 2 above.
 
-**Resolution:** <pending — data-engineer + backend-engineer to decide between paths 1 and 2 during
-TICKET-PILOT-001 planning>
+**Resolution:** CEO chose Path (1) — wizard sequencing (2026-05-28). Resolution lives in
+TICKET-PILOT-001 step 4b: the Magic Link wizard MUST create the pilot tenant row before the operator
+runs `pnpm db:migrate`. The ordering requirement and recovery pattern (isolated apply) are
+documented in `docs/ops/PILOT_RUNBOOK.md` §3 "Migration sequencing" and in
+`backlog/sprint-12/TICKET-PILOT-001.md` Notes section. Will move to RESOLVED when TICKET-PILOT-001
+lands with the working sequence and `SELECT inquiry_submit_selector` confirms the column is
+populated on the pilot tenant.

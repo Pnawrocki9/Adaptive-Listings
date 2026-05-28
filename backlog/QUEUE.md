@@ -2294,7 +2294,18 @@ min Piotr action).
   priority: P1
   estimated_hours: 4
   depends_on:
-    [FOLLOW-094, FOLLOW-098, FOLLOW-093, FOLLOW-097, FOLLOW-105, FOLLOW-106, FOLLOW-127, FOLLOW-122]
+    [
+      FOLLOW-094,
+      FOLLOW-098,
+      FOLLOW-093,
+      FOLLOW-097,
+      FOLLOW-105,
+      FOLLOW-106,
+      FOLLOW-127,
+      FOLLOW-122,
+      FOLLOW-149,
+      ESC-012,
+    ]
   model: sonnet-4.6
   spec: backlog/sprint-12/TICKET-PILOT-001.md
   notes: |
@@ -2317,6 +2328,11 @@ min Piotr action).
     not injected) 3-5 days for baseline. (4) Generate + verify SDK snippet for production embed.
     (5) Set tenants.pilot_frozen=true on the shadow→live flip (FOLLOW-106) — opens the measurement
     window per PILOT_FREEZE_RULE.md.
+    MIGRATION SEQUENCING (ESC-012, CEO 2026-05-28 Path 1): pilot tenant row MUST exist in `tenants`
+    table BEFORE operator runs `pnpm db:migrate`. Step 4b (new): verify tenant exists → run
+    `pnpm db:migrate` → SELECT inquiry_submit_selector to confirm 0016 populated the column. Running
+    migrate before wizard creates the tenant triggers 0016's RAISE EXCEPTION and rolls back the whole
+    Drizzle txn (including any future 0017+ entries). See ESC-012 + PILOT_RUNBOOK §3.
     ACCEPTANCE ADDITION (RETRO-010 finding #3, CEO 2026-05-25 — canonical-URL safeguard for the
     MANUAL install path, which the FOLLOW-105 buildSnippet wizard fix does NOT cover):
       - [ ] The SvelteKit `+layout.svelte` SDK snippet MUST include

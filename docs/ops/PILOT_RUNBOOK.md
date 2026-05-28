@@ -88,6 +88,45 @@ Measured during the ≥3-day shadow window before going live:
    "significant" A/A result means the metric or query is wrong — block go-live.
 3. **Provenance check:** confirm `data_source: 'clickhouse'` end-to-end (FOLLOW-094).
 
+### Migration sequencing (ESC-012 — Path 1, CEO decision 2026-05-28)
+
+**Mandatory order:** wizard creates tenant row → `pnpm db:migrate` → verify selector via SELECT.
+
+**Why the order matters:** Migration 0016 (`0016_pilot_inquiry_selector.sql`) contains a
+`RAISE EXCEPTION` guard that fires when the pilot tenant `000-app-estalara` is absent from the
+`tenants` table. Drizzle's pg-core migrator wraps ALL pending migrations in a single transaction, so
+0016's exception rolls back every co-pending entry (0017+ in the future) alongside it. Running
+`pnpm db:migrate` before the Magic Link wizard has created the pilot tenant is the exact failure
+mode ESC-012 documents — it was triggered during FOLLOW-149 Part D on prd.
+
+**Verification step after migration:**
+
+```sql
+SELECT inquiry_submit_selector FROM tenants WHERE id = '<pilot-tenant-id>';
+```
+
+The column must be non-null. Do NOT infer success from the migration exit message alone.
+
+**Troubleshooting — recovery pattern if Path (1) misfires:**
+
+If `pnpm db:migrate` still raises on 0016 after the wizard has run (e.g., due to a wizard bug that
+did not commit the tenant row), use the isolated apply pattern:
+
+```sql
+BEGIN;
+INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
+  VALUES ('<migration-0016-hash>', extract(epoch from now()) * 1000);
+-- run the migration SQL from 0016_pilot_inquiry_selector.sql manually here
+COMMIT;
+```
+
+This mirrors the per-entry logic the migrator uses internally, without the cross-migration
+transaction wrapping. It is the same approach used to apply migration 0015 to prd in FOLLOW-149 Part
+D. Use this pattern only as a recovery tool — it bypasses the migrator's integrity checks. Once the
+tenant row is confirmed present, `pnpm db:migrate` should apply cleanly from that point forward.
+
+See `backlog/ESCALATIONS.md` ESC-012 for full context and rationale.
+
 ## 4. Abort rule (answers B6) — RATIFIED
 
 **Scenario A — measured outcome (NULL / zero / negative lift).** A NULL/zero/negative result is a

@@ -1,8 +1,12 @@
 # Backlog Queue
 
-**Updated 2026-05-27 (evening) by pm-orchestrator.** **Sprint 13a-hardening COMPLETE — pre-pilot
-gate now CLOSED (4 PRs merged, main at `29c97ab`).** The pre-pilot hardening wave landed its 4 P0/P1
-tickets: FOLLOW-127 (P0, PR #161 `6a27841`) detection engine now populates
+**Updated 2026-05-28 by pm-orchestrator.** **Sprint 13a-hardening-v2 COMPLETE — 2/2 P0 EU go-live
+blockers DONE (PR #164 FOLLOW-139 at e4e37ac, PR #165 FOLLOW-141 at 19d11d2; both merged to main).
+FOLLOW-143 (wire getOrCreateCrossSessionId into init) + FOLLOW-144 (reconcile "rotates monthly" to
+90-day cadence across 5 disclosure surfaces) fixed inline in PR #164. RETRO-025 spawned on
+FOLLOW-143/144 inline fixes. FOLLOW-140/142 deferred Sprint 14.** Sprint 13a-hardening COMPLETE —
+pre-pilot gate CLOSED (4 PRs merged, main at `29c97ab`). The pre-pilot hardening wave landed its 4
+P0/P1 tickets: FOLLOW-127 (P0, PR #161 `6a27841`) detection engine now populates
 `inquiry_submit_selector`; FOLLOW-128 (P0, PR #160 `256b469`) DPIA §13.1/§13.2 mandated
 consent-banner disclosures shipped in the SDK; FOLLOW-129 (P0, PR #159 `10ae1e7`) tenant Privacy
 Notice template + DPO sign-off + consent-withdrawal erasure QA; FOLLOW-122 (P1, PR #162 `29c97ab`)
@@ -93,6 +97,7 @@ updates.
 | 12     | 14    | Pilot launch on app.estalara.com — COMPLETE (Lane A + Lane C; Lane B → Sprint 13)                                                   | 7       | 5    | 0       | 2     | 0       |
 | 13a    | 15    | Correctness + pilot launch (Lane A correctness gate + Lane B pilot launch) — Lane A 8/8 DONE; Lane B READY (gate closed)            | 11      | 8    | 0       | 1     | 2       |
 | 13a-h  | 15    | Pre-pilot hardening — inquiry producer (FOLLOW-127), GDPR consent disclosures (FOLLOW-128/129), honest pilot dashboard (FOLLOW-122) | 4       | 4    | 0       | 0     | 0       |
+| 13a-h2 | 15    | Pre-pilot hardening v2 — §13.2 localStorage xid erasure (FOLLOW-139), pilot inquiry selector seed (FOLLOW-141)                      | 2       | 2    | 0       | 0     | 0       |
 | 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                         | 6       | 0    | 0       | 3     | 3       |
 | Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)      | 4       | 4    | 0       | 0     | 0       |
 
@@ -2447,6 +2452,66 @@ gates).
     for real. Closes the consumer half-wire feeding TICKET-PILOT-002's runbook provenance check.
 ```
 
+## Sprint 13a-hardening-v2 — P0 EU go-live blockers (DONE)
+
+**Status:** 2/2 DONE 2026-05-28. Both PRs merged to main. PR #164 (FOLLOW-139, e4e37ac) — real
+90-day localStorage xid + erasure on withdrawal. PR #165 (FOLLOW-141, 19d11d2) — migration 0016
+seeds inquiry_submit_selector on pilot tenant. FOLLOW-143 (producer wiring) + FOLLOW-144 (cadence
+disclosure reconciliation) fixed inline in PR #164. RETRO-025 spawned 2026-05-28. Migration 0016
+applied to prd (see notes on FOLLOW-141 ticket entry below).
+
+**FOLLOW-140/142 deferred → Sprint 14:** §13.1 7-day consent-audit retention enforcement (P1) and
+`/dashboard/analytics` Rule K.2 consumer parity (P1) are not EU go-live blockers at this stage.
+Staged for Sprint 14 planning.
+
+```yaml
+- id: FOLLOW-139
+  title: localStorage 90-day cross-session xid with erasure-on-withdrawal (§13.2 factual fix)
+  agent: sdk-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 4
+  depends_on: [FOLLOW-128, FOLLOW-129]
+  model: sonnet-4.6
+  pr: '#164'
+  commit: e4e37ac
+  completed_at: '2026-05-28'
+  spec: backlog/FOLLOW_UPS.md FOLLOW-139 (RETRO-019)
+  notes: |
+    CEO decision 2026-05-28: Option C (implement real 90-day localStorage xid, not docs-fix).
+    Migrated SDK fingerprint from sessionStorage (tab-lifetime) to localStorage
+    (__estalara_xid__) with 90-day TTL rotation. eraseCrossSessionId() wired to onDenied path
+    in index.ts. 6 new unit tests (creation, TTL rotation mock, erasure on deny, cache clear).
+    DPIA §13.2 balancing test updated from "GREEN contingent on FOLLOW-128" → unconditionally
+    GREEN. 631 tests pass (10 session tests). Real CI gates green: Build, Lint, SDK E2E,
+    Rule H/J, ClickHouse smoke, Doppler verify, Gitleaks, Auto-detection corpus.
+    RETRO-023 inline fixes in same PR #164: FOLLOW-143 (wire getOrCreateCrossSessionId() into
+    post-consent init path — key now actually created in real browser sessions) + FOLLOW-144
+    (reconcile "rotates monthly" / "every 30 days" across 5 disclosure surfaces to accurate
+    "every 90 days" / "every 3 months" wording; consent-banner.test.ts regex updated). Both
+    DONE inline. RETRO-025 spawned to verify these inline fixes.
+
+- id: FOLLOW-141
+  title: Pilot tenant inquiry_submit_selector DB seed — committed migration 0016
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 2
+  depends_on: [FOLLOW-127]
+  model: sonnet-4.6
+  pr: '#165'
+  commit: 19d11d2
+  completed_at: '2026-05-28'
+  spec: backlog/FOLLOW_UPS.md FOLLOW-141 (RETRO-021)
+  notes: |
+    Migration 0016_pilot_inquiry_selector.sql: idempotent jsonb_set on tenant_site_schemas
+    for pilot tenant (resolved by slug='000-app-estalara' at apply-time, no hardcoded UUID).
+    Sets inquiry_submit_selector = '[data-estalara-slot=''inquiry-submit'']' where null/empty.
+    meta/_journal.json updated. 52/52 tests pass (13 new + 39 pre-existing). Real CI gates
+    green: Build, Lint, Test (Node 22), Typecheck, SDK E2E, Rule H/J, ClickHouse smoke.
+    Prd migration apply: see RETRO-025 / migration-0016-prd note (pending apply result).
+```
+
 ## Sprint 13b — Adaptive Listings v1.0 intent build (OPEN)
 
 **Sprint goal:** "Build the 18-archetype intent coverage (behavioral observers + chat NLP) per §D.6.
@@ -2639,12 +2704,12 @@ measurement dashboard.
 
 **Nothing actively in flight.** Sprint 13a Lane A is 8/8 DONE (Wave 1+2+3 all merged) and **Sprint
 13a-hardening is 4/4 DONE (PR #159–#162) — the pre-pilot gate is CLOSED.** YELLOW audit Sprint 1 is
-DONE (PR #158). **Next up: Lane B pilot onboarding (TICKET-PILOT-001 — now READY, gate closed,
-pending CEO spawn go-ahead)** + YELLOW audit Sprint 2. retrospective-analyst RAN on PR #159–#162
-(RETRO-019→022 written 2026-05-27); PR #153–#158 retros (RETRO-013→018) already written. **Those
-retros surfaced 2 NEW P0 go-live blockers (FOLLOW-139, FOLLOW-141) + 2 P1 (FOLLOW-140, FOLLOW-142) —
-see the Sprint 13a-hardening section's follow-up alert; CEO must weigh FOLLOW-139/141 before
-spawning TICKET-PILOT-001.**
+DONE (PR #158). **Sprint 13a-hardening-v2 is 2/2 DONE (PR #164 FOLLOW-139 e4e37ac, PR #165
+FOLLOW-141 19d11d2).** RETRO-023/024 written 2026-05-28. FOLLOW-143 (producer wiring) + FOLLOW-144
+(cadence reconciliation) fixed inline in PR #164; RETRO-025 spawned 2026-05-28 to verify those
+inline fixes (see Master Design v3.4 for verdict). **Next up: CEO decision on spawning Lane B
+(TICKET-PILOT-001) — now conditioned on RETRO-025 verdict + migration 0016 prd apply result (see
+Master Design v3.4).**
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

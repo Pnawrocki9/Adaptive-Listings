@@ -6688,18 +6688,873 @@ quiz_config FROM tenants` on every `/api/adapt` GET+POST still stands.** FOLLOW-
 
 ---
 
-<!-- RETRO-023 and beyond will be appended here by the retrospective-analyst agent. -->
-<!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-05-27 after RETRO-022 / PR #162 — final Sprint 13a-hardening retro):
-     - RETRO coverage: ...RETRO-017=PR#157/FOLLOW-114, RETRO-018=PR#158/FOLLOW-118-121 (YELLOW Sprint 1),
-       RETRO-019=PR#159/FOLLOW-129 (Sprint 13a-hardening, 1st of 4),
+<!-- RETRO-023 appended 2026-05-28 — content below. -->
+
+## RETRO-023 — FOLLOW-139 (localStorage 90-day cross-session xid with erasure-on-withdrawal — §13.2 factual fix) — 2026-05-28
+
+### 1. Summary of change
+
+- **PR:** #164 (treated-as-merged per PM instruction 2026-05-28; not yet merged at retro time;
+  branch `sdk-engineer/FOLLOW-139-localstorage-90day-xid-erasure`, commit unmerged). sdk-engineer;
+  Sprint 13a-hardening-v2; `depends_on: FOLLOW-128, FOLLOW-129`. **CEO decision 2026-05-28: Option C
+  (implement the real 90-day localStorage xid, NOT a docs-fix).** Source retro: **RETRO-019 §3
+  HALF_WIRE_C** (the §13.2 disclosure-promised "90-day localStorage identifier deleted on
+  Deny/Withdraw" that had zero producer in the SDK). This PR is the implementation half of that gap.
+- **Files changed:** 4 (+246 / −27). Two SDK code files, one SDK test file, one compliance doc.
+  - `packages/sdk/src/core/session.ts` (+106 / −0) — new module-level cross-session id surface.
+  - `packages/sdk/src/index.ts` (+5 / −0) — `eraseCrossSessionId()` wired into `onDenied` callback
+    + the `consentState === 'denied'` early-exit path.
+  - `packages/sdk/src/__tests__/session.test.ts` (+109 / −7) — 6 new tests + dual storage mock.
+  - `docs/compliance/dpia.md` (+26 / −20) — §13.2 balancing test flipped from "GREEN — contingent
+    on FOLLOW-128 deployment" to "GREEN — unconditionally passed as of FOLLOW-139"; action-owner
+    status COMPLETE; staging QA gate "READY FOR STAGING VERIFICATION"; key name `__estalara_xid__`
+    threaded into the QA item; new dated footer.
+- **Modules touched:** SDK only (core + UI-init wire + tests) + docs (compliance). No control-plane
+  / ingest / decision-api / data / db-migration / config / event-schema touched.
+- **Key contracts changed:**
+  - `XSESSION_STORAGE_KEY = '__estalara_xid__'` — **new exported const** in `core/session.ts:131` —
+    breaking: **no** (additive).
+  - `interface CrossSessionId { id: string; created_at: number }` — **new exported type** at
+    `core/session.ts:140-143` — breaking: **no** (additive).
+  - `getOrCreateCrossSessionId(): Promise<CrossSessionId>` — **new exported function** at
+    `core/session.ts:177` — breaking: **no** (additive; not yet imported by anything outside tests
+    — see §3 CHECK A).
+  - `eraseCrossSessionId(): void` — **new exported function** at `core/session.ts:220` — breaking:
+    **no** (additive; consumed by `index.ts:20,94,124`).
+  - DPIA §13.2 doc contract: balancing test transitioned from CONDITIONAL → UNCONDITIONAL GREEN
+    based on this PR — a compliance/legal status flip; **not byte-for-byte aligned with code** in
+    two ways (see §3 / §4).
+
+### 2. Verification done in PR
+
+- Test files changed: `packages/sdk/src/__tests__/session.test.ts` (+109 / −7).
+- Assertions added: **6 new tests** in a `describe('cross-session id (localStorage)')` block at
+  `session.test.ts:76-156`: (a) first-call creation persists `{id, created_at}` to localStorage;
+  (b) returns same id within 90 days (in-memory cache flush + restore); (c) rotates id after 90 days
+  via `vi.spyOn(Date, 'now')`; (d) `eraseCrossSessionId()` removes the localStorage key;
+  (e) `eraseCrossSessionId()` clears the module-level in-memory cache so the next call generates
+  fresh; (f) integration-shape test that the deny-path call sequence (create → erase) leaves the
+  key absent. PR body cites 631 tests pass; 10 in `session.test.ts`. CI gates green per QUEUE.md
+  yaml (Build, Lint, SDK E2E, Rule H/J, ClickHouse smoke, Doppler verify, Gitleaks, Auto-detection
+  corpus).
+- Coverage delta: **+** for `core/session.ts` (all four new exports + both the storage-OK and
+  storage-throws fallback branches exercised). Net-positive; no obviously-uncovered new lines.
+- CI checks: PR-body reports merge gates green; standing CI-gate caveat applies (Rule I / Vercel /
+  Python lanes pre-existing-red & non-blocking, per the CI-gate-landscape memory).
+- **Rule N verdict (the central caveat — see §3 / §4 / §6):** the 6 new tests prove the **producer
+  surface and the eraser** work correctly **at the unit level when invoked**. They do NOT prove the
+  producer is **invoked from the real init path** (nothing reads `getOrCreateCrossSessionId()` in
+  production code — §3 CHECK A), and they do NOT enforce the "rotates monthly" cadence the banner
+  + DPIA + Privacy Notice disclose (the code only rotates at the 90-day TTL boundary — §4a LG-1).
+  So the §13.2 balancing-test flip to **unconditionally GREEN** rests on a producer that is
+  technically present-but-uninvoked AND on a rotation cadence that does not match the disclosure.
+  Per Rule N, the disclosure-to-behavior alignment must be byte-for-byte; it is not.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- New exports in `packages/sdk/src/core/session.ts`:
+  - `eraseCrossSessionId` — imported and called at `packages/sdk/src/index.ts:20,94,124` (two
+    distinct real call sites: the `consentState === 'denied'` early-exit at `index.ts:93-95` and the
+    `onDenied` banner-callback path at `index.ts:118-127`). Non-test importers ≥ 1. **Not dead.**
+  - `XSESSION_STORAGE_KEY` and `CrossSessionId` — referenced only by the new tests
+    (`session.test.ts:8,90,105,118,131-152`). At the symbol level these are consumed downstream of
+    `getOrCreateCrossSessionId()` / `eraseCrossSessionId()` (the implementations use them), so they
+    are **not dead in the strict sense** — they are colocated public surface for the test suite
+    and forward-compat (e.g. a future tenant-side debug widget could read the key). **Not dead.**
+  - `getOrCreateCrossSessionId` — **DEAD_CODE candidate, P1 → FOLLOW-143.** Grep `getOrCreateCrossSessionId`
+    across `packages/` and `apps/`, excluding `node_modules` / `.next` / `__tests__` / `.test.ts` /
+    `.spec.ts`, returns **ZERO non-test importers.** It is not called by `index.ts` (the post-consent
+    init path goes `resetAdaptState()` → `getOrCreateSession()` → `incrementPageCount()` →
+    `eventQueue.push(collectPageView())` at `index.ts:147-152` with no xid step), not by
+    `core/events.ts` (events still ride `session.sessionId`, the existing `sessionStorage`
+    fingerprint, at `events.ts:51,69`), not by `core/adapt.ts`, not by `core/dqs.ts`, and not by
+    any ingest/decision-api consumer. **The 90-day localStorage value is never produced in any real
+    browser session.** The `eraseCrossSessionId()` calls on the deny paths therefore `removeItem`
+    a key that was never `setItem`'d. This is the inverse failure mode of RETRO-019: RETRO-019 found
+    "no producer code at all"; this retro finds "producer code exists but is never invoked from
+    production code paths." Net effect for the data subject is identical — **the disclosed 90-day
+    `__estalara_xid__` localStorage entry never appears in real browsers.** → **FOLLOW-143** (P1,
+    not P0 because the data-subject-facing failure here is "we promise X but never set X" which is
+    a privacy-favorable over-disclosure, not a consumer NPE; classified P1 per the Step-6
+    HALF_WIRE_P precedent that no-consumer/no-call situations are P1 while no-producer/consumer-
+    expects-data is P0. See HALF_WIRE_P entry below for the canonical wire view.).
+
+**CHECK B — Half-wire detection:**
+
+- **HALF_WIRE_P — `sdk-symbol:getOrCreateCrossSessionId` / `storage-key:__estalara_xid__`.**
+  - **Producer (code-level) — EXISTS ✅** at `packages/sdk/src/core/session.ts:177-208`. It performs
+    the documented behavior correctly when invoked.
+  - **Producer (call-site / wire-level) — DOES NOT EXIST.** No production caller invokes it (CHECK A
+    above; grep). The key `__estalara_xid__` is never written by any path the browser actually
+    executes. The eraser (`index.ts:94,124`) is wired but is targeting a key that was never created.
+  - **Consumer — "the data subject" + the §13.2 disclosure** (DPIA + Privacy Notice + banner string)
+    expects the key to exist; the FOLLOW-129 staging-QA gate ("verify `__estalara_xid__` is REMOVED
+    after Deny") would falsely pass because the key is absent because it was never created, not
+    because the eraser worked.
+  - Priority **P1** → **FOLLOW-143** (per Step 6: HALF_WIRE_P is P1 because the gap does not break
+    runtime — no consumer NPEs — but the disclosed feature is silently not delivered, and the §13.2
+    balancing test that this PR flipped to GREEN now rests on a behavior the code does not perform).
+- **HALF_WIRE — `disclosure-claim:rotation-cadence` (rotates monthly vs. 90-day TTL).** SECOND
+  retro-discovered HALF_WIRE in this PR.
+  - **Producer (code) — INCONSISTENT.** `core/session.ts:130-208` performs **single-step 90-day TTL
+    replacement** (`Date.now() - parsed.created_at > XID_TTL_MS` → new UUID). There is no 30-day
+    intermediate rotation step — the id is stable for up to 90 days, then replaced.
+  - **Consumer-side disclosure — claims MONTHLY rotation in FIVE places:**
+    1. `packages/sdk/src/ui/consent-banner.ts:146` (en): "_rotates monthly_"
+    2. `consent-banner.ts:158` (pl): "_jest rotowany co miesiąc_"
+    3. `consent-banner.ts:170` (es): "_rota mensualmente_"
+    4. `docs/compliance/dpia.md:1039` (DPIA §13.2 mitigations): "rotates every 30 days (limiting
+       staleness)"
+    5. `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md:79`: "rotates automatically every 30 days"
+  - **Pinned by a test** at `packages/sdk/src/__tests__/consent-banner.test.ts:508-514` —
+    `expect(text).toMatch(/monthly/i);` — meaning the now-inaccurate cadence claim is locked in by
+    a green test that asserts the SENTENCE renders, not that the behavior matches.
+  - Priority **P0** → **FOLLOW-144**. This is **HALF_WIRE_C** for the data-subject (the
+    disclosure-consumer reads "monthly rotation" but the code never rotates monthly) and is a
+    **factual misstatement on the §13.2 lawful-basis disclosure**. The DPIA §13.2 balancing test
+    was just flipped to unconditionally GREEN partly on the strength of this disclosure being
+    accurate; it is not. Rule N already promoted in CONVENTIONS_PATCH.md off RETRO-018/019; this
+    is a confirming instance on a **new sub-axis** (cadence mismatch within an otherwise-wired
+    disclosure). Classified P0 because (a) it is the **same disclosure** the §13.2 LIA balancing
+    test is conditioned on, and (b) data-subject-facing accuracy in a GDPR Art. 6(1)(f) disclosure
+    is a hard go-live bar — the prior P0 (RETRO-019 FOLLOW-139) was triaged P0 on the same logic.
+
+- **No new env var, DB column, Redpanda topic, or wire event introduced.** The new exports do not
+  flow into ingest, decision-api, or ClickHouse. (This is a noteworthy gap on its own — see §5d.)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P0) — "rotates monthly" disclosure vs. 90-day single-step TTL implementation.** Detailed
+  in §3 HALF_WIRE_C. The disclosure says monthly (30-day) rotation; the code rotates only at the
+  90-day boundary. This is not a documentation typo — it is a **functional behavior the code does
+  not perform.** The DPIA §13.2 balancing-test passage rests on "rotates every 30 days (limiting
+  staleness)" as one of its three mitigations; the implementation does not provide that mitigation,
+  so the balancing-test "GREEN — unconditionally" status this PR shipped is not yet supportable on
+  its own logic. → **FOLLOW-144 (P0)**.
+- **LG-2 (P1) — `getOrCreateCrossSessionId()` is never invoked from the post-consent init path.**
+  Detailed in §3 CHECK A / HALF_WIRE_P. The SDK init sequence at `index.ts:147-152` runs
+  `getOrCreateSession()` (the sessionStorage path) but **NOT** `getOrCreateCrossSessionId()`. So
+  although the producer code exists, no real browser session actually creates the disclosed
+  `__estalara_xid__` key. The §13.2 disclosure remains factually inaccurate post-FOLLOW-139, just
+  via a different mechanism than RETRO-019 found. → **FOLLOW-143 (P1)**. (P1 vs. P0 reasoning in
+  §3: this is a non-delivery, not a misrepresentation; the user gets *less* tracking than disclosed,
+  which is privacy-favorable but still a Rule N violation.)
+- **LG-3 (P2) — `getOrCreateCrossSessionId()` returns `Promise<CrossSessionId>` but is fully
+  synchronous internally** (no `await`, no async work — just `localStorage.getItem` /
+  `Date.now()` / `crypto.randomUUID()`). The async signature is presumably forward-compat for a
+  future async storage layer, but it is inconsistent with `getConsentState()` (sync) and slightly
+  asymmetric with `getOrCreateSession()` (which is genuinely async because of
+  `crypto.subtle.digest`). Low blast radius; noted only because Rule N's verification grep is
+  insensitive to invocation shape and a future caller forgetting `await` would still get a Promise
+  thenable. → folded into FOLLOW-143 AC as a doc note (not a separate stub).
+- **LG-4 (P2) — the producer/eraser pair lives in `core/session.ts` but the existing module docblock
+  (`session.ts:1-12`) describes "Session management — anonymous fingerprint, no PII" and
+  "Session ID is a SHA-256 hex string derived from stable browser signals." The new addendum
+  docblock (`session.ts:7-10`) was inserted but the FILE-LEVEL summary still describes the legacy
+  sessionStorage fingerprint as the "Session ID" model.** Readers (incl. compliance auditors) get
+  conflicting framing: is the canonical session id the SHA-256 sessionStorage value or the new UUID
+  localStorage value? Both coexist; the docblock should make the dual-id model explicit. → folded
+  into FOLLOW-143 AC, not a separate stub.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P2) — `_xidCache` is module-level shared state, not per-session/per-tenant.** If the SDK
+  is loaded twice on a page (improbable but not impossible — e.g. a publisher with two
+  `<script>` tags pointing at two `data-api-key` values), both instances share the cache. Since
+  `__estalara_xid__` is publisher-domain-bound by localStorage's same-origin rules, this is correct
+  by design *for that domain* — but a multi-tenant test harness or an SSR-then-CSR hand-off could
+  observe stale cache. Low severity; noted because the test suite manually flushes the cache
+  between tests via `eraseCrossSessionId()` (`session.test.ts:82`), which works but is a leaky
+  detail. Not stub-worthy.
+- **CB-2 (P2) — `crypto.randomUUID()` fallback uses `Math.random()`-based v4 UUID** (`session.ts:155-162`).
+  This is non-cryptographically-random. For an anonymous pseudonymous id with no
+  re-identification guarantee, this is acceptable, but the §13.2 LIA framing implies "pseudonymous"
+  with HMAC-grade entropy (lia-template.md / DPIA §13.2 use HMAC language for the
+  sessionStorage fingerprint). The new xid is *not* HMAC-derived (no `tenant_secret`, no salting),
+  and its fallback path is `Math.random`. If a future audit asks "is the id cryptographically
+  pseudonymous," only the primary path (`crypto.randomUUID()`) is. Noted for the future audit;
+  folded into FOLLOW-143 AC as a docs/clarification note.
+- **CB-3 (P2) — `eraseCrossSessionId()` does NOT erase the legacy `__estalara_session__`
+  sessionStorage fingerprint nor the `estalara_consent` localStorage entry on deny.** The §13.2
+  disclosure promises "deleted if you withdraw consent"; the strict reading is the xid is deleted.
+  But a data-subject reading the banner reasonably expects ALL pseudonymous identifiers to be
+  erased on a deny — and the legacy sessionStorage fingerprint is still present until the tab
+  closes (and `estalara_consent='denied'` lingers indefinitely so the user is not re-prompted).
+  Strict GDPR Art. 17 (right to erasure) reading: a withdrawal should erase ALL tracking
+  identifiers, not just the new one. This is a continuation of RETRO-019 §3's broader finding.
+  → folded into FOLLOW-143 AC (the erasure path should clear `__estalara_session__` from
+  sessionStorage AND optionally the consent state if a re-prompt cycle is desired; if NOT, the
+  disclosure should be tightened to name the specific keys retained).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P0) — no test asserts `getOrCreateCrossSessionId()` is INVOKED from `index.ts`'s real
+  init path.** All 6 new tests call the function directly from the test file. The integration test
+  (`session.test.ts:146-154`) simulates ONLY the deny-path eraser, not the create-on-grant path.
+  So nothing in the suite would catch the LG-2 / §3 HALF_WIRE_P (the function is never called from
+  production code) — and this is precisely what slipped past PR review. → FOLLOW-143 AC includes
+  an integration-level assertion that on a granted consent path the `__estalara_xid__` key IS
+  present in localStorage after init (E2E or jsdom integration test on `index.ts`).
+- **TG-2 (P0) — no test asserts the 30-day rotation cadence the disclosure promises.** The existing
+  rotation test rotates at 91 days (`session.test.ts:111-128`), which proves the *90-day TTL*
+  behavior — the OPPOSITE of what the disclosure claims. A test that asserts a 30-day rotation
+  step would have failed and surfaced LG-1 / §3 HALF_WIRE_C before the GREEN flip. → FOLLOW-144 AC.
+- **TG-3 (P1) — no test asserts the `eraseCrossSessionId()` call sequence runs on the EARLY-EXIT
+  deny path** (`index.ts:93-95`, where a returning denied user lands without rendering the banner).
+  The PR adds this call but its only test coverage is the in-banner `onDenied` callback path. A
+  jsdom test that pre-seeds `localStorage.estalara_consent='denied'` and asserts the xid is removed
+  on init would close this. → folded into FOLLOW-143 AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P0) — DPIA §13.2 line 1039 says "rotates every 30 days" while the implementation rotates
+  at 90 days.** This sentence is in the LIA balancing-test mitigations paragraph that conditions
+  the GREEN status. The PR did not update line 1039 (it updated lines 1045-1057 + 1079-1086 to
+  reflect FOLLOW-139). So the DPIA is now internally inconsistent: §13.2 paragraph 3 says 30-day
+  rotation; §13.2 paragraph 4 (this PR's edit) claims unconditional GREEN passage. → FOLLOW-144 AC.
+- **DG-2 (P0) — `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md:79` says "rotates automatically every
+  30 days"** — same root issue, different file. The tenant-facing template directly inherits the
+  inaccurate cadence claim. Any tenant who publishes the privacy notice carrying this template
+  ships an inaccurate disclosure to their data subjects. → folded into FOLLOW-144 AC.
+- **DG-3 (P0) — Banner copy (en/pl/es) at `consent-banner.ts:145-170` says "rotates monthly"** —
+  same root issue, three locales, locked by a test (`consent-banner.test.ts:513` matches `/monthly/i`).
+  The fix must touch all three locales **and** update the matching `consent-banner.test.ts` regex
+  (the test will fail when the wording is corrected). → folded into FOLLOW-144 AC.
+- **DG-4 (P2) — Master Design §Snapshot.1 line 8 + the broader Master Design fingerprint model
+  (lines 2413, 2487, 4338) describe a session_id that is "HMAC-derived with day_bucket, rotates
+  every 24h" — referring to the legacy `__estalara_session__` sessionStorage fingerprint.** Master
+  Design does not yet acknowledge the **dual-id model** this PR introduces (legacy sessionStorage
+  HMAC fingerprint + new localStorage UUID xid). A reader of Master Design would not know the new
+  xid exists. → folded into FOLLOW-143 AC.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 13b Lane B, READY) — the §13.2 EU go-live blocker the PR claims to
+  close remains OPEN on two new sub-axes** (LG-1 / FOLLOW-144 cadence mismatch P0; LG-2 / FOLLOW-143
+  producer-never-invoked P1). The §13.2 balancing test flip to unconditionally GREEN that this PR
+  shipped is **premature** — the lawful-basis disclosure is still factually inaccurate. PM must
+  treat **FOLLOW-144 (P0)** as a new EU-go-live blocker layered on top of where FOLLOW-139 was
+  thought to close it; and **FOLLOW-143 (P1)** as a should-fix-before-go-live (the disclosed
+  feature is silently not delivered). Flagging here per constraint 3 for PM/CEO attention — the
+  GREEN flip should be reverted to CONDITIONAL until FOLLOW-143/144 land. **The §13.2 lawful-basis
+  disclosure is currently a fresh Rule N violation, generated by the PR that was supposed to close
+  the prior Rule N violation.**
+- **TICKET-PILOT-002 (go/no-go runbook, BLOCKED) — the EU pre-flight `localStorage QA` gate
+  references the right key name now (`__estalara_xid__` at `dpia.md:1082`), but the gate is still
+  unexecutable in the same way RETRO-019 §5a flagged: a tester would observe that the key never
+  appears on a granted session (LG-2) and never gets removed because it was never set
+  (consequence of LG-2). The "remove on Deny" verification falsely passes. The runbook gate must
+  be tightened to assert KEY-PRESENT after grant AND KEY-ABSENT after deny — both halves, not just
+  the post-deny absence. → folded into FOLLOW-143 AC3.
+- **FOLLOW-140 (deferred Sprint 14, §13.1 7-day retention enforcement) — adjacent, NOT a
+  Withdraw-button ticket.** The user's framing (in the prompt) suggested FOLLOW-140 covers a future
+  Withdraw button. Verified: FOLLOW-140's scope (`backlog/FOLLOW_UPS.md:3729-3766`) is the §13.1
+  7-day consent-audit-log retention/TTL — **NOT** a UI Withdraw button. **There is currently NO
+  tracked ticket for a Withdraw button surface anywhere in QUEUE.md or FOLLOW_UPS.md** (grep
+  `withdraw`/`Withdraw` button in QUEUE/FOLLOW_UPS returns nothing). The PR's `eraseCrossSessionId()`
+  export is documentation-correct as a forward-compat hook for that future button, but the button
+  itself is not on any plan. If the §13.2 disclosure ("deleted if you withdraw consent") expects
+  there to BE a withdraw mechanism, the SDK must eventually offer one — currently a visitor cannot
+  withdraw without programmatic intervention. → **FOLLOW-145 (P2)** — file a tracking stub for the
+  Withdraw button (or a "Reopen consent banner" affordance) that calls `eraseCrossSessionId()`.
+  Sprint 14 or later; P2 because the §13.2 LIA does not technically REQUIRE a withdraw button
+  (Art. 7(3) requires withdrawal be "as easy as giving consent"; for a denied user the question
+  is moot, but a GRANTED user has no UI to revoke today).
+- **FOLLOW-141 (P0, PR #165, sibling in same Sprint 13a-hardening-v2) — unrelated to this PR's
+  surface; not affected.**
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-092 (TICKET-PILOT-001 shadow-window measurement, BLOCKED) — directly affected.** RETRO-019
+  §5b flagged that if §13.2 resolves toward sessionStorage-tab-lifetime, cross-session measurement
+  assumptions need revisiting. CEO chose Option C (real 90-day xid) — but this PR did not actually
+  wire the xid into the measurement path. Specifically: the xid does NOT flow into any event
+  payload (`packages/sdk/src/core/events.ts:51,69` still uses the legacy `session.sessionId`
+  sessionStorage fingerprint as `session_id`/`x-session-id`); the xid does NOT flow into the
+  ingest layer (no consumer in `apps/ingest/src/`); and the xid does NOT flow into ClickHouse
+  (no schema field). So **the headline cross-session-continuity USE case the Option C decision was
+  meant to enable is not actually built** — the xid is a stand-alone client-side artifact today.
+  FOLLOW-092 (shadow-window measurement of cross-session conversion) cannot use it. → **FOLLOW-146
+  (P1)** — actually use the xid: thread it onto event payloads / into the session join key, with
+  a measurement decision on whether the legacy sessionStorage fingerprint or the new
+  localStorage xid is the canonical cross-session join key.
+- **YELLOW Sprint 2–4 stubs FOLLOW-132..138 — N/A directly.** FOLLOW-143/144/145/146 are all
+  pilot-readiness / compliance-accuracy items, not YELLOW launch-readiness items; they belong on
+  the FOLLOW queue.
+
+#### 5c. Contracts changed that other modules rely on
+
+- **N/A for breaking changes.** The new exports are additive. The only cross-module-visible
+  contract change is the **DPIA §13.2 status flip from CONDITIONAL → UNCONDITIONAL GREEN**, which
+  is a compliance/legal contract change downstream consumers (DPO, EU pilot review, audit) rely on
+  — and that flip is currently unjustified by the shipped behavior (§3, §4a LG-1). The
+  pseudo-contract "the xid is a cross-session join key" is undercut by the fact that the xid never
+  appears on the wire (§5b).
+
+#### 5d. Architectural assumptions affected
+
+- **GDPR/DPIA assumption (continuation of RETRO-018/019/020 §5d lineage):** RETRO-018 = string
+  absent; RETRO-019 = behavior absent; RETRO-020 = retention claim unenforced; **THIS retro =
+  behavior PARTIALLY present (the code exists) but disconnected from the runtime path AND
+  diverges from the disclosed cadence.** The Rule N parent shape now has FOUR consecutive
+  occurrences across four PRs, with a striking pattern: each fix introduces a NEW failure mode of
+  the same shape, exposing a deeper layer of mismatch. The architectural lesson is that
+  **disclosure-driven implementation in 1-PR increments is insufficient** — the §13.2 surface
+  needs a single, all-or-nothing reconciliation pass that aligns FIVE artifacts (banner copy ×3
+  locales, DPIA §13.2 body, Privacy Notice §3) AND the implementation AND the runtime invocation
+  AND the wire/measurement side, all at once. The next FOLLOW (144 + 143 + 146) should be
+  scope-merged or sequenced atomically.
+- **Master Design dual-id model gap (NEW):** Master Design's session model (lines 2413, 2487,
+  4338) describes ONE session id: HMAC-derived sessionStorage fingerprint with 24h day_bucket
+  rotation. The new `__estalara_xid__` is a SECOND, parallel identifier with different storage
+  (localStorage), different generation (UUID, not HMAC), different TTL (90 days, not 24h), and
+  different rotation cadence (claimed monthly per disclosure, implemented 90-day TTL per code,
+  none per Master Design). Master Design does not acknowledge this dual-id model. → FOLLOW-143
+  AC4 (Master Design §B / §Snapshot.1 update OR a new ADR documenting the dual-id model).
+
+### 6. New lesson candidates
+
+- **Pattern N (compliance doc asserts behavior the code does not implement) — FOURTH consecutive
+  occurrence.** RETRO-018 (string absent) + RETRO-019 (behavior absent — sessionStorage vs
+  localStorage) + RETRO-020 (retention claim unenforced — §13.1 7-day) + RETRO-023 (this retro —
+  TWO new sub-axes: producer never invoked from init path, and rotation cadence claim diverges
+  from TTL behavior). **Rule N already promoted in CONVENTIONS_PATCH.md (515-548) by RETRO-019.**
+  Per the no-double-promotion discipline (do NOT re-promote an existing rule on additional
+  confirming occurrences), **Rule N is NOT re-promoted.** This retro is logged as a fourth
+  confirming instance, *strongly* reinforcing the rule's verification grep — which, applied to
+  this PR pre-merge, would have caught both LG-1 (rotation cadence) and LG-2 (producer not
+  invoked):
+  - `grep -rn "rotates monthly\|every 30 days\|rotates every"` cross-referenced against
+    `grep -rn "XID_TTL_MS\|90 \* 24 \* 60"` in `packages/sdk/src/` would show a cadence mismatch.
+  - `grep -rn "getOrCreateCrossSessionId" packages/ apps/ --include="*.ts" | grep -v "__tests__"`
+    returns zero non-test importers — direct evidence of LG-2.
+  - The pattern points to a Rule N strengthening that is **already inside the existing rule's
+    verification block** (lines 538-548 require "each disclosure SENTENCE the DPIA/Privacy Notice
+    mandates must appear in the banner COPY constant" AND "if a doc says 'deleted if you withdraw
+    consent,' there MUST be a removeItem on the onDenied/withdraw path"). What the existing rule
+    does NOT yet enumerate is the **cadence-mismatch** sub-shape ("if a doc says 'rotates monthly'
+    there MUST be a 30-day step in the rotation logic"). This is a candidate for a small
+    **Rule N AMENDMENT** that adds a cadence-check grep — NOT a new rule. Per the project's
+    Rule-H-amendment precedent (CONVENTIONS_PATCH.md 223-313 shows Rule H received two retro-driven
+    amendments), an amendment is appropriate when the parent rule reaches its third or fourth
+    confirming instance and the new sub-shape is a specific verification step not already covered.
+    Count of the cadence-mismatch sub-shape = **1** (this retro). Below the dedicated promotion
+    threshold of 2 for a standalone rule, but reaching the Rule-N parent shape's fourth occurrence
+    is grounds for an amendment. **Amendment is added below** (Rule N amendment 2026-05-28).
+- **Pattern (new sub-shape, distinct from Rule N) — "the source-retro's HALF_WIRE was closed
+  symbol-level but the symbol is not invoked from the production code path it was designed to
+  serve."** RETRO-019's gap was "no `getOrCreateCrossSessionId` code at all." FOLLOW-139 adds the
+  code but does NOT wire it into `init()`. So the *symbol-level* HALF_WIRE is closed; the
+  *call-site-level* HALF_WIRE is new. This is a distinct, narrower shape than Rule N (it is
+  about *symbol-vs-callsite* wiring, not *doc-vs-code* matching). Seen: RETRO-023 (this retro).
+  Count = **1**. Below the promotion threshold (2). NOT promoted; recorded so a future second
+  occurrence (e.g. another "new export exists but no real caller") crosses the threshold and
+  potentially becomes Rule O.
+
+### 7. Follow-ups
+
+- **FOLLOW-143** (sdk-engineer, 2h, **P1**, before EU/pilot go-live): Wire
+  `getOrCreateCrossSessionId()` into the SDK's post-consent init path so the disclosed
+  `__estalara_xid__` localStorage entry actually appears in real browser sessions, and tighten the
+  related docblocks + Master Design. Closes §3 CHECK A DEAD_CODE / HALF_WIRE_P, §4a LG-2/LG-3/LG-4,
+  §4b CB-3, §4c TG-1/TG-3, §4d DG-4. (`source_retro: RETRO-023`, `depends_on: FOLLOW-139`.)
+- **FOLLOW-144** (sdk-engineer + compliance-engineer, 2h, **P0**, before EU pilot go-live):
+  Reconcile the "rotates monthly" / "rotates every 30 days" disclosure across the consent banner
+  (3 locales), DPIA §13.2 line 1039, and Privacy Notice §3 line 79 with the **actual** 90-day TTL
+  implementation — either (a) implement a separate 30-day rotation step in `getOrCreateCrossSessionId`
+  and add a test asserting the cadence, OR (b) correct all five disclosure surfaces to "every 90
+  days" / "every three months" and update the `consent-banner.test.ts:513` `/monthly/i` regex.
+  Closes §3 HALF_WIRE_C, §4a LG-1, §4c TG-2, §4d DG-1/DG-2/DG-3. (`source_retro: RETRO-023`,
+  `depends_on: FOLLOW-139`.)
+- **FOLLOW-145** (sdk-engineer, 3h, **P2**, Sprint 14 or later): File the Withdraw-button /
+  Reopen-consent-banner UI affordance — a granted user currently has no in-product mechanism to
+  revoke consent, so the §13.2 "deleted if you withdraw consent" disclosure has no executable user
+  path. The new `eraseCrossSessionId()` export is forward-compat for this button; the button
+  itself needs designing (placement, copy in 3 locales, accessibility) and wiring into the same
+  erasure sequence as `onDenied`. (`source_retro: RETRO-023`, `depends_on: FOLLOW-139,FOLLOW-143`.)
+- **FOLLOW-146** (sdk-engineer + data-engineer, 4h, **P1**, before/during Sprint 14 cross-session
+  measurement work): Actually USE the xid — thread the localStorage `__estalara_xid__` onto event
+  payloads and into the ingest/ClickHouse session-join key (or decide that the legacy
+  sessionStorage `session.sessionId` remains the canonical join key and the xid is purely a
+  client-side cookie-like marker, in which case the §13.2 LIA "cross-session journey continuity"
+  rationale needs softening). Without this, the Option C decision to "implement the real 90-day
+  cross-session id" is half-built: the id exists in localStorage but never travels with events,
+  so cross-session continuity is not actually achievable. Closes §5b FOLLOW-092 dependency.
+  (`source_retro: RETRO-023`, `depends_on: FOLLOW-139,FOLLOW-143`.)
+
+### 8. Cross-references
+
+- **RETRO-019 (FOLLOW-129, PR #159)** — direct parent. RETRO-019 §3 emitted FOLLOW-139 to reconcile
+  the §13.2 doc-vs-code gap. This PR implements FOLLOW-139, but RETRO-023 finds the reconciliation
+  is incomplete on TWO new axes (LG-1 cadence, LG-2 producer not invoked) plus does not yet
+  satisfy the §13.2 "cross-session continuity" *purpose* (§5b — xid not on the wire).
+- **RETRO-018 / RETRO-020 (FOLLOW-118-121 PR #158 / FOLLOW-128 PR #160)** — Rule N lineage parents.
+  RETRO-023 is the FOURTH consecutive Rule N instance. The verification grep in CONVENTIONS_PATCH.md
+  Rule N (lines 538-548) would have caught LG-1 and LG-2 if extended slightly — see §6 amendment.
+- **CONVENTIONS_PATCH.md Rule N (lines 515-548)** — already promoted (RETRO-019); RETRO-023 is a
+  confirming instance, NOT a re-promotion. AMENDMENT added below for cadence-mismatch sub-shape.
+- **First retro of Sprint 13a-hardening-v2** — sibling: RETRO-024 (still-to-write, for PR #165 /
+  FOLLOW-141). This is the second wave of pre-pilot hardening retros after the four-PR Sprint
+  13a-hardening wave (RETRO-019..022). The wave's name "v2" is fitting: RETRO-023 shows the v1 fix
+  introduced its own Rule N gap.
+
+---
+
+## RETRO-024 — FOLLOW-141 (Seed inquiry_submit_selector on pilot tenant — partial: AC1 only) — 2026-05-28
+
+### 1. Summary of change
+
+- **PR:** #165 (treated-as-merged per PM instruction 2026-05-28; not yet merged at retro time;
+  branch `backend-engineer/FOLLOW-141-pilot-inquiry-selector`, commit unmerged). backend-engineer;
+  Sprint 13a-hardening-v2; `depends_on: FOLLOW-127`. Source retro: **RETRO-021 §3 HALF_WIRE_C / §4a
+  LG-1 (P0)** — the pilot-row `inquiry_submit_selector` lacked a committed seed; the value lived
+  only in the SDK auto-detect test fixture.
+- **Files changed:** 3 (+171 / −0).
+  - `packages/db/migrations/0016_pilot_inquiry_selector.sql` (new, +48) — idempotent `jsonb_set`
+    `UPDATE` on `tenant_site_schemas.schema` setting
+    `inquiry_submit_selector = "[data-estalara-slot='inquiry-submit']"` where the field is currently
+    `NULL` or `""` AND `tenant_id = (SELECT id FROM tenants WHERE slug = '000-app-estalara' AND deleted_at IS NULL LIMIT 1)`.
+  - `packages/db/migrations/meta/_journal.json` (+7) — Drizzle journal entry
+    `idx=16, tag=0016_pilot_inquiry_selector, version=7, when=1748736000000`.
+  - `packages/db/src/__tests__/pilot_inquiry_selector.test.ts` (new, +116) — 13 structural unit
+    tests (SQL-text assertions + journal-shape; no live DB exercise).
+- **Modules touched:** db (packages/db: 1 new migration + 1 journal update + 1 new test file). No
+  SDK / ingest / decision-api / control-plane / data / docs / config touched.
+- **Key contracts changed:**
+  - Pilot-tenant data state (runtime row, not type signature):
+    `tenant_site_schemas.schema->>'inquiry_submit_selector'` becomes
+    `"[data-estalara-slot='inquiry-submit']"` after the migration is applied to a database whose
+    `tenants` table contains a row with `slug = '000-app-estalara' AND deleted_at IS NULL`.
+    Breaking: **no** (additive JSONB key insert; no other tenant rows touched).
+    **Behaviorally contingent — see §3/§4a/§5a:** the migration is a silent no-op if the pilot
+    tenant's actual `slug` is anything other than `'000-app-estalara'`.
+  - No schema-shape, no API-route, no SDK-public-symbol, no migration-table-DDL changed (this is a
+    pure data-seed forward migration).
+
+### 2. Verification done in PR
+
+- Test files changed: `packages/db/src/__tests__/pilot_inquiry_selector.test.ts` (new, +116).
+- Assertions added: **13** structural tests across 2 `describe` blocks
+  (`pilot_inquiry_selector.test.ts:31-89` migration SQL; `:99-115` journal entry): file exists &
+  non-empty; contains the slug `'000-app-estalara'`; uses `jsonb_set` with the
+  `{inquiry_submit_selector}` path; embeds `data-estalara-slot` + `inquiry-submit`; passes `true`
+  for `create_missing`; has both `IS NULL` and `= ''` guards; uses `SELECT id FROM tenants` (not a
+  hardcoded UUID); regex-asserts no raw-UUID `WHERE tenant_id = '...'` pattern; checks
+  `deleted_at IS NULL`; journal entry exists at `idx=16` with `version='7'`. PR-reported test
+  summary: **52 tests pass across 5 files in `packages/db`** (entire package green).
+- Coverage delta: **+** for the migration text itself (13 assertions on a 48-line SQL file). **Net
+  ZERO actual DB-behavior coverage** — no test exercises the SQL against Postgres; the migration's
+  effect on a real row is not verified by CI. See §4c TG-1.
+- CI checks: PR open, not yet merged; pre-commit/pre-push hooks reported green (format, lint,
+  commitlint, Rule H, Rule J — per PR description). Standing CI-gate caveat applies (Rule I /
+  Vercel / Python lanes pre-existing-red & non-blocking, per the CI-gate-landscape memory). **PM
+  obligation:** run `gh pr checks 165 --watch` before marking READY_FOR_REVIEW (Rule A).
+- **AC verdict — PARTIAL.** FOLLOW-141 has three ACs; this PR addresses **AC1 only** (committed
+  reproducible artifact for the pilot row), and that AC is itself **conditional** (see §3 / §4a).
+  **AC2 (corpus harness scores `finalSchema.inquiry_submit_selector`) and AC3 (probe-vs-AI-Vision
+  precedence documented + tested + recorded in MASTER_DESIGN §B or a detection ADR) are NOT
+  implemented in this PR.** No edit to `packages/sdk/src/auto-detect/test-utils.ts` (the scoring
+  loop at `:550-568` still iterates per-field `detected[fieldKey]` and never reads the top-level
+  field); no edit to `docs/MASTER_DESIGN.md` §B; no test asserting probe-vs-LLM precedence in
+  `packages/sdk/src/auto-detect/__tests__/`. This is a real gap — see §4a LG-2 / §4c TG-2 →
+  carried forward as FOLLOW-147 + FOLLOW-148.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- `packages/db/migrations/0016_pilot_inquiry_selector.sql` — discovered by the Drizzle migration
+  runner (`packages/db/scripts/migrate.ts:21` calls
+  `migrate(db, { migrationsFolder: './migrations' })` against `_journal.json`), NOT by source
+  `import`. Framework-discovered entrypoint — **suppressed false positive** per Step 6 rules.
+  **Not dead.**
+- `packages/db/migrations/meta/_journal.json` — read by drizzle-orm at runtime + by the new
+  `pilot_inquiry_selector.test.ts` directly. **Not dead.**
+- `packages/db/src/__tests__/pilot_inquiry_selector.test.ts` — test file, picked up by vitest.
+  **Not dead.** **CHECK A clean ✅.**
+
+**CHECK B — Half-wire detection (`tenant_site_schemas.schema->>'inquiry_submit_selector'` on the pilot row):**
+
+- **General path (NOT pilot-specific, established by FOLLOW-127 / PR #161, re-verified):**
+  Producer EXISTS ✅ at `packages/sdk/src/auto-detect/pipeline.ts:121-123` (probe) +
+  `packages/sdk/src/auto-detect/techniques/ai-vision.ts:250` (AI Vision); persist hop EXISTS ✅
+  via `/api/detect` + `/api/schema/activate`; Consumer EXISTS ✅ at
+  `packages/sdk/src/index.ts:381` → `core/observer.ts:147`. The general wire was already closed by
+  RETRO-021's PR.
+- **Pilot-row path (RETRO-021 HALF_WIRE_C — the gap this PR was created to close):**
+  - **Producer (NEW this PR) — EXISTS but BEHAVIORALLY CONTINGENT ⚠.** Migration 0016 writes
+    `inquiry_submit_selector` into the pilot row IFF the
+    `SELECT id FROM tenants WHERE slug = '000-app-estalara' AND deleted_at IS NULL LIMIT 1`
+    sub-query resolves to a real id. **The slug `'000-app-estalara'` is NOT verified to be the
+    pilot tenant's actual slug anywhere in the codebase.** Grep across
+    `packages/db/migrations/**`, `packages/db/src/seed/**`, `apps/control-plane/scripts/**`, and
+    `apps/control-plane/src/lib/**` finds the literal `'000-app-estalara'` ONLY in (a) SDK
+    auto-detect corpus fixtures (`packages/sdk/src/auto-detect/__fixtures__/000-app-estalara/`),
+    (b) backlog/QUEUE.md documentation, and (c) **this migration**. There is NO committed
+    INSERT/seed that creates a `tenants` row with `slug = '000-app-estalara'`. The pilot tenant is
+    documented as `DEMO_TENANT_ID` (`docs/ops/PILOT_FREEZE_RULE.md:69-74`), an env-var UUID set at
+    runtime — whatever `slug` was given to that row at registration time (via Magic Link wizard or
+    manual creation) is **unverifiable from this repo**. → **HALF_WIRE_P (NEW sub-axis) — priority
+    P0** → **FOLLOW-147**. If the pilot row's `slug` is, say, `'app-estalara'` or `'pilot'` or
+    `'estalara'`, the migration runs successfully (no error, idempotent WHERE guard is satisfied
+    trivially because zero rows match), `db:migrate` reports "Migrations applied successfully",
+    and the pilot Observer reads `undefined` exactly as in RETRO-021 — but now with a green
+    migration journal masking the gap. **This is the same HALF_WIRE_C → HALF_WIRE_P shape, one
+    layer deeper.**
+  - **Consumer — EXISTS ✅ (unchanged).** `packages/sdk/src/index.ts:381` reads
+    `inquirySubmitSelector` from `SdkConfig`, threads it into `setupObservers()`, and
+    `core/observer.ts:147` registers the delegated click listener only if the value is truthy. The
+    consumer correctly silently degrades when undefined — which is the silent-no-op risk above.
+
+**Summary:** The migration is a **conditional half-wire** — the producer-side hop fires only if a
+runtime invariant (pilot row's slug literal) matches. This is a strictly weaker close of the
+RETRO-021 HALF_WIRE_C than the AC1 wording implies. Filed as HALF_WIRE_P P0 → FOLLOW-147.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P0) — slug `'000-app-estalara'` is an unverified assumption.** The migration's
+  correctness is gated on a runtime fact (the pilot tenant's `slug` column value) that has no
+  committed source. `docs/ops/PILOT_FREEZE_RULE.md:69-74` defines the pilot tenant via
+  `DEMO_TENANT_ID` (an env-var UUID) and explicitly notes "the UUID is discoverable post-PILOT-001
+  via `SELECT id, slug, status FROM tenants WHERE id = current_setting('app.demo_tenant_id')`" —
+  meaning the slug is data-of-the-database, not data-of-the-repo. If the operator who ran Magic
+  Link onboarding gave the pilot a different slug (e.g., `app-estalara`, `estalara-pilot`,
+  `production`), the migration silently no-ops on prod. Impact: TICKET-PILOT-001 ships with the
+  inquiry-conversion wire still inert and FOLLOW-092 measures zero inquiries — the exact failure
+  RETRO-021 was raised to prevent. Mitigation must be a verification step that runs BEFORE the
+  migration is treated as resolving FOLLOW-141 (either a pre-apply SELECT confirming a matching
+  row exists, or a post-apply assertion confirming the JSONB key landed). → **FOLLOW-147 (P0).**
+- **LG-2 (P1) — FOLLOW-141 AC2 + AC3 are unfulfilled and not split out as a separate stub.** The
+  source ticket's three ACs cover (1) a real pilot-row value, (2) corpus harness scoring of the
+  new field with ≥1 real-corpus L2–L7 site, and (3) probe-vs-AI-Vision precedence documented +
+  tested + recorded in MASTER_DESIGN §B / a detection ADR. This PR implements **only AC1**. AC2 is
+  the measurement gate RETRO-021 §4c TG-1 raised — without it, the L2–L7 heuristic ladder remains
+  unmeasured against real sites and the next platform onboarding (an SDK consumer) gets no
+  CI-asserted accuracy floor. AC3 is the architectural-decision-record gate RETRO-021 §4a LG-2 /
+  §4d DG-1 raised — without it, the next auto-detect editor will re-discover the implicit
+  probe-overrides-LLM precedence by reading source. Neither AC is filed as a follow-up by the
+  worker; the PR description does not even acknowledge them. → **FOLLOW-148 (P1).**
+- **LG-3 (P2) — `_journal.json:113` carries `"when": 1748304000000` (Jan 2025 UTC) for migration
+  0015 — a `when` value that is EARLIER than entries 0011..0014 (1778–1779M range, i.e., 2026-mid).**
+  Migration 0016 (this PR) sets `"when": 1748736000000` which is also a 2025 timestamp, BUT it is
+  later than 0015's, so the relative ordering within the new pair is correct. This is an inherited
+  typo (probably from a prior commit) — Drizzle uses `idx` for ordering, not `when`, so it is
+  functionally harmless. Flagged only because the next migration author will copy one of these and
+  propagate the typo. Noted, no follow-up filed (cosmetic).
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P2) — the test at `pilot_inquiry_selector.test.ts:74` is a tautology.** The test reads:
+  ```ts
+  it('expected selector value matches the ground-truth fixture', () => {
+    expect("[data-estalara-slot='inquiry-submit']").toBe("[data-estalara-slot='inquiry-submit']");
+  });
+  ```
+  This asserts a string equals itself; it cannot fail and provides zero coverage of the cross-check
+  it claims to perform (the comment promises a "cross-check against the 000-app-estalara fixture in
+  `packages/sdk/src/auto-detect/__fixtures__/000-app-estalara/detail-ground-truth.json` field 19").
+  The actual cross-check would be `readFileSync(fixturePath); JSON.parse(...); expect(parsed.inquiry_submit_selector).toBe(SQL_VALUE)`.
+  Low severity (the cross-check is currently true in the ground-truth fixture), but the test
+  misleads a future reader. → folded into FOLLOW-147 AC.
+- **CB-2 (P2) — `pilot_inquiry_selector.test.ts:62` ("passes create_missing=true") asserts only
+  `expect(sql).toContain('true')`.** The migration SQL contains the literal `'true'` in only the
+  one `jsonb_set` argument today, but a future editor could add `WHERE ... AND active = true` (or
+  any other `true` token) and the assertion would still pass even if `create_missing` was removed.
+  A stricter assertion would match the full 4-arg `jsonb_set(...)` call signature ending in
+  `, true)`. Low severity, but the test does not actually defend its stated invariant. → folded
+  into FOLLOW-147 AC.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — no integration test exercises the migration against a real (or pgmem /
+  Testcontainers) Postgres instance.** All 13 tests are string assertions on the SQL file; none
+  actually run the migration against a database with a known pilot row and assert the JSONB key
+  landed. The PR description explicitly defers the live-DB validation to manual
+  `doppler run ... pnpm db:migrate` in staging + production. This is acceptable for THIS single
+  migration (the SQL is short and reviewable), but it is the standing pattern in
+  `packages/db/src/__tests__/` (all 5 test files — archetype_embeddings_seed, ab_bandit_weights,
+  client, index, this — share the same approach), so every data-seed migration in this repo has
+  zero CI-asserted runtime correctness. Specifically uncovered here: (a) what happens if `tenants`
+  is empty (sub-query returns NULL → `WHERE tenant_id = NULL` → zero rows updated, silent no-op);
+  (b) what happens if multiple rows match the slug (LIMIT 1 picks one, the others stay NULL);
+  (c) what happens if the `schema` JSONB blob is `NULL` at the column level (vs. `{}` empty
+  object) — `jsonb_set(NULL, ...)` returns NULL, so the row would update to NULL, but the WHERE
+  guard would have already excluded it because `(NULL)->>'inquiry_submit_selector' IS NULL` is
+  true, so it would be a no-op write of NULL → NULL. None of these branches are asserted by a
+  test. → **FOLLOW-147 AC** (add a verification harness, not a full integration test).
+- **TG-2 (P1) — no SDK→API→DB end-to-end test asserts the inquiry-observer wire activates for the
+  pilot tenant after this migration applies.** The user explicitly asked the analyst to check
+  this. The existing test coverage:
+  - DB layer: this PR (structural only, no live DB).
+  - Auto-detect producer layer:
+    `packages/sdk/src/auto-detect/__tests__/detect-inquiry-selector.test.ts` (20 unit tests,
+    synthetic HTML only — RETRO-021 §4c TG-1).
+  - Observer consumer layer: `packages/sdk/src/__tests__/observer-inquiry.test.ts` (unit,
+    in-memory DOM + injected config — does not load tenant schema from a DB).
+  - E2E: `packages/sdk/e2e/inquiry-observer.spec.ts` (3 tests) loads
+    `packages/sdk/e2e/fixtures/inquiry.html`, which **hardcodes**
+    `data-inquiry-submit-selector="[data-estalara-slot='inquiry-submit']"` on the script tag
+    (`inquiry.html:18`) — i.e., bypasses the DB lookup entirely; the E2E does not exercise the
+    `/api/sdk/config` (or whichever endpoint serves the snippet's runtime config) path that the
+    pilot site uses, and so does NOT regression-test the wire this migration is meant to power.
+    Net: there is NO test, anywhere, that asserts "pilot tenant row's
+    `schema->>'inquiry_submit_selector'` is read from the DB → served to the SDK config → wired
+    into the Observer → fires `inquiry.started`". The pilot's headline conversion metric depends
+    on this wire and it is verifiable only by manual smoke against staging/production. →
+    **FOLLOW-147 AC** (the end-to-end staging smoke step is mandatory before the shadow→live
+    flip).
+- **TG-3 (P2) — no test asserts the migration is idempotent across multiple sequential runs (run
+  twice → second run is no-op).** The PR description claims idempotency from the WHERE guard, but
+  no test exercises it. The structural test asserts the *presence* of the guard string, not the
+  *behavior*. → folded into FOLLOW-147 AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1) — `docs/ops/PILOT_RUNBOOK.md` is NOT updated to document the new
+  `doppler run --project estalara-adaptive-listings --config prd -- pnpm db:migrate` step in the
+  activation procedure (§5).** The PR description includes the apply command as a "Test plan"
+  checkbox, but §5 of PILOT_RUNBOOK is a `_Stub. To be authored by TICKET-PILOT-002_` and §3
+  (Pre-live validation steps) does not mention the pilot-row-seeding pre-flight. The user
+  explicitly asked this question. A go/no-go reviewer reading the runbook today will not see
+  "verify `tenant_site_schemas.schema->>'inquiry_submit_selector'` is non-empty for the pilot
+  tenant before declaring Section 1 row 4 (inquiry wire) green." This is exactly the documentation
+  gap RETRO-021 §4d DG-1 flagged on the SDK-detection side; the migration-side equivalent is now
+  equally relevant. → **FOLLOW-147 AC.** (Not a separate stub — the runbook step lives in the
+  same operational PR as the apply-and-verify step.)
+- **DG-2 (P2) — the migration file does not link to TICKET-PILOT-001's pilot-row activation
+  step.** The SQL header reads "FOLLOW-141 — Seed inquiry_submit_selector on pilot tenant
+  (idempotent)" but does not say "this migration MUST be applied before TICKET-PILOT-001's
+  shadow→live flip." A future operator running migrations as a batch has no in-file reminder. →
+  folded into FOLLOW-147 AC (PILOT_RUNBOOK is the canonical cross-reference home).
+- **DG-3 (P2) — MASTER_DESIGN §B (auto-detection) still does not record the L1–L7 ladder + the
+  probe-overrides-LLM precedence (RETRO-021 §4d DG-1 carry-forward), and AC3 of FOLLOW-141 is the
+  ticket where it should have landed. This PR did not write that doc.** → **FOLLOW-148** (AC3
+  carry-forward).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 13b Lane B, READY, QUEUE.md L2269–L2310) — its FOLLOW-141 dependency
+  is PARTIALLY satisfied, not fully.** The ticket notes (QUEUE.md L2291–L2294) explicitly state
+  "FOLLOW-141 must be verified during the shadow window (pairs with FOLLOW-092)." The
+  shadow-window verification is now the actual gate: applying the migration to prod is necessary
+  but not sufficient, because §3 / §4a LG-1 show the migration's effect is contingent on the
+  pilot row's slug. **PM/architect must enforce:** the TICKET-PILOT-001 spawn checklist requires
+  (a) pre-apply `SELECT slug FROM tenants WHERE id = '<DEMO_TENANT_ID>'` → confirm slug matches
+  `'000-app-estalara'`, OR amend the migration; (b) post-apply
+  `SELECT schema->>'inquiry_submit_selector' FROM tenant_site_schemas WHERE tenant_id = '<DEMO_TENANT_ID>'`
+  → confirm the value is the canonical selector; (c) staging shadow-mode smoke confirming
+  `inquiry.started` fires when the pilot site's submit button is clicked. Flagged here per
+  constraint 3 for PM/architect attention; this is the headline pilot conversion metric.
+- **FOLLOW-092 (verify cta.clicked producer→ClickHouse for pilot, BLOCKED, depends_on
+  TICKET-PILOT-001) — directly downstream.** If §4a LG-1 lands silently (slug mismatch →
+  migration no-op), FOLLOW-092 will measure zero inquiry.starteds during the shadow window —
+  RETRO-021 §5b. Carry-forward unchanged: reconcile FOLLOW-147 before FOLLOW-092 spawns.
+- **TICKET-PILOT-004 (`backlog/sprint-12/TICKET-PILOT-004.md`, references
+  `inquiry_submit_selector`) — verify its assumptions still hold.** It is the other ticket in the
+  repo that names the field; its AC 5 ("000-app-estalara fixture update") refers to the SDK
+  *fixture*, not the DB row, so its scope is independent of this PR. No new dependency from this
+  retro; carry-forward from RETRO-021.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-147 (new, this retro, P0) — pilot-slug verification + post-apply assertion +
+  PILOT_RUNBOOK apply-and-verify step + test-tautology fix.** Must close BEFORE TICKET-PILOT-001's
+  shadow→live flip. The most important AC is a deterministic check (script, SQL assertion, or
+  test) that fails fast if the pilot row's slug does not match the migration's WHERE clause
+  assumption.
+- **FOLLOW-148 (new, this retro, P1) — AC2 + AC3 of FOLLOW-141 carry-forward.** Corpus harness
+  scoring of `finalSchema.inquiry_submit_selector` + a ≥1 real corpus site exercising L2–L7 + a
+  probe-vs-AI-Vision precedence test + the L1–L7 ladder recorded in MASTER_DESIGN §B or a
+  detection ADR. Sprint 13b or 14 (not a hard blocker on the pilot launch, but a hard blocker on
+  the next platform onboarding).
+- **YELLOW Sprint 2–4 reserved stubs FOLLOW-132..138 — N/A.** Neither follow-up is a YELLOW
+  launch-readiness item.
+- **Future migration authors (data-engineer, generally) — affected:** the pattern in this PR
+  ("structural-only tests on a SQL file, no DB exercise") is the de-facto standard in
+  `packages/db/src/__tests__/`. The next data-seed migration will inherit the same TG-1 gap. No
+  separate stub filed — fixing the test pattern is out of scope for the pilot, but logged as a
+  candidate Rule in §6 (single occurrence so far, below threshold).
+
+#### 5c. Contracts changed that other modules rely on
+
+- **N/A for breaking changes.** The Observer consumer (`packages/sdk/src/index.ts:381`) reads
+  `inquirySubmitSelector` from `SdkConfig` and silently no-ops on undefined — this PR does not
+  change the consumer contract; it changes the runtime data state of a single tenant row in a
+  forward-additive way.
+- **Behavioral contract risk (not type-level):** §3 HALF_WIRE_P / §4a LG-1 — the migration's
+  contract with the Observer is "after migrate, the pilot row carries the selector." That
+  contract is contingent on the slug invariant and there is no committed assertion of the
+  invariant.
+
+#### 5d. Architectural assumptions affected
+
+- **Rule L lineage continuation (5th confirming instance, sub-axis: the "frozen pre-seeded row"
+  gap remains open even after a migration is written).** RETRO-021 §6 noted a new sub-shape:
+  "AC asserts a value was hand-set/seeded but the value lives only in a test fixture, not in a
+  committed migration/seed" (count = 1, below threshold). RETRO-024 brings the count to **2** but
+  for a slightly different shape: "a committed migration was written, but its WHERE clause
+  invariant is unverified against the real production data state, so the migration's effect is
+  contingent and silently no-ops on a mismatch." This is a related-but-distinct pattern; see §6.
+- **Rule H ("Schema scaffold MUST ship with at least one runtime-wired consumer") — re-asserted
+  on the data side.** Rule H originally covered TypeScript schema scaffolds. The data-migration
+  analog is "a data-seed migration MUST ship with a verification step that confirms the seed
+  landed on the real row, not just that the SQL file syntactically targets the row." Noted as
+  evidence for a potential Rule H.1 / data-side companion clause; below promotion threshold.
+- **Operational contract — "doppler run ... pnpm db:migrate is the canonical prod-apply command
+  for schema/data migrations."** This is now an implicit assumption (PR description) without a
+  runbook home. PILOT_RUNBOOK should canonicalize it (FOLLOW-147).
+
+### 6. New lesson candidates
+
+- **Pattern (Rule L lineage, new sub-shape) — "a committed migration's effect is contingent on a
+  runtime invariant (e.g., a row's slug literal) that is NOT verified by any committed seed or
+  assertion; the migration silently no-ops on a mismatch and `db:migrate` reports success."**
+  - Seen: RETRO-024 (this retro, §3 / §4a LG-1).
+  - Sibling shape (test-fixture-only provenance, RETRO-021 §6): seen RETRO-021. Count for the
+    closely related "claimed seed has no committed authority" parent-pattern = **2** (RETRO-021 +
+    RETRO-024), which crosses the promotion threshold IF treated as one pattern. Per the
+    no-broaden-the-pattern discipline, I treat the two as distinct sub-shapes: RETRO-021 = "value
+    lives only in a test fixture"; RETRO-024 = "migration's WHERE invariant is unverified". The
+    parent pattern ("a 'seeded' pilot value lacks a committed verification path") has 2 instances
+    and IS at the threshold. **Decision: NOT promoted in this retro, because (a) Rule L already
+    covers the broader producer-consumer-wiring family and these are sub-axes inside Rule L's
+    blast radius, and (b) the two instances differ in remediation (RETRO-021 → write a migration;
+    RETRO-024 → write a verification harness around the migration), so the rule text would be
+    too narrow to be actionable across both.** Instead, **flag as evidence for a future Rule L.1
+    promotion when a third instance appears**, and require FOLLOW-147's verification harness as
+    the concrete artifact that pre-empts the third instance.
+- **Pattern — "a `packages/db/src/__tests__/*` test file asserts only the SQL file's *text* and
+  never exercises the migration against a Postgres instance."** Seen: this PR + the four
+  pre-existing files in `packages/db/src/__tests__/` (per `archetype_embeddings_seed.test.ts`,
+  `ab_bandit_weights.test.ts`, etc., by pattern). Count of *retrospective findings* = 1
+  (RETRO-024); count of *codebase instances* = 5. Below the retro-promotion threshold (2 distinct
+  retros). Logged so the next data-engineer retro that touches `packages/db/src/__tests__/`
+  crosses the threshold. Recommended remediation when promoted: `packages/db/src/__tests__/` MUST
+  include a pgmem or Testcontainers harness for each data-seed migration (data-affecting
+  migrations only; DDL-only migrations can stay structural).
+- **Pattern (partial-AC pattern) — "a follow-up's PR closes only the first AC and does not file
+  carry-forward stubs for the unfulfilled ACs in the PR body or QUEUE notes."** Seen RETRO-024
+  (AC2 + AC3 unfulfilled, no carry-forward filed by worker). Count = 1. Below threshold. Noted —
+  this is a process pattern (worker discipline), not a code pattern; consider for a CONTRIBUTING /
+  worker-checklist update if it recurs.
+- **No Rule promotion this retro.** All three patterns above are below threshold or already
+  covered by Rule L's family.
+
+### 7. Follow-ups
+
+- **FOLLOW-147** (backend-engineer + data-engineer, 2.5h, **P0**, must close BEFORE
+  TICKET-PILOT-001 shadow→live flip): make migration 0016's effect verifiable — (a) commit a
+  pre-apply SELECT check that confirms the pilot row's slug actually matches `'000-app-estalara'`
+  (or amend the migration to look up by `DEMO_TENANT_ID` env var / a different invariant); (b)
+  add a post-apply assertion (script or test) that confirms
+  `tenant_site_schemas.schema->>'inquiry_submit_selector'` is the canonical selector for the
+  pilot row after `db:migrate`; (c) update `docs/ops/PILOT_RUNBOOK.md` §3 (Pre-live validation)
+  and §5 (Activation procedure stub) to document the apply-and-verify step
+  `doppler run --project estalara-adaptive-listings --config prd -- pnpm db:migrate` + the SELECT
+  verification; (d) fix the tautological cross-check test
+  (`pilot_inquiry_selector.test.ts:74`) to read the fixture file and compare to the SQL value;
+  (e) tighten the `create_missing=true` test (`:62`) to match the full `jsonb_set(...)`
+  signature. Closes §3 HALF_WIRE_P, §4a LG-1, §4b CB-1/CB-2, §4c TG-1/TG-2/TG-3, §4d DG-1/DG-2.
+  (`source_retro: RETRO-024`, `depends_on: FOLLOW-141`.)
+- **FOLLOW-148** (ml-engineer + architect, 4h, **P1**, Sprint 13b or 14 — pre-second-platform
+  onboarding): close FOLLOW-141 AC2 + AC3 — (a) extend the auto-detect corpus harness
+  (`packages/sdk/src/auto-detect/test-utils.ts:550-568`) to score top-level fields including
+  `finalSchema.inquiry_submit_selector` against ground truth; (b) add ≥1 real or synthetic corpus
+  site beyond `000-app-estalara` that exercises the L2–L7 probe path (not just the L1
+  `data-estalara-slot` marker); (c) add a unit test in
+  `packages/sdk/src/auto-detect/__tests__/detect-inquiry-selector.test.ts` asserting probe-vs-LLM
+  precedence on conflict (probe wins when both return non-empty); (d) record the L1–L7 heuristic
+  ladder + the probe/LLM precedence rule in MASTER_DESIGN §B (auto-detection) or a new
+  `docs/adr/ADR-NNNN-inquiry-selector-detection-ladder.md`. Closes §4a LG-2, §4c (general
+  measurement gap), §4d DG-3, and the FOLLOW-141 AC2 + AC3 carry-forward.
+  (`source_retro: RETRO-024`, `depends_on: FOLLOW-141`.)
+- **Carry-forward note (no new stub):** RETRO-021 already filed FOLLOW-141 to cover all three
+  ACs. This retro's discovery is that AC1 itself remains contingent (FOLLOW-147) and AC2/AC3 were
+  not attempted in this PR (FOLLOW-148). The status of FOLLOW-141 in `backlog/FOLLOW_UPS.md`
+  should be changed from "DONE — PR #165 open" to "PARTIAL — PR #165 closes AC1 contingently;
+  AC2 + AC3 outstanding (FOLLOW-148); AC1 verification outstanding (FOLLOW-147)" — PM action,
+  not this agent's edit (RETRO-analyst is append-only on RETROSPECTIVES.md, FOLLOW_UPS.md,
+  CONVENTIONS_PATCH.md).
+- **Wave roll-up (second and final retro of Sprint 13a-hardening-v2):** the two-retro wave
+  (RETRO-023..024) closed the P0 carry-forward from Sprint 13a-hardening and produced FOLLOW-143
+  + FOLLOW-144 + FOLLOW-145 + FOLLOW-146 (RETRO-023, §13.2 localStorage residuals) and
+  FOLLOW-147 + FOLLOW-148 (RETRO-024, pilot-slug verification + AC2/AC3 carry-forward). Net
+  pre-pilot blockers for PM triage: **FOLLOW-147 is the lone P0** (must close before TICKET-PILOT-001
+  shadow→live); RETRO-023's FOLLOW-143 is also P0 (wire `getOrCreateCrossSessionId` into init —
+  EU compliance blocker); the rest are P1/P2.
+
+### 8. Cross-references
+
+- **RETRO-021 (FOLLOW-127, PR #161)** — direct parent retro: raised HALF_WIRE_C (P0) on the
+  pilot row's `inquiry_submit_selector`. FOLLOW-141 (this PR's source ticket) is the stub
+  RETRO-021 generated. This retro is the partial-close audit.
+- **RETRO-017 (FOLLOW-114, PR #157)** — grandparent: raised the consumer-with-no-producer gap
+  that RETRO-021 narrowed to the pilot row. The full lineage RETRO-017 → RETRO-021 → RETRO-024
+  traces a single wire from general consumer → general producer → frozen-pilot-row producer →
+  pilot-row-producer-with-verifiable-effect (FOLLOW-147).
+- **RETRO-023 (FOLLOW-139, PR #164)** — sibling first-of-the-pair retro for
+  Sprint 13a-hardening-v2. Both retros confirm the Rule L family (RETRO-023 = compliance
+  consumer-with-no-producer; RETRO-024 = data producer-with-unverified-invariant) but on
+  different sub-axes. The wave roll-up (§7) tracks the combined blocker set.
+- **Rule L (CONVENTIONS_PATCH.md §L)** — already promoted; this retro is a fifth confirming
+  instance on a new sub-axis (migration WHERE clause invariant unverified). **NOT re-promoted**
+  per the no-double-promotion discipline.
+- **Rule H (CONVENTIONS_PATCH.md §H)** — schema scaffold without a runtime-wired consumer. This
+  retro extends the spirit of Rule H to data migrations (a data-seed without a verification
+  harness is the data-side analog of a schema scaffold without a consumer). Logged as evidence;
+  no promotion of a Rule H.1 today (single occurrence; threshold = 2).
+- **PILOT_FREEZE_RULE.md (§Decision 2)** — pilot tenant = `DEMO_TENANT_ID` (env var UUID). The
+  migration's slug-based identification is **not** the canonical pilot identifier per this design
+  doc. FOLLOW-147 AC may resolve this by switching the migration to look up by `DEMO_TENANT_ID`
+  or by adding a pre-apply check that the slug matches.
+- **SECOND and FINAL of Sprint 13a-hardening-v2 retros** — siblings: RETRO-023 (#164 /
+  FOLLOW-139). Wave complete; P0 carry-forward FOLLOW numbers are FOLLOW-143 (RETRO-023, wire
+  xid into init) and FOLLOW-147 (this retro, pilot-slug verification).
+
+---
+
+<!-- RETRO-025 and beyond will be appended here by the retrospective-analyst agent. -->
+<!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-05-28 after RETRO-024 / PR #165 — second & final Sprint 13a-hardening-v2 retro):
+     - RETRO coverage: ...RETRO-019=PR#159/FOLLOW-129 (Sprint 13a-hardening, 1st of 4),
        RETRO-020=PR#160/FOLLOW-128 (Sprint 13a-hardening, 2nd of 4),
        RETRO-021=PR#161/FOLLOW-127 (Sprint 13a-hardening, 3rd of 4),
-       RETRO-022=PR#162/FOLLOW-122 (Sprint 13a-hardening, 4th & FINAL). Next retro = RETRO-023.
-     - FOLLOW numbers consumed: ...127 (RETRO-017), 128-131 (RETRO-018), 132-138 RESERVED
-       (YELLOW Sprint 2-4 stubs), 139 (RETRO-019), 140 (RETRO-020),
-       141 (RETRO-021 — pilot-row inquiry_submit_selector population + corpus accuracy),
-       142 (RETRO-022 — /dashboard/analytics page Rule K.2 consumer parity).
-     - NEXT FREE FOLLOW NUMBER IS 143. -->
+       RETRO-022=PR#162/FOLLOW-122 (Sprint 13a-hardening, 4th & FINAL),
+       RETRO-023=PR#164/FOLLOW-139 (Sprint 13a-hardening-v2, 1st of 2),
+       RETRO-024=PR#165/FOLLOW-141 (Sprint 13a-hardening-v2, 2nd & FINAL).
+       Next retro = RETRO-025.
+     - FOLLOW numbers consumed: ...139 (RETRO-019), 140 (RETRO-020),
+       141 (RETRO-021), 142 (RETRO-022),
+       143 (RETRO-023 — wire getOrCreateCrossSessionId into init),
+       144 (RETRO-023 — reconcile "monthly"/"30 days" cadence claim with 90-day TTL),
+       145 (RETRO-023 — Withdraw button UI affordance),
+       146 (RETRO-023 — thread xid onto event wire / ingest join key),
+       147 (RETRO-024 — pilot-slug verification + post-apply assertion + PILOT_RUNBOOK step),
+       148 (RETRO-024 — FOLLOW-141 AC2 + AC3 carry-forward: corpus harness scoring + L1-L7 ladder doc).
+     - NEXT FREE FOLLOW NUMBER IS 149. -->
+<!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-05-28 after RETRO-023 / PR #164 — first Sprint 13a-hardening-v2 retro):
+     - RETRO coverage: ...RETRO-019=PR#159/FOLLOW-129 (Sprint 13a-hardening, 1st of 4),
+       RETRO-020=PR#160/FOLLOW-128 (Sprint 13a-hardening, 2nd of 4),
+       RETRO-021=PR#161/FOLLOW-127 (Sprint 13a-hardening, 3rd of 4),
+       RETRO-022=PR#162/FOLLOW-122 (Sprint 13a-hardening, 4th & FINAL),
+       RETRO-023=PR#164/FOLLOW-139 (Sprint 13a-hardening-v2, 1st of 2). Next retro = RETRO-024
+       (2nd of 2: PR#165/FOLLOW-141).
+     - FOLLOW numbers consumed: ...139 (RETRO-019), 140 (RETRO-020),
+       141 (RETRO-021), 142 (RETRO-022),
+       143 (RETRO-023 — wire getOrCreateCrossSessionId into init), 
+       144 (RETRO-023 — reconcile "monthly"/"30 days" cadence claim with 90-day TTL),
+       145 (RETRO-023 — Withdraw button UI affordance),
+       146 (RETRO-023 — thread xid onto event wire / ingest join key).
+     - NEXT FREE FOLLOW NUMBER IS 147. -->
 <!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-05-27 after RETRO-021 / PR #161):
      - RETRO coverage: ...RETRO-017=PR#157/FOLLOW-114, RETRO-018=PR#158/FOLLOW-118-121 (YELLOW Sprint 1),
        RETRO-019=PR#159/FOLLOW-129 (Sprint 13a-hardening, 1st of 4),

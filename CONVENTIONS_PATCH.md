@@ -547,4 +547,44 @@ grep -rn "disclosure13_1\|disclosure13_2\|disclosure" packages/sdk/src/ui/consen
 grep -rn "removeItem" packages/sdk/src --include="*.ts" | grep -v "\.test\."   # zero hits + such a claim = HALF_WIRE_C, P0
 ```
 
+### Rule N amendment (2026-05-28 — RETRO-023 §6 — cadence-mismatch sub-shape)
+
+**Trigger:** Rule N reached its FOURTH consecutive confirming instance with RETRO-023 (FOLLOW-139,
+PR #164). The new sub-shape is **cadence mismatch within an otherwise-wired disclosure**: PR #164
+implemented a `localStorage` cross-session identifier, but the disclosure says "rotates monthly" /
+"every 30 days" while the code performs single-step 90-day TTL replacement. Five disclosure surfaces
+(banner copy ×3 locales, DPIA §13.2 mitigations paragraph, Privacy Notice §3) all carry the
+inaccurate cadence claim, and the `consent-banner.test.ts` regex pins `/monthly/i` so the inaccurate
+wording is locked in by a green test. This sub-shape is not enumerated by the existing Rule N
+verification block (which covers presence/absence of producers and removeItem calls). Per the Rule H
+amendment precedent in this file, an amendment is appropriate when the parent rule reaches its
+fourth confirming instance and a new, specific verification step is identifiable.
+
+**Amendment — extend Rule N verification with the cadence-claim check:**
+
+```bash
+# Rotation/cadence claims in disclosures must match the actual TTL/rotation constant in code.
+# 1. Find every cadence claim in disclosure surfaces:
+grep -rn "rotate\|every 30\|every 7\|every 24\|monthly\|weekly\|daily\|hourly" \
+  packages/sdk/src/ui/consent-banner.ts \
+  docs/compliance/dpia.md \
+  docs/compliance/PRIVACY_NOTICE_TEMPLATE.md
+# 2. Find the matching constant(s) in the SDK:
+grep -rn "TTL_MS\|_MS = .*\* 24 \*\|day_bucket\|ROTATION_INTERVAL" packages/sdk/src --include="*.ts" \
+  | grep -v "\.test\."
+# 3. The disclosed cadence (parsed from step 1) must equal the constant's value (parsed from step 2).
+#    A claim of "rotates monthly" with a 90-day TTL constant = HALF_WIRE_C, P0
+#    (data-subject-facing accuracy in a GDPR Art. 6(1)(f) disclosure).
+# 4. Any consent-banner.test.ts regex that pins the disclosure WORDING must also be reconciled —
+#    a green test on "monthly" wording does NOT validate the cadence; it only locks the sentence.
+```
+
+**Amendment rationale:** The cadence-mismatch sub-shape is a third verification step on the same
+parent rule, not a new rule, because it shares the same root cause (doc asserts user-facing behavior
+the code does not perform) and the same priority calculus (P0 when on a GDPR lawful-basis
+disclosure). A future fifth occurrence on a fundamentally different axis (e.g. a disclosed UI
+element that does not exist) would warrant a separate Rule O.
+
+**Evidence for this amendment:** RETRO-023 §3 HALF_WIRE_C / §4a LG-1 / §4d DG-1/DG-2/DG-3 / §6.
+
 <!-- Rule O+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->

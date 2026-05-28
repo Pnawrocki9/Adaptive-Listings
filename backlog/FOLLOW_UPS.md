@@ -4172,12 +4172,257 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 149 (148 consumed by RETRO-024 / PR #165 — corpus harness + L1-L7 ladder doc, carry-forward of FOLLOW-141 AC2+AC3;
+## FOLLOW-150 — Close FOLLOW-143 AC1 integration test + reconcile §13.2 `dpia.md:1017` dual-id-cadence residual + sweep stale `consent-banner.test.ts:385` comment + finally land FOLLOW-143 AC4 dual-id docblock
+
+- **status:** OPEN
+- **source_retro:** RETRO-025
+- **source_ticket:** FOLLOW-139 (PR #164 inline fixes for FOLLOW-143 + FOLLOW-144)
+- **recommended_sprint:** 13b (before EU pilot DPO sign-off — the §13.2 narrative inconsistency is
+  read by DPO at sign-off time)
+- **recommended_agent:** sdk-engineer + compliance-engineer
+- **priority:** P1
+- **estimated_hours:** 2
+- **scope:** RETRO-025 §3 CHECK B HALF_WIRE_T (test-coverage half-wire on the init-path xid producer
+  wiring) + §3 CHECK B HALF_WIRE_C-residual (one of five §13.2 cadence surfaces missed by PR #164's
+  reconciliation — the legacy HMAC "30-day rotation bucket" sentence at `dpia.md:1017`) + §4a
+  LG-1/LG-2 + §4c TG-1 + §4d DG-1/DG-2 + §5a TICKET-PILOT-002 runbook gate + §5d dual-id-model
+  documentation debt. PR #164's two inline follow-up commits closed most of FOLLOW-143 and
+  FOLLOW-144, but THREE residual gaps remain after the merge: (a) **No integration / E2E test
+  asserts `__estalara_xid__` is present in `localStorage` after a granted init AND absent after a
+  denied init** — the 6 new unit tests in `packages/sdk/src/__tests__/session.test.ts` from PR #164
+  call the producer directly from the test file; the `packages/sdk/e2e/consent.spec.ts` Playwright
+  suite exercises the Accept and Decline buttons but only asserts `estalara_consent` key state,
+  never `__estalara_xid__`. This is the precise gap FOLLOW-143 AC1 demanded close — without it, a
+  future revert dropping either `void getOrCreateCrossSessionId()` call at
+  `packages/sdk/src/index.ts:116` or `:159` would silently re-introduce RETRO-023's
+  producer-never-invoked failure with zero CI signal. (b) **`docs/compliance/dpia.md:1017` still
+  says "keyed by `tenant_secret` and a 30-day rotation bucket. The hash is stored in `localStorage`
+  and transmitted with every ingest event."** — this is the §13.2 **Processing activity** paragraph
+  describing the LEGACY HMAC fingerprint, but the rest of §13.2 (line 1039 onwards) now describes
+  the NEW UUID xid as "is refreshed every 90 days". §13.2 now contains two parallel claims about a
+  `localStorage`-stored cross-session identifier with two different cadences, conflated as if they
+  were the same identifier. A reader (DPO at sign-off, auditor, future sdk-engineer) cannot
+  determine which `localStorage` identifier (`__estalara_session__` HMAC fingerprint vs.
+  `__estalara_xid__` UUID xid) and which cadence the §13.2 LIA balancing test rests on. The Rule N
+  amendment's Step 2 grep correctly surfaces this residual on a post-merge sweep — it was just
+  missed by the PR #164 inline-fix author's manual sweep. (c)
+  **`packages/sdk/src/__tests__/consent-banner.test.ts:385` test-file comment still says "monthly
+  rotation"** — pure comment, zero behavioral impact, but contradicts the test assertions
+  immediately below it. (d) **FOLLOW-143 AC4 (`session.ts` file-level docblock + Master Design §B
+  dual-id model) was NOT addressed by the inline fix in PR #164.** The file-level docblock at
+  `packages/sdk/src/core/session.ts:1-12` still frames the SHA-256 sessionStorage fingerprint as the
+  canonical session id; the 4-line addendum at `:7-10` mentions the new xid but does not reconcile
+  the dual-id model. Master Design §B is unchanged. This documentation debt is what made gap (b)
+  possible — the doc author updating §13.2 did not know there were two identifiers to disambiguate.
+- **ac:**
+  - [ ] AC1: An integration-level test asserts BOTH halves of the init-path xid wire: (i) on a
+        granted init (consent already 'granted' OR user clicks Accept in the banner),
+        `localStorage[__estalara_xid__]` is non-empty after `init()` completes; (ii) on a denied
+        init (consent already 'denied' OR user clicks Decline), the key is absent after `init()`
+        completes. Preferred location: extend `packages/sdk/e2e/consent.spec.ts` with two ~6-line
+        assertions — after the existing Accept-flow assertion at `:90-95` add
+        `expect(await page.evaluate(() => localStorage.getItem('__estalara_xid__'))).not.toBeNull()`;
+        after the existing Decline-flow assertion at `:148-150` add the symmetric `.toBeNull()`
+        assertion. Alternatively, a jsdom integration test in a new
+        `packages/sdk/src/__tests__/init-xid.integration.test.ts` that calls `init()` from
+        `../index` and asserts the same — but the E2E location is preferred because it exercises the
+        real Shadow DOM banner + onGranted/onDenied callback chain.
+  - [ ] AC2: `docs/compliance/dpia.md:1015-1020` (the §13.2 **Processing activity** paragraph) is
+        rewritten so it unambiguously names which `localStorage` identifier(s) §13.2 covers and
+        which cadence applies to each. Two acceptable shapes: (a) **split §13.2 by identifier** —
+        one sub-section for the legacy HMAC fingerprint (`__estalara_session__`, SHA-256, 30-day
+        rotation bucket, sessionStorage/tab-lifetime per the actual implementation — verify against
+        `packages/sdk/src/core/session.ts:14-119`) and a separate sub-section for the new UUID xid
+        (`__estalara_xid__`, UUID v4, 90-day TTL, persistent localStorage); (b) **clarify inline** —
+        keep §13.2 single-section but every sentence referring to "the cross-session identifier"
+        names the specific storage key and TTL it means. Either shape must result in zero
+        cadence-claim residuals when the Rule N amendment Step 1 grep is re-run on
+        `docs/compliance/dpia.md`.
+  - [ ] AC3: `packages/sdk/src/__tests__/consent-banner.test.ts:385` comment is updated from
+        `monthly rotation` to `refreshed every 90 days` (or removed; the test assertions five lines
+        below it are self-documenting).
+  - [ ] AC4: FOLLOW-143 AC4 carry-forward — `packages/sdk/src/core/session.ts:1-12` file-level
+        docblock is rewritten to make the dual-id model explicit (legacy SHA-256 sessionStorage
+        fingerprint with 24h day_bucket rotation AND new UUID localStorage xid with 90-day TTL,
+        named by storage key, with the relationship between them stated). Master Design §B
+        (auto-detection) OR §Snapshot.1 (session model) records the dual-id model with a
+        forward-link to the §13.2 LIA. Architect's call on the doc home; if neither is the natural
+        fit, a new `docs/adr/ADR-NNNN-dual-session-id-model.md` is acceptable.
+  - [ ] AC5: PILOT_RUNBOOK §EU pre-flight `localStorage QA` gate (`docs/ops/PILOT_RUNBOOK.md`, per
+        RETRO-023 §5a / RETRO-025 §5a) is tightened to assert BOTH KEY-PRESENT after grant AND
+        KEY-ABSENT after deny — the current gate asserts only post-deny absence, which falsely
+        passes when the key was never set. This is FOLLOW-143 AC5 carry-forward.
+- **promoted_to_queue:** false
+- **depends_on:** [FOLLOW-139, FOLLOW-143, FOLLOW-144]
+
+---
+
+## FOLLOW-151 — Wire ESC-012 into TICKET-PILOT-001 spec + AC list + PILOT_RUNBOOK apply-and-verify recovery pattern
+
+- **status:** OPEN
+- **source_retro:** RETRO-026
+- **source_ticket:** FOLLOW-149 (PR #166) + ESC-012
+- **recommended_sprint:** 13b (MUST close BEFORE TICKET-PILOT-001 spawn)
+- **recommended_agent:** architect + PM
+- **priority:** P0
+- **estimated_hours:** 1
+- **scope:** RETRO-026 §3 (ESC-012-not-wired-into-TICKET-PILOT-001), §4a LG-2 + LG-3 (migration 0016
+  still pending, will hit RAISE on next `pnpm db:migrate` against tenant-less env), §4d DG-1 + DG-3.
+  PR #166 (FOLLOW-149) filed ESC-012 documenting that `pnpm db:migrate` against any tenant-less
+  environment will now fail loudly on migration 0016 because Drizzle's pg-core migrator wraps ALL
+  pending migrations in ONE transaction and 0016's `RAISE EXCEPTION` (the pilot-tenant-required
+  guard from FOLLOW-141) rolls back any future 0017+ entries alongside it. ESC-012's required-action
+  block names "TICKET-PILOT-001 (or earlier)" as the owner but TICKET-PILOT-001's spec file
+  (`backlog/sprint-12/TICKET-PILOT-001.md`) and its QUEUE.md entry (L2288-L2336) do NOT yet
+  reference ESC-012 or FOLLOW-149. A worker picking up TICKET-PILOT-001 today will follow the step-5
+  "Set tenants.pilot_frozen=true on the shadow→live flip" via `pnpm db:migrate` and trigger the
+  exact failure mode ESC-012 documents. Additionally, `docs/ops/PILOT_RUNBOOK.md` §3 / §5 do not
+  document the one-off isolated apply pattern (BEGIN/INSERT INTO
+  drizzle.\_\_drizzle_migrations/COMMIT mirror of the migrator's per-entry logic) that PR #166 Part
+  D used to apply 0015 to prd without rolling back when 0016 RAISEd — so a future operator needing
+  the same recovery has no in-repo reference.
+- **ac:**
+  - [ ] AC1: ESC-012 is added to TICKET-PILOT-001's `depends_on` field in BOTH
+        `backlog/sprint-12/TICKET-PILOT-001.md` AND the QUEUE.md entry (L2288-L2336). The depends_on
+        list is updated to reference both ESC-012 and FOLLOW-149.
+  - [ ] AC2: A new AC step is inserted between current steps 4 and 5 of TICKET-PILOT-001 requiring
+        the worker to (a) choose one of ESC-012's two resolution paths — path 1: wizard step calls
+        `pnpm db:migrate` AFTER tenant creation; path 2: edit 0016 to RAISE NOTICE no-op when tenant
+        absent — and (b) document the choice in the TICKET-PILOT-001 PR description with rationale.
+  - [ ] AC3: `docs/ops/PILOT_RUNBOOK.md` §3 (Pre-live validation) is updated to include the ESC-012
+        one-off isolated apply pattern as a documented recovery technique. Either (a) inline a brief
+        description in §3 with a link to ESC-012, or (b) create `docs/runbooks/db-operations.md` and
+        link from PILOT_RUNBOOK §3 — architect's call based on whether the pattern is pilot-specific
+        or generally applicable.
+  - [ ] AC4: When TICKET-PILOT-001 lands and ESC-012's chosen resolution path is executed, ESC-012's
+        status is updated from OPEN to RESOLVED with the chosen path documented in-line (which path,
+        which commit landed it, post-resolution verification of `pnpm db:migrate` against a fresh
+        tenant-less env confirming the gotcha is gone).
+- **promoted_to_queue:** false
+- **depends_on:** [FOLLOW-149]
+
+---
+
+## FOLLOW-152 — Vitest unit test for `migrate.ts` Part C exit-2 trap-killer + tighten `appliedCount()` regex + diagnose phantom row id=17 in `drizzle.__drizzle_migrations`
+
+- **status:** OPEN
+- **source_retro:** RETRO-026
+- **source_ticket:** FOLLOW-149 (PR #166)
+- **recommended_sprint:** 13b (within 7 days of merge to lock in test coverage on the new exit-2
+  contract before a future edit accidentally regresses it)
+- **recommended_agent:** backend-engineer + data-engineer
+- **priority:** P1 (with one P0 sub-AC — the trap-killer test)
+- **estimated_hours:** 2
+- **scope:** RETRO-026 §4b CB-1 + CB-3, §4c TG-1 + TG-3, §4a LG-4, §5d
+  ("`drizzle.__drizzle_migrations.id` is strict 1-based" assumption). PR #166 Part C
+  (`packages/db/scripts/migrate.ts`) added the central exit-2 trap-killer
+  (`pending > 0 && applied === 0 → process.exit(2)` with a loud warning pointing at FOLLOW-149) but
+  `packages/db/src/__tests__/` contains zero tests for this script. The trap-killer is the single
+  most important new contract in PR #166 and its correctness rests on visual inspection only.
+  Separately, the `appliedCount()` schema-doesn't-exist regex at `migrate.ts:79`
+  (`/does not exist|relation .* does not exist/i.test(msg)`) is permissive enough to swallow other
+  "X does not exist" errors (database, extension, role, etc.) and treat them as `before = 0`. And
+  the phantom row anomaly RETRO-026 §4b CB-1 documents (`drizzle.__drizzle_migrations` shows id=17
+  for migration 0015 / idx=15; expected id=16) is most likely explained by PostgreSQL SEQUENCE
+  semantics (sequences are non-transactional; the failed `pnpm db:migrate` attempt today that
+  triggered ESC-012 INSERTed a row for 0015 inside the txn, the txn rolled back, but the SERIAL
+  still incremented), but the explanation needs a diagnostic SELECT against prd to confirm before
+  the team relies on `id` ordering anywhere.
+- **ac:**
+  - [ ] AC1 (**P0**): Add `packages/db/src/__tests__/migrate.test.ts` (new file) with vitest +
+        `vi.mock` over `appliedCount()` + `migrate()` asserting the 4 exit-code permutations: (a)
+        `applied > 0 && pending === 0` → `process.exit` NOT called (exit 0) + "Migrations applied
+        successfully." emitted; (b) `applied === 0 && pending === 0` → exit 0 + "Already up-to-date
+        — no migrations needed." emitted; (c) `pending > 0 &&     applied === 0` → `process.exit(2)`
+        called + FOLLOW-149 warning text emitted on stderr (regex
+        `/No migrations applied but \d+ entries remain unapplied/`); (d)
+        `applied > 0 && pending > 0` → `process.exit(2)` called + partial-success warning emitted on
+        stderr. Use `vi.spyOn(process, 'exit')` and capture stderr via `vi.spyOn(console, 'error')`.
+  - [ ] AC2 (P2): Tighten the `appliedCount()` schema-doesn't-exist check at
+        `packages/db/scripts/migrate.ts:79` from `/does not exist|relation .* does not exist/i` to
+        specifically match
+        `/schema "drizzle" does not exist|relation "drizzle\.__drizzle_migrations" does not exist/i`.
+        A test for this branch is folded into AC1's file (a fifth case: `appliedCount()` throws a
+        `database "X" does not exist` → must re-throw, not swallow).
+  - [ ] AC3 (P2): Add a pre-flight call to `bash scripts/check-migration-journal.sh` at the start of
+        `migrate.ts` (BEFORE `readJournalCount()` and `migrate()`), with a fail-fast exit-2 if the
+        gate fails. OR document in `packages/db/README.md` why the runner does NOT pre-validate the
+        journal (e.g., "the CI gate already catches this at PR time, so the runtime trap-killer is
+        sufficient"). Pick one path; the choice should be documented in PR description.
+  - [ ] AC4 (P2 — phantom row diagnostic): Run
+        `SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id` against prd (via
+        doppler-injected admin DSN). Compare the row count + hash uniqueness to the 16 expected
+        journal entries (idx 0..15) at the time of the SELECT. Verdict tree: (i) **17 rows + a
+        duplicate-hash row exists** → explanation 1 (historical double-apply of a c92da81
+        repair-added entry) confirms; (ii) **16 rows + max(id)=17** → explanation 3 (rolled-back
+        SERIAL bump from today's failed `pnpm db:migrate` attempt) confirms; (iii) **17 rows with
+        all unique hashes** → explanation 2 (Drizzle re-records on hash mismatch) requires further
+        investigation. Document the finding in a brief written note: either append to
+        `docs/runbooks/db-operations.md` (created by FOLLOW-151 AC3 if path b chosen), or to a new
+        `docs/notes/2026-05-28-phantom-row.md`, or to ESC-012's RESOLVED block when ESC-012 closes.
+        The output must say which explanation the data supports and what (if anything) needs
+        changing.
+  - [ ] AC5 (P3 — optional): Document in `packages/db/README.md` that
+        `drizzle.__drizzle_migrations.id` is NOT a strict 1-based counter (it is a SERIAL that can
+        skip when a transaction is rolled back) and any code that needs ordering MUST use
+        `created_at` (matches the journal `when` value), NOT `id`.
+- **promoted_to_queue:** false
+- **depends_on:** [FOLLOW-149]
+
+---
+
+## FOLLOW-153 — Add git-log recency self-test fixture to `scripts/check-migration-journal.sh`
+
+- **status:** OPEN
+- **source_retro:** RETRO-026
+- **source_ticket:** FOLLOW-149 (PR #166)
+- **recommended_sprint:** 13b or 14 (not a launch blocker; quality-of-confidence improvement on the
+  FOLLOW-149 CI gate)
+- **recommended_agent:** devops-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** RETRO-026 §4c TG-2. The Rule O self-test in `scripts/check-migration-journal.sh` (lines
+  50-164, added by PR #166 Part B) exercises four in-memory fixtures (monotonicity violation,
+  year-drift violation, orphan entry, known-good) but **does not exercise the git-log fallback
+  path** (`getSqlTimestampSeconds()` lines 264-275 of the inline Node script) because
+  `FIXTURE_MODE=1` short-circuits the `if (!IS_FIXTURE) { try { ... git log ... } }` block (line
+  265). All four fixtures rely on file mtime for the recency check; a real-world journal violation
+  that comes from a committed-but-misdated SQL file would go through the git path, which is
+  currently untested by the self-test. The gate's confidence on its primary intended use case
+  (catching drizzle-kit year-drift in a committed migration) rests on visual inspection of the git
+  path.
+- **ac:**
+  - [ ] AC1: Add a fifth self-test fixture (fixture 5: "git-log recency happy path") to
+        `scripts/check-migration-journal.sh` that creates a tiny ephemeral git repo in the tmpdir
+        (`git init`, `git config user.email "test@example.com" && git config     user.name "Test"`),
+        commits a SQL file with `GIT_AUTHOR_DATE` env override set to a known recent ISO timestamp
+        (e.g., 2026-05-28T22:00:00Z), then runs the validator against the journal/sql pair WITHOUT
+        `FIXTURE_MODE=1` (or with a new `FIXTURE_MODE=2` that allows git but uses fixture paths —
+        engineer's call). Asserts the recency check correctly uses the git-log timestamp (verifies
+        the `getSqlTimestampSeconds()` git path is reached).
+  - [ ] AC2 (optional but recommended): Add a sixth self-test fixture (fixture 6: "git-log recency
+        vs mtime divergence") that creates a SQL file with `git commit` timestamp of 2026-05-28 then
+        immediately `touch`es the file to 2027-01-01 mtime, and asserts the validator grades it
+        against the git-log date (2026-05-28) — not the mtime (2027-01-01). This proves the git path
+        takes precedence over the mtime fallback when both are available.
+  - [ ] AC3: Run `bash scripts/check-migration-journal.sh --self-test` and confirm all 5 (or 6)
+        fixtures pass. Update the CI workflow comment if the fixture count changes.
+- **promoted_to_queue:** false
+- **depends_on:** [FOLLOW-149]
+
+---
+
+<!-- next free FOLLOW number: 154 (153 consumed by RETRO-026 / PR #166 — git-log recency self-test fixture for check-migration-journal.sh — P2;
+     152 consumed by RETRO-026 / PR #166 — vitest unit test for migrate.ts Part C exit-2 trap-killer + tighten appliedCount regex + diagnose phantom row id=17 — P1 with P0 sub-AC;
+     151 consumed by RETRO-026 / PR #166 — wire ESC-012 into TICKET-PILOT-001 spec + AC + PILOT_RUNBOOK recovery pattern — P0 pilot blocker;
+     150 consumed by RETRO-025 / PR #164 inline-fix verification — close FOLLOW-143 AC1 integration test + reconcile §13.2 dpia.md:1017 dual-id-cadence residual + sweep stale comment + dual-id docblock — P1, pre-DPO-sign-off;
+     149 consumed by PR #166 itself (Part D Rule O codification — RETRO-026 logs it as the first retro-recorded occurrence; provisional until 2nd retro instance);
+     148 consumed by RETRO-024 / PR #165 — corpus harness + L1-L7 ladder doc, carry-forward of FOLLOW-141 AC2+AC3;
      147 consumed by RETRO-024 / PR #165 — migration 0016 invariant verification + PILOT_RUNBOOK apply-and-verify — P0 pilot blocker;
      146 consumed by RETRO-023 / PR #164 — thread xid onto event wire / ingest join key;
      145 consumed by RETRO-023 / PR #164 — Withdraw button UI affordance;
-     144 consumed by RETRO-023 / PR #164 — reconcile "monthly"/"30 days" cadence claim with 90-day TTL — P0 EU go-live blocker;
-     143 consumed by RETRO-023 / PR #164 — wire getOrCreateCrossSessionId into SDK init path;
+     144 consumed by RETRO-023 / PR #164 — reconcile "monthly"/"30 days" cadence claim with 90-day TTL — P0 EU go-live blocker — DONE inline in PR #164 (substantially: 4 of 5 surfaces; 1 residual at dpia.md:1017 carried to FOLLOW-150);
+     143 consumed by RETRO-023 / PR #164 — wire getOrCreateCrossSessionId into SDK init path — DONE inline in PR #164 (substantially: producer wired; integration test + ACs 2-5 carried to FOLLOW-150);
      142 consumed by RETRO-022 / PR #162 — /dashboard/analytics page Rule K.2 consumer parity;
      141 consumed by RETRO-021 / PR #161 — pilot inquiry_submit_selector seed + corpus accuracy;
      140 consumed by RETRO-020 / PR #160 — §13.1 7-day consent-audit retention;

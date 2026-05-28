@@ -7523,24 +7523,1060 @@ RETRO-021 HALF_WIRE_C than the AC1 wording implies. Filed as HALF_WIRE_P P0 → 
 
 ---
 
-<!-- RETRO-025 and beyond will be appended here by the retrospective-analyst agent. -->
-<!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-05-28 after RETRO-024 / PR #165 — second & final Sprint 13a-hardening-v2 retro):
+## RETRO-025 — FOLLOW-143 + FOLLOW-144 inline fixes inside PR #164 (verification of the verification) — 2026-05-28
+
+### 1. Summary of change
+
+- **PR:** #164 (merged 2026-05-28 16:44:56 UTC, commit `e4e37ac`). RETRO-025 scope is the **two
+  inline follow-up fixes** that were squashed into PR #164 *before* it merged:
+  - **FOLLOW-143 inline fix** (P1, sdk-engineer, second commit on the PR) — wire
+    `getOrCreateCrossSessionId()` into the SDK's `init()` flow so the disclosed `__estalara_xid__`
+    localStorage entry actually appears in real browsers. RETRO-023 §3 CHECK A / HALF_WIRE_P /
+    §4a LG-2 found this producer was dead-code at the initial commit; this fix wires it.
+  - **FOLLOW-144 inline fix** (P0, sdk-engineer + compliance-engineer, second + third commits on
+    the PR) — reconcile the "rotates monthly" / "every 30 days" disclosure across the consent
+    banner (3 locales), DPIA §13.2 mitigations paragraph, and Privacy Notice §3 with the actual
+    90-day TTL implementation; update the `consent-banner.test.ts` regex that pinned `/monthly/i`.
+    RETRO-023 §3 HALF_WIRE_C / §4a LG-1 / §4d DG-1/DG-2/DG-3 found this cadence-mismatch on five
+    surfaces; this fix takes path (b) — correct all five surfaces to "every 90 days" rather than
+    implement a 30-day rotation step.
+- **Both follow-ups marked DONE** in `backlog/FOLLOW_UPS.md:3864` (FOLLOW-143) and `:3916`
+  (FOLLOW-144) on 2026-05-28. RETRO-025's job is to verify the inline fixes actually deliver what
+  they claim — the §13.2 DPIA balancing-test flip to **unconditionally GREEN** in PR #164 rests
+  entirely on these two fixes being correct.
+- **Files changed in the two follow-up commits** (subset of the seven-file PR; the first commit
+  was the FOLLOW-139 base implementation already covered by RETRO-023):
+  - `packages/sdk/src/index.ts` (+16 / −0 across whole PR, all 16 from FOLLOW-143 commit) — adds
+    `getOrCreateCrossSessionId` to the import list (`index.ts:21`); calls
+    `void getOrCreateCrossSessionId()` in the `onGranted` banner callback (`index.ts:116`); calls
+    `void getOrCreateCrossSessionId()` on init for returning granted visitors (`index.ts:158-160`).
+    The `eraseCrossSessionId()` calls on the deny paths (`index.ts:95,128`) are unchanged from the
+    FOLLOW-139 base commit.
+  - `packages/sdk/src/ui/consent-banner.ts` (+7 / −7) — EN `:146` "rotates monthly" →
+    "is refreshed every 90 days"; PL `:158` "jest rotowany co miesiąc" → "jest odświeżany co 90
+    dni"; ES `:170` "rota mensualmente" → "se renueva cada 90 días"; matching JSDoc comments at
+    `:135`, `:144`, `:156`, `:168` updated.
+  - `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` (+3 / −3) — `:79-81` "rotates automatically every
+    30 days" → "is refreshed every 90 days".
+  - `docs/compliance/dpia.md` (+33 / −22) — §13.2 mitigations `:1039` "rotates every 30 days
+    (limiting staleness)" → "is refreshed every 90 days (limiting staleness)"; the disclosed
+    banner-copy quote later in §13.2 updated to match; balancing test status flipped from
+    "GREEN — contingent on FOLLOW-128 deployment" to "GREEN — unconditionally passed as of
+    FOLLOW-139" with the implementation evidence (`getOrCreateCrossSessionId()` call site in
+    `index.ts`) cited inline; staging-QA gate updated to "READY FOR STAGING VERIFICATION" with the
+    correct key name (`__estalara_xid__`) threaded in; new dated footer 2026-05-28 (FOLLOW-139).
+  - `packages/sdk/src/__tests__/consent-banner.test.ts` (+6 / −6) — EN regex `/monthly/i` →
+    `/refreshed every 90 days/i` (`:513`); PL regex `/miesi/i` → `/odświeżany co 90 dni/i` (`:532`);
+    ES regex `/mensual/i` → `/renueva cada 90 d/i` (`:551`).
+- **Modules touched (by the inline fixes only):** SDK UI + SDK init + SDK tests + compliance docs.
+  No new tests added in the two follow-up commits (the test changes are pure regex updates to
+  keep the existing test green after wording flip). No new ingest / decision-api / data-engineering
+  / db-migration / config surface touched.
+- **Key contracts changed (by the inline fixes only):**
+  - `index.ts` consumer wiring of `getOrCreateCrossSessionId` (additive at call sites; producer
+    surface was already exported in the FOLLOW-139 base commit). Breaking: **no**.
+  - Disclosure-string contract on the §13.2 banner copy — EN/PL/ES rotation-cadence sentence
+    changed from "monthly" to "every 90 days" (data-subject-facing contract; matches code).
+  - DPIA §13.2 balancing-test status contract — "CONDITIONAL" → "UNCONDITIONAL GREEN" (compliance
+    contract; the legal/DPO gate that the rest of the EU pilot launch chains off).
+- **Verdict (preview):** **FOLLOW-UPS-FILED** (not CLEAN). The two inline fixes do most of what
+  they claimed, BUT FOLLOW-143 AC1's mandatory integration test ("integration-level (jsdom or E2E)
+  test asserts the key IS present in `localStorage` after a granted init AND ABSENT after a
+  denied init — both halves of the wire") was **not added** — the only test coverage of the new
+  init wiring is at the unit level of the producer itself. AND a residual cadence-disclosure
+  inconsistency remains in `dpia.md:1017` ("30-day rotation bucket") that was NOT swept by the
+  five-surface reconciliation (this sentence describes the LEGACY HMAC fingerprint inside §13.2,
+  creating a dual-id/dual-cadence narrative inconsistency within the same DPIA section). One new
+  stub filed: **FOLLOW-150** (P1, scoped to close FOLLOW-143 AC1 + the §13.2 residual sentence).
+
+### 2. Verification done in PR
+
+- **Test files changed (inline fixes only):** `consent-banner.test.ts` (regex updates only —
+  6 lines edited, 0 new tests). No new file added. No new test added to `session.test.ts`. No
+  new test added to `index.ts`'s test coverage chain (there is no `index.test.ts` in the SDK at
+  all — the SDK's `init()` is exercised only by Playwright E2E tests in `packages/sdk/e2e/`).
+- **Assertions added:** **0 new assertions** (the 6 regex edits are 1-to-1 replacements). The 6
+  new unit tests in `session.test.ts:76-156` from the FOLLOW-139 base commit (covered by RETRO-023
+  §2) still pass after the rewording but do **not** exercise the new init-path wiring — they call
+  the producer directly from the test file. PR body cites "All 39 tests in `consent-banner.test.ts`
+  and `session.test.ts` pass" after the wording flip.
+- **CI checks (per PM instruction 2026-05-28):** treated as merged; the standing CI-gate caveat
+  applies (Rule I / Vercel / Python lanes pre-existing-red & non-blocking, per the
+  `project_ci_gate_landscape` memory).
+- **AC verdict per follow-up:**
+  - **FOLLOW-143 — PARTIAL.** AC1 producer-wired ✅, deny-path eraser still wired (unchanged from
+    base) ✅, BUT AC1's mandatory integration test (KEY-PRESENT after grant AND KEY-ABSENT after
+    deny) **NOT added** — see §3 CHECK B and §4c TG-1. AC2 (early-exit-deny coverage) NOT added.
+    AC3 (legacy `__estalara_session__` erasure decision) not addressed by this PR. AC4 (Master
+    Design / `session.ts` docblock dual-id model) not addressed (`session.ts` got only a 4-line
+    addendum docblock at `:7-10`; the file-level docblock still frames SHA-256 fingerprint as the
+    canonical session id; Master Design unchanged). AC5 (PILOT_RUNBOOK gate tightening) not
+    addressed.
+  - **FOLLOW-144 — SUBSTANTIALLY DONE (PARTIAL on AC1 path-(b) acceptance).** AC1 chose path (b)
+    (correct disclosures rather than implement 30-day rotation). AC2 atomic update of all FIVE
+    surfaces — **4 of 5 swept**: banner copy ×3 locales ✅, Privacy Notice §3 ✅, DPIA §13.2
+    mitigations line 1039 ✅. **MISSED: `dpia.md:1017` still says "30-day rotation bucket"** in
+    the §13.2 processing-activity paragraph — see §4d DG-1. AC3 path-(b) sibling
+    (dual-id model reflected) carries forward from FOLLOW-143 AC4 (not done). AC4 (balancing-test
+    re-evaluation without "rotates every 30 days" mitigation) was performed in the PR — the
+    mitigation sentence at `dpia.md:1039` was rewritten to "is refreshed every 90 days (limiting
+    staleness)" and the balancing test was re-justified on the basis of refreshed cadence rather
+    than the deleted 30-day rotation. AC2's `consent-banner.test.ts` regex update was performed.
+- **Rule N + Rule N amendment verdict (key central caveat):** the Rule N amendment promoted by
+  RETRO-023 (`CONVENTIONS_PATCH.md:550-588`) prescribes a 4-step cadence-check verification —
+  grep cadence claims in EVERY disclosure surface, grep `TTL_MS`/`day_bucket`/`ROTATION_INTERVAL`
+  constants in code, compare, reconcile any pinning test regex. Applying that grep to the
+  post-merge tree (Step 2: `grep -rn "rotate\|every 30\|every 7\|every 24\|monthly\|weekly\|daily\|hourly" packages/sdk/src/ui/consent-banner.ts docs/compliance/dpia.md docs/compliance/PRIVACY_NOTICE_TEMPLATE.md`)
+  returns **one residual hit:** `docs/compliance/dpia.md:1017` "30-day rotation bucket". This is
+  the SAME §13.2 section in which `dpia.md:1039` was reconciled — so the cadence-mismatch sub-shape
+  Rule N amendment was meant to prevent is recurrent within ONE document within ONE day-cycle of
+  the amendment's promotion. The recurrence is on a related-but-different identifier (the legacy
+  HMAC fingerprint, not the new UUID xid) but it lands in the SAME §13.2 narrative the LIA flip
+  rests on — a reader of §13.2 cannot tell which `localStorage` identifier is being described or
+  which rotation cadence applies. The Rule N amendment caught the cadence-WORDING (which was
+  fixed for 4 of 5 surfaces) but did not yet enumerate the **dual-id-narrative-collision**
+  failure shape (one DPIA section describing two distinct identifiers both stored in
+  `localStorage` with different cadences). See §6.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection (inline-fix-introduced symbols only):**
+
+- The two follow-up commits added no new exports. `index.ts` imports
+  `getOrCreateCrossSessionId` from `core/session.js` (`:21`) and calls it twice
+  (`:116`, `:159`). Both call sites are real production paths reached on init (returning granted
+  visitor) and on the `onGranted` banner callback. The previously-dead-code symbol from RETRO-023
+  is now LIVE.
+- `eraseCrossSessionId` continues to be called at `:95` and `:128` (unchanged from FOLLOW-139
+  base). With the producer now actually creating the key, the eraser is now erasing something
+  real — i.e. RETRO-023 §3 CHECK A DEAD_CODE on `getOrCreateCrossSessionId` is **CLOSED**.
+- Grep `getOrCreateCrossSessionId` across `packages/` and `apps/` excluding `node_modules` /
+  `.next` / `__tests__` / `.test.ts` / `.spec.ts` returns **4 non-test hits**, all inside
+  `packages/sdk/src/index.ts` (the import + 2 call sites at `:116`, `:159`) and the producer
+  definition at `packages/sdk/src/core/session.ts:177`. Non-test importers ≥ 1. **Not dead.**
+- No other new files. **CHECK A clean ✅.**
+
+**CHECK B — Half-wire detection (key claims by the two inline fixes):**
+
+- **`sdk-symbol:getOrCreateCrossSessionId` (RETRO-023 HALF_WIRE_P remediation).**
+  - **Producer (call-site / wire-level) — NOW EXISTS ✅.** `index.ts:116` (in
+    `onGranted` callback) + `index.ts:159` (returning granted visitor on init). Both run before
+    any event flush (`:159` is at the top of the granted-path block, before `getOrCreateSession()`
+    at `:164` per the inline comment "Must run before session init so the key is populated before
+    any events fire"). The fix correctly threads the producer into the post-consent init path.
+  - **Consumer (data subject, DPO, §13.2 disclosure) — EXISTS ✅.** The disclosed
+    `__estalara_xid__` key now actually appears in real browsers; the eraser-on-deny path now
+    erases a key that actually existed.
+  - **Test-level wire — STILL HALF.** No integration/E2E test invokes `init()` and asserts
+    `localStorage[__estalara_xid__]` is set after a granted run AND absent after a denied run.
+    The 6 new unit tests added in PR #164 call the producer directly from the test file (the
+    integration-shape test at `session.test.ts:146-154` is named "eraseCrossSessionId called on
+    consent denied path (integration with index.ts wiring)" but is actually a pure unit test that
+    simulates the call sequence in the test — it does NOT execute `init()` from `index.ts`).
+    `packages/sdk/e2e/consent.spec.ts` exercises Accept and Decline buttons end-to-end against a
+    Playwright fixture but only asserts the `estalara_consent` key state (`:90-95`, `:148-150`),
+    **never asserts `__estalara_xid__`**. So the wire is now **producer-side-correct in code**
+    but **untested at the integration level** — meaning a future revert that drops one of the two
+    `void getOrCreateCrossSessionId()` calls from `index.ts` would NOT be caught by any test. This
+    is the precise gap FOLLOW-143 AC1 demands close. Priority **P1** (a future regression here
+    silently reverts the §13.2 LIA evidence the DPO sign-off rests on). → **FOLLOW-150** AC1.
+  - Producer code-side: **HALF_WIRE_P closed** ✅. Test-side wire: **HALF_WIRE_T (test-coverage
+    half-wire) — open** ⚠.
+- **`disclosure-claim:rotation-cadence` (RETRO-023 HALF_WIRE_C remediation).**
+  - **Producer (code) — UNCHANGED ✅.** `core/session.ts:130-225` still performs single-step
+    90-day TTL replacement. `XID_TTL_MS = 90 * 24 * 60 * 60 * 1000`. No 30-day step.
+  - **Consumer (5 disclosure surfaces) — 4 of 5 reconciled ✅, 1 of 5 RESIDUAL ⚠.** Grep
+    `monthly\|every 30 days\|30-day\|every month` across the five §13.2 disclosure surfaces (3
+    banner locales + DPIA §13.2 + Privacy Notice §3) returns **one hit**:
+    `docs/compliance/dpia.md:1017` "keyed by `tenant_secret` and a 30-day rotation bucket. The
+    hash is stored in `localStorage` and transmitted with every ingest event." This sentence is
+    in the §13.2 **Processing activity** paragraph describing the **legacy HMAC fingerprint**
+    (canvas + AudioContext + screen entropy keyed by `tenant_secret`) — NOT the new UUID xid
+    introduced by FOLLOW-139. But §13.2 now contains two parallel claims about a
+    `localStorage`-stored cross-session identifier with two different cadences (30-day rotation
+    bucket for the legacy HMAC, refreshed-every-90-days for the new UUID xid). The dual-id
+    collision is internal to §13.2 and would mislead any reader (DPO, auditor, future
+    sdk-engineer) about which identifier and which cadence the §13.2 LIA balancing test rests
+    on. The Rule N amendment (Step 1 grep) would catch this on a careful sweep but only flags
+    it as "cadence claim present" — it would not surface the dual-id-narrative ambiguity. The
+    fix is to either (a) split §13.2 into two sub-sections (one per identifier) or (b) update
+    the processing-activity paragraph to acknowledge BOTH identifiers with their respective
+    storage keys (`__estalara_session__` for the legacy HMAC; `__estalara_xid__` for the new
+    UUID) and TTLs. Priority **P1** → **FOLLOW-150** AC2. The blast radius is doc-only (no code
+    change), but the DPO gate at `dpia.md:1078` reads §13.2 to sign off, and an internally
+    self-contradictory §13.2 puts the DPO sign-off at risk.
+  - Code-side: **HALF_WIRE_C closed for 4 of 5 surfaces** ✅. Doc-side §13.2 residual:
+    **HALF_WIRE_C — open on 1 of 5 surfaces** ⚠ (dual-id narrative within the same DPIA section).
+- **No new env var, DB column, Redpanda topic, or wire event introduced by the inline fixes.**
+  The xid still does NOT travel on event payloads — that work is correctly carved out as
+  FOLLOW-146 (re-verified in §5b — FOLLOW-146 status: OPEN in `backlog/FOLLOW_UPS.md:4006`, no
+  accidental scope creep into PR #164). **Clean carve-out ✅.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — FOLLOW-143 AC1 integration test is not implemented.** The producer is wired in
+  code (`index.ts:116,159`) but no test exercises `init()` and asserts the localStorage state
+  after init. AC1 explicitly requires "An integration-level test (jsdom or E2E) asserts the key
+  IS present in `localStorage` after a granted init AND ABSENT after a denied init — both halves
+  of the wire". The PR added 0 such tests. Without it, a future revert that drops either
+  `void getOrCreateCrossSessionId()` call would re-introduce RETRO-023's
+  producer-never-invoked failure with zero CI signal. → **FOLLOW-150 AC1**.
+- **LG-2 (P2) — `consent-banner.test.ts:385` test-file comment still says "monthly rotation".**
+  This is a **pure comment** (`// §13.2 key facts: cross-session pseudonymous identifier, 90-day
+  retention, monthly rotation.`), zero behavioral impact, but it directly contradicts the test
+  assertions five lines below it (`.toMatch(/refreshed every 90 days/i)`). A future reader of the
+  test file gets conflicting framing. → folded into FOLLOW-150 AC3 (sweep comment).
+
+#### 4b. Code bugs not caught
+
+- N/A. The inline fixes are line-by-line text substitutions on copy strings + two
+  `void getOrCreateCrossSessionId()` insertions on existing branches. No new runtime logic was
+  introduced by the inline fixes themselves. (RETRO-023 §4b CB-1/CB-2/CB-3 carry forward
+  unchanged — those are bugs on the underlying FOLLOW-139 implementation, not on the inline
+  fixes.)
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — no integration / E2E test for the init-path xid wiring.** Same gap as LG-1,
+  expressed from the test-coverage angle. The only coverage of the new init wiring is the unit
+  tests that call the producer directly. `packages/sdk/e2e/consent.spec.ts` exercises the Accept
+  and Decline buttons end-to-end but does not query `localStorage[__estalara_xid__]` — extending
+  it by ~6 lines would close the gap (after the Accept assertion at `:95` add
+  `expect(await page.evaluate(() => localStorage.getItem('__estalara_xid__'))).not.toBeNull()`;
+  symmetric assertion `.toBeNull()` after the Decline assertion at `:148`). → **FOLLOW-150 AC1**.
+- **TG-2 (P2) — no test asserts the inline-fix wording IS the rendered banner text in a real
+  browser.** The unit-test regex updates (`/refreshed every 90 days/i`, `/odświeżany co 90 dni/i`,
+  `/renueva cada 90 d/i`) verify the COPY constant; they do not verify the rendered Shadow DOM
+  carries that text. `consent.spec.ts` does not assert §13.2 banner text presence end-to-end.
+  Low severity (the Shadow DOM render is already exercised by the consent-banner unit suite at
+  the JSDOM level), but documented for future hardening. Not folded into a stub.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1) — `dpia.md:1017` residual "30-day rotation bucket" sentence inside §13.2.** Details
+  in §3 CHECK B HALF_WIRE_C residual. The §13.2 **Processing activity** paragraph describes the
+  legacy HMAC fingerprint as "stored in `localStorage`" and rotating on a "30-day rotation bucket"
+  — same section, same physical storage tier, different identifier and different cadence than
+  the new UUID xid that the rest of §13.2 (line 1039 onwards) now describes as
+  "refreshed every 90 days". A reader cannot determine which `localStorage` identifier and which
+  cadence the §13.2 LIA balancing test rests on. Either (a) split §13.2 to describe both
+  identifiers separately with their respective storage keys (`__estalara_session__` and
+  `__estalara_xid__`) and TTLs, OR (b) clarify in the Processing-activity paragraph that the
+  "30-day rotation bucket" applies to the HMAC's `day_bucket` salt input (per Master Design
+  §B / `session.ts:1-12` legacy docblock) while the persisted `localStorage` lifetime is
+  governed by the new xid's 90-day TTL — naming the keys distinctly. The DPO sign-off (gate at
+  `dpia.md:1078`) is the immediate consumer. → **FOLLOW-150 AC2**.
+- **DG-2 (P2) — RETRO-023 §4d DG-4 (Master Design dual-id model) and FOLLOW-143 AC4 (the
+  `session.ts` file-level docblock) are NOT addressed by PR #164.** The inline fixes did not
+  update Master Design §B / §Snapshot.1; did not extend the `session.ts:1-12` file-level
+  docblock beyond the 4-line `:7-10` addendum (FOLLOW-139 base commit, not the inline fixes).
+  FOLLOW-143 remains marked DONE in `FOLLOW_UPS.md:3864` but AC4 is unfulfilled. This is
+  per-FOLLOW status drift (AC4 was not addressed even though FOLLOW-143 is marked DONE);
+  remediation can be folded into FOLLOW-150 OR re-opened on FOLLOW-143 itself by PM. →
+  **FOLLOW-150 AC4** (or PM may choose to re-open FOLLOW-143 instead — flagged below in §7).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 13b Lane B, READY) — §13.2 EU go-live gate status.** RETRO-023 §5a
+  flagged that PR #164's GREEN flip was premature; the inline fixes in this same PR now address
+  the two primary P0/P1 gaps RETRO-023 surfaced. **Net result: the §13.2 balancing-test GREEN
+  flip is now substantially supportable** (the disclosed-cadence claims match the code's actual
+  90-day TTL; the producer actually fires from init paths; the eraser actually erases a key that
+  exists). The one residual cadence sentence at `dpia.md:1017` (legacy HMAC, dual-id collision)
+  is an internal §13.2 inconsistency, not a code-vs-doc HALF_WIRE_C of the same blast radius as
+  RETRO-023's findings; the DPO sign-off can probably proceed if the §13.2 narrative is tightened
+  before sign-off (FOLLOW-150 AC2). **P0 EU pilot launch is NOT blocked by RETRO-025 findings;
+  the residuals are P1.** PM action: file FOLLOW-150 and either (a) require it close before DPO
+  sign-off, or (b) include the §13.2 narrative tightening in the DPO presentation deck so DPO
+  can sign off with full context. **The PR-level inline-fix discipline (squash both follow-ups
+  into the same PR rather than open new PRs) was sound — it kept the §13.2 closure atomic.**
+- **TICKET-PILOT-002 (go/no-go runbook, BLOCKED) — unchanged from RETRO-023 §5a.** FOLLOW-143
+  AC5 (PILOT_RUNBOOK EU pre-flight gate tightening to assert both KEY-PRESENT and KEY-ABSENT) is
+  STILL unfulfilled by the inline fix. RETRO-023's recommendation that the runbook tester observe
+  KEY-PRESENT after grant AND KEY-ABSENT after deny remains the right gate; the runbook does not
+  yet carry this. → folded into FOLLOW-150 AC1 (the integration test is the canonical artifact
+  the runbook should reference) or stays on FOLLOW-143 if PM re-opens it.
+- **FOLLOW-141 (PR #165) — sibling-but-unrelated; no impact.**
+- **FOLLOW-147 (still P0 OPEN, pilot-slug verification, from RETRO-024) — unrelated; no impact.**
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-146 (xid on event wire / ingest join key, status: OPEN per `FOLLOW_UPS.md:4006`) —
+  unchanged.** PR #164's inline fix correctly DID NOT scope-creep into FOLLOW-146 territory; the
+  inline FOLLOW-143 fix carries explicit comments at `index.ts:115` and `index.ts:157` noting
+  that "FOLLOW-146 will attach xid to event payloads" — the carve-out is clean. Verified by
+  grepping `x_session_id`/`xSessionId` across all packages/apps: **zero hits**, meaning the xid
+  is still a stand-alone client-side artifact and does not yet flow on the wire. FOLLOW-146
+  remains the ticket that delivers cross-session continuity end-to-end. No new dependency from
+  this retro.
+- **FOLLOW-145 (Withdraw button, P2, OPEN) — unchanged.**
+
+#### 5c. Contracts changed that other modules rely on
+
+- **§13.2 disclosure-cadence contract — 4 of 5 surfaces synchronized at "every 90 days".** Any
+  tenant who publishes the Estalara-supplied Privacy Notice template (per
+  `PRIVACY_NOTICE_TEMPLATE.md:79`) now ships an accurate cadence claim. Any control-plane
+  template-render or auto-onboarding wizard that re-uses the §13.2 banner copy will get the
+  updated wording. No downstream consumer needs to change behavior — the contract change is
+  documentation-favorable (factual correctness).
+- **§13.2 balancing-test contract — UNCONDITIONAL GREEN.** Downstream DPO sign-off can now
+  proceed without a FOLLOW-128/FOLLOW-139 contingency. Caveat: the §13.2 narrative inconsistency
+  (DG-1) should be tightened before the DPO presentation to avoid a back-and-forth on which
+  identifier and cadence the LIA is conditioned on.
+
+#### 5d. Architectural assumptions affected
+
+- **Rule N lineage — fifth instance, third sub-axis (dual-id-narrative collision).** Pattern N
+  (compliance doc asserts behavior the code does not implement) now has five consecutive
+  occurrences across RETRO-018, RETRO-019, RETRO-020, RETRO-023, and **RETRO-025**. The first
+  four sub-axes were: (1) string absent from banner, (2) behavior absent from code, (3) retention
+  claim unenforced, (4) cadence claim diverges from TTL. **RETRO-025's new sub-axis is (5)
+  dual-id narrative collision within ONE compliance section** — one DPIA paragraph names two
+  parallel `localStorage` identifiers with two different cadences without disambiguating which
+  identifier and which cadence the LIA conditions on. The remediation pattern is DIFFERENT from
+  the prior four: this is not a wording fix or a code fix; it is a narrative restructuring (split
+  §13.2 by identifier OR clarify the storage-key-to-cadence mapping inline). The Rule N parent
+  shape ("compliance doc asserts behavior the code does not implement") still describes the root
+  problem but the verification grep added by the 2026-05-28 amendment (cadence-claim sweep)
+  catches the SYMPTOM (one grep hit) without surfacing the deeper shape (two identifiers
+  conflated in one paragraph). See §6 for the candidate sub-amendment.
+- **Dual-id model documentation debt (continuation of RETRO-023 §5d).** RETRO-023 flagged that
+  Master Design + `session.ts` file-level docblock do not acknowledge the dual-id model. PR #164
+  did not address this (FOLLOW-143 AC4 unfulfilled). The §13.2 internal inconsistency
+  (DG-1 / FOLLOW-150 AC2) is the in-the-wild manifestation of that documentation debt — without
+  a documented dual-id model, a doc author updating §13.2 would not know there were two
+  identifiers to disambiguate. → reinforces FOLLOW-150 AC4 (extend `session.ts` file-level
+  docblock + Master Design §B to make the dual-id model explicit).
+
+### 6. New lesson candidates
+
+- **Pattern N (compliance doc asserts behavior the code does not implement) — FIFTH consecutive
+  occurrence, third sub-axis (dual-id-narrative collision within ONE compliance section).**
+  Per the no-double-promotion discipline (Rule N already promoted by RETRO-019; amendment
+  promoted by RETRO-023), **Rule N is NOT re-promoted.** This retro is a fifth confirming
+  instance. The new sub-axis (dual-id narrative collision) is NOT yet covered by either the
+  original Rule N verification block (presence/absence of producers and removeItem calls) or by
+  the RETRO-023 cadence-mismatch amendment (which catches the symptom — a residual cadence
+  string — but not the deeper shape — two identifiers conflated in one paragraph). Count of the
+  dual-id-narrative-collision sub-shape = **1** (this retro). Below the dedicated promotion
+  threshold of 2 for a standalone rule or amendment. **NOT promoted in this retro.** Logged as
+  evidence so a future second occurrence (e.g., another compliance section conflating two
+  storage tiers or two retention policies for a single named user-facing concept) crosses the
+  threshold. Recommended amendment text if/when promoted: extend Rule N Step 1 grep to flag
+  any compliance section that mentions a `localStorage`/`sessionStorage`/`Cookie` storage tier
+  more than once with different cadences — and require each such mention to name the specific
+  storage key it refers to.
+- **Pattern (FOLLOW-status drift — a FOLLOW-UP marked DONE without all ACs fulfilled).** This
+  retro found FOLLOW-143 marked DONE in `FOLLOW_UPS.md:3864` despite AC1's integration test (LG-1),
+  AC2's early-exit-deny test (RETRO-023 §4c TG-3 carry-forward), AC3 (legacy-fingerprint erasure
+  decision), AC4 (docblock + Master Design dual-id), AC5 (PILOT_RUNBOOK gate) all being
+  unfulfilled by the inline fix. The PR-level intent was reasonable (squash the P0/P1 code fixes
+  into the same PR to keep §13.2 closure atomic) but the FOLLOW-status accounting overreached —
+  AC1 was partially addressed (producer wired) but the AC1 sentence "An integration-level test
+  asserts the key IS present after grant AND ABSENT after deny" was not. This is a process
+  pattern, not a code pattern. Seen: **1 retro** (RETRO-025). Below the promotion threshold of 2.
+  Logged for a future second occurrence; consider a CONTRIBUTING / worker-checklist update if it
+  recurs ("a FOLLOW-UP must not be marked DONE unless every AC checkbox is closed by a
+  committed artifact — partial-AC closure requires a carry-forward stub").
+- **No Rule promotion this retro.** Both patterns above are below threshold or already covered
+  by Rule N's family.
+
+### 7. Follow-ups
+
+- **FOLLOW-150** (sdk-engineer + compliance-engineer, 2h, **P1**, before EU pilot DPO sign-off):
+  Close FOLLOW-143's missing integration test + reconcile the §13.2 dual-id-narrative residual +
+  sweep the stale `consent-banner.test.ts:385` comment + finally address FOLLOW-143 AC4 (the
+  `session.ts` file-level docblock + Master Design §B dual-id model). Closes §3 CHECK B
+  HALF_WIRE_T + §3 CHECK B HALF_WIRE_C-residual + §4a LG-1/LG-2 + §4c TG-1 + §4d DG-1/DG-2 + §5a
+  TICKET-PILOT-002 runbook gate + §5d dual-id-model documentation debt.
+  (`source_retro: RETRO-025`, `depends_on: FOLLOW-139, FOLLOW-143, FOLLOW-144`.)
+- **PM CHOICE FLAG (not a new stub):** PM may alternatively re-open FOLLOW-143 (revert its DONE
+  marker to PARTIAL — AC1 partially addressed, AC2/AC3/AC4/AC5 unfulfilled) and let FOLLOW-150
+  scope shrink to just the residual `dpia.md:1017` reconciliation + comment sweep. This is a
+  bookkeeping preference (RETRO-analyst is append-only on `FOLLOW_UPS.md`, cannot modify
+  existing status fields). The recommendation here keeps FOLLOW-143 DONE (since the headline
+  AC1 producer-wired half IS done) and folds the test-half + ACs 2-5 into FOLLOW-150's scope —
+  but PM judgment prevails.
+
+### 8. Cross-references
+
+- **RETRO-023 (FOLLOW-139, PR #164 base commit)** — direct parent. RETRO-023 emitted FOLLOW-143
+  + FOLLOW-144 + FOLLOW-145 + FOLLOW-146; this retro audits the inline closure of FOLLOW-143 +
+  FOLLOW-144 inside the same PR before merge. RETRO-025 is the **verification-of-the-
+  verification** loop closure: the inline fixes substantially closed RETRO-023's P0/P1 gaps but
+  introduced one P1 test-coverage residual and one P1 doc-narrative residual, both folded into
+  FOLLOW-150.
+- **RETRO-019 / RETRO-020 / RETRO-018 (Rule N lineage)** — RETRO-025 is the FIFTH consecutive
+  Rule N instance. Rule N already promoted (RETRO-019), amendment promoted (RETRO-023). No
+  re-promotion; sub-amendment candidate logged at §6 below the threshold.
+- **RETRO-024 (FOLLOW-141, PR #165)** — sibling retro from the same Sprint 13a-hardening-v2 wave.
+  Independent surface (pilot-slug invariant); no cross-impact with RETRO-025 findings.
+- **CONVENTIONS_PATCH.md Rule N + 2026-05-28 amendment** — applied as the verification framework
+  for §3 CHECK B; the amendment Step 2 grep correctly surfaced the `dpia.md:1017` residual on a
+  post-merge sweep, demonstrating the amendment's grep is well-calibrated. The dual-id-narrative
+  shape is a NEW sub-axis below the threshold.
+- **First retro of Sprint 13a-hardening-v3** (de-facto — the inline-fix verification wave that
+  the user's prompt frames as "verification of the verification"). Sibling: **RETRO-026**
+  (FOLLOW-149 / PR #166, parallel — independent surface, no expected cross-impact).
+
+---
+
+## RETRO-026 — FOLLOW-149 (migration journal repair + monotonicity CI guard + honest migrate.ts reporting + Part D 0015 apply on prd) — 2026-05-28
+
+### 1. Summary of change
+
+- **PR:** #166 (merged 2026-05-28 at 22:44 UTC+02:00, merge commit `073f5d6`). Four part commits:
+  `8a384c6` (Part A — journal repair), `d6131f6` (Part B — CI gate + self-test),
+  `109dfbb` (Part C — migrate.ts honest reporting), `be75cb3` (Part D — Rule O codification +
+  ESC-012 + README update + Part D operational note documenting the isolated 0015 apply on prd).
+  Worker = (multi-agent, attributed Pnawrocki9 + Claude Opus 4.7). Sprint 13a-hardening-v3 (new
+  wave, P0 infra hardening). `depends_on:` discovered during FOLLOW-141 (PR #165) /
+  ESC-012-triggering attempt to apply 0015 to prd. Source: live-session diagnostic 2026-05-28 that
+  observed (a) `tenants.pilot_frozen` column ABSENT on prd despite a prior `pnpm db:migrate` run
+  claiming success, and (b) drizzle-kit emitting 2025-stamped `when` values for entries 0015 +
+  0016 on the local dev machine.
+- **Files changed:** 7 (+593 / −5).
+  - `.github/workflows/ci.yml` (+22) — new `migration-journal` job, `fetch-depth: 0`, runs the
+    self-test before the real validation.
+  - `CONVENTIONS_PATCH.md` (+66 / −1) — new **Rule O** ("Migration journal monotonicity +
+    recency"), evidence cites c92da81 + FOLLOW-149.
+  - `backlog/ESCALATIONS.md` (+42) — new **ESC-012** OPEN ("`pnpm db:migrate` against any env
+    will fail until pilot tenant exists").
+  - `packages/db/README.md` (+28) — new "Migration journal integrity (Rule O — FOLLOW-149)" section
+    + the new exit-2 behavior of `migrate.ts` documented.
+  - `packages/db/migrations/meta/_journal.json` (+4 / −2) — entries 15 and 16 `when` values
+    repaired (15: `1748304000000` → `1779840001000`; 16: `1748736000000` → `1779986691000`).
+  - `packages/db/scripts/migrate.ts` (+113 / −2) — full rewrite of the runner's reporting +
+    exit-2 trap-killer.
+  - `scripts/check-migration-journal.sh` (+323) — new bash + Node-inline gate with `--self-test`
+    mode (4 fixtures: monotonicity violation, year-drift violation, orphan entry, known-good).
+- **Modules touched:** db (packages/db: 1 script + 1 README + 1 journal patch) + ci (workflow +
+  scripts root) + docs (CONVENTIONS_PATCH + ESCALATIONS). **No SDK, no apps/control-plane, no
+  apps/decision-api, no apps/ingest, no data-engineer code, no production application code
+  changed** — this is a pure infrastructure + process hardening PR.
+- **Key contracts changed:**
+  - `packages/db/scripts/migrate.ts` exit-code contract — **breaking on the operator surface**
+    (intentional). Previously: always exited 0 and printed "Migrations applied successfully."
+    Now: exits 0 only when `applied > 0 && pending === 0` OR `applied === 0 && pending === 0`
+    (already up-to-date); exits **2** when `pending > 0 && applied === 0` (the trap-killer for
+    silent skip) OR when `applied > 0 && pending > 0` (mixed/partial state). Operators or CI
+    pipelines that previously assumed exit-0-always will now see a real failure when the
+    journal-ordering bug is present. **This is the desired behavior** but is a breaking change to
+    the operational contract — see §5c.
+  - **NEW Rule O** in `CONVENTIONS_PATCH.md` lines 590–652 — three invariants on
+    `packages/db/migrations/meta/_journal.json`: strict monotonic `when`, within 7 days of SQL
+    file commit date, one-to-one tag↔SQL file mapping. Breaking: **no** (new gate; existing
+    journal already conforms after Part A's repair).
+  - **NEW CI job** `migration-journal` in `.github/workflows/ci.yml` — runs on every PR; gates
+    merge if any of the three Rule O invariants is violated. Breaking: **no** (existing journal
+    passes; future drizzle-kit year-drifted entries will be caught at PR time).
+  - **NEW ESC-012** in `backlog/ESCALATIONS.md` — operational gotcha: `pnpm db:migrate` is no
+    longer safe in tenant-less environments because migration 0016 (pilot_inquiry_selector,
+    PR #165) ends with a `RAISE EXCEPTION` when the pilot tenant slug is missing, and Drizzle's
+    pg-core migrator wraps all pending migrations in a single transaction. Breaking on dev /
+    staging / any new region clone until TICKET-PILOT-001 seeds the pilot tenant. **This is a
+    real operational regression and is correctly flagged for TICKET-PILOT-001 to resolve.**
+  - No type, no API route, no DB-schema-DDL, no event-schema, no SDK-public-symbol changed.
+  - **Runtime data state change (Part D, on prd only):** `drizzle.__drizzle_migrations` now
+    contains entry 15 (`0015_pilot_frozen`, id=17, created_at=1779840001000,
+    hash=06190fd447a42483390467b1a334f7925c77875c5c3c9a0a4044b1041aa92d10) — but **not** via
+    `pnpm db:migrate` (because that would have rolled 0015 back when 0016 hit its RAISE), via a
+    one-off isolated `BEGIN/INSERT/COMMIT` mirror of the migrator. Breaking: **no** for
+    application code; **noteworthy:** `tenants.pilot_frozen` column is now present on prd.
+
+### 2. Verification done in PR
+
+- Test files changed: **NONE.** No new unit or integration test was added for `migrate.ts` Part C
+  (the exit-2 trap-killer). The `--self-test` mode of `check-migration-journal.sh` (Part B) is the
+  only new test artifact, and it lives INSIDE the script itself, exercised via CI invocation
+  before the real journal validation.
+- Assertions added: **4 in-memory fixtures** inside `scripts/check-migration-journal.sh:50-164`
+  exercising monotonicity-violation (fixture 1), year-drift-violation (fixture 2),
+  orphan-entry (fixture 3), and known-good (fixture 4). The self-test asserts that fixtures 1-3
+  are REJECTED with exit 1 and fixture 4 is ACCEPTED with exit 0. **No test exists for `migrate.ts`
+  Part C's `pending > 0 && applied === 0 → exit 2` branch** — see §4c TG-1.
+- Coverage delta: **+** for `scripts/check-migration-journal.sh` (the script self-tests four
+  invariant cases). **0 for `packages/db/scripts/migrate.ts`** — Part C's branch logic
+  (applied/pending/before/after permutation handling, the exit-2 trap-killer, the
+  appliedCount() "schema does not exist → 0" pre-first-migration handling) has no unit or
+  integration test in `packages/db/src/__tests__/`. The PR ships behavior the script self-test
+  cannot verify because the script self-test only validates the journal, not the runner.
+- CI checks: PR merged 2026-05-28 22:44 UTC; per PR body merge gates green. Standing CI-gate
+  caveat applies (Rule I / Vercel / Python lanes pre-existing-red & non-blocking, per the
+  CI-gate-landscape memory). **The new `migration-journal` CI job has NO prior runs against a
+  broken journal in this repo** — its in-CI correctness rests on the four self-test fixtures.
+- AC verdict — **COMPLETE on the four-part scope.** All four parts (A: repair, B: CI gate +
+  self-test, C: honest migrate.ts, D: 0015 applied to prd + Rule O codified + ESC-012 filed)
+  shipped in one PR. The Part D operational gotcha (single-transaction migrator + 0016 RAISE)
+  is properly escalated rather than papered over. Three caveats: (1) no test on `migrate.ts`
+  Part C, (2) the drizzle-kit root-cause is unfixed (only guarded), (3) one phantom row anomaly
+  in `drizzle.__drizzle_migrations` (id=17 for entry idx=15) flagged by user.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- `scripts/check-migration-journal.sh` (NEW) — invoked by `.github/workflows/ci.yml` (the
+  `migration-journal` job) AND documented as a `pre-push` lefthook invocation
+  (CONVENTIONS_PATCH.md Rule O lines 628–637) AND documented in `packages/db/README.md:195-203`.
+  Framework-discovered (CI workflow), suppressed false positive per Step 6 rules. **Not dead.**
+- `scripts/check-migration-journal.sh --self-test` mode — invoked by the same CI job ("CI invokes
+  the self-test first so the gate's own correctness is provable on every run" — Rule O line 631).
+  **Not dead.**
+- `packages/db/scripts/migrate.ts` (HEAVILY MODIFIED, not new) — entrypoint of `pnpm db:migrate`
+  (root `package.json` script). **Not dead.**
+- `packages/db/scripts/migrate.ts:appliedCount()` (NEW internal function) — called twice inside
+  the same file (before/after migrate). **Not dead** at the symbol level, but it's intentionally
+  module-private (no `export`), so Rule I would not flag.
+- **CHECK A clean ✅** (all new artifacts have at least one non-test invoker).
+
+**CHECK B — Half-wire detection:**
+
+- **`pnpm db:migrate` exit-code-2 contract** —
+  - **Producer EXISTS ✅** at `packages/db/scripts/migrate.ts:107-118` (the `pending > 0 &&
+    applied === 0 → process.exit(2)` branch) and `:122-128` (the mixed-state `applied > 0 &&
+    pending > 0 → process.exit(2)` branch).
+  - **Consumer — UNVERIFIED at the operational layer.** `grep -rn 'pnpm db:migrate' .github
+    apps packages docs` finds invocations in (a) `packages/db/README.md` (3 callers, all docs),
+    (b) `.github/workflows/post-migrate-seed.yml` likely (the auto-seed workflow per Sprint 11
+    FOLLOW-063), (c) `docs/runbooks/` references. **No CI workflow / GitHub Actions job is
+    documented to treat `exit 2` specially**; the standard shell behavior is "any non-zero =
+    failed step", so CI will surface it correctly. **No producer/consumer mismatch:** standard
+    POSIX exit-code semantics suffice; this is NOT a HALF_WIRE.
+- **`check-migration-journal.sh --self-test` fixture mode (FIXTURE_MODE=1, FIXTURE_JOURNAL=...,
+  FIXTURE_SQL_DIR=...)** —
+  - **Producer EXISTS ✅** at `check-migration-journal.sh:60-68` (the `run_fixture()` helper
+    sets the env vars and re-invokes `$0`).
+  - **Consumer EXISTS ✅** at `check-migration-journal.sh:166-172` (the
+    `if [[ "${FIXTURE_MODE:-0}" == "1" ]]; then` switch overrides `JOURNAL` and
+    `MIGRATIONS_DIR`). Producer and consumer in the same file. **Not a half-wire.**
+- **Rule O CI job name** (`migration-journal` in `.github/workflows/ci.yml`) —
+  - **Producer EXISTS ✅** (new job stanza added by Part B).
+  - **Consumer — N/A** (CI jobs are leaf nodes; nothing else in the repo references the job
+    name). Standard CI pattern; **not a half-wire.**
+- **`drizzle.__drizzle_migrations` row inserted by Part D's isolated apply (id=17, idx=15)** —
+  - **Producer EXISTS ✅** (the one-off isolated `BEGIN/INSERT INTO drizzle.__drizzle_migrations
+    /COMMIT` script that ran on prd 2026-05-28; not committed to the repo per PR text).
+  - **Consumer EXISTS ✅** — `drizzle-orm/postgres-js/migrator` reads this table on every
+    `migrate()` call to decide which entries to apply. The row's `created_at=1779840001000` is
+    strictly greater than entry 14's `1779840000000` and strictly less than entry 16's
+    `1779986691000`, so the migrator correctly skips it on the next run.
+  - **Not a half-wire**, BUT see **Phantom row anomaly** below (§4b CB-1).
+- **ESC-012 OPEN status** — the escalation entry describes the new operational constraint
+  (`pnpm db:migrate` against tenant-less env = 0016 RAISE = 0015 rollback alongside). The
+  required action names "TICKET-PILOT-001 (or earlier)" as the owner. Verified
+  (`grep -n 'TICKET-PILOT-001' backlog/QUEUE.md`): TICKET-PILOT-001 is READY with a 2026-05-27
+  unblock notice; the dependency on ESC-012 resolution is **NOT yet wired into the ticket's
+  depends_on or AC list** (QUEUE.md lines 2288-2336 do not reference ESC-012 or FOLLOW-149). The
+  escalation is properly filed but TICKET-PILOT-001's spec is not updated to require ESC-012
+  resolution before the operator runs `pnpm db:migrate` for 0016+. → **FOLLOW-151 (P0)** wires
+  the dependency explicitly.
+
+**Summary:** All four new code artifacts are correctly wired. ESC-012 is properly filed but
+TICKET-PILOT-001 does not yet name it as a depends_on / AC; **§3 produces ONE FOLLOW-UP
+(FOLLOW-151 — wire ESC-012 into TICKET-PILOT-001 spec).** Rule O CI job is wired but unproven in
+prod CI against a real violation; rest on the self-test for guarantee.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3 — acceptable risk per CEO/PM choice) — the drizzle-kit `when`-generation root cause
+  is NOT fixed.** This PR addresses the symptom (silently-skipped migrations) with two guards
+  (Part A repair + Part B CI gate) and a runtime trap-killer (Part C exit 2). But drizzle-kit on
+  the affected developer machine continues to emit 2025-stamped `when` values. The pattern has
+  now recurred TWICE (2026-05-18 commit `c92da81` repaired entries 6/8/9/10/11; 2026-05-28
+  PR #166 repaired entries 15/16) — confirming a real upstream defect, not a one-off. **Decision
+  rationale for accepting the gap:** Patching drizzle-kit itself requires (a) reproducing the
+  bug deterministically on the dev machine, (b) raising upstream / forking, (c) ongoing
+  maintenance. The CI gate (Part B) catches the defect at PR time before it reaches the journal;
+  the runtime trap-killer (Part C) catches it at apply time if it ever escapes CI. Defense in
+  depth is sufficient. **Severity P3 because:** the failure mode is now visible (gate fails OR
+  runner exits 2 with a loud warning) instead of silent. Filed as a tracking note (no follow-up)
+  but logged here in §6 as a candidate Rule promotion if the pattern recurs a third time
+  (which would mean a defective second-line defense, not a defective upstream tool). **Acceptance
+  is conditional on the PM/CEO endorsing it.** → **no FOLLOW filed (P3 acceptable)** but
+  flagged in §5d for CEO/PM attention.
+- **LG-2 (P0 — operational) — ESC-012 is filed but TICKET-PILOT-001's spec doesn't enforce its
+  resolution.** QUEUE.md lines 2288-2336 list TICKET-PILOT-001 with depends_on covering Sprint
+  13a-hardening tickets and update logs through 2026-05-27 evening, but the 2026-05-28-discovered
+  ESC-012 (which directly affects step 5 of the TICKET-PILOT-001 AC list — "Set
+  tenants.pilot_frozen=true on the shadow→live flip") is not added to the ticket's depends_on or
+  AC. Without an explicit AC, a worker running TICKET-PILOT-001 might invoke `pnpm db:migrate`
+  against staging/prod before the pilot tenant exists, hit 0016's RAISE, and roll back any future
+  0017+ entries. The current workaround (the one-off isolated apply pattern used for 0015) is
+  brittle and undocumented in the runbook. → **FOLLOW-151 (P0)** wires ESC-012 into
+  TICKET-PILOT-001's AC list AND adds a runbook step naming the two equivalent resolution paths
+  in ESC-012 ("either path 1 — wizard step calls db:migrate after tenant creation, OR path 2 —
+  edit 0016 to RAISE NOTICE no-op when tenant absent").
+- **LG-3 (P1) — migration 0016 is still pending in the journal.** Repaired entry 16's `when` is
+  `1779986691000` (2026-05-28), strictly greater than entry 15's repaired `1779840001000`. After
+  Part D's one-off 0015 apply, `drizzle.__drizzle_migrations` has 16 of 17 journal entries
+  applied. The next caller of `pnpm db:migrate` against prd will pick up entry 16 and hit its
+  RAISE EXCEPTION if the pilot tenant slug `'000-app-estalara'` is missing. **This is the same
+  half-wire shape as FOLLOW-147 (RETRO-024 §3)**: entry 16 is producer-side present
+  (committed SQL + journal entry) but consumer-side conditional (RAISE-on-missing-tenant). The PR
+  text and ESC-012 correctly document this and assign resolution to TICKET-PILOT-001. → covered
+  by FOLLOW-151 AC; no separate stub needed.
+- **LG-4 (P2) — `migrate.ts:90-95` reads the journal at module-evaluation time
+  (`const journalCount = readJournalCount();` + the top-level `await migrate(...)` immediately
+  below).** If `_journal.json` is missing or malformed, the script throws an unhelpful error
+  before the new `appliedCount()`/`migrate()` flow runs. A pre-flight validation
+  (e.g., calling `bash scripts/check-migration-journal.sh` as the first action) would surface
+  the precise violation. Low severity (the CI gate already catches this at PR time), but the
+  runner is unilaterally trustful of journal shape at runtime. → folded into FOLLOW-152 AC as a
+  hardening note.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P2) — phantom row anomaly in `drizzle.__drizzle_migrations` (id=17 for migration 0015
+  / idx=15).** Per the PR description for Part D: `drizzle.__drizzle_migrations` now contains
+  entry 15 at `id=17`, `created_at=1779840001000`,
+  `hash=06190fd447a42483390467b1a334f7925c77875c5c3c9a0a4044b1041aa92d10`. Expected: id=16 (15
+  prior journal entries idx 0–14, all applied historically, plus the just-applied idx=15 = 16th
+  row → id=16 in a 1-based serial). Observed: id=17, one higher than expected. Three candidate
+  explanations (user-supplied + analyst diligence):
+  1. **One of the c92da81 repair-added entries (0003/0004/0005/0007) was historically double-
+     applied before the repair landed.** The 2026-05-18 c92da81 commit message says it "adds 4
+     missing migration entries (0003 tenant_site_schemas, 0004 ab_bandit_weights, 0005 archetype
+     seed, 0007 bandit seed)." If any of those 4 SQL files were applied manually (or by a
+     subsequent migrator run that processed them after the repair) BEFORE the journal entries
+     were added, the migrator could have inserted a row for them, and a later run would re-apply
+     and re-insert because the journal-entry hash differed. **This is the most likely
+     explanation** given the c92da81 history.
+  2. **Drizzle re-records on hash mismatch.** If a journal entry's `hash` changes between runs
+     (because the SQL was edited after a prior apply, even cosmetically), Drizzle could insert a
+     new row rather than no-op. The Part A repair changed the `when` field but not `hash`
+     (hashes are over SQL content, not journal metadata), so this is less likely — but worth
+     verifying.
+  3. **IDs aren't strictly 1-based in the prd table** — `id` may be `SERIAL` or `BIGSERIAL` and
+     have skipped due to a rolled-back transaction (Drizzle's wrapping txn would NOT skip the
+     SERIAL because PostgreSQL increments sequences outside the txn). Plausible if there was a
+     prior failed `pnpm db:migrate` invocation that bumped the sequence.
+  - **Verdict on whether this is a real bug:** Explanation 3 (sequence skip due to rolled-back
+    txn — which we know happened today when 0016's RAISE rolled back 0015 the first time, before
+    Part D's isolated apply) is **the most likely explanation given the day's events** — the
+    failed `pnpm db:migrate` attempt that triggered ESC-012 INSERTed a row for 0015 inside the
+    txn, the txn rolled back, but the `__drizzle_migrations.id` SERIAL incremented to 17 (or to
+    16 for the rolled-back attempt, then 17 for the Part D isolated apply). PostgreSQL SEQUENCE
+    semantics confirm this: `nextval()` is NOT rolled back when the surrounding txn aborts. **So
+    the phantom row is most likely a numbering quirk from a rolled-back txn, not a real bug.**
+  - **Stub-worthy?** Confirming this requires reading the prd
+    `drizzle.__drizzle_migrations` table directly (`SELECT id, hash, created_at FROM
+    drizzle.__drizzle_migrations ORDER BY id`) and comparing the 17 rows to the 16 expected
+    entries. If the row count is **17** with one duplicate-hash entry → explanation 1 confirms.
+    If the row count is **16** with `MAX(id) = 17` → explanation 3 confirms. The user surfaced
+    this as a known oddity and asked the retro to either explain or file a stub. **Filing as
+    FOLLOW-152 (P2) — diagnostic SELECT + brief written confirmation in `docs/runbooks/db-
+    operations.md` or a new ADR-NNNN.** Low severity: even if explanation 1 is correct
+    (historical double-apply), the row that's "phantom" is for an already-completed migration,
+    not one that's silently inert. → **FOLLOW-152 (P2).**
+- **CB-2 (P2) — `check-migration-journal.sh:225` uses
+  `journal.entries[journal.entries.indexOf(entry) - 1]?.idx` to identify the prior entry, but
+  `.indexOf(entry)` on an object array is O(n) and relies on reference equality** (the loop
+  iterates the same array). Functionally correct but a sloppy idiom; a sibling `const prevIdx`
+  tracked alongside `prev` and `prevTag` would be clearer and O(1). Cosmetic; no follow-up.
+- **CB-3 (P2) — the runtime `appliedCount()` schema-doesn't-exist check at `migrate.ts:79` uses
+  regex `/does not exist|relation .* does not exist/i.test(msg)`.** This is permissive enough to
+  swallow other "X does not exist" errors (e.g., `database "estalara" does not exist`,
+  `extension "uuid-ossp" does not exist`, etc.) and treat them as `before = 0`. The narrower
+  intended match is `"schema \"drizzle\" does not exist"` or
+  `"relation \"drizzle.__drizzle_migrations\" does not exist"`. False positives are unlikely
+  (the surrounding context is a known pg query), but a future operator running against a
+  malformed connection string would get a misleading "Already up-to-date" instead of the real
+  connection error. → folded into FOLLOW-152 AC as a tightening note.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P0) — NO unit test exists for `migrate.ts` Part C's exit-2 trap-killer behavior.** The
+  user explicitly asked this question. `packages/db/src/__tests__/` contains 4 files
+  (`ab_bandit_weights.test.ts`, `archetype_embeddings_seed.test.ts`, `client.test.ts`,
+  `pilot_inquiry_selector.test.ts`); none exercises `migrate.ts`. The new exit-2 branch
+  (`pending > 0 && applied === 0`) is the central trap-killer the PR was designed around. It is
+  validated by zero tests; its correctness rests on visual inspection. A reasonable test would
+  mock `appliedCount()` to return `0` before and `0` after with `journalCount = N > 0`, invoke
+  the runner, and assert `process.exit(2)` was called with the warning text. The structurally-
+  analogous test for `check-migration-journal.sh:--self-test` mode does NOT cover `migrate.ts`'s
+  branch logic. → **FOLLOW-152 (P0 sub-AC)** adds a vitest unit test covering the 4
+  permutations: (a) `applied > 0 && pending === 0` → exit 0 with success line, (b) `applied
+  === 0 && pending === 0` → exit 0 with "Already up-to-date", (c) `pending > 0 && applied
+  === 0` → exit 2 with the FOLLOW-149 warning, (d) `applied > 0 && pending > 0` → exit 2 with
+  the partial-success warning. (Same FOLLOW absorbs the LG-4 / CB-3 fixes + the CB-1 phantom
+  row diagnostic.)
+- **TG-2 (P1) — the Rule O self-test does NOT exercise a real journal-vs-stale-git-history
+  scenario.** Fixture 2 (year-drift violation) uses `: > <path>/0000_yearbug.sql` to create an
+  empty file, whose `mtime` defaults to "now" (2026), so the recency check naturally fails
+  against a 2025-stamped `when`. It does NOT exercise the git-log fallback path
+  (`getSqlTimestampSeconds()` lines 264-275) because `FIXTURE_MODE=1` short-circuits the git
+  block (line 265: `if (!IS_FIXTURE) { try { ... git log ... } }`). A real journal violation
+  that comes from a committed-but-misdated SQL file would go through the git path; the
+  self-test never reaches it. → **FOLLOW-153 (P2)** adds a self-test fixture that creates a
+  tiny ephemeral git repo (`git init`, commit a SQL file with `GIT_AUTHOR_DATE` set to
+  2026-05-28) and asserts the recency check against the git-log timestamp, not the mtime
+  fallback. Low priority (the mtime fallback covers ~90% of real cases and the git path is
+  simple), but worth covering before the gate's confidence is bet on a launch.
+- **TG-3 (P2) — no integration test exists that runs `pnpm db:migrate` against an
+  intentionally-broken journal (e.g., a year-drifted fixture entry) and asserts the runner
+  exits 2.** A Testcontainers or pgmem-based integration test could exercise the full Part B
+  + Part C chain. Same gap as the FOLLOW-147 / RETRO-024 §4c TG-1 concern (every `packages/db/
+  src/__tests__/` file ships only structural assertions, never live DB exercises). → folded
+  into FOLLOW-152 AC as a stretch goal (full integration is out of scope; mocking is acceptable).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1) — TICKET-PILOT-001's spec file (`backlog/sprint-12/TICKET-PILOT-001.md`, per
+  QUEUE.md L2299) does NOT reference ESC-012 or the FOLLOW-149 operational gotcha.** QUEUE.md's
+  entry for the ticket (L2288-L2336) mentions the FOLLOW-106 pilot_frozen flag in step 5 but
+  not the single-transaction migrator constraint. The spec file is the canonical reference for
+  the worker who picks this ticket up; without an explicit AC for ESC-012 resolution, the
+  worker will follow the now-broken `pnpm db:migrate` step. → covered by FOLLOW-151.
+- **DG-2 (P1) — Master Design has no changelog entry for the v3.3+ infra hardening (FOLLOW-149
+  + ESC-012 + Rule O).** The user noted "Master Design changelog being written separately"; this
+  retro does not block on it, but flags the gap. The post-PR-#165 v3.3 changelog mentions
+  TICKET-PILOT-001 readiness through 2026-05-27 evening; the 2026-05-28 FOLLOW-149 PR + ESC-012
+  shifts the operational landscape (Lane B is now gated on ESC-012 resolution, not just
+  the Lane A hardening tickets). → tracked in QUEUE.md L3-L20 (per `head -100` reading); the
+  master design will need a v3.4 changelog. **Outside retro scope** (Master Design is the PM /
+  CEO's editorial; not the retro-analyst's). → no FOLLOW filed; flagged for PM in §5.
+- **DG-3 (P2) — `docs/runbooks/db-operations.md` does NOT exist** (verified: no file at that
+  path; the only `docs/runbooks/` file referenced in the codebase is `vendor-accounts.md` in
+  ESC-008 context). The Part D one-off isolated apply pattern (mirror of Drizzle's per-entry
+  logic for single-migration applies) is a non-trivial operational technique that is now part
+  of the team's toolbox but is documented nowhere. → folded into FOLLOW-151 AC (PILOT_RUNBOOK is
+  the natural home; or create `docs/runbooks/db-operations.md` if the pattern is general
+  enough). The pattern recurrence after the c92da81 + FOLLOW-149 history is high; codify before
+  it's forgotten.
+- **DG-4 (P2) — the `migrate.ts` exit-2 behavior is documented in `packages/db/README.md:181-184`
+  (Part D added this) and in CONVENTIONS_PATCH.md Rule O lines 638-642, but is NOT documented
+  in the operator-facing `pnpm db:migrate` script invocation chain.** A new operator running the
+  command from the repo root has no in-terminal way to know that "exit 2" is a real
+  diagnostic, not a generic failure. The warning text the runner emits (`migrate.ts:108-117`) is
+  good — but only after the migration runs. A `pnpm db:migrate --help` or a header banner is not
+  in scope; noted for future ergonomics work. → no FOLLOW filed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (Sprint 13b Lane B, READY, QUEUE.md L2288-L2336) — directly affected by
+  ESC-012.** The ticket's step 5 ("Set tenants.pilot_frozen=true on the shadow→live flip — opens
+  the measurement window") now has a tacit prerequisite (the pilot tenant row must exist in
+  `tenants` before any future `pnpm db:migrate` run, OR the operator must use the one-off
+  isolated apply pattern for 0016). Without a spec update, a worker will pick this up and
+  re-trigger the exact failure mode that ESC-012 documents. **PM action:** add ESC-012 to
+  TICKET-PILOT-001's depends_on; add AC step 6 ("verify ESC-012 resolution path before invoking
+  pnpm db:migrate"). Flagged per constraint 3 for PM/CEO attention; this is a P0 pilot-
+  readiness item.
+- **FOLLOW-147 (RETRO-024, P0 OPEN, pilot-slug verification) — TIGHTLY COUPLED with FOLLOW-151.**
+  Both follow-ups touch TICKET-PILOT-001's pre-shadow→live checklist. FOLLOW-147 fixes the
+  migration 0016 invariant verification (data-engineer + backend-engineer); FOLLOW-151 (this
+  retro) wires ESC-012 into the ticket's depends_on (PM / architect editorial). The PM should
+  consider promoting both into a single TICKET-PILOT-001-PREFLIGHT consolidation rather than
+  two parallel follow-ups — but the retro keeps them separate per scope discipline.
+- **FOLLOW-141 (PR #165, DONE — pilot inquiry_submit_selector seed) — its production
+  applicability is now CONDITIONAL on ESC-012 resolution.** The 0016 migration is committed but
+  unapplied; until either (a) TICKET-PILOT-001 seeds the pilot tenant before `pnpm db:migrate`
+  runs, or (b) someone uses the one-off isolated apply pattern, the pilot's
+  `inquiry_submit_selector` column remains NULL. RETRO-024's FOLLOW-147 (verify migration 0016's
+  WHERE-clause invariant) is now joined by FOLLOW-151 (wire ESC-012). FOLLOW-141's status in
+  `backlog/FOLLOW_UPS.md` may need to flip from "DONE — PR #165" to "DONE pending ESC-012
+  resolution before 0016 actually applies to prd." → PM editorial.
+- **FOLLOW-092 (TICKET-PILOT-001 shadow-window measurement, BLOCKED) — UNCHANGED.** Still
+  downstream of TICKET-PILOT-001 + Lane A. ESC-012 adds one more reason for the dependency.
+- **RETRO-025 sibling (FOLLOW-150, P1, OPEN) — independent surface; no cross-impact.** RETRO-025
+  audits PR #164 inline fixes (SDK xid wiring + §13.2 cadence reconciliation). RETRO-026 audits
+  PR #166 infra hardening. Both belong to the de-facto Sprint 13a-hardening-v3 wave but touch
+  disjoint files (SDK + compliance docs vs. db scripts + CI workflow).
+
+#### 5b. Future sprint tickets affected
+
+- **TICKET-PILOT-002 (go/no-go runbook, BLOCKED) — affected.** The PILOT_RUNBOOK §3 + §5 author
+  must now include the apply-and-verify step for migration 0016 (FOLLOW-147 AC4) AND the
+  ESC-012 resolution path (FOLLOW-151 AC). The two follow-ups overlap in the runbook surface;
+  the TICKET-PILOT-002 worker must reconcile.
+- **Future migration authors (data-engineer, ml-engineer, anyone generating a new migration) —
+  affected.** Rule O now requires every new migration's `when` to be (a) strictly monotonic and
+  (b) within 7 days of the SQL file's commit date. The "how to apply when you generate a new
+  migration" steps in CONVENTIONS_PATCH.md lines 644-651 (and `packages/db/README.md:186-208`)
+  are mandatory reading for every PR adding a migration. **The CI gate enforces this** — but
+  workers should pre-check locally with `bash scripts/check-migration-journal.sh` to avoid red
+  CI cycles. → no follow-up needed; the rule is self-enforcing via CI.
+- **TICKET-PROCESS-001 follow-on (the agent-skill upgrade — commit `24eceff` "chore(agents):
+  upgrade all 10 skill files from retrospective evidence") — partially affected.** The
+  data-engineer + backend-engineer skill files should reference Rule O and the FOLLOW-149
+  pattern in their migration-authoring guidance. Not retro scope; flagged for the next
+  agent-skill refresh cycle.
+- **Sprint 14 (YELLOW audit Sprint 2–4 reserved stubs FOLLOW-132..138) — N/A.** No YELLOW item
+  involves migration journal mechanics.
+
+#### 5c. Contracts changed that other modules rely on
+
+- **Operational contract — `pnpm db:migrate` exit-code semantics.** Previously "always exit 0
+  with green text"; now "exit 0 only on real success or no-op; exit 2 on detectable trouble."
+  This is **breaking on the operator surface**, but the only "consumer" of the prior contract
+  was the operator's eyeball reading "Migrations applied successfully." The new contract is
+  strictly more honest. CI workflows that invoke `pnpm db:migrate` (the post-migrate-seed
+  workflow, any Terraform apply hook, future deploy pipelines) will correctly treat exit 2 as a
+  failure. **No code change is required in callers**, only operator/CI mental-model alignment.
+- **Operational contract — `pnpm db:migrate` against a tenant-less environment now fails loudly
+  on 0016.** ESC-012 documents this. Dev / staging / fresh region clones / any DB without the
+  pilot tenant slug will hit 0016's RAISE on next invocation. This is also a breaking change to
+  the operational contract but is documented in ESC-012 and (after FOLLOW-151) in TICKET-PILOT-
+  001 + PILOT_RUNBOOK. The systemic constraint is real and persists until ESC-012 is resolved
+  via one of the two paths.
+- **Contract — `_journal.json` must satisfy Rule O.** Every future PR adding a migration is
+  subject to the three invariants. No existing module relies on this as a precondition (it's a
+  CI-enforced project rule, not a runtime API), so no downstream consumer is affected. The
+  existing journal already conforms after Part A's repair.
+
+#### 5d. Architectural assumptions affected
+
+- **"Migration application is a black-box success/failure" assumption — RETIRED.** Before this
+  PR, the assumption was that `pnpm db:migrate` either succeeded (green) or threw (red). The
+  silent-success failure mode (drizzle skips an entry, runner reports success) was an
+  unrecognized third state. FOLLOW-149 makes the three states explicit: success, no-op, partial
+  failure (exit 2). Future operators must internalize the three-state model.
+- **"drizzle-kit is correct" assumption — DEGRADED.** The 2026-05-18 + 2026-05-28 recurrences of
+  the year-drift bug confirm a real upstream defect. This PR's response is "guard, do not fix"
+  (Part B CI gate + Part C runtime trap, but no upstream patch or fork). **PM/CEO acceptance
+  required** — see §4a LG-1. If a third year-drift incident occurs (a fortiori with the gate
+  in place, it would be caught at PR time before reaching `_journal.json`, but the local-dev
+  friction would persist), the team should reconsider patching drizzle-kit. Below the
+  retrospective threshold today; no rule promotion.
+- **"`drizzle.__drizzle_migrations.id` is a strict 1-based incrementing counter" assumption —
+  POTENTIALLY WRONG.** The phantom row anomaly (CB-1) suggests the SERIAL may have skipped due
+  to a rolled-back transaction. PostgreSQL SEQUENCE semantics confirm sequences are
+  non-transactional. Future code that reads `__drizzle_migrations.id` for ordering MUST use
+  `created_at` (the journal `when` value), NOT `id`. No existing code in the repo reads `id` for
+  ordering (verified by grep), so no impact today; logged here for future migration tooling
+  authors. → covered by FOLLOW-152 (the diagnostic SELECT confirms the explanation).
+- **"Schema-level transaction wrapping by Drizzle migrator is safe" assumption — CHALLENGED.**
+  Drizzle's pg-core migrator wraps ALL pending migrations in ONE transaction
+  (`drizzle-orm/pg-core/dialect.js:60`). When migration N's failure rolls back migration N-1,
+  N+1, ..., this is technically correct ACID behavior but operationally surprising. The
+  RAISE-on-missing-tenant pattern in 0016 (a deliberate guard, FOLLOW-141 design) is now in
+  direct conflict with this transactional behavior. The systemic architecture choice is "either
+  one txn per migration (Drizzle's behavior) OR one txn per all-pending (Drizzle's behavior),
+  pick one consistently" — the team has implicitly chosen the latter. Future RAISE-EXCEPTION
+  guards in migrations must consider this rollback radius. → escalation-worthy as a design
+  guideline; for now, ESC-012's "edit 0016 to RAISE NOTICE instead of RAISE EXCEPTION" path
+  resolves the immediate issue.
+
+### 6. New lesson candidates
+
+- **Pattern — "tooling output reports success when it did not actually do the work" (silent-
+  success bug in operator tooling).** Seen in this retro (`migrate.ts` printing "Migrations
+  applied successfully." with zero applied). The user-supplied note observed this is the second
+  instance after Rule N's HALF_WIRE pattern of "code says success when it didn't actually do the
+  work" — though Rule N's specific shape is "compliance disclosure asserts behavior the code
+  doesn't perform", which is a different axis (disclosure vs. operator-tool output).
+  - **Count of the narrower "operator tool reports success when it did nothing" pattern:** 1
+    (this retro). Sibling RETRO-025 (which landed before this retro was written and was
+    re-read) DID NOT surface an operator-tooling silent-success pattern — RETRO-025's findings
+    (HALF_WIRE_T integration-test gap; dual-id narrative collision in dpia.md:1017) are doc /
+    test-coverage shapes, not operator-tool silent-success shapes. **Below the dedicated
+    promotion threshold of 2.** NOT promoted as a new Rule. Logged here so the NEXT retro
+    crosses the threshold; promote a Rule P "tooling output must reflect reality, not
+    optimism" when the second instance lands. Sketch verification:
+    ```bash
+    # In any operator-facing script, success messaging MUST be gated on a positive observation,
+    # not an unconditional println at end of script.
+    grep -rn "console.log.*success\|echo.*success\|print.*success\|✅\|Successfully" \
+      packages/*/scripts apps/*/scripts scripts/ --include="*.ts" --include="*.sh"
+    # Each match should be inside a conditional that checks an actual side-effect count.
+    ```
+  - **Sister candidate — the cadence-mismatch Rule N amendment (RETRO-023)** is the same root
+    cause class ("artifact claims state X; reality is state Y") but applied to a different
+    surface (compliance disclosure vs. operator tooling). The two patterns are siblings, not
+    instances of the same rule. The Rule N amendment is already in place; this pattern is its
+    operator-tooling cousin.
+  - **Decision:** **NOT promoted today.** Promote to Rule P when the second instance lands.
+
+- **Pattern — "second-line defense for an unfixed upstream tool defect" (Rule O response shape).**
+  This PR's response to drizzle-kit's year-drift bug is "guard at PR time + guard at run time,
+  do not patch upstream." The pattern is a deliberate architectural choice (the team accepts
+  P3 ongoing local-dev friction in exchange for not maintaining a fork). Seen once before
+  (commit c92da81 was a one-off journal patch, no permanent guard — this PR is the first time
+  the response has been formalized as a Rule). **Count = 1.** Below threshold. Logged as a
+  candidate for a future "Rule Q — when to fork-and-patch vs. guard-and-tolerate an upstream
+  tool defect" if the team encounters another instance. Below threshold; not promoted.
+
+- **Pattern — "operational gotcha discovered during a hardening PR is filed as a new
+  escalation, not buried in PR body."** This PR filed ESC-012 the moment the Drizzle single-txn
+  + 0016 RAISE behavior was discovered, rather than papering over it with `--no-verify` or a
+  hack. **This is a positive pattern worth reinforcing as a process norm** (it already aligns
+  with CLAUDE.md "agents MUST escalate when..." guidance). Not a Rule candidate; just praise.
+
+- **Rule O — provisional pending second occurrence.** Per user instruction, Rule O was added by
+  this PR with 1 occurrence (FOLLOW-149 itself; the c92da81 precedent is cited in evidence but
+  the rule was not promoted then). The threshold for permanent promotion is 2 retro-discovered
+  instances. Rule O therefore exists in CONVENTIONS_PATCH.md (lines 590-652) but is
+  **provisional**: the first occurrence is c92da81 (2026-05-18, no retro filed at the time
+  because it was a single-commit fix), and the second is FOLLOW-149 itself (this retro). **The
+  analyst counts this as the first RETRO-recorded occurrence and the c92da81 commit as the
+  pre-retro precedent.** Per the no-double-promotion + ≥2-retros-required rule, **Rule O
+  should be treated as provisional, not permanent, until a future retro identifies a third
+  instance OR a second occurrence on top of FOLLOW-149.** This retro **does not modify
+  CONVENTIONS_PATCH.md** because Rule O was already added by PR #166 itself in commit
+  `be75cb3`. The provisional status is recorded here for the next retro that touches a
+  migration to verify.
+
+- **No new Rule promoted this retro. No CONVENTIONS_PATCH.md edit by this retro-analyst run.**
+  Rule O remains as PR #166 shipped it (provisional). The candidate Rule P ("tooling output
+  must reflect reality, not optimism") is below the promotion threshold (1 instance).
+
+### 7. Follow-ups
+
+- **FOLLOW-151** (architect + PM, 1h, **P0**, must close BEFORE TICKET-PILOT-001 spawn): wire
+  ESC-012 into TICKET-PILOT-001. (a) Add ESC-012 to TICKET-PILOT-001's depends_on in
+  `backlog/sprint-12/TICKET-PILOT-001.md` AND in the QUEUE.md entry (L2288-L2336). (b) Add a new
+  AC step (between current steps 4 and 5) requiring the worker to choose and execute one of
+  ESC-012's two resolution paths (path 1 — seed pilot tenant before db:migrate; path 2 — edit
+  0016 to RAISE NOTICE no-op when tenant absent) AND document the choice in PR description.
+  (c) Update `docs/ops/PILOT_RUNBOOK.md` §3 (Pre-live validation) to include the ESC-012
+  one-off isolated apply pattern as a recovery technique (or create
+  `docs/runbooks/db-operations.md` if the pattern is general enough to host outside the pilot
+  runbook). (d) Once ESC-012 is resolved (one of the two paths executed), update ESC-012's
+  status from OPEN to RESOLVED with the chosen path documented. Closes §3 ESC-012 wiring gap,
+  §4a LG-2 + LG-3 (migration 0016 still pending), §4d DG-1 + DG-3.
+  (`source_retro: RETRO-026`, `depends_on: FOLLOW-149`.)
+
+- **FOLLOW-152** (backend-engineer + data-engineer, 2h, **P1 with one P0 sub-AC**, Sprint 13b
+  hardening — within 7 days of merge to lock in test coverage on the new exit-2 contract):
+  test + harden `migrate.ts` Part C + investigate the phantom row anomaly. (a — P0)
+  Add a vitest unit test in `packages/db/src/__tests__/migrate.test.ts` (new file) with
+  `vi.mock` over `appliedCount()` + `migrate()` that asserts the 4 permutation outcomes:
+  `applied>0 && pending===0` → exit 0 + success line; `applied===0 && pending===0` → exit 0 +
+  "Already up-to-date"; `pending>0 && applied===0` → exit 2 + FOLLOW-149 warning; `applied>0 &&
+  pending>0` → exit 2 + partial-success warning. Use `process.exit` spy. (b — P2) Tighten the
+  `appliedCount()` schema-doesn't-exist regex at `migrate.ts:79` to match only
+  `"schema \"drizzle\" does not exist"` or
+  `"relation \"drizzle.__drizzle_migrations\" does not exist"` — not a generic `does not exist`.
+  (c — P2) Add a pre-flight invocation of `bash scripts/check-migration-journal.sh` at the
+  start of `migrate.ts` (or document in README why we don't) — closes LG-4 hardening note. (d
+   — P2 — the phantom row diagnostic) Run `SELECT id, hash, created_at FROM
+  drizzle.__drizzle_migrations ORDER BY id` against prd; if 17 rows + a duplicate-hash row
+  exists → explanation 1 (historical double-apply); if 16 rows + max(id)=17 → explanation 3
+  (rolled-back SERIAL bump). Document the finding in `docs/runbooks/db-operations.md` (or new
+  ADR-NNNN). Closes §4b CB-1 + CB-3, §4c TG-1 + TG-3, §4a LG-4, §5d "drizzle__migrations.id
+  is strict 1-based" assumption.
+  (`source_retro: RETRO-026`, `depends_on: FOLLOW-149`.)
+
+- **FOLLOW-153** (devops-engineer, 1.5h, **P2**, Sprint 13b or 14): harden the Rule O
+  self-test fixture coverage. Add a fifth self-test fixture that creates a tiny ephemeral git
+  repo (`git init` in tmp dir, commit a SQL file with `GIT_AUTHOR_DATE` env override set to
+  2026-05-28T22:00:00Z, then run the validator against it without `FIXTURE_MODE=1`) to
+  exercise the `git log --diff-filter=A --format=%ct` path that the current four fixtures
+  short-circuit. Asserts the recency check correctly uses the git-log timestamp, not the
+  mtime fallback. Optional: also fixture-6 that asserts a SQL file edited AFTER its initial
+  commit (so git-log returns the OLDER timestamp but mtime returns NEWER) is graded against
+  the git-log date, not mtime. Closes §4c TG-2.
+  (`source_retro: RETRO-026`, `depends_on: FOLLOW-149`.)
+
+- **Carry-forward observations (no new stub):**
+  - **LG-1 (P3 — accept drizzle-kit upstream defect)** — PM/CEO endorsement implicit by
+    accepting this PR's "guard, do not patch" architectural choice. If a third year-drift
+    incident occurs OR a similar drizzle-kit defect surfaces on a different field, re-litigate
+    via a fresh ADR proposal.
+  - **DG-2 (Master Design v3.4 changelog for FOLLOW-149 / ESC-012 / Rule O)** — outside retro
+    scope; flagged for PM editorial. QUEUE.md L3-L20 already covers the change at the
+    queue-status level.
+  - **FOLLOW-141 status in `backlog/FOLLOW_UPS.md`** may need PM editorial to reflect that
+    migration 0016 (PR #165) is committed-but-not-yet-applied-on-prd due to ESC-012. Not a
+    retro-analyst edit; PM decision.
+
+- **Wave roll-up (second retro of Sprint 13a-hardening-v3, sibling to RETRO-025):** RETRO-025
+  (sibling, PR #164 inline fixes for FOLLOW-143/144) consumed **FOLLOW-150** (per the ledger
+  updated by RETRO-025); per user instruction RETRO-026 was directed to start at FOLLOW-150 to
+  avoid collision, but RETRO-025 landed FIRST in the file and already took FOLLOW-150 — so
+  RETRO-026 starts at **FOLLOW-151** per the post-RETRO-025 ledger ("NEXT FREE FOLLOW NUMBER
+  IS 151"). The two retros cover the two-PR wave (PR #164 + PR #166). Net P0 blockers for PM
+  triage across the wave: **FOLLOW-151 (P0, this retro)** wires ESC-012 into TICKET-PILOT-001
+  (must close before spawn); FOLLOW-150 (P1, RETRO-025) closes the FOLLOW-143 integration test
+  + §13.2 dual-id reconciliation; FOLLOW-147 (P0, RETRO-024 — still open) is the third pilot-
+  readiness P0 from the prior wave. **ESC-012 itself remains OPEN** — its resolution is owned
+  by TICKET-PILOT-001 per the escalation's required-action block.
+
+### 8. Cross-references
+
+- **RETRO-024 (FOLLOW-141, PR #165) — direct ancestor.** RETRO-024 surfaced the inquiry-selector
+  migration 0016 with its RAISE-EXCEPTION guard. The live-session attempt to apply 0016 to prd
+  (2026-05-28) is what triggered the discovery of the single-transaction rollback + the
+  unrelated journal year-drift bug for 0015 + 0016. RETRO-026 is the systemic-fix retro for
+  the infrastructure gaps RETRO-024's diagnostic session exposed.
+- **RETRO-025 (PR #164 inline-fix verification) — sibling in Sprint 13a-hardening-v3 wave.**
+  RETRO-025 covers the SDK + compliance-doc surface (xid wiring + §13.2 cadence reconciliation);
+  RETRO-026 covers the infrastructure surface (migration journal + CI gate + migrate.ts trap-
+  killer). Disjoint files; no cross-impact. RETRO-025 consumed FOLLOW-150; RETRO-026 starts at
+  FOLLOW-151 per the post-RETRO-025 ledger.
+- **Commit c92da81 (2026-05-18, no retro)** — first observed instance of drizzle-kit year-drift
+  (entries 6/8/9/10/11). No retro was filed at the time (it was a one-off journal patch). The
+  Rule O evidence block in CONVENTIONS_PATCH.md lines 604-606 cites this as the first instance.
+- **CONVENTIONS_PATCH.md Rule O (lines 590-652)** — promoted by PR #166 itself (commit
+  `be75cb3`), provisional pending second retro-recorded occurrence. RETRO-026 logs it as the
+  first retro-recorded occurrence; Rule O is provisional until a future retro confirms it via a
+  second instance.
+- **CONVENTIONS_PATCH.md Rule N (lines 515-588) — sibling pattern shape.** Rule N covers
+  "compliance disclosure asserts behavior the code doesn't perform." The FOLLOW-149 silent-
+  success bug in `migrate.ts` is the operator-tooling cousin: "operator tool reports success
+  when it did nothing." Same root-cause class; different surface. Logged in §6 as a candidate
+  for future Rule P promotion.
+- **ESC-012 (this retro, NEW, OPEN)** — directly downstream; resolution owned by
+  TICKET-PILOT-001 (per the escalation's required-action block) and now wired via FOLLOW-151.
+- **CONVENTIONS_PATCH.md Rule H (lines 156-311) — distant cousin.** Rule H covers
+  "schema/Zod scaffold without a runtime-wired consumer." FOLLOW-149's `migrate.ts` Part C
+  trap-killer + Rule O CI gate are the *operator-tooling equivalent* of Rule H's runtime-wired
+  consumer enforcement: in both cases, the team is closing a gap where an artifact (schema or
+  tool output) failed to align with what a downstream consumer (the consuming code path or the
+  human operator) was depending on. Not a promotion candidate; logged for conceptual continuity.
+- **SECOND of Sprint 13a-hardening-v3 retros** — siblings: RETRO-025 (PR #164 inline-fix
+  verification). The wave is two-PR (PR #164 + PR #166), both merged 2026-05-28 within hours
+  of each other. RETRO-025 + RETRO-026 close the wave's retro coverage.
+
+---
+
+<!-- RETRO-027 and beyond will be appended here by the retrospective-analyst agent. -->
+<!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-05-28 after RETRO-026 / PR #166 — second & FINAL Sprint 13a-hardening-v3 retro):
      - RETRO coverage: ...RETRO-019=PR#159/FOLLOW-129 (Sprint 13a-hardening, 1st of 4),
        RETRO-020=PR#160/FOLLOW-128 (Sprint 13a-hardening, 2nd of 4),
        RETRO-021=PR#161/FOLLOW-127 (Sprint 13a-hardening, 3rd of 4),
        RETRO-022=PR#162/FOLLOW-122 (Sprint 13a-hardening, 4th & FINAL),
-       RETRO-023=PR#164/FOLLOW-139 (Sprint 13a-hardening-v2, 1st of 2),
-       RETRO-024=PR#165/FOLLOW-141 (Sprint 13a-hardening-v2, 2nd & FINAL).
-       Next retro = RETRO-025.
+       RETRO-023=PR#164/FOLLOW-139 (Sprint 13a-hardening-v2, 1st of 2 — initial commit),
+       RETRO-024=PR#165/FOLLOW-141 (Sprint 13a-hardening-v2, 2nd & FINAL),
+       RETRO-025=PR#164/FOLLOW-143+144 inline fixes (Sprint 13a-hardening-v3, 1st — verification-of-the-verification),
+       RETRO-026=PR#166/FOLLOW-149 (Sprint 13a-hardening-v3, 2nd & FINAL — migration journal repair + monotonicity CI gate + honest migrate.ts).
+       Next retro = RETRO-027.
+     - FOLLOW numbers consumed: ...143-146 (RETRO-023), 147-148 (RETRO-024),
+       149 (PR #166 itself — repaired journal + Part B CI gate + Part C migrate.ts + Part D Rule O / ESC-012),
+       150 (RETRO-025 — close FOLLOW-143 AC1 integration test + reconcile §13.2 dpia.md:1017 dual-id narrative + sweep stale comment + dual-id docblock),
+       151 (RETRO-026 — wire ESC-012 into TICKET-PILOT-001 spec + PILOT_RUNBOOK apply-and-verify recovery pattern),
+       152 (RETRO-026 — vitest unit test for migrate.ts Part C exit-2 trap-killer + tighten appliedCount regex + diagnose phantom row id=17 + pre-flight check call),
+       153 (RETRO-026 — self-test fixture for git-log recency path in check-migration-journal.sh).
+     - NEXT FREE FOLLOW NUMBER IS 154. -->
+<!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-05-28 after RETRO-025 / PR #164 inline-fix verification — first Sprint 13a-hardening-v3 retro):
+     - RETRO coverage: ...RETRO-019=PR#159/FOLLOW-129 (Sprint 13a-hardening, 1st of 4),
+       RETRO-020=PR#160/FOLLOW-128 (Sprint 13a-hardening, 2nd of 4),
+       RETRO-021=PR#161/FOLLOW-127 (Sprint 13a-hardening, 3rd of 4),
+       RETRO-022=PR#162/FOLLOW-122 (Sprint 13a-hardening, 4th & FINAL),
+       RETRO-023=PR#164/FOLLOW-139 (Sprint 13a-hardening-v2, 1st of 2 — initial commit),
+       RETRO-024=PR#165/FOLLOW-141 (Sprint 13a-hardening-v2, 2nd & FINAL),
+       RETRO-025=PR#164/FOLLOW-143+144 inline fixes (Sprint 13a-hardening-v3, 1st — verification-of-the-verification).
+       Next retro = RETRO-026 (parallel, PR#166/FOLLOW-149).
      - FOLLOW numbers consumed: ...139 (RETRO-019), 140 (RETRO-020),
        141 (RETRO-021), 142 (RETRO-022),
-       143 (RETRO-023 — wire getOrCreateCrossSessionId into init),
-       144 (RETRO-023 — reconcile "monthly"/"30 days" cadence claim with 90-day TTL),
-       145 (RETRO-023 — Withdraw button UI affordance),
-       146 (RETRO-023 — thread xid onto event wire / ingest join key),
-       147 (RETRO-024 — pilot-slug verification + post-apply assertion + PILOT_RUNBOOK step),
-       148 (RETRO-024 — FOLLOW-141 AC2 + AC3 carry-forward: corpus harness scoring + L1-L7 ladder doc).
-     - NEXT FREE FOLLOW NUMBER IS 149. -->
+       143 (RETRO-023 — wire getOrCreateCrossSessionId into init — DONE inline in PR #164),
+       144 (RETRO-023 — reconcile "monthly"/"30 days" cadence claim with 90-day TTL — DONE inline in PR #164),
+       145 (RETRO-023 — Withdraw button UI affordance — OPEN),
+       146 (RETRO-023 — thread xid onto event wire / ingest join key — OPEN),
+       147 (RETRO-024 — pilot-slug verification + post-apply assertion + PILOT_RUNBOOK step — OPEN, P0),
+       148 (RETRO-024 — FOLLOW-141 AC2 + AC3 carry-forward: corpus harness scoring + L1-L7 ladder doc — OPEN),
+       149 RESERVED for FOLLOW-149 / PR #166 (RETRO-026, parallel — not consumed by RETRO-025),
+       150 (RETRO-025 — close FOLLOW-143 AC1 integration test + reconcile §13.2 dpia.md:1017 dual-id narrative + sweep stale comment + dual-id docblock).
+     - NEXT FREE FOLLOW NUMBER IS 151 (assuming RETRO-026 consumes only what its findings need; RETRO-025 did not consume 149). -->
 <!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-05-28 after RETRO-023 / PR #164 — first Sprint 13a-hardening-v2 retro):
      - RETRO coverage: ...RETRO-019=PR#159/FOLLOW-129 (Sprint 13a-hardening, 1st of 4),
        RETRO-020=PR#160/FOLLOW-128 (Sprint 13a-hardening, 2nd of 4),

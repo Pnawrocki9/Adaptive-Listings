@@ -17,6 +17,8 @@ import {
   incrementPageCount,
   getConsentState,
   setConsentState,
+  eraseCrossSessionId,
+  getOrCreateCrossSessionId,
 } from './core/session.js';
 import { setupObservers } from './core/observer.js';
 import { createShadowHost } from './ui/shadow-host.js';
@@ -89,6 +91,8 @@ async function init(): Promise<void> {
 
     if (consentState === 'denied') {
       // User previously declined — halt SDK entirely, no events dispatched.
+      // DPIA §13.2 / FOLLOW-139: ensure cross-session xid is absent on a denied session.
+      eraseCrossSessionId();
       // The shadow host is destroyed to avoid leaving a DOM node.
       earlyHost?.destroy();
       return;
@@ -107,6 +111,9 @@ async function init(): Promise<void> {
               : {}),
             onGranted: () => {
               setConsentState('granted');
+              // DPIA §13.2 / FOLLOW-139: create the cross-session xid now that consent is granted.
+              // Fire-and-forget — future tickets (FOLLOW-146) will attach xid to event payloads.
+              void getOrCreateCrossSessionId();
               // Consent audit event — compliance audit trail, dispatched unconditionally.
               eventQueue.push({
                 type: 'consent.granted',
@@ -117,6 +124,8 @@ async function init(): Promise<void> {
             },
             onDenied: () => {
               setConsentState('denied');
+              // DPIA §13.2 / FOLLOW-139: erase cross-session xid on consent denial.
+              eraseCrossSessionId();
               // Consent audit event — dispatched even when consent is denied.
               eventQueue.push({
                 type: 'consent.denied',
@@ -142,6 +151,13 @@ async function init(): Promise<void> {
       // If earlyHost is null (SSR/non-browser), treat as granted and continue.
     }
     // consentState === 'granted' (or earlyHost is null in non-browser env) — proceed.
+
+    // DPIA §13.2 / FOLLOW-139: ensure cross-session xid exists when consent is already granted
+    // on this init call (returning visitor). Fire-and-forget — FOLLOW-146 will attach xid to
+    // event payloads. Must run before session init so the key is populated before any events fire.
+    if (consentState === 'granted') {
+      void getOrCreateCrossSessionId();
+    }
 
     // 3. Initialize anonymous session (reset idempotency state for new session)
     resetAdaptState();

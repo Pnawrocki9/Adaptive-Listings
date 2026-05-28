@@ -505,12 +505,12 @@ describe('renderConsentBanner — DPIA §13.2 cross-session identifier disclosur
     const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-2');
     expect(disclosure).toBeDefined();
     const text = disclosure!.textContent ?? '';
-    // Must cover: preferences across visits, pseudonymous identifier, 90 days, monthly rotation,
+    // Must cover: preferences across visits, pseudonymous identifier, 90 days, refreshed every 90 days,
     // deleted on consent withdrawal
     expect(text).toMatch(/preferences/i);
     expect(text).toMatch(/pseudonymous/i);
     expect(text).toMatch(/90 days/i);
-    expect(text).toMatch(/monthly/i);
+    expect(text).toMatch(/refreshed every 90 days/i);
     expect(text).toMatch(/withdraw/i);
   });
 
@@ -525,11 +525,11 @@ describe('renderConsentBanner — DPIA §13.2 cross-session identifier disclosur
     const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-2');
     expect(disclosure).toBeDefined();
     const text = disclosure!.textContent ?? '';
-    // Must cover: preferencje, pseudonimowy identyfikator, 90 dni, miesiąc, wycofania zgody
+    // Must cover: preferencje, pseudonimowy identyfikator, 90 dni, odświeżany co 90 dni, wycofania zgody
     expect(text).toMatch(/preferencj/i);
     expect(text).toMatch(/pseudonimowy/i);
     expect(text).toMatch(/90 dni/i);
-    expect(text).toMatch(/miesi/i);
+    expect(text).toMatch(/odświeżany co 90 dni/i);
     expect(text).toMatch(/wycofan/i);
   });
 
@@ -544,11 +544,11 @@ describe('renderConsentBanner — DPIA §13.2 cross-session identifier disclosur
     const disclosure = elements.find((el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-2');
     expect(disclosure).toBeDefined();
     const text = disclosure!.textContent ?? '';
-    // Must cover: preferencias, seudónimo, 90 días, mensualmente, retires/consent
+    // Must cover: preferencias, seudónimo, 90 días, renueva cada 90 días, retires/consent
     expect(text).toMatch(/preferencias/i);
     expect(text).toMatch(/seud/i);
     expect(text).toMatch(/90 d/i);
-    expect(text).toMatch(/mensual/i);
+    expect(text).toMatch(/renueva cada 90 d/i);
     expect(text).toMatch(/consentimiento/i);
   });
 

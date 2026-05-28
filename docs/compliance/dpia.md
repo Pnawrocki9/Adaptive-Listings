@@ -1036,31 +1036,33 @@ listings). No raw fingerprint entropy is stored server-side; only the salted has
 
 3. **Balancing test — does the legitimate interest override individual rights?** Balanced, with
    mitigations. The hash is pseudonymous (not directly re-identifiable without the `tenant_secret`),
-   rotates every 30 days (limiting staleness), and is cleared on explicit consent withdrawal
+   is refreshed every 90 days (limiting staleness), and is cleared on explicit consent withdrawal
    (erasure in `localStorage`). However, a 90-day cross-session identifier goes beyond what a
    typical visitor would expect without disclosure. The gap identified in audit F-14 is that the
    consent banner currently does not explain this; visitors therefore cannot exercise meaningful
    informed objection. **The balancing test is passed only if the disclosure gap is remediated.**
 
-   **Balancing test status: GREEN — contingent on FOLLOW-128 deployment.** FOLLOW-128 implements the
-   required disclosure strings in `packages/sdk/src/ui/consent-banner.ts` for EN, PL, and ES locales
-   (the three locales required for the EU pilot). Once FOLLOW-128 lands on `main` and the updated
-   SDK is deployed, the disclosure gap is closed and this balancing test transitions from
-   conditional to unconditionally passed. Until FOLLOW-128 is deployed, processing under this LIA
-   must be suspended or must operate under explicit consent (Mode B) rather than legitimate
-   interest. **This GREEN marking is contingent on FOLLOW-128 landing; it does not pre-authorize
-   deployment before FOLLOW-128 is in production.**
+   **Balancing test status: GREEN — unconditionally passed as of FOLLOW-139.** FOLLOW-128
+   implemented the required disclosure strings in `packages/sdk/src/ui/consent-banner.ts` for EN,
+   PL, and ES locales (landed on `main` 2026-05-27). FOLLOW-139 implemented the matching SDK
+   enforcement: `localStorage` storage with 90-day TTL rotation, `getOrCreateCrossSessionId()`
+   called in `packages/sdk/src/index.ts` immediately after consent is granted (both on init when
+   consent is already 'granted' and in the `onGranted` callback when the user accepts the banner),
+   and `eraseCrossSessionId()` called on every consent-denied/withdrawal path in
+   `packages/sdk/src/core/session.ts` and `packages/sdk/src/index.ts`. The disclosure gap is closed
+   and the erasure-on-withdrawal obligation is implemented. This balancing test is now
+   unconditionally passed.
 
-**Conclusion:** Processing is lawful under GDPR Art. 6(1)(f) (legitimate interests), subject to
-FOLLOW-128 deployment (see balancing test status above). The lawful basis is personalization
-continuity and conversion measurement. The legitimate interest is not overridden by individual
-rights once the cross-session nature is disclosed per FOLLOW-128.
+**Conclusion:** Processing is lawful under GDPR Art. 6(1)(f) (legitimate interests). The lawful
+basis is personalization continuity and conversion measurement. The legitimate interest is not
+overridden by individual rights: the cross-session nature is disclosed (FOLLOW-128) and the 90-day
+localStorage identifier with erasure-on-withdrawal is implemented (FOLLOW-139).
 
 **Required consent banner update (mandatory before EU pilot go-live):** The Estalara consent banner
 and tenant Privacy Notice template must be updated to explicitly state, in plain language: _"To
 remember your preferences across visits, we store a pseudonymous identifier in your browser for up
-to 90 days. This identifier rotates monthly and is deleted if you withdraw consent."_ This
-disclosure must appear in the consent banner — not only in the Privacy Policy — because the
+to 90 days. This identifier is refreshed every 90 days and is deleted if you withdraw consent."_
+This disclosure must appear in the consent banner — not only in the Privacy Policy — because the
 identifier is set at first page load before the visitor navigates to the policy.
 
 **Cross-reference — SDK implementation:** The banner copy is implemented in
@@ -1070,7 +1072,9 @@ locale strings for EN, PL, and ES. The tenant-facing disclosure paragraph is in
 `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §3.
 
 **Action owner:** Compliance Engineering (banner copy, DPIA/Privacy Notice docs) + SDK Engineer
-(consent-withdrawal `localStorage` erasure — FOLLOW-128). **Due:** before EU pilot go-live.
+(consent-withdrawal `localStorage` erasure). **Status: COMPLETE** — FOLLOW-128 delivered the
+disclosure strings and FOLLOW-139 delivered the `localStorage` 90-day TTL + erasure-on-withdrawal
+implementation. Both are merged to `main`.
 
 **DPO gate:** DPO review of this LIA is required before EU pilot go-live. Status: **PENDING** — DPO
 sign-off not yet received. Gate is tracked in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §4 (DPO
@@ -1078,11 +1082,12 @@ Gate).
 
 **Staging QA — tracked pending verification (owner: Compliance Engineering):** QA engineer must
 confirm that clicking "Deny" or "Withdraw" on a staging session removes the cross-session
-`localStorage` key (the key set by `renderConsentBanner`'s `onDenied` callback). This verification
-cannot be automated from CI because it requires a real browser session against the staging
-environment. It is a manual pre-flight gate: see `docs/ops/PILOT_RUNBOOK.md` §EU pre-flight,
-"consent disclosure and localStorage QA" gate item. Status: **PENDING** — awaiting FOLLOW-128
-deployment to staging.
+`localStorage` key (`__estalara_xid__`, set by `getOrCreateCrossSessionId()` in
+`packages/sdk/src/core/session.ts`). This verification cannot be automated from CI because it
+requires a real browser session against the staging environment. It is a manual pre-flight gate: see
+`docs/ops/PILOT_RUNBOOK.md` §EU pre-flight, "consent disclosure and localStorage QA" gate item.
+Status: **READY FOR STAGING VERIFICATION** — FOLLOW-139 implementation deployed to `main`; staging
+deploy and manual QA verification pending.
 
 ---
 
@@ -1090,7 +1095,13 @@ _Sections 13.1 and 13.2 added 2026-05-27 in response to Audit Findings F-13 and 
 gate). Authored by Compliance Engineering. Updated 2026-05-27 (FOLLOW-129): cross-references to
 `packages/sdk/src/ui/consent-banner.ts` and FOLLOW-128 added; §13.2 balancing test marked GREEN
 contingent on FOLLOW-128 deployment; privacy notice template created at
-`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md`; pilot runbook EU pre-flight gate added._
+`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md`; pilot runbook EU pre-flight gate added. Updated
+2026-05-28 (FOLLOW-139): §13.2 balancing test transitioned to unconditionally GREEN following
+implementation of `localStorage` 90-day TTL cross-session identifier with erasure-on-withdrawal in
+`packages/sdk/src/core/session.ts` (`getOrCreateCrossSessionId`, `eraseCrossSessionId`), wiring
+`getOrCreateCrossSessionId()` into the consent-granted path in `packages/sdk/src/index.ts` (called
+both on init when consent is already 'granted' and in the `onGranted` banner callback), and wiring
+`eraseCrossSessionId()` into the consent-denied path._
 
 _**DPO gate status: PENDING.** DPO sign-off on §13.1 and §13.2 LIAs has not yet been received. This
 is a hard gate before EU pilot go-live. DPO sign-off must be recorded by updating this note and the

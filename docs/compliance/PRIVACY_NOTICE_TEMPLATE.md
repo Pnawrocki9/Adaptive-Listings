@@ -76,9 +76,9 @@ identifier in your browser's local storage. This identifier is generated from ge
 characteristics (such as screen settings and timezone) and is unique to this website — it cannot be
 used to identify you across other websites.
 
-**This identifier is stored for up to 90 days. It rotates automatically every 30 days and is
-immediately deleted if you withdraw consent or click "Decline" on the personalization prompt.** No
-raw browser characteristics are stored on Estalara's servers — only the hashed result.
+**This identifier is stored for up to 90 days. It is refreshed every 90 days and is immediately
+deleted if you withdraw consent or click "Decline" on the personalization prompt.** No raw browser
+characteristics are stored on Estalara's servers — only the hashed result.
 
 This processing is carried out under the legitimate interest of personalization continuity and
 conversion measurement, as documented in Estalara's Data Protection Impact Assessment (DPIA §13.2).

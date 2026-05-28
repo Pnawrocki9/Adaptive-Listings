@@ -132,7 +132,7 @@ const BANNER_STYLE = `
  *
  * disclosure13_2 — DPIA §13.2: cross-session pseudonymous identifier notice.
  *   Source: dpia.md §13.2 "Required consent banner update" paragraph. Retention = 90 days,
- *   rotation = monthly. Must appear in the banner (not only in the Privacy Policy) because
+ *   refreshed every 90 days. Must appear in the banner (not only in the Privacy Policy) because
  *   the identifier is set at first page load before the visitor navigates to the policy.
  */
 const COPY = {
@@ -141,9 +141,9 @@ const COPY = {
     // DPIA §13.1 — denial-logging audit retention (7 days)
     disclosure13_1:
       'We record the fact of your consent decision — including a denial — for compliance and debugging purposes. This log is retained for 7 days and is then permanently deleted.',
-    // DPIA §13.2 — cross-session pseudonymous identifier (90 days, monthly rotation)
+    // DPIA §13.2 — cross-session pseudonymous identifier (90 days, refreshed every 90 days)
     disclosure13_2:
-      'To remember your preferences across visits, we store a pseudonymous identifier in your browser for up to 90 days. This identifier rotates monthly and is deleted if you withdraw consent.',
+      'To remember your preferences across visits, we store a pseudonymous identifier in your browser for up to 90 days. This identifier is refreshed every 90 days and is deleted if you withdraw consent.',
     learnMore: 'Learn more ↗',
     accept: 'Accept',
     decline: 'Decline',
@@ -153,9 +153,9 @@ const COPY = {
     // DPIA §13.1 — informacja o rejestracji decyzji dot. zgody (7 dni)
     disclosure13_1:
       'Rejestrujemy fakt Twojej decyzji dotyczącej zgody — w tym odmowę — w celach zgodności i debugowania. Dziennik ten jest przechowywany przez 7 dni, po czym jest trwale usuwany.',
-    // DPIA §13.2 — pseudonimowy identyfikator cross-session (90 dni, rotacja miesięczna)
+    // DPIA §13.2 — pseudonimowy identyfikator cross-session (90 dni, odświeżany co 90 dni)
     disclosure13_2:
-      'Aby zapamiętać Twoje preferencje pomiędzy wizytami, przechowujemy pseudonimowy identyfikator w Twojej przeglądarce przez maksymalnie 90 dni. Identyfikator ten jest rotowany co miesiąc i usuwany w przypadku wycofania zgody.',
+      'Aby zapamiętać Twoje preferencje pomiędzy wizytami, przechowujemy pseudonimowy identyfikator w Twojej przeglądarce przez maksymalnie 90 dni. Identyfikator ten jest odświeżany co 90 dni i usuwany w przypadku wycofania zgody.',
     learnMore: 'Dowiedz się więcej ↗',
     accept: 'Akceptuj',
     decline: 'Odrzuć',
@@ -165,9 +165,9 @@ const COPY = {
     // DPIA §13.1 — aviso de retención del registro de auditoría de denegación de consentimiento (7 días)
     disclosure13_1:
       'Registramos el hecho de tu decisión de consentimiento — incluida una denegación — con fines de cumplimiento y depuración. Este registro se conserva durante 7 días y luego se elimina de forma permanente.',
-    // DPIA §13.2 — identificador pseudónimo entre sesiones (90 días, rotación mensual)
+    // DPIA §13.2 — identificador pseudónimo entre sesiones (90 días, renovado cada 90 días)
     disclosure13_2:
-      'Para recordar tus preferencias entre visitas, almacenamos un identificador seudónimo en tu navegador durante un máximo de 90 días. Este identificador rota mensualmente y se elimina si retiras tu consentimiento.',
+      'Para recordar tus preferencias entre visitas, almacenamos un identificador seudónimo en tu navegador durante un máximo de 90 días. Este identificador se renueva cada 90 días y se elimina si retiras tu consentimiento.',
     learnMore: 'Más información ↗',
     accept: 'Aceptar',
     decline: 'Rechazar',

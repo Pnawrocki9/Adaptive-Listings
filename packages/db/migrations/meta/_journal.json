@@ -113,6 +113,13 @@
       "when": 1748304000000,
       "tag": "0015_pilot_frozen",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1748736000000,
+      "tag": "0016_pilot_inquiry_selector",
+      "breakpoints": true
     }
   ]
 }

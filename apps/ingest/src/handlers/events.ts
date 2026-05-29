@@ -22,6 +22,7 @@ import { Hono } from 'hono';
 
 import type { Env } from '../types.js';
 import { authenticateRequest } from '../auth.js';
+import { pushToClickHouse } from '../clickhouse-producer.js';
 import { logger } from '../observability/logger.js';
 import { checkRateLimit } from '../rate-limiter.js';
 import { pushToRedpanda } from '../redpanda-producer.js';
@@ -190,24 +191,61 @@ events.post('/', async (c) => {
     });
   }
 
-  // 6. Push to Redpanda (skip if everything was rejected)
+  // 6. Push to downstream sinks (skip if everything was rejected).
+  //
+  // Two sinks, run in parallel because both no-op when their respective env
+  // vars are unset:
+  //   - Redpanda Pandaproxy (Phase-3 destination — currently empty URL in
+  //     prd, so its producer returns `{ok:true, attempts:0}`).
+  //   - ClickHouse Cloud HTTPS interface (ESC-017 pilot path — replaces the
+  //     missing Pandaproxy hop on Redpanda Cloud Serverless).
+  //
+  // 5xx-class failure in EITHER sink that's configured returns 503 so the
+  // SDK retries; 4xx fails fast. The Phase-1 no-op return path is `ok:true`
+  // for both, so an unconfigured sink can never short-circuit the other.
   const batchId = crypto.randomUUID();
   if (validated.length > 0) {
-    const push = await pushToRedpanda(validated, c.env);
-    if (!push.ok) {
+    const [redpandaPush, clickhousePush] = await Promise.all([
+      pushToRedpanda(validated, c.env),
+      pushToClickHouse(validated, c.env),
+    ]);
+
+    if (!redpandaPush.ok) {
       logger.error(
         {
           tenant_id: tenantId,
           batch_size: eventsField.length,
-          attempts: push.attempts,
-          upstream_status: push.status,
+          attempts: redpandaPush.attempts,
+          upstream_status: redpandaPush.status,
         },
         'redpanda_push_failed',
       );
       return c.json(
         errorBody(requestId, 'redpanda_unavailable', 'Failed to publish events to message bus', {
-          attempts: push.attempts,
-          ...(push.status !== undefined ? { upstream_status: push.status } : {}),
+          attempts: redpandaPush.attempts,
+          ...(redpandaPush.status !== undefined ? { upstream_status: redpandaPush.status } : {}),
+        }),
+        503,
+      );
+    }
+
+    if (!clickhousePush.ok) {
+      logger.error(
+        {
+          tenant_id: tenantId,
+          batch_size: eventsField.length,
+          attempts: clickhousePush.attempts,
+          upstream_status: clickhousePush.status,
+          error: clickhousePush.error,
+        },
+        'clickhouse_push_failed',
+      );
+      return c.json(
+        errorBody(requestId, 'clickhouse_unavailable', 'Failed to persist events to ClickHouse', {
+          attempts: clickhousePush.attempts,
+          ...(clickhousePush.status !== undefined
+            ? { upstream_status: clickhousePush.status }
+            : {}),
         }),
         503,
       );

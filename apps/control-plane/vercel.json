@@ -7,7 +7,7 @@
   "crons": [
     {
       "path": "/api/dsr/mutation-poll",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 * * * *"
     }
   ]
 }

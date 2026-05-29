@@ -170,11 +170,14 @@ describe('pushToClickHouse — happy path', () => {
 
   it('omits the Authorization header when user/password are absent', async () => {
     const cap = captureFetch();
-    await pushToClickHouse(
-      [validEvent],
-      { ...env, CLICKHOUSE_USER: undefined, CLICKHOUSE_PASSWORD: undefined },
-      { fetchImpl: cap.fetchImpl, backoffMs: NO_BACKOFF },
-    );
+    const noAuthEnv: ClickHouseProducerEnv = {
+      CLICKHOUSE_URL: 'https://ch.example.com:8443',
+      CLICKHOUSE_DATABASE: 'default',
+    };
+    await pushToClickHouse([validEvent], noAuthEnv, {
+      fetchImpl: cap.fetchImpl,
+      backoffMs: NO_BACKOFF,
+    });
     const headers = cap.lastInit()?.headers as Record<string, string> | undefined;
     expect(headers?.Authorization).toBeUndefined();
   });

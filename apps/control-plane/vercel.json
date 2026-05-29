@@ -3,11 +3,5 @@
   "buildCommand": "cd ../.. && pnpm turbo run build --filter=@estalara/control-plane",
   "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
   "outputDirectory": ".next",
-  "regions": ["cdg1"],
-  "crons": [
-    {
-      "path": "/api/dsr/mutation-poll",
-      "schedule": "0 * * * *"
-    }
-  ]
+  "regions": ["cdg1"]
 }

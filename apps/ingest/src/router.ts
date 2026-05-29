@@ -71,6 +71,7 @@ export function createApp(): Hono<{ Bindings: Env }> {
         'Content-Type',
         'X-Estalara-API-Key',
         'X-Estalara-Signature',
+        'X-Session-ID',
         'Idempotency-Key',
       ],
       exposeHeaders: ['X-Request-ID', 'Retry-After'],

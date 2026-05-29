@@ -659,3 +659,65 @@ Cloudflare R2 bucket, signed release pipeline (`pnpm --filter @estalara/sdk rele
 injection in `buildSnippet()`, multi-region edge cache, and a rollback playbook. When that lands,
 flip the snippet generator back from `SDK_SERVE_URL` to `SDK_CDN_URL` and delete the `SDK_SERVE_URL`
 constant. Track in a Phase 2 ticket (FOLLOW stub when sprint plan opens).
+
+---
+
+## RESOLVED — ESC-016: ingest Worker has no CORS headers; SDK calls from app.estalara.com are blocked [TICKET-PILOT-001]
+
+**Filed by:** devops-engineer **Date:** 2026-05-29T00:00:00Z **Affects:** TICKET-PILOT-001 (Sprint
+13a pilot launch), every browser-loaded SDK call to `ingest.estalara.com/v1/events` from
+`app.estalara.com` (pilot) and `admin.estalara.com` (control-plane dashboards / wizard test pings)
+**Type:** infrastructure / pilot-blocker
+
+**Description:**
+
+The pilot SDK is now live on `app.estalara.com` (ESC-015 served `sdk.js` from the control plane; the
+script tag appears in DevTools and executes). But every event POST to
+`https://ingest.estalara.com/v1/events` is blocked by the browser with:
+
+> Access to fetch at 'https://ingest.estalara.com/v1/events' from origin 'https://app.estalara.com'
+> has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the
+> requested resource.
+
+Root cause: `apps/ingest/src/router.ts` registers `secureHeaders` + `errorHandler` + `idempotency`
+but **no CORS middleware** at all. The Hono app has no OPTIONS handler, so the preflight returns 404
+with no `Access-Control-*` headers, and the actual POST response is missing
+`Access-Control-Allow-Origin`. Net effect: zero events reach Redpanda from the browser-loaded pilot
+SDK. Shadow-mode telemetry was silently empty.
+
+This was never caught earlier because every prior ingest integration test exercises the handler from
+the same origin (Node `app.fetch` with no `Origin` header — the browser CORS check never runs).
+
+**Required action:** (resolved by this PR — devops lane)
+
+1. Add `hono/cors` middleware to `apps/ingest/src/router.ts`, ordered immediately after
+   `secureHeaders` so CORS headers land on every response (including the 401/429/5xx error paths the
+   SDK needs to read).
+2. Allow-list exactly the origins the SDK runs in: `https://app.estalara.com` (pilot site) and
+   `https://admin.estalara.com` (control-plane Magic Link wizard / dashboards).
+3. Allow methods `GET, POST, OPTIONS` and the four headers the SDK sets on every batch:
+   `Content-Type`, `X-Estalara-API-Key`, `X-Estalara-Signature`, `Idempotency-Key`.
+4. Expose `X-Request-ID` (debugging) and `Retry-After` (so the SDK's rate-limit backoff can read the
+   header on 429 responses) via `Access-Control-Expose-Headers`.
+5. Set `Access-Control-Max-Age: 86400` so browsers cache the preflight for 24h and the per-request
+   CORS overhead drops to zero after the first page-view.
+6. Cover preflight + actual-request + disallowed-origin paths with five unit tests in
+   `apps/ingest/src/index.test.ts` so the regression we just hit cannot land silently again.
+
+**Resolution:** RESOLVED 2026-05-29 by this PR (`devops-engineer/ESC-016-ingest-cors-fix`). After
+merge + Wrangler deploy of the ingest Worker, verify with:
+
+```
+curl -i -X OPTIONS https://ingest.estalara.com/v1/events \
+  -H "Origin: https://app.estalara.com" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: content-type,x-estalara-api-key,x-estalara-signature"
+# Expect: 204, Access-Control-Allow-Origin: https://app.estalara.com,
+# Access-Control-Allow-Methods includes POST, Access-Control-Allow-Headers
+# includes content-type + x-estalara-api-key + x-estalara-signature + idempotency-key.
+```
+
+**Phase 2 follow-up (not in scope):** when customer-owned tenant domains come online, the hardcoded
+`ALLOWED_ORIGINS` array becomes a tenant-aware lookup (origin → tenant_id → check
+`tenants.allowed_origins`). For the pilot the two-host allow-list is correct and minimises attack
+surface.

@@ -24,6 +24,9 @@ export default tseslint.config(
       'packages/sdk/scripts/**',
       'packages/sdk/e2e/*.js',
       'apps/control-plane/next.config.ts',
+      // SDK IIFE bundle served as a Vercel static asset (ESC-015).
+      // Built artifact, not source — linting it makes no sense.
+      'apps/control-plane/public/sdk.js',
     ],
   },
 

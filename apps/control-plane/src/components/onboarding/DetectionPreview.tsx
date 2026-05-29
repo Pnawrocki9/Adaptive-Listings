@@ -20,7 +20,7 @@
 import { useState } from 'react';
 import type { TenantSiteSchema } from '@estalara/shared';
 import type { DetectField } from '@estalara/shared';
-import { CONTROL_PLANE_URL } from '@estalara/shared';
+import { CONTROL_PLANE_URL, SDK_SERVE_URL } from '@estalara/shared';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -126,7 +126,7 @@ export function buildSnippet(
     inquirySubmitSelector != null
       ? `\n  data-inquiry-submit-selector="${inquirySubmitSelector}"`
       : '';
-  return `<script\n  src="https://cdn.estalara.com/sdk.js"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"${inquiryAttr}\n></script>`;
+  return `<script\n  src="${SDK_SERVE_URL}"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"${inquiryAttr}\n></script>`;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

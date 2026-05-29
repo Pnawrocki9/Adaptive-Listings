@@ -527,3 +527,52 @@ documented in `docs/ops/PILOT_RUNBOOK.md` §3 "Migration sequencing" and in
 `backlog/sprint-12/TICKET-PILOT-001.md` Notes section. Will move to RESOLVED when TICKET-PILOT-001
 lands with the working sequence and `SELECT inquiry_submit_selector` confirms the column is
 populated on the pilot tenant.
+
+---
+
+## RESOLVED — ESC-015: SDK serve URL `cdn.estalara.com` is unprovisioned; pilot snippet src 404s [TICKET-PILOT-001]
+
+**Filed by:** devops-engineer **Date:** 2026-05-29T00:00:00Z **Affects:** TICKET-PILOT-001 (Sprint
+13a pilot launch), every tenant onboarded via the Magic Link wizard, every snippet currently emitted
+by `apps/control-plane/src/components/onboarding/DetectionPreview.tsx:buildSnippet()` **Type:**
+infrastructure / pilot-blocker
+
+**Description:**
+
+`buildSnippet()` emits `<script src="https://cdn.estalara.com/sdk.js" ...>` (the canonical CDN host
+named by `SDK_CDN_URL` in `packages/shared/src/domains.ts:16`). Diagnostic during pilot dry run
+confirmed:
+
+- `cdn.estalara.com` has never been provisioned. No DNS record, no Cloudflare R2 bucket, no
+  Wrangler/Terraform deploy pipeline, no SRI release flow.
+- `packages/sdk/dist/estalara-sdk.iife.js` is built by `pnpm --filter @estalara/sdk build` but is
+  gitignored and only ever published via `npm pack` for downstream consumers. Nothing uploads it to
+  a public host.
+- Net effect: every tenant who copy-pastes the wizard-generated snippet hits a DNS-level 404 on the
+  `src` attribute, so the SDK never loads. Tier 1/2/3 are all silently broken at the install step.
+
+`admin.estalara.com` (the Next.js control plane on Vercel) went live today via ESC-014. It already
+serves Vercel static assets from `apps/control-plane/public/`. CEO decision: **ship the pilot by
+serving the SDK bundle as a Vercel static asset under `https://admin.estalara.com/sdk.js`**. CDN
+provisioning (versioned releases, SRI hashes, multi-region edge cache) is deferred to Phase 2.
+
+**Required action:** (resolved by this PR — devops lane)
+
+1. Build `@estalara/sdk` IIFE bundle and copy it to `apps/control-plane/public/sdk.js` (Vercel will
+   serve it at `https://admin.estalara.com/sdk.js` with `content-type: application/javascript`).
+2. Add `SDK_SERVE_URL = ${CONTROL_PLANE_URL}/sdk.js` to `packages/shared/src/domains.ts` so the URL
+   is derived from `CONTROL_PLANE_URL` rather than another hardcoded literal.
+3. Flip `buildSnippet()` (`DetectionPreview.tsx`) to emit `src="${SDK_SERVE_URL}"`.
+4. Update the Pilot Runbook (`docs/ops/PILOT_RUNBOOK.md` §5 "Install the snippet") to use
+   `https://admin.estalara.com/sdk.js` and to note that `cdn.estalara.com` is Phase 2.
+
+**Resolution:** RESOLVED 2026-05-29 by this PR (`devops-engineer/ESC-015-sdk-static-serving`). The
+pilot serves the SDK from `admin.estalara.com/sdk.js` via Vercel static asset hosting.
+`SDK_CDN_DOMAIN` / `SDK_CDN_URL` constants remain in `packages/shared/src/domains.ts` for the Phase
+2 cutover and are not consumed by `buildSnippet()` while the pilot is live.
+
+**Phase 2 follow-up (not in scope for this PR):** Provision `cdn.estalara.com` end-to-end —
+Cloudflare R2 bucket, signed release pipeline (`pnpm --filter @estalara/sdk release`), SRI hash
+injection in `buildSnippet()`, multi-region edge cache, and a rollback playbook. When that lands,
+flip the snippet generator back from `SDK_SERVE_URL` to `SDK_CDN_URL` and delete the `SDK_SERVE_URL`
+constant. Track in a Phase 2 ticket (FOLLOW stub when sprint plan opens).

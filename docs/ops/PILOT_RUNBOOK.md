@@ -144,12 +144,47 @@ continue/extend/abort call is **Piotr's only** (incident owner). Timeline matrix
 `data_source: 'mock'` or an error/degraded flag in production → **immediate abort of any readout**
 until the data path is fixed. This is a correctness failure, not a result.
 
-## 5. Activation procedure — TODO (TICKET-PILOT-002)
+## 5. Install the snippet (pilot)
+
+The Magic Link wizard's "Save & Activate" step renders a copyable snippet (see
+`apps/control-plane/src/components/onboarding/DetectionPreview.tsx:buildSnippet()`). For the Sprint
+13a pilot it looks like:
+
+```html
+<script
+  src="https://admin.estalara.com/sdk.js"
+  data-tenant-id="<TENANT-UUID>"
+  data-api-key="<EST_PUB_KEY>"
+  data-decision-url="https://admin.estalara.com/api"
+></script>
+```
+
+**Why `admin.estalara.com/sdk.js` and not `cdn.estalara.com/sdk.js`** — the canonical CDN host
+(`SDK_CDN_URL` in `packages/shared/src/domains.ts`) is not yet provisioned (no R2 bucket, no release
+pipeline, no SRI hashes). For the pilot we serve the IIFE bundle as a Vercel static asset from the
+control-plane `public/` directory (resolved via `SDK_SERVE_URL`). Provisioning `cdn.estalara.com`
+end-to-end is Phase 2 (see ESC-015 resolution). Until then, treat the admin host as the SDK origin
+in every pilot install conversation.
+
+Operator verification after first install:
+
+```
+curl -I https://admin.estalara.com/sdk.js
+# Expect: HTTP/2 200, content-type: application/javascript
+```
+
+If that returns 404 / 5xx, the bundle did not ship with the most recent control-plane deployment —
+re-run
+`pnpm --filter @estalara/sdk build && cp packages/sdk/dist/estalara-sdk.iife.js apps/control-plane/public/sdk.js`
+and redeploy. Do NOT instruct a tenant to flip the snippet `src` to `cdn.estalara.com` — that host
+is not live.
+
+## 6. Activation procedure — TODO (TICKET-PILOT-002)
 
 _Stub. To be authored by TICKET-PILOT-002: exact steps to flip shadow→live, verify first adaptation
 directive served, check Sentry for errors in the first N minutes._
 
-## 6. Incident response — TODO (TICKET-PILOT-002)
+## 7. Incident response — TODO (TICKET-PILOT-002)
 
 _Stub. To be authored by TICKET-PILOT-002: rollback = remove SDK snippet OR set
 `tenants.status='suspended'` for the pilot tenant; escalation path to Piotr as incident owner;

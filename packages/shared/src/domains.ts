@@ -42,6 +42,21 @@ export const CONTROL_PLANE_URL = `https://${CONTROL_PLANE_DOMAIN}` as const;
 export const CONTROL_PLANE_ENV = 'NEXT_PUBLIC_CONTROL_PLANE_URL' as const;
 
 /**
+ * Pilot SDK serve URL — control-plane static asset.
+ *
+ * The canonical CDN (`cdn.estalara.com`, see `SDK_CDN_URL` above) has not yet
+ * been provisioned (no R2 bucket, no deploy pipeline, no SRI release flow).
+ * For the Sprint 13a pilot we serve the IIFE bundle as a Vercel static asset
+ * from the control-plane `public/` directory, reachable at
+ * `https://admin.estalara.com/sdk.js`. [ESC-015]
+ *
+ * Phase 2 will provision `cdn.estalara.com` with versioned releases + SRI
+ * hashes; at that point flip snippet generation back to `SDK_CDN_URL` and
+ * delete this constant.
+ */
+export const SDK_SERVE_URL = `${CONTROL_PLANE_URL}/sdk.js` as const;
+
+/**
  * Staging subdomain prefixes follow the pattern: <service>-staging.estalara.com
  * e.g. ingest-staging.estalara.com, api-staging.estalara.com
  */

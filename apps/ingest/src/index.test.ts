@@ -86,6 +86,11 @@ function makeEnv(options: MakeEnvOptions = {}): Env {
     ENVIRONMENT: 'test',
     REDPANDA_REST_URL: 'http://mock-redpanda',
     REDPANDA_TOPIC_EVENTS: 'events',
+    // CLICKHOUSE_URL empty → no-cred guard fires; existing handler tests stay
+    // pinned to the Redpanda path. CH-specific paths are exercised in
+    // clickhouse-producer.test.ts.
+    CLICKHOUSE_URL: '',
+    CLICKHOUSE_DATABASE: 'default',
     KV_API_KEYS: mockKv({
       store: options.kvStore ?? {},
       fail: options.kvFail ?? false,

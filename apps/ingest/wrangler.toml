@@ -11,8 +11,17 @@ ENVIRONMENT = "development"
 # Redpanda HTTP REST proxy (Pandaproxy). Empty = no-bus guard active (Phase 1 mode).
 # Set to the Pandaproxy URL when Redpanda is activated in Phase 3.
 # TODO(RUNTIME-FIX-004): Set to real URL when Redpanda is activated in Phase 3.
+# Note (ESC-017): Redpanda Cloud Serverless does not expose Pandaproxy. The
+# direct ClickHouse-write path (vars below) replaces this hop for the pilot.
 REDPANDA_REST_URL = ""
 REDPANDA_TOPIC_EVENTS = "events"
+# ClickHouse Cloud HTTPS interface (ESC-017 pilot path).
+# CLICKHOUSE_URL is non-secret (hostname). CLICKHOUSE_USER, CLICKHOUSE_PASSWORD,
+# and (if used) CLICKHOUSE_DATABASE override go in via `wrangler secret put`.
+# Empty CLICKHOUSE_URL triggers the no-cred guard (events validated but not
+# persisted) — same Phase-1 semantic as the Redpanda no-bus guard.
+CLICKHOUSE_URL = ""
+CLICKHOUSE_DATABASE = "default"
 # Observability (TICKET-018) — secrets injected by Doppler at deploy time.
 # SENTRY_DSN_INGEST and OTEL_EXPORTER_HEADERS must be set as Worker secrets.
 OTEL_EXPORTER_URL = ""
@@ -51,12 +60,12 @@ new_sqlite_classes = ["RateLimiter"]
 # Development environment (local wrangler dev)
 [env.dev]
 name = "estalara-ingest-dev"
-vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
+vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events", CLICKHOUSE_URL = "", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 # Staging environment (auto-deploy on merge to main)
 [env.staging]
 name = "estalara-ingest-staging"
-vars = { ENVIRONMENT = "staging", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events-staging", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
+vars = { ENVIRONMENT = "staging", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events-staging", CLICKHOUSE_URL = "", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 [[env.staging.routes]]
 pattern = "ingest-staging.estalara.com/*"
@@ -65,7 +74,7 @@ zone_name = "estalara.com"
 # Production environment (manual deploy with human approval)
 [env.production]
 name = "estalara-ingest-production"
-vars = { ENVIRONMENT = "production", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
+vars = { ENVIRONMENT = "production", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events", CLICKHOUSE_URL = "https://hl0kc83gt4.eu-west-1.aws.clickhouse.cloud:8443", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
 
 [[env.production.routes]]
 pattern = "ingest.estalara.com/*"

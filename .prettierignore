@@ -6,3 +6,8 @@ docs/MASTER_DESIGN.md
 backlog/RETROSPECTIVES.md
 pnpm-lock.yaml
 *.lock
+
+# Built SDK bundle served as a Vercel static asset under admin.estalara.com/sdk.js.
+# This is the minified IIFE output of `pnpm --filter @estalara/sdk build`; prettier
+# would un-minify it on commit. [ESC-015]
+apps/control-plane/public/sdk.js

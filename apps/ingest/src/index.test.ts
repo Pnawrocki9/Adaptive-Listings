@@ -570,3 +570,114 @@ describe('POST /v1/events — rate limiting', () => {
     }
   });
 });
+
+// ─── ESC-016 — CORS allow-list for SDK browser callers ────────────────────────
+describe('CORS — ESC-016 SDK browser callers', () => {
+  it('OPTIONS preflight from app.estalara.com returns 204 with CORS headers', async () => {
+    const app = createApp();
+    const env = makeEnv();
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'https://app.estalara.com',
+          'Access-Control-Request-Method': 'POST',
+          'Access-Control-Request-Headers':
+            'content-type, x-estalara-api-key, x-estalara-signature',
+        },
+      }),
+      env,
+    );
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://app.estalara.com');
+    const allowMethods = res.headers.get('access-control-allow-methods') ?? '';
+    expect(allowMethods).toContain('POST');
+    expect(allowMethods).toContain('OPTIONS');
+    const allowHeaders = (res.headers.get('access-control-allow-headers') ?? '').toLowerCase();
+    expect(allowHeaders).toContain('content-type');
+    expect(allowHeaders).toContain('x-estalara-api-key');
+    expect(allowHeaders).toContain('x-estalara-signature');
+    expect(allowHeaders).toContain('idempotency-key');
+  });
+
+  it('OPTIONS preflight from admin.estalara.com is also allowed', async () => {
+    const app = createApp();
+    const env = makeEnv();
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'https://admin.estalara.com',
+          'Access-Control-Request-Method': 'POST',
+          'Access-Control-Request-Headers': 'content-type',
+        },
+      }),
+      env,
+    );
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://admin.estalara.com');
+  });
+
+  it('OPTIONS preflight from a disallowed origin omits the Allow-Origin header', async () => {
+    const app = createApp();
+    const env = makeEnv();
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'https://evil.example.com',
+          'Access-Control-Request-Method': 'POST',
+        },
+      }),
+      env,
+    );
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('POST from app.estalara.com receives Access-Control-Allow-Origin on the actual response', async () => {
+    const app = createApp();
+    const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+    const stub = stubFetch('ok');
+    try {
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: {
+            Origin: 'https://app.estalara.com',
+            'Content-Type': 'application/json',
+            'X-Estalara-API-Key': 'k1',
+          },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBe('https://app.estalara.com');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('POST from a disallowed origin omits Access-Control-Allow-Origin', async () => {
+    const app = createApp();
+    const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+    const stub = stubFetch('ok');
+    try {
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: {
+            Origin: 'https://evil.example.com',
+            'Content-Type': 'application/json',
+            'X-Estalara-API-Key': 'k1',
+          },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    } finally {
+      stub.restore();
+    }
+  });
+});

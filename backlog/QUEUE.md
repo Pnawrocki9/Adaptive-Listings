@@ -2290,7 +2290,7 @@ min Piotr action).
     Onboard app.estalara.com — SDK install, schema activation via Magic Link wizard, run in shadow
     mode 3-5 days
   agent: sdk-engineer + backend-engineer
-  status: READY # pre-pilot gate CLOSED 2026-05-27 (Sprint 13a-hardening: FOLLOW-127/128/129/122 all DONE)
+  status: IN_PROGRESS # sdk-engineer branch sdk-engineer/TICKET-PILOT-001-pilot-launch-shadow opened 2026-05-29
   priority: P1
   estimated_hours: 4
   depends_on:

@@ -530,6 +530,89 @@ populated on the pilot tenant.
 
 ---
 
+## OPEN — ESC-013: app.estalara.com frontend repo path unknown to sdk-engineer [TICKET-PILOT-001]
+
+**Filed by:** sdk-engineer **Date:** 2026-05-29T00:00:00Z **Affects:** TICKET-PILOT-001 Step 1 (SDK
+snippet install in frontend layout) **Type:** scope / operational
+
+**Description:**
+
+TICKET-PILOT-001 Step 1 requires editing `+layout.svelte` in the app.estalara.com SvelteKit frontend
+to inject the SDK snippet. However:
+
+1. No SvelteKit repo (no `.svelte` files, no `svelte.config.js`) exists in any accessible directory
+   on this machine. Searched: all directories under `/home/asipi/Projects/` and `/home/asipi/`.
+2. `/home/asipi/Projects/EstalaraNew` is a Next.js app (marketing site `estalara.com`), not
+   `app.estalara.com`.
+3. `/home/asipi/Projects/Live-Hosts` is a .NET + Python stack unrelated to SvelteKit.
+
+The ticket spec says "SvelteKit `+layout.svelte`" but no such file exists in the accessible tree.
+The app.estalara.com frontend may be in a private repo, a separate machine, or may actually be
+Next.js not SvelteKit. The SDK snippet parameters and slot requirements are fully documented in
+`docs/ops/PILOT_RUNBOOK.md` §5 (added by this PR) and can be applied as soon as the path is known.
+
+**Required action (Piotr — 2 minutes):**
+
+Provide the path to the app.estalara.com frontend repo so sdk-engineer can edit the layout file and
+inject the snippet in Step 1. Options:
+
+a. If the repo is local: provide the absolute path. b. If the repo is on GitHub: provide the repo
+URL. sdk-engineer will clone and edit. c. If the frontend is actually Next.js (not SvelteKit): the
+snippet goes in `app/layout.tsx` using Next.js `<Script>` component with
+`strategy="afterInteractive"`.
+
+**Required action (DNS — separate):** `admin.estalara.com` resolves to an nginx server (not Vercel),
+blocking the Step 1 smoke test for `GET /api/adapt`. See ESC-014.
+
+**Resolution:**
+
+---
+
+## OPEN — ESC-014: admin.estalara.com DNS not pointing to Vercel control-plane [TICKET-PILOT-001]
+
+**Filed by:** sdk-engineer **Date:** 2026-05-29T00:00:00Z **Affects:** TICKET-PILOT-001 smoke test
+(Step 1 AC: `GET https://admin.estalara.com/api/adapt` returns 200) **Type:** operational / devops
+
+**Description:**
+
+The TICKET-PILOT-001 acceptance criteria require:
+
+> Smoke assertion: `GET https://admin.estalara.com/api/adapt` returns 200 (NOT 410)
+
+Current state: `admin.estalara.com` resolves to an nginx/1.22.1 server returning "Welcome to KIEG
+server!" — not the Vercel-deployed control-plane. Verified via:
+
+```
+HTTP/1.1 200 OK
+Server: nginx/1.22.1
+Date: Fri, 29 May 2026 05:21:13 GMT
+```
+
+This means `GET https://admin.estalara.com/api/adapt` returns 404 (nginx, not Vercel). The
+control-plane is confirmed to be a Next.js app with a Vercel deployment config
+(`apps/control-plane/vercel.json`, region `cdg1`), but the custom domain `admin.estalara.com` has
+not been configured as a Vercel custom domain, or the DNS has not been pointed to Vercel's
+nameservers.
+
+The SDK's `data-decision-url` in production must be `https://admin.estalara.com/api`. If this domain
+does not point to Vercel before SDK install, all `/api/adapt` calls from app.estalara.com will 404.
+
+**Required action (Piotr or devops-engineer — ~15 minutes):**
+
+1. Go to Vercel project dashboard for the control-plane.
+2. Add `admin.estalara.com` as a custom domain.
+3. Update DNS records at the registrar to point `admin.estalara.com` to Vercel (CNAME to
+   `cname.vercel-dns.com` or A record to Vercel's IP, as Vercel instructs).
+4. Wait for DNS propagation.
+5. Verify:
+   `curl -s -o /dev/null -w "%{http_code}" "https://admin.estalara.com/api/adapt?session_id=smoke&archetype=neutral&confidence=0.5&similarity=0.5&tier=1" -H "Authorization: Bearer <key>"`
+   returns 200.
+
+Until this is resolved, use the Vercel preview URL as a temporary `data-decision-url` for shadow
+mode. Report the Vercel preview URL to sdk-engineer to unblock the snippet install.
+
+**Resolution:**
+
 ## RESOLVED — ESC-015: SDK serve URL `cdn.estalara.com` is unprovisioned; pilot snippet src 404s [TICKET-PILOT-001]
 
 **Filed by:** devops-engineer **Date:** 2026-05-29T00:00:00Z **Affects:** TICKET-PILOT-001 (Sprint

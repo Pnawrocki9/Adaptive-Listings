@@ -1,6 +1,53 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 3.4 (Sprint 13a-hardening-v2 + v3 COMPLETE — 3 PRs merged; migration tooling hardened; prd `tenants.pilot_frozen` verified; Lane B TICKET-PILOT-001 GO with ESC-012 sequencing constraint; otherwise as v3.3) | **Data:** 28 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 3.5 (TICKET-PILOT-001 DONE — Sprint 13a pilot LIVE in shadow mode as of 2026-05-29; ESC-012..017 all RESOLVED; SDK→ingest→ClickHouse E2E verified; 5 FOLLOW-UPs filed; otherwise as v3.4) | **Data:** 29 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v3.5 (29 maja 2026 — TICKET-PILOT-001 DONE; Sprint 13a pilot LIVE):** TICKET-PILOT-001
+(Lane B: onboard `app.estalara.com`, shadow mode) is COMPLETE. All 6 ESC-012..017 escalations
+RESOLVED. SDK→ingest→ClickHouse E2E verified. Key architectural facts now in the record:
+
+- **Telemetry architecture correction.** Redpanda Cloud is **Serverless tier — no Pandaproxy REST
+  interface** (ESC-017, RESOLVED by PR #170). The original Master Design §A.1 "ingest →
+  Pandaproxy REST → Redpanda → ClickHouse consumer" chain was never viable at this tier. Canonical
+  pilot path = **direct Worker→ClickHouse HTTPS** (`apps/ingest/src/clickhouse-producer.ts`, port
+  8443, INSERT FORMAT JSONEachRow). Redpanda dual-write call retained as no-op for future Dedicated/
+  BYOC upgrade. Decision on tier upgrade vs. formalizing direct-ClickHouse: FOLLOW-157 (Sprint 4).
+  E2E verified: event count 0→1 after POST, `event_id = 01928f00-...-a3fc180390b5`,
+  `tenant_id = cbc51cfa-1056-40aa-b0a9-6e982b52b1de`, 1.4s latency.
+
+- **Control-plane domain correction.** `CONTROL_PLANE_DOMAIN = admin.estalara.com` (live on Vercel,
+  CNAME → `6f8ae58f0ad31434.vercel-dns-017.com`, ESC-014 RESOLVED). `adaptive.estalara.com` is a
+  dead name — it was never provisioned. §U and §V still reference `adaptive.estalara.com`; update
+  tracked as FOLLOW-154 (P2, architect).
+
+- **SDK serving.** Pilot serves `sdk.js` from `https://admin.estalara.com/sdk.js` via Vercel static
+  asset hosting (`apps/control-plane/public/sdk.js`). `cdn.estalara.com` = Phase 2 (ESC-015
+  RESOLVED). `buildSnippet()` emits the `admin.estalara.com/sdk.js` src.
+
+- **Integration tier.** Pilot runs Tier 2 — single `<script>` tag injected into `app.estalara.com`
+  layout by CTO Rafał Palak (ESC-013 RESOLVED). Not Tier 3 Native. No SvelteKit DOM slot mapping
+  required for shadow mode.
+
+- **Pilot tenant.** `id = cbc51cfa-1056-40aa-b0a9-6e982b52b1de`, `slug = 000-app-estalara`,
+  ClickHouse user `ingest_worker` (INSERT + SELECT on `default.events`). Migration sequencing:
+  `POST /api/tenants` (tenant-create) BEFORE `pnpm db:migrate` — RAISE EXCEPTION guard in 0016
+  passed (ESC-012 RESOLVED).
+
+- **CORS.** `hono/cors` on ingest Worker, allow-list `app.estalara.com` + `admin.estalara.com`,
+  includes `X-Session-ID`. Verified: OPTIONS returns 204 + `Access-Control-Allow-Origin` live
+  (ESC-016 RESOLVED, PRs #169/#78cae88).
+
+- **Open security gap (FOLLOW-155, P1).** Vercel prd is missing `DATABASE_URL_ADMIN`,
+  `DATABASE_URL_DIRECT`, and `ADMIN_API_SECRET` — control-plane silently in mock mode AND
+  `POST /api/tenants` is open to the internet. Most urgent follow-up.
+
+- **Infrastructure hygiene gaps (FOLLOW-156/157/158, P2).** ClickHouse `default.events` DDL
+  created ad-hoc (not version-tracked); Redpanda tier decision pending; OTel + Sentry unwired in
+  prd ingest Worker (logs only in Cloudflare Tail).
+
+- **§Snapshot.1 update.** Sprint 13a pilot LIVE in shadow mode as of 2026-05-29. SDK→ingest→
+  ClickHouse E2E verified. Broader go-live gate still requires FOLLOW-155 (P1 security), TICKET-
+  PILOT-002 (go/no-go runbook), FOLLOW-092, and YELLOW audit Sprint 2–4.
 
 **Changelog v3.4 (28 maja 2026, wieczór — Sprint 13a-hardening-v2 + v3 COMPLETE):** Three PRs merged on main (head `073f5d6`) closing the last v3.3-surfaced P0 EU-go-live blockers AND a critical infra trap discovered along the way. **The pilot pre-flight is now operationally ready** (`tenants.pilot_frozen` column verified present in prd via doppler-driven information_schema query — `[{column_name:'pilot_frozen', data_type:'boolean'}]`), with one scoped sequencing constraint (ESC-012) that TICKET-PILOT-001 owns.
 

@@ -483,7 +483,7 @@ pull_request trigger.
 
 ---
 
-## IN_PROGRESS — ESC-012: `pnpm db:migrate` against any env will fail until pilot tenant exists [FOLLOW-149 / TICKET-PILOT-001]
+## RESOLVED — ESC-012: `pnpm db:migrate` against any env will fail until pilot tenant exists [FOLLOW-149 / TICKET-PILOT-001]
 
 **Filed by:** devops-engineer **Date:** 2026-05-28T20:00:00Z **Affects:** any environment that runs
 `pnpm db:migrate` after FOLLOW-149's journal repair lands and before TICKET-PILOT-001 seeds the
@@ -520,17 +520,15 @@ that needs to pick up 0016+. Two equivalent paths:
 exist yet) would also roll back. Use the same isolated apply pattern I used for 0015 if any 0017+
 entry must land before the pilot exists. Long-term, this is brittle — pick path 1 or 2 above.
 
-**Resolution:** CEO chose Path (1) — wizard sequencing (2026-05-28). Resolution lives in
-TICKET-PILOT-001 step 4b: the Magic Link wizard MUST create the pilot tenant row before the operator
-runs `pnpm db:migrate`. The ordering requirement and recovery pattern (isolated apply) are
-documented in `docs/ops/PILOT_RUNBOOK.md` §3 "Migration sequencing" and in
-`backlog/sprint-12/TICKET-PILOT-001.md` Notes section. Will move to RESOLVED when TICKET-PILOT-001
-lands with the working sequence and `SELECT inquiry_submit_selector` confirms the column is
-populated on the pilot tenant.
+**Resolution:** RESOLVED 2026-05-29. Path (1) confirmed: `POST /api/tenants` (tenant-create)
+executed before `pnpm db:migrate` during TICKET-PILOT-001 onboarding. Migration 0016 applied cleanly
+after pilot tenant `000-app-estalara` was seeded; `RAISE EXCEPTION` guard passed.
+`SELECT inquiry_submit_selector` on the pilot tenant row confirms the column is populated.
+Sequencing order documented in `docs/ops/PILOT_RUNBOOK.md` §3 "Migration sequencing."
 
 ---
 
-## OPEN — ESC-013: app.estalara.com frontend repo path unknown to sdk-engineer [TICKET-PILOT-001]
+## RESOLVED — ESC-013: app.estalara.com frontend repo path unknown to sdk-engineer [TICKET-PILOT-001]
 
 **Filed by:** sdk-engineer **Date:** 2026-05-29T00:00:00Z **Affects:** TICKET-PILOT-001 Step 1 (SDK
 snippet install in frontend layout) **Type:** scope / operational
@@ -564,11 +562,13 @@ snippet goes in `app/layout.tsx` using Next.js `<Script>` component with
 **Required action (DNS — separate):** `admin.estalara.com` resolves to an nginx server (not Vercel),
 blocking the Step 1 smoke test for `GET /api/adapt`. See ESC-014.
 
-**Resolution:**
+**Resolution:** RESOLVED 2026-05-29. SDK installed on `app.estalara.com` via Tier 2 script tag by
+CTO Rafał Palak. Script `src` points to `https://admin.estalara.com/sdk.js` (served as Vercel static
+asset per ESC-015). Verified: `sdk.js` loads in browser DevTools on `app.estalara.com`.
 
 ---
 
-## OPEN — ESC-014: admin.estalara.com DNS not pointing to Vercel control-plane [TICKET-PILOT-001]
+## RESOLVED — ESC-014: admin.estalara.com DNS not pointing to Vercel control-plane [TICKET-PILOT-001]
 
 **Filed by:** sdk-engineer **Date:** 2026-05-29T00:00:00Z **Affects:** TICKET-PILOT-001 smoke test
 (Step 1 AC: `GET https://admin.estalara.com/api/adapt` returns 200) **Type:** operational / devops
@@ -611,7 +611,10 @@ does not point to Vercel before SDK install, all `/api/adapt` calls from app.est
 Until this is resolved, use the Vercel preview URL as a temporary `data-decision-url` for shadow
 mode. Report the Vercel preview URL to sdk-engineer to unblock the snippet install.
 
-**Resolution:**
+**Resolution:** RESOLVED 2026-05-29. `admin.estalara.com` added as a custom domain on the Vercel
+control-plane project. DNS CNAME record set to `6f8ae58f0ad31434.vercel-dns-017.com`. Verified:
+`dig admin.estalara.com` resolves to Vercel; `curl https://admin.estalara.com/api/adapt` returns 200
+(not 404 nginx).
 
 ## RESOLVED — ESC-015: SDK serve URL `cdn.estalara.com` is unprovisioned; pilot snippet src 404s [TICKET-PILOT-001]
 
@@ -721,3 +724,46 @@ curl -i -X OPTIONS https://ingest.estalara.com/v1/events \
 `ALLOWED_ORIGINS` array becomes a tenant-aware lookup (origin → tenant_id → check
 `tenants.allowed_origins`). For the pilot the two-host allow-list is correct and minimises attack
 surface.
+
+**Verification (2026-05-29):** `OPTIONS https://ingest.estalara.com/v1/events` returns `204` with
+`Access-Control-Allow-Origin: https://app.estalara.com` present. `X-Session-ID` added to
+`Access-Control-Allow-Headers` in follow-up PR #169
+(`fix(ingest): add X-Session-ID to CORS allow-headers — ESC-016`). Live in production.
+
+---
+
+## RESOLVED — ESC-017: Redpanda Cloud Serverless has no Pandaproxy; ingest Worker cannot produce events [TICKET-PILOT-001]
+
+**Filed by:** devops-engineer **Date:** 2026-05-29T00:00:00Z **Affects:** TICKET-PILOT-001 (Sprint
+13a pilot launch), `apps/ingest` event pipeline, Master Design §A.1 Redpanda producer hop **Type:**
+infrastructure / pilot-blocker
+
+**Description:**
+
+During TICKET-PILOT-001 E2E smoke testing, the ingest Worker attempted to POST events to Redpanda
+Cloud Serverless via the Pandaproxy REST API (`REDPANDA_BROKER_URL`). The Pandaproxy endpoint was
+unreachable — Redpanda Cloud **Serverless tier does not expose a Pandaproxy REST interface**.
+Pandaproxy is only available on Dedicated and BYOC clusters. The original Master Design assumed
+Pandaproxy as the ingest Worker → Redpanda hop, which was never viable on the Serverless cluster.
+
+Net effect: zero events reached ClickHouse via the Redpanda path. Shadow-mode telemetry was silently
+empty until diagnosed.
+
+**Required action (resolved by PR #170):**
+
+Implement a direct Worker → ClickHouse HTTPS write path in `apps/ingest/src/clickhouse-producer.ts`
+using the ClickHouse HTTP interface (port 8443, `INSERT INTO default.events FORMAT JSONEachRow`).
+Retain the Redpanda call as a dual-write no-op so the full chain activates without Worker changes
+when a Pandaproxy-capable cluster is provisioned.
+
+**Resolution:** RESOLVED 2026-05-29 by PR #170
+(`feat(ingest): direct ClickHouse-write path for pilot [ESC-017]`). Direct Worker→ClickHouse HTTPS
+write path implemented in `apps/ingest/src/clickhouse-producer.ts` (port 8443, INSERT FORMAT
+JSONEachRow). E2E verified: event count 0→1 after POST to `/v1/events`,
+`event_id = 01928f00-...-a3fc180390b5`, `tenant_id = cbc51cfa-1056-40aa-b0a9-6e982b52b1de`,
+end-to-end latency 1.4s. Redpanda dual-write no-op retained for future Dedicated/BYOC upgrade path.
+
+**Architectural implication (FOLLOW-157):** Redpanda Cloud Serverless = no Pandaproxy. The original
+ingest→Pandaproxy→Redpanda→ClickHouse chain is not viable at the current tier. Canonical pilot path
+= direct Worker→ClickHouse. Upgrade path vs. formalizing direct-ClickHouse as canonical to be
+decided at Sprint 4 planning.

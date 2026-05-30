@@ -4412,7 +4412,150 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 154 (153 consumed by RETRO-026 / PR #166 — git-log recency self-test fixture for check-migration-journal.sh — P2;
+## FOLLOW-154 — Update Master Design §U and §V to replace `adaptive.estalara.com` with `admin.estalara.com`
+
+- **priority:** P2
+- **agent:** architect
+- **estimated_hours:** 1
+- **source_ticket:** TICKET-PILOT-001 (ESC-013/ESC-014 resolution)
+- **scope:** During TICKET-PILOT-001 onboarding, `admin.estalara.com` went live as the canonical
+  control-plane domain (ESC-014 RESOLVED). However, Master Design §U "Agency Registration Flow &
+  Master Admin" and §V "Security Architecture" still reference `adaptive.estalara.com` throughout
+  (U5, §V JWT issuer, CORS allow-list, CSP headers, §V.5.1, etc.). The name `adaptive.estalara.com`
+  was never provisioned. All prose and configuration examples that mention `adaptive.estalara.com`
+  should be updated to `admin.estalara.com`. Additionally, `CONTROL_PLANE_URL` in
+  `packages/shared/src/domains.ts` should be confirmed correct.
+- **ac:**
+  - [ ] AC1: Grep Master Design §U and §V for all occurrences of `adaptive.estalara.com`; replace
+        with `admin.estalara.com`. Update version + changelog entry (bump minor version).
+  - [ ] AC2: Verify `packages/shared/src/domains.ts` `CONTROL_PLANE_URL` / `CONTROL_PLANE_DOMAIN`
+        constants reference `admin.estalara.com` (not `adaptive.estalara.com`).
+  - [ ] AC3: Search the full repo for any other `adaptive.estalara.com` references outside of
+        historical audit/retro files; update each.
+  - [ ] AC4: Confirm no DNS record for `adaptive.estalara.com` is in use (so the rename is safe).
+- **promoted_to_queue:** false
+- **depends_on:** []
+
+---
+
+## FOLLOW-155 — Set missing Vercel prd env vars: DATABASE_URL_ADMIN / DATABASE_URL_DIRECT / ADMIN_API_SECRET
+
+- **priority:** P1
+- **agent:** devops-engineer
+- **estimated_hours:** 1
+- **source_ticket:** TICKET-PILOT-001 closeout (security gap discovered during pilot)
+- **scope:** SECURITY. During TICKET-PILOT-001 onboarding it was discovered that three env vars are
+  not set in the Vercel production environment: `DATABASE_URL_ADMIN` (pooler-bypass connection for
+  migrations + seeding), `DATABASE_URL_DIRECT` (direct connection for Drizzle Kit), and
+  `ADMIN_API_SECRET` (server-to-server auth for `POST /api/tenants` and other admin routes). As a
+  result: (1) the control-plane falls back to mock/no-op mode for DB-admin operations, silently
+  hiding errors; (2) `POST /api/tenants` (Magic Link wizard tenant-create endpoint) is exposed to
+  the internet without authentication, allowing any caller to create tenant rows.
+- **ac:**
+  - [ ] AC1: Set `DATABASE_URL_ADMIN`, `DATABASE_URL_DIRECT`, and `ADMIN_API_SECRET` in Vercel
+        project dashboard → Environment Variables → Production. Use Doppler `prd` config values.
+        Verify with
+        `doppler run --config prd -- node -e "console.log(process.env.ADMIN_API_SECRET     ? 'set' : 'MISSING')"`.
+  - [ ] AC2: Redeploy the Vercel control-plane after adding env vars.
+  - [ ] AC3: Confirm `POST /api/tenants` returns 401 when called without the correct
+        `ADMIN_API_SECRET` header. Confirm it returns 201 with the correct header.
+  - [ ] AC4: Confirm `GET /api/adapt` and related routes still return 200 after the redeploy.
+- **promoted_to_queue:** false
+- **depends_on:** []
+
+---
+
+## FOLLOW-156 — Version-track the ClickHouse `default.events` table DDL (dbt or migration journal)
+
+- **priority:** P2
+- **agent:** data-engineer
+- **estimated_hours:** 3
+- **source_ticket:** TICKET-PILOT-001 closeout (infrastructure hygiene gap)
+- **scope:** The ClickHouse `default.events` table was created ad-hoc via a one-off `curl` DDL
+  command during the TICKET-PILOT-001 pilot setup. It is not tracked in any version-controlled
+  migration journal (no drizzle journal entry, no dbt model, no Terraform resource). ClickHouse
+  Cloud auto-translated the `ReplicatedMergeTree` engine to `SharedMergeTree`. As a result: (1) a
+  fresh cluster or disaster recovery scenario has no automated way to recreate the schema; (2)
+  future schema changes (adding columns, changing TTLs, adding indices) have no review gate.
+- **ac:**
+  - [ ] AC1: Author a dbt model or a versioned DDL migration file for `default.events` that matches
+        the live schema (confirmed by `SHOW CREATE TABLE default.events` on the live cluster). Store
+        under `apps/stream-consumer/migrations/` or `packages/data/migrations/` — engineer's call;
+        document the location in `docs/runbooks/clickhouse-operations.md`.
+  - [ ] AC2: Include the `SharedMergeTree` engine translation note as a comment in the DDL file
+        (ClickHouse Cloud auto-converts `ReplicatedMergeTree`).
+  - [ ] AC3: Add a CI smoke-test or README step that validates the live schema matches the DDL file
+        (e.g., `DESCRIBE TABLE default.events` output compared to expected columns).
+  - [ ] AC4: Document the ad-hoc creation in `docs/notes/2026-05-29-clickhouse-events-ddl.md` for
+        the audit trail.
+- **promoted_to_queue:** false
+- **depends_on:** []
+
+---
+
+## FOLLOW-157 — Decide Redpanda tier: upgrade to Dedicated/BYOC (Pandaproxy) vs. formalize direct-ClickHouse as canonical
+
+- **priority:** P2
+- **agent:** architect
+- **estimated_hours:** 2
+- **source_ticket:** ESC-017 (Redpanda Serverless has no Pandaproxy)
+- **scope:** ESC-017 confirmed that Redpanda Cloud Serverless does not expose a Pandaproxy REST
+  interface. The original Master Design §A.1 ingest chain (Worker → Pandaproxy → Redpanda →
+  ClickHouse consumer) is not viable at the current tier. The pilot runs on the direct
+  Worker→ClickHouse path (`apps/ingest/src/clickhouse-producer.ts`). The Redpanda dual-write call is
+  a no-op retained for future use. A decision is needed at Sprint 4 planning:
+  - **Option A (Upgrade):** Move Redpanda cluster to Dedicated or BYOC tier (Pandaproxy exposed).
+    Enables the full streaming architecture (audit log, replay, fan-out). Higher cost (~$200+/mo).
+  - **Option B (Formalize direct-ClickHouse):** Remove the Redpanda no-op from the Worker, update
+    Master Design §A.1 to reflect direct-write as the canonical production path. Simpler, cheaper;
+    loses streaming replay and fan-out capability.
+- **ac:**
+  - [ ] AC1: CEO + CTO make the Option A/B call at Sprint 4 planning.
+  - [ ] AC2: If Option A: write a sprint ticket for the Dedicated cluster upgrade + Pandaproxy
+        integration test. Remove the `// no-op` Redpanda call from `clickhouse-producer.ts` once
+        Pandaproxy is verified.
+  - [ ] AC3: If Option B: update Master Design §A.1 to document direct-ClickHouse as canonical.
+        Remove the dead Redpanda producer code from `apps/ingest/src/`. Update CONVENTIONS_PATCH.md
+        if this promotes a pattern.
+  - [ ] AC4: Regardless of choice, update `packages/shared/src/domains.ts` `REDPANDA_*` constants
+        with a comment indicating current tier limitations.
+- **promoted_to_queue:** false
+- **depends_on:** [ESC-017]
+
+---
+
+## FOLLOW-158 — Wire OTel + Sentry into production ingest Worker (OTEL_EXPORTER_URL + SENTRY_DSN_INGEST)
+
+- **priority:** P2
+- **agent:** devops-engineer
+- **estimated_hours:** 2
+- **source_ticket:** TICKET-PILOT-001 closeout (observability gap)
+- **scope:** The ingest Worker (`apps/ingest`) has OTel and Sentry instrumentation code, but neither
+  is active in the production deployment: `OTEL_EXPORTER_URL` is empty in the Cloudflare Worker
+  environment, and `SENTRY_DSN_INGEST` is not set. Production ingest errors are only visible in
+  Cloudflare Tail Logs (real-time stream, no persistence, no alerting). Shadow-mode telemetry gaps
+  during TICKET-PILOT-001 were diagnosed via Cloudflare dashboard only.
+- **ac:**
+  - [ ] AC1: Set `OTEL_EXPORTER_URL` in the Cloudflare Worker secret store (or `wrangler.toml`
+        `[vars]`) pointing to the Grafana Cloud OTLP endpoint. Deploy + verify a test event appears
+        in Grafana.
+  - [ ] AC2: Create a `SENTRY_DSN_INGEST` secret in Cloudflare Worker environment. Deploy + verify a
+        test error appears in Sentry under the `ingest` project.
+  - [ ] AC3: Add a `docs/runbooks/ingest-observability.md` section documenting the two env vars, how
+        to check Cloudflare Tail Logs as the fallback, and how to trigger a test error.
+  - [ ] AC4: Confirm the Grafana dashboard (`grafana.internal/d/api-latency` or equivalent) shows
+        ingest Worker metrics (p95 latency, error rate) in real time.
+- **promoted_to_queue:** false
+- **depends_on:** []
+
+---
+
+<!-- next free FOLLOW number: 159 (158 consumed by TICKET-PILOT-001 closeout — OTel + Sentry unwired in prd ingest Worker — P2;
+     157 consumed by ESC-017 — Redpanda tier decision: Dedicated/BYOC vs. direct-ClickHouse canonical — P2;
+     156 consumed by TICKET-PILOT-001 closeout — ClickHouse default.events DDL not version-tracked — P2;
+     155 consumed by TICKET-PILOT-001 closeout — Vercel prd missing DATABASE_URL_ADMIN / DATABASE_URL_DIRECT / ADMIN_API_SECRET — P1 SECURITY;
+     154 consumed by TICKET-PILOT-001 closeout / ESC-013/014 resolution — Master Design §U/§V adaptive→admin.estalara.com sync — P2;
+     153 consumed by RETRO-026 / PR #166 — git-log recency self-test fixture for check-migration-journal.sh — P2;
      152 consumed by RETRO-026 / PR #166 — vitest unit test for migrate.ts Part C exit-2 trap-killer + tighten appliedCount regex + diagnose phantom row id=17 — P1 with P0 sub-AC;
      151 consumed by RETRO-026 / PR #166 — wire ESC-012 into TICKET-PILOT-001 spec + AC + PILOT_RUNBOOK recovery pattern — P0 pilot blocker;
      150 consumed by RETRO-025 / PR #164 inline-fix verification — close FOLLOW-143 AC1 integration test + reconcile §13.2 dpia.md:1017 dual-id-cadence residual + sweep stale comment + dual-id docblock — P1, pre-DPO-sign-off;

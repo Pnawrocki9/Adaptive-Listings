@@ -4598,6 +4598,19 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
     the hop is: endpoint EXISTS, SDK consumption MISSING + runtime-apply MISSING.
   - Net: AC1 (runtime-apply bridge) is the core; description needs its own consume+apply path (AC6);
     `features_list`/`tagline` need producer + playbook work if their adaptation is wanted.
+- **impl note 2026-06-01 (AC1 done + empirical finding):** the apply layer is built —
+  `packages/sdk/src/core/augment.ts` `annotateDetectedSlots()` resolves `slot_selectors`
+  (primary→fallbacks, unique-match only), maps `headline→"headline"` / `cta_primary→"cta"`,
+  self-annotates `data-estalara-slot` (idempotent, never overrides existing markup, never throws);
+  wired into `index.ts` init after detection (gated by `decisionApiUrl`); 9 unit tests + full suite
+  green. **BUT** a verify-don't-guess probe ran `detectSiteSchema` (jsdom, DOMParser present) on the
+  real app.estalara.com listing HTML → **`confidence 0`, `schema: null`** — none of the 10
+  deterministic techniques match its bespoke SvelteKit/Tailwind markup. So **client-side detection
+  (option A) yields NOTHING to annotate on the pilot**; app.estalara.com REQUIRES the server-side AI
+  Vision schema. AC4 (live pilot proof) therefore depends on **option B**: feed the activated server
+  `TenantSiteSchema` (incl. AI-Vision result, from `tenant_site_schemas`) into the same
+  `annotateDetectedSlots` (the apply layer is source-agnostic). Option A still works as-is for
+  tenants whose markup a deterministic technique covers (JSON-LD/WordPress/MUI/etc.).
 - **ac:**
   - [ ] AC1: SDK runtime applicator resolves `detail_schema.slot_selectors` (primary + ordered
         fallbacks + JSON-LD path) to elements and tags them `data-estalara-slot` at runtime;

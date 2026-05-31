@@ -4548,9 +4548,90 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **promoted_to_queue:** false
 - **depends_on:** []
 
+## FOLLOW-159 — Close detection→adaptation hop: SDK applies detected `slot_selectors` at runtime (headline/tagline/cta/description/features) — zero tenant markup
+
+- **priority:** P0
+- **agent:** sdk-engineer (runtime applicator) + ml-engineer (verify producers + AI Vision
+  `description` + `/adapt` directives)
+- **estimated_hours:** 12
+- **source_ticket:** CEO decision 2026-05-31 (Piotr) — supersedes the Plan-V3 FIX-014 ("listing
+  template + `data-estalara-*` slots on app.estalara.com"). app.estalara.com is the LIVE product and
+  must stay **no-code** (standard SDK loader snippet only); adaptation must be driven entirely by
+  detection. Direct mirror of **FOLLOW-127** (which closed the detection→schema PRODUCER hop for
+  `inquiry_submit_selector`) — this closes the schema→runtime-adaptation CONSUMER hop for the detail
+  slots.
+- **scope:** The Auto-Detect pipeline (10 deterministic techniques + AI Vision / Claude Sonnet 4.6
+  fallback, `packages/sdk/src/auto-detect/pipeline.ts`) already PRODUCES
+  `TenantSiteSchema.detail_schema.slot_selectors` — CSS `SelectorStrategy` (primary + fallbacks +
+  JSON-LD path) for `headline`, `tagline`, `cta_primary`, `cta_secondary`, `description`,
+  `features_list` on the tenant's EXISTING DOM (`packages/shared/src/tenant-site-schema.ts:85-93`),
+  persisted server-side by `apps/control-plane/src/app/api/detect/route.ts` (AI Vision import :348,
+  `.insert(tenantSiteSchemas)` :413). BUT nothing applies them at runtime: the SDK consumes the
+  schema only for `extractArchetypeHints` + `inquiry_submit_selector`
+  (`packages/sdk/src/index.ts:180-188, 397`); `TextDirective` targets ONLY `[data-estalara-slot]`
+  (`packages/shared/src/directives.ts:44-49`) and `ClassDirective` rejects non-`[data-estalara-*]`
+  selectors (`packages/sdk/src/core/adapt.ts:351`). (Contrast: `ReorderDirective` ALREADY uses
+  detected `container_selector`/`item_selector` on index pages — the bridge exists for reorder, not
+  for detail text/CTA/description.) Net: on any real tenant (incl. app.estalara.com, which has 0
+  `data-estalara-*` markers — CHK-B), detail-page adaptation never fires. Build a runtime "augment
+  applicator" in the SDK that, on a detail page, reads the activated schema's
+  `detail_schema.slot_selectors`, resolves each `SelectorStrategy` (primary → ordered fallbacks →
+  JSON-LD path) to a DOM element, and self-annotates it `data-estalara-slot="<name>"` so the
+  existing `applyDirectives` path adapts it — no tenant code change. Also verify/extend the PRODUCER
+  side: that every technique + the AI Vision prompt actually populate `description` (the type
+  supports it but emission is unverified — techniques observed to emit mainly
+  `headline`/`cta_primary`), and that the `/adapt` decision playbooks emit a `description` directive
+  (not only headline/feature/cta).
+- **audit 2026-05-31 (narrows scope — done this session):**
+  - PRODUCER (detection→schema): `slot_selectors.description` IS emitted by all 10 deterministic
+    techniques + AI Vision (`packages/sdk/src/auto-detect/techniques/*`), as are `headline` +
+    `cta_primary`. BUT `features_list`, `tagline`, `cta_secondary` are emitted by **NO** technique —
+    feature/tagline adaptation is not yet detectable no-code (extend techniques + AI Vision prompt
+    if in scope).
+  - CONTENT (`/adapt` playbooks, `packages/sdk/src/core/playbooks/archetypes/*`): TextDirectives are
+    emitted for ONLY `headline` (27×) + `cta` (19×) across all archetypes. There is **no**
+    `description` and **no** `features` slot in any playbook.
+  - DESCRIPTION already has a dedicated server pipeline `GET /api/adapt/description`
+    (`apps/control-plane/src/app/api/adapt/description/route.ts`; TICKET-DESC-001 / Master Design
+    E.7: tiered Observer/Augment/Native, LLM-generated + Upstash-cached + Modal async). BUT the SDK
+    does **not** call it (no ref in `packages/sdk/src/core/adapt.ts` or `index.ts`). For description
+    the hop is: endpoint EXISTS, SDK consumption MISSING + runtime-apply MISSING.
+  - Net: AC1 (runtime-apply bridge) is the core; description needs its own consume+apply path (AC6);
+    `features_list`/`tagline` need producer + playbook work if their adaptation is wanted.
+- **ac:**
+  - [ ] AC1: SDK runtime applicator resolves `detail_schema.slot_selectors` (primary + ordered
+        fallbacks + JSON-LD path) to elements and tags them `data-estalara-slot` at runtime;
+        idempotent (no double-tag), never throws on unresolved selectors, mutates ONLY resolved
+        elements.
+  - [ ] AC2: Adaptation works for ALL slots incl. `description` and `tagline` — a `description`
+        directive from `/adapt` rewrites the tenant's existing description block via the detected
+        selector.
+  - [ ] AC3 (producer): each deterministic technique that can, and the AI Vision prompt, populate
+        `slot_selectors.description`; corpus/fixtures assert it; `/adapt` playbooks emit a
+        `description` text directive.
+  - [ ] AC4 (pilot proof): on `000-app-estalara` (ground-truth fixtures exist), detection → activate
+        → live adaptation of headline + description + cta works on the listing page **with zero
+        `data-estalara-*` in the app.estalara.com source** (no-code). The local app.estalara.com
+        clone is for verification only; its templates are NOT modified.
+  - [ ] AC5: safety — when a slot selector is missing or resolves to >1 ambiguous element, skip that
+        slot and emit a debug event (mirror the `no_slot_elements` / `disallowed_selector` telemetry
+        already in `adapt.ts`); never break the tenant page.
+  - [ ] AC6 (description): the SDK calls `GET /api/adapt/description` on a detail page and applies
+        the returned copy to the detected `slot_selectors.description` element (self-annotated
+        `data-estalara-slot="description"`), honoring tier (Observer = `copy_template`;
+        Augment/Native = cached AI). Distinct from the playbook TextDirective path; the endpoint
+        already exists.
+  - [ ] AC7 (optional, if feature/tagline adaptation wanted): extend the deterministic techniques +
+        AI Vision prompt to emit `slot_selectors.features_list`/`tagline`, and add corresponding
+        playbook slots so `/adapt` emits those directives. Out of scope if v1 adapts only headline +
+        cta + description.
+- **promoted_to_queue:** false
+- **depends_on:** [FOLLOW-127]
+
 ---
 
-<!-- next free FOLLOW number: 159 (158 consumed by TICKET-PILOT-001 closeout — OTel + Sentry unwired in prd ingest Worker — P2;
+<!-- next free FOLLOW number: 160 (159 consumed by CEO decision 2026-05-31 — close detection→adaptation hop in SDK: apply detected slot_selectors incl. description, no-code; supersedes Plan-V3 FIX-014 — P0;
+     158 consumed by TICKET-PILOT-001 closeout — OTel + Sentry unwired in prd ingest Worker — P2;
      157 consumed by ESC-017 — Redpanda tier decision: Dedicated/BYOC vs. direct-ClickHouse canonical — P2;
      156 consumed by TICKET-PILOT-001 closeout — ClickHouse default.events DDL not version-tracked — P2;
      155 consumed by TICKET-PILOT-001 closeout — Vercel prd missing DATABASE_URL_ADMIN / DATABASE_URL_DIRECT / ADMIN_API_SECRET — P1 SECURITY;

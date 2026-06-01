@@ -4712,9 +4712,9 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   `apps/control-plane/src/lib/llm-gateway.ts` has `HAIKU_MODEL`/`SONNET_MODEL` constants chosen by a
   routing policy. Master Design §C.3 envisioned `INTENT_*_MODEL` config params but they are NOT
   wired. Make the **content-generation** model selectable from the admin dashboard: persist a
-  setting (global default + optional per-tenant override) in Supabase `tenants`, surface a dashboard
-  control, and thread it to the LLM gateway + the description Modal job (via LiteLLM, which already
-  abstracts providers).
+  **single GLOBAL default** (CEO decision 2026-06-01 — NO per-tenant override) in a config/settings
+  store, surface a dashboard control, and thread it to the LLM gateway + the description Modal job
+  (via LiteLLM, which already abstracts providers).
 - **scoping recommendation (confirm with CEO before build):**
   - Selectable ONLY for **generation/content** models (description, adaptation copy) — these are
     async/cached and latency-tolerant (Haiku / Sonnet / Opus all viable).
@@ -4723,8 +4723,8 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
     confidence→Sonnet escalation (CHAT-002 refinement) instead.
   - Curated allow-list of models (not free text); show cost/latency hints per model.
 - **ac:**
-  - [ ] AC1: a `tenants.generation_model` (or settings table) column with a safe default
-        (`claude-sonnet-4-6`); migration + RLS.
+  - [ ] AC1: a single GLOBAL `generation_model` config setting with a safe default
+        (`claude-sonnet-4-6`); migration if DB-backed. No per-tenant column.
   - [ ] AC2: dashboard control (settings page) to pick the generation model from a curated list;
         persists; admin-only.
   - [ ] AC3: `generate_description.py` + `llm-gateway.ts` read the configured model (fallback to

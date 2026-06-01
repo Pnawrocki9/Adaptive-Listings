@@ -4701,9 +4701,45 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **promoted_to_queue:** false
 - **depends_on:** [FOLLOW-159]
 
+## FOLLOW-161 — admin.estalara.com: selectable LLM model for content generation (dashboard + config)
+
+- **priority:** P2
+- **agent:** backend-engineer (dashboard + config) + ml-engineer (gateway/Modal wiring)
+- **estimated_hours:** 10
+- **source_ticket:** CEO request 2026-06-01.
+- **scope:** Today the generation model is **hardcoded** —
+  `apps/llm-gateway/src/jobs/generate_description.py:476` uses `claude-sonnet-4-6`;
+  `apps/control-plane/src/lib/llm-gateway.ts` has `HAIKU_MODEL`/`SONNET_MODEL` constants chosen by a
+  routing policy. Master Design §C.3 envisioned `INTENT_*_MODEL` config params but they are NOT
+  wired. Make the **content-generation** model selectable from the admin dashboard: persist a
+  setting (global default + optional per-tenant override) in Supabase `tenants`, surface a dashboard
+  control, and thread it to the LLM gateway + the description Modal job (via LiteLLM, which already
+  abstracts providers).
+- **scoping recommendation (confirm with CEO before build):**
+  - Selectable ONLY for **generation/content** models (description, adaptation copy) — these are
+    async/cached and latency-tolerant (Haiku / Sonnet / Opus all viable).
+  - **Do NOT** expose the **real-time chat classifier** model for free selection — its <500ms
+    latency budget constrains it to a Haiku-class model (locked FOLLOW-087); keep the
+    confidence→Sonnet escalation (CHAT-002 refinement) instead.
+  - Curated allow-list of models (not free text); show cost/latency hints per model.
+- **ac:**
+  - [ ] AC1: a `tenants.generation_model` (or settings table) column with a safe default
+        (`claude-sonnet-4-6`); migration + RLS.
+  - [ ] AC2: dashboard control (settings page) to pick the generation model from a curated list;
+        persists; admin-only.
+  - [ ] AC3: `generate_description.py` + `llm-gateway.ts` read the configured model (fallback to
+        default) instead of the hardcoded constant; LiteLLM routes accordingly.
+  - [ ] AC4: real-time chat classifier model is NOT user-selectable (stays Haiku-class) —
+        documented.
+  - [ ] AC5: changing the model takes effect for new generations (cache keyed by model so a switch
+        doesn't serve stale-model copy).
+- **promoted_to_queue:** false
+- **depends_on:** []
+
 ---
 
-<!-- next free FOLLOW number: 161 (160 consumed by CEO decision 2026-06-01 — Plan B: screenshot-based AI Vision realign to Master Design §B.5.1 for bespoke-site detection (ADR-0008) — P1;
+<!-- next free FOLLOW number: 162 (161 consumed by CEO request 2026-06-01 — admin selectable LLM generation model (dashboard + config; classifier stays Haiku-class) — P2;
+     160 consumed by CEO decision 2026-06-01 — Plan B: screenshot-based AI Vision realign to Master Design §B.5.1 for bespoke-site detection (ADR-0008) — P1;
      159 consumed by CEO decision 2026-05-31 — close detection→adaptation hop in SDK: apply detected slot_selectors incl. description, no-code; supersedes Plan-V3 FIX-014 — P0;
      158 consumed by TICKET-PILOT-001 closeout — OTel + Sentry unwired in prd ingest Worker — P2;
      157 consumed by ESC-017 — Redpanda tier decision: Dedicated/BYOC vs. direct-ClickHouse canonical — P2;

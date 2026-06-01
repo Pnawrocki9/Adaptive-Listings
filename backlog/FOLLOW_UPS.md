@@ -4638,12 +4638,62 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
         AI Vision prompt to emit `slot_selectors.features_list`/`tagline`, and add corresponding
         playbook slots so `/adapt` emits those directives. Out of scope if v1 adapts only headline +
         cta + description.
+- **plan A/B + status 2026-06-01 (ADR-0008; Master Design v3.8 §B.5.7):** apply layer DONE on branch
+  `sdk-engineer/FOLLOW-159-augment-applicator` (augment.ts applicator headline/cta/description +
+  description.ts consumer + AI-Vision detail-slot detection; 707 SDK tests green). Verified: client
+  detection returns null for app.estalara.com and HTML-text AI Vision is insufficient for bespoke
+  Tailwind (confidence 0.3, headline→price, cta/description unresolved) → bespoke tenants need a
+  **curated activated schema** (Plan A); robust automated detection is **FOLLOW-160** (Plan B,
+  screenshot AI Vision). **Remaining work for Plan A (pilot no-code):**
+  - [ ] Author + activate a CURATED `tenant_site_schemas` row for `000-app-estalara` with real,
+        human-verified `detail_schema.slot_selectors` (headline/cta/description) targeting the
+        actual app.estalara.com DOM — no app.estalara.com source edit.
+  - [ ] Extend `getTenantSchema` (`apps/control-plane/src/lib/tenant-schema.ts`) from reorder-only
+        `TenantSiteSchemaMin` to also return `detail_schema.slot_selectors`.
+  - [ ] B1: add an optional `slot_selectors` field to the `/api/adapt` response (shared
+        `AdaptationDirectives` + control-plane route + `apps/decision-api` mirror + SDK
+        `adaptResponseSchema`); document in `docs/INTERFACES.md`. Canonical per ADR-0004/0006/0007.
+  - [ ] SDK: in `refreshDirectives`, feed `resp.slot_selectors` to `annotateDetectedSlots` before
+        `applyDirectives` (today the applicator only consumes the client-detected schema, which is
+        null for bespoke sites).
 - **promoted_to_queue:** false
 - **depends_on:** [FOLLOW-127]
 
+## FOLLOW-160 — Plan B: true screenshot-based AI Vision (realign to Master Design §B.5.1) for bespoke-site detection
+
+- **priority:** P1
+- **agent:** ml-engineer
+- **estimated_hours:** 16
+- **source_ticket:** CEO decision 2026-06-01 (ADR-0008 Plan B). Follow-up to FOLLOW-159.
+- **scope:** Master Design §B.5.1 specifies L5 AI Vision = **screenshot + HTML → Claude Sonnet
+  4.6**, but the implementation (`packages/sdk/src/auto-detect/techniques/ai-vision.ts`) sends
+  **HTML text only**. Verified 2026-06-01: HTML-text vision returns `confidence 0.3` (below the 0.5
+  accept threshold) and speculative, non-matching selectors for bespoke Tailwind sites
+  (app.estalara.com) — headline resolves to the price element, cta/description do not resolve.
+  Realign the technique to the documented design: render a screenshot (headless browser) of the
+  detail page and send the image + (cleaned/rendered) HTML to Claude Vision, so the model can ground
+  detail-slot selectors (`detail_headline/cta/description_selector`, already in the prompt +
+  `buildDetailSlotSelectors`) in the visual layout rather than guessing from non-semantic markup.
+  Goal: accurate automated detection removes the need for hand-authored curated schemas (FOLLOW-159
+  Plan A) → unblocks self-serve onboarding. Decide where the screenshot is captured
+  (Modal/Playwright vs `/api/detect` server) and the cost/latency budget (§B.5.1 L5 = $0.33, 5–10s).
+- **ac:**
+  - [ ] AC1: AI Vision sends a rendered screenshot + HTML to Claude Vision; the model returns
+        detail-slot selectors grounded in the visual layout.
+  - [ ] AC2: On a corpus incl. a bespoke Tailwind fixture (app.estalara.com listing), detected
+        `detail_schema.slot_selectors` resolve to the CORRECT elements (headline ≠ price; cta and
+        description resolve) at confidence ≥ 0.5.
+  - [ ] AC3: Cost/latency stay within the §B.5.1 L5 budget; screenshot capture path documented in a
+        runbook; rate-limited per tenant as today.
+  - [ ] AC4: When automated detection succeeds, a tenant onboards with NO hand-authored schema
+        (closes the Plan A manual step for covered sites).
+- **promoted_to_queue:** false
+- **depends_on:** [FOLLOW-159]
+
 ---
 
-<!-- next free FOLLOW number: 160 (159 consumed by CEO decision 2026-05-31 — close detection→adaptation hop in SDK: apply detected slot_selectors incl. description, no-code; supersedes Plan-V3 FIX-014 — P0;
+<!-- next free FOLLOW number: 161 (160 consumed by CEO decision 2026-06-01 — Plan B: screenshot-based AI Vision realign to Master Design §B.5.1 for bespoke-site detection (ADR-0008) — P1;
+     159 consumed by CEO decision 2026-05-31 — close detection→adaptation hop in SDK: apply detected slot_selectors incl. description, no-code; supersedes Plan-V3 FIX-014 — P0;
      158 consumed by TICKET-PILOT-001 closeout — OTel + Sentry unwired in prd ingest Worker — P2;
      157 consumed by ESC-017 — Redpanda tier decision: Dedicated/BYOC vs. direct-ClickHouse canonical — P2;
      156 consumed by TICKET-PILOT-001 closeout — ClickHouse default.events DDL not version-tracked — P2;

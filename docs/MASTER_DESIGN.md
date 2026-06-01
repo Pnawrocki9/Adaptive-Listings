@@ -1,6 +1,8 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 3.7 (CEO ratifications wave 2026-05-30 — 10 z 11 decyzji ratified: D-1 app.estalara.com / D-2 chat in v1.0 / D-3 6 families classifier / D-4 live.signup OR chat / D-5 technical-readiness / D-6 Discovery Day batched / R-2 Vercel env DONE / R-3 peter+rafal owners / R-4 wait for Magic Link / R-5 **10-12 weeks** priorytet jakość; R-1 ZIP pending; pilot start tydzień 13; SCHEMA-001 + VERIFY-001 dodane; FIX-006/017 scope changed; full ratifications wave w `backlog/PLAN-V3-2026-05-30.md` §0; APPROVED_TO_IMPLEMENT=pending R-1 only; otherwise as v3.6) | **Data:** 30 maja 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 3.8 (2026-06-01 — detection→adaptation runtime bridge, **no-code app.estalara.com**, AI-Vision quality strategy [ADR-0008; FOLLOW-159 implement, FOLLOW-160 Plan B]; FIX-014 slot-injection superseded — patrz changelog v3.8 + §B.5.7. Bazuje na 3.7: CEO ratifications wave 2026-05-30 — 10 z 11 decyzji ratified: D-1 app.estalara.com / D-2 chat in v1.0 / D-3 6 families classifier / D-4 live.signup OR chat / D-5 technical-readiness / D-6 Discovery Day batched / R-2 Vercel env DONE / R-3 peter+rafal owners / R-4 wait for Magic Link / R-5 **10-12 weeks** priorytet jakość; R-1 ZIP pending; pilot start tydzień 13; SCHEMA-001 + VERIFY-001 dodane; FIX-006/017 scope changed; full ratifications wave w `backlog/PLAN-V3-2026-05-30.md` §0; APPROVED_TO_IMPLEMENT=pending R-1 only; otherwise as v3.6) | **Data:** 1 czerwca 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v3.8 (1 czerwca 2026 — detection→adaptation bridge, no-code app.estalara.com, AI-Vision quality strategy):** CEO potwierdził, że **app.estalara.com to żywy produkt i pozostaje no-code** — jego kod nie jest modyfikowany poza standardowym snippetem loadera SDK; adaptacja jest napędzana wyłącznie detekcją. Decyzja + mechanizm: **ADR-0008**; implementacja: **FOLLOW-159** (Plan A) + **FOLLOW-160** (Plan B). Konsekwencje: (1) **FIX-014 (sloty `data-estalara-*` w szablonie app.estalara.com) PORZUCONY/superseded** — `backlog/PLAN-V3-2026-05-30.md` + `CHK-B.md` oznaczone. (2) **Runtime augment-applicator (zaimplementowany)** — `packages/sdk/src/core/augment.ts` `annotateDetectedSlots()` rozwiązuje wykryte `detail_schema.slot_selectors` (primary→fallbacks, unikalne dopasowanie, nie nadpisuje istniejącego markupu, nie rzuca) i self-anotuje `data-estalara-slot` (mapowanie `headline→headline`, `cta_primary→cta`, `description→description`); potem istniejący silnik adaptuje BEZ markupu tenanta: **headline/cta** dyrektywami playbooka `/adapt`, **description** dedykowanym `/api/adapt/description` (§E.7) konsumowanym przez `core/description.ts` (textContent, XSS-safe). Parytet producent↔konsument: każdy wykryty detail-slot jest też modyfikowany. (3) **AI Vision rozszerzona** o detekcję detail-slotów (`detail_headline/cta/description_selector` w prompt + `buildDetailSlotSelectors`) zamiast hardkodu generyków. (4) **Zweryfikowane ograniczenie (verify-don't-guess):** obecna AI Vision wysyła **tylko tekst HTML** (nie screenshot, jak zakłada §B.5.1 L5) — dla bespoke sajtów Tailwind (app.estalara.com) zwróciła `confidence 0.3` (<próg 0.5 → null) i błędne/nierozwiązane selektory (headline→**cena**, cta/description brak); client-side deterministyczna detekcja zwraca `null`. (5) **Plan A (pilot, teraz — FOLLOW-159):** dla bespoke tenantów aktywowany schemat w `tenant_site_schemas` jest **kurowany/ręcznie autorski** (realne, zweryfikowane selektory) — nadal no-code (selektory w DB Estalary, nie w kodzie tenanta); applicator + opis działają bez zmian. Pozostałe kroki Plan A: rozszerzyć `getTenantSchema` (dziś reorder-only `TenantSiteSchemaMin`) o `detail_schema.slot_selectors`; **B1** — dołączyć `slot_selectors` jako **additive, opcjonalne pole odpowiedzi `/api/adapt`** (kanoniczny per ADR-0004/0006/0007); SDK konsumuje je w `refreshDirectives`. (6) **Plan B (self-serve, follow-up — FOLLOW-160):** prawdziwa **screenshot-based AI Vision** (realign do §B.5.1: screenshot+HTML→Claude Vision) dla robust detekcji bespoke sajtów bez ręcznego autorstwa; ryzyko kruchości kurowanych selektorów łagodzi Continuous Schema Validation (§B.6). Brak rename sekcji (propagacja §Y.2 = bez zmian downstream). Reszta jak v3.7.
 
 **Changelog v3.7 (30 maja 2026 wieczór — CEO ratifications wave for Plan v3):** Po zapisie Plan v3 jako v3.0 (commit `09f9ac2`) CEO odpowiedział interaktywnie na 11 pytań otwierających. **10 z 11 deliverables ratified**, 1 (R-1 ZIP app.estalara.com) pending. **Kluczowe zmiany merytoryczne vs Plan v3.0:** (1) **Conversion definition** — `inquiry.completed` (typowy real-estate inquiry form) zastąpiony przez **`live.signup` OR `chat.contact_initiated`** (logical OR, równe wagi 1.0). Estalara nie operuje jak typowe portale nieruchomości — primary funnel events to zapis na LIVE event w listingu lub bezpośredni kontakt z agentem na czacie. `inquiry.completed` schemat pozostaje jako secondary fallback dla przyszłych agencji. Nowy ticket **SCHEMA-001** dodaje `live.signup` event do `packages/shared/src/schemas/events/live.ts` + ClickHouse column + Zod parser. **FIX-006** zmienia scope z form-onSubmit na live-signup CTA + chat first-message listener. (2) **Harmonogram 8 → 10-12 tygodni** (R-5 priorytet jakość) — dodatkowe bufory na FIX-014 SvelteKit cross-stack (Sprint 3 +2d), CHAT-001 expanded scope (Sprint 4 +3d), manual QA walk-through + pełna dokumentacja runbooków + dodatkowe e2e tests (Sprint 5 +5d). **Pilot start = tydzień 13** (nie 9). Dodany formalny **mid-pilot Council checkpoint** w tygodniu 7. (3) **SDK Estalary już wpięte na app.estalara.com** — FIX-017 redukuje z M (loader integration) do S (verify + adjust). (4) **AI Vision pipeline w pełni zaimplementowany** w `apps/control-plane/src/app/api/detect/route.ts:348` (Claude Sonnet 4.6, ANTHROPIC_API_KEY) — nowy ticket **VERIFY-001** weryfikuje że aktywny dla auto-detect schema na pilot listing pages po R-2 redeploy. (5) **R-2 Vercel env DONE** — 5 env vars w prd (ANTHROPIC_API_KEY, SUPABASE_JWT_SECRET, DEMO_MODE_JWT_SECRET, CLICKHOUSE_URL, CLICKHOUSE_PASSWORD); wymagany redeploy (`vercel --prod`) żeby weszły do runtime'u. (6) **AUTH-001 seed** — peter@estalara.com + rafal@estalara.com obaj jako agency:owner (nie 1 owner + 2 admin jak v3.0 zakładał). Krystian zostanie dodany przez UI po wdrożeniu Magic Linka. (7) **D-3 6 families ratified** (nie 18) — FIX-018/019/020 (compatibility layer dual-keyed bandit_arms) aktywne, brak destructive migration. (8) **Discovery Day batched** — CHK-A/B/C/E mogą startować natychmiast po otrzymaniu ZIPa R-1; CHK-D czeka na ZIP. APPROVED_TO_IMPLEMENT pozostaje **pending R-1 only** (ZIP app.estalara.com) — wszystkie inne deliverables zamknięte. **Pełna sekcja §0 ratyfikacji w `backlog/PLAN-V3-2026-05-30.md` v3.1**.
 
@@ -1388,6 +1390,59 @@ async function computeDomFingerprint(html: string): Promise<number[]> {
 Storage: `schema_fingerprints (tenant_id, taken_at, fingerprint_vector pgvector(1024), source_url)`. Retention 90 dni. Index na (tenant_id, taken_at DESC).
 
 **Cross-reference:** to jest baza dla Innowacji R.4 (Self-Healing Schema Detection — Predictive). Plus feed do K.3.3 Alerts Center jako alert type "schema_drift_predicted" (severity: warning).
+
+---
+
+#### B.5.7. Detection → Adaptation runtime bridge & no-code integration (ADR-0008, FOLLOW-159/160)
+
+**Zasada nadrzędna (CEO, 2026-06-01): integracja jest no-code.** Kod tenanta — w szczególności
+**`app.estalara.com` (żywy produkt)** — NIE jest modyfikowany poza standardowym snippetem loadera
+SDK. Adaptacja strony szczegółów jest napędzana **wyłącznie detekcją** (§B.5.1–B.5.6) + runtime
+bridge poniżej. (To unieważnia podejście FIX-014, które dokładało `data-estalara-*` do szablonu —
+PORZUCONE/superseded.)
+
+**Most detekcja→adaptacja (zaimplementowany — `packages/sdk/src/core/augment.ts`).** Pipeline
+detekcji produkuje `TenantSiteSchema.detail_schema.slot_selectors` (CSS-selektory headline/CTA/
+description na **istniejącym** DOM tenanta), ale silnik adaptacji mutuje wyłącznie elementy z
+`data-estalara-slot`. `annotateDetectedSlots(schema)` domyka tę lukę: rozwiązuje każdy
+`SelectorStrategy` (primary → fallbacks; tylko **jednoznaczne** dopasowanie; nigdy nie nadpisuje
+istniejącego `data-estalara-slot`; nigdy nie rzuca) i **self-anotuje** dopasowany element
+`data-estalara-slot` (mapowanie `headline→headline`, `cta_primary→cta`, `description→description`).
+Następnie istniejące ścieżki adaptują BEZ markupu tenanta:
+
+- **headline / cta** → dyrektywy `TextDirective` z playbooka `/api/adapt` (`applyDirectives`).
+- **description** → dedykowany pipeline **`GET /api/adapt/description`** (§E.7), konsumowany przez
+  `packages/sdk/src/core/description.ts` i zapisywany jako `textContent` (bezpieczne wobec
+  HTML-injection) do anotowanego elementu.
+
+**Parytet producent↔konsument (wymóg):** każdy detail-slot który detekcja *wykrywa* musi być też
+*modyfikowany* w DOM (i odwrotnie). Obecny zakres parytetu: `headline`, `cta`, `description`.
+`features_list` / `tagline` — poza zakresem v1 (nie wykrywane ani nie adaptowane; AC7 FOLLOW-159).
+
+**Dostarczenie schematu do SDK (B1 — planowane).** Dla bespoke sajtów detekcja client-side zwraca
+`null` (poniżej), więc SDK otrzymuje `slot_selectors` **aktywowanego schematu serwerowego** jako
+**additive, opcjonalne pole odpowiedzi `/api/adapt`** (endpoint kanoniczny per ADR-0004/0006/0007;
+bez extra round-tripu — SDK już woła `/adapt`). Wymaga rozszerzenia `getTenantSchema`
+(`apps/control-plane/src/lib/tenant-schema.ts`, dziś zwraca reorder-only `TenantSiteSchemaMin`) o
+`detail_schema.slot_selectors`. SDK woła `annotateDetectedSlots` w `refreshDirectives` przed
+`applyDirectives`.
+
+**Zweryfikowane ograniczenie detekcji dla bespoke sajtów (2026-06-01).** Tabela §B.5.1 zakłada
+**L5: AI Vision = screenshot + HTML**; implementacja (`packages/sdk/src/auto-detect/techniques/
+ai-vision.ts`) wysyła obecnie **tylko tekst HTML** (pierwsze 50 KB) — dryf projekt↔implementacja.
+Dla `app.estalara.com` (custom SvelteKit + Tailwind, brak semantycznych klas): client-side
+deterministyczna detekcja → `confidence 0 / null`; AI Vision → `confidence 0.3` (poniżej progu 0.5)
+i spekulatywne selektory, które na realnym DOM dają headline→**cena**, cta/description nierozwiązane.
+Wniosek: **AI Vision tekst-HTML jest niewystarczająca dla bespoke/Tailwind**.
+
+- **Plan A (pilot, teraz — FOLLOW-159):** dla takich tenantów aktywowany rekord
+  `tenant_site_schemas` jest **kurowany/ręcznie autorski** — realne, ludzko-zweryfikowane selektory
+  na faktyczny DOM. Nadal no-code (selektory żyją w DB Estalary, nie w kodzie tenanta). Applicator +
+  konsument opisu działają bez zmian. Ryzyko kruchości (Tailwind) łagodzi Continuous Schema
+  Validation (§B.6) + fallbacki w `SelectorStrategy` + guard unikalnego dopasowania.
+- **Plan B (self-serve, follow-up — FOLLOW-160):** realign AI Vision do projektu §B.5.1 —
+  **screenshot + HTML → Claude Vision** — dla robust, automatycznej detekcji bespoke sajtów bez
+  ręcznego autorstwa. Pilot NIE blokuje się na Planie B.
 
 ---
 

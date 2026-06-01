@@ -2,7 +2,9 @@
 
 Permanent rules codified from lessons learned. Rules A–F come from Paczka 1 retrospective. Rules G+
 are added by the `retrospective-analyst` agent when the same finding pattern appears in ≥2
-per-ticket retrospectives (RULE_PROMOTION_THRESHOLD = 2).
+per-ticket retrospectives (RULE_PROMOTION_THRESHOLD = 2). Rules may also be codified directly from a
+CEO/architect directive (provenance is noted on the rule; the ≥2-retro gate applies only to
+retro-promoted rules).
 
 **This file is authoritative.** When a rule here conflicts with older prose in CLAUDE.md, this file
 wins. PM orchestrator includes the current rules in every worker delegation prompt.
@@ -651,4 +653,34 @@ bash scripts/check-migration-journal.sh --self-test # verify the gate itself wor
 3. Commit the new SQL file AND the journal change in the same commit so the CI gate sees the
    matching git-add date for the SQL file.
 
-<!-- Rule P+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->
+## Rule P — Check docs + repo for prior art BEFORE proposing a ticket, solution, or next step
+
+**Pattern:** Re-opening, re-proposing, or re-deciding a topic that was already discussed,
+implemented, or planned — because the proposal was formed without first checking the record. Causes
+never-ending decision loops, duplicate tickets, and re-execution of finished work (mess).
+
+**Evidence:** CEO directive 2026-06-01 (direct mandate; not retro-promoted).
+
+**Rule:** Before creating any ticket, proposing a solution, planning a next step, or designing an
+approach, FIRST search the record for the topic: `backlog/FOLLOW_UPS.md`, `backlog/QUEUE.md`,
+`backlog/sprint-*/`, `docs/adr/`, `docs/MASTER_DESIGN.md`, `backlog/RETROSPECTIVES.md`, and the
+relevant code/fixtures. Then:
+
+- already DECIDED → cite the ADR/decision and build on it; do not re-litigate.
+- already IMPLEMENTED → reference the code; do not rebuild.
+- already PLANNED (a FOLLOW/ticket exists) → extend/continue that ticket; do not create a duplicate.
+
+Only propose genuinely new work. This is the proposal-time complement to Operating Principle 1
+(Master_Design = SoT) and Rule I (wired-or-dead).
+
+**Verification:**
+
+```bash
+# Before filing FOLLOW-NNN or proposing X, confirm it isn't already covered:
+grep -rniE "<topic keywords>" backlog/ docs/ --include='*.md' | grep -viE '\.next'
+```
+
+---
+
+<!-- Rule Q+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->
+<!-- Rule P added 2026-06-01 by direct CEO directive (provenance noted in-rule), not retro-promoted -->

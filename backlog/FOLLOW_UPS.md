@@ -4645,17 +4645,28 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   Tailwind (confidence 0.3, headline→price, cta/description unresolved) → bespoke tenants need a
   **curated activated schema** (Plan A); robust automated detection is **FOLLOW-160** (Plan B,
   screenshot AI Vision). **Remaining work for Plan A (pilot no-code):**
-  - [ ] Author + activate a CURATED `tenant_site_schemas` row for `000-app-estalara` with real,
+- **A1 adopted for the pilot 2026-06-01 (ADR-0008 Update; supersedes the curated-schema path for
+  app.estalara.com):** verified app.estalara.com has ZERO stable hooks → CEO chose **A1 minimal
+  canonical hooks** on the listing template instead of a fragile curated schema. Implemented in the
+  Estalara-app repo (`web-master/.../listing/[slug]/+page.svelte`, flag
+  `PUBLIC_ESTALARA_SDK_ENABLED`; handoff `web-master/HANDOFF_ESTALARA_ADAPTIVE.md`). With
+  `data-estalara-slot` hooks present the SDK uses the DIRECT path (headline via `/adapt` playbook
+  directive; description via the `/api/adapt/description` consumer already wired). **So the four
+  items below are NOT needed for the pilot** — they are now scoped to **THIRD-PARTY tenants where we
+  cannot add hooks** (deferred; the runtime applicator stays for them, and Plan B / FOLLOW-160
+  improves their detection):
+  - [ ] (third-party only) Author + activate a CURATED `tenant_site_schemas` row with real,
         human-verified `detail_schema.slot_selectors` (headline/cta/description) targeting the
-        actual app.estalara.com DOM — no app.estalara.com source edit.
-  - [ ] Extend `getTenantSchema` (`apps/control-plane/src/lib/tenant-schema.ts`) from reorder-only
-        `TenantSiteSchemaMin` to also return `detail_schema.slot_selectors`.
-  - [ ] B1: add an optional `slot_selectors` field to the `/api/adapt` response (shared
-        `AdaptationDirectives` + control-plane route + `apps/decision-api` mirror + SDK
+        actual DOM — no tenant source edit.
+  - [ ] (third-party only) Extend `getTenantSchema` (`apps/control-plane/src/lib/tenant-schema.ts`)
+        from reorder-only `TenantSiteSchemaMin` to also return `detail_schema.slot_selectors`.
+  - [ ] (third-party only) B1: add an optional `slot_selectors` field to the `/api/adapt` response
+        (shared `AdaptationDirectives` + control-plane route + `apps/decision-api` mirror + SDK
         `adaptResponseSchema`); document in `docs/INTERFACES.md`. Canonical per ADR-0004/0006/0007.
-  - [ ] SDK: in `refreshDirectives`, feed `resp.slot_selectors` to `annotateDetectedSlots` before
-        `applyDirectives` (today the applicator only consumes the client-detected schema, which is
-        null for bespoke sites).
+  - [ ] (third-party only) SDK: in `refreshDirectives`, feed `resp.slot_selectors` to
+        `annotateDetectedSlots` before `applyDirectives`. **Pilot remaining work (A1 path):** apply
+        the §2 hooks to PROD app.estalara.com + deploy a working `sdk.js` at admin.estalara.com +
+        set `PUBLIC_ESTALARA_SDK_ENABLED=true` (see handoff doc).
 - **promoted_to_queue:** false
 - **depends_on:** [FOLLOW-127]
 

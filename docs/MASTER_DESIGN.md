@@ -1435,11 +1435,22 @@ deterministyczna detekcja → `confidence 0 / null`; AI Vision → `confidence 0
 i spekulatywne selektory, które na realnym DOM dają headline→**cena**, cta/description nierozwiązane.
 Wniosek: **AI Vision tekst-HTML jest niewystarczająca dla bespoke/Tailwind**.
 
-- **Plan A (pilot, teraz — FOLLOW-159):** dla takich tenantów aktywowany rekord
+- **Pilot first-party (app.estalara.com) — A1 minimalne haki (DECYZJA 2026-06-01, ADR-0008 Update):**
+  zweryfikowano, że app.estalara.com ma **zero stabilnych haków** (brak id/data-*, tylko Tailwind +
+  Svelte-hash; jedyny `<h1>` to cena, brak elementu tytułu) → kurowane selektory byłyby kruche, a
+  headline nie ma targetu. CEO wybrał **A1: dodać kilka kanonicznych haków** do szablonu listingu
+  (kanoniczny Tier-2 „declarative slots"; uzasadnione, bo to NASZ first-party sajt). Zaimplementowane
+  w repo Estalara-app (`web-master/.../listing/[slug]/+page.svelte`, flaga
+  `PUBLIC_ESTALARA_SDK_ENABLED`; handoff prod: `web-master/HANDOFF_ESTALARA_ADAPTIVE.md`). Z hakami
+  `data-estalara-slot` SDK używa **ścieżki bezpośredniej** (headline → dyrektywa playbooka `/adapt`;
+  description → konsument `/api/adapt/description`) — więc **kurowany schemat i B1 NIE są potrzebne
+  dla pilota**.
+- **Plan A — kurowany schemat (THIRD-PARTY, gdzie nie możemy dodać haków):** aktywowany rekord
   `tenant_site_schemas` jest **kurowany/ręcznie autorski** — realne, ludzko-zweryfikowane selektory
-  na faktyczny DOM. Nadal no-code (selektory żyją w DB Estalary, nie w kodzie tenanta). Applicator +
-  konsument opisu działają bez zmian. Ryzyko kruchości (Tailwind) łagodzi Continuous Schema
-  Validation (§B.6) + fallbacki w `SelectorStrategy` + guard unikalnego dopasowania.
+  na faktyczny DOM. No-code z perspektywy tenanta (selektory w DB Estalary). Applicator + konsument
+  opisu działają bez zmian. Ryzyko kruchości łagodzi Continuous Schema Validation (§B.6) + fallbacki
+  w `SelectorStrategy` + guard unikalnego dopasowania. Wymaga rozszerzenia `getTenantSchema` + B1
+  (pole `slot_selectors` w `/api/adapt`).
 - **Plan B (self-serve, follow-up — FOLLOW-160):** realign AI Vision do projektu §B.5.1 —
   **screenshot + HTML → Claude Vision** — dla robust, automatycznej detekcji bespoke sajtów bez
   ręcznego autorstwa. Pilot NIE blokuje się na Planie B.

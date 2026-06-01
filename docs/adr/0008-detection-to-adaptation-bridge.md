@@ -77,6 +77,29 @@ AI Vision technique to the §B.5.1 design (screenshot + HTML → Claude Vision) 
 produces accurate detail selectors for bespoke sites without hand-authoring. This is the path to
 scalable self-serve onboarding; the pilot does not block on it.
 
+## Update 2026-06-01 — A1 (minimal stable hooks) adopted for the first-party pilot
+
+After verifying that `app.estalara.com` has **zero stable selector hooks** (no `id`/`data-*`; only
+Tailwind utility + Svelte-hashed scoped classes; the only `<h1>` is the price, not a title), the CEO
+chose **A1: add minimal canonical hooks** to the listing template rather than rely on a fragile
+curated structural schema. This is the standard Tier-2 "declarative slots" integration and is
+appropriate because app.estalara.com is Estalara's own first-party site.
+
+- **Implemented** in the Estalara-app repo
+  (`web-master/src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte`), flag-gated by
+  `PUBLIC_ESTALARA_SDK_ENABLED` (prod byte-identical when off). Hooks added:
+  `data-estalara-listing(+ -id)` on the listing root, `data-estalara-slot="description"` on the
+  existing description block, and a minimal `data-estalara-slot="headline"` element (no title
+  element exists). CTA deferred (trivially addable). Production handoff:
+  `web-master/HANDOFF_ESTALARA_ADAPTIVE.md`.
+- **Consequence for this ADR's items 2 & 3:** with `data-estalara-slot` hooks present, the SDK
+  detects them as Tier-3 native (confidence 1.0) and adapts via the **direct** path — headline via
+  `/adapt` playbook directives, description via the `/api/adapt/description` consumer (FOLLOW-159).
+  So the **curated server schema (Plan A) and the `/adapt` `slot_selectors` field (B1) are NOT
+  needed for app.estalara.com**. They remain scoped to **third-party tenants where we cannot add
+  hooks**, alongside Plan B (FOLLOW-160). The runtime applicator (`augment.ts`) stays valuable for
+  those hookless third-party sites.
+
 ## Consequences
 
 - **Positive:** detail-page adaptation (headline/CTA/description) works no-code; the pilot is

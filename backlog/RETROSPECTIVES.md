@@ -8539,7 +8539,249 @@ prod CI against a real violation; rest on the self-test for guarantee.
 
 ---
 
-<!-- RETRO-027 and beyond will be appended here by the retrospective-analyst agent. -->
+## RETRO-027 — TICKET-DESC-PIVOT-001 v1.8 (rewrite Sonnet description system prompt to XML template) — 2026-06-02
+
+### 1. Summary of change
+
+- **PR:** #172 (merged 2026-06-02 19:37 UTC, squash commit `01224ce`)
+- **Files changed:** 2 (+300 / −52) — `apps/llm-gateway/src/jobs/generate_description.py`
+  (+225/−52), `docs/specs/TICKET-DESC-PIVOT-001-v1.8.md` (+75, new).
+- **Modules touched:** [llm-gateway (Modal Sonnet job) / docs]
+- **Key contracts changed:**
+  - `_SONNET_SYSTEM_PROMPT_TEMPLATE` (str) — body **replaced** (flat v1.7.1 WHITELIST prose →
+    full XML-structured prompt). Public surface (the two `{archetype}`/`{locale}` placeholders)
+    **unchanged**. Breaking: **no** to callers; **behavioural change to model output** (length
+    policy + voice). 
+  - Substitution mechanism — `.format()` → `.replace("{archetype}",…).replace("{locale}",…)`.
+    Breaking: no (output identical for the two intended placeholders).
+  - Anti-hallucination contract (`<verified_facts_used>` audit block + fact whitelist) —
+    **unchanged** by design. `_parse_verified_facts` / `_VERIFIED_FACTS_PATTERN` untouched.
+  - `max_tokens` (Tier 2 = 450, Tier 3 = 600), Redis/ClickHouse write path, user-prompt assembly,
+    response contract — **unchanged**.
+
+### 2. Verification done in PR
+
+- Test files changed: **none** (`test_generate_description.py`, 17 tests, untouched). Assertions
+  added: **0**. Coverage delta: unknown — the suite asserts parser behaviour + hallucination
+  resistance against *mocked* Sonnet output and **does not assert on the system-prompt template
+  string**, so a full prompt rewrite passes CI with zero new assertions. The PR author flagged this
+  explicitly ("doesn't assert on the template string, so structurally compatible").
+- CI checks: `pytest` 17 passed (the only CI gate for this app); `black --check` clean; `ruff check`
+  clean (E501 silenced file-wide). No live-API generation test in CI (unit-level only) — author
+  recommended a qualitative spot-check before pilot reliance.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+CHECK A (dead code): no new exported symbol. `_SONNET_SYSTEM_PROMPT_TEMPLATE` is a pre-existing
+private module constant; it has exactly one consumer — `_generate_with_sonnet` at
+`generate_description.py:618` (grep: `_SONNET_SYSTEM_PROMPT_TEMPLATE` → 1 non-comment reference, the
+`.replace()` call). The new doc file `docs/specs/TICKET-DESC-PIVOT-001-v1.8.md` is a historical
+spec (doc, exempt). No new file/export to orphan.
+
+CHECK B (half-wire): no new event / env-var / column / topic / SDK-signal introduced. The
+`<verified_facts_used>` producer (Sonnet, instructed by the prompt) ↔ consumer
+(`_parse_verified_facts` → Redis → ClickHouse `description_generations.verified_facts_used`) chain
+is pre-existing and **end-to-end intact** (grep confirms `_VERIFIED_FACTS_PATTERN` unchanged, parser
+untouched). No producer-only or consumer-only addition. Both checks clean.
+
+(Note: a latent risk to the producer→consumer chain exists via the length policy — captured as a
+logic gap in §4a, not a wiring gap, because the wire itself is connected; the risk is *truncation*
+of the wire's payload at run time.)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — length policy can starve `max_tokens` and truncate the audit block.**
+  `generate_description.py:602` keeps `max_tokens = 600 if tier >= 3 else 450`, sized in v1.7.1 for a
+  fixed ~140-word body. v1.8 (`:314`, `:360`, `:449`, `:475`) instructs the model to **track
+  `original_description` ±10% by word count** and to "extend modestly beyond" for `listing_context`
+  facts. English prose runs ~1.3–1.5 tokens/word, so a ~300-word agent original → ~400–450 tokens of
+  body alone, leaving little-to-no headroom for the trailing `<verified_facts_used>` block under
+  Tier 2's 450 cap (and a long Tier 3 original similarly pressures 600). When the response hits
+  `max_tokens` mid-output, the audit block is cut off; `_parse_verified_facts` (`:537`) finds no
+  closing tag → `_VERIFIED_FACTS_PATTERN.search` returns `None` → returns `(raw_text, [])`. **Effect:
+  the description is stored WITH a dangling/partial `<verified_facts_used>...` tag in its body
+  (rendered to the buyer), AND the ClickHouse anti-hallucination audit trail silently records `[]`
+  (no facts).** This is a real regression in the audit guarantee for long originals — the exact
+  failure mode v1.8's length change makes reachable. Mitigation options (for the FOLLOW): raise/scale
+  `max_tokens` from `original_description` word count, reserve a token budget for the audit block, or
+  detect a missing closing tag and treat as an empty-response retry. → **FOLLOW-162**.
+- **LG-2 (P3) — `.replace()` is global and unguarded; loses the stray-placeholder tripwire.**
+  `:618` `.replace("{archetype}",…).replace("{locale}",…)`. Verified there is currently **no other
+  `{…}` token** in the v1.8 body (the audit example uses `[...]` square brackets; grep for `{` in the
+  template returns only the two intended placeholders), so this is correct *today*. But unlike
+  `.format()` — which raised `KeyError`/`IndexError` on any unintended brace and thus failed loud —
+  `.replace()` silently no-ops an unsubstituted `{token}`, which would then ship **verbatim into
+  model output**. The switch was necessary (literal braces in the XML body break `.format()`), so
+  this is an accepted tradeoff, not a bug; the gap is the **lost tripwire**, addressed by the test in
+  LG-3 / TG-1. No standalone FOLLOW; folded into FOLLOW-163 (test guard).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — stale internal docstring contradicts shipped behaviour.** `_generate_with_sonnet`'s
+  docstring still reads `v1.7.1 — Uses the WHITELIST system prompt …` and `Tier 2 targets ~100 words
+  (max_tokens=450). Tier 3 targets ~150 words (max_tokens=600).` (`:566`, `:571–572`). The module
+  also still emits a user-prompt instruction "following the **WHITELIST RULES**" (`:639`) and the
+  module docstring at `:37–40` still states the 450/600 tokens are sized for the old target. After
+  v1.8 the body length is original-tracking, not ~100/~150 — so the in-code contract documentation is
+  now self-contradictory with the prompt the same file ships. Not a runtime bug, but a maintenance
+  trap (the next editor sizing `max_tokens` will trust the stale "~100/~150 words" comment and miss
+  LG-1). → folded into **FOLLOW-162** (same file, same root cause as the length policy).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — no test asserts placeholder substitution or token inventory.** A prompt rewrite (and
+  the `.format`→`.replace` switch) passes the 17-test suite untouched. Two cheap guards would have
+  caught a future regression: (a) assert that after substitution the system prompt contains the
+  literal archetype + locale values and **no** residual `{archetype}`/`{locale}`; (b) a static guard
+  asserting `re.findall(r"\{[a-z_]+\}", _SONNET_SYSTEM_PROMPT_TEMPLATE) == ["{archetype}",
+  "{locale}", …]` (the only intended tokens) — this is the lost `.format()` tripwire re-expressed as
+  a test. → **FOLLOW-163**.
+- **TG-2 (P2) — no test exercises the long-original / truncation path.** The suite mocks short Sonnet
+  outputs; nothing asserts behaviour when output approaches `max_tokens` or when the audit block is
+  absent due to truncation (vs. legitimately absent). A regression test feeding a long
+  `original_description` and asserting either a scaled `max_tokens` or a graceful missing-tag handling
+  would lock in the LG-1 fix. → folded into **FOLLOW-162** AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — Master Design §E.7 stale (Operating Principle 2 — continuous propagation).**
+  `docs/MASTER_DESIGN.md:430` (§Snapshot E.7 row) still reads "Long-form Description Pipeline (**v1.7.1
+  original-first**)"; §E.7 header `:2339` "(v1.7.1 — original-first + anti-hallucination)"; the
+  changelog `:551`/`:559` and §E.7.4/§E.7.5 describe the flat WHITELIST prose shape and the
+  `~130–150-słowowy`/fixed-target length model (`:2030`). v1.8's XML structure + original-tracking
+  length policy are undocumented in the SoT. The PR author flagged this in the PR body. → **FOLLOW-164**.
+
+#### 4e. Cross-repo fragility (note — not a code change in this repo)
+
+- **FR-1 (P3) — Estalara-app mock harness regex-couples to this template's literal source form.**
+  `infrastructure-master/dev/estalara-mock-decision.mjs` (Estalara-app repo, **local-only / not on
+  GitHub** → invisible to this repo's CI) extracts the prompt live by regex-matching
+  `_SONNET_SYSTEM_PROMPT_TEMPLATE = """…"""`. The v1.8 assignment uses `"""\` (line continuation) and
+  the body contains no `"""`, so the existing regex still matches (verified by the PR author). The
+  fragility: any future edit that introduces a `"""` inside the prompt, or changes the assignment form
+  (e.g. to an f-string, concatenation, or `textwrap.dedent`), silently breaks the harness with no CI
+  signal in either repo. Captured as a watch-item; see §6. → **FOLLOW-165** (low-priority guard /
+  doc-the-coupling).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **N/A** — no IN_PROGRESS/READY ticket consumes the prompt template string directly. The single
+  consumer (`_generate_with_sonnet`) has an unchanged signature; the POST `/api/adapt/description`
+  contract and Redis/ClickHouse schema are unchanged, so the SDK (`core/description.ts`) and
+  control-plane adapt route are not affected.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-161 (admin-selectable generation model, P2)** — partially overlaps and is the right home
+  for one v1.8-adjacent concern: its **AC5** ("cache keyed by model so a switch doesn't serve
+  stale-model copy") is the only place the model identity enters the cache key. v1.8 does not change
+  the cache key and the model stays hardcoded `claude-sonnet-4-6` (`:649`) — **already covered by
+  FOLLOW-161; not duplicated here.** Cross-reference only (see §8). Note for FOLLOW-161 implementers:
+  if a higher-token model (e.g. Opus) is later selected, LG-1's truncation math shifts — the
+  `max_tokens`/length-policy fix (FOLLOW-162) should land before or alongside FOLLOW-161.
+
+#### 5c. Contracts changed others rely on
+
+- The `<verified_facts_used>` audit-block format (consumed by `_parse_verified_facts` → ClickHouse)
+  is **unchanged in shape** — but LG-1 means it can now be *truncated at runtime* for long originals,
+  degrading the audit trail others (compliance / anti-hallucination reporting) rely on. Flagged P1 in
+  §4a; the PM decides whether this blocks pilot reliance on long-listing generation.
+
+#### 5d. Architectural assumptions affected
+
+- **"`max_tokens` 450/600 is sized for the description body."** This assumption (true under v1.7.1's
+  fixed ~140-word target) is now **invalidated** by v1.8's original-tracking length policy. Any future
+  reasoning that treats 450/600 as comfortably oversized is stale. Recorded so the next retro touching
+  this file does not re-assume it.
+
+### 6. New lesson candidates
+
+- **Pattern — "prompt/config rewrite changes model *output* contract but no test asserts on the
+  prompt/output-shape, so CI passes untouched."** Seen in: **this retro (RETRO-027)** — 17 tests
+  green on a full system-prompt rewrite; the template string and output-length contract are
+  unasserted. **Current count: 1.** Below the promotion threshold of 2. **NOT promoted.** Closest
+  prior sibling is Rule H ("schema/Zod scaffold without a runtime-wired consumer") — conceptually
+  adjacent (artifact ships without a verifying consumer/assertion) but a different surface (wiring vs.
+  prompt-content assertion). Logged as a watch-item; promote a Rule ("a change that alters an
+  LLM-output or external-contract shape must ship at least one assertion that pins the new shape — a
+  prompt rewrite is a contract change, not a no-op refactor") when a **second** instance lands.
+- **Pattern — "length/budget policy changed in one place (prompt) without re-checking the coupled
+  numeric guard (`max_tokens`)."** Seen in: this retro (LG-1). **Count: 1.** Below threshold. Watch-item.
+- **Pattern — "cross-repo coupling to a source-literal form via regex, invisible to CI in both
+  repos."** Seen in: this retro (FR-1). **Count: 1.** Below threshold. Watch-item; if a second
+  invisible cross-repo coupling surfaces, promote a Rule requiring such couplings to be either
+  contract-tested or documented at the coupling point.
+
+**No Rule promoted this retro. No `CONVENTIONS_PATCH.md` edit by this run** (all three candidates at
+count 1, below the threshold of 2).
+
+### 7. Follow-ups
+
+- **FOLLOW-162** (ml-engineer, 3h, **P1**): Fix the length-policy / `max_tokens` mismatch so long
+  originals cannot truncate the `<verified_facts_used>` audit block. (a) Scale or raise `max_tokens`
+  as a function of `original_description` word count (e.g. `base + words * tokens_per_word`, capped),
+  or reserve a fixed audit-block token budget; (b) make `_parse_verified_facts` / `_generate_with_sonnet`
+  detect an **open-but-unclosed** `<verified_facts_used` tag (truncation) and treat it as an
+  empty/failed response (no Redis write → idempotent retry) rather than storing a description with a
+  dangling tag and an empty audit list; (c) update the stale `_generate_with_sonnet` docstring
+  ("~100/~150 words", "WHITELIST") + module docstring `max_tokens` note (CB-1) to match v1.8; (d) add
+  the truncation regression test (TG-2). `source_retro: RETRO-027`. AC: long-original generation
+  preserves a parseable audit block OR fails closed; no description ever stored with a partial
+  `<verified_facts_used>` tag.
+- **FOLLOW-163** (ml-engineer, 1h, **P2**): Add prompt-substitution guard tests to
+  `test_generate_description.py` (TG-1): (a) after `_generate_with_sonnet` runs, assert the system
+  prompt contains the substituted archetype + locale and **no residual** `{archetype}`/`{locale}`;
+  (b) a static test asserting the set of `\{[a-z_]+\}` tokens in `_SONNET_SYSTEM_PROMPT_TEMPLATE` is
+  exactly `{"{archetype}", "{locale}"}` — re-expressing the `.format()` tripwire lost in the
+  `.replace()` switch (LG-2). `source_retro: RETRO-027`.
+- **FOLLOW-164** (architect/ml-engineer, 1.5h, **P2**): Propagate v1.8 into Master Design §E.7 per
+  Operating Principle 2 — update the §Snapshot E.7 row (`:430`), the §E.7 header (`:2339`), and
+  §E.7.4/§E.7.5 to describe the XML-structured prompt + original-tracking ±10% length policy
+  (superseding the fixed ~130–150-word model); cite `docs/specs/TICKET-DESC-PIVOT-001-v1.8.md` and
+  bump the changelog. `source_retro: RETRO-027`.
+- **FOLLOW-165** (ml-engineer/devops, 1h, **P3**): De-risk the Estalara-app mock-harness coupling
+  (FR-1). Either (a) add a comment at the `_SONNET_SYSTEM_PROMPT_TEMPLATE` assignment warning that the
+  Estalara-app `:9100` mock harness regex-extracts this literal and that introducing a `"""` inside
+  the body or changing the assignment form breaks it; and/or (b) file a mirror ticket in the
+  Estalara-app repo to make the harness import the prompt rather than regex-scrape it. `source_retro:
+  RETRO-027`. (Low priority; local-dev-only blast radius.)
+
+### 8. Cross-references
+
+- **FOLLOW-161 (admin-selectable generation model, OPEN, P2)** — adjacent, not duplicated. v1.8 leaves
+  the model hardcoded `claude-sonnet-4-6` (`:649`) and does not touch the cache key; FOLLOW-161 AC5
+  already owns the model-in-cache-key concern. This retro adds one note onto FOLLOW-161 (see §5b): a
+  higher-token model selection interacts with LG-1's truncation math, so FOLLOW-162 should precede or
+  accompany FOLLOW-161.
+- **TICKET-DESC-PIVOT-001 v1.7.1** (`docs/specs/TICKET-DESC-PIVOT-001-v1.7.1.md`) — direct predecessor;
+  v1.8 supersedes its prompt body while preserving its anti-hallucination contract. v1.7.1 spec is
+  retained as the historical record.
+- **CONVENTIONS_PATCH.md Rule H ("schema/Zod scaffold without a runtime-wired consumer")** — distant
+  cousin to the §6 candidate "output-contract change without an assertion." Same root-class (artifact
+  ships unverified), different surface. Logged for conceptual continuity; not a promotion.
+- **First retro for the description-pipeline surface in the post-Sprint-13a sequence** — prior retros
+  RETRO-023 through RETRO-026 covered the SDK/compliance/migration surfaces (PR #164/#165/#166);
+  disjoint files, no cross-impact with this PR's `generate_description.py` change.
+
+---
+
+<!-- RETRO-028 and beyond will be appended here by the retrospective-analyst agent. -->
+<!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-06-02 after RETRO-027 / PR #172 — TICKET-DESC-PIVOT-001 v1.8 prompt rewrite):
+     - RETRO coverage: ...RETRO-025=PR#164 inline-fix verification, RETRO-026=PR#166/FOLLOW-149,
+       RETRO-027=PR#172/TICKET-DESC-PIVOT-001 v1.8 (Sonnet description prompt XML rewrite).
+       Next retro = RETRO-028.
+     - FOLLOW numbers consumed by RETRO-027: 162 (P1 — length-policy/max_tokens truncation of the
+       verified_facts_used audit block + stale docstring + truncation test),
+       163 (P2 — placeholder-substitution + token-inventory guard tests),
+       164 (P2 — propagate v1.8 into Master Design §E.7.4/§E.7.5 + Snapshot row),
+       165 (P3 — de-risk Estalara-app mock-harness regex coupling to the template literal).
+     - NEXT FREE FOLLOW NUMBER IS 166. -->
 <!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-05-28 after RETRO-026 / PR #166 — second & FINAL Sprint 13a-hardening-v3 retro):
      - RETRO coverage: ...RETRO-019=PR#159/FOLLOW-129 (Sprint 13a-hardening, 1st of 4),
        RETRO-020=PR#160/FOLLOW-128 (Sprint 13a-hardening, 2nd of 4),

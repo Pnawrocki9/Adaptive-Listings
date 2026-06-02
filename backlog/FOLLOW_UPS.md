@@ -4738,7 +4738,118 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 162 (161 consumed by CEO request 2026-06-01 — admin selectable LLM generation model (dashboard + config; classifier stays Haiku-class) — P2;
+## FOLLOW-162 — Length policy / max_tokens mismatch can truncate the verified_facts_used audit block (v1.8)
+
+- **status:** ✅ RESOLVED by PR #173 (squash `57a6ce7`, merged 2026-06-02) — AC1–AC4 all met
+  (`_max_tokens_for` scaling + floor/ceiling, truncation→`("", [])` no-Redis-write guard, refreshed
+  docstrings, 6 regression tests; 23 pytest pass).
+- **priority:** P1
+- **agent:** ml-engineer
+- **estimated_hours:** 3
+- **source_retro:** RETRO-027 (PR #172, `01224ce`)
+- **source_ticket:** TICKET-DESC-PIVOT-001 v1.8
+- **scope:** v1.8 instructs Sonnet to track `original_description` length (±10% by word count,
+  `generate_description.py:314/:360/:449/:475`) while `max_tokens` stays fixed at 450 (Tier 2) / 600
+  (Tier 3) (`:602`), sized for the old fixed ~140-word target. For a long agent original (~300+
+  words ≈ ~400–450+ tokens of body), the response can hit `max_tokens` before the trailing
+  `<verified_facts_used>` block is emitted. On truncation, `_parse_verified_facts` (`:537`) finds no
+  closing tag → returns `(raw_text, [])`: the description is stored **with a dangling
+  `<verified_facts_used>...` tag rendered to the buyer** AND the ClickHouse anti-hallucination audit
+  trail silently records `[]`. This is a runtime regression in the audit guarantee that v1.8's
+  length change makes reachable.
+- **ac:**
+  - [ ] AC1: scale/raise `max_tokens` from `original_description` word count (e.g.
+        `base + words *     tokens_per_word`, capped) OR reserve a fixed token budget for the audit
+        block, so the block is not starved for long originals.
+  - [ ] AC2: detect an open-but-unclosed `<verified_facts_used` tag (truncation) in
+        `_generate_with_sonnet` / `_parse_verified_facts` and treat it as a failed/empty response
+        (no Redis write → idempotent retry), never storing a description with a partial audit tag.
+  - [ ] AC3: update the stale `_generate_with_sonnet` docstring (`:566` "WHITELIST", `:571–572`
+        "~100/~150 words") and module-docstring `max_tokens` note (`:37–40`) to match v1.8 (CB-1).
+  - [ ] AC4: add a regression test (TG-2) feeding a long `original_description` asserting either a
+        scaled `max_tokens` or graceful missing-tag handling.
+- **promoted_to_queue:** false
+- **depends_on:** []
+
+---
+
+## FOLLOW-163 — Add prompt-substitution + token-inventory guard tests (v1.8 .replace tripwire)
+
+- **priority:** P2
+- **agent:** ml-engineer
+- **estimated_hours:** 1
+- **source_retro:** RETRO-027 (PR #172, `01224ce`)
+- **source_ticket:** TICKET-DESC-PIVOT-001 v1.8
+- **scope:** The `.format()` → `.replace()` switch (`generate_description.py:618`) was necessary
+  (the XML body holds literal braces) but lost the `.format()` tripwire that raised on a
+  stray/unintended `{token}`. `.replace()` silently no-ops an unsubstituted placeholder, which would
+  ship verbatim into model output. No test in `test_generate_description.py` (17 tests) asserts
+  substitution or pins the token inventory, so a full prompt rewrite passes CI untouched.
+- **ac:**
+  - [ ] AC1: after `_generate_with_sonnet` runs, assert the resulting system prompt contains the
+        substituted archetype + locale values and contains no residual `{archetype}` / `{locale}`.
+  - [ ] AC2: a static test asserting the set of `\{[a-z_]+\}` tokens in
+        `_SONNET_SYSTEM_PROMPT_TEMPLATE` is exactly `{"{archetype}", "{locale}"}` (re-expresses the
+        lost `.format()` tripwire as a test).
+- **promoted_to_queue:** false
+- **depends_on:** []
+
+---
+
+## FOLLOW-164 — Propagate v1.8 prompt rewrite into Master Design §E.7 (Operating Principle 2)
+
+- **priority:** P2
+- **agent:** architect (or ml-engineer)
+- **estimated_hours:** 1.5
+- **source_retro:** RETRO-027 (PR #172, `01224ce`)
+- **source_ticket:** TICKET-DESC-PIVOT-001 v1.8
+- **scope:** Master Design §E.7 still documents the v1.7.1 prompt shape + fixed ~130–150-word
+  target: `docs/MASTER_DESIGN.md:430` (§Snapshot E.7 row "v1.7.1 original-first"), `:2339` (§E.7
+  header), the changelog `:551/:559`, §E.7.4/§E.7.5, and `:2030` (copy_template "~130–150-słowowy").
+  v1.8's XML-structured prompt + original-tracking ±10% length policy are undocumented in the SoT
+  (stale per Operating Principle 2). Flagged in PR body.
+- **ac:**
+  - [ ] AC1: update §Snapshot E.7 row (`:430`) + §E.7 header (`:2339`) to reflect v1.8.
+  - [ ] AC2: update §E.7.4/§E.7.5 to describe the XML structure + original-tracking length policy,
+        superseding the fixed-word-target language; cite `docs/specs/TICKET-DESC-PIVOT-001-v1.8.md`.
+  - [ ] AC3: add a Master Design changelog entry; no section renumbering (propagation §Y.2
+        unchanged).
+- **promoted_to_queue:** false
+- **depends_on:** []
+
+---
+
+## FOLLOW-165 — De-risk Estalara-app mock-harness regex coupling to the prompt template literal
+
+- **priority:** P3
+- **agent:** ml-engineer (or devops)
+- **estimated_hours:** 1
+- **source_retro:** RETRO-027 (PR #172, `01224ce`)
+- **source_ticket:** TICKET-DESC-PIVOT-001 v1.8
+- **scope:** The Estalara-app local dev harness
+  (`infrastructure-master/dev/estalara-mock-decision.mjs`, **local-only / not on GitHub** →
+  invisible to CI in both repos) reads this prompt live by regex-extracting
+  `_SONNET_SYSTEM_PROMPT_TEMPLATE = """…"""`. v1.8 still matches (the `"""\` assignment
+  - a body with no `"""`), but any future edit introducing a `"""` inside the body, or changing the
+    assignment form (f-string, concatenation, `textwrap.dedent`), silently breaks the harness with
+    no CI signal anywhere.
+- **ac:**
+  - [ ] AC1: add a comment at the `_SONNET_SYSTEM_PROMPT_TEMPLATE` assignment warning that the
+        Estalara-app `:9100` mock harness regex-scrapes this literal (no `"""` inside the body; keep
+        the assignment form), OR
+  - [ ] AC2: file a mirror ticket in the Estalara-app repo to make the harness import the prompt
+        rather than regex-scrape it.
+- **promoted_to_queue:** false
+- **depends_on:** []
+
+---
+
+<!-- next free FOLLOW number: 166 (162-165 consumed by RETRO-027 / PR #172 — TICKET-DESC-PIVOT-001 v1.8:
+     162 = P1 length-policy/max_tokens truncation of verified_facts_used audit block + stale docstring + truncation test;
+     163 = P2 placeholder-substitution + token-inventory guard tests (.replace tripwire);
+     164 = P2 propagate v1.8 into Master Design §E.7.4/§E.7.5 + Snapshot row;
+     165 = P3 de-risk Estalara-app mock-harness regex coupling to the template literal;
+     161 consumed by CEO request 2026-06-01 — admin selectable LLM generation model (dashboard + config; classifier stays Haiku-class) — P2;
      160 consumed by CEO decision 2026-06-01 — Plan B: screenshot-based AI Vision realign to Master Design §B.5.1 for bespoke-site detection (ADR-0008) — P1;
      159 consumed by CEO decision 2026-05-31 — close detection→adaptation hop in SDK: apply detected slot_selectors incl. description, no-code; supersedes Plan-V3 FIX-014 — P0;
      158 consumed by TICKET-PILOT-001 closeout — OTel + Sentry unwired in prd ingest Worker — P2;

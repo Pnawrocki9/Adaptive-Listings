@@ -57,7 +57,11 @@ from jobs.generate_description import (
     TTL_TIER_2,
     TTL_TIER_3,
     _ARCHETYPE_GUIDANCE,
+    _MAX_TOKENS_CEILING,
+    _MAX_TOKENS_FLOOR_TIER_2,
+    _MAX_TOKENS_FLOOR_TIER_3,
     _generate_with_sonnet,
+    _max_tokens_for,
     _parse_verified_facts,
     _write_to_redis,
 )
@@ -607,3 +611,106 @@ def test_verified_facts_missing_falls_back_gracefully() -> None:
     description, facts = _parse_verified_facts(sonnet_output)
     assert description == "Just a description, no audit block."
     assert facts == []
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-162 / RETRO-027: max_tokens scales with the original; a truncated
+# generation (audit block starved) is discarded rather than stored.
+# ---------------------------------------------------------------------------
+
+
+def test_max_tokens_for_short_original_uses_tier_floor() -> None:
+    """Short/empty originals keep the historical tier budget (floor 450/600)."""
+    assert _max_tokens_for("", 2) == _MAX_TOKENS_FLOOR_TIER_2
+    assert _max_tokens_for("", 3) == _MAX_TOKENS_FLOOR_TIER_3
+    short = "3-bed property with sitting tenant in central area."  # 9 words
+    assert _max_tokens_for(short, 2) == _MAX_TOKENS_FLOOR_TIER_2
+    assert _max_tokens_for(short, 3) == _MAX_TOKENS_FLOOR_TIER_3
+
+
+def test_max_tokens_for_long_original_scales_above_floor_and_caps() -> None:
+    """A long original scales max_tokens above the floor, bounded by the ceiling."""
+    scaled = _max_tokens_for("word " * 400, 2)
+    assert scaled > _MAX_TOKENS_FLOOR_TIER_2
+    assert scaled <= _MAX_TOKENS_CEILING
+    # An absurdly long original is clamped to the ceiling, not unbounded.
+    assert _max_tokens_for("word " * 5000, 2) == _MAX_TOKENS_CEILING
+
+
+def test_long_original_raises_sonnet_max_tokens() -> None:
+    """_generate_with_sonnet passes the scaled max_tokens to the Anthropic call."""
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        content_block = MagicMock()
+        content_block.text = "A description. <verified_facts_used>\n[]\n</verified_facts_used>"
+        resp = MagicMock(content=[content_block])
+        resp.stop_reason = "end_turn"
+        mock_client.messages.create.return_value = resp
+
+        _generate_with_sonnet("yield_hunter", "", {}, 2, "en", original_description="word " * 400)
+
+        max_tokens = mock_client.messages.create.call_args[1]["max_tokens"]
+        assert max_tokens > _MAX_TOKENS_FLOOR_TIER_2
+        assert max_tokens <= _MAX_TOKENS_CEILING
+
+
+def test_truncated_max_tokens_response_returns_empty() -> None:
+    """stop_reason == 'max_tokens' → treated as failed: ('', []) so caller skips Redis."""
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        content_block = MagicMock()
+        # Body present but the run hit the cap before the audit block was emitted.
+        content_block.text = "A long description that ran right up to the token limit and then"
+        resp = MagicMock(content=[content_block])
+        resp.stop_reason = "max_tokens"
+        mock_client.messages.create.return_value = resp
+
+        description, facts = _generate_with_sonnet(
+            "yield_hunter", "", {}, 2, "en", original_description="x"
+        )
+
+    assert description == ""
+    assert facts == []
+
+
+def test_dangling_audit_tag_returns_empty() -> None:
+    """An unclosed <verified_facts_used tag (truncation) → ('', []), never stored."""
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        content_block = MagicMock()
+        content_block.text = (
+            "A complete-looking description body.\n\n"
+            '<verified_facts_used>\n["bedrooms: 3", "location: Mad'  # cut mid-array, no close
+        )
+        resp = MagicMock(content=[content_block])
+        resp.stop_reason = "end_turn"  # even if the API did not flag it, the open tag does
+        mock_client.messages.create.return_value = resp
+
+        description, facts = _generate_with_sonnet(
+            "yield_hunter", "", {}, 2, "en", original_description="x"
+        )
+
+    assert description == ""
+    assert facts == []
+
+
+def test_truncated_response_no_redis_write(mock_redis_post: MagicMock) -> None:
+    """End-to-end: a truncated generation must not write to Redis (idempotent retry)."""
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        content_block = MagicMock()
+        content_block.text = 'Truncated body, open tag <verified_facts_used>\n["bedrooms: 3"'
+        resp = MagicMock(content=[content_block])
+        resp.stop_reason = "max_tokens"
+        mock_client.messages.create.return_value = resp
+
+        _run_job(_make_event(original_description="word " * 50))
+
+        mock_httpx.assert_not_called()

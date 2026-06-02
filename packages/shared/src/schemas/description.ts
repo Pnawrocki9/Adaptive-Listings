@@ -185,6 +185,15 @@ export const DescriptionRequestedEventSchema = z.object({
    * 450 for Tier 2, 600 for Tier 3.
    */
   max_tokens: z.number().int().positive().optional(),
+
+  /**
+   * Optional LLM model override for DEMO MODE (DEMO-001).
+   * When present, the Modal job must use this model instead of its default.
+   * Must be one of the curated allow-list: claude-haiku-4-5-20251001,
+   * claude-sonnet-4-6, claude-opus-4-8.
+   * Consumed by ml-engineer in FOLLOW-166.
+   */
+  override_model: z.string().optional(),
 });
 
 export type DescriptionRequestedEvent = z.infer<typeof DescriptionRequestedEventSchema>;

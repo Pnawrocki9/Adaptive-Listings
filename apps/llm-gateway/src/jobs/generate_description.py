@@ -34,10 +34,18 @@ Redis source values (defined in backend's DescriptionResponseSchema):
         The endpoint always returns template_fallback (miss) or ai_cached (hit).
 
 TTL:
-  - Tier 2: max_tokens=450, TTL 72h (259200s).
-  - Tier 3: max_tokens=600, TTL 48h (172800s).
+  - Tier 2: TTL 72h (259200s).
+  - Tier 3: TTL 48h (172800s).
 
-Cost: ~$0.01–$0.03 per Sonnet 4.6 call at 450–600 max_tokens.
+max_tokens (v1.8): no longer a fixed 450/600. Because v1.8 sizes the body to ±10% of
+  original_description, max_tokens scales with the original's word count via
+  _max_tokens_for() — a tier floor (450/600) for short originals up to a ceiling
+  (_MAX_TOKENS_CEILING) — so the trailing <verified_facts_used> block is never starved
+  for long listings (FOLLOW-162). A response truncated at max_tokens is discarded (no
+  Redis write) and retried.
+
+Cost: ~$0.01–$0.03 per Sonnet 4.6 call for typical originals; bounded above by the
+  _MAX_TOKENS_CEILING budget for very long originals.
 """
 
 # This module is dominated by a large XML-structured LLM system prompt held in a single
@@ -54,6 +62,7 @@ import os
 import re
 import time
 from datetime import UTC, datetime
+from math import ceil
 from typing import Any
 
 import httpx
@@ -552,6 +561,45 @@ def _parse_verified_facts(sonnet_output: str) -> tuple[str, list[str]]:
     return description, facts
 
 
+# ---------------------------------------------------------------------------
+# Output-token budget (FOLLOW-162 / RETRO-027)
+# ---------------------------------------------------------------------------
+#
+# v1.8 tells Sonnet to keep the description body within ±10% of original_description
+# by word count, so a long agent original needs a correspondingly larger output budget.
+# A fixed budget (the pre-v1.8 450/600) truncates the trailing <verified_facts_used>
+# audit block for long originals — leaving a dangling tag in the buyer-visible copy and
+# an empty audit trail in ClickHouse. We therefore size max_tokens from the original's
+# word count: a tier floor (so short originals keep the historical budget) plus a per-word
+# estimate plus a fixed reserve for the audit block, all bounded by a ceiling that caps
+# worst-case cost.
+_MAX_TOKENS_FLOOR_TIER_2 = 450
+_MAX_TOKENS_FLOOR_TIER_3 = 600
+_MAX_TOKENS_CEILING = 2000
+# Conservative across en/es/pl (non-English tokenizes to more tokens/word) + Sonnet's
+# tendency to run slightly long. The body targets ~110% of the original word count.
+_TOKENS_PER_WORD = 2.2
+_BODY_LENGTH_HEADROOM = 1.1
+# Headroom for the <verified_facts_used> JSON block (~10-20 short "key: value" entries).
+_AUDIT_BLOCK_TOKEN_RESERVE = 220
+
+
+def _max_tokens_for(original_description: str, tier: int) -> int:
+    """
+    Size the Sonnet output budget so the body AND the trailing <verified_facts_used>
+    block both fit, scaling with the agent original (FOLLOW-162).
+
+    Returns the tier floor for short/empty originals, scales up with word count, and is
+    clamped to a ceiling to bound cost.
+    """
+    floor = _MAX_TOKENS_FLOOR_TIER_3 if tier >= 3 else _MAX_TOKENS_FLOOR_TIER_2
+    word_count = len(original_description.split())
+    estimated = (
+        ceil(word_count * _BODY_LENGTH_HEADROOM * _TOKENS_PER_WORD) + _AUDIT_BLOCK_TOKEN_RESERVE
+    )
+    return max(floor, min(estimated, _MAX_TOKENS_CEILING))
+
+
 def _generate_with_sonnet(
     archetype: str,
     copy_template: str,
@@ -563,13 +611,17 @@ def _generate_with_sonnet(
     """
     Call Anthropic Sonnet 4.6 to generate a buyer-adapted listing description.
 
-    v1.7.1 — Uses the WHITELIST system prompt that forbids Sonnet from inventing
-    any number, name, or quantitative fact not present in either
-    original_description or listing_context. Sonnet appends a
+    v1.8 — Uses the XML-structured adaptive-listing system prompt that forbids
+    Sonnet from inventing any number, name, or quantitative fact not present in
+    either original_description or listing_context. Sonnet appends a
     <verified_facts_used> JSON block that we strip out and return separately.
 
-    Tier 2 targets ~100 words (max_tokens=450).
-    Tier 3 targets ~150 words (max_tokens=600).
+    v1.8 tells Sonnet to keep the body within ±10% of original_description by word
+    count (rather than a fixed ~140 words), so max_tokens scales with the original
+    via _max_tokens_for: a tier floor (450 for Tier 2, 600 for Tier 3) for short
+    originals, scaling up with word count and capped at _MAX_TOKENS_CEILING. A
+    response truncated at max_tokens (or carrying an unclosed audit tag) is treated
+    as a failed/empty response so the caller skips the Redis write and retries.
 
     Args:
         archetype:            One of the 18 archetype IDs (e.g. "yield_hunter").
@@ -599,7 +651,7 @@ def _generate_with_sonnet(
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-    max_tokens = 600 if tier >= 3 else 450
+    max_tokens = _max_tokens_for(original_description, tier)
 
     voice_pattern, hard_rules = _parse_copy_template_sections(copy_template)
 
@@ -659,7 +711,28 @@ def _generate_with_sonnet(
     if not raw_text.strip():
         return "", []
 
-    return _parse_verified_facts(raw_text)
+    description, facts = _parse_verified_facts(raw_text)
+
+    # FOLLOW-162 / RETRO-027: a generation truncated at max_tokens drops the trailing
+    # <verified_facts_used> block (and may cut the body mid-sentence). Two truncation
+    # tells: stop_reason == "max_tokens", or an opening "<verified_facts_used" tag that
+    # _parse_verified_facts could not close (so it survived in the description). Either
+    # way the response is untrustworthy — never store a description with a dangling audit
+    # tag or an empty audit trail for what should be an audited generation. Returning
+    # ("", []) makes the caller skip the Redis write so the next request retries
+    # (idempotent by design), now with a larger max_tokens via _max_tokens_for.
+    stop_reason = getattr(response, "stop_reason", None)
+    if stop_reason == "max_tokens" or "<verified_facts_used" in description:
+        log.warning(
+            "generate_description.truncated archetype=%s tier=%d stop_reason=%s max_tokens=%d",
+            archetype,
+            tier,
+            stop_reason,
+            max_tokens,
+        )
+        return "", []
+
+    return description, facts
 
 
 # ---------------------------------------------------------------------------

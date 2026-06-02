@@ -53,6 +53,11 @@ import {
 } from '@/lib/embedding-lookup';
 import { createAdminClient, tenants } from '@estalara/db';
 import { eq } from 'drizzle-orm';
+import {
+  getDemoOverride,
+  DEMO_OVERRIDE_CONFIDENCE,
+  DEMO_OVERRIDE_SIMILARITY,
+} from '@/lib/demo-override-store';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -203,6 +208,7 @@ const AdaptPostBodySchema = z.object({
  * @param tenantId       - Tenant ID threaded to LLM gateway for cost attribution.
  * @param locale         - Content locale; slot copy falls back to 'en' when locale override absent.
  * @param listingContext - Agency FAQ answers from RAG retrieval (may be empty).
+ * @param forceModel     - Optional Anthropic model ID to force (DEMO MODE, DEMO-001).
  * @returns Partial adaptation result (directives + source).
  */
 async function runDecisionTree(
@@ -213,6 +219,7 @@ async function runDecisionTree(
   tenantId: string,
   locale: 'en' | 'pl' | 'es' = 'en',
   listingContext: Record<string, string> = {},
+  forceModel?: string,
 ): Promise<{
   directives: TextDirective[];
   source: AdaptationDirectives['source'];
@@ -249,6 +256,7 @@ async function runDecisionTree(
       listingContext,
       sessionId,
       tenantId,
+      ...(forceModel ? { forceModel } : {}),
     });
 
     if (gatewayResult) {
@@ -268,6 +276,7 @@ async function runDecisionTree(
     listingContext,
     sessionId,
     tenantId,
+    ...(forceModel ? { forceModel } : {}),
   });
 
   if (gatewayResult) {
@@ -308,6 +317,12 @@ function logDecisionAsync(
    * Defaults to '' for legacy callers (matches the migration 0012 column default).
    */
   adaptDecisionId = '',
+  /**
+   * Whether this decision was driven by DEMO MODE operator override (DEMO-001).
+   * Logged so pilot analytics can exclude demo-driven decisions from measurements.
+   * Defaults to false (normal path).
+   */
+  demoOverride = false,
 ): void {
   // Fire-and-forget — never awaited, never blocks the response.
   // No-op when CLICKHOUSE_URL is not configured.
@@ -320,12 +335,19 @@ function logDecisionAsync(
   // Escape single quotes in string values to prevent injection
   const escape = (s: string) => s.replace(/'/g, "\\'");
 
+  // demo_override column: ClickHouse UInt8 boolean (1 = demo-driven, 0 = normal).
+  // Pilot analytics exclude rows where demo_override = 1. (DEMO-001 / AC6)
+  // Note: the adaptation_decisions table may not yet have this column in legacy
+  // ClickHouse instances; the INSERT includes it for forward-compatibility.
+  // If ClickHouse returns an error for the extra column, the catch below silently
+  // swallows it (analytics failure must not block responses).
   const query =
     `INSERT INTO adaptation_decisions ` +
-    `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, holdout_group, variant, adapt_decision_id, ts) ` +
+    `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, holdout_group, variant, adapt_decision_id, demo_override, ts) ` +
     `VALUES ('${escape(sessionId)}', '${escape(tenantId)}', '${escape(archetype)}', ` +
     `${String(confidence)}, ${String(similarity)}, '${escape(source)}', ${String(tier)}, ${String(directiveCount)}, ` +
-    `${holdoutGroup ? '1' : '0'}, '${escape(variant)}', '${escape(adaptDecisionId)}', '${ts}')`;
+    `${holdoutGroup ? '1' : '0'}, '${escape(variant)}', '${escape(adaptDecisionId)}', ` +
+    `${demoOverride ? '1' : '0'}, '${ts}')`;
 
   fetch(clickhouseUrl, {
     method: 'POST',
@@ -751,9 +773,65 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.error('[adapt POST] ab.assignment emit failed', e instanceof Error ? e.message : e);
   });
 
-  const archetypeId = (body.archetype_hint ?? 'neutral') as ArchetypeId;
-  const confidence = body.confidence ?? 0.5;
-  const similarity = body.similarity ?? 0.5;
+  // ── DEMO MODE override (DEMO-001 / AC4) ─────────────────────────────────────
+  // Load the per-tenant demo override. When enabled, ignore the SDK's
+  // archetype_hint/confidence/similarity and substitute the operator-chosen values
+  // so the full playbook + LLM path runs, generating with the chosen model.
+  // Fail behaviour: if the DB throws (configured-but-failed), log a Sentry-style
+  // error, set demoActive=false, and continue with the normal SDK hint. This avoids
+  // silently serving wrong copy while not blocking the response.
+  let demoActive = false;
+  let demoForceModel: string | undefined;
+
+  try {
+    const demoOverrideState = await getDemoOverride(body.tenant_id);
+    if (demoOverrideState.enabled && demoOverrideState.overrideArchetype) {
+      demoActive = true;
+      demoForceModel = demoOverrideState.overrideModel;
+    }
+  } catch (err: unknown) {
+    // Configured DB threw — fail loud in logs, degrade to normal path (Rule K.2).
+    console.error(
+      '[adapt POST] demo override DB read failed — falling back to SDK hint:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  // Resolve effective archetype + confidence + similarity.
+  // When DEMO MODE is active we always use the override archetype at high confidence
+  // and medium similarity (0.75) so Branch 3 (LLM tweak) runs with chosen model.
+  let archetypeId: ArchetypeId;
+  let confidence: number;
+  let similarity: number;
+
+  if (demoActive) {
+    // getDemoOverride was successful and overrideArchetype is non-null here.
+    // We need to re-read it; we know demoActive=true only when both conditions hold.
+    // Re-use a separate try block to be safe (the first try already succeeded).
+    let overrideArchetype: string | null = null;
+    try {
+      const state = await getDemoOverride(body.tenant_id);
+      overrideArchetype = state.overrideArchetype;
+    } catch {
+      // Unlikely (succeeded moments ago), but if it fails, fall back.
+      demoActive = false;
+    }
+
+    if (demoActive && overrideArchetype) {
+      archetypeId = overrideArchetype as ArchetypeId;
+      confidence = DEMO_OVERRIDE_CONFIDENCE;
+      similarity = DEMO_OVERRIDE_SIMILARITY;
+    } else {
+      archetypeId = (body.archetype_hint ?? 'neutral') as ArchetypeId;
+      confidence = body.confidence ?? 0.5;
+      similarity = body.similarity ?? 0.5;
+      demoActive = false;
+    }
+  } else {
+    archetypeId = (body.archetype_hint ?? 'neutral') as ArchetypeId;
+    confidence = body.confidence ?? 0.5;
+    similarity = body.similarity ?? 0.5;
+  }
 
   // TICKET-AGENCY-001: RAG retrieval — fetch top-3 FAQ answers for this listing.
   // Fail-open: retrieveListingContext never throws; returns {} on any failure.
@@ -771,6 +849,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     body.tenant_id,
     body.locale ?? 'en',
     listingContext,
+    demoActive ? demoForceModel : undefined,
   );
 
   // ── FOLLOW-007: Thompson sampling variant selection ───────────────────────
@@ -838,6 +917,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     directives: allDirectives,
     source,
     variant: selectedVariant,
+    // AC6: provenance flag so the consumer / analytics can exclude demo decisions.
+    ...(demoActive ? { demo_override: true } : {}),
     generated_at: new Date().toISOString(),
   };
 
@@ -854,6 +935,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     false, // treatment arm — not holdout
     selectedVariant,
     adaptDecisionId,
+    demoActive, // AC6: tag demo-driven decisions for analytics exclusion
   );
 
   return NextResponse.json(response, { status: 200 });

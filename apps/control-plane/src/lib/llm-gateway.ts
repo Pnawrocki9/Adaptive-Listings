@@ -42,11 +42,19 @@ export interface LlmGatewayInput {
   sessionId?: string;
   /** Tenant ID for per-tenant LLM cost attribution in ClickHouse [F-10]. */
   tenantId?: string;
+  /**
+   * Force a specific Anthropic model ID, bypassing the similarity-based routing
+   * policy. Used by DEMO MODE (DEMO-001) when the operator selects a model from
+   * the admin UI. Must be one of the curated DEMO_ALLOWED_MODELS.
+   * When null/undefined, the standard routing policy applies.
+   */
+  forceModel?: string;
 }
 
 export interface LlmGatewayOutput {
   directives: TextDirective[];
-  model: 'claude-haiku-4-5' | 'claude-sonnet-4-6';
+  /** Actual Anthropic model ID used (may be forceModel from DEMO MODE). */
+  model: string;
   tokens_in: number;
   tokens_out: number;
   cost_usd: number;
@@ -324,8 +332,10 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
 
   const { confidence, similarity } = input;
 
-  // Select model based on routing policy
-  const model = similarity > 0.6 && similarity <= 0.85 ? HAIKU_MODEL : SONNET_MODEL;
+  // Select model: forceModel (DEMO MODE) takes precedence over routing policy.
+  // forceModel values are validated upstream (DEMO_ALLOWED_MODELS allow-list).
+  const model =
+    input.forceModel ?? (similarity > 0.6 && similarity <= 0.85 ? HAIKU_MODEL : SONNET_MODEL);
 
   // Circuit breaker: check rolling 24h spend
   const currentSpend = await getRolling24hSpend();
@@ -343,14 +353,16 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     );
   }
 
-  // Build prompt
+  // Build prompt — use haiku-style for haiku, sonnet-style for all others.
   const prompt = model === HAIKU_MODEL ? buildHaikuPrompt(input) : buildSonnetPrompt(input);
 
   const startMs = Date.now();
 
   try {
     const message = await client.messages.create({
-      model: model === HAIKU_MODEL ? 'claude-haiku-4-5' : 'claude-sonnet-4-6',
+      // Pass model string directly. For DEMO MODE forceModel this is e.g.
+      // 'claude-opus-4-8' or 'claude-haiku-4-5-20251001'.
+      model,
       max_tokens: 512,
       messages: [{ role: 'user', content: prompt }],
     });

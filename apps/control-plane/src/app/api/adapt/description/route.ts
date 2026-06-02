@@ -1,10 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access --
- * @estalara/sdk is a workspace package not built locally.
- * TypeScript sees PlaybookEntry.copy_template as `any` until packages are built.
- * CI builds packages before lint so these errors don't appear in CI.
- * Same pattern as ab/weights/route.ts, dashboard/analytics/summary/route.ts, and other routes.
- */
-
 /**
  * GET /api/adapt/description
  *
@@ -58,6 +51,7 @@ import {
 } from '@/lib/description-cache';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { getAuthClaims } from '@estalara/auth';
+import { getDemoOverride } from '@/lib/demo-override-store';
 
 // ─── Query parameter schema ───────────────────────────────────────────────────
 
@@ -192,6 +186,28 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const archetypeId = archetype;
   const localeCode = locale;
 
+  // ── DEMO MODE: check per-tenant override (AC5 / DEMO-001) ────────────────
+  // When DEMO MODE is active, the SDK already requests the correct archetype
+  // (returned in the adapt response). We additionally key the Redis cache by
+  // model so switching model busts the cache — mirroring mock-server behaviour
+  // (genCache cleared on model switch). Fail-open: demo override read failure
+  // falls back to normal (no demo suffix), which is safe.
+  let demoActive = false;
+  let demoOverrideModel: string | null = null;
+  try {
+    const demoState = await getDemoOverride(tenantId);
+    if (demoState.enabled && demoState.overrideArchetype) {
+      demoActive = true;
+      demoOverrideModel = demoState.overrideModel;
+    }
+  } catch (err: unknown) {
+    // Fail-open — demo override read failure is not fatal for the description path.
+    console.error(
+      '[description] demo override DB read failed — using standard cache key:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   // ── Playbook lookup (all tiers) ───────────────────────────────────────────
   const playbook = getPlaybook(archetypeId);
   const templateText =
@@ -213,7 +229,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── Tier 2 / Tier 3: Redis cache lookup ───────────────────────────────────
-  const cacheKey = descriptionKey(tenantId, listing_id, archetypeId, localeCode);
+  // When DEMO MODE is active, the cache key includes the model so switching
+  // model busts the cache (demoActive=true, demoOverrideModel non-null).
+  const baseCacheKey = descriptionKey(tenantId, listing_id, archetypeId, localeCode);
+  const cacheKey =
+    demoActive && demoOverrideModel ? `${baseCacheKey}:demo:${demoOverrideModel}` : baseCacheKey;
   const cached = await getCachedDescription(cacheKey);
 
   if (cached !== null) {
@@ -249,6 +269,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     cache_key: cacheKey,
     ttl_seconds: ttlSeconds,
     ...(tierNum === 3 ? { priority: 'high' as const, max_tokens: 600 } : { max_tokens: 450 }),
+    // AC5 / DEMO-001: pass override_model to Modal job so it generates with the
+    // chosen model. Modal job consumer is FOLLOW-166 (ml-engineer).
+    ...(demoActive && demoOverrideModel ? { override_model: demoOverrideModel } : {}),
   };
 
   // Fire-and-forget: do NOT await. Response must not block on Modal enqueue.

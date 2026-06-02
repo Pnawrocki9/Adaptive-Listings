@@ -4844,7 +4844,29 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 166 (162-165 consumed by RETRO-027 / PR #172 — TICKET-DESC-PIVOT-001 v1.8:
+## FOLLOW-166 — Wire override_model from DescriptionRequestedEvent into the Modal generate_description job
+
+- **priority:** P2
+- **agent:** ml-engineer
+- **estimated_hours:** 2
+- **source_ticket:** DEMO-001
+- **scope:** `apps/llm-gateway/src/jobs/generate_description.py` — read the optional
+  `override_model` field from the Redpanda event payload and pass it as the `model` parameter to the
+  Anthropic API call instead of the default `_DEFAULT_MODEL`. This makes the long-form description
+  (AI-generated, via Modal async job) also honor the operator-chosen LLM model in DEMO MODE. The
+  event schema already carries the field (`packages/shared/src/schemas/description.ts`, optional
+  `override_model: string`). The control-plane description route (`/api/adapt/description`) already
+  publishes it when DEMO MODE is active (DEMO-001 / AC5). The cache key already includes the model
+  as a suffix so switching model yields a cache miss and triggers a new job.
+- **AC:**
+  1. When `override_model` is present and non-empty in the event, the Modal job uses it.
+  2. When `override_model` is absent, the job uses its default model (no regression).
+  3. Unit test: mock event with `override_model='claude-opus-4-8'` → correct model arg.
+- **depends_on:** [DEMO-001]
+
+---
+
+<!-- next free FOLLOW number: 167 (162-165 consumed by RETRO-027 / PR #172 — TICKET-DESC-PIVOT-001 v1.8:
      162 = P1 length-policy/max_tokens truncation of verified_facts_used audit block + stale docstring + truncation test;
      163 = P2 placeholder-substitution + token-inventory guard tests (.replace tripwire);
      164 = P2 propagate v1.8 into Master Design §E.7.4/§E.7.5 + Snapshot row;

@@ -4870,7 +4870,27 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 167 (162-165 consumed by RETRO-027 / PR #172 — TICKET-DESC-PIVOT-001 v1.8:
+## FOLLOW-167 — ClickHouse smoke test is a TTL time bomb (stale hardcoded BASE_TS) + same-second tenant collision
+
+- **status:** ✅ RESOLVED — `infra/clickhouse/scripts/smoke-test.sh` stamped its 5 sample events
+  with a hardcoded `BASE_TS` (`1746259200000` = 2025-05-03). The `events` table's
+  `TTL ts + 13 months` made those rows expire exactly on **2026-06-03**, so the insert→count check
+  read `0` and the CI "ClickHouse migrations smoke" gate started failing that day (initially
+  mis-diagnosed as an async-insert flake; it is a deterministic time bomb). Root cause confirmed
+  against a fresh `clickhouse-server:latest` container: a numeric epoch-ms `ts` parses correctly; a
+  _fresh_ one persists, a 13-month-old one is TTL-expired. Fixed by deriving `BASE_TS` from
+  `now - 1h` (never ages out) and making `TENANT_ID` genuinely unique (`date +%s%N` + PID + RANDOM —
+  the old 1-second-granularity id let two runs in the same second collide in the un-cleaned
+  `session_summary` MV → `page_count` doubled). Verified 5/5 green on rapid reruns.
+- **priority:** P2 (CI hygiene)
+- **agent:** devops-engineer / data-engineer
+- **source:** observed on PR #177 CI (2026-06-03)
+- **depends_on:** []
+
+---
+
+<!-- next free FOLLOW number: 168 (167 consumed by smoke-test.sh TTL-time-bomb + tenant-collision fix — see entry above;
+     162-165 consumed by RETRO-027 / PR #172 — TICKET-DESC-PIVOT-001 v1.8:
      162 = P1 length-policy/max_tokens truncation of verified_facts_used audit block + stale docstring + truncation test;
      163 = P2 placeholder-substitution + token-inventory guard tests (.replace tripwire);
      164 = P2 propagate v1.8 into Master Design §E.7.4/§E.7.5 + Snapshot row;

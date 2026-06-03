@@ -13,9 +13,19 @@ set -euo pipefail
 
 CH_USER="${CLICKHOUSE_USER:-default}"
 CH_PASS="${CLICKHOUSE_PASSWORD:-}"
-TENANT_ID="smoke-$(date +%s)-tenant"
+# Nanosecond clock + PID + RANDOM → genuinely unique per run (the old `date +%s` had
+# 1-second granularity, so two runs in the same second collided on tenant_id and their
+# session_summary rows aggregated together — the cleanup only deletes from `events`, not
+# the MV). This honours the "unique per run so parallel executions don't conflict" intent.
+TENANT_ID="smoke-$(date +%s%N)-$$-${RANDOM}-tenant"
 SESSION_ID="smoke000000000000000000000000000000000000000000000000000000001"
-BASE_TS=1746259200000  # 2026-05-03 08:00:00 UTC in ms
+# Anchor the sample events to "now" (1h ago) so they are always well inside the
+# events table's 13-month TTL. A hardcoded BASE_TS is a time bomb: the rows age out
+# exactly 13 months after that date and the insert→count check then reads 0. That is
+# what broke this smoke test on 2026-06-03 — the old constant (1746259200000) is
+# 2025-05-03, so ts + 13 months crossed into the past that day. Relative timestamps
+# keep the test deterministic regardless of when it runs.
+BASE_TS=$(( ($(date -u +%s) - 3600) * 1000 ))  # 1 hour ago, epoch ms
 
 echo "=== ClickHouse Smoke Test ==="
 echo "Tenant: ${TENANT_ID}"

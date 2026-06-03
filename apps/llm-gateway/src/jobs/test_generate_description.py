@@ -114,8 +114,11 @@ def _run_job(event: dict[str, Any]) -> None:
     cache_key: str = event["cache_key"]
     default_ttl = TTL_TIER_2 if tier == 2 else TTL_TIER_3
     ttl_seconds: int = int(event.get("ttl_seconds", default_ttl))
-    # FOLLOW-166: mirror generate_description() — resolve the (allow-listed) override model.
-    model: str = _resolve_generation_model(event.get("override_model"))
+    # FOLLOW-166 / FOLLOW-161: mirror generate_description() — precedence chain.
+    model: str = _resolve_generation_model(
+        event.get("override_model"),
+        event.get("generation_model"),
+    )
 
     try:
         description, verified_facts = _generate_with_sonnet(
@@ -805,5 +808,96 @@ def test_override_model_invalid_falls_back_to_default(mock_redis_post: MagicMock
         mock_client.messages.create.return_value = resp
 
         _run_job(_make_event(override_model="totally-not-a-real-model"))
+
+        assert mock_client.messages.create.call_args[1]["model"] == _DEFAULT_GENERATION_MODEL
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-161: global generation_model (admin-configured default) precedence.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_generation_model_global_wins_over_default() -> None:
+    """generation_model (global) is used when no override_model is present."""
+    assert _resolve_generation_model(None, "claude-opus-4-8") == "claude-opus-4-8"
+    assert (
+        _resolve_generation_model(None, "claude-haiku-4-5-20251001") == "claude-haiku-4-5-20251001"
+    )
+
+
+def test_resolve_generation_model_override_wins_over_global() -> None:
+    """override_model (DEMO MODE) beats generation_model (global admin setting)."""
+    assert (
+        _resolve_generation_model("claude-opus-4-8", "claude-haiku-4-5-20251001")
+        == "claude-opus-4-8"
+    )
+
+
+def test_resolve_generation_model_invalid_global_falls_back_to_default() -> None:
+    """A non-allow-listed generation_model must fall back to _DEFAULT_GENERATION_MODEL."""
+    assert _resolve_generation_model(None, "gpt-4o") == _DEFAULT_GENERATION_MODEL
+    assert _resolve_generation_model(None, "") == _DEFAULT_GENERATION_MODEL
+    assert _resolve_generation_model(None, None) == _DEFAULT_GENERATION_MODEL
+
+
+def test_generation_model_honored_end_to_end(mock_redis_post: MagicMock) -> None:
+    """event.generation_model (allow-listed, no override_model) reaches the Anthropic call."""
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post),
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        content_block = MagicMock()
+        content_block.text = "Body. <verified_facts_used>\n[]\n</verified_facts_used>"
+        resp = MagicMock(content=[content_block])
+        resp.stop_reason = "end_turn"
+        mock_client.messages.create.return_value = resp
+
+        _run_job(_make_event(generation_model="claude-haiku-4-5-20251001"))
+
+        assert mock_client.messages.create.call_args[1]["model"] == "claude-haiku-4-5-20251001"
+
+
+def test_override_model_beats_generation_model_end_to_end(mock_redis_post: MagicMock) -> None:
+    """When both override_model and generation_model are set, override_model wins (DEMO MODE)."""
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post),
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        content_block = MagicMock()
+        content_block.text = "Body. <verified_facts_used>\n[]\n</verified_facts_used>"
+        resp = MagicMock(content=[content_block])
+        resp.stop_reason = "end_turn"
+        mock_client.messages.create.return_value = resp
+
+        _run_job(
+            _make_event(
+                override_model="claude-opus-4-8",
+                generation_model="claude-haiku-4-5-20251001",
+            )
+        )
+
+        # override_model beats generation_model
+        assert mock_client.messages.create.call_args[1]["model"] == "claude-opus-4-8"
+
+
+def test_generation_model_invalid_falls_back_to_default(mock_redis_post: MagicMock) -> None:
+    """A non-allow-listed generation_model must not reach Anthropic — falls back to default."""
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post),
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        content_block = MagicMock()
+        content_block.text = "Body. <verified_facts_used>\n[]\n</verified_facts_used>"
+        resp = MagicMock(content=[content_block])
+        resp.stop_reason = "end_turn"
+        mock_client.messages.create.return_value = resp
+
+        _run_job(_make_event(generation_model="not-a-real-model"))
 
         assert mock_client.messages.create.call_args[1]["model"] == _DEFAULT_GENERATION_MODEL

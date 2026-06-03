@@ -192,8 +192,19 @@ export const DescriptionRequestedEventSchema = z.object({
    * Must be one of the curated allow-list: claude-haiku-4-5-20251001,
    * claude-sonnet-4-6, claude-opus-4-8.
    * Consumed by ml-engineer in FOLLOW-166.
+   * Takes precedence over generation_model (FOLLOW-161).
    */
   override_model: z.string().optional(),
+
+  /**
+   * Global admin-configured generation model (FOLLOW-161).
+   * Threaded by the control-plane route on cache miss for standard (non-DEMO) requests.
+   * Must be one of the curated allow-list: claude-haiku-4-5-20251001,
+   * claude-sonnet-4-6, claude-opus-4-8.
+   * Precedence in the Modal job: override_model > generation_model > _DEFAULT_GENERATION_MODEL.
+   * Not present when override_model is set (DEMO MODE path uses override_model instead).
+   */
+  generation_model: z.string().optional(),
 });
 
 export type DescriptionRequestedEvent = z.infer<typeof DescriptionRequestedEventSchema>;

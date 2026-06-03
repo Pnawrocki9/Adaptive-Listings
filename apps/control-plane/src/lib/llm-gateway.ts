@@ -3,9 +3,23 @@
  *
  * Routing policy (per ADP-002 spec):
  *   similarity > 0.85       → no LLM call (playbook path, not this module)
- *   0.6 < similarity ≤ 0.85 → Haiku 4.5: tweak 1-2 directives
- *   similarity ≤ 0.6, conf > 0.6 → Sonnet 4.6: full directive generation
+ *   0.6 < similarity ≤ 0.85 → Haiku 4.5: tweak 1-2 directives (low-latency path; stays Haiku)
+ *   similarity ≤ 0.6, conf > 0.6 → global default model: full directive generation (FOLLOW-161)
  *   confidence ≤ 0.6        → no LLM call (default path, not this module)
+ *
+ * Model precedence for the full-generation path (similarity ≤ 0.6):
+ *   1. forceModel (DEMO MODE, DEMO-001) — highest precedence, bypasses all routing.
+ *   2. getGlobalGenerationModel() (FOLLOW-161) — admin-configured global default.
+ *   3. SONNET_MODEL constant — static fallback when DB returns the default.
+ *
+ * The Haiku tweak path (0.6 < similarity ≤ 0.85) always stays Haiku regardless of
+ * forceModel or the global config. It is the low-latency path and its model is not
+ * user-selectable.
+ *
+ * Chat/intent classifier note (AC4 / FOLLOW-087):
+ *   The real-time chat/intent classifier model is NOT user-selectable and stays
+ *   Haiku-class. Its <500ms latency budget constrains it to a Haiku-class model.
+ *   It is not wired through this gateway.
  *
  * Circuit breaker: $100/day rolling 24h spend cap via ClickHouse llm_calls table.
  * Returns null on: missing API key, cap hit, or any Anthropic API error.
@@ -17,6 +31,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type { ArchetypeId, TextDirective } from '@estalara/shared';
 import type { PlaybookEntry } from '@estalara/sdk/playbooks';
+import { getGlobalGenerationModel } from '@/lib/global-config-store';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -332,10 +347,26 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
 
   const { confidence, similarity } = input;
 
-  // Select model: forceModel (DEMO MODE) takes precedence over routing policy.
-  // forceModel values are validated upstream (DEMO_ALLOWED_MODELS allow-list).
-  const model =
-    input.forceModel ?? (similarity > 0.6 && similarity <= 0.85 ? HAIKU_MODEL : SONNET_MODEL);
+  // Select model using precedence chain:
+  //   1. forceModel (DEMO MODE, DEMO-001) — bypasses all routing.
+  //   2. Haiku (low-latency tweak path) — when 0.6 < similarity ≤ 0.85.
+  //      This path is NOT affected by the global config (FOLLOW-161):
+  //      it is the real-time latency-sensitive path; its model is not selectable.
+  //   3. getGlobalGenerationModel() (FOLLOW-161) — admin-configured global default
+  //      for the full-generation path (similarity ≤ 0.6).
+  let model: string;
+  if (input.forceModel) {
+    // DEMO MODE takes absolute precedence (DEMO-001).
+    model = input.forceModel;
+  } else if (similarity > 0.6 && similarity <= 0.85) {
+    // Low-latency Haiku tweak path — stays Haiku, not selectable.
+    model = HAIKU_MODEL;
+  } else {
+    // Full-generation path — use admin-configured global default (FOLLOW-161).
+    // getGlobalGenerationModel() returns the default on DB absence/error, so
+    // this path never hard-fails even when config DB is unavailable.
+    model = await getGlobalGenerationModel();
+  }
 
   // Circuit breaker: check rolling 24h spend
   const currentSpend = await getRolling24hSpend();

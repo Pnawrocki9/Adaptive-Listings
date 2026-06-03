@@ -181,7 +181,20 @@ async function readProdPrompt() {
   }
 }
 function stripVerifiedFacts(text) {
-  return text.replace(/<verified_facts_used>[\s\S]*?<\/verified_facts_used>/g, '').trim();
+  // Strip the ClickHouse audit block AND the v1.9 archetype-fit-gate tags
+  // (<adaptation_verdict> / <neutral_reason>, ADR-0010) so neither leaks into the
+  // buyer-visible copy on the FIT path.
+  return text
+    .replace(/<verified_facts_used>[\s\S]*?<\/verified_facts_used>/g, '')
+    .replace(/<adaptation_verdict>[\s\S]*?<\/adaptation_verdict>/gi, '')
+    .replace(/<neutral_reason>[\s\S]*?<\/neutral_reason>/gi, '')
+    .trim();
+}
+
+/** v1.9: true when the model returned a NEUTRAL archetype-fit verdict (ADR-0010). */
+function isNeutralVerdict(text) {
+  const m = text.match(/<adaptation_verdict>\s*(FIT|NEUTRAL)\s*<\/adaptation_verdict>/i);
+  return !!m && m[1].toUpperCase() === 'NEUTRAL';
 }
 
 /**
@@ -207,6 +220,7 @@ async function generate(arche, listingKey) {
     // DESCRIPTION — real prod system prompt + the same user-message shape as generate_description.py.
     const tmpl = await readProdPrompt();
     let description;
+    let neutral = false;
     if (tmpl) {
       const system = tmpl.replace(/\{archetype\}/g, arche).replace(/\{locale\}/g, 'en');
       const user = [
@@ -225,22 +239,31 @@ async function generate(arche, listingKey) {
         'listing_context (JSON):',
         listingJson,
       ].join('\n');
-      description =
-        stripVerifiedFacts(await callClaude(user, system)) || fallbackCopy(arche).description;
+      const rawDesc = await callClaude(user, system);
+      // v1.9 archetype-fit gate (ADR-0010): NEUTRAL ⇒ wrong buyer ⇒ keep the DOM neutral.
+      // The demo mirrors prod: show the agent's ORIGINAL copy and emit no adapted headline.
+      neutral = isNeutralVerdict(rawDesc);
+      description = neutral
+        ? original || fallbackCopy(arche).description
+        : stripVerifiedFacts(rawDesc) || fallbackCopy(arche).description;
     } else {
       description = fallbackCopy(arche).description;
     }
-    // HEADLINE — small separate generation (factual, archetype-framed).
-    const hRaw = await callClaude(
-      `Write ONE compelling listing headline (max 90 chars, no surrounding quotes) for a ${arche} buyer (${persona}), strictly factually accurate to this listing data. Return ONLY the headline text, nothing else.\n\nListing (JSON): ${listingJson}`,
-    );
-    const headline =
-      hRaw
-        .trim()
-        .split('\n')[0]
-        .replace(/^["']|["']$/g, '')
-        .slice(0, 120) || fallbackCopy(arche).headline;
-    genCache.set(cacheKey, { headline, description, archetype: arche });
+    // HEADLINE — small separate generation (factual, archetype-framed). Skipped on a
+    // NEUTRAL verdict so the headline slot stays in its neutral (unmodified) state.
+    let headline = '';
+    if (!neutral) {
+      const hRaw = await callClaude(
+        `Write ONE compelling listing headline (max 90 chars, no surrounding quotes) for a ${arche} buyer (${persona}), strictly factually accurate to this listing data. Return ONLY the headline text, nothing else.\n\nListing (JSON): ${listingJson}`,
+      );
+      headline =
+        hRaw
+          .trim()
+          .split('\n')[0]
+          .replace(/^["']|["']$/g, '')
+          .slice(0, 120) || fallbackCopy(arche).headline;
+    }
+    genCache.set(cacheKey, { headline, description, archetype: arche, neutral });
   } catch (err) {
     console.warn(`[mock] generation failed for ${arche} / ${key}:`, err.message);
     genCache.set(cacheKey, fallbackCopy(arche));

@@ -29,6 +29,19 @@ v1.8 — adaptive-listing prompt (CEO 2026-06-01):
   ~140 words; richer voice-adaptation + style guidance; worked multilingual examples.
   Full rationale: docs/specs/TICKET-DESC-PIVOT-001-v1.8.md.
 
+v1.9 — archetype-fit gate (ADR-0010):
+  The system prompt now runs an <archetype_fit_gate> BEFORE writing and opens its output with
+  an <adaptation_verdict>FIT|NEUTRAL</adaptation_verdict> tag. NEUTRAL means the verified facts
+  fundamentally contradict the archetype's core needs (the property is genuinely the wrong
+  buyer) — the model refuses to reframe/"rescue" it and returns ONLY the verdict (plus an
+  optional <neutral_reason> snake_case code for analytics). We parse that verdict
+  (_parse_adaptation_verdict): on NEUTRAL we generate NO description (and therefore no
+  headline) so the DOM stays in its neutral, unmodified state and the endpoint serves the
+  agent's original copy — handled exactly like an empty response (no Redis write, idempotent
+  retry-safe). On FIT we strip the verdict tag and parse the body + <verified_facts_used> as
+  before. A missing verdict tag defaults to FIT (backward-safe). The anti-hallucination fact
+  whitelist and the length policy are unchanged from v1.8.
+
 Redis source values (defined in backend's DescriptionResponseSchema):
   - "template_fallback" — returned by the HTTP endpoint on cache miss (no write here).
   - "ai_cached"         — returned by the HTTP endpoint on cache hit (after this job writes).
@@ -315,13 +328,18 @@ def generate_description(event: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Sonnet 4.6 generation — v1.8 adaptive-listing prompt (CEO 2026-06-01)
+# Sonnet 4.6 generation — v1.9 adaptive-listing prompt + archetype-fit gate (ADR-0010)
 # ---------------------------------------------------------------------------
 #
 # Full XML-structured system prompt (objective / context / inputs / instructions /
-# fact_whitelist_rules / voice_adaptation / style_guide / output_format / examples /
-# exceptions / guardrails / priority / output_validation). Parameterised on {archetype}
-# and {locale} (substituted via str.replace — the body contains literal braces).
+# fact_whitelist_rules / archetype_fit_gate / voice_adaptation / style_guide / output_format /
+# examples / exceptions / guardrails / priority / output_validation). Parameterised on
+# {archetype} and {locale} (substituted via str.replace — the body contains literal braces).
+#
+# v1.9 adds the <archetype_fit_gate>: the output opens with
+# <adaptation_verdict>FIT|NEUTRAL</adaptation_verdict>. NEUTRAL ⇒ no description (DOM stays
+# neutral); FIT ⇒ verdict tag stripped, body + <verified_facts_used> parsed as in v1.8.
+# See _parse_adaptation_verdict.
 #
 # Same anti-hallucination contract as v1.7.x: the model may only state facts present in
 # original_description or listing_context, and must emit a trailing <verified_facts_used>
@@ -360,13 +378,17 @@ Work through these steps in order. Only the final two produce visible output.
 
 2. Read archetype_voice_pattern and archetype_hard_rules. Note the angle this archetype responds to and the lines you must not cross.
 
-3. Choose your angle. Decide which verified facts to foreground for this archetype, and which permitted generic descriptors reinforce the voice pattern. If the voice pattern asks you to lead with something the verified facts do not support with a number (e.g. "lead with cashflow" but no yield figure exists), lead with the theme using generic positive language — never with an invented figure.
+3. Run the archetype-fit gate (see <archetype_fit_gate>). Decide, from the verified facts alone, whether this property can be authentically presented to this archetype without misleading the reader.
+   - If it CANNOT (the facts contradict or fail the archetype's core needs), the verdict is NEUTRAL. Emit only the verdict per <output_format> and stop. Do not write a description. Do not explain the mismatch to the reader.
+   - If it CAN, the verdict is FIT. Continue.
 
-4. Write the description body in {locale}, matching the length of original_description within +/- 10% (by word count), applying the voice pattern within the hard rules and the fact whitelist. Describe the property as fully as the agent's original does — never drop a verified fact to hit a length.
+4. Choose your angle. Decide which verified facts to foreground for this archetype, and which permitted generic descriptors reinforce the voice pattern. If the voice pattern asks you to lead with something the verified facts do not support with a number (e.g. "lead with cashflow" but no yield figure exists), lead with the theme using generic positive language — never with an invented figure.
 
-5. Validate against <output_validation> before emitting.
+5. Write the description body in {locale}, matching the length of original_description within +/- 10% (by word count), applying the voice pattern within the hard rules and the fact whitelist. Describe the property as fully as the agent's original does — never drop a verified fact to hit a length.
 
-6. Output the description body, then the <verified_facts_used> block. Nothing else.
+6. Validate against <output_validation> before emitting.
+
+7. Output per <output_format>: the FIT verdict, then the description body, then the <verified_facts_used> block. Nothing else.
 </instructions>
 
 <fact_whitelist_rules>
@@ -387,6 +409,27 @@ These rules protect the buyer from being misled. They are the highest priority a
 6. If the verified facts are too thin to support the archetype's angle, write an honest, appealing description from what is verified rather than padding with unsupported claims.
 </fact_whitelist_rules>
 
+<archetype_fit_gate>
+Before writing anything, decide whether this property genuinely fits {archetype}. This gate protects buyers from copy that has been spun to fit a profile the facts do not support, and it keeps the listing page honest.
+
+Verdict = NEUTRAL when ANY of the following is true:
+- The verified facts contradict a core, non-negotiable need of the archetype (e.g. a family_buyer needs space/suitability for children, and the property is a 2-bed high-rise positioned as a lock-and-leave or investment unit with no outdoor space).
+- Presenting the property to this archetype would require omitting, downplaying, or spinning verified facts so that the reader is left with a misleading impression.
+- There is essentially nothing legitimate to foreground for this archetype — the only authentic angles point at a different kind of buyer.
+
+Verdict = FIT when:
+- The verified facts genuinely support at least one honest, appealing angle for this archetype, achievable without misleading the reader — even if the match is not perfect.
+
+Decision rules:
+- Minor mismatch is not NEUTRAL. If the property broadly suits the archetype but is not ideal, write a FIT description using the legitimately relevant facts; do not overclaim, and do not invent the missing pieces.
+- Fundamental misalignment IS NEUTRAL. Do NOT attempt to "rescue" it by changing voice, reframing, or finding clever legitimate angles. When the facts say this is the wrong buyer, the correct action is to leave the listing unmodified.
+- The fit decision is made from verified facts only — never from assumptions about the buyer or the area.
+
+On a NEUTRAL verdict the system keeps the DOM in its neutral (unmodified) state and shows the agent's original listing. You therefore produce NO description and NO reframing. Your entire visible job is to return the NEUTRAL verdict.
+
+CRITICAL: your reasoning about fit is internal. You MUST NOT output any analysis of why the property does or does not match — no bullet-point breakdowns, no "My approach", no ethics commentary, no acknowledgement of the mismatch. None of that may ever reach the reader. The only permitted machine-readable trace is a short code in <neutral_reason> (for logging, never displayed).
+</archetype_fit_gate>
+
 <voice_adaptation>
 - Apply archetype_voice_pattern for tone, structure, and emotional emphasis so the copy feels written for this specific buyer.
 - archetype_hard_rules always override the voice pattern. If they conflict, follow the hard rules.
@@ -406,19 +449,35 @@ Write as an experienced human copywriter who knows this market — not as an AI.
 </style_guide>
 
 <output_format>
-Output exactly two things, in this order, and nothing else:
+Always begin the output with the verdict tag, then follow the matching contract. Output nothing outside what each case specifies — no preamble, no headings, no analysis.
 
-1. The description body — in {locale}, plain prose, no heading. Its length must track original_description: aim for the same word count, within +/- 10%. The goal is to convey the property as fully as the agent intended, so let the original's length set the target rather than any fixed number.
+Verdict tag (always first):
+<adaptation_verdict>FIT</adaptation_verdict>
+or
+<adaptation_verdict>NEUTRAL</adaptation_verdict>
 
-2. Immediately after, the audit block:
+CASE FIT — output, in this order:
+1. <adaptation_verdict>FIT</adaptation_verdict>
+2. The description body — in {locale}, plain prose, no heading. Its length must track original_description: aim for the same word count, within +/- 10%. The goal is to convey the property as fully as the agent intended, so let the original's length set the target rather than any fixed number.
+3. Immediately after, the audit block:
 <verified_facts_used>
 ["bedrooms: 3", "location: Marbella Old Town", "garden: yes", "epc: B"]
 </verified_facts_used>
 
-Rules for the audit block:
+CASE NEUTRAL — output ONLY:
+1. <adaptation_verdict>NEUTRAL</adaptation_verdict>
+2. Optionally a single short reason code for logging:
+<neutral_reason>core_need_contradiction</neutral_reason>
+Produce no description body and no <verified_facts_used> block. Write nothing else. The system will keep the DOM unmodified and serve the agent's original listing.
+
+Rules for the audit block (FIT only):
 - List only the facts you actually used in the description.
 - Each entry is "key: value", drawn verbatim from original_description or listing_context.
 - The block is metadata for ClickHouse; it MUST NOT appear inside, or influence the wording of, the readable description.
+
+Rules for <neutral_reason> (NEUTRAL only):
+- A short snake_case code or brief phrase for analytics only (e.g. core_need_contradiction, no_legitimate_angle, would_require_misleading).
+- It is logging metadata and is NEVER shown to the reader.
 </output_format>
 
 <examples>
@@ -471,6 +530,19 @@ Una casa de tres dormitorios en el Casco Antiguo de Marbella, donde las calles e
 </verified_facts_used>
 </example_3>
 
+<example_4>
+<example_description>
+Fundamental misalignment, locale en. The archetype is family_buyer but the verified facts describe a 2-bed, 32nd-floor urban condo positioned as a lock-and-leave / investment unit, with no outdoor space for children, no schools, and an urban-nightlife setting. The honest verdict is NEUTRAL: the system leaves the DOM unmodified and shows the agent's original. The model returns ONLY the verdict — never the misalignment analysis. This is exactly the case where reframing must be refused.
+</example_description>
+
+Verified facts available (illustrative): archetype family_buyer; location "Brickell, Miami"; bedrooms 2; floor 32; balcony only (no yard); 24/7 security; concierge; in-unit laundry; original_description frames it as a pied-a-terre / rental hold.
+
+Good output:
+
+<adaptation_verdict>NEUTRAL</adaptation_verdict>
+<neutral_reason>core_need_contradiction</neutral_reason>
+</example_4>
+
 </examples>
 
 <exceptions>
@@ -491,17 +563,22 @@ Locale register mismatch
 - The voice pattern is provided in {locale}. If any input arrives in another language, still compose the final description natively in {locale}.
 
 Facts that do not fit the archetype
-- If the only verified facts are not the ones this archetype usually responds to, present them in the most archetype-appropriate framing available rather than inventing a better-fitting fact.
+- Distinguish degree of mismatch. If the property broadly suits the archetype but the verified facts are not its ideal selling points, give a FIT description that foregrounds the legitimately relevant facts — do not invent a better-fitting fact.
+- If the verified facts fundamentally contradict the archetype's core needs, do NOT reframe. Return the NEUTRAL verdict per <archetype_fit_gate> and <output_format>, so the DOM stays unmodified. Reframing a clearly wrong-buyer property is exactly what this prompt must not do.
 </exceptions>
 
 <guardrails>
 You MUST:
+- Run the archetype-fit gate before writing, and emit an <adaptation_verdict> of FIT or NEUTRAL.
+- On NEUTRAL, return only the verdict (and optional <neutral_reason>), so the DOM stays unmodified — no description, no reframing.
 - Ground every specific or named claim in original_description or listing_context.
 - Keep the description close to the length of original_description (within +/- 10% by word count), in {locale}, without omitting verified facts the original includes.
 - Apply archetype_hard_rules without exception.
-- Output only the description body and the <verified_facts_used> block.
+- On FIT, output only the verdict, the description body, and the <verified_facts_used> block.
 
 You MUST NOT:
+- Reframe, "rescue", or re-voice a property whose verified facts fundamentally contradict the archetype's core needs. That case is always NEUTRAL.
+- Output any fit analysis, misalignment breakdown, bullet-point reasoning, "My approach"-style commentary, or ethics explanation. Reasoning is internal; the only permitted trace is the <neutral_reason> code.
 - Invent, estimate, round, or imply any number, distance, price, yield, date, or named entity.
 - Promote a theme with fabricated specifics when the data is missing.
 - Include the audit block content inside the readable description.
@@ -511,7 +588,7 @@ You MUST NOT:
 
 <priority>
 When instructions conflict, resolve in this order:
-1. Factual accuracy / no hallucination (fact whitelist).
+1. Factual accuracy / no hallucination (fact whitelist) and the archetype-fit gate — never mislead, and never reframe a fundamentally misaligned property.
 2. archetype_hard_rules.
 3. archetype_voice_pattern and archetype fit.
 4. Human, expert authenticity (style guide).
@@ -520,12 +597,15 @@ When instructions conflict, resolve in this order:
 
 <output_validation>
 Before emitting, silently confirm:
-- Every number, distance, price, percentage, date, and named entity in the body appears in original_description or listing_context.
+- An <adaptation_verdict> (FIT or NEUTRAL) is present and is the first thing in the output.
+- If the verified facts fundamentally contradict the archetype's core needs, the verdict is NEUTRAL — and the output contains no description and no fit analysis, only the verdict and optional <neutral_reason>.
+- If FIT: every number, distance, price, percentage, date, and named entity in the body appears in original_description or listing_context.
 - No archetype_hard_rule is broken.
 - The copy reads in the archetype's voice, written by a human, free of the banned clichés.
 - The body is in {locale} and its word count is within +/- 10% of original_description.
 - No verified fact present in original_description has been dropped.
-- The output is only the description body plus the <verified_facts_used> block, and the block lists exactly the facts used.
+- No fit reasoning, misalignment breakdown, or commentary has leaked into the visible output.
+- The output matches exactly one of the two contracts in <output_format>, and nothing else.
 If any check fails, fix it before responding.
 </output_validation>
 
@@ -539,6 +619,48 @@ _VERIFIED_FACTS_PATTERN: re.Pattern[str] = re.compile(
     r"\s*<verified_facts_used>\s*(.*?)\s*</verified_facts_used>\s*",
     re.DOTALL,
 )
+
+# v1.9 archetype-fit gate (ADR-0010): the model now opens its output with an
+# <adaptation_verdict>FIT|NEUTRAL</adaptation_verdict> tag. On NEUTRAL the property
+# fundamentally does not fit the archetype, so we generate NO description and the DOM
+# stays in its neutral (unmodified) state — the caller skips the Redis write exactly as
+# for an empty response. An optional <neutral_reason> short code is logged for analytics.
+_ADAPTATION_VERDICT_PATTERN: re.Pattern[str] = re.compile(
+    r"<adaptation_verdict>\s*(FIT|NEUTRAL)\s*</adaptation_verdict>",
+    re.IGNORECASE,
+)
+_NEUTRAL_REASON_PATTERN: re.Pattern[str] = re.compile(
+    r"<neutral_reason>\s*(.*?)\s*</neutral_reason>",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _parse_adaptation_verdict(raw: str) -> tuple[str, str | None, str]:
+    """
+    Parse the v1.9 <adaptation_verdict> gate from the model output (ADR-0010).
+
+    Returns:
+        Tuple of (verdict, neutral_reason, body).
+
+        - verdict is "FIT" or "NEUTRAL". When no verdict tag is present (e.g. a
+          truncated or non-compliant response) we default to "FIT" so the existing
+          downstream parsing/validation still runs — a missing tag is treated as a
+          normal description, not a silent neutral.
+        - neutral_reason is the short snake_case code inside <neutral_reason> when
+          present (NEUTRAL only), else None.
+        - body is the model output with the <adaptation_verdict> and <neutral_reason>
+          tags removed and stripped, ready for _parse_verified_facts on the FIT path.
+    """
+    verdict_match = _ADAPTATION_VERDICT_PATTERN.search(raw)
+    verdict = verdict_match.group(1).upper() if verdict_match else "FIT"
+
+    reason_match = _NEUTRAL_REASON_PATTERN.search(raw)
+    neutral_reason = reason_match.group(1) if reason_match else None
+
+    body = _ADAPTATION_VERDICT_PATTERN.sub("", raw)
+    body = _NEUTRAL_REASON_PATTERN.sub("", body).strip()
+
+    return verdict, neutral_reason, body
 
 
 def _parse_copy_template_sections(copy_template: str) -> tuple[str, str]:
@@ -815,7 +937,22 @@ def _generate_with_sonnet(
     if not raw_text.strip():
         return "", []
 
-    description, facts = _parse_verified_facts(raw_text)
+    # v1.9 archetype-fit gate (ADR-0010): read the <adaptation_verdict> first.
+    # NEUTRAL = the property fundamentally does not fit this archetype → produce NO
+    # description so the DOM stays neutral (caller skips the Redis write, the endpoint
+    # serves the agent's original copy). This also suppresses the per-listing headline,
+    # because the caller early-returns on an empty description before _generate_headline.
+    verdict, neutral_reason, body = _parse_adaptation_verdict(raw_text)
+    if verdict == "NEUTRAL":
+        log.info(
+            "generate_description.neutral_verdict archetype=%s tier=%d reason=%s",
+            archetype,
+            tier,
+            neutral_reason or "(none)",
+        )
+        return "", []
+
+    description, facts = _parse_verified_facts(body)
 
     # FOLLOW-162 / RETRO-027: a generation truncated at max_tokens drops the trailing
     # <verified_facts_used> block (and may cut the body mid-sentence). Two truncation

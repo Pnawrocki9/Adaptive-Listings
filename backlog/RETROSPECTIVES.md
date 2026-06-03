@@ -9624,3 +9624,383 @@ written but not yet read; readers are FOLLOW-173/174 by design (FOLLOW-177, trac
 - **RETRO-026 / RETRO-029 TG-1** — standing `packages/db` "string/mock-only, no live-DB" coverage
   pattern; RETRO-030 TG-1 is another (sharper) instance — FOLLOW-183 proposes the PG harness that would
   close the whole family.
+
+## RETRO-031 — FOLLOW-172 (CRM deep-outcome ingest → conversion_labels, PII-stripped) — 2026-06-03
+
+### 1. Summary of change
+
+- **PR:** #191 (merged 2026-06-03 20:08 UTC, commit `14667fc`). backend-engineer (impl) +
+  compliance-engineer (AC2 sign-off, HANDOFFS.md §AC2). Sprint 14; `depends_on: FOLLOW-171`, gated by
+  FOLLOW-179 (merged #190). Source: MASTER_DESIGN §T (Conversion Label Loop, v3.9), task T2 of the
+  ordered FOLLOW-170…175 chain; the SECOND producer of `conversion_labels` (the deep-outcome path).
+- **Files changed:** 5 (+~1020 / −~10 net new; route +471, route.test +546, dsr/erase +21/−1,
+  dsr/erase.test +2 tests, dsr-routes.test mock add).
+  - `apps/control-plane/src/app/api/crm/outcome/route.ts` (NEW, +471) — `POST /api/crm/outcome`.
+    HMAC-SHA256 tenant-scoped auth (mirrors feedback route: `constantTimeEqual`, 64-hex enforcement,
+    raw body as HMAC data, Bearer as key) + SHA-256 `api_keys.hashed_key` lookup → `tenant_id` from
+    auth context never body. `.strict()` Zod allow-list (`prediction_id` 1..256, `lead_id` 1..256,
+    `outcome_class` enum of the FOUR deep classes only, `outcome_raw` optional record, `confidence`
+    0–1 default 1.0, `labeled_at` ISO8601). Writes via `upsertConversionLabel` inside a
+    `db.transaction()` that first `SELECT set_config('app.current_tenant_id', …, true)` (RLS). DB
+    failure → 500 fail-loud (Rule K.2) + Sentry. `label_source='system'`.
+  - `apps/control-plane/src/app/api/crm/outcome/route.test.ts` (NEW, +546) — 46 tests (auth gate,
+    `.strict()` deny-list incl. email/name/phone/crm_contact_id/hubspot/salesforce, shallow-class
+    rejection, deep-class acceptance, field requirements, upsert correctness, fail-loud error path).
+  - `apps/control-plane/src/app/api/dsr/erase/route.ts` (MODIFIED, +21/−1) — added
+    `DELETE FROM conversion_labels WHERE tenant_id = … AND lead_id = record.sessionId AND lead_id <> ''`
+    inside the existing erase transaction, double-guarded (`record.sessionId !== ''` app layer +
+    `ne(conversionLabels.leadId, '')` DB predicate).
+  - `apps/control-plane/src/app/api/dsr/erase/route.test.ts` (MODIFIED, +2 tests) — cascade tests.
+  - `apps/control-plane/src/app/api/dsr/dsr-routes.test.ts` (MODIFIED) — `conversionLabels` + `ne`
+    added to the `@estalara/db` mock (the erase route now imports them).
+- **Modules touched:** [control-plane (new CRM route + DSR erase) / tests]. No schema/migration, no
+  SDK, no ingest, no decision-api, no Modal/Python, no docs. Reuses the FOLLOW-179 `upsertConversionLabel`
+  helper and FOLLOW-171 `conversionLabels` table unchanged.
+- **Key contracts changed:**
+  - NEW public API surface `POST /api/crm/outcome` (tenant-facing CRM webhook). Breaking: N/A (new).
+    Auth = HMAC-SHA256 (FOLLOW-051 model). This is a **new tenant-integration contract** that the §U
+    onboarding + DPA must reference (condition 10).
+  - `POST /api/dsr/erase` behavior — now ALSO deletes `conversion_labels`. Breaking: no (additive).
+  - `conversion_labels` gains a SECOND writer. The `upsertConversionLabel` mandate from RETRO-030 §5c
+    is **HONORED** (route uses the helper, not a plain insert — verified §3) and `labeledAt` IS passed
+    (RETRO-030 §4b CB-2 cascade satisfied — verified §3). Both RETRO-030 cascade asks: **CLOSED.**
+- **Verdict (preview):** **FOLLOW-UPS-FILED (not clean).** Conditions 1–7 of the compliance AC2 are
+  met and verified end-to-end. BUT (i) the DSR erasure cascade is **inert for every CRM-written row
+  today** (user concern (a) — a REAL Art. 17 erasure gap, keyed on the wrong identifier namespace);
+  (ii) the new webhook is a **HALF_WIRE_C — no first-party producer** sends `prediction_id`/`lead_id`
+  to it (user concern (c) — the consumer-ready/producer-absent family, RETRO-029 lineage); and (iii)
+  go-live gates 8–10 (ROPA Activity 14, DPIA §2.3/§2.5, 13-month TTL cron, onboarding pseudonymity
+  checkbox) are unshipped by design and MUST be tracked (user concern (d)). Four follow-ups filed
+  (FOLLOW-184…187). Concern (b) PII-boundary: **VERIFIED SOUND, no gap.**
+
+### 2. Verification done in PR
+
+- Test files changed: `crm/outcome/route.test.ts` (NEW, 46 tests), `dsr/erase/route.test.ts` (+2),
+  `dsr/dsr-routes.test.ts` (mock-only edit). Assertions added: **~50+**. The 46 CRM tests are unusually
+  thorough for a route at this layer and explicitly map to compliance conditions 1–7 (auth gate,
+  `.strict()` deny-list with 16 PII-shaped fields, shallow-class rejection, deep-class acceptance,
+  `tenant_id`-from-auth-not-body, `outcome_raw`-from-parsed.data, SET LOCAL tenant_id, fail-loud 500).
+- Coverage delta: **+** strong for the route's auth/validation/PII surface. BUT the same standing gap
+  as RETRO-029/030 persists: the route test fully **mocks `upsertConversionLabel`, `transaction`, and
+  `execute`** (`route.test.ts:117-172`), so (a) the SET LOCAL SQL is asserted only by inspecting a
+  mocked `execute`'s `.values` array (`:543-553`), and (b) the actual DSR `DELETE … WHERE lead_id =
+  session_id` is asserted against a mocked Drizzle chain — **no real Postgres exercises either the
+  RLS firing or the erasure predicate.** The erasure-cascade *correctness* gap (§4a LG-1) is precisely
+  the kind a mock cannot catch: a green test proves the DELETE is *issued*, not that it *matches the
+  right rows*. → §4c TG-1.
+- CI checks: not independently verified by this analyst (read-only). Standing CI-gate caveat (Rule I /
+  Vercel / Python lanes pre-existing-red & non-blocking). PR body claims all green.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- `apps/control-plane/src/app/api/crm/outcome/route.ts` — `export async function POST` is a Next.js
+  App-Router route handler (framework entrypoint). **Suppressed per Step 6** (framework-route). Not
+  dead. Its internal helpers (`hmacSha256Hex`, `constantTimeEqual`, `sha256Hex`,
+  `verifyAndResolveTenant`, `writeWithRlsContext`) are all called within the module. **Not dead.**
+- DSR erase imports `conversionLabels` + `ne` from `@estalara/db` — both consumed at
+  `erase/route.ts:340-346`. **Not dead.**
+- No new exported library symbols added (route reuses `upsertConversionLabel`, `conversionLabels`,
+  `createAdminClient`, `apiKeys`, `errorBody`, `ErrorCode`, all pre-existing). **CHECK A clean ✅.**
+
+**CHECK B — Half-wire detection (load-bearing for this PR):**
+
+- **`POST /api/crm/outcome` webhook (new producer of `conversion_labels` deep-outcome rows):**
+  Consumer-of-its-output EXISTS ✅ — it writes via `upsertConversionLabel` into the durable table
+  (whose readers are FOLLOW-173/174, unshipped — intentional durable sink, already tracked
+  HALF_WIRE_P under FOLLOW-177). The **producer-of-its-INPUT, however, DOES NOT EXIST.** No
+  first-party caller sends `{prediction_id, lead_id, outcome_class}` to this endpoint: it is a
+  tenant-facing webhook a tenant must wire from their CRM. Grepped — zero callers of `/api/crm/outcome`
+  in `packages/sdk`, `apps/*`, `Estalara-app`, or any test other than its own route.test. This is the
+  SAME consumer-ready/producer-absent shape as RETRO-029's `prediction_id` HALF_WIRE_C — but with a
+  material distinction: this is a **tenant-integration endpoint by design**, so "no first-party
+  producer" is the intended end-state, NOT a bug. It stays correctly inert until a tenant wires it.
+  → Recorded as **HALF_WIRE_C — P3 (tracking), FOLLOW-186** (tenant onboarding/docs wire-up, also the
+  vehicle for compliance condition 10). NOT P0/P1: the absence is contractual, not accidental, and the
+  endpoint fails-safe (it 400s/401s, never silently no-ops on bad input).
+- **`prediction_id`/`lead_id` chain into `conversion_labels` from the SDK feedback path (RETRO-029
+  HALF_WIRE_C):** UNCHANGED by this PR — SDK still doesn't produce them (FOLLOW-178 OPEN). The CRM
+  path is an INDEPENDENT producer that bypasses the SDK gap (a tenant CRM supplies `prediction_id`
+  directly), so it does not depend on FOLLOW-178 — but it has its own producer-absence (above).
+- **DSR erasure cascade wire (`conversion_labels` ← erase):** Producer of the DELETE EXISTS ✅
+  (`erase/route.ts:340`). BUT it is wired to the WRONG key for CRM rows — see §4a LG-1. This is not a
+  classic half-wire (both ends exist) but a **mis-wire**: the consumer (DELETE) is connected to
+  `session_id`, while the CRM producer writes a `lead_id` from a different namespace, so the wire
+  carries no current for CRM rows. Recorded as a logic gap (LG-1), not HALF_WIRE.
+
+**Summary:** One intentional HALF_WIRE_C (tenant webhook input has no first-party producer — P3,
+FOLLOW-186, by design). No DEAD_CODE. One mis-wired DSR cascade (LG-1, not a half-wire). The two
+prior §T half-wires (FOLLOW-177 readers, FOLLOW-178 SDK) are unchanged and not regressed.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the DSR erasure cascade is INERT for every CRM-written row today (user concern (a):
+  CONFIRMED — a real GDPR Art. 17 gap).** The erase deletes
+  `conversion_labels WHERE tenant_id = record.tenantId AND lead_id = record.sessionId AND lead_id <> ''`
+  (`erase/route.ts:340-347`). But the two writers populate `lead_id` from **different identifier
+  namespaces**:
+  1. **CRM webhook (`crm/outcome/route.ts:332`)** writes `leadId = data.lead_id` — a tenant-supplied
+     **opaque pseudonymous token** (§T.6 Option i), explicitly documented as "NOT a CRM contact ID"
+     and NOT the Estalara `session_id`. The DSR `session_id` is the anonymous Estalara session token,
+     captured at `dsr/initiate/route.ts:114-122` and validated against `session_embeddings.session_id`.
+     These are unrelated values. So `conversion_labels.lead_id (CRM token) = session_id` is **almost
+     never true** → CRM rows are **NOT erased** by a DSR erase request. The data subject's deep-outcome
+     labels survive an erasure. **This is the exact right that compliance condition 7 / §AC2 exists to
+     honor, and it is unhonored for the deep-outcome rows specifically** — the rows that carry the most
+     durable linkage.
+  2. **Feedback ping (`feedback/route.ts:383`)** writes `leadId = parsed.data.lead_id ?? ''` → `''`
+     today (FOLLOW-178/180 OPEN). Those rows are correctly NOT erased by the guard (and `'' <> ''`
+     fails anyway) — they are orphaned from erasure too, but that is the RETRO-029 LG-2 / FOLLOW-180
+     gap already tracked, distinct from the CRM mis-key.
+  The PR's own comment (`erase/route.ts:330-331`) asserts "the lead_id is the session_id pseudonymous
+  token" — **this is the load-bearing incorrect assumption.** It is true (vacuously) for the
+  empty-lead feedback rows but FALSE for CRM rows, which is the entire population this cascade was
+  added (condition 7) to cover. The cascade was wired to satisfy the letter of condition 7 (a DELETE
+  on `conversion_labels` by `lead_id`) but the value it joins on cannot match the CRM `lead_id`. The
+  real fix lives with FOLLOW-180's durable-`lead_id` resolution: a DSR request must resolve the data
+  subject's durable `lead_id` (not just session_id) and erase on THAT, OR the erase must accept/derive
+  the `lead_id` and delete on it. Until then, **CRM-deep-outcome erasure is a known open obligation.**
+  → **FOLLOW-184 (P1)** — relate to FOLLOW-180; must be closed before a CRM-integrated tenant goes
+  live (it is an Art. 17 completeness gap, not merely a corpus-quality one).
+- **LG-2 (P3) — the empty-`lead_id` guard is CORRECT (user concern (a), second half: VERIFIED).** The
+  double guard — `record.sessionId !== ''` at the app layer (`:339`) AND
+  `ne(conversionLabels.leadId, '')` in the DB predicate (`:345`) — means a blank `lead_id` can NEVER
+  match-all. Even if `record.sessionId` were somehow `''` (it cannot be: `session_id` is `min(1)` at
+  `dsr/initiate/route.ts:36` and FK-validated against `session_embeddings`), the `ne(leadId,'')`
+  predicate independently prevents the catastrophic "DELETE all system labels for the tenant" failure
+  mode RETRO-029 LG-2 warned about. **This is the correct defensive implementation of the FOLLOW-180
+  erasure-key-safety requirement** and resolves that half of the concern. No follow-up; recorded as a
+  closed sub-item of FOLLOW-180's AC ("erasure path never matches on `lead_id=''`").
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — `confidence` Zod default vs spread-conditional: the default 1.0 is applied in the
+  helper call, not the schema, so an explicitly-sent `confidence: 0` is forwarded correctly but a
+  MISSING confidence relies on `data.confidence ?? 1.0` (`route.ts:338`).** This is correct (0 is a
+  valid falsy that `??` preserves), and a test covers explicit `0.85` (`route.test.ts:523-529`), but
+  there is **no test for `confidence: 0`** specifically — the one value where a `||` vs `??` mistake
+  would silently flip 0→1.0. The code uses `??` (correct); the test gap means a future refactor to
+  `||` would ship green. Low severity (code is right). → folded into FOLLOW-185 AC (the PG-harness
+  test, add a `confidence: 0` case).
+- **CB-2 (P2) — `outcome_raw` is forwarded verbatim as `jsonb` with NO size bound and NO nested-key
+  PII scan.** `.strict()` guarantees no PII at the TOP level of the body, but `outcome_raw` is
+  `z.record(z.unknown()).optional()` (`route.ts:89`) — an arbitrary nested object. A tenant CAN place
+  `{ "buyer_email": "x@y.com" }` INSIDE `outcome_raw` and it will be stored. This is **by design per
+  the compliance handoff** (`outcome_raw` is "raw inbound payload retained for debugging", and PII
+  responsibility is pushed to the tenant DPA + onboarding checkbox, condition 10) — so it is NOT a
+  code defect, but it IS a residual PII-ingress vector that depends entirely on the (unshipped)
+  contractual control. Recorded so a future retro/auditor does not treat the `.strict()` top-level
+  guarantee as a full PII boundary — it is not; `outcome_raw` is an intentional escape hatch.
+  Mitigations to consider (for FOLLOW-186/condition-10 work): a max byte size on `outcome_raw`, and/or
+  a documented "no PII in outcome_raw" clause in the same DPA checkbox that covers `lead_id`. →
+  noted in FOLLOW-186; no separate follow-up.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — the DSR cascade DELETE and the SET LOCAL RLS are asserted only against mocks; no
+  Postgres exercises whether the erase actually matches CRM rows.** This is the gap that LET LG-1
+  ship: a mock-based test asserts the DELETE is *called with a predicate*, never that the predicate
+  *selects the CRM rows that exist*. A pgmem/Testcontainers test that (a) inserts a CRM
+  `conversion_labels` row with `lead_id = <opaque token != session_id>`, (b) runs a DSR erase for that
+  session, and (c) asserts the CRM row IS or ISN'T gone would have surfaced LG-1 immediately (it
+  ISN'T gone). Same standing `packages/db`/control-plane "mock-only, no live-DB" family as RETRO-029
+  TG-1, RETRO-030 TG-1, RETRO-026. → **FOLLOW-185 (P1)** — extend the FOLLOW-183/181 PG-harness scope
+  to cover the CRM-route write + DSR-cascade match (the harness that proves erasure correctness).
+- **TG-2 (P2) — no test asserts the `crm/outcome` write and the feedback-ping write CONVERGE on the
+  same `(tenant_id, prediction_id)` via the precedence upsert.** The whole point of the deep-outcome
+  path is to UPGRADE a shallow ping label (`viewing_booked`) to a deep CRM label (`purchased`) on the
+  same prediction. The route test mocks `upsertConversionLabel` so it proves the helper is *called*
+  with `outcomeClass='offer_made'` etc., but never that the cross-writer precedence resolution
+  actually fires (that is the RETRO-030 TG-1 helper-untested gap). The two-writer convergence is the
+  load-bearing §T behavior and has zero integration coverage. → folded into FOLLOW-185.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — compliance go-live gates 8–10 are unshipped (user concern (d): CONFIRMED, must be
+  tracked).** The §AC2 sign-off (`HANDOFFS.md:1044-1089`) explicitly scopes conditions 1–7 as
+  PR-merge gates (all met) and conditions 8–10 as **go-live gates that "must be tracked as open items
+  in backlog/FOLLOW_UPS.md if not satisfied at time of merge."** They are not in PR #191 (by design).
+  Verified none is yet a FOLLOW stub:
+  - **Condition 8** — ROPA Activity 14 + DPIA §2.3/§2.5 updates (`docs/compliance/ropa.md`,
+    `docs/compliance/dpia.md`). Spec'd verbatim in `HANDOFFS.md:976-1006`. NOT yet filed.
+  - **Condition 9** — 13-month TTL enforcement on `conversion_labels` (cron/partition). The nightly
+    TTL cron covers `session_embeddings`/`engagement_scores` but **NOT** `conversion_labels`
+    (`HANDOFFS.md:952-958`). No retention disclosure may state a concrete period until this lands.
+  - **Condition 10** — §U onboarding compliance gate checkbox: tenant affirms `lead_id` values are
+    Estalara-assigned pseudonymous tokens, not CRM IDs/PII (`HANDOFFS.md:1083-1085`).
+  → **FOLLOW-187 (P1, compliance) for condition 8**, **FOLLOW-185-adjacent / FOLLOW-184 note for 9**,
+  and condition 10 folded into **FOLLOW-186**. See §7. Recorded here so no go-live gate is lost.
+- **DG-2 (P3) — MASTER_DESIGN §T still `(PROPOSED)`** despite T0/T1/T2 now merged. UNCHANGED from
+  RETRO-029 DG-1 / RETRO-030 §4d — still tracked under FOLLOW-177. Not re-filed; noted that T2 now
+  also argues for the status flip.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected (Sprint 14)
+
+- **FOLLOW-180 (durable lead_id + erasure-key safety) — NOW LOAD-BEARING for GDPR completeness, not
+  just corpus quality.** RETRO-029 framed FOLLOW-180 as P2 (orphaned rows). LG-1 here shows the CRM
+  path makes it a P1 Art. 17 gap: until a DSR erase can resolve and match the durable `lead_id`,
+  CRM-written labels survive erasure. FOLLOW-184 is the erasure-specific slice; the PM should sequence
+  FOLLOW-184/180 before any CRM-integrated tenant go-live. **The erasure half of FOLLOW-180's AC
+  ("never match on `lead_id=''`") is already satisfied by this PR (§4a LG-2) — the OPEN half is "erase
+  must match the durable lead_id for CRM rows."**
+- **FOLLOW-178 (SDK threads prediction_id/lead_id) — UNCHANGED, still OPEN/P1.** The CRM path does not
+  depend on it (tenant supplies prediction_id directly), so this PR does NOT close FOLLOW-178 and the
+  SDK feedback path remains a no-op producer. RETRO-029 §3 HALF_WIRE_C still stands.
+- **FOLLOW-173 (aggregation/calibration) — now has a SECOND real input source.** Once a tenant wires
+  the webhook, deep CRM outcomes will upgrade shallow ping labels via the precedence upsert — the
+  calibration curve becomes meaningful. No blocking action; note that FOLLOW-173 must handle the
+  manual/system/CRM precedence transparently (it does via the helper's resolution).
+- **FOLLOW-174 (admin reclassify) — unaffected directly;** still must use `upsertConversionLabel`
+  (RETRO-030 §5a cascade, unchanged).
+- **FOLLOW-177 (§T tracking / write-only) — should be updated:** §T now has TWO producers
+  (feedback + CRM) and still zero readers. The HALF_WIRE_P framing is unchanged but the §T status
+  flip (DG-2) is more overdue.
+
+#### 5b. Future sprint tickets affected
+
+- **Y2 TALLRec/LoRA corpus (§D.5.7):** the deep-outcome classes from the CRM path are the
+  highest-value training labels (confirmed sales vs. coarse engagement). Their erasability (LG-1) is
+  also a corpus-governance concern: un-erasable rows in a fine-tune corpus are a compliance liability
+  at training time, not just at rest. Record before the export ticket (FOLLOW-175) reads the corpus.
+- **Tenant onboarding / §U:** condition 10's checkbox is now a hard prerequisite for activating the
+  webhook per tenant — the onboarding flow gains a CRM-integration branch (FOLLOW-186).
+
+#### 5c. Contracts changed others rely on
+
+- `POST /api/crm/outcome` is a NEW tenant-facing public API surface (auth = HMAC-SHA256, FOLLOW-051
+  model). Per CLAUDE.md autonomy rules, a new public API surface normally warrants escalation; here it
+  was pre-authorized by the §T design + the FOLLOW-172 ticket + compliance §AC2 sign-off, so it is in
+  scope — recorded for completeness. Its request schema (the 6 allow-listed fields, deep-class-only
+  enum) is now a contract a tenant's CRM integration codes against; changing it is breaking.
+- `POST /api/dsr/erase` now cascades to `conversion_labels`. Any future writer of that table inherits
+  the erasure obligation — and the LG-1 mis-key means future writers must NOT assume the cascade
+  covers them unless they key on `session_id` (which the CRM path does not).
+
+#### 5d. Architectural assumptions affected
+
+- **"`conversion_labels.lead_id` is the session_id pseudonymous token" (asserted in
+  `erase/route.ts:330-331`) is FALSE for the CRM path.** There are now TWO distinct `lead_id`
+  populations: `''` (feedback) and tenant-opaque-token (CRM), neither of which equals `session_id`.
+  Any reasoning that treats `lead_id` and `session_id` as the same identifier (the DSR cascade does)
+  is unsound. Recorded so the next §T/DSR retro does not re-assume it; FOLLOW-184/180 must establish
+  the actual identifier-resolution model (session_id ⋈ durable lead_id ⋈ CRM token).
+- **The `.strict()` top-level allow-list is NOT a complete PII boundary** — `outcome_raw` is an
+  intentional nested escape hatch (CB-2) whose only control is the (unshipped) DPA/onboarding gate.
+  Recorded so "PII boundary verified" (concern (b)) is understood precisely: STRUCTURAL at the top
+  level, CONTRACTUAL inside `outcome_raw`.
+
+### 6. New lesson candidates
+
+- **Pattern (RECURRENCE — meets threshold via Rule N family? NO — distinct shape) — "a compliance
+  cascade (erasure/consent) is wired to satisfy the letter of a condition (a DELETE on the table
+  exists) but joins on an identifier that the data it must cover is not keyed by, so the cascade is
+  inert for the real population."** Seen in: **RETRO-031 (this)** — DSR erase keys on `session_id`
+  while CRM rows are keyed on a tenant-opaque `lead_id`. Closest prior is RETRO-029 LG-2 (the
+  `lead_id=''` un-targetable sentinel) — but that was "no usable key exists yet," whereas this is "a
+  key exists but the cascade joins on the WRONG one." Related but distinct. **Current count: 1 (with
+  RETRO-029 LG-2 as a near-neighbor of the broader 'erasure key does not reach the rows' family —
+  arguably count 2 for that broader family).** Conservatively treating the specific "wired-to-the-
+  wrong-key" shape as **count 1, NOT promoted.** Watch-item: if a future compliance cascade (DSR,
+  consent-withdrawal, retention TTL) again matches on an identifier the target rows are not keyed by,
+  promote a Rule: "a compliance-cascade DELETE/UPDATE must be tested against a row written by EACH
+  producer of the target table, asserting the row is actually matched — issuing the statement is not
+  evidence it reaches the data."
+- **Pattern (RECURRENCE — Rule L family) — "a consumer/endpoint is shipped and tested with injected
+  inputs, but no first-party producer feeds it in prod, so it is inert until an external party wires
+  it."** Seen in: **RETRO-031** (`/api/crm/outcome` has no first-party caller — but here the absence
+  is BY DESIGN, a tenant webhook), **RETRO-029** (`prediction_id` — SDK doesn't produce), **RETRO-017
+  / RETRO-021 / RETRO-024** (`inquiry_submit_selector`). This is already **Rule L** territory ("a test
+  that injects the value is not evidence the prod path produces it"). The distinction worth recording:
+  for a **tenant-facing integration endpoint**, producer-absence is the intended state, so Rule L's
+  remedy is not "wire a first-party producer" but "ship the onboarding/docs that make the tenant the
+  producer + a go-live gate." **No new rule; Rule L already covers it** — flagged in §8 so the PM
+  cites Rule L on FOLLOW-186 (the producer is the tenant's CRM; the onboarding doc is the wire).
+
+#### 6a. Reconciliation with prior retros (Step 8 — multi-axis)
+
+- **RETRO-030's two cascade asks on FOLLOW-172 are CLOSED — verified end-to-end, not assumed.** (1)
+  "Must use `upsertConversionLabel`, not a plain insert (the UNIQUE constraint makes a plain insert
+  crash on first upgrade)": the route calls `upsertConversionLabel(txDb, …)` at
+  `crm/outcome/route.ts:329` — NOT a plain `db.insert`. Traced: helper → `onConflictDoUpdate` on
+  `(tenant_id, prediction_id)` (upsert-conversion-label.ts:156). **CLOSED.** (2) "Must pass the CRM
+  event timestamp as `labeledAt` (CB-2 recency tiebreak)": the route maps
+  `data.labeled_at → new Date(...) → labeledAt` and forwards it conditionally
+  (`route.ts:315,336`). **CLOSED.** This is the FOLLOW-closure check (Step 7): both asks were traced
+  to their actual call sites, not trusted from the PR description. RETRO-030's §5a FOLLOW-172 cascade
+  is fully discharged.
+- **Multi-axis on the DSR cascade (Step 8):** I analyzed BOTH writer axes of `conversion_labels` (the
+  feedback producer AND the CRM producer), not just the obvious CRM one. The feedback axis (`''`) is
+  correctly excluded by the guard; the CRM axis (opaque token) is the one the cascade fails to reach.
+  Had I analyzed only the CRM axis I would have missed that the guard is correct (LG-2); had I
+  analyzed only the guard I would have missed the mis-key (LG-1). Both surfaced because both axes were
+  traced.
+
+### 7. Follow-ups
+
+- **FOLLOW-184:** DSR erasure must actually reach CRM-written `conversion_labels` rows — the cascade
+  currently keys on `session_id` but CRM rows are keyed on a tenant-opaque `lead_id` of a different
+  namespace, so deep-outcome labels survive an Art. 17 erase (LG-1). Resolve the durable-`lead_id`
+  ⋈ `session_id` model so the erase matches CRM rows; add a PG test proving a CRM row IS erased.
+  Relate to / sequence with FOLLOW-180. **Must close before any CRM-integrated tenant goes live.**
+  (backend-engineer + compliance-engineer, 5h, **P1**) [LG-1; GDPR Art. 17]
+- **FOLLOW-185:** PG-harness (pgmem/Testcontainers) integration test covering the CRM route write +
+  the DSR cascade + the two-writer precedence convergence: (a) a CRM row with `lead_id != session_id`
+  is/ isn't matched by DSR erase (proves LG-1), (b) SET LOCAL RLS actually isolates the CRM write,
+  (c) a shallow ping label is UPGRADED to a deep CRM label on the same `(tenant_id, prediction_id)`,
+  (d) `confidence: 0` is preserved (CB-1). Folds/extends the FOLLOW-181/183 PG-harness scope — PM may
+  merge into one DB-integration ticket. (data-engineer, 5h, **P1**) [TG-1/TG-2/CB-1]
+- **FOLLOW-186:** Tenant onboarding + docs to make the CRM webhook a real producer (HALF_WIRE_C
+  closure) AND ship compliance condition 10 — the §U onboarding gate checkbox affirming `lead_id`
+  values are Estalara-assigned pseudonymous tokens (not CRM IDs/PII), plus a "no PII in `outcome_raw`"
+  clause (CB-2) and an `outcome_raw` size bound. Includes HMAC-signing integration docs for the
+  endpoint. **Gates first CRM-integrated tenant go-live.** (compliance-engineer + backend-engineer,
+  4h, **P2**) [HALF_WIRE_C; condition 10; CB-2; cite Rule L]
+- **FOLLOW-187:** Compliance docs for the CRM-ingest activity (go-live gate, condition 8): ROPA
+  Activity 14 (CRM Deep-Outcome Ingest, per `HANDOFFS.md:976-988`) + DPIA §2.3/§2.5 updates. AND file
+  the 13-month TTL enforcement requirement on `conversion_labels` (condition 9 — the nightly TTL cron
+  does NOT yet cover this table; no retention disclosure may state a concrete period until it lands)
+  — either as an AC of this stub or a sub-task for data-engineer. **Both are go-live gates, not
+  PR-merge gates.** (compliance-engineer + data-engineer, 5h, **P1**) [DG-1; conditions 8 & 9]
+
+#### Cascade actions for the PM (not new follow-ups — thread into existing items)
+
+- **FOLLOW-180:** its erasure-safety half ("never match `lead_id=''`") is CLOSED by this PR (§4a LG-2);
+  its OPEN half ("erase must reach the durable CRM `lead_id`") is now P1 via FOLLOW-184. Re-scope/link.
+- **FOLLOW-177:** §T now has TWO producers, still zero readers — update the tracking note; the §T
+  PROPOSED→in-progress flip (DG-2) is more overdue with T2 merged.
+
+### 8. Cross-references
+
+- **RETRO-030** — DIRECT PREDECESSOR / gating ticket. RETRO-030 §5a issued two cascade asks against
+  the then-in-flight FOLLOW-172 (use the helper; pass `labeledAt`). RETRO-031 §6a VERIFIES both are
+  CLOSED end-to-end at their call sites (`crm/outcome/route.ts:329,336`) — the closure-discipline
+  check from RETRO-024, applied. The `upsertConversionLabel` UNIQUE-constraint trap RETRO-030 warned
+  about (a plain insert crashes on first upgrade) was AVOIDED.
+- **RETRO-029** — grandparent (FOLLOW-171). RETRO-029 §4a LG-2 (the `lead_id=''` un-targetable
+  erasure key) is the near-neighbor of this retro's LG-1 (wrong-key erasure) — the erasure-reachability
+  family. RETRO-029's HALF_WIRE_C (`prediction_id` SDK gap, FOLLOW-178) is UNCHANGED and the CRM path
+  does not close it (independent producer).
+- **RETRO-024 (end-to-end closure discipline)** — applied to verify RETRO-030's cascade asks (traced
+  to call sites, not trusted) AND to classify LG-1: the DSR DELETE *exists* (the gap did NOT close, it
+  was wired one hop to the wrong key — issuing the statement ≠ reaching the rows).
+- **RETRO-017 / RETRO-021 / RETRO-024** — the consumer-ready/producer-absent silent-no-op family;
+  `/api/crm/outcome`'s producer-absence is the same shape but intentional (tenant webhook), governed
+  by Rule L with the remedy = onboarding/docs (FOLLOW-186), not a first-party producer.
+- **CONVENTIONS_PATCH Rule L** — governs the HALF_WIRE_C; the PM should cite it on FOLLOW-186 (the
+  produced value must come from a real tenant-wired path + a go-live gate, not an injected test value).
+- **CONVENTIONS_PATCH Rule N** — checked: condition 8 (ROPA/DPIA disclosure must match shipped code
+  before its go-live gate) is a Rule N obligation — the docs must NOT assert "13-month retention
+  enforced" until the TTL cron (condition 9) ships. FOLLOW-187 must honor Rule N's interim-language
+  carve-out ("13 months (TTL enforcement pending FOLLOW-NNN)").
+- **CONVENTIONS_PATCH Rule K.2** — checked: the route fails LOUD on DB error (500 + Sentre capture,
+  `route.ts:445-468`), not fire-and-forget — correctly distinct from the feedback ping's
+  fire-and-forget posture. Compliant.
+- **CONVENTIONS_PATCH Rule O** — N/A (no migration/journal change in this PR).
+- **RETRO-026 / RETRO-029 / RETRO-030 TG-1** — standing control-plane/`packages/db` "mock-only, no
+  live-DB" coverage family; TG-1 here is the instance that let LG-1 ship. FOLLOW-185 is the PG harness
+  that would close the family (PM may merge with FOLLOW-181/183).

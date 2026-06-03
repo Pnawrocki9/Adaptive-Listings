@@ -143,6 +143,12 @@ paths = [
   '''HANDOFF\.md''',
   '''backlog/HANDOFFS\.md''',
   '''backlog/QUEUE\.md''',
+  # Retro/follow-up narrative docs — same class as HANDOFFS/QUEUE: prose cites long snake_case
+  # constraint/index names and kebab-case phrases (e.g. conversion_labels_tenant_prediction_unique)
+  # whose 40-char substrings false-positive on this generic heuristic. Provider-specific secret
+  # rules (aws/anthropic/openai/stripe/github/private-key/db-conn) remain active on these paths.
+  '''backlog/RETROSPECTIVES\.md''',
+  '''backlog/FOLLOW_UPS\.md''',
   '''packages/sdk/src/auto-detect/__fixtures__/''',
   # Python test files use long descriptive method names (test_empty_selectors_list_returns_empty_dict
   # etc.) whose substrings of exactly 40 chars trigger this rule as false positives.

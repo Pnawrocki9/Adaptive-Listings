@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Unit tests for long-form description adaptation (FOLLOW-159).
+ * Unit tests for long-form description adaptation (FOLLOW-159 / FOLLOW-189).
  *
  * Covers:
  *   1. ai_cached source → applies + preserves paragraph structure (multiple <p>s)
@@ -14,6 +14,8 @@
  *   9. no slot elements → returns early (no event)
  *  10. HTTP error → emits adapt.description.error, no DOM mutation
  *  11. Network error → emits adapt.description.error, no DOM mutation
+ *  12. [FOLLOW-189] Svelte reactive-children pattern: replaces <p> nodes with raw text
+ *      nodes; SDK re-asserts and CONVERGES (disconnect→write→reconnect loop-guard).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -356,6 +358,106 @@ describe('applyDescriptionAdaptation — MutationObserver resilience', () => {
 
     // No additional re-apply triggered by our own mutation
     expect(afterCount).toBe(initialApplyCount);
+  });
+
+  /**
+   * FOLLOW-189: Svelte reactive-children pattern.
+   *
+   * The SvelteKit demo slot has `{#if description}{description[0]}{/if}` as its
+   * template — Svelte renders this as a raw TEXT NODE (not a <p>), not as child elements
+   * that the SDK wrote. On every reactive update Svelte replaces the slot's children
+   * with its own text nodes, reverting the adapted <p> nodes.
+   *
+   * This test simulates that exact pattern:
+   *   1. SDK applies adapted paragraphs (<p> elements).
+   *   2. Framework "reconciles" by removing SDK's <p> nodes and inserting a single
+   *      text node with the original content (simulating Svelte's {description[0]}).
+   *   3. SDK re-asserts after the rAF fires.
+   *   4. Framework reconciles AGAIN (second reactive update).
+   *   5. SDK re-asserts again — and CONVERGES (no unbounded loop).
+   *   6. Total re-apply event count is bounded (≤ number of reconciliation rounds).
+   */
+  it('[FOLLOW-189] holds adapted description against repeated Svelte reactive-children reconciliation', async () => {
+    const container = buildSlot();
+    const slot = container.querySelector<HTMLElement>('[data-estalara-slot="description"]')!;
+    mockFetchOk(AI_CACHED_RESPONSE);
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    // Flush microtasks (fetch resolve) and initial rAF (applyAndObserveSlot is called inside rAF).
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.runAllTimers(); // fires the rAF scheduled by slots.forEach(slot => requestAnimationFrame(...))
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Verify initial adaptation applied.
+    let paragraphs = getSlotParagraphs(container);
+    expect(paragraphs).toHaveLength(3);
+    expect(paragraphs[0]).toBe('First paragraph for the yield hunter.');
+
+    // ── Round 1: Svelte replaces <p> nodes with a raw text node (reactive reconciliation) ──
+    // This simulates `{#if description}{description[0]}{/if}` — Svelte inserts a text node,
+    // not a <p>. The slot has no <p> children after this.
+    slot.textContent = 'First paragraph of the original property description.';
+
+    // MutationObserver fires synchronously → schedules rAF (rafPending flag set).
+    // Flush the rAF → reapply() runs via disconnect→write→reconnect.
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.runAllTimers();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    paragraphs = getSlotParagraphs(container);
+    expect(paragraphs).toHaveLength(3);
+    expect(paragraphs[0]).toBe('First paragraph for the yield hunter.');
+
+    const reCountAfterRound1 = testEventQueue.filter(
+      (e) => e.type === 'adapt.description.re',
+    ).length;
+    expect(reCountAfterRound1).toBeGreaterThanOrEqual(1);
+
+    // ── Round 2: Svelte reconciles again (e.g. ShowMore toggle triggers a reactive update) ──
+    slot.textContent = 'First paragraph of the original property description.';
+
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.runAllTimers();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    paragraphs = getSlotParagraphs(container);
+    expect(paragraphs).toHaveLength(3);
+    expect(paragraphs[0]).toBe('First paragraph for the yield hunter.');
+
+    const reCountAfterRound2 = testEventQueue.filter(
+      (e) => e.type === 'adapt.description.re',
+    ).length;
+    expect(reCountAfterRound2).toBeGreaterThanOrEqual(2);
+
+    // ── Convergence check: rapid burst of 5 more Svelte reconciliations ──
+    // Each fires the observer, but rafPending deduplicates them to at most 1 rAF.
+    const countBefore = testEventQueue.filter((e) => e.type === 'adapt.description.re').length;
+
+    for (let i = 0; i < 5; i++) {
+      slot.textContent = 'Original text ' + String(i);
+    }
+
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.runAllTimers(); // one rAF for the entire burst
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const countAfter = testEventQueue.filter((e) => e.type === 'adapt.description.re').length;
+
+    // At most 1 re-apply event for the 5-revert burst (rafPending deduplication).
+    expect(countAfter - countBefore).toBeLessThanOrEqual(1);
+
+    // Slot must show adapted content after convergence.
+    paragraphs = getSlotParagraphs(container);
+    expect(paragraphs).toHaveLength(3);
+    expect(paragraphs[0]).toBe('First paragraph for the yield hunter.');
   });
 });
 

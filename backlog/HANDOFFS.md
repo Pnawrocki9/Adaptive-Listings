@@ -799,3 +799,309 @@ and deep `outcome_class` values, keyed by `prediction_id`/`lead_id`.
 `packages/db/migrations/0019_conversion_labels.sql`
 
 ---
+
+## FOLLOW-172 compliance → backend-engineer
+
+**From:** compliance-engineer **To:** backend-engineer **Date:** 2026-06-03T00:00:00Z
+
+**Summary:** PII-boundary contract for `POST /api/crm/outcome` (CRM deep-outcome ingest). This is
+the AC2 deliverable for FOLLOW-172. The contract covers the exact permitted/denied field set, the
+lead_id resolution model, authentication, retention/lawful basis, DSR cascade extension, and the
+dedup/idempotency recommendation. It also records required ROPA/DPIA updates that must be completed
+before this endpoint goes live with a pilot tenant.
+
+---
+
+### A. PII-Boundary Contract
+
+#### A.1 Permitted request body fields (ALLOW-LIST)
+
+The webhook body schema MUST be restricted to exactly these fields. Any field not listed is DENIED
+at the Zod schema layer (use `.strict()` on the Zod object so unknown keys are rejected, not
+silently stripped).
+
+| Field           | Type                           | Notes                                                                                                                                                                                                                                                                                                                                          |
+| --------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prediction_id` | string, NOT NULL, max 256      | = `adapt_decision_id` issued by Estalara. The primary join key. Non-PII by design: it is a server-minted UUID that refers to an adaptation decision, not to a person.                                                                                                                                                                          |
+| `lead_id`       | string, NOT NULL, max 256      | Opaque Estalara-issued token (see §A.3). Non-reversible to a natural person from Estalara's side. NOT a CRM contact ID.                                                                                                                                                                                                                        |
+| `outcome_class` | `ConversionOutcomeClass` enum  | Must validate against the canonical `ConversionOutcomeClassSchema` from `@estalara/shared`. Accepted values: `offer_made`, `contract_signed`, `purchased`, `lost`. (`viewing_booked` and `no_response` are produced by the SDK feedback ping, not by CRM ingest; the schema SHOULD reject them on this path to enforce the taxonomy boundary.) |
+| `outcome_raw`   | object (jsonb-bound), optional | See §A.2.                                                                                                                                                                                                                                                                                                                                      |
+| `confidence`    | number (0–1), optional         | 1.0 for hard CRM facts; lower for inferred. Defaults to 1.0 if omitted.                                                                                                                                                                                                                                                                        |
+| `labeled_at`    | ISO 8601 string, optional      | CRM event timestamp; defaults to server `now()` if omitted.                                                                                                                                                                                                                                                                                    |
+
+#### A.2 outcome_raw — safety decision
+
+`outcome_raw` stores the normalized inbound payload (after allow-list enforcement) in the
+`conversion_labels.outcome_raw jsonb` column. The schema MUST apply allow-list enforcement BEFORE
+persisting: only the permitted fields above are written into `outcome_raw`. The raw HTTP request
+body is NEVER persisted as-is.
+
+Rationale: if the tenant CRM sends a richer payload (e.g. contact name, email, address alongside the
+outcome), and the server persists `JSON.parse(rawBody)` directly into `outcome_raw`, PII enters the
+store. The mitigation is structural: parse the body with the strict Zod schema (`.strict()`), then
+persist only `parsed.data` (the validated output) in `outcome_raw`. Unknown keys are rejected at 400
+before the DB write, so `outcome_raw` can only ever contain fields in §A.1.
+
+No server-side scrubbing pass is required as a secondary step PROVIDED the schema is strictly
+enforced on every code path that writes `outcome_raw`. The backend-engineer must ensure there is no
+"raw body passthrough" branch.
+
+#### A.3 lead_id resolution model — CHOSEN MODEL: Option (i) Tenant resolves tenant-side
+
+From §T.6, two options exist:
+
+- (i) Tenant resolves the CRM record to the Estalara `lead_id` on their side, sends only the opaque
+  token.
+- (ii) Tenant-supplied opaque correlation token that Estalara issued earlier.
+
+**Compliance selects Option (i) as the required default.** Justification:
+
+1. Estalara never holds the mapping between `lead_id` and any CRM contact record. Without that
+   mapping Estalara cannot perform re-identification; the link lives exclusively in the tenant's
+   system.
+2. Option (ii) requires Estalara to issue and store a correlation token, which introduces a new
+   processing activity (issuing and logging per-lead tokens) without a proportionate benefit over
+   (i). That activity would require ROPA/DPIA extension before it could launch.
+3. Option (i) is consistent with the precedent set by `inquiry.completed` (§
+   `packages/shared/src/ schemas/events/inquiry.ts`): that schema never carries PII; the CRM
+   integration at the tenant side is responsible for bridging from the Estalara session context to
+   the CRM record.
+
+What makes `lead_id` non-reversible from Estalara's side: Estalara stores only the opaque string
+value. The tenant is the only party that holds the mapping from that value to a named person. This
+is structurally the same guarantee as the HMAC session fingerprint: Estalara cannot re-identify
+without the tenant's private key / CRM mapping. The tenant's DPA and onboarding compliance gate are
+the enforcement mechanism for ensuring `lead_id` values sent to Estalara are truly opaque.
+
+The tenant onboarding compliance gate (§U) MUST include a new checkbox: "lead_id values sent to POST
+/api/crm/outcome are Estalara-assigned pseudonymous tokens; we do not send CRM contact IDs, email
+addresses, phone numbers, or any directly identifying value in this field." This is a contractual
+commitment enforced in the DPA, not a technical guarantee Estalara can verify at the boundary.
+
+#### A.4 Explicit DENY-LIST
+
+The following fields, if present in the request body, MUST cause a 400 rejection (via `.strict()`
+Zod validation):
+
+- Names: `name`, `full_name`, `first_name`, `last_name`, `contact_name`, `client_name`, `buyer_name`
+  and any variant (snake_case, camelCase, kebab-case).
+- Email addresses: `email`, `email_address`, `contact_email`, and variants.
+- Phone numbers: `phone`, `phone_number`, `mobile`, `tel`, `contact_phone`, and variants.
+- Physical addresses: `address`, `street`, `city`, `postcode`, `postal_code`, `zip`, `country` and
+  variants.
+- CRM-native contact/lead identifiers that are reversible to a person on the CRM side:
+  `crm_contact_id`, `crm_lead_id`, `crm_person_id`, `hubspot_contact_id`, `salesforce_lead_id`,
+  `salesforce_contact_id`, and equivalents for any named CRM vendor.
+- Free-text fields likely to contain PII: `notes`, `description`, `comments`, `message`, `memo`,
+  `summary` (any open-ended string field not in the allow-list above).
+
+Note: the `notes` column in the `conversion_labels` DB schema (migration 0019) is an INTERNAL field
+populated by `manual_admin` reclassification via the admin UI, not by the CRM webhook. The webhook
+MUST NOT accept a `notes` field in its body.
+
+#### A.5 prediction_id handling
+
+`prediction_id` is non-PII. It is a server-minted UUID (`adapt_decision_id`) that refers to an
+`adaptation_decisions` row. It has no meaning outside Estalara's internal join. It is safe to store
+without restriction. It is the primary key for attribution and must be NOT NULL on this endpoint
+(unlike the feedback ping where it is optional for backward-compat). Reject with 400 if absent.
+
+#### A.6 Authentication
+
+HMAC-SHA256 tenant-scoped signature, mirroring `POST /api/adapt/feedback` (FOLLOW-051 threat model,
+`apps/control-plane/src/app/api/adapt/feedback/route.ts`):
+
+- Header: `Authorization: Bearer {rawApiKey}` + `X-Estalara-Signature: {hmacSha256OfBodyHex}`
+- The HMAC key is the tenant's raw API key; the HMAC data is the raw request body text.
+- Constant-time comparison required (copy `constantTimeEqual` from the feedback route).
+- The `ADAPT_API_KEY` env-var ops fallback is acceptable for integration testing but MUST be
+  documented as ops-only in code comments.
+- `tenant_id` is derived from the authenticated API key lookup, NOT from the request body. The
+  request body MUST NOT include a `tenant_id` field; the server pins `tenant_id` from auth context.
+  This prevents a tenant from writing labels scoped to another tenant's `tenant_id`.
+
+#### A.7 RLS
+
+The `conversion_labels` insert MUST use the admin Supabase client with `app.current_tenant_id` set
+to the authenticated tenant's UUID before the insert, so the RLS policy
+`conversion_labels_tenant_isolation` (migration 0019) enforces tenant scope at the DB layer in
+addition to the application layer.
+
+---
+
+### B. Retention and Lawful Basis
+
+**Lawful basis:** Art. 6(1)(f) Legitimate Interest (model improvement — per-tenant conversion
+classifier training corpus, §T.1). The LIA at `docs/compliance/lia-template.md` covers listing
+personalization and model improvement. The CRM ingest processing is a direct extension of that
+purpose (it adds the deep-outcome dimension to the prediction↔outcome pair). No new lawful basis
+assessment is required, but the LIA must be updated to reference deep-outcome labels explicitly (see
+§B.2 below).
+
+CCPA: service provider operational necessity (Cal. Civ. Code § 1798.140(ag)); no "sale."
+
+UAE PDPL: Art. 5(1)(c) legitimate interest.
+
+**Retention posture:** `conversion_labels` rows contain `lead_id` (pseudonymous) + `prediction_id`
+(non-PII) + `outcome_class` (non-PII) + `outcome_raw` (non-PII post allow-list enforcement). These
+are training labels, not behavioral event data. Proposed retention: same 13-month window as
+`adaptation_decisions` (the prediction side of the join), to keep the corpus usable for the Y2
+fine-tuning cycle and consistent with the AI Act audit trail period already established for
+`adaptation_decisions` in ROPA Activity 4.
+
+RETENTION PROMISE IMPLEMENTATION DEPENDENCY: A 13-month TTL on `conversion_labels` does not yet
+exist in the codebase. The nightly TTL cron that enforces retention on `session_embeddings` and
+`engagement_scores` (ROPA retention table) does not cover `conversion_labels`. Before compliance can
+sign off on a ROPA entry asserting "13-month retention enforced," a data-engineer TTL ticket MUST be
+filed and merged (Rule N + K.2 join from guardrails). The backend-engineer MUST NOT document a
+concrete retention period in any user-facing or tenant-facing disclosure without that TTL ticket
+existing. Internal ROPA/DPIA references to "13 months" are permissible as design intent with the TTL
+ticket as a prerequisite gate.
+
+**DSR cascade extension:** `lead_id` erasure requests MUST cascade to `conversion_labels` rows
+matching that `lead_id` within the same tenant. This extends the existing erasure semantics
+documented in DPIA §8 and ROPA Activity 8. The DSR worker (`apps/control-plane/src/dsr/`) MUST be
+updated to include `conversion_labels` in its Postgres cascade. This is a required AC for this
+ticket to be considered compliant. The absence of this cascade would mean a data subject's erasure
+right under GDPR Art. 17 is not honored for their conversion label rows.
+
+---
+
+### C. Required ROPA and DPIA Updates
+
+Both updates are documentation-only deliverables that must be completed before this endpoint is
+activated for any pilot tenant. They are NOT blockers for merging the implementation PR (CI/tests
+can pass without them), but they ARE blockers for the tenant-facing go-live gate.
+
+**C.1 ROPA — New Activity (Activity 14)**
+
+Add to `docs/compliance/ropa.md` as Activity 14 — CRM Deep-Outcome Ingest:
+
+- Activity name: CRM deep-outcome label ingest
+- Controller: Tenant (controller for outcome data on their website) — Time2Show acts as Processor
+- Purpose: Ingest deep conversion outcomes from tenant CRM webhooks (offer_made / contract_signed /
+  purchased / lost) to build a durable prediction↔outcome training corpus for per-tenant fine-tuning
+  (§T.1, §D.5.7)
+- Lawful basis: Art. 6(1)(f) LI (model improvement); CCPA service provider; UAE PDPL Art. 5(1)(c)
+- Data categories: prediction_id (non-PII), lead_id (pseudonymous), outcome_class (enum), confidence
+  (real), labeled_at (timestamp). No names, no emails, no phone numbers, no CRM contact IDs.
+- Retention: 13 months (same as adaptation_decisions) — CONDITIONAL on TTL ticket (see §B above)
+- DSR cascade: lead_id erasure → conversion_labels rows deleted synchronously in Postgres
+  transaction
+- Security: HMAC-SHA256 tenant-scoped auth; RLS on tenant_id; allow-list Zod schema; outcome_raw
+  contains only allow-listed fields
+
+**C.2 DPIA — Processing Description Update (§2.3 / §2.5)**
+
+Add `conversion_labels` to the System Components table (§2.3) and the Data Types and Retention table
+(§2.5) in `docs/compliance/dpia.md`:
+
+- §2.3: New row — "CRM Outcome Ingest | Supabase (Postgres) | Deep-outcome label persistence for
+  per-tenant classifier training | prediction_id, lead_id (pseudonymous), outcome_class, confidence"
+- §2.5: New row — "`conversion_labels` | Postgres (Supabase, per-region) | 13 months (PENDING TTL
+  ticket) | LI (model improvement; AI Act audit trail consistency)"
+
+Neither of these ROPA/DPIA updates requires external DPO sign-off before merge (no new category of
+personal data; no new sub-processor; no new lawful basis — this is an extension of Activity 4). They
+are required before go-live with a tenant per Appendix C trigger #3 ("new purpose of processing not
+covered by existing activity record").
+
+---
+
+### D. Dedup / Idempotency Recommendation (Privacy Lens)
+
+**Context:** Migration 0019 has no UNIQUE constraint on `(tenant_id, prediction_id)`. The feedback
+ping (FOLLOW-171) and the CRM webhook (FOLLOW-172) can both write rows for the same `prediction_id`.
+Multiple CRM webhook calls for the same outcome (CRM retry logic, at-least-once delivery) could
+write duplicate rows.
+
+**Data-minimization analysis:** From a GDPR Art. 5(1)(c) data minimization standpoint, storing
+multiple rows for the same `(tenant_id, prediction_id)` with the same `outcome_class` is redundant
+personal data. Redundant pseudonymous rows are not a high-risk issue (the data is already
+pseudonymous and allow-listed), but they inflate the corpus, complicate DSR erasure (more rows per
+`lead_id` to cascade-delete), and increase the attack surface for re-identification through
+statistical analysis of label counts.
+
+**Recommendation: upsert on `(tenant_id, prediction_id)` for same-source CRM retries, but allow
+append for different `label_source` values.**
+
+Specifically: add a partial unique index
+`UNIQUE (tenant_id, prediction_id) WHERE label_source = 'system'` so that CRM webhook retries are
+idempotent (upsert using
+`ON CONFLICT DO UPDATE SET outcome_class = EXCLUDED.outcome_class, outcome_raw = EXCLUDED.outcome_raw, updated_at = now()`),
+while `manual_admin` corrections can still create a new row with an updated outcome (or update
+in-place — the backend+architect team should decide the admin UX). This keeps the corpus clean
+without losing the manual override audit trail.
+
+This recommendation has a privacy-positive rationale (minimization) but the final decision on the
+constraint shape and the admin UX is a backend+architect call. File as a follow-up to the migration
+if the constraint is not added in this PR.
+
+---
+
+### E. AC2 Sign-Off Statement
+
+**Compliance signs off on FOLLOW-172 implementation IF AND ONLY IF the following conditions are
+satisfied at code review and before go-live with any pilot tenant:**
+
+1. **Schema boundary (MUST):** The Zod request body schema uses `.strict()`. No field outside §A.1
+   is accepted. Unknown keys result in a 400, not silent strip.
+
+2. **outcome_raw safety (MUST):** `outcome_raw` is populated exclusively from `parsed.data` (the
+   Zod-validated output), never from `JSON.parse(rawBody)` or any partial raw body reference. There
+   is no code path that writes unvalidated content to `outcome_raw`.
+
+3. **lead_id semantics (MUST):** `prediction_id` is NOT NULL on this endpoint. `lead_id` is NOT NULL
+   and does not accept any of the deny-listed CRM-native identifier patterns from §A.4 at the
+   application layer. (Full enforcement relies on tenant DPA; the schema must at least reject empty
+   strings — min length 1 — so "no lead_id" is a hard error, not a silently accepted blank.)
+
+4. **tenant_id from auth context (MUST):** `tenant_id` written to `conversion_labels` is extracted
+   from the authenticated API key, not from the request body. No `tenant_id` field is present in or
+   accepted from the request body.
+
+5. **Authentication (MUST):** HMAC-SHA256 verification mirrors the feedback route exactly:
+   `constantTimeEqual`, 64-hex-char enforcement, raw body used as HMAC data, Bearer token as HMAC
+   key.
+
+6. **RLS (MUST):** The admin DB client sets `app.current_tenant_id` before the insert so the DB-
+   layer RLS policy fires in addition to the application-layer tenant_id pin.
+
+7. **DSR cascade (MUST):** The DSR worker's Postgres erasure transaction includes
+   `DELETE FROM conversion_labels WHERE lead_id = $1 AND tenant_id = $2`. Absence of this is a P0
+   compliance gap — the `lead_id` erasure right would be unhonored.
+
+8. **ROPA Activity 14 and DPIA §2.3/§2.5 updates (MUST before go-live):** Both documentation updates
+   in §C above are merged to main before any tenant is pointed at this endpoint.
+
+9. **TTL ticket for conversion_labels retention (MUST before any tenant-facing retention
+   disclosure): ** No documentation, banner, or API response may state a concrete retention period
+   for `conversion_labels` rows until a data-engineer TTL enforcement ticket (cron or partition TTL)
+   is filed, merged, and the TTL is verified in CI. Interim state: ROPA/DPIA may say "13 months (TTL
+   enforcement pending FOLLOW-NNN)."
+
+10. **Tenant onboarding gate update (MUST before first CRM-integrated tenant goes live):** The
+    onboarding compliance gate must include the checkbox from §A.3: tenant contractually affirms
+    that `lead_id` values are Estalara-assigned pseudonymous tokens, not CRM contact IDs or PII.
+
+Conditions 1–7 are verifiable at code review of the implementation PR. Conditions 8–10 are go-live
+gates, not PR-merge gates — but they must be tracked as open items in backlog/FOLLOW_UPS.md if not
+satisfied at time of merge.
+
+**Files produced:** This handoff entry in `backlog/HANDOFFS.md`. ROPA and DPIA updates are deferred
+to a follow-up compliance PR (conditions 8 above) to be filed as a FOLLOW-NNN by
+compliance-engineer.
+
+**Action required (backend-engineer):** Implement
+`apps/control-plane/src/app/api/crm/outcome/route.ts` satisfying AC2 conditions 1–7 above. File the
+DSR cascade update in the same PR or as a parallel PR against `apps/control-plane/src/dsr/`. Confirm
+in the PR description: (a) grep evidence of `.strict()` on the Zod schema, (b) grep evidence that
+`outcome_raw` is assigned from `parsed.data` not `rawBody`, (c) grep evidence of
+`app.current_tenant_id` set before insert, (d) grep evidence of
+`DELETE FROM conversion_labels WHERE lead_id` in the DSR worker.
+
+**Related tickets:** FOLLOW-170 (prediction enrichment, done), FOLLOW-171 (conversion_labels table,
+done), FOLLOW-172 (this ticket), FOLLOW-173..175 (aggregation, admin UI, export — downstream
+consumers of this corpus).
+
+---

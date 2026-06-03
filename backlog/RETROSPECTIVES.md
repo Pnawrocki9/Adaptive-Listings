@@ -8977,3 +8977,321 @@ Net: `Wiring Audit — the ESC-018 consumer-only half-wire is closed in this PR;
        140 (RETRO-020 — §13.1 7-day audit-log retention enforcement). RETRO-020 did NOT
        re-file §13.2 (covered by FOLLOW-139); RETRO-015 created no new stub (folded into FOLLOW-122).
      - NEXT FREE FOLLOW NUMBER IS 141. -->
+
+---
+
+## RETRO-029 — FOLLOW-171 (Persist durable conversion_labels from the feedback route) — 2026-06-03
+
+### 1. Summary of change
+
+- **PR:** #188 (merged 2026-06-03 19:44 UTC, commit `3c9f578`). backend-engineer + data-engineer;
+  Sprint 14; `depends_on: FOLLOW-170` (T0 prediction-enrich). Source: RETRO-028 / MASTER_DESIGN §T
+  (Conversion Label Loop, v3.9), the second task (T1) of the strictly-ordered FOLLOW-170…175 chain.
+- **Files changed:** 10 (+417 / −2).
+  - `packages/shared/src/schemas/conversion-label.ts` (new, +67) — `ConversionOutcomeClassSchema`
+    (6-value Zod enum), `ConversionLabelSourceSchema` (`system`|`manual_admin`),
+    `outcomeClassFromConverted(boolean)` (`true`→`viewing_booked`, `false`→`no_response`).
+  - `packages/shared/src/schemas/conversion-label.test.ts` (new, +59) — 4 describe blocks.
+  - `packages/shared/src/schemas/index.ts` (+1) — barrel export.
+  - `packages/db/src/schema/conversion_labels.ts` (new, +86) — Drizzle `conversionLabels` table
+    (RLS on `tenant_id`, `prediction_id` NOT NULL, `lead_id` NOT NULL DEFAULT `''`, `outcome_class`
+    text, `outcome_raw` jsonb, `label_source` text, `confidence` real nullable, `notes` text).
+  - `packages/db/src/schema/index.ts` (+1) — barrel export.
+  - `packages/db/migrations/0019_conversion_labels.sql` (new, +47) — `CREATE TABLE` + 3 indexes +
+    `ENABLE ROW LEVEL SECURITY` + tenant-isolation policy.
+  - `packages/db/migrations/meta/_journal.json` (+7) — `idx=19, tag=0019_conversion_labels,
+    version=7, when=1780505857912` (a valid 2026-06 timestamp, monotonic vs idx 18 — Rule O clean).
+  - `apps/control-plane/src/app/api/adapt/feedback/route.ts` (+73/−2) — `FeedbackBodySchema` gains
+    OPTIONAL `prediction_id` + `lead_id`; new fire-and-forget `insertConversionLabelAsync`.
+  - `apps/control-plane/src/app/api/adapt/feedback/route.test.ts` (+52) — 2 new label-path tests.
+  - `backlog/HANDOFFS.md` (+26) — handoff to sdk-engineer (thread `adapt_decision_id`) + note to
+    FOLLOW-172.
+- **Modules touched:** [shared / db / control-plane (feedback route) / docs(handoff)]. No SDK source,
+  no ingest, no decision-api, no Modal/Python touched.
+- **Key contracts changed:**
+  - `POST /api/adapt/feedback` request body (`FeedbackBodySchema`) — **added** OPTIONAL
+    `prediction_id` (`string 1..256`) + `lead_id` (`string ..256`). Breaking: **no** (both optional;
+    older SDKs still drive the bandit). **SDK→API contract change.**
+  - NEW table `conversion_labels` (Postgres/RLS). Breaking: N/A (new).
+  - NEW Zod taxonomy `@estalara/shared` exports `ConversionOutcomeClassSchema` /
+    `ConversionLabelSourceSchema` / `ConversionOutcomeClass` / `ConversionLabelSource` /
+    `outcomeClassFromConverted`. Breaking: N/A (new). The taxonomy is the single source of truth that
+    FOLLOW-172/173/174/175 are designed to import — its enum values are now a downstream contract.
+
+### 2. Verification done in PR
+
+- Test files changed: `conversion-label.test.ts` (new), `feedback/route.test.ts` (modified).
+  Assertions added: **~12** — taxonomy: enum-accepts-6 / rejects-unknown / source-accepts-2 /
+  `outcomeClassFromConverted` round-trip into the enum (`conversion-label.test.ts:25-55`); route:
+  "persists a row when `prediction_id` present" asserting `predictionId`/`tenantId`/
+  `outcomeClass='viewing_booked'`/`labelSource='system'` (`route.test.ts:406-430`) + "no row when
+  `prediction_id` absent" (`:432-446`).
+- Coverage delta: **+** for the new shared taxonomy (pure functions, well covered). For the route,
+  the label-insert is asserted only against a **mock** `db.insert(...).values(...)` (the test reads
+  `mockInsertValues.mock.calls`); the actual DDL, RLS policy, FK, and the `confidence`/`leadId`
+  default columns are **never exercised against a real Postgres** — same standing
+  string/mock-only pattern flagged in RETRO-024 TG-1 (every `packages/db` migration test). → §4c.
+- CI checks: not independently verified by this analyst (read-only). Standing CI-gate caveat applies
+  (Rule I / Vercel / Python lanes pre-existing-red & non-blocking). PM obligation: `gh pr checks 188`
+  (already merged — retroactive note).
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- `packages/shared/src/schemas/conversion-label.ts` exports — `outcomeClassFromConverted` has a
+  non-test importer at `apps/control-plane/src/app/api/adapt/feedback/route.ts:48`. **Not dead.**
+  `ConversionOutcomeClassSchema`/`ConversionLabelSourceSchema` (+ their inferred types) have **NO
+  non-test runtime importer yet** — grep finds them only in `conversion-label.test.ts` and in
+  doc-comment prose in `conversion_labels.ts`. They are **type-only / taxonomy-contract files** whose
+  intended consumers are FOLLOW-172 (CRM webhook validation) and FOLLOW-174 (admin reclassify
+  validation), neither shipped. Per Step 6 suppression (type-only files), this is **not** flagged
+  DEAD_CODE, but it is a **forward dependency** recorded in §5b: the feedback route validates the
+  outcome class implicitly via `outcomeClassFromConverted` (which only emits valid values) and never
+  calls `ConversionOutcomeClassSchema.parse`, so the route does **not** consume the schema it ships.
+- `packages/db/src/schema/conversion_labels.ts` — `conversionLabels` imported at
+  `feedback/route.ts:49`. **Not dead.** Migration 0019 + journal — Drizzle-runner entrypoints,
+  suppressed. **CHECK A clean ✅.**
+
+**CHECK B — Half-wire detection (the load-bearing audit for this PR):**
+
+- **`conversion_labels` table (column / store):** Producer EXISTS ✅ (`insertConversionLabelAsync`,
+  `feedback/route.ts:230-247`). Consumer **DOES NOT EXIST yet** — nothing reads `conversion_labels`
+  (the §T.3 aggregation = FOLLOW-173, the §T.5 admin view = FOLLOW-174 are unshipped). This is a
+  **HALF_WIRE_P (producer-only)** by the letter of CHECK B, BUT the table is an intentional durable
+  sink whose readers are explicitly the *next* tickets in a CEO-committed ordered chain (§T data
+  MOAT). Recording as **HALF_WIRE_P — P2, FOLLOW-177** (tracking only — the write-side is the whole
+  point of T1; the read-side is FOLLOW-173/174 by design). Not P0: a write-only durable training
+  store is the designed end-state of this ticket.
+- **`prediction_id` feedback-body field (SDK-signal):** Consumer EXISTS ✅ (the route reads
+  `parsed.data.prediction_id` and gates the insert on it, `route.ts:365`). **PRODUCER DOES NOT EXIST
+  in the shipped SDK.** Traced end-to-end: `packages/sdk/src/core/adapt.ts:110-116`
+  (`postFeedbackPing` body) sends **only** `{session_id, tenant_id, archetype, variant, converted}`
+  — no `prediction_id`. The SDK parses `adapt_decision_id` into the `AdaptResponse` type
+  (`adapt.ts:160`) but **never stores it** anywhere the feedback closure can reach: the feedback
+  listener (`adapt.ts:238-269`) closes over only `sessionId/archetype/variant`. So even though the
+  decision id is received, the producer wire is absent at TWO layers (not retained + not sent).
+  → **HALF_WIRE_C (consumer-only) — P1, FOLLOW-178.** Consequence (called out in the PR's own
+  HANDOFF, §5): **`conversion_labels` stays EMPTY in production until sdk-engineer acts.** The
+  entire T1 value (durable training pairs) does not materialize from the SDK path until FOLLOW-178
+  closes. NOTE the classification nuance: the body field is consumer-only (P0-class by the
+  rubric) but the *effect* is fail-soft (rows simply don't get written), so this is rated **P1** —
+  no corruption, no error, just an inert wire — exactly the silent-no-op shape of the
+  `inquiry_submit_selector` chain (RETRO-017/021/024).
+- **`lead_id` feedback-body field:** Consumer EXISTS ✅ (route stores `parsed.data.lead_id ?? ''`).
+  Producer absent (SDK doesn't send it; defaults to `''`). Same SDK gap as `prediction_id` — folded
+  into FOLLOW-178. The `''` default is also a logic gap — see §4a LG-2.
+
+**Summary:** Two half-wires. (1) HALF_WIRE_C P1 — `prediction_id` consumed by the route, never
+produced by the SDK → table empty in prod (FOLLOW-178). (2) HALF_WIRE_P P2 — `conversion_labels`
+written but not yet read; readers are FOLLOW-173/174 by design (FOLLOW-177, tracking).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — no uniqueness / upsert on `(tenant_id, prediction_id)`; the insert is a plain
+  `db.insert().values()` with NO `onConflict`.** (`feedback/route.ts:239`; migration 0019 has zero
+  `UNIQUE` constraints — grep `unique|conflict` on `0019_conversion_labels.sql` and
+  `conversion_labels.ts` returns nothing; contrast the bandit upsert in the *same file* at
+  `:196` which DOES `onConflictDoUpdate`.) MASTER_DESIGN §T.2 specifies **"One row per labeled
+  outcome, joined to the prediction by `prediction_id`"** (`MASTER_DESIGN.md:3751`), and §T.5
+  (`:3784`) describes manual reclassification as **set/change `outcome_class`** (an UPDATE of the
+  existing label) — both imply at-most-one durable label per prediction. The shipped table permits
+  unbounded rows per `prediction_id`. Three concrete failure modes, all reachable:
+  1. **Retried / duplicate feedback pings.** The ping is fire-and-forget over the network; the SDK
+     can emit the same `(prediction_id, converted=true)` twice (e.g., a re-fired `inquiry.completed`
+     event), and the SDK ALSO emits a `converted=false` ping on session expiry when
+     `feedbackConvertedFalse` is set (`adapt.ts:260-269`). Once FOLLOW-178 threads `prediction_id`,
+     a single prediction can therefore produce a `viewing_booked` row AND a later `no_response` row
+     — **two contradictory system labels for one prediction**, both retained.
+  2. **Feedback ping vs. CRM webhook collision (the user's concern (a) — CONFIRMED a real gap).**
+     FOLLOW-172's spec (`FOLLOW_UPS.md:5029`) writes `conversion_labels` `label_source=system`,
+     `confidence=1.0`, **keyed by `prediction_id`/`lead_id`** for deep outcomes. With no unique key
+     and no upsert, the CRM webhook will **INSERT a second row** for a prediction that the feedback
+     ping already labeled `viewing_booked` — rather than upgrading the shallow label to
+     `purchased`/`offer_made`. The prediction then has 2+ conflicting `system` labels.
+  3. **Aggregation double-count.** §T.3 / FOLLOW-173 computes **"conversion rate per class"** and a
+     **score-vs-actual calibration curve per `model_version`** by joining `adaptation_decisions ⋈
+     conversion_labels` on `prediction_id` (`MASTER_DESIGN.md:3792`). A one-to-many join over
+     duplicate label rows **inflates the denominator and skews calibration** — silently, with no
+     error. The MOAT's headline metric is corrupted at the source.
+  This is not a style nit: it is the difference between "durable training corpus" and "append-only
+  log of contradictory labels." Decision needed (for the FOLLOW): add `UNIQUE (tenant_id,
+  prediction_id)` + `onConflictDoUpdate` with a class-precedence/recency policy (deep CRM outcome
+  beats shallow ping; `manual_admin` beats `system`), OR explicitly document the table as
+  append-only event-log + add a "latest label per prediction" resolver that every reader
+  (FOLLOW-173/174/175) MUST use. Either way it must land **before** FOLLOW-172 (which writes the
+  second producer) and FOLLOW-173 (which reads). → **FOLLOW-179 (P1)**, gating FOLLOW-172/173.
+- **LG-2 (P2) — `lead_id` silently defaults to `''` and is the join key for two downstream
+  features.** (`route.ts:243` `leadId: args.leadId ?? ''`; column `NOT NULL DEFAULT ''`.) §T.6 makes
+  `lead_id` the **CRM-resolution key** (FOLLOW-172 resolves a CRM record to the Estalara `lead_id`
+  tenant-side) and the **DSR/erasure cascade key** (`MASTER_DESIGN.md:3806-3811` — a `lead_id`
+  erasure request cascades to its `conversion_labels` rows). Every row written by the ping today
+  carries `lead_id=''`. Until FOLLOW-170/178 actually produce a durable `lead_id` end-to-end, every
+  system label is **un-joinable to a CRM outcome and un-targetable by an erasure request** — the rows
+  exist but are orphaned from both their deep-outcome upgrade path and their GDPR deletion path. The
+  empty-string sentinel also collides: many distinct leads all share `lead_id=''`, so any
+  future `WHERE lead_id = ?` erasure that is handed `''` would match every system label across the
+  tenant. → **FOLLOW-180 (P2)** (and a compliance note: erasure handlers must treat `lead_id=''` as
+  "no durable lead", never as a matchable key).
+- **LG-3 (P3) — the route never validates `outcome_class` against the schema it ships.** The
+  feedback path emits `outcome_class` only via `outcomeClassFromConverted` (which by construction
+  returns a valid enum value), so today it cannot write an invalid class. But the table stores
+  `outcome_class` as free `text` with no DB-level CHECK and no `ConversionOutcomeClassSchema.parse`
+  at the insert site (`route.ts:243`). FOLLOW-172/174 will write `outcome_class` from less-controlled
+  sources (CRM payloads, admin input); the contract relies on each future writer remembering to
+  validate against `@estalara/shared`. The single-source-of-truth Zod enum exists but is **not
+  enforced at the only write site that exists** — a latent gap that becomes a real one the moment a
+  second, less-disciplined writer lands. Noted; folded into FOLLOW-179 AC (a shared insert helper
+  that validates).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — the route test asserts the label row only against a mock and never asserts
+  `leadId`/`confidence`/`outcomeRaw`.** (`route.test.ts:421-430` reads `mockInsertValues.mock.calls`
+  and checks 4 fields.) The test would pass even if `leadId` were dropped, `outcomeRaw` were
+  `undefined`, or the column names drifted from the Drizzle schema (the mock ignores its argument
+  shape). Combined with the no-live-DB pattern (§4c), there is **zero CI evidence that the insert's
+  column set matches the table DDL** — a rename of `outcomeClass`→`outcome_class` mapping or a
+  not-null violation on `labelSource` would not be caught until prod. Low severity today (fields are
+  correct), but the test does not defend the insert contract. → folded into FOLLOW-179.
+- **CB-2 (P2) — `confidence` is never set by the system writer, so every ping label has
+  `confidence=NULL`, while FOLLOW-172 will write `confidence=1.0` for the same `label_source=system`.**
+  This is not a bug in 0019 (the column EXISTS — see §4d, resolving the user's concern (b)) but a
+  **semantic inconsistency in the `system` source**: FOLLOW-173's calibration weights labels by
+  confidence; `NULL` vs `1.0` for the same `label_source` will be handled inconsistently unless a
+  convention is fixed now (e.g., ping labels should write an explicit `confidence` reflecting that a
+  coarse boolean is *lower*-confidence than a hard CRM fact). → folded into FOLLOW-179.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — no test exercises migration 0019 / the RLS policy / the FK / the column defaults
+  against a real (or pgmem/Testcontainers) Postgres.** Same standing pattern as RETRO-024 TG-1 and
+  RETRO-026: all DB coverage is string/mock-only. Specifically uncovered: the tenant-isolation RLS
+  policy actually isolates (a tenant cannot read another's labels); the FK `ON DELETE CASCADE`
+  fires; `lead_id`/`confidence`/`outcome_raw` defaults behave as declared; and (most relevant to
+  LG-1) that a duplicate `(tenant_id, prediction_id)` insert is *currently accepted* (which a test
+  would document as the gap). → **FOLLOW-181 (P2)** — an RLS + constraint integration check for
+  `conversion_labels` (can be folded into the repo-wide DB-harness gap if the PM prefers one ticket).
+- **TG-2 (P2) — no test asserts the SDK→API `prediction_id` round-trip.** The route test injects
+  `prediction_id` directly; nothing asserts the SDK *produces* it (because it doesn't — §3). When
+  FOLLOW-178 lands, it must add an SDK test that the feedback ping body carries the
+  `adapt_decision_id` from the prior adapt response. → folded into FOLLOW-178 AC.
+
+#### 4d. Documentation gaps
+
+- **`confidence` column — user concern (b) RESOLVED, NO gap.** Migration 0019 line 32 declares
+  `confidence real` and the Drizzle schema declares `confidence: real('confidence')`
+  (`conversion_labels.ts:70`). FOLLOW-172's `confidence=1.0` reference is **satisfiable as-is —
+  FOLLOW-172 needs NO new migration for `confidence`.** (It WILL need the LG-1 uniqueness decision
+  first.) Recorded explicitly so a future retro/implementer does not re-flag a non-gap.
+- **DG-1 (P3) — MASTER_DESIGN §T is still marked `(PROPOSED)`** (`MASTER_DESIGN.md:3712`,
+  `:5`) although T0 (FOLLOW-170, PR #187) and T1 (this PR) are now merged. Operating Principle 2
+  (continuous propagation): the §T status line and the §Snapshot row should move from PROPOSED →
+  IN PROGRESS / partially-shipped so the SoT reflects that the table + taxonomy + write-path exist.
+  → folded into FOLLOW-177 (the §T tracking stub).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected (Sprint 14, FOLLOW-170…176)
+
+- **FOLLOW-172 (CRM deep-outcome ingest → conversion_labels)** — **BLOCKED-ish / must sequence after
+  LG-1 fix.** Its spec writes the *same table* keyed by `prediction_id`/`lead_id` with
+  `confidence=1.0`. Without the uniqueness/upsert decision (FOLLOW-179) it will create conflicting
+  duplicate rows rather than upgrading the ping's shallow label. The `confidence` column it needs
+  already exists (§4d). **Action: FOLLOW-179 must land before FOLLOW-172 writes.**
+- **FOLLOW-173 (aggregation + calibration)** — **directly impacted by LG-1.** Its core metrics
+  (conversion rate per class, calibration per `model_version`) join on `prediction_id`; duplicate
+  labels inflate/ skew them silently. Also depends on the SDK actually producing labels (FOLLOW-178)
+  — until then the aggregate is over an empty table for the ping path.
+- **FOLLOW-174 (admin reclassify)** — its "set/change `outcome_class`" is an UPDATE-of-one semantic
+  (§T.5); with no unique key it cannot deterministically target "the" label for a prediction.
+  Depends on LG-1 resolution.
+- **FOLLOW-175 (LoRA export)** — exports `(features_snapshot, model_version, score)→outcome_class`;
+  duplicate/contradictory labels would poison the fine-tune corpus. Downstream of LG-1.
+- **FOLLOW-176 (SDK archetype persistence)** — adjacent SDK work; if FOLLOW-178 (thread
+  `prediction_id`/`lead_id` through the feedback ping) is scoped to sdk-engineer, the two SDK
+  follow-ups touch the same `packages/sdk/src/core/adapt.ts` feedback path and should be sequenced /
+  co-assigned to avoid a merge collision on the listener closure.
+
+#### 5b. Future sprint tickets affected
+
+- The `@estalara/shared` taxonomy enum is now a **published contract**. FOLLOW-172/174/175 and the Y2
+  TALLRec/LoRA fine-tune (§D.5.7) all key off these exact six classes. Any later enum change is a
+  breaking change to the corpus schema — record before mutating.
+
+#### 5c. Contracts changed others rely on
+
+- `POST /api/adapt/feedback` body now accepts (ignores-if-absent) `prediction_id` + `lead_id`. The
+  SDK is the only first-party producer and does not yet send them (HALF_WIRE_C). Any third-party /
+  Estalara-app caller of the feedback endpoint can begin supplying `prediction_id` to start
+  populating labels independent of the SDK.
+- `conversion_labels` table shape + RLS policy are now the contract for FOLLOW-172/173/174/175.
+
+#### 5d. Architectural assumptions affected
+
+- **"One row per labeled outcome" (§T.2) is asserted in the design but NOT enforced by the schema.**
+  Any downstream reasoning that assumes label uniqueness per prediction (calibration, reclassify,
+  export) is currently unsound. Recorded so the next retro touching §T does not re-assume it.
+- **"The Conversion Label Loop collects training data from day 1" (CEO MOAT framing, §T) is NOT yet
+  true via the SDK path.** Until FOLLOW-178, the table stays empty in prod for SDK-driven traffic.
+  The "day 1" guarantee currently holds only if a caller manually supplies `prediction_id`.
+
+### 6. New lesson candidates
+
+- **Pattern — "the SoT says X must be unique / single, but the shipped table has no constraint
+  enforcing it, and the only writer INSERTs unconditionally."** Seen in: **RETRO-029 (this)** — §T.2
+  "one row per labeled outcome" vs no `UNIQUE(tenant_id, prediction_id)` and a plain `insert().values()`.
+  Closest priors are **Rule H** (scaffold without a wired consumer) and the producer/consumer-parity
+  family, but the *missing-constraint-vs-stated-invariant* shape is distinct. **Current count: 1.**
+  Below the promotion threshold of 2. **NOT promoted.** Watch-item: if a future migration ships a
+  table whose design-doc invariant (uniqueness, single-active-row, monotonicity) is not enforced by a
+  DB constraint AND has an unconditional writer, promote a Rule requiring either the constraint or a
+  documented resolver that every reader must use.
+- **Pattern (recurrence — the silent-no-op half-wire) — "API/route consumes an optional field the
+  first-party producer never sends, so the feature is inert in prod with green CI."** Seen in:
+  **RETRO-029** (`prediction_id`), and the same shape (consumer ready, producer absent →
+  silent-no-op) in **RETRO-017 / RETRO-021 / RETRO-024** (`inquiry_submit_selector` chain). This is
+  the producer/consumer-parity family already partly covered by **Rule H** (same-runtime Zod scaffold)
+  and **Rule L** (verify the prod install path PRODUCES the config a consumer reads). The
+  `prediction_id` gap is arguably **already covered by Rule L** ("a test that injects the value is
+  not evidence" — the route test injects `prediction_id`; the SDK never produces it). Treating
+  RETRO-029 as a **Rule L recurrence** rather than a new pattern. **No new rule; Rule L already
+  codifies it** — flagged in §8 for the PM to confirm Rule L is cited on FOLLOW-178.
+
+### 7. Follow-ups
+
+- **FOLLOW-177:** §T tracking stub — `conversion_labels` is write-only until readers ship; flip
+  MASTER_DESIGN §T from PROPOSED → in-progress (DG-1). (data-engineer, 1h, **P2**) [HALF_WIRE_P]
+- **FOLLOW-178:** SDK — thread `adapt_decision_id`→`prediction_id` (and durable `lead_id`) from the
+  adapt response into the feedback ping body; store the decision id where `registerFeedbackListener`
+  can reach it; add SDK round-trip test. **Until this lands, `conversion_labels` stays empty in prod.**
+  (sdk-engineer, 4h, **P1**) [HALF_WIRE_C — cite Rule L]
+- **FOLLOW-179:** Add `UNIQUE (tenant_id, prediction_id)` + `onConflictDoUpdate` (class-precedence:
+  deep CRM > shallow ping; `manual_admin` > `system`) to `conversion_labels`, OR document
+  append-only + ship a "latest-label-per-prediction" resolver; add a shared validated insert helper
+  (`ConversionOutcomeClassSchema.parse`); **must land before FOLLOW-172/173.** (backend-engineer +
+  data-engineer, 6h, **P1**) [LG-1/LG-3/CB-1/CB-2]
+- **FOLLOW-180:** Durable `lead_id` end-to-end + erasure-key safety (`lead_id=''` is never a matchable
+  erasure key; many leads share `''`). (backend-engineer + compliance-engineer, 4h, **P2**) [LG-2]
+- **FOLLOW-181:** `conversion_labels` RLS + FK + constraint integration test (pgmem/Testcontainers);
+  may fold into the repo-wide DB-harness gap. (data-engineer, 3h, **P2**) [TG-1]
+
+### 8. Cross-references
+
+- **RETRO-028** — direct predecessor; RETRO-028 §T plan is the source of FOLLOW-170…175 and this
+  ticket (T1). RETRO-028 closed the ESC-018 consumer-only half-wire; this PR opens a *new*
+  consumer-only half-wire (`prediction_id`) one layer up — the parity family continues.
+- **RETRO-017 / RETRO-021 / RETRO-024** — the `inquiry_submit_selector` consumer-ready/producer-absent
+  silent-no-op chain; `prediction_id` is the same shape (route ready, SDK doesn't produce). The
+  end-to-end closure discipline from RETRO-024 (don't declare closure when the gap moved one hop)
+  applies directly to FOLLOW-178: closure requires producer→ping-body→insert→a non-empty row, not
+  just "the SDK type has the field."
+- **CONVENTIONS_PATCH Rule L** — "verify the prod install/snippet path PRODUCES the config a consumer
+  reads; an injected test value is not evidence." Directly governs the `prediction_id` half-wire; the
+  PM should ensure FOLLOW-178's ACs require evidence of the *produced* value, not an injected one.
+- **CONVENTIONS_PATCH Rule O** — checked; journal idx 19 `when=1780505857912` is monotonic and a real
+  2026-06 timestamp. Clean.
+- **RETRO-026** — standing `packages/db` "string/mock-only, no live-DB" coverage pattern; TG-1 here is
+  another instance.

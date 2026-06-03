@@ -14,8 +14,15 @@
  *   a non-empty string. On null/absent, leaves headline slots untouched (playbook headline
  *   directive from /api/adapt stays in effect as the cold-start fallback).
  *
- * Loop-guard: flags byte `f` — bit 1 = applying, bit 2 = rafPending.
- * Applies to both description slots and headline slots via shared observer machinery.
+ * Loop-guard (description slots): disconnect → write → reconnect pattern.
+ *   The observer is disconnected before our write and immediately reconnected after, so
+ *   our own DOM mutations are invisible to the observer. External mutations (framework
+ *   reconciliation) are caught and re-asserted via a debounced rAF. A rafPending flag
+ *   (bit 1) ensures at most one rAF is scheduled per revert burst, preventing a flicker
+ *   storm when the framework issues rapid successive mutations.
+ *
+ * Loop-guard (headline slots): unchanged flag-based approach (single textContent write,
+ *   lower mutation frequency, works reliably for static-text slots).
  *
  * @module @estalara/sdk/core/adapt-description
  */
@@ -33,17 +40,28 @@ interface DescriptionResponse {
   generated_at: string | null;
 }
 
-interface SlotObserverState {
+/** State for description slots — disconnect/reconnect loop-guard, no flag needed. */
+interface DescSlotState {
   obs: MutationObserver;
-  dt: string; // desired textContent = paragraphs.join("")
+  /** Normalised fingerprint: paragraphs.join('\x00') — includes separators to survive
+   *  Svelte text-node reconstruction that may concatenate paragraph text differently. */
+  fp: string;
+  /** rafPending — bit 1. Prevents multiple rAFs queuing for the same revert burst. */
+  f: number;
+}
+
+/** State for headline slots — flag-based loop-guard (textContent write is atomic). */
+interface HeadlineSlotState {
+  obs: MutationObserver;
+  dt: string; // desired textContent
   f: number; // flags: 1=applying, 2=rafPending
 }
 
 let _eventQueue: CollectedEvent[] | null = null;
 /** Observer state for [data-estalara-slot="description"] elements. */
-const _slotMap = new Map<HTMLElement, SlotObserverState>();
+const _slotMap = new Map<HTMLElement, DescSlotState>();
 /** Observer state for [data-estalara-slot="headline"] elements (ADR-0009). */
-const _headlineSlotMap = new Map<HTMLElement, SlotObserverState>();
+const _headlineSlotMap = new Map<HTMLElement, HeadlineSlotState>();
 
 const EVT = 'adapt.description.';
 
@@ -73,37 +91,76 @@ function render(el: HTMLElement, ps: string[]): void {
   });
 }
 
-/** Write adapted text into slot, attach MutationObserver for framework-revert resilience. */
+/**
+ * Compute a normalised text fingerprint for a description slot.
+ *
+ * Collects text from all direct-child <p> elements (the SDK's rendered structure).
+ * If no <p> children exist (e.g. Svelte has reverted to raw text nodes), falls back
+ * to the element's full textContent. The NUL separator ensures that two paragraphs
+ * with different text cannot accidentally hash the same as a single concatenated string.
+ */
+function descFingerprint(el: HTMLElement): string {
+  const ps = Array.from(el.querySelectorAll(':scope > p'));
+  if (ps.length > 0) {
+    // textContent on Element is string | null per lib.dom.d.ts; HTMLElement inherits Element.
+    // Use empty-string fallback to keep the return type as string.
+    return ps.map((p) => p.textContent || '').join('\x00');
+  }
+  return el.textContent || '';
+}
+
+/**
+ * Write adapted paragraphs into slot and attach a MutationObserver that re-asserts
+ * the adapted content on any external mutation (framework reconciliation).
+ *
+ * Loop-guard: disconnect → write → reconnect (synchronous).
+ *   Our own writes are performed while the observer is disconnected, so they never
+ *   trigger a re-apply loop. The observer is reconnected immediately after, so the
+ *   next Svelte re-render is caught and re-asserted.
+ *
+ * Convergence: The rafPending flag (bit 1 of `s.f`) ensures at most one rAF is
+ *   queued per revert burst. The fingerprint check in the rAF callback short-circuits
+ *   if the content already matches (e.g. two rapid Svelte frames where the second
+ *   one loses its race to the rAF).
+ */
 function applyAndObserveSlot(el: HTMLElement, paragraphs: string[]): () => void {
   _slotMap.get(el)?.obs.disconnect();
 
-  const s: SlotObserverState = {
+  const desiredFp = paragraphs.join('\x00');
+
+  const s: DescSlotState = {
     obs: null as unknown as MutationObserver,
-    dt: paragraphs.join(''),
+    fp: desiredFp,
     f: 0,
   };
 
+  /**
+   * Re-apply adapted paragraphs using disconnect → write → reconnect so that our
+   * own DOM mutations are invisible to the observer (no infinite loop).
+   */
   const reapply = (): void => {
-    if (s.f & 1 || el.textContent === s.dt) return;
-    s.f |= 1;
+    if (descFingerprint(el) === s.fp) return;
+    s.obs.disconnect();
     render(el, paragraphs);
-    void Promise.resolve().then(() => {
-      s.f &= ~1;
-    });
+    s.obs.observe(el, { childList: true, subtree: true });
     pushEvent(EVT + 're', {});
   };
 
   const obs = new MutationObserver(() => {
-    if (s.f || el.textContent === s.dt) return;
-    s.f |= 2;
+    // Short-circuit: already showing adapted content (our reconnect fired this).
+    if (descFingerprint(el) === s.fp) return;
+    // Deduplicate: only one rAF per revert burst.
+    if (s.f & 1) return;
+    s.f |= 1;
     requestAnimationFrame(() => {
-      s.f &= ~2;
+      s.f &= ~1;
       reapply();
     });
   });
 
+  // Initial write: observer not yet active, no loop risk.
   render(el, paragraphs);
-  obs.observe(el, { childList: true });
+  obs.observe(el, { childList: true, subtree: true });
   s.obs = obs;
   _slotMap.set(el, s);
   return reapply;
@@ -121,7 +178,7 @@ function renderHeadline(el: HTMLElement, text: string): void {
 function applyAndObserveHeadlineSlot(el: HTMLElement, text: string): () => void {
   _headlineSlotMap.get(el)?.obs.disconnect();
 
-  const s: SlotObserverState = {
+  const s: HeadlineSlotState = {
     obs: null as unknown as MutationObserver,
     dt: text,
     f: 0,

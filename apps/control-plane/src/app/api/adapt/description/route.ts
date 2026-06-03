@@ -198,9 +198,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // ── Tier 1: return template immediately, no Redis, no Modal ──────────────
   // Short-circuit before any DB calls — Tier 1 never needs the generation model.
+  // headline is always null for Tier 1 (no LLM generation; ADR-0009).
   if (tier === '1') {
     const response: DescriptionResponse = {
       description: templateText,
+      headline: null,
       source: 'template_fallback',
       locale: localeCode,
       generated_at: null,
@@ -273,9 +275,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const cached = await getCachedDescription(cacheKey);
 
   if (cached !== null) {
-    // Cache HIT — return AI-generated description from Redis.
+    // Cache HIT — return AI-generated description (and headline when present) from Redis.
+    // headline is optional in DescriptionCacheValue (pre-ADR-0009 entries lack it).
+    // Normalise absent/undefined to null so the SDK always sees a consistent field.
     const response: DescriptionResponse = {
       description: cached.text,
+      headline: cached.headline ?? null,
       source: 'ai_cached',
       locale: localeCode,
       generated_at: cached.generated_at,
@@ -324,8 +329,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   });
 
   // Return template fallback immediately.
+  // headline is null on cold-start — SDK keeps the playbook headline directive (ADR-0009).
   const response: DescriptionResponse = {
     description: templateText,
+    headline: null,
     source: 'template_fallback',
     locale: localeCode,
     generated_at: null,

@@ -9,7 +9,10 @@
  *   - Tier 3: 48 hours = 172 800 seconds
  *
  * Values are stored as JSON strings matching DescriptionCacheValue:
- *   `{ "text": "...", "generated_at": "2026-05-14T12:00:00Z" }`
+ *   `{ "text": "...", "headline": "...", "generated_at": "2026-05-14T12:00:00Z" }`
+ *
+ * The `headline` field is optional (null when generation failed; absent in pre-ADR-0009 entries).
+ * `getCachedDescription` returns the field as-is; callers must handle undefined/null.
  *
  * Wildcard delete (for cache invalidation on listing.updated events) uses SCAN + DEL
  * because Upstash Redis does not support KEYS * in production.
@@ -138,6 +141,8 @@ export async function getCachedDescription(key: string): Promise<DescriptionCach
       typeof (parsed as Record<string, unknown>).text === 'string' &&
       typeof (parsed as Record<string, unknown>).generated_at === 'string'
     ) {
+      // headline is optional: may be absent (pre-ADR-0009 entry) or null (generation failed).
+      // Normalise missing to undefined so downstream callers see a clean DescriptionCacheValue.
       return parsed as DescriptionCacheValue;
     }
     return null;

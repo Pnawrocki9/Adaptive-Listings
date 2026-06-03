@@ -4899,7 +4899,82 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 168 (167 consumed by smoke-test.sh TTL-time-bomb + tenant-collision fix — see entry above;
+## FOLLOW-168 — Cross-language event-contract parity gate for `description.requested` (TS Zod publisher ⟷ Python consumer)
+
+- **status:** OPEN
+- **priority:** P1
+- **agent:** qa-engineer / backend-engineer
+- **estimated_hours:** 3
+- **source_retro:** RETRO-028
+- **source_ticket:** TICKET-DESC-001 (PR #182) — verification gap for the ESC-018 fix
+- **scope:** ESC-018's root cause was that the TypeScript publisher's event shape
+  (`DescriptionRequestedEventSchema`, `packages/shared/src/schemas/description.ts`) and the Python
+  consumer's hand-written `required` field set (`apps/llm-gateway/src/jobs/generate_description.py`
+  `consume_description_requests()`, ~`:1095`) drifted apart with **nothing failing** — each runtime
+  tested only its own copy, so `original_description` was required by the consumer but never sent by
+  the producer, silently dropping every message on the real Redpanda→Modal path from the original
+  pipeline merge until ADR-0009 surfaced it. PR #182 fixed the **data** (added the field +
+  producer + read) but added **no parity gate**. This stub adds the missing verification: a single
+  shared contract artifact asserted by **both** runtimes so the next field added to one side without
+  the other fails CI. Strategy options: (a) a checked-in JSON fixture listing the canonical required
+  keys, read by a `packages/shared/__tests__/cross-runtime/description-event-contract.test.ts` AND
+  by `test_generate_description.py`; (b) a generated artifact from the Zod schema consumed by the
+  Python test. This is the cross-language analogue of Rule J (which today only gates TS↔TS mirror
+  files) and the §6 watch-item that becomes a codified Rule at a second occurrence.
+- **AC:**
+  1. The TS `DescriptionRequestedEventSchema` required-key set is asserted to be a superset of the
+     Python consumer's `required` set from a single shared source of truth.
+  2. Adding a required field to either runtime without the other fails CI (a regression test proves
+     this by negative case).
+  3. The gate runs in both the JS/Vitest path and the Python/pytest path (or one path reads the
+     other's checked-in artifact).
+- **depends_on:** [] (PR #182 already landed the data fix)
+- **promoted_to_queue:** true (2026-06-03 → `backlog/sprint-14/FOLLOW-168.md`, status READY)
+
+---
+
+## FOLLOW-169 — Bring `_generate_headline` to the description's anti-hallucination grounding bar (ADR-0009)
+
+- **status:** OPEN
+- **priority:** P2
+- **agent:** ml-engineer
+- **estimated_hours:** 4
+- **source_retro:** RETRO-028
+- **source_ticket:** TICKET-DESC-001 (PR #182) / ADR-0009
+- **scope:** The per-listing headline LLM call `_generate_headline`
+  (`apps/llm-gateway/src/jobs/generate_description.py` ~`:448`) uses **only an inline "do not
+  invent" user-message instruction**, with **no system prompt** and **no `<verified_facts_used>`
+  audit block** — a strictly weaker contract than the description path (`_generate_with_sonnet`),
+  which ships the full v1.8 XML whitelist system prompt + a fact-inventory build step + a
+  machine-parsed audit block logged to ClickHouse. The headline is the single most prominent
+  buyer-facing string, so a hallucinated number/distance/named-entity in it has no audit trail, no
+  parse-time detection, and no compliance/fair-housing record. Also addresses two adjacent items:
+  the SDK headline branch (`packages/sdk/src/core/adapt-description.ts` ~`:243`) applies the
+  headline without the `source === 'ai_cached'` guard the description requires (harmless today,
+  latent divergence), and the stale cache-key-format docstrings (`generate_description.py` ~`:364`;
+  the `cache_key` field doc in `packages/shared/src/schemas/description.ts`) still describe the
+  pre-FOLLOW-161 key shape without the `:{model}` suffix.
+- **AC:**
+  1. The headline call grounds in the same whitelist as the description — minimally a system prompt
+     mirroring the v1.8 hard-rules, OR the description's already-built verified-fact inventory
+     passed into the headline call instead of re-grounding from raw inputs.
+  2. A headline asserting a fact absent from `original_description` + `listing_context` is
+     detectable or suppressed (post-generation fact check, or audit-block parse), with a test
+     analogous to the description's anti-hallucination test.
+  3. The SDK headline branch is gated on `source === 'ai_cached'` for symmetry with the description,
+     OR a route-invariant test asserts a non-null headline is only ever returned on `ai_cached`.
+  4. The stale `desc:{...}:{locale}` cache-key-format docstrings are updated to include the
+     `:{model}` (and `:demo:{model}`) suffix.
+- **depends_on:** [] (independent of FOLLOW-168)
+- **promoted_to_queue:** true (2026-06-03 → `backlog/sprint-14/FOLLOW-169.md`, status READY)
+
+---
+
+<!-- next free FOLLOW number: 170 (168-169 consumed by RETRO-028 / PR #182 — TICKET-DESC-001 per-listing LLM headline + ESC-018:
+     168 = P1 cross-language TS↔Python description.requested event-contract parity gate (the verification ESC-018 lacked);
+     169 = P2 bring _generate_headline to the description anti-hallucination bar + ai_cached SDK guard + stale cache-key docstrings;
+     ADR-0009/headline §E.7 propagation folded onto FOLLOW-164 (RETRO-027), no new stub;
+     167 consumed by smoke-test.sh TTL-time-bomb + tenant-collision fix — see entry above;
      162-165 consumed by RETRO-027 / PR #172 — TICKET-DESC-PIVOT-001 v1.8:
      162 = P1 length-policy/max_tokens truncation of verified_facts_used audit block + stale docstring + truncation test;
      163 = P2 placeholder-substitution + token-inventory guard tests (.replace tripwire);

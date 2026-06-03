@@ -431,6 +431,38 @@ grep -rn "twoProportionZTest\|<metric-name>" packages/ apps/ --include="*.ts" | 
 # If two implementations exist, a parity test must reference both.
 ```
 
+#### Rule K.1 amendment (2026-06-03 — RETRO-030 §4a LG-1 — TS-map ↔ inline-SQL duplication)
+
+**Trigger:** RETRO-030 (FOLLOW-179, PR #190) added a precedence policy that lives BOTH as a
+TypeScript constant map (`OUTCOME_CLASS_RANK` + `MANUAL_ADMIN_OFFSET` in
+`packages/shared/src/schemas/conversion-label.ts`) AND as a hand-typed SQL `CASE` expression
+re-deriving the same ranks inside a Drizzle `onConflictDoUpdate` WHERE clause
+(`packages/db/src/upsert-conversion-label.ts`, transcribed twice). The incoming side uses the TS
+function; the existing-row side uses the SQL literals. No gate ties them together: adding or
+reordering an outcome class can silently mis-rank conflict resolution with green CI. This is a Rule
+K.1 instance — but K.1's original framing ("two TypeScript modules in different packages, or two API
+routes within the same app") did not enumerate the **one-language-map vs
+other-language-inline-query** sub-shape, and Rule J (which only manifests
+`apps/decision-api/src/lib/` cross-runtime FILE mirrors) cannot express a TS-map-vs-inline-SQL pair
+in `scripts/mirror-files.json`.
+
+**Amendment — K.1 explicitly covers a business rule duplicated across a typed-language map and a
+generated query/DSL string in the SAME runtime.** When a precedence/threshold/mapping table is
+encoded once as a TS constant and again as inline SQL/DSL (a `CASE`, a `WHERE` literal set, a
+hardcoded enum list in a query builder), you MUST either:
+
+1. **Derive the query fragment from the single TS source at runtime** (build the SQL `CASE` by
+   iterating the TS map and interpolating via the query builder's `sql`/parameter API) — eliminating
+   the second copy entirely; OR
+2. **Add a parity test** that executes the generated query path and asserts it agrees with the TS
+   source for every key in the map (e.g. all N class × source pairs) against pgmem/Testcontainers.
+
+A hand-typed `ELSE <floor>` in such a CASE is a smell — it silently maps an unknown key to a tier
+floor instead of failing; prefer a derived CASE that has no manual fallback. **Verification:** grep
+for inline enum/rank literals in query builders that mirror a TS constant —
+`grep -rn "CASE WHEN\|THEN [0-9]" packages/ apps/ --include="*.ts" | grep -v node_modules` — and
+confirm each such block is either derived from a shared constant or covered by a parity test.
+
 ### K.2 — Decision-grade surfaces must fail loud, never fabricate
 
 **Pattern:** A code path swallows an error or empty result and substitutes plausible-looking default

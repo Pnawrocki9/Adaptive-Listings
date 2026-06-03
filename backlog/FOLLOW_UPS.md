@@ -5239,7 +5239,81 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 182 (177-181 = RETRO-029 / PR #188 / FOLLOW-171 Conversion Label Loop T1:
+## FOLLOW-182 — eliminate the TS-map↔SQL-CASE precedence duplication in upsertConversionLabel
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-030 (§4a LG-1/LG-2)
+- **source_ticket:** FOLLOW-179 / PR #190
+- **recommended_sprint:** Sprint 14
+- **agent:** data-engineer + backend-engineer
+- **estimated_hours:** 4
+- **scope:** The conversion-label precedence policy is hand-maintained in THREE places that must
+  agree: the TS `OUTCOME_CLASS_RANK` + `MANUAL_ADMIN_OFFSET` map
+  (`packages/shared/src/schemas/conversion-label.ts:98-117`), and the SQL CASE that re-derives the
+  existing row's rank, typed TWICE inside the `onConflictDoUpdate` WHERE clause
+  (`packages/db/src/upsert-conversion-label.ts:172-192` and `:194-214`). Adding/renaming/reordering
+  an outcome class requires editing all three or the upsert silently mis-ranks (a more-authoritative
+  label rejected, or a stale one overwriting a deeper outcome) with green CI — the SQL CASE is
+  currently untested (see FOLLOW-183). This is a Rule K.1 intra-runtime duplication; Rule J does NOT
+  cover it (no file-pair). Preferred fix: derive the SQL
+  `CASE WHEN outcome_class = '<k>' THEN <rank> …` fragment at runtime by iterating
+  `OUTCOME_CLASS_RANK` and interpolating via Drizzle `sql`, so a class added to the TS map
+  propagates to the query automatically (single source of truth). This also removes the hand-typed
+  `ELSE 0 / ELSE 1000` floors that silently mis-rank an unknown stored class (LG-2). If a
+  runtime-derived CASE is not feasible, ship a parity test asserting the SQL-derived rank equals
+  `conversionLabelRank()` for all 12 (class × source) pairs against pgmem/Testcontainers.
+- **ac:**
+  - [ ] SQL conflict-resolution rank is derived from `OUTCOME_CLASS_RANK` (single source of truth)
+        OR a 12-pair SQL-vs-TS parity test exists and is wired into CI
+  - [ ] hand-typed `ELSE` floors removed or replaced with a fail-loud path for unknown classes
+  - [ ] adding a new outcome class to the TS map requires NO edit to the SQL (or fails CI if it
+        does)
+  - [ ] CI green
+- **depends_on:** source FOLLOW-179 (merged). Sequence before any outcome-class add/rename and
+  ideally before FOLLOW-172 lands a second writer.
+- **promoted_to_queue:** true (QUEUE.md, 2026-06-03; both P1)
+
+---
+
+## FOLLOW-183 — direct integration test for upsertConversionLabel (SQL precedence WHERE clause + UNIQUE constraint)
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-030 (§4c TG-1/TG-2)
+- **source_ticket:** FOLLOW-179 / PR #190
+- **recommended_sprint:** Sprint 14
+- **agent:** data-engineer
+- **estimated_hours:** 4
+- **scope:** The PR's core deliverable — `upsertConversionLabel` (219 lines incl. the SQL precedence
+  WHERE clause that decides every conflict) — has ZERO direct test. No
+  `packages/db/src/upsert-conversion-label.test.ts` exists; `index.test.ts` does not import it; the
+  feedback-route test fully mocks the helper (`route.test.ts:413-492`); and the shared tests cover
+  only the sibling TS `conversionLabelRank`, not its SQL transcription. A transposed rank literal,
+  an inverted comparator, or a column typo in the WHERE clause would ship green. The 0020
+  `UNIQUE (tenant_id, prediction_id)` constraint is likewise unexercised (the route "idempotency"
+  test asserts only that the mocked helper is called twice). Add a pgmem/Testcontainers test
+  exercising the real helper against real Postgres. Folds the RETRO-029 FOLLOW-181 RLS/FK harness
+  need (same missing PG harness) — PM may merge FOLLOW-181 + FOLLOW-183 into one DB-integration
+  ticket.
+- **ac:**
+  - [ ] duplicate `(tenant_id, prediction_id)` INSERT is rejected by the 0020 constraint (raw path)
+  - [ ] higher-rank incoming label overwrites; lower/equal-rank is a no-op (existing row preserved)
+  - [ ] equal-rank recency tiebreak on `labeled_at` works
+  - [ ] non-empty stored `lead_id` is preserved when an incoming `''` lead_id is passed
+  - [ ] `confidence` defaults to 1.0; Zod rejects an invalid `outcomeClass`/`labelSource` before any
+        DB call
+  - [ ] (if merged with FOLLOW-181) RLS isolation + FK ON DELETE CASCADE + column defaults
+  - [ ] CI green
+- **depends_on:** source FOLLOW-179 (merged); shares the PG-harness need with FOLLOW-181.
+- **promoted_to_queue:** true (QUEUE.md, 2026-06-03; both P1)
+
+---
+
+<!-- next free FOLLOW number: 184 (182-183 = RETRO-030 / PR #190 / FOLLOW-179 Conversion Label Loop T1-hardening:
+     182 = P1 eliminate TS-map↔SQL-CASE precedence duplication (LG-1/LG-2; Rule K.1 — derive SQL from TS map or 12-pair parity test);
+     183 = P1 direct integration test for upsertConversionLabel SQL WHERE + UNIQUE constraint (TG-1/TG-2; folds FOLLOW-181 PG harness).
+     177-181 = RETRO-029 / PR #188 / FOLLOW-171 Conversion Label Loop T1:
      177 = P2 §T write-only tracking + flip §T PROPOSED→in-progress (HALF_WIRE_P);
      178 = P1 SDK thread adapt_decision_id→prediction_id+lead_id into feedback ping (HALF_WIRE_C — table empty in prod until done; cite Rule L);
      179 = P1 conversion_labels UNIQUE/upsert + precedence + validated insert helper — GATES FOLLOW-172/173 (LG-1/LG-3/CB-1/CB-2);

@@ -83,3 +83,32 @@ payload + keys standard cache by active model, `_resolve_generation_model()` ext
 endpoint — a rogue agency:admin could change the model rapidly. Adding a per-minute rate limit on
 the PUT would prevent accidental or malicious thrashing. Currently not a priority since it's a
 single global write.
+
+---
+
+## 2026-06-03 / FOLLOW-179
+
+**What I built:** UNIQUE constraint on `conversion_labels(tenant_id, prediction_id)` + validated
+upsert helper (`upsertConversionLabel`) that applies a class-precedence policy (source dominance +
+funnel finality) via `INSERT ... ON CONFLICT DO UPDATE WHERE <rank CASE>`. Replaced the plain
+`db.insert()` in the feedback route. Added `conversionLabelRank()` as the TS-layer single source of
+truth for the same ordering.
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+- The `onConflictDoUpdate` WHERE clause embeds SQL rank constants that must stay in sync with the TS
+  `OUTCOME_CLASS_RANK` map; documented the sync requirement in the code but there is no automated
+  enforcement — a future class addition that updates only one side would silently mismatch. This is
+  a potential future Rule O-style gate candidate.
+- Adding `@estalara/shared` as a dep to `@estalara/db` is the first cross-package import in the db
+  layer; vitest config needed an explicit alias because `@estalara/db` previously had no
+  inter-package deps and no alias setup.
+- The `upsertConversionLabel` helper deliberately does NOT set `app.current_tenant_id` — it uses the
+  admin client (which bypasses RLS), matching the existing pattern. Any future caller that wants RLS
+  enforcement must use a tenant client instead; this should be documented explicitly to prevent
+  misuse.
+
+**A guardrail I'd add:** A CI check that asserts the SQL rank CASE values in
+`upsert-conversion-label.ts` are byte-identical to the TS constants in `conversion-label.ts` —
+preventing the two from drifting when a new outcome class is added. Pattern analogous to Rule J
+mirror checks.

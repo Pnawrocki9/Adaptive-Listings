@@ -9295,3 +9295,332 @@ written but not yet read; readers are FOLLOW-173/174 by design (FOLLOW-177, trac
   2026-06 timestamp. Clean.
 - **RETRO-026** — standing `packages/db` "string/mock-only, no live-DB" coverage pattern; TG-1 here is
   another instance.
+
+## RETRO-030 — FOLLOW-179 (conversion_labels uniqueness/upsert + precedence + validated insert helper — closes RETRO-029 LG-1/LG-3/CB-1/CB-2) — 2026-06-03
+
+### 1. Summary of change
+
+- **PR:** #190 (merged 2026-06-03 19:04:44 UTC, commit `e25e66e`). backend-engineer + data-engineer;
+  Sprint 14. Source: **RETRO-029 §4a LG-1/LG-3 + §4b CB-1/CB-2** (the gaps this PR's parent ticket
+  FOLLOW-171/PR #188 left). Hardens the FOLLOW-171 write path; **gates FOLLOW-172/173/174** (the
+  `blocks:` list in QUEUE.md:2826).
+- **Files changed:** 11 (+618 / −51).
+  - `packages/shared/src/schemas/conversion-label.ts` (+79) — NEW `conversionLabelRank()`, plus
+    module-private `OUTCOME_CLASS_RANK` (no_response 0 < viewing_booked 1 < offer_made 2 <
+    contract_signed 3 < lost 4 < purchased 5) and `MANUAL_ADMIN_OFFSET = 1000`. Neither constant is
+    exported — only the function is.
+  - `packages/shared/src/schemas/conversion-label.test.ts` (+137) — 19 new `conversionLabelRank` tests.
+  - `packages/db/src/upsert-conversion-label.ts` (NEW, +219) — `upsertConversionLabel(db, input)`:
+    Zod-parses `outcomeClass`/`labelSource` before any DB call (LG-3 fix), then
+    `INSERT … ON CONFLICT (tenant_id, prediction_id) DO UPDATE … WHERE <rank-CASE>` so the row updates
+    only when `incomingRank > existingRank` OR (`= existingRank` AND incoming `labeled_at` newer);
+    defaults `confidence=1.0` (CB-2 fix); preserves a non-empty stored `lead_id` via a CASE on update.
+  - `packages/db/src/index.ts` (+2) — exports `upsertConversionLabel` + `UpsertConversionLabelInput`.
+  - `packages/db/package.json` (+1) — NEW dep `@estalara/shared: workspace:*` (FIRST cross-package
+    runtime dep for the db layer).
+  - `packages/db/vitest.config.ts` (+10) — `@estalara/shared` test alias.
+  - `packages/db/migrations/0020_conversion_labels_dedup.sql` (NEW, +22) — `ALTER TABLE
+    conversion_labels ADD CONSTRAINT conversion_labels_tenant_prediction_unique UNIQUE (tenant_id,
+    prediction_id)`.
+  - `packages/db/migrations/meta/_journal.json` (+7) — idx=20, `when=1780509849426`.
+  - `apps/control-plane/src/app/api/adapt/feedback/route.ts` (+17/−6) —
+    `insertConversionLabelAsync`→`upsertConversionLabelAsync`, calls the helper, `confidence:1.0` explicit.
+  - `apps/control-plane/src/app/api/adapt/feedback/route.test.ts` (+121/−44) — 4 new FOLLOW-179 tests.
+  - `pnpm-lock.yaml` (+3).
+- **Modules touched:** [shared / db (schema helper + migration) / control-plane (feedback route) /
+  configs]. No SDK source, no ingest, no decision-api, no Modal/Python touched.
+- **Key contracts changed:**
+  - NEW export `@estalara/shared` `conversionLabelRank({outcomeClass, labelSource}) → number`. Breaking:
+    N/A (new). Now a **published precedence contract** that FOLLOW-172/174 must honor.
+  - NEW export `@estalara/db` `upsertConversionLabel` + `UpsertConversionLabelInput`. Breaking: N/A.
+    This is the **mandated write path** for `conversion_labels` (all future writers must use it).
+  - `conversion_labels` gains `UNIQUE (tenant_id, prediction_id)`. Breaking: **yes for any direct
+    INSERT path** — a plain `db.insert()` (e.g. FOLLOW-172 if it ignores the helper) now throws a
+    23505 unique-violation instead of silently dup-ing. This converts RETRO-029's silent corruption
+    into a loud error for non-helper writers — see §5a.
+  - NEW package edge `@estalara/db → @estalara/shared`. Breaking: N/A; verified acyclic (§3 CHECK A).
+- **Verdict (preview):** **FOLLOW-UPS-FILED** (not clean). The three RETRO-029 gaps this PR set out to
+  close (LG-1 uniqueness, LG-3 validated insert, CB-2 confidence) are closed END-TO-END for the
+  feedback-route producer (traced in §7). BUT the PR introduces (i) a new TS-map-vs-SQL-CASE
+  precedence duplication with no parity gate (the user's concern (a) — REAL, Rule-K.1 shape), and (ii)
+  ships its 219-line core helper — the entire SQL precedence WHERE clause — with **zero direct test**
+  (route test mocks the helper; shared tests cover only the TS function). Two follow-ups filed
+  (FOLLOW-182, FOLLOW-183); one cascade spec-gap recorded against the in-flight FOLLOW-172 (§5a).
+
+### 2. Verification done in PR
+
+- Test files changed: `conversion-label.test.ts` (+19 tests), `feedback/route.test.ts` (+4 tests:
+  upsert-called-with-correct-args, confidence=1.0, idempotency-contract, no_response-on-false).
+  Assertions added: **~23**. CI claimed green (PR body: shared 178, db 52, route 38; rule-h, rule-j
+  green).
+- **Coverage delta — critically uneven.** The TS `conversionLabelRank` is well covered (19 tests incl.
+  full pairwise source-dominance matrix). The route is covered at the mock level (the test injects a
+  `mockUpsertConversionLabel` and asserts call args — `route.test.ts:413-492`). **The
+  `upsertConversionLabel` helper itself has NO test file** — grep
+  `upsertConversionLabel|upsert-conversion` against `packages/db/src/index.test.ts` returns nothing,
+  and there is no `upsert-conversion-label.test.ts`. So the load-bearing artifact of this PR — the SQL
+  CASE WHERE clause that decides whether a write wins — is **never executed by any test** (the TS map
+  is tested, the SQL transcription of it is not). The PR body's "52 db tests" are the pre-existing
+  `index.test.ts`. → §4c TG-1 (P1).
+- CI checks: not independently verified by this analyst (read-only). Standing CI-gate caveat (Rule I /
+  Vercel / Python lanes pre-existing-red & non-blocking).
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- `conversionLabelRank` (shared) — non-test importer at `packages/db/src/upsert-conversion-label.ts:40`.
+  **Not dead.** `OUTCOME_CLASS_RANK` / `MANUAL_ADMIN_OFFSET` are module-private (not exported) — used
+  only inside `conversionLabelRank`; not subject to Rule I. (They are, however, the source side of the
+  drift risk in §4a LG-1.)
+- `upsertConversionLabel` (db) — non-test importer at `feedback/route.ts:49` (called at `:249`).
+  **Not dead.** `UpsertConversionLabelInput` — consumed by the route wrapper's typing. **Not dead.**
+- Migration 0020 + journal — Drizzle-runner entrypoints, suppressed. **CHECK A clean ✅.**
+- **Package-edge acyclicity (user concern (d)) — VERIFIED CLEAN.** `grep -rn "@estalara/db"
+  packages/shared/src/` returns ONE hit, and it is a doc-comment (`conversion-label.ts:15`), not an
+  import. `@estalara/shared` has no workspace deps; `@estalara/db` now depends on it. Turbo
+  topological build order (shared → db → control-plane) is correct; no cycle. The vitest alias
+  (`packages/db/vitest.config.ts`) resolves shared from `src` for tests, which is why db tests don't
+  need shared pre-built. **No build-order or circular-dep issue.**
+
+**CHECK B — Half-wire detection:**
+
+- **`conversionLabelRank` (shared producer of the rank policy):** Consumer EXISTS ✅ (the upsert helper
+  uses it for `incomingRank`). Producer EXISTS ✅. **Wired.** BUT note the *parity* gap: the SQL side
+  re-derives the same policy by hand and is NOT wired to the TS map — see §4a LG-1 (this is a
+  duplication, not a half-wire).
+- **`UNIQUE (tenant_id, prediction_id)` constraint (migration 0020):** Producer (the constraint) EXISTS
+  ✅; Consumer (the `onConflictDoUpdate` target) EXISTS ✅ at `upsert-conversion-label.ts:156`.
+  **Wired end-to-end.**
+- **`confidence=1.0` system convention (CB-2):** Producer EXISTS ✅ (route passes `1.0`; helper
+  defaults `1.0`). Reader is FOLLOW-173 calibration (unshipped) — same intentional durable-sink shape
+  as RETRO-029 §3; not a new half-wire (FOLLOW-173 already tracked).
+- **The RETRO-029 prior half-wires are UNCHANGED by this PR:** `prediction_id` is still consumer-only
+  in prod (SDK doesn't produce it — FOLLOW-178 OPEN); `conversion_labels` is still write-only
+  (FOLLOW-173/174 unshipped — FOLLOW-177 OPEN). This PR does not regress them and does not close them
+  (out of scope). **Summary: CHECK B clean ✅ for this PR's own new wires.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — TS/SQL precedence duplication with no parity gate (user concern (a): CONFIRMED REAL).**
+  The precedence policy now exists in **THREE hand-maintained places**, all that must agree:
+  (1) `OUTCOME_CLASS_RANK` + `MANUAL_ADMIN_OFFSET` in `packages/shared/src/schemas/conversion-label.ts:98-117`
+  (the TS source of truth, used for `incomingRank`);
+  (2) the SQL CASE that maps the EXISTING row's rank in the strictly-greater branch
+  (`upsert-conversion-label.ts:172-192`);
+  (3) the SAME SQL CASE re-typed AGAIN in the equal-rank/recency branch (`:194-214`).
+  The incoming side uses the TS function; the existing side uses the hand-written SQL literals
+  `0-5` / `1000-1005`. Adding or renaming an outcome class (e.g. a future `withdrawn` class, or
+  reordering `lost`/`purchased`) requires editing all three or the upsert **silently mis-ranks** — a
+  more-authoritative incoming label could be rejected, or a stale one could overwrite a deeper one,
+  with green CI (the SQL CASE is untested — §4c TG-1, so a typo in the literals is invisible). This is
+  exactly the **Rule K.1 shape** ("intra-runtime duplicate business logic that drifts silently") — NOT
+  Rule J (which only manifests `apps/decision-api/src/lib/` cross-runtime FILE mirrors; a
+  TS-map-vs-inline-SQL duplication is not a file pair and `scripts/mirror-files.json` cannot express
+  it). The clean fix the user asked about — **derive the SQL CASE from the TS map at runtime** — is
+  feasible: build the `CASE WHEN outcome_class = '<k>' THEN <rank> …` fragment by iterating
+  `OUTCOME_CLASS_RANK` in TS and interpolating via Drizzle `sql`, so a class added to the map
+  propagates to the query automatically (one source of truth, no gate needed). Failing that, a
+  parity test that asserts the SQL-derived rank equals `conversionLabelRank()` for all 12
+  (class × source) pairs against a real/pgmem PG. → **FOLLOW-182 (P1)**. Sequence: ideally before
+  FOLLOW-172 lands a second writer, but at minimum before any outcome-class is added/renamed.
+- **LG-2 (P2) — the SQL `ELSE` fallbacks silently floor an unknown class instead of failing.** The
+  existing-row CASE ends `ELSE 1000` (manual_admin branch) and `ELSE 0` (system branch)
+  (`upsert-conversion-label.ts:181,190,203,212`). An unrecognized `outcome_class` already stored in
+  the row maps to the *floor* of its source tier, so an incoming label would almost always win against
+  it. Today this is unreachable via this helper (it Zod-validates before insert, so it cannot write an
+  unknown class), but the row could have been written by a path that bypasses the helper (direct SQL,
+  a future writer that skips it, or a class that was valid when written and later removed from the
+  enum). The fail-soft floor then makes the precedence decision on garbage instead of erroring. Low
+  severity while the helper is the only writer, but it widens the moment FOLLOW-172 adds a second
+  writer. → folded into FOLLOW-182 AC (the runtime-derived CASE eliminates the hand-typed ELSE).
+- **LG-3 (P3) — precedence semantics (user concern (c)): CONFIRMED CORRECT, recorded for closure.**
+  `purchased(5) > lost(4) > contract_signed(3)` is a documented, defensible CRM-funnel-finality
+  choice (`conversion-label.ts:77-96` + PR body) — `lost` as a definitive terminal beats open-funnel
+  classes; `purchased` beats `lost` so a confirmed sale isn't overwritten by a later erroneous system
+  `lost`. The offset math is correct: `MANUAL_ADMIN_OFFSET=1000 > max class rank 5`, so
+  `manual_admin/no_response (1000) > system/purchased (5)` — verified by the source-dominance test
+  matrix (`conversion-label.test.ts:158-165`, all manual × all system pairs). **One behavioral note,
+  not a defect:** a manual_admin *downgrade* always wins (a human marking `no_response`, rank 1000,
+  overwrites a system `purchased`, rank 5). This is intended (human authority is absolute) but means
+  FOLLOW-174's admin UI can irreversibly clobber a deep system label; the helper retains
+  `outcome_raw` so the prior signal is recoverable, but FOLLOW-174 should surface a confirm step. →
+  noted in FOLLOW-174 cascade (§5a), no new follow-up.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — `updated_at` is set on every UPDATE attempt, but the WHERE clause can make the UPDATE a
+  no-op, so `updated_at` does NOT reliably reflect last-write.** When incoming rank ≤ existing rank,
+  the `DO UPDATE … WHERE false` skips the row entirely (`updated_at` unchanged) — correct. But the
+  `set.updatedAt = new Date()` (`:167`) only fires on the winning path. A reader using `updated_at` to
+  find "recently touched labels" will miss rejected-but-recent pings. Minor; only matters if a future
+  reader treats `updated_at` as "last ping seen" rather than "last value change." Recorded so
+  FOLLOW-173 doesn't assume the former.
+- **CB-2 (P2) — recency tiebreak compares `labeled_at`, but the feedback route never sets `labeledAt`,
+  so equal-rank pings tiebreak on the helper's `new Date()` at write time, not the true event time.**
+  The route's `upsertConversionLabelAsync` (`route.ts:249-257`) does NOT pass `labeledAt`; the helper
+  defaults it to `new Date()` (`upsert-conversion-label.ts:110`). So for two same-rank system pings,
+  "newer" = "processed later by the server," which is usually right but is the *server* clock, not the
+  event clock. The feedback ping body carries no event timestamp today, so this is the best available
+  signal — but when FOLLOW-172's CRM webhook (which DOES have a real outcome timestamp) writes, it MUST
+  pass `labeledAt` from the CRM event, or a late-arriving-but-older CRM outcome could lose the recency
+  tiebreak to an earlier-processed one. → noted in FOLLOW-172 cascade (§5a).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — the `upsertConversionLabel` helper and its SQL precedence WHERE clause are entirely
+  untested.** No `packages/db/src/upsert-conversion-label.test.ts` exists; `index.test.ts` does not
+  import it; the route test fully mocks it. So the PR's core deliverable — 219 lines including the
+  duplicated SQL CASE that decides every conflict — has **zero execution coverage**. A transposed
+  literal (e.g. `lost THEN 5, purchased THEN 4`), an inverted comparator (`>` vs `<`), or a column
+  typo in the WHERE clause would ship green. This is strictly worse than RETRO-029 TG-1 (which noted
+  the table DDL/RLS was mock-only): there, the untested code was declarative DDL; here it is the
+  procedural conflict-resolution logic that is the entire point of the ticket. Closing it needs a
+  pgmem/Testcontainers test that inserts a row then upserts a higher/lower/equal-rank label and
+  asserts the stored row — which ALSO closes the §4a LG-1 parity gap (the same test, run for all 12
+  pairs, proves SQL == TS). → **FOLLOW-183 (P1)** (and folds the FOLLOW-181 RLS/FK harness need from
+  RETRO-029 — same missing PG harness; PM may merge the two into one DB-integration ticket).
+- **TG-2 (P2) — no test asserts a duplicate `(tenant_id, prediction_id)` is REJECTED by the new
+  constraint, nor that the helper's onConflict path is reached.** The route "idempotency" test
+  (`route.test.ts:453-476`) asserts only that the route calls the (mocked) helper twice — it proves
+  nothing about the DB constraint or the upsert resolution, by the test's own admission
+  (`"dedup is DB-enforced"`). The constraint added in 0020 is unexercised. → folded into FOLLOW-183.
+
+#### 4d. Documentation gaps
+
+- **N/A for new docs gaps in this PR.** The helper, schema, and migration are thoroughly JSDoc'd, and
+  the rank rationale is documented in both shared and the helper. The RETRO-029 DG-1 (MASTER_DESIGN §T
+  still `(PROPOSED)`) is UNCHANGED by this PR and remains tracked under FOLLOW-177 — not re-filed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected (Sprint 14)
+
+- **FOLLOW-172 (CRM deep-outcome ingest → conversion_labels) — IN FLIGHT (isolated worktree); its spec
+  does NOT yet reference the new write contract. ACTION REQUIRED.** `backlog/sprint-14/FOLLOW-172.md:22`
+  says only "Writes `conversion_labels` (`label_source=system`, `confidence=1.0`, `outcome_raw`
+  retained)" — it does NOT say it MUST use `upsertConversionLabel`, does NOT mention the precedence
+  policy, and does NOT mention passing the CRM event timestamp as `labeledAt` (CB-2). With the new
+  `UNIQUE (tenant_id, prediction_id)` constraint live, a plain `db.insert()` in the CRM webhook will
+  now **throw a 23505 unique-violation** the moment it hits a prediction the feedback ping already
+  labeled — i.e. exactly the upgrade case (shallow `viewing_booked` → deep `purchased`) FOLLOW-172
+  exists to handle. So FOLLOW-179 converted RETRO-029's silent-dup corruption into a loud crash for
+  any writer that ignores the helper. The in-flight implementer must (a) call `upsertConversionLabel`,
+  not insert; (b) pass the CRM `labeledAt`. Since I am read-only on the spec mid-flight, this is
+  surfaced here for the PM to thread into FOLLOW-172's ACs / handoff. **Severity: P1 cascade** — a
+  FOLLOW-172 that plain-inserts will fail in prod on the first real upgrade.
+- **FOLLOW-173 (aggregation + calibration) — improved by this PR; one residual.** RETRO-029 §4a LG-1's
+  double-count concern is now RESOLVED at the DB layer (one row per prediction enforced), so the join
+  no longer inflates. Residual: FOLLOW-173 should not treat `updated_at` as "last ping seen" (CB-1) and
+  should be told the rows are precedence-deduped (its spec, `FOLLOW-173.md:20`, aggregates over
+  `(tenant_id, outcome_class, model_version, time_bucket)` and is unaware of the dedup guarantee — it
+  benefits from it transparently, so no blocking action, but the PM should note the assumption is now
+  sound).
+- **FOLLOW-174 (admin reclassify) — relies on the precedence; spec under-specifies the write path.**
+  `FOLLOW-174.md:19` says "writes `label_source=manual_admin`" but, like FOLLOW-172, does not name
+  `upsertConversionLabel`. It MUST use the helper so the `manual_admin` offset actually applies (a
+  plain insert would 23505-collide). It must also surface a confirm step for the manual-downgrade case
+  (§4a LG-3 note). → recorded for the PM to thread into FOLLOW-174.
+- **FOLLOW-178 (SDK threads prediction_id) — UNCHANGED, still OPEN/P1.** This PR does not produce
+  `prediction_id` from the SDK; the prod table stays empty for SDK traffic until FOLLOW-178 lands.
+  RETRO-029 §3 HALF_WIRE_C still stands.
+
+#### 5b. Future sprint tickets affected
+
+- The **`conversionLabelRank` precedence ordering is now a published contract** for the Y2 TALLRec/LoRA
+  fine-tune corpus (§D.5.7): the corpus's "winning label per prediction" depends on this exact rank
+  function. Reordering classes later silently re-labels historical predictions on next aggregation. Any
+  change to `OUTCOME_CLASS_RANK` is a corpus-semantics change — record before mutating (compounds the
+  RETRO-029 §5b note that the enum VALUES are a contract; now their ORDERING is too).
+
+#### 5c. Contracts changed others rely on
+
+- `upsertConversionLabel` is the **mandated write path** for `conversion_labels`; the `UNIQUE`
+  constraint makes any non-helper INSERT fail loud. All current + future writers (FOLLOW-172/174, any
+  Estalara-app or third-party caller) MUST go through it (or replicate its onConflict + precedence).
+- `@estalara/db → @estalara/shared` is a NEW package dependency edge (first for the db layer); future
+  db modules may now import shared schemas/types freely (the edge is established and acyclic).
+
+#### 5d. Architectural assumptions affected
+
+- **RETRO-029 §5d "one row per labeled outcome (§T.2) is asserted but NOT enforced" is now RESOLVED.**
+  The invariant is enforced at the DB layer by the UNIQUE constraint + the helper. Downstream reasoning
+  that assumes label uniqueness per prediction (calibration, reclassify, export) is now SOUND —
+  provided every writer uses the helper (the open risk migrates from "schema doesn't enforce it" to
+  "a writer might bypass the helper," which §5a FOLLOW-172/174 addresses). Recorded as a reconciliation
+  of the prior retro's open architectural gap.
+
+### 6. New lesson candidates
+
+- **Pattern (RECURRENCE → promote) — "the SoT states an invariant (uniqueness / single-active-row) but
+  the shipped table has no constraint enforcing it, and the only writer INSERTs unconditionally."** Seen
+  in: **RETRO-029** (§T.2 "one row per labeled outcome" vs no `UNIQUE`, plain insert) and now
+  **RETRO-030** records its **closure** (FOLLOW-179 added the constraint + onConflict). This is the same
+  shape RETRO-029 flagged as "count 1, watch-item." The closure does not itself constitute a SECOND
+  independent occurrence — it is the *fix* of the first — so the missing-constraint pattern remains at
+  **count 1. NOT promoted.** (Recording explicitly so a future retro does not miscount the fix as a
+  recurrence.)
+- **Pattern (RECURRENCE — meets threshold) — "the same business rule is duplicated across two
+  representations in the same runtime (TS map ↔ inline SQL CASE; TS ↔ TS; route ↔ route) with no parity
+  gate, so the copies drift silently."** Seen in: **RETRO-030** (this — `OUTCOME_CLASS_RANK` TS map vs
+  the hand-typed SQL CASE, ×2 within one WHERE clause) AND the **Rule K.1 evidence chain** already
+  codified (RETRO-008 `twoProportionZTest`/CTA-lift vocab; RETRO-003 `affinityScore`; RETRO-005
+  duplicate interface). **This is already covered by Rule K.1** — it meets the ≥2 threshold via the
+  existing rule, so **no NEW rule is promoted; instead Rule K.1's scope is clarified by amendment**
+  (TS-map-vs-SQL-CASE is an intra-runtime duplicate that K.1's "two TypeScript modules" framing did not
+  explicitly enumerate). See §8 / CONVENTIONS_PATCH.
+- **Meta (own blind-spot, no rule) — "core procedural logic shipped behind a mock at every layer."** The
+  helper's SQL WHERE clause is the deliverable, yet the route test mocks the helper and the shared test
+  covers only the sibling TS function — so the actual artifact is untested. This is the RETRO-026/029
+  "string/mock-only db coverage" pattern, but sharper: here the untested code is *procedural conflict
+  resolution*, not declarative DDL. Watch-item for a future "mock-shadows-the-deliverable" rule if it
+  recurs; currently folded under the existing DB-harness coverage gap. Count 1 of the sharper sub-shape.
+
+### 7. Follow-ups
+
+- **FOLLOW-182:** Eliminate the TS-map↔SQL-CASE precedence duplication — derive the `onConflict` WHERE
+  CASE from `OUTCOME_CLASS_RANK` at runtime (Drizzle `sql` fragment built by iterating the TS map), OR
+  add a parity test asserting the SQL-derived rank == `conversionLabelRank()` for all 12 (class×source)
+  pairs; remove the hand-typed `ELSE 0/1000` floors (LG-1/LG-2). (data-engineer + backend-engineer, 4h,
+  **P1**) [LG-1/LG-2; Rule K.1]
+- **FOLLOW-183:** Direct test for `upsertConversionLabel` against pgmem/Testcontainers — assert (a)
+  duplicate `(tenant_id, prediction_id)` is rejected by the 0020 constraint, (b) a higher-rank incoming
+  label overwrites, (c) a lower/equal-rank one is a no-op, (d) the recency tiebreak, (e) `lead_id`
+  non-empty preservation, (f) `confidence=1.0` default. Folds the RETRO-029 FOLLOW-181 RLS/FK harness
+  (same missing PG harness — PM may merge). (data-engineer, 4h, **P1**) [TG-1/TG-2]
+
+#### Cascade actions for the PM (not new follow-ups — thread into existing in-flight tickets)
+
+- **FOLLOW-172 (in flight):** ACs must require `upsertConversionLabel` (NOT plain insert — the UNIQUE
+  constraint now makes a plain insert crash on the first upgrade) AND must pass the CRM event timestamp
+  as `labeledAt` (CB-2). P1 — a plain-insert FOLLOW-172 fails in prod.
+- **FOLLOW-174:** ACs must require `upsertConversionLabel` (so the manual_admin offset applies) and a
+  confirm-step for the manual-downgrade-overwrites-deep-system-label case (LG-3 note).
+- **FOLLOW-173:** note that rows are now precedence-deduped (the LG-1 double-count is resolved); do not
+  treat `updated_at` as "last ping seen" (CB-1).
+
+### 8. Cross-references
+
+- **RETRO-029** — DIRECT PARENT. This PR (FOLLOW-179) closes RETRO-029 §4a LG-1 (uniqueness — now
+  enforced), §4a LG-3 (validated insert — Zod parse at `upsert-conversion-label.ts:104-107`), §4b CB-2
+  (confidence=1.0 — `route.ts:256` + helper default). RETRO-029 §4b CB-1 (route test asserts only a
+  mock) is **partially addressed** (the route test now asserts more fields) but the deeper version of
+  it RECURS one layer down as RETRO-030 §4c TG-1 (the helper itself is mocked) — the mock-shadows-the-
+  deliverable gap moved one hop, not closed. RETRO-029 §5d "invariant asserted-not-enforced" is
+  RECONCILED to RESOLVED (§5d above).
+- **RETRO-024 (end-to-end closure discipline)** — applied: I traced each claimed-closed RETRO-029 gap to
+  its actual wire (LG-1→constraint+onConflict, LG-3→Zod parse site, CB-2→explicit 1.0) rather than
+  trusting the PR's "fixes RETRO-029" claim; the trace surfaced that CB-1's mock-coverage gap moved down
+  a layer rather than closing (TG-1).
+- **CONVENTIONS_PATCH Rule K.1** — the TS-map↔SQL-CASE duplication is a Rule K.1 instance (intra-runtime
+  duplicate business logic). Amendment appended to clarify scope (see CONVENTIONS_PATCH). NOT a new rule.
+- **CONVENTIONS_PATCH Rule J** — checked and ruled OUT: Rule J's gate (`scripts/mirror-files.json`) only
+  covers `apps/decision-api/src/lib/` cross-runtime FILE mirrors; a TS-map-vs-inline-SQL duplication is
+  not expressible as a file pair, so Rule J does not and cannot cover LG-1.
+- **CONVENTIONS_PATCH Rule O** — checked; journal idx 20 `when=1780509849426` > idx 19 `1780505857912`,
+  monotonic, real 2026-06 timestamp. SQL-file-count == journal-count per PR body. **Clean.**
+- **RETRO-026 / RETRO-029 TG-1** — standing `packages/db` "string/mock-only, no live-DB" coverage
+  pattern; RETRO-030 TG-1 is another (sharper) instance — FOLLOW-183 proposes the PG harness that would
+  close the whole family.

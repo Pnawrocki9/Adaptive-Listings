@@ -69,7 +69,7 @@ export default function SettingsPage() {
             generation_model: d.generation_model ?? 'claude-sonnet-4-6',
             allowed_models:
               Array.isArray(d.allowed_models) && d.allowed_models.length > 0
-                ? (d.allowed_models)
+                ? d.allowed_models
                 : DEFAULT_MODELS,
             is_default: d.is_default ?? true,
             updated_at: d.updated_at ?? null,

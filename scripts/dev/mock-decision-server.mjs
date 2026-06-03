@@ -5,7 +5,8 @@
  * A dev-only test double for the decision API. For the selected archetype it generates the adapted
  * headline + long-form description by calling Claude, GROUNDED in the REAL listing data fetched from
  * a local backend (RAG), with the same factual-accuracy guardrail as production. Results are cached
- * per archetype (one generation per archetype, like the real /api/adapt/description pipeline).
+ * per (listing, archetype) — each listing grounds its own copy, like the real
+ * /api/adapt/description pipeline (keyed by listing_id), so content never bleeds across listings.
  *
  * It lets you watch live SDK DOM adaptation in a browser WITHOUT standing up the full stack
  * (ClickHouse / Redpanda / Modal / control-plane). The in-product equivalent is DEMO-001
@@ -81,8 +82,13 @@ const PERSONAS = {
 };
 
 let currentArchetype = process.env.ARCHETYPE ?? 'yield_hunter';
-let listingCache = null; // raw listing JSON from backend (RAG context)
-const genCache = {}; // archetype -> { headline, description }
+// Keyed by listing id/slug so each listing grounds its OWN generation (mirrors prod,
+// where the description pipeline is keyed by listing_id). Without this every listing on
+// the site would show the same hardcoded sample listing's copy.
+const listingCache = new Map(); // listingKey -> raw listing JSON (RAG context)
+const genCache = new Map(); // `${listingKey}::${archetype}` -> { headline, description }
+
+const _UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function cors(res, origin) {
   res.setHeader('Access-Control-Allow-Origin', origin ?? '*');
@@ -102,18 +108,26 @@ function json(res, status, obj, origin) {
   res.end(JSON.stringify(obj));
 }
 
-/** Fetch the real listing once (RAG grounding context). */
-async function fetchListing() {
-  if (listingCache) return listingCache;
+/**
+ * Fetch a specific listing for RAG grounding, cached per listing key. The SDK sends the
+ * listing UUID (data-estalara-listing-id); the switcher preview uses DEMO_SLUG. UUIDs hit
+ * the by-uuid endpoint, everything else is treated as a slug.
+ */
+async function fetchListing(listingKey) {
+  const key = listingKey || DEMO_SLUG;
+  if (listingCache.has(key)) return listingCache.get(key);
+  const urlForKey = _UUID_RE.test(key)
+    ? `${BACKEND}/api/v1/listing/details?listing-uuid=${encodeURIComponent(key)}&locale=EN`
+    : `${BACKEND}/api/v1/listing/details/slug?slug=${encodeURIComponent(key)}&locale=EN`;
+  let listing = {};
   try {
-    const r = await fetch(
-      `${BACKEND}/api/v1/listing/details/slug?slug=${encodeURIComponent(DEMO_SLUG)}&locale=EN`,
-    );
-    listingCache = r.ok ? await r.json() : {};
+    const r = await fetch(urlForKey);
+    listing = r.ok ? await r.json() : {};
   } catch {
-    listingCache = {};
+    listing = {};
   }
-  return listingCache;
+  listingCache.set(key, listing);
+  return listing;
 }
 
 function fallbackCopy(arche) {
@@ -176,14 +190,17 @@ function stripVerifiedFacts(text) {
  * reflects exactly what prod would emit). The HEADLINE is a small separate call (in prod it comes
  * from the /adapt playbook directive, not this pipeline).
  */
-async function generate(arche) {
-  if (genCache[arche]) return genCache[arche];
+async function generate(arche, listingKey) {
+  const key = listingKey || DEMO_SLUG;
+  const cacheKey = `${key}::${arche}`;
+  if (genCache.has(cacheKey)) return genCache.get(cacheKey);
   const persona = PERSONAS[arche] ?? PERSONAS.neutral;
   if (!ANTHROPIC_API_KEY) {
-    genCache[arche] = fallbackCopy(arche);
-    return genCache[arche];
+    const fb = fallbackCopy(arche);
+    genCache.set(cacheKey, fb);
+    return fb;
   }
-  const listing = await fetchListing();
+  const listing = await fetchListing(key);
   const listingJson = JSON.stringify(listing).slice(0, 4000);
   const original = typeof listing.description === 'string' ? listing.description : '';
   try {
@@ -223,12 +240,12 @@ async function generate(arche) {
         .split('\n')[0]
         .replace(/^["']|["']$/g, '')
         .slice(0, 120) || fallbackCopy(arche).headline;
-    genCache[arche] = { headline, description, archetype: arche };
+    genCache.set(cacheKey, { headline, description, archetype: arche });
   } catch (err) {
-    console.warn(`[mock] generation failed for ${arche}:`, err.message);
-    genCache[arche] = fallbackCopy(arche);
+    console.warn(`[mock] generation failed for ${arche} / ${key}:`, err.message);
+    genCache.set(cacheKey, fallbackCopy(arche));
   }
-  return genCache[arche];
+  return genCache.get(cacheKey);
 }
 
 function archetypePageHtml() {
@@ -319,14 +336,16 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.end(archetypePageHtml());
   }
-  // Switch + (pre)generate:  /mock/archetype/family_buyer
+  // Switch + (pre)generate a PREVIEW on the sample listing:  /mock/archetype/family_buyer
+  // This only sets the global archetype + shows a sample. The real per-listing copy is
+  // generated on demand by /adapt/description for whichever listing the SDK is on.
   if (req.method === 'GET' && path.startsWith('/mock/archetype/')) {
     const id = decodeURIComponent(path.slice('/mock/archetype/'.length));
     if (!PERSONAS[id])
       return json(res, 400, { error: 'unknown archetype', known: Object.keys(PERSONAS) }, origin);
     currentArchetype = id;
-    delete genCache[id]; // force a fresh generation so edits to the prod prompt are reflected
-    const gen = await generate(id);
+    genCache.delete(`${DEMO_SLUG}::${id}`); // fresh preview so prod-prompt edits are reflected
+    const gen = await generate(id, DEMO_SLUG);
     return json(res, 200, { ok: true, archetype: id, generated: gen }, origin);
   }
   if (req.method === 'GET' && path === '/mock/status') {
@@ -343,15 +362,18 @@ const server = http.createServer(async (req, res) => {
     if (!MODELS[id])
       return json(res, 400, { error: 'unknown model', known: Object.keys(MODELS) }, origin);
     currentModel = id;
-    for (const k of Object.keys(genCache)) delete genCache[k];
+    genCache.clear(); // every listing's copy must regenerate with the new model
     return json(res, 200, { ok: true, model: currentModel }, origin);
   }
 
   // Long-form description — GET /adapt/description?listing_id&archetype&tier&locale
+  // Grounds the generation in the REQUESTED listing (listing_id), so each listing gets its
+  // own copy — not the sample listing's. This mirrors the prod pipeline (keyed by listing_id).
   if (req.method === 'GET' && path === '/adapt/description') {
     const q = url.searchParams.get('archetype');
     const arche = PERSONAS[q] ? q : currentArchetype;
-    const gen = await generate(arche);
+    const listingKey = url.searchParams.get('listing_id') || DEMO_SLUG;
+    const gen = await generate(arche, listingKey);
     return json(
       res,
       200,
@@ -376,7 +398,10 @@ const server = http.createServer(async (req, res) => {
       } catch {
         /* ignore */
       }
-      const gen = await generate(currentArchetype);
+      // Ground the headline in the requested listing too (falls back to the sample listing
+      // if the SDK did not include a listing_id on the /adapt call).
+      const listingKey = body.listing_id || DEMO_SLUG;
+      const gen = await generate(currentArchetype, listingKey);
       return json(res, 200, buildAdaptResponse(body.session_id, gen), origin);
     });
     return;

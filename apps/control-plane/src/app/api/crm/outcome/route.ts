@@ -46,6 +46,7 @@ import { eq, and, isNull, or, gt, sql } from 'drizzle-orm';
 
 import { errorBody, ErrorCode } from '@estalara/shared';
 import { createAdminClient, apiKeys, upsertConversionLabel } from '@estalara/db';
+import type { Database } from '@estalara/db';
 
 // ─── Body schema (ALLOW-LIST, compliance condition 1) ─────────────────────────
 //
@@ -167,7 +168,7 @@ interface AuthResult {
 interface AuthFailure {
   ok: false;
   status: 401;
-  code: string;
+  code: ErrorCode;
   message: string;
 }
 
@@ -314,23 +315,25 @@ async function writeWithRlsContext(tenantId: string, data: CrmOutcomeBody): Prom
   const labeledAt = data.labeled_at ? new Date(data.labeled_at) : undefined;
 
   // SET LOCAL app.current_tenant_id fires the RLS policy on the upcoming INSERT.
-  // Must be inside a transaction for SET LOCAL to be transaction-scoped.
+  // Must be inside a transaction for SET LOCAL to be transaction-scoped (connection-local).
+  // The PgTransaction type is a structural superset of Database — it implements all the same
+  // Drizzle query methods (insert, select, execute, ...) that upsertConversionLabel needs.
+  // The cast via unknown is required because Drizzle's generic types diverge at the
+  // TypeScript level even though the runtime interface is compatible. This is the standard
+  // workaround pattern in this codebase (see dsr/erase/route.ts transaction callbacks).
   await db.transaction(async (tx) => {
-    // Cast required: Drizzle's transaction callback receives a DrizzleTransaction
-    // type that has .execute(), not just a plain Database — the cast is safe here
-    // because we only call upsertConversionLabel (which uses the subset of Drizzle
-    // API present on both Database and DrizzleTransaction).
-
-    const txDb = tx;
+    const txDb = tx as unknown as Database;
     await txDb.execute(sql`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`);
+    // exactOptionalPropertyTypes: spread optional fields conditionally to avoid
+    // passing `undefined` for optional properties (TS2379 with exactOptionalPropertyTypes).
     await upsertConversionLabel(txDb, {
       tenantId,
       predictionId: data.prediction_id,
       leadId: data.lead_id,
       outcomeClass: data.outcome_class,
       // compliance condition 2: outcome_raw is parsed.data, never rawBody
-      outcomeRaw: data.outcome_raw,
-      labeledAt,
+      ...(data.outcome_raw !== undefined ? { outcomeRaw: data.outcome_raw } : {}),
+      ...(labeledAt !== undefined ? { labeledAt } : {}),
       labelSource: 'system',
       confidence: data.confidence ?? 1.0,
     });

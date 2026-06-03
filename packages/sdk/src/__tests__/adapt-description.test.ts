@@ -501,3 +501,189 @@ describe('applyDescriptionAdaptation — no decisionApiUrl', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// ADR-0009: per-listing headline slot application
+// ---------------------------------------------------------------------------
+
+function buildSlotWithHeadline(listingId = 'listing-001'): {
+  container: HTMLElement;
+  headlineSlot: HTMLElement;
+} {
+  const container = document.createElement('div');
+  container.setAttribute('data-estalara-listing', '');
+  container.setAttribute('data-estalara-listing-id', listingId);
+
+  const descSlot = document.createElement('div');
+  descSlot.setAttribute('data-estalara-slot', 'description');
+  descSlot.innerHTML = '<p>Original description</p>';
+
+  const headlineSlot = document.createElement('h1');
+  headlineSlot.setAttribute('data-estalara-slot', 'headline');
+  headlineSlot.textContent = 'Playbook headline from /api/adapt';
+
+  container.appendChild(descSlot);
+  container.appendChild(headlineSlot);
+  document.body.appendChild(container);
+  return { container, headlineSlot };
+}
+
+describe('applyDescriptionAdaptation — ADR-0009 per-listing headline', () => {
+  it('applies the LLM headline to [data-estalara-slot="headline"] when response has a non-empty headline', async () => {
+    const { headlineSlot } = buildSlotWithHeadline();
+
+    mockFetchOk({
+      ...AI_CACHED_RESPONSE,
+      headline: 'Strong buy-to-let in a prime location',
+    });
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await flushAll();
+
+    expect(headlineSlot.textContent).toBe('Strong buy-to-let in a prime location');
+  });
+
+  it('sets headline as textContent (not innerHTML) — XSS-safe', async () => {
+    const { headlineSlot } = buildSlotWithHeadline();
+
+    mockFetchOk({
+      ...AI_CACHED_RESPONSE,
+      headline: '<script>alert(1)</script> Great property',
+    });
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await flushAll();
+
+    // textContent must not parse the string as HTML
+    expect(headlineSlot.innerHTML).not.toContain('<script>');
+    // The raw text must appear in textContent
+    expect(headlineSlot.textContent).toContain('Great property');
+  });
+
+  it('leaves headline slot untouched when headline is null', async () => {
+    const { headlineSlot } = buildSlotWithHeadline();
+    const originalText = headlineSlot.textContent;
+
+    mockFetchOk({
+      ...AI_CACHED_RESPONSE,
+      headline: null,
+    });
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await flushAll();
+
+    // Playbook headline must remain unchanged
+    expect(headlineSlot.textContent).toBe(originalText);
+  });
+
+  it('leaves headline slot untouched when headline is absent from response', async () => {
+    const { headlineSlot } = buildSlotWithHeadline();
+    const originalText = headlineSlot.textContent;
+
+    // Response without 'headline' key (pre-ADR-0009 cache entry)
+    mockFetchOk(AI_CACHED_RESPONSE);
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await flushAll();
+
+    expect(headlineSlot.textContent).toBe(originalText);
+  });
+
+  it('leaves headline slot untouched when headline is empty string', async () => {
+    const { headlineSlot } = buildSlotWithHeadline();
+    const originalText = headlineSlot.textContent;
+
+    mockFetchOk({
+      ...AI_CACHED_RESPONSE,
+      headline: '',
+    });
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await flushAll();
+
+    expect(headlineSlot.textContent).toBe(originalText);
+  });
+
+  it('emits adapt.description.headline.applied event when headline is applied', async () => {
+    buildSlotWithHeadline('listing-042');
+
+    mockFetchOk({
+      ...AI_CACHED_RESPONSE,
+      headline: 'Prime investment in Lisbon',
+    });
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await flushAll();
+
+    const events = testEventQueue.filter((e) => e.type === 'adapt.description.headline.applied');
+    expect(events).toHaveLength(1);
+    expect(events[0]!.payload.listing_id).toBe('listing-042');
+  });
+
+  it('re-applies headline via MutationObserver when framework reverts it', async () => {
+    const { headlineSlot } = buildSlotWithHeadline();
+
+    mockFetchOk({
+      ...AI_CACHED_RESPONSE,
+      headline: 'Per-listing headline text',
+    });
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    // Flush initial apply
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.runAllTimers();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Verify initial apply
+    expect(headlineSlot.textContent).toBe('Per-listing headline text');
+
+    // Simulate framework revert
+    headlineSlot.textContent = 'Playbook headline from /api/adapt';
+
+    // The MutationObserver schedules a rAF — flush it
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.runAllTimers();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Headline must be re-applied
+    expect(headlineSlot.textContent).toBe('Per-listing headline text');
+
+    // The re-apply event must have fired
+    const reEvents = testEventQueue.filter((e) => e.type === 'adapt.description.headline.re');
+    expect(reEvents.length).toBeGreaterThan(0);
+  });
+
+  it('teardownDescriptionObservers disconnects headline observers too', async () => {
+    const { headlineSlot } = buildSlotWithHeadline();
+
+    mockFetchOk({
+      ...AI_CACHED_RESPONSE,
+      headline: 'Per-listing headline',
+    });
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.runAllTimers();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(headlineSlot.textContent).toBe('Per-listing headline');
+
+    // Tear down
+    teardownDescriptionObservers();
+
+    // Simulate revert AFTER teardown
+    headlineSlot.textContent = 'Reverted';
+    vi.runAllTimers();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Must NOT be re-applied after teardown
+    expect(headlineSlot.textContent).toBe('Reverted');
+  });
+});

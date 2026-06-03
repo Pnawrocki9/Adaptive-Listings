@@ -1,5 +1,5 @@
 """
-Modal async job: generate archetype-adapted listing description using Sonnet 4.6.
+Modal async job: generate archetype-adapted listing description AND headline using Sonnet 4.6.
 
 Flow:
   1. A description.requested event arrives on the estalara.descriptions Redpanda topic.
@@ -7,11 +7,13 @@ Flow:
      generate_description.spawn() for each message (fire-and-forget).
   3. generate_description() calls Anthropic Sonnet 4.6 directly (NOT via llm-gateway.ts —
      this is Python, independent of the TypeScript control-plane).
-  4. On success, writes {"text": "...", "generated_at": "<ISO>", "verified_facts_used": [...]}
-     as a JSON string to Upstash Redis at key
+  4. On success, writes {"text": "...", "headline": "...", "generated_at": "<ISO>",
+     "verified_facts_used": [...]} as a JSON string to Upstash Redis at key
      desc:{tenant_id}:{listing_id}:{archetype}:{locale} with tier-specific TTL.
-  5. On empty response or exception, does NOT write to Redis; the next HTTP request will
-     trigger another attempt (idempotent by design).
+     The headline field is optional — if headline generation fails the description write
+     still proceeds (headline omitted / null in that case).
+  5. On empty description response or exception, does NOT write to Redis; the next HTTP
+     request will trigger another attempt (idempotent by design).
 
 v1.8 — adaptive-listing prompt (CEO 2026-06-01):
   Same anti-hallucination contract as v1.7.x — the Sonnet system prompt enforces a strict
@@ -32,6 +34,15 @@ Redis source values (defined in backend's DescriptionResponseSchema):
   - "ai_cached"         — returned by the HTTP endpoint on cache hit (after this job writes).
   Note: "ai_generated" is NOT a valid source value per Master Design E.7.3 clarification.
         The endpoint always returns template_fallback (miss) or ai_cached (hit).
+
+Per-listing headline (ADR-0009):
+  After the description is generated, a second small LLM call produces ONE headline (~max 90
+  chars, grounded strictly in original_description + listing_context, archetype-framed). The
+  headline is written into the SAME Redis cache entry as "headline": "<text>" alongside the
+  description. On HTTP cache hit the /api/adapt/description endpoint returns it as
+  headline: string | null; the SDK applies it to [data-estalara-slot="headline"] elements,
+  superseding the playbook headline directive (the cold-start fallback) once warmed.
+  Headline generation failure is non-fatal: the description is still written, headline is null.
 
 TTL:
   - Tier 2: TTL 72h (259200s).
@@ -272,12 +283,34 @@ def generate_description(event: dict[str, Any]) -> None:
         # Do not write to Redis.
         return
 
-    _write_to_redis(cache_key, description, ttl_seconds, verified_facts)
+    # ADR-0009: generate a per-listing headline alongside the description.
+    # This is a second small LLM call using the SAME resolved model.
+    # Failure is non-fatal — description is still written; headline will be null.
+    headline = _generate_headline(
+        archetype=archetype,
+        original_description=original_description,
+        listing_context=listing_context,
+        model=model,
+    )
+    if headline:
+        log.info(
+            "generate_description.headline_generated cache_key=%s headline_len=%d",
+            cache_key,
+            len(headline),
+        )
+    else:
+        log.warning(
+            "generate_description.headline_missing cache_key=%s — writing description without headline",
+            cache_key,
+        )
+
+    _write_to_redis(cache_key, description, ttl_seconds, verified_facts, headline)
     log.info(
-        "generate_description.done cache_key=%s ttl=%d verified_facts_count=%d",
+        "generate_description.done cache_key=%s ttl=%d verified_facts_count=%d has_headline=%s",
         cache_key,
         ttl_seconds,
         len(verified_facts),
+        headline is not None,
     )
 
 
@@ -811,14 +844,110 @@ def _generate_with_sonnet(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Headline generation (ADR-0009) — one small LLM call per listing+archetype
+# ---------------------------------------------------------------------------
+#
+# The headline is a single line (~max 90 chars), strictly grounded in
+# original_description + listing_context (same anti-hallucination contract),
+# framed for the archetype's voice. It uses the SAME resolved model as the
+# description generation so demo mode / global model switch applies to both.
+#
+# Max tokens for the headline call: 60 is generous for a single line of ≤90
+# chars even in non-English locales. We do not use a system prompt — the entire
+# grounding instruction is in the user message, matching the mock server's
+# inline approach for this lightweight sub-call.
+
+_HEADLINE_MAX_TOKENS = 60
+
+
+def _generate_headline(
+    archetype: str,
+    original_description: str,
+    listing_context: dict[str, Any],
+    model: str,
+) -> str | None:
+    """
+    Generate a single per-listing headline (~max 90 chars) grounded in the
+    listing's factual data, framed for the given archetype.
+
+    Uses the same model as the description generation (FOLLOW-166 / FOLLOW-161
+    precedence chain already resolved by the caller).
+
+    The prompt mirrors the mock server's inline headline call:
+      - NO surrounding quotes in the output.
+      - Strictly factual — no invented numbers/names not present in the inputs.
+      - Returns ONLY the headline text, nothing else.
+
+    Args:
+        archetype:            Buyer archetype ID (e.g. "yield_hunter").
+        original_description: Agent's original copy. Factual source of truth.
+        listing_context:      Structured listing data. Factual source of truth.
+        model:                Allow-listed Anthropic model id.
+
+    Returns:
+        A stripped headline string (≤120 chars after trim), or None on any
+        error (empty response, API error). None causes the caller to omit the
+        headline from the cache entry — description write proceeds normally.
+    """
+    import anthropic  # imported inside function for Modal image compatibility
+
+    persona = _ARCHETYPE_GUIDANCE.get(
+        archetype,
+        "Write a balanced property description for a motivated buyer.",
+    )
+
+    listing_json = json.dumps(listing_context) if listing_context else "{}"
+    original_snippet = (original_description or "(empty)")[:2000]
+
+    user_prompt = (
+        f"Write ONE compelling listing headline (max 90 chars, no surrounding quotes) "
+        f"for a {archetype} buyer ({persona}), strictly factually accurate to this "
+        f"listing data. Do NOT invent any number, distance, percentage, price, or named "
+        f"entity not present in the listing data or original description. "
+        f"Return ONLY the headline text, nothing else.\n\n"
+        f"Original description:\n{original_snippet}\n\n"
+        f"Listing data (JSON):\n{listing_json}"
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        response = client.messages.create(
+            model=model,
+            max_tokens=_HEADLINE_MAX_TOKENS,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        raw: str = ""
+        if response.content and hasattr(response.content[0], "text"):
+            raw = response.content[0].text
+
+        if not raw.strip():
+            return None
+
+        # Take only the first line, strip surrounding quotes, cap at 120 chars.
+        headline = (
+            raw.strip()
+            .split("\n")[0]
+            .strip('"\'')
+            .strip()[:120]
+        )
+        return headline if headline else None
+
+    except Exception as exc:  # noqa: BLE001
+        log.warning("generate_headline.error archetype=%s error=%s", archetype, str(exc))
+        return None
+
+
 def _write_to_redis(
     cache_key: str,
     description: str,
     ttl_seconds: int,
     verified_facts: list[str] | None = None,
+    headline: str | None = None,
 ) -> None:
     """
-    Write a generated description to Upstash Redis via the REST pipeline endpoint.
+    Write a generated description (and optional headline) to Upstash Redis via
+    the REST pipeline endpoint.
 
     Uses POST /pipeline (JSON array of commands) rather than the URL-path format
     to avoid URL-encoding issues with long description text containing special chars.
@@ -826,12 +955,14 @@ def _write_to_redis(
     Stored value format (JSON string):
         {
             "text": "<description>",
+            "headline": "<headline>" | null,
             "generated_at": "<ISO 8601 UTC>",
             "verified_facts_used": ["bedrooms: 3", "location: Marbella", ...]
         }
 
     The backend HTTP endpoint reads this JSON on cache hit:
       - Returns "text" as the description field in the API response.
+      - Returns "headline" as the headline field (null when absent).
       - Returns "generated_at" as the generated_at timestamp.
       - May propagate "verified_facts_used" for audit / debugging consumers.
       - Sets source: "ai_cached" (NOT "ai_generated" — see module docstring).
@@ -842,6 +973,8 @@ def _write_to_redis(
         ttl_seconds:    Key expiry in seconds (259200 for Tier 2, 172800 for Tier 3).
         verified_facts: Audit list of facts Sonnet self-reported as used.
                         Defaults to an empty list when absent.
+        headline:       AI-generated per-listing headline (ADR-0009). None when headline
+                        generation failed or was skipped — written as null in the JSON.
 
     Raises:
         httpx.HTTPStatusError: if the Upstash REST API returns a non-2xx response.
@@ -852,6 +985,7 @@ def _write_to_redis(
     payload_value = json.dumps(
         {
             "text": description,
+            "headline": headline,  # None serialises to JSON null
             "generated_at": datetime.now(UTC).isoformat(),
             "verified_facts_used": verified_facts if verified_facts is not None else [],
         }

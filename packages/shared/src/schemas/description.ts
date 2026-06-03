@@ -73,15 +73,17 @@ export type DescriptionSource = z.infer<typeof DescriptionSourceSchema>;
  * // Tier 1 or cache miss (template fallback)
  * {
  *   description: "This income-producing property...",
+ *   headline: null,
  *   source: "template_fallback",
  *   locale: "en",
  *   generated_at: null
  * }
  *
  * @example
- * // Cache hit (AI-generated description present in Redis)
+ * // Cache hit (AI-generated description + headline present in Redis)
  * {
  *   description: "Exceptional gross yield of 7.2% makes this...",
+ *   headline: "Strong yield play in a well-connected central location",
  *   source: "ai_cached",
  *   locale: "en",
  *   generated_at: "2026-05-14T12:00:00.000Z"
@@ -90,6 +92,15 @@ export type DescriptionSource = z.infer<typeof DescriptionSourceSchema>;
 export const DescriptionResponseSchema = z.object({
   /** The property description text. */
   description: z.string().min(1),
+
+  /**
+   * Per-listing LLM-generated headline (ADR-0009).
+   * Present (non-null) on `ai_cached` responses when the Modal job successfully
+   * generated a headline alongside the description.
+   * Null on `template_fallback` responses (cold-start) and when headline
+   * generation failed — in both cases the SDK keeps the playbook headline directive.
+   */
+  headline: z.string().nullable().optional(),
 
   /** How the description was produced. */
   source: DescriptionSourceSchema,
@@ -156,6 +167,17 @@ export const DescriptionRequestedEventSchema = z.object({
   copy_template: z.string().min(1),
 
   /**
+   * The listing's ORIGINAL agent-authored description — the factual source of truth
+   * the Modal job grounds the adapted description AND the per-listing headline in
+   * (ESC-018 / ADR-0009). Fetched server-side by the control-plane route from the
+   * Estalara backend listing-details API. May be an empty string when the listing
+   * has no description or the backend is unreachable (fail-open); the key is always
+   * present because the Modal consumer treats it as required and drops messages that
+   * omit it. The v1.8 prompt handles an empty original via its thin-original exception.
+   */
+  original_description: z.string(),
+
+  /**
    * Agency FAQ key-value pairs from RAG retrieval.
    * May be empty ({}) when no relevant FAQ answers were found.
    * Used to fill {variable} placeholders in the description.
@@ -213,6 +235,12 @@ export type DescriptionRequestedEvent = z.infer<typeof DescriptionRequestedEvent
 export const DescriptionCacheValueSchema = z.object({
   /** The AI-generated description text. */
   text: z.string().min(1),
+  /**
+   * Per-listing LLM-generated headline (ADR-0009).
+   * Null when headline generation failed; absent in entries written before ADR-0009.
+   * Optional so existing cache entries without the field remain valid.
+   */
+  headline: z.string().nullable().optional(),
   /** ISO 8601 timestamp of generation. */
   generated_at: z.string().datetime(),
 });

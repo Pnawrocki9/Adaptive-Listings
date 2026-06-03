@@ -1,14 +1,21 @@
 /**
- * Long-form description adaptation — fetches and applies archetype-adapted listing
- * descriptions from the Decision API, with MutationObserver resilience against
- * framework re-renders (SvelteKit, React, Vue) that reconcile DOM changes away.
+ * Long-form description + per-listing headline adaptation (ADR-0009).
+ *
+ * Fetches and applies archetype-adapted listing descriptions AND headlines from the
+ * Decision API, with MutationObserver resilience against framework re-renders
+ * (SvelteKit, React, Vue) that reconcile DOM changes away.
  *
  * Endpoint: GET <decisionApiUrl>/adapt/description
  *   ?listing_id=<id>&archetype=<archetype>&locale=<locale>
  *   Authorization: Bearer <apiKey>
  *
- * Response: applied only when source === "ai_cached" AND description is non-empty.
+ * Description response: applied only when source === "ai_cached" AND description is non-empty.
+ * Headline response: applied to [data-estalara-slot="headline"] elements when headline is
+ *   a non-empty string. On null/absent, leaves headline slots untouched (playbook headline
+ *   directive from /api/adapt stays in effect as the cold-start fallback).
+ *
  * Loop-guard: flags byte `f` — bit 1 = applying, bit 2 = rafPending.
+ * Applies to both description slots and headline slots via shared observer machinery.
  *
  * @module @estalara/sdk/core/adapt-description
  */
@@ -19,6 +26,8 @@ import type { ArchetypeId } from '@estalara/shared';
 
 interface DescriptionResponse {
   description: string | null;
+  /** Per-listing LLM-generated headline (ADR-0009). Null on cold-start / generation failure. */
+  headline?: string | null;
   source: 'ai_cached' | 'original' | 'template_fallback';
   locale: string;
   generated_at: string | null;
@@ -31,7 +40,10 @@ interface SlotObserverState {
 }
 
 let _eventQueue: CollectedEvent[] | null = null;
+/** Observer state for [data-estalara-slot="description"] elements. */
 const _slotMap = new Map<HTMLElement, SlotObserverState>();
+/** Observer state for [data-estalara-slot="headline"] elements (ADR-0009). */
+const _headlineSlotMap = new Map<HTMLElement, SlotObserverState>();
 
 const EVT = 'adapt.description.';
 
@@ -97,10 +109,56 @@ function applyAndObserveSlot(el: HTMLElement, paragraphs: string[]): () => void 
   return reapply;
 }
 
+/**
+ * Write a single-line headline into el as XSS-safe textContent (no paragraph wrapping).
+ * Used for [data-estalara-slot="headline"] elements.
+ */
+function renderHeadline(el: HTMLElement, text: string): void {
+  el.textContent = text;
+}
+
+/** Write headline into slot, attach MutationObserver for framework-revert resilience. */
+function applyAndObserveHeadlineSlot(el: HTMLElement, text: string): () => void {
+  _headlineSlotMap.get(el)?.obs.disconnect();
+
+  const s: SlotObserverState = {
+    obs: null as unknown as MutationObserver,
+    dt: text,
+    f: 0,
+  };
+
+  const reapply = (): void => {
+    if (s.f & 1 || el.textContent === s.dt) return;
+    s.f |= 1;
+    renderHeadline(el, text);
+    void Promise.resolve().then(() => {
+      s.f &= ~1;
+    });
+    pushEvent(EVT + 'headline.re', {});
+  };
+
+  const obs = new MutationObserver(() => {
+    if (s.f || el.textContent === s.dt) return;
+    s.f |= 2;
+    requestAnimationFrame(() => {
+      s.f &= ~2;
+      reapply();
+    });
+  });
+
+  renderHeadline(el, text);
+  obs.observe(el, { childList: true, characterData: true, subtree: true });
+  s.obs = obs;
+  _headlineSlotMap.set(el, s);
+  return reapply;
+}
+
 /** Disconnect all active description observers. Call on SDK teardown. */
 export function teardownDescriptionObservers(): void {
   for (const s of _slotMap.values()) s.obs.disconnect();
   _slotMap.clear();
+  for (const s of _headlineSlotMap.values()) s.obs.disconnect();
+  _headlineSlotMap.clear();
 }
 
 async function fetchDescription(
@@ -178,6 +236,19 @@ export async function applyDescriptionAdaptation(
   if (!paragraphs.length) return;
 
   slots.forEach((slot) => requestAnimationFrame(applyAndObserveSlot(slot, paragraphs)));
+
+  // ADR-0009: apply per-listing headline when present and non-empty.
+  // Supersedes the playbook headline directive (applied earlier by /api/adapt).
+  // When headline is null/absent, leave all headline slots untouched — the playbook
+  // directive stays as the cold-start fallback.
+  const headlineText = typeof resp.headline === 'string' ? resp.headline.trim() : '';
+  if (headlineText) {
+    const headlineSlots = document.querySelectorAll<HTMLElement>('[data-estalara-slot="headline"]');
+    headlineSlots.forEach((slot) =>
+      requestAnimationFrame(applyAndObserveHeadlineSlot(slot, headlineText)),
+    );
+    pushEvent(EVT + 'headline.applied', { listing_id: listingId, archetype });
+  }
 
   pushEvent(EVT + 'applied', { listing_id: listingId, archetype });
 }

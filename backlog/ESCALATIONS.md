@@ -767,3 +767,57 @@ end-to-end latency 1.4s. Redpanda dual-write no-op retained for future Dedicated
 ingest→Pandaproxy→Redpanda→ClickHouse chain is not viable at the current tier. Canonical pilot path
 = direct Worker→ClickHouse. Upgrade path vs. formalizing direct-ClickHouse as canonical to be
 decided at Sprint 4 planning.
+
+---
+
+## RESOLVED — ESC-018: `description.requested` event omits `original_description`; real description+headline pipeline never generates [ADR-0009]
+
+**Filed by:** Claude (session) **Date:** 2026-06-03T00:00:00Z **Affects:** description pipeline
+(`apps/control-plane/src/app/api/adapt/description/route.ts` →
+`apps/llm-gateway/src/jobs/generate_description.py`), ADR-0009 per-listing headline **Type:**
+architectural / contract
+
+**Description:** Pre-existing contract mismatch, surfaced while shipping the ADR-0009 per-listing
+LLM headline. The control-plane route builds the `description.requested` event WITHOUT an
+`original_description` field, and `DescriptionRequestedEventSchema`
+(`packages/shared/src/schemas/description.ts`) does not declare one. But the Modal consumer treats
+`original_description` as **required** — `consume_description_requests()` rejects any message
+missing it (`missing_fields`), and `generate_description()` reads `event["original_description"]`
+directly (KeyError otherwise). It is also the primary factual-grounding source for both the v1.8
+description prompt and the new `_generate_headline()` call.
+
+Net effect: in the real Redpanda→Modal path, every `description.requested` message is dropped at
+consumer validation — so neither the AI description nor the new per-listing headline is ever
+generated or cached. The local demo works only because it routes through the mock decision harness
+(`scripts/dev/mock-decision-server.mjs`, port :9100), which generates inline and bypasses this event
+contract entirely.
+
+This is **not** introduced by the ADR-0009 headline change (the route diff only added `headline`
+fields to responses); the headline simply inherits the same latent gap. The headline implementation
+itself is correct and rides the description cache as designed.
+
+**Required action:** Thread `original_description` from the route into the `description.requested`
+event and add it to `DescriptionRequestedEventSchema` (source: the listing's current description —
+likely via `retrieveListingContext` or a dedicated listing fetch). Then verify end-to-end that a
+Tier 2/3 cache miss results in a cached `{text, headline, generated_at}` entry. Decide whether to
+fix in a follow-up ticket or fold into the next description-pipeline change.
+
+**Resolution:** RESOLVED 2026-06-03 on branch `ml-engineer/per-listing-llm-headline` (PR #182).
+`original_description` is now threaded through the pipeline:
+
+- `DescriptionRequestedEventSchema` (`packages/shared/src/schemas/description.ts`) declares
+  `original_description: z.string()` (always present; may be empty).
+- New helper `apps/control-plane/src/lib/listing-details.ts` →
+  `fetchListingOriginalDescription(listingId, locale)` fetches the listing's original description
+  from the Estalara backend listing-details API (`ESTALARA_BACKEND_URL`, UUID→`?listing-uuid=` else
+  `/slug?slug=`, locale upper-cased) — mirroring the mock harness `fetchListing`. Fail-open to `''`
+  with a 2s timeout; no `listings` table exists, so the tenant backend is the source.
+- The description route (`/api/adapt/description`) fetches it in parallel with RAG context on cache
+  miss and includes it in the published event. `ESTALARA_BACKEND_URL` added to `.env.example`.
+- Tests: route asserts the event carries `original_description` (and is populated from the backend);
+  6 unit tests for the helper (UUID vs slug, locale upper-casing, fail-open paths). Full
+  control-plane typecheck/lint/prettier clean.
+
+Note: SSRF check is intentionally NOT applied — the base host comes from our trusted
+`ESTALARA_BACKEND_URL` and `listing_id` is URL-encoded into a query value (cannot alter the host);
+`checkSsrf` would also reject the loopback backend used in local dev.

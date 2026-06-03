@@ -61,6 +61,7 @@ from jobs.generate_description import (
     _MAX_TOKENS_CEILING,
     _MAX_TOKENS_FLOOR_TIER_2,
     _MAX_TOKENS_FLOOR_TIER_3,
+    _generate_headline,
     _generate_with_sonnet,
     _max_tokens_for,
     _parse_verified_facts,
@@ -96,11 +97,15 @@ def _run_job(event: dict[str, Any]) -> None:
 
     Replicates the job body in pure Python so tests run without Modal infra.
     This mirrors generate_description() exactly so that any change to the job
-    body must be reflected here too.
+    body must be reflected here too (including ADR-0009 headline generation).
     """
     import logging
 
-    from jobs.generate_description import _generate_with_sonnet, _write_to_redis
+    from jobs.generate_description import (
+        _generate_headline,
+        _generate_with_sonnet,
+        _write_to_redis,
+    )
 
     log = logging.getLogger(__name__)
 
@@ -137,7 +142,15 @@ def _run_job(event: dict[str, Any]) -> None:
     if not description:
         return
 
-    _write_to_redis(cache_key, description, ttl_seconds, verified_facts)
+    # ADR-0009: generate headline — non-fatal if None.
+    headline = _generate_headline(
+        archetype=archetype,
+        original_description=original_description,
+        listing_context=listing_context,
+        model=model,
+    )
+
+    _write_to_redis(cache_key, description, ttl_seconds, verified_facts, headline)
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +285,12 @@ def test_sonnet_raises_no_redis_write_no_crash(mock_redis_post: MagicMock) -> No
 
 
 def test_tier2_max_tokens_and_ttl(mock_sonnet: MagicMock, mock_redis_post: MagicMock) -> None:
-    """Tier 2: Sonnet call uses max_tokens=450; Redis SET uses TTL=259200."""
+    """Tier 2: description Sonnet call uses max_tokens=450; Redis SET uses TTL=259200.
+
+    The job now makes two Anthropic calls: the first (description) must use 450 tokens;
+    the second (headline, ADR-0009) uses _HEADLINE_MAX_TOKENS=60.
+    We assert on the first call's max_tokens.
+    """
     with (
         patch("anthropic.Anthropic") as mock_anthropic_cls,
         patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
@@ -283,8 +301,9 @@ def test_tier2_max_tokens_and_ttl(mock_sonnet: MagicMock, mock_redis_post: Magic
 
         _run_job(_make_event(tier=2, ttl_seconds=TTL_TIER_2))
 
-        create_kwargs = mock_client.messages.create.call_args[1]
-        assert create_kwargs["max_tokens"] == 450
+        # call_args_list[0] is the description call; [1] is the headline call.
+        description_call_kwargs = mock_client.messages.create.call_args_list[0][1]
+        assert description_call_kwargs["max_tokens"] == 450
 
         redis_body = mock_httpx.call_args[1]["json"]
         assert redis_body[0][4] == TTL_TIER_2
@@ -296,7 +315,12 @@ def test_tier2_max_tokens_and_ttl(mock_sonnet: MagicMock, mock_redis_post: Magic
 
 
 def test_tier3_max_tokens_and_ttl(mock_sonnet: MagicMock, mock_redis_post: MagicMock) -> None:
-    """Tier 3: Sonnet call uses max_tokens=600; Redis SET uses TTL=172800."""
+    """Tier 3: description Sonnet call uses max_tokens=600; Redis SET uses TTL=172800.
+
+    The job now makes two Anthropic calls: the first (description) must use 600 tokens;
+    the second (headline, ADR-0009) uses _HEADLINE_MAX_TOKENS=60.
+    We assert on the first call's max_tokens.
+    """
     with (
         patch("anthropic.Anthropic") as mock_anthropic_cls,
         patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
@@ -307,8 +331,9 @@ def test_tier3_max_tokens_and_ttl(mock_sonnet: MagicMock, mock_redis_post: Magic
 
         _run_job(_make_event(tier=3, ttl_seconds=TTL_TIER_3))
 
-        create_kwargs = mock_client.messages.create.call_args[1]
-        assert create_kwargs["max_tokens"] == 600
+        # call_args_list[0] is the description call; [1] is the headline call.
+        description_call_kwargs = mock_client.messages.create.call_args_list[0][1]
+        assert description_call_kwargs["max_tokens"] == 600
 
         redis_body = mock_httpx.call_args[1]["json"]
         assert redis_body[0][4] == TTL_TIER_3
@@ -901,3 +926,213 @@ def test_generation_model_invalid_falls_back_to_default(mock_redis_post: MagicMo
         _run_job(_make_event(generation_model="not-a-real-model"))
 
         assert mock_client.messages.create.call_args[1]["model"] == _DEFAULT_GENERATION_MODEL
+
+
+# ---------------------------------------------------------------------------
+# ADR-0009: per-listing LLM-generated headline tests
+# ---------------------------------------------------------------------------
+
+
+def _make_headline_response(text: str) -> MagicMock:
+    """Build a minimal Anthropic response mock returning the given text."""
+    block = MagicMock()
+    block.text = text
+    resp = MagicMock(content=[block])
+    return resp
+
+
+def test_headline_generated_and_written_to_redis(mock_redis_post: MagicMock) -> None:
+    """
+    ADR-0009 AC1 + AC2: When both description and headline generation succeed, the Redis
+    value contains both 'text' and 'headline' keys.
+    """
+    description_body = "Body. <verified_facts_used>\n[]\n</verified_facts_used>"
+    headline_text = "Strong yield play in a well-connected location"
+
+    # messages.create is called twice: once for description, once for headline.
+    # Return description response on first call, headline on second.
+    desc_resp = MagicMock(content=[MagicMock(text=description_body)], stop_reason="end_turn")
+    hl_resp = _make_headline_response(headline_text)
+
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.side_effect = [desc_resp, hl_resp]
+
+        _run_job(_make_event())
+
+        mock_httpx.assert_called_once()
+        value_str = mock_httpx.call_args[1]["json"][0][2]
+        value = json.loads(value_str)
+        assert "text" in value
+        assert "headline" in value
+        assert value["headline"] == headline_text
+
+
+def test_headline_failure_does_not_block_description_write(mock_redis_post: MagicMock) -> None:
+    """
+    ADR-0009 AC1 (graceful failure): when headline generation raises an exception, the
+    description is still written to Redis with headline=null — no uncaught exception.
+    """
+    import anthropic as anthropic_mod
+
+    description_body = "Body. <verified_facts_used>\n[]\n</verified_facts_used>"
+    desc_resp = MagicMock(content=[MagicMock(text=description_body)], stop_reason="end_turn")
+
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        # First call succeeds (description); second raises (headline).
+        mock_client.messages.create.side_effect = [
+            desc_resp,
+            anthropic_mod.APIStatusError(
+                message="rate_limit", response=MagicMock(status_code=429), body={}
+            ),
+        ]
+
+        # Must not raise.
+        _run_job(_make_event())
+
+        # Redis must still be written (description present).
+        mock_httpx.assert_called_once()
+        value_str = mock_httpx.call_args[1]["json"][0][2]
+        value = json.loads(value_str)
+        assert "text" in value
+        assert value.get("headline") is None
+
+
+def test_headline_empty_response_written_as_null(mock_redis_post: MagicMock) -> None:
+    """
+    ADR-0009 AC1: empty headline response → headline=null in Redis, description still written.
+    """
+    description_body = "Body. <verified_facts_used>\n[]\n</verified_facts_used>"
+    desc_resp = MagicMock(content=[MagicMock(text=description_body)], stop_reason="end_turn")
+    empty_hl_resp = _make_headline_response("")  # empty string
+
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.side_effect = [desc_resp, empty_hl_resp]
+
+        _run_job(_make_event())
+
+        mock_httpx.assert_called_once()
+        value = json.loads(mock_httpx.call_args[1]["json"][0][2])
+        assert value.get("headline") is None
+
+
+def test_headline_stripped_of_surrounding_quotes() -> None:
+    """
+    ADR-0009 AC1: _generate_headline strips surrounding quotes and trims whitespace.
+    """
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _make_headline_response(
+            '"A great buy-to-let in Lisbon"'
+        )
+
+        result = _generate_headline(
+            archetype="yield_hunter",
+            original_description="2-bed flat in Lisbon with tenant.",
+            listing_context={"bedrooms": 2, "location": "Lisbon"},
+            model=_DEFAULT_GENERATION_MODEL,
+        )
+
+        assert result is not None
+        assert not result.startswith('"')
+        assert not result.endswith('"')
+        assert "Lisbon" in result
+
+
+def test_headline_uses_correct_model() -> None:
+    """
+    ADR-0009 AC1: _generate_headline passes the model arg to the Anthropic call.
+    """
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _make_headline_response("A great property")
+
+        _generate_headline(
+            archetype="family_buyer",
+            original_description="4-bed house in Surrey.",
+            listing_context={"bedrooms": 4},
+            model="claude-haiku-4-5-20251001",
+        )
+
+        assert mock_client.messages.create.call_args[1]["model"] == "claude-haiku-4-5-20251001"
+
+
+def test_headline_grounded_in_listing_data() -> None:
+    """
+    ADR-0009 AC1 (anti-hallucination): the prompt includes both original_description
+    and listing_context JSON so the model can ground the headline.
+    """
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _make_headline_response("Good headline")
+
+        context = {"bedrooms": 3, "location": "Marbella", "epc": "B"}
+        original = "3-bed villa in Marbella with pool."
+
+        _generate_headline(
+            archetype="luxury_buyer",
+            original_description=original,
+            listing_context=context,
+            model=_DEFAULT_GENERATION_MODEL,
+        )
+
+        user_content = mock_client.messages.create.call_args[1]["messages"][0]["content"]
+        # The prompt must include both sources of truth.
+        assert "Marbella" in user_content
+        assert "original description" in user_content.lower()
+        assert "listing data" in user_content.lower()
+
+
+def test_write_to_redis_stores_headline() -> None:
+    """
+    ADR-0009 AC2: _write_to_redis stores the 'headline' field in the Redis JSON value.
+    """
+    with patch("httpx.post") as mock_httpx:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_httpx.return_value = mock_resp
+
+        _write_to_redis(
+            "desc:t:l:a:en",
+            "A lovely property.",
+            259200,
+            ["bedrooms: 3"],
+            "Solid buy-to-let in a prime location",
+        )
+
+        value = json.loads(mock_httpx.call_args[1]["json"][0][2])
+        assert value["headline"] == "Solid buy-to-let in a prime location"
+
+
+def test_write_to_redis_headline_none_stored_as_null() -> None:
+    """
+    ADR-0009 AC2: headline=None is serialised as JSON null (not omitted).
+    """
+    with patch("httpx.post") as mock_httpx:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_httpx.return_value = mock_resp
+
+        _write_to_redis("desc:t:l:a:en", "A property.", 259200, [], None)
+
+        value = json.loads(mock_httpx.call_args[1]["json"][0][2])
+        # 'headline' key must be present and its value must be None (JSON null).
+        assert "headline" in value
+        assert value["headline"] is None

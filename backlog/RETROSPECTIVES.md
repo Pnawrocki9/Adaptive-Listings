@@ -8771,6 +8771,126 @@ count 1, below the threshold of 2).
 
 ---
 
+## RETRO-028 — TICKET-DESC-001 (per-listing LLM headline via description pipeline + ESC-018 original_description threading) — 2026-06-03
+
+### 1. Summary of change
+
+- **PR:** #182 (merged 2026-06-03 14:19 UTC, squash commit `08de7fd`). Spec = `docs/adr/ADR-0009-per-listing-llm-headline.md` (no `backlog/sprint-N/TICKET-DESC-001.md` exists for this ad-hoc CEO-driven slice; the historical sprint-9 `backlog/sprint-9/TICKET-DESC-001.md` is the original pipeline ticket, not this headline work). Direct successor to RETRO-027 (PR #172, same `generate_description.py` file) and to PR #177 (FOLLOW-159, `adapt-description.ts` observer machinery this PR reuses).
+- **Files changed:** 14 (+1091 / −28).
+  - `apps/llm-gateway/src/jobs/generate_description.py` (+142/−8) — new `_generate_headline()`; `_write_to_redis` gains `headline` param; second Anthropic call wired into the job body.
+  - `apps/llm-gateway/src/jobs/test_generate_description.py` (+244/−9) — 7 new headline tests + 2 token-call-index fixups.
+  - `apps/control-plane/src/lib/listing-details.ts` (new, +85) — `fetchListingOriginalDescription(listingId, locale)` (ESC-018 fix).
+  - `apps/control-plane/src/lib/listing-details.test.ts` (new, +77) — 6 helper unit tests.
+  - `apps/control-plane/src/app/api/adapt/description/route.ts` (+20/−2) — parallel listing-details fetch on cache miss; `original_description` into event; `headline` into all three response shapes.
+  - `apps/control-plane/src/lib/description-cache.ts` (+6/−1) — pass-through of optional `headline`.
+  - `apps/control-plane/src/app/api/adapt/description/route.test.ts` (+45) — 2 ESC-018 event-shape assertions.
+  - `packages/shared/src/schemas/description.ts` (+29/−1) — `DescriptionResponseSchema.headline` (nullable optional) + `DescriptionRequestedEventSchema.original_description` (`z.string()`, required).
+  - `packages/sdk/src/core/adapt-description.ts` (+75/−4) — headline slot application + dedicated `_headlineSlotMap` observer.
+  - `packages/sdk/src/__tests__/adapt-description.test.ts` (+186) — 9 headline cases.
+  - `scripts/dev/mock-decision-server.mjs` (+5/−3) — read `listing_ids[0]` not `body.listing_id`.
+  - `backlog/ESCALATIONS.md` (+54) — ESC-018 filed + RESOLVED.
+  - `apps/control-plane/.env.example` (+3) — `ESTALARA_BACKEND_URL`.
+  - `docs/adr/ADR-0009-per-listing-llm-headline.md` (new, +120).
+- **Modules touched:** [SDK / control-plane / llm-gateway (Modal) / shared / docs / configs / scripts]
+- **Key contracts changed:**
+  - `DescriptionResponseSchema.headline` — ADDED `z.string().nullable().optional()` — breaking: **no** (additive, optional; existing consumers ignore unknown).
+  - `DescriptionRequestedEventSchema.original_description` — ADDED `z.string()` **required** — breaking: **yes** to any publisher that omits it (only the one route publishes; updated in same PR). Closes ESC-018 (the Python consumer `consume_description_requests()` at `generate_description.py:1095-1110` lists `original_description` in its `required` set and drops messages missing it).
+  - Redis cache value JSON — ADDED `"headline": string | null` alongside `text`/`generated_at`/`verified_facts_used`. Backward-compatible: route normalises absent→null; Python writes `null` on failure.
+  - `_write_to_redis(...)` Python signature — ADDED trailing optional `headline: str | None = None`. Breaking: no (defaulted, internal).
+  - New SDK DOM target: `[data-estalara-slot="headline"]` written via `textContent`. Consumes the canonical `headline` slot (Rule F), already self-annotated by `augment.ts` `annotateDetectedSlots()` (`headline→headline`).
+
+### 2. Verification done in PR
+
+- Test files changed: 3 (`test_generate_description.py` +7 headline tests; `adapt-description.test.ts` +9 SDK cases; `route.test.ts` +2 ESC-018 + new `listing-details.test.ts` +6). Assertions added: ~24 across the four suites. Coverage delta: unknown (no coverage report in PR), but every new branch (headline success / empty / exception / null-stored-as-null / quote-strip / model-passthrough / grounding-prompt; helper UUID-vs-slug / locale-upper-case / 4 fail-open paths; route event-shape) has a direct assertion.
+- CI checks: PR body reports SDK 711/711, Python 42/42, control-plane route+helper 39 green, typecheck/lint/prettier clean. **Not independently re-verified here** (read-only; standing CI-gate caveat: Rule I / Vercel / Python-test checks are pre-existing-red & non-blocking per the CI-gate-landscape memory).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅.** Every new symbol has a non-test importer:
+
+- `fetchListingOriginalDescription` (`lib/listing-details.ts`) → imported and called at `route.ts:79,122`. Wired.
+- `_generate_headline` (`generate_description.py:448`) → called at `generate_description.py:398` (job body) and in the test harness `_run_job`. Wired.
+- `_write_to_redis` `headline` param → passed at `generate_description.py:416`. Wired.
+- `renderHeadline` / `applyAndObserveHeadlineSlot` / `_headlineSlotMap` (`adapt-description.ts`) → called at `adapt-description.ts:246`, torn down in `teardownDescriptionObservers`. Wired.
+- `DescriptionResponseSchema.headline` → produced by route (`route.ts:91,105,142`), consumed by SDK (`adapt-description.ts:243`). Wired.
+
+**CHECK B (half-wire) — one finding, then clean.**
+
+- **HALF_WIRE — RESOLVED-IN-PR (not re-filed).** `DescriptionRequestedEvent.original_description`: consumer side (`generate_description.py:234` reads `event["original_description"]`; `:1095-1110` requires it) pre-existed; producer side (route → event) was the missing half (ESC-018, consumer-only = the P0-class gap). **This PR adds the producer** (`route.ts:122,131` via `fetchListingOriginalDescription`) and the schema field. Producer↔consumer now connected. Verified end-to-end in §7. No FOLLOW needed for the wire itself; a parity-test gap remains (see §4c TG-1 → FOLLOW-168).
+- New `headline` env/signal: producer = Python `_write_to_redis` → Redis; consumer = route → SDK → DOM. Both halves present. ✅
+- New env var `ESTALARA_BACKEND_URL`: producer = `.env.example` + `lib/listing-details.ts:309` reader; consumer = the route's fetch. Has a code reader and a documented default (`http://localhost:8081`). Not a half-wire (an env var with a reader and a fail-open default is wired). ✅
+
+Net: `Wiring Audit — the ESC-018 consumer-only half-wire is closed in this PR; no new dead code or half-wire introduced ✅`.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — headline LLM call has a WEAKER anti-hallucination contract than the description.** `_generate_headline` (`generate_description.py:448-522`) relies on a single inline user-message instruction ("Do NOT invent any number, distance, percentage, price, or named entity not present…", `:490-494`) and uses **no system prompt** (`:441-443` comment makes this explicit) and **no `<verified_facts_used>` audit block**. The description path (`_generate_with_sonnet`) ships the full v1.8 XML system prompt + a fact-whitelist build step + a machine-checkable trailing audit block parsed into ClickHouse. Consequence: a hallucinated headline (e.g. an invented yield % or "5 min to station" distance) has **no audit trail, no parse-time detection, and no compliance/fair-housing record** — and the headline is the single most prominent buyer-facing string. The 60-token cap and short-line format reduce surface area but do not enforce grounding. This is a genuine asymmetry, not a wiring gap. → **FOLLOW-169** (P2): bring the headline call up to the description's grounding bar — minimally a system prompt mirroring the whitelist hard-rules and a post-generation fact check (or reuse the description's already-built verified-fact inventory rather than re-grounding from raw inputs).
+- **LG-2 (P3) — headline application is NOT gated on `source === "ai_cached"`, unlike the description.** `adapt-description.ts:243` applies the headline whenever `resp.headline` is a non-empty trimmed string; the description (`:230`) additionally requires `source === 'ai_cached'`. Today this is harmless because the route only emits a non-null `headline` on the cache-hit (`ai_cached`) branch (`route.ts:105`) — Tier 1 and cold-start both hard-set `headline: null` (`:91`, `:142`). But the SDK no longer self-enforces the invariant the description path enforces: a future route change that returned a headline on any non-`ai_cached` source would apply a headline while suppressing the description, a silent divergence. → folded into **FOLLOW-169** AC (add the `source === 'ai_cached'` guard to the headline branch for symmetry, or assert the route invariant in a test).
+- **LG-3 (P3) — locale-mismatch risk between the threaded `original_description` and the cache key is bounded but unasserted.** `fetchListingOriginalDescription(listing_id, localeCode)` upper-cases the locale for the backend (`listing-details.ts:310` → `?locale=ES`) and the cache key is per-locale (`route.ts:266`), so EN/PL/ES each fetch+cache independently — **correct, no mismatch in prod**. The mock harness hardcodes EN (per task context), so a non-EN demo would ground the headline/description in the EN original while caching under the non-EN key — a **demo-only** fidelity gap, not a prod bug. No FOLLOW (demo-only, documented here for the next retro touching the harness).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2, latent) — `_generate_headline` re-instantiates `anthropic.Anthropic()` and re-reads `os.environ["ANTHROPIC_API_KEY"]` per call (`:498`), a hard `KeyError` if the key is absent.** The description path resolves its client the same way, so behaviour is consistent — but the headline adds a **second** client construction per cache-miss with no shared client. Not a correctness bug (the env var is present in Modal), but it is a second per-job allocation and a second independent failure point. The surrounding `try/except Exception` (`:520`) catches it and returns `None` (non-fatal), so blast radius is "headline silently null," which is the designed degraded state. No FOLLOW; noted for the cost/latency item below.
+- No P0/P1 code bugs found. The non-fatal headline failure path is correctly tested (`test_headline_failure_does_not_block_description_write`, `test_headline_empty_response_written_as_null`).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — no test pins the cross-language TS↔Python event contract that ESC-018 was.** The ESC-018 root cause was that the TS publisher's event shape (Zod `DescriptionRequestedEventSchema`) and the Python consumer's `required` field set (`generate_description.py:1095`) drifted apart with **nothing failing** — each side's tests passed against its own copy. This PR fixes the data but adds **no parity gate**: `route.test.ts` only asserts the published event *has* `original_description` (TS side); `test_generate_description.py` only asserts the Python consumer reads it (Python side). Neither test would catch the next field added to one side and not the other (the exact failure mode that lay dormant from the original pipeline merge until ADR-0009 surfaced it). → **FOLLOW-168** (P1): a contract-parity test asserting `DescriptionRequestedEventSchema`'s required keys are a superset of the Python consumer's `required` set (e.g. a generated JSON fixture checked into both runtimes, or a `packages/shared/__tests__/cross-runtime/description-event-contract.test.ts` that the Python suite also reads).
+- **TG-2 (P3) — no test asserts the headline grounding is *enforced* (only that the prompt *contains* the sources).** `test_headline_grounded_in_listing_data` asserts the prompt includes `original_description` + `listing_context` (input side) but nothing asserts an out-of-band fact in the model output is rejected (there is no rejection mechanism — see LG-1). Folded into FOLLOW-169.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — cache-key format docstrings are stale (model suffix).** `generate_description.py:364` and the schema's `cache_key` field doc (`description.ts`, "Format: `desc:{tenant_id}:{listing_id}:{archetype}:{locale}`") both describe the **pre-FOLLOW-161** key shape. The route now appends `:{model}` (and `:demo:{model}` in demo mode) at `route.ts:266-272`. Not load-bearing (the route passes the fully-built `cache_key` in the event; the Python job writes to whatever key it receives), but a maintenance trap consistent with RETRO-027's CB-1 stale-docstring finding. → folded into **FOLLOW-169** doc-AC (cheap, same file).
+- **DG-2 (P3) — Master Design §E.7 does not yet mention the per-listing headline or ADR-0009.** RETRO-027 already filed FOLLOW-164 to propagate v1.8 into §E.7; the ADR-0009 headline should ride that same propagation. → cross-referenced onto **FOLLOW-164** (no new stub; §E.7 is already being rewritten there). Operating Principle 2.
+
+#### 4e. Cost / latency (architectural note, not a code defect)
+
+- The headline is a **second Anthropic call per cache-miss** (`generate_description.py:398`). ADR-0009 §Consequences bounds it ("~$0.001–0.003 per Haiku call for 60-token headlines; bounded by the existing description pipeline's call rate") — so it **is** acknowledged. But it is unbounded relative to the description in one sense: there is no shared-client reuse and no circuit-breaker if the headline model is the higher-cost path (a Sonnet/Opus global model from FOLLOW-161 doubles the *expensive* call, not just the cheap one). The 60-token cap bounds output cost but not the per-miss call count. Flagged for the PM in §5; not a blocker.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-166 (OPEN — wire `override_model` from event into Modal job)** and **FOLLOW-161 (admin-selectable generation model, merged PR #179)**: the headline now inherits the resolved model (`_generate_headline(model=model)`, `:402`). So any model-routing change automatically applies to the headline too — **positive coupling**, but it means FOLLOW-166's `override_model` wiring must thread to *both* the description and headline calls (it does, since both read the single resolved `model`). No new work; verified the headline reads the same `model` variable.
+
+#### 5b. Future sprint tickets affected
+
+- **The headline A/B/bandit experiment is now superseded for warmed listings (ADR-0009 §trade-off).** Any future ticket assuming `PlaybookEntry.headline_variants` drives the buyer-visible headline on a warmed listing is **stale** — the bandit headline is overwritten by the per-listing LLM headline once Redis warms (`adapt-description.ts:246` runs after `/api/adapt` applied the playbook directive). Bandit headline-variant lift metrics for warmed traffic will read as no-signal/noise. Recorded so the next retro touching the bandit (§E.7 loop) reconciles it.
+
+#### 5c. Contracts changed others rely on
+
+- `DescriptionRequestedEventSchema.original_description` is now **required**. Any other present-or-future publisher of `description.requested` (currently only the one route) MUST send it or the Python consumer drops the message. This is exactly the drift class that caused ESC-018 — captured by FOLLOW-168 (parity gate).
+- `DescriptionResponseSchema.headline` (optional, nullable) — the SDK is the only consumer; additive. Low risk.
+
+#### 5d. Architectural assumptions affected
+
+- **"The real Redpanda→Modal description pipeline works"** was FALSE before this PR (every message dropped at consumer validation since the original pipeline merge; only the `:9100` mock harness worked end-to-end). ESC-018's resolution is the **first** time the production async path can actually populate the cache. This invalidates any prior assumption — in retros or specs — that AI descriptions were live in production. The fix is data-only-on-paper until verified against a real backend (see §7 caveat).
+- **"There is no `listings` table; listing content lives on the tenant backend."** Newly load-bearing: the description/headline pipeline now has a hard runtime dependency on `ESTALARA_BACKEND_URL` reachability (fail-open to thin generation, but grounding quality degrades to `listing_context`-only when the backend is down). New external dependency on the critical generation path.
+
+### 6. New lesson candidates
+
+- **Pattern — "cross-language producer/consumer event contract drifts because each runtime tests only its own copy; no shared parity gate (TS Zod publisher ⟷ Python consumer required-field set)."** Seen in: **RETRO-028 (this — ESC-018)**. **Current count: 1.** Below threshold of 2. **NOT promoted.** Distinct from existing **Rule J** (which gates TS↔TS *byte/AST-identical mirror files* in `apps/decision-api/src/lib/`) and from **Rule H** (Zod scaffold without a runtime-wired consumer — same-runtime): this is a *non-duplicated, cross-runtime producer↔consumer pair* with no shared source and no parity test, where one side's schema and the other's hand-written `required` set are the contract. Logged as a watch-item; if a **second** TS↔Python (or TS↔Worker-with-divergent-validation) event-contract drift surfaces, promote a Rule requiring a shared/generated contract fixture asserted by both runtimes. (FOLLOW-168 is the concrete first instance of the verification.)
+- **Pattern — "a second, lighter LLM sub-call ships WITHOUT the anti-hallucination guardrail the primary call enforces."** Seen in: RETRO-028 (LG-1). **Count: 1.** Below threshold. Watch-item; relevant if a third LLM call (e.g. a future CTA or feature-blurb generator) lands with inline-only "do not invent" instructions instead of the whitelist/audit contract.
+- **Meta (re RETRO-027's own §6 candidate):** RETRO-027 flagged "behavioural/contract change shipped with no shape assertion because the suite mocks the surface away" at count 1. This PR is the **counter-example that does it right** (24 new assertions pin every new branch), so it does **not** advance that count — recorded so the next retro does not mistakenly treat #182 as a recurrence.
+
+**No Rule promoted this retro.** All candidates at count 1. No `CONVENTIONS_PATCH.md` edit by this run.
+
+### 7. Follow-ups
+
+- **FOLLOW-168** (qa-engineer / backend-engineer, 3h, **P1**): Cross-language event-contract parity gate for `description.requested`. Assert that the TS `DescriptionRequestedEventSchema` required-key set is a superset of the Python consumer's `required` set (`generate_description.py:1095`). Strategy: a checked-in JSON fixture (the canonical required-key list) read by both a `packages/shared` test and `test_generate_description.py`, OR a generated contract artifact. AC: adding a required field to one runtime without the other fails CI. `source_retro: RETRO-028`. (This is the verification ESC-018 lacked; the data fix already landed in #182.)
+- **FOLLOW-169** (ml-engineer, 4h, **P2**): Bring `_generate_headline` to the description's grounding bar (LG-1/LG-2/TG-2/DG-1). (a) Add a system prompt mirroring the v1.8 whitelist hard-rules to the headline call, OR pass the description's already-built verified-fact inventory to the headline so it grounds in the same whitelist; (b) optionally a post-generation fact check that nulls a headline containing an out-of-whitelist number/named-entity; (c) add the `source === 'ai_cached'` guard to the SDK headline branch (`adapt-description.ts:243`) for symmetry with the description, or a route-invariant test; (d) fix the stale cache-key-format docstrings (`generate_description.py:364`, `description.ts` `cache_key` field). AC: a headline asserting a fact absent from `original_description`+`listing_context` is detectable or suppressed; headline grounding has a test analogous to the description's. `source_retro: RETRO-028`.
+- **(no new stub)** ADR-0009 / per-listing-headline propagation into Master Design §E.7 → folded onto **FOLLOW-164** (RETRO-027; §E.7 rewrite already in flight). DG-2.
+- **PM action (not a FOLLOW):** verify the ESC-018 fix end-to-end against a **real** Estalara backend before relying on production AI descriptions/headlines — §7's data fix is unit-tested with a mocked backend only; the live `ESTALARA_BACKEND_URL` listing-details contract (UUID vs `/slug` form, `description` field shape, `locale` casing) is unverified against the actual product API. Surfaced here at **P1**; the PM decides whether this gates pilot reliance.
+
+### 8. Cross-references
+
+- **RETRO-027 (PR #172, TICKET-DESC-PIVOT-001 v1.8)** — direct predecessor on the **same file** (`generate_description.py`). RETRO-027's LG-1 (max_tokens truncation of `<verified_facts_used>` for long originals, FOLLOW-162) is **unaffected** by this PR (headline uses its own 60-token cap; description token budget untouched). RETRO-027's CB-1 stale-docstring pattern **recurs** here as DG-1 (cache-key format) — same file, same maintenance-trap class. RETRO-027's §6 "no-shape-assertion" candidate is explicitly **not advanced** by this PR (see §6 meta).
+- **RETRO-017 / RETRO-021 / RETRO-022 / RETRO-024 (the `inquiry_submit_selector` chain, FOLLOW-097→114→127→141→122/142)** — the prior canonical example of a producer↔consumer wire that was "fixed" one hop at a time (consumer→producer→detector→seed). ESC-018 is the **same shape on a different axis**: a consumer (Python Modal job) required a field with no producer. This PR closes the wire in ONE hop (producer + schema + verified consumer-read) rather than moving the gap downstream — but the **parity *test*** (FOLLOW-168) is the analogue of FOLLOW-141 (the seed that finally closed the selector chain end-to-end). Tracing end-to-end: producer `route.ts:122` → event `original_description` → consumer `generate_description.py:1102` (passes `required`) → `:234` (read) → `_generate_with_sonnet` + `_generate_headline` grounding → Redis → route cache-hit → SDK render. **Chain connected; only the regression-prevention gate is outstanding.**
+- **CONVENTIONS_PATCH.md Rule J (cross-runtime mirror files)** — adjacent but distinct: Rule J gates *duplicated identical TS files*; ESC-018 is a *cross-language non-duplicated contract*. FOLLOW-168 is the Rule-J-spirit gate for this different axis (the §6 watch-item would become its codified Rule at the second occurrence).
+- **PR #177 (FOLLOW-159)** — provided the `adapt-description.ts` MutationObserver/loop-guard machinery this PR reuses verbatim for the headline slot (`_headlineSlotMap`). No regression to the description observer (separate map, shared teardown).
+
 <!-- RETRO-028 and beyond will be appended here by the retrospective-analyst agent. -->
 <!-- AUTHORITATIVE NUMBERING LEDGER (updated 2026-06-02 after RETRO-027 / PR #172 — TICKET-DESC-PIVOT-001 v1.8 prompt rewrite):
      - RETRO coverage: ...RETRO-025=PR#164 inline-fix verification, RETRO-026=PR#166/FOLLOW-149,

@@ -2659,6 +2659,53 @@ measurement window.
     (it defines "adapted") or AFTER it closes; never mid-window (Sprint 13b hard-isolation rule).
 ```
 
+## Sprint 14 — RETRO-028 follow-ups (description/headline pipeline hardening) (OPEN)
+
+**Added 2026-06-03 (human-directed promotion, outside normal PM Step-7).** Two follow-ups from
+RETRO-028 (TICKET-DESC-001 / PR #182 — per-listing LLM headline + ESC-018 `original_description`
+threading) promoted to READY tickets. Both are independent and unblocked (PR #182 already landed the
+data fix).
+
+**Related escalation:** **ESC-019 (OPEN)** — verification against the live backend revealed that the
+production Estalara listing-details API (`https://app.estalara.com/api/v1/listing/details/...`)
+302-redirects an unauthenticated server-side fetch to the login page, so the helper fails open to an
+empty `original_description` and generation is **ungrounded in prod** (silent). The ESC-018
+data-shape fix is correct; ESC-019 is the reachability/auth half and needs a human infra decision.
+FOLLOW-169 hardens the headline contract but does NOT fix the source — ESC-019 does.
+
+```yaml
+- id: FOLLOW-168
+  title:
+    Cross-language event-contract parity gate for description.requested (TS Zod ⟷ Python consumer)
+  agent: qa-engineer + backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source_retro: RETRO-028
+  source_ticket: TICKET-DESC-001 (PR #182)
+  spec: backlog/sprint-14/FOLLOW-168.md
+  notes: |
+    The verification ESC-018 lacked: a single shared contract artifact asserted by BOTH the TS
+    publisher (DescriptionRequestedEventSchema) and the Python consumer required-set, so the next
+    field added to one side without the other fails CI. Cross-language analogue of Rule J (TS↔TS).
+
+- id: FOLLOW-169
+  title: Bring _generate_headline to the description anti-hallucination grounding bar (ADR-0009)
+  agent: ml-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 4
+  depends_on: []
+  source_retro: RETRO-028
+  source_ticket: TICKET-DESC-001 (PR #182) / ADR-0009
+  spec: backlog/sprint-14/FOLLOW-169.md
+  notes: |
+    Headline LLM call has only an inline "do not invent" instruction (no system prompt, no
+    <verified_facts_used> audit block) on the most prominent buyer-facing string. Also: gate SDK
+    headline on source === 'ai_cached' (LG-2) + fix stale cache-key docstrings missing :{model} (DG-1).
+```
+
 ## YELLOW audit track (parallel) — Sprint 1 (DONE)
 
 **What this track is:** a separate "YELLOW audit" launch-readiness plan with its own `F-NN` ticket

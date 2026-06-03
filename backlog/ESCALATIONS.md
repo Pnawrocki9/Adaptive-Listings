@@ -821,3 +821,54 @@ fix in a follow-up ticket or fold into the next description-pipeline change.
 Note: SSRF check is intentionally NOT applied — the base host comes from our trusted
 `ESTALARA_BACKEND_URL` and `listing_id` is URL-encoded into a query value (cannot alter the host);
 `checkSsrf` would also reject the loopback backend used in local dev.
+
+---
+
+## OPEN — ESC-019: production Estalara backend listing-details API requires auth; server-side fetch fails open to empty `original_description` [TICKET-DESC-001]
+
+**Filed by:** Claude (session) **Date:** 2026-06-03T00:00:00Z **Affects:** description + per-listing
+headline pipeline (`apps/control-plane/src/lib/listing-details.ts`, `/api/adapt/description`),
+ESC-018 fix end-to-end correctness **Type:** architectural / infra
+
+**Description:** Surfaced while verifying the ESC-018 fix (RETRO-028 P1 PM action: "verify against a
+real backend"). The fix grounds generation by fetching the listing's original description from the
+Estalara backend listing-details API. This works against the **local dev backend**
+(`localhost:8081`, what the mock harness `fetchListing` uses) but NOT against the **production**
+backend.
+
+Verified against production (read-only GET):
+
+```
+GET https://app.estalara.com/api/v1/listing/details/slug?slug=9-blackberry-pl-palm-coast-fl-32137&locale=EN
+→ HTTP 302  location: /en?back=%2Fapi%2Fv1%2Flisting%2Fdetails%2Fslug%3F...
+```
+
+An **unauthenticated server-to-server** call is redirected to the SvelteKit login page. The helper's
+`fetch` follows the redirect (undici default `redirect: 'follow'`), receives the SPA HTML with
+`200`, `res.json()` throws, and the helper **fails open to `''`**. Net effect in production:
+`original_description` is empty, so both the adapted description and the ADR-0009 per-listing
+headline are generated **without factual grounding** (the v1.8 thin-original exception kicks in) —
+the consumer no longer drops the message (the key is present), so the failure is **silent**: copy is
+produced, just ungrounded. (`api.estalara.com` is not the host — returns 404.)
+
+The local dev backend does not enforce the auth guard, so the mock-harness demo and the unit tests
+(mocked backend) both pass — the gap is invisible until a real authenticated production fetch.
+
+**Required action (human / devops + backend — needs a decision):**
+
+1. Decide how the control-plane authenticates server-to-server to the Estalara backend listing API:
+   an **internal/unguarded backend URL** (set `ESTALARA_BACKEND_URL` to it, not the public
+   `app.estalara.com`), OR a **service token / session** the helper attaches (e.g. `Authorization`
+   header or signed internal header), OR a dedicated internal listing-details endpoint.
+2. Set the resolved `ESTALARA_BACKEND_URL` (and any token secret) in Vercel prod + Doppler.
+3. Harden the helper to fail **loud not silent** on a non-JSON / redirected response: use
+   `redirect: 'manual'` or assert the response `content-type` is JSON, and log a distinct warning
+   (and/or emit a metric) so an ungrounded-generation regression is observable rather than silent.
+4. Re-verify end-to-end: a Tier 2/3 cache miss against the real backend yields a cached
+   `{text, headline, generated_at}` whose copy reflects the actual listing facts.
+
+**Note:** The ESC-018 data-shape fix itself is correct and remains RESOLVED (the event now always
+carries the `original_description` key). ESC-019 is the _reachability/auth_ half — the field is now
+threaded, but the production source it reads is not yet reachable by an unauthenticated server call.
+
+**Resolution:** <empty until resolved>

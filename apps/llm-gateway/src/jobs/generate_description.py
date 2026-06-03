@@ -224,14 +224,18 @@ def generate_description(event: dict[str, Any]) -> None:
     cache_key: str = event["cache_key"]
     default_ttl = TTL_TIER_2 if tier == 2 else TTL_TIER_3
     ttl_seconds: int = int(event.get("ttl_seconds", default_ttl))
+    # FOLLOW-166: DEMO MODE (DEMO-001) threads its operator-chosen model here so the long-form
+    # description regenerates with it. Validated against the allow-list; falls back to the default.
+    model: str = _resolve_generation_model(event.get("override_model"))
 
     log.info(
-        "generate_description.start tenant=%s listing=%s archetype=%s locale=%s tier=%d",
+        "generate_description.start tenant=%s listing=%s archetype=%s locale=%s tier=%d model=%s",
         tenant_id,
         listing_id,
         archetype,
         locale,
         tier,
+        model,
     )
 
     try:
@@ -242,6 +246,7 @@ def generate_description(event: dict[str, Any]) -> None:
             tier=tier,
             locale=locale,
             original_description=original_description,
+            model=model,
         )
     except Exception as exc:
         log.error(
@@ -600,6 +605,39 @@ def _max_tokens_for(original_description: str, tier: int) -> int:
     return max(floor, min(estimated, _MAX_TOKENS_CEILING))
 
 
+# ---------------------------------------------------------------------------
+# Generation model selection (FOLLOW-166 — DEMO MODE override; FOLLOW-161 — global default)
+# ---------------------------------------------------------------------------
+#
+# The model is no longer hardcoded. The DEMO MODE archetype/model override (DEMO-001) threads its
+# chosen model through the description event as `override_model`; we honour it here so a model
+# switched in admin.estalara.com regenerates the long-form description with that model. The value is
+# validated against a curated allow-list (mirrors apps/control-plane/src/lib/demo-override-store.ts)
+# so an unexpected/unsafe model string can never reach the Anthropic call — it falls back to the
+# default. FOLLOW-161 (global default model) will set _DEFAULT_GENERATION_MODEL from config; for now
+# it is the static Sonnet 4.6 workhorse.
+_DEFAULT_GENERATION_MODEL = "claude-sonnet-4-6"
+_ALLOWED_GENERATION_MODELS: frozenset[str] = frozenset(
+    {
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-6",
+        "claude-opus-4-8",
+    }
+)
+
+
+def _resolve_generation_model(override_model: str | None) -> str:
+    """
+    Resolve the generation model: an allow-listed override wins, otherwise the default.
+
+    Returns _DEFAULT_GENERATION_MODEL when override_model is None, empty, or not in the curated
+    allow-list (defensive — never forward an arbitrary model string to the Anthropic API).
+    """
+    if override_model and override_model in _ALLOWED_GENERATION_MODELS:
+        return override_model
+    return _DEFAULT_GENERATION_MODEL
+
+
 def _generate_with_sonnet(
     archetype: str,
     copy_template: str,
@@ -607,9 +645,14 @@ def _generate_with_sonnet(
     tier: int,
     locale: str = "en",
     original_description: str = "",
+    model: str = _DEFAULT_GENERATION_MODEL,
 ) -> tuple[str, list[str]]:
     """
-    Call Anthropic Sonnet 4.6 to generate a buyer-adapted listing description.
+    Call the Anthropic generation model to produce a buyer-adapted listing description.
+
+    The model defaults to the Sonnet 4.6 workhorse but is overridable per call (FOLLOW-166 /
+    DEMO-001 — the operator-chosen model in admin.estalara.com), already validated by the caller
+    against the curated allow-list.
 
     v1.8 — Uses the XML-structured adaptive-listing system prompt that forbids
     Sonnet from inventing any number, name, or quantitative fact not present in
@@ -633,6 +676,8 @@ def _generate_with_sonnet(
         locale:               Target locale code (e.g. "en", "pl", "es").
         original_description: Agent's original listing copy. Factual source of truth.
                               May be an empty string when no agent copy exists.
+        model:                Anthropic model id to generate with. Defaults to the Sonnet 4.6
+                              workhorse; callers pass an allow-listed override (DEMO-001).
 
     Returns:
         Tuple of (description_text, verified_facts_used).
@@ -698,7 +743,7 @@ def _generate_with_sonnet(
     user_prompt = "\n".join(user_prompt_parts)
 
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model=model,
         max_tokens=max_tokens,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],

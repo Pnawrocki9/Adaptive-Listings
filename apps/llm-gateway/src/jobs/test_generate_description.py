@@ -57,12 +57,14 @@ from jobs.generate_description import (
     TTL_TIER_2,
     TTL_TIER_3,
     _ARCHETYPE_GUIDANCE,
+    _DEFAULT_GENERATION_MODEL,
     _MAX_TOKENS_CEILING,
     _MAX_TOKENS_FLOOR_TIER_2,
     _MAX_TOKENS_FLOOR_TIER_3,
     _generate_with_sonnet,
     _max_tokens_for,
     _parse_verified_facts,
+    _resolve_generation_model,
     _write_to_redis,
 )
 
@@ -112,6 +114,8 @@ def _run_job(event: dict[str, Any]) -> None:
     cache_key: str = event["cache_key"]
     default_ttl = TTL_TIER_2 if tier == 2 else TTL_TIER_3
     ttl_seconds: int = int(event.get("ttl_seconds", default_ttl))
+    # FOLLOW-166: mirror generate_description() — resolve the (allow-listed) override model.
+    model: str = _resolve_generation_model(event.get("override_model"))
 
     try:
         description, verified_facts = _generate_with_sonnet(
@@ -121,6 +125,7 @@ def _run_job(event: dict[str, Any]) -> None:
             tier=tier,
             locale=locale,
             original_description=original_description,
+            model=model,
         )
     except Exception as exc:
         log.error("test_job.sonnet_error error=%s", str(exc))
@@ -714,3 +719,91 @@ def test_truncated_response_no_redis_write(mock_redis_post: MagicMock) -> None:
         _run_job(_make_event(original_description="word " * 50))
 
         mock_httpx.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-166: DEMO MODE (DEMO-001) override_model is honored + validated.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_generation_model_allowlist() -> None:
+    """An allow-listed override wins; None / unknown / empty fall back to the default."""
+    assert _resolve_generation_model("claude-opus-4-8") == "claude-opus-4-8"
+    assert _resolve_generation_model("claude-haiku-4-5-20251001") == "claude-haiku-4-5-20251001"
+    assert _resolve_generation_model(None) == _DEFAULT_GENERATION_MODEL
+    assert _resolve_generation_model("") == _DEFAULT_GENERATION_MODEL
+    assert _resolve_generation_model("gpt-4o") == _DEFAULT_GENERATION_MODEL
+    assert _resolve_generation_model("'; DROP TABLE --") == _DEFAULT_GENERATION_MODEL
+
+
+def test_generate_with_sonnet_passes_model_to_anthropic() -> None:
+    """_generate_with_sonnet forwards the model arg to the Anthropic call."""
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        content_block = MagicMock()
+        content_block.text = "A description. <verified_facts_used>\n[]\n</verified_facts_used>"
+        resp = MagicMock(content=[content_block])
+        resp.stop_reason = "end_turn"
+        mock_client.messages.create.return_value = resp
+
+        _generate_with_sonnet("yield_hunter", "", {}, 2, "en", model="claude-opus-4-8")
+
+        assert mock_client.messages.create.call_args[1]["model"] == "claude-opus-4-8"
+
+
+def test_override_model_honored_end_to_end(mock_redis_post: MagicMock) -> None:
+    """event.override_model (allow-listed) reaches the Anthropic call via the job body."""
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post),
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        content_block = MagicMock()
+        content_block.text = "Body. <verified_facts_used>\n[]\n</verified_facts_used>"
+        resp = MagicMock(content=[content_block])
+        resp.stop_reason = "end_turn"
+        mock_client.messages.create.return_value = resp
+
+        _run_job(_make_event(override_model="claude-opus-4-8"))
+
+        assert mock_client.messages.create.call_args[1]["model"] == "claude-opus-4-8"
+
+
+def test_override_model_absent_uses_default(mock_redis_post: MagicMock) -> None:
+    """No override_model → the default generation model is used."""
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post),
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        content_block = MagicMock()
+        content_block.text = "Body. <verified_facts_used>\n[]\n</verified_facts_used>"
+        resp = MagicMock(content=[content_block])
+        resp.stop_reason = "end_turn"
+        mock_client.messages.create.return_value = resp
+
+        _run_job(_make_event())  # base event has no override_model
+
+        assert mock_client.messages.create.call_args[1]["model"] == _DEFAULT_GENERATION_MODEL
+
+
+def test_override_model_invalid_falls_back_to_default(mock_redis_post: MagicMock) -> None:
+    """A non-allow-listed override_model must never reach Anthropic — fall back to default."""
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post),
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        content_block = MagicMock()
+        content_block.text = "Body. <verified_facts_used>\n[]\n</verified_facts_used>"
+        resp = MagicMock(content=[content_block])
+        resp.stop_reason = "end_turn"
+        mock_client.messages.create.return_value = resp
+
+        _run_job(_make_event(override_model="totally-not-a-real-model"))
+
+        assert mock_client.messages.create.call_args[1]["model"] == _DEFAULT_GENERATION_MODEL

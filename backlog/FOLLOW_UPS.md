@@ -4846,6 +4846,10 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ## FOLLOW-166 — Wire override_model from DescriptionRequestedEvent into the Modal generate_description job
 
+- **status:** ✅ RESOLVED — `generate_description.py` now reads `event.override_model`, validates it
+  against the curated allow-list (`_resolve_generation_model`), and threads it to the Anthropic call
+  (`_generate_with_sonnet(model=...)`); DEMO-001's model dropdown now drives the long-form
+  description, not just the headline. 5 regression tests added.
 - **priority:** P2
 - **agent:** ml-engineer
 - **estimated_hours:** 2

@@ -55,6 +55,14 @@ vi.mock('@estalara/db', () => ({
     paused: 'paused',
     updatedAt: 'updated_at',
   },
+  // FOLLOW-171: conversion_labels table marker — the mock insert ignores its arg.
+  conversionLabels: {
+    tenantId: 'tenant_id',
+    predictionId: 'prediction_id',
+    leadId: 'lead_id',
+    outcomeClass: 'outcome_class',
+    labelSource: 'label_source',
+  },
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -393,6 +401,50 @@ describe('POST /api/adapt/feedback — bandit update', () => {
     expect(insertedRow.tenantId).toBe('tenant-zzz');
     expect(insertedRow.archetype).toBe('yield_hunter');
     expect(insertedRow.variant).toBe('v2');
+  });
+
+  it('FOLLOW-171: persists a conversion_labels row when prediction_id is present', async () => {
+    mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
+
+    await POST(
+      makePostRequest({
+        session_id: 'sess-x',
+        tenant_id: 'tenant-zzz',
+        archetype: 'yield_hunter',
+        variant: 'v2',
+        converted: true,
+        prediction_id: 'decision-uuid-123',
+      }),
+    );
+    await flushMicrotasks();
+
+    // Two inserts fire: the bandit upsert AND the conversion_labels row. Find the label row
+    // by its distinctive fields.
+    const calls = mockInsertValues.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    const labelRow = calls.find((r) => 'outcomeClass' in r);
+    expect(labelRow).toBeDefined();
+    expect(labelRow?.predictionId).toBe('decision-uuid-123');
+    expect(labelRow?.tenantId).toBe('tenant-zzz');
+    expect(labelRow?.outcomeClass).toBe('viewing_booked'); // converted=true → shallowest positive
+    expect(labelRow?.labelSource).toBe('system');
+  });
+
+  it('FOLLOW-171: no conversion_labels row when prediction_id is absent (bandit-only)', async () => {
+    mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
+
+    await POST(
+      makePostRequest({
+        session_id: 'sess-x',
+        tenant_id: 'tenant-zzz',
+        archetype: 'yield_hunter',
+        variant: 'v2',
+        converted: false,
+      }),
+    );
+    await flushMicrotasks();
+
+    const calls = mockInsertValues.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    expect(calls.some((r) => 'outcomeClass' in r)).toBe(false);
   });
 
   it('uses onConflictDoUpdate to update existing rows', async () => {

@@ -134,6 +134,13 @@
       "when": 1780387200000,
       "tag": "0018_app_config",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1780505857912,
+      "tag": "0019_conversion_labels",
+      "breakpoints": true
     }
   ]
 }

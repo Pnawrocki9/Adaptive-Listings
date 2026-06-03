@@ -249,6 +249,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@estalara/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@types/node':
         specifier: '*'
         version: 22.19.17

@@ -1,6 +1,16 @@
+import path from 'path';
+
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      // Resolve @estalara/shared from source so Vitest doesn't require a built dist.
+      // Added in FOLLOW-179 when upsert-conversion-label.ts introduced the first
+      // cross-package import from @estalara/shared into @estalara/db.
+      '@estalara/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
+    },
+  },
   test: {
     globals: false,
     environment: 'node',

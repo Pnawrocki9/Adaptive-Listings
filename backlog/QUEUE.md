@@ -2819,22 +2819,50 @@ FOLLOW-169 hardens the headline contract but does NOT fix the source — ESC-019
 - id: FOLLOW-179
   title: conversion_labels uniqueness/upsert + validated insert helper (gates FOLLOW-172/173)
   agent: backend-engineer + data-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 6
   depends_on: [FOLLOW-171]
   blocks: [FOLLOW-172, FOLLOW-173, FOLLOW-174]
   source: RETRO-029 (LG-1/LG-3, CB-1/CB-2)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-179 stub)
+  pr: '#190'
+  completed_at: '2026-06-03T19:04:44Z'
   notes: |
-    Migration 0019 has NO UNIQUE (tenant_id, prediction_id) and the feedback route insert is a plain
-    db.insert() with no onConflict, yet §T.2 = "one row per labeled outcome". Retried pings, a
-    converted=false expiry after converted=true, and FOLLOW-172's CRM webhook (same key) all create
-    duplicate/contradictory rows → FOLLOW-173 calibration double-counts silently. Implement
-    UNIQUE (tenant_id, prediction_id) + onConflictDoUpdate with class-precedence (deep CRM > shallow
-    ping; manual_admin > system; recency tiebreak), a shared validated insert helper
-    (ConversionOutcomeClassSchema.parse — route never validates class today), and an explicit
-    confidence convention for system labels. MUST land before FOLLOW-172 writes / FOLLOW-173 reads.
+    DONE: UNIQUE (tenant_id, prediction_id) + onConflictDoUpdate with class-precedence
+    (conversionLabelRank in @estalara/shared: manual_admin > system; purchased > lost >
+    contract_signed > offer_made > viewing_booked > no_response; recency tiebreak), validated
+    upsertConversionLabel helper (@estalara/db), feedback route switched to the helper, confidence
+    convention = 1.0 for system labels. RETRO-030 filed FOLLOW-182 (TS/SQL rank duplication) +
+    FOLLOW-183 (real-PG test of the helper) — both P1, not-clean verdict.
+
+- id: FOLLOW-182
+  title: eliminate the TS-map↔SQL-CASE precedence duplication in upsertConversionLabel
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-179]
+  source: RETRO-030 (LG-1/LG-2); CONVENTIONS_PATCH Rule K.1 amendment
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-182 stub)
+  notes: |
+    OUTCOME_CLASS_RANK (TS) and the inline SQL CASE in upsert-conversion-label.ts encode the same
+    ordering twice; adding a class silently mis-ranks unless both change. Derive the SQL from the TS
+    map (or add a parity gate). Rule K.1 intra-runtime duplication (Rule J does NOT cover it).
+
+- id: FOLLOW-183
+  title: direct PG integration test for upsertConversionLabel (precedence WHERE + UNIQUE constraint)
+  agent: data-engineer + backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-179]
+  source: RETRO-030 (TG-1/TG-2)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-183 stub)
+  notes: |
+    The helper's SQL precedence WHERE + the UNIQUE constraint are only mock-tested — core dedup
+    correctness is unverified against real Postgres. Add a pgmem/Testcontainers test exercising
+    collision/upgrade/downgrade-rejection/manual-admin-override. May merge with FOLLOW-181.
 ```
 
 ## YELLOW audit track (parallel) — Sprint 1 (DONE)

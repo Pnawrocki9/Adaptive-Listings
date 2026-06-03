@@ -323,6 +323,18 @@ function logDecisionAsync(
    * Defaults to false (normal path).
    */
   demoOverride = false,
+  /**
+   * Conversion Label Loop (FOLLOW-170, §T): the scorer that produced this decision.
+   * `rulebased-bandit-v1` today; later `lora-tenant-{id}-v*`. Stamped on every row so
+   * labels from different scorers stay distinguishable and calibratable.
+   */
+  modelVersion = 'rulebased-bandit-v1',
+  /**
+   * Conversion Label Loop (FOLLOW-170, §T): durable pseudonymous lead key, distinct from
+   * the anonymous `session_id`. Empty until a durable id is wired through the adapt request
+   * (follow-up); the column exists from day one so the field is never lost.
+   */
+  leadId = '',
 ): void {
   // Fire-and-forget — never awaited, never blocks the response.
   // No-op when CLICKHOUSE_URL is not configured.
@@ -335,6 +347,19 @@ function logDecisionAsync(
   // Escape single quotes in string values to prevent injection
   const escape = (s: string) => s.replace(/'/g, "\\'");
 
+  // Conversion Label Loop (FOLLOW-170, §T): PII-free snapshot of the scorer inputs/outputs
+  // the server saw at decision time, so a stored label can later be replayed against a future
+  // model. Only non-PII signals — no session/lead identifiers go in the snapshot.
+  const featuresSnapshot = JSON.stringify({
+    archetype,
+    confidence,
+    similarity,
+    source,
+    tier,
+    holdout: holdoutGroup,
+    variant,
+  });
+
   // demo_override column: ClickHouse UInt8 boolean (1 = demo-driven, 0 = normal).
   // Pilot analytics exclude rows where demo_override = 1. (DEMO-001 / AC6)
   // Note: the adaptation_decisions table may not yet have this column in legacy
@@ -343,11 +368,11 @@ function logDecisionAsync(
   // swallows it (analytics failure must not block responses).
   const query =
     `INSERT INTO adaptation_decisions ` +
-    `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, holdout_group, variant, adapt_decision_id, demo_override, ts) ` +
+    `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, holdout_group, variant, adapt_decision_id, demo_override, model_version, features_snapshot, lead_id, ts) ` +
     `VALUES ('${escape(sessionId)}', '${escape(tenantId)}', '${escape(archetype)}', ` +
     `${String(confidence)}, ${String(similarity)}, '${escape(source)}', ${String(tier)}, ${String(directiveCount)}, ` +
     `${holdoutGroup ? '1' : '0'}, '${escape(variant)}', '${escape(adaptDecisionId)}', ` +
-    `${demoOverride ? '1' : '0'}, '${ts}')`;
+    `${demoOverride ? '1' : '0'}, '${escape(modelVersion)}', '${escape(featuresSnapshot)}', '${escape(leadId)}', '${ts}')`;
 
   fetch(clickhouseUrl, {
     method: 'POST',

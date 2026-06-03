@@ -4990,7 +4990,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   `features_snapshot` (PII-free); (3) existing `cta-lift` + aggregates keep working; (4) tests cover
   INSERT shape; CI green.
 - **depends_on:** []
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (2026-06-03 → `backlog/sprint-14/`, status READY)
 
 ---
 
@@ -5012,7 +5012,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   (`label_source=system`); (3) tuple no longer discarded; (4) coverage ≥80% on new package code; CI
   green.
 - **depends_on:** [FOLLOW-170]
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (2026-06-03 → `backlog/sprint-14/`, status READY)
 
 ---
 
@@ -5031,7 +5031,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **AC:** (1) webhook authenticated + tenant-scoped; (2) PII boundary confirmed by compliance
   review; (3) RLS enforced; CI green.
 - **depends_on:** [FOLLOW-171]
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (2026-06-03 → `backlog/sprint-14/`, status READY)
 
 ---
 
@@ -5049,7 +5049,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **AC:** (1) per-class conversion rate; (2) calibration curve per model_version; (3) outcome sync
   path documented; tests; CI green.
 - **depends_on:** [FOLLOW-170, FOLLOW-171]
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (2026-06-03 → `backlog/sprint-14/`, status READY)
 
 ---
 
@@ -5067,7 +5067,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **AC:** (1) filtered joined table; (2) manual reclassify writes audit fields; (3) calibration view
   rendered; CI green.
 - **depends_on:** [FOLLOW-171, FOLLOW-173]
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (2026-06-03 → `backlog/sprint-14/`, status READY)
 
 ---
 
@@ -5084,11 +5084,32 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **AC:** (1) per-tenant export; (2) RLS-scoped + auditable; (3) documented as fine-tune input; CI
   green.
 - **depends_on:** [FOLLOW-174]
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (2026-06-03 → `backlog/sprint-14/`, status READY)
 
 ---
 
-<!-- next free FOLLOW number: 176 (170-175 consumed by RETRO-028 Phase-3 / Conversion Label Loop §T (MASTER_DESIGN v3.9), human-directed 2026-06-03:
+## FOLLOW-176 — Persist resolved archetype/intent across listing navigations
+
+- **status:** OPEN
+- **priority:** P1
+- **agent:** sdk-engineer
+- **estimated_hours:** 5
+- **source:** session investigation 2026-06-03 (Side-task #5)
+- **scope:** SDK-only. `currentIntentState` (`packages/sdk/src/index.ts`) is in-memory and
+  recomputed from BASE_PRIOR on every page load, so a subsequent listing does NOT inherit the
+  already-inferred archetype — the "each next listing immediately adapted" UX does not happen today.
+  Persist the resolved intent state to `sessionStorage` (keyed by sessionId), rehydrate in `init()`
+  before cold-start, consent-gated, with a staleness/version guard and a clear-on-withdrawal path.
+  Cross-session continuity (localStorage + TTL) is an explicit out-of-scope follow-up.
+- **AC:** persist-on-change (consent-gated); rehydrate-in-init so a same-tab navigation applies the
+  prior archetype immediately; no write/read without consent + clear on withdrawal;
+  staleness/version guard; <40KB gzip budget held; ≥80% coverage; CI green.
+- **depends_on:** []
+- **promoted_to_queue:** true (2026-06-03 → `backlog/sprint-14/FOLLOW-176.md`, status READY)
+
+---
+
+<!-- next free FOLLOW number: 177 (170-176 promoted to backlog/sprint-14/ 2026-06-03 (human-directed, MOAT): 170-175 = Conversion Label Loop §T tickets; 176 = SDK archetype persistence (Side-task #5). 170-175 originally from RETRO-028 Phase-3 / Conversion Label Loop §T (MASTER_DESIGN v3.9), human-directed 2026-06-03:
      170 = P0 T0-BLOCKING enrich adaptation_decisions (model_version + features_snapshot + lead_id + formalize demo_override);
      171 = P0 persist durable conversion_labels from feedback route (NEW table + Zod taxonomy + RLS);
      172 = P1 CRM deep-outcome ingest (PII-stripped);

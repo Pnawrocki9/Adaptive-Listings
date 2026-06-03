@@ -50,6 +50,7 @@ import {
   TTL_TIER3_SECONDS,
 } from '@/lib/description-cache';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
+import { fetchListingOriginalDescription } from '@/lib/listing-details';
 import { getAuthClaims } from '@estalara/auth';
 import { getDemoOverride } from '@/lib/demo-override-store';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
@@ -297,7 +298,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // We do NOT pass an intent_vector here (not available at this endpoint) — the Modal job
   // will receive whatever context we have. For now this is empty without intent_vector.
   // A future follow-up can wire intent_vector through the query params if needed.
-  const listingContext = await retrieveListingContext(tenantId, listing_id, null);
+  //
+  // original_description is the factual source of truth the Modal job grounds both the
+  // adapted description AND the per-listing headline in (ESC-018 / ADR-0009). There is no
+  // listings table in our Postgres, so we fetch it from the Estalara backend listing-details
+  // API — the same source the mock decision harness uses. Both calls are fail-open and run
+  // in parallel to keep the cache-miss path within its latency budget.
+  const [listingContext, originalDescription] = await Promise.all([
+    retrieveListingContext(tenantId, listing_id, null),
+    fetchListingOriginalDescription(listing_id, localeCode),
+  ]);
 
   const event: DescriptionRequestedEvent = {
     tenant_id: tenantId,
@@ -306,6 +316,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     locale: localeCode,
     tier: tierNum,
     copy_template: templateText,
+    original_description: originalDescription,
     listing_context: listingContext,
     cache_key: cacheKey,
     ttl_seconds: ttlSeconds,

@@ -167,6 +167,17 @@ export const DescriptionRequestedEventSchema = z.object({
   copy_template: z.string().min(1),
 
   /**
+   * The listing's ORIGINAL agent-authored description — the factual source of truth
+   * the Modal job grounds the adapted description AND the per-listing headline in
+   * (ESC-018 / ADR-0009). Fetched server-side by the control-plane route from the
+   * Estalara backend listing-details API. May be an empty string when the listing
+   * has no description or the backend is unreachable (fail-open); the key is always
+   * present because the Modal consumer treats it as required and drops messages that
+   * omit it. The v1.8 prompt handles an empty original via its thin-original exception.
+   */
+  original_description: z.string(),
+
+  /**
    * Agency FAQ key-value pairs from RAG retrieval.
    * May be empty ({}) when no relevant FAQ answers were found.
    * Used to fill {variable} placeholders in the description.

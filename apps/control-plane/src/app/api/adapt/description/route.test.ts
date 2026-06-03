@@ -358,6 +358,51 @@ describe('GET /api/adapt/description — Tier 2 cache miss (AC-4)', () => {
     expect(event?.tier).toBe(2);
     expect(event?.ttl_seconds).toBe(TTL_TIER2_SECONDS);
     expect(String(event?.cache_key)).toContain('yield_hunter');
+    // ESC-018: original_description key must always be present (Modal consumer drops
+    // messages that omit it). Here the listing fetch hits the same empty-200 mock and
+    // fails open to '' — still a present string key.
+    expect(event).toHaveProperty('original_description');
+    expect(typeof event?.original_description).toBe('string');
+  });
+
+  it('threads original_description fetched from the Estalara backend into the event (ESC-018)', async () => {
+    mockGetCachedDescription.mockResolvedValueOnce(null);
+    vi.stubEnv('ESTALARA_BACKEND_URL', 'https://backend.test');
+    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
+
+    const publishedBodies: string[] = [];
+    const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/v1/listing/details')) {
+        // Estalara backend listing-details API returns the listing JSON.
+        return Promise.resolve(
+          new Response(JSON.stringify({ description: 'The agent original copy.' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      if (init?.method === 'POST') {
+        publishedBodies.push((init.body as string | undefined) ?? '');
+      }
+      return Promise.resolve(new Response('', { status: 200 }));
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const res = await GET(makeRequest({ ...VALID_PARAMS, tier: '2' }));
+    expect(res.status).toBe(200);
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    // The listing-details endpoint must have been queried (slug form for 'prop-123').
+    const listingCall = mockFetch.mock.calls.find((c) =>
+      (c[0] as string).includes('/api/v1/listing/details/slug?slug=prop-123'),
+    );
+    expect(listingCall).toBeDefined();
+
+    const event = (
+      JSON.parse(publishedBodies[0]!) as { records: { value: Record<string, unknown> }[] }
+    ).records[0]?.value;
+    expect(event?.original_description).toBe('The agent original copy.');
   });
 
   it('does not block response on Redpanda publish failure (fire-and-forget)', async () => {

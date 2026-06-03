@@ -4970,7 +4970,132 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 170 (168-169 consumed by RETRO-028 / PR #182 — TICKET-DESC-001 per-listing LLM headline + ESC-018:
+## FOLLOW-170 — Enrich prediction row: model_version + features_snapshot + lead_id (T0, BLOCKING)
+
+- **status:** OPEN
+- **priority:** P0
+- **agent:** data-engineer (migration) + backend-engineer (INSERT)
+- **estimated_hours:** 6
+- **source_retro:** RETRO-028 / Conversion Label Loop §T (MASTER_DESIGN v3.9)
+- **scope:** EXTEND. T0 of the Conversion Label Loop and **blocking** — every adaptation decision
+  logged without these fields is permanently unusable as fine-tuning fuel. Add to ClickHouse
+  `adaptation_decisions` (new migration `0013_adaptation_decisions_label_fuel.sql`):
+  `lead_id String DEFAULT ''`, `model_version LowCardinality(String) DEFAULT ''`,
+  `features_snapshot String DEFAULT ''` (PII-free JSON of the scorer inputs), and formalize the
+  live-but-unmigrated `demo_override` column. `logDecisionAsync()`
+  (`apps/control-plane/src/app/api/adapt/route.ts:~292`) writes all new columns; REUSE the existing
+  `adapt_decision_id` (0012) as `prediction_id` — do NOT mint a second UUID.
+- **AC:** (1) migration adds the 3 columns + formalizes `demo_override`; (2) `logDecisionAsync` sets
+  `model_version` (`rulebased-bandit-v1`) + serializes the exact scorer inputs to
+  `features_snapshot` (PII-free); (3) existing `cta-lift` + aggregates keep working; (4) tests cover
+  INSERT shape; CI green.
+- **depends_on:** []
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-171 — Persist durable conversion_labels from the feedback route
+
+- **status:** OPEN
+- **priority:** P0
+- **agent:** backend-engineer + data-engineer
+- **estimated_hours:** 8
+- **source_retro:** RETRO-028 / Conversion Label Loop §T
+- **scope:** EXTEND + NEW. Stop discarding the (prediction, outcome) tuple. NEW Postgres table
+  `conversion_labels` (drizzle `packages/db`, RLS on `tenant_id`, `prediction_id` NOT NULL =
+  `adapt_decision_id`, `outcome_class` enum, `outcome_raw`, `labeled_at`, `label_source`,
+  `confidence`, `notes`). NEW Zod taxonomy `packages/shared/src/schemas/conversion-label.ts` (single
+  source of truth). EXTEND `apps/control-plane/src/app/api/adapt/feedback/route.ts`: in addition to
+  the unchanged bandit update, write a durable `conversion_labels` row; extend the feedback body to
+  carry `prediction_id` (SDK contract change → HANDOFF note).
+- **AC:** (1) table + RLS + enum live; (2) feedback route writes a durable label row
+  (`label_source=system`); (3) tuple no longer discarded; (4) coverage ≥80% on new package code; CI
+  green.
+- **depends_on:** [FOLLOW-170]
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-172 — CRM deep-outcome ingest → conversion_labels (PII-stripped)
+
+- **status:** OPEN
+- **priority:** P1
+- **agent:** backend-engineer + compliance-engineer
+- **estimated_hours:** 8-12 (consider split)
+- **source_retro:** RETRO-028 / Conversion Label Loop §T
+- **scope:** NEW. Deep outcomes (`offer_made`/`contract_signed`/`purchased`/`lost`) live in tenant
+  CRMs by design (PII never ingested). Add an authenticated tenant webhook that resolves the CRM
+  record to the Estalara `lead_id` **tenant-side** (or via an opaque correlation token) and writes
+  `conversion_labels` (`label_source=system`, `confidence=1.0`, `outcome_raw` retained) — no CRM PII
+  enters Estalara stores (§T.6 boundary).
+- **AC:** (1) webhook authenticated + tenant-scoped; (2) PII boundary confirmed by compliance
+  review; (3) RLS enforced; CI green.
+- **depends_on:** [FOLLOW-171]
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-173 — Conversion-label aggregation + score-vs-actual calibration view
+
+- **status:** OPEN
+- **priority:** P1
+- **agent:** data-engineer
+- **estimated_hours:** 6
+- **source_retro:** RETRO-028 / Conversion Label Loop §T
+- **scope:** EXTEND. Aggregate over `(tenant_id, outcome_class, model_version, time_bucket)`:
+  conversion rate per class + score-vs-actual calibration (reliability curve per `model_version`).
+  Extends the `pilot/cta-lift/route.ts` JOIN pattern with the `model_version` dimension + durable
+  label join (ClickHouse materialized view or scheduled Postgres→ClickHouse outcome sync).
+- **AC:** (1) per-class conversion rate; (2) calibration curve per model_version; (3) outcome sync
+  path documented; tests; CI green.
+- **depends_on:** [FOLLOW-170, FOLLOW-171]
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-174 — admin label table + manual reclassification
+
+- **status:** OPEN
+- **priority:** P1
+- **agent:** backend-engineer
+- **estimated_hours:** 8
+- **source_retro:** RETRO-028 / Conversion Label Loop §T
+- **scope:** EXTEND `apps/control-plane/src/app/dashboard/{analytics,pilot}` + `app/admin/*`: joined
+  prediction+outcome table (filters: tenant, outcome_class, date range, model_version); manual
+  set/change of `outcome_class` writing `label_source=manual_admin` + `notes` (bumps `updated_at`);
+  render the FOLLOW-173 aggregate/calibration view. RLS-respected.
+- **AC:** (1) filtered joined table; (2) manual reclassify writes audit fields; (3) calibration view
+  rendered; CI green.
+- **depends_on:** [FOLLOW-171, FOLLOW-173]
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-175 — Label-set export for LoRA fine-tuning
+
+- **status:** OPEN
+- **priority:** P2
+- **agent:** backend-engineer + ml-engineer
+- **estimated_hours:** 4
+- **source_retro:** RETRO-028 / Conversion Label Loop §T
+- **scope:** NEW per-tenant export of the PII-free
+  `(features_snapshot, model_version, score) → outcome_class` corpus (CSV/JSONL) — the Y2 fine-tune
+  (§D.5.7) input. Tenant-scoped (RLS), auditable.
+- **AC:** (1) per-tenant export; (2) RLS-scoped + auditable; (3) documented as fine-tune input; CI
+  green.
+- **depends_on:** [FOLLOW-174]
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 176 (170-175 consumed by RETRO-028 Phase-3 / Conversion Label Loop §T (MASTER_DESIGN v3.9), human-directed 2026-06-03:
+     170 = P0 T0-BLOCKING enrich adaptation_decisions (model_version + features_snapshot + lead_id + formalize demo_override);
+     171 = P0 persist durable conversion_labels from feedback route (NEW table + Zod taxonomy + RLS);
+     172 = P1 CRM deep-outcome ingest (PII-stripped);
+     173 = P1 aggregation + score-vs-actual calibration;
+     174 = P1 admin label table + manual reclassification;
+     175 = P2 label-set export for LoRA fine-tuning;
+     168-169 consumed by RETRO-028 / PR #182 — TICKET-DESC-001 per-listing LLM headline + ESC-018:
      168 = P1 cross-language TS↔Python description.requested event-contract parity gate (the verification ESC-018 lacked);
      169 = P2 bring _generate_headline to the description anti-hallucination bar + ai_cached SDK guard + stale cache-key docstrings;
      ADR-0009/headline §E.7 propagation folded onto FOLLOW-164 (RETRO-027), no new stub;

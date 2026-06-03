@@ -2659,12 +2659,18 @@ measurement window.
     (it defines "adapted") or AFTER it closes; never mid-window (Sprint 13b hard-isolation rule).
 ```
 
-## Sprint 14 — RETRO-028 follow-ups (description/headline pipeline hardening) (OPEN)
+## Sprint 14 — pipeline hardening + Conversion Label Loop (MOAT) + archetype persistence (OPEN)
 
-**Added 2026-06-03 (human-directed promotion, outside normal PM Step-7).** Two follow-ups from
-RETRO-028 (TICKET-DESC-001 / PR #182 — per-listing LLM headline + ESC-018 `original_description`
-threading) promoted to READY tickets. Both are independent and unblocked (PR #182 already landed the
-data fix).
+**Added 2026-06-03 (human-directed promotion, outside normal PM Step-7).** Contents:
+
+- **FOLLOW-168/169** — RETRO-028 follow-ups (TICKET-DESC-001 / PR #182): cross-language
+  event-contract parity gate + headline anti-hallucination grounding. Independent, unblocked.
+- **FOLLOW-170…175** — **Conversion Label Loop** (MASTER_DESIGN §T, v3.9), committed by CEO as the
+  data MOAT ("zbieranie danych to nasz istotny MOAT"). Strictly ordered; **FOLLOW-170 (T0) is
+  blocking** — every adaptation decision logged without model_version/feature_snapshot/lead_id is
+  permanently lost training data, so this must start first.
+- **FOLLOW-176** — SDK archetype persistence (Side-task #5): resolved archetype is not persisted
+  today (in-memory, cold-start each navigation); persist to sessionStorage + rehydrate in init.
 
 **Related escalation:** **ESC-019 (OPEN)** — verification against the live backend revealed that the
 production Estalara listing-details API (`https://app.estalara.com/api/v1/listing/details/...`)
@@ -2704,6 +2710,107 @@ FOLLOW-169 hardens the headline contract but does NOT fix the source — ESC-019
     Headline LLM call has only an inline "do not invent" instruction (no system prompt, no
     <verified_facts_used> audit block) on the most prominent buyer-facing string. Also: gate SDK
     headline on source === 'ai_cached' (LG-2) + fix stale cache-key docstrings missing :{model} (DG-1).
+
+# ── Conversion Label Loop (MASTER_DESIGN §T, v3.9) — committed 2026-06-03 (CEO: data MOAT) ──
+# Strictly ordered: FOLLOW-170 (T0) blocks the rest — unlogged decisions are lost training data forever.
+
+- id: FOLLOW-170
+  title: Enrich prediction row — model_version + features_snapshot + lead_id (T0, BLOCKING)
+  agent: data-engineer + backend-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 6
+  depends_on: []
+  produces: [FOLLOW-171, FOLLOW-173, FOLLOW-174]
+  source: MASTER_DESIGN §T / RETRO-028
+  spec: backlog/sprint-14/FOLLOW-170.md
+  notes: |
+    EXTEND ClickHouse adaptation_decisions (migration 0013): +lead_id, +model_version,
+    +features_snapshot (PII-free JSON), formalize demo_override; REUSE adapt_decision_id as
+    prediction_id. logDecisionAsync writes them. BLOCKING — start first.
+
+- id: FOLLOW-171
+  title: Persist durable conversion_labels from the feedback route
+  agent: backend-engineer + data-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 8
+  depends_on: [FOLLOW-170]
+  produces: [FOLLOW-173, FOLLOW-174]
+  source: MASTER_DESIGN §T
+  spec: backlog/sprint-14/FOLLOW-171.md
+  notes: |
+    NEW Postgres conversion_labels (RLS, outcome_class enum) + Zod taxonomy
+    packages/shared/src/schemas/conversion-label.ts. Feedback route writes a durable label row
+    (today the tuple is discarded into Beta counters). Feedback body gains prediction_id (SDK HANDOFF).
+
+- id: FOLLOW-172
+  title: CRM deep-outcome ingest → conversion_labels (PII-stripped)
+  agent: backend-engineer + compliance-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 10
+  depends_on: [FOLLOW-171]
+  source: MASTER_DESIGN §T
+  spec: backlog/sprint-14/FOLLOW-172.md
+  notes: |
+    Authenticated tenant webhook for offer/contract/purchase/lost; resolve to lead_id tenant-side,
+    no CRM PII into Estalara stores (§T.6). Compliance sign-off required.
+
+- id: FOLLOW-173
+  title: Conversion-label aggregation + score-vs-actual calibration
+  agent: data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 6
+  depends_on: [FOLLOW-170, FOLLOW-171]
+  source: MASTER_DESIGN §T
+  spec: backlog/sprint-14/FOLLOW-173.md
+  notes: |
+    Aggregate (tenant, outcome_class, model_version, time); calibration reliability curve per
+    model_version. Extends pilot/cta-lift JOIN pattern.
+
+- id: FOLLOW-174
+  title: admin label table + manual reclassification
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 8
+  depends_on: [FOLLOW-171, FOLLOW-173]
+  source: MASTER_DESIGN §T
+  spec: backlog/sprint-14/FOLLOW-174.md
+  notes: |
+    EXTEND dashboard/{analytics,pilot} + admin/*: joined prediction+outcome table (filters),
+    manual reclassify (label_source=manual_admin), calibration view. RLS-respected.
+
+- id: FOLLOW-175
+  title: Label-set export for LoRA fine-tuning
+  agent: backend-engineer + ml-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 4
+  depends_on: [FOLLOW-174]
+  source: MASTER_DESIGN §T
+  spec: backlog/sprint-14/FOLLOW-175.md
+  notes: |
+    Per-tenant PII-free (features_snapshot, model_version, score) -> outcome_class export (CSV/JSONL);
+    the Y2 fine-tune (§D.5.7) input. RLS-scoped, auditable.
+
+# ── SDK archetype persistence (Side-task #5) — committed 2026-06-03 ──
+
+- id: FOLLOW-176
+  title: Persist resolved archetype/intent across listing navigations
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 5
+  depends_on: []
+  source: session investigation 2026-06-03 (Side-task #5)
+  spec: backlog/sprint-14/FOLLOW-176.md
+  notes: |
+    currentIntentState is in-memory, recomputed each load → subsequent listings don't inherit the
+    inferred archetype. Persist to sessionStorage (keyed by sessionId), rehydrate in init() before
+    cold-start, consent-gated, staleness/version guard. Cross-session (localStorage+TTL) = follow-up.
 ```
 
 ## YELLOW audit track (parallel) — Sprint 1 (DONE)

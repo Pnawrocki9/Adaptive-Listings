@@ -64,6 +64,7 @@ from jobs.generate_description import (
     _generate_headline,
     _generate_with_sonnet,
     _max_tokens_for,
+    _parse_adaptation_verdict,
     _parse_verified_facts,
     _resolve_generation_model,
     _write_to_redis,
@@ -1136,3 +1137,112 @@ def test_write_to_redis_headline_none_stored_as_null() -> None:
         # 'headline' key must be present and its value must be None (JSON null).
         assert "headline" in value
         assert value["headline"] is None
+
+
+# ---------------------------------------------------------------------------
+# TC-18..21: v1.9 archetype-fit gate — <adaptation_verdict> (ADR-0010)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_adaptation_verdict_fit_strips_tag() -> None:
+    """FIT verdict: tag is parsed and removed from the body, reason is None."""
+    raw = (
+        "<adaptation_verdict>FIT</adaptation_verdict>\n"
+        "A bright two-bedroom home with a generous garden.\n"
+        "<verified_facts_used>\n"
+        '["bedrooms: 2", "garden: yes"]\n'
+        "</verified_facts_used>"
+    )
+    verdict, reason, body = _parse_adaptation_verdict(raw)
+    assert verdict == "FIT"
+    assert reason is None
+    assert "<adaptation_verdict>" not in body
+    assert "A bright two-bedroom home" in body
+
+
+def test_parse_adaptation_verdict_neutral_with_reason() -> None:
+    """NEUTRAL verdict: parsed with its reason code; body carries no verdict tags."""
+    raw = (
+        "<adaptation_verdict>NEUTRAL</adaptation_verdict>\n"
+        "<neutral_reason>core_need_contradiction</neutral_reason>"
+    )
+    verdict, reason, body = _parse_adaptation_verdict(raw)
+    assert verdict == "NEUTRAL"
+    assert reason == "core_need_contradiction"
+    assert "<adaptation_verdict>" not in body
+    assert "<neutral_reason>" not in body
+
+
+def test_parse_adaptation_verdict_missing_defaults_fit() -> None:
+    """No verdict tag (non-compliant/legacy output) defaults to FIT, body untouched."""
+    raw = "Just a plain description body with no gate tag."
+    verdict, reason, body = _parse_adaptation_verdict(raw)
+    assert verdict == "FIT"
+    assert reason is None
+    assert body == raw
+
+
+def test_generate_with_sonnet_fit_returns_description() -> None:
+    """A FIT response yields a description with the verdict tag stripped + parsed facts."""
+    mock_response = MagicMock()
+    mock_response.stop_reason = "end_turn"
+    mock_response.content = [
+        MagicMock(
+            text=(
+                "<adaptation_verdict>FIT</adaptation_verdict>\n"
+                "A three-bedroom home in Marbella Old Town with a private garden.\n"
+                "<verified_facts_used>\n"
+                '["bedrooms: 3", "location: Marbella Old Town", "garden: yes"]\n'
+                "</verified_facts_used>"
+            )
+        )
+    ]
+
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        mock_anthropic_cls.return_value = mock_client
+
+        description, facts = _generate_with_sonnet(
+            archetype="family_buyer",
+            copy_template="",
+            original_description="A 3-bed home in Marbella Old Town with a garden.",
+            listing_context={"bedrooms": 3},
+            tier=2,
+            locale="en",
+        )
+
+    assert "<adaptation_verdict>" not in description
+    assert "Marbella Old Town" in description
+    assert "bedrooms: 3" in facts
+
+
+def test_generate_with_sonnet_neutral_returns_empty() -> None:
+    """A NEUTRAL verdict yields no description (caller skips the Redis write)."""
+    mock_response = MagicMock()
+    mock_response.stop_reason = "end_turn"
+    mock_response.content = [
+        MagicMock(
+            text=(
+                "<adaptation_verdict>NEUTRAL</adaptation_verdict>\n"
+                "<neutral_reason>core_need_contradiction</neutral_reason>"
+            )
+        )
+    ]
+
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        mock_anthropic_cls.return_value = mock_client
+
+        description, facts = _generate_with_sonnet(
+            archetype="family_buyer",
+            copy_template="",
+            original_description="A 2-bed 32nd-floor investment condo, no outdoor space.",
+            listing_context={"bedrooms": 2, "floor": 32},
+            tier=2,
+            locale="en",
+        )
+
+    assert description == ""
+    assert facts == []

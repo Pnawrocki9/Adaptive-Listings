@@ -7,14 +7,8 @@
  *   ?listing_id=<id>&archetype=<archetype>&locale=<locale>
  *   Authorization: Bearer <apiKey>
  *
- * Response (source: "ai_cached" | "original" | "template_fallback"):
- *   Only applied when source === "ai_cached" AND description is non-empty.
- *   source === "original" → leave DOM completely untouched.
- *
- * Loop-guard strategy (three independent guards):
- *   1. state.applying — set before DOM write, cleared in next microtask.
- *   2. Text-equality check — skip if text already matches desired.
- *   3. state.rafPending — coalesce rapid bursts into one rAF callback.
+ * Response: applied only when source === "ai_cached" AND description is non-empty.
+ * Loop-guard: flags byte `f` — bit 1 = applying, bit 2 = rafPending.
  *
  * @module @estalara/sdk/core/adapt-description
  */
@@ -31,17 +25,14 @@ interface DescriptionResponse {
 }
 
 interface SlotObserverState {
-  el: HTMLElement;
   obs: MutationObserver;
   dt: string; // desired textContent = paragraphs.join("")
-  ps: string[]; // paragraphs
   f: number; // flags: 1=applying, 2=rafPending
 }
 
 let _eventQueue: CollectedEvent[] | null = null;
-const _activeObserverStates: SlotObserverState[] = [];
+const _slotMap = new Map<HTMLElement, SlotObserverState>();
 
-// Event type prefix — helps esbuild deduplicate; also documents the namespace.
 const EVT = 'adapt.description.';
 
 export function setDescriptionEventQueueRef(queue: CollectedEvent[]): void {
@@ -60,55 +51,38 @@ export function splitParagraphs(text: string): string[] {
     .filter(Boolean);
 }
 
-/** Replace slot children with one <p> per paragraph (XSS-safe via textContent). */
-function renderParagraphsIntoSlot(el: HTMLElement, paragraphs: string[]): void {
-  el.replaceChildren(
-    ...paragraphs.map((t) => {
-      const p = document.createElement('p');
-      p.textContent = t;
-      return p;
-    }),
-  );
+/** Write paragraphs into el as XSS-safe &lt;p&gt; elements. */
+function render(el: HTMLElement, ps: string[]): void {
+  el.textContent = '';
+  ps.forEach((t) => {
+    const p = document.createElement('p');
+    p.textContent = t;
+    el.append(p);
+  });
 }
 
-/** Get slot's textContent for change detection. */
-const slotText = (el: HTMLElement): string => el.textContent || '';
-
-/**
- * Write adapted text into slot (guarded write), then attach a MutationObserver
- * that re-applies if the host framework reverts the element.
- *
- * Returns the state + a doReapply closure for the initial hydration rAF.
- */
-/** Returns a doReapply closure for the initial hydration rAF. */
+/** Write adapted text into slot, attach MutationObserver for framework-revert resilience. */
 function applyAndObserveSlot(el: HTMLElement, paragraphs: string[]): () => void {
-  const xi = _activeObserverStates.findIndex((s) => s.el === el);
-  if (xi >= 0) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- xi is a valid index (findIndex >= 0 above)
-    _activeObserverStates[xi]!.obs.disconnect();
-    _activeObserverStates.splice(xi, 1);
-  }
+  _slotMap.get(el)?.obs.disconnect();
 
   const s: SlotObserverState = {
-    el,
     obs: null as unknown as MutationObserver,
     dt: paragraphs.join(''),
-    ps: paragraphs,
     f: 0,
   };
 
   const reapply = (): void => {
-    if (s.f & 1 || slotText(el) === s.dt) return;
+    if (s.f & 1 || el.textContent === s.dt) return;
     s.f |= 1;
-    renderParagraphsIntoSlot(el, s.ps);
+    render(el, paragraphs);
     void Promise.resolve().then(() => {
       s.f &= ~1;
     });
-    pushEvent(EVT + 'reapplied', {});
+    pushEvent(EVT + 're', {});
   };
 
   const obs = new MutationObserver(() => {
-    if (s.f || slotText(el) === s.dt) return;
+    if (s.f || el.textContent === s.dt) return;
     s.f |= 2;
     requestAnimationFrame(() => {
       s.f &= ~2;
@@ -116,61 +90,51 @@ function applyAndObserveSlot(el: HTMLElement, paragraphs: string[]): () => void 
     });
   });
 
-  renderParagraphsIntoSlot(el, paragraphs);
-  obs.observe(el, { childList: true, subtree: true });
+  render(el, paragraphs);
+  obs.observe(el, { childList: true });
   s.obs = obs;
-  _activeObserverStates.push(s);
+  _slotMap.set(el, s);
   return reapply;
 }
 
 /** Disconnect all active description observers. Call on SDK teardown. */
 export function teardownDescriptionObservers(): void {
-  for (const s of _activeObserverStates) s.obs.disconnect();
-  _activeObserverStates.length = 0;
+  for (const s of _slotMap.values()) s.obs.disconnect();
+  _slotMap.clear();
 }
 
 async function fetchDescription(
-  baseUrl: string,
-  apiKey: string,
-  language: string,
+  config: SdkConfig,
   listingId: string,
   archetype: string,
 ): Promise<DescriptionResponse | null> {
-  // listing_id, archetype, and language are server-controlled alphanumeric values — safe to embed directly.
-  const url = `${baseUrl}/adapt/description?listing_id=${listingId}&archetype=${archetype}&locale=${language}`;
-
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- caller guards !config.decisionApiUrl
+  const url = `${config.decisionApiUrl!}/adapt/description?listing_id=${listingId}&archetype=${archetype}&locale=${config.language}`;
+  const errEvt = EVT + 'error';
   let res: Response;
   try {
-    res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+    res = await fetch(url, { headers: { Authorization: `Bearer ${config.apiKey}` } });
   } catch {
-    // Emit degraded signal — not swallowed silently (guardrail K.2).
-    pushEvent(EVT + 'error', { reason: 'net_err' });
+    pushEvent(errEvt, { reason: 'ne' }); // guardrail K.2
     return null;
   }
 
   if (!res.ok) {
-    pushEvent(EVT + 'error', { reason: 'http_err', status: res.status });
+    pushEvent(errEvt, { reason: 'http_err', status: res.status });
     return null;
   }
 
-  let data: unknown;
+  let resp: DescriptionResponse | null = null;
   try {
-    data = await res.json();
+    const data = (await res.json()) as Record<string, unknown>;
+    if (data.source) resp = data as unknown as DescriptionResponse;
   } catch {
-    pushEvent(EVT + 'error', { reason: 'bad_resp' });
+    // fall through
+  }
+  if (!resp) {
+    pushEvent(errEvt, { reason: 'br' });
     return null;
   }
-
-  if (
-    typeof data !== 'object' ||
-    data === null ||
-    typeof (data as Record<string, unknown>).source !== 'string'
-  ) {
-    pushEvent(EVT + 'error', { reason: 'bad_resp' });
-    return null;
-  }
-
-  const resp = data as DescriptionResponse;
   if (resp.source !== 'ai_cached' || !resp.description) return null;
   return resp;
 }
@@ -180,9 +144,8 @@ async function fetchDescription(
  * [data-estalara-slot="description"] elements on the page.
  *
  * Gated on config.decisionApiUrl and archetype !== 'neutral'.
- * Listing ID from [data-estalara-listing][data-estalara-listing-id] or first
- * [data-estalara-listing-id]. Attaches a MutationObserver per slot for resilience.
- * Never throws.
+ * Listing ID from first [data-estalara-listing-id] on the page.
+ * Attaches a MutationObserver per slot for resilience. Never throws.
  */
 export async function applyDescriptionAdaptation(
   config: SdkConfig,
@@ -196,48 +159,25 @@ export async function applyDescriptionAdaptation(
   }
 
   const slots = document.querySelectorAll<HTMLElement>('[data-estalara-slot="description"]');
-  if (!slots.length) {
-    pushEvent(EVT + 'skipped', { reason: 'no_slot' });
-    return;
-  }
+  if (!slots.length) return;
 
-  const listingId =
-    document
-      .querySelector<HTMLElement>('[data-estalara-listing][data-estalara-listing-id]')
-      ?.getAttribute('data-estalara-listing-id') ??
-    document
-      .querySelector<HTMLElement>('[data-estalara-listing-id]')
-      ?.getAttribute('data-estalara-listing-id') ??
-    null;
+  const listingId = document
+    .querySelector<HTMLElement>('[data-estalara-listing-id]')
+    ?.getAttribute('data-estalara-listing-id');
 
   if (!listingId) return;
 
-  const resp = await fetchDescription(
-    config.decisionApiUrl,
-    config.apiKey,
-    config.language,
-    listingId,
-    archetype,
-  );
+  const resp = await fetchDescription(config, listingId, archetype);
   if (!resp) {
-    // source=original path — DOM untouched, emit observable skip signal.
     pushEvent(EVT + 'skipped', {});
     return;
   }
 
-  // resp.description is guaranteed non-empty by fetchDescription's guard
-  const paragraphs = splitParagraphs(resp.description ?? '');
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- fetchDescription guards !resp.description
+  const paragraphs = splitParagraphs(resp.description!);
   if (!paragraphs.length) return;
 
-  for (const slot of slots) {
-    const reapply = applyAndObserveSlot(slot, paragraphs);
-    requestAnimationFrame(reapply);
-  }
+  slots.forEach((slot) => requestAnimationFrame(applyAndObserveSlot(slot, paragraphs)));
 
-  pushEvent(EVT + 'applied', {
-    listing_id: listingId,
-    archetype,
-    paragraph_count: paragraphs.length,
-    locale: resp.locale,
-  });
+  pushEvent(EVT + 'applied', { listing_id: listingId, archetype });
 }

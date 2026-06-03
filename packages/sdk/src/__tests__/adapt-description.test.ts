@@ -11,7 +11,7 @@
  *   6. splitParagraphs() utility
  *   7. teardownDescriptionObservers disconnects all observers
  *   8. neutral archetype → emits skipped, no DOM mutation
- *   9. no slot elements → emits skipped
+ *   9. no slot elements → returns early (no event)
  *  10. HTTP error → emits adapt.description.error, no DOM mutation
  *  11. Network error → emits adapt.description.error, no DOM mutation
  */
@@ -179,8 +179,6 @@ describe('applyDescriptionAdaptation — ai_cached', () => {
     const payload = applied[0]!.payload;
     expect(payload.listing_id).toBe('listing-042');
     expect(payload.archetype).toBe('yield_hunter');
-    expect(payload.paragraph_count).toBe(3);
-    expect(payload.locale).toBe('en');
   });
 
   it('sends GET request to /adapt/description with correct query params and auth header', async () => {
@@ -306,14 +304,12 @@ describe('applyDescriptionAdaptation — MutationObserver resilience', () => {
     expect(paragraphs[0]).toBe('First paragraph for the yield hunter.');
 
     // Verify the re-apply event was emitted
-    const reapplied = testEventQueue.filter((e) => e.type === 'adapt.description.reapplied');
+    const reapplied = testEventQueue.filter((e) => e.type === 'adapt.description.re');
     expect(reapplied.length).toBeGreaterThan(0);
 
     // Verify no infinite loop: simulate three more rapid reverts
     // Each revert fires the observer once; only one rAF should be pending at a time.
-    const countBefore = testEventQueue.filter(
-      (e) => e.type === 'adapt.description.reapplied',
-    ).length;
+    const countBefore = testEventQueue.filter((e) => e.type === 'adapt.description.re').length;
     slot.innerHTML = '<p>revert 2</p>';
     slot.innerHTML = '<p>revert 3</p>';
     slot.innerHTML = '<p>revert 4</p>';
@@ -324,9 +320,7 @@ describe('applyDescriptionAdaptation — MutationObserver resilience', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const countAfter = testEventQueue.filter(
-      (e) => e.type === 'adapt.description.reapplied',
-    ).length;
+    const countAfter = testEventQueue.filter((e) => e.type === 'adapt.description.re').length;
     // Should be at most one more re-apply event (deduplicated by rafPending)
     expect(countAfter - countBefore).toBeLessThanOrEqual(1);
 
@@ -348,7 +342,7 @@ describe('applyDescriptionAdaptation — MutationObserver resilience', () => {
 
     // Count events after initial apply + rAF
     const initialApplyCount = testEventQueue.filter(
-      (e) => e.type === 'adapt.description.reapplied',
+      (e) => e.type === 'adapt.description.re',
     ).length;
 
     // The applying flag should be false now. If our own writes triggered re-apply,
@@ -358,9 +352,7 @@ describe('applyDescriptionAdaptation — MutationObserver resilience', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const afterCount = testEventQueue.filter(
-      (e) => e.type === 'adapt.description.reapplied',
-    ).length;
+    const afterCount = testEventQueue.filter((e) => e.type === 'adapt.description.re').length;
 
     // No additional re-apply triggered by our own mutation
     expect(afterCount).toBe(initialApplyCount);
@@ -392,7 +384,7 @@ describe('applyDescriptionAdaptation — neutral archetype', () => {
 // ---------------------------------------------------------------------------
 
 describe('applyDescriptionAdaptation — no slot elements', () => {
-  it('emits adapt.description.skipped when no description slots exist', async () => {
+  it('does not fetch and returns early when no description slots exist', async () => {
     const mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
 
@@ -400,10 +392,8 @@ describe('applyDescriptionAdaptation — no slot elements', () => {
     await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
     await flushAll();
 
+    // Early return — no fetch, no skipped event for no-slot (not a failure condition)
     expect(mockFetch).not.toHaveBeenCalled();
-    const skipped = testEventQueue.filter((e) => e.type === 'adapt.description.skipped');
-    expect(skipped.length).toBeGreaterThan(0);
-    expect(skipped[0]!.payload.reason).toBe('no_slot');
   });
 });
 
@@ -447,7 +437,7 @@ describe('applyDescriptionAdaptation — HTTP error', () => {
 
     const errorEvents = testEventQueue.filter((e) => e.type === 'adapt.description.error');
     expect(errorEvents.length).toBeGreaterThan(0);
-    expect(errorEvents[0]!.payload.reason).toBe('net_err');
+    expect(errorEvents[0]!.payload.reason).toBe('ne');
 
     const slot = container.querySelector('[data-estalara-slot="description"]')!;
     expect(slot.innerHTML).toBe(originalHtml);
@@ -477,9 +467,7 @@ describe('teardownDescriptionObservers', () => {
     // Tear down
     teardownDescriptionObservers();
 
-    const countBefore = testEventQueue.filter(
-      (e) => e.type === 'adapt.description.reapplied',
-    ).length;
+    const countBefore = testEventQueue.filter((e) => e.type === 'adapt.description.re').length;
 
     // Simulate framework revert AFTER teardown
     slot.innerHTML = '<p>reverted after teardown</p>';
@@ -487,9 +475,7 @@ describe('teardownDescriptionObservers', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const countAfter = testEventQueue.filter(
-      (e) => e.type === 'adapt.description.reapplied',
-    ).length;
+    const countAfter = testEventQueue.filter((e) => e.type === 'adapt.description.re').length;
     // No re-apply should have fired
     expect(countAfter).toBe(countBefore);
     expect(slot.querySelector('p')?.textContent).toBe('reverted after teardown');

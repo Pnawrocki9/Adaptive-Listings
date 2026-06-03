@@ -2749,15 +2749,70 @@ FOLLOW-169 hardens the headline contract but does NOT fix the source — ESC-019
 - id: FOLLOW-172
   title: CRM deep-outcome ingest → conversion_labels (PII-stripped)
   agent: backend-engineer + compliance-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 10
-  depends_on: [FOLLOW-171]
+  depends_on: [FOLLOW-171, FOLLOW-179]
   source: MASTER_DESIGN §T
   spec: backlog/sprint-14/FOLLOW-172.md
+  pr: '#191'
+  completed_at: '2026-06-03T20:08:10Z'
   notes: |
-    Authenticated tenant webhook for offer/contract/purchase/lost; resolve to lead_id tenant-side,
-    no CRM PII into Estalara stores (§T.6). Compliance sign-off required.
+    DONE: POST /api/crm/outcome — HMAC tenant-scoped auth, Zod .strict() allow-list (deep classes
+    only), writes via upsertConversionLabel (label_source=system, confidence=1.0) under RLS, + DSR
+    erase cascade. Compliance conditions 1-7 (code-review gates) met. RETRO-031 found LG-1: the DSR
+    cascade is keyed lead_id=session_id but CRM rows use a tenant opaque token → CRM rows survive
+    erasure (Art. 17 gap) = FOLLOW-184 (P1). Go-live gates 8-10 (ROPA/DPIA/TTL/onboarding) tracked
+    in FOLLOW-186/187. Tenant onboarding/docs needed before the webhook has a producer (FOLLOW-186).
+
+# ── Conversion Label Loop — post-FOLLOW-172 follow-ups (RETRO-031) — promoted 2026-06-03 ──
+
+- id: FOLLOW-184
+  title: DSR erasure must reach CRM-written conversion_labels rows (Art. 17 completeness)
+  agent: backend-engineer + compliance-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 5
+  depends_on: [FOLLOW-172]
+  source: RETRO-031 (LG-1); relates to FOLLOW-180
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-184 stub)
+  notes: |
+    COMPLIANCE/LEGAL — GDPR Art. 17. dsr/erase deletes conversion_labels WHERE lead_id=session_id,
+    but CRM rows store lead_id = a tenant opaque token in a DIFFERENT namespace → CRM deep-outcome
+    rows are NOT erased today. No live exposure yet (no tenant producer; FOLLOW-186), but MUST fix
+    before any CRM-integrated tenant go-live. Unify the lead_id↔erasure-subject mapping (with
+    FOLLOW-180) so the cascade reaches CRM rows; keep the empty-lead_id guard.
+
+- id: FOLLOW-185
+  title: PG-harness integration test — CRM route write + DSR cascade + two-writer precedence
+  agent: data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 5
+  depends_on: [FOLLOW-179, FOLLOW-172]
+  source: RETRO-031 (TG-1/TG-2); consolidate with FOLLOW-181 + FOLLOW-183
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-185 stub)
+  notes: |
+    The DSR cascade mis-key (FOLLOW-184) SHIPPED because the test mocks the DB — a real-PG harness
+    would have caught it. PM should consolidate FOLLOW-181 + FOLLOW-183 + FOLLOW-185 into ONE
+    pgmem/Testcontainers DB-integration ticket: RLS isolation, FK cascade, UNIQUE constraint,
+    upsert precedence WHERE, CRM-write + DSR-erase reachability, two-writer convergence.
+
+- id: FOLLOW-187
+  title:
+    Compliance docs for CRM ingest — ROPA Activity 14 + DPIA §2.3/§2.5 + conversion_labels TTL
+    (go-live gates 8-9)
+  agent: compliance-engineer + data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-172]
+  source: RETRO-031 (DG-1); HANDOFFS FOLLOW-172 conditions 8-9
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-187 stub)
+  notes: |
+    Go-live gates (not merge gates). ROPA Activity 14 + DPIA §2.3/§2.5 for CRM deep-outcome ingest;
+    13-month TTL cron for conversion_labels (the existing TTL cron does NOT cover this table —
+    HANDOFFS:952). Required before tenant go-live. (Onboarding pseudonymity checkbox = FOLLOW-186, P2.)
 
 - id: FOLLOW-173
   title: Conversion-label aggregation + score-vs-actual calibration

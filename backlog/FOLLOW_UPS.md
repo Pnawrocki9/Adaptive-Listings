@@ -5310,7 +5310,151 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 184 (182-183 = RETRO-030 / PR #190 / FOLLOW-179 Conversion Label Loop T1-hardening:
+## FOLLOW-184 — DSR erasure must reach CRM-written conversion_labels rows (Art. 17 completeness)
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-031 (§4a LG-1)
+- **source_ticket:** FOLLOW-172 / PR #191
+- **recommended_sprint:** Sprint 14
+- **agent:** backend-engineer + compliance-engineer
+- **estimated_hours:** 5
+- **scope:** The DSR erase cascade added in PR #191 deletes
+  `conversion_labels WHERE tenant_id = … AND lead_id = record.sessionId AND lead_id <> ''`
+  (`apps/control-plane/src/app/api/dsr/erase/route.ts:340-347`). But the CRM webhook writes
+  `lead_id = data.lead_id` — a tenant-supplied **opaque pseudonymous token** (§T.6 Option i,
+  `crm/outcome/route.ts:332`), which is a DIFFERENT identifier namespace than the DSR `session_id`
+  (the anonymous Estalara session token captured at `dsr/initiate/route.ts:114-122` and validated
+  against `session_embeddings`). So `lead_id (CRM token) = session_id` is almost never true → **CRM
+  deep-outcome rows survive a DSR erasure** — a real GDPR Art. 17 completeness gap for exactly the
+  population compliance condition 7 / §AC2 was meant to cover. The PR's comment "the lead_id is the
+  session_id pseudonymous token" (`erase/route.ts:330`) is the load-bearing incorrect assumption
+  (true only vacuously for the empty-lead feedback rows). NOTE the empty-`lead_id` guard itself is
+  CORRECT (double-guarded; a blank lead_id can never match-all — §4a LG-2 is closed). Resolve the
+  identifier model: a DSR erase must resolve the data subject's durable `lead_id` (not just
+  session_id) and erase on THAT, OR accept/derive the `lead_id` and delete on it. Sequence with /
+  relate to FOLLOW-180 (durable lead_id). **Must close before any CRM-integrated tenant goes live.**
+- **ac:**
+  - [ ] a DSR erase deletes `conversion_labels` rows written by the CRM webhook for the data subject
+        (the durable `lead_id`), proven by a PG-harness test (a CRM row with `lead_id != session_id`
+        IS erased) — coordinate the harness with FOLLOW-185
+  - [ ] the identifier-resolution model (session_id ⋈ durable lead_id ⋈ CRM token) is documented in
+        the DSR runbook + MASTER_DESIGN §T.6
+  - [ ] empty-`lead_id` rows remain un-matchable (regression guard for LG-2)
+  - [ ] CI green
+- **depends_on:** relates to FOLLOW-180 (durable lead_id); shares PG harness with FOLLOW-185.
+- **promoted_to_queue:** true (QUEUE.md, 2026-06-03; P1)
+
+---
+
+## FOLLOW-185 — PG-harness integration test: CRM route write + DSR cascade + two-writer precedence
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-031 (§4c TG-1/TG-2, §4b CB-1)
+- **source_ticket:** FOLLOW-172 / PR #191
+- **recommended_sprint:** Sprint 14
+- **agent:** data-engineer
+- **estimated_hours:** 5
+- **scope:** The CRM route test fully mocks `upsertConversionLabel`, `transaction`, and `execute`
+  (`crm/outcome/route.test.ts:117-172`), so the SET LOCAL RLS and the DSR
+  `DELETE … WHERE lead_id = session_id` are asserted only against mocks — which is precisely why the
+  LG-1 erasure mis-key shipped green (a mock proves the DELETE is issued, never that it matches the
+  right rows). Add a pgmem/Testcontainers integration test against real Postgres: (a) insert a CRM
+  `conversion_labels` row with `lead_id = <opaque token != session_id>`, run a DSR erase for that
+  session, assert whether the CRM row is matched (proves/guards LG-1, ties to FOLLOW-184); (b) SET
+  LOCAL `app.current_tenant_id` actually isolates the CRM write under RLS; (c) a shallow ping label
+  (`viewing_booked`) is UPGRADED to a deep CRM label (`purchased`) on the same
+  `(tenant_id, prediction_id)` via the precedence upsert (the two-writer convergence — the
+  load-bearing §T behavior, currently zero integration coverage); (d) `confidence: 0` is preserved
+  end-to-end (CB-1 — the one value a `??`→`||` refactor would silently flip to 1.0; no test covers
+  it today). Folds/extends the FOLLOW-181/183 PG-harness scope — PM may merge into one
+  DB-integration ticket.
+- **ac:**
+  - [ ] DSR-erase-vs-CRM-row match behavior is asserted against real PG (proves LG-1; guards
+        FOLLOW-184)
+  - [ ] RLS isolation on the CRM write is exercised against real PG
+  - [ ] shallow→deep precedence upgrade on the same `(tenant_id, prediction_id)` is asserted
+        end-to-end
+  - [ ] `confidence: 0` survives the route→helper→DB path
+  - [ ] CI green
+- **depends_on:** shares the PG-harness need with FOLLOW-181 + FOLLOW-183; supports FOLLOW-184.
+- **promoted_to_queue:** true (QUEUE.md, 2026-06-03; P1)
+
+---
+
+## FOLLOW-186 — Tenant onboarding + docs for the CRM webhook (HALF_WIRE_C closure + compliance condition 10)
+
+- **status:** OPEN
+- **priority:** P2
+- **source_retro:** RETRO-031 (§3 HALF_WIRE_C, §4b CB-2, §4d DG-1 condition 10)
+- **source_ticket:** FOLLOW-172 / PR #191
+- **recommended_sprint:** Sprint 14
+- **agent:** compliance-engineer + backend-engineer
+- **estimated_hours:** 4
+- **scope:** `POST /api/crm/outcome` is a tenant-facing webhook with **no first-party producer** —
+  grepped, zero callers in `packages/sdk`, `apps/*`, `Estalara-app`, or any non-self test
+  (HALF_WIRE_C, but BY DESIGN: the producer is the tenant's CRM). Per Rule L the remedy is not a
+  first-party producer but the onboarding/docs that make the tenant the producer + a go-live gate.
+  Ship: (1) tenant-facing integration docs for the endpoint (HMAC-SHA256 signing model = FOLLOW-051,
+  request schema = the 6 allow-listed fields, deep-class-only enum, examples); (2) compliance
+  **condition 10** — the §U onboarding compliance-gate checkbox: tenant contractually affirms
+  `lead_id` values are Estalara-assigned pseudonymous tokens, NOT CRM contact IDs / email / PII
+  (`HANDOFFS.md:1083-1085`); (3) extend that checkbox with a "no PII in `outcome_raw`" clause (CB-2
+  — `outcome_raw` is `z.record(z.unknown())`, an intentional nested escape hatch the `.strict()`
+  top-level guard does NOT cover) and add a max-byte-size bound on `outcome_raw`. **Gates the first
+  CRM-integrated tenant go-live.**
+- **ac:**
+  - [ ] tenant-facing CRM-webhook integration docs (auth + schema + examples) published
+  - [ ] §U onboarding gate includes the `lead_id`-is-pseudonymous-token checkbox (condition 10)
+  - [ ] onboarding gate / DPA includes a "no PII in `outcome_raw`" clause; route adds an
+        `outcome_raw` size bound
+  - [ ] CI green
+- **depends_on:** relates to compliance condition 10 (HANDOFFS §AC2); cite Rule L.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-187 — Compliance docs for CRM ingest: ROPA Activity 14 + DPIA §2.3/§2.5 + conversion_labels 13-month TTL (go-live gates 8 & 9)
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-031 (§4d DG-1, conditions 8 & 9)
+- **source_ticket:** FOLLOW-172 / PR #191
+- **recommended_sprint:** Sprint 14
+- **agent:** compliance-engineer + data-engineer
+- **estimated_hours:** 5
+- **scope:** Compliance §AC2 scopes conditions 8–10 as go-live gates that "must be tracked as open
+  items in backlog/FOLLOW_UPS.md if not satisfied at time of merge" (`HANDOFFS.md:1087-1089`). PR
+  #191 ships conditions 1–7 only (by design). This stub tracks **condition 8** + **condition 9**
+  (condition 10 → FOLLOW-186):
+  - **Condition 8 (ROPA/DPIA):** add ROPA Activity 14 — CRM Deep-Outcome Ingest to
+    `docs/compliance/ropa.md` (data categories: prediction_id non-PII, lead_id pseudonymous,
+    outcome_class enum, confidence; legal basis + retention per `HANDOFFS.md:976-988`); add the DPIA
+    §2.3 / §2.5 rows per `HANDOFFS.md:994-1001`. Merged to main before any tenant is pointed at the
+    endpoint. Neither requires external DPO sign-off before merge.
+  - **Condition 9 (13-month TTL):** the nightly TTL cron covers `session_embeddings` /
+    `engagement_scores` but **NOT** `conversion_labels` (`HANDOFFS.md:952-958`). File/implement a
+    13-month TTL enforcement (cron or partition TTL) for `conversion_labels`, verified in CI. **Per
+    Rule N, no documentation, banner, or API response may state a concrete retention period until
+    this lands** — interim ROPA/DPIA language must read "13 months (TTL enforcement pending
+    FOLLOW-187)."
+- **ac:**
+  - [ ] ROPA Activity 14 added; DPIA §2.3/§2.5 rows added (condition 8)
+  - [ ] 13-month TTL enforcement on `conversion_labels` shipped + CI-verified (condition 9)
+  - [ ] ROPA/DPIA retention language honors Rule N interim carve-out until the TTL is live
+  - [ ] CI green
+- **depends_on:** condition 10 split to FOLLOW-186; relates to FOLLOW-177 (§T status).
+- **promoted_to_queue:** true (QUEUE.md, 2026-06-03; P1)
+
+---
+
+<!-- next free FOLLOW number: 188 (184-187 = RETRO-031 / PR #191 / FOLLOW-172 Conversion Label Loop T2 — CRM deep-outcome ingest webhook:
+     184 = P1 DSR erase must reach CRM-written conversion_labels rows — cascade keys on session_id but CRM rows keyed on opaque lead_id of a different namespace → Art. 17 gap (LG-1; relate FOLLOW-180);
+     185 = P1 PG-harness test: CRM route write + DSR cascade match + two-writer shallow→deep precedence upgrade + confidence:0 (TG-1/TG-2/CB-1; folds FOLLOW-181/183);
+     186 = P2 tenant onboarding + CRM-webhook docs (HALF_WIRE_C-by-design closure) + compliance condition 10 lead_id-pseudonymity checkbox + no-PII-in-outcome_raw clause + outcome_raw size bound (CB-2; cite Rule L);
+     187 = P1 compliance go-live gates 8 & 9 — ROPA Activity 14 + DPIA §2.3/§2.5 + conversion_labels 13-month TTL cron (DG-1; Rule N interim language).
+     182-183 = RETRO-030 / PR #190 / FOLLOW-179 Conversion Label Loop T1-hardening:
      182 = P1 eliminate TS-map↔SQL-CASE precedence duplication (LG-1/LG-2; Rule K.1 — derive SQL from TS map or 12-pair parity test);
      183 = P1 direct integration test for upsertConversionLabel SQL WHERE + UNIQUE constraint (TG-1/TG-2; folds FOLLOW-181 PG harness).
      177-181 = RETRO-029 / PR #188 / FOLLOW-171 Conversion Label Loop T1:

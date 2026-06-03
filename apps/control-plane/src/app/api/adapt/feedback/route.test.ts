@@ -1,5 +1,5 @@
 /**
- * Unit tests for POST /api/adapt/feedback — FOLLOW-007 + FOLLOW-051.
+ * Unit tests for POST /api/adapt/feedback — FOLLOW-007 + FOLLOW-051 + FOLLOW-179.
  *
  * Coverage:
  *  - 202 Accepted on valid HMAC-signed body (success path)
@@ -13,6 +13,11 @@
  *  - Invalid JSON body    → 400 VALIDATION_ERROR
  *  - Zod validation fail  → 400 VALIDATION_ERROR
  *  - Fire-and-forget: response returns 202 before DB upsert resolves
+ *  FOLLOW-179:
+ *  - upsertConversionLabel called (not plain insert) when prediction_id present
+ *  - idempotent: same prediction_id twice calls upsertConversionLabel twice (idempotency enforced by helper + DB)
+ *  - invalid outcomeClass bubbles a ZodError → logged, response still 202 (fail-safe)
+ *  - confidence is always passed as 1.0 for system-source labels
  *
  * @module apps/control-plane/src/app/api/adapt/feedback/route.test
  */
@@ -22,27 +27,35 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // ─── Mock @estalara/db (hoisted) ─────────────────────────────────────────────
 
-const { mockSelectLimit, mockOnConflictDoUpdate, mockInsertValues, mockCreateAdminClient } =
-  vi.hoisted(() => {
-    const mockSelectLimit = vi.fn().mockResolvedValue([]);
-    const mockSelectWhere = vi.fn().mockReturnValue({ limit: mockSelectLimit });
-    const mockSelectFrom = vi.fn().mockReturnValue({ where: mockSelectWhere });
-    const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
+const {
+  mockSelectLimit,
+  mockOnConflictDoUpdate,
+  mockInsertValues,
+  mockCreateAdminClient,
+  mockUpsertConversionLabel,
+} = vi.hoisted(() => {
+  const mockSelectLimit = vi.fn().mockResolvedValue([]);
+  const mockSelectWhere = vi.fn().mockReturnValue({ limit: mockSelectLimit });
+  const mockSelectFrom = vi.fn().mockReturnValue({ where: mockSelectWhere });
+  const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
 
-    const mockOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
-    const mockInsertValues = vi
-      .fn()
-      .mockReturnValue({ onConflictDoUpdate: mockOnConflictDoUpdate });
-    const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
+  const mockOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+  const mockInsertValues = vi.fn().mockReturnValue({ onConflictDoUpdate: mockOnConflictDoUpdate });
+  const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
 
-    const mockCreateAdminClient = vi.fn(() => ({ select: mockSelect, insert: mockInsert }));
-    return {
-      mockSelectLimit,
-      mockOnConflictDoUpdate,
-      mockInsertValues,
-      mockCreateAdminClient,
-    };
-  });
+  const mockCreateAdminClient = vi.fn(() => ({ select: mockSelect, insert: mockInsert }));
+
+  // FOLLOW-179: upsertConversionLabel is now the write path for conversion_labels.
+  const mockUpsertConversionLabel = vi.fn().mockResolvedValue(undefined);
+
+  return {
+    mockSelectLimit,
+    mockOnConflictDoUpdate,
+    mockInsertValues,
+    mockCreateAdminClient,
+    mockUpsertConversionLabel,
+  };
+});
 
 vi.mock('@estalara/db', () => ({
   createAdminClient: mockCreateAdminClient,
@@ -55,14 +68,8 @@ vi.mock('@estalara/db', () => ({
     paused: 'paused',
     updatedAt: 'updated_at',
   },
-  // FOLLOW-171: conversion_labels table marker — the mock insert ignores its arg.
-  conversionLabels: {
-    tenantId: 'tenant_id',
-    predictionId: 'prediction_id',
-    leadId: 'lead_id',
-    outcomeClass: 'outcome_class',
-    labelSource: 'label_source',
-  },
+  // FOLLOW-179: the route now calls upsertConversionLabel (no longer raw insert).
+  upsertConversionLabel: mockUpsertConversionLabel,
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -403,7 +410,7 @@ describe('POST /api/adapt/feedback — bandit update', () => {
     expect(insertedRow.variant).toBe('v2');
   });
 
-  it('FOLLOW-171: persists a conversion_labels row when prediction_id is present', async () => {
+  it('FOLLOW-179: calls upsertConversionLabel (not raw insert) when prediction_id is present', async () => {
     mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
 
     await POST(
@@ -418,18 +425,73 @@ describe('POST /api/adapt/feedback — bandit update', () => {
     );
     await flushMicrotasks();
 
-    // Two inserts fire: the bandit upsert AND the conversion_labels row. Find the label row
-    // by its distinctive fields.
-    const calls = mockInsertValues.mock.calls.map((c) => c[0] as Record<string, unknown>);
-    const labelRow = calls.find((r) => 'outcomeClass' in r);
-    expect(labelRow).toBeDefined();
-    expect(labelRow?.predictionId).toBe('decision-uuid-123');
-    expect(labelRow?.tenantId).toBe('tenant-zzz');
-    expect(labelRow?.outcomeClass).toBe('viewing_booked'); // converted=true → shallowest positive
-    expect(labelRow?.labelSource).toBe('system');
+    // upsertConversionLabel must be called with the correct input.
+    expect(mockUpsertConversionLabel).toHaveBeenCalledOnce();
+    const [, input] = mockUpsertConversionLabel.mock.calls[0] as [unknown, Record<string, unknown>];
+    expect(input.predictionId).toBe('decision-uuid-123');
+    expect(input.tenantId).toBe('tenant-zzz');
+    expect(input.outcomeClass).toBe('viewing_booked'); // converted=true → shallowest positive
+    expect(input.labelSource).toBe('system');
   });
 
-  it('FOLLOW-171: no conversion_labels row when prediction_id is absent (bandit-only)', async () => {
+  it('FOLLOW-179: confidence is always 1.0 for system-source labels (CB-2 fix)', async () => {
+    mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
+
+    await POST(
+      makePostRequest({
+        ...VALID_BODY,
+        prediction_id: 'decision-uuid-cb2',
+      }),
+    );
+    await flushMicrotasks();
+
+    expect(mockUpsertConversionLabel).toHaveBeenCalledOnce();
+    const [, input] = mockUpsertConversionLabel.mock.calls[0] as [unknown, Record<string, unknown>];
+    expect(input.confidence).toBe(1.0);
+  });
+
+  it('FOLLOW-179: idempotent — second ping with same prediction_id calls upsertConversionLabel again (dedup is DB-enforced)', async () => {
+    // The route calls upsertConversionLabel on every ping with a prediction_id.
+    // The DB-level uniqueness + precedence WHERE clause prevents corruption.
+    // This test verifies the route does NOT short-circuit on repeated prediction_id values —
+    // the idempotency contract belongs to the helper + DB, not to the route layer.
+    mockSelectLimit.mockResolvedValue([{ alpha: 1.0, beta: 1.0 }]);
+
+    const body = {
+      session_id: 'sess-idem',
+      tenant_id: 'tenant-abc',
+      archetype: 'family_buyer',
+      variant: 'v1',
+      converted: false,
+      prediction_id: 'same-prediction-id',
+    };
+
+    await POST(makePostRequest(body));
+    await flushMicrotasks();
+    await POST(makePostRequest(body));
+    await flushMicrotasks();
+
+    // Called twice — once per request. The upsert helper handles conflict resolution.
+    expect(mockUpsertConversionLabel).toHaveBeenCalledTimes(2);
+  });
+
+  it('FOLLOW-179: no_response class on converted=false', async () => {
+    mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
+
+    await POST(
+      makePostRequest({
+        ...VALID_BODY,
+        converted: false,
+        prediction_id: 'dec-false-001',
+      }),
+    );
+    await flushMicrotasks();
+
+    const [, input] = mockUpsertConversionLabel.mock.calls[0] as [unknown, Record<string, unknown>];
+    expect(input.outcomeClass).toBe('no_response');
+  });
+
+  it('FOLLOW-171: no conversion_labels upsert when prediction_id is absent (bandit-only)', async () => {
     mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
 
     await POST(
@@ -443,11 +505,10 @@ describe('POST /api/adapt/feedback — bandit update', () => {
     );
     await flushMicrotasks();
 
-    const calls = mockInsertValues.mock.calls.map((c) => c[0] as Record<string, unknown>);
-    expect(calls.some((r) => 'outcomeClass' in r)).toBe(false);
+    expect(mockUpsertConversionLabel).not.toHaveBeenCalled();
   });
 
-  it('uses onConflictDoUpdate to update existing rows', async () => {
+  it('uses onConflictDoUpdate to update existing bandit rows', async () => {
     mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
 
     await POST(makePostRequest(VALID_BODY));
@@ -493,6 +554,22 @@ describe('POST /api/adapt/feedback — fire-and-forget', () => {
     mockSelectLimit.mockRejectedValueOnce(new Error('connection refused'));
 
     const res = await POST(makePostRequest(VALID_BODY));
+    expect(res.status).toBe(202);
+
+    await flushMicrotasks();
+    // No exception should escape to the test runner.
+  });
+
+  it('upsertConversionLabel throwing does NOT crash the response (fail-safe)', async () => {
+    mockSelectLimit.mockResolvedValue([{ alpha: 1.0, beta: 1.0 }]);
+    mockUpsertConversionLabel.mockRejectedValueOnce(new Error('unique constraint violation'));
+
+    const res = await POST(
+      makePostRequest({
+        ...VALID_BODY,
+        prediction_id: 'decision-error-test',
+      }),
+    );
     expect(res.status).toBe(202);
 
     await flushMicrotasks();

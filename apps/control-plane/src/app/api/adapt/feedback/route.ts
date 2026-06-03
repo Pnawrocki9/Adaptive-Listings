@@ -46,7 +46,7 @@ import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 
 import { errorBody, ErrorCode, updateBanditArm, outcomeClassFromConverted } from '@estalara/shared';
-import { createAdminClient, abBanditWeights, conversionLabels } from '@estalara/db';
+import { createAdminClient, abBanditWeights, upsertConversionLabel } from '@estalara/db';
 
 // ─── Body schema ──────────────────────────────────────────────────────────────
 
@@ -206,7 +206,7 @@ async function updateArmAsync(args: {
   }
 }
 
-// ─── Fire-and-forget conversion-label persistence (FOLLOW-171, §T) ────────────
+// ─── Fire-and-forget conversion-label persistence (FOLLOW-171 + FOLLOW-179, §T) ──
 
 /**
  * Persists a durable `conversion_labels` row pairing the prediction (`prediction_id` =
@@ -214,17 +214,27 @@ async function updateArmAsync(args: {
  * for later per-tenant fine-tuning (TALLRec/LoRA, §D.5.7) instead of being collapsed into the
  * bandit Beta counters and discarded.
  *
+ * Uses `upsertConversionLabel` (FOLLOW-179) instead of a plain INSERT to enforce the
+ * one-row-per-(tenant_id, prediction_id) invariant (§T.2). On duplicate `prediction_id`
+ * the upsert applies the class-precedence policy: a later system ping only overwrites an
+ * existing label when its rank is higher (e.g. `viewing_booked` > `no_response`). This
+ * prevents a re-fired feedback ping from corrupting an already-recorded deeper outcome.
+ *
  * `label_source` is always `'system'` here (auto-mapped from the ping). The coarse `converted`
  * boolean maps to the shallowest outcome class via `outcomeClassFromConverted`; deeper classes
  * (offer/contract/purchase/lost) arrive via CRM ingest (FOLLOW-172). The full parsed ping body
  * is retained in `outcome_raw` for source fidelity.
+ *
+ * `confidence` is always set to 1.0 for system-source labels: they represent observed events
+ * (hard facts), not probabilistic inferences. This closes RETRO-029 CB-2 (system rows were
+ * writing NULL, inconsistent with CRM rows that write 1.0).
  *
  * Never throws — errors are logged and swallowed so the feedback ping cannot impact callers.
  * No-op when DATABASE_URL_ADMIN is unset (dev/test) or no `prediction_id` was supplied.
  *
  * @internal
  */
-async function insertConversionLabelAsync(args: {
+async function upsertConversionLabelAsync(args: {
   tenantId: string;
   predictionId: string;
   leadId: string;
@@ -236,17 +246,18 @@ async function insertConversionLabelAsync(args: {
 
   try {
     const db = createAdminClient();
-    await db.insert(conversionLabels).values({
+    await upsertConversionLabel(db, {
       tenantId: args.tenantId,
       predictionId: args.predictionId,
       leadId: args.leadId,
       outcomeClass: outcomeClassFromConverted(args.converted),
       outcomeRaw: args.outcomeRaw,
       labelSource: 'system',
+      confidence: 1.0,
     });
   } catch (err) {
     console.error(
-      '[adapt/feedback] conversion_labels insert failed:',
+      '[adapt/feedback] conversion_labels upsert failed:',
       err instanceof Error ? err.message : err,
     );
   }
@@ -366,7 +377,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // (prediction, outcome) pair so it survives for later fine-tuning instead of being
   // collapsed into the bandit counters. Older SDKs omit prediction_id → bandit-only.
   if (parsed.data.prediction_id) {
-    void insertConversionLabelAsync({
+    void upsertConversionLabelAsync({
       tenantId: parsed.data.tenant_id,
       predictionId: parsed.data.prediction_id,
       leadId: parsed.data.lead_id ?? '',

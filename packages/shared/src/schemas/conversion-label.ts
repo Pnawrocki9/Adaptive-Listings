@@ -8,6 +8,9 @@
  *
  *   - `ConversionOutcomeClassSchema` — the canonical outcome taxonomy enum.
  *   - `ConversionLabelSourceSchema`  — who produced the label (system vs manual admin).
+ *   - `conversionLabelRank`          — the precedence function for upsert conflict resolution
+ *     (FOLLOW-179): a comparable number used to decide whether an incoming write should
+ *     overwrite an existing row.
  *
  * Both the control-plane routes (which write labels) and the `@estalara/db` drizzle
  * schema (the `conversion_labels` table) import these so the taxonomy is defined once.
@@ -64,4 +67,80 @@ export type ConversionLabelSource = z.infer<typeof ConversionLabelSourceSchema>;
  */
 export function outcomeClassFromConverted(converted: boolean): ConversionOutcomeClass {
   return converted ? 'viewing_booked' : 'no_response';
+}
+
+// ─── Precedence ranking for upsert conflict resolution (FOLLOW-179) ───────────
+
+/**
+ * Per-class rank within the same `label_source`. Higher = more authoritative.
+ *
+ * Funnel/finality ordering rationale:
+ *   - `no_response` = 0   — the weakest label; no outcome observed yet.
+ *   - `viewing_booked` = 1 — in-funnel progress, shallowest positive.
+ *   - `offer_made` = 2     — deeper funnel progress.
+ *   - `contract_signed` = 3 — near-terminal progress.
+ *   - `lost` = 4           — a definitive negative terminal outcome.
+ *     `lost` outranks in-funnel classes (`viewing_booked`, `offer_made`, `contract_signed`)
+ *     because a deal that died is final information: overwriting "offer_made" with "lost" is
+ *     an accurate reflection of reality; overwriting "lost" with "offer_made" (the reverse)
+ *     would re-open a closed story and corrupt the training corpus.
+ *   - `purchased` = 5      — the strongest terminal positive. Never overridden by `lost` from
+ *     the same source: if a purchase was recorded, a later system-generated `lost` signal is
+ *     either erroneous or concerns a different decision (correlation artefact). A human admin
+ *     can still override via `manual_admin`.
+ *
+ * Note: one reasonable alternative ordering would place `lost` below `viewing_booked`
+ * (treating it as "uncertainty" rather than "finality"), but the design decision here treats
+ * `lost` as the definitive negative terminal — consistent with standard CRM funnel semantics
+ * where "lost deal" is an explicit, intentional state that supersedes any open-funnel state.
+ * If this becomes contentious, file a follow-up ADR.
+ */
+const OUTCOME_CLASS_RANK: Record<ConversionOutcomeClass, number> = {
+  no_response: 0,
+  viewing_booked: 1,
+  offer_made: 2,
+  contract_signed: 3,
+  lost: 4,
+  purchased: 5,
+};
+
+/**
+ * Source-level offset applied to `manual_admin` labels so that ANY manual label outranks
+ * ANY system label, regardless of outcome class.
+ *
+ * A human reclassification is always more authoritative than an auto-mapped signal: it
+ * incorporates information the system cannot observe (the agent's notes, CRM reconciliation,
+ * manual verification). The offset is chosen to be larger than the maximum class rank so
+ * that `manual_admin` + `no_response` (offset + 0 = 1000) still beats
+ * `system` + `purchased`  (0 + 5 = 5).
+ */
+const MANUAL_ADMIN_OFFSET = 1000;
+
+/**
+ * Returns a comparable rank number for a (outcomeClass, labelSource) pair.
+ * Used by the `upsertConversionLabel` helper to decide — purely in application logic via
+ * `onConflictDoUpdate` — whether an incoming write should overwrite an existing row.
+ *
+ * Precedence rules (single source of truth, FOLLOW-179):
+ *   1. `label_source` dominates: `manual_admin` always outranks `system`.
+ *   2. Within the same `label_source`, rank by `outcome_class` using the funnel/finality
+ *      order defined in `OUTCOME_CLASS_RANK`.
+ *   3. Equal ranks → the newer `labeled_at` wins (handled in the SQL WHERE clause).
+ *
+ * @example
+ * // manual_admin / no_response outranks system / purchased
+ * conversionLabelRank({ outcomeClass: 'no_response', labelSource: 'manual_admin' }) // 1000
+ * conversionLabelRank({ outcomeClass: 'purchased',   labelSource: 'system' })       // 5
+ *
+ * // Within the same source, funnel depth wins
+ * conversionLabelRank({ outcomeClass: 'purchased',   labelSource: 'system' })       // 5
+ * conversionLabelRank({ outcomeClass: 'no_response', labelSource: 'system' })       // 0
+ */
+export function conversionLabelRank(args: {
+  outcomeClass: ConversionOutcomeClass;
+  labelSource: ConversionLabelSource;
+}): number {
+  const classRank = OUTCOME_CLASS_RANK[args.outcomeClass];
+  const sourceOffset = args.labelSource === 'manual_admin' ? MANUAL_ADMIN_OFFSET : 0;
+  return sourceOffset + classRank;
 }

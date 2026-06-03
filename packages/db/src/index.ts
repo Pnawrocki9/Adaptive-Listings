@@ -12,3 +12,5 @@
 export { createClient, createTenantClient, createAdminClient, withJwt } from './client.js';
 export type { ClientOptions, Database, TenantDatabase } from './client.js';
 export * from './schema/index.js';
+export { upsertConversionLabel } from './upsert-conversion-label.js';
+export type { UpsertConversionLabelInput } from './upsert-conversion-label.js';

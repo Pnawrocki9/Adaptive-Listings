@@ -257,6 +257,27 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     expect(body).toMatch(/INSERT INTO adaptation_decisions/);
     expect(body).toMatch(/holdout_group/);
   });
+
+  it('INSERT carries Conversion Label Loop fields (FOLLOW-170): model_version + features_snapshot + lead_id', async () => {
+    const capture = captureFetchBody();
+
+    await POST(
+      makePostRequest({ ...VALID_POST_BODY, holdout_pct: 0.0, consent_mode_enabled: false }),
+    );
+
+    const body = capture.getLastBody() ?? '';
+    // New columns present in the INSERT column list.
+    expect(body).toContain('model_version');
+    expect(body).toContain('features_snapshot');
+    expect(body).toContain('lead_id');
+    // model_version is stamped with the current scorer.
+    expect(body).toContain('rulebased-bandit-v1');
+    // features_snapshot is a PII-free JSON blob of the scorer signals — and carries NO
+    // session/lead identifier.
+    expect(body).toMatch(/"archetype":/);
+    expect(body).toMatch(/"confidence":/);
+    expect(body).not.toMatch(/"session_id":/);
+  });
 });
 
 // ─── No CLICKHOUSE_URL — fire-and-forget skips gracefully ─────────────────────

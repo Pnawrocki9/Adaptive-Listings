@@ -11,6 +11,9 @@
  *   4. In a single transaction:
  *      - DELETE FROM session_embeddings WHERE session_id AND tenant_id
  *      - DELETE FROM consent_records WHERE session_id
+ *      - DELETE FROM conversion_labels WHERE lead_id = session_id AND tenant_id (FOLLOW-172)
+ *        GUARD: only when lead_id (= session_id) is non-empty — an empty lead_id would
+ *        erase ALL system labels for the tenant (FOLLOW-180/LG-2 boundary).
  *   5. Redis DEL session:{session_id}:* (fire-and-forget).
  *   6. **NEW (FOLLOW-039 — RODO Art. 17 hard-delete):**
  *      For each ClickHouse PII table (events, adaptation_decisions, llm_calls,
@@ -28,12 +31,13 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, ne } from 'drizzle-orm';
 import {
   createAdminClient,
   dsrVerifications,
   sessionEmbeddings,
   consentRecords,
+  conversionLabels,
   dsrClickhouseMutations,
 } from '@estalara/db';
 import { hashOtp } from '@/lib/dsr-otp';
@@ -320,6 +324,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
 
     await tx.delete(consentRecords).where(eq(consentRecords.sessionId, record.sessionId));
+
+    // ── FOLLOW-172: conversion_labels erasure cascade (GDPR Art. 17) ────────
+    // Delete conversion_labels rows keyed by lead_id for this data subject.
+    // In the current MVP the lead_id is the session_id pseudonymous token; a
+    // durable mapping (FOLLOW-180) will make this join richer in future.
+    //
+    // CRITICAL GUARD (FOLLOW-180/LG-2): NEVER delete when lead_id is empty — an
+    // empty lead_id means "no durable lead identity has been assigned yet" and a
+    // blank-lead DELETE would erase ALL system labels for the tenant (data loss).
+    // We guard at two layers: (a) record.sessionId !== '' (defensive; session_id
+    // is always a non-empty hash from the ingest path) and (b) ne() predicate on
+    // the stored lead_id column so a blank DB value never matches.
+    if (record.sessionId !== '') {
+      await tx.delete(conversionLabels).where(
+        and(
+          eq(conversionLabels.tenantId, record.tenantId),
+          eq(conversionLabels.leadId, record.sessionId),
+          // Double-guard: skip any row where lead_id was somehow stored as ''.
+          ne(conversionLabels.leadId, ''),
+        ),
+      );
+    }
   });
 
   // ── Redis session DEL (fire-and-forget) ───────────────────────────────────

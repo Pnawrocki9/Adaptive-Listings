@@ -91,8 +91,14 @@ vi.mock('@estalara/db', () => ({
     status: 'status',
     tableName: 'table_name',
   },
+  // FOLLOW-172 — used by POST /api/dsr/erase for conversion_labels cascade.
+  conversionLabels: {
+    tenantId: 'tenant_id',
+    leadId: 'lead_id',
+  },
   eq: vi.fn((col: unknown, val: unknown) => ({ col, val, _op: 'eq' })),
   and: vi.fn((...args: unknown[]) => ({ args, _op: 'and' })),
+  ne: vi.fn((col: unknown, val: unknown) => ({ col, val, _op: 'ne' })),
 }));
 
 vi.mock('@estalara/auth', () => ({

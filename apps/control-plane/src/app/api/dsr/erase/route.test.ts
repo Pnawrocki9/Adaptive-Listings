@@ -1,8 +1,9 @@
 /**
- * Integration tests for POST /api/dsr/erase — FOLLOW-039 ClickHouse hard-delete.
+ * Integration tests for POST /api/dsr/erase — FOLLOW-039 ClickHouse hard-delete
+ * + FOLLOW-172 conversion_labels DSR cascade.
  *
  * Existing happy-path tests live in `apps/control-plane/src/app/api/dsr/dsr-routes.test.ts`.
- * This file covers the NEW behaviours added by FOLLOW-039:
+ * This file covers the NEW behaviours added by FOLLOW-039 and FOLLOW-172:
  *
  *   1. ClickHouse mutations are ISSUED (HTTP POST to CLICKHOUSE_URL) for every
  *      table in DSR_CLICKHOUSE_TABLES when a valid OTP is presented.
@@ -14,6 +15,11 @@
  *      and persists no-op 'done' rows.
  *   6. Edge case: ClickHouse HTTP failure does NOT fail the DSR endpoint;
  *      'failed' rows are persisted and the response status is 200.
+ *   FOLLOW-172 (compliance condition 7):
+ *   7. conversion_labels rows are deleted inside the Postgres transaction when
+ *      lead_id == session_id (non-empty) for the erased subject.
+ *   8. Empty session_id MUST NOT trigger a conversion_labels delete (FOLLOW-180/LG-2
+ *      guard — blank lead_id would erase ALL system labels for the tenant).
  *
  * All external dependencies are mocked.
  *
@@ -65,6 +71,10 @@ vi.mock('@estalara/db', () => ({
   },
   sessionEmbeddings: { sessionId: 'session_id', tenantId: 'tenant_id' },
   consentRecords: { sessionId: 'session_id' },
+  conversionLabels: {
+    tenantId: 'tenant_id',
+    leadId: 'lead_id',
+  },
   dsrClickhouseMutations: {
     id: 'id',
     tenantId: 'tenant_id',
@@ -74,6 +84,7 @@ vi.mock('@estalara/db', () => ({
   },
   eq: vi.fn((col: unknown, val: unknown) => ({ col, val, _op: 'eq' })),
   and: vi.fn((...args: unknown[]) => ({ args, _op: 'and' })),
+  ne: vi.fn((col: unknown, val: unknown) => ({ col, val, _op: 'ne' })),
 }));
 
 vi.mock('@/lib/dsr-otp', () => ({
@@ -274,5 +285,77 @@ describe('POST /api/dsr/erase — ClickHouse hard-delete', () => {
     for (const inserted of insertedRows as Record<string, unknown>[]) {
       expect(inserted.status).toBe('failed');
     }
+  });
+});
+
+// ─── FOLLOW-172: conversion_labels DSR erasure cascade ────────────────────────
+
+describe('POST /api/dsr/erase — FOLLOW-172 conversion_labels cascade', () => {
+  it('deletes conversion_labels rows keyed by lead_id=session_id inside the Postgres transaction', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+
+    // Import the mocked conversionLabels object reference so we can identify it
+    // when the delete() call lands on the transaction mock.
+    const { conversionLabels: mockConversionLabels } = await import('@estalara/db');
+
+    // Track the delete calls on the transaction mock.
+    const deletedTables: string[] = [];
+    mockTransaction.mockImplementationOnce(
+      async (fn: (tx: { delete: (table: unknown) => unknown }) => Promise<void>) => {
+        const txMock = {
+          delete: vi.fn((table: unknown) => {
+            // Discriminate by object reference — the mock for conversionLabels is the
+            // same object each time vi.mock factories run (singleton per vi.mock scope).
+            if (table === mockConversionLabels) {
+              deletedTables.push('conversion_labels');
+            }
+            return buildChain([]);
+          }),
+        };
+        await fn(txMock);
+      },
+    );
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+    expect(res.status).toBe(200);
+
+    // conversion_labels delete must have been issued.
+    expect(deletedTables).toContain('conversion_labels');
+  });
+
+  it('FOLLOW-180/LG-2 guard: does NOT delete conversion_labels when session_id is empty', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+
+    // Return a DSR record with an empty session_id (edge case — should not happen in production
+    // but guard must hold regardless).
+    mockSelect.mockReset();
+    mockSelect
+      .mockReturnValueOnce(buildChain([makeValidRecord({ sessionId: '' })]))
+      .mockReturnValueOnce(buildChain([]));
+
+    const { conversionLabels: mockConversionLabels } = await import('@estalara/db');
+
+    const deletedTables: string[] = [];
+    mockTransaction.mockImplementationOnce(
+      async (fn: (tx: { delete: (table: unknown) => unknown }) => Promise<void>) => {
+        const txMock = {
+          delete: vi.fn((table: unknown) => {
+            if (table === mockConversionLabels) {
+              deletedTables.push('conversion_labels');
+            }
+            return buildChain([]);
+          }),
+        };
+        await fn(txMock);
+      },
+    );
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+    expect(res.status).toBe(200);
+
+    // With empty session_id, the guard must prevent the conversion_labels delete.
+    expect(deletedTables).not.toContain('conversion_labels');
   });
 });

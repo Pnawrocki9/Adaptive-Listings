@@ -773,3 +773,29 @@ GDPR-004 (backend-engineer — consent state propagation):
   completeness, sub-processor completeness)
 
 ---
+
+## FOLLOW-171 → sdk-engineer (and FOLLOW-172)
+
+**From:** backend-engineer **To:** sdk-engineer **Date:** 2026-06-03T00:00:00Z
+
+**Summary:** The feedback endpoint `POST /api/adapt/feedback` now accepts two OPTIONAL fields —
+`prediction_id` and `lead_id` — in addition to the existing
+`{session_id, tenant_id, archetype, variant, converted}`. When `prediction_id` is present it
+persists a durable `conversion_labels` row (Postgres, RLS) joining the prediction to its outcome
+(Conversion Label Loop, MASTER_DESIGN §T). The `prediction_id` MUST be the `adapt_decision_id` the
+SDK received in the `/api/adapt` response body (`AdaptationDirectives.adapt_decision_id`). Omitting
+it is backward-compatible: the bandit still updates; only the durable label is skipped. The coarse
+`converted` boolean maps to `viewing_booked` (true) / `no_response` (false); deeper outcome classes
+come from CRM ingest (FOLLOW-172), not the SDK.
+
+**Action required:** sdk-engineer — thread the `adapt_decision_id` from the adapt response into the
+feedback ping body as `prediction_id` so warm conversions produce labeled training pairs. (Until
+then the column exists and the route works, but `conversion_labels` stays empty in production.)
+FOLLOW-172 — the CRM webhook writes the same `conversion_labels` table with `label_source='system'`
+and deep `outcome_class` values, keyed by `prediction_id`/`lead_id`.
+
+**Files:** `apps/control-plane/src/app/api/adapt/feedback/route.ts`,
+`packages/db/src/schema/conversion_labels.ts`, `packages/shared/src/schemas/conversion-label.ts`,
+`packages/db/migrations/0019_conversion_labels.sql`
+
+---

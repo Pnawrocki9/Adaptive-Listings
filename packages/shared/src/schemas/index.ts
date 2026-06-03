@@ -10,5 +10,6 @@
 export * from './event.js';
 export * from './events/index.js';
 export * from './description.js';
+export * from './conversion-label.js';
 export * from './tenant-compliance.js';
 export * from './detect.js';

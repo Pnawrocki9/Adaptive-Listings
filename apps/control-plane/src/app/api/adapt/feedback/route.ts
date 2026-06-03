@@ -45,8 +45,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 
-import { errorBody, ErrorCode, updateBanditArm } from '@estalara/shared';
-import { createAdminClient, abBanditWeights } from '@estalara/db';
+import { errorBody, ErrorCode, updateBanditArm, outcomeClassFromConverted } from '@estalara/shared';
+import { createAdminClient, abBanditWeights, conversionLabels } from '@estalara/db';
 
 // ─── Body schema ──────────────────────────────────────────────────────────────
 
@@ -56,6 +56,15 @@ const FeedbackBodySchema = z.object({
   archetype: z.string().min(1).max(128),
   variant: z.string().min(1).max(128),
   converted: z.boolean(),
+  /**
+   * Conversion Label Loop (FOLLOW-171, §T): the stable per-decision UUID returned to the SDK
+   * on `/api/adapt` (`adapt_decision_id`). When present, the feedback ping is persisted as a
+   * durable `conversion_labels` row joined to its prediction. Optional for backward-compat —
+   * older SDKs that don't send it still drive the bandit; they just produce no durable label.
+   */
+  prediction_id: z.string().min(1).max(256).optional(),
+  /** Optional durable pseudonymous lead key (§T.6); stored on the label when provided. */
+  lead_id: z.string().max(256).optional(),
 });
 
 // ─── HMAC helpers ─────────────────────────────────────────────────────────────
@@ -197,6 +206,52 @@ async function updateArmAsync(args: {
   }
 }
 
+// ─── Fire-and-forget conversion-label persistence (FOLLOW-171, §T) ────────────
+
+/**
+ * Persists a durable `conversion_labels` row pairing the prediction (`prediction_id` =
+ * `adapt_decision_id`) with the lead's outcome, so the (prediction, outcome) tuple survives
+ * for later per-tenant fine-tuning (TALLRec/LoRA, §D.5.7) instead of being collapsed into the
+ * bandit Beta counters and discarded.
+ *
+ * `label_source` is always `'system'` here (auto-mapped from the ping). The coarse `converted`
+ * boolean maps to the shallowest outcome class via `outcomeClassFromConverted`; deeper classes
+ * (offer/contract/purchase/lost) arrive via CRM ingest (FOLLOW-172). The full parsed ping body
+ * is retained in `outcome_raw` for source fidelity.
+ *
+ * Never throws — errors are logged and swallowed so the feedback ping cannot impact callers.
+ * No-op when DATABASE_URL_ADMIN is unset (dev/test) or no `prediction_id` was supplied.
+ *
+ * @internal
+ */
+async function insertConversionLabelAsync(args: {
+  tenantId: string;
+  predictionId: string;
+  leadId: string;
+  converted: boolean;
+  outcomeRaw: unknown;
+}): Promise<void> {
+  const adminUrl = process.env.DATABASE_URL_ADMIN ?? process.env.DATABASE_URL_DIRECT;
+  if (!adminUrl) return;
+
+  try {
+    const db = createAdminClient();
+    await db.insert(conversionLabels).values({
+      tenantId: args.tenantId,
+      predictionId: args.predictionId,
+      leadId: args.leadId,
+      outcomeClass: outcomeClassFromConverted(args.converted),
+      outcomeRaw: args.outcomeRaw,
+      labelSource: 'system',
+    });
+  } catch (err) {
+    console.error(
+      '[adapt/feedback] conversion_labels insert failed:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 /**
@@ -305,6 +360,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     variant: parsed.data.variant,
     converted: parsed.data.converted,
   });
+
+  // ── Fire-and-forget conversion-label persistence (FOLLOW-171, §T) ─────────
+  // When the SDK supplies prediction_id (= adapt_decision_id), persist the durable
+  // (prediction, outcome) pair so it survives for later fine-tuning instead of being
+  // collapsed into the bandit counters. Older SDKs omit prediction_id → bandit-only.
+  if (parsed.data.prediction_id) {
+    void insertConversionLabelAsync({
+      tenantId: parsed.data.tenant_id,
+      predictionId: parsed.data.prediction_id,
+      leadId: parsed.data.lead_id ?? '',
+      converted: parsed.data.converted,
+      outcomeRaw: parsed.data,
+    });
+  }
 
   return NextResponse.json({ ok: true }, { status: 202 });
 }

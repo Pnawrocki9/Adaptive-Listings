@@ -5109,7 +5109,143 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 177 (170-176 promoted to backlog/sprint-14/ 2026-06-03 (human-directed, MOAT): 170-175 = Conversion Label Loop §T tickets; 176 = SDK archetype persistence (Side-task #5). 170-175 originally from RETRO-028 Phase-3 / Conversion Label Loop §T (MASTER_DESIGN v3.9), human-directed 2026-06-03:
+## FOLLOW-177 — §T tracking: conversion_labels is write-only until readers ship; flip §T PROPOSED→in-progress
+
+- **status:** OPEN
+- **priority:** P2
+- **source_retro:** RETRO-029 (§3 HALF_WIRE_P, §4d DG-1)
+- **source_ticket:** FOLLOW-171 / PR #188
+- **recommended_sprint:** Sprint 14
+- **agent:** data-engineer
+- **estimated_hours:** 1
+- **scope:** Tracking. `conversion_labels` has a producer (feedback route) but no reader yet
+  (aggregation = FOLLOW-173, admin view = FOLLOW-174) — intentional HALF_WIRE_P, recorded so it is
+  not mistaken for closure. Also: MASTER_DESIGN §T is still `(PROPOSED)` (`MASTER_DESIGN.md:3712`,
+  `:5`) though T0 (PR #187) + T1 (PR #188) are merged; update the §T status line + §Snapshot row to
+  reflect table+taxonomy+write-path shipped (Operating Principle 2).
+- **ac:**
+  - [ ] §T status line + §Snapshot row updated PROPOSED → in-progress/partially-shipped
+  - [ ] §T notes that `conversion_labels` is write-only until FOLLOW-173/174 ship the readers
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-178 — SDK: thread adapt_decision_id→prediction_id (+ lead_id) into the feedback ping
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-029 (§3 HALF_WIRE_C, §4c TG-2)
+- **source_ticket:** FOLLOW-171 / PR #188
+- **recommended_sprint:** Sprint 14
+- **agent:** sdk-engineer
+- **estimated_hours:** 4
+- **scope:** SDK-only. The feedback endpoint now consumes OPTIONAL `prediction_id` + `lead_id`, but
+  the shipped SDK never produces them: `postFeedbackPing` (`packages/sdk/src/core/adapt.ts:110-116`)
+  sends only `{session_id, tenant_id, archetype, variant, converted}`, and the `adapt_decision_id`
+  parsed into `AdaptResponse` (`adapt.ts:160`) is never stored where the feedback listener closure
+  (`adapt.ts:238-269`) can reach it. **Until this lands, `conversion_labels` stays EMPTY in
+  production for SDK-driven traffic** — the entire T1 MOAT value does not materialize. Store the
+  decision id (and durable `lead_id` once FOLLOW-170/180 produce one) at adapt time; thread it into
+  the feedback ping body as `prediction_id`/`lead_id`. **Closure discipline (RETRO-024):** done =
+  producer→ping-body→insert→a non-empty row in a real flow, NOT "the SDK type carries the field."
+  Cite **Rule L** — an injected test value is not evidence; the ACs must verify the _produced_
+  value.
+- **ac:**
+  - [ ] adapt response `adapt_decision_id` is retained per session and reachable by the feedback
+        path
+  - [ ] feedback ping body includes `prediction_id` (= `adapt_decision_id`) and `lead_id` when known
+  - [ ] SDK round-trip test asserts the produced ping body carries the decision id (not injected)
+  - [ ] <40KB gzip budget held; coverage ≥80%; CI green
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-179 — conversion_labels uniqueness/upsert + validated insert helper (gates FOLLOW-172/173)
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-029 (§4a LG-1/LG-3, §4b CB-1/CB-2)
+- **source_ticket:** FOLLOW-171 / PR #188
+- **recommended_sprint:** Sprint 14
+- **agent:** backend-engineer + data-engineer
+- **estimated_hours:** 6
+- **scope:** Migration 0019 has NO `UNIQUE (tenant_id, prediction_id)` and the route insert is a
+  plain `db.insert().values()` with no `onConflict` (`feedback/route.ts:239`), yet MASTER_DESIGN
+  §T.2 says "one row per labeled outcome" (`:3751`) and §T.5 treats reclassify as an UPDATE. Result:
+  retried pings, a `converted=false` expiry ping after a `converted=true` ping, and FOLLOW-172's CRM
+  webhook (same key, `confidence=1.0`) all create duplicate/contradictory rows; FOLLOW-173's
+  per-class rate + calibration join double-counts silently. Decide and implement EITHER (a)
+  `UNIQUE (tenant_id, prediction_id)` + `onConflictDoUpdate` with class-precedence (deep CRM >
+  shallow ping; `manual_admin` > `system`; recency tiebreak), OR (b) document the table as
+  append-only and ship a "latest-label-per-prediction" resolver that every reader
+  (FOLLOW-173/174/175) MUST use. Also add a shared insert helper that calls
+  `ConversionOutcomeClassSchema.parse` (the route never validates the class today — LG-3) and write
+  an explicit `confidence` convention for `system` labels (CB-2). **MUST land before FOLLOW-172
+  writes and FOLLOW-173 reads.**
+- **ac:**
+  - [ ] uniqueness/upsert OR append-only + resolver decided and implemented (forward migration)
+  - [ ] precedence policy (CRM-deep > ping-shallow; manual_admin > system) defined + tested
+  - [ ] shared validated insert helper enforces `ConversionOutcomeClassSchema`
+  - [ ] explicit `confidence` value/convention for `system`-source labels
+  - [ ] tests cover the duplicate-collision and reclassify paths; CI green
+- **depends_on:** blocks [FOLLOW-172, FOLLOW-173, FOLLOW-174]
+- **promoted_to_queue:** true (QUEUE.md, 2026-06-03; next up after FOLLOW-171)
+
+---
+
+## FOLLOW-180 — durable lead_id end-to-end + erasure-key safety for conversion_labels
+
+- **status:** OPEN
+- **priority:** P2
+- **source_retro:** RETRO-029 (§4a LG-2)
+- **source_ticket:** FOLLOW-171 / PR #188
+- **recommended_sprint:** Sprint 14
+- **agent:** backend-engineer + compliance-engineer
+- **estimated_hours:** 4
+- **scope:** Every ping label is written with `lead_id=''` (`route.ts:243`, column
+  `NOT NULL DEFAULT ''`), yet §T.6 makes `lead_id` the CRM-resolution key (FOLLOW-172) AND the
+  DSR/erasure cascade key (`MASTER_DESIGN.md:3806-3811`). Empty-string rows are un-joinable to deep
+  outcomes and un-targetable by erasure; worse, many distinct leads share `''`, so a
+  `WHERE lead_id = ?` erasure handed `''` would match every system label across the tenant. Produce
+  a durable `lead_id` end-to-end (with FOLLOW-170/178) and harden erasure handlers to treat `''` as
+  "no durable lead", never a matchable key.
+- **ac:**
+  - [ ] durable `lead_id` populated on labels where a durable id exists
+  - [ ] erasure path never matches on `lead_id=''`; documented in DSR runbook + tested
+  - [ ] CI green
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-181 — conversion_labels RLS + FK + constraint integration test
+
+- **status:** OPEN
+- **priority:** P2
+- **source_retro:** RETRO-029 (§4c TG-1)
+- **source_ticket:** FOLLOW-171 / PR #188
+- **recommended_sprint:** Sprint 14
+- **agent:** data-engineer
+- **estimated_hours:** 3
+- **scope:** All `conversion_labels` coverage is string/mock-only (the route test asserts a mocked
+  `db.insert`, never a real Postgres) — the standing `packages/db` pattern (RETRO-024 TG-1,
+  RETRO-026). Add a pgmem/Testcontainers integration check: tenant-isolation RLS actually isolates;
+  FK `ON DELETE CASCADE` fires; `lead_id`/`confidence`/`outcome_raw` defaults behave as declared;
+  and the current duplicate-`(tenant_id, prediction_id)` acceptance is documented (until FOLLOW-179
+  lands). May fold into a repo-wide DB-harness ticket if the PM prefers one home.
+- **ac:**
+  - [ ] integration test exercises RLS isolation + FK cascade + column defaults against real PG
+  - [ ] CI green
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 182 (177-181 = RETRO-029 / PR #188 / FOLLOW-171 Conversion Label Loop T1:
+     177 = P2 §T write-only tracking + flip §T PROPOSED→in-progress (HALF_WIRE_P);
+     178 = P1 SDK thread adapt_decision_id→prediction_id+lead_id into feedback ping (HALF_WIRE_C — table empty in prod until done; cite Rule L);
+     179 = P1 conversion_labels UNIQUE/upsert + precedence + validated insert helper — GATES FOLLOW-172/173 (LG-1/LG-3/CB-1/CB-2);
+     180 = P2 durable lead_id end-to-end + erasure-key safety for lead_id='' (LG-2);
+     181 = P2 conversion_labels RLS+FK+constraint integration test (TG-1).
+     (170-176 promoted to backlog/sprint-14/ 2026-06-03 (human-directed, MOAT): 170-175 = Conversion Label Loop §T tickets; 176 = SDK archetype persistence (Side-task #5). 170-175 originally from RETRO-028 Phase-3 / Conversion Label Loop §T (MASTER_DESIGN v3.9), human-directed 2026-06-03:
      170 = P0 T0-BLOCKING enrich adaptation_decisions (model_version + features_snapshot + lead_id + formalize demo_override);
      171 = P0 persist durable conversion_labels from feedback route (NEW table + Zod taxonomy + RLS);
      172 = P1 CRM deep-outcome ingest (PII-stripped);

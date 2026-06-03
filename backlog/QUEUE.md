@@ -2732,13 +2732,15 @@ FOLLOW-169 hardens the headline contract but does NOT fix the source — ESC-019
 - id: FOLLOW-171
   title: Persist durable conversion_labels from the feedback route
   agent: backend-engineer + data-engineer
-  status: READY
+  status: DONE
   priority: P0
   estimated_hours: 8
   depends_on: [FOLLOW-170]
   produces: [FOLLOW-173, FOLLOW-174]
   source: MASTER_DESIGN §T
   spec: backlog/sprint-14/FOLLOW-171.md
+  pr: '#188'
+  completed_at: '2026-06-03T17:44:40Z'
   notes: |
     NEW Postgres conversion_labels (RLS, outcome_class enum) + Zod taxonomy
     packages/shared/src/schemas/conversion-label.ts. Feedback route writes a durable label row
@@ -2811,6 +2813,28 @@ FOLLOW-169 hardens the headline contract but does NOT fix the source — ESC-019
     currentIntentState is in-memory, recomputed each load → subsequent listings don't inherit the
     inferred archetype. Persist to sessionStorage (keyed by sessionId), rehydrate in init() before
     cold-start, consent-gated, staleness/version guard. Cross-session (localStorage+TTL) = follow-up.
+
+# ── Conversion Label Loop hardening (RETRO-029) — promoted 2026-06-03 ──
+
+- id: FOLLOW-179
+  title: conversion_labels uniqueness/upsert + validated insert helper (gates FOLLOW-172/173)
+  agent: backend-engineer + data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 6
+  depends_on: [FOLLOW-171]
+  blocks: [FOLLOW-172, FOLLOW-173, FOLLOW-174]
+  source: RETRO-029 (LG-1/LG-3, CB-1/CB-2)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-179 stub)
+  notes: |
+    Migration 0019 has NO UNIQUE (tenant_id, prediction_id) and the feedback route insert is a plain
+    db.insert() with no onConflict, yet §T.2 = "one row per labeled outcome". Retried pings, a
+    converted=false expiry after converted=true, and FOLLOW-172's CRM webhook (same key) all create
+    duplicate/contradictory rows → FOLLOW-173 calibration double-counts silently. Implement
+    UNIQUE (tenant_id, prediction_id) + onConflictDoUpdate with class-precedence (deep CRM > shallow
+    ping; manual_admin > system; recency tiebreak), a shared validated insert helper
+    (ConversionOutcomeClassSchema.parse — route never validates class today), and an explicit
+    confidence convention for system labels. MUST land before FOLLOW-172 writes / FOLLOW-173 reads.
 ```
 
 ## YELLOW audit track (parallel) — Sprint 1 (DONE)

@@ -614,6 +614,110 @@ Now write the description following archetype_voice_pattern and archetype_hard_r
 </adaptive_listing_prompt>"""
 
 
+# ---------------------------------------------------------------------------
+# FOLLOW-188: leak/format fail-safe — second line of defence on the FIT path
+# ---------------------------------------------------------------------------
+#
+# Even on a FIT verdict Sonnet can break character and emit reasoning text, markdown
+# formatting, or residual XML tags into the description body. This guard catches those
+# cases AFTER _parse_verified_facts strips the audit block and BEFORE the description
+# is returned to the caller (which would write it to Redis and serve it to users).
+#
+# On any violation _generate_with_sonnet returns ("", []) — identical to a NEUTRAL
+# verdict or a truncated generation — so the caller skips the Redis write and the HTTP
+# endpoint serves the agent's original copy (DOM unmodified, no Redis entry for this key
+# until the next attempt regenerates cleanly).
+#
+# Marker-list rationale:
+#   INCLUDED — high-precision English reasoning-leak phrases. These are Sonnet breaking
+#   character; they would NEVER appear in legitimate real-estate listing prose.
+#   Defensive against English leaks even when the target locale is es/pl (Sonnet sometimes
+#   reverts to English mid-reasoning).
+#     "my approach"        — self-referential preamble
+#     "as an ai"           — model identifying itself
+#     "i cannot"           — refusal preamble
+#     "i will not"         — refusal preamble
+#     "i will write"       — reasoning about its own output
+#     "misalign"           — analysis of archetype fit (NEUTRAL reasoning leaked into FIT body)
+#     "ethically"          — ethics commentary
+#     "the facts do not support" — misalignment analysis
+#     "archetype"          — prompt explicitly forbids referencing the archetype in visible copy
+#
+#   EXCLUDED (deliberately) — phrases that are FALSE-POSITIVE-PRONE in real estate copy:
+#     "non-negotiable" — a common English real-estate phrase for a firm asking price
+#                        ("the asking price is non-negotiable"); occurs naturally in listing prose.
+#     "honest description" — agents legitimately say they are giving an honest account.
+#     "key family priorities" — natural lifestyle copy ("ticks all the key family priorities").
+#
+# Locale caveat: the marker list is English-only. Spanish/Polish description bodies are
+# unlikely to trigger any marker (the phrases are English idioms), so false positives in
+# es/pl are near-zero. True reasoning leaks in non-English locales must be caught by the
+# residual-tag and markdown checks above, or handled by a future locale-aware extension.
+
+_BODY_LEAK_MARKERS: tuple[str, ...] = (
+    "my approach",
+    "as an ai",
+    "i cannot",
+    "i will not",
+    "i will write",
+    "misalign",
+    "ethically",
+    "the facts do not support",
+    "archetype",
+)
+
+
+def _body_violates_contract(body: str) -> str | None:
+    """
+    Check whether a FIT description body breaks the output contract.
+
+    This is the second line of defence (FOLLOW-188): applied AFTER verdict parsing and
+    <verified_facts_used> stripping, BEFORE the description is returned to the Redis writer.
+    On any violation the caller suppresses the result with return ("", []) so the DOM stays
+    neutral and no bad copy reaches the user.
+
+    Checks, in order:
+      1. Residual control tags — any of <adaptation_verdict, <verified_facts_used,
+         <neutral_reason remaining in the body (case-insensitive).  → "residual_tag"
+      2. Markdown / structural formatting — **bold** or a line starting with # (heading).
+         → "formatted_body"
+      3. Leaked reasoning markers — substring match (case-insensitive) against
+         _BODY_LEAK_MARKERS.  → "leak_marker"
+
+    Args:
+        body: The stripped description text (audit block already removed by
+              _parse_verified_facts; verdict tags already removed by
+              _parse_adaptation_verdict).
+
+    Returns:
+        A short reason code string if a violation is found, else None.
+    """
+    body_lower = body.lower()
+
+    # 1. Residual control tags — the production pipeline already discards a dangling
+    #    <verified_facts_used opening tag (truncation guard). This generalises it to
+    #    all three gate/audit tags that must NEVER appear in buyer-visible copy.
+    residual_tags = ("<adaptation_verdict", "<verified_facts_used", "<neutral_reason")
+    for tag in residual_tags:
+        if tag in body_lower:
+            return "residual_tag"
+
+    # 2. Markdown/structural leak — bold markers (**) or a heading line (# at line start).
+    if "**" in body:
+        return "formatted_body"
+    for line in body.splitlines():
+        if line.lstrip().startswith("#"):
+            return "formatted_body"
+
+    # 3. Leaked reasoning markers (English-only, high-precision; see module comment for
+    #    rationale and deliberate exclusions — e.g. "non-negotiable", "honest description").
+    for marker in _BODY_LEAK_MARKERS:
+        if marker in body_lower:
+            return "leak_marker"
+
+    return None
+
+
 # Regex used by _parse_verified_facts. Compiled once at module load.
 _VERIFIED_FACTS_PATTERN: re.Pattern[str] = re.compile(
     r"\s*<verified_facts_used>\s*(.*?)\s*</verified_facts_used>\s*",
@@ -953,6 +1057,19 @@ def _generate_with_sonnet(
         return "", []
 
     description, facts = _parse_verified_facts(body)
+
+    # FOLLOW-188: leak/format fail-safe — second line of defence on the FIT path.
+    # After _parse_verified_facts strips the audit block, guard the body against residual
+    # XML tags, markdown formatting, and leaked reasoning text before storing anything.
+    # Any violation → suppress (return "", []) so no bad copy reaches Redis or the user.
+    contract_violation = _body_violates_contract(description)
+    if contract_violation:
+        log.warning(
+            "generate_description.body_contract_violation archetype=%s reason=%s",
+            archetype,
+            contract_violation,
+        )
+        return "", []
 
     # FOLLOW-162 / RETRO-027: a generation truncated at max_tokens drops the trailing
     # <verified_facts_used> block (and may cut the body mid-sentence). Two truncation

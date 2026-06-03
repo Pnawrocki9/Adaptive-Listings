@@ -198,6 +198,66 @@ function isNeutralVerdict(text) {
 }
 
 /**
+ * FOLLOW-188: leak/format fail-safe — mirror of Python _body_violates_contract.
+ *
+ * Applied to the stripped FIT body AFTER stripVerifiedFacts() removes the audit block
+ * and gate tags. Returns a short reason code on violation, or null if the body is clean.
+ * On violation the caller falls back to the agent's original copy (neutral path).
+ *
+ * Checks, in order:
+ *   1. Residual control tags: <adaptation_verdict, <verified_facts_used, <neutral_reason
+ *      → "residual_tag"
+ *   2. Markdown/structural: ** (bold) or a line beginning with # (heading) → "formatted_body"
+ *   3. Leaked reasoning markers (case-insensitive English phrases) → "leak_marker"
+ *
+ * Marker inclusion/exclusion rationale — kept in sync with Python _BODY_LEAK_MARKERS:
+ *   INCLUDED (high-precision reasoning-leak phrases, never in legitimate listing prose):
+ *     "my approach", "as an ai", "i cannot", "i will not", "i will write",
+ *     "misalign", "ethically", "the facts do not support", "archetype"
+ *   EXCLUDED (false-positive-prone in real estate copy):
+ *     "non-negotiable" — common English price term ("the asking price is non-negotiable")
+ *     "honest description" — agents naturally say they give an honest account
+ *     "key family priorities" — natural lifestyle copy
+ *
+ * @param {string} body - stripped description text (audit block and gate tags already removed)
+ * @returns {string|null} reason code, or null if clean
+ */
+const _LEAK_MARKERS = [
+  'my approach',
+  'as an ai',
+  'i cannot',
+  'i will not',
+  'i will write',
+  'misalign',
+  'ethically',
+  'the facts do not support',
+  'archetype',
+];
+
+function bodyViolatesContract(body) {
+  const lower = body.toLowerCase();
+
+  // 1. Residual control tags
+  const residualTags = ['<adaptation_verdict', '<verified_facts_used', '<neutral_reason'];
+  for (const tag of residualTags) {
+    if (lower.includes(tag)) return 'residual_tag';
+  }
+
+  // 2. Markdown/structural leak
+  if (body.includes('**')) return 'formatted_body';
+  for (const line of body.split('\n')) {
+    if (line.trimStart().startsWith('#')) return 'formatted_body';
+  }
+
+  // 3. Leaked reasoning markers (case-insensitive)
+  for (const marker of _LEAK_MARKERS) {
+    if (lower.includes(marker)) return 'leak_marker';
+  }
+
+  return null;
+}
+
+/**
  * Generate (and cache) archetype-adapted headline + description, grounded in the real listing.
  * The DESCRIPTION uses the live production system prompt from generate_description.py (so the demo
  * reflects exactly what prod would emit). The HEADLINE is a small separate call (in prod it comes
@@ -240,12 +300,27 @@ async function generate(arche, listingKey) {
         listingJson,
       ].join('\n');
       const rawDesc = await callClaude(user, system);
-      // v1.9 archetype-fit gate (ADR-0010): NEUTRAL ⇒ wrong buyer ⇒ keep the DOM neutral.
+      // v1.9 archetype-fit gate (ADR-0010): NEUTRAL => wrong buyer => keep the DOM neutral.
       // The demo mirrors prod: show the agent's ORIGINAL copy and emit no adapted headline.
       neutral = isNeutralVerdict(rawDesc);
-      description = neutral
-        ? original || fallbackCopy(arche).description
-        : stripVerifiedFacts(rawDesc) || fallbackCopy(arche).description;
+      if (neutral) {
+        description = original || fallbackCopy(arche).description;
+      } else {
+        const stripped = stripVerifiedFacts(rawDesc);
+        // FOLLOW-188: leak/format fail-safe. If the FIT body contains reasoning leaks,
+        // markdown formatting, or residual gate tags, fall back to the agent's original
+        // copy (neutral path) — same behaviour as prod _body_violates_contract guard.
+        const violation = bodyViolatesContract(stripped);
+        if (violation) {
+          console.warn(
+            `[mock] body_contract_violation archetype=${arche} reason=${violation} — serving original`,
+          );
+          neutral = true; // suppress headline generation too
+          description = original || fallbackCopy(arche).description;
+        } else {
+          description = stripped || fallbackCopy(arche).description;
+        }
+      }
     } else {
       description = fallbackCopy(arche).description;
     }

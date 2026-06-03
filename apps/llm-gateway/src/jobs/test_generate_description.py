@@ -61,6 +61,7 @@ from jobs.generate_description import (
     _MAX_TOKENS_CEILING,
     _MAX_TOKENS_FLOOR_TIER_2,
     _MAX_TOKENS_FLOOR_TIER_3,
+    _body_violates_contract,
     _generate_headline,
     _generate_with_sonnet,
     _max_tokens_for,
@@ -1239,6 +1240,230 @@ def test_generate_with_sonnet_neutral_returns_empty() -> None:
             archetype="family_buyer",
             copy_template="",
             original_description="A 2-bed 32nd-floor investment condo, no outdoor space.",
+            listing_context={"bedrooms": 2, "floor": 32},
+            tier=2,
+            locale="en",
+        )
+
+    assert description == ""
+    assert facts == []
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-188: leak/format fail-safe — _body_violates_contract unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_body_violates_contract_clean_body_passes() -> None:
+    """A clean FIT description body must return None (no violation detected)."""
+    clean = (
+        "A three-bedroom home in Marbella Old Town with a private garden. "
+        "Energy performance is strong, keeping running costs predictable. "
+        "Three bedrooms give flexibility: family lets, seasonal rentals, or a steady tenancy."
+    )
+    assert _body_violates_contract(clean) is None
+
+
+def test_body_violates_contract_my_approach_suppressed() -> None:
+    """A body containing 'My approach:' is a reasoning leak -> suppressed."""
+    leaked = (
+        "My approach: I will first consider the archetype's core needs and then determine "
+        "whether this property fits. The property has three bedrooms in Marbella Old Town."
+    )
+    assert _body_violates_contract(leaked) == "leak_marker"
+
+
+def test_body_violates_contract_bold_markdown_suppressed() -> None:
+    """A body with **bold** markdown -> suppressed as formatted_body."""
+    formatted = (
+        "**Outstanding investment opportunity.** Three bedrooms in a prime location. "
+        "Strong rental demand makes this a reliable income asset."
+    )
+    assert _body_violates_contract(formatted) == "formatted_body"
+
+
+def test_body_violates_contract_heading_markdown_suppressed() -> None:
+    """A body with a # heading line -> suppressed as formatted_body."""
+    with_heading = (
+        "# Property Overview\n"
+        "Three bedrooms in Marbella Old Town with a private garden and strong EPC rating."
+    )
+    assert _body_violates_contract(with_heading) == "formatted_body"
+
+
+def test_body_violates_contract_residual_verified_facts_tag_suppressed() -> None:
+    """A residual <verified_facts_used opening tag in the body -> suppressed as residual_tag."""
+    with_tag = (
+        "A great property in Lisbon. Good transport links.\n"
+        "<verified_facts_used>\n"
+        '["bedrooms: 2"'
+    )
+    assert _body_violates_contract(with_tag) == "residual_tag"
+
+
+def test_body_violates_contract_residual_adaptation_verdict_tag_suppressed() -> None:
+    """A residual <adaptation_verdict tag in the body -> suppressed as residual_tag."""
+    with_tag = "Good property. <adaptation_verdict>FIT</adaptation_verdict> More text."
+    assert _body_violates_contract(with_tag) == "residual_tag"
+
+
+def test_body_violates_contract_residual_neutral_reason_tag_suppressed() -> None:
+    """A residual <neutral_reason tag in the body -> suppressed as residual_tag."""
+    with_tag = "A studio flat in a city centre. <neutral_reason>core_need</neutral_reason>"
+    assert _body_violates_contract(with_tag) == "residual_tag"
+
+
+def test_body_violates_contract_non_negotiable_not_suppressed() -> None:
+    """
+    'non-negotiable' in a real-estate price context must NOT trigger suppression.
+
+    Rationale: 'non-negotiable' is a common English real-estate phrase
+    ('the asking price is non-negotiable') and was deliberately excluded from
+    the marker list to avoid false positives in legitimate listing prose.
+    """
+    legitimate = (
+        "A two-bedroom flat priced at offers around the guide — the asking price is "
+        "non-negotiable. The property is move-in ready with a modern kitchen."
+    )
+    assert _body_violates_contract(legitimate) is None
+
+
+def test_body_violates_contract_case_insensitive_marker() -> None:
+    """Marker matching is case-insensitive: 'AS AN AI' must still be caught."""
+    leaked = "AS AN AI, I cannot write misleading copy about this property."
+    assert _body_violates_contract(leaked) == "leak_marker"
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-188: end-to-end suppression via _generate_with_sonnet
+# ---------------------------------------------------------------------------
+
+
+def _make_fit_response_with_body(body_text: str) -> MagicMock:
+    """
+    Build a mock Anthropic response with a FIT verdict wrapping the given body text.
+    Includes a valid <verified_facts_used> block so parsing proceeds to the contract guard.
+    """
+    content_block = MagicMock()
+    content_block.text = (
+        "<adaptation_verdict>FIT</adaptation_verdict>\n"
+        f"{body_text}\n"
+        "<verified_facts_used>\n"
+        '["bedrooms: 3", "location: Marbella Old Town"]\n'
+        "</verified_facts_used>"
+    )
+    resp = MagicMock()
+    resp.content = [content_block]
+    resp.stop_reason = "end_turn"
+    return resp
+
+
+def test_generate_with_sonnet_leak_marker_returns_empty() -> None:
+    """
+    FOLLOW-188 AC: a FIT body containing 'My approach:' -> _generate_with_sonnet returns
+    ('', []) so the caller skips Redis and the DOM stays neutral.
+    """
+    resp = _make_fit_response_with_body(
+        "My approach: lead with cashflow angle. "
+        "Three bedrooms in Marbella Old Town with a private garden."
+    )
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.return_value = resp
+
+        description, facts = _generate_with_sonnet(
+            archetype="yield_hunter",
+            copy_template="",
+            original_description="3-bed in Marbella Old Town with garden.",
+            listing_context={"bedrooms": 3},
+            tier=2,
+            locale="en",
+        )
+
+    assert description == ""
+    assert facts == []
+
+
+def test_generate_with_sonnet_bold_markdown_returns_empty() -> None:
+    """
+    FOLLOW-188 AC: a FIT body with **bold** markdown -> ('', []) — never stored.
+    """
+    resp = _make_fit_response_with_body(
+        "**Exceptional investment opportunity.** "
+        "Three bedrooms in Marbella Old Town with a private garden."
+    )
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.return_value = resp
+
+        description, facts = _generate_with_sonnet(
+            archetype="yield_hunter",
+            copy_template="",
+            original_description="3-bed in Marbella Old Town.",
+            listing_context={"bedrooms": 3},
+            tier=2,
+            locale="en",
+        )
+
+    assert description == ""
+    assert facts == []
+
+
+def test_generate_with_sonnet_contract_violation_no_redis_write(
+    mock_redis_post: MagicMock,
+) -> None:
+    """
+    FOLLOW-188 AC (end-to-end): a FIT body with a leak marker must not write to Redis.
+    """
+    resp = _make_fit_response_with_body(
+        "As an AI, I will write a description that highlights investment appeal. "
+        "Three bedrooms in Marbella Old Town."
+    )
+    with (
+        patch("anthropic.Anthropic") as mock_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.return_value = resp
+
+        _run_job(
+            _make_event(
+                original_description="3-bed in Marbella Old Town.",
+                listing_context={"bedrooms": 3},
+            )
+        )
+
+        mock_httpx.assert_not_called()
+
+
+def test_generate_with_sonnet_neutral_after_follow188_still_returns_empty() -> None:
+    """
+    Regression guard: NEUTRAL verdict must still return ('', []) after the
+    FOLLOW-188 fail-safe was wired in (the guard must not interfere with NEUTRAL).
+    """
+    mock_response = MagicMock()
+    mock_response.stop_reason = "end_turn"
+    mock_response.content = [
+        MagicMock(
+            text=(
+                "<adaptation_verdict>NEUTRAL</adaptation_verdict>\n"
+                "<neutral_reason>core_need_contradiction</neutral_reason>"
+            )
+        )
+    ]
+
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.return_value = mock_response
+
+        description, facts = _generate_with_sonnet(
+            archetype="family_buyer",
+            copy_template="",
+            original_description="A 2-bed investment condo.",
             listing_context={"bedrooms": 2, "floor": 32},
             tier=2,
             locale="en",

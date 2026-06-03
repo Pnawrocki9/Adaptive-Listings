@@ -39,8 +39,22 @@ consumer reading behavioral events from Redpanda must import from `@estalara/sha
 
 ## Decision API Contract
 
-Adaptation directive response schema: defined in `apps/decision-api` (TICKET-GDPR-004 adds
-`consent_state` field to directive request).
+Canonical endpoint: `https://admin.estalara.com/api/adapt` (ADR-0004, ADR-0006, ADR-0007).
+Implemented in `apps/control-plane/src/app/api/adapt/route.ts`.
+
+Adaptation directive response schema: `packages/shared/src/directives.ts` (`AdaptationDirectives`
+type). SDK validates responses against the mirror Zod schema at
+`packages/sdk/src/core/adapt-schema.ts`. CI Rule H (`scripts/check-adapt-schema-drift.sh`) asserts
+the two stay in sync.
+
+The Cloudflare Worker route (`apps/decision-api/src/app/api/adapt/route.ts`) is retired — it returns
+`410 Gone` since 2026-05-25. Phase 2 full deletion is tracked by FOLLOW-107.
+
+SDK loader contract: every embed snippet MUST include
+`data-decision-url="https://admin.estalara.com/api"` (the SDK appends `/adapt` at call time). See
+`apps/control-plane/src/components/onboarding/DetectionPreview.tsx:129` (`buildSnippet()`).
+
+(TICKET-GDPR-004 adds `consent_state` field to directive request.)
 
 ## DSR Endpoint
 

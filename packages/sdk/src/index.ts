@@ -34,6 +34,11 @@ import {
   resetAdaptState,
 } from './core/adapt.js';
 import {
+  applyDescriptionAdaptation,
+  setDescriptionEventQueueRef,
+  teardownDescriptionObservers,
+} from './core/adapt-description.js';
+import {
   applyArchetypeHints,
   applyBehavioralSignal,
   applyQuizPrior,
@@ -64,6 +69,8 @@ let flushTimer: ReturnType<typeof setInterval> | null = null;
 
 // Wire event queue into adapt module for adapt.applied / adapt.skipped event logging
 setEventQueueRef(eventQueue);
+// Wire event queue into description adapt module for adapt.description.* event logging
+setDescriptionEventQueueRef(eventQueue);
 
 const BATCH_INTERVAL_MS = 5_000;
 
@@ -235,6 +242,12 @@ async function init(): Promise<void> {
           confidence: resp.confidence,
           sessionId: currentSession.sessionId,
         });
+
+        // Fetch + apply long-form description adaptation (FOLLOW-159).
+        // Fire-and-forget — description errors are observable via adapt.description.error events;
+        // a failure here must never block the directive/headline path or sidebar update.
+        void applyDescriptionAdaptation(config, resp.archetype as ArchetypeId);
+
         if (config.debug) {
           console.log(`[Estalara] Archetype: ${resp.archetype} (${String(resp.confidence)})`);
         }
@@ -437,6 +450,7 @@ async function init(): Promise<void> {
     (window as Window & { __estalaraTeardown?: () => void }).__estalaraTeardown = () => {
       if (flushTimer) clearInterval(flushTimer);
       cleanupObservers();
+      teardownDescriptionObservers();
       sidebar?.destroy();
       shadowHost?.destroy();
       dqsTracker.reset();

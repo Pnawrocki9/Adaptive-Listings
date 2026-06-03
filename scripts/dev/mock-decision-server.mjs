@@ -398,9 +398,11 @@ const server = http.createServer(async (req, res) => {
       } catch {
         /* ignore */
       }
-      // Ground the headline in the requested listing too (falls back to the sample listing
-      // if the SDK did not include a listing_id on the /adapt call).
-      const listingKey = body.listing_id || DEMO_SLUG;
+      // Ground the headline in the CURRENT listing. The SDK sends `listing_ids` (an array of
+      // visible data-estalara-listing-id values); on a listing detail page that is the single
+      // current listing. Fall back to a singular listing_id, then the sample listing.
+      const listingKey =
+        (Array.isArray(body.listing_ids) && body.listing_ids[0]) || body.listing_id || DEMO_SLUG;
       const gen = await generate(currentArchetype, listingKey);
       return json(res, 200, buildAdaptResponse(body.session_id, gen), origin);
     });

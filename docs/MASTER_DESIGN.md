@@ -1,6 +1,8 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 3.8 (2026-06-01 — detection→adaptation runtime bridge, **no-code app.estalara.com**, AI-Vision quality strategy [ADR-0008; FOLLOW-159 implement, FOLLOW-160 Plan B]; FIX-014 slot-injection superseded — patrz changelog v3.8 + §B.5.7. Bazuje na 3.7: CEO ratifications wave 2026-05-30 — 10 z 11 decyzji ratified: D-1 app.estalara.com / D-2 chat in v1.0 / D-3 6 families classifier / D-4 live.signup OR chat / D-5 technical-readiness / D-6 Discovery Day batched / R-2 Vercel env DONE / R-3 peter+rafal owners / R-4 wait for Magic Link / R-5 **10-12 weeks** priorytet jakość; R-1 ZIP pending; pilot start tydzień 13; SCHEMA-001 + VERIFY-001 dodane; FIX-006/017 scope changed; full ratifications wave w `backlog/PLAN-V3-2026-05-30.md` §0; APPROVED_TO_IMPLEMENT=pending R-1 only; otherwise as v3.6) | **Data:** 1 czerwca 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 3.9 (2026-06-03 — Conversion Label Loop §T (PROPOSED) + prompt v1.9 archetype-fit gate [ADR-0010]; bazuje na 3.8: detection→adaptation runtime bridge, **no-code app.estalara.com**, AI-Vision quality strategy [ADR-0008; FOLLOW-159 implement, FOLLOW-160 Plan B]; FIX-014 slot-injection superseded — patrz changelog v3.8 + §B.5.7. Bazuje na 3.7: CEO ratifications wave 2026-05-30 — 10 z 11 decyzji ratified: D-1 app.estalara.com / D-2 chat in v1.0 / D-3 6 families classifier / D-4 live.signup OR chat / D-5 technical-readiness / D-6 Discovery Day batched / R-2 Vercel env DONE / R-3 peter+rafal owners / R-4 wait for Magic Link / R-5 **10-12 weeks** priorytet jakość; R-1 ZIP pending; pilot start tydzień 13; SCHEMA-001 + VERIFY-001 dodane; FIX-006/017 scope changed; full ratifications wave w `backlog/PLAN-V3-2026-05-30.md` §0; APPROVED_TO_IMPLEMENT=pending R-1 only; otherwise as v3.6) | **Data:** 1 czerwca 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v3.9 (3 czerwca 2026 — Conversion Label Loop + prompt v1.9):** Dwie zmiany. (1) Nowa sekcja **§T. Conversion Label Loop (PROPOSED)** — audyt (read-only) ustalił, że system **NIE** zbiera etykiet konwersji nadających się do późniejszego fine-tuningu TALLRec/LoRA: predykcje lądują cienko w ClickHouse `adaptation_decisions` (bez `model_version`, bez snapshotu cech, bez `lead_id`), a outcome z `POST /api/adapt/feedback` jest zwijany w liczniki Beta `ab_bandit_weights` (para predykcja↔outcome niszczona). §T projektuje pętlę logowaną **od dnia 1**: EXTEND `adaptation_decisions` (migracja 0013: +`lead_id`/`model_version`/`features_snapshot`, REUSE `adapt_decision_id` jako `prediction_id`) + NEW tabela `conversion_labels` (Postgres/RLS, enum outcome, `label_source` system/manual), agregacja+kalibracja, ręczna reklasyfikacja + eksport korpusu w adminie, ingest głębokich outcome z CRM (PII-stripped). Plan tasków: **FOLLOW-170…175** (`backlog/FOLLOW_UPS.md`), ściśle uporządkowane (T0 = enrich predykcji, blokujące). (2) **Prompt v1.9 archetype-fit gate** ([ADR-0010], PR #184): model opisu może zwrócić `<adaptation_verdict>NEUTRAL</adaptation_verdict>` i odmówić adaptacji listingu fundamentalnie niedopasowanego do archetypu (DOM zostaje neutralny) zamiast „spinować" mismatchowane fakty. Brak rename sekcji (propagacja §Y.2 = bez zmian downstream — §T jest additive). Reszta jak v3.8.
 
 **Changelog v3.8 (1 czerwca 2026 — detection→adaptation bridge, no-code app.estalara.com, AI-Vision quality strategy):** CEO potwierdził, że **app.estalara.com to żywy produkt i pozostaje no-code** — jego kod nie jest modyfikowany poza standardowym snippetem loadera SDK; adaptacja jest napędzana wyłącznie detekcją. Decyzja + mechanizm: **ADR-0008**; implementacja: **FOLLOW-159** (Plan A) + **FOLLOW-160** (Plan B). Konsekwencje: (1) **FIX-014 (sloty `data-estalara-*` w szablonie app.estalara.com) PORZUCONY/superseded** — `backlog/PLAN-V3-2026-05-30.md` + `CHK-B.md` oznaczone. (2) **Runtime augment-applicator (zaimplementowany)** — `packages/sdk/src/core/augment.ts` `annotateDetectedSlots()` rozwiązuje wykryte `detail_schema.slot_selectors` (primary→fallbacks, unikalne dopasowanie, nie nadpisuje istniejącego markupu, nie rzuca) i self-anotuje `data-estalara-slot` (mapowanie `headline→headline`, `cta_primary→cta`, `description→description`); potem istniejący silnik adaptuje BEZ markupu tenanta: **headline/cta** dyrektywami playbooka `/adapt`, **description** dedykowanym `/api/adapt/description` (§E.7) konsumowanym przez `core/description.ts` (textContent, XSS-safe). Parytet producent↔konsument: każdy wykryty detail-slot jest też modyfikowany. (3) **AI Vision rozszerzona** o detekcję detail-slotów (`detail_headline/cta/description_selector` w prompt + `buildDetailSlotSelectors`) zamiast hardkodu generyków. (4) **Zweryfikowane ograniczenie (verify-don't-guess):** obecna AI Vision wysyła **tylko tekst HTML** (nie screenshot, jak zakłada §B.5.1 L5) — dla bespoke sajtów Tailwind (app.estalara.com) zwróciła `confidence 0.3` (<próg 0.5 → null) i błędne/nierozwiązane selektory (headline→**cena**, cta/description brak); client-side deterministyczna detekcja zwraca `null`. (5) **Plan A (pilot, teraz — FOLLOW-159):** dla bespoke tenantów aktywowany schemat w `tenant_site_schemas` jest **kurowany/ręcznie autorski** (realne, zweryfikowane selektory) — nadal no-code (selektory w DB Estalary, nie w kodzie tenanta); applicator + opis działają bez zmian. Pozostałe kroki Plan A: rozszerzyć `getTenantSchema` (dziś reorder-only `TenantSiteSchemaMin`) o `detail_schema.slot_selectors`; **B1** — dołączyć `slot_selectors` jako **additive, opcjonalne pole odpowiedzi `/api/adapt`** (kanoniczny per ADR-0004/0006/0007); SDK konsumuje je w `refreshDirectives`. (6) **Plan B (self-serve, follow-up — FOLLOW-160):** prawdziwa **screenshot-based AI Vision** (realign do §B.5.1: screenshot+HTML→Claude Vision) dla robust detekcji bespoke sajtów bez ręcznego autorstwa; ryzyko kruchości kurowanych selektorów łagodzi Continuous Schema Validation (§B.6). Brak rename sekcji (propagacja §Y.2 = bez zmian downstream). Reszta jak v3.7.
 
@@ -3705,6 +3707,131 @@ Estalara Adaptive Listings jest projektowany jako **vertically-specialized, embe
 *Dokument przygotowany na bazie analizy 35+ źródeł zewnętrznych (Anthropic, OpenAI, Cloudflare, EDPB, ICO, CNIL, UAE Data Office, Mutiny, Optimizely, Dynamic Yield, Segment, Drift/Intercom, ClickHouse, Supabase, Vercel, Cloudflare, Modal, RunPod, pgvector benchmarks, Pinecone, Cohere, BGE) — wszystkie konkretne stwierdzenia są oparte na cytowanych linkach. Stan prawny i pricingowy aktualny na 25 kwietnia 2026.*
 
 *Wersja 1.1 (26 kwietnia 2026): rozszerzono o sekcje B.4–B.7 dotyczące auto-onboardingu i self-healing schema validation — odpowiedź na pytanie "jak zminimalizować friction onboarding klienta do <5 min".*
+---
+
+## T. Conversion Label Loop (Pętla etykiet konwersji)
+
+> **Status:** PROPOSED (v3.9). Bridges the open measurement loop (§Snapshot.1, §E.3) to the Y2
+> per-tenant fine-tuned classifier (§D.2, §D.5.7). **Logging must begin day one** — outcome labels
+> cannot be reconstructed retroactively, and ClickHouse `events` carries only a 13-month TTL.
+
+### T.1. Cel i uzasadnienie
+
+The MVP deliberately does NOT fine-tune. The Y2 (Sprint 10–12) plan replaces the rule-based /
+Thompson-bandit scorer with a **per-tenant fine-tuned classifier (Llama 3.1 8B + LoRA on Modal)**
+(§D.5.7, §I.3). TALLRec-style LoRA fine-tuning needs `(prediction, real-world outcome)` training
+pairs **per tenant**. Today those pairs are destroyed at write time: the prediction row in ClickHouse
+`adaptation_decisions` records no model version and no feature snapshot, has no durable lead
+identity, and the outcome arriving at `POST /api/adapt/feedback` is collapsed into Beta counters on
+`ab_bandit_weights` (the per-event tuple is discarded). The Conversion Label Loop persists, **from
+day one**, a durable training corpus: each scored lead's prediction (what the model thought, the
+inputs it saw, the model version) and its later real-world outcome. This extends the §P.3 "data
+flywheel od dnia 1" commitment from anonymous behavioral signals to labeled prediction↔outcome pairs.
+
+### T.2. Model danych (EXTEND vs NEW)
+
+**Prediction = EXTEND `adaptation_decisions` (ClickHouse).** Every scored lead already produces one
+row (`infra/clickhouse/migrations/0003…0012`, written by `logDecisionAsync()` in
+`apps/control-plane/src/app/api/adapt/route.ts`). A new ALTER migration `0013` adds the missing
+label-fuel columns — no parallel prediction table:
+
+| Field               | Status                                      | Notes                                                             |
+| ------------------- | ------------------------------------------- | ----------------------------------------------------------------- |
+| `prediction_id`     | **REUSE** `adapt_decision_id` (added 0012)  | Stable per-decision UUID already minted + returned to SDK.        |
+| `lead_id`           | **NEW** `String DEFAULT ''`                 | Durable pseudonymous lead key (T.6); distinct from `session_id`.  |
+| `model_version`     | **NEW** `LowCardinality(String) DEFAULT ''` | e.g. `rulebased-bandit-v1` → later `lora-tenant-{id}-v3`.         |
+| `score`             | **REUSE** `confidence` (+ `similarity`)     | Existing scalar prediction outputs.                               |
+| `features_snapshot` | **NEW** `String DEFAULT ''` (JSON)          | PII-free serialized scorer inputs (intent vector, signals, tier). |
+| `created_at`        | **REUSE** `ts`                              | —                                                                 |
+
+(Also formalize the live-but-unmigrated `demo_override` column in the same migration so label rows
+can exclude demo-driven decisions.)
+
+**Outcome = NEW table `conversion_labels` (Postgres/Supabase, drizzle `packages/db`).** Mutable,
+admin-managed, RLS-governed → Postgres, not append-only ClickHouse. One row per labeled outcome,
+joined to the prediction by `prediction_id` (= `adapt_decision_id`):
+
+| Column                      | Type                  | Notes                                                                                   |
+| --------------------------- | --------------------- | --------------------------------------------------------------------------------------- |
+| `id`                        | uuid PK               |                                                                                         |
+| `tenant_id`                 | uuid/text, NOT NULL   | RLS scope key (T.6).                                                                     |
+| `prediction_id`             | text, NOT NULL        | = `adaptation_decisions.adapt_decision_id`. A label with no prediction is not fuel.     |
+| `lead_id`                   | text                  | Mirrors the prediction's pseudonymous lead key.                                         |
+| `outcome_class`             | enum, NOT NULL        | `viewing_booked \| offer_made \| contract_signed \| purchased \| lost \| no_response`.  |
+| `outcome_raw`               | jsonb                 | Raw inbound payload (CRM webhook / feedback ping) before mapping.                       |
+| `labeled_at`                | timestamptz, NOT NULL |                                                                                         |
+| `label_source`              | enum, NOT NULL        | `system` (auto-mapped) \| `manual_admin` (set/changed in admin).                        |
+| `confidence`                | real, nullable        | 1.0 for hard CRM facts; lower for inferred.                                             |
+| `notes`                     | text, nullable        | Manual reclassification rationale.                                                      |
+| `created_at` / `updated_at` | timestamptz           | `updated_at` bumps on reclassification.                                                 |
+
+### T.3. Agregacja
+
+Planned aggregate (ClickHouse materialized view + Postgres→ClickHouse outcome sync, or scheduled
+join) over `(tenant_id, outcome_class, model_version, time_bucket)`: **conversion rate per class**;
+**score-vs-actual calibration** (reliability curve per `model_version` — proves whether a fine-tuned
+`lora-tenant-*` model is better-calibrated than `rulebased-bandit-v1`); before/after across model
+rollouts. Extends the `apps/control-plane/src/app/api/pilot/cta-lift/route.ts` JOIN pattern with a
+`model_version` dimension + the durable label join.
+
+### T.4. Klasyfikacja (taksonomia)
+
+The outcome enum is canonical. **Taxonomy lives in `packages/shared/src/schemas/conversion-label.ts`**
+(new Zod enum, single source of truth, imported by control-plane routes + the `packages/db` schema).
+Mapping: **system** — anonymous in-funnel events in ClickHouse `events` (`inquiry.completed`,
+`tour.requested`, `cta.clicked`) map to shallow classes; deep classes (`offer_made`,
+`contract_signed`, `purchased`, `lost`) arrive only via CRM ingest (T.7). **manual_admin** — admins
+set/correct `outcome_class` (T.5); each change bumps `updated_at`, records `notes`, flips
+`label_source` so the corpus can weight human-verified labels higher.
+
+### T.5. admin.estalara.com (zarządzanie etykietami)
+
+Extends the existing admin analytics/pilot dashboards (`apps/control-plane/src/app/dashboard/{analytics,pilot}`,
+`app/admin/*`) — not a parallel app:
+
+1. **Prediction + outcome table** — joined view (`adaptation_decisions ⋈ conversion_labels` on
+   `prediction_id`); filters: tenant, `outcome_class`, date range, `model_version`.
+2. **Manual outcome set/change** — writes `label_source=manual_admin` + `notes`.
+3. **Aggregate view** — conversion metrics + the score-vs-actual calibration chart (T.3).
+4. **Label-set export** — per-tenant PII-free `(features_snapshot, model_version, score) →
+   outcome_class` corpus (CSV/JSONL) as future LoRA fine-tuning fuel.
+
+### T.6. Izolacja tenantów / GDPR
+
+- **Sensitive & tenant-scoped.** `conversion_labels` carries **RLS** keyed on `tenant_id` (§J.1, §V.8),
+  no exception; ClickHouse access stays tenant-scoped as today.
+- **Per-tenant isolation / white-label.** The fine-tuned artifact is per-tenant (`lora-tenant-{id}-*`
+  in `model_version`); a tenant's labels train only that tenant's adapter. No cross-tenant pooling
+  without the federated governance of §F.3 / §R.3. DB residency in PL/EU (§A.3).
+- **`lead_id` ↔ CRM boundary.** `lead_id` is a pseudonymous Estalara key, NOT CRM PII. Deep outcomes
+  live in tenant CRMs with PII Estalara never ingests (already enforced: `inquiry.completed` strips
+  PII by schema design). CRM ingest (T.7) resolves the CRM record to the Estalara `lead_id`
+  tenant-side (or via a tenant-supplied opaque correlation token) so PII never crosses into Estalara
+  stores. The label corpus stays PII-free.
+- DSR/erasure: a `lead_id` erasure request cascades to its `conversion_labels` rows (extends
+  FOLLOW-039 erasure semantics, §H.1.1).
+
+### T.7. Zgodność z architekturą (extend, do not duplicate)
+
+| Concern               | Existing component                                                  | Action                                                                  |
+| --------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Prediction logging    | `adaptation_decisions`; `logDecisionAsync()` (adapt/route.ts)       | **EXTEND** — add `lead_id`, `model_version`, `features_snapshot`.       |
+| Prediction migrations | `infra/clickhouse/migrations/0003…0012`                             | **NEW** `0013_*` (+ formalize `demo_override`).                         |
+| Outcome persistence   | `POST /api/adapt/feedback` (today only updates `ab_bandit_weights`) | **EXTEND** to also write a durable `conversion_labels` row.             |
+| Outcome store         | Postgres/Supabase, `packages/db`                                    | **NEW** `conversion_labels` + RLS.                                      |
+| Taxonomy              | `packages/shared/src/schemas`                                       | **NEW** `conversion-label.ts` Zod enum.                                 |
+| CRM deep outcomes     | none today (CRMs not ingested by design)                            | **NEW** ingest path (tenant CRM webhook → control-plane, PII-stripped). |
+| Aggregation           | `pilot/cta-lift/route.ts` (session_id JOIN)                         | **EXTEND** with `model_version` + durable label join.                   |
+| Admin UI              | `dashboard/{analytics,pilot}`, `app/admin/*`                        | **EXTEND** with label table, reclassify, calibration, export.           |
+| Fine-tune consumer    | Modal Python app (Y2, §D.2/§D.5.7)                                  | Consumes T.5 export. Out of scope for day-one logging.                  |
+
+### T.8. Cross-references
+
+§D.2 / §D.5.7 (fine-tune target), §E.3 (A/B learning loop), §F.3 / §R.3 (federated governance),
+§P.3 (data flywheel day-one), §H.1.1 (erasure), §J.1 / §V.8 (RLS / tenant isolation), ADR-0010
+(`neutral_reason` observability ties into T instrumentation). Task breakdown: FOLLOW-170…175
+(`backlog/FOLLOW_UPS.md`), ordered T0 prediction-enrichment first.
+
 ---
 
 ## U. Agency Registration Flow & Master Admin Panel

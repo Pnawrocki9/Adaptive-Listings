@@ -224,9 +224,13 @@ def generate_description(event: dict[str, Any]) -> None:
     cache_key: str = event["cache_key"]
     default_ttl = TTL_TIER_2 if tier == 2 else TTL_TIER_3
     ttl_seconds: int = int(event.get("ttl_seconds", default_ttl))
-    # FOLLOW-166: DEMO MODE (DEMO-001) threads its operator-chosen model here so the long-form
-    # description regenerates with it. Validated against the allow-list; falls back to the default.
-    model: str = _resolve_generation_model(event.get("override_model"))
+    # Precedence chain (FOLLOW-166 / FOLLOW-161):
+    #   override_model (DEMO MODE) > generation_model (global admin default) > static default.
+    # Both are validated against the allow-list by _resolve_generation_model.
+    model: str = _resolve_generation_model(
+        event.get("override_model"),
+        event.get("generation_model"),
+    )
 
     log.info(
         "generate_description.start tenant=%s listing=%s archetype=%s locale=%s tier=%d model=%s",
@@ -609,13 +613,18 @@ def _max_tokens_for(original_description: str, tier: int) -> int:
 # Generation model selection (FOLLOW-166 — DEMO MODE override; FOLLOW-161 — global default)
 # ---------------------------------------------------------------------------
 #
-# The model is no longer hardcoded. The DEMO MODE archetype/model override (DEMO-001) threads its
-# chosen model through the description event as `override_model`; we honour it here so a model
-# switched in admin.estalara.com regenerates the long-form description with that model. The value is
-# validated against a curated allow-list (mirrors apps/control-plane/src/lib/demo-override-store.ts)
-# so an unexpected/unsafe model string can never reach the Anthropic call — it falls back to the
-# default. FOLLOW-161 (global default model) will set _DEFAULT_GENERATION_MODEL from config; for now
-# it is the static Sonnet 4.6 workhorse.
+# Precedence chain (highest to lowest):
+#   1. override_model  — DEMO MODE (DEMO-001): operator-chosen model per tenant, threaded
+#                        through the event as `override_model`. Validated against allow-list.
+#   2. generation_model — FOLLOW-161: admin-configured global default threaded by the
+#                        control-plane route on cache miss for standard (non-DEMO) requests.
+#                        Validated against allow-list.
+#   3. _DEFAULT_GENERATION_MODEL — static Sonnet 4.6 fallback when neither field is present
+#                        or both fail allow-list validation.
+#
+# Both values are validated against the curated allow-list (mirrors
+# apps/control-plane/src/lib/global-config-store.ts ALLOWED_GENERATION_MODELS) so an
+# unexpected/unsafe model string can never reach the Anthropic API call.
 _DEFAULT_GENERATION_MODEL = "claude-sonnet-4-6"
 _ALLOWED_GENERATION_MODELS: frozenset[str] = frozenset(
     {
@@ -626,15 +635,32 @@ _ALLOWED_GENERATION_MODELS: frozenset[str] = frozenset(
 )
 
 
-def _resolve_generation_model(override_model: str | None) -> str:
+def _resolve_generation_model(
+    override_model: str | None,
+    generation_model: str | None = None,
+) -> str:
     """
-    Resolve the generation model: an allow-listed override wins, otherwise the default.
+    Resolve the generation model using the FOLLOW-161 / FOLLOW-166 precedence chain.
 
-    Returns _DEFAULT_GENERATION_MODEL when override_model is None, empty, or not in the curated
-    allow-list (defensive — never forward an arbitrary model string to the Anthropic API).
+    Precedence (highest first):
+      1. override_model (DEMO-001) — per-tenant DEMO MODE model chosen in the admin UI.
+      2. generation_model (FOLLOW-161) — global admin-configured default threaded via event.
+      3. _DEFAULT_GENERATION_MODEL — static fallback.
+
+    Both values are validated against _ALLOWED_GENERATION_MODELS. An unknown value is
+    treated as absent (defensive — never forward an arbitrary string to the Anthropic API).
+
+    Args:
+        override_model:   DEMO MODE per-tenant model (event["override_model"]).
+        generation_model: Global admin-configured model (event["generation_model"]).
+
+    Returns:
+        An allow-listed model id string, always non-empty.
     """
     if override_model and override_model in _ALLOWED_GENERATION_MODELS:
         return override_model
+    if generation_model and generation_model in _ALLOWED_GENERATION_MODELS:
+        return generation_model
     return _DEFAULT_GENERATION_MODEL
 
 

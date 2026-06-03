@@ -52,6 +52,7 @@ import {
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { getAuthClaims } from '@estalara/auth';
 import { getDemoOverride } from '@/lib/demo-override-store';
+import { getGlobalGenerationModel } from '@/lib/global-config-store';
 
 // ─── Query parameter schema ───────────────────────────────────────────────────
 
@@ -186,12 +187,33 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const archetypeId = archetype;
   const localeCode = locale;
 
-  // ── DEMO MODE: check per-tenant override (AC5 / DEMO-001) ────────────────
+  // ── Playbook lookup (all tiers) ───────────────────────────────────────────
+  const playbook = getPlaybook(archetypeId);
+  const templateText =
+    localeCode === 'pl'
+      ? playbook.copy_template.pl
+      : localeCode === 'es'
+        ? playbook.copy_template.es
+        : playbook.copy_template.en;
+
+  // ── Tier 1: return template immediately, no Redis, no Modal ──────────────
+  // Short-circuit before any DB calls — Tier 1 never needs the generation model.
+  if (tier === '1') {
+    const response: DescriptionResponse = {
+      description: templateText,
+      source: 'template_fallback',
+      locale: localeCode,
+      generated_at: null,
+    };
+    return NextResponse.json(response, { status: 200 });
+  }
+
+  // ── DEMO MODE: check per-tenant override (DEMO-001) ─────────────────────
   // When DEMO MODE is active, the SDK already requests the correct archetype
   // (returned in the adapt response). We additionally key the Redis cache by
   // model so switching model busts the cache — mirroring mock-server behaviour
   // (genCache cleared on model switch). Fail-open: demo override read failure
-  // falls back to normal (no demo suffix), which is safe.
+  // falls back to normal path, which is safe.
   let demoActive = false;
   let demoOverrideModel: string | null = null;
   try {
@@ -203,37 +225,51 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   } catch (err: unknown) {
     // Fail-open — demo override read failure is not fatal for the description path.
     console.error(
-      '[description] demo override DB read failed — using standard cache key:',
+      '[description] demo override DB read failed — using standard path:',
       err instanceof Error ? err.message : err,
     );
   }
 
-  // ── Playbook lookup (all tiers) ───────────────────────────────────────────
-  const playbook = getPlaybook(archetypeId);
-  const templateText =
-    localeCode === 'pl'
-      ? playbook.copy_template.pl
-      : localeCode === 'es'
-        ? playbook.copy_template.es
-        : playbook.copy_template.en;
-
-  // ── Tier 1: return template immediately, no Redis, no Modal ──────────────
-  if (tier === '1') {
-    const response: DescriptionResponse = {
-      description: templateText,
-      source: 'template_fallback',
-      locale: localeCode,
-      generated_at: null,
-    };
-    return NextResponse.json(response, { status: 200 });
+  // ── Global generation model (FOLLOW-161) ─────────────────────────────────
+  // Read the admin-configured global default. Fail-open: getGlobalGenerationModel()
+  // returns the static default when DB is not configured or returns an error.
+  // This value is used ONLY when DEMO MODE is inactive (demoActive=false).
+  let globalModel: string;
+  try {
+    globalModel = await getGlobalGenerationModel();
+  } catch (err: unknown) {
+    // Configured DB threw — log but use the default so the request still completes.
+    console.error(
+      '[description] global config DB read failed — using default model:',
+      err instanceof Error ? err.message : err,
+    );
+    globalModel = 'claude-sonnet-4-6';
   }
 
+  // ── Effective generation model — precedence chain (AC3 / AC5) ─────────────
+  // demo override_model > global generation_model > (implicit default in Python job)
+  // The Python job _resolve_generation_model() applies its own allow-list validation,
+  // so both fields here are safe to forward as-is.
+  const effectiveModel: string =
+    demoActive && demoOverrideModel
+      ? demoOverrideModel // DEMO MODE wins
+      : globalModel; // global default (may equal the static default)
+
   // ── Tier 2 / Tier 3: Redis cache lookup ───────────────────────────────────
-  // When DEMO MODE is active, the cache key includes the model so switching
-  // model busts the cache (demoActive=true, demoOverrideModel non-null).
+  // Cache key includes the effective model so a model switch yields a cache miss
+  // instead of serving a stale-model description (AC5 / FOLLOW-161).
+  //
+  // Key structure:
+  //   - Standard path: `desc:{tenant}:{listing}:{archetype}:{locale}:{model}`
+  //   - DEMO MODE:     `desc:{tenant}:{listing}:{archetype}:{locale}:demo:{model}`
+  //
+  // The model suffix is always included in the standard path (not just DEMO MODE)
+  // so that changing the global default busts the cache correctly.
   const baseCacheKey = descriptionKey(tenantId, listing_id, archetypeId, localeCode);
   const cacheKey =
-    demoActive && demoOverrideModel ? `${baseCacheKey}:demo:${demoOverrideModel}` : baseCacheKey;
+    demoActive && demoOverrideModel
+      ? `${baseCacheKey}:demo:${demoOverrideModel}`
+      : `${baseCacheKey}:${globalModel}`;
   const cached = await getCachedDescription(cacheKey);
 
   if (cached !== null) {
@@ -269,9 +305,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     cache_key: cacheKey,
     ttl_seconds: ttlSeconds,
     ...(tierNum === 3 ? { priority: 'high' as const, max_tokens: 600 } : { max_tokens: 450 }),
-    // AC5 / DEMO-001: pass override_model to Modal job so it generates with the
-    // chosen model. Modal job consumer is FOLLOW-166 (ml-engineer).
-    ...(demoActive && demoOverrideModel ? { override_model: demoOverrideModel } : {}),
+    // Precedence chain: demo override_model > global generation_model > default (in Python job).
+    // - DEMO MODE: override_model carries the operator-chosen model (DEMO-001 / FOLLOW-166).
+    // - Standard path: generation_model carries the global admin setting (FOLLOW-161).
+    // The Python _resolve_generation_model() validates both against its allow-list.
+    ...(demoActive && demoOverrideModel
+      ? { override_model: demoOverrideModel }
+      : { generation_model: effectiveModel }),
   };
 
   // Fire-and-forget: do NOT await. Response must not block on Modal enqueue.

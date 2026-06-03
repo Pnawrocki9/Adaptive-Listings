@@ -4703,6 +4703,8 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ## FOLLOW-161 — admin.estalara.com: selectable LLM model for content generation (dashboard + config)
 
+- **status:** RESOLVED — branch `backend-engineer/FOLLOW-161-global-generation-model` (2026-06-03).
+  AC1–AC5 all met. 61 TS tests pass + 34 Python tests pass.
 - **priority:** P2
 - **agent:** backend-engineer (dashboard + config) + ml-engineer (gateway/Modal wiring)
 - **estimated_hours:** 10
@@ -4723,16 +4725,24 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
     confidence→Sonnet escalation (CHAT-002 refinement) instead.
   - Curated allow-list of models (not free text); show cost/latency hints per model.
 - **ac:**
-  - [ ] AC1: a single GLOBAL `generation_model` config setting with a safe default
-        (`claude-sonnet-4-6`); migration if DB-backed. No per-tenant column.
-  - [ ] AC2: dashboard control (settings page) to pick the generation model from a curated list;
-        persists; admin-only.
-  - [ ] AC3: `generate_description.py` + `llm-gateway.ts` read the configured model (fallback to
-        default) instead of the hardcoded constant; LiteLLM routes accordingly.
-  - [ ] AC4: real-time chat classifier model is NOT user-selectable (stays Haiku-class) —
-        documented.
-  - [ ] AC5: changing the model takes effect for new generations (cache keyed by model so a switch
-        doesn't serve stale-model copy).
+  - [x] AC1: a single GLOBAL `generation_model` config setting with a safe default
+        (`claude-sonnet-4-6`); migration if DB-backed. No per-tenant column. →
+        `packages/db/migrations/0018_app_config.sql` + `packages/db/src/schema/app_config.ts` +
+        `apps/control-plane/src/lib/global-config-store.ts::getGlobalGenerationModel()`.
+  - [x] AC2: dashboard control (settings page) to pick the generation model from a curated list;
+        persists; admin-only. → `GET/PUT /api/admin/generation-model` (agency:admin JWT);
+        `apps/control-plane/src/app/dashboard/settings/page.tsx` with cost/latency hints table.
+  - [x] AC3: `generate_description.py` + `llm-gateway.ts` read the configured model (fallback to
+        default) instead of the hardcoded constant. → `llm-gateway.ts` full-generation path calls
+        `getGlobalGenerationModel()` when no `forceModel` (Haiku tweak path stays Haiku);
+        `description/route.ts` threads `generation_model` field into event;
+        `_resolve_generation_model()` extended with `generation_model` param (override > global >
+        default precedence).
+  - [x] AC4: real-time chat classifier model is NOT user-selectable (stays Haiku-class) —
+        documented. → code comment + dashboard note added.
+  - [x] AC5: changing the model takes effect for new generations (cache keyed by model so a switch
+        doesn't serve stale-model copy). → standard cache key now
+        `desc:{t}:{l}:{a}:{locale}:{model}`; DEMO MODE key unchanged.
 - **promoted_to_queue:** false
 - **depends_on:** []
 

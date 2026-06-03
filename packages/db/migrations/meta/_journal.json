@@ -127,6 +127,13 @@
       "when": 1780300800000,
       "tag": "0017_demo_overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1780387200000,
+      "tag": "0018_app_config",
+      "breakpoints": true
     }
   ]
 }

@@ -60,7 +60,18 @@ export async function fetchListingOriginalDescription(
   }, FETCH_TIMEOUT_MS);
 
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { signal: controller.signal, redirect: 'manual' });
+    // A redirect (3xx) means ESTALARA_BACKEND_URL points at a frontend proxy, not the
+    // raw backend — the request hit an auth gate. Fail loud so misconfiguration is
+    // visible in Sentry / Vercel logs rather than silently producing ungrounded copy.
+    if (res.status >= 300 && res.status < 400) {
+      console.error(
+        '[listing-details] redirect received — ESTALARA_BACKEND_URL likely points at frontend, not backend:',
+        res.status,
+        url,
+      );
+      return '';
+    }
     if (!res.ok) return '';
     const listing = (await res.json()) as unknown;
     if (

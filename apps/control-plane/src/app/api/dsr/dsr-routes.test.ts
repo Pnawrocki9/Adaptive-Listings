@@ -96,6 +96,11 @@ vi.mock('@estalara/db', () => ({
     tenantId: 'tenant_id',
     leadId: 'lead_id',
   },
+  // FOLLOW-193 / DPIA §8 line 773 — used by POST /api/dsr/erase for engagement_scores cascade.
+  engagementScores: {
+    sessionId: 'session_id',
+    tenantId: 'tenant_id',
+  },
   eq: vi.fn((col: unknown, val: unknown) => ({ col, val, _op: 'eq' })),
   and: vi.fn((...args: unknown[]) => ({ args, _op: 'and' })),
   ne: vi.fn((col: unknown, val: unknown) => ({ col, val, _op: 'ne' })),

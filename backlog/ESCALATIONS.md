@@ -824,7 +824,7 @@ Note: SSRF check is intentionally NOT applied — the base host comes from our t
 
 ---
 
-## OPEN — ESC-019: production Estalara backend listing-details API requires auth; server-side fetch fails open to empty `original_description` [TICKET-DESC-001]
+## RESOLVED — ESC-019: production Estalara backend listing-details API requires auth; server-side fetch fails open to empty `original_description` [TICKET-DESC-001]
 
 **Filed by:** Claude (session) **Date:** 2026-06-03T00:00:00Z **Affects:** description + per-listing
 headline pipeline (`apps/control-plane/src/lib/listing-details.ts`, `/api/adapt/description`),
@@ -871,4 +871,70 @@ The local dev backend does not enforce the auth guard, so the mock-harness demo 
 carries the `original_description` key). ESC-019 is the _reachability/auth_ half — the field is now
 threaded, but the production source it reads is not yet reachable by an unauthenticated server call.
 
-**Resolution:** <empty until resolved>
+**Resolution:** RESOLVED 2026-06-04 by PR #196
+(`fix(control-plane): correct ESTALARA_BACKEND_URL to api.estalara.com + redirect guard [ESCALATION]`).
+Root cause: `ESTALARA_BACKEND_URL` was pointing at `app.estalara.com` (SvelteKit frontend with auth
+guard). PR #196 corrected it to `https://api.estalara.com` (Spring Boot backend with `permitAll()` —
+no auth required for listing-details). Added `redirect: 'manual'` guard in `listing-details.ts` so
+redirect responses fail loud rather than silently failing open. FOLLOW-192 (Sprint 15) marked
+CLOSED.
+
+---
+
+## OPEN — Estalara-app DOM hooks committed but not deployed to production [FOLLOW-191]
+
+**Filed by:** sdk-engineer **Date:** 2026-06-06T13:30:00Z **Affects:** FOLLOW-191, FOLLOW-197,
+Sprint 15 Track A **Type:** deployment
+
+**Description:**
+
+FOLLOW-191 audit (2026-06-06) confirmed the following gap: the `data-estalara-slot` hooks and the
+SDK `<script>` loader are **committed** to the Estalara-app git repo (`web-master` HEAD at commit
+`9d2df9d`) but the **production `app.estalara.com`** is running an older build that predates these
+changes. Evidence:
+
+```
+curl -s https://app.estalara.com/en/listing/deerfield-lake-ct-cape-coral-fl-33909-90681784-8a9a-4953-ae48-fe8f8a3865e2 \
+  | grep -c "data-estalara"
+# Returns: 0
+```
+
+The production HTML has zero `data-estalara-*` attributes and no SDK `<script>` tag in `<head>`. The
+adaptation layer fires `adapt.skipped` with `reason: 'no_slot_elements'` for every listing view. No
+adapted experience has been measured in production.
+
+Additionally, the local `web-master` working tree has `src/app.html` temporarily overridden to point
+to `http://localhost:9100/estalara-sdk.iife.js` for local demo use. This override is uncommitted and
+must NOT be deployed.
+
+**Required action (Rafał Palak, CTO):**
+
+Three steps to unblock pilot measurement:
+
+1. In the `web-master` directory, restore `app.html` to the committed (production) version if it
+   differs: `git checkout -- src/app.html`. The committed version correctly points to
+   `https://admin.estalara.com/sdk.js`.
+
+2. Set `PUBLIC_ESTALARA_SDK_ENABLED=true` in the production hosting environment for `web-master`
+   (Docker env, hosting provider config, or equivalent). This flag gates all four A1 slot edits —
+   without it the listing page renders with no slots (byte-identical to before the edits).
+
+3. Deploy `web-master` HEAD to production. After deploy, verify with:
+
+   ```bash
+   curl -s https://app.estalara.com/en/listing/deerfield-lake-ct-cape-coral-fl-33909-\
+   90681784-8a9a-4953-ae48-fe8f8a3865e2 | grep -c "data-estalara"
+   # Expected: ≥3 (listing-id attr + headline slot + description slot)
+   ```
+
+4. Confirm `https://admin.estalara.com/sdk.js` returns HTTP 200 (the SDK IIFE bundle must be served
+   there — see `apps/control-plane/public/sdk.js` in Adaptive-Listings).
+
+5. Mark this escalation RESOLVED and update FOLLOW-191 → DONE in `backlog/QUEUE.md`.
+
+Full deployment guide: `backlog/HANDOFFS.md` section "FOLLOW-191 → Rafał Palak (CTO)". Original slot
+spec: `/home/asipi/Projects/Estalara-app/web-master/HANDOFF_ESTALARA_ADAPTIVE.md`.
+
+**Blocking:** FOLLOW-197 (adapt.applied signal) depends on this being live.
+
+**Resolution:**

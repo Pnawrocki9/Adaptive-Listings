@@ -240,7 +240,10 @@ function registerFeedbackListener(config: SdkConfig, sessionId: string, archetyp
 
   _feedbackListenerRegistered = true;
 
-  const outcomeEvents = config.feedbackEvents ?? ['inquiry.completed'];
+  // CEO Decision D-4 (2026-05-30): live.signup is the PRIMARY pilot conversion event.
+  // inquiry.completed retained as secondary fallback for future agency tenants.
+  // FOLLOW-195: live.signup schema added to packages/shared/src/schemas/events/live.ts.
+  const outcomeEvents = config.feedbackEvents ?? ['live.signup', 'inquiry.completed'];
 
   const handleOutcome = (event: Event): void => {
     // Only fire if this document event matches one of our outcome event names

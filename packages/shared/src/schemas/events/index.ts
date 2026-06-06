@@ -66,6 +66,7 @@ import { ListingViewedEventSchema, CtaClickedEventSchema } from './listing-obser
 import { QuizEventEventSchema, QuizMismatchEventSchema } from './quiz.js';
 import { SidebarClosedEventSchema } from './sidebar.js';
 import { AdaptAppliedEventSchema, AdaptSkippedEventSchema } from './adapt-events.js';
+import { LiveSignupEventSchema } from './live.js';
 
 export * from './page-lifecycle.js';
 export * from './mouse-scroll.js';
@@ -84,15 +85,18 @@ export * from './listing-observe.js';
 export * from './quiz.js';
 export * from './sidebar.js';
 export * from './adapt-events.js';
+export * from './live.js';
 
 /**
- * `EventSchema` — the canonical discriminated union over all 44 Estalara event types
+ * `EventSchema` — the canonical discriminated union over all 45 Estalara event types
  * (10 categories from Master Design C.1, plus session quality / DQS — TICKET-DQS-001,
  * plus A/B holdout assignment — TICKET-AB-001,
  * plus consent audit — TICKET-041,
  * plus SDK observability events — TICKET-RUNTIME-FIX-003:
  *   listing.viewed, cta.clicked, quiz.event, quiz.mismatch,
- *   sidebar.closed, adapt.applied, adapt.skipped).
+ *   sidebar.closed, adapt.applied, adapt.skipped,
+ * plus primary pilot conversion event — FOLLOW-195 / CEO Decision D-4:
+ *   live.signup).
  *
  * Adding a new event type:
  *   1. Define payload + extended event schemas in the appropriate category file
@@ -161,6 +165,8 @@ export const EventSchema = z.discriminatedUnion('type', [
   // adaptation observability (2) — TICKET-RUNTIME-FIX-003
   AdaptAppliedEventSchema,
   AdaptSkippedEventSchema,
+  // primary pilot conversion (1) — FOLLOW-195 / CEO Decision D-4 (2026-05-30)
+  LiveSignupEventSchema,
 ]);
 export type Event = z.infer<typeof EventSchema>;
 
@@ -214,5 +220,7 @@ export const EVENT_TYPES = [
   'sidebar.closed',
   'adapt.applied',
   'adapt.skipped',
+  // primary pilot conversion — FOLLOW-195 / CEO Decision D-4 (2026-05-30)
+  'live.signup',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];

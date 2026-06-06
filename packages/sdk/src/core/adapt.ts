@@ -493,6 +493,7 @@ export async function fetchDirectives(
   session: SessionState,
   pageType: 'listing_list' | 'listing_detail' | 'home' | 'search',
   intentState?: IntentState,
+  listingId?: string,
 ): Promise<AdaptResponse | null> {
   if (!config.decisionApiUrl) return null;
   if (!config.tenantId) return null;
@@ -508,6 +509,13 @@ export async function fetchDirectives(
       body.archetype_hint = intentState.archetype;
       body.confidence = intentState.confidence;
       body.similarity = intentState.probabilities[intentState.archetype];
+    }
+
+    // F-13 (FOLLOW-194): include single-listing context on detail pages.
+    // When listingId is provided (caller detected data-estalara-listing-id on the page),
+    // set body.listing_id so the Decision API can activate per-listing RAG context.
+    if (listingId !== undefined) {
+      body.listing_id = listingId;
     }
 
     // Collect visible listing IDs for ReorderDirective scoring (max 50)

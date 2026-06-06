@@ -1105,3 +1105,66 @@ done), FOLLOW-172 (this ticket), FOLLOW-173..175 (aggregation, admin UI, export 
 consumers of this corpus).
 
 ---
+
+## FOLLOW-196 → FOLLOW-197
+
+**From:** sdk-engineer **To:** sdk-engineer **Date:** 2026-06-06T00:00:00Z
+
+**Summary:** Both CustomEvent payloads in Estalara-app have been extended with `user_uuid` and
+`is_agent` identity fields. Changes are committed locally at
+`/home/asipi/Projects/Estalara-app/web-master` (no public GitHub for this repo).
+
+### What changed
+
+**ChatBot.svelte** (`src/lib/ui/chatbot/ChatBot.svelte`):
+
+- Added `userUuid: string | null = null` local variable.
+- Updated `authStore.subscribe` callback to also capture `state.userUuid`.
+- Extended `estalara:chat:message-sent` CustomEvent detail with:
+  ```ts
+  user_uuid: userUuid ?? null,   // Keycloak UUID — null when not authenticated
+  is_agent: isAgent ?? false,    // true for agent-role users
+  ```
+
+**LiveSessions.svelte** (`src/lib/ui/listing/LiveSessions.svelte`):
+
+- Added `isAgent: boolean = false` and `userUuid: string | null = null` local variables.
+- Updated `authStore.subscribe` callback to also capture `state.isAgent` and `state.userUuid`.
+- **Fixed event type**: corrected `'estalara:live:signup'` → `'live.signup'` (dot-separated). This
+  matches `registerFeedbackListener` in `packages/sdk/src/core/adapt.ts` which listens for
+  `event.type === 'live.signup'`. The previous `'estalara:live:signup'` type was a dead wire — the
+  SDK adapter would never have fired the feedback ping even with FOLLOW-195 merged.
+- Extended `live.signup` CustomEvent detail with:
+  ```ts
+  user_uuid: userUuid ?? null,
+  is_agent: isAgent ?? false,
+  ```
+
+### Action required for FOLLOW-197 (sdk-engineer — SDK listeners)
+
+When implementing the SDK listeners for `estalara:chat:message-sent` and `live.signup`:
+
+1. The `estalara:chat:message-sent` listener receives
+   `{ message, listing_id, char_count, locale, timestamp, user_uuid, is_agent }` in `event.detail`.
+   Use `user_uuid` as the basis for `lead_id` derivation (hash with session salt, NEVER store raw).
+   Filter signals where `is_agent === true` — do not send agent chat interactions to the bandit as
+   conversion signals.
+
+2. The `live.signup` listener is already registered by `registerFeedbackListener` in `adapt.ts`
+   (lines ~237–283) via `document.addEventListener('live.signup', handleOutcome)`. The feedback ping
+   fires automatically. FOLLOW-197 needs to additionally route the `user_uuid` from the event detail
+   into the ingest batch as `lead_id` so the Conversion Label Loop can correlate.
+
+3. Both events must be consent-gated — only dispatch to ingest when
+   `getConsentState() === 'granted'` (or `'unknown'` with conservative behavior per tenant config).
+
+**Files in Estalara-app (local only):**
+
+- `/home/asipi/Projects/Estalara-app/web-master/src/lib/ui/chatbot/ChatBot.svelte`
+- `/home/asipi/Projects/Estalara-app/web-master/src/lib/ui/listing/LiveSessions.svelte`
+
+**SDK files (Adaptive-Listings repo, no changes needed for FOLLOW-196 scope):**
+
+- `packages/sdk/src/core/adapt.ts` — `registerFeedbackListener` already wired for `'live.signup'`
+
+---

@@ -5449,7 +5449,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 188 (184-187 = RETRO-031 / PR #191 / FOLLOW-172 Conversion Label Loop T2 — CRM deep-outcome ingest webhook:
+<!-- next free FOLLOW number: 191 (190 = CEO-directed 2026-06-04 dwell-time confidence lift, promoted to backlog/sprint-14/FOLLOW-190.md; 188-189 = SDK adapt fail-safe + description reconciliation fix, PRs #194/#195; 184-187 = RETRO-031 / PR #191 / FOLLOW-172 Conversion Label Loop T2 — CRM deep-outcome ingest webhook:
      184 = P1 DSR erase must reach CRM-written conversion_labels rows — cascade keys on session_id but CRM rows keyed on opaque lead_id of a different namespace → Art. 17 gap (LG-1; relate FOLLOW-180);
      185 = P1 PG-harness test: CRM route write + DSR cascade match + two-writer shallow→deep precedence upgrade + confidence:0 (TG-1/TG-2/CB-1; folds FOLLOW-181/183);
      186 = P2 tenant onboarding + CRM-webhook docs (HALF_WIRE_C-by-design closure) + compliance condition 10 lead_id-pseudonymity checkbox + no-PII-in-outcome_raw clause + outcome_raw size bound (CB-2; cite Rule L);

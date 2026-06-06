@@ -3046,7 +3046,7 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-195
   title: SCHEMA-001 — live.signup Zod event schema
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-06-06T00:00:00Z'
   completed_at: '2026-06-06T00:00:00Z'

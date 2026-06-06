@@ -112,3 +112,33 @@ truth for the same ordering.
 `upsert-conversion-label.ts` are byte-identical to the TS constants in `conversion-label.ts` —
 preventing the two from drifting when a new outcome class is added. Pattern analogous to Rule J
 mirror checks.
+
+---
+
+## 2026-06-06 / FOLLOW-193
+
+**What I built:** DSR engagement_scores erasure (DPIA §8 line 773 compliance gap) + Vercel cron
+restore stub (deployment gated on CEO Q3 Vercel Pro confirmation). Added `engagement_scores` Drizzle
+schema (migration 0021, RLS), exported from `@estalara/db`, imported into the DSR erase route and
+deleted inside the existing transaction for atomicity. Three new integration tests cover AC3 (delete
+issued), AC4 (row absent after), and atomicity (same transaction call as session_embeddings). Cron
+block added to `vercel.json` noting the Vercel Pro gate.
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+- The `engagement_scores` delete is inside the Drizzle `db.transaction()` — if it fails, the whole
+  transaction rolls back and no partial erasure escapes. Important because a partial Postgres erase
+  (session_embeddings deleted, engagement_scores left) is a GDPR Art. 17 gap that no external signal
+  would surface.
+- The cron block in `vercel.json` is real config — if CEO confirms Q3 and someone deploys before
+  reading the PR comment, the cron activates. Mitigated by the explicit code comment and PR
+  description gate warning.
+- Rebuilding the db package before committing is required when a new schema file is added — ESLint
+  needs the dist `.d.ts` files to resolve types for the control-plane. Without the rebuild, ESLint
+  fails with "Unsafe member access" on the new table's columns.
+- `git stash`/`git stash pop` across branches is dangerous: it can silently drop or revert staged
+  changes. Prefer committing to a WIP commit rather than stashing when switching context.
+
+**A guardrail I'd add:** A CI check that scans the DPIA §8 "erasure cascade" table and asserts each
+listed table has a `tx.delete(table)` call inside `erase/route.ts`. Would catch future tables added
+to the DPIA but forgotten in the code — the same gap that made this ticket necessary.

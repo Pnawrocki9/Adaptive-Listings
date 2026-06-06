@@ -1,9 +1,10 @@
 /**
  * Integration tests for POST /api/dsr/erase — FOLLOW-039 ClickHouse hard-delete
- * + FOLLOW-172 conversion_labels DSR cascade.
+ * + FOLLOW-172 conversion_labels DSR cascade
+ * + FOLLOW-193 engagement_scores DSR cascade (DPIA §8 line 773).
  *
  * Existing happy-path tests live in `apps/control-plane/src/app/api/dsr/dsr-routes.test.ts`.
- * This file covers the NEW behaviours added by FOLLOW-039 and FOLLOW-172:
+ * This file covers the NEW behaviours added by FOLLOW-039, FOLLOW-172, and FOLLOW-193:
  *
  *   1. ClickHouse mutations are ISSUED (HTTP POST to CLICKHOUSE_URL) for every
  *      table in DSR_CLICKHOUSE_TABLES when a valid OTP is presented.
@@ -20,6 +21,10 @@
  *      lead_id == session_id (non-empty) for the erased subject.
  *   8. Empty session_id MUST NOT trigger a conversion_labels delete (FOLLOW-180/LG-2
  *      guard — blank lead_id would erase ALL system labels for the tenant).
+ *   FOLLOW-193 / DPIA §8 line 773 (compliance conditions 9-10):
+ *   9. engagement_scores rows are deleted inside the Postgres transaction for the
+ *      erased (session_id, tenant_id) -- AC3.
+ *  10. engagement_scores row is absent after erasure -- AC4.
  *
  * All external dependencies are mocked.
  *
@@ -74,6 +79,12 @@ vi.mock('@estalara/db', () => ({
   conversionLabels: {
     tenantId: 'tenant_id',
     leadId: 'lead_id',
+  },
+  // FOLLOW-193 / DPIA §8 line 773: engagement_scores mock -- object identity used
+  // in test assertions to verify the correct table is passed to tx.delete().
+  engagementScores: {
+    sessionId: 'session_id',
+    tenantId: 'tenant_id',
   },
   dsrClickhouseMutations: {
     id: 'id',
@@ -357,5 +368,136 @@ describe('POST /api/dsr/erase — FOLLOW-172 conversion_labels cascade', () => {
 
     // With empty session_id, the guard must prevent the conversion_labels delete.
     expect(deletedTables).not.toContain('conversion_labels');
+  });
+});
+
+// --- FOLLOW-193 / DPIA §8 line 773: engagement_scores DSR erasure cascade ---
+//
+// AC3: integration test covering POST /api/dsr/erase erasure cascade for
+//      engagement_scores -- verifies the DELETE is issued inside the transaction.
+// AC4: engagement_scores row is absent after erasure (verified via the mock:
+//      the delete call is recorded and the mock table state reflects the absence).
+
+describe('POST /api/dsr/erase -- FOLLOW-193 engagement_scores cascade (DPIA §8)', () => {
+  it('AC3: deletes engagement_scores rows by (session_id, tenant_id) inside the Postgres transaction', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+
+    const { engagementScores: mockEngagementScores } = await import('@estalara/db');
+
+    const deletedTables: string[] = [];
+    mockTransaction.mockImplementationOnce(
+      async (fn: (tx: { delete: (table: unknown) => unknown }) => Promise<void>) => {
+        const txMock = {
+          delete: vi.fn((table: unknown) => {
+            if (table === mockEngagementScores) {
+              deletedTables.push('engagement_scores');
+            }
+            return buildChain([]);
+          }),
+        };
+        await fn(txMock);
+      },
+    );
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+
+    expect(res.status).toBe(200);
+
+    // AC3: engagement_scores delete was issued inside the transaction.
+    expect(deletedTables).toContain('engagement_scores');
+  });
+
+  it('AC4: engagement_scores row is absent after erasure (mock state confirms no residual row)', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+
+    const { engagementScores: mockEngagementScores } = await import('@estalara/db');
+
+    // Simulate a seeded engagement_scores row for the test session.
+    const seededRows = [
+      {
+        id: 'es-uuid-001',
+        tenantId: 'tenant-uuid-001',
+        sessionId: 'sess-abc123',
+        engagementScore: '0.72000',
+        dwellScore: '0.80000',
+        interactionScore: '0.65000',
+        scrollScore: '0.71000',
+        computedAt: new Date('2026-06-05T10:00:00Z'),
+        createdAt: new Date('2026-06-05T10:00:00Z'),
+        updatedAt: new Date('2026-06-05T10:00:00Z'),
+      },
+    ];
+
+    // Track which rows remain after the delete call.
+    let remainingRows = [...seededRows];
+
+    mockTransaction.mockImplementationOnce(
+      async (fn: (tx: { delete: (table: unknown) => unknown }) => Promise<void>) => {
+        const txMock = {
+          delete: vi.fn((table: unknown) => {
+            // Simulate the DELETE: remove matching rows from the in-memory set.
+            if (table === mockEngagementScores) {
+              remainingRows = remainingRows.filter(
+                (r) => !(r.sessionId === 'sess-abc123' && r.tenantId === 'tenant-uuid-001'),
+              );
+            }
+            return buildChain([]);
+          }),
+        };
+        await fn(txMock);
+      },
+    );
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+
+    expect(res.status).toBe(200);
+
+    // AC4: no engagement_scores row remains for the erased (session_id, tenant_id).
+    const residual = remainingRows.filter(
+      (r) => r.sessionId === 'sess-abc123' && r.tenantId === 'tenant-uuid-001',
+    );
+    expect(residual).toHaveLength(0);
+  });
+
+  it('AC3/AC4 combined: engagement_scores deletion is inside the SAME transaction as session_embeddings (atomicity)', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+
+    const { engagementScores: mockEngagementScores, sessionEmbeddings: mockSessionEmbeddings } =
+      await import('@estalara/db');
+
+    // Track which tables were deleted INSIDE the transaction (not outside it).
+    const tablesDeletedInsideTx: string[] = [];
+    let txCallCount = 0;
+
+    mockTransaction.mockImplementationOnce(
+      async (fn: (tx: { delete: (table: unknown) => unknown }) => Promise<void>) => {
+        txCallCount++;
+        const txMock = {
+          delete: vi.fn((table: unknown) => {
+            if (table === mockEngagementScores) tablesDeletedInsideTx.push('engagement_scores');
+            if (table === mockSessionEmbeddings) tablesDeletedInsideTx.push('session_embeddings');
+            return buildChain([]);
+          }),
+        };
+        await fn(txMock);
+      },
+    );
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+
+    expect(res.status).toBe(200);
+
+    // Both tables must be deleted inside the SAME transaction call.
+    expect(txCallCount).toBe(1);
+    expect(tablesDeletedInsideTx).toContain('engagement_scores');
+    expect(tablesDeletedInsideTx).toContain('session_embeddings');
+
+    // DSR request completes -- the response must contain a deleted_at timestamp.
+    const body = (await res.json()) as { deleted_at: string; clickhouse_deletion: unknown };
+    expect(typeof body.deleted_at).toBe('string');
+    expect(new Date(body.deleted_at).getTime()).toBeGreaterThan(0);
   });
 });

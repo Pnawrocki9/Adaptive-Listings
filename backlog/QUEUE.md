@@ -3068,18 +3068,23 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-196
   title: CHAT-001/002 — CustomEvent hooks in Estalara-app
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 4
   depends_on: [FOLLOW-195]
   produces: [FOLLOW-197]
   source: Audit F-04, F-07, CHK-D §A.4
   spec: backlog/sprint-15/FOLLOW-196.md
+  pr: sdk-engineer/FOLLOW-196-chat-event-payload-extension
   notes: |
-    Work in the Estalara-app SvelteKit repo (not this repo). ChatBot.svelte: dispatch
-    estalara:chat:message-sent + estalara:chat:contact-initiated. LiveSessions.svelte:
-    dispatch estalara:live-signup after bookSlot(). CEO must clarify buyer role visibility
-    for ChatBot (Audit Q4).
+    2026-06-06 DONE. Both CustomEvent payloads extended in Estalara-app:
+    1. ChatBot.svelte: userUuid tracked from authStore; user_uuid + is_agent added to
+       estalara:chat:message-sent detail.
+    2. LiveSessions.svelte: isAgent + userUuid tracked from authStore; event type
+       corrected from 'estalara:live:signup' to 'live.signup' (SDK adapter match);
+       user_uuid + is_agent added to detail.
+    Changes are local to /home/asipi/Projects/Estalara-app/web-master (no GitHub access
+    to that repo). PR in Adaptive-Listings documents the work + handoff to FOLLOW-197.
 
 - id: FOLLOW-197
   title: CHAT-003 — SDK listeners for chat/live events

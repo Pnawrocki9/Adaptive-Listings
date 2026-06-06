@@ -1106,148 +1106,65 @@ consumers of this corpus).
 
 ---
 
-## FOLLOW-191 → Rafał Palak (CTO) — deploy Estalara-app DOM hooks to production
+## FOLLOW-196 → FOLLOW-197
 
-**From:** sdk-engineer **To:** Rafał Palak (CTO) **Date:** 2026-06-06T13:30:00Z **Affects:**
-FOLLOW-191, FOLLOW-197 (adapt.applied event path) **Type:** deployment
+**From:** sdk-engineer **To:** sdk-engineer **Date:** 2026-06-06T00:00:00Z
 
-**Summary:**
+**Summary:** Both CustomEvent payloads in Estalara-app have been extended with `user_uuid` and
+`is_agent` identity fields. Changes are committed locally at
+`/home/asipi/Projects/Estalara-app/web-master` (no public GitHub for this repo).
 
-FOLLOW-191 audit confirmed the following state as of 2026-06-06:
+### What changed
 
-- The slot hooks (`data-estalara-slot="headline"`, `data-estalara-slot="description"`) are
-  **committed** to the Estalara-app git repo (`/home/asipi/Projects/Estalara-app/web-master`, commit
-  `9d2df9d feat(livesessions)` is HEAD). The listing page at
-  `src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte` already contains all four A1 edits
-  described in `HANDOFF_ESTALARA_ADAPTIVE.md`.
-- The `src/app.html` in git (HEAD) correctly has `src="https://admin.estalara.com/sdk.js"` with
-  `data-api-key="000-app-estalara"` and `data-decision-url="https://admin.estalara.com/api"`.
-- **The production site (`app.estalara.com`) is running an older build** — a curl of a live listing
-  page (e.g.
-  `/en/listing/deerfield-lake-ct-cape-coral-fl-33909-90681784-8a9a-4953-ae48-fe8f8a3865e2`) returns
-  no `data-estalara-slot` attributes and no SDK `<script>` tag. The adaptation layer is therefore
-  invisible in production: `adapt.applied` never fires, `adapt.skipped` fires with
-  `reason: 'no_slot_elements'`.
-- The local working tree has `src/app.html` temporarily changed to `localhost:9100` for demo
-  purposes. This change must NOT be deployed.
+**ChatBot.svelte** (`src/lib/ui/chatbot/ChatBot.svelte`):
 
-**Required action for Rafał:**
+- Added `userUuid: string | null = null` local variable.
+- Updated `authStore.subscribe` callback to also capture `state.userUuid`.
+- Extended `estalara:chat:message-sent` CustomEvent detail with:
+  ```ts
+  user_uuid: userUuid ?? null,   // Keycloak UUID — null when not authenticated
+  is_agent: isAgent ?? false,    // true for agent-role users
+  ```
 
-1. In `/home/asipi/Projects/Estalara-app/web-master`, ensure the `app.html` working-tree override is
-   not deployed. The committed HEAD version (pointing to `admin.estalara.com/sdk.js`) is the correct
-   production value. Restore if needed:
+**LiveSessions.svelte** (`src/lib/ui/listing/LiveSessions.svelte`):
 
-   ```bash
-   git checkout -- src/app.html
-   ```
+- Added `isAgent: boolean = false` and `userUuid: string | null = null` local variables.
+- Updated `authStore.subscribe` callback to also capture `state.isAgent` and `state.userUuid`.
+- **Fixed event type**: corrected `'estalara:live:signup'` → `'live.signup'` (dot-separated). This
+  matches `registerFeedbackListener` in `packages/sdk/src/core/adapt.ts` which listens for
+  `event.type === 'live.signup'`. The previous `'estalara:live:signup'` type was a dead wire — the
+  SDK adapter would never have fired the feedback ping even with FOLLOW-195 merged.
+- Extended `live.signup` CustomEvent detail with:
+  ```ts
+  user_uuid: userUuid ?? null,
+  is_agent: isAgent ?? false,
+  ```
 
-2. Set `PUBLIC_ESTALARA_SDK_ENABLED=true` in the production environment for the `web-master`
-   SvelteKit app. Without this flag the `{#if estalaraEnabled}` blocks are false and no slot
-   elements render. The local `.env` already has this set; it must be propagated to the hosting
-   environment (Docker / hosting provider env vars).
+### Action required for FOLLOW-197 (sdk-engineer — SDK listeners)
 
-3. Deploy the committed HEAD of `web-master` to production. The slot hooks go live once the build
-   runs with `PUBLIC_ESTALARA_SDK_ENABLED=true`.
+When implementing the SDK listeners for `estalara:chat:message-sent` and `live.signup`:
 
-4. Verify after deploy: `curl -s https://app.estalara.com/en/listing/<any-slug>` should return HTML
-   containing:
-   - `data-estalara-listing-id` on the main content div
-   - `data-estalara-slot="headline"` on the inserted `<p>` element
-   - `data-estalara-slot="description"` on the description div
-   - The SDK `<script>` tag in `<head>` pointing to `admin.estalara.com/sdk.js`
+1. The `estalara:chat:message-sent` listener receives
+   `{ message, listing_id, char_count, locale, timestamp, user_uuid, is_agent }` in `event.detail`.
+   Use `user_uuid` as the basis for `lead_id` derivation (hash with session salt, NEVER store raw).
+   Filter signals where `is_agent === true` — do not send agent chat interactions to the bandit as
+   conversion signals.
 
-5. Also verify `https://admin.estalara.com/sdk.js` returns 200 (the built SDK IIFE bundle must be
-   served there — see `apps/control-plane/public/sdk.js` in Adaptive-Listings repo).
+2. The `live.signup` listener is already registered by `registerFeedbackListener` in `adapt.ts`
+   (lines ~237–283) via `document.addEventListener('live.signup', handleOutcome)`. The feedback ping
+   fires automatically. FOLLOW-197 needs to additionally route the `user_uuid` from the event detail
+   into the ingest batch as `lead_id` so the Conversion Label Loop can correlate.
 
-**Files relevant:**
+3. Both events must be consent-gated — only dispatch to ingest when
+   `getConsentState() === 'granted'` (or `'unknown'` with conservative behavior per tenant config).
 
-- `/home/asipi/Projects/Estalara-app/web-master/src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte`
-  — slot hooks (already committed)
-- `/home/asipi/Projects/Estalara-app/web-master/src/app.html` — SDK script tag (already committed in
-  HEAD, local override must NOT be deployed)
-- `/home/asipi/Projects/Estalara-app/web-master/HANDOFF_ESTALARA_ADAPTIVE.md` — original deployment
-  guide with full context
-- `/home/asipi/Projects/Estalara-app/web-master/.env` — local env file (reference only; production
-  env must be set separately)
+**Files in Estalara-app (local only):**
 
-**Blocking:** FOLLOW-197 (SDK adapt.applied event path) cannot produce real signal until slots are
-live.
+- `/home/asipi/Projects/Estalara-app/web-master/src/lib/ui/chatbot/ChatBot.svelte`
+- `/home/asipi/Projects/Estalara-app/web-master/src/lib/ui/listing/LiveSessions.svelte`
 
----
+**SDK files (Adaptive-Listings repo, no changes needed for FOLLOW-196 scope):**
 
-## FOLLOW-195 → FOLLOW-196
-
-**From:** backend-engineer **To:** sdk-engineer **Date:** 2026-06-06T00:00:00Z
-
-**Summary:** `LiveSignupEventSchema` is now defined, exported, and wired into the canonical
-`EventSchema` discriminated union. The schema lives at `packages/shared/src/schemas/events/live.ts`
-and is exported from `packages/shared/src/index.ts`. The `registerFeedbackListener` default in
-`packages/sdk/src/core/adapt.ts` has been updated to include `'live.signup'` as the first (primary)
-conversion event alongside `'inquiry.completed'` (retained as secondary fallback), per CEO Decision
-D-4 (2026-05-30).
-
-**Schema shape — `LiveSignupPayloadSchema`:**
-
-```ts
-{
-  slot_uuid: string;         // UUID — required. The booking system slot ID.
-  slot_label?: string;       // ISO 8601 or free text, max 64 chars. Debug only. No PII.
-  source_surface?:           // Optional. UI surface that triggered the booking.
-    | 'listing_detail'
-    | 'sidebar_widget'
-    | 'search_card'
-    | 'email_link'
-    | 'other';
-}
-```
-
-The full event envelope follows the standard `EventEnvelopeBaseSchema` (event_id, tenant_id,
-session_id, ts, region, consent_state, schema_version = 1, type = 'live.signup', payload,
-listing_id?).
-
-**Import path for FOLLOW-196 (Estalara-app LiveSessions.svelte):**
-
-```ts
-import type { LiveSignupEvent } from '@estalara/shared';
-```
-
-The CustomEvent you dispatch from `LiveSessions.svelte` after `bookSlot()` resolves does NOT need to
-match this Zod schema directly — that is the SDK listener's responsibility. The CustomEvent payload
-just needs to carry the `slot_uuid` (a UUID string) and optionally `source_surface` and `slot_label`
-so the SDK can build the full envelope before flushing to ingest.
-
-Suggested CustomEvent shape for Estalara-app → SDK bridge:
-
-```ts
-document.dispatchEvent(
-  new CustomEvent('estalara:live-signup', {
-    detail: {
-      slot_uuid: slotId, // the booking UUID from your API response
-      slot_label: slotDateLabel, // optional, human-readable
-      source_surface: 'listing_detail',
-    },
-    bubbles: true,
-  }),
-);
-```
-
-**Action required (FOLLOW-196):** In Estalara-app `LiveSessions.svelte`, after the `bookSlot()` call
-resolves successfully, dispatch `estalara:live-signup` CustomEvent as above. The SDK
-`registerFeedbackListener` in adapt.ts already listens for `'live.signup'` on the document — but
-note that currently it listens for `event.type === 'live.signup'` (a DOM CustomEvent `.type`
-property), so the CustomEvent type string MUST be `'live.signup'` (not `'estalara:live-signup'`).
-Confirm with sdk-engineer (FOLLOW-197) before dispatching — they may update the listener naming.
-
-**ClickHouse impact (AC2 — confirmed not needed):** `live.signup` events route through the existing
-ClickHouse `events` table (migration 0001). The `type` column is `LowCardinality(String)` — no
-schema change required. The new event type is discriminated purely by `type = 'live.signup'` in
-query filters.
-
-**Files:**
-
-- `packages/shared/src/schemas/events/live.ts` — `LiveSignupEventSchema`, `LiveSignupPayloadSchema`
-- `packages/shared/src/schemas/events/index.ts` — union + `EVENT_TYPES` updated
-- `packages/shared/src/index.ts` — re-exports via `./schemas/index.js`
-- `packages/sdk/src/core/adapt.ts` line ~243 — `feedbackEvents` default updated
+- `packages/sdk/src/core/adapt.ts` — `registerFeedbackListener` already wired for `'live.signup'`
 
 ---

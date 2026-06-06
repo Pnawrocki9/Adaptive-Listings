@@ -1174,3 +1174,80 @@ FOLLOW-191 audit confirmed the following state as of 2026-06-06:
 live.
 
 ---
+
+## FOLLOW-195 → FOLLOW-196
+
+**From:** backend-engineer **To:** sdk-engineer **Date:** 2026-06-06T00:00:00Z
+
+**Summary:** `LiveSignupEventSchema` is now defined, exported, and wired into the canonical
+`EventSchema` discriminated union. The schema lives at `packages/shared/src/schemas/events/live.ts`
+and is exported from `packages/shared/src/index.ts`. The `registerFeedbackListener` default in
+`packages/sdk/src/core/adapt.ts` has been updated to include `'live.signup'` as the first (primary)
+conversion event alongside `'inquiry.completed'` (retained as secondary fallback), per CEO Decision
+D-4 (2026-05-30).
+
+**Schema shape — `LiveSignupPayloadSchema`:**
+
+```ts
+{
+  slot_uuid: string;         // UUID — required. The booking system slot ID.
+  slot_label?: string;       // ISO 8601 or free text, max 64 chars. Debug only. No PII.
+  source_surface?:           // Optional. UI surface that triggered the booking.
+    | 'listing_detail'
+    | 'sidebar_widget'
+    | 'search_card'
+    | 'email_link'
+    | 'other';
+}
+```
+
+The full event envelope follows the standard `EventEnvelopeBaseSchema` (event_id, tenant_id,
+session_id, ts, region, consent_state, schema_version = 1, type = 'live.signup', payload,
+listing_id?).
+
+**Import path for FOLLOW-196 (Estalara-app LiveSessions.svelte):**
+
+```ts
+import type { LiveSignupEvent } from '@estalara/shared';
+```
+
+The CustomEvent you dispatch from `LiveSessions.svelte` after `bookSlot()` resolves does NOT need to
+match this Zod schema directly — that is the SDK listener's responsibility. The CustomEvent payload
+just needs to carry the `slot_uuid` (a UUID string) and optionally `source_surface` and `slot_label`
+so the SDK can build the full envelope before flushing to ingest.
+
+Suggested CustomEvent shape for Estalara-app → SDK bridge:
+
+```ts
+document.dispatchEvent(
+  new CustomEvent('estalara:live-signup', {
+    detail: {
+      slot_uuid: slotId, // the booking UUID from your API response
+      slot_label: slotDateLabel, // optional, human-readable
+      source_surface: 'listing_detail',
+    },
+    bubbles: true,
+  }),
+);
+```
+
+**Action required (FOLLOW-196):** In Estalara-app `LiveSessions.svelte`, after the `bookSlot()` call
+resolves successfully, dispatch `estalara:live-signup` CustomEvent as above. The SDK
+`registerFeedbackListener` in adapt.ts already listens for `'live.signup'` on the document — but
+note that currently it listens for `event.type === 'live.signup'` (a DOM CustomEvent `.type`
+property), so the CustomEvent type string MUST be `'live.signup'` (not `'estalara:live-signup'`).
+Confirm with sdk-engineer (FOLLOW-197) before dispatching — they may update the listener naming.
+
+**ClickHouse impact (AC2 — confirmed not needed):** `live.signup` events route through the existing
+ClickHouse `events` table (migration 0001). The `type` column is `LowCardinality(String)` — no
+schema change required. The new event type is discriminated purely by `type = 'live.signup'` in
+query filters.
+
+**Files:**
+
+- `packages/shared/src/schemas/events/live.ts` — `LiveSignupEventSchema`, `LiveSignupPayloadSchema`
+- `packages/shared/src/schemas/events/index.ts` — union + `EVENT_TYPES` updated
+- `packages/shared/src/index.ts` — re-exports via `./schemas/index.js`
+- `packages/sdk/src/core/adapt.ts` line ~243 — `feedbackEvents` default updated
+
+---

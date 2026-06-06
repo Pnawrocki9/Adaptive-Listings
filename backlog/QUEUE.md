@@ -3046,9 +3046,11 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-195
   title: SCHEMA-001 — live.signup Zod event schema
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-06-06T00:00:00Z'
+  completed_at: '2026-06-06T00:00:00Z'
+  pr: backend-engineer/FOLLOW-195-schema-001-live-signup
   priority: P0
   estimated_hours: 3
   depends_on: []
@@ -3056,9 +3058,12 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
   source: Audit F-09, Master_Design v3.7 SCHEMA-001
   spec: backlog/sprint-15/FOLLOW-195.md
   notes: |
-    No live.signup schema in packages/shared/src/schemas/events/. Primary pilot conversion
-    event invisible to system. Thompson sampling never receives true positives.
-    Also update registerFeedbackListener default to include live.signup.
+    LiveSignupEventSchema added to packages/shared/src/schemas/events/live.ts.
+    Exported from packages/shared/src/index.ts via events/index.ts.
+    EVENT_TYPES updated (44→45). EventSchema discriminated union updated.
+    registerFeedbackListener default updated to ['live.signup','inquiry.completed'].
+    ClickHouse migration NOT needed (live.signup routes through existing events table).
+    45 tests pass in events.test.ts. Handoff note in HANDOFFS.md for FOLLOW-196.
 
 - id: FOLLOW-196
   title: CHAT-001/002 — CustomEvent hooks in Estalara-app

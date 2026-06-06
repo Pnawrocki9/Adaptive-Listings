@@ -17,6 +17,7 @@ import {
   ListingBookmarkedEventSchema,
   ListingComparedEventSchema,
   ListingNextEventSchema,
+  LiveSignupEventSchema,
   MortgageCalcUsedEventSchema,
   MouseDwellEventSchema,
   MouseExitIntentEventSchema,
@@ -52,13 +53,15 @@ const envelope = {
 const ev = <T extends string, P>(type: T, payload: P) => ({ ...envelope, type, payload });
 
 describe('EVENT_TYPES tuple', () => {
-  it('has exactly 44 unique event type literals', () => {
+  it('has exactly 45 unique event type literals', () => {
     // 34 original + 1 ab.assignment (TICKET-AB-001) + 2 consent audit (TICKET-041)
     // + 7 SDK observability (TICKET-RUNTIME-FIX-003):
     //   listing.viewed, cta.clicked, quiz.event, quiz.mismatch,
     //   sidebar.closed, adapt.applied, adapt.skipped
-    expect(EVENT_TYPES.length).toBe(44);
-    expect(new Set<string>(EVENT_TYPES).size).toBe(44);
+    // + 1 primary pilot conversion (FOLLOW-195 / CEO Decision D-4):
+    //   live.signup
+    expect(EVENT_TYPES.length).toBe(45);
+    expect(new Set<string>(EVENT_TYPES).size).toBe(45);
   });
 });
 
@@ -514,5 +517,79 @@ describe('session quality / DQS events (TICKET-DQS-001)', () => {
     expect(() =>
       SessionQualitySnapshotEventSchema.parse(ev('session.quality.snapshot', payloadWithoutTotal)),
     ).toThrow();
+  });
+});
+
+// ─── FOLLOW-195 / CEO Decision D-4 (2026-05-30): live.signup conversion event ───
+
+describe('live.signup events (FOLLOW-195)', () => {
+  const validSlotUuid = '01928f00-7000-7000-8000-aaaaaaaaaa01';
+
+  it('LiveSignup parses a valid event with only required fields', () => {
+    expect(() =>
+      LiveSignupEventSchema.parse(ev('live.signup', { slot_uuid: validSlotUuid })),
+    ).not.toThrow();
+  });
+
+  it('LiveSignup parses a valid event with all optional fields', () => {
+    expect(() =>
+      LiveSignupEventSchema.parse(
+        ev('live.signup', {
+          slot_uuid: validSlotUuid,
+          slot_label: '2026-06-15T14:00:00Z',
+          source_surface: 'listing_detail',
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('LiveSignup parses all valid source_surface enum values', () => {
+    const surfaces = [
+      'listing_detail',
+      'sidebar_widget',
+      'search_card',
+      'email_link',
+      'other',
+    ] as const;
+    for (const surface of surfaces) {
+      expect(() =>
+        LiveSignupEventSchema.parse(
+          ev('live.signup', { slot_uuid: validSlotUuid, source_surface: surface }),
+        ),
+      ).not.toThrow();
+    }
+  });
+
+  it('LiveSignup rejects a missing slot_uuid', () => {
+    expect(() => LiveSignupEventSchema.parse(ev('live.signup', {}))).toThrow();
+  });
+
+  it('LiveSignup rejects a non-UUID slot_uuid', () => {
+    expect(() =>
+      LiveSignupEventSchema.parse(ev('live.signup', { slot_uuid: 'not-a-uuid' })),
+    ).toThrow();
+  });
+
+  it('LiveSignup rejects an invalid source_surface enum value', () => {
+    expect(() =>
+      LiveSignupEventSchema.parse(
+        ev('live.signup', {
+          slot_uuid: validSlotUuid,
+          source_surface: 'homepage' as 'listing_detail',
+        }),
+      ),
+    ).toThrow();
+  });
+
+  it('LiveSignup rejects slot_label longer than 64 chars', () => {
+    expect(() =>
+      LiveSignupEventSchema.parse(
+        ev('live.signup', { slot_uuid: validSlotUuid, slot_label: 'a'.repeat(65) }),
+      ),
+    ).toThrow();
+  });
+
+  it('LiveSignup is accepted by the canonical EventSchema discriminated union', () => {
+    expect(() => EventSchema.parse(ev('live.signup', { slot_uuid: validSlotUuid }))).not.toThrow();
   });
 });

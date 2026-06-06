@@ -8,6 +8,7 @@
 
 import type { SdkConfig } from './config.js';
 import type { SessionState } from './session.js';
+import { getConsentState } from './session.js';
 
 export interface CollectedEvent {
   type: string;
@@ -17,6 +18,26 @@ export interface CollectedEvent {
 
 /** Placeholder tenant UUID sent by the SDK (ingest worker overwrites with real tenant). */
 const PLACEHOLDER_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Map the session-level consent state (from getConsentState()) to the ingest
+ * ConsentStateSchema enum used in the event envelope.
+ *
+ * Session → Ingest mapping (F-01 / FOLLOW-194):
+ *   'granted' -> 'consented'            -- explicit opt-in from the consent banner
+ *   'pending' -> 'legitimate-interest'  -- no decision yet; SDK operates under LI basis
+ *   'denied'  -> 'none'                 -- user denied; dispatchEvents is only called
+ *                                        for the consent.denied audit event in this case
+ *
+ * @internal exported for unit testing only
+ */
+export function mapConsentState(
+  sessionState: 'granted' | 'denied' | 'pending',
+): 'consented' | 'legitimate-interest' | 'none' {
+  if (sessionState === 'granted') return 'consented';
+  if (sessionState === 'denied') return 'none';
+  return 'legitimate-interest';
+}
 
 /** Generate a UUIDv4 using the Web Crypto API. */
 function generateEventId(): string {
@@ -34,7 +55,7 @@ function generateEventId(): string {
 
 /**
  * Send a batch of events to the Ingest Worker.
- * Silently swallows all errors — never propagates to the host page.
+ * Silently swallows all errors -- never propagates to the host page.
  */
 export async function dispatchEvents(
   events: CollectedEvent[],
@@ -51,7 +72,10 @@ export async function dispatchEvents(
         session_id: session.sessionId,
         ts: e.ts,
         region: 'eu' as const,
-        consent_state: config.consentState === 'opted_out' ? 'none' : 'legitimate-interest',
+        // F-01 (FOLLOW-194): map live session consent state to the ingest enum.
+        // Previously hardcoded to 'legitimate-interest', so users who granted consent
+        // were never marked 'consented' in the GDPR audit trail.
+        consent_state: mapConsentState(getConsentState()),
         schema_version: 1 as const,
         type: e.type,
         payload: e.payload,
@@ -62,7 +86,7 @@ export async function dispatchEvents(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // Canonical auth header — ingest Worker reads X-Estalara-API-Key only
+        // Canonical auth header -- ingest Worker reads X-Estalara-API-Key only
         // (apps/ingest/src/auth.ts:61). Authorization: Bearer was the old SDK
         // pattern and caused 401 on every request (RUNTIME_READINESS_AUDIT B3).
         'X-Estalara-API-Key': config.apiKey,
@@ -74,7 +98,7 @@ export async function dispatchEvents(
     });
   } catch {
     if (config.debug) {
-      console.error('[Estalara] Failed to dispatch events — continuing silently');
+      console.error('[Estalara] Failed to dispatch events -- continuing silently');
     }
   }
 }

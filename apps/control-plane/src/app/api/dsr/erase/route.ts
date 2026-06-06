@@ -38,6 +38,7 @@ import {
   sessionEmbeddings,
   consentRecords,
   conversionLabels,
+  engagementScores,
   dsrClickhouseMutations,
 } from '@estalara/db';
 import { hashOtp } from '@/lib/dsr-otp';
@@ -346,6 +347,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ),
       );
     }
+
+    // ── FOLLOW-193 / DPIA §8 line 773: engagement_scores erasure cascade ─────
+    // The DPIA explicitly lists engagement_scores in the Art. 17 erasure cascade.
+    // Deleted in the SAME transaction for atomicity -- a partial erasure (e.g.
+    // session_embeddings deleted but engagement_scores left behind) would be a
+    // GDPR Art. 17 compliance gap.
+    await tx
+      .delete(engagementScores)
+      .where(
+        and(
+          eq(engagementScores.sessionId, record.sessionId),
+          eq(engagementScores.tenantId, record.tenantId),
+        ),
+      );
   });
 
   // ── Redis session DEL (fire-and-forget) ───────────────────────────────────

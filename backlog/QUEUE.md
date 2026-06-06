@@ -3014,17 +3014,20 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-193
   title: FIX-028 — restore DSR cron + engagement_scores erasure
   agent: backend-engineer + compliance-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 6
+  completed_at: 2026-06-06
   depends_on: []
   source: Audit F-10, F-11, CHK-C G-1/G-2
   spec: backlog/sprint-15/FOLLOW-193.md
   notes: |
-    G-1: DSR mutation-poll cron removed (Vercel Hobby plan). ClickHouse mutations never
-    poll to done. GDPR Art. 17 gap. G-2: engagement_scores missing from erasure cascade.
-    CEO must confirm Vercel Pro (Audit Q3) before cron restore. engagement_scores fix
-    can start immediately.
+    G-1: DSR mutation-poll cron restored in vercel.json (AC1) -- DEPLOYMENT GATED on CEO Q3
+    Vercel Pro confirmation. Code committed; NOT live until Q3 answered.
+    G-2: engagement_scores erasure added to Drizzle transaction (AC2) -- COMPLETE.
+    AC3/AC4: Integration tests added to route.test.ts -- all 9 tests pass.
+    Migration 0021_engagement_scores.sql + Drizzle schema + RLS policy committed.
+    DPIA §8 line 773 compliance gap closed for engagement_scores.
 
 - id: FOLLOW-194
   title: SDK quick fixes batch (F-01/F-08/F-13/F-15/F-16)

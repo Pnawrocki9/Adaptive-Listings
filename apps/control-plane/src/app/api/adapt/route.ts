@@ -230,12 +230,16 @@ async function runDecisionTree(
   }
 
   // Fetch playbook (real data since ADP-003)
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
   const playbook = getPlaybook(archetypeId);
 
   // Convert playbook slots → TextDirectives; prefer locale override, fall back to English [F-09].
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
   const playbookDirectives: TextDirective[] = playbook.slots.map((s: SlotDirective) => ({
     type: 'text' as const,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     slot: s.slot,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     value: (locale === 'pl' ? s.pl : locale === 'es' ? s.es : undefined) ?? s.en,
     archetype: archetypeId,
     confidence,
@@ -252,6 +256,7 @@ async function runDecisionTree(
       archetypeId,
       confidence,
       similarity,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       basePlaybook: playbook,
       listingContext,
       sessionId,
@@ -272,6 +277,7 @@ async function runDecisionTree(
     archetypeId,
     confidence,
     similarity,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     basePlaybook: playbook,
     listingContext,
     sessionId,
@@ -807,11 +813,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // silently serving wrong copy while not blocking the response.
   let demoActive = false;
   let demoForceModel: string | undefined;
+  // F-16 (FOLLOW-194): store the single getDemoOverride() result and reuse it below.
+  // The original code called getDemoOverride() a second time inside the demoActive branch,
+  // causing a duplicate DB/Redis round-trip on every adapt request in demo mode.
+  let demoOverrideArchetype: string | null = null;
 
   try {
     const demoOverrideState = await getDemoOverride(body.tenant_id);
     if (demoOverrideState.enabled && demoOverrideState.overrideArchetype) {
       demoActive = true;
+      demoOverrideArchetype = demoOverrideState.overrideArchetype;
       demoForceModel = demoOverrideState.overrideModel;
     }
   } catch (err: unknown) {
@@ -829,33 +840,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   let confidence: number;
   let similarity: number;
 
-  if (demoActive) {
-    // getDemoOverride was successful and overrideArchetype is non-null here.
-    // We need to re-read it; we know demoActive=true only when both conditions hold.
-    // Re-use a separate try block to be safe (the first try already succeeded).
-    let overrideArchetype: string | null = null;
-    try {
-      const state = await getDemoOverride(body.tenant_id);
-      overrideArchetype = state.overrideArchetype;
-    } catch {
-      // Unlikely (succeeded moments ago), but if it fails, fall back.
-      demoActive = false;
-    }
-
-    if (demoActive && overrideArchetype) {
-      archetypeId = overrideArchetype as ArchetypeId;
-      confidence = DEMO_OVERRIDE_CONFIDENCE;
-      similarity = DEMO_OVERRIDE_SIMILARITY;
-    } else {
-      archetypeId = (body.archetype_hint ?? 'neutral') as ArchetypeId;
-      confidence = body.confidence ?? 0.5;
-      similarity = body.similarity ?? 0.5;
-      demoActive = false;
-    }
+  if (demoActive && demoOverrideArchetype) {
+    // Reuse the result from the single getDemoOverride() call above (F-16).
+    archetypeId = demoOverrideArchetype as ArchetypeId;
+    confidence = DEMO_OVERRIDE_CONFIDENCE;
+    similarity = DEMO_OVERRIDE_SIMILARITY;
   } else {
     archetypeId = (body.archetype_hint ?? 'neutral') as ArchetypeId;
     confidence = body.confidence ?? 0.5;
     similarity = body.similarity ?? 0.5;
+    demoActive = false;
   }
 
   // TICKET-AGENCY-001: RAG retrieval — fetch top-3 FAQ answers for this listing.

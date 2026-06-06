@@ -60,6 +60,57 @@ const DQS_SNAPSHOT_INTERVAL = 5;
 /** Re-fetch directives from Decision API every N behavioral signals. */
 const REFETCH_SIGNAL_INTERVAL = 5;
 
+/**
+ * Detect the page type from the current URL and an optional data-page-type attribute.
+ *
+ * Detection order (F-08 / FOLLOW-194):
+ *   1. `data-page-type` attribute on the <script> tag -- explicit override; takes precedence.
+ *   2. URL pathname contains '/listing/' -> 'listing_detail'
+ *   3. Default -> 'listing_list'
+ *
+ * @param scriptDataset - The dataset of the Estalara <script> tag (may include pageType).
+ * @returns The resolved page type literal.
+ */
+export function detectPageType(
+  scriptDataset: DOMStringMap,
+): 'listing_list' | 'listing_detail' | 'home' | 'search' {
+  // 1. Explicit data-page-type attribute overrides URL sniffing.
+  const attr = scriptDataset.pageType;
+  if (
+    attr === 'listing_detail' ||
+    attr === 'listing_list' ||
+    attr === 'home' ||
+    attr === 'search'
+  ) {
+    return attr;
+  }
+
+  // 2. URL pathname heuristic -- '/listing/' indicates a detail page.
+  if (typeof window !== 'undefined' && window.location.pathname.includes('/listing/')) {
+    return 'listing_detail';
+  }
+
+  // 3. Default to listing grid view.
+  return 'listing_list';
+}
+
+/**
+ * Read the current listing ID from the page DOM.
+ *
+ * Looks for `[data-estalara-listing-id]` in the document. Returns the first
+ * non-empty value found, or undefined if no such attribute exists.
+ *
+ * Used by F-13 (FOLLOW-194) to wire per-listing RAG context into the adapt request.
+ *
+ * @internal exported for unit testing only
+ */
+export function detectListingId(): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const el = document.querySelector<HTMLElement>('[data-estalara-listing-id]');
+  const id = el?.getAttribute('data-estalara-listing-id') ?? undefined;
+  return id !== '' ? id : undefined;
+}
+
 /** Current SDK version string. */
 export const SDK_VERSION = '0.0.0' as const;
 
@@ -89,6 +140,9 @@ async function init(): Promise<void> {
 
     // 2. Read configuration from data-* attributes
     const config = readConfig({ dataset: script.dataset });
+    // Capture script.dataset early so the refreshDirectives() closure can access it
+    // without a non-null assertion (script is guaranteed non-null past line above).
+    const scriptDataset: DOMStringMap = script.dataset;
 
     // 3a. Consent gate — MUST run before any data collection (TICKET-041, GDPR/CCPA).
     //     Create the shadow host early so we have a ShadowRoot to render the banner in.
@@ -226,17 +280,36 @@ async function init(): Promise<void> {
     // Assigned to the actual widget after createShadowHost() runs below (step 5a).
     let sidebar: SidebarWidgetController | null = null;
 
+    // F-15 (FOLLOW-194): track the last archetype returned by the Decision API.
+    // resetAdaptState() is called ONLY when the archetype changes, preventing the
+    // text-flicker that occurred every ~30s when resetAdaptState() was called
+    // unconditionally on every refreshDirectives() cycle.
+    let previousArchetype: string | null = null;
+
     /** Re-fetch directives and apply them with the latest intent state. */
     async function refreshDirectives(): Promise<void> {
       if (!config.decisionApiUrl) return;
+
+      // F-08 (FOLLOW-194): detect pageType from URL / data-page-type attribute.
+      // F-13 (FOLLOW-194): read the current listing ID for per-listing RAG context.
+      // script is guaranteed non-null here -- init() returns early if !script (line 88).
+      const pageType = detectPageType(scriptDataset);
+      const listingId = detectListingId();
+
       const resp = await fetchDirectives(
         config,
         currentSession,
-        'listing_list',
+        pageType,
         currentIntentState,
+        listingId,
       );
       if (resp) {
-        resetAdaptState();
+        // F-15 (FOLLOW-194): only reset adapt state when the archetype has changed.
+        // On an unchanged archetype, preserve existing DOM mutations -- no flicker.
+        if (resp.archetype !== previousArchetype) {
+          resetAdaptState();
+          previousArchetype = resp.archetype;
+        }
         applyDirectives(resp.directives, {
           archetypeId: resp.archetype as ArchetypeId,
           confidence: resp.confidence,

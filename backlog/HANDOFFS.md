@@ -1105,3 +1105,72 @@ done), FOLLOW-172 (this ticket), FOLLOW-173..175 (aggregation, admin UI, export 
 consumers of this corpus).
 
 ---
+
+## FOLLOW-191 → Rafał Palak (CTO) — deploy Estalara-app DOM hooks to production
+
+**From:** sdk-engineer **To:** Rafał Palak (CTO) **Date:** 2026-06-06T13:30:00Z **Affects:**
+FOLLOW-191, FOLLOW-197 (adapt.applied event path) **Type:** deployment
+
+**Summary:**
+
+FOLLOW-191 audit confirmed the following state as of 2026-06-06:
+
+- The slot hooks (`data-estalara-slot="headline"`, `data-estalara-slot="description"`) are
+  **committed** to the Estalara-app git repo (`/home/asipi/Projects/Estalara-app/web-master`, commit
+  `9d2df9d feat(livesessions)` is HEAD). The listing page at
+  `src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte` already contains all four A1 edits
+  described in `HANDOFF_ESTALARA_ADAPTIVE.md`.
+- The `src/app.html` in git (HEAD) correctly has `src="https://admin.estalara.com/sdk.js"` with
+  `data-api-key="000-app-estalara"` and `data-decision-url="https://admin.estalara.com/api"`.
+- **The production site (`app.estalara.com`) is running an older build** — a curl of a live listing
+  page (e.g.
+  `/en/listing/deerfield-lake-ct-cape-coral-fl-33909-90681784-8a9a-4953-ae48-fe8f8a3865e2`) returns
+  no `data-estalara-slot` attributes and no SDK `<script>` tag. The adaptation layer is therefore
+  invisible in production: `adapt.applied` never fires, `adapt.skipped` fires with
+  `reason: 'no_slot_elements'`.
+- The local working tree has `src/app.html` temporarily changed to `localhost:9100` for demo
+  purposes. This change must NOT be deployed.
+
+**Required action for Rafał:**
+
+1. In `/home/asipi/Projects/Estalara-app/web-master`, ensure the `app.html` working-tree override is
+   not deployed. The committed HEAD version (pointing to `admin.estalara.com/sdk.js`) is the correct
+   production value. Restore if needed:
+
+   ```bash
+   git checkout -- src/app.html
+   ```
+
+2. Set `PUBLIC_ESTALARA_SDK_ENABLED=true` in the production environment for the `web-master`
+   SvelteKit app. Without this flag the `{#if estalaraEnabled}` blocks are false and no slot
+   elements render. The local `.env` already has this set; it must be propagated to the hosting
+   environment (Docker / hosting provider env vars).
+
+3. Deploy the committed HEAD of `web-master` to production. The slot hooks go live once the build
+   runs with `PUBLIC_ESTALARA_SDK_ENABLED=true`.
+
+4. Verify after deploy: `curl -s https://app.estalara.com/en/listing/<any-slug>` should return HTML
+   containing:
+   - `data-estalara-listing-id` on the main content div
+   - `data-estalara-slot="headline"` on the inserted `<p>` element
+   - `data-estalara-slot="description"` on the description div
+   - The SDK `<script>` tag in `<head>` pointing to `admin.estalara.com/sdk.js`
+
+5. Also verify `https://admin.estalara.com/sdk.js` returns 200 (the built SDK IIFE bundle must be
+   served there — see `apps/control-plane/public/sdk.js` in Adaptive-Listings repo).
+
+**Files relevant:**
+
+- `/home/asipi/Projects/Estalara-app/web-master/src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte`
+  — slot hooks (already committed)
+- `/home/asipi/Projects/Estalara-app/web-master/src/app.html` — SDK script tag (already committed in
+  HEAD, local override must NOT be deployed)
+- `/home/asipi/Projects/Estalara-app/web-master/HANDOFF_ESTALARA_ADAPTIVE.md` — original deployment
+  guide with full context
+- `/home/asipi/Projects/Estalara-app/web-master/.env` — local env file (reference only; production
+  env must be set separately)
+
+**Blocking:** FOLLOW-197 (SDK adapt.applied event path) cannot produce real signal until slots are
+live.
+
+---

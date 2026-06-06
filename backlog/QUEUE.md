@@ -2977,30 +2977,39 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-191
   title: Verify + deploy Estalara-app DOM hooks
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  started_at: '2026-06-06T00:00:00Z'
+  completed_at: '2026-06-06T13:30:00Z'
   priority: P0
   estimated_hours: 4
   depends_on: []
   source: Audit F-02, §E.2.3
   spec: backlog/sprint-15/FOLLOW-191.md
   notes: |
-    data-estalara-slot hooks in Estalara-app (separate repo) are unverified in prod.
-    CHK-B confirmed zero slots on app.estalara.com. Entire adaptation layer invisible
-    until this lands. Verify PUBLIC_ESTALARA_SDK_ENABLED=true + slot presence.
+    AUDIT COMPLETE (sdk-engineer, 2026-06-06). Slots ARE committed to Estalara-app
+    git HEAD (commit 9d2df9d) but production is running an older build — curl of
+    app.estalara.com/en/listing/* returns 0 data-estalara-* attributes and no SDK
+    script tag. LOCAL app.html working tree points to localhost:9100 (demo override,
+    must not be deployed). ACTION REQUIRED from Rafał (CTO): restore app.html, set
+    PUBLIC_ESTALARA_SDK_ENABLED=true in prod env, deploy web-master HEAD. Full
+    instructions in backlog/HANDOFFS.md + ESCALATIONS.md (ESC-020). PR opened on
+    sdk-engineer/FOLLOW-191-verify-deploy-dom-hooks with audit evidence.
 
 - id: FOLLOW-192
   title: ESC-019 — provision internal listing-details URL or service token
   agent: backend-engineer
-  status: READY
+  status: DONE
   priority: P0
-  estimated_hours: 4
+  estimated_hours: 0
   depends_on: []
+  completed_at: '2026-06-04T00:00:00Z'
+  pr: '#196'
   source: Audit F-03, ESC-019 (CLOSED — resolved PR #196, api.estalara.com)
   spec: backlog/sprint-15/FOLLOW-192.md
   notes: |
-    ESTALARA_BACKEND_URL → 302 login redirect in prod. listing-details.ts fails open to
-    empty original_description. Every LLM description is ungrounded in production.
-    CEO must decide: internal URL vs service token (Audit Q2).
+    RESOLVED: PR #196 corrected ESTALARA_BACKEND_URL to api.estalara.com (Spring Boot
+    backend, no auth required). Added redirect:manual guard. FOLLOW-192 CLOSED 2026-06-06.
 
 - id: FOLLOW-193
   title: FIX-028 — restore DSR cron + engagement_scores erasure
@@ -3037,7 +3046,9 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-195
   title: SCHEMA-001 — live.signup Zod event schema
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-06-06T00:00:00Z'
   priority: P0
   estimated_hours: 3
   depends_on: []

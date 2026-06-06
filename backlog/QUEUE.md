@@ -74,6 +74,20 @@ docs/ops/OPERATING_PRINCIPLES.md v1.1) — Operating Principles now active for a
 ANTHROPIC_API_KEY activated in Doppler dev/stg/prd 2026-05-21 (Krok B) — AI Vision fully
 operational.
 
+**Sprint 15 OPEN — 2026-06-05. Master_Design bumped to v4.0. Based on full codebase audit
+(docs/AUDIT-2026-06-04.md). Four tracks + signal enrichment:**
+
+- **Track A (Pilot unblock, Week 1):** FOLLOW-191/192/193/194 — must complete before any real
+  traffic
+- **Track B (Signal bridges + Quiz v2.0, Week 2–3):** FOLLOW-195/196/197/198/199/200/201/202
+- **Track C (Description cache redesign + MOAT, Week 3–4):** FOLLOW-203/204 + Sprint 14 carry-overs
+  (FOLLOW-170…176, 190)
+- **Track D (Background, Week 4–5):** FOLLOW-205/206, FOLLOW-087, FOLLOW-099
+- **Track E (Signal enrichment, Week 2–3, P1/P2, low effort):** FOLLOW-207/208/209/210/211 — Track E
+  tickets are low-effort, high-ROI signal enrichments identified in the 2026-06-05 audit gap
+  analysis. FOLLOW-210 and FOLLOW-211 are P1 because they unlock categorical discrimination that
+  behavioral signals cannot provide without payload context.
+
 Single source of truth for ticket status. Updated by `pm-orchestrator`. Read by everyone.
 
 ## How to read this
@@ -117,6 +131,7 @@ updates.
 | 13a-h2 | 15    | Pre-pilot hardening v2 — §13.2 localStorage xid erasure (FOLLOW-139), pilot inquiry selector seed (FOLLOW-141)                      | 2       | 2    | 0       | 0     | 0       |
 | 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                         | 6       | 0    | 0       | 3     | 3       |
 | Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)      | 4       | 4    | 0       | 0     | 0       |
+| 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 0    | 0       | 21    | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -2672,12 +2687,13 @@ measurement window.
 - **FOLLOW-176** — SDK archetype persistence (Side-task #5): resolved archetype is not persisted
   today (in-memory, cold-start each navigation); persist to sessionStorage + rehydrate in init.
 
-**Related escalation:** **ESC-019 (OPEN)** — verification against the live backend revealed that the
-production Estalara listing-details API (`https://app.estalara.com/api/v1/listing/details/...`)
-302-redirects an unauthenticated server-side fetch to the login page, so the helper fails open to an
-empty `original_description` and generation is **ungrounded in prod** (silent). The ESC-018
-data-shape fix is correct; ESC-019 is the reachability/auth half and needs a human infra decision.
-FOLLOW-169 hardens the headline contract but does NOT fix the source — ESC-019 does.
+**Related escalation:** **ESC-019 (CLOSED — resolved PR #196, api.estalara.com)** — verification
+against the live backend revealed that the production Estalara listing-details API
+(`https://app.estalara.com/api/v1/listing/details/...`) 302-redirects an unauthenticated server-side
+fetch to the login page, so the helper fails open to an empty `original_description` and generation
+is **ungrounded in prod** (silent). The ESC-018 data-shape fix is correct; ESC-019 is the
+reachability/auth half and needs a human infra decision. FOLLOW-169 hardens the headline contract
+but does NOT fix the source — ESC-019 does.
 
 ```yaml
 - id: FOLLOW-168
@@ -2869,6 +2885,23 @@ FOLLOW-169 hardens the headline contract but does NOT fix the source — ESC-019
     inferred archetype. Persist to sessionStorage (keyed by sessionId), rehydrate in init() before
     cold-start, consent-gated, staleness/version guard. Cross-session (localStorage+TTL) = follow-up.
 
+# ── Dwell-time confidence lift — CEO-directed 2026-06-04 ──
+
+- id: FOLLOW-190
+  title: Dwell-time confidence lift — accumulate temporal engagement as intent signal
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 4
+  depends_on: []
+  source: CEO session 2026-06-04 (signal enrichment gap)
+  spec: backlog/sprint-14/FOLLOW-190.md
+  notes: |
+    registerFeedbackListener already tracks dwell for server-side ping, but never feeds it into the
+    Bayesian intent engine. Add applyDwellSignal() in intent.ts: at 30s/90s/180s thresholds boost
+    confidence of the current leading archetype (local-only, no server call, signal_count unchanged).
+    FOLLOW-176 recommended first (dwell-boosted state then also gets persisted), not strictly blocking.
+
 # ── Conversion Label Loop hardening (RETRO-029) — promoted 2026-06-03 ──
 
 - id: FOLLOW-179
@@ -2918,6 +2951,367 @@ FOLLOW-169 hardens the headline contract but does NOT fix the source — ESC-019
     The helper's SQL precedence WHERE + the UNIQUE constraint are only mock-tested — core dedup
     correctness is unverified against real Postgres. Add a pgmem/Testcontainers test exercising
     collision/upgrade/downgrade-rejection/manual-admin-override. May merge with FOLLOW-181.
+```
+
+## Sprint 15 — Pilot unblock + signal bridges + quiz v2.0 + description cache redesign (OPEN)
+
+**Added 2026-06-05 (pm-orchestrator, based on docs/AUDIT-2026-06-04.md + Master_Design v4.0).
+Updated 2026-06-06 (pm-orchestrator, Track E added from audit gap analysis).** Four tracks + signal
+enrichment:
+
+- **Track A (Pilot unblock, Week 1):** FOLLOW-191/192/193/194
+- **Track B (Signal bridges + Quiz v2.0, Week 2–3):** FOLLOW-195/196/197/198/199/200/201/202
+- **Track C (Description cache redesign, Week 3–4):** FOLLOW-203/204
+- **Track D (Background, Week 4–5):** FOLLOW-205/206
+- **Track E (Signal enrichment, Week 2–3):** FOLLOW-207/208/209/210/211 — low-effort, high-ROI
+  signal enrichments from 2026-06-05 audit gap analysis. FOLLOW-210 and FOLLOW-211 are P1 because
+  they unlock categorical discrimination that behavioral signals cannot provide without payload
+  context.
+
+Sprint 14 carry-overs (FOLLOW-170…176, 190) remain in their sprint-14 section and are referenced
+here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
+
+```yaml
+# ── Track A: Pilot unblock (Week 1) ──
+
+- id: FOLLOW-191
+  title: Verify + deploy Estalara-app DOM hooks
+  agent: sdk-engineer
+  status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  started_at: '2026-06-06T00:00:00Z'
+  completed_at: '2026-06-06T13:30:00Z'
+  priority: P0
+  estimated_hours: 4
+  depends_on: []
+  source: Audit F-02, §E.2.3
+  spec: backlog/sprint-15/FOLLOW-191.md
+  notes: |
+    AUDIT COMPLETE (sdk-engineer, 2026-06-06). Slots ARE committed to Estalara-app
+    git HEAD (commit 9d2df9d) but production is running an older build — curl of
+    app.estalara.com/en/listing/* returns 0 data-estalara-* attributes and no SDK
+    script tag. LOCAL app.html working tree points to localhost:9100 (demo override,
+    must not be deployed). ACTION REQUIRED from Rafał (CTO): restore app.html, set
+    PUBLIC_ESTALARA_SDK_ENABLED=true in prod env, deploy web-master HEAD. Full
+    instructions in backlog/HANDOFFS.md + ESCALATIONS.md (ESC-020). PR opened on
+    sdk-engineer/FOLLOW-191-verify-deploy-dom-hooks with audit evidence.
+
+- id: FOLLOW-192
+  title: ESC-019 — provision internal listing-details URL or service token
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 0
+  depends_on: []
+  completed_at: '2026-06-04T00:00:00Z'
+  pr: '#196'
+  source: Audit F-03, ESC-019 (CLOSED — resolved PR #196, api.estalara.com)
+  spec: backlog/sprint-15/FOLLOW-192.md
+  notes: |
+    RESOLVED: PR #196 corrected ESTALARA_BACKEND_URL to api.estalara.com (Spring Boot
+    backend, no auth required). Added redirect:manual guard. FOLLOW-192 CLOSED 2026-06-06.
+
+- id: FOLLOW-193
+  title: FIX-028 — restore DSR cron + engagement_scores erasure
+  agent: backend-engineer + compliance-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 6
+  depends_on: []
+  source: Audit F-10, F-11, CHK-C G-1/G-2
+  spec: backlog/sprint-15/FOLLOW-193.md
+  notes: |
+    G-1: DSR mutation-poll cron removed (Vercel Hobby plan). ClickHouse mutations never
+    poll to done. GDPR Art. 17 gap. G-2: engagement_scores missing from erasure cascade.
+    CEO must confirm Vercel Pro (Audit Q3) before cron restore. engagement_scores fix
+    can start immediately.
+
+- id: FOLLOW-194
+  title: SDK quick fixes batch (F-01/F-08/F-13/F-15/F-16)
+  agent: sdk-engineer + backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 5
+  depends_on: []
+  source: Audit F-01, F-08, F-13, F-15, F-16
+  spec: backlog/sprint-15/FOLLOW-194.md
+  notes: |
+    5 S-effort fixes in one PR: F-01 consent_state enum mapping; F-08 pageType URL detection;
+    F-13 listing_id in adapt body; F-15 resetAdaptState only on archetype change (stops flicker);
+    F-16 remove duplicate getDemoOverride() call. sdk-engineer owns F-01/08/13/15;
+    backend-engineer owns F-16.
+
+# ── Track B: Signal bridges + Quiz v2.0 (Week 2–3) ──
+
+- id: FOLLOW-195
+  title: SCHEMA-001 — live.signup Zod event schema
+  agent: backend-engineer
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-06-06T00:00:00Z'
+  completed_at: '2026-06-06T00:00:00Z'
+  pr: backend-engineer/FOLLOW-195-schema-001-live-signup
+  priority: P0
+  estimated_hours: 3
+  depends_on: []
+  produces: [FOLLOW-196, FOLLOW-197, FOLLOW-200]
+  source: Audit F-09, Master_Design v3.7 SCHEMA-001
+  spec: backlog/sprint-15/FOLLOW-195.md
+  notes: |
+    LiveSignupEventSchema added to packages/shared/src/schemas/events/live.ts.
+    Exported from packages/shared/src/index.ts via events/index.ts.
+    EVENT_TYPES updated (44→45). EventSchema discriminated union updated.
+    registerFeedbackListener default updated to ['live.signup','inquiry.completed'].
+    ClickHouse migration NOT needed (live.signup routes through existing events table).
+    45 tests pass in events.test.ts. Handoff note in HANDOFFS.md for FOLLOW-196.
+
+- id: FOLLOW-196
+  title: CHAT-001/002 — CustomEvent hooks in Estalara-app
+  agent: sdk-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 4
+  depends_on: [FOLLOW-195]
+  produces: [FOLLOW-197]
+  source: Audit F-04, F-07, CHK-D §A.4
+  spec: backlog/sprint-15/FOLLOW-196.md
+  notes: |
+    Work in the Estalara-app SvelteKit repo (not this repo). ChatBot.svelte: dispatch
+    estalara:chat:message-sent + estalara:chat:contact-initiated. LiveSessions.svelte:
+    dispatch estalara:live-signup after bookSlot(). CEO must clarify buyer role visibility
+    for ChatBot (Audit Q4).
+
+- id: FOLLOW-197
+  title: CHAT-003 — SDK listeners for chat/live events
+  agent: sdk-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 3
+  depends_on: [FOLLOW-195, FOLLOW-196]
+  source: Audit F-04, CHAT-003
+  spec: backlog/sprint-15/FOLLOW-197.md
+  notes: |
+    Register window.addEventListener for estalara:chat:message-sent,
+    estalara:chat:contact-initiated, estalara:live-signup in index.ts.
+    Feed into applyBehavioralSignal() + sendFeedback() + ingest dispatch.
+    Consent-gated. Integration test required.
+
+- id: FOLLOW-198
+  title: Cross-language event contract parity gate (FOLLOW-168 completion)
+  agent: qa-engineer + backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: FOLLOW-168 (Sprint 14), Audit addendum
+  spec: backlog/sprint-15/FOLLOW-198.md
+  notes: |
+    Confirm FOLLOW-168 Sprint 14 status. If not done: implement shared JSON schema
+    for DescriptionRequestedEvent as CI gate. Drift between TS publisher and Python
+    consumer must cause CI failure.
+
+- id: FOLLOW-199
+  title: Quiz widget v2.0 — cascading decision tree
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 12
+  depends_on: []
+  produces: [FOLLOW-200, FOLLOW-201]
+  source: Audit §10.1, Master_Design §E.4 v4.0
+  spec: backlog/sprint-15/FOLLOW-199.md
+  notes: |
+    Full rewrite quiz-widget.ts: Q1 gate → 3 branches (INWESTOR/WŁASNY_UŻYTEK/CROSS-BORDER),
+    2-3 questions, 17 non-neutral leaf archetypes. Trigger: 30s setTimeout on any page (not
+    3 listing views). Update quiz-trigger.ts + add 'es' to QuizConfig.language schema.
+    Rewrite all tests. 12h estimated.
+
+- id: FOLLOW-200
+  title: quiz_completions MOAT table + completion endpoint
+  agent: backend-engineer + data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 5
+  depends_on: [FOLLOW-199]
+  source: Audit §10.1, §E.4.8, Master_Design §E.4.8 v4.0
+  spec: backlog/sprint-15/FOLLOW-200.md
+  notes: |
+    New Postgres migration: quiz_completions table (RLS). New POST /api/quiz/completion
+    endpoint. SDK dispatches quiz.completed ingest event + calls completion endpoint
+    after FOLLOW-199 leaf reached. MOAT data for full CHAT→quiz→adaptation→conversion chain.
+
+- id: FOLLOW-201
+  title: applyQuizLeaf() + drift detection activation
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 5
+  depends_on: [FOLLOW-199]
+  source: Audit §10.1, §E.4.4/E.4.5, Master_Design §E.4.4/E.4.5 v4.0
+  spec: backlog/sprint-15/FOLLOW-201.md
+  notes: |
+    Add applyQuizLeaf() pure function to intent.ts (direct assignment ~0.95 confidence).
+    Replace applyQuizPrior() call in quiz completion callback. Add driftCandidateArchetype/
+    driftCandidateCount/DRIFT_HOLD_COUNT=3 state. Override session archetype after 3
+    consecutive mismatch cycles. detectMismatch() already exists at intent.ts:491.
+
+- id: FOLLOW-202
+  title: Navigator.language browser detection for quiz
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: Audit §10.1 multilanguage section
+  spec: backlog/sprint-15/FOLLOW-202.md
+  notes: |
+    config.ts:89-91: fallback to navigator.language.slice(0,2) when data-language attr
+    absent/unrecognized. Map to supported set (en|pl|es), fallback 'en'. Polish browser
+    with no data-language attr → Polish quiz automatically.
+
+# ── Track C: Description cache redesign (Week 3–4) ──
+
+- id: FOLLOW-203
+  title: Remove Tier logic from description route
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  produces: [FOLLOW-204]
+  source: Audit §10.3, Master_Design §E.7 v4.0, CEO decision 2026-06-05
+  spec: backlog/sprint-15/FOLLOW-203.md
+  notes: |
+    CEO decision 2026-06-05: no Tiers in Adaptive Listings. Remove tier param from
+    description route Zod schema, remove TTL_TIER2/TTL_TIER3, remove Tier-1 early-return,
+    single max_tokens:500. Remove TTL exports from description-cache.ts. Redis SET without EX.
+
+- id: FOLLOW-204
+  title: description_cache_persistent — permanent Postgres description table
+  agent: data-engineer + backend-engineer + ml-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 8
+  depends_on: [FOLLOW-203]
+  source: Audit §10.3, Master_Design §E.7.3 v4.0
+  spec: backlog/sprint-15/FOLLOW-204.md
+  notes: |
+    Co-assigned (3 agents). New Postgres migration: description_cache_persistent (RLS,
+    UNIQUE tenant+listing+archetype+locale). Lookup order: DB → Redis → template_fallback.
+    Modal Python writes to DB after generation. listing.updated webhook invalidates DB row.
+    Admin UI at /dashboard/listings/[id] shows descriptions per archetype. PM must run step 5d
+    integration check (producer=Modal Python write, consumer=route lookup) before READY_FOR_REVIEW.
+
+# ── Track D: Background / Security (Week 4–5) ──
+
+- id: FOLLOW-205
+  title: F-19 — Demo auth hardening
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: Audit F-19
+  spec: backlog/sprint-15/FOLLOW-205.md
+  notes: |
+    route.ts:696-710 presence-only Bearer check → replace with JWT verification using
+    DEMO_MODE_JWT_SECRET (env var already exists). Arbitrary Bearer → 401.
+    Valid signed JWT → proceeds. Prevents unbounded LLM cost from external parties.
+
+- id: FOLLOW-206
+  title: F-05/F-21 — SQL escaping unification
+  agent: backend-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 2
+  depends_on: []
+  source: Audit F-05, F-21
+  spec: backlog/sprint-15/FOLLOW-206.md
+  notes: |
+    Two escaping strategies: route.ts:348 uses \\' (backslash), clickhouse-dsr.ts:99
+    uses '' (ANSI SQL correct). Standardize all ClickHouse raw SQL on '' doubling.
+    Grep confirms no \\' pattern remains after fix.
+
+# ── Track E: Signal enrichment (Week 2–3) ──
+# Low-effort, high-ROI signal enrichments from 2026-06-05 audit gap analysis.
+# FOLLOW-210 and FOLLOW-211 are P1 — they unlock categorical discrimination
+# that behavioral signals alone cannot provide without payload context.
+
+- id: FOLLOW-207
+  title: Referrer URL + device type session-init signals
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: Audit §3 gap analysis (2026-06-05)
+  spec: backlog/sprint-15/FOLLOW-207.md
+  notes: |
+    Capture document.referrer + UTM params at init. Add applyReferrerHints() pure function
+    to intent.ts. Add device_type (desktop|mobile) to session.started ingest event and
+    SIGNAL_LIKELIHOODS. Investment-keyword referrers shift investor priors; desktop shifts
+    investor archetypes; mobile shifts own-use archetypes.
+
+- id: FOLLOW-208
+  title: Listing-view RATE as portfolio_builder/flip_investor signal
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: Audit §3 gap analysis (2026-06-05)
+  spec: backlog/sprint-15/FOLLOW-208.md
+  notes: |
+    Track sessionStartedAt alongside listingViewCount. Add applyListingViewRate() pure
+    function to intent.ts. Rate ≥3 views/min boosts portfolio_builder/flip_investor.
+    Rate ≤0.5 views/min + ≥2 views boosts family_buyer/first_time_buyer/upsizer.
+    Include listing_view_rate in session.quality.snapshot ingest payload.
+
+- id: FOLLOW-209
+  title: Micro-polls — single yes/no intent prompts as quiz supplement
+  agent: sdk-engineer + backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 6
+  depends_on: [FOLLOW-199]
+  source: Audit §3 alternative methods analysis (2026-06-05)
+  spec: backlog/sprint-15/FOLLOW-209.md
+  notes: |
+    New micro-poll.ts: bottom-of-screen toast (not full overlay), 24h localStorage cooldown.
+    3 default Polish questions (tenant-configurable). Trigger: quiz dismissed OR 90s elapsed
+    AND quiz not completed. New QuizConfig field micro_polls_enabled (default false).
+    Admin toggle at /dashboard/quiz. micro_poll.answered added to SIGNAL_LIKELIHOODS.
+
+- id: FOLLOW-210
+  title: Favorites/bookmark capture — app.estalara.com save-listing event
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 5
+  depends_on: []
+  source: Audit §3 (2026-06-05) — favorites = highest-value deterministic intent signal
+  spec: backlog/sprint-15/FOLLOW-210.md
+  notes: |
+    Part 1 (Estalara-app repo): dispatch estalara:listing:favorited CustomEvent on save
+    (listingId, listingType, priceRange, bedroomCount). Part 2 (this repo): SDK listener
+    in index.ts → listing.bookmarked ingest event + applyBehavioralSignal. Payload-conditional
+    boosts: bedroomCount≥3 → family_buyer/upsizer; listingType=commercial → commercial_investor.
+    PM must run step 5d integration check before READY_FOR_REVIEW.
+
+- id: FOLLOW-211
+  title: filter.applied full facet payload schema (prerequisite for FOLLOW-099)
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 2
+  depends_on: []
+  source: Audit §3 — filter.applied discriminating power is in the payload, not the event type
+  spec: backlog/sprint-15/FOLLOW-211.md
+  notes: |
+    Define FilterAppliedPayload Zod schema in packages/shared. Add facet-conditional
+    SIGNAL_LIKELIHOODS logic for filter.applied: commercial→commercial_investor+0.20;
+    bedrooms_min≥3→family_buyer+0.10; sort by yield/roi→yield_hunter+0.15;
+    price_max<median→first_time_buyer+0.08. Prerequisite for FOLLOW-099 to be useful.
 ```
 
 ## YELLOW audit track (parallel) — Sprint 1 (DONE)

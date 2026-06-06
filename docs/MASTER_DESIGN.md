@@ -1,6 +1,8 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 3.9 (2026-06-03 — Conversion Label Loop §T (PROPOSED) + prompt v1.9 archetype-fit gate [ADR-0010]; bazuje na 3.8: detection→adaptation runtime bridge, **no-code app.estalara.com**, AI-Vision quality strategy [ADR-0008; FOLLOW-159 implement, FOLLOW-160 Plan B]; FIX-014 slot-injection superseded — patrz changelog v3.8 + §B.5.7. Bazuje na 3.7: CEO ratifications wave 2026-05-30 — 10 z 11 decyzji ratified: D-1 app.estalara.com / D-2 chat in v1.0 / D-3 6 families classifier / D-4 live.signup OR chat / D-5 technical-readiness / D-6 Discovery Day batched / R-2 Vercel env DONE / R-3 peter+rafal owners / R-4 wait for Magic Link / R-5 **10-12 weeks** priorytet jakość; R-1 ZIP pending; pilot start tydzień 13; SCHEMA-001 + VERIFY-001 dodane; FIX-006/017 scope changed; full ratifications wave w `backlog/PLAN-V3-2026-05-30.md` §0; APPROVED_TO_IMPLEMENT=pending R-1 only; otherwise as v3.6) | **Data:** 1 czerwca 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 4.0 (2026-06-05 — Quiz Widget v2.0 cascading decision tree, permanent description cache (no Tiers/no TTL), §D.6 coverage matrix updated (all 17 archetypes reachable); bazuje na 3.9: Conversion Label Loop §T (PROPOSED) + prompt v1.9 archetype-fit gate [ADR-0010]; bazuje na 3.8: detection→adaptation runtime bridge, **no-code app.estalara.com**, AI-Vision quality strategy [ADR-0008; FOLLOW-159 implement, FOLLOW-160 Plan B]; FIX-014 slot-injection superseded — patrz changelog v3.8 + §B.5.7. Bazuje na 3.7: CEO ratifications wave 2026-05-30 — 10 z 11 decyzji ratified: D-1 app.estalara.com / D-2 chat in v1.0 / D-3 6 families classifier / D-4 live.signup OR chat / D-5 technical-readiness / D-6 Discovery Day batched / R-2 Vercel env DONE / R-3 peter+rafal owners / R-4 wait for Magic Link / R-5 **10-12 weeks** priorytet jakość; R-1 ZIP pending; pilot start tydzień 13; SCHEMA-001 + VERIFY-001 dodane; FIX-006/017 scope changed; full ratifications wave w `backlog/PLAN-V3-2026-05-30.md` §0; APPROVED_TO_IMPLEMENT=pending R-1 only; otherwise as v3.6) | **Data:** 5 czerwca 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v4.0 (5 czerwca 2026 — Quiz Widget v2.0 + permanent description cache + coverage matrix + signal enrichment findings):** Cztery zmiany CEO-ratified (audit session 2026-06-04/05). (0) **§C.1 + §D.7 Signal Enrichment** — audit §3 (2026-06-05) identified 5 new low-cost, high-discrimination signals absent from the SDK: referrer URL + UTM keywords (F-22), device type (F-23), listing-view rate (F-24), favorites/bookmark (F-26), filter.applied enriched payload (F-27); plus micro-poll widget (F-25, FOLLOW-209). Expected behavioral-only accuracy improvement: 35–45% → 50–60%. Tickets FOLLOW-207 through FOLLOW-211 added. §C.1 updated with new signal taxonomy entries. §D.7 updated with BEHAVIORAL_DAMPING calibration note (FOLLOW-212, P3, post-pilot). §Snapshot.1 row C updated. (1) **§E.4 Quiz Widget REDESIGNED (v2.0)** — zastąpiony płaski 2-pytaniowy quiz → **drzewo decyzyjne z bramą Q1** rozdzielającą na 3 gałęzie (INWESTOR / WŁASNY UŻYTEK / CROSS-BORDER), 2–3 pytania, 17 liści (jeden per archetype non-neutral). Wszystkie 17 archetypów non-neutral bezpośrednio osiągalnych (poprzednio 4 komórki × 18 archetypów z nakładaniem). Nowa funkcja `applyQuizLeaf()` (direct assignment, confidence ~0.95) zastępuje `applyQuizPrior()` (Bayesian multiplier) dla ścieżek drzewa. Post-quiz drift detection z `DRIFT_HOLD_COUNT = 3` anti-thrash guard. Nowa tabela MOAT `quiz_completions` (Postgres/RLS). Wielojęzyczność: `en|pl|es`, 4-poziomowy priorytet detekcji języka. `admin.estalara.com/dashboard/quiz` toggle. (2) **§E.7 Description cache REDESIGNED** — Tiers i TTL **wyeliminowane**. Decyzja: Adaptive Listings nie ma Tiers — wszyscy tenanci dostają jedno doświadczenie. Redis key: `desc:{tenant_id}:{listing_id}:{archetype}:{locale}` bez EX/TTL. Nowa tabela Postgres `description_cache_persistent` — trwały, nieulotny rekord; invalidacja przez `listing.updated` event (nie przez czas). Kolejność lookup: `description_cache_persistent → Redis → template_fallback + Modal enqueue`. Parametr `tier` usunięty z API. (3) **§D.6 Coverage Matrix UPDATED** — 3 archetypy poprzednio "🔴 None" (student_parent, retiree_relocator, diaspora_buyer) teraz "🟡 Quiz path" przez dedykowane ścieżki w gałęzi CROSS-BORDER drzewa decyzyjnego. Snapshot.1 rows E.4/E.7/D.6 zaktualizowane.
 
 **Changelog v3.9 (3 czerwca 2026 — Conversion Label Loop + prompt v1.9):** Dwie zmiany. (1) Nowa sekcja **§T. Conversion Label Loop (PROPOSED)** — audyt (read-only) ustalił, że system **NIE** zbiera etykiet konwersji nadających się do późniejszego fine-tuningu TALLRec/LoRA: predykcje lądują cienko w ClickHouse `adaptation_decisions` (bez `model_version`, bez snapshotu cech, bez `lead_id`), a outcome z `POST /api/adapt/feedback` jest zwijany w liczniki Beta `ab_bandit_weights` (para predykcja↔outcome niszczona). §T projektuje pętlę logowaną **od dnia 1**: EXTEND `adaptation_decisions` (migracja 0013: +`lead_id`/`model_version`/`features_snapshot`, REUSE `adapt_decision_id` jako `prediction_id`) + NEW tabela `conversion_labels` (Postgres/RLS, enum outcome, `label_source` system/manual), agregacja+kalibracja, ręczna reklasyfikacja + eksport korpusu w adminie, ingest głębokich outcome z CRM (PII-stripped). Plan tasków: **FOLLOW-170…175** (`backlog/FOLLOW_UPS.md`), ściśle uporządkowane (T0 = enrich predykcji, blokujące). (2) **Prompt v1.9 archetype-fit gate** ([ADR-0010], PR #184): model opisu może zwrócić `<adaptation_verdict>NEUTRAL</adaptation_verdict>` i odmówić adaptacji listingu fundamentalnie niedopasowanego do archetypu (DOM zostaje neutralny) zamiast „spinować" mismatchowane fakty. Brak rename sekcji (propagacja §Y.2 = bez zmian downstream — §T jest additive). Reszta jak v3.8.
 
@@ -423,13 +425,14 @@ RESOLVED. SDK→ingest→ClickHouse E2E verified. Key architectural facts now in
 | B.5 | Schema Discovery Pipeline (L1–L5) | 🟢 **Mostly Shipped** | L1+L2 = 11 deterministic auto-detect techniques on `main` (corpus CI 100/100 on 24 platforms, 240/240 samples since 2026-05-13). L4 AI Vision wired end-to-end (`packages/sdk/src/auto-detect/techniques/ai-vision.ts` 364 LOC + `apps/control-plane/src/app/api/detect/route.ts:175` dynamic import + `callAnthropic()`). L3 (platform templates) remains no-op but de facto replaced by L1+L2 coverage. `ANTHROPIC_API_KEY` confirmed in Doppler dev/stg/prd (2026-05-25) — AI Vision (L5) fully operational. Open gap: corpus fixture missing for `app.estalara.com` (FOLLOW-103). |
 | B.6 | Continuous Schema Validation | ✅ **Shipped** | 526-LOC Modal cron with drift detection + Sentry dedup. |
 | B.7 | Onboarding metrics | 🟡 **Partial** | Some events emitted; no dashboard yet. |
-| C | Signal ingestion / event taxonomy | 🟡 **Partial** | Ingest worker substantial. SDK emits 8 of 37 declared event types; chat / photo / mortgage_calc / inquiry events are schema-only. |
+| C | Signal ingestion / event taxonomy | 🟡 **Partial** | Ingest worker substantial. SDK emits 8 of 37 declared event types; chat / photo / mortgage_calc / inquiry events are schema-only. Signal enrichment (FOLLOW-207–211): 5 new signals identified (referrer, device, listing-view rate, favorites, filter payload). Expected behavioral-only accuracy improvement: 35–45% → 50–60%. NOT YET IMPLEMENTED. |
 | D | Intent Engine (12-dim ontology) | 🟡 **Partial** | `packages/intent-ontology` is a 14-line version stub; real ontology lives in 3 inconsistent places (intent.ts: 18 archetypes; playbooks: 18; archetype_embeddings: 3). SDK Bayesian classifier real (rule-based, ~600 LOC); Modal intent-engine = 27-line placeholder. |
 | D.5 | Continuous Detection Quality | 🟥 **Design-only** | No DQS measurement code beyond the schema_validation cron. |
+| D.6 | Archetype Coverage Matrix | 🟢 **UPDATED (2026-06-05)** | All 17 non-neutral archetypes now reachable: 13 🟢 Full (behavioral+quiz+chat), 3 🟡 Quiz path (student_parent/retiree_relocator/diaspora_buyer via CROSS-BORDER branch of quiz v2.0), 2 ⚪ Chat-only (golden_visa_buyer/commercial_investor). Previously 5 were "🔴 None / Chat-only" with no quiz path. |
 | E.1–E.3 | Adaptation decision tree + A/B + bandit | 🟡 **Partial** | A/B holdout + Thompson sampling math shipped + tested + **wired into canonical `POST /api/adapt`** (Sprint 9.5 PR #122, FOLLOW-007). Server selects a `variant` per (tenant, archetype) request and includes it in the response body. **Sprint 10 closed both Sprint 9.5 half-wires:** (1) SDK `AdaptResponse.variant?: string` field added in PR #127 (FOLLOW-042); (2) SDK feedback ping consumer at `packages/sdk/src/core/adapt.ts:postFeedbackPing()` POSTs to `/api/adapt/feedback` on outcome events in PR #127 (FOLLOW-041). PR #133 (FOLLOW-051) hardened the feedback endpoint from presence-only Bearer to HMAC-SHA256 tenant-scoped signing — threat model documented in §V.3.2. **Bandit feedback loop is end-to-end wired.** Remaining limitation: the bandit *selection* keys against `ab_bandit_weights` rows (Beta priors) without consulting `archetype_embeddings.embedding` for archetype context — that depends on FOLLOW-063 (LG-1 — automated archetype seed enforcement) to make the cosine path reachable. Decision-api Worker (`apps/decision-api/src/app/api/adapt/route.ts`) still on keyword path — by design per ADR-0004 (canonical = control-plane). |
-| E.4 | Investor Quiz Widget | ✅ **Shipped** | quiz-widget.ts (269 LOC), quiz-trigger.ts, dashboard pages. |
+| E.4 | Investor Quiz Widget | 🟥 **REDESIGNED — impl PENDING** | v2.0 cascading decision tree (3 branches, 17 leaf archetypes, 2–3 questions) ratified 2026-06-05. `applyQuizLeaf()` direct-assignment, post-quiz drift detection (DRIFT_HOLD_COUNT=3), `quiz_completions` MOAT table, multilingual (en/pl/es). Existing quiz-widget.ts/quiz-trigger.ts implement old 2-question flat quiz — need rewrite. New tickets required. |
 | E.6 | Placeholder Resolution Order (7-level) | 🟡 **Partial** | Only Level 1 (DOM attribute) implemented; Levels 2–7 fall through to literal `{token}` on-page (FOLLOW-026 P1). |
-| E.7 | Long-form Description Pipeline (v1.7.1 original-first) | ✅ **Shipped** | 668-LOC Modal Sonnet job with WHITELIST guard-rails + audit trail; `POST /api/adapt/description` wired; ClickHouse `description_generations_verified_facts` table. |
+| E.7 | Long-form Description Pipeline (v2.0 permanent cache, no Tiers) | 🟥 **REDESIGNED — impl PENDING** | Tiers and TTL eliminated (CEO 2026-06-05). Permanent cache: Redis (no TTL) + `description_cache_persistent` Postgres table. Invalidation by `listing.updated` only. `tier` param removed from API. Existing 668-LOC Modal Sonnet job + `POST /api/adapt/description` endpoint need updates to remove tier/ttl_seconds and write to `description_cache_persistent`. New tickets required. |
 | F | Data Network Effect (archetype embedding space) | 🟡 **Partial** | `archetype_embeddings` table seeded with all **18** archetypes (migration `0005_seed_archetype_embeddings.sql`, post-Sprint 8). Sprint 10 FOLLOW-043 (PR #131 + 6 fix commits) ships `pnpm seed:archetypes` script (uses Supabase PostgREST + `service_role` key per fix commit `82b9e2e` — Supabase direct host is IPv6-only, unreachable from GitHub Actions) and a manual `workflow_dispatch` GitHub Action (`.github/workflows/seed-archetypes.yml`). When invoked against a Doppler-configured environment with `SUPABASE_SERVICE_ROLE_KEY` + `OPENAI_API_KEY`, the script populates all 18 vectors with OpenAI `text-embedding-3-small` at 1024 dims; cost <$0.001. **No CI step or on-merge automation runs the seed automatically.** For any fresh DB pull, `archetype_embeddings.embedding` remains NULL until an operator runs the workflow — the cosine path that FOLLOW-019 (Sprint 9.5 PR #123) wired still falls back to djb2 by default. FOLLOW-063 (RETRO-006 LG-1) tracks the auto-seed enforcement + README runbook. The `listing_embeddings` table (migration 0013) is wired and PR #132 (FOLLOW-046) auto-seeds the 12-listing demo manifest on activation; non-demo tenants still need manual `POST /api/listings/embed` (FOLLOW-046 carve-out). **Sprint 11 FOLLOW-063 (PR #135) ships `archetype-embeddings-not-null` CI precheck (push:main, soft-skip until DOPPLER_TOKEN_DEV provisioned) + `.github/workflows/post-migrate-seed.yml` idempotent auto-seed on every push to main. Once ESC-009 / FOLLOW-040 escalation resolves, the cosine path will be enforceable in CI for any fresh DB pull.** |
 | G | Behavioral Fingerprinting | 🟡 **Partial** | Session-scoped IDs work; cross-listing per-tenant aggregation works; global DP aggregation = design-only. |
 | H | Compliance & Privacy (GDPR/AI Act/CCPA/UK/UAE) | ✅ **Shipped** | DPIA v2.0 + ROPA + LIA template + DSR endpoints (initiate/access/erase/portability with OTP+Resend) + consent gate + tenant_compliance_records + **ClickHouse hard-delete on erase via FOLLOW-039 (§H.1.1)**. EU pilot gate cleared 2026-05-24. |
@@ -1603,6 +1606,14 @@ SDK Producer Status legend: ✅ Active (SDK emituje, SIGNAL_LIKELIHOODS wired) |
 | **Cross-listing journey** | `listing.viewed`, `listing.next`, `listing.compared`, `listing.bookmarked` | 1–10 | ✅ Active (`listing.viewed`) / 📋 Planned (rest) |
 | **Device/context** | One-time per session: device class, viewport, language, IP country/city, time-of-day | 1 | ✅ Active |
 
+**Nowe sygnały (Sprint 15, FOLLOW-207/208/211):**
+- `session.referrer` — (session-init, nie event) referrer URL + UTM keyword hints; applies investment/personal prior at session start
+- `device.type` — (session-init) `desktop|mobile`; weak investor/own-use prior multiplier  
+- `listing.view_rate` — (derived, calculated from listing.viewed count + session elapsed time) views/minute; high rate (≥3/min) → portfolio_builder/flip_investor; low rate (≤0.5/min) → family_buyer/first_time_buyer
+- `listing.bookmarked` — (from app.estalara.com CustomEvent `estalara:listing:favorited`) explicit save-to-favorites; strongest deterministic non-quiz intent signal; payload: listingType, priceRange, bedroomCount
+- `filter.applied` (enriched) — existing planned signal (FOLLOW-099) now with required payload: `{facet: string, value: string|number}`; facet-conditional likelihoods: `type=commercial` → commercial_investor; `bedrooms_min≥3` → family_buyer/upsizer; `sort=yield` → yield_hunter
+- `micro_poll.answered` — (new widget, FOLLOW-209) single yes/no micro-poll answer; applies one QUIZ_LIKELIHOODS axis update; trigger: 90s into session if quiz not completed
+
 ### C.2. Ingestion rate i strategia
 
 - Klient wysyła batches **co 2 sekundy** (lub immediate flush dla `inquiry.*` i `chat.*`)
@@ -1923,15 +1934,17 @@ Trzy źródła sygnałów: **Behavioral** (SDK observers) / **Quiz** (2-question
 | `luxury_buyer` | `cta.clicked(high-price)` + `photo.dwell` | personal + any | `budget_band=comfortable` + `feature_priority=luxury` | 🟢 Full |
 | `remote_worker` | `feature.expanded(home_office/internet)` | personal + short | `feature_priority=workspace` | 🟢 Full |
 | `lifestyle_expat` | `feature.expanded(expat/international)` | personal + long | `cross_border=expat` + `geo_priority=lifestyle` | 🟢 Full |
-| `retiree_relocator` | `feature.expanded(accessibility/climate)` | personal + long | `family_stage=retiree` | ⚪ Chat-only |
-| `diaspora_buyer` | *(cross-tenant, future)* | any | `cross_border=expat_returning` | ⚪ Chat-only |
+| `retiree_relocator` | `feature.expanded(accessibility/climate)` | personal + long | `family_stage=retiree` | 🟡 Quiz path (CROSS-BORDER→A→A) |
+| `diaspora_buyer` | *(cross-tenant, future)* | any | `cross_border=expat_returning` | 🟡 Quiz path (CROSS-BORDER→A→B) |
 | `second_home_buyer` | `listing.viewed(tourist_area)` + `photo.dwell` | personal + medium | `purchase_purpose=second_home` | 🟢 Full |
-| `student_parent` | `filter.applied(near_university)` | any | `geo_priority=school_district` + `family_stage=young_family` | ⚪ Chat-only |
+| `student_parent` | `filter.applied(near_university)` | any | `geo_priority=school_district` + `family_stage=young_family` | 🟡 Quiz path (CROSS-BORDER→C) |
 | `neutral` | fallback (low combined confidence) | — | low confidence | 🟢 Always |
 
-**Coverage summary post FOLLOW-099/100:** 13/18 🟢 Full, 5/18 ⚪ Chat-only (residential app.estalara.com lacks behavioral filters for commercial/diaspora/student/golden_visa/retiree). Chat-only archetypes require `chat.intent.detected` from FOLLOW-087+101 to function.
+**Coverage summary post FOLLOW-099/100:** 13/18 🟢 Full, 3/18 🟡 Quiz path only (`retiree_relocator`, `diaspora_buyer`, `student_parent` — reachable via quiz v2.0 CROSS-BORDER branch), 2/18 ⚪ Chat-only (`golden_visa_buyer`, `commercial_investor` — residential app.estalara.com lacks behavioral filters). Chat-only archetypes require `chat.intent.detected` from FOLLOW-087+101 to function.
 
-**Note:** ⚪ Chat-only archetypes will serve `neutral` playbook if chat NLP is unavailable or quiz is OFF.
+**Note:** 🟡 Quiz path archetypes will serve `neutral` playbook if quiz is OFF and chat NLP is unavailable. ⚪ Chat-only archetypes will serve `neutral` playbook if chat NLP is unavailable or quiz is OFF.
+
+Quiz v2.0 (drzewo decyzyjne, 2026-06-05): wszystkie 17 archetypów non-neutral są teraz bezpośrednio osiągalne przez quiz. Poprzednie "🔴 None" archetypy wymagały tylko chatu — teraz mają dedykowane ścieżki w drzewie decyzyjnym (patrz §E.4.2).
 
 ---
 
@@ -1953,6 +1966,9 @@ Trzy źródła sygnałów: **Behavioral** (SDK observers) / **Quiz** (2-question
 5. ReorderDirective (photos, listings-grid): deferred → FOLLOW-104; fallback = TextDirective only
 
 **Source-labeling:** Adaptation decisions sourced from chat-only (⚪) archetypes should be tagged `source: 'chat_only'` in `PosteriorUpdatedPayload` for observability.
+
+**BEHAVIORAL_DAMPING calibration (Sprint 15+):**
+`BEHAVIORAL_DAMPING = 0.3` is the current unvalidated constant. Once pilot accumulates ≥500 sessions with quiz completions (ground truth labels), run logistic regression fit on `(signal_vector → quiz_archetype)` to calibrate both `SIGNAL_LIKELIHOODS` values and `BEHAVIORAL_DAMPING`. Do NOT increase damping before calibrated likelihoods cover all 17 archetypes — premature increase risks false positive archetype assignment. New ticket: FOLLOW-212 (P3, data-engineer + ml-engineer).
 
 ---
 
@@ -2022,14 +2038,14 @@ These events are consumed by TICKET-PILOT-003 (CTA lift dashboard) and feed the 
 | **Feature highlight order** | Pure ranking model (gradient boosted on intent×feature interaction) | Deterministyczne, A/B testable, brak halucynacji |
 | **Photo re-ranking** | CLIP-style scoring photos vs intent vector + tenant hard rules ("first photo must show exterior") | Computer vision na zdjęciach raz przy ingest property, intent-photo dot product przy serve |
 | **Chat suggested replies** | Claude Haiku 4.5 + RAG (tenant's FAQ + listing data + intent context) | Conversational quality wymaga LLM; Haiku 4.5 wystarczająco dobre |
-| **Long-form copy (description)** | Claude Sonnet 4.6 + `copy_template.en` fallback — Tier 2 + Tier 3, async, Redis-cached | Sonnet 4.6 jakość warte ceny dla flagship feature, cache TTL per Tier. Pełna spec: E.7 |
+| **Long-form copy (description)** | Claude Sonnet 4.6 + `copy_template.en` fallback — async, permanent Redis+Postgres cache (no TTL, no Tiers) | Sonnet 4.6 jakość warte ceny dla flagship feature; permanent cache (invalidation by listing.updated only). Pełna spec: E.7 |
 
 #### E.2.1. Definicje terminów stosowanych w tej sekcji
 
 - **slot** — pozycja DOM identyfikowana przez `data-estalara-slot="<name>"`. Trzy kanoniczne wartości: `headline`, `cta`, `feature`.
   > **Nota historyczna:** wartość `feature-section` używana wcześniej w `yield-hunter.ts` była błędem naming-conventionowym (SDK query selector nie pasował do dokumentacji deweloperskiej, slot `feature` nigdy nie aktywował się dla tego archetypu). Ustandaryzowano do `feature` w PR #92 / TICKET-046 (PLAYBOOK-001).
 - **wariant** — alternatywna kopia dla tego samego slotu, służąca A/B testowaniu przez bandit (E.3). NIE mylić z locale. Min 3 warianty per slot `headline` per archetype. Zaimplementowane w polu `SlotDirective.variants.{en|pl|es}[]` (`packages/sdk/src/core/playbooks/types.ts`).
-- **copy_template** — statyczny ~130–150-słowowy opis nieruchomości per archetype; jednocześnie (a) Tier 1 fallback gdy nie generujemy AI description oraz (b) seed promptu Sonneta dla Tier 2/3 (E.7). Pole `PlaybookEntry.copy_template.{en|pl?|es?}`.
+- **copy_template** — statyczny ~130–150-słowowy opis nieruchomości per archetype; jednocześnie (a) fallback gdy nie ma wygenerowanego AI description w cache oraz (b) seed promptu Sonneta (voice pattern + hard rules, per E.7). Pole `PlaybookEntry.copy_template.{en|pl?|es?}`.
 - **ListingContext** — dane listingu (cena, yield%, sypialnie, m², miasto, …) dostarczone przez AGENCY-001 (Level 2) lub enrichment APIs (Level 5), używane przez SDK `interpolatePlaceholders()` oraz wstrzykiwane do promptu LLM gateway jako kontekst.
 
 #### E.2.2. Implementacja 3 wariantów per slot
@@ -2129,186 +2145,218 @@ Mechanizmy CATE estimation feed do D.5 confirmation rate (post-adaptation behavi
 
 ---
 
-### E.4. Investor Quiz Widget — opt-in self-declared intent
+### E.4. Investor Quiz Widget — cascading decision tree (v2.0, ratified 2026-06-05)
 
-> **Decyzja produktowa (Piotr Nawrocki, 5 maja 2026):** dodajemy opt-in 2-pytaniowy quiz jako **opcjonalny, per-tenant toggle** w back-office agencji. Quiz jest dobrowolny, transparentny, i działa równolegle z behavioral detection — nie zastępuje go.
+#### E.4.1. Filozofia — cel quizu
 
-#### E.4.1. Filozofia — dlaczego opt-in zamiast obowiązkowo
+Quiz służy jako najsilniejszy sygnał cold-start: identyfikuje archetype inwestora zanim system
+zdąży zebrać wystarczające sygnały behawioralne. Pytania są **generyczne** — niezależne od
+konkretnego listingu wyświetlanego w danym momencie. Investor może trafić na listing, który go
+nie interesuje; quiz musi działać poprawnie niezależnie od kontekstu.
 
-Standardowy Adaptive Listings polega wyłącznie na behavioral signals (Section D — Intent Engine). Działa świetnie po 30-90 sek przeglądania, ale **w pierwszych 30 sek mamy zimny start** — system nie ma jeszcze wystarczająco danych żeby spersonalizować widok.
+Quiz pojawia się na **liście listingów ORAZ stronie szczegółowej** — wszędzie tam, gdzie SDK
+jest załadowane. Trigger: **30 sekund** spędzonych na stronie (nie 3 odsłony listingu jak
+w poprzednim projekcie). Cooldown: 24h w localStorage po odrzuceniu. Kontrolowany flagą
+`QuizConfig.enabled` (default: `false`) per tenant w tabeli `tenants.quiz_config`.
 
-Quiz daje agencji opcjonalne narzędzie żeby **skrócić cold-start** dla buyerów którzy chcą szybko dostać dopasowane wyniki. Kluczowe założenia:
+#### E.4.2. Drzewo decyzyjne — 3 gałęzie, 2–3 pytania, 17 liści
 
-1. **Opt-in, nie obowiązkowo** — buyer zawsze może zignorować quiz i przeglądać normalnie
-2. **Per-tenant toggle** — agencja decyduje czy quiz jest aktywny na jej stronie
-3. **Bayesian prior, nie hard lock** — odpowiedzi quizowe są silnym wstępnym sygnałem dla Intent Engine, ale behavioral signals z biegiem czasu mogą skorygować profil
-4. **Zero dark patterns** — brak modal-spam, brak "Are you sure you want to leave?", brak "X to skip" które blokują widok
-
-#### E.4.2. Dwa pytania — dlaczego te i tylko te
-
-Po analizie design partnerów (Idealista, Engel & Völkers Marbella) zidentyfikowaliśmy **dwa pytania o najwyższym signal-to-noise ratio** dla early archetype detection:
-
-**Pytanie 1: Cel zakupu**
-> "What brings you here today? / Co Cię tu przyprowadza?"
-> 
-> ○ **Looking for a home for myself or my family** *(własny)*
-> ○ **Exploring as an investment opportunity** *(inwestycyjny)*
-
-**Pytanie 2: Horyzont czasowy**
-> "When are you hoping to make a decision? / Kiedy planujesz podjąć decyzję?"
-> 
-> ○ **Within the next 3 months** *(≤3 mies.)*
-> ○ **More than a year from now / Just exploring** *(>1 rok)*
-
-**Dlaczego nie więcej pytań?** Każde dodatkowe pytanie redukuje completion rate o ~15-25% (industry data dla onboarding flows). Dwa pytania mają completion rate ~75-85% (za design partnerami z marketingu B2C SaaS), pięć pytań — ~30%. Mniej pytań = więcej completed quizzes = więcej priors dla Intent Engine.
-
-**Dlaczego te a nie inne (np. budżet, lokalizacja)?** Budżet i lokalizacja są już *implicit* w buyer's URL i selected listings. Cel + horyzont są **najsilniejsze różnicujące cechy archetype** które NIE są inferowalne z URL — buyer "Investor + 3mo" ma drastycznie inny intent niż "Family + 1yr" przeglądający te same listingi.
-
-#### E.4.3. Mapping odpowiedzi → archetype prior
-
-```typescript
-// packages/intent-engine/src/quiz-mapping.ts
-type QuizAnswers = {
-  purpose: 'personal' | 'investment';
-  horizon: 'short' | 'long';  // ≤3 mies. vs >1 rok
-};
-
-type ArchetypePrior = {
-  archetype_id: string;
-  prior_weight: number;      // 0.0 - 1.0, multiplier on default uniform prior
-  decay_minutes: number;     // jak długo prior dominuje nad behavioral signals
-};
-
-const QUIZ_TO_PRIOR: Record<string, ArchetypePrior> = {
-  'personal+short': { 
-    archetype_id: 'urgent_family_buyer', 
-    prior_weight: 0.85, 
-    decay_minutes: 10 
-  },
-  'personal+long': { 
-    archetype_id: 'aspirational_browser', 
-    prior_weight: 0.75, 
-    decay_minutes: 15 
-  },
-  'investment+short': { 
-    archetype_id: 'active_investor', 
-    prior_weight: 0.90, 
-    decay_minutes: 8 
-  },
-  'investment+long': { 
-    archetype_id: 'passive_capital_seeker', 
-    prior_weight: 0.70, 
-    decay_minutes: 20 
-  },
-};
-```
-
-**Bayesian update — formal definition:**
+Poprzedni flat 2-pytaniowy quiz produkował 4 komórki dla 18 archetypów, z nakładającymi się
+prawdopodobieństwami w popularnych komórkach. Nowy quiz używa **drzewa decyzyjnego z bramą Q1**,
+która rozdziela inwestorów na wzajemnie wykluczające się gałęzie. Każda ścieżka kończy się
+bezpośrednio jednym archetypem (liściem) — bez nakładania się.
 
 ```
-P(archetype | session_data) ∝ P(session_data | archetype) × P(archetype)
-
-Without quiz:  P(archetype) = uniform across all archetypes (1/N)
-With quiz:     P(archetype) = QUIZ_TO_PRIOR weighted distribution
-
-After T minutes of behavioral data:
-  effective_prior_weight(t) = prior_weight × max(0, 1 - t/decay_minutes)
-  
-Po decay_minutes minut: prior_weight → 0, behavioral signals dominate fully
+Q1 — BRAMA (zawsze)
+"Czego szukasz?"
+  A. Nieruchomości, która będzie na siebie zarabiać  → gałąź INWESTOR
+  B. Miejsca do mieszkania dla mnie lub rodziny      → gałąź WŁASNY UŻYTEK
+  C. Nowego miejsca w innym kraju / nowy etap życia  → gałąź CROSS-BORDER
+  D. Jeszcze nie wiem — pokaż mi oferty              → neutral (quiz kończy się)
 ```
 
-Innymi słowy: w pierwszych ~10 min od quiz completion, system jest "stronnie nastawiony" na archetype z quizu. Z każdą minutą prior słabnie liniowo, a behavioral signals zyskują wagę. Po 10-20 min (zależnie od archetype): quiz jest tylko historycznym sygnałem, system działa normalnie na podstawie zachowania.
-
-**Edge case — quiz vs behavioral mismatch:**
-Jeśli quiz mówi `personal+short` (urgent_family_buyer) a w pierwszych 5 min user przegląda 8 inwestycyjnych listingów, browse na ROI page, scroll na yield calculator → system wykrywa **strong behavioral contradiction** i logs metric `quiz_behavioral_mismatch=true`. Po 5 min: behavioral wygrywa, archetype switch do `active_investor`. Quiz answer pozostaje w session metadata dla analytics (E.4.7 — agency stats).
-
-#### E.4.4. Widget UX — sticky + triggered prompt
-
-Zgodnie z decyzją (B+D combo):
-
-**A. Sticky widget (od pierwszej sekundy)**
+**Gałąź INWESTOR:**
 ```
-                                          ┌────────────────────────────┐
-                                          │ 🎯 Find your perfect match │
-                                          │    in 2 questions →        │
-                                          │                       [×]  │
-                                          └────────────────────────────┘
-                                          Bottom-right, 320px wide
-                                          Subtle shadow, brand-tinted
-```
-- Default position: bottom-right corner (mobile + desktop)
-- Dismissible przez `[×]` — set `localStorage.estalara_quiz_dismissed=true` (24h)
-- Click → expands quiz inline (Shadow DOM, doesn't navigate away)
+Q2: "Jak ta nieruchomość ma zarabiać?"
+  A. Stały dochód z najmu długoterminowego  → Q3
+  B. Najem krótkoterminowy / wakacyjny      → vacation_rental_investor [KONIEC]
+  C. Kupno, remont i sprzedaż z zyskiem     → flip_investor [KONIEC]
+  D. Nieruchomość komercyjna                → commercial_investor [KONIEC]
 
-**B. Triggered prompt (post-3-listings event)**
-- Po `listing.view` event count ≥ 3 w sesji AND user nie kliknął quiz AND nie dismissed:
-- Wyświetl drugi sticky w innym kolorze: "Saved time on browsing? Get personalized matches in 2 quick questions."
-- Trigger TYLKO RAZ na sesję — jeśli user dismiss, no more prompts
-
-**Kluczowe UX zasady:**
-- Brak modal blokujących widok
-- Brak entry-time popups (np. "Wait 3 sec → modal") — to jest dark pattern
-- Brak countdown timers, exit-intent popups, bait-and-switch buttons
-- Quiz widget zawsze dismissable jednym klikiem
-- ARIA-compliant (focus trap w expanded state, escape key zamyka, screen reader friendly)
-
-#### E.4.5. Quiz lifecycle — events tracked
-
-```typescript
-// packages/shared/src/schemas/events/quiz.ts
-const QuizPayloadSchema = z.object({
-  quiz_id: z.literal('investor_intent_v1'),
-  step: z.enum(['shown', 'started', 'q1_answered', 'q2_answered', 'completed', 'dismissed']),
-  
-  // Anonimowe — zero PII (per TICKET-FIX-005 PII blacklist)
-  answers: z.object({
-    purpose: z.enum(['personal', 'investment']).optional(),
-    horizon: z.enum(['short', 'long']).optional(),
-  }).optional(),
-  
-  // Opcjonalne UX metrics
-  trigger: z.enum(['sticky', 'prompt_after_3_listings', 'manual']).optional(),
-  time_to_complete_ms: z.number().int().min(0).optional(),
-});
-
-export const QuizEventSchema = EventEnvelopeBaseSchema.extend({
-  type: z.literal('quiz.event'),
-  payload: QuizPayloadSchema,
-});
+Q3 (tylko po A):
+"Co jest Twoim celem długoterminowym?"
+  A. Maksymalny zwrot z tej jednej inwestycji      → yield_hunter [KONIEC]
+  B. Zbudowanie portfela wielu nieruchomości        → portfolio_builder [KONIEC]
+  C. Dochód i jednocześnie prawo pobytu w tym kraju → golden_visa_buyer [KONIEC]
 ```
 
-**6 trackowanych stanów:**
-- `shown` — widget renderowany (impression)
-- `started` — user kliknął expand
-- `q1_answered` — pytanie 1 odpowiedziane
-- `q2_answered` — pytanie 2 odpowiedziane (after this: prior aktywny w Intent Engine)
-- `completed` — quiz fully completed (oba pytania) — primary success metric
-- `dismissed` — user kliknął `[×]` lub abandoned po `started`
+**Gałąź WŁASNY UŻYTEK:**
+```
+Q2: "Co najlepiej opisuje ten zakup?"
+  A. To mój pierwszy własny dom/mieszkanie          → baza: first_time_buyer
+  B. Rodzina z dziećmi — przestrzeń i szkoły        → baza: family_buyer
+  C. Przeprowadzam się do czegoś większego           → baza: upsizer
+  D. Przeprowadzam się do mniejszego                 → baza: downsizer
 
-#### E.4.6. Privacy & GDPR considerations
+Q3 (zawsze):
+"Co najbardziej zaważy na Twojej decyzji?"
+  A. Lokalizacja i okolica       → potwierdza bazę Q2 [KONIEC]
+  B. Najwyższy standard/prestiż  → override → luxury_buyer [KONIEC]
+  C. Warunki do pracy zdalnej    → override → remote_worker [KONIEC]
+  D. Cena i koszty utrzymania    → potwierdza bazę Q2 [KONIEC]
+```
+Reguła override: odpowiedź B lub C w Q3 zastępuje bazę z Q2.
 
-- **Brak PII w quiz payload** — tylko enum values (purpose, horizon). Nie zbieramy email, name, ani niczego osobowego
-- **No tracking cookies** — quiz state w localStorage TYLKO dla dismissal tracking (24h TTL)
-- **Consent layer** — quiz nie wymaga consent dla GDPR (no PII, no profiling z personal data) ALE jest część `consent_state: 'analytics'` jeśli tenant ma cookie banner. Default: quiz visible przed consent (legitimate interest — service improvement)
-- **Right to erasure** — quiz answers powiązane są z session_id (anonimowy fingerprint hash). Erasure session_id usuwa też quiz history
+**Gałąź CROSS-BORDER:**
+```
+Q2: "Jak będziesz korzystać z tego miejsca?"
+  A. To będzie mój główny dom — przeprowadzam się na stałe → Q3
+  B. Dom na część roku (wakacje, weekendy)                  → second_home_buyer [KONIEC]
+  C. Dla mojego dziecka, które studiuje                     → student_parent [KONIEC]
 
-#### E.4.7. Cross-reference D + E + U
+Q3 (tylko po A):
+"Co najlepiej Cię opisuje?"
+  A. Emerytura — spokój i klimat              → retiree_relocator [KONIEC]
+  B. Wracam do swojego kraju                  → diaspora_buyer [KONIEC]
+  C. Nowy rozdział za granicą — praca i życie → lifestyle_expat [KONIEC]
+```
 
-- **Section D (Intent Engine)** — Section D.2 (signals) rozszerzone o `self_declared_intent` jako new signal source. Quiz priors implementowane w `intent-engine/src/bayesian-prior.ts`
-- **Section D.5 (Detection Quality Score)** — quiz answers jako **third ground truth source** (alongside post-adaptation confirmation rate i form completions). Tenant DQS reflektuje `quiz_completion_rate` jako leading indicator
-- **Section E (Adaptation Engine)** — adaptation logic używa archetype output bez modyfikacji; quiz wpływa na *which* archetype, nie na *how to adapt*
-- **Section U (Master Admin / Agency Back Office)** — toggle quizu w `/dashboard/quiz` (per-tenant), statystyki w `/dashboard/quiz/analytics`. Master Admin widzi adoption rate quizu w fleet view (`/admin/tenants` — kolumna `quiz_enabled`)
+#### E.4.3. Pokrycie archetypów po redesignie
 
-#### E.4.8. Sprint mapping (quiz tickets)
+Wszystkie 17 archetypów non-neutral jest teraz bezpośrednio osiągalnych przez quiz (włącznie z
+poprzednimi "🔴 None": `student_parent`, `retiree_relocator`, `diaspora_buyer`).
 
-| Sprint | Ticket | Deliverable |
+| Archetype | Ścieżka | Pytania |
 |---|---|---|
-| Sprint 4 | TICKET-QUIZ-001 | Quiz widget SDK component (Preact + Shadow DOM, sticky + triggered) |
-| Sprint 4 | TICKET-QUIZ-002 | Quiz event schema + Bayesian prior implementation w Intent Engine |
-| Sprint 5 | TICKET-QUIZ-003 | Per-tenant toggle w back office (`/dashboard/quiz` config page) |
-| Sprint 5 | TICKET-QUIZ-004 | Agency analytics dashboard (`/dashboard/quiz/analytics`) — completion rate, archetype distribution, conversion lift |
-| Sprint 6 | TICKET-QUIZ-005 | Quiz mismatch detection + alerts (behavioral contradiction logging dla DQS feed) |
-| Sprint 7 | TICKET-QUIZ-006 | A/B test: quiz on/off cohort comparison (causal lift via E.3.1 framework) |
+| yield_hunter | INWESTOR→A→A | 3 |
+| portfolio_builder | INWESTOR→A→B | 3 |
+| golden_visa_buyer | INWESTOR→A→C | 3 |
+| vacation_rental_investor | INWESTOR→B | 2 |
+| flip_investor | INWESTOR→C | 2 |
+| commercial_investor | INWESTOR→D | 2 |
+| first_time_buyer | WŁASNY→A→A/D | 3 |
+| family_buyer | WŁASNY→B→A/D | 3 |
+| upsizer | WŁASNY→C→A/D | 3 |
+| downsizer | WŁASNY→D→A/D | 3 |
+| luxury_buyer | WŁASNY→any→B | 3 |
+| remote_worker | WŁASNY→any→C | 3 |
+| second_home_buyer | CROSS-BORDER→B | 2 |
+| student_parent | CROSS-BORDER→C | 2 |
+| retiree_relocator | CROSS-BORDER→A→A | 3 |
+| diaspora_buyer | CROSS-BORDER→A→B | 3 |
+| lifestyle_expat | CROSS-BORDER→A→C | 3 |
+| neutral | Q1→D (skip) | 1 |
+
+#### E.4.4. Zmiany w silniku intencji — direct assignment
+
+Poprzednia `applyQuizPrior(state, purpose, horizon)` mnożyła wagi przez prior Bayesowski.
+Z drzewem decyzyjnym, które produkuje jednoznaczny liść, właściwe podejście to **bezpośrednie
+przypisanie** archetypu z wysoką pewnością:
+
+```typescript
+// Nowa funkcja w packages/sdk/src/core/intent.ts
+export function applyQuizLeaf(state: IntentState, archetype: Archetype): IntentState {
+  const probabilities = Object.fromEntries(
+    ARCHETYPE_NAMES.map((k) => [k,
+      k === archetype ? 0.85 : 0.15 / (ARCHETYPE_NAMES.length - 1)
+    ])
+  ) as ArchetypeProbabilities;
+  return {
+    archetype,
+    confidence: Math.min(0.85 * QUIZ_CONFIDENCE_BONUS, 1.0), // ~0.95
+    probabilities,
+    signal_count: state.signal_count,
+    last_updated_at: Date.now(),
+    quiz_answered: true,
+  };
+}
+```
+
+`applyQuizPrior()` pozostaje jako legacy fallback. `applyQuizLeaf()` jest wywoływana gdy
+ścieżka drzewa kończy się na liściu.
+
+#### E.4.5. Post-quiz drift detection i session override
+
+Quiz wyznacza archetype z confidence ~0.95. Ale sygnały behawioralne i chat mogą go korygować
+w obrębie sesji. Mechanizm w `packages/sdk/src/index.ts`:
+
+```
+Quiz leaf → currentIntentState.archetype = QUIZ_ARCHETYPE
+description_cache_persistent[listing × QUIZ_ARCHETYPE] ← permanentny rekord (nigdy nie zmieniony)
+
+Sygnały po quizie:
+  WZMACNIAJĄ: zgadzają się z QUIZ_ARCHETYPE → confidence rośnie, adaptacja zostaje
+  KORYGUJĄ: detectMismatch() wykrywa rozbieżność
+    → DRIFT_HOLD_COUNT = 3 kolejne cykle refreshDirectives() muszą potwierdzić
+    → po 3 potwierdzeniach: currentIntentState.archetype ← DRIFT_ARCHETYPE (session override)
+    → refreshDirectives() pobiera nowe dyrektywy dla nowego archetypu
+    → description_cache_persistent[listing × QUIZ_ARCHETYPE] NIE jest modyfikowany
+```
+
+Anti-thrash guard: `DRIFT_HOLD_COUNT = 3` zapobiega migotaniu archetypu przy jednym
+sprzecznym sygnale. Nowe stałe w `index.ts`: `driftCandidateArchetype: Archetype | null`,
+`driftCandidateCount: number`. Istniejąca `detectMismatch()` w `intent.ts:491` musi
+być AKTYWNA (przełączać archetype), a nie tylko logować event.
+
+Chat override: kiedy `apps/intent-engine` (FOLLOW-087) emituje `chat.intent.detected`,
+trafia do `applyBehavioralSignal()` z wyższymi wagami → naturalnie buduje się w kierunku
+progu mismatchu szybciej niż sygnały scroll/click.
+
+#### E.4.6. Gdy quiz jest wyłączony (admin toggle OFF)
+
+```
+currentIntentState.archetype = 'neutral'
+  ↓
+Sygnały behawioralne + chat akumulują się
+  ↓
+refreshDirectives() co 5 sygnałów:
+  if confidence < CONFIDENCE_THRESHOLD (0.6): source: 'default', brak adaptacji
+  if confidence ≥ 0.6: normalna ścieżka adaptacji
+```
+CONFIDENCE_THRESHOLD tunable per-tenant (pilot: może być 0.4). Bez chatu (FOLLOW-087):
+identyfikacja zajmuje 5–10 minut aktywnego przeglądania. Z chatem: 1–2 wiadomości.
+
+#### E.4.7. Wielojęzyczność quizu
+
+Widget wspiera `en` (domyślny), `pl`, `es`. Priorytet rozpoznawania języka:
+1. `quizConfig.language` — ustawienie admin per-tenant (z DB via `/api/quiz/config`)
+2. `data-language` attr na `<script>` tagu (embed-time)
+3. `navigator.language` — język przeglądarki inwestora (np. `pl-PL` → `pl`)
+4. `'en'` — hardcoded fallback
+
+Zmiana w `config.ts:89–91`: jeśli `data-language` absent/unrecognized → try
+`navigator.language.slice(0,2)` → map to supported language → fallback `'en'`.
+Bug do naprawienia: `QuizConfig.language` schema w `quiz/config/route.ts:25` ma tylko
+`'en' | 'pl'` — musi być rozszerzony do `'en' | 'pl' | 'es'`.
+
+#### E.4.8. MOAT: quiz_completions table
+
+Każde ukończenie quizu to dane treningowe. Nowa tabela Postgres:
+
+```sql
+CREATE TABLE quiz_completions (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id         text NOT NULL,
+  tenant_id          text NOT NULL,
+  listing_id         text,               -- nullable: quiz może być na listing list
+  branch             text NOT NULL,      -- 'investor'|'own_use'|'cross_border'|'skip'
+  q1_answer          text NOT NULL,
+  q2_answer          text,
+  q3_answer          text,
+  resolved_archetype text NOT NULL,
+  override_applied   boolean DEFAULT false,
+  completed_at       timestamptz NOT NULL DEFAULT now()
+);
+-- RLS: tenant_id isolation
+```
+
+Łączy: (session → quiz path → resolved archetype → adaptation → conversion) — pełny łańcuch MOAT.
+
+#### E.4.9. Admin ON/OFF toggle
+
+`QuizConfig.enabled: boolean` (default `false`) istnieje w `apps/control-plane/src/app/api/quiz/config/route.ts`.
+Admin UI: `admin.estalara.com/dashboard/quiz`. Wpływ wyłączenia: identyfikacja archetypu opóźnia
+się do czasu zgromadzenia sygnałów behawioralnych/chat. Do tego czasu DOM jest neutral/default.
 
 ---
 
@@ -2334,45 +2382,57 @@ Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adapto
 
 **Zasada:** każdy level jest próbowany tylko jeśli poprzedni zwrócił `null`. Level 6 (LLM) kosztuje ~$0.001 per placeholder — cache agresywnie per listing per archetype.
 
-**Cross-reference:** Level 6 dla long-form description NIE idzie przez raw LiteLLM call — przechodzi przez pipeline opisany w E.7 (cache key + Tier gating + Modal async job). Inne placeholdery (np. krótki copy w slotach `headline`/`cta`/`feature`) używają LiteLLM bezpośrednio przez gateway `apps/control-plane/src/lib/llm-gateway.ts` (Haiku 4.5 / Sonnet 4.6 routing).
+**Cross-reference:** Level 6 dla long-form description NIE idzie przez raw LiteLLM call — przechodzi przez pipeline opisany w E.7 (permanent cache lookup + Modal async job). Inne placeholdery (np. krótki copy w slotach `headline`/`cta`/`feature`) używają LiteLLM bezpośrednio przez gateway `apps/control-plane/src/lib/llm-gateway.ts` (Haiku 4.5 / Sonnet 4.6 routing).
 
 ---
 
-### E.7. Long-form Description Pipeline (v1.7.1 — original-first + anti-hallucination)
+### E.7. Long-form Description Pipeline (v2.0 — original-first + permanent cache, no Tiers)
+
+> **Decyzja CEO (2026-06-05):** Adaptive Listings nie ma Tiers — wszyscy tenanci dostają jedno doświadczenie. Model TTL-per-Tier jest wyeliminowany. Opisy są przechowywane trwale (bez TTL w Redis, z `description_cache_persistent` w Postgres) i invalidowane wyłącznie przez event `listing.updated`. Parametr `tier` usunięty z API.
 
 **Fundamentalna zasada:** AI-adapted copy NIGDY nie wypiera agentowego oryginału na pierwszej wizycie buyera. Dopiero gdy Sonnet skończy generację (w tle, dla konkretnej kombinacji listing × archetype × locale), kolejny buyer w tej samej kombinacji dostaje wersję zoptymalizowaną. Dodatkowo: Sonnet NIGDY nie zmyśla faktów (liczb, nazw, ratings) których nie ma w `original_description` ani `listing_context`.
 
 #### E.7.1. Endpoint contract
 
-| Method | Path                     | Tier | Body / Query                                                                          | Purpose                                                       |
-| ------ | ------------------------ | ---- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| GET    | `/api/adapt/description` | 1    | `?listing_id&archetype&locale`                                                        | Zwraca `copy_template[locale]` dla sidebar widget             |
-| POST   | `/api/adapt/description` | 2, 3 | `{listing_id, archetype, tier, locale, original_description, listing_context}`        | Cache lookup; hit → `ai_cached`; miss → `original` + enqueue Modal |
+`tier` parameter removed — single-tier endpoint.
+
+| Method | Path                     | Body / Query                                                                   | Purpose                                                            |
+| ------ | ------------------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| POST   | `/api/adapt/description` | `{listing_id, archetype, locale, original_description, listing_context}`       | Cache lookup; hit → `ai_cached`; miss → `original` + enqueue Modal |
 
 #### E.7.2. Response schema
 
 ```json
 {
   "description": "string | null",
-  "source": "template_fallback" | "ai_cached" | "original",
+  "source": "ai_cached" | "original",
   "locale": "en" | "pl" | "es",
   "generated_at": "ISO 8601 | null",
   "verified_facts_used": ["bedrooms: 3", "location: Madrid"]
 }
 ```
 
-- `template_fallback` — tylko Tier 1. `description = copy_template[locale]` (voice pattern wyświetlony as-is w sidebar widget). `generated_at = now()`. `verified_facts_used` omitted.
-- `ai_cached` — Tier 2/3 cache hit. `description = <Sonnet text>`. `generated_at = <Redis-stored timestamp>`. `verified_facts_used = <parsed from Sonnet audit block>`.
-- `original` — Tier 2/3 cache miss. `description = null`. `generated_at = null`. SDK NIE rusza DOM. `verified_facts_used` omitted.
+- `ai_cached` — cache hit (Redis lub `description_cache_persistent`). `description = <Sonnet text>`. `generated_at = <stored timestamp>`. `verified_facts_used = <parsed from Sonnet audit block>`.
+- `original` — cache miss. `description = null`. `generated_at = null`. SDK NIE rusza DOM. `verified_facts_used` omitted. Modal job enqueued w tle.
 
-#### E.7.3. Redis cache
+#### E.7.3. Permanent description cache (no TTL)
 
-- **Key:** `desc:{tenant_id}:{listing_id}:{archetype}:{locale}`
-- **Value:** JSON `{"text": "<Sonnet output>", "generated_at": "<ISO>", "verified_facts_used": [...]}`
-- **TTL:** Tier 2 = 72h (259200s), Tier 3 = 48h (172800s)
-- **Invalidation:** `listing.updated` Redpanda event → SCAN+DEL `desc:{tenant_id}:{listing_id}:*`
+Permanent description cache (no TTL):
 
-#### E.7.4. Modal job payload (v1.7.1)
+- **Redis key:** `desc:{tenant_id}:{listing_id}:{archetype}:{locale}`
+  - Kept for fast serving (sub-millisecond hot path)
+  - No EX/TTL set — entries persist until invalidated
+- **Postgres table:** `description_cache_persistent`
+  - Durable, permanent record — survives Redis eviction
+  - Invalidated only on `listing.updated` event (not by time)
+  - Lookup order: `description_cache_persistent` → Redis → template_fallback + Modal enqueue
+- **Invalidation trigger:** `listing.updated` webhook → SET `invalidated_at = NOW()`
+  (both Redis SCAN+DEL and `description_cache_persistent` update)
+- **Modal job:** generates description+headline → writes to BOTH Redis AND `description_cache_persistent`
+  - No priority tiers — single queue
+  - No TTL parameter passed to Redis SET
+
+#### E.7.4. Modal job payload (v2.0)
 
 ```json
 {
@@ -2380,12 +2440,10 @@ Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adapto
   "listing_id": "string",
   "archetype": "string",
   "locale": "en|pl|es",
-  "tier": 2,
   "cache_key": "desc:...",
   "copy_template": "string (voice pattern + hard rules, NOT marketing copy)",
   "original_description": "string (factual seed from agent — REQUIRED in v1.7+)",
-  "listing_context": { "bedrooms": 3, "location": { "city": "Madrid" } },
-  "ttl_seconds": 259200
+  "listing_context": { "bedrooms": 3, "location": { "city": "Madrid" } }
 }
 ```
 
@@ -2429,28 +2487,28 @@ Modal job parsuje obie sekcje przed przekazaniem Sonnetowi (jako `voice_pattern`
 
 #### E.7.6. Flow diagrams
 
-**Tier 2/3 cache miss (buyer 1):**
+**Cache miss (buyer 1):**
 
 ```
 SDK extracts original from DOM via tenant.data_extractors.description
   → POST /api/adapt/description { original_description: "...", listing_context, ... }
-  → Endpoint: Redis GET miss
+  → Endpoint: description_cache_persistent lookup miss → Redis GET miss
     → Enqueue Modal job (with original_description + copy_template voice pattern)
     → Return { description: null, source: "original" }
   → SDK: leaves DOM untouched (agent's original copy stays visible)
   → [async] Modal job:
       Sonnet(voice_pattern + hard_rules + original + context)
       → parse <verified_facts_used>
-      → Redis SET { text, generated_at, verified_facts_used }
-      → expires in 72h (Tier 2) / 48h (Tier 3)
+      → Redis SET { text, generated_at, verified_facts_used }  (no TTL — permanent)
+      → Postgres INSERT description_cache_persistent { text, generated_at, verified_facts_used }
       → ClickHouse INSERT description_generations
 ```
 
-**Tier 2/3 cache hit (buyer N+1):**
+**Cache hit (buyer N+1):**
 
 ```
 Same POST as buyer 1
-  → Endpoint: Redis GET hit
+  → Endpoint: description_cache_persistent hit (or Redis hit)
   → Return { description: "<AI>", source: "ai_cached", generated_at: "...",
             verified_facts_used: [...] }
   → SDK: replaces DOM [data-estalara-slot="description"] with AI text
@@ -2465,14 +2523,14 @@ Buyer 1 of family_buyer (same listing) → separate cache miss → original
 Each Modal job generates copy independently.
 ```
 
-**Tier 1 — separate path (sidebar widget):**
+**Listing updated (cache invalidation):**
 
 ```
-SDK calls GET /api/adapt/description?listing_id=X&archetype=Y&tier=1&locale=en
-  → Endpoint: lookup playbook, return copy_template.en (voice pattern as-is)
-  → Return { description: "<voice pattern>", source: "template_fallback", generated_at: now() }
-  → SDK: renders in sidebar widget (read-only, side-by-side with agent's
-         original in main DOM — koegzystencja, nie zastępowanie)
+listing.updated webhook fires
+  → Redis SCAN+DEL desc:{tenant_id}:{listing_id}:*
+  → Postgres UPDATE description_cache_persistent SET invalidated_at = NOW()
+     WHERE tenant_id = ? AND listing_id = ?
+  → Next buyer sees cache miss → original → Modal enqueued (fresh generation)
 ```
 
 #### E.7.7. Pre-warming (post-MVP, follow-up TICKET-PREWARM-001)

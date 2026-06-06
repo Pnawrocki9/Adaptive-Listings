@@ -3032,17 +3032,20 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-194
   title: SDK quick fixes batch (F-01/F-08/F-13/F-15/F-16)
   agent: sdk-engineer + backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 5
   depends_on: []
   source: Audit F-01, F-08, F-13, F-15, F-16
   spec: backlog/sprint-15/FOLLOW-194.md
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/201
+  completed_at: '2026-06-06'
   notes: |
-    5 S-effort fixes in one PR: F-01 consent_state enum mapping; F-08 pageType URL detection;
-    F-13 listing_id in adapt body; F-15 resetAdaptState only on archetype change (stops flicker);
-    F-16 remove duplicate getDemoOverride() call. sdk-engineer owns F-01/08/13/15;
-    backend-engineer owns F-16.
+    5 S-effort fixes shipped in single PR #201. F-01 consent_state enum mapping (mapConsentState);
+    F-08 pageType URL detection + data-page-type override (detectPageType); F-13 listing_id in
+    adapt body (detectListingId + fetchDirectives listingId param); F-15 previousArchetype guard
+    in refreshDirectives (resetAdaptState only on change); F-16 getDemoOverride dedup in route.ts.
+    17 new unit tests, 729/729 SDK tests pass, pre-push hooks green.
 
 # ── Track B: Signal bridges + Quiz v2.0 (Week 2–3) ──
 

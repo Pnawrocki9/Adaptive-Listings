@@ -1,30 +1,34 @@
 # Backlog Queue
 
-**Updated 2026-06-07 by pm-orchestrator.** **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra
-hardening) READY_FOR_REVIEW at PR #166 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).**
-Triggered by a 2026-05-28 diagnostic that proved the previous "Migration 0015: prd ✅ applied"
-bookkeeping was false — drizzle-kit silently generated 2025 timestamps for entries 15/16 (1-year
-year-drift, second occurrence after `c92da81`), Drizzle's migrator silently skipped them, and
-`migrate.ts` falsely printed "Migrations applied successfully." with zero applied. FOLLOW-149 lands:
-(A) journal `when`-values for entries 15/16 repaired to commit-timestamp-aligned 2026 values; (B)
-new CI gate `Migration journal monotonicity check` (passing, 7s) — fails on non-monotonic OR >7d
-commit-date drift; (C) `migrate.ts` now reports before/after/applied/pending counts AND exits
-non-zero with a loud warning when 0 applied but pending>0 (trap-killer); (D) migration 0015 applied
-to prd via isolated apply (see ESC-012) — `tenants.pilot_frozen` column verified present
-(boolean/default false), `drizzle.__drizzle_migrations` row id=17 hash matches. Migration 0016
-INTENTIONALLY NOT applied — its DO $ assertion requires the pilot tenant to exist, and Drizzle's
-single-transaction migrator would roll back 0015 alongside it. **ESC-012 OPEN**: `pnpm db:migrate`
-is no longer safe in tenant-less envs until TICKET-PILOT-001 either seeds the pilot tenant before
-migrate OR migration 0016's RAISE EXCEPTION is softened to NOTICE — data/backend engineers decide
-during TICKET-PILOT-001 planning. Rule O added to CONVENTIONS_PATCH.md. RETRO-025 (FOLLOW-143/144
-inline fixes) + RETRO-026 (FOLLOW-149) deferred until PR #166 merges. **Sprint 13a-hardening-v2
-COMPLETE — 2/2 P0 EU go-live blockers DONE (PR #164 FOLLOW-139 at e4e37ac, PR #165 FOLLOW-141 at
-19d11d2; both merged to main). FOLLOW-143 (wire getOrCreateCrossSessionId into init) + FOLLOW-144
-(reconcile "rotates monthly" to 90-day cadence across 5 disclosure surfaces) fixed inline in PR
-#164. RETRO-025 pending post-FOLLOW-149-merge. FOLLOW-140/142 deferred Sprint 14.** Sprint
-13a-hardening COMPLETE — pre-pilot gate CLOSED (4 PRs merged, main at `29c97ab`). The pre-pilot
-hardening wave landed its 4 P0/P1 tickets: FOLLOW-127 (P0, PR #161 `6a27841`) detection engine now
-populates `inquiry_submit_selector`; FOLLOW-128 (P0, PR #160 `256b469`) DPIA §13.1/§13.2 mandated
+**Updated 2026-06-07 by pm-orchestrator. Sprint 15 COMPLETE — 21/21 DONE. Sprint 16 OPEN —
+FOLLOW-170 (P0, data+backend) IN_PROGRESS. FOLLOW-168 corrected to DONE (closed by FOLLOW-198, PR
+#211).**
+
+**Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
+(https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
+that proved the previous "Migration 0015: prd ✅ applied" bookkeeping was false — drizzle-kit
+silently generated 2025 timestamps for entries 15/16 (1-year year-drift, second occurrence after
+`c92da81`), Drizzle's migrator silently skipped them, and `migrate.ts` falsely printed "Migrations
+applied successfully." with zero applied. FOLLOW-149 lands: (A) journal `when`-values for entries
+15/16 repaired to commit-timestamp-aligned 2026 values; (B) new CI gate
+`Migration journal monotonicity check` (passing, 7s) — fails on non-monotonic OR >7d commit-date
+drift; (C) `migrate.ts` now reports before/after/applied/pending counts AND exits non-zero with a
+loud warning when 0 applied but pending>0 (trap-killer); (D) migration 0015 applied to prd via
+isolated apply (see ESC-012) — `tenants.pilot_frozen` column verified present (boolean/default
+false), `drizzle.__drizzle_migrations` row id=17 hash matches. Migration 0016 INTENTIONALLY NOT
+applied — its DO $ assertion requires the pilot tenant to exist, and Drizzle's single-transaction
+migrator would roll back 0015 alongside it. **ESC-012 OPEN**: `pnpm db:migrate` is no longer safe in
+tenant-less envs until TICKET-PILOT-001 either seeds the pilot tenant before migrate OR migration
+0016's RAISE EXCEPTION is softened to NOTICE — data/backend engineers decide during TICKET-PILOT-001
+planning. Rule O added to CONVENTIONS_PATCH.md. RETRO-025 (FOLLOW-143/144 inline fixes) + RETRO-026
+(FOLLOW-149) deferred until PR #166 merges. **Sprint 13a-hardening-v2 COMPLETE — 2/2 P0 EU go-live
+blockers DONE (PR #164 FOLLOW-139 at e4e37ac, PR #165 FOLLOW-141 at 19d11d2; both merged to main).
+FOLLOW-143 (wire getOrCreateCrossSessionId into init) + FOLLOW-144 (reconcile "rotates monthly" to
+90-day cadence across 5 disclosure surfaces) fixed inline in PR #164. RETRO-025 pending
+post-FOLLOW-149-merge. FOLLOW-140/142 deferred Sprint 14.** Sprint 13a-hardening COMPLETE —
+pre-pilot gate CLOSED (4 PRs merged, main at `29c97ab`). The pre-pilot hardening wave landed its 4
+P0/P1 tickets: FOLLOW-127 (P0, PR #161 `6a27841`) detection engine now populates
+`inquiry_submit_selector`; FOLLOW-128 (P0, PR #160 `256b469`) DPIA §13.1/§13.2 mandated
 consent-banner disclosures shipped in the SDK; FOLLOW-129 (P0, PR #159 `10ae1e7`) tenant Privacy
 Notice template + DPO sign-off + consent-withdrawal erasure QA; FOLLOW-122 (P1, PR #162 `29c97ab`)
 `/dashboard/pilot` consumes `data_source` provenance + surfaces the fail-loud 500 state. **Net
@@ -132,6 +136,7 @@ updates.
 | 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                         | 6       | 0    | 0       | 3     | 3       |
 | Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)      | 4       | 4    | 0       | 0     | 0       |
 | 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 21   | 0       | 0     | 0       |
+| 16     | 18    | Conversion Label Loop (§T), SDK archetype persistence, DB integration tests, compliance CRM docs, micro-poll Wave 2                 | 10      | 1    | 0       | 7     | 2       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -2700,17 +2705,18 @@ but does NOT fix the source — ESC-019 does.
   title:
     Cross-language event-contract parity gate for description.requested (TS Zod ⟷ Python consumer)
   agent: qa-engineer + backend-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 3
   depends_on: []
   source_retro: RETRO-028
   source_ticket: TICKET-DESC-001 (PR #182)
+  completed_at: '2026-06-07T00:00:00Z'
   spec: backlog/sprint-14/FOLLOW-168.md
   notes: |
-    The verification ESC-018 lacked: a single shared contract artifact asserted by BOTH the TS
-    publisher (DescriptionRequestedEventSchema) and the Python consumer required-set, so the next
-    field added to one side without the other fails CI. Cross-language analogue of Rule J (TS↔TS).
+    CLOSED by FOLLOW-198 (PR #211, merged 2026-06-07). Shared JSON fixture + 8 TS + 10 Python
+    contract tests + hard CI gate cross-language-contract shipped. Status corrected from READY
+    to DONE 2026-06-07 by pm-orchestrator (stale — FOLLOW-198 notes also_closes: FOLLOW-168).
 
 - id: FOLLOW-169
   title: Bring _generate_headline to the description anti-hallucination grounding bar (ADR-0009)
@@ -2733,17 +2739,21 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-170
   title: Enrich prediction row — model_version + features_snapshot + lead_id (T0, BLOCKING)
   agent: data-engineer + backend-engineer
-  status: READY
+  status: DONE
   priority: P0
   estimated_hours: 6
   depends_on: []
   produces: [FOLLOW-171, FOLLOW-173, FOLLOW-174]
   source: MASTER_DESIGN §T / RETRO-028
   spec: backlog/sprint-14/FOLLOW-170.md
+  pr: '#187'
+  completed_at: '2026-06-03T00:00:00Z'
   notes: |
-    EXTEND ClickHouse adaptation_decisions (migration 0013): +lead_id, +model_version,
-    +features_snapshot (PII-free JSON), formalize demo_override; REUSE adapt_decision_id as
-    prediction_id. logDecisionAsync writes them. BLOCKING — start first.
+    DONE in PR #187 (d9c75d4). Migration 0013_adaptation_decisions_label_fuel.sql shipped:
+    demo_override + model_version + features_snapshot + lead_id columns added. logDecisionAsync
+    writes all 4 (model_version defaults to 'rulebased-bandit-v1', lead_id to '' until
+    FOLLOW-178 wires it). Test at route.holdout.test.ts:269 covers AC4. Status corrected from
+    READY to DONE 2026-06-07 by pm-orchestrator (ticket shipped but QUEUE.md not updated).
 
 - id: FOLLOW-171
   title: Persist durable conversion_labels from the feedback route
@@ -2833,13 +2843,17 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-173
   title: Conversion-label aggregation + score-vs-actual calibration
   agent: data-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: data-engineer
+  started_at: '2026-06-07T00:00:00Z'
   priority: P1
   estimated_hours: 6
   depends_on: [FOLLOW-170, FOLLOW-171]
   source: MASTER_DESIGN §T
   spec: backlog/sprint-14/FOLLOW-173.md
+  branch: data-engineer/FOLLOW-173-conversion-label-aggregation
   notes: |
+    UNBLOCKED 2026-06-07 (FOLLOW-170 and FOLLOW-171 both DONE). Delegated Sprint 16.
     Aggregate (tenant, outcome_class, model_version, time); calibration reliability curve per
     model_version. Extends pilot/cta-lift JOIN pattern.
 
@@ -2953,7 +2967,169 @@ but does NOT fix the source — ESC-019 does.
     collision/upgrade/downgrade-rejection/manual-admin-override. May merge with FOLLOW-181.
 ```
 
-## Sprint 15 — Pilot unblock + signal bridges + quiz v2.0 + description cache redesign (OPEN)
+## Sprint 16 — Conversion Label Loop §T + SDK persistence + DB harness + compliance CRM docs + micro-poll Wave 2 (OPEN)
+
+**Added 2026-06-07 (pm-orchestrator, Sprint 15 COMPLETE — 21/21 DONE).** Carries forward all READY
+Sprint 14 items not touched by Sprint 15, plus the Wave 2 deferred item from Sprint 15. Priority
+order: FOLLOW-170 (P0, unblocks entire §T chain) → FOLLOW-176/182/183/184/185/187 (P1) → FOLLOW-209
+Wave 2/190/173/174/175 (P2/P1 later).
+
+Key tracks:
+
+- **Track A (§T Conversion Label Loop, T0):** FOLLOW-170 (DONE, PR #187 — unblocked the chain)
+- **Track B (§T downstream, now unblocked):** FOLLOW-173 (READY) → 174 (BLOCKED on 173) → 175
+- **Track C (SDK + DB hardening):** FOLLOW-176 (P1, SDK archetype persistence), FOLLOW-182/183 (P1,
+  upsert dedup)
+- **Track D (GDPR/compliance):** FOLLOW-184 (P1, Art.17 DSR gap), FOLLOW-185 (P1, PG harness),
+  FOLLOW-187 (P1, ROPA/DPIA)
+- **Track E (Background):** FOLLOW-190 (P2, dwell signal), FOLLOW-209 Wave 2 (P2, micro-poll
+  dashboard toggle)
+
+```yaml
+- id: FOLLOW-170
+  title: Enrich prediction row — model_version + features_snapshot + lead_id (T0, BLOCKING)
+  agent: data-engineer + backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 6
+  depends_on: []
+  produces: [FOLLOW-173, FOLLOW-174]
+  source: MASTER_DESIGN §T / RETRO-028
+  spec: backlog/sprint-14/FOLLOW-170.md
+  pr: '#187'
+  completed_at: '2026-06-03T00:00:00Z'
+  notes: |
+    DONE in PR #187 (d9c75d4). Status corrected 2026-06-07 — shipped but QUEUE.md not updated.
+    FOLLOW-173 and FOLLOW-174 are now UNBLOCKED (FOLLOW-171 also DONE).
+
+- id: FOLLOW-176
+  title: Persist resolved archetype/intent across listing navigations
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 5
+  depends_on: []
+  source: session investigation 2026-06-03 (Side-task #5)
+  spec: backlog/sprint-14/FOLLOW-176.md
+  notes: |
+    currentIntentState is in-memory, recomputed each load — subsequent listings don't inherit
+    the inferred archetype. Persist to sessionStorage (keyed by sessionId), rehydrate in init()
+    before cold-start, consent-gated, staleness/version guard.
+
+- id: FOLLOW-182
+  title: Eliminate TS-map vs SQL-CASE precedence duplication in upsertConversionLabel
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-179]
+  source: RETRO-030 (LG-1/LG-2); CONVENTIONS_PATCH Rule K.1
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-182 stub)
+  notes: |
+    OUTCOME_CLASS_RANK (TS) and the SQL CASE in upsert-conversion-label.ts encode the same
+    ordering twice. Derive the SQL from the TS map (or add a 12-pair parity test). Rule K.1.
+
+- id: FOLLOW-183
+  title: PG integration test for upsertConversionLabel (precedence WHERE + UNIQUE constraint)
+  agent: data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-179]
+  source: RETRO-030 (TG-1/TG-2)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-183 stub)
+  notes: |
+    The helper's SQL precedence WHERE + the UNIQUE constraint are only mock-tested.
+    Consolidate with FOLLOW-181 + FOLLOW-185 into one pgmem/Testcontainers DB-harness ticket.
+
+- id: FOLLOW-184
+  title: DSR erasure must reach CRM-written conversion_labels rows (Art. 17 completeness)
+  agent: backend-engineer + compliance-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 5
+  depends_on: [FOLLOW-172]
+  source: RETRO-031 (LG-1); relates to FOLLOW-180
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-184 stub)
+  notes: |
+    COMPLIANCE/LEGAL — GDPR Art. 17. DSR erase keys on session_id but CRM rows store opaque
+    tenant lead_id in a different namespace. No live exposure yet (no tenant producer).
+    Must fix before any CRM-integrated tenant go-live.
+
+- id: FOLLOW-185
+  title: PG-harness integration test — CRM write + DSR cascade + two-writer precedence
+  agent: data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 5
+  depends_on: [FOLLOW-179, FOLLOW-172]
+  source: RETRO-031 (TG-1/TG-2); consolidate with FOLLOW-181 + FOLLOW-183
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-185 stub)
+  notes: |
+    PM should consolidate FOLLOW-181 + FOLLOW-183 + FOLLOW-185 into ONE pgmem/Testcontainers
+    DB-harness ticket. PM consolidation note: scope = RLS isolation + FK cascade + UNIQUE +
+    upsert precedence WHERE + CRM-write + DSR-erase reachability + two-writer convergence.
+
+- id: FOLLOW-187
+  title: Compliance docs — ROPA Activity 14 + DPIA §2.3/§2.5 + conversion_labels 13-month TTL
+  agent: compliance-engineer + data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-172]
+  source: RETRO-031 (DG-1); HANDOFFS FOLLOW-172 conditions 8-9
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-187 stub)
+  notes: |
+    Go-live gates 8-9. ROPA Activity 14 + DPIA §2.3/§2.5 for CRM deep-outcome ingest;
+    13-month TTL cron for conversion_labels (not covered by existing TTL cron).
+
+- id: FOLLOW-173
+  title: Conversion-label aggregation + score-vs-actual calibration
+  agent: data-engineer
+  status: READY_FOR_REVIEW
+  assigned_to: data-engineer
+  started_at: '2026-06-07T00:00:00Z'
+  completed_at: '2026-06-07T00:00:00Z'
+  priority: P1
+  estimated_hours: 6
+  depends_on: [FOLLOW-170, FOLLOW-171]
+  source: MASTER_DESIGN §T
+  spec: backlog/sprint-14/FOLLOW-173.md
+  branch: data-engineer/FOLLOW-173-conversion-label-aggregation
+  pr: 216
+  notes: |
+    GET /api/pilot/calibration: query-time join (ClickHouse decisions + Postgres labels).
+    Confidence decile bucketing → reliability curve per model_version (AC2).
+    Conversion aggregates per (outcome_class, model_version, tenant, window) (AC1).
+    Rule K.2: fail-loud; data_source provenance field. 28 tests, all passing.
+    HANDOFFS.md updated: FOLLOW-173 → FOLLOW-174.
+
+- id: FOLLOW-174
+  title: Admin label table + manual reclassification
+  agent: backend-engineer
+  status: BLOCKED
+  priority: P1
+  estimated_hours: 8
+  depends_on: [FOLLOW-171, FOLLOW-173]
+  source: MASTER_DESIGN §T
+  spec: backlog/sprint-14/FOLLOW-174.md
+  notes: |
+    Still blocked on FOLLOW-173 (FOLLOW-170 now DONE but FOLLOW-173 not yet started).
+
+- id: FOLLOW-190
+  title: Dwell-time confidence lift — accumulate temporal engagement as intent signal
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 4
+  depends_on: []
+  source: CEO session 2026-06-04
+  spec: backlog/sprint-14/FOLLOW-190.md
+  notes: |
+    FOLLOW-176 recommended first (dwell-boosted state then also gets persisted), not blocking.
+```
+
+## Sprint 15 — Pilot unblock + signal bridges + quiz v2.0 + description cache redesign (COMPLETE — 21/21 DONE)
 
 **Added 2026-06-05 (pm-orchestrator, based on docs/AUDIT-2026-06-04.md + Master_Design v4.0).
 Updated 2026-06-06 (pm-orchestrator, Track E added from audit gap analysis).** Four tracks + signal

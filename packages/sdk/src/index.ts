@@ -21,6 +21,10 @@ import {
   getOrCreateCrossSessionId,
   deriveLeadId,
   LEAD_ID_STORAGE_KEY,
+  persistIntentState,
+  rehydrateIntentState,
+  eraseIntentState,
+  peekStoredSessionId,
 } from './core/session.js';
 import { setupObservers } from './core/observer.js';
 import { createShadowHost } from './ui/shadow-host.js';
@@ -145,6 +149,31 @@ const BATCH_INTERVAL_MS = 5_000;
 // FOLLOW-199: quiz trigger is now time-based (30s) rather than listing-view-count based.
 
 /**
+ * Structural type guard for a persisted IntentState envelope.
+ *
+ * Validates that a rehydrated `unknown` value from sessionStorage has the
+ * required fields of IntentState before it is used as one. Intentionally
+ * permissive on the `probabilities` sub-object — a full per-archetype check
+ * would be expensive and adds no safety beyond the top-level fields.
+ *
+ * FOLLOW-176: called once per `init()` during rehydration; never called on
+ * the hot path.
+ */
+function isValidIntentState(raw: unknown): raw is IntentState {
+  if (!raw || typeof raw !== 'object') return false;
+  const r = raw as Record<string, unknown>;
+  return (
+    typeof r.archetype === 'string' &&
+    typeof r.confidence === 'number' &&
+    typeof r.signal_count === 'number' &&
+    typeof r.last_updated_at === 'number' &&
+    typeof r.quiz_answered === 'boolean' &&
+    r.probabilities !== null &&
+    typeof r.probabilities === 'object'
+  );
+}
+
+/**
  * Main SDK initialization — called automatically when DOM is ready.
  * Wraps everything in try/catch to ensure the host page is never broken.
  */
@@ -175,6 +204,9 @@ async function init(): Promise<void> {
       // User previously declined — halt SDK entirely, no events dispatched.
       // DPIA §13.2 / FOLLOW-139: ensure cross-session xid is absent on a denied session.
       eraseCrossSessionId();
+      // FOLLOW-176: erase any persisted intent state for this session (if one exists
+      // in sessionStorage from a prior page load where consent was still granted).
+      eraseIntentState(peekStoredSessionId());
       // The shadow host is destroyed to avoid leaving a DOM node.
       earlyHost?.destroy();
       return;
@@ -224,6 +256,8 @@ async function init(): Promise<void> {
           if (eventQueue.length > 0) {
             const batch = eventQueue.splice(0);
             const auditSession = await getOrCreateSession();
+            // FOLLOW-176: erase any persisted intent state for this session.
+            eraseIntentState(auditSession.sessionId);
             await dispatchEvents(batch, config, auditSession);
           }
           earlyHost.destroy();
@@ -280,26 +314,46 @@ async function init(): Promise<void> {
     // 4. Collect initial page.view event
     eventQueue.push(collectPageView());
 
-    // 4a. Initialize Bayesian intent state (BASE_PRIOR → neutral)
+    // 4a. Initialize Bayesian intent state.
+    // FOLLOW-176: attempt to rehydrate a previously persisted intent state before
+    // cold-start. A successful rehydrate means the visitor already accumulated
+    // signals on a prior listing page in this tab — skip cold-start hints so the
+    // prior archetype is not diluted by site-level priors applied a second time.
+    //
+    // Consent gate: we only reach this line when consent is 'granted' (all denial
+    // paths return early above). No re-check needed here.
+    let intentStateRehydrated = false;
     let currentIntentState: IntentState = initIntentState();
+
+    {
+      const raw = rehydrateIntentState(currentSession.sessionId);
+      if (isValidIntentState(raw)) {
+        currentIntentState = raw;
+        intentStateRehydrated = true;
+      }
+    }
 
     // 4a-f02. Apply site-level archetype hints as cold-start Bayesian prior [AUDIT-F02].
     // detectSiteSchema runs DOM pattern analysis client-side; AI Vision is excluded from
     // the browser bundle and is never called here.
-    try {
-      if (typeof document !== 'undefined') {
-        const html = document.documentElement.outerHTML;
-        const url = window.location.href;
-        const { schema } = await detectSiteSchema(html, url, config.tenantId ?? '');
-        if (schema) {
-          const hints = extractArchetypeHints(schema, html, url);
-          if (hints.length > 0) {
-            currentIntentState = applyArchetypeHints(currentIntentState, hints);
+    // Skip when state was rehydrated — archetype hints were already folded in on the
+    // first listing page and should not be applied a second time (FOLLOW-176).
+    if (!intentStateRehydrated) {
+      try {
+        if (typeof document !== 'undefined') {
+          const html = document.documentElement.outerHTML;
+          const url = window.location.href;
+          const { schema } = await detectSiteSchema(html, url, config.tenantId ?? '');
+          if (schema) {
+            const hints = extractArchetypeHints(schema, html, url);
+            if (hints.length > 0) {
+              currentIntentState = applyArchetypeHints(currentIntentState, hints);
+            }
           }
         }
+      } catch {
+        // Non-critical — detection failure must never block session init.
       }
-    } catch {
-      // Non-critical — detection failure must never block session init.
     }
 
     // FOLLOW-207: Referrer + device-type cold-session priors.
@@ -386,6 +440,10 @@ async function init(): Promise<void> {
       if (dqsUpdateCount % DQS_SNAPSHOT_INTERVAL === 0) {
         flushDqsSnapshot();
       }
+      // FOLLOW-176: persist the latest intent state to sessionStorage so subsequent
+      // listing page loads in this tab can rehydrate immediately.
+      // Consent is guaranteed at this point — all denial paths return early above.
+      persistIntentState(currentSession.sessionId, currentIntentState);
     }
 
     /** Confidence threshold above which the sidebar widget becomes visible. */

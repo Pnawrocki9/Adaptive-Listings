@@ -11,6 +11,12 @@
  * It provides cross-session continuity for returning visitors as disclosed in
  * DPIA §13.2. It is erased on consent denial or withdrawal (FOLLOW-139).
  *
+ * Intent-state persistence (FOLLOW-176):
+ * The resolved archetype/intent is written to sessionStorage keyed by sessionId
+ * so that subsequent listing navigations within the same tab can immediately apply
+ * the already-inferred archetype without re-accumulating behavioral signals.
+ * Persisted only when consent is granted; cleared on consent denial/withdrawal.
+ *
  * @module @estalara/sdk/core/session
  */
 
@@ -87,6 +93,20 @@ function readStoredSession(): SessionState | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Return the stored session ID without creating a new session.
+ *
+ * Used by the consent-denial path in `init()` to erase any persisted intent
+ * state when the session already exists in sessionStorage (returning visitor
+ * who previously granted consent but now revisits with denied consent, or
+ * mid-session consent withdrawal). Returns `undefined` when no session is stored.
+ *
+ * @internal exported for use by index.ts consent gates only
+ */
+export function peekStoredSessionId(): string | undefined {
+  return readStoredSession()?.sessionId;
 }
 
 /** Persist a session to sessionStorage. Fails silently. */
@@ -256,4 +276,155 @@ export async function deriveLeadId(userUuid: string): Promise<string> {
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
     .slice(0, 16);
+}
+
+// ---------------------------------------------------------------------------
+// Intent-state persistence (FOLLOW-176)
+// Persists resolved archetype + full IntentState to sessionStorage so
+// subsequent listing navigations in the same tab rehydrate immediately.
+// ---------------------------------------------------------------------------
+
+/** Current schema version for the persisted intent state envelope. */
+export const INTENT_STATE_SCHEMA_VERSION = 1 as const;
+
+/**
+ * Default staleness window in milliseconds (30 minutes).
+ * State saved more than this many ms ago is treated as expired and ignored.
+ */
+export const INTENT_STATE_STALE_MS = 30 * 60 * 1000;
+
+/**
+ * Envelope written to sessionStorage for each persisted intent state.
+ *
+ * Fields:
+ *   `version`   — incremented whenever the shape of `state` changes, so
+ *                 a rehydration attempt with a mismatched version is rejected.
+ *   `savedAt`   — Unix ms timestamp of the write; used for the staleness guard.
+ *   `state`     — The full IntentState object serialised as-is.
+ *
+ * This type intentionally avoids importing IntentState from intent.ts to keep
+ * session.ts free of circular dependencies. The caller (index.ts) is responsible
+ * for passing a correctly-shaped IntentState.
+ */
+export interface PersistedIntentEnvelope {
+  version: typeof INTENT_STATE_SCHEMA_VERSION;
+  savedAt: number;
+  state: unknown;
+}
+
+/**
+ * Build the sessionStorage key for the persisted intent state of a session.
+ *
+ * The key is scoped to the sessionId so multiple concurrent tabs (each with
+ * their own session) cannot collide.
+ *
+ * @internal exported for testing only
+ */
+export function intentStateStorageKey(sessionId: string): string {
+  return `estalara_intent_${sessionId}`;
+}
+
+/**
+ * Persist `intentState` for `sessionId` to sessionStorage.
+ *
+ * Consent gate: callers MUST check consent before calling this function.
+ * The function itself does not re-read consent so that the gate lives in one
+ * place (index.ts) and is not silently skipped.
+ *
+ * Fails silently — sessionStorage unavailable or quota exceeded must never
+ * throw to the host page.
+ *
+ * @param sessionId   - The current session's identifier (used as key suffix).
+ * @param intentState - The full IntentState object to persist.
+ */
+export function persistIntentState(sessionId: string, intentState: unknown): void {
+  const envelope: PersistedIntentEnvelope = {
+    version: INTENT_STATE_SCHEMA_VERSION,
+    savedAt: Date.now(),
+    state: intentState,
+  };
+  try {
+    sessionStorage.setItem(intentStateStorageKey(sessionId), JSON.stringify(envelope));
+  } catch {
+    // sessionStorage unavailable or quota exceeded — continue in-memory only
+  }
+}
+
+/**
+ * Attempt to rehydrate a previously persisted IntentState.
+ *
+ * Returns `null` (and leaves sessionStorage untouched) when:
+ *   - No entry exists for `sessionId`
+ *   - The stored envelope fails to parse
+ *   - `envelope.version` !== INTENT_STATE_SCHEMA_VERSION (schema change)
+ *   - `envelope.savedAt` is older than `staleMsThreshold` (default 30 min)
+ *   - The envelope's `state` field is missing or not an object
+ *
+ * On any stale/mismatched entry the key is proactively removed so the next
+ * `persistIntentState` call always writes a fresh envelope.
+ *
+ * Consent gate: callers MUST check consent before calling this function.
+ *
+ * @param sessionId        - The current session's identifier.
+ * @param staleMsThreshold - Maximum age in ms before an entry is considered stale.
+ *                           Defaults to INTENT_STATE_STALE_MS (30 min).
+ */
+export function rehydrateIntentState(
+  sessionId: string,
+  staleMsThreshold: number = INTENT_STATE_STALE_MS,
+): unknown {
+  const key = intentStateStorageKey(sessionId);
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+
+    const envelope = JSON.parse(raw) as Partial<PersistedIntentEnvelope>;
+
+    // Version guard — reject if schema version has changed.
+    if (envelope.version !== INTENT_STATE_SCHEMA_VERSION) {
+      sessionStorage.removeItem(key);
+      return null;
+    }
+
+    // Staleness guard — reject if saved more than staleMsThreshold ms ago.
+    if (typeof envelope.savedAt !== 'number' || Date.now() - envelope.savedAt > staleMsThreshold) {
+      sessionStorage.removeItem(key);
+      return null;
+    }
+
+    // Shape guard — state must be a non-null object.
+    if (!envelope.state || typeof envelope.state !== 'object') {
+      sessionStorage.removeItem(key);
+      return null;
+    }
+
+    return envelope.state;
+  } catch {
+    // JSON parse failure or sessionStorage unavailable
+    return null;
+  }
+}
+
+/**
+ * Erase the persisted intent state for `sessionId` from sessionStorage.
+ *
+ * Called on consent denial or withdrawal so no archetype data outlives consent
+ * (FOLLOW-176 AC3 / Mode A compliance).
+ *
+ * Also called without a sessionId when the session has not yet been established
+ * (e.g. early consent denial before `getOrCreateSession()` runs). In that case
+ * the function is a no-op because there is nothing to erase.
+ *
+ * Fails silently — storage unavailability must never propagate to the host page.
+ *
+ * @param sessionId - The session ID whose intent state should be erased.
+ *                    Pass `undefined` to skip (pre-session denial path).
+ */
+export function eraseIntentState(sessionId: string | undefined): void {
+  if (!sessionId) return;
+  try {
+    sessionStorage.removeItem(intentStateStorageKey(sessionId));
+  } catch {
+    // sessionStorage unavailable — nothing to erase
+  }
 }

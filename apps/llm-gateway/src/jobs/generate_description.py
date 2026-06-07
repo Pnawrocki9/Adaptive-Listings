@@ -87,12 +87,31 @@ import re
 import time
 from datetime import UTC, datetime
 from math import ceil
+from pathlib import Path
 from typing import Any
 
 import httpx
 import modal
 
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# REQUIRED_FIELDS — single source of truth for description.requested required keys.
+#
+# Loaded from the shared JSON fixture at module import time so that both the
+# TypeScript publisher test and this Python consumer test assert against the same
+# artifact (packages/shared/contracts/description-event.required.json).
+#
+# Cross-language contract gate: FOLLOW-198 / FOLLOW-168.
+# If the fixture diverges from either runtime, CI fails — see:
+#   packages/shared/src/__tests__/cross-runtime/description-event-contract.test.ts
+#   apps/llm-gateway/src/jobs/test_description_event_contract.py
+# ---------------------------------------------------------------------------
+
+_CONTRACT_FIXTURE = (
+    Path(__file__).parent / "../../../../packages/shared/contracts/description-event.required.json"
+)
+REQUIRED_FIELDS: frozenset[str] = frozenset(json.loads(_CONTRACT_FIXTURE.read_text()))
 
 # ---------------------------------------------------------------------------
 # Archetype-specific copywriting guidance injected into the Sonnet prompt.
@@ -1179,12 +1198,7 @@ def _generate_headline(
             return None
 
         # Take only the first line, strip surrounding quotes, cap at 120 chars.
-        headline = (
-            raw.strip()
-            .split("\n")[0]
-            .strip('"\'')
-            .strip()[:120]
-        )
+        headline = raw.strip().split("\n")[0].strip("\"'").strip()[:120]
         return headline if headline else None
 
     except Exception as exc:  # noqa: BLE001
@@ -1346,14 +1360,10 @@ def consume_description_requests() -> None:
             # v1.7.1: original_description is required (may be "" but the key must
             # be present) so Sonnet can apply the WHITELIST rules with a known
             # factual source.
-            required = {
-                "tenant_id",
-                "listing_id",
-                "archetype",
-                "cache_key",
-                "original_description",
-            }
-            missing = required - set(event.keys())
+            # v1.9.1 (FOLLOW-198): REQUIRED_FIELDS is now derived from the shared
+            # JSON fixture at module load time — not hardcoded here. See REQUIRED_FIELDS
+            # above. Both the TS publisher test and this module read the same artifact.
+            missing = REQUIRED_FIELDS - set(event.keys())
             if missing:
                 log.warning(
                     "consume_description_requests.missing_fields fields=%s offset=%s",

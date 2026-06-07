@@ -383,6 +383,57 @@ jobs:
       - name: Check mirror-file byte identity
         run: bash scripts/check-mirror-files.sh
 
+  # ── Cross-language event contract gate (FOLLOW-198 / FOLLOW-168) ───────────
+  # Asserts that the TypeScript DescriptionRequestedEventSchema required-field set
+  # and the Python consumer's REQUIRED_FIELDS both match the single source of truth:
+  #   packages/shared/contracts/description-event.required.json
+  #
+  # This is a HARD gate — no continue-on-error. Drift on either side fails the merge.
+  # The existing test-python matrix is NOT used here because it has continue-on-error
+  # on individual pytest runs. This dedicated job is always blocking.
+  cross-language-contract:
+    name: Cross-language event contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Python side — validate that generate_description.REQUIRED_FIELDS == fixture
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install llm-gateway Python deps
+        working-directory: apps/llm-gateway
+        run: pip install -e ".[dev]"
+
+      - name: Python contract test — REQUIRED_FIELDS matches shared fixture
+        working-directory: apps/llm-gateway
+        run: |
+          python -m pytest src/jobs/test_description_event_contract.py -v \
+            --tb=short \
+            --no-header
+
+      # TypeScript side — validate that DescriptionRequestedEventSchema ⊇ fixture
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package (required for schema imports)
+        run: pnpm --filter @estalara/shared build
+
+      - name: TypeScript contract test — DescriptionRequestedEventSchema ⊇ fixture
+        run: |
+          pnpm --filter @estalara/shared exec vitest run \
+            src/__tests__/cross-runtime/description-event-contract.test.ts \
+            --reporter=verbose
+
   # ── Migration journal monotonicity + recency check (FOLLOW-149) ─────────
   # Enforces _journal.json invariants:
   #   1. Every entry's `when` is strictly > previous entry's `when` (drizzle

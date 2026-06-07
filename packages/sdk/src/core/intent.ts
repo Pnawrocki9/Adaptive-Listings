@@ -256,6 +256,50 @@ const SIGNAL_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
   // Payload-conditional boosts (bedroomCount, listingType) are applied additively in
   // applyBehavioralSignal() — they cannot be encoded in a static likelihood table.
   'listing.bookmarked': makeLikelihood({ neutral: 0.7 }),
+  // device_type.desktop — desktop browsing over-indexes for investor archetypes (FOLLOW-207).
+  // Investors typically browse alongside spreadsheets on a wide screen.
+  'device_type.desktop': makeLikelihood({
+    portfolio_builder: 1.2,
+    yield_hunter: 1.2,
+    flip_investor: 1.2,
+    commercial_investor: 1.2,
+    family_buyer: 0.95,
+    first_time_buyer: 0.95,
+    upsizer: 0.95,
+    downsizer: 0.95,
+    luxury_buyer: 0.95,
+    remote_worker: 0.95,
+    lifestyle_expat: 0.95,
+    retiree_relocator: 0.95,
+    diaspora_buyer: 0.95,
+    second_home_buyer: 0.95,
+    student_parent: 0.95,
+    neutral: 0.95,
+    vacation_rental_investor: 0.95,
+    golden_visa_buyer: 0.95,
+  }),
+  // device_type.mobile — mobile browsing over-indexes for own-use archetypes (FOLLOW-207).
+  // Own-use buyers "sofa scroll" on mobile while envisioning day-to-day living.
+  'device_type.mobile': makeLikelihood({
+    family_buyer: 1.2,
+    first_time_buyer: 1.2,
+    upsizer: 1.2,
+    downsizer: 1.2,
+    portfolio_builder: 0.95,
+    yield_hunter: 0.95,
+    flip_investor: 0.95,
+    commercial_investor: 0.95,
+    luxury_buyer: 0.95,
+    remote_worker: 0.95,
+    lifestyle_expat: 0.95,
+    retiree_relocator: 0.95,
+    diaspora_buyer: 0.95,
+    second_home_buyer: 0.95,
+    student_parent: 0.95,
+    neutral: 0.95,
+    vacation_rental_investor: 0.95,
+    golden_visa_buyer: 0.95,
+  }),
 };
 
 /** How much to dampen behavioral likelihoods relative to quiz likelihoods. */
@@ -683,6 +727,78 @@ export function calculateBehavioralOnlyState(
     state = applyBehavioralSignal(state, signal.eventType, signal.payload);
   }
   return state;
+}
+
+// ─── Referrer hint priors (FOLLOW-207) ───────────────────────────────────────
+
+/**
+ * Investment-intent keywords matched against the full referrer URL and UTM term.
+ * A match boosts investor archetypes by weak additive priors.
+ */
+const INVESTMENT_KEYWORDS = ['investment', 'rental', 'yield', 'inwestycja', 'wynajem'] as const;
+
+/**
+ * Own-use-intent keywords matched against the full referrer URL and UTM term.
+ * A match boosts own-use archetypes by weak additive priors.
+ */
+const OWN_USE_KEYWORDS = ['family', 'apartment', 'mieszkanie', 'dom'] as const;
+
+/**
+ * Apply referrer URL + UTM term as cold-session intent priors (FOLLOW-207).
+ *
+ * Rules:
+ *   - Investment keywords in `referrer` OR `utmTerm` → portfolio_builder +0.05,
+ *     yield_hunter +0.04, commercial_investor +0.03
+ *   - Own-use keywords in `referrer` OR `utmTerm` → family_buyer +0.05,
+ *     first_time_buyer +0.03
+ *   - No matching keywords → return `state` unchanged (same reference)
+ *   - When both groups match, both sets of boosts are applied simultaneously
+ *   - Result is always renormalized so probabilities sum to 1.0
+ *
+ * This is a pure function — the input `state` is never mutated.
+ * `signal_count` and `quiz_answered` are preserved unchanged.
+ *
+ * @param state  - Current intent state (typically the result of `initIntentState()`).
+ * @param referrer - `document.referrer` value (may be empty string).
+ * @param utmTerm  - Value of the `utm_term` query parameter (may be empty string).
+ */
+export function applyReferrerHints(
+  state: IntentState,
+  referrer: string,
+  utmTerm: string,
+): IntentState {
+  const haystack = `${referrer} ${utmTerm}`.toLowerCase();
+
+  const hasInvestment = INVESTMENT_KEYWORDS.some((kw) => haystack.includes(kw));
+  const hasOwnUse = OWN_USE_KEYWORDS.some((kw) => haystack.includes(kw));
+
+  // No matching keywords — return state unchanged (no-op, same reference).
+  if (!hasInvestment && !hasOwnUse) return state;
+
+  const boosted = { ...state.probabilities };
+
+  if (hasInvestment) {
+    boosted.portfolio_builder += 0.05;
+    boosted.yield_hunter += 0.04;
+    boosted.commercial_investor += 0.03;
+  }
+
+  if (hasOwnUse) {
+    boosted.family_buyer += 0.05;
+    boosted.first_time_buyer += 0.03;
+  }
+
+  const probabilities = normalize(boosted);
+  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+
+  return {
+    archetype,
+    confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
+    probabilities,
+    signal_count: state.signal_count,
+    last_updated_at: Date.now(),
+    quiz_answered: state.quiz_answered,
+  };
 }
 
 // ─── Archetype hint priors (TICKET-AUTO-007) ─────────────────────────────────

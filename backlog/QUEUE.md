@@ -3096,7 +3096,7 @@ Key tracks:
   source: MASTER_DESIGN §T
   spec: backlog/sprint-14/FOLLOW-173.md
   branch: data-engineer/FOLLOW-173-conversion-label-aggregation
-  pr: pending
+  pr: 216
   notes: |
     GET /api/pilot/calibration: query-time join (ClickHouse decisions + Postgres labels).
     Confidence decile bucketing → reliability curve per model_version (AC2).

@@ -355,8 +355,8 @@ function logDecisionAsync(
   const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
   const ts = new Date().toISOString().replace('T', ' ').replace('Z', '');
 
-  // Escape single quotes in string values to prevent injection
-  const escape = (s: string) => s.replace(/'/g, "\\'");
+  // Escape single quotes in string values to prevent injection (ANSI SQL '' doubling, per FOLLOW-206)
+  const escape = (s: string) => s.replace(/'/g, "''");
 
   // Conversion Label Loop (FOLLOW-170, §T): PII-free snapshot of the scorer inputs/outputs
   // the server saw at decision time, so a stored label can later be replayed against a future

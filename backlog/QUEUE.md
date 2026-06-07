@@ -3190,12 +3190,12 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-202
   title: Navigator.language browser detection for quiz
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
+  completed_at: '2026-06-07T00:00:00Z'
+  pr: '#209'
   assigned_to: sdk-engineer
   started_at: '2026-06-07T20:00:00Z'
-  completed_at: '2026-06-07T20:30:00Z'
   branch: sdk-engineer/FOLLOW-202-navigator-language-detection
-  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/209'
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -3257,12 +3257,12 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-205
   title: F-19 — Demo auth hardening
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
+  completed_at: '2026-06-07T00:00:00Z'
+  pr: '#210'
   assigned_to: backend-engineer
   started_at: '2026-06-07T20:00:00Z'
-  completed_at: '2026-06-07T20:30:00Z'
   branch: backend-engineer/FOLLOW-205-demo-auth-hardening
-  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/210
   priority: P2
   estimated_hours: 3
   depends_on: []
@@ -3278,16 +3278,19 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-206
   title: F-05/F-21 — SQL escaping unification
   agent: backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-06-07T22:00:00Z'
   priority: P3
   estimated_hours: 2
   depends_on: []
   source: Audit F-05, F-21
   spec: backlog/sprint-15/FOLLOW-206.md
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/214
   notes: |
-    Two escaping strategies: route.ts:348 uses \\' (backslash), clickhouse-dsr.ts:99
-    uses '' (ANSI SQL correct). Standardize all ClickHouse raw SQL on '' doubling.
-    Grep confirms no \\' pattern remains after fix.
+    Two escaping strategies unified: route.ts:359 and llm-gateway.ts:167 both
+    updated from \\' (backslash) to '' (ANSI SQL doubling), consistent with
+    clickhouse-dsr.ts:99. Grep confirms no \\' pattern remains after fix. CI green.
 
 # ── Track E: Signal enrichment (Week 2–3) ──
 # Low-effort, high-ROI signal enrichments from 2026-06-05 audit gap analysis.
@@ -3335,7 +3338,9 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-209
   title: Micro-polls — single yes/no intent prompts as quiz supplement
   agent: sdk-engineer + backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: sdk-engineer (wave 1 — micro-poll UI + intent signal), backend-engineer (wave 2 — DB field + admin UI)
+  started_at: '2026-06-07T22:00:00Z'
   priority: P2
   estimated_hours: 6
   depends_on: [FOLLOW-199]

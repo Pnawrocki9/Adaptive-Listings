@@ -164,7 +164,8 @@ function logLlmCallAsync(params: {
 
   const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
   const ts = new Date().toISOString().replace('T', ' ').replace('Z', '');
-  const escape = (s: string) => s.replace(/'/g, "\\'");
+  // ANSI SQL '' doubling — consistent with clickhouse-dsr.ts (FOLLOW-206)
+  const escape = (s: string) => s.replace(/'/g, "''");
 
   const query =
     `INSERT INTO llm_calls ` +

@@ -1,6 +1,6 @@
 # Backlog Queue
 
-**Updated 2026-05-28 by pm-orchestrator.** **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra
+**Updated 2026-06-07 by pm-orchestrator.** **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra
 hardening) READY_FOR_REVIEW at PR #166 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).**
 Triggered by a 2026-05-28 diagnostic that proved the previous "Migration 0015: prd ✅ applied"
 bookkeeping was false — drizzle-kit silently generated 2025 timestamps for entries 15/16 (1-year
@@ -131,7 +131,7 @@ updates.
 | 13a-h2 | 15    | Pre-pilot hardening v2 — §13.2 localStorage xid erasure (FOLLOW-139), pilot inquiry selector seed (FOLLOW-141)                      | 2       | 2    | 0       | 0     | 0       |
 | 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                         | 6       | 0    | 0       | 3     | 3       |
 | Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)      | 4       | 4    | 0       | 0     | 0       |
-| 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 0    | 0       | 21    | 0       |
+| 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 8    | 0       | 13    | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -2977,7 +2977,7 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-191
   title: Verify + deploy Estalara-app DOM hooks
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: sdk-engineer
   started_at: '2026-06-06T00:00:00Z'
   completed_at: '2026-06-06T13:30:00Z'
@@ -3014,7 +3014,7 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-193
   title: FIX-028 — restore DSR cron + engagement_scores erasure
   agent: backend-engineer + compliance-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 6
   completed_at: 2026-06-06
@@ -3032,7 +3032,7 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-194
   title: SDK quick fixes batch (F-01/F-08/F-13/F-15/F-16)
   agent: sdk-engineer + backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 5
   depends_on: []
@@ -3074,7 +3074,7 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-196
   title: CHAT-001/002 — CustomEvent hooks in Estalara-app
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 4
   depends_on: [FOLLOW-195]
@@ -3095,7 +3095,7 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-197
   title: CHAT-003 — SDK listeners for chat/live events
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: sdk-engineer
   started_at: '2026-06-07T00:00:00Z'
   completed_at: '2026-06-07T00:00:00Z'
@@ -3106,10 +3106,10 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
   source: Audit F-04, CHAT-003
   spec: backlog/sprint-15/FOLLOW-197.md
   notes: |
-    PR #202 opened 2026-06-07. deriveLeadId (SHA-256 prefix, Rule L), estalara:chat:message-sent
-    and live.signup listeners in index.ts, lead_id in fetchDirectives POST body.
-    16 unit tests AC1-AC7. 728 tests green, 0 TS errors, 0 lint errors. CI green.
-    Branch: sdk-engineer/FOLLOW-197-chat003-sdk-listeners
+    PR #202 merged 2026-06-07 (squash, a2ca89d). deriveLeadId (SHA-256 prefix, Rule L),
+    estalara:chat:message-sent and live.signup listeners in index.ts, lead_id in
+    fetchDirectives POST body. 16 unit tests AC1-AC7. 728 tests green, 0 TS errors,
+    0 lint errors. CI green. Retrospective: spawn retrospective-analyst on PR #202.
 
 - id: FOLLOW-198
   title: Cross-language event contract parity gate (FOLLOW-168 completion)
@@ -3128,7 +3128,11 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-199
   title: Quiz widget v2.0 — cascading decision tree
   agent: sdk-engineer
-  status: READY
+  status: DONE
+  assigned_to: sdk-engineer
+  started_at: '2026-06-07T00:00:00Z'
+  completed_at: '2026-06-07T00:00:00Z'
+  pr: '#203'
   priority: P1
   estimated_hours: 12
   depends_on: []
@@ -3139,7 +3143,7 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
     Full rewrite quiz-widget.ts: Q1 gate → 3 branches (INWESTOR/WŁASNY_UŻYTEK/CROSS-BORDER),
     2-3 questions, 17 non-neutral leaf archetypes. Trigger: 30s setTimeout on any page (not
     3 listing views). Update quiz-trigger.ts + add 'es' to QuizConfig.language schema.
-    Rewrite all tests. 12h estimated.
+    Rewrite all tests. 12h estimated. Delegated 2026-06-07 by pm-orchestrator.
 
 - id: FOLLOW-200
   title: quiz_completions MOAT table + completion endpoint

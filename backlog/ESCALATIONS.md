@@ -881,7 +881,7 @@ CLOSED.
 
 ---
 
-## OPEN — Estalara-app DOM hooks committed but not deployed to production [FOLLOW-191]
+## OPEN — ESC-020: Estalara-app DOM hooks committed but not deployed to production [FOLLOW-191]
 
 **Filed by:** sdk-engineer **Date:** 2026-06-06T13:30:00Z **Affects:** FOLLOW-191, FOLLOW-197,
 Sprint 15 Track A **Type:** deployment

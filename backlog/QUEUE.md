@@ -3335,17 +3335,21 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-209
   title: Micro-polls — single yes/no intent prompts as quiz supplement
   agent: sdk-engineer + backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/215'
   priority: P2
   estimated_hours: 6
   depends_on: [FOLLOW-199]
   source: Audit §3 alternative methods analysis (2026-06-05)
   spec: backlog/sprint-15/FOLLOW-209.md
   notes: |
+    Wave 1 (SDK) complete. PR #215. All real CI gates green (Typecheck, Test Node 22,
+    Rule H, Rule J, Lint, Format — Python pre-existing-red non-blocking).
     New micro-poll.ts: bottom-of-screen toast (not full overlay), 24h localStorage cooldown.
     3 default Polish questions (tenant-configurable). Trigger: quiz dismissed OR 90s elapsed
     AND quiz not completed. New QuizConfig field micro_polls_enabled (default false).
-    Admin toggle at /dashboard/quiz. micro_poll.answered added to SIGNAL_LIKELIHOODS.
+    micro_poll.answered added to SIGNAL_LIKELIHOODS with conditional boosts.
+    Wave 2 (backend-engineer): dashboard toggle at /dashboard/quiz — not yet started.
 
 - id: FOLLOW-210
   title: Favorites/bookmark capture — app.estalara.com save-listing event

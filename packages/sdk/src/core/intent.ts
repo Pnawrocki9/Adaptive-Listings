@@ -252,6 +252,10 @@ const SIGNAL_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
   }),
   // quiz.event is a no-op at the behavioral layer — quiz prior path is the strong update
   'quiz.event': makeLikelihood({}),
+  // listing.bookmarked — saving a listing = high intent; strongly pushes away from neutral.
+  // Payload-conditional boosts (bedroomCount, listingType) are applied additively in
+  // applyBehavioralSignal() — they cannot be encoded in a static likelihood table.
+  'listing.bookmarked': makeLikelihood({ neutral: 0.7 }),
 };
 
 /** How much to dampen behavioral likelihoods relative to quiz likelihoods. */
@@ -452,6 +456,47 @@ export function applyBehavioralSignal(
   eventType: string,
   payload?: Record<string, unknown>,
 ): IntentState {
+  // Intercept listing.bookmarked before the static SIGNAL_LIKELIHOODS lookup.
+  // The static table handles the neutral→0.70 push; here we apply payload-conditional additive
+  // boosts on top of the multiplicative update (FOLLOW-210 spec step 3).
+  if (eventType === 'listing.bookmarked') {
+    const rawLikelihoodBookmarked = SIGNAL_LIKELIHOODS['listing.bookmarked'];
+    // rawLikelihoodBookmarked is always defined (key exists in SIGNAL_LIKELIHOODS above)
+    if (!rawLikelihoodBookmarked) return state;
+
+    const dampedLikelihoodBookmarked = Object.fromEntries(
+      ARCHETYPE_NAMES.map((k) => [k, 1 + (rawLikelihoodBookmarked[k] - 1) * BEHAVIORAL_DAMPING]),
+    ) as ArchetypeProbabilities;
+
+    // Step 1: apply the static multiplicative likelihood (neutral push)
+    let probabilities = applyLikelihood(state.probabilities, dampedLikelihoodBookmarked);
+
+    // Step 2: apply payload-conditional additive boosts
+    const bedroomCount =
+      typeof payload?.bedroomCount === 'number' ? payload.bedroomCount : undefined;
+    const listingType = typeof payload?.listingType === 'string' ? payload.listingType : undefined;
+
+    const boosted = { ...probabilities };
+    if (bedroomCount !== undefined && bedroomCount >= 3) {
+      boosted.family_buyer += 0.15;
+      boosted.upsizer += 0.1;
+    }
+    if (listingType === 'commercial') {
+      boosted.commercial_investor += 0.2;
+    }
+    probabilities = normalize(boosted);
+
+    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+    return {
+      archetype,
+      confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
+      probabilities,
+      signal_count: state.signal_count + 1,
+      last_updated_at: Date.now(),
+      quiz_answered: state.quiz_answered,
+    };
+  }
+
   // Intercept filter.applied before the static SIGNAL_LIKELIHOODS lookup.
   if (eventType === 'filter.applied') {
     const facet = typeof payload?.facet === 'string' ? payload.facet : '';

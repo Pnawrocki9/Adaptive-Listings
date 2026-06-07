@@ -43,10 +43,16 @@ export type ListingComparedEvent = z.infer<typeof ListingComparedEventSchema>;
 /**
  * `listing.bookmarked` — listing saved to favorites / shortlist.
  *
- * @example { type: 'listing.bookmarked', payload: { collection: 'shortlist' } }
+ * Extended by FOLLOW-210: listingType, priceRange, bedroomCount added from the
+ * `estalara:listing:favorited` CustomEvent dispatched by app.estalara.com.
+ *
+ * @example { type: 'listing.bookmarked', payload: { collection: 'shortlist', listingType: 'residential', bedroomCount: 4 } }
  */
 export const ListingBookmarkedPayloadSchema = z.object({
   collection: z.string().optional(),
+  listingType: z.string().optional(),
+  priceRange: z.string().optional(),
+  bedroomCount: z.number().optional(),
 });
 export const ListingBookmarkedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('listing.bookmarked'),

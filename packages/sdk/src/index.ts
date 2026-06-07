@@ -675,6 +675,76 @@ async function init(): Promise<void> {
       })();
     });
 
+    // FOLLOW-210: Favorites/bookmark signal bridge.
+    // Listens for estalara:listing:favorited / estalara:listing:unfavorited CustomEvents
+    // dispatched by app.estalara.com (window) on successful save/unsave.
+    //
+    // On favorited: (a) queue listing.bookmarked ingest event, (b) apply listing.bookmarked
+    // behavioral signal (with payload-conditional boosts handled inside applyBehavioralSignal).
+    // On unfavorited: log only — no intent signal (removal is ambiguous).
+
+    window.addEventListener('estalara:listing:favorited', (e: Event) => {
+      const ce = e as CustomEvent<Record<string, unknown>>;
+      const detail = ce.detail;
+
+      const listingId = typeof detail.listingId === 'string' ? detail.listingId : undefined;
+      const listingType = typeof detail.listingType === 'string' ? detail.listingType : undefined;
+      const priceRange = typeof detail.priceRange === 'string' ? detail.priceRange : undefined;
+      const bedroomCount =
+        typeof detail.bedroomCount === 'number' ? detail.bedroomCount : undefined;
+
+      // (a) Queue listing.bookmarked ingest event
+      eventQueue.push({
+        type: 'listing.bookmarked',
+        payload: {
+          ...(listingId !== undefined ? { listing_id: listingId } : {}),
+          ...(listingType !== undefined ? { listingType } : {}),
+          ...(priceRange !== undefined ? { priceRange } : {}),
+          ...(bedroomCount !== undefined ? { bedroomCount } : {}),
+        },
+        ts: Date.now(),
+      });
+
+      // (b) Apply behavioral signal with payload-conditional boosts
+      const payload: Record<string, unknown> = {};
+      if (listingType !== undefined) payload.listingType = listingType;
+      if (bedroomCount !== undefined) payload.bedroomCount = bedroomCount;
+
+      const prevSignalCount = currentIntentState.signal_count;
+      currentIntentState = applyBehavioralSignal(currentIntentState, 'listing.bookmarked', payload);
+      signalHistory.push({ eventType: 'listing.bookmarked', payload });
+      onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+
+      // Re-fetch directives if this crosses a REFETCH interval
+      if (
+        currentIntentState.signal_count > prevSignalCount &&
+        currentIntentState.signal_count % REFETCH_SIGNAL_INTERVAL === 0
+      ) {
+        void refreshDirectives();
+      }
+
+      if (config.debug) {
+        console.log('[Estalara] listing.bookmarked received', {
+          listingId,
+          listingType,
+          bedroomCount,
+          archetype: currentIntentState.archetype,
+          confidence: currentIntentState.confidence,
+        });
+      }
+    });
+
+    window.addEventListener('estalara:listing:unfavorited', (e: Event) => {
+      const ce = e as CustomEvent<Record<string, unknown>>;
+      const listingId = typeof ce.detail.listingId === 'string' ? ce.detail.listingId : undefined;
+
+      // No intent signal — removal is ambiguous (user may have already found their match).
+      // Log only for observability.
+      if (config.debug) {
+        console.log('[Estalara] listing.unfavorited received', { listingId });
+      }
+    });
+
     // 7. Flush events on interval and page unload
     async function flush(): Promise<void> {
       if (eventQueue.length === 0) return;

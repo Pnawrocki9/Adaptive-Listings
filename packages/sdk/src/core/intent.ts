@@ -887,3 +887,72 @@ export function applyArchetypeHints(
     quiz_answered: state.quiz_answered,
   };
 }
+
+// ─── Listing-view rate signal (FOLLOW-208) ────────────────────────────────────
+
+/**
+ * Apply listing-view rate as a portfolio_builder / flip_investor behavioral discriminator.
+ *
+ * Rate is computed as `viewCount / (elapsedMs / 60_000)` (views per minute).
+ *
+ * Boost rules:
+ *   - rate ≥ 3 views/min AND viewCount ≥ 2 → portfolio_builder +0.12, flip_investor +0.08,
+ *     neutral −0.10 (floored at 0 before renormalization)
+ *   - rate ≤ 0.5 views/min AND viewCount ≥ 2 → family_buyer +0.06, first_time_buyer +0.06,
+ *     upsizer +0.04
+ *   - viewCount < 2 → return `state` unchanged (no-op — first view is baseline)
+ *   - elapsedMs ≤ 0 → return `state` unchanged (guard against division by zero)
+ *   - Otherwise (0.5 < rate < 3) → return `state` unchanged
+ *
+ * The result is always renormalized so probabilities sum to 1.0.
+ * This is a pure function — the input `state` is never mutated.
+ * `signal_count` and `quiz_answered` are preserved.
+ *
+ * @param state     - Current intent state.
+ * @param viewCount - Total listing views recorded this session.
+ * @param elapsedMs - Milliseconds elapsed since session start (must be > 0).
+ */
+export function applyListingViewRate(
+  state: IntentState,
+  viewCount: number,
+  elapsedMs: number,
+): IntentState {
+  // Guard: first view is baseline — need at least two views for a meaningful rate.
+  if (viewCount < 2) return state;
+  // Guard: avoid division by zero / negative elapsed time.
+  if (elapsedMs <= 0) return state;
+
+  const rate = viewCount / (elapsedMs / 60_000);
+
+  let rateBoost: ArchetypeProbabilities | null = null;
+
+  if (rate >= 3) {
+    // High-velocity browsing: investor/comparison-shopper signal.
+    rateBoost = { ...state.probabilities };
+    rateBoost.portfolio_builder += 0.12;
+    rateBoost.flip_investor += 0.08;
+    // Floor neutral at 0 before normalize handles renormalization.
+    rateBoost.neutral = Math.max(0, rateBoost.neutral - 0.1);
+  } else if (rate <= 0.5) {
+    // Slow, deliberate browsing: own-use buyer signal.
+    rateBoost = { ...state.probabilities };
+    rateBoost.family_buyer += 0.06;
+    rateBoost.first_time_buyer += 0.06;
+    rateBoost.upsizer += 0.04;
+  }
+
+  // No matching bracket → return state unchanged (same reference).
+  if (!rateBoost) return state;
+
+  const probabilities = normalize(rateBoost);
+  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+
+  return {
+    archetype,
+    confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
+    probabilities,
+    signal_count: state.signal_count,
+    last_updated_at: Date.now(),
+    quiz_answered: state.quiz_answered,
+  };
+}

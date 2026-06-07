@@ -3321,18 +3321,25 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-210
   title: Favorites/bookmark capture — app.estalara.com save-listing event
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  started_at: '2026-06-07T15:00:00Z'
+  completed_at: '2026-06-07T18:55:00Z'
   priority: P1
   estimated_hours: 5
   depends_on: []
   source: Audit §3 (2026-06-05) — favorites = highest-value deterministic intent signal
   spec: backlog/sprint-15/FOLLOW-210.md
+  branch: sdk-engineer/FOLLOW-210-favorites-capture
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/208
   notes: |
-    Part 1 (Estalara-app repo): dispatch estalara:listing:favorited CustomEvent on save
-    (listingId, listingType, priceRange, bedroomCount). Part 2 (this repo): SDK listener
-    in index.ts → listing.bookmarked ingest event + applyBehavioralSignal. Payload-conditional
-    boosts: bedroomCount≥3 → family_buyer/upsizer; listingType=commercial → commercial_investor.
-    PM must run step 5d integration check before READY_FOR_REVIEW.
+    Part 1 (Estalara-app repo): estalara:listing:favorited CustomEvent dispatched from
+    ListingCard.svelte and listing detail +page.svelte on successful save/unsave.
+    Part 2 (this repo): SDK listener in index.ts → listing.bookmarked ingest event +
+    applyBehavioralSignal. Payload-conditional boosts: bedroomCount≥3 →
+    family_buyer/upsizer; listingType=commercial → commercial_investor.
+    Real CI gates all green: Typecheck, Test Node 22, Rule H, Rule J, Lint, Format.
+    Python tests pre-existing-red (non-blocking per ci_gate_landscape memory).
 
 - id: FOLLOW-211
   title: filter.applied full facet payload schema (prerequisite for FOLLOW-099)

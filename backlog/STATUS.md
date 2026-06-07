@@ -1,78 +1,50 @@
-# Status — 2026-05-17T00:00Z
+# Status — 2026-06-07T00:00Z
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
-## Active
+## Active sprint: Sprint 15
 
-(none — all sprints through 9 complete)
+Track A: 2/4 DONE (FOLLOW-192, FOLLOW-193), 1 READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal deploy), 1
+DONE (FOLLOW-194) Track B: 2/8 DONE (FOLLOW-195, FOLLOW-196), 1 IN_PROGRESS (FOLLOW-197), 5 READY
+(FOLLOW-198–202) Track C: 0/2 DONE, both READY (FOLLOW-203, FOLLOW-204) Track D: 0/2 DONE, both
+READY (FOLLOW-205, FOLLOW-206) Track E: 0/5 DONE, all READY (FOLLOW-207–211)
 
-## Ready (next up)
+## Currently IN_PROGRESS (1 of 3 max)
 
-- TICKET-038 (sdk-engineer) — SDK tsup build + bundle size gate
-- TICKET-030 (backend-engineer) — Magic Link onboarding wizard UI (Sprint 2.5 unblocked)
+- FOLLOW-197 (CHAT-003 — SDK listeners for chat/live events) — sdk-engineer Branch:
+  sdk-engineer/FOLLOW-197-chat003-sdk-listeners CI-check counter: 0/5 | Fix-iteration counter: 0/3
 
-## Ready for human review
+## Open escalations
 
-(none)
+| ID      | Age | Description                                                          | Blocking?                                  |
+| ------- | --- | -------------------------------------------------------------------- | ------------------------------------------ |
+| ESC-009 | 14d | E2E_BEARER_TOKEN secret not provisioned                              | demo-integration CI soft-skips only        |
+| ESC-010 | 14d | DOPPLER_TOKEN_DEV not provisioned                                    | doppler-verify CI soft-skips only          |
+| ESC-020 | 1d  | Rafal must deploy web-master HEAD + PUBLIC_ESTALARA_SDK_ENABLED=true | FOLLOW-197 E2E only; code wiring unblocked |
 
-## Blocked / Deferred
+## PRs merged today (2026-06-06/07)
 
-- TICKET-NATIVE-001 — deferred to MVP launch; requires CTO/CPO scheduling on SvelteKit side
-- TICKET-CAUSAL-001 — P2; must not start until AB-001 has 2+ weeks of real holdout data
-- TICKET-039, TICKET-040, TICKET-042, TICKET-043, TICKET-044, TICKET-045 — Sprint 3 blocked chain
+- #197 FOLLOW-191 audit (READY_FOR_REVIEW, awaiting Rafal deploy action)
+- #198 FOLLOW-195 LiveSignupEventSchema (DONE)
+- #199 FOLLOW-196 CustomEvent hooks Estalara-app (DONE)
+- #200 FOLLOW-193 DSR cron + engagement_scores erasure (DONE)
+- #201 FOLLOW-194 SDK quick fixes batch (DONE)
 
-## Cancelled
+## FOLLOW-212/213 status
 
-- TICKET-FAIR-001 — not required at this stage; archetype space is purely behavioral (Piotr
-  2026-05-13)
-- TICKET-035 — duplicate scope with TICKET-VAL-001 (Sprint 9); canonical impl there
+Filed by retrospective-analyst (RETRO-033) for the window→document event target bug in live.signup
+feedback loop. Per session context the fix was applied locally in Estalara-app
+(LiveSessions.svelte + ChatBot.svelte) but folded into FOLLOW-196 PR #199. FOLLOW-212/213 stubs
+exist in FOLLOW_UPS.md but have no QUEUE.md entries — not yet promoted to sprint tickets. PM to
+assess at next sprint planning whether promotion is needed or if FOLLOW-196 closure covers them.
 
-## Sprint 7 progress — COMPLETE
+## Sprint 8 Rule I audit (legacy, 2026-05-17)
 
-- 5/5 tickets DONE (ADP-001, ADP-003, ADP-004, ADP-002, DQS-001)
-
-## Sprint 7.5 progress — COMPLETE
-
-- 7/7 tickets DONE (AUTO-001 through AUTO-007)
-- Corpus CI gate: 100% precision / 100% recall on 24-platform corpus
-
-## Sprint 8 progress — Rule I audit (2026-05-17)
-
-QUEUE.md reports 6/6 core tickets DONE. Rule I wiring check finds 4 truly DONE and 2 PARTIAL.
-
-| Ticket      | Queue status | Rule I status | Evidence                                                                                                                                                                                                                                                                 |
-| ----------- | ------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AB-001      | DONE         | **PARTIAL**   | `assignHoldout()` called in both adapt routes (holdout wired). `thompsonSample()` has zero non-test callers — deferred as FOLLOW-007. Variant selection NOT live.                                                                                                        |
-| REORDER-001 | DONE         | **DONE**      | `buildReorderDirective()` called in decision-api adapt route:426 and control-plane adapt route:595. `reorderDirectives` returned in response.                                                                                                                            |
-| TICKET-046  | DONE         | **PARTIAL**   | `getPlaybook()` called at control-plane adapt route:127; `s.en` (variant[0]) consumed. `copy_template.en` consumed in `generate_description.py`. But `s.variants[1/2]` never accessed — bandit selection is FOLLOW-007. Data exists; multi-variant picking is not wired. |
-| ARCH-003    | DONE         | **DONE**      | Retrospective-analyst agent operational; PM invokes after each merge; RETRO entries written since. Process tooling — not an HTTP runtime service.                                                                                                                        |
-| AGENCY-001  | DONE         | **DONE**      | `retrieveListingContext()` called in control-plane POST /api/adapt:575. Dashboard page at `/dashboard/listings/[id]/answers/page.tsx` exists with full CRUD.                                                                                                             |
-| AB-004      | DONE         | **DONE**      | Analytics page fetches `/api/dashboard/analytics/summary` and `/api/dashboard/analytics/lift`. Both routes query real ClickHouse `adaptation_decisions` table (fallback to mock when CLICKHOUSE_URL unset). Table is populated fire-and-forget by both adapt routes.     |
-
-**Sprint 8 Rule I summary: 4/6 DONE, 2/6 PARTIAL**
-
-Open gaps (both tracked as FOLLOW-UP items):
-
-- **FOLLOW-007** — Wire Thompson sampling (`thompsonSample` in `decision-api/src/lib/bandit.ts`)
-  into adapt routes so the bandit selects among variant[0/1/2] per slot instead of always using
-  `s.en`. Prerequisite: real holdout data flowing (AB-001 holdout is live, so data accumulates now).
-- **FOLLOW-007 (TICKET-046 side)** — Same gap: `s.variants[1]` and `s.variants[2]` in playbooks
-  never consumed by any runtime caller. Will be resolved when FOLLOW-007 bandit wiring lands.
-
-## Sprint 8.5 progress — COMPLETE
-
-- 5/5 tickets DONE (AB-005 through AB-011) — A/B wiring sprint across PR #106, #107, #108, #109
-
-## Sprint 9 progress — COMPLETE
-
-- 6/6 tickets DONE (GDPR-001, GDPR-002, GDPR-003, GDPR-004, DESC-001, VAL-001)
-
-## Open P0 follow-ups before EU pilot
-
-- **FOLLOW-039** — ClickHouse hard deletion not yet wired (RODO Art. 17); must fix before EU pilot
-- **FOLLOW-040** — Doppler CI secret injection; must confirm before EU pilot
-- **FOLLOW-007** — Thompson sampling variant selection (see Sprint 8 gaps above)
-
-## Next escalation candidate
-
-FOLLOW-039 and FOLLOW-040 are EU-pilot blockers. Escalate if not resolved before Sprint 10 kickoff.
+| Ticket      | Queue status | Rule I status                    |
+| ----------- | ------------ | -------------------------------- |
+| AB-001      | DONE         | PARTIAL (FOLLOW-007 resolved it) |
+| REORDER-001 | DONE         | DONE                             |
+| TICKET-046  | DONE         | PARTIAL (FOLLOW-007 resolved it) |
+| ARCH-003    | DONE         | DONE                             |
+| AGENCY-001  | DONE         | DONE                             |
+| AB-004      | DONE         | DONE                             |

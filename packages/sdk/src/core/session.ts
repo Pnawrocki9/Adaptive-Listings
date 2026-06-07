@@ -224,3 +224,36 @@ export function eraseCrossSessionId(): void {
     // localStorage unavailable — in-memory cache already cleared above
   }
 }
+
+// ---------------------------------------------------------------------------
+// Registered-user lead ID derivation (FOLLOW-197 / CHAT-003)
+// ---------------------------------------------------------------------------
+
+/**
+ * sessionStorage key for the derived pseudonymous lead identifier.
+ *
+ * Rule L compliance: the raw `user_uuid` from Keycloak is NEVER stored. Only
+ * the first 16 hex chars of its SHA-256 digest are persisted here. This token
+ * cannot be reversed to the original UUID without the pre-image.
+ *
+ * Stored in sessionStorage (tab-lifetime) — NOT localStorage — so it cannot
+ * accumulate across sessions without repeated authentication (Mode A compliance).
+ */
+export const LEAD_ID_STORAGE_KEY = '__estalara_lead_id__';
+
+/**
+ * Derive a pseudonymous `lead_id` from a Keycloak user UUID.
+ *
+ * Computes SHA-256(user_uuid) and returns the first 16 hex characters.
+ * The raw UUID is NEVER stored anywhere (Rule L).
+ *
+ * @param userUuid - Keycloak `sub` claim (UUID string).
+ * @returns 16-character lowercase hex string.
+ */
+export async function deriveLeadId(userUuid: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(userUuid));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 16);
+}

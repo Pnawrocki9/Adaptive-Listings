@@ -3095,17 +3095,21 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-197
   title: CHAT-003 — SDK listeners for chat/live events
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  started_at: '2026-06-07T00:00:00Z'
+  completed_at: '2026-06-07T00:00:00Z'
+  pr: '#202'
   priority: P0
   estimated_hours: 3
   depends_on: [FOLLOW-195, FOLLOW-196]
   source: Audit F-04, CHAT-003
   spec: backlog/sprint-15/FOLLOW-197.md
   notes: |
-    Register window.addEventListener for estalara:chat:message-sent,
-    estalara:chat:contact-initiated, estalara:live-signup in index.ts.
-    Feed into applyBehavioralSignal() + sendFeedback() + ingest dispatch.
-    Consent-gated. Integration test required.
+    PR #202 opened 2026-06-07. deriveLeadId (SHA-256 prefix, Rule L), estalara:chat:message-sent
+    and live.signup listeners in index.ts, lead_id in fetchDirectives POST body.
+    16 unit tests AC1-AC7. 728 tests green, 0 TS errors, 0 lint errors. CI green.
+    Branch: sdk-engineer/FOLLOW-197-chat003-sdk-listeners
 
 - id: FOLLOW-198
   title: Cross-language event contract parity gate (FOLLOW-168 completion)

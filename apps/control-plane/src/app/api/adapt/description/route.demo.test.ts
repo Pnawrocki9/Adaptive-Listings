@@ -31,8 +31,6 @@ vi.mock('@/lib/description-cache', () => ({
   descriptionKey: mockDescriptionKey,
   setCachedDescription: vi.fn(),
   invalidateDescriptionCache: vi.fn(),
-  TTL_TIER2_SECONDS: 259200,
-  TTL_TIER3_SECONDS: 172800,
 }));
 
 vi.mock('@estalara/auth', () => ({
@@ -65,10 +63,10 @@ function makeRequest(params: Record<string, string>): NextRequest {
   });
 }
 
+// FOLLOW-203: `tier` param removed
 const VALID_PARAMS = {
   listing_id: 'listing-demo-001',
   archetype: 'yield_hunter',
-  tier: '2',
   locale: 'en',
 };
 

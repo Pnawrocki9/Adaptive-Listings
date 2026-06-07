@@ -1,5 +1,5 @@
 /**
- * Unit tests for description-cache.ts — TICKET-DESC-001.
+ * Unit tests for description-cache.ts — TICKET-DESC-001 / FOLLOW-203.
  *
  * Coverage:
  *   - descriptionKey() builds the correct key format
@@ -7,12 +7,13 @@
  *   - getCachedDescription() returns parsed DescriptionCacheValue on cache hit
  *   - getCachedDescription() returns null on malformed JSON
  *   - getCachedDescription() returns null when UPSTASH_REDIS_URL is unset
- *   - setCachedDescription() calls the pipeline endpoint with correct args
+ *   - setCachedDescription() calls the pipeline endpoint with SET and NO EX argument
  *   - invalidateDescriptionCache() SCANs and DELs matched keys
  *   - invalidateDescriptionCache() is a no-op when SCAN returns 0 keys
  *   - invalidateDescriptionCache() is a no-op when UPSTASH_REDIS_URL is unset
- *   - Tier 2 TTL = TTL_TIER2_SECONDS (72 * 3600 = 259200)
- *   - Tier 3 TTL = TTL_TIER3_SECONDS (48 * 3600 = 172800)
+ *
+ * FOLLOW-203: TTL_TIER2_SECONDS / TTL_TIER3_SECONDS removed. setCachedDescription
+ * no longer accepts a TTL parameter; Redis SET is issued without EX.
  *
  * @module apps/control-plane/src/lib/__tests__/description-cache.test
  */
@@ -23,21 +24,7 @@ import {
   getCachedDescription,
   setCachedDescription,
   invalidateDescriptionCache,
-  TTL_TIER2_SECONDS,
-  TTL_TIER3_SECONDS,
 } from '../description-cache.js';
-
-// ─── TTL constants ────────────────────────────────────────────────────────────
-
-describe('TTL constants', () => {
-  it('TTL_TIER2_SECONDS is 72 hours (259200)', () => {
-    expect(TTL_TIER2_SECONDS).toBe(259200);
-  });
-
-  it('TTL_TIER3_SECONDS is 48 hours (172800)', () => {
-    expect(TTL_TIER3_SECONDS).toBe(172800);
-  });
-});
 
 // ─── descriptionKey() ─────────────────────────────────────────────────────────
 
@@ -160,7 +147,7 @@ describe('setCachedDescription()', () => {
     vi.unstubAllGlobals();
   });
 
-  it('calls the pipeline endpoint with SET command and TTL', async () => {
+  it('calls the pipeline endpoint with SET command and NO EX argument (FOLLOW-203 AC3)', async () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response('[]', { status: 200 }));
     vi.stubGlobal('fetch', mockFetch);
 
@@ -168,7 +155,7 @@ describe('setCachedDescription()', () => {
       text: 'AI-generated description text.',
       generated_at: '2026-05-14T12:00:00.000Z',
     };
-    await setCachedDescription('desc:tenant:listing:arch:en', value, TTL_TIER2_SECONDS);
+    await setCachedDescription('desc:tenant:listing:arch:en', value);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -179,27 +166,13 @@ describe('setCachedDescription()', () => {
     expect(body).toHaveLength(1);
     expect(body[0]?.[0]).toBe('SET');
     expect(body[0]?.[1]).toBe('desc:tenant:listing:arch:en');
-    // The value should be JSON-stringified DescriptionCacheValue
+    // Value should be JSON-stringified DescriptionCacheValue
     const storedValue = JSON.parse(body[0]?.[2] as string) as Record<string, unknown>;
     expect(storedValue.text).toBe(value.text);
     expect(storedValue.generated_at).toBe(value.generated_at);
-    expect(body[0]?.[3]).toBe('EX');
-    expect(body[0]?.[4]).toBe(TTL_TIER2_SECONDS);
-  });
-
-  it('uses TTL_TIER3_SECONDS for tier 3 (caller responsibility)', async () => {
-    const mockFetch = vi.fn().mockResolvedValue(new Response('[]', { status: 200 }));
-    vi.stubGlobal('fetch', mockFetch);
-
-    const value = {
-      text: 'AI-generated tier 3 description.',
-      generated_at: '2026-05-14T12:00:00.000Z',
-    };
-    await setCachedDescription('desc:tenant:listing:arch:en', value, TTL_TIER3_SECONDS);
-
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    const body = JSON.parse(init.body as string) as unknown[][];
-    expect(body[0]?.[4]).toBe(TTL_TIER3_SECONDS);
+    // AC3: no EX argument — key persists until eviction
+    expect(body[0]).toHaveLength(3);
+    expect(body[0]).not.toContain('EX');
   });
 
   it('is a no-op when UPSTASH_REDIS_URL is not set', async () => {
@@ -207,11 +180,10 @@ describe('setCachedDescription()', () => {
     const mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
 
-    await setCachedDescription(
-      'desc:tenant:listing:arch:en',
-      { text: 'text', generated_at: '2026-05-14T12:00:00.000Z' },
-      TTL_TIER2_SECONDS,
-    );
+    await setCachedDescription('desc:tenant:listing:arch:en', {
+      text: 'text',
+      generated_at: '2026-05-14T12:00:00.000Z',
+    });
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });
@@ -247,7 +219,6 @@ describe('invalidateDescriptionCache()', () => {
 
     const mockFetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/scan/')) {
-        // SCAN returns cursor '0' (done) and the 3 keys
         return Promise.resolve(
           new Response(JSON.stringify({ result: ['0', scannedKeys] }), { status: 200 }),
         );
@@ -273,7 +244,6 @@ describe('invalidateDescriptionCache()', () => {
     const delBody = JSON.parse(delInit?.body as string) as unknown[][];
     expect(delBody).toHaveLength(1);
     expect(delBody[0]?.[0]).toBe('DEL');
-    // All 3 keys should be passed to DEL
     expect(delBody[0]).toContain(scannedKeys[0]);
     expect(delBody[0]).toContain(scannedKeys[1]);
     expect(delBody[0]).toContain(scannedKeys[2]);
@@ -282,7 +252,6 @@ describe('invalidateDescriptionCache()', () => {
   it('does not call DEL when SCAN returns 0 keys', async () => {
     const mockFetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/scan/')) {
-        // SCAN returns cursor '0' and empty key list
         return Promise.resolve(
           new Response(JSON.stringify({ result: ['0', []] }), { status: 200 }),
         );
@@ -293,7 +262,6 @@ describe('invalidateDescriptionCache()', () => {
 
     await invalidateDescriptionCache('tenant-id', 'empty-listing');
 
-    // Only the SCAN call, no DEL call
     const postCalls = mockFetch.mock.calls.filter((call: unknown[]) => {
       const init = call[1] as RequestInit | undefined;
       return init?.method === 'POST';
@@ -309,7 +277,6 @@ describe('invalidateDescriptionCache()', () => {
         .mockResolvedValue(new Response(JSON.stringify({ result: ['0', []] }), { status: 200 })),
     );
 
-    // Should not throw
     await invalidateDescriptionCache('tenant-id', 'listing-id');
     await invalidateDescriptionCache('tenant-id', 'listing-id');
   });

@@ -3184,19 +3184,24 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-202
   title: Navigator.language browser detection for quiz
   agent: sdk-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: sdk-engineer
   started_at: '2026-06-07T20:00:00Z'
+  completed_at: '2026-06-07T20:30:00Z'
   branch: sdk-engineer/FOLLOW-202-navigator-language-detection
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/209'
   priority: P2
   estimated_hours: 2
   depends_on: []
   source: Audit §10.1 multilanguage section
   spec: backlog/sprint-15/FOLLOW-202.md
+  ci_gates: 'Test (Node 22): pass, Typecheck: pass, Lint: pass, Format: pass, Rule H: pass, Rule J: pass'
   notes: |
-    config.ts:89-91: fallback to navigator.language.slice(0,2) when data-language attr
-    absent/unrecognized. Map to supported set (en|pl|es), fallback 'en'. Polish browser
-    with no data-language attr → Polish quiz automatically.
+    Implemented 4-level language resolution (Master_Design v4.0 §E.4.6). Level 3
+    (navigator.language) added via globalThis.navigator property access to avoid
+    esbuild Node-target constant-folding of bare `typeof navigator`. 7 new unit
+    tests cover AC1/AC2/AC3 + es-ES, pl/en cross, SSR-guard. QuizConfig.language
+    already accepted 'es' from FOLLOW-199 — verified at route.ts:25,41.
 
 # ── Track C: Description cache redesign (Week 3–4) ──
 

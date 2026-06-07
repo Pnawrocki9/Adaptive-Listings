@@ -110,3 +110,30 @@ route.ts.
 with a `git diff HEAD -- <file> | wc -l` check before running tests. Silent non-persistence from
 file watchers or tool infrastructure is not immediately obvious and wastes test cycles on the old
 code.
+
+## 2026-06-07 / FOLLOW-202
+
+**What I built:** Level-3 `navigator.language` fallback in the quiz language resolution chain
+(`packages/sdk/src/core/config.ts`). 7 new unit tests covering AC1/AC2/AC3 + edge cases. PR #209.
+
+**What was uncertain:**
+
+- esbuild/Vitest constant-folding of `typeof navigator`: esbuild's Node-target transform replaces
+  the bare expression `typeof navigator` with the string literal `"undefined"` as a constant-folding
+  optimisation. This means `typeof navigator !== 'undefined'` compiles to `false` in the module even
+  when `vi.stubGlobal('navigator', {...})` has been called in the test. The fix: access via
+  `(globalThis as { navigator?: ... }).navigator` — property accesses on `globalThis` are not
+  constant-folded by esbuild. Discovered empirically; the symptoms were: `navigator` was visible in
+  the test scope but readConfig returned `'en'` regardless.
+- Lefthook format hook during pre-commit: the hook ran prettier and ESLint on staged files; on the
+  first commit attempt, ESLint removed the `vi`/`afterEach` imports from the test file as "unused"
+  (because the new describe block wasn't staged at that point in processing), reverting the test
+  file silently. Fixed by ensuring both files were staged before the commit and writing the full
+  test file via Write tool.
+- Branch mixup: committed the fix to the wrong branch (backend-engineer/FOLLOW-205) by accident
+  because bash's working directory cwd was reset between calls and the earlier `git checkout` hadn't
+  persisted in the shell state. Required soft-reset + stash + branch switch + re-apply.
+
+**A guardrail I'd add:** Before every git commit, always confirm `git branch --show-current` matches
+the expected feature branch. The agent cwd resets between bash calls; `git checkout` must be
+re-verified, not assumed to persist.

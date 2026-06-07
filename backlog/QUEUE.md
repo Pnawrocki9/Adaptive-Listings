@@ -3086,8 +3086,10 @@ Key tracks:
 - id: FOLLOW-173
   title: Conversion-label aggregation + score-vs-actual calibration
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: data-engineer
+  completed_at: '2026-06-07T00:00:00Z'
+  pr: '#216'
   started_at: '2026-06-07T00:00:00Z'
   completed_at: '2026-06-07T00:00:00Z'
   priority: P1

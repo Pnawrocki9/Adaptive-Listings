@@ -52,7 +52,7 @@ import { detectSiteSchema } from './auto-detect/pipeline.js';
 import { extractArchetypeHints } from './auto-detect/archetype-hints.js';
 import { DqsTracker } from './core/dqs.js';
 import type { CollectedEvent } from './core/events.js';
-import type { IntentState } from './core/intent.js';
+import type { Archetype, IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
 import type { ArchetypeId } from '@estalara/shared';
 
@@ -61,6 +61,13 @@ const DQS_SNAPSHOT_INTERVAL = 5;
 
 /** Re-fetch directives from Decision API every N behavioral signals. */
 const REFETCH_SIGNAL_INTERVAL = 5;
+
+/**
+ * Number of consecutive refreshDirectives() cycles a drift archetype must be confirmed
+ * before overriding the quiz-assigned session state (FOLLOW-201 / Master_Design §E.4.5).
+ * Anti-thrash guard: 3 cycles prevents transient behavioral noise from flipping the archetype.
+ */
+export const DRIFT_HOLD_COUNT = 3;
 
 /**
  * Detect the page type from the current URL and an optional data-page-type attribute.
@@ -318,6 +325,18 @@ async function init(): Promise<void> {
     // unconditionally on every refreshDirectives() cycle.
     let previousArchetype: string | null = null;
 
+    // FOLLOW-201: per-session drift detection state (per-instance — RETRO-006 LG-2).
+    // Tracks consecutive refreshDirectives() cycles where detectMismatch() fires for
+    // the same suggested archetype. Only overrides quiz state when driftCandidateCount
+    // reaches DRIFT_HOLD_COUNT (anti-thrash guard per Master_Design §E.4.5).
+    let driftCandidateArchetype: Archetype | null = null;
+    let driftCandidateCount = 0;
+
+    // Declared here so refreshDirectives() can reference it without TDZ error.
+    // Populated by the observer callback after step 6 below.
+    // FOLLOW-201: also used for drift detection inside refreshDirectives().
+    const signalHistory: { eventType: string; payload?: Record<string, unknown> }[] = [];
+
     /** Re-fetch directives and apply them with the latest intent state. */
     async function refreshDirectives(): Promise<void> {
       if (!config.decisionApiUrl) return;
@@ -378,6 +397,49 @@ async function init(): Promise<void> {
           sidebar.show(state);
         }
       }
+
+      // FOLLOW-201: Post-directive drift detection.
+      // Only runs when the quiz has been answered — no quiz means no quiz-vs-behavioral
+      // discrepancy to detect. AC5: description_cache_persistent is NOT modified here;
+      // applyQuizLeaf() is session-only (no DB write).
+      if (currentIntentState.quiz_answered) {
+        const behavioralOnlyState = calculateBehavioralOnlyState(signalHistory);
+        const mismatch = detectMismatch(
+          currentIntentState.archetype,
+          behavioralOnlyState,
+          currentSession.sessionId,
+        );
+
+        if (mismatch) {
+          // Behavioral signals consistently suggest a different archetype.
+          // Track the candidate for DRIFT_HOLD_COUNT consecutive cycles before acting.
+          const candidate = mismatch.behavioral_archetype;
+          if (candidate === driftCandidateArchetype) {
+            driftCandidateCount += 1;
+          } else {
+            driftCandidateArchetype = candidate;
+            driftCandidateCount = 1;
+          }
+
+          if (driftCandidateCount >= DRIFT_HOLD_COUNT) {
+            // Anti-thrash guard satisfied: override quiz archetype with behavioral evidence.
+            // applyQuizLeaf() sets high confidence (0.85) for the drift archetype — same
+            // mechanism as quiz leaf but triggered by sustained behavioral mismatch.
+            // `candidate` is the confirmed drift archetype (Archetype, never null).
+            currentIntentState = applyQuizLeaf(currentIntentState, candidate);
+            onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+            // Reset candidate state so the cycle can begin again if drift continues.
+            driftCandidateArchetype = null;
+            driftCandidateCount = 0;
+            // Re-fetch directives with the updated intent state.
+            await refreshDirectives();
+          }
+        } else {
+          // Signals aligned with quiz archetype — reset candidate count but preserve
+          // driftCandidateArchetype so a resuming trend can still accumulate.
+          driftCandidateCount = 0;
+        }
+      }
     }
 
     // 4b. Fetch personalization directives from Decision API (Tier 1+ feature)
@@ -412,9 +474,6 @@ async function init(): Promise<void> {
     }
 
     let quizTriggered = false;
-
-    // Signal history — accumulated pre-quiz behavioral events for mismatch detection
-    const signalHistory: { eventType: string; payload?: Record<string, unknown> }[] = [];
 
     // 6. Set up behavioral observers, wiring listing view count for quiz.
     //    Pass inquirySubmitSelector from config so the inquiry click observer

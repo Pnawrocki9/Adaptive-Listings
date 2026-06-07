@@ -291,7 +291,9 @@ describe('eraseMicroPollDismissal — Mode A compliance', () => {
 
   it('does not throw when localStorage is undefined', () => {
     vi.stubGlobal('localStorage', undefined);
-    expect(() => { eraseMicroPollDismissal(); }).not.toThrow();
+    expect(() => {
+      eraseMicroPollDismissal();
+    }).not.toThrow();
   });
 
   it('does not throw when localStorage.removeItem throws', () => {
@@ -300,6 +302,8 @@ describe('eraseMicroPollDismissal — Mode A compliance', () => {
         throw new Error('storage full');
       }),
     });
-    expect(() => { eraseMicroPollDismissal(); }).not.toThrow();
+    expect(() => {
+      eraseMicroPollDismissal();
+    }).not.toThrow();
   });
 });

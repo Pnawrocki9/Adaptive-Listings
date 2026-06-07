@@ -1,8 +1,8 @@
 /**
  * Quiz trigger widget — sticky button that prompts buyer to take
- * the 2-question investor intent quiz.
+ * the v2.0 branching decision-tree quiz.
  *
- * Shown after 3 listing views OR immediately if quiz_config.sticky_widget = true.
+ * Shown after 30 seconds on ANY page type where the SDK is loaded.
  * Dismissible (sets localStorage flag for 24h).
  */
 
@@ -14,18 +14,43 @@ export interface QuizTriggerConfig {
 
 export const QUIZ_LABELS = {
   en: {
-    trigger: 'Find your match in 2 questions →',
+    trigger: 'Find your match →',
     dismiss: '×',
   },
   pl: {
-    trigger: 'Znajdź dopasowanie w 2 pytaniach →',
+    trigger: 'Znajdź dopasowanie →',
     dismiss: '×',
   },
   es: {
-    trigger: 'Encuentra tu coincidencia en 2 preguntas →',
+    trigger: 'Encuentra tu coincidencia →',
     dismiss: '×',
   },
 };
+
+/** Delay (ms) after SDK init before showing the quiz trigger. */
+export const QUIZ_TRIGGER_DELAY_MS = 30_000;
+
+/**
+ * Schedule the quiz trigger to appear after QUIZ_TRIGGER_DELAY_MS on any page.
+ * Respects the 24h dismissal cooldown. Calls `onTrigger` when the timer fires
+ * (if not dismissed). Returns a cancel function that clears the timer.
+ */
+export function scheduleQuizTrigger(onTrigger: () => void): () => void {
+  if (isQuizDismissed()) {
+    return () => {
+      // already dismissed — nothing to cancel
+    };
+  }
+  const timerId = setTimeout(() => {
+    if (!isQuizDismissed()) {
+      onTrigger();
+    }
+  }, QUIZ_TRIGGER_DELAY_MS);
+
+  return () => {
+    clearTimeout(timerId);
+  };
+}
 
 const DISMISS_STORAGE_KEY = '__estalara_quiz_dismissed__';
 const DISMISS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours

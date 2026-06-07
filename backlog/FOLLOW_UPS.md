@@ -5449,6 +5449,27 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
+## FOLLOW-205 — F-19: Demo auth hardening (JWT verification)
+
+- **source:** Audit F-19; promoted directly to `backlog/sprint-15/FOLLOW-205.md`
+- **sprint:** 15
+- **agent:** backend-engineer
+- **priority:** P2
+- **status:** DONE (PR opened 2026-06-07, branch backend-engineer/FOLLOW-205-demo-auth-hardening)
+- **scope:** Replace presence-only Bearer check in POST /api/adapt with HS256 JWT verification via
+  `crypto.subtle` (Web Crypto, no new dependency). Uses `DEMO_MODE_JWT_SECRET`. Invalid/expired JWT
+  → 401 `{ error: 'invalid_demo_token' }`. Missing env var → 500
+  `{ error: 'demo_auth_misconfigured' }`.
+- **ac:**
+  - [x] AC1: Arbitrary non-empty Bearer (not a valid JWT) → 401
+  - [x] AC2: Valid JWT signed by DEMO_MODE_JWT_SECRET → 200
+  - [x] AC3: Expired JWT → 401
+  - [x] AC4: No new third-party dependency
+  - [x] AC5: 6 unit tests, all passing; CI green
+- **promoted_to_queue:** true (QUEUE.md, 2026-06-07; Track D, P2)
+
+---
+
 <!-- next free FOLLOW number: 191 (190 = CEO-directed 2026-06-04 dwell-time confidence lift, promoted to backlog/sprint-14/FOLLOW-190.md; 188-189 = SDK adapt fail-safe + description reconciliation fix, PRs #194/#195; 184-187 = RETRO-031 / PR #191 / FOLLOW-172 Conversion Label Loop T2 — CRM deep-outcome ingest webhook:
      184 = P1 DSR erase must reach CRM-written conversion_labels rows — cascade keys on session_id but CRM rows keyed on opaque lead_id of a different namespace → Art. 17 gap (LG-1; relate FOLLOW-180);
      185 = P1 PG-harness test: CRM route write + DSR cascade match + two-writer shallow→deep precedence upgrade + confidence:0 (TG-1/TG-2/CB-1; folds FOLLOW-181/183);

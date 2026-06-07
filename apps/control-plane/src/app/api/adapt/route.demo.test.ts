@@ -23,6 +23,13 @@ const { mockGetDemoOverride } = vi.hoisted(() => ({
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
+// Bypass JWT verification — these tests focus on demo-override logic, not auth.
+vi.mock('@/lib/demo-jwt-verify', () => ({
+  verifyDemoJwt: vi.fn().mockResolvedValue(undefined),
+  DemoJwtSecretMissingError: class DemoJwtSecretMissingError extends Error {},
+  DemoJwtInvalidError: class DemoJwtInvalidError extends Error {},
+}));
+
 vi.mock('@/lib/llm-gateway', () => ({
   callLlmGateway: vi.fn().mockResolvedValue(null),
 }));

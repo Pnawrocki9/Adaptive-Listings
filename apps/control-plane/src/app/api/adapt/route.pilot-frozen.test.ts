@@ -17,6 +17,13 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // ── Mock all external deps ─────────────────────────────────────────────────────
 
+// Bypass JWT verification — these tests focus on pilot-frozen guard, not auth.
+vi.mock('@/lib/demo-jwt-verify', () => ({
+  verifyDemoJwt: vi.fn().mockResolvedValue(undefined),
+  DemoJwtSecretMissingError: class DemoJwtSecretMissingError extends Error {},
+  DemoJwtInvalidError: class DemoJwtInvalidError extends Error {},
+}));
+
 vi.mock('@/lib/llm-gateway', () => ({
   callLlmGateway: vi.fn().mockResolvedValue(null),
 }));

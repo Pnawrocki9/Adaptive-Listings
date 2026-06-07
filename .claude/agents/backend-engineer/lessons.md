@@ -142,3 +142,84 @@ block added to `vercel.json` noting the Vercel Pro gate.
 **A guardrail I'd add:** A CI check that scans the DPIA §8 "erasure cascade" table and asserts each
 listed table has a `tx.delete(table)` call inside `erase/route.ts`. Would catch future tables added
 to the DPIA but forgotten in the code — the same gap that made this ticket necessary.
+
+---
+
+## 2026-06-07 / FOLLOW-204 (lint-fix pass)
+
+**What I built:** Fixed TypeScript lint errors on the FOLLOW-204 branch
+(`description_cache_persistent` + `quiz_completions` MOAT tables). Three categories of fix: (1)
+`@estalara/db` dist was missing `.d.ts` for the two new schema files — solved by running
+`pnpm --filter @estalara/db build` first, then adding `Pick<DescriptionCachePersistent,...>[]` type
+annotations to Drizzle query results; (2) removed an unused `insertPgCachedDescription` import in
+the internal route (replaced by the strict wrapper defined in the same file); (3) removed
+unnecessary `?? new Date()` on a `notNull().defaultNow()` column. Then caught two more CI failures
+post-push: Next.js 15 rejected named non-handler exports from a Route file
+(`QuizCompletionBodySchema`, `QuizCompletionBody`, `QuizCompletionResponse` — removed `export`); and
+migration journal entry 0023 had a drizzle-kit year-drift timestamp (2025 instead of 2026) violating
+the monotonicity check.
+
+**Wiring/auth/fail-loud risks I weighed:** No logic changes — purely type annotation and export
+scope fixes. The `DescriptionCachePersistent` type import (via `type` keyword) satisfies ESLint's
+`consistent-type-imports` rule and gives the Drizzle query result arrays proper structural typing so
+`no-unsafe-member-access` passes without suppression comments.
+
+**A guardrail I'd add:** Always run `pnpm --filter @estalara/db build` before linting any package
+that imports `@estalara/db` with new schema files — the dist `.d.ts` files must be current or every
+Drizzle column access is typed as `any`. Add this to the pre-lint CI step order or to a local dev
+`prepare` script.
+
+---
+
+## 2026-06-07 / FOLLOW-203
+
+**What I built:** Removed tier logic and TTL from the description generation route. `tier` dropped
+from Zod schema, Tier-1 early-return removed, `TTL_TIER2_SECONDS`/`TTL_TIER3_SECONDS` deleted, Redis
+SET no longer passes `EX`, `max_tokens` set to single constant 500. `tier`/`ttl_seconds` made
+optional+deprecated in shared `DescriptionRequestedEventSchema` (Python consumer uses `.get()` with
+defaults so omitting is backward-safe). All tests updated.
+
+**Wiring/auth/fail-loud risks I weighed:** Auth block is unchanged (same Bearer JWT + ADAPT_API_KEY
+constant-time compare). Fail-loud behavior unchanged: getCachedDescription is fail-open returning
+null → template_fallback (not a fabricated number, and this endpoint doesn't serve a primary
+go/no-go metric). The Python consumer (ml-engineer owned) already had
+`event.get("ttl_seconds", default_ttl)` so making `ttl_seconds` optional in the TypeScript type is
+safe without touching the Python code.
+
+**A guardrail I'd add:** Never use `git stash` when switching branches mid-session with multiple
+parallel branches active — it creates cross-branch contamination. Instead, commit a WIP commit or
+use `git worktree`. The stash pop on the first branch checkout brought in sdk-engineer FOLLOW-201
+files that polluted the FOLLOW-203 commit, requiring a cleanup commit.
+
+---
+
+## 2026-06-07 / FOLLOW-205
+
+**What I built:** Replaced presence-only Bearer check in POST /api/adapt with real HS256 JWT
+verification using `crypto.subtle` (Web Crypto API, built into Node.js 15+). Extracted verification
+logic into `src/lib/demo-jwt-verify.ts` with two error types (`DemoJwtSecretMissingError`,
+`DemoJwtInvalidError`). Invalid/expired/missing token → 401 `{ error: 'invalid_demo_token' }`.
+Secret not configured → 500 `{ error: 'demo_auth_misconfigured' }`. Six new unit tests cover
+AC1/AC2/AC3 plus wrong-secret and missing-secret paths. Updated 5 existing adapt test files to mock
+`verifyDemoJwt` so non-auth tests keep working.
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+1. **Dependency constraint:** Ticket spec said `jose` was already installed — it wasn't (not in any
+   `package.json` or `node_modules`). Used `crypto.subtle` instead, which is available in the
+   existing runtime with zero new dependencies. Rule P satisfied.
+2. **TypeScript strict-mode:** `token.split('.')` returns `string[]` so destructured elements have
+   type `string | undefined` even after `parts.length !== 3` guard. Used explicit
+   `parts[0] as string` casts with a comment explaining the post-check guarantee.
+   `Uint8Array<ArrayBufferLike>` vs `BufferSource` required `.buffer as ArrayBuffer` cast for the
+   `crypto.subtle.verify` call.
+3. **Secret misconfiguration vs bad token:** Separated `DemoJwtSecretMissingError` (500 — ops alert)
+   from `DemoJwtInvalidError` (401 — client error). Any other error rethrows (uncaught 500). This
+   distinction matters: a missing secret in prod is a deployment config error, not an auth failure.
+4. **Existing test isolation:** All 5 existing POST adapt test files used arbitrary Bearer strings.
+   Mocking `verifyDemoJwt` in those files keeps them focused on their own behavior (holdout, demo
+   override, variant, etc.) without coupling them to the auth path.
+
+**A guardrail I'd add:** A linter rule (or CI grep) that flags any
+`req.headers.get('Authorization')` in POST handlers that is NOT followed by a cryptographic
+verification call within 10 lines — would have caught the presence-only check years earlier.

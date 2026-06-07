@@ -18,8 +18,8 @@
  * POST /api/adapt
  *
  * Demo-mode adaptation endpoint. Accepts a JSON body with archetype hint,
- * confidence, similarity, and session context. Requires a non-empty
- * Authorization: Bearer header (presence-only auth for demo mode).
+ * confidence, similarity, and session context. Requires a valid HS256 JWT
+ * signed by DEMO_MODE_JWT_SECRET (FOLLOW-205 — presence-only check removed).
  *
  * ClickHouse logging is fire-and-forget — the response is returned immediately
  * and the analytics insert happens asynchronously.
@@ -58,6 +58,11 @@ import {
   DEMO_OVERRIDE_CONFIDENCE,
   DEMO_OVERRIDE_SIMILARITY,
 } from '@/lib/demo-override-store';
+import {
+  verifyDemoJwt,
+  DemoJwtSecretMissingError,
+  DemoJwtInvalidError,
+} from '@/lib/demo-jwt-verify';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -230,16 +235,16 @@ async function runDecisionTree(
   }
 
   // Fetch playbook (real data since ADP-003)
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+
   const playbook = getPlaybook(archetypeId);
 
   // Convert playbook slots → TextDirectives; prefer locale override, fall back to English [F-09].
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+
   const playbookDirectives: TextDirective[] = playbook.slots.map((s: SlotDirective) => ({
     type: 'text' as const,
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+
     slot: s.slot,
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+
     value: (locale === 'pl' ? s.pl : locale === 'es' ? s.es : undefined) ?? s.en,
     archetype: archetypeId,
     confidence,
@@ -256,7 +261,7 @@ async function runDecisionTree(
       archetypeId,
       confidence,
       similarity,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
       basePlaybook: playbook,
       listingContext,
       sessionId,
@@ -277,7 +282,7 @@ async function runDecisionTree(
     archetypeId,
     confidence,
     similarity,
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
     basePlaybook: playbook,
     listingContext,
     sessionId,
@@ -685,7 +690,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  * POST /api/adapt
  *
  * Demo-mode adaptation endpoint. Accepts a JSON body and returns AdaptationDirectives.
- * Requires a non-empty Authorization: Bearer header (presence-only check for demo mode).
+ * Requires a valid HS256 JWT signed by DEMO_MODE_JWT_SECRET in the Authorization:
+ * Bearer header. Presence-only check replaced by cryptographic verification (FOLLOW-205).
  *
  * Body:
  *   tenant_id      — required, string
@@ -697,19 +703,31 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  *
  * @returns 200 AdaptationDirectives JSON.
  * @returns 400 on Zod validation failure.
- * @returns 401 if Authorization header is missing or empty.
+ * @returns 401 if Authorization header is missing, token is not a valid JWT, or JWT is expired.
+ * @returns 500 if DEMO_MODE_JWT_SECRET is not configured (deployment misconfiguration).
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // Presence-only auth — demo mode requires a non-empty Bearer token
+  // JWT auth — demo mode requires a validly-signed HS256 JWT (FOLLOW-205).
+  // The token is verified cryptographically using DEMO_MODE_JWT_SECRET via
+  // crypto.subtle (Web Crypto, no new dependency). Presence-only check removed.
   const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization');
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
   if (!token) {
-    return NextResponse.json(
-      { error: 'Unauthorized: Authorization: Bearer <token> required' },
-      {
-        status: 401,
-      },
-    );
+    return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
+  }
+  try {
+    await verifyDemoJwt(token);
+  } catch (err) {
+    if (err instanceof DemoJwtSecretMissingError) {
+      // Config error — secret not set. Surface as 500 so ops are alerted.
+      // This is NOT a normal auth path; it means the deployment is misconfigured.
+      return NextResponse.json({ error: 'demo_auth_misconfigured' }, { status: 500 });
+    }
+    if (err instanceof DemoJwtInvalidError) {
+      return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
+    }
+    // Unexpected error — rethrow to surface as 500 via Next.js error handler.
+    throw err;
   }
 
   let rawBody: unknown;

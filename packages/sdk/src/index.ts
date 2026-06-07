@@ -359,6 +359,11 @@ async function init(): Promise<void> {
     // FOLLOW-207: Referrer + device-type cold-session priors.
     // Applied after archetype hints so site-level hints are already folded in.
     // globalThis property access prevents esbuild dead-code elimination (FOLLOW-202 pattern).
+    //
+    // FOLLOW-216 (LG-1): Gate this entire block behind !intentStateRehydrated, symmetric
+    // to the archetype-hint gate above. A rehydrated session already has these priors
+    // folded in from the first listing page — re-applying them would perturb the archetype
+    // and inflate signal_count by +1 on every cross-listing navigation.
 
     // Referrer hints (cold-session prior)
     const referrer = (globalThis as { document?: { referrer?: string } }).document?.referrer ?? '';
@@ -366,12 +371,16 @@ async function init(): Promise<void> {
       new URLSearchParams(
         (globalThis as { location?: { search?: string } }).location?.search ?? '',
       ).get('utm_term') ?? '';
-    currentIntentState = applyReferrerHints(currentIntentState, referrer, utmTerm);
+    if (!intentStateRehydrated) {
+      currentIntentState = applyReferrerHints(currentIntentState, referrer, utmTerm);
+    }
 
     // Device type prior
     const windowWidth = (globalThis as { window?: { innerWidth?: number } }).window?.innerWidth;
     const deviceType = windowWidth !== undefined && windowWidth >= 1024 ? 'desktop' : 'mobile';
-    currentIntentState = applyBehavioralSignal(currentIntentState, `device_type.${deviceType}`);
+    if (!intentStateRehydrated) {
+      currentIntentState = applyBehavioralSignal(currentIntentState, `device_type.${deviceType}`);
+    }
 
     // Capture referrer_domain for session.started ingest event
     let referrerDomain = '';
@@ -574,6 +583,16 @@ async function init(): Promise<void> {
           driftCandidateCount = 0;
         }
       }
+    }
+
+    // FOLLOW-216 (LG-2): Persist the cold-start intent state (after all init-time priors have
+    // been applied: archetype hints, referrer, device) once, before the first refreshDirectives().
+    // This ensures the very first cross-listing navigation in the same tab can rehydrate the
+    // cold-start archetype even if no behavioral signal has fired yet (onIntentUpdate is the
+    // only other persist site, but it fires only after a behavioral event).
+    // Skip on a rehydrated session — the persisted entry is already current.
+    if (!intentStateRehydrated) {
+      persistIntentState(currentSession.sessionId, currentIntentState);
     }
 
     // 4b. Fetch personalization directives from Decision API (Tier 1+ feature)

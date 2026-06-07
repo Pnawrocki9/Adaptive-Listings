@@ -284,6 +284,7 @@ export async function deriveLeadId(userUuid: string): Promise<string> {
 // subsequent listing navigations in the same tab rehydrate immediately.
 // ---------------------------------------------------------------------------
 
+// Bump INTENT_STATE_SCHEMA_VERSION whenever IntentState.probabilities keys or types change.
 /** Current schema version for the persisted intent state envelope. */
 export const INTENT_STATE_SCHEMA_VERSION = 1 as const;
 

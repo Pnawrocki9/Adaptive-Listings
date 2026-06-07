@@ -131,7 +131,7 @@ updates.
 | 13a-h2 | 15    | Pre-pilot hardening v2 — §13.2 localStorage xid erasure (FOLLOW-139), pilot inquiry selector seed (FOLLOW-141)                      | 2       | 2    | 0       | 0     | 0       |
 | 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                         | 6       | 0    | 0       | 3     | 3       |
 | Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)      | 4       | 4    | 0       | 0     | 0       |
-| 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 14   | 0       | 7     | 0       |
+| 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 16   | 0       | 5     | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -3184,7 +3184,9 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-202
   title: Navigator.language browser detection for quiz
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
+  completed_at: '2026-06-07T00:00:00Z'
+  pr: '#209'
   assigned_to: sdk-engineer
   started_at: '2026-06-07T20:00:00Z'
   completed_at: '2026-06-07T20:30:00Z'
@@ -3251,7 +3253,9 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-205
   title: F-19 — Demo auth hardening
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
+  completed_at: '2026-06-07T00:00:00Z'
+  pr: '#210'
   assigned_to: backend-engineer
   started_at: '2026-06-07T20:00:00Z'
   completed_at: '2026-06-07T20:30:00Z'

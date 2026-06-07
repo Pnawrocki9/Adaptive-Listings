@@ -394,18 +394,82 @@ export function applyQuizPrior(
 }
 
 /**
+ * Facet-conditional intent boosts for `filter.applied`.
+ *
+ * Returns a new ArchetypeProbabilities with additive boosts applied and
+ * re-normalized to sum to 1.0. If the facet does not warrant a targeted
+ * boost (e.g. `price_range`), the input probabilities are returned unchanged.
+ *
+ * Boost values are smaller than quiz likelihoods (behavioral evidence only),
+ * consistent with BEHAVIORAL_DAMPING applied on other signal types.
+ *
+ * Boost rules (Master Design C.1 + FOLLOW-211 spec):
+ *   commercial        → commercial_investor +0.15
+ *   investment_yield  → yield_hunter +0.12, portfolio_builder +0.08
+ *   bedrooms ≥ 3      → family_buyer +0.10
+ *   price_range       → no archetype-specific boost (generic signal)
+ *   all other facets  → no boost (ignored)
+ */
+function applyFilterBoosts(
+  probs: ArchetypeProbabilities,
+  facet: string,
+  value?: unknown,
+): ArchetypeProbabilities {
+  const boosted = { ...probs };
+
+  if (facet === 'commercial') {
+    boosted.commercial_investor += 0.15;
+  } else if (facet === 'investment_yield') {
+    boosted.yield_hunter += 0.12;
+    boosted.portfolio_builder += 0.08;
+  } else if (facet === 'bedrooms') {
+    const numValue = typeof value === 'number' ? value : Number(value);
+    if (Number.isFinite(numValue) && numValue >= 3) {
+      boosted.family_buyer += 0.1;
+    }
+  }
+  // price_range → no archetype-specific boost
+  // all other facets → no boost
+
+  return normalize(boosted);
+}
+
+/**
  * Update intent state from a behavioral event.
  *
- * The raw signal likelihood is dampened by BEHAVIORAL_DAMPING (default 0.3),
- * so a single behavioral event has a much smaller effect than a quiz answer.
- * Unknown event types return the state unchanged (same reference,
- * signal_count is NOT incremented).
+ * For `filter.applied`, facet-conditional additive boosts are applied directly
+ * to the probability distribution (see `applyFilterBoosts`). This path bypasses
+ * the multiplicative SIGNAL_LIKELIHOODS table because the boost magnitude depends
+ * on runtime payload values that cannot be encoded in a static table.
+ *
+ * For all other known event types, the raw signal likelihood from
+ * SIGNAL_LIKELIHOODS is dampened by BEHAVIORAL_DAMPING (0.3) and applied
+ * multiplicatively. Unknown event types return the state unchanged (same
+ * reference, signal_count is NOT incremented).
  */
 export function applyBehavioralSignal(
   state: IntentState,
   eventType: string,
-  _payload?: Record<string, unknown>,
+  payload?: Record<string, unknown>,
 ): IntentState {
+  // Intercept filter.applied before the static SIGNAL_LIKELIHOODS lookup.
+  if (eventType === 'filter.applied') {
+    const facet = typeof payload?.facet === 'string' ? payload.facet : '';
+    if (!facet) return state;
+
+    const probabilities = applyFilterBoosts(state.probabilities, facet, payload?.value);
+    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+
+    return {
+      archetype,
+      confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
+      probabilities,
+      signal_count: state.signal_count + 1,
+      last_updated_at: Date.now(),
+      quiz_answered: state.quiz_answered,
+    };
+  }
+
   const rawLikelihood = SIGNAL_LIKELIHOODS[eventType];
   if (!rawLikelihood) return state;
 

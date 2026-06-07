@@ -256,10 +256,15 @@ describe('search / filter events', () => {
     ).not.toThrow();
   });
 
-  it('FilterApplied accepts string / number / boolean values', () => {
-    for (const value of ['Marbella', 500000, true]) {
+  it('FilterApplied accepts string / number / array values for enum facets', () => {
+    for (const [facet, value] of [
+      ['price_range', 500000],
+      ['bedrooms', 3],
+      ['amenities', ['pool', 'garage']],
+      ['commercial', undefined],
+    ] as [string, unknown][]) {
       expect(() =>
-        FilterAppliedEventSchema.parse(ev('filter.applied', { facet: 'price_max', value })),
+        FilterAppliedEventSchema.parse(ev('filter.applied', { facet, value })),
       ).not.toThrow();
     }
   });

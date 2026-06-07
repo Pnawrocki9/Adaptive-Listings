@@ -26,19 +26,56 @@ export const SearchQueryEventSchema = EventEnvelopeBaseSchema.extend({
 export type SearchQueryEvent = z.infer<typeof SearchQueryEventSchema>;
 
 /**
+ * Enumerated facets for `filter.applied`.
+ *
+ * Each value maps to a named filter dimension. Adding a new facet here is the
+ * authoritative change — the intent engine's conditional boosts reference
+ * the same string literals.
+ *
+ * Taxonomy (Master Design C.1):
+ *   - price_range    : min/max price slider
+ *   - bedrooms       : minimum bedroom count
+ *   - bathrooms      : minimum bathroom count
+ *   - property_type  : residential / commercial / land / etc.
+ *   - location       : neighbourhood, city, or polygon filter
+ *   - amenities      : pool, garage, terrace, etc.
+ *   - investment_yield: gross rental yield filter
+ *   - commercial     : commercial-only listing type
+ */
+export const FILTER_APPLIED_FACETS = [
+  'price_range',
+  'bedrooms',
+  'bathrooms',
+  'property_type',
+  'location',
+  'amenities',
+  'investment_yield',
+  'commercial',
+] as const;
+export type FilterAppliedFacet = (typeof FILTER_APPLIED_FACETS)[number];
+
+/**
  * `filter.applied` — user added a filter facet (price range, bedrooms, amenity, etc.).
  *
- * @example { type: 'filter.applied', payload: { facet: 'price_max', value: 500000 } }
+ * The `facet` field is an enum so the intent engine can apply per-facet archetype
+ * boosts (see `applyBehavioralSignal` in `packages/sdk/src/core/intent.ts`).
+ *
+ * `value` is optional — some facets are boolean-style toggles (e.g. `commercial`).
+ *
+ * @example { type: 'filter.applied', payload: { facet: 'commercial' } }
+ * @example { type: 'filter.applied', payload: { facet: 'bedrooms', value: 3 } }
+ * @example { type: 'filter.applied', payload: { facet: 'amenities', value: ['pool', 'garage'] } }
  */
 export const FilterAppliedPayloadSchema = z.object({
-  facet: z.string().min(1),
-  value: z.union([z.string(), z.number(), z.boolean()]),
+  facet: z.enum(FILTER_APPLIED_FACETS),
+  value: z.union([z.string(), z.number(), z.array(z.string())]).optional(),
 });
 export const FilterAppliedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('filter.applied'),
   payload: FilterAppliedPayloadSchema,
 });
 export type FilterAppliedEvent = z.infer<typeof FilterAppliedEventSchema>;
+export type FilterAppliedPayload = z.infer<typeof FilterAppliedPayloadSchema>;
 
 /**
  * `filter.removed` — user cleared a filter facet.

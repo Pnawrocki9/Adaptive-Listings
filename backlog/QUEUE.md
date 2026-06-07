@@ -3286,7 +3286,7 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
   depends_on: []
   source: Audit F-05, F-21
   spec: backlog/sprint-15/FOLLOW-206.md
-  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/203
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/214
   notes: |
     Two escaping strategies unified: route.ts:359 and llm-gateway.ts:167 both
     updated from \\' (backslash) to '' (ANSI SQL doubling), consistent with

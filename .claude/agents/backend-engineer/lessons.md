@@ -223,3 +223,29 @@ AC1/AC2/AC3 plus wrong-secret and missing-secret paths. Updated 5 existing adapt
 **A guardrail I'd add:** A linter rule (or CI grep) that flags any
 `req.headers.get('Authorization')` in POST handlers that is NOT followed by a cryptographic
 verification call within 10 lines — would have caught the presence-only check years earlier.
+
+---
+
+## 2026-06-07 / FOLLOW-206
+
+**What I built:** Unified ClickHouse SQL string escaping from backslash (`\\'`) to ANSI SQL `''`
+doubling in two files: `apps/control-plane/src/app/api/adapt/route.ts` (`logDecisionAsync`) and
+`apps/control-plane/src/lib/llm-gateway.ts` (`logLlmCallAsync`). Both now match the canonical
+pattern in `clickhouse-dsr.ts:99`. No logic change — fire-and-forget INSERT helpers only.
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+1. **Working-tree confusion:** The session started on `sdk-engineer/FOLLOW-209` branch. After
+   `git checkout main` and branching, the working tree appeared correct but `grep` from a later Bash
+   call showed the old pattern — because the shell had momentarily been on the wrong branch. Always
+   verify `git branch` and `grep` on the ACTIVE branch before concluding a fix didn't apply.
+2. **Pre-existing Python CI failures:** All `Test (Python)` checks fail due to `pip install`
+   timeouts (infrastructure issue, not code). Confirmed by log showing "operation canceled" during
+   dependency install. Real gates (Node 22, Typecheck, Lint, Format, Rule H/J, Build, Vercel) all
+   green. Documented in `project_ci_gate_landscape.md`.
+3. **Scope boundary:** Only ClickHouse raw-SQL paths were changed. Drizzle/Postgres paths use
+   parameterized queries and needed no escaping fix.
+
+**A guardrail I'd add:** A CI grep asserting `replace.*\\'` returns zero results in
+`apps/control-plane/src/` — would catch any future copy-paste of the non-standard pattern before it
+reaches main.

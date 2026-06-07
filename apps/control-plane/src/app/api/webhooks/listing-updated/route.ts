@@ -26,6 +26,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { invalidateDescriptionCache } from '@/lib/description-cache';
+import { invalidatePgDescriptionCache } from '@/lib/description-pg-cache';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
@@ -76,8 +77,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { tenant_id, listing_id } = parsed.data;
 
   // ── Cache invalidation ────────────────────────────────────────────────────
-  // invalidateDescriptionCache is fail-open — errors are swallowed internally.
+  // 1. Redis hot-cache invalidation — fail-open (errors swallowed internally).
   await invalidateDescriptionCache(tenant_id, listing_id);
+
+  // 2. Postgres permanent cache invalidation (FOLLOW-204 / Master Design §E.7).
+  //    SET invalidated_at = NOW() on all active rows for this (tenant, listing).
+  //    invalidatePgDescriptionCache throws on configured-DB error — we capture that
+  //    here and return 500 so the caller (or Sentry) knows invalidation was partial.
+  try {
+    await invalidatePgDescriptionCache(tenant_id, listing_id);
+  } catch (err: unknown) {
+    console.error(
+      '[webhooks/listing-updated] Postgres cache invalidation failed:',
+      err instanceof Error ? err.message : err,
+    );
+    return NextResponse.json(
+      { error: 'Postgres invalidation failed — Redis cache cleared, Postgres was not.' },
+      { status: 500 },
+    );
+  }
 
   return NextResponse.json({ invalidated: true }, { status: 200 });
 }

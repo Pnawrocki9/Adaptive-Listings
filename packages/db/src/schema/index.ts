@@ -28,3 +28,5 @@ export * from './demo_overrides.js';
 export * from './app_config.js';
 export * from './conversion_labels.js';
 export * from './engagement_scores.js';
+export * from './quiz_completions.js';
+export * from './description_cache_persistent.js';

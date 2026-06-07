@@ -24,6 +24,8 @@ export interface QuizConfig {
   sticky_widget: boolean;
   language: 'en' | 'pl' | 'es';
   accent_color: string;
+  /** Whether to show micro-poll bottom-toast prompts as a quiz supplement (FOLLOW-209). */
+  micro_polls_enabled: boolean;
 }
 
 const DEFAULT_CONFIG: QuizConfig = {
@@ -32,6 +34,7 @@ const DEFAULT_CONFIG: QuizConfig = {
   sticky_widget: false,
   language: 'en',
   accent_color: '#2563EB',
+  micro_polls_enabled: false,
 };
 
 const QuizConfigSchema = z.object({
@@ -40,6 +43,7 @@ const QuizConfigSchema = z.object({
   sticky_widget: z.boolean().optional(),
   language: z.enum(['en', 'pl', 'es']).optional(),
   accent_color: z.string().optional(),
+  micro_polls_enabled: z.boolean().optional(),
 });
 
 export async function GET(req: NextRequest): Promise<NextResponse> {

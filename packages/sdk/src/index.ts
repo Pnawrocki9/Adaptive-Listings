@@ -27,6 +27,11 @@ import { createShadowHost } from './ui/shadow-host.js';
 import { renderConsentBanner } from './ui/consent-banner.js';
 import { renderQuizTrigger, scheduleQuizTrigger } from './ui/quiz-trigger.js';
 import { renderQuizWidget } from './ui/quiz-widget.js';
+import {
+  renderMicroPoll,
+  isMicroPollDismissed,
+  DEFAULT_MICRO_POLL_QUESTIONS,
+} from './ui/micro-poll.js';
 import { createSidebarWidget } from './ui/sidebar-widget.js';
 import type { SidebarWidgetController } from './ui/sidebar-widget.js';
 import {
@@ -545,6 +550,12 @@ async function init(): Promise<void> {
     }
 
     let quizTriggered = false;
+    /** True once the full quiz decision tree is completed this session. */
+    let quizCompletedThisSession = false;
+    /** Index of the next micro-poll question to show (0-based). */
+    let microPollQuestionIndex = 0;
+    /** True once a micro-poll has been shown this session (one per session). */
+    let microPollShownThisSession = false;
 
     // 6. Set up behavioral observers, wiring listing view count for quiz.
     //    Pass inquirySubmitSelector from config so the inquiry click observer
@@ -617,6 +628,7 @@ async function init(): Promise<void> {
             (resolvedArchetype) => {
               // Apply v2 quiz leaf result to intent state (applyQuizLeaf — FOLLOW-199).
               // Note: full mismatch detection wiring is FOLLOW-201.
+              quizCompletedThisSession = true;
               currentIntentState = applyQuizLeaf(currentIntentState, resolvedArchetype);
               onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
               if (config.debug) {
@@ -672,6 +684,8 @@ async function init(): Promise<void> {
             () => {
               // dismissed — reset so it can show again next session
               quizTriggered = false;
+              // FOLLOW-209: quiz dismissed → attempt micro-poll as fallback
+              tryShowMicroPoll();
             },
           );
         },
@@ -679,6 +693,107 @@ async function init(): Promise<void> {
     }
 
     const cancelQuizTimer = scheduleQuizTrigger(showQuizTrigger);
+
+    // FOLLOW-209: Micro-poll bottom-toast trigger.
+    // Conditions (all must be true):
+    //   (a) micro_polls_enabled === true in config
+    //   (b) full quiz NOT completed this session
+    //   (c) micro-poll not already shown this session
+    //   (d) 24h localStorage cooldown not active
+    //   (e) triggered after quiz dismiss OR 90s since session start
+    //
+    // The micro-poll shows one question per trigger (sequence advances across listing views).
+    // On answer: apply micro_poll.answered behavioral signal + emit quiz.event with
+    //   trigger='micro_poll'. On dismiss: set 24h cooldown.
+
+    /**
+     * Attempt to show the next micro-poll question.
+     * Guards: quiz completed / already shown / cooldown / feature flag / all questions shown.
+     */
+    function tryShowMicroPoll(): void {
+      // All guards from spec (FOLLOW-209 §Trigger conditions)
+      if (!(config as unknown as Record<string, unknown>).micro_polls_enabled) return;
+      if (quizCompletedThisSession) return;
+      if (microPollShownThisSession) return;
+      if (isMicroPollDismissed()) return;
+      if (!shadowHost) return;
+
+      const questions = DEFAULT_MICRO_POLL_QUESTIONS;
+      if (microPollQuestionIndex >= questions.length) return;
+
+      const question = questions[microPollQuestionIndex];
+      if (!question) return;
+
+      microPollShownThisSession = true;
+
+      renderMicroPoll(
+        shadowHost.root,
+        { accentColor: config.accentColor },
+        question,
+        (questionKey: string, answer: 'yes' | 'no') => {
+          // Advance to next question (shown after next listing view)
+          microPollQuestionIndex += 1;
+          microPollShownThisSession = false;
+
+          // Apply micro_poll.answered behavioral signal to intent state
+          const prevSignalCount = currentIntentState.signal_count;
+          currentIntentState = applyBehavioralSignal(currentIntentState, 'micro_poll.answered', {
+            question: questionKey,
+            answer,
+          });
+          signalHistory.push({
+            eventType: 'micro_poll.answered',
+            payload: { question: questionKey, answer },
+          });
+          onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+
+          // Emit quiz.event with trigger='micro_poll' for ingest pipeline
+          eventQueue.push({
+            type: 'quiz.event',
+            payload: {
+              step: 'micro_poll_answered',
+              trigger: 'micro_poll',
+              archetype: currentIntentState.archetype,
+              confidence: currentIntentState.confidence,
+              micro_poll_question: questionKey,
+              micro_poll_answer: answer,
+            },
+            ts: Date.now(),
+          });
+
+          // Re-fetch directives if this crosses a REFETCH interval
+          if (
+            currentIntentState.signal_count > prevSignalCount &&
+            currentIntentState.signal_count % REFETCH_SIGNAL_INTERVAL === 0
+          ) {
+            void refreshDirectives();
+          }
+
+          if (config.debug) {
+            console.log('[Estalara] micro_poll.answered', {
+              question: questionKey,
+              answer,
+              archetype: currentIntentState.archetype,
+              confidence: currentIntentState.confidence,
+            });
+          }
+        },
+        () => {
+          // Dismissed — 24h cooldown is set inside renderMicroPoll before onDismiss fires
+          if (config.debug) {
+            console.log('[Estalara] micro-poll dismissed');
+          }
+        },
+      );
+    }
+
+    // Trigger micro-poll after 90s (spec §Trigger condition: 90s elapsed since session start)
+    // if micro_polls_enabled is set. Runs independently of the quiz 30s timer.
+    if ((config as unknown as Record<string, unknown>).micro_polls_enabled) {
+      setTimeout(() => {
+        tryShowMicroPoll();
+      }, 90_000);
+    }
 
     // FOLLOW-197 / CHAT-003: Chat signal bridge.
     // Listens for chat and live-signup CustomEvents dispatched by Estalara-app on `document`.

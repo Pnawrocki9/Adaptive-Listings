@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 
 import { DEFAULT_CONFIG, readConfig } from '../core/config.js';
 
@@ -60,5 +60,73 @@ describe('readConfig', () => {
     const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz' });
     const cfg = readConfig({ dataset });
     expect(cfg.inquirySubmitSelector).toBeUndefined();
+  });
+});
+
+describe('readConfig — language resolution (4-level priority chain)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * AC1: No data-language attr + navigator.language = 'pl-PL' → 'pl'
+   * Level 3 (navigator.language) kicks in when data-language is absent.
+   */
+  it('AC1: uses navigator.language primary subtag when data-language is absent (pl-PL → pl)', () => {
+    vi.stubGlobal('navigator', { language: 'pl-PL' });
+    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz' });
+    const cfg = readConfig({ dataset });
+    expect(cfg.language).toBe('pl');
+  });
+
+  /**
+   * AC2: No data-language attr + navigator.language = 'de-DE' (unsupported) → 'en'
+   * Level 3 produces unsupported lang; falls through to level 4 ('en').
+   */
+  it('AC2: falls back to en when navigator.language is unsupported (de-DE → en)', () => {
+    vi.stubGlobal('navigator', { language: 'de-DE' });
+    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz' });
+    const cfg = readConfig({ dataset });
+    expect(cfg.language).toBe('en');
+  });
+
+  /**
+   * AC3: data-language="en" takes priority over navigator.language regardless of browser setting.
+   * Level 2 wins; level 3 is never consulted.
+   */
+  it('AC3: data-language attr takes priority over navigator.language', () => {
+    vi.stubGlobal('navigator', { language: 'pl-PL' });
+    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz', language: 'en' });
+    const cfg = readConfig({ dataset });
+    expect(cfg.language).toBe('en');
+  });
+
+  it('data-language="es" takes priority over navigator.language', () => {
+    vi.stubGlobal('navigator', { language: 'pl-PL' });
+    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz', language: 'es' });
+    const cfg = readConfig({ dataset });
+    expect(cfg.language).toBe('es');
+  });
+
+  it('data-language="pl" takes priority over navigator.language=en', () => {
+    vi.stubGlobal('navigator', { language: 'en-US' });
+    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz', language: 'pl' });
+    const cfg = readConfig({ dataset });
+    expect(cfg.language).toBe('pl');
+  });
+
+  it('navigator.language=es-ES (supported) → es when data-language absent', () => {
+    vi.stubGlobal('navigator', { language: 'es-ES' });
+    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz' });
+    const cfg = readConfig({ dataset });
+    expect(cfg.language).toBe('es');
+  });
+
+  it('falls back to en when navigator is not available (SSR/worker context)', () => {
+    // Simulate environment where navigator is undefined
+    vi.stubGlobal('navigator', undefined);
+    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz' });
+    const cfg = readConfig({ dataset });
+    expect(cfg.language).toBe('en');
   });
 });

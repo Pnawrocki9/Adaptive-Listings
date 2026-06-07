@@ -63,6 +63,14 @@ export const DEFAULT_CONFIG: Omit<SdkConfig, 'apiKey'> = {
   accentColor: '#6c5ce7',
 };
 
+/** Supported quiz/UI locales. Extend this tuple when adding a new language. */
+const SUPPORTED_LANGUAGES = ['en', 'pl', 'es'] as const;
+type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+
+function isSupportedLanguage(v: string): v is SupportedLanguage {
+  return (SUPPORTED_LANGUAGES as readonly string[]).includes(v);
+}
+
 /**
  * Read SDK configuration from a <script> element's data-* attributes.
  * @throws {Error} if data-api-key is missing.
@@ -86,9 +94,38 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
   const tenantId = script.dataset.tenantId;
   const decisionApiUrl = script.dataset.decisionUrl;
 
+  /**
+   * Language resolution — 4-level priority chain (Master_Design v4.0 §E.4.6):
+   *   1. quizConfig.language — admin-set per-tenant (from DB via /api/quiz/config).
+   *      Applied by the quiz widget after init; not resolved here.
+   *   2. data-language attribute — embed-time attribute on the <script> tag.
+   *   3. navigator.language — browser's declared locale (e.g. 'pl-PL' → 'pl').
+   *      Only the BCP-47 primary subtag (first 2 chars) is used.
+   *      Unsupported locales fall through to level 4.
+   *   4. 'en' — hardcoded fallback (lowest priority).
+   *
+   * navigator is accessed via globalThis.navigator (property access) rather than
+   * the bare identifier `navigator`, because esbuild's Node-target transform
+   * replaces `typeof navigator` with the string "undefined" as a constant-folding
+   * optimisation, making the check permanently false in compiled modules even after
+   * vi.stubGlobal('navigator', ...) in tests. globalThis property accesses are
+   * not constant-folded and remain live in both browser and test environments.
+   * MDN: https://developer.mozilla.org/en-US/docs/Web/API/Navigator/language
+   */
   const rawLanguage = script.dataset.language;
-  const language: SdkConfig['language'] =
-    rawLanguage === 'pl' ? 'pl' : rawLanguage === 'es' ? 'es' : DEFAULT_CONFIG.language;
+  let language: SdkConfig['language'];
+  if (rawLanguage !== undefined && isSupportedLanguage(rawLanguage)) {
+    // Level 2: explicit data-language attribute
+    language = rawLanguage;
+  } else {
+    // Level 3: browser navigator.language (primary subtag only)
+    const nav = (globalThis as { navigator?: { language: string } }).navigator;
+    const browserPrimary = nav !== undefined ? nav.language.slice(0, 2) : undefined;
+    language =
+      browserPrimary !== undefined && isSupportedLanguage(browserPrimary)
+        ? browserPrimary
+        : DEFAULT_CONFIG.language; // Level 4: hardcoded 'en' fallback
+  }
 
   const privacyPolicyUrl = script.dataset.privacyUrl;
 

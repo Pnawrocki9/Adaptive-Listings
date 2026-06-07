@@ -532,6 +532,37 @@ export function detectMismatch(
 }
 
 /**
+ * Update intent state from a v2 quiz leaf resolution (direct archetype assignment).
+ *
+ * Called by quiz-widget v2.0 on leaf resolution. Sets the target archetype to 0.85
+ * probability; all others share the remaining 0.15 uniformly. Confidence is capped
+ * at 1.0 and includes the QUIZ_CONFIDENCE_BONUS. quiz_answered is set to true.
+ *
+ * applyQuizPrior() is preserved as the legacy fallback for the old 2-question flat quiz.
+ *
+ * @param state - Current intent state (signal_count and last_updated_at are preserved).
+ * @param archetype - The leaf archetype resolved by the decision tree.
+ */
+export function applyQuizLeaf(state: IntentState, archetype: Archetype): IntentState {
+  const leafProb = 0.85;
+  const otherCount = ARCHETYPE_NAMES.length - 1;
+  const otherProb = 0.15 / otherCount;
+
+  const probabilities = Object.fromEntries(
+    ARCHETYPE_NAMES.map((k) => [k, k === archetype ? leafProb : otherProb]),
+  ) as ArchetypeProbabilities;
+
+  return {
+    archetype,
+    confidence: Math.min(0.85 * QUIZ_CONFIDENCE_BONUS, 1.0),
+    probabilities,
+    signal_count: state.signal_count,
+    last_updated_at: Date.now(),
+    quiz_answered: true,
+  };
+}
+
+/**
  * Calculate behavioral-only intent state from a signal history.
  * Starts from BASE_PRIOR and applies only behavioral signals — no quiz prior.
  */

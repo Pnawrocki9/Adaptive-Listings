@@ -25,7 +25,7 @@ import {
 import { setupObservers } from './core/observer.js';
 import { createShadowHost } from './ui/shadow-host.js';
 import { renderConsentBanner } from './ui/consent-banner.js';
-import { renderQuizTrigger, isQuizDismissed } from './ui/quiz-trigger.js';
+import { renderQuizTrigger, scheduleQuizTrigger } from './ui/quiz-trigger.js';
 import { renderQuizWidget } from './ui/quiz-widget.js';
 import { createSidebarWidget } from './ui/sidebar-widget.js';
 import type { SidebarWidgetController } from './ui/sidebar-widget.js';
@@ -43,7 +43,7 @@ import {
 import {
   applyArchetypeHints,
   applyBehavioralSignal,
-  applyQuizPrior,
+  applyQuizLeaf,
   calculateBehavioralOnlyState,
   detectMismatch,
   initIntentState,
@@ -127,8 +127,7 @@ setDescriptionEventQueueRef(eventQueue);
 
 const BATCH_INTERVAL_MS = 5_000;
 
-/** Number of listing views required before showing the quiz trigger. */
-const QUIZ_TRIGGER_THRESHOLD = 3;
+// FOLLOW-199: quiz trigger is now time-based (30s) rather than listing-view-count based.
 
 /**
  * Main SDK initialization — called automatically when DOM is ready.
@@ -412,7 +411,6 @@ async function init(): Promise<void> {
       });
     }
 
-    let listingViewCount = 0;
     let quizTriggered = false;
 
     // Signal history — accumulated pre-quiz behavioral events for mismatch detection
@@ -444,74 +442,8 @@ async function init(): Promise<void> {
           void refreshDirectives();
         }
 
-        if (event.type === 'listing.viewed' && shadowHost && !quizTriggered && !isQuizDismissed()) {
-          listingViewCount++;
-          if (listingViewCount >= QUIZ_TRIGGER_THRESHOLD) {
-            quizTriggered = true;
-            renderQuizTrigger(
-              shadowHost.root,
-              { accentColor: quizConfig.accentColor, icon: '🎯', language: quizConfig.language },
-              () => {
-                renderQuizWidget(
-                  shadowHost.root,
-                  quizConfig,
-                  (answers) => {
-                    // Apply strong quiz prior to intent state
-                    currentIntentState = applyQuizPrior(
-                      currentIntentState,
-                      answers.purpose,
-                      answers.horizon,
-                    );
-                    onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
-                    if (config.debug) {
-                      console.log(
-                        `[Estalara] Quiz → archetype=${currentIntentState.archetype} confidence=${String(currentIntentState.confidence)}`,
-                      );
-                    }
-                    eventQueue.push({
-                      type: 'quiz.event',
-                      payload: {
-                        step: 'completed',
-                        answers,
-                        trigger: 'prompt_after_3_listings',
-                        archetype: currentIntentState.archetype,
-                        confidence: currentIntentState.confidence,
-                      },
-                      ts: Date.now(),
-                    });
-
-                    // Mismatch detection — compare quiz archetype against behavioral-only evidence
-                    const behavioralOnlyState = calculateBehavioralOnlyState(signalHistory);
-                    const mismatch = detectMismatch(
-                      currentIntentState.archetype,
-                      behavioralOnlyState,
-                      currentSession.sessionId,
-                    );
-                    if (mismatch) {
-                      eventQueue.push({
-                        type: 'quiz.mismatch',
-                        payload: {
-                          quiz_archetype: mismatch.quiz_archetype,
-                          behavioral_archetype: mismatch.behavioral_archetype,
-                          confidence_gap: mismatch.confidence_gap,
-                          signal_count: mismatch.signal_count,
-                        },
-                        ts: Date.now(),
-                      });
-                    }
-
-                    // Re-fetch directives with quiz-updated archetype confidence
-                    void refreshDirectives();
-                  },
-                  () => {
-                    // dismissed — reset so it can show again next session
-                    quizTriggered = false;
-                  },
-                );
-              },
-            );
-          }
-        }
+        // listing.viewed signal no longer drives the quiz trigger (FOLLOW-199).
+        // The quiz is now scheduled via a 30s setTimeout after SDK init (see below).
       },
       // Thread inquiry_submit_selector from tenant site schema → SdkConfig → observer options.
       // This was the root cause of inquiry.started never firing in production (FOLLOW-097).
@@ -520,6 +452,74 @@ async function init(): Promise<void> {
         ? { inquirySubmitSelector: config.inquirySubmitSelector }
         : {},
     );
+
+    // FOLLOW-199: Schedule quiz trigger 30s after SDK init, on any page type.
+    // The trigger is shown only if the quiz has not been dismissed in the past 24h.
+    // Clicking the trigger opens the v2 branching decision-tree quiz widget.
+    function showQuizTrigger(): void {
+      if (!shadowHost || quizTriggered) return;
+      quizTriggered = true;
+      renderQuizTrigger(
+        shadowHost.root,
+        { accentColor: quizConfig.accentColor, icon: '🎯', language: quizConfig.language },
+        () => {
+          renderQuizWidget(
+            shadowHost.root,
+            quizConfig,
+            (resolvedArchetype) => {
+              // Apply v2 quiz leaf result to intent state (applyQuizLeaf — FOLLOW-199).
+              // Note: full mismatch detection wiring is FOLLOW-201.
+              currentIntentState = applyQuizLeaf(currentIntentState, resolvedArchetype);
+              onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+              if (config.debug) {
+                console.log(
+                  `[Estalara] Quiz → archetype=${currentIntentState.archetype} confidence=${String(currentIntentState.confidence)}`,
+                );
+              }
+              eventQueue.push({
+                type: 'quiz.event',
+                payload: {
+                  step: 'completed',
+                  trigger: 'prompt_after_30s',
+                  archetype: currentIntentState.archetype,
+                  confidence: currentIntentState.confidence,
+                },
+                ts: Date.now(),
+              });
+
+              // Mismatch detection — compare quiz archetype against behavioral-only evidence
+              const behavioralOnlyState = calculateBehavioralOnlyState(signalHistory);
+              const mismatch = detectMismatch(
+                currentIntentState.archetype,
+                behavioralOnlyState,
+                currentSession.sessionId,
+              );
+              if (mismatch) {
+                eventQueue.push({
+                  type: 'quiz.mismatch',
+                  payload: {
+                    quiz_archetype: mismatch.quiz_archetype,
+                    behavioral_archetype: mismatch.behavioral_archetype,
+                    confidence_gap: mismatch.confidence_gap,
+                    signal_count: mismatch.signal_count,
+                  },
+                  ts: Date.now(),
+                });
+              }
+
+              // Re-fetch directives with quiz-updated archetype confidence
+              void refreshDirectives();
+            },
+            () => {
+              // dismissed — reset so it can show again next session
+              quizTriggered = false;
+            },
+          );
+        },
+      );
+    }
+
+    const cancelQuizTimer = scheduleQuizTrigger(showQuizTrigger);
 
     // FOLLOW-197 / CHAT-003: Chat signal bridge.
     // Listens for chat and live-signup CustomEvents dispatched by Estalara-app on `document`.
@@ -638,6 +638,7 @@ async function init(): Promise<void> {
     // Store cleanup on window for testing / SPA teardown
     (window as Window & { __estalaraTeardown?: () => void }).__estalaraTeardown = () => {
       if (flushTimer) clearInterval(flushTimer);
+      cancelQuizTimer();
       cleanupObservers();
       teardownDescriptionObservers();
       sidebar?.destroy();

@@ -22,7 +22,7 @@ export interface QuizConfig {
   enabled: boolean;
   trigger_after_n_listings: number;
   sticky_widget: boolean;
-  language: 'en' | 'pl';
+  language: 'en' | 'pl' | 'es';
   accent_color: string;
 }
 
@@ -38,7 +38,7 @@ const QuizConfigSchema = z.object({
   enabled: z.boolean().optional(),
   trigger_after_n_listings: z.number().int().min(1).max(10).optional(),
   sticky_widget: z.boolean().optional(),
-  language: z.enum(['en', 'pl']).optional(),
+  language: z.enum(['en', 'pl', 'es']).optional(),
   accent_color: z.string().optional(),
 });
 

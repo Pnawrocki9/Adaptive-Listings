@@ -131,7 +131,7 @@ updates.
 | 13a-h2 | 15    | Pre-pilot hardening v2 — §13.2 localStorage xid erasure (FOLLOW-139), pilot inquiry selector seed (FOLLOW-141)                      | 2       | 2    | 0       | 0     | 0       |
 | 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                         | 6       | 0    | 0       | 3     | 3       |
 | Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)      | 4       | 4    | 0       | 0     | 0       |
-| 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 8    | 0       | 13    | 0       |
+| 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 10   | 0       | 11    | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -3162,7 +3162,9 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-201
   title: applyQuizLeaf() + drift detection activation
   agent: sdk-engineer
-  status: READY
+  status: DONE
+  completed_at: '2026-06-07T00:00:00Z'
+  pr: '#204'
   priority: P1
   estimated_hours: 5
   depends_on: [FOLLOW-199]
@@ -3193,17 +3195,22 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-203
   title: Remove Tier logic from description route
   agent: backend-engineer
-  status: READY
+  status: DONE
+  completed_at: '2026-06-07T00:00:00Z'
+  pr: '#205'
   priority: P1
   estimated_hours: 4
   depends_on: []
   produces: [FOLLOW-204]
   source: Audit §10.3, Master_Design §E.7 v4.0, CEO decision 2026-06-05
   spec: backlog/sprint-15/FOLLOW-203.md
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/205
   notes: |
     CEO decision 2026-06-05: no Tiers in Adaptive Listings. Remove tier param from
     description route Zod schema, remove TTL_TIER2/TTL_TIER3, remove Tier-1 early-return,
     single max_tokens:500. Remove TTL exports from description-cache.ts. Redis SET without EX.
+    CI green: Typecheck, Test (Node 22), Rule H, Rule J, Format, Lint all pass.
+    Python test failures are pre-existing-red and non-blocking (per CI gate landscape).
 
 - id: FOLLOW-204
   title: description_cache_persistent — permanent Postgres description table

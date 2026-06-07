@@ -41,7 +41,7 @@ import { errorBody, ErrorCode } from '@estalara/shared';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
-export const QuizCompletionBodySchema = z.object({
+const QuizCompletionBodySchema = z.object({
   session_id: z.string().min(1).max(512),
   resolved_archetype: z.string().min(1).max(128),
   branch: z.string().nullable().optional(),
@@ -51,11 +51,11 @@ export const QuizCompletionBodySchema = z.object({
   language: z.enum(['en', 'pl', 'es']).default('en'),
 });
 
-export type QuizCompletionBody = z.infer<typeof QuizCompletionBodySchema>;
+type QuizCompletionBody = z.infer<typeof QuizCompletionBodySchema>;
 
-// ─── Response type (canonical — import from this module, do not redeclare) ────
+// ─── Response type ────────────────────────────────────────────────────────────
 
-export interface QuizCompletionResponse {
+interface QuizCompletionResponse {
   id: string;
   created_at: string;
 }

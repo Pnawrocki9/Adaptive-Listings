@@ -141,6 +141,79 @@ function postFeedbackPing(
     });
 }
 
+// ---------------------------------------------------------------------------
+// Quiz completion ping (fire-and-forget POST to /api/quiz/completion)
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive the quiz completion URL from the decision API base URL.
+ * The endpoint lives at {decisionApiUrl}/api/quiz/completion.
+ *
+ * @internal
+ */
+function deriveQuizCompletionUrl(config: SdkConfig): string | null {
+  if (!config.decisionApiUrl) return null;
+  return `${config.decisionApiUrl}/api/quiz/completion`;
+}
+
+/**
+ * Post a quiz completion record to POST /api/quiz/completion. Fire-and-forget —
+ * never awaited, never throws. The quiz dismiss UI must not be blocked.
+ *
+ * Auth: HMAC-SHA256 tenant-scoped (same as /api/adapt/feedback, FOLLOW-051):
+ *   Authorization: Bearer {apiKey}
+ *   X-Estalara-Signature: HMAC-SHA256(apiKey, bodyText)
+ *
+ * When SubtleCrypto is unavailable the ping is skipped rather than sending an
+ * unsigned request that the server will reject (consistent with postFeedbackPing).
+ *
+ * Failures are caught and logged to console.warn — they must never propagate to the
+ * caller or affect the quiz dismiss flow.
+ *
+ * @param config    - SDK configuration (needs apiKey + decisionApiUrl).
+ * @param sessionId - Current session identifier.
+ * @param resolvedArchetype - Quiz leaf archetype (or 'neutral').
+ * @param language  - Quiz locale ('en' | 'pl' | 'es').
+ */
+export function postQuizCompletionPing(
+  config: SdkConfig,
+  sessionId: string,
+  resolvedArchetype: string,
+  language: 'en' | 'pl' | 'es',
+): void {
+  const completionUrl = deriveQuizCompletionUrl(config);
+  if (!completionUrl) return;
+
+  const body = JSON.stringify({
+    session_id: sessionId,
+    resolved_archetype: resolvedArchetype,
+    language,
+  });
+
+  computeHmacSha256Hex(config.apiKey, body)
+    .then((signatureHex) => {
+      if (signatureHex === null) {
+        console.warn('[estalara] quiz completion ping skipped: SubtleCrypto unavailable');
+        return;
+      }
+      return fetch(completionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+          'X-Estalara-Signature': signatureHex,
+        },
+        body,
+      });
+    })
+    .catch((err: unknown) => {
+      console.warn(
+        '[estalara] quiz completion ping failed:',
+        err instanceof Error ? err.message : String(err),
+      );
+    });
+}
+
 /**
  * @deprecated Use TextDirective or ClassDirective from @estalara/shared instead.
  * Kept for backward compatibility with existing consumers.

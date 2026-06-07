@@ -20,9 +20,14 @@
  *   the token is validated against it. When unset, any non-empty token is accepted
  *   (backward compat with dev/test environments).
  *
+ * Lookup order per Master Design §E.7.2 (FOLLOW-204):
+ *   1. description_cache_persistent (Postgres) — if found and not invalidated → return
+ *   2. Upstash Redis (hot-path fast cache) — if found → return + async backfill Postgres
+ *   3. template_fallback immediately + fire-and-forget Modal enqueue
+ *
  * Source values in response:
  *   - `template_fallback` — returned from PlaybookEntry.copy_template (no Redis involved)
- *   - `ai_cached`         — returned from Upstash Redis (Modal job completed earlier)
+ *   - `ai_cached`         — returned from Upstash Redis or Postgres (Modal job completed earlier)
  *
  * Note: `ai_generated` is NOT a valid source value from this endpoint. The endpoint never
  * waits for AI generation — it always returns immediately. The `ai_cached` source is used
@@ -43,6 +48,7 @@ import { fetchListingOriginalDescription } from '@/lib/listing-details';
 import { getAuthClaims } from '@estalara/auth';
 import { getDemoOverride } from '@/lib/demo-override-store';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
+import { getPgCachedDescription, insertPgCachedDescription } from '@/lib/description-pg-cache';
 
 // ─── Query parameter schema ───────────────────────────────────────────────────
 
@@ -231,7 +237,46 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ? demoOverrideModel // DEMO MODE wins
       : globalModel; // global default (may equal the static default)
 
-  // ── Redis cache lookup ────────────────────────────────────────────────────
+  // ── Step 1: Postgres permanent cache lookup (FOLLOW-204 / Master Design §E.7.2) ──
+  // Postgres is the durable truth; Redis is the hot-path cache.
+  // On a Postgres hit we warm Redis (fire-and-forget) and return immediately.
+  // On a Postgres miss or DB error (fail-open) we fall through to Redis.
+  const pgHit = await getPgCachedDescription(tenantId, listing_id, archetypeId, localeCode);
+  if (pgHit !== null) {
+    // Postgres HIT — warm Redis with the cached value (fire-and-forget).
+    // Build the Redis key the same way the Modal job would so the hot path is primed.
+    const baseCacheKeyForWarm = descriptionKey(tenantId, listing_id, archetypeId, localeCode);
+    const warmKey =
+      demoActive && demoOverrideModel
+        ? `${baseCacheKeyForWarm}:demo:${demoOverrideModel}`
+        : `${baseCacheKeyForWarm}:${globalModel}`;
+    void (async () => {
+      try {
+        const { setCachedDescription } = await import('@/lib/description-cache');
+        await setCachedDescription(warmKey, {
+          text: pgHit.description,
+          headline: pgHit.headline ?? undefined,
+          generated_at: pgHit.generatedAt,
+        });
+      } catch (err: unknown) {
+        console.error(
+          '[description] Redis warm-up from Postgres hit failed (non-fatal):',
+          err instanceof Error ? err.message : err,
+        );
+      }
+    })();
+
+    const response: DescriptionResponse = {
+      description: pgHit.description,
+      headline: pgHit.headline ?? null,
+      source: 'ai_cached',
+      locale: localeCode,
+      generated_at: pgHit.generatedAt,
+    };
+    return NextResponse.json(response, { status: 200 });
+  }
+
+  // ── Step 2: Redis cache lookup ────────────────────────────────────────────
   // Cache key includes the effective model so a model switch yields a cache miss
   // instead of serving a stale-model description (AC5 / FOLLOW-161).
   //
@@ -249,7 +294,23 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const cached = await getCachedDescription(cacheKey);
 
   if (cached !== null) {
-    // Cache HIT — return AI-generated description (and headline when present) from Redis.
+    // Redis HIT — return AI-generated description (and headline when present).
+    // Async backfill to Postgres so the durable cache is populated (FOLLOW-204 §E.7.2 step 2).
+    void insertPgCachedDescription(
+      tenantId,
+      listing_id,
+      archetypeId,
+      localeCode,
+      cached.text,
+      cached.headline ?? null,
+      effectiveModel,
+    ).catch((err: unknown) => {
+      console.error(
+        '[description] Postgres backfill from Redis hit failed (non-fatal):',
+        err instanceof Error ? err.message : err,
+      );
+    });
+
     // headline is optional in DescriptionCacheValue (pre-ADR-0009 entries lack it).
     // Normalise absent/undefined to null so the SDK always sees a consistent field.
     const response: DescriptionResponse = {

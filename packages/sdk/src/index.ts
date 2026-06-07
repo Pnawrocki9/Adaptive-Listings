@@ -34,6 +34,7 @@ import {
   applyDirectives,
   setEventQueueRef,
   resetAdaptState,
+  postQuizCompletionPing,
 } from './core/adapt.js';
 import {
   applyDescriptionAdaptation,
@@ -535,6 +536,17 @@ async function init(): Promise<void> {
                   `[Estalara] Quiz → archetype=${currentIntentState.archetype} confidence=${String(currentIntentState.confidence)}`,
                 );
               }
+
+              // FOLLOW-200: persist quiz completion to Postgres for MOAT training data.
+              // Fire-and-forget — must never block the quiz dismiss UI.
+              // Fails silently (postQuizCompletionPing catches all errors internally).
+              postQuizCompletionPing(
+                config,
+                currentSession.sessionId,
+                currentIntentState.archetype,
+                quizConfig.language,
+              );
+
               eventQueue.push({
                 type: 'quiz.event',
                 payload: {

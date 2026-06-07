@@ -28,6 +28,14 @@ vi.mock('@estalara/auth', () => ({
   getAuthClaims: vi.fn().mockResolvedValue(null),
 }));
 
+// Bypass demo JWT verification for non-auth tests (FOLLOW-205).
+// Full auth path is exercised in route.demo-auth.test.ts.
+vi.mock('@/lib/demo-jwt-verify', () => ({
+  verifyDemoJwt: vi.fn().mockResolvedValue(undefined),
+  DemoJwtSecretMissingError: class DemoJwtSecretMissingError extends Error {},
+  DemoJwtInvalidError: class DemoJwtInvalidError extends Error {},
+}));
+
 // Mock bandit-query — POST handler now calls getBanditArms (FOLLOW-007)
 vi.mock('@/lib/bandit-query', () => ({
   getBanditArms: vi.fn().mockResolvedValue([
@@ -722,27 +730,31 @@ function makePostRequest(body: Record<string, unknown>, authHeader?: string): Ne
   });
 }
 
-describe('POST /api/adapt — presence-only auth', () => {
+describe('POST /api/adapt — auth gate (FOLLOW-205: JWT verification; verifyDemoJwt mocked)', () => {
+  // NOTE: verifyDemoJwt is mocked globally in this file (see top-level vi.mock).
+  // Full cryptographic auth coverage (invalid JWT, expired JWT, wrong secret) is
+  // in route.demo-auth.test.ts. These tests cover the HTTP surface (missing header →
+  // 401) and the downstream happy path with auth bypassed for isolation.
   beforeEach(() => {
     mockCallLlmGateway.mockClear();
     mockCallLlmGateway.mockResolvedValue(null);
   });
 
-  it('missing Authorization header → 401', async () => {
+  it('missing Authorization header → 401 invalid_demo_token', async () => {
     const res = await POST(makePostRequest(VALID_POST_BODY));
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: string }>(res);
-    expect(body.error).toContain('Unauthorized');
+    expect(body.error).toBe('invalid_demo_token');
   });
 
-  it('empty Bearer token → 401', async () => {
+  it('empty Bearer token → 401 invalid_demo_token', async () => {
     const res = await POST(makePostRequest(VALID_POST_BODY, 'Bearer '));
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: string }>(res);
-    expect(body.error).toContain('Unauthorized');
+    expect(body.error).toBe('invalid_demo_token');
   });
 
-  it('valid Authorization: Bearer demo_key → 200 with AdaptationDirectives', async () => {
+  it('Authorization: Bearer <token> (verifyDemoJwt passes) → 200 with AdaptationDirectives', async () => {
     const res = await POST(makePostRequest(VALID_POST_BODY, 'Bearer demo_key'));
     expect(res.status).toBe(200);
     const body = await parseBody<unknown>(res);

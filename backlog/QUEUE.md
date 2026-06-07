@@ -3184,7 +3184,10 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-202
   title: Navigator.language browser detection for quiz
   agent: sdk-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: sdk-engineer
+  started_at: '2026-06-07T20:00:00Z'
+  branch: sdk-engineer/FOLLOW-202-navigator-language-detection
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -3243,16 +3246,23 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-205
   title: F-19 — Demo auth hardening
   agent: backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-06-07T20:00:00Z'
+  completed_at: '2026-06-07T20:30:00Z'
+  branch: backend-engineer/FOLLOW-205-demo-auth-hardening
+  pr: TBD
   priority: P2
   estimated_hours: 3
   depends_on: []
   source: Audit F-19
   spec: backlog/sprint-15/FOLLOW-205.md
   notes: |
-    route.ts:696-710 presence-only Bearer check → replace with JWT verification using
-    DEMO_MODE_JWT_SECRET (env var already exists). Arbitrary Bearer → 401.
-    Valid signed JWT → proceeds. Prevents unbounded LLM cost from external parties.
+    Replaced presence-only Bearer check with real HS256 JWT verification using
+    crypto.subtle (Web Crypto API, no new dependency). Invalid/expired JWT → 401
+    { error: 'invalid_demo_token' }. Missing secret → 500 { error:
+    'demo_auth_misconfigured' }. 6 new unit tests cover AC1/AC2/AC3. All 745
+    tests passing. Typecheck clean.
 
 - id: FOLLOW-206
   title: F-05/F-21 — SQL escaping unification

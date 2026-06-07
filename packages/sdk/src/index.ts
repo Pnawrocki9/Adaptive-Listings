@@ -44,6 +44,7 @@ import {
 import {
   applyArchetypeHints,
   applyBehavioralSignal,
+  applyListingViewRate,
   applyQuizLeaf,
   applyReferrerHints,
   calculateBehavioralOnlyState,
@@ -144,6 +145,11 @@ const BATCH_INTERVAL_MS = 5_000;
  */
 async function init(): Promise<void> {
   try {
+    // FOLLOW-208: Record session start time for listing-view-rate computation.
+    // Must be set before any async await so all listing.viewed callbacks reference
+    // the same origin timestamp for rate = viewCount / (elapsedMs / 60_000).
+    const sessionStartedAt = Date.now();
+
     // 1. Find the Estalara script tag (the one with data-api-key)
     const script = document.querySelector<HTMLScriptElement>('script[data-api-key]');
     if (!script) return;
@@ -343,12 +349,27 @@ async function init(): Promise<void> {
     const dqsTracker = new DqsTracker(currentSession.sessionId);
     let dqsUpdateCount = 0;
 
+    // FOLLOW-208: Per-session listing view counter — declared here (before flushDqsSnapshot)
+    // so the snapshot closure can read the accumulated count. The counter is incremented
+    // inside the listing.viewed branch of the setupObservers callback below.
+    let listingViewCount = 0;
+
     /** Push a session.quality.snapshot event into the queue. */
     function flushDqsSnapshot(): void {
       const snap = dqsTracker.snapshot();
+      // FOLLOW-208: include listing_view_rate (views per minute) in every snapshot.
+      // Rate is 0 until the second view has been seen (listingViewCount < 2 → 0).
+      const elapsedMsSnap = Date.now() - sessionStartedAt;
+      const listing_view_rate =
+        listingViewCount >= 2 && elapsedMsSnap > 0
+          ? listingViewCount / (elapsedMsSnap / 60_000)
+          : 0;
       eventQueue.push({
         type: 'session.quality.snapshot',
-        payload: snap as unknown as Record<string, unknown>,
+        payload: {
+          ...(snap as unknown as Record<string, unknown>),
+          listing_view_rate,
+        },
         ts: Date.now(),
       });
     }
@@ -530,6 +551,7 @@ async function init(): Promise<void> {
     //    actually registers — fixes the RETRO-008/RETRO-009 bug where
     //    inquiry.started never fired in production because the options argument
     //    was omitted at the call site (FOLLOW-097).
+
     const cleanupObservers = setupObservers(
       config,
       (event: CollectedEvent) => {
@@ -542,6 +564,23 @@ async function init(): Promise<void> {
         const prevSignalCount = currentIntentState.signal_count;
         currentIntentState = applyBehavioralSignal(currentIntentState, event.type, event.payload);
         onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+
+        // FOLLOW-208: Apply listing-view rate signal after the second view.
+        // Rate = viewCount / (elapsedMs / 60_000). Only fires when viewCount >= 2
+        // (first view is baseline). applyListingViewRate is a pure function — it
+        // returns state unchanged for any case that does not match a boost bracket.
+        if (event.type === 'listing.viewed') {
+          listingViewCount += 1;
+          if (listingViewCount >= 2) {
+            const elapsedMs = Date.now() - sessionStartedAt;
+            currentIntentState = applyListingViewRate(
+              currentIntentState,
+              listingViewCount,
+              elapsedMs,
+            );
+            onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+          }
+        }
 
         // Re-fetch directives every REFETCH_SIGNAL_INTERVAL behavioral signals
         if (

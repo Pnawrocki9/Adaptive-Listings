@@ -1,4 +1,3 @@
- 
 /**
  * GET /api/pilot/calibration
  *

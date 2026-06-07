@@ -499,11 +499,21 @@ export async function fetchDirectives(
   if (!config.tenantId) return null;
 
   try {
+    // FOLLOW-197: include derived pseudonymous lead_id when available (registered user path).
+    // The raw user_uuid is never stored — only the SHA-256-derived 16-char hex token.
+    let leadId = '';
+    try {
+      leadId = sessionStorage.getItem('__estalara_lead_id__') ?? '';
+    } catch {
+      // sessionStorage unavailable — leave leadId as empty string
+    }
+
     const body: Record<string, unknown> = {
       tenant_id: config.tenantId,
       session_id: session.sessionId,
       page_type: pageType,
       locale: config.language,
+      lead_id: leadId,
     };
     if (intentState !== undefined) {
       body.archetype_hint = intentState.archetype;

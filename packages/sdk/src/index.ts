@@ -19,6 +19,8 @@ import {
   setConsentState,
   eraseCrossSessionId,
   getOrCreateCrossSessionId,
+  deriveLeadId,
+  LEAD_ID_STORAGE_KEY,
 } from './core/session.js';
 import { setupObservers } from './core/observer.js';
 import { createShadowHost } from './ui/shadow-host.js';
@@ -224,6 +226,37 @@ async function init(): Promise<void> {
     resetAdaptState();
     const session = await getOrCreateSession();
     const currentSession = incrementPageCount(session);
+
+    // FOLLOW-197 / CHAT-003: Registered user lead_id derivation.
+    // If a Keycloak JWT is present in localStorage ('kc_token'), derive a pseudonymous
+    // lead_id from the 'sub' claim and store it in sessionStorage (tab-lifetime only).
+    // Rule L: the raw user_uuid is NEVER stored — only the SHA-256 16-char hex prefix.
+    // Mode A compliance: sessionStorage only, never localStorage for this identifier.
+    // Failures are silently swallowed — anonymous users continue with xid-based tracking.
+    try {
+      const kcToken = localStorage.getItem('kc_token');
+      if (kcToken) {
+        // JWT is three base64url segments separated by dots; middle segment is the payload.
+        const parts = kcToken.split('.');
+        if (parts.length === 3) {
+          // base64url → base64 → JSON
+          const [, payloadSegment] = parts;
+          const b64 = (payloadSegment ?? '').replace(/-/g, '+').replace(/_/g, '/');
+          const json = atob(b64);
+          const claims = JSON.parse(json) as Record<string, unknown>;
+          if (typeof claims.sub === 'string' && claims.sub.length > 0) {
+            const leadId = await deriveLeadId(claims.sub);
+            try {
+              sessionStorage.setItem(LEAD_ID_STORAGE_KEY, leadId);
+            } catch {
+              // sessionStorage unavailable — lead_id lives in memory only for this call
+            }
+          }
+        }
+      }
+    } catch {
+      // Any parse failure (malformed JWT, missing atob, JSON error) → continue anonymously
+    }
 
     // 4. Collect initial page.view event
     eventQueue.push(collectPageView());
@@ -487,6 +520,89 @@ async function init(): Promise<void> {
         ? { inquirySubmitSelector: config.inquirySubmitSelector }
         : {},
     );
+
+    // FOLLOW-197 / CHAT-003: Chat signal bridge.
+    // Listens for chat and live-signup CustomEvents dispatched by Estalara-app on `document`.
+    // Using document (not window) per RETRO-033 — Estalara-app dispatches on document.
+    //
+    // Rule L: raw user_uuid is NEVER stored — only the SHA-256-derived lead_id is stored.
+    // Agent activity (is_agent === true) is silently filtered — investor signals only.
+
+    // Chat: estalara:chat:message-sent
+    document.addEventListener('estalara:chat:message-sent', (e: Event) => {
+      void (async (): Promise<void> => {
+        const ce = e as CustomEvent<Record<string, unknown>>;
+        if (ce.detail.is_agent === true) return;
+
+        // Derive lead_id from user_uuid if present; fall back to stored lead_id.
+        // Rule L: user_uuid is NEVER stored — only the derived hash prefix.
+        let leadId: string | undefined;
+        if (typeof ce.detail.user_uuid === 'string' && ce.detail.user_uuid.length > 0) {
+          leadId = await deriveLeadId(ce.detail.user_uuid);
+          try {
+            sessionStorage.setItem(LEAD_ID_STORAGE_KEY, leadId);
+          } catch {
+            // sessionStorage unavailable — lead_id is used in-memory only for this event
+          }
+        } else {
+          try {
+            leadId = sessionStorage.getItem(LEAD_ID_STORAGE_KEY) ?? undefined;
+          } catch {
+            // sessionStorage unavailable
+          }
+        }
+
+        eventQueue.push({
+          type: 'chat.message.sent',
+          payload: {
+            char_count: typeof ce.detail.char_count === 'number' ? ce.detail.char_count : undefined,
+            listing_id: typeof ce.detail.listing_id === 'string' ? ce.detail.listing_id : undefined,
+            lead_id: leadId,
+          },
+          ts: Date.now(),
+        });
+      })();
+    });
+
+    // Live signup: live.signup (dot-separated — registerFeedbackListener already handles
+    // the feedback ping; this listener queues the ingest event and stores lead_id).
+    document.addEventListener('live.signup', (e: Event) => {
+      void (async (): Promise<void> => {
+        const ce = e as CustomEvent<Record<string, unknown>>;
+        if (ce.detail.is_agent === true) return;
+
+        // Derive lead_id from user_uuid if present; fall back to stored lead_id.
+        // Rule L: user_uuid is NEVER stored — only the derived hash prefix.
+        let leadId: string | undefined;
+        if (typeof ce.detail.user_uuid === 'string' && ce.detail.user_uuid.length > 0) {
+          leadId = await deriveLeadId(ce.detail.user_uuid);
+          try {
+            sessionStorage.setItem(LEAD_ID_STORAGE_KEY, leadId);
+          } catch {
+            // sessionStorage unavailable
+          }
+        } else {
+          try {
+            leadId = sessionStorage.getItem(LEAD_ID_STORAGE_KEY) ?? undefined;
+          } catch {
+            // sessionStorage unavailable
+          }
+        }
+
+        // feedback ping is already handled by registerFeedbackListener in adapt.ts.
+        // This listener queues the ingest telemetry event only.
+        eventQueue.push({
+          type: 'live.signup',
+          payload: {
+            slot_uuid: typeof ce.detail.slot_uuid === 'string' ? ce.detail.slot_uuid : undefined,
+            lead_id: leadId,
+            source_surface:
+              typeof ce.detail.source_surface === 'string' ? ce.detail.source_surface : undefined,
+          },
+          ts: Date.now(),
+        });
+      })();
+    });
 
     // 7. Flush events on interval and page unload
     async function flush(): Promise<void> {

@@ -45,6 +45,7 @@ import {
   applyArchetypeHints,
   applyBehavioralSignal,
   applyQuizLeaf,
+  applyReferrerHints,
   calculateBehavioralOnlyState,
   detectMismatch,
   initIntentState,
@@ -289,6 +290,54 @@ async function init(): Promise<void> {
     } catch {
       // Non-critical — detection failure must never block session init.
     }
+
+    // FOLLOW-207: Referrer + device-type cold-session priors.
+    // Applied after archetype hints so site-level hints are already folded in.
+    // globalThis property access prevents esbuild dead-code elimination (FOLLOW-202 pattern).
+
+    // Referrer hints (cold-session prior)
+    const referrer = (globalThis as { document?: { referrer?: string } }).document?.referrer ?? '';
+    const utmTerm =
+      new URLSearchParams(
+        (globalThis as { location?: { search?: string } }).location?.search ?? '',
+      ).get('utm_term') ?? '';
+    currentIntentState = applyReferrerHints(currentIntentState, referrer, utmTerm);
+
+    // Device type prior
+    const windowWidth = (globalThis as { window?: { innerWidth?: number } }).window?.innerWidth;
+    const deviceType = windowWidth !== undefined && windowWidth >= 1024 ? 'desktop' : 'mobile';
+    currentIntentState = applyBehavioralSignal(currentIntentState, `device_type.${deviceType}`);
+
+    // Capture referrer_domain for session.started ingest event
+    let referrerDomain = '';
+    try {
+      if (referrer) {
+        referrerDomain = new URL(referrer).hostname;
+      }
+    } catch {
+      // Malformed referrer URL — leave empty
+    }
+
+    // Emit session.started with device_type and referrer_domain (FOLLOW-207 AC3).
+    // viewport is required by SessionStartedPayloadSchema; fall back to 0x0 in non-browser envs.
+    const sessionViewport =
+      windowWidth !== undefined
+        ? {
+            width: windowWidth,
+            height: (globalThis as { window?: { innerHeight?: number } }).window?.innerHeight ?? 0,
+          }
+        : { width: 0, height: 0 };
+    eventQueue.push({
+      type: 'session.started',
+      payload: {
+        device_class: deviceType,
+        viewport: sessionViewport,
+        language: config.language,
+        ...(referrerDomain ? { referrer_domain: referrerDomain } : {}),
+        device_type: deviceType,
+      },
+      ts: Date.now(),
+    });
 
     // 4b-dqs. Initialize per-session DQS tracker (TICKET-DQS-001)
     const dqsTracker = new DqsTracker(currentSession.sessionId);

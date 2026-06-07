@@ -44,6 +44,10 @@ export const SessionStartedPayloadSchema = z.object({
   time_of_day: z.enum(['night', 'morning', 'afternoon', 'evening']).optional(),
   timezone_offset_minutes: z.number().int().optional(),
   user_agent_class: z.string().optional(),
+  /** Hostname of document.referrer at session start — empty string when no referrer (FOLLOW-207). */
+  referrer_domain: z.string().optional(),
+  /** Intent-engine device type used as cold-session prior: 'desktop' (≥1024px) or 'mobile' (FOLLOW-207). */
+  device_type: z.enum(['desktop', 'mobile']).optional(),
 });
 export const SessionStartedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('session.started'),

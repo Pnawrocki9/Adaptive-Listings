@@ -1,25 +1,19 @@
 /**
  * GET /api/adapt/description
  *
- * Long-form listing description pipeline — Tier 1 / 2 / 3 gated.
+ * Long-form listing description pipeline.
  *
- * Per Master Design E.7 and TICKET-DESC-001.
+ * Per Master Design E.7, TICKET-DESC-001, and CEO decision 2026-06-05 (FOLLOW-203):
+ * Tier logic has been removed. All tenants receive the same generation path.
  *
- * Tier 1 (Observer):
- *   Returns copy_template.en from the playbook registry immediately.
- *   No Redis, no Modal job. Latency target <50ms p95.
- *
- * Tier 2 (Augment) — cache hit:
+ * Cache hit:
  *   Returns the AI-generated description from Upstash Redis.
  *   No Modal job enqueued. Latency target <100ms p95.
  *
- * Tier 2 (Augment) — cache miss:
+ * Cache miss:
  *   Returns copy_template.en immediately (template_fallback).
  *   Enqueues Modal async job (fire-and-forget) to generate + cache the AI description.
  *   Latency target <150ms p95.
- *
- * Tier 3 (Native):
- *   Same as Tier 2 but TTL is 48h (vs 72h for Tier 2) and Modal job priority is 'high'.
  *
  * Auth:
  *   Bearer JWT (same pattern as GET /api/adapt). When ADAPT_API_KEY env var is set,
@@ -43,12 +37,7 @@ import { z } from 'zod';
 import { errorBody, ErrorCode } from '@estalara/shared';
 import type { DescriptionResponse, DescriptionRequestedEvent } from '@estalara/shared';
 import { getPlaybook } from '@estalara/sdk/playbooks';
-import {
-  descriptionKey,
-  getCachedDescription,
-  TTL_TIER2_SECONDS,
-  TTL_TIER3_SECONDS,
-} from '@/lib/description-cache';
+import { descriptionKey, getCachedDescription } from '@/lib/description-cache';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { fetchListingOriginalDescription } from '@/lib/listing-details';
 import { getAuthClaims } from '@estalara/auth';
@@ -79,7 +68,6 @@ const QueryParamsSchema = z.object({
     'student_parent',
     'neutral',
   ]),
-  tier: z.enum(['1', '2', '3']),
   locale: z.enum(['en', 'pl', 'es']).default('en'),
 });
 
@@ -129,7 +117,6 @@ async function publishDescriptionRequested(event: DescriptionRequestedEvent): Pr
  * Query params:
  *   listing_id — required, string (1–256 chars)
  *   archetype  — required, one of the 18 archetype IDs
- *   tier       — required, '1' | '2' | '3'
  *   locale     — optional, 'en' | 'pl' | 'es' (default: 'en')
  *
  * @returns 200 DescriptionResponse JSON.
@@ -184,11 +171,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { listing_id, archetype, tier, locale } = parsed.data;
+  const { listing_id, archetype, locale } = parsed.data;
   const archetypeId = archetype;
   const localeCode = locale;
 
-  // ── Playbook lookup (all tiers) ───────────────────────────────────────────
+  // ── Playbook lookup ───────────────────────────────────────────────────────
   const playbook = getPlaybook(archetypeId);
   const templateText =
     localeCode === 'pl'
@@ -196,20 +183,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       : localeCode === 'es'
         ? playbook.copy_template.es
         : playbook.copy_template.en;
-
-  // ── Tier 1: return template immediately, no Redis, no Modal ──────────────
-  // Short-circuit before any DB calls — Tier 1 never needs the generation model.
-  // headline is always null for Tier 1 (no LLM generation; ADR-0009).
-  if (tier === '1') {
-    const response: DescriptionResponse = {
-      description: templateText,
-      headline: null,
-      source: 'template_fallback',
-      locale: localeCode,
-      generated_at: null,
-    };
-    return NextResponse.json(response, { status: 200 });
-  }
 
   // ── DEMO MODE: check per-tenant override (DEMO-001) ─────────────────────
   // When DEMO MODE is active, the SDK already requests the correct archetype
@@ -258,7 +231,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ? demoOverrideModel // DEMO MODE wins
       : globalModel; // global default (may equal the static default)
 
-  // ── Tier 2 / Tier 3: Redis cache lookup ───────────────────────────────────
+  // ── Redis cache lookup ────────────────────────────────────────────────────
   // Cache key includes the effective model so a model switch yields a cache miss
   // instead of serving a stale-model description (AC5 / FOLLOW-161).
   //
@@ -290,9 +263,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── Cache MISS — enqueue Modal job (fire-and-forget) ─────────────────────
-  const tierNum = parseInt(tier, 10) as 2 | 3;
-  const ttlSeconds = tierNum === 3 ? TTL_TIER3_SECONDS : TTL_TIER2_SECONDS;
-
   // RAG retrieval of listing context for prompt seeding.
   // retrieveListingContext is fail-open — returns {} on any error.
   // We do NOT pass an intent_vector here (not available at this endpoint) — the Modal job
@@ -314,13 +284,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     listing_id,
     archetype: archetypeId,
     locale: localeCode,
-    tier: tierNum,
     copy_template: templateText,
     original_description: originalDescription,
     listing_context: listingContext,
     cache_key: cacheKey,
-    ttl_seconds: ttlSeconds,
-    ...(tierNum === 3 ? { priority: 'high' as const, max_tokens: 600 } : { max_tokens: 450 }),
+    max_tokens: 500,
     // Precedence chain: demo override_model > global generation_model > default (in Python job).
     // - DEMO MODE: override_model carries the operator-chosen model (DEMO-001 / FOLLOW-166).
     // - Standard path: generation_model carries the global admin setting (FOLLOW-161).

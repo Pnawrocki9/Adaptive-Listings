@@ -121,7 +121,7 @@ export type DescriptionResponse = z.infer<typeof DescriptionResponseSchema>;
 
 /**
  * The `description.requested` Redpanda event published by the control-plane endpoint
- * on a Tier 2/3 cache miss.
+ * on a cache miss.
  *
  * Topic: `estalara.descriptions`
  * Consumer: apps/llm-gateway/src/jobs/generate_description.py (ml-engineer)
@@ -129,7 +129,13 @@ export type DescriptionResponse = z.infer<typeof DescriptionResponseSchema>;
  * The Modal job uses this payload to:
  *   1. Build a Sonnet 4.6 prompt using copy_template as seed + listing_context
  *   2. Call Anthropic Sonnet 4.6 directly (not through llm-gateway.ts)
- *   3. Write the result to Redis at cache_key with ttl_seconds TTL
+ *   3. Write the result to Redis at cache_key (no TTL — Redis eviction handles memory pressure;
+ *      Postgres in FOLLOW-204 is the durable truth)
+ *
+ * CEO decision 2026-06-05 (FOLLOW-203): Tier logic removed. All tenants use the same
+ * generation path. `tier` and `ttl_seconds` are now optional for backward compat with
+ * existing Python consumers that use event.get() with defaults; new events omit them.
+ * `priority` is also deprecated (Tier 3 no longer exists).
  *
  * @example
  * {
@@ -137,11 +143,11 @@ export type DescriptionResponse = z.infer<typeof DescriptionResponseSchema>;
  *   listing_id: "prop-123",
  *   archetype: "yield_hunter",
  *   locale: "en",
- *   tier: 2,
  *   copy_template: "This income-producing property...",
  *   listing_context: { "What is the rental yield?": "7.2%" },
- *   cache_key: "desc:550e8400...:prop-123:yield_hunter:en",
- *   ttl_seconds: 259200
+ *   cache_key: "desc:550e8400...:prop-123:yield_hunter:en:claude-sonnet-4-6",
+ *   max_tokens: 500,
+ *   generation_model: "claude-sonnet-4-6"
  * }
  */
 export const DescriptionRequestedEventSchema = z.object({
@@ -157,8 +163,12 @@ export const DescriptionRequestedEventSchema = z.object({
   /** Locale for the generated text. */
   locale: LocaleSchema,
 
-  /** Integration tier. Tier 3 uses max_tokens 600 and priority 'high'. */
-  tier: z.union([z.literal(2), z.literal(3)]),
+  /**
+   * Integration tier.
+   * @deprecated Tier logic removed (CEO decision 2026-06-05, FOLLOW-203). Optional for
+   * backward compat with Python consumers that use event.get() with defaults.
+   */
+  tier: z.union([z.literal(2), z.literal(3)]).optional(),
 
   /**
    * Static ~100-150 word seed text from PlaybookEntry.copy_template.en.
@@ -186,25 +196,27 @@ export const DescriptionRequestedEventSchema = z.object({
 
   /**
    * The Upstash Redis key where the Modal job must write the result.
-   * Format: `desc:{tenant_id}:{listing_id}:{archetype}:{locale}`
+   * Format: `desc:{tenant_id}:{listing_id}:{archetype}:{locale}:{model}`
    */
   cache_key: z.string().min(1),
 
   /**
    * Redis TTL in seconds for the SET command.
-   * 259200 = 72h (Tier 2), 172800 = 48h (Tier 3).
+   * @deprecated No longer set by the control-plane (FOLLOW-203). Python job falls back to
+   * its internal default_ttl when absent. Keys now persist until Redis eviction.
    */
-  ttl_seconds: z.number().int().positive(),
+  ttl_seconds: z.number().int().positive().optional(),
 
   /**
-   * Job priority — present only for Tier 3 jobs.
-   * The Modal job uses this to set queue priority.
+   * Job priority.
+   * @deprecated Tier 3 (high priority) removed (FOLLOW-203). Field retained for backward
+   * compat with existing Python consumers.
    */
   priority: z.enum(['normal', 'high']).optional(),
 
   /**
    * Maximum number of tokens for Sonnet to generate.
-   * 450 for Tier 2, 600 for Tier 3.
+   * Single value: 500 (FOLLOW-203).
    */
   max_tokens: z.number().int().positive().optional(),
 

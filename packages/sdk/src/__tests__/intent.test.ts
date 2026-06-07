@@ -6,6 +6,7 @@ import {
   OWN_USE_ARCHETYPES,
   applyBehavioralSignal,
   applyDecay,
+  applyQuizLeaf,
   applyQuizPrior,
   classifyFromProbabilities,
   initIntentState,
@@ -304,5 +305,73 @@ describe('full classification flow', () => {
     const before = s.confidence;
     s = applyDecay(s, 30 * 60_000);
     expect(s.confidence).toBeLessThan(before);
+  });
+});
+
+describe('applyQuizLeaf (FOLLOW-201)', () => {
+  it('sets target archetype to ~0.85 probability', () => {
+    const s = applyQuizLeaf(initIntentState(), 'family_buyer');
+    expect(s.probabilities.family_buyer).toBeCloseTo(0.85, 5);
+  });
+
+  it('all other archetypes share remaining 0.15 uniformly', () => {
+    const s = applyQuizLeaf(initIntentState(), 'family_buyer');
+    const otherCount = ARCHETYPE_NAMES.length - 1; // 17
+    const expectedOtherProb = 0.15 / otherCount;
+    for (const k of ARCHETYPE_NAMES) {
+      if (k === 'family_buyer') continue;
+      expect(s.probabilities[k]).toBeCloseTo(expectedOtherProb, 5);
+    }
+  });
+
+  it('probabilities still sum to 1.0', () => {
+    const s = applyQuizLeaf(initIntentState(), 'yield_hunter');
+    const sum = ARCHETYPE_NAMES.reduce((acc, k) => acc + s.probabilities[k], 0);
+    expect(sum).toBeCloseTo(1.0, 5);
+  });
+
+  it('sets archetype to the resolved leaf', () => {
+    const s = applyQuizLeaf(initIntentState(), 'flip_investor');
+    expect(s.archetype).toBe('flip_investor');
+  });
+
+  it('confidence is Math.min(0.85 * QUIZ_CONFIDENCE_BONUS, 1.0) — approximately 0.95 to 1.0', () => {
+    const s = applyQuizLeaf(initIntentState(), 'luxury_buyer');
+    // 0.85 * 1.2 = 1.02, capped at 1.0
+    expect(s.confidence).toBeCloseTo(1.0, 5);
+    expect(s.confidence).toBeLessThanOrEqual(1.0);
+  });
+
+  it('sets quiz_answered to true', () => {
+    const s = applyQuizLeaf(initIntentState(), 'remote_worker');
+    expect(s.quiz_answered).toBe(true);
+  });
+
+  it('preserves signal_count from the input state', () => {
+    let base = initIntentState();
+    base = applyBehavioralSignal(base, 'listing.viewed');
+    base = applyBehavioralSignal(base, 'cta.clicked');
+    expect(base.signal_count).toBe(2);
+    const s = applyQuizLeaf(base, 'retiree_relocator');
+    expect(s.signal_count).toBe(2);
+  });
+
+  it('is a pure function — does not mutate input state', () => {
+    const base = initIntentState();
+    const probsBefore = { ...base.probabilities };
+    applyQuizLeaf(base, 'yield_hunter');
+    // Original state unchanged
+    expect(base.probabilities.neutral).toBeCloseTo(probsBefore.neutral, 5);
+    expect(base.archetype).toBe('neutral');
+    expect(base.quiz_answered).toBe(false);
+  });
+
+  it('works for all 18 archetypes without throwing', () => {
+    const base = initIntentState();
+    for (const archetype of ARCHETYPE_NAMES) {
+      const s = applyQuizLeaf(base, archetype);
+      expect(s.archetype).toBe(archetype);
+      expect(s.probabilities[archetype]).toBeCloseTo(0.85, 5);
+    }
   });
 });

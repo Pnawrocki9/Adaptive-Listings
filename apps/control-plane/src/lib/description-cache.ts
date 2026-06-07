@@ -4,9 +4,10 @@
  *
  * Redis key format: `desc:{tenant_id}:{listing_id}:{archetype}:{locale}`
  *
- * TTLs:
- *   - Tier 2: 72 hours = 259 200 seconds
- *   - Tier 3: 48 hours = 172 800 seconds
+ * Keys are stored without a TTL — they persist until Redis eviction or explicit
+ * invalidation. The permanent Postgres cache (FOLLOW-204) is the durable truth;
+ * Redis acts as a fast read layer with memory-pressure eviction only.
+ * (CEO decision 2026-06-05, FOLLOW-203.)
  *
  * Values are stored as JSON strings matching DescriptionCacheValue:
  *   `{ "text": "...", "headline": "...", "generated_at": "2026-05-14T12:00:00Z" }`
@@ -25,14 +26,6 @@
  */
 
 import type { DescriptionCacheValue } from '@estalara/shared';
-
-// ─── TTL constants ────────────────────────────────────────────────────────────
-
-/** Redis TTL for Tier 2 descriptions (72 hours). */
-export const TTL_TIER2_SECONDS = 72 * 3600; // 259 200
-
-/** Redis TTL for Tier 3 descriptions (48 hours). */
-export const TTL_TIER3_SECONDS = 48 * 3600; // 172 800
 
 // ─── Key builder ─────────────────────────────────────────────────────────────
 
@@ -152,24 +145,28 @@ export async function getCachedDescription(key: string): Promise<DescriptionCach
 }
 
 /**
- * Write a description cache entry to Redis with the given TTL.
+ * Write a description cache entry to Redis without a TTL.
+ *
+ * Keys persist until Redis eviction or explicit invalidation via
+ * invalidateDescriptionCache(). The permanent Postgres cache (FOLLOW-204)
+ * is the durable truth; Redis eviction handles memory pressure.
+ * (CEO decision 2026-06-05, FOLLOW-203.)
  *
  * This is a fire-and-forget helper — it does not throw on failure.
  * The Modal job also writes to Redis directly; this function is provided
  * for testing and potential prewarming use-cases.
  *
- * @param key        - The full Redis key (use descriptionKey() to build it).
- * @param value      - The DescriptionCacheValue to store.
- * @param ttlSeconds - TTL in seconds (TTL_TIER2_SECONDS or TTL_TIER3_SECONDS).
+ * @param key   - The full Redis key (use descriptionKey() to build it).
+ * @param value - The DescriptionCacheValue to store.
  */
 export async function setCachedDescription(
   key: string,
   value: DescriptionCacheValue,
-  ttlSeconds: number,
 ): Promise<void> {
   const jsonValue = JSON.stringify(value);
   // Use POST pipeline to handle JSON values with special characters safely.
-  await redisPost([['SET', key, jsonValue, 'EX', ttlSeconds]]);
+  // No EX argument — keys persist indefinitely until eviction or invalidation.
+  await redisPost([['SET', key, jsonValue]]);
 }
 
 /**

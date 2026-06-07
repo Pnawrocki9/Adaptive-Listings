@@ -131,7 +131,7 @@ updates.
 | 13a-h2 | 15    | Pre-pilot hardening v2 — §13.2 localStorage xid erasure (FOLLOW-139), pilot inquiry selector seed (FOLLOW-141)                      | 2       | 2    | 0       | 0     | 0       |
 | 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                         | 6       | 0    | 0       | 3     | 3       |
 | Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)      | 4       | 4    | 0       | 0     | 0       |
-| 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 10   | 0       | 11    | 0       |
+| 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 13   | 0       | 8     | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -3148,12 +3148,17 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-200
   title: quiz_completions MOAT table + completion endpoint
   agent: backend-engineer + data-engineer
-  status: READY
+  status: DONE
   priority: P1
+  completed_at: '2026-06-07T00:00:00Z'
+  pr: '#207'
   estimated_hours: 5
+  assigned_to: backend-engineer (lead), data-engineer (migration)
+  started_at: '2026-06-07T14:00:00Z'
   depends_on: [FOLLOW-199]
   source: Audit §10.1, §E.4.8, Master_Design §E.4.8 v4.0
   spec: backlog/sprint-15/FOLLOW-200.md
+  branch: backend-engineer/FOLLOW-200-quiz-completions-moat
   notes: |
     New Postgres migration: quiz_completions table (RLS). New POST /api/quiz/completion
     endpoint. SDK dispatches quiz.completed ingest event + calls completion endpoint
@@ -3215,12 +3220,17 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-204
   title: description_cache_persistent — permanent Postgres description table
   agent: data-engineer + backend-engineer + ml-engineer
-  status: READY
+  status: DONE
   priority: P1
+  completed_at: '2026-06-07T00:00:00Z'
+  pr: '#207'
   estimated_hours: 8
+  assigned_to: data-engineer (migration), backend-engineer (route + webhook + admin UI), ml-engineer (Modal write)
+  started_at: '2026-06-07T14:00:00Z'
   depends_on: [FOLLOW-203]
   source: Audit §10.3, Master_Design §E.7.3 v4.0
   spec: backlog/sprint-15/FOLLOW-204.md
+  branch: backend-engineer/FOLLOW-204-description-cache-persistent
   notes: |
     Co-assigned (3 agents). New Postgres migration: description_cache_persistent (RLS,
     UNIQUE tenant+listing+archetype+locale). Lookup order: DB → Redis → template_fallback.
@@ -3327,12 +3337,17 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-211
   title: filter.applied full facet payload schema (prerequisite for FOLLOW-099)
   agent: sdk-engineer
-  status: READY
+  status: DONE
   priority: P1
+  completed_at: '2026-06-07T00:00:00Z'
+  pr: '#206'
   estimated_hours: 2
+  assigned_to: sdk-engineer
+  started_at: '2026-06-07T14:00:00Z'
   depends_on: []
   source: Audit §3 — filter.applied discriminating power is in the payload, not the event type
   spec: backlog/sprint-15/FOLLOW-211.md
+  branch: sdk-engineer/FOLLOW-211-filter-applied-payload
   notes: |
     Define FilterAppliedPayload Zod schema in packages/shared. Add facet-conditional
     SIGNAL_LIKELIHOODS logic for filter.applied: commercial→commercial_investor+0.20;

@@ -1168,3 +1168,47 @@ When implementing the SDK listeners for `estalara:chat:message-sent` and `live.s
 - `packages/sdk/src/core/adapt.ts` — `registerFeedbackListener` already wired for `'live.signup'`
 
 ---
+
+## FOLLOW-173 → FOLLOW-174
+
+**From:** data-engineer **To:** backend-engineer **Date:** 2026-06-07T00:00:00Z
+
+**Summary:** FOLLOW-173 ships the calibration endpoint at `GET /api/pilot/calibration`. It performs
+a query-time join between ClickHouse `adaptation_decisions` (adapt_decision_id, confidence,
+model_version) and Postgres `conversion_labels` (prediction_id, outcome_class), buckets model
+confidence into deciles, and returns a score-vs-actual reliability curve plus per-outcome-class
+conversion aggregates, both grouped by `model_version`. The endpoint uses the same Rule K.2
+fail-loud pattern as `cta-lift` and `inquiry-starts`: returns `data_source: 'mock'` when
+CLICKHOUSE_URL is unset (dev / CI); returns HTTP 500 + Sentry when a configured store fails; never
+silently falls back to mock in production.
+
+Sync approach is documented in both route.ts and route-helpers.ts: "query-time join (MVP — fine for
+pilot scale <10k decisions/tenant). FOLLOW-175 will migrate to ClickHouse-materialized path for
+scale."
+
+**Action required:** FOLLOW-174 (backend-engineer) should render this calibration data in the pilot
+dashboard. The response shape is:
+
+```typescript
+CalibrationResponse {
+  window_days: number;           // 7 | 14 | 30
+  tenant_id: string;
+  calibration: CalibrationRow[]; // reliability curve per (model_version, confidence_decile)
+  conversion_aggregates: ConversionAggRow[]; // conversion rate per (outcome_class, model_version)
+  generated_at: string;          // ISO
+  data_source: 'clickhouse' | 'mock';
+}
+```
+
+Import types from `./route-helpers` (same pattern as cta-lift). The endpoint is already auth-gated
+(Bearer JWT + tenant_id claim) and returns `window_days=7` by default; accepts
+`?window_days=7|14|30`.
+
+**Files:**
+
+- `apps/control-plane/src/app/api/pilot/calibration/route.ts` — GET handler
+- `apps/control-plane/src/app/api/pilot/calibration/route-helpers.ts` — types + bucketing + join
+  logic
+- `apps/control-plane/src/app/api/pilot/calibration/route.test.ts` — 28 tests (all passing)
+
+---

@@ -3251,7 +3251,7 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
   started_at: '2026-06-07T20:00:00Z'
   completed_at: '2026-06-07T20:30:00Z'
   branch: backend-engineer/FOLLOW-205-demo-auth-hardening
-  pr: TBD
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/210
   priority: P2
   estimated_hours: 3
   depends_on: []

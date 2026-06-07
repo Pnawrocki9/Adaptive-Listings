@@ -137,3 +137,22 @@ code.
 **A guardrail I'd add:** Before every git commit, always confirm `git branch --show-current` matches
 the expected feature branch. The agent cwd resets between bash calls; `git checkout` must be
 re-verified, not assumed to persist.
+
+## 2026-06-07 / FOLLOW-208
+
+**What I built:** `applyListingViewRate()` pure function in `intent.ts`; wired it into the
+`listing.viewed` observer callback in `index.ts` (with `sessionStartedAt` and `listingViewCount`);
+included `listing_view_rate` in the `session.quality.snapshot` payload; 28 unit tests covering all 6
+ACs.
+
+**What was uncertain:** Where to declare `listingViewCount` — the `flushDqsSnapshot` closure
+(declared first) needs to read it, but the counter is logically part of the observer wiring. Solved
+by hoisting `listingViewCount = 0` above `flushDqsSnapshot` so the closure captures the `let`
+binding by reference, which is valid JS/TS since `flushDqsSnapshot` is not called before the
+observers block runs.
+
+**A guardrail I'd add:** Whenever a closure declared earlier in `init()` needs to read a variable
+that is semantically part of a later initialization block, add a comment noting the
+capture-by-reference dependency and why it is safe. This prevents future refactors from accidentally
+moving the `let` declaration below the closure declaration and introducing a temporal dead zone
+issue.

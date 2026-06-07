@@ -3314,17 +3314,21 @@ here as active. FOLLOW-087 and FOLLOW-099 are background horizon items.
 - id: FOLLOW-208
   title: Listing-view RATE as portfolio_builder/flip_investor signal
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P2
   estimated_hours: 3
   depends_on: []
   source: Audit §3 gap analysis (2026-06-05)
   spec: backlog/sprint-15/FOLLOW-208.md
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/213
   notes: |
     Track sessionStartedAt alongside listingViewCount. Add applyListingViewRate() pure
     function to intent.ts. Rate ≥3 views/min boosts portfolio_builder/flip_investor.
     Rate ≤0.5 views/min + ≥2 views boosts family_buyer/first_time_buyer/upsizer.
     Include listing_view_rate in session.quality.snapshot ingest payload.
+    28 unit tests, 1016 total tests pass. All hooks green. PR #213 opened.
+    Note: branch includes FOLLOW-207 commit as parent (PR #212 not yet merged to main).
+    Will rebase cleanly when FOLLOW-207 merges.
 
 - id: FOLLOW-209
   title: Micro-polls — single yes/no intent prompts as quiz supplement

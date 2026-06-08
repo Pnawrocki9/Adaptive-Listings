@@ -1,15 +1,14 @@
-# Status — 2026-06-08T22:00Z
+# Status — 2026-06-08T23:00Z
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
 ## Active sprint: Sprint 16
 
-**15 DONE** (FOLLOW-170/173/174/176/182/183/190/221/227/230/234/237/238/239/244), **0 IN_PROGRESS**,
-**3 READY_FOR_REVIEW** (FOLLOW-191 awaiting Rafal deploy ESC-020; FOLLOW-244 PR #239 CI green —
-awaiting human merge; FOLLOW-187 PR pending CI — ROPA v2.5 + DPIA v2.7, conditions 8+9 confirmed),
-**2 READY** (FOLLOW-175 P1, FOLLOW-245 P2).
+**16 DONE** (FOLLOW-170/173/174/176/182/183/187/190/221/227/230/234/237/238/239/244), **0
+IN_PROGRESS**, **1 READY_FOR_REVIEW** (FOLLOW-191 awaiting Rafal deploy ESC-020), **2 READY**
+(FOLLOW-175 P1, FOLLOW-245 P2).
 
-ESC-021 MITIGATED — FOLLOW-187 is sole remaining blocker; PR opening pending CI.
+ESC-021 RESOLVED — FOLLOW-187 merged (PR #240, commit 7550520). ROPA v2.5 + DPIA v2.7 confirmed.
 
 ### FOLLOW-183 bounce details (PR #228)
 
@@ -26,11 +25,9 @@ cause: `packages/db/src/upsert-conversion-label.test.ts` is outside the `.gitlea
 CI-check counter: 1/5 | Fix-iteration counter: 1/3. PR comment posted at
 https://github.com/Pnawrocki9/Adaptive-Listings/pull/228#issuecomment-4649064989.
 
-## Currently IN_PROGRESS (1 of 3 max)
+## Currently IN_PROGRESS (0 of 3 max — 3 SLOTS AVAILABLE)
 
-- FOLLOW-183 (PG integration test for upsertConversionLabel) — data-engineer, PR #228 Branch:
-  data-engineer/FOLLOW-183-pg-integration-test-upsert-conversion-label CI-check counter: 1/5 |
-  Fix-iteration counter: 1/3
+(none)
 
 ## Open escalations
 

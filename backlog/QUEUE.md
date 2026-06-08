@@ -1,9 +1,10 @@
 # Backlog Queue
 
-**Updated 2026-06-08 by pm-orchestrator. Sprint 15 COMPLETE — 21/21 DONE. Sprint 16 OPEN — 7 DONE
-(FOLLOW-170/173/174/176/182/190/227/230), 1 IN_PROGRESS (FOLLOW-183 — Gitleaks real gate failing,
-bounced), 1 READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal deploy ESC-020), FOLLOW-187 READY (Activity
-15 unblocked by FOLLOW-230).**
+**Updated 2026-06-08 by pm-orchestrator. Sprint 15 COMPLETE — 21/21 DONE. Sprint 16 OPEN — 16 DONE
+(FOLLOW-170/173/174/176/182/183/187/190/221/227/230/234/237/238/239/244), 0 IN_PROGRESS, 1
+READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal deploy ESC-020), 2 READY (FOLLOW-175 P1, FOLLOW-245 P2).
+ESC-021 RESOLVED — FOLLOW-187 merged (PR #240, 7550520), ROPA v2.5 + DPIA v2.7 conditions 8+9
+confirmed.**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -2830,17 +2831,18 @@ but does NOT fix the source — ESC-019 does.
     Compliance docs for CRM ingest — ROPA Activity 15 + DPIA §2.3/§2.5 + conversion_labels TTL
     (go-live gates 8-9)
   agent: compliance-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-172]
   source: RETRO-031 (DG-1); HANDOFFS FOLLOW-172 conditions 8-9
   spec: backlog/FOLLOW_UPS.md (FOLLOW-187 stub)
   branch: compliance-engineer/FOLLOW-187-ropa-activity-15-dpia-crm
+  pr: '#240'
+  completed_at: '2026-06-08T00:00:00Z'
   notes: |
-    Go-live gates (not merge gates). ROPA Activity 15 + DPIA §2.3/§2.5 for CRM deep-outcome ingest;
-    Conditions 8+9 CONFIRMED SATISFIED: TTL cron live (FOLLOW-234/PR#230), ROPA v2.5 + DPIA v2.7
-    signed off by compliance-engineer. FOLLOW-184 DSR gap remains OPEN (separate from conditions 8+9).
+    DONE. PR #240 merged 2026-06-08 (commit 7550520). ROPA v2.5 + DPIA v2.7 signed off.
+    Conditions 8+9 CONFIRMED SATISFIED. ESC-021 RESOLVED. FOLLOW-184 DSR gap remains OPEN.
     (Onboarding pseudonymity checkbox = FOLLOW-186, P2.)
 
 - id: FOLLOW-173
@@ -3044,7 +3046,7 @@ Key tracks:
 - id: FOLLOW-183
   title: PG integration test for upsertConversionLabel (precedence WHERE + UNIQUE constraint)
   agent: data-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-179]
@@ -3052,8 +3054,9 @@ Key tracks:
   spec: backlog/FOLLOW_UPS.md (FOLLOW-183 stub)
   branch: data-engineer/FOLLOW-183-pg-integration-test-upsert-conversion-label
   pr: 228
+  completed_at: '2026-06-08T00:00:00Z'
   notes: |
-    PR #228 open. BOUNCED 2026-06-08 by pm-orchestrator — Gitleaks real gate is FAILING
+    PR #228 MERGED 2026-06-08. BOUNCED earlier — Gitleaks real gate was FAILING
     (not pre-existing-red; passes on main and on recent merged PRs). The test file lives at
     packages/db/src/upsert-conversion-label.test.ts (NOT in src/__tests__/) so it is not
     covered by the .gitleaks.toml allowlist path patterns. Data-engineer must investigate
@@ -3114,20 +3117,17 @@ Key tracks:
 - id: FOLLOW-187
   title: Compliance docs — ROPA Activity 15 + DPIA §2.3/§2.5 + conversion_labels 13-month TTL
   agent: compliance-engineer + data-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-172]
   source: RETRO-031 (DG-1); HANDOFFS FOLLOW-172 conditions 8-9
   spec: backlog/FOLLOW_UPS.md (FOLLOW-187 stub)
+  pr: '#240'
+  completed_at: '2026-06-08T00:00:00Z'
   notes: |
-    Go-live gates 8-9. ROPA Activity 15 (was 14 — renumbered by FOLLOW-230/PR #227 to avoid
-    collision with Activity 14 = Client-Side Session Intent-State Cache added by FOLLOW-218).
-    DPIA §2.3/§2.5 for CRM deep-outcome ingest; 13-month TTL cron for conversion_labels
-    (not covered by existing TTL cron). FOLLOW-230 stub in FOLLOW_UPS.md already updated
-    to Activity 15. This ticket is now READY (dependency FOLLOW-172 DONE, numbering collision
-    resolved). Condition 9 (TTL cron) closed by FOLLOW-234 (PR opened 2026-06-08).
-    Remaining: condition 8 (ROPA Activity 15 full entry + DPIA §2.3) for compliance-engineer.
+    DONE. PR #240 merged 2026-06-08 (commit 7550520). ROPA v2.5 + DPIA v2.7. Conditions 8+9
+    CONFIRMED SATISFIED. ESC-021 RESOLVED. Condition 9 (TTL cron) was closed by FOLLOW-234.
 
 - id: FOLLOW-173
   title: Conversion-label aggregation + score-vs-actual calibration

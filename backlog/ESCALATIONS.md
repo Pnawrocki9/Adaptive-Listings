@@ -938,3 +938,34 @@ spec: `/home/asipi/Projects/Estalara-app/web-master/HANDOFF_ESTALARA_ADAPTIVE.md
 **Blocking:** FOLLOW-197 (adapt.applied signal) depends on this being live.
 
 **Resolution:**
+
+---
+
+## RESOLVED — ESC-021: FOLLOW-184 Art.17 CRM erasure false-positive DPO alert risk [FOLLOW-238/FOLLOW-244/FOLLOW-187]
+
+**Filed by:** pm-orchestrator **Date:** 2026-06-08T00:00:00Z **Affects:** FOLLOW-184, FOLLOW-239,
+FOLLOW-238, FOLLOW-187, FOLLOW-244, any CRM-integrated tenant go-live **Type:** compliance
+
+**Description:** FOLLOW-239 (PR #234) made DSR CRM-erasure incompleteness observable via
+`crm_erasure_status` and a Sentry alert (path-b). RETRO-041 (§4a LG-1) found that the
+completeness-check query was tenant-scoped, not subject-scoped — causing false-positive alerts for
+every erasure request on any CRM-integrated tenant that omitted `durable_lead_id`, even for subjects
+who never had a CRM outcome. `DSR_ALERTING.md §2` over-claimed subject-level incompleteness the
+query could not substantiate.
+
+**Resolution:** RESOLVED 2026-06-08.
+
+Three PRs addressed this in sequence:
+
+1. **FOLLOW-238** (PR #237, commit `1acead5`): Renamed `incomplete_no_durable_lead_id` →
+   `crm_tenant_unverifiable`; renamed `incomplete_erasure_crm_rows_detected` → `crm_unverifiable`.
+   Alert now states CRM-namespace completeness is _unverifiable_ for this subject — no longer a
+   false positive claim.
+2. **FOLLOW-244** (PR #239, commit `43665145`): Route-level test covers `crm_tenant_unverifiable`
+   branch; DSR_ALERTING.md §2/§5 and MASTER_DESIGN §T.6 updated to new vocabulary.
+3. **FOLLOW-187** (PR #240, commit `7550520`): ROPA v2.5 + DPIA v2.7 — compliance-engineer confirmed
+   CRM go-live gate Conditions 8+9 SATISFIED. DPIA §8 documents FOLLOW-184 DSR gap as OPEN and
+   separate from conditions 8+9.
+
+**Binding rule:** Do NOT go live with CRM-integrated tenants until FOLLOW-184 (DSR erasure for
+CRM-keyed conversion_labels via durable_lead_id) is DONE.

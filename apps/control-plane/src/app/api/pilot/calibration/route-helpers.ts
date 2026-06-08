@@ -114,7 +114,7 @@ export interface CalibrationResponse {
   data_source: 'clickhouse' | 'mock';
 }
 
-// ─── JSON export schema (FOLLOW-221) ─────────────────────────────────────────
+// ─── JSON export schema (FOLLOW-221, FOLLOW-237) ─────────────────────────────
 
 /**
  * Zod schema for one row of the structured JSON export returned by
@@ -123,14 +123,27 @@ export interface CalibrationResponse {
  * Shape documented in HANDOFFS.md "FOLLOW-221 → FOLLOW-175".
  *
  * Fields:
- *   outcome_class    — e.g. 'offer_made', 'no_response'
- *   model_version    — e.g. 'rulebased-bandit-v1'
- *   tenant           — tenant_id from the JWT claim
- *   window           — window_days as a number (7 | 14 | 30)
- *   count            — labeled decisions with this (outcome_class, model_version)
- *   avg_confidence   — mean confidence across ALL decisions for this model_version
- *                      in the window (not just those with this outcome_class).
- *                      null when no decisions exist for the model version.
+ *   outcome_class                — e.g. 'offer_made', 'no_response'
+ *   model_version                — e.g. 'rulebased-bandit-v1'
+ *   tenant                       — tenant_id from the JWT claim
+ *   window                       — window_days as a number (7 | 14 | 30)
+ *   count                        — labeled decisions with this (outcome_class, model_version)
+ *   mean_model_predicted_rate    — mean of `predicted_rate` across all reliability-curve buckets
+ *                                  for this model_version; a proxy for the typical confidence
+ *                                  level the model emitted in this window. Derived per
+ *                                  model_version (NOT per outcome_class — the name
+ *                                  `avg_confidence` that appeared before FOLLOW-237 was
+ *                                  misleading). null when no calibration rows exist for the
+ *                                  model version.
+ *                                  NOTE: values ride on raw model confidence which may include
+ *                                  dwell-time inflation (FOLLOW-230 OPEN; dwell cap not yet
+ *                                  applied as of commit b62faae). Cross-compare with
+ *                                  FOLLOW-230 when using this field for corpus quality checks.
+ *   data_source                  — provenance flag (Rule K.2): 'clickhouse' when built from
+ *                                  real ClickHouse + Postgres data; 'mock' when CLICKHOUSE_URL
+ *                                  is not set (dev / CI). MUST be checked before ingesting the
+ *                                  file into a training corpus — mock fixtures must not
+ *                                  contaminate a LoRA training corpus.
  */
 export const CalibrationExportRowSchema = z.object({
   outcome_class: z.string(),
@@ -138,7 +151,18 @@ export const CalibrationExportRowSchema = z.object({
   tenant: z.string(),
   window: z.number().int().positive(),
   count: z.number().int().nonnegative(),
-  avg_confidence: z.number().nullable(),
+  /**
+   * Per-model_version mean predicted_rate across all reliability-curve buckets.
+   * NOT per-outcome_class — this is a model-level confidence proxy.
+   * Renamed from `avg_confidence` in FOLLOW-237 to prevent misinterpretation.
+   * Rides on raw model confidence pending FOLLOW-230 dwell cap (commit b62faae).
+   */
+  mean_model_predicted_rate: z.number().nullable(),
+  /**
+   * Rule K.2 provenance. 'clickhouse' = real data; 'mock' = CLICKHOUSE_URL unset (dev/CI).
+   * A consumer MUST read this field and reject mock-flagged files before corpus ingestion.
+   */
+  data_source: z.enum(['clickhouse', 'mock']),
 });
 
 /** TypeScript type inferred from CalibrationExportRowSchema. */
@@ -148,40 +172,44 @@ export type CalibrationExportRow = z.infer<typeof CalibrationExportRowSchema>;
  * Build the structured export rows from pre-assembled response data.
  *
  * Produces one CalibrationExportRow per (outcome_class, model_version) entry in
- * `conversion_aggregates`, enriched with the tenant + window context and the
- * mean confidence per model_version derived from the reliability curve.
+ * `conversion_aggregates`, enriched with the tenant + window context, the
+ * mean predicted_rate per model_version derived from the reliability curve, and
+ * the `data_source` provenance flag (Rule K.2 — FOLLOW-237).
  *
- * avg_confidence is the mean predicted_rate across all calibration buckets for
- * the same model_version — a proxy for the typical confidence level the model
- * emitted in this window. null when the model has no calibration rows (no
- * labeled decisions).
+ * `mean_model_predicted_rate` is the mean of `predicted_rate` across all
+ * reliability-curve buckets for the same model_version — a proxy for the typical
+ * confidence level the model emitted in this window. null when the model has no
+ * calibration rows. NOTE: rides on raw confidence pending FOLLOW-230 dwell cap.
  *
  * All rows are validated against CalibrationExportRowSchema before return.
  * A parse error here indicates a bug in the aggregation logic, not a user error;
  * the caller propagates it as HTTP 500.
+ *
+ * @param dataSource — 'clickhouse' or 'mock'; propagated into every row (Rule K.2).
  */
 export function buildCalibrationExportRows(
   tenantId: string,
   windowDays: number,
   calibration: CalibrationRow[],
   conversion_aggregates: ConversionAggRow[],
+  dataSource: 'clickhouse' | 'mock',
 ): CalibrationExportRow[] {
   // Compute mean predicted_rate per model_version from the reliability curve.
-  const modelConfidenceSum = new Map<string, number>();
-  const modelConfidenceCount = new Map<string, number>();
+  const modelPredictedRateSum = new Map<string, number>();
+  const modelPredictedRateCount = new Map<string, number>();
   for (const row of calibration) {
     const mv = row.model_version;
-    modelConfidenceSum.set(mv, (modelConfidenceSum.get(mv) ?? 0) + row.predicted_rate);
-    modelConfidenceCount.set(mv, (modelConfidenceCount.get(mv) ?? 0) + 1);
+    modelPredictedRateSum.set(mv, (modelPredictedRateSum.get(mv) ?? 0) + row.predicted_rate);
+    modelPredictedRateCount.set(mv, (modelPredictedRateCount.get(mv) ?? 0) + 1);
   }
 
   const rows = conversion_aggregates.map((agg): CalibrationExportRow => {
     const mv = agg.model_version;
-    const confSum = modelConfidenceSum.get(mv);
-    const confCount = modelConfidenceCount.get(mv) ?? 0;
-    const avg_confidence =
-      confCount > 0 && confSum !== undefined
-        ? Math.round((confSum / confCount) * 10000) / 10000
+    const rateSum = modelPredictedRateSum.get(mv);
+    const rateCount = modelPredictedRateCount.get(mv) ?? 0;
+    const mean_model_predicted_rate =
+      rateCount > 0 && rateSum !== undefined
+        ? Math.round((rateSum / rateCount) * 10000) / 10000
         : null;
 
     return CalibrationExportRowSchema.parse({
@@ -190,7 +218,8 @@ export function buildCalibrationExportRows(
       tenant: tenantId,
       window: windowDays,
       count: agg.count,
-      avg_confidence,
+      mean_model_predicted_rate,
+      data_source: dataSource,
     });
   });
 

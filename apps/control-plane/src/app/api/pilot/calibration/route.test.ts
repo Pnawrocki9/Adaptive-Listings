@@ -1,15 +1,18 @@
 /**
- * Tests for GET /api/pilot/calibration (FOLLOW-173, FOLLOW-221).
+ * Tests for GET /api/pilot/calibration (FOLLOW-173, FOLLOW-221, FOLLOW-237).
  *
  * Coverage:
  *   - confidenceDecile bucketing logic (unit test)
  *   - buildCalibrationFromRaw join + aggregation
- *   - buildCalibrationExportRows shape + Zod validation (FOLLOW-221)
+ *   - buildCalibrationExportRows shape + Zod validation (FOLLOW-221, FOLLOW-237)
  *   - CLICKHOUSE_URL guard (mock fallback when unset)
  *   - Rule K.2 fail-loud paths: HTTP 500 when ClickHouse configured but fails
  *   - Auth gate (401 for missing/invalid JWT)
  *   - Parameterised ClickHouse query (no string interpolation of tenant_id)
- *   - ?format=json export path: shape, Content-Disposition, chart path unaffected
+ *   - ?format=json export path: envelope shape (data_source + rows), Content-Disposition,
+ *     chart path unaffected (FOLLOW-221, FOLLOW-237 AC1/AC2)
+ *   - data_source provenance: mock path → 'mock', ClickHouse path → 'clickhouse' (FOLLOW-237 AC2)
+ *   - Unknown ?format= values return HTTP 400 (FOLLOW-237 AC3)
  *
  * @module apps/control-plane/src/app/api/pilot/calibration/route.test
  */
@@ -84,6 +87,20 @@ function makeExportRequest(windowDays?: string, authed = true): NextRequest {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (authed) headers.Authorization = 'Bearer mock-token';
   return new NextRequest(url.toString(), { headers });
+}
+
+function makeFormatRequest(format: string, authed = true): NextRequest {
+  const url = new URL('http://localhost/api/pilot/calibration');
+  url.searchParams.set('format', format);
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (authed) headers.Authorization = 'Bearer mock-token';
+  return new NextRequest(url.toString(), { headers });
+}
+
+/** Shape of the JSON export envelope (FOLLOW-237 AC1). */
+interface CalibrationExportEnvelope {
+  data_source: 'clickhouse' | 'mock';
+  rows: CalibrationExportRow[];
 }
 
 async function parseBody<T>(res: Response): Promise<T> {
@@ -512,7 +529,7 @@ describe('GET /api/pilot/calibration', () => {
   });
 });
 
-// ─── Unit: buildCalibrationExportRows (FOLLOW-221) ───────────────────────────
+// ─── Unit: buildCalibrationExportRows (FOLLOW-221, FOLLOW-237) ───────────────
 
 describe('buildCalibrationExportRows', () => {
   it('returns one row per (outcome_class, model_version) with correct shape', () => {
@@ -537,7 +554,13 @@ describe('buildCalibrationExportRows', () => {
       { outcome_class: 'no_response', model_version: 'v1', count: 5, rate: 0.5 },
     ];
 
-    const rows = buildCalibrationExportRows('tenant-abc', 14, calibration, conversionAggregates);
+    const rows = buildCalibrationExportRows(
+      'tenant-abc',
+      14,
+      calibration,
+      conversionAggregates,
+      'clickhouse',
+    );
 
     expect(rows).toHaveLength(2);
 
@@ -547,8 +570,37 @@ describe('buildCalibrationExportRows', () => {
     expect(offerRow!.tenant).toBe('tenant-abc');
     expect(offerRow!.window).toBe(14);
     expect(offerRow!.count).toBe(5);
-    // avg_confidence = mean of predicted_rates = (0.72 + 0.82) / 2 = 0.77
-    expect(offerRow!.avg_confidence).toBeCloseTo(0.77, 4);
+    // mean_model_predicted_rate = mean of predicted_rates = (0.72 + 0.82) / 2 = 0.77
+    // (renamed from avg_confidence in FOLLOW-237 — per-model_version, not per-class)
+    expect(offerRow!.mean_model_predicted_rate).toBeCloseTo(0.77, 4);
+    // AC1/AC2 (FOLLOW-237): data_source provenance must be present on every row
+    expect(offerRow!.data_source).toBe('clickhouse');
+  });
+
+  it('propagates data_source: mock to all rows when dataSource=mock', () => {
+    const calibration = [
+      {
+        confidence_decile: 0.5,
+        predicted_rate: 0.5,
+        actual_conversion_rate: 0.5,
+        sample_size: 5,
+        model_version: 'v1',
+      },
+    ];
+    const conversionAggregates = [
+      { outcome_class: 'offer_made', model_version: 'v1', count: 3, rate: 0.6 },
+    ];
+
+    const rows = buildCalibrationExportRows(
+      'tenant-mock',
+      7,
+      calibration,
+      conversionAggregates,
+      'mock',
+    );
+    expect(rows).toHaveLength(1);
+    // AC2 (FOLLOW-237 TG-1): mock-path export must be flagged 'mock'
+    expect(rows[0]!.data_source).toBe('mock');
   });
 
   it('each row passes CalibrationExportRowSchema Zod validation', () => {
@@ -565,7 +617,13 @@ describe('buildCalibrationExportRows', () => {
       { outcome_class: 'purchased', model_version: 'rulebased-bandit-v1', count: 2, rate: 0.67 },
     ];
 
-    const rows = buildCalibrationExportRows('tenant-zod', 7, calibration, conversionAggregates);
+    const rows = buildCalibrationExportRows(
+      'tenant-zod',
+      7,
+      calibration,
+      conversionAggregates,
+      'clickhouse',
+    );
     expect(rows).toHaveLength(1);
 
     // CalibrationExportRowSchema.parse must succeed for every row (throws on failure)
@@ -576,26 +634,27 @@ describe('buildCalibrationExportRows', () => {
     }).not.toThrow();
   });
 
-  it('sets avg_confidence to null when no calibration rows exist for the model', () => {
+  it('sets mean_model_predicted_rate to null when no calibration rows exist for the model', () => {
     // conversion_aggregates reference a model_version with no calibration rows
     const rows = buildCalibrationExportRows(
       'tenant-empty',
       7,
       [], // no calibration rows
       [{ outcome_class: 'no_response', model_version: 'orphan-model', count: 1, rate: 1.0 }],
+      'clickhouse',
     );
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.avg_confidence).toBeNull();
+    expect(rows[0]!.mean_model_predicted_rate).toBeNull();
   });
 
   it('returns empty array when conversion_aggregates is empty', () => {
-    const rows = buildCalibrationExportRows('tenant-x', 30, [], []);
+    const rows = buildCalibrationExportRows('tenant-x', 30, [], [], 'clickhouse');
     expect(rows).toHaveLength(0);
   });
 });
 
-// ─── Route handler: ?format=json export path (FOLLOW-221) ────────────────────
+// ─── Route handler: ?format=json export path (FOLLOW-221, FOLLOW-237) ────────
 
 describe('GET /api/pilot/calibration?format=json', () => {
   beforeEach(() => {
@@ -616,7 +675,7 @@ describe('GET /api/pilot/calibration?format=json', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns JSON array with correct shape when CLICKHOUSE_URL is unset (mock path)', async () => {
+  it('returns JSON envelope with data_source: mock when CLICKHOUSE_URL is unset (AC1/AC2)', async () => {
     authAsTenant();
     const { GET } = await import('./route.js');
     const res = await GET(makeExportRequest('14'));
@@ -630,21 +689,33 @@ describe('GET /api/pilot/calibration?format=json', () => {
     const disposition = res.headers.get('Content-Disposition') ?? '';
     expect(disposition).toBe('attachment; filename="calibration.json"');
 
-    // Body is a valid JSON array of CalibrationExportRow objects
-    const body: CalibrationExportRow[] = (await res.json()) as CalibrationExportRow[];
-    expect(Array.isArray(body)).toBe(true);
-    expect(body.length).toBeGreaterThan(0);
+    // Body is a JSON envelope with data_source + rows (FOLLOW-237 AC1)
+    const envelope = (await res.json()) as CalibrationExportEnvelope;
+    expect(Array.isArray(envelope)).toBe(false);
+    expect(envelope).toHaveProperty('data_source');
+    expect(envelope).toHaveProperty('rows');
 
-    // Every row passes schema validation
-    for (const row of body) {
+    // AC2 (FOLLOW-237 TG-1): mock path must carry data_source: 'mock'
+    expect(envelope.data_source).toBe('mock');
+
+    const rows = envelope.rows;
+    expect(Array.isArray(rows)).toBe(true);
+    expect(rows.length).toBeGreaterThan(0);
+
+    // Every row passes schema validation and carries data_source
+    for (const row of rows) {
       expect(() => CalibrationExportRowSchema.parse(row)).not.toThrow();
       expect(row.tenant).toBe(TENANT_ID);
       expect(row.window).toBe(14);
       expect(typeof row.outcome_class).toBe('string');
       expect(typeof row.model_version).toBe('string');
       expect(typeof row.count).toBe('number');
-      // avg_confidence is number or null
-      expect(row.avg_confidence === null || typeof row.avg_confidence === 'number').toBe(true);
+      // mean_model_predicted_rate is number or null
+      expect(
+        row.mean_model_predicted_rate === null || typeof row.mean_model_predicted_rate === 'number',
+      ).toBe(true);
+      // AC1 (FOLLOW-237): per-row data_source must be 'mock'
+      expect(row.data_source).toBe('mock');
     }
   });
 
@@ -667,16 +738,18 @@ describe('GET /api/pilot/calibration?format=json', () => {
     expect(res.headers.get('Content-Disposition')).toBeNull();
 
     const body = await parseBody<CalibrationResponse>(res);
-    // Must have the chart response fields, NOT the flat array shape
+    // Must have the chart response fields, NOT the envelope shape
     expect(body).toHaveProperty('calibration');
     expect(body).toHaveProperty('conversion_aggregates');
     expect(body).toHaveProperty('data_source');
     expect(body).toHaveProperty('window_days');
     expect(body).toHaveProperty('tenant_id');
+    // Chart path does not have a 'rows' envelope wrapper
+    expect(body).not.toHaveProperty('rows');
     expect(Array.isArray(body)).toBe(false);
   });
 
-  it('returns JSON export with correct data when ClickHouse is configured', async () => {
+  it('returns JSON export envelope with data_source: clickhouse when ClickHouse is configured (AC1/AC2)', async () => {
     authAsTenant();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
@@ -720,17 +793,79 @@ describe('GET /api/pilot/calibration?format=json', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="calibration.json"');
 
-    const body: CalibrationExportRow[] = (await res.json()) as CalibrationExportRow[];
-    expect(Array.isArray(body)).toBe(true);
+    const envelope = (await res.json()) as CalibrationExportEnvelope;
+
+    // AC2 (FOLLOW-237 TG-1): ClickHouse path must carry data_source: 'clickhouse'
+    expect(envelope.data_source).toBe('clickhouse');
+
+    const rows = envelope.rows;
+    expect(Array.isArray(rows)).toBe(true);
 
     // Should have one row per outcome_class
-    const offerRow = body.find((r) => r.outcome_class === 'offer_made');
-    const noResponseRow = body.find((r) => r.outcome_class === 'no_response');
+    const offerRow = rows.find((r) => r.outcome_class === 'offer_made');
+    const noResponseRow = rows.find((r) => r.outcome_class === 'no_response');
     expect(offerRow).toBeDefined();
     expect(noResponseRow).toBeDefined();
 
     // tenant + window should be propagated correctly
     expect(offerRow!.tenant).toBe(TENANT_ID);
     expect(offerRow!.window).toBe(7);
+    // AC1 (FOLLOW-237): per-row data_source must be 'clickhouse'
+    expect(offerRow!.data_source).toBe('clickhouse');
+  });
+});
+
+// ─── Route handler: unknown ?format= values (FOLLOW-237 AC3) ─────────────────
+
+describe('GET /api/pilot/calibration — unknown format values', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.CLICKHOUSE_URL;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.CLICKHOUSE_URL;
+  });
+
+  it('returns HTTP 400 for ?format=csv (AC3)', async () => {
+    authAsTenant();
+    const { GET } = await import('./route.js');
+    const res = await GET(makeFormatRequest('csv'));
+    expect(res.status).toBe(400);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('invalid_format');
+    expect(body.error.message).toContain('csv');
+    expect(body.error.message).toContain('json');
+  });
+
+  it('returns HTTP 400 for ?format=jsonl (AC3)', async () => {
+    authAsTenant();
+    const { GET } = await import('./route.js');
+    const res = await GET(makeFormatRequest('jsonl'));
+    expect(res.status).toBe(400);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('invalid_format');
+    expect(body.error.message).toContain('jsonl');
+  });
+
+  it('returns HTTP 400 for ?format=JSON (uppercase — AC3)', async () => {
+    authAsTenant();
+    const { GET } = await import('./route.js');
+    const res = await GET(makeFormatRequest('JSON'));
+    expect(res.status).toBe(400);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('invalid_format');
+    // Valid values must be listed in the error message
+    expect(body.error.message).toContain('json');
+  });
+
+  it('chart path (no ?format=) still works — not affected by format validation', async () => {
+    authAsTenant();
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest('7'));
+    expect(res.status).toBe(200);
+    const body = await parseBody<CalibrationResponse>(res);
+    expect(body.data_source).toBe('mock');
   });
 });

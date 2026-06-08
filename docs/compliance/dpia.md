@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.6 **Date:** 2026-06-08 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.7 **Date:** 2026-06-08 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -777,6 +777,22 @@ cascade because the Engagement Score is per-session pseudonymous personal data u
 sole controllership. Erasure removes the score together with the underlying `session_embeddings`
 record.
 
+**CRM outcome labels (`conversion_labels`) in DSR cascade — OPEN gap (FOLLOW-184):** The DSR erase
+route (`apps/control-plane/src/app/api/dsr/erase/route.ts`) includes two DELETE passes covering
+`conversion_labels`: Pass A deletes rows where `lead_id = session_id` (SDK feedback-ping rows), and
+Pass B deletes rows where `lead_id = durable_lead_id` (CRM webhook rows, supplied by the DSR
+initiator via the `durable_lead_id` field — FOLLOW-239 / PR #234). Pass B runs only when the
+operator supplies the `durable_lead_id` token at DSR initiation; if omitted and the tenant has
+CRM-namespace rows, the erasure is flagged as `crm_tenant_unverifiable` in the audit log and a
+Sentry warning is raised (FOLLOW-238, FOLLOW-239). The identifier-resolution model (session_id vs.
+opaque CRM `lead_id`) means GDPR Art. 17 completeness for CRM-integrated tenants is
+operator-dependent: the operator must supply `durable_lead_id` at DSR initiation, or manually
+reconcile CRM-side deletions. The code implementation for Pass B shipped in FOLLOW-239 (PR #234);
+the PG-harness integration test proving end-to-end identifier resolution (FOLLOW-185) is not yet
+merged. **FOLLOW-184 remains OPEN.** CRM-integrated tenants must not go live until FOLLOW-184 is
+DONE. This gap is separate from CRM go-live gate Conditions 8+9 (TTL cron + compliance docs), which
+are SATISFIED as of DPIA v2.7.
+
 **Implementation reference:** TICKET-GDPR-002 implements the DSR endpoint, cascade worker, and audit
 logging.
 
@@ -855,6 +871,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 2.4     | 2026-06-08 | Compliance Engineering | Section 13.3 updated (FOLLOW-230): added "Dual-store erasure model" paragraph connecting the two independent erasure paths — client cache (`estalara_intent_*` sessionStorage, erased at `index.ts:209`/`index.ts:260` via `eraseIntentState`) and server archetype (`session_embeddings`, erased via DSR cascade FOLLOW-039 / Master Design §H.1.1). Privacy Notice Template §4 updated to list all eight active SDK storage keys (three keys omitted from v1.1 added: `estalara_variant:*`, `__estalara_quiz_dismissed__`, `__estalara_micro_poll_dismissed__`; header updated from "all five" to "all eight"). ROPA Revision History updated to record Activity 14 number reservation and FOLLOW-187 renumbering to Activity 15.                                                                                                                      |
 | 2.5     | 2026-06-08 | Compliance Engineering | FOLLOW-187: §2.3 (System Components) — added CRM Outcome Ingest row (`POST /api/crm/outcome`, `conversion_labels` Postgres table). §2.5 (Data Types and Retention) — added `conversion_labels` row with 13-month intended retention and explicit enforcement-gap notice pending FOLLOW-234 TTL cron. ROPA Activity 15 added (CRM Deep-Outcome Ingest). Retention is policy-only until FOLLOW-234 ships; go-live gate for CRM-integrated tenants is UNSATISFIABLE until then per Rule N.                                                                                                                                                                                                                                                                                                                                                                  |
 | 2.6     | 2026-06-08 | Compliance Engineering | FOLLOW-235: TTL enforcement gap closed — cron shipped in FOLLOW-234 (PR #230, `c97fd50`). §2.5 `conversion_labels` retention row updated: "policy only; not yet enforced" notice removed; replaced with live enforcement statement referencing daily Vercel cron at `/api/internal/retention/conversion-labels` (FOLLOW-234 / PR #230, 2026-06-08).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 2.7     | 2026-06-08 | Compliance Engineering | FOLLOW-187 conditions 8 and 9 CONFIRMED SATISFIED. §2.3 (System Components) and §2.5 (Data Types and Retention) are complete for CRM Deep-Outcome Ingest. TTL cron is live (FOLLOW-234 / PR #230, `c97fd50`). ROPA Activity 15 complete (ROPA v2.5). CRM go-live compliance gate is now SATISFIABLE for Conditions 8+9. §8 (Data Subject Rights) updated with open-gap note: DSR cascade for `conversion_labels` via `lead_id` identifier resolution (FOLLOW-184) is a separate OPEN gap tracked as FOLLOW-184 — CRM-integrated tenants must not go live until FOLLOW-184 is DONE (code implementation shipped via FOLLOW-239 / PR #234; PG-harness integration test FOLLOW-185 not yet merged). This is separate from Conditions 8+9 which are confirmed.                                                                                               |
 
 ---
 

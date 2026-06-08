@@ -3867,18 +3867,29 @@ Extends the existing admin analytics/pilot dashboards (`apps/control-plane/src/a
   PII by schema design). CRM ingest (T.7) resolves the CRM record to the Estalara `lead_id`
   tenant-side (or via a tenant-supplied opaque correlation token) so PII never crosses into Estalara
   stores. The label corpus stays PII-free.
-- **DSR/erasure identifier-resolution model (FOLLOW-184, migration 0024):** Two identifier
-  namespaces must both be covered by a DSR Art. 17 erasure:
+- **DSR identifier-resolution model — ALL THREE verbs (FOLLOW-184 + FOLLOW-246, migration 0024):**
+  Two identifier namespaces must both be covered by EVERY DSR verb (access, erase, portability):
   - `session_id` — Estalara anonymous fingerprint, used in `session_embeddings` and ClickHouse.
   - `lead_id` (CRM token) — opaque pseudonymous token the tenant CRM sends to `POST /api/crm/outcome`;
     stored in `conversion_labels.lead_id`. **This is a different namespace from `session_id`.**
-  The DSR erase cascade (`dsr/erase/route.ts`) runs two DELETE passes in a single transaction:
+  Each verb applies the same two-pass pattern to `conversion_labels`:
   - **Pass A:** `conversion_labels WHERE lead_id = session_id` — covers SDK feedback-ping labels.
   - **Pass B:** `conversion_labels WHERE lead_id = durable_lead_id` — covers CRM deep-outcome labels.
-    Only runs when `dsr_verifications.durable_lead_id` is non-null/non-empty (captured at initiation).
-  Both passes gate on `lead_id <> ''` (FOLLOW-180/LG-2 guard). Tenant admins MUST supply the
-  `lead_id` field in `POST /api/dsr/initiate` for CRM-integrated subjects (DSR_ALERTING.md §3).
+    Only runs when `dsr_verifications.durable_lead_id` is non-null/non-empty/!= session_id.
+  Both passes gate on `lead_id <> ''` (FOLLOW-180/LG-2 guard). Results are union-merged and
+  deduplicated by row `id`. Tenant admins MUST supply the `lead_id` field in `POST /api/dsr/initiate`
+  for CRM-integrated subjects (DSR_ALERTING.md §3/§access/§portability).
+  Erase (`dsr/erase/route.ts`): runs two DELETE passes in a single transaction (FOLLOW-184).
+  Access (`dsr/access/route.ts`): returns both namespaces' rows in the 200 `conversion_labels` array
+  (FOLLOW-246, Art. 15 completeness).
+  Portability (`dsr/portability/route.ts`): exports both namespaces' rows in the downloadable JSON
+  `conversion_labels` array (FOLLOW-246, Art. 20 completeness).
   See also FOLLOW-039 (ClickHouse erasure semantics, §H.1.1) and FOLLOW-186 (tenant compliance gate).
+  **Known limitation (LG-2 / FOLLOW-246 AC5):** A supplied-but-wrong `durable_lead_id` produces a
+  silent no-op — Pass B matches nothing, and the erase `crm_erasure_status` may report `complete`
+  while CRM rows survive. The tenant-side token-correctness contract is documented in §T.6 above
+  and the DPA clause (FOLLOW-186 onboarding gate). Operators must verify the opaque CRM token
+  matches the value used in the `POST /api/crm/outcome` webhook.
 - **Operator-dependency residual (FOLLOW-239 — RETRO-042 DG-2; renamed in FOLLOW-238 PR #237):**
   Pass B is operator-dependent — the admin must know and supply the opaque CRM token at initiation
   time. There is no automated `session_id → durable_lead_id` resolver. When `durable_lead_id` is

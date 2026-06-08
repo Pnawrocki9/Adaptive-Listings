@@ -11042,3 +11042,287 @@ HALF_WIRE_P → **FOLLOW-230** (the persist-gate fix folds this in). → see §4
   mechanism itself* ship untested. FOLLOW-183 (possibly merged with FOLLOW-181/185) is the PG harness
   that closes the family.
 - **RETRO-031 (FOLLOW-172)** — sibling: confirms CB-2 is closed for the CRM writer (not re-opened here).
+
+## RETRO-044 — FOLLOW-184 (DSR Art. 17 erasure reaches CRM-written conversion_labels via durable_lead_id — closes RETRO-031 §4a LG-1) — 2026-06-08
+
+### 1. Summary of change
+
+- **PR:** #233 (merged 2026-06-08 14:56 UTC, commit `9c91ed8`). backend-engineer (impl). PR #241 is
+  the backlog-tracking close-out (FOLLOW_UPS.md + QUEUE.md + lessons.md only; NOT merged at analysis
+  time — `mergedAt: null`; no code). Sprint 15. Source: RETRO-031 §4a LG-1 → FOLLOW-184; the dedicated
+  remediation of the "DSR erase keyed on the wrong identifier namespace" gap surfaced when FOLLOW-172
+  added the SECOND `conversion_labels` producer (the CRM deep-outcome path).
+- **Files changed (PR #233):** 10 (+849 / −13).
+  - `packages/db/migrations/0024_dsr_durable_lead_id.sql` (NEW, +34) — `ADD COLUMN IF NOT EXISTS
+    durable_lead_id text` (nullable) + partial index `dsr_verifications_durable_lead_id_idx … WHERE
+    durable_lead_id IS NOT NULL`. Forward-only.
+  - `packages/db/migrations/meta/_journal.json` (+7) — journal entry 25 (monotonic — verified by PR
+    body `check-migration-journal.sh`).
+  - `packages/db/src/schema/dsr_verifications.ts` (+21) — `durableLeadId: text('durable_lead_id')`
+    (nullable) + JSDoc invariant ("SAME opaque token the tenant sent as `lead_id`; NOT CRM PII").
+  - `apps/control-plane/src/app/api/dsr/initiate/route.ts` (+23/−1) — `InitiateBodySchema` gains
+    optional `lead_id: z.string().min(1).max(256).optional()`; stored as `durableLeadId` via spread
+    `…(durableLeadId !== undefined ? { durableLeadId } : {})` (:174). JWT-scoped, tenant_id from claims.
+  - `apps/control-plane/src/app/api/dsr/erase/route.ts` (+44/−10) — Pass B added inside the existing
+    erase transaction (:365-383): `DELETE conversion_labels WHERE tenant_id = record.tenantId AND
+    lead_id = record.durableLeadId AND lead_id <> ''`, gated app-layer on `durableLeadId` typeof
+    string && `!== ''` && `!== record.sessionId` (dedup).
+  - `apps/control-plane/src/app/api/dsr/erase/route.test.ts` (+112) — 3 mock-layer Pass-B route tests.
+  - `packages/db/src/__tests__/dsr-crm-erasure.test.ts` (NEW, +486) — PGlite harness. PR body says 8;
+    the merged file has **12** `it()` (AC-1…AC-9, some with 2 cases) — incl. AC-7/8/9 for the
+    FOLLOW-239 surviving-row detection, so the file already overlaps later FOLLOW-238/239 work.
+  - `docs/MASTER_DESIGN.md §T.6` (+12/−2) — identifier-resolution model (two namespaces; Pass A/B).
+  - `docs/ops/DSR_ALERTING.md` (+69) — identifier-resolution model section.
+  - `.claude/agents/backend-engineer/lessons.md` (+41) — agent's own lesson.
+- **Modules touched:** [db (migration + schema) / control-plane (initiate + erase + tests) / docs].
+  No SDK, no ingest, no decision-api, no Modal/Python.
+- **Key contracts changed:**
+  - `dsr_verifications` gains nullable `durable_lead_id` column. Breaking: NO (additive, nullable).
+  - `POST /api/dsr/initiate` request body gains optional `lead_id`. Breaking: NO (additive optional).
+    Public tenant-facing API surface widened — must be reflected in the DSR initiation docs / DPA
+    operator guidance (§T.6 + DSR_ALERTING.md updated — verified §4d).
+  - `POST /api/dsr/erase` behavior — now ALSO deletes CRM-namespace rows when a durable token was
+    supplied at initiation. Breaking: NO (additive; covers MORE data, never less).
+- **NOTE on current file state vs PR #233:** the live `erase/route.ts` read at analysis (post-main)
+  ALSO contains the FOLLOW-238/239 `crm_tenant_unverifiable` capability check (commits `1acead5`,
+  `b2d1154`, AFTER #233). I scoped this retro to the PR #233 diff (`git show 9c91ed8`); the
+  capability-warning block is NOT FOLLOW-184's code and is already covered by RETRO-043 (FOLLOW-238).
+- **Verdict (preview):** **FOLLOW-UPS-FILED (not clean).** RETRO-031 §4a LG-1 (the Art. 17 *erase*
+  gap) is closed END-TO-END for the **erase verb** (producer = `initiate` stores token →
+  consumer = `erase` Pass B deletes → proven by PGlite AC-1/AC-2). BUT the identical `lead_id`-vs-
+  `session_id` namespace mismatch is **un-addressed on the SYMMETRIC DSR verbs**: `POST /api/dsr/access`
+  (Art. 15) and `/api/dsr/portability` (Art. 20) read ONLY `session_embeddings` + `consent_records`
+  keyed on `session_id` and **never touch `conversion_labels` at all** — neither the session_id path
+  NOR the new durable path. A CRM-integrated data subject's deep-outcome rows are therefore erasable
+  (Art. 17) but **invisible** to access/portability disclosure (Art. 15/20). One P1 follow-up filed
+  (FOLLOW-246). Two minor gaps recorded (LG-2 P3, DG-1 P3). Wiring of the FOLLOW-184 wire itself: clean.
+
+### 2. Verification done in PR
+
+- Test files changed: `dsr-crm-erasure.test.ts` (NEW, 12 PGlite `it()`), `erase/route.test.ts` (+3
+  mock-layer). Assertions added: ~15+ across both files. The PGlite harness is the right artifact —
+  it exercises **real SQL DELETE semantics** against pglite (not a mocked Drizzle chain), directly
+  closing the RETRO-031 §2 / RETRO-029/030 "mock-only, no live-DB" coverage caveat for *this* erase
+  path. AC-1 ('erases a CRM-written row when durable_lead_id matches the CRM token') and AC-4 (the
+  LG-2 empty-key regression guard, both layers) are the load-bearing ones and both execute the real
+  WHERE clause.
+- Coverage delta: **+ strong and correctly targeted** for the erase Pass-B path. **GAP:** zero test
+  coverage of the **access/portability** routes' relationship to `conversion_labels` — because those
+  routes do not query the table at all, there is nothing to test, which is precisely the §1 verdict
+  gap (the symmetric verbs were never wired). `initiate`'s storage of `lead_id` is covered only at the
+  mock layer (the PGlite harness seeds `durable_lead_id` directly into rows, not through the
+  `initiate` route) — acceptable; the storage is a one-line additive spread with no branching risk.
+- CI checks: PR body reports `@estalara/db` 87 pass, control-plane 806 pass, typecheck clean, Rule H
+  green, migration journal 25 monotonic, adapt-schema-drift clean, prettier clean, lefthook green. CI
+  not independently verified (read-only; standing Rule I / Vercel / Python pre-existing-red caveat).
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- `dsr_verifications.durableLeadId` (new schema column) — WRITTEN by `initiate/route.ts:174`, READ by
+  `erase/route.ts:369` and (post-#233) `:432`. Non-test consumer grep:
+  `grep -rn "durableLeadId" apps/control-plane/src/app/api/dsr/{initiate,erase}/route.ts | grep -v test`
+  → both files. NOT dead.
+- `0024_dsr_durable_lead_id.sql` migration — applied via the journal; the column it adds is consumed
+  above. Migration files are entrypoints (suppressed from dead-code; here also genuinely consumed).
+- `lead_id` field on `InitiateBodySchema` — consumed at `initiate/route.ts:133` destructure → :174
+  insert. NOT dead.
+- **CHECK A clean.**
+
+**CHECK B — Half-wire detection (env-var / column / event / signal both-ends):**
+
+- **`durable_lead_id` column** — Producer EXISTS (`initiate` route stores the operator-supplied
+  `lead_id`); Consumer EXISTS (`erase` Pass B deletes on it). Full chain:
+  operator → `POST /api/dsr/initiate {lead_id}` → `dsr_verifications.durable_lead_id` →
+  `POST /api/dsr/erase` reads `record.durableLeadId` → Pass B `DELETE conversion_labels`. Wired
+  end-to-end for the **erase** verb. Proven by PGlite AC-1. **NOT a half-wire for erase.**
+- **Caveat (recorded as the §1 verdict, not a CHECK-B classification):** the column is a producer/
+  consumer pair *only on the erase axis*. It is NOT consumed by `access`/`portability`. This is not a
+  classic HALF_WIRE (the column has both a producer and a consumer), it is an **incomplete-fan-out**:
+  the same upstream fact (a CRM data subject's durable identity) is wired to one of three sibling
+  consumers that all need it. Classified as a §4a logic gap (LG-1, P1), not a HALF_WIRE, and filed as
+  FOLLOW-246 per the guardrail that every completeness gap emits a follow-up.
+- **CHECK B clean for the wire FOLLOW-184 introduced.** (The incomplete-fan-out to access/portability
+  is recorded in §4a + §5, not here.)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — Art. 15 / Art. 20 namespace gap: `access` and `portability` never read
+  `conversion_labels`, so CRM deep-outcome data is undisclosable even with the new durable token.**
+  FOLLOW-184 closed the Art. 17 (erase) leg of the identifier-namespace problem RETRO-031 §4a LG-1
+  described. The SAME problem exists symmetrically on the other two DSR verbs and is untouched:
+  - `apps/control-plane/src/app/api/dsr/access/route.ts:96-113` queries ONLY `session_embeddings`
+    (keyed `session_id`) + `consent_records` (keyed `session_id`); the 200 body (`:131-149`) returns
+    `events_summary`, `matched_archetype`, `consent_records` — **no `conversion_labels` at all**
+    (grep `conversion` over the file → 0 hits).
+  - `apps/control-plane/src/app/api/dsr/portability/route.ts:90-107` — identical shape, 0 `conversion`
+    hits, body `:136`.
+  Consequence: a CRM-integrated data subject can have their deep-outcome `conversion_labels` rows
+  ERASED (Art. 17, via Pass B) but those exact rows are **invisible** to an Art. 15 access report or
+  an Art. 20 portability export — a disclosure-completeness gap. This is the mirror of the very gap
+  FOLLOW-184 was filed to fix; the fix was applied to one verb of three. Note the rows are *still*
+  invisible even via the session_id path (access/portability don't read `conversion_labels` for SDK-
+  ping labels either — so this is a pre-existing Art. 15/20 gap that FOLLOW-184's new durable token
+  *widens the awareness of* but does not introduce). → **FOLLOW-246 (P1)**: add a `conversion_labels`
+  read to access + portability covering BOTH the `session_id` path AND the `durable_lead_id` path,
+  with the same `lead_id <> ''` empty-key guard and the same operator-supplied-token contract; update
+  §T.6 to state the two-namespace model applies to all three DSR verbs, not only erase. (GDPR Art.
+  15/20; backend-engineer + compliance-engineer sign-off.)
+- **LG-2 (P3) — `initiate` validates `lead_id` shape but performs NO existence/format reconciliation
+  against any CRM row, so a typo'd token silently produces a no-op Pass B.** `InitiateBodySchema.lead_id`
+  is `min(1).max(256)` only (`initiate/route.ts:57`). If the operator mistypes the durable token, the
+  row is stored, Pass B runs `DELETE … WHERE lead_id = <typo>` matching nothing, and the response
+  reports success — the real CRM rows survive with no signal on the **erase** path (the FOLLOW-238
+  capability check only fires when `durable_lead_id` is NULL/absent — `erase/route.ts:436` `if
+  (!passBRan)` — so a *supplied-but-wrong* token bypasses the warning entirely: `passBRan` is true).
+  This is a genuine residual hole in the FOLLOW-238 unverifiable-detection: it catches "no token" but
+  not "wrong token." Low priority (operator error, tenant-side contract per §T.6 invariant), but it
+  means `crm_erasure_status: 'complete'` can be returned while CRM rows survive. → folded into
+  FOLLOW-246 AC as a documented limitation; no separate follow-up (would fragment the DSR-completeness
+  work). Recorded so a future retro does not mistake `passBRan === true` for "CRM rows actually gone."
+- **LG-3 (P3) — dedup `durableLeadId !== record.sessionId` is correct, but the JSDoc rationale
+  ("issuing a second DELETE is safe but wasteful", `erase/route.ts:367`) understates a subtlety.** If
+  a tenant ever (mis)used the session_id AS the CRM token, Pass A covers it and Pass B is correctly
+  skipped — fine. No defect; noted only because the comment frames it as a pure perf optimization when
+  it is also the thing that keeps the empty-key/dedup invariants clean. No follow-up.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** The Pass-B SQL is correct on static reading: tenant-scoped (`eq(tenantId)`), keyed on the
+  stored token, double-guarded on `ne(leadId, '')` at the DB layer plus app-layer `!== ''`, executed
+  inside the same transaction as Pass A (atomicity preserved). The dedup guard prevents a double-
+  delete. The migration is forward-only, nullable, `IF NOT EXISTS` (safe re-run). The partial index
+  `WHERE durable_lead_id IS NOT NULL` is appropriate (most rows are NULL). No correctness defect found.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, folds into FOLLOW-246) — no test asserts that access/portability disclose
+  `conversion_labels`.** This is the test face of LG-1: because the routes never query the table,
+  there is no coverage to add until the read is wired. When FOLLOW-246 adds the read, its ACs must
+  include a PGlite/route test that (a) an access report for a subject with a supplied `durable_lead_id`
+  includes the matching CRM rows, and (b) the SDK-ping (`lead_id = session_id`) rows appear too. No
+  separate follow-up — scoped into FOLLOW-246.
+- **TG-2 (P3) — `initiate`'s storage of `lead_id` → `durable_lead_id` is unproven through the route.**
+  The PGlite harness seeds the column directly; no test drives `POST /api/dsr/initiate {lead_id}` and
+  asserts the column persists. The storage is a trivial additive spread (`:174`), so risk is low —
+  recorded, not filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — §T.6 frames the two-namespace model as an *erasure* concern only.** `docs/MASTER_DESIGN.md
+  §T.6:3870-3871` reads "Two identifier namespaces must both be covered by a DSR **Art. 17 erasure**"
+  and the whole identifier-resolution block speaks only of the erase passes. It does not state that
+  Art. 15 (access) and Art. 20 (portability) require the same two-namespace coverage — which is exactly
+  why LG-1 was easy to miss. → folded into FOLLOW-246 AC (update §T.6 + DSR_ALERTING.md to scope the
+  two-namespace model to all three DSR verbs). No separate follow-up.
+- The DSR runbook + §T.6 erase-model docs themselves are accurate and complete for the erase verb —
+  the doc *gap* is one of scope (erase-only), not of correctness. Otherwise docs are good.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected (Sprint 15)
+
+- **FOLLOW-185 (PG-harness: CRM route write + DSR cascade + two-writer precedence) — STILL READY
+  (FOLLOW_UPS.md:5383); RELATED, value confirmed.** It shares the PGlite harness FOLLOW-184 introduced
+  (`dsr-crm-erasure.test.ts`). FOLLOW-185 should extend that harness to drive the CRM *producer*
+  (`POST /api/crm/outcome`) end-to-end into the erase cascade, not just seed rows. Unaffected by LG-1
+  but a natural place to also add the access/portability read coverage of FOLLOW-246. No re-spec.
+- **FOLLOW-186 (tenant onboarding gate + CRM webhook docs — RETRO-031 HALF_WIRE_C closure, condition
+  10) — STILL OPEN (FOLLOW_UPS.md:5419).** FOLLOW-184's `initiate.lead_id` field is the operator-
+  facing input that FOLLOW-186's onboarding gate must instruct CRM-integrated tenants to supply. The
+  onboarding doc FOLLOW-186 produces must now ALSO tell operators that access/portability completeness
+  for CRM subjects depends on the same token (once FOLLOW-246 lands). Re-pointed, not blocked.
+- **FOLLOW-187 (CRM go-live checklist; ESC-021) — DONE (commit `3234b2d`, this branch).** Its
+  go-live gate conditions 8/9 reference the DSR CRM erasure posture. The Art. 15/20 gap (LG-1) is a
+  NEW go-live consideration the checklist did not enumerate — surfaced here for the PM: a CRM tenant
+  going live can erase but cannot fully *disclose* CRM data. **Severity for PM escalation decision:
+  P1 compliance (Art. 15/20 partial non-compliance for CRM-integrated tenants).** Recorded in §5; the
+  PM decides whether FOLLOW-246 gates CRM go-live alongside FOLLOW-187.
+- **FOLLOW-238 / FOLLOW-244 / FOLLOW-245 (DSR `crm_erasure_status` capability signal) — DONE
+  (commits `1acead5`, `b2d1154`).** Interaction with LG-2: the unverifiable detector catches "no
+  durable token" but NOT "wrong durable token supplied" (a supplied typo → `passBRan === true` →
+  status `complete`). Recorded as LG-2; FOLLOW-244 already covered the positive `crm_tenant_unverifiable`
+  branch but not the wrong-token case. Not re-opening those follow-ups; LG-2 folds into FOLLOW-246.
+
+#### 5b. Future sprint tickets affected
+
+- Any future "automated `session_id ⋈ durable_lead_id` resolver" (the §T.6:3892 path-(a) FOLLOW
+  noted under FOLLOW-239) would, once it exists, automatically benefit access/portability too IF
+  FOLLOW-246 has wired those verbs to read the durable path. So FOLLOW-246 should be done BEFORE (or
+  share scope with) the automated resolver, so the resolver lights up all three verbs at once.
+- Y2 federated-governance / cross-tenant pooling (§F.3/§R.3) is unaffected — this is a per-tenant DSR
+  completeness change, no corpus-semantics impact.
+
+#### 5c. Contracts changed others rely on
+
+- `POST /api/dsr/initiate` now accepts optional `lead_id` — this is a public tenant-facing contract
+  widening. The DPA / onboarding (FOLLOW-186) and the CRM go-live checklist (FOLLOW-187) reference the
+  DSR flow and should cite the new field. Compliance docs §T.6 + DSR_ALERTING.md updated for erase;
+  must be extended to access/portability (DG-1 → FOLLOW-246).
+- `dsr_verifications.durable_lead_id` is a new column other DSR code may read; `access`/`portability`
+  routes SHOULD read it (LG-1) — they currently don't.
+
+#### 5d. Architectural assumptions affected
+
+- **The "DSR is fully closed once erase reaches all stores" assumption is now visibly incomplete: DSR
+  completeness is a per-VERB property, and the three verbs have drifted.** FOLLOW-039 wired ClickHouse
+  into erase; FOLLOW-184 wired the CRM namespace into erase; but `access`/`portability` were last
+  meaningfully touched before the `conversion_labels` table existed and have silently fallen behind
+  every new PII store added since. The durable_lead_id work makes this drift concrete and actionable.
+  Architectural note for the PM: a single "DSR data inventory" (one list of every PII-bearing store +
+  the identifier each is keyed on) consumed by ALL THREE verbs would prevent the drift from recurring
+  every time a store is added. Recorded as a §6 lesson candidate (count 1 — not promoted).
+
+### 6. New lesson candidates
+
+- **Pattern (count 1 — NOT promoted) — "a completeness fix applied to ONE verb/branch of a symmetric
+  set, leaving the sibling verbs/branches with the identical gap."** Seen in: this RETRO (FOLLOW-184
+  fixed the `lead_id`-namespace gap on DSR *erase* but `access`/`portability` keep it). This RHYMES
+  with RETRO-031 §4a LG-1 (the erase gap itself) but is the INVERSE shape — RETRO-031 found "the gap
+  exists," this finds "the fix was partial across siblings." It also rhymes with the broader Rule N
+  "completeness sub-shape" family (RETRO-023 amendment; RETRO-036 cited it for the SDK-storage-key
+  table). NOT promoting: (a) this is the FIRST instance of the specific *partial-fix-across-symmetric-
+  verbs* shape (threshold is 2 of the SAME shape); (b) Rule N is about *docs vs code* completeness, a
+  different axis — it does not express "code fix covered verb A not verb B." Promote a "symmetric-verb
+  completeness" rule only if a SECOND distinct instance appears (e.g. a future PR fixes one of
+  access/portability but not the other, or fixes a logging branch on one arm not its mirror — note the
+  §3582/§3599 logging-asymmetry observations are pre-existing relatives to watch).
+- **Pattern (own blind-spot, recorded not counted) — "the live file contains code from LATER PRs than
+  the one under retro."** The current `erase/route.ts` carries FOLLOW-238/239 capability logic merged
+  after #233. I almost attributed `crm_tenant_unverifiable` to FOLLOW-184. Discipline reaffirmed:
+  scope every retro to `git show <mergeCommit>`, not the working-tree file. (Relative to RETRO-038's
+  "verify against the fetched commit object, not stale main" note — same family, different direction.)
+
+### 7. Follow-ups
+
+- **FOLLOW-246: Extend DSR access (Art. 15) + portability (Art. 20) to disclose `conversion_labels`
+  on BOTH the `session_id` and `durable_lead_id` namespaces** (backend-engineer + compliance-engineer
+  sign-off, 5h, **P1**) [LG-1; GDPR Art. 15/20]. Scope includes: read with the `lead_id <> ''` guard;
+  PGlite/route test proving CRM rows appear for a subject with a supplied durable token AND SDK-ping
+  rows appear (TG-1); document the wrong-token silent-no-op limitation (LG-2); update §T.6 +
+  DSR_ALERTING.md to scope the two-namespace model to all three DSR verbs (DG-1). Filed below.
+
+### 8. Cross-references
+
+- **RETRO-031 (FOLLOW-172) — DIRECT PARENT.** This PR (FOLLOW-184) closes RETRO-031 §4a LG-1 (the
+  "DSR erasure cascade is inert for every CRM-written row — wrong identifier namespace") **for the
+  erase verb, end-to-end**: I traced producer (`initiate` stores token) → consumer (`erase` Pass B
+  deletes) → proven by PGlite AC-1 against real SQL, not a mock. Closure discipline (RETRO-024/038)
+  applied: I did NOT trust "gap closed"; I read the migration, both routes, and the 12 PGlite cases,
+  and confirmed the delete executes. The gap did **not** move one hop downstream on the erase axis —
+  but I then checked the OTHER axis (access/portability) and found the SAME namespace gap unaddressed
+  there (§4a LG-1 → FOLLOW-246). RETRO-031's §2 "mock-only, no live-DB" coverage caveat is also
+  RESOLVED for this path by the PGlite harness.
+- **RETRO-043 (FOLLOW-238) / FOLLOW-244 / FOLLOW-245** — sibling: the `crm_tenant_unverifiable`
+  capability signal in the *current* `erase/route.ts` is THEIR code, NOT FOLLOW-184's (merged after
+  #233). I scoped FOLLOW-184 to `git show 9c91ed8`. Interaction: their unverifiable detector misses
+  the "wrong token supplied" case (this retro §4a LG-2).
+- **RETRO-036 (FOLLOW-218) / Rule N completeness sub-shape** — relative: Rule N is docs-vs-code
+  completeness; this retro's LG-1 is code-vs-code (one verb fixed, siblings not). Different axis; Rule
+  N does not cover it. DG-1 (§T.6 scoped erase-only) is, however, a genuine Rule-N-adjacent doc-scope
+  gap and is folded into FOLLOW-246.
+- **FOLLOW-039 (RETRO-023)** — the ClickHouse erase leg: same architectural lesson (§5d) that DSR
+  completeness is a per-verb, per-store property and the verbs drift as stores are added.

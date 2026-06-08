@@ -51,3 +51,25 @@ docstring/code divergence is a separate P2 issue not owned by this ticket.
 grep for any backlog stubs that claim the same number and update them in the same PR. The collision
 would have been caught at FOLLOW-218 merge time if the PR description had included a step: "grep
 QUEUE.md and FOLLOW_UPS.md for 'Activity 14' and confirm no collision."
+
+---
+
+## 2026-06-08 / FOLLOW-187
+
+**What I documented/implemented:** Added ROPA Activity 15 (CRM Deep-Outcome Ingest,
+`conversion_labels`) to `docs/compliance/ropa.md` (v2.3). Added `conversion_labels` row to the
+Retention Schedule table. Updated DPIA §2.3 (System Components) and §2.5 (Data Types and Retention).
+Filed FOLLOW-234 (data-engineer TTL cron) as the Rule N enforcement complement. Updated QUEUE.md.
+
+**Where a disclosure could have drifted from shipped behavior:** The 13-month retention period for
+`conversion_labels` is an intended policy, not an implemented one. Grep of
+`packages/db/src/schema/ conversion_labels.ts`, `packages/db/migrations/0019_conversion_labels.sql`,
+`0020_conversion_labels_dedup.sql`, and all `apps/` non-test files confirmed no TTL enforcement
+exists anywhere. Per Rule N I could not write "13-month retention enforced" without code evidence.
+Instead the Retention Schedule row carries `**TTL NOT YET ENFORCED**` and the DPIA §2.5 row carries
+`policy only; not yet enforced`, and FOLLOW-234 is marked before-go-live.
+
+**A guardrail I would add:** Any new Postgres table added to ROPA with a stated retention period
+must have the data-engineer TTL ticket filed in the SAME PR. A retention claim with no enforcement
+code is a Rule N violation. Reviewers must grep for the cron/deletion implementation before
+approving any retention period as "enforced" — not as a post-merge follow-up.

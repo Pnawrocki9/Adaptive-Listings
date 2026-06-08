@@ -880,6 +880,9 @@ describe('POST /api/dsr/erase — FOLLOW-244 crm_tenant_unverifiable positive br
       ([e]) => e.action === DSR_AUDIT_ACTIONS.crm_unverifiable,
     );
     expect(unverifiableCalls).toHaveLength(1);
-    expect(unverifiableCalls[0][0].tenant_id).toBe('tenant-uuid-001');
+    const firstUnverifiable = unverifiableCalls[0];
+    if (firstUnverifiable) {
+      expect(firstUnverifiable[0].tenant_id).toBe('tenant-uuid-001');
+    }
   });
 });

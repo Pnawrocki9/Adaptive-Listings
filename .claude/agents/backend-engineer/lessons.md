@@ -249,3 +249,37 @@ pattern in `clickhouse-dsr.ts:99`. No logic change — fire-and-forget INSERT he
 **A guardrail I'd add:** A CI grep asserting `replace.*\\'` returns zero results in
 `apps/control-plane/src/` — would catch any future copy-paste of the non-standard pattern before it
 reaches main.
+
+---
+
+## 2026-06-08 / FOLLOW-174
+
+**What I built:** Admin label management surface: `GET /api/admin/labels` (joined
+`conversion_labels ⋈ adaptation_decisions`, paginated, filters: outcome_class / date_from / date_to
+/ model_version / tenant_id-for-staff), `PATCH /api/admin/labels/[id]` (manual reclassification →
+`label_source=manual_admin` + notes + updated_at), dashboard page
+`/dashboard/analytics/labels/page.tsx` (filterable table + calibration view from FOLLOW-173). Route
+tests: 17 cases covering auth gates, mock fallback, fail-loud 500 (Postgres + ClickHouse),
+cross-tenant guard, PATCH success + write-to-upsertConversionLabel verification.
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+1. **Rule H (same-PR auth for PATCH):** JWT-verified via `getAuthClaims` + HMAC-SHA256
+   `crypto.subtle`. Role gate: staff ≥ estalara:ops OR agency ≥ agency:owner. Tenant ID always
+   sourced from JWT, never from body. Cross-tenant write blocked by re-reading the row's tenant_id
+   and comparing before any write. Replay defence: Supabase JWTs carry `exp`, verified on each call.
+2. **Rule K.2 — fail loud vs fail open:** Both GET and PATCH return HTTP 500 + Sentry when a
+   configured store fails (not a mock fallback). GET falls back to mock ONLY when both
+   `DATABASE_URL_ADMIN` and `DATABASE_URL_DIRECT` are unset (dev/CI) — exposed as
+   `data_source: 'mock'` so the page renders a visible badge. PATCH returns 503 (not mock) when DB
+   is absent.
+3. **ClickHouse join guard:** The `decisionIds` -> ClickHouse IN() list validates each ID against
+   `/^[0-9a-f-]+$/i` (UUID-safe chars) before embedding in the parameterised query. No user-supplied
+   values reach the SQL literal. Caught a test bug where `prediction_id: 'pred-001'` silently
+   skipped the CH fetch (non-hex chars filtered out) — fixed by using a UUID-shaped mock ID.
+4. **No shared type redeclaration:** Page imports canonical types from route-helpers, not inline
+   re-declarations. Closes the drift pattern in RETRO-005/008/013/015.
+
+**A guardrail I'd add:** A CI gate that verifies the ClickHouse IN-list validation regex is present
+in every route that builds a CH `IN (...)` from a server-side ID list — prevents a future path that
+skips the hex-chars filter and silently allows non-UUID IDs into the query string.

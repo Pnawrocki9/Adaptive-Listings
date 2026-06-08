@@ -5765,7 +5765,8 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ## FOLLOW-221 — Calibration export: /api/pilot/calibration missing structured JSON export (LG-1)
 
-- **status:** READY (promoted to QUEUE.md Sprint 16, 2026-06-08)
+- **status:** DONE (PR #235, commit ffc7b43, 2026-06-08; RETRO-040 filed FOLLOW-237 for shape
+  defects)
 - **priority:** P1
 - **source_retro:** RETRO-032 (§4 LG-1)
 - **source_ticket:** FOLLOW-173 / PR #216
@@ -6155,7 +6156,157 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 237 (236 = RETRO-039 / PR #228 / FOLLOW-183: restore src/index.ts to packages/db vitest coverage.include, TG-1 P3. 235 = RETRO-039 / PR #228 / FOLLOW-183: tighten 12-pair parity gate to value-parity AC + fix stale JSDoc, LG-1/DG-1 P3. 234 = FOLLOW-187 companion / PR #229: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate, P1 before_go_live. 233/232/231 unused. 230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217: / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
+## FOLLOW-237 — Calibration JSON export: add Rule K.2 provenance, reject unknown format, fix FOLLOW-175 mis-wire (HALF_WIRE_P/CB-1/LG-1)
+
+- **status:** DONE (data-engineer/FOLLOW-237-calibration-export-shape-fix, 2026-06-08)
+- **priority:** P1
+- **source_retro:** RETRO-040 (§3 HALF_WIRE_P, §4a LG-1/LG-2/LG-3, §4b CB-1, §4c TG-1/TG-2)
+- **source_ticket:** FOLLOW-221 / PR #235 (commit `ffc7b43`)
+- **recommended_sprint:** Sprint 16
+- **agent:** data-engineer + backend-engineer
+- **estimated_hours:** 4
+- **scope:** FOLLOW-221 added `?format=json` to `GET /api/pilot/calibration` but it ships four
+  defects on a MOAT-bound (fine-tuning-corpus) artifact: (CB-1, P1) the export drops the Rule K.2
+  `data_source: 'clickhouse' | 'mock'` provenance field the chart response carries — a
+  `calibration.json` produced from CI/dev MOCK data is byte-shape-identical to one from real
+  ClickHouse, so mock fixtures can silently contaminate a training corpus; the commit's "Rule K.2
+  inherited" claim covers only the fail-loud error half, not the provenance half. (LG-1/HALF_WIRE_P,
+  P1) the export has ZERO repo consumer and its declared consumer FOLLOW-175 CANNOT use this shape —
+  FOLLOW-175's spec needs a per-decision `(features_snapshot, model_version, score) → outcome_class`
+  ROW-LEVEL corpus, while FOLLOW-221 emits AGGREGATE counts
+  `(outcome_class, model_version, tenant, window, count, avg_confidence)` with no
+  features/score/prediction_id; the HANDOFFS entry wrongly claims it feeds FOLLOW-175. (LG-2, P2)
+  `avg_confidence` is a per-`model_version` mean predicted_rate (NOT per-class as the field name
+  implies) AND rides on the RETRO-037 dwell-inflated, uncapped confidence (FOLLOW-230 OPEN). (LG-3,
+  P3) `format` is matched by exact equality so `?format=csv` / `jsonl` / `JSON` silently fall
+  through to the chart shape with HTTP 200 instead of a 400.
+- **ac:**
+  - [x] AC1 (CB-1): `data_source` added to `CalibrationExportRowSchema` (per-row) AND a top-level
+        envelope `{ data_source, rows }` wraps the JSON export response
+  - [x] AC2 (TG-1): tests assert mock-path export carries `data_source: 'mock'`; ClickHouse path
+        carries `data_source: 'clickhouse'` — both envelope and per-row fields asserted
+  - [x] AC3 (LG-3/TG-2): `parseFormat()` rejects unknown `format` values with HTTP 400; tests for
+        `?format=csv`, `?format=jsonl`, `?format=JSON` all pass
+  - [x] AC4 (LG-2): `avg_confidence` renamed to `mean_model_predicted_rate` with JSDoc clarifying
+        per-model_version semantics and FOLLOW-230 dwell-cap caveat
+  - [x] AC5 (LG-1): HANDOFFS.md FOLLOW-221→FOLLOW-175 entry corrected; states this is a SUMMARY,
+        FOLLOW-175 needs a separate row-level export, and cannot use this shape
+  - [x] AC6: typecheck clean, 42 tests pass, prettier clean; chart path regression tests retained
+- **depends_on:** FOLLOW-221 (DONE, PR #235); cross-links FOLLOW-230 (dwell cap), FOLLOW-175
+  (row-level export)
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-238 — DSR completeness signal: fix tenant-vs-subject scope over-claim + audit-action sync (LG-1/LG-2)
+
+- **status:** IN_PROGRESS (promoted to QUEUE.md Sprint 16, 2026-06-08; delegated to
+  backend-engineer)
+- **priority:** P1
+- **source_retro:** RETRO-041 (§4a LG-1/LG-2, §4b note, §4c TG-2)
+- **source_ticket:** FOLLOW-239 / PR #234 (commit `2a4cdba`)
+- **recommended_sprint:** Sprint 16
+- **agent:** backend-engineer
+- **estimated_hours:** 3
+- **scope:** FOLLOW-239's `crm_erasure_status` completeness check counts CRM-namespace
+  `conversion_labels` rows **tenant-wide**
+  (`WHERE tenant_id = record.tenantId AND lead_id <> '' AND lead_id <> record.sessionId`), but
+  `conversion_labels` has NO per-subject identifier other than `lead_id` — so when `durable_lead_id`
+  is omitted the route CANNOT know which CRM rows belong to the erased subject. The result: every
+  token-omitted erasure on ANY CRM-integrated tenant returns `incomplete_no_durable_lead_id` + fires
+  a Sentry warning + writes an audit row, even for subjects who never had a CRM outcome →
+  false-positive flood that trains the DPO to ignore a GDPR alert and marks genuinely-complete
+  erasures "incomplete" on the wire. The field name + `DSR_ALERTING.md §2` table over-claim
+  subject-level incompleteness the query cannot substantiate. Separately, the audit `action` literal
+  `'incomplete_erasure_crm_rows_detected'` is hand-kept-in-sync between the route and the
+  `DSR_ALERTING.md §5` query with no shared const (LG-2), and the count-query-failure `catch` leaves
+  `crm_erasure_status: 'complete'` while logging an error — a third over-claim (4b note).
+- **ac:**
+  - [ ] AC1 (LG-1): EITHER reframe the field value + Sentry message + `DSR_ALERTING.md §2` as a
+        tenant-capability warning (e.g. CRM rows exist for this tenant and no durable token was
+        supplied → CRM-namespace completeness is UNVERIFIABLE for this subject), OR gate the warning
+        on the tenant being CRM-integrated; do not emit a subject-completeness claim the schema
+        cannot support
+  - [ ] AC2 (4b note): on count-query failure emit a distinct status (e.g. `unverified`) instead of
+        `complete`
+  - [ ] AC3 (LG-2): extract `'incomplete_erasure_crm_rows_detected'` (and related DSR audit actions)
+        to a shared `DsrAuditAction` union/const consumed by both the route and any audit query
+  - [ ] AC4 (TG-2): tests for the "subject has NO CRM rows but tenant DOES" axis and the
+        count-query-failure path
+  - [ ] AC5: typecheck/lint/prettier/CI green
+- **depends_on:** FOLLOW-239 (DONE, PR #234); MUST land before FOLLOW-187 wires the live Sentry
+  alert (else the DPO inbox floods at CRM go-live); subsumed by the deferred path-(a) resolver if
+  that ships
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-240 — Route-level test of the DSR incomplete-erasure observable branch (TG-1)
+
+- **status:** READY (promoted to QUEUE.md Sprint 16, 2026-06-08; deferred — not blocking go-live)
+- **priority:** P1
+- **source_retro:** RETRO-041 (§4c TG-1)
+- **source_ticket:** FOLLOW-239 / PR #234 (commit `2a4cdba`)
+- **recommended_sprint:** Sprint 16
+- **agent:** backend-engineer
+- **estimated_hours:** 2
+- **scope:** FOLLOW-239's PGlite tests (AC-7/8/9) prove the SQL count predicate, but the route tests
+  inject `{count:0}` in every path, so the `survivingCrmRows > 0` branch — the entire point of the
+  ticket — has ZERO execution coverage. Nothing asserts the 200 body carries
+  `crm_erasure_status: 'incomplete_no_durable_lead_id'`, nor that `Sentry.captureMessage` /
+  `writeDsrAuditLog` are invoked. A producer→field plumbing regression would ship green. The author
+  self-identified this scope in `.claude/agents/backend-engineer/lessons.md`.
+- **ac:**
+  - [ ] AC1: in `dsr/erase/route.test.ts`, mock the FOLLOW-239 count select to return `{count: N>0}`
+        and assert the 200 body `crm_erasure_status === 'incomplete_no_durable_lead_id'`
+  - [ ] AC2: assert `Sentry.captureMessage` is called with `tags.follow === 'FOLLOW-239'` and
+        `tags.route === 'dsr/erase'`
+  - [ ] AC3: assert `writeDsrAuditLog` is called with
+        `action: 'incomplete_erasure_crm_rows_detected'`
+  - [ ] AC4: a `complete`-path assertion remains (regression guard); CI green
+- **depends_on:** FOLLOW-239 (DONE, PR #234); pairs with FOLLOW-238 (which changes the asserted
+  value/semantics — sequence FOLLOW-238 first or co-develop)
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-241 — Consolidate duplicate DSR_ALERTING.md + fix dangling pointer chain & RETRO-042/ESC-021 citations (DG-1/DG-2)
+
+- **status:** OPEN
+- **priority:** P2
+- **source_retro:** RETRO-041 (§4d DG-1/DG-2)
+- **source_ticket:** FOLLOW-239 / PR #234 (commit `2a4cdba`)
+- **recommended_sprint:** Sprint 16
+- **agent:** compliance-engineer + backend-engineer
+- **estimated_hours:** 2
+- **scope:** PR #234 created `docs/compliance/DSR_ALERTING.md` (NEW) alongside the pre-existing
+  `docs/ops/DSR_ALERTING.md` (FOLLOW-078, updated by FOLLOW-184) — two files of identical name in
+  different dirs with overlapping CRM/Pass-A/B operator content. DPIA §8 + `dpia.md:773` point
+  operators to `docs/ops/DSR_ALERTING.md`, which LACKS the §3 re-run procedure that lives only in
+  the new compliance file → an operator following the DPIA lands on the wrong file.
+  `backend-engineer/ lessons.md:298` (FOLLOW-184) also treats the ops file as canonical. Separately,
+  the PR's artifacts cite `RETRO-042` (commit msg, MASTER_DESIGN §T.6 note, db-test header,
+  lessons.md) and "Closes ESC-021" — neither RETRO-042 nor ESC-021 exists (max written retro is
+  RETRO-040; ESCALATIONS.md tail is ESC-020). The real source is RETRO-031 §4 / FOLLOW-184.
+- **ac:**
+  - [ ] AC1 (DG-1): consolidate to ONE canonical DSR_ALERTING.md (recommend `docs/ops/` — DPIA +
+        FOLLOW-078/184 already reference it); merge the new operator-procedure (§3) + go-live
+        checklist (§6) content into it; delete the duplicate `docs/compliance/DSR_ALERTING.md`
+  - [ ] AC2 (DG-1): repoint MASTER_DESIGN §T.6 `DSR_ALERTING.md §3` and any other refs to the
+        canonical file; verify DPIA §8 / `dpia.md:773` resolve to a file that contains §3
+  - [ ] AC3 (DG-2): correct the `RETRO-042` citations in MASTER_DESIGN §T.6 note, the
+        `dsr-crm-erasure.test.ts` header, and `backend-engineer/lessons.md` to RETRO-031/RETRO-041
+        (commit message is immutable — note the correction in §T.6)
+  - [ ] AC4 (DG-2): correct/remove the "ESC-021" references (no such escalation exists); if an
+        escalation is genuinely intended, the PM files it in ESCALATIONS.md
+  - [ ] AC5: prettier/markdownlint clean; no dangling links
+- **depends_on:** FOLLOW-239 (DONE, PR #234); relates to FOLLOW-184 (ops-file canonical), FOLLOW-187
+  (go-live checklist lives in the consolidated file)
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 238 (237 = RETRO-040 / PR #235 / FOLLOW-221: calibration JSON export — add Rule K.2 data_source provenance (CB-1 P1) + reject unknown format (LG-3) + fix avg_confidence semantics/dwell caveat (LG-2) + correct FOLLOW-175 mis-wire/HALF_WIRE_P (LG-1 P1); the export has no usable consumer and FOLLOW-175 needs row-level not aggregate. 236 = RETRO-039 / PR #228 / FOLLOW-183: restore src/index.ts to packages/db vitest coverage.include, TG-1 P3. 235 = RETRO-039 / PR #228 / FOLLOW-183: tighten 12-pair parity gate to value-parity AC + fix stale JSDoc, LG-1/DG-1 P3. 234 = FOLLOW-187 companion / PR #229: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate, P1 before_go_live. 233/232/231 unused. 230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217: / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
      220 = P1 make the FOLLOW-217 jsdom test actually DRIVE init() (it mirrors init() in local helpers, not invokes it — Rule Q violation in the ticket filed to close the Rule Q gap; TG-1/TG-2/TG-3/CB-1/DG-1; sequence BEFORE FOLLOW-219).
      219 = RETRO-033 / PR #218 / FOLLOW-216:
      219 = P3 collapse 4 scattered !intentStateRehydrated guards into one block + move CB-1 comment into JSDoc (structural hardening of FOLLOW-216 LG-1 fix; after FOLLOW-217).

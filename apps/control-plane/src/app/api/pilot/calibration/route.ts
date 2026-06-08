@@ -11,17 +11,25 @@
  * Query params:
  *   window_days: 7 | 14 | 30  (default: 7 — same allowed set as cta-lift)
  *   format: 'json' (optional — see JSON export path below)
+ *     Any non-empty format value OTHER than 'json' returns HTTP 400 (FOLLOW-237 AC3).
  *
  * Response shape (default / chart path): CalibrationResponse (see route-helpers.ts).
  *   calibration[]         — reliability curve per (model_version, confidence_decile)
  *   conversion_aggregates[] — conversion rate per (outcome_class, model_version)
  *   data_source           — 'clickhouse' | 'mock' (Rule K.2 provenance field)
  *
- * JSON export path (FOLLOW-221):
- *   `?format=json` returns a JSON array of CalibrationExportRow objects — one per
- *   (outcome_class, model_version) — with Content-Disposition: attachment and
- *   Content-Type: application/json.  Shape is Zod-validated (CalibrationExportRowSchema).
+ * JSON export path (FOLLOW-221, FOLLOW-237):
+ *   `?format=json` returns a JSON envelope with:
+ *     data_source  — 'clickhouse' | 'mock' provenance (Rule K.2 — FOLLOW-237 AC1)
+ *     rows         — CalibrationExportRow[] (one per outcome_class × model_version)
+ *   with Content-Disposition: attachment and Content-Type: application/json.
+ *   Shape is Zod-validated (CalibrationExportRowSchema).
  *   Documented in HANDOFFS.md "FOLLOW-221 -> FOLLOW-175".
+ *
+ *   NOTE: this is a calibration SUMMARY (aggregate counts per outcome_class ×
+ *   model_version × tenant × window). FOLLOW-175 needs a SEPARATE row-level
+ *   (features_snapshot, model_version, score) → outcome_class export and CANNOT
+ *   use this shape (FOLLOW-237 AC5 correction).
  *
  * Auth: Bearer JWT required; tenant_id from JWT claim (never from query string).
  *
@@ -65,10 +73,45 @@ import {
 const ALLOWED_WINDOWS = [7, 14, 30] as const;
 type WindowDays = (typeof ALLOWED_WINDOWS)[number];
 
+/** Valid values for the ?format= query parameter. */
+const ALLOWED_FORMATS = ['json'] as const;
+type AllowedFormat = (typeof ALLOWED_FORMATS)[number];
+
 /** Parse window_days; defaults to 7 when missing or out of the allowed set. */
 function parseWindowDays(raw: string | null): WindowDays {
   const n = Number(raw);
   return (ALLOWED_WINDOWS as readonly number[]).includes(n) ? (n as WindowDays) : 7;
+}
+
+/**
+ * Parse the ?format= query parameter.
+ *
+ * Returns `{ ok: true, value: AllowedFormat | null }` when the value is valid (null = chart path).
+ * Returns `{ ok: false, response: Response }` with HTTP 400 for any unknown non-empty value
+ * (FOLLOW-237 AC3 — fail loud, never silently fall through to the chart path).
+ */
+function parseFormat(
+  raw: string | null,
+): { ok: true; value: AllowedFormat | null } | { ok: false; response: Response } {
+  if (raw === null || raw === '') return { ok: true, value: null };
+  if ((ALLOWED_FORMATS as readonly string[]).includes(raw))
+    return { ok: true, value: raw as AllowedFormat };
+  // Unknown format value — reject with 400 (Rule K.2 fail loud).
+  return {
+    ok: false,
+    response: new Response(
+      JSON.stringify({
+        error: {
+          code: 'invalid_format',
+          message: `Unknown format '${raw}'. Valid values: ${ALLOWED_FORMATS.join(', ')}.`,
+        },
+      }),
+      {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    ),
+  };
 }
 
 // ─── ClickHouse access ────────────────────────────────────────────────────────
@@ -198,17 +241,29 @@ async function fetchLabelsFromPostgres(
   );
 }
 
-// ─── JSON export helper (FOLLOW-221) ─────────────────────────────────────────
+// ─── JSON export helper (FOLLOW-221, FOLLOW-237) ─────────────────────────────
 
 /**
- * Build the `?format=json` response: a JSON array with Content-Disposition
- * and Content-Type headers so browsers download it directly.
+ * Build the `?format=json` response: a JSON envelope with a top-level
+ * `data_source` provenance field (Rule K.2 — FOLLOW-237 AC1) and a `rows`
+ * array of CalibrationExportRow objects.
  *
- * The payload is Zod-validated inside buildCalibrationExportRows — a parse
- * error propagates as HTTP 500 (Rule K.2: fail loud, never fabricate).
+ * The envelope is returned with Content-Disposition attachment so browsers
+ * download it directly.  The rows are Zod-validated inside
+ * buildCalibrationExportRows — a parse error propagates as HTTP 500
+ * (Rule K.2: fail loud, never fabricate).
+ *
+ * NOTE: this export is a calibration SUMMARY (aggregate counts per
+ * outcome_class × model_version).  A consumer that needs row-level
+ * (features_snapshot, score) → outcome_class corpus data for LoRA fine-tuning
+ * CANNOT use this shape — see FOLLOW-175 for the separate row-level export.
  */
-function jsonExportResponse(rows: CalibrationExportRow[]): Response {
-  return new Response(JSON.stringify(rows), {
+function jsonExportResponse(
+  rows: CalibrationExportRow[],
+  dataSource: 'clickhouse' | 'mock',
+): Response {
+  const envelope = { data_source: dataSource, rows };
+  return new Response(JSON.stringify(envelope), {
     status: 200,
     headers: {
       'Content-Type': 'application/json',
@@ -223,6 +278,7 @@ function jsonExportResponse(rows: CalibrationExportRow[]): Response {
  * GET /api/pilot/calibration
  *
  * @returns 200 CalibrationResponse on success (with data_source provenance field).
+ * @returns 400 when an unknown ?format= value is supplied (FOLLOW-237 AC3).
  * @returns 401 when no valid tenant JWT is present.
  * @returns 500 when CLICKHOUSE_URL is set but ClickHouse query fails,
  *   OR when Postgres label fetch fails (Rule K.2 — fail loud; never fall back to
@@ -241,7 +297,14 @@ export async function GET(req: NextRequest): Promise<NextResponse | Response> {
 
   const tenantId: string = claims.tenant_id;
   const windowDays = parseWindowDays(req.nextUrl.searchParams.get('window_days'));
-  const formatJson = req.nextUrl.searchParams.get('format') === 'json';
+
+  // AC3 (FOLLOW-237): unknown ?format= values return HTTP 400 instead of silently falling
+  // through to the chart path.  parseFormat() returns { ok: false } on unknown non-empty values.
+  const formatResult = parseFormat(req.nextUrl.searchParams.get('format'));
+  if (!formatResult.ok) {
+    return formatResult.response;
+  }
+  const formatJson = formatResult.value === 'json';
 
   // Rule K.2 — fail loud.
   // When CLICKHOUSE_URL is unset (dev / CI), return deterministic mock with provenance field.
@@ -251,13 +314,15 @@ export async function GET(req: NextRequest): Promise<NextResponse | Response> {
   if (!clickhouseConfigured) {
     const response = buildMockCalibrationResponse(tenantId, windowDays);
     if (formatJson) {
+      // AC1/AC2 (FOLLOW-237): pass dataSource='mock' so every export row + envelope is flagged.
       const exportRows = buildCalibrationExportRows(
         tenantId,
         windowDays,
         response.calibration,
         response.conversion_aggregates,
+        'mock',
       );
-      return jsonExportResponse(exportRows);
+      return jsonExportResponse(exportRows, 'mock');
     }
     return NextResponse.json(response, { status: 200 });
   }
@@ -313,15 +378,17 @@ export async function GET(req: NextRequest): Promise<NextResponse | Response> {
   // ─── Build response ─────────────────────────────────────────────────────────
   const { calibration, conversion_aggregates } = buildCalibrationFromRaw(decisions, labels);
 
-  // JSON export path (FOLLOW-221) — return flat array with download headers.
+  // JSON export path (FOLLOW-221, FOLLOW-237) — return envelope with data_source + rows.
   if (formatJson) {
+    // AC1/AC2 (FOLLOW-237): pass dataSource='clickhouse' so provenance is explicit.
     const exportRows = buildCalibrationExportRows(
       tenantId,
       windowDays,
       calibration,
       conversion_aggregates,
+      'clickhouse',
     );
-    return jsonExportResponse(exportRows);
+    return jsonExportResponse(exportRows, 'clickhouse');
   }
 
   const response: CalibrationResponse = {

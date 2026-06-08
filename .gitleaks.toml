@@ -220,6 +220,10 @@ paths = [
   # ClickHouse migration filenames and comments contain long identifiers (table names, column names)
   # that match the cloudflare-api-token regex as false positives.
   '''infra/clickhouse/migrations/''',
+  # Test files at the top level of any package's src/ dir (before being moved to __tests__/)
+  # contain SQL DDL with long snake_case index names that match the cloudflare-api-token heuristic.
+  '''packages/db/src/[^/]+\.test\.ts''',
+  '''packages/shared/src/[^/]+\.test\.ts''',
 ]
 
 # Regexes for known safe patterns

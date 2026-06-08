@@ -36,9 +36,9 @@ import { PGlite } from '@electric-sql/pglite';
 
 import { allRankEntries, conversionLabelRank } from '@estalara/shared';
 
-import type { Database } from './client.js';
-import { conversionLabels, tenants } from './schema/index.js';
-import { buildStoredRankSql, upsertConversionLabel } from './upsert-conversion-label.js';
+import type { Database } from '../client.js';
+import { conversionLabels, tenants } from '../schema/index.js';
+import { buildStoredRankSql, upsertConversionLabel } from '../upsert-conversion-label.js';
 
 // ─── Fixture DDL ─────────────────────────────────────────────────────────────
 //

@@ -154,6 +154,10 @@ paths = [
   # etc.) whose substrings of exactly 40 chars trigger this rule as false positives.
   '''apps/.*/src/.*/test_.*\.py''',
   '''apps/.*/src/.*_test\.py''',
+  # Agent lesson/memory files contain prose narratives (kebab phrases, snake_case identifiers)
+  # that trigger the cloudflare-api-token heuristic as false positives.
+  '''\.claude/agents/''',
+  '''memory/''',
 ]
 # k6 official GPG fingerprint used in apt installation instructions
 # Transcript filenames (date-slug format, e.g. 2026-05-12-15-49-14-estalara-sprint7-corpus)

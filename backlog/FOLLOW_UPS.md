@@ -5055,7 +5055,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ## FOLLOW-174 — admin label table + manual reclassification
 
-- **status:** OPEN
+- **status:** DONE (PR #220 — backend-engineer/FOLLOW-174-admin-label-reclassification)
 - **priority:** P1
 - **agent:** backend-engineer
 - **estimated_hours:** 8
@@ -5470,7 +5470,244 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 191 (190 = CEO-directed 2026-06-04 dwell-time confidence lift, promoted to backlog/sprint-14/FOLLOW-190.md; 188-189 = SDK adapt fail-safe + description reconciliation fix, PRs #194/#195; 184-187 = RETRO-031 / PR #191 / FOLLOW-172 Conversion Label Loop T2 — CRM deep-outcome ingest webhook:
+## FOLLOW-214 — SDK bundle trim: restore <40KB gzip budget
+
+- **source:** PM validation of FOLLOW-176 PR #217 (2026-06-07). The Tier 1+2 SDK bundle has been
+  above the 40KB gzip limit since before Sprint 14. Baseline on main was 44.61KB; FOLLOW-176 adds
+  +0.30KB (44.91KB). The budget breach is pre-existing and predates this PR.
+- **sprint:** 16 (candidate; schedule after FOLLOW-176 merges)
+- **agent:** sdk-engineer
+- **priority:** P2
+- **status:** OPEN
+- **estimated_hours:** 4
+- **depends_on:** []
+- **scope:** Audit `packages/sdk` bundle output (tsup build), identify heaviest contributors (likely
+  Preact + intent engine inlining), and apply tree-shaking / code-split / lazy-load measures to
+  bring gzip total back under 40KB. Do not remove functionality — measure first with
+  `pnpm build --metafile` or equivalent, then trim the largest leaves. Update the bundle-size gate
+  threshold only if the trim confirms a stable new baseline below 40KB.
+- **ac:**
+  - [ ] `pnpm build` bundle-size gate passes (gzip < 40KB for Tier 1+2 combined)
+  - [ ] No existing SDK functionality removed
+  - [ ] Test (Node 22) still green, no test regressions
+  - [ ] CI green (Build gate flips from red to green)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-215 — Trim SDK public surface: 4 intent-persistence exports have no non-test importer
+
+- **status:** OPEN
+- **priority:** P3
+- **source_retro:** RETRO-032 (§3 Wiring CHECK A)
+- **source_ticket:** FOLLOW-176 / PR #217
+- **recommended_sprint:** Sprint 16 (candidate; bundle with FOLLOW-214)
+- **agent:** sdk-engineer
+- **estimated_hours:** 1
+- **scope:** `intentStateStorageKey`, `INTENT_STATE_SCHEMA_VERSION`, `INTENT_STATE_STALE_MS`, and
+  the `PersistedIntentEnvelope` type (`packages/sdk/src/core/session.ts:288/294/309/323`) are
+  `export`ed but have ZERO non-test importer (grep across packages/apps excl. `__tests__`/`.test.ts`
+  returns only `follow-176.test.ts`). They ARE used internally within `session.ts`, so they are not
+  dead symbols — only the `export` keyword is surplus, widening the SDK module surface for tests
+  only. The `@internal exported for testing only` docblock acknowledges this. Either move them
+  behind a test-only internal entrypoint, or drop `export` and have the test import the live
+  `persist`/ `rehydrate` functions and assert behavior rather than internals.
+- **ac:**
+  - [ ] no exported symbol in `session.ts` lacks a non-test importer (Rule I satisfied)
+  - [ ] `follow-176.test.ts` still green (test re-pointed at behavior, not internals)
+  - [ ] CI green
+- **depends_on:** []
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-216 — Rehydrated archetype is re-perturbed by FOLLOW-207 priors on every navigation (LG-1)
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-032 (§4a LG-1/LG-2, §4b CB-1)
+- **source_ticket:** FOLLOW-176 / PR #217
+- **recommended_sprint:** Sprint 14 (sequence BEFORE FOLLOW-190)
+- **agent:** sdk-engineer
+- **estimated_hours:** 3
+- **scope:** The rehydrate gate `intentStateRehydrated` (`packages/sdk/src/index.ts:325-334`) skips
+  ONLY the archetype-hint block (`:341`). The FOLLOW-207 referrer + device-type priors at `:359-374`
+  (`applyReferrerHints` `:369`, `applyBehavioralSignal('device_type.*')` `:374`) run UNCONDITIONALLY
+  — on top of the rehydrated state — re-nudging the resumed archetype and inflating `signal_count`
+  by +1 per navigation. This undercuts FOLLOW-176 AC2 ("applies the prior archetype on the first
+  adapt call, no re-accumulation"). FIX: gate the FOLLOW-207 block behind `!intentStateRehydrated`
+  symmetric to the archetype-hint gate (or explicitly decide+comment which priors may re-apply).
+  ALSO (LG-2): the init-time cold-start state is persisted only after the first `onIntentUpdate`
+  (`:446`) — persist once after init-time prior application, before the first `refreshDirectives()`
+  (`:581`), so the very first cross-listing hop carries the cold-start archetype. ALSO (CB-1): add a
+  one-line "bump INTENT_STATE_SCHEMA_VERSION on any IntentState.probabilities shape change"
+  guardrail comment at `session.ts:288`.
+- **ac:**
+  - [ ] FOLLOW-207 referrer/device priors do NOT mutate a rehydrated state (LG-1)
+  - [ ] cold-start init-time state is persisted before the first `refreshDirectives()` (LG-2)
+  - [ ] `INTENT_STATE_SCHEMA_VERSION` bump-discipline comment added (CB-1)
+  - [ ] regression covered by the jsdom init() test (FOLLOW-217)
+  - [ ] CI green; bundle delta neutral/negative
+- **depends_on:** blocks FOLLOW-190 (dwell lift); pairs with FOLLOW-217 (test)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-217 — jsdom init() integration test for the rehydrate→skip-hints→first-adapt chain
+
+- **status:** DONE (PR #219, merged 2026-06-08 commit `8e684ef`; RETRO-034). PARTIAL closure — AC4 +
+  staleness/schema/multi-session coverage genuine, but the core init()-wiring regression net was NOT
+  delivered (test mirrors init() instead of driving it — Rule Q violation). Re-filed as FOLLOW-220.
+- **priority:** P1
+- **source_retro:** RETRO-032 (§4c TG-1/TG-2)
+- **source_ticket:** FOLLOW-176 / PR #217
+- **recommended_sprint:** Sprint 14 (pairs with FOLLOW-216)
+- **agent:** sdk-engineer + qa-engineer
+- **estimated_hours:** 4
+- **scope:** FOLLOW-176 shipped 28 EXHAUSTIVE unit tests on the `session.ts` helpers +
+  `isValidIntentState` but ZERO test on the `index.ts init()` wiring — exactly the surface where
+  LG-1 lives. The ticket's own Test plan named an "Integration (jsdom): listing A → navigation →
+  listing B reads the persisted archetype and adapts immediately" test, which was descoped to a unit
+  round-trip. Deliver that integration test: listing A infers archetype → persist → listing B
+  `init()` rehydrates → assert (a) archetype hints are skipped, (b) **the rehydrated archetype is
+  NOT perturbed by the FOLLOW-207 priors** (LG-1 regression guard), (c) the first `fetchDirectives`
+  carries the rehydrated archetype, (d) the consent-denial early return (`:209`) and banner-onDenied
+  path (`:260`) call `eraseIntentState` (AC3 at the wired level — TG-2).
+- **ac:**
+  - [ ] jsdom `init()` test asserts rehydrate→skip-hints→first-adapt carries the rehydrated
+        archetype
+  - [ ] LG-1 regression assertion: post-init archetype equals rehydrated archetype (no prior
+        pollution)
+  - [ ] denial-path `eraseIntentState` invocation asserted at the `init()` level
+  - [ ] sessionStorage reset between cases (no cross-test bleed from the new rehydrate branch)
+  - [ ] CI green; ≥80% coverage maintained on new SDK code
+- **depends_on:** pairs with FOLLOW-216
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-218 — DPIA disclosure for the estalara_intent sessionStorage archetype store
+
+- **status:** READY (promoted to QUEUE.md Sprint 16, 2026-06-08)
+- **priority:** P2
+- **source_retro:** RETRO-032 (§4d DG-1)
+- **source_ticket:** FOLLOW-176 / PR #217
+- **recommended_sprint:** Sprint 14
+- **agent:** compliance-engineer
+- **estimated_hours:** 2
+- **scope:** PR #217 introduced a NEW client-side persisted-data store —
+  `estalara_intent_{sessionId}` in sessionStorage, holding the inferred archetype + full
+  per-archetype probability vector (profiling- adjacent data) — with NO corresponding DPIA /
+  privacy-policy entry. The in-code erasure on consent denial/withdrawal is correct
+  (`index.ts:209/260`), but the DISCLOSURE is missing. Per Rule N, compliance docs must match
+  shipped client-side storage before the go-live gate. Add a DPIA §13.2 (or new sub-section) entry:
+  data category (inferred archetype/profile + probabilities), lifetime (tab + 30-min staleness,
+  `INTENT_STATE_STALE_MS`), legal basis (consent), erasure (on denial/ withdrawal), and add the row
+  to the privacy-policy client-storage table.
+- **ac:**
+  - [ ] DPIA documents the intent-state sessionStorage store (category, lifetime, basis, erasure)
+  - [ ] privacy-policy client-storage table lists the `estalara_intent_*` key
+  - [ ] disclosure matches shipped behavior (Rule N: 30-min staleness, consent-gated, erased on
+        denial)
+- **depends_on:** []
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-219 — Collapse the four scattered `!intentStateRehydrated` cold-start-prior guards into one block
+
+- **status:** READY (promoted to QUEUE.md Sprint 16, 2026-06-08)
+- **priority:** P3
+- **source_retro:** RETRO-033 (§4a LG-2, §4b CB-1)
+- **source_ticket:** FOLLOW-216 / PR #218
+- **recommended_sprint:** Sprint 16
+- **agent:** sdk-engineer
+- **estimated_hours:** 2
+- **scope:** The FOLLOW-216 LG-1 fix repaired the symptom (FOLLOW-207 priors re-perturbing the
+  rehydrated archetype) but left the structural cause: there are now FOUR separate hand-copied
+  `if (!intentStateRehydrated)` guards in `packages/sdk/src/index.ts` — archetype hints (`:341`),
+  referrer (`:374`), device (`:381`), and the LG-2 cold-start persist (`:594`). A future ticket that
+  adds a 5th cold-start prior between `:382` and `:594` must remember to add a 5th identical guard,
+  or it silently re-opens LG-1 one prior downstream (the exact FOLLOW-207-vs-FOLLOW-176 seam that
+  caused the original bug — RETRO-032 §6 / RETRO-033 §6 "scattered/partial skip-restore guard"
+  watch-item). Collapse the cold-start priors into a single
+  `if (!intentStateRehydrated) { …all priors… }` block OR extract an
+  `applyColdStartPriors(state, ctx)` helper gated ONCE, so the gate cannot be partially applied.
+  ALSO move the CB-1 schema-version-bump comment from its detached position ABOVE the JSDoc
+  (`packages/sdk/src/core/session.ts:287`) to INSIDE the `INTENT_STATE_SCHEMA_VERSION` JSDoc block
+  so it is discoverable on IDE hover and not deletable as an orphan line. Do this AFTER FOLLOW-217
+  lands so the jsdom `init()` integration test guards the refactor.
+- **ac:**
+  - [ ] The cold-start priors (archetype hints, referrer, device) are gated by a SINGLE
+        `!intentStateRehydrated` check (one block or one helper call), not four scattered guards.
+  - [ ] Adding a new cold-start prior cannot bypass the gate (verified by code-review + the
+        FOLLOW-217 init() regression test still passing).
+  - [ ] CB-1 schema-version comment lives inside the `INTENT_STATE_SCHEMA_VERSION` JSDoc block.
+  - [ ] No behavioral change: cold-start visitors still get referrer+device priors; rehydrated
+        visitors still get none (assert via FOLLOW-217's init() test, no copy).
+- **depends_on:** [FOLLOW-217]
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-220 — Make the FOLLOW-217 jsdom test actually DRIVE init() (it currently mirrors init(), not invokes it)
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-034 (§4c TG-1/TG-2/TG-3, §4b CB-1, §4d DG-1)
+- **source_ticket:** FOLLOW-217 / PR #219
+- **recommended_sprint:** Sprint 16 (sequence BEFORE FOLLOW-219)
+- **agent:** sdk-engineer + qa-engineer
+- **estimated_hours:** 4
+- **scope:** FOLLOW-217 delivered `packages/sdk/src/__tests__/follow-217.test.ts` (20 jsdom tests)
+  to close RETRO-032's missing-init()-test gap (TG-1). BUT the test does NOT drive the production
+  `init()` (`index.ts:180`, unexported, auto-invoked at `:1100`) — it re-implements the entire
+  init() wiring in three local helpers (`simulateRehydrationStep` copies the `:329` rehydrate +
+  `:162-174` `isValidIntentState`; `applyFollow207PriorsGated` copies the `:374`/`:381` gate;
+  `applyLg2PersistGate` copies the `:594` gate) and asserts the COPIES. A `!`-drop on any real
+  `index.ts` gate, or a future cold-start prior added OUTSIDE the gate (re-opening the original LG-1
+  bug), would NOT fail any of the 20 tests — they stay green against their mirror. This is a Rule Q
+  violation in the very ticket filed to close the Rule Q gap (RETRO-034 §6, the 6th confirming
+  instance). Additionally: AC3 asserts erase by calling `eraseIntentState` directly, not via
+  init()'s denial branch (`:209`/`:260`, TG-2); the "first-adapt" leg is never exercised — no
+  `fetch` mock and no `refreshDirectives()`/`applyDirectives()` call exist despite the docblock
+  claiming they do (TG-3 + DG-1 doc-vs-code drift); and `isValidIntentState` is hand-copied into the
+  test (CB-1). FIX — either (a) add a test-only seam exporting `init()` (or
+  `initForTest(config, doc, win)`) so the REAL function is imported and invoked under jsdom with
+  stubbed `document`/`window`/`fetch`; OR (b) coordinate with FOLLOW-219 to extract
+  `applyColdStartPriors(state, ctx)` + the persist gate into one EXPORTED helper and have the test
+  import THAT real helper, deleting all local copies.
+- **ac:**
+  - [ ] The test imports and drives the REAL production wiring (exported `init()`/`initForTest` OR
+        the real exported `applyColdStartPriors` helper) — NO hand-copied gate logic remains in the
+        test.
+  - [ ] Dropping a `!` on any real `index.ts` gate (`:341`/`:374`/`:381`/`:594`) turns the test RED
+        (verify by temporarily mutating the source).
+  - [ ] The denial-branch `eraseIntentState` call is asserted THROUGH init() (`:209` early-return
+        and `:260` banner-onDenied), not by a direct helper call (TG-2).
+  - [ ] The first `refreshDirectives()`→`applyDirectives` leg is exercised with a mocked fetch and
+        the rehydrated archetype is asserted to survive it (TG-3); the docblock's fetch-mock claim
+        becomes true (DG-1).
+  - [ ] Local `isValidIntentState` copy is removed; the test relies on the production guard (CB-1).
+  - [ ] CI green; the AC4 sessionStorage-isolation + staleness/schema-version/multi-session coverage
+        already in follow-217.test.ts is preserved.
+- **depends_on:** pairs with / blocks FOLLOW-219 (the guard-collapse refactor must be guarded by
+  THIS real init() test, not FOLLOW-217's copy)
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 221 (220 = RETRO-034 / PR #219 / FOLLOW-217:
+     220 = P1 make the FOLLOW-217 jsdom test actually DRIVE init() (it mirrors init() in local helpers, not invokes it — Rule Q violation in the ticket filed to close the Rule Q gap; TG-1/TG-2/TG-3/CB-1/DG-1; sequence BEFORE FOLLOW-219).
+     219 = RETRO-033 / PR #218 / FOLLOW-216:
+     219 = P3 collapse 4 scattered !intentStateRehydrated guards into one block + move CB-1 comment into JSDoc (structural hardening of FOLLOW-216 LG-1 fix; after FOLLOW-217).
+     215-218 = RETRO-032 / PR #217 / FOLLOW-176 SDK archetype persistence:
+     215 = P3 trim 4 test-only intent-persistence exports with no non-test importer (Wiring CHECK A / Rule I);
+     216 = P1 LG-1 rehydrated archetype re-perturbed by FOLLOW-207 priors (+ LG-2 persist init-time state + CB-1 schema-version bump comment) — sequence before FOLLOW-190;
+     217 = P1 jsdom init() integration test for rehydrate→skip-hints→first-adapt + denial-path erase (TG-1/TG-2; the descoped ticket Test-plan integration test);
+     218 = P2 DPIA disclosure for estalara_intent sessionStorage archetype store (DG-1; Rule N).
+     214 = P2 SDK bundle trim <40KB (PM validation of PR #217; pre-existing breach 44.61→44.91KB).
+     191 (190 = CEO-directed 2026-06-04 dwell-time confidence lift, promoted to backlog/sprint-14/FOLLOW-190.md; 188-189 = SDK adapt fail-safe + description reconciliation fix, PRs #194/#195; 184-187 = RETRO-031 / PR #191 / FOLLOW-172 Conversion Label Loop T2 — CRM deep-outcome ingest webhook:
      184 = P1 DSR erase must reach CRM-written conversion_labels rows — cascade keys on session_id but CRM rows keyed on opaque lead_id of a different namespace → Art. 17 gap (LG-1; relate FOLLOW-180);
      185 = P1 PG-harness test: CRM route write + DSR cascade match + two-writer shallow→deep precedence upgrade + confidence:0 (TG-1/TG-2/CB-1; folds FOLLOW-181/183);
      186 = P2 tenant onboarding + CRM-webhook docs (HALF_WIRE_C-by-design closure) + compliance condition 10 lead_id-pseudonymity checkbox + no-PII-in-outcome_raw clause + outcome_raw size bound (CB-2; cite Rule L);

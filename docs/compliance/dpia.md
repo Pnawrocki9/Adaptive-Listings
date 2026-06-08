@@ -849,6 +849,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 2.0     | 2026-05-15 | Compliance Engineering | Comprehensive update reflecting Time2Show, Inc. as the operating entity with EU establishment via Polish-resident CEO. UODO confirmed as Lead Supervisory Authority on one-stop-shop basis. EU Art. 27 representative not required (Art. 3(1) basis); UK Art. 27 representative appointment in progress. External DPO appointment in progress (CEO structurally excluded per CJEU C-453/21). DPF integrated as primary EU→US transfer mechanism with SCCs as contractual fallback. Joint Controller Analysis classifying Engagement Score as Sole Controllership. Consent withdrawal SLAs clarified (24h session downgrade, 7d archetype quarantine). Engagement Score added to DSR erasure cascade. CCPA applicability threshold analysis added. AI Act FRIA threshold analysis appendix added. Production status updated to "hybrid pilot deployment". |
 | 2.1     | 2026-05-24 | Data Engineering       | Section 8 (Data Subject Rights) — Erasure flow updated to reflect FOLLOW-039 implementation: synchronous Postgres delete + asynchronous ClickHouse `ALTER TABLE ... DELETE WHERE` mutations across `events`, `adaptation_decisions`, `llm_calls`, `session_quality`; status tracked in new Postgres operational table `dsr_clickhouse_mutations`; Vercel Cron `/api/dsr/mutation-poll` polls every 5 min; retries 3× with exponential backoff; Sentry alert on permanent failure. Cross-reference Master Design §H.1.1 for the canonical erasure flow + data inventory. Pre-2.1 the DPIA cited a "daily cron" erasure design that had not been built; that gap is now closed and EU pilot is unblocked.                                                                                                                                                  |
 | 2.2     | 2026-05-24 | Compliance Engineering | Section 8 (Data Subject Rights) — Added "Erasure failure alerting" paragraph documenting FOLLOW-078 stuck mutation detection: `dsr_mutation_stuck` Sentry warning fires when a `pending`/`in_progress` mutation has not advanced in >1 hour; `dsr_erase_clickhouse_mutation_failed` Sentry error fires on permanent failure. Incident owner and 5-minute response SLA documented. Runbook: `docs/ops/DSR_ALERTING.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 2.3     | 2026-06-08 | Compliance Engineering | Section 13.3 added — disclosure for `estalara_intent_*` sessionStorage intent-state store (FOLLOW-218 / RETRO-032). Documents data category (inferred archetype + per-archetype probability vector), storage medium (sessionStorage, tab-lifetime), staleness window (30 minutes, `INTENT_STATE_STALE_MS`), consent gate (write occurs only when consent is 'granted', verified at `index.ts:329/455/595`), and erasure-on-denial/withdrawal (verified `eraseIntentState` call sites at `index.ts:209` and `index.ts:260`). No behavioral change to SDK required — gap was documentation-only. Privacy Notice Template §4 and §5 updated to add `estalara_intent_*` row and DPO gate item. ROPA Activity 14 added. DPIA version header bumped to 2.3 / 2026-06-08.                                                                                       |
 
 ---
 
@@ -1091,6 +1092,131 @@ deploy and manual QA verification pending.
 
 ---
 
+### 13.3 Client-Side sessionStorage — Intent-State Store (`estalara_intent_*`)
+
+**Finding summary (RETRO-032 / FOLLOW-176 / PR #217):** PR #217 (FOLLOW-176, merged 2026-06-07)
+introduced a new client-side storage write in the Estalara SDK: the resolved archetype label and
+full per-archetype probability vector are persisted to `sessionStorage` under the key
+`estalara_intent_{sessionId}` after the intent engine has converged on the visitor's most likely
+buyer type. This data was not disclosed in any prior DPIA section, Privacy Notice paragraph, or ROPA
+activity row. This section closes that gap. No behavioral change to the SDK is required — the
+erasure-on-withdrawal and consent gate are already implemented (verified below). The missing element
+was exclusively the documentation.
+
+**Processing activity:**
+
+The SDK writes, reads, and erases an entry from `sessionStorage` keyed by
+`estalara_intent_{sessionId}`, where `sessionId` is the per-tab HMAC hash already described in §2.4.
+The entry is a JSON envelope with schema:
+
+```json
+{ "version": 1, "savedAt": <Unix ms timestamp>, "state": <IntentState object> }
+```
+
+The `state` field contains the full `IntentState`: the resolved archetype label (e.g., `"family"`,
+`"investor"`) and the per-archetype probability vector produced by the Thompson-sampling intent
+engine. This is **profiling-adjacent data**: it is an inferred categorisation of the visitor's
+likely property-purchasing intent, derived from their behavioral signals during the current tab
+session.
+
+**Storage medium:** `sessionStorage` (browser API). `sessionStorage` is cleared automatically by the
+browser when the tab is closed. It is not shared between tabs and is not accessible to the server.
+
+**Verified SDK symbols (grep-verified against `packages/sdk/src/core/session.ts` and
+`packages/sdk/src/index.ts`):**
+
+- Key construction: `intentStateStorageKey(sessionId)` returns `` `estalara_intent_${sessionId}` ``
+  (`packages/sdk/src/core/session.ts:325`)
+- Write: `persistIntentState(sessionId, intentState)` — calls
+  `sessionStorage.setItem(intentStateStorageKey(sessionId), JSON.stringify(envelope))`
+  (`session.ts:348`)
+- Read: `rehydrateIntentState(sessionId)` — calls `sessionStorage.getItem(key)`; rejects entries
+  where `envelope.version !== INTENT_STATE_SCHEMA_VERSION` or where
+  `Date.now() - envelope.savedAt > staleMsThreshold` (default
+  `INTENT_STATE_STALE_MS = 30 * 60 * 1000` ms, i.e., 30 minutes) (`session.ts:373–406`)
+- Erase: `eraseIntentState(sessionId)` — calls
+  `sessionStorage.removeItem(intentStateStorageKey(sessionId))` (`session.ts:424–430`)
+
+**Consent gate (verified):**
+
+`persistIntentState` and `rehydrateIntentState` are called only after the consent gate in
+`packages/sdk/src/index.ts` has confirmed `consentState === 'granted'`. The function docstrings in
+`session.ts:335` and `session.ts:368` explicitly state: "Consent gate: callers MUST check consent
+before calling this function." The gate in `index.ts:201–268` returns early (halts the SDK entirely)
+before reaching `rehydrateIntentState` (`index.ts:329`) or `persistIntentState` (`index.ts:455`,
+`index.ts:595`) when consent is `'denied'` or when the visitor declines the banner. The intent-state
+entry is therefore written if and only if consent is granted.
+
+**Erasure on consent denial or withdrawal (verified):**
+
+`eraseIntentState` is called on every denial/withdrawal path:
+
+1. `index.ts:209` — consent already `'denied'` at SDK init (returning visitor who previously denied
+   or mid-session withdrawal detected on re-load): `eraseIntentState(peekStoredSessionId())`
+2. `index.ts:260` — visitor clicks "Decline" on the banner during the current session:
+   `eraseIntentState(auditSession.sessionId)` (called immediately before the SDK halts)
+
+Both call sites use `sessionStorage.removeItem(intentStateStorageKey(sessionId))` via
+`eraseIntentState`. A visitor who denies or withdraws consent will have no `estalara_intent_*` entry
+in their `sessionStorage` after the erase runs.
+
+**Data category:** Inferred archetype / buyer-intent profile (pseudonymous). Specifically: a
+categorisation of the visitor (e.g., family buyer, investor, downsizer) plus the numerical
+probability weights that produced it. This constitutes profiling within the meaning of GDPR art.
+4(4) — it is an automated evaluation of personal aspects relating to a natural person (buying
+intent) using behavioral signals (scroll, clicks, dwell time).
+
+**Lifetime:** `sessionStorage` is cleared by the browser on tab close. Within an open tab, the SDK
+treats entries older than `INTENT_STATE_STALE_MS` (30 minutes) as expired and removes them
+proactively on the next rehydration attempt (`session.ts:391–394`). The effective maximum lifetime
+is therefore: tab lifetime, capped at 30 minutes since the last archetype write. There is no
+cross-session persistence. There is no server-side copy of this entry. This is a client-only,
+tab-scoped cache.
+
+**Lawful basis:** Consent (GDPR Art. 6(1)(a), ePrivacy Art. 5(3)). The entry is written only when
+the visitor has granted consent via the Estalara consent banner (Mode B / Mode A with explicit
+opt-in via the Estalara Consent Helper). For Mode A sessions (no consent collected), the SDK halts
+before reaching any `persistIntentState` call, and no intent-state entry is written.
+
+**Necessity and proportionality:** Without the sessionStorage cache, the intent engine must
+re-accumulate behavioral signals from scratch on every page navigation within the same tab,
+producing slower and noisier archetype convergence. The cache eliminates this cold-start degradation
+within a tab without introducing any cross-session or cross-tab tracking. The data minimization
+principle (GDPR Art. 5(1)(c)) is satisfied: only the resolved intent state (already computed
+server-side) is persisted, not the raw behavioral event stream. The 30-minute staleness window and
+tab-close clearing enforce proportionality.
+
+**Privacy-by-design controls:**
+
+- `sessionStorage` (not `localStorage`): impossible to persist across tab close.
+- Session-scoped key (`estalara_intent_{sessionId}`): isolates entries per tab, per session.
+- Version guard (`INTENT_STATE_SCHEMA_VERSION`): any schema change causes silent rejection and
+  re-computation from scratch — stale profiling data cannot outlive a schema bump.
+- 30-minute staleness guard (`INTENT_STATE_STALE_MS`): limits the window in which a stale archetype
+  label could influence adaptation.
+- Erase on consent denial/withdrawal: no inferred profile data survives a consent revocation.
+
+**No server-side retention obligation:** Because the data is client-only and is erased by the
+browser on tab close (or sooner, on denial/withdrawal), there is no corresponding server-side
+retention schedule entry required in ROPA Activity 3 or the Retention Schedule table. The entry is
+absent from all server-side stores (Supabase, ClickHouse, Upstash). The existing ROPA Activity 3
+(Session Embedding Computation) row describes the server-side equivalent archetype match stored in
+`session_embeddings`. The client-side cache is a separate processing step now disclosed here and in
+ROPA Activity 14.
+
+**Required Privacy Notice update:** `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` has been updated in
+this PR to include a client-storage table (§4) listing all active SDK storage keys including
+`estalara_intent_{sessionId}`. The DPO gate in §5 has been updated to add a review item for this
+section and a staging QA gate item for sessionStorage erasure verification. No separate SDK
+implementation work is required — the storage behavior, consent gate, and erasure are already
+implemented and verified as described above.
+
+**DPO gate:** DPO review of this section (§13.3) is required before EU pilot go-live, together with
+§13.1 and §13.2. Status: **PENDING** — DPO sign-off not yet received. Gate tracked in
+`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §5.
+
+---
+
 _Sections 13.1 and 13.2 added 2026-05-27 in response to Audit Findings F-13 and F-14 (Sprint 1 GDPR
 gate). Authored by Compliance Engineering. Updated 2026-05-27 (FOLLOW-129): cross-references to
 `packages/sdk/src/ui/consent-banner.ts` and FOLLOW-128 added; §13.2 balancing test marked GREEN
@@ -1101,9 +1227,12 @@ implementation of `localStorage` 90-day TTL cross-session identifier with erasur
 `packages/sdk/src/core/session.ts` (`getOrCreateCrossSessionId`, `eraseCrossSessionId`), wiring
 `getOrCreateCrossSessionId()` into the consent-granted path in `packages/sdk/src/index.ts` (called
 both on init when consent is already 'granted' and in the `onGranted` banner callback), and wiring
-`eraseCrossSessionId()` into the consent-denied path._
+`eraseCrossSessionId()` into the consent-denied path._ Section 13.3 added 2026-06-08 (FOLLOW-218):
+disclosure for `estalara_intent_*` sessionStorage intent-state store introduced by FOLLOW-176 / PR
+#217.\_
 
-_**DPO gate status: PENDING.** DPO sign-off on §13.1 and §13.2 LIAs has not yet been received. This
-is a hard gate before EU pilot go-live. DPO sign-off must be recorded by updating this note and the
-gate line in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §4. Responsible: Compliance Engineering
-(coordinate with external DPO-as-a-Service provider — contact: compliance@estalara.com)._
+_**DPO gate status: PENDING.** DPO sign-off on §13.1, §13.2, and §13.3 LIAs has not yet been
+received. This is a hard gate before EU pilot go-live. DPO sign-off must be recorded by updating
+this note and the gate line in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §4. Responsible:
+Compliance Engineering (coordinate with external DPO-as-a-Service provider — contact:
+compliance@estalara.com)._

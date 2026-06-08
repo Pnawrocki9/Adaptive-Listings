@@ -1,7 +1,7 @@
 # Estalara Adaptive Listings — Tenant-Embed Privacy Notice Template
 
-**Version:** 1.0 **Date:** 2026-05-27 **Author:** Compliance Engineering **Regulatory basis:** GDPR
-Art. 13/14, ePrivacy Directive Art. 5(3), UK GDPR, CCPA § 1798.100(b) **DPO gate:** See §4 — DPO
+**Version:** 1.1 **Date:** 2026-06-08 **Author:** Compliance Engineering **Regulatory basis:** GDPR
+Art. 13/14, ePrivacy Directive Art. 5(3), UK GDPR, CCPA § 1798.100(b) **DPO gate:** See §5 — DPO
 sign-off required before this template is distributed to EU tenants.
 
 ---
@@ -96,22 +96,47 @@ submitting a data subject request to [tenant DSR contact].
 
 ---
 
-## 4. DPO Gate — Pre-Distribution Checklist
+## 4. Client-Storage Table — All Active Keys (mandatory disclosure for EU/UK tenants)
+
+> **Tenant action —** include this table in your Privacy Policy under a "Cookies and local storage"
+> or equivalent section. All keys listed below are written by the Estalara SDK loaded on your
+> website.
+
+| Key name                      | Storage type   | Data stored                                                                        | Lifetime                                                                                                     | Consent required | Purpose                                                                                                           |
+| ----------------------------- | -------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `__estalara_session__`        | sessionStorage | Session ID (pseudonymous SHA-256 hash), session start time, page count             | Tab lifetime (cleared on tab close)                                                                          | No (Mode A)      | Session continuity within a single browser tab                                                                    |
+| `estalara_consent`            | localStorage   | Consent decision: `"granted"` or `"denied"`                                        | Persistent (survives tab close); overwritten on re-choice                                                    | No               | Remember consent decision to avoid re-prompting                                                                   |
+| `__estalara_xid__`            | localStorage   | Cross-session pseudonymous identifier (UUID v4 + creation timestamp)               | Up to 90 days; erased on consent denial/withdrawal                                                           | Yes (Mode B)     | Personalization continuity across separate visits (DPIA §13.2)                                                    |
+| `__estalara_lead_id__`        | sessionStorage | Derived pseudonymous lead ID (first 16 hex chars of SHA-256 of Keycloak user UUID) | Tab lifetime                                                                                                 | Yes              | Link authenticated buyer sessions to behavioral profile without storing raw user ID                               |
+| `estalara_intent_{sessionId}` | sessionStorage | Inferred archetype label + per-archetype probability vector (profiling-adjacent)   | Tab lifetime; max 30 minutes since last write (`INTENT_STATE_STALE_MS`); erased on consent denial/withdrawal | Yes (Mode B)     | Session-level archetype continuity: avoids re-computing intent on every page navigation within a tab (DPIA §13.3) |
+
+> **Implementation note for `estalara_intent_*`:** The key suffix is the visitor's per-tab session
+> ID, so the full key name varies per session (e.g., `estalara_intent_a1b2c3...`). The table row
+> above uses the wildcard form `estalara_intent_{sessionId}` for disclosure. The entry is written
+> only when consent is granted, and is erased immediately when the visitor denies or withdraws
+> consent. It is cleared automatically by the browser on tab close. No copy of this data is held on
+> Estalara's servers. Source: DPIA §13.3 (FOLLOW-218).
+
+---
+
+## 5. DPO Gate — Pre-Distribution Checklist
 
 > **Status: PENDING.** This template must not be distributed to EU tenants or published on
 > app.estalara.com until the DPO gate below is closed.
 
-| Gate item                                                                     | Owner                     | Status  |
-| ----------------------------------------------------------------------------- | ------------------------- | ------- |
-| DPO review of DPIA §13.1 LIA (consent-denial audit log)                       | Compliance Engineering    | PENDING |
-| DPO review of DPIA §13.2 LIA (cross-session identifier)                       | Compliance Engineering    | PENDING |
-| DPO sign-off recorded in DPIA (replace PENDING note in §13.1/§13.2 DPO gates) | DPO-as-a-Service provider | PENDING |
-| FOLLOW-128 deployed to production (§13.2 banner disclosure live for EN/PL/ES) | SDK Engineer              | PENDING |
-| §13.2 staging localStorage QA: "Deny"/"Withdraw" removes cross-session key    | Compliance Engineering    | PENDING |
-| Tenant DPA updated to reference this template version                         | Legal / Compliance Eng.   | PENDING |
+| Gate item                                                                           | Owner                     | Status  |
+| ----------------------------------------------------------------------------------- | ------------------------- | ------- |
+| DPO review of DPIA §13.1 LIA (consent-denial audit log)                             | Compliance Engineering    | PENDING |
+| DPO review of DPIA §13.2 LIA (cross-session identifier)                             | Compliance Engineering    | PENDING |
+| DPO sign-off recorded in DPIA (replace PENDING note in §13.1/§13.2/§13.3 DPO gates) | DPO-as-a-Service provider | PENDING |
+| FOLLOW-128 deployed to production (§13.2 banner disclosure live for EN/PL/ES)       | SDK Engineer              | PENDING |
+| §13.2 staging localStorage QA: "Deny"/"Withdraw" removes cross-session key          | Compliance Engineering    | PENDING |
+| DPO review of DPIA §13.3 (intent-state sessionStorage store)                        | Compliance Engineering    | PENDING |
+| §13.3 staging sessionStorage QA: "Deny"/"Withdraw" removes `estalara_intent_*` key  | Compliance Engineering    | PENDING |
+| Tenant DPA updated to reference this template version                               | Legal / Compliance Eng.   | PENDING |
 
 Once all gate items above are DONE, update this table, record the DPO sign-off date, and update the
-DPO gate notes in `docs/compliance/dpia.md` §13.1 and §13.2.
+DPO gate notes in `docs/compliance/dpia.md` §13.1, §13.2, and §13.3.
 
 **Responsible escalation path:** If DPO sign-off is not received within 5 business days of this
 template being shared with the DPO, escalate to the human (Piotr Nawrocki) via
@@ -119,9 +144,10 @@ template being shared with the DPO, escalate to the human (Piotr Nawrocki) via
 
 ---
 
-## 5. Revision History
+## 6. Revision History
 
-| Version | Date       | Author                 | Change                                          |
-| ------- | ---------- | ---------------------- | ----------------------------------------------- |
-| 1.0     | 2026-05-27 | Compliance Engineering | Initial creation (FOLLOW-129). §13.1 + §13.2    |
-|         |            |                        | disclosure paragraphs from DPIA Audit F-13/F-14 |
+| Version | Date       | Author                 | Change                                                                                                                                                                                                                                                                                          |
+| ------- | ---------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 2026-05-27 | Compliance Engineering | Initial creation (FOLLOW-129). §13.1 + §13.2                                                                                                                                                                                                                                                    |
+|         |            |                        | disclosure paragraphs from DPIA Audit F-13/F-14                                                                                                                                                                                                                                                 |
+| 1.1     | 2026-06-08 | Compliance Engineering | FOLLOW-218: added §4 client-storage table listing all five active SDK keys including the new `estalara_intent_{sessionId}` sessionStorage entry. Renumbered old §4 (DPO Gate) to §5; old §5 (Revision History) to §6. DPO gate updated to add §13.3 review item and §13.3 staging QA gate item. |

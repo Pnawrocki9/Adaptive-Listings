@@ -51,6 +51,27 @@ export const dsrVerifications = pgTable(
     /** Null until the OTP is successfully consumed. Set to now() on first use. */
     usedAt: timestamp('used_at', { withTimezone: true }),
 
+    /**
+     * FOLLOW-184: Durable CRM lead_id for the data subject, if known at DSR initiation time.
+     *
+     * The CRM webhook writes `conversion_labels.lead_id` using an opaque pseudonymous token
+     * supplied by the tenant (§T.6 Option i). That token is NOT the Estalara session_id —
+     * the two identifiers live in different namespaces.
+     *
+     * When the tenant admin initiates a DSR for a data subject who has a CRM record, they
+     * SHOULD supply this field so the erase cascade can reach CRM-written conversion_labels
+     * rows (GDPR Art. 17 completeness).
+     *
+     * NULL = no durable CRM identity known; DSR erasure covers only SDK-ping labels
+     *        (conversion_labels.lead_id = session_id path). This is safe and correct for
+     *        sessions that pre-date CRM integration or where no CRM record exists.
+     *
+     * INVARIANT: this value is the SAME opaque token the tenant sent as `lead_id` in the
+     * CRM webhook. It is NOT a CRM contact ID / email / PII — tenant is contractually
+     * responsible for this (DPA clause + onboarding gate, §A.3).
+     */
+    durableLeadId: text('durable_lead_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

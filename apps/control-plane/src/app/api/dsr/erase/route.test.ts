@@ -371,6 +371,118 @@ describe('POST /api/dsr/erase — FOLLOW-172 conversion_labels cascade', () => {
   });
 });
 
+// ─── FOLLOW-184: Pass B — CRM lead_id erasure cascade ────────────────────────
+
+describe('POST /api/dsr/erase — FOLLOW-184 Pass B: durable CRM lead_id erasure', () => {
+  it('deletes conversion_labels by durable_lead_id when it is non-empty and != session_id', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+
+    const CRM_LEAD_ID = 'crm-opaque-token-xyz789';
+
+    // Return a DSR record with a durable_lead_id (CRM token, different from session_id).
+    mockSelect.mockReset();
+    mockSelect
+      .mockReturnValueOnce(buildChain([makeValidRecord({ durableLeadId: CRM_LEAD_ID })]))
+      .mockReturnValueOnce(buildChain([]));
+
+    const { conversionLabels: mockConversionLabels } = await import('@estalara/db');
+
+    // Track delete calls — count how many times conversion_labels is deleted.
+    const deletedTablesWithArgs: string[] = [];
+    mockTransaction.mockImplementationOnce(
+      async (fn: (tx: { delete: (table: unknown) => unknown }) => Promise<void>) => {
+        const txMock = {
+          delete: vi.fn((table: unknown) => {
+            if (table === mockConversionLabels) {
+              deletedTablesWithArgs.push('conversion_labels');
+            }
+            return buildChain([]);
+          }),
+        };
+        await fn(txMock);
+      },
+    );
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+    expect(res.status).toBe(200);
+
+    // Both Pass A (session_id) and Pass B (durable_lead_id) must delete conversion_labels.
+    // So the table must be deleted TWICE.
+    expect(deletedTablesWithArgs.filter((t) => t === 'conversion_labels')).toHaveLength(2);
+  });
+
+  it('does NOT run Pass B when durable_lead_id is null/undefined (no CRM record)', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+
+    // Record without durableLeadId (standard SDK-only session).
+    mockSelect.mockReset();
+    mockSelect
+      .mockReturnValueOnce(buildChain([makeValidRecord()])) // no durableLeadId
+      .mockReturnValueOnce(buildChain([]));
+
+    const { conversionLabels: mockConversionLabels } = await import('@estalara/db');
+
+    const deletedTablesWithArgs: string[] = [];
+    mockTransaction.mockImplementationOnce(
+      async (fn: (tx: { delete: (table: unknown) => unknown }) => Promise<void>) => {
+        const txMock = {
+          delete: vi.fn((table: unknown) => {
+            if (table === mockConversionLabels) {
+              deletedTablesWithArgs.push('conversion_labels');
+            }
+            return buildChain([]);
+          }),
+        };
+        await fn(txMock);
+      },
+    );
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+    expect(res.status).toBe(200);
+
+    // Only Pass A runs — exactly one delete for conversion_labels.
+    expect(deletedTablesWithArgs.filter((t) => t === 'conversion_labels')).toHaveLength(1);
+  });
+
+  it('dedup guard: does NOT run Pass B when durable_lead_id equals session_id', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+
+    const SESSION_ID = 'sess-abc123'; // matches makeValidRecord default sessionId
+
+    // durable_lead_id = same as session_id → dedup guard fires, Pass B skipped.
+    mockSelect.mockReset();
+    mockSelect
+      .mockReturnValueOnce(buildChain([makeValidRecord({ durableLeadId: SESSION_ID })]))
+      .mockReturnValueOnce(buildChain([]));
+
+    const { conversionLabels: mockConversionLabels } = await import('@estalara/db');
+
+    const deletedTablesWithArgs: string[] = [];
+    mockTransaction.mockImplementationOnce(
+      async (fn: (tx: { delete: (table: unknown) => unknown }) => Promise<void>) => {
+        const txMock = {
+          delete: vi.fn((table: unknown) => {
+            if (table === mockConversionLabels) {
+              deletedTablesWithArgs.push('conversion_labels');
+            }
+            return buildChain([]);
+          }),
+        };
+        await fn(txMock);
+      },
+    );
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+    expect(res.status).toBe(200);
+
+    // Pass B skipped (dedup) → only Pass A ran → exactly one delete.
+    expect(deletedTablesWithArgs.filter((t) => t === 'conversion_labels')).toHaveLength(1);
+  });
+});
+
 // --- FOLLOW-193 / DPIA §8 line 773: engagement_scores DSR erasure cascade ---
 //
 // AC3: integration test covering POST /api/dsr/erase erasure cascade for

@@ -283,3 +283,44 @@ cross-tenant guard, PATCH success + write-to-upsertConversionLabel verification.
 **A guardrail I'd add:** A CI gate that verifies the ClickHouse IN-list validation regex is present
 in every route that builds a CH `IN (...)` from a server-side ID list — prevents a future path that
 skips the hex-chars filter and silently allows non-UUID IDs into the query string.
+
+---
+
+## 2026-06-08 / FOLLOW-184
+
+**What I built:** Closed the GDPR Art. 17 DSR erasure gap for CRM-written `conversion_labels` rows.
+Added `durable_lead_id` (nullable text) column to `dsr_verifications` (migration 0024) so the tenant
+admin can supply the CRM opaque token at DSR initiation time. Extended the erase route with Pass B:
+`DELETE conversion_labels WHERE lead_id = durable_lead_id` (runs only when
+non-null/non-empty/differs from session_id). Updated `dsr/initiate` to accept and store the optional
+`lead_id` field. 8 PG-harness integration tests (PGlite) in
+`packages/db/src/__tests__/dsr-crm-erasure.test.ts` prove all ACs against real SQL semantics. 3 new
+mock-layer tests in `erase/route.test.ts` verify Pass B behavior. Updated `docs/ops/DSR_ALERTING.md`
+and `docs/MASTER_DESIGN.md §T.6` with the identifier-resolution model.
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+1. **Two identifier namespace problem:** The core gap was that session_id and CRM lead_id are in
+   completely different namespaces. The cleanest solution without FOLLOW-180 (durable lead_id full
+   wiring) is to capture the CRM token at DSR initiation time — the tenant admin initiating the DSR
+   knows it. This avoids any cross-table join and keeps the erase path O(1) per pass.
+2. **LG-2 guard preserved:** Both Pass A and Pass B gate on `lead_id <> ''` at both application
+   layer (empty-string check before DELETE) and DB layer (ne() predicate). The empty-key guard is
+   critical — without it, a blank lead_id would erase ALL system labels for the tenant.
+3. **Dedup guard:** When `durable_lead_id === session_id`, Pass B is skipped — Pass A already
+   covered those rows. Prevents a harmless double-delete but keeps invariant clarity.
+4. **No mutation-only endpoint added:** This is a change to an existing DSR flow — auth is already
+   production-grade (OTP-verified for erase, JWT-verified for initiate). Rule H amendment satisfied
+   because no new auth surface was added.
+5. **PG-harness vs mock tests:** The PGlite harness tests prove real SQL semantics (the
+   `AND lead_id <> ''` guard actually works in SQL, not just conceptually). The mock tests prove
+   Pass B logic at the route level. Both layers are needed — the LG-1 gap from RETRO-031 originally
+   shipped green because mocks proved the DELETE was issued, never that it matched the right rows.
+6. **FOLLOW-180 dependency:** Since FOLLOW-180 (durable lead_id end-to-end) is OPEN, this PR
+   gracefully handles the case where no `durable_lead_id` is supplied (NULL = only Pass A runs, safe
+   fallback for SDK-only sessions).
+
+**A guardrail I'd add:** A CI grep that asserts both Pass A AND Pass B delete patterns are present
+in `erase/route.ts` — if a future refactor removes Pass B (e.g., merging passes), the grep would
+catch the regression before CI allows the commit. Similarly, a DPIA-driven CI check that verifies
+every identifier namespace documented in §T.6 has a corresponding DELETE pass in the erase route.

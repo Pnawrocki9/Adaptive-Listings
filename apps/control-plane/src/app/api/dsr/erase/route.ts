@@ -46,7 +46,7 @@ import {
   dsrClickhouseMutations,
 } from '@estalara/db';
 import { hashOtp } from '@/lib/dsr-otp';
-import { writeDsrAuditLog } from '../_clickhouse';
+import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 import {
   DSR_CLICKHOUSE_TABLES,
   issueEraseMutation,
@@ -397,28 +397,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
   });
 
-  // ── FOLLOW-239: CRM erasure completeness check (GDPR Art. 17) ───────────────
+  // ── FOLLOW-239 / FOLLOW-238: CRM erasure tenant-capability check (GDPR Art. 17) ──
   //
-  // When durable_lead_id is NULL, Pass B above did not run. We must detect whether
-  // this tenant has CRM-written conversion_labels rows that were NOT covered by Pass A
-  // (i.e. rows with lead_id != session_id and lead_id != '').
+  // When durable_lead_id is NULL, Pass B above did not run. We detect whether
+  // this tenant has CRM-written conversion_labels rows that were NOT covered by
+  // Pass A (i.e. rows with lead_id != session_id and lead_id != '').
   //
-  // If such rows exist the erasure is INCOMPLETE — Art. 17 requires we flag this
-  // loudly (Sentry warning + ClickHouse audit entry) rather than returning a silent
-  // 200. The operator can then supply durable_lead_id in a fresh DSR initiation to
-  // re-run with Pass B.
+  // FOLLOW-238 (AC1) semantic correction — TENANT-CAPABILITY WARNING, not a
+  // subject-completeness claim:
+  //   The count query is scoped to the TENANT, not the subject. conversion_labels
+  //   has no per-subject identifier other than lead_id. When durable_lead_id is
+  //   absent, we CANNOT know which CRM rows (if any) belong to THIS subject. We
+  //   can only determine that the TENANT has un-erased CRM-namespace rows and no
+  //   durable token was supplied. That is a capability gap, not a proven subject
+  //   incompleteness. The Sentry message and status value reflect this distinction.
   //
-  // This check runs OUTSIDE the transaction (read-only) immediately after the
-  // main erase transaction commits, so it reflects the post-delete state.
+  // This check runs OUTSIDE the transaction (read-only) after the erase transaction
+  // commits, so it reflects the post-delete state.
   //
   // Observable on the wire: `crm_erasure_status` field in the 200 body:
-  //   'complete'                        — Pass B ran, or no CRM rows exist.
-  //   'incomplete_no_durable_lead_id'   — Pass B skipped; CRM rows survive.
-  //                                       Operator must re-initiate with lead_id.
+  //   'complete'                  — Pass B ran (operator supplied lead_id), or
+  //                                 no CRM-namespace rows exist for this tenant.
+  //   'crm_tenant_unverifiable'   — Pass B skipped AND tenant has CRM-namespace rows.
+  //                                 CRM completeness is UNVERIFIABLE for this subject.
+  //                                 Operator must re-initiate with lead_id.
+  //   'unverified'                — Count-query failed; CRM state unknown.
+  //                                 (FOLLOW-238 AC2: never claim 'complete' when DB threw.)
   //
   // Rule K.2: mock/fabricated data is forbidden; this is a real DB read.
 
-  type CrmErasureStatus = 'complete' | 'incomplete_no_durable_lead_id';
+  type CrmErasureStatus = 'complete' | 'crm_tenant_unverifiable' | 'unverified';
   let crmErasureStatus: CrmErasureStatus = 'complete';
 
   const durableLeadId = record.durableLeadId;
@@ -426,8 +434,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     typeof durableLeadId === 'string' && durableLeadId !== '' && durableLeadId !== record.sessionId;
 
   if (!passBRan) {
-    // Count CRM-namespace rows: non-empty lead_id that is NOT the session_id.
-    // These are rows that Pass A does not cover and Pass B would have covered.
+    // Count CRM-namespace rows tenant-wide: non-empty lead_id that is NOT the session_id.
+    // A non-zero count means this tenant has CRM rows AND no durable token was supplied —
+    // CRM-namespace completeness is UNVERIFIABLE for this subject.
     try {
       const [countRow] = await db
         .select({ count: sql<number>`count(*)::int` })
@@ -440,38 +449,44 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           ),
         );
 
-      const survivingCrmRows = countRow?.count ?? 0;
+      const tenantCrmRows = countRow?.count ?? 0;
 
-      if (survivingCrmRows > 0) {
-        crmErasureStatus = 'incomplete_no_durable_lead_id';
+      if (tenantCrmRows > 0) {
+        // FOLLOW-238 (AC1): tenant-capability warning — NOT a subject-completeness claim.
+        // We do not know if any of these rows belong to the erased subject.
+        crmErasureStatus = 'crm_tenant_unverifiable';
 
-        // ── Sentry warning (Rule K.2: configured-but-incomplete surfaces must be visible) ─
+        // ── Sentry warning (Rule K.2: capability gap must be observable) ─────────────
         console.warn(
-          `[dsr/erase] FOLLOW-239: Art. 17 incomplete — ${String(survivingCrmRows)} CRM-namespace ` +
-            `conversion_labels row(s) survive for tenant ${record.tenantId} / ` +
-            `session ${record.sessionId}. durable_lead_id was not supplied at DSR initiation. ` +
-            `Operator must re-initiate with lead_id. See docs/compliance/DSR_ALERTING.md.`,
+          `[dsr/erase] FOLLOW-238: CRM-namespace completeness UNVERIFIABLE for tenant ` +
+            `${record.tenantId} / session ${record.sessionId}. ` +
+            `Tenant has ${String(tenantCrmRows)} CRM-namespace conversion_labels row(s) ` +
+            `and no durable_lead_id was supplied at DSR initiation. ` +
+            `Cannot confirm whether any belong to this subject. ` +
+            `Operator must re-initiate with lead_id. See docs/ops/DSR_ALERTING.md.`,
         );
 
         if (typeof process !== 'undefined' && process.env.SENTRY_DSN_CONTROL_PLANE) {
           try {
             const Sentry = await import('@sentry/nextjs');
             Sentry.captureMessage(
-              `[dsr/erase] Art. 17 incomplete: ${String(survivingCrmRows)} CRM conversion_labels row(s) not erased`,
+              `[dsr/erase] CRM completeness unverifiable: tenant has ` +
+                `${String(tenantCrmRows)} CRM rows; no durable_lead_id supplied`,
               {
                 level: 'warning',
                 tags: {
                   route: 'dsr/erase',
                   tenant_id: record.tenantId,
-                  follow: 'FOLLOW-239',
+                  follow: 'FOLLOW-238',
                 },
                 extra: {
-                  surviving_crm_rows: survivingCrmRows,
+                  tenant_crm_row_count: tenantCrmRows,
                   session_id: record.sessionId,
                   dsr_verification_id: record.id,
                   reason: 'durable_lead_id_not_supplied',
-                  operator_action:
-                    'Re-initiate DSR with lead_id. See docs/compliance/DSR_ALERTING.md.',
+                  semantic:
+                    'tenant-capability-warning: cannot verify subject membership in CRM rows',
+                  operator_action: 'Re-initiate DSR with lead_id. See docs/ops/DSR_ALERTING.md.',
                 },
               },
             );
@@ -480,35 +495,38 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           }
         }
 
-        // ── ClickHouse audit entry (fire-and-forget) — incomplete erasure is auditable ─
+        // ── ClickHouse audit entry (fire-and-forget) — unverifiable state is auditable ─
+        // DSR_AUDIT_ACTIONS.crm_unverifiable is the canonical action literal (FOLLOW-238 AC3).
         void writeDsrAuditLog({
           tenant_id: record.tenantId,
           session_id: record.sessionId,
           dsr_type: 'erase',
-          action: 'incomplete_erasure_crm_rows_detected',
+          action: DSR_AUDIT_ACTIONS.crm_unverifiable,
           email: record.email,
           requested_at: record.createdAt,
           completed_at: now,
         }).catch((err: unknown) => {
           console.error(
-            '[dsr/erase] ClickHouse incomplete-erasure audit log failed:',
+            '[dsr/erase] ClickHouse crm-unverifiable audit log failed:',
             err instanceof Error ? err.message : err,
           );
         });
       }
+      // If tenantCrmRows === 0: no CRM rows exist for this tenant at all.
+      // crmErasureStatus stays 'complete' — correct and non-over-claiming.
     } catch (err: unknown) {
-      // A failure of the completeness check must not suppress the incompleteness.
-      // Log loudly — the erase DID run (Pass A completed) but we cannot confirm
-      // CRM coverage either way.
+      // FOLLOW-238 (AC2): count-query failure — MUST NOT claim 'complete'.
+      // The erase DID run (Pass A completed) but CRM state is UNKNOWN.
+      crmErasureStatus = 'unverified';
       console.error(
-        '[dsr/erase] FOLLOW-239: CRM completeness check failed — could not query surviving rows:',
+        '[dsr/erase] FOLLOW-238: CRM count-query failed — CRM erasure state unverified:',
         err instanceof Error ? err.message : err,
       );
       if (typeof process !== 'undefined' && process.env.SENTRY_DSN_CONTROL_PLANE) {
         try {
           const Sentry = await import('@sentry/nextjs');
           Sentry.captureException(err, {
-            tags: { route: 'dsr/erase', tenant_id: record.tenantId, follow: 'FOLLOW-239' },
+            tags: { route: 'dsr/erase', tenant_id: record.tenantId, follow: 'FOLLOW-238' },
           });
         } catch {
           // Sentry failure must not mask the real error.
@@ -555,7 +573,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     tenant_id: record.tenantId,
     session_id: record.sessionId,
     dsr_type: 'erase',
-    action: 'completed',
+    action: DSR_AUDIT_ACTIONS.completed,
     email: record.email,
     requested_at: record.createdAt,
     completed_at: now,
@@ -569,10 +587,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   return NextResponse.json(
     {
       deleted_at: now.toISOString(),
-      // FOLLOW-239: observable CRM erasure provenance (Rule K.2 — not silent).
-      // 'complete'                       — CRM rows erased (Pass B ran) or no CRM rows exist.
-      // 'incomplete_no_durable_lead_id'  — CRM rows survive; operator must re-initiate with lead_id.
-      //                                    See docs/compliance/DSR_ALERTING.md.
+      // FOLLOW-238 / FOLLOW-239: observable CRM capability provenance (Rule K.2 — not silent).
+      // 'complete'                 — Pass B ran, or no CRM-namespace rows exist for this tenant.
+      // 'crm_tenant_unverifiable'  — Pass B skipped; tenant has CRM rows but subject membership
+      //                              is UNVERIFIABLE. Operator must re-initiate with lead_id.
+      //                              See docs/ops/DSR_ALERTING.md.
+      // 'unverified'               — Count-query failed; CRM state unknown (Rule K.2 — never
+      //                              claim 'complete' when DB threw).
       crm_erasure_status: crmErasureStatus,
       clickhouse_deletion: clickhouseDeletion,
     },

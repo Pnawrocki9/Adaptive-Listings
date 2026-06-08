@@ -28,7 +28,7 @@ import { getAuthClaims, isTenantClaims } from '@estalara/auth';
 import { createAdminClient, sessionEmbeddings, dsrVerifications } from '@estalara/db';
 import { generateOtp, hashOtp } from '@/lib/dsr-otp';
 import { sendEmail } from '@/lib/email/resend';
-import { writeDsrAuditLog } from '../_clickhouse';
+import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 
 // ─── Request schema ────────────────────────────────────────────────────────────
 
@@ -212,7 +212,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     tenant_id: tenantId,
     session_id,
     dsr_type,
-    action: 'initiated',
+    action: DSR_AUDIT_ACTIONS.initiated,
     email,
     requested_at: new Date(),
   }).catch((err: unknown) => {

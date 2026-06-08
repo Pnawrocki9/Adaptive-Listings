@@ -1,9 +1,12 @@
 # Backlog Queue
 
-**Updated 2026-06-08 by pm-orchestrator. Sprint 15 COMPLETE — 21/21 DONE. Sprint 16 OPEN — 7 DONE
-(FOLLOW-170/173/174/176/182/190/227/230), 1 IN_PROGRESS (FOLLOW-183 — Gitleaks real gate failing,
-bounced), 1 READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal deploy ESC-020), FOLLOW-187 READY (Activity
-15 unblocked by FOLLOW-230).**
+**Updated 2026-06-08 by backend-engineer. Sprint 16 FOLLOW-184 DONE (PR #233, merged 2026-06-08) —
+DSR Art. 17 CRM erasure gap closed; dsr_verifications.durable_lead_id (migration 0024) + Pass B in
+erase cascade + 12 PGlite harness tests + MASTER_DESIGN §T.6 + DSR_ALERTING.md identifier-resolution
+model. HANDOFFS.md FOLLOW-172 condition 7 satisfied. Sprint 15 COMPLETE — 21/21 DONE. Sprint 16 OPEN
+— 7 DONE (FOLLOW-170/173/174/176/182/190/227/230), 1 IN_PROGRESS (FOLLOW-183 — Gitleaks real gate
+failing, bounced), 1 READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal deploy ESC-020), FOLLOW-187 READY
+(Activity 15 unblocked by FOLLOW-230).**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -2797,18 +2800,21 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-184
   title: DSR erasure must reach CRM-written conversion_labels rows (Art. 17 completeness)
   agent: backend-engineer + compliance-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 5
   depends_on: [FOLLOW-172]
   source: RETRO-031 (LG-1); relates to FOLLOW-180
   spec: backlog/FOLLOW_UPS.md (FOLLOW-184 stub)
+  pr: '#233'
+  merged_at: '2026-06-08'
   notes: |
-    COMPLIANCE/LEGAL — GDPR Art. 17. dsr/erase deletes conversion_labels WHERE lead_id=session_id,
-    but CRM rows store lead_id = a tenant opaque token in a DIFFERENT namespace → CRM deep-outcome
-    rows are NOT erased today. No live exposure yet (no tenant producer; FOLLOW-186), but MUST fix
-    before any CRM-integrated tenant go-live. Unify the lead_id↔erasure-subject mapping (with
-    FOLLOW-180) so the cascade reaches CRM rows; keep the empty-lead_id guard.
+    DONE. PR #233 merged 2026-06-08. Added dsr_verifications.durable_lead_id (migration 0024).
+    Pass B in dsr/erase/route.ts deletes conversion_labels WHERE lead_id = durable_lead_id AND
+    tenant_id = X. Both passes gate on lead_id <> ''. Pass B skipped when durable_lead_id is null,
+    empty, or equals session_id (dedup). dsr/initiate accepts optional lead_id. 12 PGlite harness
+    tests prove all ACs; 3 mock tests verify Pass B at route layer. DSR_ALERTING.md §identifier-
+    resolution model and MASTER_DESIGN §T.6 updated. HANDOFFS.md FOLLOW-172 condition 7 satisfied.
 
 - id: FOLLOW-185
   title: PG-harness integration test — CRM route write + DSR cascade + two-writer precedence

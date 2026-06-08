@@ -5382,13 +5382,16 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ## FOLLOW-185 — PG-harness integration test: CRM route write + DSR cascade + two-writer precedence
 
-- **status:** OPEN
+- **status:** DONE
 - **priority:** P1
 - **source_retro:** RETRO-031 (§4c TG-1/TG-2, §4b CB-1)
 - **source_ticket:** FOLLOW-172 / PR #191
 - **recommended_sprint:** Sprint 14
 - **agent:** data-engineer
 - **estimated_hours:** 5
+- **implementation_pr:** #243 —
+  `test(data): pglite harness — crm write + dsr cascade + precedence + confidence [FOLLOW-185]`
+- **merged_at:** 2026-06-09
 - **scope:** The CRM route test fully mocks `upsertConversionLabel`, `transaction`, and `execute`
   (`crm/outcome/route.test.ts:117-172`), so the SET LOCAL RLS and the DSR
   `DELETE … WHERE lead_id = session_id` are asserted only against mocks — which is precisely why the

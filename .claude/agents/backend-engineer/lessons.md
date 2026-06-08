@@ -398,3 +398,24 @@ branch name doesn't match the ticket spec, there is a risk the PM delegates the 
 assuming it is still open. Backlog entries (FOLLOW_UPS.md + QUEUE.md status) should be updated
 atomically in the same PR as the implementation, not in a follow-up bookkeeping PR. Rule: any PR
 closing a FOLLOW ticket MUST update FOLLOW_UPS.md status field in the same commit.
+
+---
+
+## 2026-06-08 / FOLLOW-246
+
+**What I built:** Wired `conversion_labels` reads into `dsr/access` and `dsr/portability` on both
+identifier namespaces (session_id Pass A + durable_lead_id Pass B). Mirrored the erase route pattern
+exactly. Updated §T.6, DSR_ALERTING.md §access/§portability, FOLLOW_UPS.md. 6 new tests.
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+- Both routes are read-only GETs — no new mutation surface, no new auth needed.
+- DB errors propagate unhandled → 500 (no catch block swallowing to empty). Rule K.2 satisfied.
+- `outcome_raw` deliberately excluded from disclosure — it may contain CRM payload structures; a
+  compliance decision is needed before including. Noted in PR description for compliance-engineer.
+
+**A guardrail I'd add:** When a new column/table/route is added that touches the DSR data inventory,
+a CI check should verify the corresponding DSR verb (access, erase, portability) all cover it.
+Currently the symmetry gap (RETRO-044 LG-1) was caught only by retrospective analysis — not by any
+automated check. A "DSR coverage matrix" CI script asserting that every table in the erasure cascade
+is also in the access/portability query list would catch this class of gap at PR time.

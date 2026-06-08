@@ -165,6 +165,11 @@ paths = [
 regexes = [
   '''C5AD17C747E3415A3642D57D77C6C491D6AC1D69''',
   '''mnt/transcripts/''',
+  # Long kebab branch names (e.g. data-engineer/FOLLOW-NNN-pg-integration-test-*)
+  # whose 40-char substrings match this heuristic in commit messages.
+  '''FOLLOW-\d{3}-[a-z]+-[a-z]+-[a-z-]+''',
+  # Agent roles in branch prefixes (sdk-engineer/, data-engineer/, backend-engineer/, etc.)
+  '''[a-z]+-engineer/FOLLOW-''',
 ]
 
 # JWT tokens (generic)

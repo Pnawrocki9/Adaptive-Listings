@@ -53,6 +53,7 @@ import {
 import {
   applyArchetypeHints,
   applyBehavioralSignal,
+  applyDwellSignal,
   applyListingViewRate,
   applyQuizLeaf,
   applyReferrerHints,
@@ -80,6 +81,10 @@ const REFETCH_SIGNAL_INTERVAL = 5;
  * Anti-thrash guard: 3 cycles prevents transient behavioral noise from flipping the archetype.
  */
 export const DRIFT_HOLD_COUNT = 3;
+
+const DWELL_THRESHOLDS_MS = [30_000, 90_000, 180_000] as const;
+const DWELL_TICK_MS = 5_000;
+const DWELL_TICK_TOLERANCE_MS = DWELL_TICK_MS - 500;
 
 /**
  * Detect the page type from the current URL and an optional data-page-type attribute.
@@ -466,6 +471,10 @@ async function init(): Promise<IntentState | null> {
     // Assigned to the actual widget after createShadowHost() runs below (step 5a).
     let sidebar: SidebarWidgetController | null = null;
 
+    let dwellTimer: ReturnType<typeof setInterval> | null = null;
+    let adaptedAt = 0;
+    const firedThresholds = new Set<number>();
+
     // F-15 (FOLLOW-194): track the last archetype returned by the Decision API.
     // resetAdaptState() is called ONLY when the archetype changes, preventing the
     // text-flicker that occurred every ~30s when resetAdaptState() was called
@@ -484,6 +493,31 @@ async function init(): Promise<IntentState | null> {
     // FOLLOW-201: also used for drift detection inside refreshDirectives().
     const signalHistory: { eventType: string; payload?: Record<string, unknown> }[] = [];
 
+    function stopDwellTimer(): void {
+      if (dwellTimer !== null) {
+        clearInterval(dwellTimer);
+        dwellTimer = null;
+      }
+    }
+    function startDwellTimer(): void {
+      stopDwellTimer();
+      adaptedAt = Date.now();
+      firedThresholds.clear();
+      dwellTimer = setInterval(() => {
+        if (currentIntentState.archetype === 'neutral') return;
+        const elapsed = Date.now() - adaptedAt;
+        for (const threshold of DWELL_THRESHOLDS_MS) {
+          if (
+            !firedThresholds.has(threshold) &&
+            Math.abs(elapsed - threshold) < DWELL_TICK_TOLERANCE_MS
+          ) {
+            firedThresholds.add(threshold);
+            currentIntentState = applyDwellSignal(currentIntentState, elapsed);
+            onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+          }
+        }
+      }, DWELL_TICK_MS);
+    }
     /** Re-fetch directives and apply them with the latest intent state. */
     async function refreshDirectives(): Promise<void> {
       if (!config.decisionApiUrl) return;
@@ -507,6 +541,11 @@ async function init(): Promise<IntentState | null> {
         if (resp.archetype !== previousArchetype) {
           resetAdaptState();
           previousArchetype = resp.archetype;
+          if (resp.archetype !== 'neutral') {
+            startDwellTimer();
+          } else {
+            stopDwellTimer();
+          }
         }
         applyDirectives(resp.directives, {
           archetypeId: resp.archetype as ArchetypeId,
@@ -1046,7 +1085,10 @@ async function init(): Promise<IntentState | null> {
     }
 
     window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') handleSessionEnd();
+      if (document.visibilityState === 'hidden') {
+        stopDwellTimer();
+        handleSessionEnd();
+      }
     });
 
     window.addEventListener('beforeunload', () => {
@@ -1064,6 +1106,7 @@ async function init(): Promise<IntentState | null> {
     (window as Window & { __estalaraTeardown?: () => void }).__estalaraTeardown = () => {
       if (flushTimer) clearInterval(flushTimer);
       cancelQuizTimer();
+      stopDwellTimer();
       cleanupObservers();
       teardownDescriptionObservers();
       sidebar?.destroy();

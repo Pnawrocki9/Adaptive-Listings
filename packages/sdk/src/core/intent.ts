@@ -1002,3 +1002,42 @@ export function applyListingViewRate(
     quiz_answered: state.quiz_answered,
   };
 }
+
+// ─── Dwell-time confidence boost (FOLLOW-190) ─────────────────────────────────
+
+/** Base boost magnitude for a single dwell-time threshold tick (FOLLOW-190). */
+export const DWELL_BASE_BOOST = 0.08;
+
+/** Unit of elapsed time used as the log2 denominator in applyDwellSignal (ms). */
+export const DWELL_UNIT_MS = 30_000;
+
+/**
+ * Apply a dwell-time confidence boost to the current leading archetype (FOLLOW-190).
+ *
+ * Reinforces the currently leading archetype proportional to log2(elapsed_ms / DWELL_UNIT_MS).
+ * All other archetypes receive a likelihood of 1.0 (no information).
+ *
+ * signal_count is NOT incremented (dwell is continuous, not a discrete event).
+ * Pure function: no DOM access, no globals, no side effects.
+ *
+ * @returns Same state reference when archetype==="neutral", elapsed_ms<=0, or boost<=1.
+ */
+export function applyDwellSignal(state: IntentState, elapsed_ms: number): IntentState {
+  if (state.archetype === 'neutral') return state;
+  if (elapsed_ms <= 0) return state;
+  const boost = 1 + DWELL_BASE_BOOST * Math.log2(elapsed_ms / DWELL_UNIT_MS);
+  if (boost <= 1) return state;
+  const likelihood = Object.fromEntries(
+    ARCHETYPE_NAMES.map((k) => [k, k === state.archetype ? boost : 1.0]),
+  ) as ArchetypeProbabilities;
+  const probabilities = applyLikelihood(state.probabilities, likelihood);
+  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+  return {
+    archetype,
+    confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
+    probabilities,
+    signal_count: state.signal_count,
+    last_updated_at: Date.now(),
+    quiz_answered: state.quiz_answered,
+  };
+}

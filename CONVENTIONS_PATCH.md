@@ -759,6 +759,63 @@ grep -n "intentStateRehydrated" packages/sdk/src/index.ts
 
 ---
 
+## Rule S — A change made to one verb/branch of a symmetric set MUST be applied to ALL siblings, at the SAME completeness AND verification tier
+
+**Pattern:** When a feature, fix, store-coverage, or compliance behavior belongs to a SET of sibling
+endpoints/branches that are supposed to behave symmetrically (e.g. the three DSR verbs
+access/erase/portability; both arms of a producer/consumer pair; every locale; every logging branch;
+variant AND holdout), a change applied to ONE sibling silently leaves the others with the identical
+gap. The dangerous second-order shape: even when the headline behavior IS carried to all siblings,
+the VERIFICATION TIER (real-SQL/integration test vs mock) or the OPERATOR SIGNAL (a completeness/
+unverifiable advisory) is applied to the template sibling but NOT mirrored to the others — so the
+fix "looks symmetric" but the siblings are under-proven or signal completeness differently. This
+recurs because the author reasons about the one verb in front of them, not the symmetric set.
+
+**Evidence (≥2 retros):**
+
+- **RETRO-044 (FOLLOW-184 / PR #233) §4a LG-1 + §6** — FOLLOW-184 fixed the
+  `lead_id`-vs-`session_id` identifier-namespace gap on DSR _erase_ (added `durable_lead_id` + Pass
+  B) but left the symmetric disclosure verbs `access` (Art. 15) and `portability` (Art. 20) unwired
+  — they never read `conversion_labels` at all. The GAP instance (count 1). RETRO-044 §6 set the
+  explicit promotion condition: "Promote a symmetric-verb completeness rule only if a SECOND
+  distinct instance appears."
+- **RETRO-045 (FOLLOW-246 / PR #242) §4c TG-1 + §4a LG-1** — FOLLOW-246 DID wire access +
+  portability to read both namespaces, but at a LOWER tier than the erase verb it mirrored: erase
+  has a real-SQL PGlite harness (`dsr-crm-erasure.test.ts`, 12 cases); the disclosure verbs got
+  mock-only Drizzle- chain tests (TG-1) — exactly the PGlite/route test RETRO-044 §4c had scoped
+  into FOLLOW-246's ACs. AND erase emits a `crm_erasure_status` completeness advisory while the
+  disclosure verbs emit none (LG-1). The RESIDUAL-ASYMMETRY instance (count 2) — the same shape
+  recurred WITHIN the fix that closed the first instance. Threshold met.
+
+**Rule:** When you change behavior that belongs to a symmetric set of verbs/branches/arms/locales:
+
+- Enumerate the full sibling set FIRST (in DSR: access, erase, portability; generally: every
+  endpoint/branch/locale that shares the contract). State it in the PR description.
+- Apply the change to EVERY sibling, or explicitly justify per-sibling why one is exempt.
+- Match the VERIFICATION TIER across siblings: if one sibling has a real-SQL/integration/PGlite test
+  for the behavior, every sibling gets the equivalent — a mock-layer test for sibling B does NOT
+  satisfy parity with a real-SQL test on sibling A.
+- Match OPERATOR/USER SIGNALS across siblings: if one sibling emits a completeness/unverifiable/
+  error advisory, the siblings emit the equivalent (or justify the asymmetry in docs).
+- The retrospective for any such change MUST diff each sibling against the template sibling on EVERY
+  axis (behavior, SQL/contract coverage tier, operator signals, error surfacing), not just the
+  headline feature.
+
+**Verification:**
+
+```bash
+# DSR exemplar: all three verbs must read conversion_labels on both namespaces (Pass A + Pass B).
+grep -ln "conversionLabels" apps/control-plane/src/app/api/dsr/{access,erase,portability}/route.ts
+# Verification-tier parity: every verb with a Pass B SELECT/DELETE needs a real-SQL test, not mocks.
+grep -rln "conversion_labels\|conversionLabels" apps/control-plane/src/app/api/dsr/*/route.test.ts \
+  packages/db/src/__tests__/dsr-crm-*.test.ts
+# Signal parity: if erase emits crm_erasure_status, check the disclosure verbs for an equivalent.
+grep -n "crm_erasure_status\|crm_disclosure_status" apps/control-plane/src/app/api/dsr/*/route.ts
+```
+
+---
+
 <!-- Rule R added 2026-06-08 — RETRO-037 §6 (RETRO-032 LG-1 + RETRO-037 LG-1, threshold met). -->
+<!-- Rule S added 2026-06-09 — RETRO-045 §6 (RETRO-044 §4a LG-1/§6 + RETRO-045 §4c TG-1/§4a LG-1, threshold met; RETRO-044 set the explicit promote-on-2nd-instance condition). -->
 <!-- Rule Q+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->
 <!-- Rule P added 2026-06-01 by direct CEO directive (provenance noted in-rule), not retro-promoted -->

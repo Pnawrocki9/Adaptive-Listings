@@ -11326,3 +11326,279 @@ HALF_WIRE_P → **FOLLOW-230** (the persist-gate fix folds this in). → see §4
   gap and is folded into FOLLOW-246.
 - **FOLLOW-039 (RETRO-023)** — the ClickHouse erase leg: same architectural lesson (§5d) that DSR
   completeness is a per-verb, per-store property and the verbs drift as stores are added.
+
+## RETRO-045 — FOLLOW-246 (DSR access (Art. 15) + portability (Art. 20) disclose CRM-written conversion_labels via durable_lead_id — closes RETRO-044 §4a LG-1) — 2026-06-09
+
+### 1. Summary of change
+
+- **PR:** #242 (merged 2026-06-08 22:00 UTC, commit `cde10e7`). backend-engineer (impl). Sprint 15.
+  Source: RETRO-044 §4a LG-1 → FOLLOW-246 — the dedicated remediation of the "Art. 17 erasure was
+  wired to the CRM `durable_lead_id` namespace but the symmetric disclosure verbs (access/portability)
+  were not" gap that RETRO-044 surfaced when FOLLOW-184 fixed only the erase leg.
+- **Files changed:** 10 (+980 / −32). Code-relevant subset (per the task brief; the PR also touched
+  `.claude/agents/{backend-engineer,retrospective-analyst}/lessons.md`, `backlog/QUEUE.md`,
+  `backlog/RETROSPECTIVES.md` (the RETRO-044 entry itself), and `backlog/FOLLOW_UPS.md`):
+  - `apps/control-plane/src/app/api/dsr/access/route.ts` (+122/−2) — Pass A (`lead_id = session_id`)
+    + Pass B (`lead_id = durable_lead_id`) `SELECT` on `conversion_labels`, union-merged + deduped by
+    `id`, returned in the 200 `conversion_labels` array (:259-268). Both passes double-guard on app-
+    layer `!== ''` AND DB-layer `ne(conversionLabels.leadId, '')` (:171-207). Pass B gated on
+    `typeof string && !== '' && !== record.sessionId` (:191-195, dedup).
+  - `apps/control-plane/src/app/api/dsr/portability/route.ts` (+122/−1) — byte-for-byte mirror of the
+    access read; rows exported in the downloadable JSON under `conversion_labels` (:253-262).
+  - `apps/control-plane/src/app/api/dsr/dsr-routes.test.ts` (+205/−4) — 6 new FOLLOW-246 `it()`
+    (4 access scenarios a/b/c/d + 2 portability) plus 4 existing pre-FOLLOW-246 access/portability
+    happy-path tests amended with a 4th `buildChain([])` mock for the new Pass-A query. Mock-layer
+    (Drizzle-chain `mockReturnValueOnce`), NOT PGlite (see §4c TG-1 — this is the residual gap).
+  - `docs/MASTER_DESIGN.md §T.6` (+17/−6) — two-namespace identifier model re-scoped from "Art. 17
+    erasure" to "ALL THREE verbs (access, erase, portability)"; adds the LG-2 wrong-token silent-no-op
+    known-limitation block. Closes RETRO-044 DG-1.
+  - `docs/ops/DSR_ALERTING.md` (+91) — new `§access` and `§portability` sections (fields table, Pass
+    A/B predicates, DPIA §8 verification note, Art. 20 machine-readable-format assessment, wrong-token
+    limitation note).
+- **Modules touched:** [control-plane (2 routes + 1 test) / docs (MASTER_DESIGN + DSR_ALERTING)].
+  No SDK, ingest, decision-api, db migration, or Modal/Python. No new schema/column/event/env-var.
+- **Key contracts changed:**
+  - `GET /api/dsr/access` 200 body — gains `conversion_labels: []` array. Breaking: NO (additive
+    field; discloses MORE data, never less). Public DSR-flow contract widened.
+  - `GET /api/dsr/portability` exported JSON — gains `conversion_labels: []` key. Breaking: NO
+    (additive).
+  - `dsr_verifications.durable_lead_id` (pre-existing column from migration 0024) — now READ by two
+    additional consumers (access + portability), completing its fan-out to all three DSR verbs.
+- **Verdict (preview):** **FOLLOW-UPS-FILED (not clean — one P2 + two P3).** RETRO-044 §4a LG-1 is
+  closed for the **disclosure verbs** at the route/plumbing level: both access and portability now
+  read `conversion_labels` on BOTH namespaces, mirroring the erase Pass A/B exactly (verified field-
+  by-field against `erase/route.ts:353-380`). BUT the closure is **one verification-tier short of the
+  erase leg**: erase got a real-SQL PGlite harness (`dsr-crm-erasure.test.ts`, 12 cases proving the
+  WHERE clause); access/portability got mock-layer Drizzle-chain tests only — exactly the PGlite/route
+  test RETRO-044 §4c TG-1 named as a FOLLOW-246 AC. The two-pass SQL semantics for the disclosure
+  verbs are therefore NOT proven against real SQL → **FOLLOW-247 (P2)**. Plus a disclosure-completeness
+  signal asymmetry (LG-1 below, P3) and an `outcome_raw` open compliance decision (DG-1, P3).
+
+### 2. Verification done in PR
+
+- Test files changed: `dsr-routes.test.ts` only (+205/−4). New assertions: 6 `it()` blocks, ~16
+  assertions. Access scenarios are well-targeted: (a) SDK-only → 1 row, `lead_id == session_id`;
+  (b) CRM-only → 1 row, `lead_id == CRM_LEAD_ID`; (c) both namespaces → union of 2 rows, distinct
+  `id`s (dedup proven); (d) null `durable_lead_id` → Pass B `select` NOT called, 0 rows, no error.
+  Portability has the symmetric (b)/(d)-equivalents. The dedup/union logic (pure JS over the two
+  result arrays) IS adequately covered by scenario (c) at the mock layer — that logic has no SQL
+  dependency, so mock coverage is sufficient FOR THE MERGE.
+- Coverage delta: + good at the route-plumbing/JS-merge layer; **GAP**: the two-pass WHERE-clause SQL
+  (tenant scoping + `lead_id` match + `ne('')` guard) is never executed against real SQL for the
+  disclosure verbs — `buildChain([rows])` returns whatever the mock is fed, so a defect in the actual
+  Drizzle predicate (e.g. a missing tenant filter, or a leak of another subject's rows) would pass
+  these tests. This is the §1 verdict gap (TG-1 → FOLLOW-247). PR body's "test plan" lists the mock
+  scenarios as satisfying AC5 but does NOT note that RETRO-044 §4c TG-1 specifically called for a
+  PGlite/route test for parity with the erase harness.
+- CI checks: PR body reports 20 tests pass in `dsr-routes.test.ts` (14 pre-existing + 6 new),
+  typecheck clean, lint 0 errors, prettier clean, lefthook (rule-h/rule-j) green. The final CI-green
+  checkbox is left UNCHECKED in the PR body ("watch after merge"). CI not independently verified
+  (read-only; standing Rule I / Vercel / Python pre-existing-red caveat).
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- No new file or export added (both routes pre-existed; this PR widened their bodies). The
+  `conversionLabels` symbol is now imported by two MORE non-test files —
+  `grep -rn "conversionLabels" .../dsr/{access,portability}/route.ts` → import + 7 query-site hits
+  each. Both routes are Next.js App-Router `GET` entrypoints (framework routes, suppressed from dead-
+  code per the rule) AND are genuinely reachable. **CHECK A clean.**
+
+**CHECK B — Half-wire detection (producer AND consumer for every column/signal):**
+
+- **`dsr_verifications.durable_lead_id`** — Producer EXISTS (`initiate/route.ts:174` stores the
+  operator-supplied `lead_id`, FOLLOW-184). Consumers now EXIST for all three verbs: `erase` Pass B
+  (DELETE), `access` Pass B (SELECT, NEW), `portability` Pass B (SELECT, NEW). Full chain for the
+  disclosure leg: operator → `POST /api/dsr/initiate {lead_id}` → `dsr_verifications.durable_lead_id`
+  → `GET /api/dsr/access|portability` reads `record.durableLeadId` → Pass B `SELECT conversion_labels`
+  → `conversion_labels[]` in the response/export. The **incomplete-fan-out** RETRO-044 §3 recorded
+  (column wired to 1 of 3 sibling consumers) is now a **complete fan-out** — all three siblings
+  consume it. **CHECK B clean.**
+- The `conversion_labels` data itself: Producer = SDK feedback ping (`lead_id = session_id`, FOLLOW-172)
+  AND CRM webhook (`lead_id = CRM token`, FOLLOW-172/179). Consumer (disclosure) now EXISTS on both
+  namespaces. Not a half-wire.
+
+`Wiring Audit — clean ✅` (no DEAD_CODE / HALF_WIRE_P / HALF_WIRE_C findings; the prior incomplete-
+fan-out is closed). Residual findings below are §4 logic/test/doc gaps, not wiring classifications.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3) — disclosure-completeness signal asymmetry vs erase: access/portability emit NO
+  equivalent of the erase `crm_erasure_status` "unverifiable/incomplete" warning when a CRM subject's
+  durable token was absent or wrong.** `erase/route.ts:419-486` computes `crm_erasure_status`
+  (`complete` / `crm_tenant_unverifiable`) so an operator learns the erase may be incomplete for a
+  CRM subject who supplied no durable token. The new disclosure verbs have NO such field
+  (`grep crm_erasure_status|disclosure_status|incomplete|unverifiable access/portability` → 0 hits):
+  if a CRM subject's `durable_lead_id` is NULL (none supplied at initiation) BUT the tenant has CRM-
+  namespace `conversion_labels` rows, the access report / portability export silently returns ONLY
+  the SDK-ping rows with no signal that CRM deep-outcome data exists but could not be located for
+  this subject. Art. 15(1) "the data subject shall have the right to obtain … information" — a silent
+  partial disclosure is itself a completeness risk. RETRO-044 §4a LG-2 + the LG-2 doc block this PR
+  added cover the *wrong-token* case for erase; this is its **disclosure-verb mirror**, and it is the
+  very pattern this whole FOLLOW chain is about (a fix applied to erase but not its disclosure
+  siblings — see §6). → **FOLLOW-248 (P3)**: mirror the erase unverifiable-detector into access +
+  portability (return a `crm_disclosure_status` / equivalent advisory when Pass B did not run but the
+  tenant has CRM-namespace rows), so disclosure and erase signal completeness symmetrically. compliance-
+  engineer sign-off on whether the advisory belongs in the data-subject-facing body or operator audit
+  only.
+- **LG-2 (P3, no follow-up — documented) — wrong-token silent no-op now spans all three verbs.** A
+  supplied-but-wrong `durable_lead_id` produces an empty Pass B on access/portability too (matches
+  nothing), so the disclosure response contains only SDK rows with no error. This PR correctly
+  DOCUMENTS the limitation in §T.6 and DSR_ALERTING.md §access (the wrong-token note), closing the
+  documentation half of RETRO-044 LG-2. No code follow-up (tenant-side token-correctness contract per
+  §T.6 / DPA / FOLLOW-186 onboarding gate). Recorded so a future retro does not read "0 CRM rows
+  disclosed" as proof none exist.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** The two-pass `SELECT` is correct on static reading: tenant-scoped
+  (`eq(conversionLabels.tenantId, record.tenantId)` on both passes), keyed on the correct identifier
+  per pass, double-guarded on `ne(leadId, '')` at the DB layer plus app-layer `!== ''`. Pass B gating
+  (`typeof string && !== '' && !== record.sessionId`) is identical to the erase leg. The JS union/
+  dedup over `id` is a correct safety net (no overlap in normal operation). The portability route is a
+  faithful mirror (diffed field-by-field against access — identical except response wrapper). No
+  correctness defect found. The mock tests cannot PROVE the SQL (4c) but static analysis surfaces no
+  bug.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — access/portability `conversion_labels` reads are covered ONLY at the mock layer; no
+  PGlite/route test proves the two-pass WHERE-clause SQL against real SQL.** RETRO-044 §4c TG-1
+  explicitly scoped into FOLLOW-246: "its ACs must include a PGlite/route test that (a) an access
+  report for a subject with a supplied `durable_lead_id` includes the matching CRM rows, and (b) the
+  SDK-ping rows appear too." The erase leg has exactly this (`packages/db/__tests__/dsr-crm-erasure.test.ts`,
+  12 real-SQL cases). The delivered FOLLOW-246 tests are `buildChain`/`mockReturnValueOnce` Drizzle-
+  chain mocks (`dsr-routes.test.ts`) — they assert the route assembles the response and the JS merge
+  dedups, but the mock returns canned rows REGARDLESS of the WHERE predicate, so they cannot catch a
+  tenant-filter omission, a namespace-key swap, or an `ne('')`-guard regression. This is a partial
+  fulfilment of FOLLOW-246's own AC and leaves the disclosure verbs at a LOWER verification tier than
+  the erase verb they mirror. → **FOLLOW-247 (P2)**: add a PGlite harness (or extend
+  `dsr-crm-erasure.test.ts` into a `dsr-crm-disclosure.test.ts`) exercising real SQL for access +
+  portability Pass A/B incl. tenant-isolation (a second tenant's rows MUST NOT leak) and the empty-key
+  guard. backend-engineer + qa-engineer.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, no follow-up — flagged for compliance) — `outcome_raw` exclusion is asserted but not
+  yet a ratified compliance decision.** Both routes intentionally OMIT `conversion_labels.outcome_raw`
+  (the raw inbound CRM payload) from the disclosed field set; DSR_ALERTING.md §access states a
+  "separate compliance decision is needed if it should be included." This is correctly surfaced, not
+  hidden — but until compliance-engineer rules on it against DPIA §8, the Art. 15/20 field set is
+  PROVISIONAL. Folded into the FOLLOW-187 CRM go-live gate (compliance-engineer's open
+  `conversion_labels` field-set verification, already NEXT in the PR body), not a new follow-up.
+- §T.6 + DSR_ALERTING.md §access/§portability are otherwise accurate, complete, and now correctly
+  scope the two-namespace model to all three verbs (RETRO-044 DG-1 closed). Doc quality good.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected (Sprint 15)
+
+- **FOLLOW-187 (CRM go-live checklist; ESC-021) — DONE (commit `3234b2d`).** RETRO-044 §5a flagged
+  for the PM that a CRM tenant could erase but not fully *disclose* CRM data (P1). FOLLOW-246 closes
+  that disclosure gap at the route level, so the §5a P1 escalation RETRO-044 raised is RESOLVED for
+  the data-path. The remaining go-live dependency is compliance-engineer's `conversion_labels` field-
+  set + Art. 20 format sign-off (PR body "NEXT") and the DG-1 `outcome_raw` decision — surfaced to the
+  PM as the residual go-live condition, NOT a code gap.
+- **FOLLOW-185 (PGlite harness: CRM route write + DSR cascade) — STILL READY (FOLLOW_UPS.md).**
+  RETRO-044 §5a noted FOLLOW-185 is "a natural place to also add the access/portability read coverage
+  of FOLLOW-246." FOLLOW-246 shipped mock-only coverage instead, so FOLLOW-247 (the PGlite parity
+  test) SHOULD be scoped together with FOLLOW-185's harness extension (both extend the same
+  `dsr-crm-*.test.ts` PGlite fixture family). Re-pointed, not blocked.
+- **FOLLOW-186 (tenant onboarding gate + CRM webhook docs) — STILL OPEN.** The onboarding doc must now
+  also tell CRM-integrated tenants that access/portability completeness for CRM subjects depends on
+  the same durable `lead_id` token (DSR_ALERTING.md §access/§portability now state this). The LG-1
+  disclosure-completeness signal (FOLLOW-248), once built, would give operators feedback when the
+  token is missing — reinforcing FOLLOW-186's onboarding instruction. Re-pointed.
+- **FOLLOW-238/244/245 (`crm_erasure_status` capability signal) — DONE.** Direct relationship to LG-1:
+  FOLLOW-248 would extend the SAME unverifiable-detection idea from erase to the disclosure verbs. Not
+  re-opening those; LG-1 is the disclosure mirror, filed as FOLLOW-248.
+
+#### 5b. Future sprint tickets affected
+
+- A future automated `session_id ⋈ durable_lead_id` resolver (§T.6 path-(a), noted under FOLLOW-239)
+  now benefits ALL THREE verbs automatically once it exists, because the durable path is wired into
+  every verb. RETRO-044 §5b's precondition ("FOLLOW-246 should be done BEFORE the resolver so it
+  lights up all three verbs") is now SATISFIED.
+- Y2 federated-governance / cross-tenant pooling (§F.3/§R.3) — unaffected (per-tenant DSR change).
+
+#### 5c. Contracts changed others rely on
+
+- `GET /api/dsr/access` 200 body and `GET /api/dsr/portability` export JSON now carry a
+  `conversion_labels` array. Any downstream DSR-report consumer, the DPA, and the compliance evidence
+  pack should cite the new field set. The DSR runbook and the data-subject-facing privacy notice
+  (Art. 13/14 disclosure of categories) should reference that conversion outcome labels are now part
+  of access/portability output. Surfaced for compliance-engineer (no follow-up — within FOLLOW-187
+  go-live verification scope).
+- `dsr_verifications.durable_lead_id` is now read by all three DSR verbs — any future verb or DSR
+  tooling MUST read it too (the architectural drift lesson, §5d, now has a concrete enforcement
+  surface).
+
+#### 5d. Architectural assumptions affected
+
+- RETRO-044 §5d's "DSR completeness is a per-VERB property and the three verbs have drifted" is now
+  CONVERGED for the `conversion_labels` store: all three verbs cover both namespaces. The drift risk
+  persists for the NEXT PII store added — there is still no single "DSR data inventory" (one list of
+  every PII-bearing store + its keying identifier) consumed by all three verbs, so a future store can
+  again be wired into one verb and not the siblings. This is now the SECOND retro to record the same
+  architectural lesson (RETRO-044 §5d count 1 → this §5d count 2) — promoted to a Rule (§6, Rule S).
+
+### 6. New lesson candidates
+
+- **Pattern (count 2 — PROMOTED to Rule S) — "a completeness/verification change applied to ONE verb
+  (or branch) of a symmetric set, leaving the sibling verbs/branches at a lower completeness or
+  verification tier with the identical gap."** Seen in: **RETRO-044 §4a LG-1 / §6** (FOLLOW-184 fixed
+  the `lead_id`-namespace gap on DSR *erase* but left access/portability unwired — the GAP instance,
+  count 1) **+ this RETRO-045** (FOLLOW-246 wired the disclosure verbs but at a LOWER verification
+  tier than erase — mock-only vs the erase PGlite harness, §4c TG-1 — AND left the disclosure-
+  completeness signal unmirrored, §4a LG-1 — the RESIDUAL-ASYMMETRY instance, count 2). RETRO-044
+  set the explicit promotion condition: "Promote a 'symmetric-verb completeness' rule only if a SECOND
+  distinct instance appears." The second instance is here: the same shape recurred WITHIN the very fix
+  that closed the first — the verification standard and the operator-signal were applied to erase but
+  not carried symmetrically to its disclosure siblings. Threshold (2 of the SAME shape) met → Rule S
+  promoted in CONVENTIONS_PATCH.md. Distinct from Rule N (docs-vs-code completeness) — Rule S is
+  code-vs-code AND verification-tier-vs-verification-tier across sibling endpoints/branches.
+- **Pattern (own blind-spot, recorded not counted) — "a fix can CLOSE the headline gap while silently
+  re-instantiating the SAME meta-pattern one level down."** I nearly recorded FOLLOW-246 as a clean
+  closure (it does close LG-1 at the route level). The harder finding was that the closure itself is
+  asymmetric: erase has PGlite, the disclosure verbs got mocks; erase has `crm_erasure_status`, the
+  disclosure verbs got no completeness signal. Discipline reaffirmed: when verb A was the template for
+  the fix on verbs B/C, diff B/C against A on EVERY axis (SQL coverage tier, operator signals, error
+  surfacing), not just the headline feature. (Relative to RETRO-044's own §6 "partial-fix-across-
+  symmetric-verbs" note — same family, now confirmed recurrent.)
+
+### 7. Follow-ups
+
+- **FOLLOW-247: PGlite real-SQL parity test for DSR access + portability `conversion_labels` two-pass
+  read** (backend-engineer + qa-engineer, 4h, **P2**) [TG-1; RETRO-044 §4c carried forward]. Mirror
+  the erase `dsr-crm-erasure.test.ts` harness for the disclosure verbs: real-SQL Pass A/B, tenant
+  isolation (second tenant's rows MUST NOT leak), empty-key guard, union/dedup. Co-scope with
+  FOLLOW-185.
+- **FOLLOW-248: Mirror the erase `crm_erasure_status` unverifiable-detector into access + portability
+  as a disclosure-completeness advisory** (backend-engineer + compliance-engineer, 3h, **P3**) [LG-1].
+  Return an advisory when Pass B did not run (no/empty durable token) but the tenant has CRM-namespace
+  `conversion_labels` rows, so a partial disclosure is signalled rather than silent. compliance-
+  engineer decides body-vs-audit placement.
+
+### 8. Cross-references
+
+- **RETRO-044 (FOLLOW-184) — DIRECT PARENT.** This PR (FOLLOW-246) closes RETRO-044 §4a LG-1 (the
+  Art. 15/20 disclosure-namespace gap) at the route/plumbing level: I traced the full chain producer
+  (`initiate` stores token) → consumer (access/portability Pass B `SELECT`) → render
+  (`conversion_labels[]` in body/export) and confirmed both passes execute with correct tenant
+  scoping and empty-key guards, byte-mirroring the erase leg. Closure discipline (RETRO-024/038)
+  applied — I did NOT trust "gap closed": the gap did **not** move one hop downstream (the column now
+  fans out to all three verbs, CHECK B clean), BUT it DID leave a residual on the VERIFICATION axis
+  (mock vs PGlite, §4c TG-1 → FOLLOW-247) and the SIGNAL axis (no `crm_erasure_status` mirror, §4a
+  LG-1 → FOLLOW-248) — exactly the "fix applied to one verb not its siblings" meta-pattern RETRO-044
+  §6 predicted would recur. RETRO-044 §4c TG-1 / DG-1 are the carried-forward items; DG-1 (doc scope)
+  is CLOSED, TG-1 (PGlite parity) is NOT (→ FOLLOW-247).
+- **RETRO-043 (FOLLOW-238) / FOLLOW-244 / FOLLOW-245** — sibling: the erase `crm_erasure_status`
+  unverifiable-detector is the template FOLLOW-248 (LG-1) would mirror into the disclosure verbs.
+- **RETRO-031 (FOLLOW-172) — GRANDPARENT.** Established the two `conversion_labels` producers (SDK
+  ping + CRM webhook) whose two namespaces this whole DSR-completeness chain reconciles.
+- **RETRO-023 (FOLLOW-039) / Rule N** — Rule N is docs-vs-code completeness; the new **Rule S** (this
+  retro) is its code-vs-code + verification-tier sibling. §5d's "DSR data inventory" architectural
+  lesson is now count 2 (RETRO-044 §5d + here), folded into Rule S's evidence.

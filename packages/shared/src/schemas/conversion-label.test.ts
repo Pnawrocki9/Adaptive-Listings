@@ -1,6 +1,7 @@
 /**
- * Unit tests for the conversion-label taxonomy (FOLLOW-171, §T.4) and
- * the precedence-rank helper (FOLLOW-179).
+ * Unit tests for the conversion-label taxonomy (FOLLOW-171, §T.4),
+ * the precedence-rank helper (FOLLOW-179), and the SQL CASE builder exports
+ * (FOLLOW-182, Rule K.1 amendment).
  *
  * @module @estalara/shared/schemas/conversion-label.test
  */
@@ -10,8 +11,13 @@ import { describe, expect, it } from 'vitest';
 import {
   ConversionLabelSourceSchema,
   ConversionOutcomeClassSchema,
+  MANUAL_ADMIN_OFFSET,
+  OUTCOME_CLASS_RANK,
+  allRankEntries,
   conversionLabelRank,
   outcomeClassFromConverted,
+  type ConversionLabelSource,
+  type ConversionOutcomeClass,
 } from './conversion-label.js';
 
 describe('ConversionOutcomeClassSchema', () => {
@@ -191,5 +197,114 @@ describe('conversionLabelRank — edge cases', () => {
     const rank1 = conversionLabelRank({ outcomeClass: 'offer_made', labelSource: 'system' });
     const rank2 = conversionLabelRank({ outcomeClass: 'offer_made', labelSource: 'system' });
     expect(rank1).toBe(rank2);
+  });
+});
+
+// ─── OUTCOME_CLASS_RANK + MANUAL_ADMIN_OFFSET exports (FOLLOW-182) ───────────
+
+describe('OUTCOME_CLASS_RANK export (FOLLOW-182, Rule K.1 amendment)', () => {
+  it('covers every member of ConversionOutcomeClass', () => {
+    const schemaValues = ConversionOutcomeClassSchema.options as ConversionOutcomeClass[];
+    for (const cls of schemaValues) {
+      expect(OUTCOME_CLASS_RANK).toHaveProperty(cls);
+      expect(typeof OUTCOME_CLASS_RANK[cls]).toBe('number');
+    }
+  });
+
+  it('has no extra keys beyond ConversionOutcomeClass members', () => {
+    const schemaValues = new Set<string>(ConversionOutcomeClassSchema.options);
+    for (const key of Object.keys(OUTCOME_CLASS_RANK)) {
+      expect(schemaValues.has(key)).toBe(true);
+    }
+  });
+
+  it('all rank values are unique non-negative integers', () => {
+    const values = Object.values(OUTCOME_CLASS_RANK);
+    const unique = new Set(values);
+    expect(unique.size).toBe(values.length);
+    for (const v of values) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(Number.isInteger(v)).toBe(true);
+    }
+  });
+
+  it('MANUAL_ADMIN_OFFSET is strictly greater than the maximum class rank', () => {
+    const maxClassRank = Math.max(...Object.values(OUTCOME_CLASS_RANK));
+    expect(MANUAL_ADMIN_OFFSET).toBeGreaterThan(maxClassRank);
+  });
+});
+
+// ─── allRankEntries parity gate (FOLLOW-182) ─────────────────────────────────
+//
+// This is the CI gate for the Rule K.1 amendment: it asserts that every entry
+// produced by `allRankEntries()` agrees exactly with `conversionLabelRank()`,
+// exercising all 12 (class × source) pairs. If a class is added to OUTCOME_CLASS_RANK
+// but allRankEntries() or conversionLabelRank() is not updated consistently, this test
+// catches the divergence.
+
+describe('allRankEntries — parity with conversionLabelRank (FOLLOW-182)', () => {
+  const sources: ConversionLabelSource[] = ['system', 'manual_admin'];
+  const classes = Object.keys(OUTCOME_CLASS_RANK) as ConversionOutcomeClass[];
+  const expectedCount = sources.length * classes.length;
+
+  it(
+    'returns exactly ' +
+      String(expectedCount) +
+      ' entries (' +
+      String(classes.length) +
+      ' classes × ' +
+      String(sources.length) +
+      ' sources)',
+    () => {
+      const entries = allRankEntries();
+      expect(entries).toHaveLength(expectedCount);
+    },
+  );
+
+  it('every entry rank matches conversionLabelRank() exactly', () => {
+    const entries = allRankEntries();
+    for (const { outcomeClass, labelSource, rank } of entries) {
+      const expected = conversionLabelRank({ outcomeClass, labelSource });
+      expect(rank).toBe(expected);
+    }
+  });
+
+  it('covers every (class, source) pair exactly once', () => {
+    const entries = allRankEntries();
+    const seen = new Set<string>();
+    for (const { outcomeClass, labelSource } of entries) {
+      const key = `${labelSource}:${outcomeClass}`;
+      expect(seen.has(key)).toBe(false);
+      seen.add(key);
+    }
+    expect(seen.size).toBe(expectedCount);
+  });
+
+  it('all source values in entries are valid ConversionLabelSource members', () => {
+    for (const { labelSource } of allRankEntries()) {
+      expect(ConversionLabelSourceSchema.safeParse(labelSource).success).toBe(true);
+    }
+  });
+
+  it('all outcomeClass values in entries are valid ConversionOutcomeClass members', () => {
+    for (const { outcomeClass } of allRankEntries()) {
+      expect(ConversionOutcomeClassSchema.safeParse(outcomeClass).success).toBe(true);
+    }
+  });
+
+  it('system entries all have rank < MANUAL_ADMIN_OFFSET (source dominance holds)', () => {
+    for (const { labelSource, rank } of allRankEntries()) {
+      if (labelSource === 'system') {
+        expect(rank).toBeLessThan(MANUAL_ADMIN_OFFSET);
+      }
+    }
+  });
+
+  it('manual_admin entries all have rank >= MANUAL_ADMIN_OFFSET', () => {
+    for (const { labelSource, rank } of allRankEntries()) {
+      if (labelSource === 'manual_admin') {
+        expect(rank).toBeGreaterThanOrEqual(MANUAL_ADMIN_OFFSET);
+      }
+    }
   });
 });

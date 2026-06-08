@@ -2941,12 +2941,13 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-182
   title: eliminate the TS-map↔SQL-CASE precedence duplication in upsertConversionLabel
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-179]
   source: RETRO-030 (LG-1/LG-2); CONVENTIONS_PATCH Rule K.1 amendment
   spec: backlog/FOLLOW_UPS.md (FOLLOW-182 stub)
+  branch: backend-engineer/FOLLOW-182-rank-dedup
   notes: |
     OUTCOME_CLASS_RANK (TS) and the inline SQL CASE in upsert-conversion-label.ts encode the same
     ordering twice; adding a class silently mis-ranks unless both change. Derive the SQL from the TS
@@ -3019,12 +3020,13 @@ Key tracks:
 - id: FOLLOW-182
   title: Eliminate TS-map vs SQL-CASE precedence duplication in upsertConversionLabel
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-179]
   source: RETRO-030 (LG-1/LG-2); CONVENTIONS_PATCH Rule K.1
   spec: backlog/FOLLOW_UPS.md (FOLLOW-182 stub)
+  branch: backend-engineer/FOLLOW-182-rank-dedup
   notes: |
     OUTCOME_CLASS_RANK (TS) and the SQL CASE in upsert-conversion-label.ts encode the same
     ordering twice. Derive the SQL from the TS map (or add a 12-pair parity test). Rule K.1.

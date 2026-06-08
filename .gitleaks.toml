@@ -165,11 +165,6 @@ paths = [
 regexes = [
   '''C5AD17C747E3415A3642D57D77C6C491D6AC1D69''',
   '''mnt/transcripts/''',
-  # Long kebab branch names (e.g. data-engineer/FOLLOW-NNN-pg-integration-test-*)
-  # whose 40-char substrings match this heuristic in commit messages.
-  '''FOLLOW-\d{3}-[a-z]+-[a-z]+-[a-z-]+''',
-  # Agent roles in branch prefixes (sdk-engineer/, data-engineer/, backend-engineer/, etc.)
-  '''[a-z]+-engineer/FOLLOW-''',
 ]
 
 # JWT tokens (generic)
@@ -225,6 +220,10 @@ paths = [
   # ClickHouse migration filenames and comments contain long identifiers (table names, column names)
   # that match the cloudflare-api-token regex as false positives.
   '''infra/clickhouse/migrations/''',
+  # Test files at the top level of any package's src/ dir (before being moved to __tests__/)
+  # contain SQL DDL with long snake_case index names that match the cloudflare-api-token heuristic.
+  '''packages/db/src/[^/]+\.test\.ts''',
+  '''packages/shared/src/[^/]+\.test\.ts''',
 ]
 
 # Regexes for known safe patterns

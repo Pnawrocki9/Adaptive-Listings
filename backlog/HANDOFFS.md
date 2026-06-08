@@ -1216,37 +1216,57 @@ Import types from `./route-helpers` (same pattern as cta-lift). The endpoint is 
 ## FOLLOW-221 → FOLLOW-175
 
 **From:** data-engineer **To:** ml-engineer / backend-engineer **Date:** 2026-06-08T00:00:00Z
+**Corrected by:** FOLLOW-237 (data-engineer, 2026-06-08)
 
-**Summary:** FOLLOW-221 adds `?format=json` export to `GET /api/pilot/calibration`. The endpoint now
-accepts an optional `format=json` query parameter. When present it returns a JSON array of
-`CalibrationExportRow` objects (one per `(outcome_class, model_version)` combination) with
-`Content-Disposition: attachment; filename="calibration.json"` and `Content-Type: application/json`.
-The existing chart-data response (no `?format=json`) is completely unaffected.
+**CORRECTION (FOLLOW-237 AC5 — LG-1):** The original handoff incorrectly stated that this export
+feeds the FOLLOW-175 §D.5.7 LoRA fine-tuning corpus. **This is WRONG.** This export is a calibration
+**SUMMARY** (aggregate counts per `outcome_class × model_version × tenant × window`). It contains NO
+per-decision features, scores, or prediction IDs. FOLLOW-175 needs a SEPARATE **row-level**
+`(features_snapshot, model_version, score) → outcome_class` export with one row per decision.
+FOLLOW-175 **CANNOT use this summary shape** for corpus construction. The original claim "FOLLOW-175
+may add fields but MUST NOT remove or rename existing ones" was also premature — the shapes are
+incompatible and FOLLOW-175 must design its own schema from scratch.
 
-**Export shape (Zod-validated — `CalibrationExportRowSchema` in route-helpers.ts):**
+**Summary (corrected):** FOLLOW-221 adds `?format=json` export to `GET /api/pilot/calibration`.
+FOLLOW-237 adds: (a) `data_source` provenance to the envelope and every row (Rule K.2), (b) HTTP 400
+rejection for unknown `?format=` values, (c) renames `avg_confidence` to `mean_model_predicted_rate`
+to clarify it is per-model_version not per-class, (d) corrects this handoff entry. The existing
+chart-data response (no `?format=json`) is completely unaffected.
+
+**Export response shape (as of FOLLOW-237):**
 
 ```typescript
+// Top-level envelope
+type CalibrationExportResponse = {
+  data_source: 'clickhouse' | 'mock'; // Rule K.2 provenance — MUST be read before corpus ingestion
+  rows: CalibrationExportRow[]; // one per (outcome_class × model_version)
+};
+
+// Per-row shape (Zod-validated — CalibrationExportRowSchema in route-helpers.ts)
 type CalibrationExportRow = {
   outcome_class: string; // e.g. 'offer_made', 'no_response', 'purchased', 'lost'
   model_version: string; // e.g. 'rulebased-bandit-v1', 'lora-tenant-abc-v2'
   tenant: string; // tenant_id from JWT claim
   window: number; // window_days (7 | 14 | 30)
   count: number; // labeled decisions with this (outcome_class, model_version)
-  avg_confidence: number | null; // mean predicted confidence for the model in this window;
-  // null when no calibration rows exist for the model version
+  mean_model_predicted_rate: number | null; // mean predicted_rate across all reliability-curve
+  //   buckets for this model_version (per-model, NOT per-class).
+  //   Rides on raw confidence pending FOLLOW-230 dwell cap (commit b62faae).
+  //   null when no calibration rows exist for the model version.
+  data_source: 'clickhouse' | 'mock'; // per-row copy of the envelope provenance field
 };
 ```
 
-**How avg_confidence is computed:** mean of `predicted_rate` across all reliability-curve buckets
-for the same `model_version`. It is a proxy for the typical confidence level the model emitted in
-this window, derived from the in-memory calibration data already assembled for the chart path.
+**Rule K.2 provenance (FOLLOW-237 AC1):** Both the envelope `data_source` and each row's
+`data_source` carry the provenance. A consumer MUST reject any file where `data_source === 'mock'`
+before using it for model training or go/no-go evaluation — mock fixtures must not contaminate a
+training corpus.
 
-**Rule K.2 provenance:** The export path inherits the same fail-loud guarantee as the chart path.
+**What FOLLOW-175 still needs (separate ticket):** A row-level export with one row per labeled
+decision, containing `(prediction_id, features_snapshot, model_version, score, outcome_class, ts)`.
+Design that schema in FOLLOW-175; do not extend this summary endpoint.
 
-**Action required for FOLLOW-175:** The export schema above is stable — FOLLOW-175 may add fields
-but MUST NOT remove or rename existing ones without a parity test.
-
-**Files changed in FOLLOW-221:**
+**Files changed in FOLLOW-221 + FOLLOW-237:**
 
 - `apps/control-plane/src/app/api/pilot/calibration/route.ts`
 - `apps/control-plane/src/app/api/pilot/calibration/route-helpers.ts`

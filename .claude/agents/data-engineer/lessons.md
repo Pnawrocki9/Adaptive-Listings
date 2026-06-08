@@ -29,3 +29,62 @@ ROPA Retention Schedule (v2.3) and DPIA §2.5 (v2.5) to confirm enforcement is l
 but no cron route exists in `apps/control-plane/src/app/api/`, a CI check should flag the gap (grep
 for cron path in vercel.json, confirm route file exists). This would have caught the
 session_embeddings/engagement_scores aspirational cron reference before it drifted.
+
+---
+
+## 2026-06-08 / FOLLOW-221
+
+**What I built:** `?format=json` export for `GET /api/pilot/calibration`. Added
+`CalibrationExportRowSchema` (Zod), `CalibrationExportRow` type, and `buildCalibrationExportRows()`
+to `route-helpers.ts`. When `?format=json` is present, the endpoint returns a flat JSON array of
+`(outcome_class, model_version, tenant, window, count, avg_confidence)` rows with
+`Content-Disposition: attachment`. Existing chart path is unaffected. 9 new tests (37 total).
+
+**Vocabulary/seed/retention risks I weighed:**
+
+- No new table/column — the export is a projection of existing `adaptation_decisions` +
+  `conversion_labels` data already assembled for the chart path. No new writer needed per Rule H.
+- `avg_confidence` is derived from `predicted_rate` (already-computed calibration rows) rather than
+  a separate ClickHouse query — avoids N+1 and keeps the export path on the same fast code path.
+- Rule K.2 inherited cleanly: the export calls `buildCalibrationExportRows()` on the same data the
+  chart path already assembled, so a configured-store failure on ClickHouse/Postgres hits the same
+  HTTP 500 + Sentry path before the export builder is ever called. No new silent-fallback risk.
+- New exports `CalibrationExportRowSchema` and `buildCalibrationExportRows` are imported by
+  `route.ts` (non-test file) — Rule I satisfied. The pre-existing `isPositiveOutcome` /
+  `confidenceDecile` Rule I warnings are not new; confirmed pre-existing on main from PR #234 logs.
+
+**A guardrail I'd add:** The CI landscape memory recorded `Rule I` as pre-existing-red since June 3.
+Each new PR that exports helper functions from `route-helpers.ts` risks compounding the WARNs. A
+Rule H amendment that specifically exempts "helper functions imported within the same app directory"
+from Rule I's zero-importer check (only enforcing it across package/app boundaries) would reduce
+noise without weakening the real signal.
+
+---
+
+## 2026-06-08 / FOLLOW-237
+
+**What I built:** Four fixes to the calibration JSON export: (1) added
+`data_source: 'clickhouse' | 'mock'` to `CalibrationExportRowSchema` and the `jsonExportResponse`
+envelope (Rule K.2 provenance); (2) added `parseFormat()` that throws HTTP 400 for unknown
+`?format=` values like `csv`, `jsonl`, `JSON`; (3) renamed `avg_confidence` →
+`mean_model_predicted_rate` with JSDoc clarifying per-model_version semantics and FOLLOW-230
+dwell-cap caveat; (4) corrected HANDOFFS.md FOLLOW-221→FOLLOW-175 entry to state this is a
+calibration SUMMARY not a row-level LoRA corpus. 42 tests (up from the original 28), all passing.
+
+**Vocabulary/seed/retention risks I weighed:**
+
+- Renamed exported field `avg_confidence` → `mean_model_predicted_rate` in
+  `CalibrationExportRowSchema`. This is a breaking change to any consumer of the JSON export — but
+  the RETRO confirmed there are ZERO existing consumers (Rule H HALF_WIRE_P), so no parity test was
+  needed. Grepped to confirm before renaming.
+- The envelope shape `{ data_source, rows }` replaces the flat array — also breaking, no consumers
+  to update. Documented in HANDOFFS.md.
+- The `parseFormat()` function throws a pre-built `Response` (not a JS `Error`) and the catch in the
+  GET handler returns it directly. This avoids the anti-pattern of re-wrapping an already-built
+  response and preserves Next.js's ability to serialize it natively.
+
+**A guardrail I'd add:** When a handoff entry claims "export feeds FOLLOW-NNN", a CI check should
+confirm the receiving ticket's spec lists the correct schema fields. A hand-written handoff that
+disagrees with the receiving ticket's AC goes undetected until someone builds FOLLOW-175 and
+discovers the shape mismatch. An automated "cross-reference ACs" step in the HANDOFFS format
+validation could catch this at PR time.

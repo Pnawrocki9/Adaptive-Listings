@@ -178,11 +178,14 @@ beforeEach(() => {
   mockInsert.mockReturnValue(buildChain([]));
 
   // Default: no pre-existing dsr_clickhouse_mutations rows.
-  // First select: dsr_verifications lookup → record.
+  // First select:  dsr_verifications lookup → record.
   // Second select: dsr_clickhouse_mutations idempotency check → empty.
+  // Third select:  FOLLOW-239 CRM completeness count query → 0 surviving rows
+  //                (default: no CRM-namespace conversion_labels rows exist).
   mockSelect
     .mockReturnValueOnce(buildChain([makeValidRecord()]))
-    .mockReturnValueOnce(buildChain([]));
+    .mockReturnValueOnce(buildChain([]))
+    .mockReturnValueOnce(buildChain([{ count: 0 }]));
 
   // Default fetch impl — pretend ClickHouse accepts every ALTER + returns a mutation_id.
   // Both ALTER and SELECT system.mutations are POSTed to the same CLICKHOUSE_URL
@@ -261,7 +264,9 @@ describe('POST /api/dsr/erase — ClickHouse hard-delete', () => {
     mockSelect.mockReset();
     mockSelect
       .mockReturnValueOnce(buildChain([makeValidRecord()]))
-      .mockReturnValueOnce(buildChain(preExisting));
+      .mockReturnValueOnce(buildChain(preExisting))
+      // FOLLOW-239: 3rd select = CRM completeness count query (no surviving rows).
+      .mockReturnValueOnce(buildChain([{ count: 0 }]));
 
     const { POST } = await import('./route.js');
     const res = await POST(makeRequest({ token: '123456' }));
@@ -343,7 +348,9 @@ describe('POST /api/dsr/erase — FOLLOW-172 conversion_labels cascade', () => {
     mockSelect.mockReset();
     mockSelect
       .mockReturnValueOnce(buildChain([makeValidRecord({ sessionId: '' })]))
-      .mockReturnValueOnce(buildChain([]));
+      .mockReturnValueOnce(buildChain([]))
+      // FOLLOW-239: 3rd select = CRM completeness count query.
+      .mockReturnValueOnce(buildChain([{ count: 0 }]));
 
     const { conversionLabels: mockConversionLabels } = await import('@estalara/db');
 
@@ -419,7 +426,9 @@ describe('POST /api/dsr/erase — FOLLOW-184 Pass B: durable CRM lead_id erasure
     mockSelect.mockReset();
     mockSelect
       .mockReturnValueOnce(buildChain([makeValidRecord()])) // no durableLeadId
-      .mockReturnValueOnce(buildChain([]));
+      .mockReturnValueOnce(buildChain([]))
+      // FOLLOW-239: 3rd select = CRM completeness count query (no surviving rows).
+      .mockReturnValueOnce(buildChain([{ count: 0 }]));
 
     const { conversionLabels: mockConversionLabels } = await import('@estalara/db');
 
@@ -455,7 +464,10 @@ describe('POST /api/dsr/erase — FOLLOW-184 Pass B: durable CRM lead_id erasure
     mockSelect.mockReset();
     mockSelect
       .mockReturnValueOnce(buildChain([makeValidRecord({ durableLeadId: SESSION_ID })]))
-      .mockReturnValueOnce(buildChain([]));
+      .mockReturnValueOnce(buildChain([]))
+      // FOLLOW-239: 3rd select = CRM completeness count query (dedup: durable_lead_id = session_id
+      // means passBRan = false, so count query runs; no surviving rows expected).
+      .mockReturnValueOnce(buildChain([{ count: 0 }]));
 
     const { conversionLabels: mockConversionLabels } = await import('@estalara/db');
 

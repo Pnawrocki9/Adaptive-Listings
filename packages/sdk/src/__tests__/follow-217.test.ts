@@ -221,13 +221,14 @@ describe('AC1 + AC2 — rehydrated archetype survives init() wiring (LG-1 regres
     seedSession();
     localStorage.setItem('estalara_consent', 'granted');
 
-    // Gate :374 litmus: stub globalThis.location.search with investment UTM.
+    // Referrer-gate litmus: stub globalThis.location.search with investment UTM.
     // init() reads utm_term via:
     //   (globalThis as { location? }).location?.search
     // Stubbing location as an object on globalThis (rather than assigning window.location.href)
     // avoids jsdom's "Not implemented: navigation" error while still exercising the real gate.
     // When this stub is active, applyReferrerHints receives utmTerm='investment' and would
-    // boost portfolio_builder — gate :374 must suppress this on a rehydrated session.
+    // boost portfolio_builder — the FOLLOW-219 single cold-start gate must suppress
+    // this on a rehydrated session.
     vi.stubGlobal('location', { search: '?utm_term=investment', pathname: '/' });
 
     insertScriptTag();
@@ -238,9 +239,9 @@ describe('AC1 + AC2 — rehydrated archetype survives init() wiring (LG-1 regres
     // AC2: returned state must show archetype, signal_count, and confidence UNCHANGED
     // (referrer + device priors were gated out — LG-1 fix from FOLLOW-216)
     expect(finalState).not.toBeNull();
-    // Gate :381 check: device_type.mobile would increment signal_count by 1 if applied
+    // Device-gate check: device_type.mobile would increment signal_count by 1 if applied
     expect(finalState!.signal_count).toBe(signalCountA);
-    // Gate :374 check: investment UTM would shift portfolio_builder probability if applied
+    // Referrer-gate check: investment UTM would shift portfolio_builder probability if applied
     expect(finalState!.archetype).toBe(archetypeA);
     expect(finalState!.confidence).toBeCloseTo(confidenceA, 5);
     // portfolio_builder must NOT have been boosted by investment UTM
@@ -250,14 +251,14 @@ describe('AC1 + AC2 — rehydrated archetype survives init() wiring (LG-1 regres
     );
   });
 
-  it('AC2 litmus for gate :381 — device_type prior changes signal_count when gate inverted', async () => {
-    // This test documents the mechanism by which gate :381 is caught:
-    // On a COLD-START (rehydrated=false), the inverted gate `if (intentStateRehydrated)`
-    // would be false, skipping the device signal. The cold-start state would have signal_count=0
-    // instead of 1. The "cold-start" test below catches this.
+  it('AC2 litmus for device-type prior — changes signal_count when cold-start gate inverted', async () => {
+    // This test documents the mechanism by which the device-type prior gate is caught:
+    // On a COLD-START (rehydrated=false), an inverted gate would skip the device signal,
+    // leaving signal_count=0 instead of ≥1. The "cold-start" test below catches this.
     //
     // On a REHYDRATED session, the returned finalState's signal_count directly exposes
-    // any wrong device signal application (see AC2 test above).
+    // any wrong device signal application (see AC2 test above). With FOLLOW-219 all
+    // priors are inside the single cold-start gate — no separate guard can be dropped.
     //
     // This test confirms the nominal rehydrated case has signal_count preserved from Listing A.
     const stateA = applyQuizLeaf(initIntentState(), 'portfolio_builder');
@@ -272,7 +273,7 @@ describe('AC1 + AC2 — rehydrated archetype survives init() wiring (LG-1 regres
 
     const finalState = await _initForTest();
 
-    // Gate :381 must prevent device_type signal from incrementing signal_count
+    // Single cold-start gate (FOLLOW-219) must prevent device_type signal from incrementing signal_count
     expect(finalState).not.toBeNull();
     expect(finalState!.signal_count).toBe(0); // unchanged — device signal was NOT applied
   });
@@ -352,8 +353,8 @@ describe('AC1 + AC2 — rehydrated archetype survives init() wiring (LG-1 regres
 
     await _initForTest();
 
-    // LG-2 gate: on a rehydrated session, the guard `if (!intentStateRehydrated)` at
-    // index.ts line ~594 must prevent the LG-2 persist.
+    // LG-2 gate: on a rehydrated session, the FOLLOW-219 single cold-start block
+    // must prevent the LG-2 persist.
     // The only allowable write is from onIntentUpdate (behavioral signal path), which
     // does NOT fire during a no-fetch init (no behavioral events in this test).
     const intentKey = intentStateStorageKey(SESSION_ID);

@@ -342,12 +342,34 @@ async function init(): Promise<IntentState | null> {
       }
     }
 
-    // 4a-f02. Apply site-level archetype hints as cold-start Bayesian prior [AUDIT-F02].
-    // detectSiteSchema runs DOM pattern analysis client-side; AI Vision is excluded from
-    // the browser bundle and is never called here.
-    // Skip when state was rehydrated — archetype hints were already folded in on the
-    // first listing page and should not be applied a second time (FOLLOW-176).
+    // Read referrer, UTM, and device width unconditionally — required by session.started
+    // below regardless of whether state was rehydrated.
+    // globalThis property access prevents esbuild dead-code elimination (FOLLOW-202 pattern).
+    const referrer = (globalThis as { document?: { referrer?: string } }).document?.referrer ?? '';
+    const utmTerm =
+      new URLSearchParams(
+        (globalThis as { location?: { search?: string } }).location?.search ?? '',
+      ).get('utm_term') ?? '';
+    const windowWidth = (globalThis as { window?: { innerWidth?: number } }).window?.innerWidth;
+    const deviceType = windowWidth !== undefined && windowWidth >= 1024 ? 'desktop' : 'mobile';
+
+    // FOLLOW-219: Single cold-start gate — ALL init-time priors and the LG-2 persist live
+    // inside this one block so the guard cannot be partially applied.
+    //
+    // Why each step is skipped on rehydration:
+    //   - Archetype hints (4a-f02): already folded in on the first listing page (FOLLOW-176).
+    //   - Referrer + device (FOLLOW-207, FOLLOW-216 LG-1): already applied on the first page;
+    //     re-applying would perturb the archetype and inflate signal_count by +1 per nav.
+    //   - LG-2 persist (FOLLOW-216): the persisted entry is already current; a second write is
+    //     a no-op in terms of state but would be caught as a double-write by follow-217 tests.
+    //
+    // Adding a new cold-start prior: add it INSIDE this block. A prior added outside this block
+    // without its own guard would be caught by the follow-217 integration tests (signal_count
+    // is asserted unchanged on every rehydrated-session test).
     if (!intentStateRehydrated) {
+      // 4a-f02. Archetype hints as cold-start Bayesian prior [AUDIT-F02].
+      // detectSiteSchema runs DOM pattern analysis client-side; AI Vision is excluded from
+      // the browser bundle and is never called here.
       try {
         if (typeof document !== 'undefined') {
           const html = document.documentElement.outerHTML;
@@ -363,32 +385,20 @@ async function init(): Promise<IntentState | null> {
       } catch {
         // Non-critical — detection failure must never block session init.
       }
-    }
 
-    // FOLLOW-207: Referrer + device-type cold-session priors.
-    // Applied after archetype hints so site-level hints are already folded in.
-    // globalThis property access prevents esbuild dead-code elimination (FOLLOW-202 pattern).
-    //
-    // FOLLOW-216 (LG-1): Gate this entire block behind !intentStateRehydrated, symmetric
-    // to the archetype-hint gate above. A rehydrated session already has these priors
-    // folded in from the first listing page — re-applying them would perturb the archetype
-    // and inflate signal_count by +1 on every cross-listing navigation.
-
-    // Referrer hints (cold-session prior)
-    const referrer = (globalThis as { document?: { referrer?: string } }).document?.referrer ?? '';
-    const utmTerm =
-      new URLSearchParams(
-        (globalThis as { location?: { search?: string } }).location?.search ?? '',
-      ).get('utm_term') ?? '';
-    if (!intentStateRehydrated) {
+      // Referrer hints (cold-session prior, FOLLOW-207).
+      // Applied after archetype hints so site-level hints are already folded in.
       currentIntentState = applyReferrerHints(currentIntentState, referrer, utmTerm);
-    }
 
-    // Device type prior
-    const windowWidth = (globalThis as { window?: { innerWidth?: number } }).window?.innerWidth;
-    const deviceType = windowWidth !== undefined && windowWidth >= 1024 ? 'desktop' : 'mobile';
-    if (!intentStateRehydrated) {
+      // Device type prior (FOLLOW-207).
       currentIntentState = applyBehavioralSignal(currentIntentState, `device_type.${deviceType}`);
+
+      // FOLLOW-216 (LG-2): Persist the cold-start intent state (after all init-time priors have
+      // been applied) once, before the first refreshDirectives(). This ensures the very first
+      // cross-listing navigation in the same tab can rehydrate the cold-start archetype even if
+      // no behavioral signal has fired yet (onIntentUpdate is the only other persist site, but
+      // it fires only after a behavioral event).
+      persistIntentState(currentSession.sessionId, currentIntentState);
     }
 
     // Capture referrer_domain for session.started ingest event
@@ -626,16 +636,6 @@ async function init(): Promise<IntentState | null> {
           driftCandidateCount = 0;
         }
       }
-    }
-
-    // FOLLOW-216 (LG-2): Persist the cold-start intent state (after all init-time priors have
-    // been applied: archetype hints, referrer, device) once, before the first refreshDirectives().
-    // This ensures the very first cross-listing navigation in the same tab can rehydrate the
-    // cold-start archetype even if no behavioral signal has fired yet (onIntentUpdate is the
-    // only other persist site, but it fires only after a behavioral event).
-    // Skip on a rehydrated session — the persisted entry is already current.
-    if (!intentStateRehydrated) {
-      persistIntentState(currentSession.sessionId, currentIntentState);
     }
 
     // 4b. Fetch personalization directives from Decision API (Tier 1+ feature)

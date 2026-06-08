@@ -21,6 +21,11 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
+      // Only measure coverage for implementation files — schema definitions are
+      // declarative (Drizzle table builder calls) and seed files require a live DB.
+      // The 80% threshold applies to the application logic: client + upsert helper.
+      include: ['src/client.ts', 'src/upsert-conversion-label.ts'],
+      exclude: ['src/**/*.test.ts'],
       thresholds: {
         lines: 80,
         functions: 80,

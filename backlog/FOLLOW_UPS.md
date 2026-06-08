@@ -5333,7 +5333,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ## FOLLOW-184 — DSR erasure must reach CRM-written conversion_labels rows (Art. 17 completeness)
 
-- **status:** OPEN
+- **status:** DONE (PR #233, merged 2026-06-08)
 - **priority:** P1
 - **source_retro:** RETRO-031 (§4a LG-1)
 - **source_ticket:** FOLLOW-172 / PR #191
@@ -5356,15 +5356,27 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   session_id) and erase on THAT, OR accept/derive the `lead_id` and delete on it. Sequence with /
   relate to FOLLOW-180 (durable lead_id). **Must close before any CRM-integrated tenant goes live.**
 - **ac:**
-  - [ ] a DSR erase deletes `conversion_labels` rows written by the CRM webhook for the data subject
+  - [x] a DSR erase deletes `conversion_labels` rows written by the CRM webhook for the data subject
         (the durable `lead_id`), proven by a PG-harness test (a CRM row with `lead_id != session_id`
-        IS erased) — coordinate the harness with FOLLOW-185
-  - [ ] the identifier-resolution model (session_id ⋈ durable lead_id ⋈ CRM token) is documented in
-        the DSR runbook + MASTER_DESIGN §T.6
-  - [ ] empty-`lead_id` rows remain un-matchable (regression guard for LG-2)
-  - [ ] CI green
+        IS erased) — 12 PGlite tests in `packages/db/src/__tests__/dsr-crm-erasure.test.ts` (AC-1
+        through AC-9 + FOLLOW-239 completeness-check predicates)
+  - [x] the identifier-resolution model (session_id ⋈ durable lead_id ⋈ CRM token) is documented in
+        the DSR runbook (`docs/ops/DSR_ALERTING.md §2 + identifier-resolution model §`) and
+        `docs/MASTER_DESIGN.md §T.6`
+  - [x] empty-`lead_id` rows remain un-matchable (regression guard for LG-2): application-layer
+        guard (`durableLeadId !== ''`) + DB-layer predicate (`ne(conversionLabels.leadId, '')`) both
+        in place; proven by AC-4 tests
+  - [x] CI green (all 91 db-package tests pass, all 18 erase route tests pass)
 - **depends_on:** relates to FOLLOW-180 (durable lead_id); shares PG harness with FOLLOW-185.
 - **promoted_to_queue:** true (QUEUE.md, 2026-06-03; P1)
+- **implementation_pr:** #233 —
+  `feat(db): close GDPR Art. 17 DSR erasure gap for CRM-written conversion_labels [FOLLOW-184]`
+- **approach_chosen:** Option A — DSR initiate accepts optional `lead_id` field stored as
+  `dsr_verifications.durable_lead_id` (migration 0024). The erase route reads this field and runs
+  Pass B (`DELETE FROM conversion_labels WHERE lead_id = durable_lead_id AND tenant_id = X`) in the
+  same atomic transaction as Pass A. No new DB table required; no automated resolver (operator must
+  know the CRM token at initiation time). Observable provenance: `crm_erasure_status` field on every
+  200 response.
 
 ---
 

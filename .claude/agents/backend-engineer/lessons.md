@@ -378,3 +378,23 @@ incomplete when you can't prove it, and don't claim complete when the DB threw.
 **A guardrail I'd add:** A shared-const parity test between `DSR_AUDIT_ACTIONS` in `_clickhouse.ts`
 and the mock objects in the two test files — if someone adds a new action to the const but forgets
 the mocks, the type system catches it at call sites but not at mock definition time.
+
+---
+
+## 2026-06-08 / FOLLOW-184 close-out
+
+**What I built:** Confirmed and formally closed out FOLLOW-184 (DSR Art. 17 CRM erasure gap). The
+implementation (PR #233) was already merged to main. This PR updates `backlog/FOLLOW_UPS.md` (status
+OPEN → DONE, AC checkboxes checked, approach_chosen documented) and `backlog/QUEUE.md` (status READY
+→ DONE, pr + merged_at recorded). Approach chosen was Option A: `dsr/initiate` accepts optional
+`lead_id` stored as `dsr_verifications.durable_lead_id` (migration 0024); `dsr/erase` reads it and
+runs Pass B in the same transaction. HANDOFFS.md FOLLOW-172 condition 7 satisfied.
+
+**Wiring/auth/fail-loud risks I weighed:** None new — this is a bookkeeping-only PR. The
+implementation PR #233 was the risk-bearing change.
+
+**A guardrail I'd add:** When a ticket is implemented in a sub-PR (PR #233 here) but the originating
+branch name doesn't match the ticket spec, there is a risk the PM delegates the ticket again
+assuming it is still open. Backlog entries (FOLLOW_UPS.md + QUEUE.md status) should be updated
+atomically in the same PR as the implementation, not in a follow-up bookkeeping PR. Rule: any PR
+closing a FOLLOW ticket MUST update FOLLOW_UPS.md status field in the same commit.

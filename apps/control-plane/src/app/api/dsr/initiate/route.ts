@@ -36,6 +36,25 @@ const InitiateBodySchema = z.object({
   session_id: z.string().min(1).max(256),
   email: z.string().email(),
   dsr_type: z.enum(['access', 'erase', 'portability']),
+  /**
+   * FOLLOW-184: Optional durable CRM lead_id for the data subject.
+   *
+   * When the tenant's CRM writes deep-outcome rows via POST /api/crm/outcome, it uses
+   * an opaque pseudonymous token as `lead_id` (§T.6 Option i). That token is in a
+   * DIFFERENT namespace from the Estalara session_id — so a DSR erase keyed only on
+   * session_id would leave CRM-written conversion_labels rows behind (Art. 17 gap).
+   *
+   * To close the gap: when the tenant admin initiates a DSR for a data subject who has
+   * a CRM record, they SHOULD supply this field using the same token the CRM webhook
+   * used as `lead_id`. The erase route will then delete conversion_labels on BOTH:
+   *   (a) lead_id = session_id   — SDK feedback-ping labels
+   *   (b) lead_id = durable_lead_id — CRM deep-outcome labels
+   *
+   * min(1) rejects empty strings; use omission (undefined) to indicate "no CRM record".
+   * PII boundary: must be the same opaque Estalara-assigned pseudonymous token sent to
+   * the CRM — NOT a CRM contact ID, email address, or any identifying value.
+   */
+  lead_id: z.string().min(1).max(256).optional(),
 });
 
 // ─── POST handler ──────────────────────────────────────────────────────────────
@@ -111,7 +130,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { session_id, email, dsr_type } = parsed.data;
+  const { session_id, email, dsr_type, lead_id: durableLeadId } = parsed.data;
 
   // ── Confirm session belongs to this tenant ─────────────────────────────────
   const db = createAdminClient();
@@ -150,6 +169,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       dsrType: dsr_type,
       otpHash,
       expiresAt,
+      // FOLLOW-184: store the CRM lead_id if supplied — used by /api/dsr/erase to
+      // delete CRM-written conversion_labels rows (lead_id != session_id namespace).
+      ...(durableLeadId !== undefined ? { durableLeadId } : {}),
     })
     .returning({ id: dsrVerifications.id, expiresAt: dsrVerifications.expiresAt });
 

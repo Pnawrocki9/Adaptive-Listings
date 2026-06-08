@@ -171,33 +171,3 @@
   AFTER #233; I nearly attributed `crm_tenant_unverifiable` to FOLLOW-184. Always scope to
   `git show <mergeCommit>`, never the working-tree file. (Same family as RETRO-038's stale-main
   note.)
-
----
-
-## 2026-06-09 / RETRO-045 (FOLLOW-246 / PR #242)
-
-- **A finding I almost missed and why:** I almost recorded FOLLOW-246 as a clean closure — it DOES
-  close RETRO-044 §4a LG-1 at the route level (both disclosure verbs now read both namespaces, CHECK
-  B fan-out complete). The harder finding was that the closure is itself asymmetric: erase got a
-  real-SQL PGlite harness, the disclosure verbs got mock-only tests (the exact PGlite test RETRO-044
-  §4c TG-1 had scoped INTO FOLLOW-246's ACs and which the PR body quietly re-framed as "satisfied by
-  the mock scenarios"). Lesson: when a PR's own parent retro named a specific AC, re-read that AC
-  against what shipped — do not accept the PR body's self-assessment that the AC is met. The PR
-  claimed AC3 (TG-1) done; it was delivered mock-only.
-- **An axis/chain I had to trace twice:** the durable_lead_id fan-out. First pass: producer
-  (initiate) → consumer (access/portability Pass B) → render (conversion_labels[]) — looked
-  complete. Second pass forced by Rule-S-in-progress: diff the disclosure verbs against the ERASE
-  verb on every axis, not just the headline read. That second diff surfaced BOTH residuals
-  (PGlite-tier gap, missing crm_erasure_status mirror). The "diff each sibling against the template
-  sibling on every axis" step is now codified as Rule S — I should run it mechanically on every
-  symmetric-set change.
-- **Meta-pattern in how gaps recur across agents:** the symmetric-set gap recurs WITHIN the fix that
-  closes it, one level down. RETRO-044 found "fix applied to 1 of 3 verbs." FOLLOW-246 fixed all 3
-  verbs' behavior but re-instantiated the SAME shape on the verification tier and the
-  operator-signal. The promote-on-2nd-instance condition RETRO-044 set was met not by a NEW
-  unrelated PR but by the remediation itself. Watch for this self-similar recurrence: a completeness
-  fix often carries its own next-level completeness gap (test tier, signal tier, doc tier). Rule S
-  promoted (count 2).
-- **Process note:** mergeCommit SHA was not in local history (`git show` failed); had to
-  `git fetch origin <sha>` first. Standard for freshly-merged PRs analyzed read-only. Do the fetch
-  up front next time.

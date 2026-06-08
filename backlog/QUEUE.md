@@ -2833,19 +2833,21 @@ but does NOT fix the source — ESC-019 does.
 
 - id: FOLLOW-187
   title:
-    Compliance docs for CRM ingest — ROPA Activity 14 + DPIA §2.3/§2.5 + conversion_labels TTL
+    Compliance docs for CRM ingest — ROPA Activity 15 + DPIA §2.3/§2.5 + conversion_labels TTL
     (go-live gates 8-9)
-  agent: compliance-engineer + data-engineer
-  status: READY
+  agent: compliance-engineer
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-172]
   source: RETRO-031 (DG-1); HANDOFFS FOLLOW-172 conditions 8-9
   spec: backlog/FOLLOW_UPS.md (FOLLOW-187 stub)
+  branch: compliance-engineer/FOLLOW-187-ropa-activity-15-dpia-crm
   notes: |
-    Go-live gates (not merge gates). ROPA Activity 14 + DPIA §2.3/§2.5 for CRM deep-outcome ingest;
-    13-month TTL cron for conversion_labels (the existing TTL cron does NOT cover this table —
-    HANDOFFS:952). Required before tenant go-live. (Onboarding pseudonymity checkbox = FOLLOW-186, P2.)
+    Go-live gates (not merge gates). ROPA Activity 15 + DPIA §2.3/§2.5 for CRM deep-outcome ingest;
+    Conditions 8+9 CONFIRMED SATISFIED: TTL cron live (FOLLOW-234/PR#230), ROPA v2.5 + DPIA v2.7
+    signed off by compliance-engineer. FOLLOW-184 DSR gap remains OPEN (separate from conditions 8+9).
+    (Onboarding pseudonymity checkbox = FOLLOW-186, P2.)
 
 - id: FOLLOW-173
   title: Conversion-label aggregation + score-vs-actual calibration

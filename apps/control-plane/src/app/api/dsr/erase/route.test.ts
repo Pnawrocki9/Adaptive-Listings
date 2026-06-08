@@ -1,10 +1,11 @@
 /**
  * Integration tests for POST /api/dsr/erase — FOLLOW-039 ClickHouse hard-delete
  * + FOLLOW-172 conversion_labels DSR cascade
- * + FOLLOW-193 engagement_scores DSR cascade (DPIA §8 line 773).
+ * + FOLLOW-193 engagement_scores DSR cascade (DPIA §8 line 773)
+ * + FOLLOW-238 CRM scope-fix: tenant-vs-subject scope over-claim correction.
  *
  * Existing happy-path tests live in `apps/control-plane/src/app/api/dsr/dsr-routes.test.ts`.
- * This file covers the NEW behaviours added by FOLLOW-039, FOLLOW-172, and FOLLOW-193:
+ * This file covers the NEW behaviours added by FOLLOW-039, FOLLOW-172, FOLLOW-193, and FOLLOW-238:
  *
  *   1. ClickHouse mutations are ISSUED (HTTP POST to CLICKHOUSE_URL) for every
  *      table in DSR_CLICKHOUSE_TABLES when a valid OTP is presented.
@@ -25,6 +26,11 @@
  *   9. engagement_scores rows are deleted inside the Postgres transaction for the
  *      erased (session_id, tenant_id) -- AC3.
  *  10. engagement_scores row is absent after erasure -- AC4.
+ *   FOLLOW-238 (AC1/AC2/AC4 — scope-fix):
+ *  11. Subject has NO CRM rows on the tenant → must NOT emit crm_tenant_unverifiable
+ *      or Sentry; must return crm_erasure_status: 'complete'.
+ *  12. Count-query DB throws → must return crm_erasure_status: 'unverified', never 'complete'
+ *      (Rule K.2: never claim 'complete' when the configured store failed).
  *
  * All external dependencies are mocked.
  *
@@ -104,6 +110,15 @@ vi.mock('@/lib/dsr-otp', () => ({
 
 vi.mock('../_clickhouse', () => ({
   writeDsrAuditLog: mockWriteDsrAuditLog,
+  // Expose the real DSR_AUDIT_ACTIONS values so test assertions stay in sync with
+  // the canonical const (FOLLOW-238 AC3: no raw string in tests either).
+  DSR_AUDIT_ACTIONS: {
+    initiated: 'initiated',
+    completed: 'completed',
+    expired: 'expired',
+    failed: 'failed',
+    crm_unverifiable: 'crm_unverifiable',
+  },
 }));
 
 // ─── Drizzle chain helper ─────────────────────────────────────────────────────
@@ -135,6 +150,37 @@ function buildChain(rows: unknown[]) {
   };
   self.then = (onFulfilled, onRejected) => Promise.resolve(rows).then(onFulfilled, onRejected);
   self.catch = (onRejected) => Promise.resolve(rows).catch(onRejected);
+  return self;
+}
+
+/**
+ * FOLLOW-238 AC2/AC4: builds a chain that rejects with `err` when awaited.
+ * Used to simulate a DB failure in the FOLLOW-238 count query.
+ */
+function buildFailingChain(err: Error) {
+  interface Self {
+    from: () => Self;
+    where: () => Self;
+    limit: () => Self;
+    returning: () => Self;
+    set: () => Self;
+    values: (v?: unknown) => Self;
+    then: (
+      onFulfilled: (v: unknown[]) => unknown,
+      onRejected?: (e: unknown) => unknown,
+    ) => Promise<unknown>;
+    catch: (onRejected: (e: unknown) => unknown) => Promise<unknown>;
+  }
+  const self = {} as Self;
+  const chainFn = () => self;
+  self.from = chainFn;
+  self.where = chainFn;
+  self.limit = chainFn;
+  self.returning = chainFn;
+  self.set = chainFn;
+  self.values = () => self;
+  self.then = (onFulfilled, onRejected) => Promise.reject(err).then(onFulfilled, onRejected);
+  self.catch = (onRejected) => Promise.reject(err).catch(onRejected);
   return self;
 }
 
@@ -626,5 +672,88 @@ describe('POST /api/dsr/erase -- FOLLOW-193 engagement_scores cascade (DPIA §8)
     const body = (await res.json()) as { deleted_at: string; clickhouse_deletion: unknown };
     expect(typeof body.deleted_at).toBe('string');
     expect(new Date(body.deleted_at).getTime()).toBeGreaterThan(0);
+  });
+});
+
+// ─── FOLLOW-238: CRM scope-fix — tenant-vs-subject scope over-claim ───────────
+//
+// AC1: subject has NO CRM rows on the tenant → must return crm_erasure_status: 'complete';
+//      must NOT invoke writeDsrAuditLog with crm_unverifiable action.
+// AC2: count-query DB throws → must return crm_erasure_status: 'unverified', never 'complete'.
+
+describe('POST /api/dsr/erase — FOLLOW-238 CRM scope correction', () => {
+  it('AC1: returns crm_erasure_status: complete when tenant has ZERO CRM rows (no Sentry, no audit)', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+
+    // The default beforeEach already sets up:
+    //   1st select: DSR lookup → valid record (no durableLeadId)
+    //   2nd select: FOLLOW-238 count → { count: 0 }   ← tenant has NO CRM rows
+    //   3rd select: CH idempotency → []
+    // This is the default setup — nothing to override.
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      deleted_at: string;
+      crm_erasure_status: string;
+      clickhouse_deletion: unknown;
+    };
+
+    // AC1: no CRM rows on tenant → 'complete', not 'crm_tenant_unverifiable'.
+    expect(body.crm_erasure_status).toBe('complete');
+
+    // AC1: writeDsrAuditLog must NOT have been called with crm_unverifiable.
+    const auditCalls = mockWriteDsrAuditLog.mock.calls as [{ action: string; tenant_id: string }][];
+    const unverifiableCalls = auditCalls.filter(([e]) => e.action === 'crm_unverifiable');
+    expect(unverifiableCalls).toHaveLength(0);
+  });
+
+  it('AC1: returns crm_erasure_status: complete when Pass B ran (durable_lead_id supplied)', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+
+    const CRM_LEAD_ID = 'crm-token-supplied-abc';
+    mockSelect.mockReset();
+    // When passBRan = true, the count query is NOT issued at all.
+    // Execution order: 1st=DSR lookup, 2nd=CH idempotency (no count query).
+    mockSelect
+      .mockReturnValueOnce(buildChain([makeValidRecord({ durableLeadId: CRM_LEAD_ID })]))
+      .mockReturnValueOnce(buildChain([])); // CH idempotency
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { crm_erasure_status: string };
+
+    // Pass B ran → 'complete' regardless of what's on the tenant.
+    expect(body.crm_erasure_status).toBe('complete');
+
+    // No audit call with crm_unverifiable.
+    const auditCalls = mockWriteDsrAuditLog.mock.calls as [{ action: string }][];
+    expect(auditCalls.filter(([e]) => e.action === 'crm_unverifiable')).toHaveLength(0);
+  });
+
+  it('AC2: returns crm_erasure_status: unverified when count-query DB throws (never claims complete)', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+
+    const dbError = new Error('DB connection lost');
+    mockSelect.mockReset();
+    // Execution order: 1st=DSR lookup (succeeds), 2nd=count query (throws), 3rd=CH idempotency.
+    mockSelect
+      .mockReturnValueOnce(buildChain([makeValidRecord()])) // DSR lookup
+      .mockReturnValueOnce(buildFailingChain(dbError)) // FOLLOW-238 count query throws
+      .mockReturnValueOnce(buildChain([])); // CH idempotency
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+
+    // Route must still return 200 — erase DID run; CRM status is separately 'unverified'.
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { crm_erasure_status: string };
+
+    // AC2: must be 'unverified', never 'complete' (Rule K.2 — never claim complete when DB threw).
+    expect(body.crm_erasure_status).toBe('unverified');
   });
 });

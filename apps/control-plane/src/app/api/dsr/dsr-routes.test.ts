@@ -123,6 +123,14 @@ vi.mock('@/lib/email/resend', () => ({
 
 vi.mock('./_clickhouse', () => ({
   writeDsrAuditLog: mockWriteDsrAuditLog,
+  // FOLLOW-238 AC3: expose DSR_AUDIT_ACTIONS so routes that import it don't error.
+  DSR_AUDIT_ACTIONS: {
+    initiated: 'initiated',
+    completed: 'completed',
+    expired: 'expired',
+    failed: 'failed',
+    crm_unverifiable: 'crm_unverifiable',
+  },
 }));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -201,6 +201,42 @@ cron logs in Vercel.
 
 ---
 
+## §2 CRM erasure status signals (FOLLOW-238)
+
+**Updated:** 2026-06-08 | **Source:** RETRO-041 §4a LG-1, FOLLOW-238
+
+`POST /api/dsr/erase` returns a `crm_erasure_status` field in every 200 response. This field is a
+**tenant-capability signal**, not a per-subject completeness claim — see the semantics column below.
+
+| Value                       | Semantics                                                                                                                                                                                                                                                                                                                              |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"complete"`                | Pass B ran (operator supplied `lead_id`), OR the tenant has zero CRM-namespace `conversion_labels` rows — no action required.                                                                                                                                                                                                          |
+| `"crm_tenant_unverifiable"` | Pass B was skipped (no `lead_id` at initiation) AND the tenant has CRM-namespace rows. CRM completeness is **UNVERIFIABLE for this subject** — we cannot determine whether any of those rows belong to the erased subject. This is a tenant-capability warning, not proof of incompleteness. Operator must re-initiate with `lead_id`. |
+| `"unverified"`              | The count-query failed (DB error). CRM state is unknown. The erase DID complete (Pass A ran). Rule K.2: never claim `'complete'` when the backing store threw. Operator should investigate and re-run if needed.                                                                                                                       |
+
+A Sentry warning (tag `follow = 'FOLLOW-238'`) is emitted for every `crm_tenant_unverifiable`
+outcome. A ClickHouse audit entry with `action = 'crm_unverifiable'` is written.
+
+Query for unverifiable outcomes:
+
+```sql
+SELECT
+  tenant_id,
+  session_id,
+  requested_at,
+  completed_at
+FROM dsr_audit_log
+WHERE action = 'crm_unverifiable'
+ORDER BY completed_at DESC
+LIMIT 100;
+```
+
+Operator response: if `crm_erasure_status` is `crm_tenant_unverifiable` or `unverified` for a
+subject who had a CRM record, obtain the durable CRM token and re-initiate the DSR with `lead_id`.
+See the identifier-resolution model section below for details.
+
+---
+
 ## Identifier-resolution model for DSR erasure (FOLLOW-184)
 
 **Updated:** 2026-06-08 | **Source:** RETRO-031 §4a LG-1, FOLLOW-184

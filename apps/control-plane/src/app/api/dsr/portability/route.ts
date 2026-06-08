@@ -21,7 +21,7 @@ import {
   consentRecords,
 } from '@estalara/db';
 import { hashOtp } from '@/lib/dsr-otp';
-import { writeDsrAuditLog } from '../_clickhouse';
+import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 
 // ─── GET handler ───────────────────────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     tenant_id: record.tenantId,
     session_id: record.sessionId,
     dsr_type: 'portability',
-    action: 'completed',
+    action: DSR_AUDIT_ACTIONS.completed,
     email: record.email,
     requested_at: record.createdAt,
     completed_at: now,

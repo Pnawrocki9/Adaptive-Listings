@@ -351,3 +351,30 @@ after an already-authenticated DSR transaction commits — no new auth surface i
 asserts the HTTP response body contains `crm_erasure_status: 'incomplete_no_durable_lead_id'` when
 CRM rows survive — a route-level test would catch a regression where the count result is not plumbed
 into the response field. This is FOLLOW-240's scope (round-trip integration test).
+
+---
+
+## 2026-06-08 / FOLLOW-238
+
+**What I built:** Fixed the tenant-vs-subject scope over-claim in the FOLLOW-239 CRM erasure
+completeness check. (1) Changed the status value from `incomplete_no_durable_lead_id` to
+`crm_tenant_unverifiable` with a Sentry/audit message explicitly framed as a tenant-capability
+warning, not a subject-completeness claim — the count query is tenant-scoped; we cannot prove which
+rows belong to the erased subject. (2) Changed the count-query catch-block to emit
+`crm_erasure_status: 'unverified'` instead of leaving it as `'complete'` (Rule K.2 — never claim
+complete when the configured store threw). (3) Extracted all DSR audit action literals to a shared
+`DSR_AUDIT_ACTIONS` const + `DsrAuditAction` type in `_clickhouse.ts`, and updated all four DSR
+route callers. (4) Added three tests: two for AC1 (tenant has zero CRM rows → complete; Pass B ran →
+complete), one for AC2 (DB throws → unverified). Updated `docs/ops/DSR_ALERTING.md §2` with the new
+three-value status table and corrected semantics. Also added `DSR_AUDIT_ACTIONS` to the
+`_clickhouse` mock in `dsr-routes.test.ts` to unblock the broader DSR test suite.
+
+**Wiring/auth/fail-loud risks I weighed:** No new DB writes or auth surfaces — all changes are in
+the read path of an already-authenticated route. The key risk was the RETRO-041 false-positive
+pattern: every DSR erase on a CRM-integrated tenant was claiming incomplete when the query couldn't
+substantiate that claim. Rule K.2 (fail-loud, not fabricate) applies in both directions: don't claim
+incomplete when you can't prove it, and don't claim complete when the DB threw.
+
+**A guardrail I'd add:** A shared-const parity test between `DSR_AUDIT_ACTIONS` in `_clickhouse.ts`
+and the mock objects in the two test files — if someone adds a new action to the const but forgets
+the mocks, the type system catches it at call sites but not at mock definition time.

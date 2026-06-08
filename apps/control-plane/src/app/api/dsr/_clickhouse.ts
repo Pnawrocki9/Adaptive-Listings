@@ -14,12 +14,54 @@
 
 import { createHash } from 'crypto';
 
+/**
+ * Canonical set of DSR audit action strings written to `dsr_audit_log.action`.
+ *
+ * FOLLOW-238 (AC3): extracted from inline literals so both the erase route and
+ * the DSR_ALERTING.md §5 ClickHouse query share the same source of truth.
+ * Prevents route-vs-docs drift — any rename here is a single-point change.
+ *
+ * Consumers: apps/control-plane/src/app/api/dsr/erase/route.ts,
+ *            apps/control-plane/src/app/api/dsr/initiate/route.ts,
+ *            apps/control-plane/src/app/api/dsr/portability/route.ts,
+ *            apps/control-plane/src/app/api/dsr/access/route.ts,
+ *            docs/ops/DSR_ALERTING.md §5 (ClickHouse query reference).
+ */
+export const DSR_AUDIT_ACTIONS = {
+  /** DSR request received and OTP sent to the data subject. */
+  initiated: 'initiated',
+  /** DSR fully completed (all Postgres + ClickHouse passes ran). */
+  completed: 'completed',
+  /** DSR OTP expired before use. */
+  expired: 'expired',
+  /** DSR processing encountered an unrecoverable error. */
+  failed: 'failed',
+  /**
+   * FOLLOW-239 / FOLLOW-238: Pass B was skipped (no durable_lead_id) and this
+   * tenant has CRM-namespace conversion_labels rows whose subject membership is
+   * UNVERIFIABLE for this session. The CRM-namespace erasure completeness cannot
+   * be confirmed. Operator must re-initiate with lead_id.
+   *
+   * Semantics (FOLLOW-238 AC1): this is a TENANT-CAPABILITY warning, not a
+   * subject-completeness claim. The query cannot prove these rows belong to the
+   * erased subject — it only proves the tenant has un-erased CRM rows and no
+   * durable token was supplied.
+   */
+  crm_unverifiable: 'crm_unverifiable',
+} as const;
+
+/** Union of all valid DSR audit action strings. */
+export type DsrAuditAction = (typeof DSR_AUDIT_ACTIONS)[keyof typeof DSR_AUDIT_ACTIONS];
+
 export interface DsrAuditEntry {
   tenant_id: string;
   session_id: string;
   dsr_type: string;
-  /** 'initiated' | 'completed' | 'expired' | 'failed' */
-  action: string;
+  /**
+   * One of the `DSR_AUDIT_ACTIONS` values. Typed as `DsrAuditAction` to prevent
+   * raw-string drift between the route and the ClickHouse query in DSR_ALERTING.md §5.
+   */
+  action: DsrAuditAction;
   /** Raw email — will be hashed before writing to ClickHouse. */
   email: string;
   requested_at: Date;

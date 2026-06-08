@@ -2,6 +2,19 @@
 
 ---
 
+**Date / ticket:** 2026-06-09 — FOLLOW-185 (data-engineer PG-harness CRM+DSR integration test)
+**Delegation row used:** Row 4 (ClickHouse/ETL/archetype pipeline/DB harness — data-engineer).
+**What validation caught (or missed):** State reconciliation at session start found 3 tickets
+(FOLLOW-183, FOLLOW-184 dup, FOLLOW-187) showing stale statuses in QUEUE.md Sprint 16 section — git
+log proved all had merged PRs. No active CI validation this iteration; corrections were documentary
+only. The pattern is repeated: git log is the ground truth for DONE status, QUEUE.md lags behind
+after busy merge days. **A delegation/validation rule I'd add:** At the start of each PM session,
+run `git log --oneline -20 | grep -E 'FOLLOW-[0-9]+'` and cross-check each referenced ticket's
+QUEUE.md status before picking the next ticket — stale IN_PROGRESS/READY entries block correct
+prioritization.
+
+---
+
 **Date / ticket:** 2026-06-08 — FOLLOW-183 (PR #228, data-engineer PG integration test) **Delegation
 row used:** Row 4 (ClickHouse/ETL/archetype pipeline — data-engineer). Validation-only loop; PR was
 already open. **What validation caught (or missed):** Step 5b (CI gate diff vs main) caught that

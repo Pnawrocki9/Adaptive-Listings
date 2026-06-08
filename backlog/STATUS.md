@@ -1,44 +1,49 @@
-# Status — 2026-06-08T22:00Z
+# Status — 2026-06-09T00:00Z
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
 ## Active sprint: Sprint 16
 
-**15 DONE** (FOLLOW-170/173/174/176/182/183/190/221/227/230/234/237/238/239/244), **0 IN_PROGRESS**,
-**3 READY_FOR_REVIEW** (FOLLOW-191 awaiting Rafal deploy ESC-020; FOLLOW-244 PR #239 CI green —
-awaiting human merge; FOLLOW-187 PR pending CI — ROPA v2.5 + DPIA v2.7, conditions 8+9 confirmed),
-**2 READY** (FOLLOW-175 P1, FOLLOW-245 P2).
+**12 DONE** (FOLLOW-170/173/174/176/182/183/184/187/190/227/230/234), **1 IN_PROGRESS** (FOLLOW-185
+— PG-harness CRM+DSR integration test, delegated to data-engineer 2026-06-09), **1
+READY_FOR_REVIEW** (FOLLOW-191 awaiting Rafal deploy ESC-020), **1 READY** (FOLLOW-175 P2 LoRA
+export).
 
-ESC-021 MITIGATED — FOLLOW-187 is sole remaining blocker; PR opening pending CI.
+### FOLLOW-185 delegation details (IN_PROGRESS as of 2026-06-09)
 
-### FOLLOW-183 bounce details (PR #228)
+**Branch:** `data-engineer/FOLLOW-185-pg-harness-crm-dsr`
 
-Status: **BOUNCED — Gitleaks real gate failing.**
+**Scope:** Integration test for CRM write + DSR cascade + two-writer precedence using PGlite or
+Testcontainers harness. Consolidates scope from FOLLOW-181 (RLS isolation) and the already-done
+FOLLOW-183 (upsert precedence WHERE + UNIQUE). This ticket focuses on: (a) CRM route write via
+`POST /api/crm/outcome` → `conversion_labels` row, (b) DSR cascade: erase by `lead_id` (Pass B from
+FOLLOW-184) reaches that CRM-written row, (c) two-writer precedence: SDK feedback ping + CRM webhook
+both writing the same `(tenant_id, prediction_id)` converges to expected state.
 
-Real gates passed: Test Node 22, Typecheck, Lint, Format, Build control-plane, Rule H, Rule J,
-ClickHouse migrations, Cross-language, Doppler, Vercel — all PASS.
-
-Gitleaks FAILS on PR #228 branch but PASSES on main and on PR #227 (FOLLOW-230, merged today). Root
-cause: `packages/db/src/upsert-conversion-label.test.ts` is outside the `.gitleaks.toml` allowlist
-(`src/__tests__/` is allowlisted; `src/*.test.ts` is not). Data-engineer must move file to
-`src/__tests__/` or add an allowlist entry.
-
-CI-check counter: 1/5 | Fix-iteration counter: 1/3. PR comment posted at
-https://github.com/Pnawrocki9/Adaptive-Listings/pull/228#issuecomment-4649064989.
+**CI-check counter:** 0/5 | **Fix-iteration counter:** 0/3
 
 ## Currently IN_PROGRESS (1 of 3 max)
 
-- FOLLOW-183 (PG integration test for upsertConversionLabel) — data-engineer, PR #228 Branch:
-  data-engineer/FOLLOW-183-pg-integration-test-upsert-conversion-label CI-check counter: 1/5 |
-  Fix-iteration counter: 1/3
+- FOLLOW-185 (PG-harness CRM+DSR integration test) — data-engineer, branch:
+  data-engineer/FOLLOW-185-pg-harness-crm-dsr. CI-check counter: 0/5 | Fix-iteration counter: 0/3
 
 ## Open escalations
 
 | ID      | Age | Description                                                          | Blocking?                           |
 | ------- | --- | -------------------------------------------------------------------- | ----------------------------------- |
-| ESC-009 | 15d | E2E_BEARER_TOKEN secret not provisioned                              | demo-integration CI soft-skips only |
-| ESC-010 | 15d | DOPPLER_TOKEN_DEV not provisioned                                    | doppler-verify CI soft-skips only   |
-| ESC-020 | 3d  | Rafal must deploy web-master HEAD + PUBLIC_ESTALARA_SDK_ENABLED=true | FOLLOW-191 final verification only  |
+| ESC-009 | 16d | E2E_BEARER_TOKEN secret not provisioned                              | demo-integration CI soft-skips only |
+| ESC-010 | 16d | DOPPLER_TOKEN_DEV not provisioned                                    | doppler-verify CI soft-skips only   |
+| ESC-020 | 4d  | Rafal must deploy web-master HEAD + PUBLIC_ESTALARA_SDK_ENABLED=true | FOLLOW-191 final verification only  |
+
+## Sprint 16 status corrections applied 2026-06-09
+
+The following tickets had stale statuses in QUEUE.md (Sprint 16 section). All corrected atomically:
+
+| Ticket     | Old status   | Correct status | PR   | Commit  | Evidence                                                    |
+| ---------- | ------------ | -------------- | ---- | ------- | ----------------------------------------------------------- |
+| FOLLOW-183 | IN_PROGRESS  | DONE           | #228 | ff3fb8e | `test(data): pg integration test for upsertConversionLabel` |
+| FOLLOW-184 | READY (dup.) | DONE           | #233 | 9c91ed8 | Already DONE in Sprint 14 carry-over section                |
+| FOLLOW-187 | READY        | DONE           | #229 | e13250b | `feat(compliance): add ROPA activity 15 CRM ingest`         |
 
 ## Sprint 16 status corrections applied 2026-06-08
 
@@ -52,15 +57,6 @@ The following tickets were merged but QUEUE.md showed stale statuses. All correc
 | FOLLOW-190 | READY       | DONE           | #225 | 1d5829a |
 | FOLLOW-227 | (new)       | DONE           | #226 | 4d3f1a4 |
 | FOLLOW-230 | (new)       | DONE           | #227 | b62faae |
-
-FOLLOW-187 title updated: Activity 14 → Activity 15 (collision fixed by FOLLOW-230).
-
-## PRs merged today (2026-06-08)
-
-- #225 FOLLOW-190 dwell-time confidence lift (sdk-engineer, merged 10:51)
-- #226 FOLLOW-227 dwell rehydrate gate + cap (sdk-engineer, merged 11:42)
-- #227 FOLLOW-230 ROPA renumber + privacy notice 8 keys + CI lint (compliance-engineer, merged
-  11:46)
 
 ## Sprint 8 Rule I audit (legacy, 2026-05-17)
 

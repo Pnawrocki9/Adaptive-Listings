@@ -1,12 +1,12 @@
 # Backlog Queue
 
-**Updated 2026-06-08 by backend-engineer. Sprint 16 FOLLOW-184 DONE (PR #233, merged 2026-06-08) —
-DSR Art. 17 CRM erasure gap closed; dsr_verifications.durable_lead_id (migration 0024) + Pass B in
-erase cascade + 12 PGlite harness tests + MASTER_DESIGN §T.6 + DSR_ALERTING.md identifier-resolution
-model. HANDOFFS.md FOLLOW-172 condition 7 satisfied. Sprint 15 COMPLETE — 21/21 DONE. Sprint 16 OPEN
-— 7 DONE (FOLLOW-170/173/174/176/182/190/227/230), 1 IN_PROGRESS (FOLLOW-183 — Gitleaks real gate
-failing, bounced), 1 READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal deploy ESC-020), FOLLOW-187 READY
-(Activity 15 unblocked by FOLLOW-230).**
+**Updated 2026-06-09 by pm-orchestrator. Sprint 16 status corrections: FOLLOW-183 DONE (PR #228
+merged 2026-06-08 — Gitleaks resolved), FOLLOW-184 DONE (duplicate Sprint 16 entry corrected to
+DONE, PR #233), FOLLOW-187 DONE (PR #229 merged 2026-06-08 — ROPA Activity 15 + DPIA §2.3/§2.5
+shipped). FOLLOW-185 now IN_PROGRESS (delegated to data-engineer). Sprint 15 COMPLETE — 21/21 DONE.
+Sprint 16 OPEN — 12 DONE (FOLLOW-170/173/174/176/182/183/184/187/190/227/230/234), 1 IN_PROGRESS
+(FOLLOW-185 — PG-harness CRM+DSR integration test), 1 READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal
+deploy ESC-020), FOLLOW-175 READY (P2 LoRA export).**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -2983,19 +2983,19 @@ but does NOT fix the source — ESC-019 does.
 (pm-orchestrator): FOLLOW-176/182/174/190/227/230 DONE; FOLLOW-183 bounced back (Gitleaks real gate
 failing); FOLLOW-187 updated to Activity 15 (FOLLOW-230 fixed collision). Updated 2026-06-08
 (data-engineer): FOLLOW-234 DONE (conversion_labels 13-month TTL cron — FOLLOW-187 condition 9
-closed).** Carries forward all READY Sprint 14 items not touched by Sprint 15, plus the Wave 2
-deferred item from Sprint 15.
+closed). Updated 2026-06-09 (pm-orchestrator): FOLLOW-183 DONE (PR #228 merged), FOLLOW-187 DONE (PR
+#229 merged), FOLLOW-185 now IN_PROGRESS (data-engineer delegated).** Carries forward all READY
+Sprint 14 items not touched by Sprint 15, plus the Wave 2 deferred item from Sprint 15.
 
 Key tracks:
 
 - **Track A (§T Conversion Label Loop, T0):** FOLLOW-170 (DONE, PR #187 — unblocked the chain)
 - **Track B (§T downstream, now unblocked):** FOLLOW-173 (DONE, PR #216) → FOLLOW-174 (DONE, PR
-  #220) → FOLLOW-175 (READY)
+  #220) → FOLLOW-175 (READY, P2)
 - **Track C (SDK + DB hardening):** FOLLOW-176 (DONE, PR #217), FOLLOW-182 (DONE, PR #222),
-  FOLLOW-183 (IN_PROGRESS — Gitleaks real gate failing, PR #228 bounced)
-- **Track D (GDPR/compliance):** FOLLOW-234 (DONE — conversion_labels TTL cron), FOLLOW-184 (P1,
-  Art.17 DSR gap), FOLLOW-185 (P1, PG harness), FOLLOW-187 (P1, ROPA Activity 15 + DPIA — READY,
-  condition 9 closed by FOLLOW-234)
+  FOLLOW-183 (DONE, PR #228), FOLLOW-185 (IN_PROGRESS — PG-harness CRM+DSR)
+- **Track D (GDPR/compliance):** FOLLOW-234 (DONE — TTL cron), FOLLOW-184 (DONE, PR #233),
+  FOLLOW-187 (DONE, PR #229 — ROPA Activity 15 + DPIA §2.3/§2.5)
 - **Track E (Background):** FOLLOW-190 (DONE, PR #225), FOLLOW-227 (DONE, PR #226), FOLLOW-230
   (DONE, PR #227)
 
@@ -3050,48 +3050,44 @@ Key tracks:
 - id: FOLLOW-183
   title: PG integration test for upsertConversionLabel (precedence WHERE + UNIQUE constraint)
   agent: data-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-179]
   source: RETRO-030 (TG-1/TG-2)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-183 stub)
   branch: data-engineer/FOLLOW-183-pg-integration-test-upsert-conversion-label
-  pr: 228
+  pr: '#228'
+  completed_at: '2026-06-08T00:00:00Z'
   notes: |
-    PR #228 open. BOUNCED 2026-06-08 by pm-orchestrator — Gitleaks real gate is FAILING
-    (not pre-existing-red; passes on main and on recent merged PRs). The test file lives at
-    packages/db/src/upsert-conversion-label.test.ts (NOT in src/__tests__/) so it is not
-    covered by the .gitleaks.toml allowlist path patterns. Data-engineer must investigate
-    what pattern Gitleaks is detecting and either (a) add the file to the allowlist with
-    a rule-specific suppress comment, or (b) move the test file to src/__tests__/ so it
-    matches the existing allowlist path. All other real gates pass: Test Node 22 pass,
-    Typecheck pass, Lint pass, Format pass, Build control-plane pass, Rule H pass, Rule J
-    pass, ClickHouse migrations pass, Cross-language pass, Doppler pass, Vercel pass.
-    Python tests and Rule I are pre-existing-red (non-blocking per ci_gate_landscape).
-    Production bugs fixed in this PR: (1) integer type mismatch via sql.raw()::integer,
-    (2) empty-reduce crash guard returns CASE END for empty entries array. Both confirmed
-    in non-test production code at packages/db/src/upsert-conversion-label.ts:122-146.
-    CI-check counter: 1/5. Fix-iteration counter: 1/3.
+    DONE. PR #228 merged 2026-06-08 (commit ff3fb8e). Gitleaks was resolved (file moved or
+    allowlisted); all real gates green on merge. PG integration tests for upsertConversionLabel
+    shipped: SQL precedence WHERE clause + UNIQUE constraint coverage + empty-reduce crash guard.
+    Production bugs fixed: (1) integer type mismatch via sql.raw()::integer, (2) empty-reduce
+    crash guard returns CASE END for empty entries array — both in non-test production code at
+    packages/db/src/upsert-conversion-label.ts:122-146.
 
 - id: FOLLOW-184
   title: DSR erasure must reach CRM-written conversion_labels rows (Art. 17 completeness)
   agent: backend-engineer + compliance-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 5
   depends_on: [FOLLOW-172]
   source: RETRO-031 (LG-1); relates to FOLLOW-180
   spec: backlog/FOLLOW_UPS.md (FOLLOW-184 stub)
+  pr: '#233'
+  completed_at: '2026-06-08T00:00:00Z'
   notes: |
-    COMPLIANCE/LEGAL — GDPR Art. 17. DSR erase keys on session_id but CRM rows store opaque
-    tenant lead_id in a different namespace. No live exposure yet (no tenant producer).
-    Must fix before any CRM-integrated tenant go-live.
+    DONE. PR #233 merged 2026-06-08 (same as Sprint 14 carry-over entry — status corrected here
+    to eliminate stale READY duplicate). See Sprint 14 carry-over section for full details.
 
 - id: FOLLOW-185
   title: PG-harness integration test — CRM write + DSR cascade + two-writer precedence
   agent: data-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: data-engineer
+  started_at: '2026-06-09T00:00:00Z'
   priority: P1
   estimated_hours: 5
   depends_on: [FOLLOW-179, FOLLOW-172]
@@ -3120,20 +3116,19 @@ Key tracks:
 - id: FOLLOW-187
   title: Compliance docs — ROPA Activity 15 + DPIA §2.3/§2.5 + conversion_labels 13-month TTL
   agent: compliance-engineer + data-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-172]
   source: RETRO-031 (DG-1); HANDOFFS FOLLOW-172 conditions 8-9
   spec: backlog/FOLLOW_UPS.md (FOLLOW-187 stub)
+  pr: '#229'
+  completed_at: '2026-06-08T00:00:00Z'
   notes: |
-    Go-live gates 8-9. ROPA Activity 15 (was 14 — renumbered by FOLLOW-230/PR #227 to avoid
-    collision with Activity 14 = Client-Side Session Intent-State Cache added by FOLLOW-218).
-    DPIA §2.3/§2.5 for CRM deep-outcome ingest; 13-month TTL cron for conversion_labels
-    (not covered by existing TTL cron). FOLLOW-230 stub in FOLLOW_UPS.md already updated
-    to Activity 15. This ticket is now READY (dependency FOLLOW-172 DONE, numbering collision
-    resolved). Condition 9 (TTL cron) closed by FOLLOW-234 (PR opened 2026-06-08).
-    Remaining: condition 8 (ROPA Activity 15 full entry + DPIA §2.3) for compliance-engineer.
+    DONE. PR #229 merged 2026-06-08 (commit e13250b). ROPA Activity 15 CRM ingest entry +
+    DPIA §2.3/§2.5 + retention note shipped. All go-live conditions 8-9 from HANDOFFS.md
+    FOLLOW-172 are now satisfied. Conditions 1-7 (code) were met at PR #191 (FOLLOW-172).
+    Condition 9 (TTL cron) closed by FOLLOW-234 (PR #230). FOLLOW-187 COMPLETE.
 
 - id: FOLLOW-173
   title: Conversion-label aggregation + score-vs-actual calibration

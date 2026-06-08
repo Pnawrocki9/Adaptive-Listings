@@ -6058,7 +6058,48 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 231 (230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
+## FOLLOW-234 — conversion_labels 13-month TTL cron (Rule N enforcement gap — blocks CRM go-live gate)
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-031 (§4d DG-1) + Rule N (compliance doc asserts retention period not
+  enforced by shipped code)
+- **source_ticket:** FOLLOW-187 / ROPA Activity 15 / DPIA §2.5
+- **recommended_sprint:** Sprint 16 (before any CRM-integrated tenant goes live)
+- **agent:** data-engineer
+- **estimated_hours:** 3
+- **before_go_live:** true
+- **depends_on:** [FOLLOW-187]
+- **scope:** ROPA Activity 15 (CRM Deep-Outcome Ingest) documents a 13-month retention period for
+  the `conversion_labels` Postgres table (from `labeled_at`). As of 2026-06-08, no application-layer
+  TTL cron or partition-level deletion policy enforces this. The schema
+  (`packages/db/src/schema/conversion_labels.ts`) and migrations (`0019_conversion_labels.sql`,
+  `0020_conversion_labels_dedup.sql`) contain no retention enforcement. Per Rule N and RETRO-031
+  DG-1, a compliance document that asserts a retention period must be paired with an enforced TTL
+  before the go-live gate is satisfiable. Implement a nightly Vercel Cron or equivalent job that
+  deletes `conversion_labels` rows where `labeled_at < NOW() - INTERVAL '13 months'`. The job must
+  be CI-verified (a test asserts rows older than 13 months are deleted and rows within 13 months are
+  retained).
+- **ac:**
+  - [ ] A nightly cron (Vercel Cron route or equivalent) executes
+        `DELETE FROM conversion_labels WHERE labeled_at < NOW() - INTERVAL '13 months'`
+  - [ ] The cron is wired into the control-plane Vercel schedule (`vercel.json` or Next.js route
+        handler `GET /api/cron/labels-ttl`)
+  - [ ] A CI-verified test asserts rows with `labeled_at` older than 13 months are deleted; rows
+        within 13 months are retained
+  - [ ] The Retention Schedule entry in `docs/compliance/ropa.md` is updated to remove the
+        `**TTL NOT YET ENFORCED**` notice
+  - [ ] The §2.5 table entry in `docs/compliance/dpia.md` is updated to remove
+        `policy only; not yet enforced`
+  - [ ] CI green
+- **go_live_gate:** The go-live gate for any CRM-integrated tenant is UNSATISFIABLE until this
+  ticket merges. ROPA Activity 15 and DPIA §2.5 carry explicit enforcement-gap notices that must be
+  removed by this ticket.
+- **promoted_to_queue:** true
+
+---
+
+<!-- next free FOLLOW number: 235 (234 = FOLLOW-187 companion: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate; 231 (230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
      220 = P1 make the FOLLOW-217 jsdom test actually DRIVE init() (it mirrors init() in local helpers, not invokes it — Rule Q violation in the ticket filed to close the Rule Q gap; TG-1/TG-2/TG-3/CB-1/DG-1; sequence BEFORE FOLLOW-219).
      219 = RETRO-033 / PR #218 / FOLLOW-216:
      219 = P3 collapse 4 scattered !intentStateRehydrated guards into one block + move CB-1 comment into JSDoc (structural hardening of FOLLOW-216 LG-1 fix; after FOLLOW-217).

@@ -139,3 +139,35 @@
   guarded shell `cat >>` heredoc that re-checks for collision atomically right before append, and
   key idempotency on a unique header pattern (`^## RETRO-NNN — FOLLOW-182`) rather than a bare
   number. Don't trust the number computed at the start of the run.
+
+## 2026-06-08 · RETRO-044 (PR #233, FOLLOW-184 — DSR durable_lead_id closes the Art. 17 CRM erasure gap)
+
+- **A finding I almost missed and why:** the Art. 15/20 (access + portability) symmetric gap. The PR
+  is a textbook clean closure — it directly resolves RETRO-031 §4a LG-1, ships a real PGlite harness
+  (not mocks), guards the empty-key boundary at two layers, and the wire is end-to-end. Every signal
+  said "clean ✅, parent gap closed." The trap: a DSR has THREE verbs and the fix touched ONE. I
+  only caught it because step 8 (multi-axis) forced me to grep `conversion_labels` across ALL
+  dsr/\*/route.ts — and access/portability returned 0 hits. The lesson: "the parent gap is closed"
+  is necessary but not sufficient — ask "closed on which AXIS, and what are the siblings of that
+  axis?" A completeness/erasure concern almost always has symmetric verbs (access/erase/portability;
+  read/write; variant/holdout; per-locale) and a fix to one is a yellow flag for the others.
+- **An axis/chain I had to trace twice:** the `durable_lead_id` wire. First pass: producer
+  (initiate) → consumer (erase Pass B) → render(delete), proven by PGlite AC-1 — genuinely
+  end-to-end, NOT a half-wire. I almost stopped there. Second pass: I asked "who ELSE should consume
+  this column?" and found access/portability are the missing consumers — reclassified from "CHECK B
+  clean" to an incomplete-fan-out logic gap (one upstream fact, 3 sibling consumers, only 1 wired).
+  The wire IS complete; the FAN-OUT is not. New sub-distinction worth keeping: HALF_WIRE = no
+  consumer; INCOMPLETE_FAN_OUT = some-but-not-all of the N consumers that need the fact.
+- **A meta-pattern in how gaps recur across agents:** DSR completeness is a per-VERB, per-STORE
+  property and the verbs drift every time a new PII store is added — FOLLOW-039 wired ClickHouse
+  into erase, FOLLOW-184 wired the CRM namespace into erase, but access/portability were last
+  meaningfully touched before `conversion_labels` even existed and silently fell behind. The
+  recurring shape: when a NEW store/identifier is added, the agent wires it into the verb the TICKET
+  names (erase) and the sibling verbs are out of the ticket's scope so they rot. A single shared
+  "DSR data inventory" consumed by all three verbs would structurally prevent it — flagged in §5d
+  for the PM. Watch for a SECOND instance of "fix one of a symmetric set" to promote the §6 lesson
+  candidate to a rule.
+- **Own blind-spot logged:** the live `erase/route.ts` carried FOLLOW-238/239 capability code merged
+  AFTER #233; I nearly attributed `crm_tenant_unverifiable` to FOLLOW-184. Always scope to
+  `git show <mergeCommit>`, never the working-tree file. (Same family as RETRO-038's stale-main
+  note.)

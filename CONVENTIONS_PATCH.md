@@ -714,5 +714,51 @@ grep -rniE "<topic keywords>" backlog/ docs/ --include='*.md' | grep -viE '\.nex
 
 ---
 
+## Rule R — A persisted intent-state mutation must be idempotent across the rehydrate boundary (gate it behind `!intentStateRehydrated` or apply only the delta)
+
+**Pattern:** A new intent-engine prior/signal mutates `currentIntentState` and is persisted to
+sessionStorage via the FOLLOW-176 wire (`persistIntentState`, reached through `onIntentUpdate`).
+Because the next listing page in the same tab REHYDRATES that persisted state, any such mutation
+that is NOT gated behind `!intentStateRehydrated` (or otherwise made idempotent) re-applies on top
+of the already-folded-in state on every cross-listing navigation — re-perturbing the resumed
+archetype and, for boosts, compounding without bound. The author "wires the signal" but does not
+account for the rehydrate boundary, so the signal silently double-counts across pages.
+
+**Evidence (≥2 retros):**
+
+- **RETRO-032 (FOLLOW-216 / PR #217)** — the FOLLOW-207 referrer + device-type priors ran
+  unconditionally on a rehydrated state (`index.ts` :383/:390 were ungated relative to the
+  archetype-hint gate at :350), re-nudging the resumed archetype and inflating `signal_count` +1 per
+  navigation.
+- **RETRO-037 (FOLLOW-190 / PR #225)** — the dwell-time boost (`applyDwellSignal`) is persisted via
+  `onIntentUpdate → persistIntentState` (`index.ts:464,515-516`) and re-accrued on the rehydrated,
+  already-boosted distribution on every cross-listing hop; no `!intentStateRehydrated` gate, no cap.
+
+**Rule:** When adding any intent-state mutation that flows into `persistIntentState` (any new prior,
+boost, or signal applied inside `init()` or its timers/callbacks), you MUST do ONE of:
+
+- gate it behind `!intentStateRehydrated` (symmetric to the archetype-hint / FOLLOW-207 gates), OR
+- make it idempotent under rehydration by persisting the accrued contribution in the IntentState
+  envelope and applying only the DELTA on resume, OR
+- explicitly decide and COMMENT that the mutation is intended to re-apply every navigation, with a
+  bounded per-session cap so it cannot compound without limit.
+
+The accompanying test MUST exercise the rehydrate→re-init path through the `_initForTest()` seam
+(Rule Q) and assert the resumed archetype/confidence is not perturbed/compounded — a pure-function
+helper test of the mutation does NOT satisfy this (the bug lives in the index.ts wiring, not the
+helper).
+
+**Verification:**
+
+```bash
+# Every state mutation reached by onIntentUpdate/persistIntentState inside init() must sit under a
+# !intentStateRehydrated gate OR carry an explicit "re-apply intended + capped" comment.
+grep -nE "currentIntentState = apply" packages/sdk/src/index.ts
+grep -n "intentStateRehydrated" packages/sdk/src/index.ts
+```
+
+---
+
+<!-- Rule R added 2026-06-08 — RETRO-037 §6 (RETRO-032 LG-1 + RETRO-037 LG-1, threshold met). -->
 <!-- Rule Q+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->
 <!-- Rule P added 2026-06-01 by direct CEO directive (provenance noted in-rule), not retro-promoted -->

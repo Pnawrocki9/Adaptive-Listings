@@ -1613,6 +1613,7 @@ SDK Producer Status legend: ✅ Active (SDK emituje, SIGNAL_LIKELIHOODS wired) |
 - `listing.bookmarked` — (from app.estalara.com CustomEvent `estalara:listing:favorited`) explicit save-to-favorites; strongest deterministic non-quiz intent signal; payload: listingType, priceRange, bedroomCount
 - `filter.applied` (enriched) — existing planned signal (FOLLOW-099) now with required payload: `{facet: string, value: string|number}`; facet-conditional likelihoods: `type=commercial` → commercial_investor; `bedrooms_min≥3` → family_buyer/upsizer; `sort=yield` → yield_hunter
 - `micro_poll.answered` — (new widget, FOLLOW-209) single yes/no micro-poll answer; applies one QUIZ_LIKELIHOODS axis update; trigger: 90s into session if quiz not completed
+- `dwell.time` — (timer, FOLLOW-190 / FOLLOW-227) per-listing dwell boost: leading archetype receives `likelihood = 1 + 0.08 × log₂(elapsed_ms / 30 000)` at 30 s / 90 s / 180 s thresholds; capped at `DWELL_MAX_SESSION_CONTRIBUTION = 3` ticks per tab-session (idempotent across cross-listing rehydration — `IntentState.dwell_ticks_applied` persisted to sessionStorage)
 
 ### C.2. Ingestion rate i strategia
 

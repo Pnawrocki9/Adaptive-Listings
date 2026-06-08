@@ -60,6 +60,7 @@ import {
   calculateBehavioralOnlyState,
   detectMismatch,
   initIntentState,
+  DWELL_MAX_SESSION_CONTRIBUTION,
 } from './core/intent.js';
 import { detectSiteSchema } from './auto-detect/pipeline.js';
 import { extractArchetypeHints } from './auto-detect/archetype-hints.js';
@@ -509,12 +510,32 @@ async function init(): Promise<IntentState | null> {
         dwellTimer = null;
       }
     }
+    /**
+     * Start (or restart) the dwell-time boost timer for the current listing page.
+     *
+     * Rehydrate strategy (Rule R / FOLLOW-227):
+     *   `IntentState.dwell_ticks_applied` is persisted to sessionStorage and carried
+     *   across the rehydrate boundary on every cross-listing navigation.  Each tick
+     *   below checks whether `(currentIntentState.dwell_ticks_applied ?? 0)` has
+     *   already reached `DWELL_MAX_SESSION_CONTRIBUTION` before calling
+     *   `applyDwellSignal` — so a rehydrated state that already received all three
+     *   threshold boosts on listing A will NOT receive them again on listing B.
+     *
+     *   The timer itself is always started when the Decision API returns a non-neutral
+     *   archetype (including on a rehydrated session), because the elapsed-time clock
+     *   resets per page.  What changes is whether each tick is allowed to apply a boost.
+     */
     function startDwellTimer(): void {
       stopDwellTimer();
       adaptedAt = Date.now();
       firedThresholds.clear();
       dwellTimer = setInterval(() => {
         if (currentIntentState.archetype === 'neutral') return;
+        // LG-2 (FOLLOW-227): enforce per-session cap before applying any boost.
+        // `dwell_ticks_applied` is persisted so it survives the rehydrate boundary.
+        if ((currentIntentState.dwell_ticks_applied ?? 0) >= DWELL_MAX_SESSION_CONTRIBUTION) {
+          return;
+        }
         const elapsed = Date.now() - adaptedAt;
         for (const threshold of DWELL_THRESHOLDS_MS) {
           if (
@@ -522,6 +543,11 @@ async function init(): Promise<IntentState | null> {
             Math.abs(elapsed - threshold) < DWELL_TICK_TOLERANCE_MS
           ) {
             firedThresholds.add(threshold);
+            // LG-2: re-check cap inside the loop — a single tick may hit several
+            // thresholds if the interval fires late.
+            if ((currentIntentState.dwell_ticks_applied ?? 0) >= DWELL_MAX_SESSION_CONTRIBUTION) {
+              break;
+            }
             currentIntentState = applyDwellSignal(currentIntentState, elapsed);
             onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
           }

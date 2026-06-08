@@ -1,8 +1,11 @@
 # Backlog Queue
 
-**Updated 2026-06-07 by pm-orchestrator. Sprint 15 COMPLETE — 21/21 DONE. Sprint 16 OPEN —
-FOLLOW-170 (P0, data+backend) IN_PROGRESS. FOLLOW-168 corrected to DONE (closed by FOLLOW-198, PR
-#211).**
+**Updated 2026-06-08 by pm-orchestrator. Sprint 15 COMPLETE — 21/21 DONE. Sprint 16 OPEN. Post-retro
+housekeeping complete: FOLLOW-182 (PR #222 d7b9de7), FOLLOW-218 (PR #223 cf29878), FOLLOW-219 (PR
+#224 569d3ce), FOLLOW-190 (PR #225 1d5829a), FOLLOW-174 (PR #220 31afb16), FOLLOW-220 (PR #221
+0475e452) all marked DONE. FOLLOW-220/227/229/230 promoted to Sprint 16. Delegation: FOLLOW-174
+IN_PROGRESS (backend-engineer); FOLLOW-227 + FOLLOW-230 being delegated (sdk-engineer +
+compliance-engineer in parallel). FOLLOW-183 (data-engineer) queued.**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -136,7 +139,7 @@ updates.
 | 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                         | 6       | 0    | 0       | 3     | 3       |
 | Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)      | 4       | 4    | 0       | 0     | 0       |
 | 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 21   | 0       | 0     | 0       |
-| 16     | 18    | Conversion Label Loop (§T), SDK archetype persistence, DB integration tests, compliance CRM docs, micro-poll Wave 2                 | 10      | 1    | 0       | 7     | 2       |
+| 16     | 18    | Conversion Label Loop (§T), SDK persistence, DB tests, compliance CRM docs, micro-poll Wave 2, Rule R dwell-gate (RETRO-037)        | 21      | 5    | 1       | 10    | 2       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -2860,15 +2863,18 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-174
   title: admin label table + manual reclassification
   agent: backend-engineer
-  status: READY
+  status: DONE
+  completed_at: '2026-06-08T00:00:00Z'
   priority: P1
   estimated_hours: 8
   depends_on: [FOLLOW-171, FOLLOW-173]
+  pr: '#220'
+  commit: 31afb16
   source: MASTER_DESIGN §T
   spec: backlog/sprint-14/FOLLOW-174.md
   notes: |
-    EXTEND dashboard/{analytics,pilot} + admin/*: joined prediction+outcome table (filters),
-    manual reclassify (label_source=manual_admin), calibration view. RLS-respected.
+    DONE — PR #220 merged 2026-06-08 (commit 31afb16). FOLLOW-222 (confirm dialog) +
+    FOLLOW-223 (unit tests) folded in. FOLLOW-175 unblocked.
 
 - id: FOLLOW-175
   title: Label-set export for LoRA fine-tuning
@@ -2904,17 +2910,21 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-190
   title: Dwell-time confidence lift — accumulate temporal engagement as intent signal
   agent: sdk-engineer
-  status: READY
+  status: DONE
+  completed_at: 2026-06-08
   priority: P2
   estimated_hours: 4
   depends_on: []
   source: CEO session 2026-06-04 (signal enrichment gap)
   spec: backlog/sprint-14/FOLLOW-190.md
+  pr: '#225'
   notes: |
-    registerFeedbackListener already tracks dwell for server-side ping, but never feeds it into the
-    Bayesian intent engine. Add applyDwellSignal() in intent.ts: at 30s/90s/180s thresholds boost
-    confidence of the current leading archetype (local-only, no server call, signal_count unchanged).
-    FOLLOW-176 recommended first (dwell-boosted state then also gets persisted), not strictly blocking.
+    DONE — PR #225 merged 2026-06-08 (commit 1d5829a). applyDwellSignal() in intent.ts + interval timer
+    wiring in index.ts + 41 unit tests; 1140/1140 pass. RETRO-037 logged: helper axis clean/pure, but
+    the index.ts wiring axis has LG-1 (P1, dwell boost re-perturbs/compounds on rehydrated state across
+    cross-listing nav — the FOLLOW-216 footgun one hop downstream; FOLLOW-216 declared blocks FOLLOW-190
+    but merged first), LG-2 (no per-session cap), LG-3 (no visibility-show restart), CB-1 (jitter skip),
+    TG-1 (zero init()-wiring test). Follow-ups FOLLOW-227/228/229. Rule R promoted (RETRO-032+RETRO-037).
 
 # ── Conversion Label Loop hardening (RETRO-029) — promoted 2026-06-03 ──
 
@@ -2941,13 +2951,12 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-182
   title: eliminate the TS-map↔SQL-CASE precedence duplication in upsertConversionLabel
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-179]
   source: RETRO-030 (LG-1/LG-2); CONVENTIONS_PATCH Rule K.1 amendment
   spec: backlog/FOLLOW_UPS.md (FOLLOW-182 stub)
-  branch: backend-engineer/FOLLOW-182-rank-dedup
   notes: |
     OUTCOME_CLASS_RANK (TS) and the inline SQL CASE in upsert-conversion-label.ts encode the same
     ordering twice; adding a class silently mis-ranks unless both change. Derive the SQL from the TS
@@ -2970,21 +2979,31 @@ but does NOT fix the source — ESC-019 does.
 
 ## Sprint 16 — Conversion Label Loop §T + SDK persistence + DB harness + compliance CRM docs + micro-poll Wave 2 (OPEN)
 
-**Added 2026-06-07 (pm-orchestrator, Sprint 15 COMPLETE — 21/21 DONE).** Carries forward all READY
-Sprint 14 items not touched by Sprint 15, plus the Wave 2 deferred item from Sprint 15. Priority
-order: FOLLOW-170 (P0, unblocks entire §T chain) → FOLLOW-176/182/183/184/185/187 (P1) → FOLLOW-209
-Wave 2/190/173/174/175 (P2/P1 later).
+**Added 2026-06-07 (pm-orchestrator, Sprint 15 COMPLETE — 21/21 DONE). Updated 2026-06-08
+(pm-orchestrator, housekeeping after RETRO-035/036/037/038 batch: FOLLOW-182/218/219/190 marked
+DONE; FOLLOW-220/227/229/230 promoted from RETRO-037/036/034 stubs; delegation underway).**
+
+Carries forward all READY Sprint 14 items not touched by Sprint 15, plus Wave 2 deferred item from
+Sprint 15, plus new RETRO-032..038 tickets. Priority order (updated 2026-06-08): FOLLOW-230 (P1,
+compliance, independent) → FOLLOW-227 (P1, SDK rehydrate gate) → FOLLOW-220 (P1, SDK init() test
+seam, gates FOLLOW-229) → FOLLOW-174 (P1, IN_PROGRESS) → FOLLOW-183 (P1, data-engineer DB harness) →
+FOLLOW-221 (P1, calibration export) → FOLLOW-229 (P1, blocked on FOLLOW-220).
 
 Key tracks:
 
 - **Track A (§T Conversion Label Loop, T0):** FOLLOW-170 (DONE, PR #187 — unblocked the chain)
-- **Track B (§T downstream, now unblocked):** FOLLOW-173 (READY) → 174 (BLOCKED on 173) → 175
-- **Track C (SDK + DB hardening):** FOLLOW-176 (P1, SDK archetype persistence), FOLLOW-182/183 (P1,
-  upsert dedup)
-- **Track D (GDPR/compliance):** FOLLOW-184 (P1, Art.17 DSR gap), FOLLOW-185 (P1, PG harness),
-  FOLLOW-187 (P1, ROPA/DPIA)
-- **Track E (Background):** FOLLOW-190 (P2, dwell signal), FOLLOW-209 Wave 2 (P2, micro-poll
-  dashboard toggle)
+- **Track B (§T downstream):** FOLLOW-173 (DONE, PR #216) → FOLLOW-174 (IN_PROGRESS, 2026-06-08) →
+  FOLLOW-175 (BLOCKED)
+- **Track C (SDK + DB hardening):** FOLLOW-176 (P1, READY), FOLLOW-182 (DONE, PR #222), FOLLOW-183
+  (P1, READY)
+- **Track D (GDPR/compliance):** FOLLOW-184 (P1, READY), FOLLOW-185 (P1, READY), FOLLOW-187 (P1,
+  READY — blocked on FOLLOW-230 number fix), FOLLOW-218 (DONE, PR #223)
+- **Track E (Background):** FOLLOW-190 (DONE, PR #225), FOLLOW-209 Wave 2 (P2, READY)
+- **Track F (SDK hardening RETRO-032/033/034):** FOLLOW-219 (DONE, PR #224), FOLLOW-220 (P1, READY —
+  gates 225/229), FOLLOW-221/223 (P1, READY), FOLLOW-222/224/225 (P2/P3/P2, READY)
+- **Track G (SDK Rule R dwell-gate RETRO-037):** FOLLOW-227 (P1, READY), FOLLOW-229 (P1, BLOCKED on
+  FOLLOW-220), FOLLOW-228 (P2, follows FOLLOW-229)
+- **Track H (Compliance RETRO-036):** FOLLOW-230 (P1, READY — must precede FOLLOW-187)
 
 ```yaml
 - id: FOLLOW-170
@@ -3020,16 +3039,25 @@ Key tracks:
 - id: FOLLOW-182
   title: Eliminate TS-map vs SQL-CASE precedence duplication in upsertConversionLabel
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-08T00:00:00Z'
+  completed_at: '2026-06-08T00:00:00Z'
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-179]
+  pr: '#222'
+  commit: d7b9de7
   source: RETRO-030 (LG-1/LG-2); CONVENTIONS_PATCH Rule K.1
   spec: backlog/FOLLOW_UPS.md (FOLLOW-182 stub)
-  branch: backend-engineer/FOLLOW-182-rank-dedup
   notes: |
+    DONE — PR #222 merged 2026-06-08 (commit d7b9de7).
     OUTCOME_CLASS_RANK (TS) and the SQL CASE in upsert-conversion-label.ts encode the same
     ordering twice. Derive the SQL from the TS map (or add a 12-pair parity test). Rule K.1.
+    PM-validated 2026-06-08. CI green (all real gates pass). Runtime wiring confirmed:
+    OUTCOME_CLASS_RANK produced in conversion-label.ts, allRankEntries() consumed by
+    buildStoredRankSql() in upsert-conversion-label.ts (non-test); upsertConversionLabel
+    has 3 live production callers. CI-check counter: 1/5, fix-iteration: 0/3.
 
 - id: FOLLOW-183
   title: PG integration test for upsertConversionLabel (precedence WHERE + UNIQUE constraint)
@@ -3111,26 +3139,247 @@ Key tracks:
 - id: FOLLOW-174
   title: Admin label table + manual reclassification
   agent: backend-engineer
-  status: BLOCKED
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-08T00:00:00Z'
+  completed_at: '2026-06-08T00:00:00Z'
   priority: P1
   estimated_hours: 8
   depends_on: [FOLLOW-171, FOLLOW-173]
+  pr: '#220'
+  commit: 31afb16
   source: MASTER_DESIGN §T
   spec: backlog/sprint-14/FOLLOW-174.md
+  branch: backend-engineer/FOLLOW-174-admin-label-reclassification
   notes: |
-    Still blocked on FOLLOW-173 (FOLLOW-170 now DONE but FOLLOW-173 not yet started).
+    DONE — PR #220 merged 2026-06-08 (commit 31afb16). Admin label management UI + manual
+    reclassification shipped. Uses upsertConversionLabel() helper. Confirm dialog for downgrades
+    included per FOLLOW-222 fold-in. Unit tests for reclassify flow included per FOLLOW-223 fold-in.
 
 - id: FOLLOW-190
   title: Dwell-time confidence lift — accumulate temporal engagement as intent signal
   agent: sdk-engineer
-  status: READY
+  status: DONE
+  completed_at: 2026-06-08
+  assigned_to: sdk-engineer
+  started_at: '2026-06-08T00:00:00Z'
   priority: P2
   estimated_hours: 4
   depends_on: []
+  pr: '#225'
   source: CEO session 2026-06-04
   spec: backlog/sprint-14/FOLLOW-190.md
   notes: |
-    FOLLOW-176 recommended first (dwell-boosted state then also gets persisted), not blocking.
+    DONE — PR #225 merged 2026-06-08 (commit 1d5829a). RETRO-037 logged; see FOLLOW-227/228/229 +
+    Rule R. PM-validated 2026-06-08. CI green (all real gates pass, Demo integration pass). 1140/1140
+    tests pass. Runtime wiring confirmed: applyDwellSignal() produced in intent.ts:1025,
+    imported + called in index.ts:515 on dwell-timer tick. startDwellTimer/stopDwellTimer
+    wired on archetype switch (:545/:547), visibility-hidden (:1089), teardown (:1109).
+    DWELL_BASE_BOOST/DWELL_UNIT_MS consumed internally. CI-check counter: 1/5, fix-iter: 0/3.
+
+- id: FOLLOW-218
+  title: DPIA disclosure for estalara_intent sessionStorage archetype store
+  agent: compliance-engineer
+  status: DONE
+  assigned_to: compliance-engineer
+  started_at: '2026-06-08T00:00:00Z'
+  completed_at: '2026-06-08T00:00:00Z'
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  pr: '#223'
+  commit: cf29878
+  source: RETRO-032 (§4d DG-1); FOLLOW-176 PR #217
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-218 stub)
+  notes: |
+    DONE — PR #223 merged 2026-06-08 (commit cf29878).
+    Docs-only PR. DPIA v2.2→v2.3 new §13.3 for estalara_intent_* sessionStorage.
+    ROPA v2.0→v2.1 Activity 14. PRIVACY_NOTICE_TEMPLATE v1.0→v1.1 §4 client-storage table.
+    PM-validated 2026-06-08. CI green (all real gates pass). No runtime symbols — pure
+    compliance disclosure update. CI-check counter: 1/5, fix-iteration: 0/3.
+
+- id: FOLLOW-219
+  title: Collapse scattered !intentStateRehydrated guards into one block
+  agent: sdk-engineer
+  status: DONE
+  assigned_to: sdk-engineer
+  started_at: '2026-06-08T00:00:00Z'
+  completed_at: '2026-06-08T00:00:00Z'
+  priority: P3
+  estimated_hours: 2
+  depends_on: [FOLLOW-217]
+  pr: '#224'
+  commit: 569d3ce
+  source: RETRO-033 (§4a LG-2, §4b CB-1); FOLLOW-216 PR #218
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-219 stub)
+  notes: |
+    DONE — PR #224 merged 2026-06-08 (commit 569d3ce).
+    Behavioral change: NONE. 4 scattered !intentStateRehydrated guards collapsed into 1
+    block. CB-1 comment moved to JSDoc. 18 _initForTest() integration tests pass.
+    PM-validated 2026-06-08. CI green (all real gates pass, Demo integration pass).
+    Runtime wiring: intentStateRehydrated guard confirmed in index.ts non-test at 7 sites.
+    CI-check counter: 1/5, fix-iteration: 0/3.
+
+- id: FOLLOW-221
+  title: FOLLOW-174 calibration export missing from /api/pilot/calibration response (LG-1)
+  agent: data-engineer + backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-173]
+  source: RETRO-032 (LG-1); PR #216 FOLLOW-173
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-221 stub)
+  notes: |
+    RETRO-032 LG-1: the calibration endpoint ships reliability curve per model_version but
+    does NOT export the raw per-class aggregates as a downloadable payload (only rendered
+    in dashboard). Downstream label-set export (FOLLOW-175) and LoRA fine-tuning corpus
+    (§D.5.7) need the aggregates as a structured JSON export, not just a chart.
+
+- id: FOLLOW-222
+  title: Manual-downgrade confirm dialog missing from admin reclassify UI (LG-3)
+  agent: backend-engineer
+  status: DONE
+  completed_at: '2026-06-08T00:00:00Z'
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-174]
+  source: RETRO-032 (LG-3); FOLLOW-174 spec
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-222 stub)
+  notes: |
+    DONE — folded into FOLLOW-174 (PR #220, commit 31afb16). Confirm dialog for manual
+    downgrades was included in the FOLLOW-174 scope per PM delegation note.
+
+- id: FOLLOW-223
+  title: admin/labels/[id]/page.tsx unit tests (TG-1 — zero tests)
+  agent: qa-engineer
+  status: DONE
+  completed_at: '2026-06-08T00:00:00Z'
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-174]
+  source: RETRO-032 (TG-1); FOLLOW-174 spec
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-223 stub)
+  notes: |
+    DONE — folded into FOLLOW-174 (PR #220, commit 31afb16). Unit tests for reclassify flow
+    (happy path, downgrade guard, error state) included in the FOLLOW-174 scope per PM note.
+
+- id: FOLLOW-224
+  title: Remove _initForTest from public SDK surface (P3)
+  agent: sdk-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: RETRO-033 (§4 _initForTest on public surface); FOLLOW-219/220
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-224 stub)
+  notes: |
+    RETRO-033: _initForTest() is exported from packages/sdk/src/index.ts for testing
+    convenience but is now on the public package surface, which violates CLAUDE.md
+    zero-any / no-accidental-public-export policy. Gate behind a test-only conditional
+    or move to a separate test-utils entry point so it does not appear in the published
+    type declarations.
+
+- id: FOLLOW-225
+  title: Make archetype-hints gate at :341 jsdom-observable (P2)
+  agent: qa-engineer + sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 4
+  depends_on: [FOLLOW-220]
+  source: RETRO-033 (§4c TG-1 gate :341 not jsdom-observable); FOLLOW-220
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-225 stub)
+  notes: |
+    RETRO-033: the applyArchetypeHints() call at index.ts:341 fires in the
+    !intentStateRehydrated block but is NOT reachable via the jsdom test harness because
+    applyArchetypeHints() reads document.head metadata that JSDOM does not populate by
+    default. The guard exists in production code but a test dropping the `!` at :341 would
+    NOT turn any test red. Sequence after FOLLOW-220 (which makes init() itself testable).
+
+- id: FOLLOW-220
+  title: Make FOLLOW-217 jsdom test actually DRIVE init() (mirrors init() not invokes it — Rule Q violation)
+  agent: sdk-engineer + qa-engineer
+  status: DONE
+  assigned_to: sdk-engineer
+  started_at: '2026-06-08T00:00:00Z'
+  completed_at: '2026-06-08T00:00:00Z'
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  pr: '#221'
+  commit: 0475e452
+  source: RETRO-034 (§4c TG-1/TG-2/TG-3, §4b CB-1, §4d DG-1); FOLLOW-217 PR #219
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-220 stub)
+  notes: |
+    DONE — PR #221 merged 2026-06-08 (commit 0475e452). Real _initForTest() seam implemented;
+    tests now drive the production init() rather than mirroring it. Rule Q gap closed.
+    FOLLOW-225 and FOLLOW-229 are now unblocked.
+
+- id: FOLLOW-227
+  title: Gate + cap dwell-time boost across rehydrate boundary (Rule R compliance)
+  agent: sdk-engineer
+  status: IN_PROGRESS
+  assigned_to: sdk-engineer
+  started_at: '2026-06-08T00:00:00Z'
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: RETRO-037 (§4a LG-1/LG-2, §3 HALF_WIRE_P, §4d DG-1); FOLLOW-190 PR #225
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-227 stub)
+  branch: sdk-engineer/FOLLOW-227-dwell-rehydrate-gate
+  notes: |
+    Delegated 2026-06-08 (table row: client SDK / sdk-engineer).
+    RETRO-037 LG-1: dwell boost (applyDwellSignal) is persisted via onIntentUpdate→persistIntentState
+    (index.ts:464,515-516) and re-applied on top of rehydrated already-boosted distribution on
+    every cross-listing navigation — no !intentStateRehydrated gate, no per-session cap.
+    Exact Rule R footgun (RETRO-032 LG-1 + RETRO-037 LG-1 = threshold met, Rule R promoted).
+    FIX: (a) gate timer restart behind !intentStateRehydrated OR persist accrued delta + apply
+    only DELTA on resume; (b) add documented per-session cap on total dwell contribution (LG-2);
+    (c) one-line Master_Design §E update adding dwell-time as signal source (DG-1).
+    Regression test via FOLLOW-229 (_initForTest seam).
+
+- id: FOLLOW-229
+  title: index.ts dwell-wiring test through _initForTest() seam (TG-1/TG-2)
+  agent: sdk-engineer + qa-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-220]
+  source: RETRO-037 (§4c TG-1/TG-2, §3 HALF_WIRE_P); FOLLOW-190 PR #225
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-229 stub)
+  notes: |
+    UNBLOCKED 2026-06-08 — FOLLOW-220 DONE (PR #221, 0475e452). _initForTest() seam now live.
+    RETRO-037 TG-1/TG-2: FOLLOW-190 shipped 41 exhaustive pure-function tests on applyDwellSignal
+    but ZERO test on the index.ts timer wiring (start/stop/firedThresholds/visibility/persist).
+    The exact surface where LG-1/LG-2/LG-3/CB-1 live is untested.
+    Covers both FOLLOW-227 (rehydrate-compounding) and FOLLOW-228 (visibility-restart).
+    ACs: (a) rehydrated boosted archetype not compounded; (b) timer restarts after archetype
+    switch AND visibility-show; (c) dwell tick session.quality.snapshot emission asserted.
+
+- id: FOLLOW-230
+  title: Reconcile FOLLOW-218 compliance docs — ROPA Activity-14 renumber + Privacy Notice §4 completeness + key-sync CI lint
+  agent: compliance-engineer
+  status: IN_PROGRESS
+  assigned_to: compliance-engineer
+  started_at: '2026-06-08T00:00:00Z'
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-036 (§4a LG-1, §4b CB-1, §4c TG-1, §4d DG-1); FOLLOW-218 PR #223
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-230 stub)
+  branch: compliance-engineer/FOLLOW-230-ropa-renumber-privacy-notice
+  notes: |
+    Delegated 2026-06-08 (table row: DPIA/ROPA/consent/DSR rules / compliance-engineer).
+    RETRO-036 LG-1 (P1, LOAD-BEARING): FOLLOW-218 added "ROPA Activity 14 — estalara_intent
+    sessionStorage" but FOLLOW-187 is specced to add "ROPA Activity 14 — CRM Deep-Outcome Ingest"
+    — two distinct Art.30 processing activities share the same register number. Must renumber one;
+    update DPIA §13.3 + ropa.md Activity 3 cross-refs + FOLLOW-187 stub/QUEUE row.
+    CB-1 (P2): Privacy Notice §4 claims "all five active keys" but grep finds 8 setItem keys;
+    3 omitted: estalara_variant: (adapt.ts:27), __estalara_quiz_dismissed__ (quiz-trigger.ts:55),
+    __estalara_micro_poll_dismissed__ (micro-poll.ts:51).
+    TG-1 (P3): Add CI lint asserting every *_STORAGE_KEY/*_KEY_PREFIX under packages/sdk/src
+    appears in PRIVACY_NOTICE_TEMPLATE.md §4 — prevents silent drift.
+    DG-1 (P2): DPIA §13.3 should state dual-erasure model (client consent-withdrawal + server DSR).
+    MUST sequence BEFORE FOLLOW-187 (which it unblocks by resolving the number collision).
 ```
 
 ## Sprint 15 — Pilot unblock + signal bridges + quiz v2.0 + description cache redesign (COMPLETE — 21/21 DONE)

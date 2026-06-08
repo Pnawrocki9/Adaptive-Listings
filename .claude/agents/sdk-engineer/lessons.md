@@ -156,3 +156,55 @@ that is semantically part of a later initialization block, add a comment noting 
 capture-by-reference dependency and why it is safe. This prevents future refactors from accidentally
 moving the `let` declaration below the closure declaration and introducing a temporal dead zone
 issue.
+
+---
+
+**Date:** 2026-06-08 / **Ticket:** FOLLOW-190
+
+**What I built:** `applyDwellSignal()` pure function in `intent.ts` (Bayesian boost for sustained
+listing engagement); interval timer wiring in `index.ts` at 30s/90s/180s thresholds; 41 unit tests.
+
+**What was uncertain:**
+
+1. DWELL_UNIT_MS math: at exactly 30s elapsed, `log2(1) = 0` so boost = 1 (no-op). The first real
+   boost fires at elapsed > 30s. Tests had to use elapsed > DWELL_UNIT_MS to observe a confidence
+   increase.
+2. applyQuizLeaf caps confidence at 1.0 via QUIZ_CONFIDENCE_BONUS — test fixtures needed
+   `quiz_answered: false` override or manual probability distributions to observe dwell boost on the
+   confidence field.
+3. The Claude Code Edit tool triggers an auto-formatter (ESLint `--fix` + prettier) BETWEEN tool
+   calls, not within them. This caused cascading import/constant removal: adding an import →
+   formatter runs → marks it "unused" (usage not yet added) → strips it. Solution: use a single
+   atomic Bash call (Python script + all pnpm commands + git commit) to bypass the inter-call race.
+
+**A guardrail I'd add:** When a new pure function is exported from `intent.ts`, add a note to the
+ticket spec that `applyQuizLeaf`-based test fixtures will have confidence=1.0 (capped) — callers
+testing confidence increases must use `quiz_answered: false` or manual probability distributions.
+
+---
+
+**Date:** 2026-06-08 / **Ticket:** FOLLOW-219
+
+**What I built:** Collapsed four scattered `if (!intentStateRehydrated)` guards in `index.ts` into a
+single consolidated block. Also moved a detached JSDoc bump-comment on `INTENT_STATE_SCHEMA_VERSION`
+into the JSDoc block (CB-1). Updated follow-217.test.ts comments to remove stale line-number
+references.
+
+**What was uncertain:**
+
+1. Branch hygiene in a shared repo with multiple in-flight agent branches: the FOLLOW-190 and
+   FOLLOW-218 branches had unstaged working-tree modifications to `index.ts` that followed my branch
+   checkout (uncommitted working-tree changes are not branch-specific). Every time I applied changes
+   and staged, an in-flight background formatter (lefthook ESLint --fix via a prior `git add`) would
+   re-write the file with FOLLOW-190 imports. Solved by identifying the contamination source (stash
+   pop from prior session + background vitest job), waiting for it to stop, then using a single
+   atomic Python+git-add compound command to apply-and-stage without any inter-tool gap.
+2. The working tree is shared across branches for uncommitted changes — `git checkout -b` or
+   `git checkout <branch>` does NOT reset unstaged modifications in the working tree. Only
+   `git checkout HEAD -- <file>` or `git reset --hard` resets specific files. Always verify the
+   working tree is clean before applying targeted edits.
+
+**A guardrail I'd add:** Before any structural refactor session, explicitly run
+`git status --short packages/sdk/src/` and verify 0 modified files. If any file is dirty (from a
+prior agent session), run `git checkout HEAD -- <files>` BEFORE making any edits. A dirty working
+tree is the most common source of "phantom import" contamination between sessions.

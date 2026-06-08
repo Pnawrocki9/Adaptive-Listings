@@ -10004,3 +10004,1041 @@ prior §T half-wires (FOLLOW-177 readers, FOLLOW-178 SDK) are unchanged and not 
 - **RETRO-026 / RETRO-029 / RETRO-030 TG-1** — standing control-plane/`packages/db` "mock-only, no
   live-DB" coverage family; TG-1 here is the instance that let LG-1 ship. FOLLOW-185 is the PG harness
   that would close the family (PM may merge with FOLLOW-181/183).
+
+## RETRO-035 — FOLLOW-219 (Consolidate 4 scattered `!intentStateRehydrated` cold-start guards into one block) — 2026-06-08
+
+> Numbering note: this entry is RETRO-035. The written log ends at RETRO-031, but RETRO-032/033/034
+> are referenced throughout QUEUE.md / FOLLOW_UPS.md / STATUS.md (they generated FOLLOW-216..225 and
+> the Rule Q amendment) and their bodies were never appended to this file. RETRO-035 is the next free
+> number that does not collide with those referenced-but-unwritten entries. The missing-body gap is
+> surfaced as a process finding in §4d (DG-1) — it is a hole in my own learning loop, not a code gap.
+
+### 1. Summary of change
+
+- **PR:** #224 (merged 2026-06-08 11:07 UTC, commit `569d3ce`)
+- **Files changed:** 3 (+59 / −52) — `packages/sdk/src/index.ts` (+37/−37), `core/session.ts`
+  (+8/−2), `__tests__/follow-217.test.ts` (+14/−13)
+- **Modules touched:** [SDK]
+- **Key contracts changed:** NONE. Pure structural refactor. No new export, event, env-var, column,
+  topic, or SDK signal. `_initForTest()` (the test seam) was already public from FOLLOW-220 (#221);
+  this PR did not add it. Breaking: no.
+- **Verification method note:** the local checkout's `main` (`9e08262`, FOLLOW-190) had diverged and
+  did NOT contain `569d3ce` (`git merge-base --is-ancestor` → NO). All analysis below was performed
+  against `origin/main` (`1d5829a`), where the true merge order is `…#220 → #222 → #223 → #224
+  (569d3ce, this) → #225 (FOLLOW-190)`. The "four guards still present" reading from local HEAD was a
+  stale-tree artifact and is NOT a finding — see §3.
+
+### 2. Verification done in PR
+
+- Test files changed: `packages/sdk/src/__tests__/follow-217.test.ts` (comment-only; 6 line-number
+  references rewritten to semantic gate names). Assertions added: 0 (housekeeping only; the suite
+  remains 18 tests). Coverage delta: 0 (no new code path; the consolidated block is behaviorally
+  identical to the four scattered guards). · CI checks: not independently re-verified by this retro;
+  PR self-check claims lint/typecheck/build/prettier green and 18/18 `_initForTest()` pass.
+- The suite is a REAL driver, not a mirror: `follow-217.test.ts:56` `import { _initForTest }` and
+  invokes it (`:203`, `:237`, …) against the production `init()` body (`index.ts:1171`). A `!`-drop on
+  the consolidated gate turns specific tests red. This is the FOLLOW-220 closure (Rule Q amendment,
+  2026-06-08) and it is what gives the FOLLOW-219 refactor a genuine regression net.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- CHECK A (dead code): no new file or export. `index.ts`/`session.ts` symbols all retain non-test
+  importers; the only public surface touched conceptually (`_initForTest`) pre-existed and is imported
+  by `follow-217.test.ts` (test-only by design, suppressed as a deliberate test seam per the Rule Q
+  amendment). No DEAD_CODE.
+- CHECK B (half-wire): no new event/env-var/column/topic/SDK-signal. The `persistIntentState` call was
+  MOVED (from the old standalone `:594` guard into the consolidated `!intentStateRehydrated` block at
+  `index.ts:401` on origin/main), not added — its consumer (`rehydrateIntentState` at `index.ts:337`)
+  is unchanged. Producer→consumer intact. No HALF_WIRE.
+- AC1 verified on origin/main: `git show origin/main:packages/sdk/src/index.ts | grep -n
+  'intentStateRehydrated\|persistIntentState'` → ONE prior gate `if (!intentStateRehydrated)` at `:369`
+  (containing archetype-hints + referrer + device + the LG-2 persist at `:401`); the only other
+  `persistIntentState` (`:474`) is the `onIntentUpdate` behavioral path — legitimately separate, not a
+  cold-start guard. So "4 guards → 1" is true on the merged line.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+N/A. The consolidation is behavior-preserving and verified end-to-end (see §6a closure check).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+N/A.
+
+#### 4c. Test coverage gaps
+
+- **(observation, not a new gap)** The follow-217 suite asserts `signal_count` unchanged on every
+  rehydrated case, which catches a NEW cold-start prior added OUTSIDE the consolidated block *only if
+  that prior touches `signal_count` or the archetype/confidence on a rehydrated session*. A cold-start
+  prior that mutates state in some OTHER dimension (e.g. a new `probabilities` key that does not move
+  `signal_count`) and is mistakenly placed outside the block would NOT necessarily turn a test red.
+  The PR comment ("a prior added outside without its own guard is caught by the follow-217 tests")
+  slightly over-claims completeness. This is the residual structural risk the refactor reduced but did
+  not eliminate — recorded as a watch-item in §6, below the rule threshold; no follow-up filed (the
+  consolidation + comment already mitigate, and FOLLOW-190 — the first real test of the seam — placed
+  its signal correctly, see §5).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (process / learning-loop):** RETRO-032, RETRO-033, and RETRO-034 are referenced as `source_retro`
+  across `FOLLOW_UPS.md` (FOLLOW-216/217/219/220/221..225), `QUEUE.md`, and `STATUS.md:70`, but their
+  full bodies were never appended to `backlog/RETROSPECTIVES.md` (this file jumps RETRO-031 → RETRO-035).
+  Effect on THIS retro: I could not read the original RETRO-033 §4a LG-2 / §4b CB-1 text to confirm
+  closure against the analyst's own words — I had to reconstruct the findings from the FOLLOW-216/219
+  stubs and trace them against code instead (which I did; §6a). Effect on the loop generally: the
+  "scattered/partial-skip guard footgun" pattern (RETRO-032 §6 / RETRO-033 §6, per the FOLLOW-219 stub)
+  and the Rule Q recurrence count ("6th confirming instance", per FOLLOW-220) live ONLY in stub prose,
+  so a future retro grepping RETROSPECTIVES.md for prior occurrences will under-count them and may fail
+  to promote a rule that has actually met threshold. FOLLOW-227 files the reconstruction/backfill as a
+  documentation task. (file: `backlog/RETROSPECTIVES.md` ends at line ~10004; refs at
+  `FOLLOW_UPS.md:5528,5621,5657`, `QUEUE.md:3185,3247,3263`, `STATUS.md:70`)
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-190 (PR #225, merged AFTER this on origin/main):** the dwell-time confidence lift is the
+  FIRST new intent signal added to `init()` after the consolidation. Verified it does NOT re-open the
+  footgun: `applyDwellSignal` is invoked from `startDwellTimer()` inside `refreshDirectives()`
+  (origin/main `index.ts` ~`:527`), which only starts when the Decision API returns a non-`neutral`
+  archetype — it is NOT a cold-start init-time prior and correctly sits OUTSIDE the
+  `!intentStateRehydrated` block. The consolidated-block comment ("add new cold-start priors INSIDE
+  this block") correctly did not apply, and FOLLOW-190's author respected the boundary. Clean.
+- **FOLLOW-220 (PR #221):** its `_initForTest()` seam is the regression net this refactor leans on;
+  the dependency `depends_on: [FOLLOW-217]` in the stub was effectively a dependency on FOLLOW-220's
+  real-driver fix, which landed first (#221 before #224). Sequencing held.
+
+#### 5b. Future sprint tickets affected
+
+- **QUEUE FOLLOW (RETRO-033 §4c gate `:341` not jsdom-observable, the `applyArchetypeHints` no-op-in-jsdom
+  item, QUEUE.md:3263):** still OPEN and UNAFFECTED — the archetype-hint call still lives inside the
+  (now consolidated) block and still does not fire under jsdom (no real DOM schema), so that coverage
+  hole is unchanged by this refactor. Recorded so it is not assumed closed.
+
+#### 5c. Contracts changed others rely on
+
+- N/A. No public contract changed. `_initForTest()` remains the one test-only export; its signature is
+  unchanged.
+
+#### 5d. Architectural assumptions affected
+
+- **Strengthened, not changed:** "all init-time cold-start priors are gated by a single
+  `!intentStateRehydrated` check" is now structurally true (one block) rather than convention
+  (four hand-copied guards). The invariant a future SDK author must preserve is now: *cold-start
+  priors go inside the block; post-adaptation/behavioral signals (dwell, quiz, behavioral) go outside
+  it and persist via `onIntentUpdate`.* FOLLOW-190 is the proof that the boundary is legible.
+
+### 6. New lesson candidates
+
+- **Pattern — "a fix that repairs a symptom by hand-copying a guard to N sites leaves a structural
+  footgun: the (N+1)th site silently re-opens the original bug; the durable fix is to collapse the
+  guard to ONE site (one block or one gated helper) so it cannot be partially applied."** Seen in:
+  RETRO-032 §6 / RETRO-033 §6 (per the FOLLOW-219 stub — the FOLLOW-207-vs-FOLLOW-176 four-guard seam
+  that this PR closed) + **RETRO-035 (this, the closure)**. **Promote-threshold 2. Current WRITTEN
+  count: 1** — only this retro records it in RETROSPECTIVES.md; RETRO-032/033 bodies are missing (§4d
+  DG-1), so the prior occurrences are not citable from the log. **NOT promoted.** If FOLLOW-227
+  backfills RETRO-032/033 and the pattern is present there in writing, the next retro that touches a
+  multi-site guard should re-evaluate promotion (it would then be a written ≥2). Watch-item only.
+- **Pattern (meta, my own blind spot) — "a retro's generated artifacts (FOLLOW stubs, rule
+  amendments, QUEUE source-refs) can ship while the retro BODY never lands in RETROSPECTIVES.md,
+  silently breaking the next retro's prior-occurrence grep and rule-promotion counting."** Seen in:
+  RETRO-035 (this — RETRO-032/033/034 bodies absent). Current count: 1. NOT promoted. Recorded so the
+  skill-upgrade run treats "verify my own prior entry actually landed" as a step-0 check.
+
+### 7. Follow-ups
+
+- **FOLLOW-227:** Backfill the missing RETRO-032, RETRO-033, and RETRO-034 bodies into
+  `backlog/RETROSPECTIVES.md` (they generated FOLLOW-216/217/219/220/221..225 and the Rule Q amendment
+  but their entries are absent; the log jumps 031→035). Reconstruct from the FOLLOW stubs + the merged
+  PRs #217/#218/#219/#224 so the learning loop's prior-occurrence grep and rule-promotion counting are
+  sound — in particular the "scattered-guard footgun" (§6, RETRO-032/033 §6) and the Rule Q "6th
+  confirming instance" (FOLLOW-220) become citable. (retrospective-analyst, 3h, **P2**) [DG-1; learning-loop integrity]
+
+#### Cascade actions for the PM (not new follow-ups)
+
+- FOLLOW-219's QUEUE entry (`QUEUE.md:3175`) is `status: READY_FOR_REVIEW`, but PR #224 is MERGED on
+  origin/main (commit `569d3ce`). **This retro is read-only on QUEUE.md (guardrail); the PM should
+  flip FOLLOW-219 to DONE / `completed_at: 2026-06-08` and update the Track-F line at `QUEUE.md:2988`.**
+  See the closing note for why I did not write QUEUE.md myself despite the task asking for step 8.
+
+### 8. Cross-references
+
+- **RETRO-033 (unwritten) — DIRECT SOURCE.** FOLLOW-219 closes its §4a LG-2 (persist cold-start state
+  before first `refreshDirectives()`) and §4b CB-1 (schema-version bump comment into JSDoc). Both
+  verified end-to-end in §6a despite the source body being absent from the log (§4d DG-1).
+- **RETRO-032 (unwritten) — GRANDPARENT.** Originated the FOLLOW-207-vs-FOLLOW-176 rehydrate seam
+  (LG-1) whose structural cause this PR removed.
+- **RETRO-034 (unwritten) — SIBLING.** Source of FOLLOW-220 (`_initForTest` real-driver seam), the
+  regression net this refactor depends on. The Rule Q amendment (2026-06-08, CONVENTIONS_PATCH.md:717
+  region) is the codified outcome of that retro and is what makes the follow-217 suite a real driver
+  rather than a mirror.
+- **CONVENTIONS_PATCH Rule Q (amendment) — APPLIED, not promoted here.** The follow-217 suite drives
+  the real `init()` via `_initForTest()` (Rule Q compliant); this PR did not change that posture.
+- **CONVENTIONS_PATCH Rule I (wired-or-dead) — checked, clean.** No new export; `_initForTest` is a
+  sanctioned test seam with a non-test-purpose entrypoint (`init()` auto-invoke at bundle load).
+- **CONVENTIONS_PATCH Rule J (mirror-code sync) — checked, N/A.** The refactor REMOVED a mirror-risk
+  (four duplicated guards), which is the inverse of a Rule J violation.
+
+#### 6a. FOLLOW-closure check (Step 7 — traced end-to-end, not one hop)
+
+- **LG-2 (RETRO-033 §4a) — CLOSED, full chain.** Producer: `persistIntentState(currentSession.sessionId,
+  currentIntentState)` at `origin/main index.ts:401`, INSIDE the cold-start block, AFTER all init-time
+  priors and BEFORE the first `refreshDirectives()`. Consumer: `rehydrateIntentState(currentSession.sessionId)`
+  at `index.ts:337` on the next listing nav → `isValidIntentState` → `intentStateRehydrated=true`.
+  Render: the rehydrated state skips the cold-start block and flows to `refreshDirectives()`→`applyDirectives()`
+  so the prior archetype survives to the DOM adapt. Producer→consumer→render all present. NOT moved one
+  hop downstream.
+- **CB-1 (RETRO-033 §4b) — CLOSED.** `origin/main core/session.ts:287-294`: the bump instruction is now
+  a JSDoc line on `INTENT_STATE_SCHEMA_VERSION` ("BUMP THIS whenever `IntentState.probabilities` keys or
+  types change … The version check lives in the `envelope.version !== INTENT_STATE_SCHEMA_VERSION` guard
+  inside `rehydrateIntentState()`"). It is hover-discoverable and references the actual enforcement site
+  — not an orphan comment. The named guard exists in `rehydrateIntentState()`. Closed end-to-end.
+- **AC1 (single guard) — CLOSED.** Verified via grep on origin/main (§3): one prior `if
+  (!intentStateRehydrated)` block; the second `persistIntentState` is the behavioral `onIntentUpdate`
+  path, not a duplicate cold-start guard.
+
+#### 6b. Multi-axis reconciliation (Step 8)
+
+- Analyzed BOTH session axes of the gate: the **cold-start axis** (rehydrated=false → all four priors +
+  persist apply once) and the **rehydrated axis** (rehydrated=true → entire block skipped, prior
+  archetype preserved). The follow-217 suite exercises both (cold-start `signal_count` increments;
+  rehydrated `signal_count`/archetype/confidence unchanged). No axis-asymmetry was introduced by the
+  consolidation.
+- **Contradiction with a prior "clean" verdict?** None to reconcile — there is no PRIOR WRITTEN retro
+  that declared this gate clean (RETRO-032/033 are unwritten). The only correction made here is to the
+  STALE-LOCAL-TREE artifact (local HEAD lacked #224), which I reconciled against origin/main rather
+  than reporting as a finding (§1).
+
+## RETRO-036 — FOLLOW-218 (DPIA §13.3 + ROPA Activity 14 + Privacy Notice §4 client-storage table for `estalara_intent_*` sessionStorage) — 2026-06-08
+
+> **Numbering note (read first).** While this analysis was in flight, the log was concurrently
+> appended by other retro runs — there are now TWO `RETRO-035` headers (FOLLOW-190 and FOLLOW-219)
+> and the tail shifted between reads. To avoid a third collision I number this entry **RETRO-036**.
+> **PM/skill-upgrade action:** the duplicate `RETRO-035` headers must be disambiguated (one →
+> RETRO-034 or a fresh number). RETRO-032/033/034 bodies are STILL absent (log jumps 031→035×2→036);
+> RETRO-035 (FOLLOW-219) §7 already filed **FOLLOW-226** to backfill them — I corroborate (§4d DG-3)
+> and do NOT re-file. FOLLOW-218 is the DG-1 follow-up RETRO-032 filed against FOLLOW-176 / PR #217.
+
+### 1. Summary of change
+
+- **PR:** #223 (merged 2026-06-08 11:07 UTC, commit `cf29878`). compliance-engineer. Docs-only.
+  Source: RETRO-032 §4d DG-1 (FOLLOW-176 / PR #217 added the `estalara_intent_{sessionId}`
+  sessionStorage write with no DPIA/ROPA/Privacy-Notice disclosure).
+- **Files changed:** 4 (+227 / −24).
+  - `docs/compliance/dpia.md` v2.2→v2.3 (+135/−6): new §13.3 (`estalara_intent_*` intent-state
+    store) — data category (inferred archetype + per-archetype probability vector, profiling-adjacent
+    per GDPR Art. 4(4)), storage medium (sessionStorage), lifetime (tab + 30-min `INTENT_STATE_STALE_MS`),
+    lawful basis (consent), consent gate, two erasure paths, privacy-by-design controls, no
+    server-side retention obligation. Revision-history row + DPO gate updated.
+  - `docs/compliance/ropa.md` v2.0→v2.1 (+25/−1): **Activity 14** — Client-Side Session Intent-State
+    Cache. Tenant-as-Controller / Time2Show-as-Processor; consent lawful basis; no server-side
+    retention row; cross-refs Activity 3 (server-side `session_embeddings` archetype).
+  - `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` v1.0→v1.1 (+43/−17): new §4 "Client-Storage Table —
+    All Active Keys" listing 5 SDK storage keys incl. `estalara_intent_{sessionId}`. Old §4 (DPO Gate)
+    → §5, old §5 (Revision History) → §6. DPO gate gains a §13.3 review item + a §13.3 staging
+    sessionStorage QA item.
+  - `.claude/agents/compliance-engineer/lessons.md` (+24): the authoring agent's self-lessons (outside
+    my analysis scope; no wiring impact).
+- **Modules touched:** [docs/compliance only]. No SDK, ingest, control-plane, decision-api, data,
+  configs, migrations. Zero runtime symbols.
+- **Key contracts changed:** None executable. The "contracts" are *documentary assertions about
+  shipped code* governed by **Rule N**. Three concrete behavioral claims (consent gate,
+  erase-on-withdrawal, 30-min staleness) — all verified §3. One *document-numbering* contract is
+  broken: ROPA "Activity 14" now has TWO conflicting definitions (§4a LG-1).
+- **Verdict (preview):** **FOLLOW-UPS-FILED (not clean).** The three behavioral claims about the
+  `estalara_intent_*` store are accurate and Rule-N-verified end-to-end (§3). BUT (i) ROPA Activity 14
+  **collides** with FOLLOW-187's already-promoted, still-OPEN "Activity 14 — CRM Deep-Outcome Ingest"
+  (RETRO-031 §7; QUEUE P1 READY) — a real numbering conflict, §4a LG-1; (ii) the Privacy Notice §4
+  table **claims "All Active Keys" / "all five" but omits three real SDK storage keys** grep finds in
+  non-test code — an *incomplete* disclosure, the Rule N completeness sub-shape, §4b CB-1; (iii)
+  RETRO-032/033/034 bodies remain missing from the log, §4d DG-3 (FOLLOW-226 already filed).
+
+### 2. Verification done in PR
+
+- Test files changed: **none** (docs-only — appropriate; no executable surface). Assertions added: 0.
+- The PR body supplies an 8-row grep-evidence table mapping each disclosed claim to a shipped symbol.
+  I **independently re-ran** the grep rather than trusting it (Rule N + Step 7) — see §3. All eight
+  symbols exist as claimed.
+- CI checks: not independently verified (read-only). Docs-only; standing CI-gate caveat applies.
+  PR body + QUEUE note both claim CI green.
+
+### 3. Wiring Audit
+
+Docs-only PR → the audit is the **Rule N inverse**: every *behavioral assertion* in new doc text must
+map to a real non-test SDK symbol (the doc is the "consumer"; the SDK is the disclosed-behavior
+"producer"). Grep `packages/sdk/src --include="*.ts" | grep -v "\.test\."`:
+
+**CHECK A — Dead code:** N/A for prose. No new code symbols. **Clean — N/A.**
+
+**CHECK B — Half-wire (Rule N behavioral-claim verification — load-bearing):**
+
+- **Key `estalara_intent_{sessionId}`** → `intentStateStorageKey(sessionId)` returns
+  `` `estalara_intent_${sessionId}` `` at `packages/sdk/src/core/session.ts:325`. **Verified ✅.**
+- **Write to sessionStorage** → `sessionStorage.setItem(intentStateStorageKey(sessionId), …)` at
+  `session.ts:348`. **Verified ✅.**
+- **30-minute staleness** → `INTENT_STATE_STALE_MS = 30 * 60 * 1000` at `session.ts:295`; enforced
+  (`removeItem` on stale) at `session.ts:392`. **Verified ✅.**
+- **Erase on consent denial/withdrawal** → `eraseIntentState` →
+  `sessionStorage.removeItem(intentStateStorageKey(sessionId))` at `session.ts:427`, invoked at
+  `index.ts:209` and `index.ts:260`. **Verified ✅** (both call sites present).
+- **No server-side copy** → no server-side store call in `persistIntentState`/`eraseIntentState`
+  (`session.ts:341-431`); grep for the key across `apps/*` returns zero. **Verified ✅** (negative
+  claim holds).
+- **Consent-gated (write iff granted)** → gate at `index.ts:201-268` halts before `persistIntentState`.
+  RETRO-032's FOLLOW-216 (OPEN) flags a *re-perturbation* defect on the rehydrate gate, NOT a
+  "writes-without-consent" defect; the disclosed consent-gate-before-write claim is accurate. No
+  regression. **Verified ✅.**
+
+**Rule N COMPLETENESS check (the §4 "All Active Keys" assertion).** The §4 header reads
+"Client-Storage Table — All Active Keys"; the note says "all five active SDK storage keys." Grep of
+non-test SDK code for `setItem` finds **eight** distinct keys, not five:
+
+| Key (literal)                           | API            | Source                                           | In §4 table?  |
+| --------------------------------------- | -------------- | ------------------------------------------------ | ------------- |
+| `__estalara_session__`                  | sessionStorage | `session.ts:63`                                  | ✅ listed     |
+| `estalara_consent`                      | localStorage   | `session.ts:26`                                  | ✅ listed     |
+| `__estalara_xid__`                      | localStorage   | `session.ts:151`                                 | ✅ listed     |
+| `__estalara_lead_id__`                  | sessionStorage | `session.ts:262`                                 | ✅ listed     |
+| `estalara_intent_{sessionId}`           | sessionStorage | `session.ts:325`                                 | ✅ listed     |
+| **`estalara_variant:{sessionId}`**      | sessionStorage | `adapt.ts:27` (`SESSION_VARIANT_KEY_PREFIX`)     | **❌ OMITTED** |
+| **`__estalara_quiz_dismissed__`**       | localStorage   | `quiz-trigger.ts:55`                             | **❌ OMITTED** |
+| **`__estalara_micro_poll_dismissed__`** | localStorage   | `micro-poll.ts:51`                               | **❌ OMITTED** |
+
+The §4 table is an **incomplete disclosure that asserts completeness** — the Rule N
+"present-but-inaccurate" sub-shape, classification **HALF_WIRE (documentation kind)**, P2 (not P0):
+all five DISCLOSED keys are accurate, and the three omitted keys are lower-sensitivity (one A/B
+variant token, two UI-dismissal timestamps) — not a false statement about a disclosed item, but the
+header over-claims "all." → **§4b CB-1 / FOLLOW-227 (P2).**
+
+**Summary:** All five disclosed `estalara_intent_*` behavioral claims Rule-N-verified end-to-end ✅.
+One Rule N **completeness** gap (§4 omits 3 of 8 real keys while claiming "all") → CB-1. No DEAD_CODE.
+The doc→code wires that exist are connected; the gap is in *coverage of the wire set*.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — ROPA "Activity 14" is double-assigned: a real numbering collision with FOLLOW-187.**
+  This PR adds `docs/compliance/ropa.md` **Activity 14 — Client-Side Session Intent-State Cache** (new
+  section after Activity 13). But **FOLLOW-187** (source RETRO-031 §4d DG-1, **promoted to QUEUE as P1,
+  status READY**, `QUEUE.md:3082-3093` / `FOLLOW_UPS.md:5418-5448`) is specced verbatim to add **"ROPA
+  Activity 14 — CRM Deep-Outcome Ingest."** Two *different* processing activities now share number 14.
+  ROPA is an append-only Art. 30 register where the activity number is a stable cross-reference (this
+  PR's own DPIA §13.3 and ropa.md Activity 3 already cite "Activity 14"); whoever executes FOLLOW-187
+  will either overwrite this entry or create a second "Activity 14," corrupting the register.
+  **Foreseeable:** RETRO-031 §7 reserved Activity 14 for CRM ingest on 2026-06-03, five days before
+  this PR claimed it; the FOLLOW-218 stub (`FOLLOW_UPS.md:5850`) says only "ROPA v2.0→v2.1 Activity 14"
+  with no cross-check against the reserved number. → **FOLLOW-227 includes the renumber.** (P1 — a
+  corrupted Art. 30 register is a compliance-integrity defect and FOLLOW-187 is READY to land the
+  collision.)
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — Privacy Notice §4 over-claims completeness: "All Active Keys"/"all five" but 3 of 8
+  real SDK storage keys are omitted** (`estalara_variant:` sessionStorage `adapt.ts:27`;
+  `__estalara_quiz_dismissed__` localStorage `quiz-trigger.ts:55`; `__estalara_micro_poll_dismissed__`
+  localStorage `micro-poll.ts:51`). Rule N "present-but-inaccurate disclosure" sub-shape applied to a
+  *tenant-distributed* template — tenants are told to paste this table into their public Privacy
+  Policy as the complete client-storage inventory, so the omission propagates to data-subject-facing
+  text. P2 (not P0): omitted keys are lower-sensitivity and none is a *false* statement about a listed
+  key — but a template that says "all" and isn't is a Rule N violation that should not be distributed
+  to EU tenants. The two `*_dismissed__` keys may be strictly-necessary UI-preference storage (ePrivacy
+  Art. 5(3) carve-out) — but that is a *classification* the table must make explicitly, not omit
+  silently; `estalara_variant:` (A/B assignment) is behavioral and likely consent-relevant. → **FOLLOW-227.**
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — no automated guard keeps the Privacy Notice §4 key table in sync with the SDK's
+  actual `setItem` key set.** This is the second time (after FOLLOW-128/129) a storage-key disclosure
+  was hand-maintained and drifted from code (here: 3 missing keys). A trivial CI lint — grep every
+  `*_STORAGE_KEY`/`KEY_PREFIX` literal under `packages/sdk/src` (non-test) and assert each appears in
+  `PRIVACY_NOTICE_TEMPLATE.md` §4 — would have caught CB-1 mechanically and would catch the next new
+  key (FOLLOW-209's micro-poll key, merged `5a02a14`, is exactly one of the three already missed). →
+  folded into **FOLLOW-227** as an AC. (Docs-only PRs cannot ship a test; the next doc ticket ships
+  the lint.)
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — DPIA §13.3 does not state the two-store erasure model explicitly.** §13.3 and ROPA
+  Activity 14 both correctly say "server-side equivalent = Activity 3 / `session_embeddings`," but
+  neither states that withdrawing consent clears the *client* cache (verified, `index.ts:209/260`)
+  while a *separate* FOLLOW-039 DSR-erase path handles the *server* copy. A complete §13.3 should make
+  the two-store erasure model legible to a data subject. → folded into FOLLOW-227 (same doc pass).
+- **DG-2 (P3) — the §13.3 staging-QA DPO-gate item has no owner/date populated** — it inherits the
+  PENDING block alongside §13.1/§13.2 (still awaiting external DPO). Not new debt; recorded so the
+  go-live counter is honest: EU pilot go-live now blocks on §13.1 + §13.2 + **§13.3** DPO sign-off.
+- **DG-3 (P2, PROCESS) — RETRO-032/033/034 entries remain absent from `backlog/RETROSPECTIVES.md`**
+  (log jumps 031→035×2→036) though their follow-ups (FOLLOW-214…225) are promoted/merged. The
+  learning-loop SoT (CLAUDE.md: RETROSPECTIVES.md is "the single source of truth for the learning
+  loop") has a three-entry hole; Step 3 ("read the last 5 retros") under-reads. **Already filed as
+  FOLLOW-226 by RETRO-035 (FOLLOW-219) §7** — I do not re-file; I corroborate and add that this retro
+  independently hit the same hole (I reconstructed RETRO-032's DG-1 lineage from QUEUE/FOLLOW_UPS, not
+  from the log). The duplicate-`RETRO-035`-header race observed in this run is a fresh symptom of the
+  same multi-writer-numbering weakness — fold into FOLLOW-226's scope.
+
+#### 4e. Things verified SOUND (recorded so they are not re-flagged)
+
+- The three `estalara_intent_*` behavioral claims (consent gate, erase-on-withdrawal, 30-min staleness)
+  are accurate to shipped code — §3. The PR's grep-evidence table is honest.
+- The "no server-side copy" claim is verified (negative grep across `apps/*`). The DPIA correctly does
+  NOT promise a server-side retention period for this entry — Rule N interim-language discipline
+  honored (contrast FOLLOW-187's `conversion_labels` TTL, which must NOT state a period until the cron
+  ships).
+- This PR does NOT regress FOLLOW-216 (the rehydrate re-perturbation LG, RETRO-032) — it touches no
+  SDK code.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected (Sprint 14/15)
+
+- **FOLLOW-187 (P1, READY) — DIRECTLY COLLIDES (LG-1).** Its spec adds "ROPA Activity 14 — CRM
+  Deep-Outcome Ingest"; that number is now taken. **PM must resequence:** renumber one of the two
+  Activity-14 targets and update the FOLLOW-187 stub (`FOLLOW_UPS.md:5431`) + QUEUE row
+  (`QUEUE.md:3083`) before FOLLOW-187 is worked. Both are compliance-engineer-owned → reconcile in one
+  pass (FOLLOW-227).
+- **FOLLOW-227 (new, this retro)** should be sequenced WITH FOLLOW-187 (same file, same agent, shared
+  renumber).
+- **FOLLOW-209 (micro-poll, DONE PR #215, `5a02a14`)** — its `__estalara_micro_poll_dismissed__` key is
+  one of the three omitted from §4. The disclosure shipped (2026-06-08) AFTER FOLLOW-209 merged but
+  didn't pick up its key — confirming the hand-maintained drift (TG-1). No action on FOLLOW-209
+  itself; it is the evidence for the CI-lint AC.
+
+#### 5b. Future sprint tickets affected
+
+- **Any future SDK ticket adding a storage key** inherits the silent-drift risk until the §4 sync lint
+  (TG-1, FOLLOW-227 AC) lands. Record for Sprint 16 SDK work (FOLLOW-214 bundle trim touches these
+  files).
+- **EU pilot go-live gate** now carries three DPIA DPO sign-offs (§13.1/§13.2/§13.3); the external-DPO
+  appointment (in progress per ropa.md header) gates one more section.
+
+#### 5c. Contracts changed others rely on
+
+- **ROPA activity-number namespace** is now in conflict (LG-1). Any doc/DPA citing "ROPA Activity 14"
+  is ambiguous until reconciled; DPIA §13.3 and ropa.md Activity 3 already cite it.
+- **`PRIVACY_NOTICE_TEMPLATE.md` §4** is a tenant-distributed contract (tenants paste it into public
+  policies). Its "All Active Keys" completeness claim is something tenants rely on for their own
+  Art. 13/14 compliance — CB-1 means adopters inherit an incomplete inventory.
+
+#### 5d. Architectural assumptions affected
+
+- **"RETROSPECTIVES.md is the single source of truth for the learning loop"** (CLAUDE.md) is currently
+  FALSE for 032/033/034 (DG-3); the SoT for those is QUEUE/FOLLOW_UPS. FOLLOW-226 restores it. The
+  duplicate `RETRO-035` headers show the numbering authority is racy under concurrent runs.
+- **"A doc-only disclosure PR is low-risk"** is the assumption that let LG-1 + CB-1 ship without review
+  friction (PR self-check all green; QUEUE labels it "pure compliance disclosure update"). Docs-only ≠
+  risk-free: it can corrupt a register (LG-1) or ship an inaccurate data-subject-facing statement
+  (CB-1). Recorded so the next docs-only compliance PR still gets the Rule N completeness +
+  cross-reference-collision check.
+
+### 6. New lesson candidates
+
+- **Pattern (RECURRENCE — Rule N family, COMPLETENESS/coverage sub-shape) — "a compliance disclosure
+  asserts a completeness claim ('all keys', 'everything we store') but a grep of shipped code finds
+  members the disclosure omits — present-but-incomplete, not present-but-wrong."** Seen in:
+  **RETRO-036 (this)** (§4 table claims "all five"/"All Active Keys"; 3 of 8 SDK keys omitted).
+  Near-neighbors are the Rule N *accuracy* sub-shape: **RETRO-018** (mandated banner string ABSENT),
+  **RETRO-019** (90-day localStorage vs tab-sessionStorage — disclosed behavior INACCURATE),
+  **RETRO-023** (cadence mismatch — Rule N amendment 1). Those flag a disclosed item that is wrong/
+  missing-its-impl; THIS flags a disclosure that is accurate *per item* but under-enumerates the set
+  it claims complete. **Rule N already governs this** (its text: "absent or, worse, present-but-
+  inaccurate"); the coverage axis is a NEW verification *step* (enumerate the full key set from code,
+  assert each is disclosed), analogous to the RETRO-023 cadence-step amendment. **Current WRITTEN
+  count on the coverage axis: 1** (this retro) — NOT promoted. Watch-item: one more coverage-axis
+  occurrence (a disclosure under-enumerating a "complete" set) promotes an "enumerate-from-code
+  completeness check" Rule N amendment; the CI-lint in FOLLOW-227 TG-1 is the mechanical form of it.
+- **Pattern (PROCESS — new) — "a sequentially-numbered append-only register (ROPA activities, DPIA
+  sections, ADR numbers, RETRO numbers) gets the SAME number assigned by two independent writers
+  because neither checks the already-reserved number before writing — only the register's current
+  max."** Seen in: **RETRO-036** twice in one run — (a) ROPA Activity 14 ← FOLLOW-218 vs the FOLLOW-187
+  reservation; (b) the duplicate `RETRO-035` headers from concurrent retro runs. Structural
+  near-neighbor: **Rule O** (migration-journal monotonicity — a sequential register corrupted by an
+  out-of-band write). Count: 1 distinct pattern (two instances same run). NOT promoted (single retro).
+  Watch-item: a second register-number collision in a future retro promotes "before writing a new
+  entry to a numbered append-only register, grep the open FOLLOW/QUEUE backlog AND the register itself
+  for the next *reserved* number, not just the current max."
+
+### 7. Follow-ups
+
+- **FOLLOW-227:** Reconcile the FOLLOW-218 compliance docs: (a) **renumber the ROPA intent-cache
+  activity** so it does not collide with FOLLOW-187's reserved "Activity 14 — CRM Deep-Outcome
+  Ingest" (LG-1) — pick the next free activity number, update DPIA §13.3 + ropa.md Activity 3
+  cross-refs, and update the FOLLOW-187 stub/QUEUE row to whichever number it keeps; (b) **complete the
+  Privacy Notice §4 table** to list every SDK storage key grep finds — add `estalara_variant:`
+  (sessionStorage), `__estalara_quiz_dismissed__` (localStorage), `__estalara_micro_poll_dismissed__`
+  (localStorage), each with its consent classification (CB-1); (c) **add a CI lint** asserting §4
+  enumerates every non-test `*_STORAGE_KEY`/`KEY_PREFIX` literal under `packages/sdk/src` (TG-1); (d)
+  state the two-store (client cache + server `session_embeddings`) erasure model in §13.3 (DG-1).
+  (compliance-engineer, 3h, **P1** — the LG-1 renumber gates FOLLOW-187 and is a register-integrity
+  defect; bundle the P2 items in the same pass.) [LG-1; CB-1; TG-1; DG-1; Rule N coverage sub-shape]
+
+#### Cascade actions for the PM (not new follow-ups — thread into existing items)
+
+- **FOLLOW-218 → DONE:** the task asked me to set `FOLLOW-218` DONE / `completed_at: 2026-06-08` in
+  QUEUE.md. **I did NOT write QUEUE.md** — it violates my hard guardrail (retrospective-analyst is
+  read-only on QUEUE.md/ESCALATIONS.md/sprint files/code; writes only RETROSPECTIVES/FOLLOW_UPS/
+  CONVENTIONS_PATCH). **PM action:** flip FOLLOW-218 (`QUEUE.md:3157`, currently `READY_FOR_REVIEW`)
+  to DONE with `completed_at: '2026-06-08T11:07:49Z'` (PR #223 merge time) and `pr: '#223'`.
+- **FOLLOW-187 (READY, P1):** do NOT work it until FOLLOW-230 resolves the Activity-number split;
+  update its stub + QUEUE row to the reconciled number first.
+- **FOLLOW-226 (RETRO-035):** the RETRO-032/033/034 backfill — this retro independently corroborates
+  the need (DG-3) and adds the duplicate-RETRO-035-header race; keep it P2, expand scope.
+- **EU pilot go-live checklist:** DPIA DPO sign-off scope is now three sections (§13.1/§13.2/§13.3).
+
+### 8. Cross-references
+
+- **RETRO-032** — PARENT (unwritten). FOLLOW-218 is the DG-1 follow-up RETRO-032 filed against
+  FOLLOW-176 / PR #217. This retro confirms FOLLOW-218 closes that DG-1 *for the intent-state store
+  specifically*, and the disclosed behavior is accurate (Step 7 closure: traced to
+  `session.ts:325/348/295/427`, `index.ts:209/260` — not trusted from the PR body).
+- **RETRO-031** — ORIGIN of the colliding number. RETRO-031 §7 filed FOLLOW-187 ("ROPA Activity 14 —
+  CRM Deep-Outcome Ingest") on 2026-06-03; FOLLOW-218 claimed the same number five days later. Direct
+  lineage of LG-1.
+- **RETRO-035 (FOLLOW-219)** — SIBLING (concurrent). It filed FOLLOW-226 (RETRO-032/033/034 backfill)
+  which this retro's DG-3 corroborates; I reference rather than duplicate it.
+- **RETRO-018 / RETRO-019 / RETRO-023** — the Rule N evidence chain (banner-string absence;
+  90-day-vs-tab inaccuracy; cadence mismatch). RETRO-036's CB-1 is the *completeness/coverage* sibling
+  of these *accuracy* findings — same Rule N parent, new axis (§6).
+- **CONVENTIONS_PATCH Rule N + its RETRO-023 amendment** — governs §3/§4b. The disclosed
+  `estalara_intent_*` behavior PASSES Rule N byte-for-byte (sessionStorage ✅, removeItem-on-withdraw
+  ✅, 30-min constant ✅). The §4 completeness gap is the candidate for a future *third* Rule N
+  verification step (§6) — recorded, not yet promoted (count 1 on the coverage axis).
+- **CONVENTIONS_PATCH Rule O** — structural near-neighbor of LG-1 (a sequential append-only register
+  corrupted by a duplicate/out-of-band write). Cited in §6 as the shape precedent for the (unpromoted)
+  numbered-register-collision pattern.
+- **FOLLOW-039 / DPIA §8** — the server-side DSR erasure cascade for `session_embeddings`; the
+  counterpart to the client-side self-clearing this PR discloses (DG-1's two-store erasure model).
+
+## RETRO-037 — FOLLOW-190 (dwell-time confidence lift → intent engine) — 2026-06-08
+
+### 1. Summary of change
+
+- **PR:** #225 (merged 2026-06-08 13:08 UTC+2, commit `1d5829a`)
+- **Files changed:** 3 (+561 / -1)
+- **Modules touched:** [SDK] (`packages/sdk/src/core/intent.ts`, `packages/sdk/src/index.ts`,
+  `packages/sdk/src/__tests__/follow-190.test.ts`)
+- **Key contracts changed:**
+  - `intent.ts` — NEW exports `applyDwellSignal(state, elapsed_ms)`, `DWELL_BASE_BOOST` (0.08),
+    `DWELL_UNIT_MS` (30_000) — added — breaking: no (additive public surface of `@estalara/sdk` core).
+  - `index.ts` — NEW module-scope constants `DWELL_THRESHOLDS_MS` / `DWELL_TICK_MS` /
+    `DWELL_TICK_TOLERANCE_MS` (not exported); NEW closures `startDwellTimer()`/`stopDwellTimer()`
+    inside `init()`; the dwell tick mutates `currentIntentState` and calls `onIntentUpdate(...)` —
+    behavioral contract change: a new wall-clock-cadenced producer of intent-state mutations AND of
+    `session.quality.snapshot` ingest events (see §3 / §4a). breaking: no API, yes behavior.
+
+### 2. Verification done in PR
+
+- Test files changed: `packages/sdk/src/__tests__/follow-190.test.ts` (new, 41 `it()` cases) ·
+  Assertions added: ~41 cases (purity, neutral no-op, signal_count preservation, boost monotonicity,
+  probabilities-sum-to-1, FOLLOW-176 shape compat, edge guards) · Coverage delta: helper-level only;
+  **zero coverage of the index.ts timer wiring** (start/stop/firedThresholds/visibility/persist) —
+  the PR's own header (`follow-190.test.ts:12,32`) admits "the full timer-reset wiring is
+  index.ts-level" and is untested.
+- CI checks: passed per PM note (QUEUE `:3151`, 1140/1140; pre-existing bundle-size gate red on main,
+  non-blocking per memory `project_ci_gate_landscape`).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** clean. `applyDwellSignal` imported + called at `index.ts:56,515`;
+`DWELL_BASE_BOOST`/`DWELL_UNIT_MS` consumed by the formula at `intent.ts:1028` + tests; module
+constants `DWELL_THRESHOLDS_MS`/`DWELL_TICK_MS`/`DWELL_TICK_TOLERANCE_MS` consumed at
+`index.ts:509,512,519`. No new file/export is unimported.
+
+**CHECK B (half-wire):** **HALF_WIRE_P (P1) — new producer of `session.quality.snapshot` with no
+matching test/consumer acknowledgement.** The dwell tick calls `onIntentUpdate()` (`index.ts:516`),
+which increments `dqsUpdateCount` and emits a `session.quality.snapshot` ingest event every
+`DQS_SNAPSHOT_INTERVAL` calls (`:455-460`) AND `persistIntentState()` on every call (`:464`). FOLLOW-190
+thus adds a SECOND, wall-clock-driven producer to two existing pipelines (DQS snapshots; the
+FOLLOW-176 persistence wire) that were previously driven only by discrete buyer signals. The consumer
+(ingest DQS pipeline / the next-page rehydrate) exists, so this is not a dangling producer — but the
+new emission cadence is unverified and has a cascading correctness effect (§4a LG-1). Classified
+HALF_WIRE_P → **FOLLOW-230** (the persist-gate fix folds this in). → see §4a / §7.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the dwell boost is persisted and then RE-APPLIED on top of the persisted state on
+  every cross-listing navigation — the exact FOLLOW-216 perturbation bug, one hop downstream, and
+  FOLLOW-216 explicitly listed itself as a BLOCKER that must "sequence BEFORE FOLLOW-190."** The dwell
+  tick mutates `currentIntentState = applyDwellSignal(...)` (`index.ts:515`) then calls
+  `onIntentUpdate()` → `persistIntentState(sessionId, currentIntentState)` (`:464`). On the next
+  listing page in the same tab, `init()` rehydrates that already-boosted distribution
+  (`:338-342`). The dwell timer is then restarted by the first `refreshDirectives()` (because
+  `previousArchetype` is `null` so `resp.archetype !== null` → `startDwellTimer()` at `:544-545`) and
+  re-accrues 30/90/180s boosts ON TOP of the persisted, already-boosted probabilities. Unlike EVERY
+  other init-time prior — `applyArchetypeHints` (gated `:350`), `applyReferrerHints` (gated `:383`),
+  `applyBehavioralSignal('device_type.*')` (gated `:390`) — the dwell boost has **no
+  `!intentStateRehydrated` gate and no per-session cap**, so a buyer dwelling across N listings on the
+  same archetype gets compounding confidence inflation. This is precisely the FOLLOW-216 LG-1 failure
+  mode ("a rehydrated session already has these priors folded in — re-applying perturbs the archetype")
+  applied to a NEW prior that ships unguarded. FOLLOW-216 (`FOLLOW_UPS.md`, source RETRO-032) named
+  itself "sequence BEFORE FOLLOW-190 … blocks FOLLOW-190 (dwell lift)"; FOLLOW-190 merged while
+  FOLLOW-216 is still **OPEN/P1**, so the dwell boost lands directly into the un-fixed re-perturbation
+  path. → **FOLLOW-230 (P1)** — gate/cap the dwell boost across rehydration. [reopens RETRO-032 LG-1
+  family; cite the new Rule promoted in §6]
+- **LG-2 (P2) — no per-session boost cap → monotone confidence runaway.** `applyDwellSignal` relies
+  solely on `normalize()` (`intent.ts:1029`) and `withConfidenceBonus` (which caps only the QUIZ
+  multiplier, not the raw probability — `intent.ts:354-357`). Within a single page the boost is
+  bounded by the 3 thresholds (≤ `1+0.08·log2(6) ≈ 1.207` at 180s), but combined with LG-1's
+  cross-listing re-accrual there is no ceiling on how far dwell alone can drive the leading
+  archetype's probability. A buyer who never sends a discrete signal but lingers can reach
+  near-1.0 confidence purely from time-on-page — a confidence the Decision API + sidebar-show gate
+  (`SIDEBAR_SHOW_THRESHOLD = 0.6`, `:468`) will act on. → folded into **FOLLOW-230** AC (add a
+  documented per-session dwell-contribution cap).
+- **LG-3 (P2) — visibility re-show never restarts the dwell timer.** `stopDwellTimer()` fires on
+  `visibilityState === 'hidden'` (`:1088`) but there is NO `'visible'` branch to restart it
+  (`grep` for `'visible'` in index.ts → 0 hits). A buyer who backgrounds the tab and returns loses
+  all dwell accrual until the next archetype SWITCH triggers `startDwellTimer()` (`:545`) — which for a
+  settled buyer may never happen. The teardown/visibility wiring is asymmetric: stop-only. →
+  **FOLLOW-228 (P2)**.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — tick tolerance can MISS a threshold under timer jitter or a long task.** The tick
+  fires every `DWELL_TICK_MS = 5000` and matches a threshold only when
+  `Math.abs(elapsed - threshold) < DWELL_TICK_TOLERANCE_MS` (4500ms, `:511-512`). If a tick is delayed
+  >4.5s past a threshold (background-tab throttling — exactly the case LG-3 also touches — a long
+  synchronous task, or `setInterval` clamping), the threshold's match window is skipped and
+  `firedThresholds` never records it, so that boost silently never applies. A monotone
+  `elapsed >= threshold && !fired` check would be robust; the symmetric-tolerance window is fragile.
+  Low severity (degrades gracefully to no-boost) but it means dwell accrual is best-effort and
+  silently lossy. → noted in **FOLLOW-228** AC.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — zero index.ts-level coverage of the dwell wiring, through the `_initForTest()` seam
+  that exists specifically to catch this class of bug.** FOLLOW-217/220 built `_initForTest()`
+  (`index.ts` export seam, Rule Q) whose stated purpose (`follow-217.test.ts:20`) is to assert "the
+  FOLLOW-207 priors did NOT perturb [a rehydrated state] after rehydration." The dwell boost is the
+  newest such prior, and it ships with **no `_initForTest()` test** asserting (a) a rehydrated boosted
+  state is not re-perturbed (LG-1 regression), (b) the timer restarts after archetype switch /
+  visibility-show (LG-3), (c) the persisted state across a listing-A→listing-B hop does not compound.
+  This is the same "exhaustive helper unit tests, zero init()-wiring test on the exact surface the bug
+  lives" gap as RETRO-032 TG-1 (FOLLOW-217) and RETRO-034 (FOLLOW-220). The 41 tests are all
+  pure-function tests; none drives `init()`. → **FOLLOW-229 (P1)** — extend the FOLLOW-220
+  `_initForTest()` jsdom test to cover dwell wiring (sequence AFTER FOLLOW-220 makes init() driveable).
+- **TG-2 (P2) — no test asserts the dwell tick does NOT inflate the refetch cadence.** PR header AC3
+  (`follow-190.test.ts:10`) claims "applyDwellSignal does NOT increment signal_count — the refetch
+  interval is unaffected," and the helper preserves `signal_count` (verified, `intent.ts:1032`). But
+  the index.ts tick calls `onIntentUpdate()`, which increments `dqsUpdateCount` (NOT signal_count) and
+  CAN emit a `session.quality.snapshot` (`:458`). The claim "refetch interval unaffected" is true
+  (refetch keys off `signal_count % REFETCH_SIGNAL_INTERVAL`, `:718-719`), but the DQS-snapshot cadence
+  IS affected and is untested (HALF_WIRE_P, §3). → folded into **FOLLOW-229**.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — Master_Design §E (intent engine) does not list dwell-time as a signal source.** A new
+  intent input (temporal engagement) shipped without a §E signal-inventory update; the boost formula,
+  thresholds, and the (missing) cap are undocumented outside code comments. → folded into FOLLOW-230
+  AC (one-line §E update) — not a separate stub.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected (Sprint 14)
+
+- **FOLLOW-216 (rehydrate-perturbation fix) — NOW STRICTLY GATING in retrospect.** FOLLOW-216 declared
+  `depends_on: blocks FOLLOW-190` and "sequence BEFORE FOLLOW-190," yet FOLLOW-190 merged first.
+  FOLLOW-216's fix (gate priors behind `!intentStateRehydrated`) MUST be extended to cover the dwell
+  boost, or FOLLOW-216 closing will leave a symmetric un-gated prior behind (LG-1). The PM should
+  sequence FOLLOW-230 WITH or immediately AFTER FOLLOW-216 and ensure the gate is applied to the dwell
+  path too. **Out-of-order merge against a declared blocker — surfaced for PM escalation.**
+- **FOLLOW-220 (make `_initForTest()` actually drive init()) — its scope now must also cover dwell
+  wiring.** FOLLOW-229 depends on FOLLOW-220; until 220 lands, the dwell LG-1 regression is
+  un-testable through the seam (TG-1).
+- **FOLLOW-219 (collapse the 4 scattered `!intentStateRehydrated` guards into one block) — DIRECTLY
+  INTERACTS.** FOLLOW-219 (PR #224, just merged) consolidates the rehydrate guards; the dwell boost is
+  a FOURTH prior that should live INSIDE that consolidated gate but does NOT (it's wired in
+  `refreshDirectives`/the timer, not the init-time prior block). When FOLLOW-219's consolidated block
+  is read by FOLLOW-216's author, they must NOT assume "all priors are now gated" — the dwell prior is
+  outside the block (LG-1). Recorded so the consolidation is not mistaken for completeness.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-209 (micro-poll dashboard toggle, Track E) — unaffected directly,** but any future
+  tuning of `SIDEBAR_SHOW_THRESHOLD` / Decision-API confidence gating must account for dwell-inflated
+  confidence (LG-2) as a NEW path to crossing the threshold without a discrete signal.
+- **Decision API calibration / FOLLOW-173 (conversion-label aggregation + reliability curve):** dwell
+  now influences the archetype/confidence that gets logged with predictions. If LG-1/LG-2 inflate
+  confidence, the calibration reliability curve (just shipped, PR #216) will see systematically
+  over-confident predictions for long-dwell sessions — a calibration-drift source to watch before the
+  curve is trusted for go/no-go. Record before FOLLOW-173's curve is read operationally.
+
+#### 5c. Contracts changed others rely on
+
+- `@estalara/sdk` core gains 3 public exports (`applyDwellSignal`, `DWELL_BASE_BOOST`,
+  `DWELL_UNIT_MS`). Additive, non-breaking, but now part of the package's tested surface (Rule I).
+- The `session.quality.snapshot` ingest event now has a NEW emission trigger (wall-clock dwell tick,
+  not only discrete signals). Any consumer reasoning about snapshot cadence (DQS analytics) inherits a
+  time-driven emission source (§3 HALF_WIRE_P).
+
+#### 5d. Architectural assumptions affected
+
+- **"Every intent-state mutation is driven by a discrete buyer signal that increments `signal_count`,
+  and `signal_count` is therefore a faithful proxy for refetch/persist cadence" is now FALSE.** The
+  dwell tick mutates state and persists WITHOUT incrementing `signal_count` (by design, `intent.ts:1032`).
+  This is intentional for refetch (correct), but it means `signal_count` is no longer a complete count
+  of state mutations — any future code that assumes "state only changed if signal_count changed" (e.g.
+  a cheap dirty-check before persist) would miss dwell updates. Recorded so the next SDK retro does not
+  re-assume signal_count completeness.
+- **"The `!intentStateRehydrated` gate covers all cold-start priors" (the FOLLOW-219 consolidation
+  premise) is now FALSE** — the dwell boost is a prior-shaped mutation living OUTSIDE the gate (LG-1).
+
+### 6. New lesson candidates
+
+- **Pattern (RECURRENCE — PROMOTE, threshold met) — "any intent-state mutation that is PERSISTED via
+  the FOLLOW-176 wire must be gated behind `!intentStateRehydrated` (or be explicitly idempotent under
+  rehydration), or it re-perturbs the resumed state on every cross-listing navigation."** Seen in:
+  **RETRO-032** (FOLLOW-216 LG-1 — FOLLOW-207 referrer/device priors run unconditionally on a
+  rehydrated state), **RETRO-037 (this)** (the FOLLOW-190 dwell boost persists and re-accrues on the
+  rehydrated, already-boosted distribution). **Current count: 2 → PROMOTED to Rule R.** The two
+  instances are the same shape (an un-gated, persisted prior that compounds across the rehydrate
+  boundary) on two different priors — exactly the ≥2-distinct-retro bar. RETRO-034 (FOLLOW-220) is the
+  test-side companion (the regression net for this class isn't wired), reinforcing why a Rule is
+  warranted. See CONVENTIONS_PATCH Rule R.
+- **Pattern (watch — count 1) — "a follow-up that declares itself a BLOCKER of a downstream ticket
+  ('sequence BEFORE FOLLOW-X / blocks FOLLOW-X') is merged out of order, and the downstream ticket
+  ships into the un-fixed path."** Seen in: **RETRO-037** (FOLLOW-216 declared `blocks FOLLOW-190`;
+  FOLLOW-190 merged first). Count 1 — NOT promoted. Watch-item: if a second declared-blocker is
+  violated, promote a Rule that the PM must verify a stub's `depends_on`/blocks field is satisfied
+  before promoting the blocked ticket to READY_FOR_REVIEW.
+
+#### 6a. Reconciliation with prior retros (Step 8 — multi-axis)
+
+- **Multi-axis on `applyDwellSignal` (Step 8):** analyzed BOTH the helper axis (pure, correct,
+  thoroughly tested — AC2/3/6 genuinely met) AND the index.ts wiring axis (the persisted, un-gated,
+  un-capped, stop-only timer — where LG-1/LG-2/LG-3/CB-1 live). The PR's verification is exhaustive on
+  the FIRST axis and absent on the SECOND. Had I analyzed only the helper, I would have echoed the PR's
+  "clean, pure, AC-complete" verdict and missed every finding; all four logic/bug findings live in the
+  wiring axis. Also analyzed the rehydrated-vs-cold-start axis (LG-1) and the
+  foreground-vs-background-tab axis (LG-3/CB-1) — neither tested.
+- **Reconciliation with RETRO-032's FOLLOW-216 verdict:** RETRO-032 isolated the perturbation to the
+  FOLLOW-207 priors. RETRO-037 does NOT contradict it — it EXTENDS it: the same un-gated-persisted-prior
+  defect now also affects the dwell boost. RETRO-032's fix scope (gate FOLLOW-207 priors) is necessary
+  but no longer sufficient; FOLLOW-216 must be widened (or FOLLOW-230 must follow it) to cover dwell.
+- **Closure check (Step 7) — FOLLOW-190 claimed-closures traced:** FOLLOW-190's spec AC4 ("archetype
+  switch resets the timer so the boost reinforces the NEW archetype") — VERIFIED end-to-end:
+  `refreshDirectives` calls `startDwellTimer()` on `resp.archetype !== previousArchetype` (`:541-545`),
+  and `startDwellTimer` resets `adaptedAt` + `firedThresholds.clear()` (`:504-505`). CLOSED. AC6
+  ("`applyDwellSignal` is pure") — VERIFIED at `intent.ts:1025-1037` (no DOM/globals/mutation; tests
+  `follow-190.test.ts:107-149`). CLOSED. AC2 (neutral no-op) — VERIFIED (`intent.ts:1026`). The ACs the
+  PR claims are genuinely closed; the gaps are in scope the ticket did NOT claim (cross-listing
+  persistence, cap, visibility re-show) — i.e. the gap moved one hop into the rehydrate boundary, not a
+  false-closure of a claimed AC.
+
+### 7. Follow-ups
+
+- **FOLLOW-230:** Gate the dwell boost across the rehydrate boundary AND add a per-session
+  dwell-contribution cap. (a) The dwell timer / persisted dwell boost must NOT compound on a rehydrated
+  state — either gate the restart behind a per-session "already-dwelled-this-archetype" guard, or make
+  `applyDwellSignal` idempotent under rehydration (track accrued dwell-boost in the persisted state and
+  only apply the DELTA). (b) Add a documented per-session cap on total dwell contribution to any
+  archetype's probability (LG-2). (c) one-line Master_Design §E signal-inventory update (DG-1). MUST be
+  sequenced WITH or immediately AFTER FOLLOW-216 and extend its gate to the dwell prior. (sdk-engineer,
+  4h, **P1**) [LG-1; LG-2; HALF_WIRE_P; DG-1; cite Rule R]
+- **FOLLOW-228:** Make the dwell timer symmetric and jitter-robust. (a) Restart `startDwellTimer()` on
+  `visibilitychange → 'visible'` for a non-neutral archetype (LG-3 — currently stop-only at `:1088`).
+  (b) Replace the symmetric `Math.abs(elapsed - threshold) < TOLERANCE` window with a monotone
+  `elapsed >= threshold && !fired` check so a delayed/throttled tick cannot silently skip a threshold
+  (CB-1). (sdk-engineer, 2h, **P2**) [LG-3; CB-1]
+- **FOLLOW-229:** Extend the FOLLOW-220 `_initForTest()` jsdom test to cover the dwell wiring:
+  (a) a rehydrated boosted state is NOT re-perturbed/compounded by a fresh dwell cycle (LG-1
+  regression), (b) the timer restarts after archetype switch and after visibility-show (LG-3),
+  (c) the dwell tick emits `session.quality.snapshot` on cadence WITHOUT incrementing the refetch
+  counter (TG-2 / HALF_WIRE_P). Sequence AFTER FOLLOW-220 (init() must be driveable). (sdk-engineer +
+  qa-engineer, 4h, **P1**) [TG-1; TG-2; depends_on FOLLOW-220]
+
+#### Cascade actions for the PM (not new follow-ups)
+
+- **FOLLOW-216:** widen its gate-fix scope to include the dwell prior, OR explicitly hand that to
+  FOLLOW-230 and link them. The out-of-order merge (FOLLOW-190 before its declared blocker FOLLOW-216)
+  is surfaced here for PM escalation — the dwell boost is currently live in the un-fixed re-perturbation
+  path.
+
+### 8. Cross-references
+
+- **RETRO-032 (FOLLOW-216 / PR #217)** — DIRECT PREDECESSOR of the perturbation pattern. RETRO-037 LG-1
+  is the SAME shape (un-gated persisted prior re-perturbs rehydrated state) on a new prior (dwell). The
+  two instances together meet the ≥2 bar → Rule R promoted (§6). FOLLOW-216 explicitly declared itself
+  a BLOCKER of FOLLOW-190; the blocker was merged out of order.
+- **RETRO-034 (FOLLOW-220 / PR #219)** — the test-seam companion. RETRO-034 established that the
+  `_initForTest()` net does not yet drive init() (Rule Q); FOLLOW-190's TG-1 is the same "no
+  init()-wiring test on the exact surface the bug lives" gap. FOLLOW-229 depends on FOLLOW-220.
+- **RETRO-033 / FOLLOW-219 (PR #224)** — the guard-consolidation that this PR interacts with: the dwell
+  prior lives OUTSIDE the consolidated `!intentStateRehydrated` block (§5d). The consolidation must not
+  be mistaken for "all priors gated."
+- **FOLLOW-176 (PR #217 — intent-state persistence)** — the persistence wire that LG-1 rides on; the
+  dwell boost is persisted via the FOLLOW-176 `persistIntentState` path (`index.ts:464`) and rehydrated
+  on the next page, which is what makes the un-gated boost compound.
+- **CONVENTIONS_PATCH Rule I** — checked: all 3 new exports + 3 module constants have non-test
+  consumers (§3 CHECK A clean). Compliant.
+- **CONVENTIONS_PATCH Rule R (NEW, this retro)** — governs LG-1; FOLLOW-230 must cite it.
+- **CONVENTIONS_PATCH Rule Q** — checked: FOLLOW-190's tests do NOT use the `_initForTest()` seam at all
+  (helper-only), so they neither violate nor satisfy Rule Q; the gap is that the wiring is untested
+  (TG-1), which FOLLOW-229 closes through the Rule-Q-compliant seam.
+
+## RETRO-038 — FOLLOW-182 (eliminate TS-map vs SQL-CASE rank duplication in upsertConversionLabel — closes RETRO-030 LG-1/LG-2) — 2026-06-08
+
+> Numbering note: this entry is RETRO-038. FOLLOW-182's natural slot is RETRO-032, but RETRO-032/033/034
+> are referenced-but-unwritten numbers reserved by OTHER tickets (they generated FOLLOW-216..225 and the
+> Rule Q amendment — see the RETRO-035 numbering note), and RETRO-035/036/037 were written ahead of this
+> entry by concurrent retro runs (FOLLOW-190/219, FOLLOW-218, FOLLOW-190). Per RETRO-035's precedent I
+> take the next free number above the current max that does not collide with any reserved id.
+
+### 1. Summary of change
+
+- **PR:** #222 (merged 2026-06-08 11:07:46 UTC, commit d7b9de7). backend-engineer + data-engineer;
+  Sprint 15. Source: RETRO-030 section 4a LG-1/LG-2 + CONVENTIONS_PATCH Rule K.1 amendment (2026-06-03)
+  — this PR is the *remediation* of the duplication RETRO-030 flagged and the amendment prescribed.
+  depends_on: FOLLOW-179 (merged #190).
+- **Verification method note:** the local checkout's main (9e08262) had diverged and did NOT contain
+  d7b9de7 (git show failed locally pre-fetch). All analysis below was performed against the fetched
+  commit object d7b9de7 (squash-merge of #222) on origin/main, not the stale working tree.
+- **Files changed:** 4 (+249 / -74).
+  - packages/shared/src/schemas/conversion-label.ts (+60/-2) — OUTCOME_CLASS_RANK and
+    MANUAL_ADMIN_OFFSET change module-private to EXPORTED (Readonly<Record<...>>); NEW exported
+    interface RankEntry + NEW exported allRankEntries(): RankEntry[] (6 classes x 2 sources = 12
+    triples, each rank computed by calling conversionLabelRank() at :199).
+  - packages/db/src/upsert-conversion-label.ts (+68/-68) — NEW module-private buildStoredRankSql(
+    labelSourceCol, outcomeClassCol) iterates allRankEntries() and reduces a chain of
+    WHEN labelSource = ... AND outcomeClass = ... THEN rank Drizzle sql fragments into a single
+    CASE ... END with NO ELSE. Both hand-typed nested SQL CASE blocks (previously typed TWICE in the
+    WHERE clause, RETRO-030 section 4a) are deleted; the WHERE collapses to
+    storedRankSql < incomingRank OR (storedRankSql = incomingRank AND labeled_at < labeledAt).
+  - packages/shared/src/schemas/conversion-label.test.ts (+117/-2) — 12 new assertions across two
+    describe blocks (OUTCOME_CLASS_RANK export, allRankEntries parity with conversionLabelRank).
+  - backlog/QUEUE.md (+4/-2) — marks FOLLOW-182 IN_PROGRESS in two pre-existing QUEUE entries.
+- **Modules touched:** [shared / db]. No control-plane source, no SDK, no ingest, no decision-api, no
+  Modal/Python, no migration, no docs. Pure application-layer query-construction refactor.
+- **Key contracts changed:**
+  - @estalara/shared — OUTCOME_CLASS_RANK, MANUAL_ADMIN_OFFSET visibility private->public; NEW exports
+    allRankEntries, RankEntry. Breaking: NO (additive widening; rank VALUES and conversionLabelRank()
+    signature byte-identical to RETRO-030). Transitively re-exported via the export * barrel in
+    packages/shared/src/schemas/index.ts:13 — no missing barrel entry.
+  - @estalara/db upsertConversionLabel — runtime behavior change at the unknown-class boundary:
+    previously a stored unknown (label_source, outcome_class) floored to ELSE 0 / ELSE 1000; now it
+    evaluates to SQL NULL -> the WHERE predicate is NULL -> the UPDATE does not fire. Signature
+    unchanged; no caller relied on the old floor (the helper Zod-validates, so it can only write known
+    classes).
+- **Verdict (preview):** FOLLOW-UPS-FILED (not clean). LG-1 + LG-2 from RETRO-030 are closed
+  END-TO-END (section 7 — the hand-typed SQL is physically gone; the K.1 verification grep now returns
+  zero). BUT the "parity gate" the PR ships is TAUTOLOGICAL (asserts the TS map against itself, never
+  the generated SQL), so RETRO-030 section 4c TG-1 (the SQL WHERE clause is untested) RECURS unchanged —
+  the PR rewrote that exact clause without adding any execution test and gave it a false-confidence
+  green gate. That gap remains FOLLOW-183 (still READY). Two minor new logic gaps recorded; no new
+  follow-up beyond re-pointing FOLLOW-183.
+
+### 2. Verification done in PR
+
+- Test files changed: conversion-label.test.ts (+2 describe blocks, 12 it() assertions). PR body claims
+  @estalara/shared 205 passed, @estalara/db 52 passed, lint 0, prettier clean, Rule H / J green. CI not
+  independently verified (read-only; standing Rule I / Vercel / Python pre-existing-red non-blocking
+  caveat applies).
+- **Coverage delta — the tested artifact is the wrong one (the central finding of this retro).** All 12
+  new assertions live in @estalara/shared and exercise allRankEntries() / OUTCOME_CLASS_RANK. NONE
+  executes buildStoredRankSql() or the generated SQL. Worse, the headline parity test —
+  'every entry rank matches conversionLabelRank() exactly' (conversion-label.test.ts:263) — is
+  TAUTOLOGICAL: allRankEntries() *populates* each entry's rank by calling
+  conversionLabelRank({outcomeClass, labelSource}) (conversion-label.ts:199), then the test asserts
+  entry.rank === conversionLabelRank(samePair). It compares a value to itself; it can never fail and
+  proves nothing about the SQL. The artifact FOLLOW-182 changed — the runtime-generated Drizzle CASE in
+  buildStoredRankSql — has ZERO execution coverage (no packages/db/src/upsert-conversion-label.test.ts;
+  index.test.ts does not import it; the three production callers test it only at the mock level per
+  RETRO-030/031). -> section 4c TG-1 (P1, RECURS).
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection:**
+
+- allRankEntries (shared) — non-test importer at packages/db/src/upsert-conversion-label.ts:46, called
+  at :114 inside buildStoredRankSql. NOT dead (git grep allRankEntries d7b9de7).
+- OUTCOME_CLASS_RANK / MANUAL_ADMIN_OFFSET (now exported) — consumed by conversionLabelRank (same file),
+  iterated by allRankEntries, and read by the parity tests. NOT dead. Barrel re-export confirmed
+  (schemas/index.ts:13 export * carries the new exports automatically — no missing entry).
+- RankEntry (interface) — type-only export, SUPPRESSED per the audit rule (it is the allRankEntries()
+  return type, imported into the consumer's type space).
+- buildStoredRankSql (db) — module-private, called at upsert-conversion-label.ts:170. Not exported; not
+  subject to Rule I. Reachable.
+- **CHECK A clean.**
+
+**CHECK B — Half-wire detection:**
+
+- allRankEntries() (shared producer of the rank table): Producer EXISTS; Consumer EXISTS
+  (buildStoredRankSql iterates it). The full chain completes: allRankEntries() -> buildStoredRankSql()
+  -> storedRankSql -> onConflictDoUpdate.where -> executed by the three production callers
+  feedback/route.ts:249, admin/labels/[id]/route.ts:244, crm/outcome/route.ts:329 (git grep
+  upsertConversionLabel d7b9de7). Wired end-to-end.
+- The RETRO-030 LG-1 duplication wire is SEVERED-AND-REPLACED, not moved one hop: the second
+  representation (hand-typed SQL CASE) is deleted; there is now exactly ONE source (the TS map) feeding
+  both the incoming-rank (conversionLabelRank) and the stored-rank (buildStoredRankSql -> allRankEntries
+  -> same map). No producer/consumer pair is left dangling.
+- **CHECK B clean for this PR's own wires.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the shipped "parity gate" is tautological and does NOT gate what the K.1 amendment asked
+  it to.** The amendment offered two options: (1) derive the SQL from the TS map (the PR did this), OR
+  (2) a parity test asserting the *SQL-derived* rank equals conversionLabelRank() for all 12 pairs. The
+  PR did option 1 AND added a test it labels "the CI gate for the Rule K.1 amendment"
+  (conversion-label.test.ts:245), but that test compares allRankEntries()[i].rank to
+  conversionLabelRank(samePair) while allRankEntries() computed that very rank by calling
+  conversionLabelRank() (:199). It is x === x — never fails, never touches buildStoredRankSql or any SQL.
+  Because the PR chose option 1, a parity test is not strictly REQUIRED (single-source derivation makes
+  TS-side drift impossible by construction), so this is NOT a correctness defect today. The risk is FALSE
+  CONFIDENCE: the test name + PR body assert a "Rule K.1 gate" exists, which could mislead a future
+  reviewer into believing the GENERATED SQL is verified against the TS map when it is not (the SQL->DB
+  path is entirely untested — section 4c). -> folded into FOLLOW-183 AC (the real PG parity test);
+  recorded so no future retro mistakes the tautological test for SQL coverage.
+- **LG-2 (P2) — whenClauses.reduce(...) has no initial value; an empty rank map throws at first call.**
+  buildStoredRankSql (upsert-conversion-label.ts:128) reduces with no seed. If OUTCOME_CLASS_RANK /
+  allRankEntries() were ever emptied, Array.prototype.reduce throws "Reduce of empty array with no
+  initial value" the first time the helper runs — a hard crash on the upsert path rather than a graceful
+  empty CASE. Unreachable today (the map is non-empty, enforced by the OUTCOME_CLASS_RANK export coverage
+  test), so P2, but a latent fail-at-runtime if the map is ever gutted by refactor. A CASE END seed or a
+  length guard would fail-soft. -> folded into FOLLOW-183 AC as a defensive guard (1-line hardening best
+  done alongside the helper's first real test; no separate follow-up).
+- **LG-3 (P3) — buildStoredRankSql is rebuilt on every upsertConversionLabel call, not once at module
+  load, despite the JSDoc claiming "on the next process startup."** It is invoked inside the function
+  body (:170), so the 12-fragment CASE is reconstructed per write. The doc comment (:96) implies a
+  module-level memoization that does not exist. Functionally harmless (idempotent, microsecond cost) —
+  recorded only because the comment misstates lifecycle. -> no follow-up; noted for the helper's next
+  editor.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** No correctness defect in the generated SQL was found by static reading: each WHEN is a full
+  mutually-exclusive source-AND-class predicate (clause order is irrelevant to the CASE result), rank
+  integers are parameterised from the TS map (not re-typed), and the NULL-on-unknown behavior is
+  intentional and documented. RETRO-030 CB-1 (updated_at set only on the winning path) and CB-2
+  (labeledAt defaults to server new Date() for the feedback route) are UNCHANGED — the set/values blocks
+  were not touched. CB-2 is already closed for the CRM writer (FOLLOW-172 #191 passes a CRM labeledAt,
+  per RETRO-031). Not re-filed.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1, RECURS from RETRO-030 section 4c TG-1 — and the PR touched the exact untested code).** The
+  load-bearing artifact remains the SQL precedence WHERE clause; FOLLOW-182 REWROTE it (two hand-typed
+  CASE blocks -> one generated CASE) yet added NO execution test for the generated SQL. Still no
+  packages/db/src/upsert-conversion-label.test.ts; the three callers mock the helper; the new shared
+  tests are tautological (section 4a LG-1). A refactor that *changed the conflict-resolution mechanism*
+  shipped with the same zero-coverage posture RETRO-030 flagged — the gap did not close, it was edited
+  in place, and the risk is now slightly HIGHER: the SQL is no longer a static literal a reviewer can
+  eyeball against the documented rank table, it is *generated*, so correctness depends on
+  buildStoredRankSql's reduce/interpolation being right — which only a DB-level test proves. ->
+  FOLLOW-183 (P1, already filed / still READY) — re-pointed here with the added AC that the PG test
+  assert the *generated* buildStoredRankSql output ranks equal conversionLabelRank() for all 12 pairs
+  (the *real* K.1 option-2 parity gate), plus the LG-2 empty-map guard. No NEW follow-up (would
+  duplicate FOLLOW-183).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — JSDoc lifecycle claim inaccurate** ("on the next process startup", section 4a LG-3).
+  Cosmetic; not separately filed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected (Sprint 15)
+
+- **FOLLOW-183 (direct PG test for upsertConversionLabel) — STILL READY/OPEN (verified in QUEUE.md);
+  this PR raises its value and shifts its target.** Before, it would test a static SQL CASE; now it must
+  test a *generated* CASE and prove the generation equals the TS map (the genuine K.1-amendment parity
+  gate the shipped tautological test does not provide). The section 4a LG-2 empty-map guard and the
+  section 4c "assert generated SQL == TS for all 12 pairs" are added to its scope. No blocking action
+  beyond promotion — FOLLOW-183 is independent and can land any time.
+- **FOLLOW-174 (admin reclassify) — STILL READY/OPEN (QUEUE.md); UNAFFECTED.** It calls
+  upsertConversionLabel (admin/labels/[id]/route.ts:244); the generated CASE produces ranks identical to
+  the old hand-typed one for all known pairs (verified by reading the rank values), so the manual_admin
+  offset path is unchanged. No re-spec needed.
+- **FOLLOW-172 (CRM ingest) — DONE (#191); UNAFFECTED.** Reads/writes via the helper; rank values
+  unchanged.
+- **FOLLOW-173 (aggregation/calibration) — DONE (#216); UNAFFECTED.** Reads the deduped rows; the
+  derivation refactor does not change which row wins for known classes.
+
+#### 5b. Future sprint tickets affected
+
+- **Adding a new ConversionOutcomeClass is now genuinely a no-SQL-edit change** (FOLLOW-182 AC3 met) —
+  but it still requires editing TWO gated TS locations: the rank map AND the Zod enum
+  ConversionOutcomeClassSchema (conversion-label.ts:37). The OUTCOME_CLASS_RANK export tests (:209
+  coverage, :216 no-extra-keys) FAIL CI if map and enum diverge, so the divergence is GATED. Net: a new
+  class = two gated TS edits, zero SQL edits (supersedes RETRO-030 section 5b's "edit all three").
+- The Y2 TALLRec/LoRA corpus dependency on the rank *ordering* (RETRO-030 section 5b) is UNCHANGED —
+  values are byte-identical; only the SQL derivation mechanism changed. No corpus-semantics impact.
+
+#### 5c. Contracts changed others rely on
+
+- OUTCOME_CLASS_RANK, MANUAL_ADMIN_OFFSET, allRankEntries, RankEntry are now part of the @estalara/shared
+  public surface (transitively re-exported). The rank table is now an externally visible contract, not a
+  private detail. Any future change to the rank VALUES is now a public-API + corpus-semantics change
+  (compounds RETRO-030 section 5b).
+
+#### 5d. Architectural assumptions affected
+
+- **Unknown-class safety flipped from fail-soft-floor to NULL-no-op (LG-2 fix, intended), with a residual
+  silent-freeze edge.** Post-PR, a stored unknown (source, class) -> NULL -> the precedence predicate is
+  NULL -> the UPDATE silently does not fire. Safer than the old mis-ranking floor, but still *silent* (no
+  error, no log): a bypass-written garbage row becomes permanently un-overwritable by the helper (every
+  future upsert's WHERE is NULL against it) without any signal. Acceptable while the helper is the only
+  validated writer and Zod blocks unknown classes — but if a ConversionOutcomeClass is ever REMOVED from
+  the enum while rows of that class exist, those rows freeze and become invisible to the precedence loop.
+  A truly fail-loud design would log on unknown-stored-class. Low priority (no enum removal planned);
+  noted for whoever ever removes a class. Reconciles RETRO-030 section 4a LG-2 to CLOSED-with-residual.
+
+### 6. New lesson candidates
+
+- **Pattern (own blind-spot, count 2 of a "test theater / coverage-that-doesn't-cover" family — NOT
+  promoted) — "a PR adds a test it names a 'parity/coverage gate' that actually asserts a value against
+  itself (tautological), giving false-green confidence while the real artifact stays untested."** Seen
+  in: this RETRO (allRankEntries rank computed by conversionLabelRank() then asserted equal to
+  conversionLabelRank()) and the sharper twin of RETRO-030 section 6 meta ("core procedural logic shipped
+  behind a mock at every layer" — count 1 of "mock-shadows-the-deliverable"). These rhyme (test exists
+  but does not exercise the deliverable) but are distinct sub-shapes: RETRO-030 was *mock-shadows*, this
+  is *self-referential-assert*. NOT promoting: (a) the two are arguably distinct sub-shapes (>=2 of the
+  SAME shape not yet met); and (b) Rule K.1's amendment ALREADY mandates the parity test "executes the
+  generated query path" — so the correct behavior is already codified; what recurred is a *violation* of
+  it, not an un-codified pattern. Promote a "no tautological/self-referential gate" rule only if a THIRD
+  instance appears that K.1 does not already cover. Held below threshold by design.
+- **Pattern (RETRO-030 LG-1 closure — record, do NOT count as recurrence).** The TS-map vs SQL-CASE
+  duplication (Rule K.1 amendment evidence) is now CLOSED by this PR. Per the discipline RETRO-030
+  section 6 used for the uniqueness-constraint pattern: a fix is not a second independent occurrence of
+  the problem. Rule K.1 + its amendment stand at their existing evidence count; this PR is the
+  remediation, not new evidence. No rule promoted, no count incremented.
+
+### 7. Follow-ups
+
+- **No NEW follow-up filed.** The one open gap (TG-1: the generated SQL WHERE clause is untested and the
+  shipped parity test is tautological) is already covered by FOLLOW-183 (P1, READY). This retro re-points
+  FOLLOW-183 with two added ACs (appended in FOLLOW_UPS.md): (i) the PG test MUST assert
+  buildStoredRankSql's GENERATED SQL produces ranks equal to conversionLabelRank() for all 12
+  (class x source) pairs against pgmem/Testcontainers — the *real* K.1-amendment option-2 parity gate the
+  tautological shared test does not provide; (ii) add a defensive guard / CASE END seed for the
+  empty-OUTCOME_CLASS_RANK reduce crash (section 4a LG-2). Filing a fresh follow-up would duplicate
+  FOLLOW-183.
+
+### 8. Cross-references
+
+- **RETRO-030** — DIRECT PARENT. This PR (FOLLOW-182) closes RETRO-030 section 4a LG-1 (TS vs SQL
+  duplication — the second representation is physically deleted; git grep "THEN [0-9]" over production
+  .ts query builders in d7b9de7 returns ZERO, so the K.1 verification grep now passes) and section 4a
+  LG-2 (the ELSE 0 / ELSE 1000 floors removed — unknown class now -> NULL -> UPDATE no-op; residual
+  silent-freeze edge recorded section 5d). It does NOT close RETRO-030 section 4c TG-1: I traced the
+  parity test the PR claims as the K.1 gate, found it tautological (asserts the TS map against itself,
+  never the SQL), and confirmed the "SQL WHERE clause is untested" gap moved ZERO hops — it remains
+  FOLLOW-183. End-to-end-closure discipline (RETRO-024) applied: I did not trust the PR's "Rule K.1 gate"
+  claim; I read the test, found it is x === x, and verified the actual SQL path is still unexecuted.
+- **CONVENTIONS_PATCH Rule K.1 + amendment (2026-06-03)** — this PR is the REMEDIATION that satisfies the
+  amendment (option 1: derive the SQL CASE from the TS map at runtime). The amendment's own verification
+  grep (CASE WHEN / THEN [0-9] in production query builders) is now clean for this path. No new rule, no
+  amendment — the rule that prescribed this fix already exists; the PR is its successful application.
+  Promoting again would miscount a fix as recurrence (the exact miscount RETRO-030 section 6 warned
+  against).
+- **CONVENTIONS_PATCH Rule J** — re-confirmed OUT (per RETRO-030): a TS-map-vs-inline-SQL pair is not a
+  scripts/mirror-files.json file pair; Rule J cannot express it. Now moot (the pair no longer exists).
+- **RETRO-026 / RETRO-029 / RETRO-030 TG-1** — standing packages/db "mock-only / no live-DB" coverage
+  family; this RETRO is the instance where that family let a *refactor of the conflict-resolution
+  mechanism itself* ship untested. FOLLOW-183 (possibly merged with FOLLOW-181/185) is the PG harness
+  that closes the family.
+- **RETRO-031 (FOLLOW-172)** — sibling: confirms CB-2 is closed for the CRM writer (not re-opened here).

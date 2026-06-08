@@ -1212,3 +1212,44 @@ Import types from `./route-helpers` (same pattern as cta-lift). The endpoint is 
 - `apps/control-plane/src/app/api/pilot/calibration/route.test.ts` — 28 tests (all passing)
 
 ---
+
+## FOLLOW-221 → FOLLOW-175
+
+**From:** data-engineer **To:** ml-engineer / backend-engineer **Date:** 2026-06-08T00:00:00Z
+
+**Summary:** FOLLOW-221 adds `?format=json` export to `GET /api/pilot/calibration`. The endpoint now
+accepts an optional `format=json` query parameter. When present it returns a JSON array of
+`CalibrationExportRow` objects (one per `(outcome_class, model_version)` combination) with
+`Content-Disposition: attachment; filename="calibration.json"` and `Content-Type: application/json`.
+The existing chart-data response (no `?format=json`) is completely unaffected.
+
+**Export shape (Zod-validated — `CalibrationExportRowSchema` in route-helpers.ts):**
+
+```typescript
+type CalibrationExportRow = {
+  outcome_class: string; // e.g. 'offer_made', 'no_response', 'purchased', 'lost'
+  model_version: string; // e.g. 'rulebased-bandit-v1', 'lora-tenant-abc-v2'
+  tenant: string; // tenant_id from JWT claim
+  window: number; // window_days (7 | 14 | 30)
+  count: number; // labeled decisions with this (outcome_class, model_version)
+  avg_confidence: number | null; // mean predicted confidence for the model in this window;
+  // null when no calibration rows exist for the model version
+};
+```
+
+**How avg_confidence is computed:** mean of `predicted_rate` across all reliability-curve buckets
+for the same `model_version`. It is a proxy for the typical confidence level the model emitted in
+this window, derived from the in-memory calibration data already assembled for the chart path.
+
+**Rule K.2 provenance:** The export path inherits the same fail-loud guarantee as the chart path.
+
+**Action required for FOLLOW-175:** The export schema above is stable — FOLLOW-175 may add fields
+but MUST NOT remove or rename existing ones without a parity test.
+
+**Files changed in FOLLOW-221:**
+
+- `apps/control-plane/src/app/api/pilot/calibration/route.ts`
+- `apps/control-plane/src/app/api/pilot/calibration/route-helpers.ts`
+- `apps/control-plane/src/app/api/pilot/calibration/route.test.ts`
+
+---

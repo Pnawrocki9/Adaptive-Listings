@@ -176,8 +176,12 @@ function isValidIntentState(raw: unknown): raw is IntentState {
 /**
  * Main SDK initialization — called automatically when DOM is ready.
  * Wraps everything in try/catch to ensure the host page is never broken.
+ *
+ * Returns the final resolved IntentState after all priors and rehydration have
+ * been applied, or `null` when init exits early (no script tag, consent denied,
+ * or an unrecoverable error). This return value is used ONLY by `_initForTest`.
  */
-async function init(): Promise<void> {
+async function init(): Promise<IntentState | null> {
   try {
     // FOLLOW-208: Record session start time for listing-view-rate computation.
     // Must be set before any async await so all listing.viewed callbacks reference
@@ -186,7 +190,7 @@ async function init(): Promise<void> {
 
     // 1. Find the Estalara script tag (the one with data-api-key)
     const script = document.querySelector<HTMLScriptElement>('script[data-api-key]');
-    if (!script) return;
+    if (!script) return null;
 
     // 2. Read configuration from data-* attributes
     const config = readConfig({ dataset: script.dataset });
@@ -209,7 +213,7 @@ async function init(): Promise<void> {
       eraseIntentState(peekStoredSessionId());
       // The shadow host is destroyed to avoid leaving a DOM node.
       earlyHost?.destroy();
-      return;
+      return null;
     }
 
     if (consentState === 'pending') {
@@ -261,7 +265,7 @@ async function init(): Promise<void> {
             await dispatchEvents(batch, config, auditSession);
           }
           earlyHost.destroy();
-          return;
+          return null;
         }
       }
       // If earlyHost is null (SSR/non-browser), treat as granted and continue.
@@ -1066,6 +1070,9 @@ async function init(): Promise<void> {
       shadowHost?.destroy();
       dqsTracker.reset();
     };
+
+    // Return the final resolved intent state (used only by _initForTest seam).
+    return currentIntentState;
   } catch (err) {
     // SDK initialization failed — log in debug mode, never propagate
     try {
@@ -1078,6 +1085,7 @@ async function init(): Promise<void> {
     } catch {
       // double-catch — truly silent
     }
+    return null;
   }
 }
 
@@ -1093,6 +1101,33 @@ export function identify(_profileId: string): void {
 // ─── Auto-detect sub-module ────────────────────────────────────────────────────
 export type { DetectionResult } from './auto-detect/index.js';
 export { detectSiteSchema } from './auto-detect/index.js';
+
+/**
+ * Test-only seam: invoke the real `init()` body from jsdom integration tests.
+ *
+ * Returns the final resolved `IntentState` after all priors, rehydration, and
+ * cold-start gates have been applied — giving tests direct in-memory access to
+ * the state without re-implementing any logic. Returns `null` on early-exit paths
+ * (no script tag, consent denied, banner denied, unrecoverable error).
+ *
+ * This export exists so tests can drive the PRODUCTION wiring (rehydration gate,
+ * cold-start prior gate, LG-2 persist gate) without reimplementing its logic
+ * locally. It MUST NOT be called from production code.
+ *
+ * Rule Q (amended 2026-06-08): acceptance tests must import + invoke the real
+ * entrypoint, never re-implement its body. This seam satisfies that requirement:
+ * mutating a gate in `init()` (e.g. dropping a `!`) will turn any test that
+ * calls `_initForTest()` RED, because the test drives the real gate. The returned
+ * state makes ALL four gates catchable — including referrer/device priors that only
+ * live in-memory and are never written back to sessionStorage on a rehydrated session.
+ *
+ * @internal — exported for test infrastructure only. Tree-shaken in production
+ * by the loader (the loader never imports from the SDK entry point directly;
+ * it `import()`s the tier bundle, which does not call _initForTest).
+ */
+export async function _initForTest(): Promise<IntentState | null> {
+  return init();
+}
 
 // Auto-initialize when DOM is ready
 if (typeof document !== 'undefined') {

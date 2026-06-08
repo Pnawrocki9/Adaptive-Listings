@@ -3879,15 +3879,21 @@ Extends the existing admin analytics/pilot dashboards (`apps/control-plane/src/a
   Both passes gate on `lead_id <> ''` (FOLLOW-180/LG-2 guard). Tenant admins MUST supply the
   `lead_id` field in `POST /api/dsr/initiate` for CRM-integrated subjects (DSR_ALERTING.md §3).
   See also FOLLOW-039 (ClickHouse erasure semantics, §H.1.1) and FOLLOW-186 (tenant compliance gate).
-- **Operator-dependency residual (FOLLOW-239 — RETRO-042 DG-2):** Pass B is operator-dependent —
-  the admin must know and supply the opaque CRM token at initiation time. There is no automated
-  `session_id → durable_lead_id` resolver. When `durable_lead_id` is omitted and CRM rows survive,
-  the erasure is flagged via Sentry warning, a ClickHouse audit entry (`action =
-  'incomplete_erasure_crm_rows_detected'`), and the `crm_erasure_status:
-  'incomplete_no_durable_lead_id'` field in the 200 response — NOT silent. The operator procedure
-  for re-running the erasure is documented in `docs/compliance/DSR_ALERTING.md §3`. This residual
-  gates the CRM go-live checklist (FOLLOW-187). A future FOLLOW may automate resolution by
-  persisting a `session_id ⋈ durable_lead_id` link at CRM-write time (path (a) of FOLLOW-239).
+- **Operator-dependency residual (FOLLOW-239 — RETRO-042 DG-2; renamed in FOLLOW-238 PR #237):**
+  Pass B is operator-dependent — the admin must know and supply the opaque CRM token at initiation
+  time. There is no automated `session_id → durable_lead_id` resolver. When `durable_lead_id` is
+  omitted and the tenant has CRM-namespace rows, the erasure is flagged via Sentry warning (`tags.
+  follow = 'FOLLOW-238'`), a ClickHouse audit entry (`action = 'crm_unverifiable'`), and the
+  `crm_erasure_status: 'crm_tenant_unverifiable'` field in the 200 response — NOT silent. This is a
+  tenant-capability warning (FOLLOW-238 AC1): the system cannot confirm whether the surviving rows
+  belong to the erased subject; it only knows the tenant has CRM rows and no durable token was
+  supplied. The operator procedure for re-running the erasure is documented in
+  `docs/compliance/DSR_ALERTING.md §3`. This residual gates the CRM go-live checklist (FOLLOW-187).
+  A future FOLLOW may automate resolution by persisting a `session_id ⋈ durable_lead_id` link at
+  CRM-write time (path (a) of FOLLOW-239).
+  *(Historical note: before FOLLOW-238 the wire value was `incomplete_no_durable_lead_id` and the
+  audit action was `incomplete_erasure_crm_rows_detected`. Both were renamed in PR #237 for
+  semantic accuracy — see DSR_ALERTING.md §2.)*
 
 ### T.7. Zgodność z architekturą (extend, do not duplicate)
 

@@ -35,7 +35,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { eq, and, ne } from 'drizzle-orm';
+import { eq, and, ne, sql } from 'drizzle-orm';
 import {
   createAdminClient,
   dsrVerifications,
@@ -397,6 +397,128 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
   });
 
+  // ── FOLLOW-239: CRM erasure completeness check (GDPR Art. 17) ───────────────
+  //
+  // When durable_lead_id is NULL, Pass B above did not run. We must detect whether
+  // this tenant has CRM-written conversion_labels rows that were NOT covered by Pass A
+  // (i.e. rows with lead_id != session_id and lead_id != '').
+  //
+  // If such rows exist the erasure is INCOMPLETE — Art. 17 requires we flag this
+  // loudly (Sentry warning + ClickHouse audit entry) rather than returning a silent
+  // 200. The operator can then supply durable_lead_id in a fresh DSR initiation to
+  // re-run with Pass B.
+  //
+  // This check runs OUTSIDE the transaction (read-only) immediately after the
+  // main erase transaction commits, so it reflects the post-delete state.
+  //
+  // Observable on the wire: `crm_erasure_status` field in the 200 body:
+  //   'complete'                        — Pass B ran, or no CRM rows exist.
+  //   'incomplete_no_durable_lead_id'   — Pass B skipped; CRM rows survive.
+  //                                       Operator must re-initiate with lead_id.
+  //
+  // Rule K.2: mock/fabricated data is forbidden; this is a real DB read.
+
+  type CrmErasureStatus = 'complete' | 'incomplete_no_durable_lead_id';
+  let crmErasureStatus: CrmErasureStatus = 'complete';
+
+  const durableLeadId = record.durableLeadId;
+  const passBRan =
+    typeof durableLeadId === 'string' &&
+    durableLeadId !== '' &&
+    durableLeadId !== record.sessionId;
+
+  if (!passBRan) {
+    // Count CRM-namespace rows: non-empty lead_id that is NOT the session_id.
+    // These are rows that Pass A does not cover and Pass B would have covered.
+    try {
+      const [countRow] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(conversionLabels)
+        .where(
+          and(
+            eq(conversionLabels.tenantId, record.tenantId),
+            ne(conversionLabels.leadId, ''),
+            ne(conversionLabels.leadId, record.sessionId),
+          ),
+        );
+
+      const survivingCrmRows = countRow?.count ?? 0;
+
+      if (survivingCrmRows > 0) {
+        crmErasureStatus = 'incomplete_no_durable_lead_id';
+
+        // ── Sentry warning (Rule K.2: configured-but-incomplete surfaces must be visible) ─
+        console.warn(
+          `[dsr/erase] FOLLOW-239: Art. 17 incomplete — ${String(survivingCrmRows)} CRM-namespace ` +
+            `conversion_labels row(s) survive for tenant ${record.tenantId} / ` +
+            `session ${record.sessionId}. durable_lead_id was not supplied at DSR initiation. ` +
+            `Operator must re-initiate with lead_id. See docs/compliance/DSR_ALERTING.md.`,
+        );
+
+        if (typeof process !== 'undefined' && process.env.SENTRY_DSN_CONTROL_PLANE) {
+          try {
+            const Sentry = await import('@sentry/nextjs');
+            Sentry.captureMessage(
+              `[dsr/erase] Art. 17 incomplete: ${String(survivingCrmRows)} CRM conversion_labels row(s) not erased`,
+              {
+                level: 'warning',
+                tags: {
+                  route: 'dsr/erase',
+                  tenant_id: record.tenantId,
+                  follow: 'FOLLOW-239',
+                },
+                extra: {
+                  surviving_crm_rows: survivingCrmRows,
+                  session_id: record.sessionId,
+                  dsr_verification_id: record.id,
+                  reason: 'durable_lead_id_not_supplied',
+                  operator_action:
+                    'Re-initiate DSR with lead_id. See docs/compliance/DSR_ALERTING.md.',
+                },
+              },
+            );
+          } catch {
+            // Sentry failure must not mask the real status.
+          }
+        }
+
+        // ── ClickHouse audit entry (fire-and-forget) — incomplete erasure is auditable ─
+        void writeDsrAuditLog({
+          tenant_id: record.tenantId,
+          session_id: record.sessionId,
+          dsr_type: 'erase',
+          action: 'incomplete_erasure_crm_rows_detected',
+          email: record.email,
+          requested_at: record.createdAt,
+          completed_at: now,
+        }).catch((err: unknown) => {
+          console.error(
+            '[dsr/erase] ClickHouse incomplete-erasure audit log failed:',
+            err instanceof Error ? err.message : err,
+          );
+        });
+      }
+    } catch (err: unknown) {
+      // A failure of the completeness check must not suppress the incompleteness.
+      // Log loudly — the erase DID run (Pass A completed) but we cannot confirm
+      // CRM coverage either way.
+      console.error(
+        '[dsr/erase] FOLLOW-239: CRM completeness check failed — could not query surviving rows:',
+        err instanceof Error ? err.message : err,
+      );
+      if (typeof process !== 'undefined' && process.env.SENTRY_DSN_CONTROL_PLANE) {
+        try {
+          const Sentry = await import('@sentry/nextjs');
+          Sentry.captureException(err, {
+            tags: { route: 'dsr/erase', tenant_id: record.tenantId, follow: 'FOLLOW-239' },
+          });
+        } catch {
+          // Sentry failure must not mask the real error.
+        }
+      }
+    }
+  }
+
   // ── Redis session DEL (fire-and-forget) ───────────────────────────────────
   void deleteSessionFromRedis(record.sessionId).catch((err: unknown) => {
     console.error('[dsr/erase] Redis DEL failed:', err instanceof Error ? err.message : err);
@@ -449,6 +571,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   return NextResponse.json(
     {
       deleted_at: now.toISOString(),
+      // FOLLOW-239: observable CRM erasure provenance (Rule K.2 — not silent).
+      // 'complete'                       — CRM rows erased (Pass B ran) or no CRM rows exist.
+      // 'incomplete_no_durable_lead_id'  — CRM rows survive; operator must re-initiate with lead_id.
+      //                                    See docs/compliance/DSR_ALERTING.md.
+      crm_erasure_status: crmErasureStatus,
       clickhouse_deletion: clickhouseDeletion,
     },
     { status: 200 },

@@ -1,12 +1,15 @@
-# Status — 2026-06-08T14:00Z
+# Status — 2026-06-08T22:00Z
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
 ## Active sprint: Sprint 16
 
-**7 DONE** (FOLLOW-170/173/174/176/182/190/227/230), **1 IN_PROGRESS** (FOLLOW-183 bounced —
-Gitleaks real gate failing), **1 READY_FOR_REVIEW** (FOLLOW-191 awaiting Rafal deploy ESC-020), **2
-READY** (FOLLOW-187, FOLLOW-175).
+**15 DONE** (FOLLOW-170/173/174/176/182/183/190/221/227/230/234/237/238/239/244), **0 IN_PROGRESS**,
+**3 READY_FOR_REVIEW** (FOLLOW-191 awaiting Rafal deploy ESC-020; FOLLOW-244 PR #239 CI green —
+awaiting human merge; FOLLOW-187 PR pending CI — ROPA v2.5 + DPIA v2.7, conditions 8+9 confirmed),
+**2 READY** (FOLLOW-175 P1, FOLLOW-245 P2).
+
+ESC-021 MITIGATED — FOLLOW-187 is sole remaining blocker; PR opening pending CI.
 
 ### FOLLOW-183 bounce details (PR #228)
 

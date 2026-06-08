@@ -8,6 +8,10 @@
     {
       "path": "/api/dsr/mutation-poll",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/internal/retention/conversion-labels",
+      "schedule": "0 2 * * *"
     }
   ]
 }

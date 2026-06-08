@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.2 **Date:** 2026-05-24 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.4 **Date:** 2026-06-08 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -850,6 +850,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 2.1     | 2026-05-24 | Data Engineering       | Section 8 (Data Subject Rights) — Erasure flow updated to reflect FOLLOW-039 implementation: synchronous Postgres delete + asynchronous ClickHouse `ALTER TABLE ... DELETE WHERE` mutations across `events`, `adaptation_decisions`, `llm_calls`, `session_quality`; status tracked in new Postgres operational table `dsr_clickhouse_mutations`; Vercel Cron `/api/dsr/mutation-poll` polls every 5 min; retries 3× with exponential backoff; Sentry alert on permanent failure. Cross-reference Master Design §H.1.1 for the canonical erasure flow + data inventory. Pre-2.1 the DPIA cited a "daily cron" erasure design that had not been built; that gap is now closed and EU pilot is unblocked.                                                                                                                                                  |
 | 2.2     | 2026-05-24 | Compliance Engineering | Section 8 (Data Subject Rights) — Added "Erasure failure alerting" paragraph documenting FOLLOW-078 stuck mutation detection: `dsr_mutation_stuck` Sentry warning fires when a `pending`/`in_progress` mutation has not advanced in >1 hour; `dsr_erase_clickhouse_mutation_failed` Sentry error fires on permanent failure. Incident owner and 5-minute response SLA documented. Runbook: `docs/ops/DSR_ALERTING.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | 2.3     | 2026-06-08 | Compliance Engineering | Section 13.3 added — disclosure for `estalara_intent_*` sessionStorage intent-state store (FOLLOW-218 / RETRO-032). Documents data category (inferred archetype + per-archetype probability vector), storage medium (sessionStorage, tab-lifetime), staleness window (30 minutes, `INTENT_STATE_STALE_MS`), consent gate (write occurs only when consent is 'granted', verified at `index.ts:329/455/595`), and erasure-on-denial/withdrawal (verified `eraseIntentState` call sites at `index.ts:209` and `index.ts:260`). No behavioral change to SDK required — gap was documentation-only. Privacy Notice Template §4 and §5 updated to add `estalara_intent_*` row and DPO gate item. ROPA Activity 14 added. DPIA version header bumped to 2.3 / 2026-06-08.                                                                                       |
+| 2.4     | 2026-06-08 | Compliance Engineering | Section 13.3 updated (FOLLOW-230): added "Dual-store erasure model" paragraph connecting the two independent erasure paths — client cache (`estalara_intent_*` sessionStorage, erased at `index.ts:209`/`index.ts:260` via `eraseIntentState`) and server archetype (`session_embeddings`, erased via DSR cascade FOLLOW-039 / Master Design §H.1.1). Privacy Notice Template §4 updated to list all eight active SDK storage keys (three keys omitted from v1.1 added: `estalara_variant:*`, `__estalara_quiz_dismissed__`, `__estalara_micro_poll_dismissed__`; header updated from "all five" to "all eight"). ROPA Revision History updated to record Activity 14 number reservation and FOLLOW-187 renumbering to Activity 15.                                                                                                                      |
 
 ---
 
@@ -1204,12 +1205,42 @@ absent from all server-side stores (Supabase, ClickHouse, Upstash). The existing
 `session_embeddings`. The client-side cache is a separate processing step now disclosed here and in
 ROPA Activity 14.
 
-**Required Privacy Notice update:** `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` has been updated in
-this PR to include a client-storage table (§4) listing all active SDK storage keys including
-`estalara_intent_{sessionId}`. The DPO gate in §5 has been updated to add a review item for this
-section and a staging QA gate item for sessionStorage erasure verification. No separate SDK
-implementation work is required — the storage behavior, consent gate, and erasure are already
-implemented and verified as described above.
+**Dual-store erasure model (FOLLOW-230):** The inferred archetype / intent profile exists in two
+independent stores and each has its own erasure path:
+
+1. **Client cache (`estalara_intent_*`, sessionStorage):** Erased on consent denial or withdrawal by
+   `eraseIntentState(sessionId)`, which calls
+   `sessionStorage.removeItem(intentStateStorageKey(sessionId))` (verified at
+   `packages/sdk/src/core/session.ts:427`). Called at two sites:
+   - `packages/sdk/src/index.ts:209` — when a returning visitor's stored consent state is `'denied'`
+     at SDK init (consent previously denied or mid-session withdrawal detected on reload).
+   - `packages/sdk/src/index.ts:260` — when the visitor clicks "Decline" on the consent banner
+     during the current session, immediately before the SDK halts. The browser additionally clears
+     sessionStorage on tab close, providing a second independent clearing mechanism independent of
+     any SDK code path.
+
+2. **Server archetype (`session_embeddings` table, Postgres per-region):** Erased via the DSR
+   erasure cascade (FOLLOW-039, implemented in `apps/control-plane/src/dsr/`). On receipt of an
+   erasure DSR, the cascade executes a synchronous Postgres `DELETE WHERE session_id = $1` on
+   `session_embeddings` (and `consent_records`, `engagement_scores`, `answers`) inside a single
+   transaction, followed by asynchronous ClickHouse mutations on `adaptation_decisions`,
+   `llm_calls`, `session_quality`. The cascade is described in DPIA §8 and documented in Master
+   Design §H.1.1. The 13-month ClickHouse retention TTL enforces a bounded maximum lifetime without
+   DSR action.
+
+These two erasure paths are independent: the client cache is erased synchronously in the visitor's
+browser on every consent denial/withdrawal event; the server archetype record is erased in response
+to an explicit DSR erasure request (or naturally expires after 90 days via the nightly TTL cron).
+Data subjects who wish to erase both stores should submit a DSR erasure request via the tenant's DSR
+channel; the client-side cache is additionally cleared immediately upon withdrawing consent via the
+consent banner.
+
+**Required Privacy Notice update:** `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §4 has been updated
+(FOLLOW-230) to list all eight active SDK storage keys, including the three keys omitted from v1.1:
+`estalara_variant:{sessionId}`, `__estalara_quiz_dismissed__`, and
+`__estalara_micro_poll_dismissed__`. Each key now has an explicit consent classification and per-key
+implementation notes with grep-verified source references. No separate SDK implementation work is
+required for the three newly-listed keys — their storage behavior was already shipped.
 
 **DPO gate:** DPO review of this section (§13.3) is required before EU pilot go-live, together with
 §13.1 and §13.2. Status: **PENDING** — DPO sign-off not yet received. Gate tracked in

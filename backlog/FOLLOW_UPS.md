@@ -5436,7 +5436,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-## FOLLOW-187 — Compliance docs for CRM ingest: ROPA Activity 14 + DPIA §2.3/§2.5 + conversion_labels 13-month TTL (go-live gates 8 & 9)
+## FOLLOW-187 — Compliance docs for CRM ingest: ROPA Activity 15 + DPIA §2.3/§2.5 + conversion_labels 13-month TTL (go-live gates 8 & 9)
 
 - **status:** OPEN
 - **priority:** P1
@@ -5449,11 +5449,15 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   items in backlog/FOLLOW_UPS.md if not satisfied at time of merge" (`HANDOFFS.md:1087-1089`). PR
   #191 ships conditions 1–7 only (by design). This stub tracks **condition 8** + **condition 9**
   (condition 10 → FOLLOW-186):
-  - **Condition 8 (ROPA/DPIA):** add ROPA Activity 14 — CRM Deep-Outcome Ingest to
-    `docs/compliance/ropa.md` (data categories: prediction_id non-PII, lead_id pseudonymous,
+  - **Condition 8 (ROPA/DPIA):** add ROPA **Activity 15** — CRM Deep-Outcome Ingest to
+    `docs/compliance/ropa.md` (data categories: prediction*id non-PII, lead_id pseudonymous,
     outcome_class enum, confidence; legal basis + retention per `HANDOFFS.md:976-988`); add the DPIA
     §2.3 / §2.5 rows per `HANDOFFS.md:994-1001`. Merged to main before any tenant is pointed at the
-    endpoint. Neither requires external DPO sign-off before merge.
+    endpoint. Neither requires external DPO sign-off before merge. **Number note (FOLLOW-230):**
+    Originally targeted Activity 14. FOLLOW-218 (PR #223, merged 2026-06-08) added Activity 14 for
+    the client-side `estalara_intent*\*` sessionStorage cache before this ticket executed. This stub
+    is updated to use **Activity 15** (the next free number). ROPA v2.2 revision history confirms
+    the assignment.
   - **Condition 9 (13-month TTL):** the nightly TTL cron covers `session_embeddings` /
     `engagement_scores` but **NOT** `conversion_labels` (`HANDOFFS.md:952-958`). File/implement a
     13-month TTL enforcement (cron or partition TTL) for `conversion_labels`, verified in CI. **Per
@@ -5461,11 +5465,12 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
     this lands** — interim ROPA/DPIA language must read "13 months (TTL enforcement pending
     FOLLOW-187)."
 - **ac:**
-  - [ ] ROPA Activity 14 added; DPIA §2.3/§2.5 rows added (condition 8)
+  - [ ] ROPA Activity **15** added; DPIA §2.3/§2.5 rows added (condition 8)
   - [ ] 13-month TTL enforcement on `conversion_labels` shipped + CI-verified (condition 9)
   - [ ] ROPA/DPIA retention language honors Rule N interim carve-out until the TTL is live
   - [ ] CI green
-- **depends_on:** condition 10 split to FOLLOW-186; relates to FOLLOW-177 (§T status).
+- **depends_on:** condition 10 split to FOLLOW-186; relates to FOLLOW-177 (§T status). Unblocked by
+  FOLLOW-230 (number collision resolved 2026-06-08).
 - **promoted_to_queue:** true (QUEUE.md, 2026-06-03; P1)
 
 ---
@@ -5998,7 +6003,8 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ## FOLLOW-230 — Reconcile FOLLOW-218 compliance docs: ROPA Activity-14 renumber + Privacy Notice §4 completeness + key-sync CI lint
 
-- **status:** OPEN
+- **status:** DONE (PR #226, branch compliance-engineer/FOLLOW-230-ropa-renumber-privacy-notice,
+  2026-06-08)
 - **priority:** P1
 - **source_retro:** RETRO-036 (§4a LG-1, §4b CB-1, §4c TG-1, §4d DG-1, §3 Rule N completeness)
 - **source_ticket:** FOLLOW-218 / PR #223

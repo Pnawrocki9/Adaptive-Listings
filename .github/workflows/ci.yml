@@ -383,6 +383,25 @@ jobs:
       - name: Check mirror-file byte identity
         run: bash scripts/check-mirror-files.sh
 
+  # ── Privacy Notice key-sync gate (FOLLOW-230 / Rule N) ──────────────────
+  # Asserts that every *_STORAGE_KEY, *_KEY_PREFIX, and *_DISMISS_KEY constant
+  # in packages/sdk/src (non-test files) is disclosed in the Privacy Notice
+  # template (docs/compliance/PRIVACY_NOTICE_TEMPLATE.md §4).
+  #
+  # A key present in shipped SDK code but absent from the privacy notice is a
+  # Rule N compliance gap: a disclosure-by-omission that makes the notice
+  # factually incomplete for EU/UK data subjects (RETRO-036 CB-1).
+  #
+  # Hard gate — no continue-on-error.
+  privacy-notice-keys-sync:
+    name: Privacy Notice SDK key-sync (Rule N / FOLLOW-230)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assert all SDK storage keys are disclosed in Privacy Notice §4
+        run: bash scripts/check-privacy-notice-keys.sh
+
   # ── Cross-language event contract gate (FOLLOW-198 / FOLLOW-168) ───────────
   # Asserts that the TypeScript DescriptionRequestedEventSchema required-field set
   # and the Python consumer's REQUIRED_FIELDS both match the single source of truth:

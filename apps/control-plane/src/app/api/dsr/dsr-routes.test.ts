@@ -91,10 +91,17 @@ vi.mock('@estalara/db', () => ({
     status: 'status',
     tableName: 'table_name',
   },
-  // FOLLOW-172 — used by POST /api/dsr/erase for conversion_labels cascade.
+  // FOLLOW-172 / FOLLOW-246 — used by erase cascade AND access/portability read.
   conversionLabels: {
+    id: 'id',
     tenantId: 'tenant_id',
+    predictionId: 'prediction_id',
     leadId: 'lead_id',
+    outcomeClass: 'outcome_class',
+    labelSource: 'label_source',
+    confidence: 'confidence',
+    labeledAt: 'labeled_at',
+    notes: 'notes',
   },
   // FOLLOW-193 / DPIA §8 line 773 — used by POST /api/dsr/erase for engagement_scores cascade.
   engagementScores: {
@@ -215,7 +222,23 @@ function makeValidRecord(dsrType: string, overrides: Record<string, unknown> = {
     expiresAt: new Date(Date.now() + 10 * 60 * 1000),
     usedAt: null,
     createdAt: new Date(),
+    // FOLLOW-246: durable CRM lead_id, nullable.
+    durableLeadId: null,
     ...overrides,
+  };
+}
+
+/** Build a conversion_labels row fixture for FOLLOW-246 tests. */
+function makeLabelRow(leadId: string, predictionId = 'pred-001') {
+  return {
+    id: `label-${predictionId}`,
+    predictionId,
+    leadId,
+    outcomeClass: 'viewing_booked',
+    labelSource: 'system',
+    confidence: null,
+    labeledAt: new Date('2026-04-01T10:00:00Z'),
+    notes: null,
   };
 }
 
@@ -381,11 +404,14 @@ describe('GET /api/dsr/access', () => {
       revokedAt: null,
     };
 
-    // Call order: dsrVerifications lookup → update usedAt → sessionEmbeddings → consentRecords
+    // Call order: dsrVerifications → update usedAt → sessionEmbeddings → consentRecords
+    //             → conversion_labels Pass A → (no Pass B: durableLeadId null)
     mockSelect
       .mockReturnValueOnce(buildChain([validRecord])) // 1st: dsr record
       .mockReturnValueOnce(buildChain([sessionRow])) // 2nd: session
-      .mockReturnValueOnce(buildChain([consentRow])); // 3rd: consents
+      .mockReturnValueOnce(buildChain([consentRow])) // 3rd: consents
+      .mockReturnValueOnce(buildChain([])); // 4th: conversion_labels Pass A (empty)
+    // Pass B skipped: durableLeadId is null.
     mockUpdate.mockReturnValue(buildChain([]));
 
     const { GET } = await import('./access/route.js');
@@ -399,6 +425,7 @@ describe('GET /api/dsr/access', () => {
       events_summary: { count: number };
       matched_archetype: string | null;
       consent_records: unknown[];
+      conversion_labels: unknown[];
     };
     expect(body).toHaveProperty('session_id');
     expect(body).toHaveProperty('tenant_id');
@@ -407,6 +434,9 @@ describe('GET /api/dsr/access', () => {
     expect(body).toHaveProperty('matched_archetype');
     expect(body).toHaveProperty('consent_records');
     expect(Array.isArray(body.consent_records)).toBe(true);
+    // FOLLOW-246: conversion_labels must be present in response.
+    expect(body).toHaveProperty('conversion_labels');
+    expect(Array.isArray(body.conversion_labels)).toBe(true);
   });
 });
 
@@ -496,7 +526,8 @@ describe('GET /api/dsr/portability', () => {
     mockSelect
       .mockReturnValueOnce(buildChain([validRecord])) // dsr record
       .mockReturnValueOnce(buildChain([sessionRow])) // session
-      .mockReturnValueOnce(buildChain([])); // consents (empty)
+      .mockReturnValueOnce(buildChain([])) // consents (empty)
+      .mockReturnValueOnce(buildChain([])); // conversion_labels Pass A (empty; no Pass B: durableLeadId null)
     mockUpdate.mockReturnValue(buildChain([]));
 
     const { GET } = await import('./portability/route.js');
@@ -511,5 +542,175 @@ describe('GET /api/dsr/portability', () => {
 
     const contentType = res.headers.get('Content-Type');
     expect(contentType).toContain('application/json');
+  });
+});
+
+// ─── FOLLOW-246: conversion_labels on both namespaces (access + portability) ──
+//
+// These tests assert the four scenarios from FOLLOW-246 AC5:
+//   (a) session-only subject → SDK rows returned
+//   (b) CRM subject (durable_lead_id set) → CRM rows returned
+//   (c) both namespaces → union without duplicates
+//   (d) null durable_lead_id → SDK rows only, no error
+
+describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespaces', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockHashOtp.mockImplementation((otp: string) => `hash_of_${otp}`);
+    mockWriteDsrAuditLog.mockResolvedValue(undefined);
+  });
+
+  it('(a) returns SDK-ping labels when durable_lead_id is null', async () => {
+    const validRecord = makeValidRecord('access', { durableLeadId: null });
+    const sdkLabel = makeLabelRow(validRecord.sessionId, 'pred-sdk-001');
+
+    // Call order: dsr record → update → session → consents → labels Pass A (SDK rows) → (no Pass B)
+    mockSelect
+      .mockReturnValueOnce(buildChain([validRecord]))
+      .mockReturnValueOnce(buildChain([])) // session (absent — that's fine)
+      .mockReturnValueOnce(buildChain([])) // consents (empty)
+      .mockReturnValueOnce(buildChain([sdkLabel])); // Pass A: SDK labels
+    mockUpdate.mockReturnValue(buildChain([]));
+
+    const { GET } = await import('./access/route.js');
+    const req = makeRequest('GET', '/api/dsr/access', { searchParams: { token: '123456' } });
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { conversion_labels: { lead_id: string }[] };
+    expect(body.conversion_labels).toHaveLength(1);
+    expect(body.conversion_labels[0]?.lead_id).toBe(validRecord.sessionId);
+  });
+
+  it('(b) returns CRM labels when durable_lead_id is set and different from session_id', async () => {
+    const CRM_LEAD_ID = 'crm-opaque-token-xyz';
+    const validRecord = makeValidRecord('access', { durableLeadId: CRM_LEAD_ID });
+    const crmLabel = makeLabelRow(CRM_LEAD_ID, 'pred-crm-001');
+
+    // Call order: dsr record → update → session → consents → Pass A (empty, no sdk labels)
+    //             → Pass B (CRM labels)
+    mockSelect
+      .mockReturnValueOnce(buildChain([validRecord]))
+      .mockReturnValueOnce(buildChain([])) // session (absent)
+      .mockReturnValueOnce(buildChain([])) // consents (empty)
+      .mockReturnValueOnce(buildChain([])) // Pass A: no SDK labels for this session
+      .mockReturnValueOnce(buildChain([crmLabel])); // Pass B: CRM labels
+    mockUpdate.mockReturnValue(buildChain([]));
+
+    const { GET } = await import('./access/route.js');
+    const req = makeRequest('GET', '/api/dsr/access', { searchParams: { token: '123456' } });
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { conversion_labels: { lead_id: string }[] };
+    expect(body.conversion_labels).toHaveLength(1);
+    expect(body.conversion_labels[0]?.lead_id).toBe(CRM_LEAD_ID);
+  });
+
+  it('(c) returns union of SDK + CRM labels without duplicates when both namespaces have rows', async () => {
+    const CRM_LEAD_ID = 'crm-opaque-token-abc';
+    const validRecord = makeValidRecord('access', { durableLeadId: CRM_LEAD_ID });
+    const sdkLabel = makeLabelRow(validRecord.sessionId, 'pred-sdk-002');
+    const crmLabel = makeLabelRow(CRM_LEAD_ID, 'pred-crm-002');
+
+    mockSelect
+      .mockReturnValueOnce(buildChain([validRecord]))
+      .mockReturnValueOnce(buildChain([])) // session
+      .mockReturnValueOnce(buildChain([])) // consents
+      .mockReturnValueOnce(buildChain([sdkLabel])) // Pass A: SDK label
+      .mockReturnValueOnce(buildChain([crmLabel])); // Pass B: CRM label
+    mockUpdate.mockReturnValue(buildChain([]));
+
+    const { GET } = await import('./access/route.js');
+    const req = makeRequest('GET', '/api/dsr/access', { searchParams: { token: '123456' } });
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      conversion_labels: { id: string; lead_id: string }[];
+    };
+    // Two distinct rows — no duplicates.
+    expect(body.conversion_labels).toHaveLength(2);
+    const ids = body.conversion_labels.map((l) => l.id);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it('(d) null durable_lead_id → only Pass A runs, no error, empty labels when no SDK rows', async () => {
+    const validRecord = makeValidRecord('access', { durableLeadId: null });
+
+    mockSelect
+      .mockReturnValueOnce(buildChain([validRecord]))
+      .mockReturnValueOnce(buildChain([])) // session
+      .mockReturnValueOnce(buildChain([])) // consents
+      .mockReturnValueOnce(buildChain([])); // Pass A: no SDK labels
+    // Pass B must NOT be called when durableLeadId is null.
+    mockUpdate.mockReturnValue(buildChain([]));
+
+    const { GET } = await import('./access/route.js');
+    const req = makeRequest('GET', '/api/dsr/access', { searchParams: { token: '123456' } });
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { conversion_labels: unknown[] };
+    // No labels but no error — graceful skip.
+    expect(body.conversion_labels).toHaveLength(0);
+    // Pass B (5th select call) must NOT have been made.
+    expect(mockSelect).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('FOLLOW-246: GET /api/dsr/portability — conversion_labels on both namespaces', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockHashOtp.mockImplementation((otp: string) => `hash_of_${otp}`);
+    mockWriteDsrAuditLog.mockResolvedValue(undefined);
+  });
+
+  it('exports SDK-ping labels when durable_lead_id is null', async () => {
+    const validRecord = makeValidRecord('portability', { durableLeadId: null });
+    const sdkLabel = makeLabelRow(validRecord.sessionId, 'pred-sdk-port-001');
+
+    mockSelect
+      .mockReturnValueOnce(buildChain([validRecord]))
+      .mockReturnValueOnce(buildChain([])) // session
+      .mockReturnValueOnce(buildChain([])) // consents
+      .mockReturnValueOnce(buildChain([sdkLabel])); // Pass A
+    mockUpdate.mockReturnValue(buildChain([]));
+
+    const { GET } = await import('./portability/route.js');
+    const req = makeRequest('GET', '/api/dsr/portability', { searchParams: { token: '123456' } });
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const raw = await res.text();
+    const body = JSON.parse(raw) as { conversion_labels: { lead_id: string }[] };
+    expect(body.conversion_labels).toHaveLength(1);
+    expect(body.conversion_labels[0]?.lead_id).toBe(validRecord.sessionId);
+    // Verify Art. 20 machine-readable format: Content-Type must be application/json.
+    expect(res.headers.get('Content-Type')).toContain('application/json');
+  });
+
+  it('exports CRM labels when durable_lead_id is set', async () => {
+    const CRM_LEAD_ID = 'crm-opaque-port-token';
+    const validRecord = makeValidRecord('portability', { durableLeadId: CRM_LEAD_ID });
+    const crmLabel = makeLabelRow(CRM_LEAD_ID, 'pred-crm-port-001');
+
+    mockSelect
+      .mockReturnValueOnce(buildChain([validRecord]))
+      .mockReturnValueOnce(buildChain([])) // session
+      .mockReturnValueOnce(buildChain([])) // consents
+      .mockReturnValueOnce(buildChain([])) // Pass A: no SDK labels
+      .mockReturnValueOnce(buildChain([crmLabel])); // Pass B: CRM labels
+    mockUpdate.mockReturnValue(buildChain([]));
+
+    const { GET } = await import('./portability/route.js');
+    const req = makeRequest('GET', '/api/dsr/portability', { searchParams: { token: '123456' } });
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const raw = await res.text();
+    const body = JSON.parse(raw) as { conversion_labels: { lead_id: string }[] };
+    expect(body.conversion_labels).toHaveLength(1);
+    expect(body.conversion_labels[0]?.lead_id).toBe(CRM_LEAD_ID);
   });
 });

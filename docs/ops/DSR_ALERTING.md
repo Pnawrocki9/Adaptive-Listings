@@ -302,11 +302,102 @@ compliance gate (FOLLOW-186 condition 10) enforces this contractually.
 
 ---
 
+---
+
+## §access — conversion_labels in Art. 15 access report (FOLLOW-246)
+
+**Updated:** 2026-06-08 | **Source:** FOLLOW-246 (RETRO-044 §4a LG-1)
+
+`GET /api/dsr/access` returns a `conversion_labels` array in the 200 body covering BOTH identifier
+namespaces for the data subject:
+
+| Pass | Query predicate                               | What it covers                                  |
+| ---- | --------------------------------------------- | ----------------------------------------------- |
+| A    | `lead_id = session_id AND lead_id <> ''`      | SDK feedback-ping labels (existing, FOLLOW-172) |
+| B    | `lead_id = durable_lead_id AND lead_id <> ''` | CRM deep-outcome labels (FOLLOW-246)            |
+
+Pass B only runs when `dsr_verifications.durable_lead_id` is non-null, non-empty, and differs from
+`session_id`. Results are union-merged and deduplicated by row `id`.
+
+### Fields returned per row
+
+| Field           | Type            | Source column                     | Notes                                             |
+| --------------- | --------------- | --------------------------------- | ------------------------------------------------- |
+| `id`            | UUID string     | `conversion_labels.id`            | Primary key.                                      |
+| `prediction_id` | string          | `conversion_labels.prediction_id` | Join key to `adaptation_decisions` in ClickHouse. |
+| `lead_id`       | string          | `conversion_labels.lead_id`       | Identifier namespace (session_id or CRM token).   |
+| `outcome_class` | string (enum)   | `conversion_labels.outcome_class` | One of `ConversionOutcomeClass` values.           |
+| `label_source`  | string (enum)   | `conversion_labels.label_source`  | `system` or `manual_admin`.                       |
+| `confidence`    | number or null  | `conversion_labels.confidence`    | Labeler confidence (0–1). Nullable.               |
+| `labeled_at`    | ISO 8601 string | `conversion_labels.labeled_at`    | When the label was created/updated.               |
+| `notes`         | string or null  | `conversion_labels.notes`         | Manual reclassification rationale. Nullable.      |
+
+**Compliance note (DPIA §8):** Compliance-engineer must verify these fields against DPIA §8 before
+marking the Art. 15 access gate as closed. The `outcome_raw` column (raw inbound payload) is
+intentionally NOT returned — it may contain CRM payload structures that are outside the Art. 15
+disclosure scope for this endpoint; a separate compliance decision is needed if it should be
+included.
+
+### Known limitation
+
+A supplied-but-wrong `durable_lead_id` at DSR initiation produces a silent no-op in Pass B — it
+matches nothing and the `conversion_labels` array returns only Pass A rows (SDK labels). The tenant
+is contractually responsible for supplying the correct CRM token (DPA clause, FOLLOW-186 gate).
+
+---
+
+## §portability — conversion_labels in Art. 20 portability export (FOLLOW-246)
+
+**Updated:** 2026-06-08 | **Source:** FOLLOW-246 (RETRO-044 §4a LG-1)
+
+`GET /api/dsr/portability` exports the same `conversion_labels` data as the access endpoint,
+included in the downloadable JSON file under the `conversion_labels` key. The same two-pass model
+applies (Pass A: session_id, Pass B: durable_lead_id). The same fields are exported.
+
+### Art. 20 machine-readable format compliance
+
+The portability export is structured JSON (`Content-Type: application/json`) delivered as a
+downloadable attachment (`Content-Disposition: attachment; filename="estalara-data-export-*.json"`).
+This satisfies the GDPR Art. 20(1) "structured, commonly used and machine-readable format"
+requirement. Compliance-engineer must confirm this shape meets the DPO's Art. 20 interpretation
+before the CRM go-live gate (FOLLOW-187 condition 9+).
+
+### Portability format excerpt
+
+```json
+{
+  "session_id": "...",
+  "tenant_id": "...",
+  "exported_at": "2026-06-08T12:00:00.000Z",
+  "events_summary": { "count": 1, "first_at": "...", "last_at": "..." },
+  "matched_archetype": "...",
+  "consent_records": [...],
+  "conversion_labels": [
+    {
+      "id": "...",
+      "prediction_id": "...",
+      "lead_id": "...",
+      "outcome_class": "viewing_booked",
+      "label_source": "system",
+      "confidence": null,
+      "labeled_at": "2026-04-01T10:00:00.000Z",
+      "notes": null
+    }
+  ]
+}
+```
+
+---
+
 ## Related documents
 
 - `docs/compliance/dpia.md` — Section 8 (Data Subject Rights), erasure flow and alerting
 - `apps/control-plane/src/app/api/dsr/mutation-poll/route.ts` — polling handler source
 - `apps/control-plane/src/app/api/dsr/erase/route.ts` — erase handler (Pass A + Pass B cascade)
+- `apps/control-plane/src/app/api/dsr/access/route.ts` — access handler (Pass A + Pass B read,
+  FOLLOW-246)
+- `apps/control-plane/src/app/api/dsr/portability/route.ts` — portability handler (Pass A + Pass B
+  export, FOLLOW-246)
 - `apps/control-plane/src/app/api/dsr/initiate/route.ts` — initiate handler (captures
   durable_lead_id)
 - `packages/db/src/schema/dsr_clickhouse_mutations.ts` — Drizzle schema for the mutation tracking

@@ -6454,7 +6454,9 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **depends_on:** RETRO-031 §4a LG-1 lineage; shares the PGlite harness
   `packages/db/src/__tests__/ dsr-crm-erasure.test.ts` (FOLLOW-184) and relates to FOLLOW-185
   (CRM-producer e2e harness), FOLLOW-186 (onboarding gate), FOLLOW-187 (CRM go-live checklist).
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+- **promoted_as:** backend-engineer/FOLLOW-246-dsr-access-portability-crm-labels (direct
+  implementation, no queue ticket — P1 compliance fix)
 
 ---
 

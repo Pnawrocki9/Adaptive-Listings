@@ -201,10 +201,79 @@ cron logs in Vercel.
 
 ---
 
+## Identifier-resolution model for DSR erasure (FOLLOW-184)
+
+**Updated:** 2026-06-08 | **Source:** RETRO-031 §4a LG-1, FOLLOW-184
+
+### Background — two identifier namespaces
+
+Estalara uses two distinct identifier namespaces for the same data subject:
+
+| Identifier            | Source                                                   | Where used                                                   |
+| --------------------- | -------------------------------------------------------- | ------------------------------------------------------------ |
+| `session_id`          | Estalara SDK fingerprint (SHA-256 hash, anonymous)       | `session_embeddings`, `dsr_verifications`, ClickHouse tables |
+| `lead_id` (CRM token) | Opaque pseudonymous token sent by the tenant CRM webhook | `conversion_labels.lead_id` (CRM deep-outcome rows)          |
+
+These identifiers are in **different namespaces**. A data subject's `session_id` is almost never
+equal to the CRM `lead_id` the tenant's CRM uses for the same person.
+
+### The gap (pre-FOLLOW-184)
+
+The original DSR erase cascade deleted `conversion_labels WHERE lead_id = session_id`. Because CRM
+webhook rows use `lead_id = <CRM token> ≠ session_id`, they survived DSR erasure — a GDPR Art. 17
+completeness gap for any CRM-integrated tenant.
+
+### Resolution model (FOLLOW-184)
+
+`dsr_verifications.durable_lead_id` (nullable text, migration 0024) captures the CRM token at DSR
+initiation time. The erase route then runs two DELETE passes in a single transaction:
+
+- **Pass A** — `conversion_labels WHERE lead_id = session_id` — covers SDK feedback-ping labels.
+- **Pass B** — `conversion_labels WHERE lead_id = durable_lead_id` — covers CRM deep-outcome labels.
+
+Both passes enforce the empty-key guard: `lead_id <> ''` (FOLLOW-180/LG-2 — an empty key must never
+match all system labels for the tenant).
+
+Pass B only runs when `durable_lead_id` is non-null, non-empty, and differs from `session_id` (dedup
+guard: if equal, Pass A already covers those rows).
+
+### Operational requirement: supplying durable_lead_id at DSR initiation
+
+When a tenant admin initiates a DSR for a data subject who has a CRM record, they MUST supply the
+`lead_id` field in `POST /api/dsr/initiate`:
+
+```json
+{
+  "session_id": "<estalara-session-fingerprint>",
+  "email": "subject@example.com",
+  "dsr_type": "erase",
+  "lead_id": "<same-token-sent-to-crm-webhook>"
+}
+```
+
+The `lead_id` value must be the same opaque pseudonymous token the tenant's CRM used in the
+`POST /api/crm/outcome` request for this data subject. It must NOT be a CRM contact ID, email
+address, or any PII (tenant contractual obligation, DPA clause + onboarding gate §A.3).
+
+If the tenant cannot provide the `lead_id` (e.g., no CRM record exists for the data subject), omit
+the field. Pass A covers SDK-only sessions; Pass B is a no-op in that case.
+
+### Compliance note
+
+GDPR Art. 17 erasure is complete when BOTH passes execute for all known identifiers. Tenants with
+CRM integration MUST provide the `lead_id` field for full Art. 17 compliance. The tenant onboarding
+compliance gate (FOLLOW-186 condition 10) enforces this contractually.
+
+---
+
 ## Related documents
 
 - `docs/compliance/dpia.md` — Section 8 (Data Subject Rights), erasure flow and alerting
 - `apps/control-plane/src/app/api/dsr/mutation-poll/route.ts` — polling handler source
+- `apps/control-plane/src/app/api/dsr/erase/route.ts` — erase handler (Pass A + Pass B cascade)
+- `apps/control-plane/src/app/api/dsr/initiate/route.ts` — initiate handler (captures
+  durable_lead_id)
 - `packages/db/src/schema/dsr_clickhouse_mutations.ts` — Drizzle schema for the mutation tracking
   table
+- `packages/db/migrations/0024_dsr_durable_lead_id.sql` — migration that adds durable_lead_id
 - `apps/control-plane/sentry.server.config.ts` — Sentry initialization

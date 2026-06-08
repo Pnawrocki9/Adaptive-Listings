@@ -14,6 +14,10 @@
  *      - DELETE FROM conversion_labels WHERE lead_id = session_id AND tenant_id (FOLLOW-172)
  *        GUARD: only when lead_id (= session_id) is non-empty — an empty lead_id would
  *        erase ALL system labels for the tenant (FOLLOW-180/LG-2 boundary).
+ *      - DELETE FROM conversion_labels WHERE lead_id = durable_lead_id AND tenant_id (FOLLOW-184)
+ *        Covers CRM-written rows where lead_id is an opaque CRM token ≠ session_id.
+ *        Only runs when dsr_verifications.durable_lead_id is non-null/non-empty.
+ *        Same empty-key guard as above (GDPR Art. 17 completeness, RETRO-031 §4a LG-1).
  *   5. Redis DEL session:{session_id}:* (fire-and-forget).
  *   6. **NEW (FOLLOW-039 — RODO Art. 17 hard-delete):**
  *      For each ClickHouse PII table (events, adaptation_decisions, llm_calls,
@@ -326,23 +330,53 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     await tx.delete(consentRecords).where(eq(consentRecords.sessionId, record.sessionId));
 
-    // ── FOLLOW-172: conversion_labels erasure cascade (GDPR Art. 17) ────────
-    // Delete conversion_labels rows keyed by lead_id for this data subject.
-    // In the current MVP the lead_id is the session_id pseudonymous token; a
-    // durable mapping (FOLLOW-180) will make this join richer in future.
+    // ── FOLLOW-172 / FOLLOW-184: conversion_labels erasure cascade (GDPR Art. 17) ─
     //
-    // CRITICAL GUARD (FOLLOW-180/LG-2): NEVER delete when lead_id is empty — an
-    // empty lead_id means "no durable lead identity has been assigned yet" and a
-    // blank-lead DELETE would erase ALL system labels for the tenant (data loss).
-    // We guard at two layers: (a) record.sessionId !== '' (defensive; session_id
-    // is always a non-empty hash from the ingest path) and (b) ne() predicate on
-    // the stored lead_id column so a blank DB value never matches.
+    // Two DELETE passes cover both identifier namespaces for this data subject:
+    //
+    //   Pass A — SDK feedback-ping labels (existing, FOLLOW-172):
+    //     conversion_labels WHERE lead_id = session_id
+    //     These are rows written by the SDK feedback ping with lead_id = session_id.
+    //
+    //   Pass B — CRM deep-outcome labels (NEW, FOLLOW-184):
+    //     conversion_labels WHERE lead_id = durable_lead_id
+    //     CRM webhook writes use an opaque tenant-supplied token as lead_id, which is
+    //     a DIFFERENT namespace from session_id. Without this pass those rows survive
+    //     a DSR erasure — GDPR Art. 17 gap (RETRO-031 §4a LG-1).
+    //
+    // CRITICAL GUARD on BOTH passes (FOLLOW-180/LG-2):
+    //   NEVER delete when the key is empty — an empty lead_id would erase ALL system
+    //   labels for the tenant (data loss). Guarded at two layers:
+    //     (a) application-layer: key !== '' before issuing the DELETE
+    //     (b) DB-layer: ne(conversionLabels.leadId, '') predicate in the WHERE clause
+    //
+    // Pass A: session_id path (SDK ping labels).
     if (record.sessionId !== '') {
       await tx.delete(conversionLabels).where(
         and(
           eq(conversionLabels.tenantId, record.tenantId),
           eq(conversionLabels.leadId, record.sessionId),
           // Double-guard: skip any row where lead_id was somehow stored as ''.
+          ne(conversionLabels.leadId, ''),
+        ),
+      );
+    }
+
+    // Pass B: durable CRM lead_id path (CRM deep-outcome labels, FOLLOW-184).
+    // Only runs when the DSR initiator supplied a durable_lead_id AND it differs
+    // from the session_id (dedup: if they happen to be equal, Pass A already covered
+    // those rows — issuing a second DELETE is safe but wasteful).
+    const durableLeadId = record.durableLeadId;
+    if (
+      typeof durableLeadId === 'string' &&
+      durableLeadId !== '' &&
+      durableLeadId !== record.sessionId
+    ) {
+      await tx.delete(conversionLabels).where(
+        and(
+          eq(conversionLabels.tenantId, record.tenantId),
+          eq(conversionLabels.leadId, durableLeadId),
+          // Double-guard: belt-and-suspenders — an empty stored lead_id must never match.
           ne(conversionLabels.leadId, ''),
         ),
       );

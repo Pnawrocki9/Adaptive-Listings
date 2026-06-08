@@ -10,8 +10,15 @@
  * that proves whether a fine-tuned `lora-tenant-*` model beats
  * `rulebased-bandit-v1` (MASTER_DESIGN §T.3).
  *
+ * Export path (FOLLOW-221): `?format=json` returns a JSON array of
+ * CalibrationExportRow objects — one per (outcome_class, model_version)
+ * combination — with a Content-Disposition attachment header so it can be
+ * downloaded directly and fed into FOLLOW-175 / §D.5.7 LoRA fine-tuning corpus.
+ *
  * @module apps/control-plane/src/app/api/pilot/calibration/route-helpers
  */
+
+import { z } from 'zod';
 
 // ─── ClickHouse row shapes ────────────────────────────────────────────────────
 
@@ -107,6 +114,89 @@ export interface CalibrationResponse {
   data_source: 'clickhouse' | 'mock';
 }
 
+// ─── JSON export schema (FOLLOW-221) ─────────────────────────────────────────
+
+/**
+ * Zod schema for one row of the structured JSON export returned by
+ * `GET /api/pilot/calibration?format=json`.
+ *
+ * Shape documented in HANDOFFS.md "FOLLOW-221 → FOLLOW-175".
+ *
+ * Fields:
+ *   outcome_class    — e.g. 'offer_made', 'no_response'
+ *   model_version    — e.g. 'rulebased-bandit-v1'
+ *   tenant           — tenant_id from the JWT claim
+ *   window           — window_days as a number (7 | 14 | 30)
+ *   count            — labeled decisions with this (outcome_class, model_version)
+ *   avg_confidence   — mean confidence across ALL decisions for this model_version
+ *                      in the window (not just those with this outcome_class).
+ *                      null when no decisions exist for the model version.
+ */
+export const CalibrationExportRowSchema = z.object({
+  outcome_class: z.string(),
+  model_version: z.string(),
+  tenant: z.string(),
+  window: z.number().int().positive(),
+  count: z.number().int().nonnegative(),
+  avg_confidence: z.number().nullable(),
+});
+
+/** TypeScript type inferred from CalibrationExportRowSchema. */
+export type CalibrationExportRow = z.infer<typeof CalibrationExportRowSchema>;
+
+/**
+ * Build the structured export rows from pre-assembled response data.
+ *
+ * Produces one CalibrationExportRow per (outcome_class, model_version) entry in
+ * `conversion_aggregates`, enriched with the tenant + window context and the
+ * mean confidence per model_version derived from the reliability curve.
+ *
+ * avg_confidence is the mean predicted_rate across all calibration buckets for
+ * the same model_version — a proxy for the typical confidence level the model
+ * emitted in this window. null when the model has no calibration rows (no
+ * labeled decisions).
+ *
+ * All rows are validated against CalibrationExportRowSchema before return.
+ * A parse error here indicates a bug in the aggregation logic, not a user error;
+ * the caller propagates it as HTTP 500.
+ */
+export function buildCalibrationExportRows(
+  tenantId: string,
+  windowDays: number,
+  calibration: CalibrationRow[],
+  conversion_aggregates: ConversionAggRow[],
+): CalibrationExportRow[] {
+  // Compute mean predicted_rate per model_version from the reliability curve.
+  const modelConfidenceSum = new Map<string, number>();
+  const modelConfidenceCount = new Map<string, number>();
+  for (const row of calibration) {
+    const mv = row.model_version;
+    modelConfidenceSum.set(mv, (modelConfidenceSum.get(mv) ?? 0) + row.predicted_rate);
+    modelConfidenceCount.set(mv, (modelConfidenceCount.get(mv) ?? 0) + 1);
+  }
+
+  const rows = conversion_aggregates.map((agg): CalibrationExportRow => {
+    const mv = agg.model_version;
+    const confSum = modelConfidenceSum.get(mv);
+    const confCount = modelConfidenceCount.get(mv) ?? 0;
+    const avg_confidence =
+      confCount > 0 && confSum !== undefined
+        ? Math.round((confSum / confCount) * 10000) / 10000
+        : null;
+
+    return CalibrationExportRowSchema.parse({
+      outcome_class: agg.outcome_class,
+      model_version: mv,
+      tenant: tenantId,
+      window: windowDays,
+      count: agg.count,
+      avg_confidence,
+    });
+  });
+
+  return rows;
+}
+
 // ─── Outcome taxonomy helpers ─────────────────────────────────────────────────
 
 /**
@@ -131,18 +221,18 @@ export function isPositiveOutcome(outcomeClass: string): boolean {
 /**
  * Map a confidence value in [0, 1] to its decile lower bound.
  *
- * Decile buckets: [0.0, 0.1), [0.1, 0.2), …, [0.9, 1.0].
- * confidence = 1.0 → bucket 0.9 (inclusive upper bound for perfect scores).
+ * Decile buckets: [0.0, 0.1), [0.1, 0.2), ..., [0.9, 1.0].
+ * confidence = 1.0 -> bucket 0.9 (inclusive upper bound for perfect scores).
  *
  * @example
- * confidenceDecile(0.0)  → 0.0
- * confidenceDecile(0.05) → 0.0
- * confidenceDecile(0.15) → 0.1
- * confidenceDecile(1.0)  → 0.9
+ * confidenceDecile(0.0)  -> 0.0
+ * confidenceDecile(0.05) -> 0.0
+ * confidenceDecile(0.15) -> 0.1
+ * confidenceDecile(1.0)  -> 0.9
  */
 export function confidenceDecile(confidence: number): number {
   const clamped = Math.max(0, Math.min(1, confidence));
-  // confidence = 1.0 → floor(1.0 * 10) = 10 → capped to 9
+  // confidence = 1.0 -> floor(1.0 * 10) = 10 -> capped to 9
   const bucket = Math.min(9, Math.floor(clamped * 10));
   return Math.round(bucket) / 10;
 }
@@ -157,10 +247,10 @@ export function confidenceDecile(confidence: number): number {
  * FOLLOW-175 will migrate to ClickHouse-materialized path for scale.
  *
  * Algorithm:
- * 1. Build a label map: prediction_id → PgLabelRow.
+ * 1. Build a label map: prediction_id -> PgLabelRow.
  * 2. For each decision, look up its label. If found, assign to the (model_version,
  *    confidence_decile) bucket.
- * 3. Aggregate each bucket → CalibrationRow.
+ * 3. Aggregate each bucket -> CalibrationRow.
  * 4. Build ConversionAggRow for every (outcome_class, model_version) pair
  *    among labeled decisions.
  */
@@ -175,7 +265,7 @@ export function buildCalibrationFromRaw(
   }
 
   // Step 2: bucket accumulator.
-  // Key: `${model_version}::${decile}` → bucket stats.
+  // Key: `${model_version}::${decile}` -> bucket stats.
   interface Bucket {
     model_version: string;
     decile: number;
@@ -186,7 +276,7 @@ export function buildCalibrationFromRaw(
   const buckets = new Map<string, Bucket>();
 
   // Step 2b: conversion-aggregate accumulator.
-  // Key: `${model_version}::${outcome_class}` → count.
+  // Key: `${model_version}::${outcome_class}` -> count.
   const aggMap = new Map<string, { model_version: string; outcome_class: string; count: number }>();
   // Total labeled per model_version for rate computation.
   const modelTotals = new Map<string, number>();

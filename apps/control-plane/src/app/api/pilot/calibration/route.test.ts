@@ -1,13 +1,15 @@
 /**
- * Tests for GET /api/pilot/calibration (FOLLOW-173).
+ * Tests for GET /api/pilot/calibration (FOLLOW-173, FOLLOW-221).
  *
  * Coverage:
  *   - confidenceDecile bucketing logic (unit test)
  *   - buildCalibrationFromRaw join + aggregation
+ *   - buildCalibrationExportRows shape + Zod validation (FOLLOW-221)
  *   - CLICKHOUSE_URL guard (mock fallback when unset)
  *   - Rule K.2 fail-loud paths: HTTP 500 when ClickHouse configured but fails
  *   - Auth gate (401 for missing/invalid JWT)
  *   - Parameterised ClickHouse query (no string interpolation of tenant_id)
+ *   - ?format=json export path: shape, Content-Disposition, chart path unaffected
  *
  * @module apps/control-plane/src/app/api/pilot/calibration/route.test
  */
@@ -18,10 +20,13 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   confidenceDecile,
   buildCalibrationFromRaw,
+  buildCalibrationExportRows,
   isPositiveOutcome,
+  CalibrationExportRowSchema,
   type ChDecisionRow,
   type PgLabelRow,
   type CalibrationResponse,
+  type CalibrationExportRow,
 } from './route-helpers';
 
 // ─── Mock @estalara/auth ─────────────────────────────────────────────────────
@@ -66,6 +71,15 @@ const mockCreateAdminClient = vi.mocked(createAdminClient);
 
 function makeRequest(windowDays?: string, authed = true): NextRequest {
   const url = new URL('http://localhost/api/pilot/calibration');
+  if (windowDays !== undefined) url.searchParams.set('window_days', windowDays);
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (authed) headers.Authorization = 'Bearer mock-token';
+  return new NextRequest(url.toString(), { headers });
+}
+
+function makeExportRequest(windowDays?: string, authed = true): NextRequest {
+  const url = new URL('http://localhost/api/pilot/calibration');
+  url.searchParams.set('format', 'json');
   if (windowDays !== undefined) url.searchParams.set('window_days', windowDays);
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (authed) headers.Authorization = 'Bearer mock-token';
@@ -495,5 +509,228 @@ describe('GET /api/pilot/calibration', () => {
     // it must only appear as the param_tenant_id value (injection-safe pattern).
     const queryParam = new URL(firstCallUrl).searchParams.get('query') ?? '';
     expect(queryParam).not.toContain(TENANT_ID);
+  });
+});
+
+// ─── Unit: buildCalibrationExportRows (FOLLOW-221) ───────────────────────────
+
+describe('buildCalibrationExportRows', () => {
+  it('returns one row per (outcome_class, model_version) with correct shape', () => {
+    const calibration = [
+      {
+        confidence_decile: 0.7,
+        predicted_rate: 0.72,
+        actual_conversion_rate: 0.68,
+        sample_size: 10,
+        model_version: 'v1',
+      },
+      {
+        confidence_decile: 0.8,
+        predicted_rate: 0.82,
+        actual_conversion_rate: 0.75,
+        sample_size: 8,
+        model_version: 'v1',
+      },
+    ];
+    const conversionAggregates = [
+      { outcome_class: 'offer_made', model_version: 'v1', count: 5, rate: 0.5 },
+      { outcome_class: 'no_response', model_version: 'v1', count: 5, rate: 0.5 },
+    ];
+
+    const rows = buildCalibrationExportRows('tenant-abc', 14, calibration, conversionAggregates);
+
+    expect(rows).toHaveLength(2);
+
+    const offerRow = rows.find((r) => r.outcome_class === 'offer_made');
+    expect(offerRow).toBeDefined();
+    expect(offerRow!.model_version).toBe('v1');
+    expect(offerRow!.tenant).toBe('tenant-abc');
+    expect(offerRow!.window).toBe(14);
+    expect(offerRow!.count).toBe(5);
+    // avg_confidence = mean of predicted_rates = (0.72 + 0.82) / 2 = 0.77
+    expect(offerRow!.avg_confidence).toBeCloseTo(0.77, 4);
+  });
+
+  it('each row passes CalibrationExportRowSchema Zod validation', () => {
+    const calibration = [
+      {
+        confidence_decile: 0.5,
+        predicted_rate: 0.55,
+        actual_conversion_rate: 0.5,
+        sample_size: 3,
+        model_version: 'rulebased-bandit-v1',
+      },
+    ];
+    const conversionAggregates = [
+      { outcome_class: 'purchased', model_version: 'rulebased-bandit-v1', count: 2, rate: 0.67 },
+    ];
+
+    const rows = buildCalibrationExportRows('tenant-zod', 7, calibration, conversionAggregates);
+    expect(rows).toHaveLength(1);
+
+    // CalibrationExportRowSchema.parse must succeed for every row (throws on failure)
+    expect(() => {
+      for (const row of rows) {
+        CalibrationExportRowSchema.parse(row);
+      }
+    }).not.toThrow();
+  });
+
+  it('sets avg_confidence to null when no calibration rows exist for the model', () => {
+    // conversion_aggregates reference a model_version with no calibration rows
+    const rows = buildCalibrationExportRows(
+      'tenant-empty',
+      7,
+      [], // no calibration rows
+      [{ outcome_class: 'no_response', model_version: 'orphan-model', count: 1, rate: 1.0 }],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.avg_confidence).toBeNull();
+  });
+
+  it('returns empty array when conversion_aggregates is empty', () => {
+    const rows = buildCalibrationExportRows('tenant-x', 30, [], []);
+    expect(rows).toHaveLength(0);
+  });
+});
+
+// ─── Route handler: ?format=json export path (FOLLOW-221) ────────────────────
+
+describe('GET /api/pilot/calibration?format=json', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.CLICKHOUSE_URL;
+    mockCaptureException.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.CLICKHOUSE_URL;
+  });
+
+  it('returns 401 for unauthenticated export request', async () => {
+    mockGetAuthClaims.mockResolvedValue(null);
+    const { GET } = await import('./route.js');
+    const res = await GET(makeExportRequest('7', false));
+    expect(res.status).toBe(401);
+  });
+
+  it('returns JSON array with correct shape when CLICKHOUSE_URL is unset (mock path)', async () => {
+    authAsTenant();
+    const { GET } = await import('./route.js');
+    const res = await GET(makeExportRequest('14'));
+
+    expect(res.status).toBe(200);
+
+    // Content-Type must be application/json
+    expect(res.headers.get('Content-Type')).toBe('application/json');
+
+    // Content-Disposition must be the attachment header
+    const disposition = res.headers.get('Content-Disposition') ?? '';
+    expect(disposition).toBe('attachment; filename="calibration.json"');
+
+    // Body is a valid JSON array of CalibrationExportRow objects
+    const body: CalibrationExportRow[] = (await res.json()) as CalibrationExportRow[];
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBeGreaterThan(0);
+
+    // Every row passes schema validation
+    for (const row of body) {
+      expect(() => CalibrationExportRowSchema.parse(row)).not.toThrow();
+      expect(row.tenant).toBe(TENANT_ID);
+      expect(row.window).toBe(14);
+      expect(typeof row.outcome_class).toBe('string');
+      expect(typeof row.model_version).toBe('string');
+      expect(typeof row.count).toBe('number');
+      // avg_confidence is number or null
+      expect(row.avg_confidence === null || typeof row.avg_confidence === 'number').toBe(true);
+    }
+  });
+
+  it('includes Content-Disposition: attachment; filename="calibration.json" header', async () => {
+    authAsTenant();
+    const { GET } = await import('./route.js');
+    const res = await GET(makeExportRequest('7'));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="calibration.json"');
+  });
+
+  it('chart path (no ?format=json) is unaffected — returns CalibrationResponse shape', async () => {
+    authAsTenant();
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest('7'));
+
+    expect(res.status).toBe(200);
+    // Chart path does NOT set Content-Disposition
+    expect(res.headers.get('Content-Disposition')).toBeNull();
+
+    const body = await parseBody<CalibrationResponse>(res);
+    // Must have the chart response fields, NOT the flat array shape
+    expect(body).toHaveProperty('calibration');
+    expect(body).toHaveProperty('conversion_aggregates');
+    expect(body).toHaveProperty('data_source');
+    expect(body).toHaveProperty('window_days');
+    expect(body).toHaveProperty('tenant_id');
+    expect(Array.isArray(body)).toBe(false);
+  });
+
+  it('returns JSON export with correct data when ClickHouse is configured', async () => {
+    authAsTenant();
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+
+    // ClickHouse returns 2 decisions for the same model
+    const chDecisionRows = [
+      JSON.stringify({
+        adapt_decision_id: 'dec-X1',
+        confidence: 0.7,
+        model_version: 'rulebased-bandit-v1',
+      }),
+      JSON.stringify({
+        adapt_decision_id: 'dec-X2',
+        confidence: 0.9,
+        model_version: 'rulebased-bandit-v1',
+      }),
+    ].join('\n');
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(new Response(chDecisionRows, { status: 200 })),
+    );
+
+    // Postgres labels: one positive, one negative
+    mockCreateAdminClient.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockImplementation(() => ({
+            then: (resolve: (v: unknown[]) => void) =>
+              Promise.resolve([
+                { prediction_id: 'dec-X1', outcome_class: 'offer_made' },
+                { prediction_id: 'dec-X2', outcome_class: 'no_response' },
+              ]).then(resolve),
+          })),
+        }),
+      }),
+    } as unknown as ReturnType<typeof createAdminClient>);
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeExportRequest('7'));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="calibration.json"');
+
+    const body: CalibrationExportRow[] = (await res.json()) as CalibrationExportRow[];
+    expect(Array.isArray(body)).toBe(true);
+
+    // Should have one row per outcome_class
+    const offerRow = body.find((r) => r.outcome_class === 'offer_made');
+    const noResponseRow = body.find((r) => r.outcome_class === 'no_response');
+    expect(offerRow).toBeDefined();
+    expect(noResponseRow).toBeDefined();
+
+    // tenant + window should be propagated correctly
+    expect(offerRow!.tenant).toBe(TENANT_ID);
+    expect(offerRow!.window).toBe(7);
   });
 });

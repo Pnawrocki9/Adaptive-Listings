@@ -10,11 +10,18 @@
  *
  * Query params:
  *   window_days: 7 | 14 | 30  (default: 7 — same allowed set as cta-lift)
+ *   format: 'json' (optional — see JSON export path below)
  *
- * Response shape: CalibrationResponse (see route-helpers.ts).
+ * Response shape (default / chart path): CalibrationResponse (see route-helpers.ts).
  *   calibration[]         — reliability curve per (model_version, confidence_decile)
  *   conversion_aggregates[] — conversion rate per (outcome_class, model_version)
  *   data_source           — 'clickhouse' | 'mock' (Rule K.2 provenance field)
+ *
+ * JSON export path (FOLLOW-221):
+ *   `?format=json` returns a JSON array of CalibrationExportRow objects — one per
+ *   (outcome_class, model_version) — with Content-Disposition: attachment and
+ *   Content-Type: application/json.  Shape is Zod-validated (CalibrationExportRowSchema).
+ *   Documented in HANDOFFS.md "FOLLOW-221 -> FOLLOW-175".
  *
  * Auth: Bearer JWT required; tenant_id from JWT claim (never from query string).
  *
@@ -27,8 +34,8 @@
  * FOLLOW-175 will migrate to ClickHouse-materialized path for scale.
  *
  * Rule K.2 — fail loud:
- *   When CLICKHOUSE_URL is set but a query fails → HTTP 500 + Sentry; no mock fallback.
- *   When CLICKHOUSE_URL is unset (dev / CI) → HTTP 200 mock with data_source: 'mock'.
+ *   When CLICKHOUSE_URL is set but a query fails -> HTTP 500 + Sentry; no mock fallback.
+ *   When CLICKHOUSE_URL is unset (dev / CI) -> HTTP 200 mock with data_source: 'mock'.
  *
  * No string interpolation in SQL — all user-supplied values bound as typed ClickHouse
  * parameters (`{tenant_id:String}`, `{window_days:UInt16}`) per FOLLOW-206 pattern.
@@ -45,10 +52,12 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { createAdminClient, conversionLabels } from '@estalara/db';
 import {
   buildCalibrationFromRaw,
+  buildCalibrationExportRows,
   buildMockCalibrationResponse,
   type ChDecisionRow,
   type PgLabelRow,
   type CalibrationResponse,
+  type CalibrationExportRow,
 } from './route-helpers';
 
 // ─── Query param parsing ──────────────────────────────────────────────────────
@@ -189,6 +198,25 @@ async function fetchLabelsFromPostgres(
   );
 }
 
+// ─── JSON export helper (FOLLOW-221) ─────────────────────────────────────────
+
+/**
+ * Build the `?format=json` response: a JSON array with Content-Disposition
+ * and Content-Type headers so browsers download it directly.
+ *
+ * The payload is Zod-validated inside buildCalibrationExportRows — a parse
+ * error propagates as HTTP 500 (Rule K.2: fail loud, never fabricate).
+ */
+function jsonExportResponse(rows: CalibrationExportRow[]): Response {
+  return new Response(JSON.stringify(rows), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Disposition': 'attachment; filename="calibration.json"',
+    },
+  });
+}
+
 // ─── Route handler ─────────────────────────────────────────────────────────────
 
 /**
@@ -200,7 +228,7 @@ async function fetchLabelsFromPostgres(
  *   OR when Postgres label fetch fails (Rule K.2 — fail loud; never fall back to
  *   mock when a real data store is configured).
  */
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export async function GET(req: NextRequest): Promise<NextResponse | Response> {
   const claims = await getAuthClaims(req);
   if (!claims || !('tenant_id' in claims) || !claims.tenant_id) {
     return NextResponse.json(
@@ -213,18 +241,28 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const tenantId: string = claims.tenant_id;
   const windowDays = parseWindowDays(req.nextUrl.searchParams.get('window_days'));
+  const formatJson = req.nextUrl.searchParams.get('format') === 'json';
 
   // Rule K.2 — fail loud.
   // When CLICKHOUSE_URL is unset (dev / CI), return deterministic mock with provenance field.
-  // When CLICKHOUSE_URL is set, any query failure → HTTP 500 + Sentry; no mock fallback.
+  // When CLICKHOUSE_URL is set, any query failure -> HTTP 500 + Sentry; no mock fallback.
   const clickhouseConfigured = Boolean(process.env.CLICKHOUSE_URL);
 
   if (!clickhouseConfigured) {
     const response = buildMockCalibrationResponse(tenantId, windowDays);
+    if (formatJson) {
+      const exportRows = buildCalibrationExportRows(
+        tenantId,
+        windowDays,
+        response.calibration,
+        response.conversion_aggregates,
+      );
+      return jsonExportResponse(exportRows);
+    }
     return NextResponse.json(response, { status: 200 });
   }
 
-  // ── Fetch from ClickHouse ───────────────────────────────────────────────────
+  // ─── Fetch from ClickHouse ───────────────────────────────────────────────────
   let decisions: ChDecisionRow[];
   try {
     const raw = await fetchDecisionsFromClickHouse(tenantId, windowDays);
@@ -247,7 +285,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Fetch labels from Postgres ─────────────────────────────────────────────
+  // ─── Fetch labels from Postgres ─────────────────────────────────────────────
   // Only request labels for decision IDs returned by ClickHouse. This keeps the
   // IN-clause bounded and avoids a full-table scan on conversion_labels.
   const decisionIds = decisions.map((d) => d.adapt_decision_id).filter(Boolean);
@@ -272,8 +310,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Build response ─────────────────────────────────────────────────────────
+  // ─── Build response ─────────────────────────────────────────────────────────
   const { calibration, conversion_aggregates } = buildCalibrationFromRaw(decisions, labels);
+
+  // JSON export path (FOLLOW-221) — return flat array with download headers.
+  if (formatJson) {
+    const exportRows = buildCalibrationExportRows(
+      tenantId,
+      windowDays,
+      calibration,
+      conversion_aggregates,
+    );
+    return jsonExportResponse(exportRows);
+  }
 
   const response: CalibrationResponse = {
     window_days: windowDays,

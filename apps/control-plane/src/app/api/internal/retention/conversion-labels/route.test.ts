@@ -27,7 +27,7 @@
 
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { thirteenMonthsAgo } from './route';
+import { thirteenMonthsAgo } from './_utils';
 
 // ─── Hoisted mocks ────────────────────────────────────────────────────────────
 

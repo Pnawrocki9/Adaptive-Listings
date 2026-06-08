@@ -42,6 +42,7 @@ import type { NextRequest } from 'next/server';
 import { lt } from 'drizzle-orm';
 import * as Sentry from '@sentry/nextjs';
 import { createAdminClient, conversionLabels } from '@estalara/db';
+import { thirteenMonthsAgo } from './_utils';
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
@@ -52,22 +53,6 @@ function isAuthorized(req: NextRequest): boolean {
   if (!secret) return false;
   const authHeader = req.headers.get('authorization');
   return authHeader === `Bearer ${secret}`;
-}
-
-// ─── Retention boundary ──────────────────────────────────────────────────────
-
-/**
- * Returns the cutoff Date: exactly 13 months before `now`.
- *
- * Uses calendar-month arithmetic (not a fixed millisecond constant) so the
- * boundary tracks leap-year and DST edge cases correctly.
- *
- * Exported for test assertions.
- */
-export function thirteenMonthsAgo(now: Date = new Date()): Date {
-  const cutoff = new Date(now);
-  cutoff.setMonth(cutoff.getMonth() - 13);
-  return cutoff;
 }
 
 // ─── GET handler ────────────────────────────────────────────────────────────

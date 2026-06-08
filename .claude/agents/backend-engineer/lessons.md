@@ -329,23 +329,23 @@ every identifier namespace documented in §T.6 has a corresponding DELETE pass i
 
 ## 2026-06-08 / FOLLOW-239
 
-**What I built:** Art. 17 CRM erasure completeness check — closes the silent-incompleteness gap
-from RETRO-042. In `dsr/erase/route.ts`, after the main transaction completes, if `durable_lead_id`
-was NULL (Pass B skipped), run a count query for surviving CRM-namespace `conversion_labels` rows
+**What I built:** Art. 17 CRM erasure completeness check — closes the silent-incompleteness gap from
+RETRO-042. In `dsr/erase/route.ts`, after the main transaction completes, if `durable_lead_id` was
+NULL (Pass B skipped), run a count query for surviving CRM-namespace `conversion_labels` rows
 (lead_id != '' AND lead_id != session_id). If > 0, emit a Sentry warning + ClickHouse audit entry
-with `action = 'incomplete_erasure_crm_rows_detected'` + return `crm_erasure_status:
-'incomplete_no_durable_lead_id'` in the 200 body (observable on the wire). When Pass B ran or no
-CRM rows exist, return `crm_erasure_status: 'complete'`. Extended PGlite tests AC-7/8/9 prove the
-SQL predicate detects surviving rows, yields no false positives, and returns 0 after a complete
-erasure. Created `docs/compliance/DSR_ALERTING.md` with operator procedure for obtaining the durable
-token and re-running. Updated `docs/MASTER_DESIGN.md` §T.6 with the residual operator-dependency
-note (RETRO-042 DG-2).
+with `action = 'incomplete_erasure_crm_rows_detected'` + return
+`crm_erasure_status: 'incomplete_no_durable_lead_id'` in the 200 body (observable on the wire). When
+Pass B ran or no CRM rows exist, return `crm_erasure_status: 'complete'`. Extended PGlite tests
+AC-7/8/9 prove the SQL predicate detects surviving rows, yields no false positives, and returns 0
+after a complete erasure. Created `docs/compliance/DSR_ALERTING.md` with operator procedure for
+obtaining the durable token and re-running. Updated `docs/MASTER_DESIGN.md` §T.6 with the residual
+operator-dependency note (RETRO-042 DG-2).
 
 **Wiring/auth/fail-loud risks I weighed:** Path (b) — alert/audit — is the correct choice because
-path (a) (auto-resolver) would require a new DB table and migration; path (b) closes the GDPR
-Art. 17 observability gap immediately without adding a writable surface. The count query is
-read-only after an already-authenticated DSR transaction commits — no new auth surface introduced.
-The `crm_erasure_status` field on the 200 body is the observable provenance signal (Rule K.2).
+path (a) (auto-resolver) would require a new DB table and migration; path (b) closes the GDPR Art.
+17 observability gap immediately without adding a writable surface. The count query is read-only
+after an already-authenticated DSR transaction commits — no new auth surface introduced. The
+`crm_erasure_status` field on the 200 body is the observable provenance signal (Rule K.2).
 
 **A guardrail I'd add:** An integration test that mounts the full `POST /api/dsr/erase` route and
 asserts the HTTP response body contains `crm_erasure_status: 'incomplete_no_durable_lead_id'` when

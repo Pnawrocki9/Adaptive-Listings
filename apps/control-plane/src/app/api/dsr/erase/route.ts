@@ -423,9 +423,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const durableLeadId = record.durableLeadId;
   const passBRan =
-    typeof durableLeadId === 'string' &&
-    durableLeadId !== '' &&
-    durableLeadId !== record.sessionId;
+    typeof durableLeadId === 'string' && durableLeadId !== '' && durableLeadId !== record.sessionId;
 
   if (!passBRan) {
     // Count CRM-namespace rows: non-empty lead_id that is NOT the session_id.

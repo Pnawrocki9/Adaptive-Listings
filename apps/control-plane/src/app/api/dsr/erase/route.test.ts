@@ -3,9 +3,17 @@
  * + FOLLOW-172 conversion_labels DSR cascade
  * + FOLLOW-193 engagement_scores DSR cascade (DPIA §8 line 773)
  * + FOLLOW-238 CRM scope-fix: tenant-vs-subject scope over-claim correction.
+ * + FOLLOW-244 (supersedes FOLLOW-240): crm_tenant_unverifiable positive branch coverage.
+ *
+ * FOLLOW-240 is superseded by FOLLOW-244. FOLLOW-240 was drafted against the
+ * removed `incomplete_no_durable_lead_id` / `incomplete_erasure_crm_rows_detected`
+ * values. FOLLOW-238 (PR #237) renamed those to `crm_tenant_unverifiable` /
+ * `crm_unverifiable` respectively. FOLLOW-244 picks up FOLLOW-240's intent and
+ * asserts the new (current) values.
  *
  * Existing happy-path tests live in `apps/control-plane/src/app/api/dsr/dsr-routes.test.ts`.
- * This file covers the NEW behaviours added by FOLLOW-039, FOLLOW-172, FOLLOW-193, and FOLLOW-238:
+ * This file covers the NEW behaviours added by FOLLOW-039, FOLLOW-172, FOLLOW-193, FOLLOW-238,
+ * and FOLLOW-244:
  *
  *   1. ClickHouse mutations are ISSUED (HTTP POST to CLICKHOUSE_URL) for every
  *      table in DSR_CLICKHOUSE_TABLES when a valid OTP is presented.
@@ -31,6 +39,11 @@
  *      or Sentry; must return crm_erasure_status: 'complete'.
  *  12. Count-query DB throws → must return crm_erasure_status: 'unverified', never 'complete'
  *      (Rule K.2: never claim 'complete' when the configured store failed).
+ *   FOLLOW-244 (AC1/AC2/AC3 — crm_tenant_unverifiable positive branch):
+ *  13. Count returns {count: 1} (CRM rows exist, no durable_lead_id) → must return
+ *      crm_erasure_status: 'crm_tenant_unverifiable'.
+ *  14. Same → Sentry.captureMessage called with tags.follow === 'FOLLOW-238'.
+ *  15. Same → writeDsrAuditLog called with action: DSR_AUDIT_ACTIONS.crm_unverifiable.
  *
  * All external dependencies are mocked.
  *
@@ -50,6 +63,8 @@ const {
   mockInsert,
   mockWriteDsrAuditLog,
   mockHashOtp,
+  mockCaptureMessage,
+  mockCaptureException,
   insertedRows,
   selectedRows,
 } = vi.hoisted(() => {
@@ -62,10 +77,19 @@ const {
     mockInsert: vi.fn(),
     mockWriteDsrAuditLog: vi.fn().mockResolvedValue(undefined),
     mockHashOtp: vi.fn().mockImplementation((otp: string) => `hash_of_${otp}`),
+    // FOLLOW-244: Sentry mock — route uses dynamic import('@sentry/nextjs') gated
+    // on SENTRY_DSN_CONTROL_PLANE being set; mocked here to assert call-through.
+    mockCaptureMessage: vi.fn(),
+    mockCaptureException: vi.fn(),
     insertedRows,
     selectedRows,
   };
 });
+
+vi.mock('@sentry/nextjs', () => ({
+  captureMessage: mockCaptureMessage,
+  captureException: mockCaptureException,
+}));
 
 vi.mock('@estalara/db', () => ({
   createAdminClient: vi.fn(() => ({
@@ -755,5 +779,110 @@ describe('POST /api/dsr/erase — FOLLOW-238 CRM scope correction', () => {
 
     // AC2: must be 'unverified', never 'complete' (Rule K.2 — never claim complete when DB threw).
     expect(body.crm_erasure_status).toBe('unverified');
+  });
+});
+
+// ─── FOLLOW-244: crm_tenant_unverifiable positive branch (supersedes FOLLOW-240) ─
+//
+// FOLLOW-240 is superseded by this ticket. FOLLOW-240 was drafted before FOLLOW-238 (PR #237)
+// renamed the DSR erase status values:
+//   - `incomplete_no_durable_lead_id` → `crm_tenant_unverifiable` (wire field)
+//   - `incomplete_erasure_crm_rows_detected` → `crm_unverifiable` (audit action)
+// FOLLOW-240's ACs would assert the removed values. FOLLOW-244 folds FOLLOW-240's
+// intent here with the correct post-FOLLOW-238 values.
+//
+// AC1 (FOLLOW-244): mock count select to return { count: 1 } (CRM rows exist, no
+//     durable_lead_id) → response contains crm_erasure_status: 'crm_tenant_unverifiable'.
+// AC2 (FOLLOW-244): same → Sentry.captureMessage called with tags.follow === 'FOLLOW-238'.
+// AC3 (FOLLOW-244): same → writeDsrAuditLog called with action: DSR_AUDIT_ACTIONS.crm_unverifiable.
+
+describe('POST /api/dsr/erase — FOLLOW-244 crm_tenant_unverifiable positive branch', () => {
+  it('AC1: returns crm_erasure_status: crm_tenant_unverifiable when tenant has CRM rows and no durable_lead_id', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+    // Enable Sentry so the captureMessage path fires.
+    vi.stubEnv('SENTRY_DSN_CONTROL_PLANE', 'https://fake@sentry.io/1');
+
+    mockSelect.mockReset();
+    // Execution order:
+    //   1st: DSR lookup → valid record (no durableLeadId)
+    //   2nd: FOLLOW-238 count query → { count: 1 } ← tenant HAS CRM rows
+    //   3rd: CH idempotency → []
+    mockSelect
+      .mockReturnValueOnce(buildChain([makeValidRecord()]))
+      .mockReturnValueOnce(buildChain([{ count: 1 }]))
+      .mockReturnValueOnce(buildChain([]));
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      deleted_at: string;
+      crm_erasure_status: string;
+      clickhouse_deletion: unknown;
+    };
+
+    // AC1: tenant has CRM rows + no durable_lead_id → crm_tenant_unverifiable.
+    expect(body.crm_erasure_status).toBe('crm_tenant_unverifiable');
+  });
+
+  it('AC2: Sentry.captureMessage called with tags.follow === FOLLOW-238 when crm_tenant_unverifiable', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+    vi.stubEnv('SENTRY_DSN_CONTROL_PLANE', 'https://fake@sentry.io/1');
+
+    mockCaptureMessage.mockReset();
+    mockSelect.mockReset();
+    mockSelect
+      .mockReturnValueOnce(buildChain([makeValidRecord()]))
+      .mockReturnValueOnce(buildChain([{ count: 1 }]))
+      .mockReturnValueOnce(buildChain([]));
+
+    const { POST } = await import('./route.js');
+    await POST(makeRequest({ token: '123456' }));
+
+    // AC2: Sentry.captureMessage must have been called at least once.
+    expect(mockCaptureMessage).toHaveBeenCalled();
+
+    // AC2: The call must carry tags.follow === 'FOLLOW-238'.
+    const calls = mockCaptureMessage.mock.calls as [
+      string,
+      { level?: string; tags?: Record<string, string> },
+    ][];
+    const matchingCall = calls.find(([, opts]) => opts.tags?.follow === 'FOLLOW-238');
+    expect(matchingCall).toBeDefined();
+    if (matchingCall) {
+      expect(matchingCall[1].level).toBe('warning');
+    }
+  });
+
+  it('AC3: writeDsrAuditLog called with action: DSR_AUDIT_ACTIONS.crm_unverifiable when crm_tenant_unverifiable', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', '');
+    vi.stubEnv('SENTRY_DSN_CONTROL_PLANE', 'https://fake@sentry.io/1');
+
+    mockWriteDsrAuditLog.mockReset();
+    mockWriteDsrAuditLog.mockResolvedValue(undefined);
+    mockSelect.mockReset();
+    mockSelect
+      .mockReturnValueOnce(buildChain([makeValidRecord()]))
+      .mockReturnValueOnce(buildChain([{ count: 1 }]))
+      .mockReturnValueOnce(buildChain([]));
+
+    // Import the canonical DSR_AUDIT_ACTIONS from the mocked module so the
+    // assertion stays in sync with the source of truth (no raw strings in tests).
+    const { DSR_AUDIT_ACTIONS } = await import('../_clickhouse.js');
+
+    const { POST } = await import('./route.js');
+    await POST(makeRequest({ token: '123456' }));
+
+    // AC3: writeDsrAuditLog must have been called with action = crm_unverifiable.
+    const auditCalls = mockWriteDsrAuditLog.mock.calls as [{ action: string; tenant_id: string }][];
+    const unverifiableCalls = auditCalls.filter(
+      ([e]) => e.action === DSR_AUDIT_ACTIONS.crm_unverifiable,
+    );
+    expect(unverifiableCalls).toHaveLength(1);
+    const firstUnverifiable = unverifiableCalls[0];
+    if (firstUnverifiable) {
+      expect(firstUnverifiable[0].tenant_id).toBe('tenant-uuid-001');
+    }
   });
 });

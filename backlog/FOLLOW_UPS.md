@@ -6243,7 +6243,10 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ## FOLLOW-240 — Route-level test of the DSR incomplete-erasure observable branch (TG-1)
 
-- **status:** READY (promoted to QUEUE.md Sprint 16, 2026-06-08; deferred — not blocking go-live)
+- **status:** SUPERSEDED by FOLLOW-244 (PR to be opened 2026-06-08). FOLLOW-240's ACs asserted the
+  removed values `incomplete_no_durable_lead_id` / `incomplete_erasure_crm_rows_detected` which were
+  renamed by FOLLOW-238 (PR #237). FOLLOW-244 folds this ticket's intent and asserts the correct
+  post-FOLLOW-238 values.
 - **priority:** P1
 - **source_retro:** RETRO-041 (§4c TG-1)
 - **source_ticket:** FOLLOW-239 / PR #234 (commit `2a4cdba`)
@@ -6257,13 +6260,10 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   `writeDsrAuditLog` are invoked. A producer→field plumbing regression would ship green. The author
   self-identified this scope in `.claude/agents/backend-engineer/lessons.md`.
 - **ac:**
-  - [ ] AC1: in `dsr/erase/route.test.ts`, mock the FOLLOW-239 count select to return `{count: N>0}`
-        and assert the 200 body `crm_erasure_status === 'incomplete_no_durable_lead_id'`
-  - [ ] AC2: assert `Sentry.captureMessage` is called with `tags.follow === 'FOLLOW-239'` and
-        `tags.route === 'dsr/erase'`
-  - [ ] AC3: assert `writeDsrAuditLog` is called with
-        `action: 'incomplete_erasure_crm_rows_detected'`
-  - [ ] AC4: a `complete`-path assertion remains (regression guard); CI green
+  - [x] AC1: SUPERSEDED — intent folded into FOLLOW-244 AC1 (uses `crm_tenant_unverifiable`)
+  - [x] AC2: SUPERSEDED — intent folded into FOLLOW-244 AC2 (uses `tags.follow = 'FOLLOW-238'`)
+  - [x] AC3: SUPERSEDED — intent folded into FOLLOW-244 AC3 (uses `crm_unverifiable` action)
+  - [x] AC4: complete-path assertions exist in FOLLOW-238 tests; regression guard in place
 - **depends_on:** FOLLOW-239 (DONE, PR #234); pairs with FOLLOW-238 (which changes the asserted
   value/semantics — sequence FOLLOW-238 first or co-develop)
 - **promoted_to_queue:** true
@@ -6306,7 +6306,99 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 238 (237 = RETRO-040 / PR #235 / FOLLOW-221: calibration JSON export — add Rule K.2 data_source provenance (CB-1 P1) + reject unknown format (LG-3) + fix avg_confidence semantics/dwell caveat (LG-2) + correct FOLLOW-175 mis-wire/HALF_WIRE_P (LG-1 P1); the export has no usable consumer and FOLLOW-175 needs row-level not aggregate. 236 = RETRO-039 / PR #228 / FOLLOW-183: restore src/index.ts to packages/db vitest coverage.include, TG-1 P3. 235 = RETRO-039 / PR #228 / FOLLOW-183: tighten 12-pair parity gate to value-parity AC + fix stale JSDoc, LG-1/DG-1 P3. 234 = FOLLOW-187 companion / PR #229: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate, P1 before_go_live. 233/232/231 unused. 230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217: / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
+## FOLLOW-243 — Tighten stale `mean_model_predicted_rate` dwell-cap JSDoc caveat (FOLLOW-230 now DONE) (DG/LG-2 staleness)
+
+- **status:** OPEN
+- **priority:** P3
+- **source_retro:** RETRO-042 (§5a, §6a LG-2-staleness, §7)
+- **source_ticket:** FOLLOW-237 / PR #236 (commit `d83f584`, local squash `5c03d75`)
+- **recommended_sprint:** Sprint 16 (bundle with any calibration-route touch)
+- **agent:** data-engineer
+- **estimated_hours:** 1
+- **scope:** FOLLOW-237 added a JSDoc caveat on `mean_model_predicted_rate` (in `route-helpers.ts`
+  schema field + `buildCalibrationExportRows` doc + HANDOFFS entry) stating the value "rides on raw
+  confidence pending FOLLOW-230 dwell cap (commit b62faae)." FOLLOW-230 is now **DONE** (dwell
+  gate+cap landed, PR #226/#227), so the "pending" framing is stale — the dwell cap IS applied for
+  decisions made after it shipped. The caveat is still partly true (in-window HISTORICAL decisions
+  made before the cap predate it), but the wording overstates the open risk. This is a doc-accuracy
+  nit on a corpus-bound field, NOT a code defect; no numeric change.
+- **ac:**
+  - [ ] AC1: reword the caveat in `CalibrationExportRowSchema.mean_model_predicted_rate` JSDoc,
+        `buildCalibrationExportRows` doc, and the HANDOFFS FOLLOW-221→FOLLOW-175 entry from "pending
+        FOLLOW-230 dwell cap" to "decisions made before the dwell cap (commit b62faae) predate it;
+        in-window historical decisions may be over-confident" — i.e. FOLLOW-230 is DONE, not pending
+  - [ ] AC2: no behavior/numeric change; existing 42 tests still pass; prettier clean
+- **depends_on:** FOLLOW-237 (DONE, PR #236), FOLLOW-230 (DONE, PR #227)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-244 — Re-scope stale FOLLOW-240 test to new DSR values + cover the untested `crm_tenant_unverifiable` branch + fix orphaned doc consumers (TG-1/DG-1)
+
+- **status:** DONE (PR opened 2026-06-08)
+- **priority:** P1
+- **source_retro:** RETRO-043 (§4c TG-1, §4d DG-1, §6a)
+- **source_ticket:** FOLLOW-238 / PR #237 (merge commit `1acead5`, content commit `8db2cb5`)
+- **recommended_sprint:** Sprint 16
+- **agent:** backend-engineer + compliance-engineer
+- **estimated_hours:** 3
+- **scope:** FOLLOW-238 renamed the DSR erase status values (`incomplete_no_durable_lead_id` →
+  `crm_tenant_unverifiable`; audit action `incomplete_erasure_crm_rows_detected` →
+  `crm_unverifiable`) and added `unverified`, but (i) the `crm_tenant_unverifiable` positive branch
+  (`tenantCrmRows > 0`) has ZERO route-level execution coverage — FOLLOW-238's 3 tests cover only
+  the two `complete` paths + the `unverified` throw; (ii) FOLLOW-240 (QUEUE Sprint 16, READY) still
+  asserts the REMOVED values and would FAIL against merged code; (iii) the rename orphaned two doc
+  consumers that still carry the old values — `docs/compliance/DSR_ALERTING.md` §2 status table + §5
+  DPO ClickHouse query (`WHERE action = 'incomplete_erasure_crm_rows_detected'` → returns 0 rows in
+  prod) + operator steps, and `docs/MASTER_DESIGN.md:3886-3887` §T.6. This is the realized RETRO-041
+  LG-2 hand-sync drift. MUST land before FOLLOW-187 wires the live Sentry alert (ESC-021) so the
+  alert/query point at a value the route actually emits.
+- **ac:**
+  - [x] AC1 (TG-1): `crm_tenant_unverifiable` positive branch tested in FOLLOW-244 describe block
+  - [x] AC2 (TG-1): `Sentry.captureMessage` with `tags.follow === 'FOLLOW-238'` and
+        `writeDsrAuditLog` with `action: DSR_AUDIT_ACTIONS.crm_unverifiable` both asserted
+  - [x] AC3: FOLLOW-240 superseded — ACs folded here with updated post-FOLLOW-238 values
+  - [x] AC4 (DG-1): `docs/compliance/DSR_ALERTING.md` §2 table, §5 query, §4 operator steps and
+        `MASTER_DESIGN §T.6` updated to `crm_tenant_unverifiable`/`crm_unverifiable`/`unverified`
+  - [x] AC5: historical `incomplete_erasure_crm_rows_detected` rows addressed in DSR_ALERTING.md §5
+        with combined query covering both old and new action names
+- **depends_on:** FOLLOW-238 (DONE, PR #237); supersedes/updates FOLLOW-240; coordinate with
+  FOLLOW-241 (doc consolidation) and FOLLOW-187 (live Sentry alert / go-live)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-245 — Codify `crm_erasure_status` response values as a shared const + reconcile the wire⇔audit two-name split (LG-1/LG-2)
+
+- **status:** PROMOTED (Sprint 16, READY — 2026-06-08)
+- **priority:** P2
+- **source_retro:** RETRO-043 (§4a LG-1/LG-2)
+- **source_ticket:** FOLLOW-238 / PR #237 (merge commit `1acead5`, content commit `8db2cb5`)
+- **recommended_sprint:** Sprint 16
+- **agent:** backend-engineer
+- **estimated_hours:** 2
+- **scope:** FOLLOW-238 closed RETRO-041 LG-2 for the AUDIT ACTION (extracted to
+  `DSR_AUDIT_ACTIONS`) but left the 200-response status string `'crm_tenant_unverifiable'` as a raw
+  literal (`erase/route.ts:429,457`) outside any const — AND it is a DIFFERENT spelling from its own
+  audit action `'crm_unverifiable'`, with no documented mapping. A dashboard correlating the 200
+  field to the audit row must know the undocumented `crm_tenant_unverifiable` (wire) ⇔
+  `crm_unverifiable` (audit) equivalence. The shared-const fix reached one of two literals; the
+  drift moved one layer over. Additionally, `DSR_AUDIT_ACTIONS.expired`/`.failed` are declared but
+  have no producer (latent half-wire).
+- **ac:**
+  - [ ] AC1: extract the `CrmErasureStatus` values to a single shared const (mirroring
+        `DSR_AUDIT_ACTIONS`), consumed by the route + any test; no raw status literal in `route.ts`
+  - [ ] AC2: either unify the wire/audit spelling OR document the `crm_tenant_unverifiable` ⇔
+        `crm_unverifiable` mapping in one canonical place (`_clickhouse.ts` or DSR_ALERTING.md)
+  - [ ] AC3: document-or-remove the unproduced `expired`/`failed` audit action values (note their
+        intended future producer, or drop them)
+  - [ ] AC4: tsc clean; existing DSR tests pass; prettier clean
+- **depends_on:** FOLLOW-238 (DONE, PR #237); pairs with FOLLOW-244 (test) and FOLLOW-241 (docs)
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 246 (245 = RETRO-043 / PR #237 / FOLLOW-238: codify crm_erasure_status response values as shared const + reconcile wire(crm_tenant_unverifiable)⇔audit(crm_unverifiable) two-name split + document/remove unproduced expired/failed actions, P2 LG-1/LG-2. 244 = RETRO-043 / PR #237 / FOLLOW-238: re-scope stale FOLLOW-240 test to new DSR values + cover the untested crm_tenant_unverifiable positive branch (TG-1 P1) + fix orphaned doc consumers in docs/compliance/DSR_ALERTING.md §2/§5 query + MASTER_DESIGN §T.6 still on removed incomplete_* values (DG-1 P1 — realized RETRO-041 LG-2 sync-risk); MUST precede FOLLOW-187 live Sentry alert per ESC-021. 243 = RETRO-042 / PR #236 / FOLLOW-237: tighten stale mean_model_predicted_rate "pending FOLLOW-230" JSDoc caveat now that FOLLOW-230 is DONE, P3 doc-nit. 242 unused/reserved. 241 = RETRO-041 DSR_ALERTING consolidation + RETRO-042/ESC-021 citation fix. 238 (237 = RETRO-040 / PR #235 / FOLLOW-221: calibration JSON export — add Rule K.2 data_source provenance (CB-1 P1) + reject unknown format (LG-3) + fix avg_confidence semantics/dwell caveat (LG-2) + correct FOLLOW-175 mis-wire/HALF_WIRE_P (LG-1 P1); the export has no usable consumer and FOLLOW-175 needs row-level not aggregate. 236 = RETRO-039 / PR #228 / FOLLOW-183: restore src/index.ts to packages/db vitest coverage.include, TG-1 P3. 235 = RETRO-039 / PR #228 / FOLLOW-183: tighten 12-pair parity gate to value-parity AC + fix stale JSDoc, LG-1/DG-1 P3. 234 = FOLLOW-187 companion / PR #229: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate, P1 before_go_live. 233/232/231 unused. 230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217: / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
      220 = P1 make the FOLLOW-217 jsdom test actually DRIVE init() (it mirrors init() in local helpers, not invokes it — Rule Q violation in the ticket filed to close the Rule Q gap; TG-1/TG-2/TG-3/CB-1/DG-1; sequence BEFORE FOLLOW-219).
      219 = RETRO-033 / PR #218 / FOLLOW-216:
      219 = P3 collapse 4 scattered !intentStateRehydrated guards into one block + move CB-1 comment into JSDoc (structural hardening of FOLLOW-216 LG-1 fix; after FOLLOW-217).

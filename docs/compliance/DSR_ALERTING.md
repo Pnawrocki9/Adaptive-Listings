@@ -1,7 +1,8 @@
 # DSR Failure Alerting and Operator Procedure
 
 **Scope:** Art. 17 GDPR erasure requests handled by `POST /api/dsr/erase`. **Last updated:**
-2026-06-08 (FOLLOW-239 — closes the operator-dependency gap identified in RETRO-042).
+2026-06-08 (FOLLOW-244 — updates stale `incomplete_*` value references to post-FOLLOW-238 values;
+see FOLLOW-239 for original operator-dependency gap identification, FOLLOW-238 for the rename).
 
 ---
 
@@ -26,13 +27,19 @@ FOLLOW-239 makes this gap observable and auditable rather than silent.
 
 The route returns `crm_erasure_status` in every 200 response:
 
-| Value                             | Meaning                                                                                                                                         |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"complete"`                      | Pass B ran (operator supplied `lead_id`), or no CRM-namespace rows existed — erasure is complete.                                               |
-| `"incomplete_no_durable_lead_id"` | Pass B was skipped (operator did not supply `lead_id`) AND surviving CRM rows were detected. The data subject's CRM-written labels still exist. |
+| Value                       | Meaning                                                                                                                                                                                                                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"complete"`                | Pass B ran (operator supplied `lead_id`), or no CRM-namespace rows existed for this tenant — erasure is complete.                                                                                                                                                                                             |
+| `"crm_tenant_unverifiable"` | Pass B was skipped (operator did not supply `lead_id`) AND the tenant has CRM-namespace `conversion_labels` rows. CRM-namespace completeness is UNVERIFIABLE for this subject — the system cannot determine whether any of those rows belong to the erased subject. Operator must re-initiate with `lead_id`. |
+| `"unverified"`              | The count query failed (DB error). The Postgres erasure (Pass A) DID run, but CRM state is unknown. Never treated as `"complete"` (Rule K.2). Check Sentry for the captured exception.                                                                                                                        |
 
-A Sentry warning is emitted for every `incomplete_no_durable_lead_id` outcome. A ClickHouse audit
-entry is written with `action = 'incomplete_erasure_crm_rows_detected'`.
+A Sentry warning (`level: 'warning'`) is emitted for every `crm_tenant_unverifiable` outcome. A
+ClickHouse audit entry is written with `action = 'crm_unverifiable'`.
+
+> **Renamed in FOLLOW-238 (PR #237, 2026-06-08):** The wire field was previously
+> `incomplete_no_durable_lead_id`; the audit action was previously
+> `incomplete_erasure_crm_rows_detected`. Any rows written under the old action name predate
+> FOLLOW-238 and are addressed in §5 below.
 
 ---
 
@@ -104,7 +111,7 @@ As of FOLLOW-239, Estalara's DSR erasure is **operator-dependent** for CRM-integ
 1. Identify the durable CRM token before initiating the DSR.
 2. Supply it as `lead_id` in `POST /api/dsr/initiate`.
 3. Confirm `crm_erasure_status: "complete"` in the erase response.
-4. If `crm_erasure_status: "incomplete_no_durable_lead_id"` is returned, investigate immediately and
+4. If `crm_erasure_status: "crm_tenant_unverifiable"` is returned, investigate immediately and
    re-run per section 3.3 above.
 
 ---
@@ -113,20 +120,22 @@ As of FOLLOW-239, Estalara's DSR erasure is **operator-dependent** for CRM-integ
 
 ### Sentry
 
-Every `incomplete_no_durable_lead_id` outcome fires a Sentry warning with:
+Every `crm_tenant_unverifiable` outcome fires a Sentry warning (`level: 'warning'`) with:
 
 - `tags.route = 'dsr/erase'`
-- `tags.follow = 'FOLLOW-239'`
-- `extra.surviving_crm_rows` — count of un-erased rows
+- `tags.follow = 'FOLLOW-238'`
+- `extra.tenant_crm_row_count` — number of CRM-namespace rows present on the tenant
 - `extra.session_id` — the data subject's session fingerprint
 - `extra.dsr_verification_id` — the DSR request UUID for cross-referencing
+- `extra.reason = 'durable_lead_id_not_supplied'`
+- `extra.operator_action` — instructions to re-initiate with `lead_id`
 
-Create a Sentry alert for: `tags.follow = FOLLOW-239 AND level = warning`. Route to your DPO /
+Create a Sentry alert for: `tags.follow = FOLLOW-238 AND level = warning`. Route to your DPO /
 compliance inbox.
 
 ### ClickHouse audit
 
-Query for incomplete erasures:
+Query for unverifiable-CRM erasures (current action name, post-FOLLOW-238):
 
 ```sql
 SELECT
@@ -135,10 +144,28 @@ SELECT
   requested_at,
   completed_at
 FROM dsr_audit_log
-WHERE action = 'incomplete_erasure_crm_rows_detected'
+WHERE action = 'crm_unverifiable'
 ORDER BY completed_at DESC
 LIMIT 100;
 ```
+
+> **Historical rows (pre-FOLLOW-238):** Rows written before FOLLOW-238 (PR #237, 2026-06-08) used
+> the action name `incomplete_erasure_crm_rows_detected`. To include those in the above query, use:
+>
+> ```sql
+> SELECT
+>   tenant_id,
+>   session_id,
+>   requested_at,
+>   completed_at
+> FROM dsr_audit_log
+> WHERE action IN ('crm_unverifiable', 'incomplete_erasure_crm_rows_detected')
+> ORDER BY completed_at DESC
+> LIMIT 100;
+> ```
+>
+> The `incomplete_erasure_crm_rows_detected` action name is no longer produced by the route. Any
+> rows carrying it were written under FOLLOW-239 (pre-rename, before 2026-06-08).
 
 ---
 

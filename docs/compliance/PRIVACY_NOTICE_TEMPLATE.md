@@ -1,6 +1,6 @@
 # Estalara Adaptive Listings — Tenant-Embed Privacy Notice Template
 
-**Version:** 1.1 **Date:** 2026-06-08 **Author:** Compliance Engineering **Regulatory basis:** GDPR
+**Version:** 1.2 **Date:** 2026-06-08 **Author:** Compliance Engineering **Regulatory basis:** GDPR
 Art. 13/14, ePrivacy Directive Art. 5(3), UK GDPR, CCPA § 1798.100(b) **DPO gate:** See §5 — DPO
 sign-off required before this template is distributed to EU tenants.
 
@@ -99,23 +99,38 @@ submitting a data subject request to [tenant DSR contact].
 ## 4. Client-Storage Table — All Active Keys (mandatory disclosure for EU/UK tenants)
 
 > **Tenant action —** include this table in your Privacy Policy under a "Cookies and local storage"
-> or equivalent section. All keys listed below are written by the Estalara SDK loaded on your
+> or equivalent section. All eight keys listed below are written by the Estalara SDK loaded on your
 > website.
 
-| Key name                      | Storage type   | Data stored                                                                        | Lifetime                                                                                                     | Consent required | Purpose                                                                                                           |
-| ----------------------------- | -------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `__estalara_session__`        | sessionStorage | Session ID (pseudonymous SHA-256 hash), session start time, page count             | Tab lifetime (cleared on tab close)                                                                          | No (Mode A)      | Session continuity within a single browser tab                                                                    |
-| `estalara_consent`            | localStorage   | Consent decision: `"granted"` or `"denied"`                                        | Persistent (survives tab close); overwritten on re-choice                                                    | No               | Remember consent decision to avoid re-prompting                                                                   |
-| `__estalara_xid__`            | localStorage   | Cross-session pseudonymous identifier (UUID v4 + creation timestamp)               | Up to 90 days; erased on consent denial/withdrawal                                                           | Yes (Mode B)     | Personalization continuity across separate visits (DPIA §13.2)                                                    |
-| `__estalara_lead_id__`        | sessionStorage | Derived pseudonymous lead ID (first 16 hex chars of SHA-256 of Keycloak user UUID) | Tab lifetime                                                                                                 | Yes              | Link authenticated buyer sessions to behavioral profile without storing raw user ID                               |
-| `estalara_intent_{sessionId}` | sessionStorage | Inferred archetype label + per-archetype probability vector (profiling-adjacent)   | Tab lifetime; max 30 minutes since last write (`INTENT_STATE_STALE_MS`); erased on consent denial/withdrawal | Yes (Mode B)     | Session-level archetype continuity: avoids re-computing intent on every page navigation within a tab (DPIA §13.3) |
+| Key name                            | Storage type   | Data stored                                                                        | Lifetime                                                                                                     | Consent required | Purpose                                                                                                                          |
+| ----------------------------------- | -------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `__estalara_session__`              | sessionStorage | Session ID (pseudonymous SHA-256 hash), session start time, page count             | Tab lifetime (cleared on tab close)                                                                          | No (Mode A)      | Session continuity within a single browser tab                                                                                   |
+| `estalara_consent`                  | localStorage   | Consent decision: `"granted"` or `"denied"`                                        | Persistent (survives tab close); overwritten on re-choice                                                    | No               | Remember consent decision to avoid re-prompting                                                                                  |
+| `__estalara_xid__`                  | localStorage   | Cross-session pseudonymous identifier (UUID v4 + creation timestamp)               | Up to 90 days; erased on consent denial/withdrawal                                                           | Yes (Mode B)     | Personalization continuity across separate visits (DPIA §13.2)                                                                   |
+| `__estalara_lead_id__`              | sessionStorage | Derived pseudonymous lead ID (first 16 hex chars of SHA-256 of Keycloak user UUID) | Tab lifetime                                                                                                 | Yes              | Link authenticated buyer sessions to behavioral profile without storing raw user ID                                              |
+| `estalara_intent_{sessionId}`       | sessionStorage | Inferred archetype label + per-archetype probability vector (profiling-adjacent)   | Tab lifetime; max 30 minutes since last write (`INTENT_STATE_STALE_MS`); erased on consent denial/withdrawal | Yes (Mode B)     | Session-level archetype continuity: avoids re-computing intent on every page navigation within a tab (DPIA §13.3)                |
+| `estalara_variant:{sessionId}`      | sessionStorage | A/B variant assignment string for the current session (e.g., `"variant_0"`)        | Tab lifetime (sessionStorage cleared on tab close); no cross-session persistence                             | No               | Ensure consistent A/B variant within a tab so feedback pings match the served variant (`SESSION_VARIANT_KEY_PREFIX`, `adapt.ts`) |
+| `__estalara_quiz_dismissed__`       | localStorage   | Unix timestamp (ms) of the last quiz dismissal                                     | 24 hours from dismissal (self-expires by TTL check; not erased on consent denial)                            | No               | User preference: suppress the intent-quiz prompt for 24 hours after dismissal to avoid re-prompting                              |
+| `__estalara_micro_poll_dismissed__` | localStorage   | Unix timestamp (ms) of the last micro-poll dismissal                               | 24 hours from dismissal (self-expires by TTL check; not erased on consent denial)                            | No               | User preference: suppress the micro-poll bottom-toast for 24 hours after dismissal to avoid re-prompting                         |
 
-> **Implementation note for `estalara_intent_*`:** The key suffix is the visitor's per-tab session
-> ID, so the full key name varies per session (e.g., `estalara_intent_a1b2c3...`). The table row
-> above uses the wildcard form `estalara_intent_{sessionId}` for disclosure. The entry is written
-> only when consent is granted, and is erased immediately when the visitor denies or withdraws
-> consent. It is cleared automatically by the browser on tab close. No copy of this data is held on
-> Estalara's servers. Source: DPIA §13.3 (FOLLOW-218).
+> **Implementation notes:**
+>
+> - `estalara_intent_*` and `estalara_variant:*`: the key suffix is the per-tab session ID, so the
+>   full key name varies per session. The wildcard forms above are used for disclosure. Both entries
+>   are sessionStorage and are cleared automatically by the browser on tab close.
+> - `estalara_intent_*` is written only when consent is granted and is erased immediately on consent
+>   denial/withdrawal (`eraseIntentState()` at `index.ts:209` and `index.ts:260`). Source: DPIA
+>   §13.3 (FOLLOW-218).
+> - `estalara_variant:*` stores only the variant assignment string (no behavioral or profile data).
+>   No erase-on-denial is required or implemented because the data is not behavioral tracking data.
+>   Source: `SESSION_VARIANT_KEY_PREFIX` in `packages/sdk/src/core/adapt.ts`.
+> - `__estalara_quiz_dismissed__` and `__estalara_micro_poll_dismissed__` store only a Unix
+>   timestamp; they contain no identifier or behavioral signal. Legal basis is strictly-necessary
+>   under ePrivacy Art. 5(3)(b): storing a dismissal preference is necessary to provide the
+>   interactive service functionality explicitly requested (dismissing the prompt). No
+>   erase-on-denial is implemented because these keys contain no personal data beyond a preference
+>   timestamp. Sources: `DISMISS_STORAGE_KEY` in `packages/sdk/src/ui/quiz-trigger.ts`;
+>   `MICRO_POLL_DISMISS_KEY` in `packages/sdk/src/ui/micro-poll.ts`.
 
 ---
 
@@ -146,8 +161,9 @@ template being shared with the DPO, escalate to the human (Piotr Nawrocki) via
 
 ## 6. Revision History
 
-| Version | Date       | Author                 | Change                                                                                                                                                                                                                                                                                          |
-| ------- | ---------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0     | 2026-05-27 | Compliance Engineering | Initial creation (FOLLOW-129). §13.1 + §13.2                                                                                                                                                                                                                                                    |
-|         |            |                        | disclosure paragraphs from DPIA Audit F-13/F-14                                                                                                                                                                                                                                                 |
-| 1.1     | 2026-06-08 | Compliance Engineering | FOLLOW-218: added §4 client-storage table listing all five active SDK keys including the new `estalara_intent_{sessionId}` sessionStorage entry. Renumbered old §4 (DPO Gate) to §5; old §5 (Revision History) to §6. DPO gate updated to add §13.3 review item and §13.3 staging QA gate item. |
+| Version | Date       | Author                 | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------- | ---------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 2026-05-27 | Compliance Engineering | Initial creation (FOLLOW-129). §13.1 + §13.2                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+|         |            |                        | disclosure paragraphs from DPIA Audit F-13/F-14                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 1.1     | 2026-06-08 | Compliance Engineering | FOLLOW-218: added §4 client-storage table listing all five active SDK keys including the new `estalara_intent_{sessionId}` sessionStorage entry. Renumbered old §4 (DPO Gate) to §5; old §5 (Revision History) to §6. DPO gate updated to add §13.3 review item and §13.3 staging QA gate item.                                                                                                                                                                                               |
+| 1.2     | 2026-06-08 | Compliance Engineering | FOLLOW-230: §4 updated to list all eight active SDK keys. Added three keys omitted from v1.1: `estalara_variant:{sessionId}` (sessionStorage, A/B variant, strictly-necessary), `__estalara_quiz_dismissed__` (localStorage, preference timestamp, strictly-necessary), `__estalara_micro_poll_dismissed__` (localStorage, preference timestamp, strictly-necessary). Updated header from "all five" to "all eight". Added per-key implementation notes with grep-verified source references. |

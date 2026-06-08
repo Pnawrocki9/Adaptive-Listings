@@ -2829,7 +2829,7 @@ but does NOT fix the source — ESC-019 does.
 
 - id: FOLLOW-187
   title:
-    Compliance docs for CRM ingest — ROPA Activity 14 + DPIA §2.3/§2.5 + conversion_labels TTL
+    Compliance docs for CRM ingest — ROPA Activity 15 + DPIA §2.3/§2.5 + conversion_labels TTL
     (go-live gates 8-9)
   agent: compliance-engineer + data-engineer
   status: READY
@@ -2839,9 +2839,11 @@ but does NOT fix the source — ESC-019 does.
   source: RETRO-031 (DG-1); HANDOFFS FOLLOW-172 conditions 8-9
   spec: backlog/FOLLOW_UPS.md (FOLLOW-187 stub)
   notes: |
-    Go-live gates (not merge gates). ROPA Activity 14 + DPIA §2.3/§2.5 for CRM deep-outcome ingest;
+    Go-live gates (not merge gates). ROPA Activity 15 + DPIA §2.3/§2.5 for CRM deep-outcome ingest;
     13-month TTL cron for conversion_labels (the existing TTL cron does NOT cover this table —
     HANDOFFS:952). Required before tenant go-live. (Onboarding pseudonymity checkbox = FOLLOW-186, P2.)
+    Number note (FOLLOW-230): originally "Activity 14" but Activity 14 was claimed by FOLLOW-218 (PR
+    #223) for the estalara_intent_* sessionStorage cache. Use Activity 15. ROPA v2.2 confirms.
 
 - id: FOLLOW-173
   title: Conversion-label aggregation + score-vs-actual calibration
@@ -3101,16 +3103,18 @@ Key tracks:
     upsert precedence WHERE + CRM-write + DSR-erase reachability + two-writer convergence.
 
 - id: FOLLOW-187
-  title: Compliance docs — ROPA Activity 14 + DPIA §2.3/§2.5 + conversion_labels 13-month TTL
+  title: Compliance docs — ROPA Activity 15 + DPIA §2.3/§2.5 + conversion_labels 13-month TTL
   agent: compliance-engineer + data-engineer
   status: READY
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-172]
   source: RETRO-031 (DG-1); HANDOFFS FOLLOW-172 conditions 8-9
+    Number note (FOLLOW-230): originally Activity 14; renumbered to 15 (Activity 14 taken by
+    FOLLOW-218 intent-cache). ROPA v2.2 confirms Activity 15 assignment.
   spec: backlog/FOLLOW_UPS.md (FOLLOW-187 stub)
   notes: |
-    Go-live gates 8-9. ROPA Activity 14 + DPIA §2.3/§2.5 for CRM deep-outcome ingest;
+    Go-live gates 8-9. ROPA Activity 15 + DPIA §2.3/§2.5 for CRM deep-outcome ingest;
     13-month TTL cron for conversion_labels (not covered by existing TTL cron).
 
 - id: FOLLOW-173

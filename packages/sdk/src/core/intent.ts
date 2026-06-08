@@ -98,6 +98,20 @@ export interface IntentState {
   /** Unix ms timestamp of the last update. */
   last_updated_at: number;
   quiz_answered: boolean;
+  /**
+   * Number of dwell-time threshold ticks whose boost has already been folded into
+   * this state (FOLLOW-227 Rule R idempotency field).
+   *
+   * This field is persisted to sessionStorage via `persistIntentState` and
+   * rehydrated on the next listing page in the same tab.  `startDwellTimer` reads
+   * it on every tick and skips any boost that has already been applied, so a
+   * rehydrated state is never re-boosted and the total cross-session contribution
+   * cannot exceed `DWELL_MAX_SESSION_CONTRIBUTION`.
+   *
+   * Optional / defaults to 0 so that states persisted before FOLLOW-227 remain
+   * valid — `isValidIntentState` does not require this field.
+   */
+  dwell_ticks_applied?: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1003,13 +1017,27 @@ export function applyListingViewRate(
   };
 }
 
-// ─── Dwell-time confidence boost (FOLLOW-190) ─────────────────────────────────
+// ─── Dwell-time confidence boost (FOLLOW-190, capped in FOLLOW-227) ───────────
 
 /** Base boost magnitude for a single dwell-time threshold tick (FOLLOW-190). */
 export const DWELL_BASE_BOOST = 0.08;
 
 /** Unit of elapsed time used as the log2 denominator in applyDwellSignal (ms). */
 export const DWELL_UNIT_MS = 30_000;
+
+/**
+ * Maximum number of dwell-time threshold ticks whose boost may be applied
+ * across the entire session (including resumption after cross-listing navigation).
+ *
+ * Rule R compliance (FOLLOW-227): persisted `IntentState.dwell_ticks_applied`
+ * carries the already-applied count across the rehydrate boundary.  The
+ * `startDwellTimer` call site in index.ts checks this field before every tick
+ * and skips boosts that have already been counted, so the total contribution
+ * is bounded by this constant and cannot compound without limit.
+ *
+ * Value = 3 (one per threshold in DWELL_THRESHOLDS_MS: 30 s / 90 s / 180 s).
+ */
+export const DWELL_MAX_SESSION_CONTRIBUTION = 3 as const;
 
 /**
  * Apply a dwell-time confidence boost to the current leading archetype (FOLLOW-190).
@@ -1019,6 +1047,11 @@ export const DWELL_UNIT_MS = 30_000;
  *
  * signal_count is NOT incremented (dwell is continuous, not a discrete event).
  * Pure function: no DOM access, no globals, no side effects.
+ *
+ * Rule R compliance (FOLLOW-227): increments `dwell_ticks_applied` in the returned
+ * state so the boost count survives the sessionStorage rehydrate boundary.  The
+ * call site in `startDwellTimer` (index.ts) is responsible for checking
+ * `DWELL_MAX_SESSION_CONTRIBUTION` BEFORE calling this function.
  *
  * @returns Same state reference when archetype==="neutral", elapsed_ms<=0, or boost<=1.
  */
@@ -1039,5 +1072,8 @@ export function applyDwellSignal(state: IntentState, elapsed_ms: number): Intent
     signal_count: state.signal_count,
     last_updated_at: Date.now(),
     quiz_answered: state.quiz_answered,
+    // Increment the tick counter so the persisted envelope carries the correct
+    // count into the next listing page (Rule R idempotency — FOLLOW-227).
+    dwell_ticks_applied: (state.dwell_ticks_applied ?? 0) + 1,
   };
 }

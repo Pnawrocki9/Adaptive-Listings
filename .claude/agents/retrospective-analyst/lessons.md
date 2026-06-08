@@ -51,3 +51,91 @@
 - **One thing I did right to record:** I resisted re-counting RETRO-027's "no-shape-assertion"
   candidate against this PR — #182 actually pins every new branch with 24 assertions, so it's the
   counter-example, not a recurrence. Noting positive cases keeps the promotion counter honest.
+
+## 2026-06-08 · RETRO-035 (PR #224, FOLLOW-219 — collapse 4 cold-start guards into one block)
+
+- **A finding I almost missed and why:** the local checkout's `main` had DIVERGED and did not
+  contain the merge commit `569d3ce` (`git merge-base --is-ancestor … HEAD` → NO). My step-3 grep
+  against the working tree showed FOUR `!intentStateRehydrated` guards still present and I nearly
+  wrote that up as a P1 "consolidation reverted / never landed" finding. The reconcile step saved
+  it: `git show origin/main:…` and `rev-list --left-right` showed origin/main was the real merged
+  line (#224 → #225) and the local tree was stale. **Lesson: never trust the local working tree for
+  post-merge analysis. Resolve the merge commit's reachability FIRST
+  (`merge-base --is-ancestor <sha> origin/main`), then read every file via
+  `git show origin/main:<path>`, not the checkout.** A divergent local main can fabricate phantom
+  findings.
+- **An axis/chain I had to trace twice:** the LG-2 persist. First read (local, stale) showed a
+  persist at `:464` AND `:638` inside a `:637` guard — looked like the old un-consolidated shape. On
+  origin/main it's persist at `:401` (inside the single cold-start block) + `:474` (the
+  `onIntentUpdate` behavioral path — a legitimately separate site, NOT a duplicate cold-start
+  guard). I had to trace which persist was the cold-start one vs the behavioral one before I could
+  confirm "4→1". The behavioral persist is an easy false-positive for "you missed a guard."
+- **A meta-pattern in how gaps recur across agents:** the loop's OWN bookkeeping is a gap source.
+  RETRO-032/033/034 generated 10 FOLLOW stubs + a Rule Q amendment but their BODIES were never
+  written to RETROSPECTIVES.md (log jumps 031→035). My prior-occurrence grep and rule-promotion
+  counter both silently under-count because the evidence lives in stub prose, not the log. The
+  "scattered-guard footgun" pattern is probably already at
+  written-threshold-2-minus-the-missing-bodies. **Step-0 for every future run: verify my OWN last
+  1-3 entries actually landed in RETROSPECTIVES.md before trusting the file as the prior-occurrence
+  source.** Filed FOLLOW-226 to backfill.
+
+- **2026-06-08 / RETRO-037 (FOLLOW-190, dwell-time lift)** · **A finding I almost missed and why:**
+  The 41 tests + the PR's "pure, no side effects, AC-complete" framing are entirely true — for the
+  HELPER axis (`applyDwellSignal`). I almost echoed "clean." EVERY real finding lives in the
+  index.ts WIRING axis the tests never touch: the boost is persisted via
+  `onIntentUpdate→persistIntentState` and re-accrues on the rehydrated state on the next page
+  (LG-1). The lesson: a thoroughly-tested PURE helper is the strongest possible decoy — the side
+  effects it disclaims ("no globals, no persistence") are exactly what its CALLER does. Always read
+  the caller, not just the unit under test.
+- **An axis/chain I had to trace twice:** the persist→rehydrate→re-apply chain. First pass I saw the
+  dwell timer reset on archetype switch (AC4, genuinely closed) and almost moved on. Second pass:
+  followed `onIntentUpdate` → `persistIntentState` (`:464`) → next-page `rehydrateIntentState`
+  (`:338`) → `startDwellTimer` restarts because `previousArchetype` starts null (`:541-545`) → boost
+  compounds. The chain only closes when you trace it ACROSS the page-navigation boundary, not within
+  one init().
+- **A meta-pattern in how gaps recur across agents:** This is the THIRD consecutive SDK retro in the
+  rehydrate-boundary family (RETRO-032 FOLLOW-207 priors, RETRO-034 the untested seam, RETRO-037 the
+  dwell boost). Each agent "wires its signal" correctly in isolation and forgets the FOLLOW-176
+  persistence boundary that turns every per-page mutation into a per-session accumulator. I promoted
+  Rule R for exactly this. Also a process gap: FOLLOW-216 declared `blocks FOLLOW-190` / "sequence
+  BEFORE FOLLOW-190" and FOLLOW-190 merged first anyway — declared-blocker ordering is not enforced
+  at the PM/merge gate. Watch-item (count 1) for a future ordering Rule.
+- **My own blind spot (carried from last run):** Re-confirmed the RETRO-032/033/034 bodies are STILL
+  absent from RETROSPECTIVES.md and Rule Q's body is absent from CONVENTIONS_PATCH.md, though both
+  are referenced everywhere. I grepped FOLLOW_UPS + the QUEUE footer (not just RETROSPECTIVES.md) to
+  get the true RETRO/FOLLOW/Rule numbering — relying on RETROSPECTIVES.md alone would have numbered
+  this RETRO-032 and collided. Promoted my new rule as Rule R (not Q) to avoid the
+  dangling-reference collision. FOLLOW-226 (backfill) remains the right fix; until it lands, ALWAYS
+  cross-check the FOLLOW_UPS footer + QUEUE for the real high-water marks.
+
+## 2026-06-08 · RETRO-038 (FOLLOW-182 / PR #222)
+
+- **A finding I almost missed and why:** The PR ships a test literally named the "CI gate for the
+  Rule K.1 amendment" and the PR body asserts the parity gate exists. I almost recorded the gap as
+  CLOSED on that claim. Reading the test source revealed it is TAUTOLOGICAL: `allRankEntries()`
+  computes each entry's `rank` by calling `conversionLabelRank()`, then the test asserts
+  `entry.rank === conversionLabelRank(samePair)` — `x === x`. It never executes the generated SQL.
+  Lesson: a test named a "parity gate" is not a parity gate; trace what the asserted value is
+  DERIVED from before crediting coverage. The genuine SQL-vs-TS path stayed untested (still
+  FOLLOW-183).
+- **An axis/chain I had to trace twice:** The local working tree was STALE (`git show <merge-sha>`
+  failed; local `main` was several commits behind origin and the file on disk was the pre-merge
+  version). I first read the OLD `conversion-label.ts` (unexported map, no `allRankEntries`) and
+  nearly analyzed the wrong code. Had to re-fetch and run all greps against the commit object
+  (`git grep <pattern> d7b9de7`, `git show d7b9de7:<path>`) rather than the checkout. Build the
+  habit: when `git show <sha>` fails, fetch and pin EVERY read to the commit object, not the
+  worktree.
+- **A meta-pattern in how gaps recur across agents:** "test theater" — a refactor edits the exact
+  load-bearing artifact a prior retro flagged as untested (RETRO-030 TG-1: the SQL WHERE clause),
+  and the new tests cover the _sibling_ TS function or assert a value against itself, leaving the
+  deliverable still unexecuted. The gap doesn't move one hop downstream (the RETRO-024 failure mode)
+  — it stays exactly put while _looking_ closed. The fix-PR even raises the risk (static literal ->
+  generated SQL). Watch for this whenever a remediation PR claims to satisfy a coverage/parity rule:
+  verify the new test EXECUTES the changed code path, not a proxy for it.
+- **Process gap in my own loop:** RETROSPECTIVES.md is under heavy concurrent append by parallel
+  retro runs — RETRO-032/033/034 are referenced-but-unwritten (other tickets reserved the numbers),
+  and RETRO-035/036/037 were written by other runs WHILE I was composing. The `Edit` tool kept
+  failing ("file modified since read"). Resolution: compute the next-free RETRO number with a
+  guarded shell `cat >>` heredoc that re-checks for collision atomically right before append, and
+  key idempotency on a unique header pattern (`^## RETRO-NNN — FOLLOW-182`) rather than a bare
+  number. Don't trust the number computed at the start of the run.

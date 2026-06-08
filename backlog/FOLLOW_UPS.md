@@ -5241,7 +5241,11 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ## FOLLOW-182 — eliminate the TS-map↔SQL-CASE precedence duplication in upsertConversionLabel
 
-- **status:** OPEN
+- **status:** DONE (PR #222, merged 2026-06-08, commit d7b9de7; retro RETRO-038). LG-1 + LG-2 closed
+  end-to-end (the hand-typed SQL CASE is gone; SQL now derived at runtime from `OUTCOME_CLASS_RANK`
+  via `allRankEntries()`/`buildStoredRankSql()`; `ELSE` floors removed). RESIDUAL: the SQL-vs-TS
+  parity is still untested (the shipped shared-package "parity gate" is tautological) — carried to
+  FOLLOW-183 (see its RETRO-038 amendment).
 - **priority:** P1
 - **source_retro:** RETRO-030 (§4a LG-1/LG-2)
 - **source_ticket:** FOLLOW-179 / PR #190
@@ -5307,6 +5311,23 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] CI green
 - **depends_on:** source FOLLOW-179 (merged); shares the PG-harness need with FOLLOW-181.
 - **promoted_to_queue:** true (QUEUE.md, 2026-06-03; both P1)
+- **amendment (RETRO-038, 2026-06-08 — FOLLOW-182 / PR #222 landed):** FOLLOW-182 replaced the two
+  hand-typed SQL CASE blocks with a runtime-generated `buildStoredRankSql()` that iterates
+  `allRankEntries()`. This CHANGES this ticket's target and RAISES its priority-of-value: the WHERE
+  clause is no longer a static literal a reviewer can eyeball against the documented rank table — it
+  is now _generated_, and its correctness depends on `buildStoredRankSql`'s
+  `reduce`/`sql`-interpolation being right, which only a DB-level test can prove. The "parity gate"
+  FOLLOW-182 shipped in `conversion-label.test.ts` is TAUTOLOGICAL (`allRankEntries()` computes each
+  `rank` by calling `conversionLabelRank()`, then the test asserts that rank equals
+  `conversionLabelRank()` — `x === x`, never touches the SQL), so the real parity gate the Rule K.1
+  amendment (option 2) intended still does not exist. Two ACs added:
+  - [ ] the PG test asserts the GENERATED `buildStoredRankSql()` output ranks equal
+        `conversionLabelRank()` for ALL 12 (class × source) pairs against pgmem/Testcontainers (this
+        is the _real_ SQL-vs-TS parity gate; the shipped shared-package test does not exercise the
+        SQL)
+  - [ ] add a defensive guard (or a `sql\`CASE
+        END\``seed) to`buildStoredRankSql` for the     empty-`OUTCOME_CLASS_RANK`case — the current`whenClauses.reduce(...)`has no initial value and     throws`Reduce
+        of empty array with no initial value` if the rank map is ever emptied (RETRO-038 §4a LG-2)
 
 ---
 
@@ -5588,7 +5609,8 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ## FOLLOW-218 — DPIA disclosure for the estalara_intent sessionStorage archetype store
 
-- **status:** READY (promoted to QUEUE.md Sprint 16, 2026-06-08)
+- **status:** READY_FOR_REVIEW (PR #223, branch
+  compliance-engineer/FOLLOW-218-dpia-sessionstorage-disclosure, 2026-06-08)
 - **priority:** P2
 - **source_retro:** RETRO-032 (§4d DG-1)
 - **source_ticket:** FOLLOW-176 / PR #217
@@ -5616,7 +5638,8 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ## FOLLOW-219 — Collapse the four scattered `!intentStateRehydrated` cold-start-prior guards into one block
 
-- **status:** READY (promoted to QUEUE.md Sprint 16, 2026-06-08)
+- **status:** READY_FOR_REVIEW (PR #224, branch sdk-engineer/FOLLOW-219-guard-consolidation,
+  2026-06-08)
 - **priority:** P3
 - **source_retro:** RETRO-033 (§4a LG-2, §4b CB-1)
 - **source_ticket:** FOLLOW-216 / PR #218
@@ -5697,7 +5720,339 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 221 (220 = RETRO-034 / PR #219 / FOLLOW-217:
+---
+
+## FOLLOW-221 — Calibration export: /api/pilot/calibration missing structured JSON export (LG-1)
+
+- **status:** READY (promoted to QUEUE.md Sprint 16, 2026-06-08)
+- **priority:** P1
+- **source_retro:** RETRO-032 (§4 LG-1)
+- **source_ticket:** FOLLOW-173 / PR #216
+- **recommended_sprint:** Sprint 16
+- **agent:** data-engineer + backend-engineer
+- **estimated_hours:** 3
+- **scope:** RETRO-032 LG-1: the `/api/pilot/calibration` endpoint ships a reliability curve per
+  `model_version` but does NOT export the raw per-class aggregates as a downloadable structured JSON
+  payload — it only renders them in the dashboard chart. The downstream label-set export
+  (`FOLLOW-175`) and LoRA fine-tuning corpus (`§D.5.7`) need these aggregates as structured JSON,
+  not just a UI chart. Add a `?format=json` query param (or a `/api/pilot/calibration/export`
+  endpoint) returning the full
+  `(outcome_class, model_version, tenant, window, count, avg_confidence)` rows as a JSON array with
+  a `Content-Disposition: attachment` header.
+- **ac:**
+  - [ ] `GET /api/pilot/calibration?format=json` returns structured JSON array of calibration rows
+  - [ ] Response schema is Zod-validated and documented in HANDOFFS.md for FOLLOW-175
+  - [ ] Existing chart rendering is unaffected (no regression on HTML format)
+  - [ ] 3+ unit tests covering the JSON export path
+- **depends_on:** [FOLLOW-173]
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-222 — Admin reclassification: missing confirm dialog for manual downgrades (LG-3)
+
+- **status:** READY (promoted to QUEUE.md Sprint 16, 2026-06-08)
+- **priority:** P2
+- **source_retro:** RETRO-032 (§4 LG-3)
+- **source_ticket:** FOLLOW-174 (not yet shipped — file this before FOLLOW-174 is delegated)
+- **recommended_sprint:** Sprint 16 (include in FOLLOW-174 scope or as immediate follow-on)
+- **agent:** backend-engineer
+- **estimated_hours:** 2
+- **scope:** RETRO-032 LG-3: the admin reclassification UI (FOLLOW-174) will allow downgrading a
+  high-confidence label to a lower-precedence class (e.g. `purchased` → `viewing_booked`). The spec
+  does not include a confirm dialog guarding manual downgrades. A single mis-click in an admin
+  dashboard could irrecoverably lower a high-value training label, corrupting the calibration
+  corpus. Requires a confirm step ("You are downgrading a 'purchased' label to 'viewing_booked'.
+  This cannot be undone. Continue?") before any downgrade is applied via `upsertConversionLabel`.
+  Note: PM may fold this into FOLLOW-174 if that ticket has not started yet.
+- **ac:**
+  - [ ] Downgrading a label (moving to a lower `OUTCOME_CLASS_RANK`) triggers a confirm dialog
+  - [ ] Upgrading a label (higher rank) proceeds without confirm (safe operation)
+  - [ ] Confirmed downgrades apply via the precedence upsert helper
+  - [ ] Dialog text names the source class and target class explicitly
+  - [ ] Unit test: confirm dialog fires on downgrade; does NOT fire on upgrade
+- **depends_on:** [FOLLOW-174]
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-223 — admin/labels/[id]/page.tsx has zero unit tests (TG-1)
+
+- **status:** READY (promoted to QUEUE.md Sprint 16, 2026-06-08)
+- **priority:** P1
+- **source_retro:** RETRO-032 (§4 TG-1)
+- **source_ticket:** FOLLOW-174 (not yet shipped — file this before delegation)
+- **recommended_sprint:** Sprint 16 (include in FOLLOW-174 scope or immediate follow-on)
+- **agent:** qa-engineer
+- **estimated_hours:** 3
+- **scope:** RETRO-032 TG-1: FOLLOW-174 will ship admin label reclassification UI in
+  `apps/control-plane/src/app/api/admin/labels/[id]/page.tsx` with zero planned unit tests for the
+  reclassification flow. Per CLAUDE.md test coverage bar (≥70% for apps), new route pages require
+  tests. Add vitest/react-testing-library unit tests for: (a) happy path — operator selects valid
+  class → `upsertConversionLabel` called with correct args; (b) downgrade confirm guard — confirm
+  dialog fires and shows source+target class names; (c) error state — upsert throws → user sees
+  error message + can retry; (d) loading state — spinner shown during async upsert. Note: PM may
+  fold this into FOLLOW-174 if that ticket has not started yet (preferred).
+- **ac:**
+  - [ ] Test file at `apps/control-plane/src/app/api/admin/labels/[id]/__tests__/page.test.tsx`
+  - [ ] Happy path (correct class → upsert): passes
+  - [ ] Downgrade confirm dialog (fires on downgrade, skips on upgrade): passes
+  - [ ] Error state (upsert fails → error message visible): passes
+  - [ ] Loading/spinner state: passes
+  - [ ] All tests run in `pnpm test` CI (not skipped)
+- **depends_on:** [FOLLOW-174]
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-224 — Remove `_initForTest` from public SDK surface (P3)
+
+- **status:** READY (promoted to QUEUE.md Sprint 16, 2026-06-08)
+- **priority:** P3
+- **source_retro:** RETRO-033 (§4 \_initForTest public-surface violation)
+- **source_ticket:** FOLLOW-220 / FOLLOW-219
+- **recommended_sprint:** Sprint 16
+- **agent:** sdk-engineer
+- **estimated_hours:** 1
+- **scope:** RETRO-033: `_initForTest()` (and related test-seam helpers) are exported from
+  `packages/sdk/src/index.ts` for testing convenience but are now on the public package surface —
+  they appear in the published TypeScript declaration file and are visible to SDK consumers. Per
+  CLAUDE.md ("Zero `any` in TypeScript without inline disable + reason" and general hygiene), test
+  utilities must not pollute the public surface. Gate `_initForTest` and any other `_*ForTest`
+  exports behind a `process.env.NODE_ENV === 'test'` conditional or move them to a separate
+  `packages/sdk/src/test-utils.ts` entry point that is NOT included in the main `exports` field.
+- **ac:**
+  - [ ] `_initForTest` and any `_*ForTest` symbols do NOT appear in `packages/sdk/dist/*.d.ts` after
+        a clean `pnpm build`
+  - [ ] Test files that use `_initForTest` still compile and pass (via `test-utils` import or
+        conditional export)
+  - [ ] `pnpm build` + `pnpm typecheck` clean
+  - [ ] CI green
+- **depends_on:** []
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-225 — applyArchetypeHints gate at :341 not jsdom-observable (P2)
+
+- **status:** READY (promoted to QUEUE.md Sprint 16, 2026-06-08)
+- **priority:** P2
+- **source_retro:** RETRO-033 (§4c TG-1 gate :341 not jsdom-observable)
+- **source_ticket:** FOLLOW-220 (sequence after FOLLOW-220 makes init() testable)
+- **recommended_sprint:** Sprint 16 (after FOLLOW-220)
+- **agent:** qa-engineer + sdk-engineer
+- **estimated_hours:** 4
+- **scope:** RETRO-033: `applyArchetypeHints()` is called at `index.ts:341` inside the
+  `!intentStateRehydrated` block. However, `applyArchetypeHints()` reads `document.head` metadata
+  (meta tags set by the host site) that jsdom does not populate by default. A test dropping the `!`
+  at `:341` (reopening the FOLLOW-216 LG-1 bug) would NOT fail any existing test — the gate exists
+  in production but is invisible to the current test harness. This must be fixed after FOLLOW-220
+  (which exports a real `initForTest()` testable under jsdom). Fix: populate synthetic
+  `document.head` meta tags in the jsdom test fixture, then assert that (a) with a rehydrated state,
+  `applyArchetypeHints()` is NOT called; (b) with a cold-start state, it IS called and the archetype
+  priors reflect the seeded meta tags.
+- **ac:**
+  - [ ] jsdom test fixture populates at least one `document.head` meta tag readable by
+        `applyArchetypeHints()`
+  - [ ] Test asserts: rehydrated state → archetype hint priors NOT applied after `initForTest()`
+  - [ ] Test asserts: cold-start state → archetype hint priors ARE applied after `initForTest()`
+  - [ ] Dropping the `!` at `index.ts:341` turns the rehydration assertion RED (mutation test)
+  - [ ] CI green; existing FOLLOW-219 guard-collapse tests unaffected
+- **depends_on:** [FOLLOW-220]
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-226 — Backfill the missing RETRO-032 / RETRO-033 / RETRO-034 bodies into RETROSPECTIVES.md
+
+- **status:** OPEN
+- **priority:** P2
+- **source_retro:** RETRO-035 (§4d DG-1, §7)
+- **source_ticket:** FOLLOW-219 / PR #224 (the retro that surfaced the gap)
+- **recommended_sprint:** Sprint 16
+- **agent:** retrospective-analyst
+- **estimated_hours:** 3
+- **scope:** RETRO-032, RETRO-033, and RETRO-034 are referenced as `source_retro` across
+  FOLLOW_UPS.md (FOLLOW-216/217/219/220/221..225), QUEUE.md (`:3185,:3247,:3263`), and STATUS.md
+  (`:70`) and they generated those stubs plus the Rule Q amendment — but their full bodies were
+  NEVER appended to `backlog/RETROSPECTIVES.md`, which jumps from RETRO-031 straight to RETRO-035.
+  This breaks the learning loop: a future retro's prior-occurrence grep over RETROSPECTIVES.md
+  under-counts patterns that actually recurred (the "scattered/partial-skip guard footgun",
+  RETRO-032/033 §6; the Rule Q "6th confirming instance", per the FOLLOW-220 stub), so a rule that
+  has genuinely met the 2-occurrence threshold may fail to promote. Reconstruct the three entries
+  (8-section template) from the FOLLOW stubs (FOLLOW-173/174/176/216/217 et al.) + the merged PRs
+  #216/#217/#218/#219/#224, mark each clearly as a reconstructed backfill with provenance, and
+  insert them in numeric order before RETRO-035 (or as a clearly-labeled appendix if in-place
+  insertion risks line-anchor churn).
+- **ac:**
+  - [ ] RETRO-032, RETRO-033, RETRO-034 bodies exist in RETROSPECTIVES.md, each with all 8 sections
+        (use "reconstructed from stubs + PR diff" provenance where a section can't be fully
+        recovered).
+  - [ ] The "scattered-guard footgun" pattern (§6) and the Rule Q recurrence count are explicitly
+        recorded in the backfilled bodies so future grep-based occurrence counting is correct.
+  - [ ] After backfill, re-evaluate whether the footgun pattern now meets the written-≥2 threshold
+        (RETRO-032/033 + RETRO-035) and, if so, promote a CONVENTIONS_PATCH rule ("collapse
+        multi-site guards to one block/helper; the (N+1)th copy re-opens the bug").
+  - [ ] No existing RETRO-001..031 or RETRO-035 content is altered; only additions.
+- **depends_on:** none (read-only reconstruction)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-227 — Gate + cap the dwell-time boost across the rehydrate boundary (LG-1/LG-2)
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-037 (§4a LG-1/LG-2, §3 HALF_WIRE_P, §4d DG-1)
+- **source_ticket:** FOLLOW-190 / PR #225
+- **recommended_sprint:** Sprint 16 (sequence WITH or immediately AFTER FOLLOW-216)
+- **agent:** sdk-engineer
+- **estimated_hours:** 4
+- **scope:** The FOLLOW-190 dwell boost (`applyDwellSignal`, `intent.ts:1025`) is persisted via
+  `onIntentUpdate → persistIntentState` (`index.ts:464,515-516`) and then re-applied on top of the
+  already-boosted, rehydrated distribution on every cross-listing navigation — because the dwell
+  timer is restarted by the first `refreshDirectives()` (`index.ts:541-545`) and, unlike every other
+  init-time prior (`applyArchetypeHints` `:350`, `applyReferrerHints` `:383`, device-type
+  `applyBehavioralSignal` `:390`), the dwell path has NO `!intentStateRehydrated` gate and NO
+  per-session cap. This is the exact FOLLOW-216 re-perturbation footgun one hop downstream
+  (RETRO-032 LG-1 → RETRO-037 LG-1 → Rule R). FIX: (a) make the dwell contribution idempotent under
+  rehydration — either gate the timer restart behind a per-session
+  "already-accrued-for-this-archetype" guard, OR persist the accrued dwell-boost factor in the
+  IntentState envelope and apply only the DELTA on resume; (b) add a documented per-session cap on
+  total dwell contribution to any archetype's probability (LG-2 — no ceiling today;
+  `withConfidenceBonus` caps only the quiz multiplier); (c) one-line Master_Design §E
+  signal-inventory update adding dwell-time as an intent source (DG-1).
+- **ac:**
+  - [ ] A rehydrated, dwell-boosted state is NOT re-perturbed/compounded by a fresh dwell cycle
+        (LG-1 — assert via the FOLLOW-220 `_initForTest()` seam; see FOLLOW-229)
+  - [ ] Total per-session dwell contribution to any archetype is bounded by a named, documented cap
+        (LG-2)
+  - [ ] Master_Design §E lists dwell-time as a signal source with the boost formula + cap (DG-1)
+  - [ ] CI green; SDK bundle delta neutral/negative
+- **depends_on:** pairs with / extends FOLLOW-216 (the gate must cover the dwell prior); regression
+  test is FOLLOW-229
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-228 — Dwell timer: restart on visibility-show + jitter-robust threshold match (LG-3/CB-1)
+
+- **status:** OPEN
+- **priority:** P2
+- **source_retro:** RETRO-037 (§4a LG-3, §4b CB-1)
+- **source_ticket:** FOLLOW-190 / PR #225
+- **recommended_sprint:** Sprint 16
+- **agent:** sdk-engineer
+- **estimated_hours:** 2
+- **scope:** The dwell timer wiring is asymmetric and lossy. (a) LG-3: `stopDwellTimer()` fires on
+  `visibilitychange → 'hidden'` (`index.ts:1088`) but there is NO `'visible'` branch to restart it —
+  a buyer who backgrounds then returns loses all dwell accrual until the next archetype SWITCH
+  (`:545`), which for a settled buyer may never fire. (b) CB-1: the tick matches a threshold only
+  when `Math.abs(elapsed - threshold) < DWELL_TICK_TOLERANCE_MS` (4500ms, `:511-512`); a tick
+  delayed >4.5s past a threshold (background-tab throttling, a long task, `setInterval` clamping)
+  skips the match window and `firedThresholds` never records it, so that boost silently never
+  applies. FIX: add a `visibilityState === 'visible'` restart branch for a non-neutral archetype;
+  replace the symmetric tolerance window with a monotone
+  `elapsed >= threshold && !firedThresholds.has(threshold)` check.
+- **ac:**
+  - [ ] Returning to a foregrounded tab restarts dwell accrual for a non-neutral archetype (LG-3)
+  - [ ] A delayed/throttled tick still fires every not-yet-fired threshold it has passed (CB-1)
+  - [ ] Regression covered through the FOLLOW-220 `_initForTest()` seam (see FOLLOW-229)
+  - [ ] CI green
+- **depends_on:** test via FOLLOW-229
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-229 — index.ts dwell-wiring test through the \_initForTest() seam (TG-1/TG-2)
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-037 (§4c TG-1/TG-2, §3 HALF_WIRE_P)
+- **source_ticket:** FOLLOW-190 / PR #225
+- **recommended_sprint:** Sprint 16 (sequence AFTER FOLLOW-220 makes init() driveable)
+- **agent:** sdk-engineer + qa-engineer
+- **estimated_hours:** 4
+- **scope:** FOLLOW-190 shipped 41 EXHAUSTIVE pure-function unit tests on `applyDwellSignal` but
+  ZERO test on the `index.ts` timer wiring (start/stop/firedThresholds/visibility/persist) — the
+  exact surface where LG-1/LG-2/LG-3/CB-1 live, and the same "helper-tested, init()-wiring-untested"
+  gap as RETRO-032 TG-1 / RETRO-034. The `_initForTest()` seam (FOLLOW-217/220, Rule Q) exists
+  precisely to assert that priors do NOT perturb a rehydrated state; the dwell boost is the newest
+  such prior and has no seam test. Deliver: (a) a rehydrated boosted state is NOT
+  re-perturbed/compounded by a fresh dwell cycle (LG-1 regression); (b) the timer restarts after
+  archetype switch AND after visibility-show (LG-3); (c) the dwell tick emits
+  `session.quality.snapshot` on its wall-clock cadence WITHOUT incrementing the refetch counter /
+  `signal_count` (TG-2 + HALF_WIRE_P — assert the refetch-cadence claim and the new snapshot
+  producer).
+- **ac:**
+  - [ ] `_initForTest()`-driven test: rehydrated dwell-boosted archetype is not compounded (LG-1)
+  - [ ] timer restarts after archetype switch and after visibility-show are asserted (LG-3)
+  - [ ] dwell tick's `session.quality.snapshot` emission + `signal_count` preservation asserted
+        (TG-2/HALF_WIRE_P)
+  - [ ] CI green; ≥80% coverage maintained on the new SDK wiring
+- **depends_on:** [FOLLOW-220] (init() must be driveable through the seam); covers FOLLOW-227 +
+  FOLLOW-228
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-230 — Reconcile FOLLOW-218 compliance docs: ROPA Activity-14 renumber + Privacy Notice §4 completeness + key-sync CI lint
+
+- **status:** OPEN
+- **priority:** P1
+- **source_retro:** RETRO-036 (§4a LG-1, §4b CB-1, §4c TG-1, §4d DG-1, §3 Rule N completeness)
+- **source_ticket:** FOLLOW-218 / PR #223
+- **recommended_sprint:** Sprint 16 (sequence BEFORE FOLLOW-187, which it unblocks)
+- **agent:** compliance-engineer
+- **estimated_hours:** 3
+- **scope:** PR #223 (FOLLOW-218) disclosed the `estalara_intent_*` sessionStorage store across DPIA
+  §13.3 / ROPA Activity 14 / Privacy Notice §4. The three behavioral claims are accurate and
+  Rule-N-verified end-to-end (RETRO-036 §3), but three reconciliation gaps remain:
+  - **(a) ROPA Activity-14 number collision (LG-1, the load-bearing P1).** This PR added
+    `docs/compliance/ropa.md` "Activity 14 — Client-Side Session Intent-State Cache." But
+    **FOLLOW-187** (RETRO-031 §4d DG-1, QUEUE P1 READY, `FOLLOW_UPS.md:5418`) is specced to add
+    "ROPA Activity 14 — CRM Deep-Outcome Ingest." Two different Art. 30 processing activities now
+    share number 14 in an append-only register that cross-references by number (DPIA §13.3 + ropa.md
+    Activity 3 already cite it). Pick distinct numbers; update DPIA §13.3 + ropa.md Activity 3
+    cross-refs and the FOLLOW-187 stub (`FOLLOW_UPS.md:5431`) + QUEUE row (`QUEUE.md:3083`) to
+    whichever number FOLLOW-187 keeps.
+  - **(b) Privacy Notice §4 over-claims completeness (CB-1, P2).** The §4 table header reads "All
+    Active Keys" / "all five active SDK storage keys" but grep of non-test `packages/sdk/src` finds
+    EIGHT `setItem` keys; three are omitted: `estalara_variant:` (sessionStorage, `adapt.ts:27`,
+    `SESSION_VARIANT_KEY_PREFIX`), `__estalara_quiz_dismissed__` (localStorage,
+    `quiz-trigger.ts:55`), `__estalara_micro_poll_dismissed__` (localStorage, `micro-poll.ts:51`).
+    Add each row with its consent classification (the two `*_dismissed__` keys may be ePrivacy Art.
+    5(3) strictly-necessary — state that explicitly; `estalara_variant:` is behavioral/A-B and
+    likely consent-relevant). This is a tenant-distributed template, so the omission propagates to
+    public Privacy Policies.
+  - **(c) Key-sync CI lint (TG-1, P3 but durable).** Add a CI lint that greps every non-test
+    `*_STORAGE_KEY`/`KEY_PREFIX` literal under `packages/sdk/src` and asserts each appears in
+    `PRIVACY_NOTICE_TEMPLATE.md` §4 — so the next new SDK storage key cannot silently drift out of
+    the disclosure (this is the SECOND hand-maintained-disclosure drift after FOLLOW-128/129;
+    FOLLOW-209's micro-poll key is one of the three already missed).
+  - **(d) Two-store erasure model (DG-1, P2).** DPIA §13.3 should state explicitly that consent
+    withdrawal clears the CLIENT cache (`index.ts:209/260`) while the SERVER `session_embeddings`
+    archetype is erased via the separate FOLLOW-039 DSR cascade — currently the two stores are
+    cross-referenced but the dual-erasure model is not spelled out for a data subject.
+- **ac:**
+  - [ ] ROPA intent-cache activity and CRM-ingest activity (FOLLOW-187) have DISTINCT numbers; DPIA
+        §13.3 + ropa.md Activity 3 cross-refs + FOLLOW-187 stub/QUEUE row updated to match.
+  - [ ] Privacy Notice §4 table lists all 8 SDK storage keys, each with a consent classification;
+        the "All Active Keys" claim is now accurate (or the header is scoped honestly).
+  - [ ] CI lint asserts §4 enumerates every non-test `*_STORAGE_KEY`/`KEY_PREFIX` literal under
+        `packages/sdk/src`; the lint fails if a new key is added without a §4 row.
+  - [ ] DPIA §13.3 states the client-cache (consent-withdrawal) + server (`session_embeddings` DSR)
+        two-store erasure model.
+  - [ ] No retention period stated for the intent cache (Rule N interim-language discipline; the
+        entry is client-only, browser-enforced — already correct in PR #223, keep it that way).
+  - [ ] CI green.
+- **depends_on:** none; FOLLOW-187 must be reconciled by / sequenced after this (this renames its
+  target).
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 231 (230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
      220 = P1 make the FOLLOW-217 jsdom test actually DRIVE init() (it mirrors init() in local helpers, not invokes it — Rule Q violation in the ticket filed to close the Rule Q gap; TG-1/TG-2/TG-3/CB-1/DG-1; sequence BEFORE FOLLOW-219).
      219 = RETRO-033 / PR #218 / FOLLOW-216:
      219 = P3 collapse 4 scattered !intentStateRehydrated guards into one block + move CB-1 comment into JSDoc (structural hardening of FOLLOW-216 LG-1 fix; after FOLLOW-217).

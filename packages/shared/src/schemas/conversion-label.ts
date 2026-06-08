@@ -11,6 +11,11 @@
  *   - `conversionLabelRank`          — the precedence function for upsert conflict resolution
  *     (FOLLOW-179): a comparable number used to decide whether an incoming write should
  *     overwrite an existing row.
+ *   - `OUTCOME_CLASS_RANK`           — exported map: class → per-class rank (FOLLOW-182).
+ *   - `MANUAL_ADMIN_OFFSET`          — exported offset for manual_admin labels (FOLLOW-182).
+ *   - `allRankEntries`               — derives the full (12-pair) rank table from the TS map
+ *     so that `@estalara/db` can build the SQL CASE at runtime without duplicating literals
+ *     (Rule K.1 amendment, FOLLOW-182).
  *
  * Both the control-plane routes (which write labels) and the `@estalara/db` drizzle
  * schema (the `conversion_labels` table) import these so the taxonomy is defined once.
@@ -94,8 +99,12 @@ export function outcomeClassFromConverted(converted: boolean): ConversionOutcome
  * `lost` as the definitive negative terminal — consistent with standard CRM funnel semantics
  * where "lost deal" is an explicit, intentional state that supersedes any open-funnel state.
  * If this becomes contentious, file a follow-up ADR.
+ *
+ * **Exported** (FOLLOW-182, Rule K.1 amendment): `@estalara/db/upsert-conversion-label`
+ * derives the SQL CASE expression at runtime by iterating this map so rank literals never
+ * appear in two places. Any new outcome class added here automatically propagates to the SQL.
  */
-const OUTCOME_CLASS_RANK: Record<ConversionOutcomeClass, number> = {
+export const OUTCOME_CLASS_RANK: Readonly<Record<ConversionOutcomeClass, number>> = {
   no_response: 0,
   viewing_booked: 1,
   offer_made: 2,
@@ -113,8 +122,11 @@ const OUTCOME_CLASS_RANK: Record<ConversionOutcomeClass, number> = {
  * manual verification). The offset is chosen to be larger than the maximum class rank so
  * that `manual_admin` + `no_response` (offset + 0 = 1000) still beats
  * `system` + `purchased`  (0 + 5 = 5).
+ *
+ * **Exported** (FOLLOW-182, Rule K.1 amendment): used alongside `OUTCOME_CLASS_RANK` when
+ * building the SQL CASE expression at runtime in `@estalara/db/upsert-conversion-label`.
  */
-const MANUAL_ADMIN_OFFSET = 1000;
+export const MANUAL_ADMIN_OFFSET = 1000;
 
 /**
  * Returns a comparable rank number for a (outcomeClass, labelSource) pair.
@@ -143,4 +155,50 @@ export function conversionLabelRank(args: {
   const classRank = OUTCOME_CLASS_RANK[args.outcomeClass];
   const sourceOffset = args.labelSource === 'manual_admin' ? MANUAL_ADMIN_OFFSET : 0;
   return sourceOffset + classRank;
+}
+
+// ─── SQL CASE builder — FOLLOW-182 (Rule K.1 amendment) ──────────────────────
+
+/**
+ * One entry in the flat rank table produced by `allRankEntries()`.
+ *
+ * Consumed by `@estalara/db/upsert-conversion-label` to build the SQL CASE expression
+ * for the stored row's precedence rank entirely at runtime, so the query never encodes
+ * rank literals independently of the TS map (Rule K.1 amendment, FOLLOW-182).
+ */
+export interface RankEntry {
+  outcomeClass: ConversionOutcomeClass;
+  labelSource: ConversionLabelSource;
+  rank: number;
+}
+
+/**
+ * Returns the complete, ordered list of (outcomeClass, labelSource, rank) triples derived
+ * from `OUTCOME_CLASS_RANK` and `MANUAL_ADMIN_OFFSET`.
+ *
+ * **This is the single source of truth for all SQL CASE fragments** that compute the stored
+ * row's precedence rank for upsert conflict resolution. The consumer (`upsertConversionLabel`
+ * in `@estalara/db`) iterates this list and interpolates via the Drizzle `sql` tag so rank
+ * literals never appear in two places (Rule K.1 amendment, FOLLOW-182).
+ *
+ * If a new `ConversionOutcomeClass` is added to `OUTCOME_CLASS_RANK`, the returned list
+ * automatically grows — no SQL edit is required.
+ *
+ * @returns Array of 12 entries (6 classes × 2 sources), ordered system-first then
+ *   manual_admin, each within funnel/finality order.
+ */
+export function allRankEntries(): RankEntry[] {
+  const sources: ConversionLabelSource[] = ['system', 'manual_admin'];
+  const classes = Object.keys(OUTCOME_CLASS_RANK) as ConversionOutcomeClass[];
+  const entries: RankEntry[] = [];
+  for (const labelSource of sources) {
+    for (const outcomeClass of classes) {
+      entries.push({
+        outcomeClass,
+        labelSource,
+        rank: conversionLabelRank({ outcomeClass, labelSource }),
+      });
+    }
+  }
+  return entries;
 }

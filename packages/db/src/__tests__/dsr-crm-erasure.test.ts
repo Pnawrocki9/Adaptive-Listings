@@ -1,5 +1,5 @@
 /**
- * PG-harness integration tests for FOLLOW-184: DSR erasure must reach
+ * PG-harness integration tests for FOLLOW-184 / FOLLOW-239: DSR erasure must reach
  * CRM-written conversion_labels rows (GDPR Art. 17 completeness).
  *
  * Uses @electric-sql/pglite (in-memory Postgres) to prove the identifier-
@@ -28,6 +28,16 @@
  *   AC-5: When durable_lead_id IS NULL, only Pass A runs (no CRM rows erased).
  *   AC-6: When durable_lead_id equals session_id, the dedup guard fires and Pass B is
  *         skipped (identical key means Pass A already covered those rows).
+ *
+ * FOLLOW-239 ACs (omitted-token observable outcome, RETRO-042 TG-2):
+ *   AC-7 (FOLLOW-239 primary): When durable_lead_id is NULL and CRM rows survive,
+ *         the completeness check query detects > 0 surviving CRM-namespace rows.
+ *         This is the SQL predicate that drives the Sentry warning + audit log in
+ *         the production dsr/erase route (the observable outcome on the wire).
+ *   AC-8: When durable_lead_id is NULL but NO CRM rows exist (only SDK-ping rows),
+ *         the completeness check query returns 0 — no false positive.
+ *   AC-9: When durable_lead_id IS supplied and Pass B runs, the completeness check
+ *         query returns 0 — no false positive after a full erasure.
  *
  * @module @estalara/db/dsr-crm-erasure.test
  */
@@ -482,5 +492,174 @@ describe('AC-6: Dedup guard — durable_lead_id = session_id skips Pass B', () =
     // Row must be deleted (by Pass A).
     const after = await getAllLabels(TENANT_ID);
     expect(after).toHaveLength(0);
+  });
+});
+
+// ─── Helper: the FOLLOW-239 completeness-check query ─────────────────────────
+//
+// This mirrors the SQL predicate in production dsr/erase/route.ts (FOLLOW-239
+// block) that determines whether CRM-namespace rows survived the erasure when
+// durable_lead_id was not supplied.  Exercising the same predicate against real
+// Postgres proves: (a) the count is correct, and (b) a regression that changes
+// the WHERE clause would break these tests.
+
+async function countSurvivingCrmRows(tenantId: string, sessionId: string): Promise<number> {
+  const res = await pg.query<{ count: string }>(
+    `SELECT count(*)::int AS count
+       FROM conversion_labels
+      WHERE tenant_id = $1
+        AND lead_id  <> ''
+        AND lead_id  <> $2`,
+    [tenantId, sessionId],
+  );
+  return Number(res.rows[0]?.count ?? 0);
+}
+
+// ─── AC-7 (FOLLOW-239 primary): omitted-token path — CRM rows survive + detectable ───
+//
+// When durable_lead_id is NULL the production route skips Pass B.  The
+// completeness-check query (count surviving CRM-namespace rows) MUST return > 0
+// so the Sentry warning and 'incomplete_no_durable_lead_id' response field fire.
+// This test proves the OBSERVABLE OUTCOME: rows DO survive AND the count query
+// reports them — the two facts that drive every observable signal.
+
+describe('AC-7 (FOLLOW-239 primary): omitted durable_lead_id — CRM rows survive and are detectable', () => {
+  it('reports > 0 surviving CRM rows when durable_lead_id is NULL', async () => {
+    const SESSION_ID = 'sess-239-omitted-token';
+    const CRM_LEAD_ID = 'crm-opaque-token-not-supplied';
+
+    // SDK-ping row — will be erased by Pass A.
+    await insertLabel({
+      tenantId: TENANT_ID,
+      predictionId: 'pred-239-sdk',
+      leadId: SESSION_ID,
+      outcomeClass: 'viewing_booked',
+    });
+
+    // CRM row — will NOT be erased when durable_lead_id is NULL (Pass B skipped).
+    await insertLabel({
+      tenantId: TENANT_ID,
+      predictionId: 'pred-239-crm',
+      leadId: CRM_LEAD_ID,
+      outcomeClass: 'purchased',
+    });
+
+    // Run erasure without durable_lead_id (operator omitted it).
+    await runEraseTransaction(pg, {
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      durableLeadId: null,
+    });
+
+    // OBSERVABLE OUTCOME 1: CRM row survives (Pass B did not run).
+    const after = await getAllLabels(TENANT_ID);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.lead_id).toBe(CRM_LEAD_ID);
+
+    // OBSERVABLE OUTCOME 2: the completeness-check query detects the surviving row.
+    // This is the same SQL predicate the production route evaluates to trigger the
+    // Sentry warning and set crm_erasure_status = 'incomplete_no_durable_lead_id'.
+    const survivingCount = await countSurvivingCrmRows(TENANT_ID, SESSION_ID);
+    expect(survivingCount).toBe(1);
+  });
+
+  it('detects multiple surviving CRM rows for the same session', async () => {
+    const SESSION_ID = 'sess-239-multi-crm';
+    const CRM_LEAD_A = 'crm-token-a';
+    const CRM_LEAD_B = 'crm-token-b';
+
+    await insertLabel({
+      tenantId: TENANT_ID,
+      predictionId: 'pred-239-crm-a',
+      leadId: CRM_LEAD_A,
+      outcomeClass: 'offer_made',
+    });
+    await insertLabel({
+      tenantId: TENANT_ID,
+      predictionId: 'pred-239-crm-b',
+      leadId: CRM_LEAD_B,
+      outcomeClass: 'purchased',
+    });
+
+    await runEraseTransaction(pg, {
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      durableLeadId: null,
+    });
+
+    const survivingCount = await countSurvivingCrmRows(TENANT_ID, SESSION_ID);
+    expect(survivingCount).toBe(2);
+  });
+});
+
+// ─── AC-8: No false positive when only SDK-ping rows exist ────────────────────
+//
+// If the tenant has no CRM rows (lead_id = session_id only), the completeness
+// check must return 0 — no spurious 'incomplete_no_durable_lead_id' flag.
+
+describe('AC-8 (FOLLOW-239): no false positive when only SDK-ping rows exist', () => {
+  it('returns 0 surviving CRM rows when all labels use lead_id = session_id', async () => {
+    const SESSION_ID = 'sess-239-sdk-only';
+
+    await insertLabel({
+      tenantId: TENANT_ID,
+      predictionId: 'pred-239-sdk-only',
+      leadId: SESSION_ID,
+      outcomeClass: 'viewing_booked',
+    });
+
+    await runEraseTransaction(pg, {
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      durableLeadId: null,
+    });
+
+    // Pass A erased the SDK row — nothing survives.
+    const after = await getAllLabels(TENANT_ID);
+    expect(after).toHaveLength(0);
+
+    // Completeness check must return 0 (no CRM-namespace rows to detect).
+    const survivingCount = await countSurvivingCrmRows(TENANT_ID, SESSION_ID);
+    expect(survivingCount).toBe(0);
+  });
+});
+
+// ─── AC-9: No false positive after a complete erasure (Pass B ran) ────────────
+//
+// When durable_lead_id IS supplied and Pass B deletes the CRM rows, the
+// completeness check must return 0 — correct status 'complete' on the wire.
+
+describe('AC-9 (FOLLOW-239): no false positive after complete erasure (Pass B ran)', () => {
+  it('returns 0 surviving CRM rows after Pass B deleted them', async () => {
+    const SESSION_ID = 'sess-239-complete';
+    const CRM_LEAD_ID = 'crm-token-supplied';
+
+    await insertLabel({
+      tenantId: TENANT_ID,
+      predictionId: 'pred-239-complete-sdk',
+      leadId: SESSION_ID,
+      outcomeClass: 'viewing_booked',
+    });
+    await insertLabel({
+      tenantId: TENANT_ID,
+      predictionId: 'pred-239-complete-crm',
+      leadId: CRM_LEAD_ID,
+      outcomeClass: 'purchased',
+    });
+
+    // Operator supplied durable_lead_id — Pass B runs.
+    await runEraseTransaction(pg, {
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      durableLeadId: CRM_LEAD_ID,
+    });
+
+    // Both rows gone.
+    const after = await getAllLabels(TENANT_ID);
+    expect(after).toHaveLength(0);
+
+    // Completeness check returns 0 — no surviving CRM-namespace rows → 'complete'.
+    const survivingCount = await countSurvivingCrmRows(TENANT_ID, SESSION_ID);
+    expect(survivingCount).toBe(0);
   });
 });

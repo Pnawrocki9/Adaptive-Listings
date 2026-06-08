@@ -171,3 +171,59 @@
   AFTER #233; I nearly attributed `crm_tenant_unverifiable` to FOLLOW-184. Always scope to
   `git show <mergeCommit>`, never the working-tree file. (Same family as RETRO-038's stale-main
   note.)
+
+## 2026-06-09 · RETRO-046 (PR #243, FOLLOW-185 — PGlite CRM+DSR harness)
+
+- **A finding I almost missed and why:** the PR's "golden-query regression test" claim. The PR body
+  asserted that any production WHERE-clause divergence would break scenario (a). I almost accepted
+  it because the harness IS real PGlite SQL (looks rigorous). Reading `runEraseTransaction` showed
+  it is a HAND-COPY of the erase route, not an import — so a production divergence would leave it
+  green. The lesson: "real-SQL harness" ≠ "tests the production route." Always check whether the
+  integration test IMPORTS the route/handler or RE-TYPES its query. Bypass/mirror = the gap moved
+  one hop (mocked-route → bypassed-route), not closed.
+- **An axis/chain I had to trace twice:** the RETRO numbering + body-existence chain. RETRO-044 is
+  the last body in RETROSPECTIVES.md, but CONVENTIONS_PATCH Rule S cites "RETRO-045 §6". Tracing it:
+  RETRO-045 WAS committed (`b280197`, ancestor of HEAD) and added 276 lines to RETROSPECTIVES.md —
+  but PR #242 was SQUASH-merged (`cde10e7`) which dropped the body; the canonical file has no
+  RETRO-045. Same loss-shape as RETRO-032/033/034 (FOLLOW-226) and RETRO-039–043 (no bodies). I had
+  to reconcile Rule S against the authoring COMMIT, not the (missing) in-file §6. Filed FOLLOW-251 +
+  a CI-lint AC.
+- **A meta-pattern in how gaps recur across agents:** "test-theater that re-implements/bypasses the
+  production path" now spans data-engineer (this PR + FOLLOW-184's `dsr-crm-erasure.test.ts` both
+  re-type the WHERE) and backend-engineer (FOLLOW-246 disclosure verbs shipped mock-only,
+  RETRO-045). Real-SQL coverage is improving but the ROUTE↔helper↔DB binding is covered nowhere —
+  coverage drifts per-LAYER the way RETRO-044 showed DSR completeness drifts per-VERB. A single
+  route-driven harness would retire both drifts; flagged in §5d + FOLLOW-250.
+- **Process integrity note:** squash-merging retro-bearing branches is silently truncating the
+  learning loop (the very loop I am). This is the third+ instance. It is a tooling defect, NOT a
+  CONVENTIONS coding rule — so I filed FOLLOW-251 rather than promoting a rule. Watch for the
+  retrospective-analyst's OWN outputs being dropped this way next time.
+
+## 2026-06-09 · RETRO-046 RECOVERY RUN (PR #243, FOLLOW-185) — the prediction came true on my own output
+
+- **What happened:** the RETRO-046 entry I authored above (and its lessons note, immediately
+  preceding) was LOST when PR #243's branch was reconciled with main — merge-conflict resolution on
+  `backlog/RETROSPECTIVES.md` dropped the RETRO-046 BODY while the FOLLOW-249/250/251 stubs in
+  `FOLLOW_UPS.md` survived. This is the EXACT failure I had flagged one entry up ("watch for the
+  retrospective-analyst's OWN outputs being dropped this way next time"). It happened on the very
+  next merge. The process note in §6/§4d DG-2 was not paranoia — it is the dominant integrity risk
+  to this agent's work product.
+- **The recovery pattern (codify it):** when re-authoring a lost retro, (1) re-author the BODY only
+  — do NOT re-file the follow-ups if they survived in `FOLLOW_UPS.md` (re-appending would double
+  them and corrupt the `next free FOLLOW number` ledger); grep `FOLLOW_UPS.md` for the stub IDs
+  FIRST and confirm before writing. (2) Verify the sibling retro that was reported missing is
+  actually restored now (`grep "^## RETRO-045"`) before referencing it as present — state state, do
+  not assume it. (3) Keep the same RETRO number; do NOT renumber. (4) Add a one-paragraph recovery
+  banner at the top of the re-authored entry so a future reader knows the entry is a reconstruction,
+  not the original.
+- **An axis I had to re-trace:** the FOLLOW-ledger axis. The lost run had already incremented the
+  "next free FOLLOW number" comment to 252 and written the 249/250/251 stubs. A naive recovery that
+  re-emits stubs would have produced FOLLOW-249'/250'/251' duplicates or, worse, reused 252+. The
+  discipline: a recovery run is RETROSPECTIVES-only unless a stub is verified ABSENT.
+- **Meta-pattern (now confirmed, not just predicted):** the learning loop's single biggest blind
+  spot is its OWN persistence layer, not the code it analyses. A finding that improves agents is
+  worthless if the merge strategy silently deletes it. Until FOLLOW-251's CI-lint lands (fails on a
+  cited-but-bodiless RETRO-NNN), I MUST end every run by re-grepping that the body I just wrote is
+  on disk AND that every RETRO-NNN I cited has a body — treat citation-without-body as a P2 finding
+  every single run, because squash/conflict loss is now demonstrably recurrent (RETRO-032/033/034,
+  039–043, 045, and 046 itself).

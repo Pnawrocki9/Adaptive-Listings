@@ -6463,7 +6463,172 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 247 (246 = RETRO-044 / PR #233 / FOLLOW-184: DSR access (Art.15) + portability (Art.20) must read conversion_labels on BOTH session_id AND durable_lead_id namespaces — FOLLOW-184 closed only the erase verb (RETRO-031 §4a LG-1); the symmetric access/portability verbs never query conversion_labels at all, so CRM deep-outcome rows are erasable but undisclosable (P1 Art.15/20); folds LG-2 erase-wrong-token-silent-no-op + DG-1 §T.6-scoped-erase-only. 245 = RETRO-043 / PR #237 / FOLLOW-238: codify crm_erasure_status response values as shared const + reconcile wire(crm_tenant_unverifiable)⇔audit(crm_unverifiable) two-name split + document/remove unproduced expired/failed actions, P2 LG-1/LG-2. 244 = RETRO-043 / PR #237 / FOLLOW-238: re-scope stale FOLLOW-240 test to new DSR values + cover the untested crm_tenant_unverifiable positive branch (TG-1 P1) + fix orphaned doc consumers in docs/compliance/DSR_ALERTING.md §2/§5 query + MASTER_DESIGN §T.6 still on removed incomplete_* values (DG-1 P1 — realized RETRO-041 LG-2 sync-risk); MUST precede FOLLOW-187 live Sentry alert per ESC-021. 243 = RETRO-042 / PR #236 / FOLLOW-237: tighten stale mean_model_predicted_rate "pending FOLLOW-230" JSDoc caveat now that FOLLOW-230 is DONE, P3 doc-nit. 242 unused/reserved. 241 = RETRO-041 DSR_ALERTING consolidation + RETRO-042/ESC-021 citation fix. 238 (237 = RETRO-040 / PR #235 / FOLLOW-221: calibration JSON export — add Rule K.2 data_source provenance (CB-1 P1) + reject unknown format (LG-3) + fix avg_confidence semantics/dwell caveat (LG-2) + correct FOLLOW-175 mis-wire/HALF_WIRE_P (LG-1 P1); the export has no usable consumer and FOLLOW-175 needs row-level not aggregate. 236 = RETRO-039 / PR #228 / FOLLOW-183: restore src/index.ts to packages/db vitest coverage.include, TG-1 P3. 235 = RETRO-039 / PR #228 / FOLLOW-183: tighten 12-pair parity gate to value-parity AC + fix stale JSDoc, LG-1/DG-1 P3. 234 = FOLLOW-187 companion / PR #229: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate, P1 before_go_live. 233/232/231 unused. 230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217: / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
+## FOLLOW-247 — PGlite real-SQL parity test for DSR access + portability `conversion_labels` two-pass read (TG-1 carried forward from RETRO-044 §4c)
+
+- **status:** READY
+- **priority:** P2
+- **source_retro:** RETRO-045 (§4c TG-1; carries forward RETRO-044 §4c TG-1 / FOLLOW-246 AC3)
+- **source_ticket:** FOLLOW-246 / PR #242 (merge commit `cde10e7`)
+- **recommended_sprint:** Sprint 16 (co-scope with FOLLOW-185)
+- **agent:** backend-engineer (+ qa-engineer)
+- **estimated_hours:** 4
+- **scope:** FOLLOW-246 wired access + portability to read `conversion_labels` on both namespaces
+  but delivered ONLY mock-layer tests (`apps/control-plane/src/app/api/dsr/dsr-routes.test.ts` —
+  `buildChain`/`mockReturnValueOnce` Drizzle-chain mocks). The mock returns canned rows REGARDLESS
+  of the WHERE predicate, so it cannot catch a tenant-filter omission, a namespace-key swap, or an
+  `ne(leadId, '')`-guard regression. The erase verb it mirrors has real-SQL proof
+  (`packages/db/src/__tests__/dsr-crm-erasure.test.ts`, 12 PGlite cases). RETRO-044 §4c TG-1
+  explicitly scoped a PGlite/route test into FOLLOW-246's ACs; it was not delivered. Bring the
+  disclosure verbs to the SAME verification tier as the erase verb.
+- **ac:**
+  - [ ] AC1: PGlite harness (new `dsr-crm-disclosure.test.ts` or extension of
+        `dsr-crm-erasure.test.ts`) executes the access route's Pass A + Pass B against REAL SQL and
+        asserts a subject with a supplied `durable_lead_id` gets their CRM rows AND their SDK-ping
+        (`lead_id = session_id`) rows.
+  - [ ] AC2: same real-SQL proof for the portability export.
+  - [ ] AC3 (tenant isolation — load-bearing): seed a SECOND tenant's `conversion_labels` rows with
+        the SAME `lead_id` value and assert they DO NOT leak into the first tenant's output.
+  - [ ] AC4: empty-key guard regression — a row stored with `lead_id = ''` must never match either
+        pass.
+  - [ ] AC5: union/dedup proven against real SQL where Pass A and Pass B overlap on an `id`.
+  - [ ] AC6: tsc clean; prettier clean; tests green in CI.
+- **depends_on:** FOLLOW-246 (the wiring under test); shares PGlite fixture family with FOLLOW-184
+  (`dsr-crm-erasure.test.ts`) and FOLLOW-185 (CRM-producer e2e harness — co-scope).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-248 — Mirror the erase `crm_erasure_status` unverifiable-detector into DSR access + portability as a disclosure-completeness advisory (LG-1)
+
+- **status:** READY
+- **priority:** P3
+- **source_retro:** RETRO-045 (§4a LG-1)
+- **source_ticket:** FOLLOW-246 / PR #242 (merge commit `cde10e7`); template = FOLLOW-238 erase
+  `crm_erasure_status` (RETRO-043)
+- **recommended_sprint:** Sprint 16+ (after FOLLOW-247)
+- **agent:** backend-engineer (+ compliance-engineer sign-off on placement)
+- **estimated_hours:** 3
+- **scope:** The erase route computes `crm_erasure_status` (`complete` / `crm_tenant_unverifiable`,
+  `erase/route.ts:419-486`) so an operator learns the erase may be incomplete for a CRM subject who
+  supplied no durable token. The new disclosure verbs emit NO equivalent: if a CRM subject's
+  `durable_lead_id` is NULL but the tenant HAS CRM-namespace `conversion_labels` rows, the access
+  report / portability export silently returns ONLY the SDK-ping rows — an Art. 15(1) disclosure-
+  completeness risk. Mirror the unverifiable-detector into both disclosure verbs.
+- **ac:**
+  - [ ] AC1: `GET /api/dsr/access` returns a completeness advisory (e.g. `crm_disclosure_status`)
+        when Pass B did not run AND the tenant has CRM-namespace `conversion_labels` rows.
+  - [ ] AC2: same advisory for `GET /api/dsr/portability` export.
+  - [ ] AC3 (compliance decision): compliance-engineer rules whether advisory belongs in
+        data-subject-facing body or operator audit log only.
+  - [ ] AC4: test coverage for the advisory.
+  - [ ] AC5: §T.6 + DSR_ALERTING.md §access/§portability document the advisory; tsc/prettier clean.
+- **depends_on:** FOLLOW-238/244/245 (erase `crm_erasure_status` template); relates to FOLLOW-186.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-249 — Scenario (b) "RLS isolation" proves only the `WHERE tenant_id` predicate, not RLS enforcement (LG-1)
+
+- **status:** OPEN
+- **priority:** P2
+- **source_retro:** RETRO-046 (§4a LG-1)
+- **source_ticket:** FOLLOW-185 / PR #243 (merge commit `14fea94`)
+- **recommended_sprint:** Sprint 16/17
+- **agent:** qa-engineer (+ data-engineer)
+- **estimated_hours:** 3
+- **scope:** `packages/db/src/__tests__/crm-dsr-harness.test.ts` scenario (b) is labelled "RLS
+  tenant isolation" but its fixture DDL explicitly OMITS RLS policies ("RLS policies are
+  intentionally omitted … these tests verify SQL-layer logic, not RLS enforcement"). The two tests
+  prove the application-layer `WHERE tenant_id = $1` predicate isolates reads/deletes — valuable,
+  but a bypass-write that FORGETS the `WHERE tenant_id` clause would NOT be caught (no policy
+  backstop). The FOLLOW-185 AC reads "RLS isolation on the CRM write is exercised against real PG";
+  the delivered artifact exercises tenant-PREDICATE isolation. Close the AC↔artifact gap.
+- **ac:**
+  - [ ] AC1: EITHER add a PGlite fixture variant that installs the real `conversion_labels` RLS
+        policy (`USING (tenant_id = current_setting('app.current_tenant_id'))`) + a non-admin role,
+        and proves a write/read that forgets the tenant clause is blocked by the policy;
+  - [ ] AC2: OR (if PGlite cannot replicate the Supabase RLS runtime faithfully) rename the scenario
+        in-doc to "tenant-predicate isolation" and record the RLS-enforcement coverage gap in
+        `docs/MASTER_DESIGN.md §T` (the harness proves SQL-predicate isolation; RLS enforcement is a
+        Supabase-runtime concern verified elsewhere).
+  - [ ] AC3: tsc + prettier clean; existing `@estalara/db` tests pass.
+- **depends_on:** FOLLOW-185 (the harness this refines).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-250 — Route-driven CRM + DSR integration coverage: the harness re-implements/bypasses the production routes (LG-2 / TG-1 / TG-2)
+
+- **status:** OPEN
+- **priority:** P2
+- **source_retro:** RETRO-046 (§4a LG-2, §4c TG-1/TG-2, §5d)
+- **source_ticket:** FOLLOW-185 / PR #243 (merge commit `14fea94`)
+- **recommended_sprint:** Sprint 16/17 (PM: consider merging with FOLLOW-247)
+- **agent:** data-engineer (+ backend-engineer)
+- **estimated_hours:** 5
+- **scope:** Both PGlite harnesses prove SQL semantics by RE-TYPING the production query rather than
+  importing the route: `crm-dsr-harness.test.ts`'s `runEraseTransaction` is a hand-copy of
+  `dsr/erase/route.ts`'s WHERE clauses (the PR's "golden-query regression test" claim is therefore
+  false — a production-route divergence would NOT break scenario (a)); scenarios (c)/(d) call
+  `upsertConversionLabel` directly, never `POST /api/crm/outcome` or `/api/adapt/feedback`, so the
+  route→helper→DB chain and the TWO-PRODUCER convergence (deep-outcome CRM ping UPGRADES a shallow
+  SDK feedback ping) are unproven on the route side. The route↔helper seam RETRO-031 §4c named is
+  STILL uncovered — the gap moved one hop (mocked-at-route → bypassed-route-in-harness). Add real
+  route-driven coverage.
+- **ac:**
+  - [ ] AC1: an integration test imports and invokes the actual `POST /api/crm/outcome` handler
+        against PGlite and asserts the resulting `conversion_labels` row (tenant_id pinned from
+        auth, lead_id from body, outcome_class/confidence as sent).
+  - [ ] AC2: a test drives the actual erase route handler (not a re-typed `runEraseTransaction`)
+        against PGlite and asserts Pass A + Pass B delete the right rows — so a production
+        WHERE-clause divergence breaks the test.
+  - [ ] AC3 (two-writer convergence end-to-end): `/api/adapt/feedback` shallow ping
+        (`viewing_booked`) followed by `/api/crm/outcome` deep outcome (`purchased`) on the same
+        `(tenant_id, prediction_id)` converges to `purchased` via the route→helper→DB path (ideally;
+        if the feedback route is out of scope, document why and cover the CRM producer only).
+  - [ ] AC4: retire or downgrade the "golden-query regression test" claim on the hand-copied
+        mirrors; add an in-file note that `runEraseTransaction` is a SQL-semantics mirror, NOT a
+        route regression guard.
+  - [ ] AC5: tsc + prettier clean; CI green.
+- **depends_on:** FOLLOW-185 (extends `crm-dsr-harness.test.ts`); convergent with FOLLOW-247
+  (RETRO-045 PGlite parity for disclosure verbs) and FOLLOW-184's `dsr-crm-erasure.test.ts` (same
+  mirror pattern).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-251 — Backfill missing RETRO bodies (RETRO-045, RETRO-039–043) + CI lint for dangling RETRO citations (DG-2)
+
+- **status:** OPEN
+- **priority:** P2
+- **source_retro:** RETRO-046 (§4d DG-2, §6)
+- **source_ticket:** FOLLOW-185 / PR #243 (merge commit `14fea94`)
+- **recommended_sprint:** Sprint 16/17
+- **agent:** pm-orchestrator (+ devops-engineer for the CI lint)
+- **estimated_hours:** 3
+- **scope:** Squash-merges are silently dropping retro BODIES that were committed on feature
+  branches, truncating the learning loop. RETRO-045's body is absent from
+  `backlog/RETROSPECTIVES.md` (`grep "^## RETRO-045"` → 0) even though Rule S
+  (`CONVENTIONS_PATCH.md:819`) and FOLLOW-246/247/248 were produced from it — the body was added by
+  commit `b280197` on the FOLLOW-246 feature branch but PR #242 was squash-merged as `cde10e7`,
+  which did not carry it to main. The same loss-shape already affects RETRO-032/033/034 (FOLLOW-226)
+  and RETRO-039–043 (referenced by RETRO-044, no bodies in file). Restore the bodies and add a guard
+  so it cannot recur silently.
+- **ac:**
+  - [ ] AC1: backfill the RETRO-045 body verbatim from commit `b280197` into RETROSPECTIVES.md (and
+        confirm FOLLOW-247/248 stubs, also lost in the squash, are restored to FOLLOW_UPS.md).
+  - [ ] AC2: extend FOLLOW-226 scope (or do here) to backfill the RETRO-039–043 bodies.
+  - [ ] AC3 (CI lint): a script that fails if any `RETRO-NNN` cited in `CONVENTIONS_PATCH.md` or
+        `backlog/FOLLOW_UPS.md` has no `^## RETRO-NNN` body in `backlog/RETROSPECTIVES.md`.
+  - [ ] AC4: document in `docs/AGENT_WORKFLOW.md` (or the retro loop section of CLAUDE.md) that
+        retro bodies must survive merge — prefer merge-commit over squash for retro-bearing PRs, or
+        split the retro into its own PR to main.
+- **depends_on:** none (recovery work); relates to FOLLOW-226.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 252 (251 = RETRO-046 / PR #243 / FOLLOW-185: backfill missing RETRO bodies + CI lint. 250 = RETRO-046 / PR #243 / FOLLOW-185: route-driven CRM+DSR integration coverage. 249 = RETRO-046 / PR #243 / FOLLOW-185: RLS isolation PGlite enforcement. 248 = RETRO-045 / PR #242 / FOLLOW-246: mirror crm_erasure_status into access+portability. 247 = RETRO-045 / PR #242 / FOLLOW-246: PGlite real-SQL parity for disclosure verbs. 246 = RETRO-044 / PR #233 / FOLLOW-184: DSR access (Art.15) + portability (Art.20) must read conversion_labels on BOTH session_id AND durable_lead_id namespaces — FOLLOW-184 closed only the erase verb (RETRO-031 §4a LG-1); the symmetric access/portability verbs never query conversion_labels at all, so CRM deep-outcome rows are erasable but undisclosable (P1 Art.15/20); folds LG-2 erase-wrong-token-silent-no-op + DG-1 §T.6-scoped-erase-only. 245 = RETRO-043 / PR #237 / FOLLOW-238: codify crm_erasure_status response values as shared const + reconcile wire(crm_tenant_unverifiable)⇔audit(crm_unverifiable) two-name split + document/remove unproduced expired/failed actions, P2 LG-1/LG-2. 244 = RETRO-043 / PR #237 / FOLLOW-238: re-scope stale FOLLOW-240 test to new DSR values + cover the untested crm_tenant_unverifiable positive branch (TG-1 P1) + fix orphaned doc consumers in docs/compliance/DSR_ALERTING.md §2/§5 query + MASTER_DESIGN §T.6 still on removed incomplete_* values (DG-1 P1 — realized RETRO-041 LG-2 sync-risk); MUST precede FOLLOW-187 live Sentry alert per ESC-021. 243 = RETRO-042 / PR #236 / FOLLOW-237: tighten stale mean_model_predicted_rate "pending FOLLOW-230" JSDoc caveat now that FOLLOW-230 is DONE, P3 doc-nit. 242 unused/reserved. 241 = RETRO-041 DSR_ALERTING consolidation + RETRO-042/ESC-021 citation fix. 238 (237 = RETRO-040 / PR #235 / FOLLOW-221: calibration JSON export — add Rule K.2 data_source provenance (CB-1 P1) + reject unknown format (LG-3) + fix avg_confidence semantics/dwell caveat (LG-2) + correct FOLLOW-175 mis-wire/HALF_WIRE_P (LG-1 P1); the export has no usable consumer and FOLLOW-175 needs row-level not aggregate. 236 = RETRO-039 / PR #228 / FOLLOW-183: restore src/index.ts to packages/db vitest coverage.include, TG-1 P3. 235 = RETRO-039 / PR #228 / FOLLOW-183: tighten 12-pair parity gate to value-parity AC + fix stale JSDoc, LG-1/DG-1 P3. 234 = FOLLOW-187 companion / PR #229: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate, P1 before_go_live. 233/232/231 unused. 230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217: / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
      220 = P1 make the FOLLOW-217 jsdom test actually DRIVE init() (it mirrors init() in local helpers, not invokes it — Rule Q violation in the ticket filed to close the Rule Q gap; TG-1/TG-2/TG-3/CB-1/DG-1; sequence BEFORE FOLLOW-219).
      219 = RETRO-033 / PR #218 / FOLLOW-216:
      219 = P3 collapse 4 scattered !intentStateRehydrated guards into one block + move CB-1 comment into JSDoc (structural hardening of FOLLOW-216 LG-1 fix; after FOLLOW-217).

@@ -419,3 +419,40 @@ a CI check should verify the corresponding DSR verb (access, erase, portability)
 Currently the symmetry gap (RETRO-044 LG-1) was caught only by retrospective analysis — not by any
 automated check. A "DSR coverage matrix" CI script asserting that every table in the erasure cascade
 is also in the access/portability query list would catch this class of gap at PR time.
+
+---
+
+## 2026-06-09 / FOLLOW-250 + FOLLOW-256
+
+**What I built:** Route-driven PGlite integration tests for CRM write + DSR erase + DSR access + DSR
+portability handlers. New test files: `crm/outcome/route-driven-pglite.test.ts` (AC1 CRM write + AC3
+two-writer convergence), `dsr/erase/route-driven-pglite.test.ts` (AC2 erase Pass A + B + OTP
+validation + crm_erasure_status), `dsr/disclosure-route-driven-pglite.test.ts` (AC1 both-namespace
+disclosure + AC2 tenant isolation + AC3 access/portability parity). Added `@electric-sql/pglite` to
+control-plane devDeps. Labeled existing `runEraseTransaction` + `runDisclosureRead` SQL-semantics
+mirrors per Rule T.
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+1. **Rule T compliance mechanism:** Imported the actual route handlers (not re-typed helpers) and
+   mocked `createAdminClient()` with a lazy factory (`getTestDb()`) that returns the PGlite-backed
+   Drizzle client. This puts the production WHERE clauses on the call-stack — any divergence breaks
+   tests.
+2. **Erase route complexity:** The erase route touches 6 tables + Redis + ClickHouse. Used unset env
+   vars (`UPSTASH_REDIS_URL`, `CLICKHOUSE_URL`) to trigger the built-in no-op code paths for those
+   external deps; `vi.mock('@/lib/clickhouse-dsr')` made `readClickHouseConfig()` return null which
+   triggers the built-in no-op branch that inserts 'done' rows to `dsr_clickhouse_mutations` (valid
+   test behavior, not fabricated data).
+3. **PGlite environment:** The control-plane vitest defaults to `jsdom`. Used
+   `@vitest-environment node` per-file docblock for the PGlite tests. PGlite is WebAssembly and
+   needs the Node runtime.
+4. **session_embeddings vector column:** The route does `SELECT *` from session_embeddings including
+   the `embedding vector(1024)` column. Defined it as `text` in the fixture DDL (PGlite has no
+   pgvector); also included all other columns (`similarity_score`, `signal_count`, `quiz_archetype`)
+   to avoid "column does not exist" errors from the route's SELECT \*.
+
+**A guardrail I'd add:** The `@vitest-environment node` docblock is a per-file override but easy to
+forget when adding new PGlite tests to a package that defaults to jsdom. A CI check or lint rule
+that validates any test file importing `@electric-sql/pglite` has the `@vitest-environment node`
+docblock would prevent silent test-skip scenarios where PGlite init fails and all tests are marked
+"skipped" instead of "failed".

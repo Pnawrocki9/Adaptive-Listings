@@ -175,10 +175,16 @@ async function insertLabelRaw(opts: {
 }
 
 /**
- * Simulate the production DSR erase transaction (Pass A + Pass B).
+ * SQL-semantics mirror — not a route regression guard.
  *
- * Mirrors `runEraseTransaction` in dsr-crm-erasure.test.ts exactly, derived from
- * the production logic in apps/control-plane/src/app/api/dsr/erase/route.ts.
+ * This helper re-implements the WHERE-clause logic from
+ * apps/control-plane/src/app/api/dsr/erase/route.ts for SQL-semantics
+ * verification. It DOES NOT import the actual route handler, so a
+ * WHERE-clause divergence in production code would NOT break these tests.
+ *
+ * For a regression guard that DOES catch production-route divergences, see
+ * apps/control-plane/src/app/api/dsr/erase/route-driven-pglite.test.ts
+ * (FOLLOW-250 AC2 — imports and invokes the real POST handler against PGlite).
  *
  * Pass A: DELETE WHERE lead_id = session_id AND lead_id <> ''
  * Pass B: DELETE WHERE lead_id = durable_lead_id AND lead_id <> ''

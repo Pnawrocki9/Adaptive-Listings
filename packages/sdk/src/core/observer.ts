@@ -6,6 +6,10 @@
  *   - IntersectionObserver for listing card impressions
  *   - Click tracking on CTA buttons
  *   - Click tracking on inquiry submit button (inquiry.started)
+ *   - IntersectionObserver-based photo dwell tracking (photo.dwell) — FOLLOW-099
+ *   - Click tracking on feature-expand elements (feature.expanded) — FOLLOW-099
+ *   - Input/click tracking on mortgage calculator widget (mortgage_calc.used) — FOLLOW-099
+ *   - Form submit/change tracking on search-filter slots (filter.applied) — FOLLOW-099
  *
  * Returns a cleanup function to remove all listeners.
  *
@@ -15,8 +19,13 @@
 import type { SdkConfig } from './config.js';
 import type { CollectedEvent } from './events.js';
 import { collectScrollDepth } from './events.js';
+import { FILTER_APPLIED_FACETS } from '@estalara/shared';
+import type { FilterAppliedFacet } from '@estalara/shared';
 
 const SCROLL_MILESTONES = [25, 50, 75, 100] as const;
+
+/** Minimum continuous visibility (ms) before photo.dwell fires. FOLLOW-099. */
+const PHOTO_DWELL_THRESHOLD_MS = 2000;
 
 export interface ObserverOptions {
   /**
@@ -27,6 +36,357 @@ export interface ObserverOptions {
    */
   inquirySubmitSelector?: string;
 }
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Map an arbitrary form field name to a FilterAppliedFacet enum value.
+ * Returns undefined when the name cannot be mapped to a known facet.
+ * Used by setupFilterAppliedObserver to normalise raw form field names.
+ */
+function resolveFilterFacet(fieldName: string): FilterAppliedFacet | undefined {
+  const lower = fieldName.toLowerCase();
+  // Direct membership check — cast is safe because FILTER_APPLIED_FACETS is the authoritative list.
+  if ((FILTER_APPLIED_FACETS as readonly string[]).includes(lower)) {
+    return lower as FilterAppliedFacet;
+  }
+  // Prefix-based heuristics for common form field naming conventions.
+  if (lower.includes('price') || lower.includes('budget')) return 'price_range';
+  if (lower.includes('bedroom') || lower.includes('bed')) return 'bedrooms';
+  if (lower.includes('bathroom') || lower.includes('bath')) return 'bathrooms';
+  if (lower.includes('property_type') || lower.includes('prop_type')) return 'property_type';
+  if (lower.includes('location') || lower.includes('area') || lower.includes('neighbourhood'))
+    return 'location';
+  if (lower.includes('amenity') || lower.includes('amenities') || lower.includes('pool'))
+    return 'amenities';
+  if (lower.includes('yield') || lower.includes('investment')) return 'investment_yield';
+  if (lower.includes('commercial')) return 'commercial';
+  return undefined;
+}
+
+/**
+ * Infer the mortgage calculator input type from an element's name / id / data attributes.
+ * Returns 'unknown' when inference fails.
+ */
+function resolveMortgageInputType(
+  el: HTMLElement,
+): 'loan_amount' | 'interest_rate' | 'term' | 'down_payment' | 'unknown' {
+  // `name` is optional on HTMLElement (only present on form elements); `id` is always string.
+  // Prefer the typed cast to access .name; fall back to id then data-field attribute.
+  // HTMLInputElement.name and HTMLElement.id are always strings (never undefined).
+  // Prefer name → id → data-field attribute (last may be undefined).
+  const inputName = (el as HTMLInputElement).name;
+  const name = (inputName || el.id || (el.dataset.field ?? '')).toLowerCase();
+  if (name.includes('loan') || name.includes('amount') || name.includes('principal'))
+    return 'loan_amount';
+  if (name.includes('interest') || name.includes('rate')) return 'interest_rate';
+  if (name.includes('term') || name.includes('year') || name.includes('duration')) return 'term';
+  if (name.includes('down') || name.includes('deposit')) return 'down_payment';
+  return 'unknown';
+}
+
+// ─── Individual observer factories (exported for unit testing — Rule H satisfied
+//     by their inclusion in setupObservers below) ─────────────────────────────
+
+/**
+ * Photo dwell observer (FOLLOW-099).
+ *
+ * Uses IntersectionObserver to track when a photo image enters the viewport.
+ * A per-element timeout fires `photo.dwell` after PHOTO_DWELL_THRESHOLD_MS of
+ * continuous visibility.  The timer is cancelled when the element leaves the
+ * viewport before the threshold elapses.
+ *
+ * Payload uses PhotDwellPayloadSchema shape: `{ photo_id, dwell_ms }`.
+ *
+ * Selectors observed:
+ *   - `[data-estalara-slot="photos"] img` — images inside photo container slots
+ *   - `img[data-photo-id]`                — directly-marked photo images
+ *
+ * @returns Cleanup function that disconnects the observer and cancels pending timers.
+ */
+export function setupPhotoDwellObserver(
+  _config: SdkConfig,
+  onEvent: (event: CollectedEvent) => void,
+): () => void {
+  if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined') {
+    return function noCleanup() {
+      // Non-browser or no IntersectionObserver support
+    };
+  }
+
+  const dwellTimers = new Map<Element, ReturnType<typeof setTimeout>>();
+
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        const el = entry.target as HTMLImageElement;
+        if (entry.isIntersecting) {
+          const timerId = setTimeout(() => {
+            const photoId =
+              el.dataset.photoId ??
+              el.getAttribute('data-photo-id') ??
+              el.src.split('/').pop()?.split('?')[0] ??
+              '';
+            onEvent({
+              type: 'photo.dwell',
+              payload: {
+                photo_id: photoId,
+                dwell_ms: PHOTO_DWELL_THRESHOLD_MS,
+              },
+              ts: Date.now(),
+            });
+            dwellTimers.delete(el);
+          }, PHOTO_DWELL_THRESHOLD_MS);
+          dwellTimers.set(el, timerId);
+        } else {
+          // Element left viewport before threshold — cancel timer
+          const timerId = dwellTimers.get(el);
+          if (timerId !== undefined) {
+            clearTimeout(timerId);
+            dwellTimers.delete(el);
+          }
+        }
+      }
+    },
+    { threshold: 0.5 },
+  );
+
+  document.querySelectorAll('[data-estalara-slot="photos"] img').forEach((img) => {
+    io.observe(img);
+  });
+  document.querySelectorAll('img[data-photo-id]').forEach((img) => {
+    io.observe(img);
+  });
+
+  return () => {
+    for (const timerId of dwellTimers.values()) {
+      clearTimeout(timerId);
+    }
+    dwellTimers.clear();
+    io.disconnect();
+  };
+}
+
+/**
+ * Feature-expanded observer (FOLLOW-099).
+ *
+ * Listens for click events on elements carrying a `data-feature` attribute
+ * (e.g. amenity rows, energy certificates, feature disclosure triggers).
+ * Fires `feature.expanded` with `{ feature, label? }` using the canonical
+ * FeatureExpandedPayloadSchema field names (`feature` = the data-feature value,
+ * `label` = trimmed text content capped at 100 chars).
+ *
+ * @returns Cleanup function that removes the document click listener.
+ */
+export function setupFeatureExpandedObserver(
+  _config: SdkConfig,
+  onEvent: (event: CollectedEvent) => void,
+): () => void {
+  if (typeof document === 'undefined') {
+    return function noCleanup() {
+      // Non-browser environment
+    };
+  }
+
+  function onFeatureClick(e: MouseEvent): void {
+    try {
+      const target = e.target as HTMLElement | null;
+      const featureEl = target?.closest('[data-feature]') as HTMLElement | null;
+      if (!featureEl) return;
+
+      const featureId = featureEl.dataset.feature ?? '';
+      if (!featureId) return;
+
+      // featureEl.textContent is string (may be empty) — trim and cap at 100 chars.
+      // Omit label from payload when the trimmed text is empty.
+      const trimmedText = featureEl.textContent.trim().slice(0, 100);
+      const labelText = trimmedText.length > 0 ? trimmedText : undefined;
+
+      onEvent({
+        type: 'feature.expanded',
+        payload: {
+          feature: featureId,
+          ...(labelText ? { label: labelText } : {}),
+        },
+        ts: Date.now(),
+      });
+    } catch {
+      // Swallow — never propagate
+    }
+  }
+
+  document.addEventListener('click', onFeatureClick);
+
+  return () => {
+    document.removeEventListener('click', onFeatureClick);
+  };
+}
+
+/**
+ * Mortgage calculator observer (FOLLOW-099).
+ *
+ * Listens for `input` and `click` events bubbling up from inside
+ * `[data-estalara-slot="mortgage"]` containers.  Fires `mortgage_calc.used`
+ * with a payload shaped to match MortgageCalcUsedPayloadSchema:
+ *   `{ down_payment_pct?, term_years?, monthly_payment?, interest_rate_pct? }`
+ *
+ * The payload field populated depends on the inferred input type.
+ * When `input_type` is `loan_amount` or `unknown` the payload is intentionally
+ * empty — the event still signals that the user interacted with the calculator.
+ *
+ * @returns Cleanup function that removes the document input and click listeners.
+ */
+export function setupMortgageCalcObserver(
+  _config: SdkConfig,
+  onEvent: (event: CollectedEvent) => void,
+): () => void {
+  if (typeof document === 'undefined') {
+    return function noCleanup() {
+      // Non-browser environment
+    };
+  }
+
+  function buildMortgagePayload(
+    inputType: 'loan_amount' | 'interest_rate' | 'term' | 'down_payment' | 'unknown',
+    el: HTMLElement,
+  ): Record<string, unknown> {
+    const rawValue = (el as HTMLInputElement).value;
+    const numValue = rawValue ? parseFloat(rawValue) : undefined;
+    if (inputType === 'down_payment' && numValue !== undefined && !isNaN(numValue)) {
+      return { down_payment_pct: numValue };
+    }
+    if (inputType === 'term' && numValue !== undefined && !isNaN(numValue)) {
+      return { term_years: numValue };
+    }
+    if (inputType === 'interest_rate' && numValue !== undefined && !isNaN(numValue)) {
+      return { interest_rate_pct: numValue };
+    }
+    // loan_amount and unknown: emit event with no numeric payload — interaction signal only
+    return {};
+  }
+
+  function onMortgageInteraction(e: Event): void {
+    try {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (!target.closest('[data-estalara-slot="mortgage"]')) return;
+
+      const inputType = resolveMortgageInputType(target);
+      const payload = buildMortgagePayload(inputType, target);
+
+      onEvent({
+        type: 'mortgage_calc.used',
+        payload,
+        ts: Date.now(),
+      });
+    } catch {
+      // Swallow — never propagate
+    }
+  }
+
+  document.addEventListener('input', onMortgageInteraction);
+  document.addEventListener('click', onMortgageInteraction);
+
+  return () => {
+    document.removeEventListener('input', onMortgageInteraction);
+    document.removeEventListener('click', onMortgageInteraction);
+  };
+}
+
+/**
+ * Filter-applied observer (FOLLOW-099).
+ *
+ * Listens for `change` events on inputs/selects and `submit` events on forms
+ * inside `[data-estalara-slot="search-filters"]` or `[data-estalara-slot="filters"]`
+ * containers.
+ *
+ * Fires `filter.applied` with `{ facet, value? }` (FilterAppliedPayloadSchema).
+ * Field names are normalised to the FilterAppliedFacet enum via resolveFilterFacet().
+ * Fields whose names cannot be mapped to a known facet are silently dropped —
+ * the enum is authoritative and unknown facets must not reach the intent engine.
+ *
+ * On form submit: one event is emitted per non-empty, recognisable field.
+ * On change: one event per changed field.
+ *
+ * @returns Cleanup function that removes the document change and submit listeners.
+ */
+export function setupFilterAppliedObserver(
+  _config: SdkConfig,
+  onEvent: (event: CollectedEvent) => void,
+): () => void {
+  if (typeof document === 'undefined') {
+    return function noCleanup() {
+      // Non-browser environment
+    };
+  }
+
+  const FILTER_SLOT_SELECTOR =
+    '[data-estalara-slot="search-filters"], [data-estalara-slot="filters"]';
+
+  function onFilterChange(e: Event): void {
+    try {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (!target.closest(FILTER_SLOT_SELECTOR)) return;
+
+      // HTMLInputElement.name and .value are always strings (never undefined).
+      // Prefer name → id → data-facet attribute as field identifier.
+      const inputEl = target as HTMLInputElement;
+      const fieldName = inputEl.name || target.id || (target.dataset.facet ?? '');
+      const facet = resolveFilterFacet(fieldName);
+      if (!facet) return;
+
+      // `value` is always a string on form elements.
+      const rawValue = inputEl.value;
+      const payload: Record<string, unknown> = { facet };
+      if (rawValue !== '') payload.value = rawValue;
+
+      onEvent({ type: 'filter.applied', payload, ts: Date.now() });
+    } catch {
+      // Swallow — never propagate
+    }
+  }
+
+  function onFilterSubmit(e: Event): void {
+    try {
+      const form = e.target as HTMLFormElement | null;
+      if (!form) return;
+      // The form itself may carry the slot, or it may be a child of a slotted container.
+      const inSlot =
+        form.closest(FILTER_SLOT_SELECTOR) !== null || form.matches(FILTER_SLOT_SELECTOR);
+      if (!inSlot) return;
+
+      // HTMLFormControlsCollection is array-like but iterable via for-of.
+      for (const formEl of Array.from(form.elements)) {
+        const el = formEl as HTMLInputElement | HTMLSelectElement;
+        // `name` and `id` are always strings on form elements (may be empty).
+        const fieldName = el.name || el.id;
+        const facet = resolveFilterFacet(fieldName);
+        if (!facet) continue;
+        // `value` is always a string on form elements (may be empty).
+        const rawValue = el.value;
+        if (!rawValue) continue;
+        onEvent({
+          type: 'filter.applied',
+          payload: { facet, value: rawValue },
+          ts: Date.now(),
+        });
+      }
+    } catch {
+      // Swallow — never propagate
+    }
+  }
+
+  document.addEventListener('change', onFilterChange);
+  document.addEventListener('submit', onFilterSubmit);
+
+  return () => {
+    document.removeEventListener('change', onFilterChange);
+    document.removeEventListener('submit', onFilterSubmit);
+  };
+}
+
+// ─── Main composite observer ──────────────────────────────────────────────────
 
 export function setupObservers(
   config: SdkConfig,
@@ -168,6 +528,22 @@ export function setupObservers(
       document.removeEventListener('click', onInquirySubmitClick);
     });
   }
+
+  // ─── Photo dwell tracking (FOLLOW-099) ─────────────────────────────────────
+  // Rule H: non-test caller — this line inside setupObservers() is the production call site.
+  cleanupFns.push(setupPhotoDwellObserver(config, onEvent));
+
+  // ─── Feature expanded tracking (FOLLOW-099) ────────────────────────────────
+  // Rule H: non-test caller — this line inside setupObservers() is the production call site.
+  cleanupFns.push(setupFeatureExpandedObserver(config, onEvent));
+
+  // ─── Mortgage calculator tracking (FOLLOW-099) ─────────────────────────────
+  // Rule H: non-test caller — this line inside setupObservers() is the production call site.
+  cleanupFns.push(setupMortgageCalcObserver(config, onEvent));
+
+  // ─── Filter applied tracking (FOLLOW-099) ──────────────────────────────────
+  // Rule H: non-test caller — this line inside setupObservers() is the production call site.
+  cleanupFns.push(setupFilterAppliedObserver(config, onEvent));
 
   if (config.debug) {
     console.log('[Estalara] Observers active');

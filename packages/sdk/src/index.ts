@@ -10,7 +10,7 @@
  * @module @estalara/sdk
  */
 
-import { readConfig } from './core/config.js';
+import { readConfig, BOT_UA_RE } from './core/config.js';
 import { dispatchEvents, collectPageView } from './core/events.js';
 import {
   getOrCreateSession,
@@ -189,6 +189,15 @@ function isValidIntentState(raw: unknown): raw is IntentState {
  */
 async function init(): Promise<IntentState | null> {
   try {
+    // FOLLOW-099 AC7 (CEO-ratified): Bot detection gate.
+    // Any known crawler UA short-circuits init before session creation, DOM mutation,
+    // or any data collection.  Uses globalThis.navigator to avoid esbuild constant-folding
+    // of `typeof navigator` checks (same pattern as language detection in config.ts).
+    const navGlobal = (globalThis as { navigator?: { userAgent?: string } }).navigator;
+    if (navGlobal !== undefined && BOT_UA_RE.test(navGlobal.userAgent ?? '')) {
+      return null;
+    }
+
     // FOLLOW-208: Record session start time for listing-view-rate computation.
     // Must be set before any async await so all listing.viewed callbacks reference
     // the same origin timestamp for rate = viewCount / (elapsedMs / 60_000).

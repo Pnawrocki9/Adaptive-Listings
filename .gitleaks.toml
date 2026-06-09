@@ -224,6 +224,10 @@ paths = [
   # contain SQL DDL with long snake_case index names that match the cloudflare-api-token heuristic.
   '''packages/db/src/[^/]+\.test\.ts''',
   '''packages/shared/src/[^/]+\.test\.ts''',
+  # Route-driven PGlite integration tests embed fixture DDL with long snake_case index names
+  # (e.g. conversion_labels_tenant_prediction_unique = 40 chars) that false-positive on this rule.
+  # The same allow-list exemption exists for packages/db/src/__tests__/ (same DDL, same pattern).
+  '''apps/control-plane/src/app/api/.*route-driven-pglite\.test\.ts''',
 ]
 
 # Regexes for known safe patterns

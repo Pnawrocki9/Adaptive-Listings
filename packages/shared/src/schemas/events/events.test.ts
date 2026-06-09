@@ -565,8 +565,9 @@ describe('live.signup events (FOLLOW-195)', () => {
     }
   });
 
-  it('LiveSignup rejects a missing slot_uuid', () => {
-    expect(() => LiveSignupEventSchema.parse(ev('live.signup', {}))).toThrow();
+  it('LiveSignup accepts a missing slot_uuid (FOLLOW-258 F-04: optional to prevent event loss)', () => {
+    // slot_uuid is now optional — events without it must not be dropped.
+    expect(() => LiveSignupEventSchema.parse(ev('live.signup', {}))).not.toThrow();
   });
 
   it('LiveSignup rejects a non-UUID slot_uuid', () => {

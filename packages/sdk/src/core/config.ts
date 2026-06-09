@@ -4,6 +4,18 @@
  * @module @estalara/sdk/core/config
  */
 
+/**
+ * Bot user-agent pattern used to gate event emission in `init()`.
+ *
+ * Matches the seven crawlers named in FOLLOW-099 AC7 (CEO-ratified).
+ * Case-insensitive. Accessed via `BOT_UA_RE.test(navigator.userAgent)`.
+ *
+ * Note: this list covers major SEO/audit crawlers only.  Exotic crawlers not
+ * in this list will pass through — the cost of mis-classifying a real buyer as
+ * a bot is higher than the cost of allowing an unknown crawler through.
+ */
+export const BOT_UA_RE = /Googlebot|bingbot|Slurp|DuckDuckBot|AhrefsBot|SemrushBot|MJ12bot/i;
+
 export interface SdkConfig {
   apiKey: string;
   /** Derived from API key prefix (optional override via data-tenant-id). */

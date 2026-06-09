@@ -1,9 +1,9 @@
 # Backlog Queue
 
-**Updated 2026-06-10 by pm-orchestrator. Wave A launched — FOLLOW-258 IN_PROGRESS (sdk-engineer,
-branch sdk-engineer/FOLLOW-258-data-loss-cluster). FOLLOW-259/260/261/262 READY. Sprint 16 OPEN — 13
-DONE, 1 IN_PROGRESS (FOLLOW-099 READY_FOR_REVIEW PR #248), 2 READY_FOR_REVIEW (FOLLOW-191 awaiting
-ESC-020, FOLLOW-250/256 PR #247), FOLLOW-175 READY (P2 LoRA export).**
+**Updated 2026-06-10 by pm-orchestrator. Wave A launched — FOLLOW-258 READY_FOR_REVIEW (PR #249,
+sdk-engineer). FOLLOW-259/260/261/262 READY. Sprint 16 OPEN — 13 DONE, 1 IN_PROGRESS (FOLLOW-099
+READY_FOR_REVIEW PR #248), 2 READY_FOR_REVIEW (FOLLOW-191 awaiting ESC-020, FOLLOW-250/256 PR #247),
+FOLLOW-175 READY (P2 LoRA export).**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -3225,11 +3225,12 @@ Five tickets, two agents (sdk-engineer + backend-engineer), ~21 estimated hours 
 - id: FOLLOW-258
   title: SDK↔ingest data-loss cluster (F-01/F-02/F-03/F-04/F-29)
   agent: sdk-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P0
   estimated_hours: 6
   source: 2026-06-09 audit
   branch: sdk-engineer/FOLLOW-258-data-loss-cluster
+  pr: '#249'
 
 - id: FOLLOW-259
   title: Thread prediction_id + lead_id into feedback ping (activates §T loop)

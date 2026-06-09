@@ -5,7 +5,7 @@
  *   (a) CSV format output shape
  *   (b) JSONL format output shape
  *   (c) PII exclusion — lead_id, outcome_raw, notes absent from output
- *   (d) data_source: 'mock' (X-Data-Source: mock) when DATABASE_URL_ADMIN unset
+ *   (d) data_source: 'mock' in-body + X-Data-Source: mock header when DATABASE_URL_ADMIN unset
  *   (e) 400 on unknown format value
  *   (f) 401 on missing JWT
  *   + 400 for staff with no tenant_id param
@@ -187,19 +187,27 @@ describe('GET /api/admin/labels/export', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Data-Source')).toBe('mock');
     expect(Number(res.headers.get('X-Row-Count'))).toBe(3);
+    // Rule K.2 amendment: data_source must be in-body (header-only is lost on download)
+    const text = await res.text();
+    expect(text.split('\n')[0]).toContain('data_source');
+    expect(text).toContain('"mock"');
+    expect(res.headers.get('Content-Disposition')).toContain('attachment');
   });
 
-  it('(d) mock path with jsonl format returns 3 JSONL lines', async () => {
+  it('(d) mock path with jsonl format returns 3 JSONL lines with in-body data_source', async () => {
     agencyAuth();
     const { GET } = await import('./route.js');
     const res = await GET(makeExportRequest({ format: 'jsonl' }));
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Data-Source')).toBe('mock');
+    expect(res.headers.get('Content-Disposition')).toContain('attachment');
     const text = await res.text();
     const lines = text.trim().split('\n').filter(Boolean);
     expect(lines).toHaveLength(3);
-    const parsed = JSON.parse(lines[0]!) as ExportRow;
+    const parsed = JSON.parse(lines[0]!) as ExportRow & { data_source: string };
     expect(parsed.prediction_id).toBe('mock-pred-001');
+    // Rule K.2 amendment: data_source must be in the JSONL body, not just the header
+    expect(parsed.data_source).toBe('mock');
     // PII fields must be absent
     expect(parsed).not.toHaveProperty('lead_id');
     expect(parsed).not.toHaveProperty('outcome_raw');
@@ -234,7 +242,7 @@ describe('GET /api/admin/labels/export', () => {
     const lines = text.trim().split('\n').filter(Boolean);
     expect(lines).toHaveLength(1);
 
-    const row = JSON.parse(lines[0]!) as ExportRow;
+    const row = JSON.parse(lines[0]!) as ExportRow & { data_source: string };
     expect(row.prediction_id).toBe(PRED_UUID);
     expect(row.outcome_class).toBe('viewing_booked');
     expect(row.label_source).toBe('system');
@@ -243,6 +251,9 @@ describe('GET /api/admin/labels/export', () => {
     expect(row.model_version).toBe('');
     expect(row.confidence).toBe(0);
     expect(row.archetype).toBe('');
+    // Rule K.2 amendment: data_source must be in-body
+    expect(row.data_source).toBe('real');
+    expect(res.headers.get('Content-Disposition')).toContain('attachment');
   });
 
   // ── (a) CSV format output shape ────────────────────────────────────────────
@@ -269,14 +280,17 @@ describe('GET /api/admin/labels/export', () => {
 
     const text = await res.text();
     const lines = text.split('\n');
-    // First line is the CSV header
+    // First line is the CSV header — data_source is the first column (Rule K.2 amendment)
     expect(lines[0]).toBe(
-      'prediction_id,features_snapshot,model_version,confidence,archetype,outcome_class,label_source,labeled_at',
+      'data_source,prediction_id,features_snapshot,model_version,confidence,archetype,outcome_class,label_source,labeled_at',
     );
     // Second line is the data row
     expect(lines[1]).toContain(PRED_UUID);
     expect(lines[1]).toContain('offer_made');
     expect(lines[1]).toContain('manual_admin');
+    // In-body data_source
+    expect(lines[1]).toContain('"real"');
+    expect(res.headers.get('Content-Disposition')).toContain('attachment');
   });
 
   it('(a) CSV default format when format param is omitted', async () => {
@@ -291,7 +305,7 @@ describe('GET /api/admin/labels/export', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toContain('text/csv');
     const text = await res.text();
-    expect(text.startsWith('prediction_id,')).toBe(true);
+    expect(text.startsWith('data_source,')).toBe(true);
   });
 
   // ── (c) PII exclusion ─────────────────────────────────────────────────────

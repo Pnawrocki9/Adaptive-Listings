@@ -227,12 +227,13 @@ function csvEscape(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
-function rowsToCsv(rows: ExportRow[]): string {
+function rowsToCsv(rows: ExportRow[], dataSource: 'mock' | 'real'): string {
   const header =
-    'prediction_id,features_snapshot,model_version,confidence,archetype,outcome_class,label_source,labeled_at';
+    'data_source,prediction_id,features_snapshot,model_version,confidence,archetype,outcome_class,label_source,labeled_at';
   const lines = rows.map((r) => {
     const fs = r.features_snapshot !== null ? JSON.stringify(r.features_snapshot) : '';
     return [
+      csvEscape(dataSource),
       csvEscape(r.prediction_id),
       csvEscape(fs),
       csvEscape(r.model_version),
@@ -246,8 +247,8 @@ function rowsToCsv(rows: ExportRow[]): string {
   return [header, ...lines].join('\n');
 }
 
-function rowsToJsonl(rows: ExportRow[]): string {
-  return rows.map((r) => JSON.stringify(r)).join('\n');
+function rowsToJsonl(rows: ExportRow[], dataSource: 'mock' | 'real'): string {
+  return rows.map((r) => JSON.stringify({ data_source: dataSource, ...r })).join('\n');
 }
 
 // ─── Audit helper ─────────────────────────────────────────────────────────────
@@ -390,13 +391,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const dbConfigured = Boolean(process.env.DATABASE_URL_ADMIN ?? process.env.DATABASE_URL_DIRECT);
   if (!dbConfigured) {
     const mockRows = buildMockExportRows();
-    const body = format === 'jsonl' ? rowsToJsonl(mockRows) : rowsToCsv(mockRows);
+    const body = format === 'jsonl' ? rowsToJsonl(mockRows, 'mock') : rowsToCsv(mockRows, 'mock');
     const contentType =
       format === 'jsonl' ? 'text/plain; charset=utf-8' : 'text/csv; charset=utf-8';
+    const ext = format === 'jsonl' ? 'jsonl' : 'csv';
     return new NextResponse(body, {
       status: 200,
       headers: {
         'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="corpus-mock.${ext}"`,
         'X-Data-Source': 'mock',
         'X-Row-Count': String(mockRows.length),
       },
@@ -475,8 +478,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   });
 
   // ── Format output ─────────────────────────────────────────────────────────
-  const body = format === 'jsonl' ? rowsToJsonl(exportRows) : rowsToCsv(exportRows);
+  const body = format === 'jsonl' ? rowsToJsonl(exportRows, 'real') : rowsToCsv(exportRows, 'real');
   const contentType = format === 'jsonl' ? 'text/plain; charset=utf-8' : 'text/csv; charset=utf-8';
+  const ext = format === 'jsonl' ? 'jsonl' : 'csv';
 
   // ── Audit (fire-and-forget) ───────────────────────────────────────────────
   auditCorpusExport({
@@ -490,6 +494,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     status: 200,
     headers: {
       'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="corpus-${tenantId}.${ext}"`,
       'X-Data-Source': 'real',
       'X-Row-Count': String(exportRows.length),
     },

@@ -1,9 +1,10 @@
 # Backlog Queue
 
-**Updated 2026-06-10 by pm-orchestrator. Wave A launched — FOLLOW-258 READY_FOR_REVIEW (PR #249,
-sdk-engineer). FOLLOW-259/260/261/262 READY. Sprint 16 OPEN — 13 DONE, 1 IN_PROGRESS (FOLLOW-099
-READY_FOR_REVIEW PR #248), 2 READY_FOR_REVIEW (FOLLOW-191 awaiting ESC-020, FOLLOW-250/256 PR #247),
-FOLLOW-175 READY (P2 LoRA export).**
+**Updated 2026-06-10 by pm-orchestrator. Wave A launched — FOLLOW-258 DONE (PR #249 merged),
+FOLLOW-259 DONE (PR #250 merged), FOLLOW-261 READY_FOR_REVIEW (PR #252), FOLLOW-262 READY_FOR_REVIEW
+(PR #253). FOLLOW-260 READY_FOR_REVIEW (PR #251). Sprint 16 OPEN — 13 DONE, 1 IN_PROGRESS
+(FOLLOW-099 READY_FOR_REVIEW PR #248), 2 READY_FOR_REVIEW (FOLLOW-191 awaiting ESC-020,
+FOLLOW-250/256 PR #247), FOLLOW-175 READY (P2 LoRA export).**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -3260,7 +3261,8 @@ Five tickets, two agents (sdk-engineer + backend-engineer), ~21 estimated hours 
 - id: FOLLOW-262
   title: SDK lifecycle hygiene — listener leaks, scroll throttle, chat→intent (F-05/F-06/F-08)
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  pr: 253
   priority: P2
   estimated_hours: 5
   source: 2026-06-09 audit (F-05/F-06/F-08)

@@ -6918,7 +6918,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **depends_on:** FOLLOW-257 (the SDK-limb removal this completes); FOLLOW-199 (where a real
   per-tenant timer/threshold feature is tracked — if AC1 chooses _remove_, FOLLOW-199 must re-add
   all three limbs). Coordinate the backend dashboard/API changes with sdk-engineer's test seam work.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
 
 ---
 
@@ -6971,7 +6971,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **depends_on:** FOLLOW-263 (the repoint this reconciles); FOLLOW-102 (the SoT column);
   RETRO-012/FOLLOW-117 (the precedent contract). Sequence before TICKET-PILOT-001 measurement
   window.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
 
 ---
 

@@ -1,7 +1,8 @@
 # Backlog Queue
 
 **Updated 2026-06-10 by pm-orchestrator. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263
-DONE. Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251,
+DONE. RETRO-050/051 complete. FOLLOW-265 (P1, before TICKET-PILOT-001) and FOLLOW-264 (P2) promoted
+READY. Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251,
 FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
 (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
 awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE — 21/21 DONE.**
@@ -2779,6 +2780,53 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
     PR #260. Repointed freeze guard from quizConfig.enabled JSONB to tenants.quiz_enabled.
     CI green (pm-orchestrator 2026-06-10): Typecheck/Lint/Format/Test(Node22)/Build(control-plane)/
     RuleH/RuleJ/Demo-integration all pass. Build(SDK-bundle) pre-existing. Merged.
+
+- id: FOLLOW-265
+  title:
+    Reconcile pilot-freeze guard narrowing — restore Lane-C coverage OR ratify quiz-only + sync
+    PILOT_FREEZE_RULE.md
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-263]
+  model: sonnet-4.6
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-265 stub)
+  notes: |
+    RETRO-051 §4a LG-1. FOLLOW-263 narrowed the freeze guard from a 4-flag LANE_C_FLAG_KEYS set
+    to quiz-only, silently dropping intent_engine_enabled/shadow_mode_override/lane_c_active axes.
+    Those flags had no producers (no live coverage lost), but PILOT_FREEZE_RULE.md:93-105 still
+    describes the old 4-flag / quizConfig / active_lane_c_flags mechanism. Code and doc diverged.
+    Also: active_lane_c_flags log field renamed quiz_enabled (no alert sweep done) and
+    quizConfig.enabled is now orphaned (third consecutive retro on this blob decay).
+    Must resolve BEFORE TICKET-PILOT-001 measurement window opens.
+    ACs: AC1 decide multi-flag vs quiz-only; AC2 update PILOT_FREEZE_RULE.md; AC3 log-field rename
+    sweep; AC4 retire quizConfig.enabled key; AC5 contract-pinning test; AC6 fix mis-citation.
+    Source: RETRO-051. Cite RETRO-012/FOLLOW-117 precedent.
+
+- id: FOLLOW-264
+  title:
+    Complete Option-A removal — retire orphaned dashboard quiz-trigger producer + seam-driven gate
+    test
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: [FOLLOW-257, FOLLOW-199]
+  model: sonnet-4.6
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-264 stub)
+  notes: |
+    RETRO-050 §4a LG-1/LG-2, §4c TG-1. FOLLOW-257 removed the SDK consumer limb of
+    data-quiz-trigger, but the dashboard producer survives: apps/control-plane/src/app/dashboard/
+    quiz/page.tsx:208-220 "Show quiz after N listing views" input still persists
+    trigger_after_n_listings via POST /api/quiz/config into tenants.quiz_config JSONB with nothing
+    reading it (HALF_WIRE_P, false configurability shown to paying tenants).
+    Also: /api/config mock + audit fixture dead-name residue (LG-2); and follow-257.test.ts
+    AC2 tests assert against a local simulatedShowQuizTrigger() mirror instead of driving
+    the real showQuizTrigger() via _initForTest seam (Rule Q gap, TG-1).
+    ACs: AC1 retire/disable dashboard input; AC2 clear dead-name residue; AC3 seam-driven jsdom
+    test; AC4 document quiz_config JSONB retirement or future threshold rebuild intent.
+    Source: RETRO-050. Cite Rule L + RETRO-050.
 
 - id: FOLLOW-103
   title: app.estalara.com DOM adaptation — corpus fixture + AI Vision slots + 5-slot coverage

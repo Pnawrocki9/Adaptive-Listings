@@ -1,5 +1,37 @@
 # Retrospective-Analyst — meta-lessons (self-improvement loop)
 
+## 2026-06-10 · RETRO-047 (PR #256, FOLLOW-101 — chat.intent.detected → Bayesian prior bridge)
+
+- **A finding I almost missed and why:** the Rule R reload-reapply double-count (LG-1). Both the PR
+  body AND the ml-engineer lesson explicitly LABEL the `_chatPriorAppliedSessionId` guard as "Rule R
+  idempotency," and there is a passing AC-5 "Rule R" test. The trap: the guard IS once-per-session
+  in memory and the test IS green — but the guard is the WRONG KIND for the boundary Rule R actually
+  governs. Rule R is about the PERSISTED rehydrate boundary (sessionStorage survives reload); an
+  in-memory module variable resets on reload while the persisted (already-applied) state + the 24h
+  shadow Redis key both survive → the chat likelihoods re-multiply onto the rehydrated distribution.
+  Lesson: when a PR CLAIMS to satisfy an existing Rule, re-derive the rule's literal invariant
+  against the code; never accept the label. The "Rule R" test was the decoy — it tested the path
+  that works.
+- **An axis/chain I had to trace twice:** the `quiz.mismatch` consumer. First pass it looked like a
+  HALF_WIRE_P (event produced, no obvious consumer — and the whole ticket purpose is
+  "disagreement-rate analytics," which has no query). Second pass: ingest is GENERIC
+  (`EventSchema.safeParse` → Redpanda + ClickHouse `events` table with generic `type`+`payload`
+  columns), so the event DOES reach durable storage end-to-end — NOT a half-wire. The "no dedicated
+  disagreement-rate query" is a real but PRE-EXISTING (FOLLOW-100 producer) +
+  deliberately-post-pilot gap, so it's a §4a logic note, not a CHECK-B P0. The discipline: trace the
+  event to durable storage before classifying a missing dedicated query as a missing consumer. Also
+  had to trace the SECOND `quiz.mismatch` producer (index.ts:838, FOLLOW-100) to catch the semantic
+  overloading (`behavioral_archetype` reused for chat archetype + `confidence_gap:0` placeholder).
+- **A meta-pattern in how gaps recur across agents:** the SAME rule (Rule R) has now been violated
+  in THREE consecutive intent-engine PRs from TWO agents (RETRO-032 sdk, RETRO-037 sdk, RETRO-047
+  ml). The rule exists; the verification grep (`grep "currentIntentState = apply" index.ts`) is
+  BLIND to this instance because the mutation happens in `adapt.ts:fetchDirectives` and is folded
+  into `currentIntentState` via a DESTRUCTURE at the index.ts call site, not a literal assignment.
+  Meta-lesson for the skill-upgrade run: rules with an index.ts-shaped verification grep silently
+  fail when the mutation moves into a helper that RETURNS the new state — the grep needs to follow
+  the return-value fold-in, not just direct assignment. Filed as a §6 count-1 candidate to broaden
+  Rule R's grep.
+
 ## 2026-06-02 · RETRO-027 (PR #172, TICKET-DESC-PIVOT-001 v1.8 — Sonnet prompt rewrite)
 
 - **A finding I almost missed and why:** the audit-block truncation chain (LG-1). The diff _looks_

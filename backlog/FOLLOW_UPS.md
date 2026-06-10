@@ -6628,7 +6628,78 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 252 (251 = RETRO-046 / PR #243 / FOLLOW-185: backfill missing RETRO bodies + CI lint. 250 = RETRO-046 / PR #243 / FOLLOW-185: route-driven CRM+DSR integration coverage. 249 = RETRO-046 / PR #243 / FOLLOW-185: RLS isolation PGlite enforcement. 248 = RETRO-045 / PR #242 / FOLLOW-246: mirror crm_erasure_status into access+portability. 247 = RETRO-045 / PR #242 / FOLLOW-246: PGlite real-SQL parity for disclosure verbs. 246 = RETRO-044 / PR #233 / FOLLOW-184: DSR access (Art.15) + portability (Art.20) must read conversion_labels on BOTH session_id AND durable_lead_id namespaces — FOLLOW-184 closed only the erase verb (RETRO-031 §4a LG-1); the symmetric access/portability verbs never query conversion_labels at all, so CRM deep-outcome rows are erasable but undisclosable (P1 Art.15/20); folds LG-2 erase-wrong-token-silent-no-op + DG-1 §T.6-scoped-erase-only. 245 = RETRO-043 / PR #237 / FOLLOW-238: codify crm_erasure_status response values as shared const + reconcile wire(crm_tenant_unverifiable)⇔audit(crm_unverifiable) two-name split + document/remove unproduced expired/failed actions, P2 LG-1/LG-2. 244 = RETRO-043 / PR #237 / FOLLOW-238: re-scope stale FOLLOW-240 test to new DSR values + cover the untested crm_tenant_unverifiable positive branch (TG-1 P1) + fix orphaned doc consumers in docs/compliance/DSR_ALERTING.md §2/§5 query + MASTER_DESIGN §T.6 still on removed incomplete_* values (DG-1 P1 — realized RETRO-041 LG-2 sync-risk); MUST precede FOLLOW-187 live Sentry alert per ESC-021. 243 = RETRO-042 / PR #236 / FOLLOW-237: tighten stale mean_model_predicted_rate "pending FOLLOW-230" JSDoc caveat now that FOLLOW-230 is DONE, P3 doc-nit. 242 unused/reserved. 241 = RETRO-041 DSR_ALERTING consolidation + RETRO-042/ESC-021 citation fix. 238 (237 = RETRO-040 / PR #235 / FOLLOW-221: calibration JSON export — add Rule K.2 data_source provenance (CB-1 P1) + reject unknown format (LG-3) + fix avg_confidence semantics/dwell caveat (LG-2) + correct FOLLOW-175 mis-wire/HALF_WIRE_P (LG-1 P1); the export has no usable consumer and FOLLOW-175 needs row-level not aggregate. 236 = RETRO-039 / PR #228 / FOLLOW-183: restore src/index.ts to packages/db vitest coverage.include, TG-1 P3. 235 = RETRO-039 / PR #228 / FOLLOW-183: tighten 12-pair parity gate to value-parity AC + fix stale JSDoc, LG-1/DG-1 P3. 234 = FOLLOW-187 companion / PR #229: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate, P1 before_go_live. 233/232/231 unused. 230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217: / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
+## FOLLOW-252 — Gate the chat-intent prior idempotency on the rehydrate boundary (Rule R), not the in-memory `_chatPriorAppliedSessionId` guard (LG-1)
+
+- **source_retro:** RETRO-047 (§4a LG-1; §4c TG-2 folds in)
+- **source_ticket:** FOLLOW-101 / PR #256 (merge commit `0918bb5`)
+- **recommended_sprint:** Sprint 13b hardening / next SDK wave (before any post-pilot
+  disagreement-rate analysis)
+- **recommended_agent:** sdk-engineer + ml-engineer
+- **priority:** P1
+- **estimated_hours:** 4
+- **scope:** FOLLOW-101 guards `applyChatIntentPrior` single-apply on the in-memory module variable
+  `_chatPriorAppliedSessionId` (`packages/sdk/src/core/adapt.ts:309/760/762`), reset by
+  `resetAdaptState()`. This works for SPA cross-listing navigation within one page-tab lifecycle but
+  does NOT survive a hard page reload: the module re-initializes and the guard resets to `null`,
+  while (a) `rehydrateIntentState` restores the already-chat-prior-applied IntentState from
+  sessionStorage (`index.ts:349-353`) and (b) the shadow Redis key persists (24h TTL,
+  `apps/intent-engine/src/redis_writer.py:40`). So `/api/adapt` returns `chat_intent_dimensions`
+  again and `applyChatIntentPrior` (multiplicative, not damped — `intent.ts:1082`) re-folds the chat
+  likelihoods onto the already-applied distribution, re-perturbing the resumed archetype and
+  compounding on every reload within the 24h window. This is the EXACT Rule R double-count shape
+  (RETRO-032 FOLLOW-207 priors, RETRO-037 dwell boost), now via the chat prior. Replace the
+  in-memory guard with a Rule-R-compliant mechanism: persist a `chat_prior_applied` marker IN the
+  IntentState envelope (or combine `!intentStateRehydrated` with a persisted flag) so the prior
+  folds in exactly once across reloads.
+- **ac:**
+  - [ ] AC1: the chat-intent prior is applied AT MOST ONCE across a page reload (rehydrate) within
+        the 24h shadow-key window — the rehydrated distribution is NOT re-perturbed/compounded.
+  - [ ] AC2: a chat signal that arrives AFTER the first adapt call (first call returned no dims, a
+        later call returns dims for the first time) STILL applies exactly once (TG-2 — no
+        regression).
+  - [ ] AC3: idempotency marker is persisted in the IntentState envelope (or equivalent), not an
+        in-memory module variable; `resetAdaptState()`/session teardown still clears it correctly.
+  - [ ] AC4: a test through the `_initForTest` rehydrate→re-init seam proves AC1/AC2 (see
+        FOLLOW-253).
+  - [ ] AC5: cite Rule R in code comment; align with the `!intentStateRehydrated` gate family
+        consolidated by FOLLOW-219.
+- **depends_on:** FOLLOW-101 (the wire under repair); relates to FOLLOW-219 (gate consolidation),
+  FOLLOW-087 (24h TTL shadow producer). Pairs with FOLLOW-253 (the test).
+- **promoted_to_queue:** true (2026-06-10 by pm-orchestrator)
+
+---
+
+## FOLLOW-253 — Add a rehydrate→re-init SDK test for the chat-intent prior through the `_initForTest` seam (TG-1)
+
+- **source_retro:** RETRO-047 (§4c TG-1; Rule R verification clause)
+- **source_ticket:** FOLLOW-101 / PR #256 (merge commit `0918bb5`)
+- **recommended_sprint:** with FOLLOW-252
+- **recommended_agent:** sdk-engineer + qa-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** `packages/sdk/src/__tests__/follow-101.test.ts` has ZERO
+  `_initForTest`/rehydrate/re-init coverage — the AC-5 "Rule R" test exercises only the in-memory
+  guard within one lifecycle (+ `resetAdaptState()`), which is precisely the path that works, so the
+  reload-reapply hole (FOLLOW-252 LG-1) passes CI silently. Per Rule R's verification clause ("The
+  accompanying test MUST exercise the rehydrate→re-init path through the `_initForTest()` seam (Rule
+  Q); a pure-function helper test does NOT satisfy this"), add a test that drives
+  init()→`persistIntentState`→re-init (`rehydrateIntentState`) and asserts the chat prior is folded
+  in at most once across the reload boundary.
+- **ac:**
+  - [ ] AC1: a test drives the rehydrate→re-init path via the `_initForTest` seam (not a
+        pure-function `applyChatIntentPrior` unit test).
+  - [ ] AC2: asserts the resumed archetype/confidence is NOT re-perturbed and the chat prior applies
+        at most once across reload (validates the FOLLOW-252 fix; would FAIL against the current
+        in-memory guard).
+  - [ ] AC3: covers the post-first-adapt chat-arrival case (TG-2) — applies once when dims first
+        appear.
+- **depends_on:** FOLLOW-252 (the fix under test); shares the `_initForTest` seam pattern used by
+  RETRO-032/037 Rule R tests (FOLLOW-217/229).
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 254 (253 = RETRO-047 / PR #256 / FOLLOW-101: rehydrate→re-init SDK test for the chat-intent prior via _initForTest seam (Rule R verification clause), P2 TG-1. 252 = RETRO-047 / PR #256 / FOLLOW-101: gate the chat-intent prior idempotency on the rehydrate boundary (persisted marker / !intentStateRehydrated) not the in-memory _chatPriorAppliedSessionId guard — 3rd Rule R double-count instance (RETRO-032/037), reload re-folds the multiplicative chat likelihoods onto rehydrated state within the 24h shadow-key window, P1 LG-1. 251 = RETRO-046 / PR #243 / FOLLOW-185: backfill missing RETRO bodies + CI lint. 250 = RETRO-046 / PR #243 / FOLLOW-185: route-driven CRM+DSR integration coverage. 249 = RETRO-046 / PR #243 / FOLLOW-185: RLS isolation PGlite enforcement. 248 = RETRO-045 / PR #242 / FOLLOW-246: mirror crm_erasure_status into access+portability. 247 = RETRO-045 / PR #242 / FOLLOW-246: PGlite real-SQL parity for disclosure verbs. 246 = RETRO-044 / PR #233 / FOLLOW-184: DSR access (Art.15) + portability (Art.20) must read conversion_labels on BOTH session_id AND durable_lead_id namespaces — FOLLOW-184 closed only the erase verb (RETRO-031 §4a LG-1); the symmetric access/portability verbs never query conversion_labels at all, so CRM deep-outcome rows are erasable but undisclosable (P1 Art.15/20); folds LG-2 erase-wrong-token-silent-no-op + DG-1 §T.6-scoped-erase-only. 245 = RETRO-043 / PR #237 / FOLLOW-238: codify crm_erasure_status response values as shared const + reconcile wire(crm_tenant_unverifiable)⇔audit(crm_unverifiable) two-name split + document/remove unproduced expired/failed actions, P2 LG-1/LG-2. 244 = RETRO-043 / PR #237 / FOLLOW-238: re-scope stale FOLLOW-240 test to new DSR values + cover the untested crm_tenant_unverifiable positive branch (TG-1 P1) + fix orphaned doc consumers in docs/compliance/DSR_ALERTING.md §2/§5 query + MASTER_DESIGN §T.6 still on removed incomplete_* values (DG-1 P1 — realized RETRO-041 LG-2 sync-risk); MUST precede FOLLOW-187 live Sentry alert per ESC-021. 243 = RETRO-042 / PR #236 / FOLLOW-237: tighten stale mean_model_predicted_rate "pending FOLLOW-230" JSDoc caveat now that FOLLOW-230 is DONE, P3 doc-nit. 242 unused/reserved. 241 = RETRO-041 DSR_ALERTING consolidation + RETRO-042/ESC-021 citation fix. 238 (237 = RETRO-040 / PR #235 / FOLLOW-221: calibration JSON export — add Rule K.2 data_source provenance (CB-1 P1) + reject unknown format (LG-3) + fix avg_confidence semantics/dwell caveat (LG-2) + correct FOLLOW-175 mis-wire/HALF_WIRE_P (LG-1 P1); the export has no usable consumer and FOLLOW-175 needs row-level not aggregate. 236 = RETRO-039 / PR #228 / FOLLOW-183: restore src/index.ts to packages/db vitest coverage.include, TG-1 P3. 235 = RETRO-039 / PR #228 / FOLLOW-183: tighten 12-pair parity gate to value-parity AC + fix stale JSDoc, LG-1/DG-1 P3. 234 = FOLLOW-187 companion / PR #229: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate, P1 before_go_live. 233/232/231 unused. 230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217: / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
      220 = P1 make the FOLLOW-217 jsdom test actually DRIVE init() (it mirrors init() in local helpers, not invokes it — Rule Q violation in the ticket filed to close the Rule Q gap; TG-1/TG-2/TG-3/CB-1/DG-1; sequence BEFORE FOLLOW-219).
      219 = RETRO-033 / PR #218 / FOLLOW-216:
      219 = P3 collapse 4 scattered !intentStateRehydrated guards into one block + move CB-1 comment into JSDoc (structural hardening of FOLLOW-216 LG-1 fix; after FOLLOW-217).

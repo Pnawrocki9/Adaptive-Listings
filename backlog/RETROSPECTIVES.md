@@ -11879,3 +11879,316 @@ classifications.
 - **RETRO-035 (FOLLOW-226) — same loss-shape:** the missing-RETRO-body backfill precedent that
   FOLLOW-251 (this retro's DG-2) extends to RETRO-045/039–043 + a CI lint.
 
+## RETRO-047 — FOLLOW-101 (chat.intent.detected → Bayesian prior bridge in SDK intent.ts) — 2026-06-10
+
+### 1. Summary of change
+
+- **PR:** #256 (merged 2026-06-10 14:32 UTC, commit `0918bb5`). ml-engineer (impl). Sprint 13b /
+  Lane C — last item. Source: FOLLOW-101; depends_on FOLLOW-087 (chat NLP Modal worker writes the
+  shadow Redis key) + FOLLOW-100 (`applyChatIntentPrior` + `CHAT_INTENT_LIKELIHOODS` shipped).
+- **Files changed:** 18 (+1369 / −146). Code-relevant subset (the rest are backlog/lessons
+  bookkeeping — QUEUE.md, STATUS.md, ESCALATIONS.md, FOLLOW-101.md spec, 2× lessons.md):
+  - `apps/control-plane/src/lib/chat-intent-cache.ts` (NEW, +162) — `readShadowChatIntent` (Upstash
+    HTTP GET of `shadow:{tenant}:{session}:chat_intent`, fail-open → null) + `flattenIntentDimensions`
+    (dims → `Record<string,string>`, nulls/`false` omitted, `tax_aware:true`→`'true'`) +
+    `shadowChatIntentKey`. Mirrors `description-cache.ts` Upstash pattern (same env vars).
+  - `apps/control-plane/src/app/api/adapt/route.ts` (+30) — reads the shadow key after scoring
+    (:321-335), includes `chat_intent_dimensions` in the `AdaptationDirectives` response only when
+    non-empty (:344-345). Belt-and-suspenders try/catch on top of the helper's own fail-open.
+  - `apps/control-plane/src/app/api/adapt/route.chat-intent.test.ts` (NEW, +235) — AC-1/2/3.
+  - `packages/shared/src/directives.ts` (+16) — `AdaptationDirectives.chat_intent_dimensions?:
+    Record<string,string> | null`.
+  - `packages/sdk/src/core/adapt-schema.ts` (+5) — `chat_intent_dimensions: z.record(z.string())
+    .nullish()` on `adaptResponseSchema`.
+  - `packages/sdk/src/core/adapt.ts` (+100/−8) — **return-type change**: `fetchDirectives` now
+    returns `FetchDirectivesResult { adaptResponse, updatedIntentState? }` (was `AdaptResponse|null`);
+    applies `applyChatIntentPrior` once per session via in-memory `_chatPriorAppliedSessionId` guard
+    (:744-787), persists via `persistIntentState`, dispatches `quiz.mismatch` on `chat_mismatch`.
+  - `packages/sdk/src/index.ts` (+9/−1) — destructures the new envelope at the init() call site
+    (:579-593), folds `updatedIntentState` into `currentIntentState` + calls `onIntentUpdate`.
+  - `packages/sdk/src/__tests__/follow-101.test.ts` (NEW, +362) — AC-4/5/6 + mismatch + Rule R.
+  - 4 existing SDK test files amended for the return-type cascade (`adapt.test.ts` +12/−12,
+    `adapt-schema.test.ts` +8/−7, `adapt-canonical-url.integration.test.ts` +1/−1, `follow-194.test.ts`
+    +10/−2) — the ml-engineer lesson notes the change cascaded to 6 call-sites.
+- **Modules touched:** [SDK (adapt + index + schema) / control-plane (route + new cache lib) /
+  shared (directives) / docs(N/A) / configs(N/A)]. No ingest, no decision-api, no Modal/Python code
+  change (the producer is FOLLOW-087, already merged).
+- **Key contracts changed:**
+  - `AdaptationDirectives.chat_intent_dimensions` — ADDED — `Record<string,string> | null` optional.
+    Breaking: NO (additive optional). Added to BOTH `@estalara/shared` `directives.ts` AND SDK
+    `adaptResponseSchema` simultaneously → adapt-schema-drift gate clean (verified in PR body).
+  - `fetchDirectives` return type — CHANGED — `Promise<AdaptResponse|null>` →
+    `Promise<FetchDirectivesResult>`. Breaking: **YES for direct callers** (the `null` sentinel moved
+    to `.adaptResponse`). Sole non-test caller is `index.ts` (updated). All 6 callers in tests were
+    updated (Rule G applied — see §3/§4c). Internal SDK surface, not a public package export.
+- **Verdict (preview):** **FOLLOW-UPS-FILED (not clean — one P1 + one P2).** The producer→consumer
+  wire for `chat_intent_dimensions` is connected end-to-end (control-plane route produces → SDK
+  consumes → IntentState updated → persisted → `quiz.mismatch` reaches ingest/ClickHouse). **BUT the
+  Rule R idempotency guard FOLLOW-101 chose is the WRONG mechanism**: `_chatPriorAppliedSessionId` is
+  an in-memory module variable that does NOT survive the rehydrate boundary Rule R is specifically
+  about — on a page reload the chat prior re-multiplies onto the already-folded-in rehydrated
+  distribution (the 24h shadow Redis key + persisted intent state both survive the reload). This is
+  the THIRD occurrence of the Rule R double-count pattern (RETRO-032, RETRO-037), and FOLLOW-101
+  violates the EXISTING Rule R rather than introducing a new pattern → **FOLLOW-252 (P1)**. The AC-5
+  "Rule R" test exercises only the in-memory guard within one lifecycle (+ `resetAdaptState()`),
+  never the rehydrate→re-init path Rule R mandates (Rule Q seam) → **FOLLOW-253 (P2)**.
+
+### 2. Verification done in PR
+
+- Test files changed: 3 NEW (`route.chat-intent.test.ts` 235, `follow-101.test.ts` 362,) + 4 amended
+  for the return-type cascade. Assertions added: ~30+ across AC-1…AC-6. Coverage delta: + good at the
+  per-function/per-lifecycle layer (flatten rules, fail-open, prior applied/skipped, mismatch
+  dispatch, single-apply-per-session, sessionStorage persist). **GAP:** no test drives the
+  rehydrate→re-init path (`_initForTest`/Rule Q seam) — the AC-5 "Rule R" test uses the in-memory
+  guard + `resetAdaptState()` only, so the reload-reapply hole (§4a LG-1) passes CI silently. Same
+  false-pass shape RETRO-032/037 named for prior Rule R cases.
+- CI checks: PR body reports SDK 1263 + control-plane 890 tests pass; Lint/Typecheck/Test(Node22)/
+  Format/RuleH/RuleJ/Build(control-plane)/Vercel green; Build + Rule I pre-existing-red on main (not
+  introduced). CI not independently verified (read-only; standing Rule I / Vercel / Python
+  pre-existing-red caveat per project memory `project_ci_gate_landscape`). **Process note (focus
+  area):** a Vitest v2 `vi.fn` type-argument change caused a CI typecheck failure that the local
+  pre-commit format hook reported as "unchanged" (prettier saw no format delta; the breakage was a
+  type error, not a format error — different gate). Root cause analysis in §4b CB-1.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection (every new file/export has ≥1 non-test importer):**
+
+- `apps/control-plane/src/lib/chat-intent-cache.ts` — `readShadowChatIntent` + `flattenIntentDimensions`
+  imported by `route.ts:302` (non-test). `shadowChatIntentKey` exported, used internally by
+  `readShadowChatIntent` (+ tests). `grep -rn "readShadowChatIntent\|flattenIntentDimensions"
+  apps/control-plane/src --include=*.ts | grep -v test` → `route.ts`. NOT dead.
+- `FetchDirectivesResult` (NEW interface, adapt.ts:626) — returned by `fetchDirectives`, destructured
+  at `index.ts:579` (non-test). NOT dead.
+- `chat_intent_dimensions` (directives.ts + adapt-schema.ts) — type-only field, suppressed from
+  dead-code per the type-only rule; nonetheless consumed at `adapt.ts:751`. NOT dead.
+- **CHECK A clean.**
+
+**CHECK B — Half-wire detection (every new event/env-var/column/topic/signal has BOTH producer AND
+consumer):**
+
+- **`chat_intent_dimensions` (response field / SDK signal)** — Producer EXISTS (`route.ts:344-345`
+  populates it from the flattened shadow read). Consumer EXISTS (`adapt.ts:751` reads
+  `response.chat_intent_dimensions` → `applyChatIntentPrior`). Full chain:
+  Modal `process_chat_message` (FOLLOW-087) → `shadow:*:chat_intent` Redis (24h TTL) →
+  `readShadowChatIntent` → `chat_intent_dimensions` in adapt response → `applyChatIntentPrior` →
+  IntentState update → `persistIntentState` + `onIntentUpdate`. Both ends present. **NOT a half-wire.**
+- **`quiz.mismatch` event (NEW producer added by this PR at `adapt.ts:778`)** — Producer EXISTS (this
+  PR; there is ALSO a pre-existing producer at `index.ts:838` from FOLLOW-100, behavioral-vs-quiz).
+  Consumer: the ingest path is GENERIC — `apps/ingest/src/handlers/events.ts:181` validates via
+  `EventSchema.safeParse` (discriminated union incl. `quiz.mismatch`) then pushes to Redpanda
+  (`pushToRedpanda`) + ClickHouse (`pushToClickHouse`). ClickHouse `events` table (`infra/clickhouse/
+  migrations/0001_create_events.sql`) stores `type` (LowCardinality String) + `payload` (JSON String)
+  generically. So `quiz.mismatch` reaches durable storage end-to-end. `quiz.mismatch` is a registered
+  member of `EVENT_TYPES` + `EventSchema`. **NOT a HALF_WIRE** — the event has a real consumer (generic
+  ingest → ClickHouse persistence). See §4a LG-2 for the analytics-query completeness caveat (no
+  DEDICATED disagreement-rate query reads it yet — but that is pre-existing to FOLLOW-100's producer,
+  not introduced here, and is a §4a logic note, not a CHECK-B classification).
+- No new env-var, column, topic, or Redis key INTRODUCED by this PR (the shadow key is FOLLOW-087's).
+- **CHECK B clean** for the wires FOLLOW-101 introduced.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — Rule R violation: the chat-intent prior re-applies across the rehydrate boundary on
+  page reload, double-counting the chat likelihoods.** `adapt.ts:744-787` gates the single-apply
+  behaviour on the **in-memory module variable** `_chatPriorAppliedSessionId` (declared `:309`, reset
+  by `resetAdaptState()` `:326`). This guard correctly suppresses re-apply on SPA cross-listing
+  navigation WITHIN one page-tab lifecycle. **But it does NOT survive a hard page reload / new
+  document load** (the JS module re-initializes and the guard resets to `null`), which is precisely
+  the boundary Rule R (CONVENTIONS_PATCH.md:717) governs. On reload:
+  (1) `index.ts:349-353` `rehydrateIntentState` restores the already-chat-prior-applied IntentState
+  from sessionStorage (`estalara_intent_${sessionId}`), sets `intentStateRehydrated = true`;
+  (2) the shadow Redis key persists (24h TTL — `apps/intent-engine/src/redis_writer.py:40`,
+  `ttl_seconds=86400`), so `/api/adapt` STILL returns `chat_intent_dimensions`;
+  (3) `_chatPriorAppliedSessionId` is `null` after the module reload → the `:760` guard passes →
+  `applyChatIntentPrior` multiplies `CHAT_INTENT_LIKELIHOODS` onto the ALREADY-folded-in rehydrated
+  distribution a second time (`applyChatIntentPrior` is multiplicative & NOT damped, intent.ts:1082);
+  (4) the doubly-applied state is persisted back. Result: the resumed archetype/confidence is
+  re-perturbed and can compound on every reload within the 24h window — the EXACT Rule R bug shape
+  from RETRO-032 (FOLLOW-207 priors) and RETRO-037 (dwell boost). Rule R's prescribed fix is to gate
+  behind `!intentStateRehydrated` (symmetric to the FOLLOW-207 / archetype-hint gates that already
+  exist at `index.ts:350`) OR persist a "chat-prior-applied" flag IN the IntentState envelope and
+  apply only on first-fold. The in-memory guard satisfies NEITHER across the rehydrate boundary.
+  → **FOLLOW-252 (P1)**: gate the chat-intent prior idempotency on a persisted marker (e.g. an
+  IntentState envelope flag `chat_prior_applied: true`, or the existing `!intentStateRehydrated`
+  combined with a persisted flag so a fresh chat signal AFTER rehydrate still applies once) rather
+  than the in-memory `_chatPriorAppliedSessionId`; sequence-aware so a chat message that arrives
+  AFTER the first adapt call still folds in exactly once. Cite Rule R.
+- **LG-2 (P3, no follow-up — recorded) — `quiz.mismatch` now has TWO producers with divergent
+  payload semantics and a hardcoded `confidence_gap: 0` from this PR.** The pre-existing producer
+  (`index.ts:838`, FOLLOW-100) emits `behavioral_archetype` = the genuine behavioral-only archetype
+  and a real computed `confidence_gap`/`signal_count`. The NEW producer (`adapt.ts:778`) reuses the
+  SAME event + the SAME `behavioral_archetype` field to carry the **chat** archetype, with
+  `confidence_gap: 0` (honest placeholder — the gap isn't computed in this context) and
+  `signal_count: intentState.signal_count`. The ml-engineer lesson acknowledges this as deliberate
+  schema reuse. Consequence: any disagreement-rate analytics query over `events WHERE
+  type='quiz.mismatch'` cannot distinguish behavioral-vs-quiz from chat-vs-quiz mismatches, and a
+  `confidence_gap=0` row from the chat producer is indistinguishable from a genuine zero-gap. This is
+  a semantic-overloading / analytics-ambiguity gap, not a correctness bug (schema validates). No
+  follow-up filed (deliberate reuse, shadow-only window, no consumer yet differentiates) — RECORDED
+  so a future retro building the disagreement-rate query knows it must add a `source`/`mismatch_kind`
+  discriminator before relying on `quiz.mismatch` rows, and does not read `confidence_gap=0` as real.
+- **LG-3 (P3, no follow-up) — analytics completeness: no DEDICATED query/MV reads `quiz.mismatch`
+  yet.** The event reaches the generic ClickHouse `events` table but no aggregation surfaces the
+  "disagreement rate" the §1 ticket purpose names. PRE-EXISTING to FOLLOW-100's producer (not
+  introduced by FOLLOW-101), and explicitly a post-pilot analysis per the shadow-only Sprint-13
+  constraint (`schemas.py:63` "adaptation does NOT read this in Sprint 13"). Recorded, not filed —
+  the disagreement-rate query is a deliberate post-pilot deliverable, not a missing wire.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2 — process, the focus-area item) — a Vitest v2 `vi.fn` type-argument change broke CI
+  typecheck and slipped the local pre-commit hook because the format hook and the typecheck gate are
+  DIFFERENT gates.** Root cause: the pre-commit lefthook runs `prettier --check` (format) + lint +
+  commitlint; it does NOT run `tsc --noEmit` (typecheck) on the staged files (typecheck is a CI-only
+  gate for speed). A `vi.fn<...>()` generic-arg signature that compiles under Vitest v1 but errors
+  under v2 is a TYPE error, invisible to prettier — prettier correctly reported the file "unchanged"
+  because formatting was fine. The trailing-space blank line the focus area mentions was a SEPARATE
+  artifact: an editor left a `  \n` line that prettier WOULD normally strip, but the file was not
+  re-staged after the `vi.fn` edit, so the hook ran against the previously-staged (clean) blob and
+  said "unchanged" — i.e. the hook validated a stale staged version, not the working-tree edit. Two
+  distinct root causes, both real: (a) typecheck is not in the pre-commit hook, so type regressions
+  only surface in CI; (b) edit-after-stage means the hook can pass on a blob that differs from what
+  is committed if `git add` is not re-run. No code defect SHIPPED (CI caught it, author fixed it
+  before merge), so P2/process not P1. Recorded as a §6 lesson candidate (count 1 — NOT promoted;
+  Rule B already mandates "re-run prettier on every file you touch, every time" which addresses (b)
+  for format; the typecheck-not-in-hook gap (a) is a NEW shape — needs a 2nd occurrence to codify).
+- Otherwise **N/A.** The route read is fail-open (double-guarded), `flattenIntentDimensions` correctly
+  omits null/`false`/empty, the schema-drift gate confirms both contract sides match, and
+  `applyChatIntentPrior` is a pure function. No shipped correctness defect found beyond LG-1 (which
+  is a Rule R logic gap, listed in 4a per convention).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — the AC-5 "Rule R" test does not exercise the rehydrate→re-init path.** `follow-101.test.ts`
+  has ZERO `_initForTest`/`rehydrate`/`reinit` references (grep → 0 hits). The AC-5 test asserts
+  single-apply within one module lifecycle and resets via `resetAdaptState()` — which is exactly the
+  in-memory path that WORKS; it never reloads the module / rehydrates persisted state, so the LG-1
+  reload-reapply hole passes CI silently. Per Rule R's own verification clause ("The accompanying test
+  MUST exercise the rehydrate→re-init path through the `_initForTest()` seam (Rule Q) … a pure-function
+  helper test does NOT satisfy this"), this test does not meet the Rule R bar. → **FOLLOW-253 (P2)**:
+  add an SDK test driving init()→persist→re-init (rehydrate) through the `_initForTest` seam asserting
+  the chat prior is folded in AT MOST once across the reload boundary (paired with the FOLLOW-252 fix).
+- **TG-2 (P3, folds into FOLLOW-252) — no test covers a chat signal arriving AFTER the first adapt
+  call.** The fix for LG-1 must not regress the legitimate case where the first `/api/adapt` returned
+  no dims (no chat yet) and a LATER call (post chat.message.sent) returns dims for the first time —
+  that must still apply once. Scope into FOLLOW-252's ACs.
+
+#### 4d. Documentation gaps
+
+- **N/A.** The new code is well-JSDoc'd (`chat-intent-cache.ts`, the `FetchDirectivesResult` envelope,
+  the shadow-only constraint is stated in 3 places: `directives.ts:171-175`, `adapt.ts:748-753`,
+  `route.ts:973-974`). The MASTER_DESIGN §D.1.1 reference is cited. No doc drift introduced.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected (Sprint 13b / Lane C)
+
+- **FOLLOW-102 (Quiz ON/OFF toggle — `SdkConfig` + `tenants.quiz_enabled`) — READY (P2).** If the
+  quiz is toggled OFF, `state.quiz_answered` is never true, so `applyChatIntentPrior`'s mismatch
+  branch (`intent.ts:1100` requires `state.quiz_answered`) never fires and no `quiz.mismatch` is
+  emitted from the chat path — correct behaviour, but FOLLOW-102's test matrix should include
+  "quiz OFF → chat prior still applies to the distribution but emits no mismatch." Re-pointed, not
+  blocked.
+- **FOLLOW-103 (BLOCKED — TICKET-PILOT-001) — unaffected** by this merge (different surface).
+- **FOLLOW-100 (DONE, PR #254) — DIRECT DEPENDENCY.** Its `quiz.mismatch` producer at `index.ts:838`
+  is now a SIBLING producer to FOLLOW-101's at `adapt.ts:778` (LG-2 semantic-overloading). Any future
+  change to the `QuizMismatchPayload` schema must reconcile BOTH producers (Rule S sibling-set
+  awareness applies to the two producers).
+
+#### 5b. Future sprint tickets affected
+
+- **Any future "disagreement-rate analytics" query / MV (post-pilot, §D.7)** MUST add a
+  `source`/`mismatch_kind` discriminator to distinguish the two `quiz.mismatch` producers (LG-2) and
+  MUST NOT treat `confidence_gap=0` as a real measured gap (it is a placeholder from the chat
+  producer). Surfaced here so the query author does not silently conflate them.
+- **FOLLOW-087 batch tier (Sonnet 4.6, 6h)** re-writes the shadow key; combined with the 24h TTL this
+  is exactly what makes the LG-1 reload-reapply window wide — the fix (FOLLOW-252) must be robust to
+  the key being refreshed mid-session.
+
+#### 5c. Contracts changed others rely on
+
+- `AdaptationDirectives.chat_intent_dimensions` (shared) — additive optional; any other consumer of
+  the adapt response (decision-api mirrors, analytics) may now see this field. Additive, safe.
+- `fetchDirectives` return type (`FetchDirectivesResult`) — internal SDK; the SOLE non-test caller
+  (`index.ts`) is updated. Rule G (breaking type change → grep all inline mock/call-sites) WAS applied
+  — 6 test call-sites updated (per the ml-engineer lesson). This is a textbook Rule G case and it was
+  honoured; recorded as a POSITIVE (no gap).
+
+#### 5d. Architectural assumptions affected
+
+- **The "shadow-only" invariant holds:** `chat_intent_dimensions` updates IntentState for analytics +
+  `quiz.mismatch` ONLY; it does NOT change which directives are served (the adaptation output is
+  computed BEFORE the shadow read and is not re-derived from the updated state on this call). Verified
+  at `route.ts` (response assembled from `selectedVariant`/scoring, the shadow read only APPENDS a
+  field) and `adapt.ts` (the prior updates `currentIntentState`, not the applied directives). Invariant
+  intact.
+- **New architectural note for the PM:** Rule R now has THREE instances (RETRO-032, RETRO-037, this).
+  All three are "a new intent-state mutation wired into `persistIntentState` without honouring the
+  rehydrate boundary." Rule R already exists and already covers all three — the recurring failure is
+  ENFORCEMENT, not absence of a rule. The Rule R verification grep (`grep -nE "currentIntentState =
+  apply" packages/sdk/src/index.ts`) does NOT catch FOLLOW-101 because the mutation happens INSIDE
+  `adapt.ts:fetchDirectives` (`updatedIntentState = applyChatIntentPrior(...)`) and is folded into
+  `currentIntentState` at `index.ts:586` via a DESTRUCTURE, not a direct `currentIntentState = apply…`
+  assignment. The grep is blind to the indirection. Recorded as a §6 candidate to BROADEN Rule R's
+  verification grep (count 1 for the grep-blind-spot shape — not promoted; the rule itself stands).
+
+### 6. New lesson candidates
+
+- **Pattern (Rule R — already a RULE; this is its THIRD enforcement instance) — "an intent-state
+  mutation wired into `persistIntentState` whose idempotency guard does not survive the rehydrate
+  boundary."** Seen in: RETRO-032 (FOLLOW-216, FOLLOW-207 priors), RETRO-037 (FOLLOW-190, dwell
+  boost), **this RETRO-047 (FOLLOW-101, chat prior — in-memory guard instead of `!intentStateRehydrated`/
+  persisted flag)**. NOT a new rule (Rule R covers it). The actionable amendment candidate is to the
+  Rule R VERIFICATION grep, which is `index.ts`-assignment-shaped and missed the `adapt.ts`-indirect
+  mutation here — **count 1 for the "grep-blind-to-indirection" sub-shape**; not promoted. If a SECOND
+  Rule R instance slips past the grep via indirection (mutation outside a literal `currentIntentState =
+  apply…` in index.ts), broaden the grep to also scan `adapt.ts` for `applyChatIntentPrior|apply.*Prior`
+  + any `updatedIntentState` fold-in, and to assert a rehydrate-boundary test exists.
+- **Pattern (count 1 — NOT promoted) — "a type/tooling regression (Vitest v2 `vi.fn` type-args) that
+  the pre-commit hook cannot catch because typecheck is a CI-only gate, not a hook gate."** Seen in:
+  this RETRO (CB-1). Rule B already mandates re-prettier-on-touch (covers the stale-stage half); the
+  "typecheck not in pre-commit" half is a distinct shape. Promote a "run `tsc --noEmit` on staged
+  packages in pre-commit (or at least on widely-changed return types)" rule only if a SECOND CI-only-
+  typecheck-escape appears. Recorded for the count.
+- **Pattern (own blind-spot, recorded not counted) — "an idempotency guard that LOOKS correct in
+  isolation (it IS once-per-session in-memory) but is the WRONG KIND of guard for the boundary that
+  matters."** I almost accepted the AC-5 "Rule R" test + the `_chatPriorAppliedSessionId` guard as
+  satisfying Rule R because the PR body and the ml-engineer lesson both call it "Rule R idempotency."
+  The harder finding was tracing that the guard is in-memory and the boundary Rule R governs is the
+  PERSISTED rehydrate path — the guard and the rule's boundary are orthogonal. Discipline reaffirmed:
+  when a PR CLAIMS to satisfy an existing Rule, re-derive the rule's actual invariant against the code
+  rather than trusting the label (same family as RETRO-045's "a fix can close the headline gap while
+  re-instantiating the meta-pattern one level down").
+
+### 7. Follow-ups
+
+- **FOLLOW-252: Gate the chat-intent prior idempotency on the rehydrate boundary (Rule R), not the
+  in-memory `_chatPriorAppliedSessionId` guard** (sdk-engineer + ml-engineer, 4h, **P1**) [LG-1; Rule
+  R]. Persist a "chat-prior-applied" marker in the IntentState envelope (or combine `!intentStateRehydrated`
+  with a persisted flag) so the chat prior folds in EXACTLY once across page reloads within the 24h
+  shadow-key window, while still applying once when a chat signal arrives AFTER the first adapt call
+  (TG-2). Cite Rule R; sequence before any post-pilot disagreement-rate analysis. Filed below.
+- **FOLLOW-253: Add a rehydrate→re-init SDK test for the chat prior through the `_initForTest` seam**
+  (sdk-engineer + qa-engineer, 2h, **P2**) [TG-1; Rule R verification clause]. Drive init()→persist→
+  re-init asserting the chat prior is applied at most once across the reload boundary; pair with the
+  FOLLOW-252 fix. Filed below.
+
+### 8. Cross-references
+
+- **RETRO-032 (FOLLOW-216) + RETRO-037 (FOLLOW-190) — Rule R precedents.** This is the THIRD
+  occurrence of the Rule R rehydrate-boundary double-count, now via a chat-intent prior with an
+  in-memory guard. Rule R (CONVENTIONS_PATCH.md:717) was promoted at count 2 from those two; FOLLOW-101
+  VIOLATES it. No new rule — enforcement gap (the verification grep is index.ts-shaped and missed the
+  adapt.ts indirection). Closure discipline: I did NOT trust the PR's "Rule R idempotency" label; I
+  traced the guard (in-memory, module-scope) against Rule R's actual boundary (persisted rehydrate)
+  and confirmed the reload-reapply path with the 24h shadow-key TTL + the rehydrate call site.
+- **RETRO-035 (FOLLOW-219) — the `!intentStateRehydrated` consolidation** is the mechanism FOLLOW-252
+  should extend (the chat prior is a new mutation that belongs under the same gate family).
+- **FOLLOW-087 / FOLLOW-100 — DIRECT DEPENDENCIES.** FOLLOW-087 is the `quiz.mismatch`-feeding shadow
+  producer + the 24h TTL that widens the LG-1 window; FOLLOW-100 is the `applyChatIntentPrior` impl +
+  the SIBLING `quiz.mismatch` producer (LG-2 semantic overloading). First retro in the chat-intent
+  Lane C bridge chain (no prior FOLLOW-101 retro).
+

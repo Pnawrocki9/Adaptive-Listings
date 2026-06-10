@@ -1,13 +1,19 @@
 /**
- * Tests for the pilot_frozen Lane C guard in /api/adapt (FOLLOW-117).
+ * Tests for the pilot_frozen Lane C guard in /api/adapt.
  *
- * Bug fixed: the guard previously checked cfg.quiz_enabled but the quiz config
- * producer (POST /api/quiz/config) writes the field as cfg.enabled. This test
- * verifies that the guard fires when a frozen-pilot tenant has quizConfig.enabled = true.
+ * FOLLOW-263 / RETRO-049: guard repointed from JSONB `quizConfig.enabled` to the
+ * typed boolean column `tenants.quiz_enabled` (SoT per FOLLOW-102 / migration 0025).
+ *
+ * Original guard introduced by RETRO-012 / FOLLOW-117.
  *
  * The guard is non-blocking (fire-and-forget, per PILOT_FREEZE_RULE.md §Decision 3).
- * It emits a console.warn when pilot_frozen=true AND any LANE_C_FLAG_KEYS entry is
- * set to true in quizConfig. We assert on the warn call to confirm the guard triggered.
+ * It emits a console.warn when pilot_frozen=true AND quiz_enabled=true. We assert
+ * on the warn call to confirm the guard triggered.
+ *
+ * AC1: guard reads tenants.quiz_enabled (typed column), NOT quizConfig JSONB.
+ * AC2: fires correctly for quiz_enabled=true AND quiz_enabled=false.
+ * AC3: quiz_enabled changes during freeze window → guard reflects new state.
+ * AC4: pilotFrozen=true + quiz_enabled=false → guard does NOT fire.
  *
  * @module apps/control-plane/src/app/api/adapt/route.pilot-frozen.test
  */
@@ -68,6 +74,11 @@ vi.mock('@/lib/embedding-lookup', () => ({
 }));
 
 // ── DB mock — must be declared before import of route ─────────────────────────
+//
+// FOLLOW-263 (AC1): the DB mock now exposes `quizEnabled` (the typed boolean
+// column) rather than `quizConfig` (the JSONB column). This proves the guard reads
+// the typed column — if the route still selected `quizConfig`, the mock would
+// return undefined for it and the guard would silently fail to fire.
 
 const mockDbSelect = vi.fn();
 
@@ -78,7 +89,8 @@ vi.mock('@estalara/db', () => ({
   tenants: {
     id: 'id',
     pilotFrozen: 'pilot_frozen',
-    quizConfig: 'quiz_config',
+    // FOLLOW-263: expose quizEnabled (typed boolean SoT), not quizConfig (JSONB legacy).
+    quizEnabled: 'quiz_enabled',
   },
 }));
 
@@ -116,13 +128,17 @@ const VALID_POST_BODY = {
 
 /**
  * Configure the DB mock to return a tenant row with the given pilotFrozen flag
- * and quizConfig object.
+ * and quizEnabled boolean.
+ *
+ * FOLLOW-263 (AC1): mock uses `quizEnabled` (typed boolean), not `quizConfig`
+ * (JSONB). The guard must select quizEnabled from the DB — if it still selected
+ * quizConfig, this mock would return undefined and the guard would be silent.
  */
-function setupDbMock(pilotFrozen: boolean, quizConfig: Record<string, unknown>): void {
+function setupDbMock(pilotFrozen: boolean, quizEnabled: boolean): void {
   mockDbSelect.mockReturnValue({
     from: vi.fn().mockReturnValue({
       where: vi.fn().mockReturnValue({
-        limit: vi.fn().mockResolvedValue([{ pilotFrozen, quizConfig }]),
+        limit: vi.fn().mockResolvedValue([{ pilotFrozen, quizEnabled }]),
       }),
     }),
   });
@@ -130,7 +146,7 @@ function setupDbMock(pilotFrozen: boolean, quizConfig: Record<string, unknown>):
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
-describe('pilot_frozen Lane C guard — FOLLOW-117', () => {
+describe('pilot_frozen Lane C guard — RETRO-012/FOLLOW-117 / FOLLOW-263 repoint', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -145,9 +161,13 @@ describe('pilot_frozen Lane C guard — FOLLOW-117', () => {
     warnSpy.mockRestore();
   });
 
-  it('pilot_frozen=true + quizConfig.enabled=true → guard emits warn and response is still 200', async () => {
-    // Arrange: frozen pilot with quiz widget ON (the field that was wrongly checked as quiz_enabled)
-    setupDbMock(true, { enabled: true });
+  // ── AC1 + AC2: guard reads typed column, fires when quiz_enabled=true ────────
+
+  it('AC1/AC2: pilot_frozen=true + quiz_enabled=true → guard emits warn (typed column read)', async () => {
+    // FOLLOW-263 (AC1): the mock exposes quizEnabled=true. If the route still
+    // selected quizConfig (JSONB), it would get undefined and the guard would be
+    // silent — this test would fail, proving the column was not repointed.
+    setupDbMock(true, true);
 
     const res = await POST(makePostRequest(VALID_POST_BODY));
 
@@ -157,7 +177,7 @@ describe('pilot_frozen Lane C guard — FOLLOW-117', () => {
     // Allow the fire-and-forget async work to settle
     await new Promise((resolve) => setImmediate(resolve));
 
-    // Assert the warn fired with the correct event name and flag key
+    // Assert the warn fired with the correct event name
     const warnCalls = warnSpy.mock.calls;
     const matchingCall = warnCalls.find((args) => {
       const msg = typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]);
@@ -165,16 +185,24 @@ describe('pilot_frozen Lane C guard — FOLLOW-117', () => {
     });
     expect(matchingCall).toBeDefined();
 
-    // The logged message must include 'enabled' (the corrected key), not 'quiz_enabled' (the old wrong key)
+    // FOLLOW-263: the logged message must include quiz_enabled:true (the typed
+    // column value), NOT the old active_lane_c_flags JSONB-key array format.
     const loggedMsg = matchingCall![0] as string;
-    const parsed = JSON.parse(loggedMsg) as { active_lane_c_flags: string[] };
-    expect(parsed.active_lane_c_flags).toContain('enabled');
-    expect(parsed.active_lane_c_flags).not.toContain('quiz_enabled');
+    const parsed = JSON.parse(loggedMsg) as {
+      quiz_enabled?: boolean;
+      active_lane_c_flags?: string[];
+    };
+    expect(parsed.quiz_enabled).toBe(true);
+    // Ensure the old JSONB-key array format is NOT present (guard was repointed)
+    expect(parsed.active_lane_c_flags).toBeUndefined();
   });
 
-  it('pilot_frozen=true + quizConfig.enabled=false → guard does NOT emit warn', async () => {
-    // Arrange: frozen pilot, but quiz is OFF — no Lane C flags active
-    setupDbMock(true, { enabled: false });
+  // ── AC2 + AC4: guard does NOT fire when quiz_enabled=false ──────────────────
+
+  it('AC2/AC4: pilot_frozen=true + quiz_enabled=false → guard does NOT emit warn (quiz already off)', async () => {
+    // AC4 acceptance: pilotFrozen=true + quiz_enabled=false should not trigger warn.
+    // Quiz is already off — no Lane C contamination risk.
+    setupDbMock(true, false);
 
     await POST(makePostRequest(VALID_POST_BODY));
     await new Promise((resolve) => setImmediate(resolve));
@@ -187,9 +215,11 @@ describe('pilot_frozen Lane C guard — FOLLOW-117', () => {
     expect(matchingCall).toBeUndefined();
   });
 
-  it('pilot_frozen=false + quizConfig.enabled=true → guard does NOT emit warn', async () => {
-    // Arrange: pilot NOT frozen — guard should never fire regardless of Lane C flags
-    setupDbMock(false, { enabled: true });
+  // ── pilot not frozen → guard never fires ────────────────────────────────────
+
+  it('pilot_frozen=false + quiz_enabled=true → guard does NOT emit warn', async () => {
+    // Pilot NOT frozen — guard should never fire regardless of quiz state.
+    setupDbMock(false, true);
 
     await POST(makePostRequest(VALID_POST_BODY));
     await new Promise((resolve) => setImmediate(resolve));
@@ -202,26 +232,102 @@ describe('pilot_frozen Lane C guard — FOLLOW-117', () => {
     expect(matchingCall).toBeUndefined();
   });
 
-  it('pilot_frozen=true + quizConfig missing → guard does NOT emit warn (absent flag = safe)', async () => {
-    // Arrange: frozen pilot, quizConfig is empty object — no flags set
-    setupDbMock(true, {});
+  // ── AC3: quiz_enabled changes during freeze window ──────────────────────────
+
+  it('AC3: quiz_enabled changes from false→true during freeze window → guard fires on next read', async () => {
+    // First call: quiz_enabled=false — guard should NOT fire.
+    setupDbMock(true, false);
 
     await POST(makePostRequest(VALID_POST_BODY));
     await new Promise((resolve) => setImmediate(resolve));
 
-    const warnCalls = warnSpy.mock.calls;
-    const matchingCall = warnCalls.find((args) => {
+    const warnCallsBefore = warnSpy.mock.calls.filter((args) => {
       const msg = typeof args[0] === 'string' ? args[0] : '';
       return msg.includes('pilot_frozen_lane_c_active');
     });
-    expect(matchingCall).toBeUndefined();
+    expect(warnCallsBefore).toHaveLength(0);
+
+    // Simulate quiz_enabled changing to true during the freeze window
+    // (e.g. a PATCH /api/tenants/:id was called and flipped the column).
+    // Reset mock to return quiz_enabled=true.
+    vi.clearAllMocks();
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    setupDbMock(true, true);
+
+    await POST(makePostRequest({ ...VALID_POST_BODY, session_id: 'sess-frozen-002' }));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // Guard MUST fire now that quiz_enabled is true
+    const warnCallsAfter = warnSpy.mock.calls.filter((args) => {
+      const msg = typeof args[0] === 'string' ? args[0] : '';
+      return msg.includes('pilot_frozen_lane_c_active');
+    });
+    expect(warnCallsAfter).toHaveLength(1);
+
+    const parsed = JSON.parse(warnCallsAfter[0]![0] as string) as { quiz_enabled?: boolean };
+    expect(parsed.quiz_enabled).toBe(true);
   });
+
+  it('AC3: quiz_enabled changes from true→false during freeze window → guard stops firing', async () => {
+    // First call: quiz_enabled=true — guard fires.
+    setupDbMock(true, true);
+
+    await POST(makePostRequest(VALID_POST_BODY));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const warnCallsBefore = warnSpy.mock.calls.filter((args) => {
+      const msg = typeof args[0] === 'string' ? args[0] : '';
+      return msg.includes('pilot_frozen_lane_c_active');
+    });
+    expect(warnCallsBefore).toHaveLength(1);
+
+    // Simulate quiz being disabled (tenant toggled quiz OFF via dashboard).
+    vi.clearAllMocks();
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    setupDbMock(true, false);
+
+    await POST(makePostRequest({ ...VALID_POST_BODY, session_id: 'sess-frozen-003' }));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // Guard must NOT fire — quiz is now off, no contamination risk.
+    const warnCallsAfter = warnSpy.mock.calls.filter((args) => {
+      const msg = typeof args[0] === 'string' ? args[0] : '';
+      return msg.includes('pilot_frozen_lane_c_active');
+    });
+    expect(warnCallsAfter).toHaveLength(0);
+  });
+
+  // ── Non-blocking response guarantee ─────────────────────────────────────────
 
   it('guard never blocks the response — always returns 200 even when warn fires', async () => {
-    setupDbMock(true, { enabled: true, intent_engine_enabled: true });
+    setupDbMock(true, true);
 
     const res = await POST(makePostRequest(VALID_POST_BODY));
     // Non-blocking: HTTP response must be 200 regardless
     expect(res.status).toBe(200);
+  });
+
+  // ── Guard is silent for unknown tenant ──────────────────────────────────────
+
+  it('pilot_frozen=true + quizEnabled missing (DB returns undefined) → guard does NOT emit warn', async () => {
+    // Simulates a row where quiz_enabled column is null/undefined (e.g. old row
+    // before migration 0025 backfill ran). Guard should treat undefined as false — safe.
+    mockDbSelect.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ pilotFrozen: true, quizEnabled: undefined }]),
+        }),
+      }),
+    });
+
+    await POST(makePostRequest(VALID_POST_BODY));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const warnCalls = warnSpy.mock.calls;
+    const matchingCall = warnCalls.find((args) => {
+      const msg = typeof args[0] === 'string' ? args[0] : '';
+      return msg.includes('pilot_frozen_lane_c_active');
+    });
+    expect(matchingCall).toBeUndefined();
   });
 });

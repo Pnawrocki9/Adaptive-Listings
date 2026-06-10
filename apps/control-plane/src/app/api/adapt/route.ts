@@ -72,31 +72,38 @@ const CONFIDENCE_THRESHOLD = 0.6;
 const HIGH_SIMILARITY_THRESHOLD = 0.85;
 const LOW_SIMILARITY_THRESHOLD = 0.6;
 
-// ─── Pilot freeze guard (FOLLOW-106) ─────────────────────────────────────────
-
-/**
- * Lane C feature flags that must not be silently active while the pilot tenant
- * is in the measurement window (`pilot_frozen = true`).
- *
- * Each flag key maps to a path inside the `quizConfig` JSONB column. New Lane C
- * flags (e.g. `tenants.quiz_enabled` from FOLLOW-102, intent-engine toggles from
- * FOLLOW-087/100/101) should be added here as they land. The check is intentionally
- * conservative — unknown/undefined values are treated as inactive (flag absent = safe).
- *
- * Per PILOT_FREEZE_RULE.md §Decision 3 and Master Design v3.0: this warning is
- * NON-BLOCKING. It never changes the response or throws; it is purely observability.
- */
-const LANE_C_FLAG_KEYS = [
-  'lane_c_active', // generic escape-hatch flag — any explicitly set sentinel
-  'intent_engine_enabled', // FOLLOW-087/100/101 — chat NLP intent bridge
-  'enabled', // FOLLOW-102 — quiz widget ON/OFF toggle (QuizConfig writes cfg.enabled, not cfg.quiz_enabled)
-  'shadow_mode_override', // explicit shadow-mode bypass flag
-] as const;
+// ─── Pilot freeze guard (FOLLOW-117 / RETRO-012 / FOLLOW-263) ────────────────
+//
+// FOLLOW-263 (RETRO-049): repointed from JSONB `quizConfig.enabled` to the typed
+// boolean column `tenants.quiz_enabled` (Drizzle field: `quizEnabled`), which is
+// the sole source-of-truth per FOLLOW-102 / migration 0025.
+//
+// The old pattern read `quizConfig` (JSONB) and searched LANE_C_FLAG_KEYS for any
+// key set to true. That became silently blind once FOLLOW-102 moved the SoT to
+// `quiz_enabled`. The new pattern reads `quizEnabled` directly — a typed boolean
+// column — and fires when pilotFrozen=true AND quizEnabled=true.
+//
+// If `quiz_enabled = false` the guard does NOT fire: quiz is already off, so no
+// contamination risk to the CTA-lift measurement window exists.
+//
+// Legacy note: `quizConfig` JSONB column still exists on the tenants table as a
+// historical configuration store. It is NOT the SoT for quiz enabled/disabled
+// state. Do NOT read quizConfig.enabled for freeze-guard decisions — use
+// tenants.quizEnabled only. (Rule H — FOLLOW-263)
+//
+// Per PILOT_FREEZE_RULE.md §Decision 3 and Master Design v3.0: this warning is
+// NON-BLOCKING. It never changes the response or throws; it is purely observability.
 
 /**
  * Reads the tenant record from Postgres and emits a structured warning (via
- * `console.warn`) when `pilot_frozen = true` AND any Lane C feature flag is
- * active in `quizConfig`.
+ * `console.warn`) when `pilot_frozen = true` AND `quiz_enabled = true`.
+ *
+ * Uses `tenants.quizEnabled` (the typed boolean column added by FOLLOW-102 /
+ * migration 0025) as the sole source-of-truth — NOT the JSONB `quizConfig.enabled`
+ * path that was used before FOLLOW-263.
+ *
+ * RETRO-012 / FOLLOW-117: guard introduced.
+ * FOLLOW-263 / RETRO-049: repointed at tenants.quiz_enabled (SoT per FOLLOW-102).
  *
  * Failure modes:
  *   - DB unavailable / query error → silently no-ops (warning omitted, never throws).
@@ -118,7 +125,10 @@ function checkPilotFrozenAsync(tenantId: string, requestId: string): void {
       const rows = await db
         .select({
           pilotFrozen: tenants.pilotFrozen,
-          quizConfig: tenants.quizConfig,
+          // FOLLOW-263: read the typed boolean column (SoT per FOLLOW-102 / migration 0025).
+          // Do NOT use tenants.quizConfig (JSONB) — that path is legacy and was the root
+          // cause of the silent blind-spot reported in RETRO-049.
+          quizEnabled: tenants.quizEnabled,
         })
         .from(tenants)
         .where(eq(tenants.id, tenantId))
@@ -127,26 +137,27 @@ function checkPilotFrozenAsync(tenantId: string, requestId: string): void {
       const row = rows[0];
       if (!row?.pilotFrozen) return;
 
-      // pilot_frozen = true — check for any active Lane C flag.
-      const cfg = (row.quizConfig ?? {}) as Record<string, unknown>;
-      const activeFlags = LANE_C_FLAG_KEYS.filter((key) => cfg[key] === true);
+      // pilot_frozen = true — check whether quiz is ON (the Lane C flag that matters).
+      // quizEnabled=false means quiz is already off → no contamination risk, no warning.
+      if (!row.quizEnabled) return;
 
-      if (activeFlags.length > 0) {
-        console.warn(
-          JSON.stringify({
-            level: 'warn',
-            event: 'pilot_frozen_lane_c_active',
-            tenant_id: tenantId,
-            request_id: requestId,
-            active_lane_c_flags: activeFlags,
-            message:
-              'Tenant has pilot_frozen=true but Lane C feature flags are active. ' +
-              'This may contaminate the CTA-lift measurement window. ' +
-              'Per PILOT_FREEZE_RULE.md, Lane C features must be gated OFF while ' +
-              'the measurement window is open. This warning is non-blocking.',
-          }),
-        );
-      }
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          event: 'pilot_frozen_lane_c_active',
+          tenant_id: tenantId,
+          request_id: requestId,
+          // FOLLOW-263: surface the typed column value rather than a list of JSONB keys.
+          // quiz_enabled=true is the single Lane C state that contaminates the measurement
+          // window. RETRO-012 / FOLLOW-117 precedent; repointed per FOLLOW-263 / RETRO-049.
+          quiz_enabled: true,
+          message:
+            'Tenant has pilot_frozen=true but quiz_enabled=true. ' +
+            'This may contaminate the CTA-lift measurement window. ' +
+            'Per PILOT_FREEZE_RULE.md, Lane C features must be gated OFF while ' +
+            'the measurement window is open. This warning is non-blocking.',
+        }),
+      );
     } catch (err: unknown) {
       // Analytics/observability failures must never surface to callers.
       console.error('[adapt] pilot_frozen check failed:', err instanceof Error ? err.message : err);

@@ -456,3 +456,33 @@ forget when adding new PGlite tests to a package that defaults to jsdom. A CI ch
 that validates any test file importing `@electric-sql/pglite` has the `@vitest-environment node`
 docblock would prevent silent test-skip scenarios where PGlite init fails and all tests are marked
 "skipped" instead of "failed".
+
+---
+
+## 2026-06-10 / FOLLOW-263
+
+**What I built:** Repointed the pilot-freeze guard (`checkPilotFrozenAsync`) from JSONB
+`quizConfig.enabled` (legacy) to the typed boolean column `tenants.quizEnabled` (SoT per FOLLOW-102
+/ migration 0025). Updated `route.pilot-frozen.test.ts` with 7 tests covering AC1–AC4 (typed column
+read proven by mock shape, on/off states, mid-window state changes, non-blocking guarantee).
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+1. **Silent regression pattern (RETRO-049):** The guard was observability-only but still had
+   correctness: it was reading from the wrong store. The fix was purely a column swap in the SELECT
+   — no auth or data flow changes. The risk was that "it still compiles and tests pass" could mask
+   the bug. The test mock is now shaped to ONLY expose `quizEnabled` (not `quizConfig`) — if the
+   route selected the wrong field it would get `undefined` and the guard would be silent, failing
+   the positive-case assertion. This is the correct self-validating test design.
+2. **Legacy comment discipline (Rule H):** After the fix, `quizConfig` JSONB still exists on the
+   tenants table. Added explicit comments in the guard saying "do NOT use quizConfig.enabled for
+   freeze-guard decisions" to prevent future regression. This is the Rule H obligation for a
+   dead-read that can't be fully removed yet (the column stores other quiz configuration that is
+   still read).
+3. **Fire-and-forget observability contract:** The guard is non-blocking. The fix preserves this
+   contract — the select now targets a different field but never blocks the response.
+
+**A guardrail I'd add:** A lint rule or CI check that detects reads of `tenants.quizConfig` in files
+that also read `tenants.quizEnabled` and emits a warning: "these two fields have different SoT
+semantics — double-check you're not mixing quiz-enabled state from the legacy JSONB with the typed
+column." Would have caught RETRO-049 at PR time instead of needing a RETRO cycle.

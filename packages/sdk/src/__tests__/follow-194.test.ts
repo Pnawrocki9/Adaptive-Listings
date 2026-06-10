@@ -331,13 +331,21 @@ describe('F-15 resetAdaptState called only on archetype change', () => {
     );
 
     // First call — succeeds
-    const resp1 = await fetchDirectives(MOCK_CONFIG, MOCK_SESSION, 'listing_detail');
+    const { adaptResponse: resp1 } = await fetchDirectives(
+      MOCK_CONFIG,
+      MOCK_SESSION,
+      'listing_detail',
+    );
     expect(resp1?.archetype).toBe('yield_hunter');
 
     // Second call with same archetype — in production refreshDirectives() would NOT call
     // resetAdaptState() here; fetchDirectives itself does not call resetAdaptState.
     // This test confirms fetchDirectives is side-effect-free w.r.t. resetAdaptState.
-    const resp2 = await fetchDirectives(MOCK_CONFIG, MOCK_SESSION, 'listing_detail');
+    const { adaptResponse: resp2 } = await fetchDirectives(
+      MOCK_CONFIG,
+      MOCK_SESSION,
+      'listing_detail',
+    );
     expect(resp2?.archetype).toBe('yield_hunter');
 
     // The guard is in index.ts; fetchDirectives itself never calls resetAdaptState.

@@ -128,6 +128,11 @@ export const adaptResponseSchema = z
     ]),
     variant: z.string().optional(),
     generated_at: z.string(),
+    /**
+     * Flattened chat-intent dimensions from Modal NLP pipeline (FOLLOW-101).
+     * Absent when no shadow data exists for the session.
+     */
+    chat_intent_dimensions: z.record(z.string()).nullish(),
   })
   .passthrough();
 

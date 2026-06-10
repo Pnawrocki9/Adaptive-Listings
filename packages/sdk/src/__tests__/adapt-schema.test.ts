@@ -131,7 +131,7 @@ describe('fetchDirectives — Zod validation path', () => {
       'fetch',
       vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(VALID_RESPONSE) })),
     );
-    const result = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
+    const { adaptResponse: result } = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
     expect(result).not.toBeNull();
     expect(result?.archetype).toBe('yield_hunter');
   });
@@ -143,7 +143,7 @@ describe('fetchDirectives — Zod validation path', () => {
       'fetch',
       vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(invalid) })),
     );
-    const result = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
+    const { adaptResponse: result } = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
     expect(result).toBeNull();
   });
 
@@ -157,7 +157,7 @@ describe('fetchDirectives — Zod validation path', () => {
         }),
       ),
     );
-    const result = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
+    const { adaptResponse: result } = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
     expect(result).toBeNull();
   });
 
@@ -171,7 +171,7 @@ describe('fetchDirectives — Zod validation path', () => {
         }),
       ),
     );
-    const result = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
+    const { adaptResponse: result } = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
     expect(result).toBeNull();
   });
 
@@ -185,7 +185,7 @@ describe('fetchDirectives — Zod validation path', () => {
         }),
       ),
     );
-    const result = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
+    const { adaptResponse: result } = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
     expect(result).not.toBeNull();
     expect(result?.archetype).toBe('yield_hunter');
   });
@@ -202,7 +202,7 @@ describe('fetchDirectives — Zod validation path', () => {
       vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(invalid) })),
     );
 
-    const result = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
+    const { adaptResponse: result } = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
     expect(result).toBeNull();
     expect(captureException).toHaveBeenCalledTimes(1);
   });
@@ -213,6 +213,7 @@ describe('fetchDirectives — Zod validation path', () => {
       'fetch',
       vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ garbage: true }) })),
     );
-    await expect(fetchDirectives(BASE_CONFIG, SESSION, 'listing_list')).resolves.toBeNull();
+    const { adaptResponse } = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
+    expect(adaptResponse).toBeNull();
   });
 });

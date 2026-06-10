@@ -94,7 +94,7 @@ describe('FOLLOW-105 — snippet → SDK init → canonical /api/adapt request',
     );
     vi.stubGlobal('fetch', mockFetch);
 
-    const result = await fetchDirectives(config, SESSION, 'listing_list');
+    const { adaptResponse: result } = await fetchDirectives(config, SESSION, 'listing_list');
 
     expect(result).not.toBeNull();
     const fetchedUrl = mockFetch.mock.calls[0]?.[0] ?? '';

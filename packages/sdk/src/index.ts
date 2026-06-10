@@ -576,13 +576,21 @@ async function init(): Promise<IntentState | null> {
       const pageType = detectPageType(scriptDataset);
       const listingId = detectListingId();
 
-      const resp = await fetchDirectives(
+      const { adaptResponse: resp, updatedIntentState } = await fetchDirectives(
         config,
         currentSession,
         pageType,
         currentIntentState,
         listingId,
       );
+
+      // FOLLOW-101: if the chat-intent prior was applied, update currentIntentState
+      // and notify the DQS tracker. The persist already happened inside fetchDirectives.
+      if (updatedIntentState !== undefined) {
+        currentIntentState = updatedIntentState;
+        onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+      }
+
       if (resp) {
         // FOLLOW-258 F-04: persist for live.signup conversion attribution.
         lastAdaptDecisionId = resp.adapt_decision_id;

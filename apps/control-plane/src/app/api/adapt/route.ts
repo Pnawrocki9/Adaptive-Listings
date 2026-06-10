@@ -64,6 +64,7 @@ import {
   DemoJwtInvalidError,
   type DemoJwtClaims,
 } from '@/lib/demo-jwt-verify';
+import { readShadowChatIntent, flattenIntentDimensions } from '@/lib/chat-intent-cache';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -962,6 +963,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // ── FOLLOW-101: shadow chat-intent prior bridge (AC-1) ───────────────────────
+  // Read the Modal NLP shadow key for this (tenant, session) pair and flatten
+  // intent_dimensions into a Record<string,string> for the SDK's applyChatIntentPrior.
+  //
+  // Failure posture: any Redis error is fail-open — we log at console.warn and set
+  // chatIntentDimensions to null. The adapt response is NEVER blocked by this read.
+  //
+  // Shadow-only constraint (Sprint 13): this value is returned to the SDK for
+  // IntentState update and quiz.mismatch detection ONLY — it does NOT influence
+  // which directives are served. Adaptation output remains purely behavioural.
+  let chatIntentDimensions: Record<string, string> | null = null;
+  try {
+    const shadow = await readShadowChatIntent(tenantId, body.session_id);
+    if (shadow !== null) {
+      const flattened = flattenIntentDimensions(shadow.intent_dimensions);
+      if (Object.keys(flattened).length > 0) {
+        chatIntentDimensions = flattened;
+      }
+    }
+  } catch (err: unknown) {
+    // readShadowChatIntent is fail-open; this catch is a belt-and-suspenders guard.
+    console.warn(
+      '[adapt] chat-intent shadow read unexpected error (fail-open):',
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   const response: AdaptationDirectives = {
     adapt_decision_id: adaptDecisionId,
     session_id: body.session_id,
@@ -974,6 +1002,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     variant: selectedVariant,
     // AC6: provenance flag so the consumer / analytics can exclude demo decisions.
     ...(demoActive ? { demo_override: true } : {}),
+    // FOLLOW-101: include chat-intent dimensions when present (null = absent).
+    ...(chatIntentDimensions !== null ? { chat_intent_dimensions: chatIntentDimensions } : {}),
     generated_at: new Date().toISOString(),
   };
 

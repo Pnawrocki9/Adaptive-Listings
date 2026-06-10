@@ -8,7 +8,7 @@
  */
 
 import type { SessionState } from './session.js';
-import { getConsentState } from './session.js';
+import { getConsentState, persistIntentState } from './session.js';
 import type { SdkConfig } from './config.js';
 import type {
   TextDirective,
@@ -18,6 +18,7 @@ import type {
 } from '@estalara/shared';
 import type { CollectedEvent } from './events.js';
 import type { IntentState } from './intent.js';
+import { applyChatIntentPrior } from './intent.js';
 import { adaptResponseSchema } from './adapt-schema.js';
 
 // ---------------------------------------------------------------------------
@@ -262,6 +263,16 @@ export interface AdaptResponse {
    * caller that still reads it; do not rely on it being present.
    */
   ttl_seconds?: number;
+  /**
+   * Flattened chat-intent dimension map from the Modal NLP pipeline (FOLLOW-101).
+   *
+   * Present when the `/api/adapt` route found a shadow Redis key for this
+   * `(tenant_id, session_id)` pair. The SDK calls `applyChatIntentPrior` with
+   * this map to update the local IntentState for disagreement-rate analysis.
+   *
+   * Absent (undefined / null) when no shadow data exists for the session.
+   */
+  chat_intent_dimensions?: Record<string, string> | null;
 }
 
 /** Context passed to applyDirectives for event logging and idempotency. */
@@ -285,6 +296,19 @@ let _eventQueue: CollectedEvent[] | null = null;
 let _feedbackListenerRegistered = false;
 
 /**
+ * Rule R idempotency guard for chat-intent prior (FOLLOW-101).
+ *
+ * Stores the session ID for which `applyChatIntentPrior` has already been
+ * applied this session. On cross-listing navigation the session ID persists
+ * within the same tab, so this guard prevents the same chat prior from
+ * being re-applied on the rehydrated state on every listing page.
+ *
+ * Reset by `resetAdaptState()` which is called only when the session is
+ * fully torn down or the archetype changes.
+ */
+let _chatPriorAppliedSessionId: string | null = null;
+
+/**
  * Wire the SDK event queue into this module so adapt events flow through
  * the standard 5s batch flush. Call this once from src/index.ts.
  */
@@ -299,6 +323,7 @@ export function setEventQueueRef(queue: CollectedEvent[]): void {
 export function resetAdaptState(): void {
   appliedFingerprints.clear();
   _feedbackListenerRegistered = false;
+  _chatPriorAppliedSessionId = null;
 }
 
 /**
@@ -594,6 +619,19 @@ function runApply(
 // ---------------------------------------------------------------------------
 
 /**
+ * Result envelope returned by `fetchDirectives` (FOLLOW-101).
+ *
+ * `adaptResponse` is the standard adapt API response (null on network failure).
+ * `updatedIntentState` is set when `chat_intent_dimensions` in the response
+ * triggered an `applyChatIntentPrior` call — callers should replace their local
+ * `currentIntentState` with this value and persist it to sessionStorage.
+ */
+export interface FetchDirectivesResult {
+  adaptResponse: AdaptResponse | null;
+  updatedIntentState?: IntentState;
+}
+
+/**
  * Fetch adaptation directives from the Decision API.
  * Returns null if Decision API is unavailable, config.decisionApiUrl is not set,
  * or config.tenantId is not set (tenant_id is required by the Decision API).
@@ -608,9 +646,9 @@ export async function fetchDirectives(
   pageType: 'listing_list' | 'listing_detail' | 'home' | 'search',
   intentState?: IntentState,
   listingId?: string,
-): Promise<AdaptResponse | null> {
-  if (!config.decisionApiUrl) return null;
-  if (!config.tenantId) return null;
+): Promise<FetchDirectivesResult> {
+  if (!config.decisionApiUrl) return { adaptResponse: null };
+  if (!config.tenantId) return { adaptResponse: null };
 
   try {
     // FOLLOW-197: include derived pseudonymous lead_id when available (registered user path).
@@ -668,7 +706,7 @@ export async function fetchDirectives(
       body: JSON.stringify(body),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) return { adaptResponse: null };
 
     const data: unknown = await res.json();
 
@@ -685,7 +723,7 @@ export async function fetchDirectives(
       const gSentry = (globalThis as { Sentry?: { captureException?: (e: unknown) => void } })
         .Sentry;
       gSentry?.captureException?.(err);
-      return null;
+      return { adaptResponse: null };
     }
 
     // FOLLOW-042: cache variant in sessionStorage for the feedback ping
@@ -701,9 +739,63 @@ export async function fetchDirectives(
       );
     }
 
-    return response;
+    // ── FOLLOW-101: chat-intent Bayesian prior bridge ──────────────────────────
+    //
+    // When the control-plane found a shadow chat-intent key for this session,
+    // `chat_intent_dimensions` is a non-empty Record<string,string>. Apply
+    // `applyChatIntentPrior` ONCE per session (Rule R idempotency gate): skip
+    // if we already applied for this session ID so cross-listing navigation cannot
+    // double-count the prior on a rehydrated state.
+    //
+    // Shadow-only constraint (Sprint 13): this update does NOT change which
+    // directives are served — adaptation output remains purely behavioural. The
+    // IntentState update is for disagreement-rate analysis and quiz.mismatch
+    // detection only.
+    const dims = response.chat_intent_dimensions;
+    if (
+      dims !== null &&
+      dims !== undefined &&
+      Object.keys(dims).length > 0 &&
+      intentState !== undefined &&
+      _chatPriorAppliedSessionId !== session.sessionId
+    ) {
+      _chatPriorAppliedSessionId = session.sessionId;
+
+      const updatedIntentState = applyChatIntentPrior(intentState, dims);
+
+      // Persist the updated state to sessionStorage so subsequent listing pages
+      // in this tab can rehydrate immediately (FOLLOW-176 pattern).
+      try {
+        persistIntentState(session.sessionId, updatedIntentState);
+      } catch {
+        // sessionStorage unavailable — state is still updated in-memory for this page
+      }
+
+      // If applyChatIntentPrior detected a quiz-vs-chat mismatch, dispatch the
+      // quiz.mismatch ingest event so the disagreement-rate pipeline can record it.
+      if (updatedIntentState.chat_mismatch) {
+        pushEvent({
+          type: 'quiz.mismatch',
+          payload: {
+            quiz_archetype: updatedIntentState.chat_mismatch.quiz_archetype,
+            // schema field is behavioral_archetype; semantically equivalent here —
+            // the "other" archetype determined from a non-behavioral source (chat NLP).
+            behavioral_archetype: updatedIntentState.chat_mismatch.chat_archetype,
+            // confidence_gap and signal_count are unavailable in this context;
+            // use safe defaults so the ingest schema validates correctly.
+            confidence_gap: 0,
+            signal_count: intentState.signal_count,
+          },
+          ts: Date.now(),
+        });
+      }
+
+      return { adaptResponse: response, updatedIntentState };
+    }
+
+    return { adaptResponse: response };
   } catch {
-    return null;
+    return { adaptResponse: null };
   }
 }
 

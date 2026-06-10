@@ -89,7 +89,7 @@ const LOW_SIMILARITY_THRESHOLD = 0.6;
 // Legacy note: `quizConfig` JSONB column still exists on the tenants table as a
 // historical configuration store. It is NOT the SoT for quiz enabled/disabled
 // state. Do NOT read quizConfig.enabled for freeze-guard decisions — use
-// tenants.quizEnabled only. (Rule H — FOLLOW-263)
+// tenants.quizEnabled only. (RETRO-012/FOLLOW-117 SoT-alignment)
 //
 // Per PILOT_FREEZE_RULE.md §Decision 3 and Master Design v3.0: this warning is
 // NON-BLOCKING. It never changes the response or throws; it is purely observability.

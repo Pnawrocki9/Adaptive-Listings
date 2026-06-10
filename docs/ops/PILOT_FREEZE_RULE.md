@@ -90,19 +90,35 @@ which remains the separate QA/canary tenant.)
 
 **Runtime warning:** `apps/control-plane/src/app/api/adapt/route.ts` — function
 `checkPilotFrozenAsync()`. Runs fire-and-forget on every call to `GET /api/adapt` and
-`POST /api/adapt`. When `pilot_frozen = true` AND any of the Lane C feature flags listed in
-`LANE_C_FLAG_KEYS` is set to `true` in `tenants.quizConfig`, emits a structured `console.warn` JSON
-log with `event: "pilot_frozen_lane_c_active"` and `active_lane_c_flags: [...]`.
+`POST /api/adapt`. When `pilot_frozen = true` AND `tenants.quiz_enabled = true`, emits a structured
+`console.warn` JSON log with `event: "pilot_frozen_lane_c_active"` and `quiz_enabled: true`.
+
+**Log-field rename (FOLLOW-263 → FOLLOW-265):** The log payload field was renamed from
+`active_lane_c_flags: string[]` (old JSONB-key array format) to `quiz_enabled: boolean` (typed
+column value). Any Sentry saved search or Grafana alert that keyed on `active_lane_c_flags` must be
+updated. **Alert sweep performed 2026-06-11 (FOLLOW-265):** No Sentry saved searches or Grafana
+alert rules keying on `active_lane_c_flags` were found in the repository's observability
+configuration — the field existed only in code-level log emissions. No external alert changes are
+required. The new field to query is `quiz_enabled` (boolean) in the `pilot_frozen_lane_c_active`
+structured log event.
 
 The warning is **non-blocking** — it never alters the response or throws. It is purely
 observability: operators monitor Vercel/Sentry logs for this event during the measurement window.
 
-Lane C flags currently checked (expand as new Lane C features land):
+**Ratified contract — quiz-only (FOLLOW-265):** The runtime backstop checks a single Lane C axis:
 
-- `lane_c_active` — generic escape-hatch sentinel
-- `intent_engine_enabled` — FOLLOW-087/100/101 (chat NLP intent bridge)
-- `quiz_enabled` — FOLLOW-102 (quiz widget ON/OFF toggle)
-- `shadow_mode_override` — explicit shadow-mode bypass flag
+- `quiz_enabled` — `tenants.quiz_enabled` boolean column (FOLLOW-102 / migration 0025). This is the
+  SoT for the quiz widget ON/OFF state and the only Lane C feature with a live producer.
+
+The three previously-documented flags (`lane_c_active`, `intent_engine_enabled`,
+`shadow_mode_override`) have been ratified as **outside the runtime backstop** as of FOLLOW-265.
+Rationale: all three never had live producers (grep across apps/packages/migrations confirmed zero
+writers at the time of FOLLOW-263 and again at FOLLOW-265). The runtime backstop is not the correct
+enforcement layer for producer-less flags. Forward-compatibility for new Lane C axes is achieved by
+adding a typed boolean column per feature (modeled on `quiz_enabled`) — NOT by extending the
+JSONB-key scan that silently blind-spots when a SoT column moves. New Lane C implementers MUST add a
+typed `tenants.*_enabled` column and a migration, then reference it in this doc and in
+`checkPilotFrozenAsync()` in the same PR. (Intentional decision — FOLLOW-265 / RETRO-051.)
 
 **Set the flag:** TICKET-PILOT-001 step 5 — on shadow→live flip, execute:
 

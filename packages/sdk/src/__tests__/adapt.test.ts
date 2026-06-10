@@ -85,22 +85,22 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('fetchDirectives', () => {
-  it('returns null when decisionApiUrl is not set', async () => {
+  it('returns null adaptResponse when decisionApiUrl is not set', async () => {
     const result = await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list');
-    expect(result).toBeNull();
+    expect(result.adaptResponse).toBeNull();
   });
 
-  it('returns null when tenantId is not set', async () => {
+  it('returns null adaptResponse when tenantId is not set', async () => {
     const config: SdkConfig = {
       ...BASE_CONFIG,
       decisionApiUrl: 'https://decision.estalara.com',
       // tenantId intentionally omitted
     };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
-    expect(result).toBeNull();
+    expect(result.adaptResponse).toBeNull();
   });
 
-  it('returns null on network error (fails silently)', async () => {
+  it('returns null adaptResponse on network error (fails silently)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.reject(new Error('network error'))),
@@ -112,10 +112,10 @@ describe('fetchDirectives', () => {
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
-    expect(result).toBeNull();
+    expect(result.adaptResponse).toBeNull();
   });
 
-  it('returns null on non-OK HTTP response', async () => {
+  it('returns null adaptResponse on non-OK HTTP response', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() =>
@@ -132,7 +132,7 @@ describe('fetchDirectives', () => {
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
-    expect(result).toBeNull();
+    expect(result.adaptResponse).toBeNull();
   });
 
   it('returns AdaptResponse on success', async () => {
@@ -151,7 +151,7 @@ describe('fetchDirectives', () => {
       decisionApiUrl: 'https://decision.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
-    const result = await fetchDirectives(config, SESSION, 'listing_list');
+    const { adaptResponse: result } = await fetchDirectives(config, SESSION, 'listing_list');
     expect(result).not.toBeNull();
     expect(result?.archetype).toBe('yield_hunter');
     expect(result?.directives).toHaveLength(2);
@@ -977,7 +977,7 @@ describe('fetchDirectives — FOLLOW-042 variant field', () => {
       decisionApiUrl: 'https://decision.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
-    const result = await fetchDirectives(config, SESSION, 'listing_list');
+    const { adaptResponse: result } = await fetchDirectives(config, SESSION, 'listing_list');
     expect(result).not.toBeNull();
     expect(result?.variant).toBe('v1');
   });
@@ -1003,7 +1003,7 @@ describe('fetchDirectives — FOLLOW-042 variant field', () => {
       decisionApiUrl: 'https://decision.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
-    const result = await fetchDirectives(config, SESSION, 'listing_list');
+    const { adaptResponse: result } = await fetchDirectives(config, SESSION, 'listing_list');
     expect(result?.variant).toBe('v2');
   });
 
@@ -1028,7 +1028,7 @@ describe('fetchDirectives — FOLLOW-042 variant field', () => {
       decisionApiUrl: 'https://decision.estalara.com',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
-    const result = await fetchDirectives(config, SESSION, 'listing_list');
+    const { adaptResponse: result } = await fetchDirectives(config, SESSION, 'listing_list');
     expect(result).not.toBeNull();
     expect(result?.variant).toBeUndefined();
   });

@@ -162,4 +162,20 @@ export interface AdaptationDirectives {
   variant?: string;
   /** ISO 8601 timestamp of when this response was generated. */
   generated_at: string;
+  /**
+   * Flattened chat-intent dimension map from the Modal NLP pipeline (FOLLOW-101).
+   *
+   * Populated by the `/api/adapt` control-plane route when a shadow chat-intent
+   * entry exists in Redis for this `(tenant_id, session_id)` pair. The SDK
+   * (`adapt.ts`) calls `applyChatIntentPrior(currentIntentState, chat_intent_dimensions)`
+   * to update the local IntentState for disagreement-rate analysis.
+   *
+   * Shadow-only constraint (Sprint 13): this value is NOT used to serve different
+   * directives — adaptation output remains purely behavioural. The update is for
+   * `quiz.mismatch` detection and intent analytics only.
+   *
+   * Absent when no shadow data exists for the session (first adapt call before any
+   * chat messages, or Redis unavailable).
+   */
+  chat_intent_dimensions?: Record<string, string> | null;
 }

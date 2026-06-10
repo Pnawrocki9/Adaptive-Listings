@@ -2818,11 +2818,12 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
     Complete Option-A removal — retire orphaned dashboard quiz-trigger producer + seam-driven gate
     test
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P2
   estimated_hours: 3
   depends_on: [FOLLOW-257, FOLLOW-199]
   model: sonnet-4.6
+  pr: '263'
   spec: backlog/FOLLOW_UPS.md (FOLLOW-264 stub)
   notes: |
     RETRO-050 §4a LG-1/LG-2, §4c TG-1. FOLLOW-257 removed the SDK consumer limb of

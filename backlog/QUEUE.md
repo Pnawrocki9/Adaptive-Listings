@@ -1,9 +1,8 @@
 # Backlog Queue
 
-**Updated 2026-06-10 by pm-orchestrator. Sprint 13b: FOLLOW-087/099/100/101/102/252/253 DONE.
-FOLLOW-257 READY_FOR_REVIEW (PR #259, CI green). FOLLOW-263 READY_FOR_REVIEW (PR #260, CI running).
-Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261
-PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
+**Updated 2026-06-10 by pm-orchestrator. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263
+DONE. Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251,
+FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
 (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
 awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE — 21/21 DONE.**
 
@@ -2745,9 +2744,10 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
 - id: FOLLOW-257
   title: Resolve Rule-L half-wire — quiz.trigger_after_n_listings parsed but never emitted or read
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: sdk-engineer
   completed_at: '2026-06-10T19:25:00Z'
+  merged_at: '2026-06-10T20:00:00Z'
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-102]
@@ -2764,9 +2764,10 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
 - id: FOLLOW-263
   title: Repoint pilot-freeze guard at tenants.quiz_enabled (FOLLOW-102 SoT migration)
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer
   completed_at: '2026-06-10T19:33:00Z'
+  merged_at: '2026-06-10T20:00:00Z'
   priority: P2
   estimated_hours: 2
   depends_on: [FOLLOW-102]
@@ -2776,7 +2777,8 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
   spec: backlog/sprint-13/FOLLOW-263.md
   notes: |
     PR #260. Repointed freeze guard from quizConfig.enabled JSONB to tenants.quiz_enabled.
-    CI running — awaiting pm-orchestrator CI verification.
+    CI green (pm-orchestrator 2026-06-10): Typecheck/Lint/Format/Test(Node22)/Build(control-plane)/
+    RuleH/RuleJ/Demo-integration all pass. Build(SDK-bundle) pre-existing. Merged.
 
 - id: FOLLOW-103
   title: app.estalara.com DOM adaptation — corpus fixture + AI Vision slots + 5-slot coverage

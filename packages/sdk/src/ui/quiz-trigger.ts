@@ -27,7 +27,12 @@ export const QUIZ_LABELS = {
   },
 };
 
-/** Delay (ms) after SDK init before showing the quiz trigger. */
+/**
+ * Delay (ms) after SDK init before showing the quiz trigger.
+ * FOLLOW-199: per-tenant timer configurability tracked separately.
+ * Rule L: data-quiz-trigger attribute was removed in FOLLOW-257 (no producer
+ * or runtime consumer existed); this constant is the sole timer source.
+ */
 export const QUIZ_TRIGGER_DELAY_MS = 30_000;
 
 /**

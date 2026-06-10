@@ -67,18 +67,17 @@ export interface SdkConfig {
 
   /**
    * Quiz widget configuration.
-   * Read from data-quiz-enabled and data-quiz-trigger attributes.
-   * Default: { enabled: true, trigger_after_n_listings: 3 }.
+   * Read from data-quiz-enabled attribute.
+   * Default: { enabled: true }.
    * Added in FOLLOW-102.
+   *
+   * Rule L: data-quiz-trigger attribute removed — no producer or runtime consumer
+   * existed. `buildSnippet()` in DetectionPreview.tsx never emitted it, and the SDK
+   * timer (QUIZ_TRIGGER_DELAY_MS) never read the parsed value. FOLLOW-257 (Option A).
    */
   quiz?: {
     /** Whether the quiz widget is active for this tenant. Default true. */
     enabled: boolean;
-    /**
-     * Number of listing views after which the quiz trigger is shown.
-     * Read from data-quiz-trigger attribute. Default 3.
-     */
-    trigger_after_n_listings?: number;
   };
 }
 
@@ -89,7 +88,7 @@ export const DEFAULT_CONFIG: Omit<SdkConfig, 'apiKey'> = {
   consentState: 'legitimate_interest',
   language: 'en',
   accentColor: '#6c5ce7',
-  quiz: { enabled: true, trigger_after_n_listings: 3 },
+  quiz: { enabled: true },
 };
 
 /** Supported quiz/UI locales. Extend this tuple when adding a new language. */
@@ -169,16 +168,12 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
   // Any value other than the string "false" resolves to enabled=true (safe default).
   // Rule L: buildSnippet() in DetectionPreview.tsx is the production producer of
   // data-quiz-enabled; it emits the attribute only when quiz_enabled === false.
+  //
+  // Rule L: data-quiz-trigger removed (FOLLOW-257, Option A). No producer
+  // (buildSnippet never emitted it) and no runtime consumer (the timer uses the
+  // hardcoded QUIZ_TRIGGER_DELAY_MS constant). Per-tenant timer configurability is
+  // tracked separately in FOLLOW-199.
   const quizEnabled = script.dataset.quizEnabled !== 'false';
-
-  // data-quiz-trigger is the number of listing views after which the quiz is shown.
-  // Parsed as an integer; invalid/missing values fall back to DEFAULT_CONFIG.quiz.trigger_after_n_listings.
-  const rawQuizTrigger = script.dataset.quizTrigger;
-  const parsedQuizTrigger = rawQuizTrigger !== undefined ? parseInt(rawQuizTrigger, 10) : undefined;
-  const quizTriggerAfterN =
-    parsedQuizTrigger !== undefined && !isNaN(parsedQuizTrigger) && parsedQuizTrigger > 0
-      ? parsedQuizTrigger
-      : DEFAULT_CONFIG.quiz?.trigger_after_n_listings;
 
   return {
     apiKey,
@@ -194,7 +189,6 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
     accentColor,
     quiz: {
       enabled: quizEnabled,
-      ...(quizTriggerAfterN !== undefined ? { trigger_after_n_listings: quizTriggerAfterN } : {}),
     },
   };
 }

@@ -244,23 +244,29 @@ different field names, use the existing schema — do not create a parallel shap
 
 ---
 
-## 2026-06-10 / FOLLOW-252 + FOLLOW-253
+**Date:** 2026-06-10 / **Ticket:** FOLLOW-102
 
-**What I built:** Rule R fix for chat-intent prior double-count on page reload. Added
-`chatPriorApplied?: boolean` to `IntentState`; wired a PRIMARY persistent guard in `fetchDirectives`
-checking `intentState.chatPriorApplied !== true` (survives sessionStorage rehydration) before the
-existing in-memory secondary guard. After applying, spread `{ chatPriorApplied: true }` onto the
-result and persist. 6 `_initForTest`-seam tests in `follow-252.test.ts` driving the REAL init() body
-twice on same sessionStorage to assert the distribution is NOT re-perturbed on reload.
+**What I built:** Quiz ON/OFF toggle: DB migration adding
+`tenants.quiz_enabled boolean NOT NULL DEFAULT true`; `PATCH /api/tenants/:id` with tenant-scoped
+JWT auth + Zod; `SdkConfig.quiz` sub-object + `readConfig()` parsing
+`data-quiz-enabled`/`data-quiz-trigger`; `buildSnippet()` Rule L producer; `/dashboard/quiz` toggle
+with optimistic update + rollback; `showQuizTrigger()` gate in `index.ts`.
 
-**What was uncertain (wiring/perf/compat):** Whether `resetAdaptState()` needed direct access to
-`IntentState.chatPriorApplied` to clear it. Resolved: session teardown calls `eraseIntentState()`
-which removes the whole envelope; new sessions get `initIntentState()` with no `chatPriorApplied`
-field. The `resetAdaptState()` in adapt.ts resets the in-memory secondary guard; the PRIMARY flag
-clearing is handled by the session lifecycle, not adapt state reset.
+**What was uncertain:**
 
-**A guardrail I'd add:** When a new Rule R guard is added to `fetchDirectives`, check whether the
-companion `FetchDirectivesResult` return path correctly returns the marked state (not the pre-mark
-state). In this PR the original code used `updatedIntentState` in the mismatch check and return;
-after adding `markedIntentState`, both had to be updated to use the marked version so the caller
-receives `chatPriorApplied: true` in-memory, not just in sessionStorage.
+1. ESLint `@typescript-eslint/no-unsafe-return` on `vi.fn<>()` return in a `vi.mock()` factory:
+   TypeScript's dataflow does not cross the `vi.mock()` closure boundary, so even a fully typed
+   `vi.fn<[unknown], Promise<...>>()` call has its return typed as `any` at the consumer site. The
+   fix is `// eslint-disable-next-line @typescript-eslint/no-unsafe-return` with a reason comment —
+   not a cast or additional type annotation.
+2. commitlint body-max-line-length (100 chars): multi-sentence AC summaries easily exceed 100 chars.
+   Draft body lines in a text editor with a ruler before committing, or keep AC lines to a single
+   short clause.
+3. Rule L wiring for a feature toggle requires tracing the entire chain: DB column → API read →
+   dashboard state → wizard prop → snippet emitter → SDK parser → feature gate. Each hop must be
+   explicit and tested. A half-wire (e.g., DB column present but API never returns it) is invisible
+   to unit tests that inject the value directly.
+
+**A guardrail I'd add:** For any new `data-*` attribute the SDK consumes, the Rule L evidence grep
+must be run BEFORE writing tests. The grep output belongs in the PR description; if it comes back
+empty, stop and wire the producer before writing any consumer tests.

@@ -2709,36 +2709,39 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
   title: Gate chat-intent prior idempotency on rehydrate boundary (Rule R fix)
   agent: sdk-engineer + ml-engineer
   status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  completed_at: '2026-06-10T18:20:00Z'
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-101]
   model: sonnet-4.6
+  branch: sdk-engineer/FOLLOW-252-rule-r-chat-prior-rehydrate
+  pr: 258
   spec: backlog/sprint-13/FOLLOW-252.md
   notes: |
-    RETRO-047 LG-1 (P1). PR #258 open (sdk-engineer/FOLLOW-252-rule-r-chat-prior-rehydrate).
-    Fix: added chatPriorApplied?: boolean to IntentState (intent.ts); PRIMARY guard in
-    fetchDirectives checks intentState.chatPriorApplied !== true (persisted, survives reload);
-    SECONDARY guard _chatPriorAppliedSessionId retained for defence-in-depth (same-tab, no reload).
-    markedIntentState = { ...updatedIntentState, chatPriorApplied: true } persisted after apply.
-    Rule R comment at guard. 1269 tests pass (6 new in follow-252.test.ts).
-    CI verified green (pm-orchestrator 2026-06-10): Typecheck/Lint/Format/Test(Node22)/
-    Build(control-plane)/RuleH/RuleJ/Demo-integration all pass.
-    Build(SDK-bundle) fail = pre-existing on main (51KB > 40KB), not introduced by this PR.
+    PR #258. Added chatPriorApplied?: boolean to IntentState; PRIMARY guard in fetchDirectives
+    persists across reload; SECONDARY _chatPriorAppliedSessionId retained for same-tab defence.
+    1269 tests pass. CI verified green (pm-orchestrator 2026-06-10): Typecheck/Lint/Format/
+    Test(Node22)/Build(control-plane)/RuleH/RuleJ/Demo-integration all pass.
+    Build(SDK-bundle) fail = pre-existing on main, not introduced by this PR.
 
 - id: FOLLOW-253
   title: Rehydrate→re-init SDK test for chat-intent prior via _initForTest seam (Rule R coverage)
   agent: sdk-engineer + qa-engineer
   status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  completed_at: '2026-06-10T18:20:00Z'
   priority: P2
   estimated_hours: 2
   depends_on: [FOLLOW-252]
   model: sonnet-4.6
+  branch: sdk-engineer/FOLLOW-252-rule-r-chat-prior-rehydrate
+  pr: 258
   spec: backlog/sprint-13/FOLLOW-253.md
   notes: |
-    RETRO-047 TG-1 (P2). Lands in same PR as FOLLOW-252 (PR #258). 6 tests in
-    follow-252.test.ts drive the REAL init() body via _initForTest() seam. Simulates page reload
-    by calling _initForTest() twice on same sessionStorage. Asserts distribution NOT re-perturbed.
-    Covers FOLLOW-252 AC1-AC4 + FOLLOW-253 AC1-AC3. All 1269 tests pass.
+    Bundled in PR #258 with FOLLOW-252. 6 tests in follow-252.test.ts drive real init() via
+    _initForTest seam; simulate page reload by calling _initForTest twice on same sessionStorage;
+    assert distribution not re-perturbed. Covers AC1–AC3.
 
 - id: FOLLOW-103
   title: app.estalara.com DOM adaptation — corpus fixture + AI Vision slots + 5-slot coverage

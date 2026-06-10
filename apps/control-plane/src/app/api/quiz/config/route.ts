@@ -60,17 +60,21 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const db = createAdminClient();
     const rows = await db
-      .select({ quizConfig: tenants.quizConfig })
+      .select({ quizConfig: tenants.quizConfig, quizEnabled: tenants.quizEnabled })
       .from(tenants)
       .where(eq(tenants.id, tenantId))
       .limit(1);
 
     const stored = (rows[0]?.quizConfig ?? {}) as Partial<QuizConfig>;
     const config = { ...DEFAULT_CONFIG, ...stored };
-    return NextResponse.json(config);
+    // FOLLOW-102: also return the dedicated quiz_enabled column (boolean SoT for the ON/OFF toggle)
+    // and tenant_id so the dashboard page can call PATCH /api/tenants/:id with the correct id.
+    // quizEnabled defaults to true when the row is missing (DB unavailable path below).
+    const quizEnabled: boolean = rows[0]?.quizEnabled ?? true;
+    return NextResponse.json({ ...config, quiz_enabled: quizEnabled, tenant_id: tenantId });
   } catch {
     // Fallback to defaults if DB unavailable
-    return NextResponse.json(DEFAULT_CONFIG);
+    return NextResponse.json({ ...DEFAULT_CONFIG, quiz_enabled: true, tenant_id: tenantId });
   }
 }
 

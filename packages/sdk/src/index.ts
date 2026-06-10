@@ -783,7 +783,12 @@ async function init(): Promise<IntentState | null> {
     // FOLLOW-199: Schedule quiz trigger 30s after SDK init, on any page type.
     // The trigger is shown only if the quiz has not been dismissed in the past 24h.
     // Clicking the trigger opens the v2 branching decision-tree quiz widget.
+    //
+    // FOLLOW-102: config.quiz?.enabled === false suppresses the quiz entirely for
+    // tenants that rely on behavioral + chat NLP signals only (§B.1 / §D.6).
+    // No prompt, no widget, no quiz events are emitted when the quiz is disabled.
     function showQuizTrigger(): void {
+      if (config.quiz?.enabled === false) return;
       if (!shadowHost || quizTriggered) return;
       quizTriggered = true;
       renderQuizTrigger(

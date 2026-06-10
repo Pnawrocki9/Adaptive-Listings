@@ -103,16 +103,22 @@ function postFeedbackPing(
   archetype: string,
   variant: string,
   converted: boolean,
+  predictionId: string | undefined,
+  leadId: string | undefined,
 ): void {
   const feedbackUrl = deriveFeedbackUrl(config);
   if (!feedbackUrl || !config.tenantId) return;
 
+  // FOLLOW-259: prediction_id activates the §T Conversion Label Loop on the server.
+  // lead_id ties the label to a pseudonymous buyer for future fine-tuning.
   const body = JSON.stringify({
     session_id: sessionId,
     tenant_id: config.tenantId,
     archetype,
     variant,
     converted,
+    ...(predictionId ? { prediction_id: predictionId } : {}),
+    ...(leadId ? { lead_id: leadId } : {}),
   });
 
   // Sign and send — async, fire-and-forget.
@@ -307,7 +313,12 @@ export function resetAdaptState(): void {
  *
  * @internal — called from fetchDirectives() after a successful adapt response with a variant.
  */
-function registerFeedbackListener(config: SdkConfig, sessionId: string, archetype: string): void {
+function registerFeedbackListener(
+  config: SdkConfig,
+  sessionId: string,
+  archetype: string,
+  predictionId: string | undefined,
+): void {
   if (_feedbackListenerRegistered) return;
   if (typeof document === 'undefined') return;
 
@@ -325,7 +336,23 @@ function registerFeedbackListener(config: SdkConfig, sessionId: string, archetyp
     const variant = getCachedVariant(sessionId);
     if (!variant) return;
 
-    postFeedbackPing(config, sessionId, archetype, variant, /* converted= */ true);
+    // FOLLOW-259: read lead_id at outcome time (may be set after listener registration).
+    let leadId: string | undefined;
+    try {
+      leadId = sessionStorage.getItem('__estalara_lead_id__') ?? undefined;
+    } catch {
+      // sessionStorage unavailable
+    }
+
+    postFeedbackPing(
+      config,
+      sessionId,
+      archetype,
+      variant,
+      /* converted= */ true,
+      predictionId,
+      leadId,
+    );
   };
 
   for (const eventName of outcomeEvents) {
@@ -342,7 +369,21 @@ function registerFeedbackListener(config: SdkConfig, sessionId: string, archetyp
         if (dwell >= 30_000) {
           const variant = getCachedVariant(sessionId);
           if (variant) {
-            postFeedbackPing(config, sessionId, archetype, variant, /* converted= */ false);
+            let leadId: string | undefined;
+            try {
+              leadId = sessionStorage.getItem('__estalara_lead_id__') ?? undefined;
+            } catch {
+              // sessionStorage unavailable
+            }
+            postFeedbackPing(
+              config,
+              sessionId,
+              archetype,
+              variant,
+              /* converted= */ false,
+              predictionId,
+              leadId,
+            );
           }
         }
       } else {
@@ -650,8 +691,14 @@ export async function fetchDirectives(
     // FOLLOW-042: cache variant in sessionStorage for the feedback ping
     if (response.variant) {
       cacheVariant(session.sessionId, response.variant);
-      // FOLLOW-041: register outcome event listener to fire the feedback ping
-      registerFeedbackListener(config, session.sessionId, response.archetype);
+      // FOLLOW-041: register outcome event listener to fire the feedback ping.
+      // FOLLOW-259: pass adapt_decision_id so conversion_labels table gets populated.
+      registerFeedbackListener(
+        config,
+        session.sessionId,
+        response.archetype,
+        response.adapt_decision_id,
+      );
     }
 
     return response;

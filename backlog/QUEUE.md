@@ -1,11 +1,12 @@
 # Backlog Queue
 
 **Updated 2026-06-10 by pm-orchestrator. Sprint 13b: FOLLOW-087/099/100/101/102/252/253 DONE.
-RETRO-048/049 filed: FOLLOW-257 READY (P1 Rule-L half-wire), FOLLOW-263 READY (P2 freeze-guard SoT —
-before TICKET-PILOT-001 window). Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR
-#250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14
-DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW
-(FOLLOW-191 awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE — 21/21 DONE.**
+RETRO-048/049 filed: FOLLOW-257 READY_FOR_REVIEW PR #259 (P1 Rule-L half-wire), FOLLOW-263 READY (P2
+freeze-guard SoT — before TICKET-PILOT-001 window). Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR
+#249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged).
+Sprint 16 OPEN — 14 DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1
+READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE —
+21/21 DONE.**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -2745,7 +2746,8 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
 - id: FOLLOW-257
   title: Resolve Rule-L half-wire — quiz.trigger_after_n_listings parsed but never emitted or read
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  pr: 259
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-102]
@@ -3063,31 +3065,36 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-182
   title: eliminate the TS-map↔SQL-CASE precedence duplication in upsertConversionLabel
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-179]
   source: RETRO-030 (LG-1/LG-2); CONVENTIONS_PATCH Rule K.1 amendment
   spec: backlog/FOLLOW_UPS.md (FOLLOW-182 stub)
   branch: backend-engineer/FOLLOW-182-rank-dedup
+  pr: '#222'
+  completed_at: '2026-06-08T00:00:00Z'
   notes: |
-    OUTCOME_CLASS_RANK (TS) and the inline SQL CASE in upsert-conversion-label.ts encode the same
-    ordering twice; adding a class silently mis-ranks unless both change. Derive the SQL from the TS
-    map (or add a parity gate). Rule K.1 intra-runtime duplication (Rule J does NOT cover it).
+    DONE in PR #222 (d7b9de7). Merged 2026-06-08. SQL CASE derived from TS map via
+    allRankEntries() — no more hand-typed literals. Rule K.1 satisfied. Status corrected
+    2026-06-10 (stale Sprint 14 section — canonical status in Sprint 16 section is DONE).
 
 - id: FOLLOW-183
   title: direct PG integration test for upsertConversionLabel (precedence WHERE + UNIQUE constraint)
   agent: data-engineer + backend-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-179]
   source: RETRO-030 (TG-1/TG-2)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-183 stub)
+  branch: data-engineer/FOLLOW-183-pg-integration-test-upsert-conversion-label
+  pr: '#228'
+  completed_at: '2026-06-08T00:00:00Z'
   notes: |
-    The helper's SQL precedence WHERE + the UNIQUE constraint are only mock-tested — core dedup
-    correctness is unverified against real Postgres. Add a pgmem/Testcontainers test exercising
-    collision/upgrade/downgrade-rejection/manual-admin-override. May merge with FOLLOW-181.
+    DONE. PR #228 merged 2026-06-08 (commit ff3fb8e). PG integration tests for
+    upsertConversionLabel shipped. Status corrected 2026-06-10 (stale Sprint 14 section —
+    canonical status in Sprint 16 section is DONE).
 ```
 
 ## Wave A — 2026-06-09 Audit Bug Fixes (OPEN)

@@ -152,7 +152,9 @@ paths = [
   '''packages/sdk/src/auto-detect/__fixtures__/''',
   # Python test files use long descriptive method names (test_empty_selectors_list_returns_empty_dict
   # etc.) whose substrings of exactly 40 chars trigger this rule as false positives.
+  # Covers both nested (src/jobs/test_*.py) and top-level (src/test_*.py) test modules.
   '''apps/.*/src/.*/test_.*\.py''',
+  '''apps/.*/src/test_.*\.py''',
   '''apps/.*/src/.*_test\.py''',
   # Agent lesson/memory files contain prose narratives (kebab phrases, snake_case identifiers)
   # that trigger the cloudflare-api-token heuristic as false positives.

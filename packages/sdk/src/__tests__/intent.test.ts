@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ARCHETYPE_NAMES,
+  CHAT_INTENT_LIKELIHOODS,
   INVESTOR_ARCHETYPES,
   OWN_USE_ARCHETYPES,
   applyBehavioralSignal,
+  applyChatIntentPrior,
   applyDecay,
   applyQuizLeaf,
   applyQuizPrior,
@@ -373,5 +375,331 @@ describe('applyQuizLeaf (FOLLOW-201)', () => {
       expect(s.archetype).toBe(archetype);
       expect(s.probabilities[archetype]).toBeCloseTo(0.85, 5);
     }
+  });
+});
+
+// ─── FOLLOW-100: new SIGNAL_LIKELIHOODS entries ─────────────────────────────────
+
+describe('SIGNAL_LIKELIHOODS new signals (FOLLOW-100)', () => {
+  it('photo.dwell shifts probability toward luxury_buyer and second_home_buyer', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'photo.dwell');
+    expect(after.probabilities.luxury_buyer).toBeGreaterThan(before.probabilities.luxury_buyer);
+    expect(after.probabilities.second_home_buyer).toBeGreaterThan(
+      before.probabilities.second_home_buyer,
+    );
+    expect(after.probabilities.neutral).toBeLessThan(before.probabilities.neutral);
+    expect(after.signal_count).toBe(1);
+  });
+
+  it('mortgage_calc.used shifts probability toward first_time_buyer and family_buyer', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'mortgage_calc.used');
+    expect(after.probabilities.first_time_buyer).toBeGreaterThan(
+      before.probabilities.first_time_buyer,
+    );
+    expect(after.probabilities.family_buyer).toBeGreaterThan(before.probabilities.family_buyer);
+    expect(after.probabilities.neutral).toBeLessThan(before.probabilities.neutral);
+  });
+
+  it('price.compared shifts probability toward flip_investor and yield_hunter', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'price.compared');
+    expect(after.probabilities.flip_investor).toBeGreaterThan(before.probabilities.flip_investor);
+    expect(after.probabilities.yield_hunter).toBeGreaterThan(before.probabilities.yield_hunter);
+  });
+
+  it('inquiry.started pushes the whole distribution away from neutral (no single archetype)', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'inquiry.started');
+    expect(after.probabilities.neutral).toBeLessThan(before.probabilities.neutral);
+    expect(sumProbs(after.probabilities)).toBeCloseTo(1.0, 5);
+  });
+
+  it('feature.expanded with no payload applies only the base neutral-push', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'feature.expanded');
+    expect(after.probabilities.neutral).toBeLessThan(before.probabilities.neutral);
+    expect(after.signal_count).toBe(1);
+  });
+});
+
+// ─── FOLLOW-100: feature.expanded payload-conditional intercept ─────────────────
+
+describe('feature.expanded intercept (FOLLOW-100)', () => {
+  it('feature=home_office boosts remote_worker', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'feature.expanded', { feature: 'home_office' });
+    expect(after.probabilities.remote_worker).toBeGreaterThan(before.probabilities.remote_worker);
+  });
+
+  it('feature=yield boosts vacation_rental_investor and yield_hunter', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'feature.expanded', { feature: 'yield' });
+    expect(after.probabilities.vacation_rental_investor).toBeGreaterThan(
+      before.probabilities.vacation_rental_investor,
+    );
+    expect(after.probabilities.yield_hunter).toBeGreaterThan(before.probabilities.yield_hunter);
+  });
+
+  it('feature=visa boosts golden_visa_buyer', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'feature.expanded', { feature: 'visa' });
+    expect(after.probabilities.golden_visa_buyer).toBeGreaterThan(
+      before.probabilities.golden_visa_buyer,
+    );
+  });
+
+  it('feature=accessibility boosts downsizer and retiree_relocator', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'feature.expanded', { feature: 'accessibility' });
+    expect(after.probabilities.downsizer).toBeGreaterThan(before.probabilities.downsizer);
+    expect(after.probabilities.retiree_relocator).toBeGreaterThan(
+      before.probabilities.retiree_relocator,
+    );
+  });
+
+  it('feature=international boosts lifestyle_expat and diaspora_buyer', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'feature.expanded', { feature: 'international' });
+    expect(after.probabilities.lifestyle_expat).toBeGreaterThan(
+      before.probabilities.lifestyle_expat,
+    );
+    expect(after.probabilities.diaspora_buyer).toBeGreaterThan(before.probabilities.diaspora_buyer);
+  });
+
+  it('unrecognized feature value applies base neutral-push only (no targeted boost)', () => {
+    const before = initIntentState();
+    const base = applyBehavioralSignal(before, 'feature.expanded');
+    const after = applyBehavioralSignal(before, 'feature.expanded', { feature: 'mystery_feature' });
+    // Same as base (no payload) — no archetype-specific boost was applied.
+    for (const k of ARCHETYPE_NAMES) {
+      expect(after.probabilities[k]).toBeCloseTo(base.probabilities[k], 6);
+    }
+  });
+
+  it('feature value is case-insensitive (HOME_OFFICE === home_office)', () => {
+    const before = initIntentState();
+    const lower = applyBehavioralSignal(before, 'feature.expanded', { feature: 'home_office' });
+    const upper = applyBehavioralSignal(before, 'feature.expanded', { feature: 'HOME_OFFICE' });
+    expect(upper.probabilities.remote_worker).toBeCloseTo(lower.probabilities.remote_worker, 6);
+  });
+});
+
+// ─── FOLLOW-100: applyFilterBoosts new facets ───────────────────────────────────
+
+describe('applyFilterBoosts new facets (FOLLOW-100)', () => {
+  it('renovation boosts flip_investor', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'filter.applied', { facet: 'renovation' });
+    expect(after.probabilities.flip_investor).toBeGreaterThan(before.probabilities.flip_investor);
+  });
+
+  it('type=holiday boosts vacation_rental_investor', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'filter.applied', {
+      facet: 'type',
+      value: 'holiday',
+    });
+    expect(after.probabilities.vacation_rental_investor).toBeGreaterThan(
+      before.probabilities.vacation_rental_investor,
+    );
+  });
+
+  it('type=apartment (non-holiday) does NOT boost vacation_rental_investor', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'filter.applied', {
+      facet: 'type',
+      value: 'apartment',
+    });
+    expect(after.probabilities.vacation_rental_investor).toBeCloseTo(
+      before.probabilities.vacation_rental_investor,
+      6,
+    );
+  });
+
+  it('price_max low (numeric ≤ 300_000) boosts first_time_buyer', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'filter.applied', {
+      facet: 'price_max',
+      value: 250_000,
+    });
+    expect(after.probabilities.first_time_buyer).toBeGreaterThan(
+      before.probabilities.first_time_buyer,
+    );
+  });
+
+  it('price_max="low" string also boosts first_time_buyer', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'filter.applied', {
+      facet: 'price_max',
+      value: 'low',
+    });
+    expect(after.probabilities.first_time_buyer).toBeGreaterThan(
+      before.probabilities.first_time_buyer,
+    );
+  });
+
+  it('price_max high (> 300_000) does NOT boost first_time_buyer', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'filter.applied', {
+      facet: 'price_max',
+      value: 800_000,
+    });
+    expect(after.probabilities.first_time_buyer).toBeCloseTo(
+      before.probabilities.first_time_buyer,
+      6,
+    );
+  });
+
+  it('bedrooms_min ≥ 4 boosts upsizer', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'filter.applied', {
+      facet: 'bedrooms_min',
+      value: 4,
+    });
+    expect(after.probabilities.upsizer).toBeGreaterThan(before.probabilities.upsizer);
+  });
+
+  it('bedrooms_max ≤ 2 boosts downsizer', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'filter.applied', {
+      facet: 'bedrooms_max',
+      value: 2,
+    });
+    expect(after.probabilities.downsizer).toBeGreaterThan(before.probabilities.downsizer);
+  });
+
+  it('near_university boosts student_parent and family_buyer', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'filter.applied', { facet: 'near_university' });
+    expect(after.probabilities.student_parent).toBeGreaterThan(before.probabilities.student_parent);
+    expect(after.probabilities.family_buyer).toBeGreaterThan(before.probabilities.family_buyer);
+  });
+
+  it('school_district boosts student_parent and family_buyer', () => {
+    const before = initIntentState();
+    const after = applyBehavioralSignal(before, 'filter.applied', { facet: 'school_district' });
+    expect(after.probabilities.student_parent).toBeGreaterThan(before.probabilities.student_parent);
+    expect(after.probabilities.family_buyer).toBeGreaterThan(before.probabilities.family_buyer);
+  });
+});
+
+// ─── FOLLOW-100: CHAT_INTENT_LIKELIHOODS + applyChatIntentPrior ─────────────────
+
+describe('CHAT_INTENT_LIKELIHOODS (FOLLOW-100)', () => {
+  it('every entry is a full 18-archetype likelihood with unspecified keys = 1.0', () => {
+    for (const key of Object.keys(CHAT_INTENT_LIKELIHOODS)) {
+      const entry = CHAT_INTENT_LIKELIHOODS[key];
+      expect(entry).toBeDefined();
+      for (const a of ARCHETYPE_NAMES) {
+        expect(Number.isFinite(entry?.[a])).toBe(true);
+      }
+    }
+  });
+
+  it('contains the decomposed compound urgency keys', () => {
+    expect(CHAT_INTENT_LIKELIHOODS['urgency=0-3mo']).toBeDefined();
+    expect(CHAT_INTENT_LIKELIHOODS['urgency=12mo+']).toBeDefined();
+  });
+});
+
+describe('applyChatIntentPrior (FOLLOW-100)', () => {
+  it('empty intentDimensions returns state unchanged (same reference)', () => {
+    const s = initIntentState();
+    const after = applyChatIntentPrior(s, {});
+    expect(after).toBe(s);
+  });
+
+  it('no matching dimension returns state unchanged (same reference)', () => {
+    const s = initIntentState();
+    const after = applyChatIntentPrior(s, { unknown_dimension: 'whatever' });
+    expect(after).toBe(s);
+  });
+
+  it('purchase_purpose=investment increases yield_hunter and portfolio_builder probability', () => {
+    const before = initIntentState();
+    const after = applyChatIntentPrior(before, { purchase_purpose: 'investment' });
+    expect(after.probabilities.yield_hunter).toBeGreaterThan(before.probabilities.yield_hunter);
+    expect(after.probabilities.portfolio_builder).toBeGreaterThan(
+      before.probabilities.portfolio_builder,
+    );
+  });
+
+  it('cross_border=expat_returning makes diaspora_buyer dominant', () => {
+    const before = initIntentState();
+    const after = applyChatIntentPrior(before, { cross_border: 'expat_returning' });
+    expect(after.archetype).toBe('diaspora_buyer');
+  });
+
+  it('feature_priority=workspace makes remote_worker dominant', () => {
+    const before = initIntentState();
+    const after = applyChatIntentPrior(before, { feature_priority: 'workspace' });
+    expect(after.archetype).toBe('remote_worker');
+  });
+
+  it('does NOT set quiz_answered (chat is a separate source)', () => {
+    const before = initIntentState();
+    const after = applyChatIntentPrior(before, { purchase_purpose: 'vacation_rental' });
+    expect(after.quiz_answered).toBe(false);
+  });
+
+  it('applies multiple dimensions multiplicatively (compound investment + urgency → flip_investor)', () => {
+    const before = initIntentState();
+    const after = applyChatIntentPrior(before, {
+      purchase_purpose: 'investment',
+      urgency: '0-3mo',
+    });
+    // flip_investor receives boosts from both purchase_purpose=investment and urgency=0-3mo.
+    expect(after.probabilities.flip_investor).toBeGreaterThan(before.probabilities.flip_investor);
+    expect(INVESTOR_ARCHETYPES.has(after.archetype)).toBe(true);
+  });
+
+  it('probabilities sum to 1.0 after chat prior', () => {
+    const before = initIntentState();
+    const after = applyChatIntentPrior(before, { purchase_purpose: 'retirement' });
+    expect(sumProbs(after.probabilities)).toBeCloseTo(1.0, 5);
+  });
+
+  it('emits chat_mismatch when quiz-answered state conflicts with confident chat archetype', () => {
+    // Quiz declared a family_buyer (own-use). Chat then strongly and repeatedly signals
+    // investment across several dimensions, overpowering the quiz prior and flipping the
+    // leading archetype to an investor persona — a genuine quiz/chat conflict.
+    const quizState = applyQuizLeaf(initIntentState(), 'family_buyer');
+    expect(quizState.quiz_answered).toBe(true);
+    expect(quizState.archetype).toBe('family_buyer');
+
+    const after = applyChatIntentPrior(quizState, {
+      purchase_purpose: 'vacation_rental',
+      finance_complexity: 'investment_vehicle',
+      tax_aware: 'true',
+      urgency: '0-3mo',
+    });
+    expect(INVESTOR_ARCHETYPES.has(after.archetype)).toBe(true);
+    expect(after.archetype).not.toBe('family_buyer');
+    expect(after.chat_mismatch).toBeDefined();
+    expect(after.chat_mismatch?.quiz_archetype).toBe('family_buyer');
+    expect(after.chat_mismatch?.chat_archetype).toBe(after.archetype);
+  });
+
+  it('does NOT emit chat_mismatch when chat agrees with quiz archetype', () => {
+    const quizState = applyQuizLeaf(initIntentState(), 'vacation_rental_investor');
+    const after = applyChatIntentPrior(quizState, { purchase_purpose: 'vacation_rental' });
+    expect(after.archetype).toBe('vacation_rental_investor');
+    expect(after.chat_mismatch).toBeUndefined();
+  });
+
+  it('does NOT emit chat_mismatch when quiz was not answered', () => {
+    const before = initIntentState();
+    const after = applyChatIntentPrior(before, { purchase_purpose: 'vacation_rental' });
+    expect(after.chat_mismatch).toBeUndefined();
+  });
+
+  it('is a pure function — does not mutate the input state', () => {
+    const before = initIntentState();
+    const neutralBefore = before.probabilities.neutral;
+    applyChatIntentPrior(before, { purchase_purpose: 'investment' });
+    expect(before.probabilities.neutral).toBeCloseTo(neutralBefore, 6);
+    expect(before.archetype).toBe('neutral');
   });
 });

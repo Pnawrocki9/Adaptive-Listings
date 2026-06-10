@@ -1187,6 +1187,10 @@ export function identify(_profileId: string): void {
   // No-op stub — forward-compat for Profile Mode (U.11, Sprint 12+)
 }
 
+// ─── Intent engine public API (re-exported for FOLLOW-101 chat-intent bridge) ──
+export { applyChatIntentPrior, CHAT_INTENT_LIKELIHOODS } from './core/intent.js';
+export type { Archetype, ArchetypeProbabilities, IntentState } from './core/intent.js';
+
 // ─── Auto-detect sub-module ────────────────────────────────────────────────────
 export type { DetectionResult } from './auto-detect/index.js';
 export { detectSiteSchema } from './auto-detect/index.js';

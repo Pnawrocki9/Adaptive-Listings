@@ -112,6 +112,18 @@ export interface IntentState {
    * valid — `isValidIntentState` does not require this field.
    */
   dwell_ticks_applied?: number;
+  /**
+   * Quiz-vs-chat archetype disagreement metadata (FOLLOW-100).
+   *
+   * Set by `applyChatIntentPrior` when the chat-derived leading archetype differs
+   * from the quiz-declared archetype and BOTH sources are confident
+   * (chat_confidence > 0.7 AND state.quiz_answered). Consumed downstream (FOLLOW-101
+   * bridge) to surface a quiz/chat conflict signal. Absent when there is no mismatch.
+   *
+   * This is observable metadata, not a silent override — `applyChatIntentPrior` still
+   * returns the chat-updated distribution; the field merely records the disagreement.
+   */
+  chat_mismatch?: { quiz_archetype: Archetype; chat_archetype: Archetype };
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -318,6 +330,169 @@ const SIGNAL_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
   // (FOLLOW-209). Payload-conditional boosts are applied in applyBehavioralSignal(); this
   // entry serves as the signal registration so unknown-event-type guard does not short-circuit.
   'micro_poll.answered': makeLikelihood({ neutral: 0.8 }),
+  // photo.dwell — sustained dwell on listing photos (gallery hover/zoom). Soft behavioral
+  // signal: over-indexes for buyers who shop on lifestyle/aesthetics (luxury, second home,
+  // expat). Full BEHAVIORAL_DAMPING treatment per §D.7 — not a quiz-equivalent (FOLLOW-100).
+  'photo.dwell': makeLikelihood({
+    luxury_buyer: 1.15,
+    second_home_buyer: 1.12,
+    lifestyle_expat: 1.08,
+    neutral: 0.88,
+  }),
+  // feature.expanded — base neutral-push entry (FOLLOW-100). The discriminating boosts are
+  // payload-conditional (payload.feature) and applied in applyBehavioralSignal(); they cannot
+  // be encoded in a static table. An unrecognized feature value gets this base push only.
+  'feature.expanded': makeLikelihood({ neutral: 0.85 }),
+  // mortgage_calc.used — engagement with the mortgage calculator. Strong own-use financing
+  // signal: first-time and family buyers run affordability numbers; investors rarely do
+  // (cash / commercial finance) (FOLLOW-100).
+  'mortgage_calc.used': makeLikelihood({
+    family_buyer: 1.2,
+    first_time_buyer: 1.25,
+    upsizer: 1.1,
+    neutral: 0.8,
+  }),
+  // price.compared — opening the price-comparison view across listings. Over-indexes for
+  // value-seeking investor archetypes who shop on margin/yield (FOLLOW-100).
+  'price.compared': makeLikelihood({
+    flip_investor: 1.2,
+    yield_hunter: 1.1,
+    portfolio_builder: 1.08,
+    neutral: 0.85,
+  }),
+  // inquiry.started — began filling an inquiry/contact form. High general intent but no
+  // archetype discriminator on its own: it pushes the whole distribution away from neutral
+  // without favouring any single persona (FOLLOW-100).
+  'inquiry.started': makeLikelihood({ neutral: 0.7 }),
+};
+
+/**
+ * Likelihood assigned to every archetype NOT named in a `CHAT_INTENT_LIKELIHOODS` entry.
+ *
+ * Master Design §D.1.1 lists chat intent likelihoods P(dimension=value | archetype) only for
+ * the archetypes a dimension discriminates. For a proper Bayesian posterior update those listed
+ * values must dominate the *complement* — the unnamed archetypes (including the high-prior
+ * `neutral`) must take a LOW likelihood, exactly as `QUIZ_LIKELIHOODS` does (favored ≈ 0.8,
+ * unfavored ≈ 0.05). A `makeLikelihood`-style 1.0 default would instead PENALISE the named
+ * archetypes (every listed value is < 1.0), so a single strong dimension could never make its
+ * archetype dominant — contradicting §D.1.1 ("strong prior") and FOLLOW-100 AC-7. We therefore
+ * default unnamed archetypes to this low floor so chat intent behaves like the quiz prior.
+ */
+const CHAT_REST_LIKELIHOOD = 0.05;
+
+/**
+ * Build a chat-intent likelihood: named archetypes keep their §D.1.1 value; every other
+ * archetype takes the low `CHAT_REST_LIKELIHOOD` floor (NOT 1.0 — see CHAT_REST_LIKELIHOOD).
+ */
+function makeChatLikelihood(overrides: Partial<ArchetypeProbabilities>): ArchetypeProbabilities {
+  const baseline = Object.fromEntries(
+    ARCHETYPE_NAMES.map((k) => [k, CHAT_REST_LIKELIHOOD]),
+  ) as ArchetypeProbabilities;
+  return { ...baseline, ...overrides };
+}
+
+/**
+ * Chat-intent likelihoods — P(dimension=value | archetype) for the 12-dimension chat
+ * intent vector produced by the chat NLP path (FOLLOW-087 / Master Design §D.1.1).
+ *
+ * Keyed by `"dimension=value"` strings. Named archetypes carry the literal §D.1.1 value;
+ * unnamed archetypes default to `CHAT_REST_LIKELIHOOD` (low floor) so the named archetypes
+ * dominate the posterior, mirroring the quiz prior. Applied multiplicatively and NOT damped —
+ * chat intent carries the same weight as quiz answers per §D.7 (the QUIZ_CONFIDENCE_BONUS
+ * applies in `applyChatIntentPrior`).
+ *
+ * Compound D.1.1 cases (e.g. `urgency=0-3mo + purchase_purpose=investment`) are decomposed
+ * into single-dimension keys that each apply when present (see `urgency=0-3mo` below); the
+ * compound boost maps to the dominant archetype of the compound case.
+ *
+ * Exported for the FOLLOW-101 chat-intent bridge.
+ */
+export const CHAT_INTENT_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
+  'purchase_purpose=investment': makeChatLikelihood({
+    yield_hunter: 0.7,
+    vacation_rental_investor: 0.6,
+    flip_investor: 0.6,
+    portfolio_builder: 0.7,
+    golden_visa_buyer: 0.5,
+    commercial_investor: 0.5,
+  }),
+  'purchase_purpose=second_home': makeChatLikelihood({
+    second_home_buyer: 0.85,
+    lifestyle_expat: 0.4,
+  }),
+  'purchase_purpose=vacation_rental': makeChatLikelihood({
+    vacation_rental_investor: 0.9,
+  }),
+  'purchase_purpose=retirement': makeChatLikelihood({
+    retiree_relocator: 0.85,
+    downsizer: 0.5,
+  }),
+  'purchase_purpose=relocation': makeChatLikelihood({
+    lifestyle_expat: 0.7,
+    remote_worker: 0.6,
+    retiree_relocator: 0.4,
+  }),
+  'cross_border=foreign_buyer': makeChatLikelihood({
+    golden_visa_buyer: 0.7,
+    lifestyle_expat: 0.6,
+    diaspora_buyer: 0.4,
+  }),
+  'cross_border=expat_returning': makeChatLikelihood({
+    diaspora_buyer: 0.85,
+  }),
+  'family_stage=young_family': makeChatLikelihood({
+    family_buyer: 0.8,
+    student_parent: 0.4,
+  }),
+  'family_stage=established_family': makeChatLikelihood({
+    family_buyer: 0.7,
+    upsizer: 0.5,
+  }),
+  'family_stage=empty_nester': makeChatLikelihood({
+    downsizer: 0.75,
+    retiree_relocator: 0.3,
+  }),
+  'family_stage=retiree': makeChatLikelihood({
+    retiree_relocator: 0.85,
+    downsizer: 0.6,
+  }),
+  'finance_complexity=investment_vehicle': makeChatLikelihood({
+    yield_hunter: 0.6,
+    golden_visa_buyer: 0.6,
+    commercial_investor: 0.5,
+  }),
+  'finance_complexity=standard_mortgage': makeChatLikelihood({
+    first_time_buyer: 0.7,
+    family_buyer: 0.4,
+  }),
+  // Compound case `urgency=0-3mo + purchase_purpose=investment` → flip_investor:0.8.
+  // Decomposed: urgency alone leans flip_investor; purchase_purpose=investment applies
+  // separately when present, so the combination compounds toward flip_investor.
+  'urgency=0-3mo': makeChatLikelihood({
+    flip_investor: 0.6,
+    yield_hunter: 0.5,
+  }),
+  // Compound case `urgency=12mo+ + purchase_purpose=investment` → portfolio_builder:0.7.
+  'urgency=12mo+': makeChatLikelihood({
+    portfolio_builder: 0.6,
+    yield_hunter: 0.5,
+  }),
+  'geo_priority=school_district': makeChatLikelihood({
+    family_buyer: 0.7,
+    student_parent: 0.6,
+  }),
+  'feature_priority=workspace': makeChatLikelihood({
+    remote_worker: 0.85,
+  }),
+  // Compound case `budget_band=comfortable + purchase_purpose=primary` → luxury_buyer:0.6.
+  'budget_band=comfortable': makeChatLikelihood({
+    luxury_buyer: 0.6,
+  }),
+  'tax_aware=true': makeChatLikelihood({
+    yield_hunter: 0.4,
+    golden_visa_buyer: 0.5,
+    vacation_rental_investor: 0.4,
+  }),
 };
 
 /** How much to dampen behavioral likelihoods relative to quiz likelihoods. */
@@ -469,12 +644,18 @@ export function applyQuizPrior(
  * Boost values are smaller than quiz likelihoods (behavioral evidence only),
  * consistent with BEHAVIORAL_DAMPING applied on other signal types.
  *
- * Boost rules (Master Design C.1 + FOLLOW-211 spec):
- *   commercial        → commercial_investor +0.15
- *   investment_yield  → yield_hunter +0.12, portfolio_builder +0.08
- *   bedrooms ≥ 3      → family_buyer +0.10
- *   price_range       → no archetype-specific boost (generic signal)
- *   all other facets  → no boost (ignored)
+ * Boost rules (Master Design C.1 + FOLLOW-211 + FOLLOW-100 spec):
+ *   commercial                       → commercial_investor +0.15
+ *   investment_yield                 → yield_hunter +0.12, portfolio_builder +0.08
+ *   bedrooms ≥ 3                     → family_buyer +0.10
+ *   renovation                       → flip_investor +0.15
+ *   type = holiday / vacation        → vacation_rental_investor +0.18
+ *   price_max ≤ 300_000 (or 'low')   → first_time_buyer +0.12
+ *   bedrooms_min ≥ 4                 → upsizer +0.12
+ *   bedrooms_max ≤ 2                 → downsizer +0.12
+ *   near_university / school_district→ student_parent +0.15, family_buyer +0.08
+ *   price_range                      → no archetype-specific boost (generic signal)
+ *   all other facets                 → no boost (ignored)
  */
 function applyFilterBoosts(
   probs: ArchetypeProbabilities,
@@ -493,6 +674,39 @@ function applyFilterBoosts(
     if (Number.isFinite(numValue) && numValue >= 3) {
       boosted.family_buyer += 0.1;
     }
+  } else if (facet === 'renovation') {
+    // FOLLOW-100: any renovation filter is a fixer-upper / value-add signal.
+    boosted.flip_investor += 0.15;
+  } else if (facet === 'type') {
+    // FOLLOW-100: holiday/vacation property type → short-term-rental investor.
+    const strValue = typeof value === 'string' ? value.toLowerCase() : '';
+    if (strValue === 'holiday' || strValue === 'vacation') {
+      boosted.vacation_rental_investor += 0.18;
+    }
+  } else if (facet === 'price_max') {
+    // FOLLOW-100: a low price ceiling indicates a budget-constrained first-time buyer.
+    // Accepts a numeric threshold (≤ 300_000) or the explicit string 'low'.
+    const isLowString = typeof value === 'string' && value.toLowerCase() === 'low';
+    const numValue = typeof value === 'number' ? value : Number(value);
+    if (isLowString || (Number.isFinite(numValue) && numValue <= 300_000)) {
+      boosted.first_time_buyer += 0.12;
+    }
+  } else if (facet === 'bedrooms_min') {
+    // FOLLOW-100: a high bedroom floor (≥ 4) indicates a household needing more space.
+    const numValue = typeof value === 'number' ? value : Number(value);
+    if (Number.isFinite(numValue) && numValue >= 4) {
+      boosted.upsizer += 0.12;
+    }
+  } else if (facet === 'bedrooms_max') {
+    // FOLLOW-100: a low bedroom ceiling (≤ 2) indicates someone scaling down.
+    const numValue = typeof value === 'number' ? value : Number(value);
+    if (Number.isFinite(numValue) && numValue <= 2) {
+      boosted.downsizer += 0.12;
+    }
+  } else if (facet === 'near_university' || facet === 'school_district') {
+    // FOLLOW-100: proximity-to-education filters → student-parent and family buyers.
+    boosted.student_parent += 0.15;
+    boosted.family_buyer += 0.08;
   }
   // price_range → no archetype-specific boost
   // all other facets → no boost
@@ -589,6 +803,59 @@ export function applyBehavioralSignal(
     }
 
     const probabilities = normalize(boosted);
+    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+
+    return {
+      archetype,
+      confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
+      probabilities,
+      signal_count: state.signal_count + 1,
+      last_updated_at: Date.now(),
+      quiz_answered: state.quiz_answered,
+    };
+  }
+
+  // Intercept feature.expanded before the static SIGNAL_LIKELIHOODS lookup (FOLLOW-100).
+  // Mirrors the listing.bookmarked intercept: apply the static damped neutral-push first,
+  // then payload-conditional multiplicative boosts keyed on payload.feature. An unrecognized
+  // (or absent) feature value gets the base neutral-push only — no targeted boost.
+  if (eventType === 'feature.expanded') {
+    const rawLikelihoodFeature = SIGNAL_LIKELIHOODS['feature.expanded'];
+    // rawLikelihoodFeature is always defined (key exists in SIGNAL_LIKELIHOODS above)
+    if (!rawLikelihoodFeature) return state;
+
+    const dampedLikelihoodFeature = Object.fromEntries(
+      ARCHETYPE_NAMES.map((k) => [k, 1 + (rawLikelihoodFeature[k] - 1) * BEHAVIORAL_DAMPING]),
+    ) as ArchetypeProbabilities;
+
+    // Step 1: apply the static multiplicative likelihood (neutral push).
+    let probabilities = applyLikelihood(state.probabilities, dampedLikelihoodFeature);
+
+    // Step 2: apply payload-conditional multiplicative boosts keyed on payload.feature.
+    const feature = typeof payload?.feature === 'string' ? payload.feature.toLowerCase() : '';
+    const boosted = { ...probabilities };
+
+    if (feature === 'yield' || feature === 'str' || feature === 'rental_yield') {
+      boosted.vacation_rental_investor *= 1.3;
+      boosted.yield_hunter *= 1.15;
+    } else if (feature === 'legal' || feature === 'visa' || feature === 'golden_visa') {
+      boosted.golden_visa_buyer *= 1.35;
+      boosted.lifestyle_expat *= 1.1;
+    } else if (feature === 'home_office' || feature === 'workspace' || feature === 'internet') {
+      boosted.remote_worker *= 1.4;
+    } else if (feature === 'accessibility') {
+      boosted.downsizer *= 1.2;
+      boosted.retiree_relocator *= 1.15;
+    } else if (feature === 'climate') {
+      boosted.retiree_relocator *= 1.2;
+      boosted.lifestyle_expat *= 1.1;
+    } else if (feature === 'expat' || feature === 'international' || feature === 'foreign') {
+      boosted.lifestyle_expat *= 1.3;
+      boosted.diaspora_buyer *= 1.15;
+    }
+    // unrecognized feature → no boost (base neutral-push from step 1 only)
+
+    probabilities = normalize(boosted);
     const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
 
     return {
@@ -772,6 +1039,82 @@ export function applyQuizLeaf(state: IntentState, archetype: Archetype): IntentS
     signal_count: state.signal_count,
     last_updated_at: Date.now(),
     quiz_answered: true,
+  };
+}
+
+/**
+ * Update intent state from chat-derived intent dimensions (FOLLOW-100 / §D.1.1).
+ *
+ * `intentDimensions` is a flat `dimension → value` map (e.g.
+ * `{ purchase_purpose: 'investment', urgency: '0-3mo', tax_aware: 'true' }`). For each pair,
+ * `CHAT_INTENT_LIKELIHOODS["<dimension>=<value>"]` is looked up; matched likelihoods are applied
+ * multiplicatively in iteration order. Chat intent is NOT damped — it carries the same weight as
+ * quiz answers per §D.7, so the QUIZ_CONFIDENCE_BONUS is applied to the resulting confidence.
+ *
+ * Behaviour:
+ *   - Empty `intentDimensions` → returns `state` unchanged (same reference).
+ *   - Dimension values with no matching entry are skipped (no boost).
+ *   - Does NOT set `quiz_answered` — chat is a separate evidence source.
+ *   - Mismatch detection: when chat confidence > 0.7 AND `state.quiz_answered` is true AND the
+ *     chat-derived leading archetype differs from the incoming `state.archetype` by more than
+ *     MISMATCH_GAP_THRESHOLD (in probability), the returned state carries `chat_mismatch`
+ *     metadata `{ quiz_archetype, chat_archetype }`. This is observable, not a silent override —
+ *     the chat-updated distribution is still returned.
+ *
+ * Pure function — the input `state` is never mutated. `signal_count` is preserved.
+ *
+ * @param state            - Current intent state (typically post-quiz).
+ * @param intentDimensions - Flat chat-intent dimension → value map.
+ */
+export function applyChatIntentPrior(
+  state: IntentState,
+  intentDimensions: Record<string, string>,
+): IntentState {
+  const entries = Object.entries(intentDimensions);
+  if (entries.length === 0) return state;
+
+  let probabilities = state.probabilities;
+  let matched = false;
+
+  for (const [dimension, value] of entries) {
+    const likelihood = CHAT_INTENT_LIKELIHOODS[`${dimension}=${value}`];
+    if (!likelihood) continue;
+    // Multiplicative, NOT damped (§D.7: chat weight == quiz weight).
+    probabilities = applyLikelihood(probabilities, likelihood);
+    matched = true;
+  }
+
+  // No dimension matched a known entry → distribution unchanged; return original reference.
+  if (!matched) return state;
+
+  const quizArchetypeBefore = state.archetype;
+  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+  const confidence = withConfidenceBonus(rawConfidence, true);
+
+  // Mismatch detection: confident chat result disagreeing with a confident quiz result.
+  // Gap is measured in probability between the chat-leading archetype and the quiz archetype's
+  // probability under the chat-updated distribution.
+  let chat_mismatch: { quiz_archetype: Archetype; chat_archetype: Archetype } | undefined;
+  if (
+    confidence > 0.7 &&
+    state.quiz_answered &&
+    archetype !== quizArchetypeBefore &&
+    probabilities[archetype] - probabilities[quizArchetypeBefore] > MISMATCH_GAP_THRESHOLD
+  ) {
+    chat_mismatch = { quiz_archetype: quizArchetypeBefore, chat_archetype: archetype };
+  }
+
+  return {
+    archetype,
+    confidence,
+    probabilities,
+    signal_count: state.signal_count,
+    last_updated_at: Date.now(),
+    quiz_answered: state.quiz_answered,
+    ...(state.dwell_ticks_applied !== undefined
+      ? { dwell_ticks_applied: state.dwell_ticks_applied }
+      : {}),
+    ...(chat_mismatch !== undefined ? { chat_mismatch } : {}),
   };
 }
 

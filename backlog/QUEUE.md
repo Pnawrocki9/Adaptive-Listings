@@ -2612,16 +2612,26 @@ measurement window.
 - id: FOLLOW-100
   title: SIGNAL_LIKELIHOODS all 18 archetypes + CHAT_INTENT_LIKELIHOODS + applyChatIntentPrior()
   agent: sdk-engineer
-  status: BLOCKED
+  status: READY_FOR_REVIEW
+  pr: 254
   priority: P1
   estimated_hours: 8
   depends_on: [FOLLOW-099]
   model: opus-4.7-xhigh
-  spec: (to author at spawn — backlog/sprint-13/FOLLOW-100.md)
+  spec: backlog/sprint-13/FOLLOW-100.md
   notes: |
     Likelihood calibration + Bayesian prior math → opus-4.7-xhigh. Per §D.1.1 + §D.6. Target:
     ≥13/18 archetypes reach 🟢 Full coverage. Payload-aware (filter.applied likelihoods differ by
     facet value). Thresholds calibrated on synthetic session fixtures (feeds §D.7).
+    PR #254. AC-1..AC-8 implemented; 56 new tests, full suite 1251 passing; typecheck/build/lint
+    green. Spec AC-4-vs-AC-7 inconsistency resolved with makeChatLikelihood low-floor complement
+    (CHAT_REST_LIKELIHOOD=0.05) so named archetypes dominate like the quiz prior.
+    HALF-WIRE FLAGS (Rule L) requiring producer follow-up: (1) price.compared has no SDK observer
+    producer; (2) new filter.applied facets (renovation/type/price_max/bedrooms_min/bedrooms_max/
+    near_university/school_district) are NOT in the closed FILTER_APPLIED_FACETS shared enum, so
+    they are dead until the enum + resolveFilterFacet are extended (cross-module w/ backend-engineer,
+    out of FOLLOW-100 intent.ts-only scope). Bundle gate already RED on main (49.83KB>40KB), this
+    branch +1.03KB → 50.86KB — pre-existing breach, code-split follow-up needed.
 
 - id: FOLLOW-087
   title: Chat NLP in apps/intent-engine (Haiku 4.5 real-time + Sonnet 4.6 batch)

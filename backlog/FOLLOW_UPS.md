@@ -6699,7 +6699,176 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 254 (253 = RETRO-047 / PR #256 / FOLLOW-101: rehydrate→re-init SDK test for the chat-intent prior via _initForTest seam (Rule R verification clause), P2 TG-1. 252 = RETRO-047 / PR #256 / FOLLOW-101: gate the chat-intent prior idempotency on the rehydrate boundary (persisted marker / !intentStateRehydrated) not the in-memory _chatPriorAppliedSessionId guard — 3rd Rule R double-count instance (RETRO-032/037), reload re-folds the multiplicative chat likelihoods onto rehydrated state within the 24h shadow-key window, P1 LG-1. 251 = RETRO-046 / PR #243 / FOLLOW-185: backfill missing RETRO bodies + CI lint. 250 = RETRO-046 / PR #243 / FOLLOW-185: route-driven CRM+DSR integration coverage. 249 = RETRO-046 / PR #243 / FOLLOW-185: RLS isolation PGlite enforcement. 248 = RETRO-045 / PR #242 / FOLLOW-246: mirror crm_erasure_status into access+portability. 247 = RETRO-045 / PR #242 / FOLLOW-246: PGlite real-SQL parity for disclosure verbs. 246 = RETRO-044 / PR #233 / FOLLOW-184: DSR access (Art.15) + portability (Art.20) must read conversion_labels on BOTH session_id AND durable_lead_id namespaces — FOLLOW-184 closed only the erase verb (RETRO-031 §4a LG-1); the symmetric access/portability verbs never query conversion_labels at all, so CRM deep-outcome rows are erasable but undisclosable (P1 Art.15/20); folds LG-2 erase-wrong-token-silent-no-op + DG-1 §T.6-scoped-erase-only. 245 = RETRO-043 / PR #237 / FOLLOW-238: codify crm_erasure_status response values as shared const + reconcile wire(crm_tenant_unverifiable)⇔audit(crm_unverifiable) two-name split + document/remove unproduced expired/failed actions, P2 LG-1/LG-2. 244 = RETRO-043 / PR #237 / FOLLOW-238: re-scope stale FOLLOW-240 test to new DSR values + cover the untested crm_tenant_unverifiable positive branch (TG-1 P1) + fix orphaned doc consumers in docs/compliance/DSR_ALERTING.md §2/§5 query + MASTER_DESIGN §T.6 still on removed incomplete_* values (DG-1 P1 — realized RETRO-041 LG-2 sync-risk); MUST precede FOLLOW-187 live Sentry alert per ESC-021. 243 = RETRO-042 / PR #236 / FOLLOW-237: tighten stale mean_model_predicted_rate "pending FOLLOW-230" JSDoc caveat now that FOLLOW-230 is DONE, P3 doc-nit. 242 unused/reserved. 241 = RETRO-041 DSR_ALERTING consolidation + RETRO-042/ESC-021 citation fix. 238 (237 = RETRO-040 / PR #235 / FOLLOW-221: calibration JSON export — add Rule K.2 data_source provenance (CB-1 P1) + reject unknown format (LG-3) + fix avg_confidence semantics/dwell caveat (LG-2) + correct FOLLOW-175 mis-wire/HALF_WIRE_P (LG-1 P1); the export has no usable consumer and FOLLOW-175 needs row-level not aggregate. 236 = RETRO-039 / PR #228 / FOLLOW-183: restore src/index.ts to packages/db vitest coverage.include, TG-1 P3. 235 = RETRO-039 / PR #228 / FOLLOW-183: tighten 12-pair parity gate to value-parity AC + fix stale JSDoc, LG-1/DG-1 P3. 234 = FOLLOW-187 companion / PR #229: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate, P1 before_go_live. 233/232/231 unused. 230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217: / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
+## FOLLOW-254 — Reconcile `chatPriorApplied` JSDoc reset-path with the actual clearing mechanism (`eraseIntentState`/session rotation, NOT `resetAdaptState`) + decide archetype-change re-applicability (LG-1 / DG)
+
+- **source_retro:** RETRO-048 (§4a LG-1; §4d)
+- **source_ticket:** FOLLOW-252 / PR #258 (merge commit `d34ec13`)
+- **recommended_sprint:** next SDK doc/hardening wave (low urgency)
+- **recommended_agent:** sdk-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** The `chatPriorApplied` JSDoc in `packages/sdk/src/core/intent.ts:127-128` claims the
+  flag is "Cleared to `false` (or absent) by `resetAdaptState()` / session teardown." But
+  `resetAdaptState()` (`adapt.ts:327-331`) only clears the IN-MEMORY `_chatPriorAppliedSessionId`,
+  not the PERSISTED `IntentState.chatPriorApplied` in the sessionStorage envelope. The persisted
+  flag is actually cleared ONLY by `eraseIntentState()` (full envelope removeItem on consent
+  deny/withdraw — `session.ts:430-437`) or by natural session-ID rotation (new key). The SHIPPED
+  clearing behaviour is correct; the DOC is wrong and will mislead the next maintainer into thinking
+  `resetAdaptState()` makes the chat prior re-appliable (it does not — the persisted flag survives a
+  `resetAdaptState()`). Additionally, the codebase currently provides NO path to re-apply the chat
+  prior after an archetype change; decide whether that is intended and document it.
+- **ac:**
+  - [ ] AC1: `chatPriorApplied` JSDoc names the ACTUAL clearing path (`eraseIntentState` /
+        session-ID rotation), not `resetAdaptState`.
+  - [ ] AC2: an explicit decision is documented (in JSDoc or a code comment) on whether an archetype
+        change SHOULD make the chat prior re-appliable; if yes, the archetype-change path must also
+        strip the persisted flag (and a test asserts it); if no, state why the persisted flag
+        intentionally survives archetype changes.
+- **depends_on:** FOLLOW-252 (the fix this documents). Relates to FOLLOW-255 (the two-guard
+  ownership cleanup).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-255 — Retire or explicitly annotate the now-redundant in-memory `_chatPriorAppliedSessionId` guard; the persisted `chatPriorApplied` flag is the sole authoritative source of truth (LG-2)
+
+- **source_retro:** RETRO-048 (§4a LG-2; §5d)
+- **source_ticket:** FOLLOW-252 / PR #258 (merge commit `d34ec13`)
+- **recommended_sprint:** next SDK hardening wave
+- **recommended_agent:** sdk-engineer
+- **priority:** P3
+- **estimated_hours:** 2
+- **scope:** FOLLOW-252 retained the in-memory `_chatPriorAppliedSessionId` guard "for
+  defence-in-depth" alongside the new persisted `chatPriorApplied` flag, ANDed together at
+  `adapt.ts:780-782`. Analysis (RETRO-048 §4a LG-2) shows the persisted flag alone covers every
+  enumerated scenario, INCLUDING same-tab re-entry (the `follow-252.test.ts` in-tab-navigation
+  `describe` at `:496` exercises that path WITHOUT relying on the in-memory guard — it does not call
+  `resetAdaptState()` and the persisted flag is read on the second `_initForTest`). Two guards for
+  one invariant is maintenance debt: the in-memory guard sets
+  `_chatPriorAppliedSessionId = session.sessionId` at `:784` BEFORE the persisted flag is
+  computed/persisted at `:791/:796`, so any future early-return inserted between those lines
+  diverges them. Either (preferred) drop the in-memory guard and confirm the existing in-tab test
+  still passes, OR add a one-line invariant comment at `:784` stating the persisted flag is the SOLE
+  source of truth and the in-memory guard must never gate-OUT an apply the persisted flag would
+  gate-IN.
+- **ac:**
+  - [ ] AC1: EITHER `_chatPriorAppliedSessionId` is removed (and `resetAdaptState` + the guard
+        simplified) with the existing same-tab test still green; OR a precise invariant comment is
+        added documenting the persisted flag as authoritative and the in-memory guard as a
+        non-authoritative fast-path.
+  - [ ] AC2: if removed, no test regresses (the in-tab-navigation `describe` must still pass on the
+        persisted flag alone).
+- **depends_on:** FOLLOW-252. Pairs with FOLLOW-254.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-256 — Cross-reference the stale in-memory-only "Rule R" `describe` in `follow-101.test.ts` to `follow-252.test.ts` for the rehydrate-boundary proof (or fold + delete) (TG-1)
+
+- **source_retro:** RETRO-048 (§4c TG-1)
+- **source_ticket:** FOLLOW-253 / PR #258 (merge commit `d34ec13`)
+- **recommended_sprint:** with FOLLOW-255
+- **recommended_agent:** sdk-engineer + qa-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** FOLLOW-253's rehydrate-boundary tests correctly live in a dedicated
+  `packages/sdk/src/__tests__/follow-252.test.ts`. But the feature file
+  `packages/sdk/src/__tests__/follow-101.test.ts` still contains an AC-5 "Rule R idempotency — prior
+  applied at most once" `describe` (`:265`) that exercises ONLY the in-memory guard within one
+  lifecycle and would STILL pass if the persisted guard were deleted. A reader of
+  `follow-101.test.ts` may believe the reload-boundary is covered there (it is not). Add a one-line
+  pointer comment to that `describe` directing the reader to `follow-252.test.ts` for the
+  rehydrate-boundary proof, OR fold the in-memory assertion into the 252 file and delete the
+  now-redundant 101 `describe`.
+- **ac:**
+  - [ ] AC1: the `follow-101.test.ts` AC-5 `describe` carries a comment pointing at
+        `follow-252.test.ts` for the rehydrate-boundary coverage (or is folded + deleted).
+  - [ ] AC2: no test coverage is lost in the process (the in-memory single-apply assertion still
+        exists somewhere).
+- **depends_on:** FOLLOW-253 (the test this annotates).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-257 — Resolve the `data-quiz-trigger` / `quiz.trigger_after_n_listings` Rule-L half-wire (wire end-to-end OR remove) + add the missing `showQuizTrigger()` gate test (LG-1 / TG-1)
+
+- **source_retro:** RETRO-049 (§3 CHECK B HALF_WIRE_C; §4a LG-1; §4c TG-1)
+- **source_ticket:** FOLLOW-102 / PR #257 (merge commit `94aa116`)
+- **recommended_sprint:** next SDK wave / Quiz v2.0 prep (before any "configurable quiz trigger
+  threshold" feature)
+- **recommended_agent:** sdk-engineer
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** FOLLOW-102 added a `data-quiz-trigger` parser to `readConfig()`
+  (`packages/sdk/src/core/config.ts:176-181`) that stores `SdkConfig.quiz.trigger_after_n_listings`,
+  with 4 tests asserting the parse. But the field is DOUBLE-DEAD: (a) the production producer
+  `buildSnippet` (`apps/control-plane/src/components/onboarding/DetectionPreview.tsx:132-146`) NEVER
+  emits `data-quiz-trigger` (grep: zero non-test producers), so the attribute is never present in a
+  real snippet; and (b) NO SDK runtime path reads the parsed value — `scheduleQuizTrigger`
+  (`packages/sdk/src/index.ts:868` → `packages/sdk/src/ui/quiz-trigger.ts:38`) fires on the
+  hardcoded `QUIZ_TRIGGER_DELAY_MS = 30_000` (FOLLOW-199) and ignores the config; the dashboard
+  "Trigger threshold" writes `quizConfig.trigger_after_n_listings` JSONB (a SEPARATE store the SDK
+  never reads). This is the exact Rule L shape (CONVENTIONS_PATCH.md:511 — consumer whose production
+  path never PRODUCES it), here double-dead (even the parsed value has no reader). ALSO: the actual
+  AC6 gate `index.ts:791` `if (config.quiz?.enabled === false) return;` (`showQuizTrigger`) has NO
+  behavioral test — `follow-102.test.ts` only tests `readConfig` parsing (TG-1).
+- **ac:**
+  - [ ] AC1: EITHER wire `data-quiz-trigger` end-to-end — `buildSnippet` emits it sourced from the
+        tenant's `quizConfig.trigger_after_n_listings`, AND `scheduleQuizTrigger`/the listing-view
+        counter honors `config.quiz.trigger_after_n_listings` — OR remove the parse + the
+        `SdkConfig.quiz.trigger_after_n_listings` field + the 4 trigger-parse tests, leaving no
+        parsed-but-inert config.
+  - [ ] AC2: if wired, a test asserts the production snippet path EMITS `data-quiz-trigger` (not a
+        literal injected into `readConfig`) — Rule L evidence, not a consumer-only test.
+  - [ ] AC3: add a `showQuizTrigger()` gate test (TG-1): with `config.quiz.enabled === false`, no
+        quiz trigger / widget / quiz events are emitted; with `enabled !== false`, the trigger
+        schedules.
+  - [ ] AC4: cite Rule L in the resolution comment.
+- **depends_on:** FOLLOW-102 (the wire under repair); reconcile with FOLLOW-199
+  (`QUIZ_TRIGGER_DELAY_MS`). Relates to Quiz v2.0.
+- **promoted_to_queue:** true (2026-06-10 by pm-orchestrator)
+
+---
+
+## FOLLOW-263 — Repoint the pilot-freeze Lane-C guard at the new SoT column `tenants.quiz_enabled` (restores the RETRO-012/FOLLOW-117 closure FOLLOW-102 moved one hop) (LG-2 / TG-2)
+
+> **Note:** Renumbered from FOLLOW-258 (collision with Wave A ticket PR #249). Next safe number
+> after FOLLOW-262 was 263.
+
+- **source_retro:** RETRO-049 (§4a LG-2; §4c TG-2; §5a/§5d)
+- **source_ticket:** FOLLOW-102 / PR #257 (merge commit `94aa116`)
+- **recommended_sprint:** before TICKET-PILOT-001 CTA-lift measurement window opens
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** The pilot-freeze Lane-C guard `checkPilotFrozenAsync`
+  (`apps/control-plane/src/app/api/adapt/route.ts:111-153`) SELECTs only `tenants.quizConfig` and
+  filters `LANE_C_FLAG_KEYS` (`:90-94`, includes `'enabled'`) against the JSONB. FOLLOW-117 (PR
+  #156, RETRO-012) previously fixed this guard by aligning it to the field the producer writes
+  (`cfg.enabled`). FOLLOW-102 then made `tenants.quiz_enabled` the authoritative SoT for quiz on/off
+  (its own `backlog/HANDOFFS.md` note instructs all readers to use the COLUMN, NOT
+  `quizConfig.enabled`) but did NOT repoint the freeze guard. Result: if a frozen pilot tenant's
+  quiz is toggled ON via the new column (`PATCH /api/tenants/:id`, `quiz_enabled:true`) during the
+  measurement window, the contamination warning does NOT fire — false reassurance at go/no-go, the
+  exact harm FOLLOW-117 was filed to prevent, re-instantiated one column over.
+- **ac:**
+  - [ ] AC1: `checkPilotFrozenAsync` SELECT adds `quizEnabled: tenants.quizEnabled`.
+  - [ ] AC2: `quiz_enabled === true` on a `pilotFrozen === true` tenant is treated as a
+        Lane-C-active signal and surfaces in the `pilot_frozen_lane_c_active` warning (OR the column
+        is explicitly documented as intentionally exempt with rationale).
+  - [ ] AC3: a test (TG-2) asserts the warning fires for `pilotFrozen=true` + `quizEnabled=true` and
+        does NOT fire for `pilotFrozen=true` + `quizEnabled=false`.
+  - [ ] AC4: reconcile the two-store divergence noted in RETRO-049 §5d — either keep both readers
+        consistent or document `tenants.quiz_enabled` as sole SoT and note `quizConfig.enabled` is
+        legacy.
+  - [ ] AC5: cite RETRO-012 / FOLLOW-117 precedent in the fix comment.
+- **depends_on:** FOLLOW-102 (the column); FOLLOW-117 / RETRO-012 (the precedent closure this
+  restores). Sequence before TICKET-PILOT-001 measurement window.
+- **promoted_to_queue:** true (2026-06-10 by pm-orchestrator, renumbered to FOLLOW-263)
+
+---
+
+<!-- next free FOLLOW number: 259 (258 = RETRO-049 / PR #257 / FOLLOW-102: repoint the pilot-freeze Lane-C guard at the new SoT column tenants.quiz_enabled — FOLLOW-117/RETRO-012 fixed the guard to watch quizConfig.enabled, FOLLOW-102 moved the authoritative toggle to the tenants.quiz_enabled column and did not repoint the guard, so a frozen pilot toggled quiz-ON via the new column raises no contamination warning (false reassurance at go/no-go); add quizEnabled to checkPilotFrozenAsync SELECT + test, P2 LG-2/TG-2. 257 = RETRO-049 / PR #257 / FOLLOW-102: resolve the data-quiz-trigger / quiz.trigger_after_n_listings Rule-L HALF_WIRE_C — config.ts parses it but buildSnippet never emits data-quiz-trigger AND no SDK runtime reads the parsed value (scheduleQuizTrigger uses hardcoded QUIZ_TRIGGER_DELAY_MS=30s, FOLLOW-199); wire end-to-end OR remove parse+field+4 tests, plus add the missing showQuizTrigger() gate test (TG-1), P1 LG-1/TG-1. 256 = RETRO-048 / PR #258 / FOLLOW-253: cross-reference the stale in-memory-only AC-5 "Rule R" describe in follow-101.test.ts to follow-252.test.ts for the rehydrate-boundary proof (or fold+delete) — the dedicated seam file is correct but the feature file's AC-5 still passes even if the persisted guard is deleted, P3 TG-1. 255 = RETRO-048 / PR #258 / FOLLOW-252: retire or annotate the redundant in-memory _chatPriorAppliedSessionId guard — persisted chatPriorApplied flag is sole source of truth; in-tab test already proves persisted path covers same-tab re-entry; two guards ANDed at adapt.ts:780-782 is debt, P3 LG-2. 254 = RETRO-048 / PR #258 / FOLLOW-252: reconcile chatPriorApplied JSDoc reset-path (claims resetAdaptState clears it; actually only eraseIntentState/session-rotation does) + decide archetype-change re-applicability, P3 LG-1/DG. 253 = RETRO-047 / PR #256 / FOLLOW-101: rehydrate→re-init SDK test for the chat-intent prior via _initForTest seam (Rule R verification clause), P2 TG-1. 252 = RETRO-047 / PR #256 / FOLLOW-101: gate the chat-intent prior idempotency on the rehydrate boundary (persisted marker / !intentStateRehydrated) not the in-memory _chatPriorAppliedSessionId guard — 3rd Rule R double-count instance (RETRO-032/037), reload re-folds the multiplicative chat likelihoods onto rehydrated state within the 24h shadow-key window, P1 LG-1. 251 = RETRO-046 / PR #243 / FOLLOW-185: backfill missing RETRO bodies + CI lint. 250 = RETRO-046 / PR #243 / FOLLOW-185: route-driven CRM+DSR integration coverage. 249 = RETRO-046 / PR #243 / FOLLOW-185: RLS isolation PGlite enforcement. 248 = RETRO-045 / PR #242 / FOLLOW-246: mirror crm_erasure_status into access+portability. 247 = RETRO-045 / PR #242 / FOLLOW-246: PGlite real-SQL parity for disclosure verbs. 246 = RETRO-044 / PR #233 / FOLLOW-184: DSR access (Art.15) + portability (Art.20) must read conversion_labels on BOTH session_id AND durable_lead_id namespaces — FOLLOW-184 closed only the erase verb (RETRO-031 §4a LG-1); the symmetric access/portability verbs never query conversion_labels at all, so CRM deep-outcome rows are erasable but undisclosable (P1 Art.15/20); folds LG-2 erase-wrong-token-silent-no-op + DG-1 §T.6-scoped-erase-only. 245 = RETRO-043 / PR #237 / FOLLOW-238: codify crm_erasure_status response values as shared const + reconcile wire(crm_tenant_unverifiable)⇔audit(crm_unverifiable) two-name split + document/remove unproduced expired/failed actions, P2 LG-1/LG-2. 244 = RETRO-043 / PR #237 / FOLLOW-238: re-scope stale FOLLOW-240 test to new DSR values + cover the untested crm_tenant_unverifiable positive branch (TG-1 P1) + fix orphaned doc consumers in docs/compliance/DSR_ALERTING.md §2/§5 query + MASTER_DESIGN §T.6 still on removed incomplete_* values (DG-1 P1 — realized RETRO-041 LG-2 sync-risk); MUST precede FOLLOW-187 live Sentry alert per ESC-021. 243 = RETRO-042 / PR #236 / FOLLOW-237: tighten stale mean_model_predicted_rate "pending FOLLOW-230" JSDoc caveat now that FOLLOW-230 is DONE, P3 doc-nit. 242 unused/reserved. 241 = RETRO-041 DSR_ALERTING consolidation + RETRO-042/ESC-021 citation fix. 238 (237 = RETRO-040 / PR #235 / FOLLOW-221: calibration JSON export — add Rule K.2 data_source provenance (CB-1 P1) + reject unknown format (LG-3) + fix avg_confidence semantics/dwell caveat (LG-2) + correct FOLLOW-175 mis-wire/HALF_WIRE_P (LG-1 P1); the export has no usable consumer and FOLLOW-175 needs row-level not aggregate. 236 = RETRO-039 / PR #228 / FOLLOW-183: restore src/index.ts to packages/db vitest coverage.include, TG-1 P3. 235 = RETRO-039 / PR #228 / FOLLOW-183: tighten 12-pair parity gate to value-parity AC + fix stale JSDoc, LG-1/DG-1 P3. 234 = FOLLOW-187 companion / PR #229: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate, P1 before_go_live. 233/232/231 unused. 230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217: / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
      220 = P1 make the FOLLOW-217 jsdom test actually DRIVE init() (it mirrors init() in local helpers, not invokes it — Rule Q violation in the ticket filed to close the Rule Q gap; TG-1/TG-2/TG-3/CB-1/DG-1; sequence BEFORE FOLLOW-219).
      219 = RETRO-033 / PR #218 / FOLLOW-216:
      219 = P3 collapse 4 scattered !intentStateRehydrated guards into one block + move CB-1 comment into JSDoc (structural hardening of FOLLOW-216 LG-1 fix; after FOLLOW-217).

@@ -12192,3 +12192,647 @@ consumer):**
   the SIBLING `quiz.mismatch` producer (LG-2 semantic overloading). First retro in the chat-intent
   Lane C bridge chain (no prior FOLLOW-101 retro).
 
+## RETRO-048 — FOLLOW-252 + FOLLOW-253 (Gate chat-intent prior on persisted `chatPriorApplied` flag — Rule R fix + rehydrate→re-init `_initForTest` test) — 2026-06-10
+
+### 1. Summary of change
+
+- **PR:** #258 (merged 2026-06-10 18:35 UTC, commit `d34ec13`). sdk-engineer (impl). Branch
+  `sdk-engineer/FOLLOW-252-rule-r-chat-prior-rehydrate`. Two tickets in ONE PR (combined retro):
+  FOLLOW-252 (P1 Rule R fix) + FOLLOW-253 (P2 rehydrate→re-init test). Source: RETRO-047 §4a LG-1 +
+  §4c TG-1 — the THIRD Rule R double-count instance (after RETRO-032 FOLLOW-207 priors, RETRO-037
+  dwell boost), where FOLLOW-101's in-memory `_chatPriorAppliedSessionId` guard did NOT survive the
+  rehydrate boundary so the multiplicative chat prior re-folded on every reload within the 24h
+  shadow-key window.
+- **Files changed:** 3 (+591 / −12). All `packages/sdk`:
+  - `packages/sdk/src/core/intent.ts` (+19/−0) — adds `chatPriorApplied?: boolean` to `IntentState`
+    with full JSDoc citing Rule R + the rehydrate-boundary contract (FOLLOW-252).
+  - `packages/sdk/src/core/adapt.ts` (+39/−12) — adds the PRIMARY persisted guard
+    `intentState.chatPriorApplied !== true` (`:780`) BEFORE the retained secondary in-memory guard
+    `_chatPriorAppliedSessionId !== session.sessionId` (`:782`); after applying the prior, spreads
+    `chatPriorApplied: true as const` onto `markedIntentState` (`:791`), persists it via
+    `persistIntentState`, and returns `markedIntentState` (not the bare `updatedIntentState`) so the
+    flag reaches the `index.ts` call-site. `// Rule R:` comment present at the guard (AC5).
+  - `packages/sdk/src/__tests__/follow-252.test.ts` (NEW, +533) — 6 tests driving the REAL `init()`
+    body via `_initForTest()` (Rule Q seam); the "reload" scenario calls `_initForTest()` twice on
+    the SAME sessionStorage without clearing intent state between calls — exactly the hole RETRO-047
+    named.
+- **Modules touched:** [SDK (intent + adapt + tests) only]. No control-plane, ingest, shared, docs,
+  or config change. Pure SDK-internal idempotency hardening.
+- **Key contracts changed:**
+  - `IntentState.chatPriorApplied` — ADDED — `boolean` optional. Breaking: **NO** (additive optional;
+    `isValidIntentState` at `index.ts:169-181` does NOT require it; pre-FOLLOW-252 sessionStorage
+    envelopes remain valid). `INTENT_STATE_SCHEMA_VERSION` (`session.ts:295`) correctly NOT bumped —
+    confirmed below (§4a LG-3 is a doc nit, not a schema-compat issue).
+  - `fetchDirectives` now returns `markedIntentState` (with the flag) instead of `updatedIntentState`
+    in the chat-prior branch — same `FetchDirectivesResult` shape, no caller change needed.
+- **Verdict (preview):** **FOLLOW-UPS-FILED (not clean — but no P0/P1; three P3s).** The Rule R chain
+  RETRO-047 opened is now CLOSED END-TO-END: persisted producer → persisted guard → rehydrate-safe
+  consumer → render (`onIntentUpdate`), proven by a `_initForTest`-twice test that goes RED if the
+  primary guard is dropped. The reload-reapply double-count hole is genuinely closed (not moved one
+  hop — see §7 closure trace). Residual gaps are all P3: (a) a JSDoc-vs-code drift where
+  `chatPriorApplied`'s doc claims `resetAdaptState()` clears it but `resetAdaptState()` only clears
+  the in-memory sibling (LG-1); (b) the two-guard authoritative-ownership ambiguity the focus area
+  flagged (LG-2); (c) test-file placement (TG-1). Rule R amendment evaluated and DECLINED with reason
+  (§6 / §11).
+
+### 2. Verification done in PR
+
+- Test files changed: 1 NEW (`follow-252.test.ts`, 533 lines, 6 `it` blocks across 4 `describe`s).
+  Assertions added: ~25 across FOLLOW-252 AC1–AC5 + FOLLOW-253 AC1–AC3. Coverage delta: **closes the
+  exact gap RETRO-047 §4c TG-1 named** — `follow-252.test.ts` has 5 `_initForTest()` call-sites
+  (`grep -n "_initForTest" follow-252.test.ts` → 5 hits) and the reload scenario re-inits WITHOUT
+  clearing sessionStorage (the hole `follow-101.test.ts` never exercised — it had 0 `_initForTest`
+  references). A mutation test is documented: "Dropping or inverting the `intentState.chatPriorApplied`
+  guard in adapt.ts causes the relevant tests here to go RED" (file header) — this is the Rule Q +
+  Rule R verification-clause bar, met.
+- CI checks: PR body reports `Test Files 47 passed (47) · Tests 1269 passed (1269)` (6 new + 1263
+  pre-existing unchanged). PR self-check confirms prettier run on all 3 touched files, Rule H
+  (`chatPriorApplied` defined in IntentState + consumed in guard, not dead schema), and the Rule R
+  comment at the guard. CI not independently verified (read-only; standing Rule I / Vercel / Python
+  pre-existing-red caveat per `project_ci_gate_landscape`). No type-cascade this time (additive
+  optional field, no return-type change) — so the RETRO-047 CB-1 Vitest-typecheck class did not
+  recur.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code detection (every new file/export has ≥1 non-test importer):**
+
+- `IntentState.chatPriorApplied` (NEW field, `intent.ts:133`) — type-only field on an existing
+  exported interface → suppressed from dead-code per the type-only rule; nonetheless consumed at
+  `adapt.ts:780` (guard) AND produced at `adapt.ts:791` (`markedIntentState`). NOT dead.
+- No new exported function/const/file (the test file is a `__tests__` file; the in-memory guard
+  `_chatPriorAppliedSessionId` is RETAINED, not new). **CHECK A clean.**
+
+**CHECK B — Half-wire detection (every new event/env-var/column/topic/signal has BOTH producer AND
+consumer):**
+
+- **`chatPriorApplied` (NEW persisted SDK signal in the sessionStorage IntentState envelope)** —
+  Producer EXISTS: `adapt.ts:791` `const markedIntentState = { ...updatedIntentState, chatPriorApplied: true as const }`
+  → persisted via `persistIntentState(session.sessionId, markedIntentState)` (`:796`). Consumer
+  EXISTS: `adapt.ts:780` `intentState.chatPriorApplied !== true` (the PRIMARY idempotency guard),
+  reading the rehydrated envelope. Full chain:
+  `applyChatIntentPrior` → `markedIntentState.chatPriorApplied=true` → `persistIntentState` →
+  sessionStorage `estalara_intent_<sessionId>` → (reload) `rehydrateIntentState` →
+  `isValidIntentState` (passes; field optional) → `currentIntentState` → `fetchDirectives` guard
+  reads `chatPriorApplied===true` → skips re-apply. Both ends present, on BOTH sides of the
+  rehydrate boundary. **NOT a half-wire.**
+- `grep -rn "chatPriorApplied" packages/sdk/src --include=*.ts | grep -v __tests__` → exactly 2
+  non-test code sites in `adapt.ts` (`:780` consumer, `:791` producer) + the `intent.ts` field def +
+  its JSDoc references. Producer and consumer both real.
+- No new env-var, ClickHouse column, Redpanda topic, or Redis key introduced. **CHECK B clean.**
+
+`Wiring Audit — clean ✅` (both CHECK A and CHECK B; the new persisted signal is producer+consumer
+balanced across the rehydrate boundary).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3 — doc-vs-code drift, focus-area-adjacent) — `chatPriorApplied`'s JSDoc claims
+  `resetAdaptState()` clears it, but `resetAdaptState()` does NOT touch the persisted flag.**
+  `intent.ts:127-128` documents: "Cleared to `false` (or absent) by `resetAdaptState()` / session
+  teardown so a genuinely new session can receive the prior for the first time." But `resetAdaptState()`
+  (`adapt.ts:327-331`) only does `appliedFingerprints.clear(); _feedbackListenerRegistered = false;
+  _chatPriorAppliedSessionId = null;` — it clears the IN-MEMORY sibling guard, NOT the PERSISTED
+  `IntentState.chatPriorApplied` (which lives in the sessionStorage envelope and is untouched by
+  `resetAdaptState`). The flag is ACTUALLY cleared only by `eraseIntentState()` (full envelope
+  `removeItem` on consent deny/withdraw — `session.ts:430-437`) or by the natural session-ID rotation
+  (a new session ID → a new envelope key → no rehydrated flag). The PR body's self-check even states
+  this correctly ("cleared by eraseIntentState on deny/withdraw"), so the SHIPPED clearing behaviour
+  is sound — but the JSDoc on the field contradicts it and will mislead the next maintainer into
+  thinking `resetAdaptState()` is the reset path (it is the reset path for the IN-MEMORY guard, not
+  the persisted flag). Impact: a future archetype-change handler that calls `resetAdaptState()`
+  expecting the chat prior to become re-appliable would NOT get that behaviour (the persisted flag
+  survives), and could either re-fold incorrectly (if they then clear the in-memory guard and a stale
+  envelope is somehow re-read) or, more likely, silently NOT re-apply a legitimately-new chat prior
+  after an archetype change. This is the exact "two resets for one concept, doc names the wrong one"
+  shape. → **FOLLOW-254 (P3)**: reconcile the `chatPriorApplied` JSDoc with the actual clearing path
+  (eraseIntentState / session rotation), and decide+document whether an archetype change SHOULD make
+  the chat prior re-appliable (if yes, `resetAdaptState` or the archetype-change path must also strip
+  the persisted flag).
+- **LG-2 (P3 — focus-area: two guards for one invariant, authoritative-ownership ambiguity).** The
+  fix retains BOTH `intentState.chatPriorApplied` (primary, persisted) AND `_chatPriorAppliedSessionId`
+  (secondary, in-memory) checked with `&&` at `adapt.ts:780-782`. With `&&`, the prior is applied
+  ONLY if BOTH guards say "not yet applied" — so the EFFECTIVE authority is whichever guard is MORE
+  restrictive at any moment. Analysis of the four states confirms correctness today: (persisted=true,
+  mem=*) → skip (persisted wins, reload-safe ✅); (persisted=false/absent, mem=set) → skip (in-tab
+  re-entry ✅); (persisted=false, mem=null) → apply (genuine first fold ✅). So the secondary guard is
+  genuinely redundant-but-harmless for the scenarios enumerated. The MAINTENANCE risk is real but
+  P3: a future edit that flips the persisted guard to a different polarity, or that needs the prior to
+  re-apply (e.g. a fresh chat signal mid-session with a NEW dimension set), must reason about BOTH
+  guards and the `&&` — and the in-memory guard sets `_chatPriorAppliedSessionId = session.sessionId`
+  (`:784`) BEFORE the persisted flag is even computed, so the two can diverge within a lifecycle if
+  any early-return path is added between `:784` and the persist at `:796`. The PR comment correctly
+  labels the persisted one PRIMARY and the in-memory one "redundant but cheap; kept for
+  defence-in-depth" (`:758-765`) — so authority IS documented in-code, which downgrades this from a
+  bug to a maintenance note. → **FOLLOW-255 (P3)**: add a one-line invariant comment at `:784`
+  stating the persisted flag is the SOLE source of truth and the in-memory guard is a non-authoritative
+  fast-path that must never gate-OUT an apply the persisted flag would gate-IN; OR (cleaner) drop the
+  in-memory guard entirely once a test proves the persisted path covers the same-tab re-entry case
+  (the `follow-252.test.ts` "in-tab navigation" describe at `:496` already exercises this WITHOUT
+  needing the in-memory guard, since it does NOT call `resetAdaptState()` and the persisted flag is
+  read on the second `_initForTest`). Two guards for one invariant is debt; the data to retire the
+  secondary one already exists.
+- **LG-3 (P3 — schema-version decision: CORRECT, recorded as a positive, no follow-up).** The focus
+  area asked whether `INTENT_STATE_SCHEMA_VERSION` needs bumping. It does NOT, and the PR got this
+  right. `rehydrateIntentState` (`session.ts:391`) rejects an envelope whose `version !==
+  INTENT_STATE_SCHEMA_VERSION` (=1). Bumping to 2 would have INVALIDATED every in-flight
+  pre-FOLLOW-252 envelope on deploy — wiping live sessions' rehydrated archetype distributions for no
+  benefit. Because `chatPriorApplied` is OPTIONAL and `isValidIntentState` (`index.ts:172-180`) does
+  not require it, an old (v1, no-flag) envelope rehydrates cleanly: the absent flag reads as `!== true`
+  → the prior applies once (correct — that session never folded it in) → the flag is then written.
+  New-code-reading-old-data and old-code-reading-new-data (the optional field is just ignored) are
+  BOTH safe. Keeping version=1 is the correct backward-compatible choice. The AC3 test asserts
+  `envelope.version === INTENT_STATE_SCHEMA_VERSION` (`:458`) — locking in "no bump." Recorded as a
+  POSITIVE; no follow-up.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** No shipped correctness defect. The guard ordering is correct, the `as const` on
+  `chatPriorApplied: true` is type-safe, the persist is inside the existing try/catch (storage-unavailable
+  fails open, state still updated in-memory for the page), and `markedIntentState` is threaded to BOTH
+  the persist AND the return value AND the `chat_mismatch` event payload consistently (the diff
+  renamed all three `updatedIntentState` references to `markedIntentState` — no half-rename left a
+  stale unflagged copy). The RETRO-047 CB-1 Vitest-typecheck escape did not recur (no return-type
+  change, no `vi.fn` generic-arg edit).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3 — test-file placement, focus-area question).** FOLLOW-253's 6 tests live in a NEW
+  `follow-252.test.ts` rather than being added to the feature's own `follow-101.test.ts`. Assessment:
+  a DEDICATED file is the RIGHT call here, NOT a gap in coverage — but it leaves the FEATURE file
+  (`follow-101.test.ts`) still containing an AC-5 "Rule R idempotency" `describe` (`:265`) that
+  exercises ONLY the in-memory guard and would STILL pass even if the persisted guard were deleted.
+  That stale-but-green test is now MISLEADING: a reader of `follow-101.test.ts` sees "Rule R
+  idempotency — applied at most once" and may believe the reload hole is covered there (it is not;
+  the real coverage moved to `follow-252.test.ts`). Two seam tests for one feature in two files is
+  acceptable (the 252 file is explicitly the rehydrate-boundary seam; the 101 file is the
+  per-lifecycle behaviour) — but the 101 AC-5 `describe` SHOULD carry a one-line pointer comment
+  ("reload-boundary coverage lives in follow-252.test.ts") so the in-memory-only test is not
+  mistaken for the full Rule R proof. → **FOLLOW-256 (P3)**: add a cross-reference comment to the
+  `follow-101.test.ts` AC-5 `describe` pointing at `follow-252.test.ts` for the rehydrate-boundary
+  proof; OR fold the in-memory AC-5 assertion into the 252 file and delete the now-redundant 101 one.
+  Dedicated file = correct; the residue is the orphaned-looking AC-5 in the feature file.
+- Otherwise coverage is GOOD: AC1 (reload skip), AC2 (TG-2 late chat arrival applies once), AC3
+  (persisted-not-in-memory + version unchanged + absent-when-no-dims), in-tab re-entry — all driven
+  through the real `init()` seam.
+
+#### 4d. Documentation gaps
+
+- Covered by LG-1 (the `chatPriorApplied` JSDoc reset-path drift) — filed as FOLLOW-254. No
+  MASTER_DESIGN or compliance-doc drift (the field is SDK-internal state, already covered by the
+  `estalara_intent_*` sessionStorage disclosure from FOLLOW-218 / RETRO-036; `chatPriorApplied` is a
+  boolean inside that already-disclosed envelope, not a new storage key — no new DPIA/ROPA entry
+  needed). Verified: the existing `estalara_intent_*` ROPA/DPIA disclosure covers "intent state" as a
+  whole; a boolean idempotency flag inside it is not separately material. No DG follow-up beyond
+  LG-1.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **Wave A is COMPLETE** (QUEUE.md:4-5: FOLLOW-100/101/102/252/253 all DONE). No IN_PROGRESS ticket
+  consumes `chatPriorApplied`. **No current-sprint cascade.**
+- **FOLLOW-102 (Quiz ON/OFF toggle — DONE, PR #257)** — unaffected; the chat prior's mismatch branch
+  still requires `quiz_answered`, and `chatPriorApplied` is orthogonal to the quiz toggle.
+
+#### 5b. Future sprint tickets affected
+
+- **Any future intent-state mutation that wants to RE-APPLY after an archetype change** must contend
+  with LG-1: `resetAdaptState()` does NOT clear the persisted `chatPriorApplied`, so a re-appliable
+  chat prior post-archetype-change is NOT currently achievable without also stripping the persisted
+  flag. Surfaced so the next mutation author does not assume `resetAdaptState()` is a full reset.
+- **The post-pilot disagreement-rate analytics work (RETRO-047 §5b, LG-2 there)** is unaffected by
+  this PR (it touched neither `quiz.mismatch` producer) — but it remains gated behind the two-producer
+  `source`/`mismatch_kind` discriminator RETRO-047 flagged. No new constraint added here.
+
+#### 5c. Contracts changed others rely on
+
+- `IntentState.chatPriorApplied` (SDK-internal) — additive optional; the ONLY readers are the SDK
+  guard + the FOLLOW-252 test. `isValidIntentState` unchanged (does not require it). No external
+  consumer (decision-api, analytics) reads IntentState directly — it is SDK-local. Safe.
+- `INTENT_STATE_SCHEMA_VERSION` UNCHANGED (=1) — correct (§4a LG-3); no rehydrate-invalidation
+  cascade.
+
+#### 5d. Architectural assumptions affected
+
+- **The Rule R rehydrate-boundary invariant is now ENFORCED for the chat prior** (was VIOLATED in
+  FOLLOW-101). This closes the last of the three Rule R instances (RETRO-032 referrer/device priors
+  fixed by FOLLOW-216/227, RETRO-037 dwell boost fixed by FOLLOW-227, this chat prior fixed by
+  FOLLOW-252). All three intent-state mutations wired into `persistIntentState` now honour the
+  rehydrate boundary. The architectural pattern "persisted idempotency flag in the IntentState
+  envelope" is now the established mechanism — the chat prior uses an explicit `chatPriorApplied`
+  flag rather than the `!intentStateRehydrated` gate (because, unlike the dwell/referrer priors, a
+  chat signal can legitimately arrive AFTER rehydrate (TG-2) and must still apply once — the
+  `!intentStateRehydrated` gate alone would have WRONGLY suppressed that). This is a meaningful
+  design distinction worth recording: `!intentStateRehydrated` gates "apply-only-on-cold-start"
+  mutations; a persisted per-signal flag gates "apply-exactly-once-ever, whenever the signal first
+  arrives" mutations. The chat prior is the latter family.
+- **Two-guard defence-in-depth is now in the codebase** (LG-2). The architectural risk is that this
+  becomes a COPIED pattern (next idempotency author adds an in-memory + persisted pair "for safety")
+  when the persisted flag alone suffices. Recorded so the pattern is not cargo-culted.
+
+### 6. New lesson candidates
+
+- **Pattern (Rule R — its THIRD instance NOW CLOSED; this PR is the FIX, not a new violation) —
+  "intent-state mutation idempotency must be persisted across the rehydrate boundary."** Seen in:
+  RETRO-032 (FOLLOW-216), RETRO-037 (FOLLOW-190), RETRO-047 (FOLLOW-101). Rule R already exists
+  (promoted at count 2 from RETRO-032/037). FOLLOW-252 is the REMEDIATION of the 3rd instance, so it
+  does NOT add a new violation count — it demonstrates the fix shape. **Rule R amendment evaluated:**
+  the focus area asks whether the 3-occurrence count warrants a NEW rule about "in-memory guards that
+  must survive rehydration." DECISION: **NO new rule, but a Rule R VERIFICATION-CLAUSE amendment is
+  now warranted (count 2 for the grep-blind-spot sub-shape).** RETRO-047 §5d already recorded count 1
+  for "the Rule R verification grep is `index.ts`-`currentIntentState = apply…`-shaped and is BLIND
+  to an idempotency mechanism implemented INSIDE `adapt.ts:fetchDirectives`." FOLLOW-252's fix
+  CONFIRMS the mechanism lives in `adapt.ts` (the `chatPriorApplied` guard + producer are both in
+  `fetchDirectives`, not `index.ts`) — so the grep `grep -nE "currentIntentState = apply"
+  packages/sdk/src/index.ts` would have found NOTHING for this whole chat-prior feature, both for the
+  original bug AND for its fix. That is the SECOND concrete demonstration that the Rule R grep misses
+  `adapt.ts`-resident idempotency. → see §11 for the amendment.
+- **Pattern (count 1 — NOT promoted) — "doc names the wrong reset path for a dual-storage guard."**
+  The `chatPriorApplied` JSDoc says `resetAdaptState()` clears it; `resetAdaptState()` clears only the
+  in-memory sibling (LG-1). This is a specific case of "two storage locations for related state, the
+  doc cites the wrong one's lifecycle." Seen here only (count 1). If a SECOND dual-storage-guard doc
+  drift appears, consider a "document the AUTHORITATIVE store's lifecycle, not the fast-path's" rule.
+  Recorded for the count.
+- **Pattern (count 1 — NOT promoted) — "two guards for one invariant (defence-in-depth) where one
+  is provably sufficient."** LG-2. The in-memory guard is retained "for defence-in-depth" but the
+  persisted flag alone covers every enumerated scenario (the in-tab test proves it). Recorded; if a
+  SECOND "redundant defence-in-depth guard that could be retired" appears, consider a "prefer one
+  authoritative guard + a test over two guards + a comment" rule. Count 1.
+- **Pattern (own blind-spot, recorded not counted) — "verifying a CLOSURE without confirming the gap
+  did not move one hop."** This PR is itself a closure of RETRO-047 LG-1. Per step 7, I did NOT stop
+  at "a persisted flag now exists" — I traced producer (`:791`) → persist (`:796`) → rehydrate
+  (`session.ts:408`) → `isValidIntentState` (does the optional field survive the validity gate? yes)
+  → guard read (`:780`) → render (`index.ts:589-591` `onIntentUpdate`), and confirmed the test
+  re-inits WITHOUT clearing sessionStorage (so it actually crosses the boundary). The gap did NOT
+  move downstream (e.g. to "the flag persists but `isValidIntentState` strips it" or "the flag is set
+  but never read on rehydrate") — both were live possibilities I had to rule out by reading
+  `isValidIntentState` and the rehydrate path directly. This is the FOLLOW-097→114→127→141 chain
+  discipline applied: a flag-based closure can fail at the validity-gate hop or the rehydrate-read
+  hop, and I checked both.
+
+### 7. Prior-follow-up closure check (NEW — step 7)
+
+**FOLLOW-252 + FOLLOW-253 close RETRO-047 §4a LG-1 + §4c TG-1 (the FOLLOW-101 Rule R hole).** Traced
+END-TO-END (not one hop):
+
+1. **Producer hop** — `adapt.ts:791` writes `chatPriorApplied: true` onto `markedIntentState`;
+   `:796` persists it. ✅ present.
+2. **Persistence hop** — `persistIntentState` (`session.ts:347`) wraps it in the versioned envelope
+   (version=1, unchanged). ✅ the flag is INSIDE `envelope.state`, the serialised object (AC3 test
+   `:462` asserts `envelope.state.chatPriorApplied === true`). ✅
+3. **Rehydrate-validity hop (the hop most likely to silently drop a new optional field)** —
+   `rehydrateIntentState` (`session.ts:408`) returns `envelope.state` whole; `isValidIntentState`
+   (`index.ts:169`) checks archetype/confidence/signal_count/last_updated_at/quiz_answered/probabilities
+   and does NOT strip unknown/extra fields → `chatPriorApplied` SURVIVES rehydration. ✅ Verified by
+   reading `isValidIntentState` directly — it is a shape-CHECK, not a shape-REBUILD, so it cannot drop
+   the field.
+4. **Consumer hop** — `fetchDirectives` reads `intentState.chatPriorApplied !== true` (`:780`) on the
+   rehydrated state → skips re-apply. ✅
+5. **Render hop** — when applied (first time only), `markedIntentState` returns to `index.ts:589-591`
+   → `currentIntentState` updated → `onIntentUpdate(archetype, confidence)` (DQS tracker). On reload,
+   the guard skips, so render is NOT re-perturbed. ✅
+6. **Test proves the boundary** — `follow-252.test.ts` AC1 (`:231`) calls `_initForTest()`, captures
+   `yield_hunter` prob, tears down + `resetAdaptState()` (simulating module re-load) but does NOT
+   clear sessionStorage, calls `_initForTest()` AGAIN, asserts `yhAfterSecond ≈ yhAfterFirst` to 10
+   decimals. This is the genuine rehydrate→re-init crossing RETRO-047 demanded. The gap did NOT move
+   one hop downstream. **CLOSURE CONFIRMED.**
+
+The ONLY residue is LG-1 (the doc says `resetAdaptState()` clears the flag — it does not; this is a
+DOC hop, not a functional hop, and the functional clearing via `eraseIntentState` IS correct). So the
+closure is functionally complete; FOLLOW-254 fixes a doc that, if trusted, could re-open a DIFFERENT
+gap (re-apply after archetype change) one level down — recorded precisely so the chain-moves-one-hop
+risk is tracked, not waved away.
+
+### 8. Multi-axis analysis (NEW — step 8)
+
+Axes of the `chatPriorApplied` contract change, each analysed:
+
+- **Persisted axis vs in-memory axis** — BOTH analysed (§4a LG-2). Persisted is authoritative +
+  reload-safe; in-memory is a redundant fast-path. The fix correctly makes the persisted axis primary.
+- **Producer axis vs consumer axis** — BOTH present and balanced (§3 CHECK B). Producer `:791`,
+  consumer `:780`.
+- **Cold-start axis vs late-arrival (TG-2) axis** — BOTH analysed. Cold start: prior applies, flag
+  set. Late arrival (first adapt returned no dims, second returns dims): the rehydrated flag is
+  absent/false → prior applies once on the later call → flag set. The `!intentStateRehydrated` gate
+  alone would have WRONGLY suppressed the late-arrival case — which is precisely why FOLLOW-252 chose
+  a per-signal persisted flag over the rehydrate gate (recorded §5d). The AC2 test (`:347`) covers
+  this axis.
+- **Schema-version axis (old envelope vs new envelope)** — BOTH analysed (§4a LG-3): version NOT
+  bumped, old envelopes rehydrate cleanly (absent flag → applies once → correct), new envelopes
+  ignored gracefully by old code. No contradiction with any prior retro.
+- **Reconciliation with prior retros:** this PR CONFIRMS (does not contradict) RETRO-047's verdict —
+  RETRO-047 said FOLLOW-101's in-memory guard was the wrong mechanism; FOLLOW-252 replaces it with
+  the persisted mechanism RETRO-047 prescribed. No "clean" verdict from a prior retro is contradicted
+  (RETRO-047 already filed the gap; this closes it). The ONE nuance I add to RETRO-047: RETRO-047 §4a
+  LG-1 suggested the fix could be "`!intentStateRehydrated` combined with a persisted flag." The
+  shipped fix uses the persisted flag ALONE (no `!intentStateRehydrated` gate) — and that is MORE
+  correct for the TG-2 late-arrival axis than the combined gate would have been. Recorded as a
+  refinement of RETRO-047's prescription, not a contradiction.
+
+### 9. Follow-ups
+
+- **FOLLOW-254 (P3)** — reconcile `chatPriorApplied` JSDoc reset-path with actual clearing
+  (`eraseIntentState`/session rotation, NOT `resetAdaptState`); decide+document archetype-change
+  re-applicability [LG-1 / DG]. sdk-engineer, 1h.
+- **FOLLOW-255 (P3)** — retire OR explicitly annotate the redundant in-memory `_chatPriorAppliedSessionId`
+  guard now that the persisted flag is authoritative (the in-tab test already proves the persisted
+  path covers same-tab re-entry) [LG-2]. sdk-engineer, 2h.
+- **FOLLOW-256 (P3)** — cross-reference the stale `follow-101.test.ts` AC-5 in-memory-only "Rule R"
+  `describe` to `follow-252.test.ts` for the rehydrate-boundary proof (or fold + delete) [TG-1].
+  sdk-engineer + qa-engineer, 1h.
+
+### 10. Cross-references
+
+- **RETRO-047 (FOLLOW-101) — DIRECT PARENT.** This PR is the remediation of RETRO-047 §4a LG-1
+  (FOLLOW-252) + §4c TG-1 (FOLLOW-253). Closure confirmed end-to-end (§7). The chat-prior Rule R
+  chain is now CLOSED.
+- **RETRO-032 (FOLLOW-216) + RETRO-037 (FOLLOW-190) — Rule R sibling instances.** All three Rule R
+  rehydrate-boundary mutations are now remediated (FOLLOW-216/227 for referrer/dwell, FOLLOW-252 for
+  chat). This PR completes the Rule R enforcement triad.
+- **RETRO-035 (FOLLOW-219) — the `!intentStateRehydrated` consolidation.** FOLLOW-252 deliberately
+  did NOT use that gate (chose a per-signal persisted flag instead) because the chat prior must apply
+  on late arrival (TG-2) — recorded as the design distinction between the two idempotency families
+  (§5d / §8).
+- **CONVENTIONS_PATCH.md Rule R (line 717) + Rule Q (the `_initForTest` seam).** This PR satisfies
+  both: persisted-idempotent mutation (Rule R) + a seam test that drives real `init()` twice (Rule Q
+  / Rule R verification clause). §11 amends Rule R's verification grep.
+
+### 11. Rule promotion
+
+**No NEW rule promoted.** Rule R already exists (promoted at count 2). The 3rd instance is REMEDIATED
+here, not newly violated. A NEW "rehydration-safe guard" rule would DUPLICATE Rule R.
+
+**Rule R VERIFICATION-CLAUSE amendment IS promoted (grep-blind-spot sub-shape now at count 2).** The
+amendment is appended to CONVENTIONS_PATCH.md Rule R: the existing verification grep
+(`grep -nE "currentIntentState = apply" packages/sdk/src/index.ts`) is blind to idempotency
+mechanisms implemented inside `adapt.ts:fetchDirectives` — demonstrated TWICE on the chat-prior
+chain (RETRO-047 §5d recorded the original-bug miss as count 1; FOLLOW-252's fix living entirely in
+`adapt.ts` confirms the fix would also escape the grep — count 2). The amendment broadens the grep to
+scan `adapt.ts` for `apply.*Prior` folds and to assert a `_initForTest`-seam rehydrate test exists.
+
+
+## RETRO-049 — FOLLOW-102 (Quiz ON/OFF toggle — `tenants.quiz_enabled` + `SdkConfig.quiz` + PATCH /api/tenants/:id + snippet producer + dashboard) — 2026-06-10
+
+> **Numbering note.** RETRO-048 was concurrently authored for a DIFFERENT PR (FOLLOW-252 + FOLLOW-253
+> / PR #258). This entry — for FOLLOW-102 / PR #257 — takes the next free number RETRO-049 to avoid
+> clobbering it. Follow-up numbers 254/255/256 were consumed by that concurrent retro; this retro
+> uses 257/258.
+
+### 1. Summary of change
+
+- **PR:** #257 (merged 2026-06-10 18:34 UTC, commit `94aa116`). sdk-engineer. Sprint 13b, Lane C.
+  Adds a per-tenant quiz ON/OFF toggle: a dedicated `tenants.quiz_enabled` boolean column (migration
+  0025), a `PATCH /api/tenants/:id` write route (tenant-scoped JWT + Zod), `SdkConfig.quiz` parsed
+  from `data-quiz-enabled`/`data-quiz-trigger`, a `buildSnippet()` Rule-L producer for
+  `data-quiz-enabled="false"`, a `/dashboard/quiz` toggle (optimistic + rollback), and the SDK gate
+  in `showQuizTrigger()`.
+- **Files changed:** 15 (+965 / −32): 1 SQL migration, 1 journal entry, 1 Drizzle schema, 3 SDK
+  files (`config.ts`, `index.ts`, 1 test), 5 control-plane files, 1 HANDOFFS note, 1 agent lessons.
+- **Modules touched:** SDK (`packages/sdk`), control-plane (`apps/control-plane`), shared DB
+  (`packages/db`), docs (HANDOFFS).
+- **Key contracts changed:**
+  - `tenants.quiz_enabled` (DB column) — ADDED — `boolean NOT NULL DEFAULT true` — breaking: no
+    (additive, defaulted, forward-only, IF NOT EXISTS).
+  - `SdkConfig.quiz` (`{ enabled: boolean; trigger_after_n_listings?: number }`) — ADDED — optional
+    sub-object — breaking: no.
+  - `PATCH /api/tenants/:id` — ADDED — new route, accepts `{ quiz_enabled?: boolean }` — breaking: no.
+  - `GET /api/quiz/config` response — CHANGED — now also returns `quiz_enabled` + `tenant_id` —
+    additive, breaking: no.
+  - `buildSnippet(tenantId, apiKey, inquirySubmitSelector?, quizEnabled?)` — CHANGED — new 4th
+    optional positional param — breaking: no (sole non-test caller updated).
+
+### 2. Verification done in PR
+
+- Test files added/changed: `packages/sdk/src/__tests__/follow-102.test.ts` (10 — `readConfig`),
+  `apps/control-plane/src/app/api/tenants/[id]/route.test.ts` (7 — mock OFF/ON, string→400,
+  no-fields→400, 401, 403, DB path), `dashboard/quiz/quiz-toggle.test.tsx` (4 — OFF/ON render + PATCH
+  OFF/ON), `DetectionPreview.test.tsx` (+6 — buildSnippet emit/omit + prop-thread). ~27 new assertions.
+- Coverage delta: unknown (not independently computed; read-only).
+- CI checks: PR body reports SDK 1263 + control-plane tests pass; Lint/Typecheck/Test/Format/RuleH/
+  RuleL/Build green. NOT independently verified (read-only; standing Rule I / Vercel / Python
+  pre-existing-red caveat per `project_ci_gate_landscape`). **Process note (focus area):** the Vitest
+  v2 `vi.fn<>` type-arg change caused TWO distinct CI failures from one edit — a typecheck failure
+  (type error) AND a separate prettier trailing-space failure (format error). Different gates,
+  different root causes; analysis in §4b CB-1.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code (every new file/export has ≥1 non-test importer):**
+
+- `PATCH` handler (`api/tenants/[id]/route.ts`) — Next.js route entrypoint (framework-route
+  suppression); ALSO has a runtime non-test caller — dashboard `page.tsx:99` PATCHes it. NOT dead.
+- `buildSnippet` 4th param `quizEnabled` — threaded from `DetectionPreview.tsx:197` (non-test). NOT dead.
+- `SdkConfig.quiz.enabled` — read at `index.ts:791` (non-test gate). NOT dead.
+- `tenants.quizEnabled` (Drizzle column) — read by `quiz/config/route.ts:63`, written by
+  `tenants/[id]/route.ts:129` (non-test). NOT dead.
+- **CHECK A clean.**
+
+**CHECK B — Half-wire (every new column/attribute/SDK-signal has BOTH producer AND consumer):**
+
+- **`tenants.quiz_enabled` (column)** — Producer: `PATCH /api/tenants/:id` (`route.ts:129`) + migration
+  default. Consumer: `GET /api/quiz/config:63` → dashboard. End-to-end. **NOT a half-wire.**
+- **`data-quiz-enabled` (SDK `<script>` attribute)** — Producer: `buildSnippet` (`DetectionPreview.tsx:145`)
+  when `quizEnabled === false`. Consumer: `config.ts:172` `readConfig()` → `index.ts:791` gate. Full
+  chain DB→/api/quiz/config→dashboard→DetectionPreview prop→buildSnippet→`data-quiz-enabled`→readConfig→
+  `config.quiz.enabled`→`showQuizTrigger()`. **NOT a half-wire** (Rule-L happy path, both ends present + tested).
+- **`data-quiz-trigger` / `SdkConfig.quiz.trigger_after_n_listings` (NEW attribute + field)** — Consumer
+  EXISTS (`config.ts:176-181` parses `dataset.quizTrigger`). **Producer ABSENT** — `buildSnippet` never
+  emits `data-quiz-trigger` (grep: zero non-test producers). AND no SDK runtime path reads the parsed
+  value (`grep config.quiz?.trigger_after_n_listings` outside config.ts/tests → 0; the real timing uses
+  hardcoded `QUIZ_TRIGGER_DELAY_MS = 30_000`, `ui/quiz-trigger.ts:31`, FOLLOW-199). → **HALF_WIRE_C — P1.**
+  **FOLLOW-257.** See §4a LG-1.
+- No new env-var, Redpanda topic, or Redis key introduced.
+- **CHECK B — one HALF_WIRE_C (`data-quiz-trigger`), filed FOLLOW-257.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — `data-quiz-trigger` / `quiz.trigger_after_n_listings` is double-dead config (Rule L
+  HALF_WIRE_C).** `config.ts:176-181` parses, range-checks (`> 0`), and defaults `data-quiz-trigger`
+  into `SdkConfig.quiz.trigger_after_n_listings`, and 4 of the 10 FOLLOW-102 SDK tests assert it. But
+  (a) `buildSnippet` (`DetectionPreview.tsx:132-146`) emits ONLY `data-quiz-enabled`, never
+  `data-quiz-trigger`, so the attribute is never present in a real snippet; and (b) NO SDK runtime
+  path reads the parsed value — `scheduleQuizTrigger` (`index.ts:868`→`ui/quiz-trigger.ts:38`) fires on
+  the hardcoded 30s constant, and the dashboard "Trigger threshold" writes to `quizConfig.trigger_after_n_listings`
+  JSONB (a SEPARATE store) that nothing in the SDK reads. Net: the field is always its hardcoded default.
+  Textbook Rule L (CONVENTIONS_PATCH.md:511 — consumer whose production path never PRODUCES it), here
+  double-dead (even the parsed value has no reader). → **FOLLOW-257 (P1):** either wire end-to-end (emit
+  `data-quiz-trigger` from `buildSnippet` sourced from `quizConfig.trigger_after_n_listings`, AND have
+  `scheduleQuizTrigger` honor `config.quiz.trigger_after_n_listings`) or remove the parse + field + 4
+  tests until a real timing feature needs it. Cite Rule L.
+- **LG-2 (P2) — the pilot-freeze Lane-C guard does NOT watch the new `tenants.quiz_enabled` column;
+  it still inspects `cfg.enabled` in `quizConfig` JSONB — re-instantiating RETRO-012 / FOLLOW-117 one
+  column over.** `api/adapt/route.ts:90-94` `LANE_C_FLAG_KEYS` includes `'enabled'` (comment:
+  "QuizConfig writes cfg.enabled, not cfg.quiz_enabled"); `checkPilotFrozenAsync:118-120` SELECTs only
+  `quizConfig` (not `quizEnabled`) and filters `cfg[key] === true`. FOLLOW-117 (PR #156, RETRO-012)
+  previously fixed this guard by aligning it to the field the producer writes. FOLLOW-102 then made
+  `tenants.quiz_enabled` the SoT (its own HANDOFFS note says use the COLUMN, not `quizConfig.enabled`)
+  but did NOT repoint the freeze guard. Consequence: if a frozen pilot tenant's quiz is toggled ON via
+  the new column (`PATCH /api/tenants/:id`, `quiz_enabled:true`) during the CTA-lift window, the
+  contamination warning does NOT fire. Step-7 closure pattern: FOLLOW-117 closed the mismatch; FOLLOW-102
+  MOVED the authoritative toggle to a column the guard does not inspect — gap moved one hop. P2 (guard
+  is fire-and-forget, non-blocking, never alters the response) but it is FALSE reassurance at go/no-go,
+  the exact harm FOLLOW-117 was filed to prevent. → **FOLLOW-258 (P2):** add `quizEnabled: tenants.quizEnabled`
+  to the guard SELECT + treat `quiz_enabled === true` as Lane-C-active (or document the column as
+  intentionally exempt). Cite RETRO-012 / FOLLOW-117.
+- **LG-3 (P3, no follow-up — recorded; ANSWERS focus-area fail-open question) — quiz-OFF propagates to
+  live tenants ONLY on snippet re-paste; there is NO runtime channel, and the SDK gate is fail-OPEN.**
+  The SDK learns `quiz_enabled` EXCLUSIVELY from the static `data-quiz-enabled` snippet attribute — it
+  NEVER fetches `/api/quiz/config` at runtime (grep: zero SDK fetches of that endpoint). So `/api/quiz/config`
+  being unreachable does NOT affect the SDK gate AT ALL. The gate is `quizEnabled = (dataset.quizEnabled
+  !== 'false')`: absent/missing attribute → `true` → quiz shows (fail-OPEN, safe default). A tenant who
+  toggles OFF in the dashboard but keeps their installed `<script>` STILL gets the quiz until they
+  regenerate + re-paste. By-design for a static-snippet SDK; recorded so a future "instant kill-switch"
+  requirement knows it must add a runtime config fetch and make a deliberate fail-open vs fail-closed choice.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2 — process, the focus-area item) — ONE edit (Vitest v2 `vi.fn<>` type-arg) produced TWO
+  distinct CI failures because typecheck and format are SEPARATE gates and the pre-commit hook runs
+  only format.** Distinct root causes: (a) the `vi.fn<(req)=>Promise<...>>()` generic-arg signature
+  compiles under Vitest v1 but errors under v2's stricter `vi.fn` overloads — a TYPE error, invisible
+  to prettier, caught only by CI `tsc --noEmit` because the lefthook runs `prettier --check`+lint+commitlint
+  but NOT typecheck (CI-only for hook speed); (b) the trailing-space was a separate prettier failure —
+  format error prettier strips ONLY if the edited file is re-staged before commit; a hook validating a
+  stale staged blob reports "unchanged." No defect SHIPPED (CI caught both; fixed before merge) → P2/process.
+  This is the SECOND retro recording the "typecheck-not-in-pre-commit → type regression escapes to CI-only"
+  shape (first: RETRO-047 §4b CB-1, same Vitest v2 `vi.fn` family). Pattern now at count 2; promotion in §6.
+- Otherwise **N/A.** `PATCH /api/tenants/:id` validates with Zod, scopes WHERE to the authed tenant,
+  rejects empty PATCH (400), returns 404 on missing row, fail-opens to `quiz_enabled:true` on DB error
+  in `/api/quiz/config`. `readConfig` defaults are safe. No shipped correctness defect beyond Rule-L LG-1.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — the SDK gate `showQuizTrigger()` early-return is NOT tested.** `index.ts:791`
+  `if (config.quiz?.enabled === false) return;` is the actual AC6 feature gate, but `follow-102.test.ts`
+  only tests `readConfig` parsing (AC3). No test drives `init()`/`showQuizTrigger` with
+  `config.quiz.enabled === false` asserting NO trigger / widget / quiz events emit. The wire parsed-config
+  → suppressed-UI is unproven. → folds into **FOLLOW-257** AC. (Same class as RETRO-047 TG-1: consumer
+  parsed but the gated behavior path untested.)
+- **TG-2 (P3, folds into FOLLOW-258) — no test covers the pilot-freeze guard seeing `quiz_enabled=true`
+  on a frozen tenant.** When FOLLOW-258 adds `quizEnabled` to the guard SELECT, add a test asserting the
+  warning fires for `pilotFrozen=true` + `quizEnabled=true`.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — ROPA `tenants` data-category enumeration is now stale.** `docs/compliance/ropa.md:259`
+  lists the `tenants` table categories ("…brand_config, quiz_config, Stripe…") but not the new `quiz_enabled`
+  column. `quiz_enabled` is non-personal tenant CONFIG (not personal data) → low-impact, does NOT trigger
+  Rule N (no user-facing behavior disclosed). Recorded as a P3 doc nit for the next compliance sweep; no
+  dedicated follow-up (carries no personal data, affects no DSR / lawful-basis disclosure).
+- Otherwise well-JSDoc'd (migration cites §B.1/§E.4/§D.6; `buildSnippet`, `SdkConfig.quiz`, the route,
+  and the dashboard page all carry FOLLOW-102 rationale).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected (Sprint 13b Lane C + 13a Lane B)
+
+- **FOLLOW-117 (DONE, PR #156, RETRO-012) — closure PARTIALLY RE-OPENED (§4a LG-2).** Its fix aligned
+  the guard to `cfg.enabled`; FOLLOW-102 moved the authoritative toggle to `tenants.quiz_enabled`, which
+  the guard does not read. FOLLOW-258 restores the closure.
+- **TICKET-PILOT-001 (IN_PROGRESS, Lane B pilot launch) — DIRECTLY affected.** QUEUE notes "FOLLOW-102 =
+  mergeable — tenant-gated OFF for the pilot tenant" — pilot is expected to run `quiz_enabled=false`. That
+  OFF state reaches the SDK ONLY via the snippet's `data-quiz-enabled="false"` (§4a LG-3), so onboarding
+  MUST regenerate/re-paste the snippet after setting the column — the `PATCH` write alone does not gate
+  the live widget. The install checklist should add that step. Re-pointed, not blocked.
+- **FOLLOW-101 (DONE, PR #256, RETRO-047) — interaction reaffirmed.** RETRO-047 §5a noted that with quiz
+  OFF, `state.quiz_answered` is never true, so the chat-path `quiz.mismatch` branch never fires. FOLLOW-102
+  makes quiz-OFF real and per-tenant. Consistent; no new conflict.
+
+#### 5b. Future sprint tickets affected
+
+- **Quiz v2.0 / any "configurable quiz trigger threshold" feature** MUST close LG-1 first
+  (`data-quiz-trigger` is parsed-but-inert) or it will appear to ship a configurable threshold while the
+  SDK silently uses the hardcoded 30s timer.
+- **Any "instant kill-switch" / runtime tenant-config feature** must add an SDK runtime fetch of
+  quiz-enablement and make a deliberate fail-open vs fail-closed choice (§4a LG-3 — today snippet-static +
+  fail-open).
+- **`data-engineer` daily schema-validation cron** (`apps/data-quality/src/crons/schema_validation.py`)
+  validates the per-tenant SITE SCHEMA (`TenantSiteSchema` JSONB), NOT the Postgres `tenants` column set
+  (verified: the cron enumerates no expected `tenants` columns; it samples site schemas). So it does NOT
+  need a `quiz_enabled` entry — no drift-check update required. (Answers focus-area question on downstream
+  consumers.) ClickHouse has no `tenants` dim-table sync that consumes the column either.
+
+#### 5c. Contracts changed others rely on
+
+- `buildSnippet` gained a 4th positional param `quizEnabled?` — internal to control-plane; the SOLE
+  non-test caller (`DetectionPreview.tsx:197`) was updated; 6 buildSnippet tests pass. Rule G satisfied.
+  POSITIVE — no gap.
+- `GET /api/quiz/config` response is now `{ ...config, quiz_enabled, tenant_id }` — additive; extra keys
+  are safe for any other consumer.
+- `tenants.quiz_enabled` — new SoT column; HANDOFFS instructs all readers to use it not `quizConfig.enabled`.
+  The pilot-freeze guard is the one reader that did NOT get repointed (LG-2).
+
+#### 5d. Architectural assumptions affected
+
+- **Two stores now express "quiz on/off": the new `tenants.quiz_enabled` column (SoT per HANDOFFS) AND
+  the legacy `quizConfig.enabled` JSONB (still written by `POST /api/quiz/config`, still watched by the
+  freeze guard).** FOLLOW-102 declared the column authoritative but did NOT retire the JSONB field or
+  repoint its remaining reader. Until LG-2 closes, "is the quiz on?" has two answers that can diverge.
+  PM note: a future cleanup should either backfill `quiz_enabled` from `quizConfig.enabled` and stop
+  writing the JSONB field, or document the column as sole SoT and repoint every reader (only the freeze
+  guard remains).
+
+### 6. New lesson candidates
+
+- **Pattern (Rule L — already a RULE; confirming instance) — "the SDK parses a `data-*` config attribute
+  (`data-quiz-trigger`) that no production `buildSnippet` path emits AND no runtime path reads."** Seen
+  in: RETRO-009/010/011 (Rule L promotion evidence) + RETRO-049 §4a LG-1 (double-dead variant). Rule L
+  covers it; filed FOLLOW-257. NOT a new rule.
+- **Pattern (count 2 — PROMOTED as Rule T) — "a type/tooling regression the pre-commit hook structurally
+  cannot catch because typecheck is a CI-only gate (Vitest v2 `vi.fn` type-args)."** Seen in: RETRO-047
+  §4b CB-1 (FOLLOW-101) + RETRO-049 §4b CB-1 (FOLLOW-102) — same root cause two consecutive retros: the
+  lefthook runs format+lint+commitlint but NOT `tsc --noEmit`. **Threshold of 2 reached.** Promoting a
+  NARROW Rule T that codifies the LESSON (a green pre-commit is NOT a typecheck pass; run `tsc --noEmit`
+  on touched packages before declaring ready) WITHOUT mandating a specific hook reconfiguration (adding
+  typecheck to the hook trades hook SPEED — a devops escalation, not an auto-codified convention). See
+  CONVENTIONS_PATCH.md Rule T.
+- **Pattern (count 1 — NOT promoted, recorded) — "a previously-'fixed' guard/consumer is silently
+  re-broken when a later ticket introduces a NEW authoritative field and does not repoint the prior
+  reader of the OLD field."** RETRO-012/FOLLOW-117 established the guard→field alignment; RETRO-049 §4a
+  LG-2 shows FOLLOW-102 re-broke it by adding `tenants.quiz_enabled` without repointing the freeze guard.
+  Sibling of Rule S (apply to ALL members of a symmetric set) and of the step-7 closure-moves-one-hop
+  pattern; the specific "new-SoT-field orphans an old reader" shape is count 1. Not promoted; recorded so
+  a 2nd instance can promote a Rule S sub-shape.
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed:** I nearly classified the whole `SdkConfig.quiz` sub-object as cleanly
+  wired because the `enabled` half IS fully wired end-to-end (DB→snippet→SDK→gate) with 10 green tests
+  around it. The harder finding was that the SIBLING field `trigger_after_n_listings` in the SAME
+  sub-object is double-dead — I had to grep the parsed value's downstream readers (zero) AND the
+  attribute's producers (zero) separately. Lesson: audit EACH field of a new config shape independently;
+  a sub-object is not "wired" because ONE of its fields is (field-granular multi-axis discipline).
+- **A chain I had to trace twice:** the pilot-freeze guard (LG-2). First read: "guard exists, watches
+  `enabled`, FOLLOW-117 fixed it — clean." Re-tracing against FOLLOW-102's HANDOFFS ("use the NEW column")
+  revealed the guard reads the OLD field and FOLLOW-102 moved the SoT — the FOLLOW-117 closure is
+  partially re-opened. Trusting the prior "DONE" label would have missed it.
+
+### 7. Follow-ups
+
+- **FOLLOW-257 (P1)** — Resolve the `data-quiz-trigger` / `quiz.trigger_after_n_listings` Rule-L
+  half-wire: wire it end-to-end OR remove the parse + field + 4 tests; ALSO add the missing
+  `showQuizTrigger()` gate test (TG-1). [LG-1; TG-1; Rule L] (sdk-engineer, 3h). Filed below.
+- **FOLLOW-258 (P2)** — Repoint the pilot-freeze Lane-C guard at the new SoT column `tenants.quiz_enabled`
+  (add to `checkPilotFrozenAsync` SELECT + treat `quiz_enabled=true` as Lane-C-active), with a test
+  (TG-2). Restores the RETRO-012/FOLLOW-117 closure FOLLOW-102 moved one hop. [LG-2; TG-2]
+  (backend-engineer, 2h). Filed below.
+- ROPA `tenants` enumeration (DG-1, P3) and the quiz-OFF re-paste propagation note (LG-3, P3) are
+  RECORDED, not filed (no personal data / by-design static-snippet behavior).
+
+### 8. Cross-references
+
+- **RETRO-012 / FOLLOW-117 — the precedent LG-2 re-opens.** Same key-mismatch class, one column over.
+  Closure discipline: I did NOT trust the FOLLOW-117 "DONE" label; I re-traced the guard SELECT against
+  FOLLOW-102's HANDOFFS SoT declaration and confirmed the guard reads the now-secondary field.
+- **RETRO-009/010/011 — Rule L promotion evidence.** LG-1 is a confirming Rule-L instance (double-dead variant).
+- **RETRO-047 — sibling Lane-C retro + shared process pattern.** Its §4b CB-1 (Vitest v2 `vi.fn` →
+  CI-only typecheck escape) is the FIRST instance of the pattern this retro promotes as Rule T (count 2
+  here). Its §5a quiz-OFF / `quiz_answered` interaction is reaffirmed by FOLLOW-102 making quiz-OFF real.
+- **RETRO-048 — concurrent retro (different PR #258 / FOLLOW-252+253).** Consumed FOLLOW numbers 254-256
+  and RETRO number 048; this retro is RETRO-049 / FOLLOW-257-258 to avoid collision.
+- **FOLLOW-199 — `scheduleQuizTrigger` / `QUIZ_TRIGGER_DELAY_MS = 30_000`** is the hardcoded timer that
+  makes `trigger_after_n_listings` inert (LG-1). FOLLOW-257 must reconcile with it.

@@ -1,12 +1,11 @@
 # Backlog Queue
 
-**Updated 2026-06-10 by pm-orchestrator. Sprint 13b: FOLLOW-087 DONE (PR #255), FOLLOW-099 DONE (PR
-#248), FOLLOW-100 DONE (PR #254), FOLLOW-101 DONE (PR #256), FOLLOW-102 DONE (PR #257 merged
-2026-06-10), FOLLOW-252 DONE (PR #258 merged 2026-06-10), FOLLOW-253 DONE (PR #258). Wave A COMPLETE
-— all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252,
-FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
-(FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
-awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE — 21/21 DONE.**
+**Updated 2026-06-10 by pm-orchestrator. Sprint 13b: FOLLOW-087/099/100/101/102/252/253 DONE.
+RETRO-048/049 filed: FOLLOW-257 READY (P1 Rule-L half-wire), FOLLOW-263 READY (P2 freeze-guard SoT —
+before TICKET-PILOT-001 window). Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR
+#250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14
+DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW
+(FOLLOW-191 awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE — 21/21 DONE.**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -2742,6 +2741,39 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
     Bundled in PR #258 with FOLLOW-252. 6 tests in follow-252.test.ts drive real init() via
     _initForTest seam; simulate page reload by calling _initForTest twice on same sessionStorage;
     assert distribution not re-perturbed. Covers AC1–AC3.
+
+- id: FOLLOW-257
+  title: Resolve Rule-L half-wire — quiz.trigger_after_n_listings parsed but never emitted or read
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-102]
+  model: sonnet-4.6
+  spec: backlog/sprint-13/FOLLOW-257.md
+  notes: |
+    RETRO-049 LG-1 (P1). config.ts parses quiz.trigger_after_n_listings from data-quiz-trigger
+    attribute but buildSnippet never emits data-quiz-trigger AND the SDK runtime never reads the
+    parsed value — timer is hardcoded to QUIZ_TRIGGER_DELAY_MS = 30s (FOLLOW-199). Rule H:
+    half-wire must be resolved. Either: (A) remove the dead parse + dead attribute + the field from
+    SdkConfig, or (B) wire buildSnippet to emit data-quiz-trigger and the SDK timer to read
+    config.quiz.triggerAfterNListings. Also add a test for showQuizTrigger gate (TG-1).
+
+- id: FOLLOW-263
+  title: Repoint pilot-freeze guard at tenants.quiz_enabled (FOLLOW-102 SoT migration)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-102]
+  model: sonnet-4.6
+  spec: backlog/sprint-13/FOLLOW-263.md
+  notes: |
+    RETRO-049 LG-2 (P2). The pilot-freeze guard (RETRO-012/FOLLOW-117) reads quizConfig.enabled
+    from the JSONB settings column. FOLLOW-102 moved the quiz SoT to tenants.quiz_enabled. The
+    freeze guard is now silently blind to the new column — quiz state can diverge between the two
+    stores. MUST land before TICKET-PILOT-001 measurement window opens. Repoint the freeze guard
+    read to tenants.quiz_enabled; add a test for the mismatched-SoT scenario.
 
 - id: FOLLOW-103
   title: app.estalara.com DOM adaptation — corpus fixture + AI Vision slots + 5-slot coverage

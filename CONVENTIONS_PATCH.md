@@ -757,6 +757,41 @@ grep -nE "currentIntentState = apply" packages/sdk/src/index.ts
 grep -n "intentStateRehydrated" packages/sdk/src/index.ts
 ```
 
+### Rule R amendment (2026-06-10 — RETRO-048 §6/§11 — verification grep was blind to `adapt.ts`-resident idempotency)
+
+**Sub-shape (count 2):** the Rule R verification grep above is `index.ts`-shaped
+(`currentIntentState = apply…`) and is BLIND to an idempotency mechanism implemented INSIDE
+`packages/sdk/src/core/adapt.ts:fetchDirectives`. The chat-intent prior demonstrated this TWICE: the
+ORIGINAL FOLLOW-101 violation lived in `adapt.ts` (in-memory `_chatPriorAppliedSessionId` guard,
+RETRO-047 §5d — count 1), AND the FOLLOW-252 FIX also lives entirely in `adapt.ts` (the persisted
+`chatPriorApplied` producer at `adapt.ts:791` + guard at `:780`, RETRO-048 — count 2). The original
+grep returns ZERO hits for the whole chat-prior chain, so neither the bug nor its fix would be
+surfaced by it. A mutation folded into `currentIntentState` via a `FetchDirectivesResult`
+DESTRUCTURE at the `index.ts` call-site (`index.ts:589` `currentIntentState = updatedIntentState`) —
+rather than a literal `currentIntentState = apply…` — is invisible to the original grep.
+
+**Amended verification (run BOTH the index.ts grep above AND this adapt.ts scan):**
+
+```bash
+# Idempotency mechanisms that live inside fetchDirectives/adapt.ts must ALSO be checked: any
+# `apply*Prior`/`apply*Signal` fold that feeds persistIntentState must be guarded by a PERSISTED
+# flag in the IntentState envelope (survives rehydrate), NOT only an in-memory module variable.
+grep -nE "apply[A-Za-z]+(Prior|Signal)\(" packages/sdk/src/core/adapt.ts
+grep -nE "persistIntentState\(" packages/sdk/src/core/adapt.ts
+# For each such fold, confirm a PERSISTED idempotency flag (e.g. chatPriorApplied) is read BEFORE
+# the fold AND written INTO the persisted envelope (not an in-memory `let _xApplied…` alone):
+grep -nE "let _[A-Za-z]+Applied" packages/sdk/src/core/adapt.ts   # in-memory-only guard = SMELL
+grep -nE "\.chatPriorApplied|Applied: true as const" packages/sdk/src/core/adapt.ts  # persisted flag = OK
+```
+
+**Rule (amended):** an idempotency guard for a `persistIntentState`-feeding mutation MUST be a flag
+PERSISTED in the IntentState envelope (so it survives the rehydrate boundary), NOT an in-memory
+module variable. An in-memory guard alone (`let _xApplied: string | null`) is a SMELL — it resets on
+hard reload while the persisted state + any 24h shadow key survive, re-folding the mutation. If an
+in-memory guard is kept as a fast-path, the PERSISTED flag MUST be the authoritative `&&`-primary
+guard and the accompanying test MUST drive `_initForTest()` TWICE on the SAME sessionStorage (no
+clear between calls) and assert the resumed distribution is not re-perturbed.
+
 ---
 
 ## Rule S — A change made to one verb/branch of a symmetric set MUST be applied to ALL siblings, at the SAME completeness AND verification tier
@@ -815,6 +850,49 @@ grep -n "crm_erasure_status\|crm_disclosure_status" apps/control-plane/src/app/a
 
 ---
 
+## Rule T — A green pre-commit hook is NOT a typecheck pass; type/tooling regressions escape the format-only hook and surface CI-only — run `tsc --noEmit` on touched packages before declaring ready
+
+**Pattern:** An edit introduces a TYPE regression (most often a test-tooling signature change — e.g.
+a Vitest v2 `vi.fn<...>()` generic-arg form that compiled under v1 but errors under v2) that the
+local pre-commit hook CANNOT catch, because the hook runs `prettier --check` + ESLint + commitlint
+but NOT `tsc --noEmit` (typecheck is a CI-only gate, kept out of the hook for speed). The author
+sees a green pre-commit and assumes the change is clean; the type error only appears in CI. A
+confounding second failure often co-occurs: a format error (trailing space / blank line) that
+prettier WOULD strip but only if the edited file is re-staged (`git add`) — a hook validating a
+stale staged blob reports "unchanged," so one edit yields two distinct CI failures from two distinct
+gates.
+
+**Evidence:** RETRO-047 §4b CB-1 (FOLLOW-101, PR #256 — Vitest v2 `vi.fn` type-arg → CI-only
+typecheck failure + stale-stage prettier failure) and RETRO-049 §4b CB-1 (FOLLOW-102, PR #257 — the
+SAME Vitest v2 `vi.fn` family, same two-gate split). Same root cause two consecutive retros;
+threshold of 2 met. No defect SHIPPED in either case (CI caught both), so this is a PROCESS rule,
+not a correctness gate.
+
+**Rule:** Treat a green pre-commit hook as evidence of FORMAT + LINT correctness ONLY — never as a
+typecheck pass. Before marking a ticket READY_FOR_REVIEW (and before any PR that touches
+`.ts`/`.tsx`, especially test files or shared return types), run `tsc --noEmit` (or the package's
+`typecheck` script / `turbo run typecheck --filter=<changed>`) locally on every package you touched.
+When a test-runner major version changes (Vitest v1→v2, etc.), re-typecheck all test files that use
+the runner's typed mock/spy APIs (`vi.fn<>`, `vi.mocked`, `MockInstance`) — overload signatures
+commonly tighten across majors. Re-`git add` every file after every edit so the hook validates the
+working-tree blob, not a stale staged one (this is the format half of Rule B, restated for the
+stale-stage shape). This rule does NOT mandate adding `tsc --noEmit` to the pre-commit hook itself —
+that trades hook speed and is a devops/DX decision to be escalated, not auto-codified here.
+
+**Verification:**
+
+```bash
+# Before declaring ready, typecheck every touched package (NOT covered by the format-only pre-commit hook):
+pnpm -r --filter '...[origin/main]' run typecheck   # or: turbo run typecheck --filter=<changed-pkg>
+# After a test-runner major bump, find typed-mock call sites that may break across the major:
+grep -rn "vi\.fn<\|vi\.mocked\|MockInstance" packages/*/src apps/*/src --include="*.test.ts" --include="*.test.tsx"
+# Confirm no file was committed with a stale staged blob (working tree must equal index for touched files):
+git diff --name-only            # must be empty for files you intend to commit
+```
+
+---
+
+<!-- Rule T added 2026-06-10 — RETRO-049 §6 (RETRO-047 §4b CB-1 + RETRO-049 §4b CB-1, Vitest v2 vi.fn type-arg → CI-only typecheck escape, threshold met). Process rule (no shipped defect); does NOT mandate hook reconfiguration (devops escalation). -->
 <!-- Rule R added 2026-06-08 — RETRO-037 §6 (RETRO-032 LG-1 + RETRO-037 LG-1, threshold met). -->
 <!-- Rule S added 2026-06-09 — RETRO-045 §6 (RETRO-044 §4a LG-1/§6 + RETRO-045 §4c TG-1/§4a LG-1, threshold met; RETRO-044 set the explicit promote-on-2nd-instance condition). -->
 <!-- Rule Q+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->

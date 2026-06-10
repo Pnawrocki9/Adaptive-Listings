@@ -259,3 +259,82 @@
   on disk AND that every RETRO-NNN I cited has a body — treat citation-without-body as a P2 finding
   every single run, because squash/conflict loss is now demonstrably recurrent (RETRO-032/033/034,
   039–043, 045, and 046 itself).
+
+---
+
+## 2026-06-10 · RETRO-048 (FOLLOW-252 + FOLLOW-253 / PR #258 — chat-prior Rule R fix + rehydrate test)
+
+- **A finding I almost missed and why:** the `chatPriorApplied` JSDoc reset-path drift (LG-1). The
+  field's doc confidently states `resetAdaptState()` clears it — and the PR self-check separately
+  (and correctly) says `eraseIntentState` clears it. I almost accepted the JSDoc at face value
+  because it READS authoritative and the functional behaviour is correct. Only by opening
+  `resetAdaptState()` itself (`adapt.ts:327-331`) did I see it touches ONLY the in-memory
+  `_chatPriorAppliedSessionId`, never the persisted flag. Lesson: when a field is guarded in TWO
+  storage locations (in-memory + persisted), the doc almost always names ONE lifecycle and silently
+  attributes it to the other store. Always open the cited reset function and confirm which store it
+  actually mutates — never trust a "cleared by X" JSDoc on a dual-storage field.
+- **An axis/chain I had to trace twice:** the rehydrate-VALIDITY hop. A flag-based closure is most
+  likely to silently fail not at the producer or consumer, but at the validity gate in between —
+  `isValidIntentState` could have been a shape-REBUILD that drops unknown fields, which would strip
+  `chatPriorApplied` on every rehydrate and silently re-open the exact bug FOLLOW-252 fixed. I had
+  to read `isValidIntentState` (`index.ts:169-181`) directly to confirm it is a shape-CHECK (returns
+  a boolean, returns the original object) and NOT a rebuild. This is the FOLLOW-097→114→127→141
+  "gap-moves-one-hop" discipline: a persisted-flag fix can fail at the validity hop or the
+  rehydrate-read hop, and "the flag is written" is NOT closure until you prove the flag SURVIVES the
+  round-trip.
+- **A meta-pattern in how gaps recur across agents:** the SAME chat-prior chain has now produced the
+  SAME blind spot for the Rule R verification grep TWICE — the bug (RETRO-047) and the fix
+  (RETRO-048) BOTH live in `adapt.ts:fetchDirectives`, which the `index.ts`-shaped Rule R grep
+  cannot see. The recurring meta-pattern: a verification grep written against the FIRST place a
+  pattern appeared (index.ts priors) goes blind the moment the same pattern moves to a SECOND module
+  (adapt.ts folds). Verification greps must be RE-DERIVED against each new instance's actual code
+  location, not reused verbatim — a passing grep on the wrong file is worse than no grep (false
+  confidence). I promoted the Rule R verification-clause amendment at count 2 specifically because a
+  blind grep is an enforcement hole that will keep letting Rule R violations through `adapt.ts`.
+- **A discipline win to keep:** the focus area handed me four leading questions (schema bump? two
+  guards? new rule? test placement?). I answered each against the CODE rather than the question's
+  framing: schema bump = correctly NOT done (verified the version guard would invalidate live
+  envelopes); two guards = real debt but provably redundant (the in-tab test already runs on the
+  persisted path alone); new rule = NO (Rule R exists; promoting a duplicate would be noise — but
+  the VERIFICATION CLAUSE warranted amending at count 2); test placement = dedicated file is correct
+  but leaves an orphaned stale AC-5 in the feature file. Three of four "should we?" questions
+  resolved to "the shipped choice is right, here's the residual" — resist the pull to manufacture a
+  P1 just because the question implied one.
+
+---
+
+**Date / RETRO:** 2026-06-10 / RETRO-049 (FOLLOW-102, PR #257 — quiz ON/OFF toggle)
+
+- **A finding I almost missed and why:** the `SdkConfig.quiz` sub-object's
+  `trigger_after_n_listings` field is double-dead (no `buildSnippet` producer for
+  `data-quiz-trigger` AND no SDK runtime reader of the parsed value), while its SIBLING field
+  `enabled` IS fully wired end-to-end with 10 green tests. The green tests + the fully-wired sibling
+  almost made me stamp the sub-object "clean." The fix: audit EACH field of a new config shape
+  independently — a sub-object is not wired because ONE field is. Run the producer grep AND the
+  parsed-value-reader grep SEPARATELY per field. (Same family as RETRO-047's "guard looks correct in
+  isolation but is the wrong kind for the boundary.")
+- **An axis/chain I had to trace twice:** the pilot-freeze Lane-C guard. First pass: "guard exists,
+  watches `enabled`, FOLLOW-117 fixed it — clean." Re-tracing against FOLLOW-102's own HANDOFFS note
+  ("use the NEW `tenants.quiz_enabled` column, not `quizConfig.enabled`") revealed the guard still
+  reads the OLD JSONB field while FOLLOW-102 moved the SoT — FOLLOW-117/RETRO-012's closure is
+  partially re-opened (the gap moved one hop to a new column). Trusting the "DONE" label on
+  FOLLOW-117 would have buried it. Always re-derive a prior closure against the NEW ticket's SoT
+  declaration.
+- **A meta-pattern in how gaps recur across agents:** "a previously-closed consumer↔field alignment
+  is silently re-broken when a later ticket introduces a NEW authoritative field and doesn't repoint
+  the old reader." This is the contract-side twin of the SDK-side step-7 closure-moves-one-hop
+  pattern (inquiry_submit_selector chain). When a PR declares a NEW SoT column/field, grep for EVERY
+  existing reader of the field it supersedes and verify each was repointed — the producing agent
+  rarely owns all the consumers. (Count 1 as its own shape; watch for instance 2 to promote a Rule S
+  sub-shape.)
+- **Process note:** the Vitest v2 `vi.fn` type-arg → CI-only-typecheck escape recurred (RETRO-047
+  then RETRO-049) and reached threshold 2 → promoted Rule T. Kept the rule NARROW (a green
+  pre-commit ≠ a typecheck pass; run `tsc --noEmit`) and explicitly did NOT auto-mandate adding
+  typecheck to the hook (that is a devops speed/DX tradeoff = escalation, not a convention to
+  codify). Discipline: promote the LESSON at threshold without over-reaching into an infra decision
+  the retro can't own.
+- **Numbering hazard observed:** a concurrent retro authored RETRO-048 for a DIFFERENT PR (#258) and
+  consumed FOLLOW 254-256 while this run was in flight. I detected the collision by grepping RETRO/
+  FOLLOW headers right before writing and shifted to RETRO-049 / FOLLOW-257-258. Always re-grep the
+  next free RETRO and FOLLOW numbers IMMEDIATELY before the append, not at the start of the run —
+  parallel retros race on these counters.

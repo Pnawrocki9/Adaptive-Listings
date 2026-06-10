@@ -99,6 +99,7 @@ vi.mock('@estalara/shared', async () => {
 
 // NOTE: verifyDemoJwt is NOT mocked here — we test the full auth path.
 import { POST } from './route';
+import { getDemoOverride } from '@/lib/demo-override-store';
 
 // ─── JWT helpers ──────────────────────────────────────────────────────────────
 
@@ -125,13 +126,17 @@ function encodeSegment(obj: Record<string, unknown>): string {
  * Build a real HS256 JWT signed with TEST_SECRET.
  * `expOffsetSeconds` is relative to now: positive = expires in future, negative = already expired.
  */
-async function buildJwt(expOffsetSeconds: number): Promise<string> {
+async function buildJwt(
+  expOffsetSeconds: number,
+  extra: Record<string, unknown> = {},
+): Promise<string> {
   const header = encodeSegment({ alg: 'HS256', typ: 'JWT' });
   const nowSecs = Math.floor(Date.now() / 1000);
   const payload = encodeSegment({
     sub: 'demo',
     iat: nowSecs,
     exp: nowSecs + expOffsetSeconds,
+    ...extra,
   });
 
   const signingInput = `${header}.${payload}`;
@@ -270,6 +275,23 @@ describe('POST /api/adapt — demo JWT auth hardening (FOLLOW-205)', () => {
     expect(res.status).toBe(500);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.error).toBe('demo_auth_misconfigured');
+  });
+
+  it('FOLLOW-260: JWT tenant_id supersedes body tenant_id (cross-tenant escalation blocked)', async () => {
+    const jwtTenantId = '550e8400-e29b-41d4-a716-446655440099';
+    const bodyTenantId = '550e8400-e29b-41d4-a716-446655440001';
+    expect(jwtTenantId).not.toBe(bodyTenantId);
+
+    const token = await buildJwt(3600, { tenant_id: jwtTenantId });
+
+    const body = { ...BASE_BODY, tenant_id: bodyTenantId };
+    const res = await POST(makePostRequest(body, `Bearer ${token}`));
+
+    expect(res.status).toBe(200);
+    // getDemoOverride must have been called with the JWT tenant, not the body tenant.
+    const mockGetDemoOverride = vi.mocked(getDemoOverride);
+    expect(mockGetDemoOverride).toHaveBeenCalledWith(jwtTenantId);
+    expect(mockGetDemoOverride).not.toHaveBeenCalledWith(bodyTenantId);
   });
 });
 

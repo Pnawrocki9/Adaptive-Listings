@@ -1,10 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return --
- * @estalara/auth and @estalara/db are workspace packages resolved from source in Vitest
- * but not built locally. TypeScript sees them as `any` until packages are built (CI builds
- * them before lint). Same pattern as pilot/cta-lift/route.ts and other routes that import
- * from workspace packages.
- */
-
 /**
  * GET /api/admin/labels/export
  *
@@ -293,7 +286,7 @@ function auditCorpusExport(args: {
  * Returns 3 deterministic sample rows for dev/CI when DATABASE_URL_ADMIN is unset.
  * data_source header is set to 'mock' — consumers MUST surface a visible badge.
  */
-export function buildMockExportRows(): ExportRow[] {
+function buildMockExportRows(): ExportRow[] {
   return [
     {
       prediction_id: 'mock-pred-001',

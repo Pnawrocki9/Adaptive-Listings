@@ -1,12 +1,9 @@
 # Backlog Queue
 
-**Updated 2026-06-09 by pm-orchestrator. Sprint 16 status corrections: FOLLOW-183 DONE (PR #228
-merged 2026-06-08 — Gitleaks resolved), FOLLOW-184 DONE (duplicate Sprint 16 entry corrected to
-DONE, PR #233), FOLLOW-187 DONE (PR #229 merged 2026-06-08 — ROPA Activity 15 + DPIA §2.3/§2.5
-shipped). FOLLOW-185 now IN_PROGRESS (delegated to data-engineer). Sprint 15 COMPLETE — 21/21 DONE.
-Sprint 16 OPEN — 12 DONE (FOLLOW-170/173/174/176/182/183/184/187/190/227/230/234), 1 IN_PROGRESS
-(FOLLOW-185 — PG-harness CRM+DSR integration test), 1 READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal
-deploy ESC-020), FOLLOW-175 READY (P2 LoRA export).**
+**Updated 2026-06-10 by pm-orchestrator. Wave A launched — FOLLOW-258 READY_FOR_REVIEW (PR #249,
+sdk-engineer). FOLLOW-259/260/261/262 READY. Sprint 16 OPEN — 13 DONE, 1 IN_PROGRESS (FOLLOW-099
+READY_FOR_REVIEW PR #248), 2 READY_FOR_REVIEW (FOLLOW-191 awaiting ESC-020, FOLLOW-250/256 PR #247),
+FOLLOW-175 READY (P2 LoRA export).**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -116,31 +113,32 @@ updates.
 
 ## Sprint progress
 
-| Sprint | Weeks | Theme                                                                                                                               | Tickets | DONE | IN_PROG | READY | BLOCKED |
-| ------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
-| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability)                                                                | 9       | 9    | 0       | 0     | 0       |
-| 1      | 2     | Ingest baseline + event schema                                                                                                      | 10      | 10   | 0       | 0     | 0       |
-| 2      | 3     | Postgres + tenant auth + dashboard skeleton                                                                                         | 10      | 10   | 0       | 0     | 0       |
-| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                                                                                 | 6       | 0    | 0       | 1     | 4       |
-| 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                                                                                 | 10      | 2    | 0       | 1     | 7       |
-| 4      | 6     | Intent ontology v1 + Modal scaffolding                                                                                              | tbd     | —    | —       | —     | tbd     |
-| 5      | 7     | LLM gateway + intent extraction from chat (Haiku 4.5 real-time + Sonnet 4.6 batch — decyzja 2026-05-25, patrz FOLLOW-087)           | tbd     | —    | —       | —     | tbd     |
-| 6      | 8     | Embeddings + archetype matching + decision API                                                                                      | 3       | 3    | 0       | 0     | 0       |
-| 7      | 9     | Decision API real logic + adaptation playbooks                                                                                      | 5       | 5    | 0       | 0     | 0       |
-| 7.5    | 9.5   | Auto-Detection Engine                                                                                                               | 7       | 7    | 0       | 0     | 0       |
-| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop                                                                   | 16      | 13   | 0       | 0     | 0       |
-| 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline                                                                      | 6       | 6    | 0       | 0     | 0       |
-| 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)                                                                       | 6       | 6    | 0       | 0     | 0       |
-| 10     | 12    | Close the bandit loop + real embeddings + e2e test                                                                                  | 9       | 9    | 0       | 0     | 0       |
-| 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                                                                    | 9       | 5    | 0       | 4     | 0       |
-| 12     | 14    | Pilot launch on app.estalara.com — COMPLETE (Lane A + Lane C; Lane B → Sprint 13)                                                   | 7       | 5    | 0       | 2     | 0       |
-| 13a    | 15    | Correctness + pilot launch (Lane A correctness gate + Lane B pilot launch) — Lane A 8/8 DONE; Lane B READY (gate closed)            | 11      | 8    | 0       | 1     | 2       |
-| 13a-h  | 15    | Pre-pilot hardening — inquiry producer (FOLLOW-127), GDPR consent disclosures (FOLLOW-128/129), honest pilot dashboard (FOLLOW-122) | 4       | 4    | 0       | 0     | 0       |
-| 13a-h2 | 15    | Pre-pilot hardening v2 — §13.2 localStorage xid erasure (FOLLOW-139), pilot inquiry selector seed (FOLLOW-141)                      | 2       | 2    | 0       | 0     | 0       |
-| 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                         | 6       | 0    | 0       | 3     | 3       |
-| Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)      | 4       | 4    | 0       | 0     | 0       |
-| 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 21   | 0       | 0     | 0       |
-| 16     | 18    | Conversion Label Loop (§T), SDK archetype persistence, DB integration tests, compliance CRM docs, micro-poll Wave 2                 | 12      | 9    | 1       | 2     | 0       |
+| Sprint | Weeks | Theme                                                                                                                                                   | Tickets | DONE | IN_PROG | READY | BLOCKED |
+| ------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ---- | ------- | ----- | ------- |
+| 0      | 1     | Foundation (repo, monorepo, CI, scaffolding, secrets, observability)                                                                                    | 9       | 9    | 0       | 0     | 0       |
+| 1      | 2     | Ingest baseline + event schema                                                                                                                          | 10      | 10   | 0       | 0     | 0       |
+| 2      | 3     | Postgres + tenant auth + dashboard skeleton                                                                                                             | 10      | 10   | 0       | 0     | 0       |
+| 2.5    | 4     | Auto-Onboarding pipeline (NEW v1.1)                                                                                                                     | 6       | 0    | 0       | 1     | 4       |
+| 3      | 5     | SDK Tier 1 Observer + Magic Link UI                                                                                                                     | 10      | 2    | 0       | 1     | 7       |
+| 4      | 6     | Intent ontology v1 + Modal scaffolding                                                                                                                  | tbd     | —    | —       | —     | tbd     |
+| 5      | 7     | LLM gateway + intent extraction from chat (Haiku 4.5 real-time + Sonnet 4.6 batch — decyzja 2026-05-25, patrz FOLLOW-087)                               | tbd     | —    | —       | —     | tbd     |
+| 6      | 8     | Embeddings + archetype matching + decision API                                                                                                          | 3       | 3    | 0       | 0     | 0       |
+| 7      | 9     | Decision API real logic + adaptation playbooks                                                                                                          | 5       | 5    | 0       | 0     | 0       |
+| 7.5    | 9.5   | Auto-Detection Engine                                                                                                                                   | 7       | 7    | 0       | 0     | 0       |
+| 8      | 10    | A/B holdout + re-ranking + agency answers + variants + retro loop                                                                                       | 16      | 13   | 0       | 0     | 0       |
+| 9      | 11    | DPIA + ROPA + DSR + consent propagation + description pipeline                                                                                          | 6       | 6    | 0       | 0     | 0       |
+| 9.5    | 11.5  | MVP Demo Readiness (onboarding activation + bandit + scoring)                                                                                           | 6       | 6    | 0       | 0     | 0       |
+| 10     | 12    | Close the bandit loop + real embeddings + e2e test                                                                                                      | 9       | 9    | 0       | 0     | 0       |
+| 11     | 13    | Pilot readiness (seed CI, demo CI, HMAC compat, GDPR ClickHouse)                                                                                        | 9       | 5    | 0       | 4     | 0       |
+| 12     | 14    | Pilot launch on app.estalara.com — COMPLETE (Lane A + Lane C; Lane B → Sprint 13)                                                                       | 7       | 5    | 0       | 2     | 0       |
+| 13a    | 15    | Correctness + pilot launch (Lane A correctness gate + Lane B pilot launch) — Lane A 8/8 DONE; Lane B READY (gate closed)                                | 11      | 8    | 0       | 1     | 2       |
+| 13a-h  | 15    | Pre-pilot hardening — inquiry producer (FOLLOW-127), GDPR consent disclosures (FOLLOW-128/129), honest pilot dashboard (FOLLOW-122)                     | 4       | 4    | 0       | 0     | 0       |
+| 13a-h2 | 15    | Pre-pilot hardening v2 — §13.2 localStorage xid erasure (FOLLOW-139), pilot inquiry selector seed (FOLLOW-141)                                          | 2       | 2    | 0       | 0     | 0       |
+| 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                                             | 6       | 0    | 0       | 3     | 3       |
+| Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)                          | 4       | 4    | 0       | 0     | 0       |
+| 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)                                 | 21      | 21   | 0       | 0     | 0       |
+| 16     | 18    | Conversion Label Loop (§T), SDK archetype persistence, DB integration tests, compliance CRM docs, micro-poll Wave 2                                     | 12      | 9    | 1       | 2     | 0       |
+| Wave A | —     | Bug fix cluster: data-loss (FOLLOW-258), cross-tenant auth (FOLLOW-260), SQL injection (FOLLOW-261), feedback ping (FOLLOW-259), lifecycle (FOLLOW-262) | 5       | 0    | 1       | 4     | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -3213,6 +3211,59 @@ Key tracks:
     FOLLOW-187 updated to Activity 15. Privacy notice expanded from 5 to 8 SDK storage keys.
     New CI gate: check-privacy-notice-keys.sh (hard gate, not continue-on-error). DPIA v2.4.
     Unblocks FOLLOW-187 (Activity 15 assignment now correct).
+```
+
+## Wave A — Bug fix cluster: data-loss, cross-tenant auth, SQL injection, lifecycle (OPEN)
+
+**Added 2026-06-10 (pm-orchestrator). Promoted from FOLLOW_UPS.md stubs per 2026-06-09 comprehensive
+audit (FOLLOW-267). Wave A is the decision-free highest-value fix set. P0 tickets (FOLLOW-258/260)
+are blocking critical path for any public tenant onboarding.**
+
+Five tickets, two agents (sdk-engineer + backend-engineer), ~21 estimated hours total.
+
+```yaml
+- id: FOLLOW-258
+  title: SDK↔ingest data-loss cluster (F-01/F-02/F-03/F-04/F-29)
+  agent: sdk-engineer
+  status: READY_FOR_REVIEW
+  priority: P0
+  estimated_hours: 6
+  source: 2026-06-09 audit
+  branch: sdk-engineer/FOLLOW-258-data-loss-cluster
+  pr: '#249'
+
+- id: FOLLOW-259
+  title: Thread prediction_id + lead_id into feedback ping (activates §T loop)
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  source: 2026-06-09 audit (F-20)
+  depends_on: [FOLLOW-170]
+
+- id: FOLLOW-260
+  title: /api/adapt cross-tenant auth hardening (ESC-021, F-26)
+  agent: backend-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 4
+  source: 2026-06-09 audit (F-26)
+
+- id: FOLLOW-261
+  title: Parameterize ClickHouse INSERT in /api/adapt (SQL injection, F-30)
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  source: 2026-06-09 audit (F-30)
+
+- id: FOLLOW-262
+  title: SDK lifecycle hygiene — listener leaks, scroll throttle, chat→intent (F-05/F-06/F-08)
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 5
+  source: 2026-06-09 audit (F-05/F-06/F-08)
 ```
 
 ## Sprint 15 — Pilot unblock + signal bridges + quiz v2.0 + description cache redesign (COMPLETE — 21/21 DONE)

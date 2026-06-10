@@ -12,6 +12,7 @@
 
 import { readConfig, BOT_UA_RE } from './core/config.js';
 import { dispatchEvents, collectPageView } from './core/events.js';
+import { scrubMessagePii } from './core/pii-scrub.js';
 import {
   getOrCreateSession,
   incrementPageCount,
@@ -500,6 +501,8 @@ async function init(): Promise<IntentState | null> {
     // text-flicker that occurred every ~30s when resetAdaptState() was called
     // unconditionally on every refreshDirectives() cycle.
     let previousArchetype: string | null = null;
+    // FOLLOW-258 F-04: store the most recent adapt_decision_id for live.signup attribution.
+    let lastAdaptDecisionId: string | undefined;
 
     // FOLLOW-201: per-session drift detection state (per-instance — RETRO-006 LG-2).
     // Tracks consecutive refreshDirectives() cycles where detectMismatch() fires for
@@ -581,6 +584,8 @@ async function init(): Promise<IntentState | null> {
         listingId,
       );
       if (resp) {
+        // FOLLOW-258 F-04: persist for live.signup conversion attribution.
+        lastAdaptDecisionId = resp.adapt_decision_id;
         // F-15 (FOLLOW-194): only reset adapt state when the archetype has changed.
         // On an unchanged archetype, preserve existing DOM mutations -- no flicker.
         if (resp.archetype !== previousArchetype) {
@@ -981,11 +986,15 @@ async function init(): Promise<IntentState | null> {
           }
         }
 
+        // F-01 (FOLLOW-258): message field is required by ChatMessageSentPayloadSchema.
+        // F-29 (FOLLOW-258): scrub PII (email/phone) before storing in ClickHouse.
+        const rawMessage = typeof ce.detail.message === 'string' ? ce.detail.message : '';
+        if (rawMessage.length === 0) return;
         eventQueue.push({
           type: 'chat.message.sent',
           payload: {
+            message: scrubMessagePii(rawMessage),
             char_count: typeof ce.detail.char_count === 'number' ? ce.detail.char_count : undefined,
-            listing_id: typeof ce.detail.listing_id === 'string' ? ce.detail.listing_id : undefined,
             lead_id: leadId,
           },
           ts: Date.now(),
@@ -1020,6 +1029,7 @@ async function init(): Promise<IntentState | null> {
 
         // feedback ping is already handled by registerFeedbackListener in adapt.ts.
         // This listener queues the ingest telemetry event only.
+        // FOLLOW-258 F-04: thread adapt_decision_id for conversion attribution when slot_uuid absent.
         eventQueue.push({
           type: 'live.signup',
           payload: {
@@ -1027,6 +1037,7 @@ async function init(): Promise<IntentState | null> {
             lead_id: leadId,
             source_surface:
               typeof ce.detail.source_surface === 'string' ? ce.detail.source_surface : undefined,
+            adapt_decision_id: lastAdaptDecisionId,
           },
           ts: Date.now(),
         });

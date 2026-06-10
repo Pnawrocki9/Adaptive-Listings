@@ -41,9 +41,11 @@ import { EventEnvelopeBaseSchema } from '../event.js';
 export const LiveSignupPayloadSchema = z.object({
   /**
    * UUID of the live session slot the buyer booked. Provided by the tenant's booking system.
-   * Must be a valid UUID so it can be joined to the tenant's slot table later.
+   * Optional — some tenant integrations may not always provide this (e.g. booking confirmed
+   * asynchronously). When absent, use adapt_decision_id for conversion attribution.
+   * FOLLOW-258 F-04: made optional to stop 100% event loss when tenant omits it.
    */
-  slot_uuid: z.string().uuid(),
+  slot_uuid: z.string().uuid().optional(),
 
   /**
    * Human-readable label for the slot (ISO 8601 datetime or free text). Optional.
@@ -58,6 +60,20 @@ export const LiveSignupPayloadSchema = z.object({
   source_surface: z
     .enum(['listing_detail', 'sidebar_widget', 'search_card', 'email_link', 'other'])
     .optional(),
+
+  /**
+   * SDK-derived hashed buyer identifier. Links this conversion to a session.
+   * Derived from user_uuid via SHA-256 (Rule L — raw user_uuid never stored).
+   * FOLLOW-258 F-03: added to stop lead_id being stripped by Zod.
+   */
+  lead_id: z.string().optional(),
+
+  /**
+   * adapt_decision_id from the most recent /api/adapt response at booking time.
+   * Enables attribution: which adaptation decision drove this conversion?
+   * FOLLOW-258 F-04: threading adapt response for conversion attribution when slot_uuid absent.
+   */
+  adapt_decision_id: z.string().uuid().optional(),
 });
 
 export const LiveSignupEventSchema = EventEnvelopeBaseSchema.extend({

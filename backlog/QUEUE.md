@@ -140,14 +140,10 @@ updates.
 | Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)      | 4       | 4    | 0       | 0     | 0       |
 | 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 21   | 0       | 0     | 0       |
 
-<<<<<<< Updated upstream | 16 | 18 | Conversion Label Loop (§T), SDK archetype persistence, DB
-integration tests, compliance CRM docs, micro-poll Wave 2 | 12 | 14 | 0 | 1 | 0 | ======= | 16 | 18
-| Conversion Label Loop (§T), SDK archetype persistence, DB integration tests, compliance CRM docs,
-micro-poll Wave 2 | 12 | 12 | 0 | 0 | 0 |
-
-> > > > > > > Stashed changes | Wave A | — | Bug fix cluster: data-loss (FOLLOW-258), cross-tenant
-> > > > > > > auth (FOLLOW-260), SQL injection (FOLLOW-261), feedback ping (FOLLOW-259), lifecycle
-> > > > > > > (FOLLOW-262) | 5 | 5 | 0 | 0 | 0 |
+| 16 | 18 | Conversion Label Loop (§T), SDK archetype persistence, DB integration tests, compliance
+CRM docs, micro-poll Wave 2 | 15 | 14 | 0 | 1 | 0 | | Wave A | — | Bug fix cluster: data-loss
+(FOLLOW-258), cross-tenant auth (FOLLOW-260), SQL injection (FOLLOW-261), feedback ping
+(FOLLOW-259), lifecycle (FOLLOW-262) | 5 | 5 | 0 | 0 | 0 |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -2609,7 +2605,6 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
   estimated_hours: 8
   depends_on: []
   model: sonnet-4.6
-<<<<<<< Updated upstream
   spec: backlog/sprint-13/FOLLOW-099.md
   pr: '#248'
   completed_at: '2026-06-09T22:34:41Z'
@@ -2617,20 +2612,10 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
     DONE in PR #248 (0865ca2). photo.dwell, feature.expanded, mortgage_calc.used, filter.applied
     (facet+value), inquiry.started. Payload-aware dispatch + bot detection gate. Status corrected
     2026-06-10 by pm-orchestrator.
-=======
-  spec: (to author at spawn — backlog/sprint-13/FOLLOW-099.md)
-  pr: '#248'
-  completed_at: '2026-06-09T20:34:41Z'
-  notes: |
-    DONE: PR #248 merged 2026-06-09. Behavioral observers + bot detection gate shipped.
-    photo.dwell, feature.expanded, mortgage_calc.used, filter.applied (facet+value),
-    inquiry.started. Payload-aware dispatch through dispatchEvents(). Bundle delta <5KB gzip.
->>>>>>> Stashed changes
 
 - id: FOLLOW-100
   title: SIGNAL_LIKELIHOODS all 18 archetypes + CHAT_INTENT_LIKELIHOODS + applyChatIntentPrior()
   agent: sdk-engineer
-<<<<<<< Updated upstream
   status: DONE
   pr: '#254'
   completed_at: '2026-06-10T11:19:48Z'
@@ -2638,13 +2623,6 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
   estimated_hours: 8
   depends_on: [FOLLOW-099]
   model: opus-4.7-xhigh
-=======
-  status: IN_PROGRESS
-  priority: P1
-  estimated_hours: 8
-  depends_on: [FOLLOW-099]
-  model: opus-4.8
->>>>>>> Stashed changes
   spec: backlog/sprint-13/FOLLOW-100.md
   notes: |
     Likelihood calibration + Bayesian prior math → opus-4.7-xhigh. Per §D.1.1 + §D.6. Target:
@@ -2943,18 +2921,10 @@ but does NOT fix the source — ESC-019 does.
   source: MASTER_DESIGN §T
   spec: backlog/sprint-14/FOLLOW-175.md
   pr: '#245'
-<<<<<<< Updated upstream
   completed_at: '2026-06-09T18:41:22Z'
   notes: |
     DONE in PR #245 (35d3355). Per-tenant PII-free (features_snapshot, model_version, score) ->
     outcome_class export (CSV/JSONL); the Y2 fine-tune (§D.5.7) input. RLS-scoped, auditable.
-=======
-  completed_at: '2026-06-09T00:00:00Z'
-  notes: |
-    DONE: PR #245 merged 2026-06-09. LoRA label-set export route (csv/jsonl) shipped.
-    Per-tenant PII-free (features_snapshot, model_version, score) -> outcome_class export (CSV/JSONL);
-    the Y2 fine-tune (§D.5.7) input. RLS-scoped, auditable.
->>>>>>> Stashed changes
 
 # ── SDK archetype persistence (Side-task #5) — committed 2026-06-03 ──
 
@@ -3196,28 +3166,17 @@ Key tracks:
   status: DONE
   assigned_to: data-engineer
   started_at: '2026-06-09T00:00:00Z'
-<<<<<<< Updated upstream
   completed_at: '2026-06-09T01:10:00Z'
-=======
-  completed_at: '2026-06-08T22:51:42Z'
->>>>>>> Stashed changes
   priority: P1
   estimated_hours: 5
   depends_on: [FOLLOW-179, FOLLOW-172]
   source: RETRO-031 (TG-1/TG-2); consolidate with FOLLOW-181 + FOLLOW-183
   spec: backlog/FOLLOW_UPS.md (FOLLOW-185 stub)
-<<<<<<< Updated upstream
   pr: '#243/#244'
   notes: |
     DONE. PRs #243 (14fea94) and #244 (cfb1f1c) merged 2026-06-09. PGlite harness covering CRM
     write + DSR cascade + two-writer precedence + confidence handling. Status corrected
     2026-06-10 by pm-orchestrator.
-=======
-  pr: '#243'
-  notes: |
-    DONE: PR #243 merged 2026-06-08. PGlite harness for crm write + dsr cascade shipped.
-    Broader route-driven PGlite coverage (FOLLOW-250/256) completed in PR #247 (2026-06-09).
->>>>>>> Stashed changes
 
 - id: FOLLOW-234
   title: 13-month TTL enforcement for conversion_labels (FOLLOW-187 condition 9)
@@ -3353,11 +3312,7 @@ Five tickets, two agents (sdk-engineer + backend-engineer), ~21 estimated hours 
   source: 2026-06-09 audit
   branch: sdk-engineer/FOLLOW-258-data-loss-cluster
   pr: '#249'
-<<<<<<< Updated upstream
   completed_at: '2026-06-09T22:21:16Z'
-=======
-  completed_at: '2026-06-10T05:19:30Z'
->>>>>>> Stashed changes
 
 - id: FOLLOW-259
   title: Thread prediction_id + lead_id into feedback ping (activates §T loop)
@@ -3368,11 +3323,7 @@ Five tickets, two agents (sdk-engineer + backend-engineer), ~21 estimated hours 
   source: 2026-06-09 audit (F-20)
   depends_on: [FOLLOW-170]
   pr: '#250'
-<<<<<<< Updated upstream
   completed_at: '2026-06-10T04:46:31Z'
-=======
-  completed_at: '2026-06-10T05:19:56Z'
->>>>>>> Stashed changes
 
 - id: FOLLOW-260
   title: /api/adapt cross-tenant auth hardening (ESC-021, F-26)
@@ -3382,11 +3333,7 @@ Five tickets, two agents (sdk-engineer + backend-engineer), ~21 estimated hours 
   estimated_hours: 4
   source: 2026-06-09 audit (F-26)
   pr: '#251'
-<<<<<<< Updated upstream
   completed_at: '2026-06-10T05:29:05Z'
-=======
-  completed_at: '2026-06-10T09:28:39Z'
->>>>>>> Stashed changes
 
 - id: FOLLOW-261
   title: Parameterize ClickHouse INSERT in /api/adapt (SQL injection, F-30)
@@ -3396,21 +3343,14 @@ Five tickets, two agents (sdk-engineer + backend-engineer), ~21 estimated hours 
   estimated_hours: 3
   source: 2026-06-09 audit (F-30)
   pr: '#252'
-<<<<<<< Updated upstream
   completed_at: '2026-06-10T05:50:27Z'
-=======
-  completed_at: '2026-06-10T09:46:49Z'
->>>>>>> Stashed changes
 
 - id: FOLLOW-262
   title: SDK lifecycle hygiene — listener leaks, scroll throttle, chat→intent (F-05/F-06/F-08)
   agent: sdk-engineer
   status: DONE
   pr: '#253'
-<<<<<<< Updated upstream
   completed_at: '2026-06-10T06:02:22Z'
-=======
->>>>>>> Stashed changes
   priority: P2
   estimated_hours: 5
   source: 2026-06-09 audit (F-05/F-06/F-08)

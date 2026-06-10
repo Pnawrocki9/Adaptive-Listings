@@ -2,9 +2,10 @@
 
 **Updated 2026-06-10 by pm-orchestrator. Sprint 13b: FOLLOW-087 DONE (PR #255), FOLLOW-099 DONE (PR
 #248), FOLLOW-100 DONE (PR #254), FOLLOW-101 DONE (PR #256 merged 2026-06-10), FOLLOW-102
-READY_FOR_REVIEW (PR #257, CI green). Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259
-PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN —
-14 DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW
+READY_FOR_REVIEW (PR #257, CI green), FOLLOW-252 READY (P1 Rule R fix from RETRO-047), FOLLOW-253
+READY (P2 test from RETRO-047). Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR
+#250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14
+DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW
 (FOLLOW-191 awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE — 21/21 DONE.**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
@@ -2703,6 +2704,35 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
     CI verified green (pm-orchestrator 2026-06-10): Typecheck/Lint/Format/Test(Node22)/
     Build(control-plane)/RuleH/RuleJ/Migration-monotonicity/Demo-integration all pass.
     Build(SDK-bundle) fail = pre-existing on main (51KB > 40KB), not introduced by this PR.
+
+- id: FOLLOW-252
+  title: Gate chat-intent prior idempotency on rehydrate boundary (Rule R fix)
+  agent: sdk-engineer + ml-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-101]
+  model: sonnet-4.6
+  spec: backlog/sprint-13/FOLLOW-252.md
+  notes: |
+    RETRO-047 LG-1 (P1). _chatPriorAppliedSessionId is in-memory — resets on page reload while
+    rehydrated IntentState + 24h Redis shadow key persist → applyChatIntentPrior double-counts on
+    reload (3rd Rule R violation: RETRO-032, RETRO-037, RETRO-047). Fix: persist chat_prior_applied
+    marker in IntentState envelope so prior folds in exactly once across reloads.
+
+- id: FOLLOW-253
+  title: Rehydrate→re-init SDK test for chat-intent prior via _initForTest seam (Rule R coverage)
+  agent: sdk-engineer + qa-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-252]
+  model: sonnet-4.6
+  spec: backlog/sprint-13/FOLLOW-253.md
+  notes: |
+    RETRO-047 TG-1 (P2). follow-101.test.ts has zero rehydrate/re-init coverage — the Rule R test
+    exercises only the in-memory guard. Drive init→persistIntentState→re-init via _initForTest seam
+    and assert chat prior applies at most once across reload boundary.
 
 - id: FOLLOW-103
   title: app.estalara.com DOM adaptation — corpus fixture + AI Vision slots + 5-slot coverage

@@ -5,8 +5,11 @@
  *   1. readConfig() parses data-quiz-enabled="false" → quiz.enabled=false
  *   2. readConfig() defaults to quiz.enabled=true when data-quiz-enabled is absent
  *   3. readConfig() resolves any value other than "false" to quiz.enabled=true
- *   4. readConfig() parses data-quiz-trigger (integer) → quiz.trigger_after_n_listings
- *   5. readConfig() defaults trigger_after_n_listings to DEFAULT_CONFIG value when absent
+ *
+ * FOLLOW-257 (Option A): data-quiz-trigger / trigger_after_n_listings removed —
+ * no production producer (buildSnippet never emitted it) and no runtime consumer
+ * (the timer uses the hardcoded QUIZ_TRIGGER_DELAY_MS constant). Rule L.
+ * Tests 4 and 5 from the original AC3 have been removed along with the dead field.
  *
  * Rule H compliance: readConfig is a non-test consumer of data-quiz-enabled.
  * The production producer is buildSnippet() in DetectionPreview.tsx (Rule L).
@@ -57,35 +60,8 @@ describe('readConfig — FOLLOW-102 quiz sub-object', () => {
     expect(cfg.quiz?.enabled).toBe(true);
   });
 
-  // AC3 test 4: data-quiz-trigger is parsed as integer
-  it('parses data-quiz-trigger="5" as quiz.trigger_after_n_listings=5', () => {
-    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz', quizTrigger: '5' });
-    const cfg = readConfig({ dataset });
-    expect(cfg.quiz?.trigger_after_n_listings).toBe(5);
-  });
-
-  // AC3 test 5: absent data-quiz-trigger → defaults to DEFAULT_CONFIG value
-  it('defaults trigger_after_n_listings to DEFAULT_CONFIG value when data-quiz-trigger is absent', () => {
-    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz' });
-    const cfg = readConfig({ dataset });
-    expect(cfg.quiz?.trigger_after_n_listings).toBe(DEFAULT_CONFIG.quiz?.trigger_after_n_listings);
-    expect(cfg.quiz?.trigger_after_n_listings).toBe(3);
-  });
-
-  it('defaults trigger_after_n_listings to 3 when data-quiz-trigger is not a valid positive integer', () => {
-    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz', quizTrigger: 'abc' });
-    const cfg = readConfig({ dataset });
-    expect(cfg.quiz?.trigger_after_n_listings).toBe(3);
-  });
-
-  it('defaults trigger_after_n_listings to 3 when data-quiz-trigger is 0', () => {
-    const dataset = makeDataset({ apiKey: 'EXAMPLE_api_key_xyz', quizTrigger: '0' });
-    const cfg = readConfig({ dataset });
-    expect(cfg.quiz?.trigger_after_n_listings).toBe(3);
-  });
-
-  // Verify DEFAULT_CONFIG includes the quiz sub-object
-  it('DEFAULT_CONFIG includes quiz.enabled=true and trigger_after_n_listings=3', () => {
-    expect(DEFAULT_CONFIG.quiz).toEqual({ enabled: true, trigger_after_n_listings: 3 });
+  // Verify DEFAULT_CONFIG includes the quiz sub-object (FOLLOW-257: no trigger_after_n_listings)
+  it('DEFAULT_CONFIG includes quiz.enabled=true and no trigger_after_n_listings field', () => {
+    expect(DEFAULT_CONFIG.quiz).toEqual({ enabled: true });
   });
 });

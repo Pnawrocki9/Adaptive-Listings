@@ -38,9 +38,9 @@ vi.mock('drizzle-orm', () => ({
 }));
 
 // Mock auth — default to an authenticated tenant-scoped JWT.
-const mockGetAuthClaims = vi.fn<[unknown], Promise<{ tenant_id: string } | null>>();
+const mockGetAuthClaims = vi.fn<(req: unknown) => Promise<{ tenant_id: string } | null>>();
 vi.mock('@estalara/auth', () => ({
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- vi.fn generic is typed above; linter can't trace across vi.mock closure boundary
+   
   getAuthClaims: (req: unknown): Promise<{ tenant_id: string } | null> => mockGetAuthClaims(req),
 }));
 

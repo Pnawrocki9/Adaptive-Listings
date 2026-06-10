@@ -12836,3 +12836,230 @@ scan `adapt.ts` for `apply.*Prior` folds and to assert a `_initForTest`-seam reh
   and RETRO number 048; this retro is RETRO-049 / FOLLOW-257-258 to avoid collision.
 - **FOLLOW-199 — `scheduleQuizTrigger` / `QUIZ_TRIGGER_DELAY_MS = 30_000`** is the hardcoded timer that
   makes `trigger_after_n_listings` inert (LG-1). FOLLOW-257 must reconcile with it.
+
+## RETRO-050 — FOLLOW-257 (remove dead `data-quiz-trigger` half-wire — closes RETRO-049 §4a LG-1, Option A) — 2026-06-10
+
+### 1. Summary of change
+
+- **PR:** #259 (merged 2026-06-10 19:41 UTC, commit `377a77d`)
+- **Files changed:** 4 (+197 / −51): 2 SDK source (`core/config.ts`, `ui/quiz-trigger.ts`), 2 SDK
+  test (`__tests__/follow-102.test.ts` trimmed, `__tests__/follow-257.test.ts` new +171).
+- **Modules touched:** SDK (`packages/sdk`) only. NO control-plane, DB, or docs touched.
+- **Key contracts changed:**
+  - `SdkConfig.quiz.trigger_after_n_listings?: number` — **REMOVED** — breaking: no for runtime (the
+    field was never produced or read), but a TYPE-level removal: any external `SdkConfig` consumer that
+    referenced the field will no longer compile (none exist in-repo; grep below).
+  - `DEFAULT_CONFIG.quiz` — CHANGED `{ enabled: true, trigger_after_n_listings: 3 }` → `{ enabled: true }`.
+  - `readConfig()` — the `data-quiz-trigger` / `dataset.quizTrigger` parse path REMOVED. The attribute
+    is now silently ignored.
+  - `QUIZ_TRIGGER_DELAY_MS = 30_000` (`ui/quiz-trigger.ts:31`) — UNCHANGED (kept as sole timer source;
+    FOLLOW-199 comment added).
+
+### 2. Verification done in PR
+
+- Test files changed: `follow-257.test.ts` (new, 9 tests: AC1 field-absent ×4, AC2 `showQuizTrigger`
+  gate ×4 via `scheduleQuizTrigger` fake-timers, AC3 constant ×1), `follow-102.test.ts` (−4 dead
+  trigger tests, DEFAULT_CONFIG assertion updated). Net assertions added: ~13; net removed: ~5.
+- CI checks: PR body reports SDK 1284/1284 pass; Lint/Format/TypeCheck/RuleH/RuleJ green. NOT
+  independently verified (read-only; standing Rule I / Vercel / Python pre-existing-red caveat per
+  `project_ci_gate_landscape`).
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code (every new file/export has ≥1 non-test importer):**
+
+- `follow-257.test.ts` — type-only/test file (suppressed). No new EXPORTS introduced anywhere; this
+  PR only removes a field and a parse branch. **CHECK A clean.**
+
+**CHECK B — Half-wire (every new/changed signal has BOTH producer AND consumer):**
+
+- The SDK side of the `data-quiz-trigger` half-wire (RETRO-049 §4a LG-1) is now fully removed —
+  consumer (`config.ts` parse), field (`SdkConfig.quiz.trigger_after_n_listings`), and default all
+  gone. Grep `triggerAfterNListings` / `trigger_after_n_listings` / `quizTrigger` in
+  `packages/sdk/src --include=*.ts | grep -v __tests__` → **empty** (only the 3 explanatory Rule-L
+  comments in `config.ts`/`quiz-trigger.ts` remain). The SDK half is clean.
+- **BUT — the removal created an INVERSE half-wire one hop UPSTREAM, in the control-plane (NOT
+  touched by this PR).** The `data-quiz-trigger` chain's *producer-side sibling* still lives:
+  - Producer: `apps/control-plane/src/app/dashboard/quiz/page.tsx:208-220` — a live "Show quiz after
+    N listing views" number input (min 1, max 10) bound to `config.trigger_after_n_listings`,
+    persisted on save via `POST /api/quiz/config` (`route.ts:42` Zod `z.number().int().min(1).max(10)`)
+    into the `tenants.quiz_config` JSONB column (`route.ts:124`).
+  - Consumer: the ONLY runtime consumer that this value could ever reach was the SDK
+    `config.quiz.trigger_after_n_listings` path — which this PR just **deleted**. No other reader of
+    `quizConfig.trigger_after_n_listings` exists (grep across `apps/`+`packages/` non-test → the only
+    hits are the dashboard producer, the `/api/quiz/config` echo, `/api/config` mock, and an audit
+    fixture; `api/adapt/route.ts` reads `quizConfig` only for the freeze guard, never the threshold).
+  - → **HALF_WIRE_P — P2.** A validated, persisted, user-facing dashboard control that, post-removal,
+    can NEVER affect any runtime behavior. Classification: Rule-L producer-side residue. **FOLLOW-264.**
+    See §4a LG-1 + §7. (This is exactly the step-7 "Option A removes the consumer but leaves the
+    producer dangling — gap moves one hop" pattern; the half-wire was not closed end-to-end, it was
+    halved.)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — orphaned dashboard producer: "Show quiz after N listing views" now writes to nothing
+  readable (the inverse of RETRO-049 §4a LG-1, created by Option A).** FOLLOW-257's spec offered two
+  resolutions — wire end-to-end OR remove the parse+field+tests. Option A (remove) was taken, which is
+  the correct *minimal* SDK fix, BUT the spec/RETRO-049 framed the half-wire as SDK-local
+  (`data-quiz-trigger` + `config.ts`). The fuller chain has a THIRD limb the SDK retro did not surface:
+  the dashboard threshold input + its `POST /api/quiz/config` Zod validation + JSONB persistence
+  (`page.tsx:208-220`, `route.ts:42,124`). After Option A, a tenant can still set "Show quiz after N
+  listing views" to 7, save successfully (200, value stored in `tenants.quiz_config`), and reload to
+  see 7 — but the SDK timer is hardcoded at `QUIZ_TRIGGER_DELAY_MS = 30_000` and there is no
+  listing-view counter anywhere. The control is a no-op with full UI affordance + range validation +
+  persistence: maximally convincing, zero effect. This is *false configurability* surfaced to the
+  paying tenant — the same class of harm Rule L warns about (a config the system pretends to honor).
+  → **FOLLOW-264 (P2):** either remove/disable the dashboard "Show quiz after N listing views" input +
+  its Zod field + JSONB key (true Option A completion across all three limbs), OR (if Quiz v2.0 wants
+  it) wire it end-to-end and re-introduce the SDK consumer. Until then, at minimum disable the input
+  with a "coming soon (FOLLOW-199)" affordance so the tenant is not misled. Cite Rule L + this retro.
+- **LG-2 (P3, no follow-up — recorded) — `/api/config` mock and audit fixture still carry
+  `trigger_after_n_listings`.** `apps/control-plane/src/app/api/config/route.ts:31,62` types+defaults it
+  (`number | null`, default `null`) and `api/audit/route.ts:86` emits it in an audit-detail fixture.
+  These are mock/stub surfaces (not the real persistence path), so they are harmless, but they keep the
+  dead field name alive in the type vocabulary. Folds into FOLLOW-264 cleanup scope if Option A is
+  completed; recorded here, not separately filed.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** This is a removal-only SDK change. The removed parse path was inert (RETRO-049 established
+  it was never produced nor read), so deleting it cannot regress runtime behavior. `readConfig` still
+  returns `quiz.enabled` correctly; `data-quiz-enabled` parsing is untouched and re-asserted by AC1
+  test 4. The `?.` optional-chaining gate in `index.ts:791` is unaffected. No correctness defect.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — the AC2 "gate" tests assert against a SIMULATED copy of the gate, not the real
+  `showQuizTrigger()`.** `follow-257.test.ts` AC2a/b/c/d define a local `simulatedShowQuizTrigger()`
+  that *mirrors* `index.ts:791` (`if (config.quiz?.enabled === false) return;`) and assert on that copy
+  — they do NOT drive `init()` / the real `showQuizTrigger` inner function. This is the Rule-Q "mirror,
+  don't invoke" shape (precedent: RETRO-034 FOLLOW-220, RETRO-033). If `index.ts:791` is later changed
+  (e.g. inverted, or the gate moved), these tests stay green while the real gate breaks — the comment
+  "Mirror the exact gate in index.ts:791" is a hand-maintained invariant with no enforcement. RETRO-049
+  §4c TG-1 ALREADY flagged that the real `showQuizTrigger()` early-return is untested and folded it into
+  FOLLOW-257's AC; FOLLOW-257 added gate tests but they exercise a *replica*, so the real-wire gap
+  RETRO-049 TG-1 raised is **NOT actually closed** — it was answered with a mirror. Step-7 closure
+  check: the consumer-gate test moved from "absent" to "mirrored," not to "drives the real path." →
+  folds into **FOLLOW-264** AC (add a jsdom test that drives `init()` with `quiz.enabled=false` via
+  `_initForTest`/the public seam and asserts no quiz trigger renders — cite Rule Q).
+
+#### 4d. Documentation gaps
+
+- **N/A** for new docs (no doc surfaces touched). The Rule-L removal comments in `config.ts:74,172` and
+  `quiz-trigger.ts:33` are accurate and cite FOLLOW-257 + FOLLOW-199. The stale dashboard JSDoc at
+  `page.tsx:10` ("The existing quiz widget configuration (trigger_after_n_listings, language, etc.)")
+  is now misleading but folds into FOLLOW-264's dashboard cleanup (LG-1), not separately filed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-102 / RETRO-049 §4a LG-1 — the source half-wire: SDK limb CLOSED, control-plane limb
+  OPENED (§3, §4a LG-1).** The retro-049 finding is half-resolved: the parsed-but-inert SDK consumer
+  is gone; the persist-but-unread dashboard producer remains. Net: the *double-dead* field is now
+  *single-dead on the producer side*. FOLLOW-264 completes the closure.
+- **FOLLOW-263 (DONE, PR #260) — adjacent, no conflict.** FOLLOW-263 repointed the pilot-freeze guard
+  off `quizConfig.enabled` onto `tenants.quiz_enabled` (RETRO-049 §4a LG-2). It touched the SAME
+  `quizConfig` JSONB blob that holds `trigger_after_n_listings`, but only the `enabled` key; the
+  threshold key is orthogonal. Confirmed `api/adapt/route.ts` reads `quizConfig` only for the freeze
+  guard and never the threshold — so FOLLOW-257's removal does not interact with the freeze path.
+- **TICKET-PILOT-001 (IN_PROGRESS) — unaffected by the removal**, but the pilot install checklist
+  should note the "Show quiz after N listing views" control is currently inert (LG-1) so onboarding
+  does not promise the tenant a working threshold.
+
+#### 5b. Future sprint tickets affected
+
+- **Quiz v2.0 / "configurable quiz trigger threshold" (FOLLOW-199 territory) — now must rebuild BOTH
+  limbs.** With Option A taken, the SDK consumer no longer exists, so any future threshold feature must
+  re-add: (1) the SDK `data-quiz-trigger` parse, (2) a `buildSnippet` producer that emits it from
+  `quizConfig.trigger_after_n_listings`, AND (3) a listing-view counter that the SDK timer honors
+  instead of the flat 30s. The dashboard producer (limb 3) already exists — so if FOLLOW-264 chooses
+  *remove* over *wire*, that UI must also come back later. Record the decision rationale so the rebuild
+  knows what was deliberately torn down.
+
+#### 5c. Contracts changed others rely on
+
+- `SdkConfig.quiz.trigger_after_n_listings` removed from the public `@estalara/sdk` type. In-repo grep
+  confirms zero external consumers (the only references were the SDK's own config + tests, now removed).
+  No downstream type breakage. The `POST /api/quiz/config` contract (Zod still accepts
+  `trigger_after_n_listings`) is UNCHANGED — so the API still advertises a field the SDK no longer
+  honors (the §4a LG-1 mismatch).
+
+#### 5d. Architectural assumptions affected
+
+- **The `tenants.quiz_config` JSONB is now a partial dead-letter store.** Two of its keys have diverged:
+  `enabled` is legacy-but-still-read-by-nothing-authoritative (superseded by `tenants.quiz_enabled`
+  column per FOLLOW-263), and `trigger_after_n_listings` is written-by-dashboard-read-by-nothing (this
+  retro). The JSONB blob is accumulating write-only keys. PM note: a future cleanup should decide whether
+  `quiz_config` JSONB is retired entirely in favor of typed columns, or whether `trigger_after_n_listings`
+  re-earns a reader. Recorded as the architectural residue of two consecutive Option-A removals on the
+  same blob.
+
+### 6. New lesson candidates
+
+- **Pattern (count 2 — RECORDED, not yet promoted) — "an Option-A 'remove the dead consumer' fix closes
+  the SDK/downstream limb but leaves the upstream PRODUCER (dashboard input + API validation + persistence)
+  dangling, so the half-wire is HALVED, not closed — the gap moves one hop upstream."** Seen in: RETRO-050
+  §4a LG-1 (FOLLOW-257 removed the SDK `data-quiz-trigger` consumer but left the dashboard "N listings"
+  producer + Zod + JSONB) — and the *symmetric sibling* in RETRO-049 §4a LG-2 / FOLLOW-263 (FOLLOW-102
+  added a new SoT field and orphaned the OLD reader; that is "new-producer orphans old-consumer," this is
+  "removed-consumer orphans surviving-producer"). These are mirror images of the same step-7 "closure
+  moves one hop" meta-pattern but on OPPOSITE limbs, so I am NOT collapsing them into one count yet. The
+  *narrow* shape here — "a removal fix must enumerate ALL limbs of the wire (producer UI, API validation,
+  persistence, AND consumer) and close or document every one, not just the limb named in the source
+  finding" — is at count 1 as stated (this retro). NOT promoted (threshold 2). Recorded so a 2nd
+  remove-only fix that orphans a producer promotes a Rule L sub-shape: *"Option-A removals are
+  multi-limb: grep the full producer→persist→consumer chain and resolve every limb."*
+- **Pattern (Rule Q — already a known shape, count reinforced) — "a consumer-gate test that MIRRORS the
+  production gate in a local helper instead of INVOKING the real function via the test seam, so the test
+  stays green if the real gate changes."** Seen in: RETRO-050 §4c TG-1 (FOLLOW-257 AC2 simulates
+  `showQuizTrigger`) + RETRO-034 FOLLOW-220 + RETRO-033. Rule Q already governs "drive init(), don't
+  mirror it"; this is a confirming instance, filed into FOLLOW-264 AC. NOT a new rule.
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed:** the PR diff is SDK-only and the source retro (RETRO-049) framed the
+  half-wire as SDK-local, so the obvious verdict was "Wiring Audit — clean, Option A correctly removed the
+  dead SDK consumer." I almost stopped there. The catch came from CHECK B discipline applied to the
+  *removed* signal, not just new ones: "if a consumer is deleted, what producers now point at nothing?"
+  Grepping `trigger_after_n_listings` across `apps/` (NOT just the changed `packages/sdk`) surfaced the
+  live dashboard input + Zod + JSONB that the SDK-scoped diff never showed. Lesson: a removal PR's wiring
+  audit must grep the WHOLE repo for the removed symbol's siblings, because the orphan it creates is by
+  definition in a file the PR did not touch.
+- **A chain I had to trace twice:** the AC2 gate tests (TG-1). First read: "9 tests, AC2 covers the
+  enabled=false gate — RETRO-049 TG-1 closed." Re-reading the test body showed `simulatedShowQuizTrigger`
+  is a local replica with a "Mirror the exact gate in index.ts:791" comment, not a call into the real
+  function. The RETRO-049 TG-1 closure was answered with a mirror, not a drive — step-7 says trace
+  end-to-end before declaring closure, and the test does not reach the real `index.ts:791`.
+- **Meta-pattern in how gaps recur across agents:** two consecutive retros (049 guard, 050 producer) on
+  the SAME `quiz_config` JSONB blob both found a limb orphaned by a single-limb fix. The recurring agent
+  behavior is "fix the limb the ticket names, ship green, don't grep the blob's other keys/readers." The
+  blob (multi-key JSONB shared across features) is a structural magnet for this.
+
+### 7. Follow-ups
+
+- **FOLLOW-264 (P2)** — Complete the FOLLOW-257 Option-A removal across ALL limbs: remove/disable the
+  dashboard "Show quiz after N listing views" input + its `POST /api/quiz/config` Zod field +
+  `tenants.quiz_config.trigger_after_n_listings` persistence (and the `/api/config` mock + audit fixture
+  residue, LG-2), OR re-wire end-to-end if Quiz v2.0 wants it; ALSO replace the AC2 *mirrored*
+  `showQuizTrigger` gate tests with a jsdom test that drives the real `init()`/`showQuizTrigger` via the
+  test seam (TG-1, Rule Q). [LG-1; LG-2; TG-1; Rule L; Rule Q] (sdk-engineer + backend-engineer, 3h).
+  Filed below.
+
+### 8. Cross-references
+
+- **RETRO-049 / FOLLOW-102 / FOLLOW-257 — the source.** This retro evaluates Option A's execution: SDK
+  limb correctly removed; the §4a LG-1 closure is partial because the producer limb survives (§3, §4a
+  LG-1) and the §4c TG-1 gate-test gap was answered with a mirror not a drive (§4c TG-1). I did NOT trust
+  the "FOLLOW-257 DONE" label — I re-traced the full producer→persist→consumer chain repo-wide and the
+  AC2 test bodies, both of which revealed the closure stopped one limb short.
+- **RETRO-063 / FOLLOW-263 — symmetric sibling on the same JSONB blob.** FOLLOW-263 orphaned the old
+  reader by adding a new SoT field; FOLLOW-257 orphaned the surviving producer by removing the consumer.
+  Mirror images of the step-7 "closure moves one hop" meta-pattern (§6). (Note: FOLLOW-263 was authored
+  under RETRO-049, not a separate retro number — referenced here as RETRO-049 §4a LG-2.)
+- **RETRO-009/010/011 — Rule L promotion evidence.** §4a LG-1 (orphaned producer = a config the system
+  pretends to honor) is a producer-side Rule-L instance.
+- **RETRO-033 / RETRO-034 (FOLLOW-220) — Rule Q precedent.** §4c TG-1 (mirror-the-gate instead of
+  invoke-via-seam) is the same shape; folded into FOLLOW-264.

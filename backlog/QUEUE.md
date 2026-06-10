@@ -1,12 +1,10 @@
 # Backlog Queue
 
-**Updated 2026-06-09 by pm-orchestrator. Sprint 16 status corrections: FOLLOW-183 DONE (PR #228
-merged 2026-06-08 — Gitleaks resolved), FOLLOW-184 DONE (duplicate Sprint 16 entry corrected to
-DONE, PR #233), FOLLOW-187 DONE (PR #229 merged 2026-06-08 — ROPA Activity 15 + DPIA §2.3/§2.5
-shipped). FOLLOW-185 now IN_PROGRESS (delegated to data-engineer). Sprint 15 COMPLETE — 21/21 DONE.
-Sprint 16 OPEN — 12 DONE (FOLLOW-170/173/174/176/182/183/184/187/190/227/230/234), 1 IN_PROGRESS
-(FOLLOW-185 — PG-harness CRM+DSR integration test), 1 READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal
-deploy ESC-020), FOLLOW-175 READY (P2 LoRA export).**
+**Updated 2026-06-10 by backend-engineer/pm-orchestrator. FOLLOW-258 DONE (PR #249 merged),
+FOLLOW-259 DONE (PR #250 merged), FOLLOW-260 IN_PROGRESS (backend-engineer). Sprint 16 OPEN — 12
+DONE (FOLLOW-170/173/174/176/182/183/184/187/190/227/230/234), 1 IN_PROGRESS (FOLLOW-185 —
+PG-harness CRM+DSR integration test), 1 READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal deploy ESC-020),
+FOLLOW-175 READY (P2 LoRA export). Sprint 15 COMPLETE — 21/21 DONE.**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -2976,6 +2974,47 @@ but does NOT fix the source — ESC-019 does.
     correctness is unverified against real Postgres. Add a pgmem/Testcontainers test exercising
     collision/upgrade/downgrade-rejection/manual-admin-override. May merge with FOLLOW-181.
 ```
+
+## Wave A — 2026-06-09 Audit Bug Fixes (OPEN)
+
+**Added 2026-06-10 (sdk-engineer/pm-orchestrator). Updated 2026-06-10 (backend-engineer): FOLLOW-258
+DONE (PR #249), FOLLOW-259 DONE (PR #250), FOLLOW-260 IN_PROGRESS.**
+
+| Ticket     | Owner            | P   | Status      | PR   |
+| ---------- | ---------------- | --- | ----------- | ---- |
+| FOLLOW-258 | sdk-engineer     | P0  | DONE        | #249 |
+| FOLLOW-259 | sdk-engineer     | P1  | DONE        | #250 |
+| FOLLOW-260 | backend-engineer | P0  | IN_PROGRESS | —    |
+| FOLLOW-261 | backend-engineer | P1  | READY       | —    |
+| FOLLOW-262 | sdk-engineer     | P2  | READY       | —    |
+
+### FOLLOW-258 — SDK↔ingest data-loss cluster [P0]
+
+F-01: chat.message.sent never sent the message text; F-02: scroll depth read wrong field name
+(depth_percent vs pct); F-03: lead_id/listing_view_rate stripped by Zod discriminated union; F-04:
+live.signup rejected when slot_uuid absent; F-29: PII scrubbing for chat messages. See PR #249.
+
+### FOLLOW-259 — Thread prediction_id + lead_id into feedback ping [P1]
+
+§T Conversion Label Loop was inert because prediction_id was never sent. postFeedbackPing now
+includes prediction_id (= adapt_decision_id) and lead_id (read from sessionStorage at outcome time).
+See PR #250.
+
+### FOLLOW-260 — /api/adapt cross-tenant auth hardening [P0]
+
+F-26 / ESC-021 companion. Tenant ID extracted from validated JWT must supersede any tenant_id in the
+request body.
+
+### FOLLOW-261 — Parameterize ClickHouse INSERT in /api/adapt [P1]
+
+F-30. SQL injection surface via string interpolation in ClickHouse INSERT. Switch to parameterized
+queries.
+
+### FOLLOW-262 — SDK lifecycle hygiene [P2]
+
+F-05/F-06/F-08. Listener leak on re-init, scroll throttle missing, chat→intent signal not wired.
+
+---
 
 ## Sprint 16 — Conversion Label Loop §T + SDK persistence + DB harness + compliance CRM docs + micro-poll Wave 2 (OPEN)
 

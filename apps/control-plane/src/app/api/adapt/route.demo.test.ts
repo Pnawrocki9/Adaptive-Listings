@@ -25,7 +25,7 @@ const { mockGetDemoOverride } = vi.hoisted(() => ({
 
 // Bypass JWT verification — these tests focus on demo-override logic, not auth.
 vi.mock('@/lib/demo-jwt-verify', () => ({
-  verifyDemoJwt: vi.fn().mockResolvedValue(undefined),
+  verifyDemoJwt: vi.fn().mockResolvedValue({}),
   DemoJwtSecretMissingError: class DemoJwtSecretMissingError extends Error {},
   DemoJwtInvalidError: class DemoJwtInvalidError extends Error {},
 }));

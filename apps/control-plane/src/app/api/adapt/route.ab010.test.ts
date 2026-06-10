@@ -22,7 +22,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // Bypass JWT verification — these tests focus on holdout/consent gating, not auth.
 vi.mock('@/lib/demo-jwt-verify', () => ({
-  verifyDemoJwt: vi.fn().mockResolvedValue(undefined),
+  verifyDemoJwt: vi.fn().mockResolvedValue({}),
   DemoJwtSecretMissingError: class DemoJwtSecretMissingError extends Error {},
   DemoJwtInvalidError: class DemoJwtInvalidError extends Error {},
 }));

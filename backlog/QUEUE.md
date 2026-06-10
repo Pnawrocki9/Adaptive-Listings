@@ -3303,7 +3303,8 @@ Five tickets, two agents (sdk-engineer + backend-engineer), ~21 estimated hours 
 - id: FOLLOW-262
   title: SDK lifecycle hygiene — listener leaks, scroll throttle, chat→intent (F-05/F-06/F-08)
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  pr: 253
   priority: P2
   estimated_hours: 5
   source: 2026-06-09 audit (F-05/F-06/F-08)

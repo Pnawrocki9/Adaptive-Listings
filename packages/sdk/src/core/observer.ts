@@ -403,32 +403,44 @@ export function setupObservers(
   }
 
   // ─── Scroll depth tracking ──────────────────────────────────────────────────
+  // RAF throttle: coalesce all scroll events that fire within a single animation
+  // frame into one DOM read. Without this, onScroll runs on every scroll tick
+  // (~60 fps), causing unnecessary layout thrashing. FOLLOW-262.
 
   const firedMilestones = new Set<number>();
+  let scrollRafId: number | null = null;
 
   function onScroll(): void {
-    try {
-      const scrollTop = window.scrollY || document.documentElement.scrollTop;
-      const docHeight =
-        document.documentElement.scrollHeight - document.documentElement.clientHeight;
-      if (docHeight <= 0) return;
+    if (scrollRafId !== null) return;
+    scrollRafId = requestAnimationFrame(() => {
+      scrollRafId = null;
+      try {
+        const scrollTop = window.scrollY || document.documentElement.scrollTop;
+        const docHeight =
+          document.documentElement.scrollHeight - document.documentElement.clientHeight;
+        if (docHeight <= 0) return;
 
-      const depthPercent = Math.round((scrollTop / docHeight) * 100);
+        const depthPercent = Math.round((scrollTop / docHeight) * 100);
 
-      for (const milestone of SCROLL_MILESTONES) {
-        if (depthPercent >= milestone && !firedMilestones.has(milestone)) {
-          firedMilestones.add(milestone);
-          onEvent(collectScrollDepth(milestone));
+        for (const milestone of SCROLL_MILESTONES) {
+          if (depthPercent >= milestone && !firedMilestones.has(milestone)) {
+            firedMilestones.add(milestone);
+            onEvent(collectScrollDepth(milestone));
+          }
         }
+      } catch {
+        // Never throw — observer errors are silenced
       }
-    } catch {
-      // Never throw — observer errors are silenced
-    }
+    });
   }
 
   window.addEventListener('scroll', onScroll, { passive: true });
   cleanupFns.push(() => {
     window.removeEventListener('scroll', onScroll);
+    if (scrollRafId !== null) {
+      cancelAnimationFrame(scrollRafId);
+      scrollRafId = null;
+    }
   });
 
   // ─── Listing card impression tracking ──────────────────────────────────────

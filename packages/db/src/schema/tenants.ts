@@ -55,6 +55,15 @@ export const tenants = pgTable(
      */
     pilotFrozen: boolean('pilot_frozen').notNull().default(false),
 
+    /**
+     * Whether the quiz widget is enabled for this tenant.
+     * Default true — pilot tenant behavior is not changed (Sprint 13b freeze rule).
+     * Tenants with high-quality chat coverage may set this to false to rely on
+     * behavioral + chat NLP signals only (§B.1 / §D.6 rationale).
+     * Added in FOLLOW-102.
+     */
+    quizEnabled: boolean('quiz_enabled').notNull().default(true),
+
     // Profile Mode gate — U.11, POST-MVP, master-admin gated
     profileModeEnabled: boolean('profile_mode_enabled').notNull().default(false),
     profileModeEnabledAt: timestamp('profile_mode_enabled_at', { withTimezone: true }),

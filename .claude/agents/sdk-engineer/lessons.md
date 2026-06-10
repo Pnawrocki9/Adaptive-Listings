@@ -241,3 +241,32 @@ gate in `init()`; 36 unit tests.
 `packages/shared/src/schemas/events/` for the event type first. If the schema already exists with
 different field names, use the existing schema — do not create a parallel shape. The ticket spec
 "shape" is a starting point, not an override for existing canonical schemas.
+
+---
+
+**Date:** 2026-06-10 / **Ticket:** FOLLOW-102
+
+**What I built:** Quiz ON/OFF toggle: DB migration adding
+`tenants.quiz_enabled boolean NOT NULL DEFAULT true`; `PATCH /api/tenants/:id` with tenant-scoped
+JWT auth + Zod; `SdkConfig.quiz` sub-object + `readConfig()` parsing
+`data-quiz-enabled`/`data-quiz-trigger`; `buildSnippet()` Rule L producer; `/dashboard/quiz` toggle
+with optimistic update + rollback; `showQuizTrigger()` gate in `index.ts`.
+
+**What was uncertain:**
+
+1. ESLint `@typescript-eslint/no-unsafe-return` on `vi.fn<>()` return in a `vi.mock()` factory:
+   TypeScript's dataflow does not cross the `vi.mock()` closure boundary, so even a fully typed
+   `vi.fn<[unknown], Promise<...>>()` call has its return typed as `any` at the consumer site. The
+   fix is `// eslint-disable-next-line @typescript-eslint/no-unsafe-return` with a reason comment —
+   not a cast or additional type annotation.
+2. commitlint body-max-line-length (100 chars): multi-sentence AC summaries easily exceed 100 chars.
+   Draft body lines in a text editor with a ruler before committing, or keep AC lines to a single
+   short clause.
+3. Rule L wiring for a feature toggle requires tracing the entire chain: DB column → API read →
+   dashboard state → wizard prop → snippet emitter → SDK parser → feature gate. Each hop must be
+   explicit and tested. A half-wire (e.g., DB column present but API never returns it) is invisible
+   to unit tests that inject the value directly.
+
+**A guardrail I'd add:** For any new `data-*` attribute the SDK consumes, the Rule L evidence grep
+must be run BEFORE writing tests. The grep output belongs in the PR description; if it comes back
+empty, stop and wire the producer before writing any consumer tests.

@@ -176,6 +176,13 @@
       "when": 1780929528396,
       "tag": "0024_dsr_durable_lead_id",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1781112236167,
+      "tag": "0025_tenants_quiz_enabled",
+      "breakpoints": true
     }
   ]
 }

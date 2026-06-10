@@ -39,6 +39,13 @@ export interface DetectionPreviewProps {
    * if provided it is used as a display hint before activation.
    */
   tenantId?: string;
+  /**
+   * Whether the quiz widget is enabled for this tenant (from tenants.quiz_enabled).
+   * Rule L (FOLLOW-102): this is the production producer of data-quiz-enabled in the
+   * generated snippet. When false, buildSnippet emits data-quiz-enabled="false".
+   * When true (default), the attribute is omitted — smaller snippet, SDK defaults to enabled.
+   */
+  quizEnabled?: boolean;
 }
 
 interface ActivateResponse {
@@ -116,17 +123,27 @@ function confidenceBadgeClass(confidence: number): string {
  *   sourced from `TenantSiteSchema.inquiry_submit_selector`. When null / undefined the
  *   `data-inquiry-submit-selector` attribute is omitted entirely from the snippet so
  *   that tenants who copy-paste the tag don't get a blank attribute value. [FOLLOW-114]
+ *
+ * @param quizEnabled - Whether the quiz widget is enabled for this tenant, sourced from
+ *   `tenants.quiz_enabled`. When explicitly `false`, emits `data-quiz-enabled="false"`.
+ *   When `true` (default), the attribute is omitted — the SDK defaults to enabled, so
+ *   omitting produces a smaller snippet with no behavior change. [FOLLOW-102 Rule L]
  */
 export function buildSnippet(
   tenantId: string,
   apiKey: string,
   inquirySubmitSelector?: string | null,
+  quizEnabled?: boolean,
 ): string {
   const inquiryAttr: string =
     inquirySubmitSelector != null
       ? `\n  data-inquiry-submit-selector="${inquirySubmitSelector}"`
       : '';
-  return `<script\n  src="${SDK_SERVE_URL}"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"${inquiryAttr}\n></script>`;
+  // Rule L (FOLLOW-102): emit data-quiz-enabled ONLY when the tenant has explicitly
+  // disabled the quiz. Omitting the attribute when true keeps the snippet smaller and
+  // avoids a half-wire (the SDK consumer in config.ts defaults to enabled=true).
+  const quizAttr: string = quizEnabled === false ? `\n  data-quiz-enabled="false"` : '';
+  return `<script\n  src="${SDK_SERVE_URL}"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"${inquiryAttr}${quizAttr}\n></script>`;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -158,6 +175,7 @@ export function DetectionPreview({
   detection_source,
   detection_confidence,
   tenantId = '',
+  quizEnabled,
 }: DetectionPreviewProps) {
   const [activating, setActivating] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
@@ -168,9 +186,16 @@ export function DetectionPreview({
   const snippetTenantId = activated !== null ? activated.tenant_id : tenantId;
   // Pass inquiry_submit_selector from the detected schema so tenants who copy this snippet
   // get a script tag that already wires up the inquiry click observer. [FOLLOW-114]
+  // Pass quizEnabled from the tenant record so the snippet emits data-quiz-enabled="false"
+  // when the quiz is disabled for this tenant. [FOLLOW-102 Rule L]
   const snippet =
     activated !== null
-      ? buildSnippet(snippetTenantId, activated.api_key, schema.inquiry_submit_selector)
+      ? buildSnippet(
+          snippetTenantId,
+          activated.api_key,
+          schema.inquiry_submit_selector,
+          quizEnabled,
+        )
       : '';
 
   async function handleActivate(): Promise<void> {

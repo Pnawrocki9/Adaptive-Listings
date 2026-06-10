@@ -1,5 +1,23 @@
 'use client';
 
+/**
+ * Quiz settings dashboard page.
+ *
+ * FOLLOW-102 (AC5): Adds the quiz ON/OFF toggle backed by tenants.quiz_enabled
+ * (the dedicated boolean column). The toggle optimistically updates local state,
+ * PATCHes PATCH /api/tenants/:id on change, and rolls back on error.
+ *
+ * The existing quiz widget configuration (trigger_after_n_listings, language, etc.)
+ * continues to be persisted to tenants.quiz_config JSONB via POST /api/quiz/config.
+ *
+ * §B.1 rationale displayed in the toggle description:
+ *   Tenants with high-quality chat coverage may disable the quiz and rely on
+ *   behavioral + chat NLP signals only. Tenants without chat need the quiz as a
+ *   primary archetype signal source.
+ *
+ * @module apps/control-plane/src/app/dashboard/quiz/page
+ */
+
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -9,6 +27,10 @@ interface QuizConfig {
   sticky_widget: boolean;
   language: 'en' | 'pl';
   accent_color: string;
+  /** FOLLOW-102: dedicated boolean column SoT for the quiz ON/OFF toggle. */
+  quiz_enabled: boolean;
+  /** Tenant ID returned by /api/quiz/config for use in PATCH /api/tenants/:id. */
+  tenant_id?: string;
 }
 
 const DEFAULTS: QuizConfig = {
@@ -17,6 +39,7 @@ const DEFAULTS: QuizConfig = {
   sticky_widget: false,
   language: 'en',
   accent_color: '#2563EB',
+  quiz_enabled: true,
 };
 
 export default function QuizSettingsPage() {
@@ -24,18 +47,78 @@ export default function QuizSettingsPage() {
   const [status, setStatus] = useState<'idle' | 'loading' | 'saved' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
 
+  // FOLLOW-102 AC5: separate state for the quiz ON/OFF toggle so optimistic updates
+  // can be rolled back independently of the rest of the form.
+  const [quizEnabled, setQuizEnabled] = useState<boolean>(true);
+  const [quizToggleStatus, setQuizToggleStatus] = useState<'idle' | 'saving' | 'error'>('idle');
+  const [quizToggleError, setQuizToggleError] = useState('');
+
   useEffect(() => {
     void fetch('/api/quiz/config')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) {
+          throw new Error(`HTTP ${String(r.status)}`);
+        }
+        return r.json();
+      })
       .then((data: unknown) => {
         if (data && typeof data === 'object') {
-          setConfig({ ...DEFAULTS, ...(data as Partial<QuizConfig>) });
+          const d = data as Partial<QuizConfig>;
+          setConfig({ ...DEFAULTS, ...d });
+          // FOLLOW-102: initialise quiz ON/OFF toggle from the dedicated column
+          setQuizEnabled(typeof d.quiz_enabled === 'boolean' ? d.quiz_enabled : true);
         }
       })
       .catch(() => {
         // load silently — defaults already set
       });
   }, []);
+
+  /**
+   * FOLLOW-102 AC5: Toggle the quiz ON/OFF by PATCHing PATCH /api/tenants/:id.
+   * Optimistic: local state is updated immediately; rolled back on error.
+   *
+   * §B.1 rationale: tenants with chat coverage may disable the quiz;
+   * those without chat need it for archetype signal coverage.
+   */
+  async function handleQuizEnabledToggle(): Promise<void> {
+    const tenantId = config.tenant_id;
+    if (!tenantId) {
+      setQuizToggleError('Tenant ID not loaded. Please refresh the page.');
+      setQuizToggleStatus('error');
+      return;
+    }
+
+    const newValue = !quizEnabled;
+    // Optimistic update
+    setQuizEnabled(newValue);
+    setQuizToggleStatus('saving');
+    setQuizToggleError('');
+
+    try {
+      const res = await fetch(`/api/tenants/${tenantId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quiz_enabled: newValue }),
+      });
+
+      if (!res.ok) {
+        const body = (await res.json()) as { error?: string };
+        // Rollback optimistic update
+        setQuizEnabled(!newValue);
+        setQuizToggleError(body.error ?? 'Failed to update quiz setting.');
+        setQuizToggleStatus('error');
+        return;
+      }
+
+      setQuizToggleStatus('idle');
+    } catch {
+      // Rollback optimistic update on network error
+      setQuizEnabled(!newValue);
+      setQuizToggleError('Network error. Please try again.');
+      setQuizToggleStatus('error');
+    }
+  }
 
   async function handleSave(e: React.SyntheticEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
@@ -69,37 +152,56 @@ export default function QuizSettingsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Investor Quiz Settings</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Configure the 2-question intent quiz widget embedded on your listings page.
+          Configure the decision-tree intent quiz widget embedded on your listings page.
         </p>
       </div>
 
+      {/* ── FOLLOW-102 AC5: Quiz ON/OFF toggle ───────────────────────────────── */}
+      <div className="mb-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-900">Quiz widget</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Enable the investor intent quiz on your listings pages. Tenants with high-quality chat
+              coverage may disable the quiz and rely on behavioral and chat NLP signals only.
+              Tenants without chat need the quiz as a primary archetype signal source (e.g. for
+              student_parent, retiree_relocator, diaspora_buyer archetypes — §B.1 / §D.6).
+            </p>
+            {quizToggleStatus === 'error' && (
+              <p
+                role="alert"
+                data-testid="quiz-toggle-error"
+                className="mt-2 text-xs font-medium text-red-600"
+              >
+                {quizToggleError}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            data-testid="quiz-enabled-toggle"
+            aria-label={quizEnabled ? 'Disable quiz widget' : 'Enable quiz widget'}
+            aria-pressed={quizEnabled}
+            disabled={quizToggleStatus === 'saving'}
+            onClick={() => {
+              void handleQuizEnabledToggle();
+            }}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              quizEnabled ? 'bg-blue-600' : 'bg-gray-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                quizEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Quiz widget configuration form ───────────────────────────────────── */}
       <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
         <form onSubmit={(e) => void handleSave(e)} className="space-y-6">
-          {/* Enabled toggle */}
-          <div className="flex items-center justify-between">
-            <div>
-              <label className="text-sm font-medium text-gray-900">Enable Quiz Widget</label>
-              <p className="text-xs text-gray-500">
-                Show the investor intent quiz on your listings page
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setConfig((c) => ({ ...c, enabled: !c.enabled }));
-              }}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                config.enabled ? 'bg-blue-600' : 'bg-gray-200'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                  config.enabled ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
           {/* Trigger threshold */}
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">

@@ -15,6 +15,34 @@ agent needs to do with it. **Files:** <list of relevant files / artifacts>
 
 ---
 
+## FOLLOW-102 → any downstream quiz/tenant ticket
+
+**From:** sdk-engineer **To:** backend-engineer / data-engineer / qa-engineer **Date:**
+2026-06-10T00:00:00Z
+
+**Summary:** FOLLOW-102 ships `tenants.quiz_enabled boolean NOT NULL DEFAULT true` (migration 0025),
+`PATCH /api/tenants/:id` (tenant-scoped JWT, Zod validation), the SDK gate in `showQuizTrigger()`,
+and `data-quiz-enabled="false"` emission from `buildSnippet()`. The `GET /api/quiz/config` route now
+also returns `quiz_enabled` and `tenant_id` so the dashboard can call PATCH without a separate
+lookup.
+
+**Action required:** Any ticket that reads or mutates quiz enablement should use
+`tenants.quiz_enabled` (the dedicated boolean column) — NOT `tenants.quiz_config.enabled` (the JSONB
+field which is for widget configuration only). PATCH `/api/tenants/:id` is the write path; the SDK
+`data-quiz-enabled` attribute is the propagation mechanism.
+
+**Files:**
+
+- `packages/db/migrations/0025_tenants_quiz_enabled.sql`
+- `packages/db/src/schema/tenants.ts` (`quizEnabled` field)
+- `apps/control-plane/src/app/api/tenants/[id]/route.ts`
+- `apps/control-plane/src/app/api/quiz/config/route.ts` (now returns `quiz_enabled` + `tenant_id`)
+- `apps/control-plane/src/components/onboarding/DetectionPreview.tsx` (`buildSnippet`)
+- `packages/sdk/src/core/config.ts` (`SdkConfig.quiz`, `readConfig`)
+- `packages/sdk/src/index.ts` (`showQuizTrigger` gate)
+
+---
+
 ## TICKET-041 → TICKET-GDPR-004
 
 **From:** sdk-engineer **To:** backend-engineer **Date:** 2026-05-15T08:00:00Z

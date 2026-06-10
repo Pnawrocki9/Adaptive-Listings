@@ -83,7 +83,9 @@ const MOCK_ENTRIES: AuditEntry[] = [
     user_email: 'admin@tenant.example',
     ip_address: '203.0.113.42',
     created_at: '2026-05-05T11:45:00.000Z',
-    details: { trigger_after_n_listings: 3, language: 'en' },
+    // trigger_after_n_listings removed from audit fixture — FOLLOW-264 AC2 (LG-2).
+    // Dead field cleared after FOLLOW-257 removed the SDK consumer.
+    details: { language: 'en' },
   },
 ];
 

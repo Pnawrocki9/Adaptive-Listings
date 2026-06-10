@@ -7,8 +7,15 @@
  * (the dedicated boolean column). The toggle optimistically updates local state,
  * PATCHes PATCH /api/tenants/:id on change, and rolls back on error.
  *
- * The existing quiz widget configuration (trigger_after_n_listings, language, etc.)
- * continues to be persisted to tenants.quiz_config JSONB via POST /api/quiz/config.
+ * Quiz widget configuration (language, accent_color, sticky_widget, etc.)
+ * is persisted to tenants.quiz_config JSONB via POST /api/quiz/config.
+ *
+ * AC2 / AC5 (FOLLOW-264 / Rule L / RETRO-050): "Show quiz after N listing views"
+ * was removed from this page and from the API schema. The SDK consumer
+ * (trigger_after_n_listings) was removed in FOLLOW-257; this removes the orphaned
+ * producer that surfaced false configurability to paying tenants (HALF_WIRE_P).
+ * Per-tenant timer control is re-planned under FOLLOW-199 (Quiz v2.0) and will
+ * rebuild all three limbs (DB, API, SDK) together.
  *
  * §B.1 rationale displayed in the toggle description:
  *   Tenants with high-quality chat coverage may disable the quiz and rely on
@@ -23,7 +30,9 @@ import { useEffect, useState } from 'react';
 
 interface QuizConfig {
   enabled: boolean;
-  trigger_after_n_listings: number;
+  // trigger_after_n_listings removed — Rule L / RETRO-050 HALF_WIRE_P (FOLLOW-264).
+  // The SDK consumer was deleted in FOLLOW-257; this removes the orphaned producer.
+  // Re-add under FOLLOW-199 (Quiz v2.0) with a matching SDK consumer.
   sticky_widget: boolean;
   language: 'en' | 'pl';
   accent_color: string;
@@ -35,7 +44,6 @@ interface QuizConfig {
 
 const DEFAULTS: QuizConfig = {
   enabled: false,
-  trigger_after_n_listings: 3,
   sticky_widget: false,
   language: 'en',
   accent_color: '#2563EB',
@@ -202,23 +210,10 @@ export default function QuizSettingsPage() {
       {/* ── Quiz widget configuration form ───────────────────────────────────── */}
       <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
         <form onSubmit={(e) => void handleSave(e)} className="space-y-6">
-          {/* Trigger threshold */}
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Show quiz after N listing views
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={10}
-              value={config.trigger_after_n_listings}
-              onChange={(e) => {
-                setConfig((c) => ({ ...c, trigger_after_n_listings: Number(e.target.value) }));
-              }}
-              className="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            />
-            <p className="mt-1 text-xs text-gray-400">Range: 1–10 listing views</p>
-          </div>
+          {/* Trigger threshold — REMOVED (FOLLOW-264 / Rule L / RETRO-050):
+              "Show quiz after N listing views" had no SDK consumer after FOLLOW-257.
+              Surfacing an input that can never affect runtime is false configurability
+              (HALF_WIRE_P). Per-tenant timer control planned for FOLLOW-199 (Quiz v2.0). */}
 
           {/* Sticky widget */}
           <div className="flex items-center justify-between">

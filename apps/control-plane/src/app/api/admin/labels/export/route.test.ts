@@ -125,7 +125,7 @@ function mockDbWithLabels(
     insert: vi.fn().mockReturnValue({
       values: vi.fn().mockResolvedValue(undefined),
     }),
-  };
+  } as unknown as ReturnType<typeof createAdminClient>;
 }
 
 // ─── Test suite ───────────────────────────────────────────────────────────────
@@ -353,7 +353,7 @@ describe('GET /api/admin/labels/export', () => {
           }),
         }),
       }),
-    };
+    } as unknown as ReturnType<typeof createAdminClient>;
     mockCreateAdminClient.mockReturnValue(mockDb);
 
     const { GET } = await import('./route.js');

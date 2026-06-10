@@ -1,9 +1,9 @@
 # Backlog Queue
 
 **Updated 2026-06-10 by pm-orchestrator. Sprint 13b: FOLLOW-087/099/100/101/102/252/253 DONE.
-FOLLOW-257 READY_FOR_REVIEW (PR #259, CI green). FOLLOW-263 IN_PROGRESS (backend-engineer). Wave A
-COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR
-#252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
+FOLLOW-257 READY_FOR_REVIEW (PR #259, CI green). FOLLOW-263 READY_FOR_REVIEW (PR #260, CI green —
+backend-engineer). Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260
+PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
 (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
 awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE — 21/21 DONE.**
 
@@ -2763,11 +2763,12 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
 - id: FOLLOW-263
   title: Repoint pilot-freeze guard at tenants.quiz_enabled (FOLLOW-102 SoT migration)
   agent: backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P2
   estimated_hours: 2
   depends_on: [FOLLOW-102]
   model: sonnet-4.6
+  pr: '#260'
   spec: backlog/sprint-13/FOLLOW-263.md
   notes: |
     RETRO-049 LG-2 (P2). The pilot-freeze guard (RETRO-012/FOLLOW-117) reads quizConfig.enabled
@@ -2775,6 +2776,10 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
     freeze guard is now silently blind to the new column — quiz state can diverge between the two
     stores. MUST land before TICKET-PILOT-001 measurement window opens. Repoint the freeze guard
     read to tenants.quiz_enabled; add a test for the mismatched-SoT scenario.
+    PR #260: checkPilotFrozenAsync() repointed to select quizEnabled (typed bool) from tenants.
+    7 new tests covering AC1-AC4 (typed column read, on/off states, state change during window,
+    non-blocking guarantee). 909 tests pass. Build(control-plane)/Typecheck/Format/Lint/RuleH/RuleJ
+    all green. Pre-existing-red gates (Rule I, Python tests, SDK bundle) non-blocking per memory.
 
 - id: FOLLOW-103
   title: app.estalara.com DOM adaptation — corpus fixture + AI Vision slots + 5-slot coverage

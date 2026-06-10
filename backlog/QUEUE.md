@@ -1,10 +1,11 @@
 # Backlog Queue
 
 **Updated 2026-06-10 by backend-engineer/pm-orchestrator. FOLLOW-258 DONE (PR #249 merged),
-FOLLOW-259 DONE (PR #250 merged), FOLLOW-260 READY_FOR_REVIEW (PR #251), FOLLOW-261 IN_PROGRESS.
-Sprint 16 OPEN — 12 DONE (FOLLOW-170/173/174/176/182/183/184/187/190/227/230/234), 1 IN_PROGRESS
-(FOLLOW-185 — PG-harness CRM+DSR integration test), 1 READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal
-deploy ESC-020), FOLLOW-175 READY (P2 LoRA export). Sprint 15 COMPLETE — 21/21 DONE.**
+FOLLOW-259 DONE (PR #250 merged), FOLLOW-260 READY_FOR_REVIEW (PR #251), FOLLOW-261 READY_FOR_REVIEW
+(PR #252). Sprint 16 OPEN — 12 DONE (FOLLOW-170/173/174/176/182/183/184/187/190/227/230/234), 1
+IN_PROGRESS (FOLLOW-185 — PG-harness CRM+DSR integration test), 1 READY_FOR_REVIEW (FOLLOW-191
+awaiting Rafal deploy ESC-020), FOLLOW-175 READY (P2 LoRA export). Sprint 15 COMPLETE — 21/21
+DONE.**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic

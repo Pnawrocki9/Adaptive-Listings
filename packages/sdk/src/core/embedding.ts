@@ -113,7 +113,7 @@ export function buildBehavioralFingerprint(
     } else if (e.type === 'page.view') {
       pageCount++;
     } else if (e.type === 'scroll.depth') {
-      const depth = e.payload?.depth_percent;
+      const depth = e.payload?.pct;
       if (typeof depth === 'number' && depth > maxScrollDepth) {
         maxScrollDepth = depth;
       }

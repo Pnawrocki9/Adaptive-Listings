@@ -1,19 +1,22 @@
 # Backlog Queue
 
-**Updated 2026-06-10 by pm-orchestrator. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263
-DONE. RETRO-050/051 complete. FOLLOW-265 (P1, before TICKET-PILOT-001) and FOLLOW-264 (P2) promoted
-READY. Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251,
-FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
-(FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
-awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE — 21/21 DONE.**
+**Updated 2026-06-10 by pm-orchestrator (loop 2). Sprint 13b:
+FOLLOW-087/099/100/101/102/252/253/257/263 DONE. RETRO-050/051 complete. FOLLOW-265 (P1, before
+TICKET-PILOT-001) and FOLLOW-264 (P2) promoted READY. Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR
+#249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged).
+Sprint 16 OPEN — 14 DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1
+READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE —
+21/21 DONE. Sprint 13a-hardening-v3 DONE — FOLLOW-149 PR #166 merged. FOLLOW-182 IN_PROGRESS
+corrected to DONE (PR #222 merged 2026-06-08). ESC-020 OPEN (Rafal deploy) — pipeline paused on new
+ticket delegation per protocol.**
 
-**Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
-(https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
-that proved the previous "Migration 0015: prd ✅ applied" bookkeeping was false — drizzle-kit
-silently generated 2025 timestamps for entries 15/16 (1-year year-drift, second occurrence after
-`c92da81`), Drizzle's migrator silently skipped them, and `migrate.ts` falsely printed "Migrations
-applied successfully." with zero applied. FOLLOW-149 lands: (A) journal `when`-values for entries
-15/16 repaired to commit-timestamp-aligned 2026 values; (B) new CI gate
+**Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
+(https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
+diagnostic that proved the previous "Migration 0015: prd ✅ applied" bookkeeping was false —
+drizzle-kit silently generated 2025 timestamps for entries 15/16 (1-year year-drift, second
+occurrence after `c92da81`), Drizzle's migrator silently skipped them, and `migrate.ts` falsely
+printed "Migrations applied successfully." with zero applied. FOLLOW-149 lands: (A) journal
+`when`-values for entries 15/16 repaired to commit-timestamp-aligned 2026 values; (B) new CI gate
 `Migration journal monotonicity check` (passing, 7s) — fails on non-monotonic OR >7d commit-date
 drift; (C) `migrate.ts` now reports before/after/applied/pending counts AND exits non-zero with a
 loud warning when 0 applied but pending>0 (trap-killer); (D) migration 0015 applied to prd via
@@ -3033,15 +3036,16 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-174
   title: admin label table + manual reclassification
   agent: backend-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 8
   depends_on: [FOLLOW-171, FOLLOW-173]
   source: MASTER_DESIGN §T
   spec: backlog/sprint-14/FOLLOW-174.md
+  pr: '#220'
+  completed_at: '2026-06-08T00:00:00Z'
   notes: |
-    EXTEND dashboard/{analytics,pilot} + admin/*: joined prediction+outcome table (filters),
-    manual reclassify (label_source=manual_admin), calibration view. RLS-respected.
+    DONE in PR #220 (31afb16). Merged 2026-06-08. Status corrected 2026-06-10 by pm-orchestrator.
 
 - id: FOLLOW-175
   title: Label-set export for LoRA fine-tuning
@@ -3063,33 +3067,32 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-176
   title: Persist resolved archetype/intent across listing navigations
   agent: sdk-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 5
   depends_on: []
   source: session investigation 2026-06-03 (Side-task #5)
   spec: backlog/sprint-14/FOLLOW-176.md
+  pr: '#217'
+  completed_at: '2026-06-08T00:00:00Z'
   notes: |
-    currentIntentState is in-memory, recomputed each load → subsequent listings don't inherit the
-    inferred archetype. Persist to sessionStorage (keyed by sessionId), rehydrate in init() before
-    cold-start, consent-gated, staleness/version guard. Cross-session (localStorage+TTL) = follow-up.
+    DONE in PR #217 (ea9d59c). Merged 2026-06-08. Status corrected 2026-06-10 by pm-orchestrator.
 
 # ── Dwell-time confidence lift — CEO-directed 2026-06-04 ──
 
 - id: FOLLOW-190
   title: Dwell-time confidence lift — accumulate temporal engagement as intent signal
   agent: sdk-engineer
-  status: READY
+  status: DONE
   priority: P2
   estimated_hours: 4
   depends_on: []
   source: CEO session 2026-06-04 (signal enrichment gap)
   spec: backlog/sprint-14/FOLLOW-190.md
+  pr: '#225'
+  completed_at: '2026-06-08T00:00:00Z'
   notes: |
-    registerFeedbackListener already tracks dwell for server-side ping, but never feeds it into the
-    Bayesian intent engine. Add applyDwellSignal() in intent.ts: at 30s/90s/180s thresholds boost
-    confidence of the current leading archetype (local-only, no server call, signal_count unchanged).
-    FOLLOW-176 recommended first (dwell-boosted state then also gets persisted), not strictly blocking.
+    DONE in PR #225 (1d5829a). Merged 2026-06-08. Status corrected 2026-06-10 by pm-orchestrator.
 
 # ── Conversion Label Loop hardening (RETRO-029) — promoted 2026-06-03 ──
 
@@ -3116,22 +3119,24 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-182
   title: eliminate the TS-map↔SQL-CASE precedence duplication in upsertConversionLabel
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-179]
   source: RETRO-030 (LG-1/LG-2); CONVENTIONS_PATCH Rule K.1 amendment
   spec: backlog/FOLLOW_UPS.md (FOLLOW-182 stub)
   branch: backend-engineer/FOLLOW-182-rank-dedup
+  pr: '#222'
+  completed_at: '2026-06-08T00:00:00Z'
   notes: |
-    OUTCOME_CLASS_RANK (TS) and the inline SQL CASE in upsert-conversion-label.ts encode the same
-    ordering twice; adding a class silently mis-ranks unless both change. Derive the SQL from the TS
-    map (or add a parity gate). Rule K.1 intra-runtime duplication (Rule J does NOT cover it).
+    DONE in PR #222 (d7b9de7). Merged 2026-06-08. Status corrected 2026-06-10 by pm-orchestrator
+    — branch had a stale pre-merge orphan commit, but the actual work landed via PR #222. SQL CASE
+    derived from TS map via allRankEntries(); Rule K.1 satisfied.
 
 - id: FOLLOW-183
   title: direct PG integration test for upsertConversionLabel (precedence WHERE + UNIQUE constraint)
   agent: data-engineer + backend-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-179]

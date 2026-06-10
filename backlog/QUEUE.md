@@ -1,12 +1,11 @@
 # Backlog Queue
 
 **Updated 2026-06-10 by pm-orchestrator. Sprint 13b: FOLLOW-087/099/100/101/102/252/253 DONE.
-RETRO-048/049 filed: FOLLOW-257 READY_FOR_REVIEW PR #259 (P1 Rule-L half-wire), FOLLOW-263 READY (P2
-freeze-guard SoT — before TICKET-PILOT-001 window). Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR
-#249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged).
-Sprint 16 OPEN — 14 DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1
-READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE —
-21/21 DONE.**
+FOLLOW-257 READY_FOR_REVIEW (PR #259, CI green). FOLLOW-263 IN_PROGRESS (backend-engineer). Wave A
+COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR
+#252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
+(FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
+awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE — 21/21 DONE.**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -2754,12 +2753,12 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
   model: sonnet-4.6
   spec: backlog/sprint-13/FOLLOW-257.md
   notes: |
-    RETRO-049 LG-1 (P1). config.ts parses quiz.trigger_after_n_listings from data-quiz-trigger
-    attribute but buildSnippet never emits data-quiz-trigger AND the SDK runtime never reads the
-    parsed value — timer is hardcoded to QUIZ_TRIGGER_DELAY_MS = 30s (FOLLOW-199). Rule H:
-    half-wire must be resolved. Either: (A) remove the dead parse + dead attribute + the field from
-    SdkConfig, or (B) wire buildSnippet to emit data-quiz-trigger and the SDK timer to read
-    config.quiz.triggerAfterNListings. Also add a test for showQuizTrigger gate (TG-1).
+    PR #259. Option A: removed triggerAfterNListings from SdkConfig.quiz + readConfig() + tests.
+    QUIZ_TRIGGER_DELAY_MS=30s retained; FOLLOW-199 comment added. 9 new tests in follow-257.test.ts
+    (showQuizTrigger gate + Rule H assertions). 1284 tests pass.
+    CI verified green (pm-orchestrator 2026-06-10): Typecheck/Lint/Format/Test(Node22)/
+    Build(control-plane)/RuleH/RuleJ/Demo-integration all pass.
+    Build(SDK-bundle) pre-existing on main — not introduced by this PR.
 
 - id: FOLLOW-263
   title: Repoint pilot-freeze guard at tenants.quiz_enabled (FOLLOW-102 SoT migration)

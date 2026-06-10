@@ -1,11 +1,11 @@
 # Backlog Queue
 
-**Updated 2026-06-10 by pm-orchestrator. Wave A status: FOLLOW-258 DONE (PR #249 merged), FOLLOW-259
-DONE (PR #250 merged), FOLLOW-260 READY_FOR_REVIEW (PR #251), FOLLOW-261 READY_FOR_REVIEW (PR #252),
-FOLLOW-262 READY_FOR_REVIEW (PR #253). Sprint 16 OPEN — 12 DONE
-(FOLLOW-170/173/174/176/182/183/184/187/190/227/230/234), 1 IN_PROGRESS (FOLLOW-185 — PG-harness
-CRM+DSR integration test), 1 READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal deploy ESC-020), FOLLOW-175
-READY (P2 LoRA export). Sprint 15 COMPLETE — 21/21 DONE.**
+**Updated 2026-06-10 by pm-orchestrator. Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249,
+FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint
+16 OPEN — 14 DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1
+READY_FOR_REVIEW (FOLLOW-191 awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 13b: FOLLOW-087
+DONE (PR #255), FOLLOW-099 DONE (PR #248), FOLLOW-100 DONE (PR #254), FOLLOW-101 READY. Sprint 15
+COMPLETE — 21/21 DONE.**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -139,8 +139,8 @@ updates.
 | 13b    | 16    | Adaptive Listings v1.0 intent build (Lane C; parallel under hard isolation per freeze rule)                                                             | 6       | 0    | 0       | 3     | 3       |
 | Y-S1   | —     | YELLOW audit Sprint 1 (parallel track) — F-02 cold-start, F-09 locale copy, F-10 LLM attribution, F-13/F-14 GDPR LIA (PR #158)                          | 4       | 4    | 0       | 0     | 0       |
 | 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)                                 | 21      | 21   | 0       | 0     | 0       |
-| 16     | 18    | Conversion Label Loop (§T), SDK archetype persistence, DB integration tests, compliance CRM docs, micro-poll Wave 2                                     | 12      | 9    | 1       | 2     | 0       |
-| Wave A | —     | Bug fix cluster: data-loss (FOLLOW-258), cross-tenant auth (FOLLOW-260), SQL injection (FOLLOW-261), feedback ping (FOLLOW-259), lifecycle (FOLLOW-262) | 5       | 0    | 1       | 4     | 0       |
+| 16     | 18    | Conversion Label Loop (§T), SDK archetype persistence, DB integration tests, compliance CRM docs, micro-poll Wave 2                                     | 12      | 14   | 0       | 1     | 0       |
+| Wave A | —     | Bug fix cluster: data-loss (FOLLOW-258), cross-tenant auth (FOLLOW-260), SQL injection (FOLLOW-261), feedback ping (FOLLOW-259), lifecycle (FOLLOW-262) | 5       | 5    | 0       | 0     | 0       |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -2586,8 +2586,9 @@ measurement window.
   UX effect (enables post-pilot disagreement-rate analysis).
 - **FOLLOW-102 = mergeable** — tenant-gated OFF for the pilot tenant.
 
-**Note:** FOLLOW-087 cannot reach green CI until ESC-010 (`DOPPLER_TOKEN_DEV`) + ESC-009
-(`E2E_BEARER_TOKEN`) are provisioned.
+**Sprint 13b progress 2026-06-10:** FOLLOW-099 DONE (PR #248), FOLLOW-100 DONE (PR #254), FOLLOW-087
+DONE (PR #255). FOLLOW-101 now READY (all deps satisfied). FOLLOW-103 BLOCKED (TICKET-PILOT-001
+needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK TypeScript work).
 
 ```yaml
 # LANE C — Adaptive Listings v1.0 intent build (13b; parallel with Lane B shadow window ONLY under
@@ -2596,24 +2597,25 @@ measurement window.
 - id: FOLLOW-099
   title: SDK behavioral observers + payload schemas (5 new event types)
   agent: sdk-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 8
   depends_on: []
   model: sonnet-4.6
-  spec: (to author at spawn — backlog/sprint-13/FOLLOW-099.md)
+  spec: backlog/sprint-13/FOLLOW-099.md
+  pr: '#248'
+  completed_at: '2026-06-09T22:34:41Z'
   notes: |
-    photo.dwell, feature.expanded, mortgage_calc.used, filter.applied (facet+value),
-    inquiry.started. Payload-aware dispatch through dispatchEvents(). Bundle delta <5KB gzip.
-    Foundation for §D.6 Coverage Matrix.
-    FREEZE: pilot-tenant-affecting (changes SDK event emission) → must NOT ship to the pilot tenant
-    during the CTA-lift measurement window (Sprint 13b hard-isolation rule / PILOT_FREEZE_RULE.md).
+    DONE in PR #248 (0865ca2). photo.dwell, feature.expanded, mortgage_calc.used, filter.applied
+    (facet+value), inquiry.started. Payload-aware dispatch + bot detection gate. Status corrected
+    2026-06-10 by pm-orchestrator.
 
 - id: FOLLOW-100
   title: SIGNAL_LIKELIHOODS all 18 archetypes + CHAT_INTENT_LIKELIHOODS + applyChatIntentPrior()
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
-  pr: 254
+  status: DONE
+  pr: '#254'
+  completed_at: '2026-06-10T11:19:48Z'
   priority: P1
   estimated_hours: 8
   depends_on: [FOLLOW-099]
@@ -2636,8 +2638,9 @@ measurement window.
 - id: FOLLOW-087
   title: Chat NLP in apps/intent-engine (Haiku 4.5 real-time + Sonnet 4.6 batch)
   agent: ml-engineer
-  status: READY_FOR_REVIEW
-  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/255
+  status: DONE
+  pr: '#255'
+  completed_at: '2026-06-10'
   priority: P1
   estimated_hours: 12
   depends_on: [FOLLOW-040, FOLLOW-063]
@@ -2658,12 +2661,15 @@ measurement window.
 - id: FOLLOW-101
   title: chat.intent.detected → Bayesian prior bridge in SDK intent.ts
   agent: ml-engineer + sdk-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: ml-engineer
+  started_at: '2026-06-10T00:00:00Z'
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-087, FOLLOW-100]
   model: opus-4.7-xhigh
-  spec: (to author at spawn — backlog/sprint-13/FOLLOW-101.md)
+  branch: ml-engineer/FOLLOW-101-chat-intent-prior-bridge
+  spec: backlog/sprint-13/FOLLOW-101.md
   notes: |
     UNBLOCKED: both deps satisfied — FOLLOW-100 (applyChatIntentPrior) merged (PR #254), FOLLOW-087
     stable chat.intent.detected schema in PR #255 (apps/intent-engine/src/schemas.py:
@@ -2837,17 +2843,18 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-185
   title: PG-harness integration test — CRM route write + DSR cascade + two-writer precedence
   agent: data-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 5
   depends_on: [FOLLOW-179, FOLLOW-172]
   source: RETRO-031 (TG-1/TG-2); consolidate with FOLLOW-181 + FOLLOW-183
   spec: backlog/FOLLOW_UPS.md (FOLLOW-185 stub)
+  pr: '#243/#244'
+  completed_at: '2026-06-09T01:10:00Z'
   notes: |
-    The DSR cascade mis-key (FOLLOW-184) SHIPPED because the test mocks the DB — a real-PG harness
-    would have caught it. PM should consolidate FOLLOW-181 + FOLLOW-183 + FOLLOW-185 into ONE
-    pgmem/Testcontainers DB-integration ticket: RLS isolation, FK cascade, UNIQUE constraint,
-    upsert precedence WHERE, CRM-write + DSR-erase reachability, two-writer convergence.
+    DONE. PRs #243 (14fea94) and #244 (cfb1f1c) merged 2026-06-09. PGlite harness covering CRM
+    write + DSR cascade + two-writer precedence + confidence handling. Status corrected
+    2026-06-10 by pm-orchestrator.
 
 - id: FOLLOW-187
   title:
@@ -2900,15 +2907,17 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-175
   title: Label-set export for LoRA fine-tuning
   agent: backend-engineer + ml-engineer
-  status: READY
+  status: DONE
   priority: P2
   estimated_hours: 4
   depends_on: [FOLLOW-174]
   source: MASTER_DESIGN §T
   spec: backlog/sprint-14/FOLLOW-175.md
+  pr: '#245'
+  completed_at: '2026-06-09T18:41:22Z'
   notes: |
-    Per-tenant PII-free (features_snapshot, model_version, score) -> outcome_class export (CSV/JSONL);
-    the Y2 fine-tune (§D.5.7) input. RLS-scoped, auditable.
+    DONE in PR #245 (35d3355). Per-tenant PII-free (features_snapshot, model_version, score) ->
+    outcome_class export (CSV/JSONL); the Y2 fine-tune (§D.5.7) input. RLS-scoped, auditable.
 
 # ── SDK archetype persistence (Side-task #5) — committed 2026-06-03 ──
 
@@ -2997,16 +3006,16 @@ but does NOT fix the source — ESC-019 does.
 
 ## Wave A — 2026-06-09 Audit Bug Fixes (OPEN)
 
-**Added 2026-06-10 (sdk-engineer/pm-orchestrator). Updated 2026-06-10 (backend-engineer): FOLLOW-258
-DONE (PR #249), FOLLOW-259 DONE (PR #250), FOLLOW-260 IN_PROGRESS.**
+**Added 2026-06-10 (sdk-engineer/pm-orchestrator). COMPLETE — all 5 merged 2026-06-10 by
+pm-orchestrator.**
 
-| Ticket     | Owner            | P   | Status      | PR   |
-| ---------- | ---------------- | --- | ----------- | ---- |
-| FOLLOW-258 | sdk-engineer     | P0  | DONE        | #249 |
-| FOLLOW-259 | sdk-engineer     | P1  | DONE        | #250 |
-| FOLLOW-260 | backend-engineer | P0  | IN_PROGRESS | —    |
-| FOLLOW-261 | backend-engineer | P1  | READY       | —    |
-| FOLLOW-262 | sdk-engineer     | P2  | READY       | —    |
+| Ticket     | Owner            | P   | Status | PR   |
+| ---------- | ---------------- | --- | ------ | ---- |
+| FOLLOW-258 | sdk-engineer     | P0  | DONE   | #249 |
+| FOLLOW-259 | sdk-engineer     | P1  | DONE   | #250 |
+| FOLLOW-260 | backend-engineer | P0  | DONE   | #251 |
+| FOLLOW-261 | backend-engineer | P1  | DONE   | #252 |
+| FOLLOW-262 | sdk-engineer     | P2  | DONE   | #253 |
 
 ### FOLLOW-258 — SDK↔ingest data-loss cluster [P0]
 
@@ -3043,16 +3052,19 @@ F-05/F-06/F-08. Listener leak on re-init, scroll throttle missing, chat→intent
 failing); FOLLOW-187 updated to Activity 15 (FOLLOW-230 fixed collision). Updated 2026-06-08
 (data-engineer): FOLLOW-234 DONE (conversion_labels 13-month TTL cron — FOLLOW-187 condition 9
 closed). Updated 2026-06-09 (pm-orchestrator): FOLLOW-183 DONE (PR #228 merged), FOLLOW-187 DONE (PR
-#229 merged), FOLLOW-185 now IN_PROGRESS (data-engineer delegated).** Carries forward all READY
-Sprint 14 items not touched by Sprint 15, plus the Wave 2 deferred item from Sprint 15.
+#229 merged), FOLLOW-185 now IN_PROGRESS (data-engineer delegated). Updated 2026-06-10
+(pm-orchestrator): FOLLOW-185 DONE (PR #243/#244 merged), FOLLOW-175 DONE (PR #245 merged). Sprint
+16 now 14/14 non-READY_FOR_REVIEW tickets DONE; FOLLOW-191 remains READY_FOR_REVIEW (ESC-020).**
+Carries forward all READY Sprint 14 items not touched by Sprint 15, plus the Wave 2 deferred item
+from Sprint 15.
 
 Key tracks:
 
 - **Track A (§T Conversion Label Loop, T0):** FOLLOW-170 (DONE, PR #187 — unblocked the chain)
 - **Track B (§T downstream, now unblocked):** FOLLOW-173 (DONE, PR #216) → FOLLOW-174 (DONE, PR
-  #220) → FOLLOW-175 (READY, P2)
+  #220) → FOLLOW-175 (DONE, PR #245)
 - **Track C (SDK + DB hardening):** FOLLOW-176 (DONE, PR #217), FOLLOW-182 (DONE, PR #222),
-  FOLLOW-183 (DONE, PR #228), FOLLOW-185 (IN_PROGRESS — PG-harness CRM+DSR)
+  FOLLOW-183 (DONE, PR #228), FOLLOW-185 (DONE — PG-harness CRM+DSR, PRs #243/#244)
 - **Track D (GDPR/compliance):** FOLLOW-234 (DONE — TTL cron), FOLLOW-184 (DONE, PR #233),
   FOLLOW-187 (DONE, PR #229 — ROPA Activity 15 + DPIA §2.3/§2.5)
 - **Track E (Background):** FOLLOW-190 (DONE, PR #225), FOLLOW-227 (DONE, PR #226), FOLLOW-230
@@ -3144,18 +3156,20 @@ Key tracks:
 - id: FOLLOW-185
   title: PG-harness integration test — CRM write + DSR cascade + two-writer precedence
   agent: data-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: data-engineer
   started_at: '2026-06-09T00:00:00Z'
+  completed_at: '2026-06-09T01:10:00Z'
   priority: P1
   estimated_hours: 5
   depends_on: [FOLLOW-179, FOLLOW-172]
   source: RETRO-031 (TG-1/TG-2); consolidate with FOLLOW-181 + FOLLOW-183
   spec: backlog/FOLLOW_UPS.md (FOLLOW-185 stub)
+  pr: '#243/#244'
   notes: |
-    PM should consolidate FOLLOW-181 + FOLLOW-183 + FOLLOW-185 into ONE pgmem/Testcontainers
-    DB-harness ticket. PM consolidation note: scope = RLS isolation + FK cascade + UNIQUE +
-    upsert precedence WHERE + CRM-write + DSR-erase reachability + two-writer convergence.
+    DONE. PRs #243 (14fea94) and #244 (cfb1f1c) merged 2026-06-09. PGlite harness covering CRM
+    write + DSR cascade + two-writer precedence + confidence handling. Status corrected
+    2026-06-10 by pm-orchestrator.
 
 - id: FOLLOW-234
   title: 13-month TTL enforcement for conversion_labels (FOLLOW-187 condition 9)
@@ -3274,11 +3288,10 @@ Key tracks:
     Unblocks FOLLOW-187 (Activity 15 assignment now correct).
 ```
 
-## Wave A — Bug fix cluster: data-loss, cross-tenant auth, SQL injection, lifecycle (OPEN)
+## Wave A — Bug fix cluster: data-loss, cross-tenant auth, SQL injection, lifecycle (COMPLETE)
 
-**Added 2026-06-10 (pm-orchestrator). Promoted from FOLLOW_UPS.md stubs per 2026-06-09 comprehensive
-audit (FOLLOW-267). Wave A is the decision-free highest-value fix set. P0 tickets (FOLLOW-258/260)
-are blocking critical path for any public tenant onboarding.**
+**Added 2026-06-10 (pm-orchestrator). COMPLETE — all 5 merged 2026-06-10. Promoted from
+FOLLOW_UPS.md stubs per 2026-06-09 comprehensive audit (FOLLOW-267).**
 
 Five tickets, two agents (sdk-engineer + backend-engineer), ~21 estimated hours total.
 
@@ -3286,43 +3299,51 @@ Five tickets, two agents (sdk-engineer + backend-engineer), ~21 estimated hours 
 - id: FOLLOW-258
   title: SDK↔ingest data-loss cluster (F-01/F-02/F-03/F-04/F-29)
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P0
   estimated_hours: 6
   source: 2026-06-09 audit
   branch: sdk-engineer/FOLLOW-258-data-loss-cluster
   pr: '#249'
+  completed_at: '2026-06-09T22:21:16Z'
 
 - id: FOLLOW-259
   title: Thread prediction_id + lead_id into feedback ping (activates §T loop)
   agent: sdk-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 3
   source: 2026-06-09 audit (F-20)
   depends_on: [FOLLOW-170]
+  pr: '#250'
+  completed_at: '2026-06-10T04:46:31Z'
 
 - id: FOLLOW-260
   title: /api/adapt cross-tenant auth hardening (ESC-021, F-26)
   agent: backend-engineer
-  status: READY
+  status: DONE
   priority: P0
   estimated_hours: 4
   source: 2026-06-09 audit (F-26)
+  pr: '#251'
+  completed_at: '2026-06-10T05:29:05Z'
 
 - id: FOLLOW-261
   title: Parameterize ClickHouse INSERT in /api/adapt (SQL injection, F-30)
   agent: backend-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 3
   source: 2026-06-09 audit (F-30)
+  pr: '#252'
+  completed_at: '2026-06-10T05:50:27Z'
 
 - id: FOLLOW-262
   title: SDK lifecycle hygiene — listener leaks, scroll throttle, chat→intent (F-05/F-06/F-08)
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
-  pr: 253
+  status: DONE
+  pr: '#253'
+  completed_at: '2026-06-10T06:02:22Z'
   priority: P2
   estimated_hours: 5
   source: 2026-06-09 audit (F-05/F-06/F-08)

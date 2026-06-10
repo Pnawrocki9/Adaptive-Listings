@@ -2,6 +2,18 @@
 
 ---
 
+**Date / ticket:** 2026-06-10 — Wave A (FOLLOW-258/259/260/261/262) + Sprint 16 close **Delegation
+row used:** No delegation this iteration — state reconciliation only. **What validation caught (or
+missed):** gh pr list showed 0 open PRs but QUEUE.md header showed 3 READY_FOR_REVIEW entries;
+`gh pr view` per PR confirmed all 5 Wave A PRs were merged earlier today. Also found FOLLOW-185,
+FOLLOW-175, FOLLOW-099, FOLLOW-173 all merged but still stale in QUEUE.md. Rule: always verify PR
+state with `gh pr view` rather than trusting QUEUE.md header text. **A delegation/validation rule
+I'd add:** At session start, diff `gh pr list --state merged --limit 10` against QUEUE.md
+READY_FOR_REVIEW entries — any mismatch means stale state requiring atomic correction before
+proceeding.
+
+---
+
 **Date / ticket:** 2026-06-09 — FOLLOW-185 (data-engineer PG-harness CRM+DSR integration test)
 **Delegation row used:** Row 4 (ClickHouse/ETL/archetype pipeline/DB harness — data-engineer).
 **What validation caught (or missed):** State reconciliation at session start found 3 tickets

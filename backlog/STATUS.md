@@ -1,39 +1,51 @@
-# Status — 2026-06-09T00:00Z
+# Status — 2026-06-10T11:00Z
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
 ## Active sprint: Sprint 16
 
-**12 DONE** (FOLLOW-170/173/174/176/182/183/184/187/190/227/230/234), **1 IN_PROGRESS** (FOLLOW-185
-— PG-harness CRM+DSR integration test, delegated to data-engineer 2026-06-09), **1
-READY_FOR_REVIEW** (FOLLOW-191 awaiting Rafal deploy ESC-020), **1 READY** (FOLLOW-175 P2 LoRA
-export).
+**COMPLETE — 14 DONE** (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234). Wave A ALL
+DONE: FOLLOW-258/259/260/261/262 (all PRs merged 2026-06-10). FOLLOW-099 DONE (PR #248 merged
+2026-06-09).
 
-### FOLLOW-185 delegation details (IN_PROGRESS as of 2026-06-09)
+**1 READY_FOR_REVIEW** — FOLLOW-191 (awaiting Rafal deploy ESC-020, deployment-only gate).
 
-**Branch:** `data-engineer/FOLLOW-185-pg-harness-crm-dsr`
+## Currently IN_PROGRESS
 
-**Scope:** Integration test for CRM write + DSR cascade + two-writer precedence using PGlite or
-Testcontainers harness. Consolidates scope from FOLLOW-181 (RLS isolation) and the already-done
-FOLLOW-183 (upsert precedence WHERE + UNIQUE). This ticket focuses on: (a) CRM route write via
-`POST /api/crm/outcome` → `conversion_labels` row, (b) DSR cascade: erase by `lead_id` (Pass B from
-FOLLOW-184) reaches that CRM-written row, (c) two-writer precedence: SDK feedback ping + CRM webhook
-both writing the same `(tenant_id, prediction_id)` converges to expected state.
+None. 0 of 3 max.
 
-**CI-check counter:** 0/5 | **Fix-iteration counter:** 0/3
+## CI-check counters
 
-## Currently IN_PROGRESS (1 of 3 max)
-
-- FOLLOW-185 (PG-harness CRM+DSR integration test) — data-engineer, branch:
-  data-engineer/FOLLOW-185-pg-harness-crm-dsr. CI-check counter: 0/5 | Fix-iteration counter: 0/3
+No ticket currently IN_PROGRESS — counters reset.
 
 ## Open escalations
 
 | ID      | Age | Description                                                          | Blocking?                           |
 | ------- | --- | -------------------------------------------------------------------- | ----------------------------------- |
-| ESC-009 | 16d | E2E_BEARER_TOKEN secret not provisioned                              | demo-integration CI soft-skips only |
-| ESC-010 | 16d | DOPPLER_TOKEN_DEV not provisioned                                    | doppler-verify CI soft-skips only   |
-| ESC-020 | 4d  | Rafal must deploy web-master HEAD + PUBLIC_ESTALARA_SDK_ENABLED=true | FOLLOW-191 final verification only  |
+| ESC-009 | 17d | E2E_BEARER_TOKEN secret not provisioned                              | demo-integration CI soft-skips only |
+| ESC-010 | 17d | DOPPLER_TOKEN_DEV not provisioned                                    | doppler-verify CI soft-skips only   |
+| ESC-020 | 5d  | Rafal must deploy web-master HEAD + PUBLIC_ESTALARA_SDK_ENABLED=true | FOLLOW-191 final verification only  |
+
+## Wave A status corrections applied 2026-06-10
+
+All 5 Wave A tickets confirmed DONE via gh pr state checks:
+
+| Ticket     | Old status       | Correct status | PR   | Merged at            |
+| ---------- | ---------------- | -------------- | ---- | -------------------- |
+| FOLLOW-258 | READY_FOR_REVIEW | DONE           | #249 | 2026-06-10T05:19:30Z |
+| FOLLOW-259 | READY            | DONE           | #250 | 2026-06-10T05:19:56Z |
+| FOLLOW-260 | READY_FOR_REVIEW | DONE           | #251 | 2026-06-10T09:28:39Z |
+| FOLLOW-261 | READY_FOR_REVIEW | DONE           | #252 | 2026-06-10T09:46:49Z |
+| FOLLOW-262 | READY_FOR_REVIEW | DONE           | #253 | 2026-06-10T10:05:56Z |
+
+## Additional status corrections applied 2026-06-10
+
+| Ticket     | Old status  | Correct status | PR   | Merged at            |
+| ---------- | ----------- | -------------- | ---- | -------------------- |
+| FOLLOW-185 | IN_PROGRESS | DONE           | #243 | 2026-06-08T22:51:42Z |
+| FOLLOW-175 | READY       | DONE           | #245 | 2026-06-09T00:00:00Z |
+| FOLLOW-099 | READY       | DONE           | #248 | 2026-06-09T20:34:41Z |
+| FOLLOW-173 | IN_PROGRESS | DONE           | #216 | 2026-06-07T00:00:00Z |
 
 ## Sprint 16 status corrections applied 2026-06-09
 

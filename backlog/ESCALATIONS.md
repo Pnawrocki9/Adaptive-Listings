@@ -61,7 +61,7 @@ with PILOT-prefixed commits).
 
 ---
 
-## OPEN — ESC-010: DOPPLER_TOKEN_DEV secret must be provisioned in GitHub Actions [FOLLOW-040]
+## RESOLVED — ESC-010: DOPPLER_TOKEN_DEV secret must be provisioned in GitHub Actions [FOLLOW-040]
 
 **Filed by:** devops-engineer **Date:** 2026-05-24T00:00:00Z **Affects:** FOLLOW-040, FOLLOW-063,
 FOLLOW-068, FOLLOW-039 **Type:** repo-config
@@ -95,7 +95,9 @@ The token has NOT been created yet. Until it is provisioned in GitHub Actions se
 
 **Do NOT create a production-scope token.** Production secrets remain Vercel-only per §V.6.3.
 
-**Resolution:**
+**Resolution:** RESOLVED 2026-06-10 by Piotr Nawrocki. Doppler service token `ci-github-actions`
+created in project `estalara` config `dev`. Added as `DOPPLER_TOKEN_DEV` GitHub Actions repository
+secret. CI `doppler-verify` job confirmed green ("Doppler auth verified").
 
 ---
 
@@ -378,7 +380,7 @@ FOLLOW-034 is CANCELLED — no compliance audit or region gate required.
 
 ---
 
-## OPEN — ESC-009: Provision E2E_BEARER_TOKEN GitHub Actions secret for demo-integration CI job
+## RESOLVED — ESC-009: Provision E2E_BEARER_TOKEN GitHub Actions secret for demo-integration CI job
 
 **Filed by:** qa-engineer **Date:** 2026-05-24T00:00:00Z **Affects:** FOLLOW-068, PR
 `qa-engineer/FOLLOW-068-demo-ci` **Type:** other
@@ -414,7 +416,10 @@ FOLLOW-040). Until FOLLOW-040 lands, the job soft-skips with exit 0 before the s
 Provisioning `E2E_BEARER_TOKEN` now is still recommended so it is ready the moment FOLLOW-040
 unblocks the job.
 
-**Resolution:** (pending — awaiting DevOps/Piotr action)
+**Resolution:** RESOLVED 2026-05-24 by Piotr Nawrocki. `E2E_BEARER_TOKEN` added as GitHub Actions
+repository secret (2026-05-24T15:48Z). `E2E_TENANT_ID` added as GitHub Actions repository variable
+with value `est_test_e2e_tenant` (2026-05-24T15:47Z). Confirmed present via `gh secret list` on
+2026-06-10.
 
 ---
 

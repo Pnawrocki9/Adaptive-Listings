@@ -164,18 +164,29 @@ function logLlmCallAsync(params: {
 
   const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
   const ts = new Date().toISOString().replace('T', ' ').replace('Z', '');
-  // ANSI SQL '' doubling — consistent with clickhouse-dsr.ts (FOLLOW-206)
-  const escape = (s: string) => s.replace(/'/g, "''");
 
+  // FOLLOW-261 (F-30): parameterized INSERT — {name:Type} placeholders eliminate string
+  // interpolation; values passed as ?param_name= URL query params (ClickHouse HTTP interface).
   const query =
     `INSERT INTO llm_calls ` +
     `(session_id, tenant_id, archetype, model, tokens_in, tokens_out, cost_usd, latency_ms, source, ts) ` +
-    `VALUES ('${escape(params.sessionId)}', '${escape(params.tenantId)}', ` +
-    `'${escape(params.archetypeId)}', '${escape(params.model)}', ` +
-    `${String(params.tokensIn)}, ${String(params.tokensOut)}, ${String(params.costUsd)}, ` +
-    `${String(params.latencyMs)}, '${escape(params.source)}', '${ts}')`;
+    `VALUES ({p_session_id:String}, {p_tenant_id:String}, {p_archetype:String}, {p_model:String}, ` +
+    `{p_tokens_in:UInt32}, {p_tokens_out:UInt32}, {p_cost_usd:Float64}, {p_latency_ms:UInt32}, ` +
+    `{p_source:String}, {p_ts:String})`;
 
-  fetch(clickhouseUrl, {
+  const url = new URL(clickhouseUrl);
+  url.searchParams.set('param_p_session_id', params.sessionId);
+  url.searchParams.set('param_p_tenant_id', params.tenantId);
+  url.searchParams.set('param_p_archetype', params.archetypeId);
+  url.searchParams.set('param_p_model', params.model);
+  url.searchParams.set('param_p_tokens_in', String(params.tokensIn));
+  url.searchParams.set('param_p_tokens_out', String(params.tokensOut));
+  url.searchParams.set('param_p_cost_usd', String(params.costUsd));
+  url.searchParams.set('param_p_latency_ms', String(params.latencyMs));
+  url.searchParams.set('param_p_source', params.source);
+  url.searchParams.set('param_p_ts', ts);
+
+  fetch(url.toString(), {
     method: 'POST',
     body: query,
     headers: {

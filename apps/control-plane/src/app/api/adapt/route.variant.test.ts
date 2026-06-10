@@ -18,7 +18,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // Bypass JWT verification — these tests focus on variant/bandit wiring, not auth.
 vi.mock('@/lib/demo-jwt-verify', () => ({
-  verifyDemoJwt: vi.fn().mockResolvedValue(undefined),
+  verifyDemoJwt: vi.fn().mockResolvedValue({}),
   DemoJwtSecretMissingError: class DemoJwtSecretMissingError extends Error {},
   DemoJwtInvalidError: class DemoJwtInvalidError extends Error {},
 }));
@@ -165,14 +165,17 @@ describe('POST /api/adapt — FOLLOW-007: response includes variant', () => {
 
 describe('POST /api/adapt — FOLLOW-007: ClickHouse INSERT carries variant', () => {
   let lastFetchBody: string | null = null;
+  let lastFetchUrl: string | null = null;
 
   beforeEach(() => {
     vi.clearAllMocks();
     lastFetchBody = null;
+    lastFetchUrl = null;
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123/');
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((_url: unknown, opts?: { body?: string }) => {
+      vi.fn().mockImplementation((url: unknown, opts?: { body?: string }) => {
+        lastFetchUrl = typeof url === 'string' ? url : null;
         lastFetchBody = opts?.body ?? null;
         return Promise.resolve(new Response('', { status: 200 }));
       }),
@@ -196,13 +199,14 @@ describe('POST /api/adapt — FOLLOW-007: ClickHouse INSERT carries variant', ()
     expect(lastFetchBody).toContain('variant');
   });
 
-  it('INSERT includes the selected variant value as a string literal', async () => {
+  it('INSERT passes selected variant value as URL param (FOLLOW-261 parameterized)', async () => {
     await POST(makePostRequest(VALID_BODY));
-    expect(lastFetchBody).not.toBeNull();
-    expect(lastFetchBody).toContain("'v1'");
+    expect(lastFetchUrl).not.toBeNull();
+    const parsedUrl = new URL(lastFetchUrl!);
+    expect(parsedUrl.searchParams.get('param_p_variant')).toBe('v1');
   });
 
-  it('all-paused path logs `control` to ClickHouse', async () => {
+  it('all-paused path passes `control` to ClickHouse as URL param (FOLLOW-261)', async () => {
     mockGetBanditArms.mockResolvedValue([
       { variant: 'control', alpha: 1, beta: 1, paused: true },
       { variant: 'v1', alpha: 1, beta: 1, paused: true },
@@ -210,7 +214,8 @@ describe('POST /api/adapt — FOLLOW-007: ClickHouse INSERT carries variant', ()
     ]);
 
     await POST(makePostRequest(VALID_BODY));
-    expect(lastFetchBody).not.toBeNull();
-    expect(lastFetchBody).toContain("'control'");
+    expect(lastFetchUrl).not.toBeNull();
+    const parsedUrl = new URL(lastFetchUrl!);
+    expect(parsedUrl.searchParams.get('param_p_variant')).toBe('control');
   });
 });

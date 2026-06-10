@@ -19,7 +19,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // Bypass JWT verification — these tests focus on holdout wiring, not auth.
 vi.mock('@/lib/demo-jwt-verify', () => ({
-  verifyDemoJwt: vi.fn().mockResolvedValue(undefined),
+  verifyDemoJwt: vi.fn().mockResolvedValue({}),
   DemoJwtSecretMissingError: class DemoJwtSecretMissingError extends Error {},
   DemoJwtInvalidError: class DemoJwtInvalidError extends Error {},
 }));
@@ -58,18 +58,25 @@ import { GET, POST } from './route.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Captures the body of the most recent ClickHouse fetch call. */
-function captureFetchBody(): { getLastBody: () => string | null } {
+/** Captures the body and URL of the most recent ClickHouse fetch call. */
+function captureFetchBody(): { getLastBody: () => string | null; getLastUrl: () => URL | null } {
   let lastBody: string | null = null;
+  let lastUrl: URL | null = null;
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockImplementation((_url: unknown, opts?: { body?: string }) => {
+    vi.fn().mockImplementation((url: unknown, opts?: { body?: string }) => {
       lastBody = opts?.body ?? null;
+      try {
+        lastUrl = typeof url === 'string' ? new URL(url) : null;
+      } catch {
+        lastUrl = null;
+      }
       return Promise.resolve(new Response('', { status: 200 }));
     }),
   );
   return {
     getLastBody: () => lastBody,
+    getLastUrl: () => lastUrl,
   };
 }
 
@@ -125,7 +132,7 @@ describe('GET /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET-
     vi.unstubAllGlobals();
   });
 
-  it('smoke: holdout_group=true → INSERT includes holdout_group=1', async () => {
+  it('smoke: holdout_group=true → INSERT includes holdout_group=1 (FOLLOW-261: URL param)', async () => {
     const capture = captureFetchBody();
 
     const res = await GET(makeGetRequest({ ...VALID_GET_PARAMS, holdout_group: 'true' }));
@@ -134,12 +141,13 @@ describe('GET /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET-
     const body = capture.getLastBody();
     expect(body).not.toBeNull();
     expect(body).toContain('holdout_group');
-    // ClickHouse Boolean true is represented as 1
-    expect(body).toContain('holdout_group');
-    expect(body).toMatch(/1, '.*'/); // holdout_group=1 followed by ts value
+    // FOLLOW-261: value is passed as URL param, not interpolated into query body
+    const url = capture.getLastUrl();
+    expect(url).not.toBeNull();
+    expect(url!.searchParams.get('param_p_holdout_group')).toBe('1');
   });
 
-  it('smoke: holdout_group=false → INSERT includes holdout_group=0', async () => {
+  it('smoke: holdout_group=false → INSERT includes holdout_group=0 (FOLLOW-261: URL param)', async () => {
     const capture = captureFetchBody();
 
     const res = await GET(makeGetRequest({ ...VALID_GET_PARAMS, holdout_group: 'false' }));
@@ -148,10 +156,13 @@ describe('GET /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET-
     const body = capture.getLastBody();
     expect(body).not.toBeNull();
     expect(body).toContain('holdout_group');
-    expect(body).toMatch(/0, '.*'/); // holdout_group=0 followed by ts value
+    // FOLLOW-261: value is passed as URL param
+    const url = capture.getLastUrl();
+    expect(url).not.toBeNull();
+    expect(url!.searchParams.get('param_p_holdout_group')).toBe('0');
   });
 
-  it('smoke: holdout_group absent → INSERT defaults to holdout_group=0', async () => {
+  it('smoke: holdout_group absent → INSERT defaults to holdout_group=0 (FOLLOW-261: URL param)', async () => {
     const capture = captureFetchBody();
 
     const res = await GET(makeGetRequest(VALID_GET_PARAMS));
@@ -160,8 +171,10 @@ describe('GET /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET-
     const body = capture.getLastBody();
     expect(body).not.toBeNull();
     expect(body).toContain('holdout_group');
-    // Default is false = 0
-    expect(body).toMatch(/0, '.*'/);
+    // FOLLOW-261: default false → URL param '0'
+    const url = capture.getLastUrl();
+    expect(url).not.toBeNull();
+    expect(url!.searchParams.get('param_p_holdout_group')).toBe('0');
   });
 
   it('INSERT includes holdout_group column in the field list', async () => {
@@ -196,7 +209,7 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     vi.unstubAllGlobals();
   });
 
-  it('smoke: treatment arm (holdout_pct=0.0) → INSERT includes holdout_group=0', async () => {
+  it('smoke: treatment arm (holdout_pct=0.0) → INSERT includes holdout_group=0 (FOLLOW-261: URL param)', async () => {
     const capture = captureFetchBody();
 
     // holdout_pct=0.0 → 100% treatment, consent_mode_enabled=false → no skip
@@ -208,8 +221,10 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     const body = capture.getLastBody();
     expect(body).not.toBeNull();
     expect(body).toContain('holdout_group');
-    // Treatment arm logs holdout_group=0
-    expect(body).toMatch(/0, '.*'/);
+    // FOLLOW-261: treatment arm → URL param '0'
+    const url = capture.getLastUrl();
+    expect(url).not.toBeNull();
+    expect(url!.searchParams.get('param_p_holdout_group')).toBe('0');
   });
 
   it('smoke: holdout arm (holdout_pct=1.0) → no ClickHouse INSERT (returns early)', async () => {
@@ -274,17 +289,23 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     );
 
     const body = capture.getLastBody() ?? '';
-    // New columns present in the INSERT column list.
+    // Column names still present in the INSERT column list (query body).
     expect(body).toContain('model_version');
     expect(body).toContain('features_snapshot');
     expect(body).toContain('lead_id');
-    // model_version is stamped with the current scorer.
-    expect(body).toContain('rulebased-bandit-v1');
-    // features_snapshot is a PII-free JSON blob of the scorer signals — and carries NO
-    // session/lead identifier.
-    expect(body).toMatch(/"archetype":/);
-    expect(body).toMatch(/"confidence":/);
-    expect(body).not.toMatch(/"session_id":/);
+
+    // FOLLOW-261: values are now URL params, not interpolated into query body.
+    const url = capture.getLastUrl();
+    expect(url).not.toBeNull();
+    // model_version scorer stamp is in the URL param.
+    expect(url!.searchParams.get('param_p_model_version')).toBe('rulebased-bandit-v1');
+    // features_snapshot is a PII-free JSON blob — parse it from the URL param.
+    const snapshot = url!.searchParams.get('param_p_features_snapshot') ?? '';
+    const parsed = JSON.parse(snapshot) as Record<string, unknown>;
+    expect(parsed).toHaveProperty('archetype');
+    expect(parsed).toHaveProperty('confidence');
+    // PII check: session/lead IDs must NOT be in the snapshot.
+    expect(snapshot).not.toMatch(/"session_id":/);
   });
 });
 

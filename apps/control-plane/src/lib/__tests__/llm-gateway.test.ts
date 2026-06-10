@@ -369,3 +369,112 @@ describe('callLlmGateway — response shape', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('callLlmGateway — FOLLOW-261 parameterized ClickHouse INSERT (logLlmCallAsync)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
+    process.env.CLICKHOUSE_URL = 'http://localhost:8123';
+    // First fetch call = spend check (returns 0), second = INSERT
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: [{ total: '0' }] }),
+      })
+      .mockResolvedValue({ ok: true });
+  });
+
+  afterEach(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.CLICKHOUSE_URL;
+    vi.restoreAllMocks();
+  });
+
+  it('FOLLOW-261: INSERT query body uses {p_*:Type} placeholders, not interpolated values', async () => {
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Yield headline',
+        archetype: 'yield_hunter',
+        confidence: 0.8,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      sessionId: 'sess-inject-test',
+      tenantId: 'tenant-inject-test',
+    });
+
+    // Second fetch call is the ClickHouse INSERT (first is the spend check)
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const [, options] = mockFetch.mock.calls[1] as [string, RequestInit];
+    const body = options.body as string;
+
+    expect(body).toContain('{p_session_id:String}');
+    expect(body).toContain('{p_tenant_id:String}');
+    expect(body).toContain('{p_model:String}');
+    expect(body).toContain('{p_cost_usd:Float64}');
+    // Literal values must NOT be interpolated into the query body
+    expect(body).not.toContain('sess-inject-test');
+    expect(body).not.toContain('tenant-inject-test');
+  });
+
+  it('FOLLOW-261: values appear as URL query params on the ClickHouse INSERT URL', async () => {
+    const sessionId = 'sess-param-verify';
+    const tenantId = 'tenant-param-verify';
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Yield headline',
+        archetype: 'yield_hunter',
+        confidence: 0.8,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    await callLlmGateway({ ...BASE_INPUT, similarity: 0.75, sessionId, tenantId });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const [fetchUrl] = mockFetch.mock.calls[1] as [string];
+    const parsedUrl = new URL(fetchUrl);
+
+    expect(parsedUrl.searchParams.get('param_p_session_id')).toBe(sessionId);
+    expect(parsedUrl.searchParams.get('param_p_tenant_id')).toBe(tenantId);
+    expect(parsedUrl.searchParams.get('param_p_model')).toBe('claude-haiku-4-5');
+    expect(parsedUrl.origin).toBe('http://localhost:8123');
+  });
+
+  it('FOLLOW-261 (F-30): single-quote in tenantId goes to URL param, not query body', async () => {
+    const maliciousTenant = "t'); DROP TABLE llm_calls; --";
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Yield headline',
+        archetype: 'yield_hunter',
+        confidence: 0.8,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      tenantId: maliciousTenant,
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const [fetchUrl, options] = mockFetch.mock.calls[1] as [string, RequestInit];
+    const body = options.body as string;
+    const parsedUrl = new URL(fetchUrl);
+
+    expect(body).not.toContain('DROP TABLE');
+    expect(body).not.toContain(maliciousTenant);
+    expect(parsedUrl.searchParams.get('param_p_tenant_id')).toBe(maliciousTenant);
+  });
+});

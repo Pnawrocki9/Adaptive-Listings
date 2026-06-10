@@ -356,9 +356,6 @@ function logDecisionAsync(
   const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
   const ts = new Date().toISOString().replace('T', ' ').replace('Z', '');
 
-  // Escape single quotes in string values to prevent injection (ANSI SQL '' doubling, per FOLLOW-206)
-  const escape = (s: string) => s.replace(/'/g, "''");
-
   // Conversion Label Loop (FOLLOW-170, §T): PII-free snapshot of the scorer inputs/outputs
   // the server saw at decision time, so a stored label can later be replayed against a future
   // model. Only non-PII signals — no session/lead identifiers go in the snapshot.
@@ -372,21 +369,35 @@ function logDecisionAsync(
     variant,
   });
 
-  // demo_override column: ClickHouse UInt8 boolean (1 = demo-driven, 0 = normal).
-  // Pilot analytics exclude rows where demo_override = 1. (DEMO-001 / AC6)
-  // Note: the adaptation_decisions table may not yet have this column in legacy
-  // ClickHouse instances; the INSERT includes it for forward-compatibility.
-  // If ClickHouse returns an error for the extra column, the catch below silently
-  // swallows it (analytics failure must not block responses).
+  // FOLLOW-261 (F-30): parameterized INSERT — {name:Type} placeholders eliminate string
+  // interpolation; values passed as ?param_name= URL query params (ClickHouse HTTP interface).
   const query =
     `INSERT INTO adaptation_decisions ` +
     `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, holdout_group, variant, adapt_decision_id, demo_override, model_version, features_snapshot, lead_id, ts) ` +
-    `VALUES ('${escape(sessionId)}', '${escape(tenantId)}', '${escape(archetype)}', ` +
-    `${String(confidence)}, ${String(similarity)}, '${escape(source)}', ${String(tier)}, ${String(directiveCount)}, ` +
-    `${holdoutGroup ? '1' : '0'}, '${escape(variant)}', '${escape(adaptDecisionId)}', ` +
-    `${demoOverride ? '1' : '0'}, '${escape(modelVersion)}', '${escape(featuresSnapshot)}', '${escape(leadId)}', '${ts}')`;
+    `VALUES ({p_session_id:String}, {p_tenant_id:String}, {p_archetype:String}, ` +
+    `{p_confidence:Float64}, {p_similarity:Float64}, {p_source:String}, {p_tier:UInt32}, {p_directive_count:UInt32}, ` +
+    `{p_holdout_group:UInt8}, {p_variant:String}, {p_adapt_decision_id:String}, ` +
+    `{p_demo_override:UInt8}, {p_model_version:String}, {p_features_snapshot:String}, {p_lead_id:String}, {p_ts:String})`;
 
-  fetch(clickhouseUrl, {
+  const url = new URL(clickhouseUrl);
+  url.searchParams.set('param_p_session_id', sessionId);
+  url.searchParams.set('param_p_tenant_id', tenantId);
+  url.searchParams.set('param_p_archetype', archetype);
+  url.searchParams.set('param_p_confidence', String(confidence));
+  url.searchParams.set('param_p_similarity', String(similarity));
+  url.searchParams.set('param_p_source', source);
+  url.searchParams.set('param_p_tier', String(tier));
+  url.searchParams.set('param_p_directive_count', String(directiveCount));
+  url.searchParams.set('param_p_holdout_group', holdoutGroup ? '1' : '0');
+  url.searchParams.set('param_p_variant', variant);
+  url.searchParams.set('param_p_adapt_decision_id', adaptDecisionId);
+  url.searchParams.set('param_p_demo_override', demoOverride ? '1' : '0');
+  url.searchParams.set('param_p_model_version', modelVersion);
+  url.searchParams.set('param_p_features_snapshot', featuresSnapshot);
+  url.searchParams.set('param_p_lead_id', leadId);
+  url.searchParams.set('param_p_ts', ts);
+
+  fetch(url.toString(), {
     method: 'POST',
     body: query,
     headers: {

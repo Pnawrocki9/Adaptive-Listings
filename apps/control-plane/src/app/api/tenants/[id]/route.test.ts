@@ -40,7 +40,6 @@ vi.mock('drizzle-orm', () => ({
 // Mock auth — default to an authenticated tenant-scoped JWT.
 const mockGetAuthClaims = vi.fn<(req: unknown) => Promise<{ tenant_id: string } | null>>();
 vi.mock('@estalara/auth', () => ({
-   
   getAuthClaims: (req: unknown): Promise<{ tenant_id: string } | null> => mockGetAuthClaims(req),
 }));
 

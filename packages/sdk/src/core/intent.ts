@@ -113,6 +113,25 @@ export interface IntentState {
    */
   dwell_ticks_applied?: number;
   /**
+   * Rule R: chat-intent prior idempotency marker (FOLLOW-252).
+   *
+   * Set to `true` by `applyChatIntentPrior` (via `fetchDirectives`) once the
+   * chat-intent dimension map has been successfully folded into this distribution.
+   * Persisted to sessionStorage via `persistIntentState` so the flag survives a
+   * hard page reload within the 24h Redis shadow-key window.
+   *
+   * Guard in `fetchDirectives`: if `state.chatPriorApplied === true`, the prior
+   * is NOT re-applied — even when the `/api/adapt` response returns
+   * `chat_intent_dimensions` again (because the shadow key still exists).
+   *
+   * Cleared to `false` (or absent) by `resetAdaptState()` / session teardown so a
+   * genuinely new session can receive the prior for the first time.
+   *
+   * Optional / defaults to `false` so states persisted before FOLLOW-252 remain
+   * valid — `isValidIntentState` does not require this field.
+   */
+  chatPriorApplied?: boolean;
+  /**
    * Quiz-vs-chat archetype disagreement metadata (FOLLOW-100).
    *
    * Set by `applyChatIntentPrior` when the chat-derived leading archetype differs

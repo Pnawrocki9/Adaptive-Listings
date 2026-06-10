@@ -298,13 +298,17 @@ let _feedbackListenerRegistered = false;
 /**
  * Rule R idempotency guard for chat-intent prior (FOLLOW-101).
  *
- * Stores the session ID for which `applyChatIntentPrior` has already been
- * applied this session. On cross-listing navigation the session ID persists
- * within the same tab, so this guard prevents the same chat prior from
- * being re-applied on the rehydrated state on every listing page.
+ * FOLLOW-252: this in-memory guard is REPLACED by `IntentState.chatPriorApplied`
+ * (a persisted flag in the sessionStorage envelope). The in-memory variable is kept
+ * only as a secondary fast-path guard for cross-listing navigation within the same
+ * tab lifecycle (no reload); the primary, reload-safe guard is `state.chatPriorApplied`.
  *
- * Reset by `resetAdaptState()` which is called only when the session is
- * fully torn down or the archetype changes.
+ * On hard page reload `_chatPriorAppliedSessionId` resets to null, but
+ * `IntentState.chatPriorApplied` survives via sessionStorage rehydration — so the
+ * double-count-on-reload hole (RETRO-047 LG-1) is closed by the persisted flag.
+ *
+ * Reset by `resetAdaptState()` which is called only when the session is fully torn
+ * down or the archetype changes.
  */
 let _chatPriorAppliedSessionId: string | null = null;
 
@@ -739,13 +743,26 @@ export async function fetchDirectives(
       );
     }
 
-    // ── FOLLOW-101: chat-intent Bayesian prior bridge ──────────────────────────
+    // ── FOLLOW-101 / FOLLOW-252: chat-intent Bayesian prior bridge ────────────
     //
     // When the control-plane found a shadow chat-intent key for this session,
     // `chat_intent_dimensions` is a non-empty Record<string,string>. Apply
     // `applyChatIntentPrior` ONCE per session (Rule R idempotency gate): skip
     // if we already applied for this session ID so cross-listing navigation cannot
     // double-count the prior on a rehydrated state.
+    //
+    // Rule R: chat-prior idempotency persisted across reload (FOLLOW-252).
+    //
+    // DOUBLE GUARD to satisfy both in-tab navigation and hard-reload scenarios:
+    //
+    //   1. `intentState.chatPriorApplied === true` — PRIMARY guard, persisted in
+    //      the sessionStorage IntentState envelope. Survives a hard page reload
+    //      within the 24h Redis shadow-key window (RETRO-047 LG-1 fix). This is
+    //      the guard that closes the reload-reapply hole.
+    //
+    //   2. `_chatPriorAppliedSessionId !== session.sessionId` — SECONDARY guard,
+    //      in-memory fast-path for cross-listing navigation within the same tab
+    //      lifecycle (no reload). Redundant but cheap; kept for defence-in-depth.
     //
     // Shadow-only constraint (Sprint 13): this update does NOT change which
     // directives are served — adaptation output remains purely behavioural. The
@@ -757,30 +774,40 @@ export async function fetchDirectives(
       dims !== undefined &&
       Object.keys(dims).length > 0 &&
       intentState !== undefined &&
+      // Rule R: chat-prior idempotency persisted across reload (FOLLOW-252).
+      // Primary guard: skip if the persisted IntentState already has chatPriorApplied=true.
+      // This prevents re-folding on every reload within the 24h shadow-key window.
+      intentState.chatPriorApplied !== true &&
+      // Secondary in-memory guard: skip within the same tab lifecycle (no reload needed).
       _chatPriorAppliedSessionId !== session.sessionId
     ) {
       _chatPriorAppliedSessionId = session.sessionId;
 
       const updatedIntentState = applyChatIntentPrior(intentState, dims);
 
+      // Mark the prior as applied in the IntentState envelope (Rule R / FOLLOW-252).
+      // This flag is persisted to sessionStorage so it survives a hard page reload —
+      // the primary idempotency mechanism across the rehydrate boundary.
+      const markedIntentState = { ...updatedIntentState, chatPriorApplied: true as const };
+
       // Persist the updated state to sessionStorage so subsequent listing pages
       // in this tab can rehydrate immediately (FOLLOW-176 pattern).
       try {
-        persistIntentState(session.sessionId, updatedIntentState);
+        persistIntentState(session.sessionId, markedIntentState);
       } catch {
         // sessionStorage unavailable — state is still updated in-memory for this page
       }
 
       // If applyChatIntentPrior detected a quiz-vs-chat mismatch, dispatch the
       // quiz.mismatch ingest event so the disagreement-rate pipeline can record it.
-      if (updatedIntentState.chat_mismatch) {
+      if (markedIntentState.chat_mismatch) {
         pushEvent({
           type: 'quiz.mismatch',
           payload: {
-            quiz_archetype: updatedIntentState.chat_mismatch.quiz_archetype,
+            quiz_archetype: markedIntentState.chat_mismatch.quiz_archetype,
             // schema field is behavioral_archetype; semantically equivalent here —
             // the "other" archetype determined from a non-behavioral source (chat NLP).
-            behavioral_archetype: updatedIntentState.chat_mismatch.chat_archetype,
+            behavioral_archetype: markedIntentState.chat_mismatch.chat_archetype,
             // confidence_gap and signal_count are unavailable in this context;
             // use safe defaults so the ingest schema validates correctly.
             confidence_gap: 0,
@@ -790,7 +817,7 @@ export async function fetchDirectives(
         });
       }
 
-      return { adaptResponse: response, updatedIntentState };
+      return { adaptResponse: response, updatedIntentState: markedIntentState };
     }
 
     return { adaptResponse: response };

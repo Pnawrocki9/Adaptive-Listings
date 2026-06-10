@@ -1,16 +1,15 @@
 # Backlog Queue
 
 **Updated 2026-06-11. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE. RETRO-050/051
-complete. FOLLOW-265 (P1) IN_PROGRESS — delegated to backend-engineer 2026-06-11 (AC1 is an agent
-implementation decision, no CEO pre-approval required). FOLLOW-264 (P2) READY. Wave A COMPLETE — all
-5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262
-PR #253 — all merged). Sprint 16 OPEN — 14 DONE
-(FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
-local-first testing pending — ESC-020 workflow clarified). Sprint 15 COMPLETE — 21/21 DONE. ESC-020
-OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10: local-first testing required before
-prod deploy; Rafal action deferred until CEO signs off locally. FOLLOW-266–269 added: Archetype
-Identification Tracer (§K.3.6, CEO-directed 2026-06-10) — stubs in FOLLOW_UPS.md, promoted to Sprint
-17 planning.**
+complete. FOLLOW-265 (P1) READY_FOR_REVIEW — PR #262 opened 2026-06-11 (quiz-only ratified, docs
+synced, 9/9 tests, pre-push green). FOLLOW-264 (P2) READY. Wave A COMPLETE — all 5 DONE (FOLLOW-258
+PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all
+merged). Sprint 16 OPEN — 14 DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234),
+1 READY_FOR_REVIEW (FOLLOW-191 local-first testing pending — ESC-020 workflow clarified). Sprint 15
+COMPLETE — 21/21 DONE. ESC-020 OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10:
+local-first testing required before prod deploy; Rafal action deferred until CEO signs off locally.
+FOLLOW-266–269 added: Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10) — stubs in
+FOLLOW_UPS.md, promoted to Sprint 17 planning.**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -2791,18 +2790,19 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
     Reconcile pilot-freeze guard narrowing — restore Lane-C coverage OR ratify quiz-only + sync
     PILOT_FREEZE_RULE.md
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-263]
   model: sonnet-4.6
   spec: backlog/sprint-13/FOLLOW-265.md
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/262
   started_at: 2026-06-11T00:00:00Z
+  completed_at: 2026-06-11T00:00:00Z
   notes: |
-    RETRO-051 §4a LG-1. FOLLOW-263 narrowed the freeze guard from a 4-flag LANE_C_FLAG_KEYS set
-    to quiz-only, silently dropping intent_engine_enabled/shadow_mode_override/lane_c_active axes.
-    Those flags had no producers (no live coverage lost), but PILOT_FREEZE_RULE.md:93-105 still
-    describes the old 4-flag / quizConfig / active_lane_c_flags mechanism. Code and doc diverged.
+    RETRO-051 §4a LG-1. Quiz-only contract ratified. PILOT_FREEZE_RULE.md synced. Alert sweep
+    performed (no active_lane_c_flags Sentry/Grafana rules found). quizConfig JSONB annotated.
+    Two AC5 contract-pinning tests added. Mis-citation fixed. PR #262 — all ACs done, pre-push green.
     Also: active_lane_c_flags log field renamed quiz_enabled (no alert sweep done) and
     quizConfig.enabled is now orphaned (third consecutive retro on this blob decay).
     Must resolve BEFORE TICKET-PILOT-001 measurement window opens.

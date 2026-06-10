@@ -338,3 +338,34 @@
   FOLLOW headers right before writing and shifted to RETRO-049 / FOLLOW-257-258. Always re-grep the
   next free RETRO and FOLLOW numbers IMMEDIATELY before the append, not at the start of the run —
   parallel retros race on these counters.
+
+## 2026-06-10 · RETRO-051 (PR #260, FOLLOW-263 — repoint pilot-freeze guard at typed tenants.quiz_enabled)
+
+- **A finding I almost missed and why:** the guard NARROWING (§4a LG-1). The ticket title and source
+  finding (RETRO-049 §4a LG-2) framed this as a single-axis "repoint the quiz flag to the typed
+  column" — and the quiz axis WAS cleanly fixed end-to-end (8 green tests). The obvious verdict was
+  "clean, closure restored." The catch came from auditing the DIFF's DELETION, not its addition: the
+  rewrite removed `LANE_C_FLAG_KEYS`, a 4-element set, and the ticket only named 1 element. Grepping
+  the other 3 keys' producers (zero — Rule-L dead config, so no LIVE loss) AND reading the design
+  doc (PILOT_FREEZE_RULE.md still lists all 4 + the old quizConfig/active_lane_c_flags mechanism)
+  revealed the guard was narrowed and its ratified Decision-3 contract orphaned. Lesson: when a fix
+  DELETES a SET (flag list, key array, enum), enumerate every member's fate AND check the contract
+  doc that names the set — the gap is in the members the ticket didn't name and in a doc the diff
+  didn't touch.
+- **An axis/chain I had to trace twice:** the quiz-axis closure. First read accepted "repointed,
+  closed." I re-traced the PRODUCER side specifically — does anything WRITE tenants.quizEnabled? —
+  and confirmed PATCH /api/tenants/:id:129 does, so producer→consumer→render is real (not a guard
+  reading a column nothing populates). Step-7 discipline: confirm the new SoT column has a live
+  writer before declaring the consumer-repoint a genuine closure; otherwise you've moved the gap to
+  a never-produced field (the inverse of what FOLLOW-263 itself was fixing).
+- **A meta-pattern in how gaps recur across agents:** three consecutive retros on the same
+  quiz_config surface (049 guard-SoT-move, 050 producer-limb-orphan, 051 guard-flag-set-narrow +
+  doc-orphan) all stem from "fix the limb/axis/key the ticket NAMES; ship green; don't enumerate the
+  set, the other limb, or the contract doc describing the whole." Structural magnets for this: (a)
+  multi-key JSONB blobs and (b) guards/checks over flag SETS. Both invite single-member fixes that
+  pass CI. This is Rule S territory (apply to ALL siblings) — I treated LG-1 as a confirming Rule S
+  application, not a new rule. When auditing ANY guard/check/multi-key store, list every member up
+  front and demand each one's fate before accepting the verdict.
+- **Numbering:** concurrent FOLLOW-257 retro claimed RETRO-050 + FOLLOW-264 mid-flight. I re-grepped
+  RETRO/FOLLOW headers immediately before writing and took RETRO-051 / FOLLOW-265. (Confirms the
+  RETRO-049 lesson: re-grep counters right before the append, parallel retros race them.)

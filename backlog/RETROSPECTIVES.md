@@ -13063,3 +13063,258 @@ scan `adapt.ts` for `apply.*Prior` folds and to assert a `_initForTest`-seam reh
   pretends to honor) is a producer-side Rule-L instance.
 - **RETRO-033 / RETRO-034 (FOLLOW-220) — Rule Q precedent.** §4c TG-1 (mirror-the-gate instead of
   invoke-via-seam) is the same shape; folded into FOLLOW-264.
+
+## RETRO-051 — FOLLOW-263 (repoint pilot-freeze Lane-C guard at typed `tenants.quiz_enabled` — closes RETRO-049 §4a LG-2 / restores RETRO-012/FOLLOW-117) — 2026-06-10
+
+### 1. Summary of change
+
+- **PR:** #260 (squash-merged 2026-06-10 ~21:42 UTC into main, commit `56b6d66`; the squash also carried
+  FOLLOW-257's SDK limb — analyzed separately in RETRO-050).
+- **Files changed (FOLLOW-263 limb):** 2 (+191 / -74 across the whole squash; the FOLLOW-263 portion is
+  `route.ts` guard rewrite + `route.pilot-frozen.test.ts` rewrite to 8 tests).
+- **Modules touched:** control-plane (`apps/control-plane/src/app/api/adapt`). No SDK/shared/db-schema
+  change (the `quiz_enabled` column already existed from FOLLOW-102 / migration 0025).
+- **Key contracts changed:**
+  - `checkPilotFrozenAsync` SELECT — now reads `quizEnabled: tenants.quizEnabled` (typed boolean) instead
+    of `quizConfig: tenants.quizConfig` (JSONB) — internal, not breaking.
+  - `pilot_frozen_lane_c_active` log payload — field `active_lane_c_flags: string[]` REMOVED, replaced by
+    `quiz_enabled: true` (boolean). Breaking for any log consumer / alert that keyed on
+    `active_lane_c_flags` — see §4d DG-1 and §5c.
+  - `LANE_C_FLAG_KEYS` const (`lane_c_active`, `intent_engine_enabled`, `enabled`/quiz,
+    `shadow_mode_override`) — REMOVED entirely; the guard now watches a SINGLE flag (quiz). Narrows the
+    documented Lane-C contamination set — see §4a LG-1 (the central finding).
+
+### 2. Verification done in PR
+
+- Test files changed: `route.pilot-frozen.test.ts` (rewritten). Assertions added: 8 tests
+  (AC1/AC2 fire-on-true + typed-column read + `active_lane_c_flags` absent; AC2/AC4 no-fire on
+  quiz_enabled=false; not-frozen no-fire; AC3 false→true and true→false transitions; non-blocking 200;
+  undefined-column treated as false). Coverage delta: unknown (est. high for the guard fn — both branches +
+  null path + transitions covered).
+- CI checks: not independently re-verified by this retro (read-only); PR was marked READY only after
+  pm-orchestrator CI-verify per the backlog trail (`146134b`). The squash commit body documents the
+  Vitest-v2 `vi.fn` family was NOT re-triggered here (the FOLLOW-263 tests use `vi.fn()` without type-args).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅` for newly-INTRODUCED symbols (CHECK A + CHECK B):
+
+- **CHECK A (dead code):** no new file/export introduced. `checkPilotFrozenAsync` retains its two live
+  callers (`route.ts:692` GET path, `route.ts:783` POST path) — both intact. Not dead.
+- **CHECK B (half-wire) on the read symbol:** `tenants.quizEnabled` (consumer added here) has a verified
+  PRODUCER — `PATCH /api/tenants/:id` writes it (`tenants/[id]/route.ts:129` `quizEnabled: body.quiz_enabled`)
+  and `migration 0025` backfills `default(true)`. Producer→consumer→render (console.warn) chain is complete.
+  No half-wire among NEW symbols.
+- **NOTE — the audit-relevant finding here is a REMOVAL, not an addition:** removing `LANE_C_FLAG_KEYS`
+  deleted the only CONSUMER of three documented Lane-C flags (`lane_c_active`, `intent_engine_enabled`,
+  `shadow_mode_override`). Grep confirms none of the three ever had a producer (`grep -rn` across
+  apps/packages/migrations/json → zero writers), so they were Rule-L dead config — removing the consumer
+  loses no LIVE wire. BUT `intent_engine_enabled` was the documented PLACEHOLDER for an in-flight Lane-C
+  contaminant (FOLLOW-087/100/101, chat-intent — FOLLOW-101 just merged). Classifying this as a
+  contract/coverage divergence rather than a wiring defect → §4a LG-1.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, the central finding — multi-axis / step-8) — FOLLOW-263 narrowed the pilot-freeze guard
+  from "ANY Lane-C flag active" to "QUIZ only," silently dropping the documented `intent_engine_enabled`
+  axis, and did NOT update the design contract (PILOT_FREEZE_RULE.md) that still says the guard watches a
+  4-flag set.** The PR's framing (RETRO-049 §4a LG-2, FOLLOW-263 stub) was "repoint the QUIZ flag from
+  JSONB to the typed column" — a single-axis task. But the guard it replaced was MULTI-flag
+  (`LANE_C_FLAG_KEYS` = `lane_c_active`, `intent_engine_enabled`, `enabled`/quiz, `shadow_mode_override`,
+  `route.ts` old `:90-94`). The rewrite collapsed the whole set to `if (!row.quizEnabled) return;`
+  (`route.ts:142`). `docs/ops/PILOT_FREEZE_RULE.md:100-105` STILL documents the guard as checking all four
+  flags ("Lane C flags currently checked (expand as new Lane C features land): `lane_c_active` …
+  `intent_engine_enabled` — FOLLOW-087/100/101 … `quiz_enabled` … `shadow_mode_override`") and `:93-95`
+  still describes the `tenants.quizConfig` + `active_lane_c_flags: [...]` mechanism that no longer exists.
+  So code and the Master-Design-ratified freeze contract (Decision 3) have diverged. **Why it matters now,
+  not theoretically:** PILOT_FREEZE_RULE.md classifies FOLLOW-101 (chat.intent → prior bridge, merged
+  today, RETRO-047) and FOLLOW-087/100 as Lane-C **SHADOW-ONLY / "must not change served directives for
+  the pilot tenant"**; `intent_engine_enabled` was the guard's hook to warn if intent-engine state went
+  live mid-window. The guard is now structurally incapable of firing for anything but quiz — if a future
+  per-tenant intent-engine toggle ships, the freeze backstop will silently not cover it, AND nobody reading
+  the (unchanged) doc will know the backstop was narrowed. This is the SAME class as RETRO-049 §4a LG-2
+  (guard blind to the real state) one turn later, on the SIBLING axes. → **FOLLOW-265 (P1):** either (a)
+  restore multi-flag coverage by reading the typed quiz column AND retaining a forward-compatible Lane-C
+  flag check (documented mechanism for `lane_c_active` / `intent_engine_enabled` / `shadow_mode_override`),
+  OR (b) formally ratify the narrowing — update PILOT_FREEZE_RULE.md §runtime-warning + the flag list to
+  "quiz_enabled only; other Lane-C features are controlled by merge-discipline + PR checklist, not the
+  runtime backstop" and note WHY (the three other flags never had a producer). Either way the
+  code↔doc divergence must close before TICKET-PILOT-001 opens the measurement window. Cite RETRO-012 /
+  FOLLOW-117 / FOLLOW-102.
+- **LG-2 (P2) — the FOLLOW-263 stub's AC4 ("reconcile the two-store divergence") was NOT done; the legacy
+  `quizConfig.enabled` JSONB key is now a confirmed write-nothing-reads orphan and the doc still points
+  freeze readers at `tenants.quizConfig`.** The stub (FOLLOW_UPS §FOLLOW-263 AC4) required reconciling the
+  two stores (`tenants.quiz_enabled` column vs `quizConfig.enabled` JSONB). The guard was repointed to the
+  column (good) but `quizConfig.enabled` is still written by nothing authoritative and read by nothing now
+  (the freeze guard was its last reader). RETRO-050 §5d independently flagged the same JSONB blob accreting
+  write-only keys. Net: "is the quiz on?" still has a stale JSONB answer that can diverge from the column,
+  and PILOT_FREEZE_RULE.md:22/94 still names `tenants.quizConfig` as the freeze-flag store. Folds into
+  FOLLOW-265 AC (doc + store reconciliation) rather than a separate ticket — same blast radius.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A — no shipped correctness defect in the FOLLOW-263 limb.** The guard logic is sound:
+  `if (!row?.pilotFrozen) return;` then `if (!row.quizEnabled) return;` then warn. `quizEnabled: undefined`
+  (pre-backfill row) is correctly treated as falsy → no fire (tested, `:312-332`). Fire-and-forget +
+  try/catch preserved; non-blocking 200 preserved and tested (`:302-308`). The column is `.notNull()
+  .default(true)` in schema (`tenants.ts:65`) so the undefined-path is belt-and-suspenders, not a live
+  risk. No P0/P1/P2 code bug.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, folds into FOLLOW-265) — no test asserts the guard's NARROWING is intentional / no test
+  pins the Lane-C contract.** The 8 tests exhaustively cover the quiz axis but there is NO test
+  documenting that `lane_c_active` / `intent_engine_enabled` / `shadow_mode_override` are deliberately NO
+  LONGER watched (e.g. a test that sets a frozen tenant with a hypothetical intent flag and asserts
+  no-fire WITH a comment "intentional — see FOLLOW-265 decision"). Without it, a future engineer re-reading
+  PILOT_FREEZE_RULE.md's 4-flag list will assume coverage that the tests don't contradict. When FOLLOW-265
+  resolves LG-1, add a test that pins whichever contract is chosen.
+- **TG-2 (P3) — the `active_lane_c_flags` → `quiz_enabled` log-field rename has a test asserting the NEW
+  field is present and the OLD absent (`:195-197`), which is good — but there is no corresponding update to
+  any log-alert / dashboard query that consumed `active_lane_c_flags` (see §5c). Not a unit-test gap so
+  much as an integration/ops gap; recorded.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1 — promoted from the usual P3 because it is a SAFETY backstop contract, not prose) —
+  `docs/ops/PILOT_FREEZE_RULE.md` is now materially stale and CONTRADICTS the shipped guard.** Specifically:
+  `:93-95` describes reading `tenants.quizConfig` + emitting `active_lane_c_flags: [...]` (both gone);
+  `:100-105` lists 4 watched flags (only quiz remains). This doc is the ratified Decision-3 contract for the
+  pilot-freeze safety mechanism and is referenced by TICKET-PILOT-001 step 5. A stale safety-contract doc is
+  higher-impact than a stale enumeration. → folds into **FOLLOW-265** (the fix must update code AND this doc
+  together, whichever direction LG-1 resolves).
+- **DG-2 (P3) — `route.ts:92` comment cites "(Rule H — FOLLOW-263)" for the "do not read quizConfig.enabled"
+  note.** Rule H governs grep-before-claiming-removed, not store-of-record choice; minor mis-citation
+  (the relevant precedent is RETRO-012/FOLLOW-117 SoT-alignment + Rule S sub-shape). Cosmetic; recorded, no
+  follow-up.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected (Sprint 13b Lane C + 13a Lane B)
+
+- **TICKET-PILOT-001 (READY, Lane B pilot launch) — DIRECTLY affected, and is the deadline for FOLLOW-265.**
+  Its step 5 (PILOT_FREEZE_RULE.md:107) sets `pilot_frozen=true` on shadow→live flip and relies on the
+  runtime backstop to catch Lane-C contamination during the CTA-lift window. The backstop now only covers
+  quiz; the onboarding/runbook still cites the 4-flag doc. The freeze-guard narrowing must be ratified-or-
+  restored (FOLLOW-265) BEFORE the measurement window opens or the documented backstop overstates coverage.
+- **FOLLOW-101 (DONE, PR #256, RETRO-047) — interaction newly relevant.** FOLLOW-101 made
+  `chat.intent.detected → prior` real and is classified Lane-C SHADOW-ONLY by PILOT_FREEZE_RULE.md:39. The
+  `intent_engine_enabled` guard hook that would have warned if that path affected served directives
+  mid-window is exactly what FOLLOW-263 removed. No live regression today (there is no per-tenant
+  intent-engine toggle — verified: zero `intentEngineEnabled` columns/flags repo-wide), but the backstop
+  for the SHADOW-ONLY contract is gone.
+- **FOLLOW-117 (DONE, PR #156, RETRO-012) — closure RESTORED end-to-end for the quiz axis.** Step-7 verified:
+  `PATCH /api/tenants/:id` (`route.ts:129`, producer) → `checkPilotFrozenAsync` (`route.ts:131/142`,
+  consumer) → `console.warn` (`:144`, render). I did NOT trust the "DONE" label — I traced producer→
+  consumer→render and confirmed the quiz hop is genuinely closed (unlike RETRO-049's finding that FOLLOW-102
+  had moved it one hop). The RETRO-049 §4a LG-2 gap is CLOSED for quiz. (The OTHER Lane-C axes are LG-1.)
+
+#### 5b. Future sprint tickets affected
+
+- **Any future per-tenant intent-engine / shadow-mode toggle** must re-add its own freeze-guard hook —
+  the generic `LANE_C_FLAG_KEYS` extension point is gone, so "add your flag to the list" is no longer
+  available; the next Lane-C feature must explicitly re-wire the guard or rely on merge-discipline only.
+  FOLLOW-265's decision (restore-generic vs ratify-quiz-only) determines which.
+- **Quiz v2.0 / FOLLOW-264 (the surviving `trigger_after_n_listings` producer)** — unaffected by this limb
+  but shares the same `quiz_config` JSONB blob now declared partially-legacy here (LG-2) and in RETRO-050 §5d.
+
+#### 5c. Contracts changed others rely on
+
+- **Log schema `pilot_frozen_lane_c_active`: `active_lane_c_flags: string[]` → `quiz_enabled: boolean`.**
+  Any Sentry/Grafana saved-search, log-based alert, or ops runbook that parsed `active_lane_c_flags` will
+  silently match nothing. Grep of the repo found no in-repo consumer of that field (it was console.warn-only),
+  but external observability config lives outside the repo — flagged for the ops sweep (TG-2 / FOLLOW-265 AC).
+- `checkPilotFrozenAsync` signature unchanged; both call sites intact. No caller breakage.
+- `tenants.quizEnabled` is now read by TWO routes (`/api/tenants/[id]`, `/api/quiz/config`, and now
+  `/api/adapt` guard) — consistent typed-column reads; the SoT-consolidation HANDOFFS intent is now better
+  honored (one fewer JSONB reader).
+
+#### 5d. Architectural assumptions affected
+
+- **The pilot-freeze backstop changed shape from "extensible multi-flag JSONB sentinel set" to "single
+  typed-column check."** This is arguably the RIGHT direction (typed > JSONB stringly-keyed; the three
+  removed flags were never produced). But it was done as a side-effect of a single-axis "repoint quiz"
+  ticket WITHOUT a deliberate architectural decision or doc update — so the system LOST a documented
+  extension point silently. The reconciliation (FOLLOW-265) should make the narrowing a RATIFIED choice
+  (update Decision 3 + the flag list) rather than an emergent one, OR restore the extension point.
+- **`tenants.quiz_config` JSONB continues to accrete write-only / read-only-mismatched keys** (`enabled`
+  now read by nothing; `trigger_after_n_listings` from RETRO-050 written-read-by-nothing). Two consecutive
+  retros on this blob (049/050) plus this one (051) all touch its decay. PM note: schedule a typed-column
+  migration of `quiz_config` or formally freeze it as legacy.
+
+### 6. New lesson candidates
+
+- **Pattern (count 2 — RECORDED, not promoted; promotion deferred to a Rule S sub-shape) — "a 'repoint
+  the consumer to the new SoT' fix that touches a guard/check which historically covered a SET of sibling
+  flags closes the ONE named axis but silently drops the OTHER axes of the set (and leaves the contract doc
+  describing the old set)."** Seen in: RETRO-049 §4a LG-2 (FOLLOW-102 orphaned the OLD reader — the inverse
+  hop) and RETRO-051 §4a LG-1 (FOLLOW-263 fixed the quiz axis but dropped `intent_engine_enabled` /
+  `shadow_mode_override` / `lane_c_active` and left PILOT_FREEZE_RULE.md stale). This is the SAME
+  "multi-axis fix touched one axis" shape as Rule S (apply a fix to ALL members of a symmetric set) — here
+  the set is "Lane-C flags a freeze guard watches." Count is 2 across consecutive retros on the same guard,
+  but RETRO-049 framed it as a single-axis SoT-move, so I am recording this as the FIRST clean instance of
+  the *guard-flag-set* sub-shape and NOT yet promoting a standalone rule (Rule S already covers
+  "apply to all members"; this is a confirming application, not a new rule). If a 3rd guard/flag-set
+  narrowing recurs, promote a Rule S sub-clause: *"When a fix repoints or narrows a guard that checks a
+  SET (flag list, key array, enum), enumerate EVERY member, decide each member's fate explicitly, and
+  update the contract doc that names the set."*
+- **Pattern (count 1 — RECORDED) — "a fix that changes a structured-log payload's field names (here
+  `active_lane_c_flags` → `quiz_enabled`) without sweeping the downstream log-alert/dashboard consumers of
+  the old field."** New shape; observability contracts live partly outside the repo so the wiring audit
+  can't fully verify them. Recorded; not promoted (count 1).
+- **Rule promotion check:** the Vitest-v2 `vi.fn` typecheck-CI-only pattern promoted as **Rule T** in
+  RETRO-049 does NOT recur here (these tests avoid type-args). No new promotion this retro.
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed:** the obvious verdict was "FOLLOW-263 cleanly repointed the quiz flag to the
+  typed column, 8 green tests, RETRO-049 §4a LG-2 closed — clean." I nearly recorded that and stopped. The
+  catch came from step-8 multi-axis discipline applied to the DIFF, not just the new symbol: the diff
+  DELETED `LANE_C_FLAG_KEYS`, a four-element set, and the ticket only named ONE element (quiz). Grepping the
+  three OTHER keys' producers (zero) AND reading the design doc (PILOT_FREEZE_RULE.md still lists all four)
+  surfaced that the guard was narrowed and the contract doc was orphaned — a divergence invisible if you
+  only audit what the ticket claims to touch.
+- **A chain I had to trace twice:** the quiz-axis closure (§5a FOLLOW-117). First read: "guard reads
+  quizConfig → repointed to quizEnabled → closed." I re-traced to confirm the PRODUCER side: does anything
+  actually WRITE `tenants.quizEnabled`? `PATCH /api/tenants/:id:129` does — so the producer→consumer→render
+  chain is real, not a guard reading a column nothing populates. The quiz hop IS genuinely closed; the gap
+  is on the SIBLING axes, not this one.
+- **Meta-pattern in how gaps recur across agents:** three consecutive retros (049 guard-SoT, 050 producer-
+  limb, 051 guard-flag-set + doc) all stem from "fix the limb/axis/key the ticket names; don't enumerate the
+  set, the other limb, or the contract doc that describes the whole." The recurring agent behavior is
+  scope-fidelity-to-the-ticket-title at the expense of set-completeness. The structural magnets are
+  (a) multi-key JSONB blobs and (b) guards/checks over flag SETS — both invite single-member fixes.
+
+### 7. Follow-ups
+
+- **FOLLOW-265 (P1)** — Reconcile the pilot-freeze guard narrowing with its design contract: either restore
+  forward-compatible Lane-C multi-flag coverage (typed quiz column + a documented mechanism for
+  `lane_c_active`/`intent_engine_enabled`/`shadow_mode_override`) OR formally ratify "quiz_enabled-only" by
+  updating `PILOT_FREEZE_RULE.md` Decision-3 §runtime-warning + the 4-flag list + the `tenants.quizConfig`
+  references (DG-1) and the `active_lane_c_flags` log-field consumers (§5c). Also retire/annotate the
+  now-orphaned `quizConfig.enabled` legacy key (LG-2) and add a test pinning whichever contract is chosen
+  (TG-1). MUST land before TICKET-PILOT-001 opens the CTA-lift measurement window. [LG-1; LG-2; TG-1; DG-1;
+  §5c] (backend-engineer, 3h). Filed below.
+- DG-2 (Rule-H mis-citation) and TG-2 (log-field ops sweep, subsumed by FOLLOW-265 §5c AC) are RECORDED,
+  not separately filed.
+
+### 8. Cross-references
+
+- **RETRO-049 / FOLLOW-102 / FOLLOW-263 — the direct source.** RETRO-049 §4a LG-2 filed FOLLOW-263 to close
+  the QUIZ-axis SoT mismatch; this retro confirms that axis IS closed end-to-end (§5a) but finds the fix
+  also silently dropped the SIBLING Lane-C axes + orphaned the contract doc (§4a LG-1). I did NOT trust the
+  "FOLLOW-263 DONE" label — I traced the quiz hop producer→consumer→render (closed) AND audited the deleted
+  flag set + design doc (divergence).
+- **RETRO-012 / FOLLOW-117 — the precedent FOLLOW-263 restores (for quiz) and partially re-breaks (for the
+  other flags).** FOLLOW-117 originally aligned the guard's consumer keys to real producers; FOLLOW-263
+  re-aligned the quiz key to the new SoT column but removed the (always-dead) sibling keys without ratifying
+  the narrowing. Same SoT-alignment lineage, Rule S sub-shape.
+- **RETRO-050 — concurrent retro (same squash PR #260, FOLLOW-257 SDK limb).** It claimed RETRO-050 +
+  FOLLOW-264; this retro is RETRO-051 + FOLLOW-265 to avoid collision. RETRO-050 §5d and this retro §5d both
+  document the `quiz_config` JSONB blob's decay (`enabled` read-by-nothing here; `trigger_after_n_listings`
+  written-read-by-nothing there) — converging architectural residue.
+- **RETRO-047 / FOLLOW-101 — the Lane-C SHADOW-ONLY feature whose freeze-guard hook (`intent_engine_enabled`)
+  this PR removed.** No live regression (no per-tenant intent toggle exists) but the documented backstop for
+  its SHADOW-ONLY classification is gone — the core of LG-1's "why it matters now."

@@ -1,13 +1,12 @@
 # Backlog Queue
 
-**Updated 2026-06-10 by sdk-engineer. Sprint 13b: FOLLOW-087 DONE (PR #255), FOLLOW-099 DONE (PR
-#248), FOLLOW-100 DONE (PR #254), FOLLOW-101 DONE (PR #256 merged 2026-06-10), FOLLOW-102
-READY_FOR_REVIEW (PR #257, CI green), FOLLOW-252 READY_FOR_REVIEW (PR #258, Rule R chat-prior
-rehydrate fix + FOLLOW-253 test), FOLLOW-253 READY_FOR_REVIEW (lands in PR #258 with FOLLOW-252).
-Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261
-PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
-(FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
-awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE — 21/21 DONE.**
+**Updated 2026-06-10 by pm-orchestrator (CI-verified). Sprint 13b: FOLLOW-087 DONE (PR #255),
+FOLLOW-099 DONE (PR #248), FOLLOW-100 DONE (PR #254), FOLLOW-101 DONE (PR #256 merged), FOLLOW-102
+READY_FOR_REVIEW (PR #257, CI green), FOLLOW-252 READY_FOR_REVIEW (PR #258, CI green), FOLLOW-253
+READY_FOR_REVIEW (PR #258, bundled). Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR
+#250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14
+DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW
+(FOLLOW-191 awaiting Rafal deploy ESC-020), 0 IN_PROGRESS. Sprint 15 COMPLETE — 21/21 DONE.**
 
 **Sprint 13a-hardening-v3 OPEN — FOLLOW-149 (P0 infra hardening) READY_FOR_REVIEW at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166).** Triggered by a 2026-05-28 diagnostic
@@ -2722,6 +2721,9 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
     SECONDARY guard _chatPriorAppliedSessionId retained for defence-in-depth (same-tab, no reload).
     markedIntentState = { ...updatedIntentState, chatPriorApplied: true } persisted after apply.
     Rule R comment at guard. 1269 tests pass (6 new in follow-252.test.ts).
+    CI verified green (pm-orchestrator 2026-06-10): Typecheck/Lint/Format/Test(Node22)/
+    Build(control-plane)/RuleH/RuleJ/Demo-integration all pass.
+    Build(SDK-bundle) fail = pre-existing on main (51KB > 40KB), not introduced by this PR.
 
 - id: FOLLOW-253
   title: Rehydrate→re-init SDK test for chat-intent prior via _initForTest seam (Rule R coverage)

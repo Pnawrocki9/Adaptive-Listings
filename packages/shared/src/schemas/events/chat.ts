@@ -36,9 +36,15 @@ export type ChatOpenedEvent = z.infer<typeof ChatOpenedEventSchema>;
  * }
  */
 export const ChatMessageSentPayloadSchema = z.object({
+  /** PII-scrubbed message text (emails/phones replaced with placeholders). */
   message: z.string().min(1).max(4000),
   char_count: z.number().int().nonnegative().optional(),
   locale: z.string().min(2).max(10).optional(),
+  /**
+   * SDK-derived hashed buyer identifier. FOLLOW-258 F-03: added to stop lead_id
+   * being stripped by Zod during ingest validation.
+   */
+  lead_id: z.string().optional(),
 });
 export const ChatMessageSentEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('chat.message.sent'),

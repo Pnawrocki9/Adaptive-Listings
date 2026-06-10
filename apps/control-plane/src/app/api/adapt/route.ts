@@ -62,6 +62,7 @@ import {
   verifyDemoJwt,
   DemoJwtSecretMissingError,
   DemoJwtInvalidError,
+  type DemoJwtClaims,
 } from '@/lib/demo-jwt-verify';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -726,8 +727,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!token) {
     return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
   }
+  let jwtClaims: DemoJwtClaims = {};
   try {
-    await verifyDemoJwt(token);
+    jwtClaims = await verifyDemoJwt(token);
   } catch (err) {
     if (err instanceof DemoJwtSecretMissingError) {
       // Config error — secret not set. Surface as 500 so ops are alerted.
@@ -758,10 +760,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const body = parsed.data;
 
+  // FOLLOW-260 (F-26): JWT tenant_id is authoritative — supersedes body.tenant_id.
+  // Prevents cross-tenant escalation: a caller with a valid demo JWT for tenant A
+  // cannot access tenant B's data by sending tenant_id: B in the body.
+  const tenantId = jwtClaims.tenant_id ?? body.tenant_id;
+
   // ── Pilot freeze guard (FOLLOW-106) — non-blocking, fire-and-forget ────────
   // Emits a structured warning if pilot_frozen=true AND any Lane C feature flag
   // is active. Must run as early as possible so the warning precedes any response.
-  checkPilotFrozenAsync(body.tenant_id, crypto.randomUUID());
+  checkPilotFrozenAsync(tenantId, crypto.randomUUID());
 
   // FOLLOW-105 / ADR-0006 §Decision 4C: stable per-decision UUID. Generated once
   // per request and returned in EVERY response arm (skip, holdout, treatment) and
@@ -772,7 +779,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Run before any directive building. Returns early with empty directives
   // when the session is held-out or consent-skipped.
   const assignment = await assignHoldout({
-    tenant_id: body.tenant_id,
+    tenant_id: tenantId,
     session_id: body.session_id,
     ...(body.consent_state !== undefined ? { consent_state: body.consent_state } : {}),
     consent_mode_enabled: body.consent_mode_enabled ?? false,
@@ -799,7 +806,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // AC-2: holdout → no adaptation, emit ab.assignment event fire-and-forget.
     void publishAbAssignmentEvent({
       session_id: body.session_id,
-      tenant_id: body.tenant_id,
+      tenant_id: tenantId,
       holdout_group: true,
       holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
       assigned_at: assignment.assigned_at,
@@ -825,7 +832,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Treatment arm: emit ab.assignment event and continue building directives.
   void publishAbAssignmentEvent({
     session_id: body.session_id,
-    tenant_id: body.tenant_id,
+    tenant_id: tenantId,
     holdout_group: false,
     holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
     assigned_at: assignment.assigned_at,
@@ -848,7 +855,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   let demoOverrideArchetype: string | null = null;
 
   try {
-    const demoOverrideState = await getDemoOverride(body.tenant_id);
+    const demoOverrideState = await getDemoOverride(tenantId);
     if (demoOverrideState.enabled && demoOverrideState.overrideArchetype) {
       demoActive = true;
       demoOverrideArchetype = demoOverrideState.overrideArchetype;
@@ -884,7 +891,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // TICKET-AGENCY-001: RAG retrieval — fetch top-3 FAQ answers for this listing.
   // Fail-open: retrieveListingContext never throws; returns {} on any failure.
   const listingContext = await retrieveListingContext(
-    body.tenant_id,
+    tenantId,
     body.listing_id ?? null,
     body.intent_vector ?? null,
   );
@@ -894,7 +901,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     confidence,
     similarity,
     body.session_id,
-    body.tenant_id,
+    tenantId,
     body.locale ?? 'en',
     listingContext,
     demoActive ? demoForceModel : undefined,
@@ -904,7 +911,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Query bandit arms for (tenant_id, archetype) and sample a variant.
   // Auto-seeds 3 arms (control, v1, v2) with Beta(1, 1) on first request.
   // When all arms are paused (or DB unavailable), defaults to 'control'.
-  const banditArms = await getBanditArms(body.tenant_id, archetypeId);
+  const banditArms = await getBanditArms(tenantId, archetypeId);
   const selectedVariant = thompsonSample(banditArms) ?? 'control';
 
   // Append ReorderDirective for tenants with reorder_capable + listing_ids present.
@@ -914,7 +921,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // skipped when listing_ids exceeds LISTING_EMBEDDING_BATCH_LIMIT (latency guard).
   // Canonical decision-api helper: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
   const allDirectives: (TextDirective | ReorderDirective)[] = [...textDirectives];
-  const tenantSchema = await getTenantSchemaFromDb(body.tenant_id);
+  const tenantSchema = await getTenantSchemaFromDb(tenantId);
   if (tenantSchema && body.listing_ids && body.listing_ids.length > 0) {
     // Fetch embeddings in parallel — fail-open: any error → null → djb2 fallback.
     let archetypeEmbedding: number[] | null = null;
@@ -924,7 +931,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       try {
         const [archEmb, listEmbs] = await Promise.all([
           fetchArchetypeEmbedding(archetypeId),
-          fetchListingEmbeddings(body.tenant_id, body.listing_ids),
+          fetchListingEmbeddings(tenantId, body.listing_ids),
         ]);
         archetypeEmbedding = archEmb;
         listingEmbeddings = listEmbs;
@@ -970,10 +977,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     generated_at: new Date().toISOString(),
   };
 
-  // Fire-and-forget ClickHouse log using tenant_id from body.
   logDecisionAsync(
     body.session_id,
-    body.tenant_id,
+    tenantId,
     archetypeId,
     confidence,
     similarity,

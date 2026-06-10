@@ -208,3 +208,36 @@ references.
 `git status --short packages/sdk/src/` and verify 0 modified files. If any file is dirty (from a
 prior agent session), run `git checkout HEAD -- <files>` BEFORE making any edits. A dirty working
 tree is the most common source of "phantom import" contamination between sessions.
+
+---
+
+**Date:** 2026-06-09 / **Ticket:** FOLLOW-099
+
+**What I built:** 4 new behavioral observer functions (`setupPhotoDwellObserver`,
+`setupFeatureExpandedObserver`, `setupMortgageCalcObserver`, `setupFilterAppliedObserver`) wired
+into `setupObservers()` in `observer.ts`; `BOT_UA_RE` constant in `config.ts` with bot-detection
+gate in `init()`; 36 unit tests.
+
+**What was uncertain:**
+
+1. Existing schemas vs ticket spec: ticket described `{ feature_id, element_text? }` and
+   `{ input_type, listing_id? }` shapes, but the repo already had `FeatureExpandedPayloadSchema`
+   with `{ feature, label? }` and `MortgageCalcUsedPayloadSchema` with
+   `{ down_payment_pct?, term_years?, interest_rate_pct? }`. Used the existing schemas — do NOT
+   redefine shared types (guardrail applies even when the ticket spec says otherwise; check shared
+   package first).
+2. ESLint `no-unnecessary-condition` on DOM APIs: TypeScript considers `HTMLInputElement.name`,
+   `.value`, `.id` as non-optional strings. The `?? ''` pattern triggers the lint rule. Use `|| ''`
+   (falsy short-circuit) instead of `??` when the type is `string` (not `string | undefined`). Same
+   for `??` on non-null types — use conditional `? : ` with truthy check.
+3. `HTMLElement.textContent` is typed `string | null` in lib.dom.d.ts but ESLint/TypeScript can
+   narrow it to `string` in some contexts (after the element exists check). Safest: call
+   `.textContent` without null coalescing and let TypeScript infer.
+4. jsdom `<select>.value` assignment: setting `el.value = 'x'` on a `<select>` only works if there's
+   a matching `<option value="x">`. Tests that set select.value without options will silently get an
+   empty string. Use `<input>` in tests for value assertions, or add the matching option.
+
+**A guardrail I'd add:** Before adding new event payloads in observer functions, grep
+`packages/shared/src/schemas/events/` for the event type first. If the schema already exists with
+different field names, use the existing schema — do not create a parallel shape. The ticket spec
+"shape" is a starting point, not an override for existing canonical schemas.

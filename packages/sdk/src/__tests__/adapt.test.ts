@@ -1190,6 +1190,8 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
     expect(body.archetype).toBe(archetype);
     expect(body.variant).toBe('v1');
     expect(body.converted).toBe(true);
+    // FOLLOW-259: prediction_id must be present to activate §T Conversion Label Loop.
+    expect(body.prediction_id).toBe(MOCK_RESPONSE.adapt_decision_id);
   });
 
   it('does not fire feedback ping when no variant is cached', async () => {
@@ -1358,5 +1360,49 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
     expect(warnSpy).toHaveBeenCalledWith('[estalara] feedback ping failed:', 'network failure');
 
     warnSpy.mockRestore();
+  });
+
+  it('FOLLOW-259: includes prediction_id and lead_id in feedback ping body', async () => {
+    const sessionId = 'FOLLOW259_SESSION';
+    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
+    const leadId = 'deadbeef01234567';
+
+    // Seed lead_id in sessionStorage before the outcome event fires
+    sessionStorage.setItem('__estalara_lead_id__', leadId);
+
+    const responseWithVariant: AdaptResponse = {
+      ...MOCK_RESPONSE,
+      session_id: sessionId,
+      archetype: 'family_buyer',
+      variant: 'v2',
+    };
+
+    const mockFetch = vi.fn();
+    mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(responseWithVariant) });
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 202 });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com',
+      tenantId,
+    };
+    const session: SessionState = { ...SESSION, sessionId };
+
+    await fetchDirectives(config, session, 'listing_list');
+    document.dispatchEvent(new Event('live.signup'));
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const [, feedbackInit] = mockFetch.mock.calls[1] as [string, RequestInit];
+    const body = JSON.parse(feedbackInit.body as string) as Record<string, unknown>;
+
+    // AC1: prediction_id must equal adapt_decision_id from the adapt response
+    expect(body.prediction_id).toBe(MOCK_RESPONSE.adapt_decision_id);
+    // AC1: lead_id must be threaded from sessionStorage
+    expect(body.lead_id).toBe(leadId);
   });
 });

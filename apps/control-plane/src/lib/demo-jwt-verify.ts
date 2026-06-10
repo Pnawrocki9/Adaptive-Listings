@@ -16,6 +16,12 @@
  * @module apps/control-plane/src/lib/demo-jwt-verify
  */
 
+/** Claims extracted from a verified demo JWT. */
+export interface DemoJwtClaims {
+  /** Tenant the demo session belongs to. Present in JWTs issued by /api/demo/sessions. */
+  tenant_id?: string;
+}
+
 /** Thrown when `DEMO_MODE_JWT_SECRET` is not set in the environment. */
 export class DemoJwtSecretMissingError extends Error {
   constructor() {
@@ -42,10 +48,11 @@ export class DemoJwtInvalidError extends Error {
  *   4. `exp` claim is in the future (replay / expiry defence).
  *
  * @param token - The raw JWT string (without the "Bearer " prefix).
+ * @returns Verified claims extracted from the JWT payload.
  * @throws {DemoJwtSecretMissingError} If `DEMO_MODE_JWT_SECRET` is absent.
  * @throws {DemoJwtInvalidError} If the token is invalid for any reason.
  */
-export async function verifyDemoJwt(token: string): Promise<void> {
+export async function verifyDemoJwt(token: string): Promise<DemoJwtClaims> {
   const secret = process.env.DEMO_MODE_JWT_SECRET;
   if (!secret || secret.length === 0) {
     throw new DemoJwtSecretMissingError();
@@ -113,6 +120,12 @@ export async function verifyDemoJwt(token: string): Promise<void> {
       throw new DemoJwtInvalidError('token has expired');
     }
   }
+
+  return {
+    ...(typeof payload.tenant_id === 'string' && payload.tenant_id.length > 0
+      ? { tenant_id: payload.tenant_id }
+      : {}),
+  };
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

@@ -116,8 +116,19 @@ interface LabelRow {
 
 // ─── SQL helpers that MIRROR the production route predicates ─────────────────
 //
+// SQL-semantics mirror — not a route regression guard.
+//
 // The production routes (access/route.ts and portability/route.ts) use Drizzle
-// ORM but compile to identical SQL predicates:
+// ORM but compile to identical SQL predicates. The function below replicates
+// those predicates as raw SQL against PGlite to verify SQL correctness.
+//
+// IMPORTANT: This helper does NOT import the actual route handler. A WHERE-clause
+// divergence introduced directly in the production route would NOT break tests
+// that call runDisclosureRead(). For a regression guard that imports and invokes
+// the real GET handlers see:
+//   apps/control-plane/src/app/api/dsr/disclosure-route-driven-pglite.test.ts
+//   (FOLLOW-256 AC1/AC2/AC3 — imports both access and portability GET handlers
+//   against PGlite, so any WHERE-clause change in production BREAKS those tests).
 //
 //   Pass A:
 //     SELECT ... FROM conversion_labels
@@ -132,9 +143,6 @@ interface LabelRow {
 //        AND lead_id  <> ''
 //
 //   Union-dedup: merge by id, emit each id exactly once.
-//
-// These functions replicate those predicates as raw SQL against PGlite.
-// A production regression that changes the WHERE clause would break these tests.
 
 async function runDisclosureRead(
   pg: PGlite,

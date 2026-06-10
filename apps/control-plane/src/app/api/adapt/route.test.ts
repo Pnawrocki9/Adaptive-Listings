@@ -31,7 +31,7 @@ vi.mock('@estalara/auth', () => ({
 // Bypass demo JWT verification for non-auth tests (FOLLOW-205).
 // Full auth path is exercised in route.demo-auth.test.ts.
 vi.mock('@/lib/demo-jwt-verify', () => ({
-  verifyDemoJwt: vi.fn().mockResolvedValue(undefined),
+  verifyDemoJwt: vi.fn().mockResolvedValue({}),
   DemoJwtSecretMissingError: class DemoJwtSecretMissingError extends Error {},
   DemoJwtInvalidError: class DemoJwtInvalidError extends Error {},
 }));

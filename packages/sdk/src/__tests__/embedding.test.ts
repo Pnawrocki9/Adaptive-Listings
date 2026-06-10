@@ -50,10 +50,11 @@ describe('buildBehavioralFingerprint', () => {
   });
 
   it('uses max scroll.depth event, not avg', () => {
+    // FOLLOW-258 F-02: field name is `pct` per ScrollDepthPayloadSchema (was depth_percent).
     const events = [
-      { type: 'scroll.depth', payload: { depth_percent: 25 } },
-      { type: 'scroll.depth', payload: { depth_percent: 75 } },
-      { type: 'scroll.depth', payload: { depth_percent: 50 } },
+      { type: 'scroll.depth', payload: { pct: 25 } },
+      { type: 'scroll.depth', payload: { pct: 75 } },
+      { type: 'scroll.depth', payload: { pct: 50 } },
     ];
     const fp = buildBehavioralFingerprint(events, 0);
     expect(fp.avg_scroll_depth).toBeCloseTo(0.75, 5);

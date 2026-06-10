@@ -48,6 +48,11 @@ export const SessionQualitySnapshotPayloadSchema = z.object({
   final_confidence: z.number().min(0).max(1),
   /** Total cumulative update() calls for this session. */
   total_events: z.number().int().nonnegative(),
+  /**
+   * Listing views per minute at snapshot time. 0 until at least 2 views seen.
+   * FOLLOW-258 F-03: added to stop listing_view_rate being stripped by Zod.
+   */
+  listing_view_rate: z.number().min(0).optional(),
 });
 
 export const SessionQualitySnapshotEventSchema = EventEnvelopeBaseSchema.extend({

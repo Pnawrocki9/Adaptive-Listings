@@ -2636,31 +2636,39 @@ measurement window.
 - id: FOLLOW-087
   title: Chat NLP in apps/intent-engine (Haiku 4.5 real-time + Sonnet 4.6 batch)
   agent: ml-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/255
   priority: P1
   estimated_hours: 12
   depends_on: [FOLLOW-040, FOLLOW-063]
   model: opus-4.7-xhigh
-  spec: (to author at spawn — backlog/sprint-13/FOLLOW-087.md)
+  spec: backlog/sprint-13/FOLLOW-087.md
   notes: |
-    Code deps (FOLLOW-040/063) are DONE, but this CANNOT reach green CI until ESC-010
-    (DOPPLER_TOKEN_DEV) + ESC-009 (E2E_BEARER_TOKEN) secrets are provisioned. Two-tier pipeline per
-    §C.3 v2.6, identical 12-dim output schema, model as Doppler config (INTENT_REALTIME_MODEL /
-    INTENT_BATCH_MODEL). opus-4.7-xhigh — async semantics + structured-output accuracy.
+    PR #255. Two-tier pipeline shipped per §C.3 v2.6: real-time process_chat_message (Haiku 4.5)
+    + 6h Sonnet 4.6 batch cron, identical 12-dim ChatIntentDetectedPayload (schemas.py = the
+    FOLLOW-101 contract). SHADOW-ONLY Redis writes to shadow:{tenant}:{session}:chat_intent.
+    ClickHouse reader stubbed ([]) for Sprint 13. extract_intent reads message CONTENT text (not a
+    hash over IDs); neutral fallback on any error (never raises); §C.3 multilingual Haiku→Sonnet
+    retry on low-confidence mixed-language input. Models read from env (INTENT_REALTIME_MODEL /
+    INTENT_BATCH_MODEL). Local: 13 pass / 2 skip (live tests guarded on ANTHROPIC_API_KEY);
+    black/ruff/mypy --strict clean. Real CI gates green (Typecheck/Lint/Format/RuleH/RuleJ/
+    Cross-language/Gitleaks). Test (Python) matrix + Build(SDK) + Rule I are pre-existing-red /
+    non-blocking (same on main + merged PR #254).
 
 - id: FOLLOW-101
   title: chat.intent.detected → Bayesian prior bridge in SDK intent.ts
   agent: ml-engineer + sdk-engineer
-  status: BLOCKED
+  status: READY
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-087, FOLLOW-100]
   model: opus-4.7-xhigh
   spec: (to author at spawn — backlog/sprint-13/FOLLOW-101.md)
   notes: |
-    Double-gated (needs stable chat.intent.detected schema from FOLLOW-087 + applyChatIntentPrior
-    from FOLLOW-100). SDK consumes chat.intent.detected, applies strong prior, detectMismatch vs quiz
-    prior → quiz.mismatch. Last item in Lane C.
+    UNBLOCKED: both deps satisfied — FOLLOW-100 (applyChatIntentPrior) merged (PR #254), FOLLOW-087
+    stable chat.intent.detected schema in PR #255 (apps/intent-engine/src/schemas.py:
+    ChatIntentDetectedPayload). SDK consumes chat.intent.detected, applies strong prior,
+    detectMismatch vs quiz prior → quiz.mismatch. Last item in Lane C.
 
 - id: FOLLOW-102
   title: Quiz ON/OFF toggle (SdkConfig + Supabase tenants.quiz_enabled + dashboard)

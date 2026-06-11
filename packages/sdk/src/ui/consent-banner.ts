@@ -13,9 +13,15 @@
  * @module @estalara/sdk/ui/consent-banner
  */
 
+import type { QuizLanguage } from '@estalara/shared';
+
 export interface ConsentBannerOptions {
-  /** UI language for banner text. */
-  language: 'en' | 'pl' | 'es';
+  /**
+   * UI language for banner text.
+   * Uses `QuizLanguage` from `@estalara/shared` — canonical `['en','pl','es']` union
+   * (FOLLOW-273). Never repeat the literal set in SDK files.
+   */
+  language: QuizLanguage;
   /** Accent color for the primary "Accept" button (hex, rgb, or CSS color). */
   accentColor: string;
   /** Optional URL for the tenant's privacy policy — shown as a "Learn more" link. */

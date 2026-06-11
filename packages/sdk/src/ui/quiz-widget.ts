@@ -14,8 +14,14 @@
  * On leaf resolution: calls `onComplete` with the resolved archetype (or 'neutral').
  * On dismiss: calls `onDismiss`.
  *
+ * FOLLOW-273 (2026-06-11): `QuizWidgetConfig.language` and `QUIZ_CONTENT` key type now use
+ * `QuizLanguage` imported from `@estalara/shared` instead of the inline `'en'|'pl'|'es'`
+ * literal. `QUIZ_LANGUAGE_VALUES` is the single canonical source of truth.
+ *
  * @module @estalara/sdk/ui/quiz-widget
  */
+
+import type { QuizLanguage } from '@estalara/shared';
 
 import type { Archetype } from '../core/intent.js';
 
@@ -24,7 +30,7 @@ export type QuizResolvedArchetype = Archetype;
 
 export interface QuizWidgetConfig {
   accentColor: string;
-  language: 'en' | 'pl' | 'es';
+  language: QuizLanguage;
 }
 
 // ─── I18n content ─────────────────────────────────────────────────────────────
@@ -47,7 +53,12 @@ interface QuizLang {
   skip: string;
 }
 
-export const QUIZ_CONTENT: Record<'en' | 'pl' | 'es', QuizLang> = {
+/**
+ * AC3 (FOLLOW-273): The keys of this map MUST equal `QUIZ_LANGUAGE_VALUES`. Enforced by the
+ * parity test in `src/__tests__/follow-273.test.ts`. If a new locale is added to
+ * `QUIZ_LANGUAGE_VALUES`, TypeScript will error here until the corresponding key is added.
+ */
+export const QUIZ_CONTENT: Record<QuizLanguage, QuizLang> = {
   en: {
     q1_gate: {
       question: 'What are you looking for?',

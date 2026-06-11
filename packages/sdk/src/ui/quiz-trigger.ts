@@ -4,15 +4,21 @@
  *
  * Shown after 30 seconds on ANY page type where the SDK is loaded.
  * Dismissible (sets localStorage flag for 24h).
+ *
+ * FOLLOW-273 (2026-06-11): `QuizTriggerConfig.language` and `QUIZ_LABELS` key type now use
+ * `QuizLanguage` imported from `@estalara/shared` instead of the inline `'en'|'pl'|'es'`
+ * literal. `QUIZ_LANGUAGE_VALUES` is the single canonical source of truth.
  */
+
+import type { QuizLanguage } from '@estalara/shared';
 
 export interface QuizTriggerConfig {
   accentColor: string;
   icon: string;
-  language: 'en' | 'pl' | 'es';
+  language: QuizLanguage;
 }
 
-export const QUIZ_LABELS = {
+export const QUIZ_LABELS: Record<QuizLanguage, { trigger: string; dismiss: string }> = {
   en: {
     trigger: 'Find your match →',
     dismiss: '×',

@@ -17,11 +17,17 @@
  * @module @estalara/sdk/ui/sidebar-widget
  */
 
+import type { QuizLanguage } from '@estalara/shared';
+
 export interface SidebarWidgetOptions {
   /** Accent / brand colour — defaults to #0066ff. */
   accentColor?: string;
-  /** UI language — defaults to 'en'. */
-  language?: 'en' | 'pl' | 'es';
+  /**
+   * UI language — defaults to 'en'.
+   * Uses `QuizLanguage` from `@estalara/shared` — canonical `['en','pl','es']` union
+   * (FOLLOW-273). Never repeat the literal set in SDK files.
+   */
+  language?: QuizLanguage;
   /** Called when the user clicks the close button. */
   onClose?: () => void;
 }

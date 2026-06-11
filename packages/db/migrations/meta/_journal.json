@@ -183,6 +183,13 @@
       "when": 1781112236167,
       "tag": "0025_tenants_quiz_enabled",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1781202418234,
+      "tag": "0026_strip_quiz_config_enabled",
+      "breakpoints": true
     }
   ]
 }

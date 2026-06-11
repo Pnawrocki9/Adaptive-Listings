@@ -39,8 +39,12 @@ export const tenants = pgTable(
     /**
      * E.4 investor quiz widget configuration — widget UX settings only.
      *
-     * SCOPE (valid keys): `accentColor`, `language`, `stickyWidget`, `microPollsEnabled`.
-     * (Stored as snake_case: `accent_color`, `language`, `sticky_widget`, `micro_polls_enabled`.)
+     * SCOPE (valid keys — all wired to a non-test producer AND consumer):
+     *   `language`           → GET /api/quiz/config → quiz widget locale
+     *   `accentColor`        → GET /api/quiz/config → quiz widget brand color
+     *   `microPollsEnabled`  → GET /api/quiz/config → buildSnippet emits data-micro-polls-enabled
+     *                          → readConfig() → config.microPollsEnabled → SDK micro-poll trigger
+     * (Stored as snake_case: `language`, `accent_color`, `micro_polls_enabled`.)
      * Persisted via POST /api/quiz/config and read by GET /api/quiz/config.
      *
      * NOT the source-of-truth for quiz enabled/disabled state — use `quizEnabled`
@@ -51,7 +55,11 @@ export const tenants = pgTable(
      *     so the key cannot re-enter the blob via POST /api/quiz/config.
      *   - Existing rows: migration `0026_strip_quiz_config_enabled` removes the key from
      *     all rows via `quiz_config = quiz_config - 'enabled'`.
-     * The blob no longer carries `enabled`. ON/OFF gating lives exclusively in `quizEnabled`.
+     * FOLLOW-274 (2026-06-11, Rule U): the `sticky_widget` key has been ELIMINATED.
+     *   - Write path: `QuizConfigSchema` uses `.omit({ sticky_widget: true })`.
+     *   - Existing rows: migration `0027_strip_quiz_config_sticky_widget` strips the key.
+     * The blob no longer carries `enabled` or `sticky_widget`. ON/OFF gating lives
+     * exclusively in `quizEnabled`.
      */
     quizConfig: jsonb('quiz_config').default({}),
 

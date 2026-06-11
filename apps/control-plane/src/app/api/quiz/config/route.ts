@@ -14,11 +14,17 @@
  * RETRO-050 HALF_WIRE_P). If Quiz v2.0 (FOLLOW-199) reintroduces a per-tenant timer,
  * ALL THREE LIMBS must be rebuilt together: (1) a typed column or JSONB key + migration,
  * (2) this API schema field, (3) a real SDK consumer via readConfig / data-* attribute.
- * tenants.quiz_config JSONB is still used by this route for the remaining fields
- * (sticky_widget, language, accent_color, micro_polls_enabled). It is NOT
- * being retired in favour of typed columns at this time — the schema is small and typed
- * columns would require a migration per field. This decision should be revisited during
- * Quiz v2.0 planning.
+ * tenants.quiz_config JSONB is still used by this route for the remaining wired fields
+ * (language, accent_color, micro_polls_enabled). It is NOT being retired in favour of
+ * typed columns at this time — the schema is small and typed columns would require a
+ * migration per field. This decision should be revisited during Quiz v2.0 planning.
+ *
+ * FOLLOW-274 (2026-06-11): `sticky_widget` RETIRED — zero SDK consumer (Rule U).
+ *   - POST: `QuizConfigSchema` now omits `sticky_widget`; any `sticky_widget` key in
+ *     the request body is silently dropped before DB write.
+ *   - GET: `parseStoredQuizConfig()` strips a legacy `sticky_widget` key from the blob.
+ *   - `micro_polls_enabled` WIRED: buildSnippet emits `data-micro-polls-enabled="true"`
+ *     when true; readConfig() in packages/sdk parses it → config.microPollsEnabled.
  *
  * FOLLOW-270: `QuizConfig` type, `QuizConfigSchema`, and `QUIZ_DEFAULT_CONFIG` are now
  * imported from `@estalara/shared` to eliminate the hand-duplicated copy that drifted

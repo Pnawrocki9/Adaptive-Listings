@@ -885,7 +885,7 @@ async function init(): Promise<IntentState | null> {
      */
     function tryShowMicroPoll(): void {
       // All guards from spec (FOLLOW-209 §Trigger conditions)
-      if (!(config as unknown as Record<string, unknown>).micro_polls_enabled) return;
+      if (!config.microPollsEnabled) return;
       if (quizCompletedThisSession) return;
       if (microPollShownThisSession) return;
       if (isMicroPollDismissed()) return;
@@ -962,7 +962,7 @@ async function init(): Promise<IntentState | null> {
 
     // Trigger micro-poll after 90s (spec §Trigger condition: 90s elapsed since session start)
     // if micro_polls_enabled is set. Runs independently of the quiz 30s timer.
-    if ((config as unknown as Record<string, unknown>).micro_polls_enabled) {
+    if (config.microPollsEnabled) {
       setTimeout(() => {
         tryShowMicroPoll();
       }, 90_000);

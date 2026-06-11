@@ -190,6 +190,13 @@
       "when": 1781202418234,
       "tag": "0026_strip_quiz_config_enabled",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1781208120531,
+      "tag": "0027_strip_quiz_config_sticky_widget",
+      "breakpoints": true
     }
   ]
 }

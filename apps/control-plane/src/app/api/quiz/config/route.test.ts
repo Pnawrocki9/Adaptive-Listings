@@ -22,7 +22,7 @@ vi.mock('@estalara/auth', () => ({
 
 import { createAdminClient } from '@estalara/db';
 import { getAuthClaims, requireTenantAccess } from '@estalara/auth';
-import { QUIZ_LANGUAGE_VALUES, QuizConfigSchema } from '@estalara/shared';
+import { QUIZ_LANGUAGE_VALUES, QuizConfigSchema, parseStoredQuizConfig } from '@estalara/shared';
 
 import { GET, POST } from './route';
 
@@ -112,6 +112,53 @@ describe('QUIZ_LANGUAGE_VALUES canonical enum (FOLLOW-270)', () => {
   it('QuizConfigSchema rejects an unknown language value', () => {
     const result = QuizConfigSchema.safeParse({ language: 'de' });
     expect(result.success).toBe(false);
+  });
+});
+
+// ── FOLLOW-274: sticky_widget is stripped from the persisted blob ────────────
+describe('QuizConfigSchema strips sticky_widget key (FOLLOW-274, Rule U)', () => {
+  it('strips sticky_widget from schema parse output', () => {
+    const result = QuizConfigSchema.safeParse({ sticky_widget: true, language: 'pl' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // `sticky_widget` must NOT be present in the parsed output
+      expect(result.data).not.toHaveProperty('sticky_widget');
+      expect(result.data.language).toBe('pl');
+    }
+  });
+
+  it('strips sticky_widget: false as well', () => {
+    const result = QuizConfigSchema.safeParse({ sticky_widget: false });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty('sticky_widget');
+    }
+  });
+});
+
+// ── FOLLOW-274: sticky_widget backfill — a legacy blob containing sticky_widget ────
+describe('parseStoredQuizConfig strips sticky_widget from legacy blob (FOLLOW-274, Rule U)', () => {
+  it('strips legacy sticky_widget key while preserving sibling keys', () => {
+    const legacyBlob = { sticky_widget: true, language: 'es', accent_color: '#FF0000' };
+    const result: Record<string, unknown> = parseStoredQuizConfig(legacyBlob);
+    // sticky_widget must be gone; siblings must survive
+    expect(result).not.toHaveProperty('sticky_widget');
+    expect(result.language).toBe('es');
+    expect(result.accent_color).toBe('#FF0000');
+  });
+
+  it('strips both enabled and sticky_widget from a fully legacy blob', () => {
+    const legacyBlob = {
+      enabled: true,
+      sticky_widget: false,
+      language: 'pl',
+      micro_polls_enabled: true,
+    };
+    const result: Record<string, unknown> = parseStoredQuizConfig(legacyBlob);
+    expect(result).not.toHaveProperty('enabled');
+    expect(result).not.toHaveProperty('sticky_widget');
+    expect(result.language).toBe('pl');
+    expect(result.micro_polls_enabled).toBe(true);
   });
 });
 
@@ -246,13 +293,26 @@ describe('POST /api/quiz/config', () => {
       dbMock as unknown as ReturnType<typeof createAdminClient>,
     );
 
-    // First POST: set full config (enabled is stripped by schema, language + sticky_widget persist)
-    await POST(makePostRequest({ language: 'pl', sticky_widget: true }));
+    // First POST: set language + micro_polls_enabled
+    await POST(makePostRequest({ language: 'pl', micro_polls_enabled: true }));
 
-    // Second POST: update only sticky_widget — language should be preserved
-    const res = await POST(makePostRequest({ sticky_widget: false }));
-    const body = await parseBody<{ sticky_widget: boolean; language: string }>(res);
-    expect(body.sticky_widget).toBe(false);
+    // Second POST: update only micro_polls_enabled — language should be preserved
+    const res = await POST(makePostRequest({ micro_polls_enabled: false }));
+    const body = await parseBody<{ micro_polls_enabled: boolean; language: string }>(res);
+    expect(body.micro_polls_enabled).toBe(false);
+    expect(body.language).toBe('pl');
+  });
+
+  it('strips sticky_widget from POST body — sticky_widget absent in persisted response (FOLLOW-274, Rule U)', async () => {
+    vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+    );
+    const res = await POST(makePostRequest({ sticky_widget: true, language: 'pl' }));
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    // FOLLOW-274 AC4: `sticky_widget` must NOT appear in the persisted blob response
+    expect(body).not.toHaveProperty('sticky_widget');
     expect(body.language).toBe('pl');
   });
 });

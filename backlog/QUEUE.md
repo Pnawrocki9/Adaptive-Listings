@@ -3453,14 +3453,16 @@ Key tracks:
 ```
 
 - id: FOLLOW-270 title: Reconcile QuizConfig.language enum skew + de-duplicate hand-copied
-  QuizConfig interface agent: backend-engineer status: IN_PROGRESS assigned_to: backend-engineer
-  started_at: '2026-06-11T00:00:00Z' priority: P2 estimated_hours: 2 depends_on: [FOLLOW-264]
-  source_retro: RETRO-053 (§4e MX-1; §5c; §6 — Rule-S symmetric-set drift) spec:
-  backlog/FOLLOW_UPS.md (FOLLOW-270 stub) branch:
-  backend-engineer/FOLLOW-270-quiz-config-language-enum-skew notes: | QuizConfig.language enum skew:
-  route.ts accepts 'en'|'pl'|'es' but dashboard page.tsx types only 'en'|'pl' (onChange cast). 'es'
-  unreachable from UI. De-dup or add parity test. Verify with tsc --noEmit AND runner pass (Rule G
-  amendment 2026-06-11). Promoted to queue 2026-06-11.
+  QuizConfig interface agent: backend-engineer status: READY_FOR_REVIEW assigned_to:
+  backend-engineer started_at: '2026-06-11T00:00:00Z' completed_at: '2026-06-11T00:00:00Z' priority:
+  P2 estimated_hours: 2 depends_on: [FOLLOW-264] source_retro: RETRO-053 (§4e MX-1; §5c; §6 — Rule-S
+  symmetric-set drift) spec: backlog/FOLLOW_UPS.md (FOLLOW-270 stub) branch:
+  backend-engineer/FOLLOW-270-quiz-config-language-enum-skew pr: '#265' notes: | Canonical
+  QuizConfig extracted to packages/shared/src/schemas/quiz-config.ts. Both route.ts and page.tsx now
+  import from @estalara/shared. 'es' (Español) added to dashboard select. Parity tests added
+  (QUIZ_LANGUAGE_VALUES coverage, Zod accept-all, reject-unknown, route handler 'es' e2e). tsc
+  --noEmit green; 914 control-plane tests green; 205 shared tests green; all real CI gates pass
+  (Typecheck, Lint, Format, Test Node 22, Rule H, Rule J, Demo integration, etc.).
 
 - id: FOLLOW-271 title: Eliminate orphaned quizConfig.enabled JSONB key — strip on write + backfill
   (Rule U) agent: backend-engineer status: READY priority: P2 estimated_hours: 2 depends_on:

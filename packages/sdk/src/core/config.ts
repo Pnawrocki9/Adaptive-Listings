@@ -1,6 +1,10 @@
 /**
  * SDK configuration — read from data-* attributes on the <script> tag.
  *
+ * FOLLOW-273 (2026-06-11): `SdkConfig.language` now uses `QuizLanguage` from `@estalara/shared`
+ * instead of the inline `'en'|'pl'|'es'` literal. The local `SUPPORTED_LANGUAGES` array now
+ * derives from `QUIZ_LANGUAGE_VALUES` so there is a single canonical source of truth.
+ *
  * @module @estalara/sdk/core/config
  */
 
@@ -16,6 +20,9 @@
  */
 export const BOT_UA_RE = /Googlebot|bingbot|Slurp|DuckDuckBot|AhrefsBot|SemrushBot|MJ12bot/i;
 
+import type { QuizLanguage } from '@estalara/shared';
+import { QUIZ_LANGUAGE_VALUES } from '@estalara/shared';
+
 export interface SdkConfig {
   apiKey: string;
   /** Derived from API key prefix (optional override via data-tenant-id). */
@@ -29,8 +36,10 @@ export interface SdkConfig {
   /**
    * UI language for the consent banner and quiz widget.
    * Read from data-language attribute. Defaults to 'en'.
+   * Uses `QuizLanguage` from `@estalara/shared` — the canonical `['en','pl','es']` union
+   * (FOLLOW-273). Never repeat the literal set in SDK files.
    */
-  language: 'en' | 'pl' | 'es';
+  language: QuizLanguage;
   /**
    * URL for the tenant's privacy policy — shown as a "Learn more" link in the consent banner.
    * Read from data-privacy-url attribute. Optional.
@@ -100,9 +109,13 @@ export const DEFAULT_CONFIG: Omit<SdkConfig, 'apiKey'> = {
   quiz: { enabled: true },
 };
 
-/** Supported quiz/UI locales. Extend this tuple when adding a new language. */
-const SUPPORTED_LANGUAGES = ['en', 'pl', 'es'] as const;
-type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+/**
+ * Supported quiz/UI locales — aliased from the canonical `QUIZ_LANGUAGE_VALUES` tuple.
+ * Add new locales to `packages/shared/src/schemas/quiz-config.ts` only; this alias
+ * and `isSupportedLanguage` update automatically (FOLLOW-273).
+ */
+const SUPPORTED_LANGUAGES = QUIZ_LANGUAGE_VALUES;
+type SupportedLanguage = QuizLanguage;
 
 function isSupportedLanguage(v: string): v is SupportedLanguage {
   return (SUPPORTED_LANGUAGES as readonly string[]).includes(v);

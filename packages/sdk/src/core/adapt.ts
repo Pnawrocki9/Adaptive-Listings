@@ -15,6 +15,7 @@ import type {
   ClassDirective,
   ReorderDirective,
   ArchetypeId,
+  QuizLanguage,
 } from '@estalara/shared';
 import type { CollectedEvent } from './events.js';
 import type { IntentState } from './intent.js';
@@ -180,13 +181,13 @@ function deriveQuizCompletionUrl(config: SdkConfig): string | null {
  * @param config    - SDK configuration (needs apiKey + decisionApiUrl).
  * @param sessionId - Current session identifier.
  * @param resolvedArchetype - Quiz leaf archetype (or 'neutral').
- * @param language  - Quiz locale ('en' | 'pl' | 'es').
+ * @param language  - Quiz locale (canonical `QuizLanguage` from `@estalara/shared`, FOLLOW-273).
  */
 export function postQuizCompletionPing(
   config: SdkConfig,
   sessionId: string,
   resolvedArchetype: string,
-  language: 'en' | 'pl' | 'es',
+  language: QuizLanguage,
 ): void {
   const completionUrl = deriveQuizCompletionUrl(config);
   if (!completionUrl) return;

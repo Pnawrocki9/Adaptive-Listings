@@ -99,9 +99,10 @@ describe('isQuizDismissed', () => {
 });
 
 describe('QUIZ_LABELS', () => {
-  it('has both en and pl keys', () => {
+  it('has en, pl, and es keys (all QUIZ_LANGUAGE_VALUES)', () => {
     expect(QUIZ_LABELS).toHaveProperty('en');
     expect(QUIZ_LABELS).toHaveProperty('pl');
+    expect(QUIZ_LABELS).toHaveProperty('es');
   });
 
   it('en labels have trigger and dismiss', () => {
@@ -114,6 +115,11 @@ describe('QUIZ_LABELS', () => {
     expect(QUIZ_LABELS.pl.dismiss).toBeTruthy();
   });
 
+  it('es labels have trigger and dismiss', () => {
+    expect(QUIZ_LABELS.es.trigger).toBeTruthy();
+    expect(QUIZ_LABELS.es.dismiss).toBeTruthy();
+  });
+
   it('en trigger contains "match"', () => {
     // v2: no longer references "2 questions" — shorter label (FOLLOW-199)
     expect(QUIZ_LABELS.en.trigger).toContain('match');
@@ -122,5 +128,9 @@ describe('QUIZ_LABELS', () => {
   it('pl trigger contains "dopasowanie"', () => {
     // v2: no longer references "2 pytaniach" — shorter label (FOLLOW-199)
     expect(QUIZ_LABELS.pl.trigger).toContain('dopasowanie');
+  });
+
+  it('es trigger contains "coincidencia"', () => {
+    expect(QUIZ_LABELS.es.trigger).toContain('coincidencia');
   });
 });

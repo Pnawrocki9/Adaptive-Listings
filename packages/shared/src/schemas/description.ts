@@ -21,10 +21,16 @@
  * cache miss always receive `template_fallback` synchronously, and will receive `ai_cached`
  * on the next request after the Modal job completes.
  *
+ * FOLLOW-273 (2026-06-11): `LocaleSchema` now derives from `QUIZ_LANGUAGE_VALUES` in
+ * `quiz-config.ts` — that tuple is the single source of truth for `['en','pl','es']`.
+ * This eliminates the previously duplicated literal array here.
+ *
  * @module @estalara/shared/schemas/description
  */
 
 import { z } from 'zod';
+
+import { QUIZ_LANGUAGE_VALUES } from './quiz-config.js';
 
 /** Valid archetype IDs — mirrors ArchetypeId in @estalara/shared/directives. */
 export const ArchetypeIdSchema = z.enum([
@@ -48,8 +54,16 @@ export const ArchetypeIdSchema = z.enum([
   'neutral',
 ]);
 
-/** Supported locale codes for the description pipeline. */
-export const LocaleSchema = z.enum(['en', 'pl', 'es']);
+/**
+ * Supported locale codes for the description pipeline.
+ *
+ * Derived from `QUIZ_LANGUAGE_VALUES` (packages/shared/src/schemas/quiz-config.ts) which is
+ * the single source of truth for the `['en','pl','es']` tuple (FOLLOW-273). The two sets are
+ * intentionally co-extensive: the description API locale and the quiz/UI locale share the
+ * same supported language set. If a new locale is ever added, update `QUIZ_LANGUAGE_VALUES`
+ * in quiz-config.ts and this schema updates automatically.
+ */
+export const LocaleSchema = z.enum(QUIZ_LANGUAGE_VALUES);
 export type Locale = z.infer<typeof LocaleSchema>;
 
 /** Integration tier for description gating. */

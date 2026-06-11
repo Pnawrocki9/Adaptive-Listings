@@ -1,33 +1,39 @@
-# Status — 2026-06-10T12:00Z
+# Status — 2026-06-11T08:00Z
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
-## Active sprint: Sprint 16 (COMPLETE) + Sprint 13b (ACTIVE — FOLLOW-257/263 READY)
+## Active sprint: Sprint 14 (ACTIVE — FOLLOW-169 READY_FOR_REVIEW)
 
 **Sprint 16 COMPLETE — 14 DONE** (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234).
 Wave A ALL DONE: FOLLOW-258/259/260/261/262 (all PRs merged 2026-06-10). FOLLOW-099 DONE (PR #248).
+**Sprint 13b COMPLETE** — FOLLOW-257 (PR #259) + FOLLOW-263 (PR #260) + FOLLOW-264 (PR #263) +
+FOLLOW-265 (PR #262). All DONE 2026-06-11. RETRO-052/053 complete: Rule U + Rule G (amendment)
+promoted; FOLLOW-270/271 stubs created.
 
-**1 READY_FOR_REVIEW (deployment-only)** — FOLLOW-191 (awaiting Rafal deploy ESC-020).
+**2 READY_FOR_REVIEW** — FOLLOW-169 (PR #264, all real CI gates green) + FOLLOW-191 (awaiting Rafal
+deploy ESC-020).
 
-## ESCALATION BLOCKER — ESC-020 OPEN
+## ESCALATION STATUS — ESC-020 OPEN (non-blocking)
 
-Per PM rules: one OPEN escalation exists. Human attention required before next ticket delegation.
-See backlog/ESCALATIONS.md ESC-020. Does NOT block FOLLOW-257/263/169 code work — only FOLLOW-191
-final verification and FOLLOW-197 (adapt.applied signal).
-
-## Next READY tickets (pending ESC-020 resolution decision)
-
-1. FOLLOW-257 (P1, Sprint 13b, sdk-engineer) — Rule-L half-wire quiz.trigger_after_n_listings
-2. FOLLOW-263 (P2, Sprint 13b, backend-engineer) — Repoint pilot-freeze guard
-3. FOLLOW-169 (P2, Sprint 14, ml-engineer) — Headline anti-hallucination grounding
+ESC-020 is OPEN but CEO confirmed 2026-06-10: does NOT block code work pipeline. Only blocks
+FOLLOW-191 final verification and FOLLOW-197 (adapt.applied signal).
 
 ## Currently IN_PROGRESS
 
-None. 0 of 3 max.
+None — 0 of 3 max in flight.
 
-## CI-check counters
+## READY_FOR_REVIEW
 
-No ticket currently IN_PROGRESS — counters reset.
+| Ticket     | PR   | CI status                         |
+| ---------- | ---- | --------------------------------- |
+| FOLLOW-169 | #264 | All real gates green (2026-06-11) |
+| FOLLOW-191 | —    | Awaiting Rafal deploy (ESC-020)   |
+
+## Open escalations
+
+| ID      | Age | Description                                                          | Blocking?                          |
+| ------- | --- | -------------------------------------------------------------------- | ---------------------------------- |
+| ESC-020 | 6d  | Rafal must deploy web-master HEAD + PUBLIC_ESTALARA_SDK_ENABLED=true | FOLLOW-191 final verification only |
 
 ## QUEUE.md stale corrections applied 2026-06-10T12:00Z
 

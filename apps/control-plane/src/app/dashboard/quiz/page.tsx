@@ -41,9 +41,13 @@ import { QUIZ_DEFAULT_CONFIG, QUIZ_LANGUAGE_VALUES } from '@estalara/shared';
  * Dashboard-local extension of the canonical QuizConfig that includes
  * the dedicated quiz_enabled column value and tenant_id returned by GET /api/quiz/config.
  * These fields live in the API response but are NOT part of the JSONB blob shape.
+ *
+ * FOLLOW-271: `enabled` removed. The quiz ON/OFF state lives in `quiz_enabled`
+ * (the typed `tenants.quiz_enabled` boolean column). The JSONB blob no longer
+ * carries `enabled` per Rule U / FOLLOW-271.
  */
 interface DashboardQuizConfig {
-  enabled: boolean;
+  // `enabled` intentionally absent — use `quiz_enabled` (typed column SoT), per FOLLOW-271.
   // trigger_after_n_listings removed — Rule L / RETRO-050 HALF_WIRE_P (FOLLOW-264).
   // The SDK consumer was deleted in FOLLOW-257; this removes the orphaned producer.
   // Re-add under FOLLOW-199 (Quiz v2.0) with a matching SDK consumer.

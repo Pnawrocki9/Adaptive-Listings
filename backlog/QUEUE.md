@@ -9,14 +9,14 @@ replace mirror; RETRO-053 → Rule G amended, FOLLOW-270 stub). FOLLOW-169 (P2) 
 2026-06-11T06:29:18Z (headline anti-hallucination grounding: \_HEADLINE_SYSTEM_PROMPT +
 verified_facts, post-gen fact check, SDK source=ai_cached guard, stale docstrings fixed; RETRO-054
 to be spawned). FOLLOW-270 (P2) and FOLLOW-271 (P2) promoted to Sprint 16 queue (backend-engineer).
-Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261
-PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
-(FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
-local-first testing pending — ESC-020 workflow clarified). Sprint 15 COMPLETE — 21/21 DONE. ESC-020
-OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10: local-first testing required before
-prod deploy; Rafal action deferred until CEO signs off locally. FOLLOW-266–269 added: Archetype
-Identification Tracer (§K.3.6, CEO-directed 2026-06-10) — stubs in FOLLOW_UPS.md, promoted to Sprint
-17 planning.**
+FOLLOW-271 READY_FOR_REVIEW — PR #266 opened 2026-06-11. Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR
+#249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged).
+Sprint 16 OPEN — 14 DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1
+READY_FOR_REVIEW (FOLLOW-191 local-first testing pending — ESC-020 workflow clarified). Sprint 15
+COMPLETE — 21/21 DONE. ESC-020 OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10:
+local-first testing required before prod deploy; Rafal action deferred until CEO signs off locally.
+FOLLOW-266–269 added: Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10) — stubs in
+FOLLOW_UPS.md, promoted to Sprint 17 planning.**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -3219,8 +3219,9 @@ closed). Updated 2026-06-09 (pm-orchestrator): FOLLOW-183 DONE (PR #228 merged),
 (pm-orchestrator): FOLLOW-185 DONE (PR #243/#244 merged), FOLLOW-175 DONE (PR #245 merged). Sprint
 16 now 14/14 non-READY_FOR_REVIEW tickets DONE; FOLLOW-191 remains READY_FOR_REVIEW (ESC-020).
 Updated 2026-06-11 (pm-orchestrator): FOLLOW-270 and FOLLOW-271 promoted from FOLLOW_UPS.md stubs
-(RETRO-052/053); FOLLOW-270 IN_PROGRESS (backend-engineer, delegated 2026-06-11).** Carries forward
-all READY Sprint 14 items not touched by Sprint 15, plus the Wave 2 deferred item from Sprint 15.
+(RETRO-052/053); FOLLOW-270 DONE (PR #265 merged 2026-06-11, RETRO-055 to be spawned); FOLLOW-271
+IN_PROGRESS (backend-engineer, delegated 2026-06-11).** Carries forward all READY Sprint 14 items
+not touched by Sprint 15, plus the Wave 2 deferred item from Sprint 15.
 
 Key tracks:
 
@@ -3453,25 +3454,28 @@ Key tracks:
 ```
 
 - id: FOLLOW-270 title: Reconcile QuizConfig.language enum skew + de-duplicate hand-copied
-  QuizConfig interface agent: backend-engineer status: READY_FOR_REVIEW assigned_to:
+  QuizConfig interface agent: backend-engineer status: DONE assigned_to:
   backend-engineer started_at: '2026-06-11T00:00:00Z' completed_at: '2026-06-11T00:00:00Z' priority:
   P2 estimated_hours: 2 depends_on: [FOLLOW-264] source_retro: RETRO-053 (§4e MX-1; §5c; §6 — Rule-S
   symmetric-set drift) spec: backlog/FOLLOW_UPS.md (FOLLOW-270 stub) branch:
-  backend-engineer/FOLLOW-270-quiz-config-language-enum-skew pr: '#265' notes: | Canonical
-  QuizConfig extracted to packages/shared/src/schemas/quiz-config.ts. Both route.ts and page.tsx now
-  import from @estalara/shared. 'es' (Español) added to dashboard select. Parity tests added
-  (QUIZ_LANGUAGE_VALUES coverage, Zod accept-all, reject-unknown, route handler 'es' e2e). tsc
-  --noEmit green; 914 control-plane tests green; 205 shared tests green; all real CI gates pass
-  (Typecheck, Lint, Format, Test Node 22, Rule H, Rule J, Demo integration, etc.).
+  backend-engineer/FOLLOW-270-quiz-config-language-enum-skew pr: '#265' notes: | DONE. PR #265
+  merged 2026-06-11. Canonical QuizConfig extracted to packages/shared/src/schemas/quiz-config.ts.
+  Both route.ts and page.tsx now import from @estalara/shared. 'es' (Español) added to dashboard
+  select. Parity tests added (QUIZ_LANGUAGE_VALUES coverage, Zod accept-all, reject-unknown, route
+  handler 'es' e2e). tsc --noEmit green; 914 control-plane tests green; 205 shared tests green; all
+  real CI gates pass (Typecheck, Lint, Format, Test Node 22, Rule H, Rule J, Demo integration,
+  etc.). RETRO-055 to be spawned.
 
 - id: FOLLOW-271 title: Eliminate orphaned quizConfig.enabled JSONB key — strip on write + backfill
-  (Rule U) agent: backend-engineer status: READY priority: P2 estimated_hours: 2 depends_on:
-  [FOLLOW-265, FOLLOW-270] source_retro: RETRO-052 (§4a LG-1; §5d; §6 — Rule U promotion) spec:
-  backlog/FOLLOW_UPS.md (FOLLOW-271 stub) notes: | Strip 'enabled' from quiz_config JSONB on write
-  in POST /api/quiz/config (route.ts:142) via Zod .omit or explicit delete. One-time backfill
-  migration. Confirm quiz_config carries ONLY non-gating UX keys after. Test asserting enabled
-  absent from persisted blob. Rule G: verify with tsc --noEmit AND runner pass. Promoted to queue
-  2026-06-11.
+  (Rule U) agent: backend-engineer status: READY_FOR_REVIEW assigned_to: backend-engineer
+  started_at: '2026-06-11T00:00:00Z' completed_at: '2026-06-11T20:30:00Z' priority: P2
+  estimated_hours: 2 depends_on: [FOLLOW-265, FOLLOW-270] source_retro: RETRO-052 (§4a LG-1; §5d; §6
+  — Rule U promotion) spec: backlog/FOLLOW_UPS.md (FOLLOW-271 stub) branch:
+  backend-engineer/FOLLOW-271-strip-quiz-enabled-blob-key pr:
+  https://github.com/Pnawrocki9/Adaptive-Listings/pull/266 notes: | PR #266 —
+  QuizConfigSchema.omit({ enabled: true }) strips on write; parseStoredQuizConfig() strips on read;
+  migration 0026 backfills existing rows. 918/918 tests pass. typecheck clean. Migration journal
+  monotonicity check passes (27 entries). Rule H, Rule J pre-push green.
 
 ## Wave A — Bug fix cluster: data-loss, cross-tenant auth, SQL injection, lifecycle (COMPLETE)
 

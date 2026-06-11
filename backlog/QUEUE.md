@@ -22,9 +22,8 @@ promoted to Sprint 17 planning. Sprint 17 OPEN — FOLLOW-274 PM-VALIDATED READY
 real CI gates green; SDK bundle bloat pre-existing on main), FOLLOW-273 PM-VALIDATED
 READY_FOR_REVIEW (PR #268, real CI gates green; SDK bundle bloat pre-existing on main), FOLLOW-272
 READY (P3, ml-engineer). RETRO-057 complete: micro_polls_enabled is still P1 HALF_WIRE in prod
-(DetectWizard.tsx:259 never passes the flag); FOLLOW-275 filed (P1, architect decision required on
-snippet-threading vs SDK runtime GET before backend-engineer can implement). FOLLOW-275 promoted to
-Sprint 17. Architect delegated 2026-06-11T21:30Z to decide FOLLOW-275 architecture.**
+(DetectWizard.tsx:259 never passes the flag). ADR-0011 PROPOSED (PR #269, architect) — SDK GET
+/api/quiz/public-config at init time preferred; FOLLOW-275 BLOCKED pending CTO ratification.**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -165,7 +164,7 @@ CRM docs, micro-poll Wave 2 | 17 | 16 | 0 | 1 | 0 | | Wave A | — | Bug fix clu
 (FOLLOW-259), lifecycle (FOLLOW-262) | 5 | 5 | 0 | 0 | 0 | | 17 | 19 | quiz_config blob cleanup
 (FOLLOW-274), SDK locale enum alignment (FOLLOW-273), headline fact-check tightening (FOLLOW-272),
 micro_polls wire end-to-end (FOLLOW-275) + Archetype Identification Tracer (FOLLOW-266–269) | 4 | 0
-| 0 | 4 | 0 |
+| 0 | 3 | 1 |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -4154,27 +4153,27 @@ planning.**
     Wire micro_polls_enabled (+ symmetric quizEnabled) end-to-end from tenant store to production
     SDK snippet — DetectWizard/DetectionPreview call site supplies neither flag; no dashboard
     re-emission surface (Rule L + Rule S)
-  agent: architect (ADR decision) → backend-engineer + sdk-engineer (implementation)
-  status: IN_PROGRESS
-  assigned_to: architect
+  agent: backend-engineer + sdk-engineer (after ADR ratification)
+  status: BLOCKED
+  block_reason: |
+    ADR-0011 PROPOSED in PR #269 — awaiting CTO (Rafał) ratification. Decision: SDK GET
+    /api/quiz/public-config at init time (option b). Implementation starts once ACCEPTED.
   started_at: '2026-06-11T21:30:00Z'
   priority: P1
   estimated_hours: 6
-  depends_on: []
+  depends_on: [ADR-0011-ratification]
   source_retro:
     RETRO-057 (§4a LG-1 P1 / LG-2 P2; §4c TG-1 P1; §4d DG-1 P1; §5a/§5d; Rule L call-site caveat +
     Rule S)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-275 stub)
+  adr: docs/adr/PROPOSED-FOLLOW-275-quiz-config-transport.md (PR #269)
   notes: |
     FOLLOW-274 wired only the buildSnippet EMITTER hop (5th param + data-micro-polls-enabled
     emission). The gap moved one hop UP: buildSnippet's sole non-test caller
     (DetectionPreview.tsx:214) has one non-test render site (DetectWizard.tsx:259) which passes
-    NEITHER microPollsEnabled NOR quizEnabled. The wizard has zero quiz_config access + runs
-    pre-toggle; dashboard quiz page renders no snippet → data-micro-polls-enabled never emitted
-    in prod → SDK consumer (index.ts:888,965) never fires. Same call-site gap leaves quizEnabled
-    (FOLLOW-102) unwired. Architecture decision required: (a) thread flags through
-    DetectWizard→buildSnippet + dashboard re-emission surface, OR (b) SDK GET /api/quiz/config
-    at runtime (PREFERRED, more robust). Architect delegated 2026-06-11T21:30Z.
+    NEITHER microPollsEnabled NOR quizEnabled. ADR-0011 recommends (b): SDK fetches
+    GET /api/quiz/public-config at init time (API-key auth, CORS-open, 5-min TTL) —
+    snippet-attributes retired as config transport for post-activation-mutable keys.
     Correct over-asserting docstrings (tenants.ts:42-46, DetectionPreview.tsx:135/208).
     Sequence before TICKET-PILOT-001 dashboard-quiz-disable path + before FOLLOW-199.
 ```

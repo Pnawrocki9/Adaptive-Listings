@@ -20,49 +20,25 @@
  * columns would require a migration per field. This decision should be revisited during
  * Quiz v2.0 planning.
  *
+ * FOLLOW-270: `QuizConfig` type, `QuizConfigSchema`, and `QUIZ_DEFAULT_CONFIG` are now
+ * imported from `@estalara/shared` to eliminate the hand-duplicated copy that drifted
+ * on the `language` enum (`page.tsx` had `'en' | 'pl'`; route was authoritative at
+ * `'en' | 'pl' | 'es'`). Both sides now reference the same canonical definition.
+ *
  * @module apps/control-plane/src/app/api/quiz/config/route
  */
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 
 import { createAdminClient, tenants } from '@estalara/db';
 import { getAuthClaims, requireTenantAccess } from '@estalara/auth';
+import type { QuizConfig } from '@estalara/shared';
+import { QuizConfigSchema, QUIZ_DEFAULT_CONFIG } from '@estalara/shared';
 import { eq } from 'drizzle-orm';
 
-export interface QuizConfig {
-  enabled: boolean;
-  // trigger_after_n_listings removed — Rule L / RETRO-050 HALF_WIRE_P:
-  // SDK consumer deleted in FOLLOW-257; producer removed here in FOLLOW-264.
-  // Re-add ALL THREE LIMBS together under FOLLOW-199 (Quiz v2.0).
-  sticky_widget: boolean;
-  language: 'en' | 'pl' | 'es';
-  accent_color: string;
-  /** Whether to show micro-poll bottom-toast prompts as a quiz supplement (FOLLOW-209). */
-  micro_polls_enabled: boolean;
-}
-
-const DEFAULT_CONFIG: QuizConfig = {
-  enabled: false,
-  sticky_widget: false,
-  language: 'en',
-  accent_color: '#2563EB',
-  micro_polls_enabled: false,
-};
-
-const QuizConfigSchema = z.object({
-  enabled: z.boolean().optional(),
-  // trigger_after_n_listings removed — Rule L / RETRO-050 HALF_WIRE_P (AC5: FOLLOW-264).
-  // The SDK consumer was removed in FOLLOW-257; removing the producer here completes
-  // the Option-A cleanup. Any submitted value for this key is now silently dropped by
-  // Zod's strip() default — it is never written to tenants.quiz_config.
-  // Re-add under FOLLOW-199 (Quiz v2.0) with a matching SDK consumer.
-  sticky_widget: z.boolean().optional(),
-  language: z.enum(['en', 'pl', 'es']).optional(),
-  accent_color: z.string().optional(),
-  micro_polls_enabled: z.boolean().optional(),
-});
+// Re-export so existing consumers that import QuizConfig from this route continue to compile.
+export type { QuizConfig } from '@estalara/shared';
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const claims = await getAuthClaims(req);
@@ -84,7 +60,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .limit(1);
 
     const stored = (rows[0]?.quizConfig ?? {}) as Partial<QuizConfig>;
-    const config = { ...DEFAULT_CONFIG, ...stored };
+    const config = { ...QUIZ_DEFAULT_CONFIG, ...stored };
     // FOLLOW-102: also return the dedicated quiz_enabled column (boolean SoT for the ON/OFF toggle)
     // and tenant_id so the dashboard page can call PATCH /api/tenants/:id with the correct id.
     // quizEnabled defaults to true when the row is missing (DB unavailable path below).
@@ -92,7 +68,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ...config, quiz_enabled: quizEnabled, tenant_id: tenantId });
   } catch {
     // Fallback to defaults if DB unavailable
-    return NextResponse.json({ ...DEFAULT_CONFIG, quiz_enabled: true, tenant_id: tenantId });
+    return NextResponse.json({ ...QUIZ_DEFAULT_CONFIG, quiz_enabled: true, tenant_id: tenantId });
   }
 }
 
@@ -132,7 +108,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       .limit(1);
 
     const stored = (rows[0]?.quizConfig ?? {}) as Partial<QuizConfig>;
-    const current = { ...DEFAULT_CONFIG, ...stored };
+    const current = { ...QUIZ_DEFAULT_CONFIG, ...stored };
     // current fills all required fields; parsed.data overrides only the provided ones
     const updated = { ...current, ...parsed.data } as QuizConfig;
 

@@ -3453,7 +3453,7 @@ Key tracks:
 ```
 
 - id: FOLLOW-270 title: Reconcile QuizConfig.language enum skew + de-duplicate hand-copied
-  QuizConfig interface agent: backend-engineer status: READY_FOR_REVIEW assigned_to:
+  QuizConfig interface agent: backend-engineer status: DONE assigned_to:
   backend-engineer started_at: '2026-06-11T00:00:00Z' completed_at: '2026-06-11T00:00:00Z' priority:
   P2 estimated_hours: 2 depends_on: [FOLLOW-264] source_retro: RETRO-053 (§4e MX-1; §5c; §6 — Rule-S
   symmetric-set drift) spec: backlog/FOLLOW_UPS.md (FOLLOW-270 stub) branch:

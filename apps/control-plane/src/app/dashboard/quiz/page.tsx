@@ -17,6 +17,12 @@
  * Per-tenant timer control is re-planned under FOLLOW-199 (Quiz v2.0) and will
  * rebuild all three limbs (DB, API, SDK) together.
  *
+ * FOLLOW-270: `QuizConfig` and `QuizLanguage` are now imported from `@estalara/shared`
+ * (canonical definition). The previously hand-copied `interface QuizConfig` in this file
+ * typed `language` as `'en' | 'pl'`, missing `'es'` — a producer⇔contract enum mismatch
+ * relative to the API route. Both sides now reference the same type, and the language
+ * `<select>` now includes the Español option.
+ *
  * §B.1 rationale displayed in the toggle description:
  *   Tenants with high-quality chat coverage may disable the quiz and rely on
  *   behavioral + chat NLP signals only. Tenants without chat need the quiz as a
@@ -28,30 +34,47 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-interface QuizConfig {
-  enabled: boolean;
+import type { QuizLanguage } from '@estalara/shared';
+import { QUIZ_DEFAULT_CONFIG, QUIZ_LANGUAGE_VALUES } from '@estalara/shared';
+
+/**
+ * Dashboard-local extension of the canonical QuizConfig that includes
+ * the dedicated quiz_enabled column value and tenant_id returned by GET /api/quiz/config.
+ * These fields live in the API response but are NOT part of the JSONB blob shape.
+ *
+ * FOLLOW-271: `enabled` removed. The quiz ON/OFF state lives in `quiz_enabled`
+ * (the typed `tenants.quiz_enabled` boolean column). The JSONB blob no longer
+ * carries `enabled` per Rule U / FOLLOW-271.
+ */
+interface DashboardQuizConfig {
+  // `enabled` intentionally absent — use `quiz_enabled` (typed column SoT), per FOLLOW-271.
   // trigger_after_n_listings removed — Rule L / RETRO-050 HALF_WIRE_P (FOLLOW-264).
   // The SDK consumer was deleted in FOLLOW-257; this removes the orphaned producer.
   // Re-add under FOLLOW-199 (Quiz v2.0) with a matching SDK consumer.
   sticky_widget: boolean;
-  language: 'en' | 'pl';
+  language: QuizLanguage;
   accent_color: string;
+  micro_polls_enabled: boolean;
   /** FOLLOW-102: dedicated boolean column SoT for the quiz ON/OFF toggle. */
   quiz_enabled: boolean;
   /** Tenant ID returned by /api/quiz/config for use in PATCH /api/tenants/:id. */
   tenant_id?: string;
 }
 
-const DEFAULTS: QuizConfig = {
-  enabled: false,
-  sticky_widget: false,
-  language: 'en',
-  accent_color: '#2563EB',
+const DEFAULTS: DashboardQuizConfig = {
+  ...QUIZ_DEFAULT_CONFIG,
   quiz_enabled: true,
 };
 
+/** Human-readable label for each supported language code. */
+const LANGUAGE_LABELS: Record<QuizLanguage, string> = {
+  en: 'English',
+  pl: 'Polish',
+  es: 'Español',
+};
+
 export default function QuizSettingsPage() {
-  const [config, setConfig] = useState<QuizConfig>(DEFAULTS);
+  const [config, setConfig] = useState<DashboardQuizConfig>(DEFAULTS);
   const [status, setStatus] = useState<'idle' | 'loading' | 'saved' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -71,7 +94,7 @@ export default function QuizSettingsPage() {
       })
       .then((data: unknown) => {
         if (data && typeof data === 'object') {
-          const d = data as Partial<QuizConfig>;
+          const d = data as Partial<DashboardQuizConfig>;
           setConfig({ ...DEFAULTS, ...d });
           // FOLLOW-102: initialise quiz ON/OFF toggle from the dedicated column
           setQuizEnabled(typeof d.quiz_enabled === 'boolean' ? d.quiz_enabled : true);
@@ -240,18 +263,23 @@ export default function QuizSettingsPage() {
             </button>
           </div>
 
-          {/* Language */}
+          {/* Language — FOLLOW-270: select is now driven from QUIZ_LANGUAGE_VALUES so it
+              stays in sync with the API's Zod enum without a separate maintenance step.
+              Added 'es' (Español) which was previously unreachable from the UI. */}
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Language</label>
             <select
               value={config.language}
               onChange={(e) => {
-                setConfig((c) => ({ ...c, language: e.target.value as 'en' | 'pl' }));
+                setConfig((c) => ({ ...c, language: e.target.value as QuizLanguage }));
               }}
               className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             >
-              <option value="en">English</option>
-              <option value="pl">Polish</option>
+              {QUIZ_LANGUAGE_VALUES.map((lang) => (
+                <option key={lang} value={lang}>
+                  {LANGUAGE_LABELS[lang]}
+                </option>
+              ))}
             </select>
           </div>
 

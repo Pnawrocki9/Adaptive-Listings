@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@estalara/db', () => ({
   createAdminClient: vi.fn(),
-  tenants: { id: 'id', quizConfig: 'quiz_config', updatedAt: 'updated_at' },
+  tenants: {
+    id: 'id',
+    quizConfig: 'quiz_config',
+    quizEnabled: 'quiz_enabled',
+    updatedAt: 'updated_at',
+  },
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -17,6 +22,7 @@ vi.mock('@estalara/auth', () => ({
 
 import { createAdminClient } from '@estalara/db';
 import { getAuthClaims, requireTenantAccess } from '@estalara/auth';
+import { QUIZ_LANGUAGE_VALUES, QuizConfigSchema } from '@estalara/shared';
 
 import { GET, POST } from './route';
 
@@ -54,7 +60,7 @@ function makePostRequest(body: unknown, withAuth = true): NextRequest {
 }
 
 /** Minimal stateful DB mock that simulates quiz_config reads/writes per tenant. */
-function makeDbMock(initial: Record<string, unknown> = {}) {
+function makeDbMock(initial: Record<string, unknown> = {}, quizEnabled = false) {
   let stored = { ...initial };
   return {
     select: vi.fn().mockReturnValue({
@@ -63,7 +69,11 @@ function makeDbMock(initial: Record<string, unknown> = {}) {
           limit: vi
             .fn()
             .mockImplementation(() =>
-              Promise.resolve(Object.keys(stored).length > 0 ? [{ quizConfig: stored }] : []),
+              Promise.resolve(
+                Object.keys(stored).length > 0 || quizEnabled
+                  ? [{ quizConfig: stored, quizEnabled }]
+                  : [],
+              ),
             ),
         }),
       }),
@@ -83,6 +93,49 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+// ── FOLLOW-270 parity: canonical language enum ────────────────────────────────
+describe('QUIZ_LANGUAGE_VALUES canonical enum (FOLLOW-270)', () => {
+  it('includes all three supported locales', () => {
+    expect(QUIZ_LANGUAGE_VALUES).toContain('en');
+    expect(QUIZ_LANGUAGE_VALUES).toContain('pl');
+    expect(QUIZ_LANGUAGE_VALUES).toContain('es');
+    expect(QUIZ_LANGUAGE_VALUES).toHaveLength(3);
+  });
+
+  it('QuizConfigSchema accepts all three language values', () => {
+    for (const lang of QUIZ_LANGUAGE_VALUES) {
+      const result = QuizConfigSchema.safeParse({ language: lang });
+      expect(result.success, `expected language '${lang}' to be valid`).toBe(true);
+    }
+  });
+
+  it('QuizConfigSchema rejects an unknown language value', () => {
+    const result = QuizConfigSchema.safeParse({ language: 'de' });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ── FOLLOW-271: enabled is stripped from the persisted blob ──────────────────
+describe('QuizConfigSchema strips enabled key (FOLLOW-271, Rule U)', () => {
+  it('strips enabled from schema parse output', () => {
+    const result = QuizConfigSchema.safeParse({ enabled: true, language: 'pl' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // `enabled` must NOT be present in the parsed output
+      expect(result.data).not.toHaveProperty('enabled');
+      expect(result.data.language).toBe('pl');
+    }
+  });
+
+  it('strips enabled: false as well', () => {
+    const result = QuizConfigSchema.safeParse({ enabled: false });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty('enabled');
+    }
+  });
+});
+
 describe('GET /api/quiz/config', () => {
   it('returns 401 when no valid JWT', async () => {
     vi.mocked(getAuthClaims).mockResolvedValue(null);
@@ -99,18 +152,35 @@ describe('GET /api/quiz/config', () => {
     expect(res.status).toBe(200);
   });
 
-  it('default config has expected shape', async () => {
+  it('default config has expected shape and enabled is absent from blob', async () => {
     vi.mocked(getAuthClaims).mockResolvedValue(TENANT_CLAIMS);
     vi.mocked(createAdminClient).mockReturnValue(
       makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
     );
     const res = await GET(makeGetRequest(TENANT_ID));
-    const body = await parseBody<{
-      enabled: boolean;
-      language: string;
-    }>(res);
-    expect(body.enabled).toBe(false);
+    const body = await parseBody<Record<string, unknown>>(res);
+    // FOLLOW-271: `enabled` must NOT be present in the GET response blob fields.
+    expect(body).not.toHaveProperty('enabled');
     expect(body.language).toBe('en');
+    // quiz_enabled is returned from the dedicated typed column
+    expect(typeof body.quiz_enabled).toBe('boolean');
+  });
+
+  it('strips legacy enabled key from stored blob during GET (FOLLOW-271 belt-and-suspenders)', async () => {
+    vi.mocked(getAuthClaims).mockResolvedValue(TENANT_CLAIMS);
+    // Simulate a legacy row that still has `enabled` in the JSONB (pre-backfill)
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeDbMock({ enabled: true, language: 'pl' }, true) as unknown as ReturnType<
+        typeof createAdminClient
+      >,
+    );
+    const res = await GET(makeGetRequest(TENANT_ID));
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    // `enabled` from the JSONB blob must be stripped; only quiz_enabled (typed column) survives
+    expect(body).not.toHaveProperty('enabled');
+    expect(body.language).toBe('pl');
+    expect(body.quiz_enabled).toBe(true);
   });
 });
 
@@ -125,24 +195,46 @@ describe('POST /api/quiz/config', () => {
     expect(body.error).toContain('Unauthorized');
   });
 
-  it('updates config fields and returns updated config', async () => {
+  it('strips enabled from POST body — enabled absent in persisted blob response (AC4 FOLLOW-271)', async () => {
     vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
     vi.mocked(createAdminClient).mockReturnValue(
       makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
     );
+    // AC4: request body contains enabled: true — it must be absent from the persisted response
     const res = await POST(makePostRequest({ enabled: true, language: 'pl' }));
     expect(res.status).toBe(200);
-    const body = await parseBody<{
-      enabled: boolean;
-      language: string;
-    }>(res);
-    expect(body.enabled).toBe(true);
+    const body = await parseBody<Record<string, unknown>>(res);
+    // FOLLOW-271 AC4: `enabled` must NOT appear in the persisted blob response
+    expect(body).not.toHaveProperty('enabled');
     expect(body.language).toBe('pl');
   });
 
-  it('returns 400 when enabled is not a boolean', async () => {
+  it('updates config fields and returns updated config without enabled', async () => {
     vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
-    const res = await POST(makePostRequest({ enabled: 'yes' }));
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+    );
+    const res = await POST(makePostRequest({ language: 'pl' }));
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ language: string }>(res);
+    expect(body.language).toBe('pl');
+  });
+
+  // FOLLOW-270: verify 'es' is accepted end-to-end by the route handler
+  it("accepts language 'es' and returns it in the response", async () => {
+    vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+    );
+    const res = await POST(makePostRequest({ language: 'es' }));
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ language: string }>(res);
+    expect(body.language).toBe('es');
+  });
+
+  it('returns 400 when language is invalid (not a supported enum value)', async () => {
+    vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
+    const res = await POST(makePostRequest({ language: 'de' }));
     expect(res.status).toBe(400);
   });
 
@@ -154,16 +246,13 @@ describe('POST /api/quiz/config', () => {
       dbMock as unknown as ReturnType<typeof createAdminClient>,
     );
 
-    // First POST: set full config
-    await POST(makePostRequest({ enabled: true, language: 'pl', sticky_widget: true }));
+    // First POST: set full config (enabled is stripped by schema, language + sticky_widget persist)
+    await POST(makePostRequest({ language: 'pl', sticky_widget: true }));
 
-    // Second POST: update only enabled — the mock SELECT now returns the stored config
-    const res = await POST(makePostRequest({ enabled: false }));
-    const body = await parseBody<{
-      enabled: boolean;
-      language: string;
-    }>(res);
-    expect(body.enabled).toBe(false);
+    // Second POST: update only sticky_widget — language should be preserved
+    const res = await POST(makePostRequest({ sticky_widget: false }));
+    const body = await parseBody<{ sticky_widget: boolean; language: string }>(res);
+    expect(body.sticky_widget).toBe(false);
     expect(body.language).toBe('pl');
   });
 });

@@ -15,54 +15,37 @@
  * ALL THREE LIMBS must be rebuilt together: (1) a typed column or JSONB key + migration,
  * (2) this API schema field, (3) a real SDK consumer via readConfig / data-* attribute.
  * tenants.quiz_config JSONB is still used by this route for the remaining fields
- * (enabled, sticky_widget, language, accent_color, micro_polls_enabled). It is NOT
+ * (sticky_widget, language, accent_color, micro_polls_enabled). It is NOT
  * being retired in favour of typed columns at this time — the schema is small and typed
  * columns would require a migration per field. This decision should be revisited during
  * Quiz v2.0 planning.
+ *
+ * FOLLOW-270: `QuizConfig` type, `QuizConfigSchema`, and `QUIZ_DEFAULT_CONFIG` are now
+ * imported from `@estalara/shared` to eliminate the hand-duplicated copy that drifted
+ * on the `language` enum (`page.tsx` had `'en' | 'pl'`; route was authoritative at
+ * `'en' | 'pl' | 'es'`). Both sides now reference the same canonical definition.
+ *
+ * FOLLOW-271 (2026-06-11): `enabled` stripped from the persisted JSONB blob.
+ *   - POST: `QuizConfigSchema` now omits `enabled` at the Zod parse step; any `enabled`
+ *     key in the request body is silently dropped before DB write (Rule U).
+ *   - GET: `parseStoredQuizConfig()` strips a legacy `enabled` key from the read blob
+ *     (belt-and-suspenders — the backfill migration also removes it from existing rows).
+ *   - The `tenants.quiz_enabled` typed boolean column remains the sole SoT for ON/OFF.
  *
  * @module apps/control-plane/src/app/api/quiz/config/route
  */
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 
 import { createAdminClient, tenants } from '@estalara/db';
 import { getAuthClaims, requireTenantAccess } from '@estalara/auth';
+import type { QuizConfig } from '@estalara/shared';
+import { QuizConfigSchema, QUIZ_DEFAULT_CONFIG, parseStoredQuizConfig } from '@estalara/shared';
 import { eq } from 'drizzle-orm';
 
-export interface QuizConfig {
-  enabled: boolean;
-  // trigger_after_n_listings removed — Rule L / RETRO-050 HALF_WIRE_P:
-  // SDK consumer deleted in FOLLOW-257; producer removed here in FOLLOW-264.
-  // Re-add ALL THREE LIMBS together under FOLLOW-199 (Quiz v2.0).
-  sticky_widget: boolean;
-  language: 'en' | 'pl' | 'es';
-  accent_color: string;
-  /** Whether to show micro-poll bottom-toast prompts as a quiz supplement (FOLLOW-209). */
-  micro_polls_enabled: boolean;
-}
-
-const DEFAULT_CONFIG: QuizConfig = {
-  enabled: false,
-  sticky_widget: false,
-  language: 'en',
-  accent_color: '#2563EB',
-  micro_polls_enabled: false,
-};
-
-const QuizConfigSchema = z.object({
-  enabled: z.boolean().optional(),
-  // trigger_after_n_listings removed — Rule L / RETRO-050 HALF_WIRE_P (AC5: FOLLOW-264).
-  // The SDK consumer was removed in FOLLOW-257; removing the producer here completes
-  // the Option-A cleanup. Any submitted value for this key is now silently dropped by
-  // Zod's strip() default — it is never written to tenants.quiz_config.
-  // Re-add under FOLLOW-199 (Quiz v2.0) with a matching SDK consumer.
-  sticky_widget: z.boolean().optional(),
-  language: z.enum(['en', 'pl', 'es']).optional(),
-  accent_color: z.string().optional(),
-  micro_polls_enabled: z.boolean().optional(),
-});
+// Re-export so existing consumers that import QuizConfig from this route continue to compile.
+export type { QuizConfig } from '@estalara/shared';
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const claims = await getAuthClaims(req);
@@ -83,8 +66,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .where(eq(tenants.id, tenantId))
       .limit(1);
 
-    const stored = (rows[0]?.quizConfig ?? {}) as Partial<QuizConfig>;
-    const config = { ...DEFAULT_CONFIG, ...stored };
+    // FOLLOW-271: parseStoredQuizConfig strips any legacy `enabled` key from the stored blob.
+    const stored = parseStoredQuizConfig(rows[0]?.quizConfig ?? {});
+    const config = { ...QUIZ_DEFAULT_CONFIG, ...stored };
     // FOLLOW-102: also return the dedicated quiz_enabled column (boolean SoT for the ON/OFF toggle)
     // and tenant_id so the dashboard page can call PATCH /api/tenants/:id with the correct id.
     // quizEnabled defaults to true when the row is missing (DB unavailable path below).
@@ -92,7 +76,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ...config, quiz_enabled: quizEnabled, tenant_id: tenantId });
   } catch {
     // Fallback to defaults if DB unavailable
-    return NextResponse.json({ ...DEFAULT_CONFIG, quiz_enabled: true, tenant_id: tenantId });
+    return NextResponse.json({ ...QUIZ_DEFAULT_CONFIG, quiz_enabled: true, tenant_id: tenantId });
   }
 }
 
@@ -113,6 +97,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
+  // FOLLOW-271: QuizConfigSchema.omit({ enabled: true }) strips `enabled` at parse time.
+  // Any `enabled` key in the request body is silently dropped — it can never re-enter
+  // the JSONB blob (Rule U). The SoT for quiz ON/OFF is tenants.quiz_enabled (typed column).
   const parsed = QuizConfigSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -131,12 +118,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       .where(eq(tenants.id, tenantId))
       .limit(1);
 
-    const stored = (rows[0]?.quizConfig ?? {}) as Partial<QuizConfig>;
-    const current = { ...DEFAULT_CONFIG, ...stored };
-    // current fills all required fields; parsed.data overrides only the provided ones
+    // FOLLOW-271: parseStoredQuizConfig strips any legacy `enabled` key from the read blob.
+    const stored = parseStoredQuizConfig(rows[0]?.quizConfig ?? {});
+    const current = { ...QUIZ_DEFAULT_CONFIG, ...stored };
+    // current fills all required fields; parsed.data overrides only the provided ones.
+    // `enabled` cannot appear in parsed.data (Zod schema omits it), so it can never
+    // re-enter the persisted blob via this path.
     const updated = { ...current, ...parsed.data } as QuizConfig;
 
-    // Persist to DB
+    // Persist to DB — `updated` never contains `enabled` (Rule U).
     await db
       .update(tenants)
       .set({ quizConfig: updated, updatedAt: new Date() })

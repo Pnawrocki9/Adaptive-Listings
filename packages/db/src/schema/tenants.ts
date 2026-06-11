@@ -37,22 +37,21 @@ export const tenants = pgTable(
     /** White-label colors, fonts, logo overrides. */
     brandConfig: jsonb('brand_config').default({}),
     /**
-     * E.4 investor quiz widget configuration (questions, decay logic, Bayesian prior).
+     * E.4 investor quiz widget configuration — widget UX settings only.
      *
-     * SCOPE: widget UX settings only (trigger thresholds, sticky_widget, language,
-     * accent_color, micro_polls_enabled). Persisted via POST /api/quiz/config and
-     * read by GET /api/quiz/config.
+     * SCOPE (valid keys): `accentColor`, `language`, `stickyWidget`, `microPollsEnabled`.
+     * (Stored as snake_case: `accent_color`, `language`, `sticky_widget`, `micro_polls_enabled`.)
+     * Persisted via POST /api/quiz/config and read by GET /api/quiz/config.
      *
      * NOT the source-of-truth for quiz enabled/disabled state — use `quizEnabled`
-     * (the typed boolean column below) for that. The `enabled` key inside this JSONB
-     * blob is intentionally ignored by the freeze guard and by all code paths that
-     * determine whether the quiz runs. Any code that reads `quizConfig.enabled` for
-     * on/off control is incorrect — read `quizEnabled` instead.
+     * (the typed boolean column below) for that.
      *
-     * FOLLOW-265 (2026-06-11): annotated to resolve third-consecutive-retro JSONB
-     * blob decay flag (RETRO-049 §5d, RETRO-051 §5d). The `enabled` key inside this
-     * blob is ORPHANED for freeze-guard purposes and intentionally not read. The
-     * JSONB blob itself remains for widget UX configuration (non-deprecated).
+     * FOLLOW-271 (2026-06-11, Rule U): the `enabled` key has been ELIMINATED from this blob.
+     *   - Write path: `QuizConfigSchema` (packages/shared) uses `.omit({ enabled: true })`
+     *     so the key cannot re-enter the blob via POST /api/quiz/config.
+     *   - Existing rows: migration `0026_strip_quiz_config_enabled` removes the key from
+     *     all rows via `quiz_config = quiz_config - 'enabled'`.
+     * The blob no longer carries `enabled`. ON/OFF gating lives exclusively in `quizEnabled`.
      */
     quizConfig: jsonb('quiz_config').default({}),
 

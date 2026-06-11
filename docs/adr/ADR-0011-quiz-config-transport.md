@@ -1,8 +1,8 @@
 # ADR-0011 — Quiz-config transport: SDK runtime GET replaces snippet data-attributes for post-activation-mutable flags
 
-**Status:** PROPOSED **Date:** 2026-06-11 **Deciders:** architect (initial); requires PM + CTO
-ratification before ACCEPTED **Ticket:** FOLLOW-275 **Cross-references:** FOLLOW-102, FOLLOW-209,
-FOLLOW-274, ADR-0004, ADR-0006, Rule L, Rule U
+**Status:** ACCEPTED **Date:** 2026-06-11 **Accepted:** 2026-06-11 (CTO Rafał Palak, PR #269 merged)
+**Ticket:** FOLLOW-275 **Cross-references:** FOLLOW-102, FOLLOW-209, FOLLOW-274, ADR-0004, ADR-0006,
+Rule L, Rule U
 
 ---
 

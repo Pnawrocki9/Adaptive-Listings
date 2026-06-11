@@ -56,13 +56,13 @@ SDK loader contract: every embed snippet MUST include
 
 (TICKET-GDPR-004 adds `consent_state` field to directive request.)
 
-## Quiz Public Config Contract (PROPOSED — ADR-0011 / FOLLOW-275)
+## Quiz Public Config Contract (ACCEPTED — ADR-0011 / FOLLOW-275)
 
 SDK runtime config endpoint. Called by the SDK at init time (after consent, before quiz/micro-poll
 schedulers fire) to fetch post-activation-mutable quiz/widget config without requiring a snippet
 reinstall.
 
-Endpoint (PROPOSED): `GET https://admin.estalara.com/api/quiz/public-config`
+Endpoint: `GET https://admin.estalara.com/api/quiz/public-config`
 
 Auth: `Authorization: Bearer <tenant-api-key>` (the `data-api-key` from the embed snippet). CORS:
 open (`*`). Cache-Control: `max-age=300, stale-while-revalidate=60`.
@@ -79,12 +79,12 @@ Response (200):
 ```
 
 All fields non-nullable. SDK timeout budget: 1000 ms. On error/timeout the SDK falls back to snippet
-dataset attributes (DEPRECATED_FALLBACK) then to hardcoded defaults. The canonical Zod schema
-(PROPOSED) will live at `packages/shared/src/schemas/quiz-config.ts` as
-`QuizPublicConfigResponseSchema` once ADR-0011 is accepted.
+dataset attributes (DEPRECATED_FALLBACK) then to hardcoded defaults. The canonical Zod schema must
+be added to `packages/shared/src/schemas/quiz-config.ts` as `QuizPublicConfigResponseSchema` with ≥5
+test cases as part of FOLLOW-275 implementation (ADR-0011 guardrail for accepted interfaces).
 
-Status: PROPOSED (ADR-0011 at `docs/adr/PROPOSED-FOLLOW-275-quiz-config-transport.md`). Do not
-implement until ADR is ACCEPTED.
+Status: ACCEPTED (ADR-0011 at `docs/adr/ADR-0011-quiz-config-transport.md`, PR #269 merged
+2026-06-11).
 
 ## DSR Endpoint
 

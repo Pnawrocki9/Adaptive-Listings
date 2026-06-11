@@ -107,11 +107,9 @@ describe('GET /api/quiz/config', () => {
     const res = await GET(makeGetRequest(TENANT_ID));
     const body = await parseBody<{
       enabled: boolean;
-      trigger_after_n_listings: number;
       language: string;
     }>(res);
     expect(body.enabled).toBe(false);
-    expect(body.trigger_after_n_listings).toBe(3);
     expect(body.language).toBe('en');
   });
 });
@@ -132,29 +130,19 @@ describe('POST /api/quiz/config', () => {
     vi.mocked(createAdminClient).mockReturnValue(
       makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
     );
-    const res = await POST(
-      makePostRequest({ enabled: true, language: 'pl', trigger_after_n_listings: 5 }),
-    );
+    const res = await POST(makePostRequest({ enabled: true, language: 'pl' }));
     expect(res.status).toBe(200);
     const body = await parseBody<{
       enabled: boolean;
       language: string;
-      trigger_after_n_listings: number;
     }>(res);
     expect(body.enabled).toBe(true);
     expect(body.language).toBe('pl');
-    expect(body.trigger_after_n_listings).toBe(5);
   });
 
   it('returns 400 when enabled is not a boolean', async () => {
     vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
     const res = await POST(makePostRequest({ enabled: 'yes' }));
-    expect(res.status).toBe(400);
-  });
-
-  it('returns 400 when trigger_after_n_listings is out of range', async () => {
-    vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
-    const res = await POST(makePostRequest({ trigger_after_n_listings: 99 }));
     expect(res.status).toBe(400);
   });
 
@@ -167,24 +155,15 @@ describe('POST /api/quiz/config', () => {
     );
 
     // First POST: set full config
-    await POST(
-      makePostRequest({
-        enabled: true,
-        language: 'pl',
-        trigger_after_n_listings: 7,
-        sticky_widget: true,
-      }),
-    );
+    await POST(makePostRequest({ enabled: true, language: 'pl', sticky_widget: true }));
 
     // Second POST: update only enabled — the mock SELECT now returns the stored config
     const res = await POST(makePostRequest({ enabled: false }));
     const body = await parseBody<{
       enabled: boolean;
       language: string;
-      trigger_after_n_listings: number;
     }>(res);
     expect(body.enabled).toBe(false);
     expect(body.language).toBe('pl');
-    expect(body.trigger_after_n_listings).toBe(7);
   });
 });

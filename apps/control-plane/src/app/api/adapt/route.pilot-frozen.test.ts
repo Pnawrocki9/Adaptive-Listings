@@ -1,6 +1,13 @@
 /**
  * Tests for the pilot_frozen Lane C guard in /api/adapt.
  *
+ * FOLLOW-265 (2026-06-11): AC5 contract-pinning tests added — ratifies quiz-only
+ * contract (RETRO-051). The guard checks ONLY `tenants.quiz_enabled` (typed boolean
+ * column). The three previously-documented JSONB keys (lane_c_active,
+ * intent_engine_enabled, shadow_mode_override) are outside the runtime backstop by
+ * design; no live producers existed for any of them. See PILOT_FREEZE_RULE.md
+ * §Implementation for the forward-compat contract for new Lane C axes.
+ *
  * FOLLOW-263 / RETRO-049: guard repointed from JSONB `quizConfig.enabled` to the
  * typed boolean column `tenants.quiz_enabled` (SoT per FOLLOW-102 / migration 0025).
  *
@@ -14,6 +21,7 @@
  * AC2: fires correctly for quiz_enabled=true AND quiz_enabled=false.
  * AC3: quiz_enabled changes during freeze window → guard reflects new state.
  * AC4: pilotFrozen=true + quiz_enabled=false → guard does NOT fire.
+ * AC5 (FOLLOW-265): quiz-only contract pinned — non-quiz flags do NOT trigger guard.
  *
  * @module apps/control-plane/src/app/api/adapt/route.pilot-frozen.test
  */
@@ -146,7 +154,7 @@ function setupDbMock(pilotFrozen: boolean, quizEnabled: boolean): void {
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
-describe('pilot_frozen Lane C guard — RETRO-012/FOLLOW-117 / FOLLOW-263 repoint', () => {
+describe('pilot_frozen Lane C guard — RETRO-012/FOLLOW-117 / FOLLOW-263 repoint / FOLLOW-265 quiz-only ratified', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -329,5 +337,71 @@ describe('pilot_frozen Lane C guard — RETRO-012/FOLLOW-117 / FOLLOW-263 repoin
       return msg.includes('pilot_frozen_lane_c_active');
     });
     expect(matchingCall).toBeUndefined();
+  });
+
+  // ── AC5 (FOLLOW-265): contract-pinning — quiz-only ratified ──────────────────
+  //
+  // INTENTIONAL — FOLLOW-265 (ratified 2026-06-11):
+  // The freeze guard checks ONLY `tenants.quiz_enabled`. The three previously-
+  // documented JSONB-key flags (`lane_c_active`, `intent_engine_enabled`,
+  // `shadow_mode_override`) were dropped from the runtime backstop because they
+  // never had live producers. This test pins that contract: even if the DB row
+  // carries a JSONB key that looks like a Lane C flag, the guard does NOT fire
+  // solely because of that key — it only fires when `quizEnabled=true`.
+  //
+  // New Lane C axes MUST add a typed `tenants.*_enabled` column + migration and
+  // wire it into checkPilotFrozenAsync() — NOT into quizConfig JSONB. See
+  // docs/ops/PILOT_FREEZE_RULE.md §Implementation for the forward-compat contract.
+
+  it('AC5 (FOLLOW-265 quiz-only contract): DB row with only quizEnabled=false does NOT trigger guard even if JSONB quizConfig.enabled=true were present', async () => {
+    // This test verifies the quiz-only contract: the guard reads only the typed
+    // `quizEnabled` boolean column, not any JSONB blob key. A hypothetical legacy
+    // row that might have quizConfig.enabled=true in the JSONB but quizEnabled=false
+    // in the typed column must NOT fire the guard.
+    //
+    // The mock returns pilotFrozen=true with quizEnabled=false. The guard must stay
+    // silent — it does not inspect any JSONB blob for additional Lane C flags.
+    // Intentional — FOLLOW-265 / RETRO-051.
+    setupDbMock(true, false);
+
+    await POST(makePostRequest(VALID_POST_BODY));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const warnCalls = warnSpy.mock.calls;
+    const matchingCall = warnCalls.find((args) => {
+      const msg = typeof args[0] === 'string' ? args[0] : '';
+      return msg.includes('pilot_frozen_lane_c_active');
+    });
+    // Guard must NOT fire: the ONLY trigger is quizEnabled=true on the typed column.
+    // Other Lane C axes (lane_c_active, intent_engine_enabled, shadow_mode_override)
+    // are outside the runtime backstop by design — FOLLOW-265.
+    expect(matchingCall).toBeUndefined();
+  });
+
+  it('AC5 (FOLLOW-265 quiz-only contract): guard log payload does NOT contain active_lane_c_flags (old JSONB array format has been retired)', async () => {
+    // This test pins the log payload contract. After FOLLOW-263/FOLLOW-265, the
+    // warn log must use `quiz_enabled: boolean`, NOT `active_lane_c_flags: string[]`.
+    // The old format is permanently retired. Intentional — FOLLOW-265 / RETRO-051.
+    setupDbMock(true, true);
+
+    await POST(makePostRequest(VALID_POST_BODY));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const warnCalls = warnSpy.mock.calls;
+    const matchingCall = warnCalls.find((args) => {
+      const msg = typeof args[0] === 'string' ? args[0] : '';
+      return msg.includes('pilot_frozen_lane_c_active');
+    });
+    expect(matchingCall).toBeDefined();
+
+    const loggedMsg = matchingCall![0] as string;
+    const parsed = JSON.parse(loggedMsg) as {
+      quiz_enabled?: boolean;
+      active_lane_c_flags?: string[];
+    };
+    // Must use new field
+    expect(parsed.quiz_enabled).toBe(true);
+    // Must NOT use old retired field
+    expect(parsed.active_lane_c_flags).toBeUndefined();
   });
 });

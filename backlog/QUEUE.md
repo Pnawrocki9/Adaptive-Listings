@@ -2,14 +2,17 @@
 
 **Updated 2026-06-11. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE. RETRO-050/051
 complete. FOLLOW-265 (P1) READY_FOR_REVIEW — PR #262 opened 2026-06-11 (quiz-only ratified, docs
-synced, 9/9 tests, pre-push green). FOLLOW-264 (P2) READY. Wave A COMPLETE — all 5 DONE (FOLLOW-258
-PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all
-merged). Sprint 16 OPEN — 14 DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234),
-1 READY_FOR_REVIEW (FOLLOW-191 local-first testing pending — ESC-020 workflow clarified). Sprint 15
-COMPLETE — 21/21 DONE. ESC-020 OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10:
-local-first testing required before prod deploy; Rafal action deferred until CEO signs off locally.
-FOLLOW-266–269 added: Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10) — stubs in
-FOLLOW_UPS.md, promoted to Sprint 17 planning.**
+synced, 9/9 tests, pre-push green). FOLLOW-264 (P2) READY_FOR_REVIEW — PR #263 opened 2026-06-11
+(Option-A removal complete: dashboard input removed, Zod field dropped, dead-name cleaned, Rule Q
+seam-driven jsdom tests replace mirror, 1282 SDK tests pass, all hooks green). Wave A COMPLETE — all
+5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262
+PR #253 — all merged). Sprint 16 OPEN — 14 DONE
+(FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
+local-first testing pending — ESC-020 workflow clarified). Sprint 15 COMPLETE — 21/21 DONE. ESC-020
+OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10: local-first testing required before
+prod deploy; Rafal action deferred until CEO signs off locally. FOLLOW-266–269 added: Archetype
+Identification Tracer (§K.3.6, CEO-directed 2026-06-10) — stubs in FOLLOW_UPS.md, promoted to Sprint
+17 planning.**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -2815,11 +2818,12 @@ needed). FOLLOW-102 READY (P2). ESC-010/009 are non-blocking for FOLLOW-101 (SDK
     Complete Option-A removal — retire orphaned dashboard quiz-trigger producer + seam-driven gate
     test
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P2
   estimated_hours: 3
   depends_on: [FOLLOW-257, FOLLOW-199]
   model: sonnet-4.6
+  pr: '263'
   spec: backlog/FOLLOW_UPS.md (FOLLOW-264 stub)
   notes: |
     RETRO-050 §4a LG-1/LG-2, §4c TG-1. FOLLOW-257 removed the SDK consumer limb of

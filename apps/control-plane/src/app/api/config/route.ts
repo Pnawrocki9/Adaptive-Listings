@@ -28,7 +28,9 @@ export interface TenantConfig {
   };
   quiz: {
     enabled: boolean;
-    trigger_after_n_listings: number | null;
+    // trigger_after_n_listings removed — FOLLOW-264 / Rule L / RETRO-050 HALF_WIRE_P.
+    // SDK consumer deleted in FOLLOW-257; dead name cleared here (AC2 LG-2).
+    // Re-add under FOLLOW-199 (Quiz v2.0) with a matching SDK consumer.
     language: string;
   };
   sdk: {
@@ -59,7 +61,6 @@ function defaultConfig(tenantId: string): TenantConfig {
     },
     quiz: {
       enabled: false,
-      trigger_after_n_listings: null,
       language: 'en',
     },
     sdk: {

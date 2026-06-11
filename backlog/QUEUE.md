@@ -1,17 +1,21 @@
 # Backlog Queue
 
-**Updated 2026-06-11. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE. RETRO-050/051
-complete. FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-11 (quiz-only ratified, docs synced,
-contract-pinning tests, mis-citation fixed). FOLLOW-264 (P2) DONE — PR #263 merged 2026-06-11
-(Option-A removal complete: dashboard input removed, Zod field dropped, dead-name cleaned, Rule Q
-seam-driven jsdom tests replace mirror). Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249,
-FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint
-16 OPEN — 14 DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1
-READY_FOR_REVIEW (FOLLOW-191 local-first testing pending — ESC-020 workflow clarified). Sprint 15
-COMPLETE — 21/21 DONE. ESC-020 OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10:
-local-first testing required before prod deploy; Rafal action deferred until CEO signs off locally.
-FOLLOW-266–269 added: Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10) — stubs in
-FOLLOW_UPS.md, promoted to Sprint 17 planning.**
+**Updated 2026-06-11. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE.
+RETRO-050/051/052/053 complete. FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-11 (quiz-only
+ratified, docs synced, contract-pinning tests, mis-citation fixed; RETRO-052 → Rule U promoted,
+FOLLOW-271 stub). FOLLOW-264 (P2) DONE — PR #263 merged 2026-06-11 (Option-A removal complete:
+dashboard input removed, Zod field dropped, dead-name cleaned, Rule Q seam-driven jsdom tests
+replace mirror; RETRO-053 → Rule G amended, FOLLOW-270 stub). FOLLOW-169 (P2) READY_FOR_REVIEW — PR
+#264 open 2026-06-11 (headline anti-hallucination grounding: \_HEADLINE_SYSTEM_PROMPT +
+verified_facts, post-gen fact check, SDK source=ai_cached guard, stale docstrings fixed; all real CI
+gates green). Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR
+#251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
+(FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
+local-first testing pending — ESC-020 workflow clarified). Sprint 15 COMPLETE — 21/21 DONE. ESC-020
+OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10: local-first testing required before
+prod deploy; Rafal action deferred until CEO signs off locally. FOLLOW-266–269 added: Archetype
+Identification Tracer (§K.3.6, CEO-directed 2026-06-10) — stubs in FOLLOW_UPS.md, promoted to Sprint
+17 planning.**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -2898,17 +2902,22 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-169
   title: Bring _generate_headline to the description anti-hallucination grounding bar (ADR-0009)
   agent: ml-engineer
-  status: READY
+  status: READY_FOR_REVIEW
   priority: P2
   estimated_hours: 4
   depends_on: []
   source_retro: RETRO-028
   source_ticket: TICKET-DESC-001 (PR #182) / ADR-0009
   spec: backlog/sprint-14/FOLLOW-169.md
+  assigned_to: ml-engineer
+  started_at: '2026-06-11T00:00:00Z'
+  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/264
+  branch: ml-engineer/FOLLOW-169-headline-grounding
   notes: |
-    Headline LLM call has only an inline "do not invent" instruction (no system prompt, no
-    <verified_facts_used> audit block) on the most prominent buyer-facing string. Also: gate SDK
-    headline on source === 'ai_cached' (LG-2) + fix stale cache-key docstrings missing :{model} (DG-1).
+    PR #264 open 2026-06-11. AC1: _HEADLINE_SYSTEM_PROMPT + verified_facts threading.
+    AC2: _check_headline_facts() post-gen fact check, 11 new Python tests. AC3: 3 SDK tests
+    asserting headline gated on source=ai_cached. AC4: stale :{model} docstrings fixed.
+    83 Python tests + 1285 SDK tests green. Rule H + Rule J pre-push hooks passed.
 
 # ── Conversion Label Loop (MASTER_DESIGN §T, v3.9) — committed 2026-06-03 (CEO: data MOAT) ──
 # Strictly ordered: FOLLOW-170 (T0) blocks the rest — unlogged decisions are lost training data forever.

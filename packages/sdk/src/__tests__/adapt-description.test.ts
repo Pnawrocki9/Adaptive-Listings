@@ -789,3 +789,69 @@ describe('applyDescriptionAdaptation — ADR-0009 per-listing headline', () => {
     expect(headlineSlot.textContent).toBe('Reverted');
   });
 });
+
+// ---------------------------------------------------------------------------
+// FOLLOW-169 AC3: headline is gated on source === 'ai_cached'
+// (route-invariant guard: headline is applied only when the full response is
+// accepted, which requires source === 'ai_cached' in fetchDescription)
+// ---------------------------------------------------------------------------
+
+describe('applyDescriptionAdaptation — FOLLOW-169 AC3: headline only on ai_cached', () => {
+  it('does NOT apply headline when source is template_fallback (non-ai_cached)', async () => {
+    const { headlineSlot } = buildSlotWithHeadline('listing-ac3a');
+    const originalText = headlineSlot.textContent;
+
+    // source: template_fallback — fetchDescription returns null, so the headline branch
+    // is never reached even though a headline string is present in the response.
+    mockFetchOk({
+      description: 'Fallback template copy.',
+      headline: 'A headline that must not be applied',
+      source: 'template_fallback' as const,
+      locale: 'en',
+      generated_at: null,
+    });
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await flushAll();
+
+    // Headline slot must be unchanged — the headline is gated via source !== 'ai_cached'
+    // returning null from fetchDescription before the headline branch is reached.
+    expect(headlineSlot.textContent).toBe(originalText);
+  });
+
+  it('does NOT apply headline when source is original (non-ai_cached)', async () => {
+    const { headlineSlot } = buildSlotWithHeadline('listing-ac3b');
+    const originalText = headlineSlot.textContent;
+
+    mockFetchOk({
+      description: 'Agent original copy.',
+      headline: 'A headline that must not be applied',
+      source: 'original' as const,
+      locale: 'en',
+      generated_at: null,
+    });
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await flushAll();
+
+    expect(headlineSlot.textContent).toBe(originalText);
+  });
+
+  it('DOES apply headline when source is ai_cached and headline is non-empty', async () => {
+    const { headlineSlot } = buildSlotWithHeadline('listing-ac3c');
+
+    mockFetchOk({
+      description: 'AI-adapted description text.',
+      headline: 'Per-listing LLM headline for yield hunter',
+      source: 'ai_cached' as const,
+      locale: 'en',
+      generated_at: '2026-06-11T00:00:00.000Z',
+    });
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await flushAll();
+
+    // Headline must be applied — source === 'ai_cached' is satisfied
+    expect(headlineSlot.textContent).toBe('Per-listing LLM headline for yield hunter');
+  });
+});

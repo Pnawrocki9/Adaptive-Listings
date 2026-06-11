@@ -11,6 +11,9 @@
  */
 
 import { readConfig, BOT_UA_RE } from './core/config.js';
+import type { SdkConfig } from './core/config.js';
+import { fetchQuizConfig, eraseCachedQuizConfig } from './core/quiz-config.js';
+import type { QuizPublicConfigResponse } from '@estalara/shared';
 import { dispatchEvents, collectPageView } from './core/events.js';
 import { scrubMessagePii } from './core/pii-scrub.js';
 import {
@@ -70,6 +73,35 @@ import type { CollectedEvent } from './core/events.js';
 import type { Archetype, IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
 import type { ArchetypeId } from '@estalara/shared';
+
+/**
+ * Merge server-fetched quiz config into SdkConfig (ADR-0011, FOLLOW-275).
+ *
+ * Overlays `{ quiz_enabled, micro_polls_enabled, language, accent_color }` from the
+ * `GET /api/quiz/public-config` response onto the already-parsed SdkConfig.
+ *
+ * When `fetched` is `null` (network error / timeout / parse failure) the original
+ * config is returned unchanged — callers already hold snippet-attribute fallback values
+ * from `readConfig()`, which are themselves a fallback to hardcoded defaults.
+ *
+ * Called in `init()` AFTER `resolveConsent()` and BEFORE `scheduleQuizTrigger()` /
+ * `schedulesMicroPoll()` (ADR-0011 init sequence step 4).
+ *
+ * @internal exported for tests only
+ */
+export function mergeQuizConfig(
+  config: SdkConfig,
+  fetched: QuizPublicConfigResponse | null,
+): SdkConfig {
+  if (!fetched) return config;
+  return {
+    ...config,
+    quiz: { ...config.quiz, enabled: fetched.quiz_enabled },
+    microPollsEnabled: fetched.micro_polls_enabled,
+    language: fetched.language,
+    accentColor: fetched.accent_color,
+  };
+}
 
 /** How many intent-engine updates between automatic DQS snapshots. */
 const DQS_SNAPSHOT_INTERVAL = 5;
@@ -209,7 +241,9 @@ async function init(): Promise<IntentState | null> {
     if (!script) return null;
 
     // 2. Read configuration from data-* attributes
-    const config = readConfig({ dataset: script.dataset });
+    // `config` is declared with `let` because mergeQuizConfig() may replace it later
+    // (ADR-0011 step 4: fetchQuizConfig → mergeQuizConfig overlays server values).
+    let config = readConfig({ dataset: script.dataset });
     // Capture script.dataset early so the refreshDirectives() closure can access it
     // without a non-null assertion (script is guaranteed non-null past line above).
     const scriptDataset: DOMStringMap = script.dataset;
@@ -227,6 +261,8 @@ async function init(): Promise<IntentState | null> {
       // FOLLOW-176: erase any persisted intent state for this session (if one exists
       // in sessionStorage from a prior page load where consent was still granted).
       eraseIntentState(peekStoredSessionId());
+      // ADR-0011 / FOLLOW-275: erase cached quiz config on consent denial (Mode A compliance).
+      eraseCachedQuizConfig();
       // The shadow host is destroyed to avoid leaving a DOM node.
       earlyHost?.destroy();
       return null;
@@ -260,6 +296,8 @@ async function init(): Promise<IntentState | null> {
               setConsentState('denied');
               // DPIA §13.2 / FOLLOW-139: erase cross-session xid on consent denial.
               eraseCrossSessionId();
+              // ADR-0011 / FOLLOW-275: erase cached quiz config on consent denial.
+              eraseCachedQuizConfig();
               // Consent audit event — dispatched even when consent is denied.
               eventQueue.push({
                 type: 'consent.denied',
@@ -683,6 +721,30 @@ async function init(): Promise<IntentState | null> {
           // driftCandidateArchetype so a resuming trend can still accumulate.
           driftCandidateCount = 0;
         }
+      }
+    }
+
+    // ADR-0011 (FOLLOW-275) steps 3–4: fetch quiz/widget config from the control-plane
+    // and merge it into SdkConfig.  This MUST complete (or time out) before the quiz
+    // trigger and micro-poll schedulers run (steps 5–6 in ADR-0011 init sequence).
+    //
+    // Rule R gate: `intentStateRehydrated` is passed to `fetchQuizConfig()` so that
+    // cross-listing navigations within the same tab reuse the sessionStorage-cached
+    // value instead of issuing a new network request.
+    //
+    // `config` is reassigned here (declared `let` above for exactly this purpose).
+    // The fetch is bounded to 1000ms; on any failure `mergeQuizConfig` returns the
+    // pre-fetch config unchanged (snippet-attribute fallback values).
+    if (config.decisionApiUrl) {
+      const fetched = await fetchQuizConfig(
+        config.decisionApiUrl,
+        config.apiKey,
+        intentStateRehydrated,
+      );
+      config = mergeQuizConfig(config, fetched);
+
+      if (config.debug && fetched === null) {
+        console.warn('[Estalara] fetchQuizConfig returned null — using snippet/default fallback');
       }
     }
 

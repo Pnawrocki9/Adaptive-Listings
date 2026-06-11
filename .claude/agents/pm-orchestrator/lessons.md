@@ -2,6 +2,69 @@
 
 ---
 
+**Date / ticket:** 2026-06-11 — FOLLOW-274 (PR #267) + FOLLOW-273 (PR #268) validation **Delegation
+row used:** Rows 1 and 2 (sdk-engineer for SDK locale, backend-engineer for control-plane). **What
+validation caught (or missed):** Build CI gate "SDK bundle size 51.24KB > 40KB" was FAILING on both
+PRs. Step 5b `gh pr checks` was essential — the `ci_status: green` in QUEUE.md (worker self-report)
+did NOT reflect this failure. Confirmed pre-existing on main (commit eff0158 = same failure) — three
+consecutive main merges all show Build-fail before these PRs. Step 5c runtime-wiring grep confirmed
+strong non-test producer + consumer for both tickets. FOLLOW-275 correctly gated on architect: the
+"preferred" architecture (b) vs (a) choice between snippet-threading and SDK runtime GET is a
+cross-module contract decision. **A delegation/validation rule I'd add:** When `gh pr checks` shows
+a Build failure, ALWAYS grep the last 3+ main-branch CI runs to determine if the failure is
+pre-existing before bouncing to IN_PROGRESS; a pre-existing Build failure is not grounds to block a
+PR that passes all other real gates.
+
+---
+
+**Date / ticket:** 2026-06-11 — FOLLOW-274 (backend-engineer, orphaned quiz_config blob keys
+micro_polls_enabled + sticky_widget) **Delegation row used:** Row 2 (control-plane, Postgres/RLS,
+ingest/billing/webhooks — backend-engineer). **What validation caught (or missed):** Sprint 16
+STATUS.md showed FOLLOW-271 still IN_PROGRESS but QUEUE.md header clearly stated it was DONE (PR
+#266 merged). No open PRs confirmed via `gh pr list`. Promoted FOLLOW-274 from RETRO-056 stub (not
+yet in queue) — required explicit Sprint 17 section add before delegation. **A delegation/validation
+rule I'd add:** When STATUS.md and QUEUE.md header disagree on a ticket's status, QUEUE.md header is
+authoritative (it is written last after merge confirmation); always reconcile STATUS.md at session
+start.
+
+---
+
+**Date / ticket:** 2026-06-11 — FOLLOW-270 (backend-engineer, QuizConfig.language enum skew)
+**Delegation row used:** Row 2 (control-plane, Postgres/RLS, auth, onboarding HTTP —
+backend-engineer). **What validation caught (or missed):** FOLLOW-169 confirmed DONE via gh pr view
+264 (state=MERGED). RETRO-054 still pending (deferred to avoid concurrent retro+delegation).
+FOLLOW-270 and FOLLOW-271 were FOLLOW_UPS.md stubs only (promoted_to_queue: false) — needed explicit
+promotion to QUEUE.md before delegation. FOLLOW-270 is prerequisite for FOLLOW-271 so they must run
+sequentially, not in parallel. **A delegation/validation rule I'd add:** When promoting multiple
+stubs from the same RETRO cycle that touch the same file, sequence them explicitly in QUEUE.md
+(IN_PROGRESS then READY) to prevent merge conflicts, and note the sequencing rationale in STATUS.md.
+
+---
+
+**Date / ticket:** 2026-06-11 — FOLLOW-271 (backend-engineer, strip quizConfig.enabled from JSONB)
+**Delegation row used:** Row 2 (control-plane, Postgres/RLS — backend-engineer). **What validation
+caught (or missed):** PR #265 (FOLLOW-270) was already MERGED when session started — QUEUE.md still
+showed READY_FOR_REVIEW. Caught via `gh pr view 265` state check. Also confirmed FOLLOW-271's
+depends_on [FOLLOW-265, FOLLOW-270] are both DONE before setting IN_PROGRESS. RETRO-055 for
+FOLLOW-270 still pending. **A delegation/validation rule I'd add:** At session start, always do a
+`gh pr view` state check on any READY_FOR_REVIEW ticket before treating it as pending merge — merged
+PRs need DONE status and retro spawning before picking next ticket.
+
+---
+
+**Date / ticket:** 2026-06-11 — FOLLOW-169 (ml-engineer, headline anti-hallucination) **Delegation
+row used:** Row 3 (intent/adapt logic, embeddings, LLM gateway — ml-engineer). **What validation
+caught (or missed):** State read confirmed FOLLOW-264 and FOLLOW-265 both DONE (PRs #263/#262
+merged). ESC-020 remains OPEN but CEO-confirmed non-blocking for code work. FOLLOW-169 is the only
+READY ticket in the active backlog (no unresolved blocking dependencies, no IN_PROGRESS tickets).
+Pre-delegation grep confirmed both target files exist (`_generate_headline` in
+`generate_description.py` line 1137; adapt-description.ts SDK headline branch without `ai_cached`
+guard per spec). **A delegation/validation rule I'd add:** For Python+TypeScript co-spanning
+tickets, explicitly note in the delegation which test harness each sub-fix targets (Python pytest vs
+vitest) — the worker must run both suites, and CI validation must confirm both pass.
+
+---
+
 **Date / ticket:** 2026-06-10 — Loop 2 / FOLLOW-265 queue hygiene **Delegation row used:** No
 delegation — ESC-020 OPEN, protocol STOP. **What validation caught (or missed):** Five stale
 READY/IN_PROGRESS entries found (FOLLOW-149/174/176/182/190) — all merged weeks ago but never

@@ -13318,3 +13318,1643 @@ scan `adapt.ts` for `apply.*Prior` folds and to assert a `_initForTest`-seam reh
 - **RETRO-047 / FOLLOW-101 — the Lane-C SHADOW-ONLY feature whose freeze-guard hook (`intent_engine_enabled`)
   this PR removed.** No live regression (no per-tenant intent toggle exists) but the documented backstop for
   its SHADOW-ONLY classification is gone — the core of LG-1's "why it matters now."
+
+## RETRO-053 — FOLLOW-264 (complete Option-A removal — retire orphaned dashboard quiz-trigger producer + seam-driven gate test; closes RETRO-050 §4a LG-1 / §4c TG-1 across all three limbs) — 2026-06-11
+
+### 1. Summary of change
+
+- **PR:** #263 (merged 2026-06-11 05:58 UTC, commit `ce8c6aa`)
+- **Files changed:** 7 (+223 / −154). Code-relevant: 6 — `api/quiz/config/route.ts` (+21/−3),
+  `api/quiz/config/route.test.ts` (+2/−23), `api/config/route.ts` (+3/−2), `api/audit/route.ts`
+  (+3/−1), `dashboard/quiz/page.tsx` (+16/−21), `packages/sdk/src/__tests__/follow-257.test.ts`
+  (+165/−95). The 7th file is `backlog/QUEUE.md` (status bookkeeping, +13/−9 — not analyzed).
+- **Modules touched:** control-plane (4 files) + SDK (1 test file). NO DB migration, NO SDK source,
+  NO docs/ directory.
+- **Key contracts changed (all REMOVALS — this PR deletes, it adds nothing):**
+  - `QuizConfig.trigger_after_n_listings: number` — **REMOVED** from the `QuizConfig` interface,
+    `DEFAULT_CONFIG`, and the `QuizConfigSchema` Zod object in `api/quiz/config/route.ts`. Breaking:
+    no for runtime (the field had no SDK consumer after FOLLOW-257); the Zod schema now `.strip()`s
+    any submitted value before the DB write so it is never persisted. TYPE-level removal — any
+    external POST body that sent it now has it silently dropped (no 400).
+  - `TenantConfig['quiz'].trigger_after_n_listings: number | null` — **REMOVED** from the
+    `/api/config` mock type + `defaultConfig()` default (`api/config/route.ts:31,62`).
+  - Audit fixture `details.trigger_after_n_listings: 3` — **REMOVED** (`api/audit/route.ts:86`).
+  - Dashboard `QuizConfig.trigger_after_n_listings` + the "Show quiz after N listing views"
+    `<input>` + its `onChange` state binding — **REMOVED** (`dashboard/quiz/page.tsx`).
+  - SDK test contract: 4 `simulatedShowQuizTrigger()` MIRROR tests **REPLACED** by 2
+    `_initForTest`-seam jsdom tests that drive the REAL gate at `index.ts:791`.
+
+### 2. Verification done in PR
+
+- Test files changed: `route.test.ts` (−4 assertions on the removed field, −1 out-of-range 400 test),
+  `follow-257.test.ts` (mirror→seam rewrite: 4 mirror tests removed, 2 real-`_initForTest` jsdom tests
+  added — AC2a negative `data-quiz-enabled=false`→no `.estalara-trigger`, AC2b positive default→trigger
+  renders). Net SDK assertions: −2 tests but +real-wire coverage. Coverage delta: unknown; qualitative
+  UP for the gate (now drives `init()` not a replica).
+- CI checks: PR body reports SDK 1282/1282 pass (49 files), control-plane `tsc --noEmit` clean, SDK
+  `tsc --noEmit` clean, Rule H + Rule J pre-push green, ESLint 0 errors. NOT independently re-verified
+  (read-only; standing Rule I / Vercel / Python pre-existing-red caveat per `project_ci_gate_landscape`).
+- **Verification GAP — the hotfix tells the real story (§4b BUG-1).** A SEPARATE commit `0820282`
+  "fix(control-plane): update quiz config tests after trigger_after_n_listings removal" landed AFTER
+  the implementation commit `55adc8f` because `route.test.ts` still asserted on the removed field. The
+  field removal compiled clean (`tsc --noEmit` green) but the test ASSERTIONS were stale — caught only
+  at `vitest` run, not by typecheck. So "tsc clean" in the PR body materially understates: the schema
+  change shipped with red tests that needed a second commit.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code (every new file/export has ≥1 non-test importer):**
+
+- No new file or export introduced — this PR is removal-only. `follow-257.test.ts` is a test file
+  (suppressed). `_initForTest` (the seam the new tests import) is a pre-existing export with a
+  documented test-only contract (`index.ts:1234`). **CHECK A clean.**
+
+**CHECK B — Half-wire (every new/changed signal has BOTH producer AND consumer):**
+
+- **The producer-side HALF_WIRE_P that RETRO-050 §4a LG-1 filed as FOLLOW-264 is now CLOSED
+  end-to-end.** Step-7 closure trace for the `trigger_after_n_listings` chain (the chain RETRO-050
+  warned was "halved, not closed" — gap one hop upstream):
+  - PRODUCER (dashboard input): `dashboard/quiz/page.tsx:208-220` — **GONE** (verified: the `<input
+    type=number>` is replaced by a removal comment; grep for the live binding returns only comments).
+  - PRODUCER (API validation): `QuizConfigSchema` Zod field — **GONE** (`route.ts:54` now strips it).
+  - PERSIST: the JSONB write path no longer carries the key (Zod strips pre-write).
+  - CONSUMER (SDK): already removed by FOLLOW-257 (RETRO-050).
+  - Repo-wide grep `trigger_after_n_listings|triggerAfterNListings|data-quiz-trigger` across
+    `apps/ packages/ --include=*.ts,*.tsx,*.svelte` excl. tests → **only annotated removal comments
+    remain** (5 comment hits in control-plane, 3 in SDK; the `quizTriggered` hits in `index.ts:720/792/793/859`
+    are the UNRELATED one-shot render guard, a different symbol). **Producer→persist→consumer chain is
+    genuinely DEAD on every limb. No live wire, no orphaned producer. CHECK B clean.**
+- This is the first retro in the quiz-trigger lineage (049→050→053) where the wire is closed on ALL
+  limbs rather than moved one hop. I did NOT trust the "FOLLOW-264 DONE" label — I traced each limb's
+  removal independently (§4a confirms).
+
+`Wiring Audit — clean ✅` (both checks; the named half-wire is closed end-to-end).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A — the Option-A removal is complete and correct across all three limbs.** RETRO-050 §4a LG-1
+  (orphaned dashboard producer) and §5d (false configurability surfaced to paying tenants) are
+  RESOLVED: the input, the Zod field, and the persistence are all gone; AC4 documents the rationale
+  and the FOLLOW-199 (Quiz v2.0) rebuild contract (all three limbs must return together). No new
+  logic gap introduced by the removal.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **BUG-1 (PROCESS / P2, already self-corrected in-PR — recorded as the pattern source, NOT a live
+  defect) — the schema-field removal shipped with stale `route.test.ts` assertions that `tsc --noEmit`
+  could not catch; a second hotfix commit (`0820282`) was required.** When `trigger_after_n_listings`
+  was dropped from `QuizConfigSchema`/`QuizConfig` in the implementation commit, four test sites still
+  referenced it: `parseBody<{ trigger_after_n_listings: number }>(...)` + `expect(body.trigger_after_n_listings).toBe(3|5|7)`
+  and `makePostRequest({ ..., trigger_after_n_listings: 5|7 })` + an out-of-range-400 test
+  (`route.test.ts:110,138,148-151,159,168`). These COMPILE after the removal — `parseBody<T>` casts
+  `unknown`→`T` (`route.test.ts:23-24`) and `makePostRequest(body: unknown)` (`:45`) accept any shape —
+  so `tsc --noEmit` stays green; the assertions only fail at `vitest` RUNTIME (`.toBe(3)` on `undefined`).
+  The agent caught it via the test run and fixed it in a follow-up commit, so it never reached main red.
+  **This is the inverse of Rule G** (Rule G: ADDING a required field breaks inline mocks at typecheck;
+  here REMOVING a field leaves dangling RUNTIME assertions typecheck cannot see). No live correctness
+  defect ships — recorded because it is the 2nd occurrence of the "type-shape change breaks test data
+  OUTSIDE what `pnpm typecheck` validates" meta-shape (see §6, promotes a Rule G amendment).
+- No P0/P1 code bug. The removal cannot regress runtime (the field was never read post-FOLLOW-257).
+
+#### 4c. Test coverage gaps
+
+- **RETRO-050 §4c TG-1 (the mirror-gate Rule-Q violation) is CLOSED — verified end-to-end.** The 4
+  `simulatedShowQuizTrigger()` replica tests (which mirrored `index.ts:791` in a local helper and
+  could stay green if the real gate were deleted/inverted) are GONE. The 2 replacements call
+  `_initForTest()` → the production `init()` body → registers the real 30s `scheduleQuizTrigger(showQuizTrigger)`
+  → fake-timer advance fires the REAL `showQuizTrigger` gate. AC2a asserts no `.estalara-trigger` in any
+  shadow root when `data-quiz-enabled=false`; AC2b asserts it renders on the default-enabled path. I
+  confirmed the gate the test drives is the real one: `index.ts:791` `if (config.quiz?.enabled === false) return;`
+  sits inside `showQuizTrigger()`, reachable via `init()`. Deleting/inverting it now turns AC2a RED.
+  Step-7: the closure moved from "mirrored" (RETRO-050) to "drives the real path" — genuinely closed,
+  not one more hop.
+- **TG-1 (P3, recorded — no follow-up) — neither new jsdom test asserts the Zod `.strip()` behavior
+  for a SUBMITTED `trigger_after_n_listings`.** `route.test.ts` deleted the out-of-range-400 test and
+  added no replacement asserting that POSTing `{ trigger_after_n_listings: 5 }` now returns 200 with
+  the key absent from the persisted config (i.e. proving the strip, not just the absence). The removal
+  is verified by grep, so this is belt-and-suspenders; recorded for completeness, not filed (a future
+  Quiz v2.0 re-add would add its own coverage).
+
+#### 4d. Documentation gaps
+
+- **N/A for the removed field.** AC4 adds an accurate rationale block to `route.ts:10-22` (consumer
+  removed FOLLOW-257, producer removed FOLLOW-264, Quiz v2.0/FOLLOW-199 must rebuild all three limbs),
+  and the stale dashboard JSDoc RETRO-050 §4d flagged (`page.tsx:10` "...trigger_after_n_listings...
+  continues to be persisted") is corrected. Rule L + RETRO-050 citations are present at every removal
+  point (AC5). The `quiz_config` JSONB retirement decision is documented (NOT retired — small schema,
+  per-field migration deferred to Quiz v2.0).
+- **DG-1 (P3, recorded — folds into FOLLOW-270, see §4e) — the citation chain points at RETRO-050 /
+  Rule L, but the SDK-test rewrite cites "Rule Q" which is the substantively correct rule; no
+  mis-citation found.** Minor: comments say "AC5: FOLLOW-264" inside the Zod schema — accurate. No
+  doc follow-up needed.
+
+#### 4e. Multi-axis / cross-contract finding (step-8)
+
+- **MX-1 (P2, NEW — pre-existing but TOUCHED-AND-NOT-RECONCILED by this PR) — the `QuizConfig.language`
+  enum DIVERGES between the API contract and the dashboard producer, and FOLLOW-264 edited BOTH
+  `QuizConfig` interfaces (adding removal comments) without reconciling them.** Axis analysis of the
+  surviving `QuizConfig` shape (step-8: analyze EVERY axis the contract change touches, not just the
+  removed field): `api/quiz/config/route.ts:40` types `language: 'en' | 'pl' | 'es'` and its Zod is
+  `z.enum(['en', 'pl', 'es'])` (`:62`), but the dashboard `page.tsx:37` types `language: 'en' | 'pl'`
+  and its `onChange` casts `e.target.value as 'en' | 'pl'` (`:249`). So `'es'` is a valid API/Zod value
+  the dashboard cannot produce or correctly type — a producer⇔contract enum mismatch on the SAME object
+  the PR was editing. This is NOT introduced by FOLLOW-264 (it pre-exists), but the PR touched both
+  interfaces and left the divergence; a removal-completeness pass over `QuizConfig` should have caught
+  the sibling-field skew. Severity P2 (a third locale silently unreachable from the UI; not a crash).
+  → **FOLLOW-270 (P2).** Cite Rule S (apply to all members of a symmetric set — here the set is "every
+  field of `QuizConfig` across its API + dashboard copies"). Reconciles with RETRO-050 §5d's note that
+  `quiz_config` is accreting drift.
+- **Contradiction check vs prior retros:** RETRO-050 §3 declared the SDK side "clean" and folded the
+  producer cleanup into FOLLOW-264 — this retro CONFIRMS that closure (does NOT contradict it). No
+  prior retro declared the `language` enum "clean," so MX-1 introduces no contradiction; it is a newly
+  surfaced sibling axis the lineage never examined.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-257 / RETRO-050 — CLOSED end-to-end by this PR (§3, §4a, §4c).** The half-wire that was
+  "halved" (SDK consumer gone, dashboard producer dangling) is now dead on every limb. The Rule-Q
+  mirror-gate gap is replaced with a real seam test. Both RETRO-050 findings resolved.
+- **TICKET-PILOT-001 (READY, Lane B pilot) — positively affected.** RETRO-050 §5a noted the pilot
+  install checklist should stop promising a working "Show quiz after N listing views" threshold; that
+  control no longer exists, so the onboarding cannot mislead the tenant. No action needed.
+- **FOLLOW-265 / RETRO-051 (DONE, PR #262, ratified quiz-only freeze guard) — adjacent, no conflict.**
+  FOLLOW-265 touched `quizConfig.enabled` / the freeze backstop; FOLLOW-264 touched
+  `trigger_after_n_listings`. Orthogonal keys of the same JSONB blob. Both retros (051 §5d, here §5d)
+  note the blob's accreting drift — converging, not conflicting.
+
+#### 5b. Future sprint tickets affected
+
+- **Quiz v2.0 / FOLLOW-199 — the rebuild contract is now DOCUMENTED.** AC4's `route.ts:10-22` block
+  records that any future per-tenant quiz timer must re-add all three limbs together (DB/JSONB key +
+  API schema field + SDK consumer via `readConfig`/`data-*`). RETRO-050 §5b warned the rebuild "must
+  know what was deliberately torn down" — that requirement is now satisfied in-code.
+
+#### 5c. Contracts changed others rely on
+
+- `POST /api/quiz/config` no longer 400s on `trigger_after_n_listings` out of range — it silently
+  strips it. Any external caller still sending it gets a 200 (was: 400 if >10). Behavior change for
+  off-contract callers; in-repo grep finds no such caller. Recorded.
+- `QuizConfig` / `TenantConfig['quiz']` public-ish types lost a field — no in-repo non-test consumer
+  remained (grep clean). The `language` enum skew (MX-1) is the live contract risk, not the removal.
+
+#### 5d. Architectural assumptions affected
+
+- **`tenants.quiz_config` JSONB drift is now reduced, not eliminated.** FOLLOW-264 removed the
+  write-only `trigger_after_n_listings` key (RETRO-050 §5d's one written-read-by-nothing key). The
+  `enabled` key (RETRO-051 §5d: read-by-nothing after the freeze guard repointed to the typed column)
+  remains. So the blob still has ONE legacy key. PM note: the three consecutive retros (049/050/051) +
+  this one all touch this blob's decay; a typed-column migration of `quiz_config` OR a formal
+  legacy-freeze remains the clean exit. Tracked, not re-filed (RETRO-051 §5d already flagged for PM).
+
+### 6. New lesson candidates
+
+- **Pattern (count 2 — PROMOTED this retro as a Rule G amendment) — "a shared-type field SHAPE change
+  (add/remove) breaks test DATA that lives outside what `pnpm typecheck` validates — loosely-typed test
+  helpers (`parseBody<T>` casting `unknown`→`T`, `makePostRequest(body: unknown)`), HTML/JSON string
+  fixtures, Playwright `route.fulfill` bodies — so the break escapes the typecheck gate and surfaces
+  only at the test RUN (or a hotfix commit)."** Seen in: **RETRO-010 §6** (newly-REQUIRED response
+  field broke E2E HTML/JSON string fixtures typecheck can't reach — count 1, explicitly deferred:
+  "Threshold (2) NOT met. Do NOT amend Rule G yet. If it recurs… promote a Rule G amendment") AND
+  **RETRO-053 (this) §4b BUG-1** (REMOVED Zod/type field left `parseBody<T>`/`makePostRequest`
+  runtime assertions that compile clean but fail at vitest; hotfix commit `0820282` required).
+  RETRO-010 was the ADD direction reaching string fixtures; this is the REMOVE direction reaching
+  loosely-typed TS test helpers — both are the SAME meta-shape ("type-shape change → test data outside
+  the typecheck reach"). **Count 2 across non-adjacent retros (010, 053). Threshold MET — PROMOTING a
+  Rule G amendment** (NOT a standalone rule; Rule G already owns "type-shape change → grep test data,
+  verify with a runner not just typecheck"). See CONVENTIONS_PATCH.md Rule G amendment (2026-06-11).
+- **Pattern (count 1 — RECORDED) — `QuizConfig` enum/field skew between the API copy and the dashboard
+  copy of a hand-duplicated interface (MX-1).** This is a Rule-S-class symmetric-set drift (two copies
+  of one shape) on a JSONB-backed config. Rule S already governs "apply to all siblings"; this is a
+  confirming instance filed into FOLLOW-270, not a new rule. If a 2nd hand-duplicated-config-interface
+  skew recurs, consider a Rule S sub-clause: "a config shape duplicated across API route + dashboard
+  must be a single shared type or have a parity test."
+- **Rule promotion check (other rules):** Rule Q (mirror→seam) — confirming instance (§4c), the
+  RETRO-050 TG-1 it closes; not re-promoted. Rule L (false configurability) — the PR RESOLVES a Rule-L
+  instance; not re-promoted. Rule T (pre-commit ≠ typecheck) — note: BUG-1 is the COMPLEMENT of Rule T
+  (Rule T: hooks are format-only, run `tsc`; BUG-1: even `tsc` is blind to loosely-typed test data, run
+  the test runner) — captured in the Rule G amendment's verification step.
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed:** the obvious verdict was "FOLLOW-264 cleanly completed Option-A across
+  all three limbs, RETRO-050 LG-1 + TG-1 both closed, grep clean — Wiring Audit clean, no gaps." That
+  verdict is CORRECT for the removed field. The catch came from step-8 applied to the SURVIVING shape,
+  not just the removed one: the PR edited the `QuizConfig` interface in TWO files; reading BOTH copies
+  side-by-side (not just the diff hunks) surfaced the `language: 'en'|'pl'|'es'` vs `'en'|'pl'` skew —
+  a sibling-axis contract drift invisible if you only audit the field the ticket names. The lesson the
+  whole 049→053 lineage keeps re-teaching: audit the WHOLE shape/set, not the limb in the title.
+- **A chain I had to trace twice:** the hotfix (BUG-1). First read of the PR body ("control-plane `tsc
+  --noEmit` clean") said "no test breakage." The commit list showed a SEPARATE `0820282` "update quiz
+  config tests after removal" AFTER the impl commit — so tsc-clean was true AND tests were red
+  simultaneously. I re-read `route.test.ts:23-24,45` to confirm WHY: `parseBody<T>` casts `unknown`,
+  so the stale `.toBe(3)` assertions compile but fail at runtime. "tsc clean" was technically true and
+  practically misleading — the real evidence is the runner, not the typechecker.
+- **Meta-pattern in how gaps recur across agents:** the quiz lineage (049 guard / 050 SDK-limb / 051
+  guard-flag-set / 053 producer-limb) shows agents reliably fix the named limb and ship green, while
+  the recurring escape is (a) the OTHER limb/sibling-axis of the same shape and (b) test/fixture data
+  that compiles but is semantically stale. Both escapes share a root: the typecheck gate creates false
+  confidence that "compiles = correct," so changes to multi-copy shapes and loosely-typed test data
+  slip the gate. The Rule G amendment targets exactly this false-confidence seam.
+
+### 7. Follow-ups
+
+- **FOLLOW-270 (P2)** — Reconcile the `QuizConfig.language` enum skew between `api/quiz/config/route.ts`
+  (`'en'|'pl'|'es'` + Zod) and `dashboard/quiz/page.tsx` (`'en'|'pl'`), and de-duplicate the
+  hand-copied `QuizConfig` interface into one shared type (or add a parity test) so the two copies
+  cannot drift again. [MX-1; §5c] (backend-engineer, 2h). Filed below.
+- TG-1 (Zod-strip assertion) and DG-1 (citation) are RECORDED, not separately filed.
+- **NOTE on numbering:** FOLLOW-266–269 are reserved for the Archetype Identification Tracer
+  (QUEUE.md:13, CEO-directed 2026-06-10) — this retro's stub is FOLLOW-270 to avoid collision.
+
+### 8. Cross-references
+
+- **RETRO-050 / FOLLOW-257 / FOLLOW-264 — the direct source and the closure.** RETRO-050 §4a LG-1
+  filed FOLLOW-264 (HALF_WIRE_P, producer dangling) and §4c TG-1 (mirror-gate Rule-Q violation). This
+  retro confirms BOTH closed end-to-end — I traced each removal limb + confirmed the seam test drives
+  the real `index.ts:791` gate, not a replica. First clean closure (no one-hop-move) in the lineage.
+- **RETRO-049 / RETRO-051 — the sibling quiz/JSONB lineage.** Together with this retro, four
+  consecutive retros (049/050/051/053) on the `tenants.quiz_config` blob + its guard; §5d tracks the
+  converging decay (now down to one legacy key, `enabled`).
+- **RETRO-010 §6 — the Rule G amendment's first occurrence.** RETRO-010 deferred the "type-shape change
+  breaks test data outside typecheck" sub-shape at count 1; §4b BUG-1 here is occurrence 2, meeting the
+  threshold and promoting the amendment.
+- **Rule Q (RETRO-033/034) — precedent for the §4c mirror→seam closure.** Rule L (RETRO-009/010/011) —
+  the false-configurability class this PR resolves. Rule S (RETRO-…/Rule S) — the MX-1 symmetric-set
+  drift class.
+
+## RETRO-052 — FOLLOW-265 (Ratify quiz-only pilot-freeze guard contract + sync PILOT_FREEZE_RULE.md + annotate orphaned `quizConfig.enabled` — closes RETRO-051 §4a LG-1/LG-2/§4d DG-1+DG-2/§4c TG-1) — 2026-06-11
+
+> **Numbering note.** RETRO-053 (FOLLOW-264 / PR #263) was authored CONCURRENTLY for a different,
+> later-merged PR and took the next free number 053 to avoid clobbering this entry; THIS entry — for
+> FOLLOW-265 / PR #262, merged EARLIER (05:42 UTC vs #263's 05:58 UTC) — takes the still-free number
+> RETRO-052. Same concurrent-retro collision-avoidance the 048/049 and 050/051 pairs used. FOLLOW
+> number 266 is RESERVED (Archetype Identification Tracer, QUEUE.md, CEO-directed) and 270 was consumed
+> by RETRO-053; this retro's stub is FOLLOW-271.
+
+### 1. Summary of change
+
+- **PR:** #262 (merged 2026-06-11 05:42:51 UTC, commit `9769090`; branch
+  `backend-engineer/FOLLOW-265-freeze-guard-reconcile`). backend-engineer. Sprint 13b, Lane C / Lane B
+  pilot-freeze reconciliation.
+- **Files changed:** 10 (+388 / −76). Code/doc-relevant: 4 — `apps/control-plane/src/app/api/adapt/route.ts`
+  (+1/−1, AC6 citation fix), `route.pilot-frozen.test.ts` (+75/−1, 2 new contract-pinning tests),
+  `docs/ops/PILOT_FREEZE_RULE.md` (+24/−8, §Implementation rewrite), `packages/db/src/schema/tenants.ts`
+  (+18/−1, JSONB annotation). The other 6 are backlog/STATUS/agent-housekeeping (QUEUE, ESCALATIONS,
+  STATUS×2, pm-orchestrator lessons, the FOLLOW-265 sprint stub) — non-code.
+- **Modules touched:** control-plane (`apps/control-plane/src/app/api/adapt`), shared DB schema
+  (`packages/db` — JSDoc annotation ONLY, NO column added/migration), docs (ops/PILOT_FREEZE_RULE.md),
+  backlog.
+- **Key contracts changed (all RATIFICATIONS of an already-shipped FOLLOW-263 narrowing, not new behavior):**
+  - **Pilot-freeze guard contract — RATIFIED quiz-only.** `checkPilotFrozenAsync()` checks ONLY
+    `tenants.quiz_enabled` (typed boolean). The three previously-DOC'd JSONB flags (`lane_c_active`,
+    `intent_engine_enabled`, `shadow_mode_override`) are FORMALLY declared **outside the runtime
+    backstop** — none ever had a live producer. Forward-compat = add a typed `tenants.*_enabled` column
+    per new Lane-C axis, NOT extend a JSONB-key scan. (RETRO-051 §4a LG-1's restore-vs-ratify decision →
+    ratify-quiz-only selected.) Breaking: no — the code already behaved this way since FOLLOW-263; this
+    PR aligns the CONTRACT DOC + adds pinning tests + annotates the orphaned key.
+  - **`pilot_frozen_lane_c_active` log payload** — `quiz_enabled: boolean` confirmed sole field;
+    `active_lane_c_flags: string[]` retirement now DOCUMENTED + alert-swept (AC3). No code change to the
+    payload (FOLLOW-263 already renamed it); this PR pins it with a test + documents the rename for ops.
+  - **`tenants.quizConfig` JSDoc** — the `enabled` key inside the JSONB blob is now explicitly annotated
+    ORPHANED for freeze-guard purposes (the blob itself remains live for widget-UX settings). No schema
+    change. Breaking: no.
+
+### 2. Verification done in PR
+
+- Test files changed: `route.pilot-frozen.test.ts` (+2 tests, +75 lines). Assertions added: ~4
+  (AC5-a: frozen + `quizEnabled=false` → guard does NOT fire; AC5-b: log payload contains `quiz_enabled`
+  and NOT `active_lane_c_flags`). **Both drive the REAL `checkPilotFrozenAsync()` via the `POST` import**
+  (Rule Q — invoke-via-seam, NOT a mirror; verified the tests call `await POST(makePostRequest(...))` +
+  `setImmediate` flush of the fire-and-forget, then assert on the real `warnSpy`). Suite now 9
+  pilot-frozen tests. Coverage delta: unknown (est. high — quiz axis + both no-fire/fire branches +
+  payload shape pinned).
+- CI checks: not independently re-run by this retro (read-only). PR body reports 9/9 pilot-frozen,
+  187/187 adapt suite, typecheck clean (control-plane + @estalara/db), lint 0 errors, prettier unchanged,
+  pre-push Rule H + Rule J green. PR marked READY only after pm-orchestrator CI-verify per the backlog
+  trail. **Rule T does NOT recur** — the new tests use no `vi.fn<>` type-args (no Vitest-v2 typecheck-CI
+  escape).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅` (CHECK A + CHECK B).
+
+- **CHECK A (dead code):** No new file/export introduced. `checkPilotFrozenAsync` retains its two live
+  callers — `route.ts:692` (GET path) and `route.ts:783` (POST path), both intact (grepped). The 2 new
+  tests are test files (suppressed). The `tenants.ts` change is a JSDoc comment on an EXISTING column —
+  no new symbol. **CHECK A clean.**
+- **CHECK B (half-wire):** No new event / env-var / column / topic / SDK-signal introduced. The guard's
+  read symbol `tenants.quizEnabled` (consumer) has a verified PRODUCER — `PATCH /api/tenants/:id`
+  (`tenants/[id]/route.ts:129`) + migration 0025 `default(true)`; producer→consumer→render(`console.warn`,
+  `route.ts:144`) chain complete and re-pinned by the new tests (`route.ts:118-160`). The annotated
+  `quizConfig.enabled` key is the INVERSE — now documented as having NO consumer BY DESIGN (orphaned,
+  intentionally not read); this RESOLVES a prior half-wire residue, it does not create a new one.
+  **CHECK B clean.**
+- **Note — this is a reconciliation/ratification PR.** Its purpose was to close the code↔doc divergence
+  RETRO-051 surfaced; it introduces no new wires, so a clean audit is expected. The audit-relevant work
+  here was the PRIOR-CLOSURE check (§7/§8-meta), not new-symbol wiring.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — `quizConfig.enabled` was ANNOTATED orphaned (AC4), not REMOVED; the two-store divergence
+  (typed `tenants.quiz_enabled` column vs JSONB `quizConfig.enabled` key) is now DOCUMENTED but not
+  ELIMINATED.** FOLLOW-265 AC4 added a clear JSDoc (`tenants.ts:39-56`) declaring `quizConfig.enabled`
+  orphaned-for-freeze-purposes and instructing readers to use `quizEnabled`. This is the RIGHT minimal
+  reconciliation and it closes the "which store wins?" mislead-a-future-reader risk. BUT the orphaned key
+  still PHYSICALLY EXISTS in the blob and can still be WRITTEN — `POST /api/quiz/config` (`route.ts:142`
+  `.set({ quizConfig: updated })`) merges client-supplied JSONB into the column; a stale client or a
+  legacy row carrying `enabled` retains a value that contradicts the typed column, and nothing reconciles
+  them. The annotation prevents a future READER being misled, but a divergent stale value can still be
+  PERSISTED. Lower than RETRO-051's P1 because (a) the freeze guard — the last reader — is now provably
+  off the JSONB key (tested, `route.ts:131` selects `quizEnabled` only), and (b) the SDK reads
+  `quizConfig` only for widget-UX keys (`accentColor`/`language`, `index.ts:698-820`), never `enabled`.
+  So the divergence is now INERT, not dangerous. → **FOLLOW-271 (P2):** strip `enabled` from the blob on
+  write in `POST /api/quiz/config` (`route.ts:142`) and/or add a Zod `.strip` so it can never re-enter,
+  plus a one-time backfill of rows carrying it — completing the retire AC4's annotation deferred. Apply
+  Rule U (promoted this retro). Cite RETRO-049/050/051/053 §5d.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A — no shipped correctness defect.** This PR ships a JSDoc annotation, a doc rewrite, and two
+  assertion-only tests; it changes ONE line of runtime code (the comment citation at `route.ts:92`). The
+  guard logic (`if (!row?.pilotFrozen) return;` → `if (!row.quizEnabled) return;` → warn,
+  `route.ts:138-160`) is unchanged from FOLLOW-263 and was sound (RETRO-051 §4b confirmed). No P0/P1/P2
+  code bug. (Contrast RETRO-053 §4b BUG-1 — that was a removal PR with stale runtime test assertions;
+  this PR removes no field, so that shape does not apply.)
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, recorded — no follow-up) — no test injects a STALE `quizConfig.enabled=true` JSONB value
+  on a frozen `quizEnabled=false` tenant and asserts no-fire.** AC5-a sets `setupDbMock(true, false)` and
+  asserts no-fire, with a comment that a hypothetical JSONB `enabled=true` "were present" still would not
+  fire — but the mock SELECT returns only `pilotFrozen` + `quizEnabled` (the guard's real SELECT,
+  `route.ts:125-132`), so the test cannot actually inject a JSONB `enabled` into the queried shape. The
+  assertion is therefore a contract STATEMENT (the guard never selects `quizConfig`, so it structurally
+  cannot read `enabled`) rather than a behavioral proof. This is ACCEPTABLE — the structural guarantee
+  (guard SELECT omits `quizConfig`) is STRONGER than any value-injection test — so recorded, not filed.
+  If FOLLOW-271 strips the key on write, no new guard test is needed.
+
+#### 4d. Documentation gaps
+
+- **N/A — and this PR CLOSED both doc gaps RETRO-051 raised.** `docs/ops/PILOT_FREEZE_RULE.md`
+  §Implementation was rewritten (diff +24/−8): the stale `tenants.quizConfig` + `active_lane_c_flags`
+  mechanism description is gone; the 4-flag list (old `:100-105`) is replaced by the single ratified
+  `quiz_enabled` axis, with the three other flags explicitly declared outside-the-backstop + the
+  forward-compat "add a typed column per axis" pattern documented; the log-field rename + alert-sweep
+  result are documented inline. Code and the Decision-3 safety contract now AGREE → **closes RETRO-051
+  §4d DG-1 (P1 stale-safety-contract).** The AC6 fix (`route.ts:92` "(Rule H — FOLLOW-263)" →
+  "(RETRO-012/FOLLOW-117 SoT-alignment)", verified in live tree) → **closes RETRO-051 §4d DG-2.** No
+  remaining doc gap.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 (READY, Lane B pilot launch) — UNBLOCKED by this PR.** RETRO-051 §5a named the
+  code↔doc divergence as a hard gate: "the freeze-guard narrowing must be ratified-or-restored
+  (FOLLOW-265) BEFORE the measurement window opens or the documented backstop overstates coverage."
+  FOLLOW-265 ratified quiz-only AND synced the doc, so the documented backstop now exactly matches runtime
+  behavior. The PR body's "NEXT: TICKET-PILOT-001 measurement window may open. Code and docs now agree."
+  is accurate. The freeze-guard gate on PILOT-001 is CLEAR. (ESC-020 — Estalara-app DOM hooks not
+  deployed to prod — remains the separate OPEN blocker on pilot live measurements per pm-orchestrator
+  STATUS; that is not affected by this PR and the PM owns escalation.)
+- **FOLLOW-264 / RETRO-053 (DONE, PR #263, merged 16 min after this PR) — CONVERGENT, no conflict.**
+  FOLLOW-264 removed `trigger_after_n_listings` from the same `quiz_config` blob; FOLLOW-265 annotated
+  `enabled`. Orthogonal keys. Between the two, the blob is now down to its LIVE widget-UX keys
+  (`accentColor`, `language`, `stickyWidget`, `microPollsEnabled`) plus the one annotated-orphaned
+  `enabled`. The blob is materially healthier than RETRO-049/050/051 found it — the decay is being closed
+  key-by-key, which is precisely why a Rule is now warranted (§6) to make the close-out systematic rather
+  than ticket-by-ticket. (RETRO-053 §5d independently re-confirms "down to one legacy key, `enabled`".)
+
+#### 5b. Future sprint tickets affected
+
+- **Any future per-tenant Lane-C toggle (intent-engine, shadow-mode, or a new axis)** must now follow the
+  RATIFIED forward-compat pattern documented in PILOT_FREEZE_RULE.md §Implementation: add a typed
+  `tenants.*_enabled` column + migration AND wire it into `checkPilotFrozenAsync()` in the SAME PR. The
+  generic `LANE_C_FLAG_KEYS` "add your flag to the list" extension point is gone by design; this is now a
+  documented, enforced contract. RETRO-051 §5b flagged this as undecided; FOLLOW-265 decided it.
+- **Quiz v2.0 / any feature re-introducing a `quiz_config` blob key** must read its own key end-to-end
+  (Rule L) AND prefer a typed column for any ON/OFF or freeze-relevant state (Rule U, §6) — the blob is
+  for non-gating UX config only.
+
+#### 5c. Contracts changed others rely on
+
+- **Pilot-freeze runtime contract is now RATIFIED + DOCUMENTED as quiz-only.** Any ops runbook,
+  onboarding checklist, or PILOT-001 step referencing the old 4-flag backstop must read the rewritten
+  PILOT_FREEZE_RULE.md §Implementation. **The AC3 alert sweep CONFIRMED no Sentry saved-search / Grafana
+  rule keyed on `active_lane_c_flags`** — verified INDEPENDENTLY: grep of the repo finds
+  `active_lane_c_flags` only in (a) backlog markdown, (b) test assertions of its ABSENCE
+  (`route.pilot-frozen.test.ts:201,205,400,405`), and (c) stale `.claude/worktrees/` agent copies — ZERO
+  live observability-config or production-code references. The §5c external-ops sweep RETRO-051 could not
+  verify is now CLOSED in-repo.
+- `checkPilotFrozenAsync` signature + both call sites unchanged. No caller breakage.
+
+#### 5d. Architectural assumptions affected
+
+- **The pilot-freeze backstop's shape is now a RATIFIED architectural decision** ("single typed-column
+  check; new Lane-C axes get their own typed column") rather than the emergent-side-effect-of-a-repoint
+  RETRO-051 §5d flagged. The lost extension point is now a documented intentional trade (typed > JSONB
+  stringly-keyed). Closes RETRO-051's §5d concern.
+- **`tenants.quiz_config` JSONB decay is being closed key-by-key but the BLOB-LEVEL policy is still
+  implicit.** FOLLOW-264 removed one orphaned key; FOLLOW-265 annotated another. There is STILL no
+  standing rule that "ON/OFF / gating / SoT state lives in a typed column, never a JSONB blob key" — so
+  the next feature can re-add `someFlag` to `quiz_config` and re-start the decay cycle. FIVE retro touches
+  now (049/050/051 + RETRO-053 + this) on this exact blob's decay. This is the precise condition the
+  promotion threshold exists for → **Rule U promoted (§6).**
+
+### 6. New lesson candidates
+
+- **Pattern (count 3 — PROMOTED as Rule U) — "a multi-key JSONB config blob accretes a key that expresses
+  ON/OFF / gating / source-of-truth state; that key is then superseded by (or never had) a typed column;
+  and the orphaned blob key is repeatedly ANNOTATED or PARTIALLY removed across consecutive retros instead
+  of being ELIMINATED — so 'is X on?' has two stores that can diverge, and each fix closes one key or one
+  reader, never the blob-level policy."** Seen in:
+  - **RETRO-049 §4a LG-2 + §5d (FOLLOW-102)** — `tenants.quiz_enabled` typed column added as SoT, but
+    `quizConfig.enabled` JSONB left written-by-`POST /api/quiz/config`-read-by-the-freeze-guard; "two
+    stores express quiz on/off, they can diverge."
+  - **RETRO-050 §4a LG-1 + §5d (FOLLOW-257)** — same `quiz_config` blob: `trigger_after_n_listings`
+    written-by-dashboard-read-by-nothing after the SDK consumer removal; "the JSONB blob is accumulating
+    write-only keys… partial dead-letter store."
+  - **RETRO-051 §4a LG-2 + §5d (FOLLOW-263)** — same blob: `enabled` read-by-nothing after the guard
+    repointed to the column; "`tenants.quiz_config` continues to accrete write-only / read-only-mismatched
+    keys."
+  - **RETRO-053 §5d (FOLLOW-264, concurrent) + RETRO-052 §4a LG-1 + §5d (FOLLOW-265, this retro)** —
+    `trigger_after_n_listings` removed, `enabled` ANNOTATED orphaned (AC4) but not removed; the blob can
+    still persist a divergent `enabled` via `POST /api/quiz/config`.
+
+  Threshold of 2 EXCEEDED (count 3 across RETRO-049/050/051, re-confirmed by RETRO-053 + this retro). The
+  prior retros each recorded a "PM note: schedule a typed-column migration or freeze the blob as legacy"
+  WITHOUT a standing rule, so the decay kept recurring key-by-key — exactly the gap a Rule exists to stop.
+  **Promoting Rule U** (see CONVENTIONS_PATCH.md): *gating / ON-OFF / SoT state MUST live in a typed
+  column, never a JSONB blob key; a JSONB blob is for non-gating config only; when a typed column
+  supersedes a blob key, the blob key MUST be ELIMINATED (strip on write + backfill), not merely
+  annotated.* Filed FOLLOW-271 to apply it to `quizConfig.enabled`.
+- **Pattern (count stays 1 — RECORDED, NOT promoted; folds under Rule S) — "a guard/check over a SET is
+  narrowed to one member and the contract doc that names the set is left stale."** RETRO-051 §6 recorded
+  this as the FIRST clean instance of the Rule-S guard-flag-set sub-shape and set a promote-on-3rd
+  condition. FOLLOW-265 is the RESOLUTION of that instance (it ratified the narrowing AND synced the doc
+  AND pinned with a test — the model close-out), NOT a 2nd occurrence of the GAP. The GAP count stays 1;
+  no Rule-S sub-clause promotion. Recorded that "ratify the narrowing + sync the contract doc + pin with a
+  real-seam test" is the model close-out for the Rule-S guard-set sub-shape.
+- **Rule promotion check (other rules):** Rule Q — confirming instance (the 2 new tests drive the real
+  `checkPilotFrozenAsync()` via the `POST` seam, not a mirror); not re-promoted. Rule T — does NOT recur
+  (no `vi.fn<>` type-args). Rule G amendment (promoted by the concurrent RETRO-053) — N/A here (no
+  type-shape add/remove; this PR removes no field).
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed:** the obvious verdict was "FOLLOW-265 ratified quiz-only, synced the doc,
+  added 2 real-seam tests, fixed the citation — all 6 ACs closed end-to-end, RETRO-051's gaps all close,
+  Wiring Audit clean — done." I nearly recorded that (and it IS a clean PR). The catch came from reading
+  AC4 LITERALLY: it ANNOTATED `quizConfig.enabled`, it did not REMOVE it. Grepping the writer
+  (`POST /api/quiz/config` `route.ts:142` `.set({ quizConfig: updated })`) showed the blob still merges
+  client input, so the orphaned key can still be written and diverge — the annotation closes the READ-side
+  mislead but NOT the WRITE-side divergence channel. That is §4a LG-1 / FOLLOW-271, invisible if you trust
+  "AC4 done" without distinguishing ANNOTATE-vs-ELIMINATE.
+- **A chain I had to trace twice — the prior-closure check (RETRO-051's four gaps).** I did NOT trust the
+  "FOLLOW-265 closes LG-1/LG-2/DG-1/TG-1" claim; I traced each end-to-end: (1) LG-1 (guard narrowing
+  ratified) — `route.ts:118-160` reads `quizEnabled` only + PILOT_FREEZE_RULE.md rewritten to match =
+  CLOSED (contract↔code agree). (2) DG-1 (stale doc) — 4-flag list gone = CLOSED. (3) DG-2 (citation) —
+  `route.ts:92` now reads "(RETRO-012/FOLLOW-117 SoT-alignment)" = CLOSED. (4) LG-2 (orphaned
+  `quizConfig.enabled`) — traced to "annotated, not eliminated" = PARTIALLY closed: the read-mislead risk
+  is gone but the write-divergence channel remains → FOLLOW-271. So three of four gaps are genuinely
+  closed end-to-end and one moved from "undocumented divergence" to "documented-but-still-physically-
+  possible divergence" — a real hop FORWARD (not a one-hop shuffle), but not a full close. This is the
+  step-7 closure discipline catching an annotate-vs-eliminate half-close that a "DONE" label would hide.
+- **Meta-pattern in how gaps recur across agents:** FIVE retro touches (049/050/051/053/052) on the SAME
+  `quiz_config` JSONB blob. The recurring agent behavior is "fix the key/limb/reader the ticket names;
+  annotate or partial-remove rather than eliminate; never set a blob-level policy." Each fix was correct
+  and minimal; the AGGREGATE failure is that no single fix establishes the standing rule that would stop
+  the NEXT key from accreting. That is exactly why this retro PROMOTES Rule U rather than only filing a
+  per-key follow-up — the meta-loop's job is to convert a recurring per-instance fix into a policy. The
+  structural magnet remains: a shared multi-key JSONB blob mixing gating + UX keys invites single-key fixes.
+
+### 7. Follow-ups
+
+- **FOLLOW-271 (P2)** — Eliminate (don't just annotate) the orphaned `quizConfig.enabled` JSONB key: strip
+  `enabled` from the blob on write in `POST /api/quiz/config` (`route.ts:142`) and/or add a Zod `.strip`
+  so it can never re-enter, plus a one-time backfill of any rows already carrying it — completing the
+  retire that FOLLOW-265 AC4's annotation deferred. Apply Rule U (gating state = typed column; remove
+  superseded blob keys, don't annotate). [LG-1; §5d; Rule U] (backend-engineer, 2h). Filed below.
+- DG items are all CLOSED by this PR (no follow-up). TG-1 (stale-JSONB-value guard test) is RECORDED, not
+  filed (the structural SELECT-omits-`quizConfig` guarantee is stronger than a value test).
+
+### 8. Cross-references
+
+- **RETRO-051 / FOLLOW-263 / FOLLOW-265 — the direct source.** RETRO-051 §4a LG-1 filed FOLLOW-265 with
+  the explicit restore-vs-ratify decision; this retro confirms quiz-only was RATIFIED and that LG-1 (guard
+  narrowing), DG-1 (stale doc), and DG-2 (citation) are CLOSED end-to-end (§4d, §7), while LG-2 (orphaned
+  `quizConfig.enabled`) moved undocumented→documented-but-still-writable → FOLLOW-271. I did NOT trust the
+  "FOLLOW-265 closes all 4 gaps" label — I traced each (§8-meta above).
+- **RETRO-049 / RETRO-050 / RETRO-053 — the JSONB-blob-decay lineage (Rule U evidence).** RETRO-049 §5d
+  (two stores for quiz on/off), RETRO-050 §5d (`quiz_config` partial dead-letter store), RETRO-051 §5d
+  (blob accretes write-only keys), RETRO-053 §5d (down to one legacy key) + this retro = the ≥2-retro
+  evidence promoting Rule U (§6).
+- **RETRO-012 / FOLLOW-117 — the precedent the AC6 citation fix restores.** `route.ts:92` now correctly
+  cites RETRO-012/FOLLOW-117 SoT-alignment (the guard's original consumer→producer key-alignment lineage)
+  instead of Rule H.
+- **RETRO-047 / FOLLOW-101 — the SHADOW-ONLY Lane-C feature whose `intent_engine_enabled` hook FOLLOW-263
+  removed.** RETRO-051 §5a worried the backstop for its SHADOW-ONLY classification was silently gone;
+  FOLLOW-265 RATIFIES that the runtime backstop intentionally does not cover it (no live producer exists),
+  and documents the forward-compat path should a per-tenant intent toggle ever ship — converting the
+  silent gap into a deliberate, documented contract.
+
+## RETRO-054 — FOLLOW-169 (bring `_generate_headline` to the description anti-hallucination grounding bar — closes RETRO-028 §4a LG-1/LG-2 + §4c TG-2 + §4d DG-1; Rule-S close-out of the description↔headline LLM-call sibling pair) — 2026-06-11
+
+### 1. Summary of change
+
+- **PR:** #264 (merged 2026-06-11 06:29 UTC, merge commit `c5b55bb`). Branch `ml-engineer/FOLLOW-169-headline-grounding`. Source retro: RETRO-028 §4a LG-1 (the headline asymmetry finding) / ADR-0009.
+- **Files changed:** 5 (+543 / −59). Code: `apps/llm-gateway/src/jobs/generate_description.py` (+189/−25), `apps/llm-gateway/src/jobs/test_generate_description.py` (+241/−2), `packages/sdk/src/__tests__/adapt-description.test.ts` (+66/−0). Backlog-only: `backlog/QUEUE.md` (+26/−17), `backlog/STATUS.md` (+21/−15).
+- **Modules touched:** [llm-gateway (Modal Python) / SDK (tests only) / backlog]. No control-plane, no shared schema, no migration.
+- **Key contracts changed:**
+  - `_generate_headline(...)` Python signature — ADDED trailing optional `verified_facts: list[str] | None = None`. Breaking: **no** (defaulted, internal; both call sites — the job body `:325` and the test mirror `_run_job` — updated in the same PR).
+  - `_HEADLINE_SYSTEM_PROMPT` (str) — NEW module-level constant, passed as `system=` on the headline Anthropic call (`:1336`). New behavioral contract (model now receives fact-whitelist hard rules), not a wire others consume.
+  - `_check_headline_facts(headline, original_description, listing_context) -> str | None` — NEW internal post-generation fact-check. Returns a violation reason code (`"hallucinated_number"` / `"hallucinated_proper_name"`) or `None`. Internal; one production caller (`:1354`).
+  - Redis cache value JSON shape — UNCHANGED. `headline` is still `string | null`; this PR only changes WHEN the field is null (now also null on a fact-check violation, previously only on empty-response/API-error). Backward-compatible with the route normaliser and SDK consumer.
+  - Docstrings: module header (`:9-13`) and `_write_to_redis` `cache_key` example (`:1398-1402`) corrected to the post-FOLLOW-161 key shape `desc:{tenant_id}:{listing_id}:{archetype}:{locale}:{model}` (DG-1). Doc-only; no behavioral change (the route builds and passes the key).
+
+### 2. Verification done in PR
+
+- Test files changed: 2 (`test_generate_description.py` +11 Python tests; `adapt-description.test.ts` +3 SDK tests). Assertions added: ~18. Coverage delta: unknown (no report), but every new branch has a direct assertion — AC1 system-prompt-reaches-call + verified_facts-in-user-prompt; AC2 suppress-invented-number, suppress-invented-proper-name, grounded-number-passes, the 4 `_check_headline_facts` unit cases (digit absent/present, proper-name absent/present), and the end-to-end `no_redis_write_on_violation` (description still written, `headline` null). AC3: 3 SDK cases pinning the `source==='ai_cached'` gate for `template_fallback`/`original`/`ai_cached`.
+- PR body reports Python 83/83 (up from 70 pre-PR — consistent with +11 new minus the 2 token-index fixups already counted), SDK 1285/1285, `tsc --noEmit` clean on `@estalara/sdk` + `@estalara/shared`, prettier unchanged, Rule H + Rule J pre-push hooks green. **Not independently re-run here** (read-only; standing CI-gate-landscape caveat: Rule I / Vercel / Python-test checks are pre-existing-red & non-blocking — the real gates are the unit suites + typecheck the PR reports).
+- **Rule S verification tier satisfied:** the headline (the narrowed sibling) now has a system prompt AND a post-generation fact-check AND tests at the SAME completeness tier as the description path — see §6.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅` (CHECK A + CHECK B).
+
+- **CHECK A (dead code).** Every new symbol has a non-test production importer:
+  - `_HEADLINE_SYSTEM_PROMPT` → consumed at `generate_description.py:1336` (`system=` on the production Anthropic call inside `_generate_headline`). Grep: `grep -rn "_HEADLINE_SYSTEM_PROMPT" --include=*.py apps/ | grep -v test_` → the constant def `:1159` + the production call `:1336` (+ docstring/comment refs). Wired.
+  - `_check_headline_facts` → called at `generate_description.py:1354` inside `_generate_headline` (production path), violation logged + `return None`. Grep: `grep -rn "_check_headline_facts" --include=*.py apps/ | grep -v test_` → def `:1209` + call `:1354`. Wired.
+  - `_generate_headline`'s new `verified_facts` param → supplied at the job-body call site `:325` (`verified_facts if verified_facts else None`) where `verified_facts` is the `_generate_with_sonnet` self-report (`:291`). Wired.
+  - The 3 new SDK tests are test files (route-entrypoint/test suppression). No new SDK export.
+  - `_generate_headline` itself is NOT new and remains wired (job body `:325`). **CHECK A clean.**
+- **CHECK B (half-wire).** No new event / env-var / column / topic / SDK-signal introduced. The headline producer→consumer→render chain pre-existed (RETRO-028 §3): Python `_write_to_redis`→Redis (producer); route→`DescriptionResponseSchema.headline` (transport); SDK `adapt-description.ts:301-308`→`[data-estalara-slot="headline"]` (render). This PR adds a SUPPRESSION branch (`return None` on violation) on the EXISTING producer — the null path was already a designed, consumed state (route normalises absent→null; SDK skips empty). No producer-without-consumer or consumer-without-producer created. **CHECK B clean.**
+- **Note:** this is a contract-hardening PR on an already-wired path (the close-out of RETRO-028 §4a). A clean audit is expected; the audit-relevant work was the PRIOR-CLOSURE trace (§7) and the multi-axis fact-check-strength analysis (§8-multi-axis), not new-symbol wiring.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, recorded → FOLLOW-272) — `_check_headline_facts` grounding test is a SUBSTRING containment check, structurally weaker than the description path's, with two concrete false-negative classes.** The check is `token.lower() not in grounding` where `grounding = (original_description + " " + json.dumps(listing_context)).lower()` (`:1231-1236`). Two false-negatives follow:
+  1. **Digit substring coincidence.** A bare digit token "5" passes if "5" appears ANYWHERE in the serialised grounding — including inside an unrelated id, coordinate, year, or price (e.g. a hallucinated "5-min walk" passes when `listing_context` contains `"listing_id": "…5…"` or `"price": 425000`). The regex `\d[\d.,/%m²sqftftm-]*` (`:1235`) tokenises greedily but the membership test is plain substring, so "7%" also passes if grounding contains "7%" inside "17%". This is conservative-by-design (favors not suppressing a grounded headline) but it is genuinely weaker than the description's `<verified_facts_used>` audit + `_body_violates_contract` (`:694`) machine-check.
+  2. **First-word + lowercase named-entity escape.** Proper-name detection skips `words[0]` (`:1243` — sentence-start) and only flags capitalised words, so a hallucinated proper name AS THE FIRST WORD ("Redland — ideal family home…") or a lowercased entity is not caught. Bounded by the system prompt (first line of defence) but not by the deterministic check.
+  Lower than RETRO-028's P2 LG-1 because the asymmetry is now MUCH smaller (system prompt + a real post-gen check now exist where there were none) and the headline is 60-token/single-line, so surface area is tiny; the residue is the detector's precision, not its absence. → **FOLLOW-272 (P3):** tighten `_check_headline_facts` digit matching to word-boundary / whole-token grounding (not bare substring) and extend proper-name detection to `words[0]`; OR (preferred, cheaper) derive the check from the passed `verified_facts` whitelist directly rather than the raw grounding text. Apply the Rule-S "same verification tier" spirit.
+- **LG-2 (P3, recorded — NO follow-up; inherited limitation, not introduced) — the `verified_facts` whitelist threaded into the headline is the description model's SELF-REPORT, so a fact the description model hallucinated INTO its own `<verified_facts_used>` block becomes a "verified" input to the headline.** `verified_facts` comes from `_parse_verified_facts` (`:824`) — the JSON array the model itself emitted. AC1 threads it as the headline's explicit whitelist (`:1310-1313`). If the description model self-reported a fact it invented, the headline can repeat it AND `_check_headline_facts` will pass it (it appears in the description-body grounding too). This is a pre-existing property of the self-reported audit-block design (RETRO-027/028), NOT introduced or worsened by this PR — the headline is now no weaker than the description on this axis, which is exactly the parity FOLLOW-169 targeted. Recorded so the next retro touching the verified-facts audit block (FOLLOW-162 lineage) reconciles whether self-reported facts need an independent extractor. No new stub.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A — no shipped correctness defect.** The fact-check is fail-safe (any violation → `None` → headline omitted, description write proceeds — verified end-to-end by `test_headline_antihallucination_no_redis_write_on_violation`). The new `verified_facts` param is defaulted and both call sites pass it. The `verified_facts if verified_facts else None` guard (`:330`) correctly treats an empty self-report `[]` as "fall back to raw-text grounding" rather than passing an empty whitelist that would over-suppress. No P0/P1/P2 code bug. (CB-1 from RETRO-028 — second `anthropic.Anthropic()` construction per call — is UNCHANGED by this PR and remains the designed degraded-to-null path; not re-filed.)
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, recorded — no follow-up) — no test exercises the substring false-negatives in §4a LG-1.** The new tests pin the happy/sad paths with cleanly-absent tokens ("7.2", "Redland") and cleanly-present tokens ("3"), but none asserts the coincidence cases (a hallucinated "5" that collides with a grounded id, or a first-word proper name). This is acceptable for the P3 residue — the tests prove the mechanism works for the common case; the precision gap is tracked by FOLLOW-272, which should add these as red-then-green cases when it tightens the matcher. Recorded, not separately filed.
+- **TG-2 (P3, recorded) — the SDK AC3 tests assert the OBSERVABLE invariant (headline not applied on non-`ai_cached`) via the existing `fetchDescription` early-return, but do not add a dedicated guard on the headline branch itself.** This is the route-invariant approach RETRO-028 §4a LG-2 offered as an acceptable alternative ("or a route-invariant test"). The guard `adapt-description.ts:253` (`if (resp.source !== 'ai_cached' || !resp.description) return null;`) sits BEFORE the headline branch (`:301-308`), so the invariant is structurally enforced for ALL three sources — verified. Acceptable; the structural early-return is stronger than a duplicated per-branch flag. Recorded, not filed.
+
+#### 4d. Documentation gaps
+
+- **N/A — and this PR CLOSED RETRO-028 §4d DG-1.** The module header (`:9-13`) and `_write_to_redis` `cache_key` example (`:1398-1402`) now read the correct `…:{locale}:{model}` (and `:demo:{model}`) shape with an explicit FOLLOW-161/DG-1 provenance note. The `packages/shared/src/schemas/description.ts` `cache_key` doc was already corrected by FOLLOW-161 (PR body confirms; not re-touched). No remaining cache-key docstring drift.
+- **DG-2 (P3, recorded — folded onto FOLLOW-164, NOT this PR's scope) — Master Design §E.7 still does not mention ADR-0009 / the per-listing headline or its grounding contract.** Grep of `docs/MASTER_DESIGN.md` for `ADR-0009|per-listing headline|_check_headline` → no hit. RETRO-028 §4d DG-2 already routed this onto FOLLOW-164 (the §E.7 v1.8 propagation rewrite); FOLLOW-169 was a code-hardening ticket and correctly did not touch Master Design. No new stub — remains on FOLLOW-164. Operating Principle 2.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **TICKET-PILOT-001 / any pilot relying on buyer-facing AI headlines — POSITIVE de-risk.** The single most prominent buyer-facing string now has a system-prompt + post-generation fact-check, closing the compliance/fair-housing exposure RETRO-028 §4a LG-1 flagged (a hallucinated yield % or invented school name on the headline previously had no audit trail and no suppression). The headline is now no weaker than the description body on grounding. No code dependency created; this hardens an existing path.
+- **FOLLOW-168 (the sibling RETRO-028 follow-up, cross-language event-contract parity gate) — DONE (QUEUE shows FOLLOW-168 closed, also_closes via FOLLOW-198).** Orthogonal axis (event-shape parity vs. headline grounding); no interaction. Both RETRO-028 follow-ups are now resolved.
+
+#### 5b. Future sprint tickets affected
+
+- **Any future THIRD lightweight LLM sub-call (a CTA generator, a feature-blurb generator, an alt-text generator)** must now ship with `_HEADLINE_SYSTEM_PROMPT`-equivalent hard rules AND a post-generation fact-check from day one — this PR establishes the description↔headline grounding parity as the template (see §6 Rule-S close-out). RETRO-028 §6 named exactly this as the watch-condition for promoting an anti-hallucination rule.
+- **FOLLOW-162 lineage (verified_facts audit-block hardening)** — if a future ticket adds an independent fact extractor (replacing the model's self-report), the headline's `verified_facts` input (§4a LG-2) automatically inherits the stronger whitelist with no headline-side change, since the headline reads the same `verified_facts` variable. Positive coupling; recorded for that retro.
+
+#### 5c. Contracts changed others rely on
+
+- `_generate_headline` gained an optional defaulted param — no caller breakage (internal Python, two call sites both updated). The Redis `headline` field and `DescriptionResponseSchema.headline` are UNCHANGED in type; only the null-frequency changed (now also null on fact-check violation), which the route normaliser and SDK already handle. No external consumer impact.
+
+#### 5d. Architectural assumptions affected
+
+- **"Anti-hallucination grounding is enforced on the description but only advised on the headline"** (true since ADR-0009 / RETRO-028) is now FALSE — both buyer-facing LLM outputs have a system-prompt + deterministic post-gen check. The remaining asymmetry is detector PRECISION (§4a LG-1), not presence. The architectural shape "every buyer-facing generated string gets a grounding contract" is now the de-facto standard for this file.
+- **The headline's grounding now has a runtime dependency on the description's self-reported `verified_facts` quality** (§4a LG-2) — a soft coupling: if the description audit block is empty/malformed, the headline falls back to raw-text grounding (the `… else None` path, `:330`), which is the prior behavior, so no regression, but the BEST-case headline grounding is now gated on the description model's self-report fidelity.
+
+### 6. New lesson candidates
+
+- **Pattern (RESOLVED this PR — count stays 1, NOT promoted) — "a second, lighter LLM sub-call ships WITHOUT the anti-hallucination guardrail the primary call enforces."** RETRO-028 §6 logged this at count 1 as a watch-item ("relevant if a THIRD LLM call lands with inline-only 'do not invent' instructions"). FOLLOW-169 is the RESOLUTION of the FIRST instance (the headline), NOT a second occurrence of the gap — it brings the sibling up to bar. The gap count therefore stays 1; **no rule promotion.** Recorded the model close-out: "give the sub-call the same system prompt + a deterministic post-generation fact check + tests at the same tier as the primary call." If a THIRD distinct generated buyer-facing string (CTA / feature-blurb / alt-text) ships with inline-only grounding, THAT is the 2nd occurrence and the rule promotes then.
+- **Rule S — CONFIRMING close-out instance (not a new gap; no re-promotion needed — Rule S is already codified).** The description LLM call and the headline LLM call are a symmetric sibling pair (Rule S: "a change to one verb/branch of a symmetric set MUST be applied to ALL siblings at the SAME completeness AND verification tier"). RETRO-028 §4a LG-1/LG-2 was precisely a Rule-S violation discovered BEFORE Rule S existed (the headline sibling shipped at a lower grounding + verification tier than the description). FOLLOW-169 is the MODEL Rule-S close-out: it lifts the headline sibling to the same completeness (system prompt + post-gen check) AND the same verification tier (11 tests mirroring the description's grounding suite). Recorded as a positive Rule-S exemplar for future retros; Rule S already on the books, nothing to promote.
+- **Pattern (RESOLVED — RETRO-027 CB-1 / RETRO-028 DG-1 stale-cache-key-docstring maintenance trap) — count NOT advanced.** This PR CLOSES the stale docstring (DG-1) rather than recurring it. Recorded so the next retro does not mistakenly count #264 as a recurrence of the stale-docstring class.
+- **No Rule promoted this retro.** All candidates either resolved (count not advanced) or at count 1. No `CONVENTIONS_PATCH.md` edit by this run.
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed:** the easy verdict was "FOLLOW-169 adds a system prompt + a fact-check + 11 tests = RETRO-028 §4a fully closed, Wiring clean, done." I nearly recorded the fact-check as full grounding parity. The catch came from reading `_check_headline_facts` LITERALLY: the membership test is `token.lower() not in grounding` — a bare SUBSTRING containment, not a tokenised/whitelist match. That admits two concrete false-negatives (a "5" colliding with any "5" in the serialised JSON; a first-word proper name skipped by `words[1:]`). So the asymmetry is reduced from "absent" to "present-but-lower-precision," which is §4a LG-1 / FOLLOW-272 — invisible if you trust "AC2 added a fact check" without reading the matcher.
+- **An axis I had to trace twice — the `verified_facts` provenance.** I first read AC1 as "the headline now grounds against a verified whitelist = strictly safer." Tracing the variable back (`:325` ← `:291` `_generate_with_sonnet` ← `_parse_verified_facts:824`) showed the whitelist is the description MODEL'S SELF-REPORT, so a description-side hallucination that the model wrote into its own audit block becomes a "verified" headline input — §4a LG-2. That is a pre-existing limitation, not introduced here, but I had to trace the chain to confirm the PR doesn't WORSEN it (it doesn't — empty self-report falls back to raw-text, the prior behavior). The closure-discipline lesson: "grounds against verified_facts" is only as strong as how `verified_facts` itself was produced.
+- **A chain I traced end-to-end (prior-closure of RETRO-028 §4a/§4c/§4d):** LG-1 (no system prompt) → CLOSED (`:1336` `system=_HEADLINE_SYSTEM_PROMPT`). LG-2 (SDK headline not gated on `ai_cached`) → CLOSED via the route-invariant early-return `adapt-description.ts:253` reached before the headline branch `:301` + 3 SDK tests. TG-2 (grounding not ENFORCED, only present in prompt) → CLOSED (`_check_headline_facts` now enforces, with the LG-1 precision residue). DG-1 (stale cache-key docstrings) → CLOSED (`:9-13`, `:1398-1402`). So three of RETRO-028's four FOLLOW-169 components close fully end-to-end and one (TG-2/the fact check) closes the PRESENCE gap while leaving a PRECISION residue → FOLLOW-272. This is a genuine hop FORWARD (absent→present-but-imprecise), not a one-hop shuffle of the same gap — step-7 discipline distinguishing "added the mechanism" from "the mechanism is as strong as its sibling's."
+- **Meta-pattern in how gaps recur across agents:** the recurring shape is the SAME as the `quiz_config` lineage (Rule U) and the inquiry-selector chain — an agent closes the limb the ticket names (here: "add a fact check") at a SHALLOWER tier than the sibling it's meant to match, and the residue (detector precision; self-reported-whitelist trust) is one hop down. The ml-engineer did the RIGHT minimal thing (real parity in mechanism + tests); the aggregate lesson is that "bring X to the bar of Y" tickets need the retro to verify the DETECTOR/CHECK is as strong as Y's, not merely PRESENT — which is the Rule-S "same verification tier" clause doing its job.
+
+### 7. Follow-ups
+
+- **FOLLOW-272 (P3)** — Tighten `_check_headline_facts` precision to the description path's tier: replace the bare substring grounding test (`token.lower() not in grounding`, `generate_description.py:1236,1251`) with a word-boundary / whole-token match (so a bare "5" cannot match an unrelated id/year/price), and extend proper-name detection to `words[0]` (first-word entity escape); OR (preferred) derive the check from the passed `verified_facts` whitelist directly rather than the raw concatenated grounding text. Add red-then-green tests for the digit-coincidence and first-word-proper-name cases (§4c TG-1). [§4a LG-1; Rule S "same verification tier"]. (ml-engineer, 3h). Filed below.
+- DG-1 CLOSED by this PR (no follow-up). DG-2 (§E.7 ADR-0009 propagation) remains on FOLLOW-164 (no new stub). §4a LG-2 (self-reported verified_facts) is a pre-existing FOLLOW-162-lineage limitation, recorded only. §4c TG-2 / TG-1 recorded, not separately filed (folded into FOLLOW-272's test ACs).
+
+### 8. Cross-references
+
+- **RETRO-028 / FOLLOW-169 — the direct source.** RETRO-028 §4a LG-1 filed FOLLOW-169 (headline anti-hallucination asymmetry); §4a LG-2 (SDK `ai_cached` gate) and §4c TG-2 (grounding not enforced) and §4d DG-1 (stale cache-key docstrings) were folded into its ACs. This retro confirms LG-1, LG-2, TG-2, DG-1 CLOSED end-to-end (§7), with TG-2's fact-check closing PRESENCE but leaving a PRECISION residue → FOLLOW-272. I did NOT trust the "FOLLOW-169 closes RETRO-028 §4a" label — I read the matcher and traced `verified_facts` provenance (§8-meta).
+- **RETRO-027 (PR #172, v1.8) — same file (`generate_description.py`).** RETRO-027 CB-1 / RETRO-028 DG-1 stale-cache-key-docstring trap is CLOSED here (not recurred). RETRO-027/028's `<verified_facts_used>` audit-block design is the source of §4a LG-2's self-report limitation; FOLLOW-162 lineage owns any independent-extractor hardening.
+- **Rule S (CONVENTIONS_PATCH.md) — the codified rule this PR is the model close-out of.** The description↔headline LLM-call pair is a symmetric set; RETRO-028 §4a was a pre-Rule-S sibling-tier violation; FOLLOW-169 lifts the headline sibling to the same completeness + verification tier. Positive exemplar; nothing to promote (Rule S already on the books since RETRO-045).
+- **Rule U / RETRO-049-053 lineage — NOT applicable here** (no JSONB blob, no gating-state-in-blob); cross-referenced only to note the meta-pattern similarity (close-the-named-limb-at-a-shallower-tier) called out in §6 own-blind-spots.
+
+## RETRO-055 — FOLLOW-270 (Reconcile `QuizConfig.language` enum skew + extract canonical `QuizConfig` to `@estalara/shared` — closes RETRO-053 §4e MX-1 on the control-plane axis; surfaces the SDK + `LocaleSchema` axes the consolidation did not reach) — 2026-06-11
+
+### 1. Summary of change
+
+- **PR:** #265 (merged 2026-06-11 11:22 UTC; impl commit `5b4f1c1`, branch
+  `backend-engineer/FOLLOW-270-quiz-config-language-enum-skew`). backend-engineer. Sprint 16. Source
+  retro: RETRO-053 §4e MX-1.
+- **Files changed:** 5 code files in commit `5b4f1c1` (+162 / −49): `packages/shared/src/schemas/quiz-config.ts`
+  (NEW, +77), `packages/shared/src/schemas/index.ts` (+1 re-export), `api/quiz/config/route.ts`
+  (+12/−36), `dashboard/quiz/page.tsx` (+37/−13), `api/quiz/config/route.test.ts` (+35/−0, 4 new
+  tests). (The `gh pr view` file list also shows STATUS/QUEUE/FOLLOW_UPS — those are backlog
+  bookkeeping squashed into the PR view, not analyzed; the code commit is `5b4f1c1`.)
+- **Modules touched:** [shared (NEW schema module) / control-plane (API route + dashboard page +
+  test)]. NO SDK source, NO DB migration, NO docs/. **NOTE — version caveat:** the live tree of
+  `quiz-config.ts` ALREADY carries FOLLOW-271's `.omit({ enabled: true })` + `parseStoredQuizConfig`
+  (PR #266, commit `8f0bace`, merged AFTER #265). This retro analyzes ONLY what FOLLOW-270 shipped
+  (`git show 5b4f1c1` — which still carries `enabled` in the schema/interface/default); the `enabled`
+  stripping is RETRO-052/FOLLOW-271's scope, already retro'd, NOT re-analyzed here.
+- **Key contracts changed:**
+  - `QUIZ_LANGUAGE_VALUES = ['en','pl','es'] as const` — NEW exported tuple in `@estalara/shared`.
+    Consumed by `route.test.ts` and `page.tsx`. New canonical literal set for the quiz language enum.
+  - `QuizLanguage = (typeof QUIZ_LANGUAGE_VALUES)[number]` — NEW exported type. Breaking: no (additive).
+  - `QuizConfigSchema` (Zod), `QuizConfig` (interface), `QUIZ_DEFAULT_CONFIG` — MOVED from
+    `api/quiz/config/route.ts` (local) to `@estalara/shared`. `route.ts` now imports them and
+    re-exports `QuizConfig` by type alias (`route.ts:48`) for downstream compat. Breaking: no (same
+    shape; the move is transparent to importers).
+  - `dashboard/quiz/page.tsx` `language` axis — FIXED from `'en' | 'pl'` → `QuizLanguage`
+    (`'en'|'pl'|'es'`); `<select>` now driven from `QUIZ_LANGUAGE_VALUES` (`page.tsx:278`); `onChange`
+    cast is `as QuizLanguage` (`:274`). `'es'` is now UI-reachable. This is the RETRO-053 MX-1 fix.
+
+### 2. Verification done in PR
+
+- Test files changed: `route.test.ts` (+35 lines, 4 new tests, +1 import). Assertions added: ~7 —
+  `QUIZ_LANGUAGE_VALUES` contains en/pl/es + length 3 (`:99-102`); `QuizConfigSchema.safeParse` accepts
+  each of the 3 locales (`:105-108`); rejects `'de'` (`:112-113`); route handler `POST { language:'es' }`
+  → 200 + `language:'es'` in body (the end-to-end leg). Coverage delta: unknown (no report); qualitatively
+  the new canonical enum is pinned at the schema layer AND the route-handler layer.
+- CI checks: PR body reports `tsc --noEmit` clean (shared + control-plane), 914 control-plane tests pass,
+  205 shared tests pass, prettier clean, Rule H + Rule J pre-push green. CI-green box was unchecked at
+  PR-body authoring ("in progress"); the PR merged, so CI passed per the standing pm-orchestrator
+  CI-verify gate. NOT independently re-run here (read-only; standing Rule I / Vercel / Python pre-existing-red
+  caveat per `project_ci_gate_landscape`).
+- **Rule G amendment (2026-06-11) compliance — satisfied.** The PR body documents a pre-edit grep for
+  `language`/`QuizConfig` in test/fixture files and ran BOTH `tsc --noEmit` AND the vitest suites (914 +
+  205) before declaring ready — exactly the amendment's "verify with a runner, not just typecheck" clause.
+  This is the FIRST quiz-lineage PR to explicitly cite the amendment in its verification; no stale-test-data
+  escape (contrast RETRO-053 §4b BUG-1's hotfix).
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code (every new file/export has ≥1 non-test importer):**
+
+- `packages/shared/src/schemas/quiz-config.ts` (NEW file) — re-exported via `schemas/index.ts:16`
+  (`export * from './quiz-config.js'`). Per-export non-test importers (grep
+  `QUIZ_LANGUAGE_VALUES|QuizLanguage|QuizConfigSchema|QUIZ_DEFAULT_CONFIG|QuizConfig` across `apps/ packages/`
+  excl. node_modules/.next/.claude/tests):
+  - `QuizConfigSchema` → `api/quiz/config/route.ts:44,103` (production). Wired.
+  - `QUIZ_DEFAULT_CONFIG` → `route.ts:44,71,79,123` + `page.tsx:38,65` (production). Wired.
+  - `QuizLanguage` → `page.tsx:37,55,70` (production type). Wired.
+  - `QUIZ_LANGUAGE_VALUES` → `page.tsx:38,278` (production — drives the `<select>`). Wired. (Also
+    `route.test.ts` — test, suppressed.)
+  - `QuizConfig` (interface) → `route.ts:43` + re-export `:48`; `page.tsx`'s `DashboardQuizConfig`
+    spreads `QUIZ_DEFAULT_CONFIG` (structural use). Wired.
+  - **CHECK A clean.** (As shipped in `5b4f1c1`, `parseStoredQuizConfig` did NOT yet exist — it is
+    FOLLOW-271's; not in scope.)
+
+**CHECK B — Half-wire (every new/changed signal has BOTH producer AND consumer):**
+
+- No new event / env-var / DB column / topic / SDK runtime signal introduced — this PR moves a TYPE +
+  Zod schema into a shared package and fixes a UI enum. The `language` value's producer→consumer→render
+  chain is PRE-EXISTING and UNCHANGED in wiring: PRODUCER = dashboard `<select>` → `POST /api/quiz/config`
+  → `tenants.quiz_config` JSONB (`route.ts:130-133`); TRANSPORT = `GET /api/quiz/config` →
+  `SdkConfig.language` (`config.ts`); CONSUMER/RENDER = SDK `index.ts:700,709,820` →
+  `renderQuizWidget(..., quizConfig.language)` → `QUIZ_CONTENT[lang]` (`quiz-widget.ts:50`) +
+  `QUIZ_LABELS[lang]` (`quiz-trigger.ts:15`). The PR makes the producer (dashboard) able to EMIT `'es'`
+  (previously the UI couldn't), which the consumer (SDK `QUIZ_CONTENT.es`) was already able to render —
+  so the fix CLOSES a producer-narrower-than-consumer asymmetry rather than opening a half-wire. **CHECK B
+  clean** for the named change. (The SDK's own enum-source divergence is a TYPE-consistency / Rule-S
+  finding, not a runtime half-wire — see §4e MX-1.)
+
+`Wiring Audit — clean ✅` (CHECK A + CHECK B).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A for the control-plane axis.** The MX-1 fix is correct and complete on the route↔dashboard pair:
+  both reference `QUIZ_LANGUAGE_VALUES`/`QuizLanguage`, the `<select>` enumerates all three locales, the
+  `onChange` cast is `QuizLanguage`, and a third locale (`'es'`) is now genuinely UI-reachable AND
+  round-trips through the route handler (test `:163+`). No new logic gap introduced by the move/fix.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A — no shipped correctness defect.** The schema move is shape-preserving; `route.ts` re-exports
+  `QuizConfig` so any downstream `import { QuizConfig } from '.../route'` still compiles (grep finds no
+  such external importer anyway). The `page.tsx` enum widening is strictly additive (en/pl → en/pl/es) —
+  no value previously typeable becomes untypeable. No P0/P1/P2 code bug. (Contrast RETRO-053 §4b BUG-1
+  removal/stale-assertion shape — does not apply; this PR adds and moves, it does not remove a field.)
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, recorded — folds into FOLLOW-273, no separate file) — no test pins the DASHBOARD producer
+  side of the MX-1 fix.** The 4 new tests live in `route.test.ts` and exercise the schema/route (consumer/
+  validator) side: enum membership, Zod accept/reject, and the route handler accepting `'es'`. None
+  asserts that the dashboard `<select>` renders an `'es'` option or that `page.tsx` types `language` as
+  the 3-locale union — i.e. the PRODUCER half of the skew RETRO-053 MX-1 named. `page.tsx` has no test
+  file at all (consistent with RETRO-032's page.tsx-zero-tests finding). The fix is verified by the route
+  round-trip + the `QUIZ_LANGUAGE_VALUES`-driven `<select>` (structurally cannot omit a locale), so this
+  is belt-and-suspenders; recorded, not separately filed — a parity assertion is folded into FOLLOW-273's
+  ACs (which makes the SDK reference the canonical enum, where a structural parity test fits naturally).
+
+#### 4d. Documentation gaps
+
+- **N/A — and the docstrings are notably good.** `quiz-config.ts:26-28` documents the canonical-source
+  intent. **However, the docstring makes a claim the code does NOT satisfy** — see §4e MX-1: the file
+  header says *"API, dashboard, and SDK must all reference this constant — never repeat the literal set"*
+  (`:28`), but the SDK does NOT import it. That is a doc-asserts-more-than-code-delivers nit, captured
+  under MX-1 (the doc names the exact gap the fix left open), not a standalone DG.
+- Master Design §E.4.7 (`docs/MASTER_DESIGN.md:2330-2331`) named the ORIGINAL bug FOLLOW-270 fixed
+  (*"`QuizConfig.language` schema w `quiz/config/route.ts:25` ma tylko `'en'|'pl'` — musi być rozszerzony"*).
+  That MD note is now satisfied by the code; MD is descriptive prose (not a contract requiring a sync edit
+  per §Y.2), so no propagation follow-up. Recorded.
+
+#### 4e. Multi-axis / cross-contract finding (step-8)
+
+- **MX-1 (P2, NEW — the symmetric set FOLLOW-270 consolidated extends into the SDK, which the fix did NOT
+  reach; this is residual Rule-S asymmetry WITHIN the de-dup fix).** Step-8 axis analysis: FOLLOW-270's
+  thesis is "the `'en'|'pl'|'es'` literal set was hand-duplicated and drifted; consolidate it into one
+  canonical source." It consolidated exactly TWO of the copies (`route.ts` + `page.tsx`). But the SAME
+  literal set is hand-typed in the **SDK** at FOUR more source sites — and the SDK quiz path is the RUNTIME
+  RENDERER of the very `quizConfig.language` value the dashboard now produces:
+  - `packages/sdk/src/ui/quiz-widget.ts:27` — `QuizWidgetConfig.language: 'en' | 'pl' | 'es'`
+  - `packages/sdk/src/ui/quiz-widget.ts:50` — `QUIZ_CONTENT: Record<'en' | 'pl' | 'es', QuizLang>`
+  - `packages/sdk/src/ui/quiz-trigger.ts:12` — `QuizTriggerConfig.language: 'en' | 'pl' | 'es'`
+  - `packages/sdk/src/core/config.ts:95` — `SUPPORTED_LANGUAGES = ['en','pl','es'] as const` (the SDK's
+    OWN canonical-tuple-of-record, the one the schema docstring `:28` says should BE `QUIZ_LANGUAGE_VALUES`)
+
+  The SDK already depends on `@estalara/shared` (`packages/sdk/package.json:50`) and imports many shared
+  symbols (`EventSchema`, `ArchetypeId`, `FilterAppliedPayloadSchema`, …), so importing `QUIZ_LANGUAGE_VALUES`/
+  `QuizLanguage` is mechanically trivial. The chain is real (Master Design §E.4.7: priority-1 language
+  source is `quizConfig.language` from `/api/quiz/config` → SDK `config.language` → `renderQuizWidget`):
+  the value the dashboard sets is the value the SDK renders, and the two ends now reference DIFFERENT
+  hand-typed enum definitions. So the next locale addition (`'de'`/`'fr'`/`'ar'` for the UAE region) must
+  be edited in BOTH the canonical shared tuple AND the 4 SDK sites — exactly the multi-site drift the
+  ticket set out to eliminate. The fix moved the drift surface from 2 copies down to "1 canonical +
+  N SDK copies," not to 1. P2 (a future locale add silently renders untranslated/falls to `'en'` if the
+  SDK union isn't also edited; the schema docstring already PROMISES the SDK references the constant —
+  the gap is named in the code and unmet). → **FOLLOW-273 (P2).** Cite Rule S ("apply to ALL siblings of
+  the symmetric set" — here every hand-typed copy of the quiz-language literal set, including the SDK
+  render path).
+- **MX-2 (P3, NEW — the de-dup created a THIRD canonical locale enum instead of reconciling with the
+  existing `LocaleSchema`).** `@estalara/shared` ALREADY exports a canonical locale enum:
+  `packages/shared/src/schemas/description.ts:52` `export const LocaleSchema = z.enum(['en','pl','es'])`,
+  used by the `/api/adapt` + description-cache + quiz-completion routes (`route.ts:212`, `description/route.ts:77`,
+  `internal/description-cache/route.ts:51`, `quiz/completion/route.ts:51`). FOLLOW-270 introduced
+  `QUIZ_LANGUAGE_VALUES` as a SECOND canonical `['en','pl','es']` source in the same package rather than
+  deriving `QuizConfigSchema.language` from `LocaleSchema` (or a shared base). So the repo now has TWO
+  shared-package "canonical" copies of the identical locale set (`LocaleSchema` and `QUIZ_LANGUAGE_VALUES`)
+  plus the SDK's `SUPPORTED_LANGUAGES` — three canonical sources for one concept. This is lower severity
+  (both are in `@estalara/shared`, both currently equal) but it means a de-dup ticket ADDED a canonical
+  copy. P3 — recorded; FOLLOW-273 should reconcile quiz-language onto a single shared locale source
+  (prefer reusing/deriving from `LocaleSchema`) rather than adding `QUIZ_LANGUAGE_VALUES` as a parallel.
+- **Contradiction check vs prior retros:** RETRO-053 §4e MX-1 declared the `language` skew a control-plane
+  route↔dashboard problem and scoped FOLLOW-270 to "de-duplicate the hand-copied `QuizConfig` interface
+  into one shared type." RETRO-053 §4e did NOT examine the SDK render path or the existing `LocaleSchema` —
+  it analyzed only the two control-plane copies. This retro does NOT contradict RETRO-053's verdict (the
+  control-plane skew IS now closed); it EXTENDS the symmetric set RETRO-053 under-scoped: the canonical
+  set the ticket should have unified spans control-plane + SDK + the pre-existing `LocaleSchema`, and
+  FOLLOW-270's ACs (filed by RETRO-053) only named the two control-plane copies. The lesson the 049→055
+  quiz lineage keeps re-teaching: enumerate the FULL sibling set across ALL packages before scoping a
+  "de-duplicate" ticket — the runtime consumer (the SDK) is the easiest sibling to forget.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **RETRO-053 §4e MX-1 / FOLLOW-270 — CLOSED on the control-plane axis (§4a).** The route↔dashboard
+  `language` skew is reconciled; `'es'` is UI-reachable and route-validated end-to-end. The residual SDK +
+  `LocaleSchema` axes (§4e MX-1/MX-2) are NEW siblings RETRO-053 did not scope → FOLLOW-273.
+- **FOLLOW-271 / RETRO-052 (DONE, PR #266, merged after #265) — convergent, no conflict.** FOLLOW-271
+  built directly on FOLLOW-270's `quiz-config.ts` (added `.omit({ enabled: true })` + `parseStoredQuizConfig`).
+  The canonical-shared-schema FOLLOW-270 created is exactly the right home for FOLLOW-271's Rule-U `enabled`
+  elimination — the two tickets compose cleanly. (FOLLOW-271 already retro'd as RETRO-052; not re-analyzed.)
+- **TICKET-PILOT-001 (READY, Lane B pilot) — neutral/positive.** The pilot tenant is PL/EN; `'es'`
+  UI-reachability does not gate the pilot. No action.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-199 (Quiz v2.0, depends_on FOLLOW-257/199) — POSITIVE.** Quiz v2.0 re-opens the quiz config
+  surface; it now has a canonical `@estalara/shared` `QuizConfig`/`QuizConfigSchema` to extend rather than
+  a hand-copy to re-fork. If FOLLOW-273 lands first, Quiz v2.0 also gets a single quiz-language source
+  spanning the SDK render path — closing the drift before v2.0 adds a locale.
+- **Any UAE-region locale addition (`'ar'`) or new EU locale (`'de'`/`'fr'`)** — currently must be edited
+  in `QUIZ_LANGUAGE_VALUES` + `LocaleSchema` + the 4 SDK sites + the SDK `QUIZ_CONTENT`/`QUIZ_LABELS`
+  content maps. FOLLOW-273 reduces the TYPE-enum edit sites to one (the content maps still need the new
+  translations — that is real work, not drift). RETRO-053 §5c flagged `quiz_config` drift generally; this
+  is the locale-enum instance.
+
+#### 5c. Contracts changed others rely on
+
+- `@estalara/shared` gained `QUIZ_LANGUAGE_VALUES`, `QuizLanguage`, `QuizConfigSchema`, `QuizConfig`,
+  `QUIZ_DEFAULT_CONFIG` (new public-ish exports of the shared package). Additive; no existing consumer
+  breaks. The risk is the OPPOSITE of breakage — a parallel canonical enum (MX-2) that future code may
+  import instead of `LocaleSchema`, perpetuating two-source drift.
+- `api/quiz/config/route.ts` still re-exports `QuizConfig` (`:48`) — any downstream importing it from the
+  route keeps compiling. Grep finds no such non-test importer; the re-export is defensive.
+
+#### 5d. Architectural assumptions affected
+
+- **"There is one canonical locale enum in `@estalara/shared`" is now FALSE — there are two**
+  (`LocaleSchema` in `description.ts` and `QUIZ_LANGUAGE_VALUES` in `quiz-config.ts`), plus the SDK's
+  `SUPPORTED_LANGUAGES`. The repo-wide `'en'|'pl'|'es'` literal set appears at ~20 sites (9 SDK src, 6+
+  control-plane Zod/route, `LocaleSchema`, `quiz_completions` DB JSDoc). This is a SECOND instance of the
+  "hand-duplicated literal-set drifts across copies" shape on the SAME locale set — RETRO-053 MX-1 was the
+  first (control-plane route↔dashboard); this retro is the second (canonical-shared duplication + SDK
+  copies). The structural magnet is the same one Rule S governs (symmetric set, here a value enum spanning
+  packages). Tracked for the Rule-S promotion check below; the clean exit is a single `Locale`/`QuizLanguage`
+  source all packages import.
+
+### 6. New lesson candidates
+
+- **Pattern (count 2 — RECORDED, NOT promoted; folds under the EXISTING Rule S) — "a value/literal enum
+  (here the `'en'|'pl'|'es'` locale set) is hand-duplicated across packages/files; a 'de-duplicate it'
+  ticket consolidates the copies it can SEE in the named module but leaves siblings in OTHER packages
+  (esp. the runtime consumer) — and may even ADD a parallel canonical source — so the symmetric-set drift
+  is reduced, not eliminated."** Seen in:
+  - **RETRO-053 §4e MX-1 (FOLLOW-264)** — the `QuizConfig.language` enum drifted between the API route
+    copy and the dashboard copy (count 1, the control-plane instance; filed FOLLOW-270).
+  - **RETRO-055 §4e MX-1/MX-2 (this, FOLLOW-270)** — FOLLOW-270 unified the two control-plane copies but
+    left FOUR SDK hand-typed copies (the render path) AND created a 2nd canonical shared enum alongside the
+    pre-existing `LocaleSchema` (count 2, the cross-package instance).
+  **Threshold of 2 reached — but NOT promoting a new rule: this is already squarely Rule S** ("a change to
+  one verb/branch of a symmetric set MUST be applied to ALL siblings"). Rule S's existing clause already
+  requires "enumerate the full sibling set FIRST … state it in the PR description … apply to EVERY sibling
+  or justify the exemption." The two instances are a Rule-S violation (under-enumerated sibling set), not a
+  new pattern. **Recorded as a CONFIRMING Rule-S instance with a concrete sub-shape worth a future
+  amendment IF it recurs a 3rd time:** *"a 'de-duplicate / extract canonical' ticket must grep the literal/
+  shape being unified across ALL packages (incl. the SDK runtime consumer) and reconcile with any
+  pre-existing canonical source, not just the copies in the named module."* If a THIRD distinct
+  cross-package de-dup-leaves-a-sibling instance appears, promote that as a Rule S amendment. For now the
+  fix is FOLLOW-273 applying Rule S as already written.
+- **Rule promotion check (other rules):** Rule G amendment (2026-06-11) — CONFIRMING positive instance
+  (the PR ran the runner + grepped test data per the amendment, no stale-test escape); not re-promoted.
+  Rule I (wired-or-dead) — every new export has a non-test importer (§3 CHECK A); satisfied, not a finding.
+  Rule U — N/A to FOLLOW-270's scope (the `enabled` work is FOLLOW-271/RETRO-052). Rule L — N/A (no
+  install/snippet path change). **No Rule promoted this retro.** No `CONVENTIONS_PATCH.md` edit by this run.
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed and why:** the obvious verdict was "FOLLOW-270 extracted the canonical
+  `QuizConfig` to `@estalara/shared`, both control-plane copies now import it, `'es'` is UI-reachable,
+  4 new tests, RETRO-053 MX-1 closed end-to-end — Wiring clean, done." That verdict is CORRECT for the
+  control-plane axis. The catch came from step-8 applied to the WORD "de-duplicate": a de-dup ticket's
+  real success metric is "how many copies of this shape remain?", so I grepped the literal `'en'|'pl'|'es'`
+  set repo-wide (not just the two files in the diff) — which surfaced 4 SDK copies + the SDK's own
+  `SUPPORTED_LANGUAGES` + the pre-existing `LocaleSchema`. The schema's OWN docstring (`:28`) names the gap
+  ("API, dashboard, and SDK must all reference this constant") while the code leaves the SDK out. Lesson:
+  for a "de-duplicate / extract canonical" ticket, the audit is a REPO-WIDE grep of the shape being
+  unified, not a diff review — count the surviving copies, and read whether a canonical source ALREADY
+  existed (it did: `LocaleSchema`).
+- **An axis/chain I had to trace twice:** the SDK quiz-language render chain. I first read the SDK's
+  `'en'|'pl'|'es'` as "just an unrelated SDK constant." Tracing it (`index.ts:700` `language: config.language`
+  → `renderQuizWidget(..., quizConfig.language)` `:820` → `QUIZ_CONTENT[lang]` `quiz-widget.ts:50` /
+  `QUIZ_LABELS[lang]` `quiz-trigger.ts:15`) + Master Design §E.4.7 (priority-1 source = `quizConfig.language`
+  from `/api/quiz/config`) confirmed the SDK enum is the SAME contract's render end — the value the dashboard
+  produces is the value the SDK renders, against a DIFFERENT hand-typed copy. So it is a true Rule-S sibling,
+  not an unrelated constant. Lesson: a "config enum" finding must trace the enum to its RUNTIME RENDERER
+  before deciding it's out of scope — the consumer is a sibling of the producer's type.
+- **A meta-pattern in how gaps recur across agents:** the quiz lineage (049/050/051/053/052/this) keeps
+  showing the SAME shape — an agent fixes the limb/copies the ticket NAMES (here: the two control-plane
+  copies RETRO-053 scoped) and ships green, while the recurring escape is the sibling in ANOTHER package
+  (the SDK render path) or a pre-existing canonical source (`LocaleSchema`) the ticket's scope never
+  enumerated. Same root as the Rule-U `quiz_config` decay and the inquiry-selector chain: the fix is
+  scoped to what's in front of the author, and the symmetric-set / cross-package sibling is one hop away.
+  The retro's job (and Rule S's) is to enumerate the WHOLE set across packages before declaring a de-dup
+  complete. The agent did the RIGHT thing within RETRO-053's ACs; the under-scoping was in the ACs (filed
+  by RETRO-053, which only examined the control-plane axis) — which is itself the §4e contradiction-reconcile
+  lesson: a follow-up's scope is only as wide as the retro that filed it looked.
+
+### 7. Follow-ups
+
+- **FOLLOW-273 (P2)** — Make the SDK quiz/locale path reference the canonical shared language enum and
+  reconcile the duplicate canonical source: replace the hand-typed `'en' | 'pl' | 'es'` unions in
+  `packages/sdk/src/ui/quiz-widget.ts:27,50`, `quiz-trigger.ts:12`, and `core/config.ts:95`
+  (`SUPPORTED_LANGUAGES`) with `QuizLanguage`/`QUIZ_LANGUAGE_VALUES` imported from `@estalara/shared`
+  (the SDK already depends on it); AND reconcile `QUIZ_LANGUAGE_VALUES` with the pre-existing
+  `LocaleSchema` (`packages/shared/src/schemas/description.ts:52`) so there is ONE canonical locale source
+  (prefer deriving the quiz enum from `LocaleSchema` or a shared base, not two parallel `['en','pl','es']`
+  tuples). Apply Rule S (every sibling of the symmetric set, incl. the SDK render path). [§4e MX-1/MX-2;
+  §5d] (sdk-engineer, 3h). Filed below.
+- TG-1 (dashboard producer-side parity assertion) and the §4d docstring-overclaim are RECORDED, folded into
+  FOLLOW-273's ACs, not separately filed.
+- **NOTE on numbering:** FOLLOW-266–269 are RESERVED for the Archetype Identification Tracer (QUEUE.md:13,
+  CEO-directed 2026-06-10); 270/271/272 are consumed (RETRO-053/052/054). This retro's stub is **FOLLOW-273**.
+
+### 8. Cross-references
+
+- **RETRO-053 / FOLLOW-264 / FOLLOW-270 — the direct source and the closure-with-extension.** RETRO-053
+  §4e MX-1 filed FOLLOW-270 scoped to the control-plane route↔dashboard `language` skew. This retro confirms
+  that control-plane axis is CLOSED end-to-end (route + dashboard both import `QUIZ_LANGUAGE_VALUES`, `'es'`
+  UI-reachable + route-validated), and EXTENDS the symmetric set RETRO-053 under-scoped to the SDK render
+  path + the pre-existing `LocaleSchema` (§4e MX-1/MX-2 → FOLLOW-273). I did NOT trust the "FOLLOW-270 closes
+  MX-1" label — I grepped the unified literal set repo-wide and traced the SDK render chain (§8-meta).
+- **RETRO-049 / RETRO-050 / RETRO-051 / RETRO-052 / RETRO-053 — the `tenants.quiz_config` quiz lineage.**
+  Six consecutive retros on the quiz config surface. This entry is the locale-enum facet of the same
+  recurring "fix the named copies, miss the cross-package sibling" shape; §5d tracks the duplicate-canonical
+  -source decay (now two shared locale enums + SDK copies).
+- **FOLLOW-271 / RETRO-052 — the convergent sibling.** FOLLOW-271 built `.omit({ enabled: true })` +
+  `parseStoredQuizConfig` ON TOP of the `quiz-config.ts` this PR created; the live file carries both — the
+  version caveat in §1 separates FOLLOW-270's scope (analyzed here) from FOLLOW-271's (RETRO-052).
+- **Rule S (CONVENTIONS_PATCH.md, since RETRO-045) — the rule this finding falls under.** The
+  `'en'|'pl'|'es'` enum is a symmetric set spanning packages; FOLLOW-270 applied the consolidation to two
+  of its members and left the SDK siblings + the parallel `LocaleSchema` — a Rule-S under-enumerated-set
+  instance (count 2 across RETRO-053/055). Not re-promoted (Rule S already codified); a Rule-S amendment is
+  scoped IF a 3rd cross-package de-dup-leaves-a-sibling instance recurs (§6).
+- **Rule G amendment (2026-06-11, RETRO-053 §6) — positive confirming instance.** FOLLOW-270's verification
+  ran the vitest suites + grepped test data per the amendment; the first quiz-lineage PR to cite it and
+  ship without a stale-test-data hotfix (contrast RETRO-053 §4b BUG-1).
+
+## RETRO-056 — FOLLOW-271 (Eliminate orphaned `quizConfig.enabled` JSONB key — strip-on-write `.omit()` + `parseStoredQuizConfig()` read-strip + migration 0026 backfill; the Rule-U close-out of the `enabled` gating-key — but the blob's remaining `sticky_widget` / `micro_polls_enabled` keys are themselves orphaned write-only, the same decay one hop down) — 2026-06-11
+
+### 1. Summary of change
+
+- **PR:** #266 (merged 2026-06-11 19:38:44 UTC, merge commit `de94873`; branch
+  `backend-engineer/FOLLOW-271-strip-quiz-enabled-blob-key`). backend-engineer. Sprint 16. Source retro:
+  RETRO-052 §4a LG-1 / §5d / §6 (Rule U promotion). Verified `de94873` is on `main`.
+- **Files changed:** 8 (+215 / −85). Code/schema-relevant: 5 —
+  `packages/shared/src/schemas/quiz-config.ts` (+45/−16; `_QuizConfigFullSchema` legacy-tolerant + public
+  `QuizConfigSchema = .omit({ enabled: true })` + new `parseStoredQuizConfig()`),
+  `apps/control-plane/src/app/api/quiz/config/route.ts` (+20/−6; GET+POST call `parseStoredQuizConfig`,
+  `.omit` applied on write), `apps/control-plane/src/app/api/quiz/config/route.test.ts` (+80/−26; AC4 +
+  legacy-strip tests), `apps/control-plane/src/app/dashboard/quiz/page.tsx` (+5/−1;
+  `DashboardQuizConfig` drops `enabled`), `packages/db/src/schema/tenants.ts` (+11/−12; JSDoc rewrite).
+  Plus migration `packages/db/migrations/0026_strip_quiz_config_enabled.sql` (NEW +19) +
+  `meta/_journal.json` (+7, entry 26). The 8th file `backlog/QUEUE.md` (+28/−24) is bookkeeping.
+- **Modules touched:** [shared (`@estalara/shared` quiz-config schema) / control-plane (quiz config route +
+  dashboard page + test) / packages/db (tenants JSDoc + NEW backfill migration)]. **NO SDK source. NO docs/.**
+- **Key contracts changed:**
+  - **`QuizConfig` interface / `QUIZ_DEFAULT_CONFIG` (`@estalara/shared`)** — `enabled: boolean` REMOVED
+    from both. Breaking: technically yes for any consumer reading `QuizConfig.enabled`, but grep finds
+    NONE (the dashboard `DashboardQuizConfig` extension dropped it in the same PR; SDK never imported it).
+    Effectively non-breaking.
+  - **`QuizConfigSchema` (Zod, `@estalara/shared`)** — now `_QuizConfigFullSchema.omit({ enabled: true })`.
+    `enabled` is STRIPPED at parse time on every POST write — it can no longer re-enter the JSONB blob.
+    Breaking: no (silently drops an extra key; never rejects).
+  - **`parseStoredQuizConfig(raw): Partial<QuizConfig>` (NEW export, `@estalara/shared`)** — parses with
+    the legacy-tolerant `_QuizConfigFullSchema` then destructures `enabled` out. Read-side belt-and-
+    suspenders for pre-backfill rows. New public export.
+  - **`tenants.quiz_config` JSONB (DB)** — `enabled` key ELIMINATED: stripped on write (schema) AND removed
+    from all existing rows (migration 0026, `quiz_config = quiz_config - 'enabled' WHERE quiz_config ? 'enabled'`).
+  - **`tenants.quizConfig` JSDoc (`packages/db/src/schema/tenants.ts`)** — rewritten; the "intentionally
+    ignored / orphaned" `enabled` language is gone; now declares "valid keys: `accentColor`, `language`,
+    `stickyWidget`, `microPollsEnabled`." (See §4a LG-1 — this VALID-keys claim is the new gap.)
+
+### 2. Verification done in PR
+
+- Test files changed: `route.test.ts` (+80/−26). Net new/rewritten assertions ~12: schema-level
+  `safeParse({enabled:true})` strips it (both `true` and `false`); GET default-shape asserts `enabled`
+  ABSENT + `quiz_enabled` typed boolean present; GET legacy-blob strip (pre-backfill row carrying
+  `enabled:true` → response has no `enabled`, retains `language`); POST AC4 (`{enabled:true,language:'pl'}`
+  → 200, `enabled` absent); POST-without-enabled; the old "400 when enabled not boolean" test was
+  REPURPOSED to "400 when language invalid" (correct — `enabled` is no longer a validated field). **The
+  tests drive the REAL `GET`/`POST` route handlers via `makeGetRequest`/`makePostRequest` (seam, not a
+  mirror) — Rule Q satisfied.**
+- PR body reports: 918/918 control-plane tests pass (75 files), `tsc --noEmit` exit 0 on
+  `@estalara/control-plane`, `bash scripts/check-migration-journal.sh` → "Migration journal OK — 27
+  entries, all monotonic, all within 7d of SQL file commit date", Rule H + Rule J pre-push green.
+- CI checks: not independently re-run here (read-only). Migration journal monotonicity INDEPENDENTLY
+  re-verified in the live tree: entry 25 `quiz_enabled` `when:1781112236167` → entry 26
+  `strip_quiz_config_enabled` `when:1781202418234` (strictly increasing). Standing
+  `project_ci_gate_landscape` caveat applies (Rule I / Vercel / Python checks pre-existing-red & non-
+  blocking; the real gates are the unit suites + typecheck + journal check the PR reports).
+- **Rule G amendment (2026-06-11) compliance — satisfied.** The schema/interface/default `enabled` removal
+  is a type-shape change; the PR ran BOTH `tsc --noEmit` AND the 918-test vitest runner (not typecheck
+  alone) and the stale `enabled`-asserting tests were REWRITTEN (the "400 when enabled not boolean" → "400
+  when language invalid" repurpose), not left to silently pass — exactly the amendment's runner-not-just-
+  typecheck + grep-test-data clause. No Rule-T `vi.fn<>` escape (no typed-mock type-args added).
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code (every new file/export has ≥1 non-test importer):**
+
+- `parseStoredQuizConfig` (NEW export) → consumed at `route.ts:70` (GET path) and `route.ts:122` (POST
+  path), both production. Grep `parseStoredQuizConfig` across `apps/ packages/` excl. tests → def
+  `quiz-config.ts:101` + import `route.ts:44` + 2 call sites. **Wired.**
+- `_QuizConfigFullSchema` (NEW internal) → consumed by `QuizConfigSchema` (`.omit`, `:64`) and
+  `parseStoredQuizConfig` (`:103`), both in-file. Not a new public symbol; module-internal. **Wired.**
+- `QuizConfigSchema` (CHANGED, not new) retains its `route.ts:103` production consumer. `QUIZ_DEFAULT_CONFIG`
+  retains `route.ts:71,79` + `page.tsx`. The migration `.sql` is a DB entrypoint (suppressed). The test file
+  is suppressed. **CHECK A clean.**
+
+**CHECK B — Half-wire (every new/changed signal has BOTH a producer AND a consumer):**
+
+- The change in this PR is a key REMOVAL (`enabled`), which by definition cannot create a producer-without-
+  consumer or consumer-without-producer for `enabled` — it eliminates both ends. `enabled` is now: no
+  writer (stripped by `.omit` on POST), no reader (the freeze guard reads the typed `quizEnabled` column —
+  `adapt/route.ts:131,142`, RETRO-051/052 lineage; the SDK never read `quizConfig.enabled` — grep of
+  `packages/sdk/src` for `quizConfig…enabled` is EMPTY), no persisted value (migration 0026 backfill).
+  **For the `enabled` axis: clean — fully de-wired both ends.**
+- **HOWEVER, CHECK B on the BLOB AS A WHOLE (Rule U mandate: "a retro for any change that touches such a
+  blob MUST grep EVERY key of the blob for writer/reader parity") surfaces TWO orphaned write-only keys
+  the JSDoc now mislabels "valid":**
+  - **`micro_polls_enabled` — HALF_WIRE_P (P2).** PRODUCER: dashboard `page.tsx:57` writes it via POST →
+    persisted to the blob. CONSUMER on the SDK side reads `(config as Record).micro_polls_enabled`
+    (`index.ts:888,965`) — BUT `config.micro_polls_enabled` is NEVER populated from the tenant blob: the
+    SDK does NOT fetch `/api/quiz/config` at runtime (grep of `packages/sdk/src` for `quiz/config` finds
+    only the `quiz/completion` POST, not a config GET), and `buildSnippet` (`DetectionPreview.tsx:132-147`)
+    emits ONLY `data-tenant-id/api-key/decision-url/inquiry-submit-selector/quiz-enabled` — NO
+    `data-micro-polls-enabled`. So the dashboard toggle writes a blob key that has no production path to the
+    SDK reader → write-only orphan. → **FOLLOW-274 (P2).**
+  - **`sticky_widget` — HALF_WIRE_P (P2).** PRODUCER: dashboard `page.tsx:54,252` toggle → blob. CONSUMER:
+    NONE in `packages/sdk/src` (grep `sticky_widget|stickyWidget` → empty). No snippet attribute, no
+    runtime fetch. Pure write-only blob key. → folded into **FOLLOW-274**.
+- `language` / `accent_color` ARE consumed by the SDK (`config.ts:143,160` via `data-language` /
+  `data-accent-color`), so they are NOT write-only — but their dashboard-blob→SDK chain ALSO runs through a
+  snippet that `buildSnippet` does not emit them on (only the demo mockup `layout.tsx:39` hardcodes
+  `data-accent-color`). That dashboard-producer↔SDK-consumer skew on `language`/`accentColor` is the
+  RETRO-055 FOLLOW-273 axis (already filed) — cross-referenced, not re-filed here.
+- **Net: the `enabled` wiring this PR changed is clean; the blob-wide grep the Rule U promotion MANDATES
+  surfaces `sticky_widget` + `micro_polls_enabled` as the next two orphans → FOLLOW-274.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, NEW → FOLLOW-274) — the new `tenants.ts` JSDoc declares `stickyWidget` and `microPollsEnabled`
+  among the "valid keys" of `quiz_config`, but both are orphaned write-only blob keys with no end-to-end SDK
+  consumer — the SAME decay shape `enabled` had, one hop downstream.** FOLLOW-271 correctly ELIMINATED
+  `enabled` (the gating key — the Rule-U headline). But in rewriting the JSDoc it replaced the old "valid
+  keys (incl. the orphaned `enabled`)" framing with "SCOPE (valid keys): `accentColor`, `language`,
+  `stickyWidget`, `microPollsEnabled`" (`tenants.ts:42`) — implying all four are live. Two are not:
+  `micro_polls_enabled` (`page.tsx:57` producer; SDK reads `config.micro_polls_enabled` at
+  `index.ts:888,965` but that field is never sourced from the blob — no `data-micro-polls-enabled` in
+  `buildSnippet`, no SDK runtime GET of `/api/quiz/config`) and `sticky_widget` (`page.tsx:54,252`
+  producer; ZERO SDK reader). They are written by the dashboard, persisted to the blob, and read by nobody
+  in production. This is precisely the Rule-U/RETRO-050 "JSONB blob accumulating write-only keys / partial
+  dead-letter store" shape — the lineage is NOT fully closed: `enabled` is gone, but the blob still carries
+  two orphans, and the new docstring now ASSERTS they're valid, masking the residue. P2 (false
+  configurability — an admin toggling "sticky widget" / "enable micro-polls" in the dashboard sees no
+  runtime effect; identical to RETRO-050's `trigger_after_n_listings` false-configurability). →
+  **FOLLOW-274 (P2):** wire `micro_polls_enabled` + `sticky_widget` end-to-end (emit `data-micro-polls-
+  enabled` / `data-sticky-widget` in `buildSnippet`, OR have the SDK read them) OR retire the orphaned
+  producers + correct the JSDoc to list only genuinely-wired keys. Apply Rule U (grep EVERY key) + Rule L
+  (all three limbs). Cite RETRO-050 §4a LG-1.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A — no shipped correctness defect.** The `.omit({ enabled: true })` strips correctly (tested both
+  `true`/`false`); `parseStoredQuizConfig` returns `{}` on parse failure (fail-safe) and merges over
+  `QUIZ_DEFAULT_CONFIG` so a malformed legacy blob degrades to defaults, not a crash; the migration's
+  `WHERE quiz_config ? 'enabled'` predicate scopes the UPDATE to affected rows and the JSONB `-` operator
+  is atomic per-key (does not disturb sibling keys). The repurposed "400 when language invalid" test is a
+  correct replacement (an invalid enum value still 400s; `enabled` is simply no longer a rejectable field).
+  No P0/P1/P2 code bug.
+- **Note (recorded, not a bug):** `parseStoredQuizConfig` carries an `eslint-disable
+  @typescript-eslint/no-unused-vars` on the `const { enabled: _dropped, ...blob }` destructure
+  (`quiz-config.ts:103-104`). This is the idiomatic destructure-to-omit and the disable is justified +
+  inline-commented (Rule per CLAUDE.md "Zero `any`/disable without reason" — satisfied). Acceptable.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, recorded → folded into FOLLOW-274, not separately filed) — no test asserts the MIGRATION's
+  backfill behavior** (`quiz_config - 'enabled'` actually removes the key from a real row while preserving
+  siblings). The journal-monotonicity script is run, but there is no PGlite/integration test executing
+  0026 against a seeded row carrying `enabled` + `language`. The read-side `parseStoredQuizConfig` strip IS
+  tested (the GET legacy-blob test), which is the belt-and-suspenders that makes the migration non-load-
+  bearing for correctness, so this is acceptable as P3. Recorded.
+- **TG-2 (P3, recorded → FOLLOW-274) — no test pins the §4a LG-1 orphan-key reality** (that
+  `sticky_widget`/`micro_polls_enabled` round-trip dashboard→blob but reach no SDK consumer). FOLLOW-274
+  should add the red-then-green wiring/parity assertion when it resolves the orphans. Recorded.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, NEW → folded into FOLLOW-274) — the `tenants.ts` JSDoc + `quiz-config.ts:58` + the route
+  docstring all now assert four "valid" blob keys, two of which (`stickyWidget`, `microPollsEnabled`) are
+  orphaned write-only.** This is the documentation face of §4a LG-1: the docstrings were rewritten to
+  remove the `enabled`-orphaned annotation (good) but over-corrected to imply ALL remaining keys are live.
+  Correcting this docstring is part of FOLLOW-274's scope (either wire the keys → docstring becomes true,
+  or retire them → docstring lists only `accentColor`/`language`). Not separately filed.
+- **Otherwise N/A — the `enabled`-specific docstrings are excellent.** `tenants.ts:48-54`,
+  `quiz-config.ts:12-16,90-99`, and `route.ts:29-33` clearly document the strip-on-write + read-strip +
+  backfill triad with FOLLOW-271/Rule-U provenance. No stale `enabled` mislead remains anywhere (grep of
+  the quiz paths for `enabled` finds only the FOLLOW-271 explanatory comments + the legacy-tolerant
+  `_QuizConfigFullSchema` field + the typed-column `quiz_enabled` references — all correct).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **RETRO-052 / FOLLOW-271 — the `enabled` gating-key gap is CLOSED end-to-end (the Rule-U headline).**
+  RETRO-052 §4a LG-1 filed FOLLOW-271 to "strip `enabled` on write + backfill" because the annotation
+  (FOLLOW-265 AC4) left the WRITE-side divergence channel open. Traced all three: (1) write-strip —
+  `QuizConfigSchema.omit({ enabled: true })` (`quiz-config.ts:64`), tested; (2) read-strip —
+  `parseStoredQuizConfig` (`route.ts:70,122`), tested; (3) backfill — migration 0026, journal-monotonic.
+  The two-store divergence (`tenants.quiz_enabled` column vs `quizConfig.enabled` key) is now ELIMINATED,
+  not merely documented. **This is a genuine full close of the `enabled` axis — the annotate→eliminate hop
+  RETRO-052 §8-meta flagged is completed.**
+- **FOLLOW-270 / RETRO-055 (DONE, PR #265, merged earlier 2026-06-11) — convergent, no conflict.**
+  FOLLOW-271 built `.omit` + `parseStoredQuizConfig` directly onto the `quiz-config.ts` FOLLOW-270 created
+  in `@estalara/shared` — the canonical-shared home composes cleanly with the Rule-U elimination, exactly
+  as RETRO-055 §5a predicted.
+- **TICKET-PILOT-001 (READY, Lane B pilot) — neutral/positive.** The freeze guard reads `quizEnabled`
+  (typed column), unaffected by this blob change; eliminating the divergent `enabled` key removes any
+  residual "which store wins?" ambiguity at the pilot go/no-go. No new dependency.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-199 (Quiz v2.0) — POSITIVE + a watch-item.** Quiz v2.0 re-opens the quiz config surface; it now
+  inherits a clean `enabled`-free blob + the Rule-U precedent (gating state → typed column). WATCH: Quiz
+  v2.0 must also decide the fate of `sticky_widget`/`micro_polls_enabled` (FOLLOW-274) — if v2.0 wires
+  micro-polls/sticky end-to-end it closes the §4a LG-1 orphans for free; if it leaves them it perpetuates
+  the decay. The §4a LG-1 finding should be resolved BEFORE v2.0 adds more keys (Rule U: don't accrete a
+  new orphan onto an un-cleaned blob).
+- **Any future per-tenant widget toggle** must follow Rule U + Rule L: a typed column for gating state, and
+  for blob UX keys, wire the producer→snippet/transport→SDK-consumer in the SAME PR — the
+  `micro_polls_enabled` orphan (dashboard writes, snippet never emits, SDK reads an unpopulated field) is
+  the cautionary instance.
+
+#### 5c. Contracts changed others rely on
+
+- **`QuizConfig` (`@estalara/shared`) lost its `enabled` field** — any external `QuizConfig.enabled` reader
+  would break, but grep finds none (the dashboard extension dropped it in-PR; SDK never imported `QuizConfig`).
+  `QUIZ_DEFAULT_CONFIG` lost `enabled` similarly. Additive-safe in practice.
+- **`parseStoredQuizConfig` is a new `@estalara/shared` export** — additive; consumers should use it
+  (rather than raw casting) when reading `quiz_config` to inherit the legacy-strip. Worth noting for any
+  future route that reads the blob.
+- **The migration journal advanced to 27 entries / idx 26.** Any concurrent migration-authoring PR must
+  branch from this journal (entry 26 `when:1781202418234`) to keep monotonicity — standard migration
+  serialization, no special action.
+
+#### 5d. Architectural assumptions affected
+
+- **"`tenants.quiz_config` is a clean widget-UX blob" is now PARTIALLY true.** The gating key (`enabled`)
+  is eliminated — the blob no longer mixes gating + UX state, which was the Rule-U thesis. BUT it is NOT
+  yet a clean UX blob: two of its four keys (`sticky_widget`, `micro_polls_enabled`) are orphaned write-
+  only (§4a LG-1). So the blob decay is REDUCED (the dangerous gating-divergence is gone) but not
+  ELIMINATED (write-only UX orphans remain). This is the SEVENTH retro touch on this exact blob
+  (049/050/051/052/053/055/this) — the decay keeps revealing one more orphan as each named one is closed,
+  which is itself the Rule-U meta-lesson (close the named key, the blob still carries the next).
+- **Rule U is now PROVEN as a close-out mechanism on its first application.** FOLLOW-271 is the model
+  Rule-U execution (strip-on-write + backfill + the typed column as SoT) — the first ticket filed under
+  Rule U closes the key it targeted end-to-end. The residual (§4a LG-1) is not a Rule-U failure; it is
+  Rule U's own "grep EVERY key" clause doing its job by surfacing the NEXT orphans. Recorded as a positive
+  Rule-U exemplar.
+
+### 6. New lesson candidates
+
+- **Pattern (Rule U — CONFIRMING close-out instance on the `enabled` axis; AND a 4th-occurrence
+  RESIDUAL-orphan instance on the `sticky_widget`/`micro_polls_enabled` axis — Rule U ALREADY codified, NOT
+  re-promoted).** Rule U (promoted RETRO-052 §6, count 3 on `tenants.quiz_config`) governs exactly this
+  blob. FOLLOW-271 is the MODEL Rule-U close-out of the `enabled` key (strip-on-write + backfill + typed-
+  column SoT — the rule's prescription executed). The NEW finding (§4a LG-1: `sticky_widget` /
+  `micro_polls_enabled` orphaned write-only) is a 4th instance of the SAME `quiz_config`-decay shape — but
+  it does NOT promote a new rule (Rule U already covers it, and its "grep EVERY key" clause is precisely
+  what surfaced this). The lesson the 4th instance teaches is about Rule U's APPLICATION DISCIPLINE: a
+  Rule-U close-out ticket that rewrites the blob's docstring MUST verify EVERY key it newly lists as
+  "valid" is actually wired — FOLLOW-271 eliminated the named orphan but its docstring rewrite implicitly
+  re-blessed two un-named orphans. Recorded as a Rule-U application caveat (no CONVENTIONS_PATCH edit):
+  *"when closing one orphaned blob key under Rule U, re-grep ALL sibling keys for end-to-end wiring before
+  documenting them as valid — the close-out PR's own docstring is a place the next orphan hides."*
+- **Rule L (install/snippet completeness) — CONFIRMING instance, not re-promoted.** The
+  `micro_polls_enabled` orphan is a Rule-L "all three limbs" gap (producer dashboard ✓, transport snippet
+  ✗ — `buildSnippet` doesn't emit it, SDK consumer reads an unpopulated field). This is the same shape
+  RETRO-050 FOLLOW-257 (`data-quiz-trigger`) and the inquiry-selector chain showed. Rule L already
+  codified; FOLLOW-274 applies it. Count noted, not promoted.
+- **Rule G amendment (2026-06-11) — CONFIRMING positive instance.** The `enabled` removal is a type-shape
+  change; the PR rewrote the stale `enabled`-asserting tests (the "400 when enabled not boolean" repurpose)
+  and ran the 918-test runner, not typecheck alone — no stale-test-data escape. Not re-promoted.
+- **Rule Q (invoke-via-seam) — CONFIRMING.** The new tests drive the real `GET`/`POST` handlers, not a
+  mirror. Not re-promoted.
+- **No Rule promoted this retro.** The one NEW finding (§4a LG-1) is a 4th instance of the already-codified
+  Rule U; no new pattern crosses a fresh threshold. **No `CONVENTIONS_PATCH.md` edit by this run.**
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed and why.** The obvious — and CORRECT — headline verdict was "FOLLOW-271 is the
+  textbook Rule-U close-out: `.omit` strips on write, `parseStoredQuizConfig` strips on read, migration 0026
+  backfills, the typed `quiz_enabled` column is the SoT, 918 tests pass, journal monotonic, RETRO-052 §4a
+  LG-1 closed end-to-end — Wiring Audit clean, done." I nearly recorded a clean retro. The catch came from
+  the Rule-U promotion's OWN mandated clause — "a retro for any change that touches such a blob MUST grep
+  EVERY key of the blob for writer/reader parity, not just the one the ticket names." Applying it: I grepped
+  the four remaining keys' SDK consumers and found `sticky_widget` has none and `micro_polls_enabled` reads
+  a `config.micro_polls_enabled` that `buildSnippet` never emits and the SDK never fetches — two write-only
+  orphans the rewritten docstring now blesses as "valid." Invisible if you trust "the named key (`enabled`)
+  is eliminated, lineage closed" without executing the rule's blob-wide grep on the close-out PR itself.
+- **An axis/chain I had to trace twice — the `micro_polls_enabled` consumer.** I first saw
+  `index.ts:888,965` reading `(config as Record).micro_polls_enabled` and almost classified the key as
+  wired ("the SDK reads it"). Tracing the PROVENANCE of `config.micro_polls_enabled` — does it come from the
+  tenant blob? — showed it does NOT: the SDK builds `config` from `data-*` snippet attributes
+  (`config.ts:107-186`), `buildSnippet` (`DetectionPreview.tsx:132-147`) emits no `data-micro-polls-
+  enabled`, and there is no SDK runtime GET of `/api/quiz/config` (only a `quiz/completion` POST). So the
+  SDK reads a field that the production install path never populates from the blob — a CONSUMER-EXISTS-but-
+  DISCONNECTED-from-the-PRODUCER half-wire, which looks wired at a single-grep glance. Lesson: a "the SDK
+  reads `config.X`" observation must trace `config.X` back to whether the snippet PRODUCER emits it before
+  declaring the key end-to-end wired.
+- **A meta-pattern in how gaps recur across agents.** This is the SEVENTH consecutive retro on
+  `tenants.quiz_config` (049→056). The invariant shape: an agent correctly eliminates/fixes the ONE key the
+  ticket names (here: `enabled`, the model Rule-U close-out) and ships green, while the blob still carries
+  the NEXT orphan one hop down (`trigger_after_n_listings` → `enabled` → now `sticky_widget`/
+  `micro_polls_enabled`). The decay is a structural magnet: a shared multi-key JSONB blob where the
+  producer (dashboard) and the consumer (SDK, via a snippet that doesn't carry the keys) live in different
+  packages, so each key's wiring must be verified across the package boundary — exactly the cross-package-
+  sibling blind spot Rule S / RETRO-055 §8-meta also names. The retro's job (and Rule U's "grep EVERY key"
+  clause's) is to enumerate the WHOLE blob across the producer↔snippet↔SDK chain on every touch — which is
+  why this retro files FOLLOW-274 rather than declaring the lineage closed at `enabled`.
+
+### 7. Follow-ups
+
+- **FOLLOW-274 (P2)** — Resolve the two orphaned write-only `quiz_config` keys the FOLLOW-271 docstring
+  rewrite re-blessed as "valid": `micro_polls_enabled` (dashboard `page.tsx:57` producer; SDK reads
+  `config.micro_polls_enabled` at `index.ts:888,965` but `buildSnippet` `DetectionPreview.tsx:132-147`
+  never emits `data-micro-polls-enabled` and the SDK does not GET `/api/quiz/config` at runtime) and
+  `sticky_widget` (`page.tsx:54,252` producer; ZERO SDK consumer). Either WIRE them end-to-end (emit
+  `data-micro-polls-enabled` / `data-sticky-widget` in `buildSnippet` so the existing SDK read is
+  reached, OR have the SDK fetch them) OR RETIRE the dashboard producers — and in either case correct the
+  `tenants.ts:42` / `quiz-config.ts:58` / `route.ts:18` docstrings to list only genuinely-wired keys. Add
+  a parity/wiring test (§4c TG-2) and, if wiring, a migration-backfill test (§4c TG-1). Apply Rule U (grep
+  EVERY key) + Rule L (all three limbs). [§4a LG-1; §4c TG-1/TG-2; §4d DG-1; §5d] (backend-engineer +
+  sdk-engineer, 4h). Filed below.
+- **The `enabled` axis is fully CLOSED by this PR — no follow-up.** The `language`/`accent_color`
+  dashboard→snippet→SDK skew is the EXISTING RETRO-055 FOLLOW-273 axis — cross-referenced, NOT re-filed.
+- **NOTE on numbering:** FOLLOW-266–269 are RESERVED (Archetype Identification Tracer, QUEUE.md:13, CEO-
+  directed 2026-06-10 — do NOT reuse); 270–273 are consumed (RETRO-053/052/054/055). This retro's stub is
+  **FOLLOW-274**.
+
+### 8. Cross-references
+
+- **RETRO-052 / FOLLOW-265 / FOLLOW-271 — the direct source and the close-out.** RETRO-052 §4a LG-1 filed
+  FOLLOW-271 to ELIMINATE (not annotate) `quizConfig.enabled` after FOLLOW-265 AC4 left the write-divergence
+  channel open. This retro confirms FOLLOW-271 closes the `enabled` axis end-to-end (strip-on-write + read-
+  strip + backfill, §5a) — the annotate→eliminate hop RETRO-052 §8-meta wanted is completed. I did NOT
+  trust the "FOLLOW-271 closes the lineage" framing — I executed Rule U's blob-wide grep and found
+  `sticky_widget`/`micro_polls_enabled` are the next orphans (§4a LG-1 → FOLLOW-274).
+- **RETRO-049 / RETRO-050 / RETRO-051 / RETRO-053 / RETRO-055 — the `tenants.quiz_config` decay lineage
+  (Rule U evidence + this retro's residual).** RETRO-050 §4a LG-1 (`trigger_after_n_listings` write-only =
+  the precedent for §4a LG-1 here); RETRO-049/051 §5d (two stores / accreting write-only keys); RETRO-055
+  §4e (the language-enum cross-package facet). This is the SEVENTH retro on the same blob; FOLLOW-271 closes
+  the gating-key facet, FOLLOW-274 targets the UX-orphan facet.
+- **Rule U (CONVENTIONS_PATCH.md, since RETRO-052) — the rule this PR is the model close-out of, and whose
+  "grep EVERY key" clause surfaced §4a LG-1.** FOLLOW-271 executes Rule U's prescription on `enabled`; this
+  retro applies Rule U's audit clause to find the next two orphans. Not re-promoted (Rule U already
+  codified); recorded a Rule-U application caveat (§6: re-grep all sibling keys before a close-out PR's
+  docstring blesses them as valid).
+- **RETRO-055 / FOLLOW-273 — the convergent `language`/`accentColor` axis.** FOLLOW-273 (SDK references the
+  canonical shared language enum + reconcile `LocaleSchema`) covers the `language`/`accent_color`
+  dashboard→snippet→SDK skew; FOLLOW-274 (this retro) covers the DISJOINT `sticky_widget`/`micro_polls_enabled`
+  write-only orphans. Sibling follow-ups on the same blob, non-overlapping keys.
+- **Rule L (CONVENTIONS_PATCH.md) — the all-three-limbs rule the `micro_polls_enabled` orphan violates.**
+  Same shape as RETRO-050 FOLLOW-257 (`data-quiz-trigger`) and the inquiry-selector chain. FOLLOW-274
+  applies it.
+
+## RETRO-057 — FOLLOW-274 (Wire `micro_polls_enabled` end-to-end + retire `sticky_widget` — RETRO-056's two-orphan close-out; but the `micro_polls_enabled` "wire" closes only the `buildSnippet` HOP RETRO-056 named, leaving the gap one hop UP at the `DetectWizard → DetectionPreview` call site that never passes the prop — and no dashboard path re-emits the snippet, so the attribute is still never produced in prod) — 2026-06-11
+
+### 1. Summary of change
+
+- **PR:** #267 (merged 2026-06-11 22:09 UTC, squash commit `ca4da90`; `gh` API reports `mergedAt:null`
+  because squash-merge does not back-link the PR — confirmed merged via `git log`/`git show ca4da90`)
+- **Files changed:** 13 (+344 / −61)
+- **Modules touched:** [control-plane (route + dashboard page + DetectionPreview onboarding component),
+  shared (`quiz-config.ts`), db (schema docstring + migration 0027 + journal), sdk (`config.ts` +
+  `index.ts`), tests]
+- **Key contracts changed:**
+  - `SdkConfig.microPollsEnabled?: boolean` — ADDED (`packages/sdk/src/core/config.ts:90`) — breaking: no
+    (optional). Replaces the two unsafe `(config as unknown as Record<string, unknown>).micro_polls_enabled`
+    casts at `index.ts:888,965`.
+  - `buildSnippet(...)` — 5th param `microPollsEnabled?: boolean` ADDED
+    (`DetectionPreview.tsx:150`) — breaking: no (trailing optional).
+  - `QuizConfigSchema` — now `.omit({ enabled: true, sticky_widget: true })`
+    (`quiz-config.ts:74`); `QuizConfig` interface, `_QuizConfigFullSchema` (kept for legacy read),
+    and `QUIZ_DEFAULT_CONFIG` lose `sticky_widget` — breaking: a `QuizConfig.sticky_widget` reader would
+    break, but grep finds none outside this PR.
+  - `DetectionPreviewProps.microPollsEnabled?: boolean` — ADDED (`DetectionPreview.tsx:56`).
+
+### 2. Verification done in PR
+
+- Test files changed: `route.test.ts` (+67/−7), `quiz-toggle.test.tsx` (+4/−12),
+  `DetectionPreview.test.tsx` (+85/−0), `config.test.ts` (+36/−0) · Assertions added: ~15 across the four
+  (7 `buildSnippet`/`DetectionPreview`, 4 `readConfig`, 4 schema/backfill strip) · Coverage delta: unknown
+  (not reported on the wire; PR body claims 1289 SDK + 930 control-plane tests green).
+- CI checks: passed per PR body (`tsc --noEmit` 4 packages, `check-migration-journal.sh` 28 entries
+  monotonic, `check-rule-h.sh`, pre-push rule-h/rule-j). Not independently re-run by this retro.
+
+### 3. Wiring Audit
+
+**NOT clean — one P1 HALF_WIRE_P (the headline finding) + the `sticky_widget` retirement IS clean.**
+
+**CHECK A — Dead code (new file/export has ≥1 non-test importer):**
+
+- `SdkConfig.microPollsEnabled` — read at `index.ts:888,965` (non-test gates). NOT dead.
+- `buildSnippet` 5th param `microPollsEnabled` — threaded from `DetectionPreview.tsx:219` (non-test). NOT
+  dead at the component level.
+- `DetectionPreviewProps.microPollsEnabled` — destructured at `DetectionPreview.tsx:197` (non-test). NOT
+  dead at the prop-definition level.
+- Migration `0027_strip_quiz_config_sticky_widget.sql` — migration entrypoint (cron/migrator suppression);
+  journal entry idx 27 present. NOT dead.
+- **CHECK A clean** at the symbol level — but see CHECK B: a symbol can be imported-and-used yet still be
+  HALF-wired because its PRODUCER never supplies a real value (Rule L — exactly the class Rule I's
+  zero-importer gate cannot catch).
+
+**CHECK B — Half-wire (every new event/env-var/column/attribute has BOTH a real non-test producer AND
+consumer):**
+
+- **`data-micro-polls-enabled` / `config.microPollsEnabled` — HALF_WIRE_P (P1) → FOLLOW-275.** CONSUMER is
+  real and reachable: `config.ts:193` parses `dataset.microPollsEnabled === 'true'` →
+  `index.ts:888,965` gate `tryShowMicroPoll()` + the 90s timer. The EMITTER is now present:
+  `buildSnippet` (`DetectionPreview.tsx:163`) emits `data-micro-polls-enabled="true"` when
+  `microPollsEnabled === true`. **BUT the production PRODUCER that supplies that argument is still
+  absent.** `buildSnippet` has exactly ONE non-test caller —
+  `DetectionPreview.tsx:214` — and `DetectionPreview` has exactly ONE non-test render site:
+  `DetectWizard.tsx:259` (grep `<DetectionPreview` non-test → single hit). That call site passes
+  `schema / fields / detection_source / detection_confidence` and **NEITHER `microPollsEnabled` NOR
+  `quizEnabled`** (`DetectWizard.tsx:259-264`). So in production `microPollsEnabled` is always `undefined`
+  → `buildSnippet` emits nothing → the SDK consumer never fires. Compounding it: (a) `DetectWizard` has
+  ZERO `quiz` references (grep `quiz` in `DetectWizard.tsx` → empty) — the onboarding wizard runs at
+  detection/activation time, BEFORE the tenant has ever opened the dashboard quiz toggle, and has no
+  access to `quiz_config`; (b) the dashboard quiz page where the toggle actually lives and writes
+  `micro_polls_enabled` (`page.tsx:243-262`) renders NO snippet at all (grep `buildSnippet`/`DetectionPreview`/`<script`
+  in `page.tsx` → only doc-comment mentions) — a tenant who enables micro-polls is never issued a
+  re-generated snippet carrying the attribute. **Net: the dashboard writes the blob key, but no production
+  path reads that blob value and threads it into `buildSnippet(...microPollsEnabled=true)`. The attribute
+  is never produced in prod → identical runtime effect to a dead feature.** This is exactly the gap
+  RETRO-056 §4a LG-1 described, with the gap moved ONE HOP UP: RETRO-056 named the closure target as
+  "buildSnippet never emits `data-micro-polls-enabled`"; FOLLOW-274 closed THAT hop but the producer of the
+  argument (the call site sourcing it from `quiz_config`) is still missing. → **FOLLOW-275 (P1).**
+- **`sticky_widget` retirement — CLEAN ✅ (HALF_WIRE_P RESOLVED).** RETRO-056 classified `sticky_widget` as
+  a write-only orphan (producer in dashboard, zero SDK consumer). FOLLOW-274 retires it correctly and
+  end-to-end: (1) write-strip — `QuizConfigSchema.omit({ ..., sticky_widget: true })` (`quiz-config.ts:74`),
+  tested both `true`/`false`; (2) read-strip — `parseStoredQuizConfig` via `_QuizConfigFullSchema.omit`
+  (legacy-blob test asserts siblings survive); (3) backfill — migration `0027`
+  `quiz_config - 'sticky_widget'` with the `WHERE quiz_config ? 'sticky_widget'` guard, journal idx 27
+  monotonic (`when:1781208120531 > 0026's 1781202418234`); (4) producer removal — dashboard toggle UI
+  removed, type/default removed. This is a textbook Rule-U eliminate (strip-on-write + backfill + producer
+  removal), the SAME pattern FOLLOW-271 applied to `enabled`. No residue.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, NEW → FOLLOW-275) — `micro_polls_enabled` is STILL a production HALF_WIRE_P; FOLLOW-274
+  closed the `buildSnippet`-emitter hop RETRO-056 named but the gap moved one hop upstream to the
+  `DetectWizard → DetectionPreview` call site, which never passes the prop, and there is no dashboard
+  path that re-emits the snippet.** Detail in §3 CHECK B. The dashboard toggle
+  (`page.tsx:243-262`) writes `quiz_config.micro_polls_enabled`, but: (i) the sole production
+  `buildSnippet` caller (`DetectionPreview.tsx:214` ← `DetectWizard.tsx:259`) does not thread
+  `microPollsEnabled`; (ii) the wizard has no `quiz_config` access and runs before the toggle is ever set;
+  (iii) the dashboard quiz page renders no snippet. So `data-micro-polls-enabled` is never emitted in prod
+  and the SDK consumer (`index.ts:888,965`) never fires. P1 (a launch/feature-config the dashboard
+  presents as live — a tenant toggling "Micro-Poll Prompts" sees the toggle persist but gets zero runtime
+  effect; false configurability, same shape as the `data-quiz-trigger` HALF_WIRE_C RETRO-049 §4a LG-1
+  filed as FOLLOW-257). This is the precise prior-follow-up-closure failure mode the retro algorithm
+  step 7 exists to catch: trace producer→snippet→SDK-consumer→render end-to-end before declaring closure,
+  not one hop.
+- **LG-2 (P2, NEW → folded into FOLLOW-275) — the SAME call-site gap also leaves `quizEnabled`
+  (FOLLOW-102) unwired in production, and the docstring on `buildSnippet`'s `quizEnabled` param
+  (`DetectionPreview.tsx:135`) + `DetectionPreview.tsx:208` both ASSERT it is "passed from the tenant
+  record" — but `DetectWizard.tsx:259` passes neither.** A pilot tenant who DISABLES the quiz never gets a
+  snippet emitting `data-quiz-enabled="false"`; the SDK defaults to enabled. The defect is masked because
+  the SDK default (enabled) usually matches the common case, so it surfaces only for tenants who opted
+  OUT. RETRO-049 §3 (`RETROSPECTIVES.md:12626`) recorded "`buildSnippet` 4th param `quizEnabled` —
+  threaded from `DetectionPreview.tsx:197` (non-test). NOT dead." — and STOPPED THERE, trusting one hop
+  (the prop-definition site) without tracing to the `DetectWizard` render site. RECONCILIATION (algorithm
+  step 8): RETRO-049's "NOT dead" verdict on `quizEnabled` was correct at the symbol/import level but
+  INCOMPLETE at the production-producer level — the prop is defined and forwarded inside the component but
+  never SUPPLIED by the only renderer. Both `quizEnabled` and `microPollsEnabled` share one root cause:
+  `DetectWizard` is the sole snippet-producing surface and threads neither tenant-config flag. FOLLOW-275
+  should fix both arms together (Rule S — symmetric sibling set).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A — no shipped CRASH/correctness defect.** The `.omit({ enabled, sticky_widget })` strips correctly;
+  `parseStoredQuizConfig` fail-safes to `{}` and merges over `QUIZ_DEFAULT_CONFIG`; migration 0027 is
+  key-scoped and atomic per the JSONB `-` operator. The replaced unsafe casts at `index.ts:888,965` are a
+  STRICT improvement (typed `config.microPollsEnabled` vs `(config as unknown as Record).micro_polls_enabled`).
+  The LG-1 HALF_WIRE_P is a wiring/feature-completeness gap, not a runtime bug — the SDK guard
+  `if (!config.microPollsEnabled) return` degrades silently and safely (no crash; the feature simply never
+  runs). Classified as LG-1 (P1), not a code bug.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1, → FOLLOW-275) — every new `micro_polls_enabled` test injects the value DIRECTLY into the
+  unit under test; NONE asserts the production PRODUCER supplies it.** `buildSnippet` tests call
+  `buildSnippet(TENANT, KEY, undefined, undefined, true)` (literal 5th arg); the `DetectionPreview` tests
+  render `<DetectionPreview ... microPollsEnabled={true} />` (literal prop); the `readConfig` tests inject
+  `makeDataset({ microPollsEnabled: 'true' })`. This is EXACTLY the Rule-L evidence pattern ("a test that
+  injects the value into the consumer directly proves only 'if present, it works' — it is NOT evidence the
+  install path supplies it"). There is NO test asserting `DetectWizard` renders `DetectionPreview` WITH
+  `microPollsEnabled` sourced from `quiz_config`, because that wire does not exist. FOLLOW-275 must add a
+  test driving `DetectWizard` (or the snippet-producing surface) that proves the snippet carries
+  `data-micro-polls-enabled` when the tenant's `quiz_config.micro_polls_enabled` is true — red now, green
+  after the fix.
+- **TG-2 (P3, recorded → folded into FOLLOW-275) — no integration test executes migration 0027 against a
+  seeded row** carrying `sticky_widget` + siblings. As with 0026 (RETRO-056 §4c TG-1), the read-side
+  `parseStoredQuizConfig` strip IS tested (belt-and-suspenders that makes the migration non-load-bearing
+  for correctness), so this is acceptable as P3. Recorded.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1, NEW → folded into FOLLOW-275) — the `tenants.ts:42-46` docstring now ASSERTS
+  `microPollsEnabled` is wired end-to-end** ("`microPollsEnabled` → GET /api/quiz/config → buildSnippet
+  emits data-micro-polls-enabled → readConfig() → config.microPollsEnabled → SDK micro-poll trigger") —
+  but the `buildSnippet emits` arrow is FALSE in production because no caller supplies the argument (§4a
+  LG-1). The docstring documents the INTENDED wire as if it were the SHIPPED wire. Same shape as
+  RETRO-056 §4d DG-1: a close-out PR's docstring blesses a key as "valid/wired" before the wire is
+  actually complete end-to-end. This is the documentation face of LG-1 — correcting it is part of
+  FOLLOW-275's scope (either complete the wire → docstring becomes true, or annotate the gap honestly).
+  The matching JSDoc on `buildSnippet`'s `quizEnabled` param (§4a LG-2) has the same over-assertion.
+- **Otherwise N/A** — the `sticky_widget` retirement docstrings (`quiz-config.ts:16-22`,
+  `tenants.ts:55-62`, `route.ts:18-27`, `0027.sql` header, `page.tsx:53-55`) are accurate and well-
+  provenanced (Rule U / RETRO-052 / FOLLOW-274). No stale `sticky_widget` mislead remains.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **RETRO-056 / FOLLOW-274 — PARTIALLY closed, NOT fully.** RETRO-056 §4a LG-1 filed FOLLOW-274 to resolve
+  TWO orphans. `sticky_widget` is fully retired end-to-end (§3 CLEAN). `micro_polls_enabled` is NOT closed:
+  FOLLOW-274 closed only the `buildSnippet`-emitter hop RETRO-056 named, leaving the call-site producer
+  hop open (§4a LG-1). This is the annotate/partial-close lineage shape Rule U warns about, now on the
+  WIRING axis instead of the blob axis: each ticket closes the one hop the prior retro named and the gap
+  moves one hop. → FOLLOW-275 closes the remaining hop.
+- **TICKET-PILOT-001 (READY, Lane B pilot) — NEGATIVE (the LG-2 `quizEnabled` arm).** A pilot tenant who
+  toggles the quiz OFF in the dashboard never gets a snippet emitting `data-quiz-enabled="false"`
+  (§4a LG-2), so the SDK keeps the quiz enabled. For the pilot freeze story this is a divergence between
+  the dashboard's stated quiz state and the SDK's actual behavior — relevant at go/no-go. FOLLOW-275
+  should land before the pilot relies on dashboard-driven quiz disable.
+- **FOLLOW-273 / RETRO-055 (`language`/`accentColor` axis) — convergent, non-overlapping.** FOLLOW-273
+  covers the SDK-side shared-locale-enum reconciliation. Note `language`/`accent_color` are read by the SDK
+  via `data-language`/`data-accent-color`, which `buildSnippet` ALSO does not emit (only the demo mockup
+  `layout.tsx` hardcodes `data-accent-color`) — so the SAME call-site/snippet-emission gap touches those
+  keys too. FOLLOW-275's call-site fix is the natural place to emit ALL tenant-config `data-*` attributes
+  from the one snippet producer; flagged as a watch-item, the locale-enum facet stays in FOLLOW-273.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-199 (Quiz v2.0) — WATCH.** Quiz v2.0 re-opens the quiz config surface. It MUST NOT add more
+  `quiz_config`-driven SDK behaviors until the producer chain (dashboard blob → snippet emission → SDK)
+  is actually wired (FOLLOW-275), or it will accrete more keys onto a snippet path that never emits them
+  — the `micro_polls_enabled`/`quiz-trigger` shape repeating a 4th time.
+- **FOLLOW-209 (micro-poll bottom-toast feature) — BLOCKED in practice.** The SDK micro-poll consumer
+  (`tryShowMicroPoll`, the 90s timer) is implemented but UNREACHABLE in production until FOLLOW-275 wires
+  the producer. FOLLOW-209's feature is shipped-but-dark until then.
+- **Any future per-tenant SDK config flag** must follow Rule L's full triad AND verify the SINGLE snippet
+  producer (`buildSnippet` via `DetectWizard`) actually threads the value AND that a post-onboarding
+  re-emission path exists for tenants who change config after activation.
+
+#### 5c. Contracts changed others rely on
+
+- **`QuizConfig` (`@estalara/shared`) lost `sticky_widget`** — grep finds no external reader; additive-safe.
+- **`SdkConfig.microPollsEnabled` is a new optional field** — additive; the SDK already consumes it. No
+  external breakage.
+- **`buildSnippet`/`DetectionPreviewProps` gained a trailing optional param/prop** — additive; the sole
+  caller compiles unchanged (which is precisely WHY the gap is silent — a trailing optional that no caller
+  supplies typechecks clean).
+- **Migration journal advanced to idx 27** (`when:1781208120531`). Any concurrent migration PR must branch
+  from this to keep monotonicity (Rule O). Standard serialization, no special action.
+
+#### 5d. Architectural assumptions affected
+
+- **"`tenants.quiz_config` is a clean widget-UX blob" — now CLOSER to true.** `enabled` (FOLLOW-271) and
+  `sticky_widget` (FOLLOW-274) are both eliminated. The blob's three remaining keys (`language`,
+  `accent_color`, `micro_polls_enabled`) are all NON-gating UX keys — the Rule-U thesis (gating →
+  typed column, UX → blob) is now satisfied at the BLOB level. The residue is no longer a blob-decay
+  problem; it is a SNIPPET-PRODUCER problem: the blob is clean but the production path that carries blob
+  values into the SDK install snippet is incomplete (§4a LG-1/LG-2). The decay lineage on this blob
+  (049/050/051/052/053/055/056/this = EIGHTH retro) has shifted axis — from "which keys live in the blob"
+  to "do the blob's keys actually reach the SDK." This is the correct next layer to close.
+- **The onboarding wizard is the SOLE snippet-producing surface, and it produces the snippet ONCE at
+  activation with NO tenant-config flags.** This is the load-bearing architectural gap: there is no
+  post-onboarding "your install snippet" surface in the dashboard, so ANY tenant-config change made after
+  activation (quiz on/off, micro-polls, accent color, language) cannot propagate to an already-installed
+  snippet via the snippet at all — it can only propagate if the SDK fetches config at runtime, which it
+  does NOT for these keys (no SDK GET of `/api/quiz/config`; grep confirms only a `quiz/completion` POST).
+  RETRO-056 §8-meta already named "the SDK does not GET /api/quiz/config at runtime" — that observation
+  is the SAME root cause surfacing again. FOLLOW-275 must choose ONE of: (a) thread the flags through
+  `DetectWizard`→snippet AND add a dashboard re-emission surface, OR (b) have the SDK fetch
+  `/api/quiz/config` at runtime so blob changes propagate without re-install. (b) is the more robust
+  architecture for post-activation config changes; flag for architect input.
+
+### 6. New lesson candidates
+
+- **Pattern (Rule L — install/snippet PRODUCER absent; 3rd+ confirming instance on the SAME `buildSnippet`
+  surface — Rule L already codified, NOT re-promoted).** The `micro_polls_enabled` finding (§4a LG-1) is a
+  Rule-L "the consumer is wired, the production producer is absent" gap — identical in shape to RETRO-009
+  (`inquiry_submit_selector` not threaded at the SDK init call site), RETRO-010 (`data-decision-url` not
+  emitted by the manual install), RETRO-011 (`data-inquiry-submit-selector` emitted by no snippet
+  generator), and RETRO-049 (`data-quiz-trigger`). Rule L is already codified and FOLLOW-275 applies it.
+  The NEW twist worth recording (NOT a new rule): the producer absence is now at the CALL SITE of an
+  otherwise-correct emitter — `buildSnippet` CAN emit the attribute, but its sole caller never supplies the
+  argument. Recorded as a Rule-L application caveat: *"a 'buildSnippet emits data-X' fix is NOT a closed
+  wire — trace whether the SOLE production caller of buildSnippet actually SUPPLIES the value from the
+  tenant config store, and whether any post-onboarding surface re-emits the snippet after config changes."*
+- **Pattern (single-hop closure trust — the retro-process meta-pattern, count rising) — recorded as a
+  RETRO-OWN discipline note, NOT a CONVENTIONS rule.** This is the SECOND consecutive `quiz_config` retro
+  where a prior follow-up "closed" exactly the one hop the prior retro NAMED while the gap moved one hop
+  (RETRO-056: `enabled` eliminated, but the docstring re-blessed two orphans; THIS: `micro_polls_enabled`
+  emitter wired, but the call-site producer still absent). It also echoes the `inquiry_submit_selector`
+  chain (FOLLOW-097→114→127→141) the agent prompt cites as the canonical example. The retro's own
+  countermeasure (algorithm step 7) caught it here ONLY because I traced `buildSnippet`'s caller to
+  `DetectWizard` rather than stopping at `DetectionPreview.tsx` — exactly where RETRO-049 stopped on the
+  symmetric `quizEnabled` arm (§4a LG-2). The lesson is the retro process's own: a "NOT dead / wired"
+  verdict on a snippet attribute MUST trace to the SINGLE production renderer that supplies the value, not
+  the prop-definition site. (This is a discipline note, not a code rule — no CONVENTIONS_PATCH edit.)
+- **No Rule promoted this retro.** The findings are confirming instances of already-codified Rule L
+  (install-producer-absent) and Rule S (symmetric-sibling — the `quizEnabled`/`microPollsEnabled` pair),
+  plus a retro-process discipline note. Nothing crosses a fresh ≥2 threshold on a NEW pattern. **No
+  `CONVENTIONS_PATCH.md` edit by this run.**
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed and why.** The PR body is persuasive: it presents a "Rule L evidence" table
+  with a real non-test PRODUCER (`DetectionPreview.tsx:163`) and a real non-test CONSUMER
+  (`config.ts:193` → `index.ts:888,965`), and 7 new green tests. The single-grep view ("buildSnippet emits
+  it; readConfig reads it") looks like a closed wire, and I nearly recorded `micro_polls_enabled` as
+  CLEAN. The catch came from Rule L's own clause + algorithm step 7: trace the PRODUCER's PRODUCER —
+  WHO CALLS `buildSnippet` with `microPollsEnabled=true`? Grepping `<DetectionPreview` non-test → a single
+  render site (`DetectWizard.tsx:259`) that passes neither flag, with zero `quiz` access. The "producer" in
+  the PR table is the EMITTER (`buildSnippet`), not the SUPPLIER of its argument — and the supplier is
+  absent. Invisible if you trust the PR's "producer exists" framing without grepping the emitter's caller.
+- **An axis/chain I had to trace twice — the `DetectionPreview` prop chain.** I first saw
+  `DetectionPreview.tsx:219` forwarding `microPollsEnabled` into `buildSnippet` and almost called the prop
+  "threaded." Tracing the PROVENANCE — does the prop arrive with a real value? — required going UP to the
+  `<DetectionPreview .../>` render site in `DetectWizard.tsx:259`, which omits it. The prop is forwarded
+  correctly WITHIN the component but never SUPPLIED to it. Same trap RETRO-049 fell into on the symmetric
+  `quizEnabled` arm (it stopped at `DetectionPreview.tsx:197`). Lesson: a prop is only "wired" if its
+  RENDER SITE supplies a real value, not if the component forwards a possibly-undefined prop.
+- **A meta-pattern in how gaps recur across agents.** EIGHTH consecutive retro on `tenants.quiz_config`,
+  but the AXIS has shifted: the first seven were blob-content decay (which keys live in the blob); this one
+  is snippet-delivery decay (do the blob's keys reach the SDK). The invariant: an agent closes the exact
+  hop the prior retro named and ships green, while the NEXT hop down (or up) the chain stays open —
+  `trigger_after_n_listings` → `enabled` → `sticky_widget`/`micro_polls_enabled` (blob axis) → now
+  `micro_polls_enabled` EMITTER closed but PRODUCER-of-argument open (delivery axis). The structural magnet
+  is a cross-package, multi-surface chain (dashboard blob → control-plane snippet producer → SDK consumer)
+  where each hop lives in a different file/package and the typecheck passes at each hop in isolation
+  (trailing optional params). The retro's job is to enumerate the WHOLE chain end-to-end on every touch —
+  which is why this retro files FOLLOW-275 rather than accepting the `micro_polls_enabled` close.
+
+### 7. Follow-ups
+
+- **FOLLOW-275 (P1)** — Wire `micro_polls_enabled` (AND the symmetric `quizEnabled`) end-to-end from the
+  tenant `quiz_config`/`quiz_enabled` store to the production SDK install snippet. The emitter
+  (`buildSnippet` `DetectionPreview.tsx:163`) + the SDK consumer (`config.ts:193` → `index.ts:888,965`)
+  already exist; the missing hop is the PRODUCER OF THE ARGUMENT: the sole production caller
+  (`DetectWizard.tsx:259` → `DetectionPreview`) passes neither `microPollsEnabled` nor `quizEnabled`, the
+  wizard has no `quiz_config` access and runs pre-toggle, and no dashboard surface re-emits the snippet
+  after a config change. Choose ONE architecture (flag for architect): (a) thread both flags through
+  `DetectWizard`→`DetectionPreview`→`buildSnippet` from the tenant record AND add a post-onboarding
+  "your install snippet" dashboard surface that re-emits with current `quiz_config`; OR (b) (preferred,
+  more robust) have the SDK GET `/api/quiz/config` at runtime so blob changes propagate without re-install,
+  retiring the snippet-attribute approach for these keys. Apply Rule L (verify the PRODUCER supplies the
+  value, not just that the consumer reads it) + Rule S (fix `quizEnabled` and `microPollsEnabled` together
+  — symmetric sibling flags with one root cause). Correct the over-asserting docstrings
+  (`tenants.ts:42-46`, `DetectionPreview.tsx:135/208`) (§4d DG-1). Add a production-producer test:
+  drive the snippet-producing surface and assert it carries `data-micro-polls-enabled`/`data-quiz-enabled`
+  sourced from the tenant store, not injected (§4c TG-1). [§3 CHECK B; §4a LG-1/LG-2; §4c TG-1/TG-2;
+  §4d DG-1; §5a/§5d] (backend-engineer + sdk-engineer + architect input on (a) vs (b), 6h). Filed below.
+- **`sticky_widget` is fully retired by this PR — no follow-up.**
+- **NOTE on numbering:** FOLLOW-266–269 are RESERVED (Archetype Identification Tracer, QUEUE.md:13,
+  CEO-directed 2026-06-10 — do NOT reuse); 270–274 are consumed (RETRO-053/052/054/055/056). This retro's
+  stub is **FOLLOW-275**.
+
+### 8. Cross-references
+
+- **RETRO-056 / FOLLOW-274 — the direct source, PARTIALLY closed.** RETRO-056 §4a LG-1 filed FOLLOW-274 to
+  resolve `sticky_widget` + `micro_polls_enabled`. `sticky_widget` is closed end-to-end (§3 CLEAN);
+  `micro_polls_enabled` closed only the emitter hop RETRO-056 named — the gap moved one hop up to the
+  call-site producer (§4a LG-1 → FOLLOW-275). I did NOT trust the "micro_polls_enabled WIRED" PR framing —
+  I traced `buildSnippet`'s sole caller and found it supplies no value.
+- **RETRO-049 (`RETROSPECTIVES.md:12626`) — the prior single-hop trust on the SYMMETRIC `quizEnabled`
+  arm, reconciled here.** RETRO-049 §3 recorded "`buildSnippet` 4th param `quizEnabled` — threaded from
+  `DetectionPreview.tsx:197` (non-test). NOT dead." and stopped at the prop-definition site. THIS retro
+  (§4a LG-2, algorithm step 8) reconciles: that verdict was correct at the symbol level but incomplete at
+  the production-producer level — `DetectWizard.tsx:259` supplies neither flag. The two arms share one root
+  cause; FOLLOW-275 fixes both (Rule S).
+- **Rule L (CONVENTIONS_PATCH.md) — the rule the `micro_polls_enabled` gap violates, with the call-site
+  caveat (§6).** Same shape as RETRO-009/010/011/049 (install/snippet producer absent). FOLLOW-275 applies
+  it; the new caveat is "trace buildSnippet's sole caller, not just the emitter."
+- **Rule U (CONVENTIONS_PATCH.md) — satisfied by the `sticky_widget` retirement.** FOLLOW-274 executes
+  Rule U's prescription (strip-on-write + backfill + producer removal) on `sticky_widget` exactly as
+  FOLLOW-271 did for `enabled` — a second model Rule-U close-out. The blob is now Rule-U-clean (§5d);
+  Rule U not re-promoted.
+- **Rule S (CONVENTIONS_PATCH.md) — the symmetric-sibling rule for the `quizEnabled`/`microPollsEnabled`
+  pair.** Both are tenant-config flags threaded through the same `buildSnippet`/`DetectWizard` surface with
+  the identical call-site gap; FOLLOW-275 must fix them together at matched completeness + verification
+  tier per Rule S.
+- **RETRO-049 §4a LG-1 / FOLLOW-257 (`data-quiz-trigger`) — the closest precedent for §4a LG-1.** Same
+  `quiz_config`-key → SDK-consumer-wired → snippet-never-emits HALF_WIRE shape; FOLLOW-257 retired it,
+  FOLLOW-275 wires `micro_polls_enabled` (the inverse choice — wire rather than retire — because the SDK
+  consumer + a real feature (FOLLOW-209) exist).
+- **RETRO-049/050/051/052/053/055/056 — the `tenants.quiz_config` lineage (now EIGHT retros).** The
+  blob-content decay is closed (Rule-U-clean); this retro opens the snippet-delivery axis of the same blob.

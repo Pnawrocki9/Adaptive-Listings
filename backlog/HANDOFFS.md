@@ -1197,6 +1197,121 @@ When implementing the SDK listeners for `estalara:chat:message-sent` and `live.s
 
 ---
 
+## FOLLOW-275 (architect) → backend-engineer
+
+**From:** architect **To:** backend-engineer **Date:** 2026-06-11T00:00:00Z
+
+**Summary:** ADR-0011 (PROPOSED) decides option (b) — SDK runtime GET — as the transport for
+post-activation-mutable quiz/widget config fields (`quiz_enabled`, `micro_polls_enabled`,
+`language`, `accent_color`). The static embed snippet continues to carry only the immutable tenant
+binding (API key, tenant ID, decision URL). The existing `GET /api/quiz/config` route already
+returns the right shape; the gap is that the route requires a tenant JWT and the SDK runs in an
+anonymous buyer context.
+
+**Action required (backend-engineer):**
+
+1. **New route `GET /api/quiz/public-config`** (preferred per ADR-0011) — API-key-authenticated,
+   read-only, CORS-open, returning `{ quiz_enabled, micro_polls_enabled, language, accent_color }`.
+   Auth: `Authorization: Bearer <tenant-api-key>` (the `data-api-key` from the embed snippet),
+   verified against `tenants.api_key` with a constant-time compare. No `tenant_id` in the response.
+   `Cache-Control: max-age=300, stale-while-revalidate=60`. Returns 401 on invalid key, 404 on
+   tenant not found, 200 on success. CORS must allow `*` origins (buyer-facing sites, read-only).
+
+2. **Auth model note:** because this is a new mutation-free route with a new auth mechanism
+   (API-key-only, no JWT), it needs a Rule H reviewer sign-off on the auth model. The ADR (docs/adr/
+   PROPOSED-FOLLOW-275-quiz-config-transport.md) covers the threat model for this surface. Review it
+   before implementation. If you choose the alternative auth path (i) — adding an API-key auth
+   branch to the existing `GET /api/quiz/config` — document the choice in the PR.
+
+3. **Remove `data-quiz-enabled` and `data-micro-polls-enabled` emission from `buildSnippet()`.** The
+   `quizEnabled` and `microPollsEnabled` params should be removed (or nulled) so the retired
+   attributes are never emitted. Also remove the dataset reads for these two attributes from
+   `readConfig()` in `packages/sdk/src/core/config.ts` — or mark them as DEPRECATED_FALLBACK so they
+   serve as the error-path fallback until the SDK fetch succeeds.
+
+4. **Correct over-asserting docstrings** in
+   `apps/control-plane/src/components/onboarding/ DetectionPreview.tsx:135/208` and
+   `apps/control-plane/src/components/onboarding/ DetectWizard.tsx:259` — update them to reflect
+   that quiz/micro-poll config is fetched at SDK runtime, not threaded through the snippet.
+
+5. **Producer test (AC5 / Rule L):** add a test that mocks the new `GET /api/quiz/public-config`
+   route, calls the SDK init path that invokes it, and asserts the resulting `SdkConfig` carries
+   `quiz.enabled` and `microPollsEnabled` sourced from the server response. Injection into
+   `readConfig` directly does NOT satisfy Rule L.
+
+**Nullability constraint (ADR-0011 wire contract):** all five fields in the 200 response
+(`quiz_enabled`, `micro_polls_enabled`, `language`, `accent_color`, `tenant_id`) are non-nullable.
+The SDK must not treat absence as an error; fall through to local defaults for any missing field. No
+field is `string | null` on one side and `string | undefined` on the other — align both sides
+explicitly.
+
+**Files to touch:**
+
+- `apps/control-plane/src/app/api/quiz/public-config/route.ts` (NEW)
+- `apps/control-plane/src/app/api/quiz/config/route.ts` (no change required unless using path (i))
+- `apps/control-plane/src/components/onboarding/DetectionPreview.tsx` (remove retired params from
+  buildSnippet; update docstrings)
+- `packages/shared/src/schemas/quiz-config.ts` (add `QuizPublicConfigResponseSchema` Zod schema if
+  new route is added)
+
+**ADR:** `docs/adr/PROPOSED-FOLLOW-275-quiz-config-transport.md`
+
+---
+
+## FOLLOW-275 (architect) → sdk-engineer
+
+**From:** architect **To:** sdk-engineer **Date:** 2026-06-11T00:00:00Z
+
+**Summary:** ADR-0011 (PROPOSED) decides that the SDK fetches quiz/widget config at runtime via a
+new `GET /api/quiz/public-config` endpoint (API-key-authenticated, CORS-open). This replaces the
+`data-quiz-enabled` and `data-micro-polls-enabled` snippet attributes as the config transport for
+these post-activation-mutable fields.
+
+**Action required (sdk-engineer):**
+
+1. **`fetchQuizConfig()` in `packages/sdk/src/core/`** — new async function that:
+   - GETs `${config.decisionApiUrl}/quiz/public-config` (or a dedicated config URL derived from the
+     existing `decisionApiUrl`) with `Authorization: Bearer ${config.apiKey}`.
+   - 1000 ms timeout; on error/timeout falls back to any snippet-attribute values present, then to
+     hardcoded defaults (`quiz.enabled = true`, `microPollsEnabled = false`).
+   - Returns
+     `{ quizEnabled: boolean, microPollsEnabled: boolean, language: QuizLanguage, accentColor: string }`.
+
+2. **Thread into init sequence** — wire `fetchQuizConfig()` into `init()` in
+   `packages/sdk/src/ index.ts` BEFORE `scheduleQuizTrigger()` and the micro-poll 90 s timer. The
+   quiz/micro-poll schedulers must `await` this fetch (or its fallback). Do NOT block DOM
+   augmentation or archetype detection on the fetch; only the quiz/micro-poll scheduling is
+   sequenced after it.
+
+3. **Retire dataset reads** — once the runtime fetch is wired, remove or deprecate
+   `dataset.quizEnabled` and `dataset.microPollsEnabled` from `readConfig()` in `config.ts`. Keep
+   them as DEPRECATED_FALLBACK for the error path (backward-compat for legacy snippets with these
+   attributes present) with a comment explaining they are fallback-only.
+
+4. **Rule R check** — the resolved `microPollsEnabled` and `quizEnabled` values must NOT be
+   re-fetched on cross-listing navigation if the SDK is rehydrating an existing session. Gate the
+   fetch behind `!intentStateRehydrated` OR ensure the fetch result is persisted in the session
+   envelope and restored on rehydrate (so it does not re-fetch needlessly on every page).
+
+5. **Test (AC5 / Rule L):** add a test that mocks `GET /api/quiz/public-config`, drives the full
+   `init()` path (via `_initForTest()` seam), and asserts `config.quiz.enabled` and
+   `config.microPollsEnabled` reflect the mocked server values — NOT the snippet-attribute defaults.
+   This is the Rule L producer test: injection directly into `readConfig` does not satisfy it.
+
+6. **Nullability alignment:** the server response fields are all non-nullable in the 200 case. Model
+   them as
+   `{ quizEnabled: boolean; microPollsEnabled: boolean; language: string; accentColor: string }` —
+   no `| null` fields. The Zod schema for the response (in `packages/shared`) must match; add
+   `QuizPublicConfigResponseSchema` to `packages/shared/src/ schemas/quiz-config.ts` (or a sibling
+   file) if it does not exist.
+
+**Sequencing:** the backend-engineer must land the new `GET /api/quiz/public-config` route first (or
+in a parallel PR) before this SDK change can be integration-tested end-to-end.
+
+**ADR:** `docs/adr/PROPOSED-FOLLOW-275-quiz-config-transport.md`
+
+---
+
 ## FOLLOW-173 → FOLLOW-174
 
 **From:** data-engineer **To:** backend-engineer **Date:** 2026-06-07T00:00:00Z

@@ -1,5 +1,25 @@
 # ml-engineer lessons
 
+- **2026-06-11 / FOLLOW-169** · Brought `_generate_headline` to the description's anti-hallucination
+  bar. Added `_HEADLINE_SYSTEM_PROMPT` (same fact-whitelist rules as
+  `_SONNET_SYSTEM_PROMPT_TEMPLATE`), threaded `verified_facts` from the description call to avoid
+  re-grounding, and added `_check_headline_facts()` post-gen detector (digit strings + capitalised
+  proper-name heuristic, both verified against grounding text). SDK gate for AC3 was already
+  implicit (fetchDescription returns null for non-ai_cached), not explicit — added route-invariant
+  tests to make the contract visible and locked. · **Judgment calls:** (1) The proper-name heuristic
+  (capitalised mid-headline words not in stop-caps set) has a false-positive risk for legitimately
+  capitalised words (e.g. nationality adjectives, brand model names) that happen to not appear
+  verbatim in listing_context. Conservative decision: if a buyer-visible word isn't in the grounding
+  text it shouldn't be in the headline — false positives produce a suppressed headline (fallback to
+  playbook), which is safer than a hallucinated named entity. (2) The verified_facts pass-through is
+  optional (fallback to raw inputs when None) to remain backward-compatible with callers that don't
+  have facts available. (3) Digit matching in `_check_headline_facts` uses
+  `re.findall(r"\d[\d.,/%m²sqftftm-]*")` — designed to catch "7.2%" and "300m" while not splitting
+  on "3-bed". The hyphen in the char class is at the end so it is literal, not a range. ·
+  **Guardrail I'd add:** When adding a post-generation safety check for a new output type, also add
+  a `log.warning` telemetry test (asserts log was called with the expected code) — currently the K.2
+  log warning is not tested in isolation, only the return-None behavior is.
+
 - **2026-06-10 / FOLLOW-101** · Built the chat.intent.detected → Bayesian prior bridge. Part A
   (control-plane): `chat-intent-cache.ts` reads Redis shadow key, flattens `intent_dimensions` to
   `Record<string,string>` (nulls/false booleans omitted), included as `chat_intent_dimensions` in

@@ -152,6 +152,47 @@ pnpm typecheck
 # Must return exit 0 — catches all incomplete mock objects
 ```
 
+### Rule G amendment (2026-06-11 — RETRO-053 §4b BUG-1 / RETRO-010 §6 — shape change escapes typecheck via loosely-typed test data)
+
+**Pattern (the typecheck-blind sub-shape, promoted at count 2):** A shared-type field SHAPE change —
+ADDING a required field OR REMOVING a field — breaks test DATA that lives OUTSIDE what
+`pnpm typecheck` validates, so the break does NOT surface at typecheck and instead fails at the test
+RUN (or, worse, ships needing a separate hotfix commit). The blind spots are: (a) loosely-typed test
+helpers that cast `unknown`→a caller-supplied generic (`parseBody<T>(res): Promise<T>`,
+`makeRequest(body: unknown)`) — a stale `expect(body.removed_field).toBe(3)` COMPILES clean and only
+fails at runtime; (b) HTML/JS string fixtures (`e2e/fixtures/index.html`); (c) JSON fixture files;
+(d) Playwright `route.fulfill({ body: JSON.stringify(...) })` bodies.
+
+**Evidence:** RETRO-010 §6 (FOLLOW-105 — a newly-REQUIRED response field broke E2E HTML/JSON string
+fixtures `tsc` cannot reach; deferred at count 1: "Threshold (2) NOT met"). RETRO-053 §4b BUG-1
+(FOLLOW-264 / PR #263 — REMOVING `trigger_after_n_listings` from the `QuizConfigSchema`/`QuizConfig`
+left four `route.test.ts` assertions referencing it via
+`parseBody<{ trigger_after_n_listings: number }>` and
+`makePostRequest({ ..., trigger_after_n_listings: 5 })`; both compile because the helpers cast
+`unknown`, so `tsc --noEmit` stayed green and the stale `.toBe(3)` assertions failed only at the
+vitest run — requiring hotfix commit `0820282`). Count 2, non-adjacent retros → promoted.
+
+**Rule (amendment):** Rule G's grep-and-update sweep applies to field REMOVALS as well as
+required-field ADDS, and the grep MUST include test/fixture data that the type system does not
+constrain. When you add a required field to OR remove any field from an exported type whose values
+flow through tests or fixtures, ALSO grep for the field name across `*.test.ts`, `*.spec.ts`,
+`*.html`, `*.json`, and Playwright `route.fulfill` bodies — `pnpm typecheck` does NOT cover
+loosely-typed test helpers (`parseBody<T>`, `makeRequest(body: unknown)`) or out-of-typesystem
+fixtures. A green `tsc` is NOT sufficient evidence the change is complete: you MUST run the test
+suite (complements Rule T — Rule T says "hooks are format-only, run `tsc`"; this says "even `tsc` is
+blind to loosely-typed test data, run the runner").
+
+**Verification:**
+
+```bash
+# After adding/removing a field on a shared type, grep the field NAME across test + fixture data:
+grep -rn "removed_or_added_field_name" packages/ apps/ \
+  --include="*.test.ts" --include="*.spec.ts" --include="*.html" --include="*.json" --include="*.tsx" \
+  | grep -v node_modules
+# Then run the suite — typecheck alone will NOT catch stale assertions in parseBody<T>/route.fulfill bodies:
+pnpm test    # (or the touched package's vitest) — must be green, not just `tsc --noEmit`
+```
+
 ---
 
 ## Rule H — Schema scaffold MUST ship with at least one runtime-wired consumer
@@ -892,6 +933,68 @@ git diff --name-only            # must be empty for files you intend to commit
 
 ---
 
+## Rule U — Gating / ON-OFF / source-of-truth state MUST live in a typed column, never a JSONB blob key; when a typed column supersedes a blob key, ELIMINATE the blob key (strip-on-write + backfill), do not merely annotate it
+
+**Pattern:** A multi-key JSONB config blob (e.g. `tenants.quiz_config`) holds a key that expresses
+ON/OFF, gating, or source-of-truth state (e.g. `enabled`, a trigger threshold, a feature flag).
+Later a typed column is introduced as the real SoT (e.g. `tenants.quiz_enabled`), OR the key's
+consumer is removed — but the orphaned blob key is left in place. Across consecutive tickets it gets
+ANNOTATED ("this key is legacy, read the column instead") or PARTIALLY removed (the reader is
+dropped, the writer survives; or the writer is dropped, the persisted value survives), never fully
+ELIMINATED. The result: "is X on?" has two stores that can silently diverge, and each per-ticket fix
+closes one key or one limb while the blob-level decay continues — because no single fix establishes
+the policy. Annotation closes the read-side mislead but NOT the write-side divergence channel: if
+any write path still merges client input into the blob (`.set({ blob: updated })`), a stale or
+legacy key value can still be persisted and contradict the typed column.
+
+**Evidence (≥2 retros — count 3 on the same `tenants.quiz_config` blob):**
+
+- **RETRO-049 §4a LG-2 + §5d (FOLLOW-102)** — `tenants.quiz_enabled` typed column added as SoT, but
+  the legacy `quizConfig.enabled` JSONB key was left written-by-`POST /api/quiz/config` and
+  read-by-the-freeze- guard. "Two stores express quiz on/off, they can diverge." (count 1)
+- **RETRO-050 §4a LG-1 + §5d (FOLLOW-257)** — same blob: `trigger_after_n_listings` left
+  written-by-dashboard-read-by-nothing after the SDK consumer was removed. "The JSONB blob is
+  accumulating write-only keys… partial dead-letter store." (count 2)
+- **RETRO-051 §4a LG-2 + §5d (FOLLOW-263)** — same blob: `enabled` read-by-nothing after the freeze
+  guard repointed to the typed column; "continues to accrete write-only / read-only-mismatched
+  keys." (count 3)
+- **RETRO-052 §4a LG-1 (FOLLOW-265) + RETRO-053 §5d (FOLLOW-264)** — `trigger_after_n_listings`
+  removed (FOLLOW-264) and `enabled` ANNOTATED orphaned but not removed (FOLLOW-265 AC4); the blob
+  can still persist a divergent `enabled` via `POST /api/quiz/config`. Threshold long exceeded; the
+  recurring "annotate/partial-remove, never set the blob policy" behavior is why this rule is
+  promoted now rather than filing a 4th per-key follow-up alone.
+
+**Rule:**
+
+- ON/OFF, gating, feature-flag, freeze-relevant, or any source-of-truth state belongs in a TYPED
+  column (`boolean`/`enum`/etc.), NOT a JSONB blob key. A JSONB blob is for non-gating, non-SoT
+  configuration (UX settings, presentation, free-form metadata) only.
+- When a typed column SUPERSEDES an existing blob key, or a blob key's last consumer is removed,
+  ELIMINATE the key end-to-end in the SAME change (or an immediately-filed follow-up that the retro
+  tracks): (a) stop writing it — strip it on write (`delete` before `.set()`, or a Zod
+  `.strip()`/`.omit()` on the request schema so it cannot re-enter); AND (b) backfill — remove the
+  key from existing rows via a migration or documented data-fix so no stale divergent value
+  survives. An ANNOTATION ("legacy, ignored") is NOT a close — it fixes the read-side mislead but
+  leaves the write-side divergence channel open.
+- A retro for any change that touches such a blob MUST grep EVERY key of the blob (not just the one
+  the ticket names) for writer/reader parity, and classify each orphaned key as eliminate-now or
+  tracked-follow-up — never silently leave it.
+
+**Verification:**
+
+```bash
+# Find blob keys that still have a writer but no live (non-test) reader — candidate orphans:
+grep -rn "quizConfig\|quiz_config" apps/control-plane/src packages --include="*.ts" --include="*.tsx" \
+  | grep -v __tests__ | grep -v ".test."
+# Confirm no write path merges a gating key back into the blob (look for .set({ <blob>: ... }) writers):
+grep -rn "\.set({[^}]*quizConfig" apps/control-plane/src --include="*.ts"
+# After eliminating a key, confirm it is gone from the type, the Zod schema, AND any persisted default:
+grep -rn "<keyName>" apps/control-plane/src packages --include="*.ts" --include="*.tsx" | grep -v __tests__
+```
+
+---
+
+<!-- Rule U added 2026-06-11 — RETRO-052 §6 (RETRO-049 §4a LG-2/§5d + RETRO-050 §4a LG-1/§5d + RETRO-051 §4a LG-2/§5d, count 3 on tenants.quiz_config; re-confirmed RETRO-053 §5d + RETRO-052 §4a LG-1, threshold long exceeded). The decay recurred key-by-key because each fix annotated/partial-removed without a blob-level policy; this rule converts the recurring per-key fix into a policy. Filed FOLLOW-271 to apply it to quizConfig.enabled. -->
 <!-- Rule T added 2026-06-10 — RETRO-049 §6 (RETRO-047 §4b CB-1 + RETRO-049 §4b CB-1, Vitest v2 vi.fn type-arg → CI-only typecheck escape, threshold met). Process rule (no shipped defect); does NOT mandate hook reconfiguration (devops escalation). -->
 <!-- Rule R added 2026-06-08 — RETRO-037 §6 (RETRO-032 LG-1 + RETRO-037 LG-1, threshold met). -->
 <!-- Rule S added 2026-06-09 — RETRO-045 §6 (RETRO-044 §4a LG-1/§6 + RETRO-045 §4c TG-1/§4a LG-1, threshold met; RETRO-044 set the explicit promote-on-2nd-instance condition). -->

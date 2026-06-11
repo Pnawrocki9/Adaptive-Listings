@@ -40,18 +40,19 @@ export interface DetectionPreviewProps {
    */
   tenantId?: string;
   /**
-   * Whether the quiz widget is enabled for this tenant (from tenants.quiz_enabled).
-   * Rule L (FOLLOW-102): this is the production producer of data-quiz-enabled in the
-   * generated snippet. When false, buildSnippet emits data-quiz-enabled="false".
-   * When true (default), the attribute is omitted — smaller snippet, SDK defaults to enabled.
+   * RETIRED (ADR-0011, FOLLOW-275): quiz_enabled is now fetched by the SDK at runtime
+   * via `GET /api/quiz/public-config` rather than threaded through the snippet.
+   * This prop is preserved as an optional dead param so existing callers do not break,
+   * but `buildSnippet()` no longer emits `data-quiz-enabled` regardless of its value.
+   * @deprecated Use `GET /api/quiz/public-config` — SDK runtime fetch.
    */
   quizEnabled?: boolean;
   /**
-   * Whether micro-poll bottom-toast prompts are enabled for this tenant,
-   * sourced from quiz_config.micro_polls_enabled (JSONB blob, GET /api/quiz/config).
-   * Rule L (FOLLOW-274): this is the production producer of data-micro-polls-enabled.
-   * When true, buildSnippet emits data-micro-polls-enabled="true".
-   * When false or omitted, the attribute is absent — SDK defaults to disabled (opt-in).
+   * RETIRED (ADR-0011, FOLLOW-275): micro_polls_enabled is now fetched by the SDK at runtime
+   * via `GET /api/quiz/public-config` rather than threaded through the snippet.
+   * This prop is preserved as an optional dead param so existing callers do not break,
+   * but `buildSnippet()` no longer emits `data-micro-polls-enabled` regardless of its value.
+   * @deprecated Use `GET /api/quiz/public-config` — SDK runtime fetch.
    */
   microPollsEnabled?: boolean;
 }
@@ -132,36 +133,24 @@ function confidenceBadgeClass(confidence: number): string {
  *   `data-inquiry-submit-selector` attribute is omitted entirely from the snippet so
  *   that tenants who copy-paste the tag don't get a blank attribute value. [FOLLOW-114]
  *
- * @param quizEnabled - Whether the quiz widget is enabled for this tenant, sourced from
- *   `tenants.quiz_enabled`. When explicitly `false`, emits `data-quiz-enabled="false"`.
- *   When `true` (default), the attribute is omitted — the SDK defaults to enabled, so
- *   omitting produces a smaller snippet with no behavior change. [FOLLOW-102 Rule L]
- *
- * @param microPollsEnabled - Whether the micro-poll bottom-toast prompts are enabled,
- *   sourced from `quiz_config.micro_polls_enabled`. When `true`, emits
- *   `data-micro-polls-enabled="true"`. When `false` or omitted, the attribute is absent —
- *   the SDK defaults to disabled (opt-in only, smaller snippet). [FOLLOW-274 Rule L]
+ * ADR-0011 / FOLLOW-275 — `data-quiz-enabled` and `data-micro-polls-enabled` RETIRED:
+ *   These attributes are no longer emitted. The SDK fetches quiz/widget config at runtime
+ *   via `GET /api/quiz/public-config` (API-key-authenticated, CORS-open). Post-activation
+ *   config changes propagate to the SDK on next page load without snippet reinstall.
+ *   The snippet carries only immutable tenant-binding fields.
  */
 export function buildSnippet(
   tenantId: string,
   apiKey: string,
   inquirySubmitSelector?: string | null,
-  quizEnabled?: boolean,
-  microPollsEnabled?: boolean,
 ): string {
   const inquiryAttr: string =
     inquirySubmitSelector != null
       ? `\n  data-inquiry-submit-selector="${inquirySubmitSelector}"`
       : '';
-  // Rule L (FOLLOW-102): emit data-quiz-enabled ONLY when the tenant has explicitly
-  // disabled the quiz. Omitting the attribute when true keeps the snippet smaller and
-  // avoids a half-wire (the SDK consumer in config.ts defaults to enabled=true).
-  const quizAttr: string = quizEnabled === false ? `\n  data-quiz-enabled="false"` : '';
-  // Rule L (FOLLOW-274): emit data-micro-polls-enabled ONLY when explicitly enabled.
-  // The SDK defaults to disabled (opt-in); omitting the attribute is equivalent to false.
-  const microPollsAttr: string =
-    microPollsEnabled === true ? `\n  data-micro-polls-enabled="true"` : '';
-  return `<script\n  src="${SDK_SERVE_URL}"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"${inquiryAttr}${quizAttr}${microPollsAttr}\n></script>`;
+  // ADR-0011 (FOLLOW-275): data-quiz-enabled and data-micro-polls-enabled are RETIRED.
+  // Quiz/widget config is fetched at SDK runtime via GET /api/quiz/public-config.
+  return `<script\n  src="${SDK_SERVE_URL}"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"${inquiryAttr}\n></script>`;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -193,8 +182,6 @@ export function DetectionPreview({
   detection_source,
   detection_confidence,
   tenantId = '',
-  quizEnabled,
-  microPollsEnabled,
 }: DetectionPreviewProps) {
   const [activating, setActivating] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
@@ -205,19 +192,11 @@ export function DetectionPreview({
   const snippetTenantId = activated !== null ? activated.tenant_id : tenantId;
   // Pass inquiry_submit_selector from the detected schema so tenants who copy this snippet
   // get a script tag that already wires up the inquiry click observer. [FOLLOW-114]
-  // Pass quizEnabled from the tenant record so the snippet emits data-quiz-enabled="false"
-  // when the quiz is disabled for this tenant. [FOLLOW-102 Rule L]
-  // Pass microPollsEnabled from quiz_config so the snippet emits data-micro-polls-enabled="true"
-  // when micro-polls are enabled for this tenant. [FOLLOW-274 Rule L]
+  // ADR-0011 (FOLLOW-275): quizEnabled and microPollsEnabled are NO LONGER threaded through
+  // the snippet. The SDK fetches quiz/widget config at runtime via GET /api/quiz/public-config.
   const snippet =
     activated !== null
-      ? buildSnippet(
-          snippetTenantId,
-          activated.api_key,
-          schema.inquiry_submit_selector,
-          quizEnabled,
-          microPollsEnabled,
-        )
+      ? buildSnippet(snippetTenantId, activated.api_key, schema.inquiry_submit_selector)
       : '';
 
   async function handleActivate(): Promise<void> {

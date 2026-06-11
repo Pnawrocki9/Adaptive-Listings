@@ -40,12 +40,16 @@ export const tenants = pgTable(
      * E.4 investor quiz widget configuration — widget UX settings only.
      *
      * SCOPE (valid keys — all wired to a non-test producer AND consumer):
-     *   `language`           → GET /api/quiz/config → quiz widget locale
-     *   `accentColor`        → GET /api/quiz/config → quiz widget brand color
-     *   `microPollsEnabled`  → GET /api/quiz/config → buildSnippet emits data-micro-polls-enabled
-     *                          → readConfig() → config.microPollsEnabled → SDK micro-poll trigger
+     *   `language`           → GET /api/quiz/public-config → SDK runtime fetch → quiz widget locale
+     *   `accent_color`       → GET /api/quiz/public-config → SDK runtime fetch → quiz widget brand color
+     *   `micro_polls_enabled`→ GET /api/quiz/public-config → SDK runtime fetch → micro-poll trigger
      * (Stored as snake_case: `language`, `accent_color`, `micro_polls_enabled`.)
-     * Persisted via POST /api/quiz/config and read by GET /api/quiz/config.
+     * Persisted via POST /api/quiz/config; read by GET /api/quiz/config (dashboard, JWT auth) AND
+     * GET /api/quiz/public-config (SDK runtime fetch, API-key auth, ADR-0011 / FOLLOW-275).
+     *
+     * ADR-0011 (FOLLOW-275): quiz config is no longer threaded through snippet data-attributes
+     * (`data-quiz-enabled`, `data-micro-polls-enabled`). These attributes are retired. The SDK
+     * fetches this config at init time via GET /api/quiz/public-config (anonymous buyer context).
      *
      * NOT the source-of-truth for quiz enabled/disabled state — use `quizEnabled`
      * (the typed boolean column below) for that.
@@ -85,6 +89,10 @@ export const tenants = pgTable(
      * Tenants with high-quality chat coverage may set this to false to rely on
      * behavioral + chat NLP signals only (§B.1 / §D.6 rationale).
      * Added in FOLLOW-102.
+     *
+     * ADR-0011 / FOLLOW-275: this column is now propagated to the SDK via the runtime fetch
+     * `GET /api/quiz/public-config` (API-key-authenticated, anonymous buyer context) rather
+     * than via the `data-quiz-enabled` snippet attribute. The attribute is retired.
      */
     quizEnabled: boolean('quiz_enabled').notNull().default(true),
 

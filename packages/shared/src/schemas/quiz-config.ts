@@ -21,8 +21,14 @@
  *   - `micro_polls_enabled` WIRED — `buildSnippet` now emits `data-micro-polls-enabled="true"`
  *     when the flag is on; `readConfig` parses it into `SdkConfig.microPollsEnabled`.
  *
+ * FOLLOW-275 (2026-06-12): added `QuizLanguageSchema` Zod enum and
+ * `QuizPublicConfigResponseSchema` for the new `GET /api/quiz/public-config` route
+ * (ADR-0011, path ii). The schema is the canonical wire contract for the SDK runtime
+ * fetch; the route is the non-test production consumer (Rule H / Rule I).
+ *
  * Importers:
  *   - apps/control-plane/src/app/api/quiz/config/route.ts
+ *   - apps/control-plane/src/app/api/quiz/public-config/route.ts  ← FOLLOW-275
  *   - apps/control-plane/src/app/dashboard/quiz/page.tsx
  *
  * @module @estalara/shared/schemas/quiz-config
@@ -35,6 +41,9 @@ import { z } from 'zod';
  * API, dashboard, and SDK must all reference this constant — never repeat the literal set.
  */
 export const QUIZ_LANGUAGE_VALUES = ['en', 'pl', 'es'] as const;
+
+/** Zod enum schema derived from the canonical language list. */
+export const QuizLanguageSchema = z.enum(QUIZ_LANGUAGE_VALUES);
 
 /** Union type derived from the canonical language list. */
 export type QuizLanguage = (typeof QUIZ_LANGUAGE_VALUES)[number];
@@ -94,6 +103,31 @@ export const QUIZ_DEFAULT_CONFIG: QuizConfig = {
   accent_color: '#2563EB',
   micro_polls_enabled: false,
 };
+
+/**
+ * Wire contract for `GET /api/quiz/public-config` — the SDK runtime fetch endpoint
+ * introduced in FOLLOW-275 (ADR-0011, path ii).
+ *
+ * Auth: `Authorization: Bearer <tenant-api-key>` (the SDK's `data-api-key`).
+ * CORS: `Access-Control-Allow-Origin: *` (read-only, no PII).
+ * Cache-Control: `max-age=300, stale-while-revalidate=60`.
+ *
+ * All four fields are always present in a 200 response — no field is `null`.
+ * The SDK falls back to snippet-attribute values, then to hardcoded defaults,
+ * on any non-200 or network error.
+ *
+ * Non-test production consumer: `apps/control-plane/src/app/api/quiz/public-config/route.ts`
+ * (Rule H / Rule I).
+ */
+export const QuizPublicConfigResponseSchema = z.object({
+  quiz_enabled: z.boolean(),
+  micro_polls_enabled: z.boolean(),
+  language: QuizLanguageSchema,
+  accent_color: z.string(),
+});
+
+/** TypeScript type for the `GET /api/quiz/public-config` 200 response body. */
+export type QuizPublicConfigResponse = z.infer<typeof QuizPublicConfigResponseSchema>;
 
 /**
  * Parse a stored JSONB blob that may contain legacy `enabled` or `sticky_widget` keys.

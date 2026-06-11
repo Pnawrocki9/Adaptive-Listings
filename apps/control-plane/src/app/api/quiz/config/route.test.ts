@@ -17,6 +17,7 @@ vi.mock('@estalara/auth', () => ({
 
 import { createAdminClient } from '@estalara/db';
 import { getAuthClaims, requireTenantAccess } from '@estalara/auth';
+import { QUIZ_LANGUAGE_VALUES, QuizConfigSchema } from '@estalara/shared';
 
 import { GET, POST } from './route';
 
@@ -83,6 +84,28 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+// ── FOLLOW-270 parity: canonical language enum ────────────────────────────────
+describe('QUIZ_LANGUAGE_VALUES canonical enum (FOLLOW-270)', () => {
+  it('includes all three supported locales', () => {
+    expect(QUIZ_LANGUAGE_VALUES).toContain('en');
+    expect(QUIZ_LANGUAGE_VALUES).toContain('pl');
+    expect(QUIZ_LANGUAGE_VALUES).toContain('es');
+    expect(QUIZ_LANGUAGE_VALUES).toHaveLength(3);
+  });
+
+  it('QuizConfigSchema accepts all three language values', () => {
+    for (const lang of QUIZ_LANGUAGE_VALUES) {
+      const result = QuizConfigSchema.safeParse({ language: lang });
+      expect(result.success, `expected language '${lang}' to be valid`).toBe(true);
+    }
+  });
+
+  it('QuizConfigSchema rejects an unknown language value', () => {
+    const result = QuizConfigSchema.safeParse({ language: 'de' });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('GET /api/quiz/config', () => {
   it('returns 401 when no valid JWT', async () => {
     vi.mocked(getAuthClaims).mockResolvedValue(null);
@@ -138,6 +161,18 @@ describe('POST /api/quiz/config', () => {
     }>(res);
     expect(body.enabled).toBe(true);
     expect(body.language).toBe('pl');
+  });
+
+  // FOLLOW-270: verify 'es' is accepted end-to-end by the route handler
+  it("accepts language 'es' and returns it in the response", async () => {
+    vi.mocked(requireTenantAccess).mockResolvedValue(TENANT_CLAIMS);
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+    );
+    const res = await POST(makePostRequest({ language: 'es' }));
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ language: string }>(res);
+    expect(body.language).toBe('es');
   });
 
   it('returns 400 when enabled is not a boolean', async () => {

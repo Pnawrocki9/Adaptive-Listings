@@ -7057,7 +7057,257 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 272 (271 = RETRO-052 / PR #262 / FOLLOW-265: eliminate (not just annotate) the orphaned quizConfig.enabled JSONB key — FOLLOW-265 AC4 annotated it (tenants.ts:39-56 directs readers to the typed quiz_enabled column) which closes the read-side mislead, but POST /api/quiz/config route.ts:142 .set({quizConfig:updated}) still merges client input so a stale/legacy `enabled` value can persist and diverge from the typed column; strip on write + Zod .strip + one-time backfill + completeness test, P2 LG-1, applies Rule U (gating state = typed column, eliminate superseded blob keys not annotate). 270 = RETRO-053 / PR #263 / FOLLOW-264: QuizConfig.language enum skew between api/quiz/config/route.ts ('en'|'pl'|'es' + Zod) and dashboard/quiz/page.tsx ('en'|'pl' + onChange cast) — hand-duplicated QuizConfig interface drifted on the language axis; 'es' is API-valid but UI-unreachable; de-dup into one shared type OR parity test, P2 MX-1/Rule-S. NOTE 266–269 RESERVED for the Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10, QUEUE.md:13) — do not reuse. 265 = RETRO-051 / PR #260 / FOLLOW-263: QuizConfig.language enum skew between api/quiz/config/route.ts ('en'|'pl'|'es' + Zod) and dashboard/quiz/page.tsx ('en'|'pl' + onChange cast) — hand-duplicated QuizConfig interface drifted on the language axis; 'es' is API-valid but UI-unreachable; de-dup into one shared type OR parity test, P2 MX-1/Rule-S. NOTE 266–269 RESERVED for the Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10, QUEUE.md:13) — do not reuse. 265 = RETRO-051 / PR #260 / FOLLOW-263: the pilot-freeze guard repoint also narrowed the watched Lane-C set from 4 flags to quiz-only — LANE_C_FLAG_KEYS removed, intent_engine_enabled/shadow_mode_override/lane_c_active (all producer-less but doc-listed, incl. the FOLLOW-101 chat-intent hook) silently dropped, log field active_lane_c_flags→quiz_enabled, and PILOT_FREEZE_RULE.md:93-105 still describes the old 4-flag/quizConfig mechanism; restore-multi-flag OR ratify-quiz-only + sync the doc/log-schema/legacy-quizConfig.enabled key, P1 LG-1/LG-2/DG-1/TG-1, before TICKET-PILOT-001 window. 264 = RETRO-050 / PR #259 / FOLLOW-257: complete the Option-A removal across all limbs — the SDK consumer was removed but the dashboard "Show quiz after N listing views" producer (page.tsx:208-220) + POST /api/quiz/config Zod min(1)max(10) + tenants.quiz_config JSONB persistence survive with no reader = orphaned HALF_WIRE_P / false configurability; retire-or-disable that producer + clear /api/config+audit dead-name residue (LG-2) + replace the mirrored simulatedShowQuizTrigger AC2 tests with a seam-driven jsdom test of the real index.ts:791 gate (TG-1 Rule Q), P2 LG-1/LG-2/TG-1. 259 (258 = RETRO-049 / PR #257 / FOLLOW-102: repoint the pilot-freeze Lane-C guard at the new SoT column tenants.quiz_enabled — FOLLOW-117/RETRO-012 fixed the guard to watch quizConfig.enabled, FOLLOW-102 moved the authoritative toggle to the tenants.quiz_enabled column and did not repoint the guard, so a frozen pilot toggled quiz-ON via the new column raises no contamination warning (false reassurance at go/no-go); add quizEnabled to checkPilotFrozenAsync SELECT + test, P2 LG-2/TG-2. 257 = RETRO-049 / PR #257 / FOLLOW-102: resolve the data-quiz-trigger / quiz.trigger_after_n_listings Rule-L HALF_WIRE_C — config.ts parses it but buildSnippet never emits data-quiz-trigger AND no SDK runtime reads the parsed value (scheduleQuizTrigger uses hardcoded QUIZ_TRIGGER_DELAY_MS=30s, FOLLOW-199); wire end-to-end OR remove parse+field+4 tests, plus add the missing showQuizTrigger() gate test (TG-1), P1 LG-1/TG-1. 256 = RETRO-048 / PR #258 / FOLLOW-253: cross-reference the stale in-memory-only AC-5 "Rule R" describe in follow-101.test.ts to follow-252.test.ts for the rehydrate-boundary proof (or fold+delete) — the dedicated seam file is correct but the feature file's AC-5 still passes even if the persisted guard is deleted, P3 TG-1. 255 = RETRO-048 / PR #258 / FOLLOW-252: retire or annotate the redundant in-memory _chatPriorAppliedSessionId guard — persisted chatPriorApplied flag is sole source of truth; in-tab test already proves persisted path covers same-tab re-entry; two guards ANDed at adapt.ts:780-782 is debt, P3 LG-2. 254 = RETRO-048 / PR #258 / FOLLOW-252: reconcile chatPriorApplied JSDoc reset-path (claims resetAdaptState clears it; actually only eraseIntentState/session-rotation does) + decide archetype-change re-applicability, P3 LG-1/DG. 253 = RETRO-047 / PR #256 / FOLLOW-101: rehydrate→re-init SDK test for the chat-intent prior via _initForTest seam (Rule R verification clause), P2 TG-1. 252 = RETRO-047 / PR #256 / FOLLOW-101: gate the chat-intent prior idempotency on the rehydrate boundary (persisted marker / !intentStateRehydrated) not the in-memory _chatPriorAppliedSessionId guard — 3rd Rule R double-count instance (RETRO-032/037), reload re-folds the multiplicative chat likelihoods onto rehydrated state within the 24h shadow-key window, P1 LG-1. 251 = RETRO-046 / PR #243 / FOLLOW-185: backfill missing RETRO bodies + CI lint. 250 = RETRO-046 / PR #243 / FOLLOW-185: route-driven CRM+DSR integration coverage. 249 = RETRO-046 / PR #243 / FOLLOW-185: RLS isolation PGlite enforcement. 248 = RETRO-045 / PR #242 / FOLLOW-246: mirror crm_erasure_status into access+portability. 247 = RETRO-045 / PR #242 / FOLLOW-246: PGlite real-SQL parity for disclosure verbs. 246 = RETRO-044 / PR #233 / FOLLOW-184: DSR access (Art.15) + portability (Art.20) must read conversion_labels on BOTH session_id AND durable_lead_id namespaces — FOLLOW-184 closed only the erase verb (RETRO-031 §4a LG-1); the symmetric access/portability verbs never query conversion_labels at all, so CRM deep-outcome rows are erasable but undisclosable (P1 Art.15/20); folds LG-2 erase-wrong-token-silent-no-op + DG-1 §T.6-scoped-erase-only. 245 = RETRO-043 / PR #237 / FOLLOW-238: codify crm_erasure_status response values as shared const + reconcile wire(crm_tenant_unverifiable)⇔audit(crm_unverifiable) two-name split + document/remove unproduced expired/failed actions, P2 LG-1/LG-2. 244 = RETRO-043 / PR #237 / FOLLOW-238: re-scope stale FOLLOW-240 test to new DSR values + cover the untested crm_tenant_unverifiable positive branch (TG-1 P1) + fix orphaned doc consumers in docs/compliance/DSR_ALERTING.md §2/§5 query + MASTER_DESIGN §T.6 still on removed incomplete_* values (DG-1 P1 — realized RETRO-041 LG-2 sync-risk); MUST precede FOLLOW-187 live Sentry alert per ESC-021. 243 = RETRO-042 / PR #236 / FOLLOW-237: tighten stale mean_model_predicted_rate "pending FOLLOW-230" JSDoc caveat now that FOLLOW-230 is DONE, P3 doc-nit. 242 unused/reserved. 241 = RETRO-041 DSR_ALERTING consolidation + RETRO-042/ESC-021 citation fix. 238 (237 = RETRO-040 / PR #235 / FOLLOW-221: calibration JSON export — add Rule K.2 data_source provenance (CB-1 P1) + reject unknown format (LG-3) + fix avg_confidence semantics/dwell caveat (LG-2) + correct FOLLOW-175 mis-wire/HALF_WIRE_P (LG-1 P1); the export has no usable consumer and FOLLOW-175 needs row-level not aggregate. 236 = RETRO-039 / PR #228 / FOLLOW-183: restore src/index.ts to packages/db vitest coverage.include, TG-1 P3. 235 = RETRO-039 / PR #228 / FOLLOW-183: tighten 12-pair parity gate to value-parity AC + fix stale JSDoc, LG-1/DG-1 P3. 234 = FOLLOW-187 companion / PR #229: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate, P1 before_go_live. 233/232/231 unused. 230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217: / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
+## FOLLOW-272 — Tighten `_check_headline_facts` to the description path's grounding-check tier — substring containment admits a digit-coincidence + first-word-proper-name escape (Rule S "same verification tier")
+
+- **source_retro:** RETRO-054 (§4a LG-1; §4c TG-1; §6 Rule-S close-out; §7)
+- **source_ticket:** FOLLOW-169 / PR #264 (merge commit `c5b55bb`)
+- **recommended_sprint:** next `generate_description.py`-touching ticket / Sprint 14 cleanup (no
+  blocker — the headline fact-check is present and fail-safe; this raises its PRECISION to the
+  description sibling's tier)
+- **recommended_agent:** ml-engineer
+- **priority:** P3
+- **estimated_hours:** 3
+- **scope:** FOLLOW-169 closed RETRO-028 §4a LG-1 end-to-end (the headline now has a system prompt
+  `_HEADLINE_SYSTEM_PROMPT` at `generate_description.py:1336` AND a post-generation fact check
+  `_check_headline_facts` at `:1354`), bringing the headline sibling up to the description's
+  grounding PRESENCE. But the deterministic check is structurally WEAKER than the description path's
+  (`_body_violates_contract:694` + the `<verified_facts_used>` audit). `_check_headline_facts`
+  (`:1209-1254`) tests `token.lower() not in grounding` where `grounding` is the concatenated
+  `original_description + json.dumps(listing_context)` lowercased (`:1231`) — a BARE SUBSTRING
+  containment. Two concrete false-negatives follow: (1) a bare digit token (e.g. a hallucinated "5"
+  in "5-min walk") passes if "5" appears ANYWHERE in the serialised JSON — an unrelated listing_id,
+  year, coordinate, or price (e.g. `"price": 425000`); "7%" also passes inside "17%". (2)
+  Proper-name detection iterates `words[1:]` (`:1243`), skipping `words[0]`, so a hallucinated
+  proper name AS THE FIRST WORD ("Redland — ideal family home…") is not caught; lowercase entities
+  are also missed. The system prompt is the first line of defence; the deterministic check is the
+  second, and it is the weaker sibling. This is the Rule-S "same VERIFICATION tier" clause residue
+  from an otherwise model Rule-S close-out.
+- **ac:**
+  - [ ] AC1 (LG-1 digit): replace the bare substring digit test (`:1235-1236`) with a word-boundary
+        / whole-token grounding match so a bare digit token cannot match an unrelated number
+        elsewhere in the serialised grounding. Add a red-then-green test: a headline asserting
+        "5-min walk" against a `listing_context` whose only "5" is inside an id/price is SUPPRESSED.
+  - [ ] AC2 (LG-1 proper name): extend proper-name detection to `words[0]` (first-word entity) — a
+        capitalised first word that is a likely proper name (not a generic adjective/the archetype
+        framing) and is absent from grounding is flagged. Add a test: first-word hallucinated school
+        name is suppressed.
+  - [ ] AC3 (preferred alternative, may subsume AC1/AC2): derive the check from the passed
+        `verified_facts` whitelist directly (the description's already-extracted inventory threaded
+        in at `:1310-1313`) rather than the raw concatenated grounding text — a whitelist membership
+        test is both tighter and cheaper than substring scan, and matches the description path's
+        whitelist-driven model. (Note the §4a LG-2 caveat: `verified_facts` is the description
+        model's SELF-REPORT — if AC3 is chosen, document that a description-side self-reported
+        hallucination still passes; that residue is FOLLOW-162-lineage, not this ticket.)
+  - [ ] AC4: verify with `python3 -m pytest src/jobs/test_generate_description.py` AND keep the
+        existing 11 FOLLOW-169 headline tests green (no regression in the present happy/sad paths).
+- **depends_on:** FOLLOW-169 (the mechanism this tightens). No blocker on any pilot.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-273 — Make the SDK quiz/locale path reference the canonical shared language enum + reconcile the duplicate canonical source (`QUIZ_LANGUAGE_VALUES` vs pre-existing `LocaleSchema`) — the symmetric set FOLLOW-270 consolidated extends into the SDK render path it did not reach (MX-1 / MX-2)
+
+- **source_retro:** RETRO-055 (§4e MX-1/MX-2; §5d; §6 — confirming Rule-S cross-package instance;
+  §7)
+- **source_ticket:** FOLLOW-270 / PR #265 (impl commit `5b4f1c1`)
+- **recommended_sprint:** next quiz/SDK-touching ticket / before FOLLOW-199 (Quiz v2.0) re-opens the
+  quiz config surface or any new locale (`'de'`/`'fr'`/`'ar'`) is added. No pilot blocker.
+- **recommended_agent:** sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 3
+- **scope:** FOLLOW-270 extracted a canonical `QuizConfig`/`QUIZ_LANGUAGE_VALUES`/`QuizLanguage`
+  into `packages/shared/src/schemas/quiz-config.ts` and reconciled the TWO control-plane copies of
+  the `'en'|'pl'|'es'` language enum (`api/quiz/config/route.ts` + `dashboard/quiz/page.tsx`) —
+  closing RETRO-053 §4e MX-1 on the control-plane axis. But the SAME literal set is hand-typed in
+  the **SDK**, which is the RUNTIME RENDERER of the very `quizConfig.language` the dashboard now
+  produces (Master Design §E.4.7: priority-1 language source is `quizConfig.language` from
+  `/api/quiz/config` → SDK `config.language` → `renderQuizWidget`). The schema's own docstring
+  (`quiz-config.ts:28`) states _"API, dashboard, and SDK must all reference this constant — never
+  repeat the literal set"_, but the SDK does NOT import it. Hand-typed SDK sites:
+  - `packages/sdk/src/ui/quiz-widget.ts:27` — `QuizWidgetConfig.language: 'en' | 'pl' | 'es'`
+  - `packages/sdk/src/ui/quiz-widget.ts:50` — `QUIZ_CONTENT: Record<'en' | 'pl' | 'es', QuizLang>`
+  - `packages/sdk/src/ui/quiz-trigger.ts:12` — `QuizTriggerConfig.language: 'en' | 'pl' | 'es'`
+  - `packages/sdk/src/core/config.ts:95` — `SUPPORTED_LANGUAGES = ['en','pl','es'] as const` The SDK
+    already depends on `@estalara/shared` (`packages/sdk/package.json:50`) so the import is trivial.
+    SEPARATELY (MX-2), FOLLOW-270 created `QUIZ_LANGUAGE_VALUES` as a SECOND canonical
+    `['en','pl','es']` source in `@estalara/shared` while a canonical
+    `LocaleSchema = z.enum(['en','pl','es'])` ALREADY exists at
+    `packages/shared/src/schemas/description.ts:52` (used by `/api/adapt`, description-cache,
+    quiz-completion routes) — so a de-dup ticket ADDED a parallel canonical copy. Net: the
+    locale-enum drift surface went from 2 copies to "1-canonical + N-SDK-copies +
+    1-parallel-canonical," not to 1. P2: a future locale add silently renders untranslated / falls
+    to `'en'` if the SDK union isn't also edited, and the schema docstring already PROMISES SDK
+    reference. This is residual Rule-S asymmetry WITHIN the de-dup fix.
+- **ac:**
+  - [ ] AC1 (MX-1): replace the hand-typed `'en' | 'pl' | 'es'` unions in `quiz-widget.ts:27,50`,
+        `quiz-trigger.ts:12`, and `config.ts:95` (`SUPPORTED_LANGUAGES`) with `QuizLanguage` /
+        `QUIZ_LANGUAGE_VALUES` imported from `@estalara/shared`. (The `QUIZ_CONTENT`/`QUIZ_LABELS`
+        content MAPS keep their per-locale entries — that is real translation data, not a type; key
+        them by the canonical type so a new locale fails typecheck until its content is added.)
+  - [ ] AC2 (MX-2): reconcile the duplicate canonical source — `QUIZ_LANGUAGE_VALUES` and the
+        pre-existing `LocaleSchema` (`description.ts:52`) MUST resolve to ONE shared locale
+        definition (prefer deriving the quiz enum from `LocaleSchema` / a shared base, OR document
+        an explicit reason they differ). Do NOT leave two parallel `['en','pl','es']` tuples in
+        `@estalara/shared`.
+  - [ ] AC3 (Rule S): enumerate the FULL sibling set in the PR description (grep
+        `'en' | 'pl' | 'es'` and `['en', 'pl', 'es']` repo-wide) and either fix each type-enum site
+        or justify the exemption (e.g. the `consent-banner.ts:18` / `sidebar-widget.ts:24` /
+        `adapt.ts:189` locale unions are the same set — decide whether they fold onto the canonical
+        type too, or scope them out with a reason).
+  - [ ] AC4 (TG, folds RETRO-055 §4c TG-1): add a structural parity test asserting the SDK
+        quiz-language type/`QUIZ_CONTENT` keys equal `QUIZ_LANGUAGE_VALUES` (so adding a locale to
+        the canonical source without adding SDK content fails). Optionally assert the dashboard
+        `<select>` renders one option per `QUIZ_LANGUAGE_VALUES` entry.
+  - [ ] AC5: verify with `tsc --noEmit` on `@estalara/sdk` + `@estalara/shared` +
+        `@estalara/control-plane` AND run the SDK + shared + control-plane vitest suites (per the
+        Rule G amendment 2026-06-11 — an enum change can break test data/fixtures outside the
+        typecheck reach; run the runner, not just tsc).
+- **depends_on:** FOLLOW-270 (the PR that established the canonical shared source). No blocker on
+  TICKET-PILOT-001. Sequence BEFORE FOLLOW-199 (Quiz v2.0) if possible.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-274 — Resolve the two orphaned write-only `quiz_config` blob keys (`micro_polls_enabled`, `sticky_widget`) the FOLLOW-271 docstring rewrite re-blessed as "valid" — the same `quiz_config` decay one hop down from `enabled` (Rule U "grep EVERY key" + Rule L all-three-limbs)
+
+- **source_retro:** RETRO-056 (§4a LG-1; §4c TG-1/TG-2; §4d DG-1; §5d; §6 — 4th `quiz_config`-decay
+  instance under the already-codified Rule U + confirming Rule L; §7)
+- **source_ticket:** FOLLOW-271 / PR #266 (merge commit `de94873`)
+- **recommended_sprint:** before FOLLOW-199 (Quiz v2.0) re-opens the quiz config surface — Rule U:
+  do not accrete a new key onto an un-cleaned blob. No pilot blocker. Composes with FOLLOW-273
+  (disjoint keys).
+- **recommended_agent:** backend-engineer (dashboard producer + buildSnippet) + sdk-engineer (SDK
+  consumer) — primary backend-engineer.
+- **priority:** P2
+- **estimated_hours:** 4
+- **scope:** FOLLOW-271 correctly ELIMINATED the gating key `enabled` from `tenants.quiz_config`
+  (strip-on- write `.omit({ enabled: true })` + `parseStoredQuizConfig()` read-strip + migration
+  0026 backfill — the model Rule-U close-out). But in rewriting the blob's JSDoc it declared "SCOPE
+  (valid keys): `accentColor`, `language`, `stickyWidget`, `microPollsEnabled`"
+  (`packages/db/src/schema/tenants.ts:42`; `packages/shared/src/schemas/quiz-config.ts:58`;
+  `api/quiz/config/route.ts:18`) — implying all four are live. TWO are orphaned write-only, the SAME
+  decay shape `enabled` had:
+  - **`micro_polls_enabled`** — PRODUCER: dashboard `dashboard/quiz/page.tsx:57` writes it via POST
+    → persisted to the blob. The SDK READS `(config as Record).micro_polls_enabled` at
+    `packages/sdk/src/index.ts:888,965` — BUT `config.micro_polls_enabled` is never sourced from the
+    tenant blob: `buildSnippet` (`components/onboarding/DetectionPreview.tsx:132-147`) emits ONLY
+    `data-tenant-id/api-key/decision-url/inquiry-submit-selector/quiz-enabled` (NO
+    `data-micro-polls-enabled`), and the SDK does NOT GET `/api/quiz/config` at runtime (only a
+    `quiz/completion` POST exists, `sdk/src/core/adapt.ts:163`). So the dashboard toggle writes a
+    blob key that has no production path to its SDK reader → write-only orphan / Rule-L HALF_WIRE
+    (producer + disconnected consumer, no transport).
+  - **`sticky_widget`** — PRODUCER: dashboard `page.tsx:54,252` toggle → blob. CONSUMER: NONE in
+    `packages/sdk/src` (grep `sticky_widget|stickyWidget` → empty). No snippet attribute, no runtime
+    fetch. Pure write-only blob key. This is the RETRO-050 `trigger_after_n_listings`
+    false-configurability shape recurring (the 7th retro on this blob): an admin toggling "sticky
+    widget" / "enable micro-polls" sees no runtime effect, and the new docstring masks the residue
+    by listing them as valid. The `language`/`accent_color` dashboard→snippet→SDK skew is the
+    DISJOINT, already-filed FOLLOW-273 (RETRO-055) axis — out of scope here.
+- **ac:**
+  - [ ] AC1 — Decide per key (WIRE or RETIRE): for `micro_polls_enabled` and `sticky_widget`, either
+        (a) WIRE end-to-end — emit `data-micro-polls-enabled` / `data-sticky-widget` in
+        `buildSnippet` (`DetectionPreview.tsx`) sourced from the tenant record AND have the SDK
+        `config.ts` parse the attribute into `config.micro_polls_enabled` / a sticky flag (the SDK
+        already reads `config.micro_polls_enabled` at `index.ts:888,965`, so emitting the attribute
+        closes that consumer); OR (b) RETIRE the dashboard producers (`page.tsx:54,57,252`) + drop
+        the keys from `QuizConfigSchema`/`QuizConfig`/`QUIZ_DEFAULT_CONFIG` + a backfill migration
+        stripping them (mirror FOLLOW-271's pattern). Prefer WIRE for `micro_polls_enabled` (the SDK
+        consumer already exists); RETIRE for `sticky_widget` unless a real SDK consumer is added.
+  - [ ] AC2 (Rule U "grep EVERY key") — after the fix, grep ALL remaining `quiz_config` keys for
+        writer↔reader↔render parity and confirm none is write-only; document the audit in the PR.
+  - [ ] AC3 (DG-1) — correct the `tenants.ts:42` / `quiz-config.ts:58` / `route.ts:18` docstrings to
+        list only GENUINELY-wired keys (whatever AC1 leaves live).
+  - [ ] AC4 (TG, folds RETRO-056 §4c TG-1/TG-2) — add a wiring/parity test: for any WIRED key,
+        assert the dashboard→snippet (`buildSnippet` emits the attribute)→SDK-consumer chain
+        end-to-end; for any RETIRED key, assert it is absent from the schema and add a
+        migration-backfill test (a seeded row carrying the key has it removed while siblings survive
+        — mirror FOLLOW-271's missing migration test).
+  - [ ] AC5 (Rule G amendment 2026-06-11) — verify with `tsc --noEmit` on every touched package AND
+        run the control-plane + SDK + shared vitest runners (a schema-key change can break test data
+        outside the typecheck reach — run the runner, not just tsc). If a migration is added, run
+        `bash scripts/check-migration-journal.sh` for journal monotonicity.
+- **depends_on:** none hard. Sequence BEFORE FOLLOW-199 (Quiz v2.0). Composes with FOLLOW-273 (same
+  blob, disjoint keys — `language`/`accentColor` there, `micro_polls_enabled`/`sticky_widget` here).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-275 — Wire `micro_polls_enabled` (and the symmetric `quizEnabled`) end-to-end from the tenant store to the production SDK install snippet — FOLLOW-274 wired only the `buildSnippet` EMITTER (the hop RETRO-056 named), but the gap moved one hop UP to the `DetectWizard → DetectionPreview` call site that supplies neither flag, and no dashboard surface re-emits the snippet (Rule L install-producer-absent + Rule S symmetric siblings)
+
+- **source_retro:** RETRO-057 (§3 CHECK B; §4a LG-1 P1 / LG-2 P2; §4c TG-1 P1 / TG-2 P3; §4d DG-1
+  P1; §5a/§5d; §6 — confirming Rule L (install/snippet producer absent, call-site caveat) + Rule S
+  (`quizEnabled`/`microPollsEnabled` symmetric pair); 8th `tenants.quiz_config` retro,
+  snippet-delivery axis)
+- **source_ticket:** FOLLOW-274 / PR #267 (squash merge commit `ca4da90`)
+- **recommended_sprint:** before TICKET-PILOT-001 relies on dashboard-driven quiz disable (LG-2
+  `quizEnabled` arm) and before FOLLOW-199 (Quiz v2.0) accretes more `quiz_config`-driven SDK
+  behaviors. Composes with FOLLOW-273 (same blob, disjoint `language`/`accentColor` axis).
+- **recommended_agent:** backend-engineer (DetectWizard/DetectionPreview call-site + any dashboard
+  re-emission surface) + sdk-engineer (runtime config fetch if architecture (b) is chosen) +
+  architect (decide (a) snippet-threading vs (b) SDK runtime GET — primary backend-engineer.
+- **priority:** P1
+- **estimated_hours:** 6
+- **scope:** FOLLOW-274 added the `buildSnippet` 5th param `microPollsEnabled` and the emission
+  `data-micro-polls-enabled="true"` (`DetectionPreview.tsx:163`), and the SDK consumer already reads
+  it (`config.ts:193` → `index.ts:888,965`). BUT the production PRODUCER OF THE ARGUMENT is still
+  absent — the gap moved one hop up from the hop RETRO-056 named:
+  - **`micro_polls_enabled` (P1, LG-1)** — `buildSnippet` has exactly ONE non-test caller
+    (`DetectionPreview.tsx:214`), and `DetectionPreview` has exactly ONE non-test render site
+    (`DetectWizard.tsx:259`), which passes `schema/fields/detection_source/detection_confidence` and
+    NEITHER `microPollsEnabled` NOR `quizEnabled`. The wizard has ZERO `quiz_config` access (grep
+    `quiz` in `DetectWizard.tsx` → empty) and runs at onboarding BEFORE the dashboard toggle is ever
+    set. The dashboard quiz page where the toggle lives (`page.tsx:243-262`) renders NO snippet
+    (grep `buildSnippet`/`<script` → only doc comments). So `data-micro-polls-enabled` is NEVER
+    emitted in prod → SDK consumer never fires → identical to a dead feature. The `tenants.ts:42-46`
+    docstring ASSERTS the full wire as if shipped (DG-1).
+  - **`quizEnabled` (P2, LG-2)** — the SAME call-site gap leaves `quizEnabled` (FOLLOW-102) unwired:
+    a tenant who DISABLES the quiz never gets `data-quiz-enabled="false"` emitted; the SDK defaults
+    to enabled. RETRO-049 §3 (`RETROSPECTIVES.md:12626`) recorded `quizEnabled` as "NOT dead" by
+    stopping at the prop-definition site (`DetectionPreview.tsx:197`) without tracing to the
+    `DetectWizard` render site. Fix BOTH arms together (Rule S — symmetric siblings, one root
+    cause). ARCHITECTURE (flag for architect): (a) thread both flags through
+    `DetectWizard`→`DetectionPreview`→ `buildSnippet` from the tenant record AND add a
+    post-onboarding "your install snippet" dashboard surface that re-emits with current
+    `quiz_config`; OR (b) (PREFERRED, more robust per RETRO-057 §5d) have the SDK GET
+    `/api/quiz/config` at runtime so blob changes propagate without re-install, retiring the
+    snippet-attribute approach for these post-activation-mutable keys. Note
+    `language`/`accent_color` share the same un-emitted-by-buildSnippet gap (the locale-enum facet
+    stays in FOLLOW-273, but the snippet producer fix here is the natural place to emit ALL tenant
+    `data-*` attributes).
+- **ac:**
+  - [ ] AC1 (Rule L producer) — the production snippet PRODUCER supplies `microPollsEnabled` and
+        `quizEnabled` from the tenant store. If (a): `DetectWizard` (and any new dashboard snippet
+        surface) fetches `quiz_config` + `quiz_enabled` and threads both into `buildSnippet`. If
+        (b): the SDK fetches `/api/quiz/config` at runtime and reads
+        `micro_polls_enabled`/`quiz_enabled` from the response, and the snippet attributes for these
+        keys are retired.
+  - [ ] AC2 (Rule S symmetric siblings) — `quizEnabled` and `microPollsEnabled` are wired together
+        at matched completeness; if any other tenant-config `data-*` attribute (e.g.
+        `data-language`, `data-accent-color`) is also un-emitted by the chosen producer, enumerate
+        and fix or explicitly defer per-key (cross-reference FOLLOW-273 for the locale-enum facet).
+  - [ ] AC3 (post-activation propagation) — confirm and document how a tenant who changes quiz
+        config AFTER onboarding gets the new behavior (dashboard re-emission surface for (a), or
+        runtime fetch for (b)). A snippet that is produced only once at activation with no
+        re-emission path is NOT a close.
+  - [ ] AC4 (DG-1) — correct the over-asserting docstrings (`tenants.ts:42-46`,
+        `DetectionPreview.tsx:135/208`) so they describe the SHIPPED wire, not the intended one.
+  - [ ] AC5 (TG-1, Rule L) — add a PRODUCER test: drive the snippet-producing surface (DetectWizard
+        / dashboard surface) or the SDK runtime fetch and assert the snippet/config carries
+        `data-micro-polls-enabled` / `data-quiz-enabled` (or the runtime-fetched flag) SOURCED FROM
+        the tenant store, not injected literally. A test that passes the flag literally into
+        `buildSnippet`/ `DetectionPreview`/`readConfig` does NOT satisfy this (Rule L: injection ≠
+        production-path evidence). Red before the fix, green after.
+  - [ ] AC6 (Rule T / Rule G amendment) — `tsc --noEmit` on every touched package AND run the
+        control-plane + SDK vitest runners (a trailing-optional-param gap typechecks clean — the
+        runner and the producer test are the real evidence).
+- **depends_on:** none hard. Sequence BEFORE TICKET-PILOT-001's dashboard-quiz-disable path and
+  BEFORE FOLLOW-199. Architecture decision (a) vs (b) needs architect input. Composes with
+  FOLLOW-273 (disjoint locale-enum facet of the same blob).
+- **promoted_to_queue:** true (Sprint 17, 2026-06-11, P1 — pm-orchestrator)
+
+---
+
+<!-- next free FOLLOW number: 276 (275 = RETRO-057 / PR #267 / FOLLOW-274: wire micro_polls_enabled (and symmetric quizEnabled) end-to-end from the tenant store to the production SDK install snippet. FOLLOW-274 added the buildSnippet 5th param + emission data-micro-polls-enabled="true" (DetectionPreview.tsx:163) and the SDK consumer already reads it (config.ts:193 → index.ts:888,965) — but the production PRODUCER OF THE ARGUMENT is still absent, the gap moved one hop UP from the hop RETRO-056 named: buildSnippet's sole non-test caller DetectionPreview.tsx:214 ← sole non-test render site DetectWizard.tsx:259 passes neither microPollsEnabled nor quizEnabled, the wizard has zero quiz_config access + runs pre-toggle, and the dashboard quiz page page.tsx:243-262 renders no snippet → data-micro-polls-enabled never emitted in prod → SDK consumer never fires (HALF_WIRE_P P1). Same call-site gap also leaves quizEnabled (FOLLOW-102) unwired — RETRO-049 §3 RETROSPECTIVES.md:12626 recorded it "NOT dead" by stopping at the prop-def site DetectionPreview.tsx:197 without tracing to DetectWizard (LG-2 P2, reconciled per algorithm step 8). Fix both arms together (Rule S). Architecture: (a) thread flags through DetectWizard→buildSnippet + add dashboard re-emission surface, OR (b) PREFERRED SDK GET /api/quiz/config at runtime. P1 LG-1/LG-2/TG-1/DG-1, confirming Rule L (install-producer-absent, call-site caveat — NOT re-promoted) + Rule S (symmetric siblings — NOT re-promoted). 8th tenants.quiz_config retro, snippet-delivery axis (blob-content decay now Rule-U-clean after 271/274). sticky_widget fully retired by FOLLOW-274 — no follow-up. NOTE 266–269 RESERVED for the Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10, QUEUE.md:13) — do not reuse. 274 = RETRO-056 / PR #266 / FOLLOW-271: resolve the two orphaned write-only quiz_config blob keys (micro_polls_enabled, sticky_widget) the FOLLOW-271 docstring rewrite re-blessed as "valid". FOLLOW-271 correctly ELIMINATED the gating key `enabled` (strip-on-write .omit({enabled:true}) quiz-config.ts:64 + parseStoredQuizConfig() read-strip route.ts:70,122 + migration 0026 backfill + journal-monotonic — the model Rule-U close-out, RETRO-052 §4a LG-1 closed end-to-end), but its JSDoc rewrite declared four "valid keys" (tenants.ts:42) two of which are orphaned write-only: micro_polls_enabled (dashboard page.tsx:57 producer; SDK reads config.micro_polls_enabled index.ts:888,965 but buildSnippet DetectionPreview.tsx:132-147 never emits data-micro-polls-enabled and the SDK does not GET /api/quiz/config at runtime → consumer disconnected from producer) and sticky_widget (page.tsx:54,252 producer; ZERO SDK consumer). Same RETRO-050 trigger_after_n_listings false-configurability shape, 7th retro on tenants.quiz_config (049/050/051/052/053/055/056). Wire end-to-end (emit data-micro-polls-enabled/data-sticky-widget in buildSnippet + SDK parse) OR retire the producers + backfill migration + correct the docstrings + wiring/parity test, P2 LG-1/TG-1/TG-2/DG-1, applies Rule U "grep EVERY key" (already codified, NOT re-promoted — 4th instance) + Rule L all-three-limbs. DISJOINT from FOLLOW-273 which covers the language/accentColor axis of the same blob. 273 = RETRO-055 / PR #265 / FOLLOW-270: make the SDK quiz/locale path reference the canonical shared language enum + reconcile the duplicate canonical source. FOLLOW-270 closed RETRO-053 §4e MX-1 on the control-plane axis (route.ts + page.tsx now both import QUIZ_LANGUAGE_VALUES/QuizLanguage from @estalara/shared, 'es' is UI-reachable + route-validated), but the SAME 'en'|'pl'|'es' literal set is hand-typed in the SDK at quiz-widget.ts:27,50 + quiz-trigger.ts:12 + config.ts:95 (SUPPORTED_LANGUAGES) — and the SDK quiz path is the RUNTIME RENDERER of quizConfig.language (Master Design §E.4.7). The schema docstring quiz-config.ts:28 PROMISES the SDK references the constant but it doesn't. ALSO (MX-2) FOLLOW-270 created QUIZ_LANGUAGE_VALUES as a 2nd canonical ['en','pl','es'] in @estalara/shared alongside the pre-existing LocaleSchema (description.ts:52) — a de-dup ticket added a parallel canonical source. Replace SDK hand-typed unions with the shared type + reconcile to ONE shared locale source + parity test, P2 MX-1/MX-2, residual Rule-S (count 2 across RETRO-053/055 — NOT a new rule, Rule S already governs; promote a Rule-S cross-package-de-dup amendment IF a 3rd instance recurs). 272 = RETRO-054 / PR #264 / FOLLOW-169: tighten _check_headline_facts precision to the description path's tier — FOLLOW-169 closed RETRO-028 §4a LG-1 (headline now has _HEADLINE_SYSTEM_PROMPT:1336 + _check_headline_facts:1354) bringing the headline grounding-check PRESENT, but the check uses a bare substring containment (token.lower() not in grounding, generate_description.py:1235-1236,1251) which admits two false-negatives: (1) a bare digit "5" passes if "5" appears anywhere in the serialised listing_context JSON (unrelated id/year/price), (2) proper-name detection skips words[0] so a first-word hallucinated proper name escapes; tighten to word-boundary/whole-token match + extend to words[0], OR (preferred) derive the check from the threaded verified_facts whitelist directly, P3 LG-1, Rule-S "same verification tier" residue of an otherwise-model Rule-S close-out. NOTE the verified_facts whitelist is the description model's SELF-REPORT (RETRO-054 §4a LG-2) — a description-side self-reported hallucination still passes; that residue is FOLLOW-162-lineage, not this ticket. NOTE 266–269 RESERVED for the Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10, QUEUE.md:13) — do not reuse. 271 = RETRO-052 / PR #262 / FOLLOW-265: eliminate (not just annotate) the orphaned quizConfig.enabled JSONB key — FOLLOW-265 AC4 annotated it (tenants.ts:39-56 directs readers to the typed quiz_enabled column) which closes the read-side mislead, but POST /api/quiz/config route.ts:142 .set({quizConfig:updated}) still merges client input so a stale/legacy `enabled` value can persist and diverge from the typed column; strip on write + Zod .strip + one-time backfill + completeness test, P2 LG-1, applies Rule U (gating state = typed column, eliminate superseded blob keys not annotate). 270 = RETRO-053 / PR #263 / FOLLOW-264: QuizConfig.language enum skew between api/quiz/config/route.ts ('en'|'pl'|'es' + Zod) and dashboard/quiz/page.tsx ('en'|'pl' + onChange cast) — hand-duplicated QuizConfig interface drifted on the language axis; 'es' is API-valid but UI-unreachable; de-dup into one shared type OR parity test, P2 MX-1/Rule-S. NOTE 266–269 RESERVED for the Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10, QUEUE.md:13) — do not reuse. 265 = RETRO-051 / PR #260 / FOLLOW-263: eliminate (not just annotate) the orphaned quizConfig.enabled JSONB key — FOLLOW-265 AC4 annotated it (tenants.ts:39-56 directs readers to the typed quiz_enabled column) which closes the read-side mislead, but POST /api/quiz/config route.ts:142 .set({quizConfig:updated}) still merges client input so a stale/legacy `enabled` value can persist and diverge from the typed column; strip on write + Zod .strip + one-time backfill + completeness test, P2 LG-1, applies Rule U (gating state = typed column, eliminate superseded blob keys not annotate). 270 = RETRO-053 / PR #263 / FOLLOW-264: QuizConfig.language enum skew between api/quiz/config/route.ts ('en'|'pl'|'es' + Zod) and dashboard/quiz/page.tsx ('en'|'pl' + onChange cast) — hand-duplicated QuizConfig interface drifted on the language axis; 'es' is API-valid but UI-unreachable; de-dup into one shared type OR parity test, P2 MX-1/Rule-S. NOTE 266–269 RESERVED for the Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10, QUEUE.md:13) — do not reuse. 265 = RETRO-051 / PR #260 / FOLLOW-263: QuizConfig.language enum skew between api/quiz/config/route.ts ('en'|'pl'|'es' + Zod) and dashboard/quiz/page.tsx ('en'|'pl' + onChange cast) — hand-duplicated QuizConfig interface drifted on the language axis; 'es' is API-valid but UI-unreachable; de-dup into one shared type OR parity test, P2 MX-1/Rule-S. NOTE 266–269 RESERVED for the Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10, QUEUE.md:13) — do not reuse. 265 = RETRO-051 / PR #260 / FOLLOW-263: the pilot-freeze guard repoint also narrowed the watched Lane-C set from 4 flags to quiz-only — LANE_C_FLAG_KEYS removed, intent_engine_enabled/shadow_mode_override/lane_c_active (all producer-less but doc-listed, incl. the FOLLOW-101 chat-intent hook) silently dropped, log field active_lane_c_flags→quiz_enabled, and PILOT_FREEZE_RULE.md:93-105 still describes the old 4-flag/quizConfig mechanism; restore-multi-flag OR ratify-quiz-only + sync the doc/log-schema/legacy-quizConfig.enabled key, P1 LG-1/LG-2/DG-1/TG-1, before TICKET-PILOT-001 window. 264 = RETRO-050 / PR #259 / FOLLOW-257: complete the Option-A removal across all limbs — the SDK consumer was removed but the dashboard "Show quiz after N listing views" producer (page.tsx:208-220) + POST /api/quiz/config Zod min(1)max(10) + tenants.quiz_config JSONB persistence survive with no reader = orphaned HALF_WIRE_P / false configurability; retire-or-disable that producer + clear /api/config+audit dead-name residue (LG-2) + replace the mirrored simulatedShowQuizTrigger AC2 tests with a seam-driven jsdom test of the real index.ts:791 gate (TG-1 Rule Q), P2 LG-1/LG-2/TG-1. 259 (258 = RETRO-049 / PR #257 / FOLLOW-102: repoint the pilot-freeze Lane-C guard at the new SoT column tenants.quiz_enabled — FOLLOW-117/RETRO-012 fixed the guard to watch quizConfig.enabled, FOLLOW-102 moved the authoritative toggle to the tenants.quiz_enabled column and did not repoint the guard, so a frozen pilot toggled quiz-ON via the new column raises no contamination warning (false reassurance at go/no-go); add quizEnabled to checkPilotFrozenAsync SELECT + test, P2 LG-2/TG-2. 257 = RETRO-049 / PR #257 / FOLLOW-102: resolve the data-quiz-trigger / quiz.trigger_after_n_listings Rule-L HALF_WIRE_C — config.ts parses it but buildSnippet never emits data-quiz-trigger AND no SDK runtime reads the parsed value (scheduleQuizTrigger uses hardcoded QUIZ_TRIGGER_DELAY_MS=30s, FOLLOW-199); wire end-to-end OR remove parse+field+4 tests, plus add the missing showQuizTrigger() gate test (TG-1), P1 LG-1/TG-1. 256 = RETRO-048 / PR #258 / FOLLOW-253: cross-reference the stale in-memory-only AC-5 "Rule R" describe in follow-101.test.ts to follow-252.test.ts for the rehydrate-boundary proof (or fold+delete) — the dedicated seam file is correct but the feature file's AC-5 still passes even if the persisted guard is deleted, P3 TG-1. 255 = RETRO-048 / PR #258 / FOLLOW-252: retire or annotate the redundant in-memory _chatPriorAppliedSessionId guard — persisted chatPriorApplied flag is sole source of truth; in-tab test already proves persisted path covers same-tab re-entry; two guards ANDed at adapt.ts:780-782 is debt, P3 LG-2. 254 = RETRO-048 / PR #258 / FOLLOW-252: reconcile chatPriorApplied JSDoc reset-path (claims resetAdaptState clears it; actually only eraseIntentState/session-rotation does) + decide archetype-change re-applicability, P3 LG-1/DG. 253 = RETRO-047 / PR #256 / FOLLOW-101: rehydrate→re-init SDK test for the chat-intent prior via _initForTest seam (Rule R verification clause), P2 TG-1. 252 = RETRO-047 / PR #256 / FOLLOW-101: gate the chat-intent prior idempotency on the rehydrate boundary (persisted marker / !intentStateRehydrated) not the in-memory _chatPriorAppliedSessionId guard — 3rd Rule R double-count instance (RETRO-032/037), reload re-folds the multiplicative chat likelihoods onto rehydrated state within the 24h shadow-key window, P1 LG-1. 251 = RETRO-046 / PR #243 / FOLLOW-185: backfill missing RETRO bodies + CI lint. 250 = RETRO-046 / PR #243 / FOLLOW-185: route-driven CRM+DSR integration coverage. 249 = RETRO-046 / PR #243 / FOLLOW-185: RLS isolation PGlite enforcement. 248 = RETRO-045 / PR #242 / FOLLOW-246: mirror crm_erasure_status into access+portability. 247 = RETRO-045 / PR #242 / FOLLOW-246: PGlite real-SQL parity for disclosure verbs. 246 = RETRO-044 / PR #233 / FOLLOW-184: DSR access (Art.15) + portability (Art.20) must read conversion_labels on BOTH session_id AND durable_lead_id namespaces — FOLLOW-184 closed only the erase verb (RETRO-031 §4a LG-1); the symmetric access/portability verbs never query conversion_labels at all, so CRM deep-outcome rows are erasable but undisclosable (P1 Art.15/20); folds LG-2 erase-wrong-token-silent-no-op + DG-1 §T.6-scoped-erase-only. 245 = RETRO-043 / PR #237 / FOLLOW-238: codify crm_erasure_status response values as shared const + reconcile wire(crm_tenant_unverifiable)⇔audit(crm_unverifiable) two-name split + document/remove unproduced expired/failed actions, P2 LG-1/LG-2. 244 = RETRO-043 / PR #237 / FOLLOW-238: re-scope stale FOLLOW-240 test to new DSR values + cover the untested crm_tenant_unverifiable positive branch (TG-1 P1) + fix orphaned doc consumers in docs/compliance/DSR_ALERTING.md §2/§5 query + MASTER_DESIGN §T.6 still on removed incomplete_* values (DG-1 P1 — realized RETRO-041 LG-2 sync-risk); MUST precede FOLLOW-187 live Sentry alert per ESC-021. 243 = RETRO-042 / PR #236 / FOLLOW-237: tighten stale mean_model_predicted_rate "pending FOLLOW-230" JSDoc caveat now that FOLLOW-230 is DONE, P3 doc-nit. 242 unused/reserved. 241 = RETRO-041 DSR_ALERTING consolidation + RETRO-042/ESC-021 citation fix. 238 (237 = RETRO-040 / PR #235 / FOLLOW-221: calibration JSON export — add Rule K.2 data_source provenance (CB-1 P1) + reject unknown format (LG-3) + fix avg_confidence semantics/dwell caveat (LG-2) + correct FOLLOW-175 mis-wire/HALF_WIRE_P (LG-1 P1); the export has no usable consumer and FOLLOW-175 needs row-level not aggregate. 236 = RETRO-039 / PR #228 / FOLLOW-183: restore src/index.ts to packages/db vitest coverage.include, TG-1 P3. 235 = RETRO-039 / PR #228 / FOLLOW-183: tighten 12-pair parity gate to value-parity AC + fix stale JSDoc, LG-1/DG-1 P3. 234 = FOLLOW-187 companion / PR #229: conversion_labels 13-month TTL cron, Rule N enforcement gap — blocks CRM go-live gate, P1 before_go_live. 233/232/231 unused. 230 = RETRO-036 / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217: / PR #223 / FOLLOW-218: reconcile compliance docs — ROPA Activity-14 number collision w/ FOLLOW-187 (LG-1 P1) + Privacy Notice §4 omits 3 of 8 SDK storage keys (CB-1) + key-sync CI lint (TG-1) + two-store erasure model (DG-1); cite Rule N completeness sub-shape. 229 = RETRO-037 index.ts dwell-wiring test via _initForTest seam, TG-1/TG-2; 228 = RETRO-037 dwell timer visibility-show restart + jitter-robust threshold, LG-3/CB-1; 227 = RETRO-037 gate+cap dwell boost across rehydrate boundary, LG-1/LG-2/HALF_WIRE_P/DG-1 — extends FOLLOW-216, cite Rule R. 226 = RETRO-035 backfill missing RETRO-032/033/034 bodies into RETROSPECTIVES.md, DG-1 learning-loop integrity. 225 = RETRO-033 gate :341 jsdom; 224 = RETRO-033 _initForTest public surface; 223 = RETRO-032 page.tsx zero tests TG-1; 222 = RETRO-032 downgrade confirm LG-3; 221 = RETRO-032 calibration export LG-1; 220 = RETRO-034 / PR #219 / FOLLOW-217:
      220 = P1 make the FOLLOW-217 jsdom test actually DRIVE init() (it mirrors init() in local helpers, not invokes it — Rule Q violation in the ticket filed to close the Rule Q gap; TG-1/TG-2/TG-3/CB-1/DG-1; sequence BEFORE FOLLOW-219).
      219 = RETRO-033 / PR #218 / FOLLOW-216:
      219 = P3 collapse 4 scattered !intentStateRehydrated guards into one block + move CB-1 comment into JSDoc (structural hardening of FOLLOW-216 LG-1 fix; after FOLLOW-217).

@@ -486,3 +486,77 @@ read proven by mock shape, on/off states, mid-window state changes, non-blocking
 that also read `tenants.quizEnabled` and emits a warning: "these two fields have different SoT
 semantics — double-check you're not mixing quiz-enabled state from the legacy JSONB with the typed
 column." Would have caught RETRO-049 at PR time instead of needing a RETRO cycle.
+
+---
+
+## 2026-06-11 / FOLLOW-270
+
+**What I built:** Extracted the hand-duplicated `QuizConfig` interface (which had drifted:
+`route.ts` had `language: 'en' | 'pl' | 'es'`, `page.tsx` had `language: 'en' | 'pl'`) into a single
+canonical definition in `packages/shared/src/schemas/quiz-config.ts`. Both files now import from
+`@estalara/shared`. Added `QUIZ_LANGUAGE_VALUES` tuple to drive the dashboard `<select>` tag so
+adding a future locale is a one-file change. Added parity tests (enum coverage, Zod accept-all,
+reject-unknown, route handler end-to-end for `'es'`).
+
+**Wiring/auth/fail-loud risks I weighed:** No mutation surface or auth change. The only risk was
+introducing an import cycle (packages/shared → apps/control-plane → packages/shared); confirmed safe
+because the import is packages → apps (unidirectional). Also confirmed the shared package must be
+built before control-plane typecheck sees the new exports (`dist/` is gitignored; CI build step
+handles it).
+
+**A guardrail I'd add:** When a `packages/shared/src/schemas/` file is added, a CI step should
+assert the new file appears in `packages/shared/dist/schemas/` (i.e. the build was run), OR the
+build should be made a prerequisite of the typecheck job in CI. The current setup relies on the
+developer remembering to `pnpm --filter @estalara/shared run build` before typechecking downstream
+packages — easy to miss without that build step in the local typecheck chain.
+
+---
+
+## 2026-06-11 / FOLLOW-271
+
+**What I built:** Rule U application — eliminated `enabled` from `tenants.quiz_config` JSONB blob
+end-to-end: Zod `.omit({ enabled: true })` on `QuizConfigSchema` (strips at parse time, key can
+never re-enter blob via POST); `parseStoredQuizConfig()` helper strips legacy key on GET reads;
+migration `0026_strip_quiz_config_enabled` backfills existing rows; `QuizConfig` interface and
+`QUIZ_DEFAULT_CONFIG` pruned; `DashboardQuizConfig` updated; JSDoc on `tenants.quizConfig` updated
+to list only valid blob keys.
+
+**Wiring/auth/fail-loud risks I weighed:** This ticket touches only the quiz config read/write path,
+not auth. Auth mechanism on POST (`requireTenantAccess`) was not changed. No new decision-grade
+surface introduced. The `parseStoredQuizConfig` helper is a new exported symbol — confirmed it has
+two non-test call sites in the route before shipping (Rule H / Rule I). The internal
+`_QuizConfigFullSchema` is intentionally unexported to avoid leaking a schema that accepts
+`enabled`.
+
+**A guardrail I'd add:** When a `packages/shared` schema is changed and a new helper function added,
+the `dist/` rebuild step is currently manual. The typecheck CI job should depend on the shared
+package build step explicitly — without it, a `tsc --noEmit` on control-plane gives "no exported
+member" and the developer has to know to run `pnpm --filter @estalara/shared run build` first. This
+is the same gap noted in the FOLLOW-270 lesson above; second occurrence = should be escalated as a
+devops ticket.
+
+---
+
+## 2026-06-11 / FOLLOW-274
+
+**What I built:** Dual key cleanup on `tenants.quiz_config` JSONB blob. (1) `micro_polls_enabled`
+WIRED: added `microPollsEnabled?: boolean` to `SdkConfig`, made `readConfig()` parse
+`data-micro-polls-enabled="true"` attribute, made `buildSnippet()` emit it when true; replaced two
+unsafe `(config as unknown as Record<string, unknown>).micro_polls_enabled` casts in `index.ts` with
+`config.microPollsEnabled`. (2) `sticky_widget` RETIRED: zero SDK consumer confirmed,
+`.omit({ sticky_widget: true })` added to `QuizConfigSchema`, `parseStoredQuizConfig` extended to
+strip it, dashboard toggle UI removed, migration 0027 backfills existing rows. Rule G amendment
+applied: grepped for `sticky_widget` in test data files (quiz-toggle.test.tsx, route.test.ts) and
+updated stale assertions before running suite.
+
+**Wiring/auth/fail-loud risks I weighed:** No new mutating endpoint; all writes go through the
+existing POST /api/quiz/config (unchanged auth). The `microPollsEnabled` field in `SdkConfig` is an
+opt-in boolean; the SDK's 90s timer is gated by `if (config.microPollsEnabled)` so the change is
+additive and fail-safe. The `require('@estalara/shared')` anti-pattern (CJS require in an ESM test
+file) surfaced as a test failure; fixed immediately by using the already-imported named export.
+
+**A guardrail I'd add:** When a test block imports a helper from a package using `require()` in an
+ESM test file (vitest + node ESM), it always fails. A CI lint rule (`no-require-imports`) would
+catch this pattern at PR time rather than at test run. None beyond that — the attribute wire pattern
+(buildSnippet→readConfig) now has a complete Rule L test template that can be copied for future
+snippet attributes.

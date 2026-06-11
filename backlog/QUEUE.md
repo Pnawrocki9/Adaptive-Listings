@@ -1,6 +1,6 @@
 # Backlog Queue
 
-**Updated 2026-06-11. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE.
+**Updated 2026-06-11T21:30Z. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE.
 RETRO-050/051/052/053 complete. FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-11 (quiz-only
 ratified, docs synced, contract-pinning tests, mis-citation fixed; RETRO-052 → Rule U promoted,
 FOLLOW-271 stub). FOLLOW-264 (P2) DONE — PR #263 merged 2026-06-11 (Option-A removal complete:
@@ -12,13 +12,18 @@ to be spawned). FOLLOW-270 (P2) and FOLLOW-271 (P2) promoted to Sprint 16 queue 
 FOLLOW-270 DONE (PR #265 merged 2026-06-11). FOLLOW-271 DONE (PR #266 merged 2026-06-11 — strip
 quizConfig.enabled on write + backfill migration, Rule U closed). Wave A COMPLETE — all 5 DONE
 (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253
-— all merged). Sprint 16 OPEN — 14 DONE
-(FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
-local-first testing pending — ESC-020 workflow clarified). Sprint 15 COMPLETE — 21/21 DONE. ESC-020
-OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10: local-first testing required before
-prod deploy; Rafal action deferred until CEO signs off locally. FOLLOW-266–269 added: Archetype
-Identification Tracer (§K.3.6, CEO-directed 2026-06-10) — stubs in FOLLOW_UPS.md, promoted to Sprint
-17 planning.**
+— all merged). Sprint 16 COMPLETE — 15 DONE
+(FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234/270/271), 1 READY_FOR_REVIEW
+(FOLLOW-191 local-first testing pending — ESC-020 workflow clarified). Sprint 15 COMPLETE — 21/21
+DONE. ESC-020 OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10: local-first testing
+required before prod deploy; Rafal action deferred until CEO signs off locally. FOLLOW-266–269
+added: Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10) — stubs in FOLLOW_UPS.md,
+promoted to Sprint 17 planning. Sprint 17 OPEN — FOLLOW-274 PM-VALIDATED READY_FOR_REVIEW (PR #267,
+real CI gates green; SDK bundle bloat pre-existing on main), FOLLOW-273 PM-VALIDATED
+READY_FOR_REVIEW (PR #268, real CI gates green; SDK bundle bloat pre-existing on main), FOLLOW-272
+READY (P3, ml-engineer). RETRO-057 complete: micro_polls_enabled is still P1 HALF_WIRE in prod
+(DetectWizard.tsx:259 never passes the flag). ADR-0011 PROPOSED (PR #269, architect) — SDK GET
+/api/quiz/public-config at init time preferred; FOLLOW-275 BLOCKED pending CTO ratification.**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -154,9 +159,12 @@ updates.
 | 15     | 17    | Pilot unblock + signal bridges + quiz v2.0 + description cache redesign + signal enrichment (audit 2026-06-04, MD v4.0)             | 21      | 21   | 0       | 0     | 0       |
 
 | 16 | 18 | Conversion Label Loop (§T), SDK archetype persistence, DB integration tests, compliance
-CRM docs, micro-poll Wave 2 | 15 | 14 | 0 | 1 | 0 | | Wave A | — | Bug fix cluster: data-loss
+CRM docs, micro-poll Wave 2 | 17 | 16 | 0 | 1 | 0 | | Wave A | — | Bug fix cluster: data-loss
 (FOLLOW-258), cross-tenant auth (FOLLOW-260), SQL injection (FOLLOW-261), feedback ping
-(FOLLOW-259), lifecycle (FOLLOW-262) | 5 | 5 | 0 | 0 | 0 |
+(FOLLOW-259), lifecycle (FOLLOW-262) | 5 | 5 | 0 | 0 | 0 | | 17 | 19 | quiz_config blob cleanup
+(FOLLOW-274), SDK locale enum alignment (FOLLOW-273), headline fact-check tightening (FOLLOW-272),
+micro_polls wire end-to-end (FOLLOW-275) + Archetype Identification Tracer (FOLLOW-266–269) | 4 | 0
+| 0 | 3 | 1 |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -4060,6 +4068,114 @@ measurement dashboard.
     server-side dispatch — audit-trail purpose) and §13.2 (stable cross-session fingerprint — session
     continuity); full three-part LIA test each + required consent-banner disclosure language. No code
     changes per the Option B decision (documentation-only).
+```
+
+## Sprint 17 — quiz_config blob cleanup + SDK locale alignment + headline precision + Archetype Identification Tracer (OPEN)
+
+**Added 2026-06-11 (pm-orchestrator). FOLLOW-274 promoted from RETRO-056 stub; FOLLOW-273 promoted
+from RETRO-055 stub; FOLLOW-272 promoted from RETRO-054 stub. FOLLOW-266–269 (Archetype
+Identification Tracer, CEO-directed 2026-06-10, §K.3.6) reserved — ticket files TBD at sprint
+planning.**
+
+```yaml
+- id: FOLLOW-274
+  title:
+    Resolve orphaned quiz_config blob keys — wire micro_polls_enabled end-to-end OR retire +
+    sticky_widget retire (Rule U + Rule L)
+  agent: backend-engineer
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-06-11T12:00:00Z'
+  completed_at: '2026-06-11T15:00:00Z'
+  priority: P2
+  estimated_hours: 4
+  depends_on: []
+  source_retro: RETRO-056 (§4a LG-1; §4c TG-1/TG-2; §4d DG-1; §6 — Rule U 4th instance)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-274 stub)
+  branch: backend-engineer/FOLLOW-274-quiz-config-blob-orphan-keys
+  pr: '#267'
+  ci_status: green
+  notes: |
+    Two orphaned write-only quiz_config JSONB keys the FOLLOW-271 JSDoc re-blessed as "valid":
+    micro_polls_enabled (dashboard producer; SDK consumer at index.ts:888,965 but buildSnippet
+    never emits data-micro-polls-enabled → transport missing, HALF_WIRE) and sticky_widget
+    (dashboard producer; ZERO SDK consumer). Decide WIRE or RETIRE per key, update docstrings,
+    add parity test. Rule U "grep EVERY key" + Rule L all-three-limbs.
+    RESOLUTION: micro_polls_enabled WIRED (buildSnippet emits data-micro-polls-enabled,
+    readConfig parses it, SDK casts cleaned); sticky_widget RETIRED (schema omitted,
+    migration 0027 backfill, dashboard toggle removed). All ACs complete, CI green.
+
+- id: FOLLOW-273
+  title:
+    SDK quiz/locale path must reference canonical shared enum + reconcile QUIZ_LANGUAGE_VALUES vs
+    LocaleSchema (Rule S cross-package)
+  agent: sdk-engineer
+  status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  started_at: '2026-06-11T15:00:00Z'
+  completed_at: '2026-06-11T16:30:00Z'
+  priority: P2
+  estimated_hours: 3
+  depends_on: [FOLLOW-270]
+  source_retro: RETRO-055 (§4e MX-1/MX-2; §6 Rule-S cross-package instance)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-273 stub)
+  branch: sdk-engineer/FOLLOW-273-sdk-quiz-locale-canonical
+  pr: '#268'
+  ci_status: green
+  notes: |
+    FOLLOW-270 extracted canonical QuizConfig/QUIZ_LANGUAGE_VALUES to @estalara/shared but the
+    SDK still hand-types 'en'|'pl'|'es' at quiz-widget.ts:27,50, quiz-trigger.ts:12,
+    config.ts:95. Replace with shared type. Also reconcile QUIZ_LANGUAGE_VALUES vs pre-existing
+    LocaleSchema (description.ts:52) — two canonical ['en','pl','es'] now in @estalara/shared.
+    Parity test: SDK QUIZ_CONTENT keys must equal QUIZ_LANGUAGE_VALUES.
+    RESOLUTION: LocaleSchema now derives from QUIZ_LANGUAGE_VALUES (single SoT). Six SDK files
+    updated to use QuizLanguage from shared. QUIZ_CONTENT parity test added. All real CI gates green.
+
+- id: FOLLOW-272
+  title:
+    Tighten _check_headline_facts — digit coincidence + first-word proper-name escape (Rule S
+    verification-tier)
+  agent: ml-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 3
+  depends_on: [FOLLOW-169]
+  source_retro: RETRO-054 (§4a LG-1; §4c TG-1; §6 Rule-S close-out)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-272 stub)
+  branch: ml-engineer/FOLLOW-272-headline-fact-check-precision
+  notes: |
+    _check_headline_facts uses bare substring containment which admits digit coincidences and
+    first-word proper-name escapes. Tighten to word-boundary match or derive from verified_facts
+    whitelist. No pilot blocker (fact-check is present and fail-safe; this raises PRECISION).
+
+- id: FOLLOW-275
+  title:
+    Wire micro_polls_enabled (+ symmetric quizEnabled) end-to-end from tenant store to production
+    SDK snippet — DetectWizard/DetectionPreview call site supplies neither flag; no dashboard
+    re-emission surface (Rule L + Rule S)
+  agent: backend-engineer + sdk-engineer (after ADR ratification)
+  status: BLOCKED
+  block_reason: |
+    ADR-0011 PROPOSED in PR #269 — awaiting CTO (Rafał) ratification. Decision: SDK GET
+    /api/quiz/public-config at init time (option b). Implementation starts once ACCEPTED.
+  started_at: '2026-06-11T21:30:00Z'
+  priority: P1
+  estimated_hours: 6
+  depends_on: [ADR-0011-ratification]
+  source_retro:
+    RETRO-057 (§4a LG-1 P1 / LG-2 P2; §4c TG-1 P1; §4d DG-1 P1; §5a/§5d; Rule L call-site caveat +
+    Rule S)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-275 stub)
+  adr: docs/adr/PROPOSED-FOLLOW-275-quiz-config-transport.md (PR #269)
+  notes: |
+    FOLLOW-274 wired only the buildSnippet EMITTER hop (5th param + data-micro-polls-enabled
+    emission). The gap moved one hop UP: buildSnippet's sole non-test caller
+    (DetectionPreview.tsx:214) has one non-test render site (DetectWizard.tsx:259) which passes
+    NEITHER microPollsEnabled NOR quizEnabled. ADR-0011 recommends (b): SDK fetches
+    GET /api/quiz/public-config at init time (API-key auth, CORS-open, 5-min TTL) —
+    snippet-attributes retired as config transport for post-activation-mutable keys.
+    Correct over-asserting docstrings (tenants.ts:42-46, DetectionPreview.tsx:135/208).
+    Sequence before TICKET-PILOT-001 dashboard-quiz-disable path + before FOLLOW-199.
 ```
 
 ## Currently in flight

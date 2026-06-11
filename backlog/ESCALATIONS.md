@@ -942,4 +942,10 @@ spec: `/home/asipi/Projects/Estalara-app/web-master/HANDOFF_ESTALARA_ADAPTIVE.md
 
 **Blocking:** FOLLOW-197 (adapt.applied signal) depends on this being live.
 
-**Resolution:**
+**Resolution:** CEO clarification 2026-06-10: agreed workflow is **local-first testing** — all
+verification must pass on localhost (Estalara-app running on developer machine) BEFORE Rafał deploys
+to production. This escalation's "Required action (Rafał)" is DEFERRED until local testing is
+complete and CEO signs off. **This escalation does NOT block the PM pipeline for other tickets.**
+FOLLOW-191 tracks local validation; once CEO confirms local testing passes, Rafał will be instructed
+on the production deployment steps listed above. ESC-020 remains OPEN until the production deploy is
+confirmed.

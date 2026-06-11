@@ -2,6 +2,28 @@
 
 ---
 
+**Date / ticket:** 2026-06-10 — Loop 2 / FOLLOW-265 queue hygiene **Delegation row used:** No
+delegation — ESC-020 OPEN, protocol STOP. **What validation caught (or missed):** Five stale
+READY/IN_PROGRESS entries found (FOLLOW-149/174/176/182/190) — all merged weeks ago but never
+updated in QUEUE.md Sprint 14 body section. The Sprint 16 header was correct; the Sprint 14 body was
+stale. Always cross-check the git log against ALL queue sections, not just the sprint header. **A
+delegation/validation rule I'd add:** When correcting stale QUEUE.md entries, always verify the
+Sprint section header AND the individual ticket YAML blocks — they can diverge independently.
+
+---
+
+**Date / ticket:** 2026-06-10 — Sprint 13b / ESC-020 escalation surface **Delegation row used:** No
+delegation — escalation stop required per rules. **What validation caught (or missed):** ESC-020
+(Rafal CTO deploy) is OPEN and blocks per protocol even though it only affects FOLLOW-191's final
+verification, not FOLLOW-257/263/169 code work. Also caught two stale Sprint 14 entries (FOLLOW-182
+IN_PROGRESS, FOLLOW-183 READY) that STATUS.md already confirmed DONE — corrected atomically before
+stopping. **A delegation/validation rule I'd add:** When the only OPEN escalation is a
+deployment-action (not a code/arch decision), note explicitly in the escalation surface whether
+human CAN unblock non-dependent code work in parallel — the strict STOP rule can be interpreted as
+deployment-gated-only if the PM surfaces the dependency graph clearly.
+
+---
+
 **Date / ticket:** 2026-06-10 — Wave A (FOLLOW-258/259/260/261/262) + Sprint 16 close **Delegation
 row used:** No delegation this iteration — state reconciliation only. **What validation caught (or
 missed):** gh pr list showed 0 open PRs but QUEUE.md header showed 3 READY_FOR_REVIEW entries;

@@ -5,11 +5,12 @@ RETRO-050/051/052/053 complete. FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-
 ratified, docs synced, contract-pinning tests, mis-citation fixed; RETRO-052 → Rule U promoted,
 FOLLOW-271 stub). FOLLOW-264 (P2) DONE — PR #263 merged 2026-06-11 (Option-A removal complete:
 dashboard input removed, Zod field dropped, dead-name cleaned, Rule Q seam-driven jsdom tests
-replace mirror; RETRO-053 → Rule G amended, FOLLOW-270 stub). FOLLOW-169 (P2) READY_FOR_REVIEW — PR
-#264 open 2026-06-11 (headline anti-hallucination grounding: \_HEADLINE_SYSTEM_PROMPT +
-verified_facts, post-gen fact check, SDK source=ai_cached guard, stale docstrings fixed; all real CI
-gates green). Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR
-#251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
+replace mirror; RETRO-053 → Rule G amended, FOLLOW-270 stub). FOLLOW-169 (P2) DONE — PR #264 merged
+2026-06-11T06:29:18Z (headline anti-hallucination grounding: \_HEADLINE_SYSTEM_PROMPT +
+verified_facts, post-gen fact check, SDK source=ai_cached guard, stale docstrings fixed; RETRO-054
+to be spawned). FOLLOW-270 (P2) and FOLLOW-271 (P2) promoted to Sprint 16 queue (backend-engineer).
+Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261
+PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 OPEN — 14 DONE
 (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234), 1 READY_FOR_REVIEW (FOLLOW-191
 local-first testing pending — ESC-020 workflow clarified). Sprint 15 COMPLETE — 21/21 DONE. ESC-020
 OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10: local-first testing required before
@@ -2902,7 +2903,7 @@ but does NOT fix the source — ESC-019 does.
 - id: FOLLOW-169
   title: Bring _generate_headline to the description anti-hallucination grounding bar (ADR-0009)
   agent: ml-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P2
   estimated_hours: 4
   depends_on: []
@@ -2911,13 +2912,15 @@ but does NOT fix the source — ESC-019 does.
   spec: backlog/sprint-14/FOLLOW-169.md
   assigned_to: ml-engineer
   started_at: '2026-06-11T00:00:00Z'
-  pr: https://github.com/Pnawrocki9/Adaptive-Listings/pull/264
+  completed_at: '2026-06-11T06:29:18Z'
+  pr: '#264'
   branch: ml-engineer/FOLLOW-169-headline-grounding
   notes: |
-    PR #264 open 2026-06-11. AC1: _HEADLINE_SYSTEM_PROMPT + verified_facts threading.
+    DONE. PR #264 merged 2026-06-11T06:29:18Z. AC1: _HEADLINE_SYSTEM_PROMPT + verified_facts threading.
     AC2: _check_headline_facts() post-gen fact check, 11 new Python tests. AC3: 3 SDK tests
     asserting headline gated on source=ai_cached. AC4: stale :{model} docstrings fixed.
     83 Python tests + 1285 SDK tests green. Rule H + Rule J pre-push hooks passed.
+    RETRO-054 to be spawned.
 
 # ── Conversion Label Loop (MASTER_DESIGN §T, v3.9) — committed 2026-06-03 (CEO: data MOAT) ──
 # Strictly ordered: FOLLOW-170 (T0) blocks the rest — unlogged decisions are lost training data forever.
@@ -3214,9 +3217,10 @@ failing); FOLLOW-187 updated to Activity 15 (FOLLOW-230 fixed collision). Update
 closed). Updated 2026-06-09 (pm-orchestrator): FOLLOW-183 DONE (PR #228 merged), FOLLOW-187 DONE (PR
 #229 merged), FOLLOW-185 now IN_PROGRESS (data-engineer delegated). Updated 2026-06-10
 (pm-orchestrator): FOLLOW-185 DONE (PR #243/#244 merged), FOLLOW-175 DONE (PR #245 merged). Sprint
-16 now 14/14 non-READY_FOR_REVIEW tickets DONE; FOLLOW-191 remains READY_FOR_REVIEW (ESC-020).**
-Carries forward all READY Sprint 14 items not touched by Sprint 15, plus the Wave 2 deferred item
-from Sprint 15.
+16 now 14/14 non-READY_FOR_REVIEW tickets DONE; FOLLOW-191 remains READY_FOR_REVIEW (ESC-020).
+Updated 2026-06-11 (pm-orchestrator): FOLLOW-270 and FOLLOW-271 promoted from FOLLOW_UPS.md stubs
+(RETRO-052/053); FOLLOW-270 IN_PROGRESS (backend-engineer, delegated 2026-06-11).** Carries forward
+all READY Sprint 14 items not touched by Sprint 15, plus the Wave 2 deferred item from Sprint 15.
 
 Key tracks:
 
@@ -3447,6 +3451,25 @@ Key tracks:
     New CI gate: check-privacy-notice-keys.sh (hard gate, not continue-on-error). DPIA v2.4.
     Unblocks FOLLOW-187 (Activity 15 assignment now correct).
 ```
+
+- id: FOLLOW-270 title: Reconcile QuizConfig.language enum skew + de-duplicate hand-copied
+  QuizConfig interface agent: backend-engineer status: IN_PROGRESS assigned_to: backend-engineer
+  started_at: '2026-06-11T00:00:00Z' priority: P2 estimated_hours: 2 depends_on: [FOLLOW-264]
+  source_retro: RETRO-053 (§4e MX-1; §5c; §6 — Rule-S symmetric-set drift) spec:
+  backlog/FOLLOW_UPS.md (FOLLOW-270 stub) branch:
+  backend-engineer/FOLLOW-270-quiz-config-language-enum-skew notes: | QuizConfig.language enum skew:
+  route.ts accepts 'en'|'pl'|'es' but dashboard page.tsx types only 'en'|'pl' (onChange cast). 'es'
+  unreachable from UI. De-dup or add parity test. Verify with tsc --noEmit AND runner pass (Rule G
+  amendment 2026-06-11). Promoted to queue 2026-06-11.
+
+- id: FOLLOW-271 title: Eliminate orphaned quizConfig.enabled JSONB key — strip on write + backfill
+  (Rule U) agent: backend-engineer status: READY priority: P2 estimated_hours: 2 depends_on:
+  [FOLLOW-265, FOLLOW-270] source_retro: RETRO-052 (§4a LG-1; §5d; §6 — Rule U promotion) spec:
+  backlog/FOLLOW_UPS.md (FOLLOW-271 stub) notes: | Strip 'enabled' from quiz_config JSONB on write
+  in POST /api/quiz/config (route.ts:142) via Zod .omit or explicit delete. One-time backfill
+  migration. Confirm quiz_config carries ONLY non-gating UX keys after. Test asserting enabled
+  absent from persisted blob. Rule G: verify with tsc --noEmit AND runner pass. Promoted to queue
+  2026-06-11.
 
 ## Wave A — Bug fix cluster: data-loss, cross-tenant auth, SQL injection, lifecycle (COMPLETE)
 

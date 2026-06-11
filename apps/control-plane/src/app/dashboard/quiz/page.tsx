@@ -7,7 +7,7 @@
  * (the dedicated boolean column). The toggle optimistically updates local state,
  * PATCHes PATCH /api/tenants/:id on change, and rolls back on error.
  *
- * Quiz widget configuration (language, accent_color, sticky_widget, etc.)
+ * Quiz widget configuration (language, accent_color, micro_polls_enabled, etc.)
  * is persisted to tenants.quiz_config JSONB via POST /api/quiz/config.
  *
  * AC2 / AC5 (FOLLOW-264 / Rule L / RETRO-050): "Show quiz after N listing views"
@@ -22,6 +22,9 @@
  * typed `language` as `'en' | 'pl'`, missing `'es'` — a producer⇔contract enum mismatch
  * relative to the API route. Both sides now reference the same type, and the language
  * `<select>` now includes the Español option.
+ *
+ * FOLLOW-274: `sticky_widget` removed — zero SDK consumer (Rule U). UI toggle removed.
+ * `micro_polls_enabled` wired: toggle added to the form so tenants can opt in.
  *
  * §B.1 rationale displayed in the toggle description:
  *   Tenants with high-quality chat coverage may disable the quiz and rely on
@@ -45,13 +48,15 @@ import { QUIZ_DEFAULT_CONFIG, QUIZ_LANGUAGE_VALUES } from '@estalara/shared';
  * FOLLOW-271: `enabled` removed. The quiz ON/OFF state lives in `quiz_enabled`
  * (the typed `tenants.quiz_enabled` boolean column). The JSONB blob no longer
  * carries `enabled` per Rule U / FOLLOW-271.
+ *
+ * FOLLOW-274: `sticky_widget` removed — zero SDK consumer (Rule U). `micro_polls_enabled`
+ * is now a wired key: its toggle in this form updates the JSONB blob, which is then read
+ * by the snippet generator (buildSnippet) to emit data-micro-polls-enabled.
  */
 interface DashboardQuizConfig {
   // `enabled` intentionally absent — use `quiz_enabled` (typed column SoT), per FOLLOW-271.
   // trigger_after_n_listings removed — Rule L / RETRO-050 HALF_WIRE_P (FOLLOW-264).
-  // The SDK consumer was deleted in FOLLOW-257; this removes the orphaned producer.
-  // Re-add under FOLLOW-199 (Quiz v2.0) with a matching SDK consumer.
-  sticky_widget: boolean;
+  // sticky_widget removed — zero SDK consumer, FOLLOW-274 (Rule U).
   language: QuizLanguage;
   accent_color: string;
   micro_polls_enabled: boolean;
@@ -238,26 +243,42 @@ export default function QuizSettingsPage() {
               Surfacing an input that can never affect runtime is false configurability
               (HALF_WIRE_P). Per-tenant timer control planned for FOLLOW-199 (Quiz v2.0). */}
 
-          {/* Sticky widget */}
+          {/* Sticky widget — REMOVED (FOLLOW-274 / Rule U):
+              Zero SDK consumer — the SDK never read this key. Surfacing a toggle with
+              no runtime effect is false configurability (HALF_WIRE_P). The key is also
+              removed from QuizConfigSchema and from existing rows via migration 0027. */}
+
+          {/* Micro-polls (FOLLOW-274, FOLLOW-209): wired toggle.
+              When enabled, buildSnippet emits data-micro-polls-enabled="true" in the
+              SDK snippet, which the SDK reads via readConfig → config.microPollsEnabled
+              to activate the 90s micro-poll bottom-toast prompts. */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm font-medium text-gray-900">Sticky Widget</label>
+              <label className="text-sm font-medium text-gray-900">Micro-Poll Prompts</label>
               <p className="text-xs text-gray-500">
-                Keep the quiz button always visible (not just after N views)
+                Show brief single-question bottom-toast prompts after 90 seconds on a listing page.
+                Supplements the full quiz with lightweight intent signals (FOLLOW-209).
               </p>
             </div>
             <button
               type="button"
+              data-testid="micro-polls-toggle"
+              aria-label={
+                config.micro_polls_enabled
+                  ? 'Disable micro-poll prompts'
+                  : 'Enable micro-poll prompts'
+              }
+              aria-pressed={config.micro_polls_enabled}
               onClick={() => {
-                setConfig((c) => ({ ...c, sticky_widget: !c.sticky_widget }));
+                setConfig((c) => ({ ...c, micro_polls_enabled: !c.micro_polls_enabled }));
               }}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                config.sticky_widget ? 'bg-blue-600' : 'bg-gray-200'
+                config.micro_polls_enabled ? 'bg-blue-600' : 'bg-gray-200'
               }`}
             >
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                  config.sticky_widget ? 'translate-x-6' : 'translate-x-1'
+                  config.micro_polls_enabled ? 'translate-x-6' : 'translate-x-1'
                 }`}
               />
             </button>

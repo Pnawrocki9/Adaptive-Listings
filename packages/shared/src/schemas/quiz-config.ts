@@ -14,6 +14,13 @@
  * for quiz ON/OFF. `QuizConfigSchema` now `.omit({ enabled: true })` at the Zod level so
  * the key cannot re-enter the persisted JSONB blob via any write path (Rule U).
  *
+ * FOLLOW-274 (2026-06-11): `sticky_widget` RETIRED — zero SDK consumer (Rule U).
+ *   - Removed from `QuizConfig`, `QuizConfigSchema`, `_QuizConfigFullSchema`, and
+ *     `QUIZ_DEFAULT_CONFIG`. The dashboard toggle UI is also removed.
+ *   - Migration `0027_strip_quiz_config_sticky_widget` strips existing rows.
+ *   - `micro_polls_enabled` WIRED — `buildSnippet` now emits `data-micro-polls-enabled="true"`
+ *     when the flag is on; `readConfig` parses it into `SdkConfig.microPollsEnabled`.
+ *
  * Importers:
  *   - apps/control-plane/src/app/api/quiz/config/route.ts
  *   - apps/control-plane/src/app/dashboard/quiz/page.tsx
@@ -33,8 +40,8 @@ export const QUIZ_LANGUAGE_VALUES = ['en', 'pl', 'es'] as const;
 export type QuizLanguage = (typeof QUIZ_LANGUAGE_VALUES)[number];
 
 /**
- * Internal full schema (including `enabled`) used only for parsing legacy stored blobs
- * during GET reads. Never used to validate POST write paths.
+ * Internal full schema (including legacy `enabled` and `sticky_widget`) used only for
+ * parsing legacy stored blobs during GET reads. Never used to validate POST write paths.
  *
  * @internal
  */
@@ -51,28 +58,30 @@ const _QuizConfigFullSchema = z.object({
  * Canonical Zod schema for the quiz widget BLOB configuration shape.
  *
  * `enabled` is OMITTED — the typed `tenants.quiz_enabled` boolean column is the sole SoT
- * for quiz ON/OFF (FOLLOW-102 / FOLLOW-271). Calling `.parse()` or `.safeParse()` on this
- * schema strips the `enabled` key if present in the input, so it can never re-enter the
- * JSONB blob via the POST write path (Rule U).
+ * for quiz ON/OFF (FOLLOW-102 / FOLLOW-271). `sticky_widget` is OMITTED — zero SDK consumer;
+ * retired in FOLLOW-274 (Rule U). Both keys are stripped at parse time so they can never
+ * re-enter the JSONB blob via the POST write path.
  *
- * Valid blob keys: `accentColor`, `language`, `stickyWidget`, `microPollsEnabled`.
- * (Stored as snake_case: `accent_color`, `language`, `sticky_widget`, `micro_polls_enabled`.)
+ * Valid blob keys: `language`, `accentColor`, `microPollsEnabled`.
+ * (Stored as snake_case: `language`, `accent_color`, `micro_polls_enabled`.)
  *
  * All fields are optional for PATCH-style partial updates. Consumers that need a
  * complete config should merge the result with `QUIZ_DEFAULT_CONFIG`.
  */
-export const QuizConfigSchema = _QuizConfigFullSchema.omit({ enabled: true });
+export const QuizConfigSchema = _QuizConfigFullSchema.omit({ enabled: true, sticky_widget: true });
 
 /** TypeScript type inferred from the Zod schema — use this everywhere for the persisted blob. */
 export interface QuizConfig {
   // `enabled` intentionally absent — use `tenants.quiz_enabled` typed column (FOLLOW-271, Rule U).
   // trigger_after_n_listings removed — Rule L / RETRO-050 HALF_WIRE_P (FOLLOW-264).
-  // The SDK consumer was deleted in FOLLOW-257; producer removed here in FOLLOW-264.
-  // Re-add under FOLLOW-199 (Quiz v2.0) with a matching SDK consumer.
-  sticky_widget: boolean;
+  // sticky_widget removed — zero SDK consumer, FOLLOW-274 (Rule U).
   language: QuizLanguage;
   accent_color: string;
-  /** Whether to show micro-poll bottom-toast prompts as a quiz supplement (FOLLOW-209). */
+  /**
+   * Whether to show micro-poll bottom-toast prompts as a quiz supplement (FOLLOW-209).
+   * Wired in FOLLOW-274: buildSnippet emits `data-micro-polls-enabled="true"` when true;
+   * readConfig() parses `data-micro-polls-enabled` → `config.microPollsEnabled`.
+   */
   micro_polls_enabled: boolean;
 }
 
@@ -81,26 +90,26 @@ export interface QuizConfig {
  * Shared between GET handler and dashboard initialisation to keep defaults in sync.
  */
 export const QUIZ_DEFAULT_CONFIG: QuizConfig = {
-  sticky_widget: false,
   language: 'en',
   accent_color: '#2563EB',
   micro_polls_enabled: false,
 };
 
 /**
- * Parse a stored JSONB blob that may contain a legacy `enabled` key.
- * The `enabled` key is stripped on output (it is never returned from this helper).
+ * Parse a stored JSONB blob that may contain legacy `enabled` or `sticky_widget` keys.
+ * Both keys are stripped on output (they are never returned from this helper).
  *
- * Use this in GET handlers when reading rows that pre-date FOLLOW-271 backfill migration.
- * The migration (`0026_strip_quiz_config_enabled.sql`) removes `enabled` from all existing
- * rows, so this helper acts as a belt-and-suspenders guard.
+ * Use this in GET handlers when reading rows that pre-date the backfill migrations:
+ *   - `0026_strip_quiz_config_enabled.sql` removes `enabled` from all existing rows.
+ *   - `0027_strip_quiz_config_sticky_widget.sql` removes `sticky_widget` from all existing rows.
+ * This helper acts as a belt-and-suspenders guard for rows not yet backfilled.
  */
 export function parseStoredQuizConfig(raw: unknown): Partial<QuizConfig> {
-  // Parse with the full schema (tolerates legacy `enabled`), then strip it.
+  // Parse with the full schema (tolerates legacy `enabled` + `sticky_widget`), then strip them.
   const result = _QuizConfigFullSchema.safeParse(raw);
   if (!result.success) return {};
-  // Destructure to drop `enabled`; the rest is the canonical blob shape.
+  // Destructure to drop `enabled` and `sticky_widget`; the rest is the canonical blob shape.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { enabled: _dropped, ...blob } = result.data;
+  const { enabled: _dropped, sticky_widget: _droppedSticky, ...blob } = result.data;
   return blob as Partial<QuizConfig>;
 }

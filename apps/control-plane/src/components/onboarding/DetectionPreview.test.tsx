@@ -422,6 +422,91 @@ describe('DetectionPreview', () => {
     });
   });
 
+  // ── FOLLOW-274 — buildSnippet emits data-micro-polls-enabled ─────────────
+  describe('buildSnippet — FOLLOW-274 micro_polls_enabled attribute (Rule L)', () => {
+    const TENANT = '550e8400-e29b-41d4-a716-446655440000';
+    const KEY = 'est_pub_test123';
+
+    it('emits data-micro-polls-enabled="true" when microPollsEnabled=true', () => {
+      const snippet = buildSnippet(TENANT, KEY, undefined, undefined, true);
+      expect(snippet).toContain('data-micro-polls-enabled="true"');
+    });
+
+    it('omits data-micro-polls-enabled when microPollsEnabled=false (opt-in default)', () => {
+      const snippet = buildSnippet(TENANT, KEY, undefined, undefined, false);
+      expect(snippet).not.toContain('data-micro-polls-enabled');
+    });
+
+    it('omits data-micro-polls-enabled when microPollsEnabled is undefined (absent → disabled)', () => {
+      const snippet = buildSnippet(TENANT, KEY);
+      expect(snippet).not.toContain('data-micro-polls-enabled');
+    });
+
+    it('snippet with microPollsEnabled=true still contains data-api-key and data-tenant-id', () => {
+      const snippet = buildSnippet(TENANT, KEY, null, undefined, true);
+      expect(snippet).toContain(`data-tenant-id="${TENANT}"`);
+      expect(snippet).toContain(`data-api-key="${KEY}"`);
+      expect(snippet).toContain('data-micro-polls-enabled="true"');
+    });
+  });
+
+  // ── FOLLOW-274 — DetectionPreview threads microPollsEnabled prop ──────────
+  describe('DetectionPreview — FOLLOW-274 microPollsEnabled prop threads into snippet', () => {
+    it('renders snippet with data-micro-polls-enabled="true" when microPollsEnabled=true', async () => {
+      mockFetchActivate({ api_key: 'est_pub_mp1', tenant_id: 'tid-mp-1' });
+
+      render(<DetectionPreview {...BASE_PROPS} microPollsEnabled={true} />);
+
+      const { act: reactAct } = await import('@testing-library/react');
+      reactAct(() => {
+        fireEvent.click(screen.getByRole('button', { name: /save & activate/i }));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /copy snippet/i })).toBeInTheDocument();
+      });
+
+      const codeEl = document.querySelector('code');
+      expect(codeEl?.textContent).toContain('data-micro-polls-enabled="true"');
+    });
+
+    it('renders snippet WITHOUT data-micro-polls-enabled when microPollsEnabled=false', async () => {
+      mockFetchActivate({ api_key: 'est_pub_mp2', tenant_id: 'tid-mp-2' });
+
+      render(<DetectionPreview {...BASE_PROPS} microPollsEnabled={false} />);
+
+      const { act: reactAct } = await import('@testing-library/react');
+      reactAct(() => {
+        fireEvent.click(screen.getByRole('button', { name: /save & activate/i }));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /copy snippet/i })).toBeInTheDocument();
+      });
+
+      const codeEl = document.querySelector('code');
+      expect(codeEl?.textContent).not.toContain('data-micro-polls-enabled');
+    });
+
+    it('renders snippet WITHOUT data-micro-polls-enabled when prop is absent', async () => {
+      mockFetchActivate({ api_key: 'est_pub_mp3', tenant_id: 'tid-mp-3' });
+
+      render(<DetectionPreview {...BASE_PROPS} />);
+
+      const { act: reactAct } = await import('@testing-library/react');
+      reactAct(() => {
+        fireEvent.click(screen.getByRole('button', { name: /save & activate/i }));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /copy snippet/i })).toBeInTheDocument();
+      });
+
+      const codeEl = document.querySelector('code');
+      expect(codeEl?.textContent).not.toContain('data-micro-polls-enabled');
+    });
+  });
+
   // ── FOLLOW-114 — DetectionPreview threads schema.inquiry_submit_selector ──
   describe('DetectionPreview — FOLLOW-114 snippet includes inquiry selector from schema', () => {
     it('renders snippet with data-inquiry-submit-selector when schema has inquiry_submit_selector', async () => {

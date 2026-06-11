@@ -79,6 +79,15 @@ export interface SdkConfig {
     /** Whether the quiz widget is active for this tenant. Default true. */
     enabled: boolean;
   };
+
+  /**
+   * Whether to show micro-poll bottom-toast prompts as a quiz supplement.
+   * Read from `data-micro-polls-enabled="true"` attribute on the script tag.
+   * Default: false (opt-in only — emitting the attribute without "true" is a no-op).
+   * Wired in FOLLOW-274 (Rule L): `buildSnippet` emits the attribute when the tenant's
+   * `quiz_config.micro_polls_enabled` is true; this field reads it back.
+   */
+  microPollsEnabled?: boolean;
 }
 
 export const DEFAULT_CONFIG: Omit<SdkConfig, 'apiKey'> = {
@@ -175,6 +184,14 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
   // tracked separately in FOLLOW-199.
   const quizEnabled = script.dataset.quizEnabled !== 'false';
 
+  // Micro-polls configuration (FOLLOW-274, Rule L).
+  // data-micro-polls-enabled="true" opts this tenant into micro-poll bottom-toast prompts.
+  // buildSnippet() in DetectionPreview.tsx is the production producer — it emits the
+  // attribute only when quiz_config.micro_polls_enabled === true.
+  // Only the exact string "true" enables micro-polls; any other value (absent, "false",
+  // empty) resolves to false (safe opt-in default).
+  const microPollsEnabled = script.dataset.microPollsEnabled === 'true';
+
   return {
     apiKey,
     ...(tenantId !== undefined ? { tenantId } : {}),
@@ -190,5 +207,6 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
     quiz: {
       enabled: quizEnabled,
     },
+    ...(microPollsEnabled ? { microPollsEnabled: true } : {}),
   };
 }

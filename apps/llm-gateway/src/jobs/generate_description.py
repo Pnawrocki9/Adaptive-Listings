@@ -9,7 +9,9 @@ Flow:
      this is Python, independent of the TypeScript control-plane).
   4. On success, writes {"text": "...", "headline": "...", "generated_at": "<ISO>",
      "verified_facts_used": [...]} as a JSON string to Upstash Redis at key
-     desc:{tenant_id}:{listing_id}:{archetype}:{locale} with tier-specific TTL.
+     desc:{tenant_id}:{listing_id}:{archetype}:{locale}:{model}
+     (for DEMO MODE: desc:{tenant_id}:{listing_id}:{archetype}:{locale}:demo:{model}).
+     Key format includes the model suffix added by FOLLOW-161 (DG-1 / FOLLOW-169).
      The headline field is optional — if headline generation fails the description write
      still proceeds (headline omitted / null in that case).
   5. On empty description response or exception, does NOT write to Redis; the next HTTP
@@ -315,14 +317,17 @@ def generate_description(event: dict[str, Any]) -> None:
         # Do not write to Redis.
         return
 
-    # ADR-0009: generate a per-listing headline alongside the description.
+    # ADR-0009 / FOLLOW-169: generate a per-listing headline alongside the description.
     # This is a second small LLM call using the SAME resolved model.
     # Failure is non-fatal — description is still written; headline will be null.
+    # FOLLOW-169: pass the description's verified_facts so the headline model can use
+    # the already-extracted whitelist instead of re-grounding from raw text (AC1).
     headline = _generate_headline(
         archetype=archetype,
         original_description=original_description,
         listing_context=listing_context,
         model=model,
+        verified_facts=verified_facts if verified_facts else None,
     )
     if headline:
         log.info(
@@ -1118,20 +1123,135 @@ def _generate_with_sonnet(
 
 
 # ---------------------------------------------------------------------------
-# Headline generation (ADR-0009) — one small LLM call per listing+archetype
+# Headline generation (ADR-0009 / FOLLOW-169) — one small LLM call per listing+archetype
 # ---------------------------------------------------------------------------
 #
 # The headline is a single line (~max 90 chars), strictly grounded in
-# original_description + listing_context (same anti-hallucination contract),
-# framed for the archetype's voice. It uses the SAME resolved model as the
-# description generation so demo mode / global model switch applies to both.
+# original_description + listing_context (same anti-hallucination contract as
+# the description path — FOLLOW-169 closes the gap). It uses the SAME resolved
+# model as the description generation so demo mode / global model switch applies
+# to both.
 #
-# Max tokens for the headline call: 60 is generous for a single line of ≤90
-# chars even in non-English locales. We do not use a system prompt — the entire
-# grounding instruction is in the user message, matching the mock server's
-# inline approach for this lightweight sub-call.
+# FOLLOW-169 changes:
+#   1. A system prompt (_HEADLINE_SYSTEM_PROMPT) now enforces the same fact-whitelist
+#      hard rules as the description's system prompt — the model MUST NOT invent
+#      any number, named entity, percentage, price, or distance not present in
+#      original_description or listing_context.
+#   2. When the description's verified_facts inventory is passed in, the user prompt
+#      uses it as the explicit whitelist instead of asking the model to re-ground
+#      from raw inputs — tighter and cheaper.
+#   3. A post-generation fact check (_check_headline_facts) detects any specific
+#      number, URL-like word, or percentage in the headline that does not appear
+#      verbatim in the grounding sources. On any violation the call returns None
+#      (suppressed, no Redis write for the headline field) and logs a warning
+#      (Rule K.2: grounding failures must be observable).
 
+# Max tokens for the headline call: 60 is generous for a single line of ≤90
+# chars even in non-English locales.
 _HEADLINE_MAX_TOKENS = 60
+
+# ---------------------------------------------------------------------------
+# FOLLOW-169: Headline system prompt — same fact-whitelist hard rules as the
+# description path (mirrors _SONNET_SYSTEM_PROMPT_TEMPLATE's fact_whitelist_rules
+# and guardrails sections, condensed for a single-line output).
+# ---------------------------------------------------------------------------
+
+_HEADLINE_SYSTEM_PROMPT: str = """\
+You are writing a single listing headline (~max 90 characters) for a real-estate property.
+
+GROUNDING RULES (same contract as the full description — FOLLOW-169):
+1. The ONLY sources of fact are the original_description and listing_context provided by the user.
+2. You MUST NOT state any specific number, measurement, distance, percentage, price, yield, date, \
+or the name of any school, hospital, transit stop, company, agent, developer, or manager unless \
+that exact fact appears explicitly in original_description or listing_context.
+3. Generic positive descriptors containing no number and no named entity are permitted when \
+plausibly supported by the verified facts (e.g. "well-connected", "strong rental demand", \
+"spacious layout").
+4. If the verified facts are thin, write a short honest headline from what is verified. \
+Do not pad with unsupported claims.
+5. Output ONLY the headline text — no surrounding quotes, no preamble, no explanation. \
+Nothing else.
+"""
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-169: Post-generation fact check for the headline.
+# ---------------------------------------------------------------------------
+#
+# After the headline is generated, scan it for tokens that look like specific facts
+# (numbers, percentages, words starting with a capital letter that are not stop-words).
+# For each suspicious token, check whether it appears verbatim in the combined grounding
+# text (original_description + listing_context JSON). If any token is absent, suppress
+# the headline (return a violation reason code so the caller can log and discard it).
+#
+# This is a conservative detector: it checks only digits and standalone capitalised words
+# (potential proper names). Generic capitalised words that appear in the listing inputs
+# pass through. A hallucinated proper name or number is caught.
+#
+# Why not rely on the system prompt alone?
+#   The system prompt is a first line of defence. The post-generation check is a fast,
+#   deterministic second line — the same pattern as _body_violates_contract for the
+#   description body (FOLLOW-188 precedent).
+
+_HEADLINE_DIGIT_RE: re.Pattern[str] = re.compile(r"\d")
+# Proper nouns heuristic: capitalised word (≥2 chars) not at start of headline,
+# and not a common title/article/conjunction.
+_HEADLINE_STOP_CAPS: frozenset[str] = frozenset(
+    {
+        "A", "An", "The", "In", "On", "At", "Of", "For", "To", "And", "Or", "But",
+        "With", "From", "By", "As", "Its", "Is", "Are", "Was", "Be", "Has", "Have",
+        "This", "That", "These", "Those", "Your", "Our", "Their",
+    }
+)
+_HEADLINE_CAPS_WORD_RE: re.Pattern[str] = re.compile(r"\b([A-Z][a-z]+)\b")
+
+
+def _check_headline_facts(
+    headline: str,
+    original_description: str,
+    listing_context: dict[str, Any],
+) -> str | None:
+    """
+    Post-generation fact check for the headline (FOLLOW-169 AC2).
+
+    Scans the headline for tokens that look like specific, named facts (digits,
+    capitalised words that may be proper names) and verifies each appears verbatim
+    in the combined grounding text (original_description + serialised listing_context).
+
+    Args:
+        headline:             The stripped headline text (one line, ≤120 chars).
+        original_description: Agent's original copy — factual source of truth.
+        listing_context:      Structured property data — factual source of truth.
+
+    Returns:
+        A short violation reason code ("hallucinated_number", "hallucinated_proper_name")
+        if a specific fact in the headline cannot be found in the grounding sources.
+        None if the headline passes the check (all specific tokens are grounded).
+    """
+    grounding = (original_description + " " + json.dumps(listing_context)).lower()
+
+    # 1. Check any digit sequence (numbers, prices, percentages, dates, etc.).
+    #    E.g. "7.2%" or "300m" — if the digit string does not appear in the grounding, flag it.
+    for token in re.findall(r"\d[\d.,/%m²sqftftm-]*", headline, re.IGNORECASE):
+        if token.lower() not in grounding:
+            return "hallucinated_number"
+
+    # 2. Check capitalised words for possible proper names (mid-headline only).
+    #    Skip the first word (it is normally capitalised as a sentence start) and skip
+    #    common stop-words that are routinely capitalised.
+    words = headline.split()
+    for word in words[1:]:
+        # Strip trailing punctuation for lookup
+        clean = word.rstrip(".,;:!?\"')")
+        if not clean:
+            continue
+        # Only flag standalone capitalised words (≥2 chars, not in stop-caps set)
+        if len(clean) >= 2 and clean[0].isupper() and clean not in _HEADLINE_STOP_CAPS:
+            # Check that the word (case-insensitive) is present in the grounding text
+            if clean.lower() not in grounding:
+                return "hallucinated_proper_name"
+
+    return None
 
 
 def _generate_headline(
@@ -1139,29 +1259,40 @@ def _generate_headline(
     original_description: str,
     listing_context: dict[str, Any],
     model: str,
+    verified_facts: list[str] | None = None,
 ) -> str | None:
     """
     Generate a single per-listing headline (~max 90 chars) grounded in the
     listing's factual data, framed for the given archetype.
 
+    FOLLOW-169: Now uses a system prompt (_HEADLINE_SYSTEM_PROMPT) enforcing the
+    same fact-whitelist hard rules as the description path, and a post-generation
+    fact check (_check_headline_facts) that suppresses any headline containing a
+    specific number or proper name absent from the grounding sources.
+
+    When verified_facts is provided (the description's already-extracted whitelist),
+    the user prompt uses it as the explicit grounding inventory instead of asking
+    the model to re-derive it from raw text — tighter and cheaper (AC1).
+
     Uses the same model as the description generation (FOLLOW-166 / FOLLOW-161
     precedence chain already resolved by the caller).
-
-    The prompt mirrors the mock server's inline headline call:
-      - NO surrounding quotes in the output.
-      - Strictly factual — no invented numbers/names not present in the inputs.
-      - Returns ONLY the headline text, nothing else.
 
     Args:
         archetype:            Buyer archetype ID (e.g. "yield_hunter").
         original_description: Agent's original copy. Factual source of truth.
         listing_context:      Structured listing data. Factual source of truth.
         model:                Allow-listed Anthropic model id.
+        verified_facts:       Optional list of "key: value" strings already extracted
+                              from the description generation's <verified_facts_used>
+                              block. When present, passed as the explicit whitelist to
+                              the headline prompt so the model does not need to re-derive
+                              verified facts from the raw inputs (AC1).
 
     Returns:
         A stripped headline string (≤120 chars after trim), or None on any
-        error (empty response, API error). None causes the caller to omit the
-        headline from the cache entry — description write proceeds normally.
+        error (empty response, API error, fact-check violation). None causes the
+        caller to omit the headline from the cache entry — description write
+        proceeds normally.
     """
     import anthropic  # imported inside function for Modal image compatibility
 
@@ -1173,14 +1304,28 @@ def _generate_headline(
     listing_json = json.dumps(listing_context) if listing_context else "{}"
     original_snippet = (original_description or "(empty)")[:2000]
 
+    # Build the grounding section of the user prompt.
+    # When the description's verified_facts are available, pass them as an explicit
+    # whitelist so the model does not need to re-ground from raw text (AC1).
+    if verified_facts:
+        facts_block = (
+            "Verified facts whitelist (ONLY these specific facts may appear in the headline):\n"
+            + "\n".join(f"  - {f}" for f in verified_facts)
+        )
+    else:
+        facts_block = (
+            "Original description (factual source of truth):\n"
+            + original_snippet
+            + "\n\nListing data (JSON) (factual source of truth):\n"
+            + listing_json
+        )
+
     user_prompt = (
         f"Write ONE compelling listing headline (max 90 chars, no surrounding quotes) "
-        f"for a {archetype} buyer ({persona}), strictly factually accurate to this "
-        f"listing data. Do NOT invent any number, distance, percentage, price, or named "
-        f"entity not present in the listing data or original description. "
-        f"Return ONLY the headline text, nothing else.\n\n"
-        f"Original description:\n{original_snippet}\n\n"
-        f"Listing data (JSON):\n{listing_json}"
+        f"for a {archetype} buyer. Persona guidance: {persona}\n\n"
+        f"GROUNDING RULES: Do NOT invent any number, distance, percentage, price, or named "
+        f"entity not present in the sources below. Return ONLY the headline text.\n\n"
+        f"{facts_block}"
     )
 
     try:
@@ -1188,6 +1333,7 @@ def _generate_headline(
         response = client.messages.create(
             model=model,
             max_tokens=_HEADLINE_MAX_TOKENS,
+            system=_HEADLINE_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
         )
         raw: str = ""
@@ -1199,7 +1345,23 @@ def _generate_headline(
 
         # Take only the first line, strip surrounding quotes, cap at 120 chars.
         headline = raw.strip().split("\n")[0].strip("\"'").strip()[:120]
-        return headline if headline else None
+        if not headline:
+            return None
+
+        # FOLLOW-169 AC2: post-generation fact check — suppress any headline
+        # asserting a specific fact (number, proper name) absent from grounding sources.
+        # Rule K.2: log the suppression so it is observable.
+        violation = _check_headline_facts(headline, original_description or "", listing_context)
+        if violation:
+            log.warning(
+                "generate_headline.fact_check_violation archetype=%s violation=%s headline=%r",
+                archetype,
+                violation,
+                headline,
+            )
+            return None
+
+        return headline
 
     except Exception as exc:  # noqa: BLE001
         log.warning("generate_headline.error archetype=%s error=%s", archetype, str(exc))
@@ -1236,7 +1398,9 @@ def _write_to_redis(
       - Sets source: "ai_cached" (NOT "ai_generated" — see module docstring).
 
     Args:
-        cache_key:      Redis key, e.g. "desc:tenant123:listing456:yield_hunter:en".
+        cache_key:      Redis key, e.g. "desc:tenant123:listing456:yield_hunter:en:claude-sonnet-4-6"
+                        (format: desc:{tenant_id}:{listing_id}:{archetype}:{locale}:{model};
+                        FOLLOW-161 / FOLLOW-169 DG-1 — includes :{model} suffix).
         description:    AI-generated description text.
         ttl_seconds:    Key expiry in seconds (259200 for Tier 2, 172800 for Tier 3).
         verified_facts: Audit list of facts Sonnet self-reported as used.

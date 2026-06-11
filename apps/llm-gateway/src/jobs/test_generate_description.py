@@ -58,10 +58,12 @@ from jobs.generate_description import (
     TTL_TIER_3,
     _ARCHETYPE_GUIDANCE,
     _DEFAULT_GENERATION_MODEL,
+    _HEADLINE_SYSTEM_PROMPT,
     _MAX_TOKENS_CEILING,
     _MAX_TOKENS_FLOOR_TIER_2,
     _MAX_TOKENS_FLOOR_TIER_3,
     _body_violates_contract,
+    _check_headline_facts,
     _generate_headline,
     _generate_with_sonnet,
     _max_tokens_for,
@@ -144,12 +146,15 @@ def _run_job(event: dict[str, Any]) -> None:
     if not description:
         return
 
-    # ADR-0009: generate headline — non-fatal if None.
+    # ADR-0009 / FOLLOW-169: generate headline — non-fatal if None.
+    # Pass verified_facts from the description so the headline call can use the
+    # already-extracted whitelist (mirrors the production call site).
     headline = _generate_headline(
         archetype=archetype,
         original_description=original_description,
         listing_context=listing_context,
         model=model,
+        verified_facts=verified_facts if verified_facts else None,
     )
 
     _write_to_redis(cache_key, description, ttl_seconds, verified_facts, headline)
@@ -1382,7 +1387,7 @@ def test_generate_with_sonnet_leak_marker_returns_empty() -> None:
         )
 
     assert description == ""
-    assert facts == []
+    assert facts == [], "NEUTRAL after FOLLOW-188 should still return empty facts"
 
 
 def test_generate_with_sonnet_bold_markdown_returns_empty() -> None:
@@ -1471,3 +1476,237 @@ def test_generate_with_sonnet_neutral_after_follow188_still_returns_empty() -> N
 
     assert description == ""
     assert facts == []
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-169: headline anti-hallucination grounding (AC1 + AC2)
+# ---------------------------------------------------------------------------
+
+
+def test_headline_uses_system_prompt() -> None:
+    """
+    FOLLOW-169 AC1: _generate_headline passes _HEADLINE_SYSTEM_PROMPT as the
+    system parameter to the Anthropic API call (non-test production path).
+
+    Rule H: the system prompt has a runtime caller (_generate_headline, which is
+    called from the generate_description job body on every cache-miss description
+    generation path) -- this test confirms the wiring.
+    """
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _make_headline_response("Good headline")
+
+        _generate_headline(
+            archetype="yield_hunter",
+            original_description="3-bed flat in Lisbon with sitting tenant.",
+            listing_context={"bedrooms": 3, "location": "Lisbon"},
+            model=_DEFAULT_GENERATION_MODEL,
+        )
+
+        call_kwargs = mock_client.messages.create.call_args[1]
+        # The system prompt must be passed and must be the curated _HEADLINE_SYSTEM_PROMPT.
+        assert "system" in call_kwargs
+        assert call_kwargs["system"] == _HEADLINE_SYSTEM_PROMPT
+        assert len(_HEADLINE_SYSTEM_PROMPT) > 100  # sanity: not a placeholder
+
+
+def test_headline_verified_facts_appear_in_user_prompt() -> None:
+    """
+    FOLLOW-169 AC1: when verified_facts is provided, the user prompt contains the
+    whitelist entries so the model can ground against the already-extracted facts.
+    """
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _make_headline_response("Good headline")
+
+        facts = ["bedrooms: 3", "location: Lisbon", "tenanted: yes"]
+        _generate_headline(
+            archetype="yield_hunter",
+            original_description="3-bed flat in Lisbon with tenant.",
+            listing_context={"bedrooms": 3},
+            model=_DEFAULT_GENERATION_MODEL,
+            verified_facts=facts,
+        )
+
+        user_content = mock_client.messages.create.call_args[1]["messages"][0]["content"]
+        assert "bedrooms: 3" in user_content
+        assert "location: Lisbon" in user_content
+        assert "tenanted: yes" in user_content
+
+
+def test_headline_antihallucination_suppresses_invented_number() -> None:
+    """
+    FOLLOW-169 AC2: when the model returns a headline containing a specific number
+    not present in the grounding sources, _generate_headline must return None
+    (fact-check violation -> suppressed).
+
+    Grounding sources: bedrooms=3 and city "Madrid" -- no yield figure.
+    Model invents "7.2%" -> post-generation fact check catches it.
+    """
+    hallucinated_headline = "3-bed Madrid flat with 7.2% gross yield"
+    original = "3-bed flat in Madrid"
+    context: dict[str, Any] = {"bedrooms": 3, "location": {"city": "Madrid"}}
+
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _make_headline_response(hallucinated_headline)
+
+        result = _generate_headline(
+            archetype="yield_hunter",
+            original_description=original,
+            listing_context=context,
+            model=_DEFAULT_GENERATION_MODEL,
+        )
+
+    # "7.2" does not appear in the grounding text -> suppressed
+    assert result is None
+
+
+def test_headline_antihallucination_suppresses_invented_proper_name() -> None:
+    """
+    FOLLOW-169 AC2: a headline inventing a proper name absent from grounding
+    sources is suppressed by _check_headline_facts.
+    """
+    original = "3-bed family home near a local primary school"
+    context: dict[str, Any] = {"bedrooms": 3, "location": "Bristol"}
+
+    # The model invents "Redland" -- a school name not present in the sources
+    hallucinated_headline = "Ideal family home near Redland Primary School in Bristol"
+
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _make_headline_response(hallucinated_headline)
+
+        result = _generate_headline(
+            archetype="family_buyer",
+            original_description=original,
+            listing_context=context,
+            model=_DEFAULT_GENERATION_MODEL,
+        )
+
+    # "Redland" does not appear in the grounding text -> suppressed
+    assert result is None
+
+
+def test_headline_grounded_number_passes_fact_check() -> None:
+    """
+    FOLLOW-169 AC2: a headline containing a number that IS present in listing_context
+    must NOT be suppressed (grounded fact passes through).
+    """
+    original = "3-bed property with sitting tenant in central area."
+    context: dict[str, Any] = {"bedrooms": 3, "location": "Madrid", "yield_pct": 6.2}
+
+    # "3-bed" is grounded (bedrooms: 3 is in listing_context and original)
+    grounded_headline = "3-bed Madrid investment property with sitting tenant"
+
+    with patch("anthropic.Anthropic") as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _make_headline_response(grounded_headline)
+
+        result = _generate_headline(
+            archetype="yield_hunter",
+            original_description=original,
+            listing_context=context,
+            model=_DEFAULT_GENERATION_MODEL,
+        )
+
+    # "3" appears in listing_context (bedrooms: 3) and original -> passes
+    assert result is not None
+    assert "3-bed" in result
+
+
+def test_check_headline_facts_digit_absent_returns_violation() -> None:
+    """
+    _check_headline_facts returns 'hallucinated_number' when the headline contains
+    a digit string absent from the grounding sources.
+    """
+    violation = _check_headline_facts(
+        headline="3-bed flat with 7.2% gross yield",
+        original_description="3-bed flat in Madrid",
+        listing_context={"bedrooms": 3},
+    )
+    # "7.2" is not in the grounding sources
+    assert violation == "hallucinated_number"
+
+
+def test_check_headline_facts_digit_present_passes() -> None:
+    """
+    _check_headline_facts returns None when all digits in the headline are
+    present in the grounding sources.
+    """
+    violation = _check_headline_facts(
+        headline="3-bed investment flat in Madrid",
+        original_description="3-bed flat in Madrid",
+        listing_context={"bedrooms": 3},
+    )
+    # "3" is in both the original description and listing_context -> passes
+    assert violation is None
+
+
+def test_check_headline_facts_proper_name_absent_returns_violation() -> None:
+    """
+    _check_headline_facts returns 'hallucinated_proper_name' when the headline
+    contains a capitalised word (mid-headline) absent from the grounding sources.
+    """
+    violation = _check_headline_facts(
+        headline="Ideal family home near Redland Primary School",
+        original_description="3-bed family home near a local primary school",
+        listing_context={"bedrooms": 3, "location": "Bristol"},
+    )
+    # "Redland" is not in the grounding text
+    assert violation == "hallucinated_proper_name"
+
+
+def test_check_headline_facts_proper_name_present_passes() -> None:
+    """
+    _check_headline_facts returns None when capitalised words in the headline
+    are present in the grounding sources.
+    """
+    violation = _check_headline_facts(
+        headline="Prime investment in Lisbon Old Town",
+        original_description="3-bed flat in Lisbon Old Town with great views",
+        listing_context={"bedrooms": 3, "location": "Lisbon Old Town"},
+    )
+    # "Lisbon", "Old", "Town" all appear in the grounding text -> passes
+    assert violation is None
+
+
+def test_headline_antihallucination_no_redis_write_on_violation(
+    mock_redis_post: MagicMock,
+) -> None:
+    """
+    FOLLOW-169 AC2 end-to-end: when the headline fact-check fires, the description
+    is still written to Redis but headline is null -- the hallucinated headline must
+    never reach the Redis cache entry.
+    """
+    description_body = "Body. <verified_facts_used>\n[]\n</verified_facts_used>"
+    desc_resp = MagicMock(content=[MagicMock(text=description_body)], stop_reason="end_turn")
+    # Headline model invents a yield figure not in the listing data
+    hallucinated_hl = "3-bed Madrid flat with 7.2% gross yield"
+    hl_resp = _make_headline_response(hallucinated_hl)
+
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.side_effect = [desc_resp, hl_resp]
+
+        _run_job(
+            _make_event(
+                original_description="3-bed flat in Madrid",
+                listing_context={"bedrooms": 3, "location": "Madrid"},
+            )
+        )
+
+        # Description must still be written; headline must be null
+        mock_httpx.assert_called_once()
+        value = json.loads(mock_httpx.call_args[1]["json"][0][2])
+        assert "text" in value
+        assert value.get("headline") is None

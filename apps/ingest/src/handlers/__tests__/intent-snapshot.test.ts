@@ -327,9 +327,11 @@ describe('insertIntentEventToClickHouse', () => {
     expect(calls()).toHaveLength(1);
 
     const body = JSON.parse(calls()[0]!.init!.body as string) as Record<string, unknown>;
-    // LG-2: column is now 'session_id' (raw string), not 'intent_session_id' (derived UUID)
+    // LG-2: new 'session_id' column carries the raw session fingerprint (migration 0015 ADD COLUMN).
+    // intent_session_id is also present (it's the ORDER BY key column — cannot be renamed in CH).
+    // Both carry the same raw value for join compatibility.
     expect(body.session_id).toBe(SESSION_ID_HEX);
-    expect(body).not.toHaveProperty('intent_session_id');
+    expect(body.intent_session_id).toBe(SESSION_ID_HEX);
     expect(body.tenant_id).toBe(TENANT_ID);
     expect(body.event_type).toBe(INTENT_SNAPSHOT_EVENT_TYPE);
     // event_at should be an ISO 8601 string
@@ -502,11 +504,11 @@ describe('TG-1: ClickHouse session_id join-key contract (LG-2 fix)', () => {
     expect(chCall).toBeDefined();
     const body = JSON.parse(chCall!.init!.body as string) as Record<string, unknown>;
 
-    // Must use the raw session_id, not a derived UUID
+    // LG-2: new session_id column (migration 0015 ADD COLUMN) carries the raw fingerprint.
+    // intent_session_id is also present as the ORDER BY key — cannot be renamed in ClickHouse.
+    // Both carry the same raw session_id value so FOLLOW-269 can join on either.
     expect(body.session_id).toBe(SESSION_ID_HEX);
-    // Must NOT use the old intent_session_id column name (renamed in migration 0015)
-    expect(body).not.toHaveProperty('intent_session_id');
-    // Must NOT be a derived UUID (which would not match intent_sessions.session_id)
+    // session_id must NOT be a derived UUID (which would not match intent_sessions.session_id)
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     expect(uuidPattern.test(body.session_id as string)).toBe(false);
   });

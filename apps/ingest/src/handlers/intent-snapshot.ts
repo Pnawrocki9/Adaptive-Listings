@@ -114,9 +114,11 @@ export async function deriveSessionUuid(tenantId: string, sessionId: string): Pr
 /**
  * INSERT one row into ClickHouse `intent_events` via the HTTPS interface.
  *
- * Writes to the `intent_events` table (0014 DDL + 0015 rename migration).
- * The `session_id` column holds the raw SDK session fingerprint so FOLLOW-269 can join:
- *   intent_events.session_id = intent_sessions.session_id (+ tenant_id).
+ * Writes to the `intent_events` table (0014 DDL + 0015 ADD COLUMN migration).
+ * The new `session_id` column (migration 0015) holds the raw SDK session fingerprint so
+ * FOLLOW-269 can join: intent_events.session_id = intent_sessions.session_id (+ tenant_id).
+ * The `intent_session_id` column (ORDER BY key) also receives the raw value for
+ * ClickHouse key expression compatibility.
  * The `event_type` value is pinned to `INTENT_SNAPSHOT_EVENT_TYPE` from @estalara/shared.
  *
  * Fire-and-forget caller uses Promise.allSettled — this function resolves with a result
@@ -151,13 +153,24 @@ export async function insertIntentEventToClickHouse(
     chat_turns: event.payload.chat_turns,
   });
 
-  // LG-2 fix (FOLLOW-286): write the raw session_id string (column renamed from
-  // intent_session_id → session_id in migration 0015). FOLLOW-269 joins on:
+  // LG-2 fix (FOLLOW-286): write the raw session_id string to the new `session_id` column
+  // added by migration 0015 (ADD COLUMN session_id String DEFAULT ''). The existing
+  // `intent_session_id` column is part of the ORDER BY key and cannot be renamed
+  // (ClickHouse forbids renaming key columns). `intent_session_id` is still included with
+  // the raw session_id value to satisfy ClickHouse's FORMAT JSONEachRow key presence
+  // requirement; future rows will use `session_id` as the authoritative join key.
+  //
+  // FOLLOW-269 replay queries MUST join on:
   //   intent_events.session_id = intent_sessions.session_id (+ tenant_id).
+  //
   // LG-3 fix (FOLLOW-286 P2): confidence_before is null for snapshot rows — there is
   // no prior snapshot in the same request to derive it from server-side. The SDK payload
   // does not carry a confidence_before field. Null is more honest than a hardcoded 0.
   const row = {
+    // ORDER BY key column — kept for ClickHouse key expression compatibility.
+    // Also carries the raw session_id for backwards compat until a future compaction.
+    intent_session_id: sessionId,
+    // LG-2: authoritative raw session fingerprint join key (migration 0015 ADD COLUMN).
     session_id: sessionId,
     tenant_id: event.tenant_id,
     event_at: eventAt,
@@ -319,7 +332,8 @@ export async function upsertIntentSessionToSupabase(
  *
  * Dual-writes in parallel (Promise.allSettled) to:
  *   1. ClickHouse `intent_events` — INSERT the granular event row (append-only).
- *      `session_id` carries the raw SDK session fingerprint for FOLLOW-269 join.
+ *      `session_id` (new column, migration 0015) carries the raw session fingerprint
+ *      for FOLLOW-269 join. `intent_session_id` (ORDER BY key) also gets the raw value.
  *      `event_type` is pinned to `INTENT_SNAPSHOT_EVENT_TYPE` from @estalara/shared.
  *   2. Supabase `intent_sessions` — UPSERT the mutable session-level summary row.
  *      Conflict target `(tenant_id, session_id)` is passed as a URL query parameter

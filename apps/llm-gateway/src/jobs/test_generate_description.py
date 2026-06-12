@@ -1710,3 +1710,110 @@ def test_headline_antihallucination_no_redis_write_on_violation(
         value = json.loads(mock_httpx.call_args[1]["json"][0][2])
         assert "text" in value
         assert value.get("headline") is None
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-272: tightened _check_headline_facts — digit-boundary + first-word
+# proper-name detection.  These are the "red-then-green" precision cases that
+# were false-negatives under the previous bare-substring implementation.
+# ---------------------------------------------------------------------------
+
+
+def test_check_headline_facts_digit_coincidence_prevented() -> None:
+    """
+    FOLLOW-272 AC2: "$1,500" in the headline must NOT pass the fact check when
+    the grounding only contains "$1,200".  The old bare-substring check would
+    pass a hallucinated "$1,500" because "1" (or even "1,") appears inside "1,200".
+    The tightened numeric-boundary check requires the exact token "1,500" to be
+    present as a complete numeric unit — which it is not.
+    """
+    violation = _check_headline_facts(
+        headline="Luxury flat at $1,500/mo — stunning views",
+        original_description="Luxury flat available for $1,200 per month with stunning views.",
+        listing_context={"rent_pcm": 1200, "currency": "USD"},
+    )
+    # "$1,500" token ("1,500/m" extracted by digit regex) is NOT in grounding
+    # (grounding has "1,200" — a different price).
+    assert violation == "hallucinated_number"
+
+
+def test_check_headline_facts_exact_price_passes() -> None:
+    """
+    FOLLOW-272 AC2 (green side): a price token that IS present as a complete numeric
+    unit in the grounding DOES pass the check.  "1,200" in the headline is grounded
+    in the original_description which literally contains "1,200".  The tightened
+    numeric-boundary pattern (?<![0-9.,])1,200(?![0-9.,]) still finds the match.
+
+    Note: the digit regex extracts a token up to the first non-digit-class character.
+    Using "1,200 per month" (space-terminated) ensures the extracted token "1,200"
+    matches exactly in the grounding which also contains "1,200 per month".
+    """
+    violation = _check_headline_facts(
+        headline="Luxury flat priced at 1,200 per month — stunning views",
+        original_description="Luxury flat available for 1,200 per month with stunning views.",
+        listing_context={"rent_pcm": 1200, "currency": "USD"},
+    )
+    # Token "1,200" is present as a complete numeric unit in the original_description
+    assert violation is None
+
+
+def test_check_headline_facts_proper_name_first_word_caught() -> None:
+    """
+    FOLLOW-272 AC3: a hallucinated proper name AS THE FIRST WORD of the headline
+    must be caught.  Previously words[1:] skipped words[0], so "Reston Heights…"
+    escaped detection.  The tightened scan covers all words.
+    """
+    violation = _check_headline_facts(
+        headline="Reston Heights is a great family buy",
+        original_description="3-bed detached house in a quiet residential area",
+        listing_context={"bedrooms": 3, "location": "Bristol"},
+    )
+    # "Reston" is not in the grounding text at all — must be caught now
+    assert violation == "hallucinated_proper_name"
+
+
+def test_check_headline_facts_first_word_grounded_proper_name_passes() -> None:
+    """
+    FOLLOW-272 AC3 (green side): a first-word proper name that IS in the grounding
+    must NOT be suppressed.
+    """
+    violation = _check_headline_facts(
+        headline="Bristol family home with 3 bedrooms",
+        original_description="3-bed detached house in Bristol — a great area.",
+        listing_context={"bedrooms": 3, "location": "Bristol"},
+    )
+    # "Bristol" IS in both the original description and listing_context
+    assert violation is None
+
+
+def test_check_headline_facts_proper_name_escape_via_substring_prevented() -> None:
+    """
+    FOLLOW-272 AC3: the bare-substring check admitted a false negative where a
+    fact fragment like "est" (a grounded substring of "Bristol") would "verify"
+    an unrelated proper name "Reston" (because "est" in "bristol" is True).
+    The word-boundary match prevents this: re.search(r'\\bReston\\b', grounding)
+    correctly returns no match.
+    """
+    # grounding contains "Bristol" (which contains "est" but not "Reston")
+    violation = _check_headline_facts(
+        headline="Ideal family home near Reston Primary",
+        original_description="3-bed family home near Bristol Primary school",
+        listing_context={"bedrooms": 3, "location": "Bristol"},
+    )
+    # "Reston" is not a word-boundary match in "Bristol" grounding — must flag
+    assert violation == "hallucinated_proper_name"
+
+
+def test_check_headline_facts_hyphenated_bed_count_passes() -> None:
+    """
+    FOLLOW-272 AC4: "3-bed" in the headline DOES pass when "3" is in the grounding.
+    Word-boundary / numeric-boundary matching must not over-suppress hyphenated
+    compound tokens like "3-bed" where the digit is grounded.
+    """
+    violation = _check_headline_facts(
+        headline="3-bed corner unit in a quiet street",
+        original_description="3-bed property on a quiet corner street.",
+        listing_context={"bedrooms": 3},
+    )
+    # "3" token is grounded in both original_description and listing_context
+    assert violation is None

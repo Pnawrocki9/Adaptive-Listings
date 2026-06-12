@@ -41,5 +41,8 @@
 --
 -- Idempotent: ADD COLUMN IF NOT EXISTS is supported by ClickHouse MergeTree.
 
+-- Note: ClickHouse does not support NOT NULL constraints on columns; all String
+-- columns are non-nullable by type. New rows written by the CF Worker handler
+-- (FOLLOW-286) will always provide a non-empty value for session_id.
 ALTER TABLE intent_events
-  ADD COLUMN IF NOT EXISTS session_id String NOT NULL DEFAULT '';
+  ADD COLUMN IF NOT EXISTS session_id String DEFAULT '';

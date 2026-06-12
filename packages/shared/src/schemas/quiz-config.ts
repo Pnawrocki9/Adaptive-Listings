@@ -112,9 +112,14 @@ export const QUIZ_DEFAULT_CONFIG: QuizConfig = {
  * CORS: `Access-Control-Allow-Origin: *` (read-only, no PII).
  * Cache-Control: `max-age=300, stale-while-revalidate=60`.
  *
- * All four fields are always present in a 200 response — no field is `null`.
+ * All four core fields are always present in a 200 response — no field is `null`.
  * The SDK falls back to snippet-attribute values, then to hardcoded defaults,
  * on any non-200 or network error.
+ *
+ * `data_source` (FOLLOW-277, Rule K.2): indicates whether the response reflects a live
+ * DB read (`'db'`) or fallback defaults (`'fallback'`). The field is optional so
+ * pre-277 cached responses without it still parse correctly. When `'fallback'`, the
+ * SDK emits a `console.warn` in debug mode so the degraded state is observable.
  *
  * Non-test production consumer: `apps/control-plane/src/app/api/quiz/public-config/route.ts`
  * (Rule H / Rule I).
@@ -124,6 +129,13 @@ export const QuizPublicConfigResponseSchema = z.object({
   micro_polls_enabled: z.boolean(),
   language: QuizLanguageSchema,
   accent_color: z.string(),
+  /**
+   * Provenance flag (Rule K.2 / FOLLOW-277). Optional for backward compatibility with
+   * responses cached before this field was added.
+   *   - `'db'`       — values read from the live DB tenant row.
+   *   - `'fallback'` — DB unavailable or not configured; default values returned.
+   */
+  data_source: z.enum(['db', 'fallback']).optional(),
 });
 
 /** TypeScript type for the `GET /api/quiz/public-config` 200 response body. */

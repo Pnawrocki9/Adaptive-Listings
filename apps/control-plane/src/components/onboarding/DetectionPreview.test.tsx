@@ -355,142 +355,39 @@ describe('DetectionPreview', () => {
     });
   });
 
-  // ── FOLLOW-102 — buildSnippet emits data-quiz-enabled when quiz_enabled=false ──
-  describe('buildSnippet — FOLLOW-102 quiz_enabled attribute', () => {
+  // ── ADR-0011 / FOLLOW-275 — buildSnippet NEVER emits data-quiz-enabled or
+  //    data-micro-polls-enabled (retired attributes — SDK runtime fetch replaces them) ──
+  describe('buildSnippet — ADR-0011 retired snippet attributes', () => {
     const TENANT = '550e8400-e29b-41d4-a716-446655440000';
     const KEY = 'est_pub_test123';
 
-    it('emits data-quiz-enabled="false" when quiz_enabled=false', () => {
-      const snippet = buildSnippet(TENANT, KEY, undefined, false);
-      expect(snippet).toContain('data-quiz-enabled="false"');
-    });
-
-    it('omits data-quiz-enabled when quiz_enabled=true (truthy default — smaller snippet)', () => {
-      const snippet = buildSnippet(TENANT, KEY, undefined, true);
-      expect(snippet).not.toContain('data-quiz-enabled');
-    });
-
-    it('omits data-quiz-enabled when quiz_enabled is undefined (omitted — defaults to enabled)', () => {
+    // AC4: buildSnippet no longer emits data-quiz-enabled regardless of input.
+    it('never emits data-quiz-enabled (retired in ADR-0011 — SDK fetches at runtime)', () => {
       const snippet = buildSnippet(TENANT, KEY);
       expect(snippet).not.toContain('data-quiz-enabled');
     });
 
-    it('snippet with quiz_enabled=false still contains data-api-key and data-tenant-id', () => {
-      const snippet = buildSnippet(TENANT, KEY, null, false);
+    // AC4: buildSnippet no longer emits data-micro-polls-enabled regardless of input.
+    it('never emits data-micro-polls-enabled (retired in ADR-0011 — SDK fetches at runtime)', () => {
+      const snippet = buildSnippet(TENANT, KEY);
+      expect(snippet).not.toContain('data-micro-polls-enabled');
+    });
+
+    it('snippet still contains required immutable binding fields (data-api-key, data-tenant-id, data-decision-url)', () => {
+      const snippet = buildSnippet(TENANT, KEY, null);
       expect(snippet).toContain(`data-tenant-id="${TENANT}"`);
       expect(snippet).toContain(`data-api-key="${KEY}"`);
-      expect(snippet).toContain('data-quiz-enabled="false"');
+      expect(snippet).toContain('data-decision-url=');
     });
   });
 
-  // ── FOLLOW-102 — DetectionPreview threads quizEnabled prop ───────────────
-  describe('DetectionPreview — FOLLOW-102 quizEnabled prop threads into snippet', () => {
-    it('renders snippet with data-quiz-enabled="false" when quizEnabled=false', async () => {
+  // ── ADR-0011 / FOLLOW-275 — DetectionPreview snippet never carries quiz attrs ──
+  describe('DetectionPreview — ADR-0011 snippet does not contain retired quiz attributes', () => {
+    it('renders snippet without data-quiz-enabled (retired attr — SDK fetches at runtime)', async () => {
       mockFetchActivate({ api_key: 'est_pub_quiz1', tenant_id: 'tid-quiz-1' });
 
-      render(<DetectionPreview {...BASE_PROPS} quizEnabled={false} />);
-
-      const { act: reactAct } = await import('@testing-library/react');
-      reactAct(() => {
-        fireEvent.click(screen.getByRole('button', { name: /save & activate/i }));
-      });
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /copy snippet/i })).toBeInTheDocument();
-      });
-
-      const codeEl = document.querySelector('code');
-      expect(codeEl?.textContent).toContain('data-quiz-enabled="false"');
-    });
-
-    it('renders snippet WITHOUT data-quiz-enabled when quizEnabled=true', async () => {
-      mockFetchActivate({ api_key: 'est_pub_quiz2', tenant_id: 'tid-quiz-2' });
-
-      render(<DetectionPreview {...BASE_PROPS} quizEnabled={true} />);
-
-      const { act: reactAct } = await import('@testing-library/react');
-      reactAct(() => {
-        fireEvent.click(screen.getByRole('button', { name: /save & activate/i }));
-      });
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /copy snippet/i })).toBeInTheDocument();
-      });
-
-      const codeEl = document.querySelector('code');
-      expect(codeEl?.textContent).not.toContain('data-quiz-enabled');
-    });
-  });
-
-  // ── FOLLOW-274 — buildSnippet emits data-micro-polls-enabled ─────────────
-  describe('buildSnippet — FOLLOW-274 micro_polls_enabled attribute (Rule L)', () => {
-    const TENANT = '550e8400-e29b-41d4-a716-446655440000';
-    const KEY = 'est_pub_test123';
-
-    it('emits data-micro-polls-enabled="true" when microPollsEnabled=true', () => {
-      const snippet = buildSnippet(TENANT, KEY, undefined, undefined, true);
-      expect(snippet).toContain('data-micro-polls-enabled="true"');
-    });
-
-    it('omits data-micro-polls-enabled when microPollsEnabled=false (opt-in default)', () => {
-      const snippet = buildSnippet(TENANT, KEY, undefined, undefined, false);
-      expect(snippet).not.toContain('data-micro-polls-enabled');
-    });
-
-    it('omits data-micro-polls-enabled when microPollsEnabled is undefined (absent → disabled)', () => {
-      const snippet = buildSnippet(TENANT, KEY);
-      expect(snippet).not.toContain('data-micro-polls-enabled');
-    });
-
-    it('snippet with microPollsEnabled=true still contains data-api-key and data-tenant-id', () => {
-      const snippet = buildSnippet(TENANT, KEY, null, undefined, true);
-      expect(snippet).toContain(`data-tenant-id="${TENANT}"`);
-      expect(snippet).toContain(`data-api-key="${KEY}"`);
-      expect(snippet).toContain('data-micro-polls-enabled="true"');
-    });
-  });
-
-  // ── FOLLOW-274 — DetectionPreview threads microPollsEnabled prop ──────────
-  describe('DetectionPreview — FOLLOW-274 microPollsEnabled prop threads into snippet', () => {
-    it('renders snippet with data-micro-polls-enabled="true" when microPollsEnabled=true', async () => {
-      mockFetchActivate({ api_key: 'est_pub_mp1', tenant_id: 'tid-mp-1' });
-
-      render(<DetectionPreview {...BASE_PROPS} microPollsEnabled={true} />);
-
-      const { act: reactAct } = await import('@testing-library/react');
-      reactAct(() => {
-        fireEvent.click(screen.getByRole('button', { name: /save & activate/i }));
-      });
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /copy snippet/i })).toBeInTheDocument();
-      });
-
-      const codeEl = document.querySelector('code');
-      expect(codeEl?.textContent).toContain('data-micro-polls-enabled="true"');
-    });
-
-    it('renders snippet WITHOUT data-micro-polls-enabled when microPollsEnabled=false', async () => {
-      mockFetchActivate({ api_key: 'est_pub_mp2', tenant_id: 'tid-mp-2' });
-
-      render(<DetectionPreview {...BASE_PROPS} microPollsEnabled={false} />);
-
-      const { act: reactAct } = await import('@testing-library/react');
-      reactAct(() => {
-        fireEvent.click(screen.getByRole('button', { name: /save & activate/i }));
-      });
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /copy snippet/i })).toBeInTheDocument();
-      });
-
-      const codeEl = document.querySelector('code');
-      expect(codeEl?.textContent).not.toContain('data-micro-polls-enabled');
-    });
-
-    it('renders snippet WITHOUT data-micro-polls-enabled when prop is absent', async () => {
-      mockFetchActivate({ api_key: 'est_pub_mp3', tenant_id: 'tid-mp-3' });
-
+      // quizEnabled prop is a deprecated dead prop — component does not use it.
+      // We render without it: the attribute must never appear in the snippet.
       render(<DetectionPreview {...BASE_PROPS} />);
 
       const { act: reactAct } = await import('@testing-library/react');
@@ -503,6 +400,28 @@ describe('DetectionPreview', () => {
       });
 
       const codeEl = document.querySelector('code');
+      // ADR-0011: data-quiz-enabled is retired — never emitted regardless of prop value.
+      expect(codeEl?.textContent).not.toContain('data-quiz-enabled');
+    });
+
+    it('renders snippet without data-micro-polls-enabled (retired attr — SDK fetches at runtime)', async () => {
+      mockFetchActivate({ api_key: 'est_pub_mp1', tenant_id: 'tid-mp-1' });
+
+      // microPollsEnabled prop is a deprecated dead prop — component does not use it.
+      // We render without it: the attribute must never appear in the snippet.
+      render(<DetectionPreview {...BASE_PROPS} />);
+
+      const { act: reactAct } = await import('@testing-library/react');
+      reactAct(() => {
+        fireEvent.click(screen.getByRole('button', { name: /save & activate/i }));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /copy snippet/i })).toBeInTheDocument();
+      });
+
+      const codeEl = document.querySelector('code');
+      // ADR-0011: data-micro-polls-enabled is retired — never emitted regardless of prop value.
       expect(codeEl?.textContent).not.toContain('data-micro-polls-enabled');
     });
   });

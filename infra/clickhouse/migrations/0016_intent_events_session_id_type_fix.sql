@@ -1,0 +1,35 @@
+-- Migration: 0016_intent_events_session_id_type_fix
+-- FOLLOW-287 (CB-1): Fix intent_session_id column type — UUID → String.
+--
+-- Root cause: The 0014 DDL defined `intent_session_id UUID NOT NULL` as the ORDER BY key.
+-- The CF Worker handler writes the raw SDK session fingerprint (a SHA-256 hex string or an
+-- SDK-generated short ID — never a hyphenated UUID) into this column. ClickHouse's UUID type
+-- requires a hyphenated UUID string (e.g. 550e8400-e29b-41d4-a716-446655440000); a 64-char
+-- hex string is rejected by JSONEachRow, silently dropping 100% of rows.
+--
+-- Fix: MODIFY COLUMN `intent_session_id` to `String DEFAULT ''`.
+-- ClickHouse MODIFY COLUMN does not accept NOT NULL; nullability is controlled by the
+-- column definition in the original CREATE TABLE. MergeTree supports MODIFY COLUMN to
+-- relax types (UUID → String is safe; ClickHouse stores UUID as two UInt64 internally
+-- but String is accepted for any value).
+--
+-- Note: ClickHouse does NOT allow renaming an ORDER BY key column, but it DOES allow
+-- changing the type of an ORDER BY key column when the new type is compatible.
+-- UUID → String is compatible because ClickHouse will rewrite the stored values
+-- as their string representation. No data loss occurs: any existing UUID values
+-- are preserved as hyphenated UUID strings; new writes can be any non-empty string.
+--
+-- After this migration:
+--   intent_session_id String DEFAULT '' (ORDER BY key, accepts any string)
+--   session_id        String DEFAULT ''          (added by migration 0015, join key for FOLLOW-269)
+--
+-- The authoritative join key for FOLLOW-269 queries remains:
+--   intent_events.session_id = intent_sessions.session_id (+ tenant_id)
+-- (composite text key, not the UUID surrogate).
+--
+-- Idempotent: MODIFY COLUMN IF EXISTS is NOT supported by ClickHouse — this migration
+-- should only be applied once. The migrate.sh script tracks applied migrations to prevent
+-- re-application.
+
+ALTER TABLE intent_events
+  MODIFY COLUMN intent_session_id String DEFAULT '';

@@ -281,9 +281,10 @@ async function init(): Promise<IntentState | null> {
         //
         // `config.language` at this point is sourced from the `data-language` snippet
         // attribute (level 2) or the browser's navigator.language (level 3) or the
-        // hardcoded 'en' default (level 4).  `buildSnippet()` does NOT emit
-        // `data-language` or `data-accent-color` (ADR-0011 retired both attributes
-        // alongside `data-quiz-enabled`/`data-micro-polls-enabled`), so for tenants
+        // hardcoded 'en' default (level 4).  `buildSnippet()` has NEVER emitted
+        // `data-language` or `data-accent-color` — these attributes were not part of
+        // the snippet transport and were not retired by ADR-0011 (ADR-0011 only retired
+        // `data-quiz-enabled`/`data-micro-polls-enabled`).  As a result, for tenants
         // who do not hand-code those attributes, the banner always uses the
         // navigator.language or 'en' fallback.
         //
@@ -293,10 +294,10 @@ async function init(): Promise<IntentState | null> {
         //   - The quiz widget (rendered AFTER mergeQuizConfig()) correctly uses the
         //     server-fetched language; only the pre-consent banner is affected.
         //   - If a locale-specific consent banner becomes a compliance requirement,
-        //     the fix is to re-emit `data-language` in buildSnippet() — ADR-0011 only
-        //     retired the GATING/BEHAVIORAL flags, not display preferences — and update
-        //     ADR-0011 accordingly.  See the "Consent-banner locale" addendum section
-        //     added to docs/adr/ADR-0011-quiz-config-transport.md by FOLLOW-278.
+        //     the fix is to ADD `data-language` to buildSnippet() for the first time
+        //     (a new feature, not a re-introduction) and update ADR-0011 accordingly.
+        //     See the "Consent-banner locale" addendum section added to
+        //     docs/adr/ADR-0011-quiz-config-transport.md by FOLLOW-278.
         const granted = await new Promise<boolean>((resolve) => {
           renderConsentBanner(earlyHost.root, {
             language: config.language,
@@ -765,6 +766,8 @@ async function init(): Promise<IntentState | null> {
         config.decisionApiUrl,
         config.apiKey,
         intentStateRehydrated,
+        1_000,
+        config.debug,
       );
       config = mergeQuizConfig(config, fetched);
 

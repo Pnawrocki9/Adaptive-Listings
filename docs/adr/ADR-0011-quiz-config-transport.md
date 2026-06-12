@@ -287,10 +287,10 @@ The quiz trigger and widget (rendered after the merge at index.ts:760–) correc
 server-fetched locale.
 
 However, the consent banner is rendered at the consent gate (index.ts:276, before the fetch), so it
-always uses the pre-fetch `config.language`. Because `buildSnippet()` does NOT emit `data-language`
-or `data-accent-color` (those attributes were retired alongside
-`data-quiz-enabled`/`data-micro-polls-enabled` by this ADR), the banner language is determined
-entirely by:
+always uses the pre-fetch `config.language`. Because `buildSnippet()` has NEVER emitted
+`data-language` or `data-accent-color` (these attributes were not part of the snippet transport and
+were not retired by this ADR — ADR-0011 only retired
+`data-quiz-enabled`/`data-micro-polls-enabled`), the banner language is determined entirely by:
 
 1. A hand-coded `data-language` attribute on the tenant's snippet (if present, level 2).
 2. The buyer's `navigator.language` primary subtag (level 3).
@@ -318,27 +318,29 @@ separately, locale-correct at source).
 
 ### Escape hatch (if locale-specific consent becomes a compliance requirement)
 
-Re-emit `data-language` (and optionally `data-accent-color`) in `buildSnippet()`:
+Add `data-language` (and optionally `data-accent-color`) to `buildSnippet()` for the first time
+(these were never previously emitted; this would be a new feature, not a re-introduction):
 
 ```typescript
 export function buildSnippet(
   tenantId: string,
   apiKey: string,
   inquirySubmitSelector?: string | null,
-  language?: string | null, // re-add ONLY for pre-consent banner surface
-  accentColor?: string | null, // re-add ONLY for pre-consent banner surface
+  language?: string | null, // add ONLY for pre-consent banner surface (new param)
+  accentColor?: string | null, // add ONLY for pre-consent banner surface (new param)
 ): string;
 ```
 
 This ADR ONLY retired the GATING/BEHAVIORAL flags (`data-quiz-enabled`, `data-micro-polls-enabled`).
-Display-preference attributes (`data-language`, `data-accent-color`) may be re-emitted without
-conflicting with the ADR rationale — the ADR's rationale was that post-activation-mutable CONFIG
-state must not live in the static snippet; a display preference that is also pre-activation-stable
+Display-preference attributes (`data-language`, `data-accent-color`) were never emitted by
+`buildSnippet()` — they are not retired, they were simply never introduced. Adding them would not
+conflict with the ADR rationale: the ADR's rationale was that post-activation-mutable CONFIG state
+must not live in the static snippet; a display preference that is also pre-activation-stable
 (language rarely changes) is categorically different.
 
-If re-emitted, update `readConfig()` to restore the level-2 attribute read (it still has the code
-path; the attribute simply has no producer until re-added to `buildSnippet()`). File a new PR
-updating this ADR and the FOLLOW-278 comment in `index.ts`.
+If added, update `readConfig()` to activate the level-2 attribute read (the code path exists; the
+attribute simply has no producer until added to `buildSnippet()`). File a new PR updating this ADR
+and the FOLLOW-278 comment in `index.ts`.
 
 ### Cross-reference
 

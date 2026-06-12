@@ -766,8 +766,6 @@ async function init(): Promise<IntentState | null> {
         config.decisionApiUrl,
         config.apiKey,
         intentStateRehydrated,
-        1_000,
-        config.debug,
       );
       config = mergeQuizConfig(config, fetched);
 

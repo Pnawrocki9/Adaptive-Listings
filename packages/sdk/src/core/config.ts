@@ -76,9 +76,13 @@ export interface SdkConfig {
 
   /**
    * Quiz widget configuration.
-   * Read from data-quiz-enabled attribute.
-   * Default: { enabled: true }.
-   * Added in FOLLOW-102.
+   *
+   * ADR-0011 (FOLLOW-275): `enabled` is now resolved at runtime via
+   * `fetchQuizConfig()` → `mergeQuizConfig()` in `init()`, NOT from the
+   * `data-quiz-enabled` snippet attribute.  The attribute is retired as a
+   * primary transport; `readConfig()` no longer reads it.  Any value set here
+   * by `readConfig()` is a hardcoded SDK default that `mergeQuizConfig()` will
+   * override with the server-fetched value once the fetch resolves.
    *
    * Rule L: data-quiz-trigger attribute removed — no producer or runtime consumer
    * existed. `buildSnippet()` in DetectionPreview.tsx never emitted it, and the SDK
@@ -91,10 +95,13 @@ export interface SdkConfig {
 
   /**
    * Whether to show micro-poll bottom-toast prompts as a quiz supplement.
-   * Read from `data-micro-polls-enabled="true"` attribute on the script tag.
-   * Default: false (opt-in only — emitting the attribute without "true" is a no-op).
-   * Wired in FOLLOW-274 (Rule L): `buildSnippet` emits the attribute when the tenant's
-   * `quiz_config.micro_polls_enabled` is true; this field reads it back.
+   *
+   * ADR-0011 (FOLLOW-275): this field is now resolved at runtime via
+   * `fetchQuizConfig()` → `mergeQuizConfig()` in `init()`, NOT from the
+   * `data-micro-polls-enabled` snippet attribute.  The attribute is retired as a
+   * primary transport; `readConfig()` no longer reads it.  Any value set here
+   * by `readConfig()` is a hardcoded SDK default that `mergeQuizConfig()` will
+   * override with the server-fetched value once the fetch resolves.
    */
   microPollsEnabled?: boolean;
 }
@@ -185,25 +192,31 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
   // (inquiry_submit_selector field) and surfaced via data-inquiry-submit-selector attribute.
   const inquirySubmitSelector = script.dataset.inquirySubmitSelector;
 
-  // Quiz widget configuration (FOLLOW-102).
-  // data-quiz-enabled="false" disables the quiz entirely for this tenant.
-  // Any value other than the string "false" resolves to enabled=true (safe default).
-  // Rule L: buildSnippet() in DetectionPreview.tsx is the production producer of
-  // data-quiz-enabled; it emits the attribute only when quiz_enabled === false.
+  // Quiz widget configuration — defaults only (ADR-0011, FOLLOW-275).
+  //
+  // `data-quiz-enabled` and `data-micro-polls-enabled` are RETIRED as primary
+  // transports. The authoritative values are fetched at runtime via
+  // `fetchQuizConfig()` in `init()` and merged via `mergeQuizConfig()`.
+  //
+  // `readConfig()` sets the hardcoded SDK defaults here; they are overridden by
+  // the server-fetched values in `mergeQuizConfig()` before the quiz/micro-poll
+  // schedulers run.
+  //
+  // DEPRECATED_FALLBACK: the two attributes below are read ONLY as a legacy
+  // fallback path for tenants whose snippets pre-date ADR-0011 and whose
+  // `decisionApiUrl` is unreachable (i.e. `fetchQuizConfig()` returns null).
+  // In that edge case the snippet-attribute values serve as the second-level
+  // fallback before the hardcoded defaults.  `mergeQuizConfig()` applies the
+  // server value first; these fallbacks are never used when the fetch succeeds.
   //
   // Rule L: data-quiz-trigger removed (FOLLOW-257, Option A). No producer
   // (buildSnippet never emitted it) and no runtime consumer (the timer uses the
   // hardcoded QUIZ_TRIGGER_DELAY_MS constant). Per-tenant timer configurability is
   // tracked separately in FOLLOW-199.
-  const quizEnabled = script.dataset.quizEnabled !== 'false';
 
-  // Micro-polls configuration (FOLLOW-274, Rule L).
-  // data-micro-polls-enabled="true" opts this tenant into micro-poll bottom-toast prompts.
-  // buildSnippet() in DetectionPreview.tsx is the production producer — it emits the
-  // attribute only when quiz_config.micro_polls_enabled === true.
-  // Only the exact string "true" enables micro-polls; any other value (absent, "false",
-  // empty) resolves to false (safe opt-in default).
-  const microPollsEnabled = script.dataset.microPollsEnabled === 'true';
+  // DEPRECATED_FALLBACK reads — used only when fetchQuizConfig() returns null.
+  const quizEnabledFallback = script.dataset.quizEnabled !== 'false';
+  const microPollsEnabledFallback = script.dataset.microPollsEnabled === 'true';
 
   return {
     apiKey,
@@ -218,8 +231,11 @@ export function readConfig(script: { dataset: Record<string, string | undefined>
     language,
     accentColor,
     quiz: {
-      enabled: quizEnabled,
+      // Default: enabled=true (overridden by mergeQuizConfig if fetch succeeds).
+      // DEPRECATED_FALLBACK: quizEnabledFallback used only when fetch returns null.
+      enabled: quizEnabledFallback,
     },
-    ...(microPollsEnabled ? { microPollsEnabled: true } : {}),
+    // DEPRECATED_FALLBACK: microPollsEnabledFallback used only when fetch returns null.
+    ...(microPollsEnabledFallback ? { microPollsEnabled: true } : {}),
   };
 }

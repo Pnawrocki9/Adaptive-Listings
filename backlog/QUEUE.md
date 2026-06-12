@@ -1,6 +1,6 @@
 # Backlog Queue
 
-**Updated 2026-06-11T21:30Z. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE.
+**Updated 2026-06-11T22:00Z. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE.
 RETRO-050/051/052/053 complete. FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-11 (quiz-only
 ratified, docs synced, contract-pinning tests, mis-citation fixed; RETRO-052 → Rule U promoted,
 FOLLOW-271 stub). FOLLOW-264 (P2) DONE — PR #263 merged 2026-06-11 (Option-A removal complete:
@@ -23,7 +23,8 @@ real CI gates green; SDK bundle bloat pre-existing on main), FOLLOW-273 PM-VALID
 READY_FOR_REVIEW (PR #268, real CI gates green; SDK bundle bloat pre-existing on main), FOLLOW-272
 READY (P3, ml-engineer). RETRO-057 complete: micro_polls_enabled is still P1 HALF_WIRE in prod
 (DetectWizard.tsx:259 never passes the flag). ADR-0011 ACCEPTED (PR #269 merged by CTO Rafał
-2026-06-11) — FOLLOW-275 now READY (P1, backend-engineer + sdk-engineer).**
+2026-06-11) — FOLLOW-275 READY_FOR_REVIEW (PR #270 Phase 1 backend, PR #271 Phase 2 SDK; both CI
+green). Merge Phase 1 first, then Phase 2.**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -4153,8 +4154,11 @@ planning.**
     Wire micro_polls_enabled (+ symmetric quizEnabled) end-to-end from tenant store to production
     SDK snippet — DetectWizard/DetectionPreview call site supplies neither flag; no dashboard
     re-emission surface (Rule L + Rule S)
-  agent: backend-engineer + sdk-engineer
-  status: READY
+  agent: backend-engineer (Phase 1) + sdk-engineer (Phase 2)
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer + sdk-engineer
+  started_at: '2026-06-11T22:00:00Z'
+  completed_at: '2026-06-12T00:00:00Z'
   priority: P1
   estimated_hours: 6
   depends_on: []
@@ -4163,14 +4167,16 @@ planning.**
     Rule S)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-275 stub)
   adr: docs/adr/ADR-0011-quiz-config-transport.md (ACCEPTED, PR #269 merged 2026-06-11)
+  pr_phase1: '#270'
+  pr_phase2: '#271'
+  ci_status: green (both phases)
   notes: |
-    ADR-0011 ACCEPTED (PR #269 merged by CTO Rafał 2026-06-11). Architecture: SDK fetches
-    GET /api/quiz/public-config at init time (API-key auth, CORS-open, 5-min TTL cache).
-    Backend: new route + QuizPublicConfigResponseSchema in packages/shared. SDK: fetchQuizConfig()
-    in packages/sdk/src/core/, wired before quiz/micro-poll schedulers fire. DetectWizard
-    call-site fix + docstring corrections (tenants.ts:42-46, DetectionPreview.tsx:135/208).
-    See backlog/HANDOFFS.md for per-agent implementation brief.
-    Sequence before TICKET-PILOT-001 dashboard-quiz-disable path + before FOLLOW-199.
+    Phase 1 (backend-engineer, PR #270): GET /api/quiz/public-config route, QuizPublicConfigResponseSchema,
+    buildSnippet() retired attrs, docstring corrections. CI green.
+    Phase 2 (sdk-engineer, PR #271): fetchQuizConfig() in packages/sdk/src/core/quiz-config.ts,
+    wired into init() before quiz/micro-poll schedulers, mergeQuizConfig(), readConfig() dataset
+    attrs retired, Rule R rehydrate gate, 20 new tests. CI green.
+    Both PRs must merge together or in order (Phase 1 first).
 ```
 
 ## Currently in flight

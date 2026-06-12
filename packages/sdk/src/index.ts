@@ -15,6 +15,8 @@ import type { SdkConfig } from './core/config.js';
 import { fetchQuizConfig, eraseCachedQuizConfig } from './core/quiz-config.js';
 import type { QuizPublicConfigResponse } from '@estalara/shared';
 import { dispatchEvents, collectPageView } from './core/events.js';
+import { emitIntentSnapshot } from './core/intent-snapshot.js';
+import type { IntentSnapshotContext } from './core/intent-snapshot.js';
 import { scrubMessagePii } from './core/pii-scrub.js';
 import {
   getOrCreateSession,
@@ -580,6 +582,17 @@ async function init(): Promise<IntentState | null> {
     // FOLLOW-201: also used for drift detection inside refreshDirectives().
     const signalHistory: { eventType: string; payload?: Record<string, unknown> }[] = [];
 
+    // K.3.6 FOLLOW-266 Phase 3 — intent.snapshot emission context.
+    // A mutable object so quizCompleted / quizLeaf / chatTurns can be updated in-place
+    // by the quiz, micro-poll, and chat-message callbacks below without redeclaring.
+    // Per-instance (not module-level) to satisfy RETRO-006 LG-2.
+    const snapshotCtx: IntentSnapshotContext = {
+      eventQueue,
+      chatTurns: 0,
+      quizCompleted: false,
+      quizLeaf: null,
+    };
+
     function stopDwellTimer(): void {
       if (dwellTimer !== null) {
         clearInterval(dwellTimer);
@@ -859,6 +872,17 @@ async function init(): Promise<IntentState | null> {
           void refreshDirectives();
         }
 
+        // K.3.6 FOLLOW-266 Phase 3: emit intent.snapshot every 5 behavioral signals.
+        // Fire-and-forget — emitIntentSnapshot is synchronous (queue push only).
+        // Condition: signal_count crossed a 5-multiple boundary on THIS signal.
+        if (
+          currentIntentState.signal_count > prevSignalCount &&
+          currentIntentState.signal_count % 5 === 0 &&
+          currentIntentState.signal_count > 0
+        ) {
+          emitIntentSnapshot(currentIntentState, snapshotCtx);
+        }
+
         // listing.viewed signal no longer drives the quiz trigger (FOLLOW-199).
         // The quiz is now scheduled via a 30s setTimeout after SDK init (see below).
       },
@@ -892,6 +916,10 @@ async function init(): Promise<IntentState | null> {
               // Apply v2 quiz leaf result to intent state (applyQuizLeaf — FOLLOW-199).
               // Note: full mismatch detection wiring is FOLLOW-201.
               quizCompletedThisSession = true;
+              // K.3.6 FOLLOW-266: update snapshot context so intent.snapshot payloads
+              // reflect quiz completion state on the next 5-signal boundary or beforeunload.
+              snapshotCtx.quizCompleted = true;
+              snapshotCtx.quizLeaf = resolvedArchetype;
               currentIntentState = applyQuizLeaf(currentIntentState, resolvedArchetype);
               onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
               if (config.debug) {
@@ -1093,6 +1121,8 @@ async function init(): Promise<IntentState | null> {
         // F-29 (FOLLOW-258): scrub PII (email/phone) before storing in ClickHouse.
         const rawMessage = typeof ce.detail.message === 'string' ? ce.detail.message : '';
         if (rawMessage.length === 0) return;
+        // K.3.6 FOLLOW-266: count buyer chat turns for intent.snapshot payload.
+        snapshotCtx.chatTurns += 1;
         eventQueue.push({
           type: 'chat.message.sent',
           payload: {
@@ -1240,9 +1270,15 @@ async function init(): Promise<IntentState | null> {
       }
     });
 
-    window.addEventListener('beforeunload', () => {
+    // K.3.6 FOLLOW-266 Phase 3: emit a final intent.snapshot on beforeunload so the
+    // ingest pipeline always receives the session-end archetype state.
+    // The handler is stored so it can be removed in destroy() / teardown — avoids a
+    // memory leak on SPA navigations where destroy() is called without a page reload.
+    function handleBeforeUnload(): void {
+      emitIntentSnapshot(currentIntentState, snapshotCtx);
       handleSessionEnd();
-    });
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
     if (config.debug) {
       console.log(`[Estalara] SDK ${SDK_VERSION} initialized`, {
@@ -1261,6 +1297,9 @@ async function init(): Promise<IntentState | null> {
       sidebar?.destroy();
       shadowHost?.destroy();
       dqsTracker.reset();
+      // K.3.6 FOLLOW-266: remove the beforeunload listener to avoid a memory leak on
+      // SPA navigations where destroy() is called without an actual page unload.
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
 
     // Return the final resolved intent state (used only by _initForTest seam).

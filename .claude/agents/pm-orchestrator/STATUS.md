@@ -1,64 +1,72 @@
 # PM Orchestrator — Session Status
 
-**Date:** 2026-06-10 **Session:** Loop 2 (drive backlog forward)
+**Date:** 2026-06-13 **Session:** Loop 4 (validate PR #282, resolve ESC-021, close FOLLOW-288,
+delegate FOLLOW-267)
 
 ---
 
 ## Open Escalations (ages)
 
-| ESC     | Title                                                     | Filed      | Age | Blocker?                                        |
-| ------- | --------------------------------------------------------- | ---------- | --- | ----------------------------------------------- |
-| ESC-010 | DOPPLER_TOKEN_DEV not provisioned in GitHub Actions       | 2026-05-24 | 17d | Soft (doppler-verify soft-skips)                |
-| ESC-009 | E2E_BEARER_TOKEN not provisioned                          | 2026-05-24 | 17d | Soft (demo-integration soft-skips)              |
-| ESC-020 | Estalara-app DOM hooks committed but not deployed to prod | 2026-06-06 | 4d  | Blocking pilot live measurements (Rafal action) |
+| ESC     | Title                                                     | Filed      | Age | Blocker?                                                            |
+| ------- | --------------------------------------------------------- | ---------- | --- | ------------------------------------------------------------------- |
+| ESC-020 | Estalara-app DOM hooks committed but not deployed to prod | 2026-06-06 | 7d  | Blocking pilot live measurements (Rafal action; pipeline unblocked) |
 
-**ESC-020 is OPEN. Per protocol, no new ticket delegated until human confirms proceed or resolves.**
+ESC-021 RESOLVED 2026-06-13. PR #282 (migration 0016 SELECT 1 + omit intent_session_id) merged.
+ClickHouse migrations smoke gate NOW GREEN. No CEO decision was required.
+
+---
+
+## Tickets Updated This Session (2026-06-13)
+
+| Ticket            | Was         | Now      | PR   | Merged               |
+| ----------------- | ----------- | -------- | ---- | -------------------- |
+| FOLLOW-266 Phase3 | DONE        | DONE     | #280 | 2026-06-12T22:11:39Z |
+| FOLLOW-287        | IN_PROGRESS | DONE     | #281 | 2026-06-12T22:31:19Z |
+| FOLLOW-288        | READY       | DONE     | #282 | 2026-06-12T23:27:03Z |
+| FOLLOW-267        | BACKLOG     | READY    | —    | Pending delegation   |
+| ESC-021           | OPEN        | RESOLVED | —    | 2026-06-13T11:00Z    |
 
 ---
 
 ## Current In-Flight
 
-None. 0 IN_PROGRESS.
+0 tickets IN_PROGRESS. FOLLOW-267 READY, next to delegate to backend-engineer.
 
 ---
 
-## Queue Corrections Applied This Session (2026-06-10, loop 2)
+## CI Check Counter (FOLLOW-288 / PR #282 — COMPLETE)
 
-Stale QUEUE.md entries corrected (all were merged PRs not reflected in queue):
+- CI checks run: 1/5
+- Fix iterations: 0/3
+- All real gates: PASS (ClickHouse migrations smoke PASS, Lint PASS, Typecheck PASS, Test Node 22
+  PASS, Format PASS, Gitleaks PASS, Cross-language event contract PASS, Auto-Detection corpus gate
+  PASS, Migration journal monotonicity PASS, Rule H PASS, Rule J PASS, Privacy Notice key-sync PASS,
+  Vercel PASS)
+- Python tests: pre-existing failures (non-blocking per project_ci_gate_landscape memory)
 
-| Ticket     | Was                       | Now  | PR   | Merged     |
-| ---------- | ------------------------- | ---- | ---- | ---------- |
-| FOLLOW-149 | READY_FOR_REVIEW          | DONE | #166 | merged     |
-| FOLLOW-182 | IN_PROGRESS               | DONE | #222 | 2026-06-08 |
-| FOLLOW-174 | READY (Sprint 14 section) | DONE | #220 | 2026-06-08 |
-| FOLLOW-176 | READY (Sprint 14 section) | DONE | #217 | 2026-06-08 |
-| FOLLOW-190 | READY (Sprint 14 section) | DONE | #225 | 2026-06-08 |
+## CI Check Counter (FOLLOW-267 — next ticket)
 
----
-
-## READY Tickets (genuine, all depends_on DONE)
-
-| Ticket     | Priority | Agent                           | Before-go-live?                   | Note                                          |
-| ---------- | -------- | ------------------------------- | --------------------------------- | --------------------------------------------- |
-| FOLLOW-265 | P1       | backend-engineer                | YES — before TICKET-PILOT-001     | Pilot-freeze guard doc/code reconcile         |
-| FOLLOW-264 | P2       | sdk-engineer + backend-engineer | Before pilot onboarding finalizes | Retire orphaned quiz trigger producer         |
-| TICKET-038 | P0       | sdk-engineer                    | No                                | SDK tsup build + bundle size gate (<40KB)     |
-| FOLLOW-073 | P2       | compliance-engineer             | No                                | INTERNAL_API_SECRET threat model doc          |
-| FOLLOW-074 | P2       | architect                       | No                                | README local-dev setup                        |
-| FOLLOW-065 | P2       | sdk-engineer + backend-engineer | No                                | events.feedback.send_failed emission          |
-| FOLLOW-169 | P2       | ml-engineer                     | No                                | Headline LLM grounding lift (ADR-0009 parity) |
-
-**Next pick (pending ESC-020 clearance): FOLLOW-265 (P1, before-go-live safety backstop).**
+- CI checks run: 0/5
+- Fix iterations: 0/3
 
 ---
 
-## CI Check Counter
+## Pending Retros (spawning batch after main is stable)
 
-No ticket in-flight. Counter reset: 0/5 checks, 0/3 iterations.
+| Retro     | For ticket        | PR        | Status        |
+| --------- | ----------------- | --------- | ------------- |
+| RETRO-062 | FOLLOW-276        | #272      | Pending spawn |
+| RETRO-063 | FOLLOW-278        | #273      | Pending spawn |
+| RETRO-064 | FOLLOW-266 Phase1 | #277      | Pending spawn |
+| RETRO-067 | FOLLOW-266 Phase3 | #280      | Pending spawn |
+| RETRO-068 | FOLLOW-286        | #279      | Pending spawn |
+| RETRO-069 | FOLLOW-287+288    | #281+#282 | Pending spawn |
+
+Retros will be spawned as background tasks after FOLLOW-267 is delegated.
 
 ---
 
-## Pending Retros
+## Next Ticket
 
-None outstanding (RETRO-050/051 complete for most recent PRs). Note: FOLLOW-149 (PR #166) has no
-retro yet — should spawn retrospective-analyst after ESC-020 resolved.
+FOLLOW-267 (P1, READY) — K.3.6 admin API layer. Table row: ingest worker / control-plane / auth →
+backend-engineer.

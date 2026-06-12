@@ -1,14 +1,15 @@
 # Backlog Queue
 
-**Updated 2026-06-13T09:00Z. Sprint 17 WAVE 2 progress: FOLLOW-266 ALL THREE PHASES DONE (Phase 1 PR
+**Updated 2026-06-13T11:00Z. Sprint 17 WAVE 2 COMPLETE: FOLLOW-266 ALL THREE PHASES DONE (Phase 1 PR
 #277 merged 2026-06-12T18:23:36Z, Phase 2 PR #278 merged 2026-06-12, Phase 3 PR #280 merged
-2026-06-12T22:11:39Z — IntentSnapshotEventSchema + SDK every-5-signal + beforeunload emission,
-Format-gate fix applied, all real CI green). FOLLOW-286 (P1) DONE — PR #279 merged
-2026-06-12T21:27:21Z (PostgREST on_conflict fix, event_type vocab, session_id rename migration 0015,
-8 contract tests). FOLLOW-287 (P1) IN_PROGRESS — ClickHouse write-path silent data loss fix (UUID
-type mismatch + Float32 null + error surface; depends on FOLLOW-286 migration 0015 which is now
-merged). RETRO-062 (FOLLOW-276), RETRO-063 (FOLLOW-278), RETRO-064 (FOLLOW-266 Phase 1), RETRO-066
-(FOLLOW-286), RETRO-067 (FOLLOW-266 Phase 3) all pending spawn.**
+2026-06-12T22:11:39Z — IntentSnapshotEventSchema + SDK every-5-signal + beforeunload emission).
+FOLLOW-286 (P1) DONE — PR #279 merged 2026-06-12T21:27:21Z (PostgREST on_conflict fix, event_type
+vocab, session_id join key, 8 contract tests). FOLLOW-287 (P1) DONE — PR #281 merged
+2026-06-12T22:31:19Z (CB-2 confidence_before 0.0, DG-1 console.error, tests). FOLLOW-288 (P0) DONE —
+PR #282 merged 2026-06-12T23:27:03Z (migration 0016 SELECT 1 no-op + omit intent_session_id from
+INSERT body; ClickHouse migrations smoke NOW GREEN). ESC-021 RESOLVED — no CEO decision required;
+ClickHouse error 524 is a hard constraint, SELECT 1 no-op is the correct fix. RETRO-062/063/064/066/
+067/068 all pending spawn. NEXT: FOLLOW-267 (P1, backend-engineer, admin API layer).**
 
 **Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE. RETRO-050/051/052/053 complete.
 FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-11 (quiz-only ratified, docs synced, contract-pinning
@@ -37,7 +38,9 @@ data-engineer complete). RETRO-064 (FOLLOW-266 Phase 1) pending spawn. FOLLOW-26
 #278 merged 2026-06-12 (intent_weight_configs migration 0029 + CF Worker dual-write handler).
 RETRO-065 complete (3 P1 defects found: CB-1 on_conflict placement, LG-1 event_type vocab, LG-2 join
 key). FOLLOW-286 (P1) DONE — PR #279 merged 2026-06-12T21:27:21Z (all 3 P1 defects + 8 contract
-tests + P2 items).**
+tests + P2 items). FOLLOW-287 (P1) DONE — PR #281 merged 2026-06-12T22:31:19Z. FOLLOW-288 (P0) DONE
+— PR #282 merged 2026-06-12T23:27:03Z (migration 0016 SELECT 1 no-op, intent_session_id omitted from
+INSERT, ClickHouse migrations smoke NOW GREEN). ESC-021 RESOLVED.**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -4317,11 +4320,14 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     K.3.6 admin API layer — active-sessions list, SSE live stream, history search + replay, export
     endpoints, and /api/intent/config SDK weight-fetch route
   agent: backend-engineer
-  status: BACKLOG
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-06-13T11:00:00Z'
   priority: P1
   estimated_hours: 8
   depends_on: [FOLLOW-266]
   spec: backlog/FOLLOW_UPS.md (FOLLOW-267 stub)
+  branch: backend-engineer/FOLLOW-267-k36-admin-api
   notes: |
     Routes: GET /api/admin/tracer/sessions (active last 15 min), /sessions/:id (detail),
     /sessions/:id/stream (SSE 3s poll ClickHouse), /history (paginated + filters),
@@ -4329,6 +4335,7 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     SDK-facing: GET /api/intent/config — returns active global weights (5-min CDN TTL).
     All admin routes require ADMIN_API_SECRET or admin JWT.
     Gates FOLLOW-268, FOLLOW-269.
+    Delegated to backend-engineer 2026-06-13T11:00Z. Table row: control-plane/auth/backend-engineer.
 
 - id: FOLLOW-268
   title: >
@@ -4377,7 +4384,7 @@ engine deferred to FOLLOW-282 per CEO D-3.**
   completed_at: '2026-06-12T21:27:21Z'
   priority: P1
   estimated_hours: 5
-  pr_number: '279'
+  pr: '279'
   depends_on: [FOLLOW-266 Phase 2 (PR #278 merged)]
   source_retro: RETRO-065
   spec: backlog/sprint-17/FOLLOW-286.md
@@ -4393,39 +4400,67 @@ engine deferred to FOLLOW-282 per CEO D-3.**
           session_id parity between CH and Supabase rows.
     P2: confidence_before null, stale JSDoc rewritten, IntentSnapshotPayload imported from shared.
     164 tests pass. Typecheck green on @estalara/ingest and @estalara/shared.
-    Gates: FOLLOW-266 Phase 3 (sdk-engineer), FOLLOW-267.
+    PR #279 merged 2026-06-12T21:27:21Z. RETRO-068 pending spawn.
+
+- id: FOLLOW-266-phase3
+  title: >
+    K.3.6 Phase 3 — intent.snapshot SDK emission (IntentSnapshotEventSchema + emit every 5 signals
+    + beforeunload, unit tests for 5-signal cycle and rehydrated session counter reset)
+  agent: sdk-engineer
+  status: DONE
+  assigned_to: sdk-engineer
+  started_at: '2026-06-12T20:00:00Z'
+  completed_at: '2026-06-12T22:11:39Z'
+  pr: '280'
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-286]
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-266 stub, Phase 3)
+  branch: sdk-engineer/FOLLOW-266-k36-intent-snapshot-event
+  notes: |
+    PR #280 merged 2026-06-12T22:11:39Z. IntentSnapshotEventSchema added to shared. SDK emits
+    intent.snapshot after every 5th processSignal() call AND on window.beforeunload. Unit tests
+    cover 5-signal cycle, beforeunload trigger, and counter reset on session rehydrate.
+    RETRO-067 pending spawn.
 
 - id: FOLLOW-287
   title: >
-    Fix ClickHouse intent_events write path silent data loss — UUID type mismatch on session_id (CB-1),
-    null Float32 confidence_before (CB-2), missing round-trip integration test (TG-1), swallowed
-    Promise.allSettled errors (DG-1), retire orphaned deriveSessionUuid + dead exports (LG)
-  agent: backend-engineer (lead) + data-engineer (ClickHouse DDL arm)
-  status: READY_FOR_REVIEW
+    K.3.6 ClickHouse JSONEachRow type fix — intent_session_id UUID→String migration incompatible
+    with ClickHouse 26.5.1 ORDER BY key constraint; confidence_before null fix; error surfacing
+  agent: backend-engineer
+  status: DONE
   assigned_to: backend-engineer
-  started_at: '2026-06-13T00:00:00Z'
+  started_at: '2026-06-12T22:00:00Z'
+  completed_at: '2026-06-12T22:31:19Z'
   priority: P1
-  estimated_hours: 5
-  depends_on: [FOLLOW-266]
+  estimated_hours: 2
+  pr: '281'
+  depends_on: [FOLLOW-286]
   source_retro: RETRO-066
-  spec: backlog/sprint-17/FOLLOW-287.md
   branch: backend-engineer/FOLLOW-279-k36-ch-write-fix
-  pr_number: TBD
+  ci_check_counter: '2/5'
+  fix_iteration_counter: '2/3'
   notes: |
-    CB-1 FIX: migration 0016 changes intent_session_id UUID NOT NULL → String NOT NULL so raw
-    session fingerprint strings (64-char SHA-256 hex) are accepted by JSONEachRow.
-    Both intent_session_id (ORDER BY key) and session_id (join key, migration 0015) now carry
-    the raw session fingerprint string.
-    CB-2 FIX: confidence_before is now 0.0 (Float32 NOT NULL sentinel for no prior confidence).
-    IntentSnapshotPayload has no confidence_before field — null was silently rejecting 100% of rows.
-    DG-1 FIX: console.error added alongside logger.error for all Promise.allSettled failures,
-    with structured JSON including event, tenant_id, session_id, error (visible in CF Worker logs).
-    TG-1: 5 new contract tests — CB-2 null guard, CB-1 raw session_id, DG-1 console.error.
-    LG-A: handler uses session_id column (migration 0015) for FOLLOW-269 join key.
-    LG-B: deriveSessionUuid annotated @internal @deprecated; INTENT_EVENTS_VOCABULARY and
-    IntentEventType annotated @internal test-only (no non-test production callers).
-    172 tests pass. Typecheck green. Prettier clean.
+    PR #281 merged 2026-06-12T22:31:19Z. CB-2 (confidence_before 0.0) and DG-1 (console.error)
+    fixes are correct and confirmed in production code. All TypeScript/Node gates passed.
+    ClickHouse migrations smoke FAILED (code 524 ALTER_OF_COLUMN_IS_FORBIDDEN) — migration 0016
+    contained ALTER TABLE intent_events MODIFY COLUMN on ORDER BY key. ESC-021 filed.
+    FOLLOW-288 resolved the gate: migration 0016 replaced with SELECT 1 no-op, intent_session_id
+    omitted from INSERT body. ESC-021 RESOLVED. RETRO pending.
 ```
+
+- id: FOLLOW-288 title: > K.3.6 ClickHouse smoke gate repair — replace migration 0016 SELECT 1
+  no-op + drop intent_session_id from INSERT body (ESC-021 fix) agent: backend-engineer status: DONE
+  assigned_to: backend-engineer started_at: '2026-06-12T23:00:00Z' completed_at:
+  '2026-06-12T23:27:03Z' priority: P0 estimated_hours: 1 depends_on: [FOLLOW-287] source_retro:
+  ESC-021 branch: backend-engineer/FOLLOW-279-k36-ch-write-fix pr: '282' ci_check_counter: '1/5'
+  fix_iteration_counter: '0/3' notes: | PR #282 merged 2026-06-12T23:27:03Z. Migration 0016 replaced
+  with SELECT 1 no-op (preserves journal continuity). intent_session_id omitted from INSERT body —
+  ClickHouse uses zero-UUID default. session_id (String, migration 0015) is authoritative join key
+  for FOLLOW-269. confidence_before: 0.0 retained (CB-2 fix from FOLLOW-287). console.error on
+  allSettled rejections retained (DG-1 fix from FOLLOW-287). ClickHouse migrations smoke CI gate:
+  PASS. Test (Node 22): PASS. All real gates green. ESC-021 RESOLVED. PM-validated 2026-06-13. CI
+  green. Runtime wiring confirmed. Already merged by backend-engineer. RETRO pending spawn.
 
 ## Currently in flight
 

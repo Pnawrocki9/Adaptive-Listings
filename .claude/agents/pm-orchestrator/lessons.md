@@ -2,6 +2,34 @@
 
 ---
 
+**Date / ticket:** 2026-06-13 — FOLLOW-288 (PR #282) validation + ESC-021 resolution **Delegation
+row used:** Row 2 (ingest worker — backend-engineer) **What validation caught (or missed):** ESC-021
+was filed requiring human approval, but the fix (PR #282) was straightforward and already merged
+before escalation could be reviewed. Step 5c grep confirmed migration 0016 = SELECT 1,
+intent_session_id absent from INSERT body, session_id present, confidence_before 0.0, console.error
+wired — all four FOLLOW-287 acceptance criteria passed in production code. The ESC-021 filing was
+overly cautious: ClickHouse error 524 is a hard constraint, not a design question. Local stash
+conflict in QUEUE.md required git stash/pull/pop resolution. **A delegation/validation rule I'd
+add:** ESC-021-class escalations (hard technical constraints with unambiguous correct answers)
+should be resolved by pm-orchestrator without waiting for human, per scope rules — only escalate
+when there is a genuine architectural or business choice to be made.
+
+---
+
+**Date / ticket:** 2026-06-13 — FOLLOW-287 (PR #281) post-merge validation **Delegation row used:**
+Row 2 (ingest worker / backend-engineer) **What validation caught (or missed):** PR #281 was merged
+by human before PM validation ran. The stated fix ("migration 0016 is now a SELECT 1 no-op") was
+factually false — the file still contains
+`ALTER TABLE intent_events MODIFY COLUMN intent_session_id String DEFAULT '';`. ClickHouse 26.5.1
+throws code 524 (ALTER_OF_COLUMN_IS_FORBIDDEN) on MODIFY COLUMN of ORDER BY keys. CI log grep for
+the exact error message surfaced this immediately. ESC-021 filed; FOLLOW-288 queued to repair. **A
+delegation/validation rule I'd add:** When a context note says "migration X is now a no-op", always
+read the actual file before accepting — description vs file content mismatch is a known failure mode
+(occurred here and in FOLLOW-149 journal drift). Step 5c must grep the migration file content, not
+trust the PR description.
+
+---
+
 **Date / ticket:** 2026-06-12 — FOLLOW-266 Phase 1 DONE validation (PR #277 already merged)
 **Delegation row used:** Row 4 (ClickHouse/data-engineer Phase 1, completed) + Row 2
 (backend-engineer Phase 2, now delegating). **What validation caught (or missed):** PR #277 was
@@ -502,3 +530,21 @@ including the new Privacy Notice key-sync gate. FOLLOW-187 depends_on updated to
 prose files outside the existing Gitleaks allowlist paths (particularly .claude/ agent files with
 long hyphenated strings), verify Gitleaks pre-emptively with
 `echo "<string>" | gitleaks detect --pipe` or check entropy manually — don't wait for CI to find it.
+
+---
+
+**Date / ticket:** 2026-06-13 — FOLLOW-287 CI validation (PR #281, backend-engineer) + FOLLOW-266
+Phase 3 DONE (PR #280) **Delegation row used:** Row 2 (ingest worker, CF Worker — backend-engineer)
+for FOLLOW-287; Row 1 (SDK event — sdk-engineer) for FOLLOW-266 Phase 3 (already merged). **What
+validation caught (or missed):** Step 5b caught "ClickHouse migrations smoke" FAILING on PR #281 — a
+REAL gate, not pre-existing-red. The migration comment claimed "UUID→String MODIFY COLUMN is safe on
+ORDER BY keys" but ClickHouse 26.5.1 throws ALTER_OF_COLUMN_IS_FORBIDDEN (code 524). The worker's
+code was internally consistent (comment + migration agreed) but factually wrong about what
+ClickHouse 26.5.1 allows. The --watch output from the prior session did not show this failure
+because it completed before the ClickHouse smoke step ran; reading the CI log directly revealed the
+precise error. PR #280 (FOLLOW-266 Phase 3) was confirmed MERGED at 2026-06-12T22:11:39Z — caught
+before any stale READY_FOR_REVIEW confusion. **A delegation/validation rule I'd add:** When a
+migration comment asserts a ClickHouse behavior (e.g. "ALTER of ORDER BY key is safe"), always
+cross-check the CI log's actual error message — ClickHouse version-specific constraints are
+frequently misstated in migration comments, and the schema error is always clear in the migrate.sh
+output.

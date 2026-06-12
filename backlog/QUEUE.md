@@ -22,9 +22,9 @@ promoted to Sprint 17 planning. Sprint 17 OPEN — FOLLOW-274 PM-VALIDATED READY
 real CI gates green; SDK bundle bloat pre-existing on main), FOLLOW-273 PM-VALIDATED
 READY_FOR_REVIEW (PR #268, real CI gates green; SDK bundle bloat pre-existing on main), FOLLOW-272
 READY (P3, ml-engineer). RETRO-057 complete: micro_polls_enabled is still P1 HALF_WIRE in prod
-(DetectWizard.tsx:259 never passes the flag). ADR-0011 ACCEPTED (PR #269 merged by CTO Rafał
-2026-06-11) — FOLLOW-275 READY_FOR_REVIEW (PR #270 Phase 1 backend, PR #271 Phase 2 SDK; both CI
-green). Merge Phase 1 first, then Phase 2.**
+(DetectWizard.tsx:259 never passes the flag). ADR-0011 ACCEPTED (PR #269), FOLLOW-275 DONE (PR
+#270 + #271 merged 2026-06-12, RETRO-058 complete — first true closure of the 8-retro quiz_config
+lineage). FOLLOW-276 (P1) + FOLLOW-277/278 (P2) promoted to Sprint 17. FOLLOW-272 (P3) READY.**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -164,8 +164,8 @@ CRM docs, micro-poll Wave 2 | 17 | 16 | 0 | 1 | 0 | | Wave A | — | Bug fix clu
 (FOLLOW-258), cross-tenant auth (FOLLOW-260), SQL injection (FOLLOW-261), feedback ping
 (FOLLOW-259), lifecycle (FOLLOW-262) | 5 | 5 | 0 | 0 | 0 | | 17 | 19 | quiz_config blob cleanup
 (FOLLOW-274), SDK locale enum alignment (FOLLOW-273), headline fact-check tightening (FOLLOW-272),
-micro_polls wire end-to-end (FOLLOW-275) + Archetype Identification Tracer (FOLLOW-266–269) | 4 | 0
-| 0 | 4 | 0 |
+micro_polls wire (FOLLOW-275 DONE) + docs/fallback/locale fixes (FOLLOW-276/277/278) + Tracer
+(FOLLOW-266–269) | 7 | 1 | 0 | 5 | 0 |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -4155,10 +4155,10 @@ planning.**
     SDK snippet — DetectWizard/DetectionPreview call site supplies neither flag; no dashboard
     re-emission surface (Rule L + Rule S)
   agent: backend-engineer (Phase 1) + sdk-engineer (Phase 2)
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer + sdk-engineer
   started_at: '2026-06-11T22:00:00Z'
-  completed_at: '2026-06-12T00:00:00Z'
+  completed_at: '2026-06-12T05:13:50Z'
   priority: P1
   estimated_hours: 6
   depends_on: []
@@ -4177,6 +4177,48 @@ planning.**
     wired into init() before quiz/micro-poll schedulers, mergeQuizConfig(), readConfig() dataset
     attrs retired, Rule R rehydrate gate, 20 new tests. CI green.
     Both PRs must merge together or in order (Phase 1 first).
+
+- id: FOLLOW-276
+  title:
+    sweep + correct 4 stale buildSnippet/data-micro-polls-enabled docstrings made false by ADR-0011
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 1
+  depends_on: []
+  source_retro: RETRO-058 (§4d DG-1 P1)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-276 stub)
+  notes: |
+    4 docstrings in files outside the FOLLOW-275 diff still assert the retired
+    buildSnippet-attribute transport. One is user-facing (page.tsx:252). Trivial sweep.
+
+- id: FOLLOW-277
+  title: wire data_source fallback signal (HALF_WIRE_C) + fix auth-path DB-throw hard-500
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source_retro: RETRO-058 (§3 CHECK B; §4b CB-1 P2; §4c TG-2 P2)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-277 stub)
+  notes: |
+    Route emits data_source:'fallback' but QuizPublicConfigResponseSchema omits it —
+    SDK silently drops it (HALF_WIRE_C). Auth-path DB throw hard-500s against fail-soft contract.
+
+- id: FOLLOW-278
+  title:
+    consent-banner locale/accent gap + locale render-hop test (server-fetched language reaches quiz
+    but not consent banner)
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source_retro: RETRO-058 (§4a LG-1 P2; §4c TG-1 P2)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-278 stub)
+  notes: |
+    mergeQuizConfig() runs after consent banner renders — banner gets snippet language,
+    quiz/widget get server language. Add locale render-hop test per Rule L.
 ```
 
 ## Currently in flight

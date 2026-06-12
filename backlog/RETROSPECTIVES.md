@@ -14958,3 +14958,402 @@ consumer):**
   consumer + a real feature (FOLLOW-209) exist).
 - **RETRO-049/050/051/052/053/055/056 — the `tenants.quiz_config` lineage (now EIGHT retros).** The
   blob-content decay is closed (Rule-U-clean); this retro opens the snippet-delivery axis of the same blob.
+
+## RETRO-058 — FOLLOW-275 (Wire `micro_polls_enabled` + `quizEnabled` end-to-end via SDK runtime GET — ADR-0011 path (ii): new `GET /api/quiz/public-config` route + SDK `fetchQuizConfig()`; RETRO-057's snippet-delivery gap is GENUINELY closed end-to-end — producer→consumer→render verified — by switching transport from snippet data-attrs to a runtime fetch; but stale "buildSnippet emits data-micro-polls-enabled" docstrings survive in four files, and the server `language`/`accent_color` reach the quiz surfaces but NOT the consent banner) — 2026-06-12
+
+### 1. Summary of change
+
+- **PR:** #270 (Phase 1, backend; merged 2026-06-12 05:13:47 UTC, commit `0b653c3`) + #271 (Phase 2,
+  SDK; merged 2026-06-12 05:13:50 UTC, commit `913a5e3`). Two PRs, one ticket; Phase 1 first.
+  (PR #271's `files` list re-shows the Phase-1 files because it was cut from the post-#270 branch;
+  the Phase-2-only delta is the `packages/sdk/*` files + `packages/shared/src/schemas/quiz-config.ts`.)
+- **Files changed:** Phase 1 — 7 (+655 / −152); Phase 2 net-new — `packages/sdk/src/core/quiz-config.ts`
+  (+165), `packages/sdk/src/index.ts` (+63/−1), `packages/sdk/src/core/config.ts` (+38/−22),
+  `packages/sdk/src/__tests__/follow-275.test.ts` (+521), `packages/shared/src/schemas/quiz-config.ts`
+  (+34), `packages/db/src/schema/tenants.ts` docstring (+13/−5).
+- **Modules touched:** [control-plane (new public route + onboarding `DetectionPreview`/`DetectWizard`),
+  shared (`quiz-config.ts` — `QuizLanguageSchema` + `QuizPublicConfigResponseSchema` + type), sdk
+  (new `core/quiz-config.ts`, `index.ts` init wiring + `mergeQuizConfig`, `core/config.ts` retire
+  primary dataset reads), db (schema docstring), tests, QUEUE.md].
+- **Key contracts changed:**
+  - `GET /api/quiz/public-config` — NEW route (`route.ts`) — API-key (Bearer) auth, CORS `*`,
+    `Cache-Control: max-age=300, swr=60`, returns `{ quiz_enabled, micro_polls_enabled, language,
+    accent_color }` — breaking: no (additive new route).
+  - `QuizPublicConfigResponseSchema` / `QuizPublicConfigResponse` / `QuizLanguageSchema` — ADDED to
+    `@estalara/shared` (`quiz-config.ts:46,122,130`) — breaking: no (additive).
+  - `buildSnippet(...)` — signature NARROWED from 5 args to 3 (`quizEnabled`, `microPollsEnabled`
+    params REMOVED; `DetectionPreview.tsx:140`) — breaking: yes for any caller passing 4th/5th arg,
+    but the sole non-test caller (`DetectionPreview.tsx`) is updated in the same PR and the props are
+    retained as `@deprecated` dead optionals on `DetectionPreviewProps` so external callers still
+    typecheck.
+  - `mergeQuizConfig(config, fetched)` — NEW exported helper (`index.ts:92`) — additive.
+  - `fetchQuizConfig(decisionApiUrl, apiKey, intentStateRehydrated, timeoutMs=1000)` — NEW
+    (`core/quiz-config.ts:102`) — additive.
+  - `readConfig()` — STOPS reading `dataset.quizEnabled`/`dataset.microPollsEnabled` as primary
+    source; both retained as `DEPRECATED_FALLBACK` (used only when the fetch returns null) — behavior
+    change, not signature change.
+
+### 2. Verification done in PR
+
+- Test files changed: Phase 1 — `route.test.ts` (+263, 9 tests), `DetectionPreview.test.tsx`
+  (+23/−104, rewrote FOLLOW-102/274 attr suites into "ADR-0011 retired attrs" assertions). Phase 2 —
+  `follow-275.test.ts` (+521, 20 tests across AC1/AC3/AC4/Rule-L/Rule-R blocks). Assertions added:
+  ~40+. Coverage delta: unknown (not reported on the wire; PR bodies claim 931 control-plane tests
+  and 1314 SDK tests green).
+- CI checks: passed per both PR bodies (prettier, `tsc --noEmit` per package, vitest, `check-rule-h.sh`,
+  `check-rule-i.sh` — 158 pre-existing violations / 0 new, pre-push lefthook rule-h/rule-j). 0/5 CI
+  retries, 0/3 fix iterations on each. Not independently re-run by this retro.
+
+### 3. Wiring Audit
+
+**CHECK A — Dead code (every new file/export has ≥1 non-test importer; framework-route entrypoints
+suppressed):**
+
+- `apps/control-plane/src/app/api/quiz/public-config/route.ts` — Next.js App-Router route handler
+  (`GET`/`OPTIONS` exports) — framework-route entrypoint (suppressed); reachable as the SDK's runtime
+  fetch target. NOT dead.
+- `fetchQuizConfig` (`core/quiz-config.ts:102`) — imported + called at `index.ts:15,739`. NOT dead.
+- `mergeQuizConfig` (`index.ts:92`) — called at `index.ts:744` (non-test). NOT dead.
+- `eraseCachedQuizConfig` (`core/quiz-config.ts:78`) — called at `index.ts:265,300` (consent-denied +
+  banner-denied paths). NOT dead.
+- `QuizPublicConfigResponseSchema`/`QuizPublicConfigResponse` (`@estalara/shared`) — non-test
+  consumers: `route.ts:49,261,269` (producer parse) + `core/quiz-config.ts:27,50,150` +
+  `index.ts:16,94` (consumer parse). NOT dead.
+- `QuizLanguageSchema` (`quiz-config.ts:46`) — consumed in-module by `QuizPublicConfigResponseSchema`
+  (`quiz-config.ts:125`) — type-supporting symbol. NOT dead.
+- `QUIZ_CONFIG_CACHE_KEY` (`core/quiz-config.ts:38`) — used by read/write/erase helpers in the same
+  module. NOT dead.
+- **CHECK A clean ✅.**
+
+**CHECK B — Half-wire (every new event/route/field has BOTH a real non-test producer AND consumer):**
+
+- **`GET /api/quiz/public-config` — FULLY WIRED ✅.** PRODUCER: `route.ts` reads `tenants.quiz_enabled`
+  (typed column) + `parseStoredQuizConfig(quiz_config)` and returns the 4-field payload (verified by
+  the AC5 Rule-L producer test that drives the handler with mocked DB rows and asserts
+  `quiz_enabled=false / language=pl / micro_polls_enabled=true` reflect DB, not injected literals).
+  CONSUMER: `fetchQuizConfig()` GETs the route, `safeParse`s, caches; `mergeQuizConfig()` overlays
+  onto `SdkConfig`; the quiz/micro-poll schedulers read the merged config. End-to-end producer →
+  transport → consumer → render confirmed in §7.
+- **`QuizPublicConfigResponseSchema` — single canonical contract on BOTH ends ✅.** The route parses
+  outbound (`route.ts:269`) and the SDK parses inbound (`quiz-config.ts:150`) against the SAME shared
+  Zod schema — no inline redeclaration (Rule G clean).
+- **`data_source: 'fallback'` (degraded-state wire flag) — HALF_WIRE_C (P2) → FOLLOW-277.** The route
+  EMITS `data_source: 'fallback'` on three paths (unconfigured DB `route.ts:205`, auth-DB-throw is
+  actually a hard 500 — see §4b, tenant-fetch-DB-throw `route.ts:288`), but it is NOT in
+  `QuizPublicConfigResponseSchema`, so the SDK's `safeParse()` SUCCEEDS (Zod is non-strict by default
+  and ignores the extra key) and the SDK NEVER reads `data_source`. The degraded signal is produced
+  but has no consumer: the SDK cannot distinguish a real config from a DB-down fallback. Classified
+  HALF_WIRE_C (producer present, consumer absent) — but it degrades safely (the fallback values are
+  valid), so P2 not P0. → FOLLOW-277.
+- **CHECK B — one P2 HALF_WIRE_C (`data_source`); the headline route wire is CLEAN.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, NEW → FOLLOW-278) — server-fetched `language`/`accent_color` reach the quiz surfaces but
+  NOT the consent banner.** `mergeQuizConfig` (`index.ts:99-101`) overlays `language`/`accentColor`
+  onto `config`, and the merge runs at `index.ts:744`. But the consent banner is rendered at the
+  consent gate (`index.ts:276-308`, `renderConsentBanner({ language: config.language, accentColor:
+  config.accentColor })`) which executes BEFORE the fetch (line 276 ≪ 739). The `quizConfig` object
+  (`index.ts:760`) and the sidebar widget (`index.ts:770-771`) ARE built after the merge, so the quiz
+  trigger/widget/sidebar correctly get server values; only the consent banner is stranded on
+  `readConfig()` defaults (or the buyer's snippet `data-language`/`data-accent-color`, which
+  `buildSnippet` also no longer emits — so always defaults). This is ARGUABLY by-design (ADR-0011 §1:
+  the fetch runs "after consent is resolved" — the banner must precede consent resolution, so it
+  cannot consume a post-consent fetch), but it is UNDOCUMENTED and means a `pl`/`es` tenant's consent
+  banner always renders in `en` with the default accent. P2 (a localization/branding miss on the very
+  first surface a buyer sees, not a correctness/data bug). → FOLLOW-278 (document the constraint, OR
+  move the banner-relevant subset of the fetch ahead of the consent gate, OR keep
+  `data-language`/`data-accent-color` snippet emission ONLY for the pre-consent banner).
+- **LG-2 (P3, recorded → folded into FOLLOW-278) — Rule R cache is tenant-bound but key is global per
+  tab; the cache survives an `apiKey` change within a tab.** `QUIZ_CONFIG_CACHE_KEY =
+  'estalara_quiz_config_cache'` (`quiz-config.ts:38`) is a single fixed key, not scoped by `apiKey`
+  or session. The docstring (`quiz-config.ts:34-37`) justifies this ("tenant-scoped, does not change
+  within a tab"), which is correct for the single-tenant-per-tab assumption. The edge case: a tenant
+  who changes their `quiz_config` mid-session sees the change only on the NEXT tab/session (the
+  documented Rule R staleness tradeoff — acceptable). The sharper edge: if two Estalara tenants ever
+  shared one tab (multi-embed, not a supported topology today), the rehydrate gate would serve tenant
+  A's cached config to tenant B. Not reachable in the current single-embed model — recorded P3, no
+  fix required now, but key it by `apiKey` if multi-embed is ever supported.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2, NEW → FOLLOW-277) — the auth-path DB throw returns a hard 500, contradicting the route's
+  own documented fail-soft contract.** `route.ts:491-506`: if `resolveApiKey()` throws (DB error
+  during the `api_keys` lookup), the handler returns `500 { error: 'Internal server error' }`. But
+  the route docstring (`route.ts:303-309`) and the tenant-fetch catch (`route.ts:550-571`) BOTH
+  promise "DB configured but throws → 200 with fallback + `data_source: 'fallback'` (read-only
+  endpoint; hard 500 would block quiz display for all buyers if DB hiccups)." So a DB hiccup during
+  the FIRST query (auth) hard-500s and blocks the quiz, while the SAME hiccup during the SECOND query
+  (tenant fetch) fails soft. Asymmetric fail-mode on one endpoint. SDK impact is mild — `fetchQuizConfig`
+  treats any non-2xx as null and falls back to defaults, so the buyer still gets a working quiz; the
+  bug is that the 500 is NOT the documented behavior and pages Sentry differently than intended. P2
+  (no crash for the buyer; contract/observability inconsistency). → FOLLOW-277.
+- **Otherwise N/A — no shipped correctness/crash defect.** `buildSnippet`'s narrowing is safe (sole
+  caller updated, props kept as dead optionals). `mergeQuizConfig(config, null)` returns the same
+  reference (tested). `fetchQuizConfig` `clearTimeout`s on every exit path. The `let config`
+  reassignment is correctly scoped. The retired `dataset` reads degrade to `DEPRECATED_FALLBACK`
+  safely.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, → FOLLOW-278) — no test asserts server `language`/`accent_color` reach a RENDERED
+  surface.** `mergeQuizConfig` unit tests assert `merged.language`/`merged.accentColor` are overlaid
+  (AC3 block), and the Rule-L `init()` test asserts `quiz_enabled` reaches `showQuizTrigger()` — but
+  NO test drives `init()` with a server `language='pl'` and asserts the quiz trigger/widget/sidebar
+  actually RENDER in Polish (the consumer-render hop for the locale axis). This is the same Rule-L
+  evidence principle RETRO-057 applied to `micro_polls_enabled`: the merge-overlay test proves "if
+  merged, the field is set" — it is NOT evidence the rendered surface consumes it. The quiz_enabled
+  arm has the full render-hop test; the language/accent arm stops at the merge. → FOLLOW-278.
+- **TG-2 (P2, → FOLLOW-277) — no test asserts the SDK behavior on a `data_source: 'fallback'`
+  response, and no test covers the auth-path-DB-throw 500.** The route's own `route.test.ts` tests the
+  fallback-200 on tenant-fetch throw and on unconfigured DB, but there is no SDK-side test that the
+  SDK ignores the extra `data_source` key (it does, by Zod non-strict parse — but that is untested and
+  relied-upon), and no test for the auth-throw 500 path (CB-1). → FOLLOW-277.
+- **TG-3 (P3, recorded) — the Rule-R cache-hit test asserts fetch-count stays at 1, but does not
+  assert the SECOND init's MERGED config matches the cached values reaching a render surface** (it
+  asserts the sessionStorage blob, not that `config.quiz.enabled` from cache drives `showQuizTrigger`).
+  One hop short of full render-proof on the rehydrate path. Acceptable P3 — the first-init render hop
+  is proven and the cache read path is unit-tested.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1, NEW → FOLLOW-276) — FOUR stale docstrings still assert the RETIRED snippet wire
+  ("buildSnippet emits data-micro-polls-enabled") that ADR-0011 just removed.** This PR retired
+  `buildSnippet`'s emission of `data-micro-polls-enabled`/`data-quiz-enabled`, but the following
+  docstrings were NOT updated and now describe a wire that no longer exists:
+  - `packages/shared/src/schemas/quiz-config.ts:21` — "`micro_polls_enabled` WIRED — `buildSnippet`
+    now emits `data-micro-polls-enabled="true"`" (FALSE post-ADR-0011).
+  - `packages/shared/src/schemas/quiz-config.ts:91-92` — "Wired in FOLLOW-274: buildSnippet emits
+    `data-micro-polls-enabled="true"` … readConfig() parses `data-micro-polls-enabled`" (FALSE —
+    readConfig now reads it only as `DEPRECATED_FALLBACK`).
+  - `apps/control-plane/src/app/api/quiz/config/route.ts:26` — "`micro_polls_enabled` WIRED:
+    buildSnippet emits `data-micro-polls-enabled="true"`" (FALSE).
+  - `apps/control-plane/src/app/dashboard/quiz/page.tsx:54` + `page.tsx:252` — "consumed by the
+    snippet generator (buildSnippet) to emit data-micro-polls-enabled" and the user-facing helper
+    text "When enabled, buildSnippet emits data-micro-polls-enabled=\"true\" in the [snippet]" — the
+    SECOND is USER-FACING dashboard copy that now mis-describes the mechanism to tenants. P1 because
+    it is the EXACT documentation-face failure RETRO-057 §4d DG-1 and RETRO-056 §4d DG-1 flagged
+    ("a close-out PR's docstring blesses a wire before/after it is actually true"), repeated a THIRD
+    time on this same blob, AND one instance is user-facing copy. The PR corrected the docstrings it
+    touched (`DetectionPreview.tsx`, `tenants.ts`, `config.ts`) but missed these four in files it did
+    not edit. → FOLLOW-276 (sweep + correct all four to describe the ADR-0011 runtime-fetch wire).
+- **DG-2 (P3, recorded) — ADR-0011's Decision §1/§3 body text still says "SDK calls `GET
+  /api/quiz/config`" / "no new backend route required," which the implementation correctly OVERRODE
+  per the ADR's OWN §Implementation-Notes path (ii) (preferred) that introduced
+  `/api/quiz/public-config`.** The ADR is internally consistent (Implementation Notes supersede the
+  Decision body and explicitly delegate the (i)-vs-(ii) sub-decision), and the PR documented the
+  path-(ii) choice. But the Decision section now reads as contradicting the shipped route. Recorded
+  P3 — annotate the ADR Decision section to point at the path-(ii) resolution (light doc hygiene; the
+  ADR is ACCEPTED and the implementation matches its preferred path, so not a blocker).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **RETRO-057 / FOLLOW-274 — the snippet-delivery gap is NOW GENUINELY CLOSED end-to-end.** RETRO-057
+  §4a LG-1/LG-2 filed FOLLOW-275 because `micro_polls_enabled` + `quizEnabled` were HALF_WIRE_P (SDK
+  consumer wired, production producer absent at the `DetectWizard → DetectionPreview → buildSnippet`
+  call site). ADR-0011 path (ii) closes this NOT by threading the call site (rejected as Alternative
+  A) but by CHANGING THE TRANSPORT: the snippet stops carrying the flags entirely, and the SDK fetches
+  them at runtime from a route whose producer reads the typed column + blob directly. Traced
+  end-to-end in §7 — this is a TRUE closure, not a one-hop move. The eight-retro `quiz_config` lineage
+  (049/050/051/052/053/055/056/057) reaches its terminus on the delivery axis: the blob's keys now
+  provably reach the SDK.
+- **FOLLOW-273 / RETRO-055 (`language`/`accent_color` locale-enum axis) — CONVERGENT, mostly resolved.**
+  ADR-0011 §5 folded `language`/`accent_color` into the same runtime fetch, and `QuizLanguageSchema`
+  (the shared Zod enum FOLLOW-273 wanted) is added and used by `QuizPublicConfigResponseSchema`. The
+  route now delivers locale/accent to the SDK and they reach the quiz surfaces (§7). REMAINING facet:
+  the consent banner (§4a LG-1) and the `LocaleSchema`-vs-`QuizLanguageSchema` reconciliation FOLLOW-273
+  tracks separately — confirm FOLLOW-273 is not double-closed by this.
+- **TICKET-PILOT-001 (Lane B pilot) — POSITIVE, the RETRO-057 §5a concern is resolved.** A pilot tenant
+  who toggles the quiz OFF in the dashboard now propagates that to the SDK on the buyer's next page load
+  via the runtime fetch (no re-install needed) — the dashboard/SDK divergence RETRO-057 flagged for
+  go/no-go is closed. Caveat: depends on `GET /api/quiz/public-config` being reachable from the buyer
+  page origin (CORS `*` is set) and on Vercel prd having `DATABASE_URL_ADMIN` (FOLLOW-155 P1-SECURITY
+  is the prerequisite — if that env var is still missing in prd, the route returns the
+  `data_source:'fallback'` 200 and the toggle silently no-ops back to default-enabled). Cross-ref
+  FOLLOW-155.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-209 (micro-poll bottom-toast feature) — UNBLOCKED.** RETRO-057 §5b called this "shipped-but-
+  dark until FOLLOW-275 wires the producer." The producer is now wired (runtime fetch); the micro-poll
+  consumer (`index.ts:888,965` gate) is reachable in prod when the tenant enables it. FOLLOW-209 can
+  proceed.
+- **FOLLOW-199 (Quiz v2.0) — WATCH (improved).** RETRO-057 warned Quiz v2.0 must not add more
+  `quiz_config`-driven SDK behaviors until the producer chain is wired. It now IS wired via the runtime
+  fetch — new quiz config fields should be added to `QuizPublicConfigResponseSchema` + the route +
+  `mergeQuizConfig`, following the now-established pattern, NOT new snippet attributes.
+- **FOLLOW-277 / FOLLOW-278 (this retro's stubs) — the residue.** `data_source` consumer + auth-throw
+  fail-mode (277); consent-banner locale + locale render-hop test (278).
+
+#### 5c. Contracts changed others rely on
+
+- **`buildSnippet` signature NARROWED 5→3 args** — the only breaking change. Sole non-test caller
+  updated in-PR; `DetectionPreviewProps.quizEnabled`/`microPollsEnabled` retained as `@deprecated`
+  dead optionals so any external caller still compiles (the props are now no-ops). Any code that
+  passed positional 4th/5th args to `buildSnippet` directly would break — grep finds none outside the
+  PR.
+- **New public route `GET /api/quiz/public-config`** — a new public attack/contract surface. Auth is
+  API-key Bearer + SHA-256 + constant-time compare + revoked/expired checks (same model as
+  `quiz/completion` / `crm/outcome` per the PR). CORS `*`, read-only, no `tenant_id`/PII in response.
+  ADR-0011 path (ii) + Rule H auth sign-off documented in the route docstring. No new env/secret.
+- **`QuizPublicConfigResponseSchema` / `QuizLanguageSchema` / `QuizPublicConfigResponse`** — new
+  `@estalara/shared` exports; additive; consumed by both the route and the SDK.
+- **`SdkConfig` semantics:** `quiz.enabled`/`microPollsEnabled`/`language`/`accentColor` are now
+  runtime-resolved (server-authoritative) rather than snippet-attribute-resolved. Any consumer that
+  assumed these were stable-from-snippet-at-parse-time now sees them potentially mutated by
+  `mergeQuizConfig` after the init fetch resolves.
+
+#### 5d. Architectural assumptions affected
+
+- **RESOLVED: "the SDK does not GET quiz config at runtime" (RETRO-056 §8-meta / RETRO-057 §5d).** The
+  load-bearing architectural gap named across the last two retros — the snippet is produced once at
+  onboarding and there is no post-activation propagation path — is now CLOSED by the SDK runtime fetch.
+  Post-activation `quiz_config`/`quiz_enabled` changes propagate to already-installed snippets on the
+  buyer's next page load, with no re-install. This is the architecture RETRO-057 §5d flagged as
+  "preferred (b), more robust" and routed to architect input — ADR-0011 ACCEPTED it (path (ii)) and
+  this PR ships it.
+- **NEW: the runtime fetch adds a buyer-page-blocking init dependency (bounded at 1000ms).** `init()`
+  now `await`s `fetchQuizConfig()` before the quiz/micro-poll schedulers. It is bounded (1000ms
+  AbortController) and gated behind `if (config.decisionApiUrl)`, and on failure falls back without
+  blocking — but it is a new synchronous-in-init network hop on every fresh tab. It does NOT touch the
+  adapt/directive hot path. Acceptable; flagged for the perf-budget owner as a new init-latency line
+  item (worst case +1000ms to quiz-trigger readiness on a slow/unreachable control-plane, NOT to page
+  render — the quiz trigger is a 30s-delayed surface anyway).
+- **The `quiz_config` blob is now Rule-U-clean AND delivery-complete.** The eight-retro lineage closes:
+  gating state lives in the typed `quiz_enabled` column (FOLLOW-271/274), the blob holds only non-gating
+  UX keys, and those keys now provably reach the SDK via a typed, schema-validated runtime contract.
+
+### 6. New lesson candidates
+
+- **Pattern (transport-swap closes a Rule-L install-producer gap MORE robustly than threading the
+  producer) — recorded as a Rule-L application note, NOT a new rule.** RETRO-057 framed FOLLOW-275 as
+  "thread the producer OR switch to runtime fetch." The implementation chose the latter, and it is the
+  cleaner close: instead of supplying the absent `buildSnippet` argument at the call site (which would
+  still leave the post-activation re-emission problem), it eliminated the snippet transport for these
+  fields entirely and replaced it with a server-authoritative runtime fetch. Lesson (Rule-L note, not
+  a CONVENTIONS edit): *when a Rule-L gap is "the install/snippet producer never supplies a
+  post-activation-mutable value," prefer moving the field to a runtime fetch over threading it through
+  the one-shot install producer — the install path is structurally unable to carry mutable config.*
+  Already codified under Rule L; no re-promotion.
+- **Pattern (close-out PR corrects docstrings in files it EDITS but leaves stale wire-assertion
+  docstrings in files it does NOT edit — the SAME blob, 3rd consecutive retro). COUNT NOW 3 — but it
+  is a sub-facet of already-codified Rule L / Rule U doc-hygiene, NOT a fresh standalone pattern.**
+  RETRO-056 §4d DG-1 (`enabled` docstring re-blessed two orphans), RETRO-057 §4d DG-1 (`tenants.ts`
+  asserted micro-polls wired before the wire was complete), and now RETRO-058 §4d DG-1 (four stale
+  "buildSnippet emits" docstrings AFTER the emission was retired, one user-facing). The invariant: a
+  PR's author updates the docstrings on the symbols they touch and misses the docstrings on OTHER
+  files that describe the same now-changed wire. **Candidate rule:** *"When a PR changes or retires a
+  cross-file wire (event/attribute/route/transport), grep the changed token across ALL packages and
+  update every docstring/user-facing-copy that describes the old wire — not only the files in the
+  diff."* This is a genuine ≥2-occurrence (now 3) pattern, but each prior instance was logged as a
+  sub-facet of Rule L/Rule U doc-hygiene rather than as a standalone "stale cross-file wire docstring"
+  pattern. **Threshold-promotion call: NOT promoted this run** — the three instances were each filed
+  under different parent rules (L/U), so this is the FIRST retro to name the stale-cross-file-docstring
+  pattern as a distinct candidate. Logged as candidate count 1 under its own name; promote at the next
+  independent occurrence. (Conservative read of the ≥2 threshold: a pattern must appear ≥2 times *as
+  the same named pattern*; renaming three loosely-related doc-hygiene misses into one umbrella to clear
+  the gate would be premature codification — exactly the noise the threshold guards against.)
+- **No Rule promoted this retro.** The findings apply already-codified Rule L (install-producer →
+  runtime-fetch resolution), Rule H (new-route auth sign-off, satisfied), Rule G (single shared schema
+  on both ends, satisfied), Rule R (rehydrate-gate cache, satisfied), and Rule K.2 (fail-soft with
+  observable degraded signal — partially satisfied; the `data_source` consumer gap is FOLLOW-277). No
+  NEW pattern crosses a fresh ≥2 threshold under its own name. **No `CONVENTIONS_PATCH.md` edit by this
+  run.**
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed and why.** I nearly recorded the route as fully CLEAN on CHECK B because
+  the headline `micro_polls_enabled`/`quiz_enabled` wire IS genuinely closed end-to-end and the PR is
+  meticulous. The catch was applying CHECK B to EVERY new wire field, not just the headline one:
+  `data_source: 'fallback'` is PRODUCED on three route paths but the SDK's `safeParse` against a
+  non-strict schema silently drops it — a producer with no consumer (HALF_WIRE_C). The degraded signal
+  the route author added for observability (Rule K.2) is invisible to the SDK. Easy to miss because it
+  degrades SAFELY (fallback values are valid), so nothing breaks — but "nothing breaks" is exactly the
+  HALF_WIRE_C signature.
+- **An axis/chain I had to trace twice — the init ORDERING for `language`/`accent_color`.** My first
+  pass saw `mergeQuizConfig` overlaying `language`/`accentColor` and the quiz surfaces reading
+  `config.accentColor`/`config.language`, and I almost called the locale axis fully closed. Tracing the
+  ORDER of `init()` (consent banner at line 276 vs the merge at line 744) showed the consent banner —
+  the FIRST surface a buyer sees — reads the pre-merge config and never gets the server locale/accent.
+  The merge is real; the consumer ordering strands one surface. Lesson: a "field is merged and a
+  surface reads it" verdict requires checking WHETHER THE READ HAPPENS BEFORE OR AFTER the merge in
+  the init sequence — multi-axis analysis includes the TIME axis, not only the field axis.
+- **A meta-pattern in how gaps recur across agents.** This is the THIRD consecutive `quiz_config` retro
+  where the wire itself is closed/improved but a docstring (and now user-facing dashboard copy) is left
+  asserting the OLD wire. The structural magnet: docstrings describing a cross-file wire live in files
+  OTHER than the one the agent edits, so they fall outside the diff's attention window and outside the
+  typecheck/test gates (prose is not type-checked). The transport SWAP this PR made (snippet-attr →
+  runtime-fetch) is the cleanest close of the eight-retro lineage on the LOGIC axis, yet the prose axis
+  decayed identically to the prior two retros — confirming that doc-wire drift is a separate, untested
+  surface that needs its own grep-the-token-everywhere discipline (the FOLLOW-276 / candidate-rule
+  thrust).
+
+### 7. Follow-ups
+
+- **FOLLOW-276 (P1, → docs/quick fix)** — Sweep and correct the FOUR stale "buildSnippet emits
+  data-micro-polls-enabled / data-quiz-enabled" docstrings + user-facing dashboard copy that
+  ADR-0011/FOLLOW-275 made false: `packages/shared/src/schemas/quiz-config.ts:21,91-92`,
+  `apps/control-plane/src/app/api/quiz/config/route.ts:26`,
+  `apps/control-plane/src/app/dashboard/quiz/page.tsx:54,252` (the last is user-facing). Rewrite each
+  to describe the ADR-0011 runtime-fetch wire (`GET /api/quiz/public-config` → `fetchQuizConfig` →
+  `mergeQuizConfig`). [§4d DG-1; §6] (backend-engineer, 1h, P1).
+- **FOLLOW-277 (P2, → backend-engineer)** — Wire the `data_source: 'fallback'` degraded signal
+  end-to-end AND fix the asymmetric auth-path fail-mode: (a) add `data_source?: 'live' | 'fallback'`
+  to `QuizPublicConfigResponseSchema` (optional) and have the SDK read it (debug-log / metric the
+  degraded state) so the producer's K.2 signal has a consumer; (b) change the auth-path DB-throw at
+  `route.ts:491-506` from hard 500 to the documented fail-soft 200 + `data_source:'fallback'`, matching
+  the tenant-fetch catch and the route's own docstring; (c) add SDK + route tests for both
+  (`data_source` consumed; auth-throw fails soft). [§3 CHECK B; §4b CB-1; §4c TG-2] (backend-engineer
+  + sdk-engineer, 3h, P2).
+- **FOLLOW-278 (P2, → sdk-engineer + architect note)** — Resolve the consent-banner locale/accent gap
+  and add the locale render-hop test: (a) decide + DOCUMENT whether the consent banner should render
+  in the tenant's server-fetched `language`/`accent_color` (it currently always uses defaults because
+  the banner precedes the fetch) — either move a banner-relevant pre-consent config read ahead of the
+  consent gate, OR retain `data-language`/`data-accent-color` snippet emission solely for the
+  pre-consent banner, OR document the constraint as intentional in ADR-0011 + the consent-banner
+  docstring; (b) add an `init()` test that drives a server `language='pl'` response and asserts the
+  quiz trigger/widget actually RENDER in Polish (the locale consumer-render hop, currently only the
+  merge-overlay is tested). Also confirm no double-close with FOLLOW-273's `LocaleSchema` facet. [§4a
+  LG-1; §4c TG-1; §5b] (sdk-engineer + architect input on (a), 3h, P2).
+- **NOTE on numbering:** FOLLOW-275 is consumed by THIS ticket (the two PRs). 266–269 remain RESERVED
+  (Archetype Identification Tracer, CEO-directed 2026-06-10). This retro's stubs are **FOLLOW-276,
+  FOLLOW-277, FOLLOW-278** (next free after 275). Filed below.
+
+### 8. Cross-references
+
+- **RETRO-057 / FOLLOW-274 — the direct source, NOW FULLY CLOSED on the delivery axis.** RETRO-057
+  filed FOLLOW-275 for the `micro_polls_enabled`/`quizEnabled` HALF_WIRE_P. ADR-0011 path (ii) closes
+  it by transport-swap (snippet-attr → runtime fetch), verified producer→consumer→render end-to-end
+  (§7). This is the FIRST retro in the eight-entry `quiz_config` lineage to declare a TRUE end-to-end
+  closure rather than a one-hop move — because I traced the route producer (DB read, AC5 test), the SDK
+  consumer (`fetchQuizConfig`/`mergeQuizConfig`), AND the render hop (`showQuizTrigger` gated on
+  `config.quiz.enabled`, proven by the Rule-L `init()` test), not just the existence of the route.
+- **ADR-0011 (ACCEPTED, PR #269) — implementation matches the ADR's PREFERRED path (ii).** The ADR
+  Decision body §1/§3 references the old `/api/quiz/config` route, but §Implementation-Notes (lines
+  204-249) lays out path (i) vs (ii), marks (ii) preferred, and delegates the sub-decision; the PR
+  chose (ii) and documented it. ADR-aligned. DG-2 (§4d) flags the Decision-body/shipped-route
+  cosmetic inconsistency as P3 doc-hygiene on the ADR itself.
+- **RETRO-056 §8-meta + RETRO-057 §5d — the "SDK does not GET quiz config at runtime" architectural
+  gap, now RESOLVED.** Both prior retros named the missing runtime-fetch as the root cause; ADR-0011 +
+  this PR build exactly that. The two-retro architectural prediction drove this sprint's scope (the
+  retro-N → retro-N+1 scope-driving track record holds).
+- **RETRO-055 / FOLLOW-273 — `language`/`accent_color` locale axis, convergent.** This PR delivers
+  locale/accent to the SDK via the same fetch and adds `QuizLanguageSchema`; FOLLOW-278 carries the
+  consent-banner facet and the render-hop test; confirm FOLLOW-273's `LocaleSchema` reconciliation is
+  not double-closed.
+- **Rule L (CONVENTIONS_PATCH.md) — the rule the closure satisfies, via transport-swap.** Same lineage
+  as RETRO-009/010/011/049/057 (install/snippet producer absent); this is the resolution, not a new
+  violation. Recorded the "prefer runtime-fetch over threading the one-shot install producer" note (§6).
+- **Rule H (CONVENTIONS_PATCH.md) — satisfied for the new route.** ADR-0011 required an ADR for the
+  new auth surface (path (ii)); ADR-0011 IS that ADR, and the route docstring carries the Rule H auth
+  sign-off (constant-time compare, tenant-scoped, cryptographic, replay-resistant-for-read-only).
+- **Rule R (CONVENTIONS_PATCH.md) — satisfied.** The rehydrate gate reuses the sessionStorage-cached
+  config instead of re-fetching on cross-listing navigation; the cache-key-scoping edge is logged P3
+  (§4a LG-2).
+- **FOLLOW-155 (P1-SECURITY, Vercel prd env) — PREREQUISITE for prod effect.** The route returns
+  `data_source:'fallback'` (default-enabled) if `DATABASE_URL_ADMIN` is absent in prd — so the
+  TICKET-PILOT-001 dashboard-quiz-disable propagation (§5a) only works once FOLLOW-155 lands.

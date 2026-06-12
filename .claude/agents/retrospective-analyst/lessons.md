@@ -629,3 +629,58 @@
   26 `1781202418234`) rather than trusting the PR body, and grepped
   `<DetectionPreview`/`buildSnippet` non-test to confirm the SOLE production render/call sites
   rather than trusting the PR's "producer exists" table.
+
+---
+
+## 2026-06-12 / RETRO-058 — FOLLOW-275 (wire micro_polls_enabled + quizEnabled via SDK runtime GET, ADR-0011 path ii; two PRs #270+#271)
+
+- **A finding I almost missed and why.** The headline `micro_polls_enabled`/`quiz_enabled` wire is
+  GENUINELY closed end-to-end this time (transport-swap from snippet-attr to runtime fetch), and the
+  PRs are meticulous (Rule-L producer test drives the real route handler; Rule-L SDK test drives the
+  real `init()`). I nearly stamped CHECK B fully CLEAN on the strength of the headline wire. The
+  catch was applying CHECK B to EVERY new wire field, not just the headline:
+  `data_source: 'fallback'` is PRODUCED on the route's degraded paths (Rule K.2) but the SDK's Zod
+  `safeParse` is non-strict and silently drops the extra key → a producer with NO consumer
+  (HALF_WIRE_C). It hid because it degrades SAFELY (fallback values are valid) — but "nothing
+  breaks" is precisely the HALF_WIRE_C signature, and it defeats the very observability the route
+  author added.
+- **An axis/chain I had to trace twice — the init TIME axis for `language`/`accent_color`.** First
+  pass: `mergeQuizConfig` overlays `language`/`accentColor` AND quiz surfaces read
+  `config.accentColor`/ `config.language` → looked fully closed. Tracing the ORDER of `init()`
+  (consent banner rendered at line 276 vs the merge at line 744) showed the consent banner — the
+  FIRST surface a buyer sees — reads the PRE-merge config and never gets the server locale/accent.
+  The merge is real; the consumer ordering strands one surface. Lesson: "field is merged AND a
+  surface reads it" is NOT closure — you must check whether the read happens BEFORE or AFTER the
+  merge in the init sequence. Multi-axis analysis (step 8) includes the TIME axis, not only the
+  field/variant/locale axes.
+- **A meta-pattern in how gaps recur across agents.** THIRD consecutive `quiz_config` retro where
+  the wire itself is closed/improved but a docstring (and now USER-FACING dashboard copy) is left
+  asserting the OLD wire (RETRO-056 §4d, RETRO-057 §4d, RETRO-058 §4d — four stale "buildSnippet
+  emits data-micro-polls-enabled" strings AFTER the emission was retired). Structural magnet:
+  docstrings describing a cross-file wire live in files OTHER than the one the agent edits, so they
+  fall outside the diff's attention window AND outside every gate (prose is not type-checked or
+  tested). The logic axis of the eight-retro lineage finally closed cleanly via the transport swap,
+  yet the PROSE axis decayed identically a third time. This is a genuine ≥2-occurrence (now 3)
+  pattern, but I did NOT promote a rule: the three prior instances were each filed under a DIFFERENT
+  parent rule (L/U doc-hygiene), so RETRO-058 is the FIRST to name "stale cross-file wire docstring
+  after a transport/wire change" as a distinct pattern under its own name — count 1 under its own
+  name. Promoting by re-labelling three loosely-related doc misses into one umbrella to clear the ≥2
+  gate would be exactly the premature codification the threshold guards against. Logged the
+  candidate; promote at the next independent occurrence (FOLLOW-276 is the close-out).
+- **Discipline that paid off — verifying ADR alignment instead of flagging a false divergence.** The
+  ADR-0011 Decision body §1/§3 says "SDK calls GET /api/quiz/config" / "no new backend route
+  required," but the implementation built a NEW /api/quiz/public-config route. My first read flagged
+  this as a divergence. Reading the ADR's OWN §Implementation-Notes (lines 204-249) showed it lays
+  out path (i) vs path (ii), marks (ii) PREFERRED, and explicitly delegates the sub-decision — the
+  implementation chose the ADR's preferred path. So it is ADR-ALIGNED, and the Decision-body text is
+  merely stale relative to the Implementation Notes (logged P3 DG-2 on the ADR, not a divergence
+  finding). Lesson: read the WHOLE ADR (Implementation Notes / Alternatives can supersede the
+  Decision body) before recording a "diverges from design" finding — Rule P (check prior art fully)
+  applies to reading ADRs too.
+- **The retro-N → retro-N+1 scope-driving track record held.** RETRO-056 §8-meta and RETRO-057 §5d
+  both named "the SDK does not GET quiz config at runtime" as the load-bearing architectural root
+  cause and routed the (a)-vs-(b) choice to architect input; ADR-0011 ACCEPTED option (b)/path (ii)
+  and FOLLOW-275 shipped exactly that. This is the first retro in the eight-entry `quiz_config`
+  lineage to declare a TRUE end-to-end closure (producer→consumer→render verified) rather than a
+  one-hop move — because I traced all three hops (route DB read via AC5 test, SDK fetch/merge,
+  render via the Rule-L init() quiz-trigger test), not just the route's existence.

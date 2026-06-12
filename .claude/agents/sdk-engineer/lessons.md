@@ -270,3 +270,26 @@ with optimistic update + rollback; `showQuizTrigger()` gate in `index.ts`.
 **A guardrail I'd add:** For any new `data-*` attribute the SDK consumes, the Rule L evidence grep
 must be run BEFORE writing tests. The grep output belongs in the PR description; if it comes back
 empty, stop and wire the producer before writing any consumer tests.
+
+## 2026-06-12 / FOLLOW-278
+
+**What I built:** Consent-banner locale documentation + locale render-hop test. Three parts: (1)
+Added ADR-0011 addendum section documenting the accepted constraint that the consent banner renders
+before the quiz-config fetch — option (iii) of FOLLOW-278 AC1. (2) Added comment at
+`renderConsentBanner()` call site in `index.ts` explaining why the banner uses pre-fetch language.
+(3) Added `follow-278.test.ts` with 6 tests proving the locale render-hop: server `language='pl'`
+causes the quiz trigger to render `'Znajdź dopasowanie →'` (Polish text), not just sets
+`config.language` in memory. (4) Added cache-key scope note to `quiz-config.ts` docstring for the
+single-embed-per-tab assumption.
+
+**What was uncertain:** Whether to use `vi.runAllMicrotasksAsync()` to intercept the mid-init banner
+DOM state — this API does not exist in Vitest v2 (only `runAllTimers`/`advanceTimersByTime`). The
+AC1 consent-banner constraint cannot be proven with an executable assertion without intercepting a
+Promise that `init()` owns and blocking it mid-flight. Resolution: document the constraint with a
+structural sanity test (label string constants) + negative evidence (AC2 shows post-fetch surfaces
+DO get the locale; the accepted gap is the pre-fetch surface).
+
+**A guardrail I'd add:** When a ticket asks for a "RED before fix, GREEN after" test for an
+already-merged fix, verify which SURFACE the test exercises. A test that only asserts in-memory
+config values (like AC3 in follow-275) is NOT a render-hop test even if it asserts the language
+field. Always trace the value from the config assignment through to the rendered DOM text.

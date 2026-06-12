@@ -18,8 +18,10 @@
  *   - Removed from `QuizConfig`, `QuizConfigSchema`, `_QuizConfigFullSchema`, and
  *     `QUIZ_DEFAULT_CONFIG`. The dashboard toggle UI is also removed.
  *   - Migration `0027_strip_quiz_config_sticky_widget` strips existing rows.
- *   - `micro_polls_enabled` WIRED — `buildSnippet` now emits `data-micro-polls-enabled="true"`
- *     when the flag is on; `readConfig` parses it into `SdkConfig.microPollsEnabled`.
+ *   - `micro_polls_enabled` transport: post-ADR-0011, the SDK reads this value at runtime
+ *     via `GET /api/quiz/public-config` → `fetchQuizConfig()` → `mergeQuizConfig()`.
+ *     The snippet data-attributes `data-micro-polls-enabled` / `data-quiz-enabled` are
+ *     RETIRED; `readConfig()` treats them as `DEPRECATED_FALLBACK` only (FOLLOW-275).
  *
  * FOLLOW-275 (2026-06-12): added `QuizLanguageSchema` Zod enum and
  * `QuizPublicConfigResponseSchema` for the new `GET /api/quiz/public-config` route
@@ -88,8 +90,10 @@ export interface QuizConfig {
   accent_color: string;
   /**
    * Whether to show micro-poll bottom-toast prompts as a quiz supplement (FOLLOW-209).
-   * Wired in FOLLOW-274: buildSnippet emits `data-micro-polls-enabled="true"` when true;
-   * readConfig() parses `data-micro-polls-enabled` → `config.microPollsEnabled`.
+   * Post-ADR-0011 (FOLLOW-275): the SDK fetches this value at runtime via
+   * `GET /api/quiz/public-config` → `fetchQuizConfig()` → `mergeQuizConfig()`.
+   * The `data-micro-polls-enabled` snippet attribute is RETIRED; `readConfig()` treats
+   * it as `DEPRECATED_FALLBACK` only. No snippet re-install is needed when this changes.
    */
   micro_polls_enabled: boolean;
 }

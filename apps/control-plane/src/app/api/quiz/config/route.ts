@@ -23,8 +23,11 @@
  *   - POST: `QuizConfigSchema` now omits `sticky_widget`; any `sticky_widget` key in
  *     the request body is silently dropped before DB write.
  *   - GET: `parseStoredQuizConfig()` strips a legacy `sticky_widget` key from the blob.
- *   - `micro_polls_enabled` WIRED: buildSnippet emits `data-micro-polls-enabled="true"`
- *     when true; readConfig() in packages/sdk parses it → config.microPollsEnabled.
+ *   - `micro_polls_enabled` transport (post-ADR-0011 / FOLLOW-275): the SDK reads this
+ *     value at runtime via `GET /api/quiz/public-config` → `fetchQuizConfig()` →
+ *     `mergeQuizConfig()` → `config.microPollsEnabled`. The snippet data-attribute
+ *     `data-micro-polls-enabled` is RETIRED; `readConfig()` treats it as
+ *     `DEPRECATED_FALLBACK` only. Tenants need no snippet re-install for config changes.
  *
  * FOLLOW-270: `QuizConfig` type, `QuizConfigSchema`, and `QUIZ_DEFAULT_CONFIG` are now
  * imported from `@estalara/shared` to eliminate the hand-duplicated copy that drifted

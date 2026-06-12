@@ -50,8 +50,11 @@ import { QUIZ_DEFAULT_CONFIG, QUIZ_LANGUAGE_VALUES } from '@estalara/shared';
  * carries `enabled` per Rule U / FOLLOW-271.
  *
  * FOLLOW-274: `sticky_widget` removed — zero SDK consumer (Rule U). `micro_polls_enabled`
- * is now a wired key: its toggle in this form updates the JSONB blob, which is then read
- * by the snippet generator (buildSnippet) to emit data-micro-polls-enabled.
+ * is now a wired key: its toggle in this form persists the value to the JSONB blob, which
+ * the SDK fetches at runtime via `GET /api/quiz/public-config` → `fetchQuizConfig()` →
+ * `mergeQuizConfig()`. No snippet re-install is required when this value changes
+ * (ADR-0011 / FOLLOW-275). The retired `data-micro-polls-enabled` snippet attribute is
+ * treated as `DEPRECATED_FALLBACK` only by `readConfig()`.
  */
 interface DashboardQuizConfig {
   // `enabled` intentionally absent — use `quiz_enabled` (typed column SoT), per FOLLOW-271.
@@ -248,10 +251,13 @@ export default function QuizSettingsPage() {
               no runtime effect is false configurability (HALF_WIRE_P). The key is also
               removed from QuizConfigSchema and from existing rows via migration 0027. */}
 
-          {/* Micro-polls (FOLLOW-274, FOLLOW-209): wired toggle.
-              When enabled, buildSnippet emits data-micro-polls-enabled="true" in the
-              SDK snippet, which the SDK reads via readConfig → config.microPollsEnabled
-              to activate the 90s micro-poll bottom-toast prompts. */}
+          {/* Micro-polls (FOLLOW-274, FOLLOW-209, ADR-0011 / FOLLOW-275): wired toggle.
+              When enabled, the SDK fetches this setting at runtime via
+              GET /api/quiz/public-config → fetchQuizConfig() → mergeQuizConfig()
+              and activates the 90s micro-poll bottom-toast prompts. Changes take effect
+              on the buyer's next page load — no snippet re-install required.
+              The retired data-micro-polls-enabled snippet attribute is treated as
+              DEPRECATED_FALLBACK only by readConfig(). */}
           <div className="flex items-center justify-between">
             <div>
               <label className="text-sm font-medium text-gray-900">Micro-Poll Prompts</label>

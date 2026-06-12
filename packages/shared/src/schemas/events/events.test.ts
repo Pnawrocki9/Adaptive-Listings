@@ -53,15 +53,17 @@ const envelope = {
 const ev = <T extends string, P>(type: T, payload: P) => ({ ...envelope, type, payload });
 
 describe('EVENT_TYPES tuple', () => {
-  it('has exactly 45 unique event type literals', () => {
+  it('has exactly 46 unique event type literals', () => {
     // 34 original + 1 ab.assignment (TICKET-AB-001) + 2 consent audit (TICKET-041)
     // + 7 SDK observability (TICKET-RUNTIME-FIX-003):
     //   listing.viewed, cta.clicked, quiz.event, quiz.mismatch,
     //   sidebar.closed, adapt.applied, adapt.skipped
     // + 1 primary pilot conversion (FOLLOW-195 / CEO Decision D-4):
     //   live.signup
-    expect(EVENT_TYPES.length).toBe(45);
-    expect(new Set<string>(EVENT_TYPES).size).toBe(45);
+    // + 1 K.3.6 Archetype Identification Tracer (FOLLOW-266 / 2026-06-12):
+    //   intent.snapshot
+    expect(EVENT_TYPES.length).toBe(46);
+    expect(new Set<string>(EVENT_TYPES).size).toBe(46);
   });
 });
 

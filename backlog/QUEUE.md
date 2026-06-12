@@ -25,8 +25,9 @@ doc-only correction to ADR-0011 false retired claim). RETRO-059/060/061 complete
 (FOLLOW-276) and RETRO-063 (FOLLOW-278) pending spawn. FOLLOW-266 Phase 1 DONE: PR #277 merged
 2026-06-12T18:23:36Z (intent_sessions Supabase migration 0028 + intent_events ClickHouse DDL 0014;
 data-engineer complete). RETRO-064 (FOLLOW-266 Phase 1) pending spawn. FOLLOW-266 Phase 2
-IN_PROGRESS — delegated 2026-06-12T19:00Z to backend-engineer (intent_weight_configs migration
-0029 + CF Worker dual-write handler).**
+READY_FOR_REVIEW — PR #278 open 2026-06-12 (intent_weight_configs migration 0029 + CF Worker
+dual-write handler; Test Node22 pass, pre-existing Build/Rule-I/Python failures are not
+regressions).**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -4269,10 +4270,11 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     K.3.6 foundation — DB schema (intent_sessions + intent_weight_configs Supabase migrations,
     intent_events ClickHouse table) + SDK intent.snapshot event + CF Worker dual-write handler
   agent: data-engineer + backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: backend-engineer (Phase 2)
   started_at: '2026-06-12T12:00:00Z'
   phase2_started_at: '2026-06-12T19:00:00Z'
+  pr: '278'
   priority: P1
   estimated_hours: 6
   depends_on: []
@@ -4287,8 +4289,9 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     Gates FOLLOW-267, FOLLOW-268, FOLLOW-269.
     Phase 1 DONE: PR #277 merged 2026-06-12T18:23:36Z (data-engineer: intent_sessions migration
     0028 + intent_events ClickHouse DDL 0014). RETRO-064 pending.
-    Phase 2 IN_PROGRESS 2026-06-12T19:00Z: backend-engineer — intent_weight_configs migration 0029
-    + CF Worker intent.snapshot dual-write handler (AC2 + AC5). See HANDOFFS.md.
+    Phase 2 READY_FOR_REVIEW 2026-06-12: PR #278 open. intent_weight_configs migration 0029 +
+    CF Worker intent.snapshot dual-write handler (AC2 + AC5). Test Node22 green. Pre-existing
+    Build/Rule-I/Python failures are not regressions (present on main before this PR).
     Phase 3 (sdk-engineer: intent.snapshot event + SDK emission, AC4) to follow Phase 2.
 
 - id: FOLLOW-267

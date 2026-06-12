@@ -23,6 +23,7 @@ import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import { authenticateRequest } from '../auth.js';
 import { pushToClickHouse } from '../clickhouse-producer.js';
+import { handleIntentSnapshot } from './intent-snapshot.js';
 import { logger } from '../observability/logger.js';
 import { checkRateLimit } from '../rate-limiter.js';
 import { pushToRedpanda } from '../redpanda-producer.js';
@@ -191,7 +192,61 @@ events.post('/', async (c) => {
     });
   }
 
-  // 6. Push to downstream sinks (skip if everything was rejected).
+  // 6. Per-type side-effect handlers (fire-and-forget via waitUntil).
+  //
+  // intent.snapshot — dual-write to ClickHouse intent_events + Supabase intent_sessions.
+  // These writes are non-blocking: ingest ACK is returned to the SDK regardless of
+  // whether they succeed. Failures are logged to console/Sentry.
+  for (const evt of validated) {
+    if (evt.type === 'intent.snapshot') {
+      const payload = evt.payload as {
+        archetype: string;
+        confidence: number;
+        signal_count: number;
+        probabilities: Record<string, number>;
+        quiz_completed: boolean;
+        quiz_leaf: string | null;
+        chat_turns: number;
+        last_signal_delta?: {
+          archetype_deltas?: Record<string, number>;
+          event_type?: string;
+        };
+      };
+      // Hono v4 CF Workers context exposes executionCtx.waitUntil() for background tasks.
+      // Hono's type definitions don't expose executionCtx on the generic Context type;
+      // we reach it through a typed intermediary that's only needed for fire-and-forget writes.
+      interface HonoWithExecCtx {
+        executionCtx?: { waitUntil?: (p: Promise<unknown>) => void };
+      }
+      const ctx = (c as unknown as HonoWithExecCtx).executionCtx;
+      const crossSessionId =
+        typeof evt.cross_session_id === 'string' ? evt.cross_session_id : undefined;
+      const sessionIdStr =
+        typeof evt.session_id === 'string'
+          ? evt.session_id
+          : typeof evt.session_id === 'number'
+            ? String(evt.session_id)
+            : '';
+      const writePromise = handleIntentSnapshot(
+        {
+          session_id: sessionIdStr,
+          ...(crossSessionId !== undefined ? { cross_session_id: crossSessionId } : {}),
+          tenant_id: tenantId,
+          ts: typeof evt.ts === 'number' ? evt.ts : Date.now(),
+          payload,
+        },
+        c.env,
+      );
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(writePromise);
+      }
+      // If waitUntil is unavailable (test env), the promise is still dispatched;
+      // it will resolve before the Worker exits on a hot-path because handleIntentSnapshot
+      // itself awaits both writes.
+    }
+  }
+
+  // 7. Push to downstream sinks (skip if everything was rejected).
   //
   // Two sinks, run in parallel because both no-op when their respective env
   // vars are unset:

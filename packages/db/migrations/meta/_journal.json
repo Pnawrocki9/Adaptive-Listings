@@ -204,6 +204,13 @@
       "when": 1781287352000,
       "tag": "0028_intent_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1781287352250,
+      "tag": "0029_intent_weight_configs",
+      "breakpoints": true
     }
   ]
 }

@@ -67,6 +67,7 @@ import { QuizEventEventSchema, QuizMismatchEventSchema } from './quiz.js';
 import { SidebarClosedEventSchema } from './sidebar.js';
 import { AdaptAppliedEventSchema, AdaptSkippedEventSchema } from './adapt-events.js';
 import { LiveSignupEventSchema } from './live.js';
+import { IntentSnapshotEventSchema } from './intent-snapshot.js';
 
 export * from './page-lifecycle.js';
 export * from './mouse-scroll.js';
@@ -86,9 +87,10 @@ export * from './quiz.js';
 export * from './sidebar.js';
 export * from './adapt-events.js';
 export * from './live.js';
+export * from './intent-snapshot.js';
 
 /**
- * `EventSchema` — the canonical discriminated union over all 45 Estalara event types
+ * `EventSchema` — the canonical discriminated union over all 46 Estalara event types
  * (10 categories from Master Design C.1, plus session quality / DQS — TICKET-DQS-001,
  * plus A/B holdout assignment — TICKET-AB-001,
  * plus consent audit — TICKET-041,
@@ -96,7 +98,9 @@ export * from './live.js';
  *   listing.viewed, cta.clicked, quiz.event, quiz.mismatch,
  *   sidebar.closed, adapt.applied, adapt.skipped,
  * plus primary pilot conversion event — FOLLOW-195 / CEO Decision D-4:
- *   live.signup).
+ *   live.signup,
+ * plus K.3.6 Archetype Identification Tracer — FOLLOW-266:
+ *   intent.snapshot).
  *
  * Adding a new event type:
  *   1. Define payload + extended event schemas in the appropriate category file
@@ -167,6 +171,8 @@ export const EventSchema = z.discriminatedUnion('type', [
   AdaptSkippedEventSchema,
   // primary pilot conversion (1) — FOLLOW-195 / CEO Decision D-4 (2026-05-30)
   LiveSignupEventSchema,
+  // K.3.6 Archetype Identification Tracer (1) — FOLLOW-266 (2026-06-12)
+  IntentSnapshotEventSchema,
 ]);
 export type Event = z.infer<typeof EventSchema>;
 
@@ -222,5 +228,7 @@ export const EVENT_TYPES = [
   'adapt.skipped',
   // primary pilot conversion — FOLLOW-195 / CEO Decision D-4 (2026-05-30)
   'live.signup',
+  // K.3.6 Archetype Identification Tracer — FOLLOW-266 (2026-06-12)
+  'intent.snapshot',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];

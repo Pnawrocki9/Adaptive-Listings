@@ -70,7 +70,7 @@ function singlePayload(queue: CollectedEvent[]): Record<string, unknown> {
   const ev = queue[0];
   expect(ev).toBeDefined();
   // ev is guaranteed defined by the expect above; the cast is safe here.
-  return (ev!).payload;
+  return ev!.payload;
 }
 
 // ─── AC1: After 5 signal increments, one snapshot is emitted ─────────────────
@@ -96,8 +96,8 @@ describe('emitIntentSnapshot — AC1: one snapshot after 5 signals', () => {
     expect(queue).toHaveLength(1);
     const ev = queue[0];
     expect(ev).toBeDefined();
-    expect((ev!).type).toBe(INTENT_SNAPSHOT_EVENT_TYPE);
-    expect((ev!).type).toBe('intent.snapshot');
+    expect(ev!.type).toBe(INTENT_SNAPSHOT_EVENT_TYPE);
+    expect(ev!.type).toBe('intent.snapshot');
   });
 
   it('emitted event payload.signal_count equals 5', () => {
@@ -173,7 +173,7 @@ describe('emitIntentSnapshot — AC2: beforeunload path', () => {
     expect(queue).toHaveLength(1);
     const ev = queue[0];
     expect(ev).toBeDefined();
-    expect((ev!).type).toBe('intent.snapshot');
+    expect(ev!.type).toBe('intent.snapshot');
   });
 
   it('beforeunload snapshot includes the current signal_count at time of emission', () => {
@@ -199,7 +199,7 @@ describe('emitIntentSnapshot — AC2: beforeunload path', () => {
     expect(queue).toHaveLength(1);
     const ev = queue[0];
     expect(ev).toBeDefined();
-    expect((ev!).type).toBe('intent.snapshot');
+    expect(ev!.type).toBe('intent.snapshot');
   });
 });
 
@@ -306,7 +306,7 @@ describe('emitIntentSnapshot — AC5: chatTurns in payload', () => {
     expect(queue).toHaveLength(1);
     const firstEv = queue[0];
     expect(firstEv).toBeDefined();
-    expect((firstEv!).payload.chat_turns).toBe(0);
+    expect(firstEv!.payload.chat_turns).toBe(0);
 
     // Simulate a chat turn arriving (as done in index.ts listener)
     ctx.chatTurns += 1;
@@ -316,7 +316,7 @@ describe('emitIntentSnapshot — AC5: chatTurns in payload', () => {
     expect(queue).toHaveLength(2);
     const secondEv = queue[1];
     expect(secondEv).toBeDefined();
-    expect((secondEv!).payload.chat_turns).toBe(1);
+    expect(secondEv!.payload.chat_turns).toBe(1);
   });
 });
 
@@ -374,6 +374,6 @@ describe('INTENT_SNAPSHOT_EVENT_TYPE', () => {
     expect(queue).toHaveLength(1);
     const ev = queue[0];
     expect(ev).toBeDefined();
-    expect((ev!).type).toBe(INTENT_SNAPSHOT_EVENT_TYPE);
+    expect(ev!.type).toBe(INTENT_SNAPSHOT_EVENT_TYPE);
   });
 });

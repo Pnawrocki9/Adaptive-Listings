@@ -331,11 +331,11 @@ describe('insertIntentEventToClickHouse', () => {
     expect(calls()).toHaveLength(1);
 
     const body = JSON.parse(calls()[0]!.init!.body as string) as Record<string, unknown>;
-    // LG-2: new 'session_id' column carries the raw session fingerprint (migration 0015 ADD COLUMN).
-    // intent_session_id is also present (it's the ORDER BY key column — cannot be renamed in CH).
-    // Both carry the same raw value for join compatibility.
+    // LG-2: session_id column (migration 0015) carries the raw session fingerprint.
+    // intent_session_id (ORDER BY key, UUID) is omitted — ClickHouse uses zero-UUID default.
+    // MODIFY COLUMN on ORDER BY key columns is forbidden (error 524, migration 0016 is a no-op).
     expect(body.session_id).toBe(SESSION_ID_HEX);
-    expect(body.intent_session_id).toBe(SESSION_ID_HEX);
+    expect(body.intent_session_id).toBeUndefined();
     expect(body.tenant_id).toBe(TENANT_ID);
     expect(body.event_type).toBe(INTENT_SNAPSHOT_EVENT_TYPE);
     // event_at should be an ISO 8601 string
@@ -508,10 +508,10 @@ describe('TG-1: ClickHouse session_id join-key contract (LG-2 fix)', () => {
     expect(chCall).toBeDefined();
     const body = JSON.parse(chCall!.init!.body as string) as Record<string, unknown>;
 
-    // LG-2: new session_id column (migration 0015 ADD COLUMN) carries the raw fingerprint.
-    // intent_session_id is also present as the ORDER BY key — now String after migration 0016.
-    // Both carry the same raw session_id value so FOLLOW-269 can join on either.
+    // LG-2: session_id column (migration 0015) carries the raw fingerprint.
+    // intent_session_id (ORDER BY key, UUID) is omitted — zero-UUID default.
     expect(body.session_id).toBe(SESSION_ID_HEX);
+    expect(body.intent_session_id).toBeUndefined();
     // session_id must NOT be a derived UUID (which would not match intent_sessions.session_id)
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     expect(uuidPattern.test(body.session_id as string)).toBe(false);
@@ -595,7 +595,7 @@ describe('TG-1 FOLLOW-287: session_id is the raw session fingerprint (CB-1 fix)'
     expect((body.session_id as string).length).toBe(64);
   });
 
-  it('intent_session_id (ORDER BY key) also carries the raw session_id string after migration 0016', async () => {
+  it('intent_session_id (ORDER BY key, UUID) is omitted from INSERT — ClickHouse uses zero-UUID default', async () => {
     const { fetchImpl, calls } = captureFetch(200);
     const event = makeEvent({ session_id: SESSION_ID_HEX });
 
@@ -605,10 +605,11 @@ describe('TG-1 FOLLOW-287: session_id is the raw session fingerprint (CB-1 fix)'
     expect(chCall).toBeDefined();
     const body = JSON.parse(chCall!.init!.body as string) as Record<string, unknown>;
 
-    // Both the ORDER BY key column (intent_session_id) and the join key column (session_id)
-    // must carry the same raw session fingerprint string.
-    expect(body.intent_session_id).toBe(SESSION_ID_HEX);
-    expect(body.intent_session_id).toBe(body.session_id);
+    // MODIFY COLUMN on ORDER BY key columns is forbidden (ClickHouse error 524).
+    // intent_session_id is omitted from the INSERT; ClickHouse uses zero-UUID default.
+    // session_id (String, migration 0015) is the authoritative join key for FOLLOW-269.
+    expect(body.intent_session_id).toBeUndefined();
+    expect(body.session_id).toBe(SESSION_ID_HEX);
   });
 });
 

@@ -1,35 +1,17 @@
 -- Migration: 0016_intent_events_session_id_type_fix
--- FOLLOW-287 (CB-1): Fix intent_session_id column type — UUID → String.
+-- FOLLOW-287 (CB-1): Attempted to change intent_session_id from UUID to String.
 --
--- Root cause: The 0014 DDL defined `intent_session_id UUID NOT NULL` as the ORDER BY key.
--- The CF Worker handler writes the raw SDK session fingerprint (a SHA-256 hex string or an
--- SDK-generated short ID — never a hyphenated UUID) into this column. ClickHouse's UUID type
--- requires a hyphenated UUID string (e.g. 550e8400-e29b-41d4-a716-446655440000); a 64-char
--- hex string is rejected by JSONEachRow, silently dropping 100% of rows.
+-- OUTCOME: No DDL change applied. ClickHouse 26.5.1 rejects MODIFY COLUMN on ORDER BY key
+-- columns (error 524: ALTER_OF_COLUMN_IS_FORBIDDEN). The ORDER BY key
+-- (tenant_id, intent_session_id, event_at) cannot have its column type changed via ALTER.
 --
--- Fix: MODIFY COLUMN `intent_session_id` to `String DEFAULT ''`.
--- ClickHouse MODIFY COLUMN does not accept NOT NULL; nullability is controlled by the
--- column definition in the original CREATE TABLE. MergeTree supports MODIFY COLUMN to
--- relax types (UUID → String is safe; ClickHouse stores UUID as two UInt64 internally
--- but String is accepted for any value).
---
--- Note: ClickHouse does NOT allow renaming an ORDER BY key column, but it DOES allow
--- changing the type of an ORDER BY key column when the new type is compatible.
--- UUID → String is compatible because ClickHouse will rewrite the stored values
--- as their string representation. No data loss occurs: any existing UUID values
--- are preserved as hyphenated UUID strings; new writes can be any non-empty string.
---
--- After this migration:
---   intent_session_id String DEFAULT '' (ORDER BY key, accepts any string)
---   session_id        String DEFAULT ''          (added by migration 0015, join key for FOLLOW-269)
---
--- The authoritative join key for FOLLOW-269 queries remains:
+-- Resolution: the ingest handler (apps/ingest/src/handlers/intent-snapshot.ts) omits
+-- intent_session_id from the INSERT body, letting ClickHouse use the zero-UUID default
+-- (00000000-0000-0000-0000-000000000000). The authoritative session join key is:
 --   intent_events.session_id = intent_sessions.session_id (+ tenant_id)
--- (composite text key, not the UUID surrogate).
+-- using the String column added by migration 0015.
 --
--- Idempotent: MODIFY COLUMN IF EXISTS is NOT supported by ClickHouse — this migration
--- should only be applied once. The migrate.sh script tracks applied migrations to prevent
--- re-application.
+-- This migration is a no-op placeholder so the migration journal sequence is unbroken.
+-- The migrate.sh idempotency guard tracks it to prevent re-application.
 
-ALTER TABLE intent_events
-  MODIFY COLUMN intent_session_id String DEFAULT '';
+SELECT 1;

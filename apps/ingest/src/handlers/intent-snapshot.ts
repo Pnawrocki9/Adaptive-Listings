@@ -127,8 +127,9 @@ export async function deriveSessionUuid(tenantId: string, sessionId: string): Pr
  * Writes to the `intent_events` table (0014 DDL + 0015 ADD COLUMN + 0016 type fix migrations).
  *
  * Column mapping (post-FOLLOW-287 fixes):
- *   - `intent_session_id` (ORDER BY key): now String NOT NULL (migration 0016 changed from UUID).
- *     Carries the raw SDK session fingerprint. Cannot be renamed (ClickHouse ORDER BY key constraint).
+ *   - `intent_session_id` (ORDER BY key, UUID): omitted from INSERT — ClickHouse uses zero-UUID
+ *     default. MODIFY COLUMN is forbidden on ORDER BY key columns (error 524, migration 0016
+ *     was therefore a no-op).
  *   - `session_id` (migration 0015 ADD COLUMN): String, authoritative join key for FOLLOW-269.
  *     FOLLOW-269 joins: intent_events.session_id = intent_sessions.session_id (+ tenant_id).
  *   - `event_type`: pinned to `INTENT_SNAPSHOT_EVENT_TYPE` from @estalara/shared.
@@ -166,22 +167,17 @@ export async function insertIntentEventToClickHouse(
     chat_turns: event.payload.chat_turns,
   });
 
-  // CB-1 fix (FOLLOW-287): both intent_session_id and session_id carry the raw session
-  // fingerprint string. Migration 0016 changed intent_session_id from UUID NOT NULL to
-  // String NOT NULL so the column accepts any string value (was silently rejecting 64-char
-  // SHA-256 hex strings, causing 100% row drop). Migration 0015 added session_id String
-  // as the authoritative join key for FOLLOW-269 queries.
+  // `intent_session_id` is the ORDER BY key (UUID column, migration 0014). ClickHouse
+  // forbids MODIFY COLUMN on ORDER BY key columns (error 524). Omitting it from the
+  // INSERT body lets ClickHouse use the column DEFAULT (zero UUID). This is safe —
+  // the zero UUID signals "no surrogate assigned" and MergeTree can order on it.
   //
-  // FOLLOW-269 replay queries MUST join on:
-  //   intent_events.session_id = intent_sessions.session_id (+ tenant_id).
+  // `session_id` (String, migration 0015) is the authoritative join key for FOLLOW-269:
+  //   intent_events.session_id = intent_sessions.session_id (+ tenant_id)
   //
-  // CB-2 fix (FOLLOW-287): confidence_before defaults to 0.0 — the ClickHouse column is
-  // Float32 NOT NULL and JSONEachRow rejects null values for NOT NULL columns. The SDK
-  // IntentSnapshotPayload has no confidence_before field (there is no prior snapshot in
-  // the first event of a session). 0.0 is the correct sentinel for "no prior confidence."
+  // CB-2 fix (FOLLOW-287): confidence_before must be 0.0 — Float32 NOT NULL rejects null.
   const row = {
-    // ORDER BY key column (String after migration 0016). Carries the raw session fingerprint.
-    intent_session_id: sessionId,
+    // intent_session_id omitted — ClickHouse uses zero-UUID default (ORDER BY key, UUID NOT NULL).
     // LG-2 / migration 0015: authoritative raw session fingerprint join key.
     session_id: sessionId,
     tenant_id: event.tenant_id,

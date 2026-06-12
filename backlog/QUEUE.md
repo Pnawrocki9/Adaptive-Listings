@@ -1,19 +1,28 @@
 # Backlog Queue
 
-**Updated 2026-06-12T12:00Z. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE.
-RETRO-050/051/052/053 complete. FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-11 (quiz-only
-ratified, docs synced, contract-pinning tests, mis-citation fixed; RETRO-052 → Rule U promoted,
-FOLLOW-271 stub). FOLLOW-264 (P2) DONE — PR #263 merged 2026-06-11 (Option-A removal complete:
-dashboard input removed, Zod field dropped, dead-name cleaned, Rule Q seam-driven jsdom tests
-replace mirror; RETRO-053 → Rule G amended, FOLLOW-270 stub). FOLLOW-169 (P2) DONE — PR #264 merged
-2026-06-11T06:29:18Z (headline anti-hallucination grounding: \_HEADLINE_SYSTEM_PROMPT +
-verified_facts, post-gen fact check, SDK source=ai_cached guard, stale docstrings fixed; RETRO-054
-to be spawned). FOLLOW-270 (P2) and FOLLOW-271 (P2) promoted to Sprint 16 queue (backend-engineer).
-FOLLOW-270 DONE (PR #265 merged 2026-06-11). FOLLOW-271 DONE (PR #266 merged 2026-06-11 — strip
-quizConfig.enabled on write + backfill migration, Rule U closed). Wave A COMPLETE — all 5 DONE
-(FOLLOW-258 PR #249, FOLLOW-259 PR #250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253
-— all merged). Sprint 16 COMPLETE — 15 DONE
-(FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234/270/271), 1 READY_FOR_REVIEW
+**Updated 2026-06-13T09:00Z. Sprint 17 WAVE 2 progress: FOLLOW-266 ALL THREE PHASES DONE (Phase 1 PR
+#277 merged 2026-06-12T18:23:36Z, Phase 2 PR #278 merged 2026-06-12, Phase 3 PR #280 merged
+2026-06-12T22:11:39Z — IntentSnapshotEventSchema + SDK every-5-signal + beforeunload emission,
+Format-gate fix applied, all real CI green). FOLLOW-286 (P1) DONE — PR #279 merged
+2026-06-12T21:27:21Z (PostgREST on_conflict fix, event_type vocab, session_id rename migration 0015,
+8 contract tests). FOLLOW-287 (P1) IN_PROGRESS — ClickHouse write-path silent data loss fix (UUID
+type mismatch + Float32 null + error surface; depends on FOLLOW-286 migration 0015 which is now
+merged). RETRO-062 (FOLLOW-276), RETRO-063 (FOLLOW-278), RETRO-064 (FOLLOW-266 Phase 1), RETRO-066
+(FOLLOW-286), RETRO-067 (FOLLOW-266 Phase 3) all pending spawn.**
+
+**Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE. RETRO-050/051/052/053 complete.
+FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-11 (quiz-only ratified, docs synced, contract-pinning
+tests, mis-citation fixed; RETRO-052 → Rule U promoted, FOLLOW-271 stub). FOLLOW-264 (P2) DONE — PR
+#263 merged 2026-06-11 (Option-A removal complete: dashboard input removed, Zod field dropped,
+dead-name cleaned, Rule Q seam-driven jsdom tests replace mirror; RETRO-053 → Rule G amended,
+FOLLOW-270 stub). FOLLOW-169 (P2) DONE — PR #264 merged 2026-06-11T06:29:18Z (headline
+anti-hallucination grounding: \_HEADLINE_SYSTEM_PROMPT + verified_facts, post-gen fact check, SDK
+source=ai_cached guard, stale docstrings fixed; RETRO-054 to be spawned). FOLLOW-270 (P2) and
+FOLLOW-271 (P2) promoted to Sprint 16 queue (backend-engineer). FOLLOW-270 DONE (PR #265 merged
+2026-06-11). FOLLOW-271 DONE (PR #266 merged 2026-06-11 — strip quizConfig.enabled on write +
+backfill migration, Rule U closed). Wave A COMPLETE — all 5 DONE (FOLLOW-258 PR #249, FOLLOW-259 PR
+#250, FOLLOW-260 PR #251, FOLLOW-261 PR #252, FOLLOW-262 PR #253 — all merged). Sprint 16 COMPLETE —
+15 DONE (FOLLOW-170/173/174/175/176/182/183/184/185/187/190/227/230/234/270/271), 1 READY_FOR_REVIEW
 (FOLLOW-191 local-first testing pending — ESC-020 workflow clarified). Sprint 15 COMPLETE — 21/21
 DONE. ESC-020 OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10: local-first testing
 required before prod deploy; Rafal action deferred until CEO signs off locally. FOLLOW-266–269
@@ -27,7 +36,7 @@ doc-only correction to ADR-0011 false retired claim). RETRO-059/060/061 complete
 data-engineer complete). RETRO-064 (FOLLOW-266 Phase 1) pending spawn. FOLLOW-266 Phase 2 DONE — PR
 #278 merged 2026-06-12 (intent_weight_configs migration 0029 + CF Worker dual-write handler).
 RETRO-065 complete (3 P1 defects found: CB-1 on_conflict placement, LG-1 event_type vocab, LG-2 join
-key). FOLLOW-286 (P1) READY_FOR_REVIEW — PR #279 open 2026-06-12 (all 3 P1 defects + 8 contract
+key). FOLLOW-286 (P1) DONE — PR #279 merged 2026-06-12T21:27:21Z (all 3 P1 defects + 8 contract
 tests + P2 items).**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
@@ -169,8 +178,8 @@ CRM docs, micro-poll Wave 2 | 17 | 16 | 0 | 1 | 0 | | Wave A | — | Bug fix clu
 (FOLLOW-259), lifecycle (FOLLOW-262) | 5 | 5 | 0 | 0 | 0 | | 17 | 19 | quiz_config blob cleanup
 (FOLLOW-274 DONE), SDK locale enum alignment (FOLLOW-273 DONE), headline fact-check tightening
 (FOLLOW-272 DONE), micro_polls wire (FOLLOW-275 DONE) + docs/fallback/locale fixes
-(FOLLOW-276/277/278/279 DONE) + Tracer (FOLLOW-266 IN_PROGRESS, 267/268/269 BACKLOG) | 12 | 8 | 1 |
-0 | 3 |
+(FOLLOW-276/277/278/279 DONE) + Tracer (FOLLOW-266 DONE PR#280, FOLLOW-286 DONE PR#279, 267/268/269
+BACKLOG) + K.3.6 CH write fix (FOLLOW-287 IN_PROGRESS) | 13 | 10 | 1 | 0 | 0 |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -4270,18 +4279,21 @@ engine deferred to FOLLOW-282 per CEO D-3.**
   title: >
     K.3.6 foundation — DB schema (intent_sessions + intent_weight_configs Supabase migrations,
     intent_events ClickHouse table) + SDK intent.snapshot event + CF Worker dual-write handler
-  agent: data-engineer + backend-engineer
+  agent: data-engineer + backend-engineer + sdk-engineer
   status: DONE
-  assigned_to: backend-engineer (Phase 2)
+  assigned_to: sdk-engineer (Phase 3)
   started_at: '2026-06-12T12:00:00Z'
   phase2_started_at: '2026-06-12T19:00:00Z'
-  done_at: '2026-06-12T21:43:34Z'
-  pr: '278'
+  phase3_started_at: '2026-06-13T00:00:00Z'
+  completed_at: '2026-06-12T22:11:39Z'
+  pr_phase1: '277'
+  pr_phase2: '278'
+  pr_phase3: '280'
   priority: P1
   estimated_hours: 6
   depends_on: []
   spec: backlog/FOLLOW_UPS.md (FOLLOW-266 stub)
-  branch: backend-engineer/FOLLOW-266-k36-ingest-handler
+  branch: sdk-engineer/FOLLOW-266-k36-sdk-emission
   notes: |
     Three new tables: intent_sessions (Supabase, per-session summary, UNIQUE tenant+session, RLS),
     intent_weight_configs (Supabase, global weight store, CEO D-4), intent_events (ClickHouse,
@@ -4291,10 +4303,14 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     Gates FOLLOW-267, FOLLOW-268, FOLLOW-269.
     Phase 1 DONE: PR #277 merged 2026-06-12T18:23:36Z (data-engineer: intent_sessions migration
     0028 + intent_events ClickHouse DDL 0014). RETRO-064 pending.
-    Phase 2 READY_FOR_REVIEW 2026-06-12: PR #278 open. intent_weight_configs migration 0029 +
-    CF Worker intent.snapshot dual-write handler (AC2 + AC5). Test Node22 green. Pre-existing
-    Build/Rule-I/Python failures are not regressions (present on main before this PR).
-    Phase 3 (sdk-engineer: intent.snapshot event + SDK emission, AC4) to follow Phase 2.
+    Phase 2 DONE: PR #278 merged 2026-06-12 (backend-engineer: intent_weight_configs migration 0029 +
+    CF Worker intent.snapshot dual-write handler). RETRO-065 complete.
+    Phase 3 DONE: PR #280 merged 2026-06-12T22:11:39Z (sdk-engineer: IntentSnapshotEventSchema +
+    SDK emission logic in intent-snapshot.ts + index.ts every-5-signals + beforeunload paths).
+    All real CI gates green: Test Node22, Typecheck, Lint, Format, Rule H, Rule J, Migration
+    monotonicity, ClickHouse smoke, Demo integration, Gitleaks, Vercel.
+    Build/Rule-I/Python pre-existing-red on main — not regressions. RETRO-067 pending spawn.
+    CI-check counter: 2/5 (fix-iter 1/3 for format; resolved before merge). Fix-iteration counter: 1/3.
 
 - id: FOLLOW-267
   title: >
@@ -4355,9 +4371,10 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     PostgREST on_conflict URL fix (CB-1), event_type vocabulary reconciliation (LG-1/LG-2),
     join-key reconciliation, contract tests (TG-1), confidence_before + stale JSDoc + type dedup
   agent: backend-engineer (lead) + data-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-06-12T21:00:00Z'
+  completed_at: '2026-06-12T21:27:21Z'
   priority: P1
   estimated_hours: 5
   pr_number: '279'
@@ -4377,6 +4394,37 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     P2: confidence_before null, stale JSDoc rewritten, IntentSnapshotPayload imported from shared.
     164 tests pass. Typecheck green on @estalara/ingest and @estalara/shared.
     Gates: FOLLOW-266 Phase 3 (sdk-engineer), FOLLOW-267.
+
+- id: FOLLOW-287
+  title: >
+    Fix ClickHouse intent_events write path silent data loss — UUID type mismatch on session_id (CB-1),
+    null Float32 confidence_before (CB-2), missing round-trip integration test (TG-1), swallowed
+    Promise.allSettled errors (DG-1), retire orphaned deriveSessionUuid + dead exports (LG)
+  agent: backend-engineer (lead) + data-engineer (ClickHouse DDL arm)
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-06-13T00:00:00Z'
+  priority: P1
+  estimated_hours: 5
+  depends_on: [FOLLOW-266]
+  source_retro: RETRO-066
+  spec: backlog/sprint-17/FOLLOW-287.md
+  branch: backend-engineer/FOLLOW-279-k36-ch-write-fix
+  pr_number: TBD
+  notes: |
+    CB-1 FIX: migration 0016 changes intent_session_id UUID NOT NULL → String NOT NULL so raw
+    session fingerprint strings (64-char SHA-256 hex) are accepted by JSONEachRow.
+    Both intent_session_id (ORDER BY key) and session_id (join key, migration 0015) now carry
+    the raw session fingerprint string.
+    CB-2 FIX: confidence_before is now 0.0 (Float32 NOT NULL sentinel for no prior confidence).
+    IntentSnapshotPayload has no confidence_before field — null was silently rejecting 100% of rows.
+    DG-1 FIX: console.error added alongside logger.error for all Promise.allSettled failures,
+    with structured JSON including event, tenant_id, session_id, error (visible in CF Worker logs).
+    TG-1: 5 new contract tests — CB-2 null guard, CB-1 raw session_id, DG-1 console.error.
+    LG-A: handler uses session_id column (migration 0015) for FOLLOW-269 join key.
+    LG-B: deriveSessionUuid annotated @internal @deprecated; INTENT_EVENTS_VOCABULARY and
+    IntentEventType annotated @internal test-only (no non-test production callers).
+    172 tests pass. Typecheck green. Prettier clean.
 ```
 
 ## Currently in flight

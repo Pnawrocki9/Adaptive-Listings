@@ -41,6 +41,10 @@ export const INTENT_SNAPSHOT_EVENT_TYPE = 'intent.snapshot' as const;
  * Used by contract tests to assert written values stay within the DDL vocabulary.
  * LowCardinality(String) has no enforced constraint in ClickHouse; this constant
  * is the single source of truth for the expected vocabulary.
+ *
+ * @internal test-only — no non-test production caller exists (FOLLOW-287 LG-B audit).
+ * Do not use this constant in production code paths; it is retained solely for the
+ * TG-1 contract tests in apps/ingest/src/handlers/__tests__/intent-snapshot.test.ts.
  */
 export const INTENT_EVENTS_VOCABULARY = [
   'quiz_answer',
@@ -52,6 +56,10 @@ export const INTENT_EVENTS_VOCABULARY = [
   'finalized',
   INTENT_SNAPSHOT_EVENT_TYPE,
 ] as const;
+
+/**
+ * @internal test-only — see INTENT_EVENTS_VOCABULARY annotation above (FOLLOW-287 LG-B).
+ */
 export type IntentEventType = (typeof INTENT_EVENTS_VOCABULARY)[number];
 
 /**

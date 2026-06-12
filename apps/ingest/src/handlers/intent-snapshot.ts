@@ -9,6 +9,15 @@
  * the SDK regardless of whether either write succeeds. Failures are logged to console/Sentry so
  * operators can observe the degraded state (Rule K.2: fail loud on configured-store failures).
  *
+ * FOLLOW-287 fixes applied:
+ *   - CB-1: intent_session_id column type changed from UUID to String (migration 0016). The raw
+ *     session fingerprint is written to both intent_session_id (ORDER BY key) and session_id
+ *     (join key, migration 0015). Previously a 64-char SHA-256 hex would be rejected by UUID column.
+ *   - CB-2: confidence_before uses 0.0 fallback (column is Float32 NOT NULL). The IntentSnapshotPayload
+ *     has no confidence_before field; null was silently rejected by ClickHouse JSONEachRow.
+ *   - DG-1: Promise.allSettled rejections are logged via console.error (visible in CF Worker logs)
+ *     in addition to the structured logger, so operators can observe degraded state.
+ *
  * Privacy:
  *   - `event_payload` sent to ClickHouse is PII-scrubbed: contains only { signal_count,
  *     quiz_completed, quiz_leaf, chat_turns }. Never includes `probabilities` (archetype weight
@@ -70,12 +79,12 @@ export interface IntentSnapshotEvent {
 /**
  * Derive a deterministic UUID v5-style from a namespace + name string.
  *
- * NOTE: As of FOLLOW-286 (LG-2), this function is NO LONGER USED to produce the join key
- * written to ClickHouse `intent_events`. The `session_id` column now stores the RAW session
- * fingerprint string so FOLLOW-269 can join:
+ * NOTE: As of FOLLOW-286 (LG-2) and FOLLOW-287 (CB-1), this function is NO LONGER USED
+ * to produce the join key written to ClickHouse `intent_events`. The `session_id` column
+ * (migration 0015) and `intent_session_id` column (now String after migration 0016) both
+ * store the RAW session fingerprint string so FOLLOW-269 can join:
  *   intent_events.session_id = intent_sessions.session_id (composite text key)
- * instead of relying on a derived UUID that would never match `intent_sessions.id`
- * (which is `gen_random_uuid()`).
+ * instead of relying on a derived UUID.
  *
  * This function is retained for any future use cases that require a deterministic UUID
  * from a non-UUID session identifier.
@@ -85,7 +94,8 @@ export interface IntentSnapshotEvent {
  * This is NOT a standards-compliant UUID v5 (which requires SHA-1 + name space OID),
  * but is deterministic and collision-resistant for our key space.
  *
- * @internal exported for tests
+ * @internal exported for tests only — not called from production code paths (FOLLOW-287 AC6).
+ * No non-test production caller exists after the CB-1 fix (FOLLOW-287).
  */
 export async function deriveSessionUuid(tenantId: string, sessionId: string): Promise<string> {
   // If sessionId is already a UUID (8-4-4-4-12 hex), use it directly.
@@ -114,12 +124,15 @@ export async function deriveSessionUuid(tenantId: string, sessionId: string): Pr
 /**
  * INSERT one row into ClickHouse `intent_events` via the HTTPS interface.
  *
- * Writes to the `intent_events` table (0014 DDL + 0015 ADD COLUMN migration).
- * The new `session_id` column (migration 0015) holds the raw SDK session fingerprint so
- * FOLLOW-269 can join: intent_events.session_id = intent_sessions.session_id (+ tenant_id).
- * The `intent_session_id` column (ORDER BY key) also receives the raw value for
- * ClickHouse key expression compatibility.
- * The `event_type` value is pinned to `INTENT_SNAPSHOT_EVENT_TYPE` from @estalara/shared.
+ * Writes to the `intent_events` table (0014 DDL + 0015 ADD COLUMN + 0016 type fix migrations).
+ *
+ * Column mapping (post-FOLLOW-287 fixes):
+ *   - `intent_session_id` (ORDER BY key): now String NOT NULL (migration 0016 changed from UUID).
+ *     Carries the raw SDK session fingerprint. Cannot be renamed (ClickHouse ORDER BY key constraint).
+ *   - `session_id` (migration 0015 ADD COLUMN): String, authoritative join key for FOLLOW-269.
+ *     FOLLOW-269 joins: intent_events.session_id = intent_sessions.session_id (+ tenant_id).
+ *   - `event_type`: pinned to `INTENT_SNAPSHOT_EVENT_TYPE` from @estalara/shared.
+ *   - `confidence_before`: 0.0 fallback (Float32 NOT NULL; IntentSnapshotPayload has no prior field).
  *
  * Fire-and-forget caller uses Promise.allSettled — this function resolves with a result
  * object indicating success or failure. It does NOT throw.
@@ -153,24 +166,23 @@ export async function insertIntentEventToClickHouse(
     chat_turns: event.payload.chat_turns,
   });
 
-  // LG-2 fix (FOLLOW-286): write the raw session_id string to the new `session_id` column
-  // added by migration 0015 (ADD COLUMN session_id String DEFAULT ''). The existing
-  // `intent_session_id` column is part of the ORDER BY key and cannot be renamed
-  // (ClickHouse forbids renaming key columns). `intent_session_id` is still included with
-  // the raw session_id value to satisfy ClickHouse's FORMAT JSONEachRow key presence
-  // requirement; future rows will use `session_id` as the authoritative join key.
+  // CB-1 fix (FOLLOW-287): both intent_session_id and session_id carry the raw session
+  // fingerprint string. Migration 0016 changed intent_session_id from UUID NOT NULL to
+  // String NOT NULL so the column accepts any string value (was silently rejecting 64-char
+  // SHA-256 hex strings, causing 100% row drop). Migration 0015 added session_id String
+  // as the authoritative join key for FOLLOW-269 queries.
   //
   // FOLLOW-269 replay queries MUST join on:
   //   intent_events.session_id = intent_sessions.session_id (+ tenant_id).
   //
-  // LG-3 fix (FOLLOW-286 P2): confidence_before is null for snapshot rows — there is
-  // no prior snapshot in the same request to derive it from server-side. The SDK payload
-  // does not carry a confidence_before field. Null is more honest than a hardcoded 0.
+  // CB-2 fix (FOLLOW-287): confidence_before defaults to 0.0 — the ClickHouse column is
+  // Float32 NOT NULL and JSONEachRow rejects null values for NOT NULL columns. The SDK
+  // IntentSnapshotPayload has no confidence_before field (there is no prior snapshot in
+  // the first event of a session). 0.0 is the correct sentinel for "no prior confidence."
   const row = {
-    // ORDER BY key column — kept for ClickHouse key expression compatibility.
-    // Also carries the raw session_id for backwards compat until a future compaction.
+    // ORDER BY key column (String after migration 0016). Carries the raw session fingerprint.
     intent_session_id: sessionId,
-    // LG-2: authoritative raw session fingerprint join key (migration 0015 ADD COLUMN).
+    // LG-2 / migration 0015: authoritative raw session fingerprint join key.
     session_id: sessionId,
     tenant_id: event.tenant_id,
     event_at: eventAt,
@@ -178,7 +190,9 @@ export async function insertIntentEventToClickHouse(
     // cannot silently diverge. See INTENT_SNAPSHOT_EVENT_TYPE in @estalara/shared.
     event_type: INTENT_SNAPSHOT_EVENT_TYPE,
     archetype_deltas,
-    confidence_before: null,
+    // CB-2 fix: 0.0 sentinel — IntentSnapshotPayload carries no confidence_before field.
+    // Float32 NOT NULL column cannot accept null in JSONEachRow (would reject the entire row).
+    confidence_before: 0.0,
     confidence_after: event.payload.confidence,
     top_archetype: event.payload.archetype,
     event_payload,
@@ -332,17 +346,18 @@ export async function upsertIntentSessionToSupabase(
  *
  * Dual-writes in parallel (Promise.allSettled) to:
  *   1. ClickHouse `intent_events` — INSERT the granular event row (append-only).
- *      `session_id` (new column, migration 0015) carries the raw session fingerprint
- *      for FOLLOW-269 join. `intent_session_id` (ORDER BY key) also gets the raw value.
- *      `event_type` is pinned to `INTENT_SNAPSHOT_EVENT_TYPE` from @estalara/shared.
+ *      `session_id` (String column, migration 0015) carries the raw session fingerprint
+ *      for FOLLOW-269 join. `intent_session_id` (ORDER BY key, now String after migration 0016)
+ *      also carries the raw value. `event_type` is pinned to `INTENT_SNAPSHOT_EVENT_TYPE`.
+ *      `confidence_before` is 0.0 (Float32 NOT NULL; no prior confidence on first snapshot).
  *   2. Supabase `intent_sessions` — UPSERT the mutable session-level summary row.
  *      Conflict target `(tenant_id, session_id)` is passed as a URL query parameter
  *      (`?on_conflict=tenant_id,session_id`) so PostgREST correctly routes to UPDATE
  *      instead of INSERT on 2nd+ snapshot per session.
  *
  * Both writes are fire-and-forget: ingest ACK is returned to the SDK regardless of
- * whether either write succeeds. Failures are logged so operators can observe the
- * degraded state (Rule K.2).
+ * whether either write succeeds. Promise.allSettled rejections are surfaced via console.error
+ * AND the structured logger so they are visible in CF Worker logs and Sentry (Rule K.2 / DG-1).
  *
  * Callers MUST pass `ctx.waitUntil(handleIntentSnapshot(...))` in CF Workers so the
  * writes complete before the Worker process exits.
@@ -352,33 +367,71 @@ export async function handleIntentSnapshot(
   env: IntentSnapshotEnv,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  // LG-2 fix: pass raw session_id (not a derived UUID) so FOLLOW-269 can join:
+  // Pass raw session_id (not a derived UUID) so FOLLOW-269 can join:
   //   intent_events.session_id = intent_sessions.session_id (+ tenant_id).
   const [chResult, pgResult] = await Promise.allSettled([
     insertIntentEventToClickHouse(event, event.session_id, env, fetchImpl),
     upsertIntentSessionToSupabase(event, env, fetchImpl),
   ]);
 
+  // DG-1 fix (FOLLOW-287): inspect Promise.allSettled results and surface all rejections
+  // via console.error (visible in Cloudflare Worker logs and Sentry) so operators can observe
+  // degraded state (Rule K.2). Both the structured logger AND console.error are emitted so
+  // the failure is visible in both the JSON log stream and the raw CF Worker log tail.
   if (chResult.status === 'rejected') {
+    const reason = String(chResult.reason);
+    console.error(
+      JSON.stringify({
+        event: 'intent_snapshot_clickhouse_rejected',
+        tenant_id: event.tenant_id,
+        session_id: event.session_id,
+        error: reason,
+      }),
+    );
     logger.error(
-      { session_id: event.session_id, reason: String(chResult.reason) },
+      { tenant_id: event.tenant_id, session_id: event.session_id, reason },
       'intent_snapshot_clickhouse_rejected',
     );
   } else if (!chResult.value.ok) {
+    console.error(
+      JSON.stringify({
+        event: 'intent_snapshot_clickhouse_write_failed',
+        tenant_id: event.tenant_id,
+        session_id: event.session_id,
+        error: chResult.value.error,
+      }),
+    );
     logger.error(
-      { session_id: event.session_id, error: chResult.value.error },
+      { tenant_id: event.tenant_id, session_id: event.session_id, error: chResult.value.error },
       'intent_snapshot_clickhouse_write_failed',
     );
   }
 
   if (pgResult.status === 'rejected') {
+    const reason = String(pgResult.reason);
+    console.error(
+      JSON.stringify({
+        event: 'intent_snapshot_supabase_rejected',
+        tenant_id: event.tenant_id,
+        session_id: event.session_id,
+        error: reason,
+      }),
+    );
     logger.error(
-      { session_id: event.session_id, reason: String(pgResult.reason) },
+      { tenant_id: event.tenant_id, session_id: event.session_id, reason },
       'intent_snapshot_supabase_rejected',
     );
   } else if (!pgResult.value.ok) {
+    console.error(
+      JSON.stringify({
+        event: 'intent_snapshot_supabase_write_failed',
+        tenant_id: event.tenant_id,
+        session_id: event.session_id,
+        error: pgResult.value.error,
+      }),
+    );
     logger.error(
-      { session_id: event.session_id, error: pgResult.value.error },
+      { tenant_id: event.tenant_id, session_id: event.session_id, error: pgResult.value.error },
       'intent_snapshot_supabase_write_failed',
     );
   }

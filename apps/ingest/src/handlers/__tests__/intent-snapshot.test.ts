@@ -1,5 +1,5 @@
 /**
- * Vitest integration tests for the `intent.snapshot` dual-write handler (FOLLOW-266).
+ * Vitest integration tests for the `intent.snapshot` dual-write handler (FOLLOW-266 + FOLLOW-287).
  *
  * Tests cover:
  *   1. Valid event → both ClickHouse INSERT and Supabase UPSERT called with correct args.
@@ -12,6 +12,10 @@
  *      a. PostgREST UPSERT URL carries ?on_conflict=tenant_id,session_id (URL param, not Prefer header)
  *      b. event_type written to ClickHouse equals INTENT_SNAPSHOT_EVENT_TYPE and is in DDL vocabulary
  *      c. 2nd-snapshot update path: URL conflict param present → no 409 on second call
+ *   8. TG-1 contract tests (FOLLOW-287):
+ *      a. CB-2: confidence_before is 0.0 (not null) in ClickHouse JSONEachRow body
+ *      b. CB-1: session_id in ClickHouse body is the raw session_id string (not a 64-char SHA-256 hex converted to UUID)
+ *      c. DG-1: console.error is called when Promise.allSettled returns a rejection
  */
 
 import { describe, expect, it, vi, type Mock } from 'vitest';
@@ -137,8 +141,8 @@ describe('handleIntentSnapshot', () => {
     expect(chBody.event_type).toBe(INTENT_SNAPSHOT_EVENT_TYPE);
     expect(chBody.top_archetype).toBe('family_buyer');
     expect(chBody.confidence_after).toBe(0.74);
-    // LG-3 fix (FOLLOW-286 P2): confidence_before is null for snapshot rows, not 0
-    expect(chBody.confidence_before).toBeNull();
+    // CB-2 fix (FOLLOW-287): confidence_before is 0.0 (Float32 NOT NULL — null would be rejected by JSONEachRow)
+    expect(chBody.confidence_before).toBe(0.0);
     expect(chBody.tenant_id).toBe(TENANT_ID);
     expect(chBody.archetype_deltas).toBe(JSON.stringify({ family_buyer: 0.08 }));
 
@@ -337,8 +341,8 @@ describe('insertIntentEventToClickHouse', () => {
     // event_at should be an ISO 8601 string
     expect(typeof body.event_at).toBe('string');
     expect(String(body.event_at)).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    // LG-3: confidence_before is null for snapshot rows
-    expect(body.confidence_before).toBeNull();
+    // CB-2 fix (FOLLOW-287): confidence_before is 0.0 (not null) — Float32 NOT NULL column
+    expect(body.confidence_before).toBe(0.0);
   });
 
   it('returns ok:false on 5xx ClickHouse response', async () => {
@@ -505,7 +509,7 @@ describe('TG-1: ClickHouse session_id join-key contract (LG-2 fix)', () => {
     const body = JSON.parse(chCall!.init!.body as string) as Record<string, unknown>;
 
     // LG-2: new session_id column (migration 0015 ADD COLUMN) carries the raw fingerprint.
-    // intent_session_id is also present as the ORDER BY key — cannot be renamed in ClickHouse.
+    // intent_session_id is also present as the ORDER BY key — now String after migration 0016.
     // Both carry the same raw session_id value so FOLLOW-269 can join on either.
     expect(body.session_id).toBe(SESSION_ID_HEX);
     // session_id must NOT be a derived UUID (which would not match intent_sessions.session_id)
@@ -530,5 +534,184 @@ describe('TG-1: ClickHouse session_id join-key contract (LG-2 fix)', () => {
     // Both rows use the same session_id — the join key for FOLLOW-269
     expect(chBody.session_id).toBe(pgBody.session_id);
     expect(chBody.tenant_id).toBe(pgBody.tenant_id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TG-1 FOLLOW-287 — CB-2, CB-1, DG-1 contract tests
+// ---------------------------------------------------------------------------
+
+describe('TG-1 FOLLOW-287: ClickHouse JSONEachRow body type correctness (CB-2 fix)', () => {
+  it('confidence_before is 0.0 (not null) in the ClickHouse INSERT body', async () => {
+    const { fetchImpl, calls } = captureFetch(200);
+    const event = makeEvent();
+
+    await handleIntentSnapshot(event, ENV_FULL, fetchImpl);
+
+    const chCall = calls().find((c) => c.url.includes('intent_events'));
+    expect(chCall).toBeDefined();
+    const body = JSON.parse(chCall!.init!.body as string) as Record<string, unknown>;
+
+    // CB-2 fix: Float32 NOT NULL — null would cause JSONEachRow to silently reject the row.
+    // 0.0 is the correct sentinel for "no prior confidence on the first snapshot."
+    expect(body.confidence_before).not.toBeNull();
+    expect(typeof body.confidence_before).toBe('number');
+    expect(body.confidence_before).toBe(0.0);
+  });
+
+  it('no Float32 NOT NULL field in the INSERT body contains null', async () => {
+    const { fetchImpl, calls } = captureFetch(200);
+
+    await handleIntentSnapshot(makeEvent(), ENV_FULL, fetchImpl);
+
+    const chCall = calls().find((c) => c.url.includes('intent_events'));
+    expect(chCall).toBeDefined();
+    const body = JSON.parse(chCall!.init!.body as string) as Record<string, unknown>;
+
+    // Assert neither Float32 NOT NULL column carries null (would be JSONEachRow-rejected).
+    expect(body.confidence_before).not.toBeNull();
+    expect(body.confidence_after).not.toBeNull();
+  });
+});
+
+describe('TG-1 FOLLOW-287: session_id is the raw session fingerprint (CB-1 fix)', () => {
+  it('session_id in the ClickHouse body is the raw session_id string (64-char hex), not a derived UUID', async () => {
+    const { fetchImpl, calls } = captureFetch(200);
+    // Use a 64-char hex session_id (the SHA-256 hex shape that was previously causing UUID column rejection)
+    const event = makeEvent({ session_id: SESSION_ID_HEX });
+
+    await handleIntentSnapshot(event, ENV_FULL, fetchImpl);
+
+    const chCall = calls().find((c) => c.url.includes('intent_events'));
+    expect(chCall).toBeDefined();
+    const body = JSON.parse(chCall!.init!.body as string) as Record<string, unknown>;
+
+    // CB-1 fix: session_id must be the raw 64-char hex string, NOT a derived UUID.
+    // A derived UUID would never match intent_sessions.session_id for FOLLOW-269 joins,
+    // and the old UUID column type would reject non-hyphenated strings entirely.
+    expect(body.session_id).toBe(SESSION_ID_HEX);
+    expect(typeof body.session_id).toBe('string');
+    // Must be exactly the raw session_id (64 hex chars), not a 36-char hyphenated UUID
+    expect((body.session_id as string).length).toBe(64);
+  });
+
+  it('intent_session_id (ORDER BY key) also carries the raw session_id string after migration 0016', async () => {
+    const { fetchImpl, calls } = captureFetch(200);
+    const event = makeEvent({ session_id: SESSION_ID_HEX });
+
+    await handleIntentSnapshot(event, ENV_FULL, fetchImpl);
+
+    const chCall = calls().find((c) => c.url.includes('intent_events'));
+    expect(chCall).toBeDefined();
+    const body = JSON.parse(chCall!.init!.body as string) as Record<string, unknown>;
+
+    // Both the ORDER BY key column (intent_session_id) and the join key column (session_id)
+    // must carry the same raw session fingerprint string.
+    expect(body.intent_session_id).toBe(SESSION_ID_HEX);
+    expect(body.intent_session_id).toBe(body.session_id);
+  });
+});
+
+describe('TG-1 FOLLOW-287: DG-1 — console.error fires on Promise.allSettled rejection', () => {
+  it('calls console.error when ClickHouse write returns ok:false (5xx response), includes tenant_id and session_id', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      // ClickHouse returns 500 — insertIntentEventToClickHouse catches this and returns {ok: false}.
+      // Promise.allSettled status === 'fulfilled' with {ok: false}, triggering the write_failed branch.
+      // (The 'rejected' branch fires only when the write helper itself throws synchronously, which
+      // it never does — it always catches internally and returns {ok: false}.)
+      const fetchImpl = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes('intent_events')) {
+          return Promise.resolve(new Response('clickhouse_down', { status: 500 }));
+        }
+        return Promise.resolve(new Response('', { status: 200 }));
+      }) as unknown as typeof fetch;
+
+      await handleIntentSnapshot(makeEvent(), ENV_FULL, fetchImpl);
+
+      // DG-1: console.error must have been called with structured data including tenant_id, session_id
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const errorCallArgs = consoleErrorSpy.mock.calls[0];
+      expect(errorCallArgs).toBeDefined();
+      const logLine = errorCallArgs![0] as string;
+      const parsed = JSON.parse(logLine) as Record<string, unknown>;
+      expect(parsed.event).toBe('intent_snapshot_clickhouse_write_failed');
+      expect(parsed.tenant_id).toBe(TENANT_ID);
+      expect(parsed.session_id).toBe(SESSION_ID_HEX);
+      expect(typeof parsed.error).toBe('string');
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('calls console.error when ClickHouse write network-errors (fetch throws), includes tenant_id and session_id', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      // ClickHouse fetch throws (network error) — insertIntentEventToClickHouse catches it,
+      // returns {ok: false, error: 'ch_network_failure'}. The write_failed branch fires.
+      const fetchImpl = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes('intent_events')) {
+          return Promise.reject(new Error('ch_network_failure'));
+        }
+        return Promise.resolve(new Response('', { status: 200 }));
+      }) as unknown as typeof fetch;
+
+      await handleIntentSnapshot(makeEvent(), ENV_FULL, fetchImpl);
+
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const logLine = consoleErrorSpy.mock.calls[0]![0] as string;
+      const parsed = JSON.parse(logLine) as Record<string, unknown>;
+      expect(parsed.event).toBe('intent_snapshot_clickhouse_write_failed');
+      expect(parsed.tenant_id).toBe(TENANT_ID);
+      expect(parsed.session_id).toBe(SESSION_ID_HEX);
+      expect(typeof parsed.error).toBe('string');
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('calls console.error when Supabase write returns ok:false (5xx response), includes tenant_id and session_id', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const fetchImpl = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes('intent_sessions')) {
+          return Promise.resolve(new Response('supabase_down', { status: 503 }));
+        }
+        return Promise.resolve(new Response('', { status: 200 }));
+      }) as unknown as typeof fetch;
+
+      await handleIntentSnapshot(makeEvent(), ENV_FULL, fetchImpl);
+
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const logLine = consoleErrorSpy.mock.calls[0]![0] as string;
+      const parsed = JSON.parse(logLine) as Record<string, unknown>;
+      expect(parsed.event).toBe('intent_snapshot_supabase_write_failed');
+      expect(parsed.tenant_id).toBe(TENANT_ID);
+      expect(parsed.session_id).toBe(SESSION_ID_HEX);
+      expect(typeof parsed.error).toBe('string');
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('does NOT call console.error when both writes succeed', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const { fetchImpl } = captureFetch(200);
+      await handleIntentSnapshot(makeEvent(), ENV_FULL, fetchImpl);
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });

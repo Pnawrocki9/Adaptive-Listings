@@ -18,8 +18,10 @@
  *   - Removed from `QuizConfig`, `QuizConfigSchema`, `_QuizConfigFullSchema`, and
  *     `QUIZ_DEFAULT_CONFIG`. The dashboard toggle UI is also removed.
  *   - Migration `0027_strip_quiz_config_sticky_widget` strips existing rows.
- *   - `micro_polls_enabled` WIRED — `buildSnippet` now emits `data-micro-polls-enabled="true"`
- *     when the flag is on; `readConfig` parses it into `SdkConfig.microPollsEnabled`.
+ *   - `micro_polls_enabled` transport: post-ADR-0011, the SDK reads this value at runtime
+ *     via `GET /api/quiz/public-config` → `fetchQuizConfig()` → `mergeQuizConfig()`.
+ *     The snippet data-attributes `data-micro-polls-enabled` / `data-quiz-enabled` are
+ *     RETIRED; `readConfig()` treats them as `DEPRECATED_FALLBACK` only (FOLLOW-275).
  *
  * FOLLOW-275 (2026-06-12): added `QuizLanguageSchema` Zod enum and
  * `QuizPublicConfigResponseSchema` for the new `GET /api/quiz/public-config` route
@@ -88,8 +90,10 @@ export interface QuizConfig {
   accent_color: string;
   /**
    * Whether to show micro-poll bottom-toast prompts as a quiz supplement (FOLLOW-209).
-   * Wired in FOLLOW-274: buildSnippet emits `data-micro-polls-enabled="true"` when true;
-   * readConfig() parses `data-micro-polls-enabled` → `config.microPollsEnabled`.
+   * Post-ADR-0011 (FOLLOW-275): the SDK fetches this value at runtime via
+   * `GET /api/quiz/public-config` → `fetchQuizConfig()` → `mergeQuizConfig()`.
+   * The `data-micro-polls-enabled` snippet attribute is RETIRED; `readConfig()` treats
+   * it as `DEPRECATED_FALLBACK` only. No snippet re-install is needed when this changes.
    */
   micro_polls_enabled: boolean;
 }
@@ -112,9 +116,14 @@ export const QUIZ_DEFAULT_CONFIG: QuizConfig = {
  * CORS: `Access-Control-Allow-Origin: *` (read-only, no PII).
  * Cache-Control: `max-age=300, stale-while-revalidate=60`.
  *
- * All four fields are always present in a 200 response — no field is `null`.
+ * All four core fields are always present in a 200 response — no field is `null`.
  * The SDK falls back to snippet-attribute values, then to hardcoded defaults,
  * on any non-200 or network error.
+ *
+ * `data_source` (FOLLOW-277, Rule K.2): indicates whether the response reflects a live
+ * DB read (`'db'`) or fallback defaults (`'fallback'`). The field is optional so
+ * pre-277 cached responses without it still parse correctly. When `'fallback'`, the
+ * SDK emits a `console.warn` in debug mode so the degraded state is observable.
  *
  * Non-test production consumer: `apps/control-plane/src/app/api/quiz/public-config/route.ts`
  * (Rule H / Rule I).
@@ -124,6 +133,13 @@ export const QuizPublicConfigResponseSchema = z.object({
   micro_polls_enabled: z.boolean(),
   language: QuizLanguageSchema,
   accent_color: z.string(),
+  /**
+   * Provenance flag (Rule K.2 / FOLLOW-277). Optional for backward compatibility with
+   * responses cached before this field was added.
+   *   - `'db'`       — values read from the live DB tenant row.
+   *   - `'fallback'` — DB unavailable or not configured; default values returned.
+   */
+  data_source: z.enum(['db', 'fallback']).optional(),
 });
 
 /** TypeScript type for the `GET /api/quiz/public-config` 200 response body. */

@@ -10,6 +10,7 @@
  *   AC1: Route exists, reachable with valid API key → 200
  *   AC2: 200 response shape correct — all 4 fields present, non-nullable, sourced from DB
  *   AC3: 401 on bad/missing API key; 404 on tenant not found (key exists but tenant row gone)
+ *   AC4 (FOLLOW-277): auth-path DB throw → 503 (not 500); data_source present in all 200 paths
  *   AC5: Response body reflects the tenant's DB values (quiz_enabled=false, pl language, etc.)
  *
  * DB and @estalara/db are mocked below — the test proves route wiring, not DB internals.
@@ -155,7 +156,7 @@ describe('GET /api/quiz/public-config — 200 shape (AC1 + AC2 + AC5)', () => {
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
     expect(res.headers.get('Cache-Control')).toContain('max-age=300');
 
-    const body = await parseBody<QuizPublicConfigResponse>(res);
+    const body = await parseBody<QuizPublicConfigResponse & { data_source?: string }>(res);
     // All four fields must be present and non-nullable
     expect(typeof body.quiz_enabled).toBe('boolean');
     expect(typeof body.micro_polls_enabled).toBe('boolean');
@@ -166,6 +167,8 @@ describe('GET /api/quiz/public-config — 200 shape (AC1 + AC2 + AC5)', () => {
     expect(body.micro_polls_enabled).toBe(false);
     expect(body.language).toBe('en');
     expect(body.accent_color).toBe('#2563EB');
+    // AC4 (FOLLOW-277): happy path must emit data_source='db' (Rule K.2 provenance)
+    expect(body.data_source).toBe('db');
   });
 
   it('AC5 (Rule L): response reflects tenant DB values — quiz_enabled=false, language=pl', async () => {
@@ -259,5 +262,33 @@ describe('GET /api/quiz/public-config — unconfigured DB (dev/CI)', () => {
     expect(body.data_source).toBe('fallback');
     expect(typeof body.quiz_enabled).toBe('boolean');
     expect(typeof body.micro_polls_enabled).toBe('boolean');
+  });
+});
+
+// ─── AC4 (FOLLOW-277) — auth-path DB throw must NOT return 500 ───────────────
+
+describe('GET /api/quiz/public-config — AC4 (FOLLOW-277): auth-path DB throw → 503', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // DB env is set (configured) so the auth path runs
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+
+    // api_keys lookup throws to simulate a DB failure during auth
+    mockLimit.mockRejectedValue(new Error('ECONNREFUSED'));
+    mockWhere.mockReturnValue({ limit: mockLimit });
+    mockFrom.mockReturnValue({ where: mockWhere });
+    mockSelect.mockReturnValue({ from: mockFrom });
+  });
+
+  it('AC4: DB throws during auth lookup → 503, NOT 500', async () => {
+    const res = await GET(makeGetRequest('any-valid-looking-key'));
+    // Must NOT be 500 — auth-path DB throws are a transient dependency failure,
+    // not an application bug. 503 is the correct contract (FOLLOW-277).
+    expect(res.status).not.toBe(500);
+    expect(res.status).toBe(503);
+    const body = await parseBody<{ error: string }>(res);
+    expect(body.error).toBe('Service temporarily unavailable');
+    // CORS headers must be present so the SDK can read the body
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
   });
 });

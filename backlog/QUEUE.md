@@ -1,6 +1,6 @@
 # Backlog Queue
 
-**Updated 2026-06-11T22:00Z. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE.
+**Updated 2026-06-12T09:00Z. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE.
 RETRO-050/051/052/053 complete. FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-11 (quiz-only
 ratified, docs synced, contract-pinning tests, mis-citation fixed; RETRO-052 → Rule U promoted,
 FOLLOW-271 stub). FOLLOW-264 (P2) DONE — PR #263 merged 2026-06-11 (Option-A removal complete:
@@ -24,7 +24,9 @@ READY_FOR_REVIEW (PR #268, real CI gates green; SDK bundle bloat pre-existing on
 READY (P3, ml-engineer). RETRO-057 complete: micro_polls_enabled is still P1 HALF_WIRE in prod
 (DetectWizard.tsx:259 never passes the flag). ADR-0011 ACCEPTED (PR #269), FOLLOW-275 DONE (PR
 #270 + #271 merged 2026-06-12, RETRO-058 complete — first true closure of the 8-retro quiz_config
-lineage). FOLLOW-276 (P1) + FOLLOW-277/278 (P2) promoted to Sprint 17. FOLLOW-272 (P3) READY.**
+lineage). FOLLOW-276 (P1) + FOLLOW-277/278 (P2) promoted to Sprint 17. FOLLOW-272 (P3) READY.
+FOLLOW-277 DONE (PR #276 merged 2026-06-12 — HALF_WIRE_C closed: data_source field wired
+schema→route→SDK; auth-path 500→503 fixed; RETRO-059 to be spawned).**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -4195,7 +4197,8 @@ planning.**
 - id: FOLLOW-277
   title: wire data_source fallback signal (HALF_WIRE_C) + fix auth-path DB-throw hard-500
   agent: backend-engineer
-  status: READY
+  status: DONE
+  pr: 276
   priority: P2
   estimated_hours: 3
   depends_on: []

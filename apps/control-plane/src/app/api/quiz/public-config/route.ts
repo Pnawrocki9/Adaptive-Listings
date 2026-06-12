@@ -26,12 +26,19 @@
  * Cache-Control: `max-age=300, stale-while-revalidate=60` — 5-minute TTL reduces DB load.
  *
  * Fail-loud contract (Rule K.2):
- *   - DB configured but throws → 200 with fallback defaults + `data_source: 'fallback'`
- *     (read-only endpoint; hard 500 would block quiz display for all buyers if DB hiccups).
- *     Sentry capture is still emitted so the error is observable.
+ *   - DB configured but throws during auth lookup → 503 `{ error: "Service temporarily
+ *     unavailable" }` (FOLLOW-277 fix — previously hard 500, inconsistent with the
+ *     tenant-fetch catch which falls soft to 200+fallback; auth failures cannot be
+ *     silently served as fallback because we do not know the tenant_id yet, so a 503
+ *     is the correct contract: the request is structurally valid but the dependency is
+ *     unavailable). Sentry capture still emitted.
+ *   - DB configured but throws during tenant fetch → 200 with fallback defaults +
+ *     `data_source: 'fallback'` (read-only endpoint; hard 500 would block quiz display
+ *     for all buyers if DB hiccups). Sentry capture still emitted.
  *   - Invalid/missing Bearer → 401 `{ error: "Invalid API key" }`.
  *   - Tenant not found (key lookup returns no rows) → 404 `{ error: "Tenant not found" }`.
  *   - Unconfigured DB (dev/CI) → 200 with fallback defaults + `data_source: 'fallback'`.
+ *   - Happy path → 200 with `data_source: 'db'` (provenance flag, Rule K.2 / FOLLOW-277).
  *
  * All four response fields are always present — no field is `null`.
  *
@@ -216,7 +223,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     auth = await resolveApiKey(req);
   } catch (err) {
-    // DB threw during auth — fail loud (K.2) but keep CORS headers so SDK can read the body.
+    // DB threw during auth lookup (FOLLOW-277 fix — was 500, now 503).
+    // We cannot fall back to the fallback config here because we have no tenant_id yet —
+    // serving fallback to an unauthenticated caller would bypass auth entirely.
+    // 503 is correct: the request is structurally valid but the dependency is unavailable.
+    // ADR-0011 §Consequences: "on error/timeout, fall back to defaults" applies to the
+    // tenant-fetch leg (we know who the tenant is); for the auth leg, 503 is cleaner.
     console.error('[quiz/public-config] auth DB error', err);
     try {
       const { captureException } = await import('@sentry/nextjs');
@@ -225,8 +237,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       // Sentry not configured in this env
     }
     return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500, headers: CORS_HEADERS },
+      { error: 'Service temporarily unavailable' },
+      { status: 503, headers: CORS_HEADERS },
     );
   }
 
@@ -263,6 +275,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       micro_polls_enabled: merged.micro_polls_enabled,
       language: merged.language,
       accent_color: merged.accent_color,
+      // FOLLOW-277 (Rule K.2): provenance flag — live DB read.
+      data_source: 'db',
     };
 
     // Validate outbound shape with the canonical schema (belt-and-suspenders).

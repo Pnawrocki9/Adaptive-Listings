@@ -105,6 +105,8 @@ export function eraseCachedQuizConfig(): void {
  * @param intentStateRehydrated - True when the SDK is resuming a session from sessionStorage.
  *   When true the function reads from cache instead of fetching (Rule R gate).
  * @param timeoutMs - Maximum ms to wait for the fetch (default 1000).
+ * @param debug - When true, emits `console.warn` if the server returned a fallback response
+ *   (`data_source: 'fallback'`). Rule K.2: the provenance field must be READ, not merely emitted.
  * @returns The parsed response, or `null` on any failure / timeout.
  */
 export async function fetchQuizConfig(
@@ -112,6 +114,7 @@ export async function fetchQuizConfig(
   apiKey: string,
   intentStateRehydrated: boolean,
   timeoutMs = 1_000,
+  debug = false,
 ): Promise<QuizPublicConfigResponse | null> {
   // Rule R gate — rehydrate path reuses the cached config instead of re-fetching.
   if (intentStateRehydrated) {
@@ -159,6 +162,15 @@ export async function fetchQuizConfig(
     if (!result.success) {
       // Schema validation failure — return null; caller falls back to defaults.
       return null;
+    }
+
+    // Rule K.2 (FOLLOW-277): read the provenance field the server emits.
+    // When `data_source === 'fallback'`, the server served defaults (DB was down or
+    // not configured). Emit a debug-mode warning so the degraded state is observable.
+    if (debug && result.data.data_source === 'fallback') {
+      console.warn(
+        '[estalara] quiz config fetched but server used fallback defaults — DB may be unavailable',
+      );
     }
 
     // Cache the validated config for rehydrated sessions on this tab.

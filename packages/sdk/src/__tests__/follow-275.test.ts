@@ -217,6 +217,154 @@ describe('AC1 — fetchQuizConfig() unit behaviour', () => {
 });
 
 // ---------------------------------------------------------------------------
+// FOLLOW-277: data_source field — SDK reads provenance flag (Rule K.2)
+// ---------------------------------------------------------------------------
+
+describe('FOLLOW-277 — fetchQuizConfig() reads data_source provenance field', () => {
+  it('AC3: emits console.warn in debug mode when server returns data_source=fallback', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockReturnValue(undefined);
+
+    const fallbackResponse = {
+      quiz_enabled: true,
+      micro_polls_enabled: false,
+      language: 'en',
+      accent_color: '#2563EB',
+      data_source: 'fallback',
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(fallbackResponse),
+      }),
+    );
+
+    const result = await fetchQuizConfig(
+      DECISION_API_URL,
+      'test-api-key',
+      false,
+      1_000,
+      true /* debug=true */,
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.data_source).toBe('fallback');
+    // Rule K.2: the provenance field must be READ and surfaced in debug mode
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('quiz config fetched but server used fallback defaults'),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it('AC3: does NOT emit console.warn when data_source=db (happy path)', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockReturnValue(undefined);
+
+    const dbResponse = {
+      quiz_enabled: false,
+      micro_polls_enabled: true,
+      language: 'pl',
+      accent_color: '#ff0000',
+      data_source: 'db',
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(dbResponse),
+      }),
+    );
+
+    const result = await fetchQuizConfig(
+      DECISION_API_URL,
+      'test-api-key',
+      false,
+      1_000,
+      true /* debug=true */,
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.data_source).toBe('db');
+    // No warn for happy-path
+    const fallbackWarns = warnSpy.mock.calls.filter((args) =>
+      String(args[0]).includes('fallback defaults'),
+    );
+    expect(fallbackWarns).toHaveLength(0);
+
+    warnSpy.mockRestore();
+  });
+
+  it('AC3: does NOT emit the fallback warn in non-debug mode even when data_source=fallback', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockReturnValue(undefined);
+
+    const fallbackResponse = {
+      quiz_enabled: true,
+      micro_polls_enabled: false,
+      language: 'en',
+      accent_color: '#2563EB',
+      data_source: 'fallback',
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(fallbackResponse),
+      }),
+    );
+
+    // debug=false (default) — must not emit the warn
+    const result = await fetchQuizConfig(DECISION_API_URL, 'test-api-key', false, 1_000, false);
+
+    expect(result).not.toBeNull();
+    expect(result?.data_source).toBe('fallback');
+    const fallbackWarns = warnSpy.mock.calls.filter((args) =>
+      String(args[0]).includes('fallback defaults'),
+    );
+    expect(fallbackWarns).toHaveLength(0);
+
+    warnSpy.mockRestore();
+  });
+
+  it('AC3: response without data_source field still parses successfully (backward-compat)', async () => {
+    // Pre-277 responses (and cached responses) do not have data_source
+    const legacyResponse = {
+      quiz_enabled: true,
+      micro_polls_enabled: false,
+      language: 'en',
+      accent_color: '#2563EB',
+      // no data_source field
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(legacyResponse),
+      }),
+    );
+
+    const result = await fetchQuizConfig(
+      DECISION_API_URL,
+      'test-api-key',
+      false,
+      1_000,
+      true /* debug=true */,
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.data_source).toBeUndefined();
+    // Backward compat: undefined data_source does NOT trigger the fallback warn
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC3: mergeQuizConfig() overlay logic (pure function, no DOM required)
 // ---------------------------------------------------------------------------
 

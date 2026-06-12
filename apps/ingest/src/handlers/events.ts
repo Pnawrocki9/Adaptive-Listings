@@ -18,6 +18,7 @@
 
 import { trace } from '@opentelemetry/api';
 import { EventSchema } from '@estalara/shared';
+import type { IntentSnapshotPayload } from '@estalara/shared';
 import { Hono } from 'hono';
 
 import type { Env } from '../types.js';
@@ -199,19 +200,9 @@ events.post('/', async (c) => {
   // whether they succeed. Failures are logged to console/Sentry.
   for (const evt of validated) {
     if (evt.type === 'intent.snapshot') {
-      const payload = evt.payload as {
-        archetype: string;
-        confidence: number;
-        signal_count: number;
-        probabilities: Record<string, number>;
-        quiz_completed: boolean;
-        quiz_leaf: string | null;
-        chat_turns: number;
-        last_signal_delta?: {
-          archetype_deltas?: Record<string, number>;
-          event_type?: string;
-        };
-      };
+      // LG-4 fix (FOLLOW-286): use canonical IntentSnapshotPayload imported from @estalara/shared
+      // instead of an inline type redeclaration that could silently drift.
+      const payload = evt.payload as IntentSnapshotPayload;
       // Hono v4 CF Workers context exposes executionCtx.waitUntil() for background tasks.
       // Hono's type definitions don't expose executionCtx on the generic Context type;
       // we reach it through a typed intermediary that's only needed for fire-and-forget writes.

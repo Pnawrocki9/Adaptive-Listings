@@ -20,6 +20,41 @@ import { z } from 'zod';
 import { EventEnvelopeBaseSchema } from '../event.js';
 
 /**
+ * Canonical `event_type` string written to ClickHouse `intent_events` for snapshot rows.
+ *
+ * This constant is shared between the ingest CF Worker handler
+ * (`apps/ingest/src/handlers/intent-snapshot.ts`) and this schema module to ensure
+ * both sides never diverge. The ClickHouse `intent_events` table uses a
+ * `LowCardinality(String)` column — the DDL vocabulary is documented in
+ * `infra/clickhouse/migrations/0014_intent_events.sql` and extended by
+ * `0015_intent_events_session_id_fix.sql` to include this value.
+ *
+ * FOLLOW-286 fix (LG-1): previously hardcoded as the string `'intent.snapshot'` in the
+ * handler, making it impossible for a DDL vocab grep to confirm parity. Now shared here.
+ */
+export const INTENT_SNAPSHOT_EVENT_TYPE = 'intent.snapshot' as const;
+
+/**
+ * Full `event_type` vocabulary documented in the ClickHouse `intent_events` DDL
+ * (`infra/clickhouse/migrations/0014_intent_events.sql` + `0015_intent_events_session_id_fix.sql`).
+ *
+ * Used by contract tests to assert written values stay within the DDL vocabulary.
+ * LowCardinality(String) has no enforced constraint in ClickHouse; this constant
+ * is the single source of truth for the expected vocabulary.
+ */
+export const INTENT_EVENTS_VOCABULARY = [
+  'quiz_answer',
+  'chat_turn',
+  'behavioral',
+  'dwell',
+  'pageview',
+  'referrer',
+  'finalized',
+  INTENT_SNAPSHOT_EVENT_TYPE,
+] as const;
+export type IntentEventType = (typeof INTENT_EVENTS_VOCABULARY)[number];
+
+/**
  * The per-archetype probability map from the intent engine.
  * Keys are archetype identifiers (e.g. 'family_buyer', 'yield_hunter').
  * Values are floats in [0, 1] that sum to ~1.0.

@@ -8,9 +8,15 @@
  *   4. ClickHouse INSERT fails → Supabase UPSERT still fires and returns ok: true (fire-and-forget).
  *   5. PII guard: probabilities map NOT present in ClickHouse event_payload.
  *   6. deriveSessionUuid: UUID input returned as-is; non-UUID produces stable deterministic UUID.
+ *   7. TG-1 contract tests (FOLLOW-286):
+ *      a. PostgREST UPSERT URL carries ?on_conflict=tenant_id,session_id (URL param, not Prefer header)
+ *      b. event_type written to ClickHouse equals INTENT_SNAPSHOT_EVENT_TYPE and is in DDL vocabulary
+ *      c. 2nd-snapshot update path: URL conflict param present → no 409 on second call
  */
 
 import { describe, expect, it, vi, type Mock } from 'vitest';
+
+import { INTENT_EVENTS_VOCABULARY, INTENT_SNAPSHOT_EVENT_TYPE } from '@estalara/shared';
 
 import {
   deriveSessionUuid,
@@ -128,12 +134,16 @@ describe('handleIntentSnapshot', () => {
 
     // ClickHouse body contains event_type and correct fields
     const chBody = JSON.parse(chCall!.init!.body as string) as Record<string, unknown>;
-    expect(chBody.event_type).toBe('intent.snapshot');
+    expect(chBody.event_type).toBe(INTENT_SNAPSHOT_EVENT_TYPE);
     expect(chBody.top_archetype).toBe('family_buyer');
     expect(chBody.confidence_after).toBe(0.74);
-    expect(chBody.confidence_before).toBe(0);
+    // LG-3 fix (FOLLOW-286 P2): confidence_before is null for snapshot rows, not 0
+    expect(chBody.confidence_before).toBeNull();
     expect(chBody.tenant_id).toBe(TENANT_ID);
     expect(chBody.archetype_deltas).toBe(JSON.stringify({ family_buyer: 0.08 }));
+
+    // LG-2 fix (FOLLOW-286): session_id (raw string) written, not a derived UUID
+    expect(chBody.session_id).toBe(SESSION_ID_HEX);
 
     // Supabase body contains session state fields
     const pgBody = JSON.parse(pgCall!.init!.body as string) as Record<string, unknown>;
@@ -180,7 +190,7 @@ describe('handleIntentSnapshot', () => {
     // and the handler is not routed to.
     const result = await insertIntentEventToClickHouse(
       makeEvent(),
-      'test-session-uuid',
+      SESSION_ID_HEX,
       ENV_EMPTY,
       fetchImpl,
     );
@@ -301,28 +311,44 @@ describe('deriveSessionUuid', () => {
 // ---------------------------------------------------------------------------
 
 describe('insertIntentEventToClickHouse', () => {
-  it('inserts correct row shape', async () => {
+  it('inserts correct row shape with raw session_id (LG-2 fix)', async () => {
     const { fetchImpl, calls } = captureFetch(200);
     const event = makeEvent();
-    const intentSessionId = 'session-uuid-for-test';
 
-    const result = await insertIntentEventToClickHouse(event, intentSessionId, ENV_FULL, fetchImpl);
+    // LG-2 fix: pass raw session_id string, not a derived UUID
+    const result = await insertIntentEventToClickHouse(
+      event,
+      event.session_id,
+      ENV_FULL,
+      fetchImpl,
+    );
 
     expect(result.ok).toBe(true);
     expect(calls()).toHaveLength(1);
 
     const body = JSON.parse(calls()[0]!.init!.body as string) as Record<string, unknown>;
-    expect(body.intent_session_id).toBe(intentSessionId);
+    // LG-2: new 'session_id' column carries the raw session fingerprint (migration 0015 ADD COLUMN).
+    // intent_session_id is also present (it's the ORDER BY key column — cannot be renamed in CH).
+    // Both carry the same raw value for join compatibility.
+    expect(body.session_id).toBe(SESSION_ID_HEX);
+    expect(body.intent_session_id).toBe(SESSION_ID_HEX);
     expect(body.tenant_id).toBe(TENANT_ID);
-    expect(body.event_type).toBe('intent.snapshot');
+    expect(body.event_type).toBe(INTENT_SNAPSHOT_EVENT_TYPE);
     // event_at should be an ISO 8601 string
     expect(typeof body.event_at).toBe('string');
     expect(String(body.event_at)).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    // LG-3: confidence_before is null for snapshot rows
+    expect(body.confidence_before).toBeNull();
   });
 
   it('returns ok:false on 5xx ClickHouse response', async () => {
     const { fetchImpl } = captureFetch(500);
-    const result = await insertIntentEventToClickHouse(makeEvent(), 'sess', ENV_FULL, fetchImpl);
+    const result = await insertIntentEventToClickHouse(
+      makeEvent(),
+      SESSION_ID_HEX,
+      ENV_FULL,
+      fetchImpl,
+    );
     expect(result.ok).toBe(false);
     expect(result.error).toContain('500');
   });
@@ -330,7 +356,7 @@ describe('insertIntentEventToClickHouse', () => {
   it('returns ok:false on network error', async () => {
     const result = await insertIntentEventToClickHouse(
       makeEvent(),
-      'sess',
+      SESSION_ID_HEX,
       ENV_FULL,
       failFetch('net_error'),
     );
@@ -369,5 +395,140 @@ describe('upsertIntentSessionToSupabase', () => {
   it('returns ok:false on network error', async () => {
     const result = await upsertIntentSessionToSupabase(makeEvent(), ENV_FULL, failFetch());
     expect(result.ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TG-1 — Request contract tests (FOLLOW-286, Rule Q)
+// These tests assert the REAL wire contract, not mock-call shapes.
+// ---------------------------------------------------------------------------
+
+describe('TG-1: PostgREST UPSERT URL contract (CB-1 fix)', () => {
+  it('PostgREST UPSERT URL contains ?on_conflict=tenant_id,session_id as a URL query parameter', async () => {
+    const { fetchImpl, calls } = captureFetch(200);
+
+    await upsertIntentSessionToSupabase(makeEvent(), ENV_FULL, fetchImpl);
+
+    const pgCall = calls().find((c) => c.url.includes('intent_sessions'));
+    expect(pgCall).toBeDefined();
+
+    // CB-1 fix: on_conflict MUST be a URL query parameter
+    const urlObj = new URL(pgCall!.url);
+    expect(urlObj.searchParams.get('on_conflict')).toBe('tenant_id,session_id');
+  });
+
+  it('Prefer header does NOT contain on_conflict (it belongs in the URL, not the header)', async () => {
+    const { fetchImpl, calls } = captureFetch(200);
+
+    await upsertIntentSessionToSupabase(makeEvent(), ENV_FULL, fetchImpl);
+
+    const pgCall = calls().find((c) => c.url.includes('intent_sessions'));
+    expect(pgCall).toBeDefined();
+
+    const preferHeader = (pgCall!.init!.headers as Record<string, string>).Prefer;
+    // Prefer header must NOT include on_conflict
+    expect(preferHeader).not.toContain('on_conflict');
+    // Prefer header must include resolution and return
+    expect(preferHeader).toContain('resolution=merge-duplicates');
+    expect(preferHeader).toContain('return=minimal');
+  });
+
+  it('2nd snapshot for same (tenant_id, session_id) does NOT get a 409 (conflict param in URL → UPDATE path)', async () => {
+    // Simulate real PostgREST behavior: when on_conflict is a URL param, conflict → 200/201 UPDATE.
+    // When on_conflict is in Prefer header only, PostgREST ignores it → 409 INSERT conflict.
+    // We assert the URL carries the param, ensuring PostgREST routes to UPDATE.
+    let callCount = 0;
+    const fetchImpl = vi.fn((input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes('intent_sessions')) {
+        callCount++;
+        const urlObj = new URL(url);
+        const hasConflictParam = urlObj.searchParams.get('on_conflict') === 'tenant_id,session_id';
+        // Simulate: if conflict param is in URL → PostgREST handles UPDATE → 200
+        //           if not → PostgREST does INSERT → 409 on 2nd call
+        if (hasConflictParam) {
+          return Promise.resolve(new Response('', { status: 200 }));
+        }
+        // Missing param: 1st call 201, 2nd call 409 (simulates the bug)
+        return Promise.resolve(new Response('', { status: callCount === 1 ? 201 : 409 }));
+      }
+      return Promise.resolve(new Response('', { status: 200 }));
+    }) as unknown as typeof fetch;
+
+    // First snapshot
+    const result1 = await upsertIntentSessionToSupabase(makeEvent(), ENV_FULL, fetchImpl);
+    expect(result1.ok).toBe(true);
+
+    // Second snapshot — same (tenant_id, session_id)
+    const result2 = await upsertIntentSessionToSupabase(makeEvent(), ENV_FULL, fetchImpl);
+    // With on_conflict in URL, both calls return 200 (UPDATE path). No 409.
+    expect(result2.ok).toBe(true);
+    expect(callCount).toBe(2);
+  });
+});
+
+describe('TG-1: ClickHouse event_type vocabulary contract (LG-1 fix)', () => {
+  it('event_type written to ClickHouse equals INTENT_SNAPSHOT_EVENT_TYPE constant', async () => {
+    const { fetchImpl, calls } = captureFetch(200);
+
+    await insertIntentEventToClickHouse(makeEvent(), SESSION_ID_HEX, ENV_FULL, fetchImpl);
+
+    const body = JSON.parse(calls()[0]!.init!.body as string) as Record<string, unknown>;
+    expect(body.event_type).toBe(INTENT_SNAPSHOT_EVENT_TYPE);
+  });
+
+  it('event_type written to ClickHouse is within the documented 0014 DDL vocabulary', async () => {
+    const { fetchImpl, calls } = captureFetch(200);
+
+    await insertIntentEventToClickHouse(makeEvent(), SESSION_ID_HEX, ENV_FULL, fetchImpl);
+
+    const body = JSON.parse(calls()[0]!.init!.body as string) as Record<string, unknown>;
+    // The written value must be a member of the DDL LowCardinality vocabulary
+    expect(INTENT_EVENTS_VOCABULARY as readonly string[]).toContain(body.event_type);
+  });
+
+  it('INTENT_SNAPSHOT_EVENT_TYPE is within INTENT_EVENTS_VOCABULARY (constant self-consistency)', () => {
+    // Ensures that if the vocabulary is updated without including the snapshot type,
+    // this test fails loudly instead of silently allowing a vocabulary mismatch.
+    expect(INTENT_EVENTS_VOCABULARY as readonly string[]).toContain(INTENT_SNAPSHOT_EVENT_TYPE);
+  });
+});
+
+describe('TG-1: ClickHouse session_id join-key contract (LG-2 fix)', () => {
+  it('ClickHouse row carries raw session_id string (not a derived UUID) for FOLLOW-269 join', async () => {
+    const { fetchImpl, calls } = captureFetch(200);
+
+    await handleIntentSnapshot(makeEvent(), ENV_FULL, fetchImpl);
+
+    const chCall = calls().find((c) => c.url.includes('intent_events'));
+    expect(chCall).toBeDefined();
+    const body = JSON.parse(chCall!.init!.body as string) as Record<string, unknown>;
+
+    // LG-2: new session_id column (migration 0015 ADD COLUMN) carries the raw fingerprint.
+    // intent_session_id is also present as the ORDER BY key — cannot be renamed in ClickHouse.
+    // Both carry the same raw session_id value so FOLLOW-269 can join on either.
+    expect(body.session_id).toBe(SESSION_ID_HEX);
+    // session_id must NOT be a derived UUID (which would not match intent_sessions.session_id)
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    expect(uuidPattern.test(body.session_id as string)).toBe(false);
+  });
+
+  it('session_id in ClickHouse row matches session_id in Supabase upsert row (same join key)', async () => {
+    const { fetchImpl, calls } = captureFetch(200);
+
+    await handleIntentSnapshot(makeEvent(), ENV_FULL, fetchImpl);
+
+    const chCall = calls().find((c) => c.url.includes('intent_events'));
+    const pgCall = calls().find((c) => c.url.includes('intent_sessions'));
+
+    expect(chCall).toBeDefined();
+    expect(pgCall).toBeDefined();
+
+    const chBody = JSON.parse(chCall!.init!.body as string) as Record<string, unknown>;
+    const pgBody = JSON.parse(pgCall!.init!.body as string) as Record<string, unknown>;
+
+    // Both rows use the same session_id — the join key for FOLLOW-269
+    expect(chBody.session_id).toBe(pgBody.session_id);
+    expect(chBody.tenant_id).toBe(pgBody.tenant_id);
   });
 });

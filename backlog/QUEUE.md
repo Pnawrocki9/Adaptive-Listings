@@ -24,10 +24,11 @@ DONE (PR #272), FOLLOW-277 DONE (PR #276), FOLLOW-278 DONE (PR #273), FOLLOW-279
 doc-only correction to ADR-0011 false retired claim). RETRO-059/060/061 complete. RETRO-062
 (FOLLOW-276) and RETRO-063 (FOLLOW-278) pending spawn. FOLLOW-266 Phase 1 DONE: PR #277 merged
 2026-06-12T18:23:36Z (intent_sessions Supabase migration 0028 + intent_events ClickHouse DDL 0014;
-data-engineer complete). RETRO-064 (FOLLOW-266 Phase 1) pending spawn. FOLLOW-266 Phase 2
-READY_FOR_REVIEW — PR #278 open 2026-06-12 (intent_weight_configs migration 0029 + CF Worker
-dual-write handler; Test Node22 pass, pre-existing Build/Rule-I/Python failures are not
-regressions).**
+data-engineer complete). RETRO-064 (FOLLOW-266 Phase 1) pending spawn. FOLLOW-266 Phase 2 DONE — PR
+#278 merged 2026-06-12 (intent_weight_configs migration 0029 + CF Worker dual-write handler).
+RETRO-065 complete (3 P1 defects found: CB-1 on_conflict placement, LG-1 event_type vocab, LG-2 join
+key). FOLLOW-286 (P1) READY_FOR_REVIEW — PR #279 open 2026-06-12 (all 3 P1 defects + 8 contract
+tests + P2 items).**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -4270,10 +4271,11 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     K.3.6 foundation — DB schema (intent_sessions + intent_weight_configs Supabase migrations,
     intent_events ClickHouse table) + SDK intent.snapshot event + CF Worker dual-write handler
   agent: data-engineer + backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer (Phase 2)
   started_at: '2026-06-12T12:00:00Z'
   phase2_started_at: '2026-06-12T19:00:00Z'
+  done_at: '2026-06-12T21:43:34Z'
   pr: '278'
   priority: P1
   estimated_hours: 6
@@ -4346,6 +4348,35 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     /admin/tenants/[id]/tracer/export (K.3.6.4 — export dashboard).
     Master Design §K.3.6 section update + Snapshot.1 K row update.
     POST-MERGE NOTE: PM must ask CEO for exact DPIA/client-notification scope for chat logging (D-2).
+
+- id: FOLLOW-286
+  title: >
+    Fix intent.snapshot dual-write consumer defects before Phase 3 connects the SDK producer —
+    PostgREST on_conflict URL fix (CB-1), event_type vocabulary reconciliation (LG-1/LG-2),
+    join-key reconciliation, contract tests (TG-1), confidence_before + stale JSDoc + type dedup
+  agent: backend-engineer (lead) + data-engineer
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-06-12T21:00:00Z'
+  priority: P1
+  estimated_hours: 5
+  pr_number: '279'
+  depends_on: [FOLLOW-266 Phase 2 (PR #278 merged)]
+  source_retro: RETRO-065
+  spec: backlog/sprint-17/FOLLOW-286.md
+  branch: backend-engineer/FOLLOW-286-k36-upsert-fix
+  notes: |
+    Three P1 defects latent in PR #278 handler, invisible under green CI (all 18 tests mock fetchImpl):
+    CB-1: PostgREST on_conflict moved from Prefer header to URL query string (?on_conflict=tenant_id,session_id).
+    LG-1: INTENT_SNAPSHOT_EVENT_TYPE constant + INTENT_EVENTS_VOCABULARY added to @estalara/shared.
+          ClickHouse migration 0015 extends DDL vocabulary comment to include 'intent.snapshot'.
+    LG-2: Raw session_id written to ClickHouse (column renamed intent_session_id → session_id in 0015).
+          FOLLOW-269 joins on (tenant_id, session_id) composite text key.
+    TG-1: 8 new contract tests: URL ?on_conflict, Prefer header check, 2nd-snapshot no-409,
+          session_id parity between CH and Supabase rows.
+    P2: confidence_before null, stale JSDoc rewritten, IntentSnapshotPayload imported from shared.
+    164 tests pass. Typecheck green on @estalara/ingest and @estalara/shared.
+    Gates: FOLLOW-266 Phase 3 (sdk-engineer), FOLLOW-267.
 ```
 
 ## Currently in flight

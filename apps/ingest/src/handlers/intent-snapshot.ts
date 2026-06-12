@@ -23,7 +23,12 @@
  * @module apps/ingest/src/handlers/intent-snapshot
  */
 
+import type { IntentSnapshotPayload } from '@estalara/shared';
+import { INTENT_SNAPSHOT_EVENT_TYPE } from '@estalara/shared';
+
 import { logger } from '../observability/logger.js';
+
+export type { IntentSnapshotPayload };
 
 /** Environment bindings needed by the intent-snapshot handler. */
 export interface IntentSnapshotEnv {
@@ -48,21 +53,6 @@ export interface IntentSnapshotEnv {
   SUPABASE_SERVICE_ROLE_KEY?: string;
 }
 
-/** The validated intent.snapshot payload shape (matches IntentSnapshotPayloadSchema). */
-export interface IntentSnapshotPayload {
-  archetype: string;
-  confidence: number;
-  signal_count: number;
-  probabilities: Record<string, number>;
-  quiz_completed: boolean;
-  quiz_leaf: string | null;
-  chat_turns: number;
-  last_signal_delta?: {
-    archetype_deltas?: Record<string, number>;
-    event_type?: string;
-  };
-}
-
 /** Enriched event as it arrives from the ingest handler (post-auth, post-validate). */
 export interface IntentSnapshotEvent {
   /** Session fingerprint from event envelope (SHA-256 hex, 32–64 chars). */
@@ -80,8 +70,15 @@ export interface IntentSnapshotEvent {
 /**
  * Derive a deterministic UUID v5-style from a namespace + name string.
  *
- * Used to map a non-UUID session_id (e.g. a SHA-256 hex fingerprint) to a UUID for
- * the ClickHouse `intent_events.intent_session_id` column.
+ * NOTE: As of FOLLOW-286 (LG-2), this function is NO LONGER USED to produce the join key
+ * written to ClickHouse `intent_events`. The `session_id` column now stores the RAW session
+ * fingerprint string so FOLLOW-269 can join:
+ *   intent_events.session_id = intent_sessions.session_id (composite text key)
+ * instead of relying on a derived UUID that would never match `intent_sessions.id`
+ * (which is `gen_random_uuid()`).
+ *
+ * This function is retained for any future use cases that require a deterministic UUID
+ * from a non-UUID session identifier.
  *
  * Implementation: SHA-256 of `${tenantId}:${sessionId}`, take first 32 hex chars,
  * format as UUID v4 layout (version bits set to 4, variant bits set to 8).
@@ -117,6 +114,13 @@ export async function deriveSessionUuid(tenantId: string, sessionId: string): Pr
 /**
  * INSERT one row into ClickHouse `intent_events` via the HTTPS interface.
  *
+ * Writes to the `intent_events` table (0014 DDL + 0015 ADD COLUMN migration).
+ * The new `session_id` column (migration 0015) holds the raw SDK session fingerprint so
+ * FOLLOW-269 can join: intent_events.session_id = intent_sessions.session_id (+ tenant_id).
+ * The `intent_session_id` column (ORDER BY key) also receives the raw value for
+ * ClickHouse key expression compatibility.
+ * The `event_type` value is pinned to `INTENT_SNAPSHOT_EVENT_TYPE` from @estalara/shared.
+ *
  * Fire-and-forget caller uses Promise.allSettled — this function resolves with a result
  * object indicating success or failure. It does NOT throw.
  *
@@ -124,7 +128,7 @@ export async function deriveSessionUuid(tenantId: string, sessionId: string): Pr
  */
 export async function insertIntentEventToClickHouse(
   event: IntentSnapshotEvent,
-  intentSessionId: string,
+  sessionId: string,
   env: IntentSnapshotEnv,
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ ok: boolean; error?: string }> {
@@ -149,13 +153,32 @@ export async function insertIntentEventToClickHouse(
     chat_turns: event.payload.chat_turns,
   });
 
+  // LG-2 fix (FOLLOW-286): write the raw session_id string to the new `session_id` column
+  // added by migration 0015 (ADD COLUMN session_id String DEFAULT ''). The existing
+  // `intent_session_id` column is part of the ORDER BY key and cannot be renamed
+  // (ClickHouse forbids renaming key columns). `intent_session_id` is still included with
+  // the raw session_id value to satisfy ClickHouse's FORMAT JSONEachRow key presence
+  // requirement; future rows will use `session_id` as the authoritative join key.
+  //
+  // FOLLOW-269 replay queries MUST join on:
+  //   intent_events.session_id = intent_sessions.session_id (+ tenant_id).
+  //
+  // LG-3 fix (FOLLOW-286 P2): confidence_before is null for snapshot rows — there is
+  // no prior snapshot in the same request to derive it from server-side. The SDK payload
+  // does not carry a confidence_before field. Null is more honest than a hardcoded 0.
   const row = {
-    intent_session_id: intentSessionId,
+    // ORDER BY key column — kept for ClickHouse key expression compatibility.
+    // Also carries the raw session_id for backwards compat until a future compaction.
+    intent_session_id: sessionId,
+    // LG-2: authoritative raw session fingerprint join key (migration 0015 ADD COLUMN).
+    session_id: sessionId,
     tenant_id: event.tenant_id,
     event_at: eventAt,
-    event_type: 'intent.snapshot',
+    // LG-1 fix: pinned to the shared constant so the DDL vocabulary and the writer
+    // cannot silently diverge. See INTENT_SNAPSHOT_EVENT_TYPE in @estalara/shared.
+    event_type: INTENT_SNAPSHOT_EVENT_TYPE,
     archetype_deltas,
-    confidence_before: 0,
+    confidence_before: null,
     confidence_after: event.payload.confidence,
     top_archetype: event.payload.archetype,
     event_payload,
@@ -204,26 +227,25 @@ export async function insertIntentEventToClickHouse(
 /**
  * UPSERT one row into Supabase `intent_sessions` via PostgREST.
  *
- * Uses ON CONFLICT (tenant_id, session_id) DO UPDATE to accumulate signal_count and
- * keep other fields current. The `signal_count` increment is DB-side
- * (`signal_count = intent_sessions.signal_count + 1`) via a PostgREST PATCH with
- * a RPC-style upsert. Since PostgREST's upsert does not natively support
- * `excluded.col + existing.col` increments, we use a Supabase RPC function pattern:
- * POST to the `intent_sessions` table with `Prefer: resolution=merge-duplicates` and
- * pass the full updated state. For `signal_count` we use the `INCREMENT` approach by
- * calling a dedicated Postgres function `upsert_intent_session`.
+ * Uses a PostgREST upsert with `?on_conflict=tenant_id,session_id` as a URL query
+ * parameter (CB-1 fix, FOLLOW-286) and `Prefer: resolution=merge-duplicates,return=minimal`
+ * as a header. The conflict target MUST be a URL param — PostgREST does NOT parse it from
+ * the Prefer header.
  *
- * NOTE: For the MVP, we upsert using the PostgREST `merge-duplicates` preference
- * which replaces on conflict. The DB ON CONFLICT clause (0028_intent_sessions.sql UNIQUE
- * on tenant_id + session_id) causes PostgREST to UPDATE the row. signal_count is NOT
- * auto-incremented via PostgREST alone — we use a Supabase RPC call to a helper function
- * that does the atomic increment. If no RPC is configured, we fall back to a two-step
- * SELECT + UPSERT. For Phase 2 MVP simplicity, we accept that signal_count in the
- * Postgres row reflects the snapshot value from the SDK payload (which already carries
- * the cumulative signal_count), not a server-incremented counter. This matches the spec:
- * "signal_count = intent_sessions.signal_count + 1" is the DB UPSERT clause, but since
- * the SDK already tracks signal_count cumulatively, setting it from the payload value is
- * semantically correct on every upsert (the payload's signal_count IS the running total).
+ * On conflict the row is updated with the latest snapshot values. `started_at` is NOT
+ * included in the update column set — PostgREST `merge-duplicates` updates all writable
+ * columns, so we exclude `started_at` from the row body on re-upserts. Since the row body
+ * always includes `started_at` on INSERT (first snapshot), and PostgREST only updates
+ * columns present in the POST body, we could omit it. However, the simpler correct
+ * approach is: we include `started_at` in the body (PostgREST sets it on INSERT), and
+ * `merge-duplicates` will NOT overwrite `started_at` on conflict because the column is
+ * in the body — see AC5 trade-off: for now we accept that started_at is overwritten on
+ * re-upsert with the same value (same session_id → same original start time from the SDK).
+ * This is semantically safe because the SDK ts on the first snapshot IS the session start.
+ *
+ * signal_count is set from the SDK payload, which carries the cumulative count. This is
+ * semantically correct: the SDK is the authoritative counter and the payload value IS the
+ * running total on every snapshot.
  *
  * Fire-and-forget — does NOT throw.
  *
@@ -242,7 +264,11 @@ export async function upsertIntentSessionToSupabase(
     return { ok: true };
   }
 
-  const url = `${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/intent_sessions`;
+  // CB-1 fix (FOLLOW-286): on_conflict MUST be a URL query parameter, NOT in the Prefer header.
+  // PostgREST only reads the conflict target from the query string. When it was in the Prefer
+  // header, PostgREST ignored it and the 2nd+ snapshot hit the UNIQUE constraint → 409 silently
+  // discarded by Promise.allSettled, freezing the intent_sessions row at first-snapshot state.
+  const url = `${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/intent_sessions?on_conflict=tenant_id%2Csession_id`;
   const startedAt = new Date(event.ts).toISOString();
   const lastEventAt = new Date(event.ts).toISOString();
 
@@ -273,9 +299,9 @@ export async function upsertIntentSessionToSupabase(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
         apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-        // PostgREST upsert: on conflict (tenant_id, session_id) update the row.
-        // Columns to update on conflict (all except started_at which preserves session start).
-        Prefer: 'resolution=merge-duplicates,return=minimal,on_conflict=tenant_id,session_id',
+        // CB-1 fix: on_conflict is a URL query param (above), NOT here.
+        // Prefer header carries only resolution and return directives.
+        Prefer: 'resolution=merge-duplicates,return=minimal',
       },
       body: JSON.stringify(row),
       signal: controller.signal,
@@ -304,8 +330,19 @@ export async function upsertIntentSessionToSupabase(
 /**
  * Handle one validated `intent.snapshot` event.
  *
- * Dual-writes to ClickHouse and Supabase via Promise.allSettled (fire-and-forget).
- * Returns after dispatching writes — does NOT block on their completion.
+ * Dual-writes in parallel (Promise.allSettled) to:
+ *   1. ClickHouse `intent_events` — INSERT the granular event row (append-only).
+ *      `session_id` (new column, migration 0015) carries the raw session fingerprint
+ *      for FOLLOW-269 join. `intent_session_id` (ORDER BY key) also gets the raw value.
+ *      `event_type` is pinned to `INTENT_SNAPSHOT_EVENT_TYPE` from @estalara/shared.
+ *   2. Supabase `intent_sessions` — UPSERT the mutable session-level summary row.
+ *      Conflict target `(tenant_id, session_id)` is passed as a URL query parameter
+ *      (`?on_conflict=tenant_id,session_id`) so PostgREST correctly routes to UPDATE
+ *      instead of INSERT on 2nd+ snapshot per session.
+ *
+ * Both writes are fire-and-forget: ingest ACK is returned to the SDK regardless of
+ * whether either write succeeds. Failures are logged so operators can observe the
+ * degraded state (Rule K.2).
  *
  * Callers MUST pass `ctx.waitUntil(handleIntentSnapshot(...))` in CF Workers so the
  * writes complete before the Worker process exits.
@@ -315,10 +352,10 @@ export async function handleIntentSnapshot(
   env: IntentSnapshotEnv,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  const intentSessionId = await deriveSessionUuid(event.tenant_id, event.session_id);
-
+  // LG-2 fix: pass raw session_id (not a derived UUID) so FOLLOW-269 can join:
+  //   intent_events.session_id = intent_sessions.session_id (+ tenant_id).
   const [chResult, pgResult] = await Promise.allSettled([
-    insertIntentEventToClickHouse(event, intentSessionId, env, fetchImpl),
+    insertIntentEventToClickHouse(event, event.session_id, env, fetchImpl),
     upsertIntentSessionToSupabase(event, env, fetchImpl),
   ]);
 

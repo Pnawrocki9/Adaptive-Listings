@@ -1,5 +1,28 @@
 # ml-engineer lessons
 
+- **2026-06-12 / FOLLOW-272** · Tightened `_check_headline_facts` to prevent digit-coincidence and
+  first-word proper-name escape. Two changes: (1) Digit check: replaced bare
+  `token.lower() in grounding` substring with a numeric-boundary lookaround
+  `(?<![0-9.,])<token>(?![0-9.,])` so short tokens like `"5"` don't match `"425000"` or `"1,200"`
+  matches aren't verified by `"1,500"`. (2) Proper-name scan: extended from `words[1:]` to `words`
+  (all words) so a hallucinated proper name as the headline's first word is caught; added common
+  real-estate descriptive adjectives (`"Strong"`, `"Prime"`, `"Ideal"`, `"Stunning"`, etc.) to
+  `_HEADLINE_STOP_CAPS` to prevent false positives on generic sentence-starters. Added 6 new
+  precision tests (3 red-then-green: digit-coincidence, first-word proper name,
+  substring-in-stop-word; 3 green: exact price, grounded first-word, hyphenated bed count). ·
+  **Judgment calls:** (1) Extending to `words[0]` required expanding the stop-caps set with ~30
+  common real-estate adjectives — this is inherently non-exhaustive but conservative: if a rare
+  adjective is absent from the set AND absent from the grounding, the headline is suppressed (safe
+  fallback). Any legitimate first-word proper noun in the grounding passes because
+  `re.search(\bWord\b, grounding)` finds it. (2) The token `"1,200/m"` (extracted from
+  `"$1,200/mo"`) does not match `"1,200"` in grounding under either the old or new implementation —
+  the regex includes `/m` as part of the token. Documented this in test docstrings; test fixture
+  uses space-terminated price to demonstrate the pass case cleanly. · **Guardrail I'd add:** When
+  tightening a fact-check heuristic, write the regression tests BEFORE changing the code ("red
+  first") so you confirm the old code fails the new precision cases — here I wrote the tests after
+  and discovered one test was wrong because the original was also failing it (for the `/mo` suffix
+  reason). Red-first would have caught this earlier.
+
 - **2026-06-11 / FOLLOW-169** · Brought `_generate_headline` to the description's anti-hallucination
   bar. Added `_HEADLINE_SYSTEM_PROMPT` (same fact-whitelist rules as
   `_SONNET_SYSTEM_PROMPT_TEMPLATE`), threaded `verified_facts` from the description call to avoid

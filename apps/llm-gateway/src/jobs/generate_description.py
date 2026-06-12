@@ -1194,13 +1194,28 @@ Nothing else.
 #   description body (FOLLOW-188 precedent).
 
 _HEADLINE_DIGIT_RE: re.Pattern[str] = re.compile(r"\d")
-# Proper nouns heuristic: capitalised word (≥2 chars) not at start of headline,
-# and not a common title/article/conjunction.
+# Proper nouns heuristic: capitalised words that are NOT likely proper names.
+# Covers: common articles / prepositions / conjunctions (original set) PLUS
+# common real-estate descriptive adjectives / archetypes that routinely open or
+# appear mid-headline and are generic, not place/person names.
+# FOLLOW-272: the set is now applied to ALL words (including words[0]) so it
+# must include the most common generic headline openers to avoid false positives.
 _HEADLINE_STOP_CAPS: frozenset[str] = frozenset(
     {
+        # Articles, prepositions, conjunctions
         "A", "An", "The", "In", "On", "At", "Of", "For", "To", "And", "Or", "But",
         "With", "From", "By", "As", "Its", "Is", "Are", "Was", "Be", "Has", "Have",
         "This", "That", "These", "Those", "Your", "Our", "Their",
+        # Common real-estate descriptive adjectives / openers (NOT proper names)
+        "Ideal", "Prime", "Strong", "Stunning", "Spacious", "Modern", "Elegant",
+        "Bright", "Charming", "Impressive", "Exceptional", "Superb", "Excellent",
+        "Beautiful", "Luxury", "Luxurious", "Attractive", "Unique", "Rare",
+        "Perfect", "Classic", "Contemporary", "Traditional", "Cosy", "Cozy",
+        "Quiet", "Peaceful", "Vibrant", "Sought", "Desirable", "Prestigious",
+        "Newly", "Well", "Fully", "Tastefully", "Beautifully", "Recently",
+        "Lovingly", "Generously", "Conveniently",
+        # Archetype framing words that open adapted headlines
+        "Investor", "Family", "Investment", "Lifestyle", "Portfolio",
     }
 )
 _HEADLINE_CAPS_WORD_RE: re.Pattern[str] = re.compile(r"\b([A-Z][a-z]+)\b")
@@ -1212,11 +1227,31 @@ def _check_headline_facts(
     listing_context: dict[str, Any],
 ) -> str | None:
     """
-    Post-generation fact check for the headline (FOLLOW-169 AC2).
+    Post-generation fact check for the headline (FOLLOW-169 AC2; tightened by
+    FOLLOW-272).
 
     Scans the headline for tokens that look like specific, named facts (digits,
-    capitalised words that may be proper names) and verifies each appears verbatim
-    in the combined grounding text (original_description + serialised listing_context).
+    capitalised words that may be proper names) and verifies each is grounded in the
+    combined grounding text (original_description + serialised listing_context).
+
+    FOLLOW-272 precision improvements over the original substring containment:
+
+    1. **Digit tokens** — previously used bare `token.lower() in grounding` (substring),
+       which admitted false negatives such as a hallucinated "5" matching "425000" or
+       a hallucinated "7%" matching "17%" in the serialised JSON.  The tightened check
+       uses a numeric-boundary lookaround so the token must appear as a complete numeric
+       unit: `(?<![0-9.,])<token>(?![0-9.,])`.  This prevents "$1,200" from being
+       "verified" by a grounding that only contains "$1,500".
+
+    2. **Proper-name detection extended to the first word** — previously `words[1:]`
+       skipped the first word entirely (designed to ignore sentence-start
+       capitalisation), which allowed a hallucinated proper name opening the headline
+       (e.g. "Reston Heights is a great buy") to escape detection.  The updated scan
+       covers ALL words; for the first word the stop-caps guard still applies (generic
+       sentence-starters like "Prime", "Stunning", "Ideal" will not be in grounding but
+       also will not be flagged because they are common enough to reach the stop-caps
+       set — see _HEADLINE_STOP_CAPS).  If a first-word proper name IS in the stop-caps
+       set it passes; if it is NOT in the set and NOT in grounding, it is flagged.
 
     Args:
         headline:             The stripped headline text (one line, ≤120 chars).
@@ -1231,24 +1266,33 @@ def _check_headline_facts(
     grounding = (original_description + " " + json.dumps(listing_context)).lower()
 
     # 1. Check any digit sequence (numbers, prices, percentages, dates, etc.).
-    #    E.g. "7.2%" or "300m" — if the digit string does not appear in the grounding, flag it.
+    #    FOLLOW-272: use numeric-boundary lookaround instead of bare substring so that
+    #    a short token like "5" does not match "425000" or "1,500" as a substring.
+    #    The pattern (?<![0-9.,])<token>(?![0-9.,]) requires the token to be surrounded
+    #    by non-numeric, non-decimal characters — i.e. it is a complete numeric unit.
     for token in re.findall(r"\d[\d.,/%m²sqftftm-]*", headline, re.IGNORECASE):
-        if token.lower() not in grounding:
+        token_lower = token.lower()
+        boundary_pattern = re.compile(
+            r"(?<![0-9.,])" + re.escape(token_lower) + r"(?![0-9.,])"
+        )
+        if not boundary_pattern.search(grounding):
             return "hallucinated_number"
 
-    # 2. Check capitalised words for possible proper names (mid-headline only).
-    #    Skip the first word (it is normally capitalised as a sentence start) and skip
-    #    common stop-words that are routinely capitalised.
+    # 2. Check capitalised words for possible proper names.
+    #    FOLLOW-272: extended to ALL words (including words[0]) so a hallucinated
+    #    proper name at the start of the headline is also caught.
+    #    The stop-caps guard prevents generic sentence-starters from being flagged.
     words = headline.split()
-    for word in words[1:]:
+    for word in words:
         # Strip trailing punctuation for lookup
         clean = word.rstrip(".,;:!?\"')")
         if not clean:
             continue
         # Only flag standalone capitalised words (≥2 chars, not in stop-caps set)
         if len(clean) >= 2 and clean[0].isupper() and clean not in _HEADLINE_STOP_CAPS:
-            # Check that the word (case-insensitive) is present in the grounding text
-            if clean.lower() not in grounding:
+            # FOLLOW-272: use word-boundary match so "est" does not match "Reston"
+            # in the grounding — re.search with \b ensures whole-token containment.
+            if not re.search(r"\b" + re.escape(clean) + r"\b", grounding, re.IGNORECASE):
                 return "hallucinated_proper_name"
 
     return None

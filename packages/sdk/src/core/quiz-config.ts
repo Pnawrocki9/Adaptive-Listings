@@ -32,6 +32,14 @@ import { QuizPublicConfigResponseSchema } from '@estalara/shared';
  * The key is not session-scoped because the quiz config is tenant-scoped and
  * does not change within a tab session.
  *
+ * Cache-key scope note (FOLLOW-278 AC4 / LG-2):
+ *   `estalara_quiz_config_cache` is a GLOBAL-PER-TAB key — not scoped by apiKey.
+ *   This is correct for the current single-embed-per-tab model (one SDK instance
+ *   per page).  If multi-embed-per-tab is ever supported (two SDK instances with
+ *   different apiKeys on the same page), this key MUST be scoped by apiKey to
+ *   prevent tenant A's config leaking to tenant B's SDK instance.
+ *   Implementation: append `_${apiKey}` to the key and update every call site.
+ *
  * @internal exported for tests only
  */
 export const QUIZ_CONFIG_CACHE_KEY = 'estalara_quiz_config_cache';

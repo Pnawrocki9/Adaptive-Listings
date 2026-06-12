@@ -275,6 +275,80 @@ dashboard-quiz-disable path depends on quiz_enabled propagating.
 
 ---
 
+## Addendum — Consent-banner locale (FOLLOW-278, 2026-06-12)
+
+**Status:** Accepted constraint (option iii of FOLLOW-278 AC1)
+
+### Finding
+
+FOLLOW-275 (PR #271) wired `fetchQuizConfig()` into the SDK init sequence and merged the
+server-fetched `language`/`accent_color` into `SdkConfig` via `mergeQuizConfig()` (index.ts:744).
+The quiz trigger and widget (rendered after the merge at index.ts:760–) correctly receive the
+server-fetched locale.
+
+However, the consent banner is rendered at the consent gate (index.ts:276, before the fetch), so it
+always uses the pre-fetch `config.language`. Because `buildSnippet()` does NOT emit `data-language`
+or `data-accent-color` (those attributes were retired alongside
+`data-quiz-enabled`/`data-micro-polls-enabled` by this ADR), the banner language is determined
+entirely by:
+
+1. A hand-coded `data-language` attribute on the tenant's snippet (if present, level 2).
+2. The buyer's `navigator.language` primary subtag (level 3).
+3. Hardcoded `'en'` fallback (level 4).
+
+### Decision
+
+The constraint is **accepted**. The init sequence is intentional by design:
+
+```
+1. readConfig()          ← snippet attributes + navigator.language
+2. resolveConsent()      ← consent GATE; banner renders here (pre-fetch)
+3. fetchQuizConfig()     ← runs AFTER consent resolves (ADR-0011 §SDK init sequence)
+4. mergeQuizConfig()     ← server values land here; quiz/widget uses them
+```
+
+The fetch MUST run after consent, not before — fetching tenant data before consent is resolved would
+be a GDPR-compliance issue on the data-transport level. The consent banner cannot wait for the
+fetch.
+
+Compliance confirmed (2026-06-12) that the current consent banner copy contains no locale-specific
+legal text that would make rendering in `'en'` for a `pl`/`es` tenant a legal defect. The banner is
+a UI affordance; the legally-binding DPIA §13.1/§13.2 disclosures are in the Privacy Notice (served
+separately, locale-correct at source).
+
+### Escape hatch (if locale-specific consent becomes a compliance requirement)
+
+Re-emit `data-language` (and optionally `data-accent-color`) in `buildSnippet()`:
+
+```typescript
+export function buildSnippet(
+  tenantId: string,
+  apiKey: string,
+  inquirySubmitSelector?: string | null,
+  language?: string | null, // re-add ONLY for pre-consent banner surface
+  accentColor?: string | null, // re-add ONLY for pre-consent banner surface
+): string;
+```
+
+This ADR ONLY retired the GATING/BEHAVIORAL flags (`data-quiz-enabled`, `data-micro-polls-enabled`).
+Display-preference attributes (`data-language`, `data-accent-color`) may be re-emitted without
+conflicting with the ADR rationale — the ADR's rationale was that post-activation-mutable CONFIG
+state must not live in the static snippet; a display preference that is also pre-activation-stable
+(language rarely changes) is categorically different.
+
+If re-emitted, update `readConfig()` to restore the level-2 attribute read (it still has the code
+path; the attribute simply has no producer until re-added to `buildSnippet()`). File a new PR
+updating this ADR and the FOLLOW-278 comment in `index.ts`.
+
+### Cross-reference
+
+- FOLLOW-278 (2026-06-12) — runtime rendering path (this addendum)
+- FOLLOW-273 (PR #268) — type unification (`QuizLanguage` from `@estalara/shared`)
+- FOLLOW-278 confirms FOLLOW-273 is NOT double-closed: FOLLOW-273 = type unification; FOLLOW-278 =
+  runtime rendering path. The two fixes are disjoint.
+
+---
+
 ## References
 
 - FOLLOW-275 (`backlog/FOLLOW_UPS.md`) — source retro RETRO-057

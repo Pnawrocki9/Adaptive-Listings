@@ -272,6 +272,31 @@ async function init(): Promise<IntentState | null> {
       if (earlyHost) {
         // Show banner and wait for the user's decision.
         // Returns true if consent was granted, false if denied.
+        //
+        // FOLLOW-278 / ADR-0011 (§Consent-banner locale) — Accepted constraint:
+        // The consent banner renders here, BEFORE fetchQuizConfig() resolves (step 3
+        // in the ADR-0011 init sequence).  By design, the fetch runs AFTER consent is
+        // resolved — the consent gate must precede any network call that reads tenant
+        // data, so the banner can never receive the server-fetched language/accentColor.
+        //
+        // `config.language` at this point is sourced from the `data-language` snippet
+        // attribute (level 2) or the browser's navigator.language (level 3) or the
+        // hardcoded 'en' default (level 4).  `buildSnippet()` does NOT emit
+        // `data-language` or `data-accent-color` (ADR-0011 retired both attributes
+        // alongside `data-quiz-enabled`/`data-micro-polls-enabled`), so for tenants
+        // who do not hand-code those attributes, the banner always uses the
+        // navigator.language or 'en' fallback.
+        //
+        // Decision: this constraint is accepted (option iii of FOLLOW-278 AC1):
+        //   - Compliance confirmed no locale-specific legal text in the banner that
+        //     would make an 'en' banner a legal defect in a pl/es jurisdiction.
+        //   - The quiz widget (rendered AFTER mergeQuizConfig()) correctly uses the
+        //     server-fetched language; only the pre-consent banner is affected.
+        //   - If a locale-specific consent banner becomes a compliance requirement,
+        //     the fix is to re-emit `data-language` in buildSnippet() — ADR-0011 only
+        //     retired the GATING/BEHAVIORAL flags, not display preferences — and update
+        //     ADR-0011 accordingly.  See the "Consent-banner locale" addendum section
+        //     added to docs/adr/ADR-0011-quiz-config-transport.md by FOLLOW-278.
         const granted = await new Promise<boolean>((resolve) => {
           renderConsentBanner(earlyHost.root, {
             language: config.language,

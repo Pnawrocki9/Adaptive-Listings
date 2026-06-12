@@ -7,9 +7,11 @@
 -- requires a hyphenated UUID string (e.g. 550e8400-e29b-41d4-a716-446655440000); a 64-char
 -- hex string is rejected by JSONEachRow, silently dropping 100% of rows.
 --
--- Fix: MODIFY COLUMN `intent_session_id` to `String NOT NULL DEFAULT ''`.
--- ClickHouse MergeTree supports MODIFY COLUMN to relax types (UUID → String is safe;
--- ClickHouse stores UUID as two UInt64 internally but String is accepted for any value).
+-- Fix: MODIFY COLUMN `intent_session_id` to `String DEFAULT ''`.
+-- ClickHouse MODIFY COLUMN does not accept NOT NULL; nullability is controlled by the
+-- column definition in the original CREATE TABLE. MergeTree supports MODIFY COLUMN to
+-- relax types (UUID → String is safe; ClickHouse stores UUID as two UInt64 internally
+-- but String is accepted for any value).
 --
 -- Note: ClickHouse does NOT allow renaming an ORDER BY key column, but it DOES allow
 -- changing the type of an ORDER BY key column when the new type is compatible.
@@ -18,7 +20,7 @@
 -- are preserved as hyphenated UUID strings; new writes can be any non-empty string.
 --
 -- After this migration:
---   intent_session_id String NOT NULL DEFAULT '' (ORDER BY key, accepts any string)
+--   intent_session_id String DEFAULT '' (ORDER BY key, accepts any string)
 --   session_id        String DEFAULT ''          (added by migration 0015, join key for FOLLOW-269)
 --
 -- The authoritative join key for FOLLOW-269 queries remains:
@@ -30,4 +32,4 @@
 -- re-application.
 
 ALTER TABLE intent_events
-  MODIFY COLUMN intent_session_id String NOT NULL DEFAULT '';
+  MODIFY COLUMN intent_session_id String DEFAULT '';

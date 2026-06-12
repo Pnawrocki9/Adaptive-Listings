@@ -1416,3 +1416,79 @@ Design that schema in FOLLOW-175; do not extend this summary endpoint.
 - `apps/control-plane/src/app/api/pilot/calibration/route.test.ts`
 
 ---
+
+## FOLLOW-266 Phase 1 (data-engineer) → FOLLOW-266 Phase 2 (backend-engineer) → FOLLOW-266 Phase 3 (sdk-engineer)
+
+**From:** pm-orchestrator **To:** backend-engineer + sdk-engineer **Date:** 2026-06-12T12:00:00Z
+**Phase 1 DONE:** PR #277 merged 2026-06-12T18:23:36Z (commit 61be83a). RETRO-064 pending.
+
+**Summary:** FOLLOW-266 is a 3-agent co-assigned ticket for the K.3.6 Archetype Identification
+Tracer foundation. Work is sequenced to avoid merge conflicts:
+
+- **Phase 1 (data-engineer) — DONE (PR #277):** ClickHouse `intent_events` DDL migration 0014 +
+  Supabase `intent_sessions` migration 0028 + Drizzle schema
+  `packages/db/src/schema/intent-sessions.ts`. Both on main as of 2026-06-12T18:23:36Z.
+- **Phase 2 (backend-engineer) — IN_PROGRESS:** Supabase `intent_weight_configs` migration 0029
+  (AC2) + CF Worker ingest dual-write handler for `intent.snapshot` events (AC5). Branch:
+  `backend-engineer/FOLLOW-266-k36-ingest-handler`.
+- **Phase 3 (sdk-engineer) — BACKLOG (depends on Phase 2):** New `intent.snapshot` Zod event type +
+  SDK emission logic in `packages/sdk/src/core/intent.ts` (AC4). Branch:
+  `sdk-engineer/FOLLOW-266-k36-intent-snapshot-event`.
+
+**Phase 1 artifacts now on main (read these first):**
+
+- `packages/db/migrations/0028_intent_sessions.sql` — intent_sessions table DDL (RLS, indexes,
+  UNIQUE)
+- `packages/db/src/schema/intent-sessions.ts` — Drizzle schema definition (all column types)
+- `infra/clickhouse/migrations/0014_intent_events.sql` — intent_events ClickHouse MergeTree DDL
+- `packages/db/migrations/meta/_journal.json` — idx=28 added (next migration must be idx=29)
+
+**Action required (backend-engineer — Phase 2):** Phase 1 is on main. Implement:
+
+1. Migration `0029_intent_weight_configs.sql`: table with `id uuid PK`,
+   `tenant_id uuid NULL REFERENCES tenants(id)`, `is_active bool DEFAULT true`, `weights jsonb`,
+   `created_at timestamptz`, `created_by uuid REFERENCES users(id)`. RLS policy:
+   `tenant_id IS NULL OR tenant_id = current_setting('app.current_tenant_id', true)::uuid` (match
+   existing RLS pattern from intent_sessions). UNIQUE(tenant_id, is_active) WHERE is_active = true.
+   Journal entry idx=29 (check \_journal.json — current last is idx=28, when=1781287352000; set new
+   when to current epoch ms).
+2. In `apps/ingest/src/handlers/events.ts` (or a new `apps/ingest/src/handlers/intent-snapshot.ts`):
+   add a handler branch for `event.type === 'intent.snapshot'`. On match: (a) INSERT into ClickHouse
+   `intent_events` via existing `clickhouse-producer.ts` pattern, using columns: intent_session_id,
+   tenant_id, event_at, event_type, archetype_deltas, confidence_before, confidence_after,
+   top_archetype, event_payload; (b) UPSERT into Supabase `intent_sessions` via Drizzle DB client —
+   use `intentSessions` export from `packages/db/src/schema/index.ts`.
+3. Vitest integration test: mock ClickHouse producer + DB client; assert both writes fire on
+   `intent.snapshot` input; assert skipped for other event types; assert `intent_sessions` upsert
+   increments `signal_count` and updates `last_event_at`.
+
+**Action required (sdk-engineer — Phase 3 — do NOT start until Phase 2 PR is open):** After Phase 2
+PR is open (backend-engineer has confirmed the intent.snapshot event payload shape in the handler),
+implement:
+
+1. Add `IntentSnapshotEventSchema` to `packages/shared/src/schemas/events/intent.ts` (new file or
+   existing). Schema fields:
+   `archetype, confidence, signal_count, probabilities: record<string, number>, quiz_completed: boolean, quiz_leaf: string | null, chat_turns: number, last_signal_delta: { archetype_deltas: record<string, number>, event_type: string }`.
+   Add to `EventSchema` discriminated union.
+2. In `packages/sdk/src/core/intent.ts`: after every 5th `processSignal()` call AND on
+   `window.beforeunload`, emit `intent.snapshot` via the existing `queueEvent()` mechanism.
+3. Unit test: 5-signal cycle → snapshot emitted; `beforeunload` → snapshot emitted; re-hydrated
+   session → counter resets correctly.
+
+**Files to read before starting (Phase 2):**
+
+- `backlog/FOLLOW_UPS.md` §FOLLOW-266 (full AC spec)
+- `docs/MASTER_DESIGN.md` §K.3.6 (schema DDL + design rationale)
+- `packages/db/migrations/0028_intent_sessions.sql` (Phase 1 intent_sessions DDL — read columns
+  carefully)
+- `packages/db/src/schema/intent-sessions.ts` (Drizzle column definitions — use `intentSessions`
+  import)
+- `infra/clickhouse/migrations/0014_intent_events.sql` (Phase 1 intent_events DDL — use these exact
+  column names)
+- `packages/db/migrations/meta/_journal.json` (idx=28 is last; your migration must be idx=29)
+- `apps/ingest/src/clickhouse-producer.ts` (CH write pattern)
+- `apps/ingest/src/handlers/events.ts` (event handler pattern)
+- `packages/shared/src/schemas/events/` (event schema pattern)
+- `packages/sdk/src/core/intent.ts` (intent engine — add emit here, Phase 3 only)
+
+---

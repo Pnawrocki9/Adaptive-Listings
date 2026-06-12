@@ -1,6 +1,6 @@
 # Backlog Queue
 
-**Updated 2026-06-12T09:00Z. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE.
+**Updated 2026-06-12T12:00Z. Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE.
 RETRO-050/051/052/053 complete. FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-11 (quiz-only
 ratified, docs synced, contract-pinning tests, mis-citation fixed; RETRO-052 → Rule U promoted,
 FOLLOW-271 stub). FOLLOW-264 (P2) DONE — PR #263 merged 2026-06-11 (Option-A removal complete:
@@ -18,15 +18,15 @@ quizConfig.enabled on write + backfill migration, Rule U closed). Wave A COMPLET
 DONE. ESC-020 OPEN but pipeline UNBLOCKED per CEO clarification 2026-06-10: local-first testing
 required before prod deploy; Rafal action deferred until CEO signs off locally. FOLLOW-266–269
 added: Archetype Identification Tracer (§K.3.6, CEO-directed 2026-06-10) — stubs in FOLLOW_UPS.md,
-promoted to Sprint 17 planning. Sprint 17 OPEN — FOLLOW-274 PM-VALIDATED READY_FOR_REVIEW (PR #267,
-real CI gates green; SDK bundle bloat pre-existing on main), FOLLOW-273 PM-VALIDATED
-READY_FOR_REVIEW (PR #268, real CI gates green; SDK bundle bloat pre-existing on main), FOLLOW-272
-READY (P3, ml-engineer). RETRO-057 complete: micro_polls_enabled is still P1 HALF_WIRE in prod
-(DetectWizard.tsx:259 never passes the flag). ADR-0011 ACCEPTED (PR #269), FOLLOW-275 DONE (PR
-#270 + #271 merged 2026-06-12, RETRO-058 complete — first true closure of the 8-retro quiz_config
-lineage). FOLLOW-276 (P1) + FOLLOW-277/278 (P2) promoted to Sprint 17. FOLLOW-272 (P3) READY.
-FOLLOW-277 DONE (PR #276 merged 2026-06-12 — HALF_WIRE_C closed: data_source field wired
-schema→route→SDK; auth-path 500→503 fixed; RETRO-059 to be spawned).**
+promoted to Sprint 17 planning. Sprint 17 WAVE 1 COMPLETE (2026-06-12): FOLLOW-274 DONE (PR #267),
+FOLLOW-273 DONE (PR #268), FOLLOW-272 DONE (PR #275), FOLLOW-275 DONE (PRs #270+#271), FOLLOW-276
+DONE (PR #272), FOLLOW-277 DONE (PR #276), FOLLOW-278 DONE (PR #273), FOLLOW-279 DONE (PR #274 —
+doc-only correction to ADR-0011 false retired claim). RETRO-059/060/061 complete. RETRO-062
+(FOLLOW-276) and RETRO-063 (FOLLOW-278) pending spawn. FOLLOW-266 Phase 1 DONE: PR #277 merged
+2026-06-12T18:23:36Z (intent_sessions Supabase migration 0028 + intent_events ClickHouse DDL 0014;
+data-engineer complete). RETRO-064 (FOLLOW-266 Phase 1) pending spawn. FOLLOW-266 Phase 2
+IN_PROGRESS — delegated 2026-06-12T19:00Z to backend-engineer (intent_weight_configs migration
+0029 + CF Worker dual-write handler).**
 
 **Sprint 13a-hardening-v3 DONE — FOLLOW-149 (P0 infra hardening) DONE at PR #166
 (https://github.com/Pnawrocki9/Adaptive-Listings/pull/166, MERGED).** Triggered by a 2026-05-28
@@ -165,9 +165,10 @@ updates.
 CRM docs, micro-poll Wave 2 | 17 | 16 | 0 | 1 | 0 | | Wave A | — | Bug fix cluster: data-loss
 (FOLLOW-258), cross-tenant auth (FOLLOW-260), SQL injection (FOLLOW-261), feedback ping
 (FOLLOW-259), lifecycle (FOLLOW-262) | 5 | 5 | 0 | 0 | 0 | | 17 | 19 | quiz_config blob cleanup
-(FOLLOW-274), SDK locale enum alignment (FOLLOW-273), headline fact-check tightening (FOLLOW-272),
-micro_polls wire (FOLLOW-275 DONE) + docs/fallback/locale fixes (FOLLOW-276/277/278) + Tracer
-(FOLLOW-266–269) | 7 | 1 | 0 | 5 | 0 |
+(FOLLOW-274 DONE), SDK locale enum alignment (FOLLOW-273 DONE), headline fact-check tightening
+(FOLLOW-272 DONE), micro_polls wire (FOLLOW-275 DONE) + docs/fallback/locale fixes
+(FOLLOW-276/277/278/279 DONE) + Tracer (FOLLOW-266 IN_PROGRESS, 267/268/269 BACKLOG) | 12 | 8 | 1 |
+0 | 3 |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -4077,8 +4078,9 @@ measurement dashboard.
 
 **Added 2026-06-11 (pm-orchestrator). FOLLOW-274 promoted from RETRO-056 stub; FOLLOW-273 promoted
 from RETRO-055 stub; FOLLOW-272 promoted from RETRO-054 stub. FOLLOW-266–269 (Archetype
-Identification Tracer, CEO-directed 2026-06-10, §K.3.6) reserved — ticket files TBD at sprint
-planning.**
+Identification Tracer, CEO-directed 2026-06-10, §K.3.6) ticket files written 2026-06-12 — status
+BACKLOG, pending sprint planning start. FOLLOW-266 gates 267→268→269 (strict sequence). Simulation
+engine deferred to FOLLOW-282 per CEO D-3.**
 
 ```yaml
 - id: FOLLOW-274
@@ -4086,7 +4088,7 @@ planning.**
     Resolve orphaned quiz_config blob keys — wire micro_polls_enabled end-to-end OR retire +
     sticky_widget retire (Rule U + Rule L)
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-06-11T12:00:00Z'
   completed_at: '2026-06-11T15:00:00Z'
@@ -4107,13 +4109,14 @@ planning.**
     RESOLUTION: micro_polls_enabled WIRED (buildSnippet emits data-micro-polls-enabled,
     readConfig parses it, SDK casts cleaned); sticky_widget RETIRED (schema omitted,
     migration 0027 backfill, dashboard toggle removed). All ACs complete, CI green.
+    MERGED: PR #267 (fbea331) 2026-06-12. RETRO-057 complete.
 
 - id: FOLLOW-273
   title:
     SDK quiz/locale path must reference canonical shared enum + reconcile QUIZ_LANGUAGE_VALUES vs
     LocaleSchema (Rule S cross-package)
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: sdk-engineer
   started_at: '2026-06-11T15:00:00Z'
   completed_at: '2026-06-11T16:30:00Z'
@@ -4133,23 +4136,29 @@ planning.**
     Parity test: SDK QUIZ_CONTENT keys must equal QUIZ_LANGUAGE_VALUES.
     RESOLUTION: LocaleSchema now derives from QUIZ_LANGUAGE_VALUES (single SoT). Six SDK files
     updated to use QuizLanguage from shared. QUIZ_CONTENT parity test added. All real CI gates green.
+    MERGED: PR #268 (e700782) 2026-06-12. Retro pending.
 
 - id: FOLLOW-272
   title:
     Tighten _check_headline_facts — digit coincidence + first-word proper-name escape (Rule S
     verification-tier)
   agent: ml-engineer
-  status: READY
+  status: DONE
+  assigned_to: ml-engineer
+  completed_at: '2026-06-12T07:00:00Z'
   priority: P3
   estimated_hours: 3
   depends_on: [FOLLOW-169]
   source_retro: RETRO-054 (§4a LG-1; §4c TG-1; §6 Rule-S close-out)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-272 stub)
   branch: ml-engineer/FOLLOW-272-headline-fact-check-precision
+  pr: '#275'
   notes: |
     _check_headline_facts uses bare substring containment which admits digit coincidences and
     first-word proper-name escapes. Tighten to word-boundary match or derive from verified_facts
     whitelist. No pilot blocker (fact-check is present and fail-safe; this raises PRECISION).
+    MERGED: PR #275 (7aee86c) 2026-06-12. RETRO-060 complete. FOLLOW-281 stub filed (locale
+    axis: proper-name scan locale-aware for pl/es/ar).
 
 - id: FOLLOW-275
   title:
@@ -4184,21 +4193,26 @@ planning.**
   title:
     sweep + correct 4 stale buildSnippet/data-micro-polls-enabled docstrings made false by ADR-0011
   agent: backend-engineer
-  status: READY
+  status: DONE
+  assigned_to: backend-engineer
+  completed_at: '2026-06-12T09:11:00Z'
   priority: P1
   estimated_hours: 1
   depends_on: []
   source_retro: RETRO-058 (§4d DG-1 P1)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-276 stub)
+  pr: '#272'
   notes: |
     4 docstrings in files outside the FOLLOW-275 diff still assert the retired
     buildSnippet-attribute transport. One is user-facing (page.tsx:252). Trivial sweep.
+    MERGED: PR #272 (eff4b7e) 2026-06-12. RETRO-062 pending spawn.
 
 - id: FOLLOW-277
   title: wire data_source fallback signal (HALF_WIRE_C) + fix auth-path DB-throw hard-500
   agent: backend-engineer
   status: DONE
-  pr: 276
+  pr: '#276'
+  completed_at: '2026-06-12T07:00:00Z'
   priority: P2
   estimated_hours: 3
   depends_on: []
@@ -4207,21 +4221,128 @@ planning.**
   notes: |
     Route emits data_source:'fallback' but QuizPublicConfigResponseSchema omits it —
     SDK silently drops it (HALF_WIRE_C). Auth-path DB throw hard-500s against fail-soft contract.
+    MERGED: PR #276 (01f5e2b) 2026-06-12. RETRO-059 complete. FOLLOW-280 stub filed (prod
+    observability gap: debug-gated consumer doesn't fire in prod).
+
+- id: FOLLOW-279
+  title:
+    Correct false "retired" doc claim for data-language/data-accent-color in ADR-0011 + index.ts
+    comment (doc-only fix + incidental lint fix)
+  agent: sdk-engineer
+  status: DONE
+  assigned_to: sdk-engineer
+  completed_at: '2026-06-12T09:11:00Z'
+  priority: P3
+  estimated_hours: 0.5
+  depends_on: [FOLLOW-278]
+  source_retro: RETRO-061 (§4a DG-1; §6 ungated-prose-wire-assertion meta-pattern)
+  pr: '#274'
+  notes: |
+    FOLLOW-278 introduced false "retired" claims for data-language/data-accent-color in two
+    places. These attrs were NEVER emitted by buildSnippet (git-history verified). Corrected to
+    "never emitted". Also fixed incidental lint error (redundant ?? false on boolean field).
+    MERGED: PR #274 (9922d9c) 2026-06-12. RETRO-061 complete. No new follow-ups (folded into
+    existing FOLLOW-276 scope recommendation).
 
 - id: FOLLOW-278
   title:
     consent-banner locale/accent gap + locale render-hop test (server-fetched language reaches quiz
     but not consent banner)
   agent: sdk-engineer
-  status: READY
+  status: DONE
+  assigned_to: sdk-engineer
+  completed_at: '2026-06-12T09:11:00Z'
   priority: P2
   estimated_hours: 3
   depends_on: []
   source_retro: RETRO-058 (§4a LG-1 P2; §4c TG-1 P2)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-278 stub)
+  pr: '#273'
   notes: |
     mergeQuizConfig() runs after consent banner renders — banner gets snippet language,
     quiz/widget get server language. Add locale render-hop test per Rule L.
+    MERGED: PR #273 (e61418d) 2026-06-12. RETRO-063 pending spawn. Note: FOLLOW-279 (PR #274)
+    corrected false "retired" claim introduced by this PR's docs — doc-fix merged same day.
+
+- id: FOLLOW-266
+  title: >
+    K.3.6 foundation — DB schema (intent_sessions + intent_weight_configs Supabase migrations,
+    intent_events ClickHouse table) + SDK intent.snapshot event + CF Worker dual-write handler
+  agent: data-engineer + backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer (Phase 2)
+  started_at: '2026-06-12T12:00:00Z'
+  phase2_started_at: '2026-06-12T19:00:00Z'
+  priority: P1
+  estimated_hours: 6
+  depends_on: []
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-266 stub)
+  branch: backend-engineer/FOLLOW-266-k36-ingest-handler
+  notes: |
+    Three new tables: intent_sessions (Supabase, per-session summary, UNIQUE tenant+session, RLS),
+    intent_weight_configs (Supabase, global weight store, CEO D-4), intent_events (ClickHouse,
+    MergeTree ORDER BY tenant+session+time). SDK emits intent.snapshot every 5 signals OR
+    window.beforeunload; payload: archetype/confidence/probabilities/quiz/chat/last_delta.
+    CF Worker ingest handler dual-writes: INSERT intent_events + UPSERT intent_sessions.
+    Gates FOLLOW-267, FOLLOW-268, FOLLOW-269.
+    Phase 1 DONE: PR #277 merged 2026-06-12T18:23:36Z (data-engineer: intent_sessions migration
+    0028 + intent_events ClickHouse DDL 0014). RETRO-064 pending.
+    Phase 2 IN_PROGRESS 2026-06-12T19:00Z: backend-engineer — intent_weight_configs migration 0029
+    + CF Worker intent.snapshot dual-write handler (AC2 + AC5). See HANDOFFS.md.
+    Phase 3 (sdk-engineer: intent.snapshot event + SDK emission, AC4) to follow Phase 2.
+
+- id: FOLLOW-267
+  title: >
+    K.3.6 admin API layer — active-sessions list, SSE live stream, history search + replay, export
+    endpoints, and /api/intent/config SDK weight-fetch route
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P1
+  estimated_hours: 8
+  depends_on: [FOLLOW-266]
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-267 stub)
+  notes: |
+    Routes: GET /api/admin/tracer/sessions (active last 15 min), /sessions/:id (detail),
+    /sessions/:id/stream (SSE 3s poll ClickHouse), /history (paginated + filters),
+    /history/:id (full replay), /export/decisions (CSV/JSONL), /export/events (JSONL).
+    SDK-facing: GET /api/intent/config — returns active global weights (5-min CDN TTL).
+    All admin routes require ADMIN_API_SECRET or admin JWT.
+    Gates FOLLOW-268, FOLLOW-269.
+
+- id: FOLLOW-268
+  title: >
+    K.3.6 weight editor backend — CRUD for intent_weight_configs (deactivate-prior pattern) + SDK
+    weight-fetch at init (CEO D-1: effective within 5 min, fail-soft)
+  agent: backend-engineer + sdk-engineer
+  status: BACKLOG
+  priority: P2
+  estimated_hours: 6
+  depends_on: [FOLLOW-266, FOLLOW-267]
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-268 stub)
+  notes: |
+    POST /api/admin/tracer/weights: Zod-validated, deactivates prior active global row +
+    inserts new. GET /api/admin/tracer/weights: current active config. Export route.
+    SDK init(): fetch /api/intent/config, cache 5 min (ADR-0011 pattern), apply
+    signal_weights/priors/behavioral_damping before first processSignal(); fail-soft on error.
+    Simulation NOT in scope (CEO D-3 — FOLLOW-282). Gates FOLLOW-269.
+
+- id: FOLLOW-269
+  title: >
+    K.3.6 frontend — Live Session Monitor + Session History + Weight Editor + Export Dashboard (4
+    admin UI surfaces) + Master Design §K.3.6 update
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P2
+  estimated_hours: 10
+  depends_on: [FOLLOW-266, FOLLOW-267, FOLLOW-268]
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-269 stub)
+  notes: |
+    /admin/tenants/[id]/tracer (K.3.6.1 — SSE live monitor, probability bar chart, chat gate stub),
+    /admin/tenants/[id]/tracer/history (K.3.6.2 — filters, replay, CSV/JSONL export),
+    /admin/tracer/weights (K.3.6.3 — global weight editor, sliders, no simulation per D-3),
+    /admin/tenants/[id]/tracer/export (K.3.6.4 — export dashboard).
+    Master Design §K.3.6 section update + Snapshot.1 K row update.
+    POST-MERGE NOTE: PM must ask CEO for exact DPIA/client-notification scope for chat logging (D-2).
 ```
 
 ## Currently in flight

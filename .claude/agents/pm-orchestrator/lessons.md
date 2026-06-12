@@ -2,6 +2,50 @@
 
 ---
 
+**Date / ticket:** 2026-06-12 — FOLLOW-266 Phase 1 DONE validation (PR #277 already merged)
+**Delegation row used:** Row 4 (ClickHouse/data-engineer Phase 1, completed) + Row 2
+(backend-engineer Phase 2, now delegating). **What validation caught (or missed):** PR #277 was
+MERGED before this session ran — `gh pr list --state all` confirmed merge at 2026-06-12T18:23:36Z.
+Three retros (RETRO-062 FOLLOW-276, RETRO-063 FOLLOW-278, RETRO-064 FOLLOW-266 P1) were all pending
+spawn simultaneously. For greenfield migrations-only Phase 1 PRs, Rule I is satisfied by the Drizzle
+barrel re-export (`intentSessions` export in schema/index.ts) — data-engineer documented this
+explicitly in PR body, which made validation straightforward. Phase 2 (backend-engineer) must use
+the exact column names from migration 0028 and the ClickHouse DDL 0014 — integration check 5d will
+grep for those column names across both phases. **A delegation/validation rule I'd add:** When a
+co-assigned ticket completes Phase 1 (schema-only), always confirm the migration number continuity
+(0028 → 0029) and CH migration continuity (0014 → 0015) before delegating Phase 2 to avoid journal
+monotonicity failures.
+
+---
+
+**Date / ticket:** 2026-06-12 — FOLLOW-266 Phase 1 spawn (data-engineer delegation) **Delegation row
+used:** Row 4 — ClickHouse, Redpanda, ETL, archetype pipeline → data-engineer (AC1 Supabase
+migration + AC3 ClickHouse DDL). **What validation caught (or missed):** Pre-delegation repo-read
+confirmed: last Supabase migration idx=27 when=1781208120531, last ClickHouse migration 0013.
+Data-engineer must hand-patch journal `when` per Rule O if drizzle-kit emits a stale timestamp. Rule
+H deferral comment required in SQL files since Phase 2 consumer lands in a separate PR. **A
+delegation/validation rule I'd add:** For migrations-only PRs (no runtime code), Rule I is satisfied
+by a barrel re-export of the Drizzle schema file — document this path explicitly in delegation
+prompts to avoid unnecessary Rule I CI failures.
+
+---
+
+**Date / ticket:** 2026-06-12 — FOLLOW-266 delegation (K.3.6 Archetype Tracer foundation, 3-agent
+co-assigned) **Delegation row used:** Row 4 (ClickHouse — data-engineer primary), Row 2 (CF Worker
+ingest/Postgres — backend-engineer), Row 1 (SDK event — sdk-engineer). **What validation caught (or
+missed):** git log at session start showed 8 tickets merged since last STATUS.md update —
+FOLLOW-272/276/277/278/279 not yet marked DONE, FOLLOW-273/274 still READY_FOR_REVIEW. Caught all
+via `git log --oneline -20` vs QUEUE.md. The 3-agent co-assigned ticket (FOLLOW-266) required
+explicit sequencing: data-engineer (DB/CH tables AC1-3) → backend-engineer (CF Worker AC5) →
+sdk-engineer (intent.snapshot AC4). Step 5d integration check will be critical: the CF Worker
+consumer (AC5) must read from the same schema data-engineer defines (AC1-3), and the SDK event (AC4)
+must use the Zod schema the same branch defines. **A delegation/validation rule I'd add:** For
+3-agent co-assigned greenfield tickets, always enforce strict phase sequencing in HANDOFFS.md — the
+"all three can work in parallel" temptation is wrong when Phase 2 agents need Phase 1's type
+definitions.
+
+---
+
 **Date / ticket:** 2026-06-11 — FOLLOW-274 (PR #267) + FOLLOW-273 (PR #268) validation **Delegation
 row used:** Rows 1 and 2 (sdk-engineer for SDK locale, backend-engineer for control-plane). **What
 validation caught (or missed):** Build CI gate "SDK bundle size 51.24KB > 40KB" was FAILING on both

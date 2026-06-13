@@ -1,10 +1,19 @@
 /**
  * Intent weight config fetch — ADR-0012 Ticket C (FOLLOW-268-sdk).
  *
- * The SDK fetches `GET <decisionApiUrl>/api/intent/config` at init time (parallel to
+ * The SDK fetches `GET <decisionApiUrl>/intent/config` at init time (parallel to
  * `fetchQuizConfig`) to read server-managed intent weight overrides. The response is
  * validated with `IntentConfigResponseSchema` and the `data_source` field determines
  * whether the weights are applied.
+ *
+ * URL convention (FOLLOW-305 fix):
+ *   `decisionApiUrl` = `https://admin.estalara.com/api` (host + `/api`),
+ *   as emitted by `buildSnippet()` in DetectionPreview.tsx:153.
+ *   The fetch target is `buildEndpoint(decisionApiUrl, '/intent/config')` =
+ *   `https://admin.estalara.com/api/intent/config`.
+ *   DO NOT prepend `/api` here — it is already in `decisionApiUrl`.
+ *   (Prior to FOLLOW-305, this file incorrectly built `…/api/intent/config`, producing
+ *   a double-`/api` 404 against every production-onboarded tenant.)
  *
  * `data_source` handling (ADR-0012 §3, FOLLOW-299):
  *   - `'live'`  → parse `weights` via IntentWeightsSchema and return them.
@@ -34,6 +43,7 @@
 
 import { IntentConfigResponseSchema } from '@estalara/shared';
 import type { IntentWeights } from '@estalara/shared';
+import { buildEndpoint } from './endpoint.js';
 
 /**
  * Fetch intent weight overrides from `GET /api/intent/config`.
@@ -52,7 +62,10 @@ import type { IntentWeights } from '@estalara/shared';
  * The tenant_id is resolved server-side from the bearer key; it is NOT passed as a
  * query parameter (ADR-0012 §1 auth model).
  *
- * @param decisionApiUrl - Base URL from SdkConfig (e.g. "https://admin.estalara.com").
+ * @param decisionApiUrl - Base URL from SdkConfig. Production value (emitted by
+ *   `buildSnippet()` in DetectionPreview.tsx): `"https://admin.estalara.com/api"`
+ *   (host + `/api`, NO trailing slash). Route path `/intent/config` is appended by
+ *   `buildEndpoint` — DO NOT pass the bare host here (RETRO-074 CB-1 / FOLLOW-305).
  * @param apiKey         - Tenant API key sent as Bearer token.
  * @param timeoutMs      - Fetch timeout in ms. Default: 1000.
  * @param debug          - When true, emits `console.warn` on `data_source='error'` and
@@ -65,7 +78,12 @@ export async function fetchIntentWeights(
   timeoutMs = 1_000,
   debug = false,
 ): Promise<IntentWeights | null> {
-  const url = `${decisionApiUrl.replace(/\/$/, '')}/api/intent/config`;
+  // FOLLOW-305 fix: use buildEndpoint so the route path is appended without
+  // duplicating the `/api` segment already present in decisionApiUrl.
+  // Production: "https://admin.estalara.com/api" + "/intent/config"
+  //           = "https://admin.estalara.com/api/intent/config"  ✓
+  // (Prior bug: prepended "/api/intent/config" → "/api/api/intent/config" → 404)
+  const url = buildEndpoint(decisionApiUrl, '/intent/config');
 
   const controller = new AbortController();
   const timer = setTimeout(() => {

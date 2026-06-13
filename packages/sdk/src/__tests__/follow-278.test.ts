@@ -39,7 +39,8 @@ import type { QuizPublicConfigResponse } from '@estalara/shared';
 // ---------------------------------------------------------------------------
 
 const SESSION_ID = 'e'.repeat(64);
-const DECISION_API_URL = 'https://admin.estalara.com';
+// FOLLOW-305: canonical form = host + /api, matching buildSnippet() in DetectionPreview.tsx:153.
+const DECISION_API_URL = 'https://admin.estalara.com/api';
 
 /** Pre-seed a session so getOrCreateSession() skips SHA-256 fingerprint generation. */
 function seedSession(): void {
@@ -92,11 +93,16 @@ function clearAll(): void {
 
 /**
  * Build a mock `fetch` that returns the given quiz config for
- * `/api/quiz/public-config`, and a neutral adapt response for all other URLs.
+ * `/quiz/public-config`, and a neutral adapt response for all other URLs.
+ *
+ * FOLLOW-305: the match path is `/quiz/public-config` (without a leading `/api`)
+ * because `decisionApiUrl` = `host + /api` and `buildEndpoint` appends only the
+ * route path. The full URL is `…/api/quiz/public-config` — `.includes` on the
+ * route suffix `/quiz/public-config` matches correctly.
  */
 function buildMockFetch(quizConfig: QuizPublicConfigResponse): ReturnType<typeof vi.fn> {
   return vi.fn().mockImplementation((url: string) => {
-    if (url.includes('/api/quiz/public-config')) {
+    if (url.includes('/quiz/public-config')) {
       return Promise.resolve({
         ok: true,
         status: 200,

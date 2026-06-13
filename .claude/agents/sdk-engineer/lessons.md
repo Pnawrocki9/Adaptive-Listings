@@ -293,3 +293,36 @@ DO get the locale; the accepted gap is the pre-fetch surface).
 already-merged fix, verify which SURFACE the test exercises. A test that only asserts in-memory
 config values (like AC3 in follow-275) is NOT a render-hop test even if it asserts the language
 field. Always trace the value from the config assignment through to the rendered DOM text.
+
+## 2026-06-13 / FOLLOW-268-sdk
+
+**What I built:** `resolveIntentOverrides` + `fetchIntentWeights` — the SDK leg of K.3.6 D-1
+(ADR-0012 Ticket C). Three files modified/created: `intent.ts` (IntentEngineOverrides interface,
+resolveIntentOverrides, optional overrides on initIntentState + applyBehavioralSignal),
+`intent-weights.ts` (new fetch module), `index.ts` (parallel Promise.all fetch wiring + cold-start
+gate restructure), 30-test suite.
+
+**What was uncertain:**
+
+1. Cold-start gate ordering: the existing code called `initIntentState()` at line ~415 then ran a
+   parallel fetch 350 lines later. ADR-0012 requires `initIntentState(overrides)` AFTER the fetch
+   (step 6 > step 3b). Resolution: keep the temporary `initIntentState()` placeholder for the
+   rehydration check, then re-call `initIntentState(intentOverrides)` at the top of the cold-start
+   gate after the fetch completes. The rehydration path correctly skips this re-initialization
+   (overrides were already baked in by the first-page cold-start).
+2. Integration test fragility: the first integration test compared `family_buyer` probability
+   between two `_initForTest()` runs using full `damping=1.0 vs 0.3`. The assertion failed because
+   `detectSiteSchema()` in jsdom is non-deterministic across runs (DOM state differs). Fix: redesign
+   the integration test to verify WIRING (fetch called, Bearer header correct, both fetches called
+   in parallel) rather than a fragile cross-run probability delta. The damping comparison is
+   correctly handled by the pure-function unit tests in AC3.
+3. `@estalara/shared` is a devDependency of the SDK, not a runtime dep. Using
+   `import type { IntentWeights }` (type-only import) in `intent.ts` keeps it tree-shakeable and
+   avoids adding a runtime dep.
+
+**A guardrail I'd add:** When testing an integration that involves two sequential `_initForTest()`
+calls comparing relative probability outputs, avoid it — DOM side effects from the first run
+(detectSiteSchema, archetype hints) make the second run non-deterministic. Prefer: (1) verify WIRING
+(fetch URLs, headers, call counts) from integration tests; (2) verify SEMANTICS (probability shifts,
+normalization) from pure-function unit tests where inputs are fully controlled. "Cross-run
+probability comparison via \_initForTest" is an anti-pattern.

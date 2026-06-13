@@ -19,6 +19,8 @@
  * @module @estalara/sdk/core/intent
  */
 
+import type { IntentWeights } from '@estalara/shared';
+
 export type Archetype =
   // Investors
   | 'yield_hunter'
@@ -517,6 +519,122 @@ export const CHAT_INTENT_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
 /** How much to dampen behavioral likelihoods relative to quiz likelihoods. */
 const BEHAVIORAL_DAMPING = 0.3;
 
+// ─── Server-supplied weight overrides (ADR-0012 Ticket C, FOLLOW-268-sdk) ────
+
+/**
+ * Resolved intent engine parameters for one browser session.
+ *
+ * Computed once at session start (after consent, before the first behavioral
+ * signal) by `resolveIntentOverrides()`. Callers pass this bundle into
+ * `initIntentState()` and `applyBehavioralSignal()` so the intent engine uses
+ * server-supplied parameters when available, falling back to module-level
+ * constants when weights are null.
+ *
+ * Pure value type — no mutation, no hidden state.
+ */
+export interface IntentEngineOverrides {
+  /** Resolved behavioral damping scalar. Default: BEHAVIORAL_DAMPING (0.3). */
+  behavioralDamping: number;
+  /** Resolved initial archetype priors (normalized to sum-to-1). Default: BASE_PRIOR. */
+  basePrior: ArchetypeProbabilities;
+  /**
+   * Resolved signal likelihoods. Merged over SIGNAL_LIKELIHOODS: server-supplied values
+   * for specified signal types replace SDK defaults; unspecified signal types retain
+   * SDK-internal defaults. Missing archetypes within a given signal entry default to 1.0.
+   */
+  signalLikelihoods: Record<string, ArchetypeProbabilities>;
+}
+
+/**
+ * Build the default IntentEngineOverrides from module-level constants.
+ * Returned when `weights` is null so callers never need to branch.
+ *
+ * @internal
+ */
+function defaultOverrides(): IntentEngineOverrides {
+  return {
+    behavioralDamping: BEHAVIORAL_DAMPING,
+    basePrior: { ...BASE_PRIOR },
+    signalLikelihoods: { ...SIGNAL_LIKELIHOODS },
+  };
+}
+
+/**
+ * Apply server-supplied weight overrides to the intent engine's defaults.
+ *
+ * Called once at session start (after consent is resolved, before behavioral
+ * signals are processed). Returns an overrides bundle that callers pass to
+ * `applyBehavioralSignal` and `initIntentState` instead of the module-level
+ * constants. Pure function — does not mutate module state.
+ *
+ * Merge semantics (ADR-0012 §3):
+ *   - `priors`: each server-supplied archetype value is merged WITH BASE_PRIOR
+ *     (unspecified archetypes keep their BASE_PRIOR value), then the merged
+ *     distribution is normalized to sum to 1.0.  This prevents unspecified
+ *     archetypes from collapsing to 0 (the "uniform distribution collapse" risk
+ *     documented in ADR-0012 §Risks).
+ *   - `behavioral_damping`: replaces BEHAVIORAL_DAMPING scalar directly.
+ *   - `signal_likelihoods`: each server entry overrides the full archetype row
+ *     for that signal type (merged over SIGNAL_LIKELIHOODS; unspecified signal
+ *     types retain their SDK defaults; missing archetypes within a server entry
+ *     default to 1.0 — no information).
+ *
+ * Fallback contract: if `weights` is null (fetch failed, returned mock, or
+ * returned error), the returned bundle contains the SDK's internal defaults
+ * unchanged.  The intent engine MUST behave identically to the no-server-weights
+ * path when weights is null.
+ *
+ * @param weights - Parsed IntentWeights from the server, or null on failure.
+ * @returns IntentEngineOverrides — resolved values for behavioral_damping,
+ *          initial priors, and signal_likelihoods to use for this session.
+ */
+export function resolveIntentOverrides(weights: IntentWeights | null): IntentEngineOverrides {
+  if (!weights) return defaultOverrides();
+
+  // ── behavioralDamping ──────────────────────────────────────────────────────
+  const behavioralDamping = weights.behavioral_damping ?? BEHAVIORAL_DAMPING;
+
+  // ── basePrior ──────────────────────────────────────────────────────────────
+  // Merge: start with BASE_PRIOR, overlay server priors for specified archetypes,
+  // then normalize so probabilities sum to 1.0.  Unspecified archetypes keep
+  // their BASE_PRIOR value — prevents uniform distribution collapse on partial
+  // overrides (ADR-0012 §Risks: "Partial priors divergence").
+  let basePrior: ArchetypeProbabilities;
+  if (weights.priors && Object.keys(weights.priors).length > 0) {
+    const merged = { ...BASE_PRIOR };
+    for (const [k, v] of Object.entries(weights.priors)) {
+      if (k in merged) {
+        (merged as Record<string, number>)[k] = v;
+      }
+    }
+    basePrior = normalize(merged);
+  } else {
+    basePrior = { ...BASE_PRIOR };
+  }
+
+  // ── signalLikelihoods ──────────────────────────────────────────────────────
+  // Start with the SDK defaults; overlay server-supplied rows.
+  // Within a server-supplied row, missing archetypes default to 1.0 (no
+  // information — mirrors makeLikelihood() semantics).
+  let signalLikelihoods: Record<string, ArchetypeProbabilities>;
+  if (weights.signal_likelihoods && Object.keys(weights.signal_likelihoods).length > 0) {
+    signalLikelihoods = { ...SIGNAL_LIKELIHOODS };
+    for (const [signalKey, archRow] of Object.entries(weights.signal_likelihoods)) {
+      // Build a full archetype row: start from 1.0 baseline (no-information),
+      // then overlay the server-supplied per-archetype values.
+      const baselineRow = Object.fromEntries(ARCHETYPE_NAMES.map((k) => [k, 1.0]));
+      for (const [archKey, archVal] of Object.entries(archRow)) {
+        baselineRow[archKey] = archVal;
+      }
+      signalLikelihoods[signalKey] = baselineRow as ArchetypeProbabilities;
+    }
+  } else {
+    signalLikelihoods = { ...SIGNAL_LIKELIHOODS };
+  }
+
+  return { behavioralDamping, basePrior, signalLikelihoods };
+}
+
 /** Default decay rate per minute (fraction of distance toward uniform). */
 const DEFAULT_DECAY_RATE = 0.02;
 
@@ -603,9 +721,19 @@ export function classifyFromProbabilities(probs: ArchetypeProbabilities): {
   return { archetype, confidence: maxProb };
 }
 
-/** Initialize intent state with BASE_PRIOR probabilities. */
-export function initIntentState(): IntentState {
-  const probabilities = { ...BASE_PRIOR };
+/**
+ * Initialize intent state with BASE_PRIOR probabilities (or server-supplied priors).
+ *
+ * When `overrides` is provided (non-null), the initial probabilities are taken
+ * from `overrides.basePrior` — which is the server-supplied prior merged with
+ * BASE_PRIOR and normalized (see `resolveIntentOverrides`).  When `overrides`
+ * is absent or null, BASE_PRIOR is used unchanged (backward-compatible default).
+ *
+ * @param overrides - Resolved session-level overrides from `resolveIntentOverrides()`,
+ *   or undefined for the default BASE_PRIOR (backward-compatible).
+ */
+export function initIntentState(overrides?: IntentEngineOverrides): IntentState {
+  const probabilities = overrides ? { ...overrides.basePrior } : { ...BASE_PRIOR };
   const { archetype, confidence } = classifyFromProbabilities(probabilities);
   return {
     archetype,
@@ -742,25 +870,38 @@ function applyFilterBoosts(
  * on runtime payload values that cannot be encoded in a static table.
  *
  * For all other known event types, the raw signal likelihood from
- * SIGNAL_LIKELIHOODS is dampened by BEHAVIORAL_DAMPING (0.3) and applied
+ * SIGNAL_LIKELIHOODS (or `overrides.signalLikelihoods` when provided) is dampened
+ * by BEHAVIORAL_DAMPING (or `overrides.behavioralDamping` when provided) and applied
  * multiplicatively. Unknown event types return the state unchanged (same
  * reference, signal_count is NOT incremented).
+ *
+ * @param state     - Current intent state.
+ * @param eventType - The behavioral event type string.
+ * @param payload   - Optional event payload (used by payload-conditional intercepts).
+ * @param overrides - Optional session-level weight overrides from `resolveIntentOverrides()`.
+ *   When absent the module-level constants BEHAVIORAL_DAMPING and SIGNAL_LIKELIHOODS are used.
+ *   Backward-compatible: callers that do not pass overrides are unaffected.
  */
 export function applyBehavioralSignal(
   state: IntentState,
   eventType: string,
   payload?: Record<string, unknown>,
+  overrides?: IntentEngineOverrides,
 ): IntentState {
+  // Resolve the effective damping and likelihood table for this call.
+  const effectiveDamping = overrides ? overrides.behavioralDamping : BEHAVIORAL_DAMPING;
+  const effectiveLikelihoods = overrides ? overrides.signalLikelihoods : SIGNAL_LIKELIHOODS;
+
   // Intercept listing.bookmarked before the static SIGNAL_LIKELIHOODS lookup.
   // The static table handles the neutral→0.70 push; here we apply payload-conditional additive
   // boosts on top of the multiplicative update (FOLLOW-210 spec step 3).
   if (eventType === 'listing.bookmarked') {
-    const rawLikelihoodBookmarked = SIGNAL_LIKELIHOODS['listing.bookmarked'];
+    const rawLikelihoodBookmarked = effectiveLikelihoods['listing.bookmarked'];
     // rawLikelihoodBookmarked is always defined (key exists in SIGNAL_LIKELIHOODS above)
     if (!rawLikelihoodBookmarked) return state;
 
     const dampedLikelihoodBookmarked = Object.fromEntries(
-      ARCHETYPE_NAMES.map((k) => [k, 1 + (rawLikelihoodBookmarked[k] - 1) * BEHAVIORAL_DAMPING]),
+      ARCHETYPE_NAMES.map((k) => [k, 1 + (rawLikelihoodBookmarked[k] - 1) * effectiveDamping]),
     ) as ArchetypeProbabilities;
 
     // Step 1: apply the static multiplicative likelihood (neutral push)
@@ -839,12 +980,12 @@ export function applyBehavioralSignal(
   // then payload-conditional multiplicative boosts keyed on payload.feature. An unrecognized
   // (or absent) feature value gets the base neutral-push only — no targeted boost.
   if (eventType === 'feature.expanded') {
-    const rawLikelihoodFeature = SIGNAL_LIKELIHOODS['feature.expanded'];
+    const rawLikelihoodFeature = effectiveLikelihoods['feature.expanded'];
     // rawLikelihoodFeature is always defined (key exists in SIGNAL_LIKELIHOODS above)
     if (!rawLikelihoodFeature) return state;
 
     const dampedLikelihoodFeature = Object.fromEntries(
-      ARCHETYPE_NAMES.map((k) => [k, 1 + (rawLikelihoodFeature[k] - 1) * BEHAVIORAL_DAMPING]),
+      ARCHETYPE_NAMES.map((k) => [k, 1 + (rawLikelihoodFeature[k] - 1) * effectiveDamping]),
     ) as ArchetypeProbabilities;
 
     // Step 1: apply the static multiplicative likelihood (neutral push).
@@ -905,11 +1046,11 @@ export function applyBehavioralSignal(
     };
   }
 
-  const rawLikelihood = SIGNAL_LIKELIHOODS[eventType];
+  const rawLikelihood = effectiveLikelihoods[eventType];
   if (!rawLikelihood) return state;
 
   const dampedLikelihood = Object.fromEntries(
-    ARCHETYPE_NAMES.map((k) => [k, 1 + (rawLikelihood[k] - 1) * BEHAVIORAL_DAMPING]),
+    ARCHETYPE_NAMES.map((k) => [k, 1 + (rawLikelihood[k] - 1) * effectiveDamping]),
   ) as ArchetypeProbabilities;
 
   const probabilities = applyLikelihood(state.probabilities, dampedLikelihood);

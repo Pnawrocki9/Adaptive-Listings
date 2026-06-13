@@ -13,6 +13,7 @@
 import { readConfig, BOT_UA_RE } from './core/config.js';
 import type { SdkConfig } from './core/config.js';
 import { fetchQuizConfig, eraseCachedQuizConfig } from './core/quiz-config.js';
+import { fetchIntentWeights } from './core/intent-weights.js';
 import type { QuizPublicConfigResponse } from '@estalara/shared';
 import { dispatchEvents, collectPageView } from './core/events.js';
 import { emitIntentSnapshot } from './core/intent-snapshot.js';
@@ -66,8 +67,10 @@ import {
   calculateBehavioralOnlyState,
   detectMismatch,
   initIntentState,
+  resolveIntentOverrides,
   DWELL_MAX_SESSION_CONTRIBUTION,
 } from './core/intent.js';
+import type { IntentEngineOverrides } from './core/intent.js';
 import { detectSiteSchema } from './auto-detect/pipeline.js';
 import { extractArchetypeHints } from './auto-detect/archetype-hints.js';
 import { DqsTracker } from './core/dqs.js';
@@ -408,6 +411,11 @@ async function init(): Promise<IntentState | null> {
     //
     // Consent gate: we only reach this line when consent is 'granted' (all denial
     // paths return early above). No re-check needed here.
+    //
+    // ADR-0012 Ticket C: `currentIntentState` is initialized with `initIntentState()`
+    // (no overrides yet) as a temporary placeholder for the rehydration check.
+    // The server-supplied priors (intentOverrides) are applied in step 6 inside the
+    // cold-start gate AFTER the parallel fetch completes (lines below).
     let intentStateRehydrated = false;
     let currentIntentState: IntentState = initIntentState();
 
@@ -429,54 +437,6 @@ async function init(): Promise<IntentState | null> {
       ).get('utm_term') ?? '';
     const windowWidth = (globalThis as { window?: { innerWidth?: number } }).window?.innerWidth;
     const deviceType = windowWidth !== undefined && windowWidth >= 1024 ? 'desktop' : 'mobile';
-
-    // FOLLOW-219: Single cold-start gate — ALL init-time priors and the LG-2 persist live
-    // inside this one block so the guard cannot be partially applied.
-    //
-    // Why each step is skipped on rehydration:
-    //   - Archetype hints (4a-f02): already folded in on the first listing page (FOLLOW-176).
-    //   - Referrer + device (FOLLOW-207, FOLLOW-216 LG-1): already applied on the first page;
-    //     re-applying would perturb the archetype and inflate signal_count by +1 per nav.
-    //   - LG-2 persist (FOLLOW-216): the persisted entry is already current; a second write is
-    //     a no-op in terms of state but would be caught as a double-write by follow-217 tests.
-    //
-    // Adding a new cold-start prior: add it INSIDE this block. A prior added outside this block
-    // without its own guard would be caught by the follow-217 integration tests (signal_count
-    // is asserted unchanged on every rehydrated-session test).
-    if (!intentStateRehydrated) {
-      // 4a-f02. Archetype hints as cold-start Bayesian prior [AUDIT-F02].
-      // detectSiteSchema runs DOM pattern analysis client-side; AI Vision is excluded from
-      // the browser bundle and is never called here.
-      try {
-        if (typeof document !== 'undefined') {
-          const html = document.documentElement.outerHTML;
-          const url = window.location.href;
-          const { schema } = await detectSiteSchema(html, url, config.tenantId ?? '');
-          if (schema) {
-            const hints = extractArchetypeHints(schema, html, url);
-            if (hints.length > 0) {
-              currentIntentState = applyArchetypeHints(currentIntentState, hints);
-            }
-          }
-        }
-      } catch {
-        // Non-critical — detection failure must never block session init.
-      }
-
-      // Referrer hints (cold-session prior, FOLLOW-207).
-      // Applied after archetype hints so site-level hints are already folded in.
-      currentIntentState = applyReferrerHints(currentIntentState, referrer, utmTerm);
-
-      // Device type prior (FOLLOW-207).
-      currentIntentState = applyBehavioralSignal(currentIntentState, `device_type.${deviceType}`);
-
-      // FOLLOW-216 (LG-2): Persist the cold-start intent state (after all init-time priors have
-      // been applied) once, before the first refreshDirectives(). This ensures the very first
-      // cross-listing navigation in the same tab can rehydrate the cold-start archetype even if
-      // no behavioral signal has fired yet (onIntentUpdate is the only other persist site, but
-      // it fires only after a behavioral event).
-      persistIntentState(currentSession.sessionId, currentIntentState);
-    }
 
     // Capture referrer_domain for session.started ingest event
     let referrerDomain = '';
@@ -763,30 +723,113 @@ async function init(): Promise<IntentState | null> {
       }
     }
 
-    // ADR-0011 (FOLLOW-275) steps 3–4: fetch quiz/widget config from the control-plane
-    // and merge it into SdkConfig.  This MUST complete (or time out) before the quiz
-    // trigger and micro-poll schedulers run (steps 5–6 in ADR-0011 init sequence).
+    // ADR-0012 Ticket C (FOLLOW-268-sdk) + ADR-0011 (FOLLOW-275):
+    // Steps 3a + 3b run IN PARALLEL — both fetches are bounded to 1000ms each
+    // and must both complete (or timeout) before steps 5–8 run.
+    //
+    //   3a. fetchQuizConfig  — GET /api/quiz/public-config (ADR-0011)
+    //   3b. fetchIntentWeights — GET /api/intent/config (ADR-0012)
     //
     // Rule R gate: `intentStateRehydrated` is passed to `fetchQuizConfig()` so that
     // cross-listing navigations within the same tab reuse the sessionStorage-cached
-    // value instead of issuing a new network request.
+    // quiz config instead of re-fetching. Intent weights are NOT cached because they
+    // are applied once to initIntentState and the resulting IntentState is rehydrated
+    // from sessionStorage on subsequent navigations (see session.ts / Rule R comment).
     //
     // `config` is reassigned here (declared `let` above for exactly this purpose).
-    // The fetch is bounded to 1000ms; on any failure `mergeQuizConfig` returns the
-    // pre-fetch config unchanged (snippet-attribute fallback values).
+    // On any failure either fetch returns null; mergeQuizConfig / resolveIntentOverrides
+    // fall back to snippet-attribute values / SDK internal defaults respectively.
+    let intentOverrides: IntentEngineOverrides = resolveIntentOverrides(null);
     if (config.decisionApiUrl) {
-      const fetched = await fetchQuizConfig(
-        config.decisionApiUrl,
-        config.apiKey,
-        intentStateRehydrated,
-        1_000,
-        config.debug,
-      );
-      config = mergeQuizConfig(config, fetched);
+      const [fetchedQuizConfig, fetchedWeights] = await Promise.all([
+        fetchQuizConfig(
+          config.decisionApiUrl,
+          config.apiKey,
+          intentStateRehydrated,
+          1_000,
+          config.debug,
+        ),
+        // Step 3b: fetch intent weight overrides (ADR-0012 Ticket C).
+        // On a rehydrated session, the intent state is already persisted with the
+        // cold-start priors applied — refetching weights would not affect the
+        // rehydrated distribution. We still fetch so any weight config change is
+        // observable in debug mode; the result is passed to resolveIntentOverrides
+        // which is a no-op when intentStateRehydrated=true (overrides are not applied
+        // to the already-rehydrated state — see the cold-start gate below).
+        fetchIntentWeights(config.decisionApiUrl, config.apiKey, 1_000, config.debug),
+      ]);
 
-      if (config.debug && fetched === null) {
+      config = mergeQuizConfig(config, fetchedQuizConfig);
+      intentOverrides = resolveIntentOverrides(fetchedWeights);
+
+      if (config.debug && fetchedQuizConfig === null) {
         console.warn('[Estalara] fetchQuizConfig returned null — using snippet/default fallback');
       }
+    }
+
+    // FOLLOW-219 / ADR-0012 Ticket C: Single cold-start gate.
+    // ALL init-time priors and the LG-2 persist live inside this one block so the
+    // guard cannot be partially applied.
+    //
+    // Moved to AFTER the parallel fetch (step 3a/3b) so that `initIntentState` can
+    // be called with server-supplied `intentOverrides` (ADR-0012 §3 init sequence step 6).
+    //
+    // Why each step is skipped on rehydration:
+    //   - initIntentState(overrides): rehydrated state already has all cold-start priors
+    //     baked in; applying overrides again would double-count and perturb the distribution.
+    //   - Archetype hints (4a-f02): already folded in on the first listing page (FOLLOW-176).
+    //   - Referrer + device (FOLLOW-207, FOLLOW-216 LG-1): already applied on the first page;
+    //     re-applying would perturb the archetype and inflate signal_count by +1 per nav.
+    //   - LG-2 persist (FOLLOW-216): the persisted entry is already current; a second write is
+    //     a no-op in terms of state but would be caught as a double-write by follow-217 tests.
+    //
+    // Adding a new cold-start prior: add it INSIDE this block. A prior added outside this block
+    // without its own guard would be caught by the follow-217 integration tests (signal_count
+    // is asserted unchanged on every rehydrated-session test).
+    if (!intentStateRehydrated) {
+      // Step 6 (ADR-0012): re-initialize with server-supplied priors now that the fetch
+      // has completed. `intentOverrides` contains server values (or SDK defaults on null).
+      // This replaces the temporary `initIntentState()` placeholder from step 4a above.
+      currentIntentState = initIntentState(intentOverrides);
+
+      // 4a-f02. Archetype hints as cold-start Bayesian prior [AUDIT-F02].
+      // detectSiteSchema runs DOM pattern analysis client-side; AI Vision is excluded from
+      // the browser bundle and is never called here.
+      try {
+        if (typeof document !== 'undefined') {
+          const html = document.documentElement.outerHTML;
+          const url = window.location.href;
+          const { schema } = await detectSiteSchema(html, url, config.tenantId ?? '');
+          if (schema) {
+            const hints = extractArchetypeHints(schema, html, url);
+            if (hints.length > 0) {
+              currentIntentState = applyArchetypeHints(currentIntentState, hints);
+            }
+          }
+        }
+      } catch {
+        // Non-critical — detection failure must never block session init.
+      }
+
+      // Referrer hints (cold-session prior, FOLLOW-207).
+      // Applied after archetype hints so site-level hints are already folded in.
+      currentIntentState = applyReferrerHints(currentIntentState, referrer, utmTerm);
+
+      // Device type prior (FOLLOW-207).
+      // Pass intentOverrides so the damping and signal likelihoods respect server config.
+      currentIntentState = applyBehavioralSignal(
+        currentIntentState,
+        `device_type.${deviceType}`,
+        undefined,
+        intentOverrides,
+      );
+
+      // FOLLOW-216 (LG-2): Persist the cold-start intent state (after all init-time priors have
+      // been applied) once, before the first refreshDirectives(). This ensures the very first
+      // cross-listing navigation in the same tab can rehydrate the cold-start archetype even if
+      // no behavioral signal has fired yet (onIntentUpdate is the only other persist site, but
+      // it fires only after a behavioral event).
+      persistIntentState(currentSession.sessionId, currentIntentState);
     }
 
     // 4b. Fetch personalization directives from Decision API (Tier 1+ feature)
@@ -842,9 +885,16 @@ async function init(): Promise<IntentState | null> {
         // Record signal before quiz is answered (for mismatch detection)
         signalHistory.push({ eventType: event.type, payload: event.payload });
 
-        // Update Bayesian intent state from this behavioral signal
+        // Update Bayesian intent state from this behavioral signal.
+        // Pass intentOverrides so server-supplied damping and likelihoods are used
+        // for all ongoing behavioral signals (ADR-0012 Ticket C).
         const prevSignalCount = currentIntentState.signal_count;
-        currentIntentState = applyBehavioralSignal(currentIntentState, event.type, event.payload);
+        currentIntentState = applyBehavioralSignal(
+          currentIntentState,
+          event.type,
+          event.payload,
+          intentOverrides,
+        );
         onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
 
         // FOLLOW-208: Apply listing-view rate signal after the second view.

@@ -560,3 +560,38 @@ ESM test file (vitest + node ESM), it always fails. A CI lint rule (`no-require-
 catch this pattern at PR time rather than at test run. None beyond that — the attribute wire pattern
 (buildSnippet→readConfig) now has a complete Rule L test template that can be copied for future
 snippet attributes.
+
+---
+
+## 2026-06-13 / FOLLOW-294
+
+**What I built:** ADR-0012 Ticket A — (1) rewrote `GET /api/intent/config` to use Bearer API-key
+auth identical to `quiz/public-config` (SHA-256 constant-time lookup, tenant derived from key,
+`?tenant_id` param removed), (2) created `packages/shared/src/schemas/intent-weights.ts` with
+canonical `ARCHETYPE_KEYS`/`INTENT_SIGNAL_KEYS`/`IntentWeightsSchema` (.strict(), all sub-fields
+optional), (3) narrowed `IntentConfigResponse.weights` from `z.record(z.unknown())` to
+`IntentWeightsSchema`, (4) 17 route tests + 31 schema tests all green.
+
+**Wiring/auth/fail-loud risks I weighed:** (a) Auth must not fall back to mock when configured DB
+throws on the auth leg — return 503 (same reasoning as quiz/public-config: no tenant_id yet, can't
+serve mock to an unauthenticated caller). (b) Weight-fetch DB failure must return 500 +
+`data_source: 'error'`, never mock (Rule K.2). (c) The `IntentWeightsSchema.parse()` of stored JSONB
+validates the shape before returning — if a legacy row has an invalid shape it raises through to the
+500 handler, not silently to the caller. (d) mock path skips auth entirely (DB unconfigured → return
+early), which is correct: dev/CI has no real API keys.
+
+**Gotcha — test mock dispatch:** Using a module-level counter to dispatch between two
+`createAdminClient()` calls within one request was fragile (counter not reset between tests,
+`vi.clearAllMocks()` resets implementations but not counters). The fix:
+`mockCreateAdminClient.mockReturnValueOnce(authDb).mockReturnValueOnce(weightDb)` — each test sets
+up its own sequence explicitly. Also: the constant-time compare in the route uses the _actual_
+SHA-256 of the bearer token, so tests must supply the real precomputed hex of `'valid-api-key'` as
+the mock's `hashedKey`, not a placeholder string.
+
+**Gotcha — shared dist:** `pnpm --filter control-plane run typecheck` resolves `@estalara/shared`
+from `packages/shared/dist/`. After adding a new export to shared, must run
+`pnpm --filter @estalara/shared run build` before typecheck will see it.
+
+**A guardrail I'd add:** A CI step that fails if `packages/shared/dist/` is stale relative to
+`packages/shared/src/` (e.g. compare git-tracked dist hash vs current build output). This would
+catch the "shared built, but old dist checked in" class of typecheck-passes-locally-fails-CI bugs.

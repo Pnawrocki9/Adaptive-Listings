@@ -15,3 +15,4 @@ export * from './tenant-compliance.js';
 export * from './detect.js';
 export * from './quiz-config.js';
 export * from './tracer.js';
+export * from './intent-weights.js';

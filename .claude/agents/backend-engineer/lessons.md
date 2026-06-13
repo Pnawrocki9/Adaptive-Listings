@@ -595,3 +595,26 @@ from `packages/shared/dist/`. After adding a new export to shared, must run
 **A guardrail I'd add:** A CI step that fails if `packages/shared/dist/` is stale relative to
 `packages/shared/src/` (e.g. compare git-tracked dist hash vs current build output). This would
 catch the "shared built, but old dist checked in" class of typecheck-passes-locally-fails-CI bugs.
+
+---
+
+## 2026-06-13 / FOLLOW-299
+
+**What I built:** Widened `IntentConfigResponseSchema.data_source` enum in
+`packages/shared/src/schemas/tracer.ts` from `['live', 'mock']` to `['live', 'mock', 'error']` so
+the SDK (FOLLOW-268-sdk) can `safeParse` HTTP 500 error bodies and observe `data_source: 'error'`
+without crashing (RETRO-070 CB-1). Made `weights`, `effective_at`, `is_tenant_specific` optional so
+`safeParse` succeeds on the error-path body which omits those fields. Added SCHEMA-1..5 tests in the
+route test (direct schema-level assertions) and a new `tracer.test.ts` in `@estalara/shared`.
+Updated ADR-0012 `data_source` table and timeout/error-handling section to document `'error'`.
+
+**Wiring/auth/fail-loud risks I weighed:** Making `weights` optional in the schema means callers
+could accidentally construct a `IntentConfigResponse` without `weights` on the live/mock paths and
+TypeScript wouldn't catch it. Mitigated: the route's type annotations on the mock and live bodies
+still provide `weights` — optional means the type annotation permits absence, not that callers
+should omit it. The SDK (FOLLOW-268-sdk) must still check `data_source === 'live'` before using
+`weights`. No fabricated data was introduced — error path returns no `weights` at all.
+
+**A guardrail I'd add:** A lint rule or custom ESLint check that flags any `z.enum(...)` on a
+`data_source`-named field that does NOT include `'error'` — catches future schemas that emit errors
+but don't type them, preventing another RETRO-070 CB-1 recurrence.

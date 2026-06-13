@@ -259,13 +259,22 @@ export interface IntentEngineOverrides {
   the initial prior respects server-supplied priors.
 - `resolveIntentOverrides(null)` returns the module-level defaults — callers need not branch.
 
-**`data_source` application rule:**
+**`data_source` application rule (updated FOLLOW-299):**
 
-| `data_source` value    | SDK behavior                                                                  |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| `'live'`               | Parse `weights` as `IntentWeightsSchema`; apply via `resolveIntentOverrides`. |
-| `'mock'`               | Treat as null — use SDK internal defaults. Do NOT apply mock weights.         |
-| fetch failed / timeout | Treat as null — use SDK internal defaults.                                    |
+| `data_source` value    | HTTP status | SDK behavior                                                                                   |
+| ---------------------- | ----------- | ---------------------------------------------------------------------------------------------- |
+| `'live'`               | 200         | Parse `weights` as `IntentWeightsSchema`; apply via `resolveIntentOverrides`.                  |
+| `'mock'`               | 200         | Treat as null — use SDK internal defaults. Do NOT apply mock weights.                          |
+| `'error'`              | 500         | Treat as null — use SDK internal defaults. MAY emit `console.warn` or telemetry in debug mode. |
+| fetch failed / timeout | —           | Treat as null — use SDK internal defaults.                                                     |
+
+**`'error'` is NEVER silently collapsed into `'mock'` (RETRO-070 CB-1, FOLLOW-299).** `'error'`
+means the DB was configured but threw. `'mock'` means either the DB is unconfigured (dev/CI) or no
+active config row exists for the tenant. Both result in the SDK using internal defaults for
+adaptation, but they are distinct values so the SDK can emit different telemetry.
+`IntentConfigResponseSchema.data_source` is `z.enum(['live', 'mock', 'error'])` (widened by
+FOLLOW-299 from `['live', 'mock']`). The `weights` field is optional in the schema so that
+`safeParse` succeeds on the HTTP 500 error body (which omits `weights`).
 
 Rationale: mock weights (`data_source: 'mock'`) are dev/CI placeholders. Applying them in production
 would silently skew archetype scoring with non-tenant-specific values. The SDK must observe
@@ -289,7 +298,7 @@ would silently skew archetype scoring with non-tenant-specific values. The SDK m
 Step 3b runs parallel to 3a, not sequentially after it. Both must complete (or timeout) before steps
 5-8 run.
 
-**Timeout and error handling:**
+**Timeout and error handling (updated FOLLOW-299):**
 
 - Timeout budget: 1000 ms (same as `fetchQuizConfig`).
 - On network error, non-2xx, timeout, or Zod parse failure: log `console.warn` when
@@ -297,6 +306,11 @@ Step 3b runs parallel to 3a, not sequentially after it. Both must complete (or t
   path).
 - On `data_source: 'mock'`: log `console.debug` when `config.debug === true`; proceed with SDK
   internal defaults.
+- On `data_source: 'error'` (HTTP 500 from a configured-but-failing DB): log `console.warn` when
+  `config.debug === true` (distinct from `'mock'` warn — telemetry should distinguish a DB outage
+  from a clean no-config state); proceed with SDK internal defaults. The HTTP 500 body is parseable
+  via `IntentConfigResponseSchema.safeParse` (FOLLOW-299 widening), so the SDK can read
+  `data_source: 'error'` without crashing on a non-2xx response.
 - The fetch MUST NOT block DOM augmentation, archetype detection, or quiz/micro-poll scheduling —
   only the intent engine initialization (step 6) waits for it.
 
@@ -308,7 +322,8 @@ Step 3b runs parallel to 3a, not sequentially after it. Both must complete (or t
  * Fetch intent weight overrides from GET /api/intent/config.
  *
  * Returns parsed IntentWeights on success with data_source='live',
- * null on any failure (network, non-2xx, timeout, parse error, data_source='mock').
+ * null on any failure (network, non-2xx, timeout, parse error, data_source='mock',
+ * or data_source='error' — FOLLOW-299 widening; DB outage is distinguishable from mock).
  *
  * @param decisionApiUrl - Base URL from SdkConfig.decisionApiUrl.
  * @param apiKey         - Tenant API key (Bearer token).

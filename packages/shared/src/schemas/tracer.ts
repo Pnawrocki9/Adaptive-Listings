@@ -5,7 +5,13 @@
  * SDK-facing route. Imported by the route handlers and any non-test consumer
  * (Rule H: schema must have a production consumer in the same PR).
  *
- * Non-test consumers in this PR:
+ * FOLLOW-299 change: IntentConfigResponseSchema.data_source enum widened from
+ * ['live', 'mock'] to ['live', 'mock', 'error'] so the SDK (FOLLOW-268-sdk) can
+ * safeParse HTTP 500 error bodies and observe the degraded signal (RETRO-070 CB-1).
+ * weights/effective_at/is_tenant_specific are now optional to allow safeParse on
+ * the error-path body which omits those fields.
+ *
+ * Non-test consumers:
  *   - apps/control-plane/src/app/api/admin/tracer/sessions/route.ts
  *   - apps/control-plane/src/app/api/admin/tracer/sessions/[id]/route.ts
  *   - apps/control-plane/src/app/api/admin/tracer/sessions/[id]/stream/route.ts
@@ -136,19 +142,52 @@ export type TracerSessionReplayResponse = z.infer<typeof TracerSessionReplayResp
 
 // ─── Response for AC8: GET /api/intent/config ────────────────────────────────
 
+/**
+ * Response schema for `GET /api/intent/config` (SDK-facing weight-config endpoint).
+ *
+ * `data_source` values (Rule K.2 — provenance flag):
+ *   - `'live'`  — active row found in `intent_weight_configs`; weights are real.
+ *   - `'mock'`  — DB unconfigured (dev/CI) OR no active row for this tenant.
+ *                 SDK MUST treat this as "use internal defaults."
+ *   - `'error'` — DB was configured but threw during the weight fetch (HTTP 500).
+ *                 SDK MUST treat this as "use internal defaults" for adaptation,
+ *                 but MAY branch on `'error'` (vs `'mock'`) for telemetry/logging.
+ *                 This value is NEVER silently collapsed into `'mock'` (RETRO-070 CB-1).
+ *
+ * The `weights` field is ONLY present when `data_source` is `'live'` or `'mock'`.
+ * On the error path (`data_source: 'error'`, HTTP 500) the server does NOT emit
+ * `weights` — the SDK must use internal defaults. The schema reflects this: `weights`
+ * is optional so that `safeParse` succeeds on the error-path body too, enabling
+ * the SDK to read `data_source` without crashing.
+ *
+ * FOLLOW-268-sdk reads this schema directly. Do not narrow `data_source` back to
+ * `['live', 'mock']` without coordinating with sdk-engineer.
+ *
+ * Non-test consumers:
+ *   - apps/control-plane/src/app/api/intent/config/route.ts
+ *   - FOLLOW-268-sdk (SDK fetch-and-apply path)
+ */
 export const IntentConfigResponseSchema = z.object({
   /**
    * Signal weight configuration object. Validated against IntentWeightsSchema
    * (ADR-0012 §2) — all sub-fields optional; empty object `{}` is valid and
    * means "use SDK defaults for all parameters".
+   *
+   * Present on `data_source: 'live'` and `data_source: 'mock'` responses.
+   * ABSENT on `data_source: 'error'` responses (HTTP 500) — SDK uses internal defaults.
    */
-  weights: IntentWeightsSchema,
-  /** ISO 8601 UTC string of when this config row was created (effective_at). */
-  effective_at: z.string(),
-  /** Whether this is a tenant-specific config (true) or the global default (false). */
-  is_tenant_specific: z.boolean(),
-  /** Provenance flag per Rule K.2. */
-  data_source: z.enum(['live', 'mock']),
+  weights: IntentWeightsSchema.optional(),
+  /** ISO 8601 UTC string of when this config row was created (effective_at). Present on 'live'/'mock'. */
+  effective_at: z.string().optional(),
+  /** Whether this is a tenant-specific config (true) or the global default (false). Present on 'live'/'mock'. */
+  is_tenant_specific: z.boolean().optional(),
+  /**
+   * Provenance flag per Rule K.2.
+   *   'live'  — real row served from Postgres.
+   *   'mock'  — no row found or DB unconfigured; SDK uses internal defaults.
+   *   'error' — configured DB threw; SDK uses internal defaults but CAN branch for telemetry.
+   */
+  data_source: z.enum(['live', 'mock', 'error']),
 });
 
 export type IntentConfigResponse = z.infer<typeof IntentConfigResponseSchema>;

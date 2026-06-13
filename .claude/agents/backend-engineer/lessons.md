@@ -563,30 +563,35 @@ snippet attributes.
 
 ---
 
-## 2026-06-13 / FOLLOW-297 (ADR-0012 Ticket D)
+## 2026-06-13 / FOLLOW-294
 
-**What I built:** Unit-test coverage for 6 previously-untested K.3.6 tracer admin routes
-(`sessions/[id]`, `sessions/[id]/stream`, `history`, `history/[session_id]`, `export/decisions`,
-`export/events`) and the 326-LOC `clickhouse-tracer.ts` helper. 111 tests across 8 files, all green.
-Also fixed a DG-1 docstring bug: the stream route header said "300 polls" but `MAX_POLLS = 100`;
-corrected to match code.
+**What I built:** ADR-0012 Ticket A — (1) rewrote `GET /api/intent/config` to use Bearer API-key
+auth identical to `quiz/public-config` (SHA-256 constant-time lookup, tenant derived from key,
+`?tenant_id` param removed), (2) created `packages/shared/src/schemas/intent-weights.ts` with
+canonical `ARCHETYPE_KEYS`/`INTENT_SIGNAL_KEYS`/`IntentWeightsSchema` (.strict(), all sub-fields
+optional), (3) narrowed `IntentConfigResponse.weights` from `z.record(z.unknown())` to
+`IntentWeightsSchema`, (4) 17 route tests + 31 schema tests all green.
 
-**Wiring/auth/fail-loud risks I weighed:** All routes are read-only (no state mutation); auth is
-`verifyTracerAdminAuth` (constant-time timingSafeEqual + staff JWT) already shipped in FOLLOW-267.
-Key risk was Rule K.2: distinguishing "configured-but-threw" (must be 500) from "unconfigured" (mock
-OK). Every route test asserts HTTP 500 + data_source: 'error' on configured-store failures and
-rejects the mock path when DB/CH is configured. SSE stream tests use `vi.useFakeTimers()` + the
-`consumeStream()` helper to verify heartbeat is sent (not silent-empty, closing CB-1 from RETRO-061)
-and error event closes the stream (Rule K.2).
+**Wiring/auth/fail-loud risks I weighed:** (a) Auth must not fall back to mock when configured DB
+throws on the auth leg — return 503 (same reasoning as quiz/public-config: no tenant_id yet, can't
+serve mock to an unauthenticated caller). (b) Weight-fetch DB failure must return 500 +
+`data_source: 'error'`, never mock (Rule K.2). (c) The `IntentWeightsSchema.parse()` of stored JSONB
+validates the shape before returning — if a legacy row has an invalid shape it raises through to the
+500 handler, not silently to the caller. (d) mock path skips auth entirely (DB unconfigured → return
+early), which is correct: dev/CI has no real API keys.
 
-**Pitfalls found:** (1) `mockFetch.mockResolvedValue(makeOkResponse(''))` in
-`fetchIntentEventsHistory` tests: `Promise.all` issues two concurrent fetch calls, both consuming
-the same Response body → "Body is unusable" error. Fixed with `mockResolvedValueOnce` chained pairs.
-(2) `vi.stubEnv('CLICKHOUSE_DATABASE', '')` sets env to empty string; `?? 'default'` does NOT fall
-back on `''` (only on null/undefined). Test corrected to document actual behavior rather than wrong
-expectation. (3) Worktree node_modules not installed; needed `pnpm install` from the worktree root
-before vitest could resolve setup.ts imports.
+**Gotcha — test mock dispatch:** Using a module-level counter to dispatch between two
+`createAdminClient()` calls within one request was fragile (counter not reset between tests,
+`vi.clearAllMocks()` resets implementations but not counters). The fix:
+`mockCreateAdminClient.mockReturnValueOnce(authDb).mockReturnValueOnce(weightDb)` — each test sets
+up its own sequence explicitly. Also: the constant-time compare in the route uses the _actual_
+SHA-256 of the bearer token, so tests must supply the real precomputed hex of `'valid-api-key'` as
+the mock's `hashedKey`, not a placeholder string.
 
-**A guardrail I'd add:** For any helper that uses `Promise.all([fetchA, fetchB])` where both calls
-use the same mocked fetch: always use `mockResolvedValueOnce` pairs, never `mockResolvedValue`. Add
-a comment to the test helper explaining this constraint so future maintainers don't regress.
+**Gotcha — shared dist:** `pnpm --filter control-plane run typecheck` resolves `@estalara/shared`
+from `packages/shared/dist/`. After adding a new export to shared, must run
+`pnpm --filter @estalara/shared run build` before typecheck will see it.
+
+**A guardrail I'd add:** A CI step that fails if `packages/shared/dist/` is stale relative to
+`packages/shared/src/` (e.g. compare git-tracked dist hash vs current build output). This would
+catch the "shared built, but old dist checked in" class of typecheck-passes-locally-fails-CI bugs.

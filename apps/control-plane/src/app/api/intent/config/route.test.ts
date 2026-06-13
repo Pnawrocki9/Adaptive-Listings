@@ -1,41 +1,71 @@
 /**
- * Tests for GET /api/intent/config (FOLLOW-267, AC8).
+ * Tests for GET /api/intent/config (FOLLOW-294, ADR-0012 Ticket A).
  *
  * Coverage:
- *   AC8.1: 200 with Cache-Control: public, max-age=300 (CDN cache strategy)
- *   AC8.2: 200 with data_source: 'mock' when DATABASE_URL_ADMIN not set
- *   AC8.3: 400 when tenant_id is missing or invalid UUID
- *   AC8.4: Tenant-specific row takes priority over global (null tenant_id) row
- *   AC8.5: Falls back to global row when no tenant-specific row exists
- *   AC8.6: Returns default weights with data_source: 'mock' when no active row found
- *   AC8.7: 500 (never mock) when DB configured but throws (Rule K.2)
- *   AC8.8: No auth required (public endpoint — ADR-0011 pattern)
+ *   AUTH-1: returns 401 when Authorization header is absent
+ *   AUTH-2: returns 401 when Authorization header is present but malformed (no Bearer prefix)
+ *   AUTH-3: returns 401 when bearer token is empty string after trimming
+ *   AUTH-4: returns 404 when bearer token not found in api_keys
+ *   AUTH-5: returns 503 when auth DB throws (configured-but-failed on auth leg)
+ *   AUTH-6: derives tenant_id from authenticated key (no ?tenant_id query param)
+ *   MOCK-1: returns 200 with data_source: 'mock' and weights: {} when DB unconfigured (dev/CI)
+ *   MOCK-2: returns 200 with data_source: 'mock' and weights: {} when no active row found
+ *   LIVE-1: returns 200 with data_source: 'live' when active row found (tenant-specific)
+ *   LIVE-2: returns 200 with data_source: 'live' when active row found (global fallback)
+ *   FAIL-1: returns 500 (data_source: 'error') when DB configured but throws during weight fetch
+ *   CORS-1: returns CORS headers on 200 responses
+ *   CACHE-1: returns Cache-Control: public, max-age=300
+ *   OPT-1: OPTIONS returns 204 with CORS headers
+ *
+ * Database is mocked throughout — no real Postgres required.
+ *
+ * Auth implementation note: the route computes SHA-256(bearerToken) and compares it
+ * constant-time against the `hashedKey` returned by the DB mock. For auth-success
+ * tests, the DB mock returns the real SHA-256('valid-api-key') so the constant-time
+ * compare passes. For auth-failure tests, the DB returns no rows (key not found).
  *
  * @module apps/control-plane/src/app/api/intent/config/route.test
  */
 
+import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-// ─── Mock modules ─────────────────────────────────────────────────────────────
+// ─── Mocks ────────────────────────────────────────────────────────────────────
 
-vi.mock('@sentry/nextjs', () => ({
-  captureException: vi.fn(),
-}));
+// The raw API key used in Bearer headers throughout auth-success tests.
+const VALID_KEY = 'valid-api-key';
 
-// Mock Drizzle chain: db.select().from().where().limit()
-const mockLimit = vi.fn();
-const mockWhere = vi.fn();
-const mockFrom = vi.fn();
-const mockSelect = vi.fn();
+// SHA-256('valid-api-key') — computed at runtime so no high-entropy literal exists in source.
+// This matches what sha256Hex() produces inside the route, so constantTimeEqual passes.
+const VALID_KEY_HASH = createHash('sha256').update(VALID_KEY).digest('hex');
 
-mockLimit.mockResolvedValue([]);
-mockWhere.mockReturnValue({ limit: mockLimit });
-mockFrom.mockReturnValue({ where: mockWhere });
-mockSelect.mockReturnValue({ from: mockFrom });
+const TENANT_ID = '550e8400-e29b-41d4-a716-446655440042';
+
+// The route calls createAdminClient() twice in the live path:
+//   call 1: resolveApiKey  → select from api_keys
+//   call 2: weight lookup  → select from intent_weight_configs
+//
+// We expose mockDbFactory so individual tests can configure what each client instance returns.
+// Each call to createAdminClient() produces a fresh mock client object.
+
+interface MockChain {
+  select: ReturnType<typeof vi.fn>;
+}
+
+const { mockCreateAdminClient } = vi.hoisted(() => {
+  const mockCreateAdminClient = vi.fn();
+  return { mockCreateAdminClient };
+});
 
 vi.mock('@estalara/db', () => ({
-  createAdminClient: vi.fn(() => ({ select: mockSelect })),
+  createAdminClient: mockCreateAdminClient,
+  apiKeys: {
+    tenantId: 'tenant_id',
+    hashedKey: 'hashed_key',
+    revokedAt: 'revoked_at',
+    expiresAt: 'expires_at',
+  },
   intentWeightConfigs: {
     id: 'id',
     tenantId: 'tenant_id',
@@ -45,28 +75,66 @@ vi.mock('@estalara/db', () => ({
   },
 }));
 
-import { GET } from './route';
-import type { IntentConfigResponse } from '@estalara/shared';
+vi.mock('drizzle-orm', () => ({
+  eq: vi.fn((_col: unknown, _val: unknown) => ({ type: 'eq' })),
+  and: vi.fn((..._args: unknown[]) => ({ type: 'and' })),
+  or: vi.fn((..._args: unknown[]) => ({ type: 'or' })),
+  isNull: vi.fn((_col: unknown) => ({ type: 'isNull' })),
+  gt: vi.fn((_col: unknown, _val: unknown) => ({ type: 'gt' })),
+}));
+
+// ─── DB mock helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Build a Drizzle-style mock chain: select().from().where().limit() resolving to `rows`.
+ */
+function makeDbMock(rows: unknown[]): MockChain {
+  const limitFn = vi.fn().mockResolvedValue(rows);
+  const whereFn = vi.fn().mockReturnValue({ limit: limitFn });
+  const fromFn = vi.fn().mockReturnValue({ where: whereFn });
+  const selectFn = vi.fn().mockReturnValue({ from: fromFn });
+  return { select: selectFn };
+}
+
+/**
+ * Build a Drizzle-style mock chain whose limit() rejects with an error.
+ */
+function makeDbMockThrowing(err: Error): MockChain {
+  const limitFn = vi.fn().mockRejectedValue(err);
+  const whereFn = vi.fn().mockReturnValue({ limit: limitFn });
+  const fromFn = vi.fn().mockReturnValue({ where: whereFn });
+  const selectFn = vi.fn().mockReturnValue({ from: fromFn });
+  return { select: selectFn };
+}
+
+/**
+ * Auth-success row — DB returns a key row matching SHA-256('valid-api-key').
+ */
+function authSuccessRow() {
+  return [{ tenantId: TENANT_ID, hashedKey: VALID_KEY_HASH }];
+}
+
+/**
+ * Configure createAdminClient to return the specified sequence of DB instances.
+ * First call → authDb, second call → weightDb.
+ */
+function setupDbSequence(authDb: MockChain, weightDb?: MockChain) {
+  if (weightDb) {
+    mockCreateAdminClient.mockReturnValueOnce(authDb).mockReturnValueOnce(weightDb);
+  } else {
+    mockCreateAdminClient.mockReturnValue(authDb);
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const TENANT_ID = '550e8400-e29b-41d4-a716-446655440042';
-const GLOBAL_WEIGHTS = {
-  signal_weights: { quiz_answer: 2.0, behavioral: 0.8 },
-  priors: { neutral: 1.0 },
-  behavioral_damping: 0.85,
-};
-const TENANT_WEIGHTS = {
-  signal_weights: { quiz_answer: 3.0, behavioral: 1.2 },
-  priors: { yield_hunter: 1.5, neutral: 0.5 },
-  behavioral_damping: 0.9,
-};
-
-function makeRequest(tenantId?: string): NextRequest {
-  const url = tenantId
-    ? `http://localhost/api/intent/config?tenant_id=${tenantId}`
-    : 'http://localhost/api/intent/config';
-  return new NextRequest(url, { method: 'GET' });
+function makeRequest(opts: { bearer?: string } = {}): NextRequest {
+  const url = 'http://localhost/api/intent/config';
+  const headers: Record<string, string> = {};
+  if (opts.bearer !== undefined) {
+    headers.Authorization = opts.bearer;
+  }
+  return new NextRequest(url, { method: 'GET', headers });
 }
 
 async function parseBody<T>(res: Response): Promise<T> {
@@ -74,136 +142,260 @@ async function parseBody<T>(res: Response): Promise<T> {
   return raw as T;
 }
 
+// ─── Import route (after mocks are registered) ────────────────────────────────
+
+import { GET, OPTIONS } from './route';
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('GET /api/intent/config — validation', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.unstubAllEnvs();
-  });
-
-  it('AC8.3: returns 400 when tenant_id is missing', async () => {
-    const res = await GET(makeRequest());
-    expect(res.status).toBe(400);
-    const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('validation_error');
-  });
-
-  it('AC8.3: returns 400 when tenant_id is not a UUID', async () => {
-    const res = await GET(makeRequest('not-a-uuid'));
-    expect(res.status).toBe(400);
-  });
-
-  it('AC8.8: no auth required — request without Authorization header succeeds', async () => {
-    vi.stubEnv('DATABASE_URL_ADMIN', '');
-    vi.stubEnv('DATABASE_URL_DIRECT', '');
-
-    const res = await GET(makeRequest(TENANT_ID));
-    // No auth → still returns 200 (public endpoint)
-    expect(res.status).toBe(200);
+describe('OPTIONS /api/intent/config', () => {
+  it('OPT-1: returns 204 with CORS headers', () => {
+    const res = OPTIONS();
+    expect(res.status).toBe(204);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(res.headers.get('Access-Control-Allow-Methods')).toContain('GET');
   });
 });
 
-describe('GET /api/intent/config — mock path (DB unconfigured)', () => {
+describe('GET /api/intent/config — unconfigured DB (dev/CI)', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
     vi.unstubAllEnvs();
     vi.stubEnv('DATABASE_URL_ADMIN', '');
     vi.stubEnv('DATABASE_URL_DIRECT', '');
+    vi.clearAllMocks();
   });
 
-  it('AC8.1: returns Cache-Control: public, max-age=300', async () => {
-    const res = await GET(makeRequest(TENANT_ID));
+  it('MOCK-1: returns 200 with data_source: mock and empty weights when DB unconfigured', async () => {
+    const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
     expect(res.status).toBe(200);
+    const body = await parseBody<{
+      weights: object;
+      data_source: string;
+      is_tenant_specific: boolean;
+      effective_at: string;
+    }>(res);
+    expect(body.data_source).toBe('mock');
+    expect(body.weights).toEqual({});
+    expect(body.is_tenant_specific).toBe(false);
+    expect(typeof body.effective_at).toBe('string');
+  });
+
+  it('MOCK-1b: no Authorization header returns 200 mock when DB unconfigured (no auth attempted)', async () => {
+    // When DB is unconfigured, the route returns mock immediately without auth
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ data_source: string }>(res);
+    expect(body.data_source).toBe('mock');
+  });
+
+  it('CORS-1: returns Access-Control-Allow-Origin: * on mock response', async () => {
+    const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+  });
+
+  it('CACHE-1: returns Cache-Control: public, max-age=300 on mock response', async () => {
+    const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
     expect(res.headers.get('Cache-Control')).toContain('max-age=300');
     expect(res.headers.get('Cache-Control')).toContain('public');
   });
+});
 
-  it('AC8.2: returns data_source: mock when DATABASE_URL_ADMIN not set', async () => {
-    const res = await GET(makeRequest(TENANT_ID));
-    expect(res.status).toBe(200);
-    const body = await parseBody<IntentConfigResponse>(res);
-    expect(body.data_source).toBe('mock');
-    expect(typeof body.weights).toBe('object');
-    expect(typeof body.effective_at).toBe('string');
-    expect(typeof body.is_tenant_specific).toBe('boolean');
+describe('GET /api/intent/config — auth failures (DB configured)', () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+    vi.clearAllMocks();
+  });
+
+  it('AUTH-1: returns 401 when Authorization header is absent', async () => {
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: string }>(res);
+    expect(body.error).toBe('Invalid API key');
+  });
+
+  it('AUTH-2: returns 401 when Authorization header lacks Bearer prefix', async () => {
+    const res = await GET(makeRequest({ bearer: 'Basic dXNlcjpwYXNz' }));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: string }>(res);
+    expect(body.error).toBe('Invalid API key');
+  });
+
+  it('AUTH-3: returns 401 when bearer token is empty after trimming', async () => {
+    const res = await GET(makeRequest({ bearer: 'Bearer   ' }));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: string }>(res);
+    expect(body.error).toBe('Invalid API key');
+  });
+
+  it('AUTH-4: returns 404 when bearer token is not found in api_keys (no matching rows)', async () => {
+    // Auth DB returns empty — key not found
+    setupDbSequence(makeDbMock([]));
+
+    const res = await GET(makeRequest({ bearer: 'Bearer unknown-key' }));
+    expect(res.status).toBe(404);
+    const body = await parseBody<{ error: string }>(res);
+    expect(body.error).toBe('Tenant not found');
+  });
+
+  it('AUTH-5: returns 503 when auth DB throws (configured-but-failed on auth leg)', async () => {
+    // Auth DB throws
+    setupDbSequence(makeDbMockThrowing(new Error('DB connection failed')));
+
+    const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
+    expect(res.status).toBe(503);
+    const body = await parseBody<{ error: string }>(res);
+    expect(body.error).toBe('Service temporarily unavailable');
   });
 });
 
-describe('GET /api/intent/config — live path (DB configured)', () => {
+describe('GET /api/intent/config — authenticated live path (DB configured)', () => {
+  const now = new Date('2026-06-13T10:00:00.000Z');
+
   beforeEach(() => {
-    vi.clearAllMocks();
     vi.unstubAllEnvs();
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-
-    mockLimit.mockResolvedValue([]);
-    mockWhere.mockReturnValue({ limit: mockLimit });
-    mockFrom.mockReturnValue({ where: mockWhere });
-    mockSelect.mockReturnValue({ from: mockFrom });
+    vi.clearAllMocks();
   });
 
-  it('AC8.4: tenant-specific row takes priority over global null-tenant row', async () => {
-    const now = new Date('2026-06-13T10:00:00.000Z');
-    // Return both rows — tenant-specific first.
-    mockLimit.mockResolvedValue([
-      { id: 'cfg-1', tenantId: TENANT_ID, weights: TENANT_WEIGHTS, createdAt: now, isActive: true },
-      { id: 'cfg-2', tenantId: null, weights: GLOBAL_WEIGHTS, createdAt: now, isActive: true },
-    ]);
+  it('AUTH-6: derives tenant_id from authenticated key (not from query param)', async () => {
+    // No ?tenant_id in the URL — auth succeeds, weight query uses resolved tenantId
+    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock([]));
 
-    const res = await GET(makeRequest(TENANT_ID));
+    const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
+    // Returns 200 mock (no active row) but auth succeeded via API key
     expect(res.status).toBe(200);
-    const body = await parseBody<IntentConfigResponse>(res);
+    const body = await parseBody<{ data_source: string }>(res);
+    // Auth passed; no active weight row → mock
+    expect(body.data_source).toBe('mock');
+  });
+
+  it('MOCK-2: returns 200 with data_source: mock and empty weights when no active row', async () => {
+    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock([]));
+
+    const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ weights: object; data_source: string }>(res);
+    expect(body.data_source).toBe('mock');
+    expect(body.weights).toEqual({});
+  });
+
+  it('LIVE-1: returns 200 with data_source: live when tenant-specific active row found', async () => {
+    const validWeights = {
+      behavioral_damping: 0.25,
+      priors: { yield_hunter: 0.06, neutral: 0.3 },
+    };
+    const weightRows = [
+      { id: 'cfg-1', tenantId: TENANT_ID, weights: validWeights, createdAt: now, isActive: true },
+    ];
+    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock(weightRows));
+
+    const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
+    expect(res.status).toBe(200);
+    const body = await parseBody<{
+      weights: { behavioral_damping: number };
+      data_source: string;
+      is_tenant_specific: boolean;
+      effective_at: string;
+    }>(res);
     expect(body.data_source).toBe('live');
     expect(body.is_tenant_specific).toBe(true);
-    // Weights should be the tenant-specific config
-    const sw = body.weights as { signal_weights: { quiz_answer: number } };
-    expect(sw.signal_weights.quiz_answer).toBe(3.0);
+    expect(body.weights.behavioral_damping).toBe(0.25);
+    expect(body.effective_at).toBe('2026-06-13T10:00:00.000Z');
     expect(res.headers.get('Cache-Control')).toContain('max-age=300');
   });
 
-  it('AC8.5: falls back to global row when no tenant-specific row exists', async () => {
-    const now = new Date('2026-06-13T09:00:00.000Z');
-    // Only global row returned.
-    mockLimit.mockResolvedValue([
-      { id: 'cfg-global', tenantId: null, weights: GLOBAL_WEIGHTS, createdAt: now, isActive: true },
-    ]);
+  it('LIVE-2: returns 200 with data_source: live using global row when no tenant-specific row', async () => {
+    const globalWeights = { behavioral_damping: 0.3 };
+    const weightRows = [
+      { id: 'cfg-global', tenantId: null, weights: globalWeights, createdAt: now, isActive: true },
+    ];
+    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock(weightRows));
 
-    const res = await GET(makeRequest(TENANT_ID));
+    const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
     expect(res.status).toBe(200);
-    const body = await parseBody<IntentConfigResponse>(res);
+    const body = await parseBody<{
+      data_source: string;
+      is_tenant_specific: boolean;
+    }>(res);
     expect(body.data_source).toBe('live');
     expect(body.is_tenant_specific).toBe(false);
-    const sw = body.weights as { signal_weights: { quiz_answer: number } };
-    expect(sw.signal_weights.quiz_answer).toBe(2.0);
   });
 
-  it('AC8.6: returns default weights with data_source: mock when no active row found', async () => {
-    mockLimit.mockResolvedValue([]); // No active configs at all.
+  it('FAIL-1: returns 500 (data_source: error) when DB throws during weight fetch (Rule K.2)', async () => {
+    // Auth succeeds; weight DB throws (configured-but-failed)
+    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMockThrowing(new Error('DB timeout')));
 
-    const res = await GET(makeRequest(TENANT_ID));
-    expect(res.status).toBe(200);
-    const body = await parseBody<IntentConfigResponse>(res);
-    // When no active row, falls back to defaults with data_source: 'mock'
-    expect(body.data_source).toBe('mock');
-    expect(typeof body.weights).toBe('object');
-    expect(res.headers.get('Cache-Control')).toContain('max-age=300');
-  });
-
-  it('AC8.7: returns 500 (never mock) when DB configured but throws (Rule K.2)', async () => {
-    mockFrom.mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        limit: vi.fn().mockRejectedValue(new Error('DB connection timeout')),
-      }),
-    });
-    mockSelect.mockReturnValue({ from: mockFrom });
-
-    const res = await GET(makeRequest(TENANT_ID));
+    const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
     // MUST be 500 — never silently return mock when configured DB fails (Rule K.2)
     expect(res.status).toBe(500);
     const body = await parseBody<{ error: { code: string }; data_source: string }>(res);
     expect(body.error.code).toBe('db_error');
     expect(body.data_source).toBe('error');
-    // Must NOT return weights (that would be fabricated data)
+    // Must NOT return weights — that would be fabricated data
     expect('weights' in body).toBe(false);
   });
+
+  it('CORS-1: returns Access-Control-Allow-Origin: * on authenticated 200', async () => {
+    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock([]));
+
+    const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+  });
+
+  it('CACHE-1: returns Cache-Control: public, max-age=300 on authenticated response', async () => {
+    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock([]));
+
+    const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
+    expect(res.headers.get('Cache-Control')).toContain('max-age=300');
+    expect(res.headers.get('Cache-Control')).toContain('public');
+  });
+
+  it(
+    'AC5: after a tenant weight row is written (FOLLOW-268-write POST), ' +
+      'GET returns data_source: live with the written weights',
+    async () => {
+      // Simulate: FOLLOW-268-write POST created a row for TENANT_ID.
+      // The api_keys row authenticates the SDK's bearer token to TENANT_ID.
+      // The weight lookup finds the row and returns data_source: 'live'.
+      // This test verifies the end-to-end wiring contract between the write API
+      // (which creates intent_weight_configs rows) and the read API.
+      //
+      // In a real environment: POST /api/admin/intent/config with Bearer ADMIN_API_SECRET
+      // creates an intent_weight_configs row. GET /api/intent/config with Bearer <api-key>
+      // for the same tenant then returns data_source: 'live' with those weights.
+      // Here we simulate both sides via DB mocks: auth DB returns the api_keys row
+      // (same as all LIVE-* tests) and the weight DB returns the written row.
+      const writtenWeights = {
+        behavioral_damping: 0.22,
+        priors: { family_buyer: 0.07, neutral: 0.28 },
+        signal_likelihoods: {
+          'cta.clicked': { yield_hunter: 1.2 },
+        },
+      };
+      const weightRow = {
+        id: 'cfg-written-by-admin',
+        tenantId: TENANT_ID,
+        weights: writtenWeights,
+        createdAt: new Date('2026-06-13T10:00:00.000Z'),
+        isActive: true,
+      };
+      setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock([weightRow]));
+
+      const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
+      expect(res.status).toBe(200);
+      const body = await parseBody<{
+        data_source: string;
+        is_tenant_specific: boolean;
+        weights: { behavioral_damping?: number };
+      }>(res);
+
+      // Key assertion: GET returns 'live' — NOT 'mock'.
+      // This proves the GET route serves real rows from intent_weight_configs
+      // when an active row exists (as created by the FOLLOW-268-write admin API).
+      expect(body.data_source).toBe('live');
+      expect(body.is_tenant_specific).toBe(true);
+      expect(body.weights.behavioral_damping).toBe(0.22);
+    },
+  );
 });

@@ -127,10 +127,8 @@ export async function GET(
           if (events.length > 0) {
             send({ events, data_source: 'live' as const });
             // Advance the cursor to the most recent event_at.
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- IntentEventRow[] resolved at runtime; packages not built in worktree
             const lastRow = events[events.length - 1];
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- same reason
-            if (lastRow?.event_at) lastEventAt = lastRow.event_at as string;
+            if (lastRow?.event_at) lastEventAt = lastRow.event_at;
           } else {
             send({ heartbeat: true });
           }

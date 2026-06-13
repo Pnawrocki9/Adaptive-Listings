@@ -246,7 +246,6 @@ describe('GET /api/admin/tracer/export/events — JSONL output', () => {
     expect(lines).toHaveLength(2);
     // Each line must be valid JSON independently.
     for (const line of lines) {
-       
       expect(() => JSON.parse(line) as unknown).not.toThrow();
     }
   });

@@ -5,8 +5,9 @@
  *
  * Server-Sent Events: polls ClickHouse every 3 seconds for new intent_events
  * where session_id = :id AND event_at > :lastEventAt. Sends `data: <JSON>\n\n`
- * per new event batch. Closes after 5 minutes (300 polls) to prevent resource
- * exhaustion.
+ * per new event batch. Closes after 5 minutes (100 polls at 3 s each) to prevent
+ * resource exhaustion. Fix: docstring previously said "300 polls" but MAX_POLLS was
+ * always 100 — corrected by FOLLOW-297 (DG-1 from RETRO-061).
  *
  * Auth: Bearer <ADMIN_API_SECRET> OR Supabase JWT with estalara_staff: true.
  *
@@ -126,8 +127,10 @@ export async function GET(
           if (events.length > 0) {
             send({ events, data_source: 'live' as const });
             // Advance the cursor to the most recent event_at.
-            const latest = events[events.length - 1]?.event_at;
-            if (latest) lastEventAt = latest;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- IntentEventRow[] resolved at runtime; packages not built in worktree
+            const lastRow = events[events.length - 1];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- same reason
+            if (lastRow?.event_at) lastEventAt = lastRow.event_at as string;
           } else {
             send({ heartbeat: true });
           }

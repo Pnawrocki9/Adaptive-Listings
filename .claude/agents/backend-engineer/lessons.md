@@ -560,3 +560,33 @@ ESM test file (vitest + node ESM), it always fails. A CI lint rule (`no-require-
 catch this pattern at PR time rather than at test run. None beyond that — the attribute wire pattern
 (buildSnippet→readConfig) now has a complete Rule L test template that can be copied for future
 snippet attributes.
+
+---
+
+## 2026-06-13 / FOLLOW-297 (ADR-0012 Ticket D)
+
+**What I built:** Unit-test coverage for 6 previously-untested K.3.6 tracer admin routes
+(`sessions/[id]`, `sessions/[id]/stream`, `history`, `history/[session_id]`, `export/decisions`,
+`export/events`) and the 326-LOC `clickhouse-tracer.ts` helper. 111 tests across 8 files, all green.
+Also fixed a DG-1 docstring bug: the stream route header said "300 polls" but `MAX_POLLS = 100`;
+corrected to match code.
+
+**Wiring/auth/fail-loud risks I weighed:** All routes are read-only (no state mutation); auth is
+`verifyTracerAdminAuth` (constant-time timingSafeEqual + staff JWT) already shipped in FOLLOW-267.
+Key risk was Rule K.2: distinguishing "configured-but-threw" (must be 500) from "unconfigured" (mock
+OK). Every route test asserts HTTP 500 + data_source: 'error' on configured-store failures and
+rejects the mock path when DB/CH is configured. SSE stream tests use `vi.useFakeTimers()` + the
+`consumeStream()` helper to verify heartbeat is sent (not silent-empty, closing CB-1 from RETRO-061)
+and error event closes the stream (Rule K.2).
+
+**Pitfalls found:** (1) `mockFetch.mockResolvedValue(makeOkResponse(''))` in
+`fetchIntentEventsHistory` tests: `Promise.all` issues two concurrent fetch calls, both consuming
+the same Response body → "Body is unusable" error. Fixed with `mockResolvedValueOnce` chained pairs.
+(2) `vi.stubEnv('CLICKHOUSE_DATABASE', '')` sets env to empty string; `?? 'default'` does NOT fall
+back on `''` (only on null/undefined). Test corrected to document actual behavior rather than wrong
+expectation. (3) Worktree node_modules not installed; needed `pnpm install` from the worktree root
+before vitest could resolve setup.ts imports.
+
+**A guardrail I'd add:** For any helper that uses `Promise.all([fetchA, fetchB])` where both calls
+use the same mocked fetch: always use `mockResolvedValueOnce` pairs, never `mockResolvedValue`. Add
+a comment to the test helper explaining this constraint so future maintainers don't regress.

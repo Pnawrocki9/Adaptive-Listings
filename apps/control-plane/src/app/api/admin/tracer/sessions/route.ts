@@ -27,6 +27,8 @@ import type { TracerSessionsResponse, IntentSessionRow } from '@estalara/shared'
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
 
 // ─── Mock data (dev/CI only — DATABASE_URL_ADMIN not configured) ──────────────
+// Observable mock: data_source: 'mock' is always on the wire (Rule K.2).
+// Production weight rows managed via the FOLLOW-268 weight editor API.
 
 function buildMockSessions(): IntentSessionRow[] {
   return [

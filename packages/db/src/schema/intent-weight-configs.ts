@@ -7,8 +7,9 @@
  * overrides. The SDK-facing `/api/intent/config` route (FOLLOW-267) reads from this table,
  * preferring a tenant-specific active row over the global default.
  *
- * At most one active config per effective scope is enforced by a partial unique index on
- * COALESCE(tenant_id, sentinel_uuid) WHERE is_active = true (matches 0029_intent_weight_configs.sql).
+ * At most one active config per effective scope. The read path in
+ * `GET /api/intent/config` queries WHERE (tenant_id = :tenantId OR tenant_id IS NULL)
+ * AND is_active = true, returning at most 2 rows and preferring the tenant-specific row.
  *
  * RLS: global rows (tenant_id IS NULL) are readable by any tenant; per-tenant rows are isolated
  * to the owning tenant via current_setting('app.current_tenant_id', true).
@@ -41,10 +42,10 @@ export const intentWeightConfigs = pgTable('intent_weight_configs', {
 
   /**
    * Signal weight configuration in JSONB.
-   * Expected shape: { signal_weights: Record<string, number>, priors: Record<string, number>,
-   *                   behavioral_damping: number }
-   * Validated by the write API (FOLLOW-268); stored opaque here so migrations don't need to
-   * track weight schema evolution.
+   * Expected shape: IntentWeightsSchema from @estalara/shared/schemas/intent-weights
+   * (all three sub-fields optional: priors, behavioral_damping, signal_likelihoods).
+   * Validated by the write API (FOLLOW-268-write); stored opaque here so migrations
+   * don't need to track weight schema evolution.
    */
   weights: jsonb('weights').notNull(),
 

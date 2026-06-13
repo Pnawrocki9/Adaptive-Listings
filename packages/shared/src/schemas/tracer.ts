@@ -20,6 +20,8 @@
 
 import { z } from 'zod';
 
+import { IntentWeightsSchema } from './intent-weights.js';
+
 // ─── IntentSession row (Postgres intent_sessions) ────────────────────────────
 
 /**
@@ -135,8 +137,12 @@ export type TracerSessionReplayResponse = z.infer<typeof TracerSessionReplayResp
 // ─── Response for AC8: GET /api/intent/config ────────────────────────────────
 
 export const IntentConfigResponseSchema = z.object({
-  /** Signal weight configuration object (opaque — schema evolves independently). */
-  weights: z.record(z.unknown()),
+  /**
+   * Signal weight configuration object. Validated against IntentWeightsSchema
+   * (ADR-0012 §2) — all sub-fields optional; empty object `{}` is valid and
+   * means "use SDK defaults for all parameters".
+   */
+  weights: IntentWeightsSchema,
   /** ISO 8601 UTC string of when this config row was created (effective_at). */
   effective_at: z.string(),
   /** Whether this is a tenant-specific config (true) or the global default (false). */

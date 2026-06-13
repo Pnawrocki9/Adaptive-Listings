@@ -7928,3 +7928,197 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
      118-121 RESERVED for YELLOW audit Sprint 1 / PR #158; 122 consumed by RETRO-013 / PR #153 /
      FOLLOW-094; 123-124 consumed by RETRO-014 / PR #154 / FOLLOW-093; 125-126 consumed by
      RETRO-016 / PR #156 / FOLLOW-117) -->
+
+## FOLLOW-304 — Make `GET /api/intent/config` return a deterministic one-winner-PER-SCOPE config under a breached one-active invariant (the FOLLOW-301 `ORDER BY created_at DESC` only fixed the SAME-scope tie; the cross-scope `.limit(2)` can starve the tenant override when the GLOBAL scope holds ≥2 active rows, and `created_at` has no unique secondary tiebreak) — SHAPES (not blocks) FOLLOW-268-sdk
+
+- **source_retro:** RETRO-073 (§4a LG-A P2 / LG-B P2; §4c TG-A P2 / TG-B P3; §4d DG-B P3; §5a; §5d)
+- **source_ticket:** FOLLOW-301 / PR #289 (commit `a14c907`)
+  (`apps/control-plane/src/app/api/intent/config/route.ts:239-260` GET
+  `.orderBy(desc(createdAt)).limit(2)` + `rows.find(r => r.tenantId !== null) ?? globalRow`;
+  migration `packages/db/migrations/0029_intent_weight_configs.sql:34`
+  `created_at ... DEFAULT now()`; test
+  `apps/control-plane/src/app/api/intent/config/route.test.ts:464` ORD-1 covers only the same-scope
+  tie)
+- **recommended_sprint:** Sprint 17 (parallel with or fast-follow after FOLLOW-268-sdk; SDK may land
+  first against the current GET — the breach path is low-likelihood and degrades to a safe global
+  config, not a crash)
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 4
+- **scope:** FOLLOW-301 added `.orderBy(desc(intentWeightConfigs.createdAt))` before `.limit(2)` to
+  the SDK-facing GET weight query so newest-active-wins is deterministic under a transiently
+  breached one-active invariant. This closes the SAME-scope tie (ORD-1 proves it) but leaves two
+  residual sub-cases of the very breach path it targets: (1) LG-A — the query selects
+  `WHERE is_active=true AND (tenant_id=:t OR tenant_id IS NULL)` ordered across BOTH scopes then
+  `.limit(2)`, and resolves the winner with
+  `const tenantRow = rows.find(r => r.tenantId !== null); const activeRow = tenantRow ?? globalRow`.
+  If the GLOBAL scope holds ≥2 active rows whose `created_at` is newer than the single active tenant
+  row, `ORDER BY DESC` puts the two global rows first, `.limit(2)` returns exactly those two,
+  `find(tenantId !== null)` returns `undefined`, and the tenant's active override is SILENTLY
+  dropped in favour of the newest global row — violating the documented "tenant-specific preferred
+  over global" contract (`packages/db/src/schema/intent-weight-configs.ts:7-12`). (2) LG-B —
+  `created_at timestamptz DEFAULT now()` (= transaction-start time) is NOT unique; two rows inserted
+  in the same tick (a seed/migration writing two active rows, or two writes in one transaction)
+  share an identical `created_at`, and `ORDER BY desc(createdAt)` with no `, desc(id)` secondary key
+  leaves the winner arbitrary. Both bite only on the breached path — but that path is exactly what
+  the ORDER BY was added to make safe. The global default (CEO D-4, always-present, re-activated
+  over time via PUT-on-id) is the scope most likely to accumulate multiple historical active rows,
+  so the global axis is the live risk for LG-A. Fix: replace the cross-scope `.limit(2)`+`.find()`
+  with a per-scope-deterministic fetch — two scoped queries each
+  `.orderBy(desc(createdAt), desc(id)).limit(1)` (one for `tenant_id=:t`, one for `IS NULL`), prefer
+  the tenant row; OR a single
+  `DISTINCT ON (tenant_id) ... ORDER BY tenant_id, created_at DESC, id DESC`. Add `desc(id)` as the
+  stable secondary sort. Tighten the GET docstring (`route.ts:21-25`) so its determinism claim
+  matches the per-scope + secondary-key behaviour. Coordinate the result shape with FOLLOW-268-sdk
+  so the SDK's "the GET returns my one true config" assumption is fully hardened. (Consider the
+  shared `mapPgError()`/query-helper consolidation surfaced by RETRO-071/073 for the architect — out
+  of scope here.)
+- **ac:**
+  - [ ] AC1 — the GET returns ONE deterministic winner PER SCOPE; a breach of ≥2 active rows in the
+        GLOBAL scope CANNOT starve the tenant override out of the result (LG-A). Test: seed
+        [global-new, global-old, tenant] (3 active rows), drive GET, assert the TENANT row is served
+        with `is_tenant_specific:true` (TG-A) — this FAILS against the current code.
+  - [ ] AC2 — a same-scope `created_at` tie is resolved deterministically by a unique secondary sort
+        key (`id DESC`) (LG-B). Test: two same-scope rows with identical `created_at`, assert the
+        higher-`id` row wins (TG-B).
+  - [ ] AC3 — the GET docstring's determinism claim is tightened to match the per-scope +
+        secondary-key behaviour (DG-B); no over-promise that a flat `ORDER BY created_at` is robust
+        across scopes.
+  - [ ] AC4 — `data_source` provenance + tenant-vs-global preference behaviour for the
+        intact-invariant case is unchanged (no regression of LIVE-_/MOCK-_/ORD-1).
+  - [ ] AC5 — prettier + control-plane vitest green; result shape coordinated with FOLLOW-268-sdk.
+- **depends_on:** none (SHAPES FOLLOW-268-sdk; the SDK may land first against the current GET).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-305 — Make `GET /api/intent/config` (and its sibling `GET /api/quiz/public-config`) actually resolve in PRODUCTION — `fetchIntentWeights`/`fetchQuizConfig` prepend `/api` to a base URL the install snippet ALREADY emits with `/api`, producing a double-`/api` 404, so server intent weights (and quiz config) silently NEVER apply for any tenant onboarded via `buildSnippet` — the D-1 production-closure blocker
+
+- **source_retro:** RETRO-074 (§3 HALF_WIRE_C P1; §4a LG-1 P2; §4b CB-1 P1; §4c TG-1 P1 / TG-2 P2;
+  §4d DG-1 P2; §5a; §5d)
+- **source_ticket:** FOLLOW-268-sdk / PR #290 (commit `ea2089b`) (consumer:
+  `packages/sdk/src/core/intent-weights.ts:68`
+  `${decisionApiUrl.replace(/\/$/,'')}/api/intent/config`
+  - sibling `packages/sdk/src/core/quiz-config.ts:129`
+    `${decisionApiUrl.replace(/\/$/,'')}/api/quiz/public-config`; producer:
+    `apps/control-plane/src/components/onboarding/DetectionPreview.tsx:153`
+    `data-decision-url="${CONTROL_PLANE_URL}/api"` with
+    `CONTROL_PLANE_URL="https://admin.estalara.com"` (`packages/shared/src/domains.ts:41`); the ONE
+    consumer that matches the snippet: `packages/sdk/src/core/adapt.ts:705`
+    `${config.decisionApiUrl}/adapt`; masking fixtures:
+    `packages/sdk/src/__tests__/intent-weights.test.ts:43` +
+    `packages/sdk/src/__tests__/follow-275.test.ts:50` both use the BARE host
+    `'https://admin.estalara.com'`, never the prod `/api` form; archetype-axis parity gap: SDK
+    `packages/sdk/src/core/intent.ts:49` `ARCHETYPE_NAMES` vs shared
+    `packages/shared/src/schemas/intent-weights.ts:33` `ARCHETYPE_KEYS`, guarded on signals (AC10)
+    not archetypes; merge guard `intent.ts:606` `if (k in merged)`)
+- **recommended_sprint:** Sprint 17 (BLOCKS K.3.6 D-1 production closure — D-1 is code-complete but
+  not production-live until this lands)
+- **recommended_agent:** sdk-engineer (coordinate with architect on the base-URL convention /
+  `buildEndpoint` helper)
+- **priority:** P1
+- **estimated_hours:** 4
+- **scope:** The install snippet (`buildSnippet`) emits
+  `data-decision-url="${CONTROL_PLANE_URL}/api"` = `"https://admin.estalara.com/api"` (host +
+  `/api`, because the shipped `adapt.ts` consumer appends `/adapt` WITHOUT `/api`, so the snippet
+  bakes `/api` in for it — FOLLOW-105). `readConfig` assigns `config.decisionApiUrl` verbatim (no
+  `/api` strip anywhere in the SDK). But `fetchIntentWeights` AND `fetchQuizConfig` BOTH build
+  `${decisionApiUrl}/api/<path>`, assuming the BARE host — so in production they fetch
+  `https://admin.estalara.com/api/api/intent/config` (and `.../api/api/quiz/public-config`) → 404 →
+  `null` → the SDK silently falls back to internal defaults. Result: server-managed intent weights
+  (K.3.6 D-1) AND runtime quiz/widget config never reach the SDK for any `buildSnippet`-onboarded
+  tenant. The bug is INHERITED — `fetchQuizConfig` introduced the double-`/api` in FOLLOW-275 and
+  `fetchIntentWeights` faithfully mirrored it; neither was caught because every test uses the
+  bare-host fixture, not the snippet form. The three SDK fetch sites are split: `adapt.ts` appends
+  `/adapt` (matches the snippet's `/api`); `quiz-config.ts` + `intent-weights.ts` prepend `/api/...`
+  (assume bare host). Fix: EITHER (option 1, tactical) strip a trailing `/api` from `decisionApiUrl`
+  in both quiz/intent fetch sites before prepending the route path; OR (option 2, preferred /
+  structural) centralize all THREE fetch sites on one `buildEndpoint(decisionApiUrl, path)` helper
+  with ONE documented base-URL convention so a new endpoint cannot re-derive it wrong. Apply the fix
+  to BOTH fetch siblings (Rule S). Also close the unguarded archetype-key parity axis (LG-1):
+  `resolveIntentOverrides`'s `if (k in merged)` filters server priors against the SDK-local
+  hand-typed `ARCHETYPE_NAMES`, which has no parity guard against shared `ARCHETYPE_KEYS` (currently
+  identical, no live bug) — add an `ARCHETYPE_NAMES ≡ ARCHETYPE_KEYS` test mirroring AC10 so a
+  future shared-list addition cannot silently strip a server prior. Fix the misleading docstrings
+  (`intent-weights.ts:819`, `quiz-config.ts:128`) that claim `decisionApiUrl` is the bare host.
+- **ac:**
+  - [ ] AC1 — `fetchIntentWeights` resolves to `https://admin.estalara.com/api/intent/config`
+        (SINGLE `/api`) when given the PRODUCTION snippet value `${CONTROL_PLANE_URL}/api`. Test:
+        drive the fetch with the `https://admin.estalara.com/api` base and assert the final URL has
+        no `/api/api` — this test MUST FAIL against `main` today (TG-1).
+  - [ ] AC2 — `fetchQuizConfig` gets the identical fix (Rule S — symmetric siblings); same prod-URL
+        assertion for `/api/quiz/public-config`.
+  - [ ] AC3 — `ARCHETYPE_NAMES ≡ ARCHETYPE_KEYS` parity test added (mirrors AC10's signal-key guard
+        on the archetype axis) so a server prior for a future shared archetype is never silently
+        dropped by `if (k in merged)` (LG-1 / TG-2).
+  - [ ] AC4 — the `decisionApiUrl` docstrings in both fetch modules are corrected to state the
+        actual production base-URL convention (DG-1); the convention is documented in ONE place (or
+        enforced by the `buildEndpoint` helper if option 2 is taken).
+  - [ ] AC5 — an existing integration test (or a new one) drives `_initForTest()` with the
+        production snippet form and asserts BOTH `/api/intent/config` and `/api/quiz/public-config`
+        are hit with a single `/api` (no regression of the existing Bearer-header + parallel-fetch
+        assertions).
+  - [ ] AC6 — prettier + SDK typecheck + vitest green; coordinate the base-URL convention with the
+        architect (`buildEndpoint` centralization) before merge.
+- **depends_on:** none (BLOCKS K.3.6 D-1 production closure / FOLLOW-293 end-to-end gate).
+  Independent of FOLLOW-304 (GET determinism).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-306 — Bring the LAST `decisionApiUrl` fetch site (`fetchDescription`) under the `buildEndpoint` helper + add a dedicated `endpoint.test.ts` — centralization hygiene so no SDK fetch site re-derives the `host + /api` convention (NOT prod-blocking: `/adapt/description` is single-`/api` and resolves correctly today)
+
+- **source_retro:** RETRO-075 (§4b CB-2 P3; §4c TG-1 P3; §4d DG-2 P3; §5d; §6 Rule-S helper-adoption
+  sub-instance)
+- **source_ticket:** FOLLOW-305 / PR #291 (commit `3d9e8f0` — the `buildEndpoint` helper that
+  centralized 5 of 6 `decisionApiUrl` fetch sites; `adapt-description.ts` is the un-migrated 6th)
+  (outlier consumer: `packages/sdk/src/core/adapt-description.ts:227`
+  `${config.decisionApiUrl!}/adapt/description?listing_id=${listingId}&archetype=${archetype}&locale=${config.language}`
+  — builds its URL DIRECTLY, bypassing `buildEndpoint`; the helper:
+  `packages/sdk/src/core/endpoint.ts:60` `buildEndpoint(decisionApiUrl, path)`; the helper's
+  "Non-test consumers" docstring list: `packages/sdk/src/core/endpoint.ts:27-31` (omits
+  `adapt-description.ts`); route confirmed to exist:
+  `apps/control-plane/src/app/api/adapt/description/route.ts`)
+- **recommended_sprint:** Sprint 17 (hygiene; no production impact — schedule alongside other SDK
+  cleanup)
+- **recommended_agent:** sdk-engineer
+- **priority:** P3
+- **estimated_hours:** 2
+- **scope:** FOLLOW-305 centralized URL construction in `buildEndpoint(decisionApiUrl, path)` and
+  routed FIVE of the SIX `decisionApiUrl` fetch sites through it (intent-weights, quiz-config,
+  adapt/feedback, quiz/completion, main /adapt). The SIXTH — `fetchDescription`
+  (`adapt-description.ts:227`) — predates the intent/quiz wave and still builds
+  `${config.decisionApiUrl!}/adapt/description?…` by hand. This is NOT a bug: with the canonical
+  base `host/api` it resolves to `https://admin.estalara.com/api/adapt/description` (SINGLE `/api`)
+  and the route exists, so `/adapt/description` works in production today. But it is the last site
+  that can re-derive the base-URL convention wrong on a future edit (the exact failure mode Rule X
+  now forbids). Route it through `buildEndpoint` (the typed `path` parameter accepts the
+  query-string suffix:
+  `` `/adapt/description?listing_id=${listingId}&archetype=${archetype}&locale=${config.language}` ``).
+  Additionally, `buildEndpoint` itself has NO dedicated unit test — it is only exercised
+  transitively by consumer suites; add a small `endpoint.test.ts` pinning its trailing-slash
+  normalization and canonical join. Finally, the `endpoint.ts:27-31` "Non-test consumers (Rule H)"
+  docstring list omits `adapt-description.ts` — add it once migrated so the list stays an accurate
+  consumer index. This is Rule S sibling-completeness on the helper-adoption axis + Rule X
+  compliance for the last fetch site.
+- **ac:**
+  - [ ] AC1 — `fetchDescription` (`adapt-description.ts:227`) constructs its URL via
+        `buildEndpoint(config.decisionApiUrl, \`/adapt/description?listing_id=…&archetype=…&locale=…\`)`,     not by direct template-literal concatenation. The resolved URL for the production base     `https://admin.estalara.com/api`
+        is UNCHANGED (`…/api/adapt/description?…`) — assert no regression on the description fetch
+        target.
+  - [ ] AC2 — a new `packages/sdk/src/__tests__/endpoint.test.ts` asserts: (i) trailing-slash
+        normalization (`buildEndpoint('https://x/api/', '/adapt') === 'https://x/api/adapt'`); (ii)
+        canonical join
+        (`buildEndpoint('https://x/api', '/intent/config') === 'https://x/api/intent/config'`);
+        (iii) no `/api` is injected for a bare base (documents the `host+/api` caller contract).
+  - [ ] AC3 — `endpoint.ts:27-31` "Non-test consumers" docstring list updated to include
+        `adapt-description.ts` (DG-2).
+  - [ ] AC4 — prettier + SDK typecheck + vitest green; no change to any production URL.
+- **depends_on:** none (FOLLOW-305 already merged; this is pure follow-through). Does NOT block any
+  ticket.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 307 (306 = RETRO-075 / PR #291 / FOLLOW-305: bring the LAST decisionApiUrl fetch site fetchDescription (adapt-description.ts:227) under the buildEndpoint helper FOLLOW-305 introduced + add a dedicated endpoint.test.ts + fix the endpoint.ts:27-31 "Non-test consumers" docstring list that omits adapt-description.ts; NOT prod-blocking — /adapt/description is single-/api and resolves correctly today, this is centralization hygiene so no future edit can re-derive the host+/api convention wrong (Rule X compliance for the last of 6 fetch sites, Rule S sibling-completeness on the helper-adoption axis), P3. NOTE FOLLOW-305 itself FIXED all four double-/api sites + closed the RETRO-074 LG-1 archetype parity (TG-2) + the DG-1 docstrings — D-1 is NOW production-live end-to-end; do not re-file those. FOLLOW-293 stays OPEN for the LIVE network smoke ONLY (the unit-level prod-URL-form is now covered); FOLLOW-266 Phase 2 seed UNBLOCKED; FOLLOW-304 GET-determinism UNCHANGED — do not re-file any.) -->
+<!-- prior next free FOLLOW number: 306 (305 = RETRO-074 / PR #290 / FOLLOW-268-sdk: fix the double-/api production 404 — fetchIntentWeights + fetchQuizConfig prepend /api to a base the buildSnippet install already emits with /api, so server intent weights + quiz config 404-silently for every buildSnippet-onboarded tenant; centralize on a buildEndpoint helper, add prod-URL-form tests, close the ARCHETYPE_NAMES≡ARCHETYPE_KEYS parity axis, fix the misleading docstrings, P1, BLOCKED K.3.6 D-1 production closure — NOW RESOLVED by PR #291 / RETRO-075.) -->

@@ -1,20 +1,22 @@
 # Backlog Queue
 
-**Updated 2026-06-13T14:00Z. ADR-0012 D-1 CHAIN WAVE 3 COMPLETE (5 PRs merged this session):
-FOLLOW-267 (P1) DONE — PR #283 (tracer admin API, 8 routes + /api/intent/config). FOLLOW-294 (P1)
-DONE — PR #284 merge commit 4e45e3a (ADR-0012 Ticket A — authenticated GET /api/intent/config +
-shared IntentWeightsSchema; cross-tenant ?tenant_id enumeration closed). FOLLOW-268-write (P1) DONE
-— PR #285 merge commit 2998a93 (ADR-0012 Ticket B — admin write API POST/PUT
-/api/admin/intent/config; write-side IntentWeightsSchema validation satisfied). FOLLOW-297 (P1) DONE
-— PR #286 merge commit 8cdf94f (ADR-0012 Ticket D — tracer route + clickhouse- tracer unit tests,
-111 assertions; DG-1 MAX_POLLS docstring fixed). FOLLOW-299 (P1) DONE — PR #287 merge commit c387103
-(widen data_source enum to include 'error' — prerequisite for FOLLOW-268-sdk consumer).
-RETRO-070/071/072 complete (appended to RETROSPECTIVES.md). CONVENTIONS_PATCH.md Rule K.2 amended
-(enum-completeness + schema-round-trip-test; 3rd sighting across RETRO-058/070/072). New FOLLOW
-stubs from retros: FOLLOW-298 (P3), FOLLOW-300 (P2), FOLLOW-301 (P1 — BLOCKS FOLLOW-268-sdk),
-FOLLOW-302 (P3), FOLLOW-303 (P2). ADR-0012 D-1 state: A/B/D/enum-prereq DONE; NEXT READY: FOLLOW-301
-(P1); BLOCKED: FOLLOW-268-sdk (Ticket C) depends on FOLLOW-301. FOLLOW-293 (closure gate) depends on
-FOLLOW-268-sdk.**
+**Updated 2026-06-14T00:00Z. K.3.6 D-1 "immediate weights" is CODE-COMPLETE and PRODUCTION-LIVE
+end-to-end. ADR-0012 D-1 WAVE 3 + WAVE 4 COMPLETE (8 PRs total): FOLLOW-267 (P1) DONE — PR #283.
+FOLLOW-294/Ticket-A (P1) DONE — PR #284 (4e45e3a). FOLLOW-268-write/Ticket-B (P1) DONE — PR #285
+(2998a93). FOLLOW-297/Ticket-D (P1) DONE — PR #286 (8cdf94f). FOLLOW-299 (P1) DONE — PR #287
+(c387103). FOLLOW-301 (P1) DONE — PR #289 merge commit a14c907 (one-active-row invariant + atomic
+swap + deterministic GET ORDER BY + real POST→GET round-trip). FOLLOW-268-sdk/Ticket-C (P2) DONE —
+PR #290 merge commit ea2089b (resolveIntentOverrides + fetchIntentWeights; ADR-0012 Ticket C).
+FOLLOW-305 (P1) DONE — PR #291 merge commit 3d9e8f0 (buildEndpoint helper — fixed double-/api prod
+404 on 4 SDK endpoints; also fixed quiz-config delivery + feedback/quiz-completion pings — D-1
+production-live). RETRO-073/074/075 complete. CONVENTIONS_PATCH.md Rule X promoted (every
+SDK→control-plane fetch via buildEndpoint + prod-snippet-base test; RETRO-074/075 count 2). New
+FOLLOW stubs: FOLLOW-304 (P2 backend — GET per-scope determinism), FOLLOW-306 (P3 sdk —
+fetchDescription centralization). D-1 operational precondition: global-default intent_weight_configs
+row must be SEEDED for live weights — FOLLOW-266 Phase 2 UNBLOCKED (seed that row). IMPORTANT:
+RETRO-074/075 confirmed the double-/api bug also silently broke quiz-config delivery (FOLLOW-275)
+and feedback/quiz-completion writes — all FOUR now fixed by PR #291. FOLLOW-293 (closure gate) open
+for live-network smoke only.**
 
 **Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE. RETRO-050/051/052/053 complete.
 FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-11 (quiz-only ratified, docs synced, contract-pinning
@@ -187,8 +189,9 @@ CRM docs, micro-poll Wave 2 | 17 | 16 | 0 | 1 | 0 | | Wave A | — | Bug fix clu
 (FOLLOW-274 DONE), SDK locale enum alignment (FOLLOW-273 DONE), headline fact-check tightening
 (FOLLOW-272 DONE), micro_polls wire (FOLLOW-275 DONE) + docs/fallback/locale fixes
 (FOLLOW-276/277/278/279 DONE) + Tracer full D-1 chain
-(FOLLOW-266/286/287/288/267/294/268-write/297/299 all DONE) + ADR-0012 backlog (FOLLOW-301 READY P1,
-FOLLOW-268-sdk/269/293 BLOCKED, FOLLOW-295/296/298/300/302/303 BACKLOG) | 21 | 13 | 0 | 1 | 3 |
+(FOLLOW-266/286/287/288/267/294/268-write/297/299/ 301/268-sdk/305 all DONE) — K.3.6 D-1
+PRODUCTION-LIVE + ADR-0012 backlog (FOLLOW-269/293 BLOCKED, FOLLOW-295/296/298/300/302/303/304/306
+BACKLOG) | 24 | 16 | 0 | 0 | 2 |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -4391,18 +4394,23 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     ADR-0012 Ticket C — SDK weight-fetch at init (CEO D-1: effective within 5 min, fail-soft);
     fetch /api/intent/config, cache 5 min, apply signal_weights/priors/behavioral_damping
   agent: sdk-engineer
-  status: BLOCKED
+  status: DONE
   priority: P2
   estimated_hours: 4
   depends_on: [FOLLOW-266, FOLLOW-267, FOLLOW-299, FOLLOW-301]
   spec: backlog/FOLLOW_UPS.md (FOLLOW-268 stub, Ticket C)
+  pr: '290'
+  merge_commit: ea2089b
+  completed_at: '2026-06-13T00:00:00Z'
   notes: |
-    SDK init(): fetch /api/intent/config, cache 5 min (ADR-0011 pattern), apply
-    signal_weights/priors/behavioral_damping before first processSignal(); fail-soft on error.
+    PR #290 merged (ea2089b). resolveIntentOverrides() + fetchIntentWeights() implemented.
+    SDK init(): fetch /api/intent/config, cache 5 min, apply server priors/damping/signal_likelihoods
+    through initIntentState/applyBehavioralSignal; fail-soft on error (data_source='error').
     Simulation NOT in scope (CEO D-3 — FOLLOW-282).
-    BLOCKED on: FOLLOW-299 (data_source enum must include 'error' before SDK observer written)
-    AND FOLLOW-301 (GET ORDER BY + 409/atomic-swap must be correct before SDK consumes the read).
-    Gates FOLLOW-269.
+    RETRO-074 generated FOLLOW-305 (P1 — double-/api prod 404 blocker; same bug on fetchQuizConfig).
+    IMPORTANT: D-1 was code-complete but NOT production-live at this PR — fetchIntentWeights built
+    ${decisionApiUrl}/api/intent/config but decisionApiUrl is already host+/api from the snippet,
+    producing double-/api 404. Fixed by FOLLOW-305 (PR #291). Gates FOLLOW-269 (now unblocked).
 
 - id: FOLLOW-297
   title: >
@@ -4570,31 +4578,30 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     Defend intent_weight_configs one-active-row invariant in write API + deterministic GET ORDER BY
     + replace fake AC5 wiring test with real POST→GET round-trip (BLOCKS FOLLOW-268-sdk / Ticket C)
   agent: backend-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-268-write]
   source_retro: RETRO-071 (§4a LG-1/LG-3; §4c CB-1/TG-1/TG-2/TG-3; §4d DG-1)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-301 stub)
+  pr: '289'
+  merge_commit: a14c907
+  completed_at: '2026-06-13T00:00:00Z'
   notes: |
-    Three problems in FOLLOW-268-write (PR #285) that shape FOLLOW-268-sdk:
-    1. POST/PUT does not catch the 23505 unique-constraint violation on
-       intent_weight_configs_one_active partial index → generic db_error/500 instead of 409.
-       Must become: deactivate-prior-row → insert-new, OR catch 23505 → return 409 with
-       documented atomic-swap workflow.
-    2. GET /api/intent/config has no ORDER BY desc(created_at) — if two same-scope active rows
-       ever co-exist (via the LG-1 gap above or a direct DB write), the .limit(1) tie-break is
-       non-deterministic. Add ORDER BY created_at DESC.
-    3. The AC5 "wiring" test in route.test.ts mocks both POST and GET independently — it
-       does NOT prove a POST-produced row is read by GET. Replace with a real POST→GET round-trip.
-    BLOCKS FOLLOW-268-sdk because the SDK consumes the GET and the read path must be
-    deterministic before the weight-application logic is written.
+    PR #289 merged (a14c907). Atomic deactivate-then-activate transaction on POST + PUT; 23505
+    mapped to 409, FK 23503 mapped to 400; deterministic GET ORDER BY created_at DESC + id DESC;
+    real POST→GET round-trip wiring test replaces the fake mock-both-legs AC5.
+    RETRO-073 generated FOLLOW-304 (P2 — cross-scope GET determinism residual; shapes but does not
+    block FOLLOW-268-sdk). FOLLOW-268-sdk UNBLOCKED by this PR.
+    NOTE from RETRO-073: the GET's .orderBy(desc(createdAt)).limit(2) still has a cross-scope
+    starvation gap (FOLLOW-304 LG-A/LG-B) where ≥2 active global rows can crowd out the tenant
+    override. Degrades safely (serves global config, not a crash).
 
 - id: FOLLOW-293
   title: >
     ADR-0012 closure-verification gate — end-to-end wire: SDK weight-fetch (Ticket C) reaches
     intent.ts processSignal() for all 13 signals; confirmed by a non-test producer + non-test
-    consumer grep and a live integration assertion
+    consumer grep and a live integration assertion / live-network smoke test
   agent: qa-engineer
   status: BLOCKED
   priority: P2
@@ -4602,9 +4609,13 @@ engine deferred to FOLLOW-282 per CEO D-3.**
   depends_on: [FOLLOW-268, FOLLOW-269]
   spec: backlog/FOLLOW_UPS.md (FOLLOW-293 stub)
   notes: |
-    Not satisfiable until FOLLOW-268-sdk (Ticket C) ships the SDK weight-application consumer.
-    grep for non-test consumer of IntentWeightsSchema in packages/sdk/src/ is currently empty.
-    Promoted from ADR-0012 planning; do not attempt before FOLLOW-268-sdk merges.
+    FOLLOW-268-sdk (Ticket C) DONE (PR #290) and FOLLOW-305 (prod URL fix, PR #291) DONE.
+    All code hops are correct and production-live. Only remaining blocker: live-network smoke test
+    confirming the full chain (snippet → SDK init → fetchIntentWeights → GET /api/intent/config →
+    weights applied to processSignal()) in a real tenant environment. Unit-level prod-URL-form
+    coverage was added by FOLLOW-305 TG-1 tests; FOLLOW-293 is the live-network closure.
+    Also requires FOLLOW-266 Phase 2 global-default row seeded before live weights can apply.
+    Promoted from ADR-0012 planning.
 
 - id: FOLLOW-295
   title: >
@@ -4720,15 +4731,79 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     (c) Re-point the 6 "RETRO-061 bugs addressed" test-file headers at real source (ADR-0012
         §Context + PR #283/FOLLOW-267 finding) since RETRO-061 has no body in RETROSPECTIVES.md.
     FOLLOW-299 (enum prereq, PR #287) already merged — (a) should build on that.
+
+- id: FOLLOW-305
+  title: >
+    Fix double-/api production 404 on SDK fetchIntentWeights / fetchQuizConfig / deriveFeedbackUrl /
+    deriveQuizCompletionUrl via buildEndpoint helper — K.3.6 D-1 production-closure blocker
+  agent: sdk-engineer
+  status: DONE
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source_retro: RETRO-074 (§3 HALF_WIRE_C P1; §4b CB-1 P1)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-305 stub)
+  pr: '291'
+  merge_commit: 3d9e8f0
+  completed_at: '2026-06-14T00:00:00Z'
+  notes: |
+    PR #291 merged (3d9e8f0). buildEndpoint(decisionApiUrl, path) helper introduced in
+    packages/sdk/src/core/endpoint.ts; FOUR double-/api fetch sites routed through it:
+    fetchIntentWeights, fetchQuizConfig, deriveFeedbackUrl, deriveQuizCompletionUrl.
+    TG-1 prod-URL-form tests: assert .toBe('https://admin.estalara.com/api/intent/config') + no
+    double-/api. TG-2 ARCHETYPE_NAMES≡ARCHETYPE_KEYS parity (3 guards).
+    IMPORTANT SIDE EFFECT: same double-/api bug had silently broken FOLLOW-275 quiz-config
+    delivery AND feedback/quiz-completion write pings in production — all FOUR now fixed by this PR.
+    D-1 is NOW production-live end-to-end. RETRO-075 confirmed fix complete.
+    RETRO-075 generated FOLLOW-306 (P3 — fetchDescription centralization, last un-migrated site).
+    CONVENTIONS_PATCH.md Rule X promoted from RETRO-074/075 (count 2 met threshold).
+    FOLLOW-293 remains OPEN for live-network smoke only.
+
+- id: FOLLOW-304
+  title: >
+    Make GET /api/intent/config return a deterministic one-winner-PER-SCOPE config under a breached
+    invariant (per-scope LIMIT 1 + DISTINCT ON + id DESC secondary sort; SHAPES FOLLOW-268-sdk)
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P2
+  estimated_hours: 4
+  depends_on: []
+  source_retro: RETRO-073 (§4a LG-A/LG-B P2; §5a)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-304 stub)
+  notes: |
+    Non-blocking; SDK degrades safely to global config (not a crash) if ≥2 active global rows
+    crowd out the tenant override. Fix: two scoped queries each .orderBy(desc(createdAt), desc(id))
+    .limit(1), prefer tenant row; or single DISTINCT ON (tenant_id) ORDER BY tenant_id, created_at
+    DESC, id DESC. Add stable id DESC secondary sort. Coordinate result shape with FOLLOW-268-sdk.
+
+- id: FOLLOW-306
+  title: >
+    Bring fetchDescription (adapt-description.ts) under buildEndpoint + add endpoint.test.ts + fix
+    endpoint.ts consumer-list docstring — centralization hygiene (NOT prod-blocking)
+  agent: sdk-engineer
+  status: BACKLOG
+  priority: P3
+  estimated_hours: 2
+  depends_on: []
+  source_retro: RETRO-075 (§4b CB-2 P3; §4c TG-1 P3; §4d DG-2 P3)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-306 stub)
+  notes: |
+    adapt-description.ts:227 is the last of 6 decisionApiUrl fetch sites still using direct
+    template-literal concatenation. NOT a double-/api bug (resolves correctly today).
+    Route through buildEndpoint; add endpoint.test.ts pinning trailing-slash normalization;
+    update endpoint.ts:27-31 Non-test consumers docstring to include adapt-description.ts.
+    Rule X compliance + Rule S sibling-completeness on helper-adoption axis.
 ```
 
 ## Currently in flight
 
-**Nothing actively in flight as of 2026-06-13T14:00Z.** ADR-0012 D-1 chain WAVE 3 complete (5 PRs
-merged this session: #283/284/285/286/287). NEXT READY: FOLLOW-301 (P1, backend-engineer) — the
-one-active-row invariant + deterministic GET + real POST→GET wiring test that must land before
-FOLLOW-268-sdk (Ticket C / SDK weight-fetch) can be delegated. FOLLOW-268-sdk is BLOCKED on
-FOLLOW-301 + FOLLOW-299 (DONE). FOLLOW-293 (closure gate) is BLOCKED on FOLLOW-268-sdk + FOLLOW-269.
+**Nothing actively in flight as of 2026-06-14T00:00Z.** K.3.6 D-1 "immediate weights" is
+PRODUCTION-LIVE end-to-end (8 PRs: #284/#285/#286/#287/#289/#290/#291 + #283 = full D-1 chain).
+Operational precondition: a global-default intent_weight_configs row must be SEEDED for live weights
+to apply — FOLLOW-266 Phase 2 now UNBLOCKED (absent a row, GET returns data_source:'mock' and SDK
+uses internal defaults BY DESIGN). FOLLOW-293 open for live-network smoke only. FOLLOW-269 (frontend
+UI) BLOCKED on FOLLOW-268-sdk (now DONE) — ready to delegate at next sprint planning. FOLLOW-304
+(P2) and FOLLOW-306 (P3) are non-blocking backlog.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

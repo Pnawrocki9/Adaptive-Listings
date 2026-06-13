@@ -1,5 +1,40 @@
 # Retrospective-Analyst — meta-lessons (self-improvement loop)
 
+## 2026-06-14 · RETRO-075 (PR #291, FOLLOW-305 — the fix for the double-`/api` prod 404 RETRO-074 CB-1 caught; `buildEndpoint` helper; PROMOTED Rule X)
+
+- **A finding I almost missed and why:** the FIFTH `decisionApiUrl` fetch site,
+  `adapt-description.ts:227`. The PR fixed exactly the four sites RETRO-074 and the task enumerated,
+  and all four checked out — so the easy verdict was "fix complete, clean ✅." The catch was running
+  the completeness grep from the SYMBOL (`grep decisionApiUrl` across all SDK src) instead of the
+  ticket's list, which surfaced a sixth URL site the PR never touched and RETRO-074 never named (the
+  description endpoint predates the intent/quiz wave). I almost mis-flagged it as a residual
+  double-`/api` bug; tracing `${decisionApiUrl}/adapt/description` against the `host/api` base (→
+  single `/api`) + confirming the route exists correctly downgraded it to P3 hygiene (FOLLOW-306).
+  This is the RETRO-001→RETRO-004 under-count shape on a FIX retro: "fixed every site the report
+  named" ≠ "fixed every site." Lesson locked: on any fix/wiring retro, re-derive the site list from
+  the symbol, never trust the ticket's enumeration — the grep finds N+1.
+- **An axis/chain I had to trace twice — the deprecated bare-host `DECISION_API_URL`.** The task
+  explicitly asked whether any deployment uses a bare-host `decisionApiUrl` that the fix would now
+  break by NOT adding `/api`. `shared/domains.ts` DOES define
+  `DECISION_API_URL = decision.estalara.com` (bare host) — which looked like a live CB-4 break.
+  Second pass followed the `@deprecated` chain (ADR-0006/FOLLOW-105, retired Worker) and grepped ALL
+  references: zero functional consumers, the only mention is a comment saying "NOT this one." So the
+  bare-host axis is dead and the helper's `host+/api` assumption holds for every LIVE
+  `decisionApiUrl`. A scary-looking constant is not a live axis until you prove a producer feeds it
+  — verify the deprecation, don't assume it.
+- **A meta-pattern in how gaps recur across agents.** RETRO-074's promote-on-confirmation condition
+  worked exactly as designed: it deferred the Rule at count 1 (single axis, distinct root from Rule
+  L) and named the precise trigger ("a SECOND fetch site OR independent confirmation of the quiz
+  sibling"). This retro met it cleanly — four independent sites, not one inherited bug — so Rule X
+  promoted without ambiguity. The deferred-promotion-with-explicit-trigger mechanism (also seen Rule
+  S RETRO-044→045) is the right way to handle a count-1 finding that is clearly going to recur: name
+  the trigger in §6 so the NEXT retro can promote mechanically. BUT a residual meta-gap: the new
+  prod-URL tests hard-COPY the snippet string `'https://admin.estalara.com/api'` rather than
+  importing it from `CONTROL_PLANE_URL`/`buildSnippet` — so the fixture can still drift from the
+  producer silently. The deeper "derive the fixture from the real producer" remedy is still
+  unadopted; if a THIRD field shows a hand-copied-producer-fixture divergence, that is its own
+  promotable pattern.
+
 ## 2026-06-13 · RETRO-070 (PR #284, FOLLOW-294 — ADR-0012 Ticket A: authenticated GET /api/intent/config + shared IntentWeightsSchema)
 
 - **A finding I almost missed and why:** the `data_source:'error'` enum drift (CB-1/§3). The auth
@@ -758,3 +793,90 @@
   Zod-validation (still open) — so the correct verdict was PARTIALLY CLOSED + re-scope, not "still
   open" and not "closed". Resisting the binary was the right call; recorded as a re-scope NOTE, not
   a duplicate stub.
+
+## 2026-06-13 · RETRO-073 (FOLLOW-301 / PR #289 — one-active-row invariant + GET ORDER BY)
+
+- **A finding I almost missed and why.** I nearly recorded the GET `ORDER BY created_at DESC` as a
+  clean closure of RETRO-071's LG-3, because ORD-1 passes and the docstring confidently claims
+  determinism "even if the invariant is transiently breached." The catch was constructing the breach
+  MYSELF rather than trusting the one ORD-1 tests: ORD-1 breaches the TENANT scope (2 tenant rows),
+  where `find(tenantId !== null)` still works. The dangerous breach is the GLOBAL scope (2 global
+  rows newer than the tenant row), where the cross-scope `.limit(2)` starves the tenant override and
+  `find` returns undefined → tenant silently served the global config. The test picks the SAFE
+  partition to breach. Lesson: when a fix is sold as "robust under breach," enumerate WHICH
+  partition breaks — a test that breaches the convenient scope is not evidence the inconvenient
+  scope is safe. This is the same "fix closes the convenient sibling, leaves the inconvenient one"
+  one-hop-decay RETRO-057 named for wiring, now appearing in query-determinism.
+- **An axis/chain I had to trace twice — the mid-swap GET concurrency question.** The task flagged
+  "could a concurrent GET see ZERO active rows mid-swap → return data_source:'mock'?" First pass I
+  was inclined to file it. Second pass I reasoned through Postgres READ COMMITTED: the
+  deactivate-then-insert is ONE transaction, invisible to other sessions until COMMIT, so a
+  concurrent single-statement SELECT sees old-or-new, never both-off. CLEAN — and I had to carefully
+  SEPARATE that (the atomic POST/PUT swap, safe) from the manual two-API-CALL admin workflow (PUT
+  old→false, then a separate PUT/POST new→true), which DOES have a zero window but is not the
+  supported path. Two superficially-identical "zero-active window" concerns, opposite verdicts,
+  hinging on one-transaction-vs-two-calls. Recorded TG-C as an explicit non-gap so a future retro
+  doesn't file the phantom.
+- **A lineage mis-citation I had to correct from source.** RETRO-071 §6/§8 cited
+  "RETRO-027/FOLLOW-179" as instance 1 of the constraint-violation-handling pattern. Grepping the
+  actual retro bodies showed RETRO-027 is the description-prompt rewrite (TICKET-DESC-PIVOT-001) —
+  the conversion_labels missing-UNIQUE finding is RETRO-029/FOLLOW-179. Promotion math MUST be
+  re-derived from the source retros, never inherited from a citing retro's prose. New count-1
+  meta-pattern logged (retro mis-cites a prior instance's RETRO number → propagates wrong promotion
+  lineage).
+- **A meta-pattern in how gaps recur across agents.** The recurring shape across RETRO-071→073: a
+  fix closes the HEADLINE gap impeccably (atomic swap, 23505→409, real POST→GET round-trip — all
+  genuinely done and verified end-to-end, not just claimed) while leaving a NARROWER sibling of the
+  SAME gap one scope/axis over. The worker fixed exactly the literal instruction ("add ORDER BY
+  desc(createdAt)") and the instruction under-specified the partition granularity + tiebreak
+  uniqueness. Lesson for the retro→follow-up handoff: when a follow-up names a determinism fix,
+  specify the PARTITION granularity (per-scope LIMIT 1 / DISTINCT ON) and the tiebreak uniqueness
+  (unique secondary sort key) IN the AC, or the worker closes the literal gap and leaves the
+  sibling. I wrote FOLLOW-304's ACs that way (AC1 names the cross-scope starvation explicitly; AC2
+  names the unique secondary key) to avoid re-spawning the same decay.
+- **A promotion I deliberately did NOT make.** The constraint-violation-handling pattern reached its
+  natural promotion moment — but this PR REMEDIATED the RETRO-071 instance rather than RECURRING it.
+  Promoting a Rule off a FIX inverts the threshold's purpose. Held at count-2-as-symptom; sharpened
+  the carry-forward to "promote on the next NEW write route that ships an UNHANDLED 23505/23503 into
+  a generic 500." Resisting the promotion was the right call.
+
+## 2026-06-13 / RETRO-074 — FOLLOW-268-sdk (PR #290) — the FINAL K.3.6 D-1 leg
+
+- **A finding I almost missed and why.** The whole wire looked clean: the GET route exists, the
+  Bearer transport matches, and the integration test literally asserts `/api/intent/config` was
+  called. I nearly stamped "Wiring Audit clean." The catch came from the task's steer to trace the
+  `decisionApiUrl` VALUE, not its presence — `buildSnippet` emits `${CONTROL_PLANE_URL}/api` (=
+  host + `/api`), `readConfig` passes it verbatim, and `fetchIntentWeights` then PREPENDS another
+  `/api` → `…/api/api/intent/config` → 404 in production. Invisible if you only check "is the arg
+  set" (yes) or "does the test hit the right path" (yes — against a bare-host FIXTURE). The fixture
+  (`https://admin.estalara.com`) is the bare host; production emits host+`/api`. The test masked the
+  bug. **Lesson: when verifying an SDK fetch consumer, derive the producer's EXACT output string
+  (the real `buildSnippet`) and run the consumer's URL construction against THAT, never against the
+  test fixture — the fixture is the consumer author's assumption, not the producer's reality.**
+- **An axis/chain I had to trace twice.** First pass found the double-`/api` and I almost filed it
+  as a single-ticket find. Second pass: "but `fetchQuizConfig` does the identical thing and SHIPPED
+  in FOLLOW-275 — is it really broken too, or is there a strip/rewrite I missed?" Grepping for any
+  trailing-`/api` strip (none), Next rewrite (none), and the `adapt.ts` convention (appends `/adapt`
+  WITHOUT `/api` — the ONE consumer matching the snippet) confirmed the split is real and
+  quiz-config is a co-victim. The second trace turned a one-ticket find into a broader production
+  gap (quiz config ALSO doesn't reach the SDK in prod) and a structural §5d finding (no single
+  base-URL convention).
+- **A meta-pattern in how gaps recur across agents.** The install-snippet HALF_WIRE family
+  (RETRO-056/057/275) recurs HERE on a NEW axis: those were a MISSING `data-*` attribute; this is a
+  MIS-FORMED base URL that IS present. Both share one root: **the test fabricates the producer's
+  output instead of deriving it from the real producer.** The agents keep writing correct logic
+  against fixtures that lie. The structural remedy (a shared `buildEndpoint` helper / a shared
+  producer→consumer fixture from the actual `buildSnippet`) is the same one RETRO-275 §8 hinted —
+  surfaced again for the architect.
+- **A promotion I deliberately did NOT make.** The base-URL-form mismatch is count-1 on its own
+  axis; the prior install-snippet instances are missing-attribute (a different root remedy under
+  Rule L), so I held the new pattern at count-1 and folded the quiz-config sibling into FOLLOW-305
+  under the already-codified Rule S rather than minting a rule. Sharpened the carry-forward: promote
+  a "construct via shared `buildEndpoint` + assert against the PRODUCTION snippet value" rule on the
+  SECOND independent base-URL-form mismatch.
+- **The end-to-end verdict I had to state plainly.** All five D-1 legs are individually correct and
+  merged, yet the prod wire is severed at the SDK URL-form seam → D-1 is code-complete but NOT
+  production-live. The temptation was to call D-1 "closed" because every PR merged green; the
+  discipline was to trace the prod URL and say "no — it 404s in prod." Step 7 (closure END-TO-END,
+  not one hop) is exactly what caught it: the producer→consumer→apply chain breaks at the very first
+  production hop.

@@ -1,5 +1,5 @@
 /**
- * Tests for GET /api/intent/config (FOLLOW-294, ADR-0012 Ticket A).
+ * Tests for GET /api/intent/config (FOLLOW-294, ADR-0012 Ticket A, FOLLOW-299).
  *
  * Coverage:
  *   AUTH-1: returns 401 when Authorization header is absent
@@ -16,6 +16,10 @@
  *   CORS-1: returns CORS headers on 200 responses
  *   CACHE-1: returns Cache-Control: public, max-age=300
  *   OPT-1: OPTIONS returns 204 with CORS headers
+ *   SCHEMA-1: FAIL-1 body safeParsed against IntentConfigResponseSchema succeeds (FOLLOW-299)
+ *   SCHEMA-2: LIVE-1 body safeParsed against IntentConfigResponseSchema succeeds (FOLLOW-299)
+ *   SCHEMA-3: MOCK-1 body safeParsed against IntentConfigResponseSchema succeeds (FOLLOW-299)
+ *   SCHEMA-4: data_source 'error' is distinguishable from 'mock' via schema (RETRO-070 CB-1)
  *
  * Database is mocked throughout — no real Postgres required.
  *
@@ -30,6 +34,8 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+
+import { IntentConfigResponseSchema } from '@estalara/shared';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -334,6 +340,16 @@ describe('GET /api/intent/config — authenticated live path (DB configured)', (
     expect(body.data_source).toBe('error');
     // Must NOT return weights — that would be fabricated data
     expect('weights' in body).toBe(false);
+
+    // FOLLOW-299 / RETRO-070 CB-1: SDK must be able to safeParse the error body against
+    // IntentConfigResponseSchema and read data_source: 'error' without crashing.
+    // This confirms the schema widening is end-to-end consistent with the route.
+    const parsed = IntentConfigResponseSchema.safeParse(body);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.data_source).toBe('error');
+      expect(parsed.data.weights).toBeUndefined();
+    }
   });
 
   it('CORS-1: returns Access-Control-Allow-Origin: * on authenticated 200', async () => {
@@ -398,4 +414,87 @@ describe('GET /api/intent/config — authenticated live path (DB configured)', (
       expect(body.weights.behavioral_damping).toBe(0.22);
     },
   );
+});
+
+// ─── SCHEMA-* tests (FOLLOW-299) ─────────────────────────────────────────────
+// Direct schema-level coverage for the IntentConfigResponseSchema widening.
+// These tests confirm that all three data_source values the route can emit
+// are accepted by the schema, and that 'error' is distinguishable from 'mock'.
+
+describe('IntentConfigResponseSchema (FOLLOW-299) — data_source enum widening', () => {
+  it('SCHEMA-1: accepts data_source: error with no weights (DB failure body)', () => {
+    // This is the exact body the route emits on the FAIL-1 path (HTTP 500).
+    // The SDK will safeParse this body; it must succeed so the SDK can read data_source.
+    const errorBody = {
+      error: { code: 'db_error', message: 'Postgres query failed — see Sentry for details' },
+      data_source: 'error' as const,
+    };
+    const result = IntentConfigResponseSchema.safeParse(errorBody);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.data_source).toBe('error');
+      expect(result.data.weights).toBeUndefined();
+    }
+  });
+
+  it('SCHEMA-2: accepts data_source: live with full weights body', () => {
+    const liveBody = {
+      weights: { behavioral_damping: 0.25 },
+      effective_at: '2026-06-13T10:00:00.000Z',
+      is_tenant_specific: true,
+      data_source: 'live' as const,
+    };
+    const result = IntentConfigResponseSchema.safeParse(liveBody);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.data_source).toBe('live');
+      expect(result.data.weights?.behavioral_damping).toBe(0.25);
+    }
+  });
+
+  it('SCHEMA-3: accepts data_source: mock with empty weights (unconfigured-DB body)', () => {
+    const mockBody = {
+      weights: {},
+      effective_at: '2026-06-13T10:00:00.000Z',
+      is_tenant_specific: false,
+      data_source: 'mock' as const,
+    };
+    const result = IntentConfigResponseSchema.safeParse(mockBody);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.data_source).toBe('mock');
+      expect(result.data.weights).toEqual({});
+    }
+  });
+
+  it('SCHEMA-4: data_source error vs mock are distinguishable — SDK can branch for telemetry (RETRO-070 CB-1)', () => {
+    // Regression guard: the SDK must NOT conflate a DB outage ('error') with a
+    // clean no-config-yet state ('mock'). Both values must be distinct enum members
+    // so the SDK can emit different telemetry for each.
+    const errorResult = IntentConfigResponseSchema.safeParse({ data_source: 'error' });
+    const mockResult = IntentConfigResponseSchema.safeParse({
+      data_source: 'mock',
+      weights: {},
+      effective_at: new Date().toISOString(),
+      is_tenant_specific: false,
+    });
+
+    expect(errorResult.success).toBe(true);
+    expect(mockResult.success).toBe(true);
+
+    if (errorResult.success && mockResult.success) {
+      // They parse, and they are distinct.
+      expect(errorResult.data.data_source).toBe('error');
+      expect(mockResult.data.data_source).toBe('mock');
+      expect(errorResult.data.data_source).not.toBe(mockResult.data.data_source);
+    }
+  });
+
+  it('SCHEMA-5: rejects unknown data_source value (enum strict enforcement)', () => {
+    const result = IntentConfigResponseSchema.safeParse({
+      data_source: 'degraded',
+      weights: {},
+    });
+    expect(result.success).toBe(false);
+  });
 });

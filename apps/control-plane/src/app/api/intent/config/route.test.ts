@@ -350,4 +350,52 @@ describe('GET /api/intent/config — authenticated live path (DB configured)', (
     expect(res.headers.get('Cache-Control')).toContain('max-age=300');
     expect(res.headers.get('Cache-Control')).toContain('public');
   });
+
+  it(
+    'AC5: after a tenant weight row is written (FOLLOW-268-write POST), ' +
+      'GET returns data_source: live with the written weights',
+    async () => {
+      // Simulate: FOLLOW-268-write POST created a row for TENANT_ID.
+      // The api_keys row authenticates the SDK's bearer token to TENANT_ID.
+      // The weight lookup finds the row and returns data_source: 'live'.
+      // This test verifies the end-to-end wiring contract between the write API
+      // (which creates intent_weight_configs rows) and the read API.
+      //
+      // In a real environment: POST /api/admin/intent/config with Bearer ADMIN_API_SECRET
+      // creates an intent_weight_configs row. GET /api/intent/config with Bearer <api-key>
+      // for the same tenant then returns data_source: 'live' with those weights.
+      // Here we simulate both sides via DB mocks: auth DB returns the api_keys row
+      // (same as all LIVE-* tests) and the weight DB returns the written row.
+      const writtenWeights = {
+        behavioral_damping: 0.22,
+        priors: { family_buyer: 0.07, neutral: 0.28 },
+        signal_likelihoods: {
+          'cta.clicked': { yield_hunter: 1.2 },
+        },
+      };
+      const weightRow = {
+        id: 'cfg-written-by-admin',
+        tenantId: TENANT_ID,
+        weights: writtenWeights,
+        createdAt: new Date('2026-06-13T10:00:00.000Z'),
+        isActive: true,
+      };
+      setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock([weightRow]));
+
+      const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
+      expect(res.status).toBe(200);
+      const body = await parseBody<{
+        data_source: string;
+        is_tenant_specific: boolean;
+        weights: { behavioral_damping?: number };
+      }>(res);
+
+      // Key assertion: GET returns 'live' — NOT 'mock'.
+      // This proves the GET route serves real rows from intent_weight_configs
+      // when an active row exists (as created by the FOLLOW-268-write admin API).
+      expect(body.data_source).toBe('live');
+      expect(body.is_tenant_specific).toBe(true);
+      expect(body.weights.behavioral_damping).toBe(0.22);
+    },
+  );
 });

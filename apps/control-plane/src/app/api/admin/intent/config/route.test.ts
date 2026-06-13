@@ -99,8 +99,7 @@ import { POST } from './route';
 import { GET } from '../../../intent/config/route';
 
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _mockIsStaffClaims = vi.mocked(isStaffClaims);
+vi.mocked(isStaffClaims);
 
 // ─── DB mock builders ─────────────────────────────────────────────────────────
 

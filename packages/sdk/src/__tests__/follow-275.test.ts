@@ -47,7 +47,8 @@ import type { QuizPublicConfigResponse } from '@estalara/shared';
 // ---------------------------------------------------------------------------
 
 const SESSION_ID = 'f'.repeat(64);
-const DECISION_API_URL = 'https://admin.estalara.com';
+// FOLLOW-305: canonical form = host + /api, matching buildSnippet() in DetectionPreview.tsx:153.
+const DECISION_API_URL = 'https://admin.estalara.com/api';
 
 /** Pre-seed a session so getOrCreateSession() skips SHA-256 fingerprint generation. */
 function seedSession(): void {
@@ -102,12 +103,17 @@ function clearAll(): void {
 
 /**
  * Build a mock `fetch` that returns a successful `QuizPublicConfigResponse`
- * for requests matching `/api/quiz/public-config`, and a neutral adapt response
+ * for requests matching `/quiz/public-config`, and a neutral adapt response
  * for all other requests (so `refreshDirectives()` does not throw).
+ *
+ * FOLLOW-305: the match path is `/quiz/public-config` (without a leading `/api`)
+ * because `decisionApiUrl` = `host + /api` and `buildEndpoint` appends only the
+ * route path. The full URL is `…/api/quiz/public-config` — `.includes` on the
+ * route suffix `/quiz/public-config` matches correctly.
  */
 function buildMockFetch(quizConfig: QuizPublicConfigResponse): ReturnType<typeof vi.fn> {
   return vi.fn().mockImplementation((url: string) => {
-    if (url.includes('/api/quiz/public-config')) {
+    if (url.includes('/quiz/public-config')) {
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -550,9 +556,10 @@ describe('Rule L — init() calls fetchQuizConfig and uses server values (NOT sn
 
     await _initForTest();
 
-    // Find the call to the public-config endpoint
+    // Find the call to the public-config endpoint.
+    // FOLLOW-305: URL is /api/quiz/public-config (decisionApiUrl=host/api + /quiz/public-config).
     const calls = mockFetch.mock.calls as [string, RequestInit][];
-    const configCall = calls.find(([url]) => url.includes('/api/quiz/public-config'));
+    const configCall = calls.find(([url]) => url.includes('/quiz/public-config'));
     expect(configCall).toBeDefined();
     expect(configCall![1].headers).toMatchObject({
       Authorization: 'Bearer my-test-api-key',
@@ -615,7 +622,7 @@ describe('AC5 — Rule R: rehydrate path skips fetch and re-uses sessionStorage 
 
     // Count how many times the public-config endpoint was called in the first init.
     const firstCallCount = (mockFetch.mock.calls as [string, unknown][]).filter(([url]) =>
-      url.includes('/api/quiz/public-config'),
+      url.includes('/quiz/public-config'),
     ).length;
     expect(firstCallCount).toBe(1);
 
@@ -631,7 +638,7 @@ describe('AC5 — Rule R: rehydrate path skips fetch and re-uses sessionStorage 
     await _initForTest();
 
     const secondCallCount = (mockFetch.mock.calls as [string, unknown][]).filter(([url]) =>
-      url.includes('/api/quiz/public-config'),
+      url.includes('/quiz/public-config'),
     ).length;
 
     // The public-config endpoint must NOT have been called a second time.
@@ -665,5 +672,66 @@ describe('AC5 — Rule R: rehydrate path skips fetch and re-uses sessionStorage 
     eraseCachedQuizConfig();
 
     expect(sessionStorage.getItem(QUIZ_CONFIG_CACHE_KEY)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FOLLOW-305 regression guard (TG-1): PRODUCTION URL-FORM test for fetchQuizConfig
+//
+// Before FOLLOW-305, `fetchQuizConfig` built:
+//   `${decisionApiUrl}/api/quiz/public-config`
+// where decisionApiUrl = "https://admin.estalara.com/api" (the real snippet form)
+// → "https://admin.estalara.com/api/api/quiz/public-config" (404 in prod).
+//
+// This test drives `fetchQuizConfig` with the EXACT production decisionApiUrl value
+// and asserts the mock is called with the CORRECT single-/api URL.
+// It MUST FAIL on main without the FOLLOW-305 fix.
+// ---------------------------------------------------------------------------
+
+describe('FOLLOW-305 — fetchQuizConfig production URL-form regression guard (TG-1)', () => {
+  it('fetchQuizConfig calls the CORRECT single-/api URL with production decisionApiUrl form', async () => {
+    // The real install snippet value: `${CONTROL_PLANE_URL}/api` = host + /api.
+    // Verified in apps/control-plane/src/components/onboarding/DetectionPreview.tsx:153.
+    const PROD_DECISION_API_URL = 'https://admin.estalara.com/api';
+    const EXPECTED_URL = 'https://admin.estalara.com/api/quiz/public-config';
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          quiz_enabled: true,
+          micro_polls_enabled: false,
+          language: 'en',
+          accent_color: '#2563EB',
+        }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await fetchQuizConfig(PROD_DECISION_API_URL, 'test-key', false);
+
+    // Assert mock was called with EXACTLY the correct single-/api URL.
+    // Before FOLLOW-305 this assertion fails because the call would be made to
+    // "https://admin.estalara.com/api/api/quiz/public-config" (double /api → 404 in prod).
+    const [calledUrl] = mockFetch.mock.calls[0] as [string, unknown];
+    expect(calledUrl).toBe(EXPECTED_URL);
+  });
+
+  it('fetchQuizConfig does NOT produce a double-/api URL', async () => {
+    const PROD_DECISION_API_URL = 'https://admin.estalara.com/api';
+    const DOUBLE_API_URL = 'https://admin.estalara.com/api/api/quiz/public-config';
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: () => Promise.resolve({}),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await fetchQuizConfig(PROD_DECISION_API_URL, 'test-key', false);
+
+    const [calledUrl] = mockFetch.mock.calls[0] as [string, unknown];
+    // The double-/api URL must NEVER be the fetch target.
+    expect(calledUrl).not.toBe(DOUBLE_API_URL);
   });
 });

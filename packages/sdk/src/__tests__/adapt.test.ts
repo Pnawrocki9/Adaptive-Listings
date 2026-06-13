@@ -93,7 +93,7 @@ describe('fetchDirectives', () => {
   it('returns null adaptResponse when tenantId is not set', async () => {
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       // tenantId intentionally omitted
     };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
@@ -108,7 +108,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
@@ -128,7 +128,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const result = await fetchDirectives(config, SESSION, 'listing_list');
@@ -148,7 +148,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const { adaptResponse: result } = await fetchDirectives(config, SESSION, 'listing_list');
@@ -168,7 +168,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -195,7 +195,7 @@ describe('fetchDirectives', () => {
     const tenantId = '550e8400-e29b-41d4-a716-446655440000';
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId,
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -219,7 +219,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -240,7 +240,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const intentState: IntentState = {
@@ -270,7 +270,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -294,7 +294,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -316,7 +316,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -338,7 +338,7 @@ describe('fetchDirectives', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     await fetchDirectives(config, SESSION, 'listing_list');
@@ -974,7 +974,7 @@ describe('fetchDirectives — FOLLOW-042 variant field', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const { adaptResponse: result } = await fetchDirectives(config, SESSION, 'listing_list');
@@ -1000,7 +1000,7 @@ describe('fetchDirectives — FOLLOW-042 variant field', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const { adaptResponse: result } = await fetchDirectives(config, SESSION, 'listing_list');
@@ -1025,7 +1025,7 @@ describe('fetchDirectives — FOLLOW-042 variant field', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const { adaptResponse: result } = await fetchDirectives(config, SESSION, 'listing_list');
@@ -1066,7 +1066,7 @@ describe('fetchDirectives — FOLLOW-041 variant sessionStorage cache', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const session: SessionState = { ...SESSION, sessionId: 'TEST_SESSION' };
@@ -1096,7 +1096,7 @@ describe('fetchDirectives — FOLLOW-041 variant sessionStorage cache', () => {
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const session: SessionState = { ...SESSION, sessionId: 'TEST_SESSION_NO_VAR' };
@@ -1154,7 +1154,7 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId,
     };
     const session: SessionState = { ...SESSION, sessionId };
@@ -1211,7 +1211,7 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
     };
     const session: SessionState = { ...SESSION, sessionId: 'NO_VAR_SESSION' };
@@ -1249,7 +1249,7 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId,
       feedbackEvents: ['tour.requested'],
     };
@@ -1302,7 +1302,7 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId,
       feedbackUrl: customFeedbackUrl,
     };
@@ -1342,7 +1342,7 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId,
     };
     const session: SessionState = { ...SESSION, sessionId };
@@ -1384,7 +1384,7 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
 
     const config: SdkConfig = {
       ...BASE_CONFIG,
-      decisionApiUrl: 'https://decision.estalara.com',
+      decisionApiUrl: 'https://decision.estalara.com/api',
       tenantId,
     };
     const session: SessionState = { ...SESSION, sessionId };

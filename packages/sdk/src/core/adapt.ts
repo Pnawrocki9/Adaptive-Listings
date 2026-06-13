@@ -21,6 +21,7 @@ import type { CollectedEvent } from './events.js';
 import type { IntentState } from './intent.js';
 import { applyChatIntentPrior } from './intent.js';
 import { adaptResponseSchema } from './adapt-schema.js';
+import { buildEndpoint } from './endpoint.js';
 
 // ---------------------------------------------------------------------------
 // Session-level variant cache (sessionStorage, cleared on tab close)
@@ -50,15 +51,16 @@ function getCachedVariant(sessionId: string): string | null {
 
 /**
  * Derive the feedback URL from the adapt endpoint base URL.
- * Replaces the `/adapt` path suffix with `/adapt/feedback`.
  * Falls back to config.feedbackUrl if present.
+ *
+ * Convention (FOLLOW-305): decisionApiUrl = host + `/api` (e.g. "https://admin.estalara.com/api").
+ * buildEndpoint appends `/adapt/feedback` → "https://admin.estalara.com/api/adapt/feedback".
+ * DO NOT prepend `/api` here — it is already in decisionApiUrl.
  */
 function deriveFeedbackUrl(config: SdkConfig): string | null {
   if (config.feedbackUrl) return config.feedbackUrl;
   if (!config.decisionApiUrl) return null;
-  // decisionApiUrl = "https://example.com" and fetch goes to decisionApiUrl + "/adapt"
-  // feedback endpoint lives at decisionApiUrl + "/api/adapt/feedback"
-  return `${config.decisionApiUrl}/api/adapt/feedback`;
+  return buildEndpoint(config.decisionApiUrl, '/adapt/feedback');
 }
 
 /**
@@ -155,13 +157,16 @@ function postFeedbackPing(
 
 /**
  * Derive the quiz completion URL from the decision API base URL.
- * The endpoint lives at {decisionApiUrl}/api/quiz/completion.
+ *
+ * Convention (FOLLOW-305): decisionApiUrl = host + `/api` (e.g. "https://admin.estalara.com/api").
+ * buildEndpoint appends `/quiz/completion` → "https://admin.estalara.com/api/quiz/completion".
+ * DO NOT prepend `/api` here — it is already in decisionApiUrl.
  *
  * @internal
  */
 function deriveQuizCompletionUrl(config: SdkConfig): string | null {
   if (!config.decisionApiUrl) return null;
-  return `${config.decisionApiUrl}/api/quiz/completion`;
+  return buildEndpoint(config.decisionApiUrl, '/quiz/completion');
 }
 
 /**
@@ -702,7 +707,7 @@ export async function fetchDirectives(
     const sdkConsent = getConsentState();
     body.consent_state = sdkConsent === 'pending' ? 'unknown' : sdkConsent;
 
-    const res = await fetch(`${config.decisionApiUrl}/adapt`, {
+    const res = await fetch(buildEndpoint(config.decisionApiUrl, '/adapt'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

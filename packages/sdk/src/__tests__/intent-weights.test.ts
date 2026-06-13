@@ -40,7 +40,8 @@ import type { IntentWeights } from '@estalara/shared';
 // ---------------------------------------------------------------------------
 
 const SESSION_ID = 'e'.repeat(64);
-const DECISION_API_URL = 'https://admin.estalara.com';
+// FOLLOW-305: canonical form = host + /api, matching buildSnippet() in DetectionPreview.tsx:153.
+const DECISION_API_URL = 'https://admin.estalara.com/api';
 
 function seedSession(): void {
   sessionStorage.setItem(
@@ -707,5 +708,107 @@ describe('Rule L — init() calls fetchIntentWeights and applies live weights', 
 
     // Should have neutral as dominant archetype (SDK defaults, no server weights)
     expect(state!.probabilities.neutral).toBeGreaterThan(0.3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FOLLOW-305 regression guard (TG-1): PRODUCTION URL-FORM test
+//
+// Before FOLLOW-305, `fetchIntentWeights` built:
+//   `${decisionApiUrl}/api/intent/config`
+// where decisionApiUrl = "https://admin.estalara.com/api" (the real snippet form)
+// → "https://admin.estalara.com/api/api/intent/config" (404 in prod).
+//
+// This test drives `fetchIntentWeights` with the EXACT production decisionApiUrl value
+// ("host + /api", as emitted by buildSnippet() in DetectionPreview.tsx:153) and
+// asserts the mock is called with the CORRECT single-/api URL.
+// It MUST FAIL on main without the FOLLOW-305 fix.
+// ---------------------------------------------------------------------------
+
+describe('FOLLOW-305 — production URL-form regression guard (TG-1)', () => {
+  it('fetchIntentWeights calls the CORRECT single-/api URL with production decisionApiUrl form', async () => {
+    // The real install snippet value: `${CONTROL_PLANE_URL}/api` = host + /api.
+    // Verified in apps/control-plane/src/components/onboarding/DetectionPreview.tsx:153.
+    const PROD_DECISION_API_URL = 'https://admin.estalara.com/api';
+    const EXPECTED_URL = 'https://admin.estalara.com/api/intent/config';
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data_source: 'mock',
+          is_tenant_specific: false,
+          effective_at: '2026-06-14T00:00:00Z',
+        }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await fetchIntentWeights(PROD_DECISION_API_URL, 'test-key', 1_000, false);
+
+    // Assert mock was called with EXACTLY the correct single-/api URL.
+    // Before FOLLOW-305 this assertion fails because the call would be made to
+    // "https://admin.estalara.com/api/api/intent/config" (double /api → 404 in prod).
+    const [calledUrl] = mockFetch.mock.calls[0] as [string, unknown];
+    expect(calledUrl).toBe(EXPECTED_URL);
+  });
+
+  it('fetchIntentWeights does NOT produce a double-/api URL', async () => {
+    const PROD_DECISION_API_URL = 'https://admin.estalara.com/api';
+    const DOUBLE_API_URL = 'https://admin.estalara.com/api/api/intent/config';
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: () => Promise.resolve({}),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await fetchIntentWeights(PROD_DECISION_API_URL, 'test-key', 1_000, false);
+
+    const [calledUrl] = mockFetch.mock.calls[0] as [string, unknown];
+    // The double-/api URL must NEVER be the fetch target.
+    expect(calledUrl).not.toBe(DOUBLE_API_URL);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FOLLOW-305 (TG-2): ARCHETYPE_NAMES ≡ ARCHETYPE_KEYS parity guard
+//
+// `resolveIntentOverrides`'s `if (k in merged)` filter (intent.ts) operates on
+// SDK-local `ARCHETYPE_NAMES`. If shared `ARCHETYPE_KEYS` ever gains an archetype
+// that `ARCHETYPE_NAMES` does not have, that server prior would be silently dropped.
+// This guard prevents that drift (mirrors AC10 on the archetype axis).
+// ---------------------------------------------------------------------------
+
+describe('FOLLOW-305 — ARCHETYPE_NAMES ≡ ARCHETYPE_KEYS parity guard (TG-2)', () => {
+  it('ARCHETYPE_NAMES contains every key in shared ARCHETYPE_KEYS', async () => {
+    const { ARCHETYPE_KEYS } = await import('@estalara/shared');
+    const nameSet = new Set<string>(ARCHETYPE_NAMES);
+    for (const key of ARCHETYPE_KEYS) {
+      expect(nameSet.has(key)).toBe(true);
+    }
+  });
+
+  it('shared ARCHETYPE_KEYS contains every key in SDK ARCHETYPE_NAMES', async () => {
+    const { ARCHETYPE_KEYS } = await import('@estalara/shared');
+    const keySet = new Set<string>(ARCHETYPE_KEYS);
+    for (const name of ARCHETYPE_NAMES) {
+      expect(keySet.has(name)).toBe(true);
+    }
+  });
+
+  it('resolveIntentOverrides does not drop any ARCHETYPE_KEYS server prior', async () => {
+    const { ARCHETYPE_KEYS } = await import('@estalara/shared');
+    // Supply a prior for every shared archetype key (value > 0 required by schema).
+    const allPriors: Record<string, number> = {};
+    for (const key of ARCHETYPE_KEYS) {
+      allPriors[key] = 0.05;
+    }
+    const overrides = resolveIntentOverrides({ priors: allPriors });
+    // Every shared key must appear in the resolved basePrior (none silently dropped).
+    for (const key of ARCHETYPE_KEYS) {
+      expect(overrides.basePrior).toHaveProperty(key);
+    }
   });
 });

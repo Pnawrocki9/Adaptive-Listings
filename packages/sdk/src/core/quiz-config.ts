@@ -6,6 +6,15 @@
  * the retired `data-quiz-enabled` / `data-micro-polls-enabled` snippet attributes
  * as the transport for post-activation-mutable quiz config fields.
  *
+ * URL convention (FOLLOW-305 fix):
+ *   `decisionApiUrl` = `https://admin.estalara.com/api` (host + `/api`),
+ *   as emitted by `buildSnippet()` in DetectionPreview.tsx:153.
+ *   The fetch target is `buildEndpoint(decisionApiUrl, '/quiz/public-config')` =
+ *   `https://admin.estalara.com/api/quiz/public-config`.
+ *   DO NOT prepend `/api` here — it is already in `decisionApiUrl`.
+ *   (Prior to FOLLOW-305, this file incorrectly built `…/api/quiz/public-config`,
+ *   producing a double-`/api` 404 against every production-onboarded tenant.)
+ *
  * Rule R compliance:
  *   The fetch result is cached in sessionStorage under `QUIZ_CONFIG_CACHE_KEY`.
  *   On cross-listing navigation within the same tab the SDK rehydrates the cached
@@ -25,6 +34,7 @@
 
 import type { QuizPublicConfigResponse } from '@estalara/shared';
 import { QuizPublicConfigResponseSchema } from '@estalara/shared';
+import { buildEndpoint } from './endpoint.js';
 
 /**
  * sessionStorage key for the cached quiz public config.
@@ -101,6 +111,10 @@ export function eraseCachedQuizConfig(): void {
  * same tab.
  *
  * @param decisionApiUrl - The SDK's `config.decisionApiUrl` value (from `data-decision-url`).
+ *   Production value (emitted by `buildSnippet()` in DetectionPreview.tsx):
+ *   `"https://admin.estalara.com/api"` (host + `/api`, NO trailing slash).
+ *   Route path `/quiz/public-config` is appended by `buildEndpoint` — DO NOT pass
+ *   the bare host here (RETRO-074 CB-1 / FOLLOW-305).
  * @param apiKey - The SDK's `config.apiKey` (from `data-api-key`), sent as Bearer token.
  * @param intentStateRehydrated - True when the SDK is resuming a session from sessionStorage.
  *   When true the function reads from cache instead of fetching (Rule R gate).
@@ -124,9 +138,12 @@ export async function fetchQuizConfig(
     // Fall through to fetch so we still get a config if possible.
   }
 
-  // Derive the public-config URL from the decision API base URL.
-  // decisionApiUrl is expected to be e.g. "https://admin.estalara.com" (no trailing slash).
-  const url = `${decisionApiUrl.replace(/\/$/, '')}/api/quiz/public-config`;
+  // FOLLOW-305 fix: use buildEndpoint so the route path is appended without
+  // duplicating the `/api` segment already present in decisionApiUrl.
+  // Production: "https://admin.estalara.com/api" + "/quiz/public-config"
+  //           = "https://admin.estalara.com/api/quiz/public-config"  ✓
+  // (Prior bug: prepended "/api/quiz/public-config" → "/api/api/quiz/public-config" → 404)
+  const url = buildEndpoint(decisionApiUrl, '/quiz/public-config');
 
   const controller = new AbortController();
   const timer = setTimeout(() => {

@@ -994,6 +994,63 @@ grep -rn "<keyName>" apps/control-plane/src packages --include="*.ts" --include=
 
 ---
 
+## Rule W — A ClickHouse migration that touches a column in the table's `ORDER BY` / `PRIMARY KEY` MUST be validated at apply-time against the production sort key before merge; `RENAME COLUMN` / `MODIFY COLUMN` / `DROP COLUMN` on a key column is forbidden in place (resolve via table rebuild + backfill + swap)
+
+**Pattern:** A ClickHouse migration compiles, lints, and passes the smoke gate, then FAILS at
+apply-time because it targets a column that is part of the table's `ORDER BY` (or `PRIMARY KEY`)
+expression. ClickHouse forbids `RENAME COLUMN` (error on key column), `MODIFY COLUMN` (error 524
+`ALTER_OF_COLUMN_IS_FORBIDDEN`), and `DROP COLUMN` on a sort-key column. The migration merges green
+because the gate validates a WEAKER condition (SQL parses / a no-op applies) than the real runtime
+apply against a table that carries the production sort key. The fix is always a no-op stub plus a
+handler workaround (omit the column, rely on the DEFAULT), which leaves a degenerate/dead column in
+the sort key — the actual correction (a table rebuild with the right `ORDER BY`) is deferred. The
+root error is usually upstream: the original `CREATE TABLE` chose a key column that the writer never
+populates correctly (e.g. a UUID surrogate when the producer emits a String fingerprint).
+
+**Evidence (≥2 retros — K.3.6 `intent_events` lineage):**
+
+- **FOLLOW-286 / PR #279 (folded into RETRO-059 §8)** — migration 0015 first shipped a
+  `RENAME COLUMN` on `intent_session_id` (an ORDER BY key column → forbidden), corrected to
+  `ADD COLUMN`, which then shipped `ADD COLUMN … NOT NULL` (syntax error 62). Two apply-time
+  failures caught only post-merge. (count 1)
+- **FOLLOW-287 / PR #281 → remediated by PR #282 (RETRO-060 §4b CB-1)** — migration 0016 shipped
+  `MODIFY COLUMN intent_session_id String` on the same ORDER BY key column → error 524
+  `ALTER_OF_COLUMN_IS_FORBIDDEN`. PR #281 merged GREEN; PR #282 rewrote 0016 to `SELECT 1` and
+  omitted the column from the INSERT. (count 2) — threshold met; promoted at RETRO-060.
+
+**Rule:**
+
+- A migration that `RENAME`s, `MODIFY`s the type of, or `DROP`s a column named in the target table's
+  `ORDER BY` / `PRIMARY KEY` is FORBIDDEN in place — it will fail at apply-time. Resolve such a
+  change via a table rebuild: `CREATE TABLE …_v2 ENGINE=MergeTree ORDER BY (<correct key>)`,
+  backfill, atomic rename/swap.
+- CI MUST validate migrations at APPLY-TIME against an ephemeral ClickHouse instance seeded with the
+  production DDL (the real `ORDER BY` key), not merely parse/lint them — a parse-only or
+  no-op-applies gate does not catch error 524/62.
+- A pre-merge lint SHOULD parse `infra/clickhouse/migrations/*.sql` and fail on `RENAME COLUMN` /
+  `MODIFY COLUMN` / `DROP COLUMN` targeting any column named in the table's `ORDER BY` /
+  `PRIMARY KEY` clause.
+- Choose the `ORDER BY` key at `CREATE TABLE` time to be the ACTUAL write/read key the producer
+  emits and consumers join on — key columns are effectively immutable, so a surrogate-key mistake is
+  expensive to undo.
+- A retro for any CH-migration PR MUST verify the migration was applied against the production sort
+  key (not just that CI was green) before recording it as closed.
+
+**Verification:**
+
+```bash
+# Flag forbidden ALTERs on key columns (manual review trigger):
+grep -rniE "RENAME COLUMN|MODIFY COLUMN|DROP COLUMN" infra/clickhouse/migrations/*.sql
+# For each table, list its ORDER BY key columns, then confirm no migration ALTERs one of them:
+grep -rniE "ORDER BY" infra/clickhouse/migrations/*.sql
+# Confirm the migrations smoke gate applies against a real CH instance carrying the prod DDL,
+# not a parse-only / no-op check (inspect the CI workflow):
+grep -rn "clickhouse" .github/workflows/
+```
+
+---
+
+<!-- Rule W added 2026-06-13 — RETRO-060 §6 (FOLLOW-286/PR #279 RENAME+ADD-COLUMN-NOT-NULL apply-time failures + FOLLOW-287/PR #281 MODIFY COLUMN error 524 on ORDER BY key column, both merged green, count 2 on the intent_events sort-key DDL; threshold met). Filed FOLLOW-291 to build the pre-merge guard + ephemeral-apply gate, FOLLOW-290 to rebuild intent_events with the correct ORDER BY (tenant_id, session_id, event_at). Note: Rule V intentionally not used (skipped from the prior sequence); next free letter was W. -->
 <!-- Rule U added 2026-06-11 — RETRO-052 §6 (RETRO-049 §4a LG-2/§5d + RETRO-050 §4a LG-1/§5d + RETRO-051 §4a LG-2/§5d, count 3 on tenants.quiz_config; re-confirmed RETRO-053 §5d + RETRO-052 §4a LG-1, threshold long exceeded). The decay recurred key-by-key because each fix annotated/partial-removed without a blob-level policy; this rule converts the recurring per-key fix into a policy. Filed FOLLOW-271 to apply it to quizConfig.enabled. -->
 <!-- Rule T added 2026-06-10 — RETRO-049 §6 (RETRO-047 §4b CB-1 + RETRO-049 §4b CB-1, Vitest v2 vi.fn type-arg → CI-only typecheck escape, threshold met). Process rule (no shipped defect); does NOT mandate hook reconfiguration (devops escalation). -->
 <!-- Rule R added 2026-06-08 — RETRO-037 §6 (RETRO-032 LG-1 + RETRO-037 LG-1, threshold met). -->

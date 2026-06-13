@@ -1,5 +1,41 @@
 # Retrospective-Analyst — meta-lessons (self-improvement loop)
 
+## 2026-06-13 · RETRO-070 (PR #284, FOLLOW-294 — ADR-0012 Ticket A: authenticated GET /api/intent/config + shared IntentWeightsSchema)
+
+- **A finding I almost missed and why:** the `data_source:'error'` enum drift (CB-1/§3). The auth
+  axis — the ticket's entire headline — is flawless (real-SHA-256 tests, correct constant-time
+  compare, correct 503/500/401/404 ladder), so the obvious verdict was "Wiring Audit clean, model
+  Rule-H close-out." The catch came from applying the RETRO-058 discipline to EVERY emittable value,
+  not the headline one: the route emits THREE `data_source` values (`live`/`mock`/`error`) but the
+  shared `IntentConfigResponseSchema` enum lists only TWO, and the `'error'` body is an UNTYPED
+  object literal on the 500 path so `tsc` is blind to the disagreement. The gap is one axis over
+  from the ticket's focus — exactly where RETRO-058 found the identical shape on the sibling
+  `quiz/public-config` route. Lesson reinforced: enumerate a route's emit sites BY HAND and diff
+  against the response enum; a provenance value on an untyped error-literal will never be caught by
+  the typechecker.
+- **An axis/chain I had to trace twice — the RETRO number itself.** The prompt asserted "RETRO-061
+  (immediately prior, on PR #283)" and the log's last header is RETRO-058. First instinct: take 059.
+  Wrong. The K.3.6 wave (PRs #274–#283) consumed/reserved RETRO-059–069 — their FOLLOW stubs, STATUS
+  §Pending-Retros markers, QUEUE "complete" notes, and a promoted Rule W all reference those
+  numbers, but the retro BODIES were never appended to RETROSPECTIVES.md (a Wave-2 backfill debt).
+  The genuinely next-free number is 070. The prompt's "RETRO-061 on PR #283" is ALSO internally
+  inconsistent with STATUS.md (which maps 061→PR #274 and #283→the 062–066 cluster). Lesson: NEVER
+  take a referenced retro number at face value — reconcile against the STATUS/QUEUE pending-ledger
+  AND the source_retro tags in FOLLOW_UPS before picking, because the bookkeeping itself can be
+  wrong and the prompt can be a decoy. Same trap on FOLLOW numbers: 293/294/295/296/297 are
+  ADR-reserved out of sequence (294 = this ticket), so retro stubs start at 298, not 293.
+- **A meta-pattern in how gaps recur across agents:** TWO learning-loop-integrity recurrences in one
+  retro. (1) The `data_source`-enum-incompleteness HALF_WIRE_C is now count 2 across two SIBLING
+  fail-soft routes built by the same agent family (RETRO-058 quiz, RETRO-070 intent) — the
+  structural magnet is "a route author adds a K.2 provenance value for observability but forgets to
+  add it to the SHARED response schema, because the schema lives in a different package and the
+  error body is untyped." (2) The Wave-2 retro-body backfill debt (059–069 bodies missing) is the
+  SAME gap FOLLOW-185 (RETRO-035/046) already filed a CI lint for — under merge pressure the wave
+  shipped the actionable stubs+markers but skipped the durable narrative. Both confirm: the surfaces
+  that escape are the ones OUTSIDE the typecheck/test/diff attention window (cross-package schema
+  enums; prose retro bodies). My own discipline that worked: grep the token repo-wide, and reconcile
+  every referenced number against the authoritative ledger before trusting it.
+
 ## 2026-06-10 · RETRO-047 (PR #256, FOLLOW-101 — chat.intent.detected → Bayesian prior bridge)
 
 - **A finding I almost missed and why:** the Rule R reload-reapply double-count (LG-1). Both the PR
@@ -684,3 +720,41 @@
   lineage to declare a TRUE end-to-end closure (producer→consumer→render verified) rather than a
   one-hop move — because I traced all three hops (route DB read via AC5 test, SDK fetch/merge,
   render via the Rule-L init() quiz-trigger test), not just the route's existence.
+
+---
+
+## 2026-06-13 / RETRO-072 — FOLLOW-297 (PR #286, tracer route + clickhouse-tracer unit tests; TEST-ONLY + 1 docstring fix)
+
+- **A finding I almost missed and why.** A test-only PR with no new symbol and one docstring edit
+  invites a reflexive "Wiring Audit — clean ✅ (test-only)". The real finding was not in the PR's
+  changed lines at all — it was a PRE-EXISTING producer drift (`data_source:'error'` on the tracer
+  `sessions/[id]` route, absent from `TracerSessionDetailResponseSchema`) that the NEW tests SURFACE
+  and then CODIFY by asserting the literal value without a schema round-trip. The lesson for
+  test-only PRs: run step-8 (multi-axis) on the TESTS THEMSELVES — read what each assertion pins,
+  then check that pinned value against the schema whose type the test already imports. A test-only
+  PR can both surface a half-wire AND lock it in. The audit question shifts from "did the PR add a
+  producer/consumer" to "does every value these tests pin exist in the schema the tests validate
+  against."
+- **An axis/chain I had to trace twice — the AC3.7 MAX_POLLS boundary test.** First read: a clean
+  regression guard for the DG-1 fix ("after 100 polls the stream closes"). Second read, asking the
+  falsification question "what assertion here would FAIL if MAX_POLLS were 300?": nothing —
+  `runAllTimersAsync` exhausts any finite loop and the close-signal assertion fires either way. The
+  test's NAME ("MAX_POLLS is 100, not 300") over-promises what its body proves. Same twin as
+  RETRO-071's AC5 "wiring" trap: a test's name/comment claiming it pins a value is not evidence;
+  check what would actually break if the value changed. New count-1 lesson candidate logged
+  (boundary/limit test that asserts termination, not the bound).
+- **A meta-pattern in how gaps recur across agents.** The `data_source:'error'`/`'fallback'`
+  enum-incompleteness now spans THREE route families authored independently across the K.3.6 wave
+  (quiz/public-config, intent/config, tracer). Each agent did the RIGHT thing (fail loud with an
+  honest provenance value per Rule K.2) and each made the SAME schema/test omission. It took the
+  3rd, TEST-ONLY sighting — where the test had the schema's own type in scope and STILL didn't
+  round-trip — to make the Rule K.2 amendment unavoidable. PROMOTED the amendment this run
+  (enum-completeness + round-trip-test sub-shape). The deferred "promote on next sighting" note from
+  RETRO-058/RETRO-070 paid off exactly as designed: the learning loop carried the count across three
+  retros and fired on the threshold.
+- **A reconciliation I had to be careful with.** FOLLOW-295/296 are ADR-0012 tickets that live ONLY
+  in the ADR (not yet FOLLOW_UPS.md stubs), so "are they covered?" required reading the ADR, not the
+  follow-ups file. FOLLOW-296 split cleanly into two halves — docstring (DONE by this PR's DG-1) and
+  Zod-validation (still open) — so the correct verdict was PARTIALLY CLOSED + re-scope, not "still
+  open" and not "closed". Resisting the binary was the right call; recorded as a re-scope NOTE, not
+  a duplicate stub.

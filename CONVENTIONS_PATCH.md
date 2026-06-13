@@ -549,6 +549,51 @@ grep -rn "\.then((r) => r.json())\|\.then((res) => res.json())" apps/control-pla
 grep -rn "data_source" apps/control-plane/src/app/dashboard --include="*.tsx" | grep -v node_modules  # expect ≥1 read per decision-grade page
 ```
 
+### Rule K.2 amendment (2026-06-13 — RETRO-072 §6 — provenance-enum-completeness + schema-round-trip-test sub-shape)
+
+**Trigger:** Rule K.2 reached its THIRD independent confirming instance of a specific sub-shape with
+RETRO-072 (FOLLOW-297, PR #286). The parent rule already requires the degraded/provenance signal be
+**observable on the wire** — but three retros across three separate route families show the signal
+emitted with **no schema slot**, so a schema-validating consumer rejects the body and the signal is,
+in practice, unobservable. And in every case the route test asserted the literal provenance value
+**without round-tripping the body through the shared response schema**, so a green test locked in
+the drift. Instances: RETRO-058/FOLLOW-277 (`data_source:'fallback'` on `quiz/public-config`, absent
+from `QuizPublicConfigResponseSchema`); RETRO-070/FOLLOW-299 (`data_source:'error'` on
+`intent/config`, absent from `IntentConfigResponseSchema`'s `['live','mock']`); RETRO-072/FOLLOW-303
+(`data_source:'error'` on tracer `sessions/[id]`, absent from `TracerSessionDetailResponseSchema`'s
+`['live','mock','clickhouse_unavailable']` — and the new AC2.8/AC2.9 tests assert
+`body.data_source === 'error'` with no schema parse, even though the test imports the schema's own
+`TracerSessionDetailResponse` type). RETRO-058 and RETRO-070 explicitly logged this as a deferred
+"promote on next sighting" amendment candidate; RETRO-072 is that sighting.
+
+**Amendment — every provenance value a route can emit MUST be a member of its response's shared Zod
+enum, and a schema-round-trip test MUST assert it:**
+
+```bash
+# 1. Enumerate every data_source / provenance literal a route can RETURN (incl. error/500 paths,
+#    which are usually bare object literals not typed against the response schema, so tsc is blind):
+grep -rn "data_source:\s*'" apps/control-plane/src/app --include="route.ts" | grep -v node_modules
+# 2. Enumerate the members of the response schema's provenance enum:
+grep -rn "data_source: z.enum(" packages/shared/src/schemas --include="*.ts"
+# 3. EVERY literal from step 1 MUST be a member of the enum from step 2. A literal with no slot
+#    (e.g. 'error'/'fallback' on the 500 path) = HALF_WIRE_C — the consumer's safeParse rejects the
+#    degraded body and the signal is unobservable. Fix: add the value to the enum (preferred) OR
+#    document deliberate status-only branching (the consumer reads HTTP status, ignores data_source).
+# 4. A route test that asserts `body.data_source === '<value>'` is NOT sufficient — it pins the
+#    producer in isolation and is blind to the drift. The test MUST round-trip the body:
+#    `<ResponseSchema>.safeParse(body)` and assert success for EVERY emittable value (incl. error).
+```
+
+**Amendment rationale:** This is a fourth verification step on the same parent rule, not a new rule,
+because it shares K.2's root ("the degraded signal must be observable") — enum membership is the
+schema precondition for observability, and the round-trip test is the verification that the producer
+and the validating consumer agree. A literal the schema rejects is observable-on-paper but
+invisible-in-practice. Priority: P2 by default (contract bug, not a crash); P1 when the consuming
+surface is decision-grade and would silently coerce the rejected body to a plausible default.
+
+**Evidence for this amendment:** RETRO-058 §3 (FOLLOW-277), RETRO-070 §3 CHECK-B / §4b CB-1
+(FOLLOW-299), RETRO-072 §3 CHECK-B / §4b CB-1 / §4c TG-2 (FOLLOW-303).
+
 ## Rule L — Verify the production install/snippet path PRODUCES the config a consumer reads — a test that injects the value is not evidence
 
 **Pattern:** A feature wires an SDK/runtime _consumer_ of a config value (an `<script>`

@@ -548,3 +548,19 @@ migration comment asserts a ClickHouse behavior (e.g. "ALTER of ORDER BY key is 
 cross-check the CI log's actual error message — ClickHouse version-specific constraints are
 frequently misstated in migration comments, and the schema error is always clear in the migrate.sh
 output.
+
+---
+
+**Date / ticket:** 2026-06-13 — Bookkeeping pass (FOLLOW-267/294/268-write/297/299 all DONE)
+**Delegation row used:** None (bookkeeping/queue-sync session, no worker delegated) **What
+validation caught (or missed):** The QUEUE.md Sprint 17 table row still showed FOLLOW-267 as
+IN_PROGRESS and contained no entries for FOLLOW-294/268-write/297/299/268-sdk or the new
+FOLLOW-298..303 stubs. Reading working-tree RETROSPECTIVES.md (not main) was essential — RETRO-070/
+071/072 existed only in the working tree and contained the FOLLOW-301 P1 BLOCKS marker that shapes
+the entire FOLLOW-268-sdk dependency. Without reading the working-tree file the blocker would have
+been invisible. The three-retro pattern (RETRO-058/070/072) that triggered the Rule K.2 amendment
+spans 6+ weeks of history — only the running RETRO count in each entry's §8 made it catchable. **A
+delegation/validation rule I'd add:** When syncing queue after multiple merged PRs, always read
+working-tree RETROSPECTIVES.md and FOLLOW_UPS.md (not git/main) before touching QUEUE.md — retros
+append to the working tree and the FOLLOW stubs they generate may contain P1 BLOCKS markers that
+change the dependency graph before any commit.

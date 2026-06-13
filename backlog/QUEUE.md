@@ -1,15 +1,20 @@
 # Backlog Queue
 
-**Updated 2026-06-13T11:00Z. Sprint 17 WAVE 2 COMPLETE: FOLLOW-266 ALL THREE PHASES DONE (Phase 1 PR
-#277 merged 2026-06-12T18:23:36Z, Phase 2 PR #278 merged 2026-06-12, Phase 3 PR #280 merged
-2026-06-12T22:11:39Z — IntentSnapshotEventSchema + SDK every-5-signal + beforeunload emission).
-FOLLOW-286 (P1) DONE — PR #279 merged 2026-06-12T21:27:21Z (PostgREST on_conflict fix, event_type
-vocab, session_id join key, 8 contract tests). FOLLOW-287 (P1) DONE — PR #281 merged
-2026-06-12T22:31:19Z (CB-2 confidence_before 0.0, DG-1 console.error, tests). FOLLOW-288 (P0) DONE —
-PR #282 merged 2026-06-12T23:27:03Z (migration 0016 SELECT 1 no-op + omit intent_session_id from
-INSERT body; ClickHouse migrations smoke NOW GREEN). ESC-021 RESOLVED — no CEO decision required;
-ClickHouse error 524 is a hard constraint, SELECT 1 no-op is the correct fix. RETRO-062/063/064/066/
-067/068 all pending spawn. NEXT: FOLLOW-267 (P1, backend-engineer, admin API layer).**
+**Updated 2026-06-13T14:00Z. ADR-0012 D-1 CHAIN WAVE 3 COMPLETE (5 PRs merged this session):
+FOLLOW-267 (P1) DONE — PR #283 (tracer admin API, 8 routes + /api/intent/config). FOLLOW-294 (P1)
+DONE — PR #284 merge commit 4e45e3a (ADR-0012 Ticket A — authenticated GET /api/intent/config +
+shared IntentWeightsSchema; cross-tenant ?tenant_id enumeration closed). FOLLOW-268-write (P1) DONE
+— PR #285 merge commit 2998a93 (ADR-0012 Ticket B — admin write API POST/PUT
+/api/admin/intent/config; write-side IntentWeightsSchema validation satisfied). FOLLOW-297 (P1) DONE
+— PR #286 merge commit 8cdf94f (ADR-0012 Ticket D — tracer route + clickhouse- tracer unit tests,
+111 assertions; DG-1 MAX_POLLS docstring fixed). FOLLOW-299 (P1) DONE — PR #287 merge commit c387103
+(widen data_source enum to include 'error' — prerequisite for FOLLOW-268-sdk consumer).
+RETRO-070/071/072 complete (appended to RETROSPECTIVES.md). CONVENTIONS_PATCH.md Rule K.2 amended
+(enum-completeness + schema-round-trip-test; 3rd sighting across RETRO-058/070/072). New FOLLOW
+stubs from retros: FOLLOW-298 (P3), FOLLOW-300 (P2), FOLLOW-301 (P1 — BLOCKS FOLLOW-268-sdk),
+FOLLOW-302 (P3), FOLLOW-303 (P2). ADR-0012 D-1 state: A/B/D/enum-prereq DONE; NEXT READY: FOLLOW-301
+(P1); BLOCKED: FOLLOW-268-sdk (Ticket C) depends on FOLLOW-301. FOLLOW-293 (closure gate) depends on
+FOLLOW-268-sdk.**
 
 **Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE. RETRO-050/051/052/053 complete.
 FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-11 (quiz-only ratified, docs synced, contract-pinning
@@ -181,8 +186,9 @@ CRM docs, micro-poll Wave 2 | 17 | 16 | 0 | 1 | 0 | | Wave A | — | Bug fix clu
 (FOLLOW-259), lifecycle (FOLLOW-262) | 5 | 5 | 0 | 0 | 0 | | 17 | 19 | quiz_config blob cleanup
 (FOLLOW-274 DONE), SDK locale enum alignment (FOLLOW-273 DONE), headline fact-check tightening
 (FOLLOW-272 DONE), micro_polls wire (FOLLOW-275 DONE) + docs/fallback/locale fixes
-(FOLLOW-276/277/278/279 DONE) + Tracer (FOLLOW-266 DONE PR#280, FOLLOW-286 DONE PR#279, 267/268/269
-BACKLOG) + K.3.6 CH write fix (FOLLOW-287 IN_PROGRESS) | 13 | 10 | 1 | 0 | 0 |
+(FOLLOW-276/277/278/279 DONE) + Tracer full D-1 chain
+(FOLLOW-266/286/287/288/267/294/268-write/297/299 all DONE) + ADR-0012 backlog (FOLLOW-301 READY P1,
+FOLLOW-268-sdk/269/293 BLOCKED, FOLLOW-295/296/298/300/302/303 BACKLOG) | 21 | 13 | 0 | 1 | 3 |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -4320,46 +4326,131 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     K.3.6 admin API layer — active-sessions list, SSE live stream, history search + replay, export
     endpoints, and /api/intent/config SDK weight-fetch route
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-06-13T11:00:00Z'
+  completed_at: '2026-06-13T00:00:00Z'
   priority: P1
   estimated_hours: 8
   depends_on: [FOLLOW-266]
   spec: backlog/FOLLOW_UPS.md (FOLLOW-267 stub)
   branch: backend-engineer/FOLLOW-267-k36-admin-api
+  pr: '283'
   notes: |
     Routes: GET /api/admin/tracer/sessions (active last 15 min), /sessions/:id (detail),
     /sessions/:id/stream (SSE 3s poll ClickHouse), /history (paginated + filters),
     /history/:id (full replay), /export/decisions (CSV/JSONL), /export/events (JSONL).
     SDK-facing: GET /api/intent/config — returns active global weights (5-min CDN TTL).
     All admin routes require ADMIN_API_SECRET or admin JWT.
-    Gates FOLLOW-268, FOLLOW-269.
-    Delegated to backend-engineer 2026-06-13T11:00Z. Table row: control-plane/auth/backend-engineer.
+    PR #283 merged. RETRO-070 source: shipped untested (6 routes + helper, 0 tests at merge).
+    FOLLOW-297 (Ticket D) back-filled tests; FOLLOW-294 (Ticket A) hardened auth.
+
+- id: FOLLOW-294
+  title: >
+    ADR-0012 Ticket A — authenticated GET /api/intent/config + shared IntentWeightsSchema
+    (closes cross-tenant ?tenant_id enumeration gap from PR #283; establishes canonical 18-archetype
+    / 13-signal weights schema before any intent_weight_configs rows exist)
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  completed_at: '2026-06-13T00:00:00Z'
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-267]
+  spec: backlog/FOLLOW_UPS.md (ADR-0012 Ticket A)
+  pr: '284'
+  merge_commit: 4e45e3a
+  notes: |
+    PR #284 merged (4e45e3a). Authenticated GET /api/intent/config; shared IntentWeightsSchema;
+    cross-tenant ?tenant_id enumeration closed. RETRO-070 generated FOLLOW-298/299/300.
+    NOTE: route still emits data_source:'error' absent from IntentConfigResponseSchema ['live','mock']
+    enum — tracked by FOLLOW-299 (P1, BLOCKS FOLLOW-268-sdk).
+
+- id: FOLLOW-268-write
+  title: >
+    ADR-0012 Ticket B — admin write API POST/PUT /api/admin/intent/config (create/update
+    intent_weight_configs rows; write-side IntentWeightsSchema validation satisfied)
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  completed_at: '2026-06-13T00:00:00Z'
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-267, FOLLOW-294]
+  spec: backlog/FOLLOW_UPS.md (ADR-0012 Ticket B)
+  pr: '285'
+  merge_commit: 2998a93
+  notes: |
+    PR #285 merged (2998a93). POST/PUT /api/admin/intent/config with IntentWeightsSchema validation.
+    RETRO-071 generated FOLLOW-301/302. FOLLOW-300 write-validation half SATISFIED (both routes
+    validate weights through identical IntentWeightsSchema instance). Residual: one-active-row
+    invariant not defended (FOLLOW-301 P1 BLOCKS FOLLOW-268-sdk); GET tie-break non-deterministic.
 
 - id: FOLLOW-268
   title: >
-    K.3.6 weight editor backend — CRUD for intent_weight_configs (deactivate-prior pattern) + SDK
-    weight-fetch at init (CEO D-1: effective within 5 min, fail-soft)
-  agent: backend-engineer + sdk-engineer
-  status: BACKLOG
+    ADR-0012 Ticket C — SDK weight-fetch at init (CEO D-1: effective within 5 min, fail-soft);
+    fetch /api/intent/config, cache 5 min, apply signal_weights/priors/behavioral_damping
+  agent: sdk-engineer
+  status: BLOCKED
   priority: P2
-  estimated_hours: 6
-  depends_on: [FOLLOW-266, FOLLOW-267]
-  spec: backlog/FOLLOW_UPS.md (FOLLOW-268 stub)
+  estimated_hours: 4
+  depends_on: [FOLLOW-266, FOLLOW-267, FOLLOW-299, FOLLOW-301]
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-268 stub, Ticket C)
   notes: |
-    POST /api/admin/tracer/weights: Zod-validated, deactivates prior active global row +
-    inserts new. GET /api/admin/tracer/weights: current active config. Export route.
     SDK init(): fetch /api/intent/config, cache 5 min (ADR-0011 pattern), apply
     signal_weights/priors/behavioral_damping before first processSignal(); fail-soft on error.
-    Simulation NOT in scope (CEO D-3 — FOLLOW-282). Gates FOLLOW-269.
+    Simulation NOT in scope (CEO D-3 — FOLLOW-282).
+    BLOCKED on: FOLLOW-299 (data_source enum must include 'error' before SDK observer written)
+    AND FOLLOW-301 (GET ORDER BY + 409/atomic-swap must be correct before SDK consumes the read).
+    Gates FOLLOW-269.
+
+- id: FOLLOW-297
+  title: >
+    ADR-0012 Ticket D — unit-test coverage for 6 K.3.6 tracer admin routes + clickhouse-tracer.ts
+    helper (111 assertions, seam-driven); DG-1 MAX_POLLS docstring fix (stream route)
+  agent: qa-engineer
+  status: DONE
+  assigned_to: qa-engineer
+  completed_at: '2026-06-13T00:00:00Z'
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-267]
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-297 stub)
+  pr: '286'
+  merge_commit: 8cdf94f
+  notes: |
+    PR #286 merged (8cdf94f). 7 new test files, 111 assertions; seam-driven (mocks only fetch).
+    DG-1 MAX_POLLS "300 polls" → "100 polls" docstring fixed in stream/route.ts.
+    RETRO-072 generated FOLLOW-303. NOTE: AC3.7 MAX_POLLS bound test is tautological (pinning
+    gap → FOLLOW-303 TG-1). data_source:'error' enum drift codified in tests without round-trip →
+    FOLLOW-303 TG-2. FOLLOW-295/296 NOT closed by this PR (scoping/Zod-validation remain open).
+
+- id: FOLLOW-299
+  title: >
+    Widen data_source enum to include 'error' — IntentConfigResponseSchema + TracerSessionDetail
+    ResponseSchema must include 'error' slot; FOLLOW-268-sdk consumer prerequisite
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  completed_at: '2026-06-13T00:00:00Z'
+  priority: P1
+  estimated_hours: 2
+  depends_on: [FOLLOW-294, FOLLOW-297]
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-299 stub)
+  pr: '287'
+  merge_commit: c387103
+  notes: |
+    PR #287 merged (c387103). data_source enum widened to include 'error' in
+    IntentConfigResponseSchema and TracerSessionDetailResponseSchema. Prerequisite for
+    FOLLOW-268-sdk (Ticket C) data_source observer. Coordinate with FOLLOW-303 (tracer
+    family round-trip test + MAX_POLLS pinning).
 
 - id: FOLLOW-269
   title: >
     K.3.6 frontend — Live Session Monitor + Session History + Weight Editor + Export Dashboard (4
     admin UI surfaces) + Master Design §K.3.6 update
   agent: backend-engineer
-  status: BACKLOG
+  status: BLOCKED
   priority: P2
   estimated_hours: 10
   depends_on: [FOLLOW-266, FOLLOW-267, FOLLOW-268]
@@ -4371,6 +4462,7 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     /admin/tenants/[id]/tracer/export (K.3.6.4 — export dashboard).
     Master Design §K.3.6 section update + Snapshot.1 K row update.
     POST-MERGE NOTE: PM must ask CEO for exact DPIA/client-notification scope for chat logging (D-2).
+    BLOCKED on FOLLOW-268 (Ticket C — SDK weight-fetch, itself blocked on FOLLOW-299 + FOLLOW-301).
 
 - id: FOLLOW-286
   title: >
@@ -4462,16 +4554,181 @@ engine deferred to FOLLOW-282 per CEO D-3.**
   PASS. Test (Node 22): PASS. All real gates green. ESC-021 RESOLVED. PM-validated 2026-06-13. CI
   green. Runtime wiring confirmed. Already merged by backend-engineer. RETRO pending spawn.
 
+## ADR-0012 D-1 follow-up backlog (generated by RETRO-070/071/072, 2026-06-13)
+
+**ADR-0012 D-1 chain status as of 2026-06-13T14:00Z:**
+
+- DONE: FOLLOW-267 (PR #283), FOLLOW-294/Ticket-A (PR #284 4e45e3a), FOLLOW-268-write/Ticket-B (PR
+  #285 2998a93), FOLLOW-297/Ticket-D (PR #286 8cdf94f), FOLLOW-299/enum-prereq (PR #287 c387103)
+- NEXT READY (P1): FOLLOW-301 — one-active-row invariant + deterministic GET + real POST→GET test
+- BLOCKED on FOLLOW-301: FOLLOW-268/Ticket-C (SDK weight-fetch init); BLOCKED on FOLLOW-268:
+  FOLLOW-269/FOLLOW-293
+
+```yaml
+- id: FOLLOW-301
+  title: >
+    Defend intent_weight_configs one-active-row invariant in write API + deterministic GET ORDER BY
+    + replace fake AC5 wiring test with real POST→GET round-trip (BLOCKS FOLLOW-268-sdk / Ticket C)
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-268-write]
+  source_retro: RETRO-071 (§4a LG-1/LG-3; §4c CB-1/TG-1/TG-2/TG-3; §4d DG-1)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-301 stub)
+  notes: |
+    Three problems in FOLLOW-268-write (PR #285) that shape FOLLOW-268-sdk:
+    1. POST/PUT does not catch the 23505 unique-constraint violation on
+       intent_weight_configs_one_active partial index → generic db_error/500 instead of 409.
+       Must become: deactivate-prior-row → insert-new, OR catch 23505 → return 409 with
+       documented atomic-swap workflow.
+    2. GET /api/intent/config has no ORDER BY desc(created_at) — if two same-scope active rows
+       ever co-exist (via the LG-1 gap above or a direct DB write), the .limit(1) tie-break is
+       non-deterministic. Add ORDER BY created_at DESC.
+    3. The AC5 "wiring" test in route.test.ts mocks both POST and GET independently — it
+       does NOT prove a POST-produced row is read by GET. Replace with a real POST→GET round-trip.
+    BLOCKS FOLLOW-268-sdk because the SDK consumes the GET and the read path must be
+    deterministic before the weight-application logic is written.
+
+- id: FOLLOW-293
+  title: >
+    ADR-0012 closure-verification gate — end-to-end wire: SDK weight-fetch (Ticket C) reaches
+    intent.ts processSignal() for all 13 signals; confirmed by a non-test producer + non-test
+    consumer grep and a live integration assertion
+  agent: qa-engineer
+  status: BLOCKED
+  priority: P2
+  estimated_hours: 3
+  depends_on: [FOLLOW-268, FOLLOW-269]
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-293 stub)
+  notes: |
+    Not satisfiable until FOLLOW-268-sdk (Ticket C) ships the SDK weight-application consumer.
+    grep for non-test consumer of IntentWeightsSchema in packages/sdk/src/ is currently empty.
+    Promoted from ADR-0012 planning; do not attempt before FOLLOW-268-sdk merges.
+
+- id: FOLLOW-295
+  title: >
+    ADR-0012 Ticket E — tracer session route tenant-scoping: GET /api/admin/tracer/sessions/:id
+    currently looks up session_id-only (no tenant_id predicate); derive tenant from row, not caller
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-267, FOLLOW-297]
+  source_retro: ADR-0012 §Context; RETRO-072 §4c TG-3
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-295 stub; ADR-0012 Ticket E)
+  notes: |
+    sessions/:id route looks up by session_id ALONE (high-entropy SHA-256, low risk).
+    Staff-global-admin design is acceptable for K.3.6 ops tool; ticket adds tenant_id
+    predicate + validates caller context if/when surface is ever exposed beyond staff.
+    FOLLOW-297 tests exist but assert no tenant-scoping — they will need updating when
+    this ticket lands. Not a blocking concern for SDK leg (FOLLOW-268-sdk is client-side).
+
+- id: FOLLOW-296
+  title: >
+    ADR-0012 Ticket F — SSE stream Zod validation (docstring half CLOSED by FOLLOW-297 DG-1 fix;
+    remaining: add Zod schema to the {events,data_source}/{heartbeat}/{error}/{closed} SSE frame
+    types)
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-267, FOLLOW-297]
+  source_retro: ADR-0012 §Context; RETRO-072 §5a
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-296 stub; ADR-0012 Ticket F)
+  notes: |
+    Docstring half DONE (FOLLOW-297 PR #286 fixed MAX_POLLS "300→100"). Remaining: stream route
+    validates inputs with manual if-checks, emits raw JSON.stringify SSE payloads with no Zod
+    schema on the frame types. FOLLOW-297 added a test that the tenant_id guard fires (AC3.5)
+    and frames are emitted, but introduced no Zod validation. Re-scope this ticket to Zod-
+    validation half only at promotion.
+
+- id: FOLLOW-298
+  title: >
+    Give packages/shared/src/examples/intent-weights.ts a real non-test consumer or move it to a
+    fixtures path (4 EXAMPLE_* consts are exported but have ZERO importers; docstring falsely claims
+    "imported by docs build / admin tooling")
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source_retro: RETRO-070 (§4a LG-1)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-298 stub)
+  notes: |
+    Either: (a) import EXAMPLE_* consts in admin UI or documentation build (real consumer), or
+    (b) move file to packages/shared/src/__fixtures__/ and drop the false "imported by" claim.
+    Dead export violates Rule I; false docstring violates Rule H documentation parity.
+
+- id: FOLLOW-300
+  title: >
+    Separate schema-validation failure from DB-error path in GET /api/intent/config (a malformed
+    STORED weights row returns misleading db_error/500 instead of config_invalid/422)
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-294]
+  source_retro: RETRO-070/071 (§4a LG-1; RETRO-071 CB-3)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-300 stub)
+  notes: |
+    Read-side open (write-side validation satisfied by FOLLOW-268-write / RETRO-071 §8).
+    A hand-seeded row following the stale migration-0029:12 comment (signal_weights →
+    actually signal_likelihoods) passes INSERT but fails IntentWeightsSchema.parse on read.
+    The catch arm returns generic "Postgres query failed" db_error — not actionable.
+    Fix: catch Zod parse errors separately from DB errors; return 422 config_invalid with
+    parse error detail. Related: FOLLOW-302 (stale migration comment).
+
+- id: FOLLOW-302
+  title: >
+    Fix stale intent_weight_configs JSONB-shape documentation (migration 0029:12 + schema docstring
+    say signal_weights, but IntentWeightsSchema uses signal_likelihoods and .strict()-rejects
+    signal_weights)
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P3
+  estimated_hours: 1
+  depends_on: [FOLLOW-268-write]
+  source_retro: RETRO-071 (§4b CB-3; §4d DG-2)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-302 stub)
+  notes: |
+    Migration 0029:12 comment says: "weights -- jsonb: { signal_weights: {...} }".
+    IntentWeightsSchema has NO signal_weights key (it is signal_likelihoods); .strict() rejects it.
+    An operator hand-seeding from the comment produces a row the GET rejects with db_error/500.
+    Fix: update migration comment + any schema docstrings to use signal_likelihoods.
+
+- id: FOLLOW-303
+  title: >
+    Close tracer-route data_source enum drift + two test-rigor gaps from FOLLOW-297 suite:
+    round-trip data_source:'error' through TracerSessionDetailResponseSchema, pin MAX_POLLS=100 with
+    iteration-count assertion, re-point dangling RETRO-061 test-header citations
+  agent: backend-engineer
+  status: BACKLOG
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-297, FOLLOW-299]
+  source_retro: RETRO-072 (§3 CHECK B; §4b CB-1; §4c TG-1/TG-2; §4d DG-2)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-303 stub)
+  notes: |
+    Coordinate with FOLLOW-299 so intent-config route and tracer family resolve 'error' enum slot
+    in one consistent pass. Three sub-items:
+    (a) Add 'error' to TracerSessionDetailResponseSchema.data_source + audit sibling tracer schemas
+        (TracerHistoryResponseSchema, export-route bodies) for same drift + add
+        TracerSessionDetailResponseSchema.safeParse(<500 body>) round-trip assertion.
+    (b) Make stream/route.test.ts AC3.7 assert poll COUNT (expect mockFetchNewIntentEvents
+        .toHaveBeenCalledTimes(100)) so bound is pinned not just "loop terminates."
+    (c) Re-point the 6 "RETRO-061 bugs addressed" test-file headers at real source (ADR-0012
+        §Context + PR #283/FOLLOW-267 finding) since RETRO-061 has no body in RETROSPECTIVES.md.
+    FOLLOW-299 (enum prereq, PR #287) already merged — (a) should build on that.
+```
+
 ## Currently in flight
 
-**Nothing actively in flight.** Sprint 13a Lane A is 8/8 DONE (Wave 1+2+3 all merged) and **Sprint
-13a-hardening is 4/4 DONE (PR #159–#162) — the pre-pilot gate is CLOSED.** YELLOW audit Sprint 1 is
-DONE (PR #158). **Sprint 13a-hardening-v2 is 2/2 DONE (PR #164 FOLLOW-139 e4e37ac, PR #165
-FOLLOW-141 19d11d2).** RETRO-023/024 written 2026-05-28. FOLLOW-143 (producer wiring) + FOLLOW-144
-(cadence reconciliation) fixed inline in PR #164; RETRO-025 spawned 2026-05-28 to verify those
-inline fixes (see Master Design v3.4 for verdict). **Next up: CEO decision on spawning Lane B
-(TICKET-PILOT-001) — now conditioned on RETRO-025 verdict + migration 0016 prd apply result (see
-Master Design v3.4).**
+**Nothing actively in flight as of 2026-06-13T14:00Z.** ADR-0012 D-1 chain WAVE 3 complete (5 PRs
+merged this session: #283/284/285/286/287). NEXT READY: FOLLOW-301 (P1, backend-engineer) — the
+one-active-row invariant + deterministic GET + real POST→GET wiring test that must land before
+FOLLOW-268-sdk (Ticket C / SDK weight-fetch) can be delegated. FOLLOW-268-sdk is BLOCKED on
+FOLLOW-301 + FOLLOW-299 (DONE). FOLLOW-293 (closure gate) is BLOCKED on FOLLOW-268-sdk + FOLLOW-269.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

@@ -15357,3 +15357,592 @@ suppressed):**
 - **FOLLOW-155 (P1-SECURITY, Vercel prd env) — PREREQUISITE for prod effect.** The route returns
   `data_source:'fallback'` (default-enabled) if `DATABASE_URL_ADMIN` is absent in prd — so the
   TICKET-PILOT-001 dashboard-quiz-disable propagation (§5a) only works once FOLLOW-155 lands.
+
+## RETRO-070 — FOLLOW-294 (ADR-0012 Ticket A — authenticated GET /api/intent/config + shared IntentWeightsSchema; closes the RETRO-061/PR-#283 cross-tenant `?tenant_id` enumeration end-to-end and establishes the canonical 18-archetype / 13-signal weights schema BEFORE the FOLLOW-268-write path creates any `intent_weight_configs` rows; key sets verified to match the SDK `intent.ts` model exactly, but the route emits a `data_source:'error'` value absent from `IntentConfigResponseSchema`'s `['live','mock']` enum — a contract drift that must reshape FOLLOW-268-sdk before it merges) — 2026-06-13
+
+### 1. Summary of change
+
+- **PR:** #284 (squash-merged to main 2026-06-13; final branch HEAD before merge `ce71c2b`; the
+  squash rewrote history to clear a Gitleaks false-positive on a test-fixture SHA-256 hash. `gh pr
+  view` reports `state:OPEN / mergedAt:null / mergeCommit:null` because the squash-merge happened
+  out-of-band of the PR-merge API — analyzed from the fetched branch tip per the ticket's stated
+  `ce71c2b`.)
+- **Files changed:** 10 (+1636 / -210). Non-test: route.ts, intent-weights.ts (NEW), tracer.ts,
+  intent-weight-configs.ts (comment), examples/intent-weights.ts (NEW), schemas/index.ts, ADR-0012
+  (NEW, 675 lines). Test: route.test.ts (rewrite), intent-weights.test.ts (NEW). Plus
+  backend-engineer/lessons.md.
+- **Modules touched:** control-plane (the route), shared (the schema + examples + tracer narrow),
+  db (schema docstring only), docs/adr.
+- **Key contracts changed:**
+  - `GET /api/intent/config` — auth model CHANGED from unauthenticated `?tenant_id` query param to
+    `Authorization: Bearer <api-key>` (SHA-256 constant-time lookup, tenant derived from key) —
+    breaking: yes for any caller that passed `?tenant_id` (grep finds NONE outside docstrings; the
+    SDK consumer FOLLOW-268-sdk is unbuilt, so no live caller breaks).
+  - `IntentConfigResponse.weights` — NARROWED from `z.record(z.unknown())` to `IntentWeightsSchema`
+    — breaking: no at runtime (additive validation), but it now REJECTS the 6 previously-invented
+    keys.
+  - `IntentWeightsSchema` / `ARCHETYPE_KEYS` (18) / `INTENT_SIGNAL_KEYS` (13) — NEW `@estalara/shared`
+    exports — additive.
+  - No-active-row + unconfigured-DB response body CHANGED from `DEFAULT_WEIGHTS` blob to `weights:
+    {}` — breaking: no (SDK applies internal defaults per ADR-0012 §Wire Contract).
+
+### 2. Verification done in PR
+
+- Test files changed: `apps/control-plane/.../route.test.ts` (full rewrite, 17 tests: AUTH-1..6,
+  MOCK-1/1b/2, LIVE-1/2, FAIL-1, CORS-1, CACHE-1, OPT-1) · `packages/shared/.../intent-weights.test.ts`
+  (NEW, 31 tests: SHAPE/REJECT/KEY). Assertions added: ~48 across the two files. Coverage delta:
+  unknown (route was previously AC8-tested under FOLLOW-267; the rewrite replaces those).
+- CI checks: not independently verified by this retro (squash-merge + Gitleaks-false-positive rewrite
+  noted by author; local `control-plane 956 passed / shared 236 passed / tsc clean` per PR body).
+- **Auth-success tests correctly use the real `createHash('sha256').update('valid-api-key')` hex** so
+  the route's `constantTimeEqual` actually passes (not a placeholder) — verification is genuine, not
+  mocked-around. Good.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code).**
+
+- **DEAD_CODE P3 — `packages/shared/src/examples/intent-weights.ts` (the 4 `EXAMPLE_*` consts) has
+  ZERO non-test importers.** Grep `EXAMPLE_DAMPING_ONLY|EXAMPLE_ALL_THREE|EXAMPLE_PRIORS_ONLY|
+  EXAMPLE_EMPTY` across `apps/ packages/ --include=*.ts` (excl. dist + the file itself) = empty; it
+  is not even imported by its own `intent-weights.test.ts` (grep `examples|EXAMPLE_` in that test =
+  empty); and `schemas/index.ts` re-exports only `./intent-weights.js`, NOT `examples/`. The file's
+  docstring asserts "imported by the documentation build and by any admin tooling … the
+  FOLLOW-268-write admin API will reference these" — but no documentation build exists and
+  FOLLOW-268-write is unbuilt. This is an aspirational-docstring + orphaned-fixture pair. Reference
+  fixtures for a wire contract are a legitimate pattern, so P3 (not P1): either wire it into the
+  schema test as the validation corpus (cheap, gives it a real consumer) or move it under
+  `__fixtures__` and drop the false "imported by" claim. → FOLLOW-298.
+- The new route (`route.ts`) is a framework-route entrypoint (suppressed). `IntentWeightsSchema` has
+  exactly one non-test importer (`route.ts` `.parse()`) — wired. `ARCHETYPE_KEYS`/`INTENT_SIGNAL_KEYS`
+  are consumed inside `intent-weights.ts` itself (as the `z.enum` source) — wired.
+
+**CHECK B (half-wire).**
+
+- **HALF_WIRE_P P1 — `data_source: 'error'` is PRODUCED by the route but has NO schema slot and NO
+  consumer.** `route.ts` emits `{ error: {...}, data_source: 'error' }` on the weight-fetch-throw 500
+  path, but `IntentConfigResponseSchema.data_source` (tracer.ts:152) is `z.enum(['live','mock'])` —
+  `'error'` is not a member. The 500 body is a bare object literal (not typed `IntentConfigResponse`),
+  so `tsc` never catches the drift. Result: a consumer that validates the response against the shared
+  schema will REJECT the error body, and there is no SDK consumer yet to read the degraded signal.
+  This is the SAME `data_source`-producer-with-no-consumer shape as RETRO-058 §3 (FOLLOW-277,
+  `data_source:'fallback'` on `quiz/public-config`) — **count 2 on the K.3.6 family of fail-soft
+  routes** (see §6). It directly reshapes **FOLLOW-268-sdk** (which per ADR-0012 Ticket C step 5
+  "observes `data_source`"): the SDK cannot observe a value the schema forbids. → FOLLOW-299, and
+  flagged in §5a as FOLLOW-268-sdk-blocking.
+- `weights: {}` (empty, mock/no-row) ↔ SDK "applies internal defaults": producer present (route),
+  consumer is FOLLOW-268-sdk (`resolveIntentOverrides(null)` per ADR §Wire Contract line 260) — NOT
+  YET BUILT, so this is a planned wire, not a half-wire. Recorded as a forward-dependency in §5b, not
+  a finding (the consuming ticket is the very next in the sequence and the contract is documented in
+  ADR-0012).
+- `api_keys.hashedKey` / `revokedAt` / `expiresAt` consumed by `resolveApiKey` — all producers exist
+  (the api_keys table) — wired.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, NEW → FOLLOW-300) — fail-mode conflation: a schema-validation failure on a stored row
+  is reported as a Postgres error.** `route.ts` wraps `IntentWeightsSchema.parse(activeRow.weights ??
+  {})` INSIDE the same `try` whose `catch` emits `{ error: { code: 'db_error', message: 'Postgres
+  query failed — see Sentry for details' }, data_source: 'error' }` + HTTP 500. So if FOLLOW-268-write
+  (or a manual seed / legacy row) ever persists a weights blob that fails `IntentWeightsSchema`
+  (e.g. a stray invented key, a non-positive prior, a `behavioral_damping > 1`), the read path returns
+  a 500 that tells ops "Postgres query failed" when Postgres SUCCEEDED and the DATA was malformed.
+  This mis-routes the on-call response and masks a data-integrity problem as an infra problem.
+  Distinct from a genuine DB throw, which should remain 500/`db_error`. Fix: parse OUTSIDE the DB-try
+  (or branch on `err instanceof ZodError`) and surface a distinct `data_source:'error'` +
+  `code:'invalid_stored_config'` (502/500) so the signal is honest. **This is also a constraint on
+  FOLLOW-268-write:** it MUST validate writes with the identical `IntentWeightsSchema` so no row can
+  ever fail the read-side parse — note added to §5a.
+- **LG-2 (P3, recorded — NOT a bug) — 404 vs 401 status asymmetry on auth failure.** `resolveApiKey`
+  returns **401 "Invalid API key"** for missing/malformed/empty Bearer, but **404 "Tenant not found"**
+  for a well-formed key that resolves to no `api_keys` row (AUTH-4). An unknown-but-well-formed key
+  thus gets a different status (404) than a malformed one (401) — a faint format-validity oracle.
+  Severity is low: the key→tenant mapping is 1:1, no per-tenant data differs in the response, and this
+  is COPIED VERBATIM from `quiz/public-config/route.ts` (the established precedent). Recorded P3 for
+  consistency only; 401/403 would be the conventional status for "key not recognized." Not a blocker;
+  if changed, change `quiz/public-config` too (Rule S — symmetric siblings).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P1 — see §3 CHECK B / FOLLOW-299) — the `data_source:'error'` ↔ `IntentConfigResponseSchema`
+  enum mismatch** is the one defect that escaped review (the schema and the route were edited in the
+  same PR yet disagree on the enum). It is a P1 *contract* bug, not a runtime crash (the route still
+  returns valid JSON; only a schema-validating consumer breaks). Filed under §3.
+- No P0. No other runtime bug found in the auth path: constant-time compare is correct (length-guard
+  then XOR-accumulate over equal-length hex), `or(isNull(expiresAt), gt(expiresAt, now))` correctly
+  treats null-expiry as non-expiring, the `Bearer ` slice + trim + empty-check is sound, and the
+  unconfigured-DB early-return correctly precedes auth (dev/CI has no real keys).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, NEW → folded into FOLLOW-300) — no test exercises `IntentWeightsSchema.parse()` THROWING
+  on a malformed stored row.** Every LIVE-path test (`LIVE-1`, `LIVE-2`) supplies a VALID weights
+  object, so the parse always succeeds and the LG-1 conflation path is never hit. Add a test: active
+  row whose `weights` contains an invented key / negative prior → assert the route does NOT report it
+  as `db_error/Postgres query failed` (drives the LG-1 fix).
+- **TG-2 (P2, NEW → folded into FOLLOW-299) — no test asserts what a consumer sees for `data_source:
+  'error'`,** i.e. that the 500 body's `data_source` is observable and round-trips (or is deliberately
+  excluded). Once `'error'` is in the enum, add a parse-round-trip assertion so the producer's K.2
+  signal has a verified consumer contract. (This is the §3 CHECK-B closure test — the same gap
+  RETRO-058 left as FOLLOW-277.)
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, recorded → folded into FOLLOW-299) — ADR-0012's documented 500 response omits
+  `data_source:'error'`.** ADR-0012 line 491 shows `Response 500: { "error": { "code": "db_error",
+  ... } }` with NO `data_source` field, but the route emits `data_source:'error'` alongside. Minor
+  ADR/impl drift; correct the ADR (or the route) when closing FOLLOW-299 so the documented and shipped
+  500 bodies match.
+- **DG-2 (P3, recorded — averted false-positive) — the PR BODY overstates the db-schema comment fix.**
+  PR item #4 claims it "corrects stale `COALESCE(tenant_id, sentinel_uuid)` fiction: the read path
+  uses `or(eq, isNull)`, not a partial unique index on COALESCE." But migration `0029` REALLY DOES
+  create `CREATE UNIQUE INDEX … ON intent_weight_configs (COALESCE(tenant_id, '0000…'::uuid)) WHERE
+  is_active` — the COALESCE partial index is NOT fiction, it is the write-side uniqueness mechanism;
+  only the READ path uses `or(eq,isNull)`. The SHIPPED schema comment (intent-weight-configs.ts:39
+  "enforced by DB partial index") is CORRECT and preserves the real index reference — so this is a
+  misleading PR description, not a code defect. Recorded so a future reader does not "fix" the
+  accurate comment to match the inaccurate PR body. No follow-up.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-268-write (ADR-0012 Ticket B, backend-engineer) — TWO BLOCKING CONSTRAINTS before its PR
+  merges.** (1) **Validate writes with the identical `IntentWeightsSchema`** (ADR Ticket B step 3
+  already says this — REINFORCE it as a hard gate): if the write API ever persists a row that fails
+  the read-side `.parse()`, the read path returns a misleading `db_error/500` (LG-1). The write and
+  read MUST share the exact same schema instance (they do, via `@estalara/shared`) AND the write MUST
+  reject on parse failure, never store-then-fail-on-read. (2) **The `data_source:'error'` enum drift
+  (CB-1/FOLLOW-299) should be resolved before FOLLOW-268-write's AC4 test** ("`GET` returns
+  `data_source:'live'` after a successful POST") is written, so that test asserts against the corrected
+  enum. Neither blocks FOLLOW-268-write's CORE logic, but both should land in or before it.
+- **FOLLOW-268-sdk (ADR-0012 Ticket C, sdk-engineer) — BLOCKING: resolve the `data_source` enum drift
+  FIRST (FOLLOW-299).** Ticket C step 5 is "Observe `data_source`: apply only on `'live'`; fall
+  through to defaults on `'mock'` or null" and step 7 is "invalid server response → null (do not
+  throw)." With the enum as shipped (`['live','mock']`), a 500 carrying `data_source:'error'` will
+  fail the SDK's Zod parse → SDK returns null → silently treats a transient control-plane DB outage
+  identically to a legitimate mock, with no metric/log distinguishing them. Decide BEFORE Ticket C
+  merges: either (a) add `'error'` to the enum so the SDK can observe + debug-log the degraded state
+  (preferred — gives the K.2 signal a consumer), or (b) document that the SDK branches purely on HTTP
+  status and `data_source` is advisory. The HANDOFFS `weights:{}` + `data_source:'mock'` contract IS
+  coherent for the SDK leg's happy path (`resolveIntentOverrides(null)` → defaults); the gap is only
+  on the error leg.
+- **FOLLOW-297 (ADR-0012 Ticket D, route/helper unit tests) — UNBLOCKED + should absorb TG-1/TG-2.**
+  Ticket D is the route-test ticket; it should pick up the malformed-stored-row test (TG-1) and the
+  `data_source:'error'` round-trip test (TG-2) rather than duplicating them in FOLLOW-299/300.
+- **FOLLOW-293 (ADR-0012 closure-verification gate) — NOT YET SATISFIABLE.** The end-to-end wire
+  (route producer → SDK `fetchIntentWeights` consumer → `resolveIntentOverrides` render) is only 1 of
+  3 legs built. `resolveIntentOverrides`/`IntentEngineOverrides`/`fetchIntentWeights` do NOT exist in
+  `packages/sdk/src/` yet (grep empty). FOLLOW-293 must wait for Ticket C; do not declare closure on
+  the strength of this PR alone (step-7 discipline — this PR closes the AUTH wire end-to-end but the
+  WEIGHT-APPLICATION wire is producer-only by design).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-266 (K.3.6 Tracer, all phases DONE) — this PR is downstream of it.** The
+  `intent_weight_configs` table (Phase 2 / migration 0029) is the producer this route reads; the route
+  correctly assumes the COALESCE-partial-index uniqueness (`.limit(2)`: ≤1 tenant row + ≤1 global row).
+  No conflict.
+- **FOLLOW-269 (deferred simulation, RESERVED) — no impact yet.** Simulation will consume the same
+  weights schema; the canonical `IntentWeightsSchema` is the right shared dependency for it.
+- **The SDK weight-application wire (`weights:{}` → defaults; live `priors`/`behavioral_damping`/
+  `signal_likelihoods` → merge) is a PLANNED forward dependency** carried entirely by FOLLOW-268-sdk.
+  Constraint surfaced for that ticket (§5a): `priors` is a PARTIAL record (unspecified archetypes keep
+  the module-private `BASE_PRIOR`), `behavioral_damping` REPLACES the scalar (`BEHAVIORAL_DAMPING =
+  0.3`, confirmed), `signal_likelihoods` is a nested partial over the module-private
+  `SIGNAL_LIKELIHOODS`, and the payload-conditional intercepts (`listing.bookmarked`,
+  `micro_poll.answered`, `feature.expanded`, `filter.applied`) are explicitly NOT overridable in v1
+  (ADR §2 / schema docstring). `BASE_PRIOR`/`BEHAVIORAL_DAMPING`/`SIGNAL_LIKELIHOODS` are currently
+  module-private `const`s — Ticket C must add the `resolveIntentOverrides` merge seam.
+
+#### 5c. Contracts changed others rely on
+
+- **`GET /api/intent/config` auth contract** — now Bearer-API-key (SHA-256 + constant-time + revoked/
+  expired checks), CORS `*`, read-only. Same model as `quiz/public-config` (ADR-0011) and Rule H
+  sign-off in the route docstring. New consumers (FOLLOW-268-sdk) MUST send `Authorization: Bearer
+  <data-api-key>`; the `?tenant_id` param is GONE (any code relying on it breaks — grep finds none).
+- **`IntentConfigResponse.weights` narrowed to `IntentWeightsSchema`** — additive validation; the
+  only sole non-test consumer is the route itself. Any future consumer parsing the response gets the
+  18/13 key-set guarantees AND the `.strict()` rejection of unknown keys.
+- **`IntentConfigResponse.data_source` enum (`['live','mock']`) is INCOMPLETE w.r.t. the route's
+  output (`'error'`)** — see CB-1. This is the one contract others should NOT rely on as-is until
+  FOLLOW-299 reconciles it.
+- **`ARCHETYPE_KEYS` (18) / `INTENT_SIGNAL_KEYS` (13)** — VERIFIED to match the SDK `intent.ts`
+  `ARCHETYPE_NAMES` (same 18, same order) and `SIGNAL_LIKELIHOODS` top-level keys (same 13) exactly,
+  by direct grep of `packages/sdk/src/core/intent.ts`. This is the load-bearing parity claim for
+  FOLLOW-268-sdk's injection — it holds today. The docstrings correctly warn "do NOT add keys here
+  without adding to the SDK." (Residual risk: this parity is asserted by docstring, not by a CI test —
+  a future SDK archetype/signal addition could drift it silently. Logged as a Rule-S-adjacent
+  candidate in §6, count 1 under its own name.)
+
+#### 5d. Architectural assumptions affected
+
+- **The auth-leg DB-throw → 503 (NOT mock, NOT 500) decision is correct and now load-bearing.** The
+  route cannot serve mock to an unauthenticated caller (no tenant_id yet), so a configured-but-failing
+  auth DB returns 503. This is the deliberate asymmetry vs. RETRO-058/FOLLOW-277's `quiz/public-config`
+  (which fails SOFT to `data_source:'fallback'` 200). The difference is justified: `quiz/public-config`
+  resolves tenant the same way but its payload (quiz on/off) is non-sensitive and defaults are safe;
+  intent weights are tenant-scoped config and serving a default to an unauthenticated caller would
+  leak nothing but would bypass the auth contract. The asymmetry is intentional and documented — but
+  it means the two sibling routes have DIFFERENT fail-modes (503 vs 200-fallback), which a future
+  "make the intent route fail-soft like quiz" change could wrongly "harmonize." Flagged for the
+  architect: the divergence is by-design (Rule S does NOT require harmonizing here — the verbs differ
+  in sensitivity).
+- **Service-role (`createAdminClient`) bypasses the table's RLS policy on BOTH the api_keys lookup and
+  the weight query.** The `or(eq(tenantId), isNull(tenantId))` filter is therefore the ONLY tenant
+  scoping at runtime; the RLS policy (`tenant_id IS NULL OR tenant_id = current_setting(...)`) is
+  defense-in-depth that this route never exercises (it never sets `app.current_tenant_id`). This is
+  the established control-plane pattern and is sound (tenant_id comes from the authenticated key, not
+  the request), but worth recording: the global-row-readable-by-all-tenants behavior is enforced in
+  application code (`isNull(tenantId)` in the OR), not by RLS, on this path.
+
+### 6. New lesson candidates
+
+- **Pattern (a fail-soft/decision-grade route PRODUCES a `data_source` provenance value that is NOT in
+  the response Zod enum and has NO consumer) — COUNT NOW 2, but each under a different route family;
+  recorded as a Rule-K.2 application note, NOT yet promoted.** RETRO-058 §3 (FOLLOW-277:
+  `quiz/public-config` emits `data_source:'fallback'` absent from `QuizPublicConfigResponseSchema`,
+  HALF_WIRE_C) and now RETRO-070 §3/CB-1 (`intent/config` emits `data_source:'error'` absent from
+  `IntentConfigResponseSchema`'s `['live','mock']` enum). Same shape: the route author adds a K.2
+  provenance value for observability but does not add it to the shared response schema, so any
+  schema-validating consumer silently drops/rejects it and the degraded signal is invisible.
+  **Candidate rule (count 2):** *"Every `data_source` / provenance value a route can emit MUST be a
+  member of the response's shared Zod enum, and a schema round-trip test MUST assert each emittable
+  value parses — a provenance signal with no schema slot is a HALF_WIRE_C by construction."* This is a
+  genuine ≥2 occurrence **as the same named pattern** (both are "provenance value emitted but not in
+  the response enum"), unlike the RETRO-058 cross-file-docstring candidate which I held at count 1.
+  **Threshold-promotion call: NOT promoted this run.** Reason: both instances are sub-facets of the
+  already-codified **Rule K.2** (fail-soft with an OBSERVABLE degraded signal) — the existing rule
+  already requires the degraded signal be observable; these two instances show the *enum-completeness*
+  sub-shape of that requirement. Rather than mint a new letter, the correct action is a Rule K.2
+  AMENDMENT. I am recording the amendment text as a candidate (count 2, threshold met for an
+  amendment, but conservatively deferring the actual CONVENTIONS edit to the next independent instance
+  OR to the PM's call, since both instances are currently OPEN follow-ups, not closed/proven
+  recurrences). Logged here so RETRO-N+1 promotes the Rule K.2 amendment on the next sighting.
+- **Pattern (canonical key set duplicated across packages with parity asserted by docstring, not by a
+  CI/test gate) — count 1 under its own name, related to Rule S.** `ARCHETYPE_KEYS`/`INTENT_SIGNAL_KEYS`
+  in `@estalara/shared` are hand-maintained copies of the SDK `intent.ts` `ARCHETYPE_NAMES`/
+  `SIGNAL_LIKELIHOODS` keys, kept in sync ONLY by a "do NOT add keys without adding to the SDK"
+  docstring. This is the SAME structural risk as RETRO-053/055's `QuizLanguage`/`LocaleSchema`
+  cross-package duplication (FOLLOW-273), which Rule S governs. Here it is BENIGN TODAY (verified
+  identical in §5c), so it is a count-1 watch, not a finding. If a future SDK archetype/signal addition
+  drifts the shared schema silently, that is the 3rd Rule-S cross-package-dedup instance and would
+  promote a Rule-S amendment (a parity test that imports BOTH sets and asserts equality). NOT promoted.
+- **No `CONVENTIONS_PATCH.md` edit by this run.** The findings apply already-codified Rule K.2 (the
+  `data_source` enum-completeness sub-shape — amendment candidate at count 2, deferred), Rule H (new
+  auth surface — satisfied, ADR-0012 IS the required ADR, route carries the sign-off), Rule S
+  (symmetric siblings — the 404/401 + cross-package-keyset watches, both count 1 under their own
+  names), and Rule T (`tsc --noEmit` — the author's lessons.md notes the stale-`dist` typecheck trap,
+  reinforcing Rule T). No NEW pattern crosses a fresh ≥2 threshold under its own name with both
+  instances PROVEN.
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed and why.** I nearly recorded CHECK B clean because the headline auth wire
+  is meticulous and the `weights:{}`/`data_source:'mock'` happy-path is coherent. The catch was the
+  SAME RETRO-058 discipline applied to EVERY emittable value: the route emits THREE `data_source`
+  values (`live`, `mock`, `error`) but the shared enum lists only TWO. `'error'` lives on a 500 path
+  whose body is an untyped object literal, so `tsc` is blind to it and the schema-vs-route disagreement
+  is invisible unless you enumerate the route's emit sites by hand and diff them against the enum
+  members. Easy to miss because the auth axis (the ticket's headline) is flawless — the gap is one axis
+  over, on the provenance field, exactly where RETRO-058 found it on the sibling route.
+- **An axis/chain I had to trace twice — the RETRO numbering itself.** The prompt asserted "RETRO-061
+  (the immediately prior one, on PR #283)" and the file's last header is RETRO-058. First pass I almost
+  took 059. Tracing the bookkeeping (STATUS.md §Pending Retros, QUEUE.md, FOLLOW_UPS source_retro tags,
+  CONVENTIONS_PATCH Rule W) showed 059–069 are ALL consumed/reserved for the K.3.6 wave (PRs #274–#283)
+  whose retro BODIES were never appended to this log (only their FOLLOW stubs + STATUS markers exist) —
+  a Wave-2 backfill debt. The genuinely next-free number is 070, not 059. The prompt's "RETRO-061 on
+  PR #283" is also internally inconsistent with STATUS.md (which maps #283/FOLLOW-267 into the 062–066
+  cluster and assigns 061 to PR #274) — see §8. Lesson: never take a referenced retro number at face
+  value; reconcile it against the STATUS/QUEUE pending-ledger AND the source_retro tags before picking.
+- **A meta-pattern in how gaps recur across agents.** The K.3.6 wave (PRs #274–#284) generated ~11
+  retros whose stubs/STATUS markers exist but whose BODIES are absent from RETROSPECTIVES.md — the same
+  learning-loop-integrity gap RETRO-035/046 filed (FOLLOW-185/226: "backfill missing RETRO bodies + CI
+  lint"). Under merge pressure, the wave shipped stubs-and-markers (the actionable output) but skipped
+  the durable retro narrative (the learning substrate). The CI lint FOLLOW-185 asked for (fail if a
+  STATUS "RETRO-NNN complete" marker has no `## RETRO-NNN` header in the log) would have caught all 11.
+  Surfaced in §8 as a recurrence of FOLLOW-185.
+
+### 7. Follow-ups
+
+- **FOLLOW-298 (P3, → backend-engineer/sdk-engineer)** — Give `packages/shared/src/examples/intent-
+  weights.ts` a real non-test consumer or move it to a fixtures path: either import the 4 `EXAMPLE_*`
+  consts into `intent-weights.test.ts` as the schema's validation corpus (cheap, removes the orphan),
+  OR relocate under `__fixtures__/` and delete the false "imported by the documentation build / admin
+  tooling" docstring claim. [§3 CHECK A] (1h, P3).
+- **FOLLOW-299 (P1, → backend-engineer + sdk-engineer; BLOCKS FOLLOW-268-sdk)** — Reconcile the
+  `data_source` enum so the route's emittable values and the shared schema agree, and give the degraded
+  signal a consumer: (a) add `'error'` to `IntentConfigResponseSchema.data_source`
+  (`z.enum(['live','mock','error'])`), OR document that the SDK branches on HTTP status and
+  `data_source` is advisory on non-2xx; (b) update ADR-0012's 500-response example (line 491) to
+  include `data_source:'error'` (DG-1); (c) add a schema round-trip test asserting each emittable
+  `data_source` value parses (TG-2); (d) coordinate so FOLLOW-268-sdk's step-5 `data_source` observer
+  reads the corrected enum. [§3 CHECK B; §4b CB-1; §4c TG-2; §4d DG-1; §6] (backend-engineer +
+  sdk-engineer, 2h, P1).
+- **FOLLOW-300 (P2, → backend-engineer; constrains FOLLOW-268-write)** — Separate the
+  schema-validation failure path from the DB-error path in `GET /api/intent/config`: move
+  `IntentWeightsSchema.parse(activeRow.weights)` OUTSIDE the DB `try` (or branch on `ZodError`) so a
+  malformed STORED row returns a distinct `code:'invalid_stored_config'` rather than the misleading
+  `db_error/'Postgres query failed'` 500 (LG-1); add a route test driving an active row with an invalid
+  weights blob asserting the corrected, non-DB-error response (TG-1); AND reinforce as a hard AC on
+  FOLLOW-268-write that writes validate with the identical `IntentWeightsSchema` so no row can ever
+  fail the read-side parse. [§4a LG-1; §4c TG-1; §5a] (backend-engineer, 2h, P2). Fold the route-test
+  legs into FOLLOW-297 (Ticket D) if it lands first.
+- **NOTE on numbering.** RETRO number: the file ends at RETRO-058, but RETRO-059–069 are
+  consumed/reserved for the K.3.6 wave (PRs #274–#283) per STATUS.md §Pending Retros — bodies not yet
+  backfilled (see §8). Next free = **RETRO-070** (this entry). FOLLOW numbers: 293/294/295/296/297 are
+  ADR-0012-reserved (294 = THIS ticket; 293 = closure gate; 297 = Ticket D tests; 295/296 = Tickets
+  E/F); next free for retro-generated stubs = **FOLLOW-298**. This retro's stubs are **FOLLOW-298,
+  FOLLOW-299, FOLLOW-300**. Filed below.
+
+### 8. Cross-references
+
+- **RETRO-061 / PR #283 (FOLLOW-267) — the UPSTREAM security finding this PR closes — VERIFIED CLOSED
+  END-TO-END (with a numbering caveat).** ADR-0012 §Context cites "RETRO-061" as the retro that found
+  the unauthenticated `?tenant_id` cross-tenant enumeration on `GET /api/intent/config` (shipped by
+  PR #283 / FOLLOW-267). This PR removes that vector completely: `QuerySchema` deleted, no
+  `searchParams` read for tenant, tenant derived solely from the authenticated key, SHA-256 +
+  constant-time compare present. Grep for any caller still passing `?tenant_id` to the route =
+  EMPTY (only docstrings reference it). No SDK consumer exists yet to break. **The enumeration vector
+  is genuinely closed, not moved one hop** — there is no residual producer/consumer that still relies
+  on the param. CAVEAT: the repo's own bookkeeping is inconsistent about "RETRO-061" — STATUS.md §
+  Pending Retros and QUEUE.md map RETRO-061 to PR #274 (FOLLOW-279, the doc-only data-language fix) and
+  push PR #283/FOLLOW-267 into the 062–066 pending cluster, while ADR-0012 calls PR #283's finding
+  "RETRO-061." The discrepancy does not affect THIS retro's number (070) but should be reconciled when
+  the Wave-2 retro bodies are backfilled.
+- **RETRO-058 / FOLLOW-277 — the SAME `data_source`-enum-incompleteness HALF_WIRE_C on the SIBLING
+  route.** RETRO-058 §3 found `quiz/public-config` emits `data_source:'fallback'` absent from its
+  response schema; this retro finds `intent/config` emits `data_source:'error'` absent from its enum.
+  Count 2 on the named pattern — Rule K.2 enum-completeness amendment candidate (§6), deferred. The two
+  routes deliberately DIFFER on fail-mode (quiz fails soft to 200-fallback, intent fails to 503 on the
+  auth leg / 500 on the weight leg) for the sensitivity reason in §5d — so this is NOT a Rule-S
+  harmonization target, only a shared provenance-enum-completeness lesson.
+- **RETRO-053 / RETRO-055 / FOLLOW-273 — cross-package canonical-key-set duplication (Rule S).** The
+  `ARCHETYPE_KEYS`/`INTENT_SIGNAL_KEYS` vs SDK `intent.ts` duplication (§5c, §6) is the same shape as
+  the `QuizLanguage`/`LocaleSchema` dedup those retros tracked. Benign today (verified identical),
+  count 1 under its own name; a parity test would close it if it ever drifts.
+- **RETRO-035 / RETRO-046 / FOLLOW-185 (FOLLOW-226/251) — Wave-2 retro-body backfill debt RECURS.**
+  RETRO-059–069 are marked complete/pending in STATUS+QUEUE but their bodies are absent from this log
+  (only stubs + markers exist). This is the exact learning-loop-integrity gap FOLLOW-185 asked to
+  prevent with a CI lint (fail if a "RETRO-NNN complete" marker has no `## RETRO-NNN` header). Surfaced
+  for the PM: the K.3.6 wave should backfill 059–069 bodies, and the FOLLOW-185 lint would have caught
+  the omission. (Not a new stub — FOLLOW-185's scope already covers it.)
+- **ADR-0012 (the governing ADR, shipped IN this PR) — implementation matches Ticket A.** The route +
+  schema match ADR §1 (auth), §2 (schema), §Wire Contract (`weights:{}` + `data_source`), and the
+  §4 sequencing rule ("FOLLOW-294-auth MUST merge before any `intent_weight_configs` INSERT"). The
+  only ADR/impl drifts are the cosmetic 500-body `data_source` omission (DG-1) — folded into
+  FOLLOW-299.
+- **Rule H (CONVENTIONS_PATCH.md) — satisfied.** New auth surface; ADR-0012 IS the required ADR; the
+  route docstring carries the Rule H sign-off (constant-time compare, tenant-scoped, cryptographic,
+  replay-resistant-for-read-only). Verbatim reuse of the `quiz/public-config` crypto helpers.
+- **Rule K.2 (CONVENTIONS_PATCH.md) — partially satisfied + amendment candidate.** Fail-loud is honored
+  (503 auth-leg, 500 weight-leg, never mock-on-configured-failure), but the degraded `data_source`
+  signal is not yet observable by a consumer (the enum drift, §3) — the enum-completeness sub-shape is
+  the §6 amendment candidate (count 2 with RETRO-058, deferred).
+
+## RETRO-071 — FOLLOW-268-write (ADR-0012 Ticket B — admin write API POST/PUT /api/admin/intent/config: create/update intent_weight_configs rows behind the tracer-admin guard; validates writes with the canonical IntentWeightsSchema (satisfies FOLLOW-300's write-validation half), but the write path does NOT defend the one-active-row unique partial index it relies on (a duplicate-active POST/PUT surfaces as a generic db_error/500, not a clean 409) and the GET tie-break it feeds is non-deterministic if two same-scope active rows ever co-exist — a 268-sdk-shaping invariant) — 2026-06-13
+
+### 1. Summary of change
+
+- **PR:** #285 (merged 2026-06-13 14:34 UTC, commit 2998a93; squashed local commit 4a040f3)
+- **Files changed:** 5 (+1103 / -0) — all new except the AC5 test addition
+- **Modules touched:** [control-plane] (2 new route handlers + 2 new test files + 1 test addition). No shared/db/SDK source changed (consumes `@estalara/shared` IntentWeightsSchema + `@estalara/db` intentWeightConfigs, both pre-landed).
+- **Key contracts changed:**
+  - `POST /api/admin/intent/config` — NEW — body `{ weights: IntentWeightsSchema, tenant_id?: uuid, is_active?: bool=true }` → `201 { id, tenant_id, is_active, created_at }` — breaking: no (additive)
+  - `PUT /api/admin/intent/config/[id]` — NEW — body `{ weights?, is_active? }` (≥1 required) → `200 { id, tenant_id, is_active, weights, created_at }`; `404` unknown id — breaking: no (additive)
+  - `intent_weight_configs` table — no schema change; this PR is the first non-seed WRITER of the table (migration 0029, RETRO-070 lineage).
+
+### 2. Verification done in PR
+
+- Test files changed: `api/admin/intent/config/route.test.ts` (+383, 13 tests), `api/admin/intent/config/[id]/route.test.ts` (+301, 10 tests), `api/intent/config/route.test.ts` (+48, 1 AC5 wiring test). · Assertions added: ~24 `it()` blocks. · Coverage delta: unknown (PR claims 980 control-plane tests green locally; CI not re-verified by this retro).
+- CI checks: not verified by this retro (PR body asserts vitest green + prettier + Rule H/J hooks passed on push).
+- **Gap in the verification:** NO test exercises a duplicate-active-row INSERT/UPDATE (the unique-partial-index collision path) — see CB-1/LG-1. The AC5 "wiring" test is a DB-MOCK SIMULATION, not a real POST→GET round-trip (it fabricates `weightRow` and feeds it to the GET mock; it never calls the POST handler) — see TG-1.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** Both new files are Next.js App-Router route entrypoints (`POST`/`PUT` exports) — framework entrypoints, SUPPRESSED per the audit rule. No non-test importer expected or required; grep for `api/admin/intent/config` across packages/apps (excl. dist/node_modules/test/route.ts) = EMPTY, as designed. Not a finding. (The first real consumer is the human admin/curl + future admin UI; the route's OUTPUT — rows in `intent_weight_configs` — is consumed by the already-shipped `GET /api/intent/config` weight query, verified live.)
+
+**CHECK B (half-wire):** No new event/env-var/column/topic/SDK-signal introduced. The routes consume two PRE-EXISTING env vars (`DATABASE_URL_ADMIN`/`DATABASE_URL_DIRECT`, `ADMIN_API_SECRET`) and the pre-existing `intent_weight_configs` columns. The producer↔consumer pair (POST writes `weights` JSONB ↔ GET reads + `IntentWeightsSchema.parse`es it) is BOTH-ENDED and the schema instance is shared, so the write/read contract is closed. **One residual HALF-pattern carried forward (not newly introduced here): the `data_source:'error'` enum drift from RETRO-070/CB-1 — the GET consumer this PR feeds still emits a provenance value absent from `IntentConfigResponseSchema` (`['live','mock']` @ tracer.ts:151). Tracked by FOLLOW-299; NOT re-filed.**
+
+`Wiring Audit — clean ✅` for symbols NEWLY introduced by this PR (the only open wire is the inherited FOLLOW-299 enum drift on the downstream GET, already filed).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1 — 268-sdk-SHAPING) — the write API does NOT defend the `intent_weight_configs_one_active` unique partial index, so the "at most one active row per scope" invariant the GET tie-break depends on is enforced ONLY by the DB, and a violation surfaces as a misleading `db_error/500`.** `POST` (`route.ts:135–156`) does a bare `insert(...).values({ tenantId, weights, isActive })` with NO `onConflict` clause and NO pre-check; `PUT` (`[id]/route.ts:142–160`) does a bare `update(...).set({ isActive })` with NO guard. Migration 0029 creates `CREATE UNIQUE INDEX intent_weight_configs_one_active ON ... (COALESCE(tenant_id, sentinel)) WHERE is_active = true`. Therefore: (a) `POST` with `is_active:true` (the DEFAULT) for a tenant/global scope that ALREADY has an active row → Postgres raises `23505 unique_violation` → caught by the generic `catch` → `500 { code:'db_error', message:'Postgres insert failed' }` + Sentry. The admin gets a 500 for what is actually a 409-Conflict business condition ("you must deactivate the current active config first, or this is an update not a create"). (b) `PUT ... { is_active:true }` to re-activate a row when a DIFFERENT row in the same scope is already active → same `23505` → same misleading 500. **This is the SAME class as RETRO-027/FOLLOW-179's `conversion_labels` "UNIQUE/upsert missing → misleading error" finding.** The correct behavior is either an atomic "deactivate-siblings-then-activate" transaction or an explicit `409 conflict` with a clear message. As shipped, the only way to change a tenant's active config is to first PUT the old row to `is_active:false` then POST/PUT the new one to `true` — and that two-step is NOT atomic, NOT documented, and NOT tested. (`apps/control-plane/src/app/api/admin/intent/config/route.ts:135`, `[id]/route.ts:147`; migration `packages/db/migrations/0029_intent_weight_configs.sql:38`).
+
+- **LG-2 (P2) — `tenant_id` in the POST body is trusted with no existence check beyond the FK, and `verifyTracerAdminAuth` carries NO tenant binding, so a malformed/nonexistent `tenant_id` yields a 500 (FK `23503`) not a 400.** `verifyTracerAdminAuth` returns `{ ok:true, via:'admin_secret'|'staff_jwt' }` with NO `tenantId` (tracer-auth.ts:24/57/68). The write API takes `tenant_id` verbatim from the body (`route.ts:122`). This is BY DESIGN for a staff-only global admin tool (any staff caller may write any tenant's config — correct for this surface; the docstring states it explicitly). But: a syntactically-valid-UUID `tenant_id` that does NOT exist in `tenants` passes Zod, then violates the FK `tenant_id REFERENCES tenants(id)` → `23503` → generic `db_error/500` with message "Postgres insert failed". An admin typo on a tenant UUID is reported as a server error, not a 400/404 "unknown tenant". Same generic-catch-masks-the-real-cause shape as LG-1. (`route.ts:122,140`; migration `0029:30`).
+
+- **LG-3 (P2) — the GET tie-break that consumes these writes is NON-DETERMINISTIC if the one-active invariant is ever breached, because the weight query has NO `ORDER BY` and uses `.limit(2)` + `.find()`.** `GET /api/intent/config` (`route.ts:230–248`) selects `WHERE is_active=true AND (tenant_id=:t OR tenant_id IS NULL)` `.limit(2)`, then `rows.find(r => r.tenantId !== null)` / `rows.find(r => r.tenantId === null)`. This is CORRECT *only while* the unique index holds (≤1 tenant row + ≤1 global row). But the contract for which row "wins" within a scope is delegated entirely to the DB index — and LG-1 shows the write path does not actively maintain it. If a future seed/migration/bug ever creates two active same-scope rows, `.limit(2)` truncates arbitrarily (no `ORDER BY created_at DESC`) and `.find()` returns whichever Postgres happened to stream first. **This is the load-bearing "which row wins" question for FOLLOW-268-sdk's fetch.** Recommend an explicit `.orderBy(desc(createdAt))` on the GET as belt-and-suspenders independent of the index, so newest-active always wins deterministically. (`apps/control-plane/src/app/api/intent/config/route.ts:230,247`).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P1) — duplicate-active-row collision is uncaught and untested (the code-level manifestation of LG-1).** Beyond the misleading status code (LG-1), there is no test proving what happens on the `23505` path — the K.2 fail-loud tests inject a generic `db.insert` throw, which HAPPENS to cover the catch arm, but no test asserts the 409-vs-500 distinction or documents the deactivate-then-create workflow. A reviewer reading the test suite would believe duplicate-active is handled. It is not. (filed under FOLLOW-301).
+- **CB-2 (P2, recorded — averted false-positive) — the `rows[0]!` non-null assertions are SOUND.** `POST`'s `insert().returning()` always returns exactly one row on a successful insert (`route.ts:159`), and `PUT` explicitly guards `rows.length === 0 → 404` before the `rows[0]!` (`[id]/route.ts:163,167`). Both assertions are justified and carry the eslint-disable + reason. No finding — recorded so a future reader does not "harden" correct code.
+- **CB-3 (P3) — DB-schema migration comment 0029:12 documents a JSONB shape (`signal_weights`) that the canonical schema now `.strict()`-REJECTS.** Migration `0029_intent_weight_configs.sql:12` says `weights -- jsonb: { signal_weights: {...}, priors: {...}, behavioral_damping: 0.75 }`. But `IntentWeightsSchema` has NO `signal_weights` key (it is `signal_likelihoods`), and `intent-weights.test.ts:108` REJECT-1 explicitly rejects `signal_weights` as the "old invented shape". An operator hand-seeding a global default by following the migration comment writes a row that `GET`'s `IntentWeightsSchema.parse` then rejects → the exact misleading `db_error/500` LG-1/FOLLOW-300 describe. The comment is stale relative to the shipped schema. (filed under FOLLOW-302).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — the AC5 "wiring" test does NOT wire the producer to the consumer; it mocks both halves independently.** `intent/config/route.test.ts` AC5 fabricates a `weightRow` literal and feeds it to the GET DB mock — it NEVER invokes the `POST` handler. So it proves "if a row with these fields exists, GET returns live" (already covered by the LIVE-* tests) but NOT "a POST through THIS write API produces a row GET reads as live." The genuine end-to-end wire (POST handler → returning row id → GET reads same id → `data_source:'live'`) is asserted by neither side. This is a step-7 closure trap: the PR claims an end-to-end AC5 wire that is actually two independently-mocked legs. A real wiring test would call `POST(makeRequest(...))`, capture the inserted values the mock received, and assert GET returns them. (filed under FOLLOW-301).
+- **TG-2 (P2) — no test for the duplicate-active-row `23505` path nor the unknown-`tenant_id` FK `23503` path.** Both LG-1 and LG-2 currently land in the generic catch with zero coverage of the resulting status/code. (folded into FOLLOW-301 / FOLLOW-303).
+- **TG-3 (P3) — no test asserting the deactivate-then-reactivate two-step is the supported "change active config" workflow** (because that workflow is itself undocumented — see LG-1). (folded into FOLLOW-301).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — neither route documents how to CHANGE a tenant's active config given the one-active-row index.** The POST docstring says `is_active defaults to true` and PUT says it can `Activate or deactivate`, but nothing tells the admin that POSTing a second active row (or PUTting a second row active) will 500 on the unique index, nor that the supported path is deactivate-old → activate-new (and that this is non-atomic). (folded into FOLLOW-301).
+- **DG-2 (P3) — migration 0029:12 comment is stale (`signal_weights` → `signal_likelihoods`); see CB-3.** (folded into FOLLOW-302).
+
+#### 4e. Multi-axis reconciliation (step 8)
+
+- **Producer axis (this PR) vs. consumer axis (GET, RETRO-070):** RETRO-070 verified the GET read path "clean ✅" on its OWN axis. This retro does NOT contradict that verdict — but it surfaces that the GET's correctness is CONDITIONAL on the write path maintaining the one-active invariant (LG-3), and this PR is the write path that does NOT actively maintain it (LG-1). The two retros are consistent: RETRO-070 read the consumer assuming a well-formed producer; RETRO-071 finds the producer's missing guard. Reconciled: no contradiction, but the GET's `.limit(2)+.find()` tie-break (RETRO-070 did not flag) is now a LG-3 finding because its safety depends on an invariant the producer leaves to the DB alone.
+- **POST axis vs. PUT axis:** Both share the identical unique-index blind spot (LG-1) and the identical generic-catch-masks-real-error shape (LG-1/LG-2) — listed for EACH per the under-count guardrail (2 instances of the same pattern: `route.ts:135` POST-insert, `[id]/route.ts:147` PUT-update).
+- **Global (tenant_id NULL) axis vs. per-tenant axis:** The COALESCE-sentinel index applies the one-active rule to BOTH the global scope and each tenant scope; LG-1 therefore bites on a duplicate GLOBAL active POST as well as a duplicate tenant POST. Both axes affected; the seed-the-global-default operation (CEO D-4, "global default always present") is exactly where a second active POST would collide.
+- **Write-validation axis (FOLLOW-300 constraint on THIS ticket):** SATISFIED. Both routes validate `weights` through the IDENTICAL `IntentWeightsSchema` instance imported from `@estalara/shared` (`route.ts:50` PostBodySchema, `[id]/route.ts:55` PutBodySchema), `.safeParse` → 400 on failure, BEFORE any DB write. No store-then-fail-on-read path exists for a write that goes through this API. The FOLLOW-300 hard-AC ("writes validate with the identical schema, reject on parse failure") is MET. The residual FOLLOW-300/LG-1 read-side concern (a malformed STORED row → misleading db_error) is NOT closed by this PR — but that can now only be reached by a NON-API writer (a hand-seed/migration following the stale CB-3 comment), which is precisely why CB-3 is filed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-268-sdk (ADR-0012 Ticket C, sdk-engineer) — TWO BLOCKING/SHAPING findings BEFORE its PR merges.**
+  1. **(BLOCKING — the "which row wins" question) LG-1+LG-3.** Ticket C's `fetchIntentWeights` consumes whatever single row the GET returns. The SDK MUST be able to assume "the GET returns THE one active config for my scope, tenant-specific preferred, deterministically." Today that assumption holds ONLY because the DB unique index holds — and the write API does not actively defend it (LG-1), and the GET has no `ORDER BY` fallback (LG-3). DECISION NEEDED before Ticket C: add `.orderBy(desc(createdAt))` to the GET weight query (cheap, makes "newest active wins" deterministic regardless of the index) AND give the write API a 409-on-conflict or deactivate-then-activate semantic (LG-1). If the SDK ships against a non-deterministic tie-break, a future double-active row makes the served weights flap between two configs across CDN cache fills — a silent, hard-to-debug adaptation drift. **This is the is_active "which row wins" concern called out as critical for the SDK fetch.**
+  2. **(BLOCKING — inherited) the `data_source:'error'` enum drift (FOLLOW-299).** Unchanged from RETRO-070 §5a: Ticket C step-5 observes `data_source` and applies only on `'live'`; with the enum as `['live','mock']` a 500 carrying `data_source:'error'` fails the SDK Zod parse → SDK returns null → a transient control-plane DB outage is indistinguishable from a legitimate mock. Resolve FOLLOW-299 before Ticket C's `data_source` observer is written. Already filed; re-flagged here because it BLOCKS the SAME ticket.
+- **FOLLOW-300 (RETRO-070's write-validation constraint on THIS ticket) — SATISFIED on the write-validation half, OPEN on the read-side half.** §4e: writes ARE validated with the identical schema (the half FOLLOW-300 placed as a hard AC on FOLLOW-268-write is MET). The read-side half (separate `invalid_stored_config` from `db_error` in the GET) is NOT addressed by this PR and remains open under FOLLOW-300 — now reachable only via a non-API writer following the stale CB-3 migration comment, which strengthens the case for both FOLLOW-300 and FOLLOW-302. Do NOT mark FOLLOW-300 closed.
+- **FOLLOW-297 (ADR-0012 Ticket D, route/helper unit tests) — should ABSORB the new test gaps.** TG-1 (real POST→GET wiring), TG-2 (23505 duplicate-active + 23503 unknown-tenant), TG-3 (deactivate-then-activate workflow) belong in Ticket D if it lands after FOLLOW-301; otherwise FOLLOW-301 carries them. Avoid duplicating.
+- **FOLLOW-293 (ADR-0012 closure-verification gate) — STILL NOT SATISFIABLE.** Unchanged from RETRO-070: the end-to-end weight-APPLICATION wire (route producer → SDK `fetchIntentWeights` consumer → `resolveIntentOverrides` render) is now 2-of-3 legs built (producer write + producer read), but the SDK consumer leg (`resolveIntentOverrides`/`fetchIntentWeights`) still does NOT exist in `packages/sdk/src/` (grep empty). This PR closes the WRITE leg; do not declare FOLLOW-293 closure on it.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-266 Phase 2 / the global-default SEED (CEO D-4 "global default always present") — directly collides with LG-1.** Whoever seeds the global default row must do it BEFORE any other global-active row exists, or through this POST API (which will 500 if a global-active row already exists). The seed path and the write API both target the same one-active global slot; their ordering is now load-bearing and undocumented. If the seed is a migration writing `is_active:true` AND an admin later POSTs a global config, the second collides. Flag for the seed-ticket owner: the seed should be the FIRST global-active row, and any later "update the global default" must go through PUT-on-the-existing-id, never a fresh POST.
+- **FOLLOW-269 (deferred simulation) — no new impact;** it will consume the same `IntentWeightsSchema` rows; the LG-3 deterministic-tie-break fix benefits it too.
+
+#### 5c. Contracts changed others rely on
+
+- **`POST/PUT /api/admin/intent/config` request/response contracts (NEW)** — staff-only, tenant_id-in-body (LG-2), `is_active` default true. The only sanctioned mutators of `intent_weight_configs`. Any future admin UI MUST send `Authorization: Bearer <ADMIN_API_SECRET>` or a staff JWT, and MUST handle the (currently-500, should-be-409) duplicate-active case (LG-1).
+- **The `intent_weight_configs` one-active-row invariant** is now a SHARED contract between three parties: the migration index (enforcer), this write API (should-maintain-but-doesn't-actively, LG-1), and the GET tie-break (assumes-it-holds, LG-3). This three-party invariant with no single owner is the architectural smell behind LG-1/LG-3.
+- **The `data_source` enum** remains the one contract others should NOT rely on as-is until FOLLOW-299 (inherited from RETRO-070 §5c).
+
+#### 5d. Architectural assumptions affected
+
+- **"At most one active config per scope" is enforced ONLY at the DB layer, with NO application-level maintenance and NO application-level deterministic fallback.** This is the core architectural finding: the write API delegates the invariant entirely to a partial unique index, treats its violation as an opaque DB error, and the read API trusts the invariant without a defensive `ORDER BY`. Sound databases make this work — but the error surface (500 not 409) and the silent non-determinism on breach (LG-3) mean the system is correct-but-unfriendly today and fragile-if-breached tomorrow. Recommend the architect assign a single owner to the invariant: the write API should own "exactly one active" via an atomic deactivate-then-activate transaction + 409 on direct conflict, and the GET should own a deterministic `ORDER BY desc(created_at)` as defense-in-depth.
+- **The staff-admin-writes-any-tenant authorization model (LG-2) is correct for a global ops tool** but means there is NO per-tenant authorization on writes — every staff caller is omnipotent across all tenants' configs. Acceptable for an internal K.3.6 admin surface; recorded so a future "let tenants self-serve their weights" feature does NOT reuse this route without adding tenant-scoping (it would be a privilege-escalation vector if exposed to tenant JWTs).
+
+### 6. New lesson candidates
+
+- **Pattern (a write path relies on a DB UNIQUE/partial-unique constraint for a business invariant but does NOT handle the constraint violation, so a legitimate business-conflict condition surfaces as a generic `db_error/500` instead of a `409`/`400`) — COUNT NOW 2.** Instance 1: RETRO-027/FOLLOW-179 — `conversion_labels` missing UNIQUE/upsert → misleading error on duplicate. Instance 2 (this retro): `intent_weight_configs` POST/PUT do not handle the `intent_weight_configs_one_active` `23505` → duplicate-active returns `db_error/500` (LG-1/CB-1). **Candidate rule (count 2):** *"Any write to a table with a UNIQUE / partial-unique / FK constraint that encodes a business invariant MUST handle the constraint-violation error code explicitly (`23505`→409, `23503`→400/404), never let it fall into the generic catch as a 500; and a test MUST assert the mapped status."* **Threshold-promotion call: NOT promoted this run.** Reason: the two instances differ in surface (one was a missing-constraint design gap RETRO-027 fixed by ADDING the constraint; this is a present-constraint-unhandled gap) — they share the "constraint violation → misleading 500" symptom but not the same root remedy. Conservatively held at count 2-as-symptom; promote on the next sighting of the SAME root (present constraint, unhandled violation code) or on the PM's call. Logged so RETRO-N+1 promotes it.
+- **Pattern (a multi-party invariant — enforcer / maintainer / consumer — with NO single owning component) — count 1 under its own name.** The one-active-row invariant (index enforces, write API should-maintain, GET assumes) is owned by no one. Related shape to RETRO-057's "wire closes one hop but the gap moves up/down the chain." Count 1; watch.
+- **Pattern (a PR claims an "end-to-end wiring test" that actually mocks producer and consumer independently and never connects them) — count 1 under its own name (TG-1).** Adjacent to the step-7 closure discipline (the `inquiry_submit_selector` chain). Count 1; watch — if a second "fake wiring test" appears, promote a rule requiring wiring tests to invoke BOTH real handlers (or one handler feeding the other's input) rather than two independent mocks.
+- **No `CONVENTIONS_PATCH.md` edit by this run.** Findings apply already-codified Rule K.2 (fail-loud — honored; the `data_source` enum-completeness sub-shape remains the deferred RETRO-070 amendment candidate, unchanged count), Rule H (mutation auth — SATISFIED: constant-time compare, ADR-0012 IS the ADR, both routes carry the Rule H mutation sign-off in their docstrings), and Rule S (sibling POST/PUT share the identical gap — not a harmonization target, the gap is the same in both). The constraint-violation→500 pattern is the closest to a fresh promotion (count 2-as-symptom) but is held this run for the root-cause-divergence reason above.
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed and why.** I nearly recorded the write path "clean" because it does the headline things impeccably — validates with the shared schema (FOLLOW-300 satisfied), fails loud per K.2, ships its own auth (Rule H). The catch was reading migration 0029 for the table contract and noticing the `intent_weight_configs_one_active` PARTIAL UNIQUE INDEX, then asking "what does the write API do when it collides?" — and finding the answer is "nothing; it 500s." The gap is invisible if you only read the route files (they look complete); it only appears when you read the route AGAINST the schema's invariants. The is_active default of `true` is what makes it a live hazard: the COMMON case (POST a new config for a tenant that already has one) collides.
+- **An axis/chain I had to trace twice — the AC5 "wiring" test.** First read it looked like the genuine end-to-end producer→consumer proof the PR claimed. Second read (looking for the POST call) showed it fabricates the row and mocks the GET — the two legs are never connected. Easy to take at face value because it is LABELLED "end-to-end wiring contract between the write API and the read API" in its own comment. Lesson: a test's comment claiming "end-to-end" is not evidence of end-to-end; trace which handlers it actually invokes.
+- **A meta-pattern in how gaps recur across agents.** The "generic try/catch swallows a specific, actionable DB error code into an opaque 500" pattern now spans conversion_labels (RETRO-027), this write API (RETRO-071), AND is adjacent to FOLLOW-300's "DB-error path swallows a schema-validation failure" on the read side. Across three K-wave tickets, the agents consistently wrote the happy path + a single generic catch and never enumerated the SPECIFIC failure modes (constraint violation, FK violation, malformed-stored-row) that deserve distinct status codes. The remedy is structural: a shared `mapPgError(err)` helper that maps `23505/23503/...` to status+code, reused across control-plane write routes — surfaced for the architect, not filed as a stub this run (would be premature at count 2-as-symptom).
+
+### 7. Follow-ups
+
+- **FOLLOW-301 (P1, → backend-engineer; BLOCKS/SHAPES FOLLOW-268-sdk)** — Make the `intent_weight_configs` write path defend the one-active-row invariant AND prove the wire end-to-end: (a) handle the unique-index `23505` collision in POST and PUT — return `409 { code:'active_config_exists' }` with a message naming the deactivate-then-activate workflow, OR (preferred) make activation atomic (deactivate-siblings-in-same-scope-then-activate in one transaction); (b) handle the FK `23503` unknown-tenant case → `400/404 { code:'unknown_tenant' }` (LG-2); (c) add a deterministic `.orderBy(desc(createdAt))` to the GET weight query so newest-active wins independent of the index (LG-3); (d) replace the AC5 mock-both-legs test with a REAL POST→GET wiring test that invokes the POST handler and asserts GET reads the inserted row as `data_source:'live'` (TG-1); (e) add tests for the 23505 and 23503 mapped statuses (TG-2) and the deactivate-then-reactivate workflow (TG-3); (f) document the "change active config" workflow in both route docstrings (DG-1). Coordinate the LG-3 `ORDER BY` + the 409 semantics WITH FOLLOW-268-sdk before that ticket merges — the SDK must be able to assume a deterministic single-winner. [§4a LG-1/LG-2/LG-3; §4b CB-1; §4c TG-1/TG-2/TG-3; §4d DG-1; §5a; §5d] (backend-engineer, 6h, P1).
+- **FOLLOW-302 (P3, → backend-engineer/data-engineer)** — Fix the stale `intent_weight_configs` JSONB-shape documentation so no hand-seed writes a row the read path rejects: correct migration `0029_intent_weight_configs.sql:12` (`signal_weights` → `signal_likelihoods`, and the example to a valid `IntentWeightsSchema` object), and add the same corrected example to the `weights` column docstring in `packages/db/src/schema/intent-weight-configs.ts`. This removes the trap where seeding-by-following-the-comment produces a row that `GET`'s `IntentWeightsSchema.parse` rejects with a misleading `db_error/500` (CB-3, which also feeds the open read-side half of FOLLOW-300). [§4b CB-3; §4d DG-2; §5a] (backend-engineer, 1h, P3).
+- **FOLLOW-303 — NOTE, not a new stub:** the unknown-tenant FK handling (LG-2) and its test (TG-2) are folded into FOLLOW-301(b)/(e); no separate ticket. The read-side `invalid_stored_config`-vs-`db_error` split remains under the EXISTING FOLLOW-300 (do not re-file). The `data_source` enum drift remains under the EXISTING FOLLOW-299 (do not re-file). The `examples/intent-weights.ts` orphan remains under the EXISTING FOLLOW-298.
+- **Numbering:** RETROSPECTIVES ends at RETRO-070 (working tree; 059–069 are un-backfilled Wave-2 debt per RETRO-070 §8 — NOT reused). This entry = **RETRO-071**. FOLLOW_UPS ends at FOLLOW-300 (working tree). New stubs this retro = **FOLLOW-301, FOLLOW-302**. Filed below.
+
+### 8. Cross-references
+
+- **RETRO-070 / FOLLOW-294 (the immediately prior retro, the READ-side sibling of this PR) — this retro is the PRODUCER half; RETRO-070 was the CONSUMER half.** RETRO-070 verified the GET read path clean on its own axis; RETRO-071 finds (a) the GET's `.limit(2)+.find()` tie-break is undefended (LG-3, which RETRO-070 did not flag because it read the consumer assuming a well-formed producer), and (b) the write path that feeds it does not maintain the one-active invariant (LG-1). NOT a contradiction of RETRO-070's verdict — a deepening of it on the producer axis (§4e). The FOLLOW-299/FOLLOW-300 constraints RETRO-070 placed: FOLLOW-300's write-validation half is SATISFIED here (§4e/§5a); FOLLOW-299 remains a BLOCKER on FOLLOW-268-sdk, re-flagged (§5a).
+- **RETRO-027 / FOLLOW-179 — the prior instance of "write relies on a DB constraint for a business invariant but does not handle the violation → misleading error."** `conversion_labels` missing UNIQUE/upsert vs. `intent_weight_configs` unhandled one-active `23505`. Count 2-as-symptom on the named pattern (§6); held for promotion pending a same-root third sighting.
+- **RETRO-058 / FOLLOW-277 — the `data_source`-enum-incompleteness HALF_WIRE_C lineage** (inherited via the downstream GET this PR feeds; tracked by FOLLOW-299, unchanged). RETRO-070 carried this to count 2 on the Rule-K.2 enum-completeness amendment candidate; this PR introduces no new instance.
+- **ADR-0012 §Ticket B — implementation matches the ticket spec** (auth via tracer-admin guard, IntentWeightsSchema validation, Rule K.2 no-mock-write, 201/200/404 responses). The ONE place the impl is THINNER than the invariant the table requires is the unhandled one-active collision (LG-1) — ADR-0012 §2 documents "at most one active config per scope" but Ticket B's step list does not call out the deactivate-then-activate write semantics; recommend ADR-0012 §Ticket B gain a step for it when FOLLOW-301 lands.
+- **Rule H (CONVENTIONS_PATCH.md) — SATISFIED.** Mutation endpoints; ADR-0012 IS the required ADR; both route docstrings carry the Rule H mutation sign-off (cryptographic constant-time `timingSafeEqual`, staff-scoped, replay model documented). Auth ships in the same PR as the endpoints it protects.
+- **Rule K.2 (CONVENTIONS_PATCH.md) — SATISFIED on the write path** (configured-DB-throw → 500 + Sentry, no mock write path, unconfigured-DB → 500 not mock). The enum-completeness sub-shape remains the deferred RETRO-058/RETRO-070 amendment candidate on the READ path (FOLLOW-299), not introduced here.
+
+## RETRO-072 — FOLLOW-297 (ADR-0012 Ticket D — unit-test coverage for 6 K.3.6 tracer admin routes + the `clickhouse-tracer.ts` helper that PR #283/FOLLOW-267 shipped untested, plus the DG-1 stream-route docstring fix from RETRO-061; the tests are genuinely seam-driven — they drive the REAL route/helper handlers, not Rule-Q mirrored logic — and the helper suite is a model contract test (param-binding/no-injection, Rule K.2 non-2xx propagation, strict-`>` cursor). BUT three RETRO-061 bugs are only PARTIALLY closed: CB-1 silent-empty SSE is genuinely covered (heartbeat asserted), DG-1 docstring is fully fixed, yet the AC3.7 "MAX_POLLS is 100 not 300" test is tautological (it asserts the loop eventually closes under `runAllTimersAsync`, which passes identically at 100 OR 300 — the bound is not pinned), CB-2/FOLLOW-295 session-route tenant-scoping is NOT covered (the Postgres lookup is still `session_id`-only), FOLLOW-296's SSE-Zod-validation half is NOT done (only its docstring half), and most importantly the new sessions/[id] tests CODIFY a `data_source:'error'` ↔ `TracerSessionDetailResponseSchema` enum drift — a THIRD sighting of the RETRO-058/RETRO-070 enum-incompleteness family — by asserting the literal `'error'` value the shared schema (`['live','mock','clickhouse_unavailable']`) would reject, without a schema round-trip) — 2026-06-13
+
+### 1. Summary of change
+
+- **PR:** #286 (merged to main 2026-06-13 14:41:43 UTC, merge commit `8cdf94f`). Two-commit squash: (1) the 111-test bulk, (2) a lint cleanup dropping two `eslint-disable` directives + one redundant `as string` assertion in the stream route.
+- **Files changed:** 9 (+2350 / -5). 7 test files (NEW), 1 production source (`sessions/[id]/stream/route.ts`, +5/-4: docstring fix + cursor-line lint cleanup), 1 bookkeeping line in `backlog/FOLLOW_UPS.md`.
+- **Modules touched:** [control-plane] only (tracer admin route tests + `lib/clickhouse-tracer.test.ts` + the one stream-route source edit). No shared / db / SDK / docs source changed.
+- **Key contracts changed:** N/A — TEST-ONLY PR. The sole production change is documentation + lint hygiene (no exported symbol, no schema, no event, no column). `MAX_POLLS` stays `100`; the stream route's top-of-file JSDoc "(300 polls)" → "(100 polls at 3 s each)" and the inline `// ~5 minutes` are now consistent (verified in the merge-commit diff @ stream/route.ts lines 5–10, 29). Breaking: no.
+
+### 2. Verification done in PR
+
+- Test files changed: 7 NEW (`sessions/[id]/route.test.ts` 11, `sessions/[id]/stream/route.test.ts` 10, `history/route.test.ts` 12, `history/[session_id]/route.test.ts` 11, `export/decisions/route.test.ts` 13, `export/events/route.test.ts` 12, `lib/clickhouse-tracer.test.ts` 35) · Assertions added: ~111 `it()` blocks · Coverage delta: from 0 on 6 routes + the 326-LOC helper → ~full-branch on each (the routes had ZERO tests before; PR #283 shipped them untested — this PR is the RETRO-061 coverage close-out).
+- CI checks: not independently re-verified by this retro (PR body asserts 111/111 vitest green + prettier + lefthook lint/format on commit+push; the second squash commit exists specifically to clear a CI lint flag on the stream-route cursor line).
+- **The helper test (`clickhouse-tracer.test.ts`) is a model seam test:** it mocks ONLY `fetch` (the true network boundary) and drives the real `chTracerQuery`/`chTracerCount`/`fetchIntentEventsForSession`/`fetchIntentEventsHistory`/`fetchIntentEventsForExport`/`fetchNewIntentEvents` functions — asserting param-binding via `param_<key>` URL params (CH-5 no-injection sentinel), `FORMAT JSONEachRow` appension, Rule-K.2 throw-on-non-2xx (CH-7/14/19/494), strict-`>` cursor for no-duplicate (`fetchNewIntentEvents`), parallel count+data fetch (CH-18), and Basic-auth header presence/absence (CH-10/11). This is the ANTITHESIS of the Rule-Q mirrored-logic anti-pattern. Good.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code).** No new exported symbol introduced. The 7 new files are all `*.test.ts` (test entrypoints, suppressed). The one production edit adds no export. `Wiring Audit (CHECK A) — clean ✅`.
+
+**CHECK B (half-wire).** No new event / env-var / column / topic / SDK-signal introduced by this PR. The tests CONSUME pre-existing producers (the route handlers + helper + the `TracerSessionDetailResponseSchema`/`TracerHistoryResponseSchema` shared schemas). **One PRE-EXISTING half-wire is SURFACED (not introduced) by the new tests and must be recorded:** the `sessions/[id]` route PRODUCES `data_source:'error'` on its 500 path (`route.ts:141,179`) but `TracerSessionDetailResponseSchema.data_source` is `z.enum(['live','mock','clickhouse_unavailable'])` (`tracer.ts:110`) — `'error'` has NO schema slot, so any schema-validating consumer REJECTS the 500 body (HALF_WIRE_C on the provenance signal). The new AC2.8/AC2.9 tests assert `body.data_source === 'error'` (test:271,287) but NEVER round-trip the body through `TracerSessionDetailResponseSchema.parse()`, so the tests LOCK IN the drift rather than catch it. This is the SAME enum-incompleteness shape as RETRO-058/FOLLOW-277 (`'fallback'` on `quiz/public-config`) and RETRO-070/FOLLOW-299 (`'error'` on `intent/config`) — **count 3 on the named pattern**, now on the tracer-route family. → FOLLOW-303 (and drives the Rule K.2 amendment, §6/§7).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A (no production logic changed).** The only source edit is a docstring + lint cleanup. The logic-shaped findings here are all about what the TESTS do (or don't) assert — recorded in §4c — and one pre-existing producer drift (§3 CHECK B → FOLLOW-303).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **No P0/P1 NEW bug introduced.** The DG-1 docstring fix is correct and complete (both the top JSDoc @ stream/route.ts:8 and the inline `// ~5 minutes` @ :29 now agree on 100; verified in the merge-commit diff — NOTE the session-start working tree shows the OLD "(300 polls)" because the active WIP branch `backend-engineer/FOLLOW-267-k36-admin-api` predates this merge and is NOT an ancestor of `8cdf94f`; the MERGED state is correct).
+- **CB-1 (P3, pre-existing, SURFACED — folded into FOLLOW-303) — the `data_source:'error'` enum drift on the tracer `sessions/[id]` route** (§3). It is a contract bug, not a runtime crash (the route returns valid JSON; only a schema-validating consumer breaks). Shipped in PR #283; this test-only PR neither introduces nor fixes it, but the new tests assert its presence without round-tripping — so they would NOT fail if the schema were corrected, i.e. they are blind to the drift.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, NEW → FOLLOW-303) — the AC3.7 "MAX_POLLS is 100 not 300" test is tautological / does not pin the bound.** `stream/route.test.ts` AC3.7 (the DG-1 boundary test) drives the stream under `vi.useFakeTimers()` + `await vi.runAllTimersAsync()` and asserts the stream eventually emits `{closed:true, reason:'max_polls_reached'}`. But `runAllTimersAsync` exhausts the ENTIRE poll loop regardless of its length — the assertion passes IDENTICALLY whether `MAX_POLLS` is 100 OR 300 (or any finite N). It proves "the loop terminates and emits a close signal," NOT "the loop closes at exactly 100." The PR body's claim that the constant is "asserted to be 100" is overstated: the bound is not pinned by any test. To genuinely pin it, the test would need to COUNT poll iterations (e.g. assert `mockFetchNewIntentEvents` was called exactly 100 times) or import/inspect `MAX_POLLS`. Low severity (DG-1 was a docstring bug, now fixed; the constant value is correct) — recorded so a future reader does not trust AC3.7 as a regression guard against the bound silently changing.
+- **TG-2 (P2, NEW → FOLLOW-303) — no test round-trips the `data_source:'error'` 500 body through `TracerSessionDetailResponseSchema`,** so the §3/CB-1 enum drift is never caught by the suite. Add a `TracerSessionDetailResponseSchema.safeParse(errorBody)` assertion (it should pass once `'error'` is added to the enum, or the test documents the deliberate status-only branching) — the same CHECK-B closure test RETRO-058 left as FOLLOW-277 and RETRO-070 as FOLLOW-299's TG-2.
+- **TG-3 (P2, pre-existing OPEN → stays under FOLLOW-295, NOT re-filed) — no test exercises tenant-scoping on the `sessions/[id]` route, because there is none to exercise.** The Postgres lookup is `where(and(eq(intentSessions.sessionId, sessionId))).limit(1)` (`sessions/[id]/route.ts:105`) — keyed on `session_id` ALONE, with the wrapping `and()` holding a SINGLE predicate; `tenant_id` is DERIVED from the returned row (`:125`), not validated against the caller. For a staff-only global tool this is by-design (mirrors the RETRO-071 staff-writes-any-tenant model), and `session_id` is a high-entropy SHA-256 fingerprint (not enumerable), so this is LOW risk — but it is exactly the CB-2 "unscoped lookup" concern that FOLLOW-295 (ADR-0012 Ticket E) was scoped to address. PR #286 does NOT cover or close it. Reconciliation: **FOLLOW-295 remains OPEN, unchanged** (this PR's tests neither touch nor invalidate it).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (CLOSED) — the stream-route "300 polls" docstring is FIXED** (the headline deliverable of this PR's one production edit). No residual.
+- **DG-2 (P3, NEW → FOLLOW-303) — six new test-file headers cite "RETRO-061" as the source retro,** but RETRO-061 has NO `^## RETRO-061` body in `RETROSPECTIVES.md` (it is the un-backfilled / numbering-disputed retro per RETRO-070 §8 / RETRO-070 lessons — STATUS.md/QUEUE.md map "RETRO-061" to PR #274, while ADR-0012 attributes PR #283's finding to it). The CB-1/CB-2/DG-1 labels the test headers reference are coherent, but the "RETRO-061" citation is to a retro whose body does not exist in the SoT — the SAME dangling-RETRO-citation integrity gap the proposed FOLLOW-185 CI lint (RETROSPECTIVES.md:6621) targets. Recorded; folded into FOLLOW-303 as a doc-nit (re-point the headers at the real source — ADR-0012 §Context + the PR-#283 finding — or backfill RETRO-061). No separate stub.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-295 (ADR-0012 Ticket E — tracer session route tenant-scoping, P2, NOT YET FILED AS A STUB; lives in ADR-0012:421) — STILL OPEN, NOT covered by this PR.** §4c TG-3: the `sessions/[id]` lookup is `session_id`-only. PR #286 added route tests but asserted no tenant-scoping (there is none). When FOLLOW-295 is promoted to a real ticket, its scoping change WILL require updating these AC2.x tests (which currently assume the tenant comes from the row). Reconciled: PARTIALLY-COVERED-AT-MOST → effectively still-open (the tests exist now, so the scoping fix has a test harness to extend, which is the one positive this PR gives FOLLOW-295).
+- **FOLLOW-296 (ADR-0012 Ticket F — SSE stream Zod validation + docstring fix, P2, NOT YET FILED AS A STUB; ADR-0012:422) — PARTIALLY CLOSED.** Its TWO halves split cleanly: (i) the **docstring-fix half is DONE** by THIS PR's DG-1 edit (the "300 polls" → "100 polls" correction is exactly FOLLOW-296's docstring sub-item). (ii) the **Zod-validation half is NOT done** — the stream route still validates its inputs with manual `if (!tenantId)` / `if (!sessionId)` checks (`stream/route.ts:63,87`) and emits raw `JSON.stringify` SSE payloads with NO Zod schema on the `{events,data_source}` / `{heartbeat}` / `{error}` / `{closed}` frames. PR #286 added a test that the tenant_id guard fires (AC3.5) and the error/heartbeat/closed frames are emitted, but introduced NO Zod validation. Reconciled: **FOLLOW-296 should be RE-SCOPED to its remaining Zod-validation half only** (the docstring half is satisfied); do NOT re-file — note added so the PM narrows it at promotion.
+- **FOLLOW-303 (this retro's new stub) — absorbs the enum round-trip test (TG-2), the AC3.7 bound-pinning test (TG-1), and the RETRO-061-citation doc-nit (DG-2).** Coordinate the enum-slot decision with FOLLOW-299 (the sibling `intent/config` drift) so the tracer-route family and the intent-config route resolve the `data_source:'error'` slot CONSISTENTLY — ideally in one shared decision when the Rule K.2 amendment (§6) lands.
+- **FOLLOW-293 (ADR-0012 closure-verification gate) — UNCHANGED, still not satisfiable.** This PR is the test leg (Ticket D); it does not build the SDK weight-application consumer leg. Per RETRO-070/071 §5a, the end-to-end weight wire is still producer-only until FOLLOW-268-sdk lands. No movement.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-268-sdk (ADR-0012 Ticket C, sdk-engineer) — NO NEW constraint from THIS PR, but the §3 finding REINFORCES the existing one.** FOLLOW-268-sdk's `data_source` observer (Ticket C step 5) already had to resolve the `intent/config` `'error'` drift (FOLLOW-299, flagged BLOCKING in RETRO-070/071 §5a). This retro shows the SAME `'error'` drift exists on the tracer `sessions/[id]` schema — but the SDK consumes `GET /api/intent/config`, NOT the tracer routes, so the tracer drift does NOT directly block FOLLOW-268-sdk. It DOES argue for resolving the whole `data_source` enum FAMILY (intent-config + tracer routes) in one consistent pass so the SDK and the future tracer admin UI observe the same provenance vocabulary. Recorded; not a new blocker on 268-sdk.
+- **FOLLOW-301 (RETRO-071 — write-API one-active invariant + real POST→GET wiring test) — UNAFFECTED.** Different file tree (`api/admin/intent/config/**` vs `api/admin/tracer/**`); no overlap. RETRO-071's note that FOLLOW-301's route-test legs "may fold into FOLLOW-297 if it lands first" is now MOOT — FOLLOW-297 landed and did NOT pick them up (it scoped to the tracer routes only, not the intent-config write routes), so those test legs stay wholly under FOLLOW-301. Recorded so the PM does not expect FOLLOW-297 to have covered them.
+
+#### 5c. Contracts changed others rely on
+
+- **N/A.** No contract changed (test-only + docstring). The `data_source:'error'`↔`TracerSessionDetailResponseSchema` mismatch is a PRE-EXISTING contract gap surfaced, not changed, here — tracked by FOLLOW-303 (tracer family) / FOLLOW-299 (intent-config sibling).
+
+#### 5d. Architectural assumptions affected
+
+- **N/A new.** Re-confirms the staff-global-admin authorization model (any staff caller reads any tenant's tracer session, no per-tenant binding) already recorded in RETRO-071 §5d — the tracer READ surface (this PR) shares it with the intent-config WRITE surface. Acceptable for an internal K.3.6 ops tool; FOLLOW-295 is the ticket that would add tenant-scoping IF the surface is ever exposed beyond staff.
+
+### 6. New lesson candidates
+
+- **Pattern (a route emits a `data_source`/provenance value that is NOT a member of its response's shared Zod enum, so a schema-validating consumer rejects the body and the degraded signal is invisible — a HALF_WIRE_C by construction) — NOW COUNT 3, AND the tests assert the literal value WITHOUT a schema round-trip, so they codify rather than catch the drift.** Instance 1: RETRO-058/FOLLOW-277 — `data_source:'fallback'` on `quiz/public-config`, absent from `QuizPublicConfigResponseSchema`. Instance 2: RETRO-070/FOLLOW-299 — `data_source:'error'` on `intent/config`, absent from `IntentConfigResponseSchema`'s `['live','mock']`. Instance 3 (this retro): `data_source:'error'` on tracer `sessions/[id]`, absent from `TracerSessionDetailResponseSchema`'s `['live','mock','clickhouse_unavailable']` — and the NEW AC2.8/AC2.9 tests assert `body.data_source === 'error'` without a schema parse, so they would not fail if the schema were corrected. **PROMOTED THIS RUN as a Rule K.2 AMENDMENT** (the enum-completeness + schema-round-trip-test sub-shape of the already-codified "the provenance signal must be observable on the wire" rule). Three independent instances across three route families (`quiz/public-config`, `intent/config`, tracer) cleared the deferred-amendment threshold RETRO-058/RETRO-070 logged ("promote on next sighting"). See §7 / CONVENTIONS_PATCH.md.
+- **Pattern (a "boundary/limit" test that drives a loop to completion under `runAllTimersAsync` and asserts only that it terminates — which is true for ANY finite bound — instead of pinning the bound by counting iterations) — count 1 under its own name (TG-1).** Adjacent to the Rule-Q "test re-asserts a tautology rather than the real behaviour" family, but distinct (this test DOES drive the real handler — it just under-asserts). Count 1; watch. If a second "limit test that doesn't pin the limit" appears, promote a rule requiring a numeric-bound test to assert the iteration COUNT, not merely loop termination.
+
+#### Own blind-spots (meta)
+
+- **A finding I almost missed and why.** I nearly recorded the whole PR "Wiring Audit — clean ✅ (test-only)" because, structurally, there IS no new symbol or contract — the audit rules suppress test files and the lone source edit is a docstring. The catch was applying step-8 (multi-axis) to the TESTS THEMSELVES: reading what AC2.8/AC2.9 actually assert (`body.data_source === 'error'`) and then cross-checking that literal against `TracerSessionDetailResponseSchema` — the drift is invisible if you only audit "did the PR add a producer/consumer"; it only appears when you ask "does the value this test pins exist in the schema the test's own type import (`TracerSessionDetailResponse`) comes from?" A test-only PR can still SURFACE a half-wire (and even codify it).
+- **An axis/chain I had to trace twice — the AC3.7 MAX_POLLS test.** First read it looked like a genuine regression guard for the DG-1 bound ("after 100 polls the stream closes"). Second read (asking "what would FAIL this test if MAX_POLLS were 300?") showed the answer is "nothing" — `runAllTimersAsync` exhausts any finite loop and the close-signal assertion fires either way. The test's NAME ("MAX_POLLS is 100, not 300") over-promises what its body proves. Lesson, twin to RETRO-071's: a test's name/comment claiming it pins a value is not evidence it pins the value — check what assertion would actually break if the value changed.
+- **A meta-pattern in how gaps recur across agents.** The `data_source:'error'` enum drift has now appeared in THREE separate route families authored across the K.3.6 wave (quiz, intent-config, tracer), each time as "route emits the honest degraded value, schema author forgot to add the slot, and the test asserts the literal without a round-trip." The agents independently did the RIGHT thing (fail loud with an honest provenance value) and independently made the SAME schema/test omission. This is precisely the recurrence the ≥2-retro promotion gate exists to codify — and it took a 3rd, test-only sighting (where the test had the schema's own type in scope yet still didn't round-trip) to make the amendment unavoidable.
+
+### 7. Follow-ups
+
+- **FOLLOW-303 (P2, → backend-engineer or qa-engineer; coordinate the enum-slot decision WITH FOLLOW-299)** — Close the tracer-route `data_source` provenance + two test-rigor gaps the new suite left: (a) **enum slot + round-trip test (TG-2/CB-1, §3):** add `'error'` to `TracerSessionDetailResponseSchema.data_source` (`tracer.ts:110`) — and audit the sibling tracer schemas `TracerHistoryResponseSchema`/the export-route bodies for the same `'error'` 500-path drift — OR document deliberate status-only branching; then add a `TracerSessionDetailResponseSchema.safeParse(<500 body>)` round-trip assertion to `sessions/[id]/route.test.ts` so the producer's K.2 signal has a verified schema contract (mirror RETRO-058/FOLLOW-277 / RETRO-070/FOLLOW-299's TG-2 on this route family). (b) **pin the MAX_POLLS bound (TG-1, §4c):** make `stream/route.test.ts` AC3.7 assert the poll COUNT (e.g. `expect(mockFetchNewIntentEvents).toHaveBeenCalledTimes(100)`) or inspect the exported constant, so the test would FAIL if the bound silently changed to 300. (c) **doc-nit (DG-2, §4d):** re-point the six "RETRO-061 bugs addressed" test-file headers at the real source (ADR-0012 §Context + the PR-#283/FOLLOW-267 finding) or backfill a RETRO-061 body, since RETRO-061 has no `^## RETRO-061` entry in RETROSPECTIVES.md. Coordinate (a) with FOLLOW-299 so the intent-config route and the tracer family resolve the `'error'` slot in ONE consistent pass (ideally alongside the Rule K.2 amendment below). [§3; §4b CB-1; §4c TG-1/TG-2; §4d DG-2; §5a] (backend-engineer/qa-engineer, 2h, P2).
+- **NOTES (not new stubs):** FOLLOW-295 (tracer session tenant-scoping) remains OPEN and NOT-covered (§4c TG-3 / §5a) — do not re-file; it is an ADR-0012 Ticket-E item the PM promotes separately. FOLLOW-296 (SSE Zod validation + docstring) is PARTIALLY CLOSED — its docstring half is DONE by this PR's DG-1 edit; its Zod-validation half remains OPEN and should be RE-SCOPED to that half only at promotion (§5a) — do not re-file. FOLLOW-301 (intent-config write invariant) is UNAFFECTED and did NOT fold into FOLLOW-297 (§5b) — its route-test legs stay wholly under FOLLOW-301.
+
+### 8. Cross-references
+
+- **RETRO-070 / FOLLOW-294 + RETRO-071 / FOLLOW-268-write — the `data_source:'error'` enum-drift siblings.** RETRO-070 found the drift on `GET /api/intent/config` (FOLLOW-299, count 2); RETRO-071 carried it forward un-re-filed. THIS retro finds the SAME drift on the tracer `sessions/[id]` route (count 3) — and crucially, a TEST-ONLY PR that had the schema's own type in scope still asserted the literal without round-tripping. The three retros are CONSISTENT (each is a distinct route family), and together they cross the threshold that promotes the Rule K.2 enum-completeness amendment (§6/§7). FOLLOW-303 (tracer family) and FOLLOW-299 (intent-config) should resolve the slot together.
+- **RETRO-058 / FOLLOW-277 — instance 1 of the enum-incompleteness family** (`data_source:'fallback'` on `quiz/public-config`). Logged as the count-1 named-pattern origin; this retro is the count-3 promotion trigger.
+- **RETRO-059 / FOLLOW-266-Phase-3 (FOLLOW-289) — the Rule-Q mirrored-logic-test precedent.** THIS PR is the COUNTER-example: its helper suite drives the real `clickhouse-tracer` functions (mocking only `fetch`) and its route suites drive the real handlers — NOT the mirrored-logic anti-pattern Rule Q governs. Recorded as a clean Rule-Q application (no finding) so the contrast is on record: the worker was told to write seam-driven tests and did.
+- **RETRO-061 (PR #283 / FOLLOW-267) — the UPSTREAM ticket this PR back-fills coverage for.** PR #283 shipped these 6 tracer routes + the helper with ZERO tests; RETRO-061 (per ADR-0012 §Context) flagged CB-1 (silent-empty SSE), CB-2 (unscoped lookup), DG-1 (MAX_POLLS docstring). This PR CLOSES DG-1 fully and CB-1 (heartbeat covered), but CB-2's scoping fix is deferred to FOLLOW-295 (not closed here). NOTE the RETRO-061 body does not exist in RETROSPECTIVES.md (numbering dispute per RETRO-070 §8) — the DG-2 doc-nit (§4d) tracks re-pointing the citations.
+- **Rule K.2 (CONVENTIONS_PATCH.md) — AMENDED THIS RUN** (enum-completeness + schema-round-trip-test sub-shape; evidence RETRO-058/RETRO-070/RETRO-072). The route's fail-loud behaviour itself is SATISFIED on every tested route (configured-store throw → 500 + Sentry, unconfigured → 503/mock as appropriate, export routes never mock-fallback); the amendment closes the gap that an honest provenance value with no schema slot is unobservable to a validating consumer.

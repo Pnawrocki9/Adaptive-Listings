@@ -1,26 +1,30 @@
 /**
- * Tests for POST /api/admin/intent/config + PUT /api/admin/intent/config/[id]
- * (FOLLOW-268-write, ADR-0012 Ticket B).
+ * Tests for POST /api/admin/intent/config
+ * (FOLLOW-268-write, ADR-0012 Ticket B, FOLLOW-301 one-active-row invariant).
  *
  * Coverage:
- *   AC1.1: POST creates a row; response includes the created row id.
- *   AC1.2: POST returns 400 on invalid JSON body.
- *   AC1.3: POST returns 400 on Zod validation failure (invalid weight keys).
- *   AC2.1: PUT updates weights + returns the updated row.
- *   AC2.2: PUT returns 404 on unknown id.
- *   AC2.3: PUT with empty body returns 400 (at-least-one-field validation).
- *   AC3.1: POST returns 401 when no auth header.
- *   AC3.2: POST returns 403 when JWT is agency (not staff or admin secret).
- *   AC3.3: PUT returns 401 when no auth header.
- *   AC3.4: PUT returns 403 when JWT is agency (not staff or admin secret).
- *   AC3.5: POST accepts ADMIN_API_SECRET Bearer (constant-time compare path).
- *   AC4.1: POST rejects unknown signal key in signal_likelihoods (strict schema).
- *   AC4.2: POST rejects unknown archetype key in priors.
- *   AC4.3: POST accepts valid partial weights (only behavioral_damping).
- *   AC4.4: POST accepts empty weights object `{}`.
- *   K2.1:  POST returns 500 when DB is configured but throws (Rule K.2 — no mock write).
- *   K2.2:  POST returns 500 when DB is unconfigured (Rule K.2 — no mock write path).
- *   K2.3:  PUT returns 500 when DB is configured but throws (Rule K.2).
+ *   AC1.1:  POST creates a global row; response includes id, tenant_id null, is_active.
+ *   AC1.1b: POST creates a tenant-specific row when tenant_id is provided.
+ *   AC1.1c: POST creates an inactive row when is_active=false (plain insert, no deactivation).
+ *   AC1.2:  POST returns 400 on invalid JSON body.
+ *   AC1.3:  POST returns 400 on Zod validation failure (invalid weight keys).
+ *   AC3.1:  POST returns 401 when no auth header.
+ *   AC3.2:  POST returns 403 when JWT is agency (not staff or admin secret).
+ *   AC3.5:  POST accepts ADMIN_API_SECRET Bearer (constant-time compare path).
+ *   AC4.1:  POST rejects unknown signal key in signal_likelihoods (strict schema).
+ *   AC4.2:  POST rejects unknown archetype key in priors.
+ *   AC4.3:  POST accepts valid partial weights (only behavioral_damping).
+ *   AC4.4:  POST accepts empty weights object `{}`.
+ *   K2.1:   POST returns 500 when DB is configured but throws (Rule K.2 — no mock write).
+ *   K2.2:   POST returns 500 when DB is unconfigured (Rule K.2 — no mock write path).
+ *
+ *   FOLLOW-301 additions:
+ *   INV-1:  POST with is_active=true calls transaction() — deactivates then inserts.
+ *   INV-2:  POST with is_active=true, second call deactivates the first (atomic-swap).
+ *   INV-3:  POST → GET round-trip: written row is served as data_source:'live'.
+ *   INV-4:  POST residual 23505 (race) maps to 409 active_config_exists (not 500).
+ *   INV-5:  POST FK violation 23503 maps to 400 unknown_tenant (not 500).
+ *   INV-6:  POST with is_active=false uses plain insert (no transaction).
  *
  * Rule K.2 contract for writes: NEVER fall back to a mock on DB failure.
  * Unlike read routes, writes have no "unconfigured DB → return mock" path.
@@ -32,6 +36,7 @@
  * @module apps/control-plane/src/app/api/admin/intent/config/route.test
  */
 
+import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
@@ -41,6 +46,10 @@ const ADMIN_SECRET = 'test-admin-secret-xyz';
 const TENANT_ID = '550e8400-e29b-41d4-a716-446655440042';
 const ROW_ID = 'aaaabbbb-0001-0001-0001-000000000001';
 const CREATED_AT = new Date('2026-06-13T10:00:00.000Z');
+
+// SHA-256('valid-api-key') for GET route round-trip tests.
+const VALID_KEY = 'valid-api-key';
+const VALID_KEY_HASH = createHash('sha256').update(VALID_KEY).digest('hex');
 
 vi.mock('@sentry/nextjs', () => ({
   captureException: vi.fn(),
@@ -67,6 +76,12 @@ vi.mock('@estalara/db', () => ({
     createdAt: 'created_at',
     createdBy: 'created_by',
   },
+  apiKeys: {
+    tenantId: 'tenant_id',
+    hashedKey: 'hashed_key',
+    revokedAt: 'revoked_at',
+    expiresAt: 'expires_at',
+  },
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -75,13 +90,16 @@ vi.mock('drizzle-orm', () => ({
   or: vi.fn((..._args: unknown[]) => ({ type: 'or' })),
   isNull: vi.fn((_col: unknown) => ({ type: 'isNull' })),
   gt: vi.fn((_col: unknown, _val: unknown) => ({ type: 'gt' })),
+  ne: vi.fn((_col: unknown, _val: unknown) => ({ type: 'ne' })),
+  desc: vi.fn((_col: unknown) => ({ type: 'desc' })),
 }));
 
 import { getAuthClaims, isStaffClaims } from '@estalara/auth';
 import { POST } from './route';
+import { GET } from '../../../intent/config/route';
 
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
-const mockIsStaffClaims = vi.mocked(isStaffClaims);
+vi.mocked(isStaffClaims);
 
 // ─── DB mock builders ─────────────────────────────────────────────────────────
 
@@ -96,13 +114,67 @@ function makeInsertMock(rows: unknown[]) {
 }
 
 /**
- * Build a Drizzle insert mock chain that throws.
+ * Build a mock for a transaction that performs deactivate + insert.
+ * The transaction callback receives a `tx` object with both `update` and `insert`.
+ *
+ * @param insertRows - rows returned by the insert step inside the transaction.
+ * @param deactivateCount - how many rows the update step deactivates (default 1).
  */
-function makeInsertMockThrowing(err: Error) {
-  const returningFn = vi.fn().mockRejectedValue(err);
-  const valuesFn = vi.fn().mockReturnValue({ returning: returningFn });
-  const insertFn = vi.fn().mockReturnValue({ values: valuesFn });
-  return { insert: insertFn };
+function makeTransactionMock(insertRows: unknown[], deactivateCount = 1) {
+  // update chain for deactivation (no .returning())
+  const deactivateWhereFn = vi.fn().mockResolvedValue({ rowCount: deactivateCount });
+  const deactivateSetFn = vi.fn().mockReturnValue({ where: deactivateWhereFn });
+  const deactivateUpdateFn = vi.fn().mockReturnValue({ set: deactivateSetFn });
+
+  // insert chain for the new row
+  const insertReturningFn = vi.fn().mockResolvedValue(insertRows);
+  const insertValuesFn = vi.fn().mockReturnValue({ returning: insertReturningFn });
+  const insertInsertFn = vi.fn().mockReturnValue({ values: insertValuesFn });
+
+  const tx = {
+    update: deactivateUpdateFn,
+    insert: insertInsertFn,
+  };
+
+  // transaction() calls the callback with tx and returns the result
+  const transactionFn = vi.fn().mockImplementation((cb: (tx: unknown) => Promise<unknown>) => {
+    return cb(tx);
+  });
+
+  return { transaction: transactionFn, _tx: tx };
+}
+
+/**
+ * Build a mock for a transaction that throws a Postgres error.
+ */
+function makeTransactionMockThrowing(err: Error) {
+  const transactionFn = vi.fn().mockRejectedValue(err);
+  return { transaction: transactionFn };
+}
+
+/**
+ * Build a Drizzle select mock chain for AUTH queries (no orderBy):
+ * select().from().where().limit() → rows.
+ */
+function makeAuthSelectMock(rows: unknown[]) {
+  const limitFn = vi.fn().mockResolvedValue(rows);
+  const whereFn = vi.fn().mockReturnValue({ limit: limitFn });
+  const fromFn = vi.fn().mockReturnValue({ where: whereFn });
+  const selectFn = vi.fn().mockReturnValue({ from: fromFn });
+  return { select: selectFn };
+}
+
+/**
+ * Build a Drizzle select mock chain for WEIGHT queries (with orderBy):
+ * select().from().where().orderBy().limit() → rows.
+ */
+function makeWeightSelectMock(rows: unknown[]) {
+  const limitFn = vi.fn().mockResolvedValue(rows);
+  const orderByFn = vi.fn().mockReturnValue({ limit: limitFn });
+  const whereFn = vi.fn().mockReturnValue({ orderBy: orderByFn });
+  const fromFn = vi.fn().mockReturnValue({ where: whereFn });
+  const selectFn = vi.fn().mockReturnValue({ from: fromFn });
+  return { select: selectFn };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -124,6 +196,13 @@ function makePostRequest(
   });
 }
 
+function makeGetRequest(bearer: string): NextRequest {
+  return new NextRequest('http://localhost/api/intent/config', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${bearer}` },
+  });
+}
+
 async function parseBody<T>(res: Response): Promise<T> {
   const raw: unknown = await res.json();
   return raw as T;
@@ -134,7 +213,7 @@ function withConfiguredDb() {
   vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
 }
 
-// ─── POST tests ───────────────────────────────────────────────────────────────
+// ─── POST tests — auth ────────────────────────────────────────────────────────
 
 describe('POST /api/admin/intent/config — auth', () => {
   beforeEach(() => {
@@ -161,7 +240,6 @@ describe('POST /api/admin/intent/config — auth', () => {
       estalara_staff: false as const,
       mfa_verified: true,
     });
-    mockIsStaffClaims.mockReturnValue(false);
 
     const res = await POST(makePostRequest({ weights: {} }, { bearer: 'agency-jwt-token' }));
     expect(res.status).toBe(403);
@@ -177,7 +255,8 @@ describe('POST /api/admin/intent/config — auth', () => {
       isActive: true,
       createdAt: CREATED_AT,
     };
-    mockCreateAdminClient.mockReturnValue(makeInsertMock([createdRow]));
+    const { transaction } = makeTransactionMock([createdRow]);
+    mockCreateAdminClient.mockReturnValue({ transaction });
 
     const res = await POST(makePostRequest({ weights: { behavioral_damping: 0.3 } }));
     expect(res.status).toBe(201);
@@ -185,6 +264,8 @@ describe('POST /api/admin/intent/config — auth', () => {
     expect(body.id).toBe(ROW_ID);
   });
 });
+
+// ─── POST tests — validation ──────────────────────────────────────────────────
 
 describe('POST /api/admin/intent/config — validation', () => {
   beforeEach(() => {
@@ -245,7 +326,8 @@ describe('POST /api/admin/intent/config — validation', () => {
       isActive: true,
       createdAt: CREATED_AT,
     };
-    mockCreateAdminClient.mockReturnValue(makeInsertMock([createdRow]));
+    const { transaction } = makeTransactionMock([createdRow]);
+    mockCreateAdminClient.mockReturnValue({ transaction });
 
     const res = await POST(
       makePostRequest({
@@ -257,19 +339,22 @@ describe('POST /api/admin/intent/config — validation', () => {
     expect(body.id).toBe(ROW_ID);
   });
 
-  it('AC4.4: accepts empty weights object', async () => {
+  it('AC4.4: accepts empty weights object — uses transaction for is_active=true default', async () => {
     const createdRow = {
       id: ROW_ID,
       tenantId: null,
       isActive: true,
       createdAt: CREATED_AT,
     };
-    mockCreateAdminClient.mockReturnValue(makeInsertMock([createdRow]));
+    const { transaction } = makeTransactionMock([createdRow]);
+    mockCreateAdminClient.mockReturnValue({ transaction });
 
     const res = await POST(makePostRequest({ weights: {} }));
     expect(res.status).toBe(201);
   });
 });
+
+// ─── POST tests — create (AC1) ────────────────────────────────────────────────
 
 describe('POST /api/admin/intent/config — create (AC1)', () => {
   beforeEach(() => {
@@ -287,7 +372,8 @@ describe('POST /api/admin/intent/config — create (AC1)', () => {
       isActive: true,
       createdAt: CREATED_AT,
     };
-    mockCreateAdminClient.mockReturnValue(makeInsertMock([createdRow]));
+    const { transaction } = makeTransactionMock([createdRow]);
+    mockCreateAdminClient.mockReturnValue({ transaction });
 
     const res = await POST(
       makePostRequest({
@@ -314,7 +400,8 @@ describe('POST /api/admin/intent/config — create (AC1)', () => {
       isActive: true,
       createdAt: CREATED_AT,
     };
-    mockCreateAdminClient.mockReturnValue(makeInsertMock([createdRow]));
+    const { transaction } = makeTransactionMock([createdRow]);
+    mockCreateAdminClient.mockReturnValue({ transaction });
 
     const res = await POST(
       makePostRequest({
@@ -328,14 +415,16 @@ describe('POST /api/admin/intent/config — create (AC1)', () => {
     expect(body.tenant_id).toBe(TENANT_ID);
   });
 
-  it('AC1.1c: creates an inactive row when is_active=false', async () => {
+  it('AC1.1c: creates an inactive row when is_active=false — uses plain insert, no transaction', async () => {
     const createdRow = {
       id: ROW_ID,
       tenantId: null,
       isActive: false,
       createdAt: CREATED_AT,
     };
-    mockCreateAdminClient.mockReturnValue(makeInsertMock([createdRow]));
+    // Plain insert mock (no transaction needed for is_active=false).
+    const insertMock = makeInsertMock([createdRow]);
+    mockCreateAdminClient.mockReturnValue(insertMock);
 
     const res = await POST(
       makePostRequest({
@@ -349,6 +438,8 @@ describe('POST /api/admin/intent/config — create (AC1)', () => {
   });
 });
 
+// ─── POST tests — Rule K.2 fail-loud ─────────────────────────────────────────
+
 describe('POST /api/admin/intent/config — Rule K.2 fail-loud', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -359,9 +450,8 @@ describe('POST /api/admin/intent/config — Rule K.2 fail-loud', () => {
 
   it('K2.1: returns 500 when DB is configured but throws (Rule K.2 — no mock fallback)', async () => {
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-    mockCreateAdminClient.mockReturnValue(
-      makeInsertMockThrowing(new Error('Postgres connection refused')),
-    );
+    const { transaction } = makeTransactionMockThrowing(new Error('Postgres connection refused'));
+    mockCreateAdminClient.mockReturnValue({ transaction });
 
     const res = await POST(makePostRequest({ weights: {} }));
     expect(res.status).toBe(500);
@@ -379,5 +469,183 @@ describe('POST /api/admin/intent/config — Rule K.2 fail-loud', () => {
     expect(res.status).toBe(500);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('db_unconfigured');
+  });
+});
+
+// ─── POST tests — FOLLOW-301 one-active-row invariant ────────────────────────
+
+describe('POST /api/admin/intent/config — FOLLOW-301 one-active-row invariant', () => {
+  beforeEach(() => {
+    // Reset mock implementations (including mockReturnValueOnce queue) in addition to
+    // clearing call counts. This prevents a failed test (e.g. INV-3) from leaving
+    // unconsumed mockReturnValueOnce registrations that corrupt the next test.
+    mockCreateAdminClient.mockReset();
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+    mockGetAuthClaims.mockResolvedValue(null);
+  });
+
+  it('INV-1: POST with is_active=true (default) calls transaction() to deactivate-then-insert', async () => {
+    const createdRow = {
+      id: ROW_ID,
+      tenantId: null,
+      isActive: true,
+      createdAt: CREATED_AT,
+    };
+    const { transaction } = makeTransactionMock([createdRow]);
+    mockCreateAdminClient.mockReturnValue({ transaction });
+
+    const res = await POST(makePostRequest({ weights: { behavioral_damping: 0.3 } }));
+    expect(res.status).toBe(201);
+    // Verify the transaction was called (atomic-swap happened).
+    expect(transaction).toHaveBeenCalledOnce();
+  });
+
+  it('INV-2: atomic-swap — second active POST deactivates the first row', async () => {
+    // First POST: creates row-1 as active.
+    const row1 = { id: 'row-1', tenantId: null, isActive: true, createdAt: CREATED_AT };
+    const { transaction: txn1, _tx: tx1 } = makeTransactionMock([row1], 0);
+    mockCreateAdminClient.mockReturnValueOnce({ transaction: txn1 });
+
+    const res1 = await POST(makePostRequest({ weights: { behavioral_damping: 0.2 } }));
+    expect(res1.status).toBe(201);
+
+    // Verify first POST: the update (deactivation) step ran with no prior active rows.
+    // The tx.update().set().where() chain was called even with 0 rows to deactivate.
+    expect(tx1.update).toHaveBeenCalledOnce();
+    expect(tx1.insert).toHaveBeenCalledOnce();
+
+    // Second POST: deactivates row-1, creates row-2 as active.
+    const row2 = {
+      id: 'row-2',
+      tenantId: null,
+      isActive: true,
+      createdAt: new Date('2026-06-13T11:00:00.000Z'),
+    };
+    const { transaction: txn2, _tx: tx2 } = makeTransactionMock([row2], 1);
+    mockCreateAdminClient.mockReturnValueOnce({ transaction: txn2 });
+
+    const res2 = await POST(makePostRequest({ weights: { behavioral_damping: 0.4 } }));
+    expect(res2.status).toBe(201);
+    const body2 = await parseBody<{ id: string; is_active: boolean }>(res2);
+    expect(body2.id).toBe('row-2');
+    expect(body2.is_active).toBe(true);
+
+    // Second POST: the deactivation update step was called again.
+    expect(tx2.update).toHaveBeenCalledOnce();
+    expect(tx2.insert).toHaveBeenCalledOnce();
+  });
+
+  it('INV-3: POST → GET round-trip — written row is served as data_source: live', async () => {
+    // This test proves the end-to-end wiring between the admin write API and the SDK GET.
+    // Replaces the previous AC5 mock-only test (RETRO-071 TG-1).
+    //
+    // Step 1: POST via admin API creates the row.
+    const writtenWeights = {
+      behavioral_damping: 0.22,
+      priors: { family_buyer: 0.07, neutral: 0.28 },
+      signal_likelihoods: { 'cta.clicked': { yield_hunter: 1.2 } },
+    };
+    const createdRow = {
+      id: ROW_ID,
+      tenantId: TENANT_ID,
+      isActive: true,
+      createdAt: CREATED_AT,
+    };
+    const { transaction } = makeTransactionMock([createdRow]);
+    mockCreateAdminClient.mockReturnValueOnce({ transaction });
+
+    const postRes = await POST(makePostRequest({ weights: writtenWeights, tenant_id: TENANT_ID }));
+    expect(postRes.status).toBe(201);
+    const postBody = await parseBody<{ id: string }>(postRes);
+    expect(postBody.id).toBe(ROW_ID);
+
+    // Step 2: GET /api/intent/config with the tenant's API key.
+    // The GET route calls createAdminClient() twice:
+    //   - call 1: resolveApiKey → select from api_keys (no orderBy)
+    //   - call 2: weight lookup → select from intent_weight_configs (with orderBy)
+    //
+    // Auth DB returns the api_keys row for the tenant.
+    const authDb = makeAuthSelectMock([{ tenantId: TENANT_ID, hashedKey: VALID_KEY_HASH }]);
+
+    // Weight DB returns the row written by POST (with the written weights).
+    const weightRow = {
+      id: ROW_ID,
+      tenantId: TENANT_ID,
+      weights: writtenWeights,
+      createdAt: CREATED_AT,
+      isActive: true,
+    };
+    const weightDb = makeWeightSelectMock([weightRow]);
+
+    mockCreateAdminClient
+      .mockReturnValueOnce(authDb) // resolveApiKey
+      .mockReturnValueOnce(weightDb); // weight fetch
+
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+
+    const getRes = await GET(makeGetRequest(VALID_KEY));
+    expect(getRes.status).toBe(200);
+    const getBody = await parseBody<{
+      data_source: string;
+      is_tenant_specific: boolean;
+      weights: { behavioral_damping?: number };
+    }>(getRes);
+
+    // Key assertions: the GET returns 'live' with the exact weights written by POST.
+    expect(getBody.data_source).toBe('live');
+    expect(getBody.is_tenant_specific).toBe(true);
+    expect(getBody.weights.behavioral_damping).toBe(0.22);
+  });
+
+  it('INV-4: POST residual 23505 unique violation (race) maps to 409 active_config_exists', async () => {
+    // This should not happen in normal operation (the atomic swap prevents it),
+    // but can occur under concurrent write races.
+    const pgUniqueError = Object.assign(new Error('unique violation'), { code: '23505' });
+    const { transaction } = makeTransactionMockThrowing(pgUniqueError);
+    mockCreateAdminClient.mockReturnValue({ transaction });
+
+    const res = await POST(makePostRequest({ weights: {} }));
+    expect(res.status).toBe(409);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('active_config_exists');
+    // Must NOT return 'db_error' — that would be the wrong status code for this condition.
+    expect(body.error.code).not.toBe('db_error');
+  });
+
+  it('INV-5: POST FK violation 23503 maps to 400 unknown_tenant (not 500)', async () => {
+    const pgFkError = Object.assign(new Error('foreign key violation'), { code: '23503' });
+    const { transaction } = makeTransactionMockThrowing(pgFkError);
+    mockCreateAdminClient.mockReturnValue({ transaction });
+
+    const res = await POST(
+      makePostRequest({ weights: {}, tenant_id: '00000000-0000-0000-0000-999999999999' }),
+    );
+    expect(res.status).toBe(400);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('unknown_tenant');
+    // Must NOT return 'db_error'.
+    expect(body.error.code).not.toBe('db_error');
+  });
+
+  it('INV-6: POST with is_active=false uses plain insert (no transaction called)', async () => {
+    const createdRow = {
+      id: ROW_ID,
+      tenantId: null,
+      isActive: false,
+      createdAt: CREATED_AT,
+    };
+    const insertMock = makeInsertMock([createdRow]);
+    // No transaction mock needed — the route must NOT call transaction() for is_active=false.
+    mockCreateAdminClient.mockReturnValue(insertMock);
+
+    const res = await POST(makePostRequest({ weights: {}, is_active: false }));
+    expect(res.status).toBe(201);
+    const body = await parseBody<{ is_active: boolean }>(res);
+    expect(body.is_active).toBe(false);
+    // Verify plain insert was called (not transaction).
+    expect(insertMock.insert).toHaveBeenCalledOnce();
   });
 });

@@ -18,6 +18,12 @@
  *   - Active row found → 200 with `data_source: 'live'`.
  *   - DB configured but throws during weight fetch → 500 with `data_source: 'error'`.
  *
+ * Tie-break (FOLLOW-301):
+ *   The weight query uses ORDER BY created_at DESC so newest-active-wins is
+ *   deterministic even if the one-active-row invariant is ever transiently breached.
+ *   Without ORDER BY the served config can be non-deterministic across CDN cache fills,
+ *   causing FOLLOW-268-sdk weight flap.
+ *
  * Rule H auth sign-off (read-only, no mutation):
  *   - Constant-time compare: `constantTimeEqual()` on SHA-256 hex digests.
  *   - Tenant-scoped: `tenant_id` resolved from the authenticated key, never from the request.
@@ -36,7 +42,7 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, or } from 'drizzle-orm';
 
 import { createAdminClient, apiKeys, intentWeightConfigs } from '@estalara/db';
 import type { IntentConfigResponse } from '@estalara/shared';
@@ -228,6 +234,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // Fetch both tenant-specific and global rows in one query.
     // Tenant-specific (tenant_id = tenantId) takes priority over global (tenant_id IS NULL).
     // or(eq, isNull) covers both scopes; at most 2 rows can be returned.
+    // ORDER BY created_at DESC: newest-active-wins is deterministic even if the
+    // one-active-row invariant is transiently breached (FOLLOW-301 LG-3 fix).
     const rows = await db
       .select({
         id: intentWeightConfigs.id,
@@ -243,6 +251,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           or(eq(intentWeightConfigs.tenantId, tenantId), isNull(intentWeightConfigs.tenantId)),
         ),
       )
+      .orderBy(desc(intentWeightConfigs.createdAt))
       .limit(2); // At most 2: one tenant-specific + one global.
 
     // Prefer tenant-specific over global (tenant_id NOT NULL wins).

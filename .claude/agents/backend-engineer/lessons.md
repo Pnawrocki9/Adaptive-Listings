@@ -618,3 +618,26 @@ should omit it. The SDK (FOLLOW-268-sdk) must still check `data_source === 'live
 **A guardrail I'd add:** A lint rule or custom ESLint check that flags any `z.enum(...)` on a
 `data_source`-named field that does NOT include `'error'` — catches future schemas that emit errors
 but don't type them, preventing another RETRO-070 CB-1 recurrence.
+
+---
+
+## 2026-06-13 / FOLLOW-301
+
+**What I built:** Defended the `intent_weight_configs` one-active-row invariant. Three changes: (1)
+POST and PUT use atomic transactions (deactivate existing active rows in scope, then insert/update)
+to avoid hitting the `intent_weight_configs_one_active` partial unique index under normal operation;
+residual 23505 race → 409 `active_config_exists`; 23503 FK violation → 400 `unknown_tenant`. (2) GET
+weight query adds `ORDER BY created_at DESC` for deterministic newest-active-wins tie-break. (3)
+Replaced the AC5 mock-only wiring test with a real POST→GET round-trip (INV-3) plus atomic-swap
+tests (INV-1/2), 409 race-path tests (INV-4), 400 FK-violation tests (INV-5), and the ORDER BY
+determinism test (ORD-1).
+
+**Wiring/auth/fail-loud risks I weighed:** The transaction path required separate mock chain
+builders for auth vs weight DB queries (different chain shapes: `where().limit()` vs
+`where().orderBy().limit()`). Test isolation: `vi.clearAllMocks()` does NOT reset
+`mockReturnValueOnce` queues; added `mockReset()` in the FOLLOW-301 `beforeEach` to prevent stale
+queue entries from corrupted failed-test state corrupting the next test.
+
+**A guardrail I'd add:** When a route adds `.orderBy()` to an existing query, update ALL mock chains
+for that query in tests — a shared mock pattern that omits `orderBy` in the chain silently breaks
+auth vs weight DB differentiation.

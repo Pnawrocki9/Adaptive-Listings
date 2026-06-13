@@ -87,14 +87,18 @@ vi.mock('drizzle-orm', () => ({
   or: vi.fn((..._args: unknown[]) => ({ type: 'or' })),
   isNull: vi.fn((_col: unknown) => ({ type: 'isNull' })),
   gt: vi.fn((_col: unknown, _val: unknown) => ({ type: 'gt' })),
+  desc: vi.fn((_col: unknown) => ({ type: 'desc' })),
 }));
 
 // ─── DB mock helpers ──────────────────────────────────────────────────────────
 
 /**
- * Build a Drizzle-style mock chain: select().from().where().limit() resolving to `rows`.
+ * Build a Drizzle-style mock chain for AUTH queries:
+ * select().from().where().limit() resolving to `rows`.
+ *
+ * The api_keys auth query does NOT use .orderBy(), so this chain omits it.
  */
-function makeDbMock(rows: unknown[]): MockChain {
+function makeAuthDbMock(rows: unknown[]): MockChain {
   const limitFn = vi.fn().mockResolvedValue(rows);
   const whereFn = vi.fn().mockReturnValue({ limit: limitFn });
   const fromFn = vi.fn().mockReturnValue({ where: whereFn });
@@ -103,7 +107,46 @@ function makeDbMock(rows: unknown[]): MockChain {
 }
 
 /**
+ * Build a Drizzle-style mock chain for WEIGHT queries:
+ * select().from().where().orderBy().limit() resolving to `rows`.
+ *
+ * FOLLOW-301: the GET weight query now includes .orderBy(desc(createdAt)) before
+ * .limit(2) so newest-active-wins is deterministic even if the unique index is
+ * transiently breached.
+ */
+function makeWeightDbMock(rows: unknown[]): MockChain {
+  const limitFn = vi.fn().mockResolvedValue(rows);
+  const orderByFn = vi.fn().mockReturnValue({ limit: limitFn });
+  const whereFn = vi.fn().mockReturnValue({ orderBy: orderByFn });
+  const fromFn = vi.fn().mockReturnValue({ where: whereFn });
+  const selectFn = vi.fn().mockReturnValue({ from: fromFn });
+  return { select: selectFn };
+}
+
+/**
+ * Convenience alias for the common single-DB tests that only need one mock
+ * (unconfigured DB, auth-failure, etc.). Use makeAuthDbMock for clarity.
+ */
+function makeDbMock(rows: unknown[]): MockChain {
+  return makeAuthDbMock(rows);
+}
+
+/**
  * Build a Drizzle-style mock chain whose limit() rejects with an error.
+ * Used for the weight-fetch throwing path (which does use orderBy).
+ */
+function makeWeightDbMockThrowing(err: Error): MockChain {
+  const limitFn = vi.fn().mockRejectedValue(err);
+  const orderByFn = vi.fn().mockReturnValue({ limit: limitFn });
+  const whereFn = vi.fn().mockReturnValue({ orderBy: orderByFn });
+  const fromFn = vi.fn().mockReturnValue({ where: whereFn });
+  const selectFn = vi.fn().mockReturnValue({ from: fromFn });
+  return { select: selectFn };
+}
+
+/**
+ * Build a Drizzle-style mock chain whose limit() rejects with an error.
+ * Used for the auth-fetch throwing path (which does NOT use orderBy).
  */
 function makeDbMockThrowing(err: Error): MockChain {
   const limitFn = vi.fn().mockRejectedValue(err);
@@ -266,7 +309,7 @@ describe('GET /api/intent/config — authenticated live path (DB configured)', (
 
   it('AUTH-6: derives tenant_id from authenticated key (not from query param)', async () => {
     // No ?tenant_id in the URL — auth succeeds, weight query uses resolved tenantId
-    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock([]));
+    setupDbSequence(makeAuthDbMock(authSuccessRow()), makeWeightDbMock([]));
 
     const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
     // Returns 200 mock (no active row) but auth succeeded via API key
@@ -277,7 +320,7 @@ describe('GET /api/intent/config — authenticated live path (DB configured)', (
   });
 
   it('MOCK-2: returns 200 with data_source: mock and empty weights when no active row', async () => {
-    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock([]));
+    setupDbSequence(makeAuthDbMock(authSuccessRow()), makeWeightDbMock([]));
 
     const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
     expect(res.status).toBe(200);
@@ -294,7 +337,7 @@ describe('GET /api/intent/config — authenticated live path (DB configured)', (
     const weightRows = [
       { id: 'cfg-1', tenantId: TENANT_ID, weights: validWeights, createdAt: now, isActive: true },
     ];
-    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock(weightRows));
+    setupDbSequence(makeAuthDbMock(authSuccessRow()), makeWeightDbMock(weightRows));
 
     const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
     expect(res.status).toBe(200);
@@ -316,7 +359,7 @@ describe('GET /api/intent/config — authenticated live path (DB configured)', (
     const weightRows = [
       { id: 'cfg-global', tenantId: null, weights: globalWeights, createdAt: now, isActive: true },
     ];
-    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock(weightRows));
+    setupDbSequence(makeAuthDbMock(authSuccessRow()), makeWeightDbMock(weightRows));
 
     const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
     expect(res.status).toBe(200);
@@ -330,7 +373,10 @@ describe('GET /api/intent/config — authenticated live path (DB configured)', (
 
   it('FAIL-1: returns 500 (data_source: error) when DB throws during weight fetch (Rule K.2)', async () => {
     // Auth succeeds; weight DB throws (configured-but-failed)
-    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMockThrowing(new Error('DB timeout')));
+    setupDbSequence(
+      makeAuthDbMock(authSuccessRow()),
+      makeWeightDbMockThrowing(new Error('DB timeout')),
+    );
 
     const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
     // MUST be 500 — never silently return mock when configured DB fails (Rule K.2)
@@ -353,14 +399,14 @@ describe('GET /api/intent/config — authenticated live path (DB configured)', (
   });
 
   it('CORS-1: returns Access-Control-Allow-Origin: * on authenticated 200', async () => {
-    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock([]));
+    setupDbSequence(makeAuthDbMock(authSuccessRow()), makeWeightDbMock([]));
 
     const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
   });
 
   it('CACHE-1: returns Cache-Control: public, max-age=300 on authenticated response', async () => {
-    setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock([]));
+    setupDbSequence(makeAuthDbMock(authSuccessRow()), makeWeightDbMock([]));
 
     const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
     expect(res.headers.get('Cache-Control')).toContain('max-age=300');
@@ -396,7 +442,7 @@ describe('GET /api/intent/config — authenticated live path (DB configured)', (
         createdAt: new Date('2026-06-13T10:00:00.000Z'),
         isActive: true,
       };
-      setupDbSequence(makeDbMock(authSuccessRow()), makeDbMock([weightRow]));
+      setupDbSequence(makeAuthDbMock(authSuccessRow()), makeWeightDbMock([weightRow]));
 
       const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
       expect(res.status).toBe(200);
@@ -412,6 +458,52 @@ describe('GET /api/intent/config — authenticated live path (DB configured)', (
       expect(body.data_source).toBe('live');
       expect(body.is_tenant_specific).toBe(true);
       expect(body.weights.behavioral_damping).toBe(0.22);
+    },
+  );
+
+  it(
+    'ORD-1: ORDER BY newest-active-wins — GET returns newer of two same-scope active rows ' +
+      '(FOLLOW-301 LG-3 determinism fix)',
+    async () => {
+      // If the unique index is transiently breached (e.g. race), the route must
+      // serve the NEWEST active row deterministically (newest created_at wins).
+      // The weight query uses ORDER BY created_at DESC + LIMIT 2, so the first
+      // row in the result set is the newest.
+      //
+      // This test confirms the route's .find() logic (tenantRow ?? globalRow)
+      // correctly prefers the tenant-specific row, which under ORDER BY DESC is
+      // the one returned first by the DB when two same-scope rows exist.
+      const olderWeights = { behavioral_damping: 0.1 };
+      const newerWeights = { behavioral_damping: 0.9 };
+      const olderRow = {
+        id: 'cfg-old',
+        tenantId: TENANT_ID,
+        weights: olderWeights,
+        createdAt: new Date('2026-06-12T00:00:00.000Z'), // older
+        isActive: true,
+      };
+      const newerRow = {
+        id: 'cfg-new',
+        tenantId: TENANT_ID,
+        weights: newerWeights,
+        createdAt: new Date('2026-06-13T00:00:00.000Z'), // newer — returned first by ORDER BY DESC
+        isActive: true,
+      };
+      // DB returns [newerRow, olderRow] because ORDER BY created_at DESC.
+      setupDbSequence(makeAuthDbMock(authSuccessRow()), makeWeightDbMock([newerRow, olderRow]));
+
+      const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
+      expect(res.status).toBe(200);
+      const body = await parseBody<{
+        data_source: string;
+        weights: { behavioral_damping?: number };
+        effective_at: string;
+      }>(res);
+
+      // Must serve the NEWER row (0.9), not the older one (0.1).
+      expect(body.data_source).toBe('live');
+      expect(body.weights.behavioral_damping).toBe(0.9);
+      expect(body.effective_at).toBe('2026-06-13T00:00:00.000Z');
     },
   );
 });

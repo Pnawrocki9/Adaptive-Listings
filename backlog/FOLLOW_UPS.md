@@ -7764,7 +7764,8 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   - [ ] AC7 — prettier + control-plane vitest green; coordinated with FOLLOW-268-sdk on the
         deterministic-winner contract.
 - **depends_on:** none (BLOCKS/SHAPES FOLLOW-268-sdk; route-test legs may fold into FOLLOW-297).
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+- **promoted_as:** backend-engineer/FOLLOW-301-one-active-invariant (PR targeting main, 2026-06-13)
 
 ---
 

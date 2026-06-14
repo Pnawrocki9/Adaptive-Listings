@@ -4467,11 +4467,14 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     K.3.6 frontend — Live Session Monitor + Session History + Weight Editor + Export Dashboard (4
     admin UI surfaces) + Master Design §K.3.6 update
   agent: backend-engineer
-  status: BLOCKED
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-06-14T12:00:00Z'
   priority: P2
   estimated_hours: 10
   depends_on: [FOLLOW-266, FOLLOW-267, FOLLOW-268]
   spec: backlog/FOLLOW_UPS.md (FOLLOW-269 stub)
+  branch: backend-engineer/FOLLOW-269-k36-tracer-ui
   notes: |
     /admin/tenants/[id]/tracer (K.3.6.1 — SSE live monitor, probability bar chart, chat gate stub),
     /admin/tenants/[id]/tracer/history (K.3.6.2 — filters, replay, CSV/JSONL export),
@@ -4479,7 +4482,8 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     /admin/tenants/[id]/tracer/export (K.3.6.4 — export dashboard).
     Master Design §K.3.6 section update + Snapshot.1 K row update.
     POST-MERGE NOTE: PM must ask CEO for exact DPIA/client-notification scope for chat logging (D-2).
-    BLOCKED on FOLLOW-268 (Ticket C — SDK weight-fetch, itself blocked on FOLLOW-299 + FOLLOW-301).
+    All depends_on DONE: FOLLOW-266 (DONE PR #280), FOLLOW-267 (DONE PR #283),
+    FOLLOW-268-sdk (DONE PR #290). Unblocked 2026-06-14. Delegated to backend-engineer.
 
 - id: FOLLOW-286
   title: >
@@ -4847,41 +4851,36 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     (auto-apply in deploy workflow OR explicit operator checklist gate) — prevention follow-up for
     the 14-migration prod drift found on 2026-06-14 (RETRO-076 OG-1 / ESC-022)
   agent: devops-engineer
-  status: BACKLOG
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: []
   source_retro: RETRO-076 (§4a OG-1; §5d); ESC-022; FOLLOW-307 AC3
   spec: backlog/FOLLOW_UPS.md (FOLLOW-308 stub)
+  pr: '297'
+  merge_commit: 64ac12c
+  completed_at: '2026-06-14T12:40:49Z'
   notes: |
-    Root cause (RETRO-076 OG-1): no GitHub workflow auto-applies Postgres migrations — only
-    ClickHouse has an auto-apply step in ci.yml:315. The Drizzle migrator is operator-driven
-    (`pnpm db:migrate`), so every merged Postgres migration creates a silent merge-to-prod gap
-    until a human manually runs it. This was concretely realized on 2026-06-14 when prod was
-    found to be 14 migrations behind (2026-05-28 → 2026-06-14, ~2.5 weeks), including
-    compliance migrations (conversion_labels 0019/0020, dsr_durable_lead_id 0024).
-    Choose ONE mechanism and implement it:
-    Option A (preferred): add a `db:migrate` step to a deploy workflow (e.g. a new
-      post-deploy-migrate.yml, or extend post-migrate-seed.yml), gated on
-      DATABASE_URL_DIRECT / Doppler, with soft-skip-when-token-absent matching
-      post-migrate-seed.yml pattern. Mirrors how ClickHouse auto-applies on push-to-main.
-    Option B: document an explicit operator deploy-checklist item "run pnpm db:migrate after
-      merging any Postgres migration" in packages/db/README.md:169-177 AND enforce it with a
-      CI gate that compares the repo's drizzle journal entry count vs a known-applied count
-      (stored in a config file), failing/warning when they diverge.
-    Either option must prevent future compliance-migration drift observable only at feature-use
-    time. Document the chosen mechanism in docs/ops/PILOT_RUNBOOK.md and packages/db/README.md.
+    DONE — Option A implemented. PR #297 (commit 64ac12c) merged 2026-06-14.
+    .github/workflows/db-migrate.yml added: triggers on push to main when
+    packages/db/migrations/** or packages/db/scripts/migrate.ts change.
+    Applies staging-first (doppler run --config stg), then prod (--config prd) gated on
+    staging success. Concurrency guard prevents races. Fail-loud on non-zero exit.
+    Soft-skip ONLY when DOPPLER_TOKEN_STG / DOPPLER_TOKEN_PRD absent (ESC-023 filed).
+    AC1 DONE: workflow implemented. AC2 DONE: cross-referenced in docs.
+    AC3 OPEN: awaiting ESC-023 secret provisioning (Piotr operator action) to activate.
 ```
 
 ## Currently in flight
 
-**Nothing actively in flight as of 2026-06-14T10:00Z.** K.3.6 D-1 "immediate weights" is
-PRODUCTION-LIVE as of 2026-06-14 (FOLLOW-307 DONE — all 14 pending prod migrations applied, seed row
-verified). FOLLOW-293 (live smoke) now unblocked — ready to delegate to qa-engineer at next sprint
-planning. FOLLOW-269 (frontend UI) BLOCKED on FOLLOW-268-sdk (now DONE) — ready to delegate at next
-sprint planning. FOLLOW-308 (P1 devops — standing migration mechanism) is the immediate prevention
-priority. FOLLOW-304 (P2) and FOLLOW-306 (P3) are non-blocking backlog. ESC-022 OPEN — requires
-human compliance sign-off on 2.5-week migration gap.
+**1 ticket IN_PROGRESS as of 2026-06-14T12:00Z.** FOLLOW-269 (K.3.6 frontend UI) delegated to
+backend-engineer. All K.3.6 D-1 code dependencies DONE (FOLLOW-266/267/268). FOLLOW-308 DONE (PR
+#297 merged, Option A auto-apply workflow; AC3 pending ESC-023 secret provisioning — operator
+action). FOLLOW-307 DONE (prod migrations applied 2026-06-14). FOLLOW-293 (live smoke) BLOCKED on
+FOLLOW-269 (frontend must merge before end-to-end smoke). FOLLOW-304/306 non-blocking backlog.
+ESC-022 item (2) awaiting CEO decision. ESC-023 awaiting Piotr to provision DOPPLER_TOKEN_STG/PRD.
+Pending retro spawns: RETRO-062 (FOLLOW-276), RETRO-063 (FOLLOW-278), RETRO-064 (FOLLOW-266 Ph1),
+RETRO-067 (FOLLOW-266 Ph3), RETRO-068 (FOLLOW-286), RETRO-069 (FOLLOW-287/288) — 6 retros queued.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

@@ -1095,6 +1095,80 @@ grep -rn "clickhouse" .github/workflows/
 
 ---
 
+## Rule X — Every SDK→control-plane fetch site MUST build its URL through the shared `buildEndpoint(decisionApiUrl, path)` helper, and at least one test MUST assert the resolved URL against the REAL production install-snippet base (`${CONTROL_PLANE_URL}/api`), never a hand-picked bare-host fixture
+
+**Pattern:** An SDK fetch consumer constructs its request URL by RE-DERIVING the `decisionApiUrl`
+base-URL FORM inline (`${decisionApiUrl}/api/<path>`, `${decisionApiUrl}/<path>`, etc.) and gets the
+form wrong relative to the value the SOLE production install-snippet producer actually emits. The
+shipped install snippet (`buildSnippet` in `DetectionPreview.tsx`) emits
+`data-decision-url="${CONTROL_PLANE_URL}/api"` = `https://admin.estalara.com/api` — i.e. the base
+ALREADY carries `/api`. A consumer that prepends `/api` again produces a double-`/api` URL
+(`…/api/api/<path>`) that 404s in production; a consumer that assumes a bare host omits the `/api` a
+different snippet expects. CI stays green because every test fabricates a BARE-HOST fixture
+(`https://admin.estalara.com`) instead of the real `host + /api` snippet string — so the suite
+exercises a base the production producer never emits, and the prod 404 is invisible. This is
+DISTINCT from Rule L (which covers a MISSING `data-*` attribute the snippet never emits): here the
+attribute IS present and IS read — its base-URL FORM is mis-parsed. The fix is always to centralize
+URL construction in one helper with one documented base-URL convention, plus a test asserting the
+final URL against the real snippet base.
+
+**Evidence (≥2 retros — the K.3.6 SDK-fetch wave):**
+
+- **RETRO-074 / FOLLOW-268-sdk / PR #290 (§4b CB-1, §4e)** — `fetchIntentWeights` built
+  `${decisionApiUrl}/api/intent/config` against the snippet base `https://admin.estalara.com/api` →
+  `…/api/api/intent/config` → 404 → SDK silently used internal defaults; server intent weights NEVER
+  applied for any `buildSnippet`-onboarded tenant. Traced and named; recorded count 1 on the
+  base-URL-FORM axis with an EXPLICIT promote-on-confirmation condition ("if a SECOND fetch site
+  ships a base-URL-form mismatch, or the quiz-config sibling is confirmed independent, promote a
+  Rule requiring a shared `buildEndpoint` + a prod-snippet-base test"). (count 1)
+- **RETRO-075 / FOLLOW-305 / PR #291 (§4b CB-1/CB-2, §6)** — the fix confirmed the mismatch was NOT
+  one inherited bug but FOUR independent pre-existing sites each having re-derived the convention
+  wrong (`fetchIntentWeights` → `/api/intent/config`, `fetchQuizConfig` → `/api/quiz/public-config`,
+  `deriveFeedbackUrl` → `/api/adapt/feedback`, `deriveQuizCompletionUrl` → `/api/quiz/completion`,
+  all formerly double-`/api`). Every one was masked by a bare-host test fixture. (count 2 —
+  RETRO-074's promote condition met) — threshold met; promoted at RETRO-075. The remedy that landed
+  IS this rule: the `buildEndpoint(decisionApiUrl, path)` helper
+  (`packages/sdk/src/core/endpoint.ts`)
+  - TG-1 prod-URL-form tests asserting `…/api/intent/config` (single `/api`) against the
+    `https://admin.estalara.com/api` snippet base.
+
+**Rule:**
+
+- Every SDK call that builds a URL from `config.decisionApiUrl` (or a value derived from it —
+  `feedbackUrl`/`quizCompletionUrl` derivations included) MUST construct it via the shared
+  `buildEndpoint(decisionApiUrl, path)` helper. NO fetch site may inline `${decisionApiUrl}/…`
+  template-literal concatenation — that re-derives the convention and is exactly what drifted four
+  times.
+- The `decisionApiUrl = host + /api` convention is documented in ONE place (the helper's module
+  docstring) and the helper appends ONLY the route-specific path. A new endpoint adds a `path`,
+  never a base-URL form.
+- At least one test per fetch site MUST drive the function with the REAL production snippet base
+  (`${CONTROL_PLANE_URL}/api` = `https://admin.estalara.com/api`, the literal `buildSnippet` emits)
+  and assert the EXACT resolved URL (single `/api`, no `/api/api`). A bare-host fixture
+  (`https://admin.estalara.com`) is NOT acceptable as the sole base — it is the form that masked all
+  four bugs. Such a prod-form test MUST be one that would FAIL if the `/api` were doubled.
+- A retro for any SDK PR that adds or changes a `decisionApiUrl` fetch site MUST re-run the
+  completeness grep from the SYMBOL (every `decisionApiUrl` URL construction), not the ticket's
+  enumeration, and confirm each site routes through `buildEndpoint` before recording the wire
+  closed.
+
+**Verification:**
+
+```bash
+# (1) Every decisionApiUrl URL construction must go through buildEndpoint — flag any inline join:
+grep -rn 'decisionApiUrl' packages/sdk/src --include='*.ts' | grep -v '__tests__' \
+  | grep -E '\$\{[^}]*decisionApiUrl[^}]*\}/' | grep -v 'buildEndpoint'   # → expect ZERO hits
+# (2) Confirm buildEndpoint has a non-test importer at every fetch site:
+grep -rln 'buildEndpoint' packages/sdk/src --include='*.ts' | grep -v 'endpoint.ts'
+# (3) At least one test must assert against the production snippet base (host + /api), not bare host:
+grep -rn "admin.estalara.com/api'" packages/sdk/src/__tests__ | grep -iE 'toBe|expected|EXPECTED_URL'
+# (4) The producer the tests must match — verify the snippet still emits host + /api:
+grep -rn 'data-decision-url' apps/control-plane/src --include='*.tsx' | grep -v '\.test\.'
+```
+
+---
+
+<!-- Rule X added 2026-06-14 — RETRO-075 §6 (RETRO-074 §4b CB-1 base-URL-FORM mismatch, count 1, with an explicit promote-on-confirmation condition + RETRO-075 §4b CB-1 confirming FOUR independent double-/api fetch sites fixed via buildEndpoint, count 2; threshold met). DISTINCT axis from Rule L (missing-attribute) — RETRO-074 §6 explicitly kept them as separate roots/sibling rules for sibling axes of the same install-snippet→SDK-consumer meta-shape. The remedy (buildEndpoint helper + prod-snippet-base tests) shipped in PR #291. Filed FOLLOW-306 to bring the LAST fetch site (adapt-description.ts, the un-migrated 6th) under the helper + add a dedicated endpoint.test.ts. Next free Rule letter was X (Rule V intentionally skipped per the Rule W note). -->
 <!-- Rule W added 2026-06-13 — RETRO-060 §6 (FOLLOW-286/PR #279 RENAME+ADD-COLUMN-NOT-NULL apply-time failures + FOLLOW-287/PR #281 MODIFY COLUMN error 524 on ORDER BY key column, both merged green, count 2 on the intent_events sort-key DDL; threshold met). Filed FOLLOW-291 to build the pre-merge guard + ephemeral-apply gate, FOLLOW-290 to rebuild intent_events with the correct ORDER BY (tenant_id, session_id, event_at). Note: Rule V intentionally not used (skipped from the prior sequence); next free letter was W. -->
 <!-- Rule U added 2026-06-11 — RETRO-052 §6 (RETRO-049 §4a LG-2/§5d + RETRO-050 §4a LG-1/§5d + RETRO-051 §4a LG-2/§5d, count 3 on tenants.quiz_config; re-confirmed RETRO-053 §5d + RETRO-052 §4a LG-1, threshold long exceeded). The decay recurred key-by-key because each fix annotated/partial-removed without a blob-level policy; this rule converts the recurring per-key fix into a policy. Filed FOLLOW-271 to apply it to quizConfig.enabled. -->
 <!-- Rule T added 2026-06-10 — RETRO-049 §6 (RETRO-047 §4b CB-1 + RETRO-049 §4b CB-1, Vitest v2 vi.fn type-arg → CI-only typecheck escape, threshold met). Process rule (no shipped defect); does NOT mandate hook reconfiguration (devops escalation). -->

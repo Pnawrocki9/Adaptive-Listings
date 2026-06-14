@@ -1016,7 +1016,7 @@ confirmed.
 
 ---
 
-## OPEN — ESC-022: Prod Supabase was 14 migrations behind (2026-05-28 → 2026-06-14) including compliance migrations — human sign-off needed on data integrity + standing mechanism decision
+## PARTIALLY-RESOLVED (item-2-pending) — ESC-022: Prod Supabase was 14 migrations behind (2026-05-28 → 2026-06-14) including compliance migrations — item (1) compliance integrity SIGNED OFF; item (2) standing mechanism OPEN
 
 **Filed by:** pm-orchestrator **Date:** 2026-06-14T10:00:00Z **Affects:** prod Supabase (project
 yhmivuqeqkmzpxpyrsvc, "Adaptive-Listings", eu-west-3), FOLLOW-307, FOLLOW-308, compliance posture
@@ -1061,27 +1061,65 @@ fix.
 
 **Required human action (Piotr / Rafał — compliance + operations):**
 
-1. **Compliance data-integrity check:** Confirm whether any compliance-dependent features were
-   exercised in prod during the 2.5-week gap (2026-05-28 → 2026-06-14):
-   - Were any DSR delete requests processed via the `dsr_durable_lead_id` path? If so, were those
-     requests correctly executed despite the missing column, or did they silently fail/skip?
-   - Were any conversion labels written via the `conversion_labels` table during that window?
-   - Were any quiz completions written? (table was absent — writes would have errored)
-   - Answer: since prod is pre-pilot with no real user traffic confirmed, the likely answer is "no
-     meaningful data was affected." CEO/CTO should confirm this is the case.
+1. ~~**Compliance data-integrity check**~~ — **SIGNED OFF 2026-06-14 (see item-1 resolution
+   below).**
 
-2. **Standing mechanism decision:** Approve one of the two options in FOLLOW-308:
+2. **Standing mechanism decision (STILL OPEN):** Approve one of the two options in FOLLOW-308:
    - Option A: Add an auto-apply `db:migrate` step to the deploy workflow (mirrors ClickHouse).
    - Option B: Add an explicit operator checklist gate with a CI divergence check. This decision
      blocks FOLLOW-308 (P1) from proceeding to implementation.
 
-3. **Once compliance check confirmed and mechanism decided:** Mark ESC-022 RESOLVED and unblock
-   FOLLOW-308.
-
 **This escalation does NOT block the PM pipeline** for other tickets (FOLLOW-293, FOLLOW-269, etc.)
-but DOES block FOLLOW-308 AC3 closure.
+but DOES block FOLLOW-308 AC3 closure until item (2) is decided.
 
-**Resolution:** (open — awaiting human action)
+---
+
+### Item (1) — RESOLVED 2026-06-14 — Compliance data-integrity sign-off
+
+**Question closed:** Did the 14-migration prod drift (prod stuck at 2026-05-28, migrations 0017→0030
+absent) cause any data-integrity issue from the compliance migrations being absent in prod —
+specifically 0019/0020 conversion_labels and 0024 dsr_durable_lead_id?
+
+**Verdict: NO data-integrity issue. The gap was benign. No remediation needed.**
+
+**Evidence (verified against prod project yhmivuqeqkmzpxpyrsvc on 2026-06-14):**
+
+1. The three compliance migrations are PURELY ADDITIVE — no transform/backfill/drop:
+   - 0019 `CREATE TABLE IF NOT EXISTS conversion_labels` (new table)
+   - 0020 `ADD CONSTRAINT … UNIQUE (tenant_id, prediction_id)` on a table the migration itself notes
+     "has never been seeded in any environment"
+   - 0024 `ADD COLUMN IF NOT EXISTS durable_lead_id text` (nullable, no backfill) So applying them
+     late cannot corrupt pre-existing data.
+
+2. All 14 migrations applied CLEANLY — runner reported "Migrations applied: 14 … 31 now applied, 0
+   still pending", exit 0; prod `__drizzle_migrations` went 17→31. The UNIQUE constraint (0020)
+   applying cleanly is positive proof no conflicting rows existed.
+
+3. Prod data state verified EMPTY / pre-pilot: tenants=1, conversion_labels=0, dsr_verifications=0
+   (with durable_lead_id non-null=0), intent_sessions=0, quiz_completions=0, engagement_scores=0.
+
+4. The two specific compliance risks could not have materialized:
+   - DSR under-deletion (the FOLLOW-184 / 0024 concern): requires DSR requests AND CRM-sourced
+     conversion labels — prod has 0 of each. Nothing to erase; nothing erased incompletely.
+   - Conversion-label corpus duplication/loss (0019/0020 concern): conversion_labels=0 — no labels
+     written, none duplicated or lost.
+   - The prod DB had auto-paused from inactivity, consistent with no feedback/CRM/DSR traffic during
+     the window.
+
+**Signed off by:** Piotr (CEO) via Claude Code orchestrator, 2026-06-14, on the above evidence.
+
+---
+
+### Item (2) — REMAINS OPEN
+
+FOLLOW-308 (P1, devops): decide + implement the standing mechanism so prod Postgres migrations don't
+silently drift again (auto-apply on deploy OR CI divergence gate comparing prod
+`__drizzle_migrations` count vs the journal). This is the only remaining ESC-022 thread.
+
+**Resolution:** PARTIALLY-RESOLVED. Item (1) closed 2026-06-14 by Piotr (CEO) sign-off — compliance
+integrity confirmed benign (pre-pilot, zero traffic, purely-additive migrations applied cleanly).
+Item (2) — standing mechanism — remains OPEN pending Piotr's Option A/B decision to unblock
+FOLLOW-308 implementation.
 
 ---
 

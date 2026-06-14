@@ -14,19 +14,27 @@
   (quiz_config strips)
 - K.3.6: 0028 (intent_sessions), 0029 (intent_weight_configs), 0030 (seed)
 
-**STATUS: RESOLVED (apply).** All 14 migrations applied cleanly via
-`doppler run --config prd -- pnpm db:migrate` on 2026-06-14T09:26:45Z. Prod
+**STATUS: RESOLVED (apply). COMPLIANCE GAP SIGNED OFF 2026-06-14 (Piotr/CEO).** All 14 migrations
+applied cleanly via `doppler run --config prd -- pnpm db:migrate` on 2026-06-14T09:26:45Z. Prod
 `drizzle.__drizzle_migrations` now = 31 (full repo count). Seed row verified:
 `intent_weight_configs` id=3ecd053e-3d2e-4eed-a900-0a42ff8c3f9e, tenant_id=NULL, is_active=true,
 weights={}, created_at=2026-06-14T09:26:45Z. `GET /api/intent/config` now returns
 `data_source:'live'` for override-less tenants. Note: prod was AUTO-PAUSED (Supabase idle pause) and
 had to be resumed — confirms pre-pilot phase.
 
+**COMPLIANCE INTEGRITY VERDICT (ESC-022 item 1, signed off 2026-06-14):** NO data-integrity issue.
+Gap was benign. The three compliance migrations (0019/0020/0024) were purely additive; prod data
+state was verified EMPTY (conversion_labels=0, dsr_verifications=0, intent_sessions=0,
+quiz_completions=0, engagement_scores=0). Both DSR and conversion-label risks required real traffic
+that never arrived (prod was auto-paused, pre-pilot). All 14 migrations applied cleanly, including
+the UNIQUE constraint (0020) — positive proof of no conflicting rows.
+
 **ROOT CAUSE:** No auto-apply mechanism for Postgres migrations (RETRO-076 OG-1). Only ClickHouse
 has auto-apply (ci.yml:315). Drizzle `pnpm db:migrate` is operator-driven only.
 
-**PREVENTION:** FOLLOW-308 (P1 devops) tracks the standing-mechanism decision. ESC-022 (OPEN)
-requires human sign-off on compliance migration gap + mechanism choice.
+**PREVENTION:** FOLLOW-308 (P1 devops) tracks the standing-mechanism decision. ESC-022 item (2)
+remains OPEN — Piotr must choose Option A (auto-apply on deploy) or Option B (CI divergence gate) to
+unblock FOLLOW-308 implementation.
 
 ---
 
@@ -119,10 +127,10 @@ CONVENTIONS_PATCH.md.
 
 ## Open escalations (age in days as of 2026-06-14)
 
-| ESC     | Title                                                                        | Filed      | Age | Status                                                                  |
-| ------- | ---------------------------------------------------------------------------- | ---------- | --- | ----------------------------------------------------------------------- |
-| ESC-020 | Estalara-app DOM hooks committed but not deployed to production              | 2026-06-06 | 8d  | Non-blocking per CEO 2026-06-10; Rafal action deferred until local test |
-| ESC-022 | Prod Supabase was 14 migrations behind — compliance gap + standing mechanism | 2026-06-14 | 0d  | **OPEN — requires human sign-off (Piotr/Rafal); blocks FOLLOW-308 AC3** |
+| ESC     | Title                                                                        | Filed      | Age | Status                                                                                                                                                                |
+| ------- | ---------------------------------------------------------------------------- | ---------- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ESC-020 | Estalara-app DOM hooks committed but not deployed to production              | 2026-06-06 | 8d  | Non-blocking per CEO 2026-06-10; Rafal action deferred until local test                                                                                               |
+| ESC-022 | Prod Supabase was 14 migrations behind — compliance gap + standing mechanism | 2026-06-14 | 0d  | **PARTIALLY-RESOLVED** — item (1) compliance integrity SIGNED OFF 2026-06-14 by Piotr (CEO); item (2) OPEN: Option A/B mechanism decision for FOLLOW-308 still needed |
 
 All ESC-001 through ESC-021 RESOLVED (ESC-021 resolved 2026-06-12 via FOLLOW-288 / PR #282).
 
@@ -136,9 +144,10 @@ counter: 0/3.
 - K.3.6 D-1 is PRODUCTION-LIVE as of 2026-06-14. The full chain (snippet → SDK init →
   fetchIntentWeights → GET /api/intent/config → weights applied to processSignal()) is wired and the
   seed row exists in prod. FOLLOW-293 (live-network smoke) is the final verification step.
-- ESC-022 is the blocking human-decision item this session. Compliance gap from 14-migration drift
-  must be confirmed benign (pre-pilot, no real traffic) and standing mechanism chosen (Option A or B
-  per FOLLOW-308). Do not close FOLLOW-308 until ESC-022 is resolved.
+- ESC-022 item (1) SIGNED OFF 2026-06-14 by Piotr (CEO): compliance data-integrity gap confirmed
+  benign — pre-pilot, zero traffic, purely-additive migrations, prod DB auto-paused. No remediation
+  needed. ESC-022 item (2) OPEN: Piotr must choose Option A (auto-apply on deploy) or Option B (CI
+  divergence gate) to unblock FOLLOW-308 implementation.
 - FOLLOW-293 (closure gate / live smoke) can now be delegated to qa-engineer once sprint capacity
   permits. It was previously blocked on FOLLOW-307 (now DONE).
 - FOLLOW-269 (frontend UI) is now unblocked by FOLLOW-268 (Ticket C — DONE). Ready to delegate to

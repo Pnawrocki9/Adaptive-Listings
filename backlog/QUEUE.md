@@ -1,20 +1,23 @@
 # Backlog Queue
 
-**Updated 2026-06-14T10:00Z. K.3.6 D-1 "immediate weights" is PRODUCTION-LIVE as of 2026-06-14.
-FOLLOW-307 DONE: migration 0030 applied to prod Supabase (project yhmivuqeqkmzpxpyrsvc, eu-west-3)
-via `doppler run --config prd -- pnpm db:migrate` on 2026-06-14. Seed row verified:
-intent_weight_configs id=3ecd053e-3d2e-4eed-a900-0a42ff8c3f9e, tenant_id=NULL, is_active=true,
-weights={}, created_at=2026-06-14T09:26:45Z. GET /api/intent/config now returns data_source:'live'
-for override-less tenants. DRIFT FINDING (captured in ESC-022): prod was 14 migrations behind at
-apply time — drizzle.**drizzle_migrations had only 17 entries (last applied 2026-05-28 ~migration
-0016); migrations 0017→0030 had NEVER been applied to prod, including compliance migrations
-0019/0020 (conversion_labels), 0024 (dsr_durable_lead_id), 0021 (engagement_scores), 0022
-(quiz_completions), 0025 (tenants_quiz_enabled), 0026/0027 (quiz_config strips), 0028
-(intent_sessions), 0029 (intent_weight_configs), 0030 (seed). All 14 applied cleanly; prod
-drizzle.**drizzle_migrations now = 31 (full repo count). Root cause: no auto-apply mechanism
+**Updated 2026-06-14T11:00Z (partial-resolution pass). K.3.6 D-1 "immediate weights" is
+PRODUCTION-LIVE as of 2026-06-14. FOLLOW-307 DONE: migration 0030 applied to prod Supabase (project
+yhmivuqeqkmzpxpyrsvc, eu-west-3) via `doppler run --config prd -- pnpm db:migrate` on 2026-06-14.
+Seed row verified: intent_weight_configs id=3ecd053e-3d2e-4eed-a900-0a42ff8c3f9e, tenant_id=NULL,
+is_active=true, weights={}, created_at=2026-06-14T09:26:45Z. GET /api/intent/config now returns
+data_source:'live' for override-less tenants. DRIFT FINDING (captured in ESC-022): prod was 14
+migrations behind at apply time — drizzle.**drizzle_migrations had only 17 entries (last applied
+2026-05-28 ~migration 0016); migrations 0017→0030 had NEVER been applied to prod, including
+compliance migrations 0019/0020 (conversion_labels), 0024 (dsr_durable_lead_id), 0021
+(engagement_scores), 0022 (quiz_completions), 0025 (tenants_quiz_enabled), 0026/0027 (quiz_config
+strips), 0028 (intent_sessions), 0029 (intent_weight_configs), 0030 (seed). All 14 applied cleanly;
+prod drizzle.**drizzle_migrations now = 31 (full repo count). Root cause: no auto-apply mechanism
 (RETRO-076 OG-1). Note: prod project was AUTO-PAUSED (Supabase idle pause) and had to be resumed.
-FOLLOW-308 (P1 devops) filed for standing mechanism decision. ESC-022 filed for human sign-off on
-compliance migration gap. ADR-0012 D-1 WAVE 3 + WAVE 4 COMPLETE (8 PRs total):
+FOLLOW-308 (P1 devops) filed for standing mechanism decision. ESC-022 PARTIALLY-RESOLVED: item (1)
+compliance integrity SIGNED OFF 2026-06-14 by Piotr (CEO) — gap confirmed benign (pre-pilot, zero
+traffic, purely-additive migrations, prod auto-paused; no DSR requests, conversion labels, or quiz
+completions written during the window); item (2) OPEN — Option A/B standing mechanism decision still
+needed to unblock FOLLOW-308. ADR-0012 D-1 WAVE 3 + WAVE 4 COMPLETE (8 PRs total):
 FOLLOW-267/294/268-write/297/299/301/268-sdk/305 all DONE. FOLLOW-266 Phase 2 seed DONE (PR #293).
 FOLLOW-302 DONE. RETRO-073/074/075/076 complete. CONVENTIONS_PATCH.md Rule X promoted. FOLLOW-293
 (closure gate) remains OPEN for live-network smoke (now unblocked by FOLLOW-307 completion).
@@ -195,8 +198,9 @@ CRM docs, micro-poll Wave 2 | 17 | 16 | 0 | 1 | 0 | | Wave A | — | Bug fix clu
 (FOLLOW-266/286/287/288/267/294/268-write/297/299/301/268-sdk/305 all DONE) + D-1 seed (FOLLOW-266
 Ph2 seed PR #293 DONE) + FOLLOW-302 DONE + FOLLOW-307 DONE (prod apply 2026-06-14, 14-migration
 catch-up, PRODUCTION-LIVE) — K.3.6 D-1 PRODUCTION-LIVE. FOLLOW-308 (P1 devops, standing mechanism)
-filed. ADR-0012 backlog (FOLLOW-269/293 BLOCKED, FOLLOW-295/296/298/300/303/304/306/308 BACKLOG) |
-27 | 19 | 0 | 0 | 2 |
+filed; ESC-022 item (1) SIGNED OFF 2026-06-14 (compliance gap benign; item (2) Option A/B decision
+pending). ADR-0012 backlog (FOLLOW-269/293 BLOCKED, FOLLOW-295/296/298/300/303/304/306/308 BACKLOG)
+| 27 | 19 | 0 | 0 | 2 |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**

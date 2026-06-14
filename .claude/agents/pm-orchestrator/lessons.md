@@ -594,3 +594,18 @@ RETRO-076; would have been invisible if only checking git/main state. **A delega
 I'd add:** When closing a ticket whose primary artifact is a Postgres seed/DDL migration, always
 verify the apply mechanism (auto-workflow or operator checklist) before recording the data-wire as
 closed — a correct merged SQL is NOT a live data producer until applied to a real environment.
+
+---
+
+**Date / ticket:** 2026-06-14 — FOLLOW-307 DONE (prod apply confirmed) + ESC-022 filed **Delegation
+row used:** None (operational bookkeeping — no worker delegated; FOLLOW-307 was executed by
+operator, not an agent) **What validation caught (or missed):** The prod apply revealed that prod
+was 14 migrations behind (2026-05-28 → 2026-06-14) — NEVER surfaced in any CI gate, PR, or prior PM
+session. The compliance migrations (0019/0020 conversion_labels, 0024 dsr_durable_lead_id) were
+silently absent from prod for 2.5 weeks. The drift was only discovered at apply time. Also: prod
+Supabase was AUTO-PAUSED (idle), confirming there has been no steady traffic and the pre-pilot phase
+assumption is valid. FOLLOW-308 (standing mechanism) and ESC-022 (compliance sign-off) properly
+split the "apply done" concern from the "prevention needed" concern. **A delegation/validation rule
+I'd add:** After any prod DB migration apply, always record a drift count (journal entries at apply
+time vs. repo count) in the ticket's completion notes — this makes "apply lag" visible at the sprint
+review level and triggers a prevention discussion before the next migration merges without applying.

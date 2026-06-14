@@ -1013,3 +1013,72 @@ complete and CEO signs off. **This escalation does NOT block the PM pipeline for
 FOLLOW-191 tracks local validation; once CEO confirms local testing passes, Rafał will be instructed
 on the production deployment steps listed above. ESC-020 remains OPEN until the production deploy is
 confirmed.
+
+---
+
+## OPEN — ESC-022: Prod Supabase was 14 migrations behind (2026-05-28 → 2026-06-14) including compliance migrations — human sign-off needed on data integrity + standing mechanism decision
+
+**Filed by:** pm-orchestrator **Date:** 2026-06-14T10:00:00Z **Affects:** prod Supabase (project
+yhmivuqeqkmzpxpyrsvc, "Adaptive-Listings", eu-west-3), FOLLOW-307, FOLLOW-308, compliance posture
+(conversion_labels, dsr_durable_lead_id) **Type:** compliance / operational
+
+**Description:**
+
+On 2026-06-14, the K.3.6 D-1 seed (migration 0030) was applied to prod Supabase via
+`doppler run --config prd -- pnpm db:migrate`. During apply it was discovered that prod was **14
+migrations behind** — `drizzle.__drizzle_migrations` had only 17 entries, last applied approximately
+2026-05-28 (migration ~0016), while the repo was at migration 0030. Migrations **0017 through 0030
+had NEVER been applied to prod**.
+
+The affected migrations include:
+
+- **0019, 0020** — `conversion_labels` table (CRM tracking, GDPR-related label data)
+- **0024** — `dsr_durable_lead_id` column (DSR / GDPR Art. 17 erasure tracking)
+- **0021** — `engagement_scores` table
+- **0022** — `quiz_completions` table
+- **0025** — `tenants_quiz_enabled` column
+- **0026, 0027** — quiz_config strip migrations
+- **0028** — `intent_sessions` table (K.3.6)
+- **0029** — `intent_weight_configs` table (K.3.6)
+- **0030** — global-default seed row (K.3.6)
+
+This means that for approximately **2.5 weeks** (2026-05-28 → 2026-06-14), features that depended on
+these schemas were silently non-functional in prod:
+
+- Conversion label writes would have failed (table did not exist)
+- DSR `dsr_durable_lead_id` column would have been absent from `leads` (DSR erasure tracking broken)
+- Quiz completion writes would have failed (table did not exist)
+- All K.3.6 intent tracer features were inert in prod (schemas absent)
+
+All 14 migrations applied cleanly on 2026-06-14. Prod `drizzle.__drizzle_migrations` is now at 31
+(full repo count). Root cause: no auto-apply mechanism (RETRO-076 OG-1) — Postgres migrations are
+operator-driven only, unlike ClickHouse which auto-applies in CI. Note: prod project was AUTO-PAUSED
+(Supabase idle pause) and had to be resumed before apply — confirming prod is not yet serving steady
+traffic (pre-pilot phase).
+
+**FOLLOW-307** (apply objective) is DONE. **FOLLOW-308** (standing mechanism) tracks the prevention
+fix.
+
+**Required human action (Piotr / Rafał — compliance + operations):**
+
+1. **Compliance data-integrity check:** Confirm whether any compliance-dependent features were
+   exercised in prod during the 2.5-week gap (2026-05-28 → 2026-06-14):
+   - Were any DSR delete requests processed via the `dsr_durable_lead_id` path? If so, were those
+     requests correctly executed despite the missing column, or did they silently fail/skip?
+   - Were any conversion labels written via the `conversion_labels` table during that window?
+   - Were any quiz completions written? (table was absent — writes would have errored)
+   - Answer: since prod is pre-pilot with no real user traffic confirmed, the likely answer is "no
+     meaningful data was affected." CEO/CTO should confirm this is the case.
+
+2. **Standing mechanism decision:** Approve one of the two options in FOLLOW-308:
+   - Option A: Add an auto-apply `db:migrate` step to the deploy workflow (mirrors ClickHouse).
+   - Option B: Add an explicit operator checklist gate with a CI divergence check. This decision
+     blocks FOLLOW-308 (P1) from proceeding to implementation.
+
+3. **Once compliance check confirmed and mechanism decided:** Mark ESC-022 RESOLVED and unblock
+   FOLLOW-308.
+
+**This escalation does NOT block the PM pipeline** for other tickets (FOLLOW-293, FOLLOW-269, etc.)
+but DOES block FOLLOW-308 AC3 closure.
+
+**Resolution:** (open — awaiting human action)

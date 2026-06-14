@@ -8204,6 +8204,97 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
+## FOLLOW-309 — Add GET /api/admin/intent/config + fix Weight Editor PUT path (RETRO-077 CB-1/LG-1)
+
+- **source_retro:** RETRO-077
+- **source_ticket:** FOLLOW-269 / PR #298
+- **recommended_sprint:** 17 (P0 — ships in PR #299)
+- **recommended_agent:** backend-engineer
+- **priority:** P0
+- **estimated_hours:** 3
+- **scope:** GET /api/admin/intent/config returned 405 (POST-only). Weight editor never received
+  json.id so configId was always null and the PUT save path was dead code. Fix: add GET handler
+  returning AdminIntentConfigResponse (id field always present), page reads json.id → setConfigId.
+- **ac:**
+  - [x] AC1 — GET handler returns AdminIntentConfigResponse with id, tenant_id, is_active, weights,
+        created_at. No-row: id=null, is_active=false. Active-row: id=uuid, is_active=true.
+  - [x] AC2 — Rule K.2: configured-but-thrown DB → 500 + Sentry, no mock fallback.
+  - [x] AC3 — GET rejects ?tenant_id= param with 400 (global-only per CEO decision 2026-06-14).
+  - [x] AC4 — Weight editor page: sets configId from json.id; PUT path reachable.
+  - [x] AC5 — Tests GET-1..GET-5 drive real route handler via AdminIntentConfigResponseSchema.parse.
+- **promoted_to_queue:** true (DONE, PR #299 2026-06-14)
+
+---
+
+## FOLLOW-310 — Fix SSE 401: remove getAdminToken()+?token= from EventSource URL (RETRO-077 CB-2)
+
+- **source_retro:** RETRO-077
+- **source_ticket:** FOLLOW-269 / PR #298
+- **recommended_sprint:** 17 (P0 — ships in PR #299)
+- **recommended_agent:** backend-engineer
+- **priority:** P0
+- **estimated_hours:** 1
+- **scope:** EventSource cannot send custom headers. Page passed ?token=<localStorage> in URL but
+  verifyTracerAdminAuth only reads Authorization header or sb-access-token cookie. Token URL param
+  silently ignored → 401 on every SSE connect. Fix: remove getAdminToken() and ?token= from URL
+  (page-only, per ADR-0013 §Decision 1). Browser sends sb-access-token cookie automatically.
+- **ac:**
+  - [x] AC1 — getAdminToken() removed from tracer/[id]/page.tsx.
+  - [x] AC2 — EventSource URL is ?tenant_id=X only (no ?token= param).
+  - [x] AC3 — fetchSessions() drops Authorization header (cookie-only for same-origin).
+  - [x] AC4 — Test COOKIE-1 in tracer-auth.test.ts: cookie + no Authorization → ok:true.
+  - [x] AC5 — Test T8 in tracer/[id]/page.test.tsx: EventSource URL contains tenant_id but not
+        token.
+- **promoted_to_queue:** true (DONE, PR #299 2026-06-14)
+
+---
+
+## FOLLOW-311 — Add per-tenant tracer nav links from tenants list page (RETRO-077 CB-3)
+
+- **source_retro:** RETRO-077
+- **source_ticket:** FOLLOW-269 / PR #298
+- **recommended_sprint:** 17 (P1 — ships in PR #299)
+- **recommended_agent:** backend-engineer
+- **priority:** P1
+- **estimated_hours:** 1
+- **scope:** /admin/tenants/[id]/tracer, …/history, …/export were nav-orphaned (reachable only by
+  hand-typing a URL with the tenant UUID). Fix: add "Live Monitor", "History", "Export" Link
+  elements per tenant row in /admin/tenants/page.tsx.
+- **ac:**
+  - [x] AC1 — "Live Monitor" links to /admin/tenants/<id>/tracer for each row.
+  - [x] AC2 — "History" links to /admin/tenants/<id>/tracer/history.
+  - [x] AC3 — "Export" links to /admin/tenants/<id>/tracer/export.
+  - [x] AC4 — tenants/page.test.tsx T2/T3/T4 assert link hrefs are correct.
+- **promoted_to_queue:** true (DONE, PR #299 2026-06-14)
+
+---
+
+## FOLLOW-312 — Fix CSV export to use fetch()+Accept:text/csv (RETRO-077 CB-4)
+
+- **source_retro:** RETRO-077
+- **source_ticket:** FOLLOW-269 / PR #298
+- **recommended_sprint:** 17 (P2 — ships in PR #299)
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** History page "Export CSV" used <a href download?\_accept=text/csv>. The export route
+  reads format from Accept header only — bare navigation cannot set headers, so CSV always returned
+  JSONL. Fix: convert to fetch()+Accept:text/csv (matching Export Dashboard pattern).
+- **ac:**
+  - [x] AC1 — "Export CSV" is a <button> calling fetch() with Accept:text/csv header.
+  - [x] AC2 — "Export JSONL" retains <a download> (no Accept header needed, route default is JSONL).
+  - [x] AC3 — Test T6: button element + fetch with Accept:text/csv + URL has no \_accept param.
+  - [x] AC4 — Test T7: JSONL element is <a> with download attribute.
+- **promoted_to_queue:** true (DONE, PR #299 2026-06-14)
+
+---
+
+<!-- next free FOLLOW number: 313 (312 = RETRO-077 CB-4 / PR #299: fix CSV export to use
+fetch()+Accept:text/csv in history page — bare <a href download?_accept=text/csv> cannot set
+Accept header so CSV always returned JSONL. 311 = RETRO-077 CB-3 / PR #299: add per-tenant
+tracer nav links from tenants list. 310 = RETRO-077 CB-2 / PR #299: fix SSE 401 by removing
+getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETRO-077 CB-1/LG-1
+/ PR #299: add GET /api/admin/intent/config + fix Weight Editor PUT path.) -->
 <!-- next free FOLLOW number: 309 (308 = RETRO-076 OG-1 / ESC-022 / FOLLOW-307 AC3: decide + implement standing Postgres migration auto-apply or checklist gate — the 14-migration prod drift (2026-06-14) is the concrete realization of RETRO-076 and proves the manual-only operator model is unsafe at the current merge velocity; devops-engineer P1 Sprint 17.) -->
 <!-- prior next free FOLLOW number: 308 (307 = RETRO-076 / PR #293 / FOLLOW-266 Phase 2 + FOLLOW-302: migration 0030 seeds the global-default intent_weight_configs row (tenant_id=NULL, is_active=true, weights={} Option A) so GET /api/intent/config flips mock→live for override-less tenants — the seed SQL is correct + idempotent (WHERE NOT EXISTS guard + 0029 partial-unique-index backstop) + tenant-override-safe (route.ts:260 tenantRow ?? globalRow) + no-skew ({} → SDK internal defaults, live-but-inert) and FOLLOW-302 is closed on BOTH the 0029:12 comment AND the schema docstring (signal_likelihoods). THE GAP IS OPERATIONAL: no GH workflow runs db:migrate, so 0030 only materializes a 'live' GET once an operator/Terraform applies it to prod Supabase — FOLLOW-307 confirms the apply + adds the data_source:'live' assertion to FOLLOW-293's live smoke + decides a standing auto-apply-or-checklist mechanism, P1. NOTE FOLLOW-302 CLOSED (do not re-file); FOLLOW-293 stays OPEN for the live network smoke; FOLLOW-304 GET-determinism UNCHANGED (the seed is index-protected, no breach); FOLLOW-306 unrelated.) -->
 <!-- prior next free FOLLOW number: 307 (306 = RETRO-075 / PR #291 / FOLLOW-305: bring the LAST decisionApiUrl fetch site fetchDescription (adapt-description.ts:227) under the buildEndpoint helper FOLLOW-305 introduced + add a dedicated endpoint.test.ts + fix the endpoint.ts:27-31 "Non-test consumers" docstring list that omits adapt-description.ts; NOT prod-blocking — /adapt/description is single-/api and resolves correctly today, this is centralization hygiene so no future edit can re-derive the host+/api convention wrong (Rule X compliance for the last of 6 fetch sites, Rule S sibling-completeness on the helper-adoption axis), P3. NOTE FOLLOW-305 itself FIXED all four double-/api sites + closed the RETRO-074 LG-1 archetype parity (TG-2) + the DG-1 docstrings — D-1 is NOW production-live end-to-end; do not re-file those. FOLLOW-293 stays OPEN for the LIVE network smoke ONLY (the unit-level prod-URL-form is now covered); FOLLOW-266 Phase 2 seed UNBLOCKED; FOLLOW-304 GET-determinism UNCHANGED — do not re-file any.) -->

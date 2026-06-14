@@ -4,35 +4,35 @@
  * K.3.6.3 — Weight Editor (global intent weight config)
  *
  * Consumes:
- *   GET  /api/admin/intent/config              (read current active config)
- *   PUT  /api/admin/intent/config/[id]         (update an existing row)
- *   POST /api/admin/intent/config              (create a new active row)
+ *   GET  /api/admin/intent/config              (ADR-0013 — read current active global config)
+ *   PUT  /api/admin/intent/config/[id]         (update an existing row — when id non-null)
+ *   POST /api/admin/intent/config              (create a new active row — when no active row)
+ *
+ * Auth: Supabase session cookie (sb-access-token) sent automatically for same-origin fetch.
+ * The admin middleware already gates /admin/* on a valid staff JWT cookie, so no explicit
+ * Bearer token is needed here (ADR-0013 §Decision 2).
+ *
+ * Scope: global-only in v1 (CEO decision 2026-06-14). No per-tenant selector. The GET
+ * route returns 400 if ?tenant_id= is supplied.
  *
  * Simulation: stub only (D-3 deferred — FOLLOW-282).
  *
- * Rule K.2: data_source:'error' or non-2xx → visible error banner, never silent.
+ * Rule K.2: non-2xx or error field → visible error banner, never silent.
  *
  * @module apps/control-plane/src/app/admin/tracer/weights/page
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 
-import type { IntentConfigResponse, IntentWeights } from '@estalara/shared';
+import type { AdminIntentConfigResponse, IntentWeights } from '@estalara/shared';
 import { ARCHETYPE_KEYS, INTENT_SIGNAL_KEYS } from '@estalara/shared';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getAdminToken(): string {
-  if (typeof window === 'undefined') return '';
-  return localStorage.getItem('estalara_admin_token') ?? '';
-}
-
 function headers(): Record<string, string> {
-  const token = getAdminToken();
-  const h: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) h.Authorization = `Bearer ${token}`;
-  return h;
+  // Same-origin fetch — Supabase session cookie is sent automatically.
+  // No explicit Authorization header needed for browser-session admin pages (ADR-0013).
+  return { 'Content-Type': 'application/json' };
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -104,11 +104,12 @@ function SliderRow({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function WeightEditorPage() {
-  // Current live config (from GET /api/admin/intent/config)
+  // Current live config id — set from GET /api/admin/intent/config response.
+  // Non-null when an active global row exists; null when no row (data_source 'false').
   const [configId, setConfigId] = useState<string | null>(null);
+  const [isActive, setIsActive] = useState<boolean>(false);
   const [dataSource, setDataSource] = useState<string | null>(null);
-  const [effectiveAt, setEffectiveAt] = useState<string | null>(null);
-  const [isTenantSpecific, setIsTenantSpecific] = useState<boolean | null>(null);
+  const [createdAt, setCreatedAt] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadLoading, setLoadLoading] = useState(true);
 
@@ -133,45 +134,36 @@ export default function WeightEditorPage() {
     setLoadLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch('/api/admin/intent/config', {
-        headers: headers(),
-      });
-      const json = (await res.json()) as IntentConfigResponse & {
-        id?: string;
+      // GET /api/admin/intent/config (ADR-0013 Contract 2).
+      // Auth via Supabase session cookie — no token header needed for browser sessions.
+      const res = await fetch('/api/admin/intent/config');
+      const json = (await res.json()) as AdminIntentConfigResponse & {
         error?: { message?: string };
       };
-
-      // Rule K.2: visible error on data_source:'error'
-      if (json.data_source === 'error') {
-        setLoadError(
-          `Backend error loading config (data_source: error). ${json.error?.message ?? 'See Sentry.'}`,
-        );
-        setDataSource('error');
-        return;
-      }
 
       if (!res.ok) {
         setLoadError(`API error [${res.status.toString()}]: ${json.error?.message ?? 'unknown'}`);
         return;
       }
 
-      setDataSource(json.data_source);
-      setEffectiveAt(json.effective_at ?? null);
-      setIsTenantSpecific(json.is_tenant_specific ?? null);
-      if (json.id) setConfigId(json.id);
+      // ADR-0013: all fields are always present. Set config id (uuid or null).
+      setConfigId(json.id);
+      setIsActive(json.is_active);
+      setCreatedAt(json.created_at);
+      // is_active true → data_source 'live'; false → no active row ('no_active_row').
+      setDataSource(json.is_active ? 'live' : 'no_active_row');
 
-      // Populate editor from live weights (or leave defaults if empty/mock)
+      // Populate editor from live weights (or leave defaults if no active row).
+      // json.weights is always an object (AdminIntentConfigResponseSchema guarantees it).
       const w = json.weights;
-      if (w) {
-        if (typeof w.behavioral_damping === 'number') {
-          setBehavioralDamping(w.behavioral_damping);
-        }
-        if (w.priors) {
-          setPriors((prev) => ({ ...prev, ...w.priors }));
-        }
-        if (w.signal_likelihoods) {
-          setSignalLikelihoods(w.signal_likelihoods);
-        }
+      if (typeof w.behavioral_damping === 'number') {
+        setBehavioralDamping(w.behavioral_damping);
+      }
+      if (w.priors) {
+        setPriors((prev) => ({ ...prev, ...w.priors }));
+      }
+      if (w.signal_likelihoods) {
+        setSignalLikelihoods(w.signal_likelihoods);
       }
     } catch (err) {
       setLoadError(`Fetch failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -201,14 +193,14 @@ export default function WeightEditorPage() {
     try {
       let res: Response;
       if (configId) {
-        // Update existing active row
+        // Active row exists — update it via PUT (fixes LG-1: was always POST-creating).
         res = await fetch(`/api/admin/intent/config/${encodeURIComponent(configId)}`, {
           method: 'PUT',
           headers: headers(),
           body: JSON.stringify({ weights }),
         });
       } else {
-        // Create new active row (no existing id — e.g. data_source was 'mock')
+        // No active global row — create one.
         res = await fetch('/api/admin/intent/config', {
           method: 'POST',
           headers: headers(),
@@ -230,7 +222,7 @@ export default function WeightEditorPage() {
 
       if (json.id) setConfigId(json.id);
       setSaveSuccess(true);
-      // Reload to reflect live data_source
+      // Reload to reflect live data_source and updated configId.
       await loadConfig();
     } catch (err) {
       setSaveError(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -250,19 +242,20 @@ export default function WeightEditorPage() {
           <h2 className="text-xl font-bold text-gray-900">Weight Editor</h2>
           <p className="mt-1 text-sm text-gray-500">
             K.3.6.3 — Edit global intent weight config (priors, damping, signal likelihoods).
+            Global-only v1.
           </p>
         </div>
         <div className="flex items-center gap-3">
           {dataSource && <DataSourceBadge source={dataSource} />}
-          <Link
-            href="/admin/tracer/weights"
+          <button
             onClick={() => {
               void loadConfig();
             }}
-            className="text-xs text-blue-600 underline hover:text-blue-800"
+            disabled={loadLoading}
+            className="text-xs text-blue-600 underline hover:text-blue-800 disabled:opacity-50"
           >
             Reload
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -276,16 +269,16 @@ export default function WeightEditorPage() {
       {/* Provenance info */}
       {!loadError && !loadLoading && (
         <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4 text-xs text-gray-600">
-          {effectiveAt && (
+          <p>
+            <strong>Scope:</strong> Global default (v1 — no per-tenant editing)
+          </p>
+          {isActive && createdAt && (
             <p>
-              <strong>Effective at:</strong> {new Date(effectiveAt).toLocaleString()}
+              <strong>Active since:</strong> {new Date(createdAt).toLocaleString()}
             </p>
           )}
-          {isTenantSpecific !== null && (
-            <p>
-              <strong>Scope:</strong>{' '}
-              {isTenantSpecific ? 'Tenant-specific override' : 'Global default'}
-            </p>
+          {!isActive && (
+            <p className="text-yellow-700">No active global row — saving will create one.</p>
           )}
           {configId && (
             <p>
@@ -402,7 +395,7 @@ export default function WeightEditorPage() {
           disabled={saveLoading || loadLoading || !!loadError}
           className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
         >
-          {saveLoading ? 'Saving…' : 'Save config'}
+          {saveLoading ? 'Saving…' : configId ? 'Update config' : 'Create config'}
         </button>
         <button
           onClick={() => {

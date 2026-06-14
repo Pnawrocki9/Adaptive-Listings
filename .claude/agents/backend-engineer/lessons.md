@@ -661,3 +661,31 @@ only `when` timestamps + file presence, so the 0029 edit is safe.
 
 **A guardrail I'd add:** Add a CI gate that grep-checks `signal_weights` as a banned key in
 migration SQL/schema files — would have caught FOLLOW-302 at PR time instead of post-merge retro.
+
+---
+
+## 2026-06-14 / FOLLOW-309+310+311+312
+
+**What I built:** Four bug fixes for K.3.6 tracer admin UI that shipped non-functional despite green
+CI (RETRO-077). (1) Added GET /api/admin/intent/config with id field so Weight Editor PUT path
+becomes reachable. (2) Removed getAdminToken()+?token= from EventSource URL — SSE cannot send custom
+headers; cookie auth already worked, page just wasn't using it. (3) Added per-tenant tracer nav
+links from the tenants list page (3 pages were nav-orphaned). (4) Converted CSV export from bare
+<a href download> to fetch()+Accept:text/csv — bare navigation cannot set headers.
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+- RETRO-077 TG-1: the root cause of all 4 bugs was fabricated test fixtures masking wire mismatches.
+  Solution: all fixtures now derive from AdminIntentConfigResponseSchema.parse() so the schema is
+  the single source of truth for both the test and the route.
+- SSE auth (FOLLOW-310): ADR-0013 says fix is page-only. I verified verifyTracerAdminAuth Path 2
+  (getAuthClaims reads sb-access-token cookie) works correctly before removing the token param — the
+  new tracer-auth.test.ts COOKIE-1 proves it.
+- Rule K.2: GET handler fails loud on configured-but-thrown DB (500 + Sentry). No mock fallback on
+  the GET read path either (reads are also decision-grade — page shows error banner).
+- Pre-existing build failure (sdk/playbooks, sdk/auto-detect) confirmed pre-exists on base commit
+  via git stash — not caused by this PR.
+
+**A guardrail I'd add:** A CI check that asserts every SSE-producing page has no ?token= URL param
+(EventSource can never send headers; passing a token in the URL is always wrong and is now a
+documented anti-pattern from RETRO-077).

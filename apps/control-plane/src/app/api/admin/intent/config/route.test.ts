@@ -95,7 +95,8 @@ vi.mock('drizzle-orm', () => ({
 }));
 
 import { getAuthClaims, isStaffClaims } from '@estalara/auth';
-import { POST } from './route';
+import { AdminIntentConfigResponseSchema } from '@estalara/shared';
+import { GET as ADMIN_GET, POST } from './route';
 import { GET } from '../../../intent/config/route';
 
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
@@ -647,5 +648,133 @@ describe('POST /api/admin/intent/config — FOLLOW-301 one-active-row invariant'
     expect(body.is_active).toBe(false);
     // Verify plain insert was called (not transaction).
     expect(insertMock.insert).toHaveBeenCalledOnce();
+  });
+});
+
+// ─── GET /api/admin/intent/config tests (FOLLOW-309, ADR-0013 Contract 2) ────
+//
+// These tests drive the REAL GET handler imported from ./route (not the SDK-facing GET).
+// All fixture objects are validated through AdminIntentConfigResponseSchema so the
+// test cannot pass if the shape the handler emits contradicts the schema (RETRO-077 TG-1
+// anti-pattern: fabricated fixtures that don't match the route's real response shape).
+//
+// Coverage:
+//   GET-1: no active global row → 200 with id=null, is_active=false (ADR-0013 nullability)
+//   GET-2: active global row found → 200 with string UUID id, is_active=true
+//   GET-3: unauthenticated request → 401
+//   GET-4: ?tenant_id= present → 400 unsupported_param (global-only v1)
+//   GET-5: DB configured but throws → 500 db_error (Rule K.2 — no mock fallback)
+
+describe('GET /api/admin/intent/config — FOLLOW-309 (ADR-0013 Contract 2)', () => {
+  beforeEach(() => {
+    mockCreateAdminClient.mockReset();
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+    mockGetAuthClaims.mockResolvedValue(null);
+  });
+
+  /**
+   * Build a Drizzle select chain for the admin GET handler:
+   * select().from().where().orderBy().limit() → rows.
+   */
+  function makeAdminSelectMock(rows: unknown[]) {
+    const limitFn = vi.fn().mockResolvedValue(rows);
+    const orderByFn = vi.fn().mockReturnValue({ limit: limitFn });
+    const whereFn = vi.fn().mockReturnValue({ orderBy: orderByFn });
+    const fromFn = vi.fn().mockReturnValue({ where: whereFn });
+    const selectFn = vi.fn().mockReturnValue({ from: fromFn });
+    return { select: selectFn };
+  }
+
+  function makeAdminGetRequest(opts: { bearer?: string; tenantIdParam?: string } = {}) {
+    const url = new URL('http://localhost/api/admin/intent/config');
+    if (opts.tenantIdParam) url.searchParams.set('tenant_id', opts.tenantIdParam);
+    const headers: Record<string, string> = {};
+    if (opts.bearer !== undefined) headers.Authorization = `Bearer ${opts.bearer}`;
+    return new NextRequest(url.toString(), { method: 'GET', headers });
+  }
+
+  it('GET-1: no active global row → 200 with id=null, is_active=false', async () => {
+    const db = makeAdminSelectMock([]);
+    mockCreateAdminClient.mockReturnValue(db);
+
+    const res = await ADMIN_GET(makeAdminGetRequest({ bearer: ADMIN_SECRET }));
+    expect(res.status).toBe(200);
+
+    const body = await parseBody<unknown>(res);
+    // Validate against the REAL shared schema — not a hand-authored fixture.
+    // If the route emits a shape AdminIntentConfigResponseSchema rejects, parse() throws.
+    const parsed = AdminIntentConfigResponseSchema.parse(body);
+    expect(parsed.id).toBeNull();
+    expect(parsed.is_active).toBe(false);
+    expect(parsed.tenant_id).toBeNull();
+    expect(parsed.created_at).toBeNull();
+    expect(parsed.weights).toEqual({});
+  });
+
+  it('GET-2: active global row found → 200 with string UUID id, is_active=true', async () => {
+    const activeRow = {
+      id: ROW_ID,
+      tenantId: null,
+      weights: { behavioral_damping: 0.35 },
+      isActive: true,
+      createdAt: CREATED_AT,
+    };
+    const db = makeAdminSelectMock([activeRow]);
+    mockCreateAdminClient.mockReturnValue(db);
+
+    const res = await ADMIN_GET(makeAdminGetRequest({ bearer: ADMIN_SECRET }));
+    expect(res.status).toBe(200);
+
+    const body = await parseBody<unknown>(res);
+    // Validate against the REAL shared schema (RETRO-077 TG-1 prevention).
+    const parsed = AdminIntentConfigResponseSchema.parse(body);
+    expect(parsed.id).toBe(ROW_ID);
+    expect(parsed.is_active).toBe(true);
+    expect(parsed.tenant_id).toBeNull();
+    expect(typeof parsed.created_at).toBe('string');
+    expect(parsed.weights.behavioral_damping).toBe(0.35);
+  });
+
+  it('GET-3: unauthenticated request → 401', async () => {
+    mockGetAuthClaims.mockResolvedValue(null);
+
+    const res = await ADMIN_GET(makeAdminGetRequest({}));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('unauthorized');
+  });
+
+  it('GET-4: ?tenant_id= present → 400 unsupported_param (global-only v1, ADR-0013)', async () => {
+    const res = await ADMIN_GET(
+      makeAdminGetRequest({ bearer: ADMIN_SECRET, tenantIdParam: TENANT_ID }),
+    );
+    expect(res.status).toBe(400);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('unsupported_param');
+  });
+
+  it('GET-5: DB configured but throws → 500 db_error (Rule K.2 — no mock fallback)', async () => {
+    const db = makeAdminSelectMock([]);
+    // Override the select chain to throw instead of returning empty rows.
+    const throwingSelectFn = vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockReturnValue({
+            limit: vi.fn().mockRejectedValue(new Error('Postgres connection refused')),
+          }),
+        }),
+      }),
+    });
+    mockCreateAdminClient.mockReturnValue({ ...db, select: throwingSelectFn });
+
+    const res = await ADMIN_GET(makeAdminGetRequest({ bearer: ADMIN_SECRET }));
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('db_error');
+    // Must NOT return fabricated data — no 'id' or 'weights' fields in error body.
+    expect('id' in body).toBe(false);
   });
 });

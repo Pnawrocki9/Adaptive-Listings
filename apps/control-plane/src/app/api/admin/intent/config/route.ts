@@ -1,7 +1,19 @@
 /**
- * POST /api/admin/intent/config
+ * GET + POST /api/admin/intent/config
  *
- * K.3.6 D-1 admin write API — create an intent_weight_configs row (ADR-0012 Ticket B).
+ * K.3.6 D-1 admin API — read and write the global intent_weight_configs row.
+ *
+ * GET  /api/admin/intent/config  (ADR-0013 Contract 2)
+ *   Returns the currently-active global config row with its database `id` included.
+ *   `id` is needed by the Weight Editor page to issue PUT updates instead of
+ *   POST-creating a new row per save (fixes FOLLOW-309 LG-1).
+ *   Returns `AdminIntentConfigResponse` from `@estalara/shared` — all fields always
+ *   present; `id`/`created_at` are null when no active global row exists.
+ *   ?tenant_id= returns 400 unsupported_param (global-only in v1; CEO decision 2026-06-14).
+ *   Rule K.2: configured DB failure → 500 + Sentry; NO mock fallback for admin reads.
+ *
+ * POST /api/admin/intent/config  (ADR-0012 Ticket B)
+ *   K.3.6 D-1 admin write API — create an intent_weight_configs row.
  *
  * Creates a new weight configuration row: global default when `tenant_id` is omitted
  * (tenant_id IS NULL in the DB), or a per-tenant override when `tenant_id` is supplied.
@@ -61,12 +73,132 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 
 import { createAdminClient, intentWeightConfigs } from '@estalara/db';
-import { IntentWeightsSchema } from '@estalara/shared';
+import { IntentWeightsSchema, AdminIntentConfigResponseSchema } from '@estalara/shared';
+import type { AdminIntentConfigResponse } from '@estalara/shared';
 
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
+
+// ─── GET handler ──────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/intent/config
+ *
+ * Returns the active global intent weight config row, including the database `id`
+ * which the Weight Editor page requires to PUT-update an existing row (FOLLOW-309).
+ *
+ * Global-only in v1: ?tenant_id= returns 400 unsupported_param (ADR-0013 §Decision 2).
+ *
+ * Rule K.2: if the DB is configured but throws, return 500 + Sentry capture.
+ * There is no mock fallback for admin reads — a broken admin API must be visible.
+ *
+ * @returns 200 AdminIntentConfigResponse — all fields present, id/created_at null when no row.
+ * @returns 400 if ?tenant_id= param is present (unsupported in v1).
+ * @returns 401/403 if auth fails.
+ * @returns 500 if DB is unconfigured or the configured DB throws (Rule K.2).
+ */
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const authResult = await verifyTracerAdminAuth(req);
+  if (!authResult.ok) {
+    return NextResponse.json(
+      { error: { code: 'unauthorized', message: authResult.message } },
+      { status: authResult.status },
+    );
+  }
+
+  // ── Reject ?tenant_id= — global-only in v1 (ADR-0013, CEO decision 2026-06-14) ──
+  const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
+  if (tenantIdParam !== null) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'unsupported_param',
+          message: '?tenant_id is not supported on this route in v1; omit it',
+        },
+      },
+      { status: 400 },
+    );
+  }
+
+  // ── Rule K.2: admin reads also require a configured DB ────────────────────
+  const dbConfigured =
+    Boolean(process.env.DATABASE_URL_ADMIN) || Boolean(process.env.DATABASE_URL_DIRECT);
+  if (!dbConfigured) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'db_error',
+          message:
+            'DATABASE_URL_ADMIN or DATABASE_URL_DIRECT must be set to read intent weight configs',
+        },
+      },
+      { status: 500 },
+    );
+  }
+
+  // ── Query the active global row ───────────────────────────────────────────
+  try {
+    const db = createAdminClient();
+    const rows = await db
+      .select({
+        id: intentWeightConfigs.id,
+        tenantId: intentWeightConfigs.tenantId,
+        weights: intentWeightConfigs.weights,
+        isActive: intentWeightConfigs.isActive,
+        createdAt: intentWeightConfigs.createdAt,
+      })
+      .from(intentWeightConfigs)
+      .where(and(isNull(intentWeightConfigs.tenantId), eq(intentWeightConfigs.isActive, true)))
+      .orderBy(desc(intentWeightConfigs.createdAt))
+      .limit(1);
+
+    // No active global row → return the nulled sentinel shape (ADR-0013 nullability contract).
+    if (rows.length === 0) {
+      const body: AdminIntentConfigResponse = AdminIntentConfigResponseSchema.parse({
+        id: null,
+        tenant_id: null,
+        is_active: false,
+        weights: {},
+        created_at: null,
+      });
+      return NextResponse.json(body, { status: 200 });
+    }
+
+    // rows.length === 0 guard is above; rows[0] is always defined here.
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- length checked above
+    const row = rows[0]!;
+    // Parse weights through IntentWeightsSchema to validate stored data.
+    const weightsResult = IntentWeightsSchema.safeParse(row.weights);
+    const weights = weightsResult.success ? weightsResult.data : {};
+
+    const body: AdminIntentConfigResponse = AdminIntentConfigResponseSchema.parse({
+      id: row.id,
+      tenant_id: null,
+      is_active: true,
+      weights,
+      created_at: row.createdAt.toISOString(),
+    });
+    return NextResponse.json(body, { status: 200 });
+  } catch (err: unknown) {
+    // Configured-but-failed: fail loud (Rule K.2). NO mock fallback for reads.
+    const message = err instanceof Error ? err.message : String(err);
+    Sentry.captureException(err, {
+      extra: { route: 'GET /api/admin/intent/config', message },
+    });
+    return NextResponse.json(
+      {
+        error: {
+          code: 'db_error',
+          message: 'Postgres query failed — see Sentry for details',
+        },
+      },
+      { status: 500 },
+    );
+  }
+}
 
 // ─── Postgres error codes ─────────────────────────────────────────────────────
 

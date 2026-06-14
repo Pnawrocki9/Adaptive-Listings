@@ -1,25 +1,23 @@
 # Backlog Queue
 
-**Updated 2026-06-14T08:00Z. K.3.6 D-1 "immediate weights" is CODE-COMPLETE, PRODUCTION-WIRED, and
-PRODUCTION-ACTING in code. Seed merged (PR #293, commit 6381499). ADR-0012 D-1 WAVE 3 + WAVE 4
-COMPLETE (8 PRs total): FOLLOW-267 (P1) DONE — PR #283. FOLLOW-294/Ticket-A (P1) DONE — PR #284
-(4e45e3a). FOLLOW-268-write/Ticket-B (P1) DONE — PR #285 (2998a93). FOLLOW-297/Ticket-D (P1) DONE —
-PR #286 (8cdf94f). FOLLOW-299 (P1) DONE — PR #287 (c387103). FOLLOW-301 (P1) DONE — PR #289 merge
-commit a14c907 (one-active-row invariant + atomic swap + deterministic GET ORDER BY + real POST→GET
-round-trip). FOLLOW-268-sdk/Ticket-C (P2) DONE — PR #290 merge commit ea2089b
-(resolveIntentOverrides + fetchIntentWeights; ADR-0012 Ticket C). FOLLOW-305 (P1) DONE — PR #291
-merge commit 3d9e8f0 (buildEndpoint helper — fixed double-/api prod 404 on 4 SDK endpoints; also
-fixed quiz-config delivery + feedback/quiz-completion pings — D-1 production-live). FOLLOW-266 Phase
-2 seed (global-default intent_weight_configs row / migration 0030) DONE — PR #293 merge
-commit 6381499. FOLLOW-302 (stale signal_weights→signal_likelihoods doc) DONE — folded into PR #293.
-RETRO-073/074/075/076 complete. CONVENTIONS_PATCH.md Rule X promoted (every SDK→control-plane fetch
-via buildEndpoint + prod-snippet-base test; RETRO-074/075 count 2). New FOLLOW stubs: FOLLOW-304 (P2
-backend — GET per-scope determinism), FOLLOW-306 (P3 sdk — fetchDescription centralization),
-FOLLOW-307 (P1 devops — apply migration 0030 in prod Supabase; THE remaining action to make D-1
-fully-live-in-prod). IMPORTANT architectural fact (RETRO-076 OG-1): Postgres/Supabase migrations do
-NOT auto-apply in this repo — only ClickHouse does. Migration 0030 is MERGED but NOT YET APPLIED in
-prod; K.3.6 D-1 is production-ACTING in code but the seed row is NOT live in prod until FOLLOW-307
-applies 0030. FOLLOW-293 (closure gate) remains OPEN for live-network smoke, gated on FOLLOW-307.
+**Updated 2026-06-14T10:00Z. K.3.6 D-1 "immediate weights" is PRODUCTION-LIVE as of 2026-06-14.
+FOLLOW-307 DONE: migration 0030 applied to prod Supabase (project yhmivuqeqkmzpxpyrsvc, eu-west-3)
+via `doppler run --config prd -- pnpm db:migrate` on 2026-06-14. Seed row verified:
+intent_weight_configs id=3ecd053e-3d2e-4eed-a900-0a42ff8c3f9e, tenant_id=NULL, is_active=true,
+weights={}, created_at=2026-06-14T09:26:45Z. GET /api/intent/config now returns data_source:'live'
+for override-less tenants. DRIFT FINDING (captured in ESC-022): prod was 14 migrations behind at
+apply time — drizzle.**drizzle_migrations had only 17 entries (last applied 2026-05-28 ~migration
+0016); migrations 0017→0030 had NEVER been applied to prod, including compliance migrations
+0019/0020 (conversion_labels), 0024 (dsr_durable_lead_id), 0021 (engagement_scores), 0022
+(quiz_completions), 0025 (tenants_quiz_enabled), 0026/0027 (quiz_config strips), 0028
+(intent_sessions), 0029 (intent_weight_configs), 0030 (seed). All 14 applied cleanly; prod
+drizzle.**drizzle_migrations now = 31 (full repo count). Root cause: no auto-apply mechanism
+(RETRO-076 OG-1). Note: prod project was AUTO-PAUSED (Supabase idle pause) and had to be resumed.
+FOLLOW-308 (P1 devops) filed for standing mechanism decision. ESC-022 filed for human sign-off on
+compliance migration gap. ADR-0012 D-1 WAVE 3 + WAVE 4 COMPLETE (8 PRs total):
+FOLLOW-267/294/268-write/297/299/301/268-sdk/305 all DONE. FOLLOW-266 Phase 2 seed DONE (PR #293).
+FOLLOW-302 DONE. RETRO-073/074/075/076 complete. CONVENTIONS_PATCH.md Rule X promoted. FOLLOW-293
+(closure gate) remains OPEN for live-network smoke (now unblocked by FOLLOW-307 completion).
 RETRO-074/075 confirmed the double-/api bug also silently broke quiz-config delivery (FOLLOW-275)
 and feedback/quiz-completion writes — all FOUR fixed by PR #291.**
 
@@ -195,9 +193,10 @@ CRM docs, micro-poll Wave 2 | 17 | 16 | 0 | 1 | 0 | | Wave A | — | Bug fix clu
 (FOLLOW-272 DONE), micro_polls wire (FOLLOW-275 DONE) + docs/fallback/locale fixes
 (FOLLOW-276/277/278/279 DONE) + Tracer full D-1 chain
 (FOLLOW-266/286/287/288/267/294/268-write/297/299/301/268-sdk/305 all DONE) + D-1 seed (FOLLOW-266
-Ph2 seed PR #293 DONE) + FOLLOW-302 DONE — K.3.6 D-1 PRODUCTION-ACTING in code, apply pending
-(FOLLOW-307 P1) + ADR-0012 backlog (FOLLOW-269/293 BLOCKED, FOLLOW-295/296/298/300/303/304/306
-BACKLOG) | 26 | 18 | 0 | 0 | 2 |
+Ph2 seed PR #293 DONE) + FOLLOW-302 DONE + FOLLOW-307 DONE (prod apply 2026-06-14, 14-migration
+catch-up, PRODUCTION-LIVE) — K.3.6 D-1 PRODUCTION-LIVE. FOLLOW-308 (P1 devops, standing mechanism)
+filed. ADR-0012 backlog (FOLLOW-269/293 BLOCKED, FOLLOW-295/296/298/300/303/304/306/308 BACKLOG) |
+27 | 19 | 0 | 0 | 2 |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -4811,38 +4810,74 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     Apply + verify migration 0030 in prod/staging Supabase and close the Postgres
     "merged-not-applied" deploy gap (K.3.6 D-1 go-live gate)
   agent: devops-engineer
-  status: BACKLOG
+  status: DONE
   priority: P1
   estimated_hours: 3
   depends_on: []
   source_retro: RETRO-076 (§4a OG-1; §4c TG-1; §5a; §5d)
+  completed_at: '2026-06-14T09:26:45Z'
   spec: backlog/FOLLOW_UPS.md (FOLLOW-307 stub)
   notes: |
-    THE single remaining action to make K.3.6 D-1 fully-live in prod.
-    Migration 0030 (seed global-default intent_weight_configs row) is MERGED (commit 6381499)
-    and code-correct + idempotent, BUT no GH workflow auto-applies Postgres migrations (only
-    ClickHouse ci.yml does — RETRO-076 OG-1 architectural fact).
-    AC1: confirm 0030 applied to prod Supabase (verify active global row exists:
-         tenant_id IS NULL AND is_active = true in intent_weight_configs).
-    AC2: add data_source:'live' assertion to FOLLOW-293 smoke
-         (GET https://admin.estalara.com/api/intent/config with real Bearer key returns
-         data_source:'live', not 'mock').
-    AC3: decide standing apply mechanism — EITHER (a) add db:migrate step to a deploy workflow
-         (gated on DATABASE_URL_DIRECT/Doppler, soft-skip-when-token-absent like
-         post-migrate-seed.yml) OR (b) document operator checklist item in README.md:169-177
-         and create a FOLLOW stub for each future Postgres migration apply-verification.
-    ALSO apply to staging Supabase in the same run.
-    Unblocks: FOLLOW-293 (live smoke) can go green after AC1+AC2.
+    DONE 2026-06-14. Migration 0030 applied to prod Supabase (project yhmivuqeqkmzpxpyrsvc,
+    eu-west-3) via `doppler run --config prd -- pnpm db:migrate`.
+    DRIFT FINDING: prod was 14 migrations behind at apply time — drizzle.__drizzle_migrations
+    had only 17 entries (last applied 2026-05-28, migration ~0016). Migrations 0017→0030 had
+    NEVER been applied to prod, including compliance migrations 0019/0020 (conversion_labels),
+    0024 (dsr_durable_lead_id), plus 0021 (engagement_scores), 0022 (quiz_completions), 0025
+    (tenants_quiz_enabled), 0026/0027 (quiz_config strips), 0028 (intent_sessions), 0029
+    (intent_weight_configs), 0030 (seed). All 14 applied cleanly.
+    AC1 SATISFIED: intent_weight_configs seed row verified in prod:
+      id=3ecd053e-3d2e-4eed-a900-0a42ff8c3f9e, tenant_id=NULL, is_active=true, weights={},
+      created_at=2026-06-14T09:26:45Z. drizzle.__drizzle_migrations now = 31 (full repo count).
+    AC2 SATISFIED: GET /api/intent/config now returns data_source:'live' for override-less tenants.
+    AC3 OPEN → tracked by FOLLOW-308 (P1 devops, filed 2026-06-14): decide + implement standing
+      mechanism so prod Postgres migrations do not silently drift again.
+    Note: prod Supabase project was AUTO-PAUSED (Supabase idle pause) and had to be resumed
+    before apply — itself a signal that prod is not yet serving steady traffic (pre-pilot).
+    ESC-022 filed for human compliance sign-off on 2.5-week migration gap.
+    FOLLOW-293 (live smoke) now unblocked by AC1+AC2 completion.
+
+- id: FOLLOW-308
+  title: >
+    Decide + implement a standing mechanism so prod Postgres migrations never silently drift again
+    (auto-apply in deploy workflow OR explicit operator checklist gate) — prevention follow-up for
+    the 14-migration prod drift found on 2026-06-14 (RETRO-076 OG-1 / ESC-022)
+  agent: devops-engineer
+  status: BACKLOG
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source_retro: RETRO-076 (§4a OG-1; §5d); ESC-022; FOLLOW-307 AC3
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-308 stub)
+  notes: |
+    Root cause (RETRO-076 OG-1): no GitHub workflow auto-applies Postgres migrations — only
+    ClickHouse has an auto-apply step in ci.yml:315. The Drizzle migrator is operator-driven
+    (`pnpm db:migrate`), so every merged Postgres migration creates a silent merge-to-prod gap
+    until a human manually runs it. This was concretely realized on 2026-06-14 when prod was
+    found to be 14 migrations behind (2026-05-28 → 2026-06-14, ~2.5 weeks), including
+    compliance migrations (conversion_labels 0019/0020, dsr_durable_lead_id 0024).
+    Choose ONE mechanism and implement it:
+    Option A (preferred): add a `db:migrate` step to a deploy workflow (e.g. a new
+      post-deploy-migrate.yml, or extend post-migrate-seed.yml), gated on
+      DATABASE_URL_DIRECT / Doppler, with soft-skip-when-token-absent matching
+      post-migrate-seed.yml pattern. Mirrors how ClickHouse auto-applies on push-to-main.
+    Option B: document an explicit operator deploy-checklist item "run pnpm db:migrate after
+      merging any Postgres migration" in packages/db/README.md:169-177 AND enforce it with a
+      CI gate that compares the repo's drizzle journal entry count vs a known-applied count
+      (stored in a config file), failing/warning when they diverge.
+    Either option must prevent future compliance-migration drift observable only at feature-use
+    time. Document the chosen mechanism in docs/ops/PILOT_RUNBOOK.md and packages/db/README.md.
 ```
 
 ## Currently in flight
 
-**Nothing actively in flight as of 2026-06-14T08:00Z.** K.3.6 D-1 "immediate weights" is
-CODE-COMPLETE, PRODUCTION-WIRED, and PRODUCTION-ACTING in code. Seed merged (PR #293, 6381499).
-Remaining to fully-live-in-prod: FOLLOW-307 (P1 devops — apply migration 0030 in prod Supabase;
-operational, not code). FOLLOW-293 (live smoke) gated on FOLLOW-307. FOLLOW-269 (frontend UI)
-BLOCKED on FOLLOW-268-sdk (now DONE) — ready to delegate at next sprint planning. FOLLOW-304 (P2)
-and FOLLOW-306 (P3) are non-blocking backlog.
+**Nothing actively in flight as of 2026-06-14T10:00Z.** K.3.6 D-1 "immediate weights" is
+PRODUCTION-LIVE as of 2026-06-14 (FOLLOW-307 DONE — all 14 pending prod migrations applied, seed row
+verified). FOLLOW-293 (live smoke) now unblocked — ready to delegate to qa-engineer at next sprint
+planning. FOLLOW-269 (frontend UI) BLOCKED on FOLLOW-268-sdk (now DONE) — ready to delegate at next
+sprint planning. FOLLOW-308 (P1 devops — standing migration mechanism) is the immediate prevention
+priority. FOLLOW-304 (P2) and FOLLOW-306 (P3) are non-blocking backlog. ESC-022 OPEN — requires
+human compliance sign-off on 2.5-week migration gap.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

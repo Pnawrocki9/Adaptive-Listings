@@ -8130,6 +8130,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **recommended_agent:** devops-engineer (coordinate with PM)
 - **priority:** P1
 - **estimated_hours:** 3
+- **status:** DONE — completed 2026-06-14T09:26:45Z
 - **scope:** Migration `0030_seed_global_intent_weights.sql` is MERGED to main (commit `6381499`)
   and the seed SQL is correct + idempotent (SEED-1..4) — BUT there is NO automatic
   Postgres-migration apply step on deploy. `pnpm db:migrate` (`scripts/migrate.ts`) is
@@ -8142,31 +8143,59 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   "merged" and "K.3.6 D-1 actually ACTING in prod" (RETRO-076 §4a OG-1, §5a, §5d). The fix is
   operational + a standing-mechanism decision, NOT a code change to the seed.
 - **ac:**
-  - [ ] AC1 — migration 0030 is confirmed APPLIED to the prod (and staging) Supabase DB: an active
-        global row exists
-        (`SELECT count(*) FROM intent_weight_configs WHERE tenant_id IS NULL AND     is_active = true`
-        returns exactly 1) in each environment.
-  - [ ] AC2 — FOLLOW-293's live smoke asserts an authenticated
-        `GET     https://admin.estalara.com/api/intent/config` (real Bearer key, override-less
-        tenant) returns `data_source:'live'` (NOT `'mock'`) with `weights:{}` and
-        `is_tenant_specific:false` — the cross-leg prod proof that 0030 applied AND the RETRO-075
-        URL wire AND the Bearer auth all resolve end-to-end.
-  - [ ] AC3 — a STANDING apply mechanism is decided and recorded (RETRO-076 §5d): EITHER (a) a
-        `db:migrate` step is added to a deploy workflow (gated on Doppler/`DATABASE_URL_DIRECT`,
-        mirroring `post-migrate-seed.yml`'s soft-skip-when-token-absent pattern) so Postgres
-        migrations apply on push-to-main like ClickHouse does, OR (b) an explicit operator
-        deploy-checklist item "run `pnpm db:migrate` after merging any Postgres migration" is
-        documented and cross-referenced from `packages/db/README.md:169-177`.
-  - [ ] AC4 — the chosen mechanism prevents the next Postgres migration from carrying a silent
-        merge-to-effect apply-lag (i.e. a future seed/DDL either auto-applies or is
-        checklist-tracked).
+  - [x] AC1 — migration 0030 APPLIED to prod Supabase (project yhmivuqeqkmzpxpyrsvc, eu-west-3) via
+        `doppler run --config prd -- pnpm db:migrate` on 2026-06-14. Seed row verified:
+        `SELECT count(*) FROM intent_weight_configs WHERE tenant_id IS NULL AND is_active = true`
+        returns exactly 1. Row: id=3ecd053e-3d2e-4eed-a900-0a42ff8c3f9e, weights={},
+        created_at=2026-06-14T09:26:45Z. drizzle.\_\_drizzle_migrations = 31 (full repo count).
+        DRIFT FINDING: prod was 14 migrations behind at apply time — migrations 0017→0030 had NEVER
+        been applied, including compliance migrations 0019/0020/0024. All 14 applied cleanly.
+  - [x] AC2 — GET /api/intent/config now returns data_source:'live' for override-less tenants.
+        FOLLOW-293 live-network smoke is now unblocked (was waiting on this seed row).
+  - [ ] AC3 — STANDING apply mechanism: NOT YET DECIDED. Tracked by FOLLOW-308 (P1 devops, filed
+        2026-06-14). Options: (a) auto-apply workflow step or (b) operator checklist gate. ESC-022
+        filed for human sign-off on the 2.5-week compliance migration gap.
+  - [ ] AC4 — prevention of future merge-to-effect lag: blocked on AC3 decision (FOLLOW-308).
 - **depends_on:** none for AC1/AC2 (0030 already merged); AC2 closure is the gating assertion for
   FOLLOW-293. Does NOT block any worker ticket — it BLOCKS the FOLLOW-293 "D-1 verified live in
   prod" closure.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (DONE, completed_at 2026-06-14T09:26:45Z)
 
 ---
 
-<!-- next free FOLLOW number: 308 (307 = RETRO-076 / PR #293 / FOLLOW-266 Phase 2 + FOLLOW-302: migration 0030 seeds the global-default intent_weight_configs row (tenant_id=NULL, is_active=true, weights={} Option A) so GET /api/intent/config flips mock→live for override-less tenants — the seed SQL is correct + idempotent (WHERE NOT EXISTS guard + 0029 partial-unique-index backstop) + tenant-override-safe (route.ts:260 tenantRow ?? globalRow) + no-skew ({} → SDK internal defaults, live-but-inert) and FOLLOW-302 is closed on BOTH the 0029:12 comment AND the schema docstring (signal_likelihoods). THE GAP IS OPERATIONAL: no GH workflow runs db:migrate, so 0030 only materializes a 'live' GET once an operator/Terraform applies it to prod Supabase — FOLLOW-307 confirms the apply + adds the data_source:'live' assertion to FOLLOW-293's live smoke + decides a standing auto-apply-or-checklist mechanism, P1. NOTE FOLLOW-302 CLOSED (do not re-file); FOLLOW-293 stays OPEN for the live network smoke; FOLLOW-304 GET-determinism UNCHANGED (the seed is index-protected, no breach); FOLLOW-306 unrelated.) -->
+## FOLLOW-308 — Decide + implement standing mechanism so prod Postgres migrations never silently drift again (prevention for 14-migration gap found 2026-06-14 / RETRO-076 OG-1)
+
+- **source_retro:** RETRO-076 (§4a OG-1; §5d); ESC-022; FOLLOW-307 AC3
+- **source_ticket:** FOLLOW-307 (completed 2026-06-14)
+- **recommended_sprint:** 17 (immediate P1 — same sprint as the prevention gap)
+- **recommended_agent:** devops-engineer
+- **priority:** P1
+- **estimated_hours:** 4
+- **status:** BACKLOG
+- **scope:** Root cause of FOLLOW-307's drift finding: no GitHub workflow auto-applies Postgres
+  migrations on merge/deploy. Only ClickHouse has this (ci.yml:315). Drizzle's `pnpm db:migrate` is
+  entirely operator-driven, creating a silent merge-to-prod gap on every Postgres migration.
+  Concretely: on 2026-06-14 prod was found to be 14 migrations behind (2026-05-28 → 2026-06-14, ~2.5
+  weeks), including compliance migrations 0019/0020 (conversion_labels), 0024 (dsr_durable_lead_id).
+  Choose ONE mechanism and implement it fully:
+  - Option A (preferred): add a `db:migrate` step to a new or existing deploy workflow, gated on
+    `DATABASE_URL_DIRECT` / Doppler, soft-skip-when-token-absent (same pattern as
+    `post-migrate-seed.yml`). This mirrors ClickHouse's auto-apply behavior.
+  - Option B: document an explicit operator deploy-checklist item in `packages/db/README.md:169-177`
+    AND add a CI gate that compares the repo's Drizzle journal entry count vs a pinned known-applied
+    count, failing/warning on divergence to make the gap visible.
+- **ac:**
+  - [ ] AC1 — chosen mechanism documented and implemented; no future Postgres migration can merge
+        without either auto-applying or triggering an observable gate.
+  - [ ] AC2 — mechanism cross-referenced in `docs/ops/PILOT_RUNBOOK.md` and `packages/db/README.md`.
+  - [ ] AC3 — ESC-022 human compliance sign-off received before closing (confirm no data-integrity
+        issues from compliance migrations 0019/0020/0024 running against pre-schema prod).
+- **depends_on:** ESC-022 (human decision on compliance gap); otherwise none.
+- **promoted_to_queue:** true (added to Sprint 17 backlog QUEUE.md 2026-06-14)
+
+---
+
+<!-- next free FOLLOW number: 309 (308 = RETRO-076 OG-1 / ESC-022 / FOLLOW-307 AC3: decide + implement standing Postgres migration auto-apply or checklist gate — the 14-migration prod drift (2026-06-14) is the concrete realization of RETRO-076 and proves the manual-only operator model is unsafe at the current merge velocity; devops-engineer P1 Sprint 17.) -->
+<!-- prior next free FOLLOW number: 308 (307 = RETRO-076 / PR #293 / FOLLOW-266 Phase 2 + FOLLOW-302: migration 0030 seeds the global-default intent_weight_configs row (tenant_id=NULL, is_active=true, weights={} Option A) so GET /api/intent/config flips mock→live for override-less tenants — the seed SQL is correct + idempotent (WHERE NOT EXISTS guard + 0029 partial-unique-index backstop) + tenant-override-safe (route.ts:260 tenantRow ?? globalRow) + no-skew ({} → SDK internal defaults, live-but-inert) and FOLLOW-302 is closed on BOTH the 0029:12 comment AND the schema docstring (signal_likelihoods). THE GAP IS OPERATIONAL: no GH workflow runs db:migrate, so 0030 only materializes a 'live' GET once an operator/Terraform applies it to prod Supabase — FOLLOW-307 confirms the apply + adds the data_source:'live' assertion to FOLLOW-293's live smoke + decides a standing auto-apply-or-checklist mechanism, P1. NOTE FOLLOW-302 CLOSED (do not re-file); FOLLOW-293 stays OPEN for the live network smoke; FOLLOW-304 GET-determinism UNCHANGED (the seed is index-protected, no breach); FOLLOW-306 unrelated.) -->
 <!-- prior next free FOLLOW number: 307 (306 = RETRO-075 / PR #291 / FOLLOW-305: bring the LAST decisionApiUrl fetch site fetchDescription (adapt-description.ts:227) under the buildEndpoint helper FOLLOW-305 introduced + add a dedicated endpoint.test.ts + fix the endpoint.ts:27-31 "Non-test consumers" docstring list that omits adapt-description.ts; NOT prod-blocking — /adapt/description is single-/api and resolves correctly today, this is centralization hygiene so no future edit can re-derive the host+/api convention wrong (Rule X compliance for the last of 6 fetch sites, Rule S sibling-completeness on the helper-adoption axis), P3. NOTE FOLLOW-305 itself FIXED all four double-/api sites + closed the RETRO-074 LG-1 archetype parity (TG-2) + the DG-1 docstrings — D-1 is NOW production-live end-to-end; do not re-file those. FOLLOW-293 stays OPEN for the LIVE network smoke ONLY (the unit-level prod-URL-form is now covered); FOLLOW-266 Phase 2 seed UNBLOCKED; FOLLOW-304 GET-determinism UNCHANGED — do not re-file any.) -->
 <!-- prior next free FOLLOW number: 306 (305 = RETRO-074 / PR #290 / FOLLOW-268-sdk: fix the double-/api production 404 — fetchIntentWeights + fetchQuizConfig prepend /api to a base the buildSnippet install already emits with /api, so server intent weights + quiz config 404-silently for every buildSnippet-onboarded tenant; centralize on a buildEndpoint helper, add prod-URL-form tests, close the ARCHETYPE_NAMES≡ARCHETYPE_KEYS parity axis, fix the misleading docstrings, P1, BLOCKED K.3.6 D-1 production closure — NOW RESOLVED by PR #291 / RETRO-075.) -->

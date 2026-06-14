@@ -4924,10 +4924,29 @@ CEO ratified Decision 4C (add adapt_decision_id, defer explainability_id → FOL
 triggering) RESOLVED — branch renamed to `architect/**` for push-CI + Actions budget bumped. Note:
 DOPPLER_TOKEN_DEV (ESC-010) + E2E_BEARER_TOKEN (ESC-009) still outstanding for Lane B / full E2E.
 
-## Awaiting human review (0 PRs)
+## Awaiting human review (1 PR)
+
+- **FOLLOW-315 — READY_FOR_REVIEW (PR #302, 2026-06-14).** [data-engineer, P1]
+  `fix(control-plane): qualify event_at in tracer ClickHouse queries to avoid Code 386`. Branch
+  `data-engineer/FOLLOW-315-tracer-event-at-alias-shadowing`. Root cause: every K.3.6 tracer event
+  query projects `toString(event_at) AS event_at`, shadowing the `DateTime64` column with a `String`
+  alias of the same name; ClickHouse resolves aliases inside WHERE/ORDER BY, so a bare `event_at` in
+  a date predicate binds to the String alias → `String >= DateTime` → NO_COMMON_TYPE (Code 386) at
+  query-analysis time (fails even on an empty table — which is why mock-fetch unit tests never
+  caught it). Broke tracer **export + history + SSE-stream** whenever a from/to/cursor date filter
+  was applied (per-session query unaffected — its WHERE never references event_at). Same schema in
+  prod ClickHouse Cloud → was broken in prod too, just never exercised with a date filter. Fix:
+  qualify `intent_events.event_at` in WHERE/ORDER BY across all 4 builders
+  (`clickhouse-tracer.ts`) + 4 regression tests (CH-315a–d, vitest 39/39, no live CH needed). Found
+  via local end-to-end Stack B verification against real ClickHouse 24.8 (export with date filter
+  returns seeded row, HTTP 200). **CI green for the change** (Test Node 22, Typecheck, Lint, Format,
+  Build control-plane, ClickHouse smoke, Cross-language, Rule H/J, Gitleaks all ✅); only red checks
+  are `Build (SDK-bundle gate)` + `Rule I` — both pre-existing-red on main (confirmed run
+  27501567753), unrelated (zero SDK files touched). retrospective-analyst to run on merge;
+  FOLLOW-315 entry to be cataloged in FOLLOW_UPS.md by the retro loop.
 
 _All Wave 3 PRs (#153–#157), YELLOW audit Sprint 1 (#158), and Sprint 13a-hardening (#159–#162)
-merged to main 2026-05-27. Nothing awaiting review._
+merged to main 2026-05-27._
 
 ## Recent merges
 

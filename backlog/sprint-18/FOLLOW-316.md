@@ -1,9 +1,9 @@
 # FOLLOW-316 — Live-ClickHouse CI guard: submit the tracer query builders for analysis so a Code-386-class error fails CI
 
-**Sprint:** 18 **Priority:** P1 **Status:** READY **Agent:** devops-engineer (CI, lead) +
-backend-engineer (spec) **Estimated hours:** 6 **Source retro:** RETRO-078 (§4c TG-1/TG-2) **Source
-ticket:** FOLLOW-315 / PR #302 **Depends on:** none (FOLLOW-315 merged, PR #302) **Promoted:**
-2026-06-14 (CEO-directed)
+**Sprint:** 18 **Priority:** P1 **Status:** READY_FOR_REVIEW **Agent:** devops-engineer (CI, lead) +
+backend-engineer (spec) **Branch:** `devops-engineer/FOLLOW-316-tracer-ci-guard` **PR:** #305
+**Estimated hours:** 6 **Source retro:** RETRO-078 (§4c TG-1/TG-2) **Source ticket:** FOLLOW-315 /
+PR #302 **Depends on:** none (FOLLOW-315 merged, PR #302) **Promoted:** 2026-06-14 (CEO-directed)
 
 ---
 
@@ -70,18 +70,18 @@ This is the standing gap to close: a real-engine guard on the tracer query path.
 
 The ticket is DONE when ALL of these are true:
 
-- [ ] **AC1** — A live-CH integration spec submits all 4 tracer builders (export + history with
+- [x] **AC1** — A live-CH integration spec submits all 4 tracer builders (export + history with
       from/to + stream-poll cursor + per-session) against a real ClickHouse and asserts they return
       200 / no error against a seeded `intent_events` table.
-- [ ] **AC2** — A negative control in the same spec shows that a deliberately unqualified
+- [x] **AC2** — A negative control in the same spec shows that a deliberately unqualified
       bare-`event_at` date predicate FAILS against the same container (proves the guard catches the
       Code-386 / `NO_COMMON_TYPE` class).
-- [ ] **AC3** — The spec runs in CI in a job where ClickHouse is up and does NOT `skipIf` silently
+- [x] **AC3** — The spec runs in CI in a job where ClickHouse is up and does NOT `skipIf` silently
       in that job: absence of the container is a hard failure there, not a skip.
-- [ ] **AC4** — `intent_events` (or the minimal columns the builders touch) is created and minimally
+- [x] **AC4** — `intent_events` (or the minimal columns the builders touch) is created and minimally
       seeded on the CI container before the spec runs.
-- [ ] **AC5** — Prettier + control-plane vitest green; the new/extended job is green on a clean
-      checkout (verify with `gh pr checks --watch`).
+- [x] **AC5** — Prettier + control-plane vitest green; the new/extended job is green on a clean
+      checkout (PR #305, CI run 27511309098 — `Tracer query-builders live ClickHouse guard: pass`).
 
 ## Implementation guidance
 

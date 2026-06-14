@@ -90,6 +90,12 @@ Measured during the ≥3-day shadow window before going live:
 
 ### Migration sequencing (ESC-012 — Path 1, CEO decision 2026-05-28)
 
+> **FOLLOW-308 (2026-06-14):** `.github/workflows/db-migrate.yml` now auto-applies `pnpm db:migrate`
+> to staging then prod on every push to `main` that touches `packages/db/migrations/**`. This
+> eliminates the operator-driven-only gap that caused prod to drift 14 migrations behind (ESC-022 /
+> RETRO-076 OG-1). The workflow is inert until `DOPPLER_TOKEN_STG` / `DOPPLER_TOKEN_PRD` are
+> provisioned (ESC-023). Manual fallback: `doppler run --config prd -- pnpm db:migrate`.
+
 **Mandatory order:** wizard creates tenant row → `pnpm db:migrate` → verify selector via SELECT.
 
 **Why the order matters:** Migration 0016 (`0016_pilot_inquiry_selector.sql`) contains a

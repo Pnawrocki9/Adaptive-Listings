@@ -8171,7 +8171,7 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **recommended_agent:** devops-engineer
 - **priority:** P1
 - **estimated_hours:** 4
-- **status:** BACKLOG
+- **status:** PR-OPEN (inert-pending-secret: ESC-023)
 - **scope:** Root cause of FOLLOW-307's drift finding: no GitHub workflow auto-applies Postgres
   migrations on merge/deploy. Only ClickHouse has this (ci.yml:315). Drizzle's `pnpm db:migrate` is
   entirely operator-driven, creating a silent merge-to-prod gap on every Postgres migration.
@@ -8185,11 +8185,20 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
     AND add a CI gate that compares the repo's Drizzle journal entry count vs a pinned known-applied
     count, failing/warning on divergence to make the gap visible.
 - **ac:**
-  - [ ] AC1 — chosen mechanism documented and implemented; no future Postgres migration can merge
-        without either auto-applying or triggering an observable gate.
-  - [ ] AC2 — mechanism cross-referenced in `docs/ops/PILOT_RUNBOOK.md` and `packages/db/README.md`.
+  - [x] AC1 — Option A implemented: `.github/workflows/db-migrate.yml` auto-applies
+        `pnpm db:migrate` to staging then prod on every push to main that touches
+        `packages/db/migrations/**` or `packages/db/scripts/migrate.ts`. Path-filtered to avoid
+        needless prod connections on unrelated merges. Staging gates prod via
+        `needs: migrate-staging`. Concurrency guard prevents racing. FOLLOW-149 exit-code-2 guard
+        surfaces journal bugs as CI red. Soft-skip ONLY when Doppler token absent (ESC-023); token
+        present but broken = hard fail. Workflow is INERT until ESC-023 secrets provisioned — see
+        status note.
+  - [x] AC2 — cross-referenced in `docs/ops/PILOT_RUNBOOK.md` §3 migration note and
+        `packages/db/README.md` §How to apply migrations in CI.
   - [ ] AC3 — ESC-022 human compliance sign-off received before closing (confirm no data-integrity
         issues from compliance migrations 0019/0020/0024 running against pre-schema prod).
+        Separately, ESC-023 (DOPPLER_TOKEN_STG / DOPPLER_TOKEN_PRD) must be provisioned for the
+        workflow to activate beyond soft-skip.
 - **depends_on:** ESC-022 (human decision on compliance gap); otherwise none.
 - **promoted_to_queue:** true (added to Sprint 17 backlog QUEUE.md 2026-06-14)
 

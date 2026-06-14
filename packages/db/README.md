@@ -168,10 +168,26 @@ Drizzle does not manage RLS policies — put them in the migration SQL file alon
 
 ## How to apply migrations in CI
 
-The CI pipeline (or Terraform apply hook) sets `DATABASE_URL_DIRECT` via Doppler. Running:
+### Automatic (primary path — FOLLOW-308)
+
+`.github/workflows/db-migrate.yml` runs automatically on every push to `main` that touches
+`packages/db/migrations/**` or `packages/db/scripts/migrate.ts`. It applies migrations to staging
+first (`doppler run --config stg`), and only if staging succeeds, applies to prod
+(`doppler run --config prd`). A
+`concurrency: db-migrate-${{ github.ref }}, cancel-in-progress: false` guard prevents two runs from
+racing the migrator.
+
+The workflow is **inert until `DOPPLER_TOKEN_STG` and `DOPPLER_TOKEN_PRD` GitHub Actions secrets are
+provisioned** (ESC-023). Until then it soft-skips with a clear notice. Once provisioned, it
+activates automatically on the next migration push.
+
+### Manual fallback
+
+The CI pipeline (or operator) can also invoke `doppler run` directly:
 
 ```bash
-pnpm db:migrate
+doppler run --config stg -- pnpm db:migrate   # staging
+doppler run --config prd -- pnpm db:migrate   # prod
 ```
 
 from the repo root executes `scripts/migrate.ts` against the direct Postgres URL. The script uses
@@ -182,6 +198,11 @@ The runner reports honest counts (`applied`, `before`, `after`, `pending`, `jour
 exits with code `2` when `pending > 0 && applied === 0` — the signature of the journal-ordering bug
 described in CONVENTIONS_PATCH.md Rule O. A green "Migrations applied successfully." line is emitted
 only when at least one entry was applied AND zero entries remain pending.
+
+> **RETRO-076 OG-1 (2026-06-14):** Postgres migrations were operator-driven only until FOLLOW-308.
+> This allowed prod to drift 14 migrations / 2.5 weeks behind without detection, including
+> compliance migrations 0019/0020/0024. The auto-apply workflow closes that gap. Do not revert to
+> manual-only without a replacement gate.
 
 ## Migration journal integrity (Rule O — FOLLOW-149)
 

@@ -1082,3 +1082,61 @@ fix.
 but DOES block FOLLOW-308 AC3 closure.
 
 **Resolution:** (open — awaiting human action)
+
+---
+
+## OPEN — ESC-023: DOPPLER_TOKEN_STG and DOPPLER_TOKEN_PRD GitHub Actions secrets must be provisioned for db-migrate.yml to activate [FOLLOW-308]
+
+**Filed by:** devops-engineer **Date:** 2026-06-14T00:00:00Z **Affects:** FOLLOW-308,
+`.github/workflows/db-migrate.yml`, prod + staging Supabase migration auto-apply **Type:**
+repo-config / secrets
+
+**Description:**
+
+FOLLOW-308 (Option A — CEO decision) implements a new GitHub Actions workflow
+`.github/workflows/db-migrate.yml` that auto-applies `pnpm db:migrate` to staging then prod on every
+push to `main` that touches `packages/db/migrations/**` or `packages/db/scripts/migrate.ts`.
+
+The workflow requires two Doppler service tokens as GitHub Actions repository secrets:
+
+- `DOPPLER_TOKEN_STG` — Doppler service token scoped to project `estalara-adaptive-listings`, config
+  `stg`. Used to inject `DATABASE_URL_ADMIN` (or `DATABASE_URL_DIRECT`) for the staging Supabase
+  project during the `migrate-staging` job.
+- `DOPPLER_TOKEN_PRD` — Doppler service token scoped to project `estalara-adaptive-listings`, config
+  `prd`. Used to inject the prod Supabase credentials during the `migrate-prod` job.
+
+**`gh secret list` result (2026-06-14):** Only `DOPPLER_TOKEN_DEV` exists in this repo. Neither
+`DOPPLER_TOKEN_STG` nor `DOPPLER_TOKEN_PRD` exists.
+
+**Current impact:** The `db-migrate.yml` workflow is in the repo and will be triggered by migration
+pushes, but both jobs will soft-skip (emit a `::notice::` and exit 0). The workflow is visually
+present in GitHub Actions but INERT. No auto-apply will occur until the secrets are provisioned.
+
+**Required action (Piotr — ~10 minutes per token, ~20 minutes total):**
+
+For each environment (stg, prd):
+
+1. Go to [Doppler dashboard](https://dashboard.doppler.com) → project `estalara-adaptive-listings` →
+   config `stg` (or `prd`) → Access → Service Tokens → Create service token.
+   - Name: `ci-github-actions-migrate`
+   - Config: `stg` (for staging token) / `prd` (for prod token)
+   - Expiry: none or 1 year — rotate on breach per V.6.1 policy.
+   - The token needs READ access to the config so `doppler run` can inject
+     `DATABASE_URL_ADMIN`/`DATABASE_URL_DIRECT`/`DATABASE_URL`.
+2. Copy the token value (shown only once).
+3. Go to GitHub repo → Settings → Secrets and variables → Actions → New repository secret.
+   - Staging: Name `DOPPLER_TOKEN_STG`, value = staging token.
+   - Prod: Name `DOPPLER_TOKEN_PRD`, value = prod token.
+4. After adding, push an empty commit to `main` or use `workflow_dispatch` on `db-migrate.yml` to
+   trigger a run. Confirm both jobs execute `pnpm db:migrate` (not soft-skip) and exit 0 ("Already
+   up-to-date" or "Migrations applied successfully.").
+5. Mark ESC-023 RESOLVED.
+
+**Security note:** The `prd` token must be scoped read-only to the Doppler `prd` config. It does NOT
+need write access to Doppler — only `doppler run` injection (reading secrets). The token should NOT
+have access to any other Doppler project.
+
+**This does NOT block FOLLOW-308 AC1/AC2** (the workflow is implemented and cross-referenced in
+docs). It blocks AC3 (ESC-022 compliance sign-off) and the "live not inert" state of the mechanism.
+
+**Resolution:** (open — awaiting secret provisioning)

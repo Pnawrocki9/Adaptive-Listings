@@ -2,6 +2,19 @@
 
 ---
 
+**Date / ticket:** 2026-06-14 — FOLLOW-269 (promotion from BLOCKED to IN_PROGRESS) + FOLLOW-308
+(status reconciliation BACKLOG→DONE) **Delegation row used:** Row 2 (control-plane, Next.js —
+backend-engineer) **What validation caught (or missed):** QUEUE.md still showed FOLLOW-269 as
+BLOCKED and FOLLOW-308 as BACKLOG even though all FOLLOW-269 depends_on (FOLLOW-266/267/268) had
+merged and FOLLOW-308 was implemented in PR #297. The session context note is the source of truth
+for what actually merged — QUEUE.md can lag behind when the prior session ended mid-update. Always
+re-verify status by cross-checking git log + QUEUE.md; don't rely on the last-session QUEUE.md
+alone. **A delegation/validation rule I'd add:** After each batch of merged PRs, run a mini audit:
+for every BLOCKED ticket whose depends_on are now all DONE, promote to READY before picking a new
+ticket — stale BLOCKED entries hide ready work.
+
+---
+
 **Date / ticket:** 2026-06-13 — FOLLOW-288 (PR #282) validation + ESC-021 resolution **Delegation
 row used:** Row 2 (ingest worker — backend-engineer) **What validation caught (or missed):** ESC-021
 was filed requiring human approval, but the fix (PR #282) was straightforward and already merged

@@ -904,3 +904,35 @@
   the next retro: a "data-wire closed" claim must name the ENVIRONMENT the data lands in, not just
   the code that would land it — and a new "no-auto-Postgres-apply" deploy gap is now watched at
   count 1 (promote on a 2nd merged-but-unapplied Postgres migration).
+
+### 2026-06-14 · RETRO-077 (FOLLOW-269 / PR #298 — K.3.6 tracer admin UI, 4 consumer pages)
+
+- **A finding I almost missed and why.** The Weight Editor page is internally clean,
+  Rule-K.2-conscious, and its 23 tests are green — I nearly logged "consumer contract conformance
+  ✅" off the task's framing (which centered the `data_source` cast). The catch came from grepping
+  the ACTUAL route exports instead of trusting the page docstring: `admin/intent/config/route.ts`
+  exports POST only, so the page's `GET /api/admin/intent/config` is a 405, and the GET that DOES
+  exist (`/api/intent/config`) drops the `id` the page needs to ever PUT. Both bugs were invisible
+  to CI because the test mocks `global.fetch` with a fabricated 200-GET carrying a fabricated `id`.
+  Lesson: for a CONSUMER ticket, the first move is `grep "export async function" <each route>` +
+  diff the real response body against what the page reads — never audit the page against its own
+  docstring or its own mocked fixture.
+- **An axis/chain I had to trace twice — the SSE auth seam.** First pass: "EventSource opened +
+  closed on unmount, onerror present → SSE handling clean ✅." Second pass (task item 2 forced "does
+  the stream actually authenticate?"): the page passes the token as `?token=` (EventSource can't set
+  headers) but `verifyTracerAdminAuth` reads the Authorization header ONLY — so every stream 401s.
+  The SSE plumbing (lifecycle/heartbeat/data/closed/error frames) is genuinely correct; the AUTH leg
+  one level down is severed. "SSE handled correctly" has two layers — frame handling AND the auth
+  the connection rides on — and only the first was clean.
+- **A meta-pattern in how gaps recur across agents.** Same one-hop-decay shape the K.3.6 data-plane
+  wave showed (RETRO-074→076), now on the admin/UI plane: every page is correct against the contract
+  the worker IMAGINED, and the tests endorse that imagined contract, so the wire severs precisely at
+  the page↔route seam that no test crosses. The fixture-lies family is now count-3 (RETRO-072
+  schema-round-trip, RETRO-074/075 bare-host base, RETRO-077 fabricated GET+id) but each instance is
+  a DIFFERENT seam (schema enum / base-URL form / endpoint-method+field), which is why I held off
+  promoting a single rule — the common remedy ("the test must cross the real seam, not a mock of
+  it") is real but spans Rule L's producer axis AND a new consumer axis. Carry-forward: on the NEXT
+  independent "consumer test mocks a fabricated server response" sighting, promote a consumer-side
+  companion to Rule L ("a consumer test MUST drive the real handler or a route-derived fixture,
+  never a hand-authored response shape") — count is at 1 on that specific consumer-UI axis even
+  though the family is at 3.

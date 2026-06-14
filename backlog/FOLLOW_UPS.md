@@ -8299,3 +8299,179 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 <!-- prior next free FOLLOW number: 308 (307 = RETRO-076 / PR #293 / FOLLOW-266 Phase 2 + FOLLOW-302: migration 0030 seeds the global-default intent_weight_configs row (tenant_id=NULL, is_active=true, weights={} Option A) so GET /api/intent/config flips mock→live for override-less tenants — the seed SQL is correct + idempotent (WHERE NOT EXISTS guard + 0029 partial-unique-index backstop) + tenant-override-safe (route.ts:260 tenantRow ?? globalRow) + no-skew ({} → SDK internal defaults, live-but-inert) and FOLLOW-302 is closed on BOTH the 0029:12 comment AND the schema docstring (signal_likelihoods). THE GAP IS OPERATIONAL: no GH workflow runs db:migrate, so 0030 only materializes a 'live' GET once an operator/Terraform applies it to prod Supabase — FOLLOW-307 confirms the apply + adds the data_source:'live' assertion to FOLLOW-293's live smoke + decides a standing auto-apply-or-checklist mechanism, P1. NOTE FOLLOW-302 CLOSED (do not re-file); FOLLOW-293 stays OPEN for the live network smoke; FOLLOW-304 GET-determinism UNCHANGED (the seed is index-protected, no breach); FOLLOW-306 unrelated.) -->
 <!-- prior next free FOLLOW number: 307 (306 = RETRO-075 / PR #291 / FOLLOW-305: bring the LAST decisionApiUrl fetch site fetchDescription (adapt-description.ts:227) under the buildEndpoint helper FOLLOW-305 introduced + add a dedicated endpoint.test.ts + fix the endpoint.ts:27-31 "Non-test consumers" docstring list that omits adapt-description.ts; NOT prod-blocking — /adapt/description is single-/api and resolves correctly today, this is centralization hygiene so no future edit can re-derive the host+/api convention wrong (Rule X compliance for the last of 6 fetch sites, Rule S sibling-completeness on the helper-adoption axis), P3. NOTE FOLLOW-305 itself FIXED all four double-/api sites + closed the RETRO-074 LG-1 archetype parity (TG-2) + the DG-1 docstrings — D-1 is NOW production-live end-to-end; do not re-file those. FOLLOW-293 stays OPEN for the LIVE network smoke ONLY (the unit-level prod-URL-form is now covered); FOLLOW-266 Phase 2 seed UNBLOCKED; FOLLOW-304 GET-determinism UNCHANGED — do not re-file any.) -->
 <!-- prior next free FOLLOW number: 306 (305 = RETRO-074 / PR #290 / FOLLOW-268-sdk: fix the double-/api production 404 — fetchIntentWeights + fetchQuizConfig prepend /api to a base the buildSnippet install already emits with /api, so server intent weights + quiz config 404-silently for every buildSnippet-onboarded tenant; centralize on a buildEndpoint helper, add prod-URL-form tests, close the ARCHETYPE_NAMES≡ARCHETYPE_KEYS parity axis, fix the misleading docstrings, P1, BLOCKED K.3.6 D-1 production closure — NOW RESOLVED by PR #291 / RETRO-075.) -->
+
+## FOLLOW-309 — Weight Editor reads a non-existent `GET /api/admin/intent/config` (returns 405) and a config `id` the GET never emits — point the page at the real config GET, make that GET return `id`, and drive the test against the real handler (CB-1 P0 + LG-1 P1)
+
+- **source_retro:** RETRO-077 (§3 HALF_WIRE_C CB-1; §4a LG-1; §4c TG-1)
+- **source_ticket:** FOLLOW-269 / PR #298
+- **recommended_sprint:** 17 (immediate — blocks the Weight Editor demo)
+- **recommended_agent:** backend-engineer
+- **priority:** P0
+- **estimated_hours:** 5
+- **scope:** `apps/control-plane/src/app/admin/tracer/weights/page.tsx:136` does
+  `fetch('/api/admin/intent/config')` with default method GET, but
+  `apps/control-plane/src/app/api/admin/intent/config/route.ts` exports ONLY POST (no GET handler) →
+  Next.js App Router returns **405 Method Not Allowed**, so the Weight Editor shows "API error
+  [405]" on every load and never reads the live config. The GET that serves a config lives at
+  `/api/intent/config` (SDK-facing, route.ts:183) — a different path. TWO compounding defects: (a)
+  **CB-1** wrong endpoint/method. EITHER add a staff-auth-guarded GET handler to
+  `/api/admin/intent/config` that returns the active global row, OR repoint the page at the existing
+  `/api/intent/config` (but that route derives tenant from request context and is NOT the
+  admin-guarded surface — prefer adding the admin GET). (b) **LG-1** the config GET response body
+  (`IntentConfigResponse`) has no `id` field (route.ts:280-285 drops the SELECTed `id`), so
+  `page.tsx:161` never sets `configId`, so `handleSave` (:203) can NEVER take the PUT branch — every
+  Save POST-creates a new active row. Add `id` to the GET response (a `IntentConfigResponseSchema`
+  change — coordinate with the SDK, which also reads this schema, so make `id` OPTIONAL and
+  SDK-ignored). (c) **TG-1** rewrite `weights/page.test.tsx` to drive the REAL GET route handler (as
+  FOLLOW-297's route tests do) or derive its fixture from the route's typed response — the current
+  `MOCK_LIVE_RESPONSE` fabricates an `id` and a 200-GET the route cannot emit, which is why
+  CB-1/LG-1 passed CI.
+- **ac:**
+  - [ ] AC1 — opening the Weight Editor on a configured DB loads the active config (no 405); on an
+        unconfigured DB it shows the `mock` badge, not an error.
+  - [ ] AC2 — after a successful Save, the page holds the returned `id` and a subsequent Save issues
+        a PUT (not a second POST-create); verified by asserting the fetch method/URL.
+  - [ ] AC3 — the config GET response includes `id` (optional in `IntentConfigResponseSchema`); SDK
+        `safeParse` still succeeds (schema round-trip test added).
+  - [ ] AC4 — the page test drives the real GET/PUT/POST handlers (or a route-derived fixture); a
+        test asserts the fetched URL + method and FAILS if the page calls a 405 path.
+  - [ ] AC5 — prettier + control-plane vitest green.
+- **depends_on:** coordinate the `IntentConfigResponseSchema` `id` add with the SDK consumer
+  (FOLLOW-268-sdk path) so the optional field is ignored, not rejected.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-310 — Live Monitor SSE auth is severed: the page passes the admin token as a `?token=` query param but `verifyTracerAdminAuth` reads it ONLY from the Authorization header, so every stream 401s (CB-2 P0)
+
+- **source_retro:** RETRO-077 (§3 HALF_WIRE_C CB-2; §4c TG-2; §5d)
+- **source_ticket:** FOLLOW-269 / PR #298
+- **recommended_sprint:** 17 (immediate — the Live Monitor's headline live-tail is non-functional)
+- **recommended_agent:** backend-engineer (auth surface — coordinate with architect per §5d)
+- **priority:** P0
+- **estimated_hours:** 4
+- **scope:** `apps/control-plane/src/app/admin/tenants/[id]/tracer/page.tsx:149` (SessionStream)
+  builds the EventSource URL with `&token=${token}` because EventSource cannot set custom headers
+  (page comment :147). But `apps/control-plane/src/lib/tracer-auth.ts:43` reads the bearer token
+  ONLY from `Authorization`/`authorization` headers; `sessions/[id]/stream/route.ts:55` calls
+  `verifyTracerAdminAuth(req)` with no query-param fallback. Result: the SSE request has no
+  Authorization header → 401 → EventSource `onerror` → status `error`. Fix: extend
+  `verifyTracerAdminAuth` (or add an SSE-specific guard) to ALSO accept a `token` query param,
+  constant-time-compared identically to the header path (do NOT log it), OR move SSE auth to a
+  cookie. This is a cross-cutting decision for every future admin SSE surface (§5d) — get an
+  architect sign-off on query-param-token-vs-cookie. Also reconcile the token SOURCE inconsistency:
+  the page reads `localStorage.estalara_admin_token` (`getAdminToken`) while its own docstring
+  (:10-13) claims an `X-Admin-Token` cookie — pick one and make the docstring true.
+- **ac:**
+  - [ ] AC1 — a valid admin token in the SSE `?token=` query param authenticates the stream (200,
+        events flow); an invalid/absent token 401s.
+  - [ ] AC2 — the token compare stays constant-time and the token is never written to logs/Sentry.
+  - [ ] AC3 — a test drives the real stream route + `verifyTracerAdminAuth` with a query-param token
+        (TG-2) and FAILS if the helper reverts to header-only.
+  - [ ] AC4 — architect sign-off recorded (query-param-token vs cookie for admin SSE); page
+        docstring + token source reconciled.
+  - [ ] AC5 — prettier + control-plane vitest green.
+- **depends_on:** architect decision on the admin-SSE auth mechanism (§5d).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-311 — The three tenant-scoped tracer pages (Live Monitor / History / Export) are nav-orphaned (Rule H): no sidebar, tenant-list, or tenant-detail link reaches them — add a per-tenant nav path
+
+- **source_retro:** RETRO-077 (§3 HW-3 Rule-H reachability orphan)
+- **source_ticket:** FOLLOW-269 / PR #298
+- **recommended_sprint:** 17
+- **recommended_agent:** backend-engineer
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** `apps/control-plane/src/app/admin/layout.tsx:11` (`TRACER_NAV_LINKS`) links ONLY
+  `/admin/tracer/weights`. The tenants list `apps/control-plane/src/app/admin/tenants/page.tsx`
+  renders MOCK_TENANTS rows with no `/tracer` link, and there is no `admin/tenants/[id]/page.tsx`
+  tenant-detail page. So an admin can reach `/admin/tenants/[id]/tracer` (and its history/export
+  siblings) ONLY by hand-typing a URL with a tenant UUID. The three pages' cross-links work once
+  you're on one, but there is no entry into the set. Add a "Tracer" / "Live Monitor" link on each
+  tenant row in the tenants list (`/admin/tenants/${tenant.id}/tracer`), and/or a tenant-detail page
+  that links the tracer set. Note `tenants/page.tsx` still renders MOCK_TENANTS (TODO Sprint 5) —
+  the link target must use the real tenant id once that's wired, but the nav href shape
+  (`/admin/tenants/[id]/tracer`) is correct today.
+- **ac:**
+  - [ ] AC1 — every tenant row in the admin tenants list exposes a link that resolves to
+        `/admin/tenants/<that-tenant-id>/tracer`.
+  - [ ] AC2 — a test asserts the rendered href contains the per-row tenant id (not a
+        hardcoded/placeholder id).
+  - [ ] AC3 — the Live Monitor is reachable in ≤2 clicks from the admin sidebar.
+  - [ ] AC4 — prettier + control-plane vitest green.
+- **depends_on:** none (works against MOCK_TENANTS today; survives the real-tenants wiring since the
+  href is id-templated).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-312 — History "Export CSV" link yields JSONL (route selects CSV from the `Accept` header, page sets a `_accept` query param the route ignores) + datetime-local→ISO format ambiguity on both export entry points (LG-2 P2 + LG-3 P3)
+
+- **source_retro:** RETRO-077 (§4a LG-2 Rule-S divergence; §4a LG-3)
+- **source_ticket:** FOLLOW-269 / PR #298
+- **recommended_sprint:** 17 or 18
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 3
+- **scope:** (a) **LG-2** `history/page.tsx:305` `buildExportUrl('csv')` sets `_accept=text/csv` as
+  a query param on an `<a href download>`; `export/decisions/route.ts:144` selects CSV ONLY from
+  `req.headers.get('Accept')` (which a plain `<a>` navigation cannot set) and ignores `_accept`, so
+  the "Export CSV (decisions)" button downloads JSONL. The Export Dashboard page does it correctly
+  (sets the `Accept: text/csv` header via `fetch`, export/page.tsx:72) — Rule-S sibling divergence:
+  two CSV-trigger sites, only one honors the route's selector. Fix the history link to use the same
+  `fetch`+blob+`Accept` mechanism as the Export Dashboard (a plain `<a>` cannot deliver CSV via this
+  route), OR add a `_accept`/`format` query-param fallback to the route (and apply it to BOTH sites
+  consistently). (b) **LG-3** both export entry points feed `<input type="datetime-local">` values
+  (`YYYY-MM-DDTHH:MM`, no seconds, no TZ) into a route documented as taking "ISO 8601" — at minimum
+  an implicit-local-vs-UTC ambiguity for a tenant-facing export; normalize to a full ISO-8601-UTC
+  string before the request, or have the route parse the truncated form explicitly.
+- **ac:**
+  - [ ] AC1 — the History "Export CSV" control produces a genuine CSV (verified by
+        content-type/first-line), matching the Export Dashboard behavior.
+  - [ ] AC2 — CSV selection works identically from BOTH the History link and the Export Dashboard
+        (Rule S).
+  - [ ] AC3 — `from`/`to` are sent as unambiguous ISO-8601-UTC; a test pins the format the route
+        receives.
+  - [ ] AC4 — prettier + control-plane vitest green.
+- **depends_on:** none.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-313 — Drop the `{data_source?: string}` loose casts in the 3 tracer pages once FOLLOW-303 is EXTENDED to widen all four tracer `data_source` enums to include `'error'`
+
+- **source_retro:** RETRO-077 (§4e; §5c — FOLLOW-303 coverage verdict)
+- **source_ticket:** FOLLOW-269 / PR #298
+- **recommended_sprint:** 18 (after the extended FOLLOW-303 lands)
+- **recommended_agent:** qa-engineer or backend-engineer
+- **priority:** P3
+- **estimated_hours:** 2
+- **scope:** The Live Monitor (page.tsx:329), History (page.tsx:239), and replay (page.tsx:277)
+  consumers cast `data_source` to `{ data_source?: string }` because the typed enums omit `'error'`:
+  `TracerSessionsResponseSchema.data_source = ['live','mock']` and
+  `TracerHistoryResponseSchema.data_source = ['live','mock']`
+  (`packages/shared/src/schemas/tracer.ts`), while the detail/replay enums are
+  `['live','mock','clickhouse_unavailable']`. **FOLLOW-303 as currently written does NOT enable this
+  cleanup**: its AC1 names only `TracerSessionDetailResponseSchema` (+ "audit" of siblings) and does
+  NOT name `TracerSessionsResponseSchema` at all (the Live Monitor's GET). So FIRST extend
+  FOLLOW-303 to widen ALL FOUR tracer enums (`Sessions`, `History`, `SessionDetail`,
+  `SessionReplay`) to a consistent set including `'error'` (coordinate the slot with FOLLOW-299's
+  intent-config sibling and the Rule K.2 amendment), THEN drop the casts here and read the typed
+  `data_source` field, preserving the existing Rule-K.2 visible-error behavior.
+- **ac:**
+  - [ ] AC1 — (pre-req, fold into FOLLOW-303) all four tracer `data_source` enums consistently
+        include `'error'`.
+  - [ ] AC2 — the 3 tracer pages read the typed `data_source` field with no `{data_source?: string}`
+        cast; the error banner still renders on `'error'` and on non-2xx (Rule K.2 preserved).
+  - [ ] AC3 — a type-level check (no `as` cast on the response data_source) + render test for the
+        error path.
+  - [ ] AC4 — prettier + control-plane vitest green.
+- **depends_on:** FOLLOW-303 EXTENDED to widen all four tracer enums (not just
+  `TracerSessionDetailResponseSchema`).
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 314 (309-313 = RETRO-077 / PR #298 / FOLLOW-269 K.3.6 tracer admin UI: 309 = Weight Editor GET 405 (admin/intent/config exports POST-only; real GET is /api/intent/config) + can-never-PUT (GET drops `id`) + test fabricates the contract [CB-1 P0 + LG-1 P1 + TG-1]; 310 = Live Monitor SSE 401s (page sends ?token= query param, verifyTracerAdminAuth reads header-only) [CB-2 P0]; 311 = 3 tenant-scoped pages nav-orphaned, only Weight Editor in sidebar, no tenant-row link, no [id]/page.tsx [Rule H P1]; 312 = History "Export CSV" yields JSONL (_accept query param ignored, route reads Accept header) + datetime-local→ISO ambiguity [LG-2 P2 + LG-3 P3]; 313 = drop the data_source loose casts AFTER extending FOLLOW-303 to widen ALL FOUR tracer enums incl Sessions+History to add 'error' [P3, depends extended 303]. FOLLOW-303 does NOT cover the UI cast cleanup — it names only TracerSessionDetailResponseSchema, not TracerSessionsResponseSchema; must be EXTENDED. No Rule promoted this run: the "consumer UI test mocks a fabricated server contract" pattern is count-3 in the fixture-lies family but adjacent to Rule L; held for the architect to extend Rule L or mint a rule on the next independent sighting.) -->

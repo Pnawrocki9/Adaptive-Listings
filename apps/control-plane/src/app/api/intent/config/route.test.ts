@@ -506,6 +506,51 @@ describe('GET /api/intent/config — authenticated live path (DB configured)', (
       expect(body.effective_at).toBe('2026-06-13T00:00:00.000Z');
     },
   );
+
+  it(
+    'SEED-LIVE: global empty-weights seed row (Option A, FOLLOW-266 Phase 2) returns ' +
+      "data_source: 'live' with weights: {} — NOT 'mock' (D-1 production-live confirmation)",
+    async () => {
+      // This test proves the end-to-end effect of migration 0030_seed_global_intent_weights:
+      // once the seed INSERT runs, the global-default row (tenant_id IS NULL, weights = '{}')
+      // is present and GET /api/intent/config returns data_source: 'live' instead of 'mock'.
+      //
+      // The tenant has NO tenant-specific override. The route must:
+      //   1. Auth-succeed (api_keys row found).
+      //   2. Find the global active row (tenant_id IS NULL, weights = {}).
+      //   3. Return data_source: 'live' with weights: {} (not 'mock').
+      //
+      // This is the canonical test proving that the empty/identity seed does NOT
+      // result in fabricated data — it results in live-but-inert by design.
+      const seededGlobalRow = {
+        id: 'cfg-global-seed',
+        tenantId: null, // tenant_id IS NULL = global default (seed row)
+        weights: {}, // Option A: empty identity seed
+        createdAt: new Date('2026-06-14T07:00:00.000Z'),
+        isActive: true,
+      };
+      setupDbSequence(makeAuthDbMock(authSuccessRow()), makeWeightDbMock([seededGlobalRow]));
+
+      const res = await GET(makeRequest({ bearer: 'Bearer valid-api-key' }));
+      expect(res.status).toBe(200);
+
+      const body = await parseBody<{
+        weights: object;
+        data_source: string;
+        is_tenant_specific: boolean;
+        effective_at: string;
+      }>(res);
+
+      // Core assertion: seed row causes data_source: 'live' (D-1 production-live).
+      expect(body.data_source).toBe('live');
+      // The weights are {} — identity seed; SDK applies its internal defaults.
+      expect(body.weights).toEqual({});
+      // The seed is global (tenant_id IS NULL) so is_tenant_specific = false.
+      expect(body.is_tenant_specific).toBe(false);
+      // effective_at reflects the seed row's created_at.
+      expect(body.effective_at).toBe('2026-06-14T07:00:00.000Z');
+    },
+  );
 });
 
 // ─── SCHEMA-* tests (FOLLOW-299) ─────────────────────────────────────────────

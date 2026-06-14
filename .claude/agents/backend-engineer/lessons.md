@@ -641,3 +641,23 @@ queue entries from corrupted failed-test state corrupting the next test.
 **A guardrail I'd add:** When a route adds `.orderBy()` to an existing query, update ALL mock chains
 for that query in tests — a shared mock pattern that omits `orderBy` in the chain silently breaks
 auth vs weight DB differentiation.
+
+---
+
+## 2026-06-14 / FOLLOW-266-phase2-seed + FOLLOW-302
+
+**What I built:** Migration `0030_seed_global_intent_weights` — the Option A empty/identity
+global-default weight seed (tenant_id IS NULL, weights = '{}'). Flips `GET /api/intent/config` from
+`data_source:'mock'` to `data_source:'live'` for all tenants without an override, with
+behavior-identical SDK defaults. Folded in FOLLOW-302: corrected stale `signal_weights` comment in
+migration 0029 and schema docstring in `intent-weight-configs.ts`. Added PGlite idempotency test
+(SEED-1..4) in packages/db and SEED-LIVE route-level test in control-plane.
+
+**Wiring/auth/fail-loud risks I weighed:** The empty-weights seed could be confused with the no-row
+mock path — the route's existing parse path would fail on `{}` if IntentWeightsSchema rejected it;
+confirmed all sub-fields are optional so `{}` parses cleanly. FOLLOW-302 risk: editing an
+already-applied migration file — verified the CI journal gate hashes nothing in the SQL content,
+only `when` timestamps + file presence, so the 0029 edit is safe.
+
+**A guardrail I'd add:** Add a CI gate that grep-checks `signal_weights` as a banned key in
+migration SQL/schema files — would have caught FOLLOW-302 at PR time instead of post-merge retro.

@@ -42,8 +42,12 @@ export const intentWeightConfigs = pgTable('intent_weight_configs', {
 
   /**
    * Signal weight configuration in JSONB.
-   * Expected shape: IntentWeightsSchema from @estalara/shared/schemas/intent-weights
-   * (all three sub-fields optional: priors, behavioral_damping, signal_likelihoods).
+   * Canonical shape: `{ priors?, behavioral_damping?, signal_likelihoods? }` —
+   * defined by IntentWeightsSchema in @estalara/shared/schemas/intent-weights.
+   * All three sub-fields are optional; an empty `{}` is valid (identity / Option A seed,
+   * migration 0030). FOLLOW-302: migration 0029 line 12 previously showed the stale
+   * `signal_weights` key; corrected to `signal_likelihoods` in this PR (journal-safe —
+   * the monotonicity gate does not hash SQL content).
    * Validated by the write API (FOLLOW-268-write); stored opaque here so migrations
    * don't need to track weight schema evolution.
    */

@@ -9,7 +9,7 @@
 --   id           -- surrogate PK (UUID).
 --   tenant_id    -- FK -> tenants(id) CASCADE DELETE; NULL = global default.
 --   is_active    -- soft-gate; at most one active row per (tenant_id, NULL global).
---   weights      -- jsonb: { signal_weights: {...}, priors: {...}, behavioral_damping: 0.75 }
+--   weights      -- jsonb: { priors?: {...}, behavioral_damping?: 0.75, signal_likelihoods?: {...} }
 --   created_at   -- when this config row was created.
 --   created_by   -- FK -> users(id); NULL for system-seeded global defaults.
 --

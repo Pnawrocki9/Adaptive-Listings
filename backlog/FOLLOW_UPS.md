@@ -7793,13 +7793,15 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
   docstring to a valid `IntentWeightsSchema` example
   (`{ priors: {...}, behavioral_damping: 0.3, signal_likelihoods: {...} }`).
 - **ac:**
-  - [ ] AC1 — migration 0029:12 comment shows a valid `IntentWeightsSchema`-shaped example (no
-        `signal_weights`).
-  - [ ] AC2 — the `weights` column docstring in `intent-weight-configs.ts` matches the canonical
-        schema.
-  - [ ] AC3 — prettier green.
+  - [x] AC1 — migration 0029:12 comment shows a valid `IntentWeightsSchema`-shaped example (no
+        `signal_weights`). Fixed in FOLLOW-266-phase2-seed PR (journal-safe — gate does not hash SQL
+        content).
+  - [x] AC2 — the `weights` column docstring in `intent-weight-configs.ts` matches the canonical
+        schema. Fixed in same PR.
+  - [x] AC3 — prettier green.
 - **depends_on:** none (strengthens FOLLOW-300's read-side half).
 - **promoted_to_queue:** false
+- **closed_by:** FOLLOW-266-phase2-seed PR (folded in)
 
 ---
 

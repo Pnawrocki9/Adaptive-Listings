@@ -211,6 +211,13 @@
       "when": 1781287352250,
       "tag": "0029_intent_weight_configs",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1781420214161,
+      "tag": "0030_seed_global_intent_weights",
+      "breakpoints": true
     }
   ]
 }

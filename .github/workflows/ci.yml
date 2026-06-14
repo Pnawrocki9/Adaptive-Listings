@@ -336,10 +336,11 @@ jobs:
         ports:
           - 8123:8123
         env:
-          # Passwordless default user — the tracer client (clickhouse-tracer.ts
-          # authHeaders) sends no Authorization header when CLICKHOUSE_PASSWORD
-          # is empty, which matches this setup.
-          CLICKHOUSE_ALLOW_EMPTY_PASSWORD: "1"
+          # Skip user-setup so the default user has no password (same as local
+          # dev — FOLLOW-315 verification used this flag). The tracer client
+          # (clickhouse-tracer.ts authHeaders) sends no Authorization header
+          # when CLICKHOUSE_PASSWORD is empty, which matches a passwordless CH.
+          CLICKHOUSE_SKIP_USER_SETUP: "1"
     steps:
       - uses: actions/checkout@v4
 

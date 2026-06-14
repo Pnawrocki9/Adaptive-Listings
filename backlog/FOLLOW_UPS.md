@@ -8122,5 +8122,51 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 
 ---
 
-<!-- next free FOLLOW number: 307 (306 = RETRO-075 / PR #291 / FOLLOW-305: bring the LAST decisionApiUrl fetch site fetchDescription (adapt-description.ts:227) under the buildEndpoint helper FOLLOW-305 introduced + add a dedicated endpoint.test.ts + fix the endpoint.ts:27-31 "Non-test consumers" docstring list that omits adapt-description.ts; NOT prod-blocking — /adapt/description is single-/api and resolves correctly today, this is centralization hygiene so no future edit can re-derive the host+/api convention wrong (Rule X compliance for the last of 6 fetch sites, Rule S sibling-completeness on the helper-adoption axis), P3. NOTE FOLLOW-305 itself FIXED all four double-/api sites + closed the RETRO-074 LG-1 archetype parity (TG-2) + the DG-1 docstrings — D-1 is NOW production-live end-to-end; do not re-file those. FOLLOW-293 stays OPEN for the LIVE network smoke ONLY (the unit-level prod-URL-form is now covered); FOLLOW-266 Phase 2 seed UNBLOCKED; FOLLOW-304 GET-determinism UNCHANGED — do not re-file any.) -->
+## FOLLOW-307 — Apply + verify migration 0030 in prod/staging Supabase and close the Postgres "merged-≠-applied" deploy gap (K.3.6 D-1 go-live gate)
+
+- **source_retro:** RETRO-076
+- **source_ticket:** FOLLOW-266 Phase 2 (PR #293)
+- **recommended_sprint:** 17 (immediate — this is the last hop to a green FOLLOW-293 live smoke)
+- **recommended_agent:** devops-engineer (coordinate with PM)
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** Migration `0030_seed_global_intent_weights.sql` is MERGED to main (commit `6381499`)
+  and the seed SQL is correct + idempotent (SEED-1..4) — BUT there is NO automatic
+  Postgres-migration apply step on deploy. `pnpm db:migrate` (`scripts/migrate.ts`) is
+  operator/Terraform-driven; a grep of `.github/workflows/` for
+  `db:migrate`/`drizzle-kit migrate`/`db:push` finds ZERO invocations (the only auto-DDL-apply in
+  any workflow is ClickHouse at `ci.yml:315`; `post-migrate-seed.yml` seeds ONLY
+  `archetype_embeddings`, not migrations). So the global-default `intent_weight_configs` row — and
+  therefore the `GET /api/intent/config` `mock → live` flip — does NOT materialize in any
+  environment until an operator runs `db:migrate` there. This is the single remaining gap between
+  "merged" and "K.3.6 D-1 actually ACTING in prod" (RETRO-076 §4a OG-1, §5a, §5d). The fix is
+  operational + a standing-mechanism decision, NOT a code change to the seed.
+- **ac:**
+  - [ ] AC1 — migration 0030 is confirmed APPLIED to the prod (and staging) Supabase DB: an active
+        global row exists
+        (`SELECT count(*) FROM intent_weight_configs WHERE tenant_id IS NULL AND     is_active = true`
+        returns exactly 1) in each environment.
+  - [ ] AC2 — FOLLOW-293's live smoke asserts an authenticated
+        `GET     https://admin.estalara.com/api/intent/config` (real Bearer key, override-less
+        tenant) returns `data_source:'live'` (NOT `'mock'`) with `weights:{}` and
+        `is_tenant_specific:false` — the cross-leg prod proof that 0030 applied AND the RETRO-075
+        URL wire AND the Bearer auth all resolve end-to-end.
+  - [ ] AC3 — a STANDING apply mechanism is decided and recorded (RETRO-076 §5d): EITHER (a) a
+        `db:migrate` step is added to a deploy workflow (gated on Doppler/`DATABASE_URL_DIRECT`,
+        mirroring `post-migrate-seed.yml`'s soft-skip-when-token-absent pattern) so Postgres
+        migrations apply on push-to-main like ClickHouse does, OR (b) an explicit operator
+        deploy-checklist item "run `pnpm db:migrate` after merging any Postgres migration" is
+        documented and cross-referenced from `packages/db/README.md:169-177`.
+  - [ ] AC4 — the chosen mechanism prevents the next Postgres migration from carrying a silent
+        merge-to-effect apply-lag (i.e. a future seed/DDL either auto-applies or is
+        checklist-tracked).
+- **depends_on:** none for AC1/AC2 (0030 already merged); AC2 closure is the gating assertion for
+  FOLLOW-293. Does NOT block any worker ticket — it BLOCKS the FOLLOW-293 "D-1 verified live in
+  prod" closure.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 308 (307 = RETRO-076 / PR #293 / FOLLOW-266 Phase 2 + FOLLOW-302: migration 0030 seeds the global-default intent_weight_configs row (tenant_id=NULL, is_active=true, weights={} Option A) so GET /api/intent/config flips mock→live for override-less tenants — the seed SQL is correct + idempotent (WHERE NOT EXISTS guard + 0029 partial-unique-index backstop) + tenant-override-safe (route.ts:260 tenantRow ?? globalRow) + no-skew ({} → SDK internal defaults, live-but-inert) and FOLLOW-302 is closed on BOTH the 0029:12 comment AND the schema docstring (signal_likelihoods). THE GAP IS OPERATIONAL: no GH workflow runs db:migrate, so 0030 only materializes a 'live' GET once an operator/Terraform applies it to prod Supabase — FOLLOW-307 confirms the apply + adds the data_source:'live' assertion to FOLLOW-293's live smoke + decides a standing auto-apply-or-checklist mechanism, P1. NOTE FOLLOW-302 CLOSED (do not re-file); FOLLOW-293 stays OPEN for the live network smoke; FOLLOW-304 GET-determinism UNCHANGED (the seed is index-protected, no breach); FOLLOW-306 unrelated.) -->
+<!-- prior next free FOLLOW number: 307 (306 = RETRO-075 / PR #291 / FOLLOW-305: bring the LAST decisionApiUrl fetch site fetchDescription (adapt-description.ts:227) under the buildEndpoint helper FOLLOW-305 introduced + add a dedicated endpoint.test.ts + fix the endpoint.ts:27-31 "Non-test consumers" docstring list that omits adapt-description.ts; NOT prod-blocking — /adapt/description is single-/api and resolves correctly today, this is centralization hygiene so no future edit can re-derive the host+/api convention wrong (Rule X compliance for the last of 6 fetch sites, Rule S sibling-completeness on the helper-adoption axis), P3. NOTE FOLLOW-305 itself FIXED all four double-/api sites + closed the RETRO-074 LG-1 archetype parity (TG-2) + the DG-1 docstrings — D-1 is NOW production-live end-to-end; do not re-file those. FOLLOW-293 stays OPEN for the LIVE network smoke ONLY (the unit-level prod-URL-form is now covered); FOLLOW-266 Phase 2 seed UNBLOCKED; FOLLOW-304 GET-determinism UNCHANGED — do not re-file any.) -->
 <!-- prior next free FOLLOW number: 306 (305 = RETRO-074 / PR #290 / FOLLOW-268-sdk: fix the double-/api production 404 — fetchIntentWeights + fetchQuizConfig prepend /api to a base the buildSnippet install already emits with /api, so server intent weights + quiz config 404-silently for every buildSnippet-onboarded tenant; centralize on a buildEndpoint helper, add prod-URL-form tests, close the ARCHETYPE_NAMES≡ARCHETYPE_KEYS parity axis, fix the misleading docstrings, P1, BLOCKED K.3.6 D-1 production closure — NOW RESOLVED by PR #291 / RETRO-075.) -->

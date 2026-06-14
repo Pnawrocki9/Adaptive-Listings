@@ -1,22 +1,27 @@
 # Backlog Queue
 
-**Updated 2026-06-14T00:00Z. K.3.6 D-1 "immediate weights" is CODE-COMPLETE and PRODUCTION-LIVE
-end-to-end. ADR-0012 D-1 WAVE 3 + WAVE 4 COMPLETE (8 PRs total): FOLLOW-267 (P1) DONE — PR #283.
-FOLLOW-294/Ticket-A (P1) DONE — PR #284 (4e45e3a). FOLLOW-268-write/Ticket-B (P1) DONE — PR #285
-(2998a93). FOLLOW-297/Ticket-D (P1) DONE — PR #286 (8cdf94f). FOLLOW-299 (P1) DONE — PR #287
-(c387103). FOLLOW-301 (P1) DONE — PR #289 merge commit a14c907 (one-active-row invariant + atomic
-swap + deterministic GET ORDER BY + real POST→GET round-trip). FOLLOW-268-sdk/Ticket-C (P2) DONE —
-PR #290 merge commit ea2089b (resolveIntentOverrides + fetchIntentWeights; ADR-0012 Ticket C).
-FOLLOW-305 (P1) DONE — PR #291 merge commit 3d9e8f0 (buildEndpoint helper — fixed double-/api prod
-404 on 4 SDK endpoints; also fixed quiz-config delivery + feedback/quiz-completion pings — D-1
-production-live). RETRO-073/074/075 complete. CONVENTIONS_PATCH.md Rule X promoted (every
-SDK→control-plane fetch via buildEndpoint + prod-snippet-base test; RETRO-074/075 count 2). New
-FOLLOW stubs: FOLLOW-304 (P2 backend — GET per-scope determinism), FOLLOW-306 (P3 sdk —
-fetchDescription centralization). D-1 operational precondition: global-default intent_weight_configs
-row must be SEEDED for live weights — FOLLOW-266 Phase 2 UNBLOCKED (seed that row). IMPORTANT:
+**Updated 2026-06-14T08:00Z. K.3.6 D-1 "immediate weights" is CODE-COMPLETE, PRODUCTION-WIRED, and
+PRODUCTION-ACTING in code. Seed merged (PR #293, commit 6381499). ADR-0012 D-1 WAVE 3 + WAVE 4
+COMPLETE (8 PRs total): FOLLOW-267 (P1) DONE — PR #283. FOLLOW-294/Ticket-A (P1) DONE — PR #284
+(4e45e3a). FOLLOW-268-write/Ticket-B (P1) DONE — PR #285 (2998a93). FOLLOW-297/Ticket-D (P1) DONE —
+PR #286 (8cdf94f). FOLLOW-299 (P1) DONE — PR #287 (c387103). FOLLOW-301 (P1) DONE — PR #289 merge
+commit a14c907 (one-active-row invariant + atomic swap + deterministic GET ORDER BY + real POST→GET
+round-trip). FOLLOW-268-sdk/Ticket-C (P2) DONE — PR #290 merge commit ea2089b
+(resolveIntentOverrides + fetchIntentWeights; ADR-0012 Ticket C). FOLLOW-305 (P1) DONE — PR #291
+merge commit 3d9e8f0 (buildEndpoint helper — fixed double-/api prod 404 on 4 SDK endpoints; also
+fixed quiz-config delivery + feedback/quiz-completion pings — D-1 production-live). FOLLOW-266 Phase
+2 seed (global-default intent_weight_configs row / migration 0030) DONE — PR #293 merge
+commit 6381499. FOLLOW-302 (stale signal_weights→signal_likelihoods doc) DONE — folded into PR #293.
+RETRO-073/074/075/076 complete. CONVENTIONS_PATCH.md Rule X promoted (every SDK→control-plane fetch
+via buildEndpoint + prod-snippet-base test; RETRO-074/075 count 2). New FOLLOW stubs: FOLLOW-304 (P2
+backend — GET per-scope determinism), FOLLOW-306 (P3 sdk — fetchDescription centralization),
+FOLLOW-307 (P1 devops — apply migration 0030 in prod Supabase; THE remaining action to make D-1
+fully-live-in-prod). IMPORTANT architectural fact (RETRO-076 OG-1): Postgres/Supabase migrations do
+NOT auto-apply in this repo — only ClickHouse does. Migration 0030 is MERGED but NOT YET APPLIED in
+prod; K.3.6 D-1 is production-ACTING in code but the seed row is NOT live in prod until FOLLOW-307
+applies 0030. FOLLOW-293 (closure gate) remains OPEN for live-network smoke, gated on FOLLOW-307.
 RETRO-074/075 confirmed the double-/api bug also silently broke quiz-config delivery (FOLLOW-275)
-and feedback/quiz-completion writes — all FOUR now fixed by PR #291. FOLLOW-293 (closure gate) open
-for live-network smoke only.**
+and feedback/quiz-completion writes — all FOUR fixed by PR #291.**
 
 **Sprint 13b: FOLLOW-087/099/100/101/102/252/253/257/263 DONE. RETRO-050/051/052/053 complete.
 FOLLOW-265 (P1) DONE — PR #262 merged 2026-06-11 (quiz-only ratified, docs synced, contract-pinning
@@ -189,9 +194,10 @@ CRM docs, micro-poll Wave 2 | 17 | 16 | 0 | 1 | 0 | | Wave A | — | Bug fix clu
 (FOLLOW-274 DONE), SDK locale enum alignment (FOLLOW-273 DONE), headline fact-check tightening
 (FOLLOW-272 DONE), micro_polls wire (FOLLOW-275 DONE) + docs/fallback/locale fixes
 (FOLLOW-276/277/278/279 DONE) + Tracer full D-1 chain
-(FOLLOW-266/286/287/288/267/294/268-write/297/299/ 301/268-sdk/305 all DONE) — K.3.6 D-1
-PRODUCTION-LIVE + ADR-0012 backlog (FOLLOW-269/293 BLOCKED, FOLLOW-295/296/298/300/302/303/304/306
-BACKLOG) | 24 | 16 | 0 | 0 | 2 |
+(FOLLOW-266/286/287/288/267/294/268-write/297/299/301/268-sdk/305 all DONE) + D-1 seed (FOLLOW-266
+Ph2 seed PR #293 DONE) + FOLLOW-302 DONE — K.3.6 D-1 PRODUCTION-ACTING in code, apply pending
+(FOLLOW-307 P1) + ADR-0012 backlog (FOLLOW-269/293 BLOCKED, FOLLOW-295/296/298/300/303/304/306
+BACKLOG) | 26 | 18 | 0 | 0 | 2 |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -4696,17 +4702,23 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     say signal_weights, but IntentWeightsSchema uses signal_likelihoods and .strict()-rejects
     signal_weights)
   agent: backend-engineer
-  status: BACKLOG
+  status: DONE
   priority: P3
   estimated_hours: 1
   depends_on: [FOLLOW-268-write]
   source_retro: RETRO-071 (§4b CB-3; §4d DG-2)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-302 stub)
+  pr: '293'
+  merge_commit: 6381499
+  completed_at: '2026-06-14T00:00:00Z'
   notes: |
-    Migration 0029:12 comment says: "weights -- jsonb: { signal_weights: {...} }".
-    IntentWeightsSchema has NO signal_weights key (it is signal_likelihoods); .strict() rejects it.
-    An operator hand-seeding from the comment produces a row the GET rejects with db_error/500.
-    Fix: update migration comment + any schema docstrings to use signal_likelihoods.
+    DONE — folded into PR #293 (merge commit 6381499) alongside FOLLOW-266 Phase 2 seed.
+    BOTH sites corrected per RETRO-076 DG-1:
+    (1) migration 0029:12 comment now reads `weights -- jsonb: { priors?: {...},
+        behavioral_damping?: 0.75, signal_likelihoods?: {...} }` — stale signal_weights GONE.
+    (2) intent-weight-configs.ts weights-column TSDoc now reads `{ priors?, behavioral_damping?,
+        signal_likelihoods? }` with explicit FOLLOW-302 correction annotation.
+    Do NOT re-file. RETRO-076 (§4d DG-1) confirms both sites verified in merge commit.
 
 - id: FOLLOW-303
   title: >
@@ -4793,17 +4805,44 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     Route through buildEndpoint; add endpoint.test.ts pinning trailing-slash normalization;
     update endpoint.ts:27-31 Non-test consumers docstring to include adapt-description.ts.
     Rule X compliance + Rule S sibling-completeness on helper-adoption axis.
+
+- id: FOLLOW-307
+  title: >
+    Apply + verify migration 0030 in prod/staging Supabase and close the Postgres
+    "merged-not-applied" deploy gap (K.3.6 D-1 go-live gate)
+  agent: devops-engineer
+  status: BACKLOG
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source_retro: RETRO-076 (§4a OG-1; §4c TG-1; §5a; §5d)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-307 stub)
+  notes: |
+    THE single remaining action to make K.3.6 D-1 fully-live in prod.
+    Migration 0030 (seed global-default intent_weight_configs row) is MERGED (commit 6381499)
+    and code-correct + idempotent, BUT no GH workflow auto-applies Postgres migrations (only
+    ClickHouse ci.yml does — RETRO-076 OG-1 architectural fact).
+    AC1: confirm 0030 applied to prod Supabase (verify active global row exists:
+         tenant_id IS NULL AND is_active = true in intent_weight_configs).
+    AC2: add data_source:'live' assertion to FOLLOW-293 smoke
+         (GET https://admin.estalara.com/api/intent/config with real Bearer key returns
+         data_source:'live', not 'mock').
+    AC3: decide standing apply mechanism — EITHER (a) add db:migrate step to a deploy workflow
+         (gated on DATABASE_URL_DIRECT/Doppler, soft-skip-when-token-absent like
+         post-migrate-seed.yml) OR (b) document operator checklist item in README.md:169-177
+         and create a FOLLOW stub for each future Postgres migration apply-verification.
+    ALSO apply to staging Supabase in the same run.
+    Unblocks: FOLLOW-293 (live smoke) can go green after AC1+AC2.
 ```
 
 ## Currently in flight
 
-**Nothing actively in flight as of 2026-06-14T00:00Z.** K.3.6 D-1 "immediate weights" is
-PRODUCTION-LIVE end-to-end (8 PRs: #284/#285/#286/#287/#289/#290/#291 + #283 = full D-1 chain).
-Operational precondition: a global-default intent_weight_configs row must be SEEDED for live weights
-to apply — FOLLOW-266 Phase 2 now UNBLOCKED (absent a row, GET returns data_source:'mock' and SDK
-uses internal defaults BY DESIGN). FOLLOW-293 open for live-network smoke only. FOLLOW-269 (frontend
-UI) BLOCKED on FOLLOW-268-sdk (now DONE) — ready to delegate at next sprint planning. FOLLOW-304
-(P2) and FOLLOW-306 (P3) are non-blocking backlog.
+**Nothing actively in flight as of 2026-06-14T08:00Z.** K.3.6 D-1 "immediate weights" is
+CODE-COMPLETE, PRODUCTION-WIRED, and PRODUCTION-ACTING in code. Seed merged (PR #293, 6381499).
+Remaining to fully-live-in-prod: FOLLOW-307 (P1 devops — apply migration 0030 in prod Supabase;
+operational, not code). FOLLOW-293 (live smoke) gated on FOLLOW-307. FOLLOW-269 (frontend UI)
+BLOCKED on FOLLOW-268-sdk (now DONE) — ready to delegate at next sprint planning. FOLLOW-304 (P2)
+and FOLLOW-306 (P3) are non-blocking backlog.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

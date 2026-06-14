@@ -880,3 +880,27 @@
   discipline was to trace the prod URL and say "no — it 404s in prod." Step 7 (closure END-TO-END,
   not one hop) is exactly what caught it: the producer→consumer→apply chain breaks at the very first
   production hop.
+
+### 2026-06-14 · RETRO-076 (FOLLOW-266 Phase 2 + FOLLOW-302 / PR #293 — K.3.6 D-1 global-default weight seed)
+
+- **A finding I almost missed and why.** I nearly recorded the seed wire `clean ✅ — producer (0030)
+  - consumer (GET globalRow) + SDK apply all
+    present`and stopped: the CODE chain genuinely closes end-to-end and the idempotency/tenant-priority/empty-weights checks all came back clean. The catch was the task's check #1 ("auto-apply on deploy, or operator-run?"), which pushed me from "the seed SQL is correct" to "does the seed SQL ever RUN in prod?" Grep of`.github/workflows/`for`db:migrate`= ZERO;`post-migrate-seed.yml` seeds archetype_embeddings ONLY; the only auto-DDL is ClickHouse (`ci.yml`). So a MERGED Postgres seed is NOT-LIVE until an operator runs `db:migrate`.
+    Lesson sharpened: for a DATA-signal producer, the real producer is the APPLIED row, not the
+    merged SQL — a seed wire closes at "applied in the target env," never at "INSERT is correct."
+- **An axis/chain I had to trace twice — idempotency-vs-overwrite.** First pass "WHERE NOT EXISTS →
+  re-run-safe, done." Second pass (task's "operator seeds a DIFFERENT global later") forced me to
+  split THREE scenarios the one guard handles differently: 0030 re-run (no-op), later operator
+  INSERT (guard SKIPS 0030 → never overwrites the tuned row, bootstrap-only), concurrent
+  double-apply (both pass the guard, the 0029 partial-unique index `23505` saves one). The guard
+  (best-effort skip) and the index (hard invariant) do DIFFERENT jobs and only compose correctly
+  when traced across all three axes — "WHERE NOT EXISTS" alone reads as mere dedup.
+- **A meta-pattern in how gaps recur across agents.** The K.3.6 D-1 closure wave's end-to-end "does
+  it ACT in prod" verdict slips ONE infra hop downstream each retro: RETRO-074 = SDK URL severed the
+  wire → RETRO-075 = fixed URL but "needs a seed" → RETRO-076 = ships the seed but "needs the seed
+  APPLIED, and apply isn't automatic." Same one-hop-decay shape RETRO-057 named, now walking from
+  code into deploy/infra (code → URL → data-row → data-row-APPLY). Step 7 catches it every time only
+  if "closure" is traced to the LAST REAL-ENVIRONMENT hop, never the last CODE hop. Handoff rule for
+  the next retro: a "data-wire closed" claim must name the ENVIRONMENT the data lands in, not just
+  the code that would land it — and a new "no-auto-Postgres-apply" deploy gap is now watched at
+  count 1 (promote on a 2nd merged-but-unapplied Postgres migration).

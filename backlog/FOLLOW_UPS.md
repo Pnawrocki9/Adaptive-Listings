@@ -8474,4 +8474,124 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 314 (309-313 = RETRO-077 / PR #298 / FOLLOW-269 K.3.6 tracer admin UI: 309 = Weight Editor GET 405 (admin/intent/config exports POST-only; real GET is /api/intent/config) + can-never-PUT (GET drops `id`) + test fabricates the contract [CB-1 P0 + LG-1 P1 + TG-1]; 310 = Live Monitor SSE 401s (page sends ?token= query param, verifyTracerAdminAuth reads header-only) [CB-2 P0]; 311 = 3 tenant-scoped pages nav-orphaned, only Weight Editor in sidebar, no tenant-row link, no [id]/page.tsx [Rule H P1]; 312 = History "Export CSV" yields JSONL (_accept query param ignored, route reads Accept header) + datetime-local→ISO ambiguity [LG-2 P2 + LG-3 P3]; 313 = drop the data_source loose casts AFTER extending FOLLOW-303 to widen ALL FOUR tracer enums incl Sessions+History to add 'error' [P3, depends extended 303]. FOLLOW-303 does NOT cover the UI cast cleanup — it names only TracerSessionDetailResponseSchema, not TracerSessionsResponseSchema; must be EXTENDED. No Rule promoted this run: the "consumer UI test mocks a fabricated server contract" pattern is count-3 in the fixture-lies family but adjacent to Rule L; held for the architect to extend Rule L or mint a rule on the next independent sighting.) -->
+## FOLLOW-315 — [DONE — PR #302] Qualify `event_at` in the K.3.6 tracer ClickHouse queries to avoid Code 386 NO_COMMON_TYPE
+
+- **status:** DONE (merged as PR #302, squash commit `433089b`, 2026-06-14 21:15 UTC). Retroactively
+  cataloged here — this fix was implemented directly during local Stack B verification and was never
+  stubbed before implementation.
+- **source_retro:** RETRO-078 (this entry is its subject; recorded for traceability)
+- **source_ticket:** found during local end-to-end Stack B verification (not a prior FOLLOW)
+- **recommended_sprint:** N/A (shipped)
+- **recommended_agent:** backend-engineer (implemented)
+- **priority:** P1 (latent prod-affecting bug)
+- **estimated_hours:** N/A (shipped)
+- **scope:** Every tracer event-query builder in `apps/control-plane/src/lib/clickhouse-tracer.ts`
+  projects `toString(event_at) AS event_at`, shadowing the `DateTime64(3)` column with a `String`
+  alias of the same name. ClickHouse resolves alias names inside WHERE/ORDER BY, so a bare
+  `event_at` in a date predicate (`event_at >= parseDateTimeBestEffort(...)`) binds to the `String`
+  alias → `String >= DateTime` → **Code 386 NO_COMMON_TYPE at query-analysis time** (throws even on
+  an empty table). Pre-fix blast radius: `fetchIntentEventsForExport` (always 500),
+  `fetchIntentEventsHistory` (500 on any from/to), `fetchNewIntentEvents` (the SSE poll — every
+  cursor poll 500'd); `fetchIntentEventsForSession` was unaffected (its WHERE never references
+  `event_at`). Same schema on prod ClickHouse Cloud → broken in prod, never exercised with a date
+  filter. Fix: qualify column refs as `intent_events.event_at` in WHERE/ORDER BY across all 4
+  builders; the JSON output key stays `event_at` via the alias so `IntentEventRow` parsing is
+  unchanged (zero consumer cascade).
+- **ac:**
+  - [x] AC1 — all 4 builders qualify WHERE/ORDER BY `event_at` references as
+        `intent_events.event_at`.
+  - [x] AC2 — JSON output key unchanged (`toString(event_at) AS event_at` projection preserved);
+        `IntentEventRow` parsing + all 6 route consumers byte-compatible.
+  - [x] AC3 — regression tests CH-315a–d assert the qualification on the wire + a negative regex
+        catches any unqualified date predicate (mock-fetch; see FOLLOW-316 for the live-CH gap they
+        do NOT cover).
+  - [x] AC4 — file-level comment documents the alias-shadow mechanism
+        (`clickhouse-tracer.ts:144-151`).
+- **follow_on:** FOLLOW-316 (live-CH CI guard — the CH-315a–d tests are mock-only and could not have
+  caught the original Code 386), FOLLOW-317 (audit sibling alias-shadows incl. confirmed
+  `clickhouse-dsr.ts:271,275`).
+- **promoted_to_queue:** true (was implemented directly; parent marks DONE in QUEUE.md separately)
+
+---
+
+## FOLLOW-316 — Add a live-ClickHouse CI guard that submits the tracer queries for analysis (so a Code-386-class error fails CI)
+
+- **source_retro:** RETRO-078 (§4c TG-1/TG-2)
+- **source_ticket:** FOLLOW-315 / PR #302
+- **recommended_sprint:** 18
+- **recommended_agent:** devops-engineer (CI) + backend-engineer (spec)
+- **priority:** P1
+- **estimated_hours:** 6
+- **scope:** The CH-315a–d regression tests added by PR #302 are mock-`fetch` only — they assert the
+  SQL sent on the wire but never submit it to a ClickHouse engine, so they could NOT have caught the
+  original Code 386 (a query-analysis error raised only by a real server). The repo's only
+  live-ClickHouse tests
+  (`apps/control-plane/src/__tests__/integration/clickhouse-dsr.integration.test.ts`) gate every
+  spec behind `test.skipIf(!process.env.CLICKHOUSE_URL)` (lines 64/142/192/220) and `CLICKHOUSE_URL`
+  is unset in CI → they **self-skip silently**. Meanwhile `.github/workflows/ci.yml` already runs a
+  `clickhouse-smoke` job (line 287) that boots `clickhouse/clickhouse-server:latest`, applies
+  migrations, and runs `infra/clickhouse/scripts/smoke-test.sh`. Close the gap by exercising the
+  real container against the tracer query builders: (a) add a vitest integration spec that calls
+  each of the 4 builders (`fetchIntentEventsForExport`, `fetchIntentEventsHistory` with from/to,
+  `fetchNewIntentEvents`, `fetchIntentEventsForSession`) against an `intent_events` table created on
+  the CI container — a Code-386 / NO_COMMON_TYPE must FAIL the job; (b) wire `CLICKHOUSE_URL` (and
+  the table DDL/seed) into the existing `clickhouse-smoke` job (cheapest) OR add a dedicated
+  `tracer-query-smoke` job; (c) ensure the spec does NOT self-skip when the CI container is up (run
+  it ONLY in the job where the container exists, but make absence-of-container a hard error there,
+  not a silent skip).
+- **ac:**
+  - [ ] AC1 — a live-CH integration spec submits all 4 tracer builders (export + history with
+        from/to + stream-poll cursor + per-session) against a real ClickHouse and asserts they
+        return 200/no error; a deliberately unqualified bare-`event_at` date predicate is shown to
+        FAIL against the same container (proves the guard catches Code 386).
+  - [ ] AC2 — the spec runs in CI in a job where ClickHouse is up; it does NOT `skipIf` silently in
+        that job (absence of the container fails the job).
+  - [ ] AC3 — `intent_events` (or the minimal columns the builders touch) is created + minimally
+        seeded in the CI container before the spec runs.
+  - [ ] AC4 — prettier + control-plane vitest green; the new job is green on a clean checkout.
+- **notes:** Consider also un-self-skipping the existing `clickhouse-dsr.integration.test.ts` in the
+  same job for free coverage of the DSR path (overlaps FOLLOW-317's sibling fix).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-317 — Audit + fix every ClickHouse `toString(col) AS col` (and `f(col) AS col`) alias-shadow across the repo
+
+- **source_retro:** RETRO-078 (§4a LG-1, §5d, §6 Pattern A)
+- **source_ticket:** FOLLOW-315 / PR #302
+- **recommended_sprint:** 18
+- **recommended_agent:** data-engineer
+- **priority:** P2
+- **estimated_hours:** 4
+- **scope:** PR #302 fixed the alias-shadow only in `clickhouse-tracer.ts`. A grep for
+  `toString(<col>) AS <col>` across non-test, non-dist TS found a **confirmed sibling** at
+  `apps/control-plane/src/lib/clickhouse-dsr.ts:271` (`toString(create_time) AS create_time`) with
+  `ORDER BY create_time DESC` at :275 referencing the same String alias. It does NOT throw Code 386
+  (no date _comparison_ is made — the WHERE filters `table` + `mutation_id` only), but `ORDER BY` on
+  the `String` alias sorts the `DateTime` **lexicographically**, and with `LIMIT 1`
+  `pollMutationStatus` can return the WRONG `system.mutations` row when multiple rows share a
+  (table, mutation_id) (the docstring at :256 admits this is possible). Sweep the remaining CH query
+  builders too: `apps/ingest/src/clickhouse-producer.ts`, any decision-api CH queries, and
+  `packages/db` CH query/schema code. Fix each by EITHER table-qualifying the column in WHERE/ORDER
+  BY OR (preferred — removes the shadow entirely) aliasing the projection to a DISTINCT name (e.g.
+  `toString(create_time) AS create_time_str`). Add the same warning comment block #302 added to
+  `clickhouse-tracer.ts:144-151` wherever the self-alias is intentionally retained.
+- **ac:**
+  - [ ] AC1 — `clickhouse-dsr.ts` `pollMutationStatus` no longer sorts on a String alias: either
+        `ORDER BY system.mutations.create_time DESC` (qualified to the DateTime column) or the
+        projection is renamed and ORDER BY uses the real column; add a test that a multi-row (table,
+        mutation_id) returns the chronologically-latest row, not the lexically-latest.
+  - [ ] AC2 — every other repo ClickHouse query builder is grepped for `f(col) AS col`
+        self-aliasing; each hit is either fixed (qualify or rename) or annotated as provably-safe
+        (column never referenced in WHERE/ORDER BY) with a one-line justification comment.
+  - [ ] AC3 — a short convention note added to the data-engineer docs / CONVENTIONS pointer: prefer
+        a distinct projection alias over `f(col) AS col` to avoid WHERE/ORDER BY shadowing.
+  - [ ] AC4 — prettier + relevant vitest green; ideally a fixed builder is covered by FOLLOW-316's
+        live-CH job.
+- **depends_on:** none (FOLLOW-316 strengthens its verification but is not a hard blocker).
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 318 (315 = RETRO-078 / PR #302 — DONE retroactive catalog: qualify event_at in the 4 K.3.6 tracer ClickHouse query builders to avoid Code 386 NO_COMMON_TYPE; toString(event_at) AS event_at self-alias shadows the DateTime64 column with a String alias inside WHERE/ORDER BY, so a bare event_at date predicate binds to the String alias → String>=DateTime → throw at query-analysis time, even on an empty table; broke export/history/SSE-poll in prod, output-key-transparent fix = zero consumer cascade, found via local Stack B real-CH 24.8, NOT CI. 316 = RETRO-078 §4c — live-ClickHouse CI guard: the CH-315a-d regression tests are mock-fetch-only + the only live-CH integration tests self-skip in CI (CLICKHOUSE_URL unset) even though a clickhouse-smoke job already boots a real CH container; submit the 4 tracer builders to that container so a Code-386-class error fails CI, P1. 317 = RETRO-078 §4a LG-1/§5d — audit the toString(col) AS col alias-shadow across all CH builders; confirmed sibling clickhouse-dsr.ts:271,275 (lexicographic String ORDER BY + wrong-row LIMIT 1, latent-not-throwing); fix by qualify-or-rename + sweep ingest/decision-api/packages-db, P2. NOTE 314 was consumed by PR #301 (dev-only localhost CORS + idempotent local-dev tenant seed). NO Rule promoted RETRO-078: alias-shadow pattern is count-1 standalone (tracer+DSR = one PR-discovered family); the mock-test-can't-catch-real-backend-rejection AXIS is count-1 on the live-backend-query-analysis axis (the HTTP/schema axis of that family is ≥3 but covered by Rule L + K.2 round-trip) — held for the next independent sighting per RETRO-077's identical deferral discipline.) -->
+<!-- prior next free FOLLOW number: 314 (309-313 = RETRO-077 / PR #298 / FOLLOW-269 K.3.6 tracer admin UI: 309 = Weight Editor GET 405 (admin/intent/config exports POST-only; real GET is /api/intent/config) + can-never-PUT (GET drops `id`) + test fabricates the contract [CB-1 P0 + LG-1 P1 + TG-1]; 310 = Live Monitor SSE 401s (page sends ?token= query param, verifyTracerAdminAuth reads header-only) [CB-2 P0]; 311 = 3 tenant-scoped pages nav-orphaned, only Weight Editor in sidebar, no tenant-row link, no [id]/page.tsx [Rule H P1]; 312 = History "Export CSV" yields JSONL (_accept query param ignored, route reads Accept header) + datetime-local→ISO ambiguity [LG-2 P2 + LG-3 P3]; 313 = drop the data_source loose casts AFTER extending FOLLOW-303 to widen ALL FOUR tracer enums incl Sessions+History to add 'error' [P3, depends extended 303]. FOLLOW-303 does NOT cover the UI cast cleanup — it names only TracerSessionDetailResponseSchema, not TracerSessionsResponseSchema; must be EXTENDED. No Rule promoted this run: the "consumer UI test mocks a fabricated server contract" pattern is count-3 in the fixture-lies family but adjacent to Rule L; held for the architect to extend Rule L or mint a rule on the next independent sighting.) -->

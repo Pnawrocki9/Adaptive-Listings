@@ -936,3 +936,47 @@
   companion to Rule L ("a consumer test MUST drive the real handler or a route-derived fixture,
   never a hand-authored response shape") — count is at 1 on that specific consumer-UI axis even
   though the family is at 3.
+
+---
+
+## 2026-06-14 · RETRO-078 — FOLLOW-315 (qualify `event_at` in tracer ClickHouse queries; Code 386)
+
+- **A finding I almost missed and why — the regression test re-creates the blind spot it "closes."**
+  First instinct on a +74-line test addition with 4 named regression cases (CH-315a–d) + a negative
+  regex guard was "coverage gap = N/A, well-tested ✅." Wrong frame. The tests assert the SQL
+  _string on the wire_, but the original bug (Code 386) is raised only by a real ClickHouse engine
+  at query-analysis time — a mock-`fetch` test CANNOT reach it. So the very tests added to fix the
+  bug could not have caught the bug, and the suite remains blind to its entire defect class. The
+  tell: the PR body itself said "no live ClickHouse required" and "found via local end-to-end Stack
+  B verification" — i.e. CI did not find it and structurally can't. The lesson: when a fix's own
+  regression test runs at the SAME mock boundary that let the bug ship, that is a coverage finding,
+  not a coverage win. "It added tests" ≠ "it added tests that can catch this bug shape."
+- **An axis/chain I had to trace twice — does the CI guard already exist?** First pass: "no live-CH
+  job, so the gap is 'add one' — easy." Second pass (grep `clickhouse` in `.github/workflows/`): a
+  `clickhouse-smoke` job ALREADY boots a real `clickhouse-server` container and sets a CH URL — but
+  only to run the migrations smoke script, and the vitest integration tests self-skip because
+  `CLICKHOUSE_URL` is never exported to them (`test.skipIf` at 4 sites). The gap is not "no
+  container" but "the existing container is never pointed at the query builders, and the integration
+  tests self-skip SILENTLY in CI." That reshaped FOLLOW-316 from "stand up CH in CI" (big) to "wire
+  CLICKHOUSE_URL into the job that already has CH + stop the silent self-skip" (cheap). Always grep
+  for the existing job before scoping a new one.
+- **An axis I had to trace twice — is this only a tracer bug?** The diff touched one file, so the
+  lazy verdict is "scoped, no cascade." Forcing the sibling-audit grep (`f(col) AS col`) surfaced a
+  confirmed second instance in `clickhouse-dsr.ts:271,275` — same alias-shadow mechanism, but it
+  does NOT throw (no date comparison) and instead silently sorts a DateTime lexicographically under
+  `ORDER BY` + `LIMIT 1` → can return the wrong mutation row. The SAME root pattern manifests as a
+  THROW in one place and a SILENT wrong-answer in another; the throw is what got it noticed, the
+  silent one would have rotted indefinitely. One-file diffs still warrant the pattern grep.
+- **A meta-pattern in how gaps recur across agents.** Same shape as the K.3.6 wave (RETRO-076/077):
+  prod-acting data-plane code whose correctness depends on a REAL backend (ClickHouse/Postgres) that
+  CI never exercises — 076 = no auto-migrate, 077 = page↔route seam no test crosses, 078 = no
+  live-CH query-analysis test. The recurring remedy is identical: close the real-backend
+  verification hop in automation; mock boundaries (HTTP, fetch, schema) keep proving the agent's
+  IMAGINED contract, not the engine's actual one. The fixture-lies family I tracked in RETRO-077 now
+  has a sibling family — "mock-test can't catch a real-BACKEND rejection" — distinct because the
+  rejecting authority is a SQL engine, not an HTTP route or a Zod schema. Held both below the
+  promotion threshold (alias-shadow = count-1; live-backend-rejection axis = count-1) per
+  RETRO-077's same discipline. Carry-forward: the NEXT live-backend-rejection-vs-mock-test sighting
+  trips a rule ("a fix for a bug a real backend rejected MUST ship with a spec driving a real
+  instance of that backend, or a non-self-skipping CI integration job"); and the NEXT
+  `f(col) AS col` alias-shadow sighting trips a ClickHouse-query rule distinct from Rule W.

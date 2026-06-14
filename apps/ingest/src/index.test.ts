@@ -36,6 +36,9 @@ interface MakeEnvOptions {
   /** `'allow'` (default) — every check passes. `'deny'` — every check fails (429).
    *  `{ allowFirstNEvents: N }` — accept until cumulative event count crosses N. */
   rateLimit?: 'allow' | 'deny' | { allowFirstNEvents: number };
+  /** Override the ENVIRONMENT binding (default: 'test'). Pass 'production' to exercise
+   *  the production CORS allow-list (no localhost origins). */
+  environment?: string;
 }
 
 interface RateCheckResponse {
@@ -83,7 +86,7 @@ function mockRateLimiter(
 
 function makeEnv(options: MakeEnvOptions = {}): Env {
   return {
-    ENVIRONMENT: 'test',
+    ENVIRONMENT: options.environment ?? 'test',
     REDPANDA_REST_URL: 'http://mock-redpanda',
     REDPANDA_TOPIC_EVENTS: 'events',
     // CLICKHOUSE_URL empty → no-cred guard fires; existing handler tests stay
@@ -673,6 +676,140 @@ describe('CORS — ESC-016 SDK browser callers', () => {
           method: 'POST',
           headers: {
             Origin: 'https://evil.example.com',
+            'Content-Type': 'application/json',
+            'X-Estalara-API-Key': 'k1',
+          },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+// ─── Dev-only localhost CORS (local E2E enablement) ───────────────────────────
+//
+// The browser SDK runs on http://localhost:5173 (Estalara-app SvelteKit) during
+// local E2E testing and calls the Worker at http://localhost:8787. These tests
+// verify that:
+//   - In non-production envs (ENVIRONMENT !== 'production'), localhost origins are allowed.
+//   - In the production env (ENVIRONMENT === 'production'), localhost origins are rejected —
+//     the prod allow-list is unchanged.
+//
+// Gating mechanism: the CORS origin callback reads c.env.ENVIRONMENT at request time.
+describe('CORS — dev-only localhost origins', () => {
+  it('OPTIONS preflight from localhost:5173 is allowed in dev env', async () => {
+    const app = createApp();
+    const env = makeEnv({ environment: 'development' });
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'http://localhost:5173',
+          'Access-Control-Request-Method': 'POST',
+          'Access-Control-Request-Headers': 'content-type, x-estalara-api-key',
+        },
+      }),
+      env,
+    );
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:5173');
+  });
+
+  it('OPTIONS preflight from localhost:3000 is allowed in dev env', async () => {
+    const app = createApp();
+    const env = makeEnv({ environment: 'development' });
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'http://localhost:3000',
+          'Access-Control-Request-Method': 'POST',
+          'Access-Control-Request-Headers': 'content-type, x-estalara-api-key',
+        },
+      }),
+      env,
+    );
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
+  });
+
+  it('OPTIONS preflight from localhost:5173 is BLOCKED in production env', async () => {
+    const app = createApp();
+    const env = makeEnv({ environment: 'production' });
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'http://localhost:5173',
+          'Access-Control-Request-Method': 'POST',
+        },
+      }),
+      env,
+    );
+    // CORS middleware omits the header when the origin is not in the allow-list.
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('OPTIONS preflight from localhost:3000 is BLOCKED in production env', async () => {
+    const app = createApp();
+    const env = makeEnv({ environment: 'production' });
+    const res = await app.fetch(
+      new Request('http://test/v1/events', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'http://localhost:3000',
+          'Access-Control-Request-Method': 'POST',
+        },
+      }),
+      env,
+    );
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('POST from localhost:5173 receives Access-Control-Allow-Origin in dev env', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        environment: 'development',
+      });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: {
+            Origin: 'http://localhost:5173',
+            'Content-Type': 'application/json',
+            'X-Estalara-API-Key': 'k1',
+          },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:5173');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('POST from localhost:5173 is BLOCKED (no Allow-Origin) in production env', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        environment: 'production',
+      });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: {
+            Origin: 'http://localhost:5173',
             'Content-Type': 'application/json',
             'X-Estalara-API-Key': 'k1',
           },

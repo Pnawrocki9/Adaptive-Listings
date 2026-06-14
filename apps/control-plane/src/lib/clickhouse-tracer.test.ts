@@ -504,3 +504,77 @@ describe('fetchNewIntentEvents', () => {
     expect(result).toEqual([]);
   });
 });
+
+// ─── FOLLOW-315: event_at column references must be table-qualified ────────────
+//
+// Every SELECT projects `toString(event_at) AS event_at`, shadowing the DateTime64
+// column with a String alias of the same name. ClickHouse resolves alias names inside
+// WHERE/ORDER BY, so a *bare* `event_at` in a date comparison binds to the String alias
+// → `String >= DateTime` → "NO_COMMON_TYPE" (Code 386) at query-analysis time, even on
+// an empty table. The fix qualifies the column as `intent_events.event_at`. These tests
+// assert the qualification on the wire so the regression can never silently return.
+
+describe('FOLLOW-315: event_at qualified to avoid NO_COMMON_TYPE (Code 386)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Matches a date predicate on a *bare* (unqualified) event_at — the broken form.
+  // Lookbehind excludes `.event_at` (qualified) and `(event_at` (the toString arg).
+  const UNQUALIFIED_DATE_PREDICATE = /(?<![\w.(])event_at\s*(>=|<=|>)\s*parseDateTimeBestEffort/;
+
+  function queryOfCall(i: number): string {
+    return new URL(mockFetch.mock.calls[i]![0] as string).searchParams.get('query') ?? '';
+  }
+
+  it('CH-315a: export qualifies both date bounds and ORDER BY', async () => {
+    mockFetch.mockResolvedValue(makeOkResponse(''));
+    await fetchIntentEventsForExport(CFG, {
+      tenantId: TENANT_ID,
+      from: '2026-01-01T00:00:00Z',
+      to: '2026-01-31T23:59:59Z',
+    });
+    const query = queryOfCall(0);
+    expect(query).toContain('intent_events.event_at >= parseDateTimeBestEffort');
+    expect(query).toContain('intent_events.event_at <= parseDateTimeBestEffort');
+    expect(query).toContain('ORDER BY intent_events.event_at');
+    expect(query).not.toMatch(UNQUALIFIED_DATE_PREDICATE);
+  });
+
+  it('CH-315b: history qualifies date bounds when from/to provided (data + count)', async () => {
+    mockFetch.mockResolvedValueOnce(makeOkResponse('')).mockResolvedValueOnce(makeOkResponse(''));
+    await fetchIntentEventsHistory(CFG, {
+      tenantId: TENANT_ID,
+      from: '2026-01-01T00:00:00Z',
+      to: '2026-01-31T23:59:59Z',
+      limit: 50,
+      offset: 0,
+    });
+    // Both the data query (call 0) and the count query (call 1) share the WHERE clause.
+    for (const i of [0, 1]) {
+      const query = queryOfCall(i);
+      expect(query).toContain('intent_events.event_at >= parseDateTimeBestEffort');
+      expect(query).toContain('intent_events.event_at <= parseDateTimeBestEffort');
+      expect(query).not.toMatch(UNQUALIFIED_DATE_PREDICATE);
+    }
+    // ORDER BY appears only on the data query.
+    expect(queryOfCall(0)).toContain('ORDER BY intent_events.event_at');
+  });
+
+  it('CH-315c: stream poll qualifies the strict cursor comparison and ORDER BY', async () => {
+    mockFetch.mockResolvedValue(makeOkResponse(''));
+    await fetchNewIntentEvents(CFG, TENANT_ID, SESSION_ID, '2026-01-15T10:00:00Z');
+    const query = queryOfCall(0);
+    expect(query).toContain('intent_events.event_at > parseDateTimeBestEffort');
+    expect(query).toContain('ORDER BY intent_events.event_at');
+    expect(query).not.toMatch(UNQUALIFIED_DATE_PREDICATE);
+  });
+
+  it('CH-315d: per-session fetch qualifies ORDER BY (no date predicate)', async () => {
+    mockFetch.mockResolvedValue(makeOkResponse(''));
+    await fetchIntentEventsForSession(CFG, TENANT_ID, SESSION_ID);
+    const query = queryOfCall(0);
+    expect(query).toContain('ORDER BY intent_events.event_at');
+    expect(query).not.toMatch(UNQUALIFIED_DATE_PREDICATE);
+  });
+});

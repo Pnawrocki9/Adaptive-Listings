@@ -140,6 +140,15 @@ export async function chTracerCount(
 }
 
 // ─── Intent event queries ─────────────────────────────────────────────────────
+//
+// IMPORTANT: every SELECT below projects `toString(event_at) AS event_at`, which
+// shadows the underlying DateTime64 column with a String alias of the same name.
+// ClickHouse resolves alias names inside WHERE/ORDER BY, so a bare `event_at` in a
+// WHERE date comparison binds to the String alias → `String >= DateTime` →
+// "NO_COMMON_TYPE" (Code 386) at query-analysis time, even on an empty table.
+// Therefore any WHERE/ORDER BY reference to the *column* MUST be table-qualified
+// as `intent_events.event_at`. The JSON output key stays `event_at` via the alias,
+// so IntentEventRow parsing is unaffected. (FOLLOW-315)
 
 /**
  * Fetch intent_events rows for a given session_id (ordered ASC by event_at).
@@ -167,7 +176,7 @@ export async function fetchIntentEventsForSession(
     FROM intent_events
     WHERE tenant_id   = {p_tenant_id:String}
       AND session_id  = {p_session_id:String}
-    ORDER BY event_at ASC
+    ORDER BY intent_events.event_at ASC
   `;
   return chTracerQuery<IntentEventRow>(cfg, sql, {
     p_tenant_id: tenantId,
@@ -203,11 +212,11 @@ export async function fetchIntentEventsHistory(
     params.p_session_id = opts.sessionId;
   }
   if (opts.from) {
-    whereClauses.push('event_at >= parseDateTimeBestEffort({p_from:String})');
+    whereClauses.push('intent_events.event_at >= parseDateTimeBestEffort({p_from:String})');
     params.p_from = opts.from;
   }
   if (opts.to) {
-    whereClauses.push('event_at <= parseDateTimeBestEffort({p_to:String})');
+    whereClauses.push('intent_events.event_at <= parseDateTimeBestEffort({p_to:String})');
     params.p_to = opts.to;
   }
   if (opts.archetype) {
@@ -230,7 +239,7 @@ export async function fetchIntentEventsHistory(
       event_payload
     FROM intent_events
     WHERE ${whereStr}
-    ORDER BY event_at DESC
+    ORDER BY intent_events.event_at DESC
     LIMIT {p_limit:UInt32} OFFSET {p_offset:UInt32}
   `;
 
@@ -278,9 +287,9 @@ export async function fetchIntentEventsForExport(
       event_payload
     FROM intent_events
     WHERE tenant_id  = {p_tenant_id:String}
-      AND event_at  >= parseDateTimeBestEffort({p_from:String})
-      AND event_at  <= parseDateTimeBestEffort({p_to:String})
-    ORDER BY event_at ASC
+      AND intent_events.event_at >= parseDateTimeBestEffort({p_from:String})
+      AND intent_events.event_at <= parseDateTimeBestEffort({p_to:String})
+    ORDER BY intent_events.event_at ASC
   `;
   return chTracerQuery<IntentEventRow>(cfg, sql, {
     p_tenant_id: opts.tenantId,
@@ -315,8 +324,8 @@ export async function fetchNewIntentEvents(
     FROM intent_events
     WHERE tenant_id  = {p_tenant_id:String}
       AND session_id = {p_session_id:String}
-      AND event_at   > parseDateTimeBestEffort({p_last_event_at:String})
-    ORDER BY event_at ASC
+      AND intent_events.event_at > parseDateTimeBestEffort({p_last_event_at:String})
+    ORDER BY intent_events.event_at ASC
   `;
   return chTracerQuery<IntentEventRow>(cfg, sql, {
     p_tenant_id: tenantId,

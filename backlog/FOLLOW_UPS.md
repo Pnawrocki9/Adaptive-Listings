@@ -8551,7 +8551,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] AC4 — prettier + control-plane vitest green; the new job is green on a clean checkout.
 - **notes:** Consider also un-self-skipping the existing `clickhouse-dsr.integration.test.ts` in the
   same job for free coverage of the DSR path (overlaps FOLLOW-317's sibling fix).
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (2026-06-14 → Sprint 18, `backlog/sprint-18/FOLLOW-316.md`)
 
 ---
 

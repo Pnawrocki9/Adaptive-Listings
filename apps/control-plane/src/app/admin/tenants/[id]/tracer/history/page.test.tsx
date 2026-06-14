@@ -1,19 +1,26 @@
 /**
  * Tests for /admin/tenants/[id]/tracer/history (Session History, K.3.6.2).
  *
+ * FOLLOW-312 fix: the "Export CSV" button previously used a bare <a href download>
+ * with _accept=text/csv as a query param. The export route selects CSV only from
+ * the Accept header — a bare navigation cannot set that header, so every CSV export
+ * silently returned JSONL. The fix: use fetch() with Accept: text/csv (the same
+ * approach the Export Dashboard uses correctly).
+ *
  * Coverage:
  *   T1: renders error banner on non-2xx API response (Rule K.2)
  *   T2: renders error banner when data_source is 'error'
  *   T3: renders event table with event_type column
- *   T4: renders data_source provenance badge
+ *   T4: renders data_source provenance badge (mock)
  *   T5: renders empty-state row when no events
- *   T6: renders export download link buttons
+ *   T6: "Export CSV" is a <button> that calls fetch with Accept: text/csv (FOLLOW-312 fix)
+ *   T7: "Export JSONL" is an <a> link with download attribute (no Accept header needed)
  *
  * @module apps/control-plane/src/app/admin/tenants/[id]/tracer/history/page.test
  */
 
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
 import SessionHistoryPage from './page';
@@ -48,9 +55,17 @@ function makeFetchResponse(body: unknown, status = 200, ok = true) {
   };
 }
 
+const EMPTY_HISTORY = {
+  events: [],
+  total: 0,
+  limit: 50,
+  offset: 0,
+  data_source: 'live',
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('SessionHistoryPage — data rendering + error states', () => {
+describe('SessionHistoryPage — FOLLOW-312 CSV export fix + data rendering', () => {
   const originalFetch = global.fetch;
 
   afterEach(() => {
@@ -63,6 +78,11 @@ describe('SessionHistoryPage — data rendering + error states', () => {
       value: { getItem: () => 'test-admin-token', setItem: vi.fn(), removeItem: vi.fn() },
       writable: true,
     });
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: vi.fn(() => 'blob:mock'),
+      writable: true,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), writable: true });
   });
 
   it('T1: renders error banner on non-2xx API response (Rule K.2)', async () => {
@@ -121,7 +141,7 @@ describe('SessionHistoryPage — data rendering + error states', () => {
     });
   });
 
-  it('T4: renders data_source provenance badge', async () => {
+  it('T4: renders data_source provenance badge when data_source is mock', async () => {
     global.fetch = vi.fn().mockResolvedValueOnce(
       makeFetchResponse({
         events: [],
@@ -140,15 +160,7 @@ describe('SessionHistoryPage — data rendering + error states', () => {
   });
 
   it('T5: renders empty state when no events match', async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce(
-      makeFetchResponse({
-        events: [],
-        total: 0,
-        limit: 50,
-        offset: 0,
-        data_source: 'live',
-      }),
-    );
+    global.fetch = vi.fn().mockResolvedValueOnce(makeFetchResponse(EMPTY_HISTORY));
 
     render(<SessionHistoryPage params={mockParams} searchParams={mockSearchParams} />);
 
@@ -157,22 +169,73 @@ describe('SessionHistoryPage — data rendering + error states', () => {
     });
   });
 
-  it('T6: renders export links', async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce(
-      makeFetchResponse({
-        events: [],
-        total: 0,
-        limit: 50,
-        offset: 0,
-        data_source: 'live',
-      }),
-    );
+  it('T6: "Export CSV" is a <button> that calls fetch with Accept: text/csv (FOLLOW-312 fix)', async () => {
+    // FOLLOW-312 proof: this test would FAIL against the old code where Export CSV was an
+    // <a href> that set _accept=text/csv as a query param (which the route ignores).
+    // After the fix: it must be a <button> that calls fetch() with Accept: text/csv.
+
+    const fetchMock = vi
+      .fn()
+      // Initial history load
+      .mockResolvedValueOnce(makeFetchResponse(EMPTY_HISTORY))
+      // CSV export fetch — returns a blob
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: () => Promise.resolve(new Blob(['col1,col2'], { type: 'text/csv' })),
+      });
+    global.fetch = fetchMock;
 
     render(<SessionHistoryPage params={mockParams} searchParams={mockSearchParams} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Export CSV/i)).toBeDefined();
-      expect(screen.getByText(/Export JSONL/i)).toBeDefined();
+      expect(screen.getByText(/No events match/i)).toBeDefined();
     });
+
+    // CSV element must be a <button>, not an <a> (bare <a> cannot set Accept header).
+    const csvBtn = screen.getByText(/Export CSV/i);
+    expect(csvBtn.tagName.toLowerCase()).toBe('button');
+
+    fireEvent.click(csvBtn);
+
+    await waitFor(() => {
+      // fetch called at least twice: history load + CSV export.
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    // Find the CSV export call.
+    const csvCall = fetchMock.mock.calls.find((call) => {
+      const url = call[0] as string;
+      return url.includes('/api/admin/tracer/export/decisions');
+    });
+    expect(csvCall).toBeDefined();
+
+    // The CSV call MUST set Accept: text/csv header.
+    const csvInit = csvCall?.[1] as RequestInit | undefined;
+    const acceptHeader = (csvInit?.headers as Record<string, string> | undefined)?.Accept;
+    expect(acceptHeader).toBe('text/csv');
+
+    // The URL must NOT contain _accept query param (that was the broken approach).
+    const csvUrl = csvCall?.[0] as string;
+    expect(csvUrl).not.toContain('_accept');
+  });
+
+  it('T7: "Export JSONL" is an <a> link with download attribute (no Accept header needed)', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(makeFetchResponse(EMPTY_HISTORY));
+
+    render(<SessionHistoryPage params={mockParams} searchParams={mockSearchParams} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/No events match/i)).toBeDefined();
+    });
+
+    const jsonlLink = screen.getByText(/Export JSONL/i);
+    // JSONL export uses <a download> — the route default is JSONL, no Accept header needed.
+    expect(jsonlLink.tagName.toLowerCase()).toBe('a');
+    expect(jsonlLink.hasAttribute('download')).toBe(true);
+    const href = jsonlLink.getAttribute('href') ?? '';
+    // Must include tenant_id but NOT _accept (JSONL is the route default).
+    expect(href).toContain(TENANT_ID);
+    expect(href).not.toContain('_accept');
   });
 });

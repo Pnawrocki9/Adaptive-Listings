@@ -7,10 +7,11 @@
  *   GET  /api/admin/tracer/sessions?since_minutes=15  (initial list)
  *   GET  /api/admin/tracer/sessions/[id]/stream       (SSE per-session)
  *
- * Auth: all fetch calls include `Authorization: Bearer <ADMIN_API_SECRET>` via the
- * `X-Admin-Token` cookie set at login. This is a staff-only page — non-admin users
- * are shown a 401/403 error state. The admin-token is read from the cookie on the
- * client side; it is NEVER embedded in page markup or JS bundles.
+ * Auth: Supabase session cookie (sb-access-token) sent automatically with every
+ * same-origin request, including EventSource connections (ADR-0013 §Decision 1).
+ * The admin middleware already gates /admin/* on a valid staff JWT, so no explicit
+ * token is needed. The previous approach of passing ?token=<localStorage> caused
+ * every SSE connection to 401 because verifyTracerAdminAuth reads only headers.
  *
  * Rule K.2: if the API returns a non-2xx response or `data_source: 'error'`,
  * the page renders a VISIBLE error banner — it never silently zero-fills.
@@ -43,12 +44,6 @@ interface LiveMonitorProps {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Retrieve the admin bearer token from localStorage (set at staff login). */
-function getAdminToken(): string {
-  if (typeof window === 'undefined') return '';
-  return localStorage.getItem('estalara_admin_token') ?? '';
-}
 
 /**
  * Derive per-archetype probability distribution from intent_state JSON blob
@@ -135,7 +130,13 @@ function DataSourceBadge({ source }: { source: string }) {
   );
 }
 
-/** Live SSE event tail for an active session. */
+/** Live SSE event tail for an active session.
+ *
+ * Auth: EventSource is a same-origin request — the browser sends the sb-access-token
+ * session cookie automatically. No token query param is needed (ADR-0013 §Decision 1).
+ * The previous ?token= query param caused every SSE connection to 401 because
+ * verifyTracerAdminAuth reads the token only from headers, not query params (FOLLOW-310).
+ */
 function SessionStream({ tenantId, sessionId }: { tenantId: string; sessionId: string }) {
   const [events, setEvents] = useState<string[]>([]);
   const [status, setStatus] = useState<'connecting' | 'live' | 'error' | 'closed'>('connecting');
@@ -143,10 +144,9 @@ function SessionStream({ tenantId, sessionId }: { tenantId: string; sessionId: s
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    const token = getAdminToken();
-    // NOTE: EventSource does not support custom headers in all browsers.
-    // We pass the token as a query param for the SSE endpoint (admin-only surface).
-    const url = `/api/admin/tracer/sessions/${encodeURIComponent(sessionId)}/stream?tenant_id=${encodeURIComponent(tenantId)}&token=${encodeURIComponent(token)}`;
+    // Cookie auth: sb-access-token is sent automatically with this same-origin request.
+    // Do NOT pass a token query param — verifyTracerAdminAuth ignores query params (ADR-0013).
+    const url = `/api/admin/tracer/sessions/${encodeURIComponent(sessionId)}/stream?tenant_id=${encodeURIComponent(tenantId)}`;
     const es = new EventSource(url);
     esRef.current = es;
 
@@ -313,13 +313,11 @@ export default function LiveSessionMonitorPage({ params }: LiveMonitorProps) {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const token = getAdminToken();
-      const res = await fetch(`/api/admin/tracer/sessions`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      // Same-origin fetch — sb-access-token cookie sent automatically (ADR-0013).
+      const res = await fetch(`/api/admin/tracer/sessions`);
       if (res.status === 401 || res.status === 403) {
         setErrorMsg(
-          `Auth error: ${res.status.toString()} — provide a valid admin token (see localStorage estalara_admin_token)`,
+          `Auth error: ${res.status.toString()} — ensure you are logged in as Estalara staff`,
         );
         return;
       }

@@ -20,6 +20,8 @@
  *   - apps/control-plane/src/app/api/admin/tracer/export/decisions/route.ts
  *   - apps/control-plane/src/app/api/admin/tracer/export/events/route.ts
  *   - apps/control-plane/src/app/api/intent/config/route.ts
+ *   - apps/control-plane/src/app/api/admin/intent/config/route.ts (AdminIntentConfigResponseSchema)
+ *   - apps/control-plane/src/app/admin/tracer/weights/page.tsx (AdminIntentConfigResponse type)
  *
  * @module @estalara/shared/schemas/tracer
  */
@@ -139,6 +141,45 @@ export const TracerSessionReplayResponseSchema = z.object({
 });
 
 export type TracerSessionReplayResponse = z.infer<typeof TracerSessionReplayResponseSchema>;
+
+// ─── Response for GET /api/admin/intent/config (admin weight read) ───────────
+
+/**
+ * Response schema for `GET /api/admin/intent/config` (admin-only, ADR-0013 Contract 2).
+ *
+ * Returns the currently-active global weight config row with its database `id` included.
+ * This is the admin-read counterpart to the SDK-facing `IntentConfigResponseSchema`; they
+ * serve different callers with different field sets — `id` is admin-only.
+ *
+ * Global-only in v1: `tenant_id` is always `null`. A `?tenant_id=` query param returns 400.
+ *
+ * Nullability contract (ADR-0013 §2):
+ *   - `id`:         string UUID when row exists; `null` when no active global row.
+ *   - `tenant_id`:  always `null` in v1 (global scope only).
+ *   - `is_active`:  `true` when row found; `false` when no row.
+ *   - `weights`:    `IntentWeights` when row found; `{}` (empty) when no row.
+ *   - `created_at`: ISO 8601 UTC string when row found; `null` when no row.
+ *
+ * All fields are always present — no field is `undefined`.
+ *
+ * Non-test consumers:
+ *   - apps/control-plane/src/app/api/admin/intent/config/route.ts (GET handler)
+ *   - apps/control-plane/src/app/admin/tracer/weights/page.tsx (loadConfig)
+ */
+export const AdminIntentConfigResponseSchema = z.object({
+  /** Database row UUID, or null when no active global row exists. */
+  id: z.string().uuid().nullable(),
+  /** Always null in v1 (global scope only). */
+  tenant_id: z.string().uuid().nullable(),
+  /** True when an active row was found. */
+  is_active: z.boolean(),
+  /** Active weight config. Empty object {} when no row exists. */
+  weights: IntentWeightsSchema,
+  /** Row creation timestamp (ISO 8601 UTC), or null when no row exists. */
+  created_at: z.string().nullable(),
+});
+
+export type AdminIntentConfigResponse = z.infer<typeof AdminIntentConfigResponseSchema>;
 
 // ─── Response for AC8: GET /api/intent/config ────────────────────────────────
 

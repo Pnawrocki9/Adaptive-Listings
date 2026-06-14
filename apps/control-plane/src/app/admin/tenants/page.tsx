@@ -1,5 +1,7 @@
 // TODO Sprint 5: fetch from tenants table via createAdminClient()
 
+import Link from 'next/link';
+
 import type { MockTenant } from './mock-data';
 import { MOCK_TENANTS } from './mock-data';
 
@@ -40,19 +42,21 @@ export default function AdminTenantsPage() {
         ))}
       </div>
 
-      {/* Table */}
+      {/* Table — includes per-tenant K.3.6 Tracer links (FOLLOW-311) */}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              {['Tenant', 'Plan', 'Status', 'SDK', 'Demo', 'Profile Mode', 'Created'].map((h) => (
-                <th
-                  key={h}
-                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
-                >
-                  {h}
-                </th>
-              ))}
+              {['Tenant', 'Plan', 'Status', 'SDK', 'Demo', 'Profile Mode', 'Created', 'Tracer'].map(
+                (h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
+                  >
+                    {h}
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -79,13 +83,36 @@ export default function AdminTenantsPage() {
                   <button
                     disabled
                     title="Requires Master Admin approval workflow"
-                    className="rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-500 opacity-50 cursor-not-allowed"
+                    className="cursor-not-allowed rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-500 opacity-50"
                   >
                     {tenant.profile_mode ? 'On' : 'Off'}
                   </button>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-500">
                   {new Date(tenant.created_at).toLocaleDateString()}
+                </td>
+                {/* K.3.6 per-tenant Tracer links (FOLLOW-311) */}
+                <td className="px-4 py-3">
+                  <div className="flex flex-col gap-0.5 text-xs">
+                    <Link
+                      href={`/admin/tenants/${tenant.id}/tracer`}
+                      className="text-purple-600 underline hover:text-purple-800"
+                    >
+                      Live Monitor
+                    </Link>
+                    <Link
+                      href={`/admin/tenants/${tenant.id}/tracer/history`}
+                      className="text-purple-600 underline hover:text-purple-800"
+                    >
+                      History
+                    </Link>
+                    <Link
+                      href={`/admin/tenants/${tenant.id}/tracer/export`}
+                      className="text-purple-600 underline hover:text-purple-800"
+                    >
+                      Export
+                    </Link>
+                  </div>
                 </td>
               </tr>
             ))}

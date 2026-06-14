@@ -293,8 +293,8 @@ export default function SessionHistoryPage({ params, searchParams }: HistoryPage
     }
   };
 
-  // Build export download URL
-  const buildExportUrl = (format: 'csv' | 'jsonl') => {
+  // Build the JSONL export URL for the <a download> link (no Accept header required for JSONL).
+  const buildJsonlExportUrl = () => {
     const url = new URL('/api/admin/tracer/export/decisions', window.location.origin);
     url.searchParams.set('tenant_id', tenantId);
     url.searchParams.set(
@@ -302,8 +302,56 @@ export default function SessionHistoryPage({ params, searchParams }: HistoryPage
       filterFrom || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
     );
     url.searchParams.set('to', filterTo || new Date().toISOString());
-    if (format === 'csv') url.searchParams.set('_accept', 'text/csv');
     return url.toString();
+  };
+
+  // CSV export must use fetch() with Accept: text/csv — the route selects CSV from the
+  // Accept header only; a bare <a href download> cannot set headers (FOLLOW-312 / RETRO-077 LG-2).
+  const [csvExporting, setCsvExporting] = useState(false);
+  const [csvError, setCsvError] = useState<string | null>(null);
+
+  const handleExportCsv = async () => {
+    setCsvExporting(true);
+    setCsvError(null);
+    try {
+      const url = new URL('/api/admin/tracer/export/decisions', window.location.origin);
+      url.searchParams.set('tenant_id', tenantId);
+      url.searchParams.set(
+        'from',
+        filterFrom || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      );
+      url.searchParams.set('to', filterTo || new Date().toISOString());
+
+      const res = await fetch(url.toString(), {
+        headers: { Accept: 'text/csv' },
+      });
+
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: { message?: string; code?: string };
+        };
+        setCsvError(
+          `CSV export failed: ${json.error?.message ?? json.error?.code ?? `HTTP ${res.status.toString()}`}`,
+        );
+        return;
+      }
+
+      const blob = await res.blob();
+      const from = filterFrom || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const to = filterTo || new Date().toISOString();
+      const filename = `tracer-decisions-${tenantId.slice(0, 8)}-${from.replace('T', '_')}-${to.replace('T', '_')}.csv`;
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+    } catch (err) {
+      setCsvError(`CSV export failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setCsvExporting(false);
+    }
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -429,17 +477,19 @@ export default function SessionHistoryPage({ params, searchParams }: HistoryPage
         </div>
       </div>
 
-      {/* Export buttons */}
-      <div className="mb-4 flex gap-2">
-        <a
-          href={buildExportUrl('csv')}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-          download
+      {/* Export buttons — CSV uses fetch(Accept: text/csv); JSONL uses <a download> */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {/* CSV: must use fetch + Accept header — bare <a> navigation cannot set Accept (FOLLOW-312) */}
+        <button
+          onClick={() => void handleExportCsv()}
+          disabled={csvExporting || !tenantId}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
         >
-          Export CSV (decisions)
-        </a>
+          {csvExporting ? 'Exporting…' : 'Export CSV (decisions)'}
+        </button>
+        {/* JSONL: route default is JSONL — no Accept header needed; <a download> works */}
         <a
-          href={buildExportUrl('jsonl')}
+          href={buildJsonlExportUrl()}
           className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
           download
         >
@@ -452,6 +502,11 @@ export default function SessionHistoryPage({ params, searchParams }: HistoryPage
           Full Export Dashboard →
         </Link>
       </div>
+      {csvError && (
+        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-800">
+          <strong>Export error:</strong> {csvError}
+        </div>
+      )}
 
       {/* Event table */}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">

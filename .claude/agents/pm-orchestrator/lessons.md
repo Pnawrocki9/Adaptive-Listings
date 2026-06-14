@@ -551,6 +551,21 @@ output.
 
 ---
 
+**Date / ticket:** 2026-06-14 — FOLLOW-266 Phase 2 "seed global default weights" — scope assessment,
+no delegation **Delegation row used:** N/A (CEO-directed scope clarification pass; no ticket yet
+exists for the seed task; surfaced a CEO decision required before any worker can proceed) **What
+validation caught (or missed):** The "FOLLOW-266 Phase 2" label has been reused for two distinct
+things: the DB migration (PR #278, DONE) and a separate unnamed operational task (seed the
+global-default row). No written QUEUE.md ticket or FOLLOW_UPS.md stub exists for the seed task — it
+is referenced only as a prose note in the QUEUE.md header and STATUS.md. Additionally, the weight
+values themselves raise a genuine ML decision: seeding SDK-identical defaults is a no-op and defeats
+the purpose; a meaningful seed requires CEO/ml-engineer input on what the global defaults should
+actually be. **A delegation/validation rule I'd add:** Before delegating any "operational
+precondition" task mentioned only in prose notes, verify it has a scoped QUEUE.md entry with an id,
+AC, and agent assignment — prose references are not sufficient for safe delegation.
+
+---
+
 **Date / ticket:** 2026-06-13 — Bookkeeping pass (FOLLOW-267/294/268-write/297/299 all DONE)
 **Delegation row used:** None (bookkeeping/queue-sync session, no worker delegated) **What
 validation caught (or missed):** The QUEUE.md Sprint 17 table row still showed FOLLOW-267 as
@@ -564,3 +579,18 @@ delegation/validation rule I'd add:** When syncing queue after multiple merged P
 working-tree RETROSPECTIVES.md and FOLLOW_UPS.md (not git/main) before touching QUEUE.md — retros
 append to the working tree and the FOLLOW stubs they generate may contain P1 BLOCKS markers that
 change the dependency graph before any commit.
+
+---
+
+**Date / ticket:** 2026-06-14 — RETRO-076 bookkeeping (FOLLOW-266 Ph2 seed + FOLLOW-302 DONE,
+FOLLOW-307 added) **Delegation row used:** None (bookkeeping/queue-sync session, no worker
+delegated) **What validation caught (or missed):** RETRO-076 (working tree, not yet on main)
+surfaced the critical OG-1 finding: a MERGED Postgres/Supabase migration is NOT the same as an
+APPLIED migration. The seed SQL (migration 0030) is code-correct and CI-green but produces zero
+effect in prod until an operator runs db:migrate — because no GH workflow auto-applies Postgres
+migrations (only ClickHouse ci.yml does). This "merged does not equal live" gap is an architectural
+standing fact affecting EVERY future Postgres seed/DDL. Caught at bookkeeping stage via working-tree
+RETRO-076; would have been invisible if only checking git/main state. **A delegation/validation rule
+I'd add:** When closing a ticket whose primary artifact is a Postgres seed/DDL migration, always
+verify the apply mechanism (auto-workflow or operator checklist) before recording the data-wire as
+closed — a correct merged SQL is NOT a live data producer until applied to a real environment.

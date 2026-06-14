@@ -1,9 +1,10 @@
 # FOLLOW-316 — Live-ClickHouse CI guard: submit the tracer query builders for analysis so a Code-386-class error fails CI
 
-**Sprint:** 18 **Priority:** P1 **Status:** READY_FOR_REVIEW **Agent:** devops-engineer (CI, lead) +
+**Sprint:** 18 **Priority:** P1 **Status:** DONE **Agent:** devops-engineer (CI, lead) +
 backend-engineer (spec) **Branch:** `devops-engineer/FOLLOW-316-tracer-ci-guard` **PR:** #305
-**Estimated hours:** 6 **Source retro:** RETRO-078 (§4c TG-1/TG-2) **Source ticket:** FOLLOW-315 /
-PR #302 **Depends on:** none (FOLLOW-315 merged, PR #302) **Promoted:** 2026-06-14 (CEO-directed)
+**Merged:** 2026-06-14 (`cce2cd8`) **Estimated hours:** 6 **Source retro:** RETRO-078 (§4c
+TG-1/TG-2) **Source ticket:** FOLLOW-315 / PR #302 **Depends on:** none (FOLLOW-315 merged, PR #302)
+**Promoted:** 2026-06-14 (CEO-directed)
 
 ---
 

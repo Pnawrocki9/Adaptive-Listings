@@ -4589,9 +4589,10 @@ pending planning.**
     Live-ClickHouse CI guard — submit the tracer query builders for analysis so a Code-386-class
     error fails CI
   agent: devops-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: devops-engineer
   started_at: '2026-06-14'
+  completed_at: '2026-06-14'
   branch: devops-engineer/FOLLOW-316-tracer-ci-guard
   pr: '#305'
   priority: P1

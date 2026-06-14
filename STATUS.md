@@ -53,29 +53,31 @@ None active.
 
 ## ADR-0012 D-1 chain — complete dependency tree (as of 2026-06-14T10:00Z)
 
-| Ticket                      | Label          | Status   | PR / commit    | Notes                                                               |
-| --------------------------- | -------------- | -------- | -------------- | ------------------------------------------------------------------- |
-| FOLLOW-266                  | Foundation     | DONE     | #277/278/280   | DB schema + SDK emission (3 phases)                                 |
-| FOLLOW-286                  | Prereq         | DONE     | #279           | on_conflict / event_type / join-key fixes                           |
-| FOLLOW-287/288              | CH smoke       | DONE     | #281/282       | migration 0016 no-op; ESC-021 RESOLVED                              |
-| FOLLOW-267                  | Ticket —       | DONE     | #283           | 8 tracer routes + /api/intent/config                                |
-| FOLLOW-294 (Ticket A)       | Auth + schema  | DONE     | #284 (4e45e3a) | cross-tenant enum gap closed; IntentWeightsSchema                   |
-| FOLLOW-268-write (Ticket B) | Write API      | DONE     | #285 (2998a93) | POST/PUT; write-side validation satisfied                           |
-| FOLLOW-297 (Ticket D)       | Tests          | DONE     | #286 (8cdf94f) | 111 tests; DG-1 docstring fixed                                     |
-| FOLLOW-299 (enum prereq)    | Enum prereq    | DONE     | #287 (c387103) | data_source widened to include 'error'                              |
-| FOLLOW-301                  | Invariant      | DONE     | #289 (a14c907) | one-active invariant + ORDER BY + real POST→GET test                |
-| FOLLOW-268 (Ticket C)       | SDK init       | DONE     | #290 (ea2089b) | resolveIntentOverrides + fetchIntentWeights                         |
-| FOLLOW-305                  | URL fix        | DONE     | #291 (3d9e8f0) | buildEndpoint; fixed double-/api on 4 SDK endpoints                 |
-| FOLLOW-266 Ph2 seed         | Seed           | DONE     | #293 (6381499) | migration 0030 merged; global-default row in repo                   |
-| **FOLLOW-307**              | **Prod apply** | **DONE** | operator apply | All 14 pending migrations applied 2026-06-14; seed verified in prod |
-| FOLLOW-269                  | Frontend UI    | BLOCKED  | —              | Blocked on FOLLOW-268 (Ticket C — now DONE); ready to delegate      |
-| FOLLOW-293                  | Closure gate   | BLOCKED  | —              | FOLLOW-307 done → now blocked only on FOLLOW-269; live smoke needed |
+| Ticket                      | Label          | Status      | PR / commit    | Notes                                                               |
+| --------------------------- | -------------- | ----------- | -------------- | ------------------------------------------------------------------- |
+| FOLLOW-266                  | Foundation     | DONE        | #277/278/280   | DB schema + SDK emission (3 phases)                                 |
+| FOLLOW-286                  | Prereq         | DONE        | #279           | on_conflict / event_type / join-key fixes                           |
+| FOLLOW-287/288              | CH smoke       | DONE        | #281/282       | migration 0016 no-op; ESC-021 RESOLVED                              |
+| FOLLOW-267                  | Ticket —       | DONE        | #283           | 8 tracer routes + /api/intent/config                                |
+| FOLLOW-294 (Ticket A)       | Auth + schema  | DONE        | #284 (4e45e3a) | cross-tenant enum gap closed; IntentWeightsSchema                   |
+| FOLLOW-268-write (Ticket B) | Write API      | DONE        | #285 (2998a93) | POST/PUT; write-side validation satisfied                           |
+| FOLLOW-297 (Ticket D)       | Tests          | DONE        | #286 (8cdf94f) | 111 tests; DG-1 docstring fixed                                     |
+| FOLLOW-299 (enum prereq)    | Enum prereq    | DONE        | #287 (c387103) | data_source widened to include 'error'                              |
+| FOLLOW-301                  | Invariant      | DONE        | #289 (a14c907) | one-active invariant + ORDER BY + real POST→GET test                |
+| FOLLOW-268 (Ticket C)       | SDK init       | DONE        | #290 (ea2089b) | resolveIntentOverrides + fetchIntentWeights                         |
+| FOLLOW-305                  | URL fix        | DONE        | #291 (3d9e8f0) | buildEndpoint; fixed double-/api on 4 SDK endpoints                 |
+| FOLLOW-266 Ph2 seed         | Seed           | DONE        | #293 (6381499) | migration 0030 merged; global-default row in repo                   |
+| **FOLLOW-307**              | **Prod apply** | **DONE**    | operator apply | All 14 pending migrations applied 2026-06-14; seed verified in prod |
+| **FOLLOW-308**              | **Auto-apply** | **PR-OPEN** | PR (inert)     | db-migrate.yml implemented; inert until ESC-023 secrets provisioned |
+| FOLLOW-269                  | Frontend UI    | BLOCKED     | —              | Blocked on FOLLOW-268 (Ticket C — now DONE); ready to delegate      |
+| FOLLOW-293                  | Closure gate   | BLOCKED     | —              | FOLLOW-307 done → now blocked only on FOLLOW-269; live smoke needed |
 
 ## READY tickets (next up)
 
 No tickets currently READY. Immediate priorities for next sprint planning:
 
-- FOLLOW-308 (P1 devops) — standing Postgres migration mechanism; blocked on ESC-022 human sign-off
+- FOLLOW-308 (P1 devops) — PR-OPEN (inert-pending-secret ESC-023): db-migrate.yml implemented;
+  activates when DOPPLER_TOKEN_STG + DOPPLER_TOKEN_PRD provisioned; AC3 blocked on ESC-022
 - FOLLOW-293 (P2 qa-engineer) — live-network smoke test; now unblocked by FOLLOW-307 DONE
 - FOLLOW-269 (P2 backend-engineer) — frontend UI; now unblocked by FOLLOW-268 DONE
 

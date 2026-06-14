@@ -1,0 +1,146 @@
+# db-migrate.yml
+#
+# Applies all pending Postgres/Supabase (Drizzle) migrations automatically on
+# every push to main that touches packages/db/migrations/** or the migration
+# runner itself.  Runs staging FIRST; if staging succeeds, runs prod.
+#
+# IMPORTANT — SECRETS REQUIRED (see ESC-023):
+#   DOPPLER_TOKEN_STG — Doppler service token scoped to project
+#     estalara-adaptive-listings, config stg.  Required for the migrate-staging
+#     job to run.
+#   DOPPLER_TOKEN_PRD — Doppler service token scoped to project
+#     estalara-adaptive-listings, config prd.  Required for the migrate-prod
+#     job to run.
+#
+# Until both secrets are provisioned this workflow emits a clear notice and
+# exits 0 (soft-skip on "dependency not configured" — the only allowed
+# soft-skip per guardrails).  A missing secret that IS configured (token
+# present but Doppler auth fails) is a hard failure — no secondary skip gate.
+#
+# Fail-loud contract:
+#   Any non-zero exit from `pnpm db:migrate` fails the job immediately.
+#   This includes the FOLLOW-149 guard (exit code 2: pending > 0 && applied = 0
+#   — journal ordering bug).  CI will be red and the migration must be fixed.
+#   There is NO continue-on-error on the migrate step itself.
+#
+# Idempotency:
+#   The Drizzle migrator tracks applied migrations in drizzle.__drizzle_migrations
+#   and skips already-applied entries.  Re-running is safe.
+#
+# Manual fallback (when secret is absent or for emergency apply):
+#   doppler run --config stg -- pnpm db:migrate  (staging)
+#   doppler run --config prd -- pnpm db:migrate  (prod)
+
+name: DB Migrate
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/db/migrations/**"
+      - "packages/db/scripts/migrate.ts"
+  workflow_dispatch:
+
+# Prevent two concurrent migration runs racing against the same database.
+# cancel-in-progress: false — never cancel a migration that has already started.
+concurrency:
+  group: db-migrate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Staging migrate ──────────────────────────────────────────────────────
+  migrate-staging:
+    name: Migrate (staging)
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @estalara/db
+        run: pnpm --filter @estalara/db build
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      # Soft-skip ONLY when the Doppler service token for staging is absent
+      # (dependency not configured — ESC-023).  If the token IS present but
+      # Doppler auth fails, the doppler run step will exit non-zero (hard fail).
+      - name: Check DOPPLER_TOKEN_STG presence
+        id: stg-token-check
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_STG }}
+        run: |
+          if [ -z "${DOPPLER_TOKEN}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOPPLER_TOKEN_STG is not set — skipping staging migration."
+            echo "This workflow is INERT until DOPPLER_TOKEN_STG is provisioned."
+            echo "See backlog/ESCALATIONS.md ESC-023 for provisioning instructions."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Drizzle migrations (staging)
+        if: steps.stg-token-check.outputs.skip == 'false'
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_STG }}
+        run: doppler run --config stg -- pnpm db:migrate
+
+  # ── Prod migrate ─────────────────────────────────────────────────────────
+  # Gated on staging success. If staging migration fails, prod never runs.
+  migrate-prod:
+    name: Migrate (prod)
+    runs-on: ubuntu-latest
+    environment: production
+    needs: migrate-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @estalara/db
+        run: pnpm --filter @estalara/db build
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      # Soft-skip ONLY when the Doppler service token for prod is absent
+      # (dependency not configured — ESC-023).  If the token IS present but
+      # Doppler auth fails, the doppler run step will exit non-zero (hard fail).
+      - name: Check DOPPLER_TOKEN_PRD presence
+        id: prd-token-check
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: |
+          if [ -z "${DOPPLER_TOKEN}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOPPLER_TOKEN_PRD is not set — skipping prod migration."
+            echo "This workflow is INERT until DOPPLER_TOKEN_PRD is provisioned."
+            echo "See backlog/ESCALATIONS.md ESC-023 for provisioning instructions."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Drizzle migrations (prod)
+        if: steps.prd-token-check.outputs.skip == 'false'
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: doppler run --config prd -- pnpm db:migrate

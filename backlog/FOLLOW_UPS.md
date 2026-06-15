@@ -9012,7 +9012,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   Next.js App Router package — NOT `@supabase/auth-helpers-nextjs` (deprecated). Use
   `createBrowserClient` for the Client Component form and `createServerClient` with `cookies()` for
   Server Actions and middleware.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (2026-06-15, Sprint 18)
 
 ---
 

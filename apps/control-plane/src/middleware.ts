@@ -20,19 +20,19 @@
  *   The /api/intent/config and /api/quiz/public-config routes already set
  *   Access-Control-Allow-Origin: * inline and are unaffected.
  *
+ * Admin session auth uses @supabase/ssr createServerClient so it handles the
+ * chunked sb-<project-ref>-auth-token cookie format set by signInWithPassword().
+ * The @estalara/auth getAuthClaims path remains for Bearer-token API routes and
+ * tenant dashboard routes.
+ *
  * @module apps/control-plane/src/middleware
  */
 
+import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import {
-  getAuthClaims,
-  isStaffClaims,
-  isTenantClaims,
-  requireAgencyRole,
-  requireStaffRole,
-} from '@estalara/auth';
+import { getAuthClaims, isTenantClaims, requireAgencyRole } from '@estalara/auth';
 
 // ─── Dev-only CORS allow-list for SDK-facing adapt routes ─────────────────────
 
@@ -106,6 +106,68 @@ function isSdkCorsRoute(pathname: string): boolean {
   );
 }
 
+// ─── Supabase SSR admin session check ─────────────────────────────────────
+// @supabase/ssr sets chunked cookies named sb-<project-ref>-auth-token rather
+// than the legacy sb-access-token that @estalara/auth reads. For /admin/* routes
+// we use createServerClient to reassemble the session from those cookies, then
+// read estalara_staff / estalara_role from app_metadata directly. The cookie
+// adapter's setAll callback writes refreshed tokens back onto the response so
+// the session stays alive across request boundaries.
+
+type EstalaraRole = 'estalara:superadmin' | 'estalara:ops' | 'estalara:readonly';
+
+const STAFF_ROLE_RANK: Record<EstalaraRole, number> = {
+  'estalara:superadmin': 3,
+  'estalara:ops': 2,
+  'estalara:readonly': 1,
+};
+
+function isEstalaraRole(v: unknown): v is EstalaraRole {
+  return v === 'estalara:superadmin' || v === 'estalara:ops' || v === 'estalara:readonly';
+}
+
+async function checkAdminSession(req: NextRequest): Promise<{
+  authorized: boolean;
+  role?: EstalaraRole;
+  supabaseResponse: NextResponse;
+}> {
+  const supabaseResponse = NextResponse.next({ request: req });
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) return { authorized: false, supabaseResponse };
+
+  const supabase = createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return req.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          supabaseResponse.cookies.set(name, value, options);
+        });
+      },
+    },
+  });
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { authorized: false, supabaseResponse };
+
+  const appMeta = user.app_metadata as Record<string, unknown>;
+  const isStaff = appMeta.estalara_staff === true;
+  const staffRole = appMeta.estalara_role;
+
+  if (!isStaff || !isEstalaraRole(staffRole)) return { authorized: false, supabaseResponse };
+  if (STAFF_ROLE_RANK[staffRole] < STAFF_ROLE_RANK['estalara:readonly']) {
+    return { authorized: false, supabaseResponse };
+  }
+
+  return { authorized: true, role: staffRole, supabaseResponse };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+
 function loginRedirect(req: NextRequest): NextResponse {
   const url = req.nextUrl.clone();
   url.pathname = '/sign-in';
@@ -145,20 +207,13 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   }
 
   // Staff admin routes — require Estalara staff (readonly minimum)
+  // Uses @supabase/ssr to handle the chunked cookie format from signInWithPassword().
   if (pathname.startsWith('/admin')) {
-    const claims = await getAuthClaims(req);
-    if (!claims) return loginRedirect(req);
-    try {
-      requireStaffRole(claims, 'estalara:readonly');
-    } catch {
-      return loginRedirect(req);
-    }
-    const res = NextResponse.next();
-    res.headers.set('X-Request-Id', requestId);
-    if (isStaffClaims(claims)) {
-      res.headers.set('X-Staff-Role', claims.estalara_role);
-    }
-    return res;
+    const { authorized, role, supabaseResponse } = await checkAdminSession(req);
+    if (!authorized) return loginRedirect(req);
+    supabaseResponse.headers.set('X-Request-Id', requestId);
+    if (role) supabaseResponse.headers.set('X-Staff-Role', role);
+    return supabaseResponse;
   }
 
   // Tenant dashboard routes — require agency user (viewer minimum)

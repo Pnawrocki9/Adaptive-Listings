@@ -36,7 +36,12 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { IntentWeightsSchema, INTENT_SIGNAL_KEYS, ARCHETYPE_KEYS } from './intent-weights.js';
+import {
+  IntentWeightsSchema,
+  INTENT_SIGNAL_KEYS,
+  ARCHETYPE_KEYS,
+  DEFAULT_INTENT_WEIGHTS,
+} from './intent-weights.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -238,5 +243,38 @@ describe('ARCHETYPE_KEYS and INTENT_SIGNAL_KEYS completeness', () => {
   it('KEY-7: INTENT_SIGNAL_KEYS has no duplicates', () => {
     const unique = new Set(INTENT_SIGNAL_KEYS);
     expect(unique.size).toBe(INTENT_SIGNAL_KEYS.length);
+  });
+});
+
+// ─── DEFAULT_INTENT_WEIGHTS (canonical defaults) ───────────────────────────────
+
+describe('DEFAULT_INTENT_WEIGHTS — canonical defaults the Weight Editor resets to', () => {
+  it('DEFAULT-1: validates against IntentWeightsSchema', () => {
+    expect(() => IntentWeightsSchema.parse(DEFAULT_INTENT_WEIGHTS)).not.toThrow();
+  });
+
+  it('DEFAULT-2: behavioral_damping is the SDK default 0.3', () => {
+    expect(DEFAULT_INTENT_WEIGHTS.behavioral_damping).toBe(0.3);
+  });
+
+  it('DEFAULT-3: priors cover all 18 archetype keys (matches BASE_PRIOR key set)', () => {
+    const priorKeys = Object.keys(DEFAULT_INTENT_WEIGHTS.priors ?? {});
+    expect(priorKeys.length).toBe(ARCHETYPE_KEYS.length);
+    for (const k of ARCHETYPE_KEYS) {
+      expect(DEFAULT_INTENT_WEIGHTS.priors).toHaveProperty(k);
+    }
+  });
+
+  it('DEFAULT-4: priors sum to 1.0 (proper probability distribution per BASE_PRIOR)', () => {
+    const sum = Object.values(DEFAULT_INTENT_WEIGHTS.priors ?? {}).reduce((a, b) => a + b, 0);
+    expect(sum).toBeCloseTo(1.0, 5);
+  });
+
+  it('DEFAULT-5: neutral carries the highest prior (0.37 fallback per BASE_PRIOR)', () => {
+    expect(DEFAULT_INTENT_WEIGHTS.priors?.neutral).toBe(0.37);
+  });
+
+  it('DEFAULT-6: omits signal_likelihoods so the SDK applies its internal table', () => {
+    expect(DEFAULT_INTENT_WEIGHTS.signal_likelihoods).toBeUndefined();
   });
 });

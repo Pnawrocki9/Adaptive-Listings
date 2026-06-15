@@ -136,3 +136,50 @@ export const IntentWeightsSchema = z
   .strict();
 
 export type IntentWeights = z.infer<typeof IntentWeightsSchema>;
+
+// ─── Canonical default weights ─────────────────────────────────────────────────
+
+/**
+ * Canonical default intent weights — the project-agreed starting point the
+ * Weight Editor pre-loads and resets to.
+ *
+ * Values mirror the SDK's internal constants in `packages/sdk/src/core/intent.ts`:
+ *   - `priors` = `BASE_PRIOR` (Master Design §D distribution: 6 investor + 6 own-use
+ *     archetypes at 0.04, 5 special at 0.03, `neutral` 0.37 — sums to 1.00).
+ *   - `behavioral_damping` = `BEHAVIORAL_DAMPING` (0.3).
+ *   - `signal_likelihoods` is intentionally omitted: an empty/absent value means the
+ *     SDK applies its internal `SIGNAL_LIKELIHOODS` table, which is NOT overridable to
+ *     a meaningful default here (it is a large per-signal/per-archetype matrix). Reset
+ *     therefore clears any operator overrides back to SDK defaults.
+ *
+ * The SDK's `BASE_PRIOR` remains the runtime source of truth for the SDK itself; this
+ * constant restates it for the admin contract. `intent-weights.test.ts` asserts the
+ * two agree (sum-to-1 + key coverage) so drift is caught in CI.
+ */
+export const DEFAULT_INTENT_WEIGHTS: IntentWeights = {
+  behavioral_damping: 0.3,
+  priors: {
+    // Investors (each 0.04)
+    yield_hunter: 0.04,
+    vacation_rental_investor: 0.04,
+    flip_investor: 0.04,
+    portfolio_builder: 0.04,
+    golden_visa_buyer: 0.04,
+    commercial_investor: 0.04,
+    // Own use (each 0.04)
+    family_buyer: 0.04,
+    first_time_buyer: 0.04,
+    upsizer: 0.04,
+    downsizer: 0.04,
+    luxury_buyer: 0.04,
+    remote_worker: 0.04,
+    // Special / cross-border (each 0.03)
+    lifestyle_expat: 0.03,
+    retiree_relocator: 0.03,
+    diaspora_buyer: 0.03,
+    second_home_buyer: 0.03,
+    student_parent: 0.03,
+    // Fallback
+    neutral: 0.37,
+  },
+};

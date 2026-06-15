@@ -1016,7 +1016,7 @@ confirmed.
 
 ---
 
-## PARTIALLY-RESOLVED (item-2-pending) — ESC-022: Prod Supabase was 14 migrations behind (2026-05-28 → 2026-06-14) including compliance migrations — item (1) compliance integrity SIGNED OFF; item (2) standing mechanism OPEN
+## RESOLVED — ESC-022: Prod Supabase was 14 migrations behind (2026-05-28 → 2026-06-14) including compliance migrations — item (1) compliance integrity SIGNED OFF; item (2) standing mechanism DONE (FOLLOW-308 LIVE)
 
 **Filed by:** pm-orchestrator **Date:** 2026-06-14T10:00:00Z **Affects:** prod Supabase (project
 yhmivuqeqkmzpxpyrsvc, "Adaptive-Listings", eu-west-3), FOLLOW-307, FOLLOW-308, compliance posture
@@ -1110,11 +1110,16 @@ specifically 0019/0020 conversion_labels and 0024 dsr_durable_lead_id?
 
 ---
 
-### Item (2) — REMAINS OPEN
+### Item (2) — RESOLVED 2026-06-15 — Standing mechanism live
 
-FOLLOW-308 (P1, devops): decide + implement the standing mechanism so prod Postgres migrations don't
-silently drift again (auto-apply on deploy OR CI divergence gate comparing prod
-`__drizzle_migrations` count vs the journal). This is the only remaining ESC-022 thread.
+FOLLOW-308 (P1, devops): Option A implemented and now ACTIVE. `.github/workflows/db-migrate.yml`
+auto-applies `pnpm db:migrate` staging → prod on every push to `main` touching
+`packages/db/migrations/**` or `packages/db/scripts/migrate.ts`. Activation required three fixes
+beyond the initial PR #297: (a) ESC-023 Doppler tokens provisioned, (b) build-order fix PR #306
+(`Build @estalara/shared` before `db`), (c) `DATABASE_URL_ADMIN` added to Doppler stg/prd. Verified
+live end-to-end: `workflow_dispatch` run 27513894932 — Migrate (staging) + Migrate (prod) both
+green, real `Run Drizzle migrations` executed (not soft-skip). With item (1) already signed off,
+ESC-022 is now fully RESOLVED.
 
 **Resolution:** PARTIALLY-RESOLVED. Item (1) closed 2026-06-14 by Piotr (CEO) sign-off — compliance
 integrity confirmed benign (pre-pilot, zero traffic, purely-additive migrations applied cleanly).
@@ -1123,7 +1128,7 @@ FOLLOW-308 implementation.
 
 ---
 
-## OPEN — ESC-023: DOPPLER_TOKEN_STG and DOPPLER_TOKEN_PRD GitHub Actions secrets must be provisioned for db-migrate.yml to activate [FOLLOW-308]
+## RESOLVED — ESC-023: DOPPLER_TOKEN_STG and DOPPLER_TOKEN_PRD GitHub Actions secrets must be provisioned for db-migrate.yml to activate [FOLLOW-308]
 
 **Filed by:** devops-engineer **Date:** 2026-06-14T00:00:00Z **Affects:** FOLLOW-308,
 `.github/workflows/db-migrate.yml`, prod + staging Supabase migration auto-apply **Type:**
@@ -1177,4 +1182,31 @@ have access to any other Doppler project.
 **This does NOT block FOLLOW-308 AC1/AC2** (the workflow is implemented and cross-referenced in
 docs). It blocks AC3 (ESC-022 compliance sign-off) and the "live not inert" state of the mechanism.
 
-**Resolution:** (open — awaiting secret provisioning)
+**Resolution:** RESOLVED 2026-06-15 (Piotr). Three conditions had to be met for the workflow to run
+for real, not just exist:
+
+1. **GitHub Actions secrets provisioned** (2026-06-14): `DOPPLER_TOKEN_STG` and `DOPPLER_TOKEN_PRD`
+   service tokens (Doppler project `estalara-adaptive-listings`, configs `stg`/`prd`) added as repo
+   secrets. Confirmed via `gh secret list`.
+2. **Build-ordering bug fixed** (PR #306, merged 2026-06-15): `db-migrate.yml` built `@estalara/db`
+   without first building its `workspace:*` dependency `@estalara/shared`, so `tsc` failed on a
+   clean runner (`TS2307: Cannot find module '@estalara/shared'`). Added
+   `pnpm --filter @estalara/shared build` before the db build in all three affected jobs
+   (migrate-staging, migrate-prod, and `post-migrate-seed.yml` seed-archetypes, which had the same
+   latent bug).
+3. **Doppler config content** (2026-06-15): the `stg`/`prd` configs were missing
+   `DATABASE_URL_ADMIN` (the admin/RLS-bypass connection the migrate script requires per
+   `packages/db/src/client.ts:189`). Added to both configs as the Supabase **Session pooler** URI
+   (port 5432, IPv4-reachable from GitHub-hosted runners — Direct connection is IPv6-only and would
+   fail; Transaction pooler 6543 is not session-mode).
+
+**Verification:** `workflow_dispatch` run 27513894932 — both `Migrate (staging)` and
+`Migrate (prod)` green, with the real `Run Drizzle migrations` step executing (NOT the soft-skip
+path). The workflow is now LIVE, not inert: any push to `main` touching `packages/db/migrations/**`
+or `packages/db/scripts/migrate.ts` auto-applies staging → prod.
+
+**Note:** This was the activation half of FOLLOW-308 AC3. The other half — the **ESC-022 human
+compliance sign-off** on migrations 0019/0020/0024 against pre-schema prod — was already SIGNED OFF
+2026-06-14 (ESC-022 item 1, Piotr/CEO). With activation now verified live, ESC-022 item (2)
+(standing mechanism) is also closed → ESC-022 fully RESOLVED and **FOLLOW-308 closed in full**
+2026-06-15.

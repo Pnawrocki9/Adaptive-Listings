@@ -8152,10 +8152,11 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
         been applied, including compliance migrations 0019/0020/0024. All 14 applied cleanly.
   - [x] AC2 — GET /api/intent/config now returns data_source:'live' for override-less tenants.
         FOLLOW-293 live-network smoke is now unblocked (was waiting on this seed row).
-  - [ ] AC3 — STANDING apply mechanism: NOT YET DECIDED. Tracked by FOLLOW-308 (P1 devops, filed
-        2026-06-14). Options: (a) auto-apply workflow step or (b) operator checklist gate. ESC-022
-        filed for human sign-off on the 2.5-week compliance migration gap.
-  - [ ] AC4 — prevention of future merge-to-effect lag: blocked on AC3 decision (FOLLOW-308).
+  - [x] AC3 — STANDING apply mechanism DECIDED + IMPLEMENTED via FOLLOW-308 (Option A,
+        `db-migrate.yml`), DONE 2026-06-15. ESC-022 compliance sign-off received 2026-06-14.
+  - [x] AC4 — prevention of future merge-to-effect lag: DONE — auto-apply workflow now live
+        (FOLLOW-308 verified end-to-end, run 27513894932). Future Postgres migrations auto-apply on
+        merge to main, closing the merge-to-effect lag.
 - **depends_on:** none for AC1/AC2 (0030 already merged); AC2 closure is the gating assertion for
   FOLLOW-293. Does NOT block any worker ticket — it BLOCKS the FOLLOW-293 "D-1 verified live in
   prod" closure.
@@ -8171,7 +8172,10 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
 - **recommended_agent:** devops-engineer
 - **priority:** P1
 - **estimated_hours:** 4
-- **status:** PR-OPEN (inert-pending-secret: ESC-023)
+- **status:** DONE 2026-06-15 (CLOSED IN FULL). PR #297 (initial workflow) + PR #306 (build-order
+  fix) merged; ESC-023 RESOLVED; ESC-022 RESOLVED (item 1 compliance sign-off 2026-06-14, item 2
+  standing mechanism live). Workflow verified active end-to-end via run 27513894932 — staging + prod
+  both green, real db:migrate executed (not soft-skip).
 - **scope:** Root cause of FOLLOW-307's drift finding: no GitHub workflow auto-applies Postgres
   migrations on merge/deploy. Only ClickHouse has this (ci.yml:315). Drizzle's `pnpm db:migrate` is
   entirely operator-driven, creating a silent merge-to-prod gap on every Postgres migration.
@@ -8195,10 +8199,13 @@ Doppler dashboard. Verify by re-running any recent CI workflow.
         status note.
   - [x] AC2 — cross-referenced in `docs/ops/PILOT_RUNBOOK.md` §3 migration note and
         `packages/db/README.md` §How to apply migrations in CI.
-  - [ ] AC3 — ESC-022 human compliance sign-off received before closing (confirm no data-integrity
-        issues from compliance migrations 0019/0020/0024 running against pre-schema prod).
-        Separately, ESC-023 (DOPPLER_TOKEN_STG / DOPPLER_TOKEN_PRD) must be provisioned for the
-        workflow to activate beyond soft-skip.
+  - [x] AC3 — DONE. ESC-022 human compliance sign-off received 2026-06-14 (Piotr/CEO): the
+        0019/0020/0024 compliance migrations are purely additive and prod was empty/pre-pilot
+        (conversion_labels=0, durable_lead_id non-null=0) → no data-integrity issue, gap benign.
+        Activation sub-condition DONE 2026-06-15: DOPPLER_TOKEN_STG/PRD provisioned +
+        DATABASE_URL_ADMIN added to Doppler stg/prd (Supabase Session pooler URI) + build-order fix
+        PR #306. Workflow verified LIVE end-to-end (run 27513894932: Migrate staging + prod both
+        green, real `Run Drizzle migrations` executed, not soft-skip).
 - **depends_on:** ESC-022 (human decision on compliance gap); otherwise none.
 - **promoted_to_queue:** true (added to Sprint 17 backlog QUEUE.md 2026-06-14)
 
@@ -8593,5 +8600,39 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 318 (315 = RETRO-078 / PR #302 — DONE retroactive catalog: qualify event_at in the 4 K.3.6 tracer ClickHouse query builders to avoid Code 386 NO_COMMON_TYPE; toString(event_at) AS event_at self-alias shadows the DateTime64 column with a String alias inside WHERE/ORDER BY, so a bare event_at date predicate binds to the String alias → String>=DateTime → throw at query-analysis time, even on an empty table; broke export/history/SSE-poll in prod, output-key-transparent fix = zero consumer cascade, found via local Stack B real-CH 24.8, NOT CI. 316 = RETRO-078 §4c — live-ClickHouse CI guard: the CH-315a-d regression tests are mock-fetch-only + the only live-CH integration tests self-skip in CI (CLICKHOUSE_URL unset) even though a clickhouse-smoke job already boots a real CH container; submit the 4 tracer builders to that container so a Code-386-class error fails CI, P1. 317 = RETRO-078 §4a LG-1/§5d — audit the toString(col) AS col alias-shadow across all CH builders; confirmed sibling clickhouse-dsr.ts:271,275 (lexicographic String ORDER BY + wrong-row LIMIT 1, latent-not-throwing); fix by qualify-or-rename + sweep ingest/decision-api/packages-db, P2. NOTE 314 was consumed by PR #301 (dev-only localhost CORS + idempotent local-dev tenant seed). NO Rule promoted RETRO-078: alias-shadow pattern is count-1 standalone (tracer+DSR = one PR-discovered family); the mock-test-can't-catch-real-backend-rejection AXIS is count-1 on the live-backend-query-analysis axis (the HTTP/schema axis of that family is ≥3 but covered by Rule L + K.2 round-trip) — held for the next independent sighting per RETRO-077's identical deferral discipline.) -->
+## FOLLOW-318 — Tighten the FOLLOW-316 AC2 negative-control assertion so it greens ONLY on the Code-386 class, not on any HTTP 500
+
+- **source_retro:** RETRO-079 (§4c TG-1, §6 matcher-precision sub-pattern)
+- **source_ticket:** FOLLOW-316 / PR #305
+- **recommended_sprint:** 18
+- **recommended_agent:** qa-engineer (or backend-engineer)
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** The live-ClickHouse negative control added by FOLLOW-316 asserts
+  `await expect(chTracerQuery(cfg, brokenSql, ...)).rejects.toThrow(/Code: 386|NO_COMMON_TYPE|HTTP 500/)`
+  at `apps/control-plane/src/__tests__/integration/clickhouse-tracer.integration.test.ts:302`. The
+  whole purpose of this control is to prove the guard catches the **Code-386 `NO_COMMON_TYPE`
+  alias-shadow class** specifically — but the `|HTTP 500` alternative is a catch-all:
+  `chTracerQuery` wraps every non-2xx as `ClickHouse tracer query failed: HTTP 500: <body>`, so the
+  matcher greens on ANY 500 (missing seed table, an unrelated syntax error introduced by a future
+  edit to `brokenSql`, an OOM, a container misconfig). That makes the negative control pass for the
+  wrong reason — the same "assertion weaker than the contract it defends" family RETRO-072/078
+  flagged, here on the matcher-precision axis. Drop the `HTTP 500` arm so the control fails loudly
+  if the engine rejects for any reason OTHER than Code 386.
+- **ac:**
+  - [ ] AC1 — the AC2 assertion regex is tightened to `/Code: 386|NO_COMMON_TYPE/` (the `|HTTP 500`
+        catch-all arm removed), and the `tracer-query-smoke` CI job is still green (the real
+        Code-386 body satisfies the tighter matcher — verified, not assumed).
+  - [ ] AC2 — (optional hardening) the control additionally asserts the thrown message references
+        `event_at` (or the alias-shadow shape) so a future Code-386 from an UNRELATED column would
+        not falsely satisfy the control.
+  - [ ] AC3 — a one-line comment at the assertion explains why the matcher is intentionally narrow
+        (so a later contributor does not "helpfully" re-broaden it to `HTTP 500`).
+  - [ ] AC4 — prettier + control-plane vitest green.
+- **depends_on:** none (FOLLOW-316 merged, PR #305).
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 319 (318 = RETRO-079 / PR #305 / FOLLOW-316 §4c TG-1 — tighten the live-CH negative-control assertion regex from /Code: 386|NO_COMMON_TYPE|HTTP 500/ to /Code: 386|NO_COMMON_TYPE/ at clickhouse-tracer.integration.test.ts:302; the |HTTP 500 catch-all greens on ANY 500 so the control passes for the wrong reason, P2 1h. NOTE the DSR live-CH CI-wiring leg from RETRO-079 §4c HW-1 / §5a is NOT a new follow-up — inherited by FOLLOW-317, whose AC should be amended at promotion to "un-self-skip + live-CH-wire clickhouse-dsr.integration.test.ts in the same PR." NO Rule promoted RETRO-079: FOLLOW-316 is the REMEDIATION of RETRO-078 Pattern B, not a 2nd independent sighting, so the live-backend-vs-mock axis stays count-1; the new matcher-precision sub-pattern is count-1. -- prior: 318 (315 = RETRO-078 / PR #302 — DONE retroactive catalog: qualify event_at in the 4 K.3.6 tracer ClickHouse query builders to avoid Code 386 NO_COMMON_TYPE; toString(event_at) AS event_at self-alias shadows the DateTime64 column with a String alias inside WHERE/ORDER BY, so a bare event_at date predicate binds to the String alias → String>=DateTime → throw at query-analysis time, even on an empty table; broke export/history/SSE-poll in prod, output-key-transparent fix = zero consumer cascade, found via local Stack B real-CH 24.8, NOT CI. 316 = RETRO-078 §4c — live-ClickHouse CI guard: the CH-315a-d regression tests are mock-fetch-only + the only live-CH integration tests self-skip in CI (CLICKHOUSE_URL unset) even though a clickhouse-smoke job already boots a real CH container; submit the 4 tracer builders to that container so a Code-386-class error fails CI, P1. 317 = RETRO-078 §4a LG-1/§5d — audit the toString(col) AS col alias-shadow across all CH builders; confirmed sibling clickhouse-dsr.ts:271,275 (lexicographic String ORDER BY + wrong-row LIMIT 1, latent-not-throwing); fix by qualify-or-rename + sweep ingest/decision-api/packages-db, P2. NOTE 314 was consumed by PR #301 (dev-only localhost CORS + idempotent local-dev tenant seed). NO Rule promoted RETRO-078: alias-shadow pattern is count-1 standalone (tracer+DSR = one PR-discovered family); the mock-test-can't-catch-real-backend-rejection AXIS is count-1 on the live-backend-query-analysis axis (the HTTP/schema axis of that family is ≥3 but covered by Rule L + K.2 round-trip) — held for the next independent sighting per RETRO-077's identical deferral discipline.) -->
 <!-- prior next free FOLLOW number: 314 (309-313 = RETRO-077 / PR #298 / FOLLOW-269 K.3.6 tracer admin UI: 309 = Weight Editor GET 405 (admin/intent/config exports POST-only; real GET is /api/intent/config) + can-never-PUT (GET drops `id`) + test fabricates the contract [CB-1 P0 + LG-1 P1 + TG-1]; 310 = Live Monitor SSE 401s (page sends ?token= query param, verifyTracerAdminAuth reads header-only) [CB-2 P0]; 311 = 3 tenant-scoped pages nav-orphaned, only Weight Editor in sidebar, no tenant-row link, no [id]/page.tsx [Rule H P1]; 312 = History "Export CSV" yields JSONL (_accept query param ignored, route reads Accept header) + datetime-local→ISO ambiguity [LG-2 P2 + LG-3 P3]; 313 = drop the data_source loose casts AFTER extending FOLLOW-303 to widen ALL FOUR tracer enums incl Sessions+History to add 'error' [P3, depends extended 303]. FOLLOW-303 does NOT cover the UI cast cleanup — it names only TracerSessionDetailResponseSchema, not TracerSessionsResponseSchema; must be EXTENDED. No Rule promoted this run: the "consumer UI test mocks a fabricated server contract" pattern is count-3 in the fixture-lies family but adjacent to Rule L; held for the architect to extend Rule L or mint a rule on the next independent sighting.) -->

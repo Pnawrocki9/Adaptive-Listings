@@ -4906,19 +4906,23 @@ pending planning.**
     staging success. Concurrency guard prevents races. Fail-loud on non-zero exit.
     Soft-skip ONLY when DOPPLER_TOKEN_STG / DOPPLER_TOKEN_PRD absent (ESC-023 filed).
     AC1 DONE: workflow implemented. AC2 DONE: cross-referenced in docs.
-    AC3 OPEN: awaiting ESC-023 secret provisioning (Piotr operator action) to activate.
+    AC3 DONE 2026-06-15: ESC-022 compliance sign-off received 2026-06-14 (Piotr/CEO); activation
+    completed — ESC-023 tokens provisioned, build-order fix PR #306 merged, DATABASE_URL_ADMIN added
+    to Doppler stg/prd. Verified LIVE end-to-end (run 27513894932: staging + prod both green, real
+    db:migrate, not soft-skip). FOLLOW-308 CLOSED IN FULL; ESC-022 + ESC-023 RESOLVED.
 ```
 
 ## Currently in flight
 
 **1 ticket IN_PROGRESS as of 2026-06-14T12:00Z.** FOLLOW-269 (K.3.6 frontend UI) delegated to
-backend-engineer. All K.3.6 D-1 code dependencies DONE (FOLLOW-266/267/268). FOLLOW-308 DONE (PR
-#297 merged, Option A auto-apply workflow; AC3 pending ESC-023 secret provisioning — operator
-action). FOLLOW-307 DONE (prod migrations applied 2026-06-14). FOLLOW-293 (live smoke) BLOCKED on
-FOLLOW-269 (frontend must merge before end-to-end smoke). FOLLOW-304/306 non-blocking backlog.
-ESC-022 item (2) awaiting CEO decision. ESC-023 awaiting Piotr to provision DOPPLER_TOKEN_STG/PRD.
-Pending retro spawns: RETRO-062 (FOLLOW-276), RETRO-063 (FOLLOW-278), RETRO-064 (FOLLOW-266 Ph1),
-RETRO-067 (FOLLOW-266 Ph3), RETRO-068 (FOLLOW-286), RETRO-069 (FOLLOW-287/288) — 6 retros queued.
+backend-engineer. All K.3.6 D-1 code dependencies DONE (FOLLOW-266/267/268). FOLLOW-308 DONE /
+CLOSED IN FULL 2026-06-15 (PR #297 + PR #306 merged, Option A auto-apply workflow verified LIVE
+end-to-end; AC1–AC3 all DONE; ESC-022 + ESC-023 RESOLVED). FOLLOW-307 DONE (prod migrations applied
+2026-06-14). FOLLOW-293 (live smoke) BLOCKED on FOLLOW-269 (frontend must merge before end-to-end
+smoke). FOLLOW-304/306 non-blocking backlog. ESC-022 item (2) awaiting CEO decision. ESC-023
+awaiting Piotr to provision DOPPLER_TOKEN_STG/PRD. Pending retro spawns: RETRO-062 (FOLLOW-276),
+RETRO-063 (FOLLOW-278), RETRO-064 (FOLLOW-266 Ph1), RETRO-067 (FOLLOW-266 Ph3), RETRO-068
+(FOLLOW-286), RETRO-069 (FOLLOW-287/288) — 6 retros queued.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

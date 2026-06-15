@@ -634,3 +634,15 @@ items the PM can advance. **A delegation/validation rule I'd add:** When both op
 require human-only physical actions (deploy, secret provisioning) and there are no READY Sprint 18
 tickets, spawn any pending retrospective-analyst tasks immediately rather than stopping entirely —
 retro spawns are PM-scope work that does not conflict with escalation-stop on worker tickets.
+
+---
+
+**Date / ticket:** 2026-06-15 — FOLLOW-324 DONE (PR #308 merged) + FOLLOW-326 promoted + delegated
+**Delegation row used:** "ingest worker, control-plane, Postgres/RLS, auth, onboarding HTTP" →
+backend-engineer **What validation caught (or missed):** PR #308 was in READY_FOR_REVIEW status in
+QUEUE.md but was already merged on GitHub (2026-06-15T13:21:27Z). Always check
+`gh pr view <N> --json state,mergedAt` to catch merge events that happened between PM sessions —
+QUEUE.md can lag behind GitHub state. **A delegation/validation rule I'd add:** At the start of
+every loop, check gh pr view for all READY_FOR_REVIEW tickets to confirm they haven't already been
+merged — a merged PR with READY_FOR_REVIEW status in QUEUE.md is a stale record that blocks retro
+spawning.

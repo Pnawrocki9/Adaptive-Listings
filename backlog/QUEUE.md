@@ -4950,7 +4950,7 @@ pending planning.**
     SDK bundle size fix: split auto-detect pipeline into optional companion IIFE
     (estalara-detect.iife.js) to pass the <40 KB gzip bundle gate
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -4958,17 +4958,13 @@ pending planning.**
   spec: backlog/FOLLOW_UPS.md (FOLLOW-324 stub)
   pr: '308'
   branch: sdk-engineer/FOLLOW-324-sdk-bundle-size
+  merge_commit: confirmed merged 2026-06-15T13:21:27Z
+  completed_at: '2026-06-15T13:21:27Z'
   notes: |
-    PR #308 OPEN. Merge-ready (comment-fix commit 5924adc landed). CI confirmed green by sdk-engineer.
-    Bundle: 52.61 KB -> 39.73 KB gzip core. Companion estalara-detect.iife.js = 12.43 KB gzip.
-    Architect verdict: Option 1 accepted (companion split; cold-start hints are marginal warm-start,
-    not load-bearing). CEO product decision 2026-06-15: companion auto-included for ALL Tier 1+2
-    tenants by default (opt-out) — wired by FOLLOW-325.
-    MERGE ORDER: PR #308 (FOLLOW-324) must merge BEFORE FOLLOW-325 PR so the companion artifact
-    exists in the repo when buildSnippet() copy-step runs.
-    PM VALIDATION NOTE: this ticket was pm-validated this session. CI green state was reported by
-    sdk-engineer (comment-fix landed). Full independent CI re-verification (gh pr checks 308 --watch)
-    is REQUIRED before human merge per guardrails. Do NOT merge based on worker self-report alone.
+    DONE. PR #308 merged 2026-06-15T13:21:27Z. Bundle: 52.61 KB -> 39.73 KB gzip core.
+    Companion estalara-detect.iife.js = 12.43 KB gzip. Architect verdict: Option 1 accepted.
+    CEO product decision 2026-06-15: companion auto-included for ALL Tier 1+2 tenants by
+    default (opt-out) — wired by FOLLOW-325. Retro: RETRO for PR #308 pending spawn.
 
 - id: FOLLOW-325
   title: >
@@ -4989,20 +4985,44 @@ pending planning.**
     in the onboarding snippet for ALL Tier 1+2 tenants by DEFAULT. Opt-out, not opt-in.
     Cold-start client-side archetype detection is ON by default.
     backend-engineer running in isolated worktree, branch backend-engineer/FOLLOW-325-buildsnippet-detect-companion.
-    PR pending. BLOCKS: FOLLOW-324 must be merged first (companion artifact must exist in public/).
+    PR pending. FOLLOW-324 (PR #308) now MERGED — companion artifact exists in repo.
     Closes the buildSnippet() half-wire introduced by FOLLOW-324 split.
+
+- id: FOLLOW-326
+  title: >
+    admin.estalara.com sign-in page + full admin auth flow (Supabase SSR, /sign-in, middleware fix,
+    sign-out)
+  agent: backend-engineer
+  status: IN_PROGRESS
+  priority: P1
+  estimated_hours: 5
+  depends_on: []
+  source: CEO directive 2026-06-15 — /sign-in 404s, /admin/* unguarded
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-326 stub)
+  branch: backend-engineer/FOLLOW-326-admin-auth-flow
+  assigned_to: backend-engineer
+  started_at: '2026-06-15T14:00:00Z'
+  notes: |
+    Promoted to queue and delegated 2026-06-15. Install @supabase/ssr, create sign-in page,
+    replace root page with permanentRedirect, fix middleware redirect to /sign-in,
+    add Sign Out to sidebar. Supabase project: yhmivuqeqkmzpxpyrsvc (eu-west-3).
+    PARALLEL with FOLLOW-325 (different files: auth pages vs onboarding snippet).
+    Post-merge operator step: Piotr must add NEXT_PUBLIC_SUPABASE_URL +
+    NEXT_PUBLIC_SUPABASE_ANON_KEY to Vercel prod env (noted in PR description).
 ```
 
 ## Currently in flight
 
-**0 tickets IN_PROGRESS as of 2026-06-15T00:00Z.** FOLLOW-269 (K.3.6 frontend UI) DONE — PR #298
-merged 2026-06-14T11:41:43Z. FOLLOW-309/310/311/312 (4 RETRO-077 wiring bug fixes) DONE — PR #299
-merged 2026-06-14T13:06:34Z. FOLLOW-308 DONE / CLOSED IN FULL 2026-06-15. FOLLOW-307 DONE. K.3.6 D-1
-fully PRODUCTION-LIVE. ESC-022 + ESC-023 RESOLVED. ESC-020 OPEN but non-blocking (CEO 2026-06-10).
-FOLLOW-293 (live-network smoke) now UNBLOCKED (FOLLOW-269 DONE); pending delegation to qa-engineer.
-FOLLOW-317 + FOLLOW-318 stubs pending promotion to Sprint 18. Pending retro spawns: RETRO-064
-(FOLLOW-266 Ph1 / PR #277), RETRO-067 (FOLLOW-266 Ph3 / PR #280), RETRO-068 (FOLLOW-286 / PR #279),
-plus retro for FOLLOW-309/310/311/312 (PR #299).
+**2 tickets IN_PROGRESS as of 2026-06-15T14:00Z.**
+
+- FOLLOW-325 (backend-engineer) — buildSnippet() companion auto-include + INTERFACES.md. PR pending.
+  FOLLOW-324 (PR #308) MERGED 2026-06-15T13:21:27Z — companion artifact in repo, FOLLOW-325
+  unblocked.
+- FOLLOW-326 (backend-engineer) — admin.estalara.com auth flow. Delegated 2026-06-15T14:00Z. PR
+  pending. FOLLOW-324 DONE (PR #308 merged 2026-06-15T13:21:27Z). RETRO for PR #308 pending spawn (5
+  retros total queued). ESC-020 OPEN but non-blocking (Rafal deploy action). ESC-022/023/024
+  RESOLVED. K.3.6 D-1 fully PRODUCTION-LIVE. Pending retro spawns: RETRO-064 (PR #277), RETRO-067
+  (PR #280), RETRO-068 (PR #279), retro for PR #299, retro for PR #308.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

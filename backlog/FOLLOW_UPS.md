@@ -8948,7 +8948,75 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 326 (325 = CEO product decision 2026-06-15: buildSnippet() auto-includes estalara-detect.iife.js companion for ALL Tier 1+2 tenants by default — opt-out, cold-start archetype detection ON by default; closes FOLLOW-324 half-wire (PR #308 exists; buildSnippet() doesn't emit companion tag yet). 324 = sdk-engineer/FOLLOW-324-sdk-bundle-size PR #308 merge-ready: split auto-detect pipeline into companion estalara-detect.iife.js (12.43KB gzip), core drops 52.61→39.73KB — passes 40KB gate. Architect Option 1 accepted.) -->
+## FOLLOW-326 — admin.estalara.com sign-in page + full admin auth flow
+
+- **source:** CEO directive 2026-06-15 — admin.estalara.com must have a working login; `/sign-in`
+  currently 404s; `/admin/*` is unguarded (no real login flow exists despite middleware stubs)
+- **recommended_agent:** backend-engineer
+- **priority:** P1
+- **estimated_hours:** 5
+- **depends_on:** []
+- **scope:** | Wire Supabase email/password auth into the control plane so Piotr can log in at
+  admin.estalara.com. The marketing landing page at `/` is replaced by a redirect. The `/sign-in`
+  page is the only public-facing UI — logo + form, nothing else. All `/admin/*` pages stay exactly
+  as they are (sidebar, Registrations, Tenants, Demo Sessions, Tracer Weight Editor).
+
+  **What already exists (do not rewrite):**
+  - `/admin/*` pages with full sidebar layout (`admin/layout.tsx`) — leave untouched
+  - `@estalara/auth` JWT verification (server-side) — untouched
+  - Middleware route protection logic in `src/middleware.ts` — fix only the redirect target
+
+  **What to build:**
+  1. Install `@supabase/ssr` in `apps/control-plane/package.json` — provides `createBrowserClient` /
+     `createServerClient` for Next.js App Router cookie sessions.
+  2. Create `src/app/sign-in/page.tsx` — Server Component with a Client Component form child:
+     - Estalara wordmark (text, same style as existing landing header)
+     - Email + Password inputs
+     - "Sign in" button — calls `supabase.auth.signInWithPassword()` via a Server Action
+     - Inline error message on failure (do not clear fields)
+     - On success: `redirect('/admin')`
+     - No navigation, no footer, no marketing copy — just the form centered on white bg
+  3. Replace `src/app/page.tsx` root with `permanentRedirect('/sign-in')` (delete marketing page).
+  4. Fix `src/middleware.ts`: change the `/login` redirect target → `/sign-in` (two occurrences).
+  5. Add "Sign out" to `src/app/admin/layout.tsx` sidebar footer:
+     - Server Action: `supabase.auth.signOut()` → `redirect('/sign-in')`
+     - Replace or sit beside the existing "Staff Only" badge
+  6. Document `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in
+     `apps/control-plane/.env.example` (mark them as required). These must also be added to Vercel
+     prod env by the operator after this PR merges (note in PR description).
+
+  **Supabase project:** `yhmivuqeqkmzpxpyrsvc` (eu-west-3). Anon key is in Doppler prd as
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY`. URL is `https://yhmivuqeqkmzpxpyrsvc.supabase.co`.
+
+  **Auth note:** `supabase.auth.signInWithPassword()` issues a Supabase JWT which the existing
+  middleware already verifies via `getAuthClaims()` reading the `sb-access-token` cookie. No changes
+  to the JWT verification layer are needed.
+
+- **ac:**
+  - [ ] AC1 — GET `/sign-in` renders: Estalara wordmark + email field + password field + "Sign in"
+        button. No other content. 200 status. Unauthenticated.
+  - [ ] AC2 — Valid Supabase staff credentials → `signInWithPassword()` succeeds → `sb-access-token`
+        cookie set → browser redirects to `/admin` → `/admin/registrations` loads without 401.
+  - [ ] AC3 — Invalid credentials → error message shown inline ("Invalid email or password") →
+        fields retain their values → no redirect.
+  - [ ] AC4 — GET `/` returns 308 redirect to `/sign-in`.
+  - [ ] AC5 — Unauthenticated GET `/admin/registrations` (no cookie) → middleware redirects to
+        `/sign-in?redirect=/admin/registrations`.
+  - [ ] AC6 — "Sign out" in admin sidebar → `signOut()` → cookie cleared → redirect to `/sign-in`.
+  - [ ] AC7 — `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env.example` with
+        comments explaining they are required for the sign-in flow.
+  - [ ] AC8 — CI gates green: Build, Build (control-plane), Typecheck, Lint, Format.
+- **notes:** | The `/register` route (`src/app/register/`) exists but is unrelated — leave as-is.
+  The dashboard (`/dashboard/*`) is tenant-facing and also needs auth; do not break its existing
+  middleware protection but do not add new UI for it in this ticket. `@supabase/ssr` is the official
+  Next.js App Router package — NOT `@supabase/auth-helpers-nextjs` (deprecated). Use
+  `createBrowserClient` for the Client Component form and `createServerClient` with `cookies()` for
+  Server Actions and middleware.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 327 (326 = CEO directive 2026-06-15: buildSnippet() auto-includes estalara-detect.iife.js companion for ALL Tier 1+2 tenants by default — opt-out, cold-start archetype detection ON by default; closes FOLLOW-324 half-wire (PR #308 exists; buildSnippet() doesn't emit companion tag yet). 324 = sdk-engineer/FOLLOW-324-sdk-bundle-size PR #308 merge-ready: split auto-detect pipeline into companion estalara-detect.iife.js (12.43KB gzip), core drops 52.61→39.73KB — passes 40KB gate. Architect Option 1 accepted.) -->
 <!-- next free FOLLOW number: 324 (323 = RETRO-080 / PR #299 / FOLLOW-309-312 closeout: (a) fix the RETRO-077 LG-3 datetime-local->ISO ambiguity FOLLOW-312 left un-closed -- raw YYYY-MM-DDTHH:MM from the datetime-local filter flows TZ-less/seconds-less into BOTH export builders AND the history table-load fetch, route validates only z.string().min(1) -> ClickHouse window is local-vs-UTC ambiguous; (b) ground the PUT/POST save-response fixture (no shared write-response schema; T9 mocks a partial the real PUT route doesn't emit -- last corner of the RETRO-077 TG-1 fixture-lies pattern on the write-response sub-surface, low risk since loadConfig reconciles via the schema-grounded GET); (c) add the POST-create UI-branch test. P2 3h backend+qa. RETRO-080 verdict: ALL FOUR RETRO-077 wires CLOSED END-TO-END (admin GET producer<->page consumer<->PUT/[id] producer loop; SSE cookie auth via getAuthClaims sb-access-token; 3 nav <Link>s into 3 existing pages; CSV via fetch+Accept) -- only LG-3 moved ONE HOP -> FOLLOW-323. AdminIntentConfigResponseSchema added to @estalara/shared (additive, SDK-facing IntentConfigResponseSchema UNTOUCHED). Implements ADR-0013. NO Rule promoted: PR #299 is the REMEDIATION of the RETRO-077 fixture-lies sighting (fixtures now derive from AdminIntentConfigResponseSchema.parse(), GET-1..5 + COOKIE-1..5 drive REAL handlers) -- a fix does NOT increment the count, so the fixture-lies family STAYS count-3, held for the next genuinely-independent sighting. FOLLOW-313 narrows (Weight-Editor cast now typed-gone; 3 tracer pages remain). Pre-existing control-plane BUILD break (sdk/playbooks + sdk/auto-detect, FOLLOW-267 origin) confirmed pre-exists, sdk-engineer scope, NOT re-filed. -->
 <!-- prior next free FOLLOW number: 323 (322 = RETRO-068 / PR #279 / FOLLOW-286: add a LIVE-backend contract test for the intent.snapshot dual-write handler so a type/constraint incompatibility (UUID column, Float32 NOT NULL, JSONEachRow strictness, mis-placed PostgREST on_conflict) FAILS CI — every current test mocks fetchImpl so BOTH PR #278 (FOLLOW-266 Phase 2, on_conflict-in-Prefer-header → real 409) AND PR #279 (FOLLOW-286, raw-hex→intent_session_id UUID column + confidence_before:null→Float32 NOT NULL, BOTH backend-rejected, caught only by FOLLOW-287) shipped P1 INSERT-body defects under green mock CI; boot ephemeral CH (0014+0015+0016) + PostgREST (0028), submit the REAL handler bodies, + a PRECISE-assertion negative control reproducing the FOLLOW-286/287 broken shapes (NOT a permissive HTTP-500 regex per RETRO-079 §4c TG-1), REQUIRE_*=1 hard-fail-on-container-absence modeled on FOLLOW-316 tracer-query-smoke, share the FOLLOW-291 ephemeral-CH harness, P2 4h backend+data-engineer. RETRO-068 is the analysis of PR #279's ingest payload (bundled into PR #280's merge diff per RETRO-067; pinned both 8a43588 merge-state vs main HEAD): CB-1 on_conflict-URL + LG-1 event_type-const + LG-2 raw-session_id-String-join-key + LG-4 payload-de-dup SURVIVE on main byte-stable + genuinely wired (Wiring Audit clean); LG-A intent_session_id-UUID-reject + LG-B confidence_before-null-Float32-reject were SUPERSEDED by FOLLOW-287 PRs #281/#282 (already owned by FOLLOW-290/291/292, NOT re-filed); the 8 TG-1 tests are reconciled to the FOLLOW-287 state on main so NO test-drift gap. NO Rule promoted RETRO-068: Rule W already governs the migration-0015 ORDER-BY-key axis (promoted RETRO-060, this PR is its named count-1 evidence); the mock-can't-catch-real-backend-rejection family is count-1 on the INGEST-handler surface (RETRO-078/079 are the sibling CH-query-builder surface — fresh count per RETRO-077/079 deferral discipline; the migration sub-axis is already Rule W, the HTTP/enum sub-axis already Rule K.2-round-trip + Rule L) — held below threshold. FOLLOW-288/289 (RETRO-059 SDK producer) + FOLLOW-321 (RETRO-067 snapshot-trigger) NOT re-filed.) -->
 <!-- prior next free FOLLOW number: 322 (321 = RETRO-067 / PR #280 / FOLLOW-266 Phase 3: wire the every-5 intent.snapshot periodic trigger into ALL signal_count-incrementing SDK sites — only the behavioral observer index.ts:928 fires it, micro_poll.answered index.ts:1081 crosses 5-boundaries with no snapshot (snapshot-trigger HALF_WIRE), factor the guard into one helper at the applyBehavioralSignal boundary + seam-driven micro-poll-boundary test (share FOLLOW-289 harness) + benign boundary+unload double-emit note + "every 5 behavioral signals" docstring fix, P2 3h LG-1/LG-2/TG-2/DG-1. RETRO-067 is the 2nd retro of PR #280 (RETRO-059 already filed FOLLOW-288 archetype_deltas HALF_WIRE_C + FOLLOW-289 mirrored-test Rule Q — BOTH confirmed still OPEN, NOT re-filed); the producer→envelope→union→ingest→dual-write chain is GENUINELY wired end-to-end (emitIntentSnapshot 2 prod call-sites, IntentSnapshotContext per-init, IntentSnapshotEventSchema in the union, ingest routes on resolved tenantId, 22 SDK tests re-verified pass). PR #280's merge diff BUNDLES PR #279/FOLLOW-286's entire ingest payload (migration 0015, CB-1/LG-1/LG-2/LG-3, shared constants incl test-only INTENT_EVENTS_VOCABULARY, 8 TG-1 contract tests) — those are RETRO-068's subject. RECONCILED RETRO-064: at merge 6f865ff the handler wrote BOTH intent_session_id + session_id raw with confidence_before:null; RETRO-064's "handler OMITS intent_session_id" is the LATER FOLLOW-287 state (PRs #281/#282 merged after #280) → this PR's ingest is superseded, sort-key saga NOT its concern, no dup stubs. NO Rule promoted RETRO-067: the "per-signal side-effect attached at one of several increment sites" sub-pattern is count-1 (distinct from Rule S's explicit-verb siblings — implicit increment SITES); the mirrored-test-hides-a-missing-sibling consequence is already Rule Q. -- prior: 319 (318 = RETRO-079 / PR #305 / FOLLOW-316 §4c TG-1 — tighten the live-CH negative-control assertion regex from /Code: 386|NO_COMMON_TYPE|HTTP 500/ to /Code: 386|NO_COMMON_TYPE/ at clickhouse-tracer.integration.test.ts:302; the |HTTP 500 catch-all greens on ANY 500 so the control passes for the wrong reason, P2 1h. NOTE the DSR live-CH CI-wiring leg from RETRO-079 §4c HW-1 / §5a is NOT a new follow-up — inherited by FOLLOW-317, whose AC should be amended at promotion to "un-self-skip + live-CH-wire clickhouse-dsr.integration.test.ts in the same PR." NO Rule promoted RETRO-079: FOLLOW-316 is the REMEDIATION of RETRO-078 Pattern B, not a 2nd independent sighting, so the live-backend-vs-mock axis stays count-1; the new matcher-precision sub-pattern is count-1. -- prior: 318 (315 = RETRO-078 / PR #302 — DONE retroactive catalog: qualify event_at in the 4 K.3.6 tracer ClickHouse query builders to avoid Code 386 NO_COMMON_TYPE; toString(event_at) AS event_at self-alias shadows the DateTime64 column with a String alias inside WHERE/ORDER BY, so a bare event_at date predicate binds to the String alias → String>=DateTime → throw at query-analysis time, even on an empty table; broke export/history/SSE-poll in prod, output-key-transparent fix = zero consumer cascade, found via local Stack B real-CH 24.8, NOT CI. 316 = RETRO-078 §4c — live-ClickHouse CI guard: the CH-315a-d regression tests are mock-fetch-only + the only live-CH integration tests self-skip in CI (CLICKHOUSE_URL unset) even though a clickhouse-smoke job already boots a real CH container; submit the 4 tracer builders to that container so a Code-386-class error fails CI, P1. 317 = RETRO-078 §4a LG-1/§5d — audit the toString(col) AS col alias-shadow across all CH builders; confirmed sibling clickhouse-dsr.ts:271,275 (lexicographic String ORDER BY + wrong-row LIMIT 1, latent-not-throwing); fix by qualify-or-rename + sweep ingest/decision-api/packages-db, P2. NOTE 314 was consumed by PR #301 (dev-only localhost CORS + idempotent local-dev tenant seed). NO Rule promoted RETRO-078: alias-shadow pattern is count-1 standalone (tracer+DSR = one PR-discovered family); the mock-test-can't-catch-real-backend-rejection AXIS is count-1 on the live-backend-query-analysis axis (the HTTP/schema axis of that family is ≥3 but covered by Rule L + K.2 round-trip) — held for the next independent sighting per RETRO-077's identical deferral discipline.) -->

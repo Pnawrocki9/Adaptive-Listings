@@ -225,4 +225,38 @@ describe('WeightEditorPage — FOLLOW-309 fixes + data rendering + error states'
       expect((saveCall?.[1] as RequestInit).method).toBe('PUT');
     });
   });
+
+  it('T10: "Reset to defaults" restores the canonical priors (neutral 0.37, not uniform)', async () => {
+    // Load an active row whose stored weights differ from the defaults, then Reset and
+    // confirm the neutral prior slider returns to the BASE_PRIOR value 0.37 — proving the
+    // editor resets to project-agreed defaults rather than a uniform 1/N distribution.
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      makeFetchResponse(
+        AdminIntentConfigResponseSchema.parse({
+          id: ROW_ID,
+          tenant_id: null,
+          is_active: true,
+          weights: { behavioral_damping: 0.9, priors: { neutral: 0.01 } },
+          created_at: CREATED_AT,
+        }),
+      ),
+    );
+
+    render(<WeightEditorPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Update config/i)).toBeDefined();
+    });
+
+    // The neutral number input reflects the loaded 0.01 before reset.
+    const neutralInputs = screen.getAllByDisplayValue('0.01');
+    expect(neutralInputs.length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByText(/Reset to defaults/i));
+
+    // After reset, the neutral prior is the canonical BASE_PRIOR value 0.37.
+    await waitFor(() => {
+      expect(screen.getAllByDisplayValue('0.37').length).toBeGreaterThan(0);
+    });
+  });
 });

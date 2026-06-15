@@ -71,8 +71,6 @@ import {
   DWELL_MAX_SESSION_CONTRIBUTION,
 } from './core/intent.js';
 import type { IntentEngineOverrides } from './core/intent.js';
-import { detectSiteSchema } from './auto-detect/pipeline.js';
-import { extractArchetypeHints } from './auto-detect/archetype-hints.js';
 import { DqsTracker } from './core/dqs.js';
 import type { CollectedEvent } from './core/events.js';
 import type { Archetype, IntentState } from './core/intent.js';
@@ -795,15 +793,41 @@ async function init(): Promise<IntentState | null> {
       // 4a-f02. Archetype hints as cold-start Bayesian prior [AUDIT-F02].
       // detectSiteSchema runs DOM pattern analysis client-side; AI Vision is excluded from
       // the browser bundle and is never called here.
+      //
+      // FOLLOW-324: the auto-detect pipeline (~17 KB gzip) is NOT bundled into the IIFE.
+      // Instead it is loaded as a separate `estalara-detect.iife.js` script whose IIFE
+      // exposes `window.__EStalaraDetect = { detectSiteSchema, extractArchetypeHints }`.
+      // This keeps the Tier 1+2 IIFE under the 40 KB gzip limit.
+      // The call is inside an existing try/catch so a missing or erroring detect script is
+      // non-critical and does not block session init.
       try {
         if (typeof document !== 'undefined') {
-          const html = document.documentElement.outerHTML;
-          const url = window.location.href;
-          const { schema } = await detectSiteSchema(html, url, config.tenantId ?? '');
-          if (schema) {
-            const hints = extractArchetypeHints(schema, html, url);
-            if (hints.length > 0) {
-              currentIntentState = applyArchetypeHints(currentIntentState, hints);
+          // The detect bundle (estalara-detect.iife.js) exposes __EStalaraDetect on
+          // globalThis. Types are declared as a narrow structural interface here to
+          // avoid `import()` type annotations which are forbidden by the lint rule
+          // @typescript-eslint/consistent-type-imports.
+          interface DetectGlobal {
+            detectSiteSchema: (
+              html: string,
+              url: string,
+              tenantId: string,
+            ) => Promise<{ schema: Record<string, unknown> | null }>;
+            extractArchetypeHints: (
+              schema: Record<string, unknown>,
+              html: string,
+              url: string,
+            ) => { archetype_id: ArchetypeId; confidence_boost: number; signal: string }[];
+          }
+          const detect = (globalThis as { __EStalaraDetect?: DetectGlobal }).__EStalaraDetect;
+          if (detect) {
+            const html = document.documentElement.outerHTML;
+            const url = window.location.href;
+            const { schema } = await detect.detectSiteSchema(html, url, config.tenantId ?? '');
+            if (schema) {
+              const hints = detect.extractArchetypeHints(schema, html, url);
+              if (hints.length > 0) {
+                currentIntentState = applyArchetypeHints(currentIntentState, hints);
+              }
             }
           }
         }
@@ -1384,8 +1408,14 @@ export { applyChatIntentPrior, CHAT_INTENT_LIKELIHOODS } from './core/intent.js'
 export type { Archetype, ArchetypeProbabilities, IntentState } from './core/intent.js';
 
 // ─── Auto-detect sub-module ────────────────────────────────────────────────────
-export type { DetectionResult } from './auto-detect/index.js';
-export { detectSiteSchema } from './auto-detect/index.js';
+// detectSiteSchema is available via the '@estalara/sdk/auto-detect' sub-path export.
+// It is NOT re-exported from the top-level index to keep the IIFE (Tier 1+2) bundle
+// under the 40KB gzip limit. All production consumers (apps/control-plane/src/app/api/detect)
+// already import from '@estalara/sdk/auto-detect' directly. (FOLLOW-324)
+// DetectionResult is re-exported from pipeline.ts directly (not via index.ts) to avoid
+// pulling auto-detect/index.ts into the bundle chain — index.ts exports value symbols
+// (detectInquirySubmitSelector etc.) that would be bundled otherwise.
+export type { DetectionResult } from './auto-detect/pipeline.js';
 
 /**
  * Test-only seam: invoke the real `init()` body from jsdom integration tests.

@@ -4,13 +4,13 @@
  * Route rules:
  *   /admin/*      → Estalara staff only (estalara:readonly minimum)
  *   /dashboard/*  → Agency tenant users only (agency:viewer minimum)
- *   /             → public (landing page)
- *   /login        → public
+ *   /             → public (redirects to /sign-in)
+ *   /sign-in      → public
  *   /register     → public
  *   /api/health   → public
  *   everything else → public (no auth gate at middleware level)
  *
- * Auth failures redirect to /login with a `redirect` query param so the login
+ * Auth failures redirect to /sign-in with a `redirect` query param so the sign-in
  * page can send the user back after successful authentication.
  *
  * CORS for SDK-facing adapt routes (dev only):
@@ -94,7 +94,7 @@ function sdkCorsPreflightResponse(requestOrigin: string | null): NextResponse {
 }
 
 /** Routes that require no authentication. */
-const PUBLIC_PREFIXES = ['/', '/login', '/register', '/api/health'];
+const PUBLIC_PREFIXES = ['/', '/sign-in', '/register', '/api/health'];
 
 function isPublicRoute(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix + '/'));
@@ -108,7 +108,7 @@ function isSdkCorsRoute(pathname: string): boolean {
 
 function loginRedirect(req: NextRequest): NextResponse {
   const url = req.nextUrl.clone();
-  url.pathname = '/login';
+  url.pathname = '/sign-in';
   url.searchParams.set('redirect', req.nextUrl.pathname);
   return NextResponse.redirect(url);
 }

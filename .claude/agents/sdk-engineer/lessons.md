@@ -326,3 +326,45 @@ calls comparing relative probability outputs, avoid it — DOM side effects from
 (fetch URLs, headers, call counts) from integration tests; (2) verify SEMANTICS (probability shifts,
 normalization) from pure-function unit tests where inputs are fully controlled. "Cross-run
 probability comparison via \_initForTest" is an anti-pattern.
+
+## 2026-06-15 / FOLLOW-324
+
+**What I built:** Fixed the SDK bundle size gate (52.61 KB → 39.73 KB gzip). Split the auto-detect
+pipeline (~16.8 KB gzip, 10 detection techniques) into a separate IIFE `estalara-detect.iife.js`
+exposed on `window.__EStalaraDetect`. The main IIFE reads the global opportunistically — non-fatal
+when absent. Also added `esbuildOptions.drop: ['console']` to IIFE config to eliminate the last 0.25
+KB from 9 unreachable debug console calls.
+
+**What was uncertain:**
+
+1. Whether dynamic `import()` would work in IIFE mode — it doesn't. tsup `bundle: true` + IIFE
+   format inlines all dynamic imports just as it inlines static ones. The ONLY way to exclude code
+   from an IIFE bundle is: (a) mark as external (requires a module loader, not browser-native), or
+   (b) don't import it at all. The correct solution is a second IIFE entry point.
+2. Whether `esbuildOptions` was supported in tsup 8.x — confirmed yes, via callback signature
+   `esbuildOptions: (opts) => { opts.drop = ['console']; }`.
+3. ESLint rules around inline type annotations: `typeof import('./foo').Bar` is forbidden by
+   `@typescript-eslint/consistent-type-imports`; must use a locally declared `interface` instead of
+   `type` alias (another rule: prefer `interface` over `type`); and `T[]` not `Array<T>`.
+
+**A guardrail I'd add:** Before any PR that touches `src/index.ts`, check whether static imports
+added by the PR are to modules that the IIFE bundler will inline. Any non-trivial module (>2KB gzip)
+should be lazy or separately bundled. Rule: "new top-level static import in index.ts that is not
+already in the baseline → must have a size analysis entry in the PR description."
+
+## 2026-06-15 / FOLLOW-324 architect fix (comment-only)
+
+**What I built:** Replaced two false "server-side schema used instead" comments in
+`packages/sdk/src/auto-detect/detect-bundle.ts` and `packages/sdk/tsup.config.ts` with accurate
+wording: when `estalara-detect.iife.js` is absent, cold-start site-level archetype hints are
+skipped; `archetype_hint` defaults to `'neutral'` until behavioral signals converge. Bundle
+unchanged at 39.73 KB gzip.
+
+**What was uncertain:** Nothing — comment-only change, straightforward grep-and-replace. CI
+confirmed all non-pre-existing gates passed (Format, Lint, Typecheck, Test Node 22, Build, Demo
+integration, Rule H/J all green).
+
+**A guardrail I'd add:** When a comment describes system behavior, grep for the described subsystem
+(e.g., `tenant_site_schema`, Decision API fallback) to verify the behavior actually exists in code
+before writing the comment. A comment describing a non-existent server fallback is a half-wire entry
+point (RETRO-004 class) — it creates false confidence in callers about what will happen at runtime.

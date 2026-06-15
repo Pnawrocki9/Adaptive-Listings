@@ -4919,6 +4919,78 @@ pending planning.**
     completed — ESC-023 tokens provisioned, build-order fix PR #306 merged, DATABASE_URL_ADMIN added
     to Doppler stg/prd. Verified LIVE end-to-end (run 27513894932: staging + prod both green, real
     db:migrate, not soft-skip). FOLLOW-308 CLOSED IN FULL; ESC-022 + ESC-023 RESOLVED.
+
+- id: FOLLOW-293
+  title: >
+    K.3.6 D-1 live-network smoke: call real GET /api/intent/config and assert data_source:'live'
+    (proves migration 0030 + FOLLOW-307 are effective in production)
+  agent: qa-engineer
+  status: BLOCKED
+  priority: P2
+  estimated_hours: 3
+  depends_on: [FOLLOW-307]
+  block_reason: >
+    Implementation DONE (PR #307, commit 2c1b352, merged 2026-06-15). Smoke exists and soft-skips on
+    every CI run. BLOCKED on ESC-024: GitHub Actions secrets ESTALARA_SMOKE_API_KEY and
+    ESTALARA_SMOKE_DECISION_API_URL must be provisioned by Piotr before the hard-assert mode
+    activates. Once secrets are present, the job runs live assertions AC-LN1/LN2/LN3 automatically.
+  source_retro: ADR-0012 (D-1 closure gate)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-293 stub)
+  pr: '307'
+  merge_commit: 2c1b352
+  notes: |
+    Live-network smoke test implemented by qa-engineer (branch qa-engineer/FOLLOW-293-live-smoke,
+    PR #307, merged 2026-06-15). The smoke CI job (intent-weights-live-smoke.yml) soft-skips when
+    ESTALARA_SMOKE_API_KEY or ESTALARA_SMOKE_DECISION_API_URL are absent.
+    ESC-024 filed for Piotr to provision the 2 secrets. See ESCALATIONS.md ESC-024 for exact steps.
+    After secrets are provisioned: push any commit to main OR workflow_dispatch intent-weights-live-smoke.yml.
+
+- id: FOLLOW-324
+  title: >
+    SDK bundle size fix: split auto-detect pipeline into optional companion IIFE
+    (estalara-detect.iife.js) to pass the <40 KB gzip bundle gate
+  agent: sdk-engineer
+  status: READY_FOR_REVIEW
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: FOLLOW-214 (deferred bundle-trim stub); TICKET-038 bundle gate
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-324 stub)
+  pr: '308'
+  branch: sdk-engineer/FOLLOW-324-sdk-bundle-size
+  notes: |
+    PR #308 OPEN. Merge-ready (comment-fix commit 5924adc landed). CI confirmed green by sdk-engineer.
+    Bundle: 52.61 KB -> 39.73 KB gzip core. Companion estalara-detect.iife.js = 12.43 KB gzip.
+    Architect verdict: Option 1 accepted (companion split; cold-start hints are marginal warm-start,
+    not load-bearing). CEO product decision 2026-06-15: companion auto-included for ALL Tier 1+2
+    tenants by default (opt-out) — wired by FOLLOW-325.
+    MERGE ORDER: PR #308 (FOLLOW-324) must merge BEFORE FOLLOW-325 PR so the companion artifact
+    exists in the repo when buildSnippet() copy-step runs.
+    PM VALIDATION NOTE: this ticket was pm-validated this session. CI green state was reported by
+    sdk-engineer (comment-fix landed). Full independent CI re-verification (gh pr checks 308 --watch)
+    is REQUIRED before human merge per guardrails. Do NOT merge based on worker self-report alone.
+
+- id: FOLLOW-325
+  title: >
+    buildSnippet() auto-includes estalara-detect.iife.js companion for all Tier 1+2 tenants by
+    default (opt-out) + docs/INTERFACES.md window.__EStalaraDetect surface note
+  agent: backend-engineer
+  status: IN_PROGRESS
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-324]
+  source: FOLLOW-324 (PR #308) + CEO product decision 2026-06-15
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-325 stub)
+  branch: backend-engineer/FOLLOW-325-buildsnippet-detect-companion
+  assigned_to: backend-engineer
+  started_at: '2026-06-15T00:00:00Z'
+  notes: |
+    CEO PRODUCT DECISION 2026-06-15: the estalara-detect.iife.js companion MUST be auto-included
+    in the onboarding snippet for ALL Tier 1+2 tenants by DEFAULT. Opt-out, not opt-in.
+    Cold-start client-side archetype detection is ON by default.
+    backend-engineer running in isolated worktree, branch backend-engineer/FOLLOW-325-buildsnippet-detect-companion.
+    PR pending. BLOCKS: FOLLOW-324 must be merged first (companion artifact must exist in public/).
+    Closes the buildSnippet() half-wire introduced by FOLLOW-324 split.
 ```
 
 ## Currently in flight

@@ -1213,7 +1213,13 @@ compliance sign-off** on migrations 0019/0020/0024 against pre-schema prod — w
 
 ---
 
-## OPEN — ESC-024: GitHub Actions secrets required for FOLLOW-293 K.3.6 D-1 live-network smoke [FOLLOW-293]
+## RESOLVED — ESC-024: GitHub Actions secrets required for FOLLOW-293 K.3.6 D-1 live-network smoke [FOLLOW-293]
+
+**Resolved:** 2026-06-15 by Piotr (CEO). ESTALARA_SMOKE_API_KEY (smoke key est_pub_0000000000000001,
+api_keys row inserted manually via Supabase SQL) + ESTALARA_SMOKE_DECISION_API_URL
+(https://admin.estalara.com/api) added to GitHub Actions secrets. DATABASE_URL_ADMIN added to Vercel
+prod env (was in Doppler prd but missing from Vercel); control-plane redeployed. Smoke run
+27555287447: AC-LN1/LN2/LN3 all GREEN. FOLLOW-293 DONE IN FULL.
 
 **Filed:** 2026-06-15 by qa-engineer **Blocks:** FOLLOW-293 hard-assert mode (smoke currently
 soft-skips in all CI runs) **Priority:** P2

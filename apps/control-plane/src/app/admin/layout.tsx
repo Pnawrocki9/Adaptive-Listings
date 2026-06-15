@@ -1,5 +1,17 @@
+/**
+ * Admin layout — sidebar navigation for all /admin/* pages.
+ *
+ * Includes a "Sign out" Server Action that calls supabase.auth.signOut()
+ * and redirects to /sign-in (AC6).
+ *
+ * @module apps/control-plane/src/app/admin/layout
+ */
+
 import type React from 'react';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 const NAV_LINKS = [
   { href: '/admin/registrations', label: 'Registrations' },
@@ -9,6 +21,17 @@ const NAV_LINKS = [
 
 /** K.3.6 Archetype Tracer navigation links (staff-only). */
 const TRACER_NAV_LINKS = [{ href: '/admin/tracer/weights', label: 'Weight Editor' }];
+
+/**
+ * Server Action: sign out the current user and redirect to /sign-in.
+ * Called by the sidebar footer form submission.
+ */
+async function signOut() {
+  'use server';
+  const supabase = await createServerSupabaseClient();
+  await supabase.auth.signOut();
+  redirect('/sign-in');
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -58,9 +81,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </nav>
 
           <div className="border-t border-gray-200 px-4 py-3">
-            <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-semibold text-purple-800">
-              Staff Only
-            </span>
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-semibold text-purple-800">
+                Staff Only
+              </span>
+              <form action={signOut}>
+                <button
+                  type="submit"
+                  className="text-xs text-gray-500 transition-colors hover:text-gray-900"
+                >
+                  Sign out
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </aside>

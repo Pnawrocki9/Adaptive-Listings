@@ -622,3 +622,15 @@ split the "apply done" concern from the "prevention needed" concern. **A delegat
 I'd add:** After any prod DB migration apply, always record a drift count (journal entries at apply
 time vs. repo count) in the ticket's completion notes — this makes "apply lag" visible at the sprint
 review level and triggers a prevention discussion before the next migration merges without applying.
+
+---
+
+**Date / ticket:** 2026-06-14 — Loop 6 state read (FOLLOW-316 DONE, FOLLOW-269 IN_PROGRESS,
+ESC-020 + ESC-023 OPEN) **Delegation row used:** N/A — escalation stop required; no delegation this
+session. **What validation caught (or missed):** Both OPEN escalations are human-action items only
+(ESC-020 = Rafal deploy; ESC-023 = Piotr secret provisioning). No READY tickets exist in Sprint 18
+(FOLLOW-317/318 still stubs). RETRO-064/067/068 remain pending spawn — these are the only actionable
+items the PM can advance. **A delegation/validation rule I'd add:** When both open escalations
+require human-only physical actions (deploy, secret provisioning) and there are no READY Sprint 18
+tickets, spawn any pending retrospective-analyst tasks immediately rather than stopping entirely —
+retro spawns are PM-scope work that does not conflict with escalation-stop on worker tickets.

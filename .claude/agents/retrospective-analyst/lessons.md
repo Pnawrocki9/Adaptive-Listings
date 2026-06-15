@@ -1010,3 +1010,36 @@
   self-skipping, inherited by FOLLOW-317). Watch for the "we fixed the guard but the sibling path is
   still uncovered" shape — closure of one hop routinely leaves the adjacent hop open, exactly the
   half-wire-moves-downstream pattern the agent spec warns about.
+
+## 2026-06-15 · RETRO-080 (PR #299, FOLLOW-309/310/311/312 — the four RETRO-077 wiring-bug fixes; ALL closed end-to-end, ONE residual one-hop; fixture-lies family held at count-3, NO promotion)
+
+- **A finding I almost missed and why:** RETRO-077 LG-3 (datetime-local→ISO ambiguity) was "folded
+  into FOLLOW-312," and the PR title + body confidently claimed FOLLOW-312 done. The easy verdict
+  was "FOLLOW-312 closed." The catch was the step-7 closure discipline: I read FOLLOW-312's FULL
+  RETRO-077 scope (LG-2 selector AND LG-3 datetime) and grepped the actual sink —
+  `handleExportCsv` + the JSONL builder + the history table-load all still pass the raw
+  `filterFrom`/`filterTo` (datetime-local) to a route validating only `z.string().min(1)`. The PR
+  fixed the LG-2 selector and STOPPED. A "ticket done" claim covered only the most-visible half of a
+  two-part finding. Lesson locked: when a prior RETRO folds N findings into ONE follow-up, the
+  closure check must enumerate ALL N and grep each — "the PR fixed the headline bug" ≠ "the PR
+  closed the follow-up."
+
+- **An axis/chain I had to trace twice:** the SSE cookie-auth closure. The page just deletes
+  `?token=` — that alone is necessary-not-sufficient. I had to trace the POSITIVE leg: EventSource
+  (same-origin) → browser sends `sb-access-token` cookie → `verifyTracerAdminAuth` Path 2 →
+  `getAuthClaims` → `packages/auth/src/middleware.ts:46-49` actually parses that cookie. THEN a
+  second trace I almost skipped: does the control-plane `middleware.ts` matcher (matches
+  `/api/admin/*`) REDIRECT the SSE to an HTML login page before the route's own auth runs? It does
+  not — the redirect branch keys on `pathname.startsWith('/admin')`, and `/api/admin/...` has a
+  different prefix, so it falls through to `NextResponse.next()`. Removing a broken auth param is
+  only half a fix; the working path has to be proven reachable AND un-intercepted.
+
+- **A meta-pattern in how gaps recur across agents:** the deferral-discipline distinction between a
+  REMEDIATION and an independent SIGHTING is now load-bearing for rule-promotion accounting. PR #299
+  is the FIX of the RETRO-077 fixture-lies sighting (schema-derived fixtures + real-handler tests),
+  so it does NOT increment the count — exactly as RETRO-068/078/079 held their remediations
+  non-incrementing. Without this rule, a "fixed it correctly" PR would falsely tip a family over the
+  threshold and mint a premature rule. The corollary I'm internalizing: a fix can leave the SAME
+  pattern's last narrow corner open (here, the un-grounded PUT/POST save-response fixture, because
+  no shared write-response schema exists) — file it as a concrete coverage gap, but it's a residual
+  of the SAME sighting, so it also does not advance the count.

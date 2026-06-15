@@ -1,72 +1,35 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+/**
+ * Tests for the root page (/) — permanently redirects to /sign-in.
+ *
+ * Next.js `permanentRedirect()` throws a NEXT_REDIRECT error during rendering.
+ * The test verifies this behaviour by asserting the redirect is triggered.
+ */
+import { describe, expect, it, vi } from 'vitest';
 
-// Mock next/link for tests
-vi.mock('next/link', () => ({
-  default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
+// permanentRedirect throws in the Next.js runtime. Mock it so we can assert it's called.
+vi.mock('next/navigation', () => ({
+  permanentRedirect: (path: string) => {
+    throw Object.assign(new Error('NEXT_REDIRECT'), { digest: `NEXT_REDIRECT;replace;${path}` });
+  },
 }));
 
-// Mock next/font/google for layout tests
-vi.mock('next/font/google', () => ({
-  Inter: () => ({ variable: '--font-inter', className: 'inter' }),
-}));
+import RootPage from './page';
 
-// Mock next-themes
-vi.mock('next-themes', () => ({
-  ThemeProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-
-import Landing from './page';
-
-describe('Landing page', () => {
-  it('renders the main headline', () => {
-    render(<Landing />);
-    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
-    expect(screen.getByText('Adaptive Listings')).toBeInTheDocument();
+describe('Root page (/) redirect', () => {
+  it('throws a NEXT_REDIRECT to /sign-in', () => {
+    expect(() => {
+      RootPage();
+    }).toThrow('NEXT_REDIRECT');
   });
 
-  it('renders Sign in CTA button', () => {
-    render(<Landing />);
-    const signInLinks = screen.getAllByRole('link', { name: /sign in/i });
-    expect(signInLinks.length).toBeGreaterThanOrEqual(1);
-    expect(signInLinks[0]).toHaveAttribute('href', '/sign-in');
-  });
-
-  it('renders Try demo CTA button', () => {
-    render(<Landing />);
-    const demoLinks = screen.getAllByRole('link', { name: /try demo/i });
-    expect(demoLinks.length).toBeGreaterThanOrEqual(1);
-    expect(demoLinks[0]).toHaveAttribute('href', '/onboarding');
-  });
-
-  it('renders footer with copyright', () => {
-    render(<Landing />);
-    expect(screen.getByText(/2026 Time2Show Inc/i)).toBeInTheDocument();
-  });
-
-  it('renders navigation header', () => {
-    render(<Landing />);
-    expect(screen.getByRole('banner')).toBeInTheDocument();
-    // "Estalara" appears in both the nav brand span and the h1 — getAllByText handles multiple
-    const estalaraElements = screen.getAllByText(/^Estalara$/);
-    expect(estalaraElements.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('renders feature highlights section', () => {
-    render(<Landing />);
-    expect(screen.getByText('60s')).toBeInTheDocument();
-    expect(screen.getByText('Time to embed')).toBeInTheDocument();
-    expect(screen.getByText(/80ms/)).toBeInTheDocument();
-    expect(screen.getByText('Decision latency')).toBeInTheDocument();
-  });
-
-  it('renders privacy and terms links in footer', () => {
-    render(<Landing />);
-    expect(screen.getByRole('link', { name: /privacy/i })).toHaveAttribute('href', '/privacy');
-    expect(screen.getByRole('link', { name: /terms/i })).toHaveAttribute('href', '/terms');
+  it('redirects to /sign-in path', () => {
+    let digest: string | undefined;
+    try {
+      RootPage();
+    } catch (e) {
+      const err = e as { digest?: string };
+      digest = err.digest;
+    }
+    expect(digest).toContain('/sign-in');
   });
 });

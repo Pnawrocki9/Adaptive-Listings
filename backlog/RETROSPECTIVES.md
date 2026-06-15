@@ -16629,3 +16629,343 @@ CHECK B (half-wire): one new symbol — the CI-scoped env var `REQUIRE_CLICKHOUS
 - **Direct child of RETRO-078 / FOLLOW-315 —** FOLLOW-316 is the literal follow-up RETRO-078 §7 generated to close its §4c TG-2 ("no CI job runs the tracer queries against a live ClickHouse"). This retro VERIFIES that closure is genuine end-to-end (CI job → live container → migrations → seed → real builder submission → Code-386 negative control), not one-hop. Closure confirmed; the only residuals are the assertion-precision TG-1 and the deliberately-deferred DSR coverage (FOLLOW-317).
 - **Related to RETRO-076 / FOLLOW-307 (real-backend-verification meta-gap) —** §5d: FOLLOW-316 closes the live-CH-query half; the no-auto-migrate / prod-apply half stays open under FOLLOW-307. Same remedy class, different backend.
 - **Related to RETRO-072 / RETRO-077 / RETRO-078 (fixture-lies / mock-proves-nothing / assertion-passes-for-wrong-reason family) —** §6: this retro adds a matcher-precision sub-axis (TG-1) to that family, count-1, held below threshold per the same discipline those retros applied.
+
+## RETRO-064 — FOLLOW-266 Phase 1 (K.3.6 tracer FOUNDATION: `intent_sessions` Supabase migration 0028 + Drizzle schema + `intent_events` ClickHouse DDL 0014 — the storage contract every downstream K.3.6 leg builds on. Retro spawned LATE (after RETRO-065/067/068/070-079), so this is a ROOT-CAUSE retro: PR #277's ClickHouse `ORDER BY (tenant_id, intent_session_id, event_at)` is the ORIGINAL sin behind the entire `intent_events` sort-key remediation saga — it chose a UUID surrogate (`intent_session_id`) for the sort key that NO writer ever populates (the SDK/Phase-2 producer emits a `session_id` SHA-256 text fingerprint and joins on it), so 0014 shipped a key column that is dead-on-arrival. Because ClickHouse forbids ALTER on ORDER BY key columns (error 524), this could NOT be repaired in place: 0015 was forced to ADD a parallel `session_id` String column, 0016 was forced into a `SELECT 1` no-op, and the handler omits the column → EVERY production row carries the zero-UUID `00000000-…` in the 2nd sort position, collapsing the sort key to a degenerate single-prefix that destroys the per-session locality the 0014 header explicitly promised. This is EXACTLY the failure Rule W codifies — and Rule W's own promotion evidence (FOLLOW-286/PR#279, FOLLOW-287/PR#281) are BOTH downstream remediation attempts of THIS PR's mistake; Rule W even names the root cause verbatim ("a UUID surrogate when the producer emits a String fingerprint"). So: Rule W already governs (NO new rule), FOLLOW-290 (table rebuild) + FOLLOW-291 (Rule W gate) + FOLLOW-292 (confidence_before sentinel) already exist as RETRO-060 stubs (NO duplicate stubs minted). Two GENUINELY-NEW gaps remain unfiled: (1) the 90-day `intent_events` TTL is PROMISED in the 0014 header but NO TTL DDL exists in 0014/0015/0016 and no follow-up ever tracked it — an unenforced-retention Rule-N-family gap the PR's own self-check ticked green via a deferral note → FOLLOW-319; (2) the Drizzle schema declares both `intent_sessions` indexes plain-ASC while the 0028 SQL (the actual prod applier) declares `last_event_at DESC` / `finalized_at DESC NULLS FIRST` — a definition-vs-DDL direction drift → FOLLOW-320. The Postgres `intent_sessions` table itself is CLEAN and fully consumed end-to-end (3 tracer admin routes read it); the damage is entirely on the ClickHouse `intent_events` sort-key axis) — 2026-06-15
+
+### 1. Summary of change
+
+- **PR:** #277 (merged 2026-06-12T18:23:36Z, commit 9d13d41) — branch `data-engineer/FOLLOW-266-k36-intent-sessions`
+- **Files changed:** 5 (+240 / -0)
+- **Modules touched:** [shared-db (`packages/db`) / data (ClickHouse `infra/clickhouse`) / configs (journal)]
+- **Key contracts changed:**
+  - `intent_sessions` (Postgres) — NEW table — breaking: no (greenfield). Drizzle export `intentSessions` + `IntentSession`/`NewIntentSession` types.
+  - `intent_events` (ClickHouse) — NEW table — breaking: no (greenfield) — BUT the chosen `ORDER BY (tenant_id, intent_session_id, event_at)` is a contract that proved structurally wrong (see §4b CB-1) and became immutable-in-place the moment any row landed.
+  - `meta/_journal.json` — idx=28 added (`0028_intent_sessions`, when=1781287352000) — monotonic, Rule O clean.
+
+### 2. Verification done in PR
+
+- Test files changed: **none** (greenfield DDL + schema-def PR; Drizzle table defs are type-only, no behavioral test). Assertions added: 0. Coverage delta: 0 (no new runtime code paths in THIS PR — the writer is Phase 2).
+- CI checks: PR body claims `@estalara/db` lint/typecheck/test green (116 tests, pre-existing), migration-journal monotonicity PASSED, Rule-H pre-push PASSED. **Not independently re-verified here** (retro is read-only); note the Rule-H pass was a DEFERRAL-blessed pass (writer scoped to Phase 2), and NO test exercised the ClickHouse sort-key choice — which is precisely why the `ORDER BY` defect shipped green (Rule W §Pattern: the smoke gate validates a WEAKER condition than a real apply against the prod sort key).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code / dead export):** clean ✅
+- `intentSessions` export (`packages/db/src/schema/intent-sessions.ts` via `index.ts:33`) — has 3 non-test runtime importers: `apps/control-plane/.../tracer/sessions/route.ts:24`, `sessions/[id]/route.ts:25`, `history/[session_id]/route.ts:28` (grep: `grep -rn "intentSessions" apps/ packages/ --include=*.ts | grep -v test`). WIRED.
+- `IntentSession`/`NewIntentSession` types — type-only, suppressed per algorithm step 6.
+
+**CHECK B (half-wire — every new table/column has a producer AND consumer):**
+- `intent_sessions` table — PRODUCER: ingest dual-write handler `apps/ingest/src/handlers/intent-snapshot.ts` (Phase 2, PR #278/#279) UPSERTs it; CONSUMER: 3 tracer admin routes SELECT it. Both present (via later phases) → **clean ✅**.
+- `intent_events` table — PRODUCER: `intent-snapshot.ts:158` INSERTs it; CONSUMER: `clickhouse-tracer.ts` (4 builders) + tracer routes read it. Both present → table-level wiring clean.
+- **`intent_events.intent_session_id` column (the ORDER-BY key column) — HALF-WIRE / DEAD COLUMN ⚠️.** PRODUCER: NONE — the handler OMITS it from the INSERT (0016 comment + `intent-snapshot.ts`), so it carries the zero-UUID DEFAULT on 100% of rows. CONSUMER: NONE — every join/replay uses `session_id` (the 0015 column). A column that is (a) in the sort key, (b) never written, (c) never read = a dead sort dimension. This is **already filed as FOLLOW-290** (DEAD_COLUMN, RETRO-060) → no duplicate. Recorded here because RETRO-064 is the retro of the PR that CREATED it.
+- `intent_events` 90-day TTL — PROMISED in header, NO enforcing DDL → unenforced-retention half-wire → **FOLLOW-319** (new). See §4a LG-2.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (root-cause, P1 — already remediated/tracked):** `0014_intent_events.sql:54` chose `ORDER BY (tenant_id, intent_session_id, event_at)` keyed on a UUID surrogate. The actual write/read/join key is `session_id` (SHA-256 text). Because ClickHouse cannot ALTER an ORDER BY key column, this forced 0015 (ADD `session_id`) + 0016 (no-op) and leaves a degenerate sort key (zero-UUID 2nd dimension on all rows → no per-session sort locality, the OPPOSITE of the header's stated benefit). Fix = table rebuild → **FOLLOW-290 (exists, RETRO-060)**. This retro CONFIRMS FOLLOW-290 is the correct closure (a rebuild with `ORDER BY (tenant_id, session_id, event_at)`), NOT one-hop: 0015/0016 each moved the gap downstream (0015 added the right column but couldn't put it in the key; 0016 tried MODIFY and was rejected; the handler-omit "workaround" is the 3rd hop) — the wire is NOT closed end-to-end until the rebuild lands. **Closure status: OPEN (FOLLOW-290 unmerged).**
+- **LG-2 (new, P2 — unenforced retention):** `0014_intent_events.sql:34,43` states "Retention: 90 days enforced via TTL cron" and "A TTL ALTER TABLE will be added in a follow-up migration," but NO TTL exists in 0014/0015/0016 and NO follow-up was ever filed (grep `TTL` over `infra/clickhouse/migrations/*.sql` → only the 0014 comment). The PR self-check ticked "Every retention promise maps to an enforced TTL" green on a deferral note that no one tracked. Rule-N-family (retention-promise-without-enforcement). Note: adding `TTL event_at + INTERVAL 90 DAY` does NOT touch the ORDER BY key, so it can fold into the FOLLOW-290 rebuild OR ship as a standalone ALTER → **FOLLOW-319 (new)**.
+- **LG-3 (new, P3 — Postgres TTL asymmetry, doc-only):** `intent_sessions` (Postgres) is documented as "long-lived business records, no short TTL" while its `intent_events` (ClickHouse) child has a 90-day window. After 90 days a finalized `intent_sessions` row's `intentState` summary survives but its granular `intent_events` replay trail is gone — a half-orphaned record. Likely acceptable (the summary is the durable artifact) but undocumented as an intentional split-lifetime. Fold the one-line rationale into FOLLOW-319.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P1, root-cause — already tracked):** the `ORDER BY` UUID-surrogate choice (LG-1). This is the bug; everything in the 0015→0016→handler-omit chain is its blast radius. Filed: FOLLOW-290 + the Rule W gate FOLLOW-291. **Rule W is the codification that WOULD have caught this PR at apply-time had it existed** — it did not exist until RETRO-060, two PRs later. No new bug here beyond what RETRO-060 already enumerated.
+- **CB-2 (P3 — schema/DDL index-direction drift, new):** `intent-sessions.ts:106-107` declares `index('idx_intent_sessions_tenant_last_event').on(t.tenantId, t.lastEventAt)` and `..._finalized).on(t.tenantId, t.finalizedAt)` — both plain ASC, no `.desc()`, no NULLS ordering. The applied SQL (`0028_intent_sessions.sql:61-64`) declares `(tenant_id, last_event_at DESC)` and `(tenant_id, finalized_at DESC NULLS FIRST)`. The hand-written SQL is the prod applier (`scripts/migrate.ts`, not drizzle-kit), so prod gets the DESC indexes — but the in-code schema MISDOCUMENTS them and a future `drizzle-kit generate` would emit a spurious "fix" migration to drop+recreate them ASC. Definition-vs-DDL drift → **FOLLOW-320 (new)**.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1 — folds into FOLLOW-291/Rule W):** there was ZERO apply-time test of the ClickHouse `ORDER BY` choice in this PR — the only thing standing between the sort-key mistake and prod was reviewer eyeballs. The structural fix is the Rule-W apply-against-prod-sort-key CI gate (FOLLOW-291) + the live-ClickHouse smoke job that RETRO-078/079 later built (`tracer-query-smoke`). No NEW test stub needed — FOLLOW-291 owns it; this retro confirms the gate must be live BEFORE the FOLLOW-290 rebuild so the rebuild's new key is itself validated.
+- **TG-2 (P3):** no Drizzle↔SQL parity check exists for index direction (would have caught CB-2). Fold an assertion into FOLLOW-320.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3):** `0014_intent_events.sql:32` documents `ORDER BY (tenant_id, intent_session_id, event_at)` as "optimal sort-key alignment" for per-session replay — a claim that is FALSE for every row written (the key collapses to a single prefix). The header also still lists the original `event_type` vocabulary WITHOUT `'intent.snapshot'` (added later by 0015). Both header claims are now stale-and-wrong but live in the immutable original migration. Correct the narrative in the FOLLOW-290 rebuild migration's header, not by editing 0014 (forward-only). Fold into FOLLOW-290.
+- **DG-2 (clean):** the Drizzle JSDoc and 0028 SQL header for `intent_sessions` are accurate and mutually consistent (RLS pattern, column semantics, Phase-2-writer note). No gap.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-290 (OPEN):** the canonical fix for this PR's CB-1. RETRO-064 confirms its scope (full `intent_events` rebuild with `ORDER BY (tenant_id, session_id, event_at)`) and recommends FOLDING FOLLOW-319 (TTL) + FOLLOW-292 (confidence sentinel) + DG-1 (header correction) into the SAME rebuild to avoid a 2nd `intent_events` migration. Coordinate.
+- **FOLLOW-291 (Rule W gate, OPEN):** must land BEFORE FOLLOW-290 so the rebuild's new sort key is apply-time-validated — otherwise the rebuild risks re-introducing an unvalidated key.
+- **FOLLOW-269 (tracer admin UI, DONE-with-residuals per RETRO-077):** its replay/history queries join on `session_id` (correct, the 0015 column) — already adapted to the workaround, so NOT broken by the degenerate key. But the per-session SORT performance the UI's history/replay views depend on is degraded until FOLLOW-290 rebuilds the key.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-266 §ML-training / offline replay (future):** the 0014 header sells `intent_events` as "the offline-training source." A training job that assumes per-session row locality from the sort key will get full-table scans until FOLLOW-290. Worth flagging at that ticket's planning.
+
+#### 5c. Contracts changed others rely on
+
+- `intent_events` sort key + `event_type` vocab + `session_id` join key — all consumed by `clickhouse-tracer.ts` (4 builders) and the ingest handler. The CONTRACT THAT SHIPPED in this PR was wrong on the sort-key axis; the de-facto contract is now `session_id`-keyed (0015). FOLLOW-290 must make the DDL match the de-facto contract.
+- `intentSessions` Drizzle schema + `IntentSession` types — consumed by 3 tracer routes. Stable and correct.
+
+#### 5d. Architectural assumptions affected
+
+- **The "key columns are immutable" assumption is now load-bearing for K.3.6.** This PR is the case study: a single wrong `ORDER BY` at `CREATE TABLE` time cost three remediation migrations and an outstanding rebuild. Rule W §4 ("choose the ORDER BY key to be the ACTUAL key the producer emits") is the governing principle; this retro is its canonical example.
+- **No-auto-apply meta-gap (RETRO-076 lineage):** even once FOLLOW-290 rebuilds the table, the rebuild only takes effect after an operator applies it — there is no push-to-main migration apply. Same open meta-gap RETRO-076 §5d named for Postgres 0030; it applies to the ClickHouse rebuild too.
+
+### 6. New lesson candidates
+
+- **Pattern: "CREATE TABLE chose an ORDER BY / PRIMARY KEY column the writer never populates correctly (surrogate-vs-real-key), discovered only when a later ALTER is rejected (error 524) because key columns are immutable."** — seen in: RETRO-064 (this, the root CREATE), RETRO-059 §8 (FOLLOW-286 first ALTER rejection), RETRO-060 §4b CB-1 (FOLLOW-287 2nd rejection). **ALREADY PROMOTED to Rule W at RETRO-060** — count ≥3 across the lineage, threshold long met. NO new rule; this retro reinforces Rule W and adds the ROOT-CREATE instance to its evidence chain (Rule W §Evidence currently cites only the two ALTER-failure children; the CREATE-time origin is RETRO-064).
+- **Pattern: "retention promised in a migration header with no enforcing TTL DDL and no tracked follow-up; the PR self-check ticks the retention box on an untracked deferral."** — seen in: RETRO-064 §4a LG-2 (intent_events 90d). Adjacent to FOLLOW-234 (conversion_labels 13-month TTL, Rule N enforcement gap) — but that was a different table/PR. Count 1 as a NAMED "deferred-TTL-never-filed" sub-pattern (the conversion_labels case was filed, here it was NOT). **NOT promoted** (threshold 2). Logged; watch the next greenfield ClickHouse table with a TTL-cron deferral note.
+- **Pattern: "Drizzle schema index definition diverges from the hand-written SQL migration's index direction (ASC vs DESC/NULLS), and the SQL is the prod applier so the in-code schema silently misdocuments prod."** — seen in: RETRO-064 §4b CB-2. Count 1. **NOT promoted.** (Rule G/Rule U govern column-shape and gating-state drift, not index-direction drift — a genuinely new axis; held for a 2nd sighting.)
+
+### 7. Follow-ups
+
+- **FOLLOW-319:** Wire (or fold into the FOLLOW-290 rebuild) the promised 90-day TTL on ClickHouse `intent_events` (`TTL event_at + INTERVAL 90 DAY`); the 0014 header promises it but no DDL enforces it and no follow-up tracked it. Also document the intentional Postgres-session/ClickHouse-events split-lifetime (LG-3). (data-engineer, 2h, **P2**)
+- **FOLLOW-320:** Reconcile the `intent_sessions` Drizzle index definitions (`intent-sessions.ts:106-107`, plain ASC) with the applied SQL (`0028_intent_sessions.sql:61-64`, `last_event_at DESC` / `finalized_at DESC NULLS FIRST`) so `drizzle-kit generate` does not emit a spurious drop+recreate migration; add a tiny Drizzle↔SQL index-direction parity assertion (TG-2). (data-engineer, 2h, **P3**)
+- (NO stub for the sort-key rebuild, the Rule W gate, or the confidence_before sentinel — **FOLLOW-290 / FOLLOW-291 / FOLLOW-292 already exist** as RETRO-060 stubs and fully cover those gaps. Minting duplicates would be noise.)
+
+### 8. Cross-references
+
+- **Root-cause parent of RETRO-059 §8 / RETRO-060 (the `intent_events` sort-key saga) —** §4a LG-1 / §4b CB-1: PR #277's 0014 `ORDER BY` is the ORIGINAL defect that FOLLOW-286 (PR #279) and FOLLOW-287 (PR #281/#282) spent two migrations working around and that FOLLOW-290 will finally rebuild. This retro was spawned out of order (after its own children's retros), so it reconciles BACKWARD: it does not re-discover those gaps, it identifies their source and confirms their stubs are correct and still OPEN (not one-hop-closed).
+- **Reinforces Rule W (promoted at RETRO-060 / FOLLOW-291) —** §5d / §6: Rule W's evidence chain cites the two ALTER-rejection children but not the CREATE-time origin; RETRO-064 supplies that origin. No re-promotion (already a rule).
+- **Related to RETRO-076 / FOLLOW-307 (no-auto-apply meta-gap) —** §5d: the eventual FOLLOW-290 rebuild, like Postgres migration 0030, only acts after an operator applies it; same open deploy-apply hop, different backend.
+- **Related to RETRO-077 (FOLLOW-269 tracer UI) —** §5a: the UI consumers join on `session_id` and so survive the degenerate key, but their per-session sort performance is degraded until FOLLOW-290.
+
+## RETRO-067 — FOLLOW-266 Phase 3 (K.3.6 tracer SDK EMISSION: the producer leg — `emitIntentSnapshot(state, ctx)` + per-`init()` `IntentSnapshotContext` push `intent.snapshot` onto the shared `eventQueue`, dispatched by the generic `dispatchEvents` envelope → ingest `events.ts` validates against the `EventSchema` union → routes to `handleIntentSnapshot` → ClickHouse `intent_events` + Supabase `intent_sessions`. THE FULL PRODUCER→ENVELOPE→UNION→INGEST→DUAL-WRITE CHAIN IS GENUINELY WIRED END-TO-END — verified hop-by-hop, NOT one-hop: `emitIntentSnapshot` has 2 non-test production call-sites (`index.ts:933` every-5-signals, `index.ts:1328` beforeunload), `IntentSnapshotContext` is instantiated per-`init()` at `index.ts:549` (no module singleton — RETRO-006 LG-2 honored), the `IntentSnapshotEventSchema` is in the shared `EventSchema` discriminated union (`events/index.ts:175,232` — added in an earlier phase, this PR only ADDED the `INTENT_SNAPSHOT_EVENT_TYPE` + `INTENT_EVENTS_VOCABULARY` constants), the ingest router matches `evt.type === 'intent.snapshot'` (`events.ts:202`) and dual-writes with the RESOLVED `tenantId` (not the SDK `PLACEHOLDER_TENANT_ID`) + raw `session_id`, and the 22 SDK tests genuinely pass (re-run live: 22/22). NOTE: PR #280's merge diff is BUNDLED — its branch was cut before PR #279 (FOLLOW-286) merged 44 min earlier, so the merge-diff carries #279's ENTIRE ingest payload (migration `0015_intent_events_session_id_fix.sql`, the CB-1 on_conflict-URL fix, LG-1 event_type-constant, LG-2 raw-session_id join key, LG-3 `confidence_before: null`, the shared constants, the 8 TG-1 contract tests). Those belong to FOLLOW-286 / RETRO-068 and are NOT re-analyzed here except where they intersect the SDK producer. CRITICAL RECONCILIATION with RETRO-064: at this PR's merge commit `6f865ff` the handler wrote `intent_session_id: sessionId` AND `session_id: sessionId` (both raw, `confidence_before: null`); RETRO-064's "handler OMITS intent_session_id → zero-UUID on every row" describes the LATER main state produced by FOLLOW-287 (PRs #281/#282, merged AFTER #280) — so this PR is a point-in-time snapshot SUPERSEDED on the ingest axis, and the sort-key saga (FOLLOW-290/291/292) is NOT this PR's producer concern. RETRO-059 already retro'd PR #280 and filed FOLLOW-288 (`archetype_deltas` HALF_WIRE_C) + FOLLOW-289 (mirrored-test Rule Q) — THIS retro does NOT re-file them; it verifies they are STILL OPEN (not one-hop-closed) and surfaces ONE genuinely-new gap RETRO-059 missed on the snapshot-TRIGGER axis: the every-5-signals periodic snapshot is wired into only ONE of the SDK's signal-incrementing call-sites (the behavioral observer `index.ts:928`), so a `micro_poll.answered` signal that crosses a 5-multiple boundary — `applyBehavioralSignal` at `index.ts:1081` increments `signal_count` but has NO `emitIntentSnapshot` call — NEVER emits a periodic snapshot; the boundary is silently skipped until the next observer signal or `beforeunload` → snapshot-trigger HALF_WIRE → FOLLOW-321) — 2026-06-15
+
+### 1. Summary of change
+
+- **PR:** #280 (merged 2026-06-12T22:11:39Z, commit `6f865ff`) — branch `sdk-engineer/FOLLOW-266-k36-sdk-emission`
+- **Files changed:** 9 (+886 / -79) — **but only 3 are genuinely Phase-3-NEW** (`packages/sdk/src/core/intent-snapshot.ts`, `packages/sdk/src/index.ts`, `packages/sdk/src/__tests__/intent-snapshot.test.ts`); the other 6 (ingest handler/events, shared schema constants, ClickHouse 0015, ingest test) are bundled-in FOLLOW-286 content (PR #279, merged 44 min earlier — branch cut before #279) — see header NOTE; those are RETRO-068's subject.
+- **Modules touched:** [SDK (`packages/sdk` — Phase 3 proper) / shared (`packages/shared` — constants, bundled #279) / ingest (`apps/ingest` — bundled #279) / data (ClickHouse 0015 — bundled #279) / configs (QUEUE journal)]
+- **Key contracts changed (Phase-3 axis only):**
+  - `emitIntentSnapshot(state: IntentState, ctx: IntentSnapshotContext): void` — NEW SDK export — breaking: no (greenfield). Synchronous, fire-and-forget queue push.
+  - `IntentSnapshotContext` — NEW SDK interface (`{ eventQueue, chatTurns, quizCompleted, quizLeaf }`) — per-`init()` instance — breaking: no.
+  - The `intent.snapshot` PRODUCER is now LIVE in the SDK — the `IntentSnapshotEventSchema` union member (added earlier) finally has a runtime producer. Consumers (ingest dual-write, FOLLOW-269 replay) were already present → the union-level wire is closed by this PR.
+  - `INTENT_SNAPSHOT_EVENT_TYPE` / `INTENT_EVENTS_VOCABULARY` shared constants — added — breaking: no (bundled #279, FOLLOW-286 LG-1).
+
+### 2. Verification done in PR
+
+- Test files changed (Phase-3): `packages/sdk/src/__tests__/intent-snapshot.test.ts` (NEW, +379, 22 unit tests AC1–AC6 + constant assertion). Bundled-#279: `apps/ingest/.../intent-snapshot.test.ts` (+171 incl. 8 TG-1 contract tests). Assertions added: ~30 SDK + ~13 ingest. Coverage delta: SDK `core/intent-snapshot.ts` is fully exercised; the PRODUCTION call-sites in `index.ts` (`:933`, `:1328`, `:919-921` quiz, `:1175` chat) are NOT loaded by any test (mirrored-guard pattern — see §4c TG-1 / FOLLOW-289 already filed).
+- CI checks: PR body claims `Test Files 53 passed / Tests 1346 passed`, typecheck + prettier green. **Independently re-verified the SDK file here:** `vitest run src/__tests__/intent-snapshot.test.ts` → **22/22 pass** (not fabricated). Pre-existing `size-limit` >40KB flag is the known non-blocking item; the new helper adds ~1.2KB.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code / dead export):**
+- `emitIntentSnapshot` (`packages/sdk/src/core/intent-snapshot.ts:66`) — 2 non-test production importers/call-sites: `index.ts:19` (import), `index.ts:933` (every-5), `index.ts:1328` (beforeunload) (grep: `grep -rn emitIntentSnapshot packages/ apps/ --include=*.ts | grep -v node_modules | grep -v '\.test\.'`). **WIRED ✅**
+- `IntentSnapshotContext` (`intent-snapshot.ts:34`) — non-test importer `index.ts:20`, instantiated `index.ts:549`. **WIRED ✅**
+- `INTENT_EVENTS_VOCABULARY` (`packages/shared/.../intent-snapshot.ts:49`, bundled #279) — **ZERO non-test production importers** (grep above on the symbol: only the def + the `IntentEventType` alias; all real importers are `*.test.ts`). The schema annotates it `@internal test-only — no non-test production caller exists (FOLLOW-287 LG-B audit)`. This is a deliberate test-only constant introduced by FOLLOW-286 and already audited/annotated by FOLLOW-287 → **NOT a new DEAD_CODE finding for this retro; it belongs to RETRO-068 (FOLLOW-286 axis) and is already accounted for.** Recorded for traceability only.
+
+**CHECK B (half-wire — every new event/signal has a producer AND a consumer):**
+- `intent.snapshot` event — **PRODUCER:** `emitIntentSnapshot` (this PR, LIVE in 2 SDK call-sites) → `dispatchEvents` envelope (`events.ts:`, generic) → ingest. **CONSUMER:** ingest `events.ts:202` routes to `handleIntentSnapshot` → ClickHouse + Supabase. Both present → **event-level wire clean ✅** (this PR is what CLOSED the union-member's producer side).
+- **`archetype_deltas` CH column / `last_signal_delta` payload field — HALF_WIRE_C ⚠️ (ALREADY FILED — FOLLOW-288).** `emitIntentSnapshot` hardcodes `last_signal_delta: undefined` (`intent-snapshot.ts:78`); the ingest consumer derives the dedicated `archetype_deltas` CH column from exactly this field, so it is `'{}'` on 100% of SDK-produced rows. Confirmed STILL OPEN (FOLLOW-288 unmerged) — NOT re-filed.
+- **Periodic-snapshot TRIGGER — HALF_WIRE (snapshot-trigger axis) ⚠️ NEW → FOLLOW-321.** The "every 5 signals" PRODUCER is wired into only the behavioral-observer call-site (`index.ts:928`). `signal_count` is ALSO incremented by `micro_poll.answered` (`applyBehavioralSignal` at `index.ts:1081`) — that call-site has a `prevSignalCount` REFETCH check (`:1106`) but NO `emitIntentSnapshot`. So a snapshot boundary crossed by a micro-poll is silently skipped. See §4a LG-1.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (NEW, P2 — snapshot-trigger half-wire) → FOLLOW-321.** The periodic `intent.snapshot` is emitted ONLY from the behavioral-observer callback (`index.ts:928-934`). But `signal_count` advances from at least two SDK sites: the observer AND `micro_poll.answered` (`index.ts:1081` → `applyBehavioralSignal` → `signal_count + 1`). A micro-poll answer that takes `signal_count` from 4→5 (or any 5-multiple crossing) does NOT fire `emitIntentSnapshot` — the boundary is skipped until the next observer signal re-crosses a multiple or `beforeunload` fires a final snapshot. Result: the "every 5 signals" cadence the §K.3.6 design promises is honored only for behavioral signals; sessions that advance via micro-polls under-emit periodic snapshots, thinning the FOLLOW-269 replay trail unevenly across tenants (micro-poll-heavy tenants get fewer mid-session snapshots). `applyQuizLeaf` is SAFE (it preserves `signal_count`, verified `intent.ts` — quiz does not cross boundaries), and the chat bridge increments `chatTurns` but does NOT advance `signal_count`, so the ONLY unwired incrementer is `micro_poll.answered`. Fix = either factor the every-5 guard into a single helper called from BOTH increment sites (Rule S — symmetric siblings), or move the guard to wrap the single `applyBehavioralSignal` boundary. **NOT one-hop:** FOLLOW-289 (test-mirroring) would NOT catch this even if closed, because the gap is a MISSING call-site, not a mis-tested one — a seam test that only drives the observer path is still blind to the micro-poll path.
+- **LG-2 (NEW, P3 — boundary+unload double-emit, benign).** If a session's final observer signal lands exactly on a 5-multiple AND the user then closes the tab, the every-5 snapshot (`index.ts:933`) AND the beforeunload snapshot (`index.ts:1328`) BOTH fire with the SAME `state`/`ctx` → two near-identical `intent.snapshot` rows (different `ts` by ms). Harmless for the Supabase UPSERT (idempotent on `(tenant_id, session_id)`), but it double-counts in the append-only ClickHouse `intent_events` trail and any FOLLOW-269 per-session snapshot COUNT. Low impact (≤1 extra row/session, only on the exact-boundary-then-unload race); fold a one-line note into FOLLOW-321.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A (no new bug).** The `confidence` field is schema-clamped (`IntentSnapshotPayloadSchema: z.number().min(0).max(1)`) and the SDK state confidence is itself clamped (`Math.min(..., 1.0)` in `applyQuizLeaf`/engine) — no out-of-range payload risk. `last_signal_delta: undefined` parses cleanly (`LastSignalDeltaSchema` is `.optional()`, verified) — AC3 is genuine, not a fluke. The bundled-#279 ingest fixes (CB-1/LG-1/LG-2/LG-3) are RETRO-068's subject.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1 — ALREADY FILED, FOLLOW-289).** The 22 SDK tests call `emitIntentSnapshot` directly with a hand-built `IntentSnapshotContext` and RE-IMPLEMENT the `signal_count % 5` guard + the beforeunload call INLINE (`intent-snapshot.test.ts:29` header states verbatim "the PRODUCTION wiring in `index.ts` is verified by the non-test grep"; `:90-92`, `:170`, `:330` re-implement the guard). The production call-sites (`index.ts:933/1328/919-921/1175`) have ZERO loaded-module coverage — a regression deleting any of them passes all 22 tests. This is Rule Q (mirrored-logic). FOLLOW-289 already owns it; **confirmed STILL OPEN, NOT re-filed.** Note: this same blind spot is WHY LG-1 (the micro-poll trigger gap) shipped — a seam-driven `init()` test that processed a micro-poll across a boundary would have exposed it.
+- **TG-2 (NEW, P3) — fold into FOLLOW-321.** No test asserts a periodic snapshot fires (or deliberately does NOT) when `signal_count` advances via a non-observer path. Add a seam-driven assertion that a micro-poll-driven 5-boundary crossing produces exactly one `intent.snapshot` (post-fix) — this both fixes LG-1 and converts FOLLOW-289's coverage into a regression guard for the symmetric trigger.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — fold into FOLLOW-321.** `intent-snapshot.ts` docstring (`:11`) and the §K.3.6 design both say snapshots fire "Every 5 behavioral signals" — which is TECHNICALLY accurate for the observer path but MISLEADING given a reader expects "every 5th signal of any kind." Either correct the docstring to "every 5th BEHAVIORAL-OBSERVER signal (micro-poll signals do not currently trigger a periodic snapshot)" or fix LG-1 and keep the docstring. The `intent-snapshot.ts:78` "the SDK does not currently track per-signal deltas" comment is already covered by FOLLOW-288 AC3 — not re-filed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-288 (OPEN, P1) — `archetype_deltas` HALF_WIRE_C.** This retro CONFIRMS it is still open and correctly scoped; the `last_signal_delta: undefined` producer hardcode is unchanged at `intent-snapshot.ts:78`. Coordinate its column decision with FOLLOW-290 (CH rebuild) per its own depends_on.
+- **FOLLOW-289 (OPEN, P1) — mirrored-test Rule Q.** Confirmed open. RECOMMEND folding the FOLLOW-321 LG-1 fix's regression test INTO FOLLOW-289's seam-driven `init()` rewrite — the same jsdom harness that drives the real every-5 path should also drive the micro-poll path, killing two birds (Rule Q closure + trigger-symmetry guard). Cross-linked.
+- **FOLLOW-269 (tracer admin UI, DONE-with-residuals per RETRO-077):** its replay/history views consume `intent_events`. The LG-1 under-emission means the per-session snapshot density it visualizes is NON-UNIFORM (micro-poll-heavy sessions appear to "stall" between snapshots). Flag at FOLLOW-269's residual cleanup.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-266 §ML-training / offline replay (future):** a training job that assumes a regular 5-signal snapshot cadence per session will see irregular gaps for micro-poll-driven sessions (LG-1) AND empty `archetype_deltas` on every row (FOLLOW-288). Both must close before the trail is training-grade.
+
+#### 5c. Contracts changed others rely on
+
+- The `intent.snapshot` event PRODUCER contract is now LIVE — any consumer (ingest, FOLLOW-269) can rely on the SDK emitting it, BUT must NOT rely on (a) a strictly-every-5-of-any-signal cadence (LG-1) or (b) a populated `archetype_deltas` (FOLLOW-288). Both caveats should be documented at the schema until the fixes land.
+
+#### 5d. Architectural assumptions affected
+
+- **"One signal pipeline → one snapshot trigger" is FALSE in the current SDK.** The SDK has ≥2 signal-incrementing sites (observer + micro-poll) and a 3rd state-mutating site (quiz leaf, non-incrementing). Any per-signal side-effect (snapshot, refetch, future analytics) must be attached at the `applyBehavioralSignal` boundary itself (one place) rather than duplicated per call-site, or it WILL drift across sites. This is the SDK-side analogue of the symmetric-sibling problem Rule S governs.
+
+### 6. New lesson candidates
+
+- **Pattern: "a per-signal side-effect (snapshot / refetch / counter) is attached at ONE of several call-sites that advance the same counter, so signals arriving via a sibling path silently skip the side-effect."** — seen in: RETRO-067 §4a LG-1 (micro-poll skips the every-5 snapshot). Adjacent to but DISTINCT from Rule S (which governs symmetric verbs/branches of an EXPLICIT set, e.g. DSR access/erase/portability): here the "siblings" are implicit signal-increment SITES, not named verbs. Count **1** under this named sub-shape. **NOT promoted** (threshold 2). Watch the next SDK feature that hooks a `signal_count` boundary; if it too wires only the observer path, promote a "attach per-signal effects at the `applyBehavioralSignal` boundary, not per call-site" rule (or a Rule S amendment for implicit-sibling sites).
+- **Pattern: "mirrored-logic unit test re-implements the production guard inline, so a MISSING sibling call-site is invisible to the suite."** — seen in: RETRO-067 §4c (the micro-poll gap is invisible precisely because no test loads `init()`), RETRO-032/037/050/058/059 (Rule Q lineage). **ALREADY governed by Rule Q** — no new rule; this is a fresh consequence (mirroring hides not just the tested site's regressions but the EXISTENCE of an untested sibling site). Reinforces Rule Q; folds into FOLLOW-289's scope.
+
+### 7. Follow-ups
+
+- **FOLLOW-321:** Wire the every-5 `intent.snapshot` trigger into ALL `signal_count`-incrementing SDK sites — currently only the behavioral observer (`index.ts:928`) fires it; `micro_poll.answered` (`index.ts:1081`) crosses 5-boundaries with no snapshot (LG-1). Factor the guard into a single helper invoked from the `applyBehavioralSignal` boundary (or both call-sites), add a seam-driven test that a micro-poll-driven boundary emits exactly one snapshot (TG-2), correct the "every 5 behavioral signals" docstring (DG-1), and fold a one-line note on the benign boundary+unload double-emit (LG-2). Coordinate with FOLLOW-289 (share the jsdom `init()` harness). (sdk-engineer, 3h, **P2**)
+- (NO stub for `archetype_deltas` HALF_WIRE_C → **FOLLOW-288 exists**; NO stub for the mirrored-test Rule Q gap → **FOLLOW-289 exists**; NO stub for the test-only `INTENT_EVENTS_VOCABULARY` → already FOLLOW-287-LG-B-audited and on the RETRO-068 axis. Minting duplicates would be noise.)
+
+### 8. Cross-references
+
+- **Second retro of PR #280 (the first was RETRO-059, body never backfilled) —** RETRO-067 is the canonical reserved slot for FOLLOW-266 Phase 3 per QUEUE.md:4928. RETRO-059 already filed FOLLOW-288 + FOLLOW-289 against this PR; this retro does NOT re-discover them, it confirms both are STILL OPEN (not one-hop-closed) and adds the snapshot-TRIGGER axis (LG-1/FOLLOW-321) that RETRO-059 missed — a multi-axis reconciliation per algorithm step 8 (RETRO-059 analyzed the deltas + test axes, not the trigger-site axis).
+- **Reconciles RETRO-064 (FOLLOW-266 Phase 1, root-cause) —** RETRO-064 §3/§4 describe the handler OMITTING `intent_session_id` (zero-UUID every row). That is the LATER main state from FOLLOW-287 (PRs #281/#282, merged AFTER #280). At THIS PR's merge (`6f865ff`) the handler wrote BOTH columns raw with `confidence_before: null` — verified via `git show 6f865ff:apps/ingest/src/handlers/intent-snapshot.ts`. So PR #280's ingest payload was SUPERSEDED on the sort-key axis; the FOLLOW-290/291/292 saga is NOT this PR's producer concern and no duplicate stubs are minted here.
+- **Companion to RETRO-068 (FOLLOW-286 / PR #279) —** PR #280's merge diff BUNDLES #279's entire ingest payload (migration 0015, CB-1/LG-1/LG-2/LG-3, shared constants, 8 TG-1 contract tests, the test-only `INTENT_EVENTS_VOCABULARY`). Those are RETRO-068's subject and are analyzed there, not here.
+- **Reinforces Rule Q (RETRO-032/037/050/058/059 lineage) —** §4c: the mirrored-logic SDK tests are why LG-1 (a missing call-site) shipped invisibly. FOLLOW-289 owns the Rule Q closure; FOLLOW-321 should share its harness.
+
+## RETRO-068 — FOLLOW-286 (K.3.6 Phase-2 ingest-handler DEFECT-FIX: the three P1 `intent.snapshot` dual-write defects RETRO-065 flagged in PR #278 — CB-1 PostgREST `on_conflict` placement, LG-1 `event_type` vocabulary pin, LG-2 raw-`session_id` join key — plus 8 TG-1 contract tests, migration `0015_intent_events_session_id_fix.sql`, and P2 items (LG-3 `confidence_before:null`, LG-4 `IntentSnapshotPayload` de-dup, DG-1 JSDoc). THE MERGE-COMMIT STATE (`8a43588`) IS SUPERSEDED ON `main` ON TWO AXES BY THE FOLLOW-287 PRs (#281/#282): at `8a43588` the handler wrote the raw SHA-256 fingerprint into BOTH `intent_session_id` (a UUID NOT NULL ORDER BY key column) AND the new `session_id` String column, with `confidence_before: null` — and BOTH would have been REJECTED by ClickHouse at INSERT time (UUID column cannot accept a 64-char hex string; Float32 NOT NULL cannot accept `null` in JSONEachRow → the whole row is dropped). So PR #279 "fixed" three P1 defects under green CI while SHIPPING TWO NEW P1 latent defects of the identical class (a write the mock-`fetchImpl` accepts but the real backend rejects) — caught only post-merge by FOLLOW-287, which omits `intent_session_id` (zero-UUID DEFAULT) and reverts to `confidence_before: 0.0`. On `main` HEAD the handler + the 8 TG-1 tests are fully reconciled to the FOLLOW-287 state (tests now assert `intent_session_id` undefined + `confidence_before` 0.0), so NO test-drift gap remains. The CB-1 `?on_conflict=tenant_id%2Csession_id` URL fix + LG-1 `INTENT_SNAPSHOT_EVENT_TYPE`/`INTENT_EVENTS_VOCABULARY` shared constants + LG-2 raw-`session_id` String join key + LG-4 payload de-dup all SURVIVE on `main` byte-stable and are GENUINELY wired. The one genuinely-new, untracked gap: the 8 TG-1 tests are MOCK-`fetchImpl` request-SHAPE tests — they assert the handler EMITS `?on_conflict=` and that a SIMULATED PostgREST/ClickHouse returns 200 — they CANNOT and DID NOT catch the two type-incompatibility defects FOLLOW-287 then found, the exact same "mock can't catch real-backend rejection" axis RETRO-078/079 flagged for the CH query builders, now confirmed on the ingest dual-write INSERT-body path → FOLLOW-322. Rule W already governs the migration-0015 ORDER-BY-key axis (promoted RETRO-060); the sort-key saga stubs FOLLOW-290/291/292 already exist (NOT re-filed); FOLLOW-288/289 (RETRO-059) + FOLLOW-321 (RETRO-067) cover the bundled SDK producer and are NOT this retro's concern) — 2026-06-15
+
+### 1. Summary of change
+
+- **PR:** #279 (merged 2026-06-12 21:27 UTC, commit `8a43588`)
+- **Files changed:** 6 (+380 / −77) — `apps/ingest/src/handlers/intent-snapshot.ts`, `apps/ingest/src/handlers/events.ts`, `apps/ingest/src/handlers/__tests__/intent-snapshot.test.ts`, `packages/shared/src/schemas/events/intent-snapshot.ts`, `infra/clickhouse/migrations/0015_intent_events_session_id_fix.sql`, `backlog/QUEUE.md`
+- **Branch:** `backend-engineer/FOLLOW-286-k36-upsert-fix`
+- **Modules touched:** ingest (CF Worker dual-write handler), shared (event schema constants), data/configs (ClickHouse migration 0015), docs/configs (QUEUE.md)
+- **Key contracts changed:**
+  - `INTENT_SNAPSHOT_EVENT_TYPE` (`@estalara/shared`) — ADDED const `'intent.snapshot'` — breaking: no (new export)
+  - `INTENT_EVENTS_VOCABULARY` + `IntentEventType` (`@estalara/shared`) — ADDED — breaking: no (new export; later `@internal test-only` per FOLLOW-287 LG-B)
+  - `IntentSnapshotPayload` — now imported from `@estalara/shared` in `events.ts` + re-exported from `intent-snapshot.ts`; the inline redeclaration in the handler is REMOVED — breaking: no (canonicalization)
+  - `insertIntentEventToClickHouse(event, intentSessionId, …)` → param renamed to `sessionId`; INSERT body now carries `session_id` + (at merge) `intent_session_id`, `event_type` pinned to the const, `confidence_before` → `null` (at merge; SUPERSEDED to `0.0` by FOLLOW-287) — breaking: internal signature only
+  - PostgREST UPSERT URL now `…/intent_sessions?on_conflict=tenant_id%2Csession_id`; `Prefer` header drops `on_conflict` — breaking: no (corrects a latent prod defect)
+  - ClickHouse `intent_events` — migration 0015 `ADD COLUMN IF NOT EXISTS session_id String DEFAULT ''` — breaking: no (additive)
+
+### 2. Verification done in PR
+
+- Test files changed: `apps/ingest/src/handlers/__tests__/intent-snapshot.test.ts` (+171/−10). Assertions added: 8 new TG-1 contract tests (on_conflict-in-URL, Prefer-has-no-on_conflict, 2nd-snapshot-no-409, event_type≡const, event_type∈vocabulary, const∈vocabulary, raw-session_id-not-UUID, CH↔Supabase session_id parity) + updated existing assertions. Coverage delta: stated 138 → 164 tests pass (ingest); `@estalara/shared` 205 pass; both typecheck green.
+- CI checks: passed per PR body (Test Node22 green); pre-existing non-blocking failures (Python, SDK bundle >40KB, Rule I) acknowledged. **CAVEAT (the central finding):** all 18 prior tests AND all 8 new TG-1 tests mock `fetchImpl` — green CI did NOT and could not exercise the real PostgREST/ClickHouse type contract, which is exactly why both the original 3 defects AND the two NEW type-incompatibility defects (UUID-column / Float32-NOT-NULL) shipped under green. CI-greenness here is a WEAKER guarantee than the runtime apply (the same Rule-W-family gap, on the handler-body axis rather than the migration axis).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅` on every symbol PR #279 introduced (verified on `main` HEAD):
+
+- CHECK A (dead code): `INTENT_SNAPSHOT_EVENT_TYPE` has 3 non-test prod consumers (`packages/sdk/src/core/intent-snapshot.ts:82`, `apps/ingest/src/handlers/intent-snapshot.ts:187`, self) — wired. `IntentSnapshotPayload` re-export consumed at `apps/ingest/src/handlers/events.ts:200` — wired. `IntentEventType` is a type-only export with no consumer — SUPPRESSED (Rule I type-only exemption). `INTENT_EVENTS_VOCABULARY` had ONLY test consumers at #279's merge (Rule-I-borderline test-only export) — but FOLLOW-287 LG-B then annotated it `@internal test-only`, which is the accepted resolution; NOT a fileable dead-code finding.
+- CHECK B (half-wire): every new column/const/event_type has both a producer and consumer. `session_id` column (migration 0015 producer) ← handler writes it (producer) → FOLLOW-269 replay join (documented consumer; the consumer leg is owned by FOLLOW-269 / RETRO-077, not severed by this PR). `event_type` const written by handler (producer) + asserted by contract tests + documented in DDL comment (consumer). No HALF_WIRE_P / HALF_WIRE_C originated by this PR.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-A (P1, SUPERSEDED — already tracked, NOT re-filed):** At merge commit `8a43588` the handler wrote `intent_session_id: sessionId` where `sessionId` is the raw 64-char SHA-256 hex fingerprint, but `intent_events.intent_session_id` is a `UUID` (NOT NULL ORDER BY key, migration 0014). ClickHouse JSONEachRow REJECTS a non-UUID string into a UUID column → the entire INSERT fails → ZERO `intent_events` rows would have landed in prod for any snapshot. Invisible under green CI because `captureFetch` accepts any JSON body. CAUGHT post-merge by FOLLOW-287 (PR #282 omits the column → zero-UUID DEFAULT). This is the Rule-W root-cause axis — already owned by **FOLLOW-290** (table rebuild) + **FOLLOW-291** (apply-time guard). NOT re-filed.
+- **LG-B (P2, SUPERSEDED — already tracked, NOT re-filed):** LG-3 set `confidence_before: null`, but `intent_events.confidence_before` is `Float32` (NOT NULL — ClickHouse types are non-nullable). `null` in JSONEachRow rejects the row. The PR JSDoc argued "null is more honest than 0" — semantically true, but the column type forbids it. CAUGHT by FOLLOW-287 CB-2 (revert to `0.0`). The genuine-zero-vs-no-prior ambiguity this re-introduces is owned by **FOLLOW-292**. NOT re-filed.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- Both LG-A and LG-B are P1/P2 bugs that shipped under green CI and were caught only by the next remediation PR. Root cause: **mock-`fetchImpl` tests assert request shape, never backend type-acceptance** — see §4c TG-A.
+
+#### 4c. Test coverage gaps
+
+- **TG-A (P2, GENUINELY NEW → FOLLOW-322):** The 8 TG-1 "contract tests" assert the handler EMITS the right URL/body SHAPE and that a SIMULATED backend returns 200. They CANNOT catch a value the real backend rejects on type grounds — which is precisely how LG-A (UUID column) + LG-B (Float32 NOT NULL) escaped this PR's own green CI, on the same PR that congratulated itself for catching 3 mock-hidden defects. This is the RETRO-078/079 "mock can't catch real-backend rejection" axis, now confirmed on the INGEST DUAL-WRITE INSERT-body path (a 2nd subsystem). Distinct from FOLLOW-291 (which guards MIGRATIONS against ephemeral CH, not handler INSERT bodies) — they should share the ephemeral-CH+PostgREST harness. → FOLLOW-322.
+
+#### 4d. Documentation gaps
+
+- N/A — DG-1 (JSDoc rewrite of `upsertIntentSessionToSupabase`) was a deliberate in-PR doc FIX and is accurate on `main`; the migration-0015 header is correct.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-287 (DONE, PRs #281/#282) — DIRECTLY remediated this PR's LG-A + LG-B. FOLLOW-290/291/292 (open, RETRO-060) — downstream of the same `intent_events` sort-key root cause.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-269** (tracer replay UI / queries, RETRO-077) — its CH↔Supabase join depends on the `session_id` String column this PR added; the join key contract (`intent_events.session_id = intent_sessions.session_id + tenant_id`) is established here and is correct on `main`.
+
+#### 5c. Contracts changed others rely on
+
+- `INTENT_SNAPSHOT_EVENT_TYPE` / `INTENT_EVENTS_VOCABULARY` are now the single source of truth pinning the writer to the DDL vocabulary (consumed by SDK `intent-snapshot.ts` + ingest handler). The `session_id` join-key contract is consumed by the FOLLOW-269 replay path.
+
+#### 5d. Architectural assumptions affected
+
+- Confirms the K.3.6 ClickHouse `intent_events` ORDER BY key (`tenant_id, intent_session_id, event_at`) is architecturally wrong (UUID surrogate no writer can populate) — already codified by Rule W + FOLLOW-290. This PR is one node in that remediation chain, not the origin (RETRO-064 is the origin / PR #277).
+
+### 6. New lesson candidates
+
+- Pattern: "A mock-`fetchImpl` / mock-transport contract test asserts request SHAPE and a simulated 2xx, but cannot catch a value the REAL backend rejects on type/constraint grounds (UUID column, Float32 NOT NULL, LowCardinality, JSONEachRow strictness) — so a defect-fix PR can ship NEW latent defects of the identical class it just 'fixed', under green CI." — seen in: RETRO-078 §4c, RETRO-079 §4c (ClickHouse tracer query builders), and now RETRO-068 §4c (ingest dual-write INSERT body). **Count on the INGEST-handler axis = 1 (this retro).** The CH-query-builder axis (RETRO-078/079) is a sibling subsystem of the SAME family but a different surface; per the RETRO-077/079 deferral discipline I treat the handler-INSERT-body surface as a fresh count-1. NOT promoted (threshold 2 on this surface). Held for the next independent sighting on a non-tracer live-backend write path. The migration sub-axis of this family is ALREADY Rule W; the HTTP/enum sub-axis is ALREADY Rule K.2 round-trip + Rule L.
+
+### 7. Follow-ups
+
+- **FOLLOW-322:** Add a live-backend contract test for the `intent.snapshot` dual-write handler — submit the real INSERT body to an ephemeral ClickHouse (carrying the prod `intent_events` DDL) and the real UPSERT to an ephemeral PostgREST/Supabase, so a type-incompatibility (UUID column, Float32 NOT NULL, JSONEachRow strictness) or a mis-placed `on_conflict` FAILS CI — the class of defect both PR #278 AND PR #279 shipped under green mock-`fetchImpl` CI (backend-engineer + data-engineer, 4h, **P2**). Coordinate with / share the ephemeral-CH harness from FOLLOW-291 (migration apply-time guard) so one CI job covers both migration-apply and handler-INSERT-body type contracts.
+- (NOT re-filed: FOLLOW-290/291/292 own the sort-key/confidence_before saga; FOLLOW-288/289/321 own the bundled SDK producer.)
+
+### 8. Cross-references
+
+- **Companion to RETRO-067 (FOLLOW-266 Phase 3 / PR #280) —** PR #280's merge diff BUNDLED this PR's entire ingest payload via a stale-base branch; RETRO-067 explicitly deferred analysis of migration 0015, CB-1/LG-1/LG-2/LG-3, the shared constants, and the 8 TG-1 tests to THIS retro. They are analyzed here.
+- **Reconciles RETRO-064 (FOLLOW-266 Phase 1, root-cause) + Rule W —** RETRO-064 §3 describes the handler OMITTING `intent_session_id` (zero-UUID every row). That is the LATER `main` state from FOLLOW-287 (PRs #281/#282), NOT this PR's merge state. At `8a43588` the handler wrote BOTH columns raw with `confidence_before: null` — verified via `git show 8a43588:apps/ingest/src/handlers/intent-snapshot.ts` vs `git show main:…`. Rule W's own promotion evidence (RETRO-060) names "FOLLOW-286 / PR #279" as count-1 of the migration-apply-time-failure lineage; this retro confirms that and adds the previously-unrecorded handler-INSERT-body twin of the same defect (LG-A/LG-B), which the FOLLOW-287 PRs corrected.
+- **Reinforces the RETRO-078/079 mock-vs-live-backend axis —** §4c TG-A is the 1st sighting of that family on the ingest dual-write surface; held below threshold, FOLLOW-322 files the concrete coverage gap without promoting a rule.
+
+## RETRO-080 — FOLLOW-309/310/311/312 (the four RETRO-077 wiring-bug fixes for the K.3.6 tracer admin UI — Weight Editor GET 405 + can-never-PUT, Live Monitor SSE 401, three nav-orphaned tenant pages, and "Export CSV" yielding JSONL; ALL FOUR severed wires from RETRO-077 are now GENUINELY closed END-TO-END — the new admin `GET /api/admin/intent/config` producer ↔ the page consumer ↔ the existing `PUT /[id]` producer form a complete read→edit→write loop, the SSE drops `?token=` and rides the `sb-access-token` cookie that `verifyTracerAdminAuth` Path 2 / `getAuthClaims` genuinely reads, the tenants list now renders three per-row `<Link>`s into the orphaned pages (all three target pages exist), and CSV export switched to `fetch(Accept: text/csv)`; the RETRO-077 TG-1 fixture-lie root cause is correctly remediated — fixtures now derive from `AdminIntentConfigResponseSchema.parse()` and the new GET-1..5 route tests + COOKIE-1..5 auth tests drive the REAL handlers, so this is a FIX of the fixture-lies pattern, NOT a fresh independent sighting → family stays count-3, NO promotion. TWO residuals: (1) RETRO-077 LG-3 datetime-local→ISO ambiguity was "folded into FOLLOW-312" but this PR fixed ONLY the LG-2 CSV-vs-JSONL selector — the raw `YYYY-MM-DDTHH:MM` filter value still flows TZ-less/seconds-less from the `<input type="datetime-local">` into BOTH export builders AND the history table-load fetch → FOLLOW-323; (2) the page's save-response read is still hand-typed `{id?,error?}` — the PUT/POST routes have NO shared response schema, so the T9 save-response fixture remains un-grounded (the narrow last corner of the fixture-lies pattern), low-severity because `loadConfig()` immediately reconciles via the schema-grounded GET → folded into FOLLOW-323) — 2026-06-15
+
+### 1. Summary of change
+
+- **PR:** #299 (merged 2026-06-14 13:06 UTC, commit e2d09e6)
+- **Files changed:** 14 (+1114 / -187) — 6 page/route `.tsx`/`.ts` + 6 `.test.tsx`/`.test.ts` + `packages/shared/src/schemas/tracer.ts` (new `AdminIntentConfigResponseSchema`) + `.claude/agents/backend-engineer/lessons.md`
+- **Modules touched:** control-plane (admin UI + admin GET route) · shared (1 new response schema). Zero new third-party deps. Decisions pinned in ADR-0013 (ACCEPTED 2026-06-14).
+- **Key contracts changed:** `AdminIntentConfigResponse` / `AdminIntentConfigResponseSchema` — **ADDED** to `@estalara/shared` (`id`/`tenant_id`/`is_active`/`weights`/`created_at`, all always-present, `id`/`created_at` nullable). breaking: **no** (purely additive; the SDK-facing `IntentConfigResponseSchema` is UNTOUCHED — the fix correctly created a SEPARATE admin-read schema rather than bolting `id` onto the SDK contract as RETRO-077 LG-1 had suggested, avoiding cross-caller contamination). The Weight Editor's GET wire is repointed from the (405-only) `/api/admin/intent/config` POST route to that same route's NEW GET handler.
+
+### 2. Verification done in PR
+
+- Test files changed: 6 (4 rewritten: weights/history/tenant-monitor page tests + config route test; 2 new: `tenants/page.test.tsx`, `lib/tracer-auth.test.ts`) · Assertions added: GET-1..5 (route), COOKIE-1..5 (auth), T7/T8 (SSE no-token), T6/T7 (CSV-button/JSONL-link), T2/T3/T4 (nav links), T6/T8/T9 (PUT path + correct admin URL). · Coverage delta: unknown (est. up — the new route+auth tests drive REAL handlers, closing the RETRO-077 TG-1 hole).
+- CI checks: per PR body 1146/1146 control-plane tests pass; lint/prettier clean on touched files. Pre-existing `apps/control-plane` BUILD failure on `@estalara/sdk/playbooks` + `@estalara/sdk/auto-detect` missing exports was confirmed to reproduce on the base commit `2610a68` (git-stash verified) — NOT introduced by this PR, but it is a standing FOLLOW-267-origin build break that means the control-plane Next.js build is red on `main` independent of tests (surfaced §5a; tracked under sdk-engineer scope, not re-filed here).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** the one new export, `AdminIntentConfigResponseSchema` / `AdminIntentConfigResponse`, has a non-test producer (`api/admin/intent/config/route.ts:160,177` GET handler) AND a non-test consumer (`admin/tracer/weights/page.tsx:140`) — grep `AdminIntentConfigResponse` across `apps`+`packages` (excl. node_modules/dist/.test.) returns exactly those two + the schema def. The new GET handler is a Next.js App Router framework entrypoint (suppressed from Rule I). No orphaned export.
+- **CHECK B (half-wire):** the schema is symmetric (route emits it via `.parse()`, page reads it as the typed shape). Every wire RETRO-077 flagged as severed is now BOTH-ended:
+  - GET producer (`route.ts` GET, 200 with `id`) ↔ page consumer (`loadConfig` reads `json.id` → `setConfigId`) ↔ PUT producer (`config/[id]/route.ts:127` `PutBodySchema` accepts `{weights}`, weights+is_active both optional with at-least-one constraint — the page's `{weights}` body validates) — verified hop-by-hop, NOT one-hop.
+  - SSE consumer (`page.tsx` EventSource `?tenant_id=` only) ↔ stream route `verifyTracerAdminAuth` Path 2 (`tracer-auth.ts:65`) ↔ `getAuthClaims` reads `sb-access-token` cookie (`packages/auth/src/middleware.ts:46-49`). The browser sends the cookie automatically on the same-origin EventSource. Middleware matcher matches `/api/admin/*` but the `pathname.startsWith('/admin')` HTML-redirect branch does NOT fire for `/api/admin/...` (different prefix), so the SSE is not redirected to a login page — the route's own auth gate is the only gate, and it now passes via cookie. End-to-end verified.
+  - Nav producer (`tenants/page.tsx:709-726` three `<Link>`s per row) ↔ the three target pages all exist on disk (`tracer/page.tsx`, `tracer/history/page.tsx`, `tracer/export/page.tsx` all present). Reachability orphan closed.
+  - CSV consumer (`history/page.tsx` `handleExportCsv` → `fetch(Accept:'text/csv')`) ↔ `export/decisions/route.ts:144` Accept-header CSV selector. JSONL retains `<a download>` against the route default. Both ends matched.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — RETRO-077 LG-3 datetime-local→ISO ambiguity is NOT fixed (one-hop closure of FOLLOW-312).** RETRO-077 §4a LG-3 folded the `<input type="datetime-local">` → ISO mismatch into FOLLOW-312, but PR #299 closed only the LG-2 CSV-vs-JSONL selector. The filter inputs (`history/page.tsx:431,442`) still produce a `YYYY-MM-DDTHH:MM` string (no seconds, no TZ); the default-when-empty path uses `.toISOString()` (correct UTC) but the **user-supplied-filter** path passes the raw datetime-local value as `from`/`to` to (a) the new CSV `handleExportCsv` (`:321,323`), (b) the JSONL `buildJsonlExportUrl` (`:302,304`), AND (c) the history table-load fetch (`:226-227`). The export route validates only `z.string().min(1)` (`export/decisions/route.ts:37-38`) and forwards the value straight to ClickHouse (`fetchIntentEventsForExport`, `:119`). Whether ClickHouse parses the TZ-less truncated string is environment-dependent and is an implicit local-vs-UTC ambiguity for a tenant-facing export and the history listing alike. → FOLLOW-323. This is exactly the gap RETRO-077 named; the fix moved one hop (LG-2) and left LG-3 un-closed.
+- **LG-2 (P3) — the `is_active=false` "staged row" is invisible to the Weight Editor (pre-existing v1 design edge, NOT introduced here).** The admin GET WHERE-clause filters `is_active = true` (`route.ts:171`), so a staged row (`is_active=false`) yields `id=null` → the editor POST-creates a NEW row instead of reactivating the staged one. The PUT route's docstring (`config/[id]/route.ts:31`) explicitly supports staged-row activation via direct API (`PUT {is_active:true}`), but the UI never surfaces it. This is the global-only-v1 one-active-row design (CEO decision 2026-06-14), not a regression — noted for completeness, NOT filed (out of v1 scope).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — no new functional bug introduced. The four RETRO-077 P0/P1 functional bugs are genuinely fixed (verified §3). The only un-closed item is the LG-1 datetime ambiguity (P2, inherited from RETRO-077, not new to this PR).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — the save-response (PUT/POST) fixture is still hand-typed; the PUT/POST routes have NO shared response schema (the last corner of the RETRO-077 TG-1 fixture-lies pattern).** The GET read path is now fully schema-grounded (GET-1..5 round-trip the REAL handler output through `AdminIntentConfigResponseSchema.parse`, so a route↔schema drift FAILS). BUT the page's `handleSave` reads the save response only as `{ id?, error? }` (`weights/page.tsx:211`), and T9 mocks the PUT response as `{ id, is_active, created_at }` — a partial the real PUT route does NOT emit (the real route returns the full `{id, tenant_id, is_active, weights, created_at}`, `config/[id]/route.ts:120`). There is no `AdminIntentConfigWriteResponseSchema` to ground that fixture. Severity is low because the page reads only `json.id` from the save response and `loadConfig()` (schema-grounded) immediately reloads to reconcile rendered state, so a save-response shape drift cannot corrupt the UI — but it is the precise residual of the fixture-lies axis on the write-response sub-surface. → folded into FOLLOW-323.
+- **TG-2 (P3) — no test exercises the page's POST-create branch end-to-end.** T9 covers the PUT (active-row) save; T8 confirms the load fetches the admin GET when there is no row, and T1 asserts the "Create config" label is reachable — but no test clicks Save with `configId=null` and asserts a POST to `/api/admin/intent/config` fires. The POST handler itself is independently tested (existing POST suite), so this is a UI-branch coverage gap, not a wire gap. → folded into FOLLOW-323.
+
+#### 4d. Documentation gaps
+
+- N/A — the RETRO-077 DG-1 docstring drift is fixed: `weights/page.tsx:7-22` now correctly documents the GET/PUT/POST contract + cookie auth + global-only scope, and `tenants/[id]/tracer/page.tsx:46-52` now documents cookie-only SSE auth (ADR-0013 §Decision 1). Docstrings now describe the SHIPPED wire.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-293 (live-network smoke, UNBLOCKED per QUEUE:4930)** — now that the admin tracer UI is functionally wired, the smoke ticket can validate the Weight Editor read/write + SSE stream against a live backend. The LG-1 datetime ambiguity (FOLLOW-323) should be in scope before any tenant-facing export demo, else a filtered CSV/JSONL export may silently return a wrong (local-vs-UTC-shifted) window.
+- **Standing build break (NOT this PR):** `apps/control-plane` Next.js build is RED on `main` (`@estalara/sdk/playbooks` + `/auto-detect` missing exports, FOLLOW-267 origin). Tests are green but the build is not — surfaced for the PM at P1 as an sdk-engineer item; it does not gate this retro but means the control-plane app cannot currently `next build`.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-282 (D-3 simulation stub)** — unaffected; the Weight Editor's simulation stub still renders (T5).
+- **FOLLOW-313 (UI data_source cast cleanup)** — PARTIALLY advanced: the Weight Editor's loose `{data_source?:string}` cast is GONE (it now uses the typed `AdminIntentConfigResponse`), so FOLLOW-313 narrows to the THREE remaining pages (Live Monitor `page.tsx:39,327`, History `page.tsx:239,277`) whose casts are correctly UNTOUCHED here. FOLLOW-313 still depends on FOLLOW-303 being EXTENDED to widen all four tracer `data_source` enums (per RETRO-077 §5c) — unchanged.
+
+#### 5c. Contracts changed others rely on
+
+- `AdminIntentConfigResponseSchema` is admin-only and consumed by exactly one producer + one consumer (both in control-plane). No SDK / decision-api / ingest dependency. The SDK-facing `IntentConfigResponseSchema` was deliberately NOT changed — so the FOLLOW-268-sdk weight-fetch consumer (RETRO-074/075) is unaffected. Clean separation.
+
+#### 5d. Architectural assumptions affected
+
+- **ADR-0013 resolves the RETRO-077 §5d cross-cutting SSE-auth decision:** "admin SSE auth = same-origin `sb-access-token` cookie, never a `?token=` query param" is now the pinned convention for every future admin SSE surface. The backend-engineer's own lessons.md (this PR) proposes a CI grep banning `?token=` on EventSource URLs — a reasonable future Rule candidate but count-1, NOT promoted. The `localStorage` admin-token sourcing RETRO-077 flagged is fully removed from both the Live Monitor and the Weight Editor (`getAdminToken` deleted from both).
+
+### 6. New lesson candidates
+
+- Pattern: **"a consumer-side UI test that mocks `global.fetch`/EventSource with a hand-fabricated server contract proves rendering but proves NOTHING about the wire"** (the fixture-lies family) — seen in: RETRO-077 (count-3 cumulative: RETRO-072 `data_source:'error'` schema-reject; RETRO-074/075 bare-host base; RETRO-077 `MOCK_LIVE_RESPONSE.id`). **PR #299 is the REMEDIATION of the RETRO-077 sighting, NOT a fresh independent sighting** — fixtures now derive from `AdminIntentConfigResponseSchema.parse()`, the new GET-1..5 + COOKIE-1..5 tests drive the REAL handlers, and T8/T9 assert the actual URL+method. Per the established deferral discipline (RETRO-068/078/079 all held remediations as non-incrementing), a fix does not advance the count. **Family stays count-3; NO promotion this run.** The ONE narrow residual (TG-1: the save-response fixture is still hand-typed because the PUT/POST routes lack a shared response schema) is the same pattern's last corner on the WRITE-response sub-surface — it is filed as a concrete coverage gap (FOLLOW-323), but as a residual of the SAME sighting it likewise does not increment the count. The architect's standing RETRO-077 question (extend Rule L with a consumer-side sub-shape, or mint a "consumer test drives the real handler" rule) remains OPEN, awaiting a genuinely NEW independent sighting on a different ticket.
+
+### 7. Follow-ups
+
+- FOLLOW-323: (a) Fix the RETRO-077 LG-3 datetime-local→ISO ambiguity that FOLLOW-312 left un-closed — normalize the `<input type="datetime-local">` `from`/`to` values to a full ISO-8601 UTC instant (append `:00Z`/convert local→UTC) at ALL THREE sink sites (CSV `handleExportCsv`, JSONL `buildJsonlExportUrl`, history table-load fetch), OR tighten the export route's `z.string()` to a strict ISO-datetime validator that 400s a TZ-less value; (b) ground the save-response read — add an `AdminIntentConfigWriteResponseSchema` (or reuse the GET schema) for the PUT/POST 200 body and make the T9 save fixture derive from it (closes the last corner of the RETRO-077 TG-1 fixture-lies pattern on the write-response sub-surface); (c) add a UI-branch test for the POST-create path (Save with `configId=null` → POST to `/api/admin/intent/config`). (backend-engineer/qa-engineer, 3h, **P2**)
+
+### 8. Cross-references
+
+- **Closes (verified end-to-end) RETRO-077 — FOLLOW-269 (PR #298).** All three RETRO-077 severed wires (CB-1 Weight-Editor 405/can-never-PUT, CB-2 SSE 401, HW-3 nav orphan) + LG-2 CSV-yields-JSONL are GENUINELY closed; the RETRO-077 TG-1 fixture-lie root cause is remediated at the schema-derived-fixture level. The ONLY RETRO-077 item that moved ONE HOP rather than closing is LG-3 (datetime ambiguity) → FOLLOW-323.
+- **Implements ADR-0013** (Tracer admin SSE auth + admin config-read contract, ACCEPTED 2026-06-14) — Decision 1 (cookie-only SSE auth) and Decision 2 (admin GET read contract + global-only-v1 `?tenant_id=`→400).
+- **Reconciles with RETRO-073 (FOLLOW-301) + the PUT/[id] contract** — the page's `{weights}` PUT body lands on the FOLLOW-301 atomic deactivate-then-activate transaction; because the page never sends `is_active`, the PUT is a plain `weights` UPDATE that preserves the existing active flag — no interaction with the one-active-row invariant. The FOLLOW-304 cross-scope GET-determinism breach is global-only-v1-inert here (admin GET filters `tenant_id IS NULL` + `is_active=true` + `ORDER BY created_at DESC LIMIT 1`) and is NOT re-filed.
+- **Continues the fixture-lies thread (RETRO-072/074/075/077)** — this is the first FIX retro in that thread; it confirms the remedy RETRO-077 prescribed (schema-derived fixtures + real-handler tests) and records the discipline that a remediation does not increment the promotion count.

@@ -4467,14 +4467,16 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     K.3.6 frontend — Live Session Monitor + Session History + Weight Editor + Export Dashboard (4
     admin UI surfaces) + Master Design §K.3.6 update
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-06-14T12:00:00Z'
+  completed_at: '2026-06-14T11:41:43Z'
   priority: P2
   estimated_hours: 10
   depends_on: [FOLLOW-266, FOLLOW-267, FOLLOW-268]
   spec: backlog/FOLLOW_UPS.md (FOLLOW-269 stub)
   branch: backend-engineer/FOLLOW-269-k36-tracer-ui
+  pr: '298'
   notes: |
     /admin/tenants/[id]/tracer (K.3.6.1 — SSE live monitor, probability bar chart, chat gate stub),
     /admin/tenants/[id]/tracer/history (K.3.6.2 — filters, replay, CSV/JSONL export),
@@ -4484,6 +4486,9 @@ engine deferred to FOLLOW-282 per CEO D-3.**
     POST-MERGE NOTE: PM must ask CEO for exact DPIA/client-notification scope for chat logging (D-2).
     All depends_on DONE: FOLLOW-266 (DONE PR #280), FOLLOW-267 (DONE PR #283),
     FOLLOW-268-sdk (DONE PR #290). Unblocked 2026-06-14. Delegated to backend-engineer.
+    PR #298 merged 2026-06-14T11:41:43Z. RETRO-077 spawned (3 P0/P1 wiring bugs found —
+    FOLLOW-309/310/311/312 generated). FOLLOW-309/310/311/312 fixed in PR #299 (merged
+    2026-06-14T13:06:34Z). FOLLOW-293 (live-network smoke) now UNBLOCKED.
 
 - id: FOLLOW-286
   title: >
@@ -4914,15 +4919,14 @@ pending planning.**
 
 ## Currently in flight
 
-**1 ticket IN_PROGRESS as of 2026-06-14T12:00Z.** FOLLOW-269 (K.3.6 frontend UI) delegated to
-backend-engineer. All K.3.6 D-1 code dependencies DONE (FOLLOW-266/267/268). FOLLOW-308 DONE /
-CLOSED IN FULL 2026-06-15 (PR #297 + PR #306 merged, Option A auto-apply workflow verified LIVE
-end-to-end; AC1–AC3 all DONE; ESC-022 + ESC-023 RESOLVED). FOLLOW-307 DONE (prod migrations applied
-2026-06-14). FOLLOW-293 (live smoke) BLOCKED on FOLLOW-269 (frontend must merge before end-to-end
-smoke). FOLLOW-304/306 non-blocking backlog. ESC-022 item (2) awaiting CEO decision. ESC-023
-awaiting Piotr to provision DOPPLER_TOKEN_STG/PRD. Pending retro spawns: RETRO-062 (FOLLOW-276),
-RETRO-063 (FOLLOW-278), RETRO-064 (FOLLOW-266 Ph1), RETRO-067 (FOLLOW-266 Ph3), RETRO-068
-(FOLLOW-286), RETRO-069 (FOLLOW-287/288) — 6 retros queued.
+**0 tickets IN_PROGRESS as of 2026-06-15T00:00Z.** FOLLOW-269 (K.3.6 frontend UI) DONE — PR #298
+merged 2026-06-14T11:41:43Z. FOLLOW-309/310/311/312 (4 RETRO-077 wiring bug fixes) DONE — PR #299
+merged 2026-06-14T13:06:34Z. FOLLOW-308 DONE / CLOSED IN FULL 2026-06-15. FOLLOW-307 DONE. K.3.6 D-1
+fully PRODUCTION-LIVE. ESC-022 + ESC-023 RESOLVED. ESC-020 OPEN but non-blocking (CEO 2026-06-10).
+FOLLOW-293 (live-network smoke) now UNBLOCKED (FOLLOW-269 DONE); pending delegation to qa-engineer.
+FOLLOW-317 + FOLLOW-318 stubs pending promotion to Sprint 18. Pending retro spawns: RETRO-064
+(FOLLOW-266 Ph1 / PR #277), RETRO-067 (FOLLOW-266 Ph3 / PR #280), RETRO-068 (FOLLOW-286 / PR #279),
+plus retro for FOLLOW-309/310/311/312 (PR #299).
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

@@ -16552,3 +16552,80 @@ CHECK B (half-wire): no new event / env-var / column / topic / SDK-signal introd
 - **Related to RETRO-076 / FOLLOW-307 (migrations don't auto-apply) —** both retros expose the same meta-gap: the K.3.6 data plane has prod-acting code whose correctness depends on a real ClickHouse/Postgres that CI never exercises (076 = no auto-migrate; 078 = no live-CH tracer-query test). The remedy class is the same: close the real-backend verification hop in automation.
 - **Related to RETRO-077 (K.3.6 tracer UI wiring) —** this fix is the data-path complement to RETRO-077's control-path wiring fixes; together they are what makes the FOLLOW-269 tracer functional end-to-end. §5a.
 - **Related to Rule W —** adjacent ClickHouse-correctness territory but distinct: Rule W governs migration-time changes to KEY columns; this is a query-time alias shadow on a NON-key column. Not covered by W; candidate for its own rule on the next sighting (§6 Pattern A).
+
+## RETRO-079 — FOLLOW-316 (live-ClickHouse CI guard for the K.3.6 tracer query builders — adds a dedicated `tracer-query-smoke` CI job that boots a real ClickHouse, applies migrations, seeds one `intent_events` row, and submits all 4 tracer builders + a Code-386 negative control against the live engine, with `REQUIRE_CLICKHOUSE=1` making container-absence a HARD fail (no silent skip); this is the GENUINE end-to-end closure of RETRO-078 §4c TG-2 — the negative control faithfully reproduces the exact FOLLOW-315 broken shape (`toString(event_at) AS event_at` + bare `event_at` predicate) and the 4 fixed builders all use the table-qualified `intent_events.event_at`, so a regression to the bare form WOULD now bite CI. THREE residual gaps: (TG-1) the AC2 negative-control assertion regex `/Code: 386|NO_COMMON_TYPE|HTTP 500/` is over-permissive — the `HTTP 500` arm passes green on ANY 500, so a future container/schema misconfig that 500s for a DIFFERENT reason would falsely satisfy the "guard caught Code 386" claim; (HW-1) the job EXCLUDES the still-self-skipping `clickhouse-dsr.integration.test.ts`, so RETRO-078 LG-1 / FOLLOW-317's lexicographic-ORDER-BY sibling remains CI-uncovered — the ticket's optional Notes offer to un-self-skip DSR for free coverage was correctly declined (DSR has known latent failures) but the coverage hole is therefore still open; (LG-1, P3) the hardcoded seed INSERT is coupled to the current `intent_events` column set — a future migration adding a non-defaulted column silently breaks the seed) — 2026-06-14
+
+### 1. Summary of change
+
+- **PR:** #305 (merged 2026-06-14 20:40 UTC, commit cce2cd8)
+- **Files changed:** 4 (+384 / -12) — `.github/workflows/ci.yml` (+64 / -0) · `apps/control-plane/src/__tests__/integration/clickhouse-tracer.integration.test.ts` (+305 / -0, new) · `backlog/QUEUE.md` (+5 / -2, status line — not analyzed per scope) · `backlog/sprint-18/FOLLOW-316.md` (+10 / -10, AC checkboxes — not analyzed per scope).
+- **Modules touched:** [configs (CI), control-plane (integration test), docs/backlog]. NO code-under-test changed (the tracer query logic was already fixed by FOLLOW-315 / PR #302). This is a pure verification-infrastructure ticket.
+- **Key contracts changed:** NONE. No new public symbol, route, schema, column, or topic. One new CI-scoped env var `REQUIRE_CLICKHOUSE` (test-harness contract only, not a product env var). breaking: **no**.
+
+### 2. Verification done in PR
+
+- Test files changed: `clickhouse-tracer.integration.test.ts` (new, +305) · Assertions added: 5 specs — 4 happy-path builder calls (AC1a–d) + 1 negative control (AC2) — plus a module-level `throw` (AC3 hard-fail) and a `beforeAll` seed / `afterAll` cleanup (AC4) · Coverage delta: unknown (these specs run ONLY in the new CI job, not in the unit coverage run; they add live-query-analysis coverage the mock-fetch suite structurally cannot provide).
+- CI checks: passed — the new `tracer-query-smoke` job is green (FOLLOW-316.md AC5 cites PR #305 CI run 27511309098 "Tracer query-builders live ClickHouse guard: pass"). The job itself is the new gate; verified it boots `clickhouse/clickhouse-server:latest`, waits for `/ping`, runs `migrate.sh` (LOCAL=1 → MergeTree applies 0001–0016 incl. `intent_events` 0014 + `session_id` 0015), then runs the scoped vitest integration file with `REQUIRE_CLICKHOUSE=1`.
+
+### 3. Wiring Audit
+
+CHECK A (dead code): the only new file is a vitest integration spec — a **test entrypoint** (suppressed per the framework-entrypoint exclusion). It imports the 6 production helpers from `@/lib/clickhouse-tracer` (`fetchIntentEventsForExport/History/ForSession`, `fetchNewIntentEvents`, `chTracerQuery`, `resolveClickHouseTracerConfig` + the `ClickHouseTracerConfig` type) — all pre-existing, all with non-test importers (verified in RETRO-078 §3). No new product export introduced. **No dead code.**
+
+CHECK B (half-wire): one new symbol — the CI-scoped env var `REQUIRE_CLICKHOUSE`. Producer: `.github/workflows/ci.yml:378` (`REQUIRE_CLICKHOUSE: "1"` in the `tracer-query-smoke` job env). Consumer: `clickhouse-tracer.integration.test.ts:99` (`process.env.REQUIRE_CLICKHOUSE === '1'`) → :107 module-level `throw` when set-but-no-URL. **Both ends wired** (grep: `grep -rn REQUIRE_CLICKHOUSE --include=*.yml --include=*.ts .`). The other new identifier `tracer-query-smoke` (job name) is referenced only by itself in `ci.yml` — that is expected for a leaf CI job (no in-repo branch-protection `required_status_checks` block exists; making this a required check is a GitHub-settings action, surfaced in §5d, not an in-repo half-wire).
+
+`Wiring Audit — clean ✅`
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3) — hardcoded seed INSERT is coupled to the current `intent_events` column set.** `clickhouse-tracer.integration.test.ts:~190` inlines a 10-column `INSERT INTO intent_events (intent_session_id, tenant_id, event_at, event_type, archetype_deltas, confidence_before, confidence_after, top_archetype, event_payload, session_id) VALUES (...)`. This matches 0014 (8 cols) + 0015 (`session_id`) exactly today. A future migration that adds a NON-defaulted column (or reorders, though ClickHouse INSERT is name-positional here so reorder is fine) would make this seed fail at `beforeAll` and red the job — which is arguably the DESIRED fail-loud behaviour, but the failure would read as a tracer-query regression, not a seed-schema-drift, costing triage time. Minor; flagged so the next `intent_events` migration author knows to update the seed. → no follow-up (covered by leaving it loud); noted for FOLLOW-317-adjacent awareness.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A — no product code changed.** This PR adds a guard; it does not touch the tracer logic. The bug this guard exists to catch (FOLLOW-315 Code 386) is already fixed; the negative control proves the guard would re-catch a regression. No NEW bug introduced.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — AC2 negative-control assertion is over-permissive: `rejects.toThrow(/Code: 386|NO_COMMON_TYPE|HTTP 500/)` (`clickhouse-tracer.integration.test.ts:302`).** The `|HTTP 500` alternative means the spec passes on ANY HTTP-500 thrown by `chTracerQuery` (whose error string is `ClickHouse tracer query failed: HTTP 500: <body>`). In the happy case the body DOES contain `Code: 386`, so the first two arms already match — but the `HTTP 500` arm is a catch-all that would also green on a 500 caused by a DIFFERENT engine error (e.g., the seed table missing, a syntax error introduced by a future edit to `brokenSql`, an OOM). A guard whose whole purpose is to prove "the Code-386 CLASS is caught" should assert the Code-386 signature SPECIFICALLY. Tightening to `/Code: 386|NO_COMMON_TYPE/` (drop the `HTTP 500` arm) makes the negative control honest. This is the SAME family the parent retro (RETRO-078 §6 Pattern B) flagged — a test that asserts a weaker contract than the one it claims to defend — recurring now on the assertion-precision axis. → FOLLOW-318 (P2, 1h).
+- **HW-1 / TG-2 (P2) — the latent DSR sibling (RETRO-078 LG-1 / FOLLOW-317) remains CI-uncovered.** The `tracer-query-smoke` job deliberately scopes vitest to ONLY `clickhouse-tracer.integration.test.ts` (job comment: "The DSR integration spec has known latent failures tracked by FOLLOW-317; running it here would produce false negatives"). This was the correct call — un-skipping a known-failing spec would red the new job — but it means `clickhouse-dsr.integration.test.ts` STILL self-skips in CI (its 4 `test.skipIf(!HAS_CLICKHOUSE)` gates at lines 142/192/220 are unchanged, `CLICKHOUSE_URL` is set in NO job that runs that file), so the `clickhouse-dsr.ts:271,275` lexicographic-ORDER-BY wrong-row bug RETRO-078 named has ZERO live-engine coverage. The ticket's own Notes offered this as optional free coverage; it was rightly declined pending FOLLOW-317's fix. The coverage hole is therefore inherited by FOLLOW-317: when that lands, the DSR spec MUST be wired into a live-CH job in the SAME PR (alongside this file, per the job comment's own TODO). Surfaced for PM — not a new follow-up (FOLLOW-317 already owns it); recorded so FOLLOW-317's AC explicitly includes the CI-wiring leg, not just the code fix.
+
+#### 4d. Documentation gaps
+
+- **N/A — exemplary.** The spec carries a ~55-line file-level docstring documenting the AC3 skip/hard-fail matrix, the passwordless-auth contract (matching `authHeaders` empty-password behaviour), the GET-vs-POST readonly distinction (`chPostSql` helper exists precisely because `chTracerQuery` uses GET, which ClickHouse rejects for INSERT/ALTER with Code 164), and the negative-control rationale. The CI job has a matching block comment including the explicit FOLLOW-317 TODO. This is the documentation standard RETRO-078 §4d praised in the parent fix, sustained.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-317 (Sprint 18, DSR alias-shadow sibling fix) — INHERITS the DSR CI-wiring leg.** Per §4c HW-1, the `tracer-query-smoke` job's own comment instructs FOLLOW-317 to add `clickhouse-dsr.integration.test.ts` to the job's vitest scope once the DSR latent failures are fixed. FOLLOW-317's AC should explicitly include "un-self-skip the DSR integration spec AND wire it into a live-CH job in the same PR," else the DSR fix ships with the same mock-only / self-skip blindness FOLLOW-316 just closed for the tracer. Surfaced for PM — no escalation; both tickets are in the same sprint.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-269 / K.3.6 tracer admin UI (RETRO-077 wiring fixes FOLLOW-309..312)** — strictly de-risked, not blocked. The tracer UI's date-filtered History/Export/SSE paths now have a live-engine regression guard behind them; any future edit to a tracer builder that reintroduces a query-analysis error fails `tracer-query-smoke` before reaching the UI. No action.
+- **Any new K.3.6 tracer builder** (e.g., D-3 simulation FOLLOW-282 if it adds a CH query) — SHOULD be added to the AC1 happy-path block in this spec so the live guard covers it too. Pattern-establishing, not blocking.
+
+#### 5c. Contracts changed others rely on
+
+- **None.** No product contract touched. The only new contract is the `tracer-query-smoke` CI job's existence + the `REQUIRE_CLICKHOUSE`/`CLICKHOUSE_URL`/`CLICKHOUSE_PASSWORD` env triad it consumes — internal to CI, no consumer outside the job.
+
+#### 5d. Architectural assumptions affected
+
+- **CONFIRMS the remedy-class that RETRO-076 and RETRO-078 both named: "K.3.6 data-plane correctness depends on a real backend CI never exercised."** FOLLOW-316 closes the live-ClickHouse-query-analysis half of that gap (RETRO-078); RETRO-076's no-auto-migrate half (FOLLOW-307, prod Supabase apply) remains open and orthogonal. The architectural pattern now established: a `services:`-backed CI job that boots the real engine + applies migrations + submits the real code path is the canonical way to guard query-analysis-class defects — reusable for decision-api and ingest CH queries (FOLLOW-317 sweep targets).
+- **NON-code repo-config note (surfaced, not a gap to fix here):** `tracer-query-smoke` is a new CI job but there is NO in-repo `required_status_checks` / branch-protection manifest, so whether this job is a MERGE-BLOCKING gate vs. an advisory check is a GitHub-settings decision outside the repo. If the intent is "a Code-386 regression must BLOCK merge," an operator must add `Tracer query-builders live ClickHouse guard` to the branch-protection required checks. Surfaced for the human/devops — the PM decides whether to escalate (CLAUDE.md: workflow needing repo-config that doesn't exist).
+
+### 6. New lesson candidates
+
+- **Pattern B continuation (live-backend-rejection vs mock-only test):** RETRO-078 §6 Pattern B flagged "a test that fixes a bug a REAL backend rejected MUST drive a real instance of that backend (or a non-self-skipping CI integration job), not only a mock of the call boundary" as count-1 on the live-backend-query-analysis axis, and explicitly said "when the NEXT live-backend-rejection-vs-mock-test instance appears, mint a rule." **This retro is NOT that next independent sighting — it is the REMEDIATION RETRO-078 prescribed** (FOLLOW-316 builds exactly the non-self-skipping CI integration job Pattern B called for). A cure-of-the-gap is not a second occurrence of the gap. The axis therefore stays **count-1**; **NOT promoted**. (Consistent with the threshold discipline RETRO-077/078 applied to the same family.)
+- **NEW sub-pattern candidate — assertion under-specifies the contract it guards (TG-1):** "a negative-control / guard test asserts a SUPERSET error matcher (`|HTTP 500`) broader than the specific defect class it claims to catch (`Code 386`), so it greens on unrelated failures of the same coarse HTTP status." — seen in: RETRO-079 (this, AC2 regex). This is a refinement of the RETRO-072 "tautological AC3.7 MAX_POLLS test" family (an assertion that passes for the wrong reason) and the RETRO-078 Pattern B family, but on the matcher-precision axis specifically. **count-1 on the matcher-precision axis** — NOT promoted; recorded for the next sighting.
+
+### 7. Follow-ups
+
+- **FOLLOW-318**: Tighten the AC2 negative-control assertion in `clickhouse-tracer.integration.test.ts:302` from `/Code: 386|NO_COMMON_TYPE|HTTP 500/` to `/Code: 386|NO_COMMON_TYPE/` (drop the catch-all `HTTP 500` arm) so the guard greens ONLY on the actual Code-386 class, not on any 500; optionally also assert the thrown message contains `event_at` to pin the alias-shadow shape (qa-engineer / backend-engineer, 1h, **P2**).
+- **(No new follow-up for the DSR CI-wiring leg)** — it is inherited by the existing **FOLLOW-317**; this retro's §5a recommends FOLLOW-317's AC be amended at promotion to explicitly include "un-self-skip + live-CH-wire the DSR integration spec in the same PR." Recorded here, no duplicate stub.
+
+### 8. Cross-references
+
+- **Direct child of RETRO-078 / FOLLOW-315 —** FOLLOW-316 is the literal follow-up RETRO-078 §7 generated to close its §4c TG-2 ("no CI job runs the tracer queries against a live ClickHouse"). This retro VERIFIES that closure is genuine end-to-end (CI job → live container → migrations → seed → real builder submission → Code-386 negative control), not one-hop. Closure confirmed; the only residuals are the assertion-precision TG-1 and the deliberately-deferred DSR coverage (FOLLOW-317).
+- **Related to RETRO-076 / FOLLOW-307 (real-backend-verification meta-gap) —** §5d: FOLLOW-316 closes the live-CH-query half; the no-auto-migrate / prod-apply half stays open under FOLLOW-307. Same remedy class, different backend.
+- **Related to RETRO-072 / RETRO-077 / RETRO-078 (fixture-lies / mock-proves-nothing / assertion-passes-for-wrong-reason family) —** §6: this retro adds a matcher-precision sub-axis (TG-1) to that family, count-1, held below threshold per the same discipline those retros applied.

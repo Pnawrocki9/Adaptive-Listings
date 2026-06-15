@@ -1,6 +1,6 @@
 # PM Orchestrator Status
 
-**Last updated:** 2026-06-14T10:00Z
+**Last updated:** 2026-06-15T00:00Z
 
 ## OPERATIONAL RECORD — Prod Supabase 14-migration drift catch-up (2026-06-14)
 
@@ -40,46 +40,46 @@ unblock FOLLOW-308 implementation.
 
 ## Current sprints
 
-- **Sprint 17 OPEN** — K.3.6 D-1 PRODUCTION-LIVE as of 2026-06-14 (FOLLOW-307 DONE). 19 DONE, 0
-  READY, 2 BLOCKED (FOLLOW-269/FOLLOW-293), backlog: FOLLOW-295/296/298/300/303/304/306/308
-  - pre-existing FOLLOW-282/290/291/292.
+- **Sprint 17 OPEN** — K.3.6 D-1 PRODUCTION-LIVE as of 2026-06-14 (FOLLOW-307 DONE). 21 DONE, 0
+  READY, 1 BLOCKED (FOLLOW-293 — now UNBLOCKED, pending qa delegation), backlog:
+  FOLLOW-295/296/298/300/303/304/306 + pre-existing FOLLOW-282/290/291/292. FOLLOW-269 +
+  FOLLOW-309/310/311/312 DONE (PR #298 + #299, 2026-06-14).
+- **Sprint 18 OPEN** — FOLLOW-316 DONE. FOLLOW-317 + FOLLOW-318 stubs pending promotion.
 - **Sprint 16 COMPLETE** — 16/17 DONE; FOLLOW-191 READY_FOR_REVIEW (ESC-020 pending Rafal deploy,
   non-blocking per CEO 2026-06-10).
 - **Sprint 15 COMPLETE** — 21/21 DONE.
 
 ## IN_PROGRESS tickets (0/3 max)
 
-None active.
+None active — retro spawns queued (RETRO-064 / RETRO-067 / RETRO-068 / retro for PR #299).
 
 ## ADR-0012 D-1 chain — complete dependency tree (as of 2026-06-14T10:00Z)
 
-| Ticket                      | Label          | Status      | PR / commit    | Notes                                                               |
-| --------------------------- | -------------- | ----------- | -------------- | ------------------------------------------------------------------- |
-| FOLLOW-266                  | Foundation     | DONE        | #277/278/280   | DB schema + SDK emission (3 phases)                                 |
-| FOLLOW-286                  | Prereq         | DONE        | #279           | on_conflict / event_type / join-key fixes                           |
-| FOLLOW-287/288              | CH smoke       | DONE        | #281/282       | migration 0016 no-op; ESC-021 RESOLVED                              |
-| FOLLOW-267                  | Ticket —       | DONE        | #283           | 8 tracer routes + /api/intent/config                                |
-| FOLLOW-294 (Ticket A)       | Auth + schema  | DONE        | #284 (4e45e3a) | cross-tenant enum gap closed; IntentWeightsSchema                   |
-| FOLLOW-268-write (Ticket B) | Write API      | DONE        | #285 (2998a93) | POST/PUT; write-side validation satisfied                           |
-| FOLLOW-297 (Ticket D)       | Tests          | DONE        | #286 (8cdf94f) | 111 tests; DG-1 docstring fixed                                     |
-| FOLLOW-299 (enum prereq)    | Enum prereq    | DONE        | #287 (c387103) | data_source widened to include 'error'                              |
-| FOLLOW-301                  | Invariant      | DONE        | #289 (a14c907) | one-active invariant + ORDER BY + real POST→GET test                |
-| FOLLOW-268 (Ticket C)       | SDK init       | DONE        | #290 (ea2089b) | resolveIntentOverrides + fetchIntentWeights                         |
-| FOLLOW-305                  | URL fix        | DONE        | #291 (3d9e8f0) | buildEndpoint; fixed double-/api on 4 SDK endpoints                 |
-| FOLLOW-266 Ph2 seed         | Seed           | DONE        | #293 (6381499) | migration 0030 merged; global-default row in repo                   |
-| **FOLLOW-307**              | **Prod apply** | **DONE**    | operator apply | All 14 pending migrations applied 2026-06-14; seed verified in prod |
-| **FOLLOW-308**              | **Auto-apply** | **PR-OPEN** | PR (inert)     | db-migrate.yml implemented; inert until ESC-023 secrets provisioned |
-| FOLLOW-269                  | Frontend UI    | BLOCKED     | —              | Blocked on FOLLOW-268 (Ticket C — now DONE); ready to delegate      |
-| FOLLOW-293                  | Closure gate   | BLOCKED     | —              | FOLLOW-307 done → now blocked only on FOLLOW-269; live smoke needed |
+| Ticket                      | Label          | Status    | PR / commit    | Notes                                                               |
+| --------------------------- | -------------- | --------- | -------------- | ------------------------------------------------------------------- |
+| FOLLOW-266                  | Foundation     | DONE      | #277/278/280   | DB schema + SDK emission (3 phases)                                 |
+| FOLLOW-286                  | Prereq         | DONE      | #279           | on_conflict / event_type / join-key fixes                           |
+| FOLLOW-287/288              | CH smoke       | DONE      | #281/282       | migration 0016 no-op; ESC-021 RESOLVED                              |
+| FOLLOW-267                  | Ticket —       | DONE      | #283           | 8 tracer routes + /api/intent/config                                |
+| FOLLOW-294 (Ticket A)       | Auth + schema  | DONE      | #284 (4e45e3a) | cross-tenant enum gap closed; IntentWeightsSchema                   |
+| FOLLOW-268-write (Ticket B) | Write API      | DONE      | #285 (2998a93) | POST/PUT; write-side validation satisfied                           |
+| FOLLOW-297 (Ticket D)       | Tests          | DONE      | #286 (8cdf94f) | 111 tests; DG-1 docstring fixed                                     |
+| FOLLOW-299 (enum prereq)    | Enum prereq    | DONE      | #287 (c387103) | data_source widened to include 'error'                              |
+| FOLLOW-301                  | Invariant      | DONE      | #289 (a14c907) | one-active invariant + ORDER BY + real POST→GET test                |
+| FOLLOW-268 (Ticket C)       | SDK init       | DONE      | #290 (ea2089b) | resolveIntentOverrides + fetchIntentWeights                         |
+| FOLLOW-305                  | URL fix        | DONE      | #291 (3d9e8f0) | buildEndpoint; fixed double-/api on 4 SDK endpoints                 |
+| FOLLOW-266 Ph2 seed         | Seed           | DONE      | #293 (6381499) | migration 0030 merged; global-default row in repo                   |
+| **FOLLOW-307**              | **Prod apply** | **DONE**  | operator apply | All 14 pending migrations applied 2026-06-14; seed verified in prod |
+| **FOLLOW-308**              | **Auto-apply** | **DONE**  | PR #297/#306   | db-migrate.yml LIVE end-to-end; ESC-022+ESC-023 RESOLVED 2026-06-15 |
+| FOLLOW-269                  | Frontend UI    | DONE      | #298           | Merged 2026-06-14; RETRO-077 complete; FOLLOW-309-312 generated     |
+| FOLLOW-309/310/311/312      | UI bug fixes   | DONE      | #299           | Merged 2026-06-14; retro pending spawn                              |
+| FOLLOW-293                  | Closure gate   | UNBLOCKED | —              | All deps DONE; ready to delegate to qa-engineer                     |
 
 ## READY tickets (next up)
 
-No tickets currently READY. Immediate priorities for next sprint planning:
-
-- FOLLOW-308 (P1 devops) — PR-OPEN (inert-pending-secret ESC-023): db-migrate.yml implemented;
-  activates when DOPPLER_TOKEN_STG + DOPPLER_TOKEN_PRD provisioned; AC3 blocked on ESC-022
-- FOLLOW-293 (P2 qa-engineer) — live-network smoke test; now unblocked by FOLLOW-307 DONE
-- FOLLOW-269 (P2 backend-engineer) — frontend UI; now unblocked by FOLLOW-268 DONE
+- FOLLOW-293 (P2 qa-engineer) — live-network smoke; all deps DONE; delegate NOW
+- FOLLOW-317 (P2 data-engineer) — alias-shadow audit; stub needs Sprint 18 promotion
+- FOLLOW-318 (P2 qa-engineer) — AC2 assertion tighten; stub needs Sprint 18 promotion
 
 ## ADR-0012 backlog (not yet sprint-planned)
 
@@ -121,39 +121,42 @@ CONVENTIONS_PATCH.md.
 
 ## Pending retros (carry-forward from earlier sessions)
 
-- RETRO-064 — FOLLOW-266 Phase 1 (PR #277, data-engineer)
-- RETRO-067 — FOLLOW-266 Phase 3 (PR #280, sdk-engineer)
-- RETRO-068 — FOLLOW-286 (PR #279, backend-engineer)
+- RETRO-064 — FOLLOW-266 Phase 1 (PR #277, data-engineer) — PENDING SPAWN
+- RETRO-067 — FOLLOW-266 Phase 3 (PR #280, sdk-engineer) — PENDING SPAWN
+- RETRO-068 — FOLLOW-286 (PR #279, backend-engineer) — PENDING SPAWN
+- RETRO for PR #299 (FOLLOW-309/310/311/312 tracer UI bug fixes, backend-engineer) — PENDING SPAWN
 
-## Open escalations (age in days as of 2026-06-14)
+Next free RETRO number: 080 (RETRO-079 = FOLLOW-316 / PR #305, complete). Spawn order: RETRO-064
+first (oldest; foundation for K.3.6 data plane).
 
-| ESC     | Title                                                                        | Filed      | Age | Status                                                                                                                                                                |
-| ------- | ---------------------------------------------------------------------------- | ---------- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ESC-020 | Estalara-app DOM hooks committed but not deployed to production              | 2026-06-06 | 8d  | Non-blocking per CEO 2026-06-10; Rafal action deferred until local test                                                                                               |
-| ESC-022 | Prod Supabase was 14 migrations behind — compliance gap + standing mechanism | 2026-06-14 | 0d  | **PARTIALLY-RESOLVED** — item (1) compliance integrity SIGNED OFF 2026-06-14 by Piotr (CEO); item (2) OPEN: Option A/B mechanism decision for FOLLOW-308 still needed |
+## Open escalations (age in days as of 2026-06-15)
 
-All ESC-001 through ESC-021 RESOLVED (ESC-021 resolved 2026-06-12 via FOLLOW-288 / PR #282).
+| ESC     | Title                                                           | Filed      | Age | Status                                                                  |
+| ------- | --------------------------------------------------------------- | ---------- | --- | ----------------------------------------------------------------------- |
+| ESC-020 | Estalara-app DOM hooks committed but not deployed to production | 2026-06-06 | 9d  | Non-blocking per CEO 2026-06-10; Rafal action deferred until local test |
+
+All ESC-001 through ESC-023 RESOLVED (ESC-022+ESC-023 resolved 2026-06-15; ESC-021 resolved
+2026-06-12 via FOLLOW-288 / PR #282).
 
 ## CI check counter (current session)
 
-Bookkeeping/status update session only — no PRs validated. CI check counter: 0/5. Fix iteration
-counter: 0/3.
+State-correction pass (FOLLOW-269 → DONE, STATUS.md + QUEUE.md updated). No PRs validated. CI check
+counter: 0/5. Fix iteration counter: 0/3.
 
 ## Notes
 
 - K.3.6 D-1 is PRODUCTION-LIVE as of 2026-06-14. The full chain (snippet → SDK init →
   fetchIntentWeights → GET /api/intent/config → weights applied to processSignal()) is wired and the
   seed row exists in prod. FOLLOW-293 (live-network smoke) is the final verification step.
-- ESC-022 item (1) SIGNED OFF 2026-06-14 by Piotr (CEO): compliance data-integrity gap confirmed
-  benign — pre-pilot, zero traffic, purely-additive migrations, prod DB auto-paused. No remediation
-  needed. ESC-022 item (2) OPEN: Piotr must choose Option A (auto-apply on deploy) or Option B (CI
-  divergence gate) to unblock FOLLOW-308 implementation.
-- FOLLOW-293 (closure gate / live smoke) can now be delegated to qa-engineer once sprint capacity
-  permits. It was previously blocked on FOLLOW-307 (now DONE).
-- FOLLOW-269 (frontend UI) is now unblocked by FOLLOW-268 (Ticket C — DONE). Ready to delegate to
-  backend-engineer at next sprint planning.
+- ESC-022 + ESC-023 FULLY RESOLVED 2026-06-15. FOLLOW-308 DONE (db-migrate.yml LIVE). ESC-020
+  remains OPEN but is non-blocking per CEO (2026-06-10).
+- FOLLOW-269 DONE — PR #298 merged 2026-06-14. RETRO-077 complete (3 wiring bugs found).
+  FOLLOW-309/310/311/312 DONE — PR #299 merged 2026-06-14.
+- FOLLOW-293 (closure gate / live smoke) now UNBLOCKED. All dependencies DONE. Ready to delegate to
+  qa-engineer immediately.
 - FOLLOW-303 (data_source round-trip test + MAX_POLLS pin): still pending delegation.
 - FOLLOW-295 / FOLLOW-296 are independent and can be scheduled in parallel with FOLLOW-303.
-- RETRO-064/067/068 remain pending spawn from earlier. PM should spawn these at next available slot.
-- This bookkeeping pass (QUEUE.md + STATUS.md + ESCALATIONS.md + FOLLOW_UPS.md) captures the
-  2026-06-14 prod apply event and drift finding. No code was changed.
+- RETRO-064/067/068 pending spawn since 2026-06-12 (3 days). Plus retro for PR #299 pending. PM
+  spawning RETRO-064 first (FOLLOW-266 Phase 1, PR #277, data-engineer, oldest).
+- FOLLOW-317 (data-engineer, alias-shadow audit, P2) and FOLLOW-318 (qa-engineer, assertion tighten,
+  P2) need Sprint 18 promotion and ticket files.

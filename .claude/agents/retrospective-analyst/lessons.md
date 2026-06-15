@@ -980,3 +980,33 @@
   trips a rule ("a fix for a bug a real backend rejected MUST ship with a spec driving a real
   instance of that backend, or a non-self-skipping CI integration job"); and the NEXT
   `f(col) AS col` alias-shadow sighting trips a ClickHouse-query rule distinct from Rule W.
+
+## 2026-06-14 · RETRO-079 (PR #305, FOLLOW-316 — live-ClickHouse `tracer-query-smoke` CI guard; the remediation RETRO-078 §4c TG-2 prescribed; NO Rule promoted)
+
+- **A finding I almost missed and why:** The AC2 negative-control assertion
+  `/Code: 386|NO_COMMON_TYPE|HTTP 500/` LOOKS rigorous — it names the exact bug class. I nearly
+  rubber-stamped it as "guard proven." The `|HTTP 500` arm is the trap: because `chTracerQuery`
+  stringifies EVERY non-2xx as `HTTP 500: <body>`, that arm is a catch-all that greens on any 500.
+  Lesson for next time: when a test claims to prove a SPECIFIC failure class, read the matcher's
+  WEAKEST alternative, not its strongest — an OR-regex is only as precise as its loosest arm. This
+  is the matcher-precision cousin of the RETRO-072 tautological-assertion family.
+- **An axis/chain I had to trace twice:** The "is this a NEW sighting that trips Rule promotion?"
+  question. First pass I almost counted FOLLOW-316 as the 2nd sighting of RETRO-078's Pattern B
+  (live-backend-vs-mock) → would have falsely hit threshold 2 → premature rule. Second pass: a
+  REMEDIATION of a named gap is NOT a second independent OCCURRENCE of that gap. The cure and the
+  disease are the same axis, count-1. Codify this distinction: a follow-up that BUILDS the thing a
+  prior retro asked for never advances that pattern's promotion count — only an independent fresh
+  bug does.
+- **An axis I had to verify, not assume:** the negative-control SQL ACTUALLY reproduces the
+  FOLLOW-315 broken shape. I diffed `brokenSql` (`toString(event_at) AS event_at` + bare
+  `event_at >= parseDateTimeBestEffort(...)`) against the 4 FIXED builders (all
+  `intent_events.event_at` qualified) and the migration column set (0014+0015) before trusting the
+  guard. A guard that submits a query is only as good as whether that query is the real bug shape —
+  worth the two greps.
+- **Meta-pattern in how gaps recur across agents:** the K.3.6 arc keeps surfacing the SAME meta-gap
+  from different doors — "prod-acting code whose correctness depends on a real backend CI never
+  exercises" (RETRO-076 no-auto-migrate, RETRO-078 mock-only CH test, now RETRO-079 closing the CH
+  half). The remediation always has a residual deferred to the next ticket (here: the DSR spec stays
+  self-skipping, inherited by FOLLOW-317). Watch for the "we fixed the guard but the sibling path is
+  still uncovered" shape — closure of one hop routinely leaves the adjacent hop open, exactly the
+  half-wire-moves-downstream pattern the agent spec warns about.

@@ -5,8 +5,11 @@ export default defineConfig([
   // FOLLOW-324: auto-detect pipeline is NOT bundled here (it adds ~17 KB gzip).
   // Tenants who want cold-start archetype hints load estalara-detect.iife.js
   // separately BEFORE this script (see the detect-bundle entry below).
-  // The main SDK reads window.__EStalaraDetect opportunistically; missing detect
-  // script is non-fatal — the Decision API's server-side schema is used instead.
+  // The main SDK reads window.__EStalaraDetect opportunistically; if the detect
+  // script (estalara-detect.iife.js) is absent, cold-start site-level archetype
+  // hints are skipped. Referrer and device-type cold-start priors still apply.
+  // The archetype_hint sent to /api/adapt on the first refreshDirectives() call
+  // defaults to 'neutral' until behavioral signals converge.
   {
     entry: { 'estalara-sdk': 'src/index.ts' },
     format: ['iife'],

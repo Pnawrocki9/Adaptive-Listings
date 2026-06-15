@@ -15,9 +15,10 @@
  *   <script src="estalara-sdk.iife.js" data-api-key="…"></script>
  *
  * The main SDK reads `window.__EStalaraDetect` opportunistically — if this
- * script is absent (e.g. tenant omits it), cold-start archetype hints are
- * skipped. The Decision API's server-side schema is used instead on the
- * first adapt request.
+ * script (estalara-detect.iife.js) is absent, cold-start site-level archetype
+ * hints are skipped. Referrer and device-type cold-start priors still apply.
+ * The `archetype_hint` sent to /api/adapt on the first refreshDirectives() call
+ * defaults to 'neutral' until behavioral signals converge.
  *
  * @module @estalara/sdk/auto-detect/detect-bundle
  */

@@ -4659,11 +4659,12 @@ pending planning.**
     intent.ts processSignal() for all 13 signals; confirmed by a non-test producer + non-test
     consumer grep and a live integration assertion / live-network smoke test
   agent: qa-engineer
-  status: BLOCKED
+  status: IN_PROGRESS
   priority: P2
   estimated_hours: 3
   depends_on: [FOLLOW-268, FOLLOW-269]
   spec: backlog/FOLLOW_UPS.md (FOLLOW-293 stub)
+  branch: qa-engineer/FOLLOW-293-live-network-smoke
   notes: |
     FOLLOW-268-sdk (Ticket C) DONE (PR #290) and FOLLOW-305 (prod URL fix, PR #291) DONE.
     All code hops are correct and production-live. Only remaining blocker: live-network smoke test
@@ -4672,6 +4673,9 @@ pending planning.**
     coverage was added by FOLLOW-305 TG-1 tests; FOLLOW-293 is the live-network closure.
     Also requires FOLLOW-266 Phase 2 global-default row seeded before live weights can apply.
     Promoted from ADR-0012 planning.
+    2026-06-15: qa-engineer implemented smoke test at tests/integration/intent-weights-live.smoke.test.ts
+    + CI job intent-weights-live-smoke.yml. Soft-skips cleanly when secrets absent. Hard-fails when
+    REQUIRE_LIVE_INTENT_SMOKE=1 + secrets absent. ESC-024 filed for secret provisioning. PR pending.
 
 - id: FOLLOW-295
   title: >

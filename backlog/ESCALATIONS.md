@@ -1210,3 +1210,63 @@ compliance sign-off** on migrations 0019/0020/0024 against pre-schema prod — w
 2026-06-14 (ESC-022 item 1, Piotr/CEO). With activation now verified live, ESC-022 item (2)
 (standing mechanism) is also closed → ESC-022 fully RESOLVED and **FOLLOW-308 closed in full**
 2026-06-15.
+
+---
+
+## OPEN — ESC-024: GitHub Actions secrets required for FOLLOW-293 K.3.6 D-1 live-network smoke [FOLLOW-293]
+
+**Filed:** 2026-06-15 by qa-engineer **Blocks:** FOLLOW-293 hard-assert mode (smoke currently
+soft-skips in all CI runs) **Priority:** P2
+
+**Context:**
+
+FOLLOW-293 adds a live-network smoke (`tests/integration/intent-weights-live.smoke.test.ts`) that
+calls the real SDK `fetchIntentWeights()` against the real `GET /api/intent/config` endpoint and
+asserts `data_source: 'live'` (proving migration 0030 / FOLLOW-307 AC1 is effective in production).
+The CI job (`intent-weights-live-smoke.yml`) runs on every push but soft-skips when the required
+secrets are absent. Currently **no run will exercise the live assertion** because neither secret is
+provisioned.
+
+**Secrets needed:**
+
+1. `ESTALARA_SMOKE_API_KEY` — a real tenant Bearer token for a real row in `api_keys` in the
+   production Supabase (project `yhmivuqeqkmzpxpyrsvc`, eu-west-3). The token must be for a tenant
+   that has NO tenant-specific `intent_weight_configs` row so it falls through to the global seed
+   row and returns `data_source: 'live'`. Any real onboarded-tenant key works, or a dedicated
+   smoke-tenant key seeded via `pnpm seed:local-tenant` run against prod.
+
+2. `ESTALARA_SMOKE_DECISION_API_URL` — the production `decisionApiUrl` value, which is
+   `https://admin.estalara.com/api` (host + `/api`, as emitted by `buildSnippet()` in
+   `DetectionPreview.tsx:153`). This is NOT a secret (it is already public in the snippet), but it
+   is included as a secret so the CI job can be pointed at staging vs production without a code
+   change. Staging value: `https://admin-stg.estalara.com/api` (if a staging deployment exists).
+
+**Steps to provision:**
+
+1. Create (or reuse) a tenant API key in production Supabase:
+   - Find an existing active key:
+     `SELECT raw_key, tenant_id FROM api_keys WHERE revoked_at IS NULL LIMIT 1;` (requires
+     `pnpm db:studio` or Supabase SQL editor with service-role access).
+   - Alternatively run `pnpm seed:local-tenant` against prod to create a dedicated smoke tenant.
+2. Add both secrets to the GitHub repo:
+   - GitHub repo → Settings → Secrets and variables → Actions → New repository secret
+   - `ESTALARA_SMOKE_API_KEY`: the raw API key value
+   - `ESTALARA_SMOKE_DECISION_API_URL`: `https://admin.estalara.com/api`
+3. Push a commit to main or use `workflow_dispatch` on `intent-weights-live-smoke.yml`.
+4. Confirm the job enters the HARD-FAIL mode (not soft-skip): look for `secrets_present=true` in the
+   "Check secret availability" step.
+5. Confirm the smoke assertions pass: AC-LN1, AC-LN2, AC-LN3 all green.
+6. Mark ESC-024 RESOLVED.
+
+**What happens until ESC-024 is resolved:**
+
+Every CI run emits:
+`::notice::ESTALARA_SMOKE_API_KEY is not set — K.3.6 D-1 live-network smoke will soft-skip.`
+
+The smoke test suite itself reports all 3 tests as skipped. This is NOT a CI failure — it is a
+documented, intentional soft-skip. The live assertion gap (FOLLOW-293's core purpose) is documented
+here so it cannot be forgotten.
+
+**Security note:** `ESTALARA_SMOKE_API_KEY` must be a read-only SDK API key (same `scopes` as the
+`data-api-key` attribute in the install snippet — `write:events` if the ingest is wired, or a custom
+read scope). It must NOT be an admin key or service-role key.

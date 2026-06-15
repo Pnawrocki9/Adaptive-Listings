@@ -1,0 +1,82 @@
+name: K.3.6 D-1 Intent Weights Live Smoke (FOLLOW-293)
+
+# Runs on every push to main and on every PR — but self-skips when the
+# required secrets are absent (forked PRs, branches without secret access).
+# When ESTALARA_SMOKE_API_KEY is present (internal PRs / scheduled runs),
+# the job sets REQUIRE_LIVE_INTENT_SMOKE=1 and the spec HARD-FAILS on any
+# broken wire — no silent green badge over a dead endpoint.
+#
+# Skip-loud contract (mirrors tracer-query-smoke / RETRO-007 FOLLOW-097/114/127/141):
+#   secrets absent → soft-skip with ::notice:: in the spec output
+#   REQUIRE_LIVE_INTENT_SMOKE=1 + secrets absent → spec throws (hard-fail)
+#   secrets present + endpoint broken → spec assertion fails (hard-fail)
+#
+# ESC-024: ESTALARA_SMOKE_API_KEY and ESTALARA_SMOKE_DECISION_API_URL are not
+# yet provisioned as GitHub Actions secrets. Until they are, every run enters
+# the soft-skip path. See backlog/ESCALATIONS.md ESC-024.
+
+on:
+  push:
+    branches:
+      - main
+      - "qa-engineer/**"
+      - "backend-engineer/**"
+      - "sdk-engineer/**"
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # Nightly at 04:00 UTC — production canary run
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  intent-weights-live-smoke:
+    name: K.3.6 D-1 live-network smoke (fetchIntentWeights → GET /api/intent/config)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @estalara/shared (SDK import dependency)
+        run: pnpm --filter @estalara/shared build
+
+      # Announce skip when secrets are absent — soft-skip, not a failure.
+      # When ESTALARA_SMOKE_API_KEY IS set, REQUIRE_LIVE_INTENT_SMOKE=1 is
+      # forwarded to the spec so a misconfigured endpoint hard-fails instead
+      # of silently skipping.
+      - name: Check secret availability
+        id: secret-check
+        env:
+          ESTALARA_SMOKE_API_KEY: ${{ secrets.ESTALARA_SMOKE_API_KEY }}
+        run: |
+          if [ -z "${ESTALARA_SMOKE_API_KEY}" ]; then
+            echo "::notice::ESTALARA_SMOKE_API_KEY is not set — K.3.6 D-1 live-network smoke will soft-skip. Provision the secret per ESC-024 to enable live assertions."
+            echo "secrets_present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "secrets_present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run K.3.6 D-1 live-network smoke
+        working-directory: tests/integration
+        env:
+          ESTALARA_SMOKE_DECISION_API_URL: ${{ secrets.ESTALARA_SMOKE_DECISION_API_URL }}
+          ESTALARA_SMOKE_API_KEY: ${{ secrets.ESTALARA_SMOKE_API_KEY }}
+          # Set REQUIRE_LIVE_INTENT_SMOKE=1 only when secrets are present.
+          # This makes the spec hard-fail if secrets are present but the endpoint
+          # is broken — preventing a silent pass over a dead wire.
+          REQUIRE_LIVE_INTENT_SMOKE: ${{ steps.secret-check.outputs.secrets_present == 'true' && '1' || '' }}
+        run: pnpm exec vitest run --config vitest.config.ts

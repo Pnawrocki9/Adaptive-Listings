@@ -41,6 +41,7 @@ import { assignHoldout, DEFAULT_HOLDOUT_PCT, thompsonSample } from '@estalara/sh
 import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { getAuthClaims } from '@estalara/auth';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { publishAbAssignmentEvent } from '@/lib/ab-events';
@@ -365,6 +366,7 @@ function logDecisionAsync(
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
   if (!clickhouseUrl) return;
 
+  const clickhouseUser = process.env.CLICKHOUSE_USER ?? 'default';
   const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
   const ts = new Date().toISOString().replace('T', ' ').replace('Z', '');
 
@@ -414,11 +416,7 @@ function logDecisionAsync(
     body: query,
     headers: {
       'Content-Type': 'text/plain',
-      ...(clickhousePassword
-        ? {
-            Authorization: `Basic ${Buffer.from(`:${clickhousePassword}`).toString('base64')}`,
-          }
-        : {}),
+      ...clickhouseAuthHeaders({ user: clickhouseUser, password: clickhousePassword }),
     },
   }).catch((err: unknown) => {
     // Analytics failures must not surface to callers

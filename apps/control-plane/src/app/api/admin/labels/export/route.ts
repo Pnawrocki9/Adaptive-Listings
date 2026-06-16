@@ -37,6 +37,7 @@ import { eq } from 'drizzle-orm';
 
 import { getAuthClaims, isStaffClaims } from '@estalara/auth';
 import { createAdminClient, conversionLabels, staffAuditLog } from '@estalara/db';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 
 // ─── ExportRow ────────────────────────────────────────────────────────────────
 
@@ -86,16 +87,9 @@ interface ChDecisionRow {
   features_snapshot: string | null;
 }
 
-function clickHouseHeaders(password: string): Record<string, string> {
-  const headers: Record<string, string> = { 'Content-Type': 'text/plain' };
-  if (password) {
-    headers.Authorization = `Basic ${Buffer.from(`:${password}`).toString('base64')}`;
-  }
-  return headers;
-}
-
 async function chQuery<T>(
   baseUrl: string,
+  user: string,
   password: string,
   sql: string,
   params: Record<string, string>,
@@ -107,7 +101,10 @@ async function chQuery<T>(
   }
   const res = await fetch(url.toString(), {
     method: 'GET',
-    headers: clickHouseHeaders(password),
+    headers: {
+      'Content-Type': 'text/plain',
+      ...clickhouseAuthHeaders({ user, password }),
+    },
   });
   if (!res.ok) {
     throw new Error(`ClickHouse query failed: HTTP ${String(res.status)}`);
@@ -133,6 +130,7 @@ async function fetchDecisionContext(
   if (!baseUrl) return null;
   if (decisionIds.length === 0) return new Map();
 
+  const user = process.env.CLICKHOUSE_USER ?? 'default';
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
 
   // All decisionIds come from Postgres rows (not direct user input) and have
@@ -158,7 +156,7 @@ async function fetchDecisionContext(
     LIMIT 10000
   `;
 
-  const rows = await chQuery<Record<string, unknown>>(baseUrl, password, sql, {
+  const rows = await chQuery<Record<string, unknown>>(baseUrl, user, password, sql, {
     tenant_id: tenantId,
   });
 

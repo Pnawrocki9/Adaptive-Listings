@@ -58,6 +58,7 @@ import * as Sentry from '@sentry/nextjs';
 import { getAuthClaims } from '@estalara/auth';
 import { eq, and, inArray } from 'drizzle-orm';
 import { createAdminClient, conversionLabels } from '@estalara/db';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import {
   buildCalibrationFromRaw,
   buildCalibrationExportRows,
@@ -116,12 +117,11 @@ function parseFormat(
 
 // ─── ClickHouse access ────────────────────────────────────────────────────────
 
-function clickHouseHeaders(password: string): Record<string, string> {
-  const headers: Record<string, string> = { 'Content-Type': 'text/plain' };
-  if (password) {
-    headers.Authorization = `Basic ${Buffer.from(`:${password}`).toString('base64')}`;
-  }
-  return headers;
+function clickHouseHeaders(user: string, password: string): Record<string, string> {
+  return {
+    'Content-Type': 'text/plain',
+    ...clickhouseAuthHeaders({ user, password }),
+  };
 }
 
 /**
@@ -131,6 +131,7 @@ function clickHouseHeaders(password: string): Record<string, string> {
  */
 async function chQuery<T>(
   baseUrl: string,
+  user: string,
   password: string,
   sql: string,
   params: Record<string, string>,
@@ -143,7 +144,7 @@ async function chQuery<T>(
 
   const res = await fetch(url.toString(), {
     method: 'GET',
-    headers: clickHouseHeaders(password),
+    headers: clickHouseHeaders(user, password),
   });
   if (!res.ok) {
     throw new Error(`ClickHouse query failed: HTTP ${String(res.status)}`);
@@ -170,6 +171,7 @@ async function fetchDecisionsFromClickHouse(
 ): Promise<ChDecisionRow[] | null> {
   const baseUrl = process.env.CLICKHOUSE_URL;
   if (!baseUrl) return null;
+  const user = process.env.CLICKHOUSE_USER ?? 'default';
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
 
   // Sync approach: query-time join (MVP — fine for pilot scale <10k decisions/tenant).
@@ -185,7 +187,7 @@ async function fetchDecisionsFromClickHouse(
       AND adapt_decision_id != ''
   `;
 
-  const rows = await chQuery<Record<string, unknown>>(baseUrl, password, decisionSql, {
+  const rows = await chQuery<Record<string, unknown>>(baseUrl, user, password, decisionSql, {
     tenant_id: tenantId,
     window_days: String(windowDays),
   });

@@ -34,12 +34,14 @@
  *   the container is created fresh per CI run.
  *
  * Auth contract (AC3 / CRITICAL):
- *   The tracer client sends `Authorization: Basic base64(":<password>")` only
+ *   The tracer client sends `Authorization: Basic base64("<user>:<password>")` only
  *   when CLICKHOUSE_PASSWORD is non-empty. The `tracer-query-smoke` CI job boots
  *   ClickHouse with `CLICKHOUSE_SKIP_USER_SETUP=1` (passwordless default user)
  *   and passes `CLICKHOUSE_PASSWORD=""`, so no Authorization header is sent.
- *   This avoids the "empty username" HTTP 403 that a password-protected instance
- *   would return (verified: FOLLOW-316 spec authorship).
+ *   When a password IS provided, CLICKHOUSE_USER (default: "default") is always
+ *   included before the colon — the previous empty-username form
+ *   `base64(":password")` was rejected by ClickHouse Cloud (Code 516
+ *   AUTHENTICATION_FAILED) and is fixed in this PR.
  *
  * Negative control (AC2):
  *   A deliberate bare-`event_at` predicate (the FOLLOW-315 broken shape) is
@@ -48,6 +50,7 @@
  *
  * Env contract:
  *   CLICKHOUSE_URL       — HTTP endpoint, e.g. http://localhost:8123
+ *   CLICKHOUSE_USER      — optional; defaults to "default" (passwordless CI: omit)
  *   CLICKHOUSE_PASSWORD  — optional; omit / leave empty for passwordless CH
  *   REQUIRE_CLICKHOUSE   — set to "1" in the CI job to hard-fail on missing CH
  *
@@ -64,6 +67,7 @@ import {
   fetchNewIntentEvents,
   resolveClickHouseTracerConfig,
 } from '@/lib/clickhouse-tracer';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 
 // ─── POST helper for write operations (INSERT / ALTER … DELETE) ──────────────
 //
@@ -75,10 +79,10 @@ async function chPostSql(cfg: ClickHouseTracerConfig, sql: string): Promise<void
   const url = new URL(cfg.url);
   url.searchParams.set('database', cfg.database);
 
-  const headers: Record<string, string> = { 'Content-Type': 'text/plain' };
-  if (cfg.password) {
-    headers.Authorization = `Basic ${Buffer.from(`:${cfg.password}`).toString('base64')}`;
-  }
+  const headers: Record<string, string> = {
+    'Content-Type': 'text/plain',
+    ...clickhouseAuthHeaders(cfg),
+  };
 
   const res = await fetch(url.toString(), {
     method: 'POST',

@@ -9014,8 +9014,34 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   Server Actions and middleware.
 - **promoted_to_queue:** true (2026-06-15, Sprint 18)
 
+## FOLLOW-329 — Apply Rule K.2 fail-loud + `data_source` provenance to `/api/dashboard/analytics/summary`
+
+- **status:** OPEN
+- **source_ticket:** FOLLOW-328 (PR pending) — surfaced while migrating the route's ClickHouse auth
+  header to fix Code 516.
+- **recommended_sprint:** 18
+- **recommended_agent:** data-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** The summary route is the un-fixed sibling of FOLLOW-124 (which applied this to
+  `/api/dashboard/analytics/lift`). `summary/route.ts:145-146` does
+  `fetchSummaryFromClickHouse(tenantId).catch(() => null)` then
+  `chData ?? buildMockSummary(tenantId)` — so with `CLICKHOUSE_URL` set, ANY query failure
+  (including the Code 516 auth failure FOLLOW-328 just fixed) silently serves fabricated mock
+  numbers at HTTP 200. Worse than lift: the `SummaryResponse` has NO `data_source` field, so the
+  consumer cannot even distinguish mock from real. Fix: fail loud on a configured-but-failing
+  ClickHouse (re-throw / 500 with structured error per Rule K.2), keep `buildMockSummary` ONLY for
+  the `CLICKHOUSE_URL`-unset (dev/CI) path, and add a `data_source: 'clickhouse' | 'mock' | 'error'`
+  field consumed by `/dashboard/analytics/page.tsx` (overlaps FOLLOW-142 consumer wire).
+- **ac:**
+  - [ ] AC1: With `CLICKHOUSE_URL` set, a failing summary query returns a fail-loud error (not a
+        silent mock 200); a test asserts this.
+  - [ ] AC2: `buildMockSummary` is reachable ONLY when `CLICKHOUSE_URL` is unset.
+  - [ ] AC3: `SummaryResponse` carries `data_source` and the page distinguishes mock/real/error.
+
 ---
 
+<!-- next free FOLLOW number: 330 (328 = ClickHouse empty-username Basic-auth Code 516 fix across all 12 control-plane CH reads — see backlog/sprint-18/FOLLOW-328.md; 329 = summary-route Rule K.2 fail-loud + data_source, sibling of FOLLOW-124, surfaced by 328.) -->
 <!-- next free FOLLOW number: 327 (326 = CEO directive 2026-06-15: buildSnippet() auto-includes estalara-detect.iife.js companion for ALL Tier 1+2 tenants by default — opt-out, cold-start archetype detection ON by default; closes FOLLOW-324 half-wire (PR #308 exists; buildSnippet() doesn't emit companion tag yet). 324 = sdk-engineer/FOLLOW-324-sdk-bundle-size PR #308 merge-ready: split auto-detect pipeline into companion estalara-detect.iife.js (12.43KB gzip), core drops 52.61→39.73KB — passes 40KB gate. Architect Option 1 accepted.) -->
 <!-- next free FOLLOW number: 324 (323 = RETRO-080 / PR #299 / FOLLOW-309-312 closeout: (a) fix the RETRO-077 LG-3 datetime-local->ISO ambiguity FOLLOW-312 left un-closed -- raw YYYY-MM-DDTHH:MM from the datetime-local filter flows TZ-less/seconds-less into BOTH export builders AND the history table-load fetch, route validates only z.string().min(1) -> ClickHouse window is local-vs-UTC ambiguous; (b) ground the PUT/POST save-response fixture (no shared write-response schema; T9 mocks a partial the real PUT route doesn't emit -- last corner of the RETRO-077 TG-1 fixture-lies pattern on the write-response sub-surface, low risk since loadConfig reconciles via the schema-grounded GET); (c) add the POST-create UI-branch test. P2 3h backend+qa. RETRO-080 verdict: ALL FOUR RETRO-077 wires CLOSED END-TO-END (admin GET producer<->page consumer<->PUT/[id] producer loop; SSE cookie auth via getAuthClaims sb-access-token; 3 nav <Link>s into 3 existing pages; CSV via fetch+Accept) -- only LG-3 moved ONE HOP -> FOLLOW-323. AdminIntentConfigResponseSchema added to @estalara/shared (additive, SDK-facing IntentConfigResponseSchema UNTOUCHED). Implements ADR-0013. NO Rule promoted: PR #299 is the REMEDIATION of the RETRO-077 fixture-lies sighting (fixtures now derive from AdminIntentConfigResponseSchema.parse(), GET-1..5 + COOKIE-1..5 drive REAL handlers) -- a fix does NOT increment the count, so the fixture-lies family STAYS count-3, held for the next genuinely-independent sighting. FOLLOW-313 narrows (Weight-Editor cast now typed-gone; 3 tracer pages remain). Pre-existing control-plane BUILD break (sdk/playbooks + sdk/auto-detect, FOLLOW-267 origin) confirmed pre-exists, sdk-engineer scope, NOT re-filed. -->
 <!-- prior next free FOLLOW number: 323 (322 = RETRO-068 / PR #279 / FOLLOW-286: add a LIVE-backend contract test for the intent.snapshot dual-write handler so a type/constraint incompatibility (UUID column, Float32 NOT NULL, JSONEachRow strictness, mis-placed PostgREST on_conflict) FAILS CI — every current test mocks fetchImpl so BOTH PR #278 (FOLLOW-266 Phase 2, on_conflict-in-Prefer-header → real 409) AND PR #279 (FOLLOW-286, raw-hex→intent_session_id UUID column + confidence_before:null→Float32 NOT NULL, BOTH backend-rejected, caught only by FOLLOW-287) shipped P1 INSERT-body defects under green mock CI; boot ephemeral CH (0014+0015+0016) + PostgREST (0028), submit the REAL handler bodies, + a PRECISE-assertion negative control reproducing the FOLLOW-286/287 broken shapes (NOT a permissive HTTP-500 regex per RETRO-079 §4c TG-1), REQUIRE_*=1 hard-fail-on-container-absence modeled on FOLLOW-316 tracer-query-smoke, share the FOLLOW-291 ephemeral-CH harness, P2 4h backend+data-engineer. RETRO-068 is the analysis of PR #279's ingest payload (bundled into PR #280's merge diff per RETRO-067; pinned both 8a43588 merge-state vs main HEAD): CB-1 on_conflict-URL + LG-1 event_type-const + LG-2 raw-session_id-String-join-key + LG-4 payload-de-dup SURVIVE on main byte-stable + genuinely wired (Wiring Audit clean); LG-A intent_session_id-UUID-reject + LG-B confidence_before-null-Float32-reject were SUPERSEDED by FOLLOW-287 PRs #281/#282 (already owned by FOLLOW-290/291/292, NOT re-filed); the 8 TG-1 tests are reconciled to the FOLLOW-287 state on main so NO test-drift gap. NO Rule promoted RETRO-068: Rule W already governs the migration-0015 ORDER-BY-key axis (promoted RETRO-060, this PR is its named count-1 evidence); the mock-can't-catch-real-backend-rejection family is count-1 on the INGEST-handler surface (RETRO-078/079 are the sibling CH-query-builder surface — fresh count per RETRO-077/079 deferral discipline; the migration sub-axis is already Rule W, the HTTP/enum sub-axis already Rule K.2-round-trip + Rule L) — held below threshold. FOLLOW-288/289 (RETRO-059 SDK producer) + FOLLOW-321 (RETRO-067 snapshot-trigger) NOT re-filed.) -->

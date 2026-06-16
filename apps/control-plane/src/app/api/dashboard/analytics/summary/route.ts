@@ -1,9 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument --
- * @estalara/auth is a workspace package resolved from source in Vitest but not built locally.
- * TypeScript sees it as `any` until packages are built (CI builds them before lint).
- * Same pattern as middleware.ts, quiz/config/route.ts, and other routes that import
- * from @estalara/auth or @estalara/db.
- */
 /**
  * GET /api/dashboard/analytics/summary
  *
@@ -23,6 +17,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getAuthClaims } from '@estalara/auth';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 
 // ─── Response types ────────────────────────────────────────────────────────────
 
@@ -52,6 +47,7 @@ async function fetchSummaryFromClickHouse(tenantId: string): Promise<{
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
   if (!clickhouseUrl) return null;
 
+  const user = process.env.CLICKHOUSE_USER ?? 'default';
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
 
   // Parameterized query — tenant_id is bound via ClickHouse query parameters
@@ -74,10 +70,8 @@ async function fetchSummaryFromClickHouse(tenantId: string): Promise<{
 
   const headers: Record<string, string> = {
     'Content-Type': 'text/plain',
+    ...clickhouseAuthHeaders({ user, password }),
   };
-  if (password) {
-    headers.Authorization = `Basic ${Buffer.from(`:${password}`).toString('base64')}`;
-  }
 
   const res = await fetch(url.toString(), { method: 'GET', headers });
   if (!res.ok) return null;
@@ -96,6 +90,12 @@ async function fetchSummaryFromClickHouse(tenantId: string): Promise<{
 }
 
 // ─── Mock data (dev / CI fallback) ────────────────────────────────────────────
+//
+// NOTE: this route currently falls back to mock data on ANY ClickHouse failure
+// (see GET handler `.catch(() => null)`), so a configured-but-failing CH silently
+// serves fabricated numbers at HTTP 200 with no `data_source` provenance. That is
+// the un-fixed sibling of FOLLOW-124 (lift route) — tracked by FOLLOW-329:
+// fail loud when CLICKHOUSE_URL is set, keep mock only for the unset (dev/CI) path.
 
 /** Deterministic integer hash of a string. */
 function hash(s: string): number {

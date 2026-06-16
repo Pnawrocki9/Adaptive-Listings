@@ -17,11 +17,14 @@
  */
 
 import type { IntentEventRow } from '@estalara/shared';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 export interface ClickHouseTracerConfig {
   url: string;
+  /** ClickHouse username. Defaults to `'default'` when env is unset. */
+  user: string;
   password: string;
   database: string;
 }
@@ -35,15 +38,9 @@ export function resolveClickHouseTracerConfig(): ClickHouseTracerConfig | null {
   if (!url) return null;
   return {
     url: url.replace(/\/$/, ''),
+    user: process.env.CLICKHOUSE_USER ?? 'default',
     password: process.env.CLICKHOUSE_PASSWORD ?? '',
     database: process.env.CLICKHOUSE_DATABASE ?? 'default',
-  };
-}
-
-function authHeaders(cfg: ClickHouseTracerConfig): Record<string, string> {
-  if (!cfg.password) return {};
-  return {
-    Authorization: `Basic ${Buffer.from(`:${cfg.password}`).toString('base64')}`,
   };
 }
 
@@ -74,7 +71,7 @@ export async function chTracerQuery<T = unknown>(
     method: 'GET',
     headers: {
       'Content-Type': 'text/plain',
-      ...authHeaders(cfg),
+      ...clickhouseAuthHeaders(cfg),
     },
     signal: AbortSignal.timeout(8000),
   });
@@ -117,7 +114,7 @@ export async function chTracerCount(
     method: 'GET',
     headers: {
       'Content-Type': 'text/plain',
-      ...authHeaders(cfg),
+      ...clickhouseAuthHeaders(cfg),
     },
     signal: AbortSignal.timeout(8000),
   });

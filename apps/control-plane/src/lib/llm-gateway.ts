@@ -32,6 +32,7 @@ import { z } from 'zod';
 import type { ArchetypeId, TextDirective } from '@estalara/shared';
 import type { PlaybookEntry } from '@estalara/sdk/playbooks';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -116,6 +117,7 @@ async function getRolling24hSpend(): Promise<number> {
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
   if (!clickhouseUrl) return 0;
 
+  const clickhouseUser = process.env.CLICKHOUSE_USER ?? 'default';
   const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
   const query = `SELECT sum(cost_usd) as total FROM llm_calls WHERE ts >= now() - INTERVAL 1 DAY FORMAT JSON`;
 
@@ -125,11 +127,7 @@ async function getRolling24hSpend(): Promise<number> {
       body: query,
       headers: {
         'Content-Type': 'text/plain',
-        ...(clickhousePassword
-          ? {
-              Authorization: `Basic ${Buffer.from(`:${clickhousePassword}`).toString('base64')}`,
-            }
-          : {}),
+        ...clickhouseAuthHeaders({ user: clickhouseUser, password: clickhousePassword }),
       },
     });
 
@@ -162,6 +160,7 @@ function logLlmCallAsync(params: {
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
   if (!clickhouseUrl) return;
 
+  const clickhouseUser = process.env.CLICKHOUSE_USER ?? 'default';
   const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
   const ts = new Date().toISOString().replace('T', ' ').replace('Z', '');
 
@@ -191,11 +190,7 @@ function logLlmCallAsync(params: {
     body: query,
     headers: {
       'Content-Type': 'text/plain',
-      ...(clickhousePassword
-        ? {
-            Authorization: `Basic ${Buffer.from(`:${clickhousePassword}`).toString('base64')}`,
-          }
-        : {}),
+      ...clickhouseAuthHeaders({ user: clickhouseUser, password: clickhousePassword }),
     },
   }).catch((err: unknown) => {
     console.error('[llm-gateway] ClickHouse log failed:', err instanceof Error ? err.message : err);

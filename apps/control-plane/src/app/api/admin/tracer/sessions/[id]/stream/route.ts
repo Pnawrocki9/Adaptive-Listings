@@ -134,6 +134,9 @@ export async function GET(
           }
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
+          console.error(
+            `[tracer/stream] ClickHouse query failed for tenant ${tenantId} session ${sessionId}: ${message}`,
+          );
           Sentry.captureException(err, {
             extra: {
               route: 'GET /api/admin/tracer/sessions/[id]/stream',

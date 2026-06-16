@@ -46,6 +46,14 @@ export function resolveClickHouseTracerConfig(): ClickHouseTracerConfig | null {
 
 // ─── Core parameterized query executor ───────────────────────────────────────
 
+// ClickHouse Cloud auto-idles; the first query after an idle period must wake the
+// service, which routinely takes >8s. The previous 8s budget aborted that cold-start
+// wake before it completed, so every tracer read (history, Live Monitor SSE) returned
+// a 500 even though auth and the query were correct. 30s comfortably covers cold-start
+// while staying well under the 300s Vercel function limit. (Keep-warm cron is the
+// longer-term fix; see project notes.)
+const CH_TRACER_TIMEOUT_MS = 30_000;
+
 /**
  * Execute a parameterized SELECT against ClickHouse and parse JSONEachRow output.
  *
@@ -73,7 +81,7 @@ export async function chTracerQuery<T = unknown>(
       'Content-Type': 'text/plain',
       ...clickhouseAuthHeaders(cfg),
     },
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(CH_TRACER_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -116,7 +124,7 @@ export async function chTracerCount(
       'Content-Type': 'text/plain',
       ...clickhouseAuthHeaders(cfg),
     },
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(CH_TRACER_TIMEOUT_MS),
   });
 
   if (!res.ok) {

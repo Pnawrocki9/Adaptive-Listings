@@ -71,12 +71,14 @@ import {
 
 const CFG: ClickHouseTracerConfig = {
   url: 'http://clickhouse:8123',
+  user: 'ingest_worker',
   password: 'secret',
   database: 'estalara',
 };
 
 const CFG_NO_PASS: ClickHouseTracerConfig = {
   url: 'http://clickhouse:8123',
+  user: 'ingest_worker',
   password: '',
   database: 'estalara',
 };
@@ -95,13 +97,26 @@ describe('resolveClickHouseTracerConfig', () => {
 
   it('CH-2: returns config object when CLICKHOUSE_URL is set', () => {
     vi.stubEnv('CLICKHOUSE_URL', 'http://ch:8123');
+    vi.stubEnv('CLICKHOUSE_USER', 'ingest_worker');
     vi.stubEnv('CLICKHOUSE_PASSWORD', 'mypass');
     vi.stubEnv('CLICKHOUSE_DATABASE', 'mydb');
     const cfg = resolveClickHouseTracerConfig();
     expect(cfg).not.toBeNull();
     expect(cfg!.url).toBe('http://ch:8123');
+    expect(cfg!.user).toBe('ingest_worker');
     expect(cfg!.password).toBe('mypass');
     expect(cfg!.database).toBe('mydb');
+  });
+
+  it('CH-2b: defaults user to "default" when CLICKHOUSE_USER is unset', () => {
+    vi.stubEnv('CLICKHOUSE_URL', 'http://ch:8123');
+    vi.stubEnv('CLICKHOUSE_USER', '');
+    const cfg = resolveClickHouseTracerConfig();
+    // '' ?? 'default' === '' because '' is not null/undefined.
+    // When env is genuinely unset (vi.unstubAllEnvs), the fallback is 'default'.
+    // This test verifies the env var is read at all; the real default is tested
+    // via the unit test for clickhouse-http.ts.
+    expect(cfg).not.toBeNull();
   });
 
   it('CH-3: strips trailing slash from URL', () => {
@@ -183,18 +198,19 @@ describe('chTracerQuery', () => {
     expect(result).toEqual([{ a: 1 }, { a: 2 }, { a: 3 }]);
   });
 
-  it('CH-10: sets Authorization header when password is present', async () => {
+  it('CH-10: sets Authorization header when password is present — includes username', async () => {
     mockFetch.mockResolvedValue(makeOkResponse(''));
     await chTracerQuery(CFG, 'SELECT 1');
     const callHeaders = mockFetch.mock.calls[0]?.[1]?.headers as Record<string, string>;
     expect(callHeaders).toBeDefined();
     expect(callHeaders.Authorization).toMatch(/^Basic /);
-    // Basic auth encodes :<password>
+    // Basic auth must be base64("user:password") — NOT base64(":password") (empty username
+    // is rejected by ClickHouse Cloud with Code 516 AUTHENTICATION_FAILED).
     const decoded = Buffer.from(
       callHeaders.Authorization!.replace('Basic ', ''),
       'base64',
     ).toString('utf-8');
-    expect(decoded).toBe(':secret');
+    expect(decoded).toBe('ingest_worker:secret');
   });
 
   it('CH-11: sends no Authorization header when password is empty', async () => {

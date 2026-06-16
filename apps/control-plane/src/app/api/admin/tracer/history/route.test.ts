@@ -196,6 +196,7 @@ describe('GET /api/admin/tracer/history — live path (ClickHouse configured)', 
     mockGetAuthClaims.mockResolvedValue(null);
     mockResolveClickHouseTracerConfig.mockReturnValue({
       url: 'http://clickhouse:8123',
+      user: 'default',
       password: 'pass',
       database: 'default',
     });

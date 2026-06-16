@@ -251,6 +251,7 @@ describe('GET /api/admin/tracer/history/[session_id] — live path (DB configure
     mockLimit.mockResolvedValue([]);
     mockResolveClickHouseTracerConfig.mockReturnValue({
       url: 'http://clickhouse:8123',
+      user: 'default',
       password: 'pass',
       database: 'default',
     });
@@ -280,6 +281,7 @@ describe('GET /api/admin/tracer/history/[session_id] — live path (DB configure
     mockLimit.mockResolvedValue([MOCK_SESSION_ROW]);
     mockResolveClickHouseTracerConfig.mockReturnValue({
       url: 'http://clickhouse:8123',
+      user: 'default',
       password: 'pass',
       database: 'default',
     });
@@ -314,6 +316,7 @@ describe('GET /api/admin/tracer/history/[session_id] — live path (DB configure
     mockLimit.mockResolvedValue([MOCK_SESSION_ROW]);
     mockResolveClickHouseTracerConfig.mockReturnValue({
       url: 'http://clickhouse:8123',
+      user: 'default',
       password: 'pass',
       database: 'default',
     });

@@ -44,6 +44,7 @@ import { getAuthClaims, isStaffClaims } from '@estalara/auth';
 import { createAdminClient, conversionLabels } from '@estalara/db';
 import { ConversionOutcomeClassSchema, type ConversionOutcomeClass } from '@estalara/shared';
 
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import {
   buildMockLabelsResponse,
   type AdminLabelsResponse,
@@ -68,16 +69,9 @@ type Query = z.infer<typeof QuerySchema>;
 
 // ─── ClickHouse helpers ───────────────────────────────────────────────────────
 
-function clickHouseHeaders(password: string): Record<string, string> {
-  const headers: Record<string, string> = { 'Content-Type': 'text/plain' };
-  if (password) {
-    headers.Authorization = `Basic ${Buffer.from(`:${password}`).toString('base64')}`;
-  }
-  return headers;
-}
-
 async function chQuery<T>(
   baseUrl: string,
+  user: string,
   password: string,
   sql: string,
   params: Record<string, string>,
@@ -89,7 +83,10 @@ async function chQuery<T>(
   }
   const res = await fetch(url.toString(), {
     method: 'GET',
-    headers: clickHouseHeaders(password),
+    headers: {
+      'Content-Type': 'text/plain',
+      ...clickhouseAuthHeaders({ user, password }),
+    },
   });
   if (!res.ok) {
     throw new Error(`ClickHouse query failed: HTTP ${String(res.status)}`);
@@ -118,6 +115,7 @@ async function fetchPredictions(
   if (!baseUrl) return null;
   if (decisionIds.length === 0) return [];
 
+  const user = process.env.CLICKHOUSE_USER ?? 'default';
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
 
   // Build the IN list as a parameterised array literal:
@@ -154,7 +152,7 @@ async function fetchPredictions(
     LIMIT 1000
   `;
 
-  const rows = await chQuery<Record<string, unknown>>(baseUrl, password, sql, {
+  const rows = await chQuery<Record<string, unknown>>(baseUrl, user, password, sql, {
     tenant_id: tenantId,
   });
 

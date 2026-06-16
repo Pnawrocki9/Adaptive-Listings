@@ -37,6 +37,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -106,13 +107,13 @@ export function buildEraseMutationSql(
 
 interface ClickHouseConfig {
   url: string;
+  /** ClickHouse username. Defaults to `'default'` when env is unset. */
+  user: string;
   password: string;
 }
 
 /**
- * Resolve ClickHouse connection details from environment, mirroring the
- * pattern used in `apps/control-plane/src/lib/llm-gateway.ts` and
- * `apps/control-plane/src/app/api/dsr/_clickhouse.ts`.
+ * Resolve ClickHouse connection details from environment.
  *
  * Returns null when CLICKHOUSE_URL is not configured (dev / CI without a
  * ClickHouse instance) — callers should treat this as a no-op.
@@ -122,16 +123,9 @@ export function readClickHouseConfig(): ClickHouseConfig | null {
   if (!url) return null;
   return {
     url: url.replace(/\/$/, ''),
+    user: process.env.CLICKHOUSE_USER ?? 'default',
     password: process.env.CLICKHOUSE_PASSWORD ?? '',
   };
-}
-
-function authHeaders(cfg: ClickHouseConfig): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (cfg.password) {
-    headers.Authorization = `Basic ${Buffer.from(`:${cfg.password}`).toString('base64')}`;
-  }
-  return headers;
 }
 
 /**
@@ -142,7 +136,7 @@ export async function executeClickHouseSql(cfg: ClickHouseConfig, sql: string): 
   const res = await fetch(cfg.url, {
     method: 'POST',
     headers: {
-      ...authHeaders(cfg),
+      ...clickhouseAuthHeaders(cfg),
       'Content-Type': 'text/plain',
     },
     body: sql,

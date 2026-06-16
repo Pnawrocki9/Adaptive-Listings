@@ -125,6 +125,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(body, { status: 200 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    // Surface the real ClickHouse error (Code/HTTP body or AbortError on timeout) in the
+    // platform runtime logs, not only Sentry — the client response is intentionally generic,
+    // so without this the underlying cause is invisible in `vercel logs`.
+    console.error(`[tracer/history] ClickHouse query failed for tenant ${tenant_id}: ${message}`);
     Sentry.captureException(err, {
       extra: {
         route: 'GET /api/admin/tracer/history',

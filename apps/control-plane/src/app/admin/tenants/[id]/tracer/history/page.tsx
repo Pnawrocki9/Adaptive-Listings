@@ -294,15 +294,17 @@ export default function SessionHistoryPage({ params, searchParams }: HistoryPage
   };
 
   // Build the JSONL export URL for the <a download> link (no Accept header required for JSONL).
+  // Relative URL (no window.location.origin) so this is safe to call during SSR — a 'use client'
+  // page is still server-rendered for the initial HTML, and `window` is undefined there. Calling
+  // the previous `new URL(path, window.location.origin)` form at render time threw
+  // `ReferenceError: window is not defined`, crashing the whole history page with a 500.
   const buildJsonlExportUrl = () => {
-    const url = new URL('/api/admin/tracer/export/decisions', window.location.origin);
-    url.searchParams.set('tenant_id', tenantId);
-    url.searchParams.set(
-      'from',
-      filterFrom || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    );
-    url.searchParams.set('to', filterTo || new Date().toISOString());
-    return url.toString();
+    const qs = new URLSearchParams({
+      tenant_id: tenantId,
+      from: filterFrom || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      to: filterTo || new Date().toISOString(),
+    });
+    return `/api/admin/tracer/export/decisions?${qs.toString()}`;
   };
 
   // CSV export must use fetch() with Accept: text/csv — the route selects CSV from the

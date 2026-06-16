@@ -22,7 +22,7 @@
  *   CH-18: fetchIntentEventsHistory — calls count query in parallel with data query
  *   CH-19: fetchIntentEventsForExport — passes all three required params
  *   CH-20: fetchNewIntentEvents — passes lastEventAt as param (cursor advancement)
- *   CH-21: AbortSignal.timeout is 8000ms (documented)
+ *   CH-21: AbortSignal.timeout is set (30s — covers ClickHouse Cloud cold-start)
  *
  * RETRO-061 suspects addressed:
  *   - DG-1: MAX_POLLS docstring off by 3× (tested in stream route test, documented here)
@@ -220,7 +220,7 @@ describe('chTracerQuery', () => {
     expect(callHeaders.Authorization).toBeUndefined();
   });
 
-  it('CH-21: uses AbortSignal.timeout(8000)', async () => {
+  it('CH-21: uses AbortSignal.timeout (30s — covers ClickHouse Cloud cold-start)', async () => {
     mockFetch.mockResolvedValue(makeOkResponse(''));
     await chTracerQuery(CFG, 'SELECT 1');
     const callOptions = mockFetch.mock.calls[0]?.[1] as RequestInit;

@@ -187,7 +187,7 @@ Status: READY_FOR_REVIEW. Awaiting human merge. PM comment posted: #315 comment 
 | RETRO-063 | FOLLOW-278    | #273           | PENDING                                  |
 | RETRO-081 | FOLLOW-293    | #307           | DONE (2026-06-17) — no new FOLLOW filed  |
 | RETRO-082 | FOLLOW-324    | #308           | DONE (2026-06-17) — FOLLOW-335 filed     |
-| RETRO-083 | FOLLOW-326    | #309/#310/#311 | PENDING                                  |
+| RETRO-083 | FOLLOW-326    | #309/#310/#311 | DONE (2026-06-17) — FOLLOW-336 filed     |
 | RETRO-084 | FOLLOW-327    | #312           | DONE (2026-06-17) — FOLLOW-331/332 filed |
 | RETRO-085 | FOLLOW-328    | #313           | DONE (2026-06-17) — FOLLOW-333 filed     |
 | RETRO-086 | FOLLOW-330    | #314           | DONE (2026-06-17) — FOLLOW-334 filed     |
@@ -215,5 +215,10 @@ RETRO-082 DONE (2026-06-17): SDK bundle size fix (FOLLOW-324 / PR #308). FOLLOW-
 detect-bundle.ts producer-side unit test, P2). LG-1 (snippet half-wire) closing via FOLLOW-325 PR
 #315. No Rule promoted (IIFE static-import-inflation count-1).
 
-Next: spawn retrospective-analyst for FOLLOW-326 (PRs #309/#310/#311) → RETRO-083
-(admin.estalara.com sign-in + Supabase SSR auth flow).
+RETRO-083 DONE (2026-06-17): admin.estalara.com sign-in + SSR auth (FOLLOW-326 / PRs
+#309/#310/#311). FOLLOW-336 filed (TG-1/TG-2: checkStaffSession + middleware admin gate untested, P2
+3h). 3-PR chain. Wiring CLEAN. No Rule promoted (cookie-name-mismatch count-1;
+untested-primary-auth-gate count-1).
+
+Next: spawn retrospective-analyst for FOLLOW-276 (PR #272) → RETRO-062 and FOLLOW-278 (PR #273) →
+RETRO-063 (last two pending retros from Sprint 17 Wave 2).

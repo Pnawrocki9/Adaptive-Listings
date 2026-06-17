@@ -9243,6 +9243,45 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
+## FOLLOW-336 — Add tests for Supabase SSR session auth paths: `checkStaffSession` + middleware admin gate + `SignInForm` (RETRO-083 TG-1/TG-2)
+
+- **status:** OPEN
+- **source_retro:** RETRO-083
+- **source_ticket:** FOLLOW-326 (PRs #309/#310/#311)
+- **recommended_sprint:** 18
+- **recommended_agent:** qa-engineer (or backend-engineer)
+- **priority:** P2
+- **estimated_hours:** 3
+- **depends_on:** []
+- **scope:** FOLLOW-326 added three auth code paths with no tests: (a) `checkStaffSession()` in
+  `apps/control-plane/src/lib/tracer-auth.ts` — the SSR cookie auth path that is now the PRIMARY
+  production auth mechanism for all `/api/admin/*` routes (guards Weight Editor, Session History,
+  Live Monitor SSE); (b) the `createServerClient` + `getUser()` middleware admin gate in
+  `src/middleware.ts`; (c) `SignInForm.tsx` (signInWithPassword happy path + error display). The 5
+  existing `tracer-auth.test.ts` tests cover only the Bearer and legacy JWT paths. The new primary
+  path has zero coverage.
+- **ac:**
+  - [ ] AC1: A test for `checkStaffSession` covers `'staff'` / `'not_staff'` / `'none'` return
+        values with a mocked `createServerClient` (mock `getUser()` to return staff user, non-staff
+        user, error, null).
+  - [ ] AC2: A test for the middleware admin gate (in `src/middleware.test.ts`) mocks
+        `createServerClient().getUser()` and asserts: (a) authenticated staff → pass-through, (b)
+        unauthenticated → redirect to `/sign-in`, (c) non-staff → redirect to `/sign-in`.
+  - [ ] AC3: (Optional) A test for `SignInForm.tsx` covering happy path (mock `signInWithPassword()`
+        success → `router.push('/admin')`) and error path (error message displayed, fields retain
+        values).
+  - [ ] AC4: All existing `tracer-auth.test.ts` (5/5) and `middleware.test.ts` (11/11) tests
+        continue to pass.
+  - [ ] AC5: `pnpm typecheck` + `pnpm test` green.
+- **notes:** TG-1 + TG-2 from RETRO-083. The `checkStaffSession` path is the live PRIMARY production
+  auth gate for all admin routes since PR #311 merged (2026-06-15). A regression would NOT be
+  silently masked (it would produce 401s on all admin routes immediately), but CI cannot catch it
+  pre-deploy without tests. P2 severity — security gate with zero test coverage.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 337 (336 = RETRO-083 / PRs #309/#310/#311 / FOLLOW-326 admin sign-in + SSR auth: checkStaffSession (primary admin auth path), middleware admin gate (createServerClient getUser), and SignInForm are all untested; qa-engineer, P2 3h.) -->
 <!-- next free FOLLOW number: 336 (335 = RETRO-082 / PR #308 / FOLLOW-324 SDK bundle size fix: detect-bundle.ts has no unit test asserting globalThis.__EStalaraDetect is set correctly with detectSiteSchema + extractArchetypeHints as callable functions; sdk-engineer, P2 1h.) -->
 <!-- next free FOLLOW number: 335 (334 = RETRO-086 / PR #314 / FOLLOW-330 tracer history SSR window crash + CH cold-start 8s->30s timeout: keep-warm cron for CH Cloud to prevent auto-idle cold-start delays >8s on tracer/analytics routes; 30s timeout in CH_TRACER_TIMEOUT_MS is a symptom treatment, cron prevents idle, P2 2h devops.) -->
 <!-- next free FOLLOW number: 334 (333 = RETRO-085 / PR #313 / FOLLOW-328 ClickHouse Basic auth fix: 12 route-level call-sites migrated to clickhouseAuthHeaders but only clickhouse-tracer.test.ts CH-10 asserts the Authorization header is non-empty-username; add route-level assertions for the 11 uncovered sites, P3 2h qa.) -->

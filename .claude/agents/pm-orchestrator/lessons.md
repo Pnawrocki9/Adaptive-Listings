@@ -2,6 +2,19 @@
 
 ---
 
+**Date / ticket:** 2026-06-17 — RETRO-083 (FOLLOW-326 / PRs #309/#310/#311 retrospective spawn)
+**Delegation row used:** N/A — PM-self retrospective analysis (step 6, post-merge, retro backlog).
+**What validation caught (or missed):** Wiring audit: createBrowserClient/createServerClient/
+checkStaffSession/verifyTracerAdminAuth all confirmed with non-test producers + consumers. Found
+TG-1/TG-2: checkStaffSession (the primary admin auth path after sign-in) and the middleware SSR gate
+have zero test coverage — FOLLOW-336 filed. The 3-PR iteration pattern (scaffold → cookie mismatch →
+API auth gate) is the expected outcome for @supabase/ssr migration. **A delegation/validation rule
+I'd add:** When a PR introduces a new primary auth path (the MAIN production gate, not a fallback),
+verify its test count before READY_FOR_REVIEW — a primary auth path with zero tests is a P2 gap
+regardless of whether the existing tests are green.
+
+---
+
 **Date / ticket:** 2026-06-17 — RETRO-082 (FOLLOW-324 / PR #308 retrospective spawn) **Delegation
 row used:** N/A — PM-self retrospective analysis (step 6, post-merge, retro backlog). **What
 validation caught (or missed):** Wiring audit: \_\_EStalaraDetect producer (detect-bundle.ts:36) and

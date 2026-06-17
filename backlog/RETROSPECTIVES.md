@@ -17458,3 +17458,113 @@ Wiring audit: FULLY CLEAN.
 - **FOLLOW-325 / RETRO for PR #315 (buildSnippet companion auto-include):** The direct follow-on to this split. RETRO-082's LG-1 closes when FOLLOW-325 merges.
 - **RETRO-007 / FOLLOW-097 (SDK bundle gate):** The 40 KB bundle gate was established early in the project as a non-negotiable quality bar. RETRO-082 is the first sighting of an IIFE bundler inflation event caught by that gate.
 - **ADR-0012 (K.3.6 D-1 architecture):** The detect bundle is part of the K.3.6 auto-detect cold-start prior system. ADR-0012 documents the decision to use a global bridge rather than a dynamic import.
+
+---
+
+## RETRO-083 — FOLLOW-326 (admin.estalara.com sign-in page + Supabase SSR auth flow — 3-PR iteration: PR #309 sign-in page, PR #310 middleware cookie fix, PR #311 `verifyTracerAdminAuth` SSR session path; root causes: `@supabase/ssr` chunked cookie vs. `sb-access-token` legacy name mismatch, missing `estalara_staff` app_metadata claims, package.json merge conflict; all resolved; AC1-AC8 complete) — 2026-06-17
+
+### 1. What was built
+
+FOLLOW-326 delivered admin sign-in for `admin.estalara.com` in three sequential PRs, each one fixing a blocker revealed only after the previous one was deployed. The three PRs form a single feature with cascading fix iterations.
+
+**PR #309** (`feat(control-plane): add /sign-in page + Supabase SSR auth flow [FOLLOW-326]`, merged 2026-06-15): The foundational PR. Installs `@supabase/ssr` (replacing deprecated `@supabase/auth-helpers-nextjs`). Adds `src/lib/supabase/client.ts` (`createBrowserClient`) and `src/lib/supabase/server.ts` (`createServerClient`). Adds `/sign-in` page (Server Component root + `SignInForm` client component with `signInWithPassword()`). Replaces the marketing landing page (`/`) with a `permanentRedirect('/sign-in')` (308). Fixes `src/middleware.ts` `/login` → `/sign-in`. Adds a Sign-Out Server Action to `admin/layout.tsx`. 790 additions, 213 deletions.
+
+**PR #310** (`fix(control-plane): use @supabase/ssr in middleware to read chunked session cookies [FOLLOW-326]`, merged 2026-06-15): Fixes the login-appears-to-work-but-immediately-redirects-back-to-sign-in bug. Root cause: `@supabase/ssr` v0.12 sets a chunked cookie named `sb-<project-ref>-auth-token` (not `sb-access-token`), which the old middleware `@estalara/auth`'s `extractRawToken()` could not find. Fix: replace the `/admin/*` auth check in middleware with `createServerClient` + `getUser()` from `@supabase/ssr`. Also adds `packages/auth/sql/custom_access_token_hook.sql` (new SQL function to inject `estalara_staff`/`estalara_role` into JWTs). 205 additions, 61 deletions.
+
+**PR #311** (`fix(control-plane): accept Supabase SSR session in verifyTracerAdminAuth [FOLLOW-326]`, merged 2026-06-15): Fixes 401s on all admin data views (Weight Editor, Session History, Live Monitor SSE) after login worked. Root cause: `verifyTracerAdminAuth` (guarding all `/api/admin/*` routes) only checked the Bearer `ADMIN_API_SECRET` header OR the legacy `getAuthClaims()` → `sb-access-token` path. Browser-initiated fetches after `signInWithPassword()` carried the chunked `sb-<project-ref>-auth-token` cookie only — neither path recognized it. Fix: add a `checkStaffSession` path that reads the SSR chunked cookie via `createServerClient().getUser()` and checks `user.app_metadata.estalara_staff`. Does NOT require the custom access token hook. 278 additions, 66 deletions.
+
+### 2. Wiring audit
+
+**Scope:** `createBrowserClient` wrapper (`supabase/client.ts`), `createServerClient` wrapper (`supabase/server.ts`), `checkStaffSession` (internal to `tracer-auth.ts`), `verifyTracerAdminAuth` (existing export, new auth path added).
+
+- `createClient` from `@/lib/supabase/client` — producer: `apps/control-plane/src/lib/supabase/client.ts:30`. Consumer: `apps/control-plane/src/app/sign-in/SignInForm.tsx:17` (import). CLEAN.
+
+- `createServerSupabaseClient` from `@/lib/supabase/server` — producer: `server.ts`. Consumer: `apps/control-plane/src/app/admin/layout.tsx:14` (import, Sign-Out Server Action). CLEAN.
+
+- `createServerClient` (from `@supabase/ssr`) — producer: `@supabase/ssr` package. Consumers (non-test): `middleware.ts:31` + `middleware.ts:139` (admin session gate), `tracer-auth.ts:26` + `tracer-auth.ts:55` (checkStaffSession). CLEAN.
+
+- `checkStaffSession` — module-private function in `tracer-auth.ts` (not exported). Producer: defined at line 49. Consumer: called at line 118 inside `verifyTracerAdminAuth`. Self-contained. CLEAN.
+
+- `verifyTracerAdminAuth` — existing export, new auth path added. Non-test importers: all `/api/admin/*` route files. Wiring unchanged (existing callers get the new path automatically). CLEAN.
+
+**grep evidence:**
+```
+grep -rn "createBrowserClient\|createServerClient\|checkStaffSession\|verifyTracerAdminAuth\|supabase/server\|supabase/client" apps/control-plane/src --include="*.ts" --include="*.tsx" | grep -v "\.test\." | grep -v "node_modules"
+```
+(12+ non-test lines confirming all symbols wired). Wiring audit: FULLY CLEAN.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, KNOWN at PR time) — the custom access token hook (`packages/auth/sql/custom_access_token_hook.sql`) is NOT installed in production.** PR #310 added the SQL file but it requires a manual step: run the SQL in Supabase SQL editor + register the function in Authentication → Hooks. Until this is done, `getAuthClaims()` (the Bearer JWT path) continues to work via the `app_metadata` approach from `checkStaffSession`, but the legacy JWT Bearer path (`@estalara/auth`'s `extractRawToken()`) will NOT carry `estalara_staff` claims. The PR body documents this clearly and provides exact SQL. PR #311's fix (checking `user.app_metadata.estalara_staff` via `checkStaffSession`) works WITHOUT the hook — it reads `app_metadata` directly from the Supabase session. So the admin sign-in is fully functional without the hook. The hook is a future improvement for the JWT Bearer path. No follow-up filed (already noted in PR body; devops/backend scope). Severity: P3 (the current auth path works; the hook would add JWT-level claims).
+
+- **LG-2 (P2) — `verifyTracerAdminAuth` now has THREE auth paths (Bearer ADMIN_API_SECRET, checkStaffSession SSR cookie, legacy `getAuthClaims()` JWT).** The three-path cascade makes the function's failure mode complex: if `checkStaffSession` throws (e.g., Supabase network error), it falls through to the legacy JWT path, which may then 401. The error is caught and logged by Sentry, but the user gets a generic 401 without knowing why. Severity: P2 (auth failure in production is user-visible). No follow-up filed (the three-path cascade is a deliberate incremental migration — the long-term goal is to consolidate onto the SSR path; a cleanup can happen when the legacy JWT path is retired). This is noted for the next major auth refactor.
+
+- **LG-3 (P3) — the `checkStaffSession` function does NOT validate `estalara_role`** — it only checks `estalara_staff === true`. A staff user without a specific role (e.g., `estalara:superadmin`) will be granted access. This is acceptable for the MVP single-admin use case but may need role-based access control (RBAC) in a multi-admin future. No follow-up filed.
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **CB-1 (P1, RESOLVED by PR #311) — `verifyTracerAdminAuth` accepted only Bearer / legacy JWT; the SSR session cookie path was missing.** This caused every admin data API call to 401 after a successful browser login. PR #311 added `checkStaffSession` to fix this. Fully resolved.
+
+- **CB-2 (P1, RESOLVED by PR #310) — middleware could not find the Supabase session cookie.** `@supabase/ssr` v0.12 uses chunked cookies with a project-ref-scoped name; the old `extractRawToken()` looked for `sb-access-token` only. PR #310 replaced the middleware auth check with `createServerClient` + `getUser()`. Fully resolved.
+
+- **No correctness gaps remain in the merged state.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None in the final merged state.** The 3-PR chain is a sequential remediation: each PR introduced a fix for a bug revealed by the previous PR's deployment. The final state (PRs #309+#310+#311 all merged) is correct.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — `checkStaffSession` (the new SSR cookie auth path in `verifyTracerAdminAuth`) is NOT covered by a test.** PR #311 notes: "`tracer-auth.test.ts` — 5/5 pass (existing Bearer/JWT/401 paths unchanged)." The 5 existing tests cover the Bearer and legacy JWT paths. The new `checkStaffSession` path — which is now the PRIMARY path for browser-initiated admin fetches — has no test. Severity: P2 (this is the live production auth path for all admin routes). **Filed as FOLLOW-336 below.**
+
+- **TG-2 (P2) — the middleware `createServerClient` + `getUser()` path (PR #310) has no test.** `src/middleware.test.ts` — 11 existing CORS tests pass (per PR #309 body, "unchanged, verified locally"). The new Supabase SSR path in middleware (the admin session gate) is not covered. Severity: P2 (middleware auth is the first gate for all `/admin/*` requests). **Folded into FOLLOW-336.**
+
+- **TG-3 (P3) — `SignInForm.tsx` has no unit test.** The `signInWithPassword()` happy path, the error display, and the `router.push('/admin')` redirect are untested. PR #309 updated `page.test.tsx` to cover the `permanentRedirect` but not the form itself. Severity: P3 (the form is thin UI; the real auth logic is in Supabase). **Folded into FOLLOW-336.**
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, RESOLVED-IN-PR) — `.env.example` updated with `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.** The PR body documents the operator action required after merge (add to Vercel prod env vars). CLEAN.
+
+- **DG-2 (P3) — `packages/auth/sql/custom_access_token_hook.sql` has no corresponding migration or runbook entry.** The file exists but requires manual Supabase dashboard registration. No `backlog/runbooks/` entry exists. Low severity (PR body documents the steps); no follow-up filed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-332 (P2, qa-engineer) — add admin/layout.test.tsx + admin/page.test.tsx.** PR #309's sign-out Server Action in `admin/layout.tsx` is not covered by FOLLOW-332's scope, but the layout file change is adjacent. FOLLOW-332's tests should include the sign-out path. Noted for the FOLLOW-332 delegation prompt.
+
+#### 5b. Future sprint tickets affected
+
+- **Any new `/api/admin/*` route:** Must call `verifyTracerAdminAuth` from `tracer-auth.ts`. The three-path cascade (Bearer, SSR cookie, legacy JWT) is now the canonical gate. New routes that add their own auth check instead of calling `verifyTracerAdminAuth` will have inconsistent security. This is a known risk as the admin surface grows.
+
+- **Custom access token hook (LG-1):** If the hook is installed in the future, `getAuthClaims()` will start receiving `estalara_staff` claims in Bearer JWTs — the legacy path will work again for non-browser clients (API clients, curl). No code change needed; the hook is additive.
+
+#### 5c. Contracts changed others rely on
+
+- **`/` (root route):** Now permanently redirects to `/sign-in` (308). Any existing bookmark to `admin.estalara.com/` will redirect. This is intentional (no marketing landing page on the admin domain).
+
+- **`@supabase/ssr` replaces `@supabase/auth-helpers-nextjs`:** The deprecated package is removed. Any code that imported from `auth-helpers-nextjs` would need to be migrated. Grep confirms no other files imported from the deprecated package.
+
+#### 5d. Architectural assumptions affected
+
+- **The assumption that `sb-access-token` is the canonical Supabase session cookie name is incorrect for `@supabase/ssr` v0.12+.** The correct name is `sb-<project-ref>-auth-token` (chunked). This assumption was in `@estalara/auth`'s `extractRawToken()` and in the old middleware. PR #310 fixed middleware; PR #311 fixed `verifyTracerAdminAuth`. The `@estalara/auth`'s legacy JWT path still looks for `sb-access-token` — it now functions only for the custom access token hook case (where JWTs are issued) or for Bearer tokens passed directly. The chunked cookie path is now handled exclusively by `checkStaffSession` / `createServerClient`.
+
+- **The 3-PR iteration pattern is the expected outcome for a new auth flow:** the first PR establishes the scaffold, the second fixes the runtime cookie name mismatch, the third fixes the API route auth gate. This is a known pattern for `@supabase/ssr` migrations (per `project_admin_ssr_cookie_auth.md` memory note: "admin browser-session routes must use `createServerClient().getUser()`, NOT `getAuthClaims`"). The memory note correctly predicted the fix pattern.
+
+### 6. New lesson candidates
+
+- **Pattern: "a new auth library (`@supabase/ssr`) sets cookies with a different naming scheme than the old library (`sb-<project-ref>-auth-token` vs. `sb-access-token`), causing every middleware auth check and API route auth gate to fail silently — the login appears to succeed but every protected request gets 401."** — seen in: RETRO-083 (PRs #310 + #311 both fixed this pattern at different layers: middleware and API auth gate). This is the "cookie name mismatch across auth library upgrade" pattern. It required THREE PRs to fully fix because the mismatch existed in two places: middleware (PR #310) and `verifyTracerAdminAuth` (PR #311). The `project_admin_ssr_cookie_auth.md` memory note was written AFTER this was resolved and now serves as the canonical lesson. **Count 1 — first sighting in this repo.** No Rule promotion (count 1). The memory note is the correct artifact for this.
+
+- **Pattern: "an auth gate function has multiple fallback paths (Bearer, SSR cookie, legacy JWT); a new auth mechanism (SSR cookie) is added to the gate but has no test; the other paths have tests; CI shows all tests green; the untested path is the PRIMARY production path."** — seen in: RETRO-083 TG-1/TG-2 (`checkStaffSession` + middleware `getUser()` both untested). **Count 1 — first sighting.** No Rule promotion. FOLLOW-336 addresses it.
+
+### 7. Follow-ups
+
+- **FOLLOW-336 (NEW — TG-1/TG-2, P2):** Add tests for the Supabase SSR session auth path in both `tracer-auth.ts` (`checkStaffSession`) and `src/middleware.ts` (admin session gate). Specifically: (a) a test for `checkStaffSession` covering the `'staff'` / `'not_staff'` / `'none'` return values with a mocked `createServerClient`; (b) a test for the middleware admin gate that mocks `createServerClient().getUser()` and asserts the correct redirect/pass behavior; (c) optionally, a test for `SignInForm.tsx` covering the happy path, error display, and redirect. Priority: P2 (the SSR session path is the PRIMARY live production auth mechanism for all admin routes). (qa-engineer or backend-engineer, 3h, **P2**, Sprint 18)
+
+### 8. Cross-references
+
+- **`project_admin_ssr_cookie_auth.md` (user memory):** The canonical lesson from this 3-PR chain is already captured in the memory note: "admin browser-session routes must use `@supabase/ssr` `createServerClient.getUser()`, NOT `getAuthClaims` (sb-access-token mismatch)." RETRO-083 is the retro that explains WHY.
+- **RETRO-077 / RETRO-080 (tracer admin UI auth):** Those retros addressed the SSE token-in-query-param vs. header issue for the Live Monitor. RETRO-083 addresses the browser session cookie mismatch for all API routes. Clean separation — both are "admin auth" but at different layers and mechanisms.
+- **FOLLOW-332 (P2, qa-engineer) — admin layout/page tests:** The sign-out Server Action added by PR #309 should be in scope for FOLLOW-332's test coverage.

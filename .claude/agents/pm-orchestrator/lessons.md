@@ -2,6 +2,19 @@
 
 ---
 
+**Date / ticket:** 2026-06-17 — RETRO-086 (FOLLOW-330 / PR #314 retrospective spawn) **Delegation
+row used:** N/A — PM-self retrospective analysis (step 6, post-merge, retro backlog). **What
+validation caught (or missed):** Wiring audit: all changed symbols (CH_TRACER_TIMEOUT_MS,
+buildJsonlExportUrl) are module-private, no export/import wiring required — CLEAN. Found two new
+pattern count-1s: (a) 'use client' components that access window synchronously at render time crash
+SSR; (b) hardcoded AbortSignal timeouts ignore managed-service idle/cold-start behavior. Neither
+reached count-2 promotion threshold. FOLLOW-334 filed for CH keep-warm cron. **A
+delegation/validation rule I'd add:** When a PR fixes a timeout, check if the timeout was hardcoded
+for an assumed service latency without accounting for idle/cold-start — if so, file a keep-warm
+follow-up immediately.
+
+---
+
 **Date / ticket:** 2026-06-17 — RETRO-085 (FOLLOW-328 / PR #313 retrospective spawn) **Delegation
 row used:** N/A — PM-self retrospective analysis (step 6, post-merge, 7 retros outstanding). **What
 validation caught (or missed):** Step 5c wiring audit confirmed clickhouseAuthHeaders has 12+

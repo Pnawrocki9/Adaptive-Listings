@@ -9182,6 +9182,37 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
+## FOLLOW-334 — ClickHouse Cloud keep-warm cron (prevent auto-idle cold-start delays >8s on tracer/analytics routes)
+
+- **status:** OPEN
+- **source_ticket:** FOLLOW-330 / RETRO-086 LG-1
+- **recommended_sprint:** 19
+- **recommended_agent:** devops-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** ClickHouse Cloud auto-idles after inactivity. The first query after idle wakes the
+  service in >8s; PR #314 (FOLLOW-330) raised the tracer AbortSignal timeout to 30s as a symptom
+  treatment. The real fix is a keep-warm cron that periodically pings ClickHouse to prevent idle.
+  Options: (a) a Vercel cron route (`/api/admin/tracer/health` or a lightweight `SELECT 1` endpoint)
+  called every 5-10 minutes via `vercel.json` crons, or (b) a GitHub Actions scheduled workflow
+  running on a cadence. Either approach prevents cold starts, reducing first-query latency from
+  potentially 30s back to <1s. Note: the 30s timeout in `CH_TRACER_TIMEOUT_MS` should remain as a
+  safety net even after the cron is in place.
+- **ac:**
+  - [ ] AC1: A keep-warm mechanism (Vercel cron or GH Actions schedule) pings the ClickHouse tracer
+        endpoint at a regular interval (≤10 minutes) to prevent auto-idle.
+  - [ ] AC2: The keep-warm ping is lightweight (no data read — `SELECT 1` or equivalent).
+  - [ ] AC3: The mechanism is observable: logs or metrics confirm the ping executes on schedule.
+  - [ ] AC4: `CH_TRACER_TIMEOUT_MS` remains at 30s as a safety net (do not reduce it).
+  - [ ] AC5: `pnpm typecheck` + CI green after changes.
+- **notes:** LG-1 from RETRO-086. The 30s timeout raise in PR #314 is the correct immediate fix;
+  this follow-up addresses the root cause (CH Cloud idle behavior). P2 because cold-start delays
+  degrade admin UX but do not cause data loss or serve fabricated data.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 335 (334 = RETRO-086 / PR #314 / FOLLOW-330 tracer history SSR window crash + CH cold-start 8s->30s timeout: keep-warm cron for CH Cloud to prevent auto-idle cold-start delays >8s on tracer/analytics routes; 30s timeout in CH_TRACER_TIMEOUT_MS is a symptom treatment, cron prevents idle, P2 2h devops.) -->
 <!-- next free FOLLOW number: 334 (333 = RETRO-085 / PR #313 / FOLLOW-328 ClickHouse Basic auth fix: 12 route-level call-sites migrated to clickhouseAuthHeaders but only clickhouse-tracer.test.ts CH-10 asserts the Authorization header is non-empty-username; add route-level assertions for the 11 uncovered sites, P3 2h qa.) -->
 <!-- next free FOLLOW number: 333 (331-332 = RETRO-084 / PR #312 / FOLLOW-327 single-tenant admin nav + DEFAULT_INTENT_WEIGHTS shared export: 331 = DEFAULT_INTENT_WEIGHTS is a hand-copied dup of SDK private BASE_PRIOR+BEHAVIORAL_DAMPING with NO drift guard — DEFAULT-1..6 assert the shared constant vs ITSELF, the docstring (intent-weights.ts:155-160) FALSELY claims "drift is caught in CI" pointing at packages/sdk/src/__tests__/intent-weights-drift.test.ts which DOES NOT EXIST, and BASE_PRIOR isn't even exported from the SDK; export SDK constants + write the real cross-package equality test + fix the docstring, P2 3h sdk+backend [LG-1+DG-1]. 332 = the single-tenant admin shell (Item 1 headline) shipped with ZERO test — no admin/layout.test.tsx + no admin/page.test.tsx exist, so the sidebar hiding 3 multi-tenant screens + showing 3 PILOT_TENANT_ID-scoped tracer links AND the /admin->pilot-tracer landing redirect are unasserted ("admin (8) tests" cited are unrelated files); add both test files + pin PILOT_TENANT_ID to the Master-Design pilot id, P2 2h qa [TG-1+TG-2]. Wiring Audit CLEAN (both new exports have non-test prod importers; nav targets all exist; PILOT_TENANT_ID points at the real live prod tenant cbc51cfa-... per MASTER_DESIGN §Snapshot so NO seed/migration-apply hop unlike RETRO-076). NO functional bug (uniform-prior fix genuine, T10 proves neutral=0.37). NO Rule promoted: P-DUP-CONTRACT + P-SHELL-UNTESTED both count-1 first sightings, held below threshold. Reconciled RETRO-077/080 (2nd nav path to tracer pages, not a regression) + RETRO-076 (no migration-apply gap here, tenant already live).) -->
 <!-- next free FOLLOW number: 331 (330 = tracer history SSR window crash + CH cold-start 8s->30s timeout + error logging, surfaced post-FOLLOW-328; 328 = ClickHouse empty-username Basic-auth Code 516 fix across all 12 control-plane CH reads — see backlog/sprint-18/FOLLOW-328.md; 329 = summary-route Rule K.2 fail-loud + data_source, sibling of FOLLOW-124, surfaced by 328.) -->

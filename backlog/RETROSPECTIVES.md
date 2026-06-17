@@ -17148,3 +17148,108 @@ CHECK B (half-wire — every new env-var has BOTH producer + consumer):
 - **RETRO-008 §4a CB-1 / FOLLOW-124 (lift route Rule K.2):** The lift route's silent-mock pattern was identified in RETRO-008 and FOLLOW-124 tracks the fix. The summary route (FOLLOW-329) is a symmetric sibling — Rule S applies (§5b). The retro for FOLLOW-329 should diff summary vs lift to confirm symmetric treatment.
 - **RETRO-078 / RETRO-079 (live-ClickHouse CI guard):** Those retros established that mock-only CH tests cannot catch runtime query failures (Code 386, auth 516, etc.). TG-1 here is the same meta-pattern applied to the auth-helper call-sites. The live-ClickHouse CI guard (FOLLOW-316 / RETRO-079) covers the QUERY builders; it does NOT cover the per-call-site Authorization header construction. FOLLOW-333 closes that.
 - **RETRO-080 (FOLLOW-309-312 wiring fixes):** No interaction — those fixes were to the admin tracer UI auth (SSE cookie) and nav. This PR fixes the ROUTE-level CH auth, not the UI-level auth. Clean separation confirmed.
+
+---
+
+## RETRO-086 — FOLLOW-330 (tracer history SSR `window is not defined` crash + ClickHouse cold-start 8s→30s/45s timeout; two pre-existing bugs unmasked by the FOLLOW-328 auth fix; history page 500 + Live Monitor SSE 500 both resolved; `CH_TRACER_TIMEOUT_MS` constant introduced; `buildJsonlExportUrl` rewritten to use relative URL; `console.error` observability added to history + stream error catches) — 2026-06-17
+
+### 1. What was built
+
+PR #314 (`fix(control-plane): tracer history SSR window crash + ClickHouse cold-start timeout [FOLLOW-330]`, merged 2026-06-16) fixes two distinct pre-existing bugs in the K.3.6 tracer (FOLLOW-269) that were masked while every ClickHouse read was returning Code 516 AUTHENTICATION_FAILED. Once FOLLOW-328 (PR #313) fixed the Basic auth header, the Postgres-backed `/api/admin/tracer/sessions` returned 200, but the ClickHouse-backed Session History and Live Monitor still 500'd — now for different reasons.
+
+**Fix 1 — SSR crash in history/page.tsx.** `buildJsonlExportUrl()` was called at render time (for the `<a download href>` attribute) using `new URL(path, window.location.origin)`. A `'use client'` page is still server-rendered for the initial HTML; during SSR `window` is undefined, throwing `ReferenceError: window is not defined`, which crashed the entire page with a Vercel 500 (digest 4154280423, confirmed in prod logs). Fix: replace `new URL(…, window.location.origin)` with a plain relative URL built from `URLSearchParams` — no `window` access, SSR-safe.
+
+**Fix 2 — ClickHouse cold-start timeout.** `chTracerQuery` and `chTracerCount` used `AbortSignal.timeout(8000)`. ClickHouse Cloud auto-idles; the first query after an idle period wakes the service in >8s, so every cold-start fetch aborted before the wake completed, producing a 500 even with correct auth and SQL. The abort cycle repeated on retry. Fix: introduce `CH_TRACER_TIMEOUT_MS = 30_000` (a module-private named constant), raise both timeouts to 30s. This stays well under the 300s Vercel function limit.
+
+**Fix 3 — Observability.** The history and stream error catches previously sent to Sentry only; the real cause (HTTP response body or `AbortError`) was invisible in `vercel logs`. Added `console.error` of the message to both catches, making the root cause visible in runtime logs without changing the generic client response.
+
+6 files changed: 57 additions, 14 deletions. Tests updated: 80 vitest tests green across tracer lib + history page + history/stream routes.
+
+### 2. Wiring audit
+
+**Scope:** `CH_TRACER_TIMEOUT_MS` (new constant), `buildJsonlExportUrl` (rewritten inline closure), `console.error` observability additions.
+
+- `CH_TRACER_TIMEOUT_MS` — module-private constant in `apps/control-plane/src/lib/clickhouse-tracer.ts:55`. Producer: line 55 (`const CH_TRACER_TIMEOUT_MS = 30_000`). Consumers: lines 84 + 127 within the same file (`AbortSignal.timeout(CH_TRACER_TIMEOUT_MS)` in `chTracerQuery` and `chTracerCount`). Not exported; wiring is self-contained. CLEAN.
+
+- `buildJsonlExportUrl` — local closure inside `apps/control-plane/src/app/admin/tenants/[id]/tracer/history/page.tsx:301`. Consumed by the same file at line 494 (`href={buildJsonlExportUrl()}`). Not exported; wiring is self-contained. CLEAN.
+
+- `console.error` additions — inline observability in `apps/control-plane/src/app/api/admin/tracer/history/route.ts:128` and `apps/control-plane/src/app/api/admin/tracer/sessions/[id]/stream/route.ts:137`. These are side effects, not new exported symbols. CLEAN.
+
+**No new exported symbols, events, env vars, DB columns, or config fields introduced.** All changes are internal to their respective files. Wiring audit: FULLY CLEAN.
+
+**grep evidence:**
+```
+grep -rn "CH_TRACER_TIMEOUT_MS" apps/control-plane/src --include="*.ts" --include="*.tsx"
+→ clickhouse-tracer.ts:55 (producer), :84 (consumer), :127 (consumer) — all in same file, not exported
+```
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, carry-forward) — keep-warm cron for ClickHouse Cloud idle wakeup is NOT in this PR.** Raising the timeout to 30s is the correct immediate fix, but it means the first request after an idle period will take up to 30s to respond instead of failing fast. The real solution is a keep-warm cron that pings CH periodically to prevent idle. This was explicitly noted in the PR body and the `CH_TRACER_TIMEOUT_MS` comment ("Keep-warm cron is the longer-term fix; see project notes"). AC4 in FOLLOW-330 is unchecked: "AC4: keep-warm cron for the idle ClickHouse service (longer-term; separate follow-up)." **No FOLLOW-330 fix can address this in-PR.** Filed as FOLLOW-334 below.
+
+- **LG-2 (P3, architectural) — the 30s cold-start tolerance applies only to `clickhouse-tracer.ts`; other CH call-sites in control-plane still use the `clickhouseAuthHeaders` helper via `fetch(url, { signal: AbortSignal.timeout(8000) })` — but only if they specify a signal at all.** A quick audit: `clickhouse-dsr.ts`, `adapt/route.ts`, `dashboard/analytics/lift/route.ts`, `dashboard/analytics/summary/route.ts`, `admin/labels/route.ts`, and others in the analytics/pilot surface do NOT appear to use `AbortSignal.timeout` (they rely on Vercel's function-level timeout or implicit fetch timeout). This is arguably fine (no self-abort, the request runs until the Vercel 300s limit), but if CH is cold, these routes will also stall. The keep-warm cron (LG-1 / FOLLOW-334) is the correct fix for all of them. No separate follow-up needed for LG-2 — it is subsumed by FOLLOW-334. Noted for completeness.
+
+- **LG-3 (P3) — `CH_TRACER_TIMEOUT_MS` is module-private and not exported or configurable via env var.** If an operator needs to tune the timeout in production (e.g., ClickHouse Cloud SLA improves to <15s wakeup), they must edit the source. This is a deliberate design choice (hardcoded constant rather than env-driven), and for an MVP this is acceptable. No follow-up needed; the comment in the code points to the keep-warm cron as the real solution.
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **No correctness gaps introduced.** The two fixes are isolated: (1) the `buildJsonlExportUrl` rewrite produces an identical URL string (`/api/admin/tracer/export/decisions?tenant_id=…&from=…&to=…`) — only the construction method changed, not the output. (2) `AbortSignal.timeout(30_000)` replaces `AbortSignal.timeout(8000)` — semantically identical, just wider budget. Both fixes are correct and do not change observable behavior under normal conditions.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None.** The SSR crash and cold-start abort were genuine production bugs (verified in prod logs, digest 4154280423). This PR resolves both. No new logic paths, no new state, no behavioral regression.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, informational) — `buildJsonlExportUrl` has no dedicated unit test asserting SSR-safety (no `window` access in the output URL).** The fix is trivially correct (no `window.location.origin` call site remains), and the broader page test suite covers the component. However, a dedicated test that calls `buildJsonlExportUrl()` in a Node.js environment (where `window` is undefined) and asserts no `ReferenceError` would serve as a regression guard. Severity P3: the fix is verified correct, the function is a local closure, and the SSR crash would manifest as an immediate 500 in any future regression — highly visible, not silent. No follow-up filed (insufficient severity for the queue).
+
+- **TG-2 (P3, informational) — `CH_TRACER_TIMEOUT_MS` value (30000) is asserted by the renamed test CH-21 ("uses AbortSignal.timeout (30s — covers ClickHouse Cloud cold-start)"), but the test only checks that `signal` is defined, not that it equals exactly 30000.** Reading `clickhouse-tracer.test.ts` CH-21: it asserts `callOptions.signal` is truthy but does not extract the timeout value. The timeout value is correct (the constant is set to 30_000 and the test documents this); the assertion gap is that a future change to `CH_TRACER_TIMEOUT_MS` (e.g., to 15_000) would not fail the test. Severity P3 (the constant is named and correct; a regression would be self-documenting). No follow-up filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, RESOLVED-IN-PR) — the `CH_TRACER_TIMEOUT_MS` constant includes a full explanatory comment** about CH Cloud auto-idle, the >8s wakeup, and the keep-warm cron TODO. The `buildJsonlExportUrl` rewrite includes a 4-line comment explaining the SSR crash root cause (`new URL(…, window.location.origin)` at render time) and why relative URL is the fix. Documentation delta is CLEAN and additive.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-328 (RETRO-085, DONE):** This PR is FOLLOW-328's direct child — the auth fix unmasked both bugs. The cascade is complete; no further cascading from FOLLOW-330.
+
+- **FOLLOW-307 (P1, devops — apply migration 0030 in prod Supabase):** No interaction. This PR is tracer/SSR only; the Postgres migration path is unaffected.
+
+- **FOLLOW-329 (P2 — dashboard/analytics/summary Rule K.2 fail-loud):** No interaction. This PR touches neither the summary route nor any analytics path.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-334 (NEW — keep-warm cron for ClickHouse Cloud):** See LG-1 above. The 30s timeout is a symptom treatment; the root cause is the CH Cloud auto-idle gap. A keep-warm cron (a periodic no-op SELECT 1 against the CH endpoint) would prevent cold starts. Estimated 1-2h for a devops-engineer to add a Vercel cron job or a GitHub Actions scheduled workflow hitting `/api/admin/tracer/health` (or similar). P2, Sprint 19.
+
+- **Any future ClickHouse call-site added to the tracer:** Must use `CH_TRACER_TIMEOUT_MS` from `clickhouse-tracer.ts` rather than a hardcoded millisecond value. This is a code-convention matter (not a Rule-H wiring issue since the constant is module-private). A comment in the module header would make this discoverable; see DG-1 — the existing comment covers this implicitly.
+
+#### 5c. Contracts changed others rely on
+
+- **No exported symbols changed.** `CH_TRACER_TIMEOUT_MS` is module-private. `buildJsonlExportUrl` is a local closure. The route responses (`/api/admin/tracer/history`, `/api/admin/tracer/sessions/[id]/stream`) remain unchanged in schema. No SDK, ingest, or decision-api caller is affected.
+
+#### 5d. Architectural assumptions affected
+
+- **The assumption that 8s is sufficient for any ClickHouse Cloud operation was incorrect for idle-wakeup scenarios.** This is now documented in the `CH_TRACER_TIMEOUT_MS` constant comment. The broader implication: ClickHouse Cloud's auto-idle behavior should be treated as a first-class operational concern in this repo; FOLLOW-334 addresses it.
+
+- **The assumption that `'use client'` pages are safe to access `window` at render time is wrong in Next.js App Router.** `'use client'` components still SSR their initial HTML; `window` is only available after hydration. This is a known Next.js 15 nuance that tripped this PR. The fix pattern (relative URLs, no `window.location.origin` at render time, `useEffect` / `useLayoutEffect` for window-dependent state) should be applied to any future `'use client'` component that needs the origin. Existing pattern in the codebase: check for `typeof window !== 'undefined'` guards or use relative URLs from the start. **Filed as a Rule candidate below.**
+
+### 6. New lesson candidates
+
+- **Pattern: "a `'use client'` component in Next.js App Router accesses `window` synchronously at render time (e.g., for a computed `href` attribute), causing a `ReferenceError: window is not defined` during SSR of the initial HTML."** — seen in: RETRO-086 §3 (buildJsonlExportUrl using `new URL(path, window.location.origin)`). This is a well-known Next.js 15 pitfall: `'use client'` marks a component as a client component, but it still pre-renders on the server. Any code that runs at render time (not inside `useEffect`) must be SSR-safe. Fix pattern: use relative URLs (`/api/path?${qs}`) or guard with `typeof window !== 'undefined'`. **Count 1 — first sighting. No Rule promotion.** Watch for a second sighting in a different `'use client'` component.
+
+- **Pattern: "a hardcoded AbortSignal timeout is set based on an assumed server latency without accounting for cold-start/idle-wake behavior of the downstream service."** — seen in: RETRO-086 (8s budget for ClickHouse Cloud, which requires >8s to wake from auto-idle). This sub-pattern is specific to managed cloud services with idle/auto-suspend behavior (ClickHouse Cloud, Supabase pooler cold starts, Neon auto-suspend). The fix is either a named constant with a comment or a keep-warm mechanism. **Count 1 — first sighting. No Rule promotion.** The broader "don't hardcode infra-specific latency budgets" pattern is count-1; watch for a second sighting with a different service.
+
+### 7. Follow-ups
+
+- **FOLLOW-334 (NEW — LG-1, P2):** Add a keep-warm cron for the ClickHouse Cloud tracer endpoint to prevent auto-idle cold-start delays. The 30s timeout added in PR #314 is a symptom treatment; cold starts mean the first query after idle takes up to 30s, degrading UX. A scheduled ping (Vercel cron or GitHub Actions scheduled workflow, ~1-2h) hitting a lightweight CH endpoint (e.g., `SELECT 1` via `/api/admin/tracer/sessions` health check or a dedicated `/api/admin/tracer/health` route) would keep CH active. (devops-engineer or backend-engineer, 2h, **P2**, Sprint 19)
+
+### 8. Cross-references
+
+- **FOLLOW-328 / RETRO-085:** Direct parent. Both bugs fixed here were masked while Code 516 prevented any CH read from succeeding.
+- **FOLLOW-269 (K.3.6 tracer UI, backend-engineer):** The SSR crash and timeout were pre-existing bugs in FOLLOW-269's tracer UI work that only became visible post-auth-fix. FOLLOW-269's remaining AC4 (keep-warm cron) is now FOLLOW-334.
+- **RETRO-077 / RETRO-080 (tracer admin UI auth):** Those retros addressed the UI-layer auth (SSE cookie, nav orphaning). This PR addressed the service-layer runtime bugs (SSR crash, CH cold-start). Clean separation — the two fix tracks do not overlap.
+- **RETRO-078 / RETRO-079 (ClickHouse Code 386 + live-CI guard):** The cold-start timeout pattern is a different axis from the query-builder Code 386 bugs those retros addressed. The fix type is also different: timeout increase vs. query qualifier fix. No overlap.

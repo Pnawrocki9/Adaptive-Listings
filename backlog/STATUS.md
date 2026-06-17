@@ -190,7 +190,7 @@ Status: READY_FOR_REVIEW. Awaiting human merge. PM comment posted: #315 comment 
 | RETRO-083 | FOLLOW-326    | #309/#310/#311 | PENDING                                  |
 | RETRO-084 | FOLLOW-327    | #312           | DONE (2026-06-17) — FOLLOW-331/332 filed |
 | RETRO-085 | FOLLOW-328    | #313           | DONE (2026-06-17) — FOLLOW-333 filed     |
-| RETRO-086 | FOLLOW-330    | #314           | PENDING                                  |
+| RETRO-086 | FOLLOW-330    | #314           | DONE (2026-06-17) — FOLLOW-334 filed     |
 
 RETRO-084 findings: LG-1 DEFAULT_INTENT_WEIGHTS drift guard missing (docstring claims CI guard that
 does not exist: intent-weights-drift.test.ts MISSING); TG-1 single-tenant admin shell change shipped
@@ -203,5 +203,9 @@ RETRO-085 DONE (2026-06-17): ClickHouse Basic auth fix (FOLLOW-328 / PR #313). F
 confirmed. No Rule promoted (centralized-helper coverage illusion count-1; K.2 silent-mock sub-shape
 already governed by Rule K.2).
 
-Next: spawn retrospective-analyst for FOLLOW-330 (PR #314) → RETRO-086 (tracer history SSR crash +
-CH cold-start timeout fix).
+RETRO-086 DONE (2026-06-17): Tracer SSR crash + CH cold-start timeout fix (FOLLOW-330 / PR #314).
+FOLLOW-334 filed (LG-1: keep-warm cron for CH Cloud auto-idle, P2). No Rule promoted (window-at-SSR
+count-1; hardcoded-timeout count-1; both first sightings below threshold).
+
+Next: spawn retrospective-analyst for FOLLOW-293 (PR #307) → RETRO-081 (K.3.6 D-1 live-network
+smoke).

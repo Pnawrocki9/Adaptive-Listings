@@ -2,6 +2,18 @@
 
 ---
 
+**Date / ticket:** 2026-06-17 — RETRO-062 + RETRO-063 (FOLLOW-276 / PR #272 + FOLLOW-278 / PR #273
+retrospective spawns) **Delegation row used:** N/A — PM-self retrospective analysis (step 6,
+post-merge, retro backlog, two docs-only/test-only PRs batched). **What validation caught (or
+missed):** RETRO-062: docs-only PR, wiring audit N/A, no FOLLOW stubs needed. Confirmed zero
+surviving "buildSnippet emits" claims for retired attributes via PR body grep evidence. RETRO-063:
+constraint accepted (GDPR compliance), locale render-hop test proves FOLLOW-275's mergeQuizConfig
+wiring is correct end-to-end. No new gaps. **A delegation/validation rule I'd add:** For docs-only
+and test-only PRs, skip the full wiring audit and just confirm the grep evidence in the PR body is
+valid — these PRs have no new symbols to trace.
+
+---
+
 **Date / ticket:** 2026-06-17 — RETRO-083 (FOLLOW-326 / PRs #309/#310/#311 retrospective spawn)
 **Delegation row used:** N/A — PM-self retrospective analysis (step 6, post-merge, retro backlog).
 **What validation caught (or missed):** Wiring audit: createBrowserClient/createServerClient/

@@ -87,26 +87,26 @@ partial-personalization risk for TICKET-PILOT-001.
 
 ## RETRO TRACKING (completed retros)
 
-| RETRO     | Source ticket                    | PR        | Status        | Notes                                                                                                                                                                      |
-| --------- | -------------------------------- | --------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| RETRO-059 | FOLLOW-274                       | #267      | DONE          |                                                                                                                                                                            |
-| RETRO-060 | FOLLOW-273                       | #268      | DONE          | Rule W promoted (ClickHouse ORDER BY key DDL)                                                                                                                              |
-| RETRO-061 | (no body — DG-2 cited)           | —         | N/A           | Cited in test headers; no actual entry filed                                                                                                                               |
-| RETRO-062 | FOLLOW-276                       | #272      | PENDING SPAWN |                                                                                                                                                                            |
-| RETRO-063 | FOLLOW-278                       | #273      | PENDING SPAWN |                                                                                                                                                                            |
-| RETRO-064 | FOLLOW-266 Ph1                   | #277      | PENDING SPAWN |                                                                                                                                                                            |
-| RETRO-065 | FOLLOW-266 Ph2                   | #278      | COMPLETE      | 3 P1 defects found (CB-1/LG-1/LG-2) → FOLLOW-286                                                                                                                           |
-| RETRO-066 | (ESC-021 sourced)                | —         | COMPLETE      | ClickHouse MODIFY COLUMN on ORDER BY key → Rule W                                                                                                                          |
-| RETRO-067 | FOLLOW-266 Ph3                   | #280      | PENDING SPAWN |                                                                                                                                                                            |
-| RETRO-068 | FOLLOW-286                       | #279      | PENDING SPAWN |                                                                                                                                                                            |
-| RETRO-069 | FOLLOW-287+288                   | #281+#282 | PENDING SPAWN |                                                                                                                                                                            |
-| RETRO-070 | FOLLOW-267                       | #283      | COMPLETE      | Rule K.2 amended; FOLLOW-298/299/300 filed                                                                                                                                 |
-| RETRO-071 | FOLLOW-268-write                 | #285      | COMPLETE      | FOLLOW-301/302 filed                                                                                                                                                       |
-| RETRO-072 | FOLLOW-297                       | #286      | COMPLETE      | FOLLOW-303 filed                                                                                                                                                           |
-| RETRO-073 | FOLLOW-301                       | #289      | COMPLETE      | FOLLOW-304 filed (P2 GET cross-scope determinism)                                                                                                                          |
-| RETRO-074 | FOLLOW-268-sdk                   | #290      | COMPLETE      | FOLLOW-305 filed (P1 double-/api blocker); Rule X count=1                                                                                                                  |
-| RETRO-075 | FOLLOW-305                       | #291      | COMPLETE      | FOLLOW-306 filed (P3 hygiene); Rule X PROMOTED (count=2)                                                                                                                   |
-| RETRO-076 | FOLLOW-266 Ph2 seed + FOLLOW-302 | #293      | COMPLETE      | FOLLOW-307 filed (P1 devops apply gate); OG-1 no-auto-Postgres-apply fact recorded; FOLLOW-302 CLOSED both sites; NO new Rule (OG-1 count=1, promote-on-2nd condition set) |
+| RETRO     | Source ticket                    | PR        | Status                                                               | Notes                                                                                                                                                                      |
+| --------- | -------------------------------- | --------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RETRO-059 | FOLLOW-274                       | #267      | DONE                                                                 |                                                                                                                                                                            |
+| RETRO-060 | FOLLOW-273                       | #268      | DONE                                                                 | Rule W promoted (ClickHouse ORDER BY key DDL)                                                                                                                              |
+| RETRO-061 | (no body — DG-2 cited)           | —         | N/A                                                                  | Cited in test headers; no actual entry filed                                                                                                                               |
+| RETRO-062 | FOLLOW-276                       | #272      | DONE (2026-06-17) — no FOLLOW filed (docs-only)                      |
+| RETRO-063 | FOLLOW-278                       | #273      | DONE (2026-06-17) — no FOLLOW filed (docs+test, constraint accepted) |
+| RETRO-064 | FOLLOW-266 Ph1                   | #277      | PENDING SPAWN                                                        |                                                                                                                                                                            |
+| RETRO-065 | FOLLOW-266 Ph2                   | #278      | COMPLETE                                                             | 3 P1 defects found (CB-1/LG-1/LG-2) → FOLLOW-286                                                                                                                           |
+| RETRO-066 | (ESC-021 sourced)                | —         | COMPLETE                                                             | ClickHouse MODIFY COLUMN on ORDER BY key → Rule W                                                                                                                          |
+| RETRO-067 | FOLLOW-266 Ph3                   | #280      | PENDING SPAWN                                                        |                                                                                                                                                                            |
+| RETRO-068 | FOLLOW-286                       | #279      | PENDING SPAWN                                                        |                                                                                                                                                                            |
+| RETRO-069 | FOLLOW-287+288                   | #281+#282 | PENDING SPAWN                                                        |                                                                                                                                                                            |
+| RETRO-070 | FOLLOW-267                       | #283      | COMPLETE                                                             | Rule K.2 amended; FOLLOW-298/299/300 filed                                                                                                                                 |
+| RETRO-071 | FOLLOW-268-write                 | #285      | COMPLETE                                                             | FOLLOW-301/302 filed                                                                                                                                                       |
+| RETRO-072 | FOLLOW-297                       | #286      | COMPLETE                                                             | FOLLOW-303 filed                                                                                                                                                           |
+| RETRO-073 | FOLLOW-301                       | #289      | COMPLETE                                                             | FOLLOW-304 filed (P2 GET cross-scope determinism)                                                                                                                          |
+| RETRO-074 | FOLLOW-268-sdk                   | #290      | COMPLETE                                                             | FOLLOW-305 filed (P1 double-/api blocker); Rule X count=1                                                                                                                  |
+| RETRO-075 | FOLLOW-305                       | #291      | COMPLETE                                                             | FOLLOW-306 filed (P3 hygiene); Rule X PROMOTED (count=2)                                                                                                                   |
+| RETRO-076 | FOLLOW-266 Ph2 seed + FOLLOW-302 | #293      | COMPLETE                                                             | FOLLOW-307 filed (P1 devops apply gate); OG-1 no-auto-Postgres-apply fact recorded; FOLLOW-302 CLOSED both sites; NO new Rule (OG-1 count=1, promote-on-2nd condition set) |
 
 **Wave-2 retros still pending spawn:** RETRO-062/063/064/067/068/069.
 
@@ -220,5 +220,10 @@ RETRO-083 DONE (2026-06-17): admin.estalara.com sign-in + SSR auth (FOLLOW-326 /
 3h). 3-PR chain. Wiring CLEAN. No Rule promoted (cookie-name-mismatch count-1;
 untested-primary-auth-gate count-1).
 
-Next: spawn retrospective-analyst for FOLLOW-276 (PR #272) → RETRO-062 and FOLLOW-278 (PR #273) →
-RETRO-063 (last two pending retros from Sprint 17 Wave 2).
+RETRO-062 DONE (2026-06-17): Stale quiz-config docstrings post-ADR-0011 (FOLLOW-276 / PR #272).
+Docs-only, no FOLLOW stubs.
+
+RETRO-063 DONE (2026-06-17): Consent-banner locale constraint accepted (FOLLOW-278 / PR #273).
+Render-hop test + ADR-0011 addendum. No FOLLOW stubs.
+
+ALL 8 PENDING RETROS COMPLETE (2026-06-17). Next: read QUEUE.md and pick next ticket.

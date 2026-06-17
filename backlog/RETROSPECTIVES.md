@@ -17568,3 +17568,121 @@ grep -rn "createBrowserClient\|createServerClient\|checkStaffSession\|verifyTrac
 - **`project_admin_ssr_cookie_auth.md` (user memory):** The canonical lesson from this 3-PR chain is already captured in the memory note: "admin browser-session routes must use `@supabase/ssr` `createServerClient.getUser()`, NOT `getAuthClaims` (sb-access-token mismatch)." RETRO-083 is the retro that explains WHY.
 - **RETRO-077 / RETRO-080 (tracer admin UI auth):** Those retros addressed the SSE token-in-query-param vs. header issue for the Live Monitor. RETRO-083 addresses the browser session cookie mismatch for all API routes. Clean separation — both are "admin auth" but at different layers and mechanisms.
 - **FOLLOW-332 (P2, qa-engineer) — admin layout/page tests:** The sign-out Server Action added by PR #309 should be in scope for FOLLOW-332's test coverage.
+
+---
+
+## RETRO-062 — FOLLOW-276 (stale quiz-config snippet-attr docstrings post-ADR-0011; four `buildSnippet emits data-micro-polls-enabled` / `data-quiz-enabled` claims corrected to describe the ADR-0011 runtime-fetch wire; pure docstring correction, no logic changed) — 2026-06-17
+
+### 1. What was built
+
+PR #272 (`docs(control-plane): correct stale quiz-config snippet-attr docstrings post-ADR-0011 [FOLLOW-276]`, merged 2026-06-12) is a pure documentation correction. ADR-0011 retired `buildSnippet()`'s emission of `data-micro-polls-enabled` / `data-quiz-enabled` and moved `readConfig()` to treat those attributes as `DEPRECATED_FALLBACK` only. FOLLOW-275's close-out PRs (#270/#271) corrected docstrings in their direct diffs, but four stale "buildSnippet emits" claims survived in adjacent files outside those diffs.
+
+Four locations corrected:
+1. `packages/shared/src/schemas/quiz-config.ts` line 21 (FOLLOW-274 note claiming buildSnippet emits `data-micro-polls-enabled`)
+2. `packages/shared/src/schemas/quiz-config.ts` lines 91-92 (`QuizConfig.micro_polls_enabled` JSDoc)
+3. `apps/control-plane/src/app/api/quiz/config/route.ts` line 26 (WIRED block claiming active emission)
+4. `apps/control-plane/src/app/dashboard/quiz/page.tsx` lines 54 + 252 (JSDoc + user-facing JSX comment)
+
+All four rewritten to describe the ADR-0011 runtime-fetch wire: `GET /api/quiz/public-config` → `fetchQuizConfig()` → `mergeQuizConfig()` → `config.*`. The user-facing comment now reads: "Changes take effect on the buyer's next page load — no snippet re-install required."
+
+3 files changed: 25 additions, 12 deletions. No logic changed, no test files touched.
+
+### 2. Wiring audit
+
+**Scope:** Documentation-only PR. No new exported symbols, events, env vars, DB columns, or config fields. Wiring audit: N/A (no new wiring to verify).
+
+**AC3 grep (from PR body) confirmed zero surviving active "buildSnippet emits" claims for the retired attributes:**
+```
+grep -rn "buildSnippet emits|data-micro-polls-enabled.*emits|data-quiz-enabled.*emits" --include="*.ts" --include="*.tsx" apps/ packages/ --exclude-dir=dist --exclude-dir=node_modules
+→ 3 hits, all for non-retired attributes (data-decision-url, data-inquiry-submit-selector) or a DEPRECATED_FALLBACK read path test. CLEAN.
+```
+
+### 3. Logic gaps
+
+- **None.** This is a documentation-only correction. The underlying ADR-0011 runtime-fetch wire was already implemented by FOLLOW-275 (PRs #270/#271). This PR has no logic.
+
+### 4. Code review
+
+- No code logic changed. No test files touched. TypeScript typecheck exits 0 on both `@estalara/shared` and `control-plane` filters. 931 tests passed. CLEAN.
+
+### 5. Cascading impact
+
+- **None.** Documentation-only. No consumer depends on these docstring claims. The runtime behavior (runtime-fetch transport) was already correct; only the stale documentation was wrong.
+
+### 6. New lesson candidates
+
+- **Pattern: "close-out PRs for an ADR migration correct docstrings only in their direct diff; sibling files with matching-but-stale claims are not grepped for consistency."** — seen in: RETRO-062 (FOLLOW-275 close-out PRs #270/#271 corrected some docstrings but missed 4 of the stale "buildSnippet emits" claims in adjacent files). The fix: when an ADR retires an emit/attribute/behavior, grep ALL files (not just touched files) for the claim text before closing. **Count 1 — first sighting.** No Rule promotion (count 1).
+
+### 7. Follow-ups
+
+- None. All stale claims corrected. CLEAN.
+
+### 8. Cross-references
+
+- **ADR-0011 (quiz-config transport):** The ADR whose implementation created the stale docstrings. RETRO-062 completes the docstring propagation.
+- **FOLLOW-275 / PRs #270+#271:** The close-out PRs that corrected the directly-touched files. RETRO-062 corrects the residual.
+
+---
+
+## RETRO-063 — FOLLOW-278 (consent-banner locale/accent gap resolution — Option iii accepted: document constraint as accepted behavior; adds locale render-hop test verifying `language='pl'` flows from server config to quiz trigger button text; ADR-0011 `§Consent-banner locale` addendum; `QUIZ_CONFIG_CACHE_KEY` scope note added; no logic changed) — 2026-06-17
+
+### 1. What was built
+
+PR #273 (`fix(sdk): document consent-banner locale constraint + add locale render-hop test [FOLLOW-278]`, merged 2026-06-12) resolves RETRO-058 §4a LG-1/LG-2/TG-1.
+
+The locale/accent gap: `buildSnippet()` does NOT emit `data-language` or `data-accent-color`. The consent banner renders at step 2 (consent gate, before any tenant-data fetch); the quiz-config fetch runs at step 3 (after consent resolves). The banner cannot wait for the fetch without fetching tenant data pre-consent — a GDPR compliance issue. Compliance confirmed no locale-specific legal text in the banner. The gap is **accepted behavior**, not a bug.
+
+Three changes:
+1. **Option iii chosen** — document the constraint at the `renderConsentBanner()` call site in `packages/sdk/src/index.ts` (28-line comment) and in `docs/adr/ADR-0011-quiz-config-transport.md` (new `§Consent-banner locale` addendum).
+2. **Locale render-hop test** (`packages/sdk/src/__tests__/follow-278.test.ts`, 6 tests) — drives `_initForTest()`, mocks the server returning `language='pl'`, advances fake timers to quiz trigger (30s), asserts rendered button text is `'Znajdź dopasowanie →'` (QUIZ_LABELS.pl.trigger). RED before FOLLOW-275 (mergeQuizConfig not wired), GREEN after (index.ts:744 calls mergeQuizConfig before renderQuizTrigger at 760).
+3. **`QUIZ_CONFIG_CACHE_KEY` scope note** in `packages/sdk/src/core/quiz-config.ts` — documents the global-per-tab scope and the multi-embed caveat.
+
+5 files changed: 434 additions, 0 deletions. 1320 tests passed (+6 new).
+
+### 2. Wiring audit
+
+**Scope:** New test file, ADR addendum, docstrings. No new exported symbols, events, env vars, DB columns, or config fields.
+
+- `QUIZ_CONFIG_CACHE_KEY` scope note — documentation addition in `quiz-config.ts`. Not a new export. CLEAN.
+- `follow-278.test.ts` — test file only. Imports `_initForTest()` (existing seam from `packages/sdk/src/index.ts`). CLEAN.
+- ADR-0011 addendum — documentation only. CLEAN.
+
+Wiring audit: N/A (no new wiring). CLEAN.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, ACCEPTED — the constraint is the resolution):** `buildSnippet()` does not emit `data-language` / `data-accent-color`. The consent banner will always render in the tenant's embed-default language (the SDK's fallback, typically English) regardless of server-side `language` configuration. This is accepted behavior per compliance guidance (no locale-specific legal text in banner). The locale DOES reach the quiz trigger (tested by TG-1 test). Documented in index.ts comment + ADR-0011 addendum. No follow-up filed — the constraint is intentional.
+
+- **LG-2 (P3) — `QUIZ_CONFIG_CACHE_KEY` is global-per-tab (not scoped by apiKey).** In a multi-embed-per-tab scenario, tenant A's config could leak to tenant B's SDK instance. The scope note documents this. For the current single-embed model, it is correct. No follow-up filed (multi-embed is a future concern).
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **No correctness gaps.** The test file validates the existing production behavior is correct (FOLLOW-275 wired mergeQuizConfig before renderQuizTrigger; FOLLOW-278 proves it). No production code changed.
+
+#### 4b. Code bugs not caught
+
+- **None.** Pure test + docs change.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (RESOLVED-BY-PR) — locale render-hop test.** The 6 tests in `follow-278.test.ts` cover the core concern (Polish/Spanish/English label text reaches the rendered trigger). CLEAN.
+
+### 5. Cascading impact
+
+- **None for logic.** The ADR addendum (§Consent-banner locale) is now the canonical reference for why the banner ignores locale — future devs won't file a bug against it.
+
+### 6. New lesson candidates
+
+- **Pattern: "when an architectural constraint (GDPR-compliance-driven locale gap) is accepted, documenting it at the call site AND in the ADR prevents repeated re-investigation."** — seen in: RETRO-063 (the locale gap was surfaced in RETRO-058; FOLLOW-278 documents it in two places — call-site comment + ADR addendum + scope note on the cache key). This is the correct closure pattern for "accepted but non-obvious constraint" findings. **Count 1.** No Rule promotion (count 1, and it is a documentation practice note, not a code pattern).
+
+### 7. Follow-ups
+
+- None. The constraint is documented. The locale render-hop test is green. CLEAN.
+
+### 8. Cross-references
+
+- **RETRO-058 (FOLLOW-275 / quiz-config transport):** LG-1/LG-2/TG-1 from RETRO-058 are the source of FOLLOW-278. RETRO-063 closes all three.
+- **ADR-0011-quiz-config-transport.md:** The canonical document for the quiz-config transport decision. `§Consent-banner locale` addendum added in this PR.
+- **FOLLOW-273 / PR #268 (type unification):** FOLLOW-273 proves the `QuizLanguage` type is correct at the type level. FOLLOW-278 (this retro) proves the type is correctly consumed by rendering. The two are disjoint and complementary.

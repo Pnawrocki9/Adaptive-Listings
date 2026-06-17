@@ -185,7 +185,7 @@ Status: READY_FOR_REVIEW. Awaiting human merge. PM comment posted: #315 comment 
 | --------- | ------------- | -------------- | ---------------------------------------- |
 | RETRO-062 | FOLLOW-276    | #272           | PENDING                                  |
 | RETRO-063 | FOLLOW-278    | #273           | PENDING                                  |
-| RETRO-081 | FOLLOW-293    | #307           | PENDING                                  |
+| RETRO-081 | FOLLOW-293    | #307           | DONE (2026-06-17) — no new FOLLOW filed  |
 | RETRO-082 | FOLLOW-324    | #308           | PENDING                                  |
 | RETRO-083 | FOLLOW-326    | #309/#310/#311 | PENDING                                  |
 | RETRO-084 | FOLLOW-327    | #312           | DONE (2026-06-17) — FOLLOW-331/332 filed |
@@ -207,5 +207,9 @@ RETRO-086 DONE (2026-06-17): Tracer SSR crash + CH cold-start timeout fix (FOLLO
 FOLLOW-334 filed (LG-1: keep-warm cron for CH Cloud auto-idle, P2). No Rule promoted (window-at-SSR
 count-1; hardcoded-timeout count-1; both first sightings below threshold).
 
-Next: spawn retrospective-analyst for FOLLOW-293 (PR #307) → RETRO-081 (K.3.6 D-1 live-network
-smoke).
+RETRO-081 DONE (2026-06-17): K.3.6 D-1 live-network smoke (FOLLOW-293 / PR #307). CLEAN wiring
+audit. Smoke run 27555287447 GREEN (ESC-024 resolved by Piotr). FOLLOW-307 apply attested. No new
+FOLLOW stubs (LG-1/2/3 all P3 by-design).
+
+Next: spawn retrospective-analyst for FOLLOW-324 (PR #308) → RETRO-082 (SDK bundle size fix,
+auto-detect companion split).

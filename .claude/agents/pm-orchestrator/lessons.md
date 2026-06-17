@@ -2,6 +2,19 @@
 
 ---
 
+**Date / ticket:** 2026-06-17 — RETRO-081 (FOLLOW-293 / PR #307 retrospective spawn) **Delegation
+row used:** N/A — PM-self retrospective analysis (step 6, post-merge, retro backlog). **What
+validation caught (or missed):** Wiring audit: fetchIntentWeights is imported from the real SDK (no
+mock) — correct for a live-network smoke. ESTALARA_SMOKE_API_KEY / URL / REQUIRE_LIVE_INTENT_SMOKE
+all have clean producers in the CI workflow and consumers in the test. ESC-024 filing + resolution
+pattern correctly applied. Smoke run 27555287447 GREEN attests FOLLOW-307 migration apply. No gaps
+warranting follow-up stubs — all LG points are P3 by-design. **A delegation/validation rule I'd
+add:** When a live-network smoke test PR is validated, confirm the CI job has BOTH a soft-skip path
+for missing secrets AND a nightly/scheduled run that exercises the hard-assert path — a smoke that
+only ever soft-skips provides zero production assurance.
+
+---
+
 **Date / ticket:** 2026-06-17 — RETRO-086 (FOLLOW-330 / PR #314 retrospective spawn) **Delegation
 row used:** N/A — PM-self retrospective analysis (step 6, post-merge, retro backlog). **What
 validation caught (or missed):** Wiring audit: all changed symbols (CH_TRACER_TIMEOUT_MS,

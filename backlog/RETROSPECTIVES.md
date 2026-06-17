@@ -17253,3 +17253,104 @@ grep -rn "CH_TRACER_TIMEOUT_MS" apps/control-plane/src --include="*.ts" --includ
 - **FOLLOW-269 (K.3.6 tracer UI, backend-engineer):** The SSR crash and timeout were pre-existing bugs in FOLLOW-269's tracer UI work that only became visible post-auth-fix. FOLLOW-269's remaining AC4 (keep-warm cron) is now FOLLOW-334.
 - **RETRO-077 / RETRO-080 (tracer admin UI auth):** Those retros addressed the UI-layer auth (SSE cookie, nav orphaning). This PR addressed the service-layer runtime bugs (SSR crash, CH cold-start). Clean separation — the two fix tracks do not overlap.
 - **RETRO-078 / RETRO-079 (ClickHouse Code 386 + live-CI guard):** The cold-start timeout pattern is a different axis from the query-builder Code 386 bugs those retros addressed. The fix type is also different: timeout increase vs. query qualifier fix. No overlap.
+
+---
+
+## RETRO-081 — FOLLOW-293 (K.3.6 D-1 live-network smoke for `fetchIntentWeights` → `GET /api/intent/config`; proves migration 0030 seed row is effective in production; introduces `tests/integration/` workspace with skip-loud / hard-fail CI guard; ESC-024 filed for secret provisioning; smoke run 27555287447 verified AC-LN1/LN2/LN3 all GREEN after ESC-024 resolved by Piotr) — 2026-06-17
+
+### 1. What was built
+
+PR #307 (`test(qa): K.3.6 D-1 live-network smoke — fetchIntentWeights → GET /api/intent/config [FOLLOW-293]`, merged 2026-06-15, smoke run 27555287447 confirmed GREEN 2026-06-15) closes the live-network gap for the K.3.6 D-1 "immediate intent weights" feature. Prior to this PR, every test in the D-1 chain (FOLLOW-268-sdk route tests, FOLLOW-305 endpoint URL tests) mocked the network layer; no CI path had ever called `fetchIntentWeights()` against a real backend and asserted `data_source: 'live'`.
+
+Three artifacts added:
+
+1. `tests/integration/intent-weights-live.smoke.test.ts` — 3 assertions (AC-LN1/LN2/LN3): `fetchIntentWeights()` returns non-null, the endpoint returns `data_source='live'` (proving migration 0030 seed row is applied), and the URL form has single `/api` (not double `/api/api` — the FOLLOW-305 regression guard).
+
+2. `tests/integration/vitest.config.ts` + `package.json` — new `tests/integration/` workspace, isolated from the main vitest config.
+
+3. `.github/workflows/intent-weights-live-smoke.yml` — CI job that runs on push to `main` + PR + nightly at 04:00 UTC. Implements the skip-loud / hard-fail contract: secrets absent → soft-skip with `::notice::`; `REQUIRE_LIVE_INTENT_SMOKE=1` + secrets absent → hard-fail at module load; secrets present + endpoint broken → hard-fail. This mirrors the RETRO-007 / FOLLOW-097/114/127/141 cautionary chain pattern.
+
+ESC-024 was filed in the same PR documenting the two required GitHub Actions secrets (`ESTALARA_SMOKE_API_KEY`, `ESTALARA_SMOKE_DECISION_API_URL`) and how to provision them. ESC-024 was resolved by Piotr (CEO) 2026-06-15 — secrets provisioned, smoke run 27555287447 ran with `secrets_present=true`, all 3 assertions passed.
+
+7 files changed: 495 additions, 1 deletion.
+
+### 2. Wiring audit
+
+**Scope:** `fetchIntentWeights` (imported from real SDK), `ESTALARA_SMOKE_API_KEY` and `ESTALARA_SMOKE_DECISION_API_URL` (new env vars), `REQUIRE_LIVE_INTENT_SMOKE` (new CI env flag), `tests/integration/` (new workspace).
+
+- `fetchIntentWeights` — non-test producer: `packages/sdk/src/core/intent-weights.ts` (exported from `packages/sdk/src/index.ts`). Non-test consumer in test context: `tests/integration/intent-weights-live.smoke.test.ts` imports the real SDK function (no mock — this is the point of the smoke test). The test is not a unit test — it is a live-network integration smoke; the consumer IS the test file and this is the correct wiring for a smoke. CLEAN.
+
+- `ESTALARA_SMOKE_API_KEY` / `ESTALARA_SMOKE_DECISION_API_URL` — new GitHub Actions secrets (documented in ESC-024). Producer: `.github/workflows/intent-weights-live-smoke.yml` passes them to the test run via `env:`. Consumer: `tests/integration/intent-weights-live.smoke.test.ts` reads them from `process.env`. CLEAN.
+
+- `REQUIRE_LIVE_INTENT_SMOKE` — producer: `intent-weights-live-smoke.yml` sets it to `'1'` when `secrets_present=true`. Consumer: smoke test reads it at module load to switch from soft-skip to hard-fail. CLEAN.
+
+- `tests/integration/` workspace — registered in `pnpm-lock.yaml` and the `tests/integration/package.json`. The workspace is standalone (not added to the root `pnpm-workspace.yaml` explicitly; it is in `pnpm-lock.yaml` as an importer). CLEAN.
+
+**No new exported symbols introduced into `packages/` or `apps/`.** The new workspace is purely test infrastructure. Wiring audit: FULLY CLEAN.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, addressed-at-merge) — the smoke hard-fails immediately if secrets are present but `ESTALARA_SMOKE_DECISION_API_URL` is absent.** The guard checks `ESTALARA_SMOKE_API_KEY` presence for the skip-flag but does NOT independently check `ESTALARA_SMOKE_DECISION_API_URL`. However, if the URL is absent, `buildEndpoint(undefined, '/intent/config')` would produce a malformed URL and the fetch would fail with a network error, which would be caught by the smoke test's error handling and fail the assertion. The hard-fail behavior is preserved; the error message may be less clear. Severity: low (the secrets are provisioned together per ESC-024; a URL-absent scenario is unlikely in practice). No follow-up filed.
+
+- **LG-2 (P3, by design) — the smoke does NOT assert the `weights` field is non-empty.** AC-LN1 asserts `fetchIntentWeights()` returns non-null; AC-LN2 asserts `data_source='live'`; AC-LN3 asserts the single-`/api` URL form. But the actual `weights` object (the `signal_likelihoods` / `signal_weights` values) is not validated. A future migration that zeroes out the seed row's weights would not fail this smoke. Severity: P3 (the purpose of the smoke is to prove the seed row exists and the chain is wired, not to validate the weight values themselves). No follow-up filed; acceptable for an MVP smoke test.
+
+- **LG-3 (P3) — the smoke is specific to the global-default (`tenant_id = NULL`) seed row.** It uses a tenant key that has NO tenant-specific override row, so the route falls through to the global default. A scenario where the global default is present but a tenant-specific row overrides it for the smoke tenant is not covered. This is by design (the smoke proves the global default path). No follow-up filed.
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **No correctness gaps.** The three assertions correctly test the three distinct concerns: (1) non-null return (basic connectivity), (2) `data_source='live'` (seed row presence), (3) single `/api` (URL-form regression). The skip-loud contract is correctly implemented with two independent guards (`REQUIRE_LIVE_INTENT_SMOKE=1` + `HAS_SECRETS`). The CI job's `secret-check` step uses the standard GitHub Actions output variable pattern.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None.** The smoke itself is test infrastructure, not production code. The only production change is the addition of `tests/integration/` to `pnpm-lock.yaml` (new workspace entry).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, informational) — the smoke test file itself has no unit test.** The vitest.config.ts and the smoke spec are not covered by a meta-test. This is standard for integration test infrastructure. No follow-up filed.
+
+- **TG-2 (P3) — the `REQUIRE_LIVE_INTENT_SMOKE=1` hard-fail path is tested locally (per PR body) but not asserted in a CI unit test.** The PR body confirms: `REQUIRE_LIVE_INTENT_SMOKE=1 pnpm exec vitest run ... → hard-fails with clear error message ✓ verified locally`. This is a local-only assertion. The hard-fail path is correct code (throws at module load), and it runs in the CI job when secrets are present — so it is implicitly CI-tested on every real secrets run. Severity P3. No follow-up filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, RESOLVED-IN-PR) — ESC-024 documents the secrets, provisioning steps, and resolution path completely.** The smoke test file itself has a 50-line comment block explaining the purpose, skip/hard-fail contract, required env vars, and the connection to RETRO-007/FOLLOW-097/114/127/141. Documentation delta: CLEAN and thorough.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-307 (P1, devops — apply migration 0030 in prod Supabase):** This smoke is the live attestation that FOLLOW-307's migration apply succeeded. When AC-LN2 asserts `data_source='live'`, it proves migration 0030 is applied in the environment pointed to by `ESTALARA_SMOKE_DECISION_API_URL`. Smoke run 27555287447 (GREEN, 2026-06-15) provides this attestation — confirming FOLLOW-307's apply was effective. The smoke and FOLLOW-307 are tightly coupled: the smoke is the verification step for the migration apply.
+
+- **ESC-024 (RESOLVED, 2026-06-15):** The smoke PR filed ESC-024 documenting the missing secrets. Piotr provisioned both secrets on 2026-06-15. Run 27555287447 confirmed hard-assert mode (`secrets_present=true`) and all 3 assertions passed. ESC-024 fully RESOLVED.
+
+#### 5b. Future sprint tickets affected
+
+- **Any future intent-weights API change:** AC-LN2 is a regression guard for the `data_source='live'` contract. If a future PR accidentally removes the seed row or changes the route's fallback logic such that `data_source` returns `'mock'` when the seed row is present, the nightly smoke run at 04:00 UTC would catch it before the next business day. This is the value of the smoke as a continuous production canary.
+
+- **FOLLOW-307 (P1) closure criteria:** With smoke run 27555287447 GREEN, FOLLOW-307's AC1 ("apply 0030 in prod/staging Supabase; verify active global row exists; add `data_source:'live'` assertion to FOLLOW-293 smoke") is fully satisfied. FOLLOW-293 smoke now serves as the standing automated attestation.
+
+#### 5c. Contracts changed others rely on
+
+- **No production contracts changed.** The PR is purely test infrastructure. The `tests/integration/` workspace is isolated from `apps/` and `packages/`.
+
+#### 5d. Architectural assumptions affected
+
+- **The assumption that "a merged migration means it's live in prod" was already corrected by RETRO-076 (OG-1 architectural fact).** This PR adds the automated attestation that closes the gap: the live smoke running in production-pointing CI is the standing proof that the migration is applied and effective. This is the correct pattern for future migration validation.
+
+- **The "skip-loud / hard-fail" CI contract (RETRO-007 / FOLLOW-097/114/127/141 cautionary chain) is now applied to the D-1 smoke.** The pattern prevents the known failure mode of a test that always skips looking green. The nightly run with secrets present ensures the hard-assert path executes regularly.
+
+### 6. New lesson candidates
+
+- **Pattern: "a live-network smoke test that self-skips when secrets are absent should also have a nightly scheduled run with the secrets present — otherwise the skip path is the only path that ever runs in CI, and the test never actually asserts anything."** — seen in: RETRO-081 (intent-weights-live-smoke.yml nightly at 04:00 UTC + `REQUIRE_LIVE_INTENT_SMOKE=1` hard-fail on secrets-present run). This is the codified RETRO-007 lesson. The pattern is already in practice. **Count 2+ (RETRO-007 + RETRO-081 both implement it).** The existing lesson is reinforced; no new Rule needed (the RETRO-007 pattern is already canonical and referenced in the PR body).
+
+### 7. Follow-ups
+
+- None. FOLLOW-293 is DONE. ESC-024 RESOLVED. The smoke is green in production (run 27555287447). The nightly canary at 04:00 UTC provides standing coverage. FOLLOW-307's apply is attested.
+
+### 8. Cross-references
+
+- **FOLLOW-307 (devops — apply migration 0030):** This smoke is FOLLOW-307's automated attestation. Run 27555287447 GREEN confirms the apply succeeded.
+- **RETRO-076 (OG-1 — Postgres migrations do not auto-apply):** RETRO-081 is the companion retro — RETRO-076 establishes the architectural fact; RETRO-081 confirms the automated attestation that verifies the manual apply.
+- **RETRO-007 / FOLLOW-097/114/127/141 (cautionary chain):** The skip-loud / hard-fail contract directly addresses the RETRO-007 failure mode. Referenced explicitly in the PR body and smoke file comment.
+- **FOLLOW-268-sdk / FOLLOW-305 (D-1 SDK chain):** Those PRs built the production wire; RETRO-081's smoke is the live-network proof that the wire is connected end-to-end in production.

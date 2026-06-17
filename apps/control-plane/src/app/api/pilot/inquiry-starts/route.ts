@@ -1,9 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument --
- * @estalara/auth is a workspace package resolved from source in Vitest but not built locally.
- * TypeScript sees it as `any` until packages are built (CI builds them before lint).
- * Same pattern as dashboard/analytics/summary/route.ts and other routes that import
- * from @estalara/auth.
- */
 /**
  * GET /api/pilot/inquiry-starts
  *
@@ -44,6 +38,7 @@ import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { getAuthClaims } from '@estalara/auth';
 import type { DailyBreakdownRow, InquiryStartsResponse } from './route-helpers';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 
 // ─── Response types (re-exported from route-helpers for backward compat) ───────
 // Canonical definitions live in route-helpers.ts so client components can import
@@ -73,6 +68,8 @@ function computeLiftPct(
 
 interface ClickHouseConfig {
   url: string;
+  /** ClickHouse username. Defaults to `'default'` when env is unset. */
+  user: string;
   password: string;
 }
 
@@ -81,14 +78,8 @@ function readClickHouseConfig(): ClickHouseConfig | null {
   if (!url) return null;
   return {
     url: url.replace(/\/$/, ''),
+    user: process.env.CLICKHOUSE_USER ?? 'default',
     password: process.env.CLICKHOUSE_PASSWORD ?? '',
-  };
-}
-
-function authHeaders(cfg: ClickHouseConfig): Record<string, string> {
-  if (!cfg.password) return {};
-  return {
-    Authorization: `Basic ${Buffer.from(`:${cfg.password}`).toString('base64')}`,
   };
 }
 
@@ -151,7 +142,7 @@ async function fetchFromClickHouse(
 
   const aggRes = await fetch(aggUrl.toString(), {
     method: 'GET',
-    headers: { ...authHeaders(cfg), 'Content-Type': 'text/plain' },
+    headers: { ...clickhouseAuthHeaders(cfg), 'Content-Type': 'text/plain' },
   });
   if (!aggRes.ok) {
     throw new Error(
@@ -199,7 +190,7 @@ async function fetchFromClickHouse(
 
   const dailyRes = await fetch(dailyUrl.toString(), {
     method: 'GET',
-    headers: { ...authHeaders(cfg), 'Content-Type': 'text/plain' },
+    headers: { ...clickhouseAuthHeaders(cfg), 'Content-Type': 'text/plain' },
   });
   if (!dailyRes.ok) {
     throw new Error(

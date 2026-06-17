@@ -169,6 +169,7 @@ describe('GET /api/admin/tracer/sessions/[id]/stream — param validation', () =
   it('AC3.5: returns 400 when tenant_id query param is missing (CB-2 scope guard)', async () => {
     mockResolveClickHouseTracerConfig.mockReturnValue({
       url: 'http://clickhouse:8123',
+      user: 'default',
       password: 'pass',
       database: 'default',
     });
@@ -190,6 +191,7 @@ describe('GET /api/admin/tracer/sessions/[id]/stream — SSE stream behaviour', 
     mockGetAuthClaims.mockResolvedValue(null);
     mockResolveClickHouseTracerConfig.mockReturnValue({
       url: 'http://clickhouse:8123',
+      user: 'default',
       password: 'pass',
       database: 'default',
     });
@@ -299,6 +301,7 @@ describe('MAX_POLLS constant — DG-1 docstring bug verified (RETRO-061)', () =>
     mockGetAuthClaims.mockResolvedValue(null);
     mockResolveClickHouseTracerConfig.mockReturnValue({
       url: 'http://clickhouse:8123',
+      user: 'default',
       password: 'pass',
       database: 'default',
     });

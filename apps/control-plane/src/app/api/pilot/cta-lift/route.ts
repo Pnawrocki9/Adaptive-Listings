@@ -1,8 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access --
- * @estalara/auth is a workspace package resolved from source in Vitest but not built locally.
- * TypeScript sees it as `any` until packages are built (CI builds them before lint).
- * Same pattern as pilot/inquiry-starts/route.ts and other routes that import from @estalara/auth.
- */
 /**
  * GET /api/pilot/cta-lift
  *
@@ -33,6 +28,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { getAuthClaims } from '@estalara/auth';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import {
   FUNNEL_STAGES,
   parseWindowDays,
@@ -46,14 +42,6 @@ import {
 
 // ─── ClickHouse access ─────────────────────────────────────────────────────────
 
-function clickHouseHeaders(password: string): Record<string, string> {
-  const headers: Record<string, string> = { 'Content-Type': 'text/plain' };
-  if (password) {
-    headers.Authorization = `Basic ${Buffer.from(`:${password}`).toString('base64')}`;
-  }
-  return headers;
-}
-
 /**
  * Execute one parameterized ClickHouse query over the HTTP interface and parse
  * JSONEachRow output. tenant_id and window_days are bound as query parameters
@@ -61,6 +49,7 @@ function clickHouseHeaders(password: string): Record<string, string> {
  */
 async function chQuery<T>(
   baseUrl: string,
+  user: string,
   password: string,
   sql: string,
   params: Record<string, string>,
@@ -73,7 +62,10 @@ async function chQuery<T>(
 
   const res = await fetch(url.toString(), {
     method: 'GET',
-    headers: clickHouseHeaders(password),
+    headers: {
+      'Content-Type': 'text/plain',
+      ...clickhouseAuthHeaders({ user, password }),
+    },
   });
   if (!res.ok) {
     throw new Error(`ClickHouse query failed: HTTP ${String(res.status)}`);
@@ -104,6 +96,7 @@ async function chQuery<T>(
 async function fetchCtaLiftRaw(tenantId: string, windowDays: number): Promise<ChRawData | null> {
   const baseUrl = process.env.CLICKHOUSE_URL;
   if (!baseUrl) return null;
+  const user = process.env.CLICKHOUSE_USER ?? 'default';
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
   const params = { tenant_id: tenantId, window_days: String(windowDays) };
 
@@ -172,9 +165,9 @@ async function fetchCtaLiftRaw(tenantId: string, windowDays: number): Promise<Ch
   `;
 
   const [groupsRaw, archetypesRaw, funnelRaw] = await Promise.all([
-    chQuery<Record<string, unknown>>(baseUrl, password, groupSql, params),
-    chQuery<Record<string, unknown>>(baseUrl, password, archetypeSql, params),
-    chQuery<Record<string, unknown>>(baseUrl, password, funnelSql, params),
+    chQuery<Record<string, unknown>>(baseUrl, user, password, groupSql, params),
+    chQuery<Record<string, unknown>>(baseUrl, user, password, archetypeSql, params),
+    chQuery<Record<string, unknown>>(baseUrl, user, password, funnelSql, params),
   ]);
 
   return {

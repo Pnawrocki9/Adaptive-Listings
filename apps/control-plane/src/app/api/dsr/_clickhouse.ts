@@ -13,6 +13,7 @@
  */
 
 import { createHash } from 'crypto';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 
 /**
  * Canonical set of DSR audit action strings written to `dsr_audit_log.action`.
@@ -94,14 +95,13 @@ export async function writeDsrAuditLog(entry: DsrAuditEntry): Promise<void> {
       : null,
   };
 
+  const user = process.env.CLICKHOUSE_USER ?? 'default';
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
   const headers: Record<string, string> = {
     'Content-Type': 'text/plain',
     'X-ClickHouse-Format': 'JSONEachRow',
+    ...clickhouseAuthHeaders({ user, password }),
   };
-  if (password) {
-    headers.Authorization = `Basic ${Buffer.from(`:${password}`).toString('base64')}`;
-  }
 
   const url = new URL(clickhouseUrl.replace(/\/$/, ''));
   url.searchParams.set('query', 'INSERT INTO dsr_audit_log FORMAT JSONEachRow');

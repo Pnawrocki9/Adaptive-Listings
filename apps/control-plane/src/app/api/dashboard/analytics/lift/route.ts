@@ -45,6 +45,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getAuthClaims, isTenantClaims } from '@estalara/auth';
 import { zTest } from '@/lib/z-test';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -113,6 +114,7 @@ async function fetchLiftFromClickHouse(tenantId: string): Promise<ChLiftRow[] | 
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
   if (!clickhouseUrl) return null;
 
+  const user = process.env.CLICKHOUSE_USER ?? 'default';
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
 
   // Join adaptation_decisions with the canonical events table on (tenant_id,
@@ -149,10 +151,10 @@ async function fetchLiftFromClickHouse(tenantId: string): Promise<ChLiftRow[] | 
   url.searchParams.set('query', query);
   url.searchParams.set('param_tenant_id', tenantId);
 
-  const headers: Record<string, string> = { 'Content-Type': 'text/plain' };
-  if (password) {
-    headers.Authorization = `Basic ${Buffer.from(`:${password}`).toString('base64')}`;
-  }
+  const headers: Record<string, string> = {
+    'Content-Type': 'text/plain',
+    ...clickhouseAuthHeaders({ user, password }),
+  };
 
   try {
     const res = await fetch(url.toString(), { method: 'GET', headers });

@@ -188,6 +188,7 @@ describe('GET /api/admin/tracer/export/events — ClickHouse config gate', () =>
   it('AC7.6: returns 500 data_source: error when ClickHouse configured but throws (Rule K.2)', async () => {
     mockResolveClickHouseTracerConfig.mockReturnValue({
       url: 'http://clickhouse:8123',
+      user: 'default',
       password: 'pass',
       database: 'default',
     });
@@ -209,6 +210,7 @@ describe('GET /api/admin/tracer/export/events — JSONL output', () => {
     mockGetAuthClaims.mockResolvedValue(null);
     mockResolveClickHouseTracerConfig.mockReturnValue({
       url: 'http://clickhouse:8123',
+      user: 'default',
       password: 'pass',
       database: 'default',
     });

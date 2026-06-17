@@ -25,7 +25,23 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 import type { AdminIntentConfigResponse, IntentWeights } from '@estalara/shared';
-import { ARCHETYPE_KEYS, INTENT_SIGNAL_KEYS } from '@estalara/shared';
+import { ARCHETYPE_KEYS, INTENT_SIGNAL_KEYS, DEFAULT_INTENT_WEIGHTS } from '@estalara/shared';
+
+// ─── Canonical defaults ─────────────────────────────────────────────────────────
+
+/** behavioral_damping default (0.3) — DEFAULT_INTENT_WEIGHTS is the single source of truth. */
+const DEFAULT_DAMPING = DEFAULT_INTENT_WEIGHTS.behavioral_damping ?? 0.3;
+
+/**
+ * Default priors keyed by archetype, derived from the canonical DEFAULT_INTENT_WEIGHTS
+ * (SDK BASE_PRIOR). Every ARCHETYPE_KEYS entry is present; fall back to the neutral
+ * floor only if a key were ever missing (it isn't — DEFAULT-3 test guards this).
+ */
+function defaultPriors(): Record<string, number> {
+  const p: Record<string, number> = {};
+  for (const k of ARCHETYPE_KEYS) p[k] = DEFAULT_INTENT_WEIGHTS.priors?.[k] ?? 0.04;
+  return p;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -113,13 +129,10 @@ export default function WeightEditorPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadLoading, setLoadLoading] = useState(true);
 
-  // Editor state
-  const [behavioralDamping, setBehavioralDamping] = useState(0.3);
-  const [priors, setPriors] = useState<Record<string, number>>(() => {
-    const p: Record<string, number> = {};
-    for (const k of ARCHETYPE_KEYS) p[k] = 1 / ARCHETYPE_KEYS.length;
-    return p;
-  });
+  // Editor state — initialized to the canonical project defaults (BASE_PRIOR + 0.3
+  // damping), NOT a uniform distribution. loadConfig overlays the live row on top.
+  const [behavioralDamping, setBehavioralDamping] = useState(DEFAULT_DAMPING);
+  const [priors, setPriors] = useState<Record<string, number>>(defaultPriors);
   const [signalLikelihoods, setSignalLikelihoods] = useState<
     Record<string, Record<string, number>>
   >({});
@@ -128,6 +141,18 @@ export default function WeightEditorPage() {
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // ── Reset to canonical defaults ────────────────────────────────────────────────
+  // Restores the project-agreed starting point (DEFAULT_INTENT_WEIGHTS): BASE_PRIOR
+  // priors, 0.3 damping, and clears any signal_likelihood overrides (empty = SDK
+  // internal SIGNAL_LIKELIHOODS table). Does NOT persist — operator must Save/Update.
+  const resetToDefaults = useCallback(() => {
+    setBehavioralDamping(DEFAULT_DAMPING);
+    setPriors(defaultPriors());
+    setSignalLikelihoods({});
+    setSaveSuccess(false);
+    setSaveError(null);
+  }, []);
 
   // ── Load current config ──────────────────────────────────────────────────────
   const loadConfig = useCallback(async () => {
@@ -405,6 +430,14 @@ export default function WeightEditorPage() {
           className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
         >
           Reload
+        </button>
+        <button
+          onClick={resetToDefaults}
+          disabled={saveLoading || loadLoading}
+          title="Restore project-agreed defaults (BASE_PRIOR + 0.3 damping, clears signal overrides). Save to persist."
+          className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Reset to defaults
         </button>
       </div>
     </div>

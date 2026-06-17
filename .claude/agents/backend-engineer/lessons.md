@@ -719,3 +719,23 @@ in `docs/INTERFACES.md`, 5 new test cases in `DetectionPreview.test.tsx`.
 **A guardrail I'd add:** A CI check that asserts `apps/control-plane/public/*.iife.js` and
 `apps/control-plane/public/*.js` are in the ESLint global ignores list — prevents the "lint fails on
 built artifact" trap on the next similar commit.
+## 2026-06-15 / FOLLOW-326
+
+**What I built:** /sign-in page + Supabase SSR auth flow for the Next.js 15 control plane. Installed
+@supabase/ssr + @supabase/supabase-js, created browser/server client helpers, added /sign-in Server
+Component with SignInForm client component (signInWithPassword + router.push), replaced / with
+permanentRedirect to /sign-in, fixed middleware /login→/sign-in (2 occurrences), added Sign out
+Server Action in admin sidebar, updated .env.example.
+
+**Wiring/auth/fail-loud risks I weighed:** The sign-out path is a Server Action triggered by a
+
+<form> POST — no HMAC/JWT needed as it's a browser-initiated session invalidation via Supabase's
+signOut() which clears the sb-access-token cookie. The existing middleware already verifies that
+cookie via getAuthClaims() — no changes to the auth layer needed (AC2 flows through the existing
+path). The client helper throws loud on missing env vars rather than silently returning a null client.
+
+**A guardrail I'd add:** When @supabase/ssr adds overloaded function signatures (deprecated vs
+non-deprecated), @typescript-eslint/no-deprecated can fire even on the correct overload because
+TypeScript resolves by position. A downstream note in the eslint config or an inline cast is
+necessary — the code review checklist should ask "did the linter flag a deprecated overload that
+you're actually NOT using?"

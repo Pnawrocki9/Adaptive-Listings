@@ -176,11 +176,16 @@ NON-BLOCKING (90 FOLLOW-090).
 | Ticket     | CI checks | Fix iterations |
 | ---------- | --------- | -------------- |
 | FOLLOW-325 | 1/5       | 0/3            |
-| FOLLOW-336 | 0/5       | 0/3            |
+| FOLLOW-336 | 0/5       | 1/3            |
 
 FOLLOW-325: DONE (PR #315 merged 43ad849 2026-06-17). CI green. RETRO-087 complete. FOLLOW-336:
 IN_PROGRESS — delegated to qa-engineer 2026-06-17T20:00Z. Branch:
-qa-engineer/FOLLOW-336-admin-auth-tests.
+qa-engineer/FOLLOW-336-admin-auth-tests. PM validation 2026-06-18: 5 test failures + 3 lint errors
+found BEFORE PR was opened (fix iteration 1/3). SSR-1..4 PASS (9/9). ADMIN-1/2/3/5 FAIL (Next.js
+E119: plain Record<string,string> passed to new NextRequest headers; NextResponse.next({request})
+requires a native Headers instance). SIGN-IN-1 FAIL (screen.getByRole("form") throws — no role
+attribute on <form> in SignInForm.tsx). Lint: 3 errors in SignInForm.test.tsx (unnecessary ??, 2x
+async-with-no-await). Re-delegated to qa-engineer for targeted fixes.
 
 ## Pending Retro Spawns (ALL COMPLETE as of 2026-06-17)
 

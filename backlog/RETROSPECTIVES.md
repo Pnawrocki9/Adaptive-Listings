@@ -16969,3 +16969,89 @@ CHECK B (half-wire): one new symbol — the CI-scoped env var `REQUIRE_CLICKHOUS
 - **Implements ADR-0013** (Tracer admin SSE auth + admin config-read contract, ACCEPTED 2026-06-14) — Decision 1 (cookie-only SSE auth) and Decision 2 (admin GET read contract + global-only-v1 `?tenant_id=`→400).
 - **Reconciles with RETRO-073 (FOLLOW-301) + the PUT/[id] contract** — the page's `{weights}` PUT body lands on the FOLLOW-301 atomic deactivate-then-activate transaction; because the page never sends `is_active`, the PUT is a plain `weights` UPDATE that preserves the existing active flag — no interaction with the one-active-row invariant. The FOLLOW-304 cross-scope GET-determinism breach is global-only-v1-inert here (admin GET filters `tenant_id IS NULL` + `is_active=true` + `ORDER BY created_at DESC LIMIT 1`) and is NOT re-filed.
 - **Continues the fixture-lies thread (RETRO-072/074/075/077)** — this is the first FIX retro in that thread; it confirms the remedy RETRO-077 prescribed (schema-derived fixtures + real-handler tests) and records the discipline that a remediation does not increment the promotion count.
+
+
+## RETRO-084 — FOLLOW-327 (single-tenant admin nav + canonical `DEFAULT_INTENT_WEIGHTS` shared export) — 2026-06-17
+
+### 1. Summary of change
+
+- **PR:** #312 (merged 2026-06-15 22:01 UTC, commit `34fcb11`)
+- **Files changed:** 7 (+204 / -32)
+- **Modules touched:** [control-plane (admin shell: `layout.tsx`, `page.tsx`, new `lib/pilot-tenant.ts`, `tracer/weights/page.tsx`), shared (`schemas/intent-weights.ts`)]
+- **Key contracts changed:**
+  - `@estalara/shared` — **ADDED** `DEFAULT_INTENT_WEIGHTS: IntentWeights` (a hand-copied restatement of the SDK's private `BASE_PRIOR` + `BEHAVIORAL_DAMPING 0.3`) — additive, breaking: no.
+  - `apps/control-plane/src/lib/pilot-tenant.ts` — **ADDED** `PILOT_TENANT_ID` (baked default `cbc51cfa-1056-40aa-b0a9-6e982b52b1de`, env-overridable via `NEXT_PUBLIC_PILOT_TENANT_ID`) — app-internal, breaking: no.
+  - Admin nav surface (`layout.tsx`) — **CHANGED** sidebar: removed Registrations / Tenants / Demo Sessions links, added pilot-scoped Live Monitor + Session History + Weight Editor — UX contract, breaking: no (hidden pages still routable by URL).
+  - `/admin` landing (`page.tsx`) — **CHANGED** `permanentRedirect('/admin/registrations')` → `/admin/tenants/${PILOT_TENANT_ID}/tracer` — breaking: no.
+
+### 2. Verification done in PR
+
+- Test files changed: `packages/shared/src/schemas/intent-weights.test.ts` (+6, DEFAULT-1..6), `apps/control-plane/src/app/admin/tracer/weights/page.test.tsx` (+1, T10). · Assertions added: 7 · Coverage delta: unknown (est. positive on shared constant + weights-page reset; **zero** on the two changed admin-shell files).
+- CI checks: passed (per PR body + QUEUE.md FOLLOW-327 `status: DONE`, "CI green"); not independently re-watched (read-only retro).
+
+### 3. Wiring Audit
+
+CHECK A (dead code — every new file/export has ≥1 non-test production importer):
+- `DEFAULT_INTENT_WEIGHTS` (`packages/shared/src/schemas/intent-weights.ts:159`) → imported by `apps/control-plane/src/app/admin/tracer/weights/page.tsx:28` (non-test). Barrel re-export chain verified: `shared/src/index.ts:13 → schemas/index.ts:18 → intent-weights.js`. **WIRED.**
+- `PILOT_TENANT_ID` (`apps/control-plane/src/lib/pilot-tenant.ts:16`) → imported by `layout.tsx:15` and `page.tsx:3` (both non-test). **WIRED.**
+- Nav link targets resolve to existing route files: `tenants/[id]/tracer/page.tsx`, `tenants/[id]/tracer/history/page.tsx`, `tracer/weights/page.tsx` all present. **WIRED.**
+
+CHECK B (half-wire — every new env-var has BOTH producer + consumer):
+- `NEXT_PUBLIC_PILOT_TENANT_ID` — consumer present (`pilot-tenant.ts:16`), producer = baked default fallback (no env var required for prod; the literal pilot id IS the default, confirmed live in MASTER_DESIGN §Snapshot lines 26/41). Not a true half-wire: env is an optional override, not a required input. **CLEAN.**
+
+**Wiring Audit — clean ✅** (no DEAD_CODE / HALF_WIRE findings). The findings below are verification/test gaps and a documented-but-absent drift guard, NOT wiring breaks.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — `DEFAULT_INTENT_WEIGHTS` is a hand-copied duplicate of the SDK `BASE_PRIOR` with NO enforced drift guard, and the PR's own docstring claims a CI guard that does not exist.** `packages/shared/src/schemas/intent-weights.ts:155-160` docstring asserts: *"`intent-weights.test.ts` asserts the two agree (sum-to-1 + key coverage) so drift is caught in CI."* This is false. The DEFAULT-1..6 tests (`intent-weights.test.ts:251-279`) assert the shared constant **against itself** (sums to 1.0, 18 keys, neutral 0.37) — they never import or compare the SDK's `BASE_PRIOR`. The test header (lines 29-30) defers the real cross-check to `packages/sdk/src/__tests__/intent-weights-drift.test.ts` — **that file does not exist** (`grep` returns MISSING). Furthermore `BASE_PRIOR` / `BEHAVIORAL_DAMPING` are **not exported** from `packages/sdk/src/core/intent.ts` (grep for `export.*BASE_PRIOR` returns empty), so no test could import them even if written, and `packages/shared` has no `@estalara/sdk` dependency. Net: two independent copies of an 18-key probability distribution + damping scalar, asserted equal by prose only. The values agree today (verified by eye: `intent.ts:162-185` `BASE_PRIOR` === `intent-weights.ts:159-186` `priors`), but any future edit to one is silent on the other. Master Design §D is the human source of truth; both copies can drift from it independently. This is the exact "two restatements of one contract, no automated reconciliation" shape Rule S-family governs.
+- **LG-2 (P3) — Reset/initial damping uses a guarded fallback (`?? 0.3`) that masks a future schema change.** `weights/page.tsx:33` `const DEFAULT_DAMPING = DEFAULT_INTENT_WEIGHTS.behavioral_damping ?? 0.3;` and `:42` `?? 0.04` re-hardcode the very magic numbers `DEFAULT_INTENT_WEIGHTS` exists to centralize. If `behavioral_damping` were ever made optional/removed from the constant, the page would silently fall back to a stale literal rather than fail. Low severity (DEFAULT-2/DEFAULT-3 tests guard the constant's shape today), but it defeats single-source-of-truth.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — no functional defect found. The Reset handler (`weights/page.tsx:147-155`) correctly restores priors + damping + clears `signalLikelihoods`, and `resetToDefaults` is wired to the new button (`:434-441`). T10 proves neutral returns to 0.37 (not uniform). The uniform-prior bug that Item 2 was filed to fix is genuinely removed (`useState(0.3)` / `useState(defaultPriors)` at `:131-133`, replacing the old `1/ARCHETYPE_KEYS.length`).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — The single-tenant admin-shell change (the headline deliverable of Item 1) has ZERO direct test coverage.** No `apps/control-plane/src/app/admin/layout.test.tsx` exists and no `apps/control-plane/src/app/admin/page.test.tsx` exists (both confirmed absent). So: (a) the sidebar hiding Registrations/Tenants/Demo-Sessions and showing the 3 pilot-scoped tracer links is unasserted; (b) the `/admin` → `/admin/tenants/${PILOT_TENANT_ID}/tracer` landing redirect is unasserted. The PR body's "Existing... admin (8) tests still pass" refers to *other* admin tests, not these two changed files — the claim is technically true but does not cover the change. A regression that re-exposes a hidden multi-tenant screen, or points the landing at the wrong tenant, would not bite CI.
+- **TG-2 (P3) — No test pins the `PILOT_TENANT_ID` literal to the Master-Design pilot id.** The id `cbc51cfa-...` is duplicated in `pilot-tenant.ts:17`, MASTER_DESIGN.md:26/41, and `apps/ingest/src/clickhouse-producer.test.ts:25`. A typo in the baked default would route the admin's entire single-tenant surface at a non-existent tenant (empty Live Monitor) with nothing failing in CI.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — The `intent-weights.ts` docstring (lines 155-160) cites a non-existent drift test as proof of CI safety** (see LG-1). Either the test must be written (FOLLOW below) or the docstring must stop claiming a guard exists. A future reader trusts "drift is caught in CI" and edits one copy freely. Fix is coupled to LG-1's FOLLOW.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- None blocked. FOLLOW-328 (PR #313, ClickHouse 516 auth fix) and FOLLOW-330 already merged on top of this and are independent (auth-header layer, not nav/weights). No IN_PROGRESS ticket assumes the old `NAV_LINKS` array or the old uniform-prior editor init.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-269 (K.3.6 tracer admin UI, the still-open tracer pages)** — now reachable via the new sidebar in addition to RETRO-080's per-tenant-list `<Link>`s. When multi-tenant ships (post-v1), the hardcoded `PILOT_TENANT_ID` nav must revert to a tenant-selector; the literal becomes a migration point. Note for whoever un-hides the multi-tenant screens.
+- **Tracer chat column (D-2, DPIA) + simulation (D-3, FOLLOW-282)** — explicitly deferred by this PR; unaffected.
+
+#### 5c. Contracts changed others rely on
+
+- `DEFAULT_INTENT_WEIGHTS` is now a public `@estalara/shared` export. Any future admin/config code that wants "the canonical starting distribution" will import THIS, not the SDK `BASE_PRIOR` (which stays the runtime source of truth and is private). The drift risk (LG-1) therefore widens with each new consumer — the two copies must be reconciled by a real test before more code depends on the shared copy as authoritative.
+
+#### 5d. Architectural assumptions affected
+
+- **Single-tenant v1 is now baked into the admin shell, not just config.** The `/admin` landing and entire sidebar assume exactly one tenant via a code-level constant. This is intentional (CEO 2026-06-15, MASTER_DESIGN v4.0 §E.7 "no Tiers / one experience") and aligned — recorded so the multi-tenant un-baking is a tracked, deliberate reversal, not a surprise.
+
+### 6. New lesson candidates
+
+- **Pattern P-DUP-CONTRACT: "a constant restated in a second package to satisfy a different consumer, with the equivalence asserted only in prose / a deferred-but-absent test, and no automated cross-package reconciliation."** — seen in: this RETRO-084 (`DEFAULT_INTENT_WEIGHTS` ↔ SDK `BASE_PRIOR`). Closest prior kin: Rule S (symmetric-set completeness) and Rule U (typed-column vs JSONB-blob single-source), and the recurring "docstring claims a CI guard that doesn't exist" sub-shape echoes the RETRO-078/079 "mock-only test can't catch the real thing" family — but P-DUP-CONTRACT as stated (cross-package value duplication w/ no drift test) is a **first independent sighting**. promote-threshold 2, current count **1** → NO promotion. Hold for the next sighting.
+- **Pattern P-SHELL-UNTESTED: "a nav/routing/landing change that is the headline deliverable ships with zero test on the changed file because adjacent unrelated tests are cited as coverage."** — seen in: this RETRO-084 (`layout.tsx` + `page.tsx` nav/redirect, "admin (8) tests still pass" cited but those aren't for these files). First sighting. promote-threshold 2, current count **1** → NO promotion.
+
+### 7. Follow-ups
+
+- **FOLLOW-331:** Add a real cross-package drift guard for `DEFAULT_INTENT_WEIGHTS` ↔ SDK `BASE_PRIOR`/`BEHAVIORAL_DAMPING` (export the SDK constants OR snapshot them in a fixture the shared/SDK test imports; assert key-set + per-key value + damping equality), and fix the `intent-weights.ts:155-160` docstring to reference the test that actually exists. (sdk-engineer + backend-engineer, 3h, **P2**) — closes LG-1 + DG-1.
+- **FOLLOW-332:** Add `admin/layout.test.tsx` + `admin/page.test.tsx` — assert the v1 sidebar shows only the 3 pilot-scoped tracer links and hides Registrations/Tenants/Demo-Sessions, and that `/admin` redirects to `/admin/tenants/${PILOT_TENANT_ID}/tracer`; pin the `PILOT_TENANT_ID` default to the Master-Design pilot id. (qa-engineer / backend-engineer, 2h, **P2**) — closes TG-1 + TG-2.
+
+### 8. Cross-references
+
+- **Related to RETRO-077 / RETRO-080 (FOLLOW-309/310/311/312):** RETRO-077 flagged the 3 tenant-tracer pages as Rule-H nav orphans; RETRO-080 closed that via per-tenant-list `<Link>`s. This PR adds a SECOND reachability path (direct sidebar links scoped to `PILOT_TENANT_ID`) — reconciled: not a regression, both paths target the same existing pages, and the sidebar path is the v1-primary one. The Weight Editor (`/admin/tracer/weights`) it links is the same page RETRO-073/080 wired to the GET/PUT config loop.
+- **Related to RETRO-076 (FOLLOW-302) migration-apply gap:** unlike the global-weight-seed chain (which needed an operator to apply migration 0030 before going live), this PR's `PILOT_TENANT_ID` points at a tenant row that ALREADY exists in prod (MASTER_DESIGN §Snapshot lines 26/41; events written since the 2026-05-29 pilot E2E), so the nav resolves to live data with no deploy-apply hop. No payload-side gap of that family here.
+- **Related to RETRO-072/074/075/077/080 (fixture-lies thread):** the DEFAULT-1..6 + T10 tests here are NOT fixture-lies (they assert real values of a real constant) — but LG-1's "docstring claims a CI guard that isn't there" is the same *over-claimed-verification* meta-pattern, recorded as a sibling, not a new sighting.

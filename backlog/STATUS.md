@@ -181,15 +181,21 @@ Status: READY_FOR_REVIEW. Awaiting human merge. PM comment posted: #315 comment 
 
 ## Pending Retro Spawns (8 retros outstanding as of 2026-06-17)
 
-| RETRO     | Source ticket | PR(s)          | Status to spawn |
-| --------- | ------------- | -------------- | --------------- |
-| RETRO-062 | FOLLOW-276    | #272           | PENDING         |
-| RETRO-063 | FOLLOW-278    | #273           | PENDING         |
-| RETRO-081 | FOLLOW-293    | #307           | PENDING         |
-| RETRO-082 | FOLLOW-324    | #308           | PENDING         |
-| RETRO-083 | FOLLOW-326    | #309/#310/#311 | PENDING         |
-| RETRO-084 | FOLLOW-327    | #312           | PENDING (next)  |
-| RETRO-085 | FOLLOW-328    | #313           | PENDING         |
-| RETRO-086 | FOLLOW-330    | #314           | PENDING         |
+| RETRO     | Source ticket | PR(s)          | Status to spawn                          |
+| --------- | ------------- | -------------- | ---------------------------------------- |
+| RETRO-062 | FOLLOW-276    | #272           | PENDING                                  |
+| RETRO-063 | FOLLOW-278    | #273           | PENDING                                  |
+| RETRO-081 | FOLLOW-293    | #307           | PENDING                                  |
+| RETRO-082 | FOLLOW-324    | #308           | PENDING                                  |
+| RETRO-083 | FOLLOW-326    | #309/#310/#311 | PENDING                                  |
+| RETRO-084 | FOLLOW-327    | #312           | DONE (2026-06-17) — FOLLOW-331/332 filed |
+| RETRO-085 | FOLLOW-328    | #313           | PENDING (next)                           |
+| RETRO-086 | FOLLOW-330    | #314           | PENDING                                  |
 
-Next: spawn retrospective-analyst for FOLLOW-327 (PR #312) → RETRO-084.
+RETRO-084 findings: LG-1 DEFAULT_INTENT_WEIGHTS drift guard missing (docstring claims CI guard that
+does not exist: intent-weights-drift.test.ts MISSING); TG-1 single-tenant admin shell change shipped
+with ZERO test on changed files. No functional bug. No Rule promoted (P-DUP-CONTRACT +
+P-SHELL-UNTESTED both count-1 first sightings). FOLLOW-331 (drift guard, P2) + FOLLOW-332 (admin
+tests, P2) filed. Wiring audit CLEAN.
+
+Next: spawn retrospective-analyst for FOLLOW-328 (PR #313) → RETRO-085.

@@ -9016,6 +9016,89 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
+## FOLLOW-331 — Add a real cross-package drift guard for `DEFAULT_INTENT_WEIGHTS` ↔ SDK `BASE_PRIOR`/`BEHAVIORAL_DAMPING`, and fix the docstring that claims a CI guard which does not exist (RETRO-084 LG-1 + DG-1)
+
+- **source_retro:** RETRO-084
+- **source_ticket:** FOLLOW-327 (PR #312)
+- **recommended_sprint:** next
+- **recommended_agent:** sdk-engineer + backend-engineer
+- **priority:** P2
+- **estimated_hours:** 3
+- **depends_on:** []
+- **scope:** | PR #312 added `DEFAULT_INTENT_WEIGHTS` to `@estalara/shared`
+  (`packages/shared/src/schemas/intent-weights.ts:159`) as a **hand-copied restatement** of the
+  SDK's private `BASE_PRIOR` (`packages/sdk/src/core/intent.ts:162`) + `BEHAVIORAL_DAMPING 0.3`
+  (`:520`). The values agree today but there is NO automated reconciliation: the new DEFAULT-1..6
+  tests assert the shared constant against ITSELF (sum-to-1, 18 keys, neutral 0.37), never against
+  the SDK. Worse, the `intent-weights.ts:155-160` docstring claims _"intent-weights.test.ts asserts
+  the two agree ... so drift is caught in CI"_ and the test header (`intent-weights.test.ts:29-30`)
+  defers the real cross-check to `packages/sdk/src/__tests__/intent-weights-drift.test.ts` — **that
+  file does not exist**, and `BASE_PRIOR`/`BEHAVIORAL_DAMPING` are **not exported** from the SDK, so
+  no test could currently import them. Two independent copies of an 18-key probability
+  distribution + damping scalar, reconciled by prose only — each can drift from the other and from
+  Master Design §D silently. **What to do:**
+  1. Export `BASE_PRIOR` + `BEHAVIORAL_DAMPING` from the SDK (or expose a frozen snapshot fixture
+     both packages can import) WITHOUT changing SDK runtime behavior — they stay the runtime SoT.
+  2. Write the drift test (in whichever package can see both): assert key-set equality, per-key
+     value equality, and `behavioral_damping` equality between `DEFAULT_INTENT_WEIGHTS` and the SDK
+     constants. A single divergent value must FAIL CI.
+  3. Fix the `intent-weights.ts:155-160` docstring to point at the test that actually runs (and the
+     `intent-weights.test.ts:29-30` header pointer), or delete the false "drift is caught in CI"
+     claim if the guard ends up living elsewhere.
+- **ac:**
+  - [ ] AC1 — A test exists that imports BOTH the shared `DEFAULT_INTENT_WEIGHTS` and the SDK
+        `BASE_PRIOR`/`BEHAVIORAL_DAMPING` (or a shared snapshot) and asserts full equality (keys +
+        values + damping). Mutating either copy in isolation turns the test RED.
+  - [ ] AC2 — The `intent-weights.ts` docstring and the `intent-weights.test.ts` header reference
+        the real test path; no comment claims a CI guard that does not exist.
+  - [ ] AC3 — SDK runtime behavior unchanged (BASE_PRIOR stays the runtime SoT; only its export
+        visibility changes). CI green: Build, Typecheck, Lint, Format, unit.
+- **notes:** | First independent sighting of Pattern P-DUP-CONTRACT (cross-package constant
+  duplication with prose-only / absent-test reconciliation) — adjacent to Rule S and Rule U but not
+  yet at the 2-sighting promotion threshold; if a second sighting lands, the architect should
+  consider a rule. Master Design §D is the human source of truth for the distribution.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-332 — Add `admin/layout.test.tsx` + `admin/page.test.tsx` for the single-tenant nav + landing redirect (RETRO-084 TG-1 + TG-2)
+
+- **source_retro:** RETRO-084
+- **source_ticket:** FOLLOW-327 (PR #312)
+- **recommended_sprint:** next
+- **recommended_agent:** qa-engineer (or backend-engineer)
+- **priority:** P2
+- **estimated_hours:** 2
+- **depends_on:** []
+- **scope:** | The headline deliverable of PR #312's Item 1 — the single-tenant admin shell —
+  shipped with ZERO direct test coverage. No `apps/control-plane/src/app/admin/layout.test.tsx` and
+  no `apps/control-plane/src/app/admin/page.test.tsx` exist (both confirmed absent). So the sidebar
+  change (`layout.tsx:24-30`: hides Registrations/Tenants/Demo-Sessions, shows 3 `PILOT_TENANT_ID`-
+  scoped tracer links) and the landing redirect change (`page.tsx:12`:
+  `permanentRedirect('/admin/registrations')` → `/admin/tenants/${PILOT_TENANT_ID}/tracer`) are
+  unasserted. The PR's "admin (8) tests still pass" refers to unrelated admin tests, not these
+  files. Also the `PILOT_TENANT_ID` literal (`pilot-tenant.ts:17`) is duplicated across
+  MASTER_DESIGN.md and `clickhouse-producer.test.ts` with no test pinning it to the Master-Design
+  pilot id. **What to do:**
+  1. `admin/layout.test.tsx` — render the sidebar; assert it contains Live Monitor + Session History
+     - Weight Editor links (with hrefs containing `PILOT_TENANT_ID` for the first two), and that
+       Registrations / Tenants / Demo Sessions are NOT rendered in the nav.
+  2. `admin/page.test.tsx` — assert `AdminIndexPage` calls `permanentRedirect` with
+     `/admin/tenants/${PILOT_TENANT_ID}/tracer` (mock `next/navigation`).
+  3. Pin `PILOT_TENANT_ID`'s default to the Master-Design pilot id
+     (`cbc51cfa-1056-40aa-b0a9-6e982b52b1de`) so a typo in the baked literal fails CI.
+- **ac:**
+  - [ ] AC1 — `admin/layout.test.tsx` asserts the v1 sidebar shows exactly the 3 tracer links (2
+        pilot-scoped) and hides the 3 multi-tenant screens.
+  - [ ] AC2 — `admin/page.test.tsx` asserts `/admin` redirects to the pilot tracer live monitor.
+  - [ ] AC3 — A test pins the `PILOT_TENANT_ID` default to the canonical pilot id; CI green.
+- **notes:** | First sighting of Pattern P-SHELL-UNTESTED (headline nav/routing change ships with no
+  test on the changed file, adjacent unrelated tests cited as coverage) — below promotion threshold.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 333 (331-332 = RETRO-084 / PR #312 / FOLLOW-327 single-tenant admin nav + DEFAULT_INTENT_WEIGHTS shared export: 331 = DEFAULT_INTENT_WEIGHTS is a hand-copied dup of SDK private BASE_PRIOR+BEHAVIORAL_DAMPING with NO drift guard — DEFAULT-1..6 assert the shared constant vs ITSELF, the docstring (intent-weights.ts:155-160) FALSELY claims "drift is caught in CI" pointing at packages/sdk/src/__tests__/intent-weights-drift.test.ts which DOES NOT EXIST, and BASE_PRIOR isn't even exported from the SDK; export SDK constants + write the real cross-package equality test + fix the docstring, P2 3h sdk+backend [LG-1+DG-1]. 332 = the single-tenant admin shell (Item 1 headline) shipped with ZERO test — no admin/layout.test.tsx + no admin/page.test.tsx exist, so the sidebar hiding 3 multi-tenant screens + showing 3 PILOT_TENANT_ID-scoped tracer links AND the /admin->pilot-tracer landing redirect are unasserted ("admin (8) tests" cited are unrelated files); add both test files + pin PILOT_TENANT_ID to the Master-Design pilot id, P2 2h qa [TG-1+TG-2]. Wiring Audit CLEAN (both new exports have non-test prod importers; nav targets all exist; PILOT_TENANT_ID points at the real live prod tenant cbc51cfa-... per MASTER_DESIGN §Snapshot so NO seed/migration-apply hop unlike RETRO-076). NO functional bug (uniform-prior fix genuine, T10 proves neutral=0.37). NO Rule promoted: P-DUP-CONTRACT + P-SHELL-UNTESTED both count-1 first sightings, held below threshold. Reconciled RETRO-077/080 (2nd nav path to tracer pages, not a regression) + RETRO-076 (no migration-apply gap here, tenant already live).) -->
 <!-- next free FOLLOW number: 327 (326 = CEO directive 2026-06-15: buildSnippet() auto-includes estalara-detect.iife.js companion for ALL Tier 1+2 tenants by default — opt-out, cold-start archetype detection ON by default; closes FOLLOW-324 half-wire (PR #308 exists; buildSnippet() doesn't emit companion tag yet). 324 = sdk-engineer/FOLLOW-324-sdk-bundle-size PR #308 merge-ready: split auto-detect pipeline into companion estalara-detect.iife.js (12.43KB gzip), core drops 52.61→39.73KB — passes 40KB gate. Architect Option 1 accepted.) -->
 <!-- next free FOLLOW number: 324 (323 = RETRO-080 / PR #299 / FOLLOW-309-312 closeout: (a) fix the RETRO-077 LG-3 datetime-local->ISO ambiguity FOLLOW-312 left un-closed -- raw YYYY-MM-DDTHH:MM from the datetime-local filter flows TZ-less/seconds-less into BOTH export builders AND the history table-load fetch, route validates only z.string().min(1) -> ClickHouse window is local-vs-UTC ambiguous; (b) ground the PUT/POST save-response fixture (no shared write-response schema; T9 mocks a partial the real PUT route doesn't emit -- last corner of the RETRO-077 TG-1 fixture-lies pattern on the write-response sub-surface, low risk since loadConfig reconciles via the schema-grounded GET); (c) add the POST-create UI-branch test. P2 3h backend+qa. RETRO-080 verdict: ALL FOUR RETRO-077 wires CLOSED END-TO-END (admin GET producer<->page consumer<->PUT/[id] producer loop; SSE cookie auth via getAuthClaims sb-access-token; 3 nav <Link>s into 3 existing pages; CSV via fetch+Accept) -- only LG-3 moved ONE HOP -> FOLLOW-323. AdminIntentConfigResponseSchema added to @estalara/shared (additive, SDK-facing IntentConfigResponseSchema UNTOUCHED). Implements ADR-0013. NO Rule promoted: PR #299 is the REMEDIATION of the RETRO-077 fixture-lies sighting (fixtures now derive from AdminIntentConfigResponseSchema.parse(), GET-1..5 + COOKIE-1..5 drive REAL handlers) -- a fix does NOT increment the count, so the fixture-lies family STAYS count-3, held for the next genuinely-independent sighting. FOLLOW-313 narrows (Weight-Editor cast now typed-gone; 3 tracer pages remain). Pre-existing control-plane BUILD break (sdk/playbooks + sdk/auto-detect, FOLLOW-267 origin) confirmed pre-exists, sdk-engineer scope, NOT re-filed. -->
 <!-- prior next free FOLLOW number: 323 (322 = RETRO-068 / PR #279 / FOLLOW-286: add a LIVE-backend contract test for the intent.snapshot dual-write handler so a type/constraint incompatibility (UUID column, Float32 NOT NULL, JSONEachRow strictness, mis-placed PostgREST on_conflict) FAILS CI — every current test mocks fetchImpl so BOTH PR #278 (FOLLOW-266 Phase 2, on_conflict-in-Prefer-header → real 409) AND PR #279 (FOLLOW-286, raw-hex→intent_session_id UUID column + confidence_before:null→Float32 NOT NULL, BOTH backend-rejected, caught only by FOLLOW-287) shipped P1 INSERT-body defects under green mock CI; boot ephemeral CH (0014+0015+0016) + PostgREST (0028), submit the REAL handler bodies, + a PRECISE-assertion negative control reproducing the FOLLOW-286/287 broken shapes (NOT a permissive HTTP-500 regex per RETRO-079 §4c TG-1), REQUIRE_*=1 hard-fail-on-container-absence modeled on FOLLOW-316 tracer-query-smoke, share the FOLLOW-291 ephemeral-CH harness, P2 4h backend+data-engineer. RETRO-068 is the analysis of PR #279's ingest payload (bundled into PR #280's merge diff per RETRO-067; pinned both 8a43588 merge-state vs main HEAD): CB-1 on_conflict-URL + LG-1 event_type-const + LG-2 raw-session_id-String-join-key + LG-4 payload-de-dup SURVIVE on main byte-stable + genuinely wired (Wiring Audit clean); LG-A intent_session_id-UUID-reject + LG-B confidence_before-null-Float32-reject were SUPERSEDED by FOLLOW-287 PRs #281/#282 (already owned by FOLLOW-290/291/292, NOT re-filed); the 8 TG-1 tests are reconciled to the FOLLOW-287 state on main so NO test-drift gap. NO Rule promoted RETRO-068: Rule W already governs the migration-0015 ORDER-BY-key axis (promoted RETRO-060, this PR is its named count-1 evidence); the mock-can't-catch-real-backend-rejection family is count-1 on the INGEST-handler surface (RETRO-078/079 are the sibling CH-query-builder surface — fresh count per RETRO-077/079 deferral discipline; the migration sub-axis is already Rule W, the HTTP/enum sub-axis already Rule K.2-round-trip + Rule L) — held below threshold. FOLLOW-288/289 (RETRO-059 SDK producer) + FOLLOW-321 (RETRO-067 snapshot-trigger) NOT re-filed.) -->

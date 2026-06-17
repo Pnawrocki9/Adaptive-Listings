@@ -2,6 +2,19 @@
 
 ---
 
+**Date / ticket:** 2026-06-17 — RETRO-087 (FOLLOW-325 / PR #315) + RETRO-069 (FOLLOW-287+288 / PRs
+#281+#282) + marking FOLLOW-325 DONE + promoting FOLLOW-331/332/336 to QUEUE **Delegation row
+used:** N/A — PM-self retro analysis + queue hygiene (step 6). **What validation caught (or
+missed):** RETRO-087: DETECT_SERVE_URL non-test producer+consumer confirmed (domains.ts:73 →
+DetectionPreview.tsx:183). RETRO-069: SELECT 1 no-op pattern for blocked ORDER BY key ALTER is safe
+(migration journal gate hashes timestamps/count, not SQL content). Caught that RETRO-064/067/068
+were already written in RETROSPECTIVES.md but STATUS.md still showed them as PENDING SPAWN — the old
+RETRO TRACKING table was stale. **A delegation/validation rule I'd add:** When marking tickets DONE
+after human merge, always verify the PR merge commit exists in git log before updating QUEUE.md — do
+not rely on "was READY_FOR_REVIEW" as a proxy for "is merged."
+
+---
+
 **Date / ticket:** 2026-06-17 — RETRO-062 + RETRO-063 (FOLLOW-276 / PR #272 + FOLLOW-278 / PR #273
 retrospective spawns) **Delegation row used:** N/A — PM-self retrospective analysis (step 6,
 post-merge, retro backlog, two docs-only/test-only PRs batched). **What validation caught (or

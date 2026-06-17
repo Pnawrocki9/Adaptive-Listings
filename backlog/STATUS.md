@@ -87,28 +87,30 @@ partial-personalization risk for TICKET-PILOT-001.
 
 ## RETRO TRACKING (completed retros)
 
-| RETRO     | Source ticket                    | PR        | Status                                                               | Notes                                                                                                                                                                      |
-| --------- | -------------------------------- | --------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| RETRO-059 | FOLLOW-274                       | #267      | DONE                                                                 |                                                                                                                                                                            |
-| RETRO-060 | FOLLOW-273                       | #268      | DONE                                                                 | Rule W promoted (ClickHouse ORDER BY key DDL)                                                                                                                              |
-| RETRO-061 | (no body — DG-2 cited)           | —         | N/A                                                                  | Cited in test headers; no actual entry filed                                                                                                                               |
+| RETRO     | Source ticket                    | PR        | Status                                                               | Notes                                                                                             |
+| --------- | -------------------------------- | --------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| RETRO-059 | FOLLOW-274                       | #267      | DONE                                                                 |                                                                                                   |
+| RETRO-060 | FOLLOW-273                       | #268      | DONE                                                                 | Rule W promoted (ClickHouse ORDER BY key DDL)                                                     |
+| RETRO-061 | (no body — DG-2 cited)           | —         | N/A                                                                  | Cited in test headers; no actual entry filed                                                      |
 | RETRO-062 | FOLLOW-276                       | #272      | DONE (2026-06-17) — no FOLLOW filed (docs-only)                      |
 | RETRO-063 | FOLLOW-278                       | #273      | DONE (2026-06-17) — no FOLLOW filed (docs+test, constraint accepted) |
-| RETRO-064 | FOLLOW-266 Ph1                   | #277      | PENDING SPAWN                                                        |                                                                                                                                                                            |
-| RETRO-065 | FOLLOW-266 Ph2                   | #278      | COMPLETE                                                             | 3 P1 defects found (CB-1/LG-1/LG-2) → FOLLOW-286                                                                                                                           |
-| RETRO-066 | (ESC-021 sourced)                | —         | COMPLETE                                                             | ClickHouse MODIFY COLUMN on ORDER BY key → Rule W                                                                                                                          |
-| RETRO-067 | FOLLOW-266 Ph3                   | #280      | PENDING SPAWN                                                        |                                                                                                                                                                            |
-| RETRO-068 | FOLLOW-286                       | #279      | PENDING SPAWN                                                        |                                                                                                                                                                            |
-| RETRO-069 | FOLLOW-287+288                   | #281+#282 | PENDING SPAWN                                                        |                                                                                                                                                                            |
-| RETRO-070 | FOLLOW-267                       | #283      | COMPLETE                                                             | Rule K.2 amended; FOLLOW-298/299/300 filed                                                                                                                                 |
-| RETRO-071 | FOLLOW-268-write                 | #285      | COMPLETE                                                             | FOLLOW-301/302 filed                                                                                                                                                       |
-| RETRO-072 | FOLLOW-297                       | #286      | COMPLETE                                                             | FOLLOW-303 filed                                                                                                                                                           |
-| RETRO-073 | FOLLOW-301                       | #289      | COMPLETE                                                             | FOLLOW-304 filed (P2 GET cross-scope determinism)                                                                                                                          |
-| RETRO-074 | FOLLOW-268-sdk                   | #290      | COMPLETE                                                             | FOLLOW-305 filed (P1 double-/api blocker); Rule X count=1                                                                                                                  |
-| RETRO-075 | FOLLOW-305                       | #291      | COMPLETE                                                             | FOLLOW-306 filed (P3 hygiene); Rule X PROMOTED (count=2)                                                                                                                   |
-| RETRO-076 | FOLLOW-266 Ph2 seed + FOLLOW-302 | #293      | COMPLETE                                                             | FOLLOW-307 filed (P1 devops apply gate); OG-1 no-auto-Postgres-apply fact recorded; FOLLOW-302 CLOSED both sites; NO new Rule (OG-1 count=1, promote-on-2nd condition set) |
+| RETRO-064 | FOLLOW-266 Ph1                   | #277      | DONE (2026-06-17) — FOLLOW-319/320 filed                             | Root-cause retro: 0014 ORDER BY key dead-on-arrival; Rule W already governs                       |
+| RETRO-065 | FOLLOW-266 Ph2                   | #278      | COMPLETE                                                             | 3 P1 defects found (CB-1/LG-1/LG-2) → FOLLOW-286                                                  |
+| RETRO-066 | (ESC-021 sourced)                | —         | COMPLETE                                                             | ClickHouse MODIFY COLUMN on ORDER BY key → Rule W                                                 |
+| RETRO-067 | FOLLOW-266 Ph3                   | #280      | DONE (2026-06-17) — FOLLOW-321 filed (snapshot trigger HALF_WIRE)    | RETRO-059 stubs FOLLOW-288/289 confirmed still open; bundled #279 payload attributed to RETRO-068 |
+| RETRO-068 | FOLLOW-286                       | #279      | DONE (2026-06-17) — FOLLOW-322 filed (mock-backend rejection gap)    | LG-A/LG-B superseded by FOLLOW-287; FOLLOW-290/291/292 stubs confirmed; Rule W governs            |
+| RETRO-069 | FOLLOW-287+288                   | #281+#282 | DONE (2026-06-17) — no new stubs (FOLLOW-290/291/292 cover it)       | ESC-021 root cause; SELECT 1 no-op pattern; Rule W count=3 (reinforces; already promoted)         |
+| RETRO-070 | FOLLOW-267                       | #283      | COMPLETE                                                             | Rule K.2 amended; FOLLOW-298/299/300 filed                                                        |
+| RETRO-071 | FOLLOW-268-write                 | #285      | COMPLETE                                                             | FOLLOW-301/302 filed                                                                              |
+| RETRO-072 | FOLLOW-297                       | #286      | COMPLETE                                                             | FOLLOW-303 filed                                                                                  |
+| RETRO-073 | FOLLOW-301                       | #289      | COMPLETE                                                             | FOLLOW-304 filed (P2 GET cross-scope determinism)                                                 |
+| RETRO-074 | FOLLOW-268-sdk                   | #290      | COMPLETE                                                             | FOLLOW-305 filed (P1 double-/api blocker); Rule X count=1                                         |
+| RETRO-075 | FOLLOW-305                       | #291      | COMPLETE                                                             | FOLLOW-306 filed (P3 hygiene); Rule X PROMOTED (count=2)                                          |
+| RETRO-076 | FOLLOW-266 Ph2 seed + FOLLOW-302 | #293      | COMPLETE                                                             | FOLLOW-307 filed; OG-1 no-auto-Postgres-apply fact; FOLLOW-302 CLOSED; NO new Rule (count=1)      |
+| RETRO-087 | FOLLOW-325                       | #315      | DONE (2026-06-17) — no new stubs (FOLLOW-331/332/335 cover it)       | DETECT_SERVE_URL companion wire closed; LG-1 detect-bundle.ts → FOLLOW-335 still open             |
 
-**Wave-2 retros still pending spawn:** RETRO-062/063/064/067/068/069.
+**ALL Wave-2 retros complete: RETRO-062/063/064/067/068/069 DONE 2026-06-17.** **RETRO-087
+(FOLLOW-325 / PR #315) DONE 2026-06-17.**
 
 **Rule X promoted** (CONVENTIONS_PATCH.md): every SDK→control-plane fetch site MUST use
 buildEndpoint(decisionApiUrl, path) + a test asserting the resolved URL against the real production
@@ -125,35 +127,36 @@ snippet base (${CONTROL_PLANE_URL}/api). Promoted from RETRO-074/075 (count 2; t
 | FOLLOW-268-sdk | (per PR body — green)                       | 0/3            |
 | FOLLOW-305     | (per PR body — 1383 vitest green, CI green) | 0/3            |
 
-## Sprint 18+ Current State (2026-06-17)
+## Sprint 18+ Current State (2026-06-17 20:00Z)
 
-**FOLLOW-324 DONE** (PR #308, merged 2026-06-15). SDK bundle: 52.61 KB -> 39.73 KB gzip. Companion
-estalara-detect.iife.js = 12.43 KB. CI: all real gates GREEN (verified via gh pr view 308).
+**ALL SPRINT 18 PRs MERGED AND RETROS COMPLETE.**
 
-**FOLLOW-325 READY_FOR_REVIEW** (PR #315, 2026-06-17). buildSnippet() companion auto-include. PM
-re-validated 2026-06-17T18:00Z. All real CI gates GREEN. Runtime wiring confirmed (DETECT_SERVE_URL
-producer: packages/shared/src/domains.ts:73; non-test consumer: DetectionPreview.tsx:23,183). PR
-comment posted. CI check counter: 1/5, fix iterations: 0/3. Awaiting human merge.
+**FOLLOW-324 DONE** (PR #308). SDK bundle 52.61 KB → 39.73 KB gzip. RETRO-082 DONE.
 
-**FOLLOW-326 DONE** (PRs #309/#310/#311, all merged 2026-06-15). admin.estalara.com sign-in +
-Supabase SSR auth flow. AC1-AC8 completed.
+**FOLLOW-325 DONE** (PR #315, merged 43ad849 2026-06-17). buildSnippet() companion auto-include.
+DETECT_SERVE_URL wired: producer packages/shared/src/domains.ts:73, non-test consumer
+DetectionPreview.tsx:183. RETRO-087 DONE 2026-06-17 — no new stubs (FOLLOW-331/332/335 cover
+residuals).
 
-**FOLLOW-327 DONE** (PR #312, merged 2026-06-16). Single-tenant admin nav + canonical Weight Editor
-defaults (DEFAULT_INTENT_WEIGHTS in @estalara/shared, "Reset to defaults" button).
+**FOLLOW-326 DONE** (PRs #309/#310/#311). admin.estalara.com sign-in + Supabase SSR. RETRO-083 DONE.
 
-**FOLLOW-328 DONE** (PR #313, merged 2026-06-16). ClickHouse Basic auth fix — include username in
-Authorization header (Code 516 AUTHENTICATION_FAILED resolved). New shared clickhouse-http.ts.
+**FOLLOW-327 DONE** (PR #312). Single-tenant nav + DEFAULT_INTENT_WEIGHTS. RETRO-084 DONE.
 
-**FOLLOW-330 DONE** (PR #314, merged 2026-06-16). Tracer history SSR window crash + CH cold-start
-timeout fixed (timeout raised 8s→30s/45s, buildJsonlExportUrl uses relative URL).
+**FOLLOW-328 DONE** (PR #313). ClickHouse Basic auth fix (Code 516 resolved). RETRO-085 DONE.
 
-**FOLLOW-293 DONE** (PR #307, merged 2026-06-15). K.3.6 D-1 live-network smoke. ESC-024 resolved by
-Piotr. Smoke run 27555287447: AC-LN1/LN2/LN3 all GREEN.
+**FOLLOW-330 DONE** (PR #314). Tracer SSR crash + CH cold-start timeout. RETRO-086 DONE.
 
-**Pending retro spawns:** RETRO-062 (PR #272), RETRO-063 (PR #273), RETRO-064 (PR #277), RETRO-067
-(PR #280), RETRO-068 (PR #279), RETRO for FOLLOW-324 (PR #308), RETRO for FOLLOW-326 (PRs
-#309/#310/#311), RETRO for FOLLOW-327 (PR #312), RETRO for FOLLOW-328 (PR #313), RETRO for
-FOLLOW-330 (PR #314).
+**FOLLOW-293 DONE** (PR #307). K.3.6 D-1 live-network smoke. RETRO-081 DONE.
+
+**Wave-2 retros:** RETRO-062/063/064/067/068/069 ALL DONE 2026-06-17.
+
+**Pending retro spawns: NONE.** All retros through RETRO-087 complete.
+
+**New READY tickets promoted (Sprint 18 P2, 2026-06-17):**
+
+- FOLLOW-336 (READY): checkStaffSession + middleware + SignInForm tests (qa-engineer, 3h)
+- FOLLOW-331 (READY): DEFAULT_INTENT_WEIGHTS drift guard + docstring fix (sdk-engineer, 3h)
+- FOLLOW-332 (READY): admin/layout.test.tsx + admin/page.test.tsx (qa-engineer, 2h)
 
 ## ESCALATION STATUS
 
@@ -168,18 +171,17 @@ live smoke, Gitleaks, Migration journal monotonicity — all GREEN. Python tests
 auto-detect): pre-existing FAILURE, NON-BLOCKING per CI landscape. Rule I: pre-existing FAILURE,
 NON-BLOCKING (90 FOLLOW-090).
 
-## CI CHECK COUNTER (FOLLOW-325, current ticket)
+## CI CHECK COUNTER (current sprint — FOLLOW-336 next up)
 
 | Ticket     | CI checks | Fix iterations |
 | ---------- | --------- | -------------- |
 | FOLLOW-325 | 1/5       | 0/3            |
+| FOLLOW-336 | 0/5       | 0/3            |
 
-FOLLOW-325: PR #315 opened (commit 438de07). PM re-validated 2026-06-17T18:00Z (second session).
-Real blocking gates: ALL GREEN. Pre-existing-red non-blocking: Rule I (168 violations, FOLLOW-090),
-Python tests (all Modal app variants), Doppler verify (timing flap — passes on one of two runs).
-Status: READY_FOR_REVIEW. Awaiting human merge. PM comment posted: #315 comment (evidence pasted).
+FOLLOW-325: DONE (PR #315 merged 43ad849 2026-06-17). CI green. RETRO-087 complete. FOLLOW-336:
+READY — not yet started. Next ticket to delegate.
 
-## Pending Retro Spawns (8 retros outstanding as of 2026-06-17)
+## Pending Retro Spawns (ALL COMPLETE as of 2026-06-17)
 
 | RETRO     | Source ticket | PR(s)          | Status to spawn                          |
 | --------- | ------------- | -------------- | ---------------------------------------- |
@@ -226,4 +228,24 @@ Docs-only, no FOLLOW stubs.
 RETRO-063 DONE (2026-06-17): Consent-banner locale constraint accepted (FOLLOW-278 / PR #273).
 Render-hop test + ADR-0011 addendum. No FOLLOW stubs.
 
-ALL 8 PENDING RETROS COMPLETE (2026-06-17). Next: read QUEUE.md and pick next ticket.
+RETRO-064 DONE (2026-06-17): FOLLOW-266 Phase 1 root-cause retro (PR #277). FOLLOW-319
+(intent_events TTL gap) + FOLLOW-320 (Drizzle index direction drift) filed. Rule W already governs;
+no new rule.
+
+RETRO-067 DONE (2026-06-17): FOLLOW-266 Phase 3 SDK emission (PR #280). FOLLOW-321 filed (snapshot
+trigger HALF_WIRE: micro_poll.answered crossing 5-multiple boundary emits no periodic snapshot).
+
+RETRO-068 DONE (2026-06-17): FOLLOW-286 ingest handler defect-fix (PR #279). FOLLOW-322 filed
+(mock-fetchImpl cannot catch type-incompatibility in dual-write INSERT-body). Rule W governs; no
+new.
+
+RETRO-069 DONE (2026-06-17): FOLLOW-287+288 ESC-021 repair (PRs #281+#282). No new stubs — all gaps
+covered by FOLLOW-290/291/292. SELECT 1 no-op pattern noted (count 1, no Rule). Rule W count=3
+reinforced (already promoted at RETRO-060).
+
+RETRO-087 DONE (2026-06-17): FOLLOW-325 companion wire closure (PR #315). DETECT_SERVE_URL wired:
+producer packages/shared/src/domains.ts:73, consumer DetectionPreview.tsx:183. No new stubs —
+FOLLOW-331/332/335 cover residuals. detect-bundle.ts global bridge untested pattern count=2
+(RETRO-082+087) but deferred: wait for FOLLOW-335 to land before promoting Rule.
+
+ALL RETROS THROUGH RETRO-087 COMPLETE (2026-06-17). Next: delegate FOLLOW-336 to qa-engineer.

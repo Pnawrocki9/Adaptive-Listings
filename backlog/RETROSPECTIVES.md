@@ -17686,3 +17686,170 @@ Wiring audit: N/A (no new wiring). CLEAN.
 - **RETRO-058 (FOLLOW-275 / quiz-config transport):** LG-1/LG-2/TG-1 from RETRO-058 are the source of FOLLOW-278. RETRO-063 closes all three.
 - **ADR-0011-quiz-config-transport.md:** The canonical document for the quiz-config transport decision. `§Consent-banner locale` addendum added in this PR.
 - **FOLLOW-273 / PR #268 (type unification):** FOLLOW-273 proves the `QuizLanguage` type is correct at the type level. FOLLOW-278 (this retro) proves the type is correctly consumed by rendering. The two are disjoint and complementary.
+
+---
+
+## RETRO-087 — FOLLOW-325 (`buildSnippet()` auto-includes the `estalara-detect.iife.js` companion for all Tier 1+2 tenants; `DETECT_SERVE_URL` added to `@estalara/shared`; `docs/INTERFACES.md` `window.__EStalaraDetect` surface contract; dev fallback route `GET /api/sdk-detect`; Tier 3 opt-out + companion-suppression deferred to FOLLOW-331/FOLLOW-332) — 2026-06-17
+
+### 1. What was built
+
+PR #315 (`feat(control-plane): buildSnippet() auto-includes detect companion for Tier 1+2 [FOLLOW-325]`, merged `43ad849` 2026-06-17). 7 files changed, 3298 insertions, 9 deletions.
+
+The PR closes the RETRO-082 LG-1 snippet half-wire: PR #308 (FOLLOW-324) split `estalara-detect.iife.js` into a companion bundle and set `window.__EStalaraDetect` in it, but `buildSnippet()` did NOT emit the companion `<script>` tag — so every newly-onboarded tenant got a main SDK IIFE that called `window.__EStalaraDetect` before it was defined.
+
+Four deliverables:
+
+1. **`DETECT_SERVE_URL` constant** in `packages/shared/src/domains.ts:73` — `${CONTROL_PLANE_URL}/estalara-detect.iife.js`. Same host pattern as `SDK_SERVE_URL` per Rule X (no double-`/api`, just a static-asset path).
+
+2. **`buildSnippet()` update** in `DetectionPreview.tsx:183` — emits the companion `<script>` tag BEFORE the main SDK tag, both without `async`/`defer`, guaranteeing browser execution ordering (`window.__EStalaraDetect` defined before the main SDK IIFE runs).
+
+3. **Static asset** `apps/control-plane/public/estalara-detect.iife.js` committed (61 KB, ~12 KB gzip). Same Vercel-static pattern as `public/sdk.js` from PR #308.
+
+4. **`docs/INTERFACES.md`** new `window.__EStalaraDetect` section documenting the full interface contract, load ordering, default-ON for Tier 1+2, Tier 3 exclusion rationale, and opt-out hooks deferred to FOLLOW-331/FOLLOW-332.
+
+### 2. Wiring audit
+
+**New exported symbol:**
+
+- `DETECT_SERVE_URL` — `packages/shared/src/domains.ts:73`
+  - Producer (non-test): `packages/shared/src/domains.ts:73` (export), re-exported via `packages/shared/src/index.ts` (wildcard `export * from './domains.js'`)
+  - Consumer (non-test): `apps/control-plane/src/components/onboarding/DetectionPreview.tsx:23,183` — imported and used in `buildSnippet()` as `${DETECT_SERVE_URL}` inside the companion `<script>` tag
+  - **Wire: CLEAN.** Non-test producer confirmed; non-test consumer confirmed.
+
+**New file:**
+
+- `apps/control-plane/src/app/api/sdk-detect/route.ts` — dev-only fallback GET route. Reads `packages/sdk/dist/estalara-detect.iife.js`; returns an empty JS comment when absent. NOT a production path — production uses the static `public/estalara-detect.iife.js` file. No new exported symbol. CLEAN.
+
+**Deferred wires (explicitly NOT wired in this PR — by design):**
+
+- Per-tenant opt-out toggle — deferred to FOLLOW-331 (mentioned in code comment + INTERFACES.md but no runtime producer/consumer yet). CORRECT — not a wiring gap, a deliberate future work stub.
+- Tier 3 companion suppression — deferred to FOLLOW-332. CORRECT.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, OPEN — FOLLOW-335) — `detect-bundle.ts` producer has no unit test for `globalThis.__EStalaraDetect` global assignment.** RETRO-082 TG-1 already filed FOLLOW-335 against this. This retro confirms it is still OPEN (PR #315 adds only consumer-side tests — CompanionTag-1..5 in DetectionPreview.test.tsx — none of which test the actual `detect-bundle.ts` code that sets the global). Not re-filed; FOLLOW-335 is the correct tracking stub.
+
+- **LG-2 (P3, ACCEPTABLE) — `estalara-detect.iife.js` committed as a built artifact.** The file in `apps/control-plane/public/` is a compiled binary at `61 KB`. It was hand-built from PR #308 (FOLLOW-324) output. Future SDK changes must regenerate it. The dev fallback route (`/api/sdk-detect`) reads `packages/sdk/dist/` which IS built from source — so in development, the latest build is used. In production, the static file may lag SDK changes. This is acceptable for MVP (the two are built together; CI would catch a drift via SDK E2E tests). Low severity; noted for operational awareness.
+
+- **LG-3 (P3) — `DETECT_SERVE_URL` is on the same `admin.estalara.com` host as the control-plane app.** This means a control-plane deploy outage also takes down the auto-detect companion. Acceptable for MVP single-region; multi-CDN distribution is a future hardening concern.
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **The companion `<script>` tag is emitted WITHOUT `async` or `defer` by design** — this is correct. The main SDK IIFE reads `window.__EStalaraDetect` synchronously on execution. If the companion loaded async, the global would not be set in time. The inline comment in `buildSnippet()` correctly documents this load-ordering requirement.
+
+- **Tier 3 exclusion is documented but not enforced in code.** `buildSnippet()` always emits the companion for ALL tenants including Tier 3. FOLLOW-332 is the gating ticket for suppression. For the current pilot (Tier 1/2 only), this is non-blocking.
+
+#### 4b. Code bugs not caught
+
+- **None.** The DETECT_SERVE_URL constant uses the same `${CONTROL_PLANE_URL}` base as `SDK_SERVE_URL` — both resolve to `https://admin.estalara.com/...`. No double-`/api` path issue (it is a static asset path, not an API endpoint). Rule X pattern correctly applied.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, FOLLOW-335, OPEN) — detect-bundle.ts producer-side global assignment has no unit test.** Inherited from RETRO-082 TG-1. Not new here.
+
+- **TG-2 (P3) — The dev fallback `GET /api/sdk-detect` route has no test.** Low severity; it is a dev-only path that returns an empty comment when artifact absent. Not filed as a separate stub (low ROI).
+
+### 5. Cascading impact
+
+- **FOLLOW-331 (READY in queue) — per-tenant opt-out toggle.** Any tenant that does NOT want auto-detection must wait for FOLLOW-331 before they have a supported way to suppress the companion. For the current pilot (single tenant, CEO decision to default-ON), this is non-blocking.
+
+- **FOLLOW-332 (READY in queue) — Tier 3 companion suppression.** If Tier 3 is activated before FOLLOW-332 ships, the companion will fire on Tier 3 pages unnecessarily (redundant but not harmful — `window.__EStalaraDetect` will be set but the Tier 3 SDK (`<EstalaraListing/>`) does not read it). Harmless, but should close before Tier 3 launch.
+
+- **FOLLOW-335 (READY in queue, from RETRO-082) — detect-bundle.ts unit test.** No runtime impact; test coverage gap only.
+
+### 6. New lesson candidates
+
+- **Pattern: "when a PR ships a consumer of a global bridge pattern (`window.__EStalaraDetect`) but the producer (detect-bundle.ts) has no unit test for the global assignment, add a P2 follow-up stub IMMEDIATELY — the companion can silently regress if the SDK build changes detect-bundle.ts output."** — seen in: RETRO-082 (filed FOLLOW-335), RETRO-087 (confirms FOLLOW-335 still open after PR #315). **Count 2 (RETRO-082 + RETRO-087) on the "untested IIFE global bridge" axis.** Threshold: ≥2 independent retros. However, this pattern is already captured by FOLLOW-335's existence (P2 action pending); it does not need a new Rule until the test lands and we can confirm the Rule form. Defer Rule promotion to after FOLLOW-335 merges; re-assess at RETRO-088.
+
+### 7. Follow-ups
+
+- **FOLLOW-331 (READY, P2, sdk-engineer + backend-engineer)** — per-tenant opt-out toggle. Already promoted to QUEUE.md in this session.
+- **FOLLOW-332 (READY, P2, qa-engineer)** — Tier 3 companion suppression. Already promoted to QUEUE.md in this session.
+- **FOLLOW-335 (READY, P2, sdk-engineer)** — detect-bundle.ts global assignment unit test. Already in FOLLOW_UPS.md.
+
+### 8. Cross-references
+
+- **RETRO-082 (FOLLOW-324 / PR #308):** The PR that created the companion bundle and the `window.__EStalaraDetect` pattern. RETRO-087 is the closure of RETRO-082 LG-1 (snippet half-wire). RETRO-082 TG-1 (detect-bundle.ts unit test) is still open as FOLLOW-335.
+- **FOLLOW-331/332:** Deferred work explicitly scoped and referenced in PR #315 code comments and INTERFACES.md.
+- **Rule X (RETRO-075 / RETRO-074):** `DETECT_SERVE_URL` correctly uses `${CONTROL_PLANE_URL}/estalara-detect.iife.js` (no `/api` prefix on a static-asset path). Rule X verifies no double-`/api` — confirmed clean.
+
+---
+
+## RETRO-069 — FOLLOW-287 + FOLLOW-288 (K.3.6 `intent_events` ClickHouse JSONEachRow type repair: `intent_session_id` UUID→String incompatibility fix + `confidence_before` null→0.0 sentinel + migration 0016 SELECT 1 no-op; ESC-021 root-cause retro) — 2026-06-17
+
+### 1. What was built
+
+PR #281 (FOLLOW-287, merged 2026-06-12T22:31:19Z) + PR #282 (FOLLOW-288, merged 2026-06-12T23:27:03Z). Together these two PRs constitute the ESC-021 remediation chain.
+
+**FOLLOW-287 (PR #281) — ingest handler type fix:**
+
+- **CB-2:** Revert `confidence_before: null` → `confidence_before: 0.0` (Float32 NOT NULL cannot accept null in JSONEachRow; the row would be silently dropped by ClickHouse).
+- **DG-1:** Add `console.error` on `allSettled` rejections in the ingest handler so a silent ClickHouse insert failure surfaces in observability.
+- **The problem:** PR #281 originally included `migration 0016_intent_events_uuid_fix.sql` attempting `ALTER TABLE intent_events MODIFY COLUMN intent_session_id String` — but `intent_session_id` is an ORDER BY key column. ClickHouse error 524 (`ALTER_OF_COLUMN_IS_FORBIDDEN`) blocks any ALTER on ORDER BY columns. This caused the ClickHouse migrations smoke CI gate to FAIL. ESC-021 filed.
+
+**FOLLOW-288 (PR #282) — migration 0016 repair:**
+
+- Replace migration 0016 with `SELECT 1` no-op (preserves journal monotonicity; the ORDER BY-key column cannot be modified in place).
+- Drop `intent_session_id` from the INSERT body entirely → ClickHouse uses the zero-UUID default value for the column on every row.
+- `session_id` (String, migration 0015) is now the authoritative join key for all K.3.6 queries (FOLLOW-269 and later).
+- CI smoke gate: PASS. ESC-021 RESOLVED.
+
+### 2. Wiring audit
+
+**FOLLOW-287:**
+
+- `confidence_before` value change (null → 0.0 float) — existing column, no schema change. Internal handler change. CLEAN.
+- No new exported symbols, events, env vars, DB columns. CLEAN.
+
+**FOLLOW-288:**
+
+- Migration 0016 is now `SELECT 1` — a no-op that preserves the migration journal count at 17. No schema changes applied.
+- `intent_session_id` omitted from INSERT body — the column STILL EXISTS in the `intent_events` table (zero-UUID DEFAULT). All reads that JOIN on `session_id` (String) are unaffected. CLEAN.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, OPEN — FOLLOW-290) — `intent_events` ORDER BY key is degenerate.** The zero-UUID default for `intent_session_id` on every row collapses the sort key `(tenant_id, intent_session_id, event_at)` to an effectively binary sort: all rows for a tenant share the zero-UUID second dimension. Per-session locality (the intent of the 0014 DDL) is permanently lost until FOLLOW-290 rebuilds the table with `ORDER BY (tenant_id, session_id, event_at)`. **Already tracked by FOLLOW-290.** Not re-filed.
+
+- **LG-2 (P2, OPEN — FOLLOW-292) — `confidence_before: 0.0` is ambiguous between "session start, no prior snapshot" and "genuine 0.0 top-archetype confidence."** The fix is correct for ClickHouse type compliance (Float32 NOT NULL), but a replay consumer (FOLLOW-269) cannot distinguish session-start from genuine-zero-confidence rows without an additional sentinel. **Already tracked by FOLLOW-292.** Not re-filed.
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **The `SELECT 1` no-op migration preserves journal count (17 entries after 0016) without applying any schema change.** This is the correct pattern when an in-place fix is blocked by an immutable ORDER BY key. The migration journal monotonicity CI gate (`migration-journal-monotonicity`) passes because timestamps/count/existence are hashed, not SQL content. This is an architectural fact (confirmed by RETRO-076 OG-1 and the migration gate design).
+
+#### 4b. Code bugs not caught
+
+- **The two LG-A/LG-B defects from PR #279 (FOLLOW-286) — `intent_session_id: sessionId` (UUID column ← 64-char hex) + `confidence_before: null` (Float32 NOT NULL ← null) — were NOT caught by the FOLLOW-286 TG-1 mock-`fetchImpl` tests.** This is the same "mock can't catch real-backend rejection" pattern RETRO-078/079 (CH query builder axis) confirmed. RETRO-068 filed FOLLOW-322 against this pattern on the ingest dual-write INSERT-body path. Not re-filed here; FOLLOW-322 is the correct stub.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, FOLLOW-291) — no pre-merge CI guard that applies ClickHouse migrations against a live CH instance carrying the production schema.** PR #281's migration 0016 passed CI (all TypeScript/Node gates green) but failed at apply-time (error 524). FOLLOW-291 would have caught this. **Already tracked by FOLLOW-291.** Not re-filed.
+
+### 5. Cascading impact
+
+- **`session_id` (String, migration 0015) is now the authoritative join key** for K.3.6 queries. FOLLOW-269 (tracer UI), the archetype drift cron, and any future ML replay jobs MUST join on `session_id`, NOT `intent_session_id`. This is documented in the QUEUE.md FOLLOW-288 notes.
+
+- **FOLLOW-290 (OPEN) — `intent_events` table rebuild.** Until FOLLOW-290 lands, every production `intent_events` INSERT carries the zero-UUID `intent_session_id`, degrading sort-key locality. The table is functionally correct for reads (join on `session_id`) but sub-optimal for time-range scans within a session. Non-blocking for MVP; blocking for ML training grade data.
+
+### 6. New lesson candidates
+
+- **Pattern: "an ALTER on an ORDER BY / PRIMARY KEY column fails at apply-time with error 524, not at DDL-parse time — ClickHouse does not reject the SQL at `ATTACH/CREATE` level, only at the ALTER execution step."** — seen in: RETRO-060 (FOLLOW-286 first ALTER rejection: PR #279 tried RENAME), RETRO-069 (FOLLOW-287 second ALTER rejection: PR #281 tried MODIFY). **Count 2+ — already PROMOTED to Rule W** (RETRO-060 threshold met). This retro is the third independent sighting of the exact same failure; it reinforces Rule W but does NOT trigger a new promotion (Rule W already covers this).
+
+- **Pattern: "a SELECT 1 no-op migration is the correct repair when an ORDER BY / PRIMARY KEY column fix is blocked by error 524; it preserves journal monotonicity without applying schema changes."** — seen in: RETRO-069 (this, FOLLOW-288). **Count 1.** No Rule promotion. File as knowledge note: the `migration-journal-monotonicity` gate hashes timestamps/count/existence, NOT SQL content, so a `SELECT 1` always passes the gate.
+
+### 7. Follow-ups
+
+- **FOLLOW-290 (OPEN, P2, data-engineer)** — rebuild `intent_events` with `ORDER BY (tenant_id, session_id, event_at)`. Tracked. Coordinate with FOLLOW-291 (pre-merge CH-DDL guard) + FOLLOW-292 (confidence_before disambiguation).
+- **FOLLOW-291 (OPEN, P2, devops-engineer)** — pre-merge ClickHouse-DDL guard (lint rejecting ALTER on ORDER BY key columns). Tracked.
+- **FOLLOW-292 (OPEN, P2, backend-engineer)** — `confidence_before` session-start vs genuine-0.0 disambiguation. Tracked.
+- **FOLLOW-322 (OPEN, P2, qa-engineer)** — live-backend contract test for `intent.snapshot` dual-write to catch type-incompatibility defects that mock-`fetchImpl` tests cannot catch. Tracked.
+
+### 8. Cross-references
+
+- **RETRO-064 (FOLLOW-266 Phase 1 / PR #277):** Root-cause retro. PR #277's 0014 DDL chose `intent_session_id` UUID as ORDER BY key — the original sin that forced the FOLLOW-286/287/288 workaround chain.
+- **RETRO-068 (FOLLOW-286 / PR #279):** Filed FOLLOW-322 (mock-`fetchImpl` cannot catch type incompatibilities in dual-write paths). RETRO-069 confirms this pattern.
+- **ESC-021 (RESOLVED):** The migration 0016 error 524 escalation that FOLLOW-288 closed.
+- **Rule W:** The ClickHouse ORDER BY key immutability rule, promoted at RETRO-060. RETRO-069 is the third independent sighting.

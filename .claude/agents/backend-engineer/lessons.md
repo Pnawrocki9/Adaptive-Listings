@@ -689,3 +689,33 @@ links from the tenants list page (3 pages were nav-orphaned). (4) Converted CSV 
 **A guardrail I'd add:** A CI check that asserts every SSE-producing page has no ?token= URL param
 (EventSource can never send headers; passing a token in the URL is always wrong and is now a
 documented anti-pattern from RETRO-077).
+
+---
+
+## 2026-06-17 / FOLLOW-325
+
+**What I built:** `buildSnippet()` companion tag — `estalara-detect.iife.js` auto-included in the
+onboarding snippet for all Tier 1+2 tenants. New `DETECT_SERVE_URL` constant in
+`@estalara/shared/domains`, `apps/control-plane/public/estalara-detect.iife.js` committed as a
+Vercel static asset, `GET /api/sdk-detect` dev fallback route, `## window.__EStalaraDetect` section
+in `docs/INTERFACES.md`, 5 new test cases in `DetectionPreview.test.tsx`.
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+1. **Build artifact in git:** The companion IIFE is a binary artifact committed to `public/`. The
+   pre-commit lint hook tried to lint it, failing the commit. Fixed by adding it to
+   `eslint.config.mjs` global ignores — same pattern as the existing `public/sdk.js` entry. Always
+   check ESLint ignore list when committing minified/built JS to `public/`.
+2. **Rule H for DETECT_SERVE_URL:** New export from `@estalara/shared` consumed in the same PR by
+   `buildSnippet()` (line 183 of `DetectionPreview.tsx`) which is called at line 231 in the React
+   component render. Production code path confirmed.
+3. **Tier 3 exclusion:** Documented both in the JSDoc and in `docs/INTERFACES.md` why Tier 3 (Native
+   `<EstalaraListing/>`) doesn't need the companion — Tier 3 owns the DOM. Deferred suppression via
+   tenant flag to FOLLOW-332.
+4. **Stash vs staged state:** The worktree had substantial staged work from a prior session. Did not
+   re-apply stash (stash was superseded by the staged state). Verified staged file list matched all
+   AC requirements before committing.
+
+**A guardrail I'd add:** A CI check that asserts `apps/control-plane/public/*.iife.js` and
+`apps/control-plane/public/*.js` are in the ESLint global ignores list — prevents the "lint fails on
+built artifact" trap on the next similar commit.

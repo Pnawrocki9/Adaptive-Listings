@@ -2,6 +2,37 @@
 
 ---
 
+**Date / ticket:** 2026-06-17 — FOLLOW-325 (buildSnippet companion auto-include, session 2 /
+context-resumed) **Delegation row used:** Row 2 (control-plane, onboarding HTTP — backend-engineer)
+**What validation caught (or missed):** `git stash show stash@{0} --name-only` confirmed the stash
+holds DetectionPreview.tsx + test + INTERFACES.md + domains.ts, but NOT
+`apps/control-plane/public/estalara-detect.iife.js`. AC2 requires the companion artifact to be
+placed in public/ so it can be served via Vercel static hosting. This gap means even a clean
+stash-apply would leave AC2 unmet — the artifact copy step must be explicit in the delegation
+prompt. **A delegation/validation rule I'd add:** When an AC requires a build artifact to be SERVED
+from a static directory (e.g. public/), always grep that directory in the stash diff to confirm the
+artifact copy step is present — "the IIFE exists in SDK dist" and "the IIFE is in public/" are two
+different facts.
+
+---
+
+**Date / ticket:** 2026-06-17 — FOLLOW-325 validation (PR #315, backend-engineer, READY_FOR_REVIEW)
+**Delegation row used:** Row 2 (control-plane, onboarding HTTP — backend-engineer) **What validation
+caught (or missed):** Rule I shows 168 violations (up from ~107 baseline). Step 5c confirmed
+DETECT_SERVE_URL has both a non-test producer (domains.ts exported via packages/shared/src/index.ts)
+and a non-test consumer (DetectionPreview.tsx line 183, buildSnippet()). The increase in Rule I
+violations is not from FOLLOW-325 code — none of the new symbols appear in the Rule I failure list.
+PR also references FOLLOW-331 and FOLLOW-332 in code comments but does NOT file them as
+FOLLOW_UPS.md stubs — caught at validation, flagged in PR comment for sprint-planning follow-up. **A
+delegation/validation rule I'd add:** When a PR's code comments reference future FOLLOW-NNN stubs by
+number but those stubs are absent from FOLLOW_UPS.md, flag this in the PR comment and add a
+post-merge task to file the stubs — deferred follow-up stubs referenced in code but not filed are
+invisible to the sprint planner.
+
+---
+
+---
+
 **Date / ticket:** 2026-06-14 — FOLLOW-269 (promotion from BLOCKED to IN_PROGRESS) + FOLLOW-308
 (status reconciliation BACKLOG→DONE) **Delegation row used:** Row 2 (control-plane, Next.js —
 backend-engineer) **What validation caught (or missed):** QUEUE.md still showed FOLLOW-269 as
@@ -622,6 +653,22 @@ split the "apply done" concern from the "prevention needed" concern. **A delegat
 I'd add:** After any prod DB migration apply, always record a drift count (journal entries at apply
 time vs. repo count) in the ticket's completion notes — this makes "apply lag" visible at the sprint
 review level and triggers a prevention discussion before the next migration merges without applying.
+
+---
+
+---
+
+**Date / ticket:** 2026-06-17 — FOLLOW-325 re-validation (PR #315) **Delegation row used:** N/A —
+validation pass on open PR (step 5b/5c/5e). **What validation caught (or missed):** PR #315 was
+already validated in the prior session (STATUS.md correctly showed READY_FOR_REVIEW). This session
+confirmed: 0 real blocking CI failures (all failures are pre-existing-red), runtime wiring confirmed
+(DETECT_SERVE_URL producer+consumer both non-test), AC1-AC5 all met. The
+`gh pr checks 315 --json state,name | jq` count command failed due to empty stdout (gh CLI returning
+non-JSON on PR checks endpoint with `--json`); fell back to parsing the tabular `gh pr checks 315`
+output with grep. STATUS.md was stale (still said IN_PROGRESS) even though QUEUE.md had
+READY_FOR_REVIEW — STATUS.md must be kept in sync atomically with QUEUE.md. **A
+delegation/validation rule I'd add:** After posting the PM validation comment on a PR, immediately
+update STATUS.md to match QUEUE.md status — never let the two files drift on the same ticket state.
 
 ---
 

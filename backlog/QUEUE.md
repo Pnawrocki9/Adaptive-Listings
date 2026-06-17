@@ -4970,7 +4970,7 @@ pending planning.**
     buildSnippet() auto-includes estalara-detect.iife.js companion for all Tier 1+2 tenants by
     default (opt-out) + docs/INTERFACES.md window.__EStalaraDetect surface note
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-324]
@@ -4979,14 +4979,46 @@ pending planning.**
   branch: backend-engineer/FOLLOW-325-buildsnippet-detect-companion
   assigned_to: backend-engineer
   started_at: '2026-06-17T00:00:00Z'
+  pr: '315'
+  pr_commit: 438de07
   notes: |
-    CEO PRODUCT DECISION 2026-06-15: the estalara-detect.iife.js companion MUST be auto-included
-    in the onboarding snippet for ALL Tier 1+2 tenants by DEFAULT. Opt-out, not opt-in.
-    Cold-start client-side archetype detection is ON by default.
-    FOLLOW-324 (PR #308) now MERGED — companion artifact exists in apps/control-plane/public/.
-    Dependency is CLEAR. Re-delegated to backend-engineer 2026-06-17 (prior worktree had no
-    commits; re-spawning on branch backend-engineer/FOLLOW-325-buildsnippet-detect-companion).
-    Closes the buildSnippet() half-wire introduced by FOLLOW-324 split.
+    PR #315 opened (commit 438de07). PM-validated 2026-06-17.
+    CI green (all real blocking gates pass): Lint, Format, Typecheck, Test (Node 22),
+    Build, Build (control-plane), Rule H, Rule J, Auto-Detection corpus gate,
+    Cross-language event contract, ClickHouse migrations smoke, Gitleaks,
+    Migration journal monotonicity, Privacy Notice SDK key-sync, Tracer guard,
+    K.3.6 D-1 live smoke, SDK E2E tests, Demo integration, Vercel.
+    Non-success checks are all pre-existing-red/non-blocking per CI landscape:
+      - Rule I: 168 violations (pre-existing-red; FOLLOW-090 tracks; no new FOLLOW-325 symbols flagged)
+      - Python tests (all Modal apps): pre-existing-red (apps/auto-detect dir does not exist)
+      - Doppler verify: one run FAIL one run PASS — the latest run PASSES (timing flap, non-blocking)
+    CI check counter: 1/5. Fix iterations: 0/3.
+    AC1 MET: buildSnippet() emits companion <script src="DETECT_SERVE_URL"> BEFORE main SDK tag,
+      using the shared DETECT_SERVE_URL constant from packages/shared/src/domains.ts (Rule X). No
+      hardcoded string.
+    AC2 MET: apps/control-plane/public/estalara-detect.iife.js committed (new file, Vercel static
+      asset; added to eslint global ignores same pattern as sdk.js).
+    AC3 MET: DetectionPreview.test.tsx adds 5 companion assertions: tag present, companion BEFORE
+      SDK tag, no async/defer on companion, src points to admin.estalara.com, main SDK tag still
+      has all required attributes. Tier 3 behavior documented in code comments + FOLLOW-332 stub.
+    AC4 MET: docs/INTERFACES.md has new "Auto-Detect Companion Bundle — window.__EStalaraDetect
+      (FOLLOW-325)" section with full interface contract, load ordering, default-ON/opt-out docs,
+      Tier 3 exclusion rationale, and dependency on PR #308.
+    AC5 MET: all real CI gates green (see above).
+    Runtime wiring (5c):
+      PRODUCER: packages/shared/src/domains.ts — exports DETECT_SERVE_URL (re-exported via
+        packages/shared/src/index.ts line 32: export * from './domains.js')
+      CONSUMER (non-test): apps/control-plane/src/components/onboarding/DetectionPreview.tsx line
+        23 imports DETECT_SERVE_URL from @estalara/shared; line 183 uses it in buildSnippet():
+        const companionTag = `<script src="${DETECT_SERVE_URL}"></script>`;
+      Both non-test. Wire confirmed.
+    Also adds GET /api/sdk-detect dev-fallback route (reads packages/sdk/dist/; graceful empty
+    comment when artifact absent — does not affect prod path which uses static public/ file).
+    FOLLOW-331 (per-tenant opt-out toggle) and FOLLOW-332 (Tier 3 companion suppression) are
+    referenced in code comments but NOT yet filed as stubs in FOLLOW_UPS.md — these are deferred
+    follow-ups, not blockers for this PR.
+    After human merge: spawn retrospective-analyst for FOLLOW-325.
+    HUMAN MERGE GATED — do not merge without human review.
 
 - id: FOLLOW-326
   title: >
@@ -5067,13 +5099,15 @@ pending planning.**
 
 ## Currently in flight
 
-**1 ticket IN_PROGRESS as of 2026-06-17T00:00Z.** FOLLOW-325 (buildSnippet companion auto-include)
-re-delegated to backend-engineer 2026-06-17. FOLLOW-324 DONE (PR #308). FOLLOW-326 DONE (PRs
-#309/#310/#311). FOLLOW-327 DONE (PR #312). FOLLOW-328 DONE (PR #313). FOLLOW-330 DONE (PR #314).
-FOLLOW-293 DONE (PR #307 — live-network smoke green, ESC-024 resolved). ESC-020 OPEN but
-non-blocking (CEO 2026-06-10). Pending retro spawns: RETRO-062 (PR #272), RETRO-063 (PR #273),
-RETRO-064 (PR #277), RETRO-067 (PR #280), RETRO-068 (PR #279), plus retros for FOLLOW-324 (PR #308),
-FOLLOW-326 (PRs #309/#310/#311), FOLLOW-327 (PR #312), FOLLOW-328 (PR #313), FOLLOW-330 (PR #314).
+**0 tickets IN_PROGRESS as of 2026-06-17T18:30Z. 1 ticket READY_FOR_REVIEW (FOLLOW-325 PR #315).**
+FOLLOW-325 PM-validated 2026-06-17: CI green (all real gates), wiring confirmed, ACs met — awaiting
+human merge. FOLLOW-324 DONE (PR #308). FOLLOW-326 DONE (PRs #309/#310/#311). FOLLOW-327 DONE (PR
+#312). FOLLOW-328 DONE (PR #313). FOLLOW-330 DONE (PR #314). FOLLOW-293 DONE (PR #307 — live-network
+smoke green, ESC-024 resolved). ESC-020 OPEN but non-blocking (CEO 2026-06-10). Pending retro
+spawns: RETRO-062 (PR #272), RETRO-063 (PR #273), RETRO-064 (PR #277), RETRO-067 (PR #280),
+RETRO-068 (PR #279), plus retros for FOLLOW-324 (PR #308), FOLLOW-326 (PRs #309/#310/#311),
+FOLLOW-327 (PR #312), FOLLOW-328 (PR #313), FOLLOW-330 (PR #314), and FOLLOW-325 (PR #315 — pending
+merge).
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

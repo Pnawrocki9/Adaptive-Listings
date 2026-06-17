@@ -1,4 +1,4 @@
-# Status — 2026-06-17T00:00Z
+# Status — 2026-06-17T18:00Z
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
@@ -130,11 +130,10 @@ snippet base (${CONTROL_PLANE_URL}/api). Promoted from RETRO-074/075 (count 2; t
 **FOLLOW-324 DONE** (PR #308, merged 2026-06-15). SDK bundle: 52.61 KB -> 39.73 KB gzip. Companion
 estalara-detect.iife.js = 12.43 KB. CI: all real gates GREEN (verified via gh pr view 308).
 
-**FOLLOW-325 IN_PROGRESS** (backend-engineer, re-delegated 2026-06-17). buildSnippet() companion
-auto-include. Depends on FOLLOW-324 (DONE). Branch:
-backend-engineer/FOLLOW-325-buildsnippet-detect-companion. Branch has stash@{0} with partial
-implementation (DetectionPreview.tsx + test + INTERFACES.md + domains.ts). Branch is behind main by
-7 commits; must rebase before committing. PR not yet opened.
+**FOLLOW-325 READY_FOR_REVIEW** (PR #315, 2026-06-17). buildSnippet() companion auto-include. PM
+re-validated 2026-06-17T18:00Z. All real CI gates GREEN. Runtime wiring confirmed (DETECT_SERVE_URL
+producer: packages/shared/src/domains.ts:73; non-test consumer: DetectionPreview.tsx:23,183). PR
+comment posted. CI check counter: 1/5, fix iterations: 0/3. Awaiting human merge.
 
 **FOLLOW-326 DONE** (PRs #309/#310/#311, all merged 2026-06-15). admin.estalara.com sign-in +
 Supabase SSR auth flow. AC1-AC8 completed.
@@ -173,8 +172,24 @@ NON-BLOCKING (90 FOLLOW-090).
 
 | Ticket     | CI checks | Fix iterations |
 | ---------- | --------- | -------------- |
-| FOLLOW-325 | 0/5       | 0/3            |
+| FOLLOW-325 | 1/5       | 0/3            |
 
-Note: FOLLOW-325 branch must be rebased on main before committing — branch was stale (7 commits
-behind) when stash@{0} partial implementation was created. Backend-engineer must: (1) switch to
-branch, (2) rebase on main, (3) apply stash, (4) verify, (5) commit, (6) open PR.
+FOLLOW-325: PR #315 opened (commit 438de07). PM re-validated 2026-06-17T18:00Z (second session).
+Real blocking gates: ALL GREEN. Pre-existing-red non-blocking: Rule I (168 violations, FOLLOW-090),
+Python tests (all Modal app variants), Doppler verify (timing flap — passes on one of two runs).
+Status: READY_FOR_REVIEW. Awaiting human merge. PM comment posted: #315 comment (evidence pasted).
+
+## Pending Retro Spawns (8 retros outstanding as of 2026-06-17)
+
+| RETRO     | Source ticket | PR(s)          | Status to spawn |
+| --------- | ------------- | -------------- | --------------- |
+| RETRO-062 | FOLLOW-276    | #272           | PENDING         |
+| RETRO-063 | FOLLOW-278    | #273           | PENDING         |
+| RETRO-081 | FOLLOW-293    | #307           | PENDING         |
+| RETRO-082 | FOLLOW-324    | #308           | PENDING         |
+| RETRO-083 | FOLLOW-326    | #309/#310/#311 | PENDING         |
+| RETRO-084 | FOLLOW-327    | #312           | PENDING (next)  |
+| RETRO-085 | FOLLOW-328    | #313           | PENDING         |
+| RETRO-086 | FOLLOW-330    | #314           | PENDING         |
+
+Next: spawn retrospective-analyst for FOLLOW-327 (PR #312) → RETRO-084.

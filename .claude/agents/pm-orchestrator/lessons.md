@@ -2,6 +2,19 @@
 
 ---
 
+**Date / ticket:** 2026-06-17 — RETRO-084 (FOLLOW-327 / PR #312 retrospective spawn) **Delegation
+row used:** N/A — retrospective-analyst spawn (PM step 6, post-merge). **What validation caught (or
+missed):** RETRO-084 found that DEFAULT_INTENT_WEIGHTS docstring claims a CI drift guard
+(intent-weights-drift.test.ts) that does not exist, and the single-tenant admin shell change (the
+headline deliverable) shipped with zero tests on the changed files. The analyst correctly did not
+prematurely promote Rules. FOLLOW numbers 331/332 were pre-announced in FOLLOW-325 PR body for
+different concepts; the analyst correctly used the authoritative FOLLOW_UPS.md next-free marker
+(333) instead. **A delegation/validation rule I'd add:** When a PR body pre-announces follow-up stub
+numbers, always grep FOLLOW_UPS.md for the canonical next-free marker before spawning retros — the
+pre-announcement may be stale relative to other retros that already consumed those numbers.
+
+---
+
 **Date / ticket:** 2026-06-17 — FOLLOW-325 (buildSnippet companion auto-include, session 2 /
 context-resumed) **Delegation row used:** Row 2 (control-plane, onboarding HTTP — backend-engineer)
 **What validation caught (or missed):** `git stash show stash@{0} --name-only` confirmed the stash

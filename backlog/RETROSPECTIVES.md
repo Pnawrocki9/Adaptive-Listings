@@ -17055,3 +17055,96 @@ CHECK B (half-wire — every new env-var has BOTH producer + consumer):
 - **Related to RETRO-077 / RETRO-080 (FOLLOW-309/310/311/312):** RETRO-077 flagged the 3 tenant-tracer pages as Rule-H nav orphans; RETRO-080 closed that via per-tenant-list `<Link>`s. This PR adds a SECOND reachability path (direct sidebar links scoped to `PILOT_TENANT_ID`) — reconciled: not a regression, both paths target the same existing pages, and the sidebar path is the v1-primary one. The Weight Editor (`/admin/tracer/weights`) it links is the same page RETRO-073/080 wired to the GET/PUT config loop.
 - **Related to RETRO-076 (FOLLOW-302) migration-apply gap:** unlike the global-weight-seed chain (which needed an operator to apply migration 0030 before going live), this PR's `PILOT_TENANT_ID` points at a tenant row that ALREADY exists in prod (MASTER_DESIGN §Snapshot lines 26/41; events written since the 2026-05-29 pilot E2E), so the nav resolves to live data with no deploy-apply hop. No payload-side gap of that family here.
 - **Related to RETRO-072/074/075/077/080 (fixture-lies thread):** the DEFAULT-1..6 + T10 tests here are NOT fixture-lies (they assert real values of a real constant) — but LG-1's "docstring claims a CI guard that isn't there" is the same *over-claimed-verification* meta-pattern, recorded as a sibling, not a new sighting.
+
+## RETRO-085 — FOLLOW-328 (ClickHouse Basic auth fix — empty-username Code 516 + shared `clickhouse-http.ts` centralizing all 12 control-plane CH auth calls; the PR fixes the production 500s on every analytics/tracer route by adding `CLICKHOUSE_USER` before the colon in the Basic auth header, ships a shared helper replacing 12 bespoke `Buffer.from(":${password}")` inline constructions, and surfaces a Rule K.2 silent-mock sibling in `dashboard/analytics/summary` that the fix did NOT close → FOLLOW-329; the deploy prerequisite is an env-var apply, not a migration: `CLICKHOUSE_USER=ingest_worker` must land in Vercel Production+Preview env before/at deploy or the new code falls back to `'default'` and still 516s — AC5/AC6 NOT closed in the PR body) — 2026-06-17
+
+### 1. Summary of change
+
+- **PR:** #313 (merged 2026-06-16T19:00:20Z, commit 096a615)
+- **Files changed:** 25 (+302 / -122) — 2 new files (`clickhouse-http.ts` + `clickhouse-http.test.ts`), 11 production-route files migrated, 6 test files updated, `clickhouse-tracer.ts` + `clickhouse-dsr.ts` + `llm-gateway.ts` refactored, backlog updated
+- **Modules touched:** control-plane (all CH-backed routes: adapt, dashboard analytics, admin labels, DSR, pilot calibration/cta-lift/inquiry-starts, admin tracer routes, llm-gateway). Zero SDK/ingest/shared/decision-api changes.
+- **Key contracts changed:**
+  - `ClickHouseTracerConfig` — **ADDED** `user: string` field — breaking: yes for any test that constructs a bare `{url, password, database}` config without `user`; all 6 affected test files updated in this PR.
+  - `clickhouseAuthHeaders` — **ADDED** as a new export from `apps/control-plane/src/lib/clickhouse-http.ts`; the existing per-route `authHeaders(cfg)` / `clickHouseHeaders(password)` local helpers — **REMOVED** from 5 files (labels/route.ts, labels/export/route.ts, tracer.ts, dsr.ts via authHeaders removal, tracer integration test inline header). Breaking: no for external callers (all inline helpers were unexported local functions).
+
+### 2. Verification done in PR
+
+- Test files changed: 7 (`clickhouse-http.test.ts` new, `clickhouse-tracer.test.ts` updated, `clickhouse-tracer.integration.test.ts` updated, and 4 tracer route tests with `+user: 'default'` fixture additions)
+- Assertions added: 4 new unit assertions in `clickhouse-http.test.ts` (CH-H-1 through CH-H-4) verifying the regression case (old `:password` form → encoded `user:password` form); updated CH-10 in `clickhouse-tracer.test.ts` from `expect(decoded).toBe(':secret')` to `expect(decoded).toBe('ingest_worker:secret')` (the canonical regression guard)
+- Coverage delta: new `clickhouse-http.ts` is 100% line-covered by `clickhouse-http.test.ts` (4 paths: empty-password, user+password, default-user fallback, regression guard)
+- CI checks: per QUEUE.md entry, all real CI gates GREEN (verified via `gh pr view 308`). 455 vitest tests across tracer/pilot/dashboard/adapt/dsr/labels green. Pre-existing non-blocking: Rule I (FOLLOW-090), Python tests, Doppler verify flap.
+
+### 3. Wiring Audit
+
+- **CHECK A (dead code):** `clickhouseAuthHeaders` — exported from `clickhouse-http.ts` — NON-TEST importers: `clickhouse-tracer.ts` (2 call-sites), `clickhouse-dsr.ts` (1), `llm-gateway.ts` (4), `adapt/route.ts` (1), `dashboard/analytics/lift/route.ts` (1), `dashboard/analytics/summary/route.ts` (1), `admin/labels/route.ts` (1), `admin/labels/export/route.ts` (1), `pilot/calibration/route.ts` (1), `pilot/cta-lift/route.ts` (1), `pilot/inquiry-starts/route.ts` (2), `dsr/_clickhouse.ts` (1). Count: 12+ non-test production call-sites. No dead export. Rule H: single exported symbol, all importers are production consumers.
+
+- **CHECK B (half-wire):** The new `CLICKHOUSE_USER` env var is CONSUMED in every migrated site (`process.env.CLICKHOUSE_USER ?? 'default'`). PRODUCER: Vercel control-plane env (set 2026-06-16 per PR body). The PR body explicitly calls this out: `CLICKHOUSE_USER must be set in the Vercel control-plane project (Production + Preview) to the correct ClickHouse Cloud user (ingest_worker)`. AC5 ("CLICKHOUSE_USER confirmed/set in Vercel") and AC6 ("analytics/tracer reads return 200 after deploy") are UNCHECKED in the `backlog/sprint-18/FOLLOW-328.md` spec — the deploy env var application was listed as a prerequisite, not tracked as a follow-up ticket. This is an **operational gap** (not a code gap): if the env var was NOT set before deploy, every route would still fall back to `'default'` and still 516. The PR body states `It is already present in Vercel (set 2026-06-16)`, so the PR author asserts the env is live. This assertion is not independently verifiable from the code diff but is consistent with the QUEUE.md DONE notation and STATUS.md "Code 516 RESOLVED 2026-06-17." No HALF_WIRE filed — accepted as operational (env var in Vercel is not a code artifact).
+
+- **CHECK B — `dashboard/analytics/summary` Rule K.2 gap (CARRY-FORWARD):** This PR MIGRATED the summary route's CH auth header to `clickhouseAuthHeaders` (correct) but did NOT fix the route's existing `fetchSummaryFromClickHouse(tenantId).catch(() => null)` + `chData ?? buildMockSummary(tenantId)` silent-mock pattern (`route.ts:150-151`). With `CLICKHOUSE_URL` set, ANY query failure silently serves fabricated numbers at HTTP 200 with no `data_source` provenance field — a Rule K.2 violation. The route's own docstring (added in this PR, lines 94-98) correctly identifies this as the "un-fixed sibling of FOLLOW-124" and references FOLLOW-329. This is NOT a new defect introduced by PR #313 (the pattern pre-existed); it is a VERIFIED CARRY-FORWARD that the auth-migration made more visible (previously the auth 516 masked the underlying pattern). FOLLOW-329 exists and is correctly scoped. **No new stub minted; FOLLOW-329 is the tracking artifact.**
+
+`Wiring Audit — clean ✅` (one carry-forward acknowledged; tracked in pre-existing FOLLOW-329)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, NEW) — `dashboard/analytics/summary` is the Rule K.2 silent-mock sibling of `dashboard/analytics/lift` (FOLLOW-124) — NOT fixed in this PR.** `route.ts:150-151` does `fetchSummaryFromClickHouse(tenantId).catch(() => null)` then `chData ?? buildMockSummary(tenantId)` — so with `CLICKHOUSE_URL` set and the auth now correct, a query failure (timeout, schema mismatch, CH Cloud blip) will still silently serve fabricated mock numbers at HTTP 200. Worse than the lift route: `SummaryResponse` has NO `data_source` field, so the consumer (`/dashboard/analytics/page.tsx`) cannot distinguish mock from real. FOLLOW-329 is filed and scoped correctly. This retro records it as a LG-1 finding. **P2; tracked by FOLLOW-329.**
+
+- **LG-2 (P3, NEW) — `fetchSummaryFromClickHouse` returns `null` on a non-OK HTTP response (`res.ok` check at line 77) — this means ANY CH error (not just the auth 516) falls through to mock, compounding the LG-1 gap.** The `.ok` check triggers `return null` BEFORE the `.catch()` path does, so a 401 or 500 from CH also silently promotes to mock. This is the same pattern `dashboard/analytics/lift/route.ts` (FOLLOW-124's target) already fixed. Folded into FOLLOW-329 scope — no separate stub.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — the core fix (empty-username → `user:password` in Basic auth) is correct and the CH-H-4 regression test explicitly pins the old broken shape (`decoded.startsWith(':')` must be false). No new bug introduced by this PR.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, NEW) — the 12 production call-sites use `clickhouseAuthHeaders` correctly but NO route-level test asserts the Authorization header includes a non-empty username.** `clickhouse-http.test.ts` covers the helper in isolation (CH-H-1..4), and `clickhouse-tracer.test.ts` CH-10 covers one route's header shape. But the other 11 routes (adapt, dashboard-lift, dashboard-summary, labels, labels-export, pilot-calibration, pilot-cta-lift, pilot-inquiry-starts, llm-gateway, dsr, dsr/_clickhouse) have no assertion that their call to `clickhouseAuthHeaders` actually produces a non-empty-username header. This means: if a future refactor accidentally passes `{ user: '', password: 'pw' }` to `clickhouseAuthHeaders`, the helper itself would produce `Basic base64(":pw")` (re-introducing the empty-username bug) — the existing CH-H-4 test would catch it ONLY if the test is run — but the individual route tests would pass because they mock `global.fetch` at the network layer and never inspect the Authorization header value. This is the "centralized test covers the helper; distributed call-sites are untested at the integration level" gap. Severity P2 (the helper is correct today; the gap is forward-looking). **Filed as FOLLOW-333 below.**
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, RESOLVED-IN-PR) — `clickhouse-http.ts` header comment correctly documents the root cause, the fix, and the deploy prerequisite.** The `ClickHouseTracerConfig` TSDoc for the new `user` field is present. All prior per-route `authHeaders`/`clickHouseHeaders` local function JSDoc removed (functions deleted). No stale documentation remains on the removed helpers. This is a CLEAN documentation delta.
+
+- **DG-2 (P3, operational) — AC5 and AC6 in `backlog/sprint-18/FOLLOW-328.md` remain unchecked (boxes not ticked).** AC5 ("CLICKHOUSE_USER confirmed/set in Vercel env") and AC6 ("admin.estalara.com analytics/tracer reads return 200") are operational attestations, not code changes. The PR body asserts the env var is already set in Vercel (2026-06-16), and STATUS.md confirms "Code 516 RESOLVED." These ACs were never meant to be code-gated; they are operator-confirmation checkboxes. No new follow-up; noted for completeness only.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-330 (tracer history SSR crash + CH cold-start timeout, DONE — PR #314):** This PR's auth fix unmasked FOLLOW-330's bugs — once CH stopped 516-ing, the tracer history page started loading session data from Postgres and hit the `window.location.origin` SSR crash + the 8s cold-start abort. FOLLOW-330 fixed both (relative URL for export, timeout raised 30s/45s). RETRO-086 will analyze PR #314. The cascade is complete; no residual.
+
+- **FOLLOW-329 (dashboard/analytics/summary Rule K.2 sibling, OPEN):** Directly produced by this PR's code audit. Backlog is correctly tracking it in Sprint 18 for data-engineer. No immediate consumer risk (the mock data is deterministic per tenant, not random fabrication — but it IS fabricated, and a go/no-go decision on the summary panel would use fabricated numbers if CH fails silently).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-124 (analytics lift Rule K.2 fix — DONE per QUEUE.md):** This PR confirms the summary route is the un-fixed sibling. The lift route fix (FOLLOW-124) is the template for FOLLOW-329. Whoever takes FOLLOW-329 should mirror the `data_source` + fail-loud pattern from `dashboard/analytics/lift/route.ts`.
+
+- **Any new control-plane CH route:** The `clickhouseAuthHeaders` helper and `ClickHouseTracerConfig.user` field are now the canonical pattern. New CH routes MUST import `clickhouseAuthHeaders` from `@/lib/clickhouse-http` and read `CLICKHOUSE_USER` from env before the password — a bare `Buffer.from(":${password}")` construction is now Rule H/I-detectable dead-code-adjacent (the helper exists; not using it is a smell). No new rule (P-CENTRALIZER: use the shared helper not the inline form); this is already covered by Rule H's "shared lib must be used" gate + the `rule-h` CI check detecting new unwired exports.
+
+#### 5c. Contracts changed others rely on
+
+- **`ClickHouseTracerConfig` now requires `user: string`.** All 6 test files that construct a config literal were updated in this PR. Any FUTURE test or tool that builds a `ClickHouseTracerConfig` without `user` will fail `pnpm typecheck`. This is a breaking-but-correctly-migrated change — no outstanding callers.
+
+- **`clickhouseAuthHeaders` export from `@/lib/clickhouse-http` is the new canonical auth builder.** It is an internal control-plane lib (not in `packages/`), so no SDK/ingest/decision-api caller is affected.
+
+#### 5d. Architectural assumptions affected
+
+- **The original assumption that "empty username is fine for ClickHouse"** was never documented, only inherited from the first CH integration. This PR corrects it and documents the canonical form in the helper's module comment. The ingest worker (`apps/ingest/src/clickhouse-producer.ts:214`) ALREADY used the correct `btoa(\`${user}:${password}\`)` form — so the control-plane was out of step with ingest from the beginning. The fix closes that asymmetry.
+
+### 6. New lesson candidates
+
+- **Pattern: "a new shared helper centralizes a bug-prone inline pattern across N call-sites, but only ONE of those N call-sites gets a route-level test that asserts the helper is called correctly; the remaining N-1 call-sites are tested only at the mock-network layer and would silently pass even if the caller passed wrong arguments."** — seen in: RETRO-085 §4c TG-1 (`clickhouseAuthHeaders` called at 12 sites; only `clickhouse-tracer.test.ts` CH-10 asserts the Authorization header shape at the route level; 11 others do not). This is the "centralized-helper coverage illusion" sub-shape: the helper's own unit tests are correct, but the call-site integration is untested for N-1 consumers. FIRST independent sighting of this exact form (the Rule-Q mirrored-test family is adjacent but not identical — Rule Q is about mirroring logic inline; this is about forgetting to wire the shared helper's usage into the call-site's test). Count **1** → NO promotion. Watch the next shared-helper introduction in a fan-out migration.
+
+- **Pattern: "a Rule K.2 fail-loud fix migrates a route's CH auth but leaves the route's silent-mock catch-all in place — the auth fix + the silent-mock combine so the route now correctly authenticates on success but still fabricates data on the first failure beyond auth."** — seen in: RETRO-085 §4a LG-1 (summary route). This is the "fix one layer, skip the next" sub-shape of Rule K.2. FOLLOW-124 / FOLLOW-329 are the sibling pair that demonstrates it. Count **2** if we count FOLLOW-124 (lift route, RETRO-008 §4a CB-1) as the first instance and this LG-1 as the second on `summary` specifically. BUT: the lift route's K.2 was the PR-level finding (Rule K.2 itself was promoted FROM RETRO-008/006); the summary route gap is a CARRY-FORWARD from a pre-existing non-fix — it is not a fresh sighting of a NEW pattern. Rule K.2 already governs this. NO new rule; no promotion increment. Recorded for completeness.
+
+### 7. Follow-ups
+
+- **FOLLOW-329 (pre-existing, OPEN):** Apply Rule K.2 fail-loud + `data_source` provenance to `/api/dashboard/analytics/summary`. The route currently silently serves `buildMockSummary()` whenever `CLICKHOUSE_URL` is set but the query fails (`.catch(() => null)` + `chData ?? buildMock...`). Fix: fail loud (re-throw / 500 with structured error) when `CLICKHOUSE_URL` is set and the fetch fails; keep `buildMockSummary` ONLY for the unset (dev/CI) path; add `data_source: 'clickhouse' | 'mock' | 'error'` to `SummaryResponse` consumed by the dashboard page. Template: `dashboard/analytics/lift/route.ts` (FOLLOW-124 target). (data-engineer or backend-engineer, 2h, **P2**, Sprint 18)
+
+- **FOLLOW-333 (NEW — TG-1):** Add route-level Authorization-header assertions for the 11 control-plane CH call-sites that `clickhouseAuthHeaders` was migrated to (all except `clickhouse-tracer.test.ts` CH-10, which already has one). Either: (a) add a shared test fixture / test helper that stubs `CLICKHOUSE_USER` and asserts `clickhouseAuthHeaders` produces a non-empty-username header per call-site, or (b) add an integration-layer assertion to each affected route's existing test that the Authorization header round-trips through the helper correctly (stub env, invoke route, inspect captured fetch header). Priority: P3 (helper is correct, gap is forward-looking regression guard). (qa-engineer or backend-engineer, 2h, **P3**, Sprint 18+)
+
+### 8. Cross-references
+
+- **FOLLOW-328 (this ticket):** The auth fix is the prerequisite for every tracer/analytics/DSR route to function in prod. FOLLOW-329 and FOLLOW-333 are its direct offspring.
+- **RETRO-008 §4a CB-1 / FOLLOW-124 (lift route Rule K.2):** The lift route's silent-mock pattern was identified in RETRO-008 and FOLLOW-124 tracks the fix. The summary route (FOLLOW-329) is a symmetric sibling — Rule S applies (§5b). The retro for FOLLOW-329 should diff summary vs lift to confirm symmetric treatment.
+- **RETRO-078 / RETRO-079 (live-ClickHouse CI guard):** Those retros established that mock-only CH tests cannot catch runtime query failures (Code 386, auth 516, etc.). TG-1 here is the same meta-pattern applied to the auth-helper call-sites. The live-ClickHouse CI guard (FOLLOW-316 / RETRO-079) covers the QUERY builders; it does NOT cover the per-call-site Authorization header construction. FOLLOW-333 closes that.
+- **RETRO-080 (FOLLOW-309-312 wiring fixes):** No interaction — those fixes were to the admin tracer UI auth (SSE cookie) and nav. This PR fixes the ROUTE-level CH auth, not the UI-level auth. Clean separation confirmed.

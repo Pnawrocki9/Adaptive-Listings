@@ -189,7 +189,7 @@ Status: READY_FOR_REVIEW. Awaiting human merge. PM comment posted: #315 comment 
 | RETRO-082 | FOLLOW-324    | #308           | PENDING                                  |
 | RETRO-083 | FOLLOW-326    | #309/#310/#311 | PENDING                                  |
 | RETRO-084 | FOLLOW-327    | #312           | DONE (2026-06-17) — FOLLOW-331/332 filed |
-| RETRO-085 | FOLLOW-328    | #313           | PENDING (next)                           |
+| RETRO-085 | FOLLOW-328    | #313           | DONE (2026-06-17) — FOLLOW-333 filed     |
 | RETRO-086 | FOLLOW-330    | #314           | PENDING                                  |
 
 RETRO-084 findings: LG-1 DEFAULT_INTENT_WEIGHTS drift guard missing (docstring claims CI guard that
@@ -198,4 +198,10 @@ with ZERO test on changed files. No functional bug. No Rule promoted (P-DUP-CONT
 P-SHELL-UNTESTED both count-1 first sightings). FOLLOW-331 (drift guard, P2) + FOLLOW-332 (admin
 tests, P2) filed. Wiring audit CLEAN.
 
-Next: spawn retrospective-analyst for FOLLOW-328 (PR #313) → RETRO-085.
+RETRO-085 DONE (2026-06-17): ClickHouse Basic auth fix (FOLLOW-328 / PR #313). FOLLOW-333 filed
+(TG-1: route-level auth-header assertions for 11 uncovered call-sites, P3). FOLLOW-329 carry-forward
+confirmed. No Rule promoted (centralized-helper coverage illusion count-1; K.2 silent-mock sub-shape
+already governed by Rule K.2).
+
+Next: spawn retrospective-analyst for FOLLOW-330 (PR #314) → RETRO-086 (tracer history SSR crash +
+CH cold-start timeout fix).

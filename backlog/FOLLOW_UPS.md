@@ -9147,8 +9147,42 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   test on the changed file, adjacent unrelated tests cited as coverage) — below promotion threshold.
 - **promoted_to_queue:** false
 
+## FOLLOW-333 — Add route-level Authorization-header assertions for the 11 `clickhouseAuthHeaders` call-sites not covered by `clickhouse-tracer.test.ts` CH-10 (RETRO-085 TG-1)
+
+- **source_retro:** RETRO-085
+- **source_ticket:** FOLLOW-328 (PR #313)
+- **recommended_sprint:** 18+
+- **recommended_agent:** qa-engineer (or backend-engineer)
+- **priority:** P3
+- **estimated_hours:** 2
+- **depends_on:** []
+- **scope:** | PR #313 migrated 12 control-plane CH call-sites from inline
+  `Buffer.from(":${password}")` to the shared `clickhouseAuthHeaders` helper. Only ONE of those 12
+  sites (`clickhouse-tracer.ts` via `clickhouse-tracer.test.ts` CH-10) has a route-level test
+  asserting the Authorization header includes a non-empty username. The other 11 sites
+  (adapt/route.ts, dashboard/analytics/lift, dashboard/analytics/summary, admin/labels,
+  admin/labels/export, pilot/calibration, pilot/cta-lift, pilot/inquiry-starts, llm-gateway ×2,
+  dsr/\_clickhouse) mock `global.fetch` at the network layer and never inspect the Authorization
+  header value in their test suites. The `clickhouse-http.test.ts` CH-H-4 regression test guards the
+  HELPER; but if a future refactor passes wrong arguments to the helper (e.g.
+  `{ user: '', password: 'pw' }`) the call-site tests would pass green. Fix: add shared test
+  assertions or integration-level checks that the Authorization header flowing FROM each migrated
+  call-site carries a non-empty username before the colon. Template:
+  `clickhouse-tracer.test.ts:CH-10`.
+- **ac:**
+  - [ ] AC1: For each of the 11 migrated call-sites, a test asserts the Authorization header
+        produced is `Basic base64("user:password")` with a non-empty username.
+  - [ ] AC2: A helper or fixture is introduced so future CH call-site tests get this assertion
+        automatically (avoid copy-paste across 11 test files).
+  - [ ] AC3: `pnpm typecheck` + `pnpm test` green after changes.
+- **notes:** | First sighting of "centralized-helper coverage illusion" — helper unit tests are
+  correct, but 11 of 12 call-site integrations are untested for correct argument passing. Count 1,
+  below promotion threshold. Watch for the next shared-helper fan-out migration that repeats this.
+- **promoted_to_queue:** false
+
 ---
 
+<!-- next free FOLLOW number: 334 (333 = RETRO-085 / PR #313 / FOLLOW-328 ClickHouse Basic auth fix: 12 route-level call-sites migrated to clickhouseAuthHeaders but only clickhouse-tracer.test.ts CH-10 asserts the Authorization header is non-empty-username; add route-level assertions for the 11 uncovered sites, P3 2h qa.) -->
 <!-- next free FOLLOW number: 333 (331-332 = RETRO-084 / PR #312 / FOLLOW-327 single-tenant admin nav + DEFAULT_INTENT_WEIGHTS shared export: 331 = DEFAULT_INTENT_WEIGHTS is a hand-copied dup of SDK private BASE_PRIOR+BEHAVIORAL_DAMPING with NO drift guard — DEFAULT-1..6 assert the shared constant vs ITSELF, the docstring (intent-weights.ts:155-160) FALSELY claims "drift is caught in CI" pointing at packages/sdk/src/__tests__/intent-weights-drift.test.ts which DOES NOT EXIST, and BASE_PRIOR isn't even exported from the SDK; export SDK constants + write the real cross-package equality test + fix the docstring, P2 3h sdk+backend [LG-1+DG-1]. 332 = the single-tenant admin shell (Item 1 headline) shipped with ZERO test — no admin/layout.test.tsx + no admin/page.test.tsx exist, so the sidebar hiding 3 multi-tenant screens + showing 3 PILOT_TENANT_ID-scoped tracer links AND the /admin->pilot-tracer landing redirect are unasserted ("admin (8) tests" cited are unrelated files); add both test files + pin PILOT_TENANT_ID to the Master-Design pilot id, P2 2h qa [TG-1+TG-2]. Wiring Audit CLEAN (both new exports have non-test prod importers; nav targets all exist; PILOT_TENANT_ID points at the real live prod tenant cbc51cfa-... per MASTER_DESIGN §Snapshot so NO seed/migration-apply hop unlike RETRO-076). NO functional bug (uniform-prior fix genuine, T10 proves neutral=0.37). NO Rule promoted: P-DUP-CONTRACT + P-SHELL-UNTESTED both count-1 first sightings, held below threshold. Reconciled RETRO-077/080 (2nd nav path to tracer pages, not a regression) + RETRO-076 (no migration-apply gap here, tenant already live).) -->
 <!-- next free FOLLOW number: 331 (330 = tracer history SSR window crash + CH cold-start 8s->30s timeout + error logging, surfaced post-FOLLOW-328; 328 = ClickHouse empty-username Basic-auth Code 516 fix across all 12 control-plane CH reads — see backlog/sprint-18/FOLLOW-328.md; 329 = summary-route Rule K.2 fail-loud + data_source, sibling of FOLLOW-124, surfaced by 328.) -->
 <!-- next free FOLLOW number: 327 (326 = CEO directive 2026-06-15: buildSnippet() auto-includes estalara-detect.iife.js companion for ALL Tier 1+2 tenants by default — opt-out, cold-start archetype detection ON by default; closes FOLLOW-324 half-wire (PR #308 exists; buildSnippet() doesn't emit companion tag yet). 324 = sdk-engineer/FOLLOW-324-sdk-bundle-size PR #308 merge-ready: split auto-detect pipeline into companion estalara-detect.iife.js (12.43KB gzip), core drops 52.61→39.73KB — passes 40KB gate. Architect Option 1 accepted.) -->

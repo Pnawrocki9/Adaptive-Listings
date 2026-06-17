@@ -2,6 +2,20 @@
 
 ---
 
+**Date / ticket:** 2026-06-17 — RETRO-085 (FOLLOW-328 / PR #313 retrospective spawn) **Delegation
+row used:** N/A — PM-self retrospective analysis (step 6, post-merge, 7 retros outstanding). **What
+validation caught (or missed):** Step 5c wiring audit confirmed clickhouseAuthHeaders has 12+
+non-test production importers (clean); identified that the summary route's .catch(()=>null)
+silent-mock is a pre-existing Rule K.2 gap (FOLLOW-329 carry-forward, NOT a new defect introduced by
+PR #313). Caught TG-1: only 1 of 12 call-sites has a route-level auth-header assertion; 11
+uncovered. No Rule promoted (centralized-helper illusion count-1; K.2 already governs the
+silent-mock sub-shape). **A delegation/validation rule I'd add:** When a "fan-out helper migration"
+PR touches N call-sites, verify the test-count for the centralized helper against the number of
+migrated call-sites — if (call-site tests asserting helper output) << N, file a TG follow-up
+immediately.
+
+---
+
 **Date / ticket:** 2026-06-17 — RETRO-084 (FOLLOW-327 / PR #312 retrospective spawn) **Delegation
 row used:** N/A — retrospective-analyst spawn (PM step 6, post-merge). **What validation caught (or
 missed):** RETRO-084 found that DEFAULT_INTENT_WEIGHTS docstring claims a CI drift guard

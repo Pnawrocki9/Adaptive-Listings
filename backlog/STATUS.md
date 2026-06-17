@@ -1,4 +1,4 @@
-# Status — 2026-06-14T08:00Z
+# Status — 2026-06-17T00:00Z
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
@@ -125,13 +125,56 @@ snippet base (${CONTROL_PLANE_URL}/api). Promoted from RETRO-074/075 (count 2; t
 | FOLLOW-268-sdk | (per PR body — green)                       | 0/3            |
 | FOLLOW-305     | (per PR body — 1383 vitest green, CI green) | 0/3            |
 
+## Sprint 18+ Current State (2026-06-17)
+
+**FOLLOW-324 DONE** (PR #308, merged 2026-06-15). SDK bundle: 52.61 KB -> 39.73 KB gzip. Companion
+estalara-detect.iife.js = 12.43 KB. CI: all real gates GREEN (verified via gh pr view 308).
+
+**FOLLOW-325 IN_PROGRESS** (backend-engineer, re-delegated 2026-06-17). buildSnippet() companion
+auto-include. Depends on FOLLOW-324 (DONE). Branch:
+backend-engineer/FOLLOW-325-buildsnippet-detect-companion. Branch has stash@{0} with partial
+implementation (DetectionPreview.tsx + test + INTERFACES.md + domains.ts). Branch is behind main by
+7 commits; must rebase before committing. PR not yet opened.
+
+**FOLLOW-326 DONE** (PRs #309/#310/#311, all merged 2026-06-15). admin.estalara.com sign-in +
+Supabase SSR auth flow. AC1-AC8 completed.
+
+**FOLLOW-327 DONE** (PR #312, merged 2026-06-16). Single-tenant admin nav + canonical Weight Editor
+defaults (DEFAULT_INTENT_WEIGHTS in @estalara/shared, "Reset to defaults" button).
+
+**FOLLOW-328 DONE** (PR #313, merged 2026-06-16). ClickHouse Basic auth fix — include username in
+Authorization header (Code 516 AUTHENTICATION_FAILED resolved). New shared clickhouse-http.ts.
+
+**FOLLOW-330 DONE** (PR #314, merged 2026-06-16). Tracer history SSR window crash + CH cold-start
+timeout fixed (timeout raised 8s→30s/45s, buildJsonlExportUrl uses relative URL).
+
+**FOLLOW-293 DONE** (PR #307, merged 2026-06-15). K.3.6 D-1 live-network smoke. ESC-024 resolved by
+Piotr. Smoke run 27555287447: AC-LN1/LN2/LN3 all GREEN.
+
+**Pending retro spawns:** RETRO-062 (PR #272), RETRO-063 (PR #273), RETRO-064 (PR #277), RETRO-067
+(PR #280), RETRO-068 (PR #279), RETRO for FOLLOW-324 (PR #308), RETRO for FOLLOW-326 (PRs
+#309/#310/#311), RETRO for FOLLOW-327 (PR #312), RETRO for FOLLOW-328 (PR #313), RETRO for
+FOLLOW-330 (PR #314).
+
 ## ESCALATION STATUS
 
-ESC-021 RESOLVED (2026-06-13) — PR #282 fixed ClickHouse migrations smoke gate. ESC-020 OPEN
-(non-blocking) — Rafal deploy pending. Does not block code pipeline. No new escalations.
+ESC-020 OPEN (non-blocking) — Rafal prod deploy pending (CEO 2026-06-10 clarification: local-first
+then Rafal deploys). ESC-021/022/023/024 all RESOLVED. No new open escalations.
 
-## CI Gates — All Real Gates GREEN on main
+## CI Gates — All Real Gates GREEN on main (verified 2026-06-17)
 
-ClickHouse migrations smoke: PASS (migration 0016 = SELECT 1 no-op). Python tests
-(adaptation-engine, auto-detect): pre-existing failures, NON-BLOCKING. All TS/Node gates (Build,
-Typecheck, Lint, Format, Rule H, Rule J, Demo-integration, Gitleaks): GREEN.
+Real gates: Build, Build (control-plane), Typecheck, Lint, Format, Test (Node 22), SDK E2E, Rule H,
+Rule J, ClickHouse migrations smoke, Corpus gate, Tracer query CI guard, Demo integration, K.3.6
+live smoke, Gitleaks, Migration journal monotonicity — all GREEN. Python tests (adaptation-engine,
+auto-detect): pre-existing FAILURE, NON-BLOCKING per CI landscape. Rule I: pre-existing FAILURE,
+NON-BLOCKING (90 FOLLOW-090).
+
+## CI CHECK COUNTER (FOLLOW-325, current ticket)
+
+| Ticket     | CI checks | Fix iterations |
+| ---------- | --------- | -------------- |
+| FOLLOW-325 | 0/5       | 0/3            |
+
+Note: FOLLOW-325 branch must be rebased on main before committing — branch was stale (7 commits
+behind) when stash@{0} partial implementation was created. Backend-engineer must: (1) switch to
+branch, (2) rebase on main, (3) apply stash, (4) verify, (5) commit, (6) open PR.

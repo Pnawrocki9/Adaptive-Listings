@@ -4659,23 +4659,21 @@ pending planning.**
     intent.ts processSignal() for all 13 signals; confirmed by a non-test producer + non-test
     consumer grep and a live integration assertion / live-network smoke test
   agent: qa-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P2
   estimated_hours: 3
   depends_on: [FOLLOW-268, FOLLOW-269]
   spec: backlog/FOLLOW_UPS.md (FOLLOW-293 stub)
   branch: qa-engineer/FOLLOW-293-live-network-smoke
+  pr: '307'
+  merge_commit: 2c1b352
+  completed_at: '2026-06-15T00:00:00Z'
   notes: |
-    FOLLOW-268-sdk (Ticket C) DONE (PR #290) and FOLLOW-305 (prod URL fix, PR #291) DONE.
-    All code hops are correct and production-live. Only remaining blocker: live-network smoke test
-    confirming the full chain (snippet → SDK init → fetchIntentWeights → GET /api/intent/config →
-    weights applied to processSignal()) in a real tenant environment. Unit-level prod-URL-form
-    coverage was added by FOLLOW-305 TG-1 tests; FOLLOW-293 is the live-network closure.
-    Also requires FOLLOW-266 Phase 2 global-default row seeded before live weights can apply.
-    Promoted from ADR-0012 planning.
-    2026-06-15: qa-engineer implemented smoke test at tests/integration/intent-weights-live.smoke.test.ts
-    + CI job intent-weights-live-smoke.yml. Soft-skips cleanly when secrets absent. Hard-fails when
-    REQUIRE_LIVE_INTENT_SMOKE=1 + secrets absent. ESC-024 filed for secret provisioning. PR pending.
+    DONE — PR #307 merged 2026-06-15 (commit 2c1b352). Live-network smoke test implemented at
+    tests/integration/intent-weights-live.smoke.test.ts + CI job intent-weights-live-smoke.yml.
+    ESC-024 provisioned by Piotr (2026-06-15): ESTALARA_SMOKE_API_KEY + ESTALARA_SMOKE_DECISION_API_URL
+    added to GitHub Actions secrets. Smoke run 27555287447: AC-LN1/LN2/LN3 all GREEN.
+    data_source:'live' confirmed in production. FOLLOW-293 DONE IN FULL. ESC-024 RESOLVED.
 
 - id: FOLLOW-295
   title: >
@@ -4950,7 +4948,7 @@ pending planning.**
     SDK bundle size fix: split auto-detect pipeline into optional companion IIFE
     (estalara-detect.iife.js) to pass the <40 KB gzip bundle gate
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -4958,17 +4956,14 @@ pending planning.**
   spec: backlog/FOLLOW_UPS.md (FOLLOW-324 stub)
   pr: '308'
   branch: sdk-engineer/FOLLOW-324-sdk-bundle-size
+  completed_at: '2026-06-15T11:37:25Z'
   notes: |
-    PR #308 OPEN. Merge-ready (comment-fix commit 5924adc landed). CI confirmed green by sdk-engineer.
-    Bundle: 52.61 KB -> 39.73 KB gzip core. Companion estalara-detect.iife.js = 12.43 KB gzip.
-    Architect verdict: Option 1 accepted (companion split; cold-start hints are marginal warm-start,
-    not load-bearing). CEO product decision 2026-06-15: companion auto-included for ALL Tier 1+2
-    tenants by default (opt-out) — wired by FOLLOW-325.
-    MERGE ORDER: PR #308 (FOLLOW-324) must merge BEFORE FOLLOW-325 PR so the companion artifact
-    exists in the repo when buildSnippet() copy-step runs.
-    PM VALIDATION NOTE: this ticket was pm-validated this session. CI green state was reported by
-    sdk-engineer (comment-fix landed). Full independent CI re-verification (gh pr checks 308 --watch)
-    is REQUIRED before human merge per guardrails. Do NOT merge based on worker self-report alone.
+    PR #308 MERGED 2026-06-15. CI verified green (Build, Typecheck, Lint, Format, Test Node 22,
+    SDK E2E, Rule H, Rule J, ClickHouse smoke, Corpus gate, Tracer CI guard, Demo integration,
+    K.3.6 live smoke, Vercel — all SUCCESS; Python tests pre-existing-red/non-blocking; Rule I
+    pre-existing-red/non-blocking per CI landscape). Bundle: 52.61 KB -> 39.73 KB gzip core.
+    Companion estalara-detect.iife.js = 12.43 KB gzip. estalara-detect.iife.js now in
+    apps/control-plane/public/. FOLLOW-325 unblocked (companion artifact exists in public/).
 
 - id: FOLLOW-325
   title: >
@@ -4983,26 +4978,102 @@ pending planning.**
   spec: backlog/FOLLOW_UPS.md (FOLLOW-325 stub)
   branch: backend-engineer/FOLLOW-325-buildsnippet-detect-companion
   assigned_to: backend-engineer
-  started_at: '2026-06-15T00:00:00Z'
+  started_at: '2026-06-17T00:00:00Z'
   notes: |
     CEO PRODUCT DECISION 2026-06-15: the estalara-detect.iife.js companion MUST be auto-included
     in the onboarding snippet for ALL Tier 1+2 tenants by DEFAULT. Opt-out, not opt-in.
     Cold-start client-side archetype detection is ON by default.
-    backend-engineer running in isolated worktree, branch backend-engineer/FOLLOW-325-buildsnippet-detect-companion.
-    PR pending. BLOCKS: FOLLOW-324 must be merged first (companion artifact must exist in public/).
+    FOLLOW-324 (PR #308) now MERGED — companion artifact exists in apps/control-plane/public/.
+    Dependency is CLEAR. Re-delegated to backend-engineer 2026-06-17 (prior worktree had no
+    commits; re-spawning on branch backend-engineer/FOLLOW-325-buildsnippet-detect-companion).
     Closes the buildSnippet() half-wire introduced by FOLLOW-324 split.
+
+- id: FOLLOW-326
+  title: >
+    admin.estalara.com sign-in page + full admin auth flow (Supabase SSR)
+  agent: backend-engineer
+  status: DONE
+  priority: P1
+  estimated_hours: 5
+  depends_on: []
+  source: CEO directive 2026-06-15
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-326 stub)
+  pr: '309, 310, 311'
+  branch: backend-engineer/FOLLOW-326-admin-auth-flow
+  completed_at: '2026-06-15T21:33:47Z'
+  notes: |
+    Three PRs merged 2026-06-15: PR #309 (feat: /sign-in page + Supabase SSR auth flow),
+    PR #310 (fix: @supabase/ssr middleware chunked session cookies),
+    PR #311 (fix: verifyTracerAdminAuth accepts Supabase SSR session).
+    AC1-AC8 completed. admin.estalara.com sign-in page live.
+
+- id: FOLLOW-327
+  title: >
+    Single-tenant admin nav + canonical Weight Editor intent weight defaults
+  agent: backend-engineer
+  status: DONE
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-326]
+  source: CEO decision 2026-06-15 (single-tenant admin v1)
+  pr: '312'
+  merge_commit: 34fcb11
+  completed_at: '2026-06-16T00:01:31Z'
+  notes: |
+    PR #312 merged 2026-06-16. Single-tenant admin nav: hides multi-tenant screens (Registrations,
+    Tenants, Demo Sessions) from sidebar; /admin lands on pilot tenant live monitor. Adds
+    lib/pilot-tenant.ts (NEXT_PUBLIC_PILOT_TENANT_ID). Weight Editor: adds DEFAULT_INTENT_WEIGHTS
+    to @estalara/shared (BASE_PRIOR + 0.3 damping, sums to 1.0); pre-loads editor from defaults;
+    adds "Reset to defaults" button. 6 shared tests. CI green.
+
+- id: FOLLOW-328
+  title: >
+    Fix ClickHouse Basic auth — include username in Authorization header to resolve Code 516
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 2
+  depends_on: [FOLLOW-327]
+  source: FOLLOW-330 / K.3.6 tracer debugging (ClickHouse 516 in production)
+  pr: '313'
+  merge_commit: 096a615
+  completed_at: '2026-06-16T21:00:19Z'
+  notes: |
+    PR #313 merged 2026-06-16. All ~12 control-plane ClickHouse HTTP reads used
+    Authorization: Basic base64(":password") — empty username — which ClickHouse Cloud rejects
+    with Code 516 AUTHENTICATION_FAILED. Added shared clickhouse-http.ts with
+    resolveClickHouseHttpConfig() + clickhouseAuthHeaders() reading CLICKHOUSE_USER (default
+    "default"). All CH-backed routes (admin analytics, tracer, DSR, pilot) now auth correctly.
+    Ingest worker was already correct. CI green.
+
+- id: FOLLOW-330
+  title: >
+    Fix tracer history SSR window crash + ClickHouse cold-start timeout
+  agent: backend-engineer
+  status: DONE
+  priority: P1
+  estimated_hours: 2
+  depends_on: [FOLLOW-328]
+  source: K.3.6 tracer bugs unmasked after FOLLOW-328 fixed CH auth
+  pr: '314'
+  merge_commit: c327c10
+  completed_at: '2026-06-16T21:37:39Z'
+  notes: |
+    PR #314 merged 2026-06-16. Two bugs: (1) tracer history page SSR crash — buildJsonlExportUrl()
+    called window.location.origin during server-render (window undefined → ReferenceError → 500).
+    Fixed with relative URL via URLSearchParams. (2) ClickHouse cold-start timeout — AbortSignal.timeout(8000)
+    aborted before ClickHouse Cloud woke from idle (>8s). Raised timeout to 30s + 45s for streams. CI green.
 ```
 
 ## Currently in flight
 
-**0 tickets IN_PROGRESS as of 2026-06-15T00:00Z.** FOLLOW-269 (K.3.6 frontend UI) DONE — PR #298
-merged 2026-06-14T11:41:43Z. FOLLOW-309/310/311/312 (4 RETRO-077 wiring bug fixes) DONE — PR #299
-merged 2026-06-14T13:06:34Z. FOLLOW-308 DONE / CLOSED IN FULL 2026-06-15. FOLLOW-307 DONE. K.3.6 D-1
-fully PRODUCTION-LIVE. ESC-022 + ESC-023 RESOLVED. ESC-020 OPEN but non-blocking (CEO 2026-06-10).
-FOLLOW-293 (live-network smoke) now UNBLOCKED (FOLLOW-269 DONE); pending delegation to qa-engineer.
-FOLLOW-317 + FOLLOW-318 stubs pending promotion to Sprint 18. Pending retro spawns: RETRO-064
-(FOLLOW-266 Ph1 / PR #277), RETRO-067 (FOLLOW-266 Ph3 / PR #280), RETRO-068 (FOLLOW-286 / PR #279),
-plus retro for FOLLOW-309/310/311/312 (PR #299).
+**1 ticket IN_PROGRESS as of 2026-06-17T00:00Z.** FOLLOW-325 (buildSnippet companion auto-include)
+re-delegated to backend-engineer 2026-06-17. FOLLOW-324 DONE (PR #308). FOLLOW-326 DONE (PRs
+#309/#310/#311). FOLLOW-327 DONE (PR #312). FOLLOW-328 DONE (PR #313). FOLLOW-330 DONE (PR #314).
+FOLLOW-293 DONE (PR #307 — live-network smoke green, ESC-024 resolved). ESC-020 OPEN but
+non-blocking (CEO 2026-06-10). Pending retro spawns: RETRO-062 (PR #272), RETRO-063 (PR #273),
+RETRO-064 (PR #277), RETRO-067 (PR #280), RETRO-068 (PR #279), plus retros for FOLLOW-324 (PR #308),
+FOLLOW-326 (PRs #309/#310/#311), FOLLOW-327 (PR #312), FOLLOW-328 (PR #313), FOLLOW-330 (PR #314).
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

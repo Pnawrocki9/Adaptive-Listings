@@ -20,7 +20,7 @@
 import { useState } from 'react';
 import type { TenantSiteSchema } from '@estalara/shared';
 import type { DetectField } from '@estalara/shared';
-import { CONTROL_PLANE_URL, SDK_SERVE_URL } from '@estalara/shared';
+import { CONTROL_PLANE_URL, DETECT_SERVE_URL, SDK_SERVE_URL } from '@estalara/shared';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -110,12 +110,39 @@ function confidenceBadgeClass(confidence: number): string {
 /**
  * Build the SDK snippet string from a tenant ID, API key, and optional inquiry selector.
  *
- * Emits `data-decision-url` pointing at the canonical control-plane host
- * (`CONTROL_PLANE_URL` = https://admin.estalara.com). This is REQUIRED: the SDK
- * treats a missing `data-decision-url` as "directives disabled" and never calls
- * the adapt endpoint (see packages/sdk/src/core/adapt.ts guard `if (!config.decisionApiUrl) return null`).
- * Omitting it silently disables adaptation for every onboarded tenant — the
- * [BLOCKER] found in FOLLOW-105 substep 1a audit (§A / §F.1).
+ * Emits two ordered `<script>` tags:
+ *
+ *   1. `estalara-detect.iife.js` — the auto-detect companion bundle (FOLLOW-325).
+ *      Sets `window.__EStalaraDetect = { detectSiteSchema, extractArchetypeHints }`.
+ *      Must appear BEFORE the main SDK tag so `init()` can read `window.__EStalaraDetect`
+ *      synchronously on cold start.  Both tags are plain (no `async`/`defer`) so the
+ *      browser executes them in source order before continuing the parser — guaranteeing
+ *      `window.__EStalaraDetect` is defined when the main SDK IIFE runs.
+ *
+ *      Default ON for all Tier 1+2 tenants (CEO product decision 2026-06-15).
+ *      Companion bundle built by PR #308 (sdk-engineer/FOLLOW-324, merged 2026-06-15).
+ *      `apps/control-plane/public/estalara-detect.iife.js` is the checked-in artifact.
+ *
+ *      Tier 3 (Native `<EstalaraListing/>`) does NOT use this companion.  Tier 3
+ *      tenants use the full `<EstalaraListing/>` component which owns the entire
+ *      listing DOM — site-level auto-detection is not meaningful when there is no
+ *      third-party DOM to introspect.  The companion tag is therefore absent from
+ *      Tier 3 snippets.  `buildSnippet()` currently always emits the companion;
+ *      the Tier 3 onboarding path (when implemented) will set a tenant flag that
+ *      suppresses the companion tag.  Tracked by FOLLOW-332.
+ *
+ *      // FOLLOW-331: per-tenant opt-out toggle (disable companion emission) is NOT
+ *      // yet implemented — no per-tenant config surface exists today.  Add a
+ *      // `detect_companion_disabled` boolean to the `tenants` table + a dashboard
+ *      // toggle when that surface is built.  See backlog/FOLLOW_UPS.md FOLLOW-331.
+ *
+ *   2. Main SDK IIFE (`sdk.js`).  Emits `data-decision-url` pointing at the canonical
+ *      control-plane host (`CONTROL_PLANE_URL` = https://admin.estalara.com).  This is
+ *      REQUIRED: the SDK treats a missing `data-decision-url` as "directives disabled" and
+ *      never calls the adapt endpoint (see packages/sdk/src/core/adapt.ts guard
+ *      `if (!config.decisionApiUrl) return null`). Omitting it silently disables adaptation
+ *      for every onboarded tenant — the [BLOCKER] found in FOLLOW-105 substep 1a audit
+ *      (§A / §F.1).
  *
  * We use `CONTROL_PLANE_URL` (NOT `DECISION_API_URL`, which names the deprecated
  * Cloudflare Worker `decision.estalara.com`).
@@ -150,7 +177,12 @@ export function buildSnippet(
       : '';
   // ADR-0011 (FOLLOW-275): data-quiz-enabled and data-micro-polls-enabled are RETIRED.
   // Quiz/widget config is fetched at SDK runtime via GET /api/quiz/public-config.
-  return `<script\n  src="${SDK_SERVE_URL}"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"${inquiryAttr}\n></script>`;
+  //
+  // FOLLOW-325: companion script emitted first (no async/defer) to guarantee
+  // window.__EStalaraDetect is defined before the main SDK IIFE executes.
+  const companionTag = `<script src="${DETECT_SERVE_URL}"></script>`;
+  const sdkTag = `<script\n  src="${SDK_SERVE_URL}"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"${inquiryAttr}\n></script>`;
+  return `${companionTag}\n${sdkTag}`;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

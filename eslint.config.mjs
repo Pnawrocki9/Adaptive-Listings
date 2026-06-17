@@ -27,6 +27,9 @@ export default tseslint.config(
       // SDK IIFE bundle served as a Vercel static asset (ESC-015).
       // Built artifact, not source — linting it makes no sense.
       'apps/control-plane/public/sdk.js',
+      // Auto-detect companion IIFE served as a Vercel static asset (FOLLOW-325).
+      // Built artifact from packages/sdk/dist/estalara-detect.iife.js — not source.
+      'apps/control-plane/public/estalara-detect.iife.js',
     ],
   },
 

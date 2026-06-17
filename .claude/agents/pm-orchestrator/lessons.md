@@ -2,6 +2,19 @@
 
 ---
 
+**Date / ticket:** 2026-06-17 — RETRO-082 (FOLLOW-324 / PR #308 retrospective spawn) **Delegation
+row used:** N/A — PM-self retrospective analysis (step 6, post-merge, retro backlog). **What
+validation caught (or missed):** Wiring audit: \_\_EStalaraDetect producer (detect-bundle.ts:36) and
+consumer (index.ts:821) confirmed in non-test code. The removed top-level re-export (export {
+detectSiteSchema }) had no production consumer (grep verified). Found TG-1: detect-bundle.ts (new
+companion IIFE entry) has no unit test for the global assignment — FOLLOW-335 filed. LG-1 (snippet
+half-wire) acknowledged as tracked by FOLLOW-325. **A delegation/validation rule I'd add:** When a
+new IIFE entry file is added (tsup `format: ['iife']`), verify a unit test covers the global
+assignment that the entry is responsible for — if the test suite only covers the consumer side
+(reading the global), the producer side is untested.
+
+---
+
 **Date / ticket:** 2026-06-17 — RETRO-081 (FOLLOW-293 / PR #307 retrospective spawn) **Delegation
 row used:** N/A — PM-self retrospective analysis (step 6, post-merge, retro backlog). **What
 validation caught (or missed):** Wiring audit: fetchIntentWeights is imported from the real SDK (no

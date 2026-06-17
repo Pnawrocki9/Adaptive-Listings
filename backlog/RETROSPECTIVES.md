@@ -17354,3 +17354,107 @@ ESC-024 was filed in the same PR documenting the two required GitHub Actions sec
 - **RETRO-076 (OG-1 — Postgres migrations do not auto-apply):** RETRO-081 is the companion retro — RETRO-076 establishes the architectural fact; RETRO-081 confirms the automated attestation that verifies the manual apply.
 - **RETRO-007 / FOLLOW-097/114/127/141 (cautionary chain):** The skip-loud / hard-fail contract directly addresses the RETRO-007 failure mode. Referenced explicitly in the PR body and smoke file comment.
 - **FOLLOW-268-sdk / FOLLOW-305 (D-1 SDK chain):** Those PRs built the production wire; RETRO-081's smoke is the live-network proof that the wire is connected end-to-end in production.
+
+---
+
+## RETRO-082 — FOLLOW-324 (SDK IIFE bundle size gate failure — split auto-detect pipeline into separate `estalara-detect.iife.js` companion; core IIFE drops from 52.61 KB to 39.73 KB gzip, passing the 40 KB gate; `window.__EStalaraDetect` global bridge pattern introduced; `esbuildOptions.drop:['console']` applied to IIFE build) — 2026-06-17
+
+### 1. What was built
+
+PR #308 (`fix(sdk): split auto-detect pipeline into separate IIFE to pass 40KB bundle gate [FOLLOW-324]`, merged 2026-06-15) resolves a P1 SDK gate failure. The core IIFE (`estalara-sdk.iife.js`) had grown to 52.61 KB gzip — 12.61 KB over the 40 KB limit — due to two static imports of the full auto-detect pipeline (`pipeline.ts` + `archetype-hints.ts`, ~16.8 KB gzip) being inlined by the IIFE bundler.
+
+Three changes:
+
+1. **Remove static imports** of `detectSiteSchema` / `extractArchetypeHints` from `packages/sdk/src/index.ts`. The `detectSiteSchema` top-level re-export is removed (it was unused by any production consumer — all consumers use the `@estalara/sdk/auto-detect` sub-path).
+
+2. **New file** `packages/sdk/src/auto-detect/detect-bundle.ts` — IIFE entry that sets `globalThis.__EStalaraDetect = { detectSiteSchema, extractArchetypeHints }`. Built as `dist/estalara-detect.iife.js` (12.43 KB gzip). The main SDK reads `window.__EStalaraDetect` opportunistically in the cold-start archetype-hints block; if absent, cold-start site-level hints are skipped (referrer/device priors still apply).
+
+3. **New tsup config entry** for `estalara-detect` IIFE; `esbuildOptions.drop: ['console']` added to the main IIFE build (drops 9 debug-guarded `console.*` calls and their string arguments, ~0.5 KB savings).
+
+3 files changed: 114 additions, 12 deletions. All 1383 unit tests pass. TypeScript strict-mode clean.
+
+### 2. Wiring audit
+
+**Scope:** `__EStalaraDetect` (new global), `detect-bundle.ts` (new file), `DetectionResult` type re-export change.
+
+- `__EStalaraDetect` — producer: `packages/sdk/src/auto-detect/detect-bundle.ts:36` (`).__EStalaraDetect = { detectSiteSchema, extractArchetypeHints }`). Consumer: `packages/sdk/src/index.ts:821` (`const detect = (globalThis as {...}).__EStalaraDetect`). Both are non-test production code. Wiring is a runtime global bridge (not a static import), which is correct for an optional companion IIFE. CLEAN.
+
+- `detect-bundle.ts` — built as `dist/estalara-detect.iife.js` by the new tsup entry in `tsup.config.ts`. The build entry is the non-test producer. The consumer is the install snippet: tenants load `estalara-detect.iife.js` before `estalara-sdk.iife.js`. The PR does NOT update the install snippet (`buildSnippet()` in control-plane) to auto-emit the companion tag — this is FOLLOW-325's job. CLEAN (wiring pending FOLLOW-325 for the snippet side).
+
+- `DetectionResult` type re-export — changed from `export type { DetectionResult } from './auto-detect/index.js'` to `export type { DetectionResult } from './auto-detect/pipeline.js'`. Type-only import; no runtime wiring change. The sub-path `@estalara/sdk/auto-detect` still exports `DetectionResult` via `auto-detect/index.ts`. CLEAN.
+
+- `export { detectSiteSchema } from './auto-detect/index.js'` — **REMOVED** from top-level `index.ts`. The PR body confirms via grep that no production consumer imports `detectSiteSchema` from `@estalara/sdk` (top-level). All production consumers use `@estalara/sdk/auto-detect`. CLEAN.
+
+**grep evidence (from PR body):**
+```
+grep -rn "detectSiteSchema" apps packages/sdk/src --include="*.ts" --include="*.tsx" | grep -v node_modules | grep -v .test. | grep -v /e2e/
+→ apps/control-plane/src/app/api/detect/route.ts:34: import { detectSiteSchema } from '@estalara/sdk/auto-detect'; (sub-path, not top-level)
+```
+
+Wiring audit: FULLY CLEAN.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, tracked by FOLLOW-325) — `buildSnippet()` in `apps/control-plane/src/lib/install-snippet.ts` does NOT emit `<script src="estalara-detect.iife.js">` in the install snippet.** Without this, tenants who copy the snippet from the control-plane dashboard will NOT get the companion script, and cold-start archetype hints will silently be skipped (the non-fatal fallback fires). This was explicitly known at PR merge time (FOLLOW-325 filed for this purpose). FOLLOW-325 has since been completed (PR #315, READY_FOR_REVIEW as of 2026-06-17). LG-1 is closing as FOLLOW-325 merges.
+
+- **LG-2 (P3) — the `__EStalaraDetect` global is read as `(globalThis as {...}).__EStalaraDetect` with an inline interface `DetectGlobal`.** If the detect bundle evolves to add new fields to `window.__EStalaraDetect`, the inline interface in `index.ts` must be manually kept in sync — it is not derived from `detect-bundle.ts`'s type. This is a light type-drift risk. Severity P3 (the interface is narrow; TypeScript will catch a missing call-site property at typecheck time; additions to the global shape are backward-compatible). No follow-up filed.
+
+- **LG-3 (P3) — the `esbuildOptions.drop: ['console']` applies to the MAIN IIFE build only; the ESM build retains console calls.** This is intentional (dev/npm integrators need the debug calls). However, if a future PR adds a `console.*` call to a non-debug path (not guarded by `config.debug`), it will be silently dropped in the IIFE bundle. The PR comment notes "All console.log/warn/error calls in SDK source are behind a `config.debug` guard." This assumption is not statically enforced. Severity P3. No follow-up filed (the existing lint + review process is sufficient guard).
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **No correctness gaps.** The `window.__EStalaraDetect` pattern is inside a `try/catch` block in `init()` that already existed to guard the auto-detect path. If the detect bundle is absent, `detect` is `undefined`, the `if (detect)` guard is false, and the code skips to the next block — identical behavior to a native failure. The bundle gate passes: 39.73 KB < 40 KB.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None.** All 1383 unit tests pass. TypeScript strict-mode clean. Bundle size gate passes.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — `detect-bundle.ts` (the new companion IIFE entry point) has NO unit test asserting it exports `detectSiteSchema` and `extractArchetypeHints` to `globalThis.__EStalaraDetect`.** The existing tests mock the detect path (via a `globalThis.__EStalaraDetect` setup in the jsdom environment). There is no test that loads `detect-bundle.ts` directly and asserts the global is correctly set. Severity P2: the detect-bundle is a new production artifact; a simple test that imports the module and checks `globalThis.__EStalaraDetect` is set would serve as a regression guard. **Filed as FOLLOW-335 below.**
+
+- **TG-2 (P3) — the `esbuildOptions.drop: ['console']` behavior is not tested.** No test asserts the built IIFE does not contain console strings. This would require a post-build assertion (e.g., grepping the dist file). Low severity (visible at bundle inspection); no follow-up filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, RESOLVED-IN-PR) — `tsup.config.ts` now has comment blocks explaining the split, the `__EStalaraDetect` global, and the `drop: ['console']` rationale.** `detect-bundle.ts` has a full JSDoc module comment. `index.ts` has a 4-line comment block at the old `export { detectSiteSchema }` site explaining why it was removed and where consumers should import from. Documentation delta: CLEAN and thorough.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-325 (buildSnippet companion auto-include, READY_FOR_REVIEW PR #315):** This PR's LG-1 is FOLLOW-325's entire purpose. Once FOLLOW-325 merges, every new install snippet will emit the companion `<script>` tag before the main SDK IIFE. The companion split (this PR) + snippet auto-include (FOLLOW-325) together constitute the complete feature.
+
+#### 5b. Future sprint tickets affected
+
+- **Any new auto-detect technique added to `pipeline.ts`:** Adding a new DOM detection technique will increase `estalara-detect.iife.js` but NOT the main SDK IIFE. This is the intended architecture post-split. The 40 KB gate on the main IIFE is now safely met.
+
+- **Any code that imports `detectSiteSchema` from `@estalara/sdk` (top-level):** The top-level re-export was removed. Any future PR that tries to import from the top-level will fail `pnpm typecheck`. The sub-path `@estalara/sdk/auto-detect` remains the correct import path.
+
+#### 5c. Contracts changed others rely on
+
+- **`export { detectSiteSchema }` from top-level `@estalara/sdk`:** REMOVED. Verified by grep that no current production consumer uses the top-level form (they all use `@estalara/sdk/auto-detect`). Any external npm consumer that imported from the top-level would get a TypeScript error — but this is an internal monorepo; no external consumers exist at this stage.
+
+- **`export type { DetectionResult }`:** Changed source from `auto-detect/index.js` to `auto-detect/pipeline.js`. Type-only; the type shape is unchanged. CLEAN.
+
+#### 5d. Architectural assumptions affected
+
+- **The assumption that the SDK IIFE is a single monolithic bundle is no longer correct.** The SDK now ships two optional IIFEs: the core (`estalara-sdk.iife.js`) and the companion (`estalara-detect.iife.js`). Deployment, CDN caching, and install-snippet generation must account for both files. FOLLOW-325 handles the snippet side; FOLLOW-324's PR body documents the install order.
+
+- **The `window.__EStalaraDetect` global is a new contract between the two IIFEs.** If the detect bundle is loaded AFTER the main SDK (wrong order), the opportunistic read in `init()` will find `undefined` and silently skip hints for the first session. The load order is documented in the detect-bundle module comment. Any install-snippet validation test should assert the companion `<script>` appears before the main SDK `<script>`.
+
+### 6. New lesson candidates
+
+- **Pattern: "a static import in an IIFE entry file (with `bundle: true`) inlines ALL transitive dependencies of the imported module, even if only a small subset of exports is used."** — seen in: RETRO-082 (the two static imports of `detectSiteSchema` / `extractArchetypeHints` added ~16.8 KB to the IIFE bundle because esbuild inlines every transitive dep at bundle time). The fix is to move the code to a separate IIFE entry and bridge via a global. This is the "accidental bundle inflation via static import in IIFE entry" pattern. **Count 1 — first sighting.** The 40 KB gate is the CI guard that caught it. The root cause is a misunderstanding of how IIFE `bundle: true` works vs. ESM tree-shaking. **No Rule promotion** (count 1); watch for a second sighting if a new module is statically imported into the IIFE entry.
+
+### 7. Follow-ups
+
+- **FOLLOW-335 (NEW — TG-1, P2):** Add a unit test for `detect-bundle.ts` that imports the module in a jsdom environment and asserts `globalThis.__EStalaraDetect` is set with `detectSiteSchema` and `extractArchetypeHints` as callable functions. This is a regression guard for the new companion IIFE entry. (sdk-engineer, 1h, **P2**, Sprint 18+)
+
+### 8. Cross-references
+
+- **FOLLOW-325 / RETRO for PR #315 (buildSnippet companion auto-include):** The direct follow-on to this split. RETRO-082's LG-1 closes when FOLLOW-325 merges.
+- **RETRO-007 / FOLLOW-097 (SDK bundle gate):** The 40 KB bundle gate was established early in the project as a non-negotiable quality bar. RETRO-082 is the first sighting of an IIFE bundler inflation event caught by that gate.
+- **ADR-0012 (K.3.6 D-1 architecture):** The detect bundle is part of the K.3.6 auto-detect cold-start prior system. ADR-0012 documents the decision to use a global bridge rather than a dynamic import.

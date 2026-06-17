@@ -9212,6 +9212,38 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
+## FOLLOW-335 — Add unit test for `detect-bundle.ts` asserting `globalThis.__EStalaraDetect` is set correctly (RETRO-082 TG-1)
+
+- **status:** OPEN
+- **source_retro:** RETRO-082
+- **source_ticket:** FOLLOW-324 (PR #308)
+- **recommended_sprint:** 18+
+- **recommended_agent:** sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **depends_on:** []
+- **scope:** `packages/sdk/src/auto-detect/detect-bundle.ts` (new companion IIFE entry added in PR
+  #308) has no unit test. A simple test that imports the module in a jsdom environment and asserts
+  `globalThis.__EStalaraDetect` is set with `detectSiteSchema` and `extractArchetypeHints` as
+  callable functions would serve as a regression guard. The current test suite covers the CONSUMER
+  side (the opportunistic `if (detect)` read in `init()` is covered by existing SDK tests that set
+  up the global in `beforeEach`), but not the PRODUCER side (that `detect-bundle.ts` correctly
+  assigns the global).
+- **ac:**
+  - [ ] AC1: A test imports `detect-bundle.ts` (or its built output) in a jsdom/Node environment and
+        asserts `globalThis.__EStalaraDetect` is defined and has both `detectSiteSchema` and
+        `extractArchetypeHints` as functions.
+  - [ ] AC2: The test is co-located with `detect-bundle.ts` or in `packages/sdk/src/__tests__/`.
+  - [ ] AC3: `pnpm typecheck` + `pnpm test` green after changes.
+- **notes:** TG-1 from RETRO-082. The companion IIFE entry is a new production artifact; the global
+  assignment is the critical contract between the two IIFEs. A regression where `detect-bundle.ts`
+  exports an empty object or assigns to a different global name would silently break cold-start
+  archetype hints for all tenants. P2 severity.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 336 (335 = RETRO-082 / PR #308 / FOLLOW-324 SDK bundle size fix: detect-bundle.ts has no unit test asserting globalThis.__EStalaraDetect is set correctly with detectSiteSchema + extractArchetypeHints as callable functions; sdk-engineer, P2 1h.) -->
 <!-- next free FOLLOW number: 335 (334 = RETRO-086 / PR #314 / FOLLOW-330 tracer history SSR window crash + CH cold-start 8s->30s timeout: keep-warm cron for CH Cloud to prevent auto-idle cold-start delays >8s on tracer/analytics routes; 30s timeout in CH_TRACER_TIMEOUT_MS is a symptom treatment, cron prevents idle, P2 2h devops.) -->
 <!-- next free FOLLOW number: 334 (333 = RETRO-085 / PR #313 / FOLLOW-328 ClickHouse Basic auth fix: 12 route-level call-sites migrated to clickhouseAuthHeaders but only clickhouse-tracer.test.ts CH-10 asserts the Authorization header is non-empty-username; add route-level assertions for the 11 uncovered sites, P3 2h qa.) -->
 <!-- next free FOLLOW number: 333 (331-332 = RETRO-084 / PR #312 / FOLLOW-327 single-tenant admin nav + DEFAULT_INTENT_WEIGHTS shared export: 331 = DEFAULT_INTENT_WEIGHTS is a hand-copied dup of SDK private BASE_PRIOR+BEHAVIORAL_DAMPING with NO drift guard — DEFAULT-1..6 assert the shared constant vs ITSELF, the docstring (intent-weights.ts:155-160) FALSELY claims "drift is caught in CI" pointing at packages/sdk/src/__tests__/intent-weights-drift.test.ts which DOES NOT EXIST, and BASE_PRIOR isn't even exported from the SDK; export SDK constants + write the real cross-package equality test + fix the docstring, P2 3h sdk+backend [LG-1+DG-1]. 332 = the single-tenant admin shell (Item 1 headline) shipped with ZERO test — no admin/layout.test.tsx + no admin/page.test.tsx exist, so the sidebar hiding 3 multi-tenant screens + showing 3 PILOT_TENANT_ID-scoped tracer links AND the /admin->pilot-tracer landing redirect are unasserted ("admin (8) tests" cited are unrelated files); add both test files + pin PILOT_TENANT_ID to the Master-Design pilot id, P2 2h qa [TG-1+TG-2]. Wiring Audit CLEAN (both new exports have non-test prod importers; nav targets all exist; PILOT_TENANT_ID points at the real live prod tenant cbc51cfa-... per MASTER_DESIGN §Snapshot so NO seed/migration-apply hop unlike RETRO-076). NO functional bug (uniform-prior fix genuine, T10 proves neutral=0.37). NO Rule promoted: P-DUP-CONTRACT + P-SHELL-UNTESTED both count-1 first sightings, held below threshold. Reconciled RETRO-077/080 (2nd nav path to tracer pages, not a regression) + RETRO-076 (no migration-apply gap here, tenant already live).) -->

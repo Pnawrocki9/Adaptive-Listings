@@ -186,7 +186,7 @@ Status: READY_FOR_REVIEW. Awaiting human merge. PM comment posted: #315 comment 
 | RETRO-062 | FOLLOW-276    | #272           | PENDING                                  |
 | RETRO-063 | FOLLOW-278    | #273           | PENDING                                  |
 | RETRO-081 | FOLLOW-293    | #307           | DONE (2026-06-17) — no new FOLLOW filed  |
-| RETRO-082 | FOLLOW-324    | #308           | PENDING                                  |
+| RETRO-082 | FOLLOW-324    | #308           | DONE (2026-06-17) — FOLLOW-335 filed     |
 | RETRO-083 | FOLLOW-326    | #309/#310/#311 | PENDING                                  |
 | RETRO-084 | FOLLOW-327    | #312           | DONE (2026-06-17) — FOLLOW-331/332 filed |
 | RETRO-085 | FOLLOW-328    | #313           | DONE (2026-06-17) — FOLLOW-333 filed     |
@@ -211,5 +211,9 @@ RETRO-081 DONE (2026-06-17): K.3.6 D-1 live-network smoke (FOLLOW-293 / PR #307)
 audit. Smoke run 27555287447 GREEN (ESC-024 resolved by Piotr). FOLLOW-307 apply attested. No new
 FOLLOW stubs (LG-1/2/3 all P3 by-design).
 
-Next: spawn retrospective-analyst for FOLLOW-324 (PR #308) → RETRO-082 (SDK bundle size fix,
-auto-detect companion split).
+RETRO-082 DONE (2026-06-17): SDK bundle size fix (FOLLOW-324 / PR #308). FOLLOW-335 filed (TG-1:
+detect-bundle.ts producer-side unit test, P2). LG-1 (snippet half-wire) closing via FOLLOW-325 PR
+#315. No Rule promoted (IIFE static-import-inflation count-1).
+
+Next: spawn retrospective-analyst for FOLLOW-326 (PRs #309/#310/#311) → RETRO-083
+(admin.estalara.com sign-in + Supabase SSR auth flow).

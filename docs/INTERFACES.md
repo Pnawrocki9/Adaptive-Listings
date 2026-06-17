@@ -86,6 +86,90 @@ test cases as part of FOLLOW-275 implementation (ADR-0011 guardrail for accepted
 Status: ACCEPTED (ADR-0011 at `docs/adr/ADR-0011-quiz-config-transport.md`, PR #269 merged
 2026-06-11).
 
+## Auto-Detect Companion Bundle — `window.__EStalaraDetect` (FOLLOW-325)
+
+The auto-detect companion is a separate IIFE bundle that extends the main SDK's cold-start
+site-level archetype detection without adding to the mandatory 40 KB gzip budget.
+
+### Serving
+
+Bundle artifact: `apps/control-plane/public/estalara-detect.iife.js` Canonical URL:
+`https://admin.estalara.com/estalara-detect.iife.js` Served as: Vercel static asset from `public/`
+(same mechanism as `sdk.js`) Size (once PR #308 merges): ~12.43 KB gzip
+
+Dev fallback route: `GET /api/sdk-detect` — reads from `packages/sdk/dist/estalara-detect.iife.js`;
+returns an empty JS comment when the SDK has not been built (pre-PR #308).
+
+### Interface contract
+
+The companion IIFE assigns the following global on the browser `window` object:
+
+```ts
+interface EStalaraDetect {
+  /**
+   * Run all detection techniques against the current page DOM and return a
+   * TenantSiteSchema candidate. Called by the main SDK `init()` on cold start
+   * when window.__EStalaraDetect is present.
+   * Mirrors the server-side `detectSiteSchema` from `@estalara/sdk/auto-detect`.
+   */
+  detectSiteSchema: (opts?: { debug?: boolean }) => Promise<DetectionResult | null>;
+
+  /**
+   * Extract archetype hints from the current page (framework detection, JSON-LD
+   * signals, etc.) for use in the cold-start intent seed.
+   * Mirrors `extractArchetypeHints` from `@estalara/sdk/auto-detect`.
+   */
+  extractArchetypeHints: () => ArchetypeHint[];
+}
+
+declare global {
+  interface Window {
+    __EStalaraDetect?: EStalaraDetect;
+  }
+}
+```
+
+The companion is built by `packages/sdk/src/auto-detect/detect-bundle.ts` (added in PR #308). The
+concrete `DetectionResult` and `ArchetypeHint` types are exported from `@estalara/sdk/auto-detect`.
+
+### Load ordering
+
+The snippet generator (`buildSnippet()` in
+`apps/control-plane/src/components/onboarding/DetectionPreview.tsx`) emits the companion tag BEFORE
+the main SDK tag. Both tags have no `async` or `defer` attribute, which guarantees that the browser
+executes them in source order:
+
+```html
+<script src="https://admin.estalara.com/estalara-detect.iife.js"></script>
+<script
+  src="https://admin.estalara.com/sdk.js"
+  data-tenant-id="..."
+  data-api-key="..."
+  data-decision-url="https://admin.estalara.com/api"
+></script>
+```
+
+When the companion is absent or fails to load, `window.__EStalaraDetect` is undefined and the main
+SDK `init()` skips cold-start archetype hints silently — adaptation still works via the server-side
+schema on the first adapt request.
+
+### Default ON / opt-out
+
+Companion emission is default ON for all Tier 1+2 tenants (CEO product decision 2026-06-15).
+Per-tenant opt-out is deferred to FOLLOW-331 (requires a `detect_companion_disabled` column on the
+`tenants` table and a dashboard toggle).
+
+Tier 3 (Native `<EstalaraListing/>`) does NOT use the companion. Tier 3 tenants own the entire
+listing DOM via the `<EstalaraListing/>` component, so site-level auto-detection is not meaningful —
+there is no third-party DOM to introspect. The Tier 3 onboarding path (when implemented) will
+suppress the companion tag via a tenant flag. Tracked by FOLLOW-332.
+
+### Depends on
+
+PR #308 (`sdk-engineer/FOLLOW-324-sdk-bundle-size`) — this interface is PENDING until that PR merges
+and `packages/sdk/dist/estalara-detect.iife.js` is copied to
+`apps/control-plane/public/estalara-detect.iife.js`.
+
 ## DSR Endpoint
 
 `POST /api/v1/dsr/:tenant_id` — implemented in TICKET-GDPR-002. Input/output schema documented in

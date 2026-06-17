@@ -5101,12 +5101,15 @@ pending planning.**
 
 - id: FOLLOW-336 title: > Add tests for Supabase SSR session auth paths: checkStaffSession +
   middleware admin gate + SignInForm (RETRO-083 TG-1/TG-2) agent: qa-engineer co_agent:
-  backend-engineer status: READY priority: P2 estimated_hours: 3 depends_on: [FOLLOW-326] source:
-  RETRO-083 (FOLLOW-326 / PRs #309/#310/#311) — primary admin auth gate shipped with zero tests
-  spec: backlog/FOLLOW_UPS.md (FOLLOW-336 stub) promoted_at: '2026-06-17T20:00Z' notes: | Promoted
-  2026-06-17. checkStaffSession() in tracer-auth.ts (the PRIMARY admin auth gate for all
-  /api/admin/\* routes) has zero tests. middleware.ts updateSession path has no integration test.
-  SignInForm has no tests for sign-in success/error branches. Sprint 18 P2 auth coverage gap.
+  backend-engineer status: IN_PROGRESS priority: P2 estimated_hours: 3 depends_on: [FOLLOW-326]
+  source: RETRO-083 (FOLLOW-326 / PRs #309/#310/#311) — primary admin auth gate shipped with zero
+  tests spec: backlog/FOLLOW_UPS.md (FOLLOW-336 stub) branch:
+  qa-engineer/FOLLOW-336-admin-auth-tests assigned_to: qa-engineer started_at: '2026-06-17T20:00Z'
+  promoted_at: '2026-06-17T20:00Z' notes: | Promoted 2026-06-17. IN_PROGRESS: delegated to
+  qa-engineer 2026-06-17T20:00Z. checkStaffSession() in tracer-auth.ts (the PRIMARY admin auth gate
+  for all /api/admin/\* routes) has zero tests. middleware.ts updateSession path has no integration
+  test. SignInForm has no tests for sign-in success/error branches. Sprint 18 P2 auth coverage gap.
+  CI check counter: 0/5, fix iterations: 0/3.
 
 - id: FOLLOW-331 title: > Add a real cross-package drift guard for DEFAULT_INTENT_WEIGHTS vs SDK
   BASE_PRIOR/BEHAVIORAL_DAMPING, and fix the docstring claiming a CI guard that does not exist
@@ -5128,14 +5131,12 @@ pending planning.**
 
 ## Currently in flight
 
-**0 tickets IN_PROGRESS as of 2026-06-17T20:00Z. 0 tickets READY_FOR_REVIEW.** FOLLOW-325 DONE (PR
-#315, merged 43ad849 2026-06-17). All Sprint 18 PRs done: FOLLOW-324 (PR #308), FOLLOW-325 (PR
-#315), FOLLOW-326 (PRs #309/#310/#311), FOLLOW-327 (PR #312), FOLLOW-328 (PR #313), FOLLOW-330 (PR
-#314), FOLLOW-293 (PR #307). ESC-020 OPEN but non-blocking (CEO 2026-06-10). Retros all caught up
-(RETRO-062/063/064/067/068/069/081/082/083/084/085/086/087 DONE 2026-06-17). FOLLOW-331/332/336
-promoted to QUEUE as READY (Sprint 18 P2). Next: FOLLOW-336 — checkStaffSession
-
-- middleware admin gate tests (qa-engineer / backend-engineer, 3h, P2).
+**1 ticket IN_PROGRESS as of 2026-06-17T20:00Z: FOLLOW-336 (qa-engineer). 0 READY_FOR_REVIEW.**
+FOLLOW-325 DONE (PR #315, merged 43ad849 2026-06-17). All Sprint 18 PRs done: FOLLOW-324/325/326
+/327/328/330/293. ESC-020 OPEN but non-blocking (CEO 2026-06-10). All retros through RETRO-087 DONE
+(2026-06-17). FOLLOW-331/332 READY (Sprint 18 P2). FOLLOW-336 IN_PROGRESS (qa-engineer, branch
+qa-engineer/FOLLOW-336-admin-auth-tests, Sprint 18 P2 — checkStaffSession + middleware auth tests).
+CI check counter: FOLLOW-336 0/5, fix iterations 0/3.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

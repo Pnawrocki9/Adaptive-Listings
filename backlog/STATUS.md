@@ -171,7 +171,7 @@ live smoke, Gitleaks, Migration journal monotonicity — all GREEN. Python tests
 auto-detect): pre-existing FAILURE, NON-BLOCKING per CI landscape. Rule I: pre-existing FAILURE,
 NON-BLOCKING (90 FOLLOW-090).
 
-## CI CHECK COUNTER (current sprint — FOLLOW-336 next up)
+## CI CHECK COUNTER (current sprint — FOLLOW-336 IN_PROGRESS)
 
 | Ticket     | CI checks | Fix iterations |
 | ---------- | --------- | -------------- |
@@ -179,7 +179,8 @@ NON-BLOCKING (90 FOLLOW-090).
 | FOLLOW-336 | 0/5       | 0/3            |
 
 FOLLOW-325: DONE (PR #315 merged 43ad849 2026-06-17). CI green. RETRO-087 complete. FOLLOW-336:
-READY — not yet started. Next ticket to delegate.
+IN_PROGRESS — delegated to qa-engineer 2026-06-17T20:00Z. Branch:
+qa-engineer/FOLLOW-336-admin-auth-tests.
 
 ## Pending Retro Spawns (ALL COMPLETE as of 2026-06-17)
 

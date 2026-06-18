@@ -17853,3 +17853,73 @@ PR #281 (FOLLOW-287, merged 2026-06-12T22:31:19Z) + PR #282 (FOLLOW-288, merged 
 - **RETRO-068 (FOLLOW-286 / PR #279):** Filed FOLLOW-322 (mock-`fetchImpl` cannot catch type incompatibilities in dual-write paths). RETRO-069 confirms this pattern.
 - **ESC-021 (RESOLVED):** The migration 0016 error 524 escalation that FOLLOW-288 closed.
 - **Rule W:** The ClickHouse ORDER BY key immutability rule, promoted at RETRO-060. RETRO-069 is the third independent sighting.
+
+---
+
+## RETRO-088 — FOLLOW-336 (checkStaffSession + middleware admin gate + SignInForm SSR auth tests) — 2026-06-18
+
+### 1. What was built
+
+PR #316 (FOLLOW-336, merged 2026-06-18T04:41:38Z, commit 1626013). +1673/-72.
+
+**Scope:** RETRO-083 TG-1/TG-2 — three auth code paths added by FOLLOW-326 (PRs #309/#310/#311) had zero test coverage. This PR added tests for all three.
+
+- **`tracer-auth.test.ts`** — SSR-1..4 added: `checkStaffSession()` exercised via mocked `createServerClient().auth.getUser()` returning staff user, non-staff user, error, null. 9 total tests (4 new SSR paths + 5 pre-existing Bearer/JWT paths all preserved).
+- **`middleware.test.ts`** — ADMIN-1/2/3/5: authenticated staff → pass-through; unauthenticated → redirect `/sign-in`; non-staff → redirect `/sign-in`. Root-cause fix: `@vitest-environment node` directive required because jsdom shims `globalThis.Headers` differently from Node.js native fetch, breaking the `instanceof` check in `NextResponse.next()`. 16 total tests.
+- **`SignInForm.test.tsx`** (new file) — SIGN-IN-1/2/3: happy path (`signInWithPassword` success → `router.push('/admin')`), error path (error message displayed, fields retain values), and empty form renders.
+
+**Fix iterations:** 1 (fix iteration 1 of 3: test failures on `middleware.test.ts` due to E119 `request.headers must be an instance of Headers` — fixed by `@vitest-environment node`).
+
+### 2. Wiring audit
+
+- No new exported symbols, events, env vars, DB columns, or config fields introduced.
+- All three test files are pure test additions — no production code changed.
+- `checkStaffSession()` in `tracer-auth.ts` — pre-existing production function. Tests exercise the real function; mock applied only at the `createServerClient` boundary (Rule Q compliant).
+- `middleware.ts` admin gate — pre-existing production function. Tests exercise the real `checkAdminSession` path.
+- `SignInForm.tsx` — pre-existing component. Tests exercise via `render()` + `userEvent` (no mock of the component itself).
+- WIRING AUDIT: CLEAN. No new wires — tests are consumers of existing production symbols only.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P3, OBSERVATION) — Format check CI gate listed as "real GREEN" in STATUS.md but is pre-existing-red on main.** Confirmed: commit `59ac6b5` (the commit immediately preceding PR #316's merge) already had Format check FAILING in CI. PR #316 did NOT introduce the failure. STATUS.md incorrectly classified Format check as a real green gate. FOLLOW-337 filed to fix the pre-existing prettier violation and update STATUS.md.
+- No functional logic gaps found. Auth paths are tested correctly. The `@vitest-environment node` fix addresses a Node.js/jsdom incompatibility in Next.js `NextResponse` — this is a pattern that should be applied to any future middleware tests (see TG-1 below).
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+None. The three test suites correctly exercise the production auth paths. Mock boundaries are at the Supabase client layer (Rule Q: test the real function, mock the dependency, not the function under test).
+
+#### 4b. Code bugs not caught
+
+None. All three auth paths function correctly in production (confirmed by admin.estalara.com being accessible with sign-in working since FOLLOW-326 merged). Tests add regression safety, not correctness fixes.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, carry-forward) — `@vitest-environment node` pattern should be documented as a convention for all Next.js middleware tests.** The `middleware.test.ts` fix (E119 resolution) is the second time in this sprint that environment configuration was needed for a Next.js server-side test file (`route-driven-pglite.test.ts` used the same pattern). Pattern count: 2. Below threshold for Rule promotion (requires ≥2 independent retros). Will count at next retro if seen again.
+- **TG-2 (P2, OPEN — FOLLOW-332) — `admin/layout.test.tsx` and `admin/page.test.tsx` still not written.** The single-tenant admin shell (FOLLOW-327 / PR #312) shipped with zero tests on the changed files. FOLLOW-332 is READY and will be delegated next. Not re-filed here.
+
+### 5. Cascading impact
+
+- No cascading impact. This PR adds tests only; no production code changed.
+- The three test files cover the ONLY untested production auth gate in the admin system (`checkStaffSession`). All other admin auth paths (Bearer + legacy JWT) were already covered by the existing 5 `tracer-auth.test.ts` tests.
+- **FOLLOW-332 (admin shell tests)** — still READY. The admin auth layer is now tested; the admin nav shell is not. These are independent concerns.
+
+### 6. New lesson candidates
+
+- **Pattern: "Next.js middleware tests MUST use `@vitest-environment node` to avoid jsdom `Headers` instanceof incompatibility (E119 error from `NextResponse.next()`)."** — seen in: RETRO-088 (this, `middleware.test.ts`). Count: 1. Below threshold. If seen in a second independent retro, promote to CONVENTIONS_PATCH.md.
+- **Pattern: "STATUS.md CI gate classification can drift — a gate listed as 'real GREEN' may be pre-existing-red on main; always verify against a pre-merge commit before attributing a CI failure to a new PR."** — seen in: RETRO-088 (Format check). Count: 1. Below threshold.
+
+### 7. Follow-ups
+
+- **FOLLOW-337 (OPEN, P3, devops-engineer)** — Fix pre-existing Format check CI failure and update STATUS.md gate classification. Filed 2026-06-18.
+- **FOLLOW-332 (READY, P2, qa-engineer)** — `admin/layout.test.tsx` + `admin/page.test.tsx`. Waiting for delegation.
+- **FOLLOW-331 (IN_PROGRESS, P2, sdk-engineer)** — `DEFAULT_INTENT_WEIGHTS` drift guard + docstring fix. Delegating now.
+- **FOLLOW-335 (READY, P2, sdk-engineer)** — `detect-bundle.ts` `globalThis.__EStalaraDetect` unit test.
+
+### 8. Cross-references
+
+- **RETRO-083 (FOLLOW-326 / PRs #309/#310/#311):** The source retro. Filed TG-1/TG-2 (checkStaffSession + middleware admin gate untested). This retro closes both.
+- **FOLLOW-326:** The DONE ticket that introduced the untested auth paths.
+- **FOLLOW-332:** Remaining test coverage gap (admin nav shell, single-tenant layout).
+- **FOLLOW-337:** Format check pre-existing-red documentation fix.

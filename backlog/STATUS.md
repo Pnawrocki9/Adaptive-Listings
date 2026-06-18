@@ -1,4 +1,4 @@
-# Status — 2026-06-17T18:00Z
+# Status — 2026-06-18T05:30Z
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
@@ -108,6 +108,7 @@ partial-personalization risk for TICKET-PILOT-001.
 | RETRO-075 | FOLLOW-305                       | #291      | COMPLETE                                                             | FOLLOW-306 filed (P3 hygiene); Rule X PROMOTED (count=2)                                          |
 | RETRO-076 | FOLLOW-266 Ph2 seed + FOLLOW-302 | #293      | COMPLETE                                                             | FOLLOW-307 filed; OG-1 no-auto-Postgres-apply fact; FOLLOW-302 CLOSED; NO new Rule (count=1)      |
 | RETRO-087 | FOLLOW-325                       | #315      | DONE (2026-06-17) — no new stubs (FOLLOW-331/332/335 cover it)       | DETECT_SERVE_URL companion wire closed; LG-1 detect-bundle.ts → FOLLOW-335 still open             |
+| RETRO-088 | FOLLOW-336                       | #316      | DONE (2026-06-18) — FOLLOW-337 filed (Format gate pre-existing-red)  | checkStaffSession + middleware + SignInForm auth tests. Format pre-existing-red confirmed.        |
 
 **ALL Wave-2 retros complete: RETRO-062/063/064/067/068/069 DONE 2026-06-17.** **RETRO-087
 (FOLLOW-325 / PR #315) DONE 2026-06-17.**
@@ -138,6 +139,11 @@ DETECT_SERVE_URL wired: producer packages/shared/src/domains.ts:73, non-test con
 DetectionPreview.tsx:183. RETRO-087 DONE 2026-06-17 — no new stubs (FOLLOW-331/332/335 cover
 residuals).
 
+**FOLLOW-336 DONE** (PR #316, merged 1626013 2026-06-18T04:41:38Z). checkStaffSession + middleware +
+SignInForm auth tests. CI check counter: 1/5, fix iter 1/3. Format check FAILING on PR #316 CI —
+confirmed PRE-EXISTING-RED (commit 59ac6b5 preceding this PR also had Format check FAILING). Not a
+regression. RETRO-088 PENDING SPAWN.
+
 **FOLLOW-326 DONE** (PRs #309/#310/#311). admin.estalara.com sign-in + Supabase SSR. RETRO-083 DONE.
 
 **FOLLOW-327 DONE** (PR #312). Single-tenant nav + DEFAULT_INTENT_WEIGHTS. RETRO-084 DONE.
@@ -152,11 +158,15 @@ residuals).
 
 **Pending retro spawns: NONE.** All retros through RETRO-087 complete.
 
-**New READY tickets promoted (Sprint 18 P2, 2026-06-17):**
+**New READY tickets promoted (Sprint 18 P2, 2026-06-17/18):**
 
-- FOLLOW-336 (READY): checkStaffSession + middleware + SignInForm tests (qa-engineer, 3h)
-- FOLLOW-331 (READY): DEFAULT_INTENT_WEIGHTS drift guard + docstring fix (sdk-engineer, 3h)
+- FOLLOW-336 (DONE): checkStaffSession + middleware + SignInForm tests (qa-engineer, 3h) — PR #316
+- FOLLOW-331 (IN_PROGRESS): DEFAULT_INTENT_WEIGHTS drift guard + docstring fix (sdk-engineer, 3h)
 - FOLLOW-332 (READY): admin/layout.test.tsx + admin/page.test.tsx (qa-engineer, 2h)
+- FOLLOW-335 (READY): detect-bundle.ts globalThis.\_\_EStalaraDetect unit test (sdk-engineer, 1h)
+- FOLLOW-337 (STUB): Fix pre-existing Format check failure on main (devops-engineer, P3) — confirmed
+  pre-existing-red on commit 59ac6b5 and all subsequent; Format gate listed as real in prior
+  STATUS.md but is actually broken on main; needs prettier config audit + CI fix.
 
 ## ESCALATION STATUS
 
@@ -165,22 +175,25 @@ then Rafal deploys). ESC-021/022/023/024 all RESOLVED. No new open escalations.
 
 ## CI Gates — All Real Gates GREEN on main (verified 2026-06-17)
 
-Real gates: Build, Build (control-plane), Typecheck, Lint, Format, Test (Node 22), SDK E2E, Rule H,
-Rule J, ClickHouse migrations smoke, Corpus gate, Tracer query CI guard, Demo integration, K.3.6
-live smoke, Gitleaks, Migration journal monotonicity — all GREEN. Python tests (adaptation-engine,
-auto-detect): pre-existing FAILURE, NON-BLOCKING per CI landscape. Rule I: pre-existing FAILURE,
-NON-BLOCKING (90 FOLLOW-090).
+Real gates (GREEN on main): Build, Build (control-plane), Typecheck, Lint, Test (Node 22), SDK E2E,
+Rule H, Rule J, ClickHouse migrations smoke, Corpus gate, Tracer query CI guard, Demo integration,
+K.3.6 live smoke, Gitleaks, Migration journal monotonicity. Pre-existing FAILURE / NON-BLOCKING:
+Format check (confirmed pre-existing-red — commit 59ac6b5 and all subsequent commits incl. PR #316
+show Format check FAIL; NOT introduced by any recent PR), Python tests (adaptation-engine,
+auto-detect, archetype-pipeline, data-quality, intent-engine, llm-gateway, stream-consumer), Rule I
+(FOLLOW-090). FOLLOW-337 stub filed to track Format fix.
 
-## CI CHECK COUNTER (current sprint — FOLLOW-336 IN_PROGRESS)
+## CI CHECK COUNTER (current sprint)
 
-| Ticket     | CI checks | Fix iterations |
-| ---------- | --------- | -------------- |
-| FOLLOW-325 | 1/5       | 0/3            |
-| FOLLOW-336 | 0/5       | 0/3            |
+| Ticket     | CI checks | Fix iterations | Status                     |
+| ---------- | --------- | -------------- | -------------------------- |
+| FOLLOW-325 | 1/5       | 0/3            | DONE (PR #315, 2026-06-17) |
+| FOLLOW-336 | 1/5       | 1/3            | DONE (PR #316, 2026-06-18) |
+| FOLLOW-331 | 0/5       | 0/3            | IN_PROGRESS (sdk-engineer) |
 
-FOLLOW-325: DONE (PR #315 merged 43ad849 2026-06-17). CI green. RETRO-087 complete. FOLLOW-336:
-IN_PROGRESS — delegated to qa-engineer 2026-06-17T20:00Z. Branch:
-qa-engineer/FOLLOW-336-admin-auth-tests.
+FOLLOW-336: DONE — PR #316 merged 1626013 2026-06-18T04:41:38Z. RETRO-088 DONE 2026-06-18.
+FOLLOW-331: IN_PROGRESS — delegated to sdk-engineer 2026-06-18T06:00Z. Branch:
+sdk-engineer/FOLLOW-331-intent-weights-drift-guard.
 
 ## Pending Retro Spawns (ALL COMPLETE as of 2026-06-17)
 
@@ -249,4 +262,5 @@ producer packages/shared/src/domains.ts:73, consumer DetectionPreview.tsx:183. N
 FOLLOW-331/332/335 cover residuals. detect-bundle.ts global bridge untested pattern count=2
 (RETRO-082+087) but deferred: wait for FOLLOW-335 to land before promoting Rule.
 
-ALL RETROS THROUGH RETRO-087 COMPLETE (2026-06-17). Next: delegate FOLLOW-336 to qa-engineer.
+ALL RETROS THROUGH RETRO-088 COMPLETE (2026-06-18). FOLLOW-337 filed (Format gate pre-existing-red).
+Next: delegate FOLLOW-331 to sdk-engineer.

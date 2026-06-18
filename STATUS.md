@@ -1,6 +1,6 @@
 # PM Orchestrator Status
 
-**Last updated:** 2026-06-15T00:00Z
+**Last updated:** 2026-06-18T10:30Z
 
 ## OPERATIONAL RECORD — Prod Supabase 14-migration drift catch-up (2026-06-14)
 
@@ -40,18 +40,32 @@ unblock FOLLOW-308 implementation.
 
 ## Current sprints
 
-- **Sprint 17 OPEN** — K.3.6 D-1 PRODUCTION-LIVE as of 2026-06-14 (FOLLOW-307 DONE). 21 DONE, 0
-  READY, 1 BLOCKED (FOLLOW-293 — now UNBLOCKED, pending qa delegation), backlog:
-  FOLLOW-295/296/298/300/303/304/306 + pre-existing FOLLOW-282/290/291/292. FOLLOW-269 +
-  FOLLOW-309/310/311/312 DONE (PR #298 + #299, 2026-06-14).
-- **Sprint 18 OPEN** — FOLLOW-316 DONE. FOLLOW-317 + FOLLOW-318 stubs pending promotion.
+- **Sprint 18 OPEN** — FOLLOW-331 READY_FOR_REVIEW (PR #317, PM-validated 2026-06-18T10:30Z, CI
+  green on all real gates). FOLLOW-332 IN_PROGRESS (qa-engineer, delegated 2026-06-18T10:30Z).
+  FOLLOW-335 READY (sdk-engineer). FOLLOW-336 DONE (PR #316, merged 2026-06-18).
+- **Sprint 17 OPEN** — K.3.6 D-1 PRODUCTION-LIVE as of 2026-06-14 (FOLLOW-307 DONE). 21 DONE.
 - **Sprint 16 COMPLETE** — 16/17 DONE; FOLLOW-191 READY_FOR_REVIEW (ESC-020 pending Rafal deploy,
   non-blocking per CEO 2026-06-10).
 - **Sprint 15 COMPLETE** — 21/21 DONE.
 
-## IN_PROGRESS tickets (0/3 max)
+## IN_PROGRESS tickets (1/3 max)
 
-None active — retro spawns queued (RETRO-064 / RETRO-067 / RETRO-068 / retro for PR #299).
+- FOLLOW-332 — qa-engineer — Add admin/layout.test.tsx + admin/page.test.tsx — started
+  2026-06-18T10:30Z — CI check counter: 0/5, fix iterations 0/3
+- FOLLOW-331 — sdk-engineer — READY_FOR_REVIEW (PR #317) — CI check counter: 1/5, fix iterations 0/3
+
+## OPEN escalations
+
+- ESC-020 — Estalara-app DOM hooks not deployed to production — filed 2026-06-06 — NON-BLOCKING per
+  CEO 2026-06-10, pipeline unblocked — age: 12 days
+
+## Pre-existing-red CI checks (non-blocking)
+
+- `Format check`: fails on `.claude/agents/backend-engineer/lessons.md` — pre-existing on main since
+  at least commit 1626013 (FOLLOW-336 merge, 2026-06-18). Confirmed NOT introduced by FOLLOW-336 or
+  FOLLOW-331.
+- `Rule I — wired-or-dead check`: 107+ violations at baseline (FOLLOW-090 tracking).
+- `Test (Python) (3.12, *)`: all Python modal app tests fail at dependency install (pre-existing).
 
 ## ADR-0012 D-1 chain — complete dependency tree (as of 2026-06-14T10:00Z)
 

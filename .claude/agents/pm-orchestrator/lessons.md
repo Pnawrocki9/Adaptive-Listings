@@ -812,3 +812,19 @@ never committed to branch when PM validated — caught before any PR was opened.
 delegation/validation rule I'd add:** When Next.js middleware tests use
 NextResponse.next({request}), the request MUST have headers constructed as new Headers() not a plain
 object — add this as a pattern note to the qa-engineer agent file.
+
+---
+
+**Date / ticket:** 2026-06-18 — FOLLOW-332 (qa-engineer/FOLLOW-332-admin-layout-page-tests, PR #318)
+**Delegation row used:** Row 6: E2E/integration/load/a11y tests, fixtures, golden harness →
+qa-engineer. **What validation caught (or missed):** Step 5c confirmed this is a test-only PR — no
+new exported symbols. Runtime wiring verified by confirming tests import from the REAL production
+module (PILOT_TENANT_ID from @/lib/pilot-tenant, not hand-authored). Prior fix iteration (1/3
+consumed) caught spurious expect(digest).not.toContain('/tenants/') which failed because the
+legitimate redirect path /admin/tenants/<uuid>/tracer contains '/tenants/'; qa-engineer correctly
+replaced it with expect(path).not.toBe('/admin/tenants'). SDK E2E was the slowest gate (~20 min);
+poll patiently before concluding CI is stuck. **A delegation/validation rule I'd add:** For
+test-only PRs testing a redirect path that contains a multi-tenant path segment, always verify that
+negative assertions exclude the scoped path (e.g., /admin/tenants/<uuid>/tracer) and only assert
+against the bare unscoped route (e.g., /admin/tenants) — a negative toContain('/tenants/') on a path
+that legitimately contains '/tenants/' will always fail.

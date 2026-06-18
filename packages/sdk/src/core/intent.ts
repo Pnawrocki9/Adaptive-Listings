@@ -158,8 +158,13 @@ export interface IntentState {
  *   5 special archetypes  × 0.03 = 0.15
  *   neutral                       = 0.37 (default before signals)
  *   Total                         = 1.00
+ *
+ * Exported for the cross-package drift gate in
+ * `packages/sdk/src/__tests__/intent-weights-drift.test.ts` (FOLLOW-331).
+ * Runtime behavior is unchanged — this constant remains the SDK's SoT.
+ * Do NOT mutate; treat as readonly.
  */
-const BASE_PRIOR: ArchetypeProbabilities = {
+export const BASE_PRIOR: ArchetypeProbabilities = {
   // Investors (each 0.04)
   yield_hunter: 0.04,
   vacation_rental_investor: 0.04,
@@ -516,8 +521,15 @@ export const CHAT_INTENT_LIKELIHOODS: Record<string, ArchetypeProbabilities> = {
   }),
 };
 
-/** How much to dampen behavioral likelihoods relative to quiz likelihoods. */
-const BEHAVIORAL_DAMPING = 0.3;
+/**
+ * Damping scalar applied to behavioral likelihoods before the multiplicative
+ * Bayesian update.  Value 0.3 = 30% of the raw likelihood signal is used.
+ *
+ * Exported for the cross-package drift gate in
+ * `packages/sdk/src/__tests__/intent-weights-drift.test.ts` (FOLLOW-331).
+ * Runtime behavior is unchanged.
+ */
+export const BEHAVIORAL_DAMPING = 0.3;
 
 // ─── Server-supplied weight overrides (ADR-0012 Ticket C, FOLLOW-268-sdk) ────
 

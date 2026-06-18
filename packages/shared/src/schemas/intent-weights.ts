@@ -153,8 +153,10 @@ export type IntentWeights = z.infer<typeof IntentWeightsSchema>;
  *     therefore clears any operator overrides back to SDK defaults.
  *
  * The SDK's `BASE_PRIOR` remains the runtime source of truth for the SDK itself; this
- * constant restates it for the admin contract. `intent-weights.test.ts` asserts the
- * two agree (sum-to-1 + key coverage) so drift is caught in CI.
+ * constant restates it for the admin contract. The cross-package drift guard
+ * (`packages/sdk/src/__tests__/intent-weights-drift.test.ts`, FOLLOW-331) imports
+ * BOTH this constant and the SDK's exported `BASE_PRIOR`/`BEHAVIORAL_DAMPING` and
+ * asserts full equality — so any divergence is caught in CI.
  */
 export const DEFAULT_INTENT_WEIGHTS: IntentWeights = {
   behavioral_damping: 0.3,

@@ -5117,15 +5117,16 @@ pending planning.**
 
 - id: FOLLOW-331 title: > Add a real cross-package drift guard for DEFAULT_INTENT_WEIGHTS vs SDK
   BASE_PRIOR/BEHAVIORAL_DAMPING, and fix the docstring claiming a CI guard that does not exist
-  (RETRO-084 LG-1 + DG-1) agent: sdk-engineer co_agent: backend-engineer status: IN_PROGRESS
+  (RETRO-084 LG-1 + DG-1) agent: sdk-engineer co_agent: backend-engineer status: READY_FOR_REVIEW
   priority: P2 estimated_hours: 3 depends_on: [FOLLOW-327] source: RETRO-084 (FOLLOW-327 / PR #312)
   — intent-weights-drift.test.ts referenced in docstring but never created spec:
   backlog/FOLLOW_UPS.md (FOLLOW-331 stub) branch: sdk-engineer/FOLLOW-331-intent-weights-drift-guard
   assigned_to: sdk-engineer started_at: '2026-06-18T06:00Z' promoted_at: '2026-06-17T20:00Z' notes:
-  | Promoted 2026-06-17. IN_PROGRESS: delegated to sdk-engineer 2026-06-18T06:00Z.
-  DEFAULT_INTENT_WEIGHTS in @estalara/shared must sum to 1.0 and match SDK BASE_PRIOR /
-  BEHAVIORAL_DAMPING constants. Docstring claims CI guard but no file exists. Sprint 18 P2
-  correctness guard. CI check counter: 0/5, fix iterations: 0/3.
+  | Promoted 2026-06-17. IN_PROGRESS: delegated to sdk-engineer 2026-06-18T06:00Z. READY_FOR_REVIEW
+  2026-06-18: BASE_PRIOR + BEHAVIORAL_DAMPING exported from intent.ts; drift test created at
+  packages/sdk/src/**tests**/intent-weights-drift.test.ts (9 tests pass); false docstring in
+  intent-weights.ts fixed. 55 SDK test files / 1392 tests pass; typecheck clean; prettier clean;
+  Rule H/J/I pass for new exports. PR opened. CI check counter: 0/5, fix iterations: 0/3.
 
 - id: FOLLOW-332 title: > Add admin/layout.test.tsx + admin/page.test.tsx for single-tenant nav +
   landing redirect (RETRO-084 TG-1 + TG-2) agent: qa-engineer status: READY priority: P2
@@ -5137,13 +5138,14 @@ pending planning.**
 
 ## Currently in flight
 
-**1 ticket IN_PROGRESS as of 2026-06-18T06:00Z: FOLLOW-331 (sdk-engineer). 0 READY_FOR_REVIEW.**
-FOLLOW-336 DONE (PR #316, merged 1626013 2026-06-18T04:41:38Z). RETRO-088 DONE 2026-06-18.
-FOLLOW-337 stub filed (Format gate pre-existing-red documentation fix). All Sprint 18 PRs done:
+**0 tickets IN_PROGRESS as of 2026-06-18. 1 READY_FOR_REVIEW: FOLLOW-331.** FOLLOW-336 DONE (PR
+#316, merged 1626013 2026-06-18T04:41:38Z). RETRO-088 DONE 2026-06-18. FOLLOW-337 stub filed (Format
+gate pre-existing-red documentation fix). All Sprint 18 PRs done:
 FOLLOW-324/325/326/327/328/330/293/336. ESC-020 OPEN but non-blocking (CEO 2026-06-10).
-FOLLOW-332/335 READY (Sprint 18 P2). FOLLOW-331 IN_PROGRESS (sdk-engineer, branch
+FOLLOW-332/335 READY (Sprint 18 P2). FOLLOW-331 READY_FOR_REVIEW (sdk-engineer, branch
 sdk-engineer/FOLLOW-331-intent-weights-drift-guard, Sprint 18 P2 — DEFAULT_INTENT_WEIGHTS drift
-guard + docstring fix). CI check counter: FOLLOW-331 0/5, fix iterations 0/3.
+guard + docstring fix; 9 drift tests pass, typecheck clean). CI check counter: FOLLOW-331 0/5, fix
+iterations 0/3.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

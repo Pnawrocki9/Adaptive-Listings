@@ -1,4 +1,4 @@
-# Status — 2026-06-18T05:30Z
+# Status — 2026-06-18T18:50Z
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
@@ -185,11 +185,12 @@ auto-detect, archetype-pipeline, data-quality, intent-engine, llm-gateway, strea
 
 ## CI CHECK COUNTER (current sprint)
 
-| Ticket     | CI checks | Fix iterations | Status                     |
-| ---------- | --------- | -------------- | -------------------------- |
-| FOLLOW-325 | 1/5       | 0/3            | DONE (PR #315, 2026-06-17) |
-| FOLLOW-336 | 1/5       | 1/3            | DONE (PR #316, 2026-06-18) |
-| FOLLOW-331 | 0/5       | 0/3            | IN_PROGRESS (sdk-engineer) |
+| Ticket     | CI checks | Fix iterations | Status                                 |
+| ---------- | --------- | -------------- | -------------------------------------- |
+| FOLLOW-325 | 1/5       | 0/3            | DONE (PR #315, 2026-06-17)             |
+| FOLLOW-336 | 1/5       | 1/3            | DONE (PR #316, 2026-06-18)             |
+| FOLLOW-331 | 1/5       | 0/3            | READY_FOR_REVIEW (PR #317, 2026-06-18) |
+| FOLLOW-332 | 1/5       | 1/3            | READY_FOR_REVIEW (PR #318, 2026-06-18) |
 
 FOLLOW-336: DONE — PR #316 merged 1626013 2026-06-18T04:41:38Z. RETRO-088 DONE 2026-06-18.
 FOLLOW-331: IN_PROGRESS — delegated to sdk-engineer 2026-06-18T06:00Z. Branch:
@@ -263,4 +264,18 @@ FOLLOW-331/332/335 cover residuals. detect-bundle.ts global bridge untested patt
 (RETRO-082+087) but deferred: wait for FOLLOW-335 to land before promoting Rule.
 
 ALL RETROS THROUGH RETRO-088 COMPLETE (2026-06-18). FOLLOW-337 filed (Format gate pre-existing-red).
-Next: delegate FOLLOW-331 to sdk-engineer.
+
+## Sprint 18 current state (2026-06-18)
+
+- FOLLOW-331: READY_FOR_REVIEW (PR #317). CI check counter: 1/5, fix iterations: 0/3. All real gates
+  GREEN. Python-test failures pre-existing-red (confirmed on main). Format check + Rule I
+  pre-existing-red (documented).
+- FOLLOW-332: READY_FOR_REVIEW (PR #318). PM-validated 2026-06-18. CI check counter: 1/5, fix
+  iterations: 1/3 (1 fix: spurious /tenants/ assertion corrected to bare-list-route guard). All real
+  CI gates GREEN: Build, Build(control-plane), Test (Node 22), SDK E2E tests, Lint, Typecheck, Rule
+  H, Rule J, Auto-Detection corpus gate, ClickHouse migrations smoke, Cross-language event contract,
+  Demo integration, K.3.6 D-1 live smoke, Migration journal monotonicity, Tracer query CI guard,
+  Gitleaks, Doppler verify, Privacy Notice SDK key-sync, Vercel. Pre-existing-red non-blocking:
+  Format check, Rule I, Python tests. AC1+AC2+AC3 all met. 19/19 tests pass.
+- FOLLOW-335: READY (Sprint 18 P2, no agent assigned yet).
+- ESC-020: OPEN but non-blocking (CEO 2026-06-10 defer).

@@ -5135,25 +5135,33 @@ pending planning.**
   counter: 1/5, fix iterations: 0/3.
 
 - id: FOLLOW-332 title: > Add admin/layout.test.tsx + admin/page.test.tsx for single-tenant nav +
-  landing redirect (RETRO-084 TG-1 + TG-2) agent: qa-engineer status: IN_PROGRESS priority: P2
+  landing redirect (RETRO-084 TG-1 + TG-2) agent: qa-engineer status: READY_FOR_REVIEW priority: P2
   estimated_hours: 2 depends_on: [FOLLOW-327] source: RETRO-084 (FOLLOW-327 / PR #312) — admin shell
   change shipped with zero tests on changed files spec: backlog/FOLLOW_UPS.md (FOLLOW-332 stub)
   promoted_at: '2026-06-17T20:00Z' assigned_to: qa-engineer started_at: '2026-06-18T10:30Z' branch:
-  qa-engineer/FOLLOW-332-admin-layout-page-tests notes: | Promoted 2026-06-17. Admin layout.tsx
-  (single-tenant nav hiding) + app/admin/page.tsx (redirect to pilot tenant live monitor) shipped
-  with zero tests. Sprint 18 P2 test coverage. IN_PROGRESS: delegated to qa-engineer
-  2026-06-18T10:30Z.
+  qa-engineer/FOLLOW-332-admin-layout-page-tests pr: '#318' notes: | Promoted 2026-06-17. Admin
+  layout.tsx (single-tenant nav hiding) + app/admin/page.tsx (redirect to pilot tenant live monitor)
+  shipped with zero tests. Sprint 18 P2 test coverage. DONE by qa-engineer PR #318 (2026-06-18).
+  Fix: spurious expect(digest).not.toContain('/tenants/') assertion replaced with
+  expect(path).not.toBe('/admin/tenants') guard. 19/19 tests pass. PM-validated 2026-06-18: all real
+  CI gates GREEN (Build, Build(control-plane), Test Node 22, SDK E2E, Lint, Typecheck, Rule H, Rule
+  J, Auto-Detection corpus gate, ClickHouse migrations smoke, Cross-language event contract, Demo
+  integration, K.3.6 D-1 live smoke, Migration journal monotonicity, Tracer query CI guard,
+  Gitleaks, Doppler verify, Privacy Notice SDK key-sync, Vercel). Pre-existing-red (non-blocking,
+  confirmed on main): Format check, Rule I, Python tests. CI check counter: 1/5, fix iterations:
+  1/3. AC1 DONE (layout.test.tsx 11 tests), AC2 DONE (page.test.tsx 5 tests), AC3 DONE
+  (pilot-tenant.test.ts 3 tests). Runtime wiring: test-only PR, no new symbols. PILOT_TENANT_ID
+  producer pilot-tenant.ts:16, non-test consumers layout.tsx:28-29 + page.tsx:12.
 
 ## Currently in flight
 
-**1 ticket IN_PROGRESS as of 2026-06-18T10:30Z: FOLLOW-332. 1 READY_FOR_REVIEW: FOLLOW-331
-(PM-validated 2026-06-18T10:30Z — CI green on all real gates, PR #317 comment posted, wiring
-confirmed).** FOLLOW-336 DONE (PR #316, merged 1626013 2026-06-18T04:41:38Z). RETRO-088 DONE
-2026-06-18. FOLLOW-337 stub filed (Format gate pre-existing-red documentation fix). All Sprint 18
-PRs done: FOLLOW-324/325/326/327/328/330/293/336. ESC-020 OPEN but non-blocking (CEO 2026-06-10).
-FOLLOW-335 READY (Sprint 18 P2). FOLLOW-332 IN_PROGRESS (qa-engineer, branch
-qa-engineer/FOLLOW-332-admin-layout-page-tests, Sprint 18 P2, delegated 2026-06-18T10:30Z). CI check
-counter: FOLLOW-331 1/5, fix iterations 0/3. FOLLOW-332 0/5, fix iterations 0/3.
+**2 tickets READY_FOR_REVIEW as of 2026-06-18: FOLLOW-331 (PR #317, PM-validated 2026-06-18T10:30Z)
+and FOLLOW-332 (PR #318, PM-validated 2026-06-18). All real CI gates GREEN on both PRs.** FOLLOW-336
+DONE (PR #316, merged 1626013 2026-06-18T04:41:38Z). RETRO-088 DONE 2026-06-18. FOLLOW-337 stub
+filed (Format gate pre-existing-red documentation fix). All Sprint 18 PRs done:
+FOLLOW-324/325/326/327/328/330/293/336. ESC-020 OPEN but non-blocking (CEO 2026-06-10). FOLLOW-335
+READY (Sprint 18 P2). FOLLOW-332 READY_FOR_REVIEW (qa-engineer, PR #318, PM-validated 2026-06-18).
+CI check counter: FOLLOW-331 1/5, fix iterations 0/3. FOLLOW-332 1/5, fix iterations 1/3.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

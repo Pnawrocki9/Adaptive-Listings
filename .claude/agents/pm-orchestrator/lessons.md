@@ -797,3 +797,18 @@ QUEUE.md can lag behind GitHub state. **A delegation/validation rule I'd add:** 
 every loop, check gh pr view for all READY_FOR_REVIEW tickets to confirm they haven't already been
 merged — a merged PR with READY_FOR_REVIEW status in QUEUE.md is a stale record that blocks retro
 spawning.
+
+---
+
+**Date / ticket:** 2026-06-18 — FOLLOW-336 (qa-engineer/FOLLOW-336-admin-auth-tests) **Delegation
+row used:** Row 6: E2E/integration/load/a11y tests, fixtures, golden harness → qa-engineer. **What
+validation caught (or missed):** Local test run before PR was opened caught 5 failures + 3 lint
+errors: (1) ADMIN-1/2/3/5 in middleware.test.ts fail with Next.js E119 because the makeRequest
+helper passes a plain Record as headers to new NextRequest — NextResponse.next({request}) requires a
+native Headers instance; (2) SIGN-IN-1 in SignInForm.test.tsx fails because screen.getByRole("form")
+throws when the <form> element has no role attribute; (3) three lint errors (unnecessary ??, 2x
+async-without-await) in SignInForm.test.tsx. SSR-1..4 in tracer-auth.test.ts all passed. Work was
+never committed to branch when PM validated — caught before any PR was opened. **A
+delegation/validation rule I'd add:** When Next.js middleware tests use
+NextResponse.next({request}), the request MUST have headers constructed as new Headers() not a plain
+object — add this as a pattern note to the qa-engineer agent file.

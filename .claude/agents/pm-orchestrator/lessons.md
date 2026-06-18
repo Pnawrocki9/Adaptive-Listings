@@ -841,3 +841,18 @@ test-only PRs testing a redirect path that contains a multi-tenant path segment,
 negative assertions exclude the scoped path (e.g., /admin/tenants/<uuid>/tracer) and only assert
 against the bare unscoped route (e.g., /admin/tenants) — a negative toContain('/tenants/') on a path
 that legitimately contains '/tenants/' will always fail.
+
+---
+
+**Date / ticket:** 2026-06-18 — Repo reconcile (FOLLOW-331/332 bookkeeping squash onto origin/main)
+**Delegation row used:** N/A — PM self-operation (git reconcile, no worker delegated this session).
+**What validation caught (or missed):** Step 5c not applicable (no new code symbols — pure
+bookkeeping). The squash-merge correctly surfaced that origin/main's STATUS.md had FOLLOW-332 still
+as READY_FOR_REVIEW (older snapshot) while local main had it DONE; union resolution kept local
+main's superset. Critical correction applied: FOLLOW-335 was marked IN_PROGRESS in local main but
+was never actually delegated — corrected to READY before the push. All 5 post-push verifications
+passed (FOLLOW-332 code file present, 331/332 DONE + 335 READY, Rule Y count=4, 0 conflict markers,
+RETRO-089/090 present). **A delegation/validation rule I'd add:** Before any reconcile-branch
+squash-merge, explicitly list every ticket whose status might differ between local and origin —
+IN_PROGRESS tickets are the highest-risk mismatch because a PM run may have set IN_PROGRESS locally
+without actually delegating.

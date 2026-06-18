@@ -844,6 +844,21 @@ that legitimately contains '/tenants/' will always fail.
 
 ---
 
+**Date / ticket:** 2026-06-18 — FOLLOW-335 (PR #319 validation + READY_FOR_REVIEW) **Delegation row
+used:** client SDK, Shadow DOM, tiers, browser code → sdk-engineer. **What validation caught (or
+missed):** Step 5c (runtime-wiring verification) correctly identified this as test-only — no new
+exported production symbols, therefore no producer/consumer grep required. Rule I failure on PR #319
+confirmed pre-existing-red by diffing against main (main CI run 27789146936 has same Rule I FAIL).
+Two duplicate CI runs (push + PR event) produced identical results; authoritative run (27789494111)
+completed all gates GREEN; the second run's SDK E2E lagged but also passed. ACs verified by reading
+the actual test file from the PR branch (4 tests covering: global defined, detectSiteSchema
+callable, extractArchetypeHints callable, global absent before import). **A delegation/validation
+rule I'd add:** When two duplicate CI runs exist for the same PR commit, use `gh run view <id>` on
+the authoritative PR-triggered run for the non-success count rather than waiting for the slower
+push-triggered run to also complete — both run the same code.
+
+---
+
 **Date / ticket:** 2026-06-18 — Repo reconcile (FOLLOW-331/332 bookkeeping squash onto origin/main)
 **Delegation row used:** N/A — PM self-operation (git reconcile, no worker delegated this session).
 **What validation caught (or missed):** Step 5c not applicable (no new code symbols — pure

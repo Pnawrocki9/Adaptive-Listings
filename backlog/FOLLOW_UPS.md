@@ -9214,7 +9214,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ## FOLLOW-335 — Add unit test for `detect-bundle.ts` asserting `globalThis.__EStalaraDetect` is set correctly (RETRO-082 TG-1)
 
-- **status:** OPEN
+- **status:** READY_FOR_REVIEW (PR #319, 2026-06-18T21:40Z)
 - **source_retro:** RETRO-082
 - **source_ticket:** FOLLOW-324 (PR #308)
 - **recommended_sprint:** 18+
@@ -9230,16 +9230,20 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   up the global in `beforeEach`), but not the PRODUCER side (that `detect-bundle.ts` correctly
   assigns the global).
 - **ac:**
-  - [ ] AC1: A test imports `detect-bundle.ts` (or its built output) in a jsdom/Node environment and
+  - [x] AC1: A test imports `detect-bundle.ts` (or its built output) in a jsdom/Node environment and
         asserts `globalThis.__EStalaraDetect` is defined and has both `detectSiteSchema` and
-        `extractArchetypeHints` as functions.
-  - [ ] AC2: The test is co-located with `detect-bundle.ts` or in `packages/sdk/src/__tests__/`.
-  - [ ] AC3: `pnpm typecheck` + `pnpm test` green after changes.
-- **notes:** TG-1 from RETRO-082. The companion IIFE entry is a new production artifact; the global
-  assignment is the critical contract between the two IIFEs. A regression where `detect-bundle.ts`
-  exports an empty object or assigns to a different global name would silently break cold-start
-  archetype hints for all tenants. P2 severity.
-- **promoted_to_queue:** false
+        `extractArchetypeHints` as functions. DONE — 4 tests in detect-bundle.test.ts assert global
+        defined, detectSiteSchema callable, extractArchetypeHints callable, and global absent before
+        import (isolation guard).
+  - [x] AC2: The test is co-located with `detect-bundle.ts` or in `packages/sdk/src/__tests__/`.
+        DONE — `packages/sdk/src/auto-detect/__tests__/detect-bundle.test.ts` (same dir as sibling
+        tests archetype-hints.test.ts, pipeline.test.ts).
+  - [x] AC3: `pnpm typecheck` + `pnpm test` green after changes. DONE — 1396 tests pass (up from
+        1392), typecheck clean, CI Test (Node 22) GREEN, SDK E2E GREEN.
+- **notes:** TG-1 from RETRO-082. PM-validated 2026-06-18T21:40Z. CI green (all real gates).
+  Test-only PR — no new production symbols, no producer/consumer wiring required. RETRO-091 pending
+  after merge.
+- **promoted_to_queue:** true
 
 ---
 

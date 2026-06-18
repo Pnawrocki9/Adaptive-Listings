@@ -1,4 +1,4 @@
-# Status — 2026-06-18T18:55Z (reconcile pass — FOLLOW-331/332 DONE, FOLLOW-335 READY)
+# Status — 2026-06-18T21:40Z (PM validation pass — FOLLOW-335 READY_FOR_REVIEW, PR #319)
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
@@ -171,8 +171,9 @@ regression. RETRO-088 DONE 2026-06-18.
 - FOLLOW-336 (DONE): checkStaffSession + middleware + SignInForm tests (qa-engineer, 3h) — PR #316
 - FOLLOW-331 (DONE): DEFAULT_INTENT_WEIGHTS drift guard + docstring fix (sdk-engineer, 3h) — PR #317
 - FOLLOW-332 (DONE): admin/layout.test.tsx + admin/page.test.tsx (qa-engineer, 2h) — PR #318
-- FOLLOW-335 (READY): detect-bundle.ts globalThis.\_\_EStalaraDetect unit test (sdk-engineer, 1h) —
-  NEXT (not yet delegated — correction applied in reconcile pass 2026-06-18)
+- FOLLOW-335 (READY_FOR_REVIEW): detect-bundle.ts globalThis.\_\_EStalaraDetect unit test
+  (sdk-engineer, 1h) — PR #319 opened. PM-validated 2026-06-18T21:40Z. All real CI gates GREEN.
+  Test-only PR, ACs verified, RETRO-091 pending spawn after merge.
 - FOLLOW-337 (STUB): Fix pre-existing Format check failure on main (devops-engineer, P3) — confirmed
   pre-existing-red on commit 59ac6b5 and all subsequent; needs prettier config audit + CI fix.
 - FOLLOW-338 (STUB): Fix re-introduced mis-pointing drift-guard docstring + reconcile migration-0030
@@ -197,18 +198,18 @@ auto-detect, archetype-pipeline, data-quality, intent-engine, llm-gateway, strea
 
 ## CI CHECK COUNTER (current sprint)
 
-| Ticket     | CI checks | Fix iterations | Status                     |
-| ---------- | --------- | -------------- | -------------------------- |
-| FOLLOW-325 | 1/5       | 0/3            | DONE (PR #315, 2026-06-17) |
-| FOLLOW-336 | 1/5       | 1/3            | DONE (PR #316, 2026-06-18) |
-| FOLLOW-331 | 1/5       | 0/3            | DONE (PR #317, fedfeb0)    |
-| FOLLOW-332 | 0/5       | 0/3            | DONE (PR #318, fb9d201)    |
-| FOLLOW-335 | 0/5       | 0/3            | READY — not yet delegated  |
+| Ticket     | CI checks | Fix iterations | Status                                 |
+| ---------- | --------- | -------------- | -------------------------------------- |
+| FOLLOW-325 | 1/5       | 0/3            | DONE (PR #315, 2026-06-17)             |
+| FOLLOW-336 | 1/5       | 1/3            | DONE (PR #316, 2026-06-18)             |
+| FOLLOW-331 | 1/5       | 0/3            | DONE (PR #317, fedfeb0)                |
+| FOLLOW-332 | 0/5       | 0/3            | DONE (PR #318, fb9d201)                |
+| FOLLOW-335 | 1/5       | 0/3            | READY_FOR_REVIEW (PR #319, 2026-06-18) |
 
 FOLLOW-331: DONE — PR #317 merged to origin/main as fedfeb0. RETRO-089 pending spawn. FOLLOW-332:
-DONE — PR #318 merged to origin/main as fb9d201. RETRO-090 pending spawn. FOLLOW-335: READY —
-sdk-engineer, detect-bundle.ts globalThis.\_\_EStalaraDetect unit test. NOT yet delegated (prior
-IN_PROGRESS was erroneous — corrected in reconcile pass 2026-06-18).
+DONE — PR #318 merged to origin/main as fb9d201. RETRO-090 pending spawn. FOLLOW-335:
+READY_FOR_REVIEW — PR #319 opened by sdk-engineer. PM-validated 2026-06-18T21:40Z. CI green (all
+real gates). ACs met. RETRO-091 pending after merge.
 
 ## Pending Retro Spawns (ALL COMPLETE as of 2026-06-17)
 
@@ -280,4 +281,5 @@ FOLLOW-331/332/335 cover residuals. detect-bundle.ts global bridge untested patt
 RETROS THROUGH RETRO-090 RECORDED (2026-06-18 reconcile pass). RETRO-089 (FOLLOW-331 / PR #317) and
 RETRO-090 (FOLLOW-332 / PR #318) entries recorded in RETRO TRACKING table above. FOLLOW-337 filed
 (Format gate pre-existing-red). FOLLOW-338 + FOLLOW-339 stubs added (RETRO-089/090 findings). RULE Y
-promoted (CONVENTIONS_PATCH.md). Next action: delegate FOLLOW-335 to sdk-engineer.
+promoted (CONVENTIONS_PATCH.md). FOLLOW-335 PR #319 PM-validated 2026-06-18T21:40Z —
+READY_FOR_REVIEW. Next action: human merge PR #319, then spawn RETRO-091.

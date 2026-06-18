@@ -5148,29 +5148,27 @@ pending planning.**
   origin/main as fb9d201 (squash). admin/layout.test.tsx + admin/page.test.tsx +
   pilot-tenant.test.ts all added. RETRO-090 pending spawn.
 
-- id: FOLLOW-335 title: > Add unit test for detect-bundle.ts asserting globalThis.**EStalaraDetect
-  is set correctly (RETRO-082 TG-1) agent: sdk-engineer status: READY priority: P2 estimated_hours:
-  1 depends_on: [] source: RETRO-082 (FOLLOW-324 / PR #308) — companion IIFE producer has no unit
-  test spec: backlog/FOLLOW_UPS.md (FOLLOW-335 stub) branch:
-  sdk-engineer/FOLLOW-335-detect-bundle-global-test promoted_at: '2026-06-17T20:00Z' notes: |
-  Promoted 2026-06-17. detect-bundle.ts IIFE entry (PR #308) assigns globalThis.**EStalaraDetect but
-  has no producer-side unit test. Consumer side covered (SDK init tests set up global in
-  beforeEach). Need AC1: test in jsdom/Node env importing detect-bundle.ts asserts
-  \_\_EStalaraDetect is defined with detectSiteSchema + extractArchetypeHints as callable functions.
-  AC2: test co-located with detect-bundle.ts or in packages/sdk/src/**tests**/. AC3: pnpm typecheck
-  - pnpm test green. READY: not yet delegated (reconcile pass 2026-06-18 correction — prior
-    IN_PROGRESS was erroneous, ticket was never actually delegated).
+- id: FOLLOW-335 title: > Add unit test for detect-bundle.ts asserting globalThis.\*\*EStalaraDetect
+  is set correctly (RETRO-082 TG-1) agent: sdk-engineer status: READY_FOR_REVIEW priority: P2
+  estimated_hours: 1 depends_on: [] source: RETRO-082 (FOLLOW-324 / PR #308) — companion IIFE
+  producer has no unit test spec: backlog/FOLLOW_UPS.md (FOLLOW-335 stub) branch:
+  sdk-engineer/FOLLOW-335-detect-bundle-global-test promoted_at: '2026-06-17T20:00Z' pr: '#319'
+  ready_for_review_at: '2026-06-18T21:40Z' notes: | Promoted 2026-06-17. detect-bundle.ts IIFE entry
+  (PR #308) assigns globalThis.\_\_EStalaraDetect but had no producer-side unit test. Consumer side
+  covered (SDK init tests set up global in beforeEach). IN_PROGRESS: delegated to sdk-engineer
+  2026-06-18. READY_FOR_REVIEW: PR #319 opened. PM-validated 2026-06-18T21:40Z — CI green on all
+  real gates, ACs verified, test-only PR (no new production symbols, no producer/consumer wiring
+  required). CI check counter: 1/5, fix iter 0/3. RETRO-091 pending spawn after merge.
 
 ## Currently in flight
 
-**0 tickets IN_PROGRESS as of 2026-06-18 (reconcile pass). FOLLOW-331 DONE (PR #317 merged to
-origin/main as fedfeb0). FOLLOW-332 DONE (PR #318 merged to origin/main as fb9d201). RETRO-089
-pending spawn (FOLLOW-331 / PR #317). RETRO-090 pending spawn (FOLLOW-332 / PR #318).** FOLLOW-336
-DONE (PR #316, merged 1626013 2026-06-18T04:41:38Z). RETRO-088 DONE 2026-06-18. FOLLOW-337 stub
-filed (Format gate pre-existing-red documentation fix). All Sprint 18 PRs done:
-FOLLOW-324/325/326/327/328/330/293/336/331/332. ESC-020 OPEN but non-blocking (CEO 2026-06-10).
-FOLLOW-335 READY (Sprint 18 P2, sdk-engineer, 1h) — next ticket. CI check counter: FOLLOW-335 0/5,
-fix iterations 0/3.
+**0 tickets IN_PROGRESS as of 2026-06-18. FOLLOW-331 DONE (PR #317 merged fedfeb0). FOLLOW-332 DONE
+(PR #318 merged fb9d201). FOLLOW-335 READY_FOR_REVIEW (PR #319 — PM-validated 2026-06-18T21:40Z).
+RETRO-089 pending spawn (FOLLOW-331 / PR #317). RETRO-090 pending spawn (FOLLOW-332 / PR #318).**
+FOLLOW-336 DONE (PR #316, merged 1626013 2026-06-18T04:41:38Z). RETRO-088 DONE 2026-06-18.
+FOLLOW-337 stub filed (Format gate pre-existing-red documentation fix). All Sprint 18 PRs done:
+FOLLOW-324/325/326/327/328/330/293/336/331/332. ESC-020 OPEN but non-blocking (CEO 2026-06-10). CI
+check counter: FOLLOW-335 1/5, fix iterations 0/3.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

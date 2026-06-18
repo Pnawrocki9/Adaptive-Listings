@@ -1,5 +1,14 @@
 /**
- * Tests for src/middleware.ts — CORS injection for SDK-facing adapt routes.
+ * @vitest-environment node
+ *
+ * The `node` environment override is required because checkAdminSession calls
+ * NextResponse.next({ request: req }), which does `req.headers instanceof Headers`.
+ * In jsdom, the global `Headers` is shimmed, making the instanceof check fail even
+ * for a correctly-constructed NextRequest (Next.js E119). The middleware file has no
+ * DOM dependency; the node environment uses the native fetch Headers consistently.
+ *
+ * Tests for src/middleware.ts — CORS injection for SDK-facing adapt routes,
+ * and admin gate (checkAdminSession) via @supabase/ssr (FOLLOW-336, RETRO-083 TG-2).
  *
  * Covers the dev-only localhost CORS gating added for local E2E testing
  * (Estalara-app SvelteKit on :5173 calling control-plane on :3000).
@@ -16,13 +25,24 @@
  *   CORS-NON-ADAPT: GET /api/quiz/public-config is NOT matched by adapter prefix
  *                   (that route sets its own `*` CORS — middleware must not interfere)
  *
+ *   ADMIN-1: GET /admin/dashboard — staff session (estalara_staff: true, valid role) →
+ *            passes through (no redirect), X-Staff-Role header set
+ *   ADMIN-2: GET /admin/sessions — no Supabase session (getUser → null) →
+ *            redirect to /sign-in with redirect query param
+ *   ADMIN-3: GET /admin/sessions — non-staff user (estalara_staff absent) →
+ *            redirect to /sign-in
+ *   ADMIN-4: GET /sign-in → NOT caught by the admin gate → passes through (no redirect loop)
+ *   ADMIN-5: GET /admin/dashboard — Supabase env vars absent → redirect to /sign-in
+ *
  * Auth calls are mocked so the test does not require a live DB or JWT secret.
  */
 
 import { NextRequest } from 'next/server';
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
-// Mock @estalara/auth so the dashboard/admin branches don't need real JWTs.
+// ─── Mock @estalara/auth ───────────────────────────────────────────────────────
+// Keeps the dashboard/admin bearer-JWT branches from needing real JWTs.
+
 vi.mock('@estalara/auth', () => ({
   getAuthClaims: vi.fn().mockResolvedValue(null),
   isStaffClaims: vi.fn().mockReturnValue(false),
@@ -31,10 +51,24 @@ vi.mock('@estalara/auth', () => ({
   requireStaffRole: vi.fn(),
 }));
 
+// ─── Mock @supabase/ssr ────────────────────────────────────────────────────────
+// createServerClient is called by the REAL checkAdminSession inside middleware.
+// We expose mockGetUser so individual tests can control what getUser() resolves to.
+// The mock factory is hoisted (vi.mock calls are hoisted before imports).
+
+const mockGetUser = vi.fn();
+
+vi.mock('@supabase/ssr', () => ({
+  createServerClient: vi.fn().mockImplementation(() => ({
+    auth: { getUser: mockGetUser },
+  })),
+}));
+
 import { middleware } from './middleware.js';
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.clearAllMocks();
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -44,6 +78,18 @@ function makeRequest(pathname: string, method = 'GET', origin: string | null = n
   const headers: Record<string, string> = {};
   if (origin) headers.Origin = origin;
   return new NextRequest(url, { method, headers });
+}
+
+/**
+ * Build a NextRequest whose headers is a native Headers instance.
+ *
+ * checkAdminSession calls NextResponse.next({ request: req }) which requires
+ * req.headers to be a native Headers instance (Next.js E119). Tests that reach
+ * the admin gate must use this helper instead of makeRequest.
+ */
+function makeAdminRequest(pathname: string): NextRequest {
+  const url = `http://localhost:3000${pathname}`;
+  return new NextRequest(url, { method: 'GET', headers: new Headers() });
 }
 
 // ─── OPTIONS preflight tests ──────────────────────────────────────────────────
@@ -141,5 +187,120 @@ describe('CORS header injection — GET/POST to /api/adapt routes', () => {
     // Since the middleware calls NextResponse.next() without headers here, the
     // header on the _middleware_ response will be null (the route sets it separately).
     expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+});
+
+// ─── Admin gate tests (FOLLOW-336, RETRO-083 TG-2) ───────────────────────────
+//
+// These tests exercise the checkAdminSession branch of the REAL middleware function.
+// createServerClient from @supabase/ssr is mocked above; mockGetUser controls what
+// the SSR client returns. The REAL middleware reads the result — no logic is
+// re-implemented in the test (Rule Q guardrail).
+//
+// NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set for
+// checkAdminSession to proceed past its env guard; ADMIN-5 tests the absent-env path.
+
+describe('Admin gate — /admin/* routes via checkAdminSession (FOLLOW-336)', () => {
+  beforeEach(() => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://project.supabase.co');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'anon-key-test');
+  });
+
+  it('ADMIN-1: GET /admin/dashboard — staff session → passes through, X-Staff-Role header set', async () => {
+    // The value under test — estalara_staff: true + estalara_role — comes from the
+    // mocked createServerClient().auth.getUser() response, mirroring what Supabase
+    // returns for an active staff session. The REAL checkAdminSession reads it.
+    mockGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'staff-uuid',
+          app_metadata: {
+            estalara_staff: true,
+            estalara_role: 'estalara:ops',
+          },
+          user_metadata: {},
+          aud: 'authenticated',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      },
+      error: null,
+    });
+
+    const req = makeAdminRequest('/admin/dashboard');
+    const res = await middleware(req);
+
+    // A redirect would have status 307/308; NextResponse.next() has no redirect.
+    // The middleware returns the supabaseResponse which has no redirect URL set.
+    expect(res.headers.get('location')).toBeNull();
+    // Role must be surfaced as a response header (middleware.ts line 215).
+    expect(res.headers.get('X-Staff-Role')).toBe('estalara:ops');
+  });
+
+  it('ADMIN-2: GET /admin/sessions — no Supabase session (getUser → null user) → redirect to /sign-in', async () => {
+    // No active session — checkAdminSession returns { authorized: false }.
+    // The REAL middleware calls loginRedirect() → NextResponse.redirect to /sign-in.
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+
+    const req = makeAdminRequest('/admin/sessions');
+    const res = await middleware(req);
+
+    // A redirect response has a location header.
+    const location = res.headers.get('location');
+    expect(location).not.toBeNull();
+    expect(location).toContain('/sign-in');
+    // The redirect should carry the original path as a ?redirect= param so the
+    // sign-in page can send the user back.
+    expect(location).toContain('redirect=%2Fadmin%2Fsessions');
+  });
+
+  it('ADMIN-3: GET /admin/sessions — non-staff user (estalara_staff: false) → redirect to /sign-in', async () => {
+    // A valid Supabase session exists but the user is not Estalara staff.
+    // checkAdminSession returns { authorized: false } → loginRedirect.
+    mockGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'tenant-uuid',
+          app_metadata: { provider: 'email' },
+          user_metadata: {},
+          aud: 'authenticated',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      },
+      error: null,
+    });
+
+    const req = makeAdminRequest('/admin/sessions');
+    const res = await middleware(req);
+
+    const location = res.headers.get('location');
+    expect(location).not.toBeNull();
+    expect(location).toContain('/sign-in');
+  });
+
+  it('ADMIN-4: GET /sign-in → NOT caught by admin gate → passes through (no redirect loop)', async () => {
+    // /sign-in is in PUBLIC_PREFIXES; it does NOT start with /admin, so the admin
+    // gate is never reached. Verify no redirect is issued — this proves the
+    // middleware cannot loop: an unauthenticated /admin request redirects to
+    // /sign-in, and /sign-in itself is always passed through.
+    //
+    // mockGetUser is irrelevant here; /sign-in bypasses checkAdminSession entirely.
+    const req = makeRequest('/sign-in');
+    const res = await middleware(req);
+
+    expect(res.headers.get('location')).toBeNull();
+  });
+
+  it('ADMIN-5: GET /admin/dashboard — Supabase env vars absent → redirect to /sign-in', async () => {
+    // When NEXT_PUBLIC_SUPABASE_URL / ANON_KEY are unset, checkAdminSession
+    // returns early with { authorized: false } — same redirect outcome as no session.
+    vi.unstubAllEnvs();
+    // Deliberately do NOT set NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.
+
+    const req = makeAdminRequest('/admin/dashboard');
+    const res = await middleware(req);
+
+    const location = res.headers.get('location');
+    expect(location).not.toBeNull();
+    expect(location).toContain('/sign-in');
   });
 });

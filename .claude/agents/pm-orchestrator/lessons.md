@@ -2,6 +2,97 @@
 
 ---
 
+**Date / ticket:** 2026-06-17 — RETRO-087 (FOLLOW-325 / PR #315) + RETRO-069 (FOLLOW-287+288 / PRs
+#281+#282) + marking FOLLOW-325 DONE + promoting FOLLOW-331/332/336 to QUEUE **Delegation row
+used:** N/A — PM-self retro analysis + queue hygiene (step 6). **What validation caught (or
+missed):** RETRO-087: DETECT_SERVE_URL non-test producer+consumer confirmed (domains.ts:73 →
+DetectionPreview.tsx:183). RETRO-069: SELECT 1 no-op pattern for blocked ORDER BY key ALTER is safe
+(migration journal gate hashes timestamps/count, not SQL content). Caught that RETRO-064/067/068
+were already written in RETROSPECTIVES.md but STATUS.md still showed them as PENDING SPAWN — the old
+RETRO TRACKING table was stale. **A delegation/validation rule I'd add:** When marking tickets DONE
+after human merge, always verify the PR merge commit exists in git log before updating QUEUE.md — do
+not rely on "was READY_FOR_REVIEW" as a proxy for "is merged."
+
+---
+
+**Date / ticket:** 2026-06-17 — RETRO-062 + RETRO-063 (FOLLOW-276 / PR #272 + FOLLOW-278 / PR #273
+retrospective spawns) **Delegation row used:** N/A — PM-self retrospective analysis (step 6,
+post-merge, retro backlog, two docs-only/test-only PRs batched). **What validation caught (or
+missed):** RETRO-062: docs-only PR, wiring audit N/A, no FOLLOW stubs needed. Confirmed zero
+surviving "buildSnippet emits" claims for retired attributes via PR body grep evidence. RETRO-063:
+constraint accepted (GDPR compliance), locale render-hop test proves FOLLOW-275's mergeQuizConfig
+wiring is correct end-to-end. No new gaps. **A delegation/validation rule I'd add:** For docs-only
+and test-only PRs, skip the full wiring audit and just confirm the grep evidence in the PR body is
+valid — these PRs have no new symbols to trace.
+
+---
+
+**Date / ticket:** 2026-06-17 — RETRO-083 (FOLLOW-326 / PRs #309/#310/#311 retrospective spawn)
+**Delegation row used:** N/A — PM-self retrospective analysis (step 6, post-merge, retro backlog).
+**What validation caught (or missed):** Wiring audit: createBrowserClient/createServerClient/
+checkStaffSession/verifyTracerAdminAuth all confirmed with non-test producers + consumers. Found
+TG-1/TG-2: checkStaffSession (the primary admin auth path after sign-in) and the middleware SSR gate
+have zero test coverage — FOLLOW-336 filed. The 3-PR iteration pattern (scaffold → cookie mismatch →
+API auth gate) is the expected outcome for @supabase/ssr migration. **A delegation/validation rule
+I'd add:** When a PR introduces a new primary auth path (the MAIN production gate, not a fallback),
+verify its test count before READY_FOR_REVIEW — a primary auth path with zero tests is a P2 gap
+regardless of whether the existing tests are green.
+
+---
+
+**Date / ticket:** 2026-06-17 — RETRO-082 (FOLLOW-324 / PR #308 retrospective spawn) **Delegation
+row used:** N/A — PM-self retrospective analysis (step 6, post-merge, retro backlog). **What
+validation caught (or missed):** Wiring audit: \_\_EStalaraDetect producer (detect-bundle.ts:36) and
+consumer (index.ts:821) confirmed in non-test code. The removed top-level re-export (export {
+detectSiteSchema }) had no production consumer (grep verified). Found TG-1: detect-bundle.ts (new
+companion IIFE entry) has no unit test for the global assignment — FOLLOW-335 filed. LG-1 (snippet
+half-wire) acknowledged as tracked by FOLLOW-325. **A delegation/validation rule I'd add:** When a
+new IIFE entry file is added (tsup `format: ['iife']`), verify a unit test covers the global
+assignment that the entry is responsible for — if the test suite only covers the consumer side
+(reading the global), the producer side is untested.
+
+---
+
+**Date / ticket:** 2026-06-17 — RETRO-081 (FOLLOW-293 / PR #307 retrospective spawn) **Delegation
+row used:** N/A — PM-self retrospective analysis (step 6, post-merge, retro backlog). **What
+validation caught (or missed):** Wiring audit: fetchIntentWeights is imported from the real SDK (no
+mock) — correct for a live-network smoke. ESTALARA_SMOKE_API_KEY / URL / REQUIRE_LIVE_INTENT_SMOKE
+all have clean producers in the CI workflow and consumers in the test. ESC-024 filing + resolution
+pattern correctly applied. Smoke run 27555287447 GREEN attests FOLLOW-307 migration apply. No gaps
+warranting follow-up stubs — all LG points are P3 by-design. **A delegation/validation rule I'd
+add:** When a live-network smoke test PR is validated, confirm the CI job has BOTH a soft-skip path
+for missing secrets AND a nightly/scheduled run that exercises the hard-assert path — a smoke that
+only ever soft-skips provides zero production assurance.
+
+---
+
+**Date / ticket:** 2026-06-17 — RETRO-086 (FOLLOW-330 / PR #314 retrospective spawn) **Delegation
+row used:** N/A — PM-self retrospective analysis (step 6, post-merge, retro backlog). **What
+validation caught (or missed):** Wiring audit: all changed symbols (CH_TRACER_TIMEOUT_MS,
+buildJsonlExportUrl) are module-private, no export/import wiring required — CLEAN. Found two new
+pattern count-1s: (a) 'use client' components that access window synchronously at render time crash
+SSR; (b) hardcoded AbortSignal timeouts ignore managed-service idle/cold-start behavior. Neither
+reached count-2 promotion threshold. FOLLOW-334 filed for CH keep-warm cron. **A
+delegation/validation rule I'd add:** When a PR fixes a timeout, check if the timeout was hardcoded
+for an assumed service latency without accounting for idle/cold-start — if so, file a keep-warm
+follow-up immediately.
+
+---
+
+**Date / ticket:** 2026-06-17 — RETRO-085 (FOLLOW-328 / PR #313 retrospective spawn) **Delegation
+row used:** N/A — PM-self retrospective analysis (step 6, post-merge, 7 retros outstanding). **What
+validation caught (or missed):** Step 5c wiring audit confirmed clickhouseAuthHeaders has 12+
+non-test production importers (clean); identified that the summary route's .catch(()=>null)
+silent-mock is a pre-existing Rule K.2 gap (FOLLOW-329 carry-forward, NOT a new defect introduced by
+PR #313). Caught TG-1: only 1 of 12 call-sites has a route-level auth-header assertion; 11
+uncovered. No Rule promoted (centralized-helper illusion count-1; K.2 already governs the
+silent-mock sub-shape). **A delegation/validation rule I'd add:** When a "fan-out helper migration"
+PR touches N call-sites, verify the test-count for the centralized helper against the number of
+migrated call-sites — if (call-site tests asserting helper output) << N, file a TG follow-up
+immediately.
+
+---
+
 **Date / ticket:** 2026-06-17 — RETRO-084 (FOLLOW-327 / PR #312 retrospective spawn) **Delegation
 row used:** N/A — retrospective-analyst spawn (PM step 6, post-merge). **What validation caught (or
 missed):** RETRO-084 found that DEFAULT_INTENT_WEIGHTS docstring claims a CI drift guard
@@ -706,3 +797,18 @@ QUEUE.md can lag behind GitHub state. **A delegation/validation rule I'd add:** 
 every loop, check gh pr view for all READY_FOR_REVIEW tickets to confirm they haven't already been
 merged — a merged PR with READY_FOR_REVIEW status in QUEUE.md is a stale record that blocks retro
 spawning.
+
+---
+
+**Date / ticket:** 2026-06-18 — FOLLOW-336 (qa-engineer/FOLLOW-336-admin-auth-tests) **Delegation
+row used:** Row 6: E2E/integration/load/a11y tests, fixtures, golden harness → qa-engineer. **What
+validation caught (or missed):** Local test run before PR was opened caught 5 failures + 3 lint
+errors: (1) ADMIN-1/2/3/5 in middleware.test.ts fail with Next.js E119 because the makeRequest
+helper passes a plain Record as headers to new NextRequest — NextResponse.next({request}) requires a
+native Headers instance; (2) SIGN-IN-1 in SignInForm.test.tsx fails because screen.getByRole("form")
+throws when the <form> element has no role attribute; (3) three lint errors (unnecessary ??, 2x
+async-without-await) in SignInForm.test.tsx. SSR-1..4 in tracer-auth.test.ts all passed. Work was
+never committed to branch when PM validated — caught before any PR was opened. **A
+delegation/validation rule I'd add:** When Next.js middleware tests use
+NextResponse.next({request}), the request MUST have headers constructed as new Headers() not a plain
+object — add this as a pattern note to the qa-engineer agent file.

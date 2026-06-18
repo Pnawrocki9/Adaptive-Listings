@@ -9147,8 +9147,144 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   test on the changed file, adjacent unrelated tests cited as coverage) — below promotion threshold.
 - **promoted_to_queue:** false
 
+## FOLLOW-333 — Add route-level Authorization-header assertions for the 11 `clickhouseAuthHeaders` call-sites not covered by `clickhouse-tracer.test.ts` CH-10 (RETRO-085 TG-1)
+
+- **source_retro:** RETRO-085
+- **source_ticket:** FOLLOW-328 (PR #313)
+- **recommended_sprint:** 18+
+- **recommended_agent:** qa-engineer (or backend-engineer)
+- **priority:** P3
+- **estimated_hours:** 2
+- **depends_on:** []
+- **scope:** | PR #313 migrated 12 control-plane CH call-sites from inline
+  `Buffer.from(":${password}")` to the shared `clickhouseAuthHeaders` helper. Only ONE of those 12
+  sites (`clickhouse-tracer.ts` via `clickhouse-tracer.test.ts` CH-10) has a route-level test
+  asserting the Authorization header includes a non-empty username. The other 11 sites
+  (adapt/route.ts, dashboard/analytics/lift, dashboard/analytics/summary, admin/labels,
+  admin/labels/export, pilot/calibration, pilot/cta-lift, pilot/inquiry-starts, llm-gateway ×2,
+  dsr/\_clickhouse) mock `global.fetch` at the network layer and never inspect the Authorization
+  header value in their test suites. The `clickhouse-http.test.ts` CH-H-4 regression test guards the
+  HELPER; but if a future refactor passes wrong arguments to the helper (e.g.
+  `{ user: '', password: 'pw' }`) the call-site tests would pass green. Fix: add shared test
+  assertions or integration-level checks that the Authorization header flowing FROM each migrated
+  call-site carries a non-empty username before the colon. Template:
+  `clickhouse-tracer.test.ts:CH-10`.
+- **ac:**
+  - [ ] AC1: For each of the 11 migrated call-sites, a test asserts the Authorization header
+        produced is `Basic base64("user:password")` with a non-empty username.
+  - [ ] AC2: A helper or fixture is introduced so future CH call-site tests get this assertion
+        automatically (avoid copy-paste across 11 test files).
+  - [ ] AC3: `pnpm typecheck` + `pnpm test` green after changes.
+- **notes:** | First sighting of "centralized-helper coverage illusion" — helper unit tests are
+  correct, but 11 of 12 call-site integrations are untested for correct argument passing. Count 1,
+  below promotion threshold. Watch for the next shared-helper fan-out migration that repeats this.
+- **promoted_to_queue:** false
+
 ---
 
+## FOLLOW-334 — ClickHouse Cloud keep-warm cron (prevent auto-idle cold-start delays >8s on tracer/analytics routes)
+
+- **status:** OPEN
+- **source_ticket:** FOLLOW-330 / RETRO-086 LG-1
+- **recommended_sprint:** 19
+- **recommended_agent:** devops-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** ClickHouse Cloud auto-idles after inactivity. The first query after idle wakes the
+  service in >8s; PR #314 (FOLLOW-330) raised the tracer AbortSignal timeout to 30s as a symptom
+  treatment. The real fix is a keep-warm cron that periodically pings ClickHouse to prevent idle.
+  Options: (a) a Vercel cron route (`/api/admin/tracer/health` or a lightweight `SELECT 1` endpoint)
+  called every 5-10 minutes via `vercel.json` crons, or (b) a GitHub Actions scheduled workflow
+  running on a cadence. Either approach prevents cold starts, reducing first-query latency from
+  potentially 30s back to <1s. Note: the 30s timeout in `CH_TRACER_TIMEOUT_MS` should remain as a
+  safety net even after the cron is in place.
+- **ac:**
+  - [ ] AC1: A keep-warm mechanism (Vercel cron or GH Actions schedule) pings the ClickHouse tracer
+        endpoint at a regular interval (≤10 minutes) to prevent auto-idle.
+  - [ ] AC2: The keep-warm ping is lightweight (no data read — `SELECT 1` or equivalent).
+  - [ ] AC3: The mechanism is observable: logs or metrics confirm the ping executes on schedule.
+  - [ ] AC4: `CH_TRACER_TIMEOUT_MS` remains at 30s as a safety net (do not reduce it).
+  - [ ] AC5: `pnpm typecheck` + CI green after changes.
+- **notes:** LG-1 from RETRO-086. The 30s timeout raise in PR #314 is the correct immediate fix;
+  this follow-up addresses the root cause (CH Cloud idle behavior). P2 because cold-start delays
+  degrade admin UX but do not cause data loss or serve fabricated data.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-335 — Add unit test for `detect-bundle.ts` asserting `globalThis.__EStalaraDetect` is set correctly (RETRO-082 TG-1)
+
+- **status:** OPEN
+- **source_retro:** RETRO-082
+- **source_ticket:** FOLLOW-324 (PR #308)
+- **recommended_sprint:** 18+
+- **recommended_agent:** sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **depends_on:** []
+- **scope:** `packages/sdk/src/auto-detect/detect-bundle.ts` (new companion IIFE entry added in PR
+  #308) has no unit test. A simple test that imports the module in a jsdom environment and asserts
+  `globalThis.__EStalaraDetect` is set with `detectSiteSchema` and `extractArchetypeHints` as
+  callable functions would serve as a regression guard. The current test suite covers the CONSUMER
+  side (the opportunistic `if (detect)` read in `init()` is covered by existing SDK tests that set
+  up the global in `beforeEach`), but not the PRODUCER side (that `detect-bundle.ts` correctly
+  assigns the global).
+- **ac:**
+  - [ ] AC1: A test imports `detect-bundle.ts` (or its built output) in a jsdom/Node environment and
+        asserts `globalThis.__EStalaraDetect` is defined and has both `detectSiteSchema` and
+        `extractArchetypeHints` as functions.
+  - [ ] AC2: The test is co-located with `detect-bundle.ts` or in `packages/sdk/src/__tests__/`.
+  - [ ] AC3: `pnpm typecheck` + `pnpm test` green after changes.
+- **notes:** TG-1 from RETRO-082. The companion IIFE entry is a new production artifact; the global
+  assignment is the critical contract between the two IIFEs. A regression where `detect-bundle.ts`
+  exports an empty object or assigns to a different global name would silently break cold-start
+  archetype hints for all tenants. P2 severity.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-336 — Add tests for Supabase SSR session auth paths: `checkStaffSession` + middleware admin gate + `SignInForm` (RETRO-083 TG-1/TG-2)
+
+- **status:** OPEN
+- **source_retro:** RETRO-083
+- **source_ticket:** FOLLOW-326 (PRs #309/#310/#311)
+- **recommended_sprint:** 18
+- **recommended_agent:** qa-engineer (or backend-engineer)
+- **priority:** P2
+- **estimated_hours:** 3
+- **depends_on:** []
+- **scope:** FOLLOW-326 added three auth code paths with no tests: (a) `checkStaffSession()` in
+  `apps/control-plane/src/lib/tracer-auth.ts` — the SSR cookie auth path that is now the PRIMARY
+  production auth mechanism for all `/api/admin/*` routes (guards Weight Editor, Session History,
+  Live Monitor SSE); (b) the `createServerClient` + `getUser()` middleware admin gate in
+  `src/middleware.ts`; (c) `SignInForm.tsx` (signInWithPassword happy path + error display). The 5
+  existing `tracer-auth.test.ts` tests cover only the Bearer and legacy JWT paths. The new primary
+  path has zero coverage.
+- **ac:**
+  - [ ] AC1: A test for `checkStaffSession` covers `'staff'` / `'not_staff'` / `'none'` return
+        values with a mocked `createServerClient` (mock `getUser()` to return staff user, non-staff
+        user, error, null).
+  - [ ] AC2: A test for the middleware admin gate (in `src/middleware.test.ts`) mocks
+        `createServerClient().getUser()` and asserts: (a) authenticated staff → pass-through, (b)
+        unauthenticated → redirect to `/sign-in`, (c) non-staff → redirect to `/sign-in`.
+  - [ ] AC3: (Optional) A test for `SignInForm.tsx` covering happy path (mock `signInWithPassword()`
+        success → `router.push('/admin')`) and error path (error message displayed, fields retain
+        values).
+  - [ ] AC4: All existing `tracer-auth.test.ts` (5/5) and `middleware.test.ts` (11/11) tests
+        continue to pass.
+  - [ ] AC5: `pnpm typecheck` + `pnpm test` green.
+- **notes:** TG-1 + TG-2 from RETRO-083. The `checkStaffSession` path is the live PRIMARY production
+  auth gate for all admin routes since PR #311 merged (2026-06-15). A regression would NOT be
+  silently masked (it would produce 401s on all admin routes immediately), but CI cannot catch it
+  pre-deploy without tests. P2 severity — security gate with zero test coverage.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 337 (336 = RETRO-083 / PRs #309/#310/#311 / FOLLOW-326 admin sign-in + SSR auth: checkStaffSession (primary admin auth path), middleware admin gate (createServerClient getUser), and SignInForm are all untested; qa-engineer, P2 3h.) -->
+<!-- next free FOLLOW number: 336 (335 = RETRO-082 / PR #308 / FOLLOW-324 SDK bundle size fix: detect-bundle.ts has no unit test asserting globalThis.__EStalaraDetect is set correctly with detectSiteSchema + extractArchetypeHints as callable functions; sdk-engineer, P2 1h.) -->
+<!-- next free FOLLOW number: 335 (334 = RETRO-086 / PR #314 / FOLLOW-330 tracer history SSR window crash + CH cold-start 8s->30s timeout: keep-warm cron for CH Cloud to prevent auto-idle cold-start delays >8s on tracer/analytics routes; 30s timeout in CH_TRACER_TIMEOUT_MS is a symptom treatment, cron prevents idle, P2 2h devops.) -->
+<!-- next free FOLLOW number: 334 (333 = RETRO-085 / PR #313 / FOLLOW-328 ClickHouse Basic auth fix: 12 route-level call-sites migrated to clickhouseAuthHeaders but only clickhouse-tracer.test.ts CH-10 asserts the Authorization header is non-empty-username; add route-level assertions for the 11 uncovered sites, P3 2h qa.) -->
 <!-- next free FOLLOW number: 333 (331-332 = RETRO-084 / PR #312 / FOLLOW-327 single-tenant admin nav + DEFAULT_INTENT_WEIGHTS shared export: 331 = DEFAULT_INTENT_WEIGHTS is a hand-copied dup of SDK private BASE_PRIOR+BEHAVIORAL_DAMPING with NO drift guard — DEFAULT-1..6 assert the shared constant vs ITSELF, the docstring (intent-weights.ts:155-160) FALSELY claims "drift is caught in CI" pointing at packages/sdk/src/__tests__/intent-weights-drift.test.ts which DOES NOT EXIST, and BASE_PRIOR isn't even exported from the SDK; export SDK constants + write the real cross-package equality test + fix the docstring, P2 3h sdk+backend [LG-1+DG-1]. 332 = the single-tenant admin shell (Item 1 headline) shipped with ZERO test — no admin/layout.test.tsx + no admin/page.test.tsx exist, so the sidebar hiding 3 multi-tenant screens + showing 3 PILOT_TENANT_ID-scoped tracer links AND the /admin->pilot-tracer landing redirect are unasserted ("admin (8) tests" cited are unrelated files); add both test files + pin PILOT_TENANT_ID to the Master-Design pilot id, P2 2h qa [TG-1+TG-2]. Wiring Audit CLEAN (both new exports have non-test prod importers; nav targets all exist; PILOT_TENANT_ID points at the real live prod tenant cbc51cfa-... per MASTER_DESIGN §Snapshot so NO seed/migration-apply hop unlike RETRO-076). NO functional bug (uniform-prior fix genuine, T10 proves neutral=0.37). NO Rule promoted: P-DUP-CONTRACT + P-SHELL-UNTESTED both count-1 first sightings, held below threshold. Reconciled RETRO-077/080 (2nd nav path to tracer pages, not a regression) + RETRO-076 (no migration-apply gap here, tenant already live).) -->
 <!-- next free FOLLOW number: 331 (330 = tracer history SSR window crash + CH cold-start 8s->30s timeout + error logging, surfaced post-FOLLOW-328; 328 = ClickHouse empty-username Basic-auth Code 516 fix across all 12 control-plane CH reads — see backlog/sprint-18/FOLLOW-328.md; 329 = summary-route Rule K.2 fail-loud + data_source, sibling of FOLLOW-124, surfaced by 328.) -->
 <!-- next free FOLLOW number: 327 (326 = CEO directive 2026-06-15: buildSnippet() auto-includes estalara-detect.iife.js companion for ALL Tier 1+2 tenants by default — opt-out, cold-start archetype detection ON by default; closes FOLLOW-324 half-wire (PR #308 exists; buildSnippet() doesn't emit companion tag yet). 324 = sdk-engineer/FOLLOW-324-sdk-bundle-size PR #308 merge-ready: split auto-detect pipeline into companion estalara-detect.iife.js (12.43KB gzip), core drops 52.61→39.73KB — passes 40KB gate. Architect Option 1 accepted.) -->

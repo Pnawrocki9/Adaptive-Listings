@@ -17055,3 +17055,801 @@ CHECK B (half-wire — every new env-var has BOTH producer + consumer):
 - **Related to RETRO-077 / RETRO-080 (FOLLOW-309/310/311/312):** RETRO-077 flagged the 3 tenant-tracer pages as Rule-H nav orphans; RETRO-080 closed that via per-tenant-list `<Link>`s. This PR adds a SECOND reachability path (direct sidebar links scoped to `PILOT_TENANT_ID`) — reconciled: not a regression, both paths target the same existing pages, and the sidebar path is the v1-primary one. The Weight Editor (`/admin/tracer/weights`) it links is the same page RETRO-073/080 wired to the GET/PUT config loop.
 - **Related to RETRO-076 (FOLLOW-302) migration-apply gap:** unlike the global-weight-seed chain (which needed an operator to apply migration 0030 before going live), this PR's `PILOT_TENANT_ID` points at a tenant row that ALREADY exists in prod (MASTER_DESIGN §Snapshot lines 26/41; events written since the 2026-05-29 pilot E2E), so the nav resolves to live data with no deploy-apply hop. No payload-side gap of that family here.
 - **Related to RETRO-072/074/075/077/080 (fixture-lies thread):** the DEFAULT-1..6 + T10 tests here are NOT fixture-lies (they assert real values of a real constant) — but LG-1's "docstring claims a CI guard that isn't there" is the same *over-claimed-verification* meta-pattern, recorded as a sibling, not a new sighting.
+
+## RETRO-085 — FOLLOW-328 (ClickHouse Basic auth fix — empty-username Code 516 + shared `clickhouse-http.ts` centralizing all 12 control-plane CH auth calls; the PR fixes the production 500s on every analytics/tracer route by adding `CLICKHOUSE_USER` before the colon in the Basic auth header, ships a shared helper replacing 12 bespoke `Buffer.from(":${password}")` inline constructions, and surfaces a Rule K.2 silent-mock sibling in `dashboard/analytics/summary` that the fix did NOT close → FOLLOW-329; the deploy prerequisite is an env-var apply, not a migration: `CLICKHOUSE_USER=ingest_worker` must land in Vercel Production+Preview env before/at deploy or the new code falls back to `'default'` and still 516s — AC5/AC6 NOT closed in the PR body) — 2026-06-17
+
+### 1. Summary of change
+
+- **PR:** #313 (merged 2026-06-16T19:00:20Z, commit 096a615)
+- **Files changed:** 25 (+302 / -122) — 2 new files (`clickhouse-http.ts` + `clickhouse-http.test.ts`), 11 production-route files migrated, 6 test files updated, `clickhouse-tracer.ts` + `clickhouse-dsr.ts` + `llm-gateway.ts` refactored, backlog updated
+- **Modules touched:** control-plane (all CH-backed routes: adapt, dashboard analytics, admin labels, DSR, pilot calibration/cta-lift/inquiry-starts, admin tracer routes, llm-gateway). Zero SDK/ingest/shared/decision-api changes.
+- **Key contracts changed:**
+  - `ClickHouseTracerConfig` — **ADDED** `user: string` field — breaking: yes for any test that constructs a bare `{url, password, database}` config without `user`; all 6 affected test files updated in this PR.
+  - `clickhouseAuthHeaders` — **ADDED** as a new export from `apps/control-plane/src/lib/clickhouse-http.ts`; the existing per-route `authHeaders(cfg)` / `clickHouseHeaders(password)` local helpers — **REMOVED** from 5 files (labels/route.ts, labels/export/route.ts, tracer.ts, dsr.ts via authHeaders removal, tracer integration test inline header). Breaking: no for external callers (all inline helpers were unexported local functions).
+
+### 2. Verification done in PR
+
+- Test files changed: 7 (`clickhouse-http.test.ts` new, `clickhouse-tracer.test.ts` updated, `clickhouse-tracer.integration.test.ts` updated, and 4 tracer route tests with `+user: 'default'` fixture additions)
+- Assertions added: 4 new unit assertions in `clickhouse-http.test.ts` (CH-H-1 through CH-H-4) verifying the regression case (old `:password` form → encoded `user:password` form); updated CH-10 in `clickhouse-tracer.test.ts` from `expect(decoded).toBe(':secret')` to `expect(decoded).toBe('ingest_worker:secret')` (the canonical regression guard)
+- Coverage delta: new `clickhouse-http.ts` is 100% line-covered by `clickhouse-http.test.ts` (4 paths: empty-password, user+password, default-user fallback, regression guard)
+- CI checks: per QUEUE.md entry, all real CI gates GREEN (verified via `gh pr view 308`). 455 vitest tests across tracer/pilot/dashboard/adapt/dsr/labels green. Pre-existing non-blocking: Rule I (FOLLOW-090), Python tests, Doppler verify flap.
+
+### 3. Wiring Audit
+
+- **CHECK A (dead code):** `clickhouseAuthHeaders` — exported from `clickhouse-http.ts` — NON-TEST importers: `clickhouse-tracer.ts` (2 call-sites), `clickhouse-dsr.ts` (1), `llm-gateway.ts` (4), `adapt/route.ts` (1), `dashboard/analytics/lift/route.ts` (1), `dashboard/analytics/summary/route.ts` (1), `admin/labels/route.ts` (1), `admin/labels/export/route.ts` (1), `pilot/calibration/route.ts` (1), `pilot/cta-lift/route.ts` (1), `pilot/inquiry-starts/route.ts` (2), `dsr/_clickhouse.ts` (1). Count: 12+ non-test production call-sites. No dead export. Rule H: single exported symbol, all importers are production consumers.
+
+- **CHECK B (half-wire):** The new `CLICKHOUSE_USER` env var is CONSUMED in every migrated site (`process.env.CLICKHOUSE_USER ?? 'default'`). PRODUCER: Vercel control-plane env (set 2026-06-16 per PR body). The PR body explicitly calls this out: `CLICKHOUSE_USER must be set in the Vercel control-plane project (Production + Preview) to the correct ClickHouse Cloud user (ingest_worker)`. AC5 ("CLICKHOUSE_USER confirmed/set in Vercel") and AC6 ("analytics/tracer reads return 200 after deploy") are UNCHECKED in the `backlog/sprint-18/FOLLOW-328.md` spec — the deploy env var application was listed as a prerequisite, not tracked as a follow-up ticket. This is an **operational gap** (not a code gap): if the env var was NOT set before deploy, every route would still fall back to `'default'` and still 516. The PR body states `It is already present in Vercel (set 2026-06-16)`, so the PR author asserts the env is live. This assertion is not independently verifiable from the code diff but is consistent with the QUEUE.md DONE notation and STATUS.md "Code 516 RESOLVED 2026-06-17." No HALF_WIRE filed — accepted as operational (env var in Vercel is not a code artifact).
+
+- **CHECK B — `dashboard/analytics/summary` Rule K.2 gap (CARRY-FORWARD):** This PR MIGRATED the summary route's CH auth header to `clickhouseAuthHeaders` (correct) but did NOT fix the route's existing `fetchSummaryFromClickHouse(tenantId).catch(() => null)` + `chData ?? buildMockSummary(tenantId)` silent-mock pattern (`route.ts:150-151`). With `CLICKHOUSE_URL` set, ANY query failure silently serves fabricated numbers at HTTP 200 with no `data_source` provenance field — a Rule K.2 violation. The route's own docstring (added in this PR, lines 94-98) correctly identifies this as the "un-fixed sibling of FOLLOW-124" and references FOLLOW-329. This is NOT a new defect introduced by PR #313 (the pattern pre-existed); it is a VERIFIED CARRY-FORWARD that the auth-migration made more visible (previously the auth 516 masked the underlying pattern). FOLLOW-329 exists and is correctly scoped. **No new stub minted; FOLLOW-329 is the tracking artifact.**
+
+`Wiring Audit — clean ✅` (one carry-forward acknowledged; tracked in pre-existing FOLLOW-329)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, NEW) — `dashboard/analytics/summary` is the Rule K.2 silent-mock sibling of `dashboard/analytics/lift` (FOLLOW-124) — NOT fixed in this PR.** `route.ts:150-151` does `fetchSummaryFromClickHouse(tenantId).catch(() => null)` then `chData ?? buildMockSummary(tenantId)` — so with `CLICKHOUSE_URL` set and the auth now correct, a query failure (timeout, schema mismatch, CH Cloud blip) will still silently serve fabricated mock numbers at HTTP 200. Worse than the lift route: `SummaryResponse` has NO `data_source` field, so the consumer (`/dashboard/analytics/page.tsx`) cannot distinguish mock from real. FOLLOW-329 is filed and scoped correctly. This retro records it as a LG-1 finding. **P2; tracked by FOLLOW-329.**
+
+- **LG-2 (P3, NEW) — `fetchSummaryFromClickHouse` returns `null` on a non-OK HTTP response (`res.ok` check at line 77) — this means ANY CH error (not just the auth 516) falls through to mock, compounding the LG-1 gap.** The `.ok` check triggers `return null` BEFORE the `.catch()` path does, so a 401 or 500 from CH also silently promotes to mock. This is the same pattern `dashboard/analytics/lift/route.ts` (FOLLOW-124's target) already fixed. Folded into FOLLOW-329 scope — no separate stub.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — the core fix (empty-username → `user:password` in Basic auth) is correct and the CH-H-4 regression test explicitly pins the old broken shape (`decoded.startsWith(':')` must be false). No new bug introduced by this PR.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, NEW) — the 12 production call-sites use `clickhouseAuthHeaders` correctly but NO route-level test asserts the Authorization header includes a non-empty username.** `clickhouse-http.test.ts` covers the helper in isolation (CH-H-1..4), and `clickhouse-tracer.test.ts` CH-10 covers one route's header shape. But the other 11 routes (adapt, dashboard-lift, dashboard-summary, labels, labels-export, pilot-calibration, pilot-cta-lift, pilot-inquiry-starts, llm-gateway, dsr, dsr/_clickhouse) have no assertion that their call to `clickhouseAuthHeaders` actually produces a non-empty-username header. This means: if a future refactor accidentally passes `{ user: '', password: 'pw' }` to `clickhouseAuthHeaders`, the helper itself would produce `Basic base64(":pw")` (re-introducing the empty-username bug) — the existing CH-H-4 test would catch it ONLY if the test is run — but the individual route tests would pass because they mock `global.fetch` at the network layer and never inspect the Authorization header value. This is the "centralized test covers the helper; distributed call-sites are untested at the integration level" gap. Severity P2 (the helper is correct today; the gap is forward-looking). **Filed as FOLLOW-333 below.**
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, RESOLVED-IN-PR) — `clickhouse-http.ts` header comment correctly documents the root cause, the fix, and the deploy prerequisite.** The `ClickHouseTracerConfig` TSDoc for the new `user` field is present. All prior per-route `authHeaders`/`clickHouseHeaders` local function JSDoc removed (functions deleted). No stale documentation remains on the removed helpers. This is a CLEAN documentation delta.
+
+- **DG-2 (P3, operational) — AC5 and AC6 in `backlog/sprint-18/FOLLOW-328.md` remain unchecked (boxes not ticked).** AC5 ("CLICKHOUSE_USER confirmed/set in Vercel env") and AC6 ("admin.estalara.com analytics/tracer reads return 200") are operational attestations, not code changes. The PR body asserts the env var is already set in Vercel (2026-06-16), and STATUS.md confirms "Code 516 RESOLVED." These ACs were never meant to be code-gated; they are operator-confirmation checkboxes. No new follow-up; noted for completeness only.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-330 (tracer history SSR crash + CH cold-start timeout, DONE — PR #314):** This PR's auth fix unmasked FOLLOW-330's bugs — once CH stopped 516-ing, the tracer history page started loading session data from Postgres and hit the `window.location.origin` SSR crash + the 8s cold-start abort. FOLLOW-330 fixed both (relative URL for export, timeout raised 30s/45s). RETRO-086 will analyze PR #314. The cascade is complete; no residual.
+
+- **FOLLOW-329 (dashboard/analytics/summary Rule K.2 sibling, OPEN):** Directly produced by this PR's code audit. Backlog is correctly tracking it in Sprint 18 for data-engineer. No immediate consumer risk (the mock data is deterministic per tenant, not random fabrication — but it IS fabricated, and a go/no-go decision on the summary panel would use fabricated numbers if CH fails silently).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-124 (analytics lift Rule K.2 fix — DONE per QUEUE.md):** This PR confirms the summary route is the un-fixed sibling. The lift route fix (FOLLOW-124) is the template for FOLLOW-329. Whoever takes FOLLOW-329 should mirror the `data_source` + fail-loud pattern from `dashboard/analytics/lift/route.ts`.
+
+- **Any new control-plane CH route:** The `clickhouseAuthHeaders` helper and `ClickHouseTracerConfig.user` field are now the canonical pattern. New CH routes MUST import `clickhouseAuthHeaders` from `@/lib/clickhouse-http` and read `CLICKHOUSE_USER` from env before the password — a bare `Buffer.from(":${password}")` construction is now Rule H/I-detectable dead-code-adjacent (the helper exists; not using it is a smell). No new rule (P-CENTRALIZER: use the shared helper not the inline form); this is already covered by Rule H's "shared lib must be used" gate + the `rule-h` CI check detecting new unwired exports.
+
+#### 5c. Contracts changed others rely on
+
+- **`ClickHouseTracerConfig` now requires `user: string`.** All 6 test files that construct a config literal were updated in this PR. Any FUTURE test or tool that builds a `ClickHouseTracerConfig` without `user` will fail `pnpm typecheck`. This is a breaking-but-correctly-migrated change — no outstanding callers.
+
+- **`clickhouseAuthHeaders` export from `@/lib/clickhouse-http` is the new canonical auth builder.** It is an internal control-plane lib (not in `packages/`), so no SDK/ingest/decision-api caller is affected.
+
+#### 5d. Architectural assumptions affected
+
+- **The original assumption that "empty username is fine for ClickHouse"** was never documented, only inherited from the first CH integration. This PR corrects it and documents the canonical form in the helper's module comment. The ingest worker (`apps/ingest/src/clickhouse-producer.ts:214`) ALREADY used the correct `btoa(\`${user}:${password}\`)` form — so the control-plane was out of step with ingest from the beginning. The fix closes that asymmetry.
+
+### 6. New lesson candidates
+
+- **Pattern: "a new shared helper centralizes a bug-prone inline pattern across N call-sites, but only ONE of those N call-sites gets a route-level test that asserts the helper is called correctly; the remaining N-1 call-sites are tested only at the mock-network layer and would silently pass even if the caller passed wrong arguments."** — seen in: RETRO-085 §4c TG-1 (`clickhouseAuthHeaders` called at 12 sites; only `clickhouse-tracer.test.ts` CH-10 asserts the Authorization header shape at the route level; 11 others do not). This is the "centralized-helper coverage illusion" sub-shape: the helper's own unit tests are correct, but the call-site integration is untested for N-1 consumers. FIRST independent sighting of this exact form (the Rule-Q mirrored-test family is adjacent but not identical — Rule Q is about mirroring logic inline; this is about forgetting to wire the shared helper's usage into the call-site's test). Count **1** → NO promotion. Watch the next shared-helper introduction in a fan-out migration.
+
+- **Pattern: "a Rule K.2 fail-loud fix migrates a route's CH auth but leaves the route's silent-mock catch-all in place — the auth fix + the silent-mock combine so the route now correctly authenticates on success but still fabricates data on the first failure beyond auth."** — seen in: RETRO-085 §4a LG-1 (summary route). This is the "fix one layer, skip the next" sub-shape of Rule K.2. FOLLOW-124 / FOLLOW-329 are the sibling pair that demonstrates it. Count **2** if we count FOLLOW-124 (lift route, RETRO-008 §4a CB-1) as the first instance and this LG-1 as the second on `summary` specifically. BUT: the lift route's K.2 was the PR-level finding (Rule K.2 itself was promoted FROM RETRO-008/006); the summary route gap is a CARRY-FORWARD from a pre-existing non-fix — it is not a fresh sighting of a NEW pattern. Rule K.2 already governs this. NO new rule; no promotion increment. Recorded for completeness.
+
+### 7. Follow-ups
+
+- **FOLLOW-329 (pre-existing, OPEN):** Apply Rule K.2 fail-loud + `data_source` provenance to `/api/dashboard/analytics/summary`. The route currently silently serves `buildMockSummary()` whenever `CLICKHOUSE_URL` is set but the query fails (`.catch(() => null)` + `chData ?? buildMock...`). Fix: fail loud (re-throw / 500 with structured error) when `CLICKHOUSE_URL` is set and the fetch fails; keep `buildMockSummary` ONLY for the unset (dev/CI) path; add `data_source: 'clickhouse' | 'mock' | 'error'` to `SummaryResponse` consumed by the dashboard page. Template: `dashboard/analytics/lift/route.ts` (FOLLOW-124 target). (data-engineer or backend-engineer, 2h, **P2**, Sprint 18)
+
+- **FOLLOW-333 (NEW — TG-1):** Add route-level Authorization-header assertions for the 11 control-plane CH call-sites that `clickhouseAuthHeaders` was migrated to (all except `clickhouse-tracer.test.ts` CH-10, which already has one). Either: (a) add a shared test fixture / test helper that stubs `CLICKHOUSE_USER` and asserts `clickhouseAuthHeaders` produces a non-empty-username header per call-site, or (b) add an integration-layer assertion to each affected route's existing test that the Authorization header round-trips through the helper correctly (stub env, invoke route, inspect captured fetch header). Priority: P3 (helper is correct, gap is forward-looking regression guard). (qa-engineer or backend-engineer, 2h, **P3**, Sprint 18+)
+
+### 8. Cross-references
+
+- **FOLLOW-328 (this ticket):** The auth fix is the prerequisite for every tracer/analytics/DSR route to function in prod. FOLLOW-329 and FOLLOW-333 are its direct offspring.
+- **RETRO-008 §4a CB-1 / FOLLOW-124 (lift route Rule K.2):** The lift route's silent-mock pattern was identified in RETRO-008 and FOLLOW-124 tracks the fix. The summary route (FOLLOW-329) is a symmetric sibling — Rule S applies (§5b). The retro for FOLLOW-329 should diff summary vs lift to confirm symmetric treatment.
+- **RETRO-078 / RETRO-079 (live-ClickHouse CI guard):** Those retros established that mock-only CH tests cannot catch runtime query failures (Code 386, auth 516, etc.). TG-1 here is the same meta-pattern applied to the auth-helper call-sites. The live-ClickHouse CI guard (FOLLOW-316 / RETRO-079) covers the QUERY builders; it does NOT cover the per-call-site Authorization header construction. FOLLOW-333 closes that.
+- **RETRO-080 (FOLLOW-309-312 wiring fixes):** No interaction — those fixes were to the admin tracer UI auth (SSE cookie) and nav. This PR fixes the ROUTE-level CH auth, not the UI-level auth. Clean separation confirmed.
+
+---
+
+## RETRO-086 — FOLLOW-330 (tracer history SSR `window is not defined` crash + ClickHouse cold-start 8s→30s/45s timeout; two pre-existing bugs unmasked by the FOLLOW-328 auth fix; history page 500 + Live Monitor SSE 500 both resolved; `CH_TRACER_TIMEOUT_MS` constant introduced; `buildJsonlExportUrl` rewritten to use relative URL; `console.error` observability added to history + stream error catches) — 2026-06-17
+
+### 1. What was built
+
+PR #314 (`fix(control-plane): tracer history SSR window crash + ClickHouse cold-start timeout [FOLLOW-330]`, merged 2026-06-16) fixes two distinct pre-existing bugs in the K.3.6 tracer (FOLLOW-269) that were masked while every ClickHouse read was returning Code 516 AUTHENTICATION_FAILED. Once FOLLOW-328 (PR #313) fixed the Basic auth header, the Postgres-backed `/api/admin/tracer/sessions` returned 200, but the ClickHouse-backed Session History and Live Monitor still 500'd — now for different reasons.
+
+**Fix 1 — SSR crash in history/page.tsx.** `buildJsonlExportUrl()` was called at render time (for the `<a download href>` attribute) using `new URL(path, window.location.origin)`. A `'use client'` page is still server-rendered for the initial HTML; during SSR `window` is undefined, throwing `ReferenceError: window is not defined`, which crashed the entire page with a Vercel 500 (digest 4154280423, confirmed in prod logs). Fix: replace `new URL(…, window.location.origin)` with a plain relative URL built from `URLSearchParams` — no `window` access, SSR-safe.
+
+**Fix 2 — ClickHouse cold-start timeout.** `chTracerQuery` and `chTracerCount` used `AbortSignal.timeout(8000)`. ClickHouse Cloud auto-idles; the first query after an idle period wakes the service in >8s, so every cold-start fetch aborted before the wake completed, producing a 500 even with correct auth and SQL. The abort cycle repeated on retry. Fix: introduce `CH_TRACER_TIMEOUT_MS = 30_000` (a module-private named constant), raise both timeouts to 30s. This stays well under the 300s Vercel function limit.
+
+**Fix 3 — Observability.** The history and stream error catches previously sent to Sentry only; the real cause (HTTP response body or `AbortError`) was invisible in `vercel logs`. Added `console.error` of the message to both catches, making the root cause visible in runtime logs without changing the generic client response.
+
+6 files changed: 57 additions, 14 deletions. Tests updated: 80 vitest tests green across tracer lib + history page + history/stream routes.
+
+### 2. Wiring audit
+
+**Scope:** `CH_TRACER_TIMEOUT_MS` (new constant), `buildJsonlExportUrl` (rewritten inline closure), `console.error` observability additions.
+
+- `CH_TRACER_TIMEOUT_MS` — module-private constant in `apps/control-plane/src/lib/clickhouse-tracer.ts:55`. Producer: line 55 (`const CH_TRACER_TIMEOUT_MS = 30_000`). Consumers: lines 84 + 127 within the same file (`AbortSignal.timeout(CH_TRACER_TIMEOUT_MS)` in `chTracerQuery` and `chTracerCount`). Not exported; wiring is self-contained. CLEAN.
+
+- `buildJsonlExportUrl` — local closure inside `apps/control-plane/src/app/admin/tenants/[id]/tracer/history/page.tsx:301`. Consumed by the same file at line 494 (`href={buildJsonlExportUrl()}`). Not exported; wiring is self-contained. CLEAN.
+
+- `console.error` additions — inline observability in `apps/control-plane/src/app/api/admin/tracer/history/route.ts:128` and `apps/control-plane/src/app/api/admin/tracer/sessions/[id]/stream/route.ts:137`. These are side effects, not new exported symbols. CLEAN.
+
+**No new exported symbols, events, env vars, DB columns, or config fields introduced.** All changes are internal to their respective files. Wiring audit: FULLY CLEAN.
+
+**grep evidence:**
+```
+grep -rn "CH_TRACER_TIMEOUT_MS" apps/control-plane/src --include="*.ts" --include="*.tsx"
+→ clickhouse-tracer.ts:55 (producer), :84 (consumer), :127 (consumer) — all in same file, not exported
+```
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, carry-forward) — keep-warm cron for ClickHouse Cloud idle wakeup is NOT in this PR.** Raising the timeout to 30s is the correct immediate fix, but it means the first request after an idle period will take up to 30s to respond instead of failing fast. The real solution is a keep-warm cron that pings CH periodically to prevent idle. This was explicitly noted in the PR body and the `CH_TRACER_TIMEOUT_MS` comment ("Keep-warm cron is the longer-term fix; see project notes"). AC4 in FOLLOW-330 is unchecked: "AC4: keep-warm cron for the idle ClickHouse service (longer-term; separate follow-up)." **No FOLLOW-330 fix can address this in-PR.** Filed as FOLLOW-334 below.
+
+- **LG-2 (P3, architectural) — the 30s cold-start tolerance applies only to `clickhouse-tracer.ts`; other CH call-sites in control-plane still use the `clickhouseAuthHeaders` helper via `fetch(url, { signal: AbortSignal.timeout(8000) })` — but only if they specify a signal at all.** A quick audit: `clickhouse-dsr.ts`, `adapt/route.ts`, `dashboard/analytics/lift/route.ts`, `dashboard/analytics/summary/route.ts`, `admin/labels/route.ts`, and others in the analytics/pilot surface do NOT appear to use `AbortSignal.timeout` (they rely on Vercel's function-level timeout or implicit fetch timeout). This is arguably fine (no self-abort, the request runs until the Vercel 300s limit), but if CH is cold, these routes will also stall. The keep-warm cron (LG-1 / FOLLOW-334) is the correct fix for all of them. No separate follow-up needed for LG-2 — it is subsumed by FOLLOW-334. Noted for completeness.
+
+- **LG-3 (P3) — `CH_TRACER_TIMEOUT_MS` is module-private and not exported or configurable via env var.** If an operator needs to tune the timeout in production (e.g., ClickHouse Cloud SLA improves to <15s wakeup), they must edit the source. This is a deliberate design choice (hardcoded constant rather than env-driven), and for an MVP this is acceptable. No follow-up needed; the comment in the code points to the keep-warm cron as the real solution.
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **No correctness gaps introduced.** The two fixes are isolated: (1) the `buildJsonlExportUrl` rewrite produces an identical URL string (`/api/admin/tracer/export/decisions?tenant_id=…&from=…&to=…`) — only the construction method changed, not the output. (2) `AbortSignal.timeout(30_000)` replaces `AbortSignal.timeout(8000)` — semantically identical, just wider budget. Both fixes are correct and do not change observable behavior under normal conditions.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None.** The SSR crash and cold-start abort were genuine production bugs (verified in prod logs, digest 4154280423). This PR resolves both. No new logic paths, no new state, no behavioral regression.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, informational) — `buildJsonlExportUrl` has no dedicated unit test asserting SSR-safety (no `window` access in the output URL).** The fix is trivially correct (no `window.location.origin` call site remains), and the broader page test suite covers the component. However, a dedicated test that calls `buildJsonlExportUrl()` in a Node.js environment (where `window` is undefined) and asserts no `ReferenceError` would serve as a regression guard. Severity P3: the fix is verified correct, the function is a local closure, and the SSR crash would manifest as an immediate 500 in any future regression — highly visible, not silent. No follow-up filed (insufficient severity for the queue).
+
+- **TG-2 (P3, informational) — `CH_TRACER_TIMEOUT_MS` value (30000) is asserted by the renamed test CH-21 ("uses AbortSignal.timeout (30s — covers ClickHouse Cloud cold-start)"), but the test only checks that `signal` is defined, not that it equals exactly 30000.** Reading `clickhouse-tracer.test.ts` CH-21: it asserts `callOptions.signal` is truthy but does not extract the timeout value. The timeout value is correct (the constant is set to 30_000 and the test documents this); the assertion gap is that a future change to `CH_TRACER_TIMEOUT_MS` (e.g., to 15_000) would not fail the test. Severity P3 (the constant is named and correct; a regression would be self-documenting). No follow-up filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, RESOLVED-IN-PR) — the `CH_TRACER_TIMEOUT_MS` constant includes a full explanatory comment** about CH Cloud auto-idle, the >8s wakeup, and the keep-warm cron TODO. The `buildJsonlExportUrl` rewrite includes a 4-line comment explaining the SSR crash root cause (`new URL(…, window.location.origin)` at render time) and why relative URL is the fix. Documentation delta is CLEAN and additive.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-328 (RETRO-085, DONE):** This PR is FOLLOW-328's direct child — the auth fix unmasked both bugs. The cascade is complete; no further cascading from FOLLOW-330.
+
+- **FOLLOW-307 (P1, devops — apply migration 0030 in prod Supabase):** No interaction. This PR is tracer/SSR only; the Postgres migration path is unaffected.
+
+- **FOLLOW-329 (P2 — dashboard/analytics/summary Rule K.2 fail-loud):** No interaction. This PR touches neither the summary route nor any analytics path.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-334 (NEW — keep-warm cron for ClickHouse Cloud):** See LG-1 above. The 30s timeout is a symptom treatment; the root cause is the CH Cloud auto-idle gap. A keep-warm cron (a periodic no-op SELECT 1 against the CH endpoint) would prevent cold starts. Estimated 1-2h for a devops-engineer to add a Vercel cron job or a GitHub Actions scheduled workflow hitting `/api/admin/tracer/health` (or similar). P2, Sprint 19.
+
+- **Any future ClickHouse call-site added to the tracer:** Must use `CH_TRACER_TIMEOUT_MS` from `clickhouse-tracer.ts` rather than a hardcoded millisecond value. This is a code-convention matter (not a Rule-H wiring issue since the constant is module-private). A comment in the module header would make this discoverable; see DG-1 — the existing comment covers this implicitly.
+
+#### 5c. Contracts changed others rely on
+
+- **No exported symbols changed.** `CH_TRACER_TIMEOUT_MS` is module-private. `buildJsonlExportUrl` is a local closure. The route responses (`/api/admin/tracer/history`, `/api/admin/tracer/sessions/[id]/stream`) remain unchanged in schema. No SDK, ingest, or decision-api caller is affected.
+
+#### 5d. Architectural assumptions affected
+
+- **The assumption that 8s is sufficient for any ClickHouse Cloud operation was incorrect for idle-wakeup scenarios.** This is now documented in the `CH_TRACER_TIMEOUT_MS` constant comment. The broader implication: ClickHouse Cloud's auto-idle behavior should be treated as a first-class operational concern in this repo; FOLLOW-334 addresses it.
+
+- **The assumption that `'use client'` pages are safe to access `window` at render time is wrong in Next.js App Router.** `'use client'` components still SSR their initial HTML; `window` is only available after hydration. This is a known Next.js 15 nuance that tripped this PR. The fix pattern (relative URLs, no `window.location.origin` at render time, `useEffect` / `useLayoutEffect` for window-dependent state) should be applied to any future `'use client'` component that needs the origin. Existing pattern in the codebase: check for `typeof window !== 'undefined'` guards or use relative URLs from the start. **Filed as a Rule candidate below.**
+
+### 6. New lesson candidates
+
+- **Pattern: "a `'use client'` component in Next.js App Router accesses `window` synchronously at render time (e.g., for a computed `href` attribute), causing a `ReferenceError: window is not defined` during SSR of the initial HTML."** — seen in: RETRO-086 §3 (buildJsonlExportUrl using `new URL(path, window.location.origin)`). This is a well-known Next.js 15 pitfall: `'use client'` marks a component as a client component, but it still pre-renders on the server. Any code that runs at render time (not inside `useEffect`) must be SSR-safe. Fix pattern: use relative URLs (`/api/path?${qs}`) or guard with `typeof window !== 'undefined'`. **Count 1 — first sighting. No Rule promotion.** Watch for a second sighting in a different `'use client'` component.
+
+- **Pattern: "a hardcoded AbortSignal timeout is set based on an assumed server latency without accounting for cold-start/idle-wake behavior of the downstream service."** — seen in: RETRO-086 (8s budget for ClickHouse Cloud, which requires >8s to wake from auto-idle). This sub-pattern is specific to managed cloud services with idle/auto-suspend behavior (ClickHouse Cloud, Supabase pooler cold starts, Neon auto-suspend). The fix is either a named constant with a comment or a keep-warm mechanism. **Count 1 — first sighting. No Rule promotion.** The broader "don't hardcode infra-specific latency budgets" pattern is count-1; watch for a second sighting with a different service.
+
+### 7. Follow-ups
+
+- **FOLLOW-334 (NEW — LG-1, P2):** Add a keep-warm cron for the ClickHouse Cloud tracer endpoint to prevent auto-idle cold-start delays. The 30s timeout added in PR #314 is a symptom treatment; cold starts mean the first query after idle takes up to 30s, degrading UX. A scheduled ping (Vercel cron or GitHub Actions scheduled workflow, ~1-2h) hitting a lightweight CH endpoint (e.g., `SELECT 1` via `/api/admin/tracer/sessions` health check or a dedicated `/api/admin/tracer/health` route) would keep CH active. (devops-engineer or backend-engineer, 2h, **P2**, Sprint 19)
+
+### 8. Cross-references
+
+- **FOLLOW-328 / RETRO-085:** Direct parent. Both bugs fixed here were masked while Code 516 prevented any CH read from succeeding.
+- **FOLLOW-269 (K.3.6 tracer UI, backend-engineer):** The SSR crash and timeout were pre-existing bugs in FOLLOW-269's tracer UI work that only became visible post-auth-fix. FOLLOW-269's remaining AC4 (keep-warm cron) is now FOLLOW-334.
+- **RETRO-077 / RETRO-080 (tracer admin UI auth):** Those retros addressed the UI-layer auth (SSE cookie, nav orphaning). This PR addressed the service-layer runtime bugs (SSR crash, CH cold-start). Clean separation — the two fix tracks do not overlap.
+- **RETRO-078 / RETRO-079 (ClickHouse Code 386 + live-CI guard):** The cold-start timeout pattern is a different axis from the query-builder Code 386 bugs those retros addressed. The fix type is also different: timeout increase vs. query qualifier fix. No overlap.
+
+---
+
+## RETRO-081 — FOLLOW-293 (K.3.6 D-1 live-network smoke for `fetchIntentWeights` → `GET /api/intent/config`; proves migration 0030 seed row is effective in production; introduces `tests/integration/` workspace with skip-loud / hard-fail CI guard; ESC-024 filed for secret provisioning; smoke run 27555287447 verified AC-LN1/LN2/LN3 all GREEN after ESC-024 resolved by Piotr) — 2026-06-17
+
+### 1. What was built
+
+PR #307 (`test(qa): K.3.6 D-1 live-network smoke — fetchIntentWeights → GET /api/intent/config [FOLLOW-293]`, merged 2026-06-15, smoke run 27555287447 confirmed GREEN 2026-06-15) closes the live-network gap for the K.3.6 D-1 "immediate intent weights" feature. Prior to this PR, every test in the D-1 chain (FOLLOW-268-sdk route tests, FOLLOW-305 endpoint URL tests) mocked the network layer; no CI path had ever called `fetchIntentWeights()` against a real backend and asserted `data_source: 'live'`.
+
+Three artifacts added:
+
+1. `tests/integration/intent-weights-live.smoke.test.ts` — 3 assertions (AC-LN1/LN2/LN3): `fetchIntentWeights()` returns non-null, the endpoint returns `data_source='live'` (proving migration 0030 seed row is applied), and the URL form has single `/api` (not double `/api/api` — the FOLLOW-305 regression guard).
+
+2. `tests/integration/vitest.config.ts` + `package.json` — new `tests/integration/` workspace, isolated from the main vitest config.
+
+3. `.github/workflows/intent-weights-live-smoke.yml` — CI job that runs on push to `main` + PR + nightly at 04:00 UTC. Implements the skip-loud / hard-fail contract: secrets absent → soft-skip with `::notice::`; `REQUIRE_LIVE_INTENT_SMOKE=1` + secrets absent → hard-fail at module load; secrets present + endpoint broken → hard-fail. This mirrors the RETRO-007 / FOLLOW-097/114/127/141 cautionary chain pattern.
+
+ESC-024 was filed in the same PR documenting the two required GitHub Actions secrets (`ESTALARA_SMOKE_API_KEY`, `ESTALARA_SMOKE_DECISION_API_URL`) and how to provision them. ESC-024 was resolved by Piotr (CEO) 2026-06-15 — secrets provisioned, smoke run 27555287447 ran with `secrets_present=true`, all 3 assertions passed.
+
+7 files changed: 495 additions, 1 deletion.
+
+### 2. Wiring audit
+
+**Scope:** `fetchIntentWeights` (imported from real SDK), `ESTALARA_SMOKE_API_KEY` and `ESTALARA_SMOKE_DECISION_API_URL` (new env vars), `REQUIRE_LIVE_INTENT_SMOKE` (new CI env flag), `tests/integration/` (new workspace).
+
+- `fetchIntentWeights` — non-test producer: `packages/sdk/src/core/intent-weights.ts` (exported from `packages/sdk/src/index.ts`). Non-test consumer in test context: `tests/integration/intent-weights-live.smoke.test.ts` imports the real SDK function (no mock — this is the point of the smoke test). The test is not a unit test — it is a live-network integration smoke; the consumer IS the test file and this is the correct wiring for a smoke. CLEAN.
+
+- `ESTALARA_SMOKE_API_KEY` / `ESTALARA_SMOKE_DECISION_API_URL` — new GitHub Actions secrets (documented in ESC-024). Producer: `.github/workflows/intent-weights-live-smoke.yml` passes them to the test run via `env:`. Consumer: `tests/integration/intent-weights-live.smoke.test.ts` reads them from `process.env`. CLEAN.
+
+- `REQUIRE_LIVE_INTENT_SMOKE` — producer: `intent-weights-live-smoke.yml` sets it to `'1'` when `secrets_present=true`. Consumer: smoke test reads it at module load to switch from soft-skip to hard-fail. CLEAN.
+
+- `tests/integration/` workspace — registered in `pnpm-lock.yaml` and the `tests/integration/package.json`. The workspace is standalone (not added to the root `pnpm-workspace.yaml` explicitly; it is in `pnpm-lock.yaml` as an importer). CLEAN.
+
+**No new exported symbols introduced into `packages/` or `apps/`.** The new workspace is purely test infrastructure. Wiring audit: FULLY CLEAN.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, addressed-at-merge) — the smoke hard-fails immediately if secrets are present but `ESTALARA_SMOKE_DECISION_API_URL` is absent.** The guard checks `ESTALARA_SMOKE_API_KEY` presence for the skip-flag but does NOT independently check `ESTALARA_SMOKE_DECISION_API_URL`. However, if the URL is absent, `buildEndpoint(undefined, '/intent/config')` would produce a malformed URL and the fetch would fail with a network error, which would be caught by the smoke test's error handling and fail the assertion. The hard-fail behavior is preserved; the error message may be less clear. Severity: low (the secrets are provisioned together per ESC-024; a URL-absent scenario is unlikely in practice). No follow-up filed.
+
+- **LG-2 (P3, by design) — the smoke does NOT assert the `weights` field is non-empty.** AC-LN1 asserts `fetchIntentWeights()` returns non-null; AC-LN2 asserts `data_source='live'`; AC-LN3 asserts the single-`/api` URL form. But the actual `weights` object (the `signal_likelihoods` / `signal_weights` values) is not validated. A future migration that zeroes out the seed row's weights would not fail this smoke. Severity: P3 (the purpose of the smoke is to prove the seed row exists and the chain is wired, not to validate the weight values themselves). No follow-up filed; acceptable for an MVP smoke test.
+
+- **LG-3 (P3) — the smoke is specific to the global-default (`tenant_id = NULL`) seed row.** It uses a tenant key that has NO tenant-specific override row, so the route falls through to the global default. A scenario where the global default is present but a tenant-specific row overrides it for the smoke tenant is not covered. This is by design (the smoke proves the global default path). No follow-up filed.
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **No correctness gaps.** The three assertions correctly test the three distinct concerns: (1) non-null return (basic connectivity), (2) `data_source='live'` (seed row presence), (3) single `/api` (URL-form regression). The skip-loud contract is correctly implemented with two independent guards (`REQUIRE_LIVE_INTENT_SMOKE=1` + `HAS_SECRETS`). The CI job's `secret-check` step uses the standard GitHub Actions output variable pattern.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None.** The smoke itself is test infrastructure, not production code. The only production change is the addition of `tests/integration/` to `pnpm-lock.yaml` (new workspace entry).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, informational) — the smoke test file itself has no unit test.** The vitest.config.ts and the smoke spec are not covered by a meta-test. This is standard for integration test infrastructure. No follow-up filed.
+
+- **TG-2 (P3) — the `REQUIRE_LIVE_INTENT_SMOKE=1` hard-fail path is tested locally (per PR body) but not asserted in a CI unit test.** The PR body confirms: `REQUIRE_LIVE_INTENT_SMOKE=1 pnpm exec vitest run ... → hard-fails with clear error message ✓ verified locally`. This is a local-only assertion. The hard-fail path is correct code (throws at module load), and it runs in the CI job when secrets are present — so it is implicitly CI-tested on every real secrets run. Severity P3. No follow-up filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, RESOLVED-IN-PR) — ESC-024 documents the secrets, provisioning steps, and resolution path completely.** The smoke test file itself has a 50-line comment block explaining the purpose, skip/hard-fail contract, required env vars, and the connection to RETRO-007/FOLLOW-097/114/127/141. Documentation delta: CLEAN and thorough.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-307 (P1, devops — apply migration 0030 in prod Supabase):** This smoke is the live attestation that FOLLOW-307's migration apply succeeded. When AC-LN2 asserts `data_source='live'`, it proves migration 0030 is applied in the environment pointed to by `ESTALARA_SMOKE_DECISION_API_URL`. Smoke run 27555287447 (GREEN, 2026-06-15) provides this attestation — confirming FOLLOW-307's apply was effective. The smoke and FOLLOW-307 are tightly coupled: the smoke is the verification step for the migration apply.
+
+- **ESC-024 (RESOLVED, 2026-06-15):** The smoke PR filed ESC-024 documenting the missing secrets. Piotr provisioned both secrets on 2026-06-15. Run 27555287447 confirmed hard-assert mode (`secrets_present=true`) and all 3 assertions passed. ESC-024 fully RESOLVED.
+
+#### 5b. Future sprint tickets affected
+
+- **Any future intent-weights API change:** AC-LN2 is a regression guard for the `data_source='live'` contract. If a future PR accidentally removes the seed row or changes the route's fallback logic such that `data_source` returns `'mock'` when the seed row is present, the nightly smoke run at 04:00 UTC would catch it before the next business day. This is the value of the smoke as a continuous production canary.
+
+- **FOLLOW-307 (P1) closure criteria:** With smoke run 27555287447 GREEN, FOLLOW-307's AC1 ("apply 0030 in prod/staging Supabase; verify active global row exists; add `data_source:'live'` assertion to FOLLOW-293 smoke") is fully satisfied. FOLLOW-293 smoke now serves as the standing automated attestation.
+
+#### 5c. Contracts changed others rely on
+
+- **No production contracts changed.** The PR is purely test infrastructure. The `tests/integration/` workspace is isolated from `apps/` and `packages/`.
+
+#### 5d. Architectural assumptions affected
+
+- **The assumption that "a merged migration means it's live in prod" was already corrected by RETRO-076 (OG-1 architectural fact).** This PR adds the automated attestation that closes the gap: the live smoke running in production-pointing CI is the standing proof that the migration is applied and effective. This is the correct pattern for future migration validation.
+
+- **The "skip-loud / hard-fail" CI contract (RETRO-007 / FOLLOW-097/114/127/141 cautionary chain) is now applied to the D-1 smoke.** The pattern prevents the known failure mode of a test that always skips looking green. The nightly run with secrets present ensures the hard-assert path executes regularly.
+
+### 6. New lesson candidates
+
+- **Pattern: "a live-network smoke test that self-skips when secrets are absent should also have a nightly scheduled run with the secrets present — otherwise the skip path is the only path that ever runs in CI, and the test never actually asserts anything."** — seen in: RETRO-081 (intent-weights-live-smoke.yml nightly at 04:00 UTC + `REQUIRE_LIVE_INTENT_SMOKE=1` hard-fail on secrets-present run). This is the codified RETRO-007 lesson. The pattern is already in practice. **Count 2+ (RETRO-007 + RETRO-081 both implement it).** The existing lesson is reinforced; no new Rule needed (the RETRO-007 pattern is already canonical and referenced in the PR body).
+
+### 7. Follow-ups
+
+- None. FOLLOW-293 is DONE. ESC-024 RESOLVED. The smoke is green in production (run 27555287447). The nightly canary at 04:00 UTC provides standing coverage. FOLLOW-307's apply is attested.
+
+### 8. Cross-references
+
+- **FOLLOW-307 (devops — apply migration 0030):** This smoke is FOLLOW-307's automated attestation. Run 27555287447 GREEN confirms the apply succeeded.
+- **RETRO-076 (OG-1 — Postgres migrations do not auto-apply):** RETRO-081 is the companion retro — RETRO-076 establishes the architectural fact; RETRO-081 confirms the automated attestation that verifies the manual apply.
+- **RETRO-007 / FOLLOW-097/114/127/141 (cautionary chain):** The skip-loud / hard-fail contract directly addresses the RETRO-007 failure mode. Referenced explicitly in the PR body and smoke file comment.
+- **FOLLOW-268-sdk / FOLLOW-305 (D-1 SDK chain):** Those PRs built the production wire; RETRO-081's smoke is the live-network proof that the wire is connected end-to-end in production.
+
+---
+
+## RETRO-082 — FOLLOW-324 (SDK IIFE bundle size gate failure — split auto-detect pipeline into separate `estalara-detect.iife.js` companion; core IIFE drops from 52.61 KB to 39.73 KB gzip, passing the 40 KB gate; `window.__EStalaraDetect` global bridge pattern introduced; `esbuildOptions.drop:['console']` applied to IIFE build) — 2026-06-17
+
+### 1. What was built
+
+PR #308 (`fix(sdk): split auto-detect pipeline into separate IIFE to pass 40KB bundle gate [FOLLOW-324]`, merged 2026-06-15) resolves a P1 SDK gate failure. The core IIFE (`estalara-sdk.iife.js`) had grown to 52.61 KB gzip — 12.61 KB over the 40 KB limit — due to two static imports of the full auto-detect pipeline (`pipeline.ts` + `archetype-hints.ts`, ~16.8 KB gzip) being inlined by the IIFE bundler.
+
+Three changes:
+
+1. **Remove static imports** of `detectSiteSchema` / `extractArchetypeHints` from `packages/sdk/src/index.ts`. The `detectSiteSchema` top-level re-export is removed (it was unused by any production consumer — all consumers use the `@estalara/sdk/auto-detect` sub-path).
+
+2. **New file** `packages/sdk/src/auto-detect/detect-bundle.ts` — IIFE entry that sets `globalThis.__EStalaraDetect = { detectSiteSchema, extractArchetypeHints }`. Built as `dist/estalara-detect.iife.js` (12.43 KB gzip). The main SDK reads `window.__EStalaraDetect` opportunistically in the cold-start archetype-hints block; if absent, cold-start site-level hints are skipped (referrer/device priors still apply).
+
+3. **New tsup config entry** for `estalara-detect` IIFE; `esbuildOptions.drop: ['console']` added to the main IIFE build (drops 9 debug-guarded `console.*` calls and their string arguments, ~0.5 KB savings).
+
+3 files changed: 114 additions, 12 deletions. All 1383 unit tests pass. TypeScript strict-mode clean.
+
+### 2. Wiring audit
+
+**Scope:** `__EStalaraDetect` (new global), `detect-bundle.ts` (new file), `DetectionResult` type re-export change.
+
+- `__EStalaraDetect` — producer: `packages/sdk/src/auto-detect/detect-bundle.ts:36` (`).__EStalaraDetect = { detectSiteSchema, extractArchetypeHints }`). Consumer: `packages/sdk/src/index.ts:821` (`const detect = (globalThis as {...}).__EStalaraDetect`). Both are non-test production code. Wiring is a runtime global bridge (not a static import), which is correct for an optional companion IIFE. CLEAN.
+
+- `detect-bundle.ts` — built as `dist/estalara-detect.iife.js` by the new tsup entry in `tsup.config.ts`. The build entry is the non-test producer. The consumer is the install snippet: tenants load `estalara-detect.iife.js` before `estalara-sdk.iife.js`. The PR does NOT update the install snippet (`buildSnippet()` in control-plane) to auto-emit the companion tag — this is FOLLOW-325's job. CLEAN (wiring pending FOLLOW-325 for the snippet side).
+
+- `DetectionResult` type re-export — changed from `export type { DetectionResult } from './auto-detect/index.js'` to `export type { DetectionResult } from './auto-detect/pipeline.js'`. Type-only import; no runtime wiring change. The sub-path `@estalara/sdk/auto-detect` still exports `DetectionResult` via `auto-detect/index.ts`. CLEAN.
+
+- `export { detectSiteSchema } from './auto-detect/index.js'` — **REMOVED** from top-level `index.ts`. The PR body confirms via grep that no production consumer imports `detectSiteSchema` from `@estalara/sdk` (top-level). All production consumers use `@estalara/sdk/auto-detect`. CLEAN.
+
+**grep evidence (from PR body):**
+```
+grep -rn "detectSiteSchema" apps packages/sdk/src --include="*.ts" --include="*.tsx" | grep -v node_modules | grep -v .test. | grep -v /e2e/
+→ apps/control-plane/src/app/api/detect/route.ts:34: import { detectSiteSchema } from '@estalara/sdk/auto-detect'; (sub-path, not top-level)
+```
+
+Wiring audit: FULLY CLEAN.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, tracked by FOLLOW-325) — `buildSnippet()` in `apps/control-plane/src/lib/install-snippet.ts` does NOT emit `<script src="estalara-detect.iife.js">` in the install snippet.** Without this, tenants who copy the snippet from the control-plane dashboard will NOT get the companion script, and cold-start archetype hints will silently be skipped (the non-fatal fallback fires). This was explicitly known at PR merge time (FOLLOW-325 filed for this purpose). FOLLOW-325 has since been completed (PR #315, READY_FOR_REVIEW as of 2026-06-17). LG-1 is closing as FOLLOW-325 merges.
+
+- **LG-2 (P3) — the `__EStalaraDetect` global is read as `(globalThis as {...}).__EStalaraDetect` with an inline interface `DetectGlobal`.** If the detect bundle evolves to add new fields to `window.__EStalaraDetect`, the inline interface in `index.ts` must be manually kept in sync — it is not derived from `detect-bundle.ts`'s type. This is a light type-drift risk. Severity P3 (the interface is narrow; TypeScript will catch a missing call-site property at typecheck time; additions to the global shape are backward-compatible). No follow-up filed.
+
+- **LG-3 (P3) — the `esbuildOptions.drop: ['console']` applies to the MAIN IIFE build only; the ESM build retains console calls.** This is intentional (dev/npm integrators need the debug calls). However, if a future PR adds a `console.*` call to a non-debug path (not guarded by `config.debug`), it will be silently dropped in the IIFE bundle. The PR comment notes "All console.log/warn/error calls in SDK source are behind a `config.debug` guard." This assumption is not statically enforced. Severity P3. No follow-up filed (the existing lint + review process is sufficient guard).
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **No correctness gaps.** The `window.__EStalaraDetect` pattern is inside a `try/catch` block in `init()` that already existed to guard the auto-detect path. If the detect bundle is absent, `detect` is `undefined`, the `if (detect)` guard is false, and the code skips to the next block — identical behavior to a native failure. The bundle gate passes: 39.73 KB < 40 KB.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None.** All 1383 unit tests pass. TypeScript strict-mode clean. Bundle size gate passes.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — `detect-bundle.ts` (the new companion IIFE entry point) has NO unit test asserting it exports `detectSiteSchema` and `extractArchetypeHints` to `globalThis.__EStalaraDetect`.** The existing tests mock the detect path (via a `globalThis.__EStalaraDetect` setup in the jsdom environment). There is no test that loads `detect-bundle.ts` directly and asserts the global is correctly set. Severity P2: the detect-bundle is a new production artifact; a simple test that imports the module and checks `globalThis.__EStalaraDetect` is set would serve as a regression guard. **Filed as FOLLOW-335 below.**
+
+- **TG-2 (P3) — the `esbuildOptions.drop: ['console']` behavior is not tested.** No test asserts the built IIFE does not contain console strings. This would require a post-build assertion (e.g., grepping the dist file). Low severity (visible at bundle inspection); no follow-up filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, RESOLVED-IN-PR) — `tsup.config.ts` now has comment blocks explaining the split, the `__EStalaraDetect` global, and the `drop: ['console']` rationale.** `detect-bundle.ts` has a full JSDoc module comment. `index.ts` has a 4-line comment block at the old `export { detectSiteSchema }` site explaining why it was removed and where consumers should import from. Documentation delta: CLEAN and thorough.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-325 (buildSnippet companion auto-include, READY_FOR_REVIEW PR #315):** This PR's LG-1 is FOLLOW-325's entire purpose. Once FOLLOW-325 merges, every new install snippet will emit the companion `<script>` tag before the main SDK IIFE. The companion split (this PR) + snippet auto-include (FOLLOW-325) together constitute the complete feature.
+
+#### 5b. Future sprint tickets affected
+
+- **Any new auto-detect technique added to `pipeline.ts`:** Adding a new DOM detection technique will increase `estalara-detect.iife.js` but NOT the main SDK IIFE. This is the intended architecture post-split. The 40 KB gate on the main IIFE is now safely met.
+
+- **Any code that imports `detectSiteSchema` from `@estalara/sdk` (top-level):** The top-level re-export was removed. Any future PR that tries to import from the top-level will fail `pnpm typecheck`. The sub-path `@estalara/sdk/auto-detect` remains the correct import path.
+
+#### 5c. Contracts changed others rely on
+
+- **`export { detectSiteSchema }` from top-level `@estalara/sdk`:** REMOVED. Verified by grep that no current production consumer uses the top-level form (they all use `@estalara/sdk/auto-detect`). Any external npm consumer that imported from the top-level would get a TypeScript error — but this is an internal monorepo; no external consumers exist at this stage.
+
+- **`export type { DetectionResult }`:** Changed source from `auto-detect/index.js` to `auto-detect/pipeline.js`. Type-only; the type shape is unchanged. CLEAN.
+
+#### 5d. Architectural assumptions affected
+
+- **The assumption that the SDK IIFE is a single monolithic bundle is no longer correct.** The SDK now ships two optional IIFEs: the core (`estalara-sdk.iife.js`) and the companion (`estalara-detect.iife.js`). Deployment, CDN caching, and install-snippet generation must account for both files. FOLLOW-325 handles the snippet side; FOLLOW-324's PR body documents the install order.
+
+- **The `window.__EStalaraDetect` global is a new contract between the two IIFEs.** If the detect bundle is loaded AFTER the main SDK (wrong order), the opportunistic read in `init()` will find `undefined` and silently skip hints for the first session. The load order is documented in the detect-bundle module comment. Any install-snippet validation test should assert the companion `<script>` appears before the main SDK `<script>`.
+
+### 6. New lesson candidates
+
+- **Pattern: "a static import in an IIFE entry file (with `bundle: true`) inlines ALL transitive dependencies of the imported module, even if only a small subset of exports is used."** — seen in: RETRO-082 (the two static imports of `detectSiteSchema` / `extractArchetypeHints` added ~16.8 KB to the IIFE bundle because esbuild inlines every transitive dep at bundle time). The fix is to move the code to a separate IIFE entry and bridge via a global. This is the "accidental bundle inflation via static import in IIFE entry" pattern. **Count 1 — first sighting.** The 40 KB gate is the CI guard that caught it. The root cause is a misunderstanding of how IIFE `bundle: true` works vs. ESM tree-shaking. **No Rule promotion** (count 1); watch for a second sighting if a new module is statically imported into the IIFE entry.
+
+### 7. Follow-ups
+
+- **FOLLOW-335 (NEW — TG-1, P2):** Add a unit test for `detect-bundle.ts` that imports the module in a jsdom environment and asserts `globalThis.__EStalaraDetect` is set with `detectSiteSchema` and `extractArchetypeHints` as callable functions. This is a regression guard for the new companion IIFE entry. (sdk-engineer, 1h, **P2**, Sprint 18+)
+
+### 8. Cross-references
+
+- **FOLLOW-325 / RETRO for PR #315 (buildSnippet companion auto-include):** The direct follow-on to this split. RETRO-082's LG-1 closes when FOLLOW-325 merges.
+- **RETRO-007 / FOLLOW-097 (SDK bundle gate):** The 40 KB bundle gate was established early in the project as a non-negotiable quality bar. RETRO-082 is the first sighting of an IIFE bundler inflation event caught by that gate.
+- **ADR-0012 (K.3.6 D-1 architecture):** The detect bundle is part of the K.3.6 auto-detect cold-start prior system. ADR-0012 documents the decision to use a global bridge rather than a dynamic import.
+
+---
+
+## RETRO-083 — FOLLOW-326 (admin.estalara.com sign-in page + Supabase SSR auth flow — 3-PR iteration: PR #309 sign-in page, PR #310 middleware cookie fix, PR #311 `verifyTracerAdminAuth` SSR session path; root causes: `@supabase/ssr` chunked cookie vs. `sb-access-token` legacy name mismatch, missing `estalara_staff` app_metadata claims, package.json merge conflict; all resolved; AC1-AC8 complete) — 2026-06-17
+
+### 1. What was built
+
+FOLLOW-326 delivered admin sign-in for `admin.estalara.com` in three sequential PRs, each one fixing a blocker revealed only after the previous one was deployed. The three PRs form a single feature with cascading fix iterations.
+
+**PR #309** (`feat(control-plane): add /sign-in page + Supabase SSR auth flow [FOLLOW-326]`, merged 2026-06-15): The foundational PR. Installs `@supabase/ssr` (replacing deprecated `@supabase/auth-helpers-nextjs`). Adds `src/lib/supabase/client.ts` (`createBrowserClient`) and `src/lib/supabase/server.ts` (`createServerClient`). Adds `/sign-in` page (Server Component root + `SignInForm` client component with `signInWithPassword()`). Replaces the marketing landing page (`/`) with a `permanentRedirect('/sign-in')` (308). Fixes `src/middleware.ts` `/login` → `/sign-in`. Adds a Sign-Out Server Action to `admin/layout.tsx`. 790 additions, 213 deletions.
+
+**PR #310** (`fix(control-plane): use @supabase/ssr in middleware to read chunked session cookies [FOLLOW-326]`, merged 2026-06-15): Fixes the login-appears-to-work-but-immediately-redirects-back-to-sign-in bug. Root cause: `@supabase/ssr` v0.12 sets a chunked cookie named `sb-<project-ref>-auth-token` (not `sb-access-token`), which the old middleware `@estalara/auth`'s `extractRawToken()` could not find. Fix: replace the `/admin/*` auth check in middleware with `createServerClient` + `getUser()` from `@supabase/ssr`. Also adds `packages/auth/sql/custom_access_token_hook.sql` (new SQL function to inject `estalara_staff`/`estalara_role` into JWTs). 205 additions, 61 deletions.
+
+**PR #311** (`fix(control-plane): accept Supabase SSR session in verifyTracerAdminAuth [FOLLOW-326]`, merged 2026-06-15): Fixes 401s on all admin data views (Weight Editor, Session History, Live Monitor SSE) after login worked. Root cause: `verifyTracerAdminAuth` (guarding all `/api/admin/*` routes) only checked the Bearer `ADMIN_API_SECRET` header OR the legacy `getAuthClaims()` → `sb-access-token` path. Browser-initiated fetches after `signInWithPassword()` carried the chunked `sb-<project-ref>-auth-token` cookie only — neither path recognized it. Fix: add a `checkStaffSession` path that reads the SSR chunked cookie via `createServerClient().getUser()` and checks `user.app_metadata.estalara_staff`. Does NOT require the custom access token hook. 278 additions, 66 deletions.
+
+### 2. Wiring audit
+
+**Scope:** `createBrowserClient` wrapper (`supabase/client.ts`), `createServerClient` wrapper (`supabase/server.ts`), `checkStaffSession` (internal to `tracer-auth.ts`), `verifyTracerAdminAuth` (existing export, new auth path added).
+
+- `createClient` from `@/lib/supabase/client` — producer: `apps/control-plane/src/lib/supabase/client.ts:30`. Consumer: `apps/control-plane/src/app/sign-in/SignInForm.tsx:17` (import). CLEAN.
+
+- `createServerSupabaseClient` from `@/lib/supabase/server` — producer: `server.ts`. Consumer: `apps/control-plane/src/app/admin/layout.tsx:14` (import, Sign-Out Server Action). CLEAN.
+
+- `createServerClient` (from `@supabase/ssr`) — producer: `@supabase/ssr` package. Consumers (non-test): `middleware.ts:31` + `middleware.ts:139` (admin session gate), `tracer-auth.ts:26` + `tracer-auth.ts:55` (checkStaffSession). CLEAN.
+
+- `checkStaffSession` — module-private function in `tracer-auth.ts` (not exported). Producer: defined at line 49. Consumer: called at line 118 inside `verifyTracerAdminAuth`. Self-contained. CLEAN.
+
+- `verifyTracerAdminAuth` — existing export, new auth path added. Non-test importers: all `/api/admin/*` route files. Wiring unchanged (existing callers get the new path automatically). CLEAN.
+
+**grep evidence:**
+```
+grep -rn "createBrowserClient\|createServerClient\|checkStaffSession\|verifyTracerAdminAuth\|supabase/server\|supabase/client" apps/control-plane/src --include="*.ts" --include="*.tsx" | grep -v "\.test\." | grep -v "node_modules"
+```
+(12+ non-test lines confirming all symbols wired). Wiring audit: FULLY CLEAN.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, KNOWN at PR time) — the custom access token hook (`packages/auth/sql/custom_access_token_hook.sql`) is NOT installed in production.** PR #310 added the SQL file but it requires a manual step: run the SQL in Supabase SQL editor + register the function in Authentication → Hooks. Until this is done, `getAuthClaims()` (the Bearer JWT path) continues to work via the `app_metadata` approach from `checkStaffSession`, but the legacy JWT Bearer path (`@estalara/auth`'s `extractRawToken()`) will NOT carry `estalara_staff` claims. The PR body documents this clearly and provides exact SQL. PR #311's fix (checking `user.app_metadata.estalara_staff` via `checkStaffSession`) works WITHOUT the hook — it reads `app_metadata` directly from the Supabase session. So the admin sign-in is fully functional without the hook. The hook is a future improvement for the JWT Bearer path. No follow-up filed (already noted in PR body; devops/backend scope). Severity: P3 (the current auth path works; the hook would add JWT-level claims).
+
+- **LG-2 (P2) — `verifyTracerAdminAuth` now has THREE auth paths (Bearer ADMIN_API_SECRET, checkStaffSession SSR cookie, legacy `getAuthClaims()` JWT).** The three-path cascade makes the function's failure mode complex: if `checkStaffSession` throws (e.g., Supabase network error), it falls through to the legacy JWT path, which may then 401. The error is caught and logged by Sentry, but the user gets a generic 401 without knowing why. Severity: P2 (auth failure in production is user-visible). No follow-up filed (the three-path cascade is a deliberate incremental migration — the long-term goal is to consolidate onto the SSR path; a cleanup can happen when the legacy JWT path is retired). This is noted for the next major auth refactor.
+
+- **LG-3 (P3) — the `checkStaffSession` function does NOT validate `estalara_role`** — it only checks `estalara_staff === true`. A staff user without a specific role (e.g., `estalara:superadmin`) will be granted access. This is acceptable for the MVP single-admin use case but may need role-based access control (RBAC) in a multi-admin future. No follow-up filed.
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **CB-1 (P1, RESOLVED by PR #311) — `verifyTracerAdminAuth` accepted only Bearer / legacy JWT; the SSR session cookie path was missing.** This caused every admin data API call to 401 after a successful browser login. PR #311 added `checkStaffSession` to fix this. Fully resolved.
+
+- **CB-2 (P1, RESOLVED by PR #310) — middleware could not find the Supabase session cookie.** `@supabase/ssr` v0.12 uses chunked cookies with a project-ref-scoped name; the old `extractRawToken()` looked for `sb-access-token` only. PR #310 replaced the middleware auth check with `createServerClient` + `getUser()`. Fully resolved.
+
+- **No correctness gaps remain in the merged state.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **None in the final merged state.** The 3-PR chain is a sequential remediation: each PR introduced a fix for a bug revealed by the previous PR's deployment. The final state (PRs #309+#310+#311 all merged) is correct.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — `checkStaffSession` (the new SSR cookie auth path in `verifyTracerAdminAuth`) is NOT covered by a test.** PR #311 notes: "`tracer-auth.test.ts` — 5/5 pass (existing Bearer/JWT/401 paths unchanged)." The 5 existing tests cover the Bearer and legacy JWT paths. The new `checkStaffSession` path — which is now the PRIMARY path for browser-initiated admin fetches — has no test. Severity: P2 (this is the live production auth path for all admin routes). **Filed as FOLLOW-336 below.**
+
+- **TG-2 (P2) — the middleware `createServerClient` + `getUser()` path (PR #310) has no test.** `src/middleware.test.ts` — 11 existing CORS tests pass (per PR #309 body, "unchanged, verified locally"). The new Supabase SSR path in middleware (the admin session gate) is not covered. Severity: P2 (middleware auth is the first gate for all `/admin/*` requests). **Folded into FOLLOW-336.**
+
+- **TG-3 (P3) — `SignInForm.tsx` has no unit test.** The `signInWithPassword()` happy path, the error display, and the `router.push('/admin')` redirect are untested. PR #309 updated `page.test.tsx` to cover the `permanentRedirect` but not the form itself. Severity: P3 (the form is thin UI; the real auth logic is in Supabase). **Folded into FOLLOW-336.**
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, RESOLVED-IN-PR) — `.env.example` updated with `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.** The PR body documents the operator action required after merge (add to Vercel prod env vars). CLEAN.
+
+- **DG-2 (P3) — `packages/auth/sql/custom_access_token_hook.sql` has no corresponding migration or runbook entry.** The file exists but requires manual Supabase dashboard registration. No `backlog/runbooks/` entry exists. Low severity (PR body documents the steps); no follow-up filed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-332 (P2, qa-engineer) — add admin/layout.test.tsx + admin/page.test.tsx.** PR #309's sign-out Server Action in `admin/layout.tsx` is not covered by FOLLOW-332's scope, but the layout file change is adjacent. FOLLOW-332's tests should include the sign-out path. Noted for the FOLLOW-332 delegation prompt.
+
+#### 5b. Future sprint tickets affected
+
+- **Any new `/api/admin/*` route:** Must call `verifyTracerAdminAuth` from `tracer-auth.ts`. The three-path cascade (Bearer, SSR cookie, legacy JWT) is now the canonical gate. New routes that add their own auth check instead of calling `verifyTracerAdminAuth` will have inconsistent security. This is a known risk as the admin surface grows.
+
+- **Custom access token hook (LG-1):** If the hook is installed in the future, `getAuthClaims()` will start receiving `estalara_staff` claims in Bearer JWTs — the legacy path will work again for non-browser clients (API clients, curl). No code change needed; the hook is additive.
+
+#### 5c. Contracts changed others rely on
+
+- **`/` (root route):** Now permanently redirects to `/sign-in` (308). Any existing bookmark to `admin.estalara.com/` will redirect. This is intentional (no marketing landing page on the admin domain).
+
+- **`@supabase/ssr` replaces `@supabase/auth-helpers-nextjs`:** The deprecated package is removed. Any code that imported from `auth-helpers-nextjs` would need to be migrated. Grep confirms no other files imported from the deprecated package.
+
+#### 5d. Architectural assumptions affected
+
+- **The assumption that `sb-access-token` is the canonical Supabase session cookie name is incorrect for `@supabase/ssr` v0.12+.** The correct name is `sb-<project-ref>-auth-token` (chunked). This assumption was in `@estalara/auth`'s `extractRawToken()` and in the old middleware. PR #310 fixed middleware; PR #311 fixed `verifyTracerAdminAuth`. The `@estalara/auth`'s legacy JWT path still looks for `sb-access-token` — it now functions only for the custom access token hook case (where JWTs are issued) or for Bearer tokens passed directly. The chunked cookie path is now handled exclusively by `checkStaffSession` / `createServerClient`.
+
+- **The 3-PR iteration pattern is the expected outcome for a new auth flow:** the first PR establishes the scaffold, the second fixes the runtime cookie name mismatch, the third fixes the API route auth gate. This is a known pattern for `@supabase/ssr` migrations (per `project_admin_ssr_cookie_auth.md` memory note: "admin browser-session routes must use `createServerClient().getUser()`, NOT `getAuthClaims`"). The memory note correctly predicted the fix pattern.
+
+### 6. New lesson candidates
+
+- **Pattern: "a new auth library (`@supabase/ssr`) sets cookies with a different naming scheme than the old library (`sb-<project-ref>-auth-token` vs. `sb-access-token`), causing every middleware auth check and API route auth gate to fail silently — the login appears to succeed but every protected request gets 401."** — seen in: RETRO-083 (PRs #310 + #311 both fixed this pattern at different layers: middleware and API auth gate). This is the "cookie name mismatch across auth library upgrade" pattern. It required THREE PRs to fully fix because the mismatch existed in two places: middleware (PR #310) and `verifyTracerAdminAuth` (PR #311). The `project_admin_ssr_cookie_auth.md` memory note was written AFTER this was resolved and now serves as the canonical lesson. **Count 1 — first sighting in this repo.** No Rule promotion (count 1). The memory note is the correct artifact for this.
+
+- **Pattern: "an auth gate function has multiple fallback paths (Bearer, SSR cookie, legacy JWT); a new auth mechanism (SSR cookie) is added to the gate but has no test; the other paths have tests; CI shows all tests green; the untested path is the PRIMARY production path."** — seen in: RETRO-083 TG-1/TG-2 (`checkStaffSession` + middleware `getUser()` both untested). **Count 1 — first sighting.** No Rule promotion. FOLLOW-336 addresses it.
+
+### 7. Follow-ups
+
+- **FOLLOW-336 (NEW — TG-1/TG-2, P2):** Add tests for the Supabase SSR session auth path in both `tracer-auth.ts` (`checkStaffSession`) and `src/middleware.ts` (admin session gate). Specifically: (a) a test for `checkStaffSession` covering the `'staff'` / `'not_staff'` / `'none'` return values with a mocked `createServerClient`; (b) a test for the middleware admin gate that mocks `createServerClient().getUser()` and asserts the correct redirect/pass behavior; (c) optionally, a test for `SignInForm.tsx` covering the happy path, error display, and redirect. Priority: P2 (the SSR session path is the PRIMARY live production auth mechanism for all admin routes). (qa-engineer or backend-engineer, 3h, **P2**, Sprint 18)
+
+### 8. Cross-references
+
+- **`project_admin_ssr_cookie_auth.md` (user memory):** The canonical lesson from this 3-PR chain is already captured in the memory note: "admin browser-session routes must use `@supabase/ssr` `createServerClient.getUser()`, NOT `getAuthClaims` (sb-access-token mismatch)." RETRO-083 is the retro that explains WHY.
+- **RETRO-077 / RETRO-080 (tracer admin UI auth):** Those retros addressed the SSE token-in-query-param vs. header issue for the Live Monitor. RETRO-083 addresses the browser session cookie mismatch for all API routes. Clean separation — both are "admin auth" but at different layers and mechanisms.
+- **FOLLOW-332 (P2, qa-engineer) — admin layout/page tests:** The sign-out Server Action added by PR #309 should be in scope for FOLLOW-332's test coverage.
+
+---
+
+## RETRO-062 — FOLLOW-276 (stale quiz-config snippet-attr docstrings post-ADR-0011; four `buildSnippet emits data-micro-polls-enabled` / `data-quiz-enabled` claims corrected to describe the ADR-0011 runtime-fetch wire; pure docstring correction, no logic changed) — 2026-06-17
+
+### 1. What was built
+
+PR #272 (`docs(control-plane): correct stale quiz-config snippet-attr docstrings post-ADR-0011 [FOLLOW-276]`, merged 2026-06-12) is a pure documentation correction. ADR-0011 retired `buildSnippet()`'s emission of `data-micro-polls-enabled` / `data-quiz-enabled` and moved `readConfig()` to treat those attributes as `DEPRECATED_FALLBACK` only. FOLLOW-275's close-out PRs (#270/#271) corrected docstrings in their direct diffs, but four stale "buildSnippet emits" claims survived in adjacent files outside those diffs.
+
+Four locations corrected:
+1. `packages/shared/src/schemas/quiz-config.ts` line 21 (FOLLOW-274 note claiming buildSnippet emits `data-micro-polls-enabled`)
+2. `packages/shared/src/schemas/quiz-config.ts` lines 91-92 (`QuizConfig.micro_polls_enabled` JSDoc)
+3. `apps/control-plane/src/app/api/quiz/config/route.ts` line 26 (WIRED block claiming active emission)
+4. `apps/control-plane/src/app/dashboard/quiz/page.tsx` lines 54 + 252 (JSDoc + user-facing JSX comment)
+
+All four rewritten to describe the ADR-0011 runtime-fetch wire: `GET /api/quiz/public-config` → `fetchQuizConfig()` → `mergeQuizConfig()` → `config.*`. The user-facing comment now reads: "Changes take effect on the buyer's next page load — no snippet re-install required."
+
+3 files changed: 25 additions, 12 deletions. No logic changed, no test files touched.
+
+### 2. Wiring audit
+
+**Scope:** Documentation-only PR. No new exported symbols, events, env vars, DB columns, or config fields. Wiring audit: N/A (no new wiring to verify).
+
+**AC3 grep (from PR body) confirmed zero surviving active "buildSnippet emits" claims for the retired attributes:**
+```
+grep -rn "buildSnippet emits|data-micro-polls-enabled.*emits|data-quiz-enabled.*emits" --include="*.ts" --include="*.tsx" apps/ packages/ --exclude-dir=dist --exclude-dir=node_modules
+→ 3 hits, all for non-retired attributes (data-decision-url, data-inquiry-submit-selector) or a DEPRECATED_FALLBACK read path test. CLEAN.
+```
+
+### 3. Logic gaps
+
+- **None.** This is a documentation-only correction. The underlying ADR-0011 runtime-fetch wire was already implemented by FOLLOW-275 (PRs #270/#271). This PR has no logic.
+
+### 4. Code review
+
+- No code logic changed. No test files touched. TypeScript typecheck exits 0 on both `@estalara/shared` and `control-plane` filters. 931 tests passed. CLEAN.
+
+### 5. Cascading impact
+
+- **None.** Documentation-only. No consumer depends on these docstring claims. The runtime behavior (runtime-fetch transport) was already correct; only the stale documentation was wrong.
+
+### 6. New lesson candidates
+
+- **Pattern: "close-out PRs for an ADR migration correct docstrings only in their direct diff; sibling files with matching-but-stale claims are not grepped for consistency."** — seen in: RETRO-062 (FOLLOW-275 close-out PRs #270/#271 corrected some docstrings but missed 4 of the stale "buildSnippet emits" claims in adjacent files). The fix: when an ADR retires an emit/attribute/behavior, grep ALL files (not just touched files) for the claim text before closing. **Count 1 — first sighting.** No Rule promotion (count 1).
+
+### 7. Follow-ups
+
+- None. All stale claims corrected. CLEAN.
+
+### 8. Cross-references
+
+- **ADR-0011 (quiz-config transport):** The ADR whose implementation created the stale docstrings. RETRO-062 completes the docstring propagation.
+- **FOLLOW-275 / PRs #270+#271:** The close-out PRs that corrected the directly-touched files. RETRO-062 corrects the residual.
+
+---
+
+## RETRO-063 — FOLLOW-278 (consent-banner locale/accent gap resolution — Option iii accepted: document constraint as accepted behavior; adds locale render-hop test verifying `language='pl'` flows from server config to quiz trigger button text; ADR-0011 `§Consent-banner locale` addendum; `QUIZ_CONFIG_CACHE_KEY` scope note added; no logic changed) — 2026-06-17
+
+### 1. What was built
+
+PR #273 (`fix(sdk): document consent-banner locale constraint + add locale render-hop test [FOLLOW-278]`, merged 2026-06-12) resolves RETRO-058 §4a LG-1/LG-2/TG-1.
+
+The locale/accent gap: `buildSnippet()` does NOT emit `data-language` or `data-accent-color`. The consent banner renders at step 2 (consent gate, before any tenant-data fetch); the quiz-config fetch runs at step 3 (after consent resolves). The banner cannot wait for the fetch without fetching tenant data pre-consent — a GDPR compliance issue. Compliance confirmed no locale-specific legal text in the banner. The gap is **accepted behavior**, not a bug.
+
+Three changes:
+1. **Option iii chosen** — document the constraint at the `renderConsentBanner()` call site in `packages/sdk/src/index.ts` (28-line comment) and in `docs/adr/ADR-0011-quiz-config-transport.md` (new `§Consent-banner locale` addendum).
+2. **Locale render-hop test** (`packages/sdk/src/__tests__/follow-278.test.ts`, 6 tests) — drives `_initForTest()`, mocks the server returning `language='pl'`, advances fake timers to quiz trigger (30s), asserts rendered button text is `'Znajdź dopasowanie →'` (QUIZ_LABELS.pl.trigger). RED before FOLLOW-275 (mergeQuizConfig not wired), GREEN after (index.ts:744 calls mergeQuizConfig before renderQuizTrigger at 760).
+3. **`QUIZ_CONFIG_CACHE_KEY` scope note** in `packages/sdk/src/core/quiz-config.ts` — documents the global-per-tab scope and the multi-embed caveat.
+
+5 files changed: 434 additions, 0 deletions. 1320 tests passed (+6 new).
+
+### 2. Wiring audit
+
+**Scope:** New test file, ADR addendum, docstrings. No new exported symbols, events, env vars, DB columns, or config fields.
+
+- `QUIZ_CONFIG_CACHE_KEY` scope note — documentation addition in `quiz-config.ts`. Not a new export. CLEAN.
+- `follow-278.test.ts` — test file only. Imports `_initForTest()` (existing seam from `packages/sdk/src/index.ts`). CLEAN.
+- ADR-0011 addendum — documentation only. CLEAN.
+
+Wiring audit: N/A (no new wiring). CLEAN.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, ACCEPTED — the constraint is the resolution):** `buildSnippet()` does not emit `data-language` / `data-accent-color`. The consent banner will always render in the tenant's embed-default language (the SDK's fallback, typically English) regardless of server-side `language` configuration. This is accepted behavior per compliance guidance (no locale-specific legal text in banner). The locale DOES reach the quiz trigger (tested by TG-1 test). Documented in index.ts comment + ADR-0011 addendum. No follow-up filed — the constraint is intentional.
+
+- **LG-2 (P3) — `QUIZ_CONFIG_CACHE_KEY` is global-per-tab (not scoped by apiKey).** In a multi-embed-per-tab scenario, tenant A's config could leak to tenant B's SDK instance. The scope note documents this. For the current single-embed model, it is correct. No follow-up filed (multi-embed is a future concern).
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **No correctness gaps.** The test file validates the existing production behavior is correct (FOLLOW-275 wired mergeQuizConfig before renderQuizTrigger; FOLLOW-278 proves it). No production code changed.
+
+#### 4b. Code bugs not caught
+
+- **None.** Pure test + docs change.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (RESOLVED-BY-PR) — locale render-hop test.** The 6 tests in `follow-278.test.ts` cover the core concern (Polish/Spanish/English label text reaches the rendered trigger). CLEAN.
+
+### 5. Cascading impact
+
+- **None for logic.** The ADR addendum (§Consent-banner locale) is now the canonical reference for why the banner ignores locale — future devs won't file a bug against it.
+
+### 6. New lesson candidates
+
+- **Pattern: "when an architectural constraint (GDPR-compliance-driven locale gap) is accepted, documenting it at the call site AND in the ADR prevents repeated re-investigation."** — seen in: RETRO-063 (the locale gap was surfaced in RETRO-058; FOLLOW-278 documents it in two places — call-site comment + ADR addendum + scope note on the cache key). This is the correct closure pattern for "accepted but non-obvious constraint" findings. **Count 1.** No Rule promotion (count 1, and it is a documentation practice note, not a code pattern).
+
+### 7. Follow-ups
+
+- None. The constraint is documented. The locale render-hop test is green. CLEAN.
+
+### 8. Cross-references
+
+- **RETRO-058 (FOLLOW-275 / quiz-config transport):** LG-1/LG-2/TG-1 from RETRO-058 are the source of FOLLOW-278. RETRO-063 closes all three.
+- **ADR-0011-quiz-config-transport.md:** The canonical document for the quiz-config transport decision. `§Consent-banner locale` addendum added in this PR.
+- **FOLLOW-273 / PR #268 (type unification):** FOLLOW-273 proves the `QuizLanguage` type is correct at the type level. FOLLOW-278 (this retro) proves the type is correctly consumed by rendering. The two are disjoint and complementary.
+
+---
+
+## RETRO-087 — FOLLOW-325 (`buildSnippet()` auto-includes the `estalara-detect.iife.js` companion for all Tier 1+2 tenants; `DETECT_SERVE_URL` added to `@estalara/shared`; `docs/INTERFACES.md` `window.__EStalaraDetect` surface contract; dev fallback route `GET /api/sdk-detect`; Tier 3 opt-out + companion-suppression deferred to FOLLOW-331/FOLLOW-332) — 2026-06-17
+
+### 1. What was built
+
+PR #315 (`feat(control-plane): buildSnippet() auto-includes detect companion for Tier 1+2 [FOLLOW-325]`, merged `43ad849` 2026-06-17). 7 files changed, 3298 insertions, 9 deletions.
+
+The PR closes the RETRO-082 LG-1 snippet half-wire: PR #308 (FOLLOW-324) split `estalara-detect.iife.js` into a companion bundle and set `window.__EStalaraDetect` in it, but `buildSnippet()` did NOT emit the companion `<script>` tag — so every newly-onboarded tenant got a main SDK IIFE that called `window.__EStalaraDetect` before it was defined.
+
+Four deliverables:
+
+1. **`DETECT_SERVE_URL` constant** in `packages/shared/src/domains.ts:73` — `${CONTROL_PLANE_URL}/estalara-detect.iife.js`. Same host pattern as `SDK_SERVE_URL` per Rule X (no double-`/api`, just a static-asset path).
+
+2. **`buildSnippet()` update** in `DetectionPreview.tsx:183` — emits the companion `<script>` tag BEFORE the main SDK tag, both without `async`/`defer`, guaranteeing browser execution ordering (`window.__EStalaraDetect` defined before the main SDK IIFE runs).
+
+3. **Static asset** `apps/control-plane/public/estalara-detect.iife.js` committed (61 KB, ~12 KB gzip). Same Vercel-static pattern as `public/sdk.js` from PR #308.
+
+4. **`docs/INTERFACES.md`** new `window.__EStalaraDetect` section documenting the full interface contract, load ordering, default-ON for Tier 1+2, Tier 3 exclusion rationale, and opt-out hooks deferred to FOLLOW-331/FOLLOW-332.
+
+### 2. Wiring audit
+
+**New exported symbol:**
+
+- `DETECT_SERVE_URL` — `packages/shared/src/domains.ts:73`
+  - Producer (non-test): `packages/shared/src/domains.ts:73` (export), re-exported via `packages/shared/src/index.ts` (wildcard `export * from './domains.js'`)
+  - Consumer (non-test): `apps/control-plane/src/components/onboarding/DetectionPreview.tsx:23,183` — imported and used in `buildSnippet()` as `${DETECT_SERVE_URL}` inside the companion `<script>` tag
+  - **Wire: CLEAN.** Non-test producer confirmed; non-test consumer confirmed.
+
+**New file:**
+
+- `apps/control-plane/src/app/api/sdk-detect/route.ts` — dev-only fallback GET route. Reads `packages/sdk/dist/estalara-detect.iife.js`; returns an empty JS comment when absent. NOT a production path — production uses the static `public/estalara-detect.iife.js` file. No new exported symbol. CLEAN.
+
+**Deferred wires (explicitly NOT wired in this PR — by design):**
+
+- Per-tenant opt-out toggle — deferred to FOLLOW-331 (mentioned in code comment + INTERFACES.md but no runtime producer/consumer yet). CORRECT — not a wiring gap, a deliberate future work stub.
+- Tier 3 companion suppression — deferred to FOLLOW-332. CORRECT.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, OPEN — FOLLOW-335) — `detect-bundle.ts` producer has no unit test for `globalThis.__EStalaraDetect` global assignment.** RETRO-082 TG-1 already filed FOLLOW-335 against this. This retro confirms it is still OPEN (PR #315 adds only consumer-side tests — CompanionTag-1..5 in DetectionPreview.test.tsx — none of which test the actual `detect-bundle.ts` code that sets the global). Not re-filed; FOLLOW-335 is the correct tracking stub.
+
+- **LG-2 (P3, ACCEPTABLE) — `estalara-detect.iife.js` committed as a built artifact.** The file in `apps/control-plane/public/` is a compiled binary at `61 KB`. It was hand-built from PR #308 (FOLLOW-324) output. Future SDK changes must regenerate it. The dev fallback route (`/api/sdk-detect`) reads `packages/sdk/dist/` which IS built from source — so in development, the latest build is used. In production, the static file may lag SDK changes. This is acceptable for MVP (the two are built together; CI would catch a drift via SDK E2E tests). Low severity; noted for operational awareness.
+
+- **LG-3 (P3) — `DETECT_SERVE_URL` is on the same `admin.estalara.com` host as the control-plane app.** This means a control-plane deploy outage also takes down the auto-detect companion. Acceptable for MVP single-region; multi-CDN distribution is a future hardening concern.
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **The companion `<script>` tag is emitted WITHOUT `async` or `defer` by design** — this is correct. The main SDK IIFE reads `window.__EStalaraDetect` synchronously on execution. If the companion loaded async, the global would not be set in time. The inline comment in `buildSnippet()` correctly documents this load-ordering requirement.
+
+- **Tier 3 exclusion is documented but not enforced in code.** `buildSnippet()` always emits the companion for ALL tenants including Tier 3. FOLLOW-332 is the gating ticket for suppression. For the current pilot (Tier 1/2 only), this is non-blocking.
+
+#### 4b. Code bugs not caught
+
+- **None.** The DETECT_SERVE_URL constant uses the same `${CONTROL_PLANE_URL}` base as `SDK_SERVE_URL` — both resolve to `https://admin.estalara.com/...`. No double-`/api` path issue (it is a static asset path, not an API endpoint). Rule X pattern correctly applied.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, FOLLOW-335, OPEN) — detect-bundle.ts producer-side global assignment has no unit test.** Inherited from RETRO-082 TG-1. Not new here.
+
+- **TG-2 (P3) — The dev fallback `GET /api/sdk-detect` route has no test.** Low severity; it is a dev-only path that returns an empty comment when artifact absent. Not filed as a separate stub (low ROI).
+
+### 5. Cascading impact
+
+- **FOLLOW-331 (READY in queue) — per-tenant opt-out toggle.** Any tenant that does NOT want auto-detection must wait for FOLLOW-331 before they have a supported way to suppress the companion. For the current pilot (single tenant, CEO decision to default-ON), this is non-blocking.
+
+- **FOLLOW-332 (READY in queue) — Tier 3 companion suppression.** If Tier 3 is activated before FOLLOW-332 ships, the companion will fire on Tier 3 pages unnecessarily (redundant but not harmful — `window.__EStalaraDetect` will be set but the Tier 3 SDK (`<EstalaraListing/>`) does not read it). Harmless, but should close before Tier 3 launch.
+
+- **FOLLOW-335 (READY in queue, from RETRO-082) — detect-bundle.ts unit test.** No runtime impact; test coverage gap only.
+
+### 6. New lesson candidates
+
+- **Pattern: "when a PR ships a consumer of a global bridge pattern (`window.__EStalaraDetect`) but the producer (detect-bundle.ts) has no unit test for the global assignment, add a P2 follow-up stub IMMEDIATELY — the companion can silently regress if the SDK build changes detect-bundle.ts output."** — seen in: RETRO-082 (filed FOLLOW-335), RETRO-087 (confirms FOLLOW-335 still open after PR #315). **Count 2 (RETRO-082 + RETRO-087) on the "untested IIFE global bridge" axis.** Threshold: ≥2 independent retros. However, this pattern is already captured by FOLLOW-335's existence (P2 action pending); it does not need a new Rule until the test lands and we can confirm the Rule form. Defer Rule promotion to after FOLLOW-335 merges; re-assess at RETRO-088.
+
+### 7. Follow-ups
+
+- **FOLLOW-331 (READY, P2, sdk-engineer + backend-engineer)** — per-tenant opt-out toggle. Already promoted to QUEUE.md in this session.
+- **FOLLOW-332 (READY, P2, qa-engineer)** — Tier 3 companion suppression. Already promoted to QUEUE.md in this session.
+- **FOLLOW-335 (READY, P2, sdk-engineer)** — detect-bundle.ts global assignment unit test. Already in FOLLOW_UPS.md.
+
+### 8. Cross-references
+
+- **RETRO-082 (FOLLOW-324 / PR #308):** The PR that created the companion bundle and the `window.__EStalaraDetect` pattern. RETRO-087 is the closure of RETRO-082 LG-1 (snippet half-wire). RETRO-082 TG-1 (detect-bundle.ts unit test) is still open as FOLLOW-335.
+- **FOLLOW-331/332:** Deferred work explicitly scoped and referenced in PR #315 code comments and INTERFACES.md.
+- **Rule X (RETRO-075 / RETRO-074):** `DETECT_SERVE_URL` correctly uses `${CONTROL_PLANE_URL}/estalara-detect.iife.js` (no `/api` prefix on a static-asset path). Rule X verifies no double-`/api` — confirmed clean.
+
+---
+
+## RETRO-069 — FOLLOW-287 + FOLLOW-288 (K.3.6 `intent_events` ClickHouse JSONEachRow type repair: `intent_session_id` UUID→String incompatibility fix + `confidence_before` null→0.0 sentinel + migration 0016 SELECT 1 no-op; ESC-021 root-cause retro) — 2026-06-17
+
+### 1. What was built
+
+PR #281 (FOLLOW-287, merged 2026-06-12T22:31:19Z) + PR #282 (FOLLOW-288, merged 2026-06-12T23:27:03Z). Together these two PRs constitute the ESC-021 remediation chain.
+
+**FOLLOW-287 (PR #281) — ingest handler type fix:**
+
+- **CB-2:** Revert `confidence_before: null` → `confidence_before: 0.0` (Float32 NOT NULL cannot accept null in JSONEachRow; the row would be silently dropped by ClickHouse).
+- **DG-1:** Add `console.error` on `allSettled` rejections in the ingest handler so a silent ClickHouse insert failure surfaces in observability.
+- **The problem:** PR #281 originally included `migration 0016_intent_events_uuid_fix.sql` attempting `ALTER TABLE intent_events MODIFY COLUMN intent_session_id String` — but `intent_session_id` is an ORDER BY key column. ClickHouse error 524 (`ALTER_OF_COLUMN_IS_FORBIDDEN`) blocks any ALTER on ORDER BY columns. This caused the ClickHouse migrations smoke CI gate to FAIL. ESC-021 filed.
+
+**FOLLOW-288 (PR #282) — migration 0016 repair:**
+
+- Replace migration 0016 with `SELECT 1` no-op (preserves journal monotonicity; the ORDER BY-key column cannot be modified in place).
+- Drop `intent_session_id` from the INSERT body entirely → ClickHouse uses the zero-UUID default value for the column on every row.
+- `session_id` (String, migration 0015) is now the authoritative join key for all K.3.6 queries (FOLLOW-269 and later).
+- CI smoke gate: PASS. ESC-021 RESOLVED.
+
+### 2. Wiring audit
+
+**FOLLOW-287:**
+
+- `confidence_before` value change (null → 0.0 float) — existing column, no schema change. Internal handler change. CLEAN.
+- No new exported symbols, events, env vars, DB columns. CLEAN.
+
+**FOLLOW-288:**
+
+- Migration 0016 is now `SELECT 1` — a no-op that preserves the migration journal count at 17. No schema changes applied.
+- `intent_session_id` omitted from INSERT body — the column STILL EXISTS in the `intent_events` table (zero-UUID DEFAULT). All reads that JOIN on `session_id` (String) are unaffected. CLEAN.
+
+### 3. Logic gaps (LG)
+
+- **LG-1 (P2, OPEN — FOLLOW-290) — `intent_events` ORDER BY key is degenerate.** The zero-UUID default for `intent_session_id` on every row collapses the sort key `(tenant_id, intent_session_id, event_at)` to an effectively binary sort: all rows for a tenant share the zero-UUID second dimension. Per-session locality (the intent of the 0014 DDL) is permanently lost until FOLLOW-290 rebuilds the table with `ORDER BY (tenant_id, session_id, event_at)`. **Already tracked by FOLLOW-290.** Not re-filed.
+
+- **LG-2 (P2, OPEN — FOLLOW-292) — `confidence_before: 0.0` is ambiguous between "session start, no prior snapshot" and "genuine 0.0 top-archetype confidence."** The fix is correct for ClickHouse type compliance (Float32 NOT NULL), but a replay consumer (FOLLOW-269) cannot distinguish session-start from genuine-zero-confidence rows without an additional sentinel. **Already tracked by FOLLOW-292.** Not re-filed.
+
+### 4. Code review
+
+#### 4a. Correctness gaps
+
+- **The `SELECT 1` no-op migration preserves journal count (17 entries after 0016) without applying any schema change.** This is the correct pattern when an in-place fix is blocked by an immutable ORDER BY key. The migration journal monotonicity CI gate (`migration-journal-monotonicity`) passes because timestamps/count/existence are hashed, not SQL content. This is an architectural fact (confirmed by RETRO-076 OG-1 and the migration gate design).
+
+#### 4b. Code bugs not caught
+
+- **The two LG-A/LG-B defects from PR #279 (FOLLOW-286) — `intent_session_id: sessionId` (UUID column ← 64-char hex) + `confidence_before: null` (Float32 NOT NULL ← null) — were NOT caught by the FOLLOW-286 TG-1 mock-`fetchImpl` tests.** This is the same "mock can't catch real-backend rejection" pattern RETRO-078/079 (CH query builder axis) confirmed. RETRO-068 filed FOLLOW-322 against this pattern on the ingest dual-write INSERT-body path. Not re-filed here; FOLLOW-322 is the correct stub.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, FOLLOW-291) — no pre-merge CI guard that applies ClickHouse migrations against a live CH instance carrying the production schema.** PR #281's migration 0016 passed CI (all TypeScript/Node gates green) but failed at apply-time (error 524). FOLLOW-291 would have caught this. **Already tracked by FOLLOW-291.** Not re-filed.
+
+### 5. Cascading impact
+
+- **`session_id` (String, migration 0015) is now the authoritative join key** for K.3.6 queries. FOLLOW-269 (tracer UI), the archetype drift cron, and any future ML replay jobs MUST join on `session_id`, NOT `intent_session_id`. This is documented in the QUEUE.md FOLLOW-288 notes.
+
+- **FOLLOW-290 (OPEN) — `intent_events` table rebuild.** Until FOLLOW-290 lands, every production `intent_events` INSERT carries the zero-UUID `intent_session_id`, degrading sort-key locality. The table is functionally correct for reads (join on `session_id`) but sub-optimal for time-range scans within a session. Non-blocking for MVP; blocking for ML training grade data.
+
+### 6. New lesson candidates
+
+- **Pattern: "an ALTER on an ORDER BY / PRIMARY KEY column fails at apply-time with error 524, not at DDL-parse time — ClickHouse does not reject the SQL at `ATTACH/CREATE` level, only at the ALTER execution step."** — seen in: RETRO-060 (FOLLOW-286 first ALTER rejection: PR #279 tried RENAME), RETRO-069 (FOLLOW-287 second ALTER rejection: PR #281 tried MODIFY). **Count 2+ — already PROMOTED to Rule W** (RETRO-060 threshold met). This retro is the third independent sighting of the exact same failure; it reinforces Rule W but does NOT trigger a new promotion (Rule W already covers this).
+
+- **Pattern: "a SELECT 1 no-op migration is the correct repair when an ORDER BY / PRIMARY KEY column fix is blocked by error 524; it preserves journal monotonicity without applying schema changes."** — seen in: RETRO-069 (this, FOLLOW-288). **Count 1.** No Rule promotion. File as knowledge note: the `migration-journal-monotonicity` gate hashes timestamps/count/existence, NOT SQL content, so a `SELECT 1` always passes the gate.
+
+### 7. Follow-ups
+
+- **FOLLOW-290 (OPEN, P2, data-engineer)** — rebuild `intent_events` with `ORDER BY (tenant_id, session_id, event_at)`. Tracked. Coordinate with FOLLOW-291 (pre-merge CH-DDL guard) + FOLLOW-292 (confidence_before disambiguation).
+- **FOLLOW-291 (OPEN, P2, devops-engineer)** — pre-merge ClickHouse-DDL guard (lint rejecting ALTER on ORDER BY key columns). Tracked.
+- **FOLLOW-292 (OPEN, P2, backend-engineer)** — `confidence_before` session-start vs genuine-0.0 disambiguation. Tracked.
+- **FOLLOW-322 (OPEN, P2, qa-engineer)** — live-backend contract test for `intent.snapshot` dual-write to catch type-incompatibility defects that mock-`fetchImpl` tests cannot catch. Tracked.
+
+### 8. Cross-references
+
+- **RETRO-064 (FOLLOW-266 Phase 1 / PR #277):** Root-cause retro. PR #277's 0014 DDL chose `intent_session_id` UUID as ORDER BY key — the original sin that forced the FOLLOW-286/287/288 workaround chain.
+- **RETRO-068 (FOLLOW-286 / PR #279):** Filed FOLLOW-322 (mock-`fetchImpl` cannot catch type incompatibilities in dual-write paths). RETRO-069 confirms this pattern.
+- **ESC-021 (RESOLVED):** The migration 0016 error 524 escalation that FOLLOW-288 closed.
+- **Rule W:** The ClickHouse ORDER BY key immutability rule, promoted at RETRO-060. RETRO-069 is the third independent sighting.

@@ -5117,22 +5117,18 @@ pending planning.**
 
 - id: FOLLOW-331 title: > Add a real cross-package drift guard for DEFAULT_INTENT_WEIGHTS vs SDK
   BASE_PRIOR/BEHAVIORAL_DAMPING, and fix the docstring claiming a CI guard that does not exist
-  (RETRO-084 LG-1 + DG-1) agent: sdk-engineer co_agent: backend-engineer status: READY_FOR_REVIEW
-  priority: P2 estimated_hours: 3 depends_on: [FOLLOW-327] source: RETRO-084 (FOLLOW-327 / PR #312)
-  — intent-weights-drift.test.ts referenced in docstring but never created spec:
-  backlog/FOLLOW_UPS.md (FOLLOW-331 stub) branch: sdk-engineer/FOLLOW-331-intent-weights-drift-guard
-  assigned_to: sdk-engineer started_at: '2026-06-18T06:00Z' promoted_at: '2026-06-17T20:00Z' pr:
-  '317' notes: | Promoted 2026-06-17. IN_PROGRESS: delegated to sdk-engineer 2026-06-18T06:00Z. PR
-  #317 opened. READY_FOR_REVIEW 2026-06-18T10:30Z (PM-validated): CI green on all real gates (run
-  27752092764 — Lint/Typecheck/Test Node 22/Build/Build control-plane/SDK E2E/Demo integration/etc.
-  all PASS). Format check + Rule I + Test Python failures are pre-existing-red (confirmed on main
-  run 27737181224 for Format check, FOLLOW-090 for Rule I, documented CI gate landscape for Python).
-  AC1: drift test imports DEFAULT_INTENT_WEIGHTS + BASE_PRIOR/BEHAVIORAL_DAMPING, asserts equality
-  (DRIFT-2/3). AC2: false docstring fixed in intent-weights.ts:155-160. AC3: Lint/Typecheck/Test
-  Node 22 all pass. Runtime wiring: BASE_PRIOR/BEHAVIORAL_DAMPING producers intent.ts:167/532,
-  non-test consumers intent.ts:568/607/748/904. PM comment posted at
-  https://github.com/Pnawrocki9/Adaptive-Listings/pull/317#issuecomment-4740905438. CI check
-  counter: 1/5, fix iterations: 0/3.
+  (RETRO-084 LG-1 + DG-1) agent: sdk-engineer co_agent: backend-engineer status: DONE priority: P2
+  estimated_hours: 3 depends_on: [FOLLOW-327] source: RETRO-084 (FOLLOW-327 / PR #312) —
+  intent-weights-drift.test.ts referenced in docstring but never created spec: backlog/FOLLOW_UPS.md
+  (FOLLOW-331 stub) branch: sdk-engineer/FOLLOW-331-intent-weights-drift-guard assigned_to:
+  sdk-engineer started_at: '2026-06-18T06:00Z' promoted_at: '2026-06-17T20:00Z' pr: '317'
+  merge_commit: fedfeb0 completed_at: '2026-06-18T00:00Z' notes: | Promoted 2026-06-17. IN_PROGRESS:
+  delegated to sdk-engineer 2026-06-18T06:00Z. PR #317 opened. READY_FOR_REVIEW 2026-06-18T10:30Z
+  (PM-validated): CI green on all real gates (run 27752092764). AC1: drift test imports
+  DEFAULT_INTENT_WEIGHTS + BASE_PRIOR/BEHAVIORAL_DAMPING, asserts equality (DRIFT-2/3). AC2: false
+  docstring fixed in intent-weights.ts:155-160. AC3: Lint/Typecheck/Test Node 22 all pass. DONE: PR
+  #317 merged to main as fedfeb0 (feat(sdk): export BASE_PRIOR/BEHAVIORAL_DAMPING; add cross-package
+  drift guard [FOLLOW-331] (#317)). CI check counter: 1/5, fix iterations: 0/3.
 
 - id: FOLLOW-332 title: > Add admin/layout.test.tsx + admin/page.test.tsx for single-tenant nav +
   landing redirect (RETRO-084 TG-1 + TG-2) agent: qa-engineer status: READY_FOR_REVIEW priority: P2
@@ -5155,13 +5151,13 @@ pending planning.**
 
 ## Currently in flight
 
-**2 tickets READY_FOR_REVIEW as of 2026-06-18: FOLLOW-331 (PR #317, PM-validated 2026-06-18T10:30Z)
-and FOLLOW-332 (PR #318, PM-validated 2026-06-18). All real CI gates GREEN on both PRs.** FOLLOW-336
-DONE (PR #316, merged 1626013 2026-06-18T04:41:38Z). RETRO-088 DONE 2026-06-18. FOLLOW-337 stub
-filed (Format gate pre-existing-red documentation fix). All Sprint 18 PRs done:
-FOLLOW-324/325/326/327/328/330/293/336. ESC-020 OPEN but non-blocking (CEO 2026-06-10). FOLLOW-335
-READY (Sprint 18 P2). FOLLOW-332 READY_FOR_REVIEW (qa-engineer, PR #318, PM-validated 2026-06-18).
-CI check counter: FOLLOW-331 1/5, fix iterations 0/3. FOLLOW-332 1/5, fix iterations 1/3.
+**FOLLOW-331 DONE (PR #317, merged fedfeb0). FOLLOW-332 READY_FOR_REVIEW (PR #318, PM-validated
+2026-06-18). All real CI gates GREEN on PR #318.** FOLLOW-336 DONE (PR #316, merged 1626013
+2026-06-18T04:41:38Z). RETRO-088 DONE 2026-06-18. FOLLOW-337 stub filed (Format gate
+pre-existing-red documentation fix). All Sprint 18 PRs done except FOLLOW-332 awaiting human merge:
+FOLLOW-324/325/326/327/328/330/293/336/331 DONE. ESC-020 OPEN but non-blocking (CEO 2026-06-10).
+FOLLOW-335 READY (Sprint 18 P2). CI check counter: FOLLOW-331 1/5, fix iterations 0/3. FOLLOW-332
+1/5, fix iterations 1/3.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

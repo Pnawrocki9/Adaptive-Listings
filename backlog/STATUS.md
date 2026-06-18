@@ -189,7 +189,7 @@ auto-detect, archetype-pipeline, data-quality, intent-engine, llm-gateway, strea
 | ---------- | --------- | -------------- | -------------------------------------- |
 | FOLLOW-325 | 1/5       | 0/3            | DONE (PR #315, 2026-06-17)             |
 | FOLLOW-336 | 1/5       | 1/3            | DONE (PR #316, 2026-06-18)             |
-| FOLLOW-331 | 1/5       | 0/3            | READY_FOR_REVIEW (PR #317, 2026-06-18) |
+| FOLLOW-331 | 1/5       | 0/3            | DONE (PR #317, merged fedfeb0)         |
 | FOLLOW-332 | 1/5       | 1/3            | READY_FOR_REVIEW (PR #318, 2026-06-18) |
 
 FOLLOW-336: DONE — PR #316 merged 1626013 2026-06-18T04:41:38Z. RETRO-088 DONE 2026-06-18.
@@ -267,9 +267,8 @@ ALL RETROS THROUGH RETRO-088 COMPLETE (2026-06-18). FOLLOW-337 filed (Format gat
 
 ## Sprint 18 current state (2026-06-18)
 
-- FOLLOW-331: READY_FOR_REVIEW (PR #317). CI check counter: 1/5, fix iterations: 0/3. All real gates
-  GREEN. Python-test failures pre-existing-red (confirmed on main). Format check + Rule I
-  pre-existing-red (documented).
+- FOLLOW-331: DONE (PR #317, merged fedfeb0 to main). BASE_PRIOR/BEHAVIORAL_DAMPING exported; drift
+  guard test created; false docstring fixed. CI check counter: 1/5, fix iterations: 0/3.
 - FOLLOW-332: READY_FOR_REVIEW (PR #318). PM-validated 2026-06-18. CI check counter: 1/5, fix
   iterations: 1/3 (1 fix: spurious /tenants/ assertion corrected to bare-list-route guard). All real
   CI gates GREEN: Build, Build(control-plane), Test (Node 22), SDK E2E tests, Lint, Typecheck, Rule

@@ -5101,39 +5101,32 @@ pending planning.**
 
 - id: FOLLOW-336 title: > Add tests for Supabase SSR session auth paths: checkStaffSession +
   middleware admin gate + SignInForm (RETRO-083 TG-1/TG-2) agent: qa-engineer co_agent:
-  backend-engineer status: IN_PROGRESS priority: P2 estimated_hours: 3 depends_on: [FOLLOW-326]
-  source: RETRO-083 (FOLLOW-326 / PRs #309/#310/#311) — primary admin auth gate shipped with zero
-  tests spec: backlog/FOLLOW_UPS.md (FOLLOW-336 stub) branch:
-  qa-engineer/FOLLOW-336-admin-auth-tests assigned_to: qa-engineer started_at: '2026-06-17T20:00Z'
-  promoted_at: '2026-06-17T20:00Z' notes: | Promoted 2026-06-17. IN_PROGRESS: delegated to
-  qa-engineer 2026-06-17T20:00Z. checkStaffSession() in tracer-auth.ts (the PRIMARY admin auth gate
-  for all /api/admin/\* routes) has zero tests. middleware.ts updateSession path has no integration
-  test. SignInForm has no tests for sign-in success/error branches. Sprint 18 P2 auth coverage gap.
-  CI check counter: 0/5, fix iterations: 1/3. PM VALIDATION PASS 2026-06-18: work is uncommitted on
-  branch. SSR-1..4 (tracer-auth) PASS (9/9). FAILING tests (fix required before PR can be opened):
-  (1) middleware.test.ts ADMIN-1/2/3/5 — "request.headers must be an instance of Headers" (Next.js
-  E119). checkAdminSession calls NextResponse.next({ request: req }) at middleware.ts:134, which
-  requires req.headers to be a native Headers instance. The makeRequest helper passes a plain Record
-  as headers to new NextRequest(url, { method, headers: Record }). Fix: pass new Headers(record)
-  instead of a plain object in makeRequest calls for admin gate tests, or construct a separate
-  adminMakeRequest helper that does so. (2) SignInForm.test.tsx SIGN-IN-1 — screen.getByRole("form")
-  throws because the <form> element in SignInForm.tsx has no role="form" attribute (only implicit
-  role). Fix: use screen.getByRole("form") only if role="form" is added to the <form> tag, OR
-  replace the submit trigger with emailInput.closest("form") (same pattern used in SIGN-IN-2/3). (3)
-  Lint errors in SignInForm.test.tsx — 3 violations: line 76 unnecessary ?? (getByRole never returns
-  null; use emailInput.closest("form")! directly), lines 102/135 async arrow with no await (remove
-  async keyword from the act() callbacks). Next: re-delegate to qa-engineer with these specific
-  fixes.
+  backend-engineer status: DONE priority: P2 estimated_hours: 3 depends_on: [FOLLOW-326] source:
+  RETRO-083 (FOLLOW-326 / PRs #309/#310/#311) — primary admin auth gate shipped with zero tests
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-336 stub) branch: qa-engineer/FOLLOW-336-admin-auth-tests
+  assigned_to: qa-engineer started_at: '2026-06-17T20:00Z' promoted_at: '2026-06-17T20:00Z' pr:
+  '316' merge_commit: 1626013 completed_at: '2026-06-18T04:41:38Z' notes: | Promoted 2026-06-17.
+  IN_PROGRESS: delegated to qa-engineer 2026-06-17T20:00Z. PR #316 merged by human
+  2026-06-18T04:41:38Z (merge commit 1626013). checkStaffSession() in tracer-auth.ts (the PRIMARY
+  admin auth gate for all /api/admin/\* routes) — tests added. middleware.ts updateSession path —
+  integration test added. SignInForm — sign-in success/error branch tests added. Sprint 18 P2 auth
+  coverage gap closed. CI check counter: 1/5, fix iterations: 1/3. NOTE: Format check FAILING on PR
+  #316 CI run — confirmed pre-existing-red on main (commit 59ac6b5 also had Format check FAILING
+  before this PR). NOT a regression introduced by FOLLOW-336. Status.md pre-existing-red list needs
+  update to include Format. RETRO-088 pending.
 
 - id: FOLLOW-331 title: > Add a real cross-package drift guard for DEFAULT_INTENT_WEIGHTS vs SDK
   BASE_PRIOR/BEHAVIORAL_DAMPING, and fix the docstring claiming a CI guard that does not exist
-  (RETRO-084 LG-1 + DG-1) agent: sdk-engineer co_agent: backend-engineer status: READY priority: P2
-  estimated_hours: 3 depends_on: [FOLLOW-327] source: RETRO-084 (FOLLOW-327 / PR #312) —
-  intent-weights-drift.test.ts referenced in docstring but never created spec: backlog/FOLLOW_UPS.md
-  (FOLLOW-331 stub) promoted_at: '2026-06-17T20:00Z' notes: | Promoted 2026-06-17.
-  DEFAULT_INTENT_WEIGHTS in @estalara/shared must sum to 1.0 and match SDK BASE_PRIOR /
-  BEHAVIORAL_DAMPING constants. Docstring claims CI guard but no file exists. Sprint 18 P2
-  correctness guard.
+  (RETRO-084 LG-1 + DG-1) agent: sdk-engineer co_agent: backend-engineer status: READY_FOR_REVIEW
+  priority: P2 estimated_hours: 3 depends_on: [FOLLOW-327] source: RETRO-084 (FOLLOW-327 / PR #312)
+  — intent-weights-drift.test.ts referenced in docstring but never created spec:
+  backlog/FOLLOW_UPS.md (FOLLOW-331 stub) branch: sdk-engineer/FOLLOW-331-intent-weights-drift-guard
+  assigned_to: sdk-engineer started_at: '2026-06-18T06:00Z' promoted_at: '2026-06-17T20:00Z' notes:
+  | Promoted 2026-06-17. IN_PROGRESS: delegated to sdk-engineer 2026-06-18T06:00Z. READY_FOR_REVIEW
+  2026-06-18: BASE_PRIOR + BEHAVIORAL_DAMPING exported from intent.ts; drift test created at
+  packages/sdk/src/**tests**/intent-weights-drift.test.ts (9 tests pass); false docstring in
+  intent-weights.ts fixed. 55 SDK test files / 1392 tests pass; typecheck clean; prettier clean;
+  Rule H/J/I pass for new exports. PR opened. CI check counter: 0/5, fix iterations: 0/3.
 
 - id: FOLLOW-332 title: > Add admin/layout.test.tsx + admin/page.test.tsx for single-tenant nav +
   landing redirect (RETRO-084 TG-1 + TG-2) agent: qa-engineer status: READY priority: P2
@@ -5145,14 +5138,14 @@ pending planning.**
 
 ## Currently in flight
 
-**1 ticket IN_PROGRESS as of 2026-06-18T01:00Z: FOLLOW-336 (qa-engineer). 0 READY_FOR_REVIEW.**
-FOLLOW-325 DONE (PR #315, merged 43ad849 2026-06-17). All Sprint 18 PRs done: FOLLOW-324/325/326
-/327/328/330/293. ESC-020 OPEN but non-blocking (CEO 2026-06-10). All retros through RETRO-087 DONE
-(2026-06-17). FOLLOW-331/332 READY (Sprint 18 P2). FOLLOW-336 IN_PROGRESS (qa-engineer, branch
-qa-engineer/FOLLOW-336-admin-auth-tests, Sprint 18 P2 — checkStaffSession + middleware auth tests).
-CI check counter: FOLLOW-336 0/5, fix iterations 1/3. PM VALIDATION (2026-06-18): 5 test failures +
-3 lint errors found before PR was opened. SSR-1..4 PASS. ADMIN-1/2/3/5 FAIL (E119 headers).
-SIGN-IN-1 FAIL (role="form" absent). Re-delegated to qa-engineer for fixes.
+**0 tickets IN_PROGRESS as of 2026-06-18. 1 READY_FOR_REVIEW: FOLLOW-331.** FOLLOW-336 DONE (PR
+#316, merged 1626013 2026-06-18T04:41:38Z). RETRO-088 DONE 2026-06-18. FOLLOW-337 stub filed (Format
+gate pre-existing-red documentation fix). All Sprint 18 PRs done:
+FOLLOW-324/325/326/327/328/330/293/336. ESC-020 OPEN but non-blocking (CEO 2026-06-10).
+FOLLOW-332/335 READY (Sprint 18 P2). FOLLOW-331 READY_FOR_REVIEW (sdk-engineer, branch
+sdk-engineer/FOLLOW-331-intent-weights-drift-guard, Sprint 18 P2 — DEFAULT_INTENT_WEIGHTS drift
+guard + docstring fix; 9 drift tests pass, typecheck clean). CI check counter: FOLLOW-331 0/5, fix
+iterations 0/3.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

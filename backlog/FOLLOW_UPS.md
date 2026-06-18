@@ -9277,10 +9277,39 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   auth gate for all admin routes since PR #311 merged (2026-06-15). A regression would NOT be
   silently masked (it would produce 401s on all admin routes immediately), but CI cannot catch it
   pre-deploy without tests. P2 severity — security gate with zero test coverage.
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-337 — Fix pre-existing Format check CI failure on main (RETRO-088 TG-1)
+
+- **status:** OPEN
+- **source_retro:** RETRO-088
+- **source_ticket:** FOLLOW-336 (PR #316)
+- **recommended_sprint:** 18
+- **recommended_agent:** devops-engineer
+- **priority:** P3
+- **estimated_hours:** 2
+- **depends_on:** []
+- **scope:** The Format check CI gate has been FAILING on main for multiple commits (confirmed:
+  commit 59ac6b5 before PR #316 already showed Format check FAILING; it is pre-existing-red).
+  STATUS.md incorrectly listed Format as a "real gate GREEN on main". The fix requires: (a) run
+  `pnpm prettier --check` locally to identify which files are out-of-format, (b) run
+  `pnpm prettier --write` to fix them, (c) verify the Format CI job passes on a PR, and (d) update
+  STATUS.md to move Format from pre-existing-FAILURE back to real gates GREEN once the PR lands.
+- **ac:**
+  - [ ] AC1: `pnpm prettier --check` exits 0 on the branch.
+  - [ ] AC2: CI Format check PASSES on the PR (not just local).
+  - [ ] AC3: No TypeScript/lint regressions from prettier mutations.
+  - [ ] AC4: STATUS.md updated to reflect Format as a real green gate once merged.
+- **notes:** TG-1 from RETRO-088 analysis. This is a documentation/hygiene fix — the gate has been
+  failing silently and was incorrectly listed as GREEN. P3 priority (non-blocking, no functional
+  impact, but misleading CI signal).
 - **promoted_to_queue:** false
 
 ---
 
+<!-- next free FOLLOW number: 338 (337 = RETRO-088 / PR #316 / FOLLOW-336 admin auth tests: Format check CI confirmed pre-existing-red (commit 59ac6b5 before PR #316 also failed Format); STATUS.md incorrectly listed Format as real-gate-GREEN; devops-engineer, P3, 2h.) -->
 <!-- next free FOLLOW number: 337 (336 = RETRO-083 / PRs #309/#310/#311 / FOLLOW-326 admin sign-in + SSR auth: checkStaffSession (primary admin auth path), middleware admin gate (createServerClient getUser), and SignInForm are all untested; qa-engineer, P2 3h.) -->
 <!-- next free FOLLOW number: 336 (335 = RETRO-082 / PR #308 / FOLLOW-324 SDK bundle size fix: detect-bundle.ts has no unit test asserting globalThis.__EStalaraDetect is set correctly with detectSiteSchema + extractArchetypeHints as callable functions; sdk-engineer, P2 1h.) -->
 <!-- next free FOLLOW number: 335 (334 = RETRO-086 / PR #314 / FOLLOW-330 tracer history SSR window crash + CH cold-start 8s->30s timeout: keep-warm cron for CH Cloud to prevent auto-idle cold-start delays >8s on tracer/analytics routes; 30s timeout in CH_TRACER_TIMEOUT_MS is a symptom treatment, cron prevents idle, P2 2h devops.) -->

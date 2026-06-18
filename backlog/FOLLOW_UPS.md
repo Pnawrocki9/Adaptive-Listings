@@ -9309,6 +9309,86 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
+## FOLLOW-338 — Fix the re-introduced mis-pointing drift-guard docstring + reconcile the migration-0030 third copy of the intent defaults (RETRO-089 DG-1 + TG-1)
+
+- **status:** OPEN
+- **source_retro:** RETRO-089
+- **source_ticket:** FOLLOW-331 (PR #317)
+- **recommended_sprint:** 19
+- **recommended_agent:** sdk-engineer
+- **co_agent:** data-engineer
+- **priority:** P3
+- **estimated_hours:** 2
+- **depends_on:** []
+- **scope:** FOLLOW-331 fixed the false `intent-weights.ts:155-160` docstring (RETRO-084 DG-1) but
+  left a SECOND inaccurate pointer one file over, and the drift guard reconciles only 2 of the 3
+  copies of the intent defaults. Two parts: (a) **Docstring fix (RETRO-089 DG-1):**
+  `packages/shared/src/schemas/intent-weights.test.ts:28-30` claims the
+  `ARCHETYPE_KEYS ↔ ARCHETYPE_NAMES` parity guard "runs in
+  `packages/sdk/src/__tests__/intent-weights-drift.test.ts`" — but that file never imports
+  `ARCHETYPE_NAMES`/`ARCHETYPE_KEYS` (verified: grep returns NONE). The real parity guard is in
+  `packages/sdk/src/__tests__/intent-weights.test.ts:784-793` (FOLLOW-305). Re-point the docstring
+  to the file that actually performs the assertion. (b) **Third-copy reconciliation (RETRO-089
+  TG-1):** `packages/db/migrations/0030_seed_global_intent_weights.sql:8` restates the same defaults
+  ("internal SDK defaults (BASE_PRIOR, BEHAVIORAL_DAMPING, SIGNAL_LIKELIHOODS)") as the prod
+  global-weights seed (per FOLLOW-307 / RETRO-076), but is reconciled to NEITHER `BASE_PRIOR` nor
+  `DEFAULT_INTENT_WEIGHTS` by any test. Extend the drift guard (or add a sibling test /
+  migration-lint that parses the seed values) so a divergence between migration-0030's seeded priors
+  and the SDK/shared copies fails CI.
+- **ac:**
+  - [ ] AC1: `intent-weights.test.ts:28-30` docstring cites `intent-weights.test.ts:784` (the real
+        ARCHETYPE_KEYS↔NAMES guard), not `intent-weights-drift.test.ts`.
+  - [ ] AC2: A test reconciles the migration-0030 seed priors + damping against `BASE_PRIOR` /
+        `DEFAULT_INTENT_WEIGHTS`; mutating the seed in isolation turns it RED.
+  - [ ] AC3: No new false docstring pointers introduced by the fix (re-verify every cited file
+        actually performs the cited assertion — per the new CONVENTIONS_PATCH
+        P-OVERCLAIMED-VERIFICATION rule).
+  - [ ] AC4: CI green on the PR.
+- **notes:** RETRO-089 DG-1 (P2 docstring) + TG-1 (P3 third-copy). The docstring half is the
+  recurrence of the over-claimed-verification anti-pattern that FOLLOW-331 was meant to kill (it
+  fixed one instance and introduced another) — this is the second sighting that PROMOTED the
+  P-OVERCLAIMED-VERIFICATION rule. Low severity overall: both cited guards genuinely exist (this is
+  a wrong-pointer, not a missing-guard), and the migration-0030 values agree by eye today.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-339 — Assert the admin `signOut` Server Action behavior (RETRO-090 TG-1)
+
+- **status:** OPEN
+- **source_retro:** RETRO-090
+- **source_ticket:** FOLLOW-332 (PR #318)
+- **recommended_sprint:** 19
+- **recommended_agent:** qa-engineer
+- **priority:** P3
+- **estimated_hours:** 2
+- **depends_on:** []
+- **scope:** `admin/layout.test.tsx` (FOLLOW-332 / PR #318) asserts only the STATIC sidebar render
+  (3 link labels, hrefs derived from PILOT_TENANT_ID, "Staff Only" badge, "Sign out" button
+  presence). The `signOut` Server Action ('use server') in
+  `apps/control-plane/src/app/admin/layout.tsx` is mocked away at the `@/lib/supabase/server`
+  boundary, so its runtime behavior — button submit → `createServerSupabaseClient()` →
+  `supabase.auth.signOut()` → `redirect('/sign-in')` — is never exercised. This is the inherent
+  jsdom limit for Server Components + Server Actions (same family as RETRO-088's
+  `@vitest-environment node` middleware constraint, but NOT fixable by env switch alone — a Server
+  Action needs an integration/e2e harness or a direct unit invocation of the extracted action).
+  Cover the action: invoke `signOut` (or trigger the footer form submit) with the Supabase client
+  mocked, and assert `auth.signOut()` is called AND `redirect('/sign-in')` is invoked.
+- **ac:**
+  - [ ] AC1: A test invokes the `signOut` Server Action path and asserts `supabase.auth.signOut()`
+        is called exactly once.
+  - [ ] AC2: The test asserts `redirect('/sign-in')` is invoked after `signOut()` resolves.
+  - [ ] AC3: All 11 existing `admin/layout.test.tsx` tests continue to pass.
+  - [ ] AC4: `pnpm typecheck` + `pnpm test` green for control-plane.
+- **notes:** TG-1 from RETRO-090. P3 — the `signOut` action is 3 lines and the underlying
+  `auth.signOut()` is Supabase-owned; FOLLOW-336 (PR #316) already covers `checkStaffSession` +
+  `SignInForm` auth paths. Low ROI but completes admin-shell coverage. If a jsdom unit invocation is
+  not feasible, fold this into the existing e2e/playwright admin suite instead of a vitest unit.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 340 (RETRO-089/FOLLOW-331/PR #317 consumed 338 = re-introduced mis-pointing drift-guard docstring intent-weights.test.ts:28-30 cites intent-weights-drift.test.ts for the ARCHETYPE_KEYS↔NAMES parity guard but that file never imports ARCHETYPE_NAMES — real guard is intent-weights.test.ts:784 (FOLLOW-305); + migration-0030 third copy of intent defaults un-reconciled to BASE_PRIOR/DEFAULT_INTENT_WEIGHTS; sdk-engineer+data-engineer P3 2h; PROMOTED Rule P-OVERCLAIMED-VERIFICATION count-2 [RETRO-084 DG-1 + RETRO-089 DG-1]. RETRO-090 took 339.) — RETRO-090 / PR #318 / FOLLOW-332 admin shell tests: layout.test.tsx (11) + page.test.tsx (5) + pilot-tenant.test.ts (3) = 19/19; closes RETRO-084 TG-1/TG-2 end-to-end (real components, hrefs derived from real PILOT_TENANT_ID, all nav routes exist, no fabricated contract). Wiring CLEAN (test-only, no new prod symbols; PILOT_TENANT_ID producer pilot-tenant.ts:16 has 2 non-test consumers layout.tsx:28-29 + page.tsx:12; pilot id cbc51cfa matches MASTER_DESIGN §Snapshot so NO seed/migration hop). TG-1 -> FOLLOW-339 (signOut Server Action behavior unexercised in jsdom, P3 qa). NO Rule promoted: P-SHELL-UNTESTED count-1 as remediation (a fix doesn't increment); jsdom-server-primitive axis count-2 but divergent sub-shapes (RETRO-088 Headers-instanceof vs RETRO-090 Server-Action) with no common remediation -> held. -->
 <!-- next free FOLLOW number: 338 (337 = RETRO-088 / PR #316 / FOLLOW-336 admin auth tests: Format check CI confirmed pre-existing-red (commit 59ac6b5 before PR #316 also failed Format); STATUS.md incorrectly listed Format as real-gate-GREEN; devops-engineer, P3, 2h.) -->
 <!-- next free FOLLOW number: 337 (336 = RETRO-083 / PRs #309/#310/#311 / FOLLOW-326 admin sign-in + SSR auth: checkStaffSession (primary admin auth path), middleware admin gate (createServerClient getUser), and SignInForm are all untested; qa-engineer, P2 3h.) -->
 <!-- next free FOLLOW number: 336 (335 = RETRO-082 / PR #308 / FOLLOW-324 SDK bundle size fix: detect-bundle.ts has no unit test asserting globalThis.__EStalaraDetect is set correctly with detectSiteSchema + extractArchetypeHints as callable functions; sdk-engineer, P2 1h.) -->

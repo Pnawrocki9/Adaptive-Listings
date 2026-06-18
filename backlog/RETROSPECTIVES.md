@@ -17923,3 +17923,172 @@ None. All three auth paths function correctly in production (confirmed by admin.
 - **FOLLOW-326:** The DONE ticket that introduced the untested auth paths.
 - **FOLLOW-332:** Remaining test coverage gap (admin nav shell, single-tenant layout).
 - **FOLLOW-337:** Format check pre-existing-red documentation fix.
+
+## RETRO-089 — FOLLOW-331 (real cross-package drift guard for `DEFAULT_INTENT_WEIGHTS` ↔ SDK `BASE_PRIOR`/`BEHAVIORAL_DAMPING`; export the two SDK constants; fix the `intent-weights.ts:155` docstring that falsely claimed a CI guard which did not exist — closes RETRO-084 LG-1 + DG-1) — 2026-06-18
+
+### 1. Summary of change
+
+- **PR:** #317 (merged 2026-06-18 20:00 UTC, commit `fedfeb0`)
+- **Files changed:** 7 (+289 / -66) — but only 3 are code/contract: `packages/sdk/src/core/intent.ts` (+15/-3), `packages/shared/src/schemas/intent-weights.ts` (+4/-2), `packages/sdk/src/__tests__/intent-weights-drift.test.ts` (new, +108). The other 4 (`backlog/*.md`) are bundled backlog bookkeeping commits.
+- **Modules touched:** [SDK (`core/intent.ts` export visibility + docstrings, new `__tests__/intent-weights-drift.test.ts`), shared (`schemas/intent-weights.ts` docstring)]
+- **Key contracts changed:**
+  - `@estalara/sdk` (`packages/sdk/src/core/intent.ts`) — `BASE_PRIOR` (`:167`) and `BEHAVIORAL_DAMPING` (`:532`) changed `const` → **`export const`** — visibility-only, additive, breaking: no. Runtime behavior unchanged (both remain the SDK's runtime SoT).
+  - No schema, event, env-var, DB-column, or signal contract changed. No `index.ts` re-export added — the new exports are imported only by the sibling drift test via the relative path `../core/intent.js`, so they are NOT new public package-API surface (intentional; the SDK barrel `index.ts` is untouched, bundle unchanged).
+
+### 2. Verification done in PR
+
+- Test files changed: `packages/sdk/src/__tests__/intent-weights-drift.test.ts` (NEW, 9 tests: DRIFT-1a/b/c key-set equality, DRIFT-2 per-key value equality, DRIFT-3 damping equality, DRIFT-4a/b/c/d structural + sum-to-1 on BOTH copies). · Assertions added: 9 it-blocks. · Coverage delta: positive on the cross-package reconciliation surface (previously zero — the guard did not exist).
+- Mutation evidence in PR body is concrete and credible: flipping `yield_hunter` 0.04→0.05 fails DRIFT-2 + DRIFT-4c; flipping `behavioral_damping` 0.3→0.4 fails DRIFT-3; adding a key fails DRIFT-1a/1c. **Verified by reading the test**: the assertions are real (`expect(sharedPriors[key]).toBe(sdkValue)` over `Object.entries(BASE_PRIOR)`, plus key-set parity in both directions) — this is NOT a constant-asserted-against-itself tautology (the defect RETRO-084 LG-1 flagged). It imports BOTH copies and compares them.
+- CI checks: passed per PR body + QUEUE.md FOLLOW-331 `status: DONE` ("CI check counter 1/5, fix iterations 0/3"); real gates green. Not independently re-watched (read-only retro). NOTE the Format gate remains pre-existing-red (RETRO-088 LG-1 / FOLLOW-337) — orthogonal to this PR.
+
+### 3. Wiring Audit
+
+CHECK A (dead code — every new file/export has ≥1 non-test importer; test files exempt as their own consumers):
+- `BASE_PRIOR` (now `export const`, `intent.ts:167`) → 4 non-test runtime consumers in the SAME module: `:569` (`defaultOverrides` → `basePrior: { ...BASE_PRIOR }`), `:748` (`initIntentState` default), plus merge-base at `:583-588`. Plus new test consumer (`intent-weights-drift.test.ts:41,48,54,60,72,105`). **WIRED** (the export adds reachability for the test; the value already had production consumers as a module-private const).
+- `BEHAVIORAL_DAMPING` (now `export const`, `intent.ts:532`) → 3 non-test runtime consumers: `:568` (`defaultOverrides`), `:607` (`resolveIntentEngineOverrides` fallback), `:904` (`applyBehavioralSignal` effective damping). Plus new test consumer (`:41,84`). **WIRED.**
+- New file `intent-weights-drift.test.ts` — a test file; its purpose IS to be a CI-run drift guard. Confirmed picked up by SDK vitest (`vitest.config.ts:7` `include: ['src/**/*.test.ts']`; the file is `src/__tests__/intent-weights-drift.test.ts`; `exclude` is only the corpus test). The `@estalara/shared` import resolves: SDK `package.json:50` declares `"@estalara/shared": "workspace:^"`; `DEFAULT_INTENT_WEIGHTS` is exported at `intent-weights.ts:161` → `schemas/index.ts:18` → `shared/src/index.ts:13`. **WIRED end-to-end** (test → both producers → real values). A drift test correctly has no non-test importer; the framework-route/test-entrypoint suppression applies. **Not DEAD_CODE.**
+
+CHECK B (half-wire — every new event/env-var/column/topic/SDK-signal has BOTH a producer AND consumer):
+- No new event, env var, DB column, topic, or SDK signal introduced. The only producers are the two re-exported constants, each with the runtime consumers enumerated above plus the test consumer. **No half-wire surface exists in this PR.**
+
+**Wiring Audit — clean ✅** (no DEAD_CODE / HALF_WIRE_P / HALF_WIRE_C). Both newly-exported constants retain real production consumers; the new drift test is correctly a test-only consumer of both copies and is included in CI.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A — no logic changed. The PR is a visibility change + a test + two docstring edits. Runtime Bayesian-update path is byte-identical (`BASE_PRIOR`/`BEHAVIORAL_DAMPING` literals and all 7 call-sites unchanged). The drift guard's logic is sound: strict per-key equality is correct here because both copies are hand-typed decimal literals (the PR's inline comment correctly justifies `toBe` over `toBeCloseTo` — identical literals have no FP-rounding divergence).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — no functional defect. The export change is inert at runtime; the test is additive.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — The drift guard reconciles VALUES but not the third copy: `packages/db/migrations/0030_seed_global_intent_weights.sql:8` also restates the same defaults** ("its internal SDK defaults (BASE_PRIOR, BEHAVIORAL_DAMPING, SIGNAL_LIKELIHOODS)"). The new test pins `DEFAULT_INTENT_WEIGHTS` ↔ SDK, but the migration-0030 seed row (the prod global-weights default, per FOLLOW-307 / RETRO-076) is reconciled to NEITHER copy by any test. If migration 0030's seeded priors drift from `BASE_PRIOR`, prod and SDK disagree and nothing fails CI. Low severity (0030 is already applied per FOLLOW-307 attestation; the values agree today by eye), but it is the third leg of the same triangle the drift guard was meant to close. Filed as FOLLOW-338.
+- **TG-2 (P3, OBSERVATION, not re-filed) — `weights/page.tsx:33,42` `?? 0.3` / `?? 0.04` fallback literals (RETRO-084 LG-2) are still un-guarded.** The drift test asserts `behavioral_damping`/priors are *defined* (DRIFT-4a/4b), which means the page's `??` fallbacks can never actually fire today — so RETRO-084 LG-2's "silent stale fallback" is now defended in practice (any future removal of the field would red DRIFT-4a/4b before the page could silently fall back). Recorded as effectively-mitigated, not a fresh follow-up.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — The fix for RETRO-084 DG-1 replaced one inaccurate docstring pointer with ANOTHER inaccurate one (in a different file): `packages/shared/src/schemas/intent-weights.test.ts:28-30` now claims the `ARCHETYPE_KEYS ↔ ARCHETYPE_NAMES` parity guard "runs in ... `packages/sdk/src/__tests__/intent-weights-drift.test.ts`" — but the new drift test does NOT import or assert `ARCHETYPE_NAMES`/`ARCHETYPE_KEYS` at all** (`grep ARCHETYPE_NAMES intent-weights-drift.test.ts` → NONE; the file imports only `DEFAULT_INTENT_WEIGHTS`, `BASE_PRIOR`, `BEHAVIORAL_DAMPING`). The actual key↔name parity guard lives in a DIFFERENT file: `packages/sdk/src/__tests__/intent-weights.test.ts:784-793` (FOLLOW-305 — "ARCHETYPE_NAMES ≡ ARCHETYPE_KEYS parity guard"). So a reader who edits `ARCHETYPE_KEYS` and trusts the `intent-weights.test.ts:28-30` pointer will look in the wrong file. The guard DOES exist (so this is low severity, NOT a missing-guard like the original DG-1), but it is the SAME over-claimed-verification anti-pattern — the FOLLOW-331 PR touched only the value-drift docstring (`intent-weights.ts:155-160`, correctly fixed) and did not reconcile the sibling header docstring (`intent-weights.test.ts:28-30`) it left mis-pointing. Filed as FOLLOW-338.
+- **DG-2 (P3, RESOLVED — recorded) — The original RETRO-084 DG-1 (`intent-weights.ts:155-160` claiming `intent-weights.test.ts` catches drift via a file that did not exist) is GENUINELY FIXED.** The docstring now reads "The cross-package drift guard (`...intent-weights-drift.test.ts`, FOLLOW-331) imports BOTH this constant and the SDK's exported `BASE_PRIOR`/`BEHAVIORAL_DAMPING` and asserts full equality" — and that file now exists and does exactly that. Verified end-to-end. Closed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-332 (READY_FOR_REVIEW, PR #318)** — sibling of this ticket from the same RETRO-084 (admin-shell tests). Independent surface (admin nav vs SDK constants); not affected. No IN_PROGRESS ticket assumes `BASE_PRIOR`/`BEHAVIORAL_DAMPING` are module-private.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-307 / RETRO-076 (migration-0030 global-weights seed)** — now the third un-reconciled copy of the defaults (see §4c TG-1 / FOLLOW-338). Whoever next edits the canonical priors must update THREE places (`BASE_PRIOR`, `DEFAULT_INTENT_WEIGHTS`, migration 0030); the drift test catches 2 of the 3.
+- **Multi-tenant un-baking (post-v1, RETRO-084 §5d)** — unaffected.
+
+#### 5c. Contracts changed others rely on
+
+- `BASE_PRIOR` / `BEHAVIORAL_DAMPING` are now `export const`. They are reachable from `packages/sdk/src/core/intent.ts` by relative import but NOT re-exported from the SDK barrel — so they are not yet public package API. RISK: a future engineer may treat "exported" as "public" and import them across packages, widening the single-source-of-truth surface. Documented; the in-code docstrings ("Exported for the cross-package drift gate ... Do NOT mutate; treat as readonly") mitigate this for `BASE_PRIOR`.
+
+#### 5d. Architectural assumptions affected
+
+- N/A. The SDK remains the runtime SoT for the intent defaults; `@estalara/shared` `DEFAULT_INTENT_WEIGHTS` remains the admin-contract restatement; the relationship is now CI-enforced rather than prose-asserted. This STRENGTHENS the existing assumption rather than changing it.
+
+### 6. New lesson candidates
+
+- **Pattern P-DUP-CONTRACT ("a constant restated in a second package, equivalence asserted only in prose / a deferred-absent test, no automated cross-package reconciliation")** — RETRO-084 was count-1. PR #317 is the **remediation** of that exact sighting (the drift guard now exists and is real) — per the deferral discipline applied throughout this log (RETRO-079/080/068: a fix does NOT increment a pattern's count), P-DUP-CONTRACT STAYS count-1. NO promotion. NOTE the migration-0030 third copy (§4c TG-1) is the SAME duplication shape but is the SAME logical contract surface discovered in the SAME family — not a new independent sighting, held as a follow-up not a count increment.
+- **Pattern P-OVERCLAIMED-VERIFICATION ("a docstring/test-header points at a named test or file as proof a guard runs in CI, but the cited file does not actually perform that assertion — the guard is absent OR lives elsewhere")** — seen in: **RETRO-084 DG-1** (`intent-weights.ts:155` cited `intent-weights.test.ts` for cross-package drift; that test asserted the constant against itself + cited a file that did not exist) AND **RETRO-089 DG-1** (this — `intent-weights.test.ts:28-30` cites `intent-weights-drift.test.ts` for the ARCHETYPE_KEYS↔NAMES parity guard, but that file never imports `ARCHETYPE_NAMES`; the real guard is in `intent-weights.test.ts:784`). Two independent sightings, distinct files, both with concrete file:line evidence. The RETRO-089 instance was INTRODUCED by the very PR that fixed the RETRO-084 instance — so it is genuinely independent, not a non-incrementing remediation. promote-threshold 2, current count **2** → **PROMOTED** as Rule (scoped narrowly to docstring/test-header citations of a named guard file). See CONVENTIONS_PATCH.md.
+
+### 7. Follow-ups
+
+- **FOLLOW-338 (OPEN, P3, sdk-engineer + data-engineer, 2h)** — (a) Fix the mis-pointing docstring at `packages/shared/src/schemas/intent-weights.test.ts:28-30` to cite `intent-weights.test.ts:784` (the real ARCHETYPE_KEYS↔NAMES parity guard) rather than `intent-weights-drift.test.ts` (which does not assert it) — closes §4d DG-1. (b) Extend the drift guard (or add a sibling test/migration-lint) to reconcile the migration-0030 seed priors with `BASE_PRIOR`/`DEFAULT_INTENT_WEIGHTS` so the third copy of the defaults can no longer drift silently — closes §4c TG-1.
+
+### 8. Cross-references
+
+- **RETRO-084 (FOLLOW-327 / PR #312):** The SOURCE retro. This PR closes its LG-1 (no real drift guard) and DG-1 (false docstring on `intent-weights.ts:155`) END-TO-END — verified: the guard file exists, imports both copies, asserts real per-key + damping + key-set equality, and is included in CI (`vitest include`). The closure is genuine, NOT a one-hop move (the original missing test now exists and runs). HOWEVER the same over-claimed-verification anti-pattern recurred one file over (new DG-1 → FOLLOW-338), so DG-1 as a *pattern* is not eradicated even though the specific RETRO-084 instance is.
+- **RETRO-076 / FOLLOW-307 (migration-0030 global-weights seed apply):** the third un-reconciled copy of the intent defaults (§5b / FOLLOW-338).
+- **RETRO-078/079 + the fixture-lies thread (RETRO-072/074/075/077/080):** P-OVERCLAIMED-VERIFICATION is the documentation-pointer cousin of those "mock-only / fixture test can't catch the real thing" families; RETRO-084 explicitly flagged the kinship. The new Rule is scoped narrowly to docstring/test-header *citations* to avoid overlapping Rule L / Rule K.2 round-trip / Rule Q which already govern the test-mechanics side.
+
+---
+
+## RETRO-090 — FOLLOW-332 (admin shell tests: `admin/layout.test.tsx` sidebar 3-link/3-hidden assertions + `admin/page.test.tsx` `/admin`→pilot-tracer redirect + `lib/pilot-tenant.test.ts` PILOT_TENANT_ID canonical-id pin; closes RETRO-084 TG-1/TG-2; 19/19 pass; 1 fix-iteration removed a spurious `not.toContain('/tenants/')` assertion that contradicted the pilot redirect path) — 2026-06-18
+
+### 1. Summary of change
+
+- **PR:** #318 (merged 2026-06-18 20:15 UTC, commit `fb9d201`)
+- **Files changed:** 7 (+477 / -37). Source-relevant: 3 NEW test files (+384). Remainder is backlog bookkeeping (QUEUE.md, STATUS.md ×2, pm-orchestrator lessons.md).
+- **Modules touched:** control-plane (test-only) / docs+configs (backlog files only)
+- **Key contracts changed:** N/A — no production symbols added/changed/removed. This is a pure test-addition PR. `PILOT_TENANT_ID` (the symbol under test) is unchanged; it remains `process.env.NEXT_PUBLIC_PILOT_TENANT_ID ?? 'cbc51cfa-1056-40aa-b0a9-6e982b52b1de'` (pilot-tenant.ts:16).
+
+### 2. Verification done in PR
+
+- Test files changed: `apps/control-plane/src/app/admin/layout.test.tsx` (NEW, 11 tests), `apps/control-plane/src/app/admin/page.test.tsx` (NEW, 5 tests), `apps/control-plane/src/lib/pilot-tenant.test.ts` (NEW, 3 tests).
+- Assertions added: 19 tests total, 19/19 pass. Coverage delta: +19 integration tests in control-plane; the previously-zero coverage on `admin/layout.tsx`, `admin/page.tsx`, and `lib/pilot-tenant.ts` is now non-zero (RETRO-084 TG-1/TG-2 gap closed).
+- CI checks: passed on the real gates (PM-validated READY_FOR_REVIEW per merge-commit log; Format/Rule-I/Python remain pre-existing-red per RETRO-088/FOLLOW-337, not introduced here).
+- Fix-iterations: 1. The qa-engineer's first cut asserted `expect(digest).not.toContain('/tenants/')`, which failed because the legitimate pilot redirect path `/admin/tenants/<uuid>/tracer` literally contains `/tenants/`. Replaced with the correct guard `expect(path).not.toBe('/admin/tenants')` (the real intent: the redirect must NOT land on the bare multi-tenant list). Good catch in-iteration — a false assertion that, had it been "fixed" by deleting it, would have left the redirect-target unguarded; instead it was replaced with a meaningful guard.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+CHECK A (dead code): The 3 new files are all `*.test.{ts,tsx}` — test files are exempt from the non-test-importer rule (a test runner is their entrypoint). No new non-test exports introduced. CLEAN.
+
+CHECK B (half-wire): No new event/env-var/column/topic/SDK-signal introduced. The one env var referenced, `NEXT_PUBLIC_PILOT_TENANT_ID`, is a pre-existing override read by `pilot-tenant.ts:17` (producer = deploy env / `.env`; consumer = the module default branch) and is exercised by `pilot-tenant.test.ts` (cleared in `beforeAll` to hit the baked default). No producer-only or consumer-only gap. CLEAN.
+
+Symbol-under-test wiring re-confirmed (not a new wire, but verified end-to-end for the closure check below):
+- `PILOT_TENANT_ID` producer: `apps/control-plane/src/lib/pilot-tenant.ts:16`.
+- Non-test consumers: `apps/control-plane/src/app/admin/layout.tsx:28-29` (Live Monitor + Session History hrefs) and `apps/control-plane/src/app/admin/page.tsx:12` (permanentRedirect target). Grep: `grep -rn "PILOT_TENANT_ID" apps packages --include=*.ts --include=*.tsx | grep -v .test.` → both consumers present.
+- Render targets exist: `/admin/tenants/[id]/tracer`, `/admin/tenants/[id]/tracer/history`, `/admin/tracer/weights` all resolve to real route files (`find apps/control-plane/src/app/admin/tenants` + `.../admin/tracer/weights/page.tsx`). No dangling nav link.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A.** No production logic changed. The tested behavior (3 nav links shown, 3 multi-tenant screens hidden, `/admin`→pilot-tracer redirect) is asserted against the real components and the real `PILOT_TENANT_ID` constant, not a fabricated contract (Rule L compliant — hrefs are DERIVED from the imported production constant, so a drift in `layout.tsx`/`page.tsx` away from `pilot-tenant` would fail the test).
+
+#### 4b. Code bugs not caught
+
+- **N/A.** No production code in this PR. The admin shell has been live since FOLLOW-327/PR #312; these tests add regression safety, not correctness fixes.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, OPEN — FOLLOW-339) — the layout test mocks `next/link` AND `@/lib/supabase/server`, so the `signOut` Server Action ('use server') and the real `createServerSupabaseClient()` → `redirect('/sign-in')` path are NOT exercised.** `layout.test.tsx` asserts only the static sidebar render (link labels, hrefs, "Staff Only" badge, "Sign out" button presence). The "Sign out" button's behavior (whether clicking it actually invokes `supabase.auth.signOut()` and redirects) is unasserted. This is an inherent limit of unit-testing a Server Component with a Server Action in jsdom (the same constraint RETRO-088 hit with `@vitest-environment node` for middleware). Low severity — the `signOut` action is 3 lines and the underlying `auth.signOut()` is Supabase-owned; FOLLOW-336 already covers `checkStaffSession`/`SignInForm` auth paths. Filed as P3 for completeness, not a blocking gap.
+- **TG-2 (P3, NOT FILED — subsumed) — active-link highlighting (`usePathname`-driven aria-current/styling) is not tested.** Inspection of `layout.tsx` shows the nav links are plain `<Link>`s without an active-state branch in the changed region, so there is no untested active-link logic to cover. No stub filed (no behavior to assert). Noted for awareness if active-state styling is added later.
+- **TG-3 (P3, ACCEPTABLE) — `page.test.tsx` asserts on the MOCK's own digest string (`NEXT_REDIRECT;replace;${path};307;`), not Next.js's real digest encoding.** The test reconstructs the digest format inside its own `vi.mock`, so it would still pass if Next.js changed its internal redirect digest format. This is acceptable for a unit test (the contract under test is "`page.tsx` calls `permanentRedirect` with the pilot-tracer path", which IS verified via the path substring); the digest format itself is Next.js-owned and covered by Next's own tests. No stub.
+
+#### 4d. Documentation gaps
+
+- **N/A.** The pilot-tenant rationale is well-documented in `pilot-tenant.ts:1-13` (CEO decision 2026-06-15, override semantics). Test JSDoc headers explicitly document the "no value-inject" guardrail. The canonical id matches MASTER_DESIGN §Snapshot.1 line 41 (`id = cbc51cfa-...`, pilot tenant) — verified, no doc drift.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **N/A.** Test-only PR; no production contract changed, so no IN_PROGRESS/READY ticket's assumptions are invalidated. FOLLOW-331 (DEFAULT_INTENT_WEIGHTS drift guard, the sibling RETRO-084 follow-up) is independent (intent-weights surface, not admin-shell).
+
+#### 5b. Future sprint tickets affected
+
+- **Mild positive coupling:** These tests pin the single-tenant v1 admin shape (exactly 3 links, 3 hidden screens). When multi-tenant navigation is eventually re-enabled (post-pilot, when CEO lifts the 2026-06-15 single-tenant constraint), `layout.test.tsx` AC1-a (`navLinks.length === 3`) and AC1-c (Registrations/Tenants/Demo-Sessions absent) will need updating in lockstep. This is correct test behavior (it guards the deliberate v1 scope), not a defect — noted so the future multi-tenant ticket expects to touch these tests.
+
+#### 5c. Contracts changed others rely on
+
+- **N/A.** No contract changed.
+
+#### 5d. Architectural assumptions affected
+
+- **N/A.** The single-tenant v1 assumption (one experience for all tenants; "No Tiers" / pilot-only admin per MASTER_DESIGN v4.0 §E.7 and the 2026-06-15 CEO decision) is now codified in executable tests rather than only in prose — this strengthens the assumption rather than changing it.
+
+### 6. New lesson candidates
+
+- **Pattern: "a single-tenant/admin SHELL (nav + landing redirect) shipped with ZERO test coverage on the changed files."** — seen in: RETRO-084 (sighting; filed FOLLOW-332). RETRO-090 is the **REMEDIATION** of that sighting, not an independent second sighting — a fix does not increment the pattern count (per the established RETRO-077/079/068 deferral discipline). So **P-SHELL-UNTESTED stays count-1.** No Rule promotion.
+- **Pattern: "deriving the expected value in a test from the REAL production constant (import `PILOT_TENANT_ID` from `@/lib/pilot-tenant`) instead of hand-authoring it, so the test fails if the production path drifts."** — this is the CORRECT closure shape for fixture-lies-family findings (the inverse of the Rule L anti-pattern). Seen as a positive exemplar in RETRO-080 (fixtures derived from `AdminIntentConfigResponseSchema.parse()`) and now RETRO-090. This is a praise-pattern, not a defect pattern; it reinforces Rule L's intent but does not need its own Rule. No promotion.
+- **Pattern: "Server Component + Server Action ('use server') paths cannot be exercised in jsdom; the action's runtime behavior (here `signOut`→`auth.signOut`→`redirect`) is left unasserted by a synchronous render test."** — seen in: RETRO-088 (middleware/NextResponse jsdom limit, `@vitest-environment node` workaround), RETRO-090 (this, `signOut` Server Action unexercised). **Count 2 on the broad "Next.js server-primitive untestable in jsdom" axis** — BUT the two are different sub-shapes (RETRO-088 = `Headers` instanceof in `NextResponse.next()`, fixed by env switch; RETRO-090 = Server Action invocation, NOT fixable by env switch alone — needs an integration/e2e harness). Because the sub-shapes diverge and there is no single mechanical Rule that closes both, **held below threshold — no promotion.** Re-assess if a third sighting clarifies a common remediation.
+
+### 7. Follow-ups
+
+- **FOLLOW-339 (OPEN, P3, qa-engineer, 2h)** — assert the `signOut` Server Action behavior on `admin/layout.tsx` (button click → `supabase.auth.signOut()` invoked → `redirect('/sign-in')`), which the jsdom unit test cannot reach. TG-1 from this retro.
+
+### 8. Cross-references
+
+- **RETRO-084 (FOLLOW-327 / PR #312):** The source retro. Filed TG-1 (`admin/layout.test.tsx` missing) + TG-2 (`admin/page.test.tsx` missing) + the pilot-id-pin recommendation. RETRO-090 **closes both TG-1 and TG-2 end-to-end** — the two test files now exist, exercise the real components, and derive expectations from the real `PILOT_TENANT_ID` (verified: no fabricated contract, render targets all exist). The pilot-id pin (`pilot-tenant.test.ts`) is added too.
+- **RETRO-088 (FOLLOW-336 / PR #316):** Sibling admin test-coverage closure (auth gate). RETRO-088 §4c TG-2 explicitly named FOLLOW-332 as the remaining admin-shell gap; RETRO-090 closes it. Together RETRO-088 + RETRO-090 bring the admin system (auth gate + nav shell + landing) from zero to covered.
+- **RETRO-080 (FOLLOW-309-312):** The "derive test expectations from the real production schema/constant" closure shape exemplar; RETRO-090 applies the same discipline to a constant rather than a Zod schema.
+- **No Rule promoted** (P-SHELL-UNTESTED count-1 as remediation; jsdom-server-primitive axis count-2 but divergent sub-shapes; both held below the ≥2-independent-sighting-with-common-remediation bar).

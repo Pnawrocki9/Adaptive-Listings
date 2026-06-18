@@ -1043,3 +1043,37 @@
   pattern's last narrow corner open (here, the un-grounded PUT/POST save-response fixture, because
   no shared write-response schema exists) — file it as a concrete coverage gap, but it's a residual
   of the SAME sighting, so it also does not advance the count.
+
+---
+
+## 2026-06-18 · RETRO-089 (FOLLOW-331 / PR #317 — intent-weights drift guard)
+
+- **A finding I almost missed and why:** I almost recorded a clean §4d (DG-2: RETRO-084 DG-1
+  genuinely fixed — the false `intent-weights.ts:155` docstring is now accurate and the cited drift
+  test now exists). It IS fixed. But the PR also TOUCHED the sibling header docstring in
+  `packages/shared/src/schemas/intent-weights.test.ts:28-30`, which now points the
+  ARCHETYPE_KEYS↔ARCHETYPE_NAMES parity guard at the NEW drift file — and that file never imports
+  ARCHETYPE_NAMES. The real parity guard is in a third file (`intent-weights.test.ts:784`,
+  FOLLOW-305). I only caught it because step-7 forced me to read the cited file's ACTUAL imports
+  (`grep ARCHETYPE_NAMES intent-weights-drift.test.ts` → NONE) instead of trusting the docstring's
+  prose. Lesson reinforced: when a PR "fixes a false docstring," verify the REPLACEMENT pointer too
+  — a fix can relocate the same anti-pattern one file over.
+- **An axis/chain I had to trace twice:** the closure verification. First pass I confirmed the new
+  drift test imports BOTH copies and asserts real per-key equality (true closure of RETRO-084 LG-1,
+  not a one-hop move). Second pass I had to verify the WIRE was actually live in CI — that the new
+  `__tests__/intent-weights-drift.test.ts` is matched by
+  `vitest.config.ts include: src/**/*.test.ts` and not in the exclude list, AND that
+  `@estalara/shared` resolves from the SDK package (package.json workspace dep + barrel chain). A
+  drift test that isn't picked up by the runner is a dead guard — same shape as RETRO-084's original
+  gap, just relocated to config. Both passed.
+- **A meta-pattern in how gaps recur across agents:** the over-claimed-verification pattern
+  (P-OVERCLAIMED-VERIFICATION, now Rule Y) is the documentation-pointer cousin of the fixture-lies /
+  mock-can't-catch-real families. It keeps recurring because the FIX for one instance is itself a
+  docstring edit, and docstring edits are not themselves guarded by anything — so the fix introduces
+  a fresh untested claim. This is the second time (RETRO-084 → RETRO-089) a remediation PR planted a
+  new instance of the very pattern it closed. Rule Y's third clause (a retro for any "asserted in
+  CI" docstring touch MUST open the cited file) is the loop-closer. Promotion accounting note: this
+  was a GENUINELY independent sighting (distinct file, introduced by the fix, not the fix itself),
+  so unlike RETRO-080's non-incrementing remediation, it correctly tipped the count 1→2. The
+  discriminator I applied: did the PR fix-in-place (non-incrementing) or fix-here-and-break-there
+  (new sighting)? Here it was the latter.

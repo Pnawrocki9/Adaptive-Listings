@@ -1168,6 +1168,73 @@ grep -rn 'data-decision-url' apps/control-plane/src --include='*.tsx' | grep -v 
 
 ---
 
+## Rule Y — A docstring/test-header that cites a named test or file as proof a guard runs in CI MUST be verified against that file: the cited file must actually perform the asserted check, or the citation is forbidden
+
+**Pattern:** A comment — a constant's docstring, a test-file header, a schema annotation — points at
+a NAMED test or file as evidence that some invariant is "caught in CI" / "asserted" / "guarded", but
+the cited file does NOT perform that assertion. Two sub-shapes, both observed: (1) the cited file
+**does not exist** (or asserts something else, e.g. the constant against itself rather than the
+cross-package counterpart); (2) the cited file exists and the guard exists, but **the guard lives in
+a DIFFERENT file** than the one cited. In both cases a future reader trusts the prose, edits one
+side of a duplicated/coupled contract freely, and the silent drift the comment promised would be
+caught is not — because the named guard either is absent or is somewhere the reader never looks.
+This is the DOCUMENTATION-POINTER cousin of Rule L / Rule K.2-round-trip / Rule Q (which govern the
+test MECHANICS — fabricated fixtures, missing round-trips, mirrored-test blind spots); Rule Y
+governs the CITATION: a claim that a specific named artifact proves an invariant must be true of
+that artifact.
+
+**Evidence (≥2 retros):**
+
+- **RETRO-084 / FOLLOW-327 / PR #312 (§4d DG-1)** —
+  `packages/shared/src/schemas/intent-weights.ts:155-160` docstring claimed
+  "`intent-weights.test.ts` asserts the two agree ... so drift is caught in CI" for the
+  `DEFAULT_INTENT_WEIGHTS` ↔ SDK `BASE_PRIOR` cross-package drift. False: that test asserted the
+  shared constant against ITSELF and never imported the SDK; the test header further deferred the
+  real check to `packages/sdk/src/__tests__/intent-weights-drift.test.ts` — a file that DID NOT
+  EXIST. (count 1; recorded as the over-claimed-verification meta-pattern, held below threshold.)
+- **RETRO-089 / FOLLOW-331 / PR #317 (§4d DG-1)** — the FOLLOW-331 fix corrected the
+  `intent-weights.ts:155-160` docstring AND created the real drift guard (closing the RETRO-084
+  instance end-to-end), but INTRODUCED a fresh instance one file over:
+  `packages/shared/src/schemas/intent-weights.test.ts:28-30` now claims the
+  `ARCHETYPE_KEYS ↔ ARCHETYPE_NAMES` parity guard "runs in
+  `packages/sdk/src/__tests__/intent-weights-drift.test.ts`" — but that file never imports
+  `ARCHETYPE_NAMES`/`ARCHETYPE_KEYS`; the real parity guard is in
+  `packages/sdk/src/__tests__/intent-weights.test.ts:784-793` (FOLLOW-305). Wrong-pointer sub-shape.
+  (count 2 — independent sighting in a distinct file; the PR that fixed sighting 1 produced
+  sighting 2. Threshold met → promoted at RETRO-089.) Filed FOLLOW-338.
+
+**Rule:**
+
+- Any comment that names a test, test-file, or any artifact as proof that an invariant is asserted /
+  guarded / "caught in CI" MUST be true of that artifact at the time it is written: the cited file
+  MUST exist AND MUST perform the cited assertion (import the cited symbols, compare the cited
+  values). A citation that defers to a not-yet-written file is forbidden — write the guard first, or
+  describe the gap as a gap (e.g. "NO automated guard yet — see FOLLOW-NNN"), never as a guarantee.
+- When a guard is RELOCATED, MOVED, or split, every docstring/header that cites it MUST be updated
+  to the new location in the SAME change. Fixing the guard without re-pointing its citations is half
+  a fix.
+- A retro for any PR that touches a "drift guard" / "parity guard" / "asserted in CI" docstring MUST
+  open the cited file and confirm it performs the cited assertion before recording the documentation
+  gap closed. Re-pointing a docstring is NOT closed until the new target is verified to contain the
+  guard.
+
+**Verification:**
+
+```bash
+# (1) Find docstrings/headers that cite a guard file as CI proof:
+grep -rn -iE "caught in CI|asserts the two|drift is caught|parity guard|runs in .*test" \
+  packages --include='*.ts' | grep -v node_modules
+# (2) For each cited file, confirm it imports the symbols it claims to reconcile.
+#     Example for the intent-weights chain (must each return >0 hits in the CITED file):
+grep -n 'ARCHETYPE_NAMES' packages/sdk/src/__tests__/intent-weights.test.ts        # real key↔name guard
+grep -n 'BASE_PRIOR' packages/sdk/src/__tests__/intent-weights-drift.test.ts        # real value-drift guard
+# (3) A cited file that returns ZERO hits for the symbols it supposedly reconciles is a Rule Y violation.
+```
+
+---
+
+<!-- Rule Y added 2026-06-18 — RETRO-089 §6 (RETRO-084 §4d DG-1 false/absent drift-guard citation, count 1 held as over-claimed-verification meta-pattern + RETRO-089 §4d DG-1 wrong-file guard citation introduced BY the FOLLOW-331 fix for RETRO-084's instance, count 2; threshold met). DISTINCT axis from Rule L (missing-attribute) / Rule K.2 (provenance-enum round-trip) / Rule Q (mirrored-test blind spot) — those govern the test MECHANICS; Rule Y governs the CITATION (a named artifact claimed as proof must perform the cited check). Filed FOLLOW-338 to fix the intent-weights.test.ts:28-30 mis-pointer + reconcile the migration-0030 third copy. Next free Rule letter was Y (Rule V skipped per the Rule W note; W, X used). -->
+
 <!-- Rule X added 2026-06-14 — RETRO-075 §6 (RETRO-074 §4b CB-1 base-URL-FORM mismatch, count 1, with an explicit promote-on-confirmation condition + RETRO-075 §4b CB-1 confirming FOUR independent double-/api fetch sites fixed via buildEndpoint, count 2; threshold met). DISTINCT axis from Rule L (missing-attribute) — RETRO-074 §6 explicitly kept them as separate roots/sibling rules for sibling axes of the same install-snippet→SDK-consumer meta-shape. The remedy (buildEndpoint helper + prod-snippet-base tests) shipped in PR #291. Filed FOLLOW-306 to bring the LAST fetch site (adapt-description.ts, the un-migrated 6th) under the helper + add a dedicated endpoint.test.ts. Next free Rule letter was X (Rule V intentionally skipped per the Rule W note). -->
 <!-- Rule W added 2026-06-13 — RETRO-060 §6 (FOLLOW-286/PR #279 RENAME+ADD-COLUMN-NOT-NULL apply-time failures + FOLLOW-287/PR #281 MODIFY COLUMN error 524 on ORDER BY key column, both merged green, count 2 on the intent_events sort-key DDL; threshold met). Filed FOLLOW-291 to build the pre-merge guard + ephemeral-apply gate, FOLLOW-290 to rebuild intent_events with the correct ORDER BY (tenant_id, session_id, event_at). Note: Rule V intentionally not used (skipped from the prior sequence); next free letter was W. -->
 <!-- Rule U added 2026-06-11 — RETRO-052 §6 (RETRO-049 §4a LG-2/§5d + RETRO-050 §4a LG-1/§5d + RETRO-051 §4a LG-2/§5d, count 3 on tenants.quiz_config; re-confirmed RETRO-053 §5d + RETRO-052 §4a LG-1, threshold long exceeded). The decay recurred key-by-key because each fix annotated/partial-removed without a blob-level policy; this rule converts the recurring per-key fix into a policy. Filed FOLLOW-271 to apply it to quizConfig.enabled. -->

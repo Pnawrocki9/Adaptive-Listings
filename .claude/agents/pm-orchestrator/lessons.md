@@ -137,6 +137,19 @@ invisible to the sprint planner.
 
 ---
 
+**Date / ticket:** 2026-06-18 — FOLLOW-331 (PR #317 fedfeb0) + FOLLOW-332 (PR #318 fb9d201) marked
+DONE; RETRO-089/090 pending spawn; FOLLOW-335 delegated to sdk-engineer **Delegation row used:** Row
+1 (client SDK, browser code — sdk-engineer) for FOLLOW-335. **What validation caught (or missed):**
+Both PRs merged to origin/main while local main was stale (11 superseded local chore commits). Used
+`git log origin/main` and `gh pr view` as source of truth rather than local git — correct per
+session context. No wiring issues for FOLLOW-331 (drift test is a test-only file with no runtime
+wiring requirement). FOLLOW-332 is test-only (admin/layout.test.tsx + admin/page.test.tsx +
+pilot-tenant.test.ts) — no new runtime symbols to wire, 5c N/A. **A delegation/validation rule I'd
+add:** When local main is diverged from origin/main, always source PR merge confirmation from
+`git log origin/main` or `gh pr view`, never from local git history.
+
+---
+
 **Date / ticket:** 2026-06-14 — FOLLOW-269 (promotion from BLOCKED to IN_PROGRESS) + FOLLOW-308
 (status reconciliation BACKLOG→DONE) **Delegation row used:** Row 2 (control-plane, Next.js —
 backend-engineer) **What validation caught (or missed):** QUEUE.md still showed FOLLOW-269 as

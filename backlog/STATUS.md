@@ -1,4 +1,4 @@
-# Status — 2026-06-18T18:50Z
+# Status — 2026-06-18T18:55Z (reconcile pass — FOLLOW-331/332 DONE, FOLLOW-335 READY)
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
@@ -87,28 +87,30 @@ partial-personalization risk for TICKET-PILOT-001.
 
 ## RETRO TRACKING (completed retros)
 
-| RETRO     | Source ticket                    | PR        | Status                                                               | Notes                                                                                             |
-| --------- | -------------------------------- | --------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| RETRO-059 | FOLLOW-274                       | #267      | DONE                                                                 |                                                                                                   |
-| RETRO-060 | FOLLOW-273                       | #268      | DONE                                                                 | Rule W promoted (ClickHouse ORDER BY key DDL)                                                     |
-| RETRO-061 | (no body — DG-2 cited)           | —         | N/A                                                                  | Cited in test headers; no actual entry filed                                                      |
-| RETRO-062 | FOLLOW-276                       | #272      | DONE (2026-06-17) — no FOLLOW filed (docs-only)                      |
-| RETRO-063 | FOLLOW-278                       | #273      | DONE (2026-06-17) — no FOLLOW filed (docs+test, constraint accepted) |
-| RETRO-064 | FOLLOW-266 Ph1                   | #277      | DONE (2026-06-17) — FOLLOW-319/320 filed                             | Root-cause retro: 0014 ORDER BY key dead-on-arrival; Rule W already governs                       |
-| RETRO-065 | FOLLOW-266 Ph2                   | #278      | COMPLETE                                                             | 3 P1 defects found (CB-1/LG-1/LG-2) → FOLLOW-286                                                  |
-| RETRO-066 | (ESC-021 sourced)                | —         | COMPLETE                                                             | ClickHouse MODIFY COLUMN on ORDER BY key → Rule W                                                 |
-| RETRO-067 | FOLLOW-266 Ph3                   | #280      | DONE (2026-06-17) — FOLLOW-321 filed (snapshot trigger HALF_WIRE)    | RETRO-059 stubs FOLLOW-288/289 confirmed still open; bundled #279 payload attributed to RETRO-068 |
-| RETRO-068 | FOLLOW-286                       | #279      | DONE (2026-06-17) — FOLLOW-322 filed (mock-backend rejection gap)    | LG-A/LG-B superseded by FOLLOW-287; FOLLOW-290/291/292 stubs confirmed; Rule W governs            |
-| RETRO-069 | FOLLOW-287+288                   | #281+#282 | DONE (2026-06-17) — no new stubs (FOLLOW-290/291/292 cover it)       | ESC-021 root cause; SELECT 1 no-op pattern; Rule W count=3 (reinforces; already promoted)         |
-| RETRO-070 | FOLLOW-267                       | #283      | COMPLETE                                                             | Rule K.2 amended; FOLLOW-298/299/300 filed                                                        |
-| RETRO-071 | FOLLOW-268-write                 | #285      | COMPLETE                                                             | FOLLOW-301/302 filed                                                                              |
-| RETRO-072 | FOLLOW-297                       | #286      | COMPLETE                                                             | FOLLOW-303 filed                                                                                  |
-| RETRO-073 | FOLLOW-301                       | #289      | COMPLETE                                                             | FOLLOW-304 filed (P2 GET cross-scope determinism)                                                 |
-| RETRO-074 | FOLLOW-268-sdk                   | #290      | COMPLETE                                                             | FOLLOW-305 filed (P1 double-/api blocker); Rule X count=1                                         |
-| RETRO-075 | FOLLOW-305                       | #291      | COMPLETE                                                             | FOLLOW-306 filed (P3 hygiene); Rule X PROMOTED (count=2)                                          |
-| RETRO-076 | FOLLOW-266 Ph2 seed + FOLLOW-302 | #293      | COMPLETE                                                             | FOLLOW-307 filed; OG-1 no-auto-Postgres-apply fact; FOLLOW-302 CLOSED; NO new Rule (count=1)      |
-| RETRO-087 | FOLLOW-325                       | #315      | DONE (2026-06-17) — no new stubs (FOLLOW-331/332/335 cover it)       | DETECT_SERVE_URL companion wire closed; LG-1 detect-bundle.ts → FOLLOW-335 still open             |
-| RETRO-088 | FOLLOW-336                       | #316      | DONE (2026-06-18) — FOLLOW-337 filed (Format gate pre-existing-red)  | checkStaffSession + middleware + SignInForm auth tests. Format pre-existing-red confirmed.        |
+| RETRO     | Source ticket                    | PR        | Status                                                                              | Notes                                                                                                             |
+| --------- | -------------------------------- | --------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| RETRO-059 | FOLLOW-274                       | #267      | DONE                                                                                |                                                                                                                   |
+| RETRO-060 | FOLLOW-273                       | #268      | DONE                                                                                | Rule W promoted (ClickHouse ORDER BY key DDL)                                                                     |
+| RETRO-061 | (no body — DG-2 cited)           | —         | N/A                                                                                 | Cited in test headers; no actual entry filed                                                                      |
+| RETRO-062 | FOLLOW-276                       | #272      | DONE (2026-06-17) — no FOLLOW filed (docs-only)                                     |
+| RETRO-063 | FOLLOW-278                       | #273      | DONE (2026-06-17) — no FOLLOW filed (docs+test, constraint accepted)                |
+| RETRO-064 | FOLLOW-266 Ph1                   | #277      | DONE (2026-06-17) — FOLLOW-319/320 filed                                            | Root-cause retro: 0014 ORDER BY key dead-on-arrival; Rule W already governs                                       |
+| RETRO-065 | FOLLOW-266 Ph2                   | #278      | COMPLETE                                                                            | 3 P1 defects found (CB-1/LG-1/LG-2) → FOLLOW-286                                                                  |
+| RETRO-066 | (ESC-021 sourced)                | —         | COMPLETE                                                                            | ClickHouse MODIFY COLUMN on ORDER BY key → Rule W                                                                 |
+| RETRO-067 | FOLLOW-266 Ph3                   | #280      | DONE (2026-06-17) — FOLLOW-321 filed (snapshot trigger HALF_WIRE)                   | RETRO-059 stubs FOLLOW-288/289 confirmed still open; bundled #279 payload attributed to RETRO-068                 |
+| RETRO-068 | FOLLOW-286                       | #279      | DONE (2026-06-17) — FOLLOW-322 filed (mock-backend rejection gap)                   | LG-A/LG-B superseded by FOLLOW-287; FOLLOW-290/291/292 stubs confirmed; Rule W governs                            |
+| RETRO-069 | FOLLOW-287+288                   | #281+#282 | DONE (2026-06-17) — no new stubs (FOLLOW-290/291/292 cover it)                      | ESC-021 root cause; SELECT 1 no-op pattern; Rule W count=3 (reinforces; already promoted)                         |
+| RETRO-070 | FOLLOW-267                       | #283      | COMPLETE                                                                            | Rule K.2 amended; FOLLOW-298/299/300 filed                                                                        |
+| RETRO-071 | FOLLOW-268-write                 | #285      | COMPLETE                                                                            | FOLLOW-301/302 filed                                                                                              |
+| RETRO-072 | FOLLOW-297                       | #286      | COMPLETE                                                                            | FOLLOW-303 filed                                                                                                  |
+| RETRO-073 | FOLLOW-301                       | #289      | COMPLETE                                                                            | FOLLOW-304 filed (P2 GET cross-scope determinism)                                                                 |
+| RETRO-074 | FOLLOW-268-sdk                   | #290      | COMPLETE                                                                            | FOLLOW-305 filed (P1 double-/api blocker); Rule X count=1                                                         |
+| RETRO-075 | FOLLOW-305                       | #291      | COMPLETE                                                                            | FOLLOW-306 filed (P3 hygiene); Rule X PROMOTED (count=2)                                                          |
+| RETRO-076 | FOLLOW-266 Ph2 seed + FOLLOW-302 | #293      | COMPLETE                                                                            | FOLLOW-307 filed; OG-1 no-auto-Postgres-apply fact; FOLLOW-302 CLOSED; NO new Rule (count=1)                      |
+| RETRO-087 | FOLLOW-325                       | #315      | DONE (2026-06-17) — no new stubs (FOLLOW-331/332/335 cover it)                      | DETECT_SERVE_URL companion wire closed; LG-1 detect-bundle.ts → FOLLOW-335 still open                             |
+| RETRO-088 | FOLLOW-336                       | #316      | DONE (2026-06-18) — FOLLOW-337 filed (Format gate pre-existing-red)                 | checkStaffSession + middleware + SignInForm auth tests. Format pre-existing-red confirmed.                        |
+| RETRO-089 | FOLLOW-331                       | #317      | DONE (2026-06-18) — FOLLOW-338 filed (mis-pointing docstring + 0030 third copy, P3) | DEFAULT_INTENT_WEIGHTS drift guard + docstring fix. Rule P-OVERCLAIMED-VERIFICATION count=2 → promoted as Rule Y. |
+| RETRO-090 | FOLLOW-332                       | #318      | DONE (2026-06-18) — FOLLOW-339 filed (signOut Server Action, P3)                    | admin/layout.test.tsx + admin/page.test.tsx + pilot-tenant.test.ts. 19/19 tests. Wiring CLEAN.                    |
 
 **ALL Wave-2 retros complete: RETRO-062/063/064/067/068/069 DONE 2026-06-17.** **RETRO-087
 (FOLLOW-325 / PR #315) DONE 2026-06-17.**
@@ -128,9 +130,15 @@ snippet base (${CONTROL_PLANE_URL}/api). Promoted from RETRO-074/075 (count 2; t
 | FOLLOW-268-sdk | (per PR body — green)                       | 0/3            |
 | FOLLOW-305     | (per PR body — 1383 vitest green, CI green) | 0/3            |
 
-## Sprint 18+ Current State (2026-06-17 20:00Z)
+## Sprint 18+ Current State (2026-06-18 reconcile pass)
 
-**ALL SPRINT 18 PRs MERGED AND RETROS COMPLETE.**
+**ALL SPRINT 18 PRs MERGED AND RETROS NEAR-COMPLETE.**
+
+**FOLLOW-331 DONE** (PR #317, merged fedfeb0). DEFAULT_INTENT_WEIGHTS drift guard + docstring fix.
+CI check counter: 1/5, fix iter 0/3. RETRO-089 PENDING SPAWN.
+
+**FOLLOW-332 DONE** (PR #318, merged fb9d201). admin/layout.test.tsx + admin/page.test.tsx +
+pilot-tenant.test.ts. CI check counter: 0/5 (no iteration needed). RETRO-090 PENDING SPAWN.
 
 **FOLLOW-324 DONE** (PR #308). SDK bundle 52.61 KB → 39.73 KB gzip. RETRO-082 DONE.
 
@@ -142,7 +150,7 @@ residuals).
 **FOLLOW-336 DONE** (PR #316, merged 1626013 2026-06-18T04:41:38Z). checkStaffSession + middleware +
 SignInForm auth tests. CI check counter: 1/5, fix iter 1/3. Format check FAILING on PR #316 CI —
 confirmed PRE-EXISTING-RED (commit 59ac6b5 preceding this PR also had Format check FAILING). Not a
-regression. RETRO-088 PENDING SPAWN.
+regression. RETRO-088 DONE 2026-06-18.
 
 **FOLLOW-326 DONE** (PRs #309/#310/#311). admin.estalara.com sign-in + Supabase SSR. RETRO-083 DONE.
 
@@ -156,17 +164,21 @@ regression. RETRO-088 PENDING SPAWN.
 
 **Wave-2 retros:** RETRO-062/063/064/067/068/069 ALL DONE 2026-06-17.
 
-**Pending retro spawns: NONE.** All retros through RETRO-087 complete.
+**Retro spawns: RETRO-089/090 recorded in RETRO TRACKING table (2026-06-18 reconcile pass).**
 
-**New READY tickets promoted (Sprint 18 P2, 2026-06-17/18):**
+**Sprint 18 P2 ticket status:**
 
 - FOLLOW-336 (DONE): checkStaffSession + middleware + SignInForm tests (qa-engineer, 3h) — PR #316
-- FOLLOW-331 (IN_PROGRESS): DEFAULT_INTENT_WEIGHTS drift guard + docstring fix (sdk-engineer, 3h)
-- FOLLOW-332 (READY): admin/layout.test.tsx + admin/page.test.tsx (qa-engineer, 2h)
-- FOLLOW-335 (READY): detect-bundle.ts globalThis.\_\_EStalaraDetect unit test (sdk-engineer, 1h)
+- FOLLOW-331 (DONE): DEFAULT_INTENT_WEIGHTS drift guard + docstring fix (sdk-engineer, 3h) — PR #317
+- FOLLOW-332 (DONE): admin/layout.test.tsx + admin/page.test.tsx (qa-engineer, 2h) — PR #318
+- FOLLOW-335 (READY): detect-bundle.ts globalThis.\_\_EStalaraDetect unit test (sdk-engineer, 1h) —
+  NEXT (not yet delegated — correction applied in reconcile pass 2026-06-18)
 - FOLLOW-337 (STUB): Fix pre-existing Format check failure on main (devops-engineer, P3) — confirmed
-  pre-existing-red on commit 59ac6b5 and all subsequent; Format gate listed as real in prior
-  STATUS.md but is actually broken on main; needs prettier config audit + CI fix.
+  pre-existing-red on commit 59ac6b5 and all subsequent; needs prettier config audit + CI fix.
+- FOLLOW-338 (STUB): Fix re-introduced mis-pointing drift-guard docstring + reconcile migration-0030
+  third copy of intent defaults (RETRO-089 DG-1 + TG-1, P3, sdk-engineer + data-engineer, 2h).
+- FOLLOW-339 (STUB): Assert admin signOut Server Action behavior (RETRO-090 TG-1, P3, qa-engineer,
+  1h).
 
 ## ESCALATION STATUS
 
@@ -185,16 +197,18 @@ auto-detect, archetype-pipeline, data-quality, intent-engine, llm-gateway, strea
 
 ## CI CHECK COUNTER (current sprint)
 
-| Ticket     | CI checks | Fix iterations | Status                                 |
-| ---------- | --------- | -------------- | -------------------------------------- |
-| FOLLOW-325 | 1/5       | 0/3            | DONE (PR #315, 2026-06-17)             |
-| FOLLOW-336 | 1/5       | 1/3            | DONE (PR #316, 2026-06-18)             |
-| FOLLOW-331 | 1/5       | 0/3            | DONE (PR #317, merged fedfeb0)         |
-| FOLLOW-332 | 1/5       | 1/3            | READY_FOR_REVIEW (PR #318, 2026-06-18) |
+| Ticket     | CI checks | Fix iterations | Status                     |
+| ---------- | --------- | -------------- | -------------------------- |
+| FOLLOW-325 | 1/5       | 0/3            | DONE (PR #315, 2026-06-17) |
+| FOLLOW-336 | 1/5       | 1/3            | DONE (PR #316, 2026-06-18) |
+| FOLLOW-331 | 1/5       | 0/3            | DONE (PR #317, fedfeb0)    |
+| FOLLOW-332 | 0/5       | 0/3            | DONE (PR #318, fb9d201)    |
+| FOLLOW-335 | 0/5       | 0/3            | READY — not yet delegated  |
 
-FOLLOW-336: DONE — PR #316 merged 1626013 2026-06-18T04:41:38Z. RETRO-088 DONE 2026-06-18.
-FOLLOW-331: IN_PROGRESS — delegated to sdk-engineer 2026-06-18T06:00Z. Branch:
-sdk-engineer/FOLLOW-331-intent-weights-drift-guard.
+FOLLOW-331: DONE — PR #317 merged to origin/main as fedfeb0. RETRO-089 pending spawn. FOLLOW-332:
+DONE — PR #318 merged to origin/main as fb9d201. RETRO-090 pending spawn. FOLLOW-335: READY —
+sdk-engineer, detect-bundle.ts globalThis.\_\_EStalaraDetect unit test. NOT yet delegated (prior
+IN_PROGRESS was erroneous — corrected in reconcile pass 2026-06-18).
 
 ## Pending Retro Spawns (ALL COMPLETE as of 2026-06-17)
 
@@ -263,18 +277,7 @@ producer packages/shared/src/domains.ts:73, consumer DetectionPreview.tsx:183. N
 FOLLOW-331/332/335 cover residuals. detect-bundle.ts global bridge untested pattern count=2
 (RETRO-082+087) but deferred: wait for FOLLOW-335 to land before promoting Rule.
 
-ALL RETROS THROUGH RETRO-088 COMPLETE (2026-06-18). FOLLOW-337 filed (Format gate pre-existing-red).
-
-## Sprint 18 current state (2026-06-18)
-
-- FOLLOW-331: DONE (PR #317, merged fedfeb0 to main). BASE_PRIOR/BEHAVIORAL_DAMPING exported; drift
-  guard test created; false docstring fixed. CI check counter: 1/5, fix iterations: 0/3.
-- FOLLOW-332: READY_FOR_REVIEW (PR #318). PM-validated 2026-06-18. CI check counter: 1/5, fix
-  iterations: 1/3 (1 fix: spurious /tenants/ assertion corrected to bare-list-route guard). All real
-  CI gates GREEN: Build, Build(control-plane), Test (Node 22), SDK E2E tests, Lint, Typecheck, Rule
-  H, Rule J, Auto-Detection corpus gate, ClickHouse migrations smoke, Cross-language event contract,
-  Demo integration, K.3.6 D-1 live smoke, Migration journal monotonicity, Tracer query CI guard,
-  Gitleaks, Doppler verify, Privacy Notice SDK key-sync, Vercel. Pre-existing-red non-blocking:
-  Format check, Rule I, Python tests. AC1+AC2+AC3 all met. 19/19 tests pass.
-- FOLLOW-335: READY (Sprint 18 P2, no agent assigned yet).
-- ESC-020: OPEN but non-blocking (CEO 2026-06-10 defer).
+RETROS THROUGH RETRO-090 RECORDED (2026-06-18 reconcile pass). RETRO-089 (FOLLOW-331 / PR #317) and
+RETRO-090 (FOLLOW-332 / PR #318) entries recorded in RETRO TRACKING table above. FOLLOW-337 filed
+(Format gate pre-existing-red). FOLLOW-338 + FOLLOW-339 stubs added (RETRO-089/090 findings). RULE Y
+promoted (CONVENTIONS_PATCH.md). Next action: delegate FOLLOW-335 to sdk-engineer.

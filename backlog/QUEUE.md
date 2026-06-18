@@ -5117,33 +5117,43 @@ pending planning.**
 
 - id: FOLLOW-331 title: > Add a real cross-package drift guard for DEFAULT_INTENT_WEIGHTS vs SDK
   BASE_PRIOR/BEHAVIORAL_DAMPING, and fix the docstring claiming a CI guard that does not exist
-  (RETRO-084 LG-1 + DG-1) agent: sdk-engineer co_agent: backend-engineer status: IN_PROGRESS
+  (RETRO-084 LG-1 + DG-1) agent: sdk-engineer co_agent: backend-engineer status: READY_FOR_REVIEW
   priority: P2 estimated_hours: 3 depends_on: [FOLLOW-327] source: RETRO-084 (FOLLOW-327 / PR #312)
   — intent-weights-drift.test.ts referenced in docstring but never created spec:
   backlog/FOLLOW_UPS.md (FOLLOW-331 stub) branch: sdk-engineer/FOLLOW-331-intent-weights-drift-guard
-  assigned_to: sdk-engineer started_at: '2026-06-18T06:00Z' promoted_at: '2026-06-17T20:00Z' notes:
-  | Promoted 2026-06-17. IN_PROGRESS: delegated to sdk-engineer 2026-06-18T06:00Z.
-  DEFAULT_INTENT_WEIGHTS in @estalara/shared must sum to 1.0 and match SDK BASE_PRIOR /
-  BEHAVIORAL_DAMPING constants. Docstring claims CI guard but no file exists. Sprint 18 P2
-  correctness guard. CI check counter: 0/5, fix iterations: 0/3.
+  assigned_to: sdk-engineer started_at: '2026-06-18T06:00Z' promoted_at: '2026-06-17T20:00Z' pr:
+  '317' notes: | Promoted 2026-06-17. IN_PROGRESS: delegated to sdk-engineer 2026-06-18T06:00Z. PR
+  #317 opened. READY_FOR_REVIEW 2026-06-18T10:30Z (PM-validated): CI green on all real gates (run
+  27752092764 — Lint/Typecheck/Test Node 22/Build/Build control-plane/SDK E2E/Demo integration/etc.
+  all PASS). Format check + Rule I + Test Python failures are pre-existing-red (confirmed on main
+  run 27737181224 for Format check, FOLLOW-090 for Rule I, documented CI gate landscape for Python).
+  AC1: drift test imports DEFAULT_INTENT_WEIGHTS + BASE_PRIOR/BEHAVIORAL_DAMPING, asserts equality
+  (DRIFT-2/3). AC2: false docstring fixed in intent-weights.ts:155-160. AC3: Lint/Typecheck/Test
+  Node 22 all pass. Runtime wiring: BASE_PRIOR/BEHAVIORAL_DAMPING producers intent.ts:167/532,
+  non-test consumers intent.ts:568/607/748/904. PM comment posted at
+  https://github.com/Pnawrocki9/Adaptive-Listings/pull/317#issuecomment-4740905438. CI check
+  counter: 1/5, fix iterations: 0/3.
 
 - id: FOLLOW-332 title: > Add admin/layout.test.tsx + admin/page.test.tsx for single-tenant nav +
-  landing redirect (RETRO-084 TG-1 + TG-2) agent: qa-engineer status: READY priority: P2
+  landing redirect (RETRO-084 TG-1 + TG-2) agent: qa-engineer status: IN_PROGRESS priority: P2
   estimated_hours: 2 depends_on: [FOLLOW-327] source: RETRO-084 (FOLLOW-327 / PR #312) — admin shell
   change shipped with zero tests on changed files spec: backlog/FOLLOW_UPS.md (FOLLOW-332 stub)
-  promoted_at: '2026-06-17T20:00Z' notes: | Promoted 2026-06-17. Admin layout.tsx (single-tenant nav
-  hiding) + app/admin/page.tsx (redirect to pilot tenant live monitor) shipped with zero tests.
-  Sprint 18 P2 test coverage.
+  promoted_at: '2026-06-17T20:00Z' assigned_to: qa-engineer started_at: '2026-06-18T10:30Z' branch:
+  qa-engineer/FOLLOW-332-admin-layout-page-tests notes: | Promoted 2026-06-17. Admin layout.tsx
+  (single-tenant nav hiding) + app/admin/page.tsx (redirect to pilot tenant live monitor) shipped
+  with zero tests. Sprint 18 P2 test coverage. IN_PROGRESS: delegated to qa-engineer
+  2026-06-18T10:30Z.
 
 ## Currently in flight
 
-**1 ticket IN_PROGRESS as of 2026-06-18T06:00Z: FOLLOW-331 (sdk-engineer). 0 READY_FOR_REVIEW.**
-FOLLOW-336 DONE (PR #316, merged 1626013 2026-06-18T04:41:38Z). RETRO-088 DONE 2026-06-18.
-FOLLOW-337 stub filed (Format gate pre-existing-red documentation fix). All Sprint 18 PRs done:
-FOLLOW-324/325/326/327/328/330/293/336. ESC-020 OPEN but non-blocking (CEO 2026-06-10).
-FOLLOW-332/335 READY (Sprint 18 P2). FOLLOW-331 IN_PROGRESS (sdk-engineer, branch
-sdk-engineer/FOLLOW-331-intent-weights-drift-guard, Sprint 18 P2 — DEFAULT_INTENT_WEIGHTS drift
-guard + docstring fix). CI check counter: FOLLOW-331 0/5, fix iterations 0/3.
+**1 ticket IN_PROGRESS as of 2026-06-18T10:30Z: FOLLOW-332. 1 READY_FOR_REVIEW: FOLLOW-331
+(PM-validated 2026-06-18T10:30Z — CI green on all real gates, PR #317 comment posted, wiring
+confirmed).** FOLLOW-336 DONE (PR #316, merged 1626013 2026-06-18T04:41:38Z). RETRO-088 DONE
+2026-06-18. FOLLOW-337 stub filed (Format gate pre-existing-red documentation fix). All Sprint 18
+PRs done: FOLLOW-324/325/326/327/328/330/293/336. ESC-020 OPEN but non-blocking (CEO 2026-06-10).
+FOLLOW-335 READY (Sprint 18 P2). FOLLOW-332 IN_PROGRESS (qa-engineer, branch
+qa-engineer/FOLLOW-332-admin-layout-page-tests, Sprint 18 P2, delegated 2026-06-18T10:30Z). CI check
+counter: FOLLOW-331 1/5, fix iterations 0/3. FOLLOW-332 0/5, fix iterations 0/3.
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

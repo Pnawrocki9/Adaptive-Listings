@@ -133,6 +133,15 @@ export const adaptResponseSchema = z
      * Absent when no shadow data exists for the session.
      */
     chat_intent_dimensions: z.record(z.string()).nullish(),
+    /**
+     * Resolved slot selector map from detail_schema.slot_selectors (FOLLOW-340).
+     *
+     * Optional additive field — omitted when the tenant has no curated slot selectors
+     * or when the control-plane schema lookup fails (fail-safe). The SDK uses this to
+     * self-annotate DOM nodes with data-estalara-slot BEFORE the first applyDirectives()
+     * call so pages without hand-coded slot attributes visibly adapt.
+     */
+    slot_selectors: z.record(z.string()).optional(),
   })
   .passthrough();
 

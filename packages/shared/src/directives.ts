@@ -178,4 +178,18 @@ export interface AdaptationDirectives {
    * chat messages, or Redis unavailable).
    */
   chat_intent_dimensions?: Record<string, string> | null;
+  /**
+   * Resolved slot selector map from `detail_schema.slot_selectors` (FOLLOW-340).
+   *
+   * A flat `{ slotName → CSS_selector }` mapping derived from the active tenant's
+   * `tenant_site_schemas.detail_schema.slot_selectors` primary selectors. When
+   * present, the SDK calls `annotateSlots(slot_selectors)` BEFORE the first
+   * `applyDirectives()` call so that pages without hand-coded `data-estalara-slot`
+   * attributes receive self-annotation and directives can find their targets.
+   *
+   * Additive and optional — omitted when the tenant has no curated slot selectors
+   * or when the schema lookup fails (fail-safe: the adapt response is never blocked).
+   * The SDK never overwrites an existing `data-estalara-slot` attribute (idempotent).
+   */
+  slot_selectors?: Record<string, string>;
 }

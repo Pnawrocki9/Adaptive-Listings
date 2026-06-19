@@ -216,9 +216,16 @@ const AdaptPostBodySchema = z.object({
 // ─── Decision logic ───────────────────────────────────────────────────────────
 
 /**
+ * Maps a bandit variant name to a zero-based index into `SlotDirective.variants.en`.
+ * Index 0 = control (mirrors `s.en`), 1 = v1, 2 = v2.
+ */
+const VARIANT_INDEX: Record<string, number> = { control: 0, v1: 1, v2: 2 };
+
+/**
  * Run the adaptation decision tree per Master Design E.1.
  * Now async: branches 3 and 4 call the LLM gateway (ADP-002).
  * TICKET-AGENCY-001: accepts precomputed `listingContext` for RAG injection.
+ * FOLLOW-342: accepts `variant` so the bandit selection reaches copy selection.
  *
  * @param archetypeId    - Archetype matched by the intent engine.
  * @param confidence     - Intent confidence 0–1.
@@ -228,6 +235,8 @@ const AdaptPostBodySchema = z.object({
  * @param locale         - Content locale; slot copy falls back to 'en' when locale override absent.
  * @param listingContext - Agency FAQ answers from RAG retrieval (may be empty).
  * @param forceModel     - Optional Anthropic model ID to force (DEMO MODE, DEMO-001).
+ * @param variant        - Bandit variant ('control'|'v1'|'v2'). Defaults to 'control' for
+ *                         backwards compat. Selects from `SlotDirective.variants.en` when present.
  * @returns Partial adaptation result (directives + source).
  */
 async function runDecisionTree(
@@ -239,6 +248,7 @@ async function runDecisionTree(
   locale: 'en' | 'pl' | 'es' = 'en',
   listingContext: Record<string, string> = {},
   forceModel?: string,
+  variant = 'control',
 ): Promise<{
   directives: TextDirective[];
   source: AdaptationDirectives['source'];
@@ -252,14 +262,23 @@ async function runDecisionTree(
 
   const playbook = getPlaybook(archetypeId);
 
+  // FOLLOW-342: resolve the variant index once per call.
+  // Unknown variant names (e.g. future v3) fall through to control (index 0).
+  const variantIndex = VARIANT_INDEX[variant] ?? 0;
+
   // Convert playbook slots → TextDirectives; prefer locale override, fall back to English [F-09].
+  // FOLLOW-342: when a slot carries `variants.en`, use the bandit-selected index.
+  // Falls back to `s.en` when variants are absent or the index is out of range.
 
   const playbookDirectives: TextDirective[] = playbook.slots.map((s: SlotDirective) => ({
     type: 'text' as const,
 
     slot: s.slot,
 
-    value: (locale === 'pl' ? s.pl : locale === 'es' ? s.es : undefined) ?? s.en,
+    value:
+      (locale === 'pl' ? s.pl : locale === 'es' ? s.es : undefined) ??
+      s.variants?.en[variantIndex] ??
+      s.en,
     archetype: archetypeId,
     confidence,
   }));
@@ -659,8 +678,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Decision tree ─────────────────────────────────────────────────────────
+  // ── FOLLOW-007 / FOLLOW-342: Thompson sampling variant selection ─────────
+  // Sample variant BEFORE decision tree so copy selection uses the result.
   const archetypeId = archetypeRaw as ArchetypeId;
+  const getHandlerBanditArms = await getBanditArms(tenantId, archetypeId);
+  const getHandlerVariant = thompsonSample(getHandlerBanditArms) ?? 'control';
+
+  // ── Decision tree ─────────────────────────────────────────────────────────
   const { directives, source } = await runDecisionTree(
     archetypeId,
     confidence,
@@ -668,6 +692,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     sessionId,
     tenantId,
     locale,
+    {},
+    undefined,
+    getHandlerVariant,
   );
 
   // FOLLOW-105 / ADR-0006 §Decision 4C: stable per-decision UUID, returned in the
@@ -699,7 +726,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     tier,
     directives.length,
     holdoutGroup,
-    'control',
+    getHandlerVariant,
     adaptDecisionId,
   );
 
@@ -944,6 +971,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     body.intent_vector ?? null,
   );
 
+  // ── FOLLOW-007 / FOLLOW-342: Thompson sampling variant selection ─────────
+  // Query bandit arms for (tenant_id, archetype) and sample a variant BEFORE
+  // running the decision tree so the selected variant can reach copy selection.
+  // Auto-seeds 3 arms (control, v1, v2) with Beta(1, 1) on first request.
+  // When all arms are paused (or DB unavailable), defaults to 'control'.
+  const banditArms = await getBanditArms(tenantId, archetypeId);
+  const selectedVariant = thompsonSample(banditArms) ?? 'control';
+
   const { directives: textDirectives, source } = await runDecisionTree(
     archetypeId,
     confidence,
@@ -953,19 +988,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     body.locale ?? 'en',
     listingContext,
     demoActive ? demoForceModel : undefined,
+    selectedVariant,
   );
 
   // FOLLOW-345: filter text directives by page_type before building the response.
   // On list/search/home pages, suppress per-listing headline rewrites — they are
   // only meaningful on detail pages where a single listing is in focus.
   const filteredTextDirectives = filterDirectivesByPageType(textDirectives, body.page_type);
-
-  // ── FOLLOW-007: Thompson sampling variant selection ───────────────────────
-  // Query bandit arms for (tenant_id, archetype) and sample a variant.
-  // Auto-seeds 3 arms (control, v1, v2) with Beta(1, 1) on first request.
-  // When all arms are paused (or DB unavailable), defaults to 'control'.
-  const banditArms = await getBanditArms(tenantId, archetypeId);
-  const selectedVariant = thompsonSample(banditArms) ?? 'control';
 
   // Append ReorderDirective for tenants with reorder_capable + listing_ids present.
   // TICKET-AB-011: getTenantSchema now does real DB lookup + Redis cache.

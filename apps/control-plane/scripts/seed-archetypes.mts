@@ -117,6 +117,24 @@ async function fetchPendingRows(baseUrl: string, srKey: string): Promise<Archety
   return res.json() as Promise<ArchetypeRow[]>;
 }
 
+// Clears all embeddings to NULL so a subsequent seed pass re-embeds from current descriptions.
+// Used when FORCE_RESEED=true (e.g. archetype-seeds.ts was edited and descriptions changed).
+async function clearAllEmbeddings(baseUrl: string, srKey: string): Promise<void> {
+  const url = `${baseUrl}/rest/v1/archetype_embeddings`;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: { ...restHeaders(srKey), Prefer: 'return=minimal' },
+    body: JSON.stringify({ embedding: null }),
+  });
+  if (!res.ok)
+    throw new Error(
+      `[seed-archetypes] clear embeddings failed ${String(res.status)}: ${await res.text()}`,
+    );
+  console.log(
+    '[seed-archetypes] force-reseed: cleared all embeddings — re-embedding from current descriptions.',
+  );
+}
+
 async function updateEmbedding(
   baseUrl: string,
   srKey: string,
@@ -147,6 +165,10 @@ interface SeedResult {
 async function seedArchetypeEmbeddings(): Promise<SeedResult> {
   const srKey = await getServiceRoleKey();
   const baseUrl = (process.env.SUPABASE_URL ?? SUPABASE_URL_DEFAULT).replace(/\/$/, '');
+
+  if (process.env.FORCE_RESEED === 'true') {
+    await clearAllEmbeddings(baseUrl, srKey);
+  }
 
   const pending = await fetchPendingRows(baseUrl, srKey);
 

@@ -67,8 +67,19 @@ jobs:
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
 
-      - name: Seed archetype embeddings (idempotent)
+      - name: Detect archetype description changes
+        id: desc-check
+        run: |
+          if git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" | grep -q 'packages/db/src/seed/archetype-seeds.ts'; then
+            echo "force_reseed=true" >> "$GITHUB_OUTPUT"
+            echo "[post-migrate-seed] archetype-seeds.ts changed — will force-reseed all embeddings."
+          else
+            echo "force_reseed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Seed archetype embeddings (idempotent; force on description change)
         if: steps.doppler-check.outputs.skip == 'false'
         run: doppler run --config dev -- pnpm seed:archetypes
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
+          FORCE_RESEED: ${{ steps.desc-check.outputs.force_reseed }}

@@ -539,6 +539,26 @@ jobs:
       - name: Validate _journal.json
         run: bash scripts/check-migration-journal.sh
 
+  # ── Archetype seeds completeness check ───────────────────────────────────
+  archetype-seeds-complete:
+    name: Archetype seeds completeness check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Assert all 18 archetype seeds have names and descriptions
+        run: npx tsx scripts/check-archetype-seeds.ts
+
   # ── SDK E2E tests (Playwright + Chromium) ────────────────────────────────
   sdk-e2e:
     name: SDK E2E tests

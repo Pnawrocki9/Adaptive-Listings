@@ -2,6 +2,11 @@ name: Seed archetype embeddings
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/db/src/seed/archetype-seeds.ts"
 
 jobs:
   seed:

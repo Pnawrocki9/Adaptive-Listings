@@ -2,6 +2,38 @@
 
 ---
 
+## 2026-06-20 / FOLLOW-346
+
+**What I built:** Chat NLP shadow bridge — wired the dead bridge between `stream-consumer` and
+`process_chat_message`. Added `_spawn_chat_nlp()` to `events.py` with a `modal.Function.lookup` +
+`.spawn()` fire-and-forget pattern (mirrors `waitUntil` in `events.ts`). Added `CHAT_NLP_LIVE` env
+flag to `route.ts` (default false) to make the shadow-vs-live gate machine-readable. 17 new tests (8
+stream-consumer, 5 intent-engine, 4 TS route).
+
+**Vocabulary/seed/retention risks I weighed:**
+
+- DPIA (C-07): confirmed zero raw chat text reaches ClickHouse or Postgres. The spawn forwards only
+  `tenant_id`, `session_id`, and the message dict. The NLP output (12-dim intent vector) is written
+  to Redis shadow key by `redis_writer.write_shadow_intent` with enforced 24h TTL (`ex=86400`). No
+  new column or table introduced — no Rule H seed needed.
+- `process_chat_message` in `main.py` already correctly writes the shadow key — no NLP logic changes
+  required. This confirmed the spec's instruction: "if it already does, make no change."
+- The `CHAT_NLP_LIVE` gate prevents any silent live adaptation from chat intent. The flag is read at
+  module load time (not per-request) which is intentional — changing it requires a redeploy, not a
+  runtime toggle, which is the right gate for a DPIA-controlled feature.
+- The existing `route.chat-intent.test.ts` tests all passed unchanged after adding the
+  `console.info` log in the shadow read block — confirmed no regression.
+- `_spawn_chat_nlp` has two layers of exception protection: internal `except Exception` + outer
+  `try/except` in the routing branch. Belt-and-suspenders needed because mock patches in tests
+  bypass the internal catch.
+
+**A guardrail I'd add:** When a Modal function is referenced by name string
+(`.lookup("app", "fn")`), there is no compile-time check that the function name matches the deployed
+function. A CI integration test that does `modal.Function.lookup(...)` against the staging
+deployment and asserts the function exists would catch rename drift before it reaches prod silently.
+
+---
+
 ## 2026-06-08 / FOLLOW-234
 
 **What I built:** Vercel cron route `GET /api/internal/retention/conversion-labels` (schedule

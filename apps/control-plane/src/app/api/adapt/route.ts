@@ -73,6 +73,20 @@ const CONFIDENCE_THRESHOLD = 0.6;
 const HIGH_SIMILARITY_THRESHOLD = 0.85;
 const LOW_SIMILARITY_THRESHOLD = 0.6;
 
+/**
+ * FOLLOW-346: Shadow-vs-live gate for chat NLP adaptation.
+ *
+ * When false (default): the shadow Redis key is read and `chat_intent_dimensions`
+ * is returned to the SDK for `applyChatIntentPrior` client-side state updates ONLY.
+ * The server-side decision tree (directives) is NOT influenced by chat intent.
+ *
+ * When true: chat intent is allowed to influence server-side adaptation. This gate
+ * remains false until all 5 DPIA go-live items in C-07 are signed off.
+ *
+ * Gate: CHAT_NLP_LIVE=true requires explicit CEO + DPO sign-off (C-07).
+ */
+const CHAT_NLP_LIVE = process.env.CHAT_NLP_LIVE === 'true';
+
 // ─── Pilot freeze guard (FOLLOW-117 / RETRO-012 / FOLLOW-263) ────────────────
 //
 // FOLLOW-263 (RETRO-049): repointed from JSONB `quizConfig.enabled` to the typed
@@ -1044,16 +1058,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── FOLLOW-101: shadow chat-intent prior bridge (AC-1) ───────────────────────
+  // ── FOLLOW-346 / FOLLOW-101: shadow chat-intent prior bridge ────────────────
   // Read the Modal NLP shadow key for this (tenant, session) pair and flatten
   // intent_dimensions into a Record<string,string> for the SDK's applyChatIntentPrior.
   //
   // Failure posture: any Redis error is fail-open — we log at console.warn and set
   // chatIntentDimensions to null. The adapt response is NEVER blocked by this read.
   //
-  // Shadow-only constraint (Sprint 13): this value is returned to the SDK for
-  // IntentState update and quiz.mismatch detection ONLY — it does NOT influence
-  // which directives are served. Adaptation output remains purely behavioural.
+  // CHAT_NLP_LIVE gate (FOLLOW-346): when false (default), chat intent is returned
+  // to the SDK for applyChatIntentPrior state updates ONLY — it does NOT influence
+  // which directives are served here. Server-side live adaptation from chat intent
+  // requires CHAT_NLP_LIVE=true (pending C-07 sign-off, 0/5 items complete).
   let chatIntentDimensions: Record<string, string> | null = null;
   try {
     const shadow = await readShadowChatIntent(tenantId, body.session_id);
@@ -1061,6 +1076,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const flattened = flattenIntentDimensions(shadow.intent_dimensions);
       if (Object.keys(flattened).length > 0) {
         chatIntentDimensions = flattened;
+        // Record whether live adaptation from chat is active for this request.
+        // When CHAT_NLP_LIVE is false the dimensions are returned to the SDK
+        // for client-side applyChatIntentPrior ONLY — directives are unaffected.
+        console.info(
+          '[adapt] chat-intent shadow read',
+          JSON.stringify({
+            chat_nlp_live: CHAT_NLP_LIVE,
+            dimension_count: Object.keys(flattened).length,
+            session_id: body.session_id,
+            tenant_id: tenantId,
+          }),
+        );
       }
     }
   } catch (err: unknown) {

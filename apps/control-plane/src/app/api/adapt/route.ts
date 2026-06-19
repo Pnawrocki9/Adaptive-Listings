@@ -706,6 +706,40 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   return NextResponse.json(response, { status: 200 });
 }
 
+// ─── Page-type helpers ────────────────────────────────────────────────────────
+
+/**
+ * Derive the integration tier from the page type reported by the SDK.
+ *
+ * - `listing_detail` → tier 2: full per-listing directives (headline, cta, feature, description)
+ * - `listing_list` / `search` / `home` → tier 1: lighter directives (cta, feature, reorder)
+ *
+ * Tier 2 enables per-listing text adaptation (headline rewrite, feature highlights) on the
+ * detail page where a single listing is in focus. On list/search pages the SDK shows many
+ * listings simultaneously — per-listing headline rewrites are not appropriate there, so only
+ * higher-level slots (cta, feature badge, reorder) are sent.
+ */
+function tierFromPageType(pageType: 'listing_list' | 'listing_detail' | 'home' | 'search'): 1 | 2 {
+  return pageType === 'listing_detail' ? 2 : 1;
+}
+
+/**
+ * Filter text directives by page type.
+ *
+ * On detail pages: all slots are returned (headline + cta + feature).
+ * On list/search/home pages: `headline` slots are suppressed — a headline rewrite
+ * targeting a single listing card is not meaningful across a multi-listing grid.
+ * The reorder directive (type !== 'text') is always passed through unchanged by
+ * the caller, so this function only needs to gate `TextDirective` slots.
+ */
+function filterDirectivesByPageType(
+  directives: TextDirective[],
+  pageType: 'listing_list' | 'listing_detail' | 'home' | 'search',
+): TextDirective[] {
+  if (pageType === 'listing_detail') return directives;
+  return directives.filter((d) => d.slot !== 'headline');
+}
+
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
 /**
@@ -770,6 +804,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const body = parsed.data;
 
+  // FOLLOW-345: derive tier from page_type — listing_detail gets tier 2 (full directives);
+  // all other page types get tier 1 (lighter directive set, no per-listing headline).
+  const derivedTier = tierFromPageType(body.page_type);
+
   // FOLLOW-260 (F-26): JWT tenant_id is authoritative — supersedes body.tenant_id.
   // Prevents cross-tenant escalation: a caller with a valid demo JWT for tenant A
   // cannot access tenant B's data by sending tenant_id: B in the body.
@@ -804,7 +842,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       archetype: 'neutral',
       confidence: 0.5,
       similarity: body.similarity ?? 0.5,
-      tier: 1,
+      tier: derivedTier,
       directives: [],
       reorderDirectives: [],
       source: 'default' as const,
@@ -830,7 +868,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       archetype: 'neutral',
       confidence: 0.5,
       similarity: body.similarity ?? 0.5,
-      tier: 1,
+      tier: derivedTier,
       directives: [],
       reorderDirectives: [],
       source: 'default' as const,
@@ -917,6 +955,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     demoActive ? demoForceModel : undefined,
   );
 
+  // FOLLOW-345: filter text directives by page_type before building the response.
+  // On list/search/home pages, suppress per-listing headline rewrites — they are
+  // only meaningful on detail pages where a single listing is in focus.
+  const filteredTextDirectives = filterDirectivesByPageType(textDirectives, body.page_type);
+
   // ── FOLLOW-007: Thompson sampling variant selection ───────────────────────
   // Query bandit arms for (tenant_id, archetype) and sample a variant.
   // Auto-seeds 3 arms (control, v1, v2) with Beta(1, 1) on first request.
@@ -930,7 +973,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // djb2 fallback per-listing when an embedding is missing. Batched lookups are
   // skipped when listing_ids exceeds LISTING_EMBEDDING_BATCH_LIMIT (latency guard).
   // Canonical decision-api helper: apps/decision-api/src/lib/reorder.ts buildReorderDirective()
-  const allDirectives: (TextDirective | ReorderDirective)[] = [...textDirectives];
+  const allDirectives: (TextDirective | ReorderDirective)[] = [...filteredTextDirectives];
   const tenantSchema = await getTenantSchemaFromDb(tenantId);
   if (tenantSchema && body.listing_ids && body.listing_ids.length > 0) {
     // Fetch embeddings in parallel — fail-open: any error → null → djb2 fallback.
@@ -1018,7 +1061,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     archetype: archetypeId,
     confidence,
     similarity,
-    tier: 1,
+    tier: derivedTier,
     directives: allDirectives,
     source,
     variant: selectedVariant,
@@ -1038,7 +1081,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     confidence,
     similarity,
     source,
-    1,
+    derivedTier,
     allDirectives.length,
     false, // treatment arm — not holdout
     selectedVariant,

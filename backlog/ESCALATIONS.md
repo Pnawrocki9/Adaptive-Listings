@@ -1276,3 +1276,50 @@ here so it cannot be forgotten.
 **Security note:** `ESTALARA_SMOKE_API_KEY` must be a read-only SDK API key (same `scopes` as the
 `data-api-key` attribute in the install snippet — `write:events` if the ingest is wired, or a custom
 read scope). It must NOT be an admin key or service-role key.
+
+---
+
+## OPEN — ESC-025: CEO Q4 decision required to unblock FOLLOW-341 (archetype embeddings) and thereby FOLLOW-342 (bandit variant thread) [FOLLOW-341]
+
+**Filed by:** pm-orchestrator **Date:** 2026-06-19T18:00Z **Affects:** FOLLOW-341, FOLLOW-342,
+Sprint 19 P1 chain **Type:** architectural / scope
+
+**Description:**
+
+FOLLOW-341 is the next READY P1 ticket in Sprint 19, but it has two mutually exclusive
+implementation paths that require a CEO/CTO decision before the ml-engineer can proceed:
+
+The AUDIT-2026-06-19 finding F-02 (High) confirmed: `archetype_embeddings.embedding` is NULL for all
+18 seed rows. No code anywhere in the repo writes that column (grep-confirmed: no Modal job, no
+`/api/archetype/embed` route). `getArchetypeEmbedding()` always returns NULL, so `affinityScore()`
+falls back to `deterministicScore` (djb2 hash) — the entire §F vector-matching / MOAT layer is
+non-functional in production.
+
+**Option A (build the embedding job):** Embed the 18 seed archetype descriptions via
+`text-embedding-3-small` (1024 dims), UPSERT into `archetype_embeddings.embedding`, idempotent,
+runnable on-merge + manual `workflow_dispatch`. Add a `archetype-embeddings-not-null` CI precheck.
+Estimated: 6h ml-engineer. Unblocks FOLLOW-342 (bandit variant) to produce a real lift signal.
+
+**Option B (formally drop the cosine claim):** Remove the cosine branch
+(`apps/decision-api/src/lib/reorder.ts:309-312`,
+`apps/control-plane/src/app/api/adapt/route.ts:496-499`), update MASTER_DESIGN to acknowledge djb2
+hash ordering is the current production reorder logic, and remove/update the §F claim. Estimated: 2h
+ml-engineer. Does not unblock FOLLOW-342 in a meaningful way (the bandit would still optimize, but
+over hash-ordered listings not cosine-ordered ones).
+
+**Why PM cannot decide:** This is an architectural/business call about whether to invest in the MOAT
+differentiator now vs defer it. It involves the §F marketing claim (cosine affinity matching) and
+the sprint budget. Per guardrails: PM must not make architectural calls.
+
+**Required action (Piotr/CEO or Rafał/CTO):**
+
+Reply with one of:
+
+- **"Build it (Option A)"** — pm-orchestrator will delegate FOLLOW-341 to ml-engineer with the
+  embedding job spec.
+- **"Drop the cosine claim (Option B)"** — pm-orchestrator will delegate FOLLOW-341 to ml-engineer
+  with the removal/correction spec.
+
+**Blocking:** FOLLOW-341 (READY, P1), FOLLOW-342 (BLOCKED on FOLLOW-341, P1).
+
+**Resolution:** _empty — awaiting CEO/CTO decision_

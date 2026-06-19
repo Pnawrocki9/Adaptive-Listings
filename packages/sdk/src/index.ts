@@ -76,6 +76,7 @@ import type { CollectedEvent } from './core/events.js';
 import type { Archetype, IntentState } from './core/intent.js';
 import type { QuizWidgetConfig } from './ui/quiz-widget.js';
 import type { ArchetypeId } from '@estalara/shared';
+import { DOM_ADAPT_CONFIDENCE_FLOOR, DOM_ADAPT_MIN_SIGNAL_COUNT } from './core/adapt-floor.js';
 
 /**
  * Merge server-fetched quiz config into SdkConfig (ADR-0011, FOLLOW-275).
@@ -640,16 +641,29 @@ async function init(): Promise<IntentState | null> {
             stopDwellTimer();
           }
         }
-        applyDirectives(resp.directives, {
-          archetypeId: resp.archetype as ArchetypeId,
-          confidence: resp.confidence,
-          sessionId: currentSession.sessionId,
-        });
+        // FOLLOW-343: gate DOM mutation (text, class, reorder, description) behind the
+        // confidence/signal floor.  At cold start the Bayesian prior is ~0.37; a single
+        // device or referrer hint can tip argmax above neutral at ~0.05–0.10 confidence
+        // and reshuffle the page.  We hold off until we have either:
+        //   (a) confidence ≥ DOM_ADAPT_CONFIDENCE_FLOOR (0.5), or
+        //   (b) signal_count ≥ DOM_ADAPT_MIN_SIGNAL_COUNT (2) — sufficient behavioral evidence.
+        // Quiz leaf resolves at 0.85 → always above the floor (no regression, AC-3).
+        const aboveFloor =
+          resp.confidence >= DOM_ADAPT_CONFIDENCE_FLOOR ||
+          currentIntentState.signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT;
 
-        // Fetch + apply long-form description adaptation (FOLLOW-159).
-        // Fire-and-forget — description errors are observable via adapt.description.error events;
-        // a failure here must never block the directive/headline path or sidebar update.
-        void applyDescriptionAdaptation(config, resp.archetype as ArchetypeId);
+        if (aboveFloor) {
+          applyDirectives(resp.directives, {
+            archetypeId: resp.archetype as ArchetypeId,
+            confidence: resp.confidence,
+            sessionId: currentSession.sessionId,
+          });
+
+          // Fetch + apply long-form description adaptation (FOLLOW-159).
+          // Fire-and-forget — description errors are observable via adapt.description.error events;
+          // a failure here must never block the directive/headline path or sidebar update.
+          void applyDescriptionAdaptation(config, resp.archetype as ArchetypeId);
+        }
 
         if (config.debug) {
           console.log(`[Estalara] Archetype: ${resp.archetype} (${String(resp.confidence)})`);
@@ -1406,6 +1420,9 @@ export function identify(_profileId: string): void {
 // ─── Intent engine public API (re-exported for FOLLOW-101 chat-intent bridge) ──
 export { applyChatIntentPrior, CHAT_INTENT_LIKELIHOODS } from './core/intent.js';
 export type { Archetype, ArchetypeProbabilities, IntentState } from './core/intent.js';
+
+// ─── FOLLOW-343: cold-start DOM-adaptation floor (re-exported for tests + observability) ──
+export { DOM_ADAPT_CONFIDENCE_FLOOR, DOM_ADAPT_MIN_SIGNAL_COUNT } from './core/adapt-floor.js';
 
 // ─── Auto-detect sub-module ────────────────────────────────────────────────────
 // detectSiteSchema is available via the '@estalara/sdk/auto-detect' sub-path export.

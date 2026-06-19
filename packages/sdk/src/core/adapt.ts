@@ -279,6 +279,15 @@ export interface AdaptResponse {
    * Absent (undefined / null) when no shadow data exists for the session.
    */
   chat_intent_dimensions?: Record<string, string> | null;
+  /**
+   * Resolved slot selector map from detail_schema.slot_selectors (FOLLOW-340).
+   *
+   * When present, the SDK calls `annotateSlots(slot_selectors)` BEFORE the first
+   * `applyDirectives()` so that pages without hand-coded `data-estalara-slot`
+   * attributes receive self-annotation. Additive optional — absent when the tenant
+   * has no curated slot selectors or when the schema lookup fails on the server.
+   */
+  slot_selectors?: Record<string, string>;
 }
 
 /** Context passed to applyDirectives for event logging and idempotency. */

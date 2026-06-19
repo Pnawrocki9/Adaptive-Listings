@@ -52,6 +52,7 @@ import {
   resetAdaptState,
   postQuizCompletionPing,
 } from './core/adapt.js';
+import { annotateSlots } from './core/annotate-slots.js';
 import {
   applyDescriptionAdaptation,
   setDescriptionEventQueueRef,
@@ -641,6 +642,16 @@ async function init(): Promise<IntentState | null> {
             stopDwellTimer();
           }
         }
+        // FOLLOW-340: Self-annotate DOM nodes from curated slot_selectors BEFORE
+        // applyDirectives() so pages without hand-coded data-estalara-slot attributes
+        // (incl. app.estalara.com no-code) can receive directive mutations.
+        // Runs unconditionally (outside the aboveFloor gate) so annotation is done
+        // once regardless of confidence — directives themselves are still gated below.
+        // annotateSlots is idempotent and never throws onto the host page.
+        if (resp.slot_selectors) {
+          annotateSlots(resp.slot_selectors);
+        }
+
         // FOLLOW-343: gate DOM mutation (text, class, reorder, description) behind the
         // confidence/signal floor.  At cold start the Bayesian prior is ~0.37; a single
         // device or referrer hint can tip argmax above neutral at ~0.05–0.10 confidence

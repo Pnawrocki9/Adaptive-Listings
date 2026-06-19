@@ -999,6 +999,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // FOLLOW-340: include resolved slot_selectors from the tenant site schema when
+  // present and non-empty. The SDK uses these to self-annotate DOM nodes BEFORE the
+  // first applyDirectives() call so pages without hand-coded data-estalara-slot
+  // attributes (e.g. app.estalara.com no-code) can receive visible adaptation.
+  //
+  // Fail-safe: tenantSchema may be null (schema lookup failed) or may not have
+  // slot_selectors (tenant has no curated detail schema). In either case the field
+  // is simply omitted — the adapt response is never blocked or degraded.
+  const slotSelectors =
+    tenantSchema?.slot_selectors && Object.keys(tenantSchema.slot_selectors).length > 0
+      ? tenantSchema.slot_selectors
+      : undefined;
+
   const response: AdaptationDirectives = {
     adapt_decision_id: adaptDecisionId,
     session_id: body.session_id,
@@ -1013,6 +1026,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ...(demoActive ? { demo_override: true } : {}),
     // FOLLOW-101: include chat-intent dimensions when present (null = absent).
     ...(chatIntentDimensions !== null ? { chat_intent_dimensions: chatIntentDimensions } : {}),
+    // FOLLOW-340: include resolved slot selectors for SDK self-annotation.
+    ...(slotSelectors !== undefined ? { slot_selectors: slotSelectors } : {}),
     generated_at: new Date().toISOString(),
   };
 

@@ -24,13 +24,26 @@ import { createAdminClient, tenantSiteSchemas } from '@estalara/db';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
- * Minimal per-tenant schema for reorder capability.
- * Mirrors apps/decision-api/src/lib/reorder.ts TenantSiteSchema exactly.
+ * Minimal per-tenant schema for reorder capability and slot annotation.
+ * Mirrors apps/decision-api/src/lib/reorder.ts TenantSiteSchema exactly,
+ * extended with slot_selectors (FOLLOW-340).
  */
 export interface TenantSiteSchemaMin {
   reorder_capable: boolean;
   container_selector?: string;
   item_selector?: string;
+  /**
+   * Resolved flat slot selector map from detail_schema.slot_selectors (FOLLOW-340).
+   *
+   * Keyed by slot name (e.g. "headline", "description", "cta_primary"), value is the
+   * primary CSS selector string extracted from the SlotSelectors.primary field of
+   * the detail_schema. Absent when the tenant schema has no detail slot selectors.
+   *
+   * The SDK reads this from the /api/adapt response and calls annotateSlots() BEFORE
+   * the first applyDirectives() so pages without hand-coded data-estalara-slot
+   * attributes can receive adaptation mutations.
+   */
+  slot_selectors?: Record<string, string>;
 }
 
 // ─── Demo schema ──────────────────────────────────────────────────────────────
@@ -145,6 +158,32 @@ async function lookupSchemaFromDb(tenantId: string): Promise<TenantSiteSchemaMin
     };
     if (containerSelector !== undefined) schema.container_selector = containerSelector;
     if (itemSelector !== undefined) schema.item_selector = itemSelector;
+
+    // FOLLOW-340: Extract flat slot selector map from detail_schema.slot_selectors.
+    // SlotSelectors values are SelectorStrategy objects — we use only the `primary`
+    // CSS selector string. Absent/null entries are skipped. Fail-safe: any error in
+    // this extraction block leaves slot_selectors absent on the returned schema.
+    try {
+      const detailSchema = raw.detail_schema as Record<string, unknown> | undefined;
+      const slotSelectorsRaw = detailSchema?.slot_selectors as Record<string, unknown> | undefined;
+      if (slotSelectorsRaw && typeof slotSelectorsRaw === 'object') {
+        const resolved: Record<string, string> = {};
+        for (const [name, strategy] of Object.entries(slotSelectorsRaw)) {
+          if (strategy && typeof strategy === 'object') {
+            const primary = (strategy as Record<string, unknown>).primary;
+            if (typeof primary === 'string' && primary.length > 0) {
+              resolved[name] = primary;
+            }
+          }
+        }
+        if (Object.keys(resolved).length > 0) {
+          schema.slot_selectors = resolved;
+        }
+      }
+    } catch {
+      // Fail-safe: slot_selectors extraction failure must never block schema lookup.
+    }
+
     return schema;
   } catch (err) {
     console.error('[tenant-schema] DB lookup failed:', err instanceof Error ? err.message : err);

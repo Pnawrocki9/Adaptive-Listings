@@ -1,4 +1,4 @@
-# Status — 2026-06-19T16:00Z (Sprint 19 ACTIVE — FOLLOW-343 DONE PR #321, FOLLOW-340 READY_FOR_REVIEW PR #322, RETRO-091/092 pending spawn)
+# Status — 2026-06-19T18:00Z (Sprint 19 ACTIVE — FOLLOW-343 DONE PR #321, FOLLOW-340 DONE PR #322, FOLLOW-345 DONE PR #323, RETRO-091/092/093 pending spawn, FOLLOW-347 filed, FOLLOW-341 READY pending CEO Q4)
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
@@ -210,54 +210,59 @@ auto-detect, archetype-pipeline, data-quality, intent-engine, llm-gateway, strea
 
 ## CI CHECK COUNTER (Sprint 19 — ACTIVE)
 
-| Ticket     | CI checks | Fix iterations | Status                                                                                                    |
-| ---------- | --------- | -------------- | --------------------------------------------------------------------------------------------------------- |
-| FOLLOW-343 | 1/5       | 0/3            | DONE (PR #321 merged squash commit 56b0018, 2026-06-19). RETRO-092 pending.                               |
-| FOLLOW-340 | 1/5       | 0/3            | READY_FOR_REVIEW (PR #322, 2026-06-19). Real CI gates: 0 non-SUCCESS. Bundle 39.91 KB gzip. PM-validated. |
+| Ticket     | CI checks | Fix iterations | Status                                                                                                  |
+| ---------- | --------- | -------------- | ------------------------------------------------------------------------------------------------------- |
+| FOLLOW-343 | 1/5       | 0/3            | DONE (PR #321 merged squash commit 56b0018, 2026-06-19). RETRO-092 PENDING SPAWN.                       |
+| FOLLOW-340 | 1/5       | 0/3            | DONE (PR #322 merged squash commit 3bbf03a, 2026-06-19). RETRO-093 written (unstaged), owed own number. |
+| FOLLOW-345 | 0/5       | 0/3            | DONE (PR #323 merged commit a3be21e, 2026-06-19). RETRO-093 spawned. FOLLOW-347 filed P2 Sprint 20.     |
 
 FOLLOW-343: DONE. PR #321 merged (squash commit 56b0018, 2026-06-19). DOM_ADAPT_CONFIDENCE_FLOOR=0.5
-gate wired in production. All real CI gates GREEN pre-merge. RETRO-092 pending spawn. FOLLOW-340:
-READY_FOR_REVIEW. PR #322 open (2026-06-19). annotateSlots() from slot_selectors wire. Real CI
-gates: 0 non-SUCCESS. Bundle 39.91 KB gzip. PM-validated 2026-06-19. RETRO-093 pending after merge.
-RETRO-091 (FOLLOW-335 / PR #319) still pending spawn (FOLLOW-335 merged 2026-06-18T21:56Z).
-RETRO-092 (FOLLOW-343 / PR #321) pending spawn (PR #321 merged 2026-06-19). Open CEO questions that
-unblock Sprint 19 blocked tickets: Q2 (archetype blending → FOLLOW-344), Q3 (chat shadow-vs-live →
-FOLLOW-346), Q4 (embedding job vs drop cosine claim → FOLLOW-341 direction). ESC-020 non-blocking.
+gate wired in production. RETRO-092 PENDING SPAWN. FOLLOW-340: DONE. PR #322 merged (squash commit
+3bbf03a, 2026-06-19). annotateSlots() from slot_selectors wire. Bundle 39.91 KB gzip. RETRO-093
+(FOLLOW-345 / PR #323) written and staged in working tree; RETRO-091/092 bodies still owed.
+FOLLOW-345: DONE. PR #323 merged (commit a3be21e, 2026-06-19). FOLLOW-347 filed (P2, Sprint 20).
+RETRO-091 (FOLLOW-335 / PR #319) PENDING SPAWN (body not written). RETRO-092 (FOLLOW-343 / PR #321)
+PENDING SPAWN (body not written). RETRO-093 (FOLLOW-345 / PR #323) body written (unstaged in
+backlog/RETROSPECTIVES.md). Open CEO questions that unblock Sprint 19 blocked tickets: Q2 (archetype
+blending → FOLLOW-344), Q3 (chat shadow-vs-live → FOLLOW-346), Q4 (embedding job vs drop cosine
+claim → FOLLOW-341 direction). ESC-020 non-blocking. FOLLOW-341 READY pending CEO Q4.
 
 ## Pending Retro Spawns
 
-| RETRO     | Source ticket | PR(s)          | Status to spawn                                                     |
-| --------- | ------------- | -------------- | ------------------------------------------------------------------- |
-| RETRO-062 | FOLLOW-276    | #272           | PENDING                                                             |
-| RETRO-063 | FOLLOW-278    | #273           | PENDING                                                             |
-| RETRO-081 | FOLLOW-293    | #307           | DONE (2026-06-17) — no new FOLLOW filed                             |
-| RETRO-082 | FOLLOW-324    | #308           | DONE (2026-06-17) — FOLLOW-335 filed                                |
-| RETRO-083 | FOLLOW-326    | #309/#310/#311 | DONE (2026-06-17) — FOLLOW-336 filed                                |
-| RETRO-084 | FOLLOW-327    | #312           | DONE (2026-06-17) — FOLLOW-331/332 filed                            |
-| RETRO-085 | FOLLOW-328    | #313           | DONE (2026-06-17) — FOLLOW-333 filed                                |
-| RETRO-086 | FOLLOW-330    | #314           | DONE (2026-06-17) — FOLLOW-334 filed                                |
-| RETRO-091 | FOLLOW-335    | #319           | PENDING SPAWN (FOLLOW-335 merged 2026-06-18)                        |
-| RETRO-092 | FOLLOW-343    | #321           | PENDING SPAWN (FOLLOW-343 merged 2026-06-19, squash commit 56b0018) |
+| RETRO     | Source ticket | PR(s)          | Status to spawn                                                                        |
+| --------- | ------------- | -------------- | -------------------------------------------------------------------------------------- |
+| RETRO-062 | FOLLOW-276    | #272           | PENDING                                                                                |
+| RETRO-063 | FOLLOW-278    | #273           | PENDING                                                                                |
+| RETRO-081 | FOLLOW-293    | #307           | DONE (2026-06-17) — no new FOLLOW filed                                                |
+| RETRO-082 | FOLLOW-324    | #308           | DONE (2026-06-17) — FOLLOW-335 filed                                                   |
+| RETRO-083 | FOLLOW-326    | #309/#310/#311 | DONE (2026-06-17) — FOLLOW-336 filed                                                   |
+| RETRO-084 | FOLLOW-327    | #312           | DONE (2026-06-17) — FOLLOW-331/332 filed                                               |
+| RETRO-085 | FOLLOW-328    | #313           | DONE (2026-06-17) — FOLLOW-333 filed                                                   |
+| RETRO-086 | FOLLOW-330    | #314           | DONE (2026-06-17) — FOLLOW-334 filed                                                   |
+| RETRO-091 | FOLLOW-335    | #319           | PENDING SPAWN (body not written — FOLLOW-335 merged 2026-06-18)                        |
+| RETRO-092 | FOLLOW-343    | #321           | PENDING SPAWN (body not written — FOLLOW-343 merged 2026-06-19, squash commit 56b0018) |
+| RETRO-093 | FOLLOW-345    | #323           | BODY WRITTEN (unstaged in RETROSPECTIVES.md). FOLLOW-347 filed. Commit pending.        |
 
-## Sprint 19 State (2026-06-19)
+## Sprint 19 State (2026-06-19 — updated 18:00Z)
 
-**IN PROGRESS.** FOLLOW-343 DONE (PR #321 merged squash 56b0018). FOLLOW-340 READY_FOR_REVIEW (PR
-#322).
+**IN PROGRESS.** 3 of 7 tickets DONE. 3 BLOCKED on CEO decisions. 1 READY (FOLLOW-341).
 
 1. FOLLOW-343 (P1, sdk-engineer) — confidence floor, **DONE** (PR #321 merged 56b0018, 2026-06-19)
-2. FOLLOW-340 (P1, sdk-engineer) — slot self-annotation, **READY_FOR_REVIEW** (PR #322, 2026-06-19,
-   CI green, PM-validated)
-3. FOLLOW-341 (P1, ml-engineer) — archetype embeddings, READY (CEO open question #4 to unblock)
-4. FOLLOW-342 (P1, backend-engineer) — bandit variant thread, BLOCKED on FOLLOW-341
-5. FOLLOW-346 (P2, data-engineer) — chat NLP trigger, BLOCKED on CEO decision (open Q #3)
-6. FOLLOW-344 (P2, ml-engineer) — archetype blending, BLOCKED on CEO decision (open Q #2)
-7. FOLLOW-345 (P2, backend-engineer) — page_type/tier, READY (P2, can start after FOLLOW-340 wraps
-   or in parallel)
+2. FOLLOW-340 (P1, sdk-engineer) — slot self-annotation, **DONE** (PR #322 merged 3bbf03a,
+   2026-06-19)
+3. FOLLOW-345 (P2, backend-engineer) — page_type/tier, **DONE** (PR #323 merged a3be21e, 2026-06-19)
+4. FOLLOW-341 (P1, ml-engineer) — archetype embeddings, **READY** (CEO open question #4 to unblock
+   direction)
+5. FOLLOW-342 (P1, backend-engineer) — bandit variant thread, BLOCKED on FOLLOW-341
+6. FOLLOW-346 (P2, data-engineer) — chat NLP trigger, BLOCKED on CEO decision (open Q #3)
+7. FOLLOW-344 (P2, ml-engineer) — archetype blending, BLOCKED on CEO decision (open Q #2)
 
-RETRO-092 pending spawn for FOLLOW-343 (PR #321). RETRO-091 pending spawn for FOLLOW-335 (PR #319).
-Audit PR #320 awaiting human merge (docs-only, real CI gates GREEN). Open CEO questions that unblock
-Sprint 19 blocked tickets: Q2 (archetype blending), Q3 (chat shadow-vs-live), Q4 (embedding job vs
-drop cosine claim). ESC-020 non-blocking.
+FOLLOW-347 (P2, Sprint 20) filed from RETRO-093: complete page_type directive plumbing. RETRO-091
+PENDING SPAWN for FOLLOW-335 (PR #319). RETRO-092 PENDING SPAWN for FOLLOW-343 (PR #321). RETRO-093
+body written for FOLLOW-345 (PR #323) — unstaged in RETROSPECTIVES.md. Open CEO questions that
+unblock blocked tickets: Q2 (archetype blending), Q3 (chat shadow-vs-live), Q4 (embedding job vs
+drop cosine claim). ESC-020 non-blocking. Next action: spawn retrospective-analyst for RETRO-091 and
+RETRO-092, then escalate CEO Q4 for FOLLOW-341 if no pending answer.
 
 RETRO-084 findings: LG-1 DEFAULT_INTENT_WEIGHTS drift guard missing (docstring claims CI guard that
 does not exist: intent-weights-drift.test.ts MISSING); TG-1 single-tenant admin shell change shipped

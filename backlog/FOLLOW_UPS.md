@@ -9588,7 +9588,62 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 340 (RETRO-089/FOLLOW-331/PR #317 consumed 338 = re-introduced mis-pointing drift-guard docstring intent-weights.test.ts:28-30 cites intent-weights-drift.test.ts for the ARCHETYPE_KEYS↔NAMES parity guard but that file never imports ARCHETYPE_NAMES — real guard is intent-weights.test.ts:784 (FOLLOW-305); + migration-0030 third copy of intent defaults un-reconciled to BASE_PRIOR/DEFAULT_INTENT_WEIGHTS; sdk-engineer+data-engineer P3 2h; PROMOTED Rule P-OVERCLAIMED-VERIFICATION count-2 [RETRO-084 DG-1 + RETRO-089 DG-1]. RETRO-090 took 339.) — RETRO-090 / PR #318 / FOLLOW-332 admin shell tests: layout.test.tsx (11) + page.test.tsx (5) + pilot-tenant.test.ts (3) = 19/19; closes RETRO-084 TG-1/TG-2 end-to-end (real components, hrefs derived from real PILOT_TENANT_ID, all nav routes exist, no fabricated contract). Wiring CLEAN (test-only, no new prod symbols; PILOT_TENANT_ID producer pilot-tenant.ts:16 has 2 non-test consumers layout.tsx:28-29 + page.tsx:12; pilot id cbc51cfa matches MASTER_DESIGN §Snapshot so NO seed/migration hop). TG-1 -> FOLLOW-339 (signOut Server Action behavior unexercised in jsdom, P3 qa). NO Rule promoted: P-SHELL-UNTESTED count-1 as remediation (a fix doesn't increment); jsdom-server-primitive axis count-2 but divergent sub-shapes (RETRO-088 Headers-instanceof vs RETRO-090 Server-Action) with no common remediation -> held. -->
+## FOLLOW-347 — Complete `page_type` directive plumbing (reorder gate + GET path) + real AC tests + docstring/half-wire fix (FOLLOW-345 closeout)
+
+- **status:** OPEN
+- **source_retro:** RETRO-093
+- **source_ticket:** FOLLOW-345 (PR #323)
+- **recommended_sprint:** 20
+- **recommended_agent:** backend-engineer + qa-engineer
+- **priority:** P2
+- **estimated_hours:** 6
+- **depends_on:** []
+- **scope:** FOLLOW-345 (PR #323) plumbed `page_type` into `POST /api/adapt` for the headline-slot
+  limb only and derived `tier` for analytics. Three completeness/verification gaps remain:
+  - **LG-1 — reorder NOT page-gated.** `buildReorderDirective` is appended at `route.ts:1005-1015`
+    for ANY `page_type` whenever `reorder_capable && listing_ids.length > 0`, including
+    `listing_detail` (meaningless on a single-listing page). The FOLLOW-345 stub explicitly asked
+    for "reorder only on list pages" — that limb is unimplemented.
+  - **LG-2 — GET path un-filtered.** `GET /api/adapt` (`route.ts:580-707`) has no `page_type` param
+    and never calls `filterDirectivesByPageType`; it returns all directives (headline included) on
+    any page. AC-1 holds only for POST. Decide: implement GET filtering OR document GET as the
+    legacy un-filtered decision-api-Worker contract.
+  - **TG-1/TG-2 — new behavior untested.** No test asserts `tier:2` for `listing_detail` vs `tier:1`
+    for `listing_list`, nor headline-suppression. Two existing tests silently absorbed the change:
+    `route.ab010.test.ts` AC-4 (`:180`, 2-slot playbook headline+cta on `listing_list`) and
+    `route.variant.test.ts` (`:155`) assert only `directives` non-empty/defined, not shape.
+  - **DG-1 — docstring over-claims.** `tierFromPageType` docstring (`route.ts:714-720`) claims
+    `listing_detail` gets a `description` slot (no such handling exists) and implies tier/page_type
+    gates `reorder` (it does not).
+  - **§3 HALF_WIRE_P — derived `tier` has no render consumer.** The SDK reads `config.tier` (script
+    attr `'observer'|'augment'|'native'`), never the numeric `response.tier`; the derived tier's
+    only live consumer is the ClickHouse `adaptation_decisions.tier` column. Per "No Tiers"
+    (MASTER_DESIGN v4.0 §E.7) the correct closure is to DOCUMENT `tier` as
+    analytics/provenance-only, NOT to wire it to SDK behavior (which would re-introduce tiering).
+- **ac:**
+  - [ ] AC1: `ReorderDirective` is suppressed on `listing_detail` and emitted on
+        `listing_list`/`search` (page_type-gated), with a test asserting both directions.
+  - [ ] AC2: GET-path `page_type` handling implemented OR `GET /api/adapt` documented as the legacy
+        un-filtered contract (with a docstring + test pinning the decision).
+  - [ ] AC3: A parametrized test over all four `page_type` values asserts derived `tier` (detail→2,
+        else→1) AND headline-suppression; `route.ab010.test.ts` AC-4 + `route.variant.test.ts`
+        hardened to assert directive SHAPE (slot membership), not just non-emptiness.
+  - [ ] AC4: `tierFromPageType` docstring corrected to match shipped behavior (drop `description`,
+        drop tier/reorder-gating implication).
+  - [ ] AC5: `AdaptationDirectives.tier` documented as analytics/provenance-only (numeric tier does
+        not gate SDK behavior, per §E.7).
+  - [ ] AC6 (data-engineer note): confirm no ClickHouse dashboard/query hard-assumes
+        `adaptation_decisions.tier = 1` now that it carries 1|2.
+- **notes:** LG-1/LG-2 are Rule S applications (one symmetric set: both handler verbs, both
+  directive families). TG-1 is the P-OVERCLAIMED-VERIFICATION test-coverage cousin (PR marked
+  AC-1/AC-2 `[x]` on "existing tests pass" that never exercise the new path). If GET-path resolution
+  (AC2) needs the live-GET-caller question answered first, split it into its own stub. Split overall
+  if >8h.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 348 (347 = RETRO-093 / PR #323 / FOLLOW-345 page_type+tier closeout: PR plumbed page_type into POST /api/adapt for the HEADLINE-slot limb only + derived tier for analytics; +48/-5 route.ts ONLY, ZERO new test file. GAPS: LG-1 reorder NOT page-gated (appended for any page_type incl listing_detail, route.ts:1005-1015 — stub asked "reorder only on list"); LG-2 GET path un-filtered (no page_type param, returns headline on any page, AC-1 holds POST-only); TG-1/TG-2 new behavior UNTESTED (no tier-derivation/headline-suppression assertion; route.ab010 AC-4 + route.variant SILENTLY absorbed the change asserting only non-empty directives); DG-1 docstring over-claims a `description` slot that doesn't exist + tier/reorder gating that isn't implemented; §3 HALF_WIRE_P derived tier has NO render consumer (SDK reads config.tier script-attr not response.tier; only consumer is ClickHouse adaptation_decisions.tier — correct closure per No-Tiers §E.7 = DOCUMENT tier as provenance-only, NOT wire to behavior). backend+qa P2 6h. NO Rule promoted: P-OVERCLAIMED-VERIFICATION test-coverage cousin held below threshold (Rule Y owns the doc-citation half; promote-on-next-sighting trigger named — RETRO-027/RETRO-038 prior sightings); LG-1/LG-2 = confirming Rule S applications. RETRO-091/092 still owed bodies (FOLLOW-335/PR#319, FOLLOW-343/PR#321) per STATUS.md.) — RETRO-089/FOLLOW-331/PR #317 consumed 338 = re-introduced mis-pointing drift-guard docstring intent-weights.test.ts:28-30 cites intent-weights-drift.test.ts for the ARCHETYPE_KEYS↔NAMES parity guard but that file never imports ARCHETYPE_NAMES — real guard is intent-weights.test.ts:784 (FOLLOW-305); + migration-0030 third copy of intent defaults un-reconciled to BASE_PRIOR/DEFAULT_INTENT_WEIGHTS; sdk-engineer+data-engineer P3 2h; PROMOTED Rule P-OVERCLAIMED-VERIFICATION count-2 [RETRO-084 DG-1 + RETRO-089 DG-1]. RETRO-090 took 339.) — RETRO-090 / PR #318 / FOLLOW-332 admin shell tests: layout.test.tsx (11) + page.test.tsx (5) + pilot-tenant.test.ts (3) = 19/19; closes RETRO-084 TG-1/TG-2 end-to-end (real components, hrefs derived from real PILOT_TENANT_ID, all nav routes exist, no fabricated contract). Wiring CLEAN (test-only, no new prod symbols; PILOT_TENANT_ID producer pilot-tenant.ts:16 has 2 non-test consumers layout.tsx:28-29 + page.tsx:12; pilot id cbc51cfa matches MASTER_DESIGN §Snapshot so NO seed/migration hop). TG-1 -> FOLLOW-339 (signOut Server Action behavior unexercised in jsdom, P3 qa). NO Rule promoted: P-SHELL-UNTESTED count-1 as remediation (a fix doesn't increment); jsdom-server-primitive axis count-2 but divergent sub-shapes (RETRO-088 Headers-instanceof vs RETRO-090 Server-Action) with no common remediation -> held. -->
 <!-- next free FOLLOW number: 338 (337 = RETRO-088 / PR #316 / FOLLOW-336 admin auth tests: Format check CI confirmed pre-existing-red (commit 59ac6b5 before PR #316 also failed Format); STATUS.md incorrectly listed Format as real-gate-GREEN; devops-engineer, P3, 2h.) -->
 <!-- next free FOLLOW number: 337 (336 = RETRO-083 / PRs #309/#310/#311 / FOLLOW-326 admin sign-in + SSR auth: checkStaffSession (primary admin auth path), middleware admin gate (createServerClient getUser), and SignInForm are all untested; qa-engineer, P2 3h.) -->
 <!-- next free FOLLOW number: 336 (335 = RETRO-082 / PR #308 / FOLLOW-324 SDK bundle size fix: detect-bundle.ts has no unit test asserting globalThis.__EStalaraDetect is set correctly with detectSiteSchema + extractArchetypeHints as callable functions; sdk-engineer, P2 1h.) -->

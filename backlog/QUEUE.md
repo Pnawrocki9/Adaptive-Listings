@@ -5217,9 +5217,11 @@ items are DONE.
 - id: FOLLOW-340
   title: SDK runtime slot self-annotation (make adaptation visible on un-instrumented pages)
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: sdk-engineer
   started_at: '2026-06-19T14:00Z'
+  completed_at: '2026-06-19T00:00Z'
+  merge_commit: 3bbf03a
   pr: '#322'
   priority: P1
   estimated_hours: 6
@@ -5232,7 +5234,11 @@ items are DONE.
     SDK reads slot_selectors from /api/adapt response, annotates matching DOM nodes before first
     fetchDirectives. Idempotent. No bundle-gate regression.
     PM-validated 2026-06-19. CI green (all real gates pass). Runtime wiring confirmed.
-    Bundle 39.91 KB gzip (<40 KB gate). PR #322 open. Awaiting human merge.
+    Bundle 39.91 KB gzip (<40 KB gate). PR #322 merged to main (squash commit 3bbf03a, 2026-06-19).
+    RETRO-093 NOTE: §5a flags list-page annotation/filtering asymmetry with FOLLOW-345 post-merge:
+    slot_selectors may emit a headline entry on list/search pages while filterDirectivesByPageType
+    (FOLLOW-345) suppresses the corresponding headline directive — harmless no-op in SDK but noted
+    as a slot_selectors/directives asymmetry for any future combined integration test.
 
 - id: FOLLOW-341
   title: Populate archetype_embeddings.embedding (activate the cosine affinity path)
@@ -5293,13 +5299,44 @@ items are DONE.
 - id: FOLLOW-345
   title: Server-side page_type consumption + real tier (decision route)
   agent: backend-engineer
-  status: READY
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-19T11:00Z'
+  completed_at: '2026-06-19T00:00Z'
+  merge_commit: a3be21e
+  pr: '#323'
   priority: P2
   estimated_hours: 4
   depends_on: []
   source: AUDIT-2026-06-19 F-08
   spec: backlog/FOLLOW_UPS.md (FOLLOW-345 stub)
   branch: backend-engineer/FOLLOW-345-page-type-tier
+  notes: |
+    tierFromPageType() listing_detail->tier2/else->tier1, filterDirectivesByPageType() suppresses
+    headline on list/search/home, all three tier:1 literals + logDecisionAsync arg replaced with
+    derivedTier. 121 existing tests pass. Merged PR #323 commit a3be21e, 2026-06-19.
+    RETRO-093 filed (PENDING SPAWN per backlog/RETROSPECTIVES.md unstaged). FOLLOW-347 filed:
+    LG-1 reorder not page-gated; LG-2 GET path un-filtered; TG-1/TG-2 new behavior untested;
+    DG-1 docstring over-claims; HALF_WIRE_P tier as provenance-only. backend+qa P2 6h Sprint 20.
+
+- id: FOLLOW-347
+  title: Complete page_type directive plumbing (reorder gate + GET path) + AC tests + docstring fix
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 6
+  depends_on: []
+  source: RETRO-093 (FOLLOW-345 / PR #323)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-347 stub)
+  branch: backend-engineer/FOLLOW-347-page-type-complete
+  notes: |
+    LG-1 reorder not page-gated (buildReorderDirective runs for any page_type incl listing_detail);
+    LG-2 GET /api/adapt has no page_type param + no filterDirectivesByPageType call;
+    TG-1/TG-2 no test asserts tier derivation or headline suppression (AC-1/AC-2 overclaimed);
+    DG-1 tierFromPageType docstring claims description slot + reorder/tier gating that don't exist;
+    HALF_WIRE_P derived tier has no render consumer — close by documenting tier as provenance-only
+    per No-Tiers MASTER_DESIGN §E.7 (NOT wiring tier to SDK behavior).
+    Sprint 20 candidate. Can be co-assigned qa-engineer for TG-1/TG-2.
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

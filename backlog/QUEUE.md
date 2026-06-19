@@ -200,7 +200,12 @@ Ph2 seed PR #293 DONE) + FOLLOW-302 DONE + FOLLOW-307 DONE (prod apply 2026-06-1
 catch-up, PRODUCTION-LIVE) — K.3.6 D-1 PRODUCTION-LIVE. FOLLOW-308 (P1 devops, standing mechanism)
 filed; ESC-022 item (1) SIGNED OFF 2026-06-14 (compliance gap benign; item (2) Option A/B decision
 pending). ADR-0012 backlog (FOLLOW-269/293 BLOCKED, FOLLOW-295/296/298/300/303/304/306/308 BACKLOG)
-| 27 | 19 | 0 | 0 | 2 |
+| 27 | 19 | 0 | 0 | 2 | | 18 | 20 | Admin auth + tracer hardening + SDK companion + CI hygiene
+(Sprint 18 2026-06-17/18) — FOLLOW-324/325/326/327/328/330/293/336/331/332/335 ALL DONE | 11 | 11 |
+0 | 0 | 0 | | 19 | 21 | Hollow-core must-fixes (audit 2026-06-19): confidence floor (FOLLOW-343),
+slot self-annotation (FOLLOW-340), archetype embeddings (FOLLOW-341), bandit variant thread
+(FOLLOW-342), page_type/tier (FOLLOW-345); CEO-gated: chat NLP (FOLLOW-346), archetype blending
+(FOLLOW-344) | 7 | 1 | 0 | 2 | 4 |
 
 **Sprint 2.5 is new — added in Paczka 2 based on Master Design v1.1 sections B.4-B.7
 (auto-onboarding).**
@@ -5149,26 +5154,153 @@ pending planning.**
   pilot-tenant.test.ts all added. RETRO-090 pending spawn.
 
 - id: FOLLOW-335 title: > Add unit test for detect-bundle.ts asserting globalThis.\*\*EStalaraDetect
-  is set correctly (RETRO-082 TG-1) agent: sdk-engineer status: READY_FOR_REVIEW priority: P2
-  estimated_hours: 1 depends_on: [] source: RETRO-082 (FOLLOW-324 / PR #308) — companion IIFE
-  producer has no unit test spec: backlog/FOLLOW_UPS.md (FOLLOW-335 stub) branch:
+  is set correctly (RETRO-082 TG-1) agent: sdk-engineer status: DONE priority: P2 estimated_hours: 1
+  depends_on: [] source: RETRO-082 (FOLLOW-324 / PR #308) — companion IIFE producer has no unit test
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-335 stub) branch:
   sdk-engineer/FOLLOW-335-detect-bundle-global-test promoted_at: '2026-06-17T20:00Z' pr: '#319'
-  ready_for_review_at: '2026-06-18T21:40Z' notes: | Promoted 2026-06-17. detect-bundle.ts IIFE entry
-  (PR #308) assigns globalThis.\_\_EStalaraDetect but had no producer-side unit test. Consumer side
-  covered (SDK init tests set up global in beforeEach). IN_PROGRESS: delegated to sdk-engineer
-  2026-06-18. READY_FOR_REVIEW: PR #319 opened. PM-validated 2026-06-18T21:40Z — CI green on all
-  real gates, ACs verified, test-only PR (no new production symbols, no producer/consumer wiring
-  required). CI check counter: 1/5, fix iter 0/3. RETRO-091 pending spawn after merge.
+  merge_commit: '49540aa' completed_at: '2026-06-18T21:56:14Z' notes: | Promoted 2026-06-17.
+  detect-bundle.ts IIFE entry (PR #308) assigns globalThis.\_\_EStalaraDetect but had no
+  producer-side unit test. Consumer side covered (SDK init tests set up global in beforeEach). DONE:
+  PR #319 merged to origin/main as 49540aa (2026-06-18T21:56:14Z). All real CI gates GREEN; Format
+  check/Rule I/Python pre-existing-red (confirmed pre-exists on main). CI check counter: 1/5, fix
+  iter 0/3. RETRO-091 pending spawn.
 
 ## Currently in flight
 
-**0 tickets IN_PROGRESS as of 2026-06-18. FOLLOW-331 DONE (PR #317 merged fedfeb0). FOLLOW-332 DONE
-(PR #318 merged fb9d201). FOLLOW-335 READY_FOR_REVIEW (PR #319 — PM-validated 2026-06-18T21:40Z).
-RETRO-089 pending spawn (FOLLOW-331 / PR #317). RETRO-090 pending spawn (FOLLOW-332 / PR #318).**
-FOLLOW-336 DONE (PR #316, merged 1626013 2026-06-18T04:41:38Z). RETRO-088 DONE 2026-06-18.
-FOLLOW-337 stub filed (Format gate pre-existing-red documentation fix). All Sprint 18 PRs done:
-FOLLOW-324/325/326/327/328/330/293/336/331/332. ESC-020 OPEN but non-blocking (CEO 2026-06-10). CI
-check counter: FOLLOW-335 1/5, fix iterations 0/3.
+**0 tickets IN_PROGRESS as of 2026-06-19. FOLLOW-335 DONE (PR #319 merged 49540aa
+2026-06-18T21:56:14Z). RETRO-091 pending spawn (FOLLOW-335 / PR #319). RETRO-089/090 recorded
+2026-06-18 (in STATUS.md RETRO TRACKING table). Sprint 18 COMPLETE — all tickets DONE. Sprint 19
+stubs filed (FOLLOW-340..346 from audit 2026-06-19). ESC-020 OPEN but non-blocking (CEO
+2026-06-10).** Audit PR #320 open (docs-only, branch audit/adaptive-listings-2026-06-19). All real
+CI gates GREEN on main. PR #320 pre-existing-red: Format check, Rule I, Python tests (same as main).
+
+## Sprint 19 — Hollow-core must-fixes + audit-19 wave (PLANNED, 2026-06-19)
+
+**Promoted from FOLLOW_UPS.md audit stubs FOLLOW-340..346. Priority order per audit
+F-04→F-02→F-03→F-01→F-05.** P2/P3 hygiene (FOLLOW-337/338/339) is deferred until all P1 hollow-core
+items are DONE.
+
+```yaml
+- id: FOLLOW-343
+  title:
+    Confidence/signal floor before DOM adaptation (prevent cold-start wrong-archetype reshuffle)
+  agent: sdk-engineer
+  status: DONE
+  assigned_to: sdk-engineer
+  started_at: '2026-06-19T10:00Z'
+  ready_for_review_at: '2026-06-19T12:00Z'
+  completed_at: '2026-06-19T00:00Z'
+  merge_commit: 56b0018
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: AUDIT-2026-06-19 F-01
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-343 stub)
+  branch: sdk-engineer/FOLLOW-343-confidence-floor
+  pr: 321
+  notes: |
+    Gate applyDirectives (especially reorder) behind confidence >= ~0.5 OR signal_count >= 2.
+    Named constant. No regression to quiz leaf (0.85 > floor). Cheap, high-value.
+    Delegated 2026-06-19T10:00Z. CI check counter: 1/5, fix iterations: 0/3.
+    PM-validated 2026-06-19. CI green (all real gates pass). Runtime wiring confirmed.
+    Rule I violations: 168 (down from 170 on main — improvement, no regression).
+    AC1 (no DOM mutation below floor): verified via test + code inspection.
+    AC2 (named constant + boundary test): DOM_ADAPT_CONFIDENCE_FLOOR=0.5 in adapt-floor.ts,
+      exported from index.ts, tested at 0.499/0.5 boundary.
+    AC3 (quiz leaf 0.85 above floor): test passes, invariant test guards future floor bumps.
+    AC4 (signal_count>=2 alternative gate): tested at signal_count=2 (mutates) and 1 (no-op).
+    applyDescriptionAdaptation correctly gated inside same aboveFloor block — not over-broad.
+    SIDEBAR_SHOW_THRESHOLD (0.6) is a separate gate, unchanged.
+    Pre-existing-red non-blockers: Format check, Rule I, Python tests (all pre-existing on main).
+    DONE: PR #321 merged to main (squash commit 56b0018, 2026-06-19). RETRO-092 pending spawn.
+
+- id: FOLLOW-340
+  title: SDK runtime slot self-annotation (make adaptation visible on un-instrumented pages)
+  agent: sdk-engineer
+  status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  started_at: '2026-06-19T14:00Z'
+  pr: '#322'
+  priority: P1
+  estimated_hours: 6
+  depends_on: []
+  source: AUDIT-2026-06-19 F-04
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-340 stub)
+  branch: sdk-engineer/FOLLOW-340-runtime-slot-annotation
+  notes: |
+    Biggest gap between "pipeline exists" and "buyer sees adaptation". Sequence first in sprint.
+    SDK reads slot_selectors from /api/adapt response, annotates matching DOM nodes before first
+    fetchDirectives. Idempotent. No bundle-gate regression.
+    PM-validated 2026-06-19. CI green (all real gates pass). Runtime wiring confirmed.
+    Bundle 39.91 KB gzip (<40 KB gate). PR #322 open. Awaiting human merge.
+
+- id: FOLLOW-341
+  title: Populate archetype_embeddings.embedding (activate the cosine affinity path)
+  agent: ml-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 6
+  depends_on: []
+  source: AUDIT-2026-06-19 F-02
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-341 stub)
+  branch: ml-engineer/FOLLOW-341-archetype-embeddings-populate
+  notes: |
+    CEO decision point (open question #4): build real embedding job OR formally drop cosine claim.
+    If build: embed 18 seed archetype descriptions via text-embedding-3-small, UPSERT, idempotent,
+    CI precheck. Unblocks FOLLOW-342.
+
+- id: FOLLOW-342
+  title: Thread bandit variant into playbook selection (stop optimizing placebo arms)
+  agent: backend-engineer
+  status: BLOCKED
+  block_reason: Depends on FOLLOW-341 for lift to be meaningful (cosine must produce real ordering)
+  priority: P1
+  estimated_hours: 6
+  depends_on: [FOLLOW-341]
+  source: AUDIT-2026-06-19 F-03
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-342 stub)
+  branch: backend-engineer/FOLLOW-342-bandit-variant-playbook
+  notes: |
+    Thread selectedVariant into runDecisionTree/getPlaybook so control/v1/v2 produce distinct copy.
+    Variant->copy mapping covered by unit test across all 3 indices.
+
+- id: FOLLOW-346
+  title:
+    Trigger the chat NLP engine (activate highest-value signal — gated on CEO shadow-mode decision)
+  agent: data-engineer
+  status: BLOCKED
+  block_reason: Blocked on CEO decision (open question #3 - keep shadow-only or activate live)
+  priority: P2
+  estimated_hours: 6
+  depends_on: []
+  source: AUDIT-2026-06-19 F-05
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-346 stub)
+  branch: data-engineer/FOLLOW-346-chat-nlp-trigger
+
+- id: FOLLOW-344
+  title:
+    Archetype model top-2 blending / switch-margin + passive discriminators for 8 blind archetypes
+  agent: ml-engineer
+  status: BLOCKED
+  block_reason: Needs CEO product decision on buckets-vs-blended profile (open question #2)
+  priority: P2
+  estimated_hours: 10
+  depends_on: []
+  source: AUDIT-2026-06-19 F-09 + F-06
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-344 stub)
+  branch: ml-engineer/FOLLOW-344-archetype-blending
+
+- id: FOLLOW-345
+  title: Server-side page_type consumption + real tier (decision route)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 4
+  depends_on: []
+  source: AUDIT-2026-06-19 F-08
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-345 stub)
+  branch: backend-engineer/FOLLOW-345-page-type-tier
+```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,
 merged 2026-05-27).**

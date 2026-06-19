@@ -73,3 +73,28 @@ Instead the Retention Schedule row carries `**TTL NOT YET ENFORCED**` and the DP
 must have the data-engineer TTL ticket filed in the SAME PR. A retention claim with no enforcement
 code is a Rule N violation. Reviewers must grep for the cron/deletion implementation before
 approving any retention period as "enforced" — not as a post-merge follow-up.
+
+---
+
+## 2026-06-19 / FOLLOW-346 (C-07 chat retention DPIA scope brief)
+
+**What I documented/implemented:** Authored `docs/compliance/C-07-chat-retention-scope.md` — a CEO-
+ready decision brief answering 5 questions on lawful basis, retention periods, Privacy Notice
+updates, intent-vector-only retention, and a live-activation recommendation for the chat NLP bridge
+(FOLLOW-346 shadow-only cycle).
+
+**Where a disclosure could have drifted from shipped behavior:** The central fact underlying the
+entire brief is that raw chat text is NOT persisted — only the 12-dim intent vector. Before writing
+any claim, I grep-verified `ChatIntentDetectedPayload` field list in `schemas.py:58–79` (no
+`messages` or `raw_text` field), `write_shadow_intent` in `redis_writer.py:49` (serializes
+`payload.model_dump()` only), `ttl_seconds=86400` at `redis_writer.py:40`, and the shadow key format
+at `redis_writer.py:37` and `chat-intent-cache.ts:62`. If any of those had shown a `messages` field
+being serialized, the LI basis conclusion in Q4 would have been wrong and Q1 would have required a
+consent-mandatory finding for the current shadow cycle, not just for future raw-text retention.
+
+**A guardrail I would add:** When a new modal/serverless function writes to any storage (Redis,
+ClickHouse, Postgres), the PR must include a comment explicitly listing which fields of the payload
+model ARE and ARE NOT persisted. A "model_dump()-serializes-the-whole-object" pattern is fragile: if
+a `messages` field is added to `ChatIntentDetectedPayload` later, raw chat text would silently start
+being written to Redis without any disclosure review. The schema contract should use an allowlist
+(serialize only named fields), not a full model dump.

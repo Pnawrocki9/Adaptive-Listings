@@ -150,6 +150,23 @@ export interface IntentState {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /**
+ * Hysteresis margin for archetype switching (FOLLOW-344).
+ *
+ * The current archetype is retained unless the new leading archetype beats it
+ * by at least this margin in the posterior distribution:
+ *   posterior[newLeader] - posterior[currentArchetype] >= SWITCH_MARGIN
+ *
+ * Rationale: argmax flips on near-ties produce adaptation churn when the
+ * distribution is flat (e.g. two archetypes at 0.14 vs 0.13). A small Δ
+ * prevents cycle-to-cycle flipping without materially delaying a genuine shift.
+ *
+ * Starting value: 0.05. Calibrate post-pilot once ≥500 labelled sessions are
+ * available (FOLLOW-212 — BEHAVIORAL_DAMPING + SIGNAL_LIKELIHOODS calibration).
+ * Do NOT increase before calibrated likelihoods cover all 17 archetypes.
+ */
+export const SWITCH_MARGIN = 0.05;
+
+/**
  * Base prior — before any evidence is observed.
  *
  * Distribution rationale:
@@ -717,8 +734,20 @@ export function normalize(probs: ArchetypeProbabilities): ArchetypeProbabilities
  *
  * Tie-break: 'neutral' wins equal-probability contests so fully-decayed
  * states classify as 'neutral' rather than an arbitrary archetype.
+ *
+ * Hysteresis (FOLLOW-344): when `currentArchetype` is provided, the new leader
+ * must beat it by at least `SWITCH_MARGIN` to trigger a switch. This prevents
+ * cycle-to-cycle archetype flipping on near-ties without delaying genuine shifts.
+ * Pass `undefined` (or omit) at session init so the first classification runs freely.
+ *
+ * @param probs           - Normalized posterior distribution.
+ * @param currentArchetype - The archetype currently held by the session, or undefined
+ *                           when classifying from scratch (init / quiz / decay paths).
  */
-export function classifyFromProbabilities(probs: ArchetypeProbabilities): {
+export function classifyFromProbabilities(
+  probs: ArchetypeProbabilities,
+  currentArchetype?: Archetype,
+): {
   archetype: Archetype;
   confidence: number;
 } {
@@ -730,6 +759,17 @@ export function classifyFromProbabilities(probs: ArchetypeProbabilities): {
       maxProb = probs[k];
     }
   }
+
+  // Hysteresis: hold the current archetype unless the new leader exceeds it by SWITCH_MARGIN.
+  if (
+    currentArchetype !== undefined &&
+    archetype !== currentArchetype &&
+    probs[archetype] - probs[currentArchetype] < SWITCH_MARGIN
+  ) {
+    archetype = currentArchetype;
+    maxProb = probs[currentArchetype];
+  }
+
   return { archetype, confidence: maxProb };
 }
 
@@ -934,7 +974,10 @@ export function applyBehavioralSignal(
     }
     probabilities = normalize(boosted);
 
-    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
+      probabilities,
+      state.archetype,
+    );
     return {
       archetype,
       confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
@@ -975,7 +1018,10 @@ export function applyBehavioralSignal(
     }
 
     const probabilities = normalize(boosted);
-    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
+      probabilities,
+      state.archetype,
+    );
 
     return {
       archetype,
@@ -1028,7 +1074,10 @@ export function applyBehavioralSignal(
     // unrecognized feature → no boost (base neutral-push from step 1 only)
 
     probabilities = normalize(boosted);
-    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
+      probabilities,
+      state.archetype,
+    );
 
     return {
       archetype,
@@ -1046,7 +1095,10 @@ export function applyBehavioralSignal(
     if (!facet) return state;
 
     const probabilities = applyFilterBoosts(state.probabilities, facet, payload?.value);
-    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
+      probabilities,
+      state.archetype,
+    );
 
     return {
       archetype,
@@ -1066,7 +1118,10 @@ export function applyBehavioralSignal(
   ) as ArchetypeProbabilities;
 
   const probabilities = applyLikelihood(state.probabilities, dampedLikelihood);
-  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
+    probabilities,
+    state.archetype,
+  );
 
   return {
     archetype,

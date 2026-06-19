@@ -1920,30 +1920,32 @@ Roadmap accuracy z konkretnymi milestone'ami:
 
 Trzy źródła sygnałów: **Behavioral** (SDK observers) / **Quiz** (2-question opt-in widget) / **Chat NLP** (12-dim intent vector, FOLLOW-087+092). Status: 🟢 Full (≥2 discriminating sources) / 🟡 Partial (1 source) / 🔴 None (no behavioral source for this tenant) / ⚪ Chat-only (chat NLP only, no behavioral signal on residential app.estalara.com).
 
-| Archetype | Behavioral signals (SIGNAL_LIKELIHOODS) | Quiz discrimination | Chat NLP discrimination | Status (post FOLLOW-099/100) |
-|---|---|---|---|---|
-| `yield_hunter` | `listing.viewed` + `cta.clicked` (✅ active) | investment purpose | `purchase_purpose=investment`, `tax_aware=true` | 🟢 Full |
-| `vacation_rental_investor` | `filter.applied(type=holiday)` + `feature.expanded(yield/STR)` | investment + short horizon | `purchase_purpose=vacation_rental` | 🟢 Full |
-| `flip_investor` | `price.compared` + `filter.applied(facet=renovation)` | investment + short horizon | `purchase_purpose=investment` + `urgency=0-3mo` | 🟢 Full |
-| `portfolio_builder` | `listing.viewed(many)` + `cta.clicked` | investment + long horizon | `purchase_purpose=investment` + `urgency=12mo+` | 🟢 Full |
-| `golden_visa_buyer` | `feature.expanded(legal/visa)` | investment purpose | `cross_border=foreign_buyer` + `finance_complexity=investment_vehicle` | ⚪ Chat-only |
-| `commercial_investor` | `filter.applied(type=commercial)` | investment + long horizon | `purchase_purpose=investment` + `feature_priority=commercial` | ⚪ Chat-only |
-| `family_buyer` | `filter.applied(facet=bedrooms_min≥3)` + `mortgage_calc.used` | personal + long horizon | `purchase_purpose=primary` + `family_stage=young/established` | 🟢 Full |
-| `first_time_buyer` | `mortgage_calc.used` + `filter.applied(facet=price_max=low)` | personal + short/medium | `purchase_purpose=primary` + `finance_complexity=standard_mortgage` | 🟢 Full |
-| `upsizer` | `filter.applied(facet=bedrooms_min=large)` | personal + medium | `purchase_purpose=primary` + `family_stage=established_family` | 🟢 Full |
-| `downsizer` | `filter.applied(facet=bedrooms_max=small)` + `feature.expanded(accessibility)` | personal + long | `purchase_purpose=primary` + `family_stage=empty_nester` | 🟢 Full |
-| `luxury_buyer` | `cta.clicked(high-price)` + `photo.dwell` | personal + any | `budget_band=comfortable` + `feature_priority=luxury` | 🟢 Full |
-| `remote_worker` | `feature.expanded(home_office/internet)` | personal + short | `feature_priority=workspace` | 🟢 Full |
-| `lifestyle_expat` | `feature.expanded(expat/international)` | personal + long | `cross_border=expat` + `geo_priority=lifestyle` | 🟢 Full |
-| `retiree_relocator` | `feature.expanded(accessibility/climate)` | personal + long | `family_stage=retiree` | 🟡 Quiz path (CROSS-BORDER→A→A) |
-| `diaspora_buyer` | *(cross-tenant, future)* | any | `cross_border=expat_returning` | 🟡 Quiz path (CROSS-BORDER→A→B) |
-| `second_home_buyer` | `listing.viewed(tourist_area)` + `photo.dwell` | personal + medium | `purchase_purpose=second_home` | 🟢 Full |
-| `student_parent` | `filter.applied(near_university)` | any | `geo_priority=school_district` + `family_stage=young_family` | 🟡 Quiz path (CROSS-BORDER→C) |
-| `neutral` | fallback (low combined confidence) | — | low confidence | 🟢 Always |
+**FOLLOW-344 (2026-06-19) — Passive discriminator column added.** CEO decision Q#2: 8 archetypes have no reliable passive behavioral discriminator in `SIGNAL_LIKELIHOODS` (`intent.ts:291-393`) and are documented as **quiz/chat-only**. Do NOT invent passive discriminators — manufacturing near-zero likelihoods produces noisy near-ties and worsens argmax instability. These archetypes are reliably reached via quiz v2.0 or chat NLP only. The `SWITCH_MARGIN` hysteresis (FOLLOW-344) mitigates near-tie flipping for the remaining behavioral archetypes.
 
-**Coverage summary post FOLLOW-099/100:** 13/18 🟢 Full, 3/18 🟡 Quiz path only (`retiree_relocator`, `diaspora_buyer`, `student_parent` — reachable via quiz v2.0 CROSS-BORDER branch), 2/18 ⚪ Chat-only (`golden_visa_buyer`, `commercial_investor` — residential app.estalara.com lacks behavioral filters). Chat-only archetypes require `chat.intent.detected` from FOLLOW-087+101 to function.
+| Archetype | Behavioral signals (SIGNAL_LIKELIHOODS) | Passive discriminator in `intent.ts` | Quiz discrimination | Chat NLP discrimination | Status (post FOLLOW-099/100) |
+|---|---|---|---|---|---|
+| `yield_hunter` | `listing.viewed` + `cta.clicked` (✅ active) | ✅ Strong (SIGNAL_LIKELIHOODS entries with direct boosts) | investment purpose | `purchase_purpose=investment`, `tax_aware=true` | 🟢 Full |
+| `vacation_rental_investor` | `filter.applied(type=holiday)` + `feature.expanded(yield/STR)` | ⚠️ Quiz/chat-only — payload-conditional boost only (`feature.expanded` intercept); no direct SIGNAL_LIKELIHOODS entry | investment + short horizon | `purchase_purpose=vacation_rental` | 🟡 Quiz/chat-only (FOLLOW-344) |
+| `flip_investor` | `price.compared` + `filter.applied(facet=renovation)` | ✅ Strong (`price.compared` SIGNAL_LIKELIHOODS entry) | investment + short horizon | `purchase_purpose=investment` + `urgency=0-3mo` | 🟢 Full |
+| `portfolio_builder` | `listing.viewed(many)` + `cta.clicked` | ✅ Strong (`listing.viewed`, `cta.clicked` SIGNAL_LIKELIHOODS entries) | investment + long horizon | `purchase_purpose=investment` + `urgency=12mo+` | 🟢 Full |
+| `golden_visa_buyer` | `feature.expanded(legal/visa)` | ⚠️ Quiz/chat-only — payload-conditional boost only; no direct SIGNAL_LIKELIHOODS entry; previously ⚪ Chat-only | investment purpose | `cross_border=foreign_buyer` + `finance_complexity=investment_vehicle` | ⚪ Quiz/chat-only (FOLLOW-344) |
+| `commercial_investor` | `filter.applied(type=commercial)` | ⚠️ Quiz/chat-only — payload-conditional boost only; no direct SIGNAL_LIKELIHOODS entry; previously ⚪ Chat-only | investment + long horizon | `purchase_purpose=investment` + `feature_priority=commercial` | ⚪ Quiz/chat-only (FOLLOW-344) |
+| `family_buyer` | `filter.applied(facet=bedrooms_min≥3)` + `mortgage_calc.used` | ✅ Strong (`mortgage_calc.used` SIGNAL_LIKELIHOODS entry) | personal + long horizon | `purchase_purpose=primary` + `family_stage=young/established` | 🟢 Full |
+| `first_time_buyer` | `mortgage_calc.used` + `filter.applied(facet=price_max=low)` | ✅ Strong (`mortgage_calc.used` SIGNAL_LIKELIHOODS entry) | personal + short/medium | `purchase_purpose=primary` + `finance_complexity=standard_mortgage` | 🟢 Full |
+| `upsizer` | `filter.applied(facet=bedrooms_min=large)` | ✅ Moderate (`filter.applied` payload boost via `applyFilterBoosts`) | personal + medium | `purchase_purpose=primary` + `family_stage=established_family` | 🟢 Full |
+| `downsizer` | `filter.applied(facet=bedrooms_max=small)` + `feature.expanded(accessibility)` | ⚠️ Quiz/chat-only — payload-conditional boosts only; no direct SIGNAL_LIKELIHOODS entry (FOLLOW-344) | personal + long | `purchase_purpose=primary` + `family_stage=empty_nester` | 🟡 Quiz/chat-only (FOLLOW-344) |
+| `luxury_buyer` | `cta.clicked(high-price)` + `photo.dwell` | ✅ Strong (`photo.dwell`, `cta.clicked` SIGNAL_LIKELIHOODS entries) | personal + any | `budget_band=comfortable` + `feature_priority=luxury` | 🟢 Full |
+| `remote_worker` | `feature.expanded(home_office/internet)` | ⚠️ Quiz/chat-only — payload-conditional boost only (`feature.expanded` intercept); no direct SIGNAL_LIKELIHOODS entry (FOLLOW-344) | personal + short | `feature_priority=workspace` | 🟡 Quiz/chat-only (FOLLOW-344) |
+| `lifestyle_expat` | `feature.expanded(expat/international)` | ✅ Moderate (payload-conditional boost + `photo.dwell` indirect via second_home_buyer proximity) | personal + long | `cross_border=expat` + `geo_priority=lifestyle` | 🟢 Full |
+| `retiree_relocator` | `feature.expanded(accessibility/climate)` | ⚠️ Quiz/chat-only — payload-conditional boost only (`feature.expanded` intercept); no direct SIGNAL_LIKELIHOODS entry (FOLLOW-344) | personal + long | `family_stage=retiree` | 🟡 Quiz/chat-only (FOLLOW-344) |
+| `diaspora_buyer` | *(cross-tenant, future)* | ⚠️ Quiz/chat-only — no SIGNAL_LIKELIHOODS entry; payload-conditional boost via `feature.expanded(expat)` only (FOLLOW-344) | any | `cross_border=expat_returning` | 🟡 Quiz/chat-only (FOLLOW-344) |
+| `second_home_buyer` | `listing.viewed(tourist_area)` + `photo.dwell` | ✅ Strong (`photo.dwell` SIGNAL_LIKELIHOODS entry) | personal + medium | `purchase_purpose=second_home` | 🟢 Full |
+| `student_parent` | `filter.applied(near_university)` | ⚠️ Quiz/chat-only — payload-conditional boost only (`applyFilterBoosts` intercept); no direct SIGNAL_LIKELIHOODS entry (FOLLOW-344) | any | `geo_priority=school_district` + `family_stage=young_family` | 🟡 Quiz/chat-only (FOLLOW-344) |
+| `neutral` | fallback (low combined confidence) | ✅ Always (default) | — | low confidence | 🟢 Always |
 
-**Note:** 🟡 Quiz path archetypes will serve `neutral` playbook if quiz is OFF and chat NLP is unavailable. ⚪ Chat-only archetypes will serve `neutral` playbook if chat NLP is unavailable or quiz is OFF.
+**Coverage summary post FOLLOW-344:** 8/18 🟢 Full (strong passive behavioral discriminator in `SIGNAL_LIKELIHOODS`), 6/18 🟡 Quiz/chat-only (weak/absent passive discriminator — reliable path is quiz v2.0 or chat NLP), 2/18 ⚪ Quiz/chat-only was Chat-only (`golden_visa_buyer`, `commercial_investor`), 2/18 🟢 Full (`lifestyle_expat`, `upsizer` — moderate signals retained). The 8 quiz/chat-only archetypes are: `commercial_investor`, `golden_visa_buyer`, `vacation_rental_investor`, `remote_worker`, `downsizer`, `retiree_relocator`, `diaspora_buyer`, `student_parent`. Do NOT add passive discriminators for these — see FOLLOW-344 rationale above.
+
+**Note:** Quiz/chat-only archetypes will serve `neutral` playbook if quiz is OFF and chat NLP is unavailable. ⚪ Chat-only archetypes will serve `neutral` playbook if chat NLP is unavailable or quiz is OFF.
 
 Quiz v2.0 (drzewo decyzyjne, 2026-06-05): wszystkie 17 archetypów non-neutral są teraz bezpośrednio osiągalne przez quiz. Poprzednie "🔴 None" archetypy wymagały tylko chatu — teraz mają dedykowane ścieżki w drzewie decyzyjnym (patrz §E.4.2).
 

@@ -9392,6 +9392,202 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
+<!-- ============================================================================
+     AUDIT-2026-06-19 — auditor-proposed stubs FOLLOW-340..346.
+     Source: docs/AUDIT-2026-06-19.md (CEO-commissioned end-to-end audit).
+     NOT from retrospective-analyst — these are the five hollow-core findings
+     (F-01..F-05) + F-09/F-06 + F-08 that gate "real adaptation on live traffic".
+     PM Orchestrator: promote AHEAD of the open P3 hygiene stubs. F-10 is already
+     filed as FOLLOW-329 (this audit confirms it STILL OPEN). Next free after this
+     batch: 347.
+     ============================================================================ -->
+
+## FOLLOW-340 — SDK runtime slot self-annotation (make adaptation visible on un-instrumented pages)
+
+- **source_audit:** AUDIT-2026-06-19 F-04 (High)
+- **recommended_sprint:** 19 (must-fix, wave 1)
+- **recommended_agent:** sdk-engineer
+- **priority:** P1
+- **estimated_hours:** 6
+- **scope:** The SDK only mutates DOM nodes that already carry hand-coded `data-estalara-slot`
+  attributes (`packages/sdk/src/core/adapt.ts:465`, `adapt-description.ts:276,303`) and **never
+  self-annotates** detected selectors at runtime — grep confirms zero
+  `setAttribute('data-estalara-slot', …)` in `packages/sdk/src` (non-test). The auto-detect
+  techniques only emit selector strings for the control-plane schema; they are never fed back to
+  annotate the live DOM. On any page without literal slot attributes (incl. the no-code
+  app.estalara.com) every directive emits `adapt.skipped` and nothing visibly changes. Add a
+  throw-safe, non-destructive SDK bootstrap step that resolves curated/detected `slot_selectors`
+  (from `tenant_site_schemas.detail_schema` / `/api/adapt` additive field) →
+  `el.setAttribute( 'data-estalara-slot', name)` BEFORE the first `fetchDirectives`, skipping nodes
+  that already carry the attribute, mapping `headline→headline`, `cta_primary→cta`,
+  `description→description`.
+- **ac:**
+  - [ ] SDK reads resolved slot_selectors and annotates matching nodes before first directive fetch.
+  - [ ] Annotation is idempotent (no overwrite if attribute present), never throws onto host page.
+  - [ ] e2e: a page WITHOUT hand-coded slots visibly adapts (headline/description) after annotation.
+  - [ ] No bundle-gate regression (<40KB gzip Tier 1+2).
+- **notes:** Compounded by ESC-020 (app.estalara.com hooks committed but not deployed). This is the
+  single biggest gap between "pipeline exists" and "buyer sees adaptation." **Sequence FIRST.**
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-341 — Populate `archetype_embeddings.embedding` (activate the cosine affinity path)
+
+- **source_audit:** AUDIT-2026-06-19 F-02 (High)
+- **recommended_sprint:** 19 (must-fix, wave 2)
+- **recommended_agent:** ml-engineer + data-engineer
+- **priority:** P1
+- **estimated_hours:** 6
+- **scope:** `packages/db/migrations/0005_seed_archetype_embeddings.sql:1-3` seeds 18 rows with
+  `embedding NULL` ("filled in by the Modal daily job") but **no code anywhere in the repo writes
+  that column** — no `/api/archetype/embed` route, no Modal job (grep-confirmed).
+  `getArchetypeEmbedding()` always returns NULL → `affinityScore()` falls back to
+  `deterministicScore` (djb2 hash) (`apps/decision-api/src/lib/reorder.ts:309-312`,
+  `apps/control-plane/src/app/api/adapt/route.ts:496-499`). The entire §F vector-matching / MOAT
+  layer is non-functional in prod. Build the population job: embed the 18 seed archetype
+  descriptions via `text-embedding-3-small` (1024 dims), UPSERT into
+  `archetype_embeddings.embedding`, idempotent, runnable on-merge + manual `workflow_dispatch`
+  (mirror `post-migrate-seed.yml`). Add a `archetype-embeddings-not-null` CI precheck. **Alternative
+  (S):** if the cosine path is being deferred, remove the cosine branch and the §F claim instead of
+  leaving it dead.
+- **ac:**
+  - [ ] Job populates all 18 archetype embeddings; CI precheck fails if any is NULL on a fresh pull.
+  - [ ] `affinityScore()` uses cosine for all 18 archetypes when listing embeddings exist; djb2 only
+        on a genuine missing-listing-embedding.
+  - [ ] Unblocks FOLLOW-342 (bandit needs real ordering to optimize).
+- **notes:** Decision point for CEO (F-02 open question #4): build the real job now, or formally
+  drop the cosine/MOAT claim and ship with hash ordering acknowledged.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-342 — Thread bandit variant into playbook selection (stop optimizing placebo arms)
+
+- **source_audit:** AUDIT-2026-06-19 F-03 (High)
+- **recommended_sprint:** 19 (must-fix, wave 2)
+- **recommended_agent:** backend-engineer
+- **priority:** P1
+- **estimated_hours:** 6
+- **scope:** Thompson bandit variant selection is fully wired (selected → on the wire → cached in
+  SDK → echoed on conversion → Beta update + durable `conversion_labels`), BUT `runDecisionTree()`
+  runs before `thompsonSample()` and never receives the variant; `getPlaybook()` keys only on
+  archetype, so control/v1/v2 serve byte-identical directives
+  (`apps/control-plane/src/app/api/adapt/route.ts:909-925`). The bandit cannot find a winner because
+  no arm differs. Playbooks already carry ≥3 copy variants per slot (`playbooks.test.ts:97`) — they
+  are simply not variant-indexed. Thread `selectedVariant` into `runDecisionTree`/`getPlaybook` so
+  each arm selects a distinct copy set (`slot.variants.en[variant_index]`, fall back to `slot.en`).
+- **ac:**
+  - [ ] control/v1/v2 produce measurably different directives for the same archetype.
+  - [ ] Variant→copy mapping covered by a unit test across all 3 indices.
+  - [ ] ClickHouse `adaptation_decisions.variant` reflects the served (distinct) copy set.
+- **notes:** Depends on FOLLOW-341 (real ordering) for the lift to be meaningful. Supersedes the
+  intent of the old FOLLOW-001/007/025/028 bandit-variant stubs.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-343 — Confidence/signal floor before DOM adaptation
+
+- **source_audit:** AUDIT-2026-06-19 F-01 (High)
+- **recommended_sprint:** 19 (must-fix, wave 1)
+- **recommended_agent:** sdk-engineer
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** `refreshDirectives()` calls `applyDirectives()` unconditionally whenever a response
+  exists (`packages/sdk/src/index.ts:643`), including the init-time call (`:861`) before any
+  behavioral signal. The only confidence gate in the path is `SIDEBAR_SHOW_THRESHOLD = 0.6` for
+  _sidebar visibility_ (`index.ts:660`) — it does NOT gate DOM mutation / card reorder. At cold
+  start the distribution is BASE_PRIOR (neutral 0.37) + device + referrer hints; a single hint can
+  tip argmax into a real archetype at ~0.05–0.10 confidence and reshuffle the page. Gate
+  `applyDirectives` (especially `reorder`) behind `confidence ≥ ~0.5` OR `signal_count ≥ 2`; keep
+  neutral/below-floor a no-op (leave original copy/order visible until evidence exists).
+- **ac:**
+  - [ ] No DOM mutation / reorder applied below the floor; neutral layout shown until then.
+  - [ ] Floor value is a named constant + tested at the boundary.
+  - [ ] No regression to the quiz/drift path (quiz leaf is 0.85 → above floor).
+- **notes:** Cheap, high-value — prevents the "wrong-archetype early reshuffle" trust defect. Pairs
+  with optional F-12 (gate device_type prior behind first interaction).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-344 — Archetype model: top-2 blending / switch-margin + passive discriminators for 8 blind archetypes
+
+- **source_audit:** AUDIT-2026-06-19 F-09 (High) + F-06 (Medium)
+- **recommended_sprint:** 20 (decide-then-build; needs CEO product decision)
+- **recommended_agent:** ml-engineer (+ CEO/CPO product decision)
+- **priority:** P2
+- **estimated_hours:** 10
+- **scope:** (a) F-09: 18 archetypes are not mutually exclusive (`upsizer`/`family_buyer`;
+  `downsizer`/`retiree_relocator`/`empty_nester`; `yield_hunter`/`portfolio_builder`;
+  `lifestyle_expat`/`diaspora_buyer`/`second_home_buyer`). With BASE_PRIOR neutral 0.37 + flat 0.04,
+  single-winner argmax (`core/intent.ts:721-734`) flips between near-ties cycle-to-cycle. Adopt a
+  switch-margin (don't change archetype unless the new leader beats the current by Δ) OR blend the
+  top-2 playbook priorities. (b) F-06: 8 of 18 archetypes
+  (`commercial_investor, golden_visa_buyer, vacation_rental_investor, remote_worker, downsizer, retiree_relocator, diaspora_buyer, student_parent`)
+  have no passive discriminator in `SIGNAL_LIKELIHOODS` (`intent.ts:291-393`) — they are reachable
+  only via explicit filter/feature/poll/quiz/chat. Either add passive discriminators or document
+  them as quiz/chat-only and update §D.6.
+- **ac:**
+  - [ ] Archetype no longer flips on consecutive refetches without a margin gap (test with synthetic
+        near-tie traces).
+  - [ ] §D.6 coverage matrix reconciled to the real passive-signal reachability.
+- **notes:** F-09 is partly a SPECIFICATION decision (buckets vs blended profile) — CEO open
+  question #2. Sequence AFTER the wave-1/2 must-fixes.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-345 — Server-side `page_type` consumption + real `tier` (decision route)
+
+- **source_audit:** AUDIT-2026-06-19 F-08 (Medium)
+- **recommended_sprint:** 20
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 4
+- **scope:** `apps/control-plane/src/app/api/adapt/route.ts:174` validates `page_type` but never
+  reads it again; `tier: 1` is hardcoded in all three response arms (`:807,833,1008`). A
+  `listing_detail` and a `search` page get identical treatment and the analytics `tier` column is a
+  constant. (SDK side is already fixed — `detectPageType`, `index.ts:137`.) Plumb `page_type` into
+  directive selection (e.g. reorder only on list pages, headline/description on detail) and derive
+  `tier` from the page context / request rather than a literal.
+- **ac:**
+  - [ ] Directive set differs by page_type for the same archetype.
+  - [ ] `adaptation_decisions.tier` reflects the real tier, not a constant.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-346 — Trigger the chat NLP engine (activate the highest-value signal — gated on CEO shadow-mode decision)
+
+- **source_audit:** AUDIT-2026-06-19 F-05 (High)
+- **recommended_sprint:** 20 (BLOCKED on CEO decision to leave shadow mode + DPIA scope)
+- **recommended_agent:** data-engineer + ml-engineer
+- **priority:** P2 (becomes P1 once shadow-mode is lifted)
+- **estimated_hours:** 6
+- **scope:** The chat NLP engine is real on both ends — `apps/intent-engine/src/nlp.py` (349-LOC
+  two-tier Haiku/Sonnet extractor), `process_chat_message` (`main.py:31-60`), the Redis shadow
+  reader (`chat-intent-cache.ts`), and the SDK consumer (`applyChatIntentPrior`, exported
+  `index.ts:1407`) — but **nothing calls `process_chat_message`**:
+  `apps/stream-consumer/src/consumers/events.py` only validates and inserts to ClickHouse (zero chat
+  routing). So the shadow key is never written and the whole bridge is dead in prod. Chat (the
+  designed highest-value signal for 14/18 archetypes per §D.6) is captured and discarded. Route
+  `chat.message.sent` → `process_chat_message.spawn(...)` from the stream-consumer OR via a Modal
+  `web_endpoint` the ingest worker calls (mirror the `intent.snapshot` waitUntil pattern in
+  `handlers/events.ts:201-238`).
+- **ac:**
+  - [ ] A consumed `chat.message.sent` event invokes the NLP extractor; the Redis shadow key is
+        written and read by `/api/adapt`.
+  - [ ] Live-vs-shadow behavior is explicit and CEO-gated (no surprise live adaptation).
+  - [ ] DPIA scope for free-text chat retention signed off (see C-07).
+- **notes:** Shadow-only THIS sprint by design (engine docstring). CEO open question #3: keep
+  shadow-only or activate live this cycle. Also closes the dangling `chat.intent.detected` contract
+  when wired.
+- **promoted_to_queue:** false
+
+---
+
 <!-- next free FOLLOW number: 340 (RETRO-089/FOLLOW-331/PR #317 consumed 338 = re-introduced mis-pointing drift-guard docstring intent-weights.test.ts:28-30 cites intent-weights-drift.test.ts for the ARCHETYPE_KEYS↔NAMES parity guard but that file never imports ARCHETYPE_NAMES — real guard is intent-weights.test.ts:784 (FOLLOW-305); + migration-0030 third copy of intent defaults un-reconciled to BASE_PRIOR/DEFAULT_INTENT_WEIGHTS; sdk-engineer+data-engineer P3 2h; PROMOTED Rule P-OVERCLAIMED-VERIFICATION count-2 [RETRO-084 DG-1 + RETRO-089 DG-1]. RETRO-090 took 339.) — RETRO-090 / PR #318 / FOLLOW-332 admin shell tests: layout.test.tsx (11) + page.test.tsx (5) + pilot-tenant.test.ts (3) = 19/19; closes RETRO-084 TG-1/TG-2 end-to-end (real components, hrefs derived from real PILOT_TENANT_ID, all nav routes exist, no fabricated contract). Wiring CLEAN (test-only, no new prod symbols; PILOT_TENANT_ID producer pilot-tenant.ts:16 has 2 non-test consumers layout.tsx:28-29 + page.tsx:12; pilot id cbc51cfa matches MASTER_DESIGN §Snapshot so NO seed/migration hop). TG-1 -> FOLLOW-339 (signOut Server Action behavior unexercised in jsdom, P3 qa). NO Rule promoted: P-SHELL-UNTESTED count-1 as remediation (a fix doesn't increment); jsdom-server-primitive axis count-2 but divergent sub-shapes (RETRO-088 Headers-instanceof vs RETRO-090 Server-Action) with no common remediation -> held. -->
 <!-- next free FOLLOW number: 338 (337 = RETRO-088 / PR #316 / FOLLOW-336 admin auth tests: Format check CI confirmed pre-existing-red (commit 59ac6b5 before PR #316 also failed Format); STATUS.md incorrectly listed Format as real-gate-GREEN; devops-engineer, P3, 2h.) -->
 <!-- next free FOLLOW number: 337 (336 = RETRO-083 / PRs #309/#310/#311 / FOLLOW-326 admin sign-in + SSR auth: checkStaffSession (primary admin auth path), middleware admin gate (createServerClient getUser), and SignInForm are all untested; qa-engineer, P2 3h.) -->

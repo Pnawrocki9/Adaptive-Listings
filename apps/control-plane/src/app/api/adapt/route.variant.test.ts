@@ -1,12 +1,13 @@
 /**
- * Tests for FOLLOW-007 — Thompson sampling variant selection wired into
- * the canonical POST /api/adapt route.
+ * Tests for FOLLOW-007 / FOLLOW-342 — Thompson sampling variant selection wired into
+ * the canonical POST /api/adapt route, and variant reaching copy selection.
  *
  * Coverage:
  *  - Response body includes `variant` field (non-empty string)
  *  - All-paused arms → `variant: 'control'` (thompsonSample returns null)
  *  - `getBanditArms` called with (tenant_id, archetype) — auto-seed path
  *  - ClickHouse INSERT carries the selected variant in the column list
+ *  - FOLLOW-342: 3 arms produce distinct textDirectives[0].value when playbook has variants.en
  *
  * @module apps/control-plane/src/app/api/adapt/route.variant.test
  */
@@ -63,6 +64,7 @@ vi.mock('@/lib/bandit-query', () => ({
 
 import { POST } from './route.js';
 import { getBanditArms } from '@/lib/bandit-query';
+import { getPlaybook } from '@estalara/sdk/playbooks';
 
 const VALID_BODY = {
   tenant_id: 'est_demo_tenant',
@@ -217,5 +219,117 @@ describe('POST /api/adapt — FOLLOW-007: ClickHouse INSERT carries variant', ()
     expect(lastFetchUrl).not.toBeNull();
     const parsedUrl = new URL(lastFetchUrl!);
     expect(parsedUrl.searchParams.get('param_p_variant')).toBe('control');
+  });
+});
+
+// ─── FOLLOW-342: variant reaches copy selection ───────────────────────────────
+
+describe('POST /api/adapt — FOLLOW-342: bandit variant reaches playbook copy selection', () => {
+  /**
+   * A mock playbook where the headline slot has 3 distinct variants.en entries.
+   * Simulates the structure already present on non-neutral archetypes (e.g. yield_hunter).
+   */
+  const PLAYBOOK_WITH_VARIANTS = {
+    slots: [
+      {
+        slot: 'headline',
+        en: 'Default headline (control)',
+        variants: {
+          en: ['Default headline (control)', 'Variant 1 headline', 'Variant 2 headline'],
+        },
+      },
+      { slot: 'cta', en: 'View Details' },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getPlaybook).mockReturnValue(
+      PLAYBOOK_WITH_VARIANTS as ReturnType<typeof getPlaybook>,
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  /**
+   * AC-4 (FOLLOW-342): The 3 bandit arms must produce distinct textDirectives[0].value
+   * when the playbook headline slot carries variants.en with 3 entries.
+   *
+   * Strategy: force each arm to be the sole active arm in turn, then assert the
+   * returned headline value matches the expected variants.en[index] entry.
+   * This is deterministic — thompsonSample returns the only active arm's variant.
+   */
+  it('control arm → textDirectives[0].value is variants.en[0]', async () => {
+    mockGetBanditArms.mockResolvedValue([
+      { variant: 'control', alpha: 1, beta: 1, paused: false },
+      { variant: 'v1', alpha: 1, beta: 1, paused: true },
+      { variant: 'v2', alpha: 1, beta: 1, paused: true },
+    ]);
+
+    const res = await POST(makePostRequest({ ...VALID_BODY, page_type: 'listing_detail' }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      directives: { type: string; slot: string; value: string }[];
+    };
+    const headline = body.directives.find((d) => d.type === 'text' && d.slot === 'headline');
+    expect(headline?.value).toBe('Default headline (control)');
+  });
+
+  it('v1 arm → textDirectives[0].value is variants.en[1]', async () => {
+    mockGetBanditArms.mockResolvedValue([
+      { variant: 'control', alpha: 1, beta: 1, paused: true },
+      { variant: 'v1', alpha: 1, beta: 1, paused: false },
+      { variant: 'v2', alpha: 1, beta: 1, paused: true },
+    ]);
+
+    const res = await POST(makePostRequest({ ...VALID_BODY, page_type: 'listing_detail' }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      directives: { type: string; slot: string; value: string }[];
+    };
+    const headline = body.directives.find((d) => d.type === 'text' && d.slot === 'headline');
+    expect(headline?.value).toBe('Variant 1 headline');
+  });
+
+  it('v2 arm → textDirectives[0].value is variants.en[2]', async () => {
+    mockGetBanditArms.mockResolvedValue([
+      { variant: 'control', alpha: 1, beta: 1, paused: true },
+      { variant: 'v1', alpha: 1, beta: 1, paused: true },
+      { variant: 'v2', alpha: 1, beta: 1, paused: false },
+    ]);
+
+    const res = await POST(makePostRequest({ ...VALID_BODY, page_type: 'listing_detail' }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      directives: { type: string; slot: string; value: string }[];
+    };
+    const headline = body.directives.find((d) => d.type === 'text' && d.slot === 'headline');
+    expect(headline?.value).toBe('Variant 2 headline');
+  });
+
+  it('all 3 arms produce distinct headline values', async () => {
+    // Run all 3 arm selections and collect headline values.
+    const results: string[] = [];
+
+    for (const activeVariant of ['control', 'v1', 'v2'] as const) {
+      mockGetBanditArms.mockResolvedValue([
+        { variant: 'control', alpha: 1, beta: 1, paused: activeVariant !== 'control' },
+        { variant: 'v1', alpha: 1, beta: 1, paused: activeVariant !== 'v1' },
+        { variant: 'v2', alpha: 1, beta: 1, paused: activeVariant !== 'v2' },
+      ]);
+
+      const res = await POST(makePostRequest({ ...VALID_BODY, page_type: 'listing_detail' }));
+      const body = (await res.json()) as {
+        directives: { type: string; slot: string; value: string }[];
+      };
+      const headline = body.directives.find((d) => d.type === 'text' && d.slot === 'headline');
+      results.push(headline?.value ?? '');
+    }
+
+    // All 3 values must be non-empty and distinct from each other.
+    expect(results).toHaveLength(3);
+    expect(new Set(results).size).toBe(3);
   });
 });

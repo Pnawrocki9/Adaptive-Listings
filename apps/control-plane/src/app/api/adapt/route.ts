@@ -251,6 +251,10 @@ const VARIANT_INDEX: Record<string, number> = { control: 0, v1: 1, v2: 2 };
  * @param forceModel     - Optional Anthropic model ID to force (DEMO MODE, DEMO-001).
  * @param variant        - Bandit variant ('control'|'v1'|'v2'). Defaults to 'control' for
  *                         backwards compat. Selects from `SlotDirective.variants.en` when present.
+ *                         HOLDOUT RULE (FOLLOW-360 / RETRO-095): callers MUST pass 'control' when
+ *                         the session is in the holdout group. Bandit sampling must be bypassed
+ *                         entirely for holdout sessions so the counterfactual baseline stays
+ *                         control-only and is not contaminated by v1/v2 arm selections.
  * @returns Partial adaptation result (directives + source).
  */
 async function runDecisionTree(
@@ -692,11 +696,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // ── FOLLOW-360: holdout gate — mirrors POST's early-return ordering ──────
+  // A holdout session MUST be served control copy and logged with variant='control'.
+  // Bandit sampling is skipped entirely for holdout sessions so the holdout
+  // counterfactual baseline stays control-only and is not contaminated by v1/v2
+  // arm selections. (RETRO-095 / ESC-026)
+  const archetypeId = archetypeRaw as ArchetypeId;
+
   // ── FOLLOW-007 / FOLLOW-342: Thompson sampling variant selection ─────────
   // Sample variant BEFORE decision tree so copy selection uses the result.
-  const archetypeId = archetypeRaw as ArchetypeId;
-  const getHandlerBanditArms = await getBanditArms(tenantId, archetypeId);
-  const getHandlerVariant = thompsonSample(getHandlerBanditArms) ?? 'control';
+  // Holdout sessions bypass sampling and receive 'control' directly.
+  const getHandlerVariant: string = holdoutGroup
+    ? 'control'
+    : (thompsonSample(await getBanditArms(tenantId, archetypeId)) ?? 'control');
 
   // ── Decision tree ─────────────────────────────────────────────────────────
   const { directives, source } = await runDecisionTree(

@@ -1276,3 +1276,102 @@ here so it cannot be forgotten.
 **Security note:** `ESTALARA_SMOKE_API_KEY` must be a read-only SDK API key (same `scopes` as the
 `data-api-key` attribute in the install snippet — `write:events` if the ingest is wired, or a custom
 read scope). It must NOT be an admin key or service-role key.
+
+---
+
+## RESOLVED — ESC-025: FOLLOW-346 chat NLP shadow bridge is dead-on-arrival in prod (cross-language payload-key mismatch); ticket was marked DONE against an unmet AC-1 [FOLLOW-346 / FOLLOW-366]
+
+**RESOLVED 2026-06-20:** FOLLOW-366 (PR #332, commit `eaf31a9`) merged to main — `_spawn_chat_nlp`
+now reads `payload["message"]` and the test fixture is built from the real
+`ChatMessageSentPayloadSchema` (Rule Z). PM-validated (0 new CI failures, wiring confirmed
+hop-by-hop, fail-before/pass-after). The shadow bridge now fires for real `chat.message.sent`
+traffic; FOLLOW-346 AC-1 is met end-to-end.
+
+**Filed by:** retrospective-analyst (RETRO-098, via Opus 4.8 session) **Date:** 2026-06-20
+**Affects:** FOLLOW-346 (merged PR #330), FOLLOW-366 (hotfix) **Type:** priority
+
+**Description:** The just-merged chat NLP shadow bridge does not function against real traffic. The
+SDK producer emits `chat.message.sent` with payload `{ message, char_count, lead_id }` (canonical
+`ChatMessageSentPayloadSchema`, `packages/shared/src/schemas/events/chat.ts:38-48`), but the new
+Python consumer `_spawn_chat_nlp` (`apps/stream-consumer/src/consumers/events.py:67-74`) reads
+`payload.get("content")` / `payload.get("role")` and guards `if not message["content"]: return`. For
+100% of real events `content == ""` → the guard trips → the Modal `process_chat_message` spawn never
+fires → no Redis shadow key is ever written → the TS reader at `route.ts:1073` always misses. Both
+sides shipped green because every test on the path constructs a hand-invented `{role, content}`
+fixture instead of the real producer shape (Rule Z violation). FOLLOW-346's AC-1 ("consumed
+`chat.message.sent` invokes the NLP extractor; Redis shadow key written + read by `/api/adapt`") is
+therefore NOT met end-to-end — the ticket should not have closed against it. The prior PM validation
+("verified end-to-end") checked the Redis key byte-identity but not the payload field one hop
+upstream. DPIA posture is unaffected (no raw text persisted; the brief's privacy conclusions hold —
+only its "shadow data is being collected" premise is currently false).
+
+**Required action:** (1) Authorize FOLLOW-366 as a P0 hotfix (repoint the consumer to
+`payload["message"]`, ship with a producer-shape-grounded fixture). (2) Decide whether FOLLOW-346
+should be re-opened / re-labeled (AC-1 unmet) or left DONE with FOLLOW-366 carrying the fix. (3)
+Note that the post-pilot chat-vs-archetype disagreement-rate analysis (the entire purpose of shadow
+mode) will have an empty dataset until FOLLOW-366 lands.
+
+**Owner:** CEO (priority call) → data-engineer (FOLLOW-366 implementation)
+
+---
+
+## RESOLVED — ESC-026: FOLLOW-342 GET-path bandit serves + logs treatment variants to HOLDOUT sessions, contaminating the experiment baseline in prod [FOLLOW-342 / FOLLOW-360]
+
+**RESOLVED 2026-06-20:** FOLLOW-360 (PR #333, commit `2836adc`) merged to main — GET-path variant
+selection is now gated behind the holdout check (`holdoutGroup ? 'control' : thompsonSample(...)`),
+so holdout GET sessions serve + log `variant='control'`. PM-validated (0 new CI failures, both
+serve + ClickHouse-log paths receive the gated value, fail-before/pass-after). **Data caveat:**
+exclude `adaptation_decisions` rows where `holdout_group=1 AND variant != 'control'` from historical
+lift queries for the window PR #327 merge (`66054d6`, 2026-06-19) → PR #333 merge (`2836adc`,
+2026-06-20).
+
+**Filed by:** retrospective-analyst (RETRO-095, via Opus 4.8 session) **Date:** 2026-06-20
+**Affects:** FOLLOW-342 (merged PR #327), FOLLOW-360 (hotfix), pilot-calibration + ab/weights
+analytics **Type:** priority
+
+**Description:** The POST `/api/adapt` handler returns early for holdout BEFORE variant selection
+(`route.ts:894-919`, selection at `:993`), so holdout sessions correctly get `directives:[]` and no
+variant. The GET handler samples + serves + logs a bandit variant at `route.ts:698-742` with NO
+holdout short-circuit, yet still logs `holdoutGroup`. A GET request carrying `holdout_group=true` is
+now served `v1`/`v2` copy AND logged to ClickHouse as `(holdout_group=1, variant=v1)` — the holdout
+counterfactual baseline (which must stay control-only) is being polluted on every GET-path holdout
+request. Before PR #327, GET hardcoded `'control'` in its log, so holdout rows were always clean;
+this PR regressed it. Any downstream measurement keyed on `adaptation_decisions` (FOLLOW-170
+conversion label loop, pilot calibration) now reads a contaminated baseline. Separately (P1,
+FOLLOW-359): the GET response omits `variant`, so GET-path conversions are unattributable and the
+bandit posterior never learns from GET traffic.
+
+**Required action:** (1) Authorize FOLLOW-360 as a P0 hotfix (gate GET variant selection behind the
+holdout/consent check, mirror POST's early-return ordering; holdout GET requests must serve + log
+`variant=control`). (2) Flag that any analytics computed over `adaptation_decisions` between
+2026-06-19 (PR #327 merge) and the FOLLOW-360 fix should treat holdout-row variants as suspect.
+
+**Owner:** CEO (priority call) → backend-engineer (FOLLOW-360 implementation)
+
+---
+
+## OPEN — ESC-027: FOLLOW-345 page-type-derived `tier` re-introduces Tier vocabulary that MASTER_DESIGN §E.7 eliminated — CEO ruling needed before FOLLOW-357 can be implemented [FOLLOW-345 / FOLLOW-357]
+
+**Filed by:** pm-orchestrator **Date:** 2026-06-20 **Affects:** FOLLOW-357 (P1 rename/carve-out),
+MASTER_DESIGN §E.7, `apps/control-plane/src/app/api/adapt/route.ts` `tierFromPageType()` **Type:**
+architectural
+
+**Description:** MASTER_DESIGN §E.7 (CEO ruling 2026-06-05) eliminated Tiers: "wszyscy tenanci
+dostają jedno doświadczenie … Parametr `tier` usunięty z API". FOLLOW-345 (PR #323, merged
+2026-06-20) introduces `tierFromPageType()` (`route.ts:763`) which derives a value explicitly called
+the "integration tier" (`{1, 2}` from `page_type`) and persists it to `adaptation_decisions.tier`.
+The docstring calls tier 2 "Augment" — the old tier-2 integration tier name. This contradicts §E.7.
+
+Two resolutions are possible: (a) **Rename path**: rename the derived value off the "tier"
+vocabulary (e.g. `directive_scope: 'detail' | 'list'` or `page_context`), update the ClickHouse
+column semantics, fix the docstring and §E.7 / §E.1 in MASTER_DESIGN so SoT and code agree. (b)
+**Carve-out path**: CEO grants an explicit §E.7 carve-out that the `/api/adapt` response `tier`
+field is a page-context axis (detail vs list) independent of the legacy integration-tier concept,
+and §E.7 is patched to document the exception. The "Augment" framing in the docstring is removed.
+
+**Required action:** CEO chooses (a) or (b) and records the decision here. FOLLOW-357
+(backend-engineer, P1, 2h) is BLOCKED until this ruling is received.
+
+**Owner:** CEO architectural ruling → FOLLOW-357 (backend-engineer)
+
+**Resolution:** (pending)

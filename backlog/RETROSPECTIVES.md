@@ -18092,3 +18092,666 @@ Symbol-under-test wiring re-confirmed (not a new wire, but verified end-to-end f
 - **RETRO-088 (FOLLOW-336 / PR #316):** Sibling admin test-coverage closure (auth gate). RETRO-088 §4c TG-2 explicitly named FOLLOW-332 as the remaining admin-shell gap; RETRO-090 closes it. Together RETRO-088 + RETRO-090 bring the admin system (auth gate + nav shell + landing) from zero to covered.
 - **RETRO-080 (FOLLOW-309-312):** The "derive test expectations from the real production schema/constant" closure shape exemplar; RETRO-090 applies the same discipline to a constant rather than a Zod schema.
 - **No Rule promoted** (P-SHELL-UNTESTED count-1 as remediation; jsdom-server-primitive axis count-2 but divergent sub-shapes; both held below the ≥2-independent-sighting-with-common-remediation bar).
+
+---
+
+## RETRO-093 — FOLLOW-340 (SDK runtime slot self-annotation from `/api/adapt` `slot_selectors` — make adaptation visible on un-instrumented pages) — 2026-06-19
+
+### 1. Summary of change
+
+- **PR:** #322 (merged 2026-06-19 11:22 UTC, commit `3bbf03a`)
+- **Files changed:** 12 (+816 / -47). Code/contract-relevant: `packages/sdk/src/core/annotate-slots.ts` (NEW, +72), `packages/sdk/src/index.ts` (+11), `packages/sdk/src/core/adapt.ts` (+9, type field), `packages/sdk/src/core/adapt-schema.ts` (+9, Zod field), `packages/shared/src/directives.ts` (+14, type field), `apps/control-plane/src/lib/tenant-schema.ts` (+41/-2, producer), `apps/control-plane/src/app/api/adapt/route.ts` (+15, producer), plus 2 NEW test files (+367). The remaining 3 (`CLAUDE.md` +66, `backlog/QUEUE.md`, `backlog/STATUS.md`) are bundled bookkeeping — `CLAUDE.md` gained the "Agent coding standards" section (orthogonal to this ticket; a bundled doc commit).
+- **Modules touched:** [SDK (`core/annotate-slots.ts`, `index.ts` adapt-callback wiring, `core/adapt.ts` + `core/adapt-schema.ts` contract), shared (`directives.ts` contract), control-plane (`lib/tenant-schema.ts` extractor + `api/adapt/route.ts` response producer), docs+configs (CLAUDE.md + backlog)].
+- **Key contracts changed:**
+  - `AdaptationDirectives.slot_selectors?: Record<string, string>` — **added** to BOTH `packages/shared/src/directives.ts:194` AND the SDK mirror `packages/sdk/src/core/adapt.ts:290` AND the SDK Zod `adapt-schema.ts:144` (`z.record(z.string()).optional()`). Additive, optional — breaking: **no** (older SDK ignores the new field; older server omits it → SDK no-ops).
+  - `TenantSiteSchemaMin.slot_selectors?: Record<string, string>` — **added** at `tenant-schema.ts:46` (internal control-plane type, not a public package contract).
+  - New SDK internal export `annotateSlots()` (`core/annotate-slots.ts:40`) — not re-exported from the SDK barrel `index.ts` (consumed only by the adapt-callback at `index.ts:652` and its two test files); not new public package API.
+
+### 2. Verification done in PR
+
+- Test files changed: `packages/sdk/src/__tests__/follow-340.test.ts` (NEW, 10 unit tests on `annotateSlots()`), `packages/sdk/src/__tests__/follow-340-integration.test.ts` (NEW, 3 `_initForTest`-seam integration tests). Assertions added: 13 it-blocks. Coverage delta: positive on `annotate-slots.ts` (new file, well-covered) + the index.ts adapt-callback annotation branch.
+- The unit tests are genuine (real jsdom DOM, real `querySelectorAll`, idempotency via a pre-set attribute, invalid-selector catch, scoped-root, multi-match) — NOT tautological. The integration tests drive the real `_initForTest` seam with a mocked `fetch` returning a real-shaped adapt response.
+- CI checks: PR body claims SDK 1421/1421 + control-plane 1214/1214 pass; bundle 39.91 KB gzip (< 40 KB gate, AC-4); Rule H + Rule J pre-push hooks PASSED. CI green not independently re-watched (read-only retro). Format/Rule-I/Python gates remain pre-existing-red (RETRO-088/FOLLOW-337) — orthogonal.
+
+### 3. Wiring Audit
+
+CHECK A (dead code — every new file/export has ≥1 non-test importer):
+- `annotate-slots.ts` / `annotateSlots()` (NEW export) → non-test importer `packages/sdk/src/index.ts:55` (import) + call-site `:652`. **WIRED.**
+- New contract field `slot_selectors` on `AdaptationDirectives` (shared) / `AdaptResponse` (sdk) / `adaptResponseSchema` (sdk) → producer `route.ts:1073` writes it; consumer `index.ts:651-652` reads it. **WIRED both ends.**
+- `TenantSiteSchemaMin.slot_selectors` (control-plane internal) → produced at `tenant-schema.ts:180`, consumed at `route.ts:1054-1055`. **WIRED.**
+
+CHECK B (half-wire — every new field/signal has BOTH a producer AND a consumer):
+- New SDK signal `slot_selectors`: PRODUCER = `apps/control-plane/src/app/api/adapt/route.ts:1053-1073` (extracts from `tenantSchema.slot_selectors`, includes in response when non-empty). CONSUMER = `packages/sdk/src/index.ts:651-652` → `annotateSlots()` → `el.setAttribute('data-estalara-slot', slotName)` at `annotate-slots.ts:59`. Both ends present. **No producer-only / consumer-only gap at the FIELD level.**
+- **BUT** — see §4a LG-1: the field is wired end-to-end at the transport level, yet the annotation it produces does NOT match the directive-consumer's slot vocabulary for `cta`/`feature`. This is a SEMANTIC half-wire (the attribute is set, but with a NAME no downstream directive queries), not a transport half-wire. Classified as a logic gap (LG-1, P1) rather than HALF_WIRE_C because the field+function ARE both present and both fire — the defect is a key-namespace mismatch one hop further down (annotation → `applyDirectives` selector). Recorded explicitly here so it is not lost between the two audit buckets.
+
+`Wiring Audit — field-level clean ✅; semantic name-match half-wire flagged as LG-1 (P1) → FOLLOW-352.`
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — Slot-name namespace mismatch: `annotateSlots` copies `detail_schema.slot_selectors` KEYS verbatim onto `data-estalara-slot`, but those keys (`cta_primary`, `description`, `headline`) do NOT match the playbook directive `slot` values (`headline`, `cta`, `feature`) that `applyDirectives` queries — so `cta` and `feature` directives silently miss on genuinely un-instrumented pages.** Evidence chain:
+  - Detected slot keys (`buildDetailSlots`, `packages/sdk/src/auto-detect/techniques/css-modules.ts:486-505` and every sibling technique): `headline`, `description`, `cta_primary`. Grep for a `cta:`/`feature:` KEY producer → **NONE** (`grep "^\s*cta:\|^\s*feature:" techniques/*.ts` empty).
+  - Playbook directive slot names (`grep "slot:" packages/sdk/src/core/playbooks/` → unique): `headline`, `cta`, `feature`.
+  - `applyDirectives` matcher: `packages/sdk/src/core/adapt.ts:473-474` — `const slotName = directive.slot; document.querySelectorAll('[data-estalara-slot="${slotName}"]')`. So it queries `[data-estalara-slot="cta"]` and `[data-estalara-slot="feature"]`.
+  - `annotateSlots` (`annotate-slots.ts:51,59`) sets `data-estalara-slot=<slotSelectors KEY>` with NO name translation → produces `cta_primary` (never `cta`) and never produces `feature`.
+  - **Net effect:** on an un-instrumented page, only the `headline` directive lands (the one key that coincidentally matches). `cta` directives find nothing; `feature` directives find nothing. The ticket's headline promise ("buyer sees adaptation") is only ⅓ delivered for the augment text slots.
+  - **This was an explicit AC-scope requirement that was dropped:** the FOLLOW-340 stub scope literally says "mapping `headline→headline`, `cta_primary→cta`, `description→description`." The `cta_primary→cta` rename was specified and NOT implemented. → **FOLLOW-352.**
+- **LG-2 (P2) — No `feature`/`features` slot is ever annotated, so the playbook `feature` directive is structurally unreachable via self-annotation.** Distinct from LG-1's rename: even with a rename map, there is no `feature` KEY in any `buildDetailSlots` output to map FROM. Either `buildDetailSlots` must emit a `feature`/`features_list` selector, or the gap must be documented as out-of-scope for v1 augment self-annotation. Folded into **FOLLOW-352** (same root: annotation vocabulary ≠ directive vocabulary).
+- **LG-3 (P3, MITIGATED on the pilot tenant only) — On `app.estalara.com` (the pilot target, fixture `000-app-estalara`), the page ALREADY carries hand-coded `data-estalara-slot='cta'` (`detail-ground-truth.json:9` maps `cta_primary` → `[data-estalara-slot='cta']`).** Because `annotateSlots` is idempotent (skips nodes already bearing the attribute, `annotate-slots.ts:58`), it leaves the existing `cta` attribute intact — so the CTA directive DOES land on the pilot site. This means the pilot demo masks LG-1: the one tenant the ticket was sequenced FIRST for happens not to exhibit the bug. The bug bites the moment a genuinely un-instrumented tenant (the actual stated goal of FOLLOW-340) is onboarded. Recorded so the pilot's "it works" is not mistaken for general correctness.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — The integration test only exercises slot names where KEY == directive slot (`headline`, `description`), so it cannot catch LG-1.** `follow-340-integration.test.ts:148,152` uses `slot_selectors: { headline: '.listing-headline' }` with `directive.slot = 'headline'`; the second test uses `description`/`description`. Neither test uses a `cta_primary` key against a `cta` directive — the exact mismatch that fails in production. The test proves the transport wire but is blind to the namespace defect (a fixture that agrees with itself on the slot name). Same family as the fixture-lies / Rule L thread. → covered by **FOLLOW-352** (add a `cta_primary`-key / `cta`-directive negative-then-positive case).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — No test asserts the producer side (`tenant-schema.ts` extraction + `route.ts` inclusion) end-to-end.** The 13 new tests are all SDK-side. The control-plane extractor (`tenant-schema.ts:166-185`, which reads `detail_schema.slot_selectors[].primary`, skips non-string/empty, fail-safe try-catch) and the route inclusion gate (`route.ts:1053-1073`, omit-when-empty) have no unit test in this PR. The PR body claims control-plane 1214 tests pass but none are net-new for this path. Low severity (the extractor is defensively coded), but the omit-when-empty and the `.primary`-only projection are untested. → **FOLLOW-353.**
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — The bundled `CLAUDE.md` "Agent coding standards" addition (+66 lines) is unrelated to FOLLOW-340 and was merged inside the SDK feature PR.** Not a defect in itself, but it means a doc-policy change rode in on a feature PR without its own review trail. Noted for hygiene; no follow-up (the content is benign and matches the existing repo coding-standards prose).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-341 (DONE, RETRO-094) / archetype embeddings** — independent surface (cosine path vs DOM annotation); not affected.
+- **FOLLOW-345 (DONE) page_type/tier in directive selection** — shares `route.ts` and `tenant-schema.ts`; the `slot_selectors` extraction is additive and sits in a separate block, no interaction.
+- No IN_PROGRESS/READY ticket assumes `slot_selectors` is absent from the adapt response; the field is optional so additive.
+
+#### 5b. Future sprint tickets affected
+
+- **Lane B pilot onboarding of a NON-app.estalara tenant (any genuinely un-instrumented site)** — this is the first ticket that will EXPOSE LG-1: the CTA + feature adaptation will silently not render even though the pipeline reports success (`adapt.applied`, no `adapt.skipped`). Whoever onboards the next tenant must apply FOLLOW-352 first or the augment tier delivers headline-only.
+- **FOLLOW-159 / AI-Vision + auto-detect technique tuning** — any technique that emits `cta_primary` (all of them) feeds the mismatch; a fix in `annotateSlots` (rename map) is the single choke-point, preferable to fixing 12 techniques.
+- **app.estalara.com native integration ticket (QUEUE.md:1102, "CTO/CPO approval required on slot mapping")** — the canonical slot-name mapping is exactly the unresolved question LG-1 surfaces; FOLLOW-352 should be reconciled with that pending slot-mapping decision.
+
+#### 5c. Contracts changed others rely on
+
+- `AdaptationDirectives.slot_selectors` is now a documented response field on BOTH the shared type and the SDK Zod schema (Rule H surface). Any future consumer (decision-api mirror, analytics) can rely on it. The Rule-H drift check passed (field present on both `directives.ts` and `adapt-schema.ts`). The KEY namespace of that map is `detail_schema` vocabulary (`cta_primary`), NOT directive vocabulary (`cta`) — consumers MUST be told which namespace the keys are in (documented in the field JSDoc at `directives.ts:182-194`, which correctly says "from `detail_schema.slot_selectors`").
+
+#### 5d. Architectural assumptions affected
+
+- The implicit assumption that "`data-estalara-slot` attribute values share ONE namespace across detection, annotation, and directive-matching" is now FALSE in practice: detection/annotation speak `detail_schema` keys (`cta_primary`), directives speak playbook slot names (`cta`). FOLLOW-340 connected the two layers without reconciling their vocabularies. This is the architectural root of LG-1/LG-2 and should be resolved by declaring ONE canonical slot-name set (the QUEUE.md:1120 "slot mapping" CTO/CPO item).
+
+### 6. New lesson candidates
+
+- **Pattern P-NAMESPACE-MISMATCH ("two layers are wired end-to-end at the transport level, but the KEY/identifier namespace produced by the upstream layer does not match the namespace the downstream layer queries — so the wire is physically connected yet semantically dead for the non-coinciding keys").** — seen in: **RETRO-093 (this)** — annotation emits `cta_primary`, directive queries `cta`; only the coincidentally-matching `headline` key works. Count: **1**. Below the ≥2 threshold. This is a sibling of RETRO-094's "physically-connected-but-functionally-dead half-wire" (the NULL-only seed no-op) — both are "the wire exists but doesn't carry the intended effect" — but the sub-shape differs (RETRO-094 = guard defeats the trigger cause; RETRO-093 = key namespace mismatch). **NOT promoted.** Held; if a second namespace-mismatch sighting appears, consider a Rule "a self-annotation / mapping layer that bridges two vocabularies MUST include an explicit translation table tested with at least one NON-coinciding key."
+- **Pattern P-SELF-AGREEING-FIXTURE ("an integration test uses the SAME identifier on both the producer and consumer side of the wire it is testing, so it proves transport but is blind to any namespace/translation defect between the two ends").** — seen in: **RETRO-093 CB-1** (test uses `headline`/`headline`, `description`/`description`; never a non-matching pair) AND it is the documented mechanism by which Rule L's fixture-lies family recurs (RETRO-072/074/077/080). Because Rule L already governs "derive the expected value from the real production contract," this specific sub-shape (use a NON-coinciding key to prove the translation, not a self-agreeing one) is an extension of Rule L, not a new independent pattern. Count toward Rule L's family but **NOT a fresh promotion** — Rule L's intent already covers it; flagged here as a concrete recurrence so the FOLLOW-352 test AC is explicit.
+- **Dropped-AC-scope observation (not a pattern):** the `cta_primary→cta` rename was an EXPLICIT line in the FOLLOW-340 stub scope and was silently not implemented while all 4 ACs were ticked. The ACs as written ("annotates matching nodes", "idempotent", "e2e: a page adapts") did not encode the rename, so a literal AC pass missed it. This is the "AC under-specifies the stub's prose scope → the gap passes review" shape. Count-1 here; noted, not promoted.
+
+### 7. Follow-ups
+
+- **FOLLOW-352 (OPEN, P1, sdk-engineer, 4h)** — Add a slot-name translation in `annotateSlots` (or upstream) so detected `detail_schema` keys map to playbook directive slot names: `cta_primary→cta`, and emit/map a `feature` slot. Closes §4a LG-1 + LG-2 + §4b CB-1. AC must include: (a) a translation table (single choke-point, NOT per-technique); (b) an integration test using a `cta_primary` KEY against a `cta` directive (a NON-coinciding pair) that fails before the fix and passes after; (c) a `feature`-directive reachability test or an explicit documented out-of-scope note. Reconcile the canonical slot-name set with the pending CTO/CPO slot-mapping decision (QUEUE.md:1120).
+- **FOLLOW-353 (OPEN, P3, backend-engineer, 2h)** — Unit-test the control-plane producer: `tenant-schema.ts` `.primary`-only projection + skip-non-string/empty + fail-safe, and `route.ts` omit-when-empty inclusion gate. Closes §4c TG-1.
+
+### 8. Cross-references
+
+- **RETRO-094 (FOLLOW-341 / PR #324):** Sibling audit-batch must-fix from the SAME AUDIT-2026-06-19 hollow-core set. RETRO-094's central finding ("the wire is physically connected but functionally a no-op for its own trigger cause") is the SAME meta-shape as this retro's LG-1 ("physically connected, semantically dead for the non-coinciding keys"). Two consecutive retros, two different sub-shapes of "wired but dead" — see §6 P-NAMESPACE-MISMATCH (held count-1, the sub-shapes differ so no merged promotion yet).
+- **AUDIT-2026-06-19 F-04 (the source finding):** FOLLOW-340 closes the headline portion of F-04 ("SDK never self-annotates") — the self-annotation mechanism now exists and fires. But the closure is **NOT end-to-end for the augment text tier**: F-04's goal was "buyer SEES adaptation on un-instrumented pages," and only `headline`/`description` slots actually render; `cta`/`feature` are annotated under the wrong name (LG-1) or not at all (LG-2). Per the end-to-end closure discipline (step 7), F-04 is **partially closed, gap moved one hop** (selector-match → name-match), tracked by FOLLOW-350 — NOT declared fully closed.
+- **QUEUE.md:1120 (app.estalara.com native — "CTO/CPO approval required on slot mapping"):** the canonical slot-name mapping is the unresolved decision underlying LG-1; FOLLOW-350 must align with it.
+- **Rule L (derive test expectations from the real production contract):** CB-1 / P-SELF-AGREEING-FIXTURE is a concrete recurrence; FOLLOW-350's test AC encodes the non-coinciding-key discipline.
+
+---
+
+## RETRO-094 — FOLLOW-341 (CI precheck + auto-trigger for archetype embeddings) — 2026-06-19
+
+### 1. Summary of change
+
+- **PR:** #324 (merged 2026-06-19 12:40 UTC, commit `4f48f5e`)
+- **Files changed:** 3 (+64 / -0)
+  - `scripts/check-archetype-seeds.ts` (new, +39) — DB-free source-data validator
+  - `.github/workflows/ci.yml` (+20) — `archetype-seeds-complete` job
+  - `.github/workflows/seed-archetypes.yml` (+5) — `push` trigger scoped to `packages/db/src/seed/archetype-seeds.ts`
+- **Modules touched:** [configs (CI), scripts]. No production runtime code, no SDK/control-plane/ingest/decision-api source, no docs.
+- **Key contracts changed:** None. Consumes the pre-existing `ARCHETYPE_SEEDS` export read-only. No new exported symbol, env var, DB column, event, or API field. The hardcoded `EXPECTED_COUNT = 18` is a new magic number (see §4a LG-2).
+
+### 2. Verification done in PR
+
+- Test files changed: none (no `*.test.ts`). The new `check-archetype-seeds.ts` is itself a CI assertion script, not a unit test — it has no test of its own (negative-path: an empty/short seed list is asserted only by manually breaking the source, which CI cannot prove the script catches without a fixture). Assertions added: 0 vitest. Coverage delta: 0 (script lives in `scripts/`, outside coverage scope).
+- CI checks: PR body claims `npx tsx scripts/check-archetype-seeds.ts` passes locally + lint/format clean. CI green not independently re-verified in this retro (read-only); the new job is additive and DB-free so it cannot regress existing gates.
+
+### 3. Wiring Audit
+
+CHECK A (dead code) — `scripts/check-archetype-seeds.ts`: NEW file. Importer = `.github/workflows/ci.yml:560` (`npx tsx scripts/check-archetype-seeds.ts`). CI-invoked entrypoint — suppressed from DEAD_CODE per the cron/Worker/entrypoint carve-out. Wired. ✅
+
+CHECK B (half-wire) — the new `push` trigger on `seed-archetypes.yml` is a PRODUCER of an auto-seed run. Its intended CONSUMER effect ("embeddings re-seed when descriptions change") is **NOT achieved** — the seed script it triggers only embeds rows `WHERE embedding IS NULL` (`apps/control-plane/scripts/seed-archetypes.mts:113` → `?embedding=is.null`; docstring lines 29-30 "only touches rows WHERE embedding IS NULL … no-op"). A description EDIT leaves `embedding` non-NULL, so the triggered run logs "nothing to seed" and re-embeds nothing.
+
+- **HALF_WIRE_P (P1) — auto-trigger producer fires but its consumer (seed script) is a no-op for the trigger's stated cause (description change).** File: `.github/workflows/seed-archetypes.yml:6-11` (trigger) vs `apps/control-plane/scripts/seed-archetypes.mts:113` (NULL-only filter). → **FOLLOW-347.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — The PR's stated objective ("so embeddings re-seed automatically when descriptions change") is not met.** Same root as §3 HALF_WIRE_P. The `archetype-seeds.ts` source carries the `description` strings; editing one bumps the file → fires both push workflows → seed script skips it because the old embedding is still present and non-NULL. To actually re-embed a changed description the script must compare/invalidate (e.g. store a description hash, or NULL-out the embedding for rows whose description changed) before the `?embedding=is.null` pass. Covered by FOLLOW-347.
+- **LG-2 (P3) — `EXPECTED_COUNT = 18` is a third hardcoded copy of the archetype count.** `scripts/check-archetype-seeds.ts:9` hardcodes `18`; migration `0005_seed_archetype_embeddings.sql:1` comment hardcodes "18"; `ARCHETYPE_SEEDS.length` is the live source of truth. The precheck asserts the live array against a literal, which is the point — but the literal must be hand-bumped if the canon ever moves to 19 (e.g. a new archetype). MASTER_DESIGN §D.6 phrases the canon as "17 non-neutral + neutral" = 18, so 18 is correct today; flag the duplication. Low risk. → **FOLLOW-348.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P1) — Duplicate/racing auto-seed on push to main.** The pre-existing `.github/workflows/post-migrate-seed.yml` (FOLLOW-063 / PR #135) ALREADY runs `pnpm seed:archetypes` on EVERY push to main (idempotent, `continue-on-error: true`, with a `DOPPLER_TOKEN_DEV` soft-skip guard). The new `seed-archetypes.yml` push trigger now ALSO runs the same `doppler run --config dev -- pnpm seed:archetypes` against the same dev project whenever `archetype-seeds.ts` changes — so on such a commit, two GitHub Actions runs hit the same dev Supabase concurrently. The seed is NULL-only-idempotent so the data outcome is safe, but it is redundant work + a concurrency race, and **the new trigger has NO soft-skip and NO `continue-on-error`** (unlike `post-migrate-seed.yml`): it goes straight to `doppler run ... seed:archetypes` + a hard NULL-assertion step. ESC-010 is RESOLVED so `DOPPLER_TOKEN_DEV` IS provisioned — the new run will execute for real, and any seed/assertion failure now hard-fails the push pipeline where the pre-existing equivalent was deliberately soft. → **FOLLOW-347** (consolidate the two push-seed paths; pick one auto-seed workflow).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — The precheck script itself has no negative-path test.** `check-archetype-seeds.ts` is meant to fail CI when the seed list regresses (empty name/description or wrong count), but nothing proves it actually exits 1 on a bad input — it would be a dead guard if a refactor silently broke the `failed = true` path. A 3-case fixture test (short list, empty name, empty description → expect exit 1; valid → exit 0) would lock the guard. Same shape as the FOLLOW-063 not-null check, which DOES have a live assertion in `seed-archetypes.yml`. → **FOLLOW-349.**
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — No doc/runbook note distinguishes the three now-overlapping seed automations.** Three CI artifacts now touch archetype seeding: `archetype-seeds-complete` (new, source completeness, DB-free, PR gate), `post-migrate-seed.yml` (FOLLOW-063, NULL-fill on every push), and `seed-archetypes.yml` (manual `workflow_dispatch` + new path-scoped push). An operator reading the repo cannot tell which is authoritative for "re-embed after I edited a description" (answer: none of them currently — see LG-1). Fold the clarifying note into FOLLOW-347's runbook AC. MASTER_DESIGN §F line 436 documents the FOLLOW-063 pair but not this PR's additions. → tracked under FOLLOW-347.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- N/A — no in-flight ticket consumes `ARCHETYPE_SEEDS` or these workflows. The change is CI-only and additive.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-159 / AI-Vision + any archetype-description tuning ticket** — these will EDIT `archetype-seeds.ts` descriptions expecting the new auto-trigger to re-embed. Per LG-1 it will NOT. Anyone tuning descriptions for adaptation quality must know they still need a manual NULL-out + re-seed (or wait for FOLLOW-347). Severity: a description tuned for better cosine affinity ships to prod but the OLD embedding keeps serving — silent staleness in the adaptation cosine path.
+
+#### 5c. Contracts changed others rely on
+
+- N/A — `ARCHETYPE_SEEDS` is consumed read-only; no contract changed.
+
+#### 5d. Architectural assumptions affected
+
+- The MVP refresh model (`seed-archetypes.mts` docstring lines 22-25: "MVP: one-shot manual run after any archetype description change … Post-MVP: daily Modal cron") is now half-contradicted: the PR ADDS push-automation but the underlying script still assumes the manual NULL-then-seed model. The automation and the script's idempotency model are out of sync — this is the architectural form of the §3 half-wire.
+
+### 6. New lesson candidates
+
+- **Pattern: "An auto-trigger (CI/cron) wired to a producer whose downstream step is idempotency-guarded against the trigger's own cause — the automation fires but the guarded step no-ops, so the stated goal is silently unmet."** — seen in: RETRO-094 (this; push-on-description-change → NULL-only seed no-op). Count: **1**. Below the ≥2 threshold. Closest priors are the schema-scaffold/deferred-wiring family (Rule H) and the over-claimed-verification family (Rule Y), but this is a distinct sub-shape (the wire IS connected; the guard defeats its purpose). Held for a second independent sighting.
+- **Pattern: "A new on-push automation duplicates a pre-existing on-push automation for the same effect, without consolidating — and the new copy drops the safety guard (soft-skip / continue-on-error) the original had."** — seen in: RETRO-094 (this; `seed-archetypes.yml` push vs `post-migrate-seed.yml`). Count: **1**. Below threshold. Adjacent to Rule P (check repo for prior art before adding) — the prior-art was `post-migrate-seed.yml`, which an `ls .github/workflows` would have surfaced. If a second sighting appears, consider promoting a Rule-P amendment for CI-workflow prior-art specifically.
+
+### 7. Follow-ups
+
+- **FOLLOW-347 (P1, devops-engineer + backend-engineer, 4h)** — Make archetype-description edits actually re-embed AND consolidate the duplicate push-seed automations. (Closes §3 HALF_WIRE_P, §4a LG-1, §4b CB-1, §4d DG-1.)
+- **FOLLOW-348 (P3, devops-engineer, 1h)** — Remove the third hardcoded archetype-count copy; derive `EXPECTED_COUNT` from a single source or document the canon. (§4a LG-2.)
+- **FOLLOW-349 (P3, qa-engineer, 1h)** — Negative-path test for `check-archetype-seeds.ts` (bad input → exit 1). (§4c TG-1.)
+
+### 8. Cross-references
+
+- **RETRO-006 (FOLLOW-063 / PR #135):** The source retro for the entire auto-seed enforcement effort. FOLLOW-341 is the same lineage. RETRO-006 LG-1 → FOLLOW-063 shipped BOTH `archetype-embeddings-not-null` (the DB-level NULL assertion, now living in `seed-archetypes.yml`/`post-migrate-seed.yml`) AND `post-migrate-seed.yml` (on-push idempotent NULL-fill). **Reconciliation:** the new `archetype-seeds-complete` job is genuinely complementary to FOLLOW-063's not-null check (source-completeness, no DB) and is NOT a duplicate of it. But the new `seed-archetypes.yml` push trigger DOES duplicate `post-migrate-seed.yml`'s on-push seed — CB-1.
+- **ESC-010 (RESOLVED) / FOLLOW-040:** `DOPPLER_TOKEN_DEV` is provisioned, so the new push trigger executes for real (not soft-skipped) — which is precisely why CB-1's missing `continue-on-error` matters.
+- **MASTER_DESIGN §F (line 436):** documents the FOLLOW-063 pair as the auto-seed story; does not yet reflect this PR — see DG-1.
+- **Rule P:** check repo for prior art before adding. The duplicate-workflow finding (CB-1) is a CI-surface instance of Rule P's spirit; held as a §6 lesson candidate, not promoted (count-1).
+
+---
+
+## RETRO-096 — FOLLOW-347 (force-reseed on archetype-description change + remove duplicate push trigger; claims to close RETRO-094 §3 HALF_WIRE_P / §4a LG-1 / §4b CB-1 / §4d DG-1) — 2026-06-19
+
+### 1. Summary of change
+
+- **PR:** #325 (merged 2026-06-19 12:55 UTC, commit `9f57491`)
+- **Files changed:** 3 (+34 / -6) — all infra/CI, no production runtime code:
+  - `apps/control-plane/scripts/seed-archetypes.mts` (+22) — new `clearAllEmbeddings()` + a `FORCE_RESEED==='true'` branch at the top of `seedArchetypeEmbeddings()`
+  - `.github/workflows/post-migrate-seed.yml` (+12/-1) — new `Detect archetype description changes` step (`desc-check`) that sets `force_reseed=true` when `archetype-seeds.ts` is in the push diff, wired into the seed step's env as `FORCE_RESEED`
+  - `.github/workflows/seed-archetypes.yml` (-5) — removed the `push:` trigger (path-scoped to `archetype-seeds.ts`); only `workflow_dispatch` remains
+- **Modules touched:** [configs (2 CI workflows), scripts (control-plane seeder)]. No SDK/control-plane/ingest/decision-api source, no docs, no tests.
+- **Key contracts changed:** None public. New **env var** `FORCE_RESEED` (string `'true'`/`'false'`) consumed by `seed-archetypes.mts:169`, produced by `post-migrate-seed.yml:85`. New module-internal `clearAllEmbeddings()` (not exported — `seed-archetypes.mts:235` export list unchanged). No schema/event/DB-column/SDK-signal/API-field changed. Breaking: no.
+
+### 2. Verification done in PR
+
+- Test files changed: **none**. Assertions added: **0**. Coverage delta: **0** (the seeder lives in `scripts/`, outside coverage scope; `FORCE_RESEED`/`clearAllEmbeddings` have no unit test, and the new `desc-check` workflow step has no fixture proving the `git diff … | grep` actually toggles on a description edit). The "Test plan" checkboxes in the PR body are static-inspection claims, not executed tests.
+- CI checks: PR body claims lint/format clean. Not independently re-watched (read-only retro). The change is CI-config + a script branch that only executes inside the gated `post-migrate-seed` job on push-to-main with `DOPPLER_TOKEN_DEV` present — it cannot run on `pull_request` (the workflow is push-only and needs real DB+OpenAI creds), so **the force-reseed path was almost certainly never executed end-to-end before merge** (no PR-time proof the OpenAI call fired or a vector changed — exactly FOLLOW-347's AC-1, left unverified).
+
+### 3. Wiring Audit
+
+CHECK A (dead code — every new file/export has ≥1 non-test importer):
+- `clearAllEmbeddings()` (`seed-archetypes.mts:122`) — NEW function, module-internal (not exported). Sole caller: `seed-archetypes.mts:170` inside the `FORCE_RESEED==='true'` branch. **WIRED** (one real caller). ✅
+- No new file added; no new export from the seeder's barrel (`:235` unchanged). ✅
+
+CHECK B (half-wire — every new env-var/event/column/topic/signal has BOTH a producer AND a consumer):
+- **`FORCE_RESEED` env var** — Producer: `post-migrate-seed.yml:85` (`FORCE_RESEED: ${{ steps.desc-check.outputs.force_reseed }}`). Consumer: `seed-archetypes.mts:169` (`if (process.env.FORCE_RESEED === 'true')`). Both ends present and value-compatible (the step emits the literal strings `true`/`false`; the consumer string-compares `=== 'true'`). **No HALF_WIRE.** ✅
+- `desc-check` step output `force_reseed` — produced at `post-migrate-seed.yml:74/77`, consumed at `:85`. Wired. ✅
+
+**Wiring Audit — clean ✅** at the literal env-var/function level (no DEAD_CODE / HALF_WIRE_P / HALF_WIRE_C). **BUT the wire is functionally inert — see §4a LG-1 / §7 closure check:** `FORCE_RESEED` reaches the seeder, the seeder clears embeddings and re-embeds, but it re-embeds from the **DB** descriptions, not the edited **source** descriptions — so the producer→consumer wire connects two endpoints that don't carry the data the trigger's stated cause (a `archetype-seeds.ts` edit) actually changed. This is the half-wire's deeper cousin: a *connected wire to the wrong data source*.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — The PR's stated objective ("re-embed when an archetype DESCRIPTION changes") is STILL not met — the RETRO-094 gap moved one hop downstream, it did not close.** The seeder embeds `row.description` where `row` comes from `fetchPendingRows()` → `SELECT … description FROM archetype_embeddings` (`seed-archetypes.mts:113,187`). It reads the description **from the `archetype_embeddings` DB table**, NOT from `ARCHETYPE_SEEDS` in `packages/db/src/seed/archetype-seeds.ts`. The DB `description` column is written ONCE by migration `0005_seed_archetype_embeddings.sql:5-9` (`ON CONFLICT DO NOTHING`). Editing `archetype-seeds.ts` does NOT update the DB column: (i) the seeder never imports `ARCHETYPE_SEEDS` (grep: `grep ARCHETYPE_SEEDS seed-archetypes.mts` → 0 hits); (ii) no workflow regenerates/re-applies `0005`; (iii) Postgres migrations don't auto-apply in this repo (memory `project_postgres_migrations_no_autoapply` / RETRO-076). **So `FORCE_RESEED` clears the embeddings and re-embeds the OLD DB description verbatim — the OpenAI input is byte-identical, the new vector ≈ the old vector, and the source edit never reaches the model.** Concrete proof the two description sets ALREADY diverge today (so the bug is observable now, not hypothetical): for `yield_hunter`, `0005_seed_archetype_embeddings.sql:9` = *"Investor focused on maximizing rental yield and cash flow. Responds to gross yield %, cap rate, rent-to-price ratio…"* vs `archetype-seeds.ts:20` = *"Real estate investor focused on rental yield and ROI. Analyzes price-to-rent ratios, cap rates, gross yield percentages…"* — different strings. The DB serves the 0005 text; the embedded vector reflects the 0005 text; the `archetype-seeds.ts` text is dead w.r.t. embeddings. → **FOLLOW-350.** (This is the EXACT multi-hop closure-failure shape the algorithm step 7 warns about — cf. the `inquiry_submit_selector` chain FOLLOW-097→114→127→141.)
+- **LG-2 (P2) — `clearAllEmbeddings()` is an unconditional, unfiltered `PATCH … {embedding: null}` over the WHOLE table with no WHERE clause, so a FORCE_RESEED run that then partially fails leaves the table in an all-NULL (or partially-NULL) state — degrading the live adapt cosine path to djb2 fallback for every archetype until a successful re-seed.** The seeder's per-row loop (`:185-203`) tolerates partial failure (`failed += 1`, continues) and only exits 1 if EVERY row failed (`:223`). So a FORCE_RESEED push where, say, the OpenAI key is rate-limited mid-run clears all 18 embeddings, re-fills 11, and exits 0 (success) with 7 archetypes left NULL — and the job is `continue-on-error: true` anyway. The pre-existing `archetype-embeddings-not-null` assertion that WOULD catch this lives only in `seed-archetypes.yml` (the now-dispatch-only workflow, `:34-55`), NOT in `post-migrate-seed.yml` — so the auto path that does the destructive clear has no NULL-guard backstop. Clearing-before-refilling on the same path that serves production reads, with no transaction and no post-condition assertion, is a live-data availability gap. → **FOLLOW-351.**
+- **LG-3 (P3) — `desc-check` uses `git diff --name-only "${{ github.event.before }}" "${{ github.sha }}"`, which is empty/unreliable for the first push to a branch, a force-push, or a branch-creation event (`github.event.before` = all-zeros SHA → `git diff` errors or returns nothing), silently yielding `force_reseed=false`.** For the normal push-to-main case it works, but the failure mode is silent (the `else` branch just sets false), so an edge-case push that DID change descriptions would skip the reseed without signal. Low severity (main pushes are normally fast-forward merges with a valid `before`). → folded into FOLLOW-350's AC as a robustness note, not separately filed.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 is the §4a LG-1 issue (P1)** — counted there, not double-listed. The "bug" is that the feature does not do what it says; mechanically the code runs without error (it just embeds the wrong text).
+- No crash/exception/type bug introduced. `clearAllEmbeddings` error-handling mirrors the existing helpers (throws on non-OK). `FORCE_RESEED` default (unset → not `'true'` → skip) is safe.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — Zero test proves the force-reseed path does ANYTHING.** FOLLOW-347 AC-1 ("editing a description and pushing results in that row's embedding being recomputed — verify the OpenAI call fires + vector changes") has no executable verification. Had even a smoke assertion existed (e.g. capture the embedded input text and assert it equals the SOURCE description), it would have RED-flagged LG-1 before merge, because the embedded input is the DB text, not the source text. The absence of this test is precisely why the one-hop-move shipped. → **FOLLOW-350** (the fix must ship with this assertion).
+- **TG-2 (P3) — The `desc-check` workflow step (`git diff | grep` → output toggle) has no test/fixture.** Same dead-guard risk RETRO-094 TG-1 flagged for `check-archetype-seeds.ts`: nothing proves the grep actually toggles `force_reseed=true` on an `archetype-seeds.ts` edit (vs a typo in the path silently always-false). → folded into FOLLOW-350.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — RETRO-094 DG-1 (the runbook note distinguishing the three seed automations) was tracked under FOLLOW-347 but is NOT delivered by this PR.** No runbook/MASTER_DESIGN §F update is in the diff (files changed = 3, all code/CI). An operator still cannot tell which workflow is authoritative for "I edited a description, how do I actually re-embed?" — and the honest answer per LG-1 is *still none of them*. → **FOLLOW-350** (AC: document the real procedure once LG-1 is fixed).
+- **DG-2 (P3) — The seeder docstring is now self-contradictory / stale.** `seed-archetypes.mts:28-30` still states "The script only touches rows WHERE embedding IS NULL. Re-running with all rows populated is a no-op" — which the new `FORCE_RESEED` branch (`:169-171`) deliberately violates (it NULLs everything first). And `:23-26` "Refresh cadence — MVP: one-shot manual run after any archetype description change" is exactly the workflow the PR was supposed to automate. The new inline comment at `:120-121` ("re-embeds from current descriptions") is itself inaccurate — it re-embeds from the DB descriptions, not the source's current descriptions (the LG-1 misstatement, baked into a comment — the over-claimed-comment pattern, Rule Y family). → folded into FOLLOW-350.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **N/A direct.** Sprint 19/21 (QUEUE.md:205) marks FOLLOW-347 DONE as a "bonus reseed-fix." No IN_PROGRESS ticket consumes `FORCE_RESEED` or the seeder. But note FOLLOW-344 (archetype blending, CEO-gated, READY) and FOLLOW-159 / any AI-Vision description-tuning work will EDIT `archetype-seeds.ts` descriptions believing — per this PR's merge — that the auto-reseed now works. It does not (LG-1). **Severity: a description tuned for better cosine affinity ships, the push fires, the embeddings are cleared and re-computed, the operator sees a green "re-seed" run — and the OLD 0005 text is what got embedded. Silent staleness with a false confirmation signal — WORSE than RETRO-094's state, where at least the no-op was visibly a no-op.**
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-350 (this retro)** is the real closure of the RETRO-094 lineage (FOLLOW-341 → 347 → 350). The chain is now three hops deep on the same gap ("auto re-embed on description change"): RETRO-094 found the NULL-only no-op → FOLLOW-347 added FORCE_RESEED but re-embeds DB text → FOLLOW-350 must make the embedded text actually track the source.
+- **Any future migration that edits archetype descriptions** must keep `0005` (DB seed) and `archetype-seeds.ts` (source) in sync, OR the seeder must be re-pointed to read descriptions from `ARCHETYPE_SEEDS` — see §5d.
+
+#### 5c. Contracts changed others rely on
+
+- `FORCE_RESEED` is a new internal env-var contract between `post-migrate-seed.yml` and `seed-archetypes.mts`. Only these two reference it (grep: `grep -rn FORCE_RESEED` → workflow:85 + script:169). No external consumer. Low blast radius.
+
+#### 5d. Architectural assumptions affected
+
+- **Exposes a standing SoT ambiguity: there are TWO sources of archetype descriptions and they have already drifted.** `packages/db/src/seed/archetype-seeds.ts` (`ARCHETYPE_SEEDS`, TS, consumed by… nothing at runtime — grep shows only the `.d.ts`) and `packages/db/migrations/0005_seed_archetype_embeddings.sql` (raw SQL, the actual DB writer). The seeder reads the DB (= 0005's text). So `archetype-seeds.ts` is effectively dead source-of-record for embeddings today (its only "consumer" is `check-archetype-seeds.ts`, which validates the array is complete but never feeds it to the DB). The architectural fix for LG-1 is to pick ONE description SoT and route both the DB seed and the embedder through it — otherwise the third-copy drift (cf. RETRO-089 TG-1 on intent-weights, RETRO-094 LG-2 on the count) recurs on descriptions.
+
+### 6. New lesson candidates
+
+- **Pattern P-ONEHOP-CLOSURE ("a follow-up that 'fixes' a prior gap moves the gap one hop downstream instead of closing it end-to-end — the new code runs without error and looks like a fix, but the actual data/effect the original gap blocked is still blocked at the next hop").** — seen in: **RETRO-094 → RETRO-096** (this — FOLLOW-347 cleared the NULL-only no-op but re-embeds the wrong description source; the "re-embed on description change" goal is still unmet) AND the documented `inquiry_submit_selector` chain (FOLLOW-097 fixed the SDK consumer → gap moved to missing producer FOLLOW-114 → missing detector FOLLOW-127 → missing seed FOLLOW-141), which the agent prompt itself cites as the canonical multi-hop example. Two independent multi-hop chains with concrete file:line/FOLLOW evidence. **promote-threshold 2, current count 2.** HOWEVER — discipline check: is the FOLLOW-097 chain a *prior RETRO sighting* or a prompt-supplied exemplar? It is supplied as evidence in the system prompt, not recorded as a numbered RETRO finding in this log under a named pattern. To honor the "≥2 prior RETRO IDs" evidence bar strictly (the Rule-promotion requirement cites RETRO IDs, not prompt exemplars), I count the *logged-RETRO* sightings as: RETRO-096 only (count 1 in-log). **NO promotion this cycle.** The inquiry-selector chain is recorded as a corroborating real-world precedent and a watch-flag; if a second IN-LOG one-hop-closure sighting appears, promote immediately (the remediation is mechanical: §7's end-to-end trace requirement). Held at count-1-in-log.
+- **Pattern P-DESC-SOT-SPLIT ("two divergent sources of the same seed data — a TS seed array and a raw-SQL migration — with the runtime reading one and the 'source of truth' edits landing in the other").** — seen in: RETRO-096 (this). Count 1. Adjacent to the third-copy-drift family (RETRO-089 TG-1 intent weights, RETRO-094 LG-2 archetype count) but distinct shape (here the copies have ALREADY diverged AND one copy is runtime-dead). Held below threshold; FOLLOW-350 closes the instance.
+
+### 7. Prior-follow-up closure check (RETRO-094 → FOLLOW-347)
+
+FOLLOW-347 claimed to close FOUR RETRO-094 findings. Traced each END-TO-END:
+
+- **§4b CB-1 (duplicate/racing push-seed) — GENUINELY CLOSED. ✅** `seed-archetypes.yml` `push:` trigger removed (diff -5, `:3-4` now only `workflow_dispatch`); the only on-push auto-seed is now `post-migrate-seed.yml`. Verified: `grep -n "push:" .github/workflows/seed-archetypes.yml` → none. One workflow auto-seeds on push, with `continue-on-error: true` (`post-migrate-seed.yml:34`) retained. FOLLOW-347 AC-2 met. This leg is a clean, complete closure.
+- **§3 HALF_WIRE_P + §4a LG-1 (re-embed on description change) — NOT CLOSED; gap moved one hop (→ FOLLOW-350, LG-1 above).** The wire `FORCE_RESEED` is connected, the embeddings are cleared and recomputed, but from the DB description (0005), not the edited source (`archetype-seeds.ts`). The OpenAI input is unchanged by a source edit ⇒ the vector is unchanged ⇒ the stated objective is unmet. FOLLOW-347 AC-1 ("verify the OpenAI call fires + vector CHANGES") is NOT satisfiable by this implementation for a description edit. **One-hop move, not a closure.**
+- **§4d DG-1 (runbook note distinguishing the 3 seed automations) — NOT DELIVERED (→ FOLLOW-350, DG-1 above).** No doc in the diff. FOLLOW-347 AC-3 unmet.
+
+Net: 1 of 4 claimed closures is real (CB-1). The headline objective (LG-1/HALF_WIRE_P) and the doc AC are still open and now one hop deeper. FOLLOW-347 should NOT have been marked DONE against its own AC-1/AC-3.
+
+### 8. Cross-references
+
+- **RETRO-094 (FOLLOW-341 / PR #324):** the immediate source. FOLLOW-347 was its remediation; this retro finds the remediation closed CB-1 but moved the LG-1/HALF_WIRE_P gap one hop (DB-vs-source description SoT) and skipped DG-1. The "auto re-embed on description change" objective is now 3 hops unclosed (341→347→350).
+- **RETRO-006 (FOLLOW-063 / PR #135):** origin of the `post-migrate-seed.yml` + `archetype-embeddings-not-null` pair. LG-2 (this) notes the NULL-guard assertion lives only in the now-dispatch-only `seed-archetypes.yml`, leaving the destructive FORCE_RESEED auto-path (`post-migrate-seed.yml`) without a post-condition NULL backstop — a regression in safety-coverage introduced by consolidating onto the workflow that lacks the assertion.
+- **RETRO-076 / FOLLOW-307 + memory `project_postgres_migrations_no_autoapply`:** the load-bearing fact behind LG-1 — merging/editing a migration or seed source does NOT change live DB rows; nothing re-applies `0005`. The seeder reading the DB therefore reads stale 0005 text.
+- **RETRO-089 TG-1 / RETRO-094 LG-2:** the third-copy-drift family; P-DESC-SOT-SPLIT (§6) is the descriptions-surface cousin.
+- **The `inquiry_submit_selector` chain (FOLLOW-097→114→127→141):** the canonical multi-hop one-hop-closure precedent (§6 / §7); this retro is the same shape on the archetype-embedding surface.
+
+## RETRO-091 — FOLLOW-343 (gate DOM adaptation behind a confidence/signal floor; AUDIT-2026-06-19 F-01) — 2026-06-20
+
+### 1. Summary of change
+
+- **PR:** #321 (merged 2026-06-19 08:22 UTC, commit `56b0018`)
+- **Files changed:** 5 (+1193 / -9). Code/contract-relevant: `packages/sdk/src/core/adapt-floor.ts` (NEW, +31, two constants), `packages/sdk/src/index.ts` (+26/-9, the gate), `packages/sdk/src/__tests__/follow-343.test.ts` (NEW, +399, 12 tests). The other two (`docs/AUDIT-2026-06-19.md` +541, `backlog/FOLLOW_UPS.md` +196) are bundled bookkeeping — the audit doc + the FOLLOW-340..346 stub batch rode in on this PR.
+- **Modules touched:** SDK (`core/adapt-floor.ts` new constants, `index.ts` `refreshDirectives()` gate), docs (AUDIT), backlog (FOLLOW_UPS). No control-plane / ingest / decision-api / shared source touched.
+- **Key contracts changed:**
+  - New SDK public exports `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` and `DOM_ADAPT_MIN_SIGNAL_COUNT = 2` (`adapt-floor.ts:21,31`), re-exported from the barrel (`index.ts:1436`). Additive — breaking: no.
+  - No new event / env-var / DB column / topic / SDK-signal / API field. The gate consumes two values (`resp.confidence`, `currentIntentState.signal_count`) already in the `refreshDirectives()` closure.
+  - Behavioral contract change: below the floor, `applyDirectives()` AND `applyDescriptionAdaptation()` no longer run — narrows when DOM mutation fires (behavioral, non-breaking).
+
+### 2. Verification done in PR
+
+- New test file `follow-343.test.ts`, 12 it-blocks via `_initForTest()` (Rule Q) with real jsdom + stubbed fetch. Boundary tests genuine for the directive/text-slot axis: `0`/`0.37`/`0.499` → no mutation; `0.5`/`0.75` → mutation; `signal_count=2 @ conf 0.4` → mutation; `signal_count=1 @ conf 0.45` → no mutation.
+- CI green claimed (SDK 1408/1408, tsc clean), not independently re-watched.
+- **Verification blind spot (§4c TG-1):** all 12 tests assert ONLY the `data-estalara-slot` directive path. NONE assert the description path (`applyDescriptionAdaptation` → `/adapt/description`) is suppressed below the floor — the genuinely non-redundant axis. The fetch stub matches `url.includes('/adapt')`, returning the `/adapt`-shaped body for `/adapt/description` too, so that path could not be meaningfully exercised.
+
+### 3. Wiring Audit
+
+CHECK A (dead code): `adapt-floor.ts` exports → non-test importer `index.ts:80` + live use at the gate `index.ts:662-664`; barrel re-export `index.ts:1436`. WIRED. ✅
+CHECK B (half-wire): No new event / env-var / column / topic / signal introduced. The gate reads pre-existing values (`resp.confidence`, `currentIntentState.signal_count`), both already produced upstream. N/A — nothing to half-wire. ✅
+**Wiring Audit — clean ✅.** Defects are logic/coverage/premise gaps (§4), not wiring gaps.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — The PR's headline premise ("a weak hint reshuffles listing CARDS at ~0.05–0.10 confidence") is, for the directive/reorder axis, ALREADY enforced server-side — the SDK floor is partly redundant there; its genuine value is the DESCRIPTION axis, which the framing under-sells.**
+  - Directive/text/class/reorder axis: server `/api/adapt` gates at `CONFIDENCE_THRESHOLD = 0.6` (`route.ts:72`); `runDecisionTree` Branch 1 (`route.ts:270-273`) returns `{ directives: [], source: 'default' }` whenever `confidence <= 0.6`. At cold start the server already returns ZERO directives; `applyDirectives([])` mutates/reorders nothing. The new SDK floor (0.5) is LOWER than the server gate (0.6), so for directives it never binds before the server already returned `[]`.
+  - Description axis (the real exposure): `applyDescriptionAdaptation` (`adapt-description.ts:265`) makes a SEPARATE fetch to `GET /adapt/description` (`adapt-description.ts:221-227`), gated ONLY on `archetype !== 'neutral'` (`:271`). The `/api/adapt/description` route takes NO confidence parameter. So before this PR, a single cold-start hint tipping argmax to a non-neutral archetype at conf 0.08 WOULD rewrite the full description for the wrong archetype. **FOLLOW-343's real fix is suppressing this description fetch below the floor.**
+  - Net: net-positive and correct, but rationale mis-attributed (directives, already-gated) rather than to the exposed surface (description, ungated). The server 0.6 gate does NOT cover `/adapt/description`. → **FOLLOW-354**.
+- **LG-2 (P3) — At the FIRST `refreshDirectives()` (cold-start init, `index.ts:886`), `signal_count` is already `1`, not `0` — the device-type prior at `index.ts:869` is applied via `applyBehavioralSignal('device_type.…')`, which increments `signal_count`.** Referrer/archetype hints preserve the count (`intent.ts:1428,1515`); the device prior does not. The floor's margin against gate (b) at cold start is exactly ONE signal: `DOM_ADAPT_MIN_SIGNAL_COUNT = 2` vs init-time `signal_count = 1`. If any future cold-start prior adds a second `applyBehavioralSignal` before the first refresh (FOLLOW-207/216 family), `signal_count` becomes `2` at init and gate (b) passes — silently re-opening the reshuffle, with no test to catch it. Robust today, fragile by one signal. → **FOLLOW-355**.
+
+#### 4b. Code bugs not caught
+
+- N/A — no crash/exception/type defect. `currentIntentState` initialized at `index.ts:420` before the first gate evaluation. `annotateSlots` (FOLLOW-340) correctly runs OUTSIDE the gate (`index.ts:651`); directives run INSIDE — sound split.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — The genuinely-protected axis (description suppression) is untested; all 12 tests cover only the redundant directive axis.** No test asserts `applyDescriptionAdaptation` / the `/adapt/description` fetch is skipped below the floor. The stub (`:140-166`) matches `url.includes('/adapt')` and returns the SAME body for `/adapt/description`, so even a naive description test would pass for the wrong reason. A correct test must stub `/adapt/description` distinctly and assert the fetch is NOT issued below the floor. → **FOLLOW-354**.
+- **TG-2 (P3) — No test asserts the REAL cold-start `signal_count` (LG-2).** AC4's "no-op" test pre-seeds `signal_count: 1` (`:378`); the "applies" test pre-seeds `2` (`:349`). Neither drives the real init path. → folded into **FOLLOW-355**.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — THREE confidence thresholds across the adaptation path, nothing reconciling them in MASTER_DESIGN:** (i) server `/adapt` `CONFIDENCE_THRESHOLD = 0.6` (`route.ts:72`), (ii) SDK `SIDEBAR_SHOW_THRESHOLD = 0.6` (`index.ts:515`), (iii) new SDK `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5`. The `0.5 < 0.6` relationship is asserted in a unit test (`follow-343.test.ts:203-206`) but documented nowhere; the doc must record that `/adapt/description` is NOT covered by the server 0.6 gate. → **FOLLOW-354**.
+
+### 5. Cascading impact
+
+- **5a.** FOLLOW-340 (RETRO-093): `annotateSlots` runs unconditionally (outside floor); `applyDirectives` inside. Benign — below-floor pages get annotated, no directive fires. FOLLOW-342 (bandit) lives behind the server 0.6 gate; SDK floor is downstream. No interaction.
+- **5b.** Any future cold-start prior ticket (FOLLOW-207/216 lineage) must re-check the LG-2 invariant (FOLLOW-355). FOLLOW-344 (blending): if blending lands confidence more often in 0.5–0.6, the SDK floor lets the description path fire (no server gate) while directives won't (server 0.6) — an asymmetry blending should know about. → reconcile in FOLLOW-354's doc.
+- **5c.** New SDK exports `DOM_ADAPT_CONFIDENCE_FLOOR`/`DOM_ADAPT_MIN_SIGNAL_COUNT` are public barrel symbols. Additive; Rule I satisfied. No external runtime contract changed.
+- **5d.** The assumption "the server `/adapt` confidence gate is the single source of adaptation gating" is now FALSE: (i) SDK adds its own lower floor (0.5) for directives (mostly redundant), and (ii) the description path has NEVER been server-gated and is now gated ONLY in the SDK. Adaptation gating is split across server (directives @0.6) and SDK (description @0.5) with no single owner. FOLLOW-354's doc should make the split intentional.
+
+### 6. New lesson candidates
+
+- **P-UNVERIFIED-PREMISE-REDUNDANT-GATE** ("a guard is added to fix a stated failure mode already prevented one layer away — redundant on the named axis, its real effect on a DIFFERENT axis the rationale under-states; tests then cover the named-but-redundant axis and miss the real one"). Seen in RETRO-091 (this). Count 1. NOT promoted. Watch-flag: on a 2nd sighting, promote "when adding a gate, enumerate every axis it affects and prove with a test the axis NOT already protected elsewhere."
+- **P-INIT-PRIOR-COUNTS-AS-SIGNAL** ("a 'prior'/'hint' applied at init via the behavioral-signal path increments signal_count, eroding a downstream signal-count threshold's margin"). Seen in RETRO-091 LG-2. Count 1. NOT promoted; FOLLOW-355 pins the instance.
+
+### 7. Prior-follow-up closure check
+
+- N/A for closure-of-a-prior-FOLLOW. FOLLOW-343 is a fresh AUDIT-2026-06-19 F-01 must-fix.
+- End-to-end closure of its OWN source finding (F-01): F-01's harm ("cold-start reshuffle for the wrong archetype") is fully closed for the directive axis — but that axis was already closed by the server 0.6 gate (belt-and-suspenders). F-01 is genuinely closed for the description axis (previously-ungated `/adapt/description` now floor-gated) — the substantive closure. Closed, but for a different reason than the PR rationale states.
+
+### 8. Cross-references
+
+- RETRO-093 (FOLLOW-340 / PR #322): same `refreshDirectives()` body; coexist correctly (§5a). RETRO-093's open LG-1 (`cta_primary`→`cta`, FOLLOW-352) orthogonal to the floor.
+- RETRO-094 / RETRO-096 (FOLLOW-341→347): sibling AUDIT must-fixes; shared meta-thread "a fix whose stated effect and verified effect diverge" — RETRO-096 = one-hop move; RETRO-091 = redundant-on-named-axis. Distinct sub-shapes, both held below threshold.
+- MASTER_DESIGN §E.7 / §E.4.5: DG-1's confidence-gating ladder note belongs here.
+- memory `project_no_tiers_single_model`: floor applies uniformly to all tenants — consistent with single-experience model.
+
+---
+
+## RETRO-092 — FOLLOW-345 (plumb `page_type` into directive selection + derive `tier` — control-plane `/api/adapt`) — 2026-06-20
+
+### 1. Summary of change
+
+- **PR:** #323 (merged 2026-06-19 11:45 UTC, commit `5d9ecba`)
+- **Files changed:** 1 (+48 / -5) — `apps/control-plane/src/app/api/adapt/route.ts` only. No tests, no docs, no schema.
+- **Modules touched:** control-plane (`api/adapt/route.ts` POST handler only).
+- **Key contracts changed:**
+  - `tierFromPageType(pageType) → 1 | 2` — new module-private fn (`route.ts:763`). `listing_detail`→2, else→1. Not exported. breaking: no.
+  - `filterDirectivesByPageType(directives, pageType) → TextDirective[]` — new module-private fn (`route.ts:778`). Suppresses `slot==='headline'` directives on non-detail pages. Not exported. breaking: no.
+  - **Response `tier` field semantics CHANGED (POST path):** was hardcoded literal `1` in all three arms; now carries `derivedTier ∈ {1,2}` from `page_type`. Observable value-semantics change on an existing field, not a new field. Structurally non-breaking (still `number`); semantically yes for analytics consumers (§4a LG-1, §5c).
+  - `body.page_type` (validated since FOLLOW-194, `route.ts:188`) now consumed for the first time (was validate-only dead input). Confirms FOLLOW-345 AC.
+
+### 2. Verification done in PR
+
+- Test files changed: none. Assertions added: 0. Coverage delta: 0 net-new for the two new functions. PR body cites "121 existing adapt route tests pass unchanged" — a no-regression signal, NOT proof the new behavior is correct: no test asserts `tier===2` for a `listing_detail` body, no test asserts a `headline` directive is suppressed on a `listing_list` body. Both new functions untested (§4c TG-1).
+- AC-1/AC-2 met by the code path but not locked by any test — a refactor could silently revert either with green CI.
+- CI green claimed, not re-watched. Format/Rule-I/Python gates pre-existing-red — orthogonal.
+
+### 3. Wiring Audit
+
+CHECK A: `tierFromPageType` (`:763`) → called `:850`; `filterDirectivesByPageType` (`:778`) → called `:1011`. No new export. WIRED. ✅
+CHECK B (half-wire):
+- PRODUCER of `derivedTier`: `route.ts:850,845,873,1064` (response body) + `:1087` (`logDecisionAsync` → ClickHouse `adaptation_decisions.tier`). Present. ✅
+- **CONSUMER of response `tier` — HALF_WIRE_P (P2).** No non-test consumer reads `adaptResponse.tier` anywhere. The only SDK `tier` reads are `config.tier` (`config.ts:141`) — the STRING `'observer'|'augment'|'native'` integration tier, a DIFFERENT field set from `data-tier`, never from the adapt response. The SDK `AdaptResponse.tier: 1|2|3` type (`adapt.ts:253`) is declared but never destructured. The value made "real" reaches no renderer; the only live consumer is the ClickHouse analytics column. Not new dead code (field pre-existed) → HALF_WIRE_P on the value-made-meaningful-but-unread sub-shape. → **FOLLOW-356**.
+- The `page_type→directive filtering` wire IS end-to-end: `filterDirectivesByPageType` (`:1011`) → response `directives` → SDK `applyDirectives` (`adapt.ts:473`). ✅
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — Reintroduces integration-"tier" semantics that CEO-locked MASTER_DESIGN v4.0 §E.7 explicitly eliminated.** §E.7 (`docs/MASTER_DESIGN.md:2394`, "Decyzja CEO 2026-06-05"): "Adaptive Listings nie ma Tiers — wszyscy tenanci dostają jedno doświadczenie … Parametr `tier` usunięty z API". This PR's `tierFromPageType` docstring (`route.ts:752-762`) frames the derived value as the integration tier ("`listing_detail` → tier 2: full per-listing directives … Tier 2 enables per-listing text adaptation") — the Observer/Augment/Native vocabulary (tier 2 = "Augment") — and persists it into `adaptation_decisions.tier`.
+  - Reconciliation: §E.7's "tier removed from API" scopes the `/api/adapt/description` endpoint; the `/api/adapt` decision endpoint's `tier` field predates the §E.7 redesign, so this PR did not re-add a removed field. BUT the FOLLOW-345 stub asked to "derive `tier` from page context rather than a literal" without reconciling the word against the §E.7 "no Tiers, one experience" principle. Result: a `listing_detail` buyer is logged "tier 2", a `search` buyer "tier 1" — the system again distinguishes experiences by a tier number, the exact framing §E.7 retired. A doc-vs-code divergence on a CEO-ratified decision (Rule P / OPERATING_PRINCIPLE Master_Design=SoT). NOT a runtime bug; re-seeds the ambiguity §E.7 killed. Resolution: rename the derived value (e.g. `directive_scope` / `page_context`) and drop the "integration tier" framing, OR get explicit CEO ruling that `/api/adapt`'s `tier` is an independent page-context axis. → **FOLLOW-357** (escalation-flagged, §5d).
+- **LG-2 (P2) — `adaptation_decisions.tier` now carries TWO incompatible meanings depending on the serving handler (Rule K dual-surface divergence).** The GET handler (`route.ts:632,640`, NOT touched here) takes `tier` from the caller-supplied query string (validated `1|2|3`, integration tier) and logs it into the same column (`:741`). POST now logs a page-type-derived `1|2`. `SELECT tier FROM adaptation_decisions` returns caller-integration-tier for GET rows and page-type-derived-tier for POST rows, with no discriminator. Same logical contract, two divergent producers in the SAME app. Live POST = SDK path (`adapt.ts:719`); GET = decision-api-Worker caller surface. → **FOLLOW-358**.
+- **LG-3 (P3) — `tierFromPageType` docstring over-promises a `description` directive that does not exist.** Docstring (`:756,761`) says tier 2 sends "headline, cta, feature, description". No `slot: 'description'` directive in any playbook; `filterDirectivesByPageType` only gates `headline`, so the only real page-type difference is "headline suppressed on non-detail pages." Harmless but misleading. → folded into FOLLOW-357.
+
+#### 4b. Code bugs not caught
+
+- N/A — no functional bug. The two pure functions are correct; the reorder directive (`type !== 'text'`) is appended after `filteredTextDirectives` (`:1016`), matching the docstring.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — Zero tests for the two new functions and the AC behavior.** No assertion that `listing_detail` POST → `tier===2`; `listing_list`/`search`/`home` → `tier===1`; a `headline` directive present on detail and absent on list for the same archetype (AC-1); `logDecisionAsync` receives `2` on a detail request (AC-2). "121 pass unchanged" proves the change is invisible to the suite — itself a smell. Same shape as RETRO-096 §2 / RETRO-094 §2 ("AC ticked, behavior unlocked"). → **FOLLOW-356**.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — MASTER_DESIGN §E.7 / §E.1 not updated to reconcile the new page-type-derived `tier` with "no Tiers."** §E.7:2394 still reads "Parametr `tier` usunięty z API" with no carve-out. OPERATING_PRINCIPLE 2 / Rule P. → FOLLOW-357.
+- **DG-2 (P3) — `tierFromPageType` docstring inaccuracy (phantom `description` slot, LG-3).** → FOLLOW-357.
+
+### 5. Cascading impact
+
+- **5a.** FOLLOW-346 (chat bridge) / FOLLOW-340 (slot self-annotation) share `route.ts`; edits sit in distinct blocks, no interaction. Minor: `filterDirectivesByPageType` runs on `textDirectives` BEFORE the FOLLOW-340 `slot_selectors` extraction, so a `headline` suppressed on a list page may still have had its selector advertised in `slot_selectors` (annotation without a directive to fill it). Low impact; note for FOLLOW-352's slot-mapping.
+- **5b.** Any analytics ticket reading `adaptation_decisions.tier` (e.g. FOLLOW-170 Conversion Label Loop, which snapshots `tier` into `features_snapshot` at `route.ts:415`) now ingests page-type-derived mixed with caller-supplied GET values (LG-2) — silent analytics drift since 2026-06-19, no migration/annotation. The §E.7 description-pipeline tickets will re-encounter "tier"; FOLLOW-357 should land before that work.
+- **5c.** `/api/adapt` POST `tier` changed from constant `1` to `{1,2}`; documented as `1|2|3` on the SDK type but POST only emits `1|2`. Any consumer special-casing `tier===1` is now wrong on detail pages. Currently no SDK/decision-api consumer reads it (§3 HALF_WIRE_P); the only affected surface is the ClickHouse column (a relied-on contract — FOLLOW-170 snapshot).
+- **5d.** CEO-ratified §E.7 "no Tiers, one experience" is in tension with shipped code (LG-1) — the headline cross-cutting finding, flagged for PM escalation. Severity P1 (divergence from a CEO decision on the SoT, runtime harmless). The "one logical column, one producer" assumption is broken (LG-2 / Rule K).
+
+### 6. New lesson candidates
+
+- **P-RESURRECTED-ELIMINATED-CONCEPT** ("a ticket re-derives/re-populates a value under a name a prior CEO-ratified Master_Design decision explicitly eliminated, because the stub said 'derive X from context instead of a literal' without reconciling X against the SoT decision that retired X"). Seen RETRO-092 (this). Count 1. Below threshold. Adjacent to Rule P / OPERATING_PRINCIPLE 1 but distinct sub-shape: prior-art existed and was found; the defect is the ELIMINATING decision (§E.7) was not consulted. NOT promoted. On a 2nd sighting, promote a Rule-P amendment: "before deriving/populating any value whose NAME appears in a Master_Design 'eliminated/removed' decision, cite that decision and confirm the new use is carved out."
+- **P-VALUE-MADE-REAL-BUT-UNREAD** ("effort spent making an existing response field carry a real/derived value instead of a constant, but no non-test consumer reads it — the only sink is an analytics column; the SDK type declares a richer range than any consumer uses"). Seen RETRO-092 (`tier` made `{1,2}`, only ClickHouse reads it). Count 1. Held.
+- Recurrence note (existing family): "an AC-bearing behavior change ships with 0 net-new assertions and 'N existing tests pass unchanged' offered as verification" — TG-1 here, RETRO-096 §2, RETRO-094 §2. Rule-Y over-claimed-verification family. Not fresh.
+
+### 7. Follow-ups
+
+- **FOLLOW-356 (P1, sdk-engineer + qa-engineer, 4h)** — Decide+lock the `/api/adapt` response `tier` consumer story (wire an SDK consumer OR document analytics-only and stop exposing `1|2|3` on the SDK type) AND add behavioral tests (`listing_detail`→`tier===2`+headline-present; `listing_list`→`tier===1`+headline-absent; `logDecisionAsync` receives derived tier). Closes §3 HALF_WIRE_P + §4c TG-1.
+- **FOLLOW-357 (P1, backend-engineer + CEO sign-off, 2h)** — Reconcile the page-type-derived `tier` with §E.7 "no Tiers": rename off the integration-tier vocabulary OR patch §E.7 with a carve-out; fix the `tierFromPageType` docstring (drop phantom `description` slot + "integration tier" framing). Closes §4a LG-1 + §4d DG-1/DG-2 + §4a LG-3. **PM: §5d escalation candidate — surface to CEO before further tier-axis work.**
+- **FOLLOW-358 (P2, backend-engineer, 2h)** — Resolve the GET-vs-POST `adaptation_decisions.tier` semantic divergence (Rule K): add a discriminator (e.g. `tier_source`) or unify both handlers. Closes §4a LG-2.
+
+### 8. Cross-references
+
+- RETRO-093 (FOLLOW-340 / PR #322): same file, adjacent merge; §5a interaction (a `headline` selector advertised in `slot_selectors` on a list page whose `headline` directive FOLLOW-345 filtered out). Reconcile in FOLLOW-352's slot-mapping.
+- RETRO-096 / RETRO-094 (FOLLOW-347/341): same "AC ticked, 0 net-new assertions" family — TG-1 mirrors their §2. No promotion (Rule-Y governs).
+- Rule K: LG-2 is a confirming instance on the column-semantics axis. Already promoted (count ≥2) → citation, not new promotion; FOLLOW-358 is the remediation.
+- MASTER_DESIGN §E.7 (`:2394`) + memory "No Tiers — single model": the governing CEO decision this PR is in tension with (LG-1 / DG-1 / §5d).
+
+---
+
+## RETRO-095 — FOLLOW-342 (thread bandit variant into `runDecisionTree` + playbook copy selection; `VARIANT_INDEX` map; GET/POST `getBanditArms`→`thompsonSample`→tree→log wiring) — 2026-06-20
+
+### 1. Summary of change
+
+- **PR:** #327 (merged 2026-06-19 21:17 UTC, commit `66054d6`)
+- **Files changed:** 5 (+189 / -18). Core feature in 2 files: `apps/control-plane/src/app/api/adapt/route.ts` (+39/-10) and `route.variant.test.ts` (+116/-2). The other 3 (`scripts/seed-archetypes.mts`, `.github/workflows/post-migrate-seed.yml`, `.github/workflows/seed-archetypes.yml`) are FOLLOW-347 carry-over squashed into this branch's history — NOT FOLLOW-342 scope (covered by RETRO-096). This retro analyzes only the route.ts variant-threading change.
+- **Modules touched:** control-plane (`/api/adapt` GET + POST handlers).
+- **Key contracts changed:**
+  - `runDecisionTree()` — added 9th positional param `variant = 'control'` — breaking: no (defaulted).
+  - `VARIANT_INDEX: Record<string, number>` — new module-scope const (`route.ts:222`).
+  - Copy-selection precedence in `playbookDirectives.map()`: `(locale override) ?? s.en` → `(locale override) ?? s.variants?.en[variantIndex] ?? s.en` (`route.ts:290-294`).
+  - GET response body: still does NOT carry `variant` (POST does, via `AdaptationDirectives.variant?` at `directives.ts:162`) — see §3.
+
+### 2. Verification done in PR
+
+- `route.variant.test.ts` (+116). 13 new variant tests across 3 describe blocks (AC-1…AC-4): per-arm distinct copy, control/v1/v2→`variants.en[0/1/2]` mapping, ClickHouse `param_p_variant` propagation. All 13 exercise the POST/copy axis. ZERO tests cover (a) GET holdout×variant interaction, (b) GET response omitting `variant`, (c) `default`-vs-`control/v1/v2` seed mismatch (§4a LG-1).
+- CI not verified here (PR body recorded "CI checks: 0/5 — awaiting first run"; merge implies later green, no evidence captured).
+
+### 3. Wiring Audit
+
+CHECK A: `VARIANT_INDEX` consumed at `:267`; `variant` param consumed at `:294`. Clean.
+CHECK B (half-wire) — TWO findings:
+- **HALF_WIRE_P (P1) — GET path serves a variant but never returns it.** `:698-699` samples `getHandlerVariant` (can be `v1`/`v2`), `:294` serves that variant's copy, `:730` logs it to ClickHouse — but the GET response object (`:717-728`) has NO `variant` field. The POST path returns `variant: selectedVariant` (`:1123`), which the SDK caches (`adapt.ts:749-750`) and echoes to `/api/adapt/feedback` → `updateBanditArm` (`feedback/route.ts:184`) closing the reward loop. The GET-path served variant has a producer (copy + CH log) but no consumer can attribute the conversion — GET-path reward is unattributable, so the bandit posterior never learns from GET traffic. → **FOLLOW-359**.
+- **HALF_WIRE_C (P0) — variant copy is served/logged for HOLDOUT sessions on the GET path.** POST runs `assignHoldout()` and returns early for holdout BEFORE variant selection (`:894-919`, selection at `:993`), so POST holdout sessions correctly get `directives: []` + no variant. The GET handler samples + serves + logs the variant at `:698-742` with NO holdout short-circuit, yet still logs `holdoutGroup` (`:742`). A GET request carrying `holdout_group=true` is now served `v1`/`v2` copy AND logged as `(holdout_group=1, variant=v1)` — **the holdout baseline is contaminated** (it must stay control-only to be a valid counterfactual). Before this PR, GET hardcoded `'control'` in its log (`:729` old), so the holdout row was always clean. → **FOLLOW-360**.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — seed-convention split: `'default'` rows (tenant-creation) vs `'control'/'v1'/'v2'` (lazy auto-seed) are distinct PK rows and never reconciled.** `bandit-seed.ts:72` writes one row per archetype with `variant: 'default'` at tenant creation. `bandit-query.ts:90` lazily auto-seeds `control/v1/v2`. PK is `(tenant_id, archetype, variant)` (`ab_bandit_weights.ts:84`), so both coexist: the `'default'` rows are never sampled, OR compete as a 4th arm whose copy `s.variants?.en[VARIANT_INDEX['default'] ?? 0]` = index 0 = control copy, i.e. a duplicate-of-control phantom arm diluting Thompson sampling. → **FOLLOW-361**.
+- **LG-2 (P2) — locale precedence silently disables A/B for non-`en` locales.** `:290-294`: a `pl`/`es` override wins and the bandit variant is ignored; `variants` only carries `en` arrays (`types.ts:31-35`). So A/B only runs for English buyers; `v1`/`v2` are still SAMPLED and LOGGED for pl/es sessions but the served copy equals control — logged variant ≠ served copy for non-en. → **FOLLOW-362**.
+- **LG-3 (P2) — `getBanditArms` adds a synchronous Postgres round-trip on the p95-budgeted hot path** (GET `:698`, POST `:993`), each a DB query (auto-seed INSERT on cold pair) inside the <100ms budget with no Redis cache despite the docstring claiming index-only ≤5ms. Not a correctness bug. → folded into FOLLOW-360 AC.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P1):** GET response missing `variant` (same root as §3 HALF_WIRE_P) — captured in FOLLOW-359.
+- **CB-2 (P0):** holdout contamination on GET (same root as §3 HALF_WIRE_C) — captured in FOLLOW-360.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1):** No test asserts a `holdout_group=true` GET request is NOT served a non-control variant. → AC in FOLLOW-360.
+- **TG-2 (P2):** No test asserts the GET response body shape includes (or omits) `variant`. → AC in FOLLOW-359.
+- **TG-3 (P2):** No test covers `variant` values outside `{control,v1,v2}` reaching `VARIANT_INDEX` (e.g. the `'default'` arm); the `?? 0` fallback maps it to control copy silently. → AC in FOLLOW-361.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3):** `runDecisionTree` JSDoc says variant "Defaults to 'control' for backwards compat" but does not document that holdout sessions must bypass it; Master Design §E.3 (bandit) does not state the holdout×bandit precedence rule. → AC in FOLLOW-360.
+
+### 5. Cascading impact
+
+- **5a.** FOLLOW-346 (chat NLP shadow bridge, merged `580ca65`) feeds chat-derived intent → archetype into the same POST `/api/adapt`; its variant attribution rides on the POST `variant` field, which is intact. No regression on the POST axis.
+- **5b.** FOLLOW-001 / FOLLOW-007 ("wire Thompson sampling into adapt hot path"): this PR is the de-facto partial closure of FOLLOW-007 ACs 1–3, but AC-4 (SDK propagates variant through to selection) is GET-incomplete and AC-5 (ClickHouse logged for feedback loop) is GET-unattributable. FOLLOW-007 must NOT be marked closed — see §7.
+- **5c.** `runDecisionTree` 9th positional param: only GET (`:692`) and POST (`:983`) call it — both updated. Clean. ClickHouse `adaptation_decisions.variant`: GET now emits real `v1`/`v2` instead of constant `'control'`; downstream analytics (pilot calibration, ab/weights) that assumed GET-path variant was always `control` will see distribution shift, and holdout rows now carry treatment variants (CB-2 contaminates these baselines).
+- **5d.** Bandit holdout invariant ("holdout arm always sees control") broken on one of two symmetric entry points — a Rule-S–class asymmetry.
+
+### 6. New lesson candidates
+
+- **P-1:** "A change applied to one handler of a GET/POST (or producer/consumer) symmetric pair at a different completeness tier than its sibling — variant selection AFTER the holdout gate in POST but BEFORE the (absent) gate in GET, and variant returned in POST response but omitted from GET." Recurrence of already-promoted Rule S + RETRO-003 multi-axis lesson. NOT a new promotion; reinforces Rule S. Current independent count for this GET/POST-bandit shape: 1.
+- **P-2:** "Two seed paths write the same table under divergent variant-naming conventions (`'default'` vs `'control'/v1/v2`), coexisting silently because the PK includes variant." Seen RETRO-095 only. Count 1 — below threshold.
+
+### 7. Follow-ups
+
+- **FOLLOW-359 (P1, backend-engineer, 2h)** — Return `variant` in the GET `/api/adapt` response body so the served arm is attributable end-to-end.
+- **FOLLOW-360 (P0, backend-engineer, 4h)** — Gate variant selection behind the holdout/consent check on the GET path (mirror POST's `assignHoldout` early-return ordering) + test that holdout GET requests log `variant=control`.
+- **FOLLOW-361 (P1, backend-engineer, 3h)** — Reconcile bandit seed convention: make `bandit-seed.ts` seed `control/v1/v2` (not `'default'`) or migrate/strip stale `'default'` rows; add a parity test pinning the seed-variant list against `SEED_VARIANTS`.
+- **FOLLOW-362 (P2, backend-engineer, 3h)** — Decide + implement non-`en` A/B behavior (suppress variant sampling/logging for pl/es until `variants.pl`/`variants.es` exist, or populate locale variant arrays); stop logging a variant whose copy was never served.
+
+**Closure note (Step 7):** FOLLOW-007/FOLLOW-001 ("wire Thompson sampling end-to-end") is NOT closed by PR #327. Traced: producer `getBanditArms`→`thompsonSample` ✓ (both paths) → copy selection ✓ (`:294`) → response: POST ✓ / GET ✗ (HALF_WIRE_P) → SDK cache+echo ✓ (POST only, `adapt.ts:749`) → `feedback/route.ts`→`updateBanditArm` posterior write ✓ — but GET-path conversions never reach it. The gap moved one hop downstream from "tree doesn't get variant" (closed) to "GET response doesn't expose variant" (open, FOLLOW-359). Reward loop closed for POST, open for GET.
+
+### 8. Cross-references
+
+- RETRO-094 (FOLLOW-341) / RETRO-096 (FOLLOW-347): cover the seed-archetypes/workflow files squashed into this branch's history but belonging to FOLLOW-347 scope — excluded here to avoid double-counting.
+- Reconciles with RETRO-003's multi-axis lesson and the Rule S symmetric-sibling rule: this PR is a fresh instance of both, on the GET/POST bandit pair.
+
+---
+
+## RETRO-097 — FOLLOW-344 (archetype switch-margin hysteresis in `classifyFromProbabilities` + §D.6 quiz/chat-only passive-discriminator annotation) — 2026-06-20
+
+### 1. Summary of change
+
+- **PR:** #329 (merged 2026-06-20 08:47 UTC, commit `20de7c9`)
+- **Files changed:** 3 (+315 / −30). Modules: SDK (`packages/sdk`), docs (`docs/MASTER_DESIGN.md §D.6`).
+- **Key contracts changed:**
+  - `classifyFromProbabilities(probs)` → `classifyFromProbabilities(probs, currentArchetype?)` — added optional 2nd param — breaking: no (defaults to prior free-classify).
+  - `SWITCH_MARGIN = 0.05` — new exported const (`intent.ts:167`).
+  - `§D.6` coverage matrix — added "Passive discriminator in `intent.ts`" column; reclassified 8 archetypes as 🟡/⚪ quiz/chat-only — non-code doc contract.
+- **CEO-decision alignment:** memory lock (audit 06-19 Q2/Q3) = "FOLLOW-344 = switch-margin not blending; +§D.6 quiz/chat-only doc." The merge implements hysteresis (a switch-margin), NOT top-2 blending, and adds the §D.6 annotation. **Matches the CEO decision.** Blending correctly deferred (§4d / §7 for the stub-tracking gap).
+
+### 2. Verification done in PR
+
+- New `intent-switch-margin.test.ts` (228 lines, 12 tests): `SWITCH_MARGIN` const, `classifyFromProbabilities` near-tie/clear-win/init, 4 `applyBehavioralSignal` branches. Coverage delta unknown.
+- CI claimed green (1433 tests), not independently re-verified.
+
+### 3. Wiring Audit
+
+CHECK A (dead code): `SWITCH_MARGIN` has a non-test importer (used internally + asserted in test). `classifyFromProbabilities` 2nd param consumed at 5 call sites. No dead export. ✅
+CHECK B (half-wire): **The hysteresis guard (the new param) is wired to only a SUBSET of its sibling consumers.** `classifyFromProbabilities` has **13 call sites in `intent.ts`**; the PR threaded `currentArchetype` into **5** (`applyBehavioralSignal` branches at 977/1021/1077/1098/1121) and left **8** untouched. Two of those 8 are ongoing, repeated per-signal classification paths — exactly the cycle-to-cycle churn the guard was built to stop:
+- `intent.ts:1637` — **`applyDwellSignal`** — classifies WITHOUT `state.archetype`. **HALF_WIRE (Rule S sibling miss) — P1 → FOLLOW-363.** Fires repeatedly on a `setInterval` dwell tick (`index.ts:581-604`); recurring posterior update on an established session — the near-tie flip case. Guard bypassed.
+- `intent.ts:1578` — **`applyListingViewRate`** — classifies WITHOUT `state.archetype`. **HALF_WIRE (Rule S sibling miss) — P1 → FOLLOW-363.** Fires on every `listing.viewed` after the 2nd view (`index.ts:953-963`); recurring update, guard bypassed.
+
+The other 6 unguarded sites are defensibly exempt (free-classify correct) but the exemption was never stated, violating Rule S's "enumerate the sibling set and justify each exemption":
+- `intent.ts:789` `initIntentState` — session init, no prior (correct).
+- `intent.ts:824` `applyQuizPrior` — quiz authoritative; should override (acceptable).
+- `intent.ts:1161` `applyDecay` — decays toward uniform; deliberate design choice (acceptable, undocumented).
+- `intent.ts:1318` `applyChatIntentPrior` — chat authoritative + runs once-per-session behind the Rule R idempotency gate (`adapt.ts:765`) (acceptable).
+- `intent.ts:1422` `applyReferrerHints` — one-time cold-session prior at init (`index.ts:865`) (acceptable).
+- `intent.ts:1509` `applyArchetypeHints` — one-time site-level prior at init (`index.ts:854`) (acceptable).
+
+Net: 2 P1 half-wires (real behavioral-churn gap) + a Rule S documentation gap (6 unjustified exemptions).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — Hysteresis does not cover the two repeating per-signal paths it was designed to stabilize.** `intent.ts:1578` (`applyListingViewRate`) and `intent.ts:1637` (`applyDwellSignal`) re-run `classifyFromProbabilities` on every recurring tick/view without `currentArchetype`. The PR's JSDoc claims the guard "prevents cycle-to-cycle archetype flipping" — but a dwell-driven or view-rate-driven near-tie can still flip the archetype mid-session, producing the adaptation churn FOLLOW-344 was opened to eliminate (audit F-09). The guard covers explicit-action signals but NOT the two passive time/rate signals — the MOST likely to produce flat near-tie distributions. → **FOLLOW-363**.
+
+#### 4b. Code bugs not caught
+
+- N/A (the 5 threaded call sites are correct; the half-wire is an omission, classified as LG-1).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — Zero hysteresis tests for the two ongoing paths.** `grep -c applyDwellSignal|applyListingViewRate` in the new test = 0. No near-tie test for `applyDwellSignal` or `applyListingViewRate`, so LG-1 is invisible to CI. → folded into **FOLLOW-363** AC.
+- **TG-2 (P2) — AC5 tests are tautological/under-asserting.** The three `applyBehavioralSignal` AC5 cases use `if (after.archetype !== before) expect(...gap >= SWITCH_MARGIN)` — only assert WHEN a switch already happened; a path that wrongly fails to apply hysteresis still passes (no switch → no assertion). → note for FOLLOW-363 AC (assert a held-archetype outcome, not a conditional).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — §D.6 coverage summary does not partition cleanly.** `MASTER_DESIGN.md:1946`: "8/18 🟢 Full ... 6/18 🟡 Quiz/chat-only ... 2/18 ⚪ was Chat-only ... 2/18 🟢 Full (`lifestyle_expat`, `upsizer`)". These overlap (`lifestyle_expat`/`upsizer` counted in both "8 Full" and the trailing "2 Full"; the 2 ⚪ rows also marked "Quiz/chat-only"), so the four numbers double-count and do not sum to a clean 18 partition. → **FOLLOW-364**.
+- **DG-2 (P3) — Rule S exemption rationale not recorded.** The PR did not enumerate the 13 `classifyFromProbabilities` sites or justify why 8 were left free-classify. → folded into FOLLOW-363.
+
+### 5. Cascading impact
+
+- **5a.** FOLLOW-342 (bandit variant → `runDecisionTree`/playbook copy, merged #327) and any directive-selection path keyed on `archetype`: a mid-session archetype flip from the unguarded dwell/view-rate paths (LG-1) will trigger a directive re-fetch with a different archetype, partially defeating the churn-reduction intent at the very layer the bandit now drives. No contract break; P1 stability concern.
+- **5b.** Deferred top-2 blending (CEO-gated, QUEUE.md:207 "archetype blending"; QUEUE.md:5337-5340): blending is the alternative resolution of audit F-09 that the CEO parked. **There is NO dedicated FOLLOW stub for it** — its only record is QUEUE.md prose. (NB: FOLLOW-352 is an unrelated OPEN P1 slot-name-translation follow-up from RETRO-095 — see §8. The blending deferral is currently un-ticketed.) → **FOLLOW-365**. FOLLOW-212 (post-pilot calibration): the SWITCH_MARGIN JSDoc defers calibration of 0.05 to FOLLOW-212 (≥500 labelled sessions); FOLLOW-212 must now also calibrate Δ jointly with damping/likelihoods. No new stub (exists).
+- **5c.** `classifyFromProbabilities` gained an optional param — backward-compatible; all consumers inside `intent.ts`/`index.ts` (no app/cross-package importer). `SWITCH_MARGIN` is now a public SDK export; future tuning is an SDK-surface change.
+- **5d.** Archetype stability is now a stateful property of the classify call (it reads `currentArchetype`). Any NEW code path calling `classifyFromProbabilities` on an established session MUST pass `state.archetype` or it silently reintroduces churn — a standing Rule S trap. Recommend a lint/comment guard (folded into FOLLOW-363).
+
+### 6. New lesson candidates
+
+- **Pattern:** "A newly-introduced guard parameter on a shared helper is threaded into the call sites the author was looking at, but not into the other sibling call sites of the SAME helper that share the contract — and the two missed ones are the recurring/loop paths that most need it." Concrete recurrence of **Rule S** (symmetric-set completeness). Seen RETRO-097 (this, 5 of 13 `classifyFromProbabilities` sites threaded; 2 ongoing paths missed), prior Rule S evidence RETRO-044 (DSR erase vs access/portability) and RETRO-045 (verification-tier asymmetry). Rule S already codified → no new promotion; this is a 3rd reinforcing instance (count now 3).
+
+### 7. Follow-ups
+
+- **FOLLOW-363 (P1, sdk-engineer, 3h):** Thread `currentArchetype` (`state.archetype`) into `applyDwellSignal` (`intent.ts:1637`) and `applyListingViewRate` (`intent.ts:1578`); add near-tie hold tests for both; document the per-site hysteresis policy (which of the 13 sites are intentionally free-classify) as a comment on `classifyFromProbabilities`. Closes §3 HALF_WIRE / §4a LG-1 / §4c TG-1 / §4d DG-2.
+- **FOLLOW-364 (P2, ml-engineer/docs, 1h):** Reconcile the §D.6 (`MASTER_DESIGN.md:1946`) coverage-summary counts into a single clean 18-way partition matching the table's Status column. Closes §4d DG-1.
+- **FOLLOW-365 (P3, ml-engineer + CEO, 1h):** Create a tracking stub for the deferred top-2 archetype blending decision (currently only in QUEUE.md prose, un-ticketed) so the parked CEO-gated alternative to hysteresis is not lost. Closes §5b gap.
+
+### 8. Cross-references
+
+- **Related to RETRO-095 (FOLLOW-340/342 thread) — naming-collision warning:** FOLLOW-352 already exists as an OPEN P1 sdk-engineer slot-name-translation follow-up (`cta_primary→cta`, RETRO-095 §7). The premise that FOLLOW-344's blending was "parked as FOLLOW-352" is incorrect — there is no blending FOLLOW-352; blending is un-ticketed (→ FOLLOW-365).
+- **Related to RETRO-044 / RETRO-045 (Rule S origin):** 3rd Rule S recurrence (symmetric-set incompleteness), now in the SDK intent engine — confirms Rule S generalizes beyond compliance verbs.
+- **Related to the FOLLOW-212 calibration thread:** SWITCH_MARGIN=0.05 is an uncalibrated starting value deferred to the same pilot-calibration follow-up.
+
+---
+
+## RETRO-098 — FOLLOW-346 (chat NLP shadow bridge: `_spawn_chat_nlp` consumer + `CHAT_NLP_LIVE` gate + C-07 DPIA scope brief) — 2026-06-20
+
+### 1. Summary of change
+
+- **PR:** #330 (merged 2026-06-20 08:47 UTC, commit `7f16b03`) — code; #328 (commit `4f284d3`) — C-07 DPIA scope brief (doc-only). Both reference FOLLOW-346.
+- **Files changed:** #330 — 7 (+771 / -6); #328 — 2 (+290 / -0). Net runtime-code files: `apps/stream-consumer/src/consumers/events.py` (+78), `apps/control-plane/src/app/api/adapt/route.ts` (+31/-4), `apps/intent-engine/src/test_main.py` (+115/-2, test-only), 2 new test files, `.env.example` (+7), `docs/compliance/C-07-chat-retention-scope.md` (+265).
+- **Modules touched:** ingest/stream-consumer · control-plane · intent-engine (test only) · configs · docs/compliance.
+- **Key contracts changed:**
+  - **NEW env-var `CHAT_NLP_LIVE`** (`route.ts:88`, `.env.example`) — added — breaking: no. **Inert** (§3 HW-2).
+  - **NEW internal call contract `chat.message.sent` payload → `_spawn_chat_nlp`** (`events.py:67-70`) — added — **breaking: YES, and broken on arrival** (reads `payload.content`/`payload.role`; producer emits `payload.message` — §3 HW-1).
+  - **NEW spawn signature `process_chat_message(tenant_id, session_id, message)`** — matches `main.py:32-37` ✅.
+  - No public SDK export, ingest Zod schema, DB column, ClickHouse topic, or decision-API response field changed. `ChatIntentDetectedPayload` (`schemas.py`) unchanged.
+
+### 2. Verification done in PR
+
+- Test files: `test_chat_nlp_bridge.py` (8, new), `test_main.py` (+1), `route.follow346.test.ts` (4, new). ~17 assertions. Coverage delta unknown.
+- CI claimed green (stream-consumer 36, intent-engine 5, control-plane 9, lint/typecheck/Rule H/Rule J), not independently re-watched. **Critical caveat:** every test on the producer→consumer path uses a HAND-CONSTRUCTED event `payload={"role": ..., "content": ...}` — the CONSUMER's invented key shape, NOT the real SDK/Zod producer shape `{message, char_count, lead_id}`. The green suite does not exercise the real contract and masked HW-1 (the RETRO-068/078/079 "mock can't catch real-backend/cross-language mismatch" class).
+
+### 3. Wiring Audit
+
+CHECK A (dead code):
+- `_spawn_chat_nlp` (`events.py:46`) — has a real non-test caller at `events.py:292` (`run_consumer` routing branch). Wired structurally. ✅ (functionally inert in prod — HW-1).
+- `CHAT_NLP_LIVE` const (`route.ts:88`) — declared + logged, no behavioral consumer. See HW-2.
+
+CHECK B (half-wire):
+- **HW-1 — HALF_WIRE_C, P0 (cross-language payload-key mismatch; bridge dead-on-arrival).** Producer of `chat.message.sent` is the SDK (`packages/sdk/src/index.ts:1225-1233`), payload `{ message: scrubMessagePii(rawMessage), char_count, lead_id }`; canonical schema `ChatMessageSentPayloadSchema` (`packages/shared/src/schemas/events/chat.ts:38-48`) has `message`, `char_count`, `locale`, `lead_id` — **no `role`, no `content`.** New consumer `_spawn_chat_nlp` reads `payload.get("content","")` and `payload.get("role","user")` (`events.py:69-70`), then guards `if not message["content"]: return` (`events.py:74`). No transform anywhere renames `message`→`content` or injects `role`. Therefore for EVERY real production event `content == ""` → guard trips → **spawn never called → no Redis shadow key written from real traffic → the TS reader at `route.ts:1073` always misses.** The FOLLOW-346 deliverable does not function against real traffic. → **FOLLOW-366**.
+- **HW-2 — HALF_WIRE_P, P2 (inert gate / over-claimed flag).** `CHAT_NLP_LIVE` is read (`route.ts:88`) and logged (`route.ts:1085`) but **no `if (CHAT_NLP_LIVE)` branch exists** that changes directives (all 6 occurrences are the const, comments, or the log field). The shadow read already only sets `chat_intent_dimensions` for the SDK; directives were never influenced by chat intent. So `CHAT_NLP_LIVE=true` does literally nothing — the "live activation" the gate purports to control is unreachable through this flag. Safe (no leak either state) but its asserted `true` behavior (route.ts:81-83 comment) is unimplemented. → **FOLLOW-367**.
+- **HW-3 — HALF_WIRE_P, P1 (cross-runtime Redis env-var divergence; deployment half-wire).** Even after HW-1, the Python WRITER reads `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` (`redis_writer.py:29-30`) while the TS READER and every other control-plane Redis consumer read `UPSTASH_REDIS_URL` / `UPSTASH_REDIS_TOKEN` (`chat-intent-cache.ts:69,74`; `description-cache.ts:53,58`; `dsr/erase`). The shadow KEY is byte-identical (`shadow:{tenant_id}:{session_id}:chat_intent` — `redis_writer.py:37` ≡ `chat-intent-cache.ts:63`, VERIFIED ✅), but writer and reader resolve their connection from DIFFERENT env-var names. If those two env pairs are not provisioned to point at the SAME Upstash instance (Modal secret vs Vercel env), the write and read silently miss with no error. No test, CI smoke, or doc asserts the two endpoints are the same DB. → **FOLLOW-368**.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+- **LG-1 (P0) = HW-1.** Bridge wired structurally but inert against real traffic (payload-key contract mismatch).
+- **LG-2 (P2) = HW-2.** The DPIA-controlled `CHAT_NLP_LIVE` gate has no behavioral effect; the live path it gates does not exist.
+
+#### 4b. Code bugs not caught
+- **CB-1 (P0) = HW-1.** A field-name bug (`content` vs `message`) that ships green because tests construct the wrong-shaped fixture. The code runs without exception — it silently no-ops for 100% of real events.
+- No crash/type bug otherwise. `model_used` correctly mapped via `_model_family()` (`nlp.py:131-137`) — initially suspected Literal mismatch, reconciled clean (`claude-haiku-4-5-20251001` → `"haiku-4.5"`).
+
+#### 4c. Test coverage gaps
+- **TG-1 (P1) — Zero test uses the REAL `chat.message.sent` payload shape.** `test_chat_nlp_bridge.py` `_make_raw_event(..., payload={"role","content"})` invents the consumer's shape. A single fixture sourced from `ChatMessageSentPayloadSchema` (or the SDK's actual emit `{message, char_count, lead_id}`) would have turned the suite RED and caught HW-1. This is the fixture-self-agreement failure (RETRO-093 / Rule L family) across the SDK→Python language boundary. → **FOLLOW-366** (the fix MUST ship with a producer-shape-grounded fixture).
+- **TG-2 (P2) — No end-to-end (real-Redis) test proves write↔read connect.** Python mocks `upstash_redis`; TS mocks `readShadowChatIntent`. Neither exercises a real round-trip, so HW-3 and HW-1 are both invisible to CI. The repo already has a `tracer-query-smoke` live-backend job pattern (RETRO-079). → **FOLLOW-368**.
+
+#### 4d. Documentation gaps
+- **DG-1 (P2) — C-07 brief (PR #328) asserts the bridge is functioning shadow-only; it is not (HW-1).** The brief's Context (lines 12-20) and Implementation Evidence (lines 204-226) state `chat.message.sent` is routed to `process_chat_message` and writes the 12-dim vector to a Redis shadow key. That routing is structurally present but inert. The brief's GDPR conclusions (no raw text persisted; LI balancing PASSES) remain TRUE — but the brief's premise that the shadow pipeline is producing analyzable data is currently false. Rule-N-adjacent (benign — the inaccuracy makes the privacy posture MORE conservative). Note in FOLLOW-366 closure.
+- **DG-2 (P3) — `route.ts:81-83` comment claims `CHAT_NLP_LIVE=true` "allows chat intent to influence server-side adaptation."** No such code path exists (HW-2). Over-claimed comment (Rule Y family). → folded into FOLLOW-367.
+
+#### 4e. Multi-axis reconciliation
+- Producer axis vs consumer axis: analyzed BOTH ends of `chat.message.sent`; the mismatch (HW-1) is only visible by reading producer (SDK) and consumer (`_spawn_chat_nlp`) together; the PR analyzed only the consumer's assumed shape.
+- Write axis vs read axis of the Redis key: key string byte-identical ✅; connection env-var names divergent (HW-3).
+- Flag false-axis vs true-axis: false = inert (safe) ✅; true = also inert (HW-2).
+- DPIA claim axis: no-raw-text VERIFIED ✅ (`schemas.py:58-79` has no `messages`/`raw_text`; `_spawn_chat_nlp` forwards only `{role,content}` dict, never the ClickHouse batch event; ClickHouse batch unchanged — `test_chat_event_still_appended_to_clickhouse_batch`). DPIA binding holds.
+
+### 5. Cascading impact
+
+- **5a.** **FOLLOW-346 itself is marked DONE but its AC-1 ("consumed `chat.message.sent` invokes the NLP extractor; Redis shadow key written + read by `/api/adapt`") is NOT met end-to-end** (HW-1). The PR's own AC-1 evidence chain is broken at the first hop. **Severity: P0 — surface to PM/CEO; the ticket should not have closed against AC-1.** The C-07 go-live gate (PR #328 Q5 table, 5 DPIA items) is correctly tracked as gating LIVE activation only, but is downstream of a pipeline that produces no shadow data today — the post-pilot disagreement-rate analysis (the entire purpose of shadow mode) will have an empty dataset until FOLLOW-366 lands.
+- **5b.** K.3.6 D-2 Archetype Tracer chat display (FOLLOW-269 lineage): C-07 Q4 declares D-2 unblocked to display the 12-dim vector under LI. True for compliance — but the tracer will display NOTHING until HW-1 is fixed. Whoever implements the tracer chat panel must depend_on FOLLOW-366. FOLLOW-346-LIVE (referenced in C-07, not yet created): add HW-2 (implement the actual `CHAT_NLP_LIVE`-gated directive path) and FOLLOW-366 as code-prerequisites.
+- **5c.** `chat.message.sent` payload is the load-bearing contract. Canonical SoT is `ChatMessageSentPayloadSchema` (`packages/shared`). `_spawn_chat_nlp` introduced a SECOND, divergent reader-side assumption. Any future consumer should read `payload.message`, not `payload.content`.
+- **5d.** Cross-runtime contract drift confirmed on a THIRD surface (after the CH-query and ingest-INSERT surfaces of RETRO-078/068): the SDK(TS)→stream-consumer(Python) event-payload boundary. The shared Zod schema exists but nothing forces the Python consumer to honor it — no codegen or parity test from `@estalara/shared` event schemas into the Python apps. Connection-config SoT split: Python (`*_REST_*`) vs TS (`UPSTASH_REDIS_*`) is an undocumented convention split (HW-3).
+
+### 6. New lesson candidates
+
+- **P-XLANG-PAYLOAD-CONTRACT** ("a Python consumer reads an event/payload by hand-assumed field names that DON'T match the canonical TS/Zod producer schema; both sides have passing unit tests because each mocks its own shape, so the wire is green-but-severed across the language boundary"). Seen RETRO-098 HW-1/CB-1 (`payload.content` vs SDK `payload.message`); the SDK/ingest-payload instance of the SAME real-backend-mismatch family already logged in RETRO-068 (ingest dual-write INSERT body), RETRO-078 (CH query mock-fetch vs live 386), RETRO-079 (closure via live-backend smoke). Parent "mock-can't-catch-cross-runtime-mismatch" family count: 4. **Promotion recommended for the parent family → Rule Z** (see CONVENTIONS_PATCH.md).
+- **P-INERT-GATE** ("a feature flag / env-var is added and logged as a safety gate, but no code branch consumes it to change behavior — the gate is a no-op in BOTH states"). Seen RETRO-098 HW-2. Count 1 in-log. Below threshold; FOLLOW-367 closes the instance. Adjacent to Rule Y (over-claimed comment) and the dead-export Rule I family.
+
+### 7. Prior-follow-up closure check
+
+FOLLOW-346 did not claim to CLOSE a prior numbered RETRO finding (it implements the audit-2026-06-19 hollow-core finding for the chat signal). Traced FOLLOW-346's OWN three AC end-to-end:
+- **AC-1 (consume → spawn → Redis write → `/api/adapt` read): NOT CLOSED end-to-end.** Breaks at hop 1 (spawn never fires for real `chat.message.sent`, HW-1).
+- **AC-2 (CHAT_NLP_LIVE gate, default false, no surprise live adaptation): PARTIALLY met.** Default-false and no-live-leak: TRUE ✅. But "explicit gate for live" is cosmetic (HW-2) — flipping it true does nothing.
+- **AC-3 (no raw free-text persisted this cycle): GENUINELY MET ✅.** Verified across ClickHouse batch (unchanged schema), Redis (vector-only `model_dump()`), Postgres (no new column). DPIA binding intact.
+
+Net: 1 of 3 AC genuinely closed (AC-3). AC-1 severed at hop 1; AC-2 half-cosmetic. FOLLOW-346 should not have been marked DONE against AC-1.
+
+### 8. Cross-references
+
+- RETRO-068 / RETRO-078 / RETRO-079: the cross-runtime "mock can't catch real-backend mismatch" family. HW-1/CB-1 is the SDK(TS)→stream-consumer(Python) event-payload instance — the 4th in-log sighting and the basis for the Rule Z promotion.
+- RETRO-093 (P-SELF-AGREEING-FIXTURE) / Rule L: TG-1 is the same fixture-self-agreement mechanism across a language boundary.
+- Rule N (compliance doc must match shipped behavior): DG-1 is a benign-direction Rule-N adjacency.
+- memory `project_audit_0619_q2_q3_decisions`: FOLLOW-346 = "wire chat shadow-only, live gated on DPIA." Shadow wiring is the deliverable that HW-1 leaves non-functional.

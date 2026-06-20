@@ -2110,6 +2110,8 @@ Bandit nie generuje wariantów — konsumuje już istniejące w `PlaybookEntry.s
 4. `winningVariant` indeksuje `slots[i].variants.en[winningVariant]`; result wraca jako `TextDirective` z polem `variant_index: number` dla downstream attribution.
 5. Po zarejestrowaniu `inquiry.completed` (lub innego conversion eventu z `adaptation_decisions` ClickHouse) — async batch job aktualizuje `α` (success) lub `β` (no-conversion) per wybrany wariant.
 
+**HOLDOUT BYPASS RULE (FOLLOW-360 / RETRO-095 / ESC-026):** Bandit sampling MUST be skipped entirely for sessions where `holdout_group = true`. Both the GET and POST handlers in `POST /api/adapt` enforce this: when `holdout_group=true`, `variant='control'` is used unconditionally without calling `getBanditArms` or `thompsonSample`. This preserves the counterfactual baseline — holdout rows in `adaptation_decisions` must always carry `(holdout_group=1, variant='control')`. Any sampling of v1/v2 for a holdout session contaminates the baseline and invalidates causal lift estimates. This rule applies to ALL code paths that write to `adaptation_decisions`.
+
 Implementacja w dwóch fazach:
 - **Faza 1 (Sprint 8, TICKET-AB-001):** bandit infrastructure + holdout assignment + `variant_index` column w `adaptation_decisions`. Zawsze wybiera `variant_index = 0` (default), bo playbook variants nie były jeszcze wyeksponowane do decision API.
 - **Faza 2 (post-Sprint 10, TICKET-BANDIT-VARIANTS):** podłączenie Thompson sampling do realnych wariantów z playbooków (PR #92). Wymaga: (a) seedowania `ab_bandit_weights` rowsami per variant per archetype przy first-use, (b) eksposure `variants` w response shape Decision API, (c) feedback loop dopisany do `adaptation_decisions`.

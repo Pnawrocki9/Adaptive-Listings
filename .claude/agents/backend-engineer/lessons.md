@@ -719,6 +719,7 @@ in `docs/INTERFACES.md`, 5 new test cases in `DetectionPreview.test.tsx`.
 **A guardrail I'd add:** A CI check that asserts `apps/control-plane/public/*.iife.js` and
 `apps/control-plane/public/*.js` are in the ESLint global ignores list — prevents the "lint fails on
 built artifact" trap on the next similar commit.
+
 ## 2026-06-15 / FOLLOW-326
 
 **What I built:** /sign-in page + Supabase SSR auth flow for the Next.js 15 control plane. Installed
@@ -739,3 +740,40 @@ non-deprecated), @typescript-eslint/no-deprecated can fire even on the correct o
 TypeScript resolves by position. A downstream note in the eslint config or an inline cast is
 necessary — the code review checklist should ask "did the linter flag a deprecated overload that
 you're actually NOT using?"
+
+---
+
+## 2026-06-20 / FOLLOW-360
+
+**What I built:** P0 hotfix — gated GET-path bandit sampling behind the holdout check in
+`POST /api/adapt` GET handler. Before the fix (regressed in PR #327 / FOLLOW-342), the GET handler
+called `getBanditArms` + `thompsonSample` unconditionally for all requests including holdout ones,
+then passed the sampled variant to both `runDecisionTree` (so holdout sessions got v1/v2 copy) and
+`logDecisionAsync` (so ClickHouse recorded `holdout_group=1, variant=v1/v2`). This contaminated the
+holdout counterfactual baseline. Fix: when `holdoutGroup === true`, skip sampling entirely and use
+`'control'` directly — mirroring the POST handler's early-return ordering. Added `runDecisionTree`
+JSDoc HOLDOUT BYPASS RULE note and §E.3.0 MASTER_DESIGN update. 4 tests in `route.follow360.test.ts`
+prove fail-before (3 fail on origin/main) and pass-after.
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+1. **RETRO-095 contamination shape:** Before fix, `holdout_group=true` rows could carry
+   `variant='v1'` or `variant='v2'` in ClickHouse. The causal lift estimate is
+   `mean(treatment outcomes) - mean(holdout outcomes)`. If holdout rows include v1/v2 copy effects,
+   the "holdout baseline" drifts up, making treatment lift appear smaller than it is. The fix is
+   zero-risk: holdout sessions are served control copy (what they would have gotten before
+   FOLLOW-342), and logged as such.
+2. **PR #327 regression scope:** FOLLOW-342 added bandit variant threading to the GET handler
+   without adding the holdout gate that POST already had. The POST holdout gate returns early at
+   line 894 before ever calling `getBanditArms`. The surgical fix replicates that same skip logic —
+   no new abstractions, just a ternary conditional.
+3. **Test determinism:** `thompsonSample` is random (Beta sampling). To write a deterministic
+   fail-before/pass-after test, I mocked `thompsonSample` to return `'v1'` always. This ensures the
+   positive-control test (`holdout=false → variant='v1'`) is deterministic, and the regression test
+   (`holdout=true → variant='control'`) would fail on origin/main where sampling ran
+   unconditionally.
+
+**A guardrail I'd add:** A CI check that asserts any code path writing to `adaptation_decisions`
+(ClickHouse) where `holdout_group=1` also writes `variant='control'` — this would have caught the
+FOLLOW-342 regression before it hit prod. Pattern: grep for `param_p_holdout_group.*1` in tests and
+assert a corresponding `param_p_variant.*control` assertion exists nearby.

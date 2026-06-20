@@ -1279,7 +1279,13 @@ read scope). It must NOT be an admin key or service-role key.
 
 ---
 
-## OPEN — ESC-025: FOLLOW-346 chat NLP shadow bridge is dead-on-arrival in prod (cross-language payload-key mismatch); ticket was marked DONE against an unmet AC-1 [FOLLOW-346 / FOLLOW-366]
+## RESOLVED — ESC-025: FOLLOW-346 chat NLP shadow bridge is dead-on-arrival in prod (cross-language payload-key mismatch); ticket was marked DONE against an unmet AC-1 [FOLLOW-346 / FOLLOW-366]
+
+**RESOLVED 2026-06-20:** FOLLOW-366 (PR #332, commit `eaf31a9`) merged to main — `_spawn_chat_nlp`
+now reads `payload["message"]` and the test fixture is built from the real
+`ChatMessageSentPayloadSchema` (Rule Z). PM-validated (0 new CI failures, wiring confirmed
+hop-by-hop, fail-before/pass-after). The shadow bridge now fires for real `chat.message.sent`
+traffic; FOLLOW-346 AC-1 is met end-to-end.
 
 **Filed by:** retrospective-analyst (RETRO-098, via Opus 4.8 session) **Date:** 2026-06-20
 **Affects:** FOLLOW-346 (merged PR #330), FOLLOW-366 (hotfix) **Type:** priority
@@ -1309,7 +1315,15 @@ mode) will have an empty dataset until FOLLOW-366 lands.
 
 ---
 
-## OPEN — ESC-026: FOLLOW-342 GET-path bandit serves + logs treatment variants to HOLDOUT sessions, contaminating the experiment baseline in prod [FOLLOW-342 / FOLLOW-360]
+## RESOLVED — ESC-026: FOLLOW-342 GET-path bandit serves + logs treatment variants to HOLDOUT sessions, contaminating the experiment baseline in prod [FOLLOW-342 / FOLLOW-360]
+
+**RESOLVED 2026-06-20:** FOLLOW-360 (PR #333, commit `2836adc`) merged to main — GET-path variant
+selection is now gated behind the holdout check (`holdoutGroup ? 'control' : thompsonSample(...)`),
+so holdout GET sessions serve + log `variant='control'`. PM-validated (0 new CI failures, both
+serve + ClickHouse-log paths receive the gated value, fail-before/pass-after). **Data caveat:**
+exclude `adaptation_decisions` rows where `holdout_group=1 AND variant != 'control'` from historical
+lift queries for the window PR #327 merge (`66054d6`, 2026-06-19) → PR #333 merge (`2836adc`,
+2026-06-20).
 
 **Filed by:** retrospective-analyst (RETRO-095, via Opus 4.8 session) **Date:** 2026-06-20
 **Affects:** FOLLOW-342 (merged PR #327), FOLLOW-360 (hotfix), pilot-calibration + ab/weights

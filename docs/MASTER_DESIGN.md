@@ -2395,6 +2395,8 @@ Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adapto
 
 > **Decyzja CEO (2026-06-05):** Adaptive Listings nie ma Tiers — wszyscy tenanci dostają jedno doświadczenie. Model TTL-per-Tier jest wyeliminowany. Opisy są przechowywane trwale (bez TTL w Redis, z `description_cache_persistent` w Postgres) i invalidowane wyłącznie przez event `listing.updated`. Parametr `tier` usunięty z API.
 
+> **FOLLOW-357 clarification (2026-06-20):** `POST /api/adapt` exposes a `directive_scope` field (values: 1 or 2) derived from the `page_type` parameter. This is a **page-context axis** — NOT an integration Tier. `directive_scope: 2` means the request is for a listing-detail page (full per-listing directive set); `directive_scope: 1` means a list/search/home page (lighter directive set). The no-Tiers decision stands: all tenants receive the same experience. The `directive_scope` field is purely an internal routing hint for controlling how many directive slots are sent per page context.
+
 **Fundamentalna zasada:** AI-adapted copy NIGDY nie wypiera agentowego oryginału na pierwszej wizycie buyera. Dopiero gdy Sonnet skończy generację (w tle, dla konkretnej kombinacji listing × archetype × locale), kolejny buyer w tej samej kombinacji dostaje wersję zoptymalizowaną. Dodatkowo: Sonnet NIGDY nie zmyśla faktów (liczb, nazw, ratings) których nie ma w `original_description` ani `listing_context`.
 
 #### E.7.1. Endpoint contract

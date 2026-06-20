@@ -116,7 +116,7 @@ const AdaptationDirectivesSchema = z.object({
   archetype: z.string(),
   confidence: z.number().min(0).max(1),
   similarity: z.number().min(0).max(1),
-  tier: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  directive_scope: z.union([z.literal(1), z.literal(2)]).optional(),
   directives: z.array(z.union([TextDirectiveSchema, ClassDirectiveSchema, ReorderDirectiveSchema])),
   source: z.enum([
     'playbook',
@@ -477,13 +477,14 @@ describe('GET /api/adapt — integration', () => {
       }),
     );
     expect(res.status).toBe(200);
-    const body = await parseBody<unknown>(res);
+    const body = await parseBody<Record<string, unknown>>(res);
     const parsed = AdaptationDirectivesSchema.safeParse(body);
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.source).toBe('playbook');
       expect(parsed.data.archetype).toBe('yield_hunter');
-      expect(parsed.data.tier).toBe(1);
+      // GET handler echoes the caller-supplied `tier` URL param (not directive_scope).
+      expect(body.tier).toBe(1);
     }
   });
 
@@ -971,5 +972,60 @@ describe('POST /api/adapt — ReorderDirective', () => {
     };
     const res = await POST(makePostRequest(body, 'Bearer demo_key'));
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── POST /api/adapt — directive_scope lock tests (FOLLOW-357 / partial TG-1 FOLLOW-356) ──
+
+describe('POST /api/adapt — directive_scope derived from page_type', () => {
+  beforeEach(() => {
+    mockCallLlmGateway.mockClear();
+    mockCallLlmGateway.mockResolvedValue(null);
+  });
+
+  it('listing_detail page_type → directive_scope === 2', async () => {
+    const body = {
+      ...VALID_POST_BODY,
+      page_type: 'listing_detail' as const,
+    };
+    const res = await POST(makePostRequest(body, 'Bearer demo_key'));
+    expect(res.status).toBe(200);
+    const resBody = await parseBody<Record<string, unknown>>(res);
+    expect(resBody.directive_scope).toBe(2);
+    expect(resBody.tier).toBeUndefined();
+  });
+
+  it('listing_list page_type → directive_scope === 1', async () => {
+    const body = {
+      ...VALID_POST_BODY,
+      page_type: 'listing_list' as const,
+    };
+    const res = await POST(makePostRequest(body, 'Bearer demo_key'));
+    expect(res.status).toBe(200);
+    const resBody = await parseBody<Record<string, unknown>>(res);
+    expect(resBody.directive_scope).toBe(1);
+    expect(resBody.tier).toBeUndefined();
+  });
+
+  it('search page_type → directive_scope === 1', async () => {
+    const body = {
+      ...VALID_POST_BODY,
+      page_type: 'search' as const,
+    };
+    const res = await POST(makePostRequest(body, 'Bearer demo_key'));
+    expect(res.status).toBe(200);
+    const resBody = await parseBody<Record<string, unknown>>(res);
+    expect(resBody.directive_scope).toBe(1);
+  });
+
+  it('home page_type → directive_scope === 1', async () => {
+    const body = {
+      ...VALID_POST_BODY,
+      page_type: 'home' as const,
+    };
+    const res = await POST(makePostRequest(body, 'Bearer demo_key'));
+    expect(res.status).toBe(200);
+    const resBody = await parseBody<Record<string, unknown>>(res);
+    expect(resBody.directive_scope).toBe(1);
   });
 });

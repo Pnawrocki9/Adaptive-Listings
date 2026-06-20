@@ -249,8 +249,13 @@ export interface AdaptResponse {
   confidence: number;
   /** Cosine similarity to the matched archetype 0–1. */
   similarity: number;
-  /** Integration tier echoed by the server. */
-  tier: 1 | 2 | 3;
+  /**
+   * Page-context directive scope from the POST /api/adapt response (FOLLOW-357).
+   * NOT an integration Tier (CEO ruling 2026-06-05, §E.7).
+   * 2 = listing_detail (full directive set), 1 = all other page types.
+   * Optional — absent on legacy GET responses.
+   */
+  directive_scope?: 1 | 2;
   /** Raw directives from the Decision API. Cast to (TextDirective | ClassDirective | ReorderDirective)[] for applyDirectives(). */
   directives: (TextDirective | ClassDirective | ReorderDirective)[];
   /** Origin of the response (playbook / llm_* / default / fallback). */

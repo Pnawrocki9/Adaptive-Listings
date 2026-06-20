@@ -116,7 +116,9 @@ export const adaptResponseSchema = z
     archetype: archetypeIdSchema,
     confidence: z.number(),
     similarity: z.number(),
-    tier: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    // directive_scope: page-context axis from POST /api/adapt (FOLLOW-357, not an integration Tier).
+    // Optional — absent on legacy GET responses which use `tier` (caller-supplied) instead.
+    directive_scope: z.union([z.literal(1), z.literal(2)]).optional(),
     directives: z.array(directiveSchema),
     source: z.enum([
       'playbook',

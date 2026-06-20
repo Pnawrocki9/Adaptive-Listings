@@ -1350,7 +1350,7 @@ holdout/consent check, mirror POST's early-return ordering; holdout GET requests
 
 ---
 
-## OPEN — ESC-027: FOLLOW-345 page-type-derived `tier` re-introduces Tier vocabulary that MASTER_DESIGN §E.7 eliminated — CEO ruling needed before FOLLOW-357 can be implemented [FOLLOW-345 / FOLLOW-357]
+## RESOLVED — ESC-027: FOLLOW-345 page-type-derived `tier` re-introduces Tier vocabulary that MASTER_DESIGN §E.7 eliminated — CEO ruling needed before FOLLOW-357 can be implemented [FOLLOW-345 / FOLLOW-357]
 
 **Filed by:** pm-orchestrator **Date:** 2026-06-20 **Affects:** FOLLOW-357 (P1 rename/carve-out),
 MASTER_DESIGN §E.7, `apps/control-plane/src/app/api/adapt/route.ts` `tierFromPageType()` **Type:**
@@ -1374,4 +1374,10 @@ and §E.7 is patched to document the exception. The "Augment" framing in the doc
 
 **Owner:** CEO architectural ruling → FOLLOW-357 (backend-engineer)
 
-**Resolution:** (pending)
+**Resolution:** RESOLVED 2026-06-20: CEO ruled option (a) — rename to `directive_scope`. Implemented
+in FOLLOW-357 (PR opened 2026-06-20): `tierFromPageType` renamed to `directiveScopeFromPageType`,
+local variable `derivedTier` renamed to `directiveScope`, POST response field `tier` renamed to
+`directive_scope` in all three response arms, docstring rewritten, `AdaptationDirectives` shared
+type updated, SDK `AdaptResponse` updated, Zod schema updated. ClickHouse column rename
+(`adaptation_decisions.tier` → `directive_scope`) is deferred to FOLLOW-358 (GET/POST column
+divergence unification).

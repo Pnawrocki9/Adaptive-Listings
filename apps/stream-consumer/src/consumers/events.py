@@ -46,15 +46,18 @@ log = structlog.get_logger(__name__)
 def _spawn_chat_nlp(event: dict[str, Any]) -> None:
     """Fire-and-forget: spawn Modal process_chat_message for a chat.message.sent event.
 
-    Extracts tenant_id, session_id, and the message content from the event payload
-    and calls process_chat_message.spawn(...) — a non-blocking Modal background call.
+    Extracts tenant_id, session_id, and the message text from the event payload
+    (canonical field: payload.message per ChatMessageSentPayloadSchema) and calls
+    process_chat_message.spawn(...) — a non-blocking Modal background call.
     The spawn returns immediately; the Modal function runs asynchronously and writes
     the 12-dim intent vector to the Redis shadow namespace.
 
-    DPIA constraint (C-07): only tenant_id, session_id, and the message dict (role +
-    content) are forwarded. No raw chat text is written to ClickHouse or Postgres
-    by this function. The NLP result (intent vector only) is written by
-    process_chat_message via redis_writer.write_shadow_intent.
+    DPIA constraint (C-07): only tenant_id, session_id, and the synthesized message
+    dict {"role": "user", "content": <payload.message>} are forwarded to Modal.
+    No raw chat text is written to ClickHouse or Postgres by this function.
+    The NLP result (intent vector only) is written by process_chat_message via
+    redis_writer.write_shadow_intent. The SDK already PII-scrubs via scrubMessagePii
+    before emission; we do not double-scrub here.
 
     Failure posture: any import error (Modal not installed, wrong environment) or
     spawn error is logged and swallowed — the ClickHouse batch is never blocked.
@@ -65,12 +68,16 @@ def _spawn_chat_nlp(event: dict[str, Any]) -> None:
         tenant_id: str = str(event.get("tenant_id", ""))
         session_id: str = str(event.get("session_id", ""))
         payload: dict[str, Any] = event.get("payload") or {}
+        # Canonical producer field is `message` (ChatMessageSentPayloadSchema).
+        # Synthesize {"role", "content"} here to satisfy the Modal function signature;
+        # this dict is never stored anywhere.
+        message_text: str = str(payload.get("message", ""))
         message: dict[str, Any] = {
-            "role": str(payload.get("role", "user")),
-            "content": str(payload.get("content", "")),
+            "role": "user",
+            "content": message_text,
         }
 
-        # Validate minimum data before spawning — skip if either id is empty.
+        # Validate minimum data before spawning — skip if either id or text is empty.
         if not tenant_id or not session_id or not message["content"]:
             log.warning(
                 "chat_nlp_spawn_skipped",

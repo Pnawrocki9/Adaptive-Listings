@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-06-20 / FOLLOW-366
+
+**What I built:** P0 hotfix for the dead FOLLOW-346 chat NLP shadow bridge. The defect: `_spawn_chat_nlp` read `payload.get("content")` and `payload.get("role")`, but the canonical SDK producer shape (`ChatMessageSentPayloadSchema`) has `{message, char_count, lead_id}` — no `content`, no `role`. So `content == ""` for 100% of real events, the empty-text guard tripped, and `process_chat_message` was never spawned. Fix: read `payload.get("message")` and synthesize `{"role": "user", "content": message_text}` only at the Modal call site (matching the Modal function's expected arg shape). Also replaced all hand-invented `{role, content}` test fixtures with the real producer shape and added a dedicated AC-Z regression test that proves fail-before / pass-after.
+
+**Vocabulary/seed/retention risks I weighed:**
+
+- No new table/column introduced. ClickHouse batch path is unchanged. DPIA (C-07) re-verified: only `tenant_id`, `session_id`, and the message text (already PII-scrubbed by the SDK's `scrubMessagePii`) are forwarded to Modal. No double-scrubbing, no raw text stored.
+- The synthesized `{"role": "user", "content": ...}` dict exists only in the `_spawn_chat_nlp` stack frame; it is never persisted.
+- Rule Z (new): ALL test fixtures for `chat.message.sent` MUST use the canonical SDK producer shape (`{message, char_count, lead_id}`), not a hand-invented `{role, content}`. Documented in the test module docstring so the pattern is visible to the next engineer.
+
+**A guardrail I'd add:** Rule Z should be formally codified: "For any consumer test that processes a named Redpanda event type, the test fixture MUST be derived from the Zod schema for that event type (or a comment linking to it). Hand-invented payload shapes are forbidden." This would have caught the original FOLLOW-346 defect at PR review time.
+
+---
+
 ## 2026-06-20 / FOLLOW-346
 
 **What I built:** Chat NLP shadow bridge — wired the dead bridge between `stream-consumer` and

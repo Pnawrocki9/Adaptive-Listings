@@ -9601,3 +9601,386 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 <!-- prior next free FOLLOW number: 323 (322 = RETRO-068 / PR #279 / FOLLOW-286: add a LIVE-backend contract test for the intent.snapshot dual-write handler so a type/constraint incompatibility (UUID column, Float32 NOT NULL, JSONEachRow strictness, mis-placed PostgREST on_conflict) FAILS CI — every current test mocks fetchImpl so BOTH PR #278 (FOLLOW-266 Phase 2, on_conflict-in-Prefer-header → real 409) AND PR #279 (FOLLOW-286, raw-hex→intent_session_id UUID column + confidence_before:null→Float32 NOT NULL, BOTH backend-rejected, caught only by FOLLOW-287) shipped P1 INSERT-body defects under green mock CI; boot ephemeral CH (0014+0015+0016) + PostgREST (0028), submit the REAL handler bodies, + a PRECISE-assertion negative control reproducing the FOLLOW-286/287 broken shapes (NOT a permissive HTTP-500 regex per RETRO-079 §4c TG-1), REQUIRE_*=1 hard-fail-on-container-absence modeled on FOLLOW-316 tracer-query-smoke, share the FOLLOW-291 ephemeral-CH harness, P2 4h backend+data-engineer. RETRO-068 is the analysis of PR #279's ingest payload (bundled into PR #280's merge diff per RETRO-067; pinned both 8a43588 merge-state vs main HEAD): CB-1 on_conflict-URL + LG-1 event_type-const + LG-2 raw-session_id-String-join-key + LG-4 payload-de-dup SURVIVE on main byte-stable + genuinely wired (Wiring Audit clean); LG-A intent_session_id-UUID-reject + LG-B confidence_before-null-Float32-reject were SUPERSEDED by FOLLOW-287 PRs #281/#282 (already owned by FOLLOW-290/291/292, NOT re-filed); the 8 TG-1 tests are reconciled to the FOLLOW-287 state on main so NO test-drift gap. NO Rule promoted RETRO-068: Rule W already governs the migration-0015 ORDER-BY-key axis (promoted RETRO-060, this PR is its named count-1 evidence); the mock-can't-catch-real-backend-rejection family is count-1 on the INGEST-handler surface (RETRO-078/079 are the sibling CH-query-builder surface — fresh count per RETRO-077/079 deferral discipline; the migration sub-axis is already Rule W, the HTTP/enum sub-axis already Rule K.2-round-trip + Rule L) — held below threshold. FOLLOW-288/289 (RETRO-059 SDK producer) + FOLLOW-321 (RETRO-067 snapshot-trigger) NOT re-filed.) -->
 <!-- prior next free FOLLOW number: 322 (321 = RETRO-067 / PR #280 / FOLLOW-266 Phase 3: wire the every-5 intent.snapshot periodic trigger into ALL signal_count-incrementing SDK sites — only the behavioral observer index.ts:928 fires it, micro_poll.answered index.ts:1081 crosses 5-boundaries with no snapshot (snapshot-trigger HALF_WIRE), factor the guard into one helper at the applyBehavioralSignal boundary + seam-driven micro-poll-boundary test (share FOLLOW-289 harness) + benign boundary+unload double-emit note + "every 5 behavioral signals" docstring fix, P2 3h LG-1/LG-2/TG-2/DG-1. RETRO-067 is the 2nd retro of PR #280 (RETRO-059 already filed FOLLOW-288 archetype_deltas HALF_WIRE_C + FOLLOW-289 mirrored-test Rule Q — BOTH confirmed still OPEN, NOT re-filed); the producer→envelope→union→ingest→dual-write chain is GENUINELY wired end-to-end (emitIntentSnapshot 2 prod call-sites, IntentSnapshotContext per-init, IntentSnapshotEventSchema in the union, ingest routes on resolved tenantId, 22 SDK tests re-verified pass). PR #280's merge diff BUNDLES PR #279/FOLLOW-286's entire ingest payload (migration 0015, CB-1/LG-1/LG-2/LG-3, shared constants incl test-only INTENT_EVENTS_VOCABULARY, 8 TG-1 contract tests) — those are RETRO-068's subject. RECONCILED RETRO-064: at merge 6f865ff the handler wrote BOTH intent_session_id + session_id raw with confidence_before:null; RETRO-064's "handler OMITS intent_session_id" is the LATER FOLLOW-287 state (PRs #281/#282 merged after #280) → this PR's ingest is superseded, sort-key saga NOT its concern, no dup stubs. NO Rule promoted RETRO-067: the "per-signal side-effect attached at one of several increment sites" sub-pattern is count-1 (distinct from Rule S's explicit-verb siblings — implicit increment SITES); the mirrored-test-hides-a-missing-sibling consequence is already Rule Q. -- prior: 319 (318 = RETRO-079 / PR #305 / FOLLOW-316 §4c TG-1 — tighten the live-CH negative-control assertion regex from /Code: 386|NO_COMMON_TYPE|HTTP 500/ to /Code: 386|NO_COMMON_TYPE/ at clickhouse-tracer.integration.test.ts:302; the |HTTP 500 catch-all greens on ANY 500 so the control passes for the wrong reason, P2 1h. NOTE the DSR live-CH CI-wiring leg from RETRO-079 §4c HW-1 / §5a is NOT a new follow-up — inherited by FOLLOW-317, whose AC should be amended at promotion to "un-self-skip + live-CH-wire clickhouse-dsr.integration.test.ts in the same PR." NO Rule promoted RETRO-079: FOLLOW-316 is the REMEDIATION of RETRO-078 Pattern B, not a 2nd independent sighting, so the live-backend-vs-mock axis stays count-1; the new matcher-precision sub-pattern is count-1. -- prior: 318 (315 = RETRO-078 / PR #302 — DONE retroactive catalog: qualify event_at in the 4 K.3.6 tracer ClickHouse query builders to avoid Code 386 NO_COMMON_TYPE; toString(event_at) AS event_at self-alias shadows the DateTime64 column with a String alias inside WHERE/ORDER BY, so a bare event_at date predicate binds to the String alias → String>=DateTime → throw at query-analysis time, even on an empty table; broke export/history/SSE-poll in prod, output-key-transparent fix = zero consumer cascade, found via local Stack B real-CH 24.8, NOT CI. 316 = RETRO-078 §4c — live-ClickHouse CI guard: the CH-315a-d regression tests are mock-fetch-only + the only live-CH integration tests self-skip in CI (CLICKHOUSE_URL unset) even though a clickhouse-smoke job already boots a real CH container; submit the 4 tracer builders to that container so a Code-386-class error fails CI, P1. 317 = RETRO-078 §4a LG-1/§5d — audit the toString(col) AS col alias-shadow across all CH builders; confirmed sibling clickhouse-dsr.ts:271,275 (lexicographic String ORDER BY + wrong-row LIMIT 1, latent-not-throwing); fix by qualify-or-rename + sweep ingest/decision-api/packages-db, P2. NOTE 314 was consumed by PR #301 (dev-only localhost CORS + idempotent local-dev tenant seed). NO Rule promoted RETRO-078: alias-shadow pattern is count-1 standalone (tracer+DSR = one PR-discovered family); the mock-test-can't-catch-real-backend-rejection AXIS is count-1 on the live-backend-query-analysis axis (the HTTP/schema axis of that family is ≥3 but covered by Rule L + K.2 round-trip) — held for the next independent sighting per RETRO-077's identical deferral discipline.) -->
 <!-- prior next free FOLLOW number: 314 (309-313 = RETRO-077 / PR #298 / FOLLOW-269 K.3.6 tracer admin UI: 309 = Weight Editor GET 405 (admin/intent/config exports POST-only; real GET is /api/intent/config) + can-never-PUT (GET drops `id`) + test fabricates the contract [CB-1 P0 + LG-1 P1 + TG-1]; 310 = Live Monitor SSE 401s (page sends ?token= query param, verifyTracerAdminAuth reads header-only) [CB-2 P0]; 311 = 3 tenant-scoped pages nav-orphaned, only Weight Editor in sidebar, no tenant-row link, no [id]/page.tsx [Rule H P1]; 312 = History "Export CSV" yields JSONL (_accept query param ignored, route reads Accept header) + datetime-local→ISO ambiguity [LG-2 P2 + LG-3 P3]; 313 = drop the data_source loose casts AFTER extending FOLLOW-303 to widen ALL FOUR tracer enums incl Sessions+History to add 'error' [P3, depends extended 303]. FOLLOW-303 does NOT cover the UI cast cleanup — it names only TracerSessionDetailResponseSchema, not TracerSessionsResponseSchema; must be EXTENDED. No Rule promoted this run: the "consumer UI test mocks a fabricated server contract" pattern is count-3 in the fixture-lies family but adjacent to Rule L; held for the architect to extend Rule L or mint a rule on the next independent sighting.) -->
+
+---
+
+## FOLLOW-354 — Test + document the confidence floor's real axis: suppress `/adapt/description` below floor, and reconcile the 3 confidence thresholds
+
+- **source_retro:** RETRO-091 (§4a LG-1, §4c TG-1, §4d DG-1, §5d)
+- **source_ticket:** FOLLOW-343 (PR #321)
+- **recommended_sprint:** next (P2 wave)
+- **recommended_agent:** sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 4
+- **scope:** FOLLOW-343's floor is largely redundant on the directive/reorder axis (the server
+  `/api/adapt` already gates at `CONFIDENCE_THRESHOLD = 0.6`, `route.ts:72,270-273`, returning
+  `[]`); its genuine value is suppressing the ungated `/adapt/description` fetch
+  (`adapt-description.ts:221-227,265`; the `/api/adapt/description` route has NO confidence
+  parameter). The 12 existing tests assert only the directive axis. Add coverage + docs for the axis
+  that actually matters.
+- **ac:**
+  - [ ] A test stubs `/adapt/description` DISTINCTLY from `/adapt` (the existing stub's
+        `url.includes('/adapt')` collides) and asserts NO `/adapt/description` fetch is issued when
+        `confidence < DOM_ADAPT_CONFIDENCE_FLOOR` AND `signal_count < DOM_ADAPT_MIN_SIGNAL_COUNT`.
+        RED before the floor existed, GREEN after.
+  - [ ] A test asserts the description fetch IS issued at/above the floor (positive control).
+  - [ ] MASTER_DESIGN (§E.4.5 or §E.7) gains a short "confidence gating ladder" note: SDK DOM floor
+        0.5 < server directive gate 0.6 = SDK sidebar 0.6; explicit statement that
+        `/adapt/description` is gated ONLY in the SDK floor (server does not gate it).
+  - [ ] Note the 0.5–0.6 asymmetry so FOLLOW-344 blending is aware.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-355 — Pin the cold-start `signal_count` invariant so a future init-time prior can't silently defeat the DOM floor
+
+- **source_retro:** RETRO-091 (§4a LG-2, §4c TG-2, §5b)
+- **source_ticket:** FOLLOW-343 (PR #321)
+- **recommended_sprint:** next (P3 wave)
+- **recommended_agent:** sdk-engineer
+- **priority:** P3
+- **estimated_hours:** 2
+- **scope:** At the first `refreshDirectives()` (cold-start init, `index.ts:886`), `signal_count` is
+  already `1` — the device-type prior at `index.ts:869` is applied via `applyBehavioralSignal`
+  (which increments the count), while referrer/archetype hints preserve it (`intent.ts:1428,1515`).
+  The floor's margin against gate (b) `DOM_ADAPT_MIN_SIGNAL_COUNT = 2` is therefore exactly ONE
+  signal. A future cold-start prior (FOLLOW-207/216 family) that adds a second init signal would
+  push cold-start `signal_count` to 2, pass gate (b), and silently re-open the wrong-archetype
+  reshuffle — with no test to catch it.
+- **ac:**
+  - [ ] An `_initForTest` integration test drives the REAL cold-start init (device + referrer +
+        archetype priors) and asserts
+        `currentIntentState.signal_count < DOM_ADAPT_MIN_SIGNAL_COUNT`. Goes RED if a future prior
+        tips it to 2.
+  - [ ] A comment at `index.ts:869` (or `adapt-floor.ts`) documents that init-time behavioral priors
+        count toward `signal_count` and the floor margin is one signal.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-356 — `/api/adapt` response `tier` consumer + behavioral tests for page-type tier/directive derivation
+
+- **source_retro:** RETRO-092 (§3 HALF_WIRE_P, §4c TG-1)
+- **source_ticket:** FOLLOW-345 (PR #323)
+- **recommended_sprint:** next
+- **recommended_agent:** sdk-engineer + qa-engineer
+- **priority:** P1
+- **estimated_hours:** 4
+- **scope:** The POST `/api/adapt` response `tier` field is now derived (`{1,2}` from `page_type`,
+  `route.ts:850`) and logged to `adaptation_decisions.tier`, but NO non-test consumer reads
+  `adaptResponse.tier` (the only SDK `tier` reads are `config.tier`, a different string field;
+  `AdaptResponse.tier: 1|2|3` at `adapt.ts:253` is declared-but-unused). Decide: (a) wire a real SDK
+  consumer, or (b) mark the field analytics-only and stop declaring `1|2|3` on the SDK type. Also:
+  the two new fns `tierFromPageType`/`filterDirectivesByPageType` (`route.ts:763,778`) and AC-1/AC-2
+  ship with ZERO assertions.
+- **ac:**
+  - [ ] A documented decision (wired consumer OR analytics-only); SDK `AdaptResponse.tier` type
+        matches what the POST path actually emits.
+  - [ ] Test: `listing_detail` body → response `tier===2` AND a `headline` directive present.
+  - [ ] Test: `listing_list`/`search`/`home` body → `tier===1` AND `headline` absent, same
+        archetype.
+  - [ ] Test: `logDecisionAsync` receives the derived tier (`2` on detail).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-357 — Reconcile `/api/adapt` page-type-derived `tier` with MASTER_DESIGN §E.7 "no Tiers" (CEO sign-off)
+
+- **source_retro:** RETRO-092 (§4a LG-1 + LG-3, §4d DG-1/DG-2, §5d escalation)
+- **source_ticket:** FOLLOW-345 (PR #323)
+- **recommended_sprint:** next (BLOCKED on CEO ruling)
+- **recommended_agent:** backend-engineer (after CEO decision)
+- **priority:** P1
+- **estimated_hours:** 2
+- **scope:** §E.7 (`MASTER_DESIGN:2394`, CEO 2026-06-05) eliminated Tiers — "wszyscy tenanci dostają
+  jedno doświadczenie … Parametr `tier` usunięty z API". `tierFromPageType` (`route.ts:752-763`)
+  re-derives a value it explicitly calls the "integration tier" (tier 2 = Augment) on the live
+  decision path and persists it to `adaptation_decisions.tier`. Either rename the value off the
+  integration-tier vocabulary (e.g. `directive_scope` / `page_context`) and adjust the docstring +
+  column semantics, OR obtain an explicit CEO carve-out that `/api/adapt`'s `tier` is an independent
+  page-context axis and patch §E.7. Also fix the docstring's phantom `description` slot (LG-3) and
+  drop the "integration tier" framing.
+- **ac:**
+  - [ ] CEO ruling recorded: rename-off-tier OR §E.7 carve-out.
+  - [ ] Code + `tierFromPageType` docstring reflect the ruling; no "integration tier" / phantom
+        `description`-slot language remains.
+  - [ ] §E.7 (or §E.1) in MASTER_DESIGN updated so SoT and shipped meaning of "tier" agree
+        (OPERATING_PRINCIPLE 2).
+- **promoted_to_queue:** false
+- **notes:** PM — §5d escalation candidate; surface to CEO before any further tier-axis work (incl.
+  the §E.7 description-pipeline tickets).
+
+---
+
+## FOLLOW-358 — Resolve GET-vs-POST `adaptation_decisions.tier` semantic divergence (Rule K parity)
+
+- **source_retro:** RETRO-092 (§4a LG-2, §8 Rule K)
+- **source_ticket:** FOLLOW-345 (PR #323)
+- **recommended_sprint:** next
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** Two handlers now write divergent semantics to the SAME `adaptation_decisions.tier`
+  column: GET `/api/adapt` (`route.ts:632,640,741`, untouched by #323) logs the CALLER-SUPPLIED
+  integration tier (`1|2|3` query param); POST (`route.ts:1087`) logs the page-type-DERIVED `1|2`.
+  An analyst querying `tier` cannot tell which meaning a row carries (Rule K dual-surface divergence
+  on the column-semantics axis). FOLLOW-170's `features_snapshot` (`route.ts:415`) also ingests this
+  mixed value.
+- **ac:**
+  - [ ] Either a discriminator (`tier_source`/`page_type`) column distinguishes GET vs POST rows, OR
+        both handlers write the same `tier` definition.
+  - [ ] A test or documented note records which producers write `adaptation_decisions.tier` and with
+        what meaning.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-359 — Return `variant` in GET /api/adapt response body (attributable arm)
+
+- **source_retro:** RETRO-095 (§3 HALF_WIRE_P / §4b CB-1 / §4c TG-2)
+- **source_ticket:** FOLLOW-342 (PR #327)
+- **recommended_sprint:** next
+- **recommended_agent:** backend-engineer
+- **priority:** P1
+- **estimated_hours:** 2
+- **scope:** The GET `/api/adapt` handler samples and serves a bandit variant (`route.ts:698-699`,
+  `:294`) and logs it to ClickHouse (`:730`) but omits `variant` from its response object
+  (`route.ts:717-728`), unlike POST (`route.ts:1123`). Any GET-path consumer cannot persist/echo the
+  served arm, so the conversion feedback loop (`/api/adapt/feedback`→`updateBanditArm`) can never
+  attribute GET-path rewards. Add `variant: getHandlerVariant` to the GET response object.
+- **ac:**
+  - [ ] GET `/api/adapt` response body includes `variant` (the value passed to `runDecisionTree` and
+        logged).
+  - [ ] Test asserts GET response `variant` equals the value logged to ClickHouse for the same
+        request.
+  - [ ] No change to POST behavior.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-360 — Gate bandit variant behind holdout/consent on the GET path (mirror POST ordering) [P0 — holdout-baseline contamination]
+
+- **source_retro:** RETRO-095 (§3 HALF_WIRE_C / §4b CB-2 / §4c TG-1 / §4d DG-1)
+- **source_ticket:** FOLLOW-342 (PR #327)
+- **recommended_sprint:** next (HOTFIX — experiment baseline is being contaminated in prod)
+- **recommended_agent:** backend-engineer
+- **priority:** P0
+- **estimated_hours:** 4
+- **scope:** POST returns early for holdout/consent-skip BEFORE variant selection
+  (`route.ts:894-919`, selection at `:993`), so holdout sessions get `directives:[]` + no variant.
+  GET selects/serves/logs the variant (`route.ts:698-742`) with NO holdout short-circuit, yet logs
+  `holdoutGroup`. A GET `holdout_group=true` request is served `v1`/`v2` copy and logged as
+  `(holdout_group=1, variant=v1)`, contaminating the holdout counterfactual baseline that
+  pilot-calibration and ab/weights analytics depend on. Move/guard GET variant selection so holdout
+  & consent-skip sessions are served + logged `variant='control'`. Document the holdout×bandit
+  precedence in `runDecisionTree` JSDoc and Master Design §E.3.
+- **ac:**
+  - [ ] GET path: holdout (`holdout_group=true`) requests are served control copy and logged with
+        `variant=control`.
+  - [ ] GET path: consent-skip requests serve no adaptation, consistent with POST.
+  - [ ] Test: holdout GET request asserts ClickHouse `param_p_variant=control` and no `v1`/`v2` copy
+        in directives.
+  - [ ] JSDoc on `runDecisionTree` and Master Design §E.3 state the holdout-bypasses-bandit rule.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-361 — Reconcile bandit seed convention (`'default'` vs `control/v1/v2`)
+
+- **source_retro:** RETRO-095 (§4a LG-1 / §4c TG-3)
+- **source_ticket:** FOLLOW-342 (PR #327)
+- **recommended_sprint:** next
+- **recommended_agent:** backend-engineer
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** `bandit-seed.ts:72` (tenant creation) seeds `variant:'default'`;
+  `bandit-query.ts:54/90` lazily auto-seeds `control/v1/v2`. PK `(tenant_id,archetype,variant)`
+  (`ab_bandit_weights.ts:84`) lets both coexist: `'default'` rows are either never sampled or act as
+  a phantom 4th arm whose `VARIANT_INDEX['default'] ?? 0` maps to control copy, diluting Thompson
+  sampling. Align `bandit-seed.ts` to seed `control/v1/v2`, migrate/strip stale `'default'` rows,
+  add a parity test.
+- **ac:**
+  - [ ] `seedBanditWeightsForTenant` seeds `control`, `v1`, `v2` per archetype (not `'default'`).
+  - [ ] Migration removes or backfills existing `variant='default'` rows.
+  - [ ] Parity test fails if `bandit-seed` variant list diverges from `bandit-query`'s
+        `SEED_VARIANTS`.
+  - [ ] No `'default'` variant is reachable by `thompsonSample`.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-362 — Define non-`en` locale A/B behavior (stop logging unserved variants)
+
+- **source_retro:** RETRO-095 (§4a LG-2)
+- **source_ticket:** FOLLOW-342 (PR #327)
+- **recommended_sprint:** next
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 3
+- **scope:** Copy precedence at `route.ts:290-294` lets a `pl`/`es` slot override win over the
+  bandit variant; `variants` only carries `en` arrays (`types.ts:31`, no playbook populates
+  `variants.pl/es`). For non-en sessions the served copy is always control while `thompsonSample`
+  still picks and logs `v1`/`v2` — logged variant ≠ served copy. Either suppress variant
+  sampling/logging for non-en locales until locale variant arrays exist, or populate
+  `variants.pl/es`. The CH log must reflect the copy actually served.
+- **ac:**
+  - [ ] For a non-en session with no locale variant arrays, the logged `variant` matches the served
+        copy (control).
+  - [ ] Decision documented: suppress vs populate locale variants.
+  - [ ] Test covers a `pl` request asserting logged variant == served variant.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-363 — Thread hysteresis (`currentArchetype`) into `applyDwellSignal` + `applyListingViewRate` (the two missed ongoing classify paths)
+
+- **source_retro:** RETRO-097 (§3 HALF_WIRE / §4a LG-1 / §4c TG-1 / §4d DG-2)
+- **source_ticket:** FOLLOW-344 (PR #329)
+- **recommended_sprint:** 20
+- **recommended_agent:** sdk-engineer
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** PR #329 added a `SWITCH_MARGIN=0.05` hysteresis guard to
+  `classifyFromProbabilities(probs, currentArchetype?)` and threaded it into the 5
+  `applyBehavioralSignal` branches, but left 8 of 13 call sites unguarded. Two are ongoing, repeated
+  per-signal classification paths that bypass the guard: `applyDwellSignal`
+  (`packages/sdk/src/core/intent.ts:1637`, fires on a `setInterval` dwell tick, `index.ts:581-604`)
+  and `applyListingViewRate` (`intent.ts:1578`, fires on every `listing.viewed` after the 2nd view,
+  `index.ts:953-963`). Both can flip the archetype on a near-tie mid-session — exactly the churn
+  FOLLOW-344 was opened to stop (audit F-09). Pass `state.archetype` into both; document WHICH of
+  the 13 sites are intentionally free-classify and WHY (Rule S).
+- **ac:**
+  - [ ] `applyDwellSignal` and `applyListingViewRate` pass `state.archetype` to
+        `classifyFromProbabilities`.
+  - [ ] New tests: a flat near-tie distribution + a repeated dwell tick (and a 2nd `listing.viewed`)
+        does NOT flip the held archetype; a clear-win (gap ≥ SWITCH_MARGIN) DOES switch. Fail
+        before, pass after.
+  - [ ] A comment on `classifyFromProbabilities` enumerates the 13 call sites and the free-classify
+        exemption rationale (Rule S).
+  - [ ] AC5-style behavioral tests strengthened to assert a held-archetype outcome, not a
+        conditional `if (changed)` (closes TG-2).
+- **notes:** Rule S sibling-completeness recurrence (3rd instance; see RETRO-044/045). Re-grep ALL
+  `classifyFromProbabilities` sites in any future intent change.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-364 — Reconcile §D.6 coverage-summary counts to a clean 18-way partition
+
+- **source_retro:** RETRO-097 (§4d DG-1)
+- **source_ticket:** FOLLOW-344 (PR #329)
+- **recommended_sprint:** 20
+- **recommended_agent:** ml-engineer (docs)
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** `docs/MASTER_DESIGN.md:1946` ("Coverage summary post FOLLOW-344") double-counts:
+  `lifestyle_expat`/`upsizer` appear in both the "8/18 Full" and the trailing "2/18 Full"; the 2 ⚪
+  rows are also marked "Quiz/chat-only" in the table. The four bucket counts do not partition the 18
+  archetypes cleanly and the prose contradicts the table Status column.
+- **ac:**
+  - [ ] The summary counts sum to exactly 18 with no archetype in two buckets.
+  - [ ] Each count matches the Status column of the table rows it claims.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-365 — Tracking stub for deferred top-2 archetype blending (CEO-gated, currently un-ticketed)
+
+- **source_retro:** RETRO-097 (§5b)
+- **source_ticket:** FOLLOW-344 (PR #329)
+- **recommended_sprint:** backlog (CEO-gated)
+- **recommended_agent:** ml-engineer + CEO/CPO product decision
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** FOLLOW-344 resolved audit F-09 via the switch-margin path (CEO Q#2: hysteresis, NOT
+  blending). The alternative — top-2 playbook blending — is parked but exists ONLY as QUEUE.md prose
+  (`QUEUE.md:207` "CEO-gated: archetype blending"; `QUEUE.md:5337-5340`). It has no FOLLOW stub.
+  (Note: FOLLOW-352 is an unrelated slot-name-translation follow-up, NOT the blending parking lot —
+  see RETRO-097 §8.) Create the tracking stub so the parked decision and its trigger condition are
+  not lost.
+- **ac:**
+  - [ ] A backlog stub records the blending option, its trigger (CEO decides to pursue blended
+        profile post-pilot), and a link to FOLLOW-344 / audit F-09.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-366 — Fix chat NLP bridge payload-key mismatch (`message` vs `content`) — bridge is dead-on-arrival [P0]
+
+- **source_retro:** RETRO-098 (§3 HW-1 / §4b CB-1 / §4a LG-1)
+- **source_ticket:** FOLLOW-346 (PR #330)
+- **recommended_sprint:** next (HOTFIX — the FOLLOW-346 deliverable is non-functional in prod)
+- **recommended_agent:** data-engineer
+- **priority:** P0
+- **estimated_hours:** 3
+- **scope:** `_spawn_chat_nlp` (`apps/stream-consumer/src/consumers/events.py:67-74`) reads
+  `payload.get("content")`/`payload.get("role")`, but the SDK producer
+  (`packages/sdk/src/index.ts:1227`) and canonical schema `ChatMessageSentPayloadSchema`
+  (`packages/shared/src/schemas/events/chat.ts:38-48`) emit `payload.message` (+ `char_count`,
+  `locale`, `lead_id`) — NO `content`/`role` fields. The content guard therefore trips for 100% of
+  real events; the Modal spawn never fires; no shadow key is ever written. Repoint the consumer to
+  read `payload["message"]` and synthesize `{"role":"user","content": payload["message"]}` for the
+  Modal call.
+- **ac:**
+  - [ ] `_spawn_chat_nlp` extracts the buyer text from `payload["message"]`, not
+        `payload["content"]`.
+  - [ ] A test fixture is constructed from `ChatMessageSentPayloadSchema` (or the SDK's actual
+        emitted payload `{message, char_count, lead_id}`) — NOT a hand-invented `{role, content}` —
+        and asserts `fn.spawn` IS called with the message text. This test MUST fail against the
+        pre-fix code.
+  - [ ] PII-scrub posture confirmed: the SDK already scrubs (`scrubMessagePii`); no double-scrub or
+        raw-text regression.
+  - [ ] DPIA C-07 binding re-verified: still only tenant_id, session_id, message text forwarded to
+        Modal; nothing new to ClickHouse/Postgres.
+  - [ ] Note in C-07 brief (or addendum) that shadow data collection begins only after this fix
+        lands (DG-1).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-367 — Implement (or remove) the `CHAT_NLP_LIVE` gate — currently an inert no-op
+
+- **source_retro:** RETRO-098 (§3 HW-2 / §4a LG-2 / §4d DG-2)
+- **source_ticket:** FOLLOW-346 (PR #330)
+- **recommended_sprint:** the FOLLOW-346-LIVE cycle (after C-07 DPIA sign-off)
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 3
+- **scope:** `CHAT_NLP_LIVE` (`apps/control-plane/src/app/api/adapt/route.ts:88`) is read and logged
+  but no `if (CHAT_NLP_LIVE)` branch changes directives — flipping it true does nothing. Either (a)
+  implement the gated path so `CHAT_NLP_LIVE=true` actually lets chat intent influence server-side
+  directive selection (the behavior the route.ts:81-83 comment claims), with the C-07 5-item DPIA
+  gate as depends_on; or (b) if no live path is planned this cycle, remove the misleading flag +
+  comments and keep the shadow-only posture documented honestly.
+- **ac:**
+  - [ ] If implemented: a test proves `CHAT_NLP_LIVE=true` changes at least one directive given a
+        shadow intent vector, AND `=false` leaves directives byte-identical.
+  - [ ] If removed: route.ts:81-83 over-claiming comment deleted; `.env.example` entry removed or
+        re-described as a placeholder.
+  - [ ] depends_on (if implemented): all 5 C-07 DPIA go-live items signed off + FOLLOW-366.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-368 — Guarantee + verify the Python writer and TS reader share one Upstash Redis instance (env-var name divergence)
+
+- **source_retro:** RETRO-098 (§3 HW-3 / §4c TG-2 / §5d)
+- **source_ticket:** FOLLOW-346 (PR #330)
+- **recommended_sprint:** next (deploy-time correctness for the shadow bridge once FOLLOW-366 lands)
+- **recommended_agent:** devops-engineer (with data-engineer)
+- **priority:** P1
+- **estimated_hours:** 4
+- **scope:** Python writer reads `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`
+  (`redis_writer.py:29-30`); TS reader + all control-plane consumers read
+  `UPSTASH_REDIS_URL`/`UPSTASH_REDIS_TOKEN` (`chat-intent-cache.ts:69,74`). The shadow KEY is
+  byte-identical (verified), but the two runtimes resolve their connection from different env-var
+  names — if Modal's secret and Vercel's env don't point at the same Upstash DB, write and read
+  silently miss with no error. Document the convention and add a live round-trip smoke.
+- **ac:**
+  - [ ] Doc/runbook entry pins that the Modal `UPSTASH_REDIS_REST_*` pair and the Vercel
+        `UPSTASH_REDIS_*` pair MUST resolve to the same Upstash database.
+  - [ ] A CI/integration smoke (extend the existing live-backend smoke pattern, RETRO-079) writes
+        via the Python `write_shadow_intent` path and reads via the TS `readShadowChatIntent` path
+        against ONE real Upstash instance, asserting round-trip with the 24h TTL.
+  - [ ] Skip-loud / hard-fail when the Upstash creds are absent (no silent skip).
+- **promoted_to_queue:** false

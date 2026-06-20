@@ -1233,6 +1233,41 @@ grep -n 'BASE_PRIOR' packages/sdk/src/__tests__/intent-weights-drift.test.ts    
 
 ---
 
+## Rule Z — Every cross-runtime consumer (Python ↔ TS) that reads an event/payload/DB-write/query-result MUST be tested against a fixture derived from the OTHER runtime's canonical contract or a real backend — a mock that validates the shape THIS runtime emits is not evidence the wire connects
+
+**Pattern:** Two runtimes communicate across a language boundary (SDK/control-plane TypeScript ↔
+stream-consumer/intent-engine/ingest Python, or app ↔ ClickHouse/PostgREST). Each side has passing
+unit tests, but each test mocks/constructs the shape ITS OWN side expects, never the contract the
+OTHER side actually emits or enforces. The wire ships green-but-severed: the producer's field names,
+the backend's column types, or the query engine's type rules differ from the consumer's hand-assumed
+shape, and the defect is invisible to CI because no test crosses the boundary with a real or
+contract-derived payload.
+
+**Rule:** When a symbol in one runtime consumes data produced by another runtime (event payload,
+Redis value, DB row, query result), at least ONE test MUST drive it with either (a) a fixture
+mechanically derived from the producing runtime's canonical contract (e.g. parsed from the
+`@estalara/shared` Zod schema for SDK events, or the producer's actual emitted object), or (b) a
+real backend round-trip in a skip-loud/hard-fail CI job. A fixture hand-authored in the consumer's
+assumed shape is forbidden as the SOLE evidence the wire connects. Cross-runtime field-name/type
+contracts (event payload keys, Redis value shape, INSERT body column types, query result types) are
+a HALF_WIRE_C P0/P1 surface until a contract-derived or live-backend test exists.
+
+**Verification:**
+
+```bash
+# 1. For each Python consumer of an SDK/ingest event payload, the field names it reads
+#    MUST exist in the canonical Zod schema in packages/shared/src/schemas/events/.
+grep -rn "payload.get\|payload\[" apps/stream-consumer/src apps/intent-engine/src apps/ingest/src \
+  | grep -v "\.test\." | grep -v test_      # each key must appear in the matching *PayloadSchema
+# 2. Cross-runtime Redis/CH/PostgREST consumers must have a live-backend smoke (skip-loud):
+grep -rln "REQUIRE_CLICKHOUSE\|REQUIRE_REDIS\|REQUIRE_UPSTASH" .github/workflows/   # a guard job must exist
+# 3. A consumer test whose fixture is hand-built in the consumer's own assumed shape
+#    (not parsed from the shared schema / not a real round-trip) does NOT satisfy this rule.
+```
+
+---
+
+<!-- Rule Z added 2026-06-20 — RETRO-098 §6 (P-XLANG-PAYLOAD-CONTRACT: parent "mock-can't-catch-cross-runtime-mismatch" family now 4 instances — RETRO-068 ingest dual-write INSERT body the mock fetchImpl accepts but ClickHouse rejects, count 1; RETRO-078 CH tracer query mock-fetch green but live engine 386s, count 2; RETRO-079 closure required a dedicated live-ClickHouse CI job because mocks structurally could not catch it; RETRO-098 §3 HW-1 SDK(TS) emits chat.message.sent {message,…} but Python _spawn_chat_nlp reads payload.content → spawn never fires for real traffic, both sides green because the Python test invents {role,content} fixtures, count 4; threshold long exceeded). DISTINCT axis from Rule J (byte-identical cross-runtime FILE mirror sync) — Rule Z governs the TEST CONTRACT across a producer/consumer language boundary, not duplicate source files; and from Rule L (missing-attribute) / Rule Y (over-claimed citation). Filed FOLLOW-366 (fix the payload-key mismatch with a producer-shape-grounded fixture) + FOLLOW-368 (live-Upstash round-trip smoke). Next free Rule letter was Z (V skipped per the Rule W note; W,X,Y used). -->
 <!-- Rule Y added 2026-06-18 — RETRO-089 §6 (RETRO-084 §4d DG-1 false/absent drift-guard citation, count 1 held as over-claimed-verification meta-pattern + RETRO-089 §4d DG-1 wrong-file guard citation introduced BY the FOLLOW-331 fix for RETRO-084's instance, count 2; threshold met). DISTINCT axis from Rule L (missing-attribute) / Rule K.2 (provenance-enum round-trip) / Rule Q (mirrored-test blind spot) — those govern the test MECHANICS; Rule Y governs the CITATION (a named artifact claimed as proof must perform the cited check). Filed FOLLOW-338 to fix the intent-weights.test.ts:28-30 mis-pointer + reconcile the migration-0030 third copy. Next free Rule letter was Y (Rule V skipped per the Rule W note; W, X used). -->
 
 <!-- Rule X added 2026-06-14 — RETRO-075 §6 (RETRO-074 §4b CB-1 base-URL-FORM mismatch, count 1, with an explicit promote-on-confirmation condition + RETRO-075 §4b CB-1 confirming FOUR independent double-/api fetch sites fixed via buildEndpoint, count 2; threshold met). DISTINCT axis from Rule L (missing-attribute) — RETRO-074 §6 explicitly kept them as separate roots/sibling rules for sibling axes of the same install-snippet→SDK-consumer meta-shape. The remedy (buildEndpoint helper + prod-snippet-base tests) shipped in PR #291. Filed FOLLOW-306 to bring the LAST fetch site (adapt-description.ts, the un-migrated 6th) under the helper + add a dedicated endpoint.test.ts. Next free Rule letter was X (Rule V intentionally skipped per the Rule W note). -->

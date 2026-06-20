@@ -1276,3 +1276,60 @@ here so it cannot be forgotten.
 **Security note:** `ESTALARA_SMOKE_API_KEY` must be a read-only SDK API key (same `scopes` as the
 `data-api-key` attribute in the install snippet — `write:events` if the ingest is wired, or a custom
 read scope). It must NOT be an admin key or service-role key.
+
+---
+
+## OPEN — ESC-025: FOLLOW-346 chat NLP shadow bridge is dead-on-arrival in prod (cross-language payload-key mismatch); ticket was marked DONE against an unmet AC-1 [FOLLOW-346 / FOLLOW-366]
+
+**Filed by:** retrospective-analyst (RETRO-098, via Opus 4.8 session) **Date:** 2026-06-20
+**Affects:** FOLLOW-346 (merged PR #330), FOLLOW-366 (hotfix) **Type:** priority
+
+**Description:** The just-merged chat NLP shadow bridge does not function against real traffic. The
+SDK producer emits `chat.message.sent` with payload `{ message, char_count, lead_id }` (canonical
+`ChatMessageSentPayloadSchema`, `packages/shared/src/schemas/events/chat.ts:38-48`), but the new
+Python consumer `_spawn_chat_nlp` (`apps/stream-consumer/src/consumers/events.py:67-74`) reads
+`payload.get("content")` / `payload.get("role")` and guards `if not message["content"]: return`. For
+100% of real events `content == ""` → the guard trips → the Modal `process_chat_message` spawn never
+fires → no Redis shadow key is ever written → the TS reader at `route.ts:1073` always misses. Both
+sides shipped green because every test on the path constructs a hand-invented `{role, content}`
+fixture instead of the real producer shape (Rule Z violation). FOLLOW-346's AC-1 ("consumed
+`chat.message.sent` invokes the NLP extractor; Redis shadow key written + read by `/api/adapt`") is
+therefore NOT met end-to-end — the ticket should not have closed against it. The prior PM validation
+("verified end-to-end") checked the Redis key byte-identity but not the payload field one hop
+upstream. DPIA posture is unaffected (no raw text persisted; the brief's privacy conclusions hold —
+only its "shadow data is being collected" premise is currently false).
+
+**Required action:** (1) Authorize FOLLOW-366 as a P0 hotfix (repoint the consumer to
+`payload["message"]`, ship with a producer-shape-grounded fixture). (2) Decide whether FOLLOW-346
+should be re-opened / re-labeled (AC-1 unmet) or left DONE with FOLLOW-366 carrying the fix. (3)
+Note that the post-pilot chat-vs-archetype disagreement-rate analysis (the entire purpose of shadow
+mode) will have an empty dataset until FOLLOW-366 lands.
+
+**Owner:** CEO (priority call) → data-engineer (FOLLOW-366 implementation)
+
+---
+
+## OPEN — ESC-026: FOLLOW-342 GET-path bandit serves + logs treatment variants to HOLDOUT sessions, contaminating the experiment baseline in prod [FOLLOW-342 / FOLLOW-360]
+
+**Filed by:** retrospective-analyst (RETRO-095, via Opus 4.8 session) **Date:** 2026-06-20
+**Affects:** FOLLOW-342 (merged PR #327), FOLLOW-360 (hotfix), pilot-calibration + ab/weights
+analytics **Type:** priority
+
+**Description:** The POST `/api/adapt` handler returns early for holdout BEFORE variant selection
+(`route.ts:894-919`, selection at `:993`), so holdout sessions correctly get `directives:[]` and no
+variant. The GET handler samples + serves + logs a bandit variant at `route.ts:698-742` with NO
+holdout short-circuit, yet still logs `holdoutGroup`. A GET request carrying `holdout_group=true` is
+now served `v1`/`v2` copy AND logged to ClickHouse as `(holdout_group=1, variant=v1)` — the holdout
+counterfactual baseline (which must stay control-only) is being polluted on every GET-path holdout
+request. Before PR #327, GET hardcoded `'control'` in its log, so holdout rows were always clean;
+this PR regressed it. Any downstream measurement keyed on `adaptation_decisions` (FOLLOW-170
+conversion label loop, pilot calibration) now reads a contaminated baseline. Separately (P1,
+FOLLOW-359): the GET response omits `variant`, so GET-path conversions are unattributable and the
+bandit posterior never learns from GET traffic.
+
+**Required action:** (1) Authorize FOLLOW-360 as a P0 hotfix (gate GET variant selection behind the
+holdout/consent check, mirror POST's early-return ordering; holdout GET requests must serve + log
+`variant=control`). (2) Flag that any analytics computed over `adaptation_decisions` between
+2026-06-19 (PR #327 merge) and the FOLLOW-360 fix should treat holdout-row variants as suspect.
+
+**Owner:** CEO (priority call) → backend-engineer (FOLLOW-360 implementation)

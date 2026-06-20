@@ -1,12 +1,20 @@
 """
-FOLLOW-346 tests: chat.message.sent → _spawn_chat_nlp → process_chat_message.
+FOLLOW-346 / FOLLOW-366 tests: chat.message.sent -> _spawn_chat_nlp -> process_chat_message.
+
+Rule Z (FOLLOW-366): ALL fixtures MUST use the real SDK producer shape
+  {"message": str, "char_count": int, "lead_id": str}
+as defined in ChatMessageSentPayloadSchema (packages/shared/src/schemas/events/chat.ts:38-48).
+Fixtures using {"role", "content"} are FORBIDDEN — that shape never existed in the SDK and
+is what let the original FOLLOW-346 defect (content == "" guard always tripping) ship green.
 
 Coverage:
-  AC-1a: a consumed chat.message.sent event triggers _spawn_chat_nlp (Modal spawn).
+  AC-1a: a consumed chat.message.sent event (real producer shape) triggers fn.spawn.
   AC-1b: non-chat events do NOT trigger _spawn_chat_nlp.
-  AC-1c: _spawn_chat_nlp skips spawn when content is empty (missing payload guard).
+  AC-1c: _spawn_chat_nlp skips spawn when payload.message is empty/absent.
   AC-2:  no raw chat text is added to the ClickHouse batch (DPIA C-07).
   AC-3:  spawn failure (Modal unavailable) does not block the ClickHouse batch.
+  AC-Z:  regression guard — real-shape event causes spawn with correct message text
+         (this test FAILS on origin/main and PASSES after the FOLLOW-366 fix).
 """
 
 from __future__ import annotations
@@ -17,6 +25,14 @@ from unittest.mock import MagicMock, patch
 from src.consumers.events import _spawn_chat_nlp, run_consumer
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
+
+# Real SDK producer shape: ChatMessageSentPayloadSchema
+# packages/shared/src/schemas/events/chat.ts:38-48
+_REAL_CHAT_PAYLOAD = {
+    "message": "Looking for 3-bed near international school",
+    "char_count": 44,
+    "lead_id": "lead-abc123",
+}
 
 
 def _make_raw_event(
@@ -74,17 +90,28 @@ def _make_dlq() -> MagicMock:
 
 
 class TestSpawnChatNlp:
-    def test_spawns_modal_function_with_correct_args(self) -> None:
-        """_spawn_chat_nlp calls modal.Function.lookup and fn.spawn with the right args."""
+    def test_spawns_modal_with_real_producer_shape(self) -> None:
+        """AC-Z / Rule Z regression guard.
+
+        Uses the REAL SDK producer payload shape {message, char_count, lead_id}.
+        This test FAILED on origin/main (payload.get("content") == "" -> guard tripped,
+        spawn never called) and PASSES after the FOLLOW-366 fix (payload.get("message")
+        is read instead).
+
+        Also verifies that Modal process_chat_message receives the synthesized
+        {"role": "user", "content": <message text>} dict as its `message` argument,
+        as required by the Modal function signature (intent-engine/src/main.py:32-37).
+        """
         mock_fn = MagicMock()
         mock_modal = MagicMock()
         mock_modal.Function.lookup.return_value = mock_fn
 
+        # Real producer shape — ChatMessageSentPayloadSchema
         event = {
             "tenant_id": "t-123",
             "session_id": "s" * 32,
             "type": "chat.message.sent",
-            "payload": {"role": "user", "content": "I need a 3-bed near schools"},
+            "payload": _REAL_CHAT_PAYLOAD,
         }
 
         with patch.dict("sys.modules", {"modal": mock_modal}):
@@ -96,11 +123,16 @@ class TestSpawnChatNlp:
         mock_fn.spawn.assert_called_once_with(
             tenant_id="t-123",
             session_id="s" * 32,
-            message={"role": "user", "content": "I need a 3-bed near schools"},
+            # Modal function expects {"role": "user", "content": <text>}; this dict is
+            # synthesized in _spawn_chat_nlp and never stored anywhere (DPIA C-07).
+            message={"role": "user", "content": "Looking for 3-bed near international school"},
         )
 
-    def test_skips_spawn_when_content_empty(self) -> None:
-        """_spawn_chat_nlp skips spawn when payload.content is empty."""
+    def test_skips_spawn_when_message_field_absent(self) -> None:
+        """AC-1c: _spawn_chat_nlp skips spawn when payload.message is absent/empty.
+
+        Uses real producer shape with message omitted (edge case: malformed event).
+        """
         mock_fn = MagicMock()
         mock_modal = MagicMock()
         mock_modal.Function.lookup.return_value = mock_fn
@@ -109,7 +141,26 @@ class TestSpawnChatNlp:
             "tenant_id": "t-123",
             "session_id": "s" * 32,
             "type": "chat.message.sent",
-            "payload": {"role": "user", "content": ""},
+            # message field absent — should guard without spawning
+            "payload": {"char_count": 0, "lead_id": "lead-xyz"},
+        }
+
+        with patch.dict("sys.modules", {"modal": mock_modal}):
+            _spawn_chat_nlp(event)
+
+        mock_fn.spawn.assert_not_called()
+
+    def test_skips_spawn_when_message_field_empty_string(self) -> None:
+        """AC-1c variant: empty string in payload.message also skips spawn."""
+        mock_fn = MagicMock()
+        mock_modal = MagicMock()
+        mock_modal.Function.lookup.return_value = mock_fn
+
+        event = {
+            "tenant_id": "t-123",
+            "session_id": "s" * 32,
+            "type": "chat.message.sent",
+            "payload": {"message": "", "char_count": 0, "lead_id": "lead-xyz"},
         }
 
         with patch.dict("sys.modules", {"modal": mock_modal}):
@@ -127,7 +178,7 @@ class TestSpawnChatNlp:
             "tenant_id": "",
             "session_id": "s" * 32,
             "type": "chat.message.sent",
-            "payload": {"role": "user", "content": "hello"},
+            "payload": {"message": "hello", "char_count": 5},
         }
 
         with patch.dict("sys.modules", {"modal": mock_modal}):
@@ -144,7 +195,7 @@ class TestSpawnChatNlp:
             "tenant_id": "t-123",
             "session_id": "s" * 32,
             "type": "chat.message.sent",
-            "payload": {"role": "user", "content": "Looking for a flat"},
+            "payload": {"message": "Looking for a flat", "char_count": 18},
         }
 
         with patch.dict("sys.modules", {"modal": mock_modal}):
@@ -157,12 +208,11 @@ class TestSpawnChatNlp:
 
 class TestChatNlpRouting:
     def test_chat_message_sent_triggers_spawn(self) -> None:
-        """AC-1a: consuming a chat.message.sent event triggers _spawn_chat_nlp."""
-        chat_payload = {"role": "user", "content": "I want a flat near the beach"}
+        """AC-1a: consuming a chat.message.sent event (real producer shape) triggers spawn."""
         msg = _make_kafka_msg(
             _make_raw_event(
                 type_="chat.message.sent",
-                payload=chat_payload,
+                payload=_REAL_CHAT_PAYLOAD,
             )
         )
         consumer = _make_consumer(msg, None, None)
@@ -179,9 +229,10 @@ class TestChatNlpRouting:
             )
 
         mock_spawn.assert_called_once()
-        # Confirm the event dict passed to spawn has the right type
+        # Confirm the event dict passed to spawn has the right type and real payload
         called_event = mock_spawn.call_args[0][0]
         assert called_event["type"] == "chat.message.sent"
+        assert called_event["payload"]["message"] == _REAL_CHAT_PAYLOAD["message"]
 
     def test_non_chat_event_does_not_trigger_spawn(self) -> None:
         """AC-1b: non-chat events (page.view) do not call _spawn_chat_nlp."""
@@ -202,16 +253,16 @@ class TestChatNlpRouting:
         mock_spawn.assert_not_called()
 
     def test_chat_event_still_appended_to_clickhouse_batch(self) -> None:
-        """AC-2: chat.message.sent is still inserted into ClickHouse (existing schema fields only).
+        """AC-2: chat.message.sent is still inserted into ClickHouse (DPIA C-07 check).
 
-        The event appears in the batch — the spawn is fire-and-forget. This confirms
-        no raw text column was conditionally removed from the batch write.
+        The event appears in the ClickHouse batch unchanged — the spawn is fire-and-forget.
+        payload.message (the PII-scrubbed text field) is NOT stripped from the event
+        before the ClickHouse insert; the ClickHouse schema stores the payload blob as-is.
         """
-        chat_payload = {"role": "user", "content": "Looking for investment property"}
         msg = _make_kafka_msg(
             _make_raw_event(
                 type_="chat.message.sent",
-                payload=chat_payload,
+                payload=_REAL_CHAT_PAYLOAD,
             )
         )
         consumer = _make_consumer(msg, None)
@@ -238,7 +289,7 @@ class TestChatNlpRouting:
         msg = _make_kafka_msg(
             _make_raw_event(
                 type_="chat.message.sent",
-                payload={"role": "user", "content": "test"},
+                payload={"message": "test message", "char_count": 12},
             )
         )
         consumer = _make_consumer(msg, None)

@@ -1333,3 +1333,31 @@ holdout/consent check, mirror POST's early-return ordering; holdout GET requests
 2026-06-19 (PR #327 merge) and the FOLLOW-360 fix should treat holdout-row variants as suspect.
 
 **Owner:** CEO (priority call) → backend-engineer (FOLLOW-360 implementation)
+
+---
+
+## OPEN — ESC-027: FOLLOW-345 page-type-derived `tier` re-introduces Tier vocabulary that MASTER_DESIGN §E.7 eliminated — CEO ruling needed before FOLLOW-357 can be implemented [FOLLOW-345 / FOLLOW-357]
+
+**Filed by:** pm-orchestrator **Date:** 2026-06-20 **Affects:** FOLLOW-357 (P1 rename/carve-out),
+MASTER_DESIGN §E.7, `apps/control-plane/src/app/api/adapt/route.ts` `tierFromPageType()` **Type:**
+architectural
+
+**Description:** MASTER_DESIGN §E.7 (CEO ruling 2026-06-05) eliminated Tiers: "wszyscy tenanci
+dostają jedno doświadczenie … Parametr `tier` usunięty z API". FOLLOW-345 (PR #323, merged
+2026-06-20) introduces `tierFromPageType()` (`route.ts:763`) which derives a value explicitly called
+the "integration tier" (`{1, 2}` from `page_type`) and persists it to `adaptation_decisions.tier`.
+The docstring calls tier 2 "Augment" — the old tier-2 integration tier name. This contradicts §E.7.
+
+Two resolutions are possible: (a) **Rename path**: rename the derived value off the "tier"
+vocabulary (e.g. `directive_scope: 'detail' | 'list'` or `page_context`), update the ClickHouse
+column semantics, fix the docstring and §E.7 / §E.1 in MASTER_DESIGN so SoT and code agree. (b)
+**Carve-out path**: CEO grants an explicit §E.7 carve-out that the `/api/adapt` response `tier`
+field is a page-context axis (detail vs list) independent of the legacy integration-tier concept,
+and §E.7 is patched to document the exception. The "Augment" framing in the docstring is removed.
+
+**Required action:** CEO chooses (a) or (b) and records the decision here. FOLLOW-357
+(backend-engineer, P1, 2h) is BLOCKED until this ruling is received.
+
+**Owner:** CEO architectural ruling → FOLLOW-357 (backend-engineer)
+
+**Resolution:** (pending)

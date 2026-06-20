@@ -9628,7 +9628,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         0.5 < server directive gate 0.6 = SDK sidebar 0.6; explicit statement that
         `/adapt/description` is gated ONLY in the SDK floor (server does not gate it).
   - [ ] Note the 0.5–0.6 asymmetry so FOLLOW-344 blending is aware.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9654,7 +9654,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         tips it to 2.
   - [ ] A comment at `index.ts:869` (or `adapt-floor.ts`) documents that init-time behavioral priors
         count toward `signal_count` and the floor margin is one signal.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9680,7 +9680,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] Test: `listing_list`/`search`/`home` body → `tier===1` AND `headline` absent, same
         archetype.
   - [ ] Test: `logDecisionAsync` receives the derived tier (`2` on detail).
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9706,7 +9706,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         `description`-slot language remains.
   - [ ] §E.7 (or §E.1) in MASTER_DESIGN updated so SoT and shipped meaning of "tier" agree
         (OPERATING_PRINCIPLE 2).
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 - **notes:** PM — §5d escalation candidate; surface to CEO before any further tier-axis work (incl.
   the §E.7 description-pipeline tickets).
 
@@ -9731,7 +9731,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         both handlers write the same `tier` definition.
   - [ ] A test or documented note records which producers write `adaptation_decisions.tier` and with
         what meaning.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9754,7 +9754,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] Test asserts GET response `variant` equals the value logged to ClickHouse for the same
         request.
   - [ ] No change to POST behavior.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9781,7 +9781,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] Test: holdout GET request asserts ClickHouse `param_p_variant=control` and no `v1`/`v2` copy
         in directives.
   - [ ] JSDoc on `runDecisionTree` and Master Design §E.3 state the holdout-bypasses-bandit rule.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9805,7 +9805,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] Parity test fails if `bandit-seed` variant list diverges from `bandit-query`'s
         `SEED_VARIANTS`.
   - [ ] No `'default'` variant is reachable by `thompsonSample`.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9828,7 +9828,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         copy (control).
   - [ ] Decision documented: suppress vs populate locale variants.
   - [ ] Test covers a `pl` request asserting logged variant == served variant.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9861,7 +9861,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         conditional `if (changed)` (closes TG-2).
 - **notes:** Rule S sibling-completeness recurrence (3rd instance; see RETRO-044/045). Re-grep ALL
   `classifyFromProbabilities` sites in any future intent change.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9880,7 +9880,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 - **ac:**
   - [ ] The summary counts sum to exactly 18 with no archetype in two buckets.
   - [ ] Each count matches the Status column of the table rows it claims.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9901,7 +9901,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 - **ac:**
   - [ ] A backlog stub records the blending option, its trigger (CEO decides to pursue blended
         profile post-pilot), and a link to FOLLOW-344 / audit F-09.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9934,7 +9934,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         Modal; nothing new to ClickHouse/Postgres.
   - [ ] Note in C-07 brief (or addendum) that shadow data collection begins only after this fix
         lands (DG-1).
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9958,7 +9958,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] If removed: route.ts:81-83 over-claiming comment deleted; `.env.example` entry removed or
         re-described as a placeholder.
   - [ ] depends_on (if implemented): all 5 C-07 DPIA go-live items signed off + FOLLOW-366.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)
 
 ---
 
@@ -9983,4 +9983,4 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         via the Python `write_shadow_intent` path and reads via the TS `readShadowChatIntent` path
         against ONE real Upstash instance, asserting round-trip with the 24h TTL.
   - [ ] Skip-loud / hard-fail when the Upstash creds are absent (no silent skip).
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (Sprint 20, 2026-06-20)

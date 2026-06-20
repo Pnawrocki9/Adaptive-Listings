@@ -1,4 +1,4 @@
-# Status — 2026-06-19T16:00Z (Sprint 19 ACTIVE — FOLLOW-343 DONE PR #321, FOLLOW-340 READY_FOR_REVIEW PR #322, RETRO-091/092 pending spawn)
+# Status — 2026-06-20T12:00Z (Sprint 19 READY_FOR_REVIEW queue pending human merges; Sprint 20 OPEN — FOLLOW-360/FOLLOW-366 IN_PROGRESS [P0 hotfixes]; FOLLOW-357 BLOCKED on CEO ruling [ESC-027])
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
@@ -186,7 +186,23 @@ regression. RETRO-088 DONE 2026-06-18.
 ## ESCALATION STATUS
 
 ESC-020 OPEN (non-blocking) — Rafal prod deploy pending (CEO 2026-06-10 clarification: local-first
-then Rafal deploys). ESC-021/022/023/024 all RESOLVED. No new open escalations.
+then Rafal deploys). ESC-021/022/023/024 all RESOLVED.
+
+ESC-025 OPEN (P0) — FOLLOW-346 chat NLP shadow bridge dead-on-arrival in prod (payload key mismatch:
+consumer reads `content`, producer emits `message`). FOLLOW-366 P0 hotfix IN_PROGRESS. Filed
+2026-06-20 by retrospective-analyst.
+
+ESC-026 OPEN (P0) — FOLLOW-342 GET-path bandit contaminates holdout baseline in prod (no holdout
+short-circuit on GET variant selection). FOLLOW-360 P0 hotfix IN_PROGRESS. Contamination began at PR
+#327 merge 2026-06-19. Any analytics on adaptation_decisions between 2026-06-19 and FOLLOW-360 fix
+should treat holdout-row variants as suspect. Filed 2026-06-20 by retrospective-analyst.
+
+ESC-027 OPEN (CEO ruling needed) — FOLLOW-357: page-type-derived `tier` field in /api/adapt
+re-introduces tier vocabulary that MASTER_DESIGN §E.7 (CEO 2026-06-05) explicitly eliminated. CEO
+must decide: (a) rename the field off "tier" vocabulary (e.g. `directive_scope`/`page_context`) and
+fix §E.7, or (b) grant an explicit carve-out that this is a page-context axis independent of the
+integration-tier concept. FOLLOW-357 (backend-engineer, P1, 2h) BLOCKED until ruling. Filed
+2026-06-20 by pm-orchestrator. Age: 0 days.
 
 ## CI Gates — All Real Gates GREEN on main (verified 2026-06-17)
 
@@ -210,19 +226,58 @@ auto-detect, archetype-pipeline, data-quality, intent-engine, llm-gateway, strea
 
 ## CI CHECK COUNTER (Sprint 19 — ACTIVE)
 
-| Ticket     | CI checks | Fix iterations | Status                                                                                                    |
-| ---------- | --------- | -------------- | --------------------------------------------------------------------------------------------------------- |
-| FOLLOW-343 | 1/5       | 0/3            | DONE (PR #321 merged squash commit 56b0018, 2026-06-19). RETRO-092 pending.                               |
-| FOLLOW-340 | 1/5       | 0/3            | READY_FOR_REVIEW (PR #322, 2026-06-19). Real CI gates: 0 non-SUCCESS. Bundle 39.91 KB gzip. PM-validated. |
+| Ticket          | CI checks | Fix iterations | Status                                                                                                                     |
+| --------------- | --------- | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| FOLLOW-343      | 1/5       | 0/3            | DONE (PR #321 merged squash commit 56b0018, 2026-06-19). RETRO-092 pending.                                                |
+| FOLLOW-340      | 1/5       | 0/3            | READY_FOR_REVIEW (PR #322, 2026-06-19). Real CI gates: 0 non-SUCCESS. Bundle 39.91 KB gzip. PM-validated.                  |
+| FOLLOW-344      | 1/5       | 0/3            | READY_FOR_REVIEW (PR #329, 2026-06-19). Real CI gates: 10/10 SUCCESS. PM-validated 2026-06-19T22:00Z.                      |
+| FOLLOW-346-dpia | 1/5       | 0/3            | READY_FOR_REVIEW (PR #328, 2026-06-19). Docs-only. Real CI gates: 9/9 SUCCESS (no Demo integration expected).              |
+| FOLLOW-346      | 1/5       | 0/3            | READY_FOR_REVIEW (PR #330, 2026-06-20). CI green (all real gates pass). PM-validated. Wiring confirmed end-to-end (5c+5d). |
+
+## CI CHECK COUNTER (Sprint 20 — ACTIVE)
+
+| Ticket     | CI checks | Fix iterations | Status                                        |
+| ---------- | --------- | -------------- | --------------------------------------------- |
+| FOLLOW-360 | 0/5       | 0/3            | IN_PROGRESS (delegated 2026-06-20, P0 hotfix) |
+| FOLLOW-366 | 0/5       | 0/3            | IN_PROGRESS (delegated 2026-06-20, P0 hotfix) |
+
+## OPEN ESCALATION AGES (as of 2026-06-20)
+
+| ESC     | Filed      | Days open | Summary                                    |
+| ------- | ---------- | --------- | ------------------------------------------ |
+| ESC-020 | 2026-06-10 | 10        | Rafal prod deploy (non-blocking)           |
+| ESC-025 | 2026-06-20 | 0         | P0: chat NLP bridge dead-on-arrival        |
+| ESC-026 | 2026-06-20 | 0         | P0: GET holdout contamination              |
+| ESC-027 | 2026-06-20 | 0         | CEO ruling needed: tier vocabulary vs §E.7 |
+
+---
 
 FOLLOW-343: DONE. PR #321 merged (squash commit 56b0018, 2026-06-19). DOM_ADAPT_CONFIDENCE_FLOOR=0.5
 gate wired in production. All real CI gates GREEN pre-merge. RETRO-092 pending spawn. FOLLOW-340:
 READY_FOR_REVIEW. PR #322 open (2026-06-19). annotateSlots() from slot_selectors wire. Real CI
 gates: 0 non-SUCCESS. Bundle 39.91 KB gzip. PM-validated 2026-06-19. RETRO-093 pending after merge.
 RETRO-091 (FOLLOW-335 / PR #319) still pending spawn (FOLLOW-335 merged 2026-06-18T21:56Z).
-RETRO-092 (FOLLOW-343 / PR #321) pending spawn (PR #321 merged 2026-06-19). Open CEO questions that
-unblock Sprint 19 blocked tickets: Q2 (archetype blending → FOLLOW-344), Q3 (chat shadow-vs-live →
-FOLLOW-346), Q4 (embedding job vs drop cosine claim → FOLLOW-341 direction). ESC-020 non-blocking.
+RETRO-092 (FOLLOW-343 / PR #321) pending spawn (PR #321 merged 2026-06-19).
+
+FOLLOW-344 READY_FOR_REVIEW (PR #329, 2026-06-19T22:00Z). ml-engineer implemented switch-margin
+hysteresis (SWITCH_MARGIN=0.05) in classifyFromProbabilities() + §D.6 quiz/chat-only annotation. CEO
+Q#2 resolved 2026-06-19 (buckets decision: switch-margin stabilizer shipped; blending deferred). All
+real CI gates GREEN: Build, Build(cp), Typecheck, Lint, Test Node 22, SDK E2E, Rule H, Rule J, Demo
+integration, Vercel — all SUCCESS. Non-real-gate failures (Format, Rule I, Python tests) are
+pre-existing-red per CI gate landscape. ACs 1-4 all verified with code evidence in PR body. Runtime
+wiring confirmed: SWITCH_MARGIN produced at intent.ts:167, consumed at intent.ts:767 inside
+classifyFromProbabilities(), which is called at 12 non-test production call sites (lines 789, 824,
+977, 1021, 1077, 1098, 1121, 1161, 1318, 1422, 1509, 1578, 1637 in intent.ts).
+
+FOLLOW-346-dpia READY_FOR_REVIEW (PR #328, 2026-06-19T22:00Z). compliance-engineer delivered
+docs/compliance/C-07-chat-retention-scope.md (DPIA scope brief for chat NLP free-text retention).
+Docs-only; no route.ts edits. Shadow-cycle confirmed compliant. Five live-activation gate items
+documented. All real CI gates GREEN. Demo integration check not expected (docs-only branch).
+IMPORTANT: FOLLOW-346 implementation (chat bridge edits route.ts) is BLOCKED until PR #327
+(FOLLOW-342) merges to avoid a route.ts three-way conflict. This is recorded in QUEUE.md.
+
+Open CEO questions blocking Sprint 19 tickets: Q3 (chat shadow-vs-live → FOLLOW-346 implementation),
+Q4 (embedding job vs drop cosine claim → FOLLOW-341 direction). ESC-020 non-blocking.
 
 ## Pending Retro Spawns
 
@@ -241,18 +296,21 @@ FOLLOW-346), Q4 (embedding job vs drop cosine claim → FOLLOW-341 direction). E
 
 ## Sprint 19 State (2026-06-19)
 
-**IN PROGRESS.** FOLLOW-343 DONE (PR #321 merged squash 56b0018). FOLLOW-340 READY_FOR_REVIEW (PR
-#322).
+**IN PROGRESS.** FOLLOW-343 DONE. FOLLOW-340, FOLLOW-344, FOLLOW-346-dpia all READY_FOR_REVIEW.
 
 1. FOLLOW-343 (P1, sdk-engineer) — confidence floor, **DONE** (PR #321 merged 56b0018, 2026-06-19)
 2. FOLLOW-340 (P1, sdk-engineer) — slot self-annotation, **READY_FOR_REVIEW** (PR #322, 2026-06-19,
    CI green, PM-validated)
-3. FOLLOW-341 (P1, ml-engineer) — archetype embeddings, READY (CEO open question #4 to unblock)
-4. FOLLOW-342 (P1, backend-engineer) — bandit variant thread, BLOCKED on FOLLOW-341
-5. FOLLOW-346 (P2, data-engineer) — chat NLP trigger, BLOCKED on CEO decision (open Q #3)
-6. FOLLOW-344 (P2, ml-engineer) — archetype blending, BLOCKED on CEO decision (open Q #2)
-7. FOLLOW-345 (P2, backend-engineer) — page_type/tier, READY (P2, can start after FOLLOW-340 wraps
-   or in parallel)
+3. FOLLOW-344 (P2, ml-engineer) — switch-margin hysteresis + §D.6 annotation, **READY_FOR_REVIEW**
+   (PR #329, 2026-06-19, CI green, PM-validated 2026-06-19T22:00Z)
+4. FOLLOW-346-dpia (P2, compliance-engineer) — C-07 DPIA scope brief, **READY_FOR_REVIEW** (PR #328,
+   2026-06-19, CI green, PM-validated 2026-06-19T22:00Z, docs-only)
+5. FOLLOW-341 (P1, ml-engineer) — archetype embeddings, READY (CEO open question #4 to unblock)
+6. FOLLOW-342 (P1, backend-engineer) — bandit variant thread, BLOCKED on FOLLOW-341
+7. FOLLOW-346 (P2, data-engineer) — chat NLP shadow bridge, READY_FOR_REVIEW (PR #330, 2026-06-20,
+   CI green, PM-validated). PR #327 blocker cleared (merged 2026-06-19T21:17Z). CEO Q#3 addressed:
+   CHAT_NLP_LIVE=false by default (shadow-only), live-mode explicitly gated.
+8. FOLLOW-345 (P2, backend-engineer) — page_type/tier, READY (P2, can start in parallel)
 
 RETRO-092 pending spawn for FOLLOW-343 (PR #321). RETRO-091 pending spawn for FOLLOW-335 (PR #319).
 Audit PR #320 awaiting human merge (docs-only, real CI gates GREEN). Open CEO questions that unblock

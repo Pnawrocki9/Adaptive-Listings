@@ -5264,31 +5264,80 @@ items are DONE.
     Thread selectedVariant into runDecisionTree/getPlaybook so control/v1/v2 produce distinct copy.
     Variant->copy mapping covered by unit test across all 3 indices.
 
+- id: FOLLOW-346-dpia
+  title: 'FOLLOW-346 DPIA parallel track: C-07 chat-retention scope brief (docs-only)'
+  agent: compliance-engineer
+  status: READY_FOR_REVIEW
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: AUDIT-2026-06-19 F-05 (DPIA sub-track)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-346 stub — DPIA AC)
+  branch: compliance-engineer/FOLLOW-346-dpia-c07-scope
+  pr: '#328'
+  started_at: 2026-06-19T00:00:00Z
+  assigned_to: compliance-engineer
+  pm_validated_at: 2026-06-19T22:00:00Z
+  notes: |
+    Docs-only. docs/compliance/C-07-chat-retention-scope.md delivers CEO-ready DPIA scope brief
+    answering all 5 required questions. Shadow-cycle architecture confirmed compliant without new
+    disclosure. Live-activation gate items documented. All real CI gates GREEN (docs-only branch;
+    no Demo integration check required). AC: DPIA scope for free-text chat retention
+    documented and signed off. PM-validated: CI green on all real gates. ACs met.
+
 - id: FOLLOW-346
   title:
     Trigger the chat NLP engine (activate highest-value signal — gated on CEO shadow-mode decision)
   agent: data-engineer
-  status: BLOCKED
-  block_reason: Blocked on CEO decision (open question #3 - keep shadow-only or activate live)
+  status: READY_FOR_REVIEW
   priority: P2
   estimated_hours: 6
-  depends_on: []
+  depends_on: [FOLLOW-346-dpia]
   source: AUDIT-2026-06-19 F-05
   spec: backlog/FOLLOW_UPS.md (FOLLOW-346 stub)
-  branch: data-engineer/FOLLOW-346-chat-nlp-trigger
+  branch: data-engineer/FOLLOW-346-chat-nlp-shadow-bridge
+  pr: '#330'
+  started_at: 2026-06-19T00:00:00Z
+  assigned_to: data-engineer
+  pm_validated_at: 2026-06-20T00:00:00Z
+  notes: |
+    PR #327 (FOLLOW-342) merged 2026-06-19T21:17:48Z — blocker cleared.
+    CI green on all real gates. Step 5c wiring confirmed end-to-end:
+    - Producer: events.py:_spawn_chat_nlp → modal.Function.lookup("estalara-intent-engine",
+      "process_chat_message").spawn() [non-test, non-blocking fire-and-forget]
+    - Intermediate: process_chat_message (main.py:32) → write_shadow_intent(payload) writes
+      shadow:{tenant_id}:{session_id}:chat_intent to Redis with 24h TTL
+    - Consumer: readShadowChatIntent in route.ts:1074 reads the exact same key pattern
+    - Key match confirmed: redis_writer.py:37 returns f"shadow:{tenant_id}:{session_id}:chat_intent";
+      chat-intent-cache.ts:63 returns `shadow:${tenantId}:${sessionId}:chat_intent` — MATCH
+    - CHAT_NLP_LIVE env var: producer .env.example:80, consumer route.ts:88 (default false)
+    - AC-3 (no raw text): EventEnvelope unchanged, _spawn_chat_nlp passes only message dict to
+      Modal; write_shadow_intent writes ChatIntentDetectedPayload (12-dim vector) to Redis only
+    PM-validated. CI check counter: 1/5. Fix iterations: 0/3.
 
 - id: FOLLOW-344
-  title:
-    Archetype model top-2 blending / switch-margin + passive discriminators for 8 blind archetypes
+  title: Archetype model switch-margin hysteresis + passive discriminator annotation (§D.6)
   agent: ml-engineer
-  status: BLOCKED
-  block_reason: Needs CEO product decision on buckets-vs-blended profile (open question #2)
+  status: READY_FOR_REVIEW
   priority: P2
   estimated_hours: 10
   depends_on: []
   source: AUDIT-2026-06-19 F-09 + F-06
   spec: backlog/FOLLOW_UPS.md (FOLLOW-344 stub)
-  branch: ml-engineer/FOLLOW-344-archetype-blending
+  branch: ml-engineer/FOLLOW-344-switch-margin-hysteresis
+  pr: '#329'
+  started_at: 2026-06-19T00:00:00Z
+  assigned_to: ml-engineer
+  pm_validated_at: 2026-06-19T22:00:00Z
+  notes: |
+    Switch-margin hysteresis (CEO Q#2 resolved 2026-06-19): SWITCH_MARGIN=0.05 guard added to
+    classifyFromProbabilities(); 5 call sites in applyBehavioralSignal updated. §D.6 annotated
+    with quiz/chat-only column for 8 blind archetypes (no passive discriminators manufactured).
+    12 tests in intent-switch-margin.test.ts. Top-2 blending deferred to a future sprint if
+    CEO decides to pursue blended profile (not yet decided). All real CI gates GREEN.
+    AC1/AC2/AC3 (switch-margin behavior) + AC4 (constant value) all verified in PR body.
+    PM-validated: CI green on all real gates. ACs met. Not do-not-merge: blending sub-scope
+    explicitly deferred by worker per CEO Q#2 resolution note.
 
 - id: FOLLOW-345
   title: Server-side page_type consumption + real tier (decision route)
@@ -5300,6 +5349,211 @@ items are DONE.
   source: AUDIT-2026-06-19 F-08
   spec: backlog/FOLLOW_UPS.md (FOLLOW-345 stub)
   branch: backend-engineer/FOLLOW-345-page-type-tier
+```
+
+## Sprint 20 — P0 hotfixes + Sprint-19 retro follow-ons (PLANNED, 2026-06-20)
+
+**Promoted from FOLLOW_UPS.md stubs FOLLOW-354..368 (RETRO-091/092/095/097/098 batch). Two P0
+hotfixes authorized by CEO 2026-06-20 (ESC-025 / ESC-026). FOLLOW-357 BLOCKED on CEO ruling. All
+others staged by priority; max 3 IN_PROGRESS at once.**
+
+```yaml
+- id: FOLLOW-360
+  title: Gate bandit variant behind holdout/consent on the GET path (mirror POST ordering)
+  agent: backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-06-20T00:00Z'
+  priority: P0
+  estimated_hours: 4
+  depends_on: []
+  source: RETRO-095 ESC-026
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-360 stub)
+  branch: backend-engineer/FOLLOW-360-get-holdout-gate
+  notes: |
+    P0 hotfix — holdout-baseline contamination in prod since PR #327 merge 2026-06-19.
+    GET path must check holdout BEFORE variant selection (mirror POST route.ts:894-919).
+    Holdout GET requests must serve + log variant=control.
+    Delegated 2026-06-20T00:00Z. CI check counter: 0/5. Fix iterations: 0/3.
+
+- id: FOLLOW-366
+  title: Fix chat NLP bridge payload-key mismatch (message vs content)
+  agent: data-engineer
+  status: IN_PROGRESS
+  assigned_to: data-engineer
+  started_at: '2026-06-20T00:00Z'
+  priority: P0
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-098 ESC-025
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-366 stub)
+  branch: data-engineer/FOLLOW-366-chat-nlp-payload-key
+  notes: |
+    P0 hotfix — bridge dead-on-arrival since PR #330 merge 2026-06-20.
+    _spawn_chat_nlp must read payload["message"] not payload["content"].
+    Fixture must be grounded in ChatMessageSentPayloadSchema (Rule Z).
+    Delegated 2026-06-20T00:00Z. CI check counter: 0/5. Fix iterations: 0/3.
+
+- id: FOLLOW-356
+  title:
+    /api/adapt response tier consumer + behavioral tests for page-type tier/directive derivation
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: RETRO-092 (FOLLOW-345 / PR #323)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-356 stub)
+  branch: sdk-engineer/FOLLOW-356-adapt-tier-consumer
+  notes: |
+    HALF_WIRE_P — AdaptResponse.tier declared but no non-test consumer reads it.
+    Decide: wire real consumer OR mark analytics-only + fix type.
+    Add tests for tierFromPageType / filterDirectivesByPageType.
+
+- id: FOLLOW-357
+  title: Reconcile /api/adapt page-type-derived tier with MASTER_DESIGN §E.7 no-Tiers
+  agent: backend-engineer
+  status: BLOCKED
+  block_reason:
+    BLOCKED on CEO ruling — does page-type axis need rename off "tier" vocabulary or is §E.7
+    carve-out granted? See ESC-025 notes and FOLLOW_UPS.md stub. DO NOT implement until CEO
+    resolves.
+  priority: P1
+  estimated_hours: 2
+  depends_on: [CEO_RULING]
+  source: RETRO-092 (FOLLOW-345 / PR #323)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-357 stub)
+  notes: |
+    Surfaced to CEO 2026-06-20 (STATUS.md). No code changes until ruling received.
+
+- id: FOLLOW-363
+  title: Thread hysteresis (currentArchetype) into applyDwellSignal + applyListingViewRate
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-097 (FOLLOW-344 / PR #329)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-363 stub)
+  branch: sdk-engineer/FOLLOW-363-hysteresis-dwell-listing-view
+
+- id: FOLLOW-368
+  title: Guarantee Python writer and TS reader share one Upstash Redis instance (env-var divergence)
+  agent: devops-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-366]
+  source: RETRO-098 (FOLLOW-346 / PR #330)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-368 stub)
+  branch: devops-engineer/FOLLOW-368-upstash-redis-env-parity
+  notes: |
+    Depends on FOLLOW-366 landing first (bridge must be functional before smoke is meaningful).
+
+- id: FOLLOW-359
+  title: Return variant in GET /api/adapt response body
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 2
+  depends_on: [FOLLOW-360]
+  source: RETRO-095 (FOLLOW-342 / PR #327)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-359 stub)
+  branch: backend-engineer/FOLLOW-359-get-variant-response
+  notes: |
+    Depends on FOLLOW-360 (GET holdout gate must land first to avoid compounding the regression).
+
+- id: FOLLOW-361
+  title: Reconcile bandit seed convention (default vs control/v1/v2)
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-095 (FOLLOW-342 / PR #327)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-361 stub)
+  branch: backend-engineer/FOLLOW-361-bandit-seed-convention
+
+- id: FOLLOW-354
+  title: Test + document the confidence floor real axis (suppress /adapt/description below floor)
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 4
+  depends_on: []
+  source: RETRO-091 (FOLLOW-343 / PR #321)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-354 stub)
+  branch: sdk-engineer/FOLLOW-354-confidence-floor-description-axis
+
+- id: FOLLOW-358
+  title: Resolve GET-vs-POST adaptation_decisions.tier semantic divergence (Rule K parity)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: RETRO-092 (FOLLOW-345 / PR #323)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-358 stub)
+  branch: backend-engineer/FOLLOW-358-tier-column-divergence
+
+- id: FOLLOW-362
+  title: Define non-en locale A/B behavior (stop logging unserved variants)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-095 (FOLLOW-342 / PR #327)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-362 stub)
+  branch: backend-engineer/FOLLOW-362-locale-ab-variant
+
+- id: FOLLOW-367
+  title: Implement (or remove) the CHAT_NLP_LIVE gate — currently an inert no-op
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: [FOLLOW-366]
+  source: RETRO-098 (FOLLOW-346 / PR #330)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-367 stub)
+  branch: backend-engineer/FOLLOW-367-chat-nlp-live-gate
+  notes: |
+    Depends on FOLLOW-366 (bridge must work before live gate is meaningful). Also depends on
+    C-07 DPIA all 5 go-live items signed off before CHAT_NLP_LIVE can be flipped true.
+
+- id: FOLLOW-364
+  title: Reconcile §D.6 coverage-summary counts to a clean 18-way partition
+  agent: ml-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  source: RETRO-097 (FOLLOW-344 / PR #329)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-364 stub)
+  branch: ml-engineer/FOLLOW-364-d6-coverage-counts
+
+- id: FOLLOW-355
+  title: Pin cold-start signal_count invariant (future init-time prior guard)
+  agent: sdk-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 2
+  depends_on: []
+  source: RETRO-091 (FOLLOW-343 / PR #321)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-355 stub)
+  branch: sdk-engineer/FOLLOW-355-signal-count-invariant
+
+- id: FOLLOW-365
+  title: Tracking stub for deferred top-2 archetype blending (CEO-gated)
+  agent: ml-engineer
+  status: BACKLOG
+  priority: P3
+  estimated_hours: 1
+  depends_on: [CEO_BLENDING_DECISION]
+  source: RETRO-097 (FOLLOW-344 / PR #329)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-365 stub)
+  notes: |
+    CEO-gated. No work until CEO decides to pursue blended profile post-pilot.
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

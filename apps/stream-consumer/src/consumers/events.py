@@ -9,6 +9,12 @@ batch is written to the dead-letter topic `events.dlq`.
 Offsets are committed only *after* a successful ClickHouse insert (at-least-once
 delivery). Duplicate events reaching ClickHouse are handled by the
 ReplicatedMergeTree merge process on `event_id`.
+
+chat.message.sent events are routed fire-and-forget to the Modal NLP engine
+(process_chat_message) before the ClickHouse batch insert. This write does NOT
+block the batch and does NOT add raw chat text to ClickHouse — only the 12-dim
+intent vector is persisted (to the Redis shadow namespace by process_chat_message).
+DPIA constraint (C-07): zero raw free-text is persisted this cycle.
 """
 
 from __future__ import annotations
@@ -35,6 +41,63 @@ from src.redpanda_client import build_consumer, build_producer, is_fatal
 _tracer = trace.get_tracer(__name__)
 
 log = structlog.get_logger(__name__)
+
+
+def _spawn_chat_nlp(event: dict[str, Any]) -> None:
+    """Fire-and-forget: spawn Modal process_chat_message for a chat.message.sent event.
+
+    Extracts tenant_id, session_id, and the message content from the event payload
+    and calls process_chat_message.spawn(...) — a non-blocking Modal background call.
+    The spawn returns immediately; the Modal function runs asynchronously and writes
+    the 12-dim intent vector to the Redis shadow namespace.
+
+    DPIA constraint (C-07): only tenant_id, session_id, and the message dict (role +
+    content) are forwarded. No raw chat text is written to ClickHouse or Postgres
+    by this function. The NLP result (intent vector only) is written by
+    process_chat_message via redis_writer.write_shadow_intent.
+
+    Failure posture: any import error (Modal not installed, wrong environment) or
+    spawn error is logged and swallowed — the ClickHouse batch is never blocked.
+    """
+    try:
+        import modal  # noqa: PLC0415 — deferred: Modal not required at module load
+
+        tenant_id: str = str(event.get("tenant_id", ""))
+        session_id: str = str(event.get("session_id", ""))
+        payload: dict[str, Any] = event.get("payload") or {}
+        message: dict[str, Any] = {
+            "role": str(payload.get("role", "user")),
+            "content": str(payload.get("content", "")),
+        }
+
+        # Validate minimum data before spawning — skip if either id is empty.
+        if not tenant_id or not session_id or not message["content"]:
+            log.warning(
+                "chat_nlp_spawn_skipped",
+                reason="missing tenant_id, session_id, or content",
+                tenant_id=tenant_id,
+                session_id=session_id,
+            )
+            return
+
+        # Lookup the deployed Modal function and spawn (non-blocking background call).
+        # modal.Function.lookup raises if the app/function is not deployed; we swallow
+        # that so the consumer loop is never blocked in dev/CI environments.
+        fn = modal.Function.lookup("estalara-intent-engine", "process_chat_message")
+        fn.spawn(
+            tenant_id=tenant_id,
+            session_id=session_id,
+            message=message,
+        )
+        log.info(
+            "chat_nlp_spawned",
+            tenant_id=tenant_id,
+            session_id=session_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Spawn errors must never block the ClickHouse batch.
+        log.warning("chat_nlp_spawn_failed", error=str(exc))
+
 
 def _extract_trace_context(msg: Message) -> Context:
     """Extract W3C trace context from Kafka message headers.
@@ -221,6 +284,21 @@ def run_consumer(
                     metrics.schema_failures += 1
                     should_flush = False
                 else:
+                    # FOLLOW-346: route chat.message.sent events to the Modal NLP
+                    # engine fire-and-forget BEFORE appending to the ClickHouse batch.
+                    # The spawn is non-blocking — the batch insert is never delayed.
+                    # DPIA (C-07): _spawn_chat_nlp forwards only tenant_id, session_id,
+                    # and the message dict; no raw text is added to the ClickHouse batch.
+                    if parsed.get("type") == "chat.message.sent":
+                        try:
+                            _spawn_chat_nlp(parsed)
+                        except Exception as spawn_exc:  # noqa: BLE001
+                            # Belt-and-suspenders: _spawn_chat_nlp already catches
+                            # all exceptions internally. This outer guard ensures the
+                            # consumer loop is never disrupted even if _spawn_chat_nlp
+                            # is mocked to raise in tests.
+                            log.warning("chat_nlp_spawn_outer_error", error=str(spawn_exc))
+
                     batch.append(parsed)
                     metrics.processed += 1
                     should_flush = len(batch) >= batch_max_size

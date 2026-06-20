@@ -762,17 +762,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 // ─── Page-type helpers ────────────────────────────────────────────────────────
 
 /**
- * Derive the integration tier from the page type reported by the SDK.
+ * Derive the directive scope from the page type reported by the SDK.
  *
- * - `listing_detail` → tier 2: full per-listing directives (headline, cta, feature, description)
- * - `listing_list` / `search` / `home` → tier 1: lighter directives (cta, feature, reorder)
+ * This is a page-context axis — NOT an integration Tier. The product has no Tiers
+ * (CEO ruling 2026-06-05, MASTER_DESIGN §E.7). The returned value controls how many
+ * directive slots are sent for the page in focus:
  *
- * Tier 2 enables per-listing text adaptation (headline rewrite, feature highlights) on the
- * detail page where a single listing is in focus. On list/search pages the SDK shows many
- * listings simultaneously — per-listing headline rewrites are not appropriate there, so only
- * higher-level slots (cta, feature badge, reorder) are sent.
+ * - `listing_detail` → 2: full per-listing directives (headline, cta, feature)
+ * - `listing_list` / `search` / `home` → 1: lighter directives (cta, feature, reorder)
+ *
+ * Scope 2 applies on the detail page where a single listing is in focus — per-listing
+ * headline rewrites are appropriate there. On list/search/home pages many listings appear
+ * simultaneously, so only higher-level slots (cta, feature badge, reorder) are sent.
+ *
+ * NOTE: the `adaptation_decisions.tier` ClickHouse column name is retained for now;
+ * the column rename to `directive_scope` is deferred to FOLLOW-358 (GET/POST column
+ * divergence unification).
  */
-function tierFromPageType(pageType: 'listing_list' | 'listing_detail' | 'home' | 'search'): 1 | 2 {
+function directiveScopeFromPageType(
+  pageType: 'listing_list' | 'listing_detail' | 'home' | 'search',
+): 1 | 2 {
   return pageType === 'listing_detail' ? 2 : 1;
 }
 
@@ -857,9 +866,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const body = parsed.data;
 
-  // FOLLOW-345: derive tier from page_type — listing_detail gets tier 2 (full directives);
-  // all other page types get tier 1 (lighter directive set, no per-listing headline).
-  const derivedTier = tierFromPageType(body.page_type);
+  // FOLLOW-345/357: derive directive scope from page_type — listing_detail gets scope 2
+  // (full directives); all other page types get scope 1 (lighter directive set, no
+  // per-listing headline). This is a page-context axis, NOT an integration Tier (§E.7).
+  const directiveScope = directiveScopeFromPageType(body.page_type);
 
   // FOLLOW-260 (F-26): JWT tenant_id is authoritative — supersedes body.tenant_id.
   // Prevents cross-tenant escalation: a caller with a valid demo JWT for tenant A
@@ -895,7 +905,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       archetype: 'neutral',
       confidence: 0.5,
       similarity: body.similarity ?? 0.5,
-      tier: derivedTier,
+      directive_scope: directiveScope,
       directives: [],
       reorderDirectives: [],
       source: 'default' as const,
@@ -921,7 +931,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       archetype: 'neutral',
       confidence: 0.5,
       similarity: body.similarity ?? 0.5,
-      tier: derivedTier,
+      directive_scope: directiveScope,
       directives: [],
       reorderDirectives: [],
       source: 'default' as const,
@@ -1129,7 +1139,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     archetype: archetypeId,
     confidence,
     similarity,
-    tier: derivedTier,
+    directive_scope: directiveScope,
     directives: allDirectives,
     source,
     variant: selectedVariant,
@@ -1142,6 +1152,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     generated_at: new Date().toISOString(),
   };
 
+  // NOTE: writing directiveScope into the existing `tier` ClickHouse column; the
+  // column rename to `directive_scope` is deferred to FOLLOW-358.
   logDecisionAsync(
     body.session_id,
     tenantId,
@@ -1149,7 +1161,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     confidence,
     similarity,
     source,
-    derivedTier,
+    directiveScope,
     allDirectives.length,
     false, // treatment arm — not holdout
     selectedVariant,

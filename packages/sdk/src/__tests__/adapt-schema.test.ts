@@ -91,6 +91,10 @@ describe('adaptResponseSchema.parse', () => {
     expect(() => adaptResponseSchema.parse({ ...VALID_RESPONSE, tier: 4 })).toThrow();
   });
 
+  it('throws on an invalid directive_scope (3 is not 1|2)', () => {
+    expect(() => adaptResponseSchema.parse({ ...VALID_RESPONSE, directive_scope: 3 })).toThrow();
+  });
+
   it('allows unknown / extra fields (passthrough — forward-compatible)', () => {
     const withExtra = {
       ...VALID_RESPONSE,

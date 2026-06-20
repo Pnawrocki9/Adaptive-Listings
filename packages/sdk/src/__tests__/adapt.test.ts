@@ -43,7 +43,7 @@ const MOCK_RESPONSE: AdaptResponse = {
   archetype: 'yield_hunter',
   confidence: 0.87,
   similarity: 0.9,
-  tier: 1,
+  directive_scope: 1,
   source: 'playbook',
   generated_at: '2026-05-25T00:00:00.000Z',
   directives: [

@@ -777,3 +777,25 @@ prove fail-before (3 fail on origin/main) and pass-after.
 (ClickHouse) where `holdout_group=1` also writes `variant='control'` — this would have caught the
 FOLLOW-342 regression before it hit prod. Pattern: grep for `param_p_holdout_group.*1` in tests and
 assert a corresponding `param_p_variant.*control` assertion exists nearby.
+
+---
+
+## 2026-06-20 / FOLLOW-357
+
+**What I built:** Surgical rename of the page-type-derived `tier` field on `POST /api/adapt` to
+`directive_scope`. Renamed `tierFromPageType` → `directiveScopeFromPageType`, `derivedTier` →
+`directiveScope`, POST response fields `tier:` → `directive_scope:` in all three response arms.
+Updated `AdaptationDirectives` shared type (tier made optional, directive_scope added optional), SDK
+`AdaptResponse` (tier removed, directive_scope added optional), Zod validate schema in SDK
+(`adapt-schema.ts`) and test schema in `route.test.ts`. Added 4 lock tests. Docstring rewritten.
+MASTER_DESIGN §E.7 patched. ESC-027 resolved. ClickHouse column rename deferred to FOLLOW-358.
+
+**Wiring/auth/fail-loud risks I weighed:** GET handler still uses `tier` (caller-supplied URL param,
+different semantics from the POST page-context `directive_scope`). Made both fields optional in
+`AdaptationDirectives` to avoid breaking the GET handler without touching it per scope constraints.
+The shared type now accurately documents the difference: GET tier = caller integration hint, POST
+directive_scope = page-context routing axis.
+
+**A guardrail I'd add:** A rule that any shared type field used by both GET and POST on the same
+route should have explicit per-handler documentation in its JSDoc — or be split into separate
+response types. GET/POST response shape divergence in a single shared type is a silent drift risk.

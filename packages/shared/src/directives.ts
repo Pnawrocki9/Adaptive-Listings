@@ -124,8 +124,17 @@ export interface AdaptationDirectives {
   confidence: number;
   /** Cosine similarity to matched archetype 0–1. */
   similarity: number;
-  /** Integration tier the caller declared. */
-  tier: 1 | 2 | 3;
+  /**
+   * Integration tier the caller declared (GET handler only — caller-supplied URL param).
+   * The POST handler does NOT return this field; use `directive_scope` instead.
+   */
+  tier?: 1 | 2 | 3;
+  /**
+   * Page-context directive scope derived from `page_type` (POST handler only).
+   * NOT an integration Tier — the product has no Tiers (CEO ruling 2026-06-05, §E.7).
+   * Controls how many directive slots are sent: 2 = listing_detail (full), 1 = all other pages.
+   */
+  directive_scope?: 1 | 2;
   /** Empty when source is 'default' or 'llm_full'. */
   directives: (TextDirective | ClassDirective | ReorderDirective)[];
   /**

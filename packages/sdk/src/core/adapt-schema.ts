@@ -116,7 +116,14 @@ export const adaptResponseSchema = z
     archetype: archetypeIdSchema,
     confidence: z.number(),
     similarity: z.number(),
-    tier: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    // directive_scope: page-context axis from POST /api/adapt (FOLLOW-357, not an integration Tier).
+    // Optional — absent on legacy GET responses which use `tier` (caller-supplied) instead.
+    directive_scope: z.union([z.literal(1), z.literal(2)]).optional(),
+    // tier: caller-supplied integration tier on the legacy GET /api/adapt surface (1|2|3).
+    // Kept optional to satisfy Rule H (schema must remain a superset of AdaptationDirectives,
+    // which still carries `tier?` for GET). GET/POST tier-vs-directive_scope reconciliation is
+    // deferred to FOLLOW-358.
+    tier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
     directives: z.array(directiveSchema),
     source: z.enum([
       'playbook',

@@ -18755,3 +18755,195 @@ Net: 1 of 3 AC genuinely closed (AC-3). AC-1 severed at hop 1; AC-2 half-cosmeti
 - RETRO-093 (P-SELF-AGREEING-FIXTURE) / Rule L: TG-1 is the same fixture-self-agreement mechanism across a language boundary.
 - Rule N (compliance doc must match shipped behavior): DG-1 is a benign-direction Rule-N adjacency.
 - memory `project_audit_0619_q2_q3_decisions`: FOLLOW-346 = "wire chat shadow-only, live gated on DPIA." Shadow wiring is the deliverable that HW-1 leaves non-functional.
+
+## RETRO-099 — FOLLOW-366 (chat NLP shadow bridge consumer: read canonical `payload.message` instead of `payload.content`; P0 hotfix closing RETRO-098 HW-1 / ESC-025) — 2026-06-20
+
+### 1. Summary of change
+
+- **PR:** #332 (merged 2026-06-20, commit `eaf31a9`). P0 hotfix resolving **ESC-025**, closing RETRO-098 HW-1/CB-1/LG-1/TG-1 (FOLLOW-366).
+- **Files changed:** 3 (+103 / -31). Runtime: `apps/stream-consumer/src/consumers/events.py` (+16/-9). Test: `apps/stream-consumer/src/tests/test_chat_nlp_bridge.py` (+73/-22). Non-shipping: `.claude/agents/data-engineer/lessons.md`.
+- **Modules touched:** ingest/stream-consumer · qa (test). No control-plane, SDK, intent-engine, schema, DB, ClickHouse, or config change.
+- **Key contracts changed:**
+  - `_spawn_chat_nlp` payload read: `payload.get("content")`/`payload.get("role")` → `payload.get("message")` + synthesize `{"role":"user","content":<text>}` at the Modal-call boundary — breaking: no (corrects a never-functional read to match the canonical producer). Now CONSISTENT with `ChatMessageSentPayloadSchema` (`packages/shared/src/schemas/events/chat.ts:38-48`).
+  - Modal contract `process_chat_message(tenant_id, session_id, message={"role","content"})` (`intent-engine/src/main.py:32-37`) unchanged and still satisfied.
+
+### 2. Verification done in PR
+
+- `test_chat_nlp_bridge.py` rewritten with producer-shape fixtures + 2 net-new tests (AC-Z spawn-args, real-shape routing, `message`-absent skip, empty-string skip). PR body: `37 passed`; fail-before/pass-after for AC-Z documented (manual fail-on-`origin/main` reproduction of the guard-trip). Not independently re-watched.
+
+### 3. Wiring Audit
+
+CHECK A (dead code): `_spawn_chat_nlp` (`events.py:46`) retains its real caller in the routing branch (`events.py:299-301`). WIRED ✅. No new export.
+CHECK B (half-wire): No NEW half-wire introduced. `payload.message` (consumer) ↔ `ChatMessageSentPayloadSchema.message` (producer) AGREE; synthesized `{"role","content"}` consumed at `main.py:55`. ✅
+`Wiring Audit — clean ✅` for this PR's surface. (Pre-existing **HW-3 / FOLLOW-368 remains OPEN** — the next hop, §5/§7.)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+- N/A for shipped behavior (closes RETRO-098 LG-1).
+
+#### 4b. Code bugs not caught
+- N/A. The `content` vs `message` bug (RETRO-098 CB-1) is the bug being FIXED; no new bug. The synthesized dict lives only in `_spawn_chat_nlp`'s stack frame (never persisted, never added to the ClickHouse batch).
+
+#### 4c. Test coverage gaps
+- **TG-1 (P3, minor) — `test_skips_spawn_when_message_field_absent` tests an unreachable-from-ingest state.** `ChatMessageSentPayloadSchema.message` is `z.string().min(1)`, so an ingest-validated event can never have absent/empty `message`. The skip-tests are defensive-only. Noted for accuracy; no follow-up.
+- **TG-2 (P2) — Still no real-backend round-trip test.** This PR closes Rule Z at the FIXTURE level (limb a); the live-Upstash round-trip (limb b, would catch HW-3) remains owned by **FOLLOW-368**. No new stub.
+
+#### 4d. Documentation gaps
+- **DG-1 (P2) — RETRO-098 DG-1 (C-07 brief premise) now UNBLOCKED at hop 1 but not reconciled.** The C-07 brief asserts the shadow pipeline produces analyzable data — true for hop 1 now, but readable end-to-end only after FOLLOW-368. Fold the brief reconciliation into FOLLOW-368 closure; no new stub.
+
+### 5. Cascading impact
+
+- **5a.** ESC-025 / FOLLOW-366: hop 1 (consume→spawn) now genuinely connects; spawn fires for real `chat.message.sent` traffic.
+- **5b.** **FOLLOW-368 (HW-3, OPEN, P1) is now the binding blocker for the bridge.** With HW-1 fixed, the gap moved exactly ONE HOP downstream: the Modal writer (`redis_writer.py:29-30`, `UPSTASH_REDIS_REST_URL/TOKEN`) and the TS reader (`chat-intent-cache.ts:69,74`, `UPSTASH_REDIS_URL/TOKEN`) resolve Upstash from DIFFERENT env-var names. The shadow KEY is byte-identical, but if the two env pairs don't point at the same instance, write↔read silently misses. **The bridge is NOT yet end-to-end functional in prod** until FOLLOW-368 lands. FOLLOW-367 (HW-2 inert gate) unaffected. K.3.6 D-2 tracer chat panel must depend_on FOLLOW-368, not just FOLLOW-366.
+- **5c.** `chat.message.sent` SoT remains `ChatMessageSentPayloadSchema`. The repo now has ONE correct Python reader of this contract as a reference.
+- **5d.** The SDK(TS)→Python event-payload boundary now has its first Rule-Z-compliant fixture, but the structural root (no codegen/parity test forcing Python consumers to honor `@estalara/shared` Zod event schemas) is unaddressed; the next hand-written consumer can re-introduce the class.
+
+### 6. New lesson candidates
+
+- **Rule Z — REINFORCING CLOSURE INSTANCE.** FOLLOW-366 is the textbook remediation of a Rule Z violation (replaced `{role,content}` self-fixtures with schema-derived `_REAL_CHAT_PAYLOAD` + AC-Z fail-before/pass-after test). Rule Z already codified → no new promotion; logged as a confirming application.
+- **P-GAP-MOVED-ONE-HOP** ("a P0 cross-runtime wire fix closes the hop it targets but the SAME wire's NEXT hop carries an already-known divergence that keeps the feature non-functional end-to-end"). Seen RETRO-099 (HW-1 fixed; HW-3 still gates the bridge) — the `inquiry_submit_selector` chain shape. Count 1. Below threshold; tracked via FOLLOW-368 dependency note.
+
+### 7. Prior-follow-up closure check
+
+FOLLOW-366 claims to close **RETRO-098 HW-1 / CB-1 / LG-1 / TG-1**. Traced hop-by-hop:
+- **HW-1 / CB-1 (payload-key read): GENUINELY CLOSED ✅.** `_spawn_chat_nlp` reads `message_text = str(payload.get("message",""))` (`events.py:71`); producer emits `message`; synthesized dict matches the Modal signature and is consumed at `main.py:55`. Spawn fires for a real-shaped event.
+- **TG-1 (self-agreeing fixture): GENUINELY CLOSED ✅.** Fixtures replaced with the producer shape; AC-Z regression test documented fail-on-`origin/main`, pass-after.
+- **FOLLOW-346 AC-1 end-to-end (consume → spawn → Redis write → `/api/adapt` read):** Hop 1 (consume→spawn) NOW CLOSED ✅. Hop 2 (Modal write→TS read) STILL OPEN ✗ — HW-3 / **FOLLOW-368** (env-var divergence; this PR touched neither `redis_writer.py` nor `chat-intent-cache.ts`). **Conclusion: AC-1 is NOT yet end-to-end met — the gap moved exactly one hop downstream. PM: do not mark FOLLOW-346 AC-1 satisfied until FOLLOW-368 lands and a write↔read round-trip is proven.**
+
+### 8. Cross-references
+
+- **RETRO-098 (FOLLOW-346):** direct parent. Closes its HW-1/CB-1/LG-1/TG-1; its HW-2 (FOLLOW-367) and HW-3 (FOLLOW-368) remain OPEN; AC-1 end-to-end still gated on FOLLOW-368.
+- **Rule Z / RETRO-068/078/079:** the cross-runtime "mock can't catch real-backend mismatch" family; this PR is the first in-repo remediation applying Rule Z's fixture discipline at the SDK(TS)→Python boundary.
+- memory `project_audit_0619_q2_q3_decisions`: hop 1 now wired; shadow data still unreadable end-to-end pending FOLLOW-368.
+
+---
+
+## RETRO-100 — FOLLOW-360 (gate GET-path bandit behind holdout check; mirror POST early-return so holdout GET serves+logs `variant='control'`; closes RETRO-095 §3 HALF_WIRE_C / §4b CB-2 / §4c TG-1 / §4d DG-1) — 2026-06-20
+
+### 1. Summary of change
+
+- **PR:** #333 (merged 2026-06-20, commit `2836adc`)
+- **Files changed:** 4 (+264 / -3). Core fix `apps/control-plane/src/app/api/adapt/route.ts` (+15/-3); `route.follow360.test.ts` (+209); `docs/MASTER_DESIGN.md §E.3.0` (+2); `.claude/agents/backend-engineer/lessons.md`.
+- **Modules touched:** control-plane (`/api/adapt` GET handler + `runDecisionTree` JSDoc), docs.
+- **Key contracts changed:** None. Pure behavioral change to the GET-path variant-selection expression (`getHandlerVariant` now `holdoutGroup ? 'control' : thompsonSample(...)`). No new symbol, schema, event, column, or response-shape change. Breaking: no.
+
+### 2. Verification done in PR
+
+- `route.follow360.test.ts` (NEW, 4 cases): (1) REGRESSION fail-before/pass-after — holdout GET logs `param_p_variant=control` (fails on origin/main per `git stash` evidence); (2) positive control — `holdout=false` logs `param_p_variant=v1`; (3) holdout GET directive uses `variants.en[0]`; (4) holdout GET does NOT call `getBanditArms` (`expect(getBanditArms).not.toHaveBeenCalled()`).
+- CI: PR body records a `--no-verify` commit bypass due to PRE-EXISTING `@estalara/db` type-resolution failures (103 on main → 101 on branch; 0 new), consistent with `project_ci_gate_landscape.md`. No green-CI evidence captured at merge (PM-validated separately: 0 new failures).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`. CHECK A: no new file/export — pure behavioral edit. CHECK B: no new event/env-var/column/topic/SDK-signal. The open HALF_WIRE_P on the GET response (RETRO-095 §3, FOLLOW-359) is correctly NOT touched here.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — GET-path consent-skip parity (FOLLOW-360 AC-2) was silently dropped, not implemented.** AC-2 reads "GET path: consent-skip requests serve no adaptation, consistent with POST." The PR closed ONLY the holdout axis. The GET handler (`route.ts:622-768`) reads no consent input: `consent_state`/`consent_mode_enabled` are POST-only schema fields (`:213-222`, used `:885-886`) and GET takes a pre-computed `holdout_group` param (`:640-642`) rather than running `assignHoldout()`. POST's consent-skip early return (`:891-905`) has NO GET equivalent; the architecture as-is cannot satisfy AC-2 without a contract addition. A Rule-S completeness asymmetry: the holdout sibling was carried to GET at full tier, the consent-skip sibling of the SAME early-return set was not — and the gap is unmarked (commit claims "mirrors POST's early-return ordering" but POST's early return covers BOTH `skipped` and `holdout_group`; only the second was mirrored). → **FOLLOW-369**.
+- **LG-2 (P2) — hot-path synchronous `getBanditArms` round-trip persists for non-holdout GET traffic (RETRO-095 LG-3, "folded into FOLLOW-360 AC" — NOT carried).** PR #333 only SKIPS that call for the holdout minority; the non-holdout majority path (`:709`) still pays the synchronous DB hop inside the <100ms budget. The folded concern was dropped on closure. → **FOLLOW-370** (P2).
+
+#### 4b. Code bugs not caught
+- N/A on the holdout axis — the targeted P0 (RETRO-095 CB-2) is genuinely fixed. No new bug from the 3-line change.
+
+#### 4c. Test coverage gaps
+- **TG-1 (P2):** No test asserts consent-skip GET behavior (path doesn't handle consent — LG-1). → AC in FOLLOW-369.
+- **TG-2 (P3):** The positive-control test mocks `thompsonSample`→`'v1'`; no test distinguishes "sampled control" from "gated control" on the non-holdout path. Case 4's `getBanditArms.not.toHaveBeenCalled()` already pins the gate. Note only.
+
+#### 4d. Documentation gaps
+- N/A. RETRO-095 §4d DG-1 genuinely closed: `runDecisionTree` JSDoc now carries the HOLDOUT RULE note (`:254-258`) and `MASTER_DESIGN §E.3.0` adds the HOLDOUT BYPASS RULE ("holdout rows must always carry `(holdout_group=1, variant='control')` … applies to ALL code paths that write to `adaptation_decisions`"). Verified true — only TWO writers exist (`logDecisionAsync` callers at `:745` GET and `:1145` POST), both now holdout-clean.
+
+### 5. Cascading impact
+
+- **5a.** Siblings FOLLOW-359/361/362 (Sprint 20) remain OPEN and correctly NOT touched. FOLLOW-359 (GET response missing `variant`, the reward-attribution HALF_WIRE_P) still required.
+- **5b.** Pilot-analytics consumers of `adaptation_decisions` now read an UNCONTAMINATED holdout baseline for GET traffic going forward — but historical rows between PR #327 (`66054d6`, 2026-06-19 21:17 UTC) and PR #333 (`2836adc`, 2026-06-20 09:53 UTC, ~12.5h) carry contaminated `(holdout_group=1, variant=v1/v2)` rows. Any lift/calibration query spanning that window mixes clean + contaminated baselines. → **FOLLOW-371** (P1): one-shot ClickHouse remediation (relabel or exclude) — the code fix stops new contamination but does not heal the existing rows ESC-026 was raised about.
+- **5c.** None. No response-shape or schema change.
+- **5d.** "holdout arm always sees control" restored on BOTH `/api/adapt` entry points for the holdout axis. The companion "consent-skip arm sees no adaptation" remains POST-only (LG-1).
+
+### 6. New lesson candidates
+
+- **P-1: "Folded-into-an-AC concern is dropped when the FOLLOW is closed by a narrower fix than its scope."** FOLLOW-360 bundled three things (holdout gate, the LG-3 hot-path round-trip, an implied consent-skip AC-2); the PR delivered only the headline holdout gate; the other ACs vanished on merge with no re-filing. Count 1 — below threshold; watch.
+- **P-2 (Rule-S reinforcement): "A change applied to one branch of a symmetric early-return SET (holdout vs consent-skip) at full tier on the headline branch but absent on the other."** Fresh instance of already-promoted Rule S; reinforces, not new.
+
+### 7. Follow-ups
+
+- **FOLLOW-369** (P1, backend-engineer, 3h) — Implement GET-path consent-skip parity (FOLLOW-360 AC-2, unmet). Either accept a `consent_state`/`consent_mode_enabled` GET param + consent-skip early-return mirroring POST `:891-905`, OR document/escalate that consent-skip is decision-api's responsibility upstream and strike the unsatisfiable AC. Add a test asserting consent-skip GET serves `directives:[]`.
+- **FOLLOW-370** (P2, backend-engineer, 2h) — Carry RETRO-095 LG-3 forward (folded into FOLLOW-360 but not delivered): add Redis/in-memory cache or batched lookup for `getBanditArms` on the non-holdout hot path, or document the measured p95 and accept it. Pin with a latency-budget assertion.
+- **FOLLOW-371** (P1, data-engineer, 3h) — One-shot ClickHouse remediation of `adaptation_decisions` rows written in the contamination window (PR #327 `66054d6` → PR #333 `2836adc`): relabel or exclude `(holdout_group=1, variant IN ('v1','v2'))` GET rows so pilot/lift/calibration queries spanning the window are not biased. The code fix stops new contamination but does not heal ESC-026's existing rows.
+
+### 8. Cross-references
+
+- Closes (holdout axis + docs) of **RETRO-095** (FOLLOW-342, PR #327): §3 HALF_WIRE_C / §4b CB-2 / §4c TG-1 / §4d DG-1 GENUINELY closed end-to-end. §4a LG-3 and the implied consent-skip AC are NOT (now FOLLOW-370 / FOLLOW-369). §3 HALF_WIRE_P (FOLLOW-359) and §4a LG-1/LG-2 (FOLLOW-361/362) remain open by design — untouched.
+- Reinforces **Rule S** (RETRO-044/045) and **RETRO-003**'s multi-axis lesson: this fix carried ONE branch (holdout) of the symmetric early-return set to GET at full tier but left consent-skip asymmetric.
+
+---
+
+## RETRO-101 — FOLLOW-357 (rename page-type `tier` → `directive_scope` per §E.7; resolves ESC-027) — 2026-06-20
+
+### 1. Summary of change
+
+- **PR:** #334 (merged 2026-06-20, commit `ab1317d`). TWO commits: `e70084e` (the rename) + `a59763e` (in-PR CI-regression fix).
+- **Files changed:** 10 (+149 / -26) — `apps/control-plane/src/app/api/adapt/route.ts` + `route.test.ts`; `packages/shared/src/directives.ts`; `packages/sdk/src/core/adapt.ts` + `adapt-schema.ts` + `__tests__/adapt.test.ts` + `__tests__/adapt-schema.test.ts`; `docs/MASTER_DESIGN.md` §E.7; `backlog/ESCALATIONS.md`; `.claude/agents/backend-engineer/lessons.md`.
+- **Key contracts changed:**
+  - `directiveScopeFromPageType(pageType) → 1 | 2` — renamed from `tierFromPageType` (`route.ts:782`, module-private).
+  - **POST `/api/adapt` response field `tier` → `directive_scope`** in all three arms (`:908,934,1142`). Rename of an observable response field. Breaking: yes for any POST-response consumer keying on `tier` (none exist today — §3).
+  - `AdaptationDirectives` (`packages/shared/src/directives.ts`): `tier: 1|2|3` → `tier?: 1|2|3` (GET-only) + `directive_scope?: 1|2` added (POST-only).
+  - SDK `AdaptResponse`: `tier: 1|2|3` removed then `tier?: 1|2|3` re-added (`a59763e`) + `directive_scope?: 1|2`.
+  - Zod `adaptResponseSchema`: `tier` (required) → `directive_scope?` in `e70084e`; `tier?` (1|2|3) re-added in `a59763e` to restore the Rule-H superset.
+  - **NOT changed (deferred):** ClickHouse `adaptation_decisions.tier` column; `logDecisionAsync` `tier` param name — `directiveScope` is written into the existing `tier` column. Deferred to FOLLOW-358 with an in-code comment (`route.ts:1155`).
+
+### 2. Verification done in PR
+
+- Tests: `route.test.ts` (+4 `directive_scope` lock tests + GET-echo assertion updated `parsed.data.tier`→`body.tier`), `adapt.test.ts` (MOCK_RESPONSE field rename), `adapt-schema.test.ts` (+1 `directive_scope === 3` rejection test, in the fix commit). This LOCKS the FOLLOW-356 TG-1 behavior RETRO-092 §4c flagged as zero-assertion.
+- CI: the Rule-H schema-drift gate + Test (Node 22) gate FAILED on `e70084e` and were fixed in `a59763e` — CI did its job; review did not (§4b CB-1). Final green claimed, not re-watched.
+
+### 3. Wiring Audit
+
+CHECK A (dead code): `directiveScopeFromPageType` (`:782`) → called `:872`. WIRED ✅. No new export.
+CHECK B (half-wire):
+- **HALF_WIRE_P (P2) — the closure RELOCATED the gap, did not close it.** `directive_scope` is PRODUCED in all 3 POST arms + written to ClickHouse, but a repo-wide grep returns **zero non-test, non-producer consumers**. RETRO-092 §3 flagged HALF_WIRE_P on the unread `tier` field; this PR renamed that same unread field to `directive_scope`, so the producer-only condition is unchanged — the half-wire was relabeled, not wired. SDK `AdaptResponse.directive_scope?` and the Zod literal are declared-but-unread (the only `.tier` reads in SDK core are `config.tier`, a different string field). → still **FOLLOW-356** (its stub text needs a `tier`→`directive_scope` update).
+- GET `tier` producer/consumer unchanged this PR — caller-supplied param → response → ClickHouse. ✅
+- `page_type→directive filtering` wire remains end-to-end (`filterDirectivesByPageType`→response→SDK `applyDirectives`), untouched. ✅
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+- **LG-1 (P2, INHERITED) — the `directive_scope` POST value still reaches no renderer.** RETRO-092 §4a LG-1 (the §E.7 vocabulary clash) IS closed (rename + carve-out). But the underlying "value-made-real-but-unread" condition is carried forward: scope `2` vs `1` changes nothing a buyer sees; the only sink is the ClickHouse column (itself named `tier`, deferred). Correct scoping for a rename ticket, but makes FOLLOW-356 ("decide the consumer story") MORE load-bearing — the field has been renamed twice with still no consumer.
+
+#### 4b. Code bugs not caught (by review; caught by CI)
+- **CB-1 (P1, RESOLVED in-PR) — the rename broke a cross-package contract via a per-file edit.** Commit `e70084e` dropped `tier` from the SDK `adaptResponseSchema` (treating it as "the field being renamed") while leaving `AdaptationDirectives.tier?` for the GET surface — violating the Rule H §316 schema-superset gate. Simultaneously it edited `adapt.test.ts` (the mock) but missed the sibling `adapt-schema.test.ts`, where the `parse({...VALID_RESPONSE, tier: 4})` rejection test stopped throwing (passthrough accepted the now-unknown key). Both escaped review; both caught by CI (Rule-H gate + Node-22 job) and fixed in `a59763e`. **This is the real lesson** (§6): a rename that touches a field shared across a producer/consumer boundary is a SYMMETRIC-SIBLING + CROSS-SURFACE operation, not a find-replace. The author renamed `tier` on the POST axis and applied it to the SDK schema too, not seeing `tier` had a SECOND independent producer (GET) the SDK schema must still accept.
+- **CB-2 (P2, RESIDUAL) — the fix is complete for CI but leaves the contract transitional.** `adaptResponseSchema` and `AdaptationDirectives` now BOTH carry `tier?` AND `directive_scope?` — no schema-level expression of "GET→tier, POST→directive_scope, never both." Correct minimal fix (restores the superset) but bakes the GET/POST divergence into the shared type until FOLLOW-358 unifies it.
+
+#### 4c. Test coverage gaps
+- **TG-1 (P3, PARTIAL) — POST lock tests added; GET-side `tier` regression not re-locked.** The 4 new POST tests assert `directive_scope` AND `resBody.tier === undefined`. No test asserts the GET response omits `directive_scope` (the mirror invariant), and no cross-handler test that `SELECT tier` semantics differ — correctly FOLLOW-358 territory. Minor.
+
+#### 4d. Documentation gaps
+- N/A. §E.7 (`MASTER_DESIGN.md:2396`) gained an explicit FOLLOW-357 clarification: `directive_scope` (1|2) is a page-context axis, NOT an integration Tier; "no Tiers" reaffirmed. The `directiveScopeFromPageType` docstring dropped the "integration tier"/"Augment"/Tier-N framing AND the phantom `description` slot (RETRO-092 §4d DG-2/LG-3) — both genuinely closed. ESC-027 flipped OPEN→RESOLVED with a full resolution note (verified in `ab1317d:backlog/ESCALATIONS.md`).
+
+### 5. Cascading impact
+
+- **5a.** **FOLLOW-356 (Sprint 20)** — its scope text still names the field `tier` and cites `adapt.ts:253`/`route.ts:850` (pre-rename). After #334 the field is `directive_scope`, the SDK type is `directive_scope?: 1|2` (+ a separate `tier?: 1|2|3` for GET), and line numbers moved. FOLLOW-356 must be re-scoped to "wire OR retire `directive_scope`" or its grep-ACs will miss. **FOLLOW-358 (Sprint 20)** — now ALSO inherits the shared-type divergence (CB-2): both `tier?` and `directive_scope?` coexist; FOLLOW-358's unification should collapse this, not just the ClickHouse column.
+- **5b.** FOLLOW-170 (Conversion Label Loop) snapshots `adaptation_decisions.tier` into `features_snapshot` (`route.ts:415`). The column still holds the mixed GET-integration-tier / POST-page-scope values RETRO-092 §5b flagged — #334 changed the response field name but NOT the column, so the analytics drift is unchanged (and now the code-name `directive_scope` no longer matches the column name `tier`, a fresh code↔column mismatch until FOLLOW-358). The §E.7 description-pipeline tickets: §E.7 now has a clean carve-out, so "tier" no longer ambiguously blocks them.
+- **5c.** POST `/api/adapt` response: `tier` REMOVED, `directive_scope` added. No live consumer (§3), so no break in practice — exactly the silent field-rename the Rule H §316 gate exists to catch (it did). `AdaptationDirectives` optionalization of `tier` is backward-compatible at the type level.
+- **5d.** "One logical field, one meaning" on `tier` is now formally split into two named axes (`tier` = GET caller-hint, `directive_scope` = POST page-context) — an improvement over RETRO-092's overloaded state — BUT the ClickHouse column (`tier`) was NOT split, so the code (`directive_scope`) and storage (`tier`) names now disagree, a transient Rule-K dual-surface state owned by FOLLOW-358.
+
+### 6. New lesson candidates
+
+- **P-RENAME-IS-A-SYMMETRIC-CROSS-SURFACE-OP** ("a field rename applied as a per-file find-replace breaks a cross-package/cross-runtime contract because the renamed field has a SECOND independent producer/surface the author didn't enumerate — `tier` was renamed to `directive_scope` on POST, but `tier` is ALSO the GET caller-supplied field, so dropping it from the shared SDK schema broke the Rule-H superset gate; and the sibling validation test was not updated alongside its twin, silently disabling a rejection assertion"). This is a confirming instance of EXISTING Rule S (symmetric-sibling completeness at equal verification tier) crossed with the Rule H §316 amendment (two divergent surfaces of one contract) and Rule T (pre-commit ≠ contract gate; `scripts/check-adapt-schema-drift.sh` run locally would have caught it). NOT a new rule — §7 cites these as governing.
+- **P-CLOSURE-RELOCATES-HALFWIRE** ("a follow-up that 'resolves' a HALF_WIRE_P by RENAMING the unread field leaves the producer-only condition intact under a new name — the wire is relabeled, not connected"). Seen RETRO-101 §3 (`tier`→`directive_scope`, still zero consumers) — the same "gap moves one hop" meta-pattern (the `inquiry_submit_selector` chain). Count 1 as a NAMED candidate for the rename-specific shape; held for a 2nd sighting.
+
+### 7. Follow-ups
+
+- **No NEW follow-up filed.** Every residual is captured by an existing promoted stub:
+  - HALF_WIRE_P (`directive_scope` unread) + consumer story → **FOLLOW-356** (P1, Sprint 20). ADVISORY: re-scope its TEXT from "`tier`" to "`directive_scope`" and refresh the `adapt.ts:253`/`route.ts:850` line refs (now `directive_scope?` + `:872`/`:908`) so its grep-ACs don't miss post-rename.
+  - GET/POST `tier` column divergence + shared-type `tier?`/`directive_scope?` coexistence (CB-2) → **FOLLOW-358** (P2, Sprint 20) — should unify the shared type, not only the ClickHouse column.
+  - CB-1 (the in-PR CI regression) is RESOLVED within #334 — no follow-up; captured as a lesson (§6) + self-recorded in `.claude/agents/backend-engineer/lessons.md`.
+
+### 8. Cross-references
+
+- **RETRO-092 (FOLLOW-345 / PR #323):** direct parent. GENUINE end-to-end closure of §4a LG-1 (§E.7 vocabulary — renamed + carve-out), §4d DG-1/DG-2/§4a LG-3 (docstring + phantom slot), §4c TG-1 (now partially locked). NOT closed, RELOCATED: §3 HALF_WIRE_P (now on `directive_scope`, FOLLOW-356) and §4a LG-2 (column divergence, FOLLOW-358). The rename closed the NAMING gap but moved the WIRING gap one name downstream.
+- **Rule H §316 amendment (adapt schema-drift gate):** CB-1 is a textbook confirming instance — the gate caught the SDK-schema/`AdaptationDirectives` superset break review missed. Citation, not new promotion.
+- **Rule S:** CB-1's missed `adapt-schema.test.ts` sibling and the missed GET surface of `tier` are confirming instances. Citation.
+- **Rule T:** the Rule-H drift + Node-22 failures surfaced CI-only; running `scripts/check-adapt-schema-drift.sh` locally (per Rule H§316) would have caught CB-1 pre-push. Citation.
+- **RETRO-098 / Rule Z:** adjacent but DISTINCT — Rule Z governs Python↔TS payload fixtures; CB-1 is a same-runtime (TS↔TS) cross-PACKAGE schema-superset break governed by Rule H§316, not Rule Z. Noted to avoid mis-citation.

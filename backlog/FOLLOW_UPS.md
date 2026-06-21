@@ -9984,3 +9984,77 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         against ONE real Upstash instance, asserting round-trip with the 24h TTL.
   - [ ] Skip-loud / hard-fail when the Upstash creds are absent (no silent skip).
 - **promoted_to_queue:** true (Sprint 20, 2026-06-20)
+
+---
+
+## FOLLOW-369 — GET-path consent-skip parity for /api/adapt (FOLLOW-360 AC-2, unmet)
+
+- **source_retro:** RETRO-100 (§4a LG-1 / §4c TG-1)
+- **source_ticket:** FOLLOW-360 (PR #333)
+- **recommended_sprint:** next
+- **recommended_agent:** backend-engineer
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** FOLLOW-360 AC-2 ("GET path: consent-skip requests serve no adaptation, consistent with
+  POST") was not implemented. PR #333 gated ONLY the holdout axis. The GET handler
+  (`route.ts:622-768`) reads no consent input; `consent_state`/`consent_mode_enabled` are POST-only
+  schema fields (`:213-222`, used `:885-886`) and GET takes a pre-computed `holdout_group` param
+  (`:640-642`) instead of running `assignHoldout()`. POST's consent-skip early return (`:891-905`)
+  has no GET equivalent. Either add a `consent_state` GET param + consent-skip early-return
+  mirroring POST, OR document/escalate that consent-skip is decision-api's responsibility upstream
+  and strike the unsatisfiable AC.
+- **ac:**
+  - [ ] GET consent-skip behavior is either implemented (serves `directives:[]`, no variant log) or
+        explicitly documented as upstream (decision-api) with a Master Design note.
+  - [ ] If implemented: a test asserts a consent-skip GET request serves `directives:[]` and logs no
+        v1/v2 variant.
+  - [ ] No change to holdout-path behavior shipped in PR #333.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-370 — Cache/de-hot-path `getBanditArms` on the non-holdout GET/POST path (RETRO-095 LG-3, folded but not delivered)
+
+- **source_retro:** RETRO-100 (§4a LG-2)
+- **source_ticket:** FOLLOW-360 (PR #333) / originally RETRO-095 §4a LG-3
+- **recommended_sprint:** next
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** RETRO-095 LG-3 (synchronous Postgres round-trip + cold-pair auto-seed INSERT for
+  `getBanditArms` inside the <100ms Decision-API budget, no Redis cache, docstring claims index-only
+  ≤5ms) was folded into FOLLOW-360 but PR #333 only skips the call for holdout sessions; the
+  non-holdout majority path (`route.ts:709` GET; POST treatment arm) still pays the hop. Add a
+  short-TTL Redis/in-memory cache for bandit arms keyed by `(tenant_id, archetype)`, or measure +
+  document the p95 cost and accept it.
+- **ac:**
+  - [ ] `getBanditArms` lookups on the hot path are cached (TTL-bounded) OR the measured p95 is
+        documented against the <100ms budget.
+  - [ ] No correctness change to variant selection.
+  - [ ] Latency-budget assertion or benchmark recorded.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-371 — One-shot ClickHouse remediation of holdout rows contaminated in the PR#327→#333 window (ESC-026 historical rows)
+
+- **source_retro:** RETRO-100 (§5b)
+- **source_ticket:** FOLLOW-360 (PR #333)
+- **recommended_sprint:** next
+- **recommended_agent:** data-engineer
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** PR #333 stops NEW contamination but does not heal existing rows. Between PR #327 merge
+  (`66054d6`, 2026-06-19 21:17 UTC) and PR #333 merge (`2836adc`, 2026-06-20 09:53 UTC, ~12.5h), the
+  GET path wrote `adaptation_decisions` rows with `(holdout_group=1, variant IN ('v1','v2'))`.
+  Pilot/lift/calibration consumers (`api/pilot/calibration`, `cta-lift`, `inquiry-starts`,
+  `dashboard/analytics/lift`, `admin/labels`) that span this window mix clean and contaminated
+  baselines. Relabel those rows to `variant='control'` or exclude them from analytics, and confirm
+  ESC-026's lift estimates are recomputed on the cleaned baseline.
+- **ac:**
+  - [ ] Contaminated rows in the time window are identified by query (count reported).
+  - [ ] Rows are relabeled (`variant→'control'`) or a documented exclusion filter is applied in the
+        affected pilot/lift queries.
+  - [ ] ESC-026 lift/calibration estimates are recomputed and the delta vs contaminated baseline is
+        recorded.
+- **promoted_to_queue:** false

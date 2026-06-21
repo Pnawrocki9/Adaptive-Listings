@@ -1,6 +1,8 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 4.0 (2026-06-05 — Quiz Widget v2.0 cascading decision tree, permanent description cache (no Tiers/no TTL), §D.6 coverage matrix updated (all 17 archetypes reachable); bazuje na 3.9: Conversion Label Loop §T (PROPOSED) + prompt v1.9 archetype-fit gate [ADR-0010]; bazuje na 3.8: detection→adaptation runtime bridge, **no-code app.estalara.com**, AI-Vision quality strategy [ADR-0008; FOLLOW-159 implement, FOLLOW-160 Plan B]; FIX-014 slot-injection superseded — patrz changelog v3.8 + §B.5.7. Bazuje na 3.7: CEO ratifications wave 2026-05-30 — 10 z 11 decyzji ratified: D-1 app.estalara.com / D-2 chat in v1.0 / D-3 6 families classifier / D-4 live.signup OR chat / D-5 technical-readiness / D-6 Discovery Day batched / R-2 Vercel env DONE / R-3 peter+rafal owners / R-4 wait for Magic Link / R-5 **10-12 weeks** priorytet jakość; R-1 ZIP pending; pilot start tydzień 13; SCHEMA-001 + VERIFY-001 dodane; FIX-006/017 scope changed; full ratifications wave w `backlog/PLAN-V3-2026-05-30.md` §0; APPROVED_TO_IMPLEMENT=pending R-1 only; otherwise as v3.6) | **Data:** 5 czerwca 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 4.1 (2026-06-21 — Platform-wide consent umbrella (§H.8) + per-user opt-out toggle (§H.9) CEO-directed; bazuje na 4.0: Quiz Widget v2.0 cascading decision tree, permanent description cache (no Tiers/no TTL), §D.6 coverage matrix updated (all 17 archetypes reachable); bazuje na 3.9: Conversion Label Loop §T (PROPOSED) + prompt v1.9 archetype-fit gate [ADR-0010]; bazuje na 3.8: detection→adaptation runtime bridge, **no-code app.estalara.com**, AI-Vision quality strategy [ADR-0008; FOLLOW-159 implement, FOLLOW-160 Plan B]; FIX-014 slot-injection superseded — patrz changelog v3.8 + §B.5.7. Bazuje na 3.7: CEO ratifications wave 2026-05-30 — 10 z 11 decyzji ratified: D-1 app.estalara.com / D-2 chat in v1.0 / D-3 6 families classifier / D-4 live.signup OR chat / D-5 technical-readiness / D-6 Discovery Day batched / R-2 Vercel env DONE / R-3 peter+rafal owners / R-4 wait for Magic Link / R-5 **10-12 weeks** priorytet jakość; R-1 ZIP pending; pilot start tydzień 13; SCHEMA-001 + VERIFY-001 dodane; FIX-006/017 scope changed; full ratifications wave w `backlog/PLAN-V3-2026-05-30.md` §0; APPROVED_TO_IMPLEMENT=pending R-1 only; otherwise as v3.6) | **Data:** 21 czerwca 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v4.1 (21 czerwca 2026 — Platform-wide consent umbrella + per-user opt-out toggle):** Dwie zmiany CEO-ratified (2026-06-21). (1) **§H.8 Platform-wide consent umbrella** — CEO decision: Adaptive-Listings owns the full consent layer for the entire Estalara platform. Consent is mandatory at app.estalara.com registration; without it the investor cannot register or use chat. The AL consent layer must disclose and cover all six processing purposes: (a) behavioral tracking, (b) reading investor chat, (c) transfer of derived insights to agency/agent, (d) buying-intent identification, (e) lead ranking by buying-intent strength, (f) agent-facing summaries of chat questions (LIVE + Estalara AI chat). Raw chat text remains APP-SIDE only — AL keeps only the 12-dim intent vector, 24h TTL, no free text (C-07 boundary). Rafał implements app-side data retention/deletion windows as a separate HANDOFF. Tracking ticket: FOLLOW-373. (2) **§H.9 Per-user opt-out toggle for DOM adaptation** — reversible, AL-only opt-out: suspending (not erasing) AL profiling + DOM adaptation for one logged-in user. OFF suspends; ON resumes. Does NOT affect app.estalara.com buying-intent / lead-ranking / agent chat-summaries (those ride the mandatory registration consent). Dual purpose: legal safeguard + product showcase (with/without DOM adaptation comparison). §G.2 updated to note Mode B (Consented Mode) is the canonical model for app.estalara.com pilot investors. Tracking ticket: FOLLOW-372. §Y.2 propagation: downstream docs reviewed; no section renames; QUEUE.md + STATUS.md updated in same commit.
 
 **Changelog v4.0 (5 czerwca 2026 — Quiz Widget v2.0 + permanent description cache + coverage matrix + signal enrichment findings):** Cztery zmiany CEO-ratified (audit session 2026-06-04/05). (0) **§C.1 + §D.7 Signal Enrichment** — audit §3 (2026-06-05) identified 5 new low-cost, high-discrimination signals absent from the SDK: referrer URL + UTM keywords (F-22), device type (F-23), listing-view rate (F-24), favorites/bookmark (F-26), filter.applied enriched payload (F-27); plus micro-poll widget (F-25, FOLLOW-209). Expected behavioral-only accuracy improvement: 35–45% → 50–60%. Tickets FOLLOW-207 through FOLLOW-211 added. §C.1 updated with new signal taxonomy entries. §D.7 updated with BEHAVIORAL_DAMPING calibration note (FOLLOW-212, P3, post-pilot). §Snapshot.1 row C updated. (1) **§E.4 Quiz Widget REDESIGNED (v2.0)** — zastąpiony płaski 2-pytaniowy quiz → **drzewo decyzyjne z bramą Q1** rozdzielającą na 3 gałęzie (INWESTOR / WŁASNY UŻYTEK / CROSS-BORDER), 2–3 pytania, 17 liści (jeden per archetype non-neutral). Wszystkie 17 archetypów non-neutral bezpośrednio osiągalnych (poprzednio 4 komórki × 18 archetypów z nakładaniem). Nowa funkcja `applyQuizLeaf()` (direct assignment, confidence ~0.95) zastępuje `applyQuizPrior()` (Bayesian multiplier) dla ścieżek drzewa. Post-quiz drift detection z `DRIFT_HOLD_COUNT = 3` anti-thrash guard. Nowa tabela MOAT `quiz_completions` (Postgres/RLS). Wielojęzyczność: `en|pl|es`, 4-poziomowy priorytet detekcji języka. `admin.estalara.com/dashboard/quiz` toggle. (2) **§E.7 Description cache REDESIGNED** — Tiers i TTL **wyeliminowane**. Decyzja: Adaptive Listings nie ma Tiers — wszyscy tenanci dostają jedno doświadczenie. Redis key: `desc:{tenant_id}:{listing_id}:{archetype}:{locale}` bez EX/TTL. Nowa tabela Postgres `description_cache_persistent` — trwały, nieulotny rekord; invalidacja przez `listing.updated` event (nie przez czas). Kolejność lookup: `description_cache_persistent → Redis → template_fallback + Modal enqueue`. Parametr `tier` usunięty z API. (3) **§D.6 Coverage Matrix UPDATED** — 3 archetypy poprzednio "🔴 None" (student_parent, retiree_relocator, diaspora_buyer) teraz "🟡 Quiz path" przez dedykowane ścieżki w gałęzi CROSS-BORDER drzewa decyzyjnego. Snapshot.1 rows E.4/E.7/D.6 zaktualizowane.
 
@@ -2685,6 +2687,8 @@ Konsekwencja:
 
 W konfiguracji per tenant pozwalamy klientowi wybrać który mode chce uruchomić, z domyślnym Mode A. **Mode A jest naszym differentiatorem vs Mutiny/Drift** — bo daje value od dnia 1 bez consent banner.
 
+> **Update v4.1 (2026-06-21) — app.estalara.com pilot runs in Mode B (mandatory consent at registration):** CEO decision: for the app.estalara.com pilot, consent is mandatory at registration — investors cannot register or use chat without granting it. This enables Mode B (full behavioral fingerprint, persistence, chat-intent signal). The Adaptive-Listings consent layer covers all six processing purposes (a)–(f) detailed in §H.8. Rafał (CTO) implements app-side data retention/deletion windows; AL owns the legal umbrella. Per-user DOM adaptation opt-out (FOLLOW-372 / §H.9) remains separate from and subordinate to the registration consent: opting out suspends DOM adaptation only, not the registration-gated buying-intent/lead-ranking/chat-summary processing.
+
 ### G.3. Techniki fingerprinting i ich realna skuteczność
 
 Niezależne badania Kochava (2024) i innych pokazują że **fingerprinting accuracy spada poniżej 50% po 24h** ze względu na Safari ITP, Firefox ETP, Brave farbling, mobile networks ([Seresa research](https://seresa.io/blog/data-loss/browser-fingerprinting-in-2025-why-ip-device-screen-hashing-is-not-the-cookie-alternative-you-think)). To znaczy że nawet ZE consent fingerprint cross-session jest niesamowicie zawodny.
@@ -2830,6 +2834,72 @@ UODO stosuje GDPR + Ustawę 2018, zwłaszcza ostry na profiling i automatyczne d
 ### H.7. NIS2
 
 NIS2 dotyczy "essential" i "important entities" — Estalara prawdopodobnie nie kwalifikuje się jako essential (real estate marketing nie jest critical infrastructure), ale **klienci enterprise (np. Idealista) mogą być** → my musimy spełnić wymagania w SLA: incident reporting w 24h, supply chain security, MFA dla admin access. Zaimplementujemy od dnia 1.
+
+### H.8. Platform-wide consent umbrella — Adaptive-Listings as legal owner (CEO decision 2026-06-21)
+
+> **Binding decision (Piotr Nawrocki, CEO, 2026-06-21):** Adaptive-Listings owns the full consent layer for the entire Estalara platform. This provides the legal umbrella for all platform-wide processing. Implementation tracked by FOLLOW-373.
+
+**Scope of mandatory consent (captured at app.estalara.com registration):**
+
+Consent is captured at registration and is mandatory — chat is only available to registered/logged-in investors, and without granting consent the investor cannot register or use the platform. The AL consent and disclosure layer must lawfully cover all of:
+
+| Purpose | Description | Lawful basis |
+|---|---|---|
+| (a) Behavioral tracking | Scroll depth, dwell time, click patterns, listing-view rate, quiz answers | Consent (ePrivacy) + GDPR Art. 6.1(a) |
+| (b) Reading investor chat | Chat messages read to extract buying intent signals | Consent — explicit disclosure required |
+| (c) Transfer to agency/agent | Derived behavioral insights (archetype, confidence) shared with the listing agency | Consent — explicit disclosure required |
+| (d) Buying-intent identification | 12-dimensional intent vector (24h TTL, no free text) derived from behavioral signals + chat | Consent + LIA |
+| (e) Lead ranking | Investors ranked by buying-intent strength for agent prioritization | Consent + LIA |
+| (f) Agent-facing chat summaries | Summaries of questions asked in LIVE chat and Estalara AI chat surfaced to agency staff | Consent — explicit disclosure required |
+
+**C-07 boundary (binding — must never be violated):**
+
+Raw chat text is stored **APP-SIDE only** (app.estalara.com). Adaptive-Listings stores only the 12-dimensional intent vector with a 24-hour TTL — no free text, no message content. This boundary is asserted in code and must be re-confirmed in every compliance document update.
+
+**Rafał (CTO) HANDOFF — app-side retention/deletion windows:**
+
+The following app-side retention and deletion windows are documented by AL for Rafał to implement on the app.estalara.com side:
+
+- Chat message text: retention period to be defined by Rafał; AL recommends ≤90 days or session-end, whichever is shorter, to align with GDPR data minimisation.
+- LIVE chat and Estalara AI chat logs: same retention window; deletion must be triggered on DSR erase request forwarded from AL.
+- The formal HANDOFF specification lives in `backlog/HANDOFFS.md` (FOLLOW-373 → Rafał Palak, CTO).
+
+**Compliance documents to update (FOLLOW-373 ACs):**
+
+- `docs/compliance/dpia.md` — add purposes (a)–(f) with lawful basis and retention periods
+- `docs/compliance/ropa.md` — add processing activity entries for (b)–(f)
+- `docs/compliance/lia-template.md` — fill LIA for purposes (d) and (e)
+- Privacy Notice template — expand consent disclosure copy for mandatory-at-registration consent
+- `packages/sdk/src/ui/consent-banner.ts` — SDK banner copy must enumerate (b)–(f); today it discloses only 7-day audit retention + 90-day cross-session ID
+
+### H.9. Per-user opt-out toggle for DOM adaptation (CEO decision 2026-06-21)
+
+> **Binding decision (Piotr Nawrocki, CEO, 2026-06-21):** A reversible, AL-only per-user opt-out for DOM adaptation is added as a legal safeguard and product showcase feature. Implementation tracked by FOLLOW-372.
+
+**Scope (AL-DOM only):**
+
+- The toggle controls **Adaptive-Listings DOM adaptation only**: archetype-based headline/photo-order/features DOM mutation and the underlying profiling that drives it.
+- It does **NOT** affect app.estalara.com's own buying-intent identification, lead ranking, or agent-facing chat summaries — those ride the mandatory registration consent (§H.8) and are outside AL's per-user opt-out scope.
+
+**Reversible — NOT erasure:**
+
+- OFF state: suspends AL profiling + DOM adaptation for the opted-out user. Accumulated archetype and intent state is preserved (enables the with/without comparison showcase).
+- ON state: resumes full adaptation with no data loss.
+- Hard erasure (Art. 17 GDPR consent withdrawal) remains on the FOLLOW-139 withdrawal path and is not altered by this toggle.
+
+**Technical seams:**
+
+| Component | Effect when opt-out = OFF |
+|---|---|
+| `packages/sdk/src/index.ts` | Skip `applyArchetypeHints()` and intent-weight updates at init |
+| DOM adaptation layer | Return slots to tenant default; suppress mutation |
+| `apps/decision-api/src/lib/consent-gate.ts` | Extended with `profilingOptOut` flag → return neutral directives |
+| `apps/intent-engine/src/redis_writer.py` | Skip applying AL chat-intent shadow prior for opted-out sessions |
+| Persistence | localStorage key + optional `consent_records` row; per-user only; no tenant-wide effect |
+
+**Compliance note:**
+
+Compliance-engineer to confirm in FOLLOW-373 DPIA update that suspend-not-erase is sufficient for AL-only DOM adaptation (no new PII is created by the suspend state; the 12-dim vector TTL continues to expire naturally).
 
 ---
 

@@ -1,4 +1,4 @@
-# Status — 2026-06-20T12:00Z (Sprint 19 READY_FOR_REVIEW queue pending human merges; Sprint 20 OPEN — FOLLOW-360/FOLLOW-366 IN_PROGRESS [P0 hotfixes]; FOLLOW-357 BLOCKED on CEO ruling [ESC-027])
+# Status — 2026-06-21T00:00Z (Sprint 19 READY_FOR_REVIEW queue pending human merges; Sprint 20 OPEN — FOLLOW-372/FOLLOW-373 newly promoted READY [CEO-directed 2026-06-21]; FOLLOW-357 READY_FOR_REVIEW [PR #334]; FOLLOW-360/FOLLOW-366 DONE [P0 hotfixes merged]; ESC-020 OPEN [non-blocking])
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
@@ -197,12 +197,10 @@ short-circuit on GET variant selection). FOLLOW-360 P0 hotfix IN_PROGRESS. Conta
 #327 merge 2026-06-19. Any analytics on adaptation_decisions between 2026-06-19 and FOLLOW-360 fix
 should treat holdout-row variants as suspect. Filed 2026-06-20 by retrospective-analyst.
 
-ESC-027 OPEN (CEO ruling needed) — FOLLOW-357: page-type-derived `tier` field in /api/adapt
-re-introduces tier vocabulary that MASTER_DESIGN §E.7 (CEO 2026-06-05) explicitly eliminated. CEO
-must decide: (a) rename the field off "tier" vocabulary (e.g. `directive_scope`/`page_context`) and
-fix §E.7, or (b) grant an explicit carve-out that this is a page-context axis independent of the
-integration-tier concept. FOLLOW-357 (backend-engineer, P1, 2h) BLOCKED until ruling. Filed
-2026-06-20 by pm-orchestrator. Age: 0 days.
+ESC-027 RESOLVED — CEO ruled option (a): rename to `directive_scope`. FOLLOW-357 PR #334 opened
+2026-06-20. PM validation in progress — PR #334 has TWO PR-introduced CI regressions (Rule H FAIL +
+Test Node 22 FAIL). Bounced back to backend-engineer for fix. FOLLOW-357 status: IN_PROGRESS. See
+QUEUE.md for exact fix instructions.
 
 ## CI Gates — All Real Gates GREEN on main (verified 2026-06-17)
 
@@ -236,19 +234,22 @@ auto-detect, archetype-pipeline, data-quality, intent-engine, llm-gateway, strea
 
 ## CI CHECK COUNTER (Sprint 20 — ACTIVE)
 
-| Ticket     | CI checks | Fix iterations | Status                                        |
-| ---------- | --------- | -------------- | --------------------------------------------- |
-| FOLLOW-360 | 0/5       | 0/3            | IN_PROGRESS (delegated 2026-06-20, P0 hotfix) |
-| FOLLOW-366 | 0/5       | 0/3            | IN_PROGRESS (delegated 2026-06-20, P0 hotfix) |
+| Ticket     | CI checks | Fix iterations | Status                                                                                                                              |
+| ---------- | --------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| FOLLOW-360 | —         | —              | DONE (PR merged — P0 hotfix; commit 2836adc)                                                                                        |
+| FOLLOW-366 | —         | —              | DONE (PR merged — P0 hotfix; commit eaf31a9)                                                                                        |
+| FOLLOW-357 | 2/5       | 1/3            | READY_FOR_REVIEW (PR #334, 2026-06-20T13:00Z). Fix commit a59763e resolves both regressions. All real CI gates GREEN. PM-validated. |
+| FOLLOW-372 | 0/5       | 0/3            | READY — promoted to queue 2026-06-21 (CEO-directed). Not yet delegated.                                                             |
+| FOLLOW-373 | 0/5       | 0/3            | READY — promoted to queue 2026-06-21 (CEO-directed). Not yet delegated.                                                             |
 
-## OPEN ESCALATION AGES (as of 2026-06-20)
+## OPEN ESCALATION AGES (as of 2026-06-21)
 
-| ESC     | Filed      | Days open | Summary                                    |
-| ------- | ---------- | --------- | ------------------------------------------ |
-| ESC-020 | 2026-06-10 | 10        | Rafal prod deploy (non-blocking)           |
-| ESC-025 | 2026-06-20 | 0         | P0: chat NLP bridge dead-on-arrival        |
-| ESC-026 | 2026-06-20 | 0         | P0: GET holdout contamination              |
-| ESC-027 | 2026-06-20 | 0         | CEO ruling needed: tier vocabulary vs §E.7 |
+| ESC     | Filed      | Days open | Summary                                                      |
+| ------- | ---------- | --------- | ------------------------------------------------------------ |
+| ESC-020 | 2026-06-10 | 11        | Rafal prod deploy (non-blocking)                             |
+| ESC-025 | 2026-06-20 | RESOLVED  | P0 hotfix FOLLOW-366 merged (eaf31a9)                        |
+| ESC-026 | 2026-06-20 | RESOLVED  | P0 hotfix FOLLOW-360 merged (2836adc)                        |
+| ESC-027 | 2026-06-20 | RESOLVED  | CEO ruling (a) received; FOLLOW-357 PR #334 READY_FOR_REVIEW |
 
 ---
 

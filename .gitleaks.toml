@@ -243,4 +243,8 @@ regexes = [
   '''<YOUR_.*>''', # Another placeholder pattern
   '''xxx''', # Placeholder secrets
   '''test-key-''', # Test API key prefixes (fake values in test files)
+  # FOLLOW-374: SHA-256 of the public EN §6.1 consent text (CANONICAL_CONSENT_TEXT_HASH).
+  # Not a secret; the cloudflare-api-token rule false-positives on 64-char hex. History-proof
+  # value allowlist (covers both lib.ts and the historical route.ts occurrence).
+  '''a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2''',
 ]

@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.7 **Date:** 2026-06-08 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.8 **Date:** 2026-06-21 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -246,6 +246,28 @@ registration or login; (b) adapting the order, emphasis, and framing of listing 
 that inferred intent; (c) improving archetype detection accuracy over time through
 privacy-preserving cross-tenant aggregation; and (d) computing an Engagement Score (Time2Show as
 Sole Controller) for product analytics and tenant-surface visitor engagement reporting.
+
+**Platform-wide consent umbrella (CEO decision 2026-06-21 — FOLLOW-373):** For the app.estalara.com
+pilot, Adaptive-Listings owns the full consent layer for the entire Estalara platform. Consent is
+mandatory at app.estalara.com registration; without granting consent the investor cannot register or
+use chat. The Adaptive-Listings consent layer must disclose and lawfully cover all six processing
+purposes enumerated in §H.8 of the Master Design and in §13.4 of this DPIA:
+
+| #   | Purpose                      | Description                                                                             |
+| --- | ---------------------------- | --------------------------------------------------------------------------------------- |
+| (a) | Behavioral tracking          | Scroll depth, dwell time, click patterns, listing-view rate, quiz answers               |
+| (b) | Reading investor chat        | Chat messages read to extract buying-intent signals; raw text stored APP-SIDE only      |
+| (c) | Transfer to agency/agent     | Derived behavioral insights (archetype, confidence) shared with the listing agency      |
+| (d) | Buying-intent identification | 12-dimensional intent vector (24 h TTL, no free text) from behavioral signals + chat    |
+| (e) | Lead ranking                 | Investors ranked by buying-intent strength for agent prioritization                     |
+| (f) | Agent-facing chat summaries  | Summaries of questions asked in LIVE chat and Estalara AI chat surfaced to agency staff |
+
+**C-07 boundary (binding — must never be violated):** Raw chat text is stored APP-SIDE only
+(app.estalara.com). Adaptive-Listings stores only the 12-dimensional intent vector with a 24-hour
+TTL — no free text, no message content. This is verified in shipped code: `schemas.py:58–79`
+(`ChatIntentDetectedPayload` fields contain no `messages` or `raw_text` field) and
+`redis_writer.py:49` (`payload.model_dump()` serializes only `ChatIntentDetectedPayload`). See also
+C-07 scoping brief (`docs/compliance/C-07-chat-retention-scope.md`).
 
 ### 3.2 Why Behavioral Signals Are the Minimum Required
 
@@ -715,6 +737,14 @@ The three consent modes described in Section 2.2 implement the following consent
 collection flow. TICKET-GDPR-004 implements the consent state propagation from SDK through ingest to
 Decision API.
 
+**Update v2.8 — Mandatory registration consent (FOLLOW-373):** For the app.estalara.com pilot,
+consent is captured at registration and is mandatory (Mode B). The registration consent covers all
+six purposes (a)–(f) enumerated in §3.1 above and §13.4 below. The SDK consent banner (Mode B for
+anonymous visitors) is a separate consent surface for tenant-embedded anonymous sessions; it is not
+the registration-consent surface for app.estalara.com investors. The `consent_records` table records
+the platform-wide grant with `consent_type = 'platform_registration'` alongside `tos_version` and
+`consent_text_hash`. See §13.4 for the full LIA covering purposes (d) and (e).
+
 ---
 
 ## 8. Data Subject Rights
@@ -861,17 +891,18 @@ to the stable presence of the CEO who directs business operations from Poland).
 
 ## 11. Revision History
 
-| Version | Date       | Author                 | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------- | ---------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0     | 2026-05-15 | Compliance Engineering | Initial DPIA. Five risks identified and assessed. Jurisdictional addenda for EU, UK, US (CCPA), UAE PDPL + DIFC.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 2.0     | 2026-05-15 | Compliance Engineering | Comprehensive update reflecting Time2Show, Inc. as the operating entity with EU establishment via Polish-resident CEO. UODO confirmed as Lead Supervisory Authority on one-stop-shop basis. EU Art. 27 representative not required (Art. 3(1) basis); UK Art. 27 representative appointment in progress. External DPO appointment in progress (CEO structurally excluded per CJEU C-453/21). DPF integrated as primary EU→US transfer mechanism with SCCs as contractual fallback. Joint Controller Analysis classifying Engagement Score as Sole Controllership. Consent withdrawal SLAs clarified (24h session downgrade, 7d archetype quarantine). Engagement Score added to DSR erasure cascade. CCPA applicability threshold analysis added. AI Act FRIA threshold analysis appendix added. Production status updated to "hybrid pilot deployment". |
-| 2.1     | 2026-05-24 | Data Engineering       | Section 8 (Data Subject Rights) — Erasure flow updated to reflect FOLLOW-039 implementation: synchronous Postgres delete + asynchronous ClickHouse `ALTER TABLE ... DELETE WHERE` mutations across `events`, `adaptation_decisions`, `llm_calls`, `session_quality`; status tracked in new Postgres operational table `dsr_clickhouse_mutations`; Vercel Cron `/api/dsr/mutation-poll` polls every 5 min; retries 3× with exponential backoff; Sentry alert on permanent failure. Cross-reference Master Design §H.1.1 for the canonical erasure flow + data inventory. Pre-2.1 the DPIA cited a "daily cron" erasure design that had not been built; that gap is now closed and EU pilot is unblocked.                                                                                                                                                  |
-| 2.2     | 2026-05-24 | Compliance Engineering | Section 8 (Data Subject Rights) — Added "Erasure failure alerting" paragraph documenting FOLLOW-078 stuck mutation detection: `dsr_mutation_stuck` Sentry warning fires when a `pending`/`in_progress` mutation has not advanced in >1 hour; `dsr_erase_clickhouse_mutation_failed` Sentry error fires on permanent failure. Incident owner and 5-minute response SLA documented. Runbook: `docs/ops/DSR_ALERTING.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| 2.3     | 2026-06-08 | Compliance Engineering | Section 13.3 added — disclosure for `estalara_intent_*` sessionStorage intent-state store (FOLLOW-218 / RETRO-032). Documents data category (inferred archetype + per-archetype probability vector), storage medium (sessionStorage, tab-lifetime), staleness window (30 minutes, `INTENT_STATE_STALE_MS`), consent gate (write occurs only when consent is 'granted', verified at `index.ts:329/455/595`), and erasure-on-denial/withdrawal (verified `eraseIntentState` call sites at `index.ts:209` and `index.ts:260`). No behavioral change to SDK required — gap was documentation-only. Privacy Notice Template §4 and §5 updated to add `estalara_intent_*` row and DPO gate item. ROPA Activity 14 added. DPIA version header bumped to 2.3 / 2026-06-08.                                                                                       |
-| 2.4     | 2026-06-08 | Compliance Engineering | Section 13.3 updated (FOLLOW-230): added "Dual-store erasure model" paragraph connecting the two independent erasure paths — client cache (`estalara_intent_*` sessionStorage, erased at `index.ts:209`/`index.ts:260` via `eraseIntentState`) and server archetype (`session_embeddings`, erased via DSR cascade FOLLOW-039 / Master Design §H.1.1). Privacy Notice Template §4 updated to list all eight active SDK storage keys (three keys omitted from v1.1 added: `estalara_variant:*`, `__estalara_quiz_dismissed__`, `__estalara_micro_poll_dismissed__`; header updated from "all five" to "all eight"). ROPA Revision History updated to record Activity 14 number reservation and FOLLOW-187 renumbering to Activity 15.                                                                                                                      |
-| 2.5     | 2026-06-08 | Compliance Engineering | FOLLOW-187: §2.3 (System Components) — added CRM Outcome Ingest row (`POST /api/crm/outcome`, `conversion_labels` Postgres table). §2.5 (Data Types and Retention) — added `conversion_labels` row with 13-month intended retention and explicit enforcement-gap notice pending FOLLOW-234 TTL cron. ROPA Activity 15 added (CRM Deep-Outcome Ingest). Retention is policy-only until FOLLOW-234 ships; go-live gate for CRM-integrated tenants is UNSATISFIABLE until then per Rule N.                                                                                                                                                                                                                                                                                                                                                                  |
-| 2.6     | 2026-06-08 | Compliance Engineering | FOLLOW-235: TTL enforcement gap closed — cron shipped in FOLLOW-234 (PR #230, `c97fd50`). §2.5 `conversion_labels` retention row updated: "policy only; not yet enforced" notice removed; replaced with live enforcement statement referencing daily Vercel cron at `/api/internal/retention/conversion-labels` (FOLLOW-234 / PR #230, 2026-06-08).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| 2.7     | 2026-06-08 | Compliance Engineering | FOLLOW-187 conditions 8 and 9 CONFIRMED SATISFIED. §2.3 (System Components) and §2.5 (Data Types and Retention) are complete for CRM Deep-Outcome Ingest. TTL cron is live (FOLLOW-234 / PR #230, `c97fd50`). ROPA Activity 15 complete (ROPA v2.5). CRM go-live compliance gate is now SATISFIABLE for Conditions 8+9. §8 (Data Subject Rights) updated with open-gap note: DSR cascade for `conversion_labels` via `lead_id` identifier resolution (FOLLOW-184) is a separate OPEN gap tracked as FOLLOW-184 — CRM-integrated tenants must not go live until FOLLOW-184 is DONE (code implementation shipped via FOLLOW-239 / PR #234; PG-harness integration test FOLLOW-185 not yet merged). This is separate from Conditions 8+9 which are confirmed.                                                                                               |
+| Version | Date       | Author                 | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------- | ---------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 2026-05-15 | Compliance Engineering | Initial DPIA. Five risks identified and assessed. Jurisdictional addenda for EU, UK, US (CCPA), UAE PDPL + DIFC.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 2.0     | 2026-05-15 | Compliance Engineering | Comprehensive update reflecting Time2Show, Inc. as the operating entity with EU establishment via Polish-resident CEO. UODO confirmed as Lead Supervisory Authority on one-stop-shop basis. EU Art. 27 representative not required (Art. 3(1) basis); UK Art. 27 representative appointment in progress. External DPO appointment in progress (CEO structurally excluded per CJEU C-453/21). DPF integrated as primary EU→US transfer mechanism with SCCs as contractual fallback. Joint Controller Analysis classifying Engagement Score as Sole Controllership. Consent withdrawal SLAs clarified (24h session downgrade, 7d archetype quarantine). Engagement Score added to DSR erasure cascade. CCPA applicability threshold analysis added. AI Act FRIA threshold analysis appendix added. Production status updated to "hybrid pilot deployment".                            |
+| 2.1     | 2026-05-24 | Data Engineering       | Section 8 (Data Subject Rights) — Erasure flow updated to reflect FOLLOW-039 implementation: synchronous Postgres delete + asynchronous ClickHouse `ALTER TABLE ... DELETE WHERE` mutations across `events`, `adaptation_decisions`, `llm_calls`, `session_quality`; status tracked in new Postgres operational table `dsr_clickhouse_mutations`; Vercel Cron `/api/dsr/mutation-poll` polls every 5 min; retries 3× with exponential backoff; Sentry alert on permanent failure. Cross-reference Master Design §H.1.1 for the canonical erasure flow + data inventory. Pre-2.1 the DPIA cited a "daily cron" erasure design that had not been built; that gap is now closed and EU pilot is unblocked.                                                                                                                                                                             |
+| 2.2     | 2026-05-24 | Compliance Engineering | Section 8 (Data Subject Rights) — Added "Erasure failure alerting" paragraph documenting FOLLOW-078 stuck mutation detection: `dsr_mutation_stuck` Sentry warning fires when a `pending`/`in_progress` mutation has not advanced in >1 hour; `dsr_erase_clickhouse_mutation_failed` Sentry error fires on permanent failure. Incident owner and 5-minute response SLA documented. Runbook: `docs/ops/DSR_ALERTING.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 2.3     | 2026-06-08 | Compliance Engineering | Section 13.3 added — disclosure for `estalara_intent_*` sessionStorage intent-state store (FOLLOW-218 / RETRO-032). Documents data category (inferred archetype + per-archetype probability vector), storage medium (sessionStorage, tab-lifetime), staleness window (30 minutes, `INTENT_STATE_STALE_MS`), consent gate (write occurs only when consent is 'granted', verified at `index.ts:329/455/595`), and erasure-on-denial/withdrawal (verified `eraseIntentState` call sites at `index.ts:209` and `index.ts:260`). No behavioral change to SDK required — gap was documentation-only. Privacy Notice Template §4 and §5 updated to add `estalara_intent_*` row and DPO gate item. ROPA Activity 14 added. DPIA version header bumped to 2.3 / 2026-06-08.                                                                                                                  |
+| 2.4     | 2026-06-08 | Compliance Engineering | Section 13.3 updated (FOLLOW-230): added "Dual-store erasure model" paragraph connecting the two independent erasure paths — client cache (`estalara_intent_*` sessionStorage, erased at `index.ts:209`/`index.ts:260` via `eraseIntentState`) and server archetype (`session_embeddings`, erased via DSR cascade FOLLOW-039 / Master Design §H.1.1). Privacy Notice Template §4 updated to list all eight active SDK storage keys (three keys omitted from v1.1 added: `estalara_variant:*`, `__estalara_quiz_dismissed__`, `__estalara_micro_poll_dismissed__`; header updated from "all five" to "all eight"). ROPA Revision History updated to record Activity 14 number reservation and FOLLOW-187 renumbering to Activity 15.                                                                                                                                                 |
+| 2.5     | 2026-06-08 | Compliance Engineering | FOLLOW-187: §2.3 (System Components) — added CRM Outcome Ingest row (`POST /api/crm/outcome`, `conversion_labels` Postgres table). §2.5 (Data Types and Retention) — added `conversion_labels` row with 13-month intended retention and explicit enforcement-gap notice pending FOLLOW-234 TTL cron. ROPA Activity 15 added (CRM Deep-Outcome Ingest). Retention is policy-only until FOLLOW-234 ships; go-live gate for CRM-integrated tenants is UNSATISFIABLE until then per Rule N.                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2.6     | 2026-06-08 | Compliance Engineering | FOLLOW-235: TTL enforcement gap closed — cron shipped in FOLLOW-234 (PR #230, `c97fd50`). §2.5 `conversion_labels` retention row updated: "policy only; not yet enforced" notice removed; replaced with live enforcement statement referencing daily Vercel cron at `/api/internal/retention/conversion-labels` (FOLLOW-234 / PR #230, 2026-06-08).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 2.7     | 2026-06-08 | Compliance Engineering | FOLLOW-187 conditions 8 and 9 CONFIRMED SATISFIED. §2.3 (System Components) and §2.5 (Data Types and Retention) are complete for CRM Deep-Outcome Ingest. TTL cron is live (FOLLOW-234 / PR #230, `c97fd50`). ROPA Activity 15 complete (ROPA v2.5). CRM go-live compliance gate is now SATISFIABLE for Conditions 8+9. §8 (Data Subject Rights) updated with open-gap note: DSR cascade for `conversion_labels` via `lead_id` identifier resolution (FOLLOW-184) is a separate OPEN gap tracked as FOLLOW-184 — CRM-integrated tenants must not go live until FOLLOW-184 is DONE (code implementation shipped via FOLLOW-239 / PR #234; PG-harness integration test FOLLOW-185 not yet merged). This is separate from Conditions 8+9 which are confirmed.                                                                                                                          |
+| 2.8     | 2026-06-21 | Compliance Engineering | FOLLOW-373: Platform-wide consent umbrella (CEO decision 2026-06-21). §3.1 updated: six processing purposes (a)–(f) enumerated; C-07 boundary re-asserted with grep-verified code evidence. §7 (Consent Strategy) updated: mandatory-at-registration consent for app.estalara.com pilot (Mode B); `consent_type = 'platform_registration'`; `consent_records` binary-grant schema confirmed sufficient. §13.4 added: LIA for buying-intent identification (purpose d) and lead ranking (purpose e) — dual lawful basis (Art. 6(1)(a) consent + LI proportionality framework); balancing test PASSES subject to three conditions. §13.5 added: FOLLOW-372 suspend-not-erase sufficiency addendum — suspend is sufficient for AL-DOM-only opt-out; no new PII created; Art. 21 objection right satisfied; Art. 17 erasure path unchanged. DPO gate extended to cover §13.4 and §13.5. |
 
 ---
 
@@ -1269,6 +1300,163 @@ required for the three newly-listed keys — their storage behavior was already 
 
 ---
 
+---
+
+### 13.4 LIA — Buying-Intent Identification and Lead Ranking (Platform-wide Consent — FOLLOW-373)
+
+**Context (CEO decision 2026-06-21):** The app.estalara.com pilot makes consent mandatory at
+registration for all six processing purposes (a)–(f). Purposes (a)–(c) and (f) are disclosed as
+consent-only. Purposes (d) (buying-intent identification) and (e) (lead ranking) additionally
+require a documented balancing test because: (i) the consent is mandatory (no platform use without
+it), meaning the voluntariness of consent is structurally constrained; (ii) the processing affects
+how investors are surfaced to agents, which is an economic decision. This LIA is required
+supplementary to the mandatory consent under GDPR Art. 6(1)(a) to demonstrate proportionality.
+
+**Processing activity — Purpose (d): Buying-intent identification**
+
+The 12-dimensional intent vector is derived from behavioral signals (scroll depth, dwell time, click
+patterns, listing-view rate) and from chat-message analysis (Haiku/Sonnet NLP extractions yielding
+`ChatIntentDetectedPayload` dimensions). The vector is stored in Upstash Redis shadow key
+`shadow:{tenant_id}:{session_id}:chat_intent` with a 24-hour TTL. No raw chat text is stored by
+Adaptive-Listings at any layer (C-07 boundary — see §3.1 above). The derived vector is used
+exclusively to identify the investor's likely buying intent (purchase purpose, urgency, budget band,
+family stage, geo priority, feature priority, cross-border status, finance complexity, decision
+role, risk appetite, emotional state, tax awareness).
+
+**Processing activity — Purpose (e): Lead ranking**
+
+Investors are ranked by buying-intent strength derived from the behavioral embedding and the
+12-dimensional chat-intent vector. This ranking is surfaced to agency staff via the agent-facing
+dashboard and chat-summary UI. The ranking is pseudonymous (keyed by session_id / investor account
+reference) and does not constitute a fully automated decision that "solely" determines a legal
+effect on the investor (the agent retains discretion); GDPR Art. 22 is therefore not engaged for the
+ranking itself. However, the ranking influences how prominently an investor is prioritized by
+agents, which has a practical economic significance. This significance requires honest balancing.
+
+**Legitimate interest test — Purpose (d):**
+
+1. **Purpose test:** Identifying buying-intent from behavioral and chat signals is a genuine
+   commercial interest of both Time2Show and the tenant agency. The tenant's business purpose is to
+   facilitate property transactions; the investor's purpose in using the platform is to find and
+   transact a property. Identifying buyer seriousness and intent is a legitimate purpose within the
+   real estate context and within the investor's reasonable expectations when signing up to a
+   platform that explicitly markets AI-driven buyer matching.
+
+2. **Necessity test:** The 12-dim vector is the minimum data needed to drive archetype-prior
+   updates. Raw chat messages are not needed (and are not retained — C-07 boundary). The 24-hour TTL
+   limits staleness. No less privacy-invasive alternative achieves the same intent-signal precision.
+
+3. **Balancing test:**
+   - The data is pseudonymous: the 12-dim vector is keyed by session_id (HMAC hash). It contains
+     structured enumeration values, not free text. Re-identification from the vector alone is
+     technically infeasible.
+   - The investor reasonably expects that a real estate personalization platform reads their
+     expressed preferences and browsing behavior to improve listing relevance. The six purposes are
+     explicitly disclosed at registration.
+   - The mandatory-consent structure constrains voluntariness. However, the investor retains the
+     ability to exercise a DSR erasure request at any time, which triggers cascade deletion of the
+     intent vector, session embeddings, and adaptation log (§8 of this DPIA). The FOLLOW-372 DOM
+     opt-out toggle provides an additional safeguard (see §13.5 below).
+   - **Balancing test result: PASSES**, subject to three conditions: (i) the six purposes are fully
+     disclosed at registration before account creation; (ii) a DSR erasure pathway is accessible to
+     the investor via the tenant; (iii) the C-07 boundary (no raw chat text in AL) is maintained.
+
+**Legitimate interest test — Purpose (e):**
+
+1. **Purpose test:** Lead ranking by buying-intent strength is a core product value proposition for
+   the tenant agency. Agents with limited bandwidth benefit from prioritizing the most serious
+   buyers first. This is a genuine and specific commercial interest.
+
+2. **Necessity test:** Ranking requires the buying-intent signal (purpose d). No less invasive
+   alternative produces equivalent ranking quality without the behavioral + chat-intent signals.
+
+3. **Balancing test:**
+   - The ranking is pseudonymous within the AL stack and is surfaced to the tenant agency alongside
+     the investor's own account information (which the investor provided directly to the agency).
+   - The investor has a reasonable expectation, on a platform where they registered to interact with
+     agents, that their expressed behavior is used to shape how agents respond to them.
+   - The agent retains full discretion; the ranking is an advisory signal, not an automated
+     determinative decision (GDPR Art. 22 not engaged).
+   - The investor can exercise a DSR erasure request to remove their session data from the ranking
+     signal (§8).
+   - **Balancing test result: PASSES**, on the same conditions as purpose (d).
+
+**Conclusion:** Purposes (d) and (e) are lawful under GDPR Art. 6(1)(a) (mandatory registration
+consent) supplemented by a documented LI basis (Art. 6(1)(f)) providing the proportionality
+framework above. The consent is reinforced by the LIA. Both bases are on the record.
+
+**Lawful basis for app-side purposes (b) and (f):** Raw chat text (purpose b) is stored APP-SIDE
+only. AL has no role in its storage or retention. AL's role is limited to reading the text in-flight
+to extract the 12-dim vector. Purpose (f) (agent-facing chat summaries) is implemented APP-SIDE by
+Rafał Palak's team. AL's contribution to purpose (f) is limited to the intent vector that informs
+the summary generation. The lawful basis for the full purpose (f) is consent (mandatory
+registration) declared at app.estalara.com. Time2Show documents its contribution; Rafał implements
+the app-side enforcement.
+
+**IMPLEMENTATION FOLLOW:** App-side data retention/deletion windows for purposes (b) and (f) are
+documented in a HANDOFF to Rafał Palak in `backlog/HANDOFFS.md` (FOLLOW-373 → Rafał Palak, CTO). The
+retention windows for AL-owned data (12-dim intent vector: 24 h Redis TTL; session embeddings: 90
+days; adaptation decisions: 13 months) are already enforced in shipped code and are re-asserted in
+ROPA Activity 16 (§below in ROPA).
+
+**DPO gate:** DPO review of this §13.4 LIA is required before the mandatory-consent registration
+flow is deployed to production. Status: **PENDING** — DPO sign-off not yet received. Gate is tracked
+in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §5 (DPO Gate, item added by FOLLOW-373).
+
+---
+
+### 13.5 Addendum — FOLLOW-372 Suspend-Not-Erase Sufficiency for AL-DOM Opt-Out
+
+**Purpose:** Determine whether the reversible "suspend" opt-out for AL DOM adaptation (FOLLOW-372)
+is legally sufficient for the AL-only DOM adaptation processing, without triggering a full consent
+withdrawal and erasure.
+
+**Scope of the FOLLOW-372 toggle:** The toggle controls Adaptive-Listings DOM adaptation only. When
+OFF: the SDK skips `applyArchetypeHints()` and intent-weight updates; the Decision API returns
+neutral directives (no personalization). When ON: full adaptation resumes with no data loss. The
+toggle does NOT affect app.estalara.com's buying-intent identification (purpose d), lead ranking
+(purpose e), or agent-facing chat summaries (purpose f) — those ride the mandatory registration
+consent (§H.8 of Master Design) and are outside AL's per-user opt-out scope.
+
+**Does suspend create new PII?** No. The suspend state is stored as a localStorage key (per-user,
+per-device) and optionally as a `consent_records` row with `consent_type = 'al_dom_opt_out'`. No new
+behavioral data is generated during the suspended period — the SDK emits no events, collects no
+signals, and performs no embeddings. The 12-dim intent vector accumulated before the opt-out
+continues to expire naturally under the 24-hour Redis TTL; the `session_embeddings` record continues
+toward its 90-day TTL. No new data accumulation occurs.
+
+**Is suspend-not-erase sufficient for GDPR Art. 18 (restriction) and Art. 21 (objection)?** Yes, for
+AL-DOM processing only.
+
+- **Art. 21 objection to LI-basis processing:** The FOLLOW-372 toggle satisfies the Art. 21
+  objection right for AL DOM adaptation where the lawful basis is LI (Mode A / Mode C anonymous
+  visitors). Activating the toggle stops the LI-basis processing immediately. This is the correct
+  mechanism — Art. 21 requires cessation of processing, not erasure.
+
+- **Art. 17 erasure (consent withdrawal):** The mandatory registration consent (Mode B for
+  app.estalara.com investors) is a separate matter. Consent withdrawal by a registered investor is
+  handled by the FOLLOW-139 erasure path (consent banner "Withdraw" → cascade deletion). The
+  FOLLOW-372 toggle is an opt-out of DOM adaptation only, not a consent withdrawal. An investor who
+  suspends DOM adaptation retains their registration consent and continues to receive the
+  registration-gated services (chat, lead visibility, agent summaries). This is explicitly
+  communicated in the toggle UX (FOLLOW-372 AC).
+
+- **No new processing ceases to be necessary:** The 12-dim vector, session embeddings, and
+  adaptation logs that already exist are subject to their existing retention schedules. No new
+  retention obligation is created by the suspended state. The suspension gate in the SDK and
+  Decision API is a processing gate, not a deletion gate.
+
+**Conclusion: Suspend-not-erase is legally sufficient for AL-only DOM adaptation opt-out.** The
+toggle satisfies the Art. 21 objection right for DOM adaptation. It does not affect the Art. 17
+erasure right (which remains on the consent-withdrawal path). No new PII is created by the suspend
+state. The 12-dim vector TTL continues to expire naturally. FOLLOW-372 may proceed without requiring
+a full erasure cascade.
+
+**DPO gate:** DPO review of this §13.5 addendum is required before the FOLLOW-372 toggle is deployed
+to production. Status: **PENDING** — tracked alongside §13.4 DPO gate above.
+
+---
+
 _Sections 13.1 and 13.2 added 2026-05-27 in response to Audit Findings F-13 and F-14 (Sprint 1 GDPR
 gate). Authored by Compliance Engineering. Updated 2026-05-27 (FOLLOW-129): cross-references to
 `packages/sdk/src/ui/consent-banner.ts` and FOLLOW-128 added; §13.2 balancing test marked GREEN
@@ -1281,10 +1469,11 @@ implementation of `localStorage` 90-day TTL cross-session identifier with erasur
 both on init when consent is already 'granted' and in the `onGranted` banner callback), and wiring
 `eraseCrossSessionId()` into the consent-denied path._ Section 13.3 added 2026-06-08 (FOLLOW-218):
 disclosure for `estalara_intent_*` sessionStorage intent-state store introduced by FOLLOW-176 / PR
-#217.\_
+#217. Section 13.4 and 13.5 added 2026-06-21 (FOLLOW-373): platform-wide consent umbrella LIA for
+purposes (d) and (e) and FOLLOW-372 suspend-not-erase sufficiency addendum.
 
-_**DPO gate status: PENDING.** DPO sign-off on §13.1, §13.2, and §13.3 LIAs has not yet been
-received. This is a hard gate before EU pilot go-live. DPO sign-off must be recorded by updating
-this note and the gate line in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §4. Responsible:
-Compliance Engineering (coordinate with external DPO-as-a-Service provider — contact:
+_**DPO gate status: PENDING.** DPO sign-off on §13.1, §13.2, §13.3, §13.4, and §13.5 LIAs has not
+yet been received. This is a hard gate before EU pilot go-live. DPO sign-off must be recorded by
+updating this note and the gate line in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §5.
+Responsible: Compliance Engineering (coordinate with external DPO-as-a-Service provider — contact:
 compliance@estalara.com)._

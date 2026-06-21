@@ -5413,18 +5413,31 @@ others staged by priority; max 3 IN_PROGRESS at once.**
 - id: FOLLOW-357
   title: Reconcile /api/adapt page-type-derived tier with MASTER_DESIGN §E.7 no-Tiers
   agent: backend-engineer
-  status: BLOCKED
-  block_reason:
-    BLOCKED on CEO ruling — does page-type axis need rename off "tier" vocabulary or is §E.7
-    carve-out granted? See ESC-025 notes and FOLLOW_UPS.md stub. DO NOT implement until CEO
-    resolves.
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-06-20T10:14Z'
+  completed_at: '2026-06-20T13:00Z'
   priority: P1
   estimated_hours: 2
-  depends_on: [CEO_RULING]
+  depends_on: []
   source: RETRO-092 (FOLLOW-345 / PR #323)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-357 stub)
+  branch: backend-engineer/FOLLOW-357-rename-tier-directive-scope
+  pr: '334'
   notes: |
-    Surfaced to CEO 2026-06-20 (STATUS.md). No code changes until ruling received.
+    CEO ruled option (a): rename to directive_scope. PR #334 opened 2026-06-20.
+    Fix commit a59763e pushed 2026-06-20 addressing both regressions.
+    PM-validated 2026-06-20T13:00Z. CI green. Runtime wiring confirmed. Ready for human review.
+    CI check counter: 2/5. Fix iterations: 1/3.
+    All real merge gates GREEN (Rule H pass, Test Node 22 pass, Build, Build(cp), Typecheck,
+    Lint, SDK E2E, Rule J, Demo integration, ClickHouse migrations smoke, Corpus gate, Tracer
+    guard, Cross-language event contract, Migration journal monotonicity, K.3.6 smoke,
+    Gitleaks, Doppler verify, Vercel — all SUCCESS).
+    Non-real pre-existing failures: Rule I, Format check, Python tests (all pre-existing-red
+    per CI gate landscape, confirmed on main).
+    Wiring confirmed: POST path emits directive_scope at route.ts:908/934/1142.
+    GET path retains tier (backward compatible). tier also re-added to adaptResponseSchema
+    as optional (Rule H superset; GET/POST reconciliation deferred to FOLLOW-358).
 
 - id: FOLLOW-363
   title: Thread hysteresis (currentArchetype) into applyDwellSignal + applyListingViewRate
@@ -5554,6 +5567,61 @@ others staged by priority; max 3 IN_PROGRESS at once.**
   spec: backlog/FOLLOW_UPS.md (FOLLOW-365 stub)
   notes: |
     CEO-gated. No work until CEO decides to pursue blended profile post-pilot.
+
+- id: FOLLOW-372
+  title: Per-user opt-out toggle for Adaptive-Listings DOM adaptation
+  agent: sdk-engineer
+  co_agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 7
+  depends_on: []
+  source: CEO-directed 2026-06-21 (Piotr)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-372 stub)
+  branch: sdk-engineer/FOLLOW-372-per-user-optout-toggle
+  promoted_at: '2026-06-21'
+  notes: |
+    Lead: sdk-engineer (Shadow DOM toggle UI + SDK init gate + DOM adaptation suppression).
+    Support: backend-engineer (Decision-API consent-gate extension with profilingOptOut +
+    per-user persistence in consent_records).
+    Scope: AL-only reversible opt-out. OFF suspends AL profiling + DOM adaptation for ONE
+    logged-in user; ON resumes. NOT erasure (hard erasure stays FOLLOW-139 withdrawal path).
+    Toggle is bottom-left fixed in Shadow DOM, persistent per-user (localStorage + optional
+    consent_records row), survives reload.
+    app.estalara.com buying-intent / lead-ranking / agent chat-summaries are verifiably
+    UNAFFECTED (those ride the mandatory registration consent from FOLLOW-373).
+    Dual purpose: legal safeguard + product showcase (with/without comparison).
+    CEO decision 2026-06-21: suspended-not-erase is sufficient for AL-only DOM adaptation
+    (compliance-engineer to confirm in FOLLOW-373 DPIA update).
+
+- id: FOLLOW-373
+  title: Platform-wide consent umbrella owned by Adaptive-Listings
+  agent: compliance-engineer
+  co_agent: backend-engineer
+  co_agent_2: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 7
+  depends_on: []
+  source: CEO-directed 2026-06-21 (Piotr)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-373 stub)
+  branch: compliance-engineer/FOLLOW-373-consent-umbrella
+  promoted_at: '2026-06-21'
+  notes: |
+    Lead: compliance-engineer (DPIA/ROPA/LIA/Privacy Notice update; lawful-basis mapping
+    for all 6 processing purposes a-f).
+    Support: backend-engineer (consent records schema + disclosure surface).
+    Support: sdk-engineer (banner + registration-consent copy).
+    CEO decision 2026-06-21: AL owns the full consent layer covering the whole platform.
+    Mandatory-at-registration consent. Must disclose+cover: (a) behavioral tracking,
+    (b) reading investor chat, (c) transfer of insights to agency/agent,
+    (d) buying-intent identification, (e) lead ranking, (f) agent-facing chat-question
+    summaries (LIVE + Estalara AI chat).
+    Raw chat text stays APP-SIDE only (NOT in AL — AL keeps 12-dim vector, 24h TTL,
+    no free text, per C-07).
+    Rafal implements app-side retention/deletion windows (external HANDOFF to be written).
+    AC includes: MASTER_DESIGN.md §G.2 / §H update + version bump per §Y.2 propagation
+    checklist; HANDOFF to Rafal in backlog/HANDOFFS.md.
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

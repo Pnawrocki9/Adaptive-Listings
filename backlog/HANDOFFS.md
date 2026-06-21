@@ -1492,3 +1492,55 @@ implement:
 - `packages/sdk/src/core/intent.ts` (intent engine — add emit here, Phase 3 only)
 
 ---
+
+## FOLLOW-373 → Rafał Palak (CTO) — App-Side Chat Retention/Deletion Windows
+
+**From:** compliance-engineer **To:** Rafał Palak (CTO) **Date:** 2026-06-21T00:00:00Z
+
+**Summary:** FOLLOW-373 (platform-wide consent umbrella) establishes that Adaptive-Listings owns the
+consent layer and disclosure for all six processing purposes (a)–(f). Purposes (b) and (f) involve
+raw chat text and agent-facing summaries stored on the APP-SIDE (app.estalara.com), which is Rafał's
+responsibility. This HANDOFF specifies the retention and deletion windows that Adaptive-Listings has
+disclosed to investors in the registration consent, so that app-side implementation aligns with
+disclosed behavior.
+
+**AL-documented retention periods for app-side data (must match app.estalara.com implementation):**
+
+| Data category                                           | Disclosed retention                                                                 | Notes                                                                                                                                                   |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Raw chat message text (LIVE chat + Estalara AI chat)    | Recommended max: 90 days from message creation, or session-end whichever is shorter | C-07 brief recommends ≤30 days for batch NLP retention; 90 days is the outer bound for broader chat log retention (GDPR data minimization Art. 5(1)(e)) |
+| Agent-facing chat summaries (purpose f)                 | Same window as source chat messages                                                 | Summaries derived from chat logs; should be deleted when source chat logs are deleted                                                                   |
+| Investor account profile / behavioral record (app-side) | Account duration + 30 days after account deletion                                   | Aligns with investor DSR erasure expectations                                                                                                           |
+
+**Deletion on DSR erasure:** When an investor submits a DSR erasure request (forwarded from
+Adaptive-Listings via the tenant DSR pathway described in DPIA §8), the app-side system must delete:
+
+1. All raw chat message text for that investor within 30 days of receiving the erasure request.
+2. All agent-facing chat summaries for that investor within 30 days.
+3. Notify Adaptive-Listings when app-side deletion is complete (coordination mechanism TBD — at
+   minimum, a manual confirmation process until an automated webhook is built).
+
+**Action required from Rafał:**
+
+1. Implement a server-side TTL/deletion sweep for chat message text and agent-facing summaries
+   aligned with the retention windows above.
+2. Implement a deletion handler that fires when an investor's DSR erasure request is received from
+   the AL DSR pathway.
+3. Confirm to compliance-engineer (compliance@estalara.com) when app-side retention enforcement is
+   live. The DPO gate in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §5 includes a gate item for
+   this confirmation.
+
+**C-07 boundary confirmation (for Rafał's reference):** The Adaptive-Listings system stores ONLY a
+12-dimensional intent vector (24 h Redis TTL, `redis_writer.py:40`, `ttl_seconds=86400`) — NOT raw
+chat text. Raw chat text is entirely app-side. Rafał's implementation must not alter the AL-side
+storage (no new raw-text storage introduced into the AL stack without a new C-08 brief and DPO
+sign-off).
+
+**Files produced:**
+
+- `docs/compliance/dpia.md` §13.4 (LIA for purposes d and e)
+- `docs/compliance/ropa.md` Activity 16 (registration consent ROPA entry)
+- `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6 (registration consent disclosure text)
+- `packages/sdk/src/ui/consent-banner.ts` (platform-wide disclosure added for registered investors)
+
+---

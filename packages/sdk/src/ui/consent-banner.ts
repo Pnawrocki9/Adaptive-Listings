@@ -140,6 +140,17 @@ const BANNER_STYLE = `
  *   Source: dpia.md §13.2 "Required consent banner update" paragraph. Retention = 90 days,
  *   refreshed every 90 days. Must appear in the banner (not only in the Privacy Policy) because
  *   the identifier is set at first page load before the visitor navigates to the policy.
+ *
+ * disclosurePlatform — DPIA §13.4 / FOLLOW-373: platform-wide consent umbrella notice.
+ *   Source: dpia.md §13.4 "Platform-wide consent umbrella" and Master Design §H.8.
+ *   For registered investors (app.estalara.com Mode B), the registration consent additionally
+ *   covers: chat analysis for buying intent, transfer of inferred profile to the agency/agent,
+ *   buying-intent identification (12-dim vector, 24 h TTL, no raw chat text stored by AL),
+ *   lead ranking by buying-intent strength, and agent-facing summaries of chat questions.
+ *   Raw chat text is NOT stored in the Adaptive-Listings system — only the structured intent
+ *   summary (C-07 boundary). The full registration consent text is in the account sign-up flow.
+ *   This disclosure is shown here for completeness so that any visitor who is also a registered
+ *   investor has full transparency about the platform-wide purposes at this consent surface.
  */
 const COPY = {
   en: {
@@ -150,6 +161,9 @@ const COPY = {
     // DPIA §13.2 — cross-session pseudonymous identifier (90 days, refreshed every 90 days)
     disclosure13_2:
       'To remember your preferences across visits, we store a pseudonymous identifier in your browser for up to 90 days. This identifier is refreshed every 90 days and is deleted if you withdraw consent.',
+    // DPIA §13.4 / FOLLOW-373 — platform-wide consent umbrella (registered investors)
+    disclosurePlatform:
+      'If you are a registered investor: your account sign-up consent also covers analysis of your chat messages to identify buying intent, transfer of your inferred buyer profile to the agency/agent, lead ranking by buying-intent strength, and agent-facing summaries of your chat questions. Raw chat text is not stored in the personalization system — only a structured 24-hour intent summary.',
     learnMore: 'Learn more ↗',
     accept: 'Accept',
     decline: 'Decline',
@@ -162,6 +176,9 @@ const COPY = {
     // DPIA §13.2 — pseudonimowy identyfikator cross-session (90 dni, odświeżany co 90 dni)
     disclosure13_2:
       'Aby zapamiętać Twoje preferencje pomiędzy wizytami, przechowujemy pseudonimowy identyfikator w Twojej przeglądarce przez maksymalnie 90 dni. Identyfikator ten jest odświeżany co 90 dni i usuwany w przypadku wycofania zgody.',
+    // DPIA §13.4 / FOLLOW-373 — platforma: pełne cele przetwarzania (zarejestrowani inwestorzy)
+    disclosurePlatform:
+      'Jeśli jesteś zarejestrowanym inwestorem: Twoja zgoda wyrażona przy rejestracji obejmuje również analizę wiadomości na czacie w celu identyfikacji intencji zakupowej, przekazanie wywnioskowanego profilu kupującego agencji/agentowi, ranking inwestorów według siły intencji zakupowej oraz podsumowania pytań z czatu widoczne dla pracowników agencji. Treść wiadomości nie jest przechowywana w systemie personalizacji — tylko strukturyzowane podsumowanie intencji przez 24 godziny.',
     learnMore: 'Dowiedz się więcej ↗',
     accept: 'Akceptuj',
     decline: 'Odrzuć',
@@ -174,6 +191,9 @@ const COPY = {
     // DPIA §13.2 — identificador pseudónimo entre sesiones (90 días, renovado cada 90 días)
     disclosure13_2:
       'Para recordar tus preferencias entre visitas, almacenamos un identificador seudónimo en tu navegador durante un máximo de 90 días. Este identificador se renueva cada 90 días y se elimina si retiras tu consentimiento.',
+    // DPIA §13.4 / FOLLOW-373 — cobertura de consentimiento de plataforma (inversores registrados)
+    disclosurePlatform:
+      'Si eres un inversor registrado: tu consentimiento de registro también cubre el análisis de tus mensajes de chat para identificar la intención de compra, la transferencia de tu perfil de comprador inferido a la agencia/agente, la clasificación por intensidad de intención de compra y los resúmenes de tus preguntas de chat para el equipo de la agencia. El texto del chat no se almacena en el sistema de personalización — solo un resumen estructurado de intención durante 24 horas.',
     learnMore: 'Más información ↗',
     accept: 'Aceptar',
     decline: 'Rechazar',
@@ -234,9 +254,9 @@ export function renderConsentBanner(
     textEl.appendChild(link);
   }
 
-  // DPIA §13.1 + §13.2 mandatory disclosures — rendered as a sub-list so they are
+  // DPIA §13.1 + §13.2 + §13.4 mandatory disclosures — rendered as a sub-list so they are
   // visually subordinate to the main banner text but still visible before the
-  // consent decision is made (§13.2 balancing-test condition).
+  // consent decision is made (§13.2 balancing-test condition; §13.4 FOLLOW-373).
   const disclosureList = document.createElement('ul');
   disclosureList.className = 'estalara-consent-disclosures';
 
@@ -248,8 +268,16 @@ export function renderConsentBanner(
   li13_2.setAttribute('data-estalara-disclosure', 'dpia-13-2');
   li13_2.textContent = copy.disclosure13_2;
 
+  // DPIA §13.4 / FOLLOW-373 — platform-wide consent umbrella disclosure for registered investors.
+  // Shown to all visitors for full transparency; specifically relevant to registered investors
+  // whose registration consent covers purposes (b)–(f) beyond behavioral tracking.
+  const liPlatform = document.createElement('li');
+  liPlatform.setAttribute('data-estalara-disclosure', 'dpia-13-4-platform');
+  liPlatform.textContent = copy.disclosurePlatform;
+
   disclosureList.appendChild(li13_1);
   disclosureList.appendChild(li13_2);
+  disclosureList.appendChild(liPlatform);
 
   // Action buttons container
   const actions = document.createElement('div');

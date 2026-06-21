@@ -10058,3 +10058,161 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] ESC-026 lift/calibration estimates are recomputed and the delta vs contaminated baseline is
         recorded.
 - **promoted_to_queue:** false
+
+---
+
+## FOLLOW-372 — Per-user opt-out toggle for Adaptive-Listings DOM adaptation (CEO-directed)
+
+- **source_retro:** N/A — CEO directive 2026-06-21 (Piotr)
+- **source_ticket:** N/A (new feature)
+- **recommended_sprint:** next
+- **recommended_agent:** sdk-engineer (lead) + backend-engineer (decision-api consent-gate +
+  persistence)
+- **priority:** P1
+- **estimated_hours:** 7 (split likely: SDK toggle/gating ~4h; decision-api + persistence ~3h)
+- **scope:** Add a per-user opt-out control that suspends **Adaptive-Listings profiling + DOM
+  adaptation for one logged-in user only** on app.estalara.com. CEO scope (2026-06-21): **AL-only**
+  — this toggle does NOT affect app.estalara.com's own buying-intent identification, lead ranking,
+  or agent-facing chat summaries; those are covered by the mandatory registration consent (chat is
+  only available to registered/logged-in investors who consent at signup — see FOLLOW-373). The
+  toggle is dual-purpose: (1) an extra legal safeguard for DOM mutation, and (2) a **product
+  showcase** — it lets a viewer compare the listing **with vs without** DOM adaptation,
+  demonstrating the strength of Adaptive Listings.
+
+  **Seams (from 2026-06-21 sweep):** persistent control rendered by the SDK in Shadow DOM (sibling
+  to `packages/sdk/src/ui/consent-banner.ts`), bottom-left fixed; gate hooks at SDK init
+  (`packages/sdk/src/index.ts` — skip `applyArchetypeHints()` / intent-weight updates), at DOM-apply
+  (return slots to tenant default / suppress mutation), at the Decision-API consent gate
+  (`apps/decision-api/src/lib/consent-gate.ts` — extend input with `profilingOptOut` → neutral
+  directives), and the chat shadow prior (`apps/intent-engine/src/redis_writer.py` — skip applying
+  AL chat-intent prior for opted-out sessions). State persisted **per-user** (localStorage key +
+  optional `consent_records` row), surviving reloads, scoped to that user only.
+
+  **Reversible — NOT erasure.** OFF _suspends_ AL profiling/adaptation; ON _resumes_ it. No deletion
+  of accumulated archetype/intent state (that preserves the with/without comparison UX and is what
+  separates this from the consent-withdrawal erasure path, FOLLOW-139). compliance-engineer to
+  confirm suspend-not-erase is sufficient for AL-only DOM adaptation (no new PII created by
+  suspend).
+
+- **ac:**
+  - [ ] SDK renders a persistent, keyboard-operable, ARIA-labelled toggle in Shadow DOM, bottom-left
+        on app.estalara.com, visible to logged-in users. ON state communicates "personalizacja /
+        profilowanie aktywne"; OFF communicates adaptation disabled.
+  - [ ] Toggle state is persisted per-user and survives reload; affects only that user (no global /
+        tenant-wide effect).
+  - [ ] When OFF: SDK skips archetype identification + intent-weight updates AND DOM adaptation is
+        neutralized (slots/headline/photo-order/features return to tenant default); a jsdom seam
+        test asserts no slot mutation occurs.
+  - [ ] When OFF: Decision-API returns neutral directives for that session (consent-gate extended
+        with `profilingOptOut`); a test asserts neutral directives + no variant log.
+  - [ ] When OFF: no profiling-tagged behavioral events contribute to archetype training for that
+        user; AL chat-intent shadow prior is not applied.
+  - [ ] Flipping ON resumes full adaptation with no data loss (with/without comparison works).
+  - [ ] app.estalara.com buying-intent / lead-ranking / agent chat-summary processing is verifiably
+        UNAFFECTED by this toggle (documented + asserted at the consent-gate boundary).
+  - [ ] Tests ≥80% on new SDK code; SDK bundle stays <40KB gzip; CI green.
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-373 — Platform-wide consent umbrella implemented in Adaptive-Listings (CEO-directed)
+
+- **source_retro:** N/A — CEO directive 2026-06-21 (Piotr)
+- **source_ticket:** related to FOLLOW-346 / C-07 (chat NLP retention scope)
+- **recommended_sprint:** next
+- **recommended_agent:** compliance-engineer (lead) + backend-engineer (consent records + disclosure
+  surface) + sdk-engineer (banner / registration-consent copy)
+- **priority:** P1
+- **estimated_hours:** 7
+- **scope:** CEO decision (2026-06-21): because the platform must be **compliant as a whole**, the
+  full consent set is **implemented and owned in Adaptive-Listings**, and that consent layer
+  provides the legal umbrella for the entire Estalara platform. Rafał then only implements **data
+  retention/deletion windows** app-side (external HANDOFF — out of this repo's scope). Raw chat text
+  is stored **app-side** (app.estalara.com), NOT in Adaptive-Listings (AL keeps only the 12-dim
+  intent vector, 24h TTL, no free text — per C-07); this ticket is about AL **owning the consent +
+  disclosure + lawful-basis documentation** that covers the platform-wide processing.
+
+  Consent is captured at **app.estalara.com registration** and is **mandatory** — chat is only
+  available to registered/logged-in investors, and without granting consent the investor cannot
+  register or use the platform (very limited value to agency clients otherwise). The AL consent
+  layer must disclose and lawfully cover all of: (a) behavioral tracking, (b) reading the investor's
+  chat, (c) transferring derived insights to the agency/agent, (d) buying-intent identification, (e)
+  lead ranking by buying-intent strength, (f) agent-facing summaries of questions asked in LIVE chat
+  and in the Estalara AI chat.
+
+  Today the AL consent banner discloses only 7-day audit retention + 90-day cross-session ID
+  (`packages/sdk/src/ui/consent-banner.ts`) — it says nothing about (b)–(f). This ticket expands the
+  consent + compliance surface to cover them.
+
+- **ac:**
+  - [x] DPIA (`docs/compliance/dpia.md`), ROPA (`docs/compliance/ropa.md`), Privacy Notice template,
+        and an LIA (`docs/compliance/lia-template.md` → filled) updated to cover processing purposes
+        (a)–(f), each with lawful basis (consent vs legitimate interest) and retention period. (DONE
+        — PR compliance-engineer/FOLLOW-373-consent-umbrella, 2026-06-21)
+  - [x] Consent disclosure copy (registration consent text + SDK banner) enumerates chat reading,
+        transfer to agency/agent, buying-intent identification, lead ranking, and chat-question
+        summaries; mandatory-at-registration nature documented. (DONE — Privacy Notice Template §6 +
+        consent-banner.ts disclosurePlatform, 2026-06-21)
+  - [x] `MASTER_DESIGN.md` §G.2 / §H already updated in v4.1 (commit cf1e542); compliance docs
+        verified consistent — no contradictions found.
+  - [x] Consent records schema: existing binary-grant schema confirmed sufficient; new
+        `consent_type = 'platform_registration'` value documented; no migration required. (DONE —
+        ROPA Activity 16 + DPIA §7 update, 2026-06-21)
+  - [x] HANDOFF written (`backlog/HANDOFFS.md`) to Rafał — app-side chat retention/deletion windows
+        documented (FOLLOW-373 HANDOFF, 2026-06-21).
+  - [x] C-07 boundary re-asserted: code-verified `schemas.py:58–79` + `redis_writer.py:49` — no raw
+        chat text in AL stack (DONE — DPIA §3.1 + ROPA Activity 16 + Privacy Notice §6.2).
+- **implementation_follow_depends_on:**
+  - FOLLOW-374 (backend-engineer): Wire `consent_records` INSERT with
+    `consent_type = 'platform_registration'` into the app.estalara.com investor registration flow.
+    BEFORE-GO-LIVE gate: go-live QA gate for mandatory registration consent is UNSATISFIABLE until
+    this INSERT is wired and QA-verified. See FOLLOW-374 stub below.
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-374 — Wire platform_registration consent_records INSERT at investor registration
+
+- **source_retro:** FOLLOW-373 implementation gap (2026-06-21)
+- **source_ticket:** FOLLOW-373
+- **recommended_sprint:** next (same sprint as FOLLOW-373 go-live)
+- **recommended_agent:** backend-engineer
+- **priority:** P0 (before-go-live gate — mandatory registration consent is UNSATISFIABLE without
+  this)
+- **estimated_hours:** 3
+- **scope:** FOLLOW-373 documented that the `consent_records` table schema (free-text `consent_type`
+  column) is sufficient for storing the platform-wide registration consent as
+  `consent_type = 'platform_registration'`. However, the actual INSERT is NOT yet wired into the
+  investor registration flow in `apps/control-plane`. This FOLLOW implements that INSERT.
+
+  The INSERT must occur at the moment the investor submits the registration form and clicks "I
+  agree" on the consent checkbox. It must capture: `tenant_id`, `session_id` (investor's session
+  identifier or account reference), `consent_type = 'platform_registration'`, `granted = true`,
+  `tos_version` (version of the registration terms shown), `consent_text_hash` (SHA-256 of the exact
+  consent text displayed — per `consent_records.consentTextHash` in
+  `packages/db/src/schema/consent_records.ts`), `ip_address` (encrypted at application layer before
+  insert), `user_agent`, `granted_at`.
+
+  **Go-live gate:** The platform-wide registration consent go-live QA gate
+  (`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §5 — "§6 registration consent text reviewed by DPO
+  before go-live on app.estalara.com") is UNSATISFIABLE until this INSERT is implemented and
+  QA-verified with a real browser session showing the consent checkbox + DB record written.
+
+- **ac:**
+  - [ ] `apps/control-plane` registration handler inserts a `consent_records` row with
+        `consent_type = 'platform_registration'` on investor account creation.
+  - [ ] `consent_text_hash` is the SHA-256 of the actual consent text displayed at registration
+        (must match the text in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6.1 or its PL/ES
+        equivalent).
+  - [ ] `tos_version` is a versioned string matching the TOS version displayed.
+  - [ ] `ip_address` is encrypted at the application layer before INSERT (consistent with existing
+        Activity 7 / Activity 16 security measure — see
+        `packages/db/src/schema/consent_records.ts`).
+  - [ ] Integration test: mock registration flow asserts `consent_records` row exists with correct
+        fields after successful registration.
+  - [ ] QA manual verification: real browser session on staging — investor registers, consent
+        checkbox presented, DB row written. DPO gate item in Privacy Notice Template §5 updated to
+        DONE after QA verification.
+  - [ ] No change to `consent_records` DB schema (no migration needed — free-text `consent_type`
+        confirmed by ROPA Activity 16).
+- **promoted_to_queue:** false

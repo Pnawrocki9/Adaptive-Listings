@@ -1,6 +1,6 @@
 # Estalara Adaptive Listings — Tenant-Embed Privacy Notice Template
 
-**Version:** 1.2 **Date:** 2026-06-08 **Author:** Compliance Engineering **Regulatory basis:** GDPR
+**Version:** 1.3 **Date:** 2026-06-21 **Author:** Compliance Engineering **Regulatory basis:** GDPR
 Art. 13/14, ePrivacy Directive Art. 5(3), UK GDPR, CCPA § 1798.100(b) **DPO gate:** See §5 — DPO
 sign-off required before this template is distributed to EU tenants.
 
@@ -139,19 +139,23 @@ submitting a data subject request to [tenant DSR contact].
 > **Status: PENDING.** This template must not be distributed to EU tenants or published on
 > app.estalara.com until the DPO gate below is closed.
 
-| Gate item                                                                           | Owner                     | Status  |
-| ----------------------------------------------------------------------------------- | ------------------------- | ------- |
-| DPO review of DPIA §13.1 LIA (consent-denial audit log)                             | Compliance Engineering    | PENDING |
-| DPO review of DPIA §13.2 LIA (cross-session identifier)                             | Compliance Engineering    | PENDING |
-| DPO sign-off recorded in DPIA (replace PENDING note in §13.1/§13.2/§13.3 DPO gates) | DPO-as-a-Service provider | PENDING |
-| FOLLOW-128 deployed to production (§13.2 banner disclosure live for EN/PL/ES)       | SDK Engineer              | PENDING |
-| §13.2 staging localStorage QA: "Deny"/"Withdraw" removes cross-session key          | Compliance Engineering    | PENDING |
-| DPO review of DPIA §13.3 (intent-state sessionStorage store)                        | Compliance Engineering    | PENDING |
-| §13.3 staging sessionStorage QA: "Deny"/"Withdraw" removes `estalara_intent_*` key  | Compliance Engineering    | PENDING |
-| Tenant DPA updated to reference this template version                               | Legal / Compliance Eng.   | PENDING |
+| Gate item                                                                                   | Owner                     | Status  |
+| ------------------------------------------------------------------------------------------- | ------------------------- | ------- |
+| DPO review of DPIA §13.1 LIA (consent-denial audit log)                                     | Compliance Engineering    | PENDING |
+| DPO review of DPIA §13.2 LIA (cross-session identifier)                                     | Compliance Engineering    | PENDING |
+| DPO sign-off recorded in DPIA (replace PENDING note in §13.1/§13.2/§13.3/§13.4/§13.5 gates) | DPO-as-a-Service provider | PENDING |
+| FOLLOW-128 deployed to production (§13.2 banner disclosure live for EN/PL/ES)               | SDK Engineer              | PENDING |
+| §13.2 staging localStorage QA: "Deny"/"Withdraw" removes cross-session key                  | Compliance Engineering    | PENDING |
+| DPO review of DPIA §13.3 (intent-state sessionStorage store)                                | Compliance Engineering    | PENDING |
+| §13.3 staging sessionStorage QA: "Deny"/"Withdraw" removes `estalara_intent_*` key          | Compliance Engineering    | PENDING |
+| DPO review of DPIA §13.4 LIA (buying-intent + lead ranking, FOLLOW-373)                     | Compliance Engineering    | PENDING |
+| DPO review of DPIA §13.5 (FOLLOW-372 suspend-not-erase addendum)                            | Compliance Engineering    | PENDING |
+| §6 registration consent text reviewed by DPO before go-live on app.estalara.com             | Compliance Engineering    | PENDING |
+| Rafał implements app-side chat text retention per HANDOFF (backlog/HANDOFFS.md FOLLOW-373)  | Rafał Palak (CTO)         | PENDING |
+| Tenant DPA updated to reference this template version                                       | Legal / Compliance Eng.   | PENDING |
 
 Once all gate items above are DONE, update this table, record the DPO sign-off date, and update the
-DPO gate notes in `docs/compliance/dpia.md` §13.1, §13.2, and §13.3.
+DPO gate notes in `docs/compliance/dpia.md` §13.1, §13.2, §13.3, §13.4, and §13.5.
 
 **Responsible escalation path:** If DPO sign-off is not received within 5 business days of this
 template being shared with the DPO, escalate to the human (Piotr Nawrocki) via
@@ -159,7 +163,88 @@ template being shared with the DPO, escalate to the human (Piotr Nawrocki) via
 
 ---
 
-## 6. Revision History
+## 6. Platform-Wide Registration Consent — app.estalara.com Disclosure
+
+> **Scope:** This section applies to **app.estalara.com** specifically, where consent is mandatory
+> at investor registration (CEO decision 2026-06-21, FOLLOW-373). Sections §§1–4 cover the
+> tenant-embed disclosure surface. This section covers the app.estalara.com registration consent
+> surface.
+
+> **DPO gate:** DPO review required before this text goes live on app.estalara.com. Status: PENDING
+> (see §5 above).
+
+> **Implementation note for Rafał (CTO):** The registration checkbox on app.estalara.com must
+> present the disclosure in §6.1 before the investor creates their account. Store a
+> `consent_records` row with `consent_type = 'platform_registration'`, `granted = true`,
+> `tos_version`, and `consent_text_hash` (SHA-256 of the displayed text) at submission time. No DB
+> migration is needed — `consent_type` is a free-text column in the existing schema.
+
+### 6.1 Registration Consent Disclosure Text (English — mandatory)
+
+> **Action:** Display this text (or an equivalent translation) above the consent checkbox at
+> registration. The checkbox must not be pre-ticked (GDPR Art. 7(2)).
+
+By creating an account and clicking "I agree", you consent to the Estalara Adaptive Listings service
+(provided by Time2Show, Inc.) processing your information for the following purposes:
+
+1. **Behavioral tracking** — We analyze how you browse listings (scroll depth, time spent, clicks,
+   and searches) to personalize the listings shown to you.
+
+2. **Chat analysis** — Your messages in the Estalara AI chat are analyzed in real time to understand
+   your buying intent (e.g., budget, urgency, preferred location). We extract a structured summary
+   of your intent — we do not store the full text of your messages in our personalization system.
+
+3. **Transfer to agency/agent** — Your inferred buyer profile (archetype, buying-intent score) is
+   shared with the real estate agency or agent you interact with on this platform.
+
+4. **Buying-intent identification** — We build a 12-dimensional profile of your buying intent from
+   your behavioral and chat signals. This profile is held for up to 24 hours in our personalization
+   system.
+
+5. **Lead ranking** — You may be ranked alongside other investors by buying-intent strength. Agents
+   use this ranking to prioritize follow-up. This ranking is advisory — the agent retains full
+   discretion.
+
+6. **Chat-question summaries** — A summary of questions you have asked in LIVE chat and in the
+   Estalara AI chat may be shown to the agency's staff to help them prepare for a conversation with
+   you.
+
+**This consent is required to use the platform.** Without granting it, you cannot create an account
+or access chat features.
+
+**Your rights:** You can withdraw this consent at any time by contacting [agency DSR contact].
+Withdrawal stops new personalization processing. A data erasure request will result in deletion of
+your behavioral data from Estalara's systems within 30 days. Withdrawal does not affect the
+lawfulness of processing before withdrawal.
+
+For full details, see the [agency privacy policy] and Estalara's privacy documentation at
+compliance@estalara.com.
+
+### 6.2 C-07 Boundary Confirmation (operator-facing — not shown to investors)
+
+Raw chat text is stored APP-SIDE only (app.estalara.com infrastructure, Rafał Palak's
+responsibility). The Adaptive-Listings system stores only a 12-dimensional intent vector with a
+24-hour TTL. Code-verified: `schemas.py:58–79` — `ChatIntentDetectedPayload` has no `messages` or
+`raw_text` field; `redis_writer.py:49` — `payload.model_dump()` serializes only the structured
+payload. See `docs/compliance/C-07-chat-retention-scope.md`.
+
+App-side chat text retention and deletion windows are specified in `backlog/HANDOFFS.md` FOLLOW-373
+HANDOFF to Rafał Palak, CTO.
+
+### 6.3 Per-User DOM Adaptation Opt-Out Disclosure (FOLLOW-372)
+
+The Estalara SDK provides a per-user toggle to suspend DOM adaptation (headline reordering, photo
+order, feature highlights) without withdrawing the registration consent. The toggle:
+
+- Does NOT affect buying-intent identification (purpose 4), lead ranking (purpose 5), or agent chat
+  summaries (purpose 6) — those ride the registration consent.
+- Is reversible: suspending preserves the accumulated profile; re-enabling resumes full
+  personalization with no data loss.
+- Satisfies the GDPR Art. 21 right to object to legitimate-interest DOM adaptation processing.
+
+---
+
+## 7. Revision History
 
 | Version | Date       | Author                 | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------- | ---------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -167,3 +252,4 @@ template being shared with the DPO, escalate to the human (Piotr Nawrocki) via
 |         |            |                        | disclosure paragraphs from DPIA Audit F-13/F-14                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | 1.1     | 2026-06-08 | Compliance Engineering | FOLLOW-218: added §4 client-storage table listing all five active SDK keys including the new `estalara_intent_{sessionId}` sessionStorage entry. Renumbered old §4 (DPO Gate) to §5; old §5 (Revision History) to §6. DPO gate updated to add §13.3 review item and §13.3 staging QA gate item.                                                                                                                                                                                               |
 | 1.2     | 2026-06-08 | Compliance Engineering | FOLLOW-230: §4 updated to list all eight active SDK keys. Added three keys omitted from v1.1: `estalara_variant:{sessionId}` (sessionStorage, A/B variant, strictly-necessary), `__estalara_quiz_dismissed__` (localStorage, preference timestamp, strictly-necessary), `__estalara_micro_poll_dismissed__` (localStorage, preference timestamp, strictly-necessary). Updated header from "all five" to "all eight". Added per-key implementation notes with grep-verified source references. |
+| 1.3     | 2026-06-21 | Compliance Engineering | FOLLOW-373: §6 added — Platform-Wide Registration Consent disclosure for app.estalara.com pilot. Covers six purposes (a)–(f) with investor-facing EN text (§6.1), C-07 boundary confirmation (§6.2), and DOM opt-out disclosure (§6.3). DPO gate updated: four new gate items. Old §6 Revision History renumbered to §7. Template version bumped to 1.3.                                                                                                                                      |

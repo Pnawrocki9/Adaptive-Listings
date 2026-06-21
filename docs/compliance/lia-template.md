@@ -395,4 +395,81 @@ assessment support.
 
 ---
 
-_End of document — Template v1.0 — Estalara Compliance Engineering — 2026-05-15_
+---
+
+## Appendix B — Platform-Wide Consent LIA: Buying-Intent Profiling (FOLLOW-373)
+
+**Template version:** v1.1 (2026-06-21) **Applicable to:** app.estalara.com pilot (Mode B, mandatory
+registration consent) **Purposes covered:** (d) Buying-intent identification, (e) Lead ranking by
+buying-intent strength **DPIA cross-reference:** DPIA §13.4
+
+This appendix documents the balancing test for purposes (d) and (e) where the lawful basis is
+mandatory registration consent (GDPR Art. 6(1)(a)) supplemented by a Legitimate Interest
+proportionality framework (Art. 6(1)(f)). The mandatory nature of the consent constrains its
+voluntariness; this LIA provides the proportionality analysis required to ensure the processing
+satisfies the data minimization and necessity principles under Art. 5(1)(b)(c).
+
+### B.1 — Purpose Test
+
+**Purpose (d) — Buying-intent identification:** Time2Show's commercial interest in providing a
+relevant, personalized listing experience to registered investors, and in enabling agents to
+understand the investor's likely purchase criteria, is a genuine and specific commercial interest.
+The investor's interest in receiving relevant listings and in being understood by agents is aligned.
+
+**Purpose (e) — Lead ranking:** The tenant agency's legitimate interest in prioritizing follow-up
+with the most serious buyers is a genuine commercial purpose within real estate sales, and is within
+the reasonable expectations of a registered investor on a platform that explicitly markets AI-driven
+buyer matching.
+
+**Is this purpose a legitimate interest?** Yes. CNIL June 2025 guidance confirms that commercial
+interest in AI-driven content personalization can constitute a legitimate interest where the purpose
+is genuine, specific, and proportionate. Identifying and ranking buyer intent in a real estate
+context satisfies all three conditions.
+
+### B.2 — Necessity Test
+
+**Can purposes (d) and (e) be achieved without the 12-dim intent vector?** No. The intent vector is
+the minimum data needed to produce a buyer-intent signal from behavioral and chat inputs without
+retaining raw chat text. Alternatives assessed:
+
+| Alternative                                    | Assessment                                                       |
+| ---------------------------------------------- | ---------------------------------------------------------------- |
+| Raw chat text retention                        | Requires explicit consent + 30-day TTL (C-07). Disproportionate. |
+| Session-only embeddings (no intent dimensions) | Insufficient precision for per-agent-meeting briefing            |
+| Manual agent data entry                        | Defeats the automated personalization purpose                    |
+| No ranking (first-come-first-served)           | Does not serve the commercial interest                           |
+
+The 24-hour TTL for the intent vector, enforced natively by Upstash Redis (`redis_writer.py:40`,
+`ttl_seconds=86400`), is the minimum retention consistent with within-session personalization and
+the investor's reasonable expectation of continuity during an active session.
+
+### B.3 — Balancing Test
+
+| Factor                       | Assessment                                                                                                                        | Weight     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| Sensitivity of data          | Low to medium — buying intent dimensions, no Art. 9 categories. Household composition inference possible but not stored verbatim. | Neutral    |
+| Scale                        | Limited — registered investors only, not anonymous public visitors                                                                | Favors LI  |
+| Persistence                  | 24 h Redis TTL (enforced). No cross-session persistence beyond the session_embeddings 90-day store (which is covered by consent). | Favors LI  |
+| Reasonable expectations      | Investor registered on a platform that explicitly discloses AI-driven buyer matching and agent lead ranking                       | Favors LI  |
+| Mandatory consent structure  | Consent is mandatory — voluntariness is constrained. This is the primary risk factor.                                             | Against LI |
+| Power imbalance              | Low — real estate platform is not an essential service; investor chose to register                                                | Favors LI  |
+| Art. 21 / FOLLOW-372 opt-out | FOLLOW-372 DOM toggle provides Art. 21 objection right for DOM adaptation. DSR erasure path available for full withdrawal.        | Favors LI  |
+| Agent discretion             | Ranking is advisory; agent retains full discretion. GDPR Art. 22 not engaged.                                                     | Favors LI  |
+
+**Overall assessment:** The mandatory consent structure is the primary tension point. However, the
+processing is proportionate because: (a) the investor's reasonable expectation on this platform
+includes AI-driven buyer matching; (b) the data is pseudonymous and has a short TTL; (c) Art. 21
+objection and full erasure pathways are available; (d) the agent retains discretion over follow-up
+prioritization. **Balancing test result: PASSES**, subject to the three conditions stated in DPIA
+§13.4 (six-purpose disclosure at registration; accessible DSR pathway; C-07 boundary maintained).
+
+### B.4 — C-07 Boundary Assertion
+
+Raw chat text is not processed or stored by Adaptive-Listings. The 12-dim intent vector derived from
+chat analysis is the only AL-side artifact. This boundary is verified in shipped code (see §6.2 of
+Privacy Notice Template and C-07 scoping brief). Any future change to this boundary requires a new
+C-08 scoping brief and explicit DPO sign-off before implementation.
+
+---
+
+_Appendix B added 2026-06-21 (FOLLOW-373) — Compliance Engineering._

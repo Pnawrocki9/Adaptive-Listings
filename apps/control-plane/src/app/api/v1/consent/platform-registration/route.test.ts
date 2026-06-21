@@ -16,7 +16,7 @@
 
 import { createHmac } from 'crypto';
 import { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ─── DB mock ──────────────────────────────────────────────────────────────────
 
@@ -147,7 +147,8 @@ describe('POST /api/v1/consent/platform-registration', () => {
   });
 
   it('inserts tos_version matching PLATFORM_REGISTRATION_TOS_VERSION when not supplied', async () => {
-    const { POST, PLATFORM_REGISTRATION_TOS_VERSION } = await import('./route');
+    const { POST } = await import('./route');
+    const { PLATFORM_REGISTRATION_TOS_VERSION } = await import('./lib');
     await POST(makeRequest(buildValidBody()));
 
     const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
@@ -169,7 +170,8 @@ describe('POST /api/v1/consent/platform-registration', () => {
   });
 
   it('inserts canonical consent_text_hash when not supplied', async () => {
-    const { POST, CANONICAL_CONSENT_TEXT_HASH } = await import('./route');
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
     await POST(makeRequest(buildValidBody()));
 
     const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<

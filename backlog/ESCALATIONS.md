@@ -1384,7 +1384,7 @@ divergence unification).
 
 ---
 
-## OPEN — SDK IIFE bundle over 40 KB gzip budget (pre-existing violation from FOLLOW-373 consent strings) [FOLLOW-372]
+## RESOLVED — SDK IIFE bundle over 40 KB gzip budget (pre-existing violation from FOLLOW-373 consent strings) [FOLLOW-372]
 
 **Filed by:** sdk-engineer **Date:** 2026-06-21 **Affects:** FOLLOW-372, FOLLOW-373,
 `packages/sdk/scripts/check-bundle-size.js` CI gate **Type:** architectural
@@ -1425,4 +1425,8 @@ sdk-engineer recommends **(A)** — the disclosure strings are legally mandated 
 not feature bloat. The 42 KB revised budget still gives substantial headroom under the 80 KB Native
 tier budget.
 
-**Resolution:** (empty until resolved)
+**Resolution:** RESOLVED 2026-06-21: CEO approved option (A) — raise budget 40KB→42KB. Implemented
+on `compliance-engineer/FOLLOW-373-consent-umbrella` (commit `b8f9e2b`): `MAX_BYTES = 42 * 1024` in
+`packages/sdk/scripts/check-bundle-size.js`. The disclosure strings are legally mandated (DPIA
+§13.4), not feature bloat; 42KB stays well under the 80KB ceiling. Headroom is now slim (~0.8KB over
+current 41.17KB) — durable trim via lazy-loaded i18n (option B) deferred to a post-pilot FOLLOW.

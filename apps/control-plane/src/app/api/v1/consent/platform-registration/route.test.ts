@@ -138,7 +138,10 @@ describe('POST /api/v1/consent/platform-registration', () => {
     await POST(makeRequest(buildValidBody()));
 
     expect(mockInsert).toHaveBeenCalledWith(expect.anything());
-    const valuesArg = mockInsertValues.mock.calls[0]?.[0] as Record<string, unknown>;
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
     expect(valuesArg.consentType).toBe('platform_registration');
     expect(valuesArg.granted).toBe(true);
   });
@@ -147,7 +150,10 @@ describe('POST /api/v1/consent/platform-registration', () => {
     const { POST, PLATFORM_REGISTRATION_TOS_VERSION } = await import('./route');
     await POST(makeRequest(buildValidBody()));
 
-    const valuesArg = mockInsertValues.mock.calls[0]?.[0] as Record<string, unknown>;
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
     expect(valuesArg.tosVersion).toBe(PLATFORM_REGISTRATION_TOS_VERSION);
   });
 
@@ -155,7 +161,10 @@ describe('POST /api/v1/consent/platform-registration', () => {
     const { POST } = await import('./route');
     await POST(makeRequest(buildValidBody({ tos_version: 'platform-v2.0-custom' })));
 
-    const valuesArg = mockInsertValues.mock.calls[0]?.[0] as Record<string, unknown>;
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
     expect(valuesArg.tosVersion).toBe('platform-v2.0-custom');
   });
 
@@ -163,7 +172,10 @@ describe('POST /api/v1/consent/platform-registration', () => {
     const { POST, CANONICAL_CONSENT_TEXT_HASH } = await import('./route');
     await POST(makeRequest(buildValidBody()));
 
-    const valuesArg = mockInsertValues.mock.calls[0]?.[0] as Record<string, unknown>;
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
     expect(valuesArg.consentTextHash).toBe(CANONICAL_CONSENT_TEXT_HASH);
   });
 
@@ -172,7 +184,10 @@ describe('POST /api/v1/consent/platform-registration', () => {
     const { POST } = await import('./route');
     await POST(makeRequest(buildValidBody({ consent_text_hash: customHash })));
 
-    const valuesArg = mockInsertValues.mock.calls[0]?.[0] as Record<string, unknown>;
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
     expect(valuesArg.consentTextHash).toBe(customHash);
   });
 
@@ -180,7 +195,10 @@ describe('POST /api/v1/consent/platform-registration', () => {
     const { POST } = await import('./route');
     await POST(makeRequest(buildValidBody(), { ip: '1.2.3.4' }));
 
-    const valuesArg = mockInsertValues.mock.calls[0]?.[0] as Record<string, unknown>;
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
     // ipAddress must NOT be the raw IP — either absent or encrypted (null here since key absent)
     expect(valuesArg.ipAddress).toBeUndefined();
   });

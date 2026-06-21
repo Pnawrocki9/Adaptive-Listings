@@ -39,6 +39,20 @@ export interface ConsentGateInput {
    * Consent state from the inbound request.
    */
   consentState: ConsentState;
+  /**
+   * Per-user profiling opt-out flag (FOLLOW-372 / Master Design §H.9).
+   *
+   * When `true` the user has suspended AL DOM adaptation for their account only.
+   * The gate returns neutral directives and suppresses variant logging.
+   *
+   * Scope: AL-DOM only — this flag does NOT affect app.estalara.com
+   * buying-intent identification, lead ranking, or agent-facing chat summaries.
+   * Those processing purposes are covered by the mandatory registration consent
+   * (§H.8) and are outside this flag's scope.
+   *
+   * Optional — defaults to `false` (opted in) when absent.
+   */
+  profilingOptOut?: boolean;
 }
 
 /**
@@ -54,7 +68,7 @@ export interface ConsentGateResult {
    * Machine-readable reason when gated. Used for ClickHouse gate_reason column
    * and observability tagging. Absent when gated = false.
    */
-  reason?: 'consent_required';
+  reason?: 'consent_required' | 'profiling_opt_out';
 }
 
 /**
@@ -76,10 +90,22 @@ export interface ConsentGateResult {
  * // US tenant, consent not required
  * consentGate({ consentRequired: false, consentState: 'unknown' })
  * // → { gated: false }
+ *
+ * @example
+ * // User opted out of AL DOM adaptation (FOLLOW-372)
+ * consentGate({ consentRequired: true, consentState: 'granted', profilingOptOut: true })
+ * // → { gated: true, reason: 'profiling_opt_out' }
  */
 export function consentGate(input: ConsentGateInput): ConsentGateResult {
+  // Consent-required gate takes priority over opt-out (belt-and-suspenders).
   if (input.consentRequired && input.consentState !== 'granted') {
     return { gated: true, reason: 'consent_required' };
+  }
+  // FOLLOW-372 / §H.9: Per-user AL-DOM opt-out.
+  // Returns neutral directives; does NOT affect app.estalara.com buying-intent /
+  // lead-ranking / agent chat-summary processing (those are outside AL's scope here).
+  if (input.profilingOptOut === true) {
+    return { gated: true, reason: 'profiling_opt_out' };
   }
   return { gated: false };
 }

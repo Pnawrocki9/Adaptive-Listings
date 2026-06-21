@@ -1544,3 +1544,68 @@ sign-off).
 - `packages/sdk/src/ui/consent-banner.ts` (platform-wide disclosure added for registered investors)
 
 ---
+
+## FOLLOW-372 → backend-engineer: Wire profilingOptOut flag into Decision-API adapt route + skip chat-intent shadow prior in redis_writer.py
+
+**From:** sdk-engineer (FOLLOW-372, 2026-06-21) **To:** backend-engineer **Priority:** P1 (needed
+for complete FOLLOW-372 AC-4 and AC-5 go-live)
+
+### What sdk-engineer delivered
+
+1. `apps/decision-api/src/lib/consent-gate.ts` — extended with `profilingOptOut?: boolean` input
+   field. When `true`, `consentGate()` returns `{ gated: true, reason: 'profiling_opt_out' }`. Tests
+   pass. The gate function is ready.
+
+2. `packages/sdk/src/core/profiling-opt-out.ts` — per-user localStorage state module.
+
+3. `packages/sdk/src/ui/profiling-toggle.ts` — Shadow DOM toggle UI component.
+
+4. `packages/sdk/src/index.ts` — the SDK reads `isProfilingOptedOut(storedLeadId)` and:
+   - Skips cold-start archetype hints + intent-weight updates when opted out.
+   - Skips `refreshDirectives()` (no DOM adaptation) when opted out.
+   - Skips behavioral-signal intent accumulation in the observer callback when opted out.
+   - Renders the toggle in Shadow DOM; onChange persists via `setProfilingOptOut()`.
+
+### What backend-engineer needs to complete
+
+**Task 1 — Wire `profilingOptOut` into the GET `/api/adapt` route handler.**
+
+The SDK sends `profilingOptOut` as a query parameter or request header (to be agreed). The adapt
+route must read it, pass it to `consentGate()`, and return neutral directives
+(`reason: 'profiling_opt_out'`) when gated. Variant logging MUST be suppressed on this gate path
+(AC-4: "no variant log").
+
+Suggested transport: add `profiling_opt_out=1` query parameter to the GET `/api/adapt` request (SDK
+already controls the request in `fetchDirectives()`). Backend reads
+`url.searchParams.get('profiling_opt_out') === '1'`.
+
+**Task 2 — Skip AL chat-intent shadow prior for opted-out sessions.**
+
+`apps/intent-engine/src/redis_writer.py` writes the 12-dim intent vector that feeds the chat-intent
+shadow prior. Per §H.9 seams table: when `profilingOptOut = true` for a session, `redis_writer.py`
+must NOT apply the AL chat-intent shadow prior (do not write the vector or skip the apply call for
+opted-out session_ids).
+
+Transport: the SDK should include the opt-out flag in the `session.started` or `intent.snapshot`
+event payload so the ingest pipeline can propagate it to `redis_writer.py`. Alternatively, the
+Decision API can block the intent vector write when `profilingOptOut = true`. Coordinate with
+ml-engineer on the cleanest seam.
+
+**Boundary reminder (DO NOT change):** This flag suspends AL DOM adaptation ONLY. It MUST NOT
+suppress:
+
+- app.estalara.com buying-intent identification
+- lead ranking by buying-intent strength
+- agent-facing chat-question summaries Those are covered by the mandatory registration consent
+  (§H.8) and must continue regardless of the opt-out toggle state.
+
+**Acceptance criteria for this handoff:**
+
+- `GET /api/adapt` returns neutral directives + no variant row written when `profiling_opt_out=1`
+  query param is present.
+- Test: consent-gate test (already added in FOLLOW-372 PR) covers the gate logic; backend-engineer
+  adds an integration test for the route suppressing variant logging.
+- `redis_writer.py` skips writing/applying intent vector for opted-out sessions.
+- No change to buying-intent / lead-ranking / agent-summary pipelines.
+
+---

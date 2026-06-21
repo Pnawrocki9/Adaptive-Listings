@@ -1381,3 +1381,52 @@ local variable `derivedTier` renamed to `directiveScope`, POST response field `t
 type updated, SDK `AdaptResponse` updated, Zod schema updated. ClickHouse column rename
 (`adaptation_decisions.tier` → `directive_scope`) is deferred to FOLLOW-358 (GET/POST column
 divergence unification).
+
+---
+
+## RESOLVED — SDK IIFE bundle over 40 KB gzip budget (pre-existing violation from FOLLOW-373 consent strings) [FOLLOW-372]
+
+**Filed by:** sdk-engineer **Date:** 2026-06-21 **Affects:** FOLLOW-372, FOLLOW-373,
+`packages/sdk/scripts/check-bundle-size.js` CI gate **Type:** architectural
+
+**Description:** The `packages/sdk` IIFE bundle budget is 40 KB gzip (hard, CI-enforced).
+
+Baseline measurements (2026-06-21):
+
+| State                                              | gzip bytes | KB                 |
+| -------------------------------------------------- | ---------- | ------------------ |
+| Pre-FOLLOW-373 (commit `aa2f007`)                  | 40,819     | 39.86 KB — PASSING |
+| Post-FOLLOW-373 (current `main`, commit `0cfd08c`) | 41,503     | 40.53 KB — FAILING |
+| FOLLOW-372 PR (this PR)                            | 42,143     | 41.17 KB — FAILING |
+
+The FOLLOW-373 compliance-engineer additions to `consent-banner.ts` (`disclosurePlatform` strings in
+EN/PL/ES — ~3×~230 chars) pushed the bundle from 39.86 KB to 40.53 KB, crossing the 40 KB limit by
+543 bytes. This pre-existing violation means the `build:check` CI gate was already failing on `main`
+before FOLLOW-372 was started.
+
+FOLLOW-372 (this PR) adds a minimal-footprint opt-out toggle and opt-out state module contributing
++640 bytes gzip above the already-over baseline, for a total of +1,183 bytes over the 40 KB limit.
+
+**Required action (choose one):** (A) **Raise the budget to 42 KB** — acknowledges that the
+FOLLOW-373 disclosures are legally required content that cannot be stripped, and the FOLLOW-372
+opt-out toggle is a mandatory legal/UX feature. Update `scripts/check-bundle-size.js` MAX_BYTES to
+43 \* 1024. The budget was set conservatively; given accumulated feature growth, 42 KB remains well
+below the 80 KB Tier 1+2+3 budget and the 40 KB was an internal Tier 1+2 target.
+
+(B) **Lazy-load the consent-banner disclosures** — move `disclosurePlatform` strings out of the main
+IIFE into a fetched i18n JSON file. SDK fetches them at consent-banner render time. This is
+architecturally cleaner but requires a backend endpoint and adds a network round-trip before the
+consent banner renders.
+
+(C) **Accept the CI failure on bundle check** temporarily and create a FOLLOW ticket to do option
+(B) post-pilot.
+
+sdk-engineer recommends **(A)** — the disclosure strings are legally mandated content (DPIA §13.4),
+not feature bloat. The 42 KB revised budget still gives substantial headroom under the 80 KB Native
+tier budget.
+
+**Resolution:** RESOLVED 2026-06-21: CEO approved option (A) — raise budget 40KB→42KB. Implemented
+on `compliance-engineer/FOLLOW-373-consent-umbrella` (commit `b8f9e2b`): `MAX_BYTES = 42 * 1024` in
+`packages/sdk/scripts/check-bundle-size.js`. The disclosure strings are legally mandated (DPIA
+§13.4), not feature bloat; 42KB stays well under the 80KB ceiling. Headroom is now slim (~0.8KB over
+current 41.17KB) — durable trim via lazy-loaded i18n (option B) deferred to a post-pilot FOLLOW.

@@ -368,3 +368,25 @@ integration, Rule H/J all green).
 (e.g., `tenant_site_schema`, Decision API fallback) to verify the behavior actually exists in code
 before writing the comment. A comment describing a non-existent server fallback is a half-wire entry
 point (RETRO-004 class) — it creates false confidence in callers about what will happen at runtime.
+
+## 2026-06-21 / FOLLOW-372
+
+**What I built:** Per-user opt-out toggle for AL DOM adaptation. New modules:
+`packages/sdk/src/core/profiling-opt-out.ts` (localStorage state, scoped by userId),
+`packages/sdk/src/ui/profiling-toggle.ts` (Shadow DOM toggle using inline styles). Extended
+`apps/decision-api/src/lib/consent-gate.ts` with `profilingOptOut` input + `profiling_opt_out`
+reason. Wired gate into 5 SDK index.ts seam points: consent-denied erase, banner-denied erase,
+cold-start skip, refreshDirectives skip, observer signal skip. Rendered toggle in Shadow DOM. 22 new
+SDK tests (all passing), 7 new consent-gate tests (all passing). HANDOFF filed for backend-engineer
+(route + redis_writer.py seams). ESC-028 filed for pre-existing bundle overage (FOLLOW-373
+compliance strings pushed baseline to 40.53 KB before FOLLOW-372 started).
+
+**What was uncertain:** Bundle budget. The pre-existing baseline was already over 40 KB after
+FOLLOW-373 merged the `disclosurePlatform` consent banner strings. My additions (+0.73 KB) sit on
+top of a +0.53 KB pre-existing violation. Used inline styles instead of a `<style>` block to
+minimise delta, but the constraint is architectural (legally required compliance strings).
+
+**A guardrail I'd add:** Before starting a UI-heavy ticket, run `pnpm run build:check` on the
+current `main` to verify the budget isn't already violated. If it is, file ESC immediately and don't
+proceed until the CEO/CTO rules on the budget. Discovering the violation at the end wastes
+optimisation effort on symptoms instead of the root cause.

@@ -10145,17 +10145,74 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   consent + compliance surface to cover them.
 
 - **ac:**
-  - [ ] DPIA (`docs/compliance/dpia.md`), ROPA (`docs/compliance/ropa.md`), Privacy Notice template,
+  - [x] DPIA (`docs/compliance/dpia.md`), ROPA (`docs/compliance/ropa.md`), Privacy Notice template,
         and an LIA (`docs/compliance/lia-template.md` → filled) updated to cover processing purposes
-        (a)–(f), each with lawful basis (consent vs legitimate interest) and retention period.
-  - [ ] Consent disclosure copy (registration consent text + SDK banner) enumerates chat reading,
+        (a)–(f), each with lawful basis (consent vs legitimate interest) and retention period. (DONE
+        — PR compliance-engineer/FOLLOW-373-consent-umbrella, 2026-06-21)
+  - [x] Consent disclosure copy (registration consent text + SDK banner) enumerates chat reading,
         transfer to agency/agent, buying-intent identification, lead ranking, and chat-question
-        summaries; mandatory-at-registration nature documented.
-  - [ ] `MASTER_DESIGN.md` §G.2 / §H updated to reflect the platform-wide consent umbrella; version
-        bumped per §Y.2 propagation checklist.
-  - [ ] Consent records schema covers the new purposes (or documented why the existing binary grant
-        suffices).
-  - [ ] HANDOFF written (`backlog/HANDOFFS.md`) to Rafał specifying the retention/deletion windows
-        AL documents for app-side data, so app-side deletion aligns with the disclosed periods.
-  - [ ] No raw chat text persisted in the Adaptive-Listings stack (re-assert C-07 boundary).
+        summaries; mandatory-at-registration nature documented. (DONE — Privacy Notice Template §6 +
+        consent-banner.ts disclosurePlatform, 2026-06-21)
+  - [x] `MASTER_DESIGN.md` §G.2 / §H already updated in v4.1 (commit cf1e542); compliance docs
+        verified consistent — no contradictions found.
+  - [x] Consent records schema: existing binary-grant schema confirmed sufficient; new
+        `consent_type = 'platform_registration'` value documented; no migration required. (DONE —
+        ROPA Activity 16 + DPIA §7 update, 2026-06-21)
+  - [x] HANDOFF written (`backlog/HANDOFFS.md`) to Rafał — app-side chat retention/deletion windows
+        documented (FOLLOW-373 HANDOFF, 2026-06-21).
+  - [x] C-07 boundary re-asserted: code-verified `schemas.py:58–79` + `redis_writer.py:49` — no raw
+        chat text in AL stack (DONE — DPIA §3.1 + ROPA Activity 16 + Privacy Notice §6.2).
+- **implementation_follow_depends_on:**
+  - FOLLOW-374 (backend-engineer): Wire `consent_records` INSERT with
+    `consent_type = 'platform_registration'` into the app.estalara.com investor registration flow.
+    BEFORE-GO-LIVE gate: go-live QA gate for mandatory registration consent is UNSATISFIABLE until
+    this INSERT is wired and QA-verified. See FOLLOW-374 stub below.
 - **promoted_to_queue:** true
+
+---
+
+## FOLLOW-374 — Wire platform_registration consent_records INSERT at investor registration
+
+- **source_retro:** FOLLOW-373 implementation gap (2026-06-21)
+- **source_ticket:** FOLLOW-373
+- **recommended_sprint:** next (same sprint as FOLLOW-373 go-live)
+- **recommended_agent:** backend-engineer
+- **priority:** P0 (before-go-live gate — mandatory registration consent is UNSATISFIABLE without
+  this)
+- **estimated_hours:** 3
+- **scope:** FOLLOW-373 documented that the `consent_records` table schema (free-text `consent_type`
+  column) is sufficient for storing the platform-wide registration consent as
+  `consent_type = 'platform_registration'`. However, the actual INSERT is NOT yet wired into the
+  investor registration flow in `apps/control-plane`. This FOLLOW implements that INSERT.
+
+  The INSERT must occur at the moment the investor submits the registration form and clicks "I
+  agree" on the consent checkbox. It must capture: `tenant_id`, `session_id` (investor's session
+  identifier or account reference), `consent_type = 'platform_registration'`, `granted = true`,
+  `tos_version` (version of the registration terms shown), `consent_text_hash` (SHA-256 of the exact
+  consent text displayed — per `consent_records.consentTextHash` in
+  `packages/db/src/schema/consent_records.ts`), `ip_address` (encrypted at application layer before
+  insert), `user_agent`, `granted_at`.
+
+  **Go-live gate:** The platform-wide registration consent go-live QA gate
+  (`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §5 — "§6 registration consent text reviewed by DPO
+  before go-live on app.estalara.com") is UNSATISFIABLE until this INSERT is implemented and
+  QA-verified with a real browser session showing the consent checkbox + DB record written.
+
+- **ac:**
+  - [ ] `apps/control-plane` registration handler inserts a `consent_records` row with
+        `consent_type = 'platform_registration'` on investor account creation.
+  - [ ] `consent_text_hash` is the SHA-256 of the actual consent text displayed at registration
+        (must match the text in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6.1 or its PL/ES
+        equivalent).
+  - [ ] `tos_version` is a versioned string matching the TOS version displayed.
+  - [ ] `ip_address` is encrypted at the application layer before INSERT (consistent with existing
+        Activity 7 / Activity 16 security measure — see
+        `packages/db/src/schema/consent_records.ts`).
+  - [ ] Integration test: mock registration flow asserts `consent_records` row exists with correct
+        fields after successful registration.
+  - [ ] QA manual verification: real browser session on staging — investor registers, consent
+        checkbox presented, DB row written. DPO gate item in Privacy Notice Template §5 updated to
+        DONE after QA verification.
+  - [ ] No change to `consent_records` DB schema (no migration needed — free-text `consent_type`
+        confirmed by ROPA Activity 16).
+- **promoted_to_queue:** false

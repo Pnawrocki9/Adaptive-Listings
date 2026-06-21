@@ -160,6 +160,11 @@ paths = [
   # that trigger the cloudflare-api-token heuristic as false positives.
   '''\.claude/agents/''',
   '''memory/''',
+  # FOLLOW-374: consent endpoint holds CANONICAL_CONSENT_TEXT_HASH (64-char SHA-256 of the public
+  # consent text); its 40-char substrings false-positive on this heuristic. Provider-specific secret
+  # rules (aws/anthropic/openai/private-key/db-conn) remain active here, so the env-based HMAC and
+  # IP-encryption keys in route.ts are still scanned.
+  '''apps/control-plane/src/app/api/v1/consent/platform-registration/''',
 ]
 # k6 official GPG fingerprint used in apt installation instructions
 # Transcript filenames (date-slug format, e.g. 2026-05-12-15-49-14-estalara-sprint7-corpus)
@@ -213,8 +218,6 @@ paths = [
   '''apps/control-plane/src/lib/email/__tests__/''',
   '''apps/control-plane/src/__tests__/''',
   '''apps/control-plane/src/app/api/adapt/feedback/route\.test\.ts''',
-  # FOLLOW-374: consent endpoint test uses a fake HMAC TEST_SECRET fixture (not a real secret)
-  '''apps/control-plane/src/app/api/v1/consent/platform-registration/route\.test\.ts''',
   '''apps/decision-api/src/lib/__tests__/''',
   '''apps/decision-api/src/__tests__/''',
   # Drizzle-generated migration files use long auto-generated identifier names
@@ -243,8 +246,4 @@ regexes = [
   '''<YOUR_.*>''', # Another placeholder pattern
   '''xxx''', # Placeholder secrets
   '''test-key-''', # Test API key prefixes (fake values in test files)
-  # FOLLOW-374: SHA-256 of the public EN §6.1 consent text (CANONICAL_CONSENT_TEXT_HASH).
-  # Not a secret; the cloudflare-api-token rule false-positives on 64-char hex. History-proof
-  # value allowlist (covers both lib.ts and the historical route.ts occurrence).
-  '''a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2''',
 ]

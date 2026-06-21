@@ -641,6 +641,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const holdoutGroup =
     holdoutGroupRaw === 'true' ? true : holdoutGroupRaw === 'false' ? false : false;
 
+  // ── FOLLOW-372: per-user DOM adaptation opt-out (§H.9) ───────────────────
+  // The SDK sends profiling_opt_out=1 when the investor has toggled off AL DOM
+  // adaptation. This gate returns neutral directives and SUPPRESSES variant
+  // logging entirely (no ClickHouse row written for opted-out sessions).
+  //
+  // SCOPE — this flag affects AL DOM adaptation ONLY. It does NOT suppress:
+  //   - app.estalara.com buying-intent identification
+  //   - lead ranking by buying-intent strength
+  //   - agent-facing chat-question summaries
+  // Those processing purposes ride the mandatory registration consent (§H.8) and
+  // are outside the scope of this flag. (See consentGate comment in
+  // apps/decision-api/src/lib/consent-gate.ts for the canonical boundary spec.)
+  const profilingOptOut = params.get('profiling_opt_out') === '1';
+
   if (!sessionId || !archetypeRaw || confidenceRaw === null || similarityRaw === null || !tierRaw) {
     return NextResponse.json(
       errorBody({
@@ -693,6 +707,33 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         details: { received: tierRaw },
       }),
       { status: 400 },
+    );
+  }
+
+  // ── FOLLOW-372: profiling opt-out gate ──────────────────────────────────
+  // Early-return BEFORE bandit sampling so no variant is sampled or logged.
+  // Variant logging is suppressed entirely: logDecisionAsync is NOT called on
+  // this path — a 'profiling_opt_out' row must never appear in adaptation_decisions.
+  //
+  // The adapt_decision_id is still generated and returned so the caller can
+  // correlate this response with client-side observability if needed.
+  if (profilingOptOut) {
+    const adaptDecisionId = crypto.randomUUID();
+    // Pilot freeze guard fires even on the opt-out path (observability only).
+    checkPilotFrozenAsync(tenantId, requestId);
+    return NextResponse.json(
+      {
+        adapt_decision_id: adaptDecisionId,
+        session_id: sessionId,
+        archetype: 'neutral' as const,
+        confidence,
+        similarity,
+        tier,
+        directives: [],
+        source: 'default' as const,
+        generated_at: new Date().toISOString(),
+      } satisfies AdaptationDirectives,
+      { status: 200 },
     );
   }
 

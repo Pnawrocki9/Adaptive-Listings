@@ -213,6 +213,8 @@ paths = [
   '''apps/control-plane/src/lib/email/__tests__/''',
   '''apps/control-plane/src/__tests__/''',
   '''apps/control-plane/src/app/api/adapt/feedback/route\.test\.ts''',
+  # FOLLOW-374: consent endpoint test uses a fake HMAC TEST_SECRET fixture (not a real secret)
+  '''apps/control-plane/src/app/api/v1/consent/platform-registration/route\.test\.ts''',
   '''apps/decision-api/src/lib/__tests__/''',
   '''apps/decision-api/src/__tests__/''',
   # Drizzle-generated migration files use long auto-generated identifier names

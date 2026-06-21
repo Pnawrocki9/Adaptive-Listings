@@ -43,7 +43,7 @@ export const PLATFORM_REGISTRATION_TOS_VERSION = 'platform-v1.3-2026-06-21' as c
  * See FOLLOW-374 PR description for the verification command.
  */
 export const CANONICAL_CONSENT_TEXT_HASH =
-  'a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2' as const;
+  'a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2' as const; // gitleaks:allow SHA-256 of public consent text
 
 // ─── Zod schema ───────────────────────────────────────────────────────────────
 

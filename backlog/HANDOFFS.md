@@ -1492,3 +1492,98 @@ implement:
 - `packages/sdk/src/core/intent.ts` (intent engine — add emit here, Phase 3 only)
 
 ---
+
+## FOLLOW-374 → Rafał Palak (CTO) — Invoke /api/v1/consent/platform-registration at investor "I agree" click
+
+**From:** backend-engineer (FOLLOW-374, 2026-06-21) **To:** Rafał Palak (CTO / app.estalara.com)
+**Priority:** P0 — go-live gate for the mandatory registration consent
+
+### What backend-engineer delivered
+
+`POST /api/v1/consent/platform-registration` is implemented and live on the control-plane
+(`admin.estalara.com`). This endpoint writes the `consent_records` row with
+`consent_type = 'platform_registration'` that satisfies the compliance go-live gate in
+`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §5.
+
+The endpoint is in `apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts`.
+
+### What Rafał needs to do
+
+**At the "I agree" registration click on app.estalara.com:**
+
+Call `POST https://admin.estalara.com/api/v1/consent/platform-registration` with the following:
+
+**Headers:**
+
+```
+Content-Type: application/json
+X-Consent-Signature: <HMAC-SHA256(PLATFORM_REGISTRATION_CONSENT_SECRET, body_json_utf8)>
+```
+
+where `body_json_utf8` is the exact UTF-8 bytes of the POST body (as a string).
+
+**Body:**
+
+```json
+{
+  "tenant_id": "<Estalara_tenant_UUID_for_app_estalara>",
+  "session_id": "<stable_investor_account_reference_no_PII>",
+  "nonce": "<random_UUID_or_32+_char_random_string_per_request>",
+  "tos_version": "platform-v1.3-2026-06-21",
+  "user_agent": "<investor_browser_user_agent>"
+}
+```
+
+- `tenant_id` — the Estalara UUID of the app.estalara.com tenant (get from Piotr / Doppler).
+- `session_id` — a stable pseudonymous investor reference (e.g. SHA-256 of their Supabase user ID).
+  Must be consistent for the investor's lifetime. No raw email / name / phone.
+- `nonce` — a fresh UUID per request (prevents accidental double-submit on retry).
+- `tos_version` — use `"platform-v1.3-2026-06-21"` to match the DPO-reviewed disclosure text. Update
+  when consent text changes and a new DPO-reviewed version is published.
+- `consent_text_hash` — optional; omit to use the canonical EN §6.1 SHA-256 hash. Provide a custom
+  hash ONLY if you display a translated version of the text.
+
+**Auth secret:** `PLATFORM_REGISTRATION_CONSENT_SECRET` — request from Piotr (to be provisioned in
+Doppler). The secret is HMAC-SHA256 shared between app.estalara.com and the control-plane.
+
+**Compute the signature (Node.js example):**
+
+```typescript
+import { createHmac } from 'crypto';
+const body = JSON.stringify({ tenant_id, session_id, nonce, tos_version, user_agent });
+const sig = createHmac('sha256', PLATFORM_REGISTRATION_CONSENT_SECRET)
+  .update(body, 'utf8')
+  .digest('hex');
+```
+
+**Expected response:**
+
+```json
+{ "consent_record_id": "uuid" } // 201 Created
+```
+
+On 409, the record already exists — this is safe (idempotent); no re-insert needed.
+
+**Critical timing:** Call this endpoint BEFORE creating the investor's account. If the endpoint
+returns non-2xx (excluding 409), do NOT proceed with account creation — surface an error to the
+investor.
+
+**What NOT to suppress:** The DOM opt-out toggle (`profiling_opt_out` in the SDK) only suspends AL
+DOM adaptation. It does NOT affect buying-intent identification, lead ranking, or agent-facing chat
+summaries. Those are covered by this registration consent and must continue regardless of the DOM
+opt-out state.
+
+### Go-live gate
+
+The compliance DPO gate (`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §5 item: "§6 registration
+consent text reviewed by DPO before go-live on app.estalara.com") requires:
+
+1. This API integration is live on app.estalara.com (verified by Rafał).
+2. QA manual verification: real browser investor registration → DB row written (check via Supabase
+   dashboard → `consent_records` table, filter `consent_type = 'platform_registration'`).
+3. DPO sign-off on the §6.1 disclosure text (PENDING — Compliance Engineering).
+
+Update `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §5 gate item to DONE after steps 1–3 are
+complete.
+
+---

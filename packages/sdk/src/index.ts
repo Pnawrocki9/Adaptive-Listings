@@ -38,6 +38,13 @@ import {
 import { setupObservers } from './core/observer.js';
 import { createShadowHost } from './ui/shadow-host.js';
 import { renderConsentBanner } from './ui/consent-banner.js';
+import { renderProfilingToggle } from './ui/profiling-toggle.js';
+import type { ProfilingToggleController } from './ui/profiling-toggle.js';
+import {
+  isProfilingOptedOut,
+  setProfilingOptOut,
+  eraseProfilingOptOut,
+} from './core/profiling-opt-out.js';
 import { renderQuizTrigger, scheduleQuizTrigger, markQuizCompleted } from './ui/quiz-trigger.js';
 import { renderQuizWidget } from './ui/quiz-widget.js';
 import {
@@ -268,6 +275,8 @@ async function init(): Promise<IntentState | null> {
       eraseIntentState(peekStoredSessionId());
       // ADR-0011 / FOLLOW-275: erase cached quiz config on consent denial (Mode A compliance).
       eraseCachedQuizConfig();
+      // FOLLOW-372 / §H.9: erase profiling opt-out flag on consent denial (storage cleanup).
+      eraseProfilingOptOut();
       // The shadow host is destroyed to avoid leaving a DOM node.
       earlyHost?.destroy();
       return null;
@@ -329,6 +338,8 @@ async function init(): Promise<IntentState | null> {
               eraseCrossSessionId();
               // ADR-0011 / FOLLOW-275: erase cached quiz config on consent denial.
               eraseCachedQuizConfig();
+              // FOLLOW-372 / §H.9: erase profiling opt-out flag on consent denial.
+              eraseProfilingOptOut();
               // Consent audit event — dispatched even when consent is denied.
               eventQueue.push({
                 type: 'consent.denied',
@@ -399,6 +410,25 @@ async function init(): Promise<IntentState | null> {
     } catch {
       // Any parse failure (malformed JWT, missing atob, JSON error) → continue anonymously
     }
+
+    // FOLLOW-372 / §H.9: Read per-user profiling opt-out state.
+    // Read after lead_id derivation so the opt-out key can be scoped to the user.
+    // The userId used here is the same SHA-256 lead_id prefix stored in sessionStorage —
+    // it is not raw PII (Rule L). For anonymous sessions the unscoped key is used.
+    //
+    // Scope boundary: this flag suspends AL DOM adaptation only. It does NOT affect
+    // app.estalara.com buying-intent identification, lead ranking, or agent-facing
+    // chat summaries (those ride the mandatory registration consent per §H.8).
+    let storedLeadId: string | undefined;
+    try {
+      storedLeadId = sessionStorage.getItem(LEAD_ID_STORAGE_KEY) ?? undefined;
+    } catch {
+      // sessionStorage unavailable — anonymous scope
+    }
+    let profilingOptedOut = isProfilingOptedOut(storedLeadId);
+
+    // Profiling toggle controller — assigned after shadowHost is confirmed non-null.
+    let profilingToggle: ProfilingToggleController | null = null;
 
     // 4. Collect initial page.view event
     eventQueue.push(collectPageView());
@@ -817,7 +847,10 @@ async function init(): Promise<IntentState | null> {
     // Adding a new cold-start prior: add it INSIDE this block. A prior added outside this block
     // without its own guard would be caught by the follow-217 integration tests (signal_count
     // is asserted unchanged on every rehydrated-session test).
-    if (!intentStateRehydrated) {
+    // FOLLOW-372 / §H.9: When opted out, skip ALL profiling cold-start priors.
+    // Accumulated archetype/intent state in sessionStorage is preserved (reversible suspend).
+    // The toggle resumes full adaptation with no data loss when flipped back ON.
+    if (!intentStateRehydrated && !profilingOptedOut) {
       // Step 6 (ADR-0012): re-initialize with server-supplied priors now that the fetch
       // has completed. `intentOverrides` contains server values (or SDK defaults on null).
       // This replaces the temporary `initIntentState()` placeholder from step 4a above.
@@ -896,8 +929,9 @@ async function init(): Promise<IntentState | null> {
       if (headlineEl) originalHeadlineText = headlineEl.textContent;
     }
 
-    // 4b. Fetch personalization directives from Decision API (Tier 1+ feature)
-    if (config.decisionApiUrl) {
+    // 4b. Fetch personalization directives from Decision API (Tier 1+ feature).
+    // FOLLOW-372 / §H.9: skip when opted out — returns to tenant default DOM.
+    if (config.decisionApiUrl && !profilingOptedOut) {
       await refreshDirectives();
     }
 
@@ -913,6 +947,30 @@ async function init(): Promise<IntentState | null> {
     // 5a. Sidebar widget ("Personalizing for you") is admin-only — not shown to investors.
     // Profiling visibility lives in admin.estalara.com (K.3.6 Archetype Tracer).
     // sidebar remains null; sidebar.show() calls below are no-ops.
+
+    // 5b. Mount the per-user profiling opt-out toggle (FOLLOW-372 / §H.9).
+    // Visible to logged-in users; renders at bottom-left fixed in Shadow DOM.
+    // The toggle controls AL DOM adaptation only — NOT buying-intent / lead-ranking /
+    // agent chat-summaries (those ride mandatory registration consent per §H.8).
+    if (shadowHost) {
+      profilingToggle = renderProfilingToggle(shadowHost.root, {
+        language: config.language,
+        accentColor: config.accentColor,
+        initialOptedOut: profilingOptedOut,
+        onChange: (newOptedOut: boolean) => {
+          profilingOptedOut = newOptedOut;
+          setProfilingOptOut(newOptedOut, storedLeadId);
+          if (!newOptedOut && config.decisionApiUrl) {
+            // Opted back IN — resume full adaptation immediately.
+            void refreshDirectives();
+          }
+          // Note: when opting OUT, the DOM is NOT actively reversed here —
+          // the tenant-default DOM is already visible (we stop applying directives).
+          // On next full page reload the DOM will be in pure tenant-default state.
+          // This is the "reversible suspend" model per §H.9.
+        },
+      });
+    }
 
     let quizTriggered = false;
     /** True once the full quiz decision tree is completed this session. */
@@ -932,6 +990,11 @@ async function init(): Promise<IntentState | null> {
       config,
       (event: CollectedEvent) => {
         eventQueue.push(event);
+
+        // FOLLOW-372 / §H.9: When opted out, skip ALL intent-weight updates and
+        // directive re-fetches. Events are still queued for audit/observability
+        // but do NOT contribute to archetype training for this user.
+        if (profilingOptedOut) return;
 
         // Record signal before quiz is answered (for mismatch detection)
         signalHistory.push({ eventType: event.type, payload: event.payload });
@@ -1432,6 +1495,7 @@ async function init(): Promise<IntentState | null> {
       stopDwellTimer();
       cleanupObservers();
       teardownDescriptionObservers();
+      profilingToggle?.destroy();
       shadowHost?.destroy();
       dqsTracker.reset();
       // K.3.6 FOLLOW-266: remove the beforeunload listener to avoid a memory leak on

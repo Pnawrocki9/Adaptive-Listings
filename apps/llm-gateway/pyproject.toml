@@ -42,5 +42,10 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["src"]
+# Put src/ on sys.path so nested tests (src/jobs/test_*.py) can `import jobs.generate_description`.
+# Without this the jobs/ package is only importable as src.jobs.* and collection fails with
+# ModuleNotFoundError. (src/__init__.py exists per repo convention, so prepend-mode roots at the
+# app dir; pythonpath restores the bare-package import the tests use.)
+pythonpath = ["src"]
 python_files = ["test_*.py", "*_test.py"]
 asyncio_mode = "auto"

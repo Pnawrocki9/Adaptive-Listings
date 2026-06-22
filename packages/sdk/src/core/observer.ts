@@ -454,7 +454,8 @@ export function setupObservers(
               onEvent({
                 type: 'listing.viewed',
                 payload: {
-                  listing_id: (entry.target as HTMLElement).dataset.listingId ?? '',
+                  listing_id:
+                    (entry.target as HTMLElement).getAttribute('data-estalara-listing-id') ?? '',
                   element: entry.target.tagName.toLowerCase(),
                 },
                 ts: Date.now(),
@@ -466,13 +467,72 @@ export function setupObservers(
         { threshold: 0.5 },
       );
 
+      // Emit listing.viewed directly for a listing root element. Used by the client-side
+      // navigation observer below, where the IntersectionObserver threshold can never be met:
+      // a listing DETAIL root is taller than the viewport, so `threshold: 0.5` (50% visible)
+      // is never satisfied and the IO callback would never fire. On navigation the root has
+      // unambiguously appeared / changed, so we signal "viewed" directly instead of waiting
+      // for an impression crossing that will not happen.
+      const emitListingViewed = (el: HTMLElement): void => {
+        onEvent({
+          type: 'listing.viewed',
+          payload: {
+            listing_id: el.getAttribute('data-estalara-listing-id') ?? '',
+            element: el.tagName.toLowerCase(),
+          },
+          ts: Date.now(),
+        });
+      };
+
       // Observe elements marked as listing cards
       document.querySelectorAll('[data-estalara-listing]').forEach((el) => {
         io.observe(el);
       });
 
+      // Watch for listing elements added or mutated by SvelteKit/React client-side navigation.
+      // querySelectorAll above only captures elements present at SDK init time.
+      //
+      // Two cases:
+      //   childList  — framework unmounts+remounts the page component (new DOM node), e.g. when
+      //                navigating listing → browse → listing. Emit listing.viewed directly (the
+      //                IntersectionObserver never fires for a viewport-taller-than-50% detail root).
+      //   attributes — framework reuses the same node but updates data-estalara-listing-id
+      //                in-place (SvelteKit same-component navigation between listing slugs).
+      const navMutObs = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          if (mutation.type === 'childList') {
+            for (const node of mutation.addedNodes) {
+              if (!(node instanceof HTMLElement)) continue;
+              if (node.hasAttribute('data-estalara-listing')) {
+                emitListingViewed(node);
+              }
+              node.querySelectorAll<HTMLElement>('[data-estalara-listing]').forEach((el) => {
+                emitListingViewed(el);
+              });
+            }
+          } else if (
+            mutation.type === 'attributes' &&
+            mutation.attributeName === 'data-estalara-listing-id'
+          ) {
+            // SvelteKit updated listing_id on the existing element — fire listing.viewed directly
+            // because IntersectionObserver already unobserved this node on the first view.
+            const el = mutation.target as HTMLElement;
+            if (el.hasAttribute('data-estalara-listing')) {
+              emitListingViewed(el);
+            }
+          }
+        }
+      });
+      navMutObs.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['data-estalara-listing-id'],
+      });
+
       cleanupFns.push(() => {
         io.disconnect();
+        navMutObs.disconnect();
       });
     }
   } catch {

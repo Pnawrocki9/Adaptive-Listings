@@ -10216,3 +10216,29 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] No change to `consent_records` DB schema (no migration needed — free-text `consent_type`
         confirmed by ROPA Activity 16).
 - **promoted_to_queue:** false
+
+## FOLLOW-375 — SPA cross-listing adaptation + source-of-truth archetype (SHIPPED, doc follow-ups)
+
+- **source_retro:** ad-hoc CEO-directed debugging session 2026-06-22 (real-browser verification)
+- **source_ticket:** —
+- **recommended_sprint:** current
+- **recommended_agent:** sdk-engineer (verification), backend-engineer (prod delivery)
+- **priority:** P1
+- **estimated_hours:** 2 (follow-ups only; core fix already implemented + verified)
+- **scope:** Cross-listing adaptation broke on SPA navigation (2nd+ listing not adapted) and the
+  quiz archetype decayed to `neutral` mid-session. Root causes + fixes are documented in
+  [ADR-0014](../docs/adr/ADR-0014-cross-listing-adaptation-and-sot-archetype.md). Implemented in
+  `packages/sdk/src/core/{observer,session,intent}.ts` and `packages/sdk/src/index.ts`; 184 SDK unit
+  tests pass; verified end-to-end in a real browser. Open follow-ups:
+  - [ ] **Add SDK unit tests** for the new paths: (a) `observer` emits `listing.viewed` on in-place
+        `data-estalara-listing-id` mutation; (b) `refreshDirectives` restores the SoT archetype on
+        neutral-decay and updates it on non-neutral resolution; (c) `eraseIntentState` clears
+        `estalara_resolved_archetype_*`. (Rule H — currently verified only by browser + existing
+        intent/session suites.)
+  - [ ] **[PLATFORM/Rafał]** Serve the production SDK bundle from a versioned/content-hashed URL so
+        a redeploy reaches single-page sessions (the `<script async>` loader is not re-fetched on
+        SPA nav). See `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §3.
+  - [ ] **[PLATFORM]** Confirm `/api/adapt` response supplies `chat_intent_dimensions` in production
+        so chat questions can drive the archetype (the "evident true need overrides quiz" path).
+        Without it, only quiz + behavioral signals move the archetype. Runbook §7.
+- **promoted_to_queue:** false

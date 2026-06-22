@@ -431,7 +431,59 @@ export function eraseIntentState(sessionId: string | undefined): void {
   if (!sessionId) return;
   try {
     sessionStorage.removeItem(intentStateStorageKey(sessionId));
+    sessionStorage.removeItem(resolvedArchetypeStorageKey(sessionId));
   } catch {
     // sessionStorage unavailable — nothing to erase
+  }
+}
+
+/**
+ * Build the sessionStorage key for the session's resolved source-of-truth archetype.
+ *
+ * @internal exported for testing only
+ */
+export function resolvedArchetypeStorageKey(sessionId: string): string {
+  return `estalara_resolved_archetype_${sessionId}`;
+}
+
+/**
+ * Persist the latest *non-neutral* archetype the engine has resolved for `sessionId`.
+ *
+ * This is the session's source-of-truth (SoT) archetype. It is seeded by the quiz answer
+ * (§D.6 / FOLLOW-344 — the quiz is the primary explicit signal) and then UPDATED whenever a
+ * subsequent strong signal — chat-intent (`applyChatIntentPrior`) or sustained behavioral
+ * evidence — resolves a *different* non-neutral archetype, so the SoT always reflects the
+ * buyer's most recently evident true need (CEO 2026-06-22: drift away from the quiz answer is
+ * legitimate, but ONLY toward another non-neutral archetype, never to `neutral`).
+ *
+ * Why this exists: routine behavioral signals (scroll, rapid listing views via
+ * `applyListingViewRate`, dwell) push probability mass toward `neutral`, which over a session
+ * can decay `IntentState.archetype` to `neutral` and silently turn OFF cross-listing
+ * adaptation. `refreshDirectives` restores this persisted SoT whenever the live archetype has
+ * decayed to `neutral`, so every subsequent listing keeps adapting. Works WITH or WITHOUT the
+ * quiz (a quiz-disabled tenant seeds the SoT from behavioral/chat resolution instead).
+ *
+ * Survives in-tab navigation AND full reload (sessionStorage); erased together with the intent
+ * state on consent denial (Mode A compliance). Callers MUST gate on consent (mirrors
+ * persistIntentState). Fails silently — storage unavailability must never reach the host page.
+ */
+export function persistResolvedArchetype(sessionId: string, archetype: string): void {
+  try {
+    sessionStorage.setItem(resolvedArchetypeStorageKey(sessionId), archetype);
+  } catch {
+    // sessionStorage unavailable — continue in-memory only
+  }
+}
+
+/**
+ * Read the session's resolved source-of-truth archetype, or `null` if none persisted.
+ *
+ * Fails silently to `null` when sessionStorage is unavailable.
+ */
+export function readResolvedArchetype(sessionId: string): string | null {
+  try {
+    return sessionStorage.getItem(resolvedArchetypeStorageKey(sessionId));
+  } catch {
+    return null;
   }
 }

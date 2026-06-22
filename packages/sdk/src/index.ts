@@ -32,6 +32,8 @@ import {
   rehydrateIntentState,
   eraseIntentState,
   peekStoredSessionId,
+  persistResolvedArchetype,
+  readResolvedArchetype,
 } from './core/session.js';
 import { setupObservers } from './core/observer.js';
 import { createShadowHost } from './ui/shadow-host.js';
@@ -43,15 +45,13 @@ import {
   setProfilingOptOut,
   eraseProfilingOptOut,
 } from './core/profiling-opt-out.js';
-import { renderQuizTrigger, scheduleQuizTrigger } from './ui/quiz-trigger.js';
+import { renderQuizTrigger, scheduleQuizTrigger, markQuizCompleted } from './ui/quiz-trigger.js';
 import { renderQuizWidget } from './ui/quiz-widget.js';
 import {
   renderMicroPoll,
   isMicroPollDismissed,
   DEFAULT_MICRO_POLL_QUESTIONS,
 } from './ui/micro-poll.js';
-import { createSidebarWidget } from './ui/sidebar-widget.js';
-import type { SidebarWidgetController } from './ui/sidebar-widget.js';
 import {
   fetchDirectives,
   applyDirectives,
@@ -541,13 +541,6 @@ async function init(): Promise<IntentState | null> {
       persistIntentState(currentSession.sessionId, currentIntentState);
     }
 
-    /** Confidence threshold above which the sidebar widget becomes visible. */
-    const SIDEBAR_SHOW_THRESHOLD = 0.6;
-
-    // Declared here (null) so refreshDirectives() can reference it without TDZ error.
-    // Assigned to the actual widget after createShadowHost() runs below (step 5a).
-    let sidebar: SidebarWidgetController | null = null;
-
     let dwellTimer: ReturnType<typeof setInterval> | null = null;
     let adaptedAt = 0;
     const firedThresholds = new Set<number>();
@@ -566,6 +559,16 @@ async function init(): Promise<IntentState | null> {
     // reaches DRIFT_HOLD_COUNT (anti-thrash guard per Master_Design §E.4.5).
     let driftCandidateArchetype: Archetype | null = null;
     let driftCandidateCount = 0;
+    let previousListingId: string | null = null;
+    // The listing-root node we last adapted. Tracked alongside the id so a remount of the SAME
+    // listing (navigate listing → browse → same listing back) — a NEW node carrying the same id —
+    // is still detected as a fresh listing that needs re-adaptation.
+    let previousListingEl: HTMLElement | null = null;
+    // Captured original (pre-adaptation) text of the headline slot — the tenant's generic
+    // placeholder, identical across listings. Restored on cross-listing navigation so a listing
+    // the archetype does not fit (neutral / archetype-fit gate) shows the original copy instead
+    // of the previous listing's adapted headline. Captured once, before the first adaptation.
+    let originalHeadlineText: string | null = null;
 
     // Declared here so refreshDirectives() can reference it without TDZ error.
     // Populated by the observer callback after step 6 below.
@@ -643,6 +646,22 @@ async function init(): Promise<IntentState | null> {
       const pageType = detectPageType(scriptDataset);
       const listingId = detectListingId();
 
+      // Source-of-truth archetype restore (§D.6 / FOLLOW-344; CEO 2026-06-22): routine
+      // behavioral signals (rapid listing views via applyListingViewRate, scroll, dwell) push
+      // probability mass toward `neutral` and can decay the live archetype to `neutral`
+      // mid-session, which would silently stop cross-listing adaptation. When that happens,
+      // re-pin the archetype to the persisted SoT (seeded by the quiz, later updated by chat /
+      // sustained behavioral evidence) so every subsequent listing keeps adapting. A genuine
+      // *non-neutral* switch (e.g. chat reveals investor intent → yield_hunter) is left
+      // untouched — drift away from the declared archetype is legitimate, but ONLY toward
+      // another non-neutral archetype, never to `neutral`. Works with OR without the quiz.
+      if (currentIntentState.archetype === 'neutral') {
+        const sot = readResolvedArchetype(currentSession.sessionId);
+        if (sot && sot !== 'neutral') {
+          currentIntentState = { ...currentIntentState, archetype: sot as Archetype };
+        }
+      }
+
       const { adaptResponse: resp, updatedIntentState } = await fetchDirectives(
         config,
         currentSession,
@@ -656,6 +675,14 @@ async function init(): Promise<IntentState | null> {
       if (updatedIntentState !== undefined) {
         currentIntentState = updatedIntentState;
         onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
+      }
+
+      // Update the session source-of-truth archetype to the latest non-neutral resolution
+      // (post chat-intent prior). This is how chat / sustained behavioral evidence overrides
+      // the quiz answer when the buyer's true need becomes evident: the SoT always tracks the
+      // most recent non-neutral archetype, and the neutral-decay restore above pins to it.
+      if (currentIntentState.archetype !== 'neutral') {
+        persistResolvedArchetype(currentSession.sessionId, currentIntentState.archetype);
       }
 
       if (resp) {
@@ -710,26 +737,7 @@ async function init(): Promise<IntentState | null> {
           console.log(`[Estalara] Archetype: ${resp.archetype} (${String(resp.confidence)})`);
         }
 
-        // Update the sidebar when confidence meets the threshold.
-        // Extract text directives for the preview panel.
-        if (sidebar && resp.confidence >= SIDEBAR_SHOW_THRESHOLD) {
-          const textDirectives = resp.directives
-            .filter((d) => d.type === 'text')
-            .map((d) => ({
-              slot: 'slot' in d ? d.slot : '',
-              text: 'value' in d && typeof d.value === 'string' ? d.value : '',
-            }));
-
-          const state = {
-            archetype: resp.archetype,
-            confidence: resp.confidence,
-            signalCount: currentIntentState.signal_count,
-            directives: textDirectives.length > 0 ? textDirectives : undefined,
-          };
-
-          // show() on first reveal, update() on subsequent calls
-          sidebar.show(state);
-        }
+        // Sidebar widget is admin-only — profiling visibility is in admin.estalara.com.
       }
 
       // FOLLOW-201: Post-directive drift detection.
@@ -914,6 +922,13 @@ async function init(): Promise<IntentState | null> {
       persistIntentState(currentSession.sessionId, currentIntentState);
     }
 
+    // Capture the original headline text BEFORE the first adaptation so cross-listing
+    // navigation can restore it on a non-fitting (neutral) listing. Read from the live DOM.
+    {
+      const headlineEl = document.querySelector<HTMLElement>('[data-estalara-slot="headline"]');
+      if (headlineEl) originalHeadlineText = headlineEl.textContent;
+    }
+
     // 4b. Fetch personalization directives from Decision API (Tier 1+ feature).
     // FOLLOW-372 / §H.9: skip when opted out — returns to tenant default DOM.
     if (config.decisionApiUrl && !profilingOptedOut) {
@@ -929,22 +944,9 @@ async function init(): Promise<IntentState | null> {
       language: config.language,
     };
 
-    // 5a. Mount Tier 1 Observer sidebar widget inside the Shadow DOM.
-    // The widget is initially hidden; it becomes visible after the first
-    // refreshDirectives() call that returns a non-neutral archetype (confidence ≥ 0.6).
-    if (shadowHost) {
-      sidebar = createSidebarWidget(shadowHost.root, {
-        accentColor: quizConfig.accentColor,
-        language: quizConfig.language,
-        onClose: () => {
-          eventQueue.push({
-            type: 'sidebar.closed',
-            payload: {},
-            ts: Date.now(),
-          });
-        },
-      });
-    }
+    // 5a. Sidebar widget ("Personalizing for you") is admin-only — not shown to investors.
+    // Profiling visibility lives in admin.estalara.com (K.3.6 Archetype Tracer).
+    // sidebar remains null; sidebar.show() calls below are no-ops.
 
     // 5b. Mount the per-user profiling opt-out toggle (FOLLOW-372 / §H.9).
     // Visible to logged-in users; renders at bottom-left fixed in Shadow DOM.
@@ -1014,6 +1016,36 @@ async function init(): Promise<IntentState | null> {
         // (first view is baseline). applyListingViewRate is a pure function — it
         // returns state unchanged for any case that does not match a boost bracket.
         if (event.type === 'listing.viewed') {
+          const viewedListingId =
+            typeof event.payload.listing_id === 'string' ? event.payload.listing_id : null;
+          const rootEl = document.querySelector<HTMLElement>('[data-estalara-listing]');
+          // Re-adapt when the listing id changed (in-place navigation) OR the root node itself
+          // changed (remount of the same or a different listing via a browse page / back button).
+          if (
+            viewedListingId &&
+            (viewedListingId !== previousListingId || rootEl !== previousListingEl)
+          ) {
+            previousListingId = viewedListingId;
+            previousListingEl = rootEl;
+            resetAdaptState();
+            // Revert adapted slots to their original copy before re-adapting, so a listing the
+            // archetype does NOT fit (the decision API returns neutral / no directive) shows the
+            // tenant's original text — not the previous listing's adapted copy left on the reused
+            // DOM node. Description: disconnect the per-slot observers FIRST so the framework's
+            // freshly-rendered per-listing text stands. Headline: restore the captured placeholder
+            // AFTER teardown — the headline loop-guard observer would otherwise treat the restore
+            // as a revert and re-assert the previous listing's adapted copy. refreshDirectives()
+            // re-applies + re-observes if the new listing IS a fit.
+            teardownDescriptionObservers();
+            if (originalHeadlineText !== null) {
+              document
+                .querySelectorAll<HTMLElement>('[data-estalara-slot="headline"]')
+                .forEach((el) => {
+                  el.textContent = originalHeadlineText;
+                });
+            }
+            void refreshDirectives();
+          }
           listingViewCount += 1;
           if (listingViewCount >= 2) {
             const elapsedMs = Date.now() - sessionStartedAt;
@@ -1078,11 +1110,18 @@ async function init(): Promise<IntentState | null> {
               // Apply v2 quiz leaf result to intent state (applyQuizLeaf — FOLLOW-199).
               // Note: full mismatch detection wiring is FOLLOW-201.
               quizCompletedThisSession = true;
+              // Permanently suppress the quiz trigger across future sessions.
+              markQuizCompleted();
               // K.3.6 FOLLOW-266: update snapshot context so intent.snapshot payloads
               // reflect quiz completion state on the next 5-signal boundary or beforeunload.
               snapshotCtx.quizCompleted = true;
               snapshotCtx.quizLeaf = resolvedArchetype;
               currentIntentState = applyQuizLeaf(currentIntentState, resolvedArchetype);
+              // Seed the session source-of-truth archetype with the quiz answer so
+              // refreshDirectives() can restore it if behavioral drift later decays the live
+              // archetype to neutral. Chat / sustained behavioral evidence may later overwrite
+              // this SoT with a different non-neutral archetype (see refreshDirectives).
+              persistResolvedArchetype(currentSession.sessionId, resolvedArchetype);
               onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
               if (config.debug) {
                 console.log(
@@ -1456,7 +1495,6 @@ async function init(): Promise<IntentState | null> {
       stopDwellTimer();
       cleanupObservers();
       teardownDescriptionObservers();
-      sidebar?.destroy();
       profilingToggle?.destroy();
       shadowHost?.destroy();
       dqsTracker.reset();

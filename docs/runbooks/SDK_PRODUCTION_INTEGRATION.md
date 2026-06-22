@@ -53,6 +53,12 @@ moved to a different listing" by watching `data-estalara-listing-id` for a value
 A full page reload also works (the SDK re-inits and rehydrates from sessionStorage). It is **only**
 SPA navigation that depends on the in-place attribute update.
 
+The SDK also handles **remount-style** navigation (listing → browse/search page → listing, or a
+back-button return) where the framework destroys and recreates the listing root node: it emits the
+internal "listing viewed" signal the moment a `data-estalara-listing` node is (re)added, and tracks
+the root node identity so even returning to the **same** listing re-adapts. No host action beyond §1
+is needed for this — just keep the two root attributes on whatever node renders the listing.
+
 ## 3. SDK bundle delivery & caching **[PLATFORM] — action required**
 
 The SDK is loaded via `<script async src="https://admin.estalara.com/...estalara-sdk...js">`.

@@ -60,15 +60,25 @@ Additional constraint: if a tenant **disables the quiz**, the system must remain
 ### 1. Detect listing changes robustly in SPA hosts (`observer.ts`, `index.ts`)
 
 - The behavioral observer now also runs a `MutationObserver` on `document.body`
-  (`childList + subtree + attributes`, `attributeFilter: ['data-estalara-listing-id']`). It handles
-  **both** framework behaviors: a remounted node (childList → `IntersectionObserver.observe`) and an
-  in-place attribute mutation (attributes → emit `listing.viewed` directly, because the
-  `IntersectionObserver` already `unobserve`d the reused node after its first view).
-- `listing.viewed` now reads `getAttribute('data-estalara-listing-id')` (correct) instead of
+  (`childList + subtree + attributes`, `attributeFilter: ['data-estalara-listing-id']`). Both
+  framework navigation shapes **emit `listing.viewed` directly** (not via the
+  `IntersectionObserver`):
+  - **childList** — the framework unmounts+remounts the listing component (a new DOM node), e.g.
+    navigating listing → browse page → listing. The `IntersectionObserver` (`threshold: 0.5`) can
+    **never** fire here: a listing DETAIL root is taller than the viewport, so 50% is never visible.
+    Relying on it left remount-style navigation completely unadapted until a full reload — the
+    primary user-reported regression. We now emit `listing.viewed` the moment the listing root is
+    added.
+  - **attributes** — the framework reuses the same node and updates `data-estalara-listing-id` in
+    place (SvelteKit same-component navigation between slugs); emit directly, because the
+    `IntersectionObserver` already `unobserve`d the reused node after its first view.
+- `listing.viewed` reads `getAttribute('data-estalara-listing-id')` (correct) instead of
   `dataset.listingId` (always empty).
-- `init()` tracks `previousListingId`. On a `listing.viewed` whose `listing_id` differs, it calls
-  `resetAdaptState()` (clears per-archetype directive fingerprints so the new listing re-applies)
-  and `refreshDirectives()`.
+- `init()` tracks both `previousListingId` **and the listing-root node identity**. It re-adapts when
+  the id changed (in-place nav) OR the root node itself changed (remount of the same listing via a
+  browse page / back button — a new node carrying the same id). On a change it calls
+  `resetAdaptState()`, tears down stale description observers, restores the original headline, then
+  `refreshDirectives()`.
 
 ### 2. Source-of-truth (SoT) archetype, anti-neutral-decay (`session.ts`, `index.ts`, `intent.ts`)
 
@@ -118,6 +128,17 @@ The SoT mechanism is **not** gated on `quiz_answered`. A quiz-disabled tenant
 (`config.quiz.enabled === false`) seeds and updates the SoT purely from behavioral/chat resolution,
 so cross-listing adaptation and anti-neutral-decay work identically without the quiz.
 
+### 5. Quiz-completion suppression is session-scoped (`quiz-trigger.ts`)
+
+The "quiz already taken → don't re-prompt" flag (`__estalara_quiz_completed__`) moved from
+**permanent localStorage** to **sessionStorage**. It must match the lifetime of what it produces:
+the resolved archetype lives in sessionStorage (Mode A — no cross-session profiling without
+re-consent). A permanent flag suppressed the quiz forever while the archetype was wiped on the next
+session, stranding a returning visitor on `neutral` with no way to re-declare — and, in practice,
+made the quiz "stop appearing" across an incognito session after one completion. Now: within a
+session the quiz is not re-shown (survives in-tab navigation and same-tab reload); a new tab /
+window / session shows it again, in lockstep with the session-scoped archetype.
+
 ## Consequences
 
 - Cross-listing adaptation fires on every SPA navigation; each listing receives its own
@@ -142,6 +163,12 @@ decision mock with live LLM (Haiku 4.5):
 - Realistic browse over 4 listings after a `family_buyer` quiz → **8/8** `archetype_hint` =
   `family_buyer`, never `neutral`; each fitting listing rendered its own family-grounded headline +
   description.
+- **Remount-style navigation** (listing → `/en` browse page → listing, and same-listing remount):
+  the new listing adapts within ~1 s without a reload. This was the regression where the original
+  `IntersectionObserver`-gated path left every browse-page navigation unadapted until a manual
+  refresh.
+- Quiz re-appears in a fresh session even when the legacy permanent `localStorage` completion flag
+  is still set (the check now reads sessionStorage).
 - Archetype-fit mismatch: `family_buyer` on the Miami high-rise rendered the **original** headline
   placeholder ("Discover what makes this property a standout opportunity.") — not blank, not the
   previous listing's adapted copy — while fitting listings kept adapting; verified

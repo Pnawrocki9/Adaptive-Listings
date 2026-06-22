@@ -83,25 +83,32 @@ export function isQuizDismissed(): boolean {
 }
 
 /**
- * Check if the quiz was ever completed (permanent localStorage flag, no TTL).
+ * Check if the quiz was completed in THIS session (sessionStorage, tab-lifetime).
+ *
+ * Session-scoped on purpose: the resolved archetype it produces also lives in sessionStorage
+ * (Mode A — no cross-session profiling without re-consent). A permanent (localStorage) flag would
+ * suppress the quiz forever while the archetype is wiped on the next session, leaving a returning
+ * visitor stuck on `neutral` with no way to re-declare. Tying completion to the session keeps the
+ * two in lockstep: within a session the quiz is not re-shown; a fresh session re-profiles.
  */
 export function isQuizCompleted(): boolean {
   try {
-    return localStorage.getItem(COMPLETED_STORAGE_KEY) === '1';
+    return sessionStorage.getItem(COMPLETED_STORAGE_KEY) === '1';
   } catch {
     return false;
   }
 }
 
 /**
- * Permanently suppress the quiz trigger after the investor completes the quiz.
- * No TTL — persists across sessions until localStorage is cleared.
+ * Suppress the quiz trigger for the rest of THIS session after the buyer completes the quiz.
+ * Survives in-tab navigation and same-tab reload (sessionStorage); a new tab / window / session
+ * shows the quiz again, in lockstep with the session-scoped resolved archetype.
  */
 export function markQuizCompleted(): void {
   try {
-    localStorage.setItem(COMPLETED_STORAGE_KEY, '1');
+    sessionStorage.setItem(COMPLETED_STORAGE_KEY, '1');
   } catch {
-    // localStorage unavailable — ignore
+    // sessionStorage unavailable — ignore
   }
 }
 

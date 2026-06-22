@@ -530,6 +530,10 @@ async function init(): Promise<IntentState | null> {
     let driftCandidateArchetype: Archetype | null = null;
     let driftCandidateCount = 0;
     let previousListingId: string | null = null;
+    // The listing-root node we last adapted. Tracked alongside the id so a remount of the SAME
+    // listing (navigate listing → browse → same listing back) — a NEW node carrying the same id —
+    // is still detected as a fresh listing that needs re-adaptation.
+    let previousListingEl: HTMLElement | null = null;
     // Captured original (pre-adaptation) text of the headline slot — the tenant's generic
     // placeholder, identical across listings. Restored on cross-listing navigation so a listing
     // the archetype does not fit (neutral / archetype-fit gate) shows the original copy instead
@@ -951,8 +955,15 @@ async function init(): Promise<IntentState | null> {
         if (event.type === 'listing.viewed') {
           const viewedListingId =
             typeof event.payload.listing_id === 'string' ? event.payload.listing_id : null;
-          if (viewedListingId && viewedListingId !== previousListingId) {
+          const rootEl = document.querySelector<HTMLElement>('[data-estalara-listing]');
+          // Re-adapt when the listing id changed (in-place navigation) OR the root node itself
+          // changed (remount of the same or a different listing via a browse page / back button).
+          if (
+            viewedListingId &&
+            (viewedListingId !== previousListingId || rootEl !== previousListingEl)
+          ) {
             previousListingId = viewedListingId;
+            previousListingEl = rootEl;
             resetAdaptState();
             // Revert adapted slots to their original copy before re-adapting, so a listing the
             // archetype does NOT fit (the decision API returns neutral / no directive) shows the

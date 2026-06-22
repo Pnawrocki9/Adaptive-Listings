@@ -111,7 +111,9 @@ function clearAll(): void {
   sessionStorage.clear();
   localStorage.clear();
   removeScriptTags();
-  document.querySelectorAll('[data-estalara-host]').forEach((el) => { el.remove(); });
+  document.querySelectorAll('[data-estalara-host]').forEach((el) => {
+    el.remove();
+  });
 }
 
 /**
@@ -128,7 +130,9 @@ function insertSlotElement(): HTMLHeadingElement {
 
 /** Remove all slot elements created by insertSlotElement(). */
 function removeSlotElements(): void {
-  document.querySelectorAll(`[data-estalara-slot="${SLOT_NAME}"]`).forEach((el) => { el.remove(); });
+  document.querySelectorAll(`[data-estalara-slot="${SLOT_NAME}"]`).forEach((el) => {
+    el.remove();
+  });
 }
 
 /**

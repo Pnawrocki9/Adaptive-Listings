@@ -2,9 +2,10 @@
  * Quiz trigger widget — sticky button that prompts buyer to take
  * the v2.0 branching decision-tree quiz.
  *
- * Shown immediately on the first listing visit (no delay). Permanently
- * suppressed after quiz completion. Dismissible (sets localStorage flag
- * for 24h) without completing.
+ * Shown after 30 seconds on ANY page type where the SDK is loaded. Suppressed
+ * for the rest of the session after quiz completion (sessionStorage, in lockstep
+ * with the session-scoped archetype). Dismissible (sets localStorage flag for 24h)
+ * without completing.
  *
  * FOLLOW-273 (2026-06-11): `QuizTriggerConfig.language` and `QUIZ_LABELS` key type now use
  * `QuizLanguage` imported from `@estalara/shared` instead of the inline `'en'|'pl'|'es'`
@@ -36,9 +37,9 @@ export const QUIZ_LABELS: Record<QuizLanguage, { trigger: string; dismiss: strin
 
 /**
  * Delay (ms) after SDK init before showing the quiz trigger.
- * 0 = show immediately on first listing visit.
+ * Hardcoded at 30s per FOLLOW-257 AC3 (FOLLOW-199 tracks per-tenant configurability separately).
  */
-export const QUIZ_TRIGGER_DELAY_MS = 0;
+export const QUIZ_TRIGGER_DELAY_MS = 30_000;
 
 /**
  * Schedule the quiz trigger to appear after QUIZ_TRIGGER_DELAY_MS on any page.

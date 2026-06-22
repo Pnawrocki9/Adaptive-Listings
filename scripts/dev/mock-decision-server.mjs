@@ -43,15 +43,15 @@ const BACKEND = process.env.BACKEND_URL ?? 'http://localhost:8081';
 const LISTING_BASE_URL = process.env.LISTING_BASE_URL ?? 'http://localhost:5173';
 const DEMO_SLUG = process.env.DEMO_SLUG ?? '9-blackberry-pl-palm-coast-fl-32137';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const MODEL = process.env.DESCRIPTION_MODEL ?? 'claude-sonnet-4-6';
+const MODEL = process.env.DESCRIPTION_MODEL ?? 'claude-haiku-4-5-20251001';
 
 // Selectable generation models (dev mirror of FOLLOW-161 — global model switch).
 const MODELS = {
-  'claude-haiku-4-5-20251001': 'Haiku 4.5 — fast / cheap',
-  'claude-sonnet-4-6': 'Sonnet 4.6 — balanced (default)',
+  'claude-haiku-4-5-20251001': 'Haiku 4.5 — fast / cheap (default)',
+  'claude-sonnet-4-6': 'Sonnet 4.6 — balanced',
   'claude-opus-4-8': 'Opus 4.8 — max quality',
 };
-let currentModel = MODELS[MODEL] ? MODEL : 'claude-sonnet-4-6';
+let currentModel = MODELS[MODEL] ? MODEL : 'claude-haiku-4-5-20251001';
 
 // 13 reachable archetypes on residential app.estalara.com (Master Design §D.6: 18 − 5 chat-only).
 // Each carries a short persona used to frame the LLM generation.
@@ -375,18 +375,18 @@ out.textContent='headline: '+(j.generated?.headline||'')+'\\n\\ndescription: '+(
 </script></body></html>`;
 }
 
-function buildAdaptResponse(sessionId, gen) {
+function buildAdaptResponse(sessionId, gen, arche = currentArchetype) {
   const mk = (slot, value) => ({
     type: 'text',
     slot,
     value,
-    archetype: currentArchetype,
+    archetype: arche,
     confidence: 0.92,
   });
   return {
     adapt_decision_id: randomUUID(),
     session_id: sessionId ?? 'unknown',
-    archetype: currentArchetype,
+    archetype: arche,
     confidence: 0.92,
     similarity: 0.9,
     tier: 2,
@@ -420,6 +420,9 @@ const server = http.createServer(async (req, res) => {
       const js = await readFile(SDK_BUNDLE);
       cors(res, origin);
       res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      // Dev-only: never cache the SDK bundle so a rebuild is picked up on the next
+      // full page load without the browser serving a stale `<script async>` copy.
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
       res.statusCode = 200;
       return res.end(js);
     } catch {
@@ -501,8 +504,31 @@ const server = http.createServer(async (req, res) => {
       // current listing. Fall back to a singular listing_id, then the sample listing.
       const listingKey =
         (Array.isArray(body.listing_ids) && body.listing_ids[0]) || body.listing_id || DEMO_SLUG;
-      const gen = await generate(currentArchetype, listingKey);
-      return json(res, 200, buildAdaptResponse(body.session_id, gen), origin);
+      // Honour archetype_hint sent by the SDK (quiz result or intent engine signal).
+      // Falls back to the manually-selected currentArchetype when the SDK sends neutral or nothing.
+      // When hint is neutral, return a neutral response so cold-start doesn't immediately adapt.
+      const hint = body.archetype_hint;
+      if (hint === 'neutral' || !hint) {
+        return json(
+          res,
+          200,
+          {
+            adapt_decision_id: randomUUID(),
+            session_id: body.session_id ?? 'unknown',
+            archetype: 'neutral',
+            confidence: 0.1,
+            similarity: 0.1,
+            tier: 0,
+            source: 'neutral',
+            generated_at: new Date().toISOString(),
+            directives: [],
+          },
+          origin,
+        );
+      }
+      const arche = PERSONAS[hint] ? hint : currentArchetype;
+      const gen = await generate(arche, listingKey);
+      return json(res, 200, buildAdaptResponse(body.session_id, gen, arche), origin);
     });
     return;
   }

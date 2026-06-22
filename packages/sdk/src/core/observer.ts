@@ -454,7 +454,8 @@ export function setupObservers(
               onEvent({
                 type: 'listing.viewed',
                 payload: {
-                  listing_id: (entry.target as HTMLElement).dataset.listingId ?? '',
+                  listing_id:
+                    (entry.target as HTMLElement).getAttribute('data-estalara-listing-id') ?? '',
                   element: entry.target.tagName.toLowerCase(),
                 },
                 ts: Date.now(),
@@ -471,8 +472,55 @@ export function setupObservers(
         io.observe(el);
       });
 
+      // Watch for listing elements added or mutated by SvelteKit/React client-side navigation.
+      // querySelectorAll above only captures elements present at SDK init time.
+      //
+      // Two cases:
+      //   childList  — framework unmounts+remounts the page component (new DOM node)
+      //   attributes — framework reuses the same node but updates data-estalara-listing-id
+      //                in-place (SvelteKit same-component navigation between listing slugs)
+      const navMutObs = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          if (mutation.type === 'childList') {
+            for (const node of mutation.addedNodes) {
+              if (!(node instanceof HTMLElement)) continue;
+              if (node.hasAttribute('data-estalara-listing')) {
+                io.observe(node);
+              }
+              node.querySelectorAll('[data-estalara-listing]').forEach((el) => {
+                io.observe(el);
+              });
+            }
+          } else if (
+            mutation.type === 'attributes' &&
+            mutation.attributeName === 'data-estalara-listing-id'
+          ) {
+            // SvelteKit updated listing_id on the existing element — fire listing.viewed directly
+            // because IntersectionObserver already unobserved this node on the first view.
+            const el = mutation.target as HTMLElement;
+            if (el.hasAttribute('data-estalara-listing')) {
+              onEvent({
+                type: 'listing.viewed',
+                payload: {
+                  listing_id: el.getAttribute('data-estalara-listing-id') ?? '',
+                  element: el.tagName.toLowerCase(),
+                },
+                ts: Date.now(),
+              });
+            }
+          }
+        }
+      });
+      navMutObs.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['data-estalara-listing-id'],
+      });
+
       cleanupFns.push(() => {
         io.disconnect();
+        navMutObs.disconnect();
       });
     }
   } catch {

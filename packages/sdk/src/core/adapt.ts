@@ -487,6 +487,20 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
     return;
   }
 
+  // Defensive: never blank a slot. An empty/whitespace directive value means "no
+  // adaptation for this archetype on this listing" (e.g. the decision API's archetype-fit
+  // gate, ADR-0010, declines to adapt a listing the archetype does not fit). Applying it
+  // would erase the original copy instead of leaving it. Skip — the slot keeps whatever it
+  // currently holds; cross-listing navigation separately restores the original (index.ts).
+  if (directive.value.trim() === '') {
+    pushEvent({
+      type: 'adapt.skipped',
+      payload: { reason: 'empty_value', slot_or_selector: slotName },
+      ts: Date.now(),
+    });
+    return;
+  }
+
   const fingerprint = `text:${slotName}:${context?.archetypeId ?? 'unknown'}`;
   if (appliedFingerprints.has(fingerprint)) return;
   appliedFingerprints.add(fingerprint);

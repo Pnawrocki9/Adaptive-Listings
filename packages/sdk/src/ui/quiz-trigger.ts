@@ -2,8 +2,9 @@
  * Quiz trigger widget — sticky button that prompts buyer to take
  * the v2.0 branching decision-tree quiz.
  *
- * Shown after 30 seconds on ANY page type where the SDK is loaded.
- * Dismissible (sets localStorage flag for 24h).
+ * Shown immediately on the first listing visit (no delay). Permanently
+ * suppressed after quiz completion. Dismissible (sets localStorage flag
+ * for 24h) without completing.
  *
  * FOLLOW-273 (2026-06-11): `QuizTriggerConfig.language` and `QUIZ_LABELS` key type now use
  * `QuizLanguage` imported from `@estalara/shared` instead of the inline `'en'|'pl'|'es'`
@@ -35,25 +36,23 @@ export const QUIZ_LABELS: Record<QuizLanguage, { trigger: string; dismiss: strin
 
 /**
  * Delay (ms) after SDK init before showing the quiz trigger.
- * FOLLOW-199: per-tenant timer configurability tracked separately.
- * Rule L: data-quiz-trigger attribute was removed in FOLLOW-257 (no producer
- * or runtime consumer existed); this constant is the sole timer source.
+ * 0 = show immediately on first listing visit.
  */
-export const QUIZ_TRIGGER_DELAY_MS = 30_000;
+export const QUIZ_TRIGGER_DELAY_MS = 0;
 
 /**
  * Schedule the quiz trigger to appear after QUIZ_TRIGGER_DELAY_MS on any page.
- * Respects the 24h dismissal cooldown. Calls `onTrigger` when the timer fires
- * (if not dismissed). Returns a cancel function that clears the timer.
+ * Suppressed permanently after quiz completion. Respects 24h dismissal cooldown.
+ * Returns a cancel function that clears the timer.
  */
 export function scheduleQuizTrigger(onTrigger: () => void): () => void {
-  if (isQuizDismissed()) {
+  if (isQuizCompleted() || isQuizDismissed()) {
     return () => {
-      // already dismissed — nothing to cancel
+      // already completed or dismissed — nothing to cancel
     };
   }
   const timerId = setTimeout(() => {
-    if (!isQuizDismissed()) {
+    if (!isQuizCompleted() && !isQuizDismissed()) {
       onTrigger();
     }
   }, QUIZ_TRIGGER_DELAY_MS);
@@ -65,6 +64,8 @@ export function scheduleQuizTrigger(onTrigger: () => void): () => void {
 
 const DISMISS_STORAGE_KEY = '__estalara_quiz_dismissed__';
 const DISMISS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+const COMPLETED_STORAGE_KEY = '__estalara_quiz_completed__';
 
 /**
  * Check if the quiz trigger was dismissed recently (24h localStorage check).
@@ -81,6 +82,29 @@ export function isQuizDismissed(): boolean {
   }
 }
 
+/**
+ * Check if the quiz was ever completed (permanent localStorage flag, no TTL).
+ */
+export function isQuizCompleted(): boolean {
+  try {
+    return localStorage.getItem(COMPLETED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Permanently suppress the quiz trigger after the investor completes the quiz.
+ * No TTL — persists across sessions until localStorage is cleared.
+ */
+export function markQuizCompleted(): void {
+  try {
+    localStorage.setItem(COMPLETED_STORAGE_KEY, '1');
+  } catch {
+    // localStorage unavailable — ignore
+  }
+}
+
 function markQuizDismissed(): void {
   try {
     localStorage.setItem(DISMISS_STORAGE_KEY, String(Date.now()));
@@ -88,6 +112,9 @@ function markQuizDismissed(): void {
     // localStorage unavailable — ignore
   }
 }
+
+// Quiz trigger color matches the listing-page CTA red (#ef4444 = Tailwind red-500).
+const TRIGGER_BG = '#ef4444';
 
 /**
  * Render the quiz trigger button into the shadow root.
@@ -106,19 +133,19 @@ export function renderQuizTrigger(
       .estalara-trigger {
         position: fixed;
         bottom: 24px;
-        right: 24px;
+        left: 24px;
         display: flex;
         align-items: center;
-        gap: 8px;
-        padding: 12px 18px;
-        background: ${config.accentColor};
+        gap: 12px;
+        padding: 24px 36px;
+        background: ${TRIGGER_BG};
         color: #fff;
         border: none;
         border-radius: 9999px;
-        font-size: 14px;
+        font-size: 28px;
         font-weight: 600;
         cursor: pointer;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+        box-shadow: 0 4px 24px rgba(0,0,0,0.22);
         z-index: 2147483647;
         pointer-events: auto;
         transition: opacity 0.2s;
@@ -128,9 +155,9 @@ export function renderQuizTrigger(
         background: transparent;
         border: none;
         color: rgba(255,255,255,0.8);
-        font-size: 18px;
+        font-size: 28px;
         cursor: pointer;
-        padding: 0 0 0 4px;
+        padding: 0 0 0 8px;
         line-height: 1;
       }
     `;

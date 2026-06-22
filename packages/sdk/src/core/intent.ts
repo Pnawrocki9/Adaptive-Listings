@@ -747,6 +747,7 @@ export function normalize(probs: ArchetypeProbabilities): ArchetypeProbabilities
 export function classifyFromProbabilities(
   probs: ArchetypeProbabilities,
   currentArchetype?: Archetype,
+  quizAnswered = false,
 ): {
   archetype: Archetype;
   confidence: number;
@@ -765,6 +766,23 @@ export function classifyFromProbabilities(
     currentArchetype !== undefined &&
     archetype !== currentArchetype &&
     probs[archetype] - probs[currentArchetype] < SWITCH_MARGIN
+  ) {
+    archetype = currentArchetype;
+    maxProb = probs[currentArchetype];
+  }
+
+  // Quiz stickiness: once the quiz has explicitly resolved a non-neutral archetype, routine
+  // behavioral signals (scroll, listing.viewed, …) push probability mass toward `neutral`,
+  // and after enough signals neutral overtakes the quiz archetype and the resolved archetype
+  // decays back to `neutral` — silently turning off cross-listing adaptation mid-session.
+  // The quiz is the source of truth (§D.6 / FOLLOW-344 "switch-margin not blending"): a drift
+  // whose argmax is `neutral` must NOT unseat it. Only a genuine contrary *non-neutral* leader
+  // (handled by the SWITCH_MARGIN hysteresis above) may switch the quiz archetype.
+  if (
+    quizAnswered &&
+    archetype === 'neutral' &&
+    currentArchetype !== undefined &&
+    currentArchetype !== 'neutral'
   ) {
     archetype = currentArchetype;
     maxProb = probs[currentArchetype];
@@ -977,6 +995,7 @@ export function applyBehavioralSignal(
     const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
       probabilities,
       state.archetype,
+      state.quiz_answered,
     );
     return {
       archetype,
@@ -1021,6 +1040,7 @@ export function applyBehavioralSignal(
     const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
       probabilities,
       state.archetype,
+      state.quiz_answered,
     );
 
     return {
@@ -1077,6 +1097,7 @@ export function applyBehavioralSignal(
     const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
       probabilities,
       state.archetype,
+      state.quiz_answered,
     );
 
     return {
@@ -1098,6 +1119,7 @@ export function applyBehavioralSignal(
     const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
       probabilities,
       state.archetype,
+      state.quiz_answered,
     );
 
     return {
@@ -1121,6 +1143,7 @@ export function applyBehavioralSignal(
   const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
     probabilities,
     state.archetype,
+    state.quiz_answered,
   );
 
   return {

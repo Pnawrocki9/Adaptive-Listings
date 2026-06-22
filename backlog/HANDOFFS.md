@@ -1639,3 +1639,31 @@ sign-off).
 - `packages/sdk/src/ui/consent-banner.ts` (platform-wide disclosure added for registered investors)
 
 ---
+
+## 2026-06-22 — SDK production integration: cross-listing adaptation + SoT archetype (→ Rafał)
+
+Two SPA-specific defects were found and fixed this session (the "1st listing adapts, 2nd+ does not"
+symptom). Full design + verification:
+`docs/adr/ADR-0014-cross-listing-adaptation-and-sot-archetype.md`. **Precise production
+requirements: `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md`** — read before deploying the SDK to
+`app.estalara.com`.
+
+**Only two items require host/platform action (everything else is already wired):**
+
+1. **[HOST] `data-estalara-listing-id` MUST update in place on SPA navigation.** The SDK detects a
+   listing change by watching this attribute for a value change. Binding it to `property.uuid`
+   (already done in `(buyer)/[lang]/listing/[slug]/+page.svelte`) satisfies this. If it is ever
+   hard-coded/memoized, the 2nd listing silently keeps the 1st listing's adapted copy.
+2. **[PLATFORM] Serve the SDK bundle from a versioned/content-hashed URL.** `<script async>` is not
+   re-fetched on SPA navigation, so a redeploy otherwise won't reach returning single-page sessions.
+
+**Already correct, do not regress:** `POST /api/adapt` honors `archetype_hint` (drives copy from the
+quiz/SoT archetype) and the `neutral` cold-start contract; `GET /api/adapt/description` is
+per-listing grounded with the archetype-fit gate (ADR-0009/0010).
+
+**Behavioral guarantee (CEO 2026-06-22):** the resolved archetype drifts only toward _other
+non-neutral_ archetypes (chat/sustained navigation revealing a different true need) and never
+silently to `neutral`; the quiz can be disabled and the system stays fully functional. See
+`[[project_consent_umbrella_optout_decision]]` adjacency for the consent posture.
+
+---

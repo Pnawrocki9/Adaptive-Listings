@@ -900,3 +900,18 @@ is ml-engineer scope and not started. **A delegation/validation rule I'd add:** 
 open PR but also has uncommitted code changes, always grep those changes to assess whether the code
 is completing ACs from the same ticket BEFORE treating the PR as PM-validatable — uncommitted ACs
 cannot be CI-verified.
+
+---
+
+**Date / ticket:** 2026-06-23 — FOLLOW-383 CI validation (PR #342 after commit 4f5f27b push)
+**Delegation row used:** Row 2 (backend-engineer) — fix-delegation loop. **What validation caught
+(or missed):** Step 5b (`gh pr checks 342 --watch`) caught Typecheck FAILING — a REAL gate. 5 TS
+errors all in `packages/sdk/src/__tests__/follow-383.test.ts`: 4x TS2352 (direct
+`as [string, RequestInit]` cast on `mock.lastCall` typed as `[] | undefined`) and 1x TS2532
+(`queue[0]` possibly undefined). Worker reported local tests 1462/1462 pass — vitest passes because
+the cast is runtime-safe; tsc --noEmit is stricter. Correct pattern confirmed in adapt.test.ts lines
+227/253: `as unknown as [string, RequestInit]`. Worker prematurely set READY_FOR_REVIEW; reverted to
+IN_PROGRESS. Fix iteration 1/3 consumed. CI check counter now 2/5. **A delegation/validation rule
+I'd add:** When a worker reports "all tests pass locally," NEVER treat that as CI-typecheck-passing
+— vitest does not run tsc --noEmit; type casts that work at runtime can fail tsc. Always wait for
+the CI Typecheck job specifically before confirming a PR is typecheck-clean.

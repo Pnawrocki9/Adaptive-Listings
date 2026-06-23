@@ -1,6 +1,6 @@
 # PM Orchestrator Status
 
-**Last updated:** 2026-06-23T14:00Z
+**Last updated:** 2026-06-23T18:30Z
 
 ## OPERATIONAL RECORD — Prod Supabase 14-migration drift catch-up (2026-06-14)
 
@@ -12,8 +12,9 @@ applied cleanly. FOLLOW-308 (auto-apply mechanism) DONE (PR #297/#306). ESC-022+
 ## Current sprint
 
 - **Sprint 21 COMPLETE** — FOLLOW-372/373/374/375/376 all merged (PRs #337–#341).
-  RETRO-102/103/104/105/106 written (uncommitted on `backend-engineer/FOLLOW-383-consent-gate-doc`
-  branch, pending commit).
+  RETRO-102/103/104/105/106 written and committed in FOLLOW-383 housekeeping commit (commit 4f5f27b
+  chore batch on backend-engineer/FOLLOW-383-consent-gate-doc branch, will land on main with PR
+  #342).
 - **Sprint 20 COMPLETE** — FOLLOW-354/356/357/358/359/360/361/362/363/364/366/367/368 DONE.
 - **Sprint 19 COMPLETE** — FOLLOW-340/341/342/343/344/345/346/346-dpia/347 DONE.
 - **Sprint 16 COMPLETE** — FOLLOW-191 ESC-020 non-blocking per CEO 2026-06-10.
@@ -22,10 +23,14 @@ applied cleanly. FOLLOW-308 (auto-apply mechanism) DONE (PR #297/#306). ESC-022+
 
 ## IN_PROGRESS tickets (1/3 max)
 
-- **FOLLOW-383** — backend-engineer — P0 opt-out server wiring — PR #342 OPEN (AC-2 doc committed;
-  AC-1+AC-3 code changes uncommitted on branch; AC-4 redis_writer.py NOT started) — CI check
-  counter: 1/5, fix iterations: 0/3. Delegating to backend-engineer to commit AC-1+AC-3 code and all
-  housekeeping files, then push. AC-4 to ml-engineer in parallel.
+- **FOLLOW-383** — backend-engineer — P0 opt-out server wiring — PR #342 OPEN — CI check counter:
+  2/5, fix iterations: 1/3. AC-1/2/3 code committed and pushed (commit 4f5f27b). TYPECHECK FAILING:
+  5 TS errors in `packages/sdk/src/__tests__/follow-383.test.ts`:
+  - 4x TS2352 (lines 89, 111, 126, 141): `mockFetch.mock.lastCall as [string, RequestInit]` must be
+    `mockFetch.mock.lastCall as unknown as [string, RequestInit]` (double-cast through unknown).
+  - 1x TS2532 (line 185): `queue[0].type` — queue[0] possibly undefined; use `queue[0]!.type` or
+    check after the `toHaveLength(1)` assertion on the previous line. Delegating fix to
+    backend-engineer (fix iteration 1/3).
 
 ---
 
@@ -53,8 +58,10 @@ consent disclosures). ESC-020 remains OPEN but non-blocking.
 
 ## CI check counter (current session — 2026-06-23)
 
-- PR #342 (FOLLOW-383): 1/5 checks run. 0/3 fix iterations. Real gate failures: 0 (Rule I is
-  pre-existing-red). Housekeeping: waiting for AC-1+AC-3 commit + push before final CI validation.
+- PR #342 (FOLLOW-383): 2/5 checks run. 1/3 fix iterations consumed. Real gate failures: 1
+  (Typecheck — 5 TS errors introduced by follow-383.test.ts; NOT pre-existing). Fix delegated to
+  backend-engineer. Rule I pre-existing-red (confirmed on both CI run 28047541089 and prior PR
+  #341).
 
 ---
 
@@ -65,7 +72,7 @@ consent disclosures). ESC-020 remains OPEN but non-blocking.
 | AC-1 | SDK sends profiling_opt_out=1 to server           | Done (uncommitted) | packages/sdk/src/core/adapt.ts diff       |
 | AC-2 | consentGate.profilingOptOut documented (decision) | Done (PR #342)     | apps/decision-api/src/lib/consent-gate.ts |
 | AC-3 | Opted-out events dropped before eventQueue.push   | Done (uncommitted) | packages/sdk/src/index.ts diff            |
-| AC-4 | redis_writer.py skips chat-prior for opted-out    | NOT STARTED        | ml-engineer scope                         |
+| AC-4 | redis_writer.py skips chat-prior for opted-out    | STUB → FOLLOW-384  | ml-engineer scope; promoted to own ticket |
 | AC-5 | (optional) DOM revert on toggle-off               | Deferred           | post-P0                                   |
 
 POST path gate (route.ts POST handler) also done (uncommitted) — defense-in-depth companion to AC-1.

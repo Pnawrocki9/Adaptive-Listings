@@ -10414,6 +10414,32 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
+## FOLLOW-384 — redis_writer.py: skip applying AL chat-intent shadow prior for opted-out sessions [AC-4 of FOLLOW-383]
+
+- **source_retro:** RETRO-103 (§3 HW-3 — OPEN HANDOFF: opted-out sessions have no chat-prior skip in
+  redis_writer.py)
+- **source_ticket:** FOLLOW-383 (split out as separate ticket because AC-4 is ml-engineer scope and
+  does not block AC-1/2/3 merge)
+- **recommended_sprint:** next (immediately after FOLLOW-383 merges)
+- **recommended_agent:** ml-engineer
+- **priority:** P1
+- **estimated_hours:** 2
+- **scope:** `apps/` (or the relevant Modal Python app) `redis_writer.py` applies the AL chat-intent
+  shadow prior to all sessions indiscriminately. When a user has opted out of AL profiling
+  (`profiling_opt_out=1`), the shadow prior MUST be skipped — otherwise opted-out behavioral history
+  continues to influence their archetype weighting via the Redis channel. The opt-out state signal
+  is available server-side (the SDK now sends `profiling_opt_out=1` in the adapt URL, per FOLLOW-383
+  AC-1). The redis_writer needs to read this flag and skip the prior write for opted-out sessions.
+- **ac:**
+  - [ ] `redis_writer.py` reads the per-session profiling opt-out flag (from the adapt request or a
+        session attribute) and skips applying the AL chat-intent shadow prior when opt-out is set.
+  - [ ] A test asserts the skip: opted-out session → no Redis prior write.
+  - [ ] A test asserts the positive path: opted-in session → prior is applied as before.
+- **depends_on:** [FOLLOW-383] (must merge first so the opt-out param flows end-to-end)
+- **promoted_to_queue:** false
+
+---
+
 ## FOLLOW-382 — Red-CI-window regression audit + Python matrix-drift guard + memory update
 
 - **source_retro:** RETRO-106 (§4b CB-1, §4c TG-1, §5d)

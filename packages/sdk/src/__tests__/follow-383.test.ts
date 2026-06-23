@@ -86,7 +86,7 @@ describe('FOLLOW-383 AC1: fetchDirectives URL when profilingOptedOut=true', () =
     );
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url] = mockFetch.mock.lastCall as [string, RequestInit];
+    const [url] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
     expect(url).toContain('profiling_opt_out=1');
   });
 
@@ -108,7 +108,7 @@ describe('FOLLOW-383 AC1: fetchDirectives URL when profilingOptedOut=true', () =
       false, // profilingOptedOut=false
     );
 
-    const [url] = mockFetch.mock.lastCall as [string, RequestInit];
+    const [url] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
     expect(url).not.toContain('profiling_opt_out');
   });
 
@@ -123,7 +123,7 @@ describe('FOLLOW-383 AC1: fetchDirectives URL when profilingOptedOut=true', () =
 
     await fetchDirectives(BASE_CONFIG, SESSION, 'listing_detail', initIntentState());
 
-    const [url] = mockFetch.mock.lastCall as [string, RequestInit];
+    const [url] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
     expect(url).not.toContain('profiling_opt_out');
   });
 
@@ -138,7 +138,7 @@ describe('FOLLOW-383 AC1: fetchDirectives URL when profilingOptedOut=true', () =
 
     await fetchDirectives(BASE_CONFIG, SESSION, 'listing_list', undefined, undefined, true);
 
-    const [url] = mockFetch.mock.lastCall as [string, RequestInit];
+    const [url] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
     // Must target the /adapt endpoint
     expect(url).toContain('/adapt');
     // Must carry the opt-out flag
@@ -182,7 +182,7 @@ describe('FOLLOW-383 AC3: behavioral event suppression when profilingOptedOut=tr
     const optedInCallback = makeObserverCallback(false);
     optedInCallback(event);
     expect(queue).toHaveLength(1);
-    expect(queue[0].type).toBe('listing.viewed');
+    expect(queue[0]!.type).toBe('listing.viewed');
   });
 
   it('does NOT contaminate eventQueue with opted-out events (regression guard)', () => {

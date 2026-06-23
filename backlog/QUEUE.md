@@ -5167,12 +5167,13 @@ pending planning.**
 
 ## Currently in flight
 
-**1 ticket READY_FOR_REVIEW as of 2026-06-23: FOLLOW-383 (PR #342, backend-engineer). Sprints
-19/20/21 ALL COMPLETE — PRs #321–#341 all merged to main.
+**1 ticket IN_PROGRESS as of 2026-06-23: FOLLOW-383 (PR #342, backend-engineer). Sprints 19/20/21
+ALL COMPLETE — PRs #321–#341 all merged to main.
 FOLLOW-340/341/342/343/344/345/346/346-dpia/347/357/360/366/372/373/374/375/376 all DONE.
-RETRO-102–106 written 2026-06-23. ESC-020 OPEN but non-blocking (CEO 2026-06-10).** READY tickets:
-FOLLOW-356/359/361/363/368/369/371 (P1) and FOLLOW-354/358/362/364/367/370 (P2). CI check counter:
-0/5. Fix iteration counter: 0/3.
+RETRO-102–106 written 2026-06-23. ESC-020 OPEN but non-blocking (CEO 2026-06-10). TYPECHECK FAILING
+on PR #342 (5 TS errors in follow-383.test.ts, introduced by this PR). Fix iteration: 1/3. CI check
+counter: 2/5. Delegating typecheck fix to backend-engineer.** READY tickets:
+FOLLOW-356/359/361/363/368/369/371 (P1) and FOLLOW-354/358/362/364/367/370 (P2).
 
 ## Sprint 19 — Hollow-core must-fixes + audit-19 wave (PLANNED, 2026-06-19)
 
@@ -5731,7 +5732,7 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   title:
     Wire SDK→server profiling opt-out producer + complete server/training/chat-prior halves [P0]
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: IN_PROGRESS
   priority: P0
   estimated_hours: 5
   depends_on: []
@@ -5743,6 +5744,10 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     AC-1 DONE: SDK appends profiling_opt_out=1 to /api/adapt URL when opted out.
     AC-2 DONE: decision-api 410 documented (JSDoc + route.ts comment). Documented as defense-in-depth.
     AC-3 DONE: behavioral events dropped before eventQueue.push when opted out.
+    TYPECHECK FAIL (CI run 28047541089): 5 errors in packages/sdk/src/__tests__/follow-383.test.ts.
+    4x TS2352: mockFetch.mock.lastCall cast needs `as unknown as [string, RequestInit]` (not direct cast).
+    1x TS2532: queue[0] possibly undefined — add non-null assertion or guard.
+    Fix iteration: 1/3. CI check counter: 2/5.
     AC-4 OPEN: redis_writer.py chat-prior skip — ml-engineer scope, filed as follow-up stub in FOLLOW_UPS.md.
 
 - id: FOLLOW-369

@@ -150,3 +150,31 @@ confirm the receiving ticket's spec lists the correct schema fields. A hand-writ
 disagrees with the receiving ticket's AC goes undetected until someone builds FOLLOW-175 and
 discovers the shape mismatch. An automated "cross-reference ACs" step in the HANDOFFS format
 validation could catch this at PR time.
+
+---
+
+## 2026-06-23 / FOLLOW-371
+
+**What I built:** One-shot remediation of ESC-026 holdout contamination. Between PR #327 (2026-06-19
+21:17 UTC) and PR #333 (2026-06-20 09:53 UTC), the GET `/api/adapt` path wrote
+`adaptation_decisions` rows with `(holdout_group=1, variant IN ('v1','v2'))`. Four analytics routes
+consuming those rows now carry an exclusion predicate
+`NOT (holdout_group=1 AND variant!='control')`. Migration 0017 (no-op documentation), an optional
+operator relabel script, golden-query regression tests, and `docs/DATA_DICTIONARY.md` (first-ever)
+were added in the same PR.
+
+**Vocabulary/seed/retention risks I weighed:**
+
+- No new table/column added (no writer-seed obligation triggered). The contaminated rows already
+  exist; the fix is query-layer, not DDL-layer.
+- Chose exclusion filter over ALTER TABLE UPDATE (async ClickHouse mutation) because: (1) the pilot
+  was in shadow mode — expected zero affected rows — so no data-in-place urgency; (2) an async
+  mutation is harder to verify atomically and has replay risk; (3) the exclusion filter is
+  self-documenting and immediately effective without operator downtime.
+- Retention: no new TTL claims made. DATA_DICTIONARY.md correctly marks existing table TTLs as
+  "Pending" to avoid making promises that aren't enforced.
+
+**A guardrail I'd add:** A CI-enforced lint rule on ClickHouse queries: any SQL touching
+`adaptation_decisions` WHERE `holdout_group = 1` must also carry `AND variant = 'control'` or the
+exclusion predicate. This would have flagged the original PR #327 gap immediately and caught any
+future regression without relying on a retro + follow-up ticket cycle.

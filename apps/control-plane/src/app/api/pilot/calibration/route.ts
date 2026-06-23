@@ -176,6 +176,13 @@ async function fetchDecisionsFromClickHouse(
 
   // Sync approach: query-time join (MVP — fine for pilot scale <10k decisions/tenant).
   // FOLLOW-175 will migrate to ClickHouse-materialized path for scale.
+  //
+  // FOLLOW-371 / ESC-026: exclude contaminated holdout rows written during the
+  // ~12.5h window (PR #327 2026-06-19 21:17 UTC → PR #333 2026-06-20 09:53 UTC)
+  // when the GET path logged (holdout_group=1, variant IN ('v1','v2')).
+  // Calibration only needs non-holdout (treatment) decisions anyway; including
+  // them would inflate the denominator with control-arm rows. This predicate
+  // ensures the calibration corpus stays clean regardless.
   const decisionSql = `
     SELECT
       adapt_decision_id,
@@ -185,6 +192,7 @@ async function fetchDecisionsFromClickHouse(
     WHERE tenant_id = {tenant_id:String}
       AND ts >= now() - toIntervalDay({window_days:UInt16})
       AND adapt_decision_id != ''
+      AND NOT (holdout_group = 1 AND variant != 'control')
   `;
 
   const rows = await chQuery<Record<string, unknown>>(baseUrl, user, password, decisionSql, {

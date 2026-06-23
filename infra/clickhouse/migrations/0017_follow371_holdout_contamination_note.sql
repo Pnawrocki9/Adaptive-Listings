@@ -1,0 +1,50 @@
+-- Migration: 0017_follow371_holdout_contamination_note
+-- FOLLOW-371 — Document the ESC-026 holdout contamination window.
+--
+-- Background (RETRO-095 / RETRO-100 / ESC-026):
+--   Between PR #327 merge  (commit 66054d6, 2026-06-19 21:17 UTC)
+--   and   PR #333 merge    (commit 2836adc, 2026-06-20 09:53 UTC)
+--   -- a ~12.5h window --
+--   the GET /api/adapt path wrote adaptation_decisions rows with
+--   (holdout_group=1, variant IN ('v1','v2')).
+--   Holdout rows should always carry variant='control'; these rows
+--   contaminate the counterfactual baseline for lift/calibration analytics.
+--
+-- Remediation chosen: QUERY-LEVEL EXCLUSION FILTER (applied in route.ts files).
+--   All pilot/lift/calibration queries that consume adaptation_decisions
+--   now include an exclusion predicate:
+--     AND NOT (holdout_group = 1 AND variant != 'control')
+--   This is equivalent to:
+--     AND (holdout_group = 0 OR variant = 'control')
+--   The predicate is a no-op for all non-contaminated rows (both before the
+--   window and after PR #333) and removes contaminated rows from aggregate counts
+--   without a destructive asynchronous ClickHouse mutation.
+--
+--   An optional relabel mutation script is also provided at:
+--     infra/clickhouse/scripts/follow371_relabel_contaminated_rows.sh
+--   for operators who prefer to fix the data in place.  That script issues an
+--   ALTER TABLE UPDATE (async ClickHouse mutation) and should be applied manually
+--   by an operator with CLICKHOUSE_URL + credentials in the environment.
+--   After the mutation finalises the exclusion filter in the query layer remains
+--   a harmless no-op (no contaminated rows remain).
+--
+-- Identification query (read-only; run against prod to confirm count):
+--
+--   SELECT count() AS contaminated_rows
+--   FROM adaptation_decisions
+--   WHERE holdout_group = 1
+--     AND variant != 'control'
+--     AND ts >= toDateTime('2026-06-19 21:17:00', 'UTC')
+--     AND ts <  toDateTime('2026-06-20 09:53:00', 'UTC');
+--
+-- Expected count: TBD at apply time.  The pilot was in shadow mode during
+-- this window; real-user GET traffic may be zero or a small number.
+--
+-- This migration is a documentation-only no-op (SELECT 1) so the journal
+-- sequence is unbroken and the remediation context is permanently in version
+-- control.  The active fix lives in the application query layer.
+--
+-- ClickHouse MergeTree: SELECT 1 is a valid no-op statement.
+-- migrate.sh splits on ";" boundaries and executes each statement individually.
+
+SELECT 1;

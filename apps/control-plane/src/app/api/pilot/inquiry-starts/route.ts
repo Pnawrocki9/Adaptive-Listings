@@ -119,6 +119,9 @@ async function fetchFromClickHouse(
   if (!cfg) return null;
 
   // ── Aggregate query ──────────────────────────────────────────────────
+  // FOLLOW-371 / ESC-026: exclude contaminated holdout rows written during the
+  // ~12.5h window (PR #327 2026-06-19 21:17 UTC → PR #333 2026-06-20 09:53 UTC)
+  // when the GET path logged (holdout_group=1, variant IN ('v1','v2')).
   const aggQuery = `
     SELECT
       ad.holdout_group                                    AS is_holdout,
@@ -131,6 +134,7 @@ async function fetchFromClickHouse(
       AND e.type = 'inquiry.started'
     WHERE ad.tenant_id = {tenant_id:String}
       AND ad.assigned_at >= now() - INTERVAL {window_days:UInt8} DAY
+      AND NOT (ad.holdout_group = 1 AND ad.variant != 'control')
     GROUP BY ad.holdout_group
     FORMAT JSONEachRow
   `.trim();
@@ -166,6 +170,7 @@ async function fetchFromClickHouse(
     });
 
   // ── Daily breakdown query ────────────────────────────────────────────
+  // FOLLOW-371 / ESC-026: same exclusion filter as aggregate query above.
   const dailyQuery = `
     SELECT
       toDate(e.ts)                                        AS date,
@@ -178,6 +183,7 @@ async function fetchFromClickHouse(
       AND e.type = 'inquiry.started'
     WHERE ad.tenant_id = {tenant_id:String}
       AND ad.assigned_at >= now() - INTERVAL {window_days:UInt8} DAY
+      AND NOT (ad.holdout_group = 1 AND ad.variant != 'control')
     GROUP BY date
     ORDER BY date ASC
     FORMAT JSONEachRow

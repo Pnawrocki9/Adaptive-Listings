@@ -28,9 +28,12 @@ on:
       - "devops-engineer/**"
       - "backend-engineer/**"
       - "sdk-engineer/**"
-      - "qa-engineer/**"
       - "data-engineer/**"
       - "ml-engineer/**"
+      - "qa-engineer/**"
+      - "compliance-engineer/**"
+      - "architect/**"
+      - "pm-orchestrator/**"
   pull_request:
     branches:
       - main

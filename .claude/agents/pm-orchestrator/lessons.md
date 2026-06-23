@@ -915,3 +915,65 @@ IN_PROGRESS. Fix iteration 1/3 consumed. CI check counter now 2/5. **A delegatio
 I'd add:** When a worker reports "all tests pass locally," NEVER treat that as CI-typecheck-passing
 — vitest does not run tsc --noEmit; type casts that work at runtime can fail tsc. Always wait for
 the CI Typecheck job specifically before confirming a PR is typecheck-clean.
+
+---
+
+**Date / ticket:** 2026-06-23 — FOLLOW-383 DONE (PR #342 merged 7ed8a81) + FOLLOW-384/385 created +
+FOLLOW-369/371/368 delegated **Delegation row used:** N/A (post-merge housekeeping + retro spawn +
+parallel 3-ticket delegation). Next delegations: Row 2 (backend-engineer/FOLLOW-369), Row 4
+(data-engineer/FOLLOW-371), Row 5 (devops-engineer/FOLLOW-368). **What validation caught (or
+missed):** Pre-merge adversarial review (conducted by human) found 3 pre-existing §H.9 sibling-path
+gaps (quiz completion persists to MOAT training table, favorites/micro-poll client-side archetype
+mutation) NOT introduced by FOLLOW-383. CEO scoped these to FOLLOW-385 (§H.9-documented set only;
+ingest stream left flowing under §H.8). FOLLOW-384 (redis_writer.py skip) promoted to READY now that
+FOLLOW-383 merged. QUEUE.md had a duplicate FOLLOW-368 entry (stale depends_on version at line ~5475
+and current version at line ~5792) — updated canonical (second) instance only. **A
+delegation/validation rule I'd add:** When a pre-merge adversarial review by the human finds
+pre-existing gaps in sibling code paths, always create the follow-up stubs immediately on the same
+day as the merge (not at sprint planning) — the context is freshest then and the CEO scope decision
+must be captured before it drifts.
+
+---
+
+**Date / ticket:** 2026-06-23 — FOLLOW-369 (PR #343) + FOLLOW-371 (PR #344) + FOLLOW-368 (PR #345)
+CI validation **Delegation row used:** Step 5b/5c validation pass (no delegation — PM-owned
+validation). FOLLOW-371 fix will use Row 4 (data-engineer). **What validation caught (or missed):**
+PR #344 (FOLLOW-371): Typecheck + Test (Node 22) FAIL — dynamic
+`import('../dashboard/analytics/lift/route.js')` inside an `it()` body fails tsc with TS2307 even
+though the target file exists. Bundler moduleResolution maps `.js`→`.ts` for static top-level
+imports but can fail for dynamic imports in test bodies. Fix: drop `.js` extension. PRs #343/#345:
+CI green (0 real gate failures, Rule I pre-existing-red excluded). Step 5c wiring confirmed for both
+(SKIP_CONSENT_STATES and readShadowChatIntent/write_shadow_intent). ESC-028 correctly filed in
+branch (not on main) — will land at merge; acceptable pattern for an escalation that blocks a new
+workflow from going live-assert. **A delegation/validation rule I'd add:** Dynamic `import()` calls
+with `.js` extensions inside test function bodies should use bare specifiers (no `.js`) even when
+the project uses `moduleResolution: Bundler` — static top-level imports benefit from the `.js`→`.ts`
+mapping more reliably than dynamic ones under tsc.
+
+---
+
+**Date / ticket:** 2026-06-23 — FOLLOW-371 (PR #344) fix-iteration 2/3 revalidation **Delegation row
+used:** Step 5b/5c recheck (PM-owned). No new delegation. **What validation caught (or missed):** My
+prior bounce diagnosis was wrong — said "drop the .js extension" but the actual bug was wrong import
+_depth_ (one `../` too shallow; test lives in `pilot/cta-lift/`, not `api/`). Data-engineer
+correctly identified the real cause (c3445e7). The `.js` extension is fine per repo convention. CI
+green after fix: 0 real gate failures. Step 5c confirmed: CLEAN*HOLDOUT predicate defined at
+`cta-lift/route.ts:107` (non-test) and consumed in SQL at `:127,149` +
+`dashboard/analytics/lift/route.ts:148` (non-test). **A delegation/validation rule I'd add:** Before
+diagnosing TS2307 "Cannot find module," verify the \_directory depth* of the relative path — check
+how many directory levels separate the test file from the target, not just the extension. A wrong
+depth gives the same error as a wrong extension.
+
+---
+
+**Date / ticket:** 2026-06-24 — FOLLOW-369/371/368 post-merge bookkeeping (PRs #343/#344/#345)
+**Delegation row used:** N/A — PM-self queue reconciliation (step 6 post-merge hygiene). **What
+validation caught (or missed):** Duplicate FOLLOW-368 entry in QUEUE.md (stale at ~line 5475 with
+status READY + depends_on [FOLLOW-366]; canonical at ~line 5815 with full PM-validation notes). Both
+reconciled to DONE with merge commit dd74026. RETRO-107 confirmed intact. FOLLOW-384/385/386 stubs
+confirmed intact. Retros 108/109/110 deferred to human scheduling rather than auto-spawned — correct
+because the session CI-check cap (5/5) was reached; spawning three more retro passes would exceed
+the session budget. **A delegation/validation rule I'd add:** When a ticket has been duplicated in
+QUEUE.md (a known recurring issue), ALWAYS reconcile BOTH entries to the same terminal status at
+merge — leaving a stale "READY" duplicate alongside a "DONE" canonical is a correctness hazard for
+the next PM session that reads queue state.

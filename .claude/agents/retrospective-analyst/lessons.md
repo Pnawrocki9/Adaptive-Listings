@@ -1120,3 +1120,48 @@
   opt-out producer (FOLLOW-376) implicit. The retro's job here was to make the implicit explicit
   BEFORE the producer goes live app-side and a withdrawn user's platform-consent row turns out to be
   un-erasable.
+
+---
+
+## 2026-06-23 · RETRO-107 (FOLLOW-383 / PR #342 — the remediation PR for RETRO-103)
+
+- **A finding I almost missed and why (the GET-vs-POST framing slip):** RETRO-103 HW-1 named the
+  control-plane **GET** `/api/adapt` gate as the dead consumer, and FOLLOW-383's stub repeats
+  "GET-URL builder." I nearly recorded the closure against the GET gate. The catch: I grepped
+  `method:` in `fetchDirectives` and saw `method: 'POST'` (`adapt.ts:746`) — the SDK never issues a
+  GET to `/adapt`. So the GET gate RETRO-103 flagged was never on the real path AT ALL; the real
+  wire is POST. #342 correctly gated the POST handler (`route.ts:915`) AND added the producer, so
+  the closure IS real — but the prior retro's framing was off by one HTTP method. Lesson: when
+  verifying a closure, re-derive the actual transport (method/path) from the producer code, never
+  trust the prior retro's or the stub's verbal description of WHICH handler is the consumer. The
+  closure can be genuine even when the prior finding's framing was wrong — say so explicitly and
+  reconcile (I logged it in §7 + DG-1).
+- **The "resolved-by-documentation" closure I had to think twice about (HW-2):** FOLLOW-383's AC for
+  the 410-dead `consentGate.profilingOptOut` was "remove OR make canonical." The PR did NEITHER in
+  code — it added a JSDoc block calling the input "reserved, do-not-remove-without-FOLLOW-107." My
+  first instinct was "still dead → still a finding." On reflection: an EXPLICITLY-reserved interface
+  with a sign-off gate is a deferred-by-design contract, not an accidental cosmetic add — which is
+  exactly what RETRO-103 HW-2 asked for ("decide"). So I classified it RESOLVED-BY-DOCUMENTATION,
+  not OPEN. Discriminator to keep: a dead symbol that is DOCUMENTED-as-reserved-with-a-revival-gate
+  is not the same finding as a dead symbol added silently. Grep still confirms zero live consumers,
+  so I carried the dormant-default-false caveat to §5b rather than dropping it.
+- **An axis/chain I traced twice (the sibling set + the temporal recurrence):** the three
+  pre-existing leaks (quiz/favorites/micro-poll) were handed to me pre-identified (FOLLOW-385), so
+  the risk was RESTATING instead of VERIFYING. I re-grepped each guard site (`:1101`, `:1392`,
+  `:1228`) and the `/api/quiz/completion` route (grep exit 1 = no gate) to corroborate independently
+  before crediting them — and confirmed FOLLOW-385's AC already enumerates the full set incl. the
+  server gate, so NO new stub. The second trace was the rule-promotion axis: "guard added to one
+  path, siblings left ungated" LOOKS like a fresh pattern worth promoting, but it IS Rule S (already
+  codified RETRO-044/045, reinforced 6×). Promoting it would have been duplicate codification. The
+  brief even hinted "candidate rule IF ≥2 prior" — the honest answer was "it's already a rule,
+  threshold not applicable." Resisting the urge to mint a new rule for an old pattern is itself the
+  discipline.
+- **A meta-pattern in how gaps recur across agents:** the §H.9 opt-out surface has now produced the
+  SAME incomplete-sibling-set gap across TWO consecutive remediation PRs (FOLLOW-372 fixed one event
+  path's ordering but introduced LG-2; FOLLOW-383 fixed the producer + reversed the drop; BOTH waves
+  left quiz/favorites/micro-poll ungated). Rule S manifests TEMPORALLY here, not just within one PR.
+  The process fix is at the PLANNING layer: a remediation PR for an incomplete-sibling-set finding
+  should enumerate the FULL sibling set in its AC (FOLLOW-385 finally does). The retro can't make a
+  PR fix more than its scope, but it CAN make sure the NEXT ticket's AC carries the whole set —
+  which is what closed the chain here. Watch for this on any "fix one path" PR: ask "what are the
+  siblings, and does a filed follow-up cover ALL of them or just the next one downstream?"

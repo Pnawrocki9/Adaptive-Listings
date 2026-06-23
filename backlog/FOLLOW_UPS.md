@@ -10245,6 +10245,38 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
+## FOLLOW-386 — End-to-end opt-out integration test + reconcile consent-gate doc to the POST enforcement surface
+
+- **source_retro:** RETRO-107 (§4c TG-1, §4d DG-1, §6 held-pattern)
+- **source_ticket:** FOLLOW-383 (PR #342)
+- **recommended_sprint:** next (low priority — bundle with any `/api/adapt` touch)
+- **recommended_agent:** sdk-engineer (lead) + backend-engineer (doc)
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** FOLLOW-383 closed the SDK→server opt-out wire end-to-end, but the two hops are tested
+  in SEPARATE suites (`follow-383.test.ts` AC-1 proves the SDK builds `/adapt?profiling_opt_out=1`;
+  `route.follow383.test.ts` AC-2/3 prove the POST handler suppresses bandit+log on that URL). No
+  single test wires the SDK-built URL THROUGH the route handler in one flow. Separately, the
+  decision-api `consentGate.profilingOptOut` JSDoc
+  (`apps/decision-api/src/lib/consent-gate.ts:53–73`) and the decision-api `index.ts` header cite
+  "GET /api/adapt handler (FOLLOW-372, PR #337)" as the active enforcement point — but
+  `fetchDirectives` issues a **POST** (`packages/sdk/src/core/adapt.ts:746`), so the live gate real
+  SDK traffic hits is the control-plane **POST** handler (`route.ts:915`), not GET. Both gates exist
+  and behave identically, so this is a doc-accuracy nit, not a behavior gap.
+- **ac:**
+  - [ ] Add one integration test that takes the URL `fetchDirectives` actually builds for an
+        opted-out session and asserts the control-plane POST handler returns neutral directives +
+        does NOT call `logDecisionAsync`/`getBanditArms` — closing the producer→consumer hop in a
+        single flow. [TG-1]
+  - [ ] Update the `consentGate.profilingOptOut` JSDoc and the decision-api `index.ts` header to
+        cite the control-plane **POST** `/api/adapt` handler (`route.ts:915`) as the active
+        enforcement surface (the SDK POSTs), noting the GET gate (`route.ts:656`) is the
+        defense-in-depth twin. [DG-1]
+- **depends_on:** []
+- **promoted_to_queue:** false
+
+---
+
 ## FOLLOW-383 — Wire the SDK→server profiling opt-out producer + complete the server/training/chat-prior halves [P0 — server gate dead-on-arrival]
 
 - **note:** Renumbered from retro-assigned 376 to 383 — FOLLOW-376 was already used for the Python
@@ -10436,7 +10468,74 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] A test asserts the skip: opted-out session → no Redis prior write.
   - [ ] A test asserts the positive path: opted-in session → prior is applied as before.
 - **depends_on:** [FOLLOW-383] (must merge first so the opt-out param flows end-to-end)
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-385 — Enforce profiling opt-out across SDK sibling profiling paths (quiz/favorites/micro-poll + quiz-completion persistence) [§H.9-documented scope]
+
+- **source:** Pre-merge adversarial review of PR #342 (FOLLOW-383) + CEO scope decision 2026-06-23
+- **source_ticket:** FOLLOW-383
+- **recommended_sprint:** next
+- **recommended_agent:** sdk-engineer (lead, packages/sdk/src/index.ts) + backend-engineer
+  (defense-in-depth gate on /api/quiz/completion route)
+- **priority:** P1
+- **estimated_hours:** 4
+- **scope:** FOLLOW-383 closed the main `/api/adapt` opt-out vector. Pre-merge review found three
+  pre-existing §H.9 violations where opted-out users continue to have AL archetype profiling
+  performed client-side. CEO scope decision: fix the §H.9-documented set ONLY (suppress client-side
+  AL profiling + archetype persistence for quiz/favorites/micro-poll). Leave the raw behavioral
+  ingest stream flowing — it rides §H.8 mandatory registration consent and the AL training
+  suppression is handled server-side by FOLLOW-384 (redis_writer chat-prior skip). This scope
+  decision is intentional and documented; a future reviewer MUST NOT re-flag the ingest stream items
+  as gaps in this ticket.
+
+  **GENUINE LEAKS TO FIX (all pre-existing; none introduced by FOLLOW-383/#342):**
+  1. **QUIZ COMPLETION** (strongest violation — clear §H.9 breach): An opted-out user is shown the
+     quiz (`scheduleQuizTrigger` / `showQuizTrigger` in `index.ts` have NO `profilingOptedOut`
+     guard), completes it, `applyQuizLeaf` computes the archetype, and `postQuizCompletionPing`
+     (`packages/sdk/src/core/adapt.ts:191`) POSTs `{session_id, resolved_archetype, language}` to
+     `/api/quiz/completion`, which PERSISTS `resolved_archetype` to the MOAT training table
+     (`apps/control-plane/src/app/api/quiz/completion/route.ts` — currently NO opt-out gate). Fix:
+     gate `showQuizTrigger` with `if (profilingOptedOut) return;` to suppress quiz display for
+     opted-out users; this also prevents `postQuizCompletionPing` from firing. Optionally also gate
+     `/api/quiz/completion` route server-side as defense-in-depth (mirrors the `/api/adapt` gate).
+
+  2. **FAVORITES** (`estalara:listing:favorited` handler, `index.ts` ~:1392–1441): For opted-out
+     users, calls `applyBehavioralSignal` + `onIntentUpdate` — client-side archetype mutation. Gate
+     with `if (profilingOptedOut) return;` BEFORE `applyBehavioralSignal`. NOTE per CEO scope
+     decision: leave `eventQueue.push` to ingest (~:1403) — that is the §H.8 stream we are NOT
+     suppressing. The `refreshDirectives` call at ~:1429 is already correctly gated server-side by
+     FOLLOW-383.
+
+  3. **MICRO-POLL** (`onAnswer` callback, `index.ts` ~:1228–1265, config-gated by
+     `microPollsEnabled`): calls `applyBehavioralSignal` + `onIntentUpdate` — client-side profiling.
+     Gate with the same `if (profilingOptedOut) return;` guard BEFORE `applyBehavioralSignal`.
+
+  **EXPLICITLY OUT OF SCOPE (CEO decision — §H.8 ingest stream, deliberately NOT suppressed):**
+  - `chat.message.sent` → ingest (`index.ts` ~:1330)
+  - `intent.snapshot` on beforeunload → ingest (`index.ts` ~:1482 / `core/intent-snapshot.ts`)
+  - `live.signup` → ingest (`index.ts` ~:1370) These transmit to ingest under §H.8 mandatory
+    registration consent. AL-profiling derivation from them is suppressed server-side by FOLLOW-384
+    (redis_writer chat-intent prior skip). Per CEO 2026-06-23: these are deliberately left flowing
+    and are NOT §H.9 violations.
+
+- **ac:**
+  - [ ] `showQuizTrigger` (and `scheduleQuizTrigger`) gates on `profilingOptedOut` — an opted-out
+        user sees NO quiz trigger; `postQuizCompletionPing` is therefore never called for opted-out
+        sessions. A test asserts the gate.
+  - [ ] `/api/quiz/completion` route checks for `profiling_opt_out=1` query param (or a request body
+        flag) and returns 200 with `{skipped: true}` without persisting, as defense-in-depth
+        mirroring the `/api/adapt` gate. A test asserts the skip.
+  - [ ] `estalara:listing:favorited` handler does NOT call `applyBehavioralSignal` /
+        `onIntentUpdate` when `profilingOptedOut=true`. The `eventQueue.push` to ingest is
+        deliberately preserved. A test asserts the behavioral-mutation gate fires before the push.
+  - [ ] `onAnswer` micro-poll callback does NOT call `applyBehavioralSignal` / `onIntentUpdate` when
+        `profilingOptedOut=true`. A test asserts the gate.
+  - [ ] A comment in each gated code block cites §H.9, FOLLOW-385, and states the ingest-stream
+        decision (§H.8 / CEO 2026-06-23 / FOLLOW-384) for the record.
+- **depends_on:** [FOLLOW-383]
+- **promoted_to_queue:** true
 
 ---
 

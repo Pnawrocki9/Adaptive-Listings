@@ -1,3 +1,7 @@
+# dotenv files — no parser available for .env format
+.env.example
+*.env
+
 docs/MASTER_DESIGN.md
 # Append-only agent-generated retrospective log. Each entry is written by the
 # retrospective-analyst subagent which cannot run prettier interactively. Long

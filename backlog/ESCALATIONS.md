@@ -1430,3 +1430,54 @@ on `compliance-engineer/FOLLOW-373-consent-umbrella` (commit `b8f9e2b`): `MAX_BY
 `packages/sdk/scripts/check-bundle-size.js`. The disclosure strings are legally mandated (DPIA
 §13.4), not feature bloat; 42KB stays well under the 80KB ceiling. Headroom is now slim (~0.8KB over
 current 41.17KB) — durable trim via lazy-loaded i18n (option B) deferred to a post-pilot FOLLOW.
+
+---
+
+## OPEN — ESC-028: GitHub Actions secrets required for FOLLOW-368 Redis shadow round-trip smoke [FOLLOW-368]
+
+**Filed by:** devops-engineer **Date:** 2026-06-23 **Affects:** FOLLOW-368 (P1), FOLLOW-346 AC-1
+(chat-intent bridge end-to-end), FOLLOW-384 (redis_writer opt-out skip), K.3.6 D-2 chat panel
+**Type:** infra / repo-config
+
+**Description (Rule C):** The `redis-shadow-smoke.yml` CI workflow added by FOLLOW-368 requires four
+GitHub Actions secrets that do not yet exist:
+
+| Secret name                | Used by               | What it must point at                       |
+| -------------------------- | --------------------- | ------------------------------------------- |
+| `UPSTASH_REDIS_REST_URL`   | Python writer (Modal) | A test Upstash Redis instance REST endpoint |
+| `UPSTASH_REDIS_REST_TOKEN` | Python writer (Modal) | Token for the same test instance            |
+| `UPSTASH_REDIS_URL`        | TS reader (Vercel)    | SAME test instance REST endpoint            |
+| `UPSTASH_REDIS_TOKEN`      | TS reader (Vercel)    | Token for the same test instance            |
+
+**Critically:** `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_URL` MUST be the SAME Upstash database
+URL (and their tokens the same token). If they differ, the round-trip smoke test will correctly fail
+— which is the entire point of FOLLOW-368 (it catches the HW-3 misconfiguration from RETRO-098).
+
+**Recommendation:** Provision a dedicated test Upstash Redis instance (free tier is sufficient) and
+set all four secrets to credentials for that one instance. This can be done in the Upstash dashboard
+(create a new database) and then GitHub repo Settings → Secrets → Actions → New repository secret.
+The test cleans up its own keys (TTL = 86400 s, so the smoke key self-deletes within 24 h).
+
+**What happens until ESC-028 is resolved:** Every run of `redis-shadow-smoke.yml` enters the
+soft-skip path (`secrets_present=false` → `REQUIRE_REDIS_SMOKE` unset → the spec emits a
+`::notice::` and skips all assertions). The workflow does NOT fail. The CI badge is green with
+"notice" annotations. This is the intended behavior — the smoke is a canary, not a blocking gate,
+until the secrets are provisioned.
+
+**After provisioning:** Once all four secrets are set in GitHub, the workflow will automatically
+switch to hard-fail mode (`REQUIRE_REDIS_SMOKE=1`). No code changes are needed — the workflow reads
+the secrets and sets the flag accordingly.
+
+**Required action:** Piotr or Rafał to:
+
+1. Create a test Upstash Redis instance (free tier sufficient) in the Upstash dashboard.
+2. Add four GitHub Actions secrets — all pointing at the same instance URL and token:
+   - `UPSTASH_REDIS_REST_URL` = the REST endpoint URL
+   - `UPSTASH_REDIS_REST_TOKEN` = the REST token
+   - `UPSTASH_REDIS_URL` = the same REST endpoint URL
+   - `UPSTASH_REDIS_TOKEN` = the same REST token
+3. Add the same four values to Doppler (dev + staging + prod configs) so local development and Modal
+   deployments also use the parity-verified instance.
+4. Mark ESC-028 RESOLVED.
+
+**Owner:** CEO / CTO — requires Upstash dashboard access + GitHub repo admin access

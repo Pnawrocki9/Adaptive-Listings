@@ -1,0 +1,109 @@
+name: Redis shadow round-trip smoke (FOLLOW-368)
+
+# Proves the Python write_shadow_intent writer and the TypeScript
+# readShadowChatIntent reader share ONE Upstash Redis instance (env-var
+# parity). Runs on every push/PR for all agent-prefixed branches and on a
+# nightly schedule.
+#
+# Skip-loud contract (mirrors intent-weights-live-smoke / RETRO-007):
+#   secrets absent → soft-skip with ::notice:: in the spec output (safe for
+#     offline dev and forked PRs — no false-red from missing secrets).
+#   REQUIRE_REDIS_SMOKE=1 + any secret absent → spec throws (hard-fail).
+#   All secrets present + round-trip broken → assertion fails (hard-fail).
+#
+# ESC-028: the four required secrets are not yet provisioned as GitHub Actions
+# secrets. Until they are, every run enters the soft-skip path. Provision them
+# per backlog/ESCALATIONS.md ESC-028 to enable live assertions.
+#
+# Required secrets (all four must point at the SAME Upstash instance):
+#   UPSTASH_REDIS_REST_URL   — Upstash REST endpoint (Python writer side)
+#   UPSTASH_REDIS_REST_TOKEN — Upstash REST token    (Python writer side)
+#   UPSTASH_REDIS_URL        — Upstash REST endpoint (TS reader side)
+#   UPSTASH_REDIS_TOKEN      — Upstash REST token    (TS reader side)
+
+on:
+  push:
+    branches:
+      - main
+      - "devops-engineer/**"
+      - "backend-engineer/**"
+      - "sdk-engineer/**"
+      - "qa-engineer/**"
+      - "data-engineer/**"
+      - "ml-engineer/**"
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # Nightly at 04:30 UTC — production canary run
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  redis-shadow-smoke:
+    name: Redis shadow round-trip (write_shadow_intent → readShadowChatIntent)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Python setup (needed for the write side) ─────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install intent-engine Python deps
+        working-directory: apps/intent-engine
+        run: pip install -e ".[dev]"
+
+      # ── Node/pnpm setup (needed for the TS read side) ────────────────────
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @estalara/shared (transitive SDK dependency)
+        run: pnpm --filter @estalara/shared build
+
+      # ── Secret availability check ─────────────────────────────────────────
+      # Announce soft-skip when secrets are absent (forked PRs, not-yet-provisioned).
+      # When ALL four secrets ARE present, set REQUIRE_REDIS_SMOKE=1 so the spec
+      # hard-fails on a broken wire instead of soft-skipping.
+      - name: Check secret availability
+        id: secret-check
+        env:
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          UPSTASH_REDIS_URL: ${{ secrets.UPSTASH_REDIS_URL }}
+          UPSTASH_REDIS_TOKEN: ${{ secrets.UPSTASH_REDIS_TOKEN }}
+        run: |
+          if [ -z "${UPSTASH_REDIS_REST_URL}" ] || [ -z "${UPSTASH_REDIS_REST_TOKEN}" ] || \
+             [ -z "${UPSTASH_REDIS_URL}" ] || [ -z "${UPSTASH_REDIS_TOKEN}" ]; then
+            echo "::notice::One or more UPSTASH_REDIS_* secrets are not set — FOLLOW-368 Redis round-trip smoke will soft-skip. Provision all four secrets per backlog/ESCALATIONS.md ESC-028 to enable live assertions."
+            echo "secrets_present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "secrets_present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Run the round-trip smoke ─────────────────────────────────────────
+      - name: Run Redis shadow round-trip smoke
+        working-directory: tests/integration
+        env:
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          UPSTASH_REDIS_URL: ${{ secrets.UPSTASH_REDIS_URL }}
+          UPSTASH_REDIS_TOKEN: ${{ secrets.UPSTASH_REDIS_TOKEN }}
+          # Set REQUIRE_REDIS_SMOKE=1 only when all four secrets are present so
+          # a broken endpoint fails loud rather than silently skipping.
+          REQUIRE_REDIS_SMOKE: >-
+            ${{ steps.secret-check.outputs.secrets_present == 'true' && '1' || '' }}
+        run: pnpm exec vitest run --config vitest.config.ts redis-shadow-round-trip.smoke

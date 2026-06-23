@@ -5475,7 +5475,7 @@ others staged by priority; max 3 IN_PROGRESS at once.**
 - id: FOLLOW-368
   title: Guarantee Python writer and TS reader share one Upstash Redis instance (env-var divergence)
   agent: devops-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-366]
@@ -5483,7 +5483,11 @@ others staged by priority; max 3 IN_PROGRESS at once.**
   spec: backlog/FOLLOW_UPS.md (FOLLOW-368 stub)
   branch: devops-engineer/FOLLOW-368-upstash-redis-env-parity
   notes: |
-    Depends on FOLLOW-366 landing first (bridge must be functional before smoke is meaningful).
+    PR open. AC-1 (runbook): docs/runbooks/upstash-redis-env-parity.md.
+    AC-2 (smoke test): tests/integration/redis-shadow-round-trip.smoke.test.ts +
+      .github/workflows/redis-shadow-smoke.yml (soft-skip until ESC-028 secrets provisioned).
+    AC-3 (skip-loud): REQUIRE_REDIS_SMOKE=1 hard-fails when creds absent.
+    ESC-028 OPEN: four GitHub Actions secrets not yet provisioned; smoke soft-skips until done.
 
 - id: FOLLOW-359
   title: Return variant in GET /api/adapt response body
@@ -5775,7 +5779,7 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
 - id: FOLLOW-368
   title: Guarantee Python writer and TS reader share one Upstash Redis instance (env-var parity)
   agent: devops-engineer
-  status: READY
+  status: IN_PROGRESS
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -5783,7 +5787,8 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   spec: backlog/FOLLOW_UPS.md (FOLLOW-368 stub)
   branch: devops-engineer/FOLLOW-368-upstash-redis-env-parity
   notes: |
-    FOLLOW-366 DONE (merged #332) — dependency cleared.
+    FOLLOW-366 DONE (merged #332) — dependency cleared. PR open.
+    ESC-028 OPEN: four GitHub Actions secrets needed for live smoke; soft-skips until provisioned.
 
 - id: FOLLOW-356
   title: /api/adapt response directive_scope consumer + behavioral tests for page-type derivation

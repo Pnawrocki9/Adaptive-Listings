@@ -19319,3 +19319,108 @@ CHECK B (half-wire): No new event/env-var/column/topic. The SoT key has a produc
 - **RETRO-098/099 (Rule Z, FOLLOW-366/368):** Python CI being green again is what actually enforces the cross-runtime test discipline those retros depend on.
 - **Rule C (repo-config dependencies):** adjacent — both are config-not-matching-reality, but Rule C is about missing repo SETTINGS, this is filesystem/matrix drift.
 - **memory `project_ci_gate_landscape`:** Python-test flips from pre-existing-red to a real gate; memory update folded into FOLLOW-382.
+
+---
+
+## RETRO-107 — FOLLOW-383 (wire SDK→server profiling opt-out producer + drop opted-out behavioral events; closes RETRO-103 §3 HW-1 / §4a LG-1 / §4a LG-2 / §4c TG-1) — 2026-06-23
+
+### 1. Summary of change
+
+- **PR:** #342 (merged 2026-06-23 21:01:59 UTC, squash commit `7ed8a81`; typecheck fix `c906ad7` landed pre-merge; CI 40/40 green). The remediation PR for RETRO-103's FOLLOW-372 server-half gaps. Closes the FOLLOW-383 P0 (the `/api/adapt` profiling-opt-out gate was dead-on-arrival because the SDK never sent the flag).
+- **Files changed:** 14 (+1654 / −198; code surface is small — most additions are tests, QUEUE/FOLLOW_UPS/STATUS, and agent lessons). Code: `packages/sdk/src/core/adapt.ts` (+9), `packages/sdk/src/index.ts` (+13), `apps/control-plane/src/app/api/adapt/route.ts` (+24), `apps/decision-api/src/lib/consent-gate.ts` (+20 doc), `apps/decision-api/src/index.ts` (+21/−11 doc). Tests: `packages/sdk/src/__tests__/follow-383.test.ts` (+221), `apps/control-plane/src/app/api/adapt/route.follow383.test.ts` (+199).
+- **Modules touched:** SDK core (`adapt.ts`) · SDK index · control-plane (`/api/adapt` POST) · decision-api (consent-gate + index — **doc-only, 410-dead path**).
+- **Key contracts changed:**
+  - `fetchDirectives(...)` gained optional `profilingOptedOut?: boolean` (7th param) — **breaking: no** (optional, defaults undefined/falsy). When true, the request path becomes `/adapt?profiling_opt_out=1` (the request is a **POST**, `adapt.ts:746`; the flag rides the URL query string, read via `req.nextUrl.searchParams` regardless of method).
+  - `POST /api/adapt` gained a `profiling_opt_out=1` early-return gate (`route.ts:915`) → neutral directives, empty `directives`, `source:'default'`, and **no `getBanditArms`/`thompsonSample`/`logDecisionAsync`** (variant logging suppressed). Mirrors the pre-existing GET gate (`route.ts:656`).
+  - **Event-drop ordering reversed** (`index.ts:990–1001`): the `if (profilingOptedOut) return;` now sits **BEFORE** `eventQueue.push(event)` (was after, the FOLLOW-372 LG-2 bug) — opted-out behavioral events are now dropped entirely, never queued to ingest.
+  - `consentGate.profilingOptOut` (decision-api) and the decision-api `index.ts` header documented as **410-reserved / defense-in-depth** (AC-2) — no behavior change; the function remains 410-dead.
+
+### 2. Verification done in PR
+
+- Test files added: `follow-383.test.ts` (SDK, AC-1 URL-build + AC-3 event-drop) · `route.follow383.test.ts` (control-plane, POST gate). Assertions: SDK — AC-1 (4 cases: appends `profiling_opt_out=1` when true; NOT when false; NOT when omitted; still targets `/adapt`), AC-3 (2 cases: events not pushed when opted-out; regression guard). Route — AC-1 (200 + empty directives + `source=default`), AC-2 (`logDecisionAsync`/ClickHouse INSERT NOT called), AC-3 (`getBanditArms`/`thompsonSample` NOT called), AC-4 (response carries `adapt_decision_id`+`session_id`), + **two positive controls** (`profiling_opt_out` absent → normal path; `=0` → normal path). The positive controls are notable — they defend the gate against a false-positive (gating ALL traffic) and confirm the param value matters.
+- CI: 40/40 green (PM-verified per merge facts); typecheck fix `c906ad7` landed before merge. Not independently re-watched.
+- **Coverage-delta note (closing RETRO-103 TG-1):** AC-1 now drives the SDK actually BUILDING the outbound URL for an opted-out session — the exact producer-side test RETRO-103 §4c TG-1 said was missing. The Rule L self-injecting-consumer gap (route tests still hand-inject `?profiling_opt_out=1`) is now backstopped by a producer test that proves the SDK emits it. The two halves are tested in separate suites, not yet a single end-to-end integration test (see §7).
+
+### 3. Wiring Audit
+
+CHECK A (dead code):
+- `fetchDirectives`' new `profilingOptedOut` param → consumed at the single call site `index.ts:671` (threaded from the init-scoped `profilingOptedOut` boolean). WIRED ✅.
+- `route.ts` POST gate → reached by real SDK traffic (the SDK posts to `/api/adapt`, `adapt.ts:746`). WIRED ✅.
+- `consentGate.profilingOptOut` + decision-api `index.ts` header → **doc-only edits to a 410-dead path.** A repo-wide grep for a live (non-test, non-410) `consentGate(` call returns ZERO (`grep -rn "consentGate(" apps packages` → only the definition + JSDoc examples + tests). This is the SAME 410-dead-input the RETRO-103 §3 HW-2 flagged; PR #342 does NOT wire it — it DOCUMENTS it as intentionally reserved (AC-2). **Classification: this resolves HW-2 by the "remove OR document" branch of FOLLOW-383's AC — the author chose DOCUMENT (do-not-remove-without-FOLLOW-107-signoff). No new finding; the dead input is now an explicitly-reserved interface, not an accidental cosmetic add.** ✅ (reserved-by-design, FOLLOW-107-gated).
+
+CHECK B (half-wire):
+- The `profiling_opt_out=1` query param now has BOTH a **producer** (SDK `fetchDirectives`, `adapt.ts:745`) AND a **consumer** (control-plane POST gate `route.ts:915`, plus the pre-existing GET gate `:656`). The RETRO-103 §3 HW-1 HALF_WIRE_C (consumer-only, P0) is **CLOSED** — see §7. ✅
+- The reversed event-drop (`index.ts:998` before push) is not a new event/env-var/column/topic — it REMOVES a producer (opted-out events → ingest), which is the intended §H.9 behavior. No half-wire introduced. ✅
+
+`Wiring Audit — clean ✅` for the shipped wiring. The remaining opt-out leaks (quiz/favorites/micro-poll) are PRE-EXISTING and out of this PR's scope — see §4a (filed as FOLLOW-385, not new).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **PRE-EXISTING (NOT introduced by #342; verified independently against HEAD `7ed8a81`; ALL covered by FOLLOW-385 — NO new stub):** three §H.9 profiling-opt-out leaks predate this PR at base `6d34fd1` and are out of FOLLOW-383's scope. Corroborated by direct read, not restated:
+  1. **Quiz completion (strongest leak).** `showQuizTrigger` (`index.ts:1101`) and `scheduleQuizTrigger` (`:1190`) have NO `profilingOptedOut` guard — confirmed by reading `:1101–1190` (the only guard is `config.quiz?.enabled === false` at `:1102` + `quizTriggered`). An opted-out user completes the quiz → `applyQuizLeaf` (`:1122`) + `persistResolvedArchetype` (`:1127`) + `postQuizCompletionPing` (`:1138`, → `adapt.ts:191`) POSTs `resolved_archetype` to `/api/quiz/completion`, which has **NO opt-out gate** (verified: `grep -n "profiling_opt_out\|optedOut" apps/control-plane/src/app/api/quiz/completion/route.ts` → exit 1, zero hits). The archetype persists to the MOAT training table. P1.
+  2. **Favorites.** `estalara:listing:favorited` handler (`index.ts:1392`) calls `applyBehavioralSignal` (`:1420`) + `onIntentUpdate` (`:1422`) with NO opt-out guard — confirmed by reading `:1392–1429` (the handler runs straight through; only `refreshDirectives` at `:1429` is server-gated by #342). Client-side archetype mutation for opted-out users. P1.
+  3. **Micro-poll.** `onAnswer` callback (`index.ts:1228`) does the same `applyBehavioralSignal` (`:1235`) + `onIntentUpdate` (`:1243`); config-gated by `microPollsEnabled` (`:1210`) but NOT by `profilingOptedOut`. P1.
+  → All three (incl. the `/api/quiz/completion` server gate) are enumerated with ACs in **FOLLOW-385** (P1, sdk-engineer + backend-engineer, 4h, `promoted_to_queue: true`). The CEO 2026-06-23 scope decision (suppress §H.9 client-side AL profiling; leave the §H.8 ingest stream flowing) is recorded in that stub. **Do NOT re-file.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. The shipped code is correct: the POST gate mirrors the GET gate with full bandit/log suppression (`route.ts:915`); the event-drop ordering reversal correctly fixes RETRO-103 LG-2 (drop-before-push). The positive-control tests rule out the over-gating false-positive.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — No single end-to-end test asserts the full chain producer→consumer→suppression in one flow.** AC-1 (SDK builds `?profiling_opt_out=1`) and the route AC-2 (no ClickHouse log on that URL) live in separate suites; each proves its hop, and the producer test now exists (closing RETRO-103 TG-1's worst gap), but no test wires the SDK's built URL THROUGH the route handler in one assertion. Low severity — the two-suite coverage is adequate and the chain is short — but a single integration test would make the closure regression-proof. → **FOLLOW-386** (folded with DG-1).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — The decision-api `consentGate.profilingOptOut` is now documented as "410-reserved / active enforcement is control-plane GET" (AC-2), but the active enforcement is actually the control-plane *POST* gate (`route.ts:915`), since `fetchDirectives` POSTs (`adapt.ts:746`).** The new consent-gate JSDoc (`consent-gate.ts:53–73`) and decision-api `index.ts` header both cite only "GET /api/adapt handler (FOLLOW-372, PR #337)" as the active point. After #342, the live gate the real SDK traffic hits is the POST handler (the GET gate `:656` is correct but the SDK does not issue GETs to `/adapt`). The doc is not wrong (both gates exist and behave identically) but it under-describes the enforcement surface and could mislead a future reader into thinking only GET is gated. → **FOLLOW-386** (1h doc reconcile). This is the mirror of the RETRO-103 framing slip noted in §7.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-384 (READY, ml-engineer, P1):** UNBLOCKED by #342 — `depends_on: [FOLLOW-383]` is now satisfied. The SDK sends `profiling_opt_out=1`; FOLLOW-384 must make `redis_writer.py` read that flag (server-side) and skip the AL chat-intent shadow prior for opted-out sessions. This closes RETRO-103 §3 HW-3 (still OPEN). Note the boundary: FOLLOW-384 reads the flag on the **ingest/redis side**, not from `/api/adapt` — the chat stream (`chat.message.sent`, `index.ts:1331`) is deliberately LEFT FLOWING to ingest (CEO 2026-06-23, §H.8), and FOLLOW-384 is the server-side derivation suppressor. The two halves (SDK drops behavioral events #342 / redis skips chat-prior FOLLOW-384) together form the training-suppression contract.
+- **FOLLOW-385 (READY, sdk-engineer+backend-engineer, P1):** the sibling-leak closure (§4a). Same-file (`index.ts`) edits as #342; the new `profilingOptedOut` guard pattern #342 used (`if (profilingOptedOut) return;` before the side-effect) is the exact pattern FOLLOW-385 must replicate at `:1101`/`:1392`/`:1228`.
+- **FOLLOW-369 (IN_PROGRESS, backend-engineer, P1) — GET-path consent-skip parity:** ADJACENT and in the SAME `route.ts` hot path. FOLLOW-369 adds GET-path consent-skip (FOLLOW-360 AC-2); #342 added the POST profiling-opt-out gate. Both are early-return gates at the top of their respective handlers. No assumption invalidated — but FOLLOW-369's author must place the consent-skip gate consistently relative to the new POST opt-out gate (`:915`) and the GET opt-out gate (`:656`), so the early-return ORDER (consent-skip vs opt-out vs holdout vs page-type) stays symmetric across GET/POST. Flag for the FOLLOW-369 PR: enumerate the full early-return ladder on both handlers (Rule S — this is exactly the GET/POST symmetric-pair shape RETRO-095/100/101 kept hitting).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-107 (Phase 2 decision-api revival, Sprint 14):** #342 makes the dormant `consentGate.profilingOptOut` input an EXPLICITLY reserved interface (do-not-remove-without-FOLLOW-107-signoff). When/if decision-api is un-410'd, the reviver inherits a documented contract — but must remember nothing currently PASSES `profilingOptOut` to `consentGate` (it would default false), so revival requires wiring the param from the request, not just flipping the 410. The dormant half-wire RETRO-103 §5b noted is now annotated, not closed.
+
+#### 5c. Contracts changed others rely on
+
+- `fetchDirectives`' new 7th optional param is SDK-internal (single call site `index.ts:671`); not a public `@estalara/sdk` export surface change. No external consumer.
+- The `profiling_opt_out=1` request contract is now FULLY wired (producer+consumer). Any future `/api/adapt` POST consumer (e.g., a new edge cache, a replay tool) must preserve the gate's position BEFORE bandit/log logic, or it reintroduces the variant-log leak.
+
+#### 5d. Architectural assumptions affected
+
+- The "AL-DOM suspend ≠ app-side processing suspend" seam (RETRO-103 §5d) is now enforced on TWO server surfaces (GET+POST opt-out gates) AND the client event-drop — strictly stronger than FOLLOW-372's client-skip-only enforcement. The architectural claim ("app.estalara.com buying-intent/lead-ranking/chat-summaries unaffected") remains true-by-construction; the §H.8-vs-§H.9 boundary (raw ingest stream flows; AL profiling derivation is suppressed) is now the load-bearing invariant that FOLLOW-384 (server derivation skip) + FOLLOW-385 (client sibling guards) must jointly uphold.
+
+### 6. New lesson candidates
+
+- **Rule S — REINFORCING INSTANCE (NOT a new promotion).** The "opt-out guard added to ONE path (`/api/adapt`) but its sibling profiling paths (quiz/favorites/micro-poll) left ungated" pattern is a textbook recurrence of the already-codified **Rule S** (symmetric-sibling completeness, origin RETRO-044/045). It is the SAME shape as RETRO-097 (`classifyFromProbabilities` threaded into 5 of 13 sites), RETRO-095/100/101 (GET/POST early-return-set asymmetry), and RETRO-102/104 (consent_type producer without the DSR consumer set). **Rule-promotion accounting: this is the ~6th reinforcing instance of an EXISTING rule — threshold-not-applicable (Rule S is already promoted). NO new rule.** Logged as confirming evidence. The discriminator worth recording: the "guard added to one path, siblings left ungated" framing in the task brief IS Rule S — the apparent "new" pattern is the established one viewed from the opt-out surface. Promoting it would be duplicate codification (noise).
+  - **Meta-note on the FOLLOW-372→383 chain (the "fix-the-symptom-not-the-class" observation):** FOLLOW-372 fixed ONE event path's ordering intent (but introduced LG-2, push-then-return); FOLLOW-383 fixed the `/api/adapt` producer + reversed the observer drop; BOTH waves missed the quiz/favorites/micro-poll siblings. This is Rule S manifesting as a *temporal* recurrence (the same incomplete-sibling-set gap survived two consecutive remediation PRs on the same surface). It does NOT warrant a new rule, but it DOES warrant a process note: **a remediation PR for an incomplete-sibling-set finding should enumerate the FULL sibling set in its AC, or the next retro will find the same class one hop over.** FOLLOW-385's AC now does enumerate the full §H.9 set — so the chain is closed at the PLANNING layer, even though #342's code scope (correctly) did not include them. Recorded as a Rule S application note, not a promotion.
+- **Pattern (held, count 1): "A remediation PR's status-doc names the wrong-but-equivalent enforcement surface (GET vs POST) for a gate that exists on both."** Seen RETRO-107 DG-1 (consent-gate JSDoc cites GET; real SDK traffic is POST). Cosmetic (both gates behave identically); count 1 — below threshold; → FOLLOW-386, held.
+
+### 7. Prior-follow-up closure check (FOLLOW-383 → RETRO-103 findings)
+
+FOLLOW-383 explicitly claims to close RETRO-103 §3 HW-1 / §4a LG-1+LG-2 / §4c TG-1. Traced END-TO-END (producer→consumer→suppression), not one hop:
+
+- **RETRO-103 HW-1 / LG-1 / CB-1 (P0, consumer-only server gate): CLOSED ✅ — verified end-to-end.** Producer NOW EXISTS: `fetchDirectives` appends `?profiling_opt_out=1` (`adapt.ts:745`, threaded from `index.ts:671`). Consumer EXISTS and is on the real traffic path: the **POST** gate (`route.ts:915`) — and this is the correction of a RETRO-103 framing slip. RETRO-103 HW-1 named the **GET** gate (`route.ts:656`) as the unreached consumer, but the SDK's `fetchDirectives` issues a **POST** (`adapt.ts:746`), so the GET gate was never on the real path at all. #342 gated the POST handler (the one real traffic hits) AND added the producer — so the wire is now genuinely producer→consumer→neutral-directives+no-variant-log, end to end, on the POST path. Tested both hops (AC-1 producer, route AC-2/AC-3 consumer). **This is a true end-to-end closure, not a one-hop move.**
+- **RETRO-103 LG-2 (P1, opted-out events emitted untagged): CLOSED ✅.** The drop now sits BEFORE `eventQueue.push` (`index.ts:998` before `:1000`) — opted-out behavioral events are never queued to ingest, so the "untagged events contaminate training" gap is closed at the source (drop, not tag). Tested (AC-3 + regression guard). Note: this is the §H.9 *behavioral-event* drop; the §H.8 chat/snapshot/live.signup ingest stream is a SEPARATE, deliberately-flowing path (CEO 2026-06-23) whose AL-derivation suppression is FOLLOW-384, not this.
+- **RETRO-103 TG-1 (P1, no SDK→URL producer test): CLOSED ✅.** `follow-383.test.ts` AC-1 drives the SDK building the opted-out URL (4 cases incl. negative + omitted). The Rule L self-injecting-consumer weakness (route tests hand-inject the param) is now backstopped by this producer test.
+- **RETRO-103 HW-2 (P2, consentGate dead input): RESOLVED-BY-DOCUMENTATION ✅ (not removed).** FOLLOW-383 AC-2 chose the "document as reserved" branch over "remove" — the input + the decision-api header now state it is 410-reserved defense-in-depth, do-not-remove-without-FOLLOW-107. Grep confirms still zero live consumers. Acceptable: an explicitly-reserved interface is not a gap (it is a deferred-by-design contract). The dormant-default-false caveat is carried to §5b.
+- **RETRO-103 HW-3 (P1, redis_writer chat-prior skip): STILL OPEN — correctly deferred, NOT closed by #342.** This was split to FOLLOW-384 (now unblocked, READY). #342 does NOT touch redis_writer; it does not CLAIM to close HW-3. Tracked, not a regression.
+- **RETRO-103 LG-3 (P2, opt-OUT does not revert current-listing DOM until reload): STILL OPEN — not in #342 scope.** Showcase one-directionality persists; not claimed closed. Not re-filed (it was a "note for FOLLOW-376/383", low priority, no AC consumed it; surfacing here for the record — PM may fold into a future showcase ticket if the with/without comparison becomes a hard requirement).
+
+**Net closure verdict:** FOLLOW-383 genuinely closes the P0 (HW-1) and the P1 event-leak (LG-2) end-to-end, and the TG-1 test gap — these are REAL closures, not gap-moved-one-hop. The remaining RETRO-103 items are correctly split (HW-3→FOLLOW-384) or out-of-scope-deferred (LG-3, HW-2-as-reserved). **PM: FOLLOW-383's OWN ACs (AC-1/2/3) are MET; AC-4 was correctly split to FOLLOW-384 pre-merge.** The §H.9 opt-out is now server-enforced on the adapt path + client-enforced on behavioral events; the OUTSTANDING §H.9 surface is the sibling-paths (FOLLOW-385) + chat-derivation (FOLLOW-384). Do not mark the broader §H.9 opt-out epic fully DONE until FOLLOW-384 + FOLLOW-385 land.
+
+### 8. Cross-references
+
+- **RETRO-103 (FOLLOW-372):** the direct predecessor — #342 is the remediation PR for its §3 HW-1/HW-2/HW-3 + §4a LG-1/LG-2 + §4c TG-1. Closure traced in §7.
+- **RETRO-105 (FOLLOW-375):** same-file (`index.ts` init) hot path; #342's event-drop reorder and #375's SoT restore coexist (opt-out short-circuits before any of it). No conflict.
+- **Rule L (RETRO-009/010/011):** HW-1's consumed-but-never-produced gap is now CLOSED (producer added + tested); the prior Rule L confirming instance is retired by this fix.
+- **Rule S (RETRO-044/045 origin; RETRO-008/095/097/100/101/102/104 reinforcements):** §6 — the quiz/favorites/micro-poll sibling-leak set (FOLLOW-385) is the ~6th reinforcing instance; NO new promotion. The temporal recurrence across FOLLOW-372→383 is a Rule S application note.
+- **FOLLOW-384 (redis_writer chat-prior skip) / FOLLOW-385 (sibling opt-out guards):** the two open §H.9 halves #342 unblocks; both already filed + promoted to queue — no new stub for either.
+- **CEO 2026-06-23 / §H.8 vs §H.9 / memory `project_consent_umbrella_optout_decision`:** the deliberate-design boundary (raw ingest stream flows under §H.8; AL profiling derivation suppressed under §H.9) recorded in §4a/§5a/§5d as an intentional choice, not a gap.

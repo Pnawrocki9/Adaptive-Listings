@@ -1,119 +1,119 @@
 # PM Orchestrator Status
 
-**Last updated:** 2026-06-23T18:30Z
+**Last updated:** 2026-06-24T00:00Z
 
 ## OPERATIONAL RECORD — Prod Supabase 14-migration drift catch-up (2026-06-14)
 
-**STATUS: RESOLVED (apply). COMPLIANCE GAP SIGNED OFF 2026-06-14 (Piotr/CEO).** All 14 migrations
-applied cleanly. FOLLOW-308 (auto-apply mechanism) DONE (PR #297/#306). ESC-022+ESC-023 RESOLVED.
+**STATUS: RESOLVED.** All 14 migrations applied. FOLLOW-308 DONE. ESC-022+ESC-023 RESOLVED.
 
 ---
 
 ## Current sprint
 
-- **Sprint 21 COMPLETE** — FOLLOW-372/373/374/375/376 all merged (PRs #337–#341).
-  RETRO-102/103/104/105/106 written and committed in FOLLOW-383 housekeeping commit (commit 4f5f27b
-  chore batch on backend-engineer/FOLLOW-383-consent-gate-doc branch, will land on main with PR
-  #342).
-- **Sprint 20 COMPLETE** — FOLLOW-354/356/357/358/359/360/361/362/363/364/366/367/368 DONE.
-- **Sprint 19 COMPLETE** — FOLLOW-340/341/342/343/344/345/346/346-dpia/347 DONE.
-- **Sprint 16 COMPLETE** — FOLLOW-191 ESC-020 non-blocking per CEO 2026-06-10.
+- **Sprint 22 IN_PROGRESS** — Wave 1 COMPLETE (4 tickets DONE). Wave 2 pending (FOLLOW-384/385).
+- **Sprint 21 COMPLETE** — FOLLOW-372/373/374/375/376 all DONE (PRs #337–#341).
+- **Sprint 20 COMPLETE** — FOLLOW-354–368 wave DONE.
+- **Sprint 19 COMPLETE** — FOLLOW-340–347 wave DONE.
 
 ---
 
-## IN_PROGRESS tickets (1/3 max)
+## Sprint 22 Wave 1 — ALL DONE (merged 2026-06-23/24)
 
-- **FOLLOW-383** — backend-engineer — P0 opt-out server wiring — PR #342 OPEN — CI check counter:
-  2/5, fix iterations: 1/3. AC-1/2/3 code committed and pushed (commit 4f5f27b). TYPECHECK FAILING:
-  5 TS errors in `packages/sdk/src/__tests__/follow-383.test.ts`:
-  - 4x TS2352 (lines 89, 111, 126, 141): `mockFetch.mock.lastCall as [string, RequestInit]` must be
-    `mockFetch.mock.lastCall as unknown as [string, RequestInit]` (double-cast through unknown).
-  - 1x TS2532 (line 185): `queue[0].type` — queue[0] possibly undefined; use `queue[0]!.type` or
-    check after the `toHaveLength(1)` assertion on the previous line. Delegating fix to
-    backend-engineer (fix iteration 1/3).
+| Ticket     | PR   | Merge commit | Completed  | Notes                                                               |
+| ---------- | ---- | ------------ | ---------- | ------------------------------------------------------------------- |
+| FOLLOW-383 | #342 | 7ed8a81      | 2026-06-23 | P0: SDK→server profiling opt-out. §H.9 core wiring. RETRO-107 done. |
+| FOLLOW-369 | #343 | 84552bf      | 2026-06-24 | GET-path consent-skip parity. RETRO-108 pending (deferred).         |
+| FOLLOW-371 | #344 | 029206a      | 2026-06-24 | CH holdout contamination remediation. RETRO-109 pending (deferred). |
+| FOLLOW-368 | #345 | dd74026      | 2026-06-24 | Upstash env-var parity. ESC-028 open. RETRO-110 pending (deferred). |
+
+---
+
+## §H.9 opt-out epic — NOT DONE (two tickets still open)
+
+| Ticket     | Agent                           | Status | Description                                                |
+| ---------- | ------------------------------- | ------ | ---------------------------------------------------------- |
+| FOLLOW-384 | ml-engineer                     | READY  | redis_writer.py chat-prior skip for opted-out sessions     |
+| FOLLOW-385 | sdk-engineer + backend-engineer | READY  | Quiz/favorites/micro-poll opt-out enforcement (§H.9 scope) |
+
+The §H.9 profiling opt-out epic is NOT complete until both FOLLOW-384 and FOLLOW-385 are DONE.
+
+---
+
+## READY_FOR_REVIEW tickets
+
+None. All wave-1 PRs merged.
+
+## IN_PROGRESS tickets (0/3 max)
+
+None.
 
 ---
 
 ## OPEN escalations
 
-| ESC     | Title                                                          | Filed      | Age | Status                                                                  |
-| ------- | -------------------------------------------------------------- | ---------- | --- | ----------------------------------------------------------------------- |
-| ESC-020 | Estalara-app DOM hooks not deployed to production [FOLLOW-191] | 2026-06-06 | 17d | Non-blocking per CEO 2026-06-10; Rafal action deferred until local test |
+| ESC     | Title                                                                        | Filed      | Age | Status                                                                                                |
+| ------- | ---------------------------------------------------------------------------- | ---------- | --- | ----------------------------------------------------------------------------------------------------- |
+| ESC-020 | Estalara-app DOM hooks not deployed to production [FOLLOW-191]               | 2026-06-06 | 18d | Non-blocking per CEO 2026-06-10; Rafal action deferred until local test                               |
+| ESC-028 | GitHub Actions secrets required for FOLLOW-368 Redis shadow round-trip smoke | 2026-06-23 | 1d  | OPEN — 4 secrets: UPSTASH_REDIS_REST_URL/TOKEN + UPSTASH_REDIS_URL/TOKEN. Piotr/Rafal must provision. |
 
-All ESC-001 through ESC-028 RESOLVED (ESC-028 = SDK bundle budget raised to 42KB for FOLLOW-372/373
-consent disclosures). ESC-020 remains OPEN but non-blocking.
+ESC-028 landed on main with PR #345 merge (dd74026). Smoke runs in soft-skip until resolved.
 
 ---
 
 ## Pre-existing-red CI checks (non-blocking)
 
-- `Rule I — wired-or-dead check`: 107+ violations at baseline (FOLLOW-090 tracking). Confirmed
-  pre-existing on PR #341 (merged) and PR #342 (open). NOT a merge blocker.
-- `Test (Python) (3.12, *)`: modal app tests (pre-existing post FOLLOW-376 cleanup; only
-  data-quality/intent-engine/llm-gateway/stream-consumer pass now).
-- `Format check`: was pre-existing-red on backend-engineer/lessons.md; may be resolved on current
-  branch — verify before merging PR #342.
+- `Rule I — wired-or-dead check`: 107+ violations at baseline (FOLLOW-090 tracking).
+- `Test (Python) (3.12, *)`: data-quality/intent-engine/llm-gateway/stream-consumer PASS (FOLLOW-376
+  fixed matrix). Other Python app variants remain absent from matrix.
 
 ---
 
-## CI check counter (current session — 2026-06-23)
+## CI check counter (session 2026-06-23/24)
 
-- PR #342 (FOLLOW-383): 2/5 checks run. 1/3 fix iterations consumed. Real gate failures: 1
-  (Typecheck — 5 TS errors introduced by follow-383.test.ts; NOT pre-existing). Fix delegated to
-  backend-engineer. Rule I pre-existing-red (confirmed on both CI run 28047541089 and prior PR
-  #341).
+- PR #342 (FOLLOW-383): 3/5 checks, 1/3 fix iterations. MERGED 7ed8a81.
+- PR #343 (FOLLOW-369): 4/5 checks, 1/3 fix iterations (session total). MERGED 84552bf.
+- PR #344 (FOLLOW-371): 5/5 checks, 2/3 fix iterations (session total). MERGED 029206a.
+- PR #345 (FOLLOW-368): 4/5 checks, 1/3 fix iterations (session total). MERGED dd74026.
 
----
-
-## FOLLOW-383 P0 gate tracking
-
-| AC   | Description                                       | Status             | Where                                     |
-| ---- | ------------------------------------------------- | ------------------ | ----------------------------------------- |
-| AC-1 | SDK sends profiling_opt_out=1 to server           | Done (uncommitted) | packages/sdk/src/core/adapt.ts diff       |
-| AC-2 | consentGate.profilingOptOut documented (decision) | Done (PR #342)     | apps/decision-api/src/lib/consent-gate.ts |
-| AC-3 | Opted-out events dropped before eventQueue.push   | Done (uncommitted) | packages/sdk/src/index.ts diff            |
-| AC-4 | redis_writer.py skips chat-prior for opted-out    | STUB → FOLLOW-384  | ml-engineer scope; promoted to own ticket |
-| AC-5 | (optional) DOM revert on toggle-off               | Deferred           | post-P0                                   |
-
-POST path gate (route.ts POST handler) also done (uncommitted) — defense-in-depth companion to AC-1.
+Session CI check counter: 5/5 (cap reached). Fix iteration counter: 2/3. Next session: fresh
+counters.
 
 ---
 
-## P0 gate note
+## FOLLOW-383 DONE — final §H.9 AC tracking
 
-FOLLOW-383 (opt-out server wiring) must ship before FOLLOW-369 and all other P1/P2 downstream
-tickets. The server-side gate was dead-on-arrival (SDK never sent profiling_opt_out=1). AC-1+AC-3
-code is done but uncommitted. Delegating to backend-engineer to commit+push.
-
----
-
-## Next READY tickets (after FOLLOW-383 unblocks)
-
-Priority order after FOLLOW-383 merged:
-
-1. FOLLOW-369 (P1, backend-engineer) — GET-path consent-skip parity
-2. FOLLOW-371 (P1, data-engineer) — ClickHouse holdout remediation
-3. FOLLOW-368 (P1, devops-engineer) — Upstash Redis env-var parity
-4. FOLLOW-356 (P1, sdk-engineer) — directive_scope consumer/behavioral tests
-5. FOLLOW-363 (P1, sdk-engineer) — hysteresis wiring in dwell/listing-view
+| AC   | Description                                     | Status          |
+| ---- | ----------------------------------------------- | --------------- |
+| AC-1 | SDK sends profiling_opt_out=1 to server         | DONE (PR #342)  |
+| AC-2 | consentGate.profilingOptOut documented          | DONE (PR #342)  |
+| AC-3 | Opted-out events dropped before eventQueue.push | DONE (PR #342)  |
+| AC-4 | redis_writer.py skips chat-prior for opted-out  | FOLLOW-384 (P1) |
+| AC-5 | (optional) DOM revert on toggle-off             | Deferred        |
 
 ---
 
-## Pending retros (as of 2026-06-23)
+## Pending retros (deferred — human to schedule)
 
-RETRO-102 through RETRO-106 written but uncommitted (on FOLLOW-383 branch). RETRO-107+ to spawn
-after FOLLOW-383 merges. Next free RETRO number: 107.
+- **RETRO-107**: FOLLOW-383 / PR #342 (7ed8a81) — sdk + control-plane opt-out gate. DONE/merged.
+- **RETRO-108**: FOLLOW-369 / PR #343 (84552bf) — control-plane GET consent-skip parity.
+- **RETRO-109**: FOLLOW-371 / PR #344 (029206a) — data-engineer ClickHouse holdout remediation.
+- **RETRO-110**: FOLLOW-368 / PR #345 (dd74026) — devops Upstash env-var parity + smoke workflow.
 
 ---
 
-## Notes (2026-06-23)
+## Next READY tickets (Sprint 22 Wave 2)
 
-- Branch `backend-engineer/FOLLOW-383-consent-gate-doc` has AC-1+AC-3 code done but not committed.
-  Backend-engineer must commit code changes + test files + all modified queue/status/retro files,
-  then push to PR #342. PM will re-validate CI after push.
-- AC-4 (redis_writer.py opt-out skip) delegated to ml-engineer in parallel — does not block AC-1/2/3
-  merge.
-- RETRO-102–106 uncommitted changes include QUEUE.md, FOLLOW_UPS.md, RETROSPECTIVES.md updates —
-  backend-engineer to commit those as housekeeping commits on the branch.
-- supabase/snippets/ directory is untracked but empty — no action needed.
-- .claude/agents/qa-engineer/lessons.md is untracked — backend-engineer to commit this too.
+1. **FOLLOW-384** (P1, ml-engineer, 2h) — redis_writer.py chat-prior skip [§H.9 AC-4]
+2. **FOLLOW-385** (P1, sdk-engineer+backend-engineer, 4h) — §H.9 sibling opt-out enforcement
+3. **FOLLOW-356** (P1, sdk-engineer, 4h) — directive_scope consumer
+4. **FOLLOW-363** (P1, sdk-engineer, 4h) — hysteresis dwell/listing-view
+
+---
+
+## Notes (2026-06-24)
+
+- Sprint 22 wave-1 complete. All four P1 tickets merged cleanly.
+- Duplicate FOLLOW-368 entry in QUEUE.md reconciled — both set to DONE.
+- RETRO-107 written and in RETROSPECTIVES.md. RETRO-108/109/110 deferred.
+- FOLLOW-384/385/386 stubs confirmed present in FOLLOW_UPS.md.
+- ESC-028 is now on main (merged with PR #345). Human action needed to provision Upstash secrets.

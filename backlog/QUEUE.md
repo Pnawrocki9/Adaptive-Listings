@@ -5167,13 +5167,13 @@ pending planning.**
 
 ## Currently in flight
 
-**1 ticket IN_PROGRESS as of 2026-06-23: FOLLOW-383 (PR #342, backend-engineer). Sprints 19/20/21
-ALL COMPLETE — PRs #321–#341 all merged to main.
-FOLLOW-340/341/342/343/344/345/346/346-dpia/347/357/360/366/372/373/374/375/376 all DONE.
-RETRO-102–106 written 2026-06-23. ESC-020 OPEN but non-blocking (CEO 2026-06-10). TYPECHECK FAILING
-on PR #342 (5 TS errors in follow-383.test.ts, introduced by this PR). Fix iteration: 1/3. CI check
-counter: 2/5. Delegating typecheck fix to backend-engineer.** READY tickets:
-FOLLOW-356/359/361/363/368/369/371 (P1) and FOLLOW-354/358/362/364/367/370 (P2).
+**FOLLOW-383 DONE — PR #342 merged 2026-06-23T21:01:59Z (squash 7ed8a81). Sprints 19/20/21/22 ALL
+COMPLETE. P0 gate cleared. FOLLOW-383/PR#342 ships AC-1 (SDK sends profiling_opt_out=1 to server),
+AC-2 (doc), AC-3 (event drop before push). FOLLOW-384 (ml-engineer, redis_writer chat-prior skip)
+unblocked. FOLLOW-385 (sdk-engineer+backend-engineer, quiz/favorites/micro-poll sibling opt-out
+gaps) filed per pre-merge adversarial review + CEO scope decision. RETRO-107 pending spawn. ESC-020
+OPEN but non-blocking (CEO 2026-06-10). 0 tickets IN_PROGRESS.** READY P1:
+FOLLOW-369/371/368/356/363/359/361/384. READY P2: FOLLOW-354/358/362/364/367/370.
 
 ## Sprint 19 — Hollow-core must-fixes + audit-19 wave (PLANNED, 2026-06-19)
 
@@ -5475,19 +5475,21 @@ others staged by priority; max 3 IN_PROGRESS at once.**
 - id: FOLLOW-368
   title: Guarantee Python writer and TS reader share one Upstash Redis instance (env-var divergence)
   agent: devops-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-366]
   source: RETRO-098 (FOLLOW-346 / PR #330)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-368 stub)
   branch: devops-engineer/FOLLOW-368-upstash-redis-env-parity
+  pr: '#345'
+  merge_commit: dd74026
+  completed_at: '2026-06-24'
   notes: |
-    PR open. AC-1 (runbook): docs/runbooks/upstash-redis-env-parity.md.
-    AC-2 (smoke test): tests/integration/redis-shadow-round-trip.smoke.test.ts +
-      .github/workflows/redis-shadow-smoke.yml (soft-skip until ESC-028 secrets provisioned).
-    AC-3 (skip-loud): REQUIRE_REDIS_SMOKE=1 hard-fails when creds absent.
-    ESC-028 OPEN: four GitHub Actions secrets not yet provisioned; smoke soft-skips until done.
+    STALE DUPLICATE — canonical entry below (line ~5815). Marking DONE here for consistency.
+    Merged as PR #345 (squash dd74026). See canonical entry for full PM-validation notes.
+    ESC-028 OPEN: 4 Upstash secrets not yet provisioned (UPSTASH_REDIS_REST_URL/TOKEN +
+    UPSTASH_REDIS_URL/TOKEN). Smoke runs in soft-skip mode until ESC-028 resolved.
 
 - id: FOLLOW-359
   title: Return variant in GET /api/adapt response body
@@ -5736,7 +5738,7 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   title:
     Wire SDK→server profiling opt-out producer + complete server/training/chat-prior halves [P0]
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P0
   estimated_hours: 5
   depends_on: []
@@ -5744,51 +5746,100 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   spec: backlog/FOLLOW_UPS.md (FOLLOW-383 stub)
   branch: backend-engineer/FOLLOW-383-consent-gate-doc
   pr: '#342'
+  completed_at: '2026-06-23T21:01:59Z'
   notes: |
+    DONE — PR #342 merged to main (squash commit 7ed8a81, 2026-06-23T21:01:59Z). CI green (40/40
+    checks pass; Typecheck fixed in c906ad7 before merge).
     AC-1 DONE: SDK appends profiling_opt_out=1 to /api/adapt URL when opted out.
-    AC-2 DONE: decision-api 410 documented (JSDoc + route.ts comment). Documented as defense-in-depth.
+    AC-2 DONE: decision-api 410 documented (JSDoc + route.ts comment).
     AC-3 DONE: behavioral events dropped before eventQueue.push when opted out.
-    TYPECHECK FAIL (CI run 28047541089): 5 errors in packages/sdk/src/__tests__/follow-383.test.ts.
-    4x TS2352: mockFetch.mock.lastCall cast needs `as unknown as [string, RequestInit]` (not direct cast).
-    1x TS2532: queue[0] possibly undefined — add non-null assertion or guard.
-    Fix iteration: 1/3. CI check counter: 2/5.
-    AC-4 OPEN: redis_writer.py chat-prior skip — ml-engineer scope, filed as follow-up stub in FOLLOW_UPS.md.
+    AC-4 SPLIT: redis_writer.py chat-prior skip → FOLLOW-384 (ml-engineer, P1, now unblocked).
+    Pre-merge adversarial review surfaced pre-existing opt-out gaps in quiz/favorites/micro-poll
+    sibling paths → FOLLOW-385 (sdk-engineer+backend-engineer, P1).
+    RETRO-107 pending spawn.
 
 - id: FOLLOW-369
   title: GET-path consent-skip parity for /api/adapt (FOLLOW-360 AC-2, unmet)
   agent: backend-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 3
   depends_on: []
   source: RETRO-100 (FOLLOW-360 / PR #333)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-369 stub)
   branch: backend-engineer/FOLLOW-369-get-consent-skip-parity
+  pr: '#343'
+  merge_commit: 84552bf
+  started_at: '2026-06-23T21:15Z'
+  pm_validated_at: '2026-06-23T22:10Z'
+  completed_at: '2026-06-24'
+  notes: |
+    Merged PR #343 (squash 84552bf). PM-validated CI green (real gates). Runtime wiring confirmed.
+    SKIP_CONSENT_STATES producer: packages/shared/src/ab-holdout.ts:27 (non-test).
+    SKIP_CONSENT_STATES consumer: apps/control-plane/src/app/api/adapt/route.ts (non-test).
+    Gate order: profiling_opt_out fires first, then consent-skip — symmetric with POST.
+    RETRO-108 pending (deferred — see STATUS.md).
+
+- id: FOLLOW-384
+  title:
+    redis_writer.py — skip AL chat-intent shadow prior for opted-out sessions [AC-4 of FOLLOW-383]
+  agent: ml-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 2
+  depends_on: [FOLLOW-383]
+  source: RETRO-103 HW-3 (FOLLOW-383 AC-4 split)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-384 stub)
+  branch: ml-engineer/FOLLOW-384-redis-writer-optout-skip
+  notes: |
+    FOLLOW-383 merged 2026-06-23 — dependency satisfied. The SDK now sends profiling_opt_out=1
+    to /api/adapt; redis_writer.py must read this flag and skip the AL chat-intent shadow prior
+    write for opted-out sessions to close the server-side training suppression loop.
 
 - id: FOLLOW-371
   title: One-shot ClickHouse remediation of holdout rows contaminated in PR#327→#333 window
   agent: data-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 3
   depends_on: []
   source: RETRO-100 (FOLLOW-360 / PR #333)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-371 stub)
   branch: data-engineer/FOLLOW-371-ch-holdout-remediation
+  pr: '#344'
+  merge_commit: 029206a
+  started_at: '2026-06-23T21:15Z'
+  pm_validated_at: '2026-06-23T22:30Z'
+  completed_at: '2026-06-24'
+  notes: |
+    Merged PR #344 (squash 029206a). Fix iteration 2/3 consumed (wrong import depth in test).
+    PM-validated. Runtime wiring confirmed (step 5c):
+    CLEAN_HOLDOUT predicate producer (non-test): apps/control-plane/src/app/api/pilot/cta-lift/route.ts:107.
+    CLEAN_HOLDOUT applied (non-test SQL): cta-lift route.ts:127,149 + dashboard/analytics/lift/route.ts:148.
+    RETRO-109 pending (deferred — see STATUS.md).
 
 - id: FOLLOW-368
   title: Guarantee Python writer and TS reader share one Upstash Redis instance (env-var parity)
   agent: devops-engineer
-  status: IN_PROGRESS
+  status: DONE
   priority: P1
   estimated_hours: 4
   depends_on: []
   source: RETRO-098 (FOLLOW-346 / PR #330)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-368 stub)
   branch: devops-engineer/FOLLOW-368-upstash-redis-env-parity
+  pr: '#345'
+  merge_commit: dd74026
+  started_at: '2026-06-23T21:15Z'
+  pm_validated_at: '2026-06-23T22:10Z'
+  completed_at: '2026-06-24'
   notes: |
-    FOLLOW-366 DONE (merged #332) — dependency cleared. PR open.
-    ESC-028 OPEN: four GitHub Actions secrets needed for live smoke; soft-skips until provisioned.
+    Merged PR #345 (squash dd74026). PM-validated. CI green. Runtime wiring confirmed.
+    write_shadow_intent producer: apps/intent-engine/src/main.py:59 (non-test).
+    readShadowChatIntent consumer: apps/control-plane/src/app/api/adapt/route.ts:1161 (non-test).
+    Smoke runs in soft-skip mode until ESC-028 resolved (4 Upstash secrets not yet provisioned).
+    ESC-028 OPEN: UPSTASH_REDIS_REST_URL/TOKEN + UPSTASH_REDIS_URL/TOKEN — human action needed.
+    RETRO-110 pending (deferred — see STATUS.md).
 
 - id: FOLLOW-356
   title: /api/adapt response directive_scope consumer + behavioral tests for page-type derivation
@@ -5815,6 +5866,25 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   source: RETRO-097 (FOLLOW-344 / PR #329)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-363 stub)
   branch: sdk-engineer/FOLLOW-363-hysteresis-dwell-listing-view
+
+- id: FOLLOW-385
+  title:
+    Enforce profiling opt-out across SDK sibling profiling paths (quiz/favorites/micro-poll +
+    quiz-completion persistence) [§H.9-documented scope]
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-383]
+  source: pre-merge adversarial review of PR #342 + CEO scope decision 2026-06-23
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-385 stub)
+  branch: sdk-engineer/FOLLOW-385-sibling-optout-enforcement
+  notes: |
+    FOLLOW-383 merged — dependency satisfied. Scope = §H.9-documented set ONLY (quiz, favorites,
+    micro-poll client-side AL profiling suppression + quiz-completion persistence gate).
+    Ingest behavioral stream (chat/intent.snapshot/live.signup) deliberately NOT in scope —
+    rides §H.8 registration consent; AL training suppression handled server-side by FOLLOW-384.
+    See FOLLOW-385 stub in FOLLOW_UPS.md for exact AC list.
 
 - id: FOLLOW-359
   title: Return variant in GET /api/adapt response body

@@ -167,16 +167,21 @@ jobs:
     name: Test (Python)
     runs-on: ubuntu-latest
     strategy:
+      # Independent jobs — one app's failure must not cancel the others (a non-existent
+      # matrix entry previously cancelled every sibling via fail-fast, masking which app
+      # actually failed).
+      fail-fast: false
       matrix:
         python-version: ["3.12"]
+        # Only the four Python apps that actually exist under apps/ (each has a pyproject.toml).
+        # adaptation-engine / archetype-pipeline / auto-detect were deleted in da9f45f
+        # ("delete 3 Modal placeholder app stubs" [TICKET-ARCH-103]) but left in this matrix,
+        # so their jobs failed on a missing working-directory and red-lined Python CI ever since.
         app:
           - intent-engine
-          - adaptation-engine
           - llm-gateway
           - stream-consumer
-          - archetype-pipeline
           - data-quality
-          - auto-detect
     defaults:
       run:
         working-directory: apps/${{ matrix.app }}

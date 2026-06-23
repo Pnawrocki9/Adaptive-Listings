@@ -133,7 +133,7 @@ describe('FOLLOW-371: dashboard analytics lift exclusion filter', () => {
       headers: { Authorization: 'Bearer mock-token' },
     });
 
-    const { GET } = await import('../dashboard/analytics/lift/route.js');
+    const { GET } = await import('../../dashboard/analytics/lift/route.js');
     const res = await GET(req);
     expect(res.status).toBe(200);
 

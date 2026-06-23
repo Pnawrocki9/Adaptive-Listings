@@ -18947,3 +18947,375 @@ CHECK B (half-wire):
 - **Rule S:** CB-1's missed `adapt-schema.test.ts` sibling and the missed GET surface of `tier` are confirming instances. Citation.
 - **Rule T:** the Rule-H drift + Node-22 failures surfaced CI-only; running `scripts/check-adapt-schema-drift.sh` locally (per Rule H§316) would have caught CB-1 pre-push. Citation.
 - **RETRO-098 / Rule Z:** adjacent but DISTINCT — Rule Z governs Python↔TS payload fixtures; CB-1 is a same-runtime (TS↔TS) cross-PACKAGE schema-superset break governed by Rule H§316, not Rule Z. Noted to avoid mis-citation.
+
+---
+
+## RETRO-102 — FOLLOW-373 (platform-wide consent umbrella (a)–(f); DPIA/ROPA/Privacy-Notice/LIA + consent-banner disclosure) — 2026-06-23
+
+### 1. Summary of change
+
+- **PR:** #336 (merged 2026-06-21, commit `fe20093`). Doc-heavy compliance PR + one SDK code touch (`consent-banner.ts` disclosure copy). CEO decision 2026-06-21: Adaptive-Listings OWNS the full consent layer for the entire Estalara platform; consent is mandatory at app.estalara.com registration and covers six purposes (a) behavioral tracking, (b) reading the investor's chat, (c) transferring derived insights to agency/agent, (d) buying-intent identification, (e) lead ranking, (f) agent-facing chat-question summaries.
+- **Files changed:** compliance docs (`docs/compliance/dpia.md` v2.8, `ropa.md` v2.6, `PRIVACY_NOTICE_TEMPLATE.md` v1.3, `lia-template.md` v1.1), `MASTER_DESIGN.md` (v4.0→v4.1; §G.2 callout, new §H.8 umbrella + §H.9 opt-out), `packages/sdk/src/ui/consent-banner.ts` (`disclosurePlatform` copy EN/PL/ES + `data-estalara-disclosure='dpia-13-4-platform'`), QUEUE/STATUS/FOLLOW_UPS/HANDOFFS. Bundle budget raised 40KB→42KB (ESC-028, CEO option A).
+- **Key contracts changed:**
+  - **Consent vocabulary** — new `consent_type = 'platform_registration'` value documented as a free-text value on the EXISTING `consent_records` schema — breaking: no (no migration; binary-grant schema confirmed sufficient).
+  - **SDK banner COPY** — `disclosurePlatform` added to the EN/PL/ES COPY constant + rendered as a `data-estalara-disclosure` attribute — additive, no behavior claim.
+  - **Master Design §H.8/§H.9** — new doc sections; non-code contract.
+  - No DB column, Zod schema, event, or API route changed in this PR (the INSERT is FOLLOW-374, the runtime opt-out is FOLLOW-372).
+
+### 2. Verification done in PR
+
+- This is a docs+copy PR. No new unit test asserts the `disclosurePlatform` copy renders, beyond whatever `consent-banner.test.ts` already pins. The six-purpose LIA balancing test (purposes d/e) is a written legal artifact, not a code test. CI claimed green (incl. the bundle-budget raise that unblocked it); not independently re-watched.
+
+### 3. Wiring Audit
+
+CHECK A (dead code): `disclosurePlatform` COPY key is consumed in the banner HTML builder (same file) — not dead. No new exported symbol. ✅
+CHECK B (half-wire):
+- **HW-1 — HALF_WIRE_P, P1 (consent_type producer absent THIS PR — correctly deferred to FOLLOW-374).** The `consent_type = 'platform_registration'` value is DOCUMENTED (ROPA Activity 16, DPIA §7) as the storage vocabulary, but NO code path WRITES a `consent_records` row with that value in this PR. This is the canonical Rule H deferral pattern and it IS handled correctly: FOLLOW-374 is filed in the same wave as the producer (and the go-live gate is explicitly marked UNSATISFIABLE until FOLLOW-374 lands). Recorded as a half-wire-by-design, closure tracked in RETRO-104. ✅ (deferral discipline satisfied — no NEW follow-up).
+- **HW-2 — Rule N watch, P1 (compliance doc discloses behaviors (b)–(f) the AL stack does not itself perform).** The umbrella DISCLOSES six purposes, but only (a) behavioral tracking is performed inside the AL repo today; (b) chat reading is the C-07 shadow vector (functional only after FOLLOW-368 — RETRO-099 §5b, still OPEN), and (c)/(d)/(e)/(f) are app-side (Rafał) processing for which AL provides only the legal umbrella. The disclosure is ACCURATE *as a platform-wide umbrella* (the CEO decision is precisely that AL owns the consent for processing that happens partly app-side), so this is NOT a Rule N violation in the RETRO-018/019 sense (false statement to data subjects). But it is a Rule-N-adjacent watch: a DPIA that asserts a user-facing behavior must have a real performer SOMEWHERE before its go-live gate is satisfiable, and for (b) that performer (the chat shadow bridge) is still severed at the FOLLOW-368 hop. → tracked, not re-filed (FOLLOW-368 already OPEN).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A (no runtime logic in this PR).
+
+#### 4b. Code bugs not caught
+
+- N/A.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — No test asserts the `disclosurePlatform` disclosure string is RENDERED in the banner for all three locales.** Rule N's verification block expects each mandated disclosure SENTENCE to appear in the banner COPY constant AND be wired into the rendered HTML. The copy was added; a regex/DOM test pinning `data-estalara-disclosure='dpia-13-4-platform'` present in the rendered banner for EN/PL/ES would prevent silent removal. → **FOLLOW-377** (folded with the Rule-N reconciliation).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — DPIA/Privacy-Notice assert the (b) chat-reading purpose is operative, but the AL chat-intent shadow pipeline is NOT end-to-end functional** (RETRO-099 §5b: hop-2 Upstash env-var divergence, FOLLOW-368 OPEN). The umbrella's lawful-basis paperwork for purpose (b) is sound, but the "we read your chat to derive intent" disclosure has no live AL data producer until FOLLOW-368 lands. Reconcile the C-07 / §H.8 premise with the real bridge state at FOLLOW-368 closure. → **FOLLOW-377**.
+
+### 5. Cascading impact
+
+- **5a.** **FOLLOW-374 (PR #338, RETRO-104)** is the producer this PR defers to — the consent-record write. **FOLLOW-372 (PRs #337/#339, RETRO-103)** is the per-user opt-out the §H.9 doc introduced. Both are in-wave; this RETRO's HW-1 closure is verified in RETRO-104.
+- **5b.** The go-live QA gate (`PRIVACY_NOTICE_TEMPLATE §5` — DPO review of §6 registration consent text) is UNSATISFIABLE until FOLLOW-374's INSERT is wired AND QA-verified with a real browser session. Correctly tracked.
+- **5c.** `consent_type` is now a load-bearing free-text vocabulary on `consent_records`. Any consumer that filters consent rows by type (DSR erase/access, RETRO-044/045 Rule S sibling set) must learn the new `'platform_registration'` value or it will mis-handle the platform-consent row. → see §6 (Rule S watch) and FOLLOW-378.
+- **5d.** Master Design grew §H.8/§H.9 — the "no Tiers, single experience" model (memory `project_no_tiers_single_model`) is preserved; the umbrella is platform-wide, not tier-scoped.
+
+### 6. New lesson candidates
+
+- **Pattern (Rule N-adjacent watch): "A compliance umbrella discloses processing performed in another runtime/repo (app-side) for which THIS repo provides only the legal basis — accurate as an umbrella, but the only in-repo performer of one disclosed purpose (chat-reading) is itself a still-severed wire (FOLLOW-368)."** Distinct from the RETRO-018/019 Rule N shape (false statement). Count 1 — below threshold; held.
+- **Pattern (Rule S watch): "A new free-text `consent_type` value is added to `consent_records` but the symmetric set of consumers that branch on consent_type (the 3 DSR verbs) is not enumerated for whether they must recognize it."** Adjacent to Rule S (RETRO-044/045). Count 1 on the consent_type axis — below threshold; → FOLLOW-378 to verify, held.
+
+### 7. Follow-ups
+
+- **FOLLOW-377 (P2, compliance-engineer + sdk-engineer, 2h):** Add a banner-render test asserting the `data-estalara-disclosure='dpia-13-4-platform'` disclosure appears for EN/PL/ES (Rule N verification §4c TG-1), AND reconcile the DPIA/Privacy-Notice (b) chat-reading premise against the real shadow-bridge state at FOLLOW-368 closure (§4d DG-1). depends_on: FOLLOW-368.
+- **FOLLOW-378 (P2, compliance-engineer + backend-engineer, 2h):** Enumerate the DSR verb sibling set (access/erase/portability) against the new `consent_type='platform_registration'` row — confirm each verb correctly includes/erases/discloses the platform-consent record (Rule S completeness; the platform row must be erasable on Art. 17 withdrawal). §5c / §6.
+
+### 8. Cross-references
+
+- **RETRO-104 (FOLLOW-374):** the consent-record INSERT producer this PR defers to (HW-1 closure traced there).
+- **RETRO-103 (FOLLOW-372):** the §H.9 per-user opt-out introduced by this PR's Master Design addition.
+- **RETRO-098/099 (FOLLOW-346/368):** purpose-(b) chat-reading depends on the still-severed shadow bridge (FOLLOW-368 hop-2 OPEN).
+- **Rule N (RETRO-018/019/023):** §3 HW-2 / §4d DG-1 are Rule-N-adjacent (umbrella accurate, but one disclosed purpose's in-repo performer is unwired) — watch, not violation.
+- **Rule S (RETRO-044/045):** §5c consent_type consumer-completeness watch.
+
+---
+
+## RETRO-103 — FOLLOW-372 (per-user opt-out toggle for AL DOM adaptation + GET /api/adapt `profiling_opt_out=1` gate) — 2026-06-23
+
+### 1. Summary of change
+
+- **PR:** #337 (merged 2026-06-21, commit `e361833`) — SDK toggle + state module + consent-gate input. #339 (merged 2026-06-21, commit `5d5e26f`) — GET `/api/adapt` `profiling_opt_out=1` early-return gate. Both FOLLOW-372 / Master Design §H.9.
+- **Files changed:** #337 — `packages/sdk/src/core/profiling-opt-out.ts` (NEW, 99), `packages/sdk/src/ui/profiling-toggle.ts` (NEW, 142), `packages/sdk/src/index.ts` (+70), `apps/decision-api/src/lib/consent-gate.ts` (+`profilingOptOut` input + `'profiling_opt_out'` reason), tests + ESCALATIONS/HANDOFFS. #339 — `apps/control-plane/src/app/api/adapt/route.ts` (+41 GET gate), `route.follow372.test.ts` (+248).
+- **Modules touched:** SDK (core + ui) · decision-api (consent-gate, **dead-410 path**) · control-plane (`/api/adapt` GET).
+- **Key contracts changed:**
+  - SDK NEW exports: `PROFILING_OPT_OUT_KEY`, `profilingOptOutKey`, `isProfilingOptedOut`, `setProfilingOptOut`, `eraseProfilingOptOut` (`profiling-opt-out.ts`); `renderProfilingToggle`, `ProfilingToggleController`, `ProfilingToggleOptions` (`profiling-toggle.ts`) — additive.
+  - `ConsentGateInput.profilingOptOut?: boolean` ADDED; `ConsentGateResult.reason` union grew `'profiling_opt_out'` — additive. **But `consentGate` has ZERO production consumers** (§3 HW-2).
+  - GET `/api/adapt` now reads `profiling_opt_out=1` query param → neutral directives, no variant log — additive request contract. **But the SDK never SENDS this param** (§3 HW-1).
+  - New localStorage key `__estalara_profiling_opt_out__[:userId]` — per-user state.
+
+### 2. Verification done in PR
+
+- #337: `follow-372.test.ts` (22 tests) + 7 consent-gate tests. #339: `route.follow372.test.ts` (8 tests) drive the GET handler WITH `profiling_opt_out=1` directly in the URL and assert neutral directives + no ClickHouse log. CI claimed green; not re-watched. **Critical caveat (Rule L):** every #339 test INJECTS `profiling_opt_out=1` into the request URL by hand — none exercises the SDK building that URL, so the missing producer (HW-1) ships green. This is the exact RETRO-009/010/011 self-injecting-consumer-test shape.
+
+### 3. Wiring Audit
+
+CHECK A (dead code):
+- SDK `renderProfilingToggle` → imported + mounted at `index.ts:949` (step 5b). WIRED ✅.
+- `isProfilingOptedOut`/`setProfilingOptOut`/`eraseProfilingOptOut` → all consumed in `index.ts` (read at :430, set in toggle `onChange`, erase at the 2 consent-denial seams). WIRED ✅.
+- `consentGate` (decision-api) → **the only call site was the decision-api `/api/adapt` route, which is `410 Gone` (ADR-0006); `route.ts:24` explicitly states "`consent-gate` … is now unreachable from production."** The `profilingOptOut` input was added to a function with ZERO live consumers. See HW-2.
+
+CHECK B (half-wire):
+- **HW-1 — HALF_WIRE_C, P0 (consumer-only: the GET gate is dead-on-arrival from real SDK traffic).** `apps/control-plane/src/app/api/adapt/route.ts:655` reads `params.get('profiling_opt_out') === '1'`, but a repo-wide grep for a NON-TEST producer of that param returns ZERO hits: `packages/sdk/src/core/adapt.ts` (`fetchDirectives`, the sole builder of the GET `/api/adapt` URL) does NOT append `profiling_opt_out`, and nothing threads the SDK's `profilingOptedOut` boolean into the request. So for EVERY real opted-out session the SDK ALREADY short-circuits client-side (`index.ts:923` skips `refreshDirectives()` entirely when `profilingOptedOut`), meaning the server gate is reached by NO real traffic at all — it is a consumer with no producer AND no live caller. The server-side neutralization the §H.9 doc + #339 promise (no variant log for opted-out sessions) never fires because the request that would trigger it is never sent. This is the `inquiry_submit_selector` / Rule L shape (consumed-but-never-produced config). → **FOLLOW-376**.
+- **HW-2 — HALF_WIRE / DEAD-INPUT, P2 (consent-gate `profilingOptOut` input added to a 410-dead function).** `consentGate` is unreachable from production (decision-api adapt route is 410). The new input + `'profiling_opt_out'` reason are exercised only by unit tests. The §H.9 doc and #339 commit body both claim "Cannot cross-import consentGate() from apps/decision-api … the opt-out check is an inline guard" — confirming the author KNEW the canonical gate is unreachable, yet still added the input to it (cosmetic). The REAL gate is the inline #339 check (HW-1). → folded into **FOLLOW-376** (decide: remove the dead consent-gate input, or make it the canonical reused gate once decision-api is un-410'd).
+- **HW-3 — HALF_WIRE_P, P1 (ml-engineer chat-prior skip never wired).** FOLLOW-372 scope (and the HANDOFF) require `redis_writer.py` to skip applying the AL chat-intent shadow prior for opted-out sessions. The #337/#339 commit bodies both say this "remains OPEN in HANDOFFS.md FOLLOW-372." So an opted-out user's chat STILL feeds the archetype shadow prior — a scope-incomplete opt-out. → **FOLLOW-376** (AC) / tracked via the open HANDOFF.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P0) = HW-1.** The server-side opt-out gate is unreachable; the entire server half of the opt-out (neutral directives + variant-log suppression on the SERVER) is dead because the SDK both (a) never sends the param and (b) already client-short-circuits, so the only enforcement is the client skip. If a future change re-enables `refreshDirectives()` for opted-out sessions (e.g. for the with/without showcase comparison), the server would profile them — the gate that should catch that is unwired.
+- **LG-2 (P1) — The opt-out does NOT suppress event emission, only intent updates.** `index.ts:992` `if (profilingOptedOut) return;` sits AFTER `eventQueue.push(event)` — events are still queued and flushed to ingest for an opted-out user (the comment says "still queued for audit/observability"). For an AL-DOM-only opt-out this is defensible, but the §H.9 / FOLLOW-372 AC "no profiling-tagged behavioral events contribute to archetype training for this user" is only met if the ingest/training pipeline filters these events downstream — which is NOT verified here. The events carry no `profiling_opt_out` tag, so the training pipeline CANNOT distinguish them. → **FOLLOW-376** (AC: tag or drop opted-out events so training can exclude them).
+- **LG-3 (P2) — Opt-OUT does not actively revert the DOM mid-session.** `index.ts` `onChange` comment: "when opting OUT, the DOM is NOT actively reversed here … On next full page reload the DOM will be in pure tenant-default state." For a product showcase whose whole point is the with/without comparison, toggling OFF leaves the already-adapted copy on screen until reload — the showcase only works one direction (OFF→ON re-fetches; ON→OFF needs reload). Cross-listing nav restore (PR #340) partially mitigates but not for the current listing. → note for FOLLOW-376.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P0) = HW-1.** Consumer reads a param no producer sends; ships green because tests inject the param. Same self-agreeing-fixture mechanism as Rule L.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — No test drives the SDK→GET-URL construction for an opted-out session.** A test asserting that an opted-out session's outbound `/api/adapt` request carries `profiling_opt_out=1` (or asserting the SDK deliberately short-circuits and documenting that the server gate is therefore unreachable) would have surfaced HW-1. → **FOLLOW-376** AC.
+- **TG-2 (P2) — No test asserts opted-out events are excluded from archetype training** (LG-2). → FOLLOW-376 AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — §H.9 / FOLLOW-372 AC "Decision-API returns neutral directives … a test asserts neutral directives + no variant log" reads as satisfied, but the canonical decision-API consentGate path is 410-dead and the live control-plane gate is unreachable by real traffic.** The AC is met only against hand-injected test URLs. The ticket should not be marked fully DONE against the server-side ACs until FOLLOW-376 wires the producer.
+
+#### 4e. Multi-axis reconciliation
+
+- **Producer vs consumer axis:** analyzed BOTH — consumer (control-plane GET gate) present, producer (SDK query param) ABSENT (HW-1). The PR analyzed only the consumer.
+- **Client-gate vs server-gate axis:** client gate (skip `refreshDirectives`) WORKS ✅; server gate is redundant-and-unreached. The opt-out IS functional end-user-visibly via the client skip — but the server-side compliance enforcement (no variant log) is unproven against real traffic.
+- **consentGate (canonical, 410-dead) vs inline #339 gate axis:** two gate implementations; the canonical one is dead, the inline one is live but unreached. Rule K.1-adjacent (duplicate gate logic, divergent reachability).
+- **Erase axis:** `eraseProfilingOptOut` IS called on both consent-denial seams ✅ (storage-compliance correct). BUT the NEW quiz-completed key (`__estalara_quiz_completed__`, PR #340) is NOT erased on denial — see RETRO-105 §4d.
+
+### 5. Cascading impact
+
+- **5a.** FOLLOW-375/PR #340 (RETRO-105) ships in the same wave and ALSO touches `index.ts` init — the opt-out `profilingOptedOut` gate at `:923` and #340's SoT-restore both sit in `refreshDirectives`/init; no conflict observed, but both are now load-bearing in the same hot path.
+- **5b.** If decision-api `/api/adapt` is ever un-410'd (FOLLOW-107 reversal), `consentGate`'s new `profilingOptOut` input becomes live — but nothing currently passes it, so it would silently default false. A dormant half-wire.
+- **5c.** New SDK public exports (`isProfilingOptedOut` et al.) are SDK-surface; future callers must scope by `userId` or they leak opt-out state across accounts on a shared device.
+- **5d.** The opt-out establishes a NEW architectural seam: "AL-DOM suspend ≠ app-side processing suspend." The boundary is documented in the consent-gate JSDoc and §H.9, but it is enforced only by the SDK client skip + an unreached server gate. The architectural claim ("app.estalara.com buying-intent/lead-ranking/chat-summaries UNAFFECTED") is TRUE by construction (AL never controlled those), but the FOLLOW-372 AC to ASSERT it at the consent-gate boundary is unmet (consent-gate is dead).
+
+### 6. New lesson candidates
+
+- **Rule L — REINFORCING INSTANCE (consumed-but-never-produced config).** HW-1 is a textbook Rule L violation: the GET gate reads `profiling_opt_out` but no production producer emits it; tests inject it directly. Rule L already codified (RETRO-009/010/011) → no new promotion; logged as a confirming instance on the SDK→server query-param axis. Note: Rule L's verification grep is `data-*`-attribute-shaped; this instance is a QUERY-PARAM-shaped consumed-but-unproduced config — the same root, a slightly different surface. If a SECOND query-param instance appears, consider a Rule L amendment extending the grep to outbound request params.
+- **Pattern: "A new input/reason is added to a function that is already dead at runtime (410-retired path), making the addition cosmetic."** Seen RETRO-103 HW-2 (`consentGate.profilingOptOut` on the 410 decision-api path). Adjacent to Rule I (dead export). Count 1 — below threshold; held.
+
+### 7. Prior-follow-up closure check
+
+FOLLOW-372 did not claim to close a prior numbered RETRO finding (it implements the CEO §H.9 directive). Traced FOLLOW-372's OWN ACs end-to-end:
+- **AC "SDK renders persistent ARIA toggle": MET ✅** (`renderProfilingToggle` mounted, keyboard-operable native checkbox, EN/PL/ES).
+- **AC "OFF skips archetype ID + intent updates + DOM neutralized": CLIENT-SIDE MET ✅** (cold-start prior skip `:847`, `refreshDirectives` skip `:923`, observer-signal skip `:992`).
+- **AC "Decision-API returns neutral directives + no variant log": NOT MET end-to-end ✗** — server gate unreachable (HW-1); met only against injected test URLs.
+- **AC "no profiling-tagged behavioral events contribute to training": NOT MET ✗** — events still emitted untagged (LG-2).
+- **AC "AL chat-intent shadow prior not applied": NOT MET ✗** — `redis_writer.py` skip is an OPEN HANDOFF (HW-3).
+- **AC "app-side processing verifiably UNAFFECTED, asserted at consent-gate boundary": NOT MET ✗** — consent-gate is 410-dead (HW-2).
+Net: the user-visible client opt-out works; 4 of the server/pipeline ACs are unwired. **PM: do not mark FOLLOW-372 fully DONE — the server-side + training-pipeline + chat-prior halves are open (FOLLOW-376).**
+
+### 8. Cross-references
+
+- **RETRO-102 (FOLLOW-373):** §H.9 was introduced by the umbrella PR; this is its runtime implementation.
+- **Rule L (RETRO-009/010/011):** HW-1 confirming instance on the query-param axis.
+- **Rule I:** HW-2 `consentGate` dead-input adjacency.
+- **RETRO-105 (FOLLOW-375):** same-wave `index.ts` init changes; the quiz-completed key it adds is not erased on denial (storage-compliance gap noted there).
+
+---
+
+## RETRO-104 — FOLLOW-374 (wire `platform_registration` consent_records INSERT — `POST /api/v1/consent/platform-registration`) — 2026-06-23
+
+### 1. Summary of change
+
+- **PR:** #338 (merged 2026-06-21, commit `f9a033c`). Implements the AL-owned endpoint app.estalara.com must call at the investor "I agree" click — the consent-record producer RETRO-102 HW-1 deferred.
+- **Files changed:** new `apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts` + `lib.ts` (route constants moved out per Next.js 15 export restriction) + integration tests; HANDOFFS. 18 integration tests.
+- **Modules touched:** control-plane (new API route) · db (consent_records INSERT via `createAdminClient()`).
+- **Key contracts changed:**
+  - NEW route `POST /api/v1/consent/platform-registration` — auth: HMAC-SHA256 shared secret (`PLATFORM_REGISTRATION_CONSENT_SECRET`) with `timingSafeEqual`; secret absent → 401 (no fail-open); replay/dedup via `(tenant_id, session_id, consent_type)` → 409 on duplicate.
+  - Writes `consent_records` row: `consent_type='platform_registration'`, `granted=true`, `tos_version`, `consent_text_hash` (SHA-256), `ip_address` (AES-256-GCM encrypted via `CONSENT_IP_ENCRYPTION_KEY`; null when key absent — plaintext never persisted), `user_agent`, `granted_at`.
+  - NEW exports in `lib.ts`: `PLATFORM_REGISTRATION_TOS_VERSION`, `CANONICAL_CONSENT_TEXT_HASH`, `PlatformRegistrationConsentInput`.
+  - No DB schema change (free-text `consent_type` confirmed sufficient by RETRO-102 / ROPA Activity 16).
+
+### 2. Verification done in PR
+
+- 18 integration tests (PR body: all ACs covered) — HMAC pass/fail, secret-absent 401, dedup 409, IP-encryption present/absent, fail-loud 500 with `degraded`/`data_source`. One in-PR fix (`TS2352/TS2493` test cast) + one Next.js-15 export fix (moved non-`POST` exports to `lib.ts`). CI claimed green.
+
+### 3. Wiring Audit
+
+CHECK A (dead code): route file is a framework entrypoint (suppressed per the route-handler exemption). `lib.ts` exports are imported by `route.ts` + tests. ✅
+CHECK B (half-wire):
+- **HW-1 — HALF_WIRE_C across the repo boundary, P1 (the CALLER is app-side / Rafał, not in this repo).** The endpoint is the PRODUCER side of RETRO-102's consent-record contract, but its CONSUMER (the app.estalara.com registration form posting to it at the "I agree" click) lives in Rafał's repo, NOT here. The HANDOFF is written. Within THIS repo the route is producer-only (no AL caller), but that is correct-by-design — the contract intentionally crosses the repo boundary. Closure of the END-TO-END consent wire is therefore NOT verifiable from this repo; the go-live gate (`PRIVACY_NOTICE_TEMPLATE §5`) correctly remains UNSATISFIABLE until Rafał wires the call + QA verifies a real browser session. → tracked via the open HANDOFF; no new follow-up (the gate already gates it).
+- Otherwise clean: the INSERT (producer) → `consent_records` (the DSR-erase/access consumers exist) is wired. ✅
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — Dedup key `(tenant_id, session_id, consent_type)` may mis-handle re-registration / consent re-grant.** A returning investor who registers a second time (or re-grants after withdrawal) with the SAME `session_id` would hit the 409 dedup and NOT write a fresh consent record — losing the new `tos_version`/`granted_at`/`consent_text_hash` for an updated consent text. If `session_id` is actually an account reference (stable per user), a TOS-version bump would silently fail to record re-consent. Needs confirmation of whether the dedup should be scoped by `(…, tos_version)` or allow consent-version supersession. → **FOLLOW-379**.
+- **LG-2 (P2) — `consent_text_hash` is a build-time constant (`CANONICAL_CONSENT_TEXT_HASH` in `lib.ts`), not computed from the text actually shown to the user.** FOLLOW-374 AC requires the hash be "the SHA-256 of the actual consent text displayed at registration." If app.estalara.com renders the text (and possibly a localized PL/ES variant), the server-side canonical hash will NOT match the displayed text for non-EN locales — the evidentiary value of the hash (proving WHAT the user agreed to) is weakened. The hash should be supplied by the caller (the displaying surface) or the endpoint must pin the exact multi-locale texts. → **FOLLOW-379**.
+
+#### 4b. Code bugs not caught
+
+- N/A — the HMAC/encryption/fail-loud paths are correctly built (Rule H amendment auth-in-same-PR satisfied: HMAC-SHA256 + timingSafeEqual + no fail-open). Rule K.2 fail-loud satisfied (configured-but-failed INSERT → 500 with `degraded`/`data_source`, no fabricated `consent_record_id`).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — No test asserts `consent_text_hash` matches a real rendered consent text** (LG-2); the test asserts the constant is sent, not that it equals the displayed text (self-agreeing — Rule L family). → FOLLOW-379.
+- **TG-2 (P3) — The QA manual gate (real browser session) is inherently app-side** (HW-1) and cannot be a CI test here; correctly a HANDOFF gate item.
+
+#### 4d. Documentation gaps
+
+- N/A — HANDOFF written, go-live gate correctly marked unsatisfiable-until-Rafał.
+
+### 5. Cascading impact
+
+- **5a.** Closes RETRO-102 HW-1 (the consent-record producer) AT THE REPO BOUNDARY — the AL side is done; end-to-end closure depends on the app-side caller (HANDOFF).
+- **5b.** DSR verbs (RETRO-044/045 Rule S set): the `platform_registration` row is now WRITTEN — so erase/access/portability MUST handle it (RETRO-102 §5c / FOLLOW-378). With the producer live, FOLLOW-378 becomes more urgent: a user who withdraws must have this row erased/disclosed.
+- **5c.** `consent_records` now has a 5th+ consent_type value flowing through `createAdminClient()` (RLS-bypass, service role) — consistent with the `/api/registrations` precedent, but the admin-client write path is security-sensitive; the HMAC gate is the only auth.
+- **5d.** Establishes the pattern "AL exposes an HMAC-authed `/api/v1/consent/*` endpoint that app.estalara.com calls" — a new cross-repo integration surface. Future consent types (withdrawal, re-grant) will likely need sibling endpoints (Rule S).
+
+### 6. New lesson candidates
+
+- **Pattern (Rule L family, cross-repo): "A consent/audit hash or version is pinned as a server-side build constant rather than derived from the surface that actually displays the text to the user — so the evidentiary artifact may not match what the user saw (esp. across locales)."** Count 1 — below threshold; → FOLLOW-379, held.
+- **Pattern (Rule S watch): "A new consent_type producer lands but the symmetric DSR consumer set is not updated in the same wave."** Reinforces the RETRO-102 §6 watch (now count 2 on the consent_type-DSR axis across RETRO-102/104) — but both are the SAME unverified gap, not two confirmed instances; → FOLLOW-378 to verify before counting toward promotion.
+
+### 7. Follow-ups
+
+- **FOLLOW-379 (P2, backend-engineer, 2h):** (a) Reconcile the dedup policy so a TOS-version bump / re-consent supersedes rather than 409s (scope dedup by consent version or allow supersession) [LG-1]; (b) source `consent_text_hash` from the text actually displayed (caller-supplied, or pin exact PL/ES texts) so the audit hash matches across locales [LG-2/TG-1].
+- (HW-1 end-to-end app-side caller + QA gate: tracked via existing HANDOFF + the unsatisfiable go-live gate — no new stub.)
+- (DSR consent_type coverage: FOLLOW-378, filed in RETRO-102.)
+
+### 8. Cross-references
+
+- **RETRO-102 (FOLLOW-373):** this PR is the producer RETRO-102 HW-1 deferred; closes it at the repo boundary.
+- **Rule H amendment (auth-in-same-PR):** satisfied — HMAC-SHA256 + timingSafeEqual + no fail-open shipped in the same PR. Confirming-good instance.
+- **Rule K.2 (fail-loud):** satisfied — configured-but-failed INSERT fails loud with provenance flags. Confirming-good instance.
+- **Rule S (RETRO-044/045):** §5b — the now-live `platform_registration` row makes FOLLOW-378 (DSR sibling coverage) urgent.
+
+---
+
+## RETRO-105 — FOLLOW-375 (cross-listing SPA adaptation + source-of-truth archetype; ADR-0014) — 2026-06-23
+
+### 1. Summary of change
+
+- **PR:** #340 (merged 2026-06-23, commit `4635c3d`). Fixes two real-browser-verified bugs: (1) 2nd+ listing not adapted on SvelteKit SPA navigation; (2) quiz archetype decaying to `neutral` mid-session, silently turning off cross-listing adaptation. ADR-0014.
+- **Files changed:** `packages/sdk/src/core/observer.ts` (+62, MutationObserver for SPA nav + in-place `data-estalara-listing-id` change), `session.ts` (+52, `persistResolvedArchetype`/`readResolvedArchetype`/`resolvedArchetypeStorageKey` + erase wiring), `intent.ts` (+23, quiz-stickiness in `classifyFromProbabilities` via new `quizAnswered` param), `adapt.ts` (+14, `adapt.skipped` on empty directive value), `index.ts` (+132/−104: SoT restore/persist, listing-change re-adapt, headline-restore, **sidebar widget removed**, `markQuizCompleted` wired), `quiz-trigger.ts` (+`isQuizCompleted`/`markQuizCompleted` sessionStorage), `mock-decision-server.mjs`, docs/runbooks/ADR.
+- **Modules touched:** SDK core (observer/session/intent/adapt) · SDK index · SDK ui (quiz-trigger).
+- **Key contracts changed:**
+  - `classifyFromProbabilities(probs, currentArchetype?, quizAnswered = false)` — 3rd param ADDED — breaking: no (defaults false). Threaded into all 5 `applyBehavioralSignal` branches.
+  - NEW session exports: `persistResolvedArchetype`, `readResolvedArchetype`, `resolvedArchetypeStorageKey`.
+  - NEW quiz-trigger exports: `isQuizCompleted`, `markQuizCompleted`.
+  - NEW sessionStorage keys: `estalara_resolved_archetype_<sessionId>` (SoT archetype), `__estalara_quiz_completed__` (session-scoped quiz suppression).
+  - `eraseIntentState` now ALSO removes the resolved-archetype key.
+  - `listing.viewed` payload `listing_id` now sourced from `getAttribute('data-estalara-listing-id')` (was `dataset.listingId`) — corrects an attribute-name mismatch.
+  - **REMOVED:** `createSidebarWidget` import + sidebar mount/show/destroy (sidebar is now admin-only).
+
+### 2. Verification done in PR
+
+- PR body: 184 SDK unit tests pass; verified end-to-end in a real browser. **But the NEW paths are NOT unit-tested in this PR** — FOLLOW-375 itself (the stub) explicitly lists "Add SDK unit tests for the new paths (observer in-place mutation; refreshDirectives SoT restore; eraseIntentState clears resolved-archetype key)" as an OPEN follow-up, acknowledging the Rule H deferral (currently verified only by browser + pre-existing intent/session suites). `follow-343.test.ts` got an 8-line update.
+
+### 3. Wiring Audit
+
+CHECK A (dead code):
+- `persistResolvedArchetype` (3 callers: quiz-leaf seed `:1124`, post-fetch update `:685`), `readResolvedArchetype` (neutral-decay restore `:659`) — WIRED ✅.
+- `markQuizCompleted` → `index.ts:1114` (on quiz completion); `isQuizCompleted` → `scheduleQuizTrigger` guard — WIRED ✅.
+- `resolvedArchetypeStorageKey` → used by the persist/read/erase trio — WIRED ✅.
+- `adapt.skipped`/`empty_value` → consistent with 5 pre-existing `adapt.skipped` emit sites — WIRED ✅.
+CHECK B (half-wire): No new event/env-var/column/topic. The SoT key has a producer (persist) AND a consumer (read in restore) AND an eraser (eraseIntentState) — fully wired across producer→consumer→render. ✅
+- **One sub-finding (DEAD_CODE removal done right):** the sidebar widget was REMOVED, not orphaned — `createSidebarWidget` import, `sidebar` var, `.show()`, `.destroy()` all deleted together. No orphan. ✅
+`Wiring Audit — clean ✅` for the shipped wiring (the gap is test coverage, §4c, not a severed wire).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — Rapid-navigation race: SoT restore reads, then fetch, then SoT persist — a fast 2nd navigation can persist a transient neutral or stale archetype.** In `refreshDirectives` the restore (`:659`, pin to SoT if live archetype is neutral) runs BEFORE `fetchDirectives`, and the SoT PERSIST (`:685`) runs AFTER, only if the post-fetch archetype is non-neutral. On rapid SPA navigation, a 2nd `listing.viewed` can fire `void refreshDirectives()` (`:1041`) while the 1st is still in-flight (both are async, no in-flight guard / no abort). Two overlapping `refreshDirectives` can interleave: the later one's restore may read a SoT the earlier one is about to overwrite, and `currentIntentState` is mutated by both. The CEO scope (drift only to non-neutral, never to neutral) is preserved by the guards, but the LAST-write-wins on `currentIntentState`/SoT under concurrency is unspecified. → **FOLLOW-380**.
+- **LG-2 (P2) — `originalHeadlineText` captured once, globally, but restored to ALL headline slots on every listing change.** `:927` captures the FIRST listing's headline text as the "tenant placeholder"; `:1047` restores THAT text to every `[data-estalara-slot="headline"]` on a non-fitting listing. If listings have DIFFERENT original headlines (they do — each listing has its own title), restoring listing-1's captured text onto listing-2's non-fitting headline shows listing-1's title on listing-2. The comment assumes the placeholder is "identical across listings," which is true only for a generic tenant placeholder, NOT for real per-listing titles. On a real SPA where SvelteKit re-renders the per-listing title, the capture-once model can stamp a stale title. → **FOLLOW-380**.
+- **LG-3 (P2) — SoT restore mutates `currentIntentState.archetype` but not `confidence`/`signal_count`.** `:661` `currentIntentState = { ...currentIntentState, archetype: sot }` pins the archetype to the SoT while leaving `confidence` at whatever the decayed-to-neutral state had (likely low). A restored archetype with neutral-era low confidence may fall below the DOM-adaptation confidence floor (FOLLOW-343/RETRO-091), so the restore re-pins the archetype but the floor may still suppress adaptation — partially defeating the fix. Needs confidence re-pin alongside archetype. → **FOLLOW-380**.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P2) — `quizAnswered` reads `state.quiz_answered`, but the SoT mechanism is meant to work WITHOUT the quiz too** (quiz-disabled tenants — memory `project_cross_listing_sot_archetype`). The intent.ts quiz-stickiness guard (`:771`) only fires when `quizAnswered === true`. For a quiz-disabled tenant, behavioral/chat resolution seeds the SoT (via the `:685` persist), and the `:659` restore still works (it does not gate on quiz) — so the SoT restore is quiz-independent ✅. BUT the intent.ts-level stickiness (preventing neutral from overtaking mid-classify) is quiz-ONLY; a quiz-disabled session relies entirely on the index.ts restore, which only fires when the live archetype has ALREADY fully decayed to neutral. So quiz-disabled tenants get a weaker guarantee (decay-then-restore) vs quiz tenants (prevent-decay + restore). Asymmetry is acceptable but undocumented. → note for FOLLOW-380.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — All new paths unit-untested (acknowledged Rule H deferral).** observer in-place `data-estalara-listing-id` mutation → `listing.viewed`; `refreshDirectives` SoT restore on neutral-decay + update on non-neutral; `eraseIntentState` clears resolved-archetype key; `intent.ts` quiz-stickiness; `adapt.ts` empty-value skip; headline restore. → already covered by **FOLLOW-375**'s open test AC (do NOT duplicate); the LG-1/LG-2/LG-3 race/stale-title/confidence cases should be ADDED to that AC. → FOLLOW-380 cross-refs FOLLOW-375.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1, storage-compliance / Rule N family) — the new `__estalara_quiz_completed__` sessionStorage key is NOT erased on consent denial / withdrawal.** `eraseIntentState` was updated to remove the resolved-archetype key, and FOLLOW-372 erases the opt-out key, but `markQuizCompleted`'s `__estalara_quiz_completed__` key has NO eraser on the consent-denied seams (`index.ts:278`/`:341`). Mode A compliance (RETRO-019/020 pattern, Rule N) requires all SDK-written keys be cleaned up on denial. The resolved-archetype key it is "in lockstep" with IS erased; its companion completion flag is not. → **FOLLOW-381**.
+
+#### 4e. Multi-axis reconciliation
+
+- **Quiz vs quiz-disabled axis:** analyzed BOTH (CB-1) — SoT restore is quiz-independent ✅; intent.ts stickiness is quiz-only (weaker guarantee for quiz-disabled). 
+- **In-place mutation vs remount axis:** observer handles BOTH (`attributes` filter for in-place `data-estalara-listing-id`; `childList` for remount) ✅; index.ts re-adapt triggers on `viewedListingId !== previousListingId` OR `rootEl !== previousListingEl` (catches same-id remount) ✅.
+- **Restore axis vs persist axis:** restore (read) at hop-1 of refreshDirectives, persist (write) at hop-3 — the ordering creates the LG-1 race under concurrency.
+- **Headline slot vs description slot axis:** description handled by observer teardown (lets framework re-render); headline by capture-once-restore (LG-2 stale-title risk). Asymmetric handling of the two text slots.
+
+### 5. Cascading impact
+
+- **5a.** Same-wave FOLLOW-372 (RETRO-103) shares `index.ts` init + `refreshDirectives`; the opt-out `:923` skip and the SoT restore `:659` coexist (opt-out short-circuits before restore). No conflict, but both are now hot-path-critical.
+- **5b.** FOLLOW-343/RETRO-091 (DOM confidence floor): LG-3 — the SoT restore re-pins archetype but not confidence, so the floor may still suppress the restored adaptation. The two features interact; calibration (FOLLOW-212) must consider the restored-archetype confidence.
+- **5c.** `classifyFromProbabilities` gained a 3rd param (`quizAnswered`), now threaded into all 5 `applyBehavioralSignal` branches — this addresses the RETRO-097 §3 Rule-S sibling-completeness concern for THIS param (all 5 branches updated symmetrically ✅), though RETRO-097's `applyDwellSignal`/`applyListingViewRate` 2nd-param gap (FOLLOW-363) is a SEPARATE call-site set still open.
+- **5d.** New architectural invariant: "session SoT archetype never decays to neutral; drifts only to other non-neutral" (ADR-0014, CEO 2026-06-22, memory `project_cross_listing_sot_archetype`). Any new behavioral signal that resolves neutral must NOT overwrite the SoT — a standing trap for future intent-engine work (the `:685` persist correctly gates on `!== 'neutral'`, but a future direct SoT writer could violate it).
+
+### 6. New lesson candidates
+
+- **Pattern: "An async re-adaptation triggered by a rapid-fire DOM/navigation event has no in-flight guard or AbortController, so two overlapping invocations interleave on shared mutable session state (last-write-wins unspecified)."** Seen RETRO-105 LG-1 (overlapping `refreshDirectives` on rapid SPA nav). Adjacent to Rule R (rehydrate-boundary idempotency) but distinct axis (concurrency, not rehydration). Count 1 — below threshold; → FOLLOW-380, held.
+- **Pattern (Rule N family, count watch): "A new SDK-written sessionStorage/localStorage key is added without an eraser on the consent-denial seams."** Seen RETRO-105 DG-1 (`__estalara_quiz_completed__`). Rule N already covers storage-cleanup-on-withdraw (RETRO-019/020); this is a confirming instance → FOLLOW-381, citation not new promotion.
+
+### 7. Follow-ups
+
+- **FOLLOW-380 (P1, sdk-engineer, 4h):** Harden cross-listing re-adaptation: (a) add an in-flight guard / AbortController so overlapping `refreshDirectives` on rapid SPA nav cannot interleave on `currentIntentState`/SoT [LG-1]; (b) capture original headline text PER-LISTING (or read the framework's freshly-rendered title) instead of capture-once-global [LG-2]; (c) re-pin confidence (not only archetype) on SoT restore so the FOLLOW-343 floor doesn't suppress the restored adaptation [LG-3]; (d) document the quiz vs quiz-disabled stickiness asymmetry [CB-1]; add the corresponding unit tests (extends FOLLOW-375's open test AC).
+- **FOLLOW-381 (P2, sdk-engineer, 1h):** Erase `__estalara_quiz_completed__` on the consent-denied / withdrawal seams (`index.ts:278`/`:341`), in lockstep with `eraseIntentState`'s resolved-archetype erase — Mode A storage compliance (Rule N). [DG-1]
+
+### 8. Cross-references
+
+- **RETRO-103 (FOLLOW-372):** same-wave `index.ts` init; the opt-out key IS erased on denial, but this PR's quiz-completed key is NOT (DG-1).
+- **RETRO-097 (FOLLOW-344/363):** `classifyFromProbabilities` param-threading — this PR's `quizAnswered` 3rd param was threaded into all 5 `applyBehavioralSignal` branches symmetrically (Rule S satisfied for this param); the separate `currentArchetype` 2nd-param gap in `applyDwellSignal`/`applyListingViewRate` (FOLLOW-363) remains.
+- **RETRO-091 (FOLLOW-343):** DOM confidence floor interacts with the SoT restore (LG-3).
+- **Rule N (RETRO-019/020):** DG-1 storage-cleanup-on-denial confirming instance.
+- **Rule H / FOLLOW-375:** the new-path unit tests are an acknowledged Rule H deferral, tracked in FOLLOW-375; FOLLOW-380 extends it.
+- **ADR-0014 / memory `project_cross_listing_sot_archetype`:** the SoT-never-decays-to-neutral invariant.
+
+---
+
+## RETRO-106 — FOLLOW-376 (green the Python test matrix — drop deleted Modal apps + fix llm-gateway imports) — 2026-06-23
+
+### 1. Summary of change
+
+- **PR:** #341 (merged 2026-06-23 08:16 UTC, commit `6d34fd1`). CI-only fix. Python CI had been fully red for a long time: the `test-python` matrix listed three apps (`adaptation-engine`, `archetype-pipeline`, `auto-detect`) DELETED in `da9f45f` (2026-05-17, TICKET-ARCH-103). Their jobs failed on a missing `working-directory`, and fail-fast cancelled every sibling job, masking which app actually failed.
+- **Files changed:** 2 — `.github/workflows/ci.yml` (matrix → the four real Python apps: intent-engine, llm-gateway, stream-consumer, data-quality; + `fail-fast: false`), `apps/llm-gateway/pyproject.toml` (+`pythonpath = ["src"]`).
+- **Modules touched:** infra/CI · llm-gateway packaging.
+- **Key contracts changed:** None (CI config + pytest path config). No code, schema, event, or API change.
+
+### 2. Verification done in PR
+
+- PR body: verified locally in isolated per-app venvs matching CI — intent-engine 14 passed/2 skipped, llm-gateway 89 passed, stream-consumer 41 passed, data-quality 23 passed. The `pythonpath = ["src"]` fix resolves `jobs.generate_description` imports in `src/jobs/test_*.py` (collection was failing with `ModuleNotFoundError`, shipped unnoticed because Python CI was already red).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`. No new file, export, event, env-var, column, or topic. CHECK A / CHECK B both N/A (CI/packaging config only). Verified the dropped apps are genuinely gone (`apps/` contains exactly the four matrix apps; `da9f45f` removed the other three on 2026-05-17) — no production functionality lost (the three were Modal PLACEHOLDER stubs per TICKET-ARCH-103; CLAUDE.md was already updated to "7 apps" at that deletion).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A.
+
+#### 4b. Code bugs not caught (latent, exposed by un-redding CI)
+
+- **CB-1 (P2, NOT a new bug — a pre-existing one this PR makes VISIBLE) — the llm-gateway nested-test import break "shipped unnoticed because Python CI was already red."** This is the real lesson: a fully-red CI gate is equivalent to NO gate — it masked an import regression that would otherwise have blocked a PR. The fix is correct, but it confirms a window during which ANY Python regression could merge undetected. Worth a one-shot audit that no OTHER Python regression slipped in during the red window (2026-05-17 → 2026-06-23, ~5 weeks). → **FOLLOW-382**.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — No guard prevents the matrix from re-drifting from the real `apps/` set.** The matrix is a hand-maintained list; the next app add/delete can desync it again (the same class of failure this PR fixes). A trivial check ("every `test-python` matrix entry has a corresponding `apps/<x>/pyproject.toml`, and vice-versa") would prevent recurrence. → **FOLLOW-382** (AC).
+
+#### 4d. Documentation gaps
+
+- N/A — CLAUDE.md app count was already corrected at the `da9f45f` deletion.
+
+### 5. Cascading impact
+
+- **5a.** With Python CI green again, the cross-runtime test discipline (Rule Z, RETRO-098/099) is now ACTUALLY enforced on PRs — stream-consumer/intent-engine tests gate again. This indirectly strengthens the FOLLOW-366/368 chat-bridge follow-ups (their Python tests now run in CI).
+- **5b.** Any future Python PR now gets per-app isolated feedback (`fail-fast: false`) — one app's failure no longer masks the others. This is a strict improvement to the gate's diagnosability.
+- **5c.** None — no contract change.
+- **5d.** Confirms the "CI gate landscape" memory (`project_ci_gate_landscape.md`): Python-test was listed as a pre-existing-red, non-blocking check. This PR FLIPS it to green-and-blocking — the memory should be updated so future PMs treat Python-test as a real merge gate again. → noted in FOLLOW-382.
+
+### 6. New lesson candidates
+
+- **Pattern: "A CI matrix hand-lists apps/packages and silently desyncs from the real filesystem set after an app is added/deleted; a fully-red gate then masks unrelated regressions (a red gate = no gate)."** Seen RETRO-106 (matrix listed 3 deleted apps; red CI masked the llm-gateway import break). Count 1 — below threshold; → FOLLOW-382, held. (Related to Rule C "repo-config dependencies" but distinct: that's about missing repo SETTINGS; this is about a config list drifting from the filesystem.)
+
+### 7. Follow-ups
+
+- **FOLLOW-382 (P2, devops-engineer, 2h):** (a) One-shot audit that no Python regression merged during the ~5-week red-CI window (2026-05-17 → 2026-06-23) [CB-1]; (b) add a matrix-drift guard asserting the `test-python` matrix entries equal the set of `apps/*/pyproject.toml` Python apps [TG-1]; (c) update `project_ci_gate_landscape` memory — Python-test is now green-and-blocking [§5d].
+
+### 8. Cross-references
+
+- **RETRO-098/099 (Rule Z, FOLLOW-366/368):** Python CI being green again is what actually enforces the cross-runtime test discipline those retros depend on.
+- **Rule C (repo-config dependencies):** adjacent — both are config-not-matching-reality, but Rule C is about missing repo SETTINGS, this is filesystem/matrix drift.
+- **memory `project_ci_gate_landscape`:** Python-test flips from pre-existing-red to a real gate; memory update folded into FOLLOW-382.

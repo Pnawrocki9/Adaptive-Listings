@@ -668,6 +668,7 @@ async function init(): Promise<IntentState | null> {
         pageType,
         currentIntentState,
         listingId,
+        profilingOptedOut,
       );
 
       // FOLLOW-101: if the chat-intent prior was applied, update currentIntentState
@@ -989,12 +990,14 @@ async function init(): Promise<IntentState | null> {
     const cleanupObservers = setupObservers(
       config,
       (event: CollectedEvent) => {
-        eventQueue.push(event);
-
-        // FOLLOW-372 / §H.9: When opted out, skip ALL intent-weight updates and
-        // directive re-fetches. Events are still queued for audit/observability
-        // but do NOT contribute to archetype training for this user.
+        // FOLLOW-383 / §H.9: When opted out, drop behavioral events entirely.
+        // Do NOT push to eventQueue — opted-out events would be sent to ingest and
+        // could contaminate archetype training data. The FOLLOW-372 spec states that
+        // profiling opt-out SUPPRESSES variant logging entirely; sending behavioral
+        // events to the training pipeline would violate that boundary.
         if (profilingOptedOut) return;
+
+        eventQueue.push(event);
 
         // Record signal before quiz is answered (for mismatch detection)
         signalHistory.push({ eventType: event.type, payload: event.payload });

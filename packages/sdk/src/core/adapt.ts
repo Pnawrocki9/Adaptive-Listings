@@ -684,6 +684,7 @@ export async function fetchDirectives(
   pageType: 'listing_list' | 'listing_detail' | 'home' | 'search',
   intentState?: IntentState,
   listingId?: string,
+  profilingOptedOut?: boolean,
 ): Promise<FetchDirectivesResult> {
   if (!config.decisionApiUrl) return { adaptResponse: null };
   if (!config.tenantId) return { adaptResponse: null };
@@ -735,7 +736,13 @@ export async function fetchDirectives(
     const sdkConsent = getConsentState();
     body.consent_state = sdkConsent === 'pending' ? 'unknown' : sdkConsent;
 
-    const res = await fetch(buildEndpoint(config.decisionApiUrl, '/adapt'), {
+    // FOLLOW-383 / §H.9: append profiling_opt_out=1 as a URL query param so the
+    // server-side GET handler gate (req.nextUrl.searchParams) fires and returns
+    // neutral directives without logging any variant row.
+    // This is the correct approach because Next.js reads searchParams from the URL,
+    // not the POST body — appending to the URL works regardless of HTTP method.
+    const adaptPath = profilingOptedOut ? '/adapt?profiling_opt_out=1' : '/adapt';
+    const res = await fetch(buildEndpoint(config.decisionApiUrl, adaptPath), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

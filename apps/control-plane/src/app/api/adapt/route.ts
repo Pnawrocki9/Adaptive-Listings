@@ -907,6 +907,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const body = parsed.data;
 
+  // FOLLOW-383 / §H.9: per-user profiling opt-out gate for POST path.
+  // The SDK appends ?profiling_opt_out=1 to the URL when the user has opted out.
+  // Next.js exposes this via req.nextUrl.searchParams regardless of HTTP method.
+  // Mirror the same early-return logic as the GET handler: return neutral directives
+  // and SUPPRESS variant logging (logDecisionAsync is NOT called on this path).
+  const postProfilingOptOut = req.nextUrl.searchParams.get('profiling_opt_out') === '1';
+  if (postProfilingOptOut) {
+    const adaptDecisionId = crypto.randomUUID();
+    return NextResponse.json(
+      {
+        adapt_decision_id: adaptDecisionId,
+        session_id: body.session_id,
+        archetype: 'neutral' as const,
+        confidence: body.confidence ?? 0.5,
+        similarity: body.similarity ?? 0.5,
+        tier: 1,
+        directives: [],
+        source: 'default' as const,
+        generated_at: new Date().toISOString(),
+      },
+      { status: 200 },
+    );
+  }
+
   // FOLLOW-345/357: derive directive scope from page_type — listing_detail gets scope 2
   // (full directives); all other page types get scope 1 (lighter directive set, no
   // per-listing headline). This is a page-context axis, NOT an integration Tier (§E.7).

@@ -799,3 +799,26 @@ directive_scope = page-context routing axis.
 **A guardrail I'd add:** A rule that any shared type field used by both GET and POST on the same
 route should have explicit per-handler documentation in its JSDoc — or be split into separate
 response types. GET/POST response shape divergence in a single shared type is a silent drift risk.
+
+---
+
+## 2026-06-23 / FOLLOW-383
+
+**What I built:** Fixed the P0 dead-on-arrival profiling opt-out server gate. (1) SDK
+`fetchDirectives` now accepts `profilingOptedOut?: boolean` and appends `?profiling_opt_out=1` to
+the `/api/adapt` URL when true — previously the server gate existed but received zero real traffic
+because the SDK never sent the param. (2) `POST /api/adapt` gets the mirror gate: reads
+`req.nextUrl.searchParams` for `profiling_opt_out=1`, returns neutral directives without calling
+`getBanditArms`, `thompsonSample`, or `logDecisionAsync`. (3) Behavioral events in `index.ts`
+observer callback now drop before `eventQueue.push` (not after) when opted out — the FOLLOW-372 code
+had the guard AFTER the push, silently queuing opted-out events for the training pipeline.
+
+**Wiring/auth/fail-loud risks I weighed:** The POST opt-out gate sits AFTER Zod body parse but
+BEFORE bandit sampling — correct placement ensures we never log a variant row or contaminate
+training data. No mock fallback risk: the opt-out path returns a well-structured 200 with
+`source: 'default'` (provenance flag present). AC-4 (redis_writer.py chat-prior skip) is ml-engineer
+scope; filed stub in FOLLOW_UPS.md, not implemented here (Rule H deferral).
+
+**A guardrail I'd add:** A lint rule or CI check that flags any `eventQueue.push` call that does NOT
+have an opt-out guard immediately before it — prevents a future developer from adding a new push
+site that bypasses the privacy gate.

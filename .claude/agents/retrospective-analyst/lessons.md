@@ -1077,3 +1077,46 @@
   so unlike RETRO-080's non-incrementing remediation, it correctly tipped the count 1→2. The
   discriminator I applied: did the PR fix-in-place (non-incrementing) or fix-here-and-break-there
   (new sighting)? Here it was the latter.
+
+---
+
+## 2026-06-23 · RETRO-102 → RETRO-106 (FOLLOW-373/372/374/375/376 batch)
+
+- **A finding I almost missed and why (RETRO-103 HW-1):** PR #339 LOOKS like a clean, well-tested
+  server gate — 8 tests, neutral-directive + no-variant-log assertions, fail-before/pass-after
+  framing. I almost recorded it as wired. The catch came from running the wiring grep from the
+  SYMBOL, not the ticket: `grep profiling_opt_out` for a NON-TEST producer returned ZERO. The SDK
+  reads its own opt-out boolean and CLIENT-short-circuits `refreshDirectives()` — so the server gate
+  is reached by no real traffic at all. Every #339 test INJECTS the query param into the URL by hand
+  (the Rule L / RETRO-009/010/011 self-injecting-consumer shape). Lesson restated: a green test that
+  constructs the consumer's OWN input is never evidence the producer emits it. Always grep the
+  producer side of any new consumer.
+- **The 410-dead-input trap (RETRO-103 HW-2):** `consentGate` got a shiny new `profilingOptOut`
+  input + a new reason union member — but its ONLY call site is the decision-api `/api/adapt` route,
+  which is `410 Gone` (the route file's OWN header says "consent-gate … is now unreachable from
+  production"). I had to read that 410 header to realize the addition is cosmetic. New reflex: when
+  a PR adds an input/branch to a shared function, grep its call sites AND check whether any of them
+  is a retired/410/deprecated path before crediting the wire.
+- **An axis I had to trace twice (RETRO-105 headline restore):** the "restore original headline on
+  non-fitting listing" code reads clean until you ask: captured WHEN, applied to WHICH slots? It
+  captures ONCE (first listing) and restores to ALL headline slots. The comment asserts "placeholder
+  identical across listings" — true for a generic tenant placeholder, FALSE for real per-listing
+  titles. I had to re-read the capture site (`:927`, once, global) against the restore site
+  (`:1047`, every listing change) to see the stale-title bug. Capture-once-apply-many is a smell I
+  should flag on sight.
+- **Same-wave entanglement:** FOLLOW-372 (#337/#339), FOLLOW-374 (#338), FOLLOW-375 (#340) all
+  merged in ~36h and all three touch `index.ts` init / `refreshDirectives` / `consent_records`. The
+  multi-axis discipline had to include "does this PR's hot-path edit collide with the sibling PR's
+  hot-path edit?" — they don't conflict here, but the opt-out skip and the SoT restore now both live
+  in the same async init and both are load-bearing. Cross-referencing same-wave PRs in §5a is now
+  routine.
+- **A meta-pattern in how gaps recur across agents:** the compliance/consent work
+  (RETRO-102/103/104) keeps producing the SAME shape — a disclosure/contract is DOCUMENTED and the
+  schema vocabulary is added, but the PRODUCER (consent_records INSERT, the SDK opt-out param) lags
+  in a separate PR, and the CONSUMER set (DSR verbs that must erase the new consent_type) is never
+  enumerated in the same wave. It's Rule H deferral + Rule S sibling-completeness + Rule L
+  producer-absence, all on the consent surface, all at once. The umbrella PR DID file FOLLOW-374
+  correctly (good deferral discipline) but left the DSR-sibling axis (FOLLOW-378) and the SDK→server
+  opt-out producer (FOLLOW-376) implicit. The retro's job here was to make the implicit explicit
+  BEFORE the producer goes live app-side and a withdrawn user's platform-consent row turns out to be
+  un-erasable.

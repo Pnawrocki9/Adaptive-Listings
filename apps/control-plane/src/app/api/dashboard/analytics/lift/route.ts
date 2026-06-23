@@ -122,6 +122,11 @@ async function fetchLiftFromClickHouse(tenantId: string): Promise<ChLiftRow[] | 
   // (dot-separated type, matching the events.type column) within the window.
   // Uses DISTINCT subquery pattern identical to the canonical pilot route so
   // both paths count the same sessions.
+  //
+  // FOLLOW-371 / ESC-026: exclude contaminated holdout rows written during the
+  // ~12.5h window (PR #327 2026-06-19 21:17 UTC → PR #333 2026-06-20 09:53 UTC)
+  // when the GET path logged (holdout_group=1, variant IN ('v1','v2')).
+  // Predicate is a no-op for all clean rows.
   const query = `
     SELECT
       ad.archetype                                          AS archetype,
@@ -140,6 +145,7 @@ async function fetchLiftFromClickHouse(tenantId: string): Promise<ChLiftRow[] | 
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}
       AND ad.ts >= now() - toIntervalDay(7)
+      AND NOT (ad.holdout_group = 1 AND ad.variant != 'control')
     GROUP BY ad.archetype
     HAVING adapted_n > 0 OR holdout_n > 0
     ORDER BY adapted_n DESC

@@ -1,0 +1,164 @@
+# Data Dictionary — Estalara Adaptive Listings
+
+**Owner:** data-engineer **Last updated:** 2026-06-23 (FOLLOW-371)
+
+This document is the canonical reference for every ClickHouse table and column. It is updated in the
+same PR as any DDL change. All analytics queries MUST use the vocabulary defined here; divergent
+query siblings require a parity test.
+
+---
+
+## Table: `adaptation_decisions`
+
+One row per adaptation request. Append-only. Downstream aggregation for lift metrics, calibration,
+and training-data fuel.
+
+**Engine:** MergeTree() **Partition:** `toYYYYMM(ts)` **Order by:** `(tenant_id, session_id, ts)`
+**Migrations:** 0003, 0006, 0008, 0010, 0012, 0013, 0017
+
+| Column              | Type                     | Default     | Added | Description                                                                                                                         |
+| ------------------- | ------------------------ | ----------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `session_id`        | `String`                 | —           | 0003  | Anonymous session identifier.                                                                                                       |
+| `tenant_id`         | `String`                 | —           | 0003  | Tenant UUID. Partition/sort key.                                                                                                    |
+| `archetype`         | `LowCardinality(String)` | —           | 0003  | Archetype selected for this request.                                                                                                |
+| `confidence`        | `Float32`                | —           | 0003  | Scorer confidence in [0, 1].                                                                                                        |
+| `similarity`        | `Float32`                | —           | 0003  | Cosine similarity to archetype centroid.                                                                                            |
+| `source`            | `LowCardinality(String)` | —           | 0003  | Decision source (`bandit`, `quiz`, `chat`, `default`).                                                                              |
+| `tier`              | `UInt8`                  | —           | 0003  | (Deprecated — no Tiers in v4.0+.)                                                                                                   |
+| `directive_count`   | `UInt16`                 | —           | 0003  | Number of DOM directives returned.                                                                                                  |
+| `ts`                | `DateTime64(3, 'UTC')`   | —           | 0003  | Decision timestamp. Sort key.                                                                                                       |
+| `holdout_group`     | `Boolean`                | `false`     | 0006  | `true` = session is in the 10% holdout (control) arm.                                                                               |
+| `gate_reason`       | `LowCardinality(String)` | `''`        | 0008  | Non-empty when a consent gate fired. Values: `''`, `'consent_required'`.                                                            |
+| `variant`           | `LowCardinality(String)` | `'control'` | 0010  | Thompson-sampled bandit variant: `'control'`, `'v1'`, `'v2'`. **Holdout rows MUST always be `'control'` (HOLDOUT RULE, ADR-0006).** |
+| `adapt_decision_id` | `String`                 | `''`        | 0012  | Stable per-decision UUID. Cross-store join key to Postgres `conversion_labels.prediction_id`.                                       |
+| `demo_override`     | `UInt8`                  | `0`         | 0013  | `1` = decision driven by demo mode.                                                                                                 |
+| `model_version`     | `LowCardinality(String)` | `''`        | 0013  | Scorer version, e.g. `'rulebased-bandit-v1'`.                                                                                       |
+| `features_snapshot` | `String`                 | `''`        | 0013  | PII-free JSON of scorer inputs at decision time.                                                                                    |
+| `lead_id`           | `String`                 | `''`        | 0013  | Durable pseudonymous lead key (empty until wired; FOLLOW-170).                                                                      |
+
+### Known data quality issue: ESC-026 contamination window
+
+Between **2026-06-19 21:17 UTC** (PR #327 merge, commit `66054d6`) and **2026-06-20 09:53 UTC** (PR
+#333 merge, commit `2836adc`) — a ~12.5h window — the GET `/api/adapt` path wrote rows with
+`(holdout_group=1, variant IN ('v1','v2'))`. Holdout rows should always carry `variant='control'`
+(HOLDOUT RULE). These contaminated rows make the holdout arm appear to include treatment variants,
+inflating its measured CTA rate and understating lift.
+
+**Remediation (FOLLOW-371, migration 0017):** All lift/calibration queries that consume this table
+include a query-level exclusion filter:
+
+```sql
+AND NOT (holdout_group = 1 AND variant != 'control')
+```
+
+This is equivalent to `AND (holdout_group = 0 OR variant = 'control')` and is a no-op for all rows
+outside the contamination window.
+
+**Identification query (read-only):**
+
+```sql
+SELECT count() AS contaminated_rows
+FROM adaptation_decisions
+WHERE holdout_group = 1
+  AND variant != 'control'
+  AND ts >= toDateTime('2026-06-19 21:17:00', 'UTC')
+  AND ts <  toDateTime('2026-06-20 09:53:00', 'UTC');
+```
+
+**Optional in-place relabel:** see
+`infra/clickhouse/scripts/follow371_relabel_contaminated_rows.sh`.
+
+### Lift delta (ESC-026 recompute)
+
+Because the pilot was in shadow mode during the contamination window, the actual holdout-arm row
+count affected is expected to be zero or a small number. The lift delta is therefore:
+
+- **If count = 0 (expected for shadow mode):** lift/calibration estimates are unchanged. The
+  exclusion filter is a no-op that future-proofs the queries.
+- **If count > 0:** the holdout CTA rate was being inflated by contaminated rows that should have
+  received `directives: []` (control experience) but were served `v1`/`v2` copy. Removing them
+  lowers the holdout CTA rate and increases the measured lift. The delta scales linearly with the
+  contaminated fraction of holdout sessions:
+  `Δ_holdout_rate ≈ (contaminated_cta_count / contaminated_count) * (contaminated_count / total_holdout_sessions)`.
+
+The actual contaminated row count is **TBD at apply time** (requires a read-only query against prod
+ClickHouse by an operator with credentials).
+
+---
+
+## Table: `events`
+
+Canonical event store. One row per event emitted by the SDK or ingest worker.
+
+**Engine:** MergeTree() **Partition:** `(tenant_id, toYYYYMMDD(ts))` **Order by:**
+`(tenant_id, session_id, ts)` **Migration:** 0001
+
+| Column       | Type                     | Description                                                                                                                                                                                                                         |
+| ------------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `event_id`   | `String`                 | UUID per event. Dedupe key for idempotent consumers.                                                                                                                                                                                |
+| `session_id` | `String`                 | Session identifier (matches `adaptation_decisions.session_id`).                                                                                                                                                                     |
+| `tenant_id`  | `String`                 | Tenant UUID.                                                                                                                                                                                                                        |
+| `type`       | `LowCardinality(String)` | **Canonical dot-separated event type** (e.g. `'cta.clicked'`, `'inquiry.started'`, `'page.view'`, `'listing.viewed'`). NEVER use underscore-separated aliases (`cta_clicked` was a vocabulary bug fixed in FOLLOW-093 / RETRO-008). |
+| `ts`         | `DateTime64(3, 'UTC')`   | Event timestamp. NEVER use `assigned_at` (non-existent column, vocabulary bug in pre-FOLLOW-093 code).                                                                                                                              |
+| `properties` | `String`                 | JSON payload.                                                                                                                                                                                                                       |
+
+---
+
+## Table: `intent_events`
+
+Per-session intent signal snapshots.
+
+**Engine:** MergeTree() **Migrations:** 0014, 0015, 0016
+
+| Column              | Type                   | Description                                                     |
+| ------------------- | ---------------------- | --------------------------------------------------------------- |
+| `tenant_id`         | `String`               | Tenant UUID.                                                    |
+| `session_id`        | `String`               | Session identifier.                                             |
+| `intent_session_id` | `UUID`                 | Legacy UUID field (zero-UUID default; see migration 0016 note). |
+| `event_at`          | `DateTime64(3, 'UTC')` | Snapshot timestamp.                                             |
+| `intent_vector`     | `Array(Float32)`       | 12-dimensional intent vector.                                   |
+
+---
+
+## Table: `dsr_audit_log`
+
+GDPR/DSR audit trail. TTL enforced.
+
+**Migration:** 0009, 0011
+
+| Column       | Type                     | Description                              |
+| ------------ | ------------------------ | ---------------------------------------- |
+| `request_id` | `String`                 | DSR request UUID.                        |
+| `tenant_id`  | `String`                 | Tenant UUID.                             |
+| `subject_id` | `String`                 | Data subject identifier.                 |
+| `action`     | `LowCardinality(String)` | `'delete'`, `'access'`, `'portability'`. |
+| `ts`         | `DateTime64(3, 'UTC')`   | Audit timestamp.                         |
+
+---
+
+## Canonical event vocabulary (Rule K.1)
+
+All queries MUST use these canonical event names. Divergent siblings require a parity test.
+
+| Event type (canonical) | Description            | DO NOT USE                         |
+| ---------------------- | ---------------------- | ---------------------------------- |
+| `page.view`            | Page load              | `pageview`, `page_view`            |
+| `listing.viewed`       | Listing detail view    | `listing_viewed`                   |
+| `cta.clicked`          | CTA click              | `cta_clicked` (pre-FOLLOW-093 bug) |
+| `inquiry.started`      | Inquiry form opened    | `inquiry_started`                  |
+| `inquiry.completed`    | Inquiry form submitted | `inquiry_completed`                |
+| `live.signup`          | LIVE event sign-up     | —                                  |
+| `filter.applied`       | Search filter applied  | —                                  |
+
+Time column is always `ts`. NOT `assigned_at` (non-existent, vocabulary bug).
+
+---
+
+## Retention / TTL promises
+
+| Table                  | TTL                                        | Mechanism             | Status             |
+| ---------------------- | ------------------------------------------ | --------------------- | ------------------ |
+| `events`               | Per-tenant override (Sprint 9 TODO)        | ClickHouse TTL clause | Pending            |
+| `adaptation_decisions` | No explicit TTL (inherits cluster default) | —                     | Pending            |
+| `intent_events`        | —                                          | —                     | Pending            |
+| `dsr_audit_log`        | Per-compliance requirement                 | TTL column            | See migration 0011 |

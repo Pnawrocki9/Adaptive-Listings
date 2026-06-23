@@ -100,6 +100,12 @@ async function fetchCtaLiftRaw(tenantId: string, windowDays: number): Promise<Ch
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
   const params = { tenant_id: tenantId, window_days: String(windowDays) };
 
+  // FOLLOW-371 / ESC-026: exclude contaminated holdout rows written during the
+  // ~12.5h window between PR #327 (2026-06-19 21:17 UTC) and PR #333
+  // (2026-06-20 09:53 UTC) when the GET path logged (holdout_group=1,
+  // variant IN ('v1','v2')). The predicate is a no-op for all clean rows.
+  const CLEAN_HOLDOUT = `NOT (ad.holdout_group = 1 AND ad.variant != 'control')`;
+
   // 1. Per-arm totals: distinct adapted/holdout sessions and the subset that
   //    fired a cta.clicked event.
   const groupSql = `
@@ -118,6 +124,7 @@ async function fetchCtaLiftRaw(tenantId: string, windowDays: number): Promise<Ch
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}
       AND ad.ts >= now() - toIntervalDay({window_days:UInt16})
+      AND ${CLEAN_HOLDOUT}
     GROUP BY ad.holdout_group
   `;
 
@@ -139,6 +146,7 @@ async function fetchCtaLiftRaw(tenantId: string, windowDays: number): Promise<Ch
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}
       AND ad.ts >= now() - toIntervalDay({window_days:UInt16})
+      AND ${CLEAN_HOLDOUT}
     GROUP BY ad.archetype, ad.holdout_group
   `;
 
@@ -155,6 +163,7 @@ async function fetchCtaLiftRaw(tenantId: string, windowDays: number): Promise<Ch
       FROM adaptation_decisions
       WHERE tenant_id = {tenant_id:String}
         AND ts >= now() - toIntervalDay({window_days:UInt16})
+        AND NOT (holdout_group = 1 AND variant != 'control')
       GROUP BY session_id
     ) AS ad
       ON ev.session_id = ad.session_id

@@ -2,15 +2,24 @@
  * Estalara decision API Cloudflare Worker.
  *
  * Routes:
- *   POST /api/adapt   — adaptation decision endpoint (TICKET-024)
+ *   POST /api/adapt   — DEPRECATED — 410 Gone (ADR-0006 Phase 1, since 2026-05-25).
+ *                       See apps/decision-api/src/app/api/adapt/route.ts.
  *   GET  /api/health  — liveness check
  *
- * Sprint 5+ will add:
- *   - Upstash Redis cache layer
- *   - Modal intent-engine fallback on cache miss
- *   - Tenant DB validation (TICKET-031)
+ * ── Phase 1 retirement status (RETRO-103 HW-2 / FOLLOW-383) ────────────────
+ * POST /api/adapt returns 410 Gone for all requests. The canonical production
+ * adapt path is `apps/control-plane/src/app/api/adapt/route.ts` GET /api/adapt
+ * (ADR-0004 §1). This Worker is retained for FOLLOW-107 Phase 2 decision (Sprint
+ * 14): once residual traffic reaches zero the entire package will be removed.
  *
- * p95 latency targets: <80ms (cached path), <2000ms (LLM path)
+ * The lib layer under `src/lib/` (`consent-gate`, `ab-assignment`, `ab-events`,
+ * `llm-gateway`, `reorder`) is unreachable from production in this state.
+ * `consentGate.profilingOptOut` (FOLLOW-372) is specifically RESERVED — it is
+ * the canonical interface definition for the opt-out contract and is kept intact
+ * so that revival of decision-api as a gate requires no interface redesign.
+ * The active enforcement point for `profilingOptOut` is the control-plane
+ * GET /api/adapt handler (FOLLOW-372, PR #337). See ConsentGateInput JSDoc.
+ * ────────────────────────────────────────────────────────────────────────────
  */
 
 import { handleAdaptRequest } from './app/api/adapt/route.js';

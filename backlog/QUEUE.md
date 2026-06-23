@@ -5167,12 +5167,13 @@ pending planning.**
 
 ## Currently in flight
 
-**0 tickets IN_PROGRESS as of 2026-06-19. FOLLOW-335 DONE (PR #319 merged 49540aa
-2026-06-18T21:56:14Z). RETRO-091 pending spawn (FOLLOW-335 / PR #319). RETRO-089/090 recorded
-2026-06-18 (in STATUS.md RETRO TRACKING table). Sprint 18 COMPLETE — all tickets DONE. Sprint 19
-stubs filed (FOLLOW-340..346 from audit 2026-06-19). ESC-020 OPEN but non-blocking (CEO
-2026-06-10).** Audit PR #320 open (docs-only, branch audit/adaptive-listings-2026-06-19). All real
-CI gates GREEN on main. PR #320 pre-existing-red: Format check, Rule I, Python tests (same as main).
+**1 ticket IN_PROGRESS as of 2026-06-23: FOLLOW-383 (PR #342, backend-engineer). Sprints 19/20/21
+ALL COMPLETE — PRs #321–#341 all merged to main.
+FOLLOW-340/341/342/343/344/345/346/346-dpia/347/357/360/366/372/373/374/375/376 all DONE.
+RETRO-102–106 written 2026-06-23. ESC-020 OPEN but non-blocking (CEO 2026-06-10). TYPECHECK FAILING
+on PR #342 (5 TS errors in follow-383.test.ts, introduced by this PR). Fix iteration: 1/3. CI check
+counter: 2/5. Delegating typecheck fix to backend-engineer.** READY tickets:
+FOLLOW-356/359/361/363/368/369/371 (P1) and FOLLOW-354/358/362/364/367/370 (P2).
 
 ## Sprint 19 — Hollow-core must-fixes + audit-19 wave (PLANNED, 2026-06-19)
 
@@ -5217,10 +5218,12 @@ items are DONE.
 - id: FOLLOW-340
   title: SDK runtime slot self-annotation (make adaptation visible on un-instrumented pages)
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: sdk-engineer
   started_at: '2026-06-19T14:00Z'
   pr: '#322'
+  merge_commit: 3bbf03a
+  completed_at: '2026-06-19T00:00Z'
   priority: P1
   estimated_hours: 6
   depends_on: []
@@ -5232,7 +5235,7 @@ items are DONE.
     SDK reads slot_selectors from /api/adapt response, annotates matching DOM nodes before first
     fetchDirectives. Idempotent. No bundle-gate regression.
     PM-validated 2026-06-19. CI green (all real gates pass). Runtime wiring confirmed.
-    Bundle 39.91 KB gzip (<40 KB gate). PR #322 open. Awaiting human merge.
+    Bundle 39.91 KB gzip (<40 KB gate). DONE: PR #322 merged (3bbf03a). RETRO pending.
 
 - id: FOLLOW-341
   title: Populate archetype_embeddings.embedding (activate the cosine affinity path)
@@ -5267,7 +5270,7 @@ items are DONE.
 - id: FOLLOW-346-dpia
   title: 'FOLLOW-346 DPIA parallel track: C-07 chat-retention scope brief (docs-only)'
   agent: compliance-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -5275,7 +5278,9 @@ items are DONE.
   spec: backlog/FOLLOW_UPS.md (FOLLOW-346 stub — DPIA AC)
   branch: compliance-engineer/FOLLOW-346-dpia-c07-scope
   pr: '#328'
+  merge_commit: 4f284d3
   started_at: 2026-06-19T00:00:00Z
+  completed_at: '2026-06-19T00:00Z'
   assigned_to: compliance-engineer
   pm_validated_at: 2026-06-19T22:00:00Z
   notes: |
@@ -5284,12 +5289,13 @@ items are DONE.
     disclosure. Live-activation gate items documented. All real CI gates GREEN (docs-only branch;
     no Demo integration check required). AC: DPIA scope for free-text chat retention
     documented and signed off. PM-validated: CI green on all real gates. ACs met.
+    DONE: PR #328 merged (4f284d3). RETRO pending.
 
 - id: FOLLOW-346
   title:
     Trigger the chat NLP engine (activate highest-value signal — gated on CEO shadow-mode decision)
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P2
   estimated_hours: 6
   depends_on: [FOLLOW-346-dpia]
@@ -5297,7 +5303,9 @@ items are DONE.
   spec: backlog/FOLLOW_UPS.md (FOLLOW-346 stub)
   branch: data-engineer/FOLLOW-346-chat-nlp-shadow-bridge
   pr: '#330'
+  merge_commit: 7f16b03
   started_at: 2026-06-19T00:00:00Z
+  completed_at: '2026-06-20T00:00Z'
   assigned_to: data-engineer
   pm_validated_at: 2026-06-20T00:00:00Z
   notes: |
@@ -5314,11 +5322,13 @@ items are DONE.
     - AC-3 (no raw text): EventEnvelope unchanged, _spawn_chat_nlp passes only message dict to
       Modal; write_shadow_intent writes ChatIntentDetectedPayload (12-dim vector) to Redis only
     PM-validated. CI check counter: 1/5. Fix iterations: 0/3.
+    DONE: PR #330 merged (7f16b03). RETRO pending. Follow-on: FOLLOW-366 (P0 hotfix merged #332),
+    FOLLOW-368 (env-parity, now unblocked).
 
 - id: FOLLOW-344
   title: Archetype model switch-margin hysteresis + passive discriminator annotation (§D.6)
   agent: ml-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   priority: P2
   estimated_hours: 10
   depends_on: []
@@ -5326,7 +5336,9 @@ items are DONE.
   spec: backlog/FOLLOW_UPS.md (FOLLOW-344 stub)
   branch: ml-engineer/FOLLOW-344-switch-margin-hysteresis
   pr: '#329'
+  merge_commit: 20de7c9
   started_at: 2026-06-19T00:00:00Z
+  completed_at: '2026-06-19T00:00Z'
   assigned_to: ml-engineer
   pm_validated_at: 2026-06-19T22:00:00Z
   notes: |
@@ -5338,17 +5350,24 @@ items are DONE.
     AC1/AC2/AC3 (switch-margin behavior) + AC4 (constant value) all verified in PR body.
     PM-validated: CI green on all real gates. ACs met. Not do-not-merge: blending sub-scope
     explicitly deferred by worker per CEO Q#2 resolution note.
+    DONE: PR #329 merged (20de7c9). RETRO pending.
 
 - id: FOLLOW-345
   title: Server-side page_type consumption + real tier (decision route)
   agent: backend-engineer
-  status: READY
+  status: DONE
   priority: P2
   estimated_hours: 4
   depends_on: []
   source: AUDIT-2026-06-19 F-08
   spec: backlog/FOLLOW_UPS.md (FOLLOW-345 stub)
   branch: backend-engineer/FOLLOW-345-page-type-tier
+  pr: '#323'
+  merge_commit: 5d9ecba
+  completed_at: '2026-06-19T00:00Z'
+  notes: |
+    DONE: PR #323 merged (5d9ecba). Superseded/renamed by FOLLOW-357 (directive_scope rename).
+    RETRO pending.
 ```
 
 ## Sprint 20 — P0 hotfixes + Sprint-19 retro follow-ons (PLANNED, 2026-06-20)
@@ -5361,38 +5380,46 @@ others staged by priority; max 3 IN_PROGRESS at once.**
 - id: FOLLOW-360
   title: Gate bandit variant behind holdout/consent on the GET path (mirror POST ordering)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-06-20T00:00Z'
+  completed_at: '2026-06-20T09:53Z'
   priority: P0
   estimated_hours: 4
   depends_on: []
   source: RETRO-095 ESC-026
   spec: backlog/FOLLOW_UPS.md (FOLLOW-360 stub)
-  branch: backend-engineer/FOLLOW-360-get-holdout-gate
+  branch: backend-engineer/FOLLOW-360-get-holdout-bandit-gate
+  pr: '#333'
+  merge_commit: 2836adc
   notes: |
     P0 hotfix — holdout-baseline contamination in prod since PR #327 merge 2026-06-19.
     GET path must check holdout BEFORE variant selection (mirror POST route.ts:894-919).
     Holdout GET requests must serve + log variant=control.
     Delegated 2026-06-20T00:00Z. CI check counter: 0/5. Fix iterations: 0/3.
+    DONE: PR #333 merged (2836adc 2026-06-20T09:53Z). RETRO-100 written (PR #335).
 
 - id: FOLLOW-366
   title: Fix chat NLP bridge payload-key mismatch (message vs content)
   agent: data-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: data-engineer
   started_at: '2026-06-20T00:00Z'
+  completed_at: '2026-06-20T00:00Z'
   priority: P0
   estimated_hours: 3
   depends_on: []
   source: RETRO-098 ESC-025
   spec: backlog/FOLLOW_UPS.md (FOLLOW-366 stub)
-  branch: data-engineer/FOLLOW-366-chat-nlp-payload-key
+  branch: data-engineer/FOLLOW-366-chat-bridge-payload-key
+  pr: '#332'
+  merge_commit: eaf31a9
   notes: |
     P0 hotfix — bridge dead-on-arrival since PR #330 merge 2026-06-20.
     _spawn_chat_nlp must read payload["message"] not payload["content"].
     Fixture must be grounded in ChatMessageSentPayloadSchema (Rule Z).
     Delegated 2026-06-20T00:00Z. CI check counter: 0/5. Fix iterations: 0/3.
+    DONE: PR #332 merged (eaf31a9). RETRO-099 written (PR #335). FOLLOW-368 now unblocked.
 
 - id: FOLLOW-356
   title:
@@ -5413,7 +5440,7 @@ others staged by priority; max 3 IN_PROGRESS at once.**
 - id: FOLLOW-357
   title: Reconcile /api/adapt page-type-derived tier with MASTER_DESIGN §E.7 no-Tiers
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-06-20T10:14Z'
   completed_at: '2026-06-20T13:00Z'
@@ -5423,21 +5450,16 @@ others staged by priority; max 3 IN_PROGRESS at once.**
   source: RETRO-092 (FOLLOW-345 / PR #323)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-357 stub)
   branch: backend-engineer/FOLLOW-357-rename-tier-directive-scope
-  pr: '334'
+  pr: '#334'
+  merge_commit: ab1317d
   notes: |
     CEO ruled option (a): rename to directive_scope. PR #334 opened 2026-06-20.
     Fix commit a59763e pushed 2026-06-20 addressing both regressions.
-    PM-validated 2026-06-20T13:00Z. CI green. Runtime wiring confirmed. Ready for human review.
+    PM-validated 2026-06-20T13:00Z. CI green. Runtime wiring confirmed.
     CI check counter: 2/5. Fix iterations: 1/3.
-    All real merge gates GREEN (Rule H pass, Test Node 22 pass, Build, Build(cp), Typecheck,
-    Lint, SDK E2E, Rule J, Demo integration, ClickHouse migrations smoke, Corpus gate, Tracer
-    guard, Cross-language event contract, Migration journal monotonicity, K.3.6 smoke,
-    Gitleaks, Doppler verify, Vercel — all SUCCESS).
-    Non-real pre-existing failures: Rule I, Format check, Python tests (all pre-existing-red
-    per CI gate landscape, confirmed on main).
+    All real merge gates GREEN. Non-real pre-existing: Rule I, Format check, Python tests.
     Wiring confirmed: POST path emits directive_scope at route.ts:908/934/1142.
-    GET path retains tier (backward compatible). tier also re-added to adaptResponseSchema
-    as optional (Rule H superset; GET/POST reconciliation deferred to FOLLOW-358).
+    DONE: PR #334 merged (ab1317d). RETRO-101 written (PR #335).
 
 - id: FOLLOW-363
   title: Thread hysteresis (currentArchetype) into applyDwellSignal + applyListingViewRate
@@ -5572,7 +5594,7 @@ others staged by priority; max 3 IN_PROGRESS at once.**
   title: Per-user opt-out toggle for Adaptive-Listings DOM adaptation
   agent: sdk-engineer
   co_agent: backend-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 7
   depends_on: []
@@ -5580,6 +5602,11 @@ others staged by priority; max 3 IN_PROGRESS at once.**
   spec: backlog/FOLLOW_UPS.md (FOLLOW-372 stub)
   branch: sdk-engineer/FOLLOW-372-per-user-optout-toggle
   promoted_at: '2026-06-21'
+  pr_sdk: '#337'
+  pr_backend: '#339'
+  merge_commit_sdk: e361833
+  merge_commit_backend: 5d5e26f
+  completed_at: '2026-06-22T00:00Z'
   notes: |
     Lead: sdk-engineer (Shadow DOM toggle UI + SDK init gate + DOM adaptation suppression).
     Support: backend-engineer (Decision-API consent-gate extension with profilingOptOut +
@@ -5593,13 +5620,14 @@ others staged by priority; max 3 IN_PROGRESS at once.**
     Dual purpose: legal safeguard + product showcase (with/without comparison).
     CEO decision 2026-06-21: suspended-not-erase is sufficient for AL-only DOM adaptation
     (compliance-engineer to confirm in FOLLOW-373 DPIA update).
+    DONE: SDK PR #337 merged (e361833), backend PR #339 merged (5d5e26f). RETRO pending.
 
 - id: FOLLOW-373
   title: Platform-wide consent umbrella owned by Adaptive-Listings
   agent: compliance-engineer
   co_agent: backend-engineer
   co_agent_2: sdk-engineer
-  status: READY
+  status: DONE
   priority: P1
   estimated_hours: 7
   depends_on: []
@@ -5607,6 +5635,9 @@ others staged by priority; max 3 IN_PROGRESS at once.**
   spec: backlog/FOLLOW_UPS.md (FOLLOW-373 stub)
   branch: compliance-engineer/FOLLOW-373-consent-umbrella
   promoted_at: '2026-06-21'
+  pr: '#336'
+  merge_commit: fe20093
+  completed_at: '2026-06-21T00:00Z'
   notes: |
     Lead: compliance-engineer (DPIA/ROPA/LIA/Privacy Notice update; lawful-basis mapping
     for all 6 processing purposes a-f).
@@ -5622,6 +5653,305 @@ others staged by priority; max 3 IN_PROGRESS at once.**
     Rafal implements app-side retention/deletion windows (external HANDOFF to be written).
     AC includes: MASTER_DESIGN.md §G.2 / §H update + version bump per §Y.2 propagation
     checklist; HANDOFF to Rafal in backlog/HANDOFFS.md.
+    DONE: PR #336 merged (fe20093). RETRO pending. FOLLOW-374 (platform_registration INSERT) is
+    before-go-live gate — see Sprint 21 below.
+```
+
+## Sprint 21 — Consent wiring + cross-listing fixes + retro follow-ons (DONE 2026-06-22)
+
+**FOLLOW-374/375/376 all merged 2026-06-22. Retros pending for PRs #332–#341 (batch RETRO-102+).
+Pending retro spawn is the highest-priority PM action this session.**
+
+```yaml
+- id: FOLLOW-374
+  title: Wire platform_registration consent_records INSERT at investor registration
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 3
+  depends_on: [FOLLOW-373]
+  source: FOLLOW-373 implementation gap (before-go-live gate)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-374 stub)
+  branch: backend-engineer/FOLLOW-374-registration-consent-insert
+  pr: '#338'
+  merge_commit: f9a033c
+  completed_at: '2026-06-22T00:00Z'
+  notes: |
+    consent_records INSERT with consent_type='platform_registration' wired into registration flow.
+    DONE: PR #338 merged (f9a033c). RETRO pending.
+
+- id: FOLLOW-375
+  title: SPA cross-listing adaptation + source-of-truth archetype (SHIPPED, doc follow-ups)
+  agent: sdk-engineer
+  status: DONE
+  priority: P1
+  estimated_hours: 2
+  depends_on: []
+  source: CEO-directed 2026-06-22 (real-browser verification session)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-375 stub)
+  branch: sdk-engineer/FOLLOW-375-cross-listing-sot-archetype
+  pr: '#340'
+  merge_commit: 4635c3d
+  completed_at: '2026-06-22T00:00Z'
+  notes: |
+    SPA cross-listing adaptation + sessionStorage SoT archetype (ADR-0014).
+    SDK unit tests for new paths, HANDOFF to Rafal for prod bundle URL + chat_intent_dimensions.
+    DONE: PR #340 merged (4635c3d). RETRO pending.
+
+- id: FOLLOW-376
+  title: Green the Python test matrix (drop deleted Modal apps + fix llm-gateway imports)
+  agent: devops-engineer
+  status: DONE
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  source: CI breakage (Python test matrix failure)
+  spec: CI hotfix
+  branch: ci(infra)/FOLLOW-376-python-test-matrix
+  pr: '#341'
+  merge_commit: 6d34fd1
+  completed_at: '2026-06-22T00:00Z'
+  notes: |
+    Drop deleted Modal apps from python matrix + fix llm-gateway imports.
+    DONE: PR #341 merged (6d34fd1). RETRO pending.
+```
+
+## Sprint 22 — Retro follow-ons + P1 wiring tickets (PLANNED 2026-06-23)
+
+**Retros DONE (RETRO-102–106 written 2026-06-23). Priority order: P0 first, then P1, then P2. Max 3
+IN_PROGRESS at once.**
+
+**P0 gate: FOLLOW-383 (opt-out server wiring) must ship before FOLLOW-369+. Server-side enforcement
+dead-on-arrival per RETRO-103.**
+
+**P1 before-go-live gate: FOLLOW-374 DONE (consent INSERT wired). FOLLOW-373 DPIA go-live checklist
+items remain (DPO sign-off, QA verification) — these are human-action items, not code tickets.**
+
+```yaml
+- id: FOLLOW-383
+  title:
+    Wire SDK→server profiling opt-out producer + complete server/training/chat-prior halves [P0]
+  agent: backend-engineer
+  status: IN_PROGRESS
+  priority: P0
+  estimated_hours: 5
+  depends_on: []
+  source: RETRO-103 (FOLLOW-372 / PRs #337/#339)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-383 stub)
+  branch: backend-engineer/FOLLOW-383-consent-gate-doc
+  pr: '#342'
+  notes: |
+    AC-1 DONE: SDK appends profiling_opt_out=1 to /api/adapt URL when opted out.
+    AC-2 DONE: decision-api 410 documented (JSDoc + route.ts comment). Documented as defense-in-depth.
+    AC-3 DONE: behavioral events dropped before eventQueue.push when opted out.
+    TYPECHECK FAIL (CI run 28047541089): 5 errors in packages/sdk/src/__tests__/follow-383.test.ts.
+    4x TS2352: mockFetch.mock.lastCall cast needs `as unknown as [string, RequestInit]` (not direct cast).
+    1x TS2532: queue[0] possibly undefined — add non-null assertion or guard.
+    Fix iteration: 1/3. CI check counter: 2/5.
+    AC-4 OPEN: redis_writer.py chat-prior skip — ml-engineer scope, filed as follow-up stub in FOLLOW_UPS.md.
+
+- id: FOLLOW-369
+  title: GET-path consent-skip parity for /api/adapt (FOLLOW-360 AC-2, unmet)
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-100 (FOLLOW-360 / PR #333)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-369 stub)
+  branch: backend-engineer/FOLLOW-369-get-consent-skip-parity
+
+- id: FOLLOW-371
+  title: One-shot ClickHouse remediation of holdout rows contaminated in PR#327→#333 window
+  agent: data-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-100 (FOLLOW-360 / PR #333)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-371 stub)
+  branch: data-engineer/FOLLOW-371-ch-holdout-remediation
+
+- id: FOLLOW-368
+  title: Guarantee Python writer and TS reader share one Upstash Redis instance (env-var parity)
+  agent: devops-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: RETRO-098 (FOLLOW-346 / PR #330)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-368 stub)
+  branch: devops-engineer/FOLLOW-368-upstash-redis-env-parity
+  notes: |
+    FOLLOW-366 DONE (merged #332) — dependency cleared.
+
+- id: FOLLOW-356
+  title: /api/adapt response directive_scope consumer + behavioral tests for page-type derivation
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: RETRO-092 (FOLLOW-345 / PR #323)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-356 stub)
+  branch: sdk-engineer/FOLLOW-356-adapt-tier-consumer
+  notes: |
+    HALF_WIRE_P — directive_scope declared but no non-test consumer reads it (RETRO-101).
+    Decide: wire real consumer OR mark analytics-only + fix type.
+    Add tests for directiveScopeFromPageType / filterDirectivesByPageType.
+
+- id: FOLLOW-363
+  title: Thread hysteresis (currentArchetype) into applyDwellSignal + applyListingViewRate
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-097 (FOLLOW-344 / PR #329)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-363 stub)
+  branch: sdk-engineer/FOLLOW-363-hysteresis-dwell-listing-view
+
+- id: FOLLOW-359
+  title: Return variant in GET /api/adapt response body
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 2
+  depends_on: []
+  source: RETRO-095 (FOLLOW-342 / PR #327)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-359 stub)
+  branch: backend-engineer/FOLLOW-359-get-variant-response
+  notes: |
+    FOLLOW-360 DONE (merged #333) — dependency cleared.
+
+- id: FOLLOW-361
+  title: Reconcile bandit seed convention (default vs control/v1/v2)
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-095 (FOLLOW-342 / PR #327)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-361 stub)
+  branch: backend-engineer/FOLLOW-361-bandit-seed-convention
+
+- id: FOLLOW-370
+  title: Cache getBanditArms on non-holdout GET/POST path (latency budget assertion)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: RETRO-100 (FOLLOW-360 / PR #333)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-370 stub)
+  branch: backend-engineer/FOLLOW-370-bandit-arms-cache
+
+- id: FOLLOW-354
+  title: Test + document the confidence floor real axis (suppress /adapt/description below floor)
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 4
+  depends_on: []
+  source: RETRO-091 (FOLLOW-343 / PR #321)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-354 stub)
+  branch: sdk-engineer/FOLLOW-354-confidence-floor-description-axis
+
+- id: FOLLOW-358
+  title: Resolve GET-vs-POST adaptation_decisions.tier semantic divergence (Rule K parity)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: RETRO-092 (FOLLOW-345 / PR #323)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-358 stub)
+  branch: backend-engineer/FOLLOW-358-tier-column-divergence
+
+- id: FOLLOW-362
+  title: Define non-en locale A/B behavior (stop logging unserved variants)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-095 (FOLLOW-342 / PR #327)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-362 stub)
+  branch: backend-engineer/FOLLOW-362-locale-ab-variant
+
+- id: FOLLOW-367
+  title: Implement (or remove) the CHAT_NLP_LIVE gate — currently an inert no-op
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-098 (FOLLOW-346 / PR #330)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-367 stub)
+  branch: backend-engineer/FOLLOW-367-chat-nlp-live-gate
+  notes: |
+    FOLLOW-366 DONE. Also depends on C-07 DPIA go-live items signed off before flipping gate true.
+
+- id: FOLLOW-364
+  title: Reconcile §D.6 coverage-summary counts to a clean 18-way partition
+  agent: ml-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  source: RETRO-097 (FOLLOW-344 / PR #329)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-364 stub)
+  branch: ml-engineer/FOLLOW-364-d6-coverage-counts
+
+- id: FOLLOW-341
+  title: Populate archetype_embeddings.embedding (activate the cosine affinity path)
+  agent: ml-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 6
+  depends_on: []
+  source: AUDIT-2026-06-19 F-02
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-341 stub)
+  branch: ml-engineer/FOLLOW-341-archetype-embeddings-populate
+  notes: |
+    CEO decision point: build real embedding job OR formally drop cosine claim.
+    If build: embed 18 seed archetype descriptions via text-embedding-3-small, UPSERT, idempotent,
+    CI precheck. Unblocks FOLLOW-342.
+
+- id: FOLLOW-342
+  title: Thread bandit variant into playbook selection (stop optimizing placebo arms)
+  agent: backend-engineer
+  status: BLOCKED
+  block_reason: Depends on FOLLOW-341 (cosine must produce real ordering for lift to be meaningful)
+  priority: P1
+  estimated_hours: 6
+  depends_on: [FOLLOW-341]
+  source: AUDIT-2026-06-19 F-03
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-342 stub)
+  branch: backend-engineer/FOLLOW-342-bandit-variant-playbook
+
+- id: FOLLOW-355
+  title: Pin cold-start signal_count invariant (future init-time prior guard)
+  agent: sdk-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 2
+  depends_on: []
+  source: RETRO-091 (FOLLOW-343 / PR #321)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-355 stub)
+  branch: sdk-engineer/FOLLOW-355-signal-count-invariant
+
+- id: FOLLOW-365
+  title: Tracking stub for deferred top-2 archetype blending (CEO-gated)
+  agent: ml-engineer
+  status: BACKLOG
+  priority: P3
+  estimated_hours: 1
+  depends_on: [CEO_BLENDING_DECISION]
+  source: RETRO-097 (FOLLOW-344 / PR #329)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-365 stub)
+  notes: |
+    CEO-gated. No work until CEO decides to pursue blended profile post-pilot.
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

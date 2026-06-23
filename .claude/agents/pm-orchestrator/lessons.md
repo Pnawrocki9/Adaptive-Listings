@@ -871,3 +871,47 @@ RETRO-089/090 present). **A delegation/validation rule I'd add:** Before any rec
 squash-merge, explicitly list every ticket whose status might differ between local and origin —
 IN_PROGRESS tickets are the highest-risk mismatch because a PM run may have set IN_PROGRESS locally
 without actually delegating.
+
+---
+
+**Date / ticket:** 2026-06-23 — Queue housekeeping pass (PRs #322–#341) **Delegation row used:** N/A
+— PM self-operation (QUEUE.md + STATUS.md housekeeping, no worker delegated). **What validation
+caught (or missed):** QUEUE.md was significantly stale after 10 merged PRs (#332–#341) accumulated
+without status updates. Multiple tickets showing IN_PROGRESS and READY_FOR_REVIEW had been merged
+days earlier. The housekeeping pass found 2 IN_PROGRESS (FOLLOW-360, FOLLOW-366), 4 READY_FOR_REVIEW
+(FOLLOW-340, 344, 346, 346-dpia), and 3 READY (FOLLOW-345, 372, 373) that were all actually DONE.
+Additionally FOLLOW-374/375/376 were missing from QUEUE.md entirely despite being promoted to
+FOLLOW_UPS.md and merged. Sprint 21 section needed creation. **A delegation/validation rule I'd
+add:** After each session ends with multiple merges, the PM MUST update QUEUE.md before the next
+session picks a new ticket — stale IN_PROGRESS entries mislead the 3-ticket cap check.
+
+---
+
+**Date / ticket:** 2026-06-23 — FOLLOW-383 state analysis + delegation to backend-engineer
+**Delegation row used:** Row 2 (ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks → backend-engineer). **What validation caught (or missed):** PR
+#342 was open for FOLLOW-383 but contained ONLY the AC-2 doc commit (JSDoc). The working tree had
+AC-1 (SDK profilingOptedOut param + profiling_opt_out=1 URL append) and AC-3 (behavioral event drop
+before eventQueue.push) code changes DONE but uncommitted — plus test files for both. This is a case
+where a worker opened a partial PR (doc-only slice) then continued coding on the same branch without
+committing. CI on PR #342: all real gates pass, only Rule I fails (pre-existing on PR #341 too —
+confirmed). STATUS.md was stale (Sprint 18 era) and needed full rewrite. AC-4 (redis_writer.py skip)
+is ml-engineer scope and not started. **A delegation/validation rule I'd add:** When a branch has an
+open PR but also has uncommitted code changes, always grep those changes to assess whether the code
+is completing ACs from the same ticket BEFORE treating the PR as PM-validatable — uncommitted ACs
+cannot be CI-verified.
+
+---
+
+**Date / ticket:** 2026-06-23 — FOLLOW-383 CI validation (PR #342 after commit 4f5f27b push)
+**Delegation row used:** Row 2 (backend-engineer) — fix-delegation loop. **What validation caught
+(or missed):** Step 5b (`gh pr checks 342 --watch`) caught Typecheck FAILING — a REAL gate. 5 TS
+errors all in `packages/sdk/src/__tests__/follow-383.test.ts`: 4x TS2352 (direct
+`as [string, RequestInit]` cast on `mock.lastCall` typed as `[] | undefined`) and 1x TS2532
+(`queue[0]` possibly undefined). Worker reported local tests 1462/1462 pass — vitest passes because
+the cast is runtime-safe; tsc --noEmit is stricter. Correct pattern confirmed in adapt.test.ts lines
+227/253: `as unknown as [string, RequestInit]`. Worker prematurely set READY_FOR_REVIEW; reverted to
+IN_PROGRESS. Fix iteration 1/3 consumed. CI check counter now 2/5. **A delegation/validation rule
+I'd add:** When a worker reports "all tests pass locally," NEVER treat that as CI-typecheck-passing
+— vitest does not run tsc --noEmit; type casts that work at runtime can fail tsc. Always wait for
+the CI Typecheck job specifically before confirming a PR is typecheck-clean.

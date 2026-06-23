@@ -50,6 +50,26 @@ export interface ConsentGateInput {
    * Those processing purposes are covered by the mandatory registration consent
    * (§H.8) and are outside this flag's scope.
    *
+   * ── Status note (RETRO-103 HW-2 / FOLLOW-383) ──────────────────────────────
+   * `apps/decision-api` currently returns **410 Gone** for all POST /api/adapt
+   * requests (ADR-0006 Phase 1 retirement, since 2026-05-25). While the Worker is
+   * in this retired state, `consentGate.profilingOptOut` is NOT evaluated by any
+   * production request path in this package.
+   *
+   * The **active enforcement point** for `profilingOptOut` is:
+   *   `apps/control-plane/src/app/api/adapt/route.ts` — GET /api/adapt handler
+   *   (FOLLOW-372, PR #337). That handler reads `profiling_opt_out=1` from the
+   *   query string and gates the session before any adaptation logic runs.
+   *
+   * This field and its gate logic are intentionally preserved here so that:
+   *   1. The canonical `ConsentGateInput` interface remains the single source of
+   *      truth for the opt-out contract (imported by consumers via this module).
+   *   2. The implementation and tests are immediately available when decision-api
+   *      is revived as a canonical gate (FOLLOW-107 Phase 2 decision point).
+   *
+   * Do not remove without FOLLOW-107 sign-off.
+   * ────────────────────────────────────────────────────────────────────────────
+   *
    * Optional — defaults to `false` (opted in) when absent.
    */
   profilingOptOut?: boolean;

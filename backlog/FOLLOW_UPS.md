@@ -10242,3 +10242,221 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         so chat questions can drive the archetype (the "evident true need overrides quiz" path).
         Without it, only quiz + behavioral signals move the archetype. Runbook §7.
 - **promoted_to_queue:** false
+
+---
+
+## FOLLOW-383 — Wire the SDK→server profiling opt-out producer + complete the server/training/chat-prior halves [P0 — server gate dead-on-arrival]
+
+- **note:** Renumbered from retro-assigned 376 to 383 — FOLLOW-376 was already used for the Python
+  CI green ticket (PR #341, QUEUE.md).
+- **source_retro:** RETRO-103 (§3 HW-1/HW-2/HW-3, §4a LG-1/LG-2/LG-3, §4c TG-1/TG-2)
+- **source_ticket:** FOLLOW-372 (PRs #337/#339)
+- **recommended_sprint:** next
+- **recommended_agent:** sdk-engineer (lead) + backend-engineer (training-tag) + ml-engineer
+  (redis_writer.py chat-prior skip)
+- **priority:** P0 (the server-side opt-out enforcement is unreachable by real SDK traffic)
+- **estimated_hours:** 5
+- **scope:** PR #339 added a GET `/api/adapt` `profiling_opt_out=1` gate, but the SDK never SENDS
+  the param — `packages/sdk/src/core/adapt.ts` (`fetchDirectives`, the sole GET-URL builder) does
+  not append it, and the SDK already client-short-circuits `refreshDirectives()` for opted-out
+  sessions (`index.ts:923`), so the server gate is reached by ZERO real traffic (Rule L
+  consumed-but-never-produced; the `inquiry_submit_selector` shape). The opt-out is user-visible
+  (the client skip works), but four halves are open: (1) the server gate is unreachable; (2)
+  `consentGate.profilingOptOut` was added to a 410-dead decision-api function (HW-2 — decide: remove
+  the dead input OR make it the canonical reused gate); (3) opted-out behavioral events are still
+  emitted UNTAGGED (`index.ts:992` returns AFTER `eventQueue.push`), so the training pipeline cannot
+  exclude them (LG-2); (4) the `redis_writer.py` chat-intent shadow-prior skip for opted-out
+  sessions is an OPEN HANDOFF (HW-3). Also: opting OUT does not actively revert the current
+  listing's DOM until reload (LG-3, showcase one-directional).
+- **ac:**
+  - [ ] The SDK threads its `profilingOptedOut` state into the `/api/adapt` request (append
+        `profiling_opt_out=1`) OR a test+comment documents that the SDK deliberately short-circuits
+        client-side and the server gate is therefore a defense-in-depth path; a test asserts the
+        outbound GET URL for an opted-out session.
+  - [ ] Decide `consentGate.profilingOptOut`: remove the dead input, or wire it as the canonical
+        reused gate (and document the decision-api 410 status).
+  - [ ] Opted-out behavioral events are tagged (or dropped) so the archetype-training pipeline can
+        exclude them; a test asserts the tag/exclusion.
+  - [ ] `redis_writer.py` skips applying the AL chat-intent shadow prior for opted-out sessions
+        (closes the OPEN HANDOFF); a test asserts the skip.
+  - [ ] (Optional) toggling OFF actively reverts the current listing's DOM to tenant default for the
+        showcase comparison, not only on reload.
+- **promoted_to_queue:** true
+
+---
+
+## FOLLOW-377 — Banner-render test for platform disclosure + reconcile DPIA (b) chat-reading premise vs shadow-bridge state
+
+- **source_retro:** RETRO-102 (§3 HW-2, §4c TG-1, §4d DG-1)
+- **source_ticket:** FOLLOW-373 (PR #336)
+- **recommended_sprint:** next
+- **recommended_agent:** compliance-engineer + sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** Add a banner-render test asserting the `data-estalara-disclosure='dpia-13-4-platform'`
+  platform-umbrella disclosure renders for EN/PL/ES (Rule N verification — each mandated disclosure
+  sentence must appear in the rendered banner, not only the COPY constant). Separately, reconcile
+  the DPIA/Privacy-Notice purpose-(b) "we read your chat to derive intent" premise against the real
+  AL chat-intent shadow-bridge state — that pipeline is still severed at the Upstash env-var hop
+  (RETRO-099 §5b, FOLLOW-368 OPEN), so the only in-repo performer of disclosed purpose (b) is not
+  yet functional end-to-end.
+- **ac:**
+  - [ ] Test asserts the platform disclosure attribute/string is present in the rendered banner for
+        all three locales.
+  - [ ] DPIA/Privacy-Notice (b) premise reconciled with the shadow-bridge state at FOLLOW-368
+        closure (or annotated as umbrella-only legal basis until then).
+- **implementation_follow_depends_on:** FOLLOW-368
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-378 — DSR verb sibling coverage for `consent_type='platform_registration'` (erase/access/portability)
+
+- **source_retro:** RETRO-102 (§5c, §6 Rule S watch); RETRO-104 (§5b)
+- **source_ticket:** FOLLOW-373 / FOLLOW-374
+- **recommended_sprint:** next (urgent once FOLLOW-374's INSERT is live app-side)
+- **recommended_agent:** compliance-engineer + backend-engineer
+- **priority:** P2 (P1 once the producer is live in prod — a withdrawn user must have this row
+  erased)
+- **estimated_hours:** 2
+- **scope:** RETRO-102 added the `consent_type='platform_registration'` vocabulary and RETRO-104
+  wired its producer (`POST /api/v1/consent/platform-registration`). Enumerate the symmetric DSR
+  verb set (access / erase / portability — the Rule S sibling set from RETRO-044/045) and confirm
+  each correctly includes / erases / discloses the platform-registration consent record. A user who
+  withdraws consent (Art. 17) MUST have this row erased; an access/portability request MUST disclose
+  it.
+- **ac:**
+  - [ ] Erase verb deletes (or anonymizes) the `platform_registration` consent_records row on
+        withdrawal; real-SQL test asserts it (verification-tier parity with the other DSR rows).
+  - [ ] Access + portability verbs disclose the platform-registration consent record.
+  - [ ] Each verb's behavior on the new consent_type is tested at the same tier as the existing
+        consent rows (Rule S).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-379 — Consent-record dedup/re-grant policy + locale-accurate `consent_text_hash`
+
+- **source_retro:** RETRO-104 (§4a LG-1/LG-2, §4c TG-1)
+- **source_ticket:** FOLLOW-374 (PR #338)
+- **recommended_sprint:** next
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** Two issues in the `POST /api/v1/consent/platform-registration` endpoint: (1) the dedup
+  key `(tenant_id, session_id, consent_type)` returns 409 on a second registration / re-grant with
+  the same session — so a TOS-version bump or post-withdrawal re-consent would silently fail to
+  record the new `tos_version`/`granted_at`/`consent_text_hash`; scope dedup by consent version or
+  allow supersession. (2) `consent_text_hash` is a server build-time constant
+  (`CANONICAL_CONSENT_TEXT_HASH`), not derived from the text actually displayed — so for PL/ES
+  locales the audit hash will not match what the user saw, weakening its evidentiary value; source
+  the hash from the displaying surface (caller-supplied) or pin the exact per-locale texts.
+- **ac:**
+  - [ ] Dedup policy allows a TOS-version bump / re-consent to supersede rather than 409.
+  - [ ] `consent_text_hash` provably matches the consent text actually displayed, for every locale;
+        a test asserts the match against the real PL/ES texts (not a self-agreeing constant).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-380 — Harden cross-listing re-adaptation (concurrency guard, per-listing headline, confidence re-pin) + unit tests
+
+- **source_retro:** RETRO-105 (§4a LG-1/LG-2/LG-3, §4b CB-1, §4c TG-1)
+- **source_ticket:** FOLLOW-375 (PR #340)
+- **recommended_sprint:** next
+- **recommended_agent:** sdk-engineer
+- **priority:** P1
+- **estimated_hours:** 4
+- **scope:** The SPA cross-listing fix has three robustness gaps under real navigation: (a) two
+  overlapping `refreshDirectives()` on rapid SPA nav have no in-flight guard / AbortController and
+  interleave on shared `currentIntentState`/SoT (last-write-wins unspecified); (b)
+  `originalHeadlineText` is captured ONCE globally and restored to ALL headline slots on every
+  listing change — if listings have different real titles, listing-1's title can be stamped onto
+  listing-2's non-fitting headline; (c) the SoT restore re-pins `archetype` but not `confidence`, so
+  the FOLLOW-343 DOM confidence floor may still suppress the restored adaptation. Also document the
+  quiz vs quiz-disabled stickiness asymmetry (intent.ts stickiness is quiz-only; the index.ts SoT
+  restore is quiz-independent). Add the unit tests FOLLOW-375 left open, covering these cases.
+- **ac:**
+  - [ ] In-flight guard / AbortController prevents overlapping `refreshDirectives` from interleaving
+        on session state; a rapid-nav test asserts a single coherent final archetype.
+  - [ ] Headline original text is captured per-listing (or read from the framework's re-rendered
+        title); a test asserts listing-2's non-fitting headline does NOT show listing-1's title.
+  - [ ] SoT restore re-pins confidence alongside archetype so the FOLLOW-343 floor does not suppress
+        the restored adaptation; a test asserts adaptation fires post-restore.
+  - [ ] Quiz vs quiz-disabled stickiness asymmetry documented.
+  - [ ] Unit tests for the FOLLOW-375 new paths (observer in-place mutation; SoT restore/update;
+        eraseIntentState clears resolved-archetype key; intent.ts quiz-stickiness; adapt.ts
+        empty-value skip).
+- **cross_ref:** extends FOLLOW-375's open test AC (do not duplicate).
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-381 — Erase `__estalara_quiz_completed__` on consent-denial seams (Mode A storage compliance)
+
+- **source_retro:** RETRO-105 (§4d DG-1)
+- **source_ticket:** FOLLOW-375 (PR #340)
+- **recommended_sprint:** next
+- **recommended_agent:** sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** PR #340 added the `__estalara_quiz_completed__` sessionStorage key
+  (`markQuizCompleted`) but did NOT add an eraser on the consent-denied / withdrawal seams
+  (`index.ts:278` / `:341`). `eraseIntentState` was updated to remove the resolved-archetype key it
+  is "in lockstep" with, but the companion completion flag is left behind — a Mode A storage-cleanup
+  gap (Rule N, RETRO-019/020 pattern: all SDK-written keys must be erased on consent
+  denial/withdrawal).
+- **ac:**
+  - [ ] An eraser for `__estalara_quiz_completed__` is called on both consent-denial seams, in
+        lockstep with `eraseIntentState`'s resolved-archetype erase.
+  - [ ] A test asserts the key is removed on consent denial.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-384 — redis_writer.py: skip applying AL chat-intent shadow prior for opted-out sessions [AC-4 of FOLLOW-383]
+
+- **source_retro:** RETRO-103 (§3 HW-3 — OPEN HANDOFF: opted-out sessions have no chat-prior skip in
+  redis_writer.py)
+- **source_ticket:** FOLLOW-383 (split out as separate ticket because AC-4 is ml-engineer scope and
+  does not block AC-1/2/3 merge)
+- **recommended_sprint:** next (immediately after FOLLOW-383 merges)
+- **recommended_agent:** ml-engineer
+- **priority:** P1
+- **estimated_hours:** 2
+- **scope:** `apps/` (or the relevant Modal Python app) `redis_writer.py` applies the AL chat-intent
+  shadow prior to all sessions indiscriminately. When a user has opted out of AL profiling
+  (`profiling_opt_out=1`), the shadow prior MUST be skipped — otherwise opted-out behavioral history
+  continues to influence their archetype weighting via the Redis channel. The opt-out state signal
+  is available server-side (the SDK now sends `profiling_opt_out=1` in the adapt URL, per FOLLOW-383
+  AC-1). The redis_writer needs to read this flag and skip the prior write for opted-out sessions.
+- **ac:**
+  - [ ] `redis_writer.py` reads the per-session profiling opt-out flag (from the adapt request or a
+        session attribute) and skips applying the AL chat-intent shadow prior when opt-out is set.
+  - [ ] A test asserts the skip: opted-out session → no Redis prior write.
+  - [ ] A test asserts the positive path: opted-in session → prior is applied as before.
+- **depends_on:** [FOLLOW-383] (must merge first so the opt-out param flows end-to-end)
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-382 — Red-CI-window regression audit + Python matrix-drift guard + memory update
+
+- **source_retro:** RETRO-106 (§4b CB-1, §4c TG-1, §5d)
+- **source_ticket:** FOLLOW-376/PR #341 (the CI-green fix)
+- **recommended_sprint:** next
+- **recommended_agent:** devops-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** Python CI was fully red 2026-05-17 → 2026-06-23 (~5 weeks) because the `test-python`
+  matrix listed three deleted apps and fail-fast masked the real failure — a red gate is no gate,
+  and it hid the llm-gateway nested-import regression PR #341 fixed. (a) One-shot audit that no
+  OTHER Python regression merged during the red window. (b) Add a matrix-drift guard asserting the
+  `test-python` matrix entries equal the set of `apps/*/pyproject.toml` Python apps (prevent
+  recurrence of the same desync). (c) Update the `project_ci_gate_landscape` memory: Python-test is
+  now green-and-blocking, a real merge gate again.
+- **ac:**
+  - [ ] Audit confirms (or remediates) any Python regression merged during the red window.
+  - [ ] CI guard fails when the Python matrix desyncs from the `apps/` filesystem set.
+  - [ ] `project_ci_gate_landscape` memory updated (Python-test is now a real gate).
+- **promoted_to_queue:** false

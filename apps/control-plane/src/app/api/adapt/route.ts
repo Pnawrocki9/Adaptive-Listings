@@ -37,7 +37,12 @@ import type {
   ReorderDirective,
   ArchetypeId,
 } from '@estalara/shared';
-import { assignHoldout, DEFAULT_HOLDOUT_PCT, thompsonSample } from '@estalara/shared';
+import {
+  assignHoldout,
+  DEFAULT_HOLDOUT_PCT,
+  thompsonSample,
+  SKIP_CONSENT_STATES,
+} from '@estalara/shared';
 import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
@@ -641,6 +646,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const holdoutGroup =
     holdoutGroupRaw === 'true' ? true : holdoutGroupRaw === 'false' ? false : false;
 
+  // ── FOLLOW-369: consent-skip parity with POST handler ────────────────────
+  // Optional consent params passed by the decision-api Worker (mirrors POST
+  // body fields consent_state / consent_mode_enabled [TICKET-AB-010]).
+  const consentState = params.get('consent_state') ?? undefined;
+  const consentModeEnabled = params.get('consent_mode_enabled') === 'true';
+
   // ── FOLLOW-372: per-user DOM adaptation opt-out (§H.9) ───────────────────
   // The SDK sends profiling_opt_out=1 when the investor has toggled off AL DOM
   // adaptation. This gate returns neutral directives and SUPPRESSES variant
@@ -724,6 +735,36 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(
       {
         adapt_decision_id: adaptDecisionId,
+        session_id: sessionId,
+        archetype: 'neutral' as const,
+        confidence,
+        similarity,
+        tier,
+        directives: [],
+        source: 'default' as const,
+        generated_at: new Date().toISOString(),
+      } satisfies AdaptationDirectives,
+      { status: 200 },
+    );
+  }
+
+  // ── FOLLOW-369: consent-skip gate — mirrors POST's assignHoldout(skipped) path ──
+  // When consent_mode_enabled=true AND consent_state is a skip state
+  // ('opted_out' | 'unknown' | 'none'), serve empty directives and suppress all
+  // variant logging (logDecisionAsync is NOT called). This mirrors the POST handler's
+  // assignment.skipped branch (route.ts:965-979) exactly.
+  //
+  // NOTE: this is distinct from profiling_opt_out (§H.9). Consent-skip is an A/B
+  // holdout consent gate — it prevents A/B assignment for non-granted sessions.
+  // profiling_opt_out is a per-user DOM adaptation toggle (§H.9).
+  if (
+    consentModeEnabled &&
+    consentState !== undefined &&
+    SKIP_CONSENT_STATES.has(consentState as 'opted_out' | 'unknown' | 'none')
+  ) {
+    return NextResponse.json(
+      {
+        adapt_decision_id: crypto.randomUUID(),
         session_id: sessionId,
         archetype: 'neutral' as const,
         confidence,

@@ -822,3 +822,27 @@ scope; filed stub in FOLLOW_UPS.md, not implemented here (Rule H deferral).
 **A guardrail I'd add:** A lint rule or CI check that flags any `eventQueue.push` call that does NOT
 have an opt-out guard immediately before it — prevents a future developer from adding a new push
 site that bypasses the privacy gate.
+
+---
+
+## 2026-06-23 / FOLLOW-369
+
+**What I built:** GET-path consent-skip parity for `GET /api/adapt` (FOLLOW-360 AC-2). Added two
+optional GET params (`consent_state`, `consent_mode_enabled`) and a pre-bandit early-return gate
+that mirrors POST's `assignment.skipped` branch: when `consent_mode_enabled=true` AND
+`consent_state` is in `SKIP_CONSENT_STATES` ('opted_out'|'unknown'|'none'), the handler returns
+`directives:[]`, `source:'default'`, `archetype:'neutral'` and suppresses `logDecisionAsync`
+entirely. Also added `SKIP_CONSENT_STATES` to the shared import. 10 new tests in
+`route.follow369.test.ts` covering all three skip states, ClickHouse/bandit suppression, negative
+cases (consent mode disabled, consented state), and ordering proof (consent-skip fires before
+holdout gate).
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+1. **Gate ordering:** consent-skip sits AFTER profiling_opt_out (harder gate) and AFTER required
+   param validation, but BEFORE holdout gate and bandit sampling — mirrors POST ordering exactly.
+2. **No mock fallback:** the consent-skip path returns a structured 200 with `source:'default'`
+   (provenance observable). No ClickHouse row written.
+3. **SKIP_CONSENT_STATES reuse:** reused the existing shared constant — single source of truth.
+
+**A guardrail I'd add:** None beyond what already exists.

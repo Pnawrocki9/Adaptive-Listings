@@ -353,6 +353,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const tenantId = authResult.tenantId;
 
+  // ── §H.9 opt-out defense-in-depth gate ───────────────────────────────────
+  // If the SDK sends profiling_opt_out=1 as a query parameter, skip persistence
+  // and return 200 { skipped: true } without writing to quiz_completions.
+  // This mirrors the GET /api/adapt gate (apps/control-plane/src/app/api/adapt/route.ts:667).
+  // The ingest stream is NOT suppressed here — it rides §H.8 mandatory registration
+  // consent (CEO 2026-06-23/FOLLOW-384). Only the AL profiling persistence is skipped.
+  const url = new URL(req.url);
+  if (url.searchParams.get('profiling_opt_out') === '1') {
+    return NextResponse.json({ skipped: true }, { status: 200 });
+  }
+
   // ── Parse + validate body ─────────────────────────────────────────────────
   let raw: unknown;
   try {

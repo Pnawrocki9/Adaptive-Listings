@@ -1332,12 +1332,16 @@ async function init(): Promise<IntentState | null> {
         if (rawMessage.length === 0) return;
         // K.3.6 FOLLOW-266: count buyer chat turns for intent.snapshot payload.
         snapshotCtx.chatTurns += 1;
+        // §H.9/FOLLOW-387: attach the per-session opt-out flag so the stream-consumer
+        // can forward it to process_chat_message and skip the AL shadow-prior write.
+        // §H.8 invariant: the event STILL flows to ingest regardless of the flag.
         eventQueue.push({
           type: 'chat.message.sent',
           payload: {
             message: scrubMessagePii(rawMessage),
             char_count: typeof ce.detail.char_count === 'number' ? ce.detail.char_count : undefined,
             lead_id: leadId,
+            profiling_opt_out: profilingOptedOut || undefined,
           },
           ts: Date.now(),
         });

@@ -45,6 +45,18 @@ export const ChatMessageSentPayloadSchema = z.object({
    * being stripped by Zod during ingest validation.
    */
   lead_id: z.string().optional(),
+  /**
+   * §H.9 opt-out flag (FOLLOW-387 / CEO approved 2026-06-24).
+   *
+   * When true, the stream-consumer's `_spawn_chat_nlp` MUST forward this flag to
+   * `process_chat_message` so that `write_shadow_intent` skips the AL chat-intent
+   * shadow prior. Optional + default false keeps all existing producers backward-
+   * compatible (events emitted before this schema bump remain valid).
+   *
+   * §H.8 invariant: the chat event STILL flows to ingest (ClickHouse) regardless
+   * of this flag — only the AL profiling DERIVATION is suppressed.
+   */
+  profiling_opt_out: z.boolean().optional(),
 });
 export const ChatMessageSentEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('chat.message.sent'),

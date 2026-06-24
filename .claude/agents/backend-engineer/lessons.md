@@ -825,6 +825,46 @@ site that bypasses the privacy gate.
 
 ---
 
+## 2026-06-24 / FOLLOW-387
+
+**What I built:** Threaded `profiling_opt_out` through the full live real-time chat path: (1) added
+optional `profiling_opt_out: z.boolean().optional()` to `ChatMessageSentPayloadSchema` in
+`packages/shared` (public ingest-event schema change, CEO-approved ESC-029); (2) SDK `index.ts` chat
+emit now sets `profiling_opt_out: profilingOptedOut || undefined`; (3) `_spawn_chat_nlp` in
+`apps/stream-consumer` reads `profiling_opt_out` from the event payload and passes it through to
+`fn.spawn(..., profiling_opt_out=...)` with a `False` default for back-compat; (4)
+`process_chat_message` in `apps/intent-engine` already had the consumer param (FOLLOW-384 — no
+change needed); (5) updated `test_chat_nlp_bridge.py` to assert `profiling_opt_out` in all spawn
+call assertions + added 3 isolation tests + 1 full end-to-end integration test (AC-4) that lets
+`_spawn_chat_nlp` run un-mocked while patching only the Modal module.
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+1. **RETRO-108 TG-1 end-to-end gap:** FOLLOW-384's tests called `write_shadow_intent` directly —
+   they proved the consumer guard but not the producer chain. The AC-4 integration test in
+   `test_chat_nlp_bridge.py` drives the real
+   `run_consumer → _spawn_chat_nlp → fn.spawn(profiling_opt_out=True)` path and asserts spawn args.
+   This is the specific gap RETRO-108 called out.
+2. **Backward compatibility:** The Zod field is `.optional()` so events without it still validate.
+   Python uses `payload.get("profiling_opt_out", False)` — in-flight legacy events default to the
+   safe behavior (shadow prior is written). No breaking change.
+3. **§H.8 invariant preserved:** The chat event STILL reaches ClickHouse. The `profiling_opt_out`
+   field is just another payload field — it doesn't change routing.
+4. **Escalation (ESC-029):** Filed a RESOLVED escalation documenting the CEO approval before making
+   the schema change. Pattern: any additive `packages/shared` event-schema change that touches the
+   public ingest wire contract requires human sign-off per CLAUDE.md autonomy rules.
+5. **`profilingOptedOut || undefined` lint trap:** The expression converts `false → undefined`
+   (which is correct for not serializing the field when opted in), but ESLint's
+   `no-unnecessary-condition` flags it when `profilingOptedOut` is a known `boolean` literal in a
+   test. Used a `chatOptOutField(b: boolean): true | undefined` helper in tests to avoid the false
+   lint positive.
+
+**A guardrail I'd add:** A CI check that asserts any `fn.spawn(` call in `events.py` that targets
+`"process_chat_message"` has `profiling_opt_out=` in its kwargs. Would catch a future refactor that
+silently drops the flag.
+
+---
+
 ## 2026-06-23 / FOLLOW-369
 
 **What I built:** GET-path consent-skip parity for `GET /api/adapt` (FOLLOW-360 AC-2). Added two

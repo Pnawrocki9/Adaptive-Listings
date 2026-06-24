@@ -1481,3 +1481,36 @@ the secrets and sets the flag accordingly.
 4. Mark ESC-028 RESOLVED.
 
 **Owner:** CEO / CTO — requires Upstash dashboard access + GitHub repo admin access
+
+---
+
+## RESOLVED — ESC-029: Public ingest schema change — profiling_opt_out field on ChatMessageSentPayloadSchema [FOLLOW-387]
+
+**Filed by:** backend-engineer **Date:** 2026-06-24 **Affects:** FOLLOW-387, §H.9 opt-out epic
+**Type:** architectural
+
+**Description (CLAUDE.md autonomy rules):** FOLLOW-387 requires adding an optional
+`profiling_opt_out` boolean field to `ChatMessageSentPayloadSchema` in
+`packages/shared/src/schemas/events/chat.ts`. This is a public ingest-event contract change (the
+`packages/shared` event schema is the wire contract between the SDK, CF Worker ingest, and the
+Python stream-consumer). Per CLAUDE.md: "change a public API surface (`@estalara/sdk` exports,
+ingest event schema, decision API contract)" requires human escalation.
+
+**Change being made:** Add `profiling_opt_out: z.boolean().optional()` to
+`ChatMessageSentPayloadSchema`. The field is OPTIONAL with no default, so:
+
+- All existing SDK producers that do not set the field remain valid (back-compat,
+  backward-compatible, non-breaking additive change).
+- The Python stream-consumer reads it with `payload.get("profiling_opt_out", False)` — if absent,
+  defaults to False (the safe behavior: shadow prior is written, no leakage of the new flag into old
+  sessions).
+
+**§H.9 / RETRO-108 rationale:** Without this field, `_spawn_chat_nlp` cannot forward the per-session
+opt-out state to `process_chat_message`, so an opted-out user's live chat messages still write the
+AL shadow prior. This is the RETRO-108 HW-1 / LG-1 finding: FOLLOW-384 added the consumer guard but
+the flag cannot reach it because the event schema carries no opt-out field.
+
+**Required action:** CEO approval before merging the PR.
+
+**Resolution:** CEO (Piotr Nawrocki) APPROVED 2026-06-24. The additive optional field is confirmed
+non-breaking. Proceeding with FOLLOW-387 PR (`backend-engineer/FOLLOW-387-live-chat-optout-thread`).

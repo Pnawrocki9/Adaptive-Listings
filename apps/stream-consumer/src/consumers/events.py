@@ -46,18 +46,21 @@ log = structlog.get_logger(__name__)
 def _spawn_chat_nlp(event: dict[str, Any]) -> None:
     """Fire-and-forget: spawn Modal process_chat_message for a chat.message.sent event.
 
-    Extracts tenant_id, session_id, and the message text from the event payload
-    (canonical field: payload.message per ChatMessageSentPayloadSchema) and calls
-    process_chat_message.spawn(...) — a non-blocking Modal background call.
+    Extracts tenant_id, session_id, the message text, and the §H.9 opt-out flag from
+    the event payload (canonical fields: payload.message, payload.profiling_opt_out per
+    ChatMessageSentPayloadSchema) and calls process_chat_message.spawn(...) — a
+    non-blocking Modal background call.
     The spawn returns immediately; the Modal function runs asynchronously and writes
-    the 12-dim intent vector to the Redis shadow namespace.
+    the 12-dim intent vector to the Redis shadow namespace (unless profiling_opt_out
+    is True, in which case write_shadow_intent skips the write — §H.9 / FOLLOW-387).
 
-    DPIA constraint (C-07): only tenant_id, session_id, and the synthesized message
-    dict {"role": "user", "content": <payload.message>} are forwarded to Modal.
-    No raw chat text is written to ClickHouse or Postgres by this function.
-    The NLP result (intent vector only) is written by process_chat_message via
-    redis_writer.write_shadow_intent. The SDK already PII-scrubs via scrubMessagePii
-    before emission; we do not double-scrub here.
+    DPIA constraint (C-07): only tenant_id, session_id, the synthesized message dict
+    {"role": "user", "content": <payload.message>}, and profiling_opt_out are forwarded
+    to Modal. No raw chat text is written to ClickHouse or Postgres by this function.
+    The SDK already PII-scrubs via scrubMessagePii before emission; we do not double-scrub.
+
+    §H.8 invariant: the chat event STILL reaches ClickHouse via the normal batch path
+    regardless of profiling_opt_out. This function gates only the AL shadow-prior write.
 
     Failure posture: any import error (Modal not installed, wrong environment) or
     spawn error is logged and swallowed — the ClickHouse batch is never blocked.
@@ -76,6 +79,10 @@ def _spawn_chat_nlp(event: dict[str, Any]) -> None:
             "role": "user",
             "content": message_text,
         }
+        # §H.9/FOLLOW-387: read the opt-out flag from the event payload.
+        # Default False preserves backward-compatibility for in-flight events emitted
+        # before the ChatMessageSentPayloadSchema was bumped to carry the field.
+        profiling_opt_out: bool = bool(payload.get("profiling_opt_out", False))
 
         # Validate minimum data before spawning — skip if either id or text is empty.
         if not tenant_id or not session_id or not message["content"]:
@@ -95,11 +102,15 @@ def _spawn_chat_nlp(event: dict[str, Any]) -> None:
             tenant_id=tenant_id,
             session_id=session_id,
             message=message,
+            # §H.9/FOLLOW-387: thread the opt-out flag so process_chat_message can
+            # skip write_shadow_intent for opted-out sessions (FOLLOW-384 consumer guard).
+            profiling_opt_out=profiling_opt_out,
         )
         log.info(
             "chat_nlp_spawned",
             tenant_id=tenant_id,
             session_id=session_id,
+            profiling_opt_out=profiling_opt_out,
         )
     except Exception as exc:  # noqa: BLE001
         # Spawn errors must never block the ClickHouse batch.

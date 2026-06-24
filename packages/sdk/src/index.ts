@@ -1099,6 +1099,8 @@ async function init(): Promise<IntentState | null> {
     // tenants that rely on behavioral + chat NLP signals only (§B.1 / §D.6).
     // No prompt, no widget, no quiz events are emitted when the quiz is disabled.
     function showQuizTrigger(): void {
+      // §H.9 opt-out: suppress AL profiling. Ingest stream left flowing (§H.8/CEO 2026-06-23/FOLLOW-384).
+      if (profilingOptedOut) return;
       if (config.quiz?.enabled === false) return;
       if (!shadowHost || quizTriggered) return;
       quizTriggered = true;
@@ -1229,6 +1231,9 @@ async function init(): Promise<IntentState | null> {
           // Advance to next question (shown after next listing view)
           microPollQuestionIndex += 1;
           microPollShownThisSession = false;
+
+          // §H.9 opt-out: suppress AL profiling. Ingest stream left flowing (§H.8/CEO 2026-06-23/FOLLOW-384).
+          if (profilingOptedOut) return;
 
           // Apply micro_poll.answered behavioral signal to intent state
           const prevSignalCount = currentIntentState.signal_count;
@@ -1412,6 +1417,9 @@ async function init(): Promise<IntentState | null> {
       });
 
       // (b) Apply behavioral signal with payload-conditional boosts
+      // §H.9 opt-out: suppress AL profiling. Ingest stream left flowing (§H.8/CEO 2026-06-23/FOLLOW-384).
+      if (profilingOptedOut) return;
+
       const payload: Record<string, unknown> = {};
       if (listingType !== undefined) payload.listingType = listingType;
       if (bedroomCount !== undefined) payload.bedroomCount = bedroomCount;

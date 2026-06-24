@@ -170,3 +170,39 @@ def test_get_service_info() -> None:
     info = get_service_info()
     assert info["version"] == "0.1.0"
     assert info["service"] == "estalara-intent-engine"
+
+
+# ---------------------------------------------------------------------------
+# §H.9 opt-out guard (FOLLOW-384)
+# ---------------------------------------------------------------------------
+
+_OPT_OUT_PAYLOAD = ChatIntentDetectedPayload(
+    tenant_id="tnt_optout",
+    session_id="sess_optout",
+    intent_dimensions={},
+    archetype_hint="neutral",
+    confidence=0.0,
+    model_used="haiku-4.5",
+    source="realtime",
+    message_count=0,
+    detected_at="2026-06-24T00:00:00+00:00",
+)
+
+
+def test_write_shadow_intent_skips_on_opt_out() -> None:
+    """AC-2: opted-out session → redis.set is NOT called (§H.9)."""
+    mock_redis = MagicMock()
+    with patch("redis_writer._get_redis", return_value=mock_redis):
+        write_shadow_intent(_OPT_OUT_PAYLOAD, profiling_opt_out=True)
+    mock_redis.set.assert_not_called()
+
+
+def test_write_shadow_intent_writes_on_opt_in() -> None:
+    """AC-3: opted-in session → redis.set is called with the correct shadow key."""
+    mock_redis = MagicMock()
+    with patch("redis_writer._get_redis", return_value=mock_redis):
+        write_shadow_intent(_OPT_OUT_PAYLOAD, profiling_opt_out=False)
+    mock_redis.set.assert_called_once()
+    args, kwargs = mock_redis.set.call_args
+    assert args[0] == "shadow:tnt_optout:sess_optout:chat_intent"
+    assert kwargs.get("ex") == 86400

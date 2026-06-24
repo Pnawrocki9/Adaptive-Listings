@@ -34,6 +34,7 @@ def process_chat_message(
     session_id: str,
     message: dict,  # {"role": "user", "content": str}
     conversation_history: list[dict] | None = None,
+    profiling_opt_out: bool = False,
 ) -> dict:
     """Real-time intent extraction from a single chat message. <500ms target.
 
@@ -42,9 +43,11 @@ def process_chat_message(
         session_id: anonymous buyer session id.
         message: the new chat message {"role": ..., "content": ...}.
         conversation_history: prior messages for light context (optional).
+        profiling_opt_out: §H.9 — if True the shadow prior write is skipped.
 
     Returns:
-        The ChatIntentDetectedPayload as a dict (also written to Redis shadow).
+        The ChatIntentDetectedPayload as a dict (also written to Redis shadow
+        unless profiling_opt_out is True).
     """
     import os
 
@@ -56,7 +59,7 @@ def process_chat_message(
     payload = extract_intent(messages, model=model, source="realtime")
     payload.tenant_id = tenant_id
     payload.session_id = session_id
-    write_shadow_intent(payload)
+    write_shadow_intent(payload, profiling_opt_out=profiling_opt_out)
     return payload.model_dump()
 
 

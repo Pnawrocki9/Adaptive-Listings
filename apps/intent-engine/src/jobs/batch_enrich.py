@@ -44,7 +44,15 @@ def batch_enrich_conversations() -> dict:
             payload = extract_intent(session["messages"], model=model, source="batch")
             payload.tenant_id = session["tenant_id"]
             payload.session_id = session["session_id"]
-            write_shadow_intent(payload)
+            # §H.9: clickhouse_reader does not yet surface opt-out state, so
+            # we default to False. The batch tier processes only sessions whose
+            # events reached ClickHouse; opted-out sessions are suppressed
+            # upstream before storage. This default is safe for the current
+            # pipeline stage — revisit when clickhouse_reader returns opt_out.
+            write_shadow_intent(
+                payload,
+                profiling_opt_out=session.get("profiling_opt_out", False),
+            )
             processed += 1
         except Exception as e:  # noqa: BLE001 — a bad session must not abort the batch.
             print(f"batch_enrich error: {e}")

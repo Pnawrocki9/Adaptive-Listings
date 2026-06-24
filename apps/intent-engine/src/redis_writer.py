@@ -37,13 +37,22 @@ def shadow_key(tenant_id: str, session_id: str) -> str:
     return f"shadow:{tenant_id}:{session_id}:chat_intent"
 
 
-def write_shadow_intent(payload: ChatIntentDetectedPayload, ttl_seconds: int = 86400) -> None:
+def write_shadow_intent(
+    payload: ChatIntentDetectedPayload,
+    ttl_seconds: int = 86400,
+    profiling_opt_out: bool = False,
+) -> None:
     """Write a chat-intent payload to the shadow namespace with a TTL.
 
     Key: shadow:{tenant_id}:{session_id}:chat_intent
     Value: the full ChatIntentDetectedPayload as a JSON string.
     TTL default 24h (86400s) — long enough for the batch tier to re-process and
     for analysis to read, short enough that stale shadow data self-cleans.
+
+    §H.9 compliance: if profiling_opt_out is True the write is skipped entirely
+    so no chat-intent shadow prior accumulates for opted-out sessions.
     """
+    if profiling_opt_out:
+        return
     key = shadow_key(payload.tenant_id, payload.session_id)
     _get_redis().set(key, json.dumps(payload.model_dump()), ex=ttl_seconds)

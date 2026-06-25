@@ -2,6 +2,53 @@
 
 ---
 
+**Date / ticket:** 2026-06-25 — FOLLOW-341 (PR #352) validation **Delegation row used:**
+Validation-only. FOLLOW-341 was delegated to ml-engineer (intent/adapt/embeddings row). **What
+validation caught (or missed):** Step 5c confirmed the full embedding dimension chain: seeder writes
+1024-dim vectors, DB column is vector(1024), and affinityScore() reads the same shape — all three
+must agree and they do. Separately, the Rule I check showed 174 failures vs. 175 on main (net -1),
+confirming the .mts consumer-search addition is a legitimate fix, not a violation-silencer. The
+`continue-on-error: true` archetype-embeddings-not-null failure was correctly diagnosed as
+expected-on-PRs (dev DB has NULL; self-clears on push:main). Caught and flagged the critical prod
+population gap: post-migrate-seed.yml only targets dev Supabase via Doppler dev config — prod
+requires a manual operator step. **A delegation/validation rule I'd add:** For any seed/migration
+job that auto-runs in CI, always confirm which Doppler config it uses (dev vs prd) before asserting
+"auto-populates on merge" — the config determines which environment actually gets updated.
+
+---
+
+**Date / ticket:** 2026-06-25 — FOLLOW-359 (PR #350) + FOLLOW-363 (PR #351) validation; FOLLOW-341
+IN_PROGRESS update; ESC-030 RESOLVED **Delegation row used:** Validation-only session (no new
+delegation). FOLLOW-341 delegated by ml-engineer (intent/embeddings row) per ESC-030 Option A CEO
+resolution. **What validation caught (or missed):** Step 5c confirmed the full chain for FOLLOW-359:
+getHandlerVariant is the single variable threaded through bandit sampling (route.ts:791), copy
+selection (805), ClickHouse log (837), and now the response body (826). The SDK consumer at
+adapt.ts:775 reads response.variant and caches it — closing the conversion attribution loop. No
+half-wire. For FOLLOW-363, both ongoing classify paths (applyDwellSignal at index.ts:633 and
+applyListingViewRate at index.ts:1055) are non-test consumers — the hysteresis guard now reaches
+runtime. QUEUE.md had duplicate entries for FOLLOW-359, FOLLOW-363, and FOLLOW-341 at two offsets
+each; all four duplicates required individual edits. **A delegation/validation rule I'd add:** When
+a ticket has duplicate QUEUE.md entries (can happen from conflicting agent writes), update ALL
+occurrences in a single validation pass and note them in the STATUS.md entry — prevents the
+stale-duplicate state from blocking a future grep.
+
+---
+
+**Date / ticket:** 2026-06-24 — FOLLOW-387 post-merge reconciliation (PR #349, merge commit b7412e1)
+**Delegation row used:** N/A — PM bookkeeping only (step 6). No new worker delegation this session
+per human instruction. **What validation caught (or missed):** Post-merge check found FOLLOW-388 and
+FOLLOW-389 were present in FOLLOW_UPS.md with promoted_to_queue:false — they had never been added to
+QUEUE.md. Both were promoted atomically in the same reconciliation pass. FOLLOW-388 carries a real
+blocking dependency (FOLLOW-101 still open) and was marked READY but with an explicit blocker note,
+so it does not get accidentally delegated. Human instruction explicitly prohibited writing RETRO-110
+in this session to avoid the dual-pass that happened with RETRO-109; RETRO-110 recorded as IN
+PROGRESS in STATUS.md instead. **A delegation/validation rule I'd add:** At every post-merge
+reconciliation, grep FOLLOW_UPS.md for any depends_on referencing the just-merged ticket ID and
+confirm each dependent stub is either already in QUEUE.md or gets promoted in the same pass —
+prevents the silent carry of un-queued ready work.
+
+---
+
 **Date / ticket:** 2026-06-17 — RETRO-087 (FOLLOW-325 / PR #315) + RETRO-069 (FOLLOW-287+288 / PRs
 #281+#282) + marking FOLLOW-325 DONE + promoting FOLLOW-331/332/336 to QUEUE **Delegation row
 used:** N/A — PM-self retro analysis + queue hygiene (step 6). **What validation caught (or
@@ -966,6 +1013,20 @@ depth gives the same error as a wrong extension.
 
 ---
 
+**Date / ticket:** 2026-06-24 — FOLLOW-384 (PR #347) validation pass **Delegation row used:** N/A —
+PM-self validation loop only (no new delegation; validating a completed worker PR). **What
+validation caught (or missed):** Step 5c confirmed both non-test call sites wire the new
+`profiling_opt_out` param: `main.py:62` (real-time path) AND `jobs/batch_enrich.py:54` (batch path).
+Having two independent call sites is the correct shape for a Python flag — Rule I does not govern
+Python exports, but the spirit (non-test consumer exists) was verified manually. The
+`gh pr checks --json` flag is unavailable on this gh CLI version; fallback: count `fail` lines in
+`gh pr checks` plaintext output. **A delegation/validation rule I'd add:** When the `--json` flag is
+unavailable on `gh pr checks`, use `gh pr checks <N> 2>&1 | grep -c "fail"` as a reliable
+non-success count — but also pipe to `grep "fail"` separately to confirm those failures are the
+known pre-existing Rule I baseline, not new regressions.
+
+---
+
 **Date / ticket:** 2026-06-24 — FOLLOW-369/371/368 post-merge bookkeeping (PRs #343/#344/#345)
 **Delegation row used:** N/A — PM-self queue reconciliation (step 6 post-merge hygiene). **What
 validation caught (or missed):** Duplicate FOLLOW-368 entry in QUEUE.md (stale at ~line 5475 with
@@ -977,3 +1038,76 @@ the session budget. **A delegation/validation rule I'd add:** When a ticket has 
 QUEUE.md (a known recurring issue), ALWAYS reconcile BOTH entries to the same terminal status at
 merge — leaving a stale "READY" duplicate alongside a "DONE" canonical is a correctness hazard for
 the next PM session that reads queue state.
+
+---
+
+**Date / ticket:** 2026-06-24 — FOLLOW-384 DONE post-merge reconciliation; FOLLOW-385 delegation
+**Delegation row used:** Row 1 (client SDK, browser code → sdk-engineer) for FOLLOW-385. **What
+validation caught (or missed):** Step 5c was pre-run at READY_FOR_REVIEW time (previous session);
+merge commit 532f3d8 confirmed at squash-merge. Exact index.ts line numbers for the three sibling
+paths (showQuizTrigger :1101, favorites listener :1392, micro-poll onAnswer :1235) were confirmed by
+live grep before writing the delegation prompt — prevents the worker from guessing at the wrong
+lines. RETRO-107 (FOLLOW-383) already flagged Rule S (sibling-set incompleteness) as the pattern
+being closed by FOLLOW-385; citing it explicitly in the delegation prompt steers the worker away
+from widening scope. **A delegation/validation rule I'd add:** When delegating a "sibling
+completeness" ticket (Rule S), always paste the exact file:line for every sibling site in the prompt
+so the worker cannot miss one — a missed sibling is a FOLLOW stub waiting to be filed.
+
+---
+
+**Date / ticket:** 2026-06-24 — FOLLOW-385 validation pass (PR #348) **Delegation row used:** Row 1
+(client SDK, browser code → sdk-engineer) — confirmed on prior delegation; this entry covers the PM
+validation step. **What validation caught (or missed):** Step 5c runtime-wiring grep confirmed all
+three new guard sites (index.ts:1103/:1236/:1421) plus the backend route gate (:363) are non-test
+consumers of the non-test producer at :428. Scope discipline check (grep for §H.8 paths in the diff)
+returned zero hits — critical confirmation that the worker stayed inside the defined §H.9 boundary.
+Step 5d (co-assignment) verified the backend route change (AC-2) is placed correctly after auth and
+before body parse. The test structural approach (closure-based guards) satisfies Rule L because it
+models the actual function structure and guard order rather than hand-injecting the flag directly
+into a state object. FOLLOW-387 was already marked promoted_to_queue:true in FOLLOW_UPS.md but had
+not been added to QUEUE.md — caught and corrected during this pass. **A delegation/validation rule
+I'd add:** After any RETRO-NNN that sets promoted_to_queue:true on a stub, the PM must reconcile
+QUEUE.md in the same session to add the new READY entry — a FOLLOW_UPS.md flag that is never
+reconciled to QUEUE.md means the ticket is invisible to the next delegation pass.
+
+---
+
+**Date / ticket:** 2026-06-24 — FOLLOW-385 post-merge reconciliation (PR #348, merge commit f7ac516)
+**Delegation row used:** N/A — PM bookkeeping + retro (step 6). No new worker delegation this
+session per human instruction. **What validation caught (or missed):** RETRO-109 written by
+pm-orchestrator directly (no retrospective-analyst subagent available in this context). The retro
+identified that the §H.8 boundary (eventQueue.push preservation inside favorites handler) was
+correctly honored by the guard placement — AFTER push, BEFORE applyBehavioralSignal — validating
+that the worker read the CEO scope decision accurately. No new FOLLOW stubs filed; FOLLOW-387 was
+already filed by RETRO-108 and covers the remaining open §H.9 leg. Duplicate RETRO-109 row in
+STATUS.md Pending Retro Spawns table was created by sequential edits — caught and removed in the
+same pass. **A delegation/validation rule I'd add:** When writing RETRO-NNN entries as
+pm-orchestrator (no retrospective-analyst available), always cross-check the Pending Retro Spawns
+table for the exact line before appending a new row — sequential edits to the same table in one
+session reliably produce duplicates.
+
+---
+
+**Date / ticket:** 2026-06-25 — FOLLOW-359 / FOLLOW-363 delegation **Delegation row used:** Row 2
+(ingest worker, control-plane, decision-api → backend-engineer) for FOLLOW-359. Row 1 (client SDK,
+browser code → sdk-engineer) for FOLLOW-363. **What validation caught (or missed):** Pre-delegation
+sweep found FOLLOW-359 had a stale `depends_on: [FOLLOW-360]` note in the earlier duplicate entry
+(line ~5497) while the canonical entry (line ~6008) correctly marked the dep cleared. Both
+duplicates required updating. FOLLOW-341 (P1, ml-engineer) has an explicit CEO decision gate in its
+FOLLOW_UPS.md stub; filing ESC-030 rather than delegating blindly is the correct path — "build job
+vs drop §F claim" is architectural scope. **A delegation/validation rule I'd add:** Before
+delegating any ticket whose stub contains "Decision point for CEO" or "CEO-gated", file an
+escalation first — never hand it to an agent until the decision is recorded.
+
+---
+
+**Date / ticket:** 2026-06-25 — FOLLOW-342 bookkeeping (IN_PROGRESS transition) **Delegation row
+used:** Row 2 (control-plane / decision-api → backend-engineer). Bookkeeping-only session; no code
+delegation performed. **What validation caught (or missed):** QUEUE.md carries two FOLLOW-342
+entries at different offsets (5262 and 6185); both required atomic update to avoid a stale-duplicate
+divergence on the next grep. CEO-authorized CONVENTIONS_PATCH additions (Rule S amendment + Rule M)
+were recorded in STATUS.md for audit traceability even though CONVENTIONS_PATCH.md itself was edited
+by the human — ensures the "why" is preserved in the PM state file. **A delegation/validation rule
+I'd add:** When recording a CONVENTIONS_PATCH update in STATUS.md, always note both the pattern
+count that triggered promotion (>= 2 prior retros) and the source retros by ID — makes future
+grep-for-rule-origin unambiguous.

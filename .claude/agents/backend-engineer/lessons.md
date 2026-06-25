@@ -886,3 +886,31 @@ holdout gate).
 3. **SKIP_CONSENT_STATES reuse:** reused the existing shared constant — single source of truth.
 
 **A guardrail I'd add:** None beyond what already exists.
+
+---
+
+## 2026-06-25 / FOLLOW-342
+
+**What I built:** Explicit AC-2 fallback test for variant-indexed copy selection: verified that when
+a `SlotDirective` carries no `variants` array, the route returns `slot.en` regardless of the bandit
+variant index. The core implementation (VARIANT_INDEX map + `s.variants?.en[variantIndex] ?? s.en`
+chain) was shipped in PR #327. This session added the explicit fallback test case to
+`route.variant.test.ts` that was implicit before (tested only indirectly via the no-variants mock in
+the first describe block).
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+1. **Ordering invariant preserved:** sampling happens BEFORE `runDecisionTree()` in both GET and
+   POST handlers. Holdout sessions short-circuit before bandit sampling and are forced to 'control'.
+   The single `getHandlerVariant`/`selectedVariant` value is reused for both ClickHouse logging and
+   directive construction — Rule K (no duplicate logic / single source of truth) is respected.
+2. **Rule M compliance:** the PR description does not claim cosine ordering is live in prod.
+   `affinityScore()` uses djb2 fallback until `FOLLOW-392` (operator prod seed) runs. The variant
+   copy selection is correct end-to-end in prod regardless of which ordering function runs.
+3. **No fabricated data:** all three paths (opt-out, consent-skip, holdout) return
+   `source:'default'` with empty directives and no ClickHouse row, observable on the wire per Rule
+   K.2.
+
+**A guardrail I'd add:** When dispatched to "implement FOLLOW-342", verify git log first — the core
+work was already merged in a prior PR (#327). Checking `git log --all --oneline | grep FOLLOW-342`
+before reading route.ts would have surfaced this in 30 seconds instead of after reading 1279 lines.

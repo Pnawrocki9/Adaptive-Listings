@@ -5240,9 +5240,11 @@ items are DONE.
 - id: FOLLOW-341
   title: Populate archetype_embeddings.embedding (activate the cosine affinity path)
   agent: ml-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: ml-engineer
   started_at: '2026-06-25T12:00Z'
+  pm_validated_at: '2026-06-25T14:00Z'
+  completed_at: '2026-06-25'
   priority: P1
   estimated_hours: 6
   depends_on: []
@@ -5250,26 +5252,40 @@ items are DONE.
   spec: backlog/FOLLOW_UPS.md (FOLLOW-341 stub)
   branch: ml-engineer/FOLLOW-341-archetype-embedding-job
   pr: '#352'
+  merge_commit: merged-2026-06-25
   notes: |
-    ESC-030 RESOLVED 2026-06-25 — CEO chose Option A (build the real embedding job).
-    Implemented: src/lib/archetype-seeder.ts (core logic), scripts/seed-archetypes.mts (thin CLI
-    wrapper), 8 unit tests (vi.mock openai + vi.stubGlobal fetch), archetype-embeddings-not-null CI
-    job in ci.yml (soft-skip without DOPPLER_TOKEN_DEV). PR #352. Unblocks FOLLOW-342.
+    STALE DUPLICATE — canonical entry below (~line 6149). Status updated to DONE here for parity.
+    PR #352 merged to main 2026-06-25. ESC-030 RESOLVED.
+    PROD SEED ACTION REQUIRED: `cd apps/control-plane && SUPABASE_SERVICE_ROLE_KEY=<prod>
+    OPENAI_API_KEY=<key> pnpm seed:archetypes` — tracked in STATUS.md. RETRO pending.
 
 - id: FOLLOW-342
   title: Thread bandit variant into playbook selection (stop optimizing placebo arms)
   agent: backend-engineer
-  status: BLOCKED
-  block_reason: Depends on FOLLOW-341 for lift to be meaningful (cosine must produce real ordering)
+  status: DONE
   priority: P1
   estimated_hours: 6
   depends_on: [FOLLOW-341]
   source: AUDIT-2026-06-19 F-03
   spec: backlog/FOLLOW_UPS.md (FOLLOW-342 stub)
-  branch: backend-engineer/FOLLOW-342-bandit-variant-playbook
+  branch: backend-engineer/FOLLOW-342-variant-playbook-selection
+  pr: '#327'
+  merge_commit: 66054d6
+  assigned_to: backend-engineer
+  started_at: '2026-06-25'
+  completed_at: '2026-06-25'
+  ci_checks_used: 0/5
+  fix_iterations_used: 0/3
   notes: |
-    Thread selectedVariant into runDecisionTree/getPlaybook so control/v1/v2 produce distinct copy.
-    Variant->copy mapping covered by unit test across all 3 indices.
+    STALE DUPLICATE — canonical entry below (~line 6185). Status updated to DONE here for parity.
+    Implementation in PR #327 (66054d6) — variant threaded into runDecisionTree via VARIANT_INDEX
+    map + slot.variants?.en[variantIndex] ?? slot.en fallback. All 4 ACs met: (1) control/v1/v2
+    produce distinct directives; (2) unit tests cover all 3 indices + fallback-to-slot.en;
+    (3) ClickHouse logs the selected variant via logDecisionAsync; (4) holdout sessions forced
+    to 'control' before bandit sampling (FOLLOW-360 holdout gate preserved).
+    AC-2 fallback test added explicitly in route.variant.test.ts (2026-06-25 session).
+    PROD COSINE CAVEAT: variant-indexed copy is correct in prod; cosine ORDERING is NOT active
+    in prod until operator runs `pnpm seed:archetypes` (FOLLOW-392). djb2 fallback is safe.
 
 - id: FOLLOW-346-dpia
   title: 'FOLLOW-346 DPIA parallel track: C-07 chat-retention scope brief (docs-only)'
@@ -5468,10 +5484,11 @@ others staged by priority; max 3 IN_PROGRESS at once.**
 - id: FOLLOW-363
   title: Thread hysteresis (currentArchetype) into applyDwellSignal + applyListingViewRate
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: sdk-engineer
   started_at: '2026-06-25T00:00Z'
   pm_validated_at: '2026-06-25T12:00Z'
+  completed_at: '2026-06-25'
   priority: P1
   estimated_hours: 3
   depends_on: []
@@ -5479,8 +5496,10 @@ others staged by priority; max 3 IN_PROGRESS at once.**
   spec: backlog/FOLLOW_UPS.md (FOLLOW-363 stub)
   branch: sdk-engineer/FOLLOW-363-hysteresis-dwell-listing-view
   pr: '#351'
+  merge_commit: merged-2026-06-25
   notes: |
-    STALE DUPLICATE — canonical entry below (~line 5876). Status synced to READY_FOR_REVIEW.
+    STALE DUPLICATE — canonical entry below (~line 5896). Status updated to DONE here for parity.
+    PR #351 merged to main 2026-06-25. RETRO pending.
 
 - id: FOLLOW-368
   title: Guarantee Python writer and TS reader share one Upstash Redis instance (env-var divergence)
@@ -5504,10 +5523,11 @@ others staged by priority; max 3 IN_PROGRESS at once.**
 - id: FOLLOW-359
   title: Return variant in GET /api/adapt response body
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-06-25T00:00Z'
   pm_validated_at: '2026-06-25T12:00Z'
+  completed_at: '2026-06-25'
   priority: P1
   estimated_hours: 2
   depends_on: [FOLLOW-360]
@@ -5515,14 +5535,10 @@ others staged by priority; max 3 IN_PROGRESS at once.**
   spec: backlog/FOLLOW_UPS.md (FOLLOW-359 stub)
   branch: backend-engineer/FOLLOW-359-get-variant-response
   pr: '#350'
+  merge_commit: merged-2026-06-25
   notes: |
-    FOLLOW-360 DONE (merged #333) — dependency cleared.
-    Delegated 2026-06-25T00:00Z. CI check counter: 1/5. Fix iterations: 0/3.
-    PM-VALIDATED 2026-06-25: CI green (Rule I pre-existing-red only). All real gates pass.
-    variant field confirmed in response object (route.ts:826) using same getHandlerVariant variable
-    as runDecisionTree (line 805) and logDecisionAsync (line 837) — single source of truth.
-    Non-test producer: route.ts:791 (getHandlerVariant sampled). Non-test consumer: adapt.ts:775
-    (cacheVariant called). AC1/AC2/AC3/AC4 verified. HOLDOUT COMPAT verified.
+    STALE DUPLICATE — canonical entry below (~line 6047). Status updated to DONE here for parity.
+    PR #350 merged to main 2026-06-25. RETRO pending.
 
 - id: FOLLOW-361
   title: Reconcile bandit seed convention (default vs control/v1/v2)
@@ -5891,10 +5907,11 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
 - id: FOLLOW-363
   title: Thread hysteresis (currentArchetype) into applyDwellSignal + applyListingViewRate
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: sdk-engineer
   started_at: '2026-06-25T00:00Z'
   pm_validated_at: '2026-06-25T12:00Z'
+  completed_at: '2026-06-25'
   priority: P1
   estimated_hours: 3
   depends_on: []
@@ -5902,14 +5919,15 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   spec: backlog/FOLLOW_UPS.md (FOLLOW-363 stub)
   branch: sdk-engineer/FOLLOW-363-hysteresis-dwell-listing-view
   pr: '#351'
+  merge_commit: merged-2026-06-25
   notes: |
-    Delegated 2026-06-25T00:00Z. CI check counter: 1/5. Fix iterations: 0/3.
-    PM-VALIDATED 2026-06-25: CI green (Rule I pre-existing-red only). All real gates pass.
+    PR #351 merged to main 2026-06-25. Delegated 2026-06-25T00:00Z. CI check counter: 1/5.
+    Fix iterations: 0/3. PM-VALIDATED 2026-06-25: CI green (Rule I pre-existing-red only).
     Both call sites patched: applyDwellSignal (intent.ts:~1703) + applyListingViewRate (intent.ts:~1636)
     now pass state.archetype + state.quiz_answered to classifyFromProbabilities.
     Non-test producer: intent.ts functions; non-test consumers: index.ts:633 (dwell) + index.ts:1055
     (listing view). ACs 1-4 + AC5 behavioral tests verified. 13-call-site inventory comment added.
-    Rule S satisfied (free-classify vs guarded documented).
+    Rule S satisfied (free-classify vs guarded documented). RETRO pending.
 
 - id: FOLLOW-385
   title:
@@ -6042,10 +6060,11 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
 - id: FOLLOW-359
   title: Return variant in GET /api/adapt response body
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-06-25T00:00Z'
   pm_validated_at: '2026-06-25T12:00Z'
+  completed_at: '2026-06-25'
   priority: P1
   estimated_hours: 2
   depends_on: []
@@ -6053,14 +6072,16 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   spec: backlog/FOLLOW_UPS.md (FOLLOW-359 stub)
   branch: backend-engineer/FOLLOW-359-get-variant-response
   pr: '#350'
+  merge_commit: merged-2026-06-25
   notes: |
-    FOLLOW-360 DONE (merged #333) — dependency cleared.
+    PR #350 merged to main 2026-06-25. FOLLOW-360 DONE (merged #333) — dependency cleared.
     Delegated 2026-06-25T00:00Z. CI check counter: 1/5. Fix iterations: 0/3.
     PM-VALIDATED 2026-06-25: CI green (Rule I pre-existing-red only). All real gates pass.
     variant field added to GET response at route.ts:826 using getHandlerVariant (same variable
     used for runDecisionTree:805 and logDecisionAsync:837). Single source of truth confirmed.
     Non-test producer: route.ts:791. Non-test consumer: adapt.ts:775. ACs 1-4 + HOLDOUT verified.
     AdaptationDirectives.variant (directives.ts:171) was already optional — no type break.
+    RETRO pending.
 
 - id: FOLLOW-361
   title: Reconcile bandit seed convention (default vs control/v1/v2)
@@ -6144,9 +6165,11 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
 - id: FOLLOW-341
   title: Populate archetype_embeddings.embedding (activate the cosine affinity path)
   agent: ml-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: ml-engineer
   started_at: '2026-06-25T12:00Z'
+  pm_validated_at: '2026-06-25T14:00Z'
+  completed_at: '2026-06-25'
   priority: P1
   estimated_hours: 6
   depends_on: []
@@ -6154,23 +6177,48 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   spec: backlog/FOLLOW_UPS.md (FOLLOW-341 stub)
   branch: ml-engineer/FOLLOW-341-archetype-embedding-job
   pr: '#352'
+  merge_commit: merged-2026-06-25
   notes: |
-    ESC-030 RESOLVED 2026-06-25 — CEO chose Option A (build the real embedding job).
+    PR #352 merged to main 2026-06-25. ESC-030 RESOLVED — CEO chose Option A.
     Implemented: src/lib/archetype-seeder.ts (core logic), scripts/seed-archetypes.mts (thin CLI
     wrapper), 8 unit tests (vi.mock openai + vi.stubGlobal fetch), archetype-embeddings-not-null CI
-    job in ci.yml (soft-skip without DOPPLER_TOKEN_DEV). PR #352. Unblocks FOLLOW-342.
+    job in ci.yml (soft-skip without DOPPLER_TOKEN_DEV).
+    PM-VALIDATED 2026-06-25T14:00Z. CI check counter: 1/5. Fix iterations: 0/3.
+    All real merge gates PASS. Runtime wiring confirmed (see STATUS.md canonical entry).
+    PROD SEED ACTION REQUIRED (go-live for §F cosine MOAT — tracked in STATUS.md):
+      cd apps/control-plane && SUPABASE_SERVICE_ROLE_KEY=<prod> OPENAI_API_KEY=<key> pnpm seed:archetypes
+    OR trigger seed-archetypes.yml workflow_dispatch with prod credentials.
+    Dev DB auto-populates via post-migrate-seed.yml on push:main. Same pattern as RETRO-076/FOLLOW-307.
+    FOLLOW-342 unblocked on code; cosine ordering in prod requires manual seed first.
+    RETRO pending.
 
 - id: FOLLOW-342
   title: Thread bandit variant into playbook selection (stop optimizing placebo arms)
   agent: backend-engineer
-  status: BLOCKED
-  block_reason: Depends on FOLLOW-341 (cosine must produce real ordering for lift to be meaningful)
+  status: DONE
   priority: P1
   estimated_hours: 6
   depends_on: [FOLLOW-341]
   source: AUDIT-2026-06-19 F-03
   spec: backlog/FOLLOW_UPS.md (FOLLOW-342 stub)
-  branch: backend-engineer/FOLLOW-342-bandit-variant-playbook
+  branch: backend-engineer/FOLLOW-342-variant-playbook-selection
+  pr: '#327'
+  merge_commit: 66054d6
+  assigned_to: backend-engineer
+  started_at: '2026-06-25'
+  completed_at: '2026-06-25'
+  ci_checks_used: 0/5
+  fix_iterations_used: 0/3
+  notes: |
+    Implementation shipped in PR #327 (66054d6). Variant threading complete:
+    VARIANT_INDEX map (control→0, v1→1, v2→2) + slot.variants?.en[variantIndex] ?? slot.en
+    fallback in runDecisionTree(). Sampling happens BEFORE decision tree in both GET and POST
+    handlers; holdout sessions forced to 'control' before sampling (FOLLOW-360 preserved).
+    ClickHouse logDecisionAsync logs the selected variant (AC-3). All 4 ACs met.
+    AC-2 fallback test (slot.en when variants absent) added explicitly in route.variant.test.ts
+    2026-06-25 session. 1293 tests green.
+    PROD COSINE CAVEAT: variant-indexed copy works in prod; cosine ORDERING requires
+    FOLLOW-392 (operator seed prod archetype_embeddings). djb2 fallback is safe degradation.
 
 - id: FOLLOW-355
   title: Pin cold-start signal_count invariant (future init-time prior guard)

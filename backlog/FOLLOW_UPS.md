@@ -9478,12 +9478,16 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   are simply not variant-indexed. Thread `selectedVariant` into `runDecisionTree`/`getPlaybook` so
   each arm selects a distinct copy set (`slot.variants.en[variant_index]`, fall back to `slot.en`).
 - **ac:**
-  - [ ] control/v1/v2 produce measurably different directives for the same archetype.
-  - [ ] Variant→copy mapping covered by a unit test across all 3 indices.
-  - [ ] ClickHouse `adaptation_decisions.variant` reflects the served (distinct) copy set.
+  - [x] control/v1/v2 produce measurably different directives for the same archetype.
+  - [x] Variant→copy mapping covered by a unit test across all 3 indices (0/1/2) +
+        fallback-to-slot.en.
+  - [x] ClickHouse `adaptation_decisions.variant` reflects the served (distinct) copy set.
 - **notes:** Depends on FOLLOW-341 (real ordering) for the lift to be meaningful. Supersedes the
   intent of the old FOLLOW-001/007/025/028 bandit-variant stubs.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
+- **done_pr:** '#327'
+- **done_merge_commit:** 66054d6
+- **done_at:** '2026-06-25'
 
 ---
 
@@ -10469,6 +10473,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] A test asserts the positive path: opted-in session → prior is applied as before.
 - **depends_on:** [FOLLOW-383] (must merge first so the opt-out param flows end-to-end)
 - **promoted_to_queue:** true
+- **status:** DONE — PR #347 squash-merged to main (commit 532f3d8) 2026-06-24. RETRO-108 pending.
 
 ---
 
@@ -10536,6 +10541,10 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         decision (§H.8 / CEO 2026-06-23 / FOLLOW-384) for the record.
 - **depends_on:** [FOLLOW-383]
 - **promoted_to_queue:** true
+- **status:** DONE — PR #348 squash-merged to main (merge commit f7ac516, range 532f3d8..f7ac516)
+  2026-06-24. PM-validated 2026-06-24T18:00Z. CI green (Rule I pre-existing-red only, same baseline
+  as PR #347 — non-blocking per CI gate landscape). ACs 1–5 all verified. RETRO-109 appended
+  2026-06-24 by pm-orchestrator (no new stubs — FOLLOW-387 already filed by RETRO-108).
 
 ---
 
@@ -10559,3 +10568,244 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] CI guard fails when the Python matrix desyncs from the `apps/` filesystem set.
   - [ ] `project_ci_gate_landscape` memory updated (Python-test is now a real gate).
 - **promoted_to_queue:** false
+
+---
+
+## FOLLOW-387 — Thread profiling_opt_out from the SDK chat-emit through ingest → `_spawn_chat_nlp` → `process_chat_message` (close RETRO-103 HW-3 end-to-end; real-time chat axis)
+
+- **source_retro:** RETRO-108 (§3 HW-1 HALF_WIRE_C, §4a LG-1, §4c TG-1, §7 — FOLLOW-384 closed only
+  the redis_writer hop; the real-time producer never sets the flag)
+- **source_ticket:** FOLLOW-384 (PR #347 — added the consumer guard but left the producer un-wired)
+- **recommended_sprint:** next (immediately — this is the still-open §H.9 chat-derivation leg)
+- **recommended_agent:** backend-engineer (ingest/stream-consumer) + sdk-engineer (chat-emit +
+  shared schema)
+- **priority:** P1
+- **estimated_hours:** 4
+- **scope:** FOLLOW-384 added `profiling_opt_out` as a CONSUMER guard on `write_shadow_intent`
+  (`redis_writer.py:55`) and threaded it through `process_chat_message` (`main.py:37/62`), but on
+  the LIVE real-time path nothing sets it True: `_spawn_chat_nlp`
+  (`apps/stream-consumer/src/consumers/ events.py:94`) calls
+  `fn.spawn(tenant_id, session_id, message)` WITHOUT `profiling_opt_out`, and
+  `ChatMessageSentPayloadSchema` (`packages/shared/src/schemas/events/chat.ts:38–52`) carries no
+  opt-out field for it to forward. Result: an opted-out user's chat STILL writes the AL chat-intent
+  shadow prior (RETRO-103 HW-3 unclosed). Close the full chain: (a) the SDK chat-emit attaches the
+  per-session opt-out state to the `chat.message.sent` event (reuse the existing
+  `__estalara_profiling_opt_out__` SDK state, `packages/sdk/src/core/profiling-opt-out.ts:30`); (b)
+  extend `ChatMessageSentPayloadSchema` to carry it — NOTE: this is a `packages/shared` PUBLIC
+  ingest-event surface change → **ESCALATE per CLAUDE.md autonomy rules BEFORE the PR, do not
+  silently extend the schema;** (c) `_spawn_chat_nlp` reads it from the event payload and forwards
+  it to `fn.spawn(..., profiling_opt_out=...)`. Honor §H.8: the chat event itself still flows to
+  ingest (CEO 2026-06-23); only the AL shadow-prior DERIVATION is suppressed.
+- **ac:**
+  - [ ] `_spawn_chat_nlp` forwards `profiling_opt_out` to the Modal
+        `process_chat_message.spawn(...)` call, read from the `chat.message.sent` event payload.
+  - [ ] `ChatMessageSentPayloadSchema` carries the opt-out state (after escalation sign-off); the
+        SDK chat-emit populates it from `__estalara_profiling_opt_out__`.
+  - [ ] A producer-side test: an opted-out chat.message.sent → spawn carries
+        `profiling_opt_out=True` → `write_shadow_intent` does NOT write the prior (the chain test,
+        not a `write_shadow_intent`- direct call). Update `test_chat_nlp_bridge.py:123`
+        `assert_called_once_with(...)` to include the flag (it currently pins the 3-arg signature
+        and would resist this change).
+  - [ ] A cross-runtime test (Rule Z): the TS-emitted opt-out field name/type is asserted against
+        the Python `_spawn_chat_nlp` reader (fixture from the shared schema), not a Python-side mock
+        shape.
+  - [ ] The §H.9 chat-derivation epic gate references this ticket as the closing leg (with
+        FOLLOW-385).
+- **depends_on:** [FOLLOW-384] (consumer guard must exist — it now does)
+- **promoted_to_queue:** true
+- **status:** DONE — PR #349 squash-merged to main (merge commit b7412e1, range f7ac516..b7412e1)
+  2026-06-24. PM post-merge reconciliation 2026-06-24. §H.9 live-chat leg CLOSED. RETRO-110 pending
+  (dedicated retrospective-analyst running in parallel).
+
+---
+
+## FOLLOW-388 — Surface per-session opt-out state in `read_recent_chat_sessions` + fix the false `batch_enrich.py` comment (close §H.9 on the batch axis once FOLLOW-101 lands)
+
+- **source_retro:** RETRO-108 (§4a LG-2 latent leak, §4d DG-1, §5b)
+- **source_ticket:** FOLLOW-384 (PR #347 — `batch_enrich.py:54` defaults `profiling_opt_out` to
+  False with a comment that contradicts the §H.8/§H.9 boundary)
+- **recommended_sprint:** bundle with FOLLOW-101 (the real ClickHouse query) — do not ship
+  FOLLOW-101 without this
+- **recommended_agent:** data-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** `batch_enrich.py:54` passes `session.get("profiling_opt_out", False)`, and the comment
+  (`:47–51`) claims opted-out sessions are "suppressed upstream before storage." That premise is
+  FALSE per the CEO 2026-06-23 §H.8 decision (raw chat events DO reach ClickHouse; only AL
+  derivation is suppressed — memory `project_optout_enforcement_h9_scope`). Today
+  `read_recent_chat_sessions` is a stub returning `[]` (`clickhouse_reader.py:28`) so the default is
+  unreached — but the day FOLLOW-101 implements the real query, every returned row will lack an
+  opt-out key, the default-False will fire, and the Sonnet-quality shadow prior will be re-written
+  for opted-out users (re-opening the §H.9 leak on the batch axis). Fix: (a) the real
+  `read_recent_chat_sessions` query MUST surface per-session opt-out state (join/derive from the
+  opt-out signal the FOLLOW-387 schema change makes available in `default.events`); (b) correct the
+  `batch_enrich.py:47–51` comment to state the real §H.8/§H.9 boundary.
+- **ac:**
+  - [ ] `read_recent_chat_sessions` returns each session dict WITH a real `profiling_opt_out` value
+        (not relying on the call-site default).
+  - [ ] A test: an opted-out session row → batch `write_shadow_intent` skips the prior.
+  - [ ] The `batch_enrich.py` comment is corrected to the actual §H.8 (events flow) / §H.9
+        (derivation suppressed) boundary.
+- **depends_on:** [FOLLOW-101, FOLLOW-387]
+- **promoted_to_queue:** true
+- **status:** READY — promoted to QUEUE.md 2026-06-24 post-merge of PR #349 (FOLLOW-387). Blocked on
+  FOLLOW-101 (real CH query not yet implemented); safe to carry in queue until then.
+
+---
+
+## FOLLOW-389 — Wire the `/api/quiz/completion` opt-out producer + replace modeled SDK guard tests with real-handler tests + fix the misleading micro-poll comment (close RETRO-109 HW-1/TG-1/DG-1)
+
+- **source_retro:** RETRO-109 (§3 HW-1 HALF_WIRE_C, §4c TG-1, §4d DG-1 — ADDENDUM re-pass)
+- **source_ticket:** FOLLOW-385 (PR #348, commit `f7ac516`)
+- **recommended_sprint:** next
+- **recommended_agent:** sdk-engineer (lead — SDK tests + adapt.ts producer + index.ts comment) +
+  backend-engineer (confirm the route gate stays after auth)
+- **priority:** P2
+- **estimated_hours:** 3
+- **scope:** FOLLOW-385's runtime guards are correct (opted-out users do not profile), but the
+  re-pass found three wiring/verification gaps that leave the §H.9 SDK enforcement
+  untestable-against-prod and one defense layer unreachable:
+  1. **HW-1 (consumer with no producer):** the new `POST /api/quiz/completion` `profiling_opt_out=1`
+     gate (`apps/control-plane/.../quiz/completion/route.ts:363`) is never reached by real traffic.
+     `postQuizCompletionPing` (`packages/sdk/src/core/adapt.ts:191`) does NOT append the param, and
+     the call site (`index.ts:1140`) is unreachable for opted-out users because Guard 1
+     (`showQuizTrigger` `:1103`) blocks the quiz. The `route.test.ts:123` test self-injects the
+     param (Rule L), so green CI is not evidence. Fix: EITHER (preferred) thread `profilingOptedOut`
+     into `postQuizCompletionPing` so it appends `?profiling_opt_out=1` — making the gate a
+     genuinely reachable double-protection consistent with the `/adapt` path — OR, if the team
+     prefers Guard 1 as the sole enforcement, change the route gate's JSDoc to state it is
+     intentionally-unreachable defense-in-depth and add a code comment so a future reviewer does not
+     read it as a live wire.
+  2. **TG-1 (test orphaning):** all 9 tests in `packages/sdk/src/__tests__/follow-385.test.ts` are
+     `modeled*` re-implementations of the guards (import only
+     `applyBehavioralSignal`/`initIntentState`, never `init`). They prove the PATTERN, not that the
+     real guards at `index.ts:1103/1236/1421` fire. Replace/augment with tests that drive the REAL
+     handlers (dispatch the real `estalara:listing:favorited` CustomEvent with
+     `profilingOptedOut=true`; assert `eventQueue` got the `listing.bookmarked` push but intent
+     state did NOT mutate; assert the real `showQuizTrigger` returns before `renderQuizTrigger`).
+  3. **DG-1 (misleading comment):** the micro-poll guard comment (`index.ts:1235`) is copy-pasted
+     from favorites and says "Ingest stream left flowing" — FALSE on the micro-poll path, where the
+     guard returns BEFORE the `quiz.event` push (`:1251`), suppressing it. (Suppression is in-scope:
+     `quiz.event` is NOT in the §H.8 protected set — `chat`/`snapshot`/`live.signup` only — so this
+     is correct behavior, just mislabeled.) Fix the comment to state the micro-poll `quiz.event`
+     ingest IS suppressed and that it is in-scope because `quiz.event` is an AL-signal stream, not a
+     §H.8 stream.
+- **ac:**
+  - [ ] The `/api/quiz/completion` opt-out gate is EITHER reachable by a real SDK request (a
+        non-test producer appends `profiling_opt_out=1`, asserted by a test that drives
+        `postQuizCompletionPing`) OR explicitly documented as intentionally-unreachable
+        defense-in-depth with a code comment.
+  - [ ] At least one SDK test drives the REAL `estalara:listing:favorited` handler (via dispatched
+        CustomEvent or real `init` wiring) and asserts: opted-out → `eventQueue` push present,
+        intent state unchanged; opted-in → both happen. The test must NOT re-implement the guard
+        inline.
+  - [ ] At least one SDK test drives the REAL `showQuizTrigger` and asserts it returns before
+        `renderQuizTrigger`/`postQuizCompletionPing` when `profilingOptedOut=true`.
+  - [ ] The `index.ts:1235` micro-poll comment is corrected to state the `quiz.event` ingest is
+        suppressed on the opted-out micro-poll path and why that is in-scope.
+- **depends_on:** [FOLLOW-385]
+- **promoted_to_queue:** true
+- **status:** READY — promoted to QUEUE.md 2026-06-24 post-merge of PR #349 (FOLLOW-387). P2.
+  FOLLOW-385 DONE (dependency satisfied). Lead: sdk-engineer; co: backend-engineer.
+
+## FOLLOW-390 — Decide GET `/api/adapt` surface liveness + close the GET-path bandit reward loop (or document it dead)
+
+- **source_retro:** RETRO-111 (§3 HW-1; §4c TG-1; §4d DG-1; §7)
+- **source_ticket:** FOLLOW-359 (PR #350, merged 2026-06-25)
+- **recommended_sprint:** next backend triage
+- **recommended_agent:** backend-engineer (lead) + sdk-engineer (confirm no GET caller)
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** FOLLOW-359 correctly added `variant` to the GET `/api/adapt` response body, closing the
+  RETRO-095 §3 HALF*WIRE_P on the producer→response leg. But the consumer side of that wire has NO
+  in-repo client: the SDK `fetchDirectives` calls `/api/adapt` with `method: 'POST'` ONLY
+  (`packages/sdk/src/core/adapt.ts:746`), and the variant cache+echo path (`adapt.ts:775-783`) is
+  reached only from the POST response. GET `/api/adapt` is documented as the \_legacy* surface
+  (`packages/sdk/src/core/adapt-schema.ts:122`). Grep
+  `grep -rn "method:\s*['\"]GET" packages/sdk/src apps/*/src | grep -i adapt` → zero hits. So the
+  RETRO-095 "GET-path reward is unattributable" concern is either (a) moot — the GET surface is
+  dead/external-only, in which case the field is documentation-only and the loop concern should be
+  retired; or (b) real — some external/legacy integrator serves GET traffic, in which case an
+  integration doc + a contract test pinning
+  `GET body.variant → POST /api/adapt/feedback → updateBanditArm` is the missing evidence. DECIDE
+  which, then act. `/api/adapt/feedback` (`feedback/route.ts:57`) already accepts `variant` from any
+  caller, so no further server work is needed for (b) beyond docs+test.
+- **ac:**
+  - [ ] Determine whether any external/legacy integrator uses GET `/api/adapt` (check middleware
+        CORS scope, pilot integration docs, tenant configs). State the verdict in the PR.
+  - [ ] If DEAD/external-only: annotate the `getHandlerVariant` provenance comment
+        (`route.ts:809-813`) to state the GET response `variant` is for external integrators (no
+        in-repo SDK consumer), and retire the RETRO-095 "GET reward unattributable" concern as
+        external-owned.
+  - [ ] If LIVE: add an integration test asserting a value read off GET `body.variant` and POSTed to
+        `/api/adapt/feedback` reaches `updateBanditArm` for the matching
+        `(tenant, archetype, variant)` row; add a one-paragraph integrator doc.
+  - [ ] PM may mark FOLLOW-007's GET axis closed only after this resolves.
+- **depends_on:** [FOLLOW-359]
+- **promoted_to_queue:** false
+
+## FOLLOW-391 — Document per-path switch-direction asymmetry of the two ongoing hysteresis sites (dwell boosts held; view-rate can favor a competitor)
+
+- **source_retro:** RETRO-112 (§4a LG-1; §4c TG-1)
+- **source_ticket:** FOLLOW-363 (PR #351, merged 2026-06-25)
+- **recommended_sprint:** next SDK docs pass / fold into FOLLOW-212 calibration
+- **recommended_agent:** sdk-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** FOLLOW-363 closed the RETRO-097 hysteresis Rule S finding at full completeness (both
+  ongoing paths guarded, 13-site JSDoc inventory added). One refinement remains: `applyDwellSignal`
+  BOOSTS the held archetype (dwell = engagement with the current archetype), so a competitor can
+  only overtake on a near-tie when it ALREADY leads by ≥ SWITCH_MARGIN before the boost — whereas
+  `applyListingViewRate` derives its distribution from view rates and can favor a competitor
+  directly. The two ongoing paths therefore respond ASYMMETRICALLY to a flat near-tie, which matters
+  for whoever calibrates SWITCH_MARGIN (FOLLOW-212). Add this to the `classifyFromProbabilities`
+  call-site inventory JSDoc. Optionally add a regression test pinning that the 6 FREE-CLASSIFY sites
+  stay free-classify (so a future "fix" that wrongly guards e.g. `applyDecay` fails CI).
+- **ac:**
+  - [ ] The `classifyFromProbabilities` call-site inventory (`intent.ts:~745`) notes the
+        switch-direction asymmetry between `applyDwellSignal` (boosts held) and
+        `applyListingViewRate` (rate-derived) and that SWITCH_MARGIN calibration (FOLLOW-212) must
+        account for both.
+  - [ ] (Optional) a test asserts at least one FREE-CLASSIFY site (e.g. `applyDecay`) still
+        free-classifies, guarding the documented exemptions against accidental regression.
+- **depends_on:** [FOLLOW-363]
+- **promoted_to_queue:** false
+
+## FOLLOW-392 — Operator action: seed prod `archetype_embeddings` + assert all 18 rows non-null (activate §F cosine in prod; close FOLLOW-341's prod hop)
+
+- **source_retro:** RETRO-113 (§3 HW-1; §4a LG-1; §4d DG-1; §7)
+- **source_ticket:** FOLLOW-341 (PR #352, merged 2026-06-25)
+- **recommended_sprint:** next ops window (gates FOLLOW-342 effect)
+- **recommended_agent:** devops-engineer (operator) + ml-engineer (verify cosine activation)
+- **priority:** P1
+- **estimated_hours:** 2
+- **scope:** FOLLOW-341 ships the seeding job, but `post-migrate-seed.yml:82` runs
+  `doppler run --config dev -- pnpm seed:archetypes` — DEV ONLY, and soft-skips if
+  `DOPPLER_TOKEN_DEV` is absent. NO workflow seeds prod. So in prod,
+  `archetype_embeddings.embedding` stays NULL, `affinityScore`
+  (`apps/control-plane/src/app/api/adapt/route.ts:516` AND
+  `apps/decision-api/src/lib/reorder.ts:286`) silently runs the djb2 fallback, and the §F cosine
+  affinity path the ticket "activates" is INACTIVE in prod (safe degradation, no error — which is
+  why it must be tracked, not noticed). Same manual-apply trap as RETRO-076/FOLLOW-307 (memory
+  `project_postgres_migrations_no_autoapply`). This stub is the SPECIFIC operator action for this
+  data; CROSS-REFERENCE, do NOT duplicate, **FOLLOW-308** (the general standing Postgres auto-apply
+  gate) and the QUEUE.md FOLLOW-341 note (`QUEUE.md:5276`) which already records the manual prod
+  step. Note: the `archetype-embeddings-not-null` CI job checks DEV and is `continue-on-error`
+  (RETRO-113 LG-1) — it is NOT evidence of prod state.
+- **ac:**
+  - [ ] Run `pnpm seed:archetypes` (or `seed-archetypes.yml` workflow_dispatch) against PROD
+        Supabase with prod `SUPABASE_SERVICE_ROLE_KEY` + `OPENAI_API_KEY`.
+  - [ ] Assert all 18 `archetype_embeddings` rows have non-null `embedding` in PROD
+        (FOLLOW-293-style live smoke / `embedding=is.null` SELECT returns zero rows).
+  - [ ] Confirm `affinityScore` takes the cosine branch in prod for a known archetype+listing pair
+        (not djb2) — a live check or log assertion.
+  - [ ] Add a one-line "dev-only auto-seed; PROD is manual operator action" note to the
+        `post-migrate-seed.yml` header and the FOLLOW-341 PR-prose claim correction.
+  - [ ] Feed this seed into whatever prod-apply checklist/automation FOLLOW-308 produces (do not
+        build a parallel mechanism).
+  - [ ] PM: FOLLOW-342's "cosine produces real ordering" precondition is NOT met until this lands —
+        treat FOLLOW-342 as effect-blocked on FOLLOW-392 even though it is code-unblocked.
+- **depends_on:** [FOLLOW-341]
+- **promoted_to_queue:** false
+
+<!-- next free FOLLOW number: 393 (390 = RETRO-111 / PR #350 / FOLLOW-359: decide GET /api/adapt surface liveness — the added `variant` response field has NO in-repo consumer since the SDK calls /api/adapt via POST only, GET is the legacy surface; either document GET dead/external-only + retire the RETRO-095 "GET reward unattributable" concern, or add a GET→feedback contract test if a live integrator exists; backend-engineer P2 2h. 391 = RETRO-112 / PR #351 / FOLLOW-363: doc the dwell-vs-view-rate switch-direction asymmetry in the classifyFromProbabilities 13-site inventory + optional FREE-CLASSIFY regression test; sdk-engineer P3 1h. 392 = RETRO-113 / PR #352 / FOLLOW-341: OPERATOR ACTION — seed PROD archetype_embeddings (post-migrate-seed.yml is dev-config-only + soft-skips; prod stays NULL → affinityScore runs djb2 fallback → §F cosine INACTIVE in prod, same trap as RETRO-076/FOLLOW-307) + assert 18 rows non-null + cross-ref FOLLOW-308 don't-duplicate; gates FOLLOW-342's "real cosine ordering" precondition in effect though it is code-unblocked; devops+ml-engineer P1 2h.) -->

@@ -1514,3 +1514,40 @@ the flag cannot reach it because the event schema carries no opt-out field.
 
 **Resolution:** CEO (Piotr Nawrocki) APPROVED 2026-06-24. The additive optional field is confirmed
 non-breaking. Proceeding with FOLLOW-387 PR (`backend-engineer/FOLLOW-387-live-chat-optout-thread`).
+
+---
+
+## RESOLVED — ESC-030: CEO decision required before FOLLOW-341 (archetype embeddings) can be delegated [FOLLOW-341]
+
+**Filed by:** pm-orchestrator **Date:** 2026-06-25 **Affects:** FOLLOW-341, FOLLOW-342 (blocked on
+FOLLOW-341), §F cosine/MOAT claim **Type:** architectural / scope
+
+**Description:**
+
+FOLLOW-341 (P1, ml-engineer, 6h) would populate `archetype_embeddings.embedding` via
+`text-embedding-3-small` to activate the cosine affinity path in `getArchetypeEmbedding()` /
+`affinityScore()`. Currently, 18 seed rows in `archetype_embeddings` have `embedding NULL`, and
+`affinityScore()` falls back to a djb2 hash for 100% of requests. The entire §F vector-matching /
+MOAT layer is non-functional in prod.
+
+FOLLOW-341's stub (FOLLOW_UPS.md) explicitly flags: "Decision point for CEO (F-02 open question #4):
+build the real embedding job now, OR formally drop the cosine/MOAT claim and ship with hash ordering
+acknowledged."
+
+Two options:
+
+**Option A — Build the job:** Delegate FOLLOW-341 to ml-engineer: build an idempotent
+embed-and-UPSERT job (Modal or GHA workflow_dispatch), add a `archetype-embeddings-not-null` CI
+precheck. Estimated 6h. Unblocks FOLLOW-342 (bandit variant → playbook selection).
+
+**Option B — Drop the claim:** Remove the cosine branch from `affinityScore()` + `reorder.ts`,
+remove the §F MOAT narrative from MASTER_DESIGN, cancel FOLLOW-341 and FOLLOW-342. Estimated 2h. The
+djb2 hash ordering becomes the documented and only mechanism.
+
+**Required action:**
+
+Piotr (CEO): choose Option A or Option B. Pasting your answer in Slack/reply with "A" or "B" is
+sufficient. PM will delegate accordingly.
+
+**Resolution:** CEO (Piotr) chose **Option A** on 2026-06-25 — "we need it to be fully functional in
+all aspects." FOLLOW-341 delegated to ml-engineer. FOLLOW-342 unblocked once FOLLOW-341 is done.

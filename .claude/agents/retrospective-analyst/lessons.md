@@ -1165,3 +1165,137 @@
   PR fix more than its scope, but it CAN make sure the NEXT ticket's AC carries the whole set —
   which is what closed the chain here. Watch for this on any "fix one path" PR: ask "what are the
   siblings, and does a filed follow-up cover ALL of them or just the next one downstream?"
+
+---
+
+## 2026-06-24 · RETRO-108 (FOLLOW-384 / PR #347)
+
+- **A finding I almost missed and why:** FOLLOW-384's two unit tests both PASS and look like clean
+  AC coverage — they call `write_shadow_intent(payload, profiling_opt_out=True/False)` DIRECTLY with
+  an explicit value. That structure is seductive: green tests + a real guard read like a closed
+  wire. The leak only surfaced when I refused to trust the consumer-direct test and asked "who in
+  PRODUCTION sets this flag True?" — grepping `fn.spawn(` in stream-consumer revealed
+  `_spawn_chat_nlp` omits it entirely, and the `chat.message.sent` schema has no opt-out field. A
+  consumer-direct unit test can NEVER reveal a missing producer — that is its blind spot, and mine
+  almost was too. Lesson: for any SUPPRESSION flag that defaults to the leaky value (False = write),
+  trace the PRODUCER chain to a real production call site, never stop at the guard + its unit test.
+- **An axis/chain I had to trace twice:** the real-time vs batch axes. First pass I nearly filed the
+  batch `session.get(..., False)` as the main leak — but `read_recent_chat_sessions` is a stub
+  returning [], so the batch default is unreached TODAY (latent, P2). The LIVE leak is the real-time
+  axis (`_spawn_chat_nlp` → `process_chat_message`), which the PR's own tests bypass. Had to
+  separate "live now" (LG-1/FOLLOW-387) from "latent on FOLLOW-101 landing" (LG-2/FOLLOW-388). Also
+  traced the request-path confusion twice: the FOLLOW-384 stub assumed "the SDK now sends
+  profiling_opt_out=1 in the adapt URL" closes it — but the ADAPT-URL path and the CHAT-event path
+  are different requests; the Modal chat spawn never sees the adapt query param. RETRO-107 §5a
+  inherited that same conflation.
+- **A meta-pattern in how gaps recur across agents:** the "consumer guard ships, production producer
+  never sets the flag, consumer-direct test can't see it" shape is the production-code mirror of
+  Rule L (self-injecting test) and the inverse of Rule H (scaffold-without-consumer). It has now
+  appeared on the SAME §H.9 epic twice (FOLLOW-372 consumer-only gate → fixed by 383's producer;
+  FOLLOW-384 consumer-only guard → producer still missing). I held it at count 2 rather than
+  promoting, because both are one epic recurring temporally — promoting on single-epic recurrence is
+  the noise RETRO-104 warned about. The DEEPER meta-pattern: a remediation ticket split off by AC
+  ("AC-4 → FOLLOW-384") inherits an UNDER-SCOPED AC — the split optimizes for "the smallest
+  mergeable unit" and the end-to-end behavior falls between the splits. Watch every AC-split
+  follow-up: does the split AC encode the full end-to-end behavior the parent finding demanded, or
+  just one hop of it?
+
+---
+
+- **2026-06-24 / RETRO-109 (FOLLOW-385, PR #348)**
+  - **A finding I almost missed and why:** A concurrent first pass of RETRO-109 had ALREADY been
+    written (sections 1–8) and recorded §3 CHECK B as "No half-wire found", §4c as a P3
+    inspection-only note, and §4d as N/A. The trap was to accept the existing entry as done. Running
+    CHECK B properly anyway — by tracing the `/api/quiz/completion` PRODUCER
+    (`postQuizCompletionPing` in adapt.ts) rather than the consumer route — surfaced HW-1: the
+    server gate has NO producer (the SDK never appends `profiling_opt_out=1` to the quiz-completion
+    URL; only to `/adapt`), and the call site is unreachable anyway because Guard 1 short-circuits
+    earlier. The first pass diffed only the route and saw a "complete" gate. LESSON: a half-wire
+    CHECK B is only valid if you grep the OTHER side of the wire in the OTHER package — reading the
+    changed file alone (the consumer) structurally cannot reveal a missing producer. This is the
+    same blind spot RETRO-108 §3 hit on the Python side; it recurred on the TS side and a peer pass
+    missed it.
+  - **An axis/chain I had to trace twice:** The micro-poll vs favorites ingest asymmetry. First read
+    it as a leak (micro-poll suppresses its `quiz.event` ingest push while favorites preserves
+    `listing.bookmarked`). Re-traced against the §H.8 protected set (memory:
+    `chat`/`snapshot`/`live.signup` ONLY) and the quiz-completion path (also suppressed via Guard 1)
+    — concluded it's IN SCOPE and consistent, NOT a leak. But the in-code comment was copy-pasted
+    and FALSE on that path. The axis had to be walked twice to separate "wrong behavior" from "right
+    behavior, wrong comment." Multi-axis discipline (step 8) is what flipped the verdict.
+  - **The test trap, again:** All 9 SDK tests were `modeled*` re-implementations of the guards
+    (never imported `init`), so green CI proves the PATTERN, not the real guards. The first pass
+    said "no SDK unit test" and rated it P3; the truth is worse — there ARE tests, and they actively
+    create false confidence (Rule L production-test shape). LESSON: when a retro says "verified by
+    inspection, low severity," check whether a test EXISTS that merely looks like coverage. A
+    self-injecting test is worse than no test because it turns the wire green.
+  - **Meta-pattern across agents:** The consumer-guard-without-producer + self-injecting-test shape
+    has now appeared THREE consecutive times on the §H.9 epic (FOLLOW-372 / 384 / 385), each time on
+    a different surface (adapt route / redis_writer / quiz-completion route). Independent-context
+    count is still 1 (one epic) so I correctly held promotion — but the recurrence is now strong
+    enough that a §H.9-SCOPED checklist item would have caught all three at planning time: "every
+    opt-out CONSUMER gate must name its production PRODUCER and ship a test that does NOT inject the
+    flag itself." When an epic produces the same wiring shape 3x, the fix is a per-epic planning
+    gate, not a global Rule.
+  - **Process note:** When a peer pass already exists, do NOT overwrite — append a clearly-marked
+    ADDENDUM that corrects the specific sections, preserves the correct verdicts, and reconciles.
+    Keeps the learning loop honest about who found what.
+
+---
+
+### 2026-06-24 · RETRO-110 (FOLLOW-387 / PR #349)
+
+- **A finding I almost missed and why:** the `profiling_opt_out` value appears at BOTH
+  `events.py:107` (the `fn.spawn` kwarg) AND `:113` (the structured-log field). On a fast diff read
+  this looks like a possible double-spawn/duplicate-arg bug. It is two legitimate distinct uses —
+  caught only by reading the surrounding lines, not the grep. Lesson: when a symbol appears 2x
+  within ~6 lines of a Python diff, read the enclosing statements before flagging — log-field vs
+  call-arg is a common false-positive shape.
+- **An axis/chain I had to trace twice:** the producer-uniqueness check. First pass I confirmed the
+  SDK is the sole `chat.message.sent` producer (`index.ts:1306`). But the contract that actually
+  matters for the leak is the sole `process_chat_message.spawn` INVOKER, which is a different grep
+  (`\.spawn(` + `process_chat_message` in apps/\*.py). Had to re-trace at the spawn layer, not the
+  event-emit layer, to be sure no replay/backfill/synthetic-chat producer also needs the flag.
+  Confirmed only `_spawn_chat_nlp` (real-time) + `batch_enrich` (stubbed reader). Lesson: "is the
+  wire fully enumerated?" must be answered at the CONSUMER-of-the-flag layer, not the event-name
+  layer — they can diverge.
+- **A meta-pattern in how gaps recur across agents:** the §H.9 epic shows the canonical "remediation
+  closes one hop, gap moves upstream" shape across FOUR consecutive retros (103→108→109→this), but
+  the CLOSING PR finally broke it by adding a real un-mocked end-to-end test (patch only the
+  external boundary, drive the real loop). The meta-pattern: a HALF_WIRE is only truly closed when a
+  test exercises the chain WITHOUT the test itself supplying the value the consumer reads. The
+  fix-PRs that merely add a consumer-direct unit test (FOLLOW-384) recurred as gaps; the one that
+  added a real-chain test (FOLLOW-387) closed clean. I should weight "does the new test
+  self-inject?" as the single strongest closure signal in future §7 checks.
+- **Self blind-spot:** I correctly resisted promoting the pattern to a Rule despite surface-count 4
+  — the discipline of "independent-context, not temporal-recurrence" held. The standing risk is that
+  a future retro forgets these are all one epic and promotes prematurely; the count-bump-with-HOLD
+  record in §6 is the guard against that.
+
+## 2026-06-25 · RETRO-111/112/113 (FOLLOW-359 / FOLLOW-363 / FOLLOW-341)
+
+- **A finding I almost missed and why:** RETRO-111 (FOLLOW-359) looked like a clean one-line
+  HALF_WIRE_P closure — the GET response now carries `variant`, AC2 proves response==ClickHouse log,
+  real-handler test, done. I almost wrote "Wiring Audit — clean ✅." The miss: the SDK NEVER calls
+  GET `/api/adapt` — `fetchDirectives` is POST-only (`adapt.ts:746`), GET is the LEGACY surface
+  (`adapt-schema.ts:122`). So the field has a producer but no in-repo consumer ON THAT SURFACE. The
+  grep `grep -rn "method:\s*GET" packages/sdk/src apps/*/src | grep -i adapt → 0 hits` is what
+  caught it. Lesson: when a PR "closes a HALF_WIRE_P by adding the response field," always grep for
+  who reads it ON THE SPECIFIC SURFACE the field was added to — the existing consumer often rides
+  the SIBLING surface (POST), which makes the wire LOOK complete.
+- **An axis/chain I had to trace twice:** FOLLOW-341 "self-populates on merge." First read: true,
+  post-migrate-seed.yml runs `pnpm seed:archetypes` on push:main. Second read of the workflow body:
+  `doppler run --config dev` — DEV ONLY, plus a soft-skip on missing `DOPPLER_TOKEN_DEV`. There is
+  no prod seeder. So the merge activates cosine in dev only; prod silently runs djb2. The PR-prose
+  claim and the workflow header both over-claim. Always read the actual `--config`/env scope of a
+  seed/migrate workflow, never trust "runs on merge" prose.
+- **A meta-pattern in how gaps recur across agents:** the same "merged ≠ live in prod for
+  Postgres/data" trap keeps surfacing across DIFFERENT agents and tickets (RETRO-076 ml/data
+  migration, now RETRO-113 ml-engineer embedding seed). That's now 2 independent contexts → I
+  flagged a candidate disclosure rule to the human (do NOT claim "self-populates on merge" unless a
+  workflow hits PROD), while noting FOLLOW-308 already owns the MECHANISM so the rule may be moot —
+  codify-now vs wait-for-308 is a human call. Also recurring: Rule S closures that are GENUINELY
+  complete (FOLLOW-363 enumerated all 13 sites + justified exemptions) are the rare non-one-hop
+  closures — worth citing as the template, and the "add a call-site inventory comment" remediation
+  is itself a Rule S amendment candidate. Discipline held: do NOT promote single-epic/single-context
+  recurrences; flag amendments to EXISTING rules (grounded in their own evidence chain) separately
+  from brand-new rules (2 independent contexts required).

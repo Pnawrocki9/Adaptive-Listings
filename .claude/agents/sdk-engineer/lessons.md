@@ -1,5 +1,24 @@
 # SDK Engineer — Lessons
 
+## 2026-06-25 / FOLLOW-363
+
+**What I built:** Threaded the `SWITCH_MARGIN=0.05` hysteresis guard into the two ongoing-classify
+call sites in `packages/sdk/src/core/intent.ts` that FOLLOW-344 (PR #329) left unguarded:
+`applyDwellSignal` and `applyListingViewRate`. Added `state.archetype` + `state.quiz_answered` as
+args to `classifyFromProbabilities` in both. Updated the JSDoc to enumerate all 13 call sites with
+free-classify / guarded rationale. Added 9 tests in `follow-363.test.ts` covering near-tie hold (3
+repeated ticks / views) and clear-win switch for both paths. All assertions are direct (no
+conditional `if (changed)` branch — closes TG-2 from RETRO-097).
+
+**What was uncertain:** Whether `applyChatIntentPrior` (line ~1375) was a 3rd unguarded ongoing
+path. Verified it is one-shot per session via the `chatPriorApplied` idempotency flag in
+`fetchDirectives` — correctly free-classify.
+
+**A guardrail I'd add:** When a hysteresis / margin guard is added to one branch of a classification
+function, the PR description should enumerate ALL call sites of that function and explicitly
+classify each as guarded or free-classify — not just the ones changed. One enumeration in the PR
+forces the author to do the Rule S sweep at write time rather than in a follow-up retro.
+
 ## 2026-06-03 / FOLLOW-159
 
 **What I built:** Long-form description adaptation in `packages/sdk/src/core/adapt-description.ts`.
@@ -368,6 +387,31 @@ integration, Rule H/J all green).
 (e.g., `tenant_site_schema`, Decision API fallback) to verify the behavior actually exists in code
 before writing the comment. A comment describing a non-existent server fallback is a half-wire entry
 point (RETRO-004 class) — it creates false confidence in callers about what will happen at runtime.
+
+## 2026-06-24 / FOLLOW-385
+
+**What I built:** Three `profilingOptedOut` guards in `packages/sdk/src/index.ts` (showQuizTrigger,
+micro-poll onAnswer callback, estalara:listing:favorited handler) + one server-side defense-in-depth
+gate in `apps/control-plane/src/app/api/quiz/completion/route.ts`. All three SDK guards follow the
+FOLLOW-383 pattern exactly. The favorites guard places the opt-out return AFTER the ingest
+eventQueue.push (§H.8 preserved) and BEFORE applyBehavioralSignal (§H.9 suppressed). The server-side
+gate checks `profiling_opt_out=1` query param AFTER auth (no auth bypass). 14 new tests; all 1471
+SDK + 1280 control-plane tests passed; typecheck + lint + CI all green.
+
+**What was uncertain:** (1) Where to place the favorites guard relative to `eventQueue.push` — the
+§H.8/§H.9 boundary requires careful placement. The ingest stream is §H.8 (must flow), the profiling
+mutations are §H.9 (suppressed). Reading the spec carefully resolved it: guard AFTER push, BEFORE
+mutation. (2) The `vi.resetAllMocks()` pattern in control-plane tests wipes `errorBody` mock
+implementation, causing `NextResponse.json(undefined)` to throw "Value is not JSON serializable".
+Fix: use `vi.clearAllMocks()` (clears call counts, preserves implementations) and use a stable
+factory function mock (not `vi.fn(impl)` which gets reset).
+
+**A guardrail I'd add:** When mocking a module that returns values consumed by framework
+serialization (like `errorBody` → `NextResponse.json`), never use `vi.fn(impl)` inside `vi.mock()`
+with `vi.resetAllMocks()` in beforeEach — the reset wipes the impl and the framework blows up with
+"not serializable" instead of a meaningful assertion failure. Use a plain function (not vi.fn)
+inside `vi.mock()` when the return value must survive `clearAllMocks`/`resetAllMocks`, or switch to
+`vi.clearAllMocks()`.
 
 ## 2026-06-21 / FOLLOW-372
 

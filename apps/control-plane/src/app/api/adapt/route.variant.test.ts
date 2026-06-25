@@ -8,6 +8,7 @@
  *  - `getBanditArms` called with (tenant_id, archetype) — auto-seed path
  *  - ClickHouse INSERT carries the selected variant in the column list
  *  - FOLLOW-342: 3 arms produce distinct textDirectives[0].value when playbook has variants.en
+ *  - FOLLOW-342 AC-2: fallback to slot.en when variants is absent from the slot
  *
  * @module apps/control-plane/src/app/api/adapt/route.variant.test
  */
@@ -331,5 +332,47 @@ describe('POST /api/adapt — FOLLOW-342: bandit variant reaches playbook copy s
     // All 3 values must be non-empty and distinct from each other.
     expect(results).toHaveLength(3);
     expect(new Set(results).size).toBe(3);
+  });
+
+  /**
+   * AC-2 (FOLLOW-342): fallback-to-slot.en when a slot has no variants array.
+   * The copy selection chain is: locale override ?? variants.en[index] ?? slot.en.
+   * When variants is undefined, slot.en must be returned regardless of the bandit index.
+   */
+  it('AC-2 fallback: slot without variants.en returns slot.en regardless of bandit index', async () => {
+    // Playbook with NO variants on the cta slot — only en is present.
+    const PLAYBOOK_NO_VARIANTS = {
+      slots: [
+        {
+          slot: 'headline',
+          en: 'Headline with no variants',
+          // variants intentionally absent
+        },
+        { slot: 'cta', en: 'CTA with no variants' },
+      ],
+    };
+
+    vi.mocked(getPlaybook).mockReturnValue(PLAYBOOK_NO_VARIANTS as ReturnType<typeof getPlaybook>);
+
+    // Drive v2 arm (index 2) — there is no variants.en[2], so must fall back to slot.en.
+    mockGetBanditArms.mockResolvedValue([
+      { variant: 'control', alpha: 1, beta: 1, paused: true },
+      { variant: 'v1', alpha: 1, beta: 1, paused: true },
+      { variant: 'v2', alpha: 1, beta: 1, paused: false },
+    ]);
+
+    const res = await POST(makePostRequest({ ...VALID_BODY, page_type: 'listing_detail' }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      directives: { type: string; slot: string; value: string }[];
+    };
+
+    // Headline: no variants → must return slot.en, NOT undefined or an empty string.
+    const headline = body.directives.find((d) => d.type === 'text' && d.slot === 'headline');
+    expect(headline?.value).toBe('Headline with no variants');
+
+    // CTA: no variants → must return slot.en.
+    const cta = body.directives.find((d) => d.type === 'text' && d.slot === 'cta');
+    expect(cta?.value).toBe('CTA with no variants');
   });
 });

@@ -934,6 +934,42 @@ grep -rln "conversion_labels\|conversionLabels" apps/control-plane/src/app/api/d
 grep -n "crm_erasure_status\|crm_disclosure_status" apps/control-plane/src/app/api/dsr/*/route.ts
 ```
 
+### Rule S amendment (2026-06-25 — RETRO-112 §6 — call-site-inventory-comment for shared guarded helpers)
+
+**Trigger:** Rule S reached its THIRD confirming instance with RETRO-112 (FOLLOW-363 / PR #351). The
+sibling set here is not endpoints/verbs but the call sites of a single shared classifier helper:
+`classifyFromProbabilities(probs, currentArchetype?)` in `packages/sdk/src/core/intent.ts`. PR #329
+(FOLLOW-344, RETRO-097) added the `SWITCH_MARGIN` hysteresis guard and threaded the
+`currentArchetype` argument into 5 of its 13 call sites, silently leaving 8 unguarded — including
+two ONGOING, high-frequency paths (`applyDwellSignal` on a `setInterval` tick,
+`applyListingViewRate` on every 2nd+ `listing.viewed`) that flipped the archetype on a near-tie
+every tick: exactly the churn the guard was opened to stop. FOLLOW-363 closed the two ongoing
+siblings AND added a 13-call-site inventory comment on the helper. The sub-shape not covered by the
+parent Rule S verification block: when the "symmetric set" is the call sites of a SHARED helper,
+there is no per-endpoint file to diff — the auditable artifact must live AT the helper definition.
+
+**Amendment — when you add a guard, branch-discriminator, or new required argument to a SHARED
+helper with ≥3 call sites, the same PR MUST add (or update) a call-site inventory comment on the
+helper that enumerates EVERY call site and labels each as guarded vs intentionally-exempt (with the
+exemption rationale, e.g. cold-start / one-shot / free-classify).** This makes the symmetric set
+auditable at one place, so the next person adding a guard cannot silently leave siblings unguarded.
+A guard threaded into SOME call sites without the inventory comment is a Rule S violation even if CI
+is green.
+
+**Verification:**
+
+```bash
+# 1. Enumerate every call site of the shared helper (the symmetric set):
+grep -rn "classifyFromProbabilities(" packages/sdk/src --include="*.ts" | grep -v "\.test\."
+# 2. The helper definition MUST carry an inventory comment listing ALL sites with guarded/exempt labels.
+#    A guard argument passed to only SOME sites with no inventory comment = Rule S violation (green CI notwithstanding).
+```
+
+**Evidence for this amendment:** RETRO-097 §... (FOLLOW-344 / PR #329 — 5 of 13 sites guarded, 8
+left unguarded incl. 2 ongoing high-frequency paths; count 2 on the shared-helper sub-shape),
+RETRO-112 §6 (FOLLOW-363 / PR #351 — closed the 2 ongoing siblings + added the 13-site inventory
+comment; count 3).
+
 ---
 
 ## Rule T — A green pre-commit hook is NOT a typecheck pass; type/tooling regressions escape the format-only hook and surface CI-only — run `tsc --noEmit` on touched packages before declaring ready
@@ -1267,6 +1303,63 @@ grep -rln "REQUIRE_CLICKHOUSE\|REQUIRE_REDIS\|REQUIRE_UPSTASH" .github/workflows
 
 ---
 
+## Rule M — A job/seed/migration claimed to "auto-populate / self-apply on merge" MUST have a workflow that actually targets PROD; dev-only automation paired with a prod-effect claim is a HALF_WIRE_P
+
+**Pattern:** A data-population job (embedding seeder, migration apply, backfill) is wired to run
+automatically on merge — but the workflow only targets the DEV/staging environment (e.g.
+`doppler run --config dev`), while a PR description, doc, AC, or code comment states or implies the
+effect reaches production. Prod stays in the pre-job state (NULL embeddings, unapplied migration);
+the feature that consumes the populated data silently runs on its FALLBACK path in prod; and every
+bookkeeping signal says "done." This is the deployment-tier cousin of Rule H (wired-or-dead) and
+shares Rule O's "green-but-never-applied-to-prod" failure mode, but the distinct axis is the CLAIM:
+the automation is real and runs — it just does not reach prod, and a human reads "auto-populates" as
+"live in prod."
+
+**Evidence (≥2 retros):**
+
+- **RETRO-076 / FOLLOW-307** — Postgres/Drizzle/Supabase migrations do not auto-apply in prod:
+  merging a migration ≠ live; no workflow runs `db:migrate` against prod (only ClickHouse
+  auto-applies); the new column is ABSENT in prod until a manual operator/Terraform apply. Count 1.
+- **RETRO-113 / FOLLOW-341 (PR #352)** — the archetype-embedding seeder. `post-migrate-seed.yml`
+  runs `pnpm seed:archetypes` only against DEV Supabase (`doppler run --config dev`); PROD
+  `archetype_embeddings.embedding` rows stay NULL → `affinityScore()`'s §F cosine path is inactive
+  in prod and silently uses the djb2 hash fallback for 100% of traffic, while the surface was
+  described as self-populating-on-merge. Count 2; threshold met. Cross-refs FOLLOW-392 (operator
+  action to seed prod) and FOLLOW-308.
+
+**Rule:** When a job/seed/migration is described — in a PR, doc, code comment, or AC — as
+"auto-populates," "self-seeds on merge," "applied automatically," or anything implying a PROD
+effect, you MUST verify a workflow actually targets the PROD environment for that effect. If only a
+dev/staging workflow exists, the prod-effect claim is forbidden. Instead: (a) state explicitly "dev
+auto-populates; PROD requires manual operator step `<cmd>`"; (b) file a tracked operator FOLLOW for
+the prod step; and (c) treat the consuming feature as running on its FALLBACK path in prod (a
+HALF_WIRE_P, P-tier) until the prod-population step is logged complete — NOT when the dev automation
+goes green.
+
+**Verification:**
+
+```bash
+# 1. For any seed/backfill/migrate workflow, confirm which env(s) it targets:
+grep -rniE "doppler run|--config|ENVIRONMENT|SUPABASE_URL|NODE_ENV" \
+  .github/workflows/*seed*.yml .github/workflows/*migrate*.yml
+# A workflow that only ever passes --config dev/stg CANNOT satisfy a "populates prod on merge" claim.
+# 2. Grep PR text / docs / comments for self-populating claims and reconcile against step 1:
+grep -rniE "auto-?populat|self-?seed|applied automatically|populates on merge|seeds on merge" \
+  apps/ packages/ docs/ backlog/ --include="*.ts" --include="*.md" | grep -v node_modules
+# 3. Each prod-effect claim backed by only a dev workflow = HALF_WIRE_P → it MUST carry an operator
+#    FOLLOW + an explicit "PROD requires manual <cmd>" note; the consuming feature is on its fallback
+#    path in prod until that step is verified.
+```
+
+**Provenance:** Promoted by direct CEO directive (Piotr, 2026-06-25) — "we need it to be fully
+functional in all aspects." The retro-promotion threshold was already met (RETRO-076 + RETRO-113);
+the retrospective-analyst recommended HOLD pending FOLLOW-308, but the CEO chose to codify now to
+lock the §F-cosine-dark-in-prod lesson. (Provenance noted in-rule per the file's CEO-directive
+clause; the ≥2-retro gate also independently applies here.)
+
+---
+
+<!-- Rule M added 2026-06-25 by CEO directive (Piotr) — threshold also met independently: RETRO-076 §6 (FOLLOW-307 migrations-don't-auto-apply-in-prod, count 1) + RETRO-113 §6 (FOLLOW-341/PR #352 archetype-seeder post-migrate-seed.yml dev-only → prod archetype_embeddings stay NULL → §F cosine inactive in prod, count 2). DISTINCT axis from Rule H (wired-or-dead, gates source-importers) and Rule O (migration-journal monotonicity, gates the journal): Rule M governs the CLAIM that automation reaches PROD when the workflow only targets dev. Filed/cross-refs FOLLOW-392 (operator seed prod archetype_embeddings) + FOLLOW-308. Letter choice: single letters A–Z are exhausted except M (the sole genuinely-unused letter — Q is the reserved `Rule Q+` retro-analyst placeholder; V is intentionally skipped per the Rule W note), so the backfilled M is assigned here. -->
 <!-- Rule Z added 2026-06-20 — RETRO-098 §6 (P-XLANG-PAYLOAD-CONTRACT: parent "mock-can't-catch-cross-runtime-mismatch" family now 4 instances — RETRO-068 ingest dual-write INSERT body the mock fetchImpl accepts but ClickHouse rejects, count 1; RETRO-078 CH tracer query mock-fetch green but live engine 386s, count 2; RETRO-079 closure required a dedicated live-ClickHouse CI job because mocks structurally could not catch it; RETRO-098 §3 HW-1 SDK(TS) emits chat.message.sent {message,…} but Python _spawn_chat_nlp reads payload.content → spawn never fires for real traffic, both sides green because the Python test invents {role,content} fixtures, count 4; threshold long exceeded). DISTINCT axis from Rule J (byte-identical cross-runtime FILE mirror sync) — Rule Z governs the TEST CONTRACT across a producer/consumer language boundary, not duplicate source files; and from Rule L (missing-attribute) / Rule Y (over-claimed citation). Filed FOLLOW-366 (fix the payload-key mismatch with a producer-shape-grounded fixture) + FOLLOW-368 (live-Upstash round-trip smoke). Next free Rule letter was Z (V skipped per the Rule W note; W,X,Y used). -->
 <!-- Rule Y added 2026-06-18 — RETRO-089 §6 (RETRO-084 §4d DG-1 false/absent drift-guard citation, count 1 held as over-claimed-verification meta-pattern + RETRO-089 §4d DG-1 wrong-file guard citation introduced BY the FOLLOW-331 fix for RETRO-084's instance, count 2; threshold met). DISTINCT axis from Rule L (missing-attribute) / Rule K.2 (provenance-enum round-trip) / Rule Q (mirrored-test blind spot) — those govern the test MECHANICS; Rule Y governs the CITATION (a named artifact claimed as proof must perform the cited check). Filed FOLLOW-338 to fix the intent-weights.test.ts:28-30 mis-pointer + reconcile the migration-0030 third copy. Next free Rule letter was Y (Rule V skipped per the Rule W note; W, X used). -->
 

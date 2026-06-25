@@ -19424,3 +19424,552 @@ FOLLOW-383 explicitly claims to close RETRO-103 §3 HW-1 / §4a LG-1+LG-2 / §4c
 - **Rule S (RETRO-044/045 origin; RETRO-008/095/097/100/101/102/104 reinforcements):** §6 — the quiz/favorites/micro-poll sibling-leak set (FOLLOW-385) is the ~6th reinforcing instance; NO new promotion. The temporal recurrence across FOLLOW-372→383 is a Rule S application note.
 - **FOLLOW-384 (redis_writer chat-prior skip) / FOLLOW-385 (sibling opt-out guards):** the two open §H.9 halves #342 unblocks; both already filed + promoted to queue — no new stub for either.
 - **CEO 2026-06-23 / §H.8 vs §H.9 / memory `project_consent_umbrella_optout_decision`:** the deliberate-design boundary (raw ingest stream flows under §H.8; AL profiling derivation suppressed under §H.9) recorded in §4a/§5a/§5d as an intentional choice, not a gap.
+
+## RETRO-108 — FOLLOW-384 (skip AL chat-intent shadow prior for opted-out sessions; AC-4 split of FOLLOW-383, claims to close RETRO-103 §3 HW-3) — 2026-06-24
+
+### 1. Summary of change
+
+- **PR:** #347 (squash-merged 2026-06-24 14:17:09 UTC, commit `532f3d8`; range `a89d65c..532f3d8`). The ml-engineer half split out of FOLLOW-383 (AC-4) to close RETRO-103 §3 HW-3 (an opted-out user's chat still feeding the archetype shadow prior). PR body claims 16 passed / 2 skipped.
+- **Files changed:** 4 (+60 / −4), all Python in `apps/intent-engine/src/`: `redis_writer.py` (+10/−1), `main.py` (+5/−2), `jobs/batch_enrich.py` (+9/−1), `test_intent_engine.py` (+36).
+- **Modules touched:** intent-engine (Modal Python app) only — `write_shadow_intent` (redis_writer), `process_chat_message` (real-time Modal endpoint, main.py), `batch_enrich_conversations` (6h cron).
+- **Key contracts changed:**
+  - `write_shadow_intent(payload, ttl_seconds=86400, profiling_opt_out: bool = False)` — 3rd param ADDED; early `if profiling_opt_out: return` guard before the Redis `set` (`redis_writer.py:55`). **breaking: no** (optional, defaults False = legacy write-always behavior).
+  - `process_chat_message(..., profiling_opt_out: bool = False)` — 4th param ADDED (`main.py:37`); threaded to `write_shadow_intent` (`main.py:62`). **breaking: no.**
+  - `batch_enrich_conversations` now passes `session.get("profiling_opt_out", False)` (`batch_enrich.py:54`).
+
+### 2. Verification done in PR
+
+- Test files changed: `test_intent_engine.py` — 2 new tests: `test_write_shadow_intent_skips_on_opt_out` (AC-2: `profiling_opt_out=True` → `mock_redis.set.assert_not_called()`), `test_write_shadow_intent_writes_on_opt_in` (AC-3: `=False` → `set` called once with key `shadow:tnt_optout:sess_optout:chat_intent`, `ex=86400`). Assertions added: 4. Both test the `write_shadow_intent` unit directly.
+- CI: PR body claims 16 passed / 2 skipped in 0.39s. Not independently re-watched. **Critically: NO test exercises the REAL-TIME producer (`_spawn_chat_nlp` in stream-consumer) or `process_chat_message` end-to-end with an opted-out session — both new tests call `write_shadow_intent` directly, bypassing the path that actually decides whether the flag is set (see §3, §7).**
+- Coverage delta: the redis_writer guard hop is now unit-covered; the producer hop (who sets the flag True) is uncovered — the leak below is invisible to the added tests by construction.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** the new `profiling_opt_out` param on `write_shadow_intent` has a non-test importer/consumer at both call sites (`main.py:62`, `batch_enrich.py:54`). The param on `process_chat_message` is consumed at `main.py:62`. No dead export. ✅
+
+**CHECK B (half-wire) — FINDING HW-1, HALF_WIRE_C, P1.** The `profiling_opt_out` flag now has a **CONSUMER** (`write_shadow_intent` guard `redis_writer.py:55`; `process_chat_message` param `main.py:37`) but **NO real-time PRODUCER ever sets it True.** Grep evidence (`grep -rn "fn.spawn\|\.spawn(" apps/stream-consumer/src`): the sole real-time invoker is `_spawn_chat_nlp` (`apps/stream-consumer/src/consumers/events.py:94`), which calls `fn.spawn(tenant_id=..., session_id=..., message=...)` — it does **NOT** pass `profiling_opt_out`, so the spawned `process_chat_message` defaults to `False` and `write_shadow_intent` writes the shadow prior for EVERY real-time chat, opted-out or not. Compounding root cause: `ChatMessageSentPayloadSchema` (`packages/shared/src/schemas/events/chat.ts:38–52`) carries NO opt-out field (`message`, `char_count`, `locale`, `lead_id` only) — so even if `_spawn_chat_nlp` wanted to forward it, the opt-out state never rides the `chat.message.sent` event to ingest in the first place. `grep -rn "profiling_opt_out" packages/shared` → zero hits. **The consumer-only param is the textbook HALF_WIRE_C (P1) shape — the guard is real but unreachable on the live real-time path.** → **FOLLOW-387.**
+
+The batch hop is NOT a new half-wire: `clickhouse_reader.read_recent_chat_sessions` is a documented STUB returning `[]` (`clickhouse_reader.py:28`), so `batch_enrich` processes 0 sessions today and `session.get("profiling_opt_out", False)` is unreached — see §4a for the latent-default note (filed forward, not a current leak).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — REAL-TIME shadow prior still accumulates for opted-out sessions; RETRO-103 HW-3 is NOT closed end-to-end (gap moved exactly one hop).** RETRO-103 §3 HW-3 (verbatim, `RETROSPECTIVES.md:19021+`): "an opted-out user's chat STILL feeds the archetype shadow prior." FOLLOW-384 added the redis_writer guard but left the real-time producer (`_spawn_chat_nlp`, `events.py:94`) un-threaded and the `chat.message.sent` event field-less, so on the LIVE path the prior is still written. The §H.9 contract ("opted-out sessions accumulate no chat-intent shadow prior") remains BROKEN at runtime. This is the dominant finding. → **FOLLOW-387** (P1, backend-engineer + sdk-engineer, thread the flag from the SDK chat-emit through ingest → `_spawn_chat_nlp` → `process_chat_message`).
+- **LG-2 (P2, latent) — batch tier `profiling_opt_out=session.get(..., False)` is a latent leak once `read_recent_chat_sessions` is implemented.** The in-code comment (`batch_enrich.py:47–51`) asserts opted-out sessions are "suppressed upstream before storage" — but per the CEO 2026-06-23 §H.8 decision the raw ingest stream is DELIBERATELY left flowing (opted-out chat events DO reach ClickHouse; only AL derivation is suppressed). So when FOLLOW-101 implements the real ClickHouse query, every returned session row will lack a `profiling_opt_out` key (the column does not exist in `default.events` for this purpose), `session.get(..., False)` will return False, and the batch tier will re-write the Sonnet-quality shadow prior for opted-out users — re-opening the same §H.9 leak on the batch axis. The comment's premise ("suppressed upstream before storage") contradicts the §H.8 boundary. → **FOLLOW-388** (P2, the ClickHouse query in FOLLOW-101 MUST also surface per-session opt-out state).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A as a defect in the shipped diff — `write_shadow_intent`'s guard is correct in isolation. The gap is one of incomplete wiring (LG-1) + a false-premise comment (LG-2), not a logic error in the lines that changed.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — No test covers the real-time producer→consumer chain, so the LG-1 leak passes CI silently.** Both new tests call `write_shadow_intent` directly with an explicit `profiling_opt_out` value; neither exercises `_spawn_chat_nlp` → `process_chat_message` → `write_shadow_intent` with an opted-out session. The existing stream-consumer suite (`test_chat_nlp_bridge.py`) asserts `mock_fn.spawn.assert_called_once_with(tenant_id=..., session_id=..., message=...)` (`:123`) — it pins the spawn signature to EXACTLY the 3 args that omit the flag, so the suite would actively RESIST adding the flag without a test update. A producer-side test (opted-out session → spawn carries `profiling_opt_out=True` → shadow prior NOT written) is the missing evidence that would have caught HW-1. → folded into **FOLLOW-387** AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — `batch_enrich.py:47–51` comment states a falsehood about the architecture** ("opted-out sessions are suppressed upstream before storage"), contradicting the §H.8 ingest-flows / §H.9 derivation-suppressed boundary (CEO 2026-06-23, memory `project_optout_enforcement_h9_scope`). A future reader implementing FOLLOW-101 will trust this comment and ship the LG-2 leak. → corrected as part of **FOLLOW-388**.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-385 (IN_PROGRESS, sdk-engineer+backend-engineer, P1) — the open SDK sibling-paths closure.** FOLLOW-385's stub (`FOLLOW_UPS.md:10490+`) explicitly states "AL-profiling derivation from [chat] is suppressed server-side by FOLLOW-384" — but per LG-1 that suppression is NOT actually in force on the real-time path. **The FOLLOW-385 author must NOT rely on FOLLOW-384 having closed the chat-derivation leak;** the chat producer thread (FOLLOW-387) is a separate, still-open hop. Flag for the FOLLOW-385 PR and for the §H.9 epic gate: do NOT mark the §H.9 opt-out epic DONE on FOLLOW-384+385 alone — FOLLOW-387 (real-time chat producer) is the third required leg.
+- **FOLLOW-386 (held, end-to-end opt-out integration test):** its scope is the `/api/adapt` SDK→route chain. The intent-engine chat→shadow chain (FOLLOW-387) is a DIFFERENT runtime boundary (TS SDK → Redpanda ingest → Modal Python) and needs its own cross-runtime test (Rule Z territory) — note for whoever promotes FOLLOW-386 so the two integration tests are not conflated.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-101 (real ClickHouse query for `read_recent_chat_sessions`):** is now a §H.9 compliance-sensitive ticket, not just a data ticket — it MUST surface per-session opt-out state or it re-opens the leak on the batch axis (LG-2 / FOLLOW-388). The current stub's "returns []" masks this; the day it returns rows, the latent default fires.
+
+#### 5c. Contracts changed others rely on
+
+- `write_shadow_intent` / `process_chat_message` gained optional params defaulting to the LEGACY write-always behavior. Any caller that does NOT explicitly pass `profiling_opt_out=True` for an opted-out session silently leaks — which is exactly the live state (the real-time producer omits it). The default-False choice makes the half-wire INVISIBLE (no type error, no test failure). This is the load-bearing risk: the safe-by-default would have required the producer to opt INTO writing, but that is a larger refactor — FOLLOW-387 must instead guarantee the producer always threads the real value.
+- `ChatMessageSentPayloadSchema` is the contract that must change to carry opt-out state across the ingest boundary — a `packages/shared` event-schema edit (public ingest surface) that requires escalation per CLAUDE.md autonomy rules. FOLLOW-387 should flag this in ESCALATIONS, not silently extend the schema.
+
+#### 5d. Architectural assumptions affected
+
+- The §H.8-vs-§H.9 invariant RETRO-107 §5d declared "load-bearing" (raw ingest flows; AL derivation suppressed) is only HALF-enforced on the chat→shadow path: the redis_writer guard exists but nothing feeds it the opt-out bit across the SDK→ingest→Modal boundary. The architectural claim "opted-out users contribute no AL chat-intent prior" is FALSE on the live real-time path until FOLLOW-387 lands. RETRO-107 §7 correctly predicted FOLLOW-384 would close HW-3 — this retro must reconcile: **FOLLOW-384 did NOT close HW-3 end-to-end; it closed only the final hop and moved the gap upstream to the producer** (see §7).
+
+### 6. New lesson candidates
+
+- **Pattern (count 2 — AT THRESHOLD, but see promotion decision): "A remediation PR for a HALF_WIRE adds the CONSUMER guard for a flag/param but does not wire the PRODUCER that must set it, so the gap moves one hop upstream and the unit test (which calls the consumer directly with an explicit value) cannot see the leak."**
+  - Instance 1 — **RETRO-103 → FOLLOW-372** (the `/api/adapt` opt-out gate was consumer-only; the SDK never produced `profiling_opt_out=1` — RETRO-103 §3 HW-1, P0). Closed only when FOLLOW-383 added the producer (RETRO-107 §7).
+  - Instance 2 — **RETRO-108 → FOLLOW-384** (THIS: `write_shadow_intent` guard is consumer-only; `_spawn_chat_nlp` never produces the flag; the unit test calls `write_shadow_intent` directly with an explicit value, so it cannot detect the missing producer). HW-1 / LG-1 / TG-1.
+  - **Discriminator vs Rule L (self-injecting consumer):** Rule L is "a TEST injects the value a consumer reads, so the test isn't evidence the wire connects." This pattern is the PRODUCTION-CODE analog: the CONSUMER guard ships real but NO production producer sets the value, AND the consumer-direct unit test structurally cannot reveal it. **Discriminator vs Rule H (scaffold must ship a wired consumer):** Rule H is consumer-missing-for-a-producer; this is the mirror — producer-missing-for-a-consumer, specifically for a SUPPRESSION flag where default-False = leak.
+  - **Promotion decision: HOLD, do NOT promote yet.** Although the surface count is 2 (RETRO-103/108), both instances are the SAME §H.9 opt-out remediation chain (FOLLOW-372→383→384), i.e. one epic recurring temporally, not two independent contexts — the same caution RETRO-104 §6 applied to the consent_type-DSR axis ("both are the SAME unverified gap, not two confirmed instances"). Promoting on a single-epic recurrence risks codifying epic-specific noise. **Record as count 2 / held; promote at the first INDEPENDENT (non-§H.9) instance.** → tracked, no `CONVENTIONS_PATCH.md` write this retro.
+- **Rule S note (not a promotion):** the real-time vs batch axes of `write_shadow_intent` are a symmetric pair; FOLLOW-384 wired the flag-pass on BOTH call sites (`main.py:62`, `batch_enrich.py:54`) — so Rule S sibling-completeness IS satisfied at the call-site level. The failure is one level up (neither call site receives a TRUE value from its producer), which Rule S does not cover. Confirming-good instance for Rule S, not a violation.
+
+### 7. Prior-follow-up closure check (FOLLOW-384 → RETRO-103 §3 HW-3, RETRO-107 §7 prediction)
+
+FOLLOW-384's stub + PR body claim to close RETRO-103 §3 HW-3 ("redis_writer.py skip for opted-out sessions"). Traced END-TO-END (producer→consumer→render), per algorithm step 7:
+
+- **RETRO-103 HW-3 (P1, chat-prior skip): NOT CLOSED END-TO-END — gap moved one hop upstream. ✗** The claimed wire is producer (real-time `_spawn_chat_nlp`) → `process_chat_message` → `write_shadow_intent` guard → (skip). FOLLOW-384 built the LAST link (the guard, `redis_writer.py:55`) and the middle link (`process_chat_message` param thread, `main.py:62`), but the FIRST link is missing: `_spawn_chat_nlp` (`events.py:94`) calls `fn.spawn(...)` with only `tenant_id`/`session_id`/`message` — `profiling_opt_out` defaults False — and `ChatMessageSentPayloadSchema` carries no opt-out field for it to forward. The end-to-end behavior RETRO-103 HW-3 demanded ("opted-out user's chat does NOT feed the shadow prior") is STILL FALSE on the live path. **This is the exact `inquiry_submit_selector`-chain shape the algorithm warns about (FOLLOW-097 fixed the consumer, gap moved to the producer): FOLLOW-384 fixed the consumer, gap moved to the producer.** → re-opened as **FOLLOW-387**, P1.
+- **Reconciliation with RETRO-107 §7 (REQUIRED — this retro CONTRADICTS a prior prediction):** RETRO-107 §7 stated "RETRO-103 HW-3 (P1, redis_writer chat-prior skip): STILL OPEN — correctly deferred... split to FOLLOW-384 (now unblocked)" and §5a said FOLLOW-384 "must make `redis_writer.py` read that flag and skip... This closes RETRO-103 §3 HW-3." RETRO-107 framed FOLLOW-384 as the closing ticket for HW-3. **That framing was incomplete: it scoped HW-3 closure to the redis_writer hop only, and did not enumerate the producer chain (SDK chat-emit → ingest schema → `_spawn_chat_nlp` → `process_chat_message`) that must ALSO carry the flag.** FOLLOW-384 satisfied its OWN narrow ACs (the stub only asked for the redis_writer guard + 2 unit tests — `FOLLOW_UPS.md:10465–10469`) but those ACs were under-scoped relative to the §H.9 end-to-end requirement. **Verdict: FOLLOW-384's stated ACs are MET; HW-3 (the §H.9 behavior) is NOT met.** The mistake was at the PLANNING layer (the FOLLOW-384 stub assumed "opt-out state is available server-side... the SDK now sends profiling_opt_out=1 in the adapt URL" — but the ADAPT url is a DIFFERENT request path than the CHAT event path; the chat→Modal spawn never sees the adapt-URL query param). This is recorded so the next retro does not declare HW-3 closed on FOLLOW-384.
+- **Net closure verdict:** RETRO-103 §3 HW-3 remains OPEN. FOLLOW-384 closed the redis_writer hop and is a necessary-but-insufficient prerequisite. PM: do NOT mark §H.9 chat-derivation suppression DONE — FOLLOW-387 (real-time producer thread + ingest schema field) is the still-open closing leg; FOLLOW-388 covers the batch axis once FOLLOW-101 lands.
+
+### 8. Cross-references
+
+- **RETRO-103 (FOLLOW-372):** origin of §3 HW-3 (the chat-prior skip). RETRO-108 finds FOLLOW-384 did not close it end-to-end — gap moved to the producer.
+- **RETRO-107 (FOLLOW-383):** §7 of THIS retro reconciles RETRO-107's prediction that FOLLOW-384 would close HW-3 — it did not, because the chat→Modal path is distinct from the adapt-URL path RETRO-107's §5a assumed carried the flag.
+- **Rule S (RETRO-044/045 origin):** §6 — call-site sibling-completeness IS satisfied here (both real-time + batch call sites pass the param); the gap is one level above Rule S's scope. Confirming-good, not a violation.
+- **Rule L (RETRO-009/010/011) / Rule H (RETRO origin):** §6 — the new "consumer-guard ships, production producer never sets the flag, consumer-direct unit test can't see it" pattern is the production-code mirror of Rule L and the inverse of Rule H. Held at count 2 (single-epic), not promoted.
+- **CEO 2026-06-23 / §H.8 vs §H.9 (memory `project_optout_enforcement_h9_scope`):** the `batch_enrich.py` comment contradicts this boundary (DG-1); LG-2/FOLLOW-388 reconcile it.
+- **FOLLOW-101 (ClickHouse query):** §5b — promoted from data-only to §H.9-compliance-sensitive; must surface opt-out state.
+
+---
+
+## RETRO-109 — FOLLOW-385 (enforce profiling opt-out on quiz/favorites/micro-poll SDK sibling paths + /api/quiz/completion server gate; §H.9-documented scope) — 2026-06-24
+
+### 1. Summary of change
+
+- **PR:** #348 (squash-merged 2026-06-24, merge commit `f7ac516`; range `532f3d8..f7ac516`). SDK sibling-path opt-out enforcement split from FOLLOW-383 (pre-merge adversarial review). Co-assigned: sdk-engineer (lead, packages/sdk) + backend-engineer (apps/control-plane quiz/completion route).
+- **Files changed:** packages/sdk/src/index.ts (3 new guards + comments), apps/control-plane/src/app/api/quiz/completion/route.ts (server-side defense-in-depth gate), new route.test.ts (5 tests). Exact line counts from PM validation notes: AC-1 guard index.ts:1103, AC-3 guard index.ts:1421, AC-4 guard index.ts:1236, AC-2 gate route.ts:363.
+- **Modules touched:** packages/sdk (client-side profiling suppression), apps/control-plane/quiz/completion (server-side persistence gate).
+- **Key contracts changed:**
+  - `showQuizTrigger` — new first-statement guard `if (profilingOptedOut) return;` at index.ts:1103. **breaking: no** (additive suppression; non-opted-out sessions unaffected).
+  - `estalara:listing:favorited` handler — new guard before `applyBehavioralSignal` at index.ts:1421 (preserves `eventQueue.push` per §H.8). **breaking: no.**
+  - `onAnswer` micro-poll callback — new guard before `applyBehavioralSignal` at index.ts:1236. **breaking: no.**
+  - `/api/quiz/completion` route — `profiling_opt_out=1` query param → 200 `{skipped:true}` without persisting; gate placed after auth (tenantId resolved at :353), before body parse (:363). **breaking: no** (new 200-OK shortcut; prior behavior for opted-in sessions unchanged).
+
+### 2. Verification done in PR
+
+- ACs 1–5 verified by PM at 2026-06-24T18:00Z against diff.
+- CI: Rule I FAIL (pre-existing-red, same baseline as PR #347/#346/#345 — FOLLOW-090 tracks the open Rule I count). All other real gates PASS (Build, Build(control-plane), Typecheck, Lint, Format, Test(Node22), SDK E2E, Rule H, Rule J, ClickHouse smoke, Migration journal, Cross-language event contract, Archetype seeds, Auto-detection corpus, Python tests ×4, Doppler, Gitleaks, Redis shadow smoke, Tracer CH, K.3.6 D-1 live smoke, Demo integration, Vercel). Non-success count on real gates: 0.
+- Runtime wiring (step 5c): producer `packages/sdk/src/index.ts:428` (`let profilingOptedOut = isProfilingOptedOut(...)`); non-test consumers at index.ts:671, :854, :935, :960, :962, :998, :1103, :1236, :1421 (all in single non-test file).
+- Scope-discipline check (step 5c out-of-scope): grep for `chat.message.sent` / `intent-snapshot` / `core/intent-snapshot.ts` / `live.signup` in diff → ZERO hits. §H.8 ingest paths deliberately NOT touched. Confirmed.
+- Co-assignment (step 5d): backend quiz/completion route.ts gate coherent (auth before gate); 5 new route-level tests. No half-wire between sdk-engineer and backend-engineer output.
+- CI check counter: 1/5. Fix iterations: 0/3.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** All three new SDK guards (`showQuizTrigger`, `onAnswer`, `estalara:listing:favorited`) are inside runtime event paths — none dead-exported. The quiz/completion route gate is on the live HTTP handler. No dead exports introduced. CLEAN.
+
+**CHECK B (half-wire):** No half-wire found in this PR. The `profilingOptedOut` variable is an existing module-scoped `let` (index.ts:428) set by `isProfilingOptedOut(...)` — the producer predates this PR. All three new consumers read the same variable within the same file. The backend route gate reads the `profiling_opt_out` query param directly from the request (no cross-module wire). Both sides of the co-assignment (SDK guards + route gate) are independently complete.
+
+**CHECK C (§H.8 / §H.9 boundary discipline):** The `eventQueue.push` call inside the `estalara:listing:favorited` handler (index.ts:1408-1417) is preserved intentionally — placed BEFORE the new guard at :1421. This is the §H.8 behavioral ingest stream that CEO 2026-06-23 explicitly scoped out of §H.9 suppression. The guard placement (AFTER push, BEFORE `applyBehavioralSignal`) correctly enforces the boundary. Confirmed CLEAN.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (noted from RETRO-108 §5a, propagated here for record):** FOLLOW-385 stub states "AL-profiling derivation from [chat] is suppressed server-side by FOLLOW-384" as a supporting rationale. Per RETRO-108 §3 HW-1, that suppression is NOT in force on the real-time path (FOLLOW-384 added the redis_writer consumer guard but no real-time producer ever sets the flag True on the chat→Modal path). This gap is owned by FOLLOW-387 — it does NOT affect the correctness of this PR's scope (quiz/favorites/micro-poll), which are independent of the chat→shadow path. Recorded here for traceability; no new stub needed (FOLLOW-387 already filed by RETRO-108).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — no logic error in the shipped diff. Guards are structurally correct and tested.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, non-blocking):** The five new backend route tests cover the `profiling_opt_out=1` skip path and the positive (opted-in) path. No SDK-side unit test asserts that `showQuizTrigger` returns early when `profilingOptedOut=true` — the guard was verified by PM via code inspection (first-statement placement at :1103). A dedicated SDK unit test for the guard would make the coverage machine-verifiable rather than inspection-dependent. Low severity: the guard is a one-liner at a visually inspectable position; no behavioral complexity. Filed as a P3 note, not a blocking stub.
+
+#### 4d. Documentation gaps
+
+- N/A — each new guard block carries the required §H.9/FOLLOW-385/§H.8 comment (AC-5 verified).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-387 (READY, BLOCKED-ON-ESCALATION):** The §H.9 chat-derivation leg. This PR does NOT close FOLLOW-387's scope; the two tickets are parallel §H.9 closures (quiz/favorites/micro-poll axis vs chat-path producer axis). FOLLOW-387 remains the open leg. The §H.9 opt-out epic is NOT complete until FOLLOW-387 merges.
+- **FOLLOW-388 (BACKLOG, depends_on FOLLOW-101 + FOLLOW-387):** The batch axis closure. Not affected by this PR.
+
+#### 5b. Future sprint tickets affected
+
+- Any ticket that adds a new SDK profiling signal path (e.g., new behavioral event handler in index.ts) MUST include a `if (profilingOptedOut) return;` guard on the profiling-mutation sub-call, consistent with the pattern established in this PR. The three guards in this PR are now the canonical reference implementation for §H.9 enforcement at the SDK layer.
+
+#### 5c. Contracts changed others rely on
+
+- `/api/quiz/completion` now accepts `profiling_opt_out=1` as a no-persist shortcut. Any client or test that POSTs to this route and expects persistence for opted-out sessions would be affected — no such client exists today (only the SDK posts here, and only after the guard at showQuizTrigger which already blocks opted-out users from reaching completion). The route change is safe.
+
+#### 5d. Architectural assumptions affected
+
+- The §H.9 enforcement pattern is now consistent across three SDK paths: the pre-existing `/api/adapt` gate (FOLLOW-372/383), the quiz/favorites/micro-poll guards (this PR), and — pending — the chat→shadow prior gate (FOLLOW-387). The architecture correctly places suppression at the earliest possible point (client-side AL profiling calls) rather than at ingest, honoring the §H.8 vs §H.9 boundary.
+
+### 6. New lesson candidates
+
+- **No new Rule promotion this retro.** The "guard every new profiling-mutation call site with `profilingOptedOut` check" discipline is implicit in the §H.9 scope decision and the three guards here are the reference implementation — but this is a domain-specific rule, not a generalizable pattern. It does not meet the ≥2 independent-context threshold for CONVENTIONS_PATCH.md.
+- **Positive observation (not a rule):** The co-assignment (sdk-engineer SDK guards + backend-engineer route gate) was structured such that each side was independently complete and testable. No half-wire arose from the co-assignment boundary. This is the intended shape for co-assigned tickets — the backend gate is defense-in-depth redundancy, not a required link in a causal chain the SDK side depended on.
+
+### 7. Prior-follow-up closure check
+
+- **RETRO-103 §3 HW-2 (favorites + micro-poll profiling not gated):** CLOSED by this PR. The `estalara:listing:favorited` guard (index.ts:1421) and the `onAnswer` micro-poll guard (index.ts:1236) close the two specific SDK profiling paths RETRO-103 identified. CONFIRMED.
+- **RETRO-103 §3 HW-1 scope (quiz trigger + quiz-completion persistence):** CLOSED by this PR. The `showQuizTrigger` guard (index.ts:1103) + the `/api/quiz/completion` server gate (route.ts:363) close the quiz path.
+- **RETRO-103 §3 HW-3 (chat shadow prior):** STILL OPEN. Documented in RETRO-108 and re-confirmed here. Owned by FOLLOW-387. Not this PR's scope.
+- **§H.9 opt-out epic net closure verdict:** PARTIALLY CLOSED. Quiz/favorites/micro-poll axes: CLOSED (this PR). Chat-derivation axis: OPEN (FOLLOW-387). DO NOT mark §H.9 DONE until FOLLOW-387 merges.
+
+### 8. Cross-references
+
+- **RETRO-103 (FOLLOW-372):** origin of §H.9 enforcement requirement; §3 HW-2 (favorites/micro-poll) and HW-1 (quiz/completion) now closed by this PR.
+- **RETRO-107 (FOLLOW-383):** the PR that introduced `profilingOptedOut` module-scoped variable that this PR's guards consume. Producer pre-exists this PR.
+- **RETRO-108 (FOLLOW-384):** filed FOLLOW-387 (chat producer thread); LG-1 above propagates RETRO-108's §5a warning about the chat-derivation gap not being closed by FOLLOW-384.
+- **CEO 2026-06-23 §H.8/§H.9 scope decision (memory `project_optout_enforcement_h9_scope`):** the `eventQueue.push` preservation inside the favorites handler is directly authorized by this decision.
+
+### ADDENDUM (RETRO-109 — deeper wiring re-pass, 2026-06-24) — corrects §3 / §4c / §4d above
+
+A concurrent first pass of RETRO-109 (the eight sections above) recorded §3 CHECK B as "No half-wire found", §4c TG-1 as a P3 inspection-only note, and §4d as N/A. A deeper re-pass that traced the `/api/quiz/completion` PRODUCER and read the new test files (rather than the diff alone) found three items the first pass missed. These correct the record; the first pass's runtime-correctness verdict (the SDK guards DO suppress profiling at runtime) stands.
+
+**HW-1 — HALF_WIRE_C, P2 (overturns §3 CHECK B "no half-wire").** The new `/api/quiz/completion` `profiling_opt_out=1` gate (`route.ts:363`) is a CONSUMER with NO production PRODUCER. Evidence: the only SDK caller is `postQuizCompletionPing` (`packages/sdk/src/core/adapt.ts:191`), which builds the URL via `buildEndpoint(config.decisionApiUrl, '/quiz/completion')` (`adapt.ts:169`) and POSTs `{session_id, resolved_archetype, language}` — it appends NO `profiling_opt_out` param (`grep -n "profiling_opt_out" packages/sdk/src/core/adapt.ts` → the only hit is `:744`, on the `/adapt` path, NOT the quiz-completion path). Compounding: `postQuizCompletionPing` is called only at `index.ts:1140`, inside the quiz-completion callback, which is unreachable for opted-out users because Guard 1 (`showQuizTrigger` returns at `:1103`) blocks the quiz from rendering. So the gate's skip branch is NEVER taken by real traffic. This is NOT a §H.9 leak (Guard 1 already closes the vector upstream) — hence P2, not P1 — but the gate as shipped is a textbook consumer-with-no-producer, and `route.test.ts:123` hand-injects `?profiling_opt_out=1` into the request URL, so green CI is not evidence any producer reaches it (Rule L shape). → **FOLLOW-389.**
+
+**TG-1 — P1 (raises §4c from P3; the first pass said "no SDK-side unit test" — there ARE 9, but they prove nothing about the real guards).** `packages/sdk/src/__tests__/follow-385.test.ts` exists (9 tests) but imports only `applyBehavioralSignal` + `initIntentState` (`:26`) — never `init` from `../index` — and every test runs a `modeled*` re-implementation of the guard inside the test body (`modeledShowQuizTrigger` `:99`, `modeledFavoritesHandler` `:134`, `modeledOnAnswer` `:218`). No test dispatches the real `estalara:listing:favorited` CustomEvent or drives the real `showQuizTrigger`/`tryShowMicroPoll`. The three production guards (`:1103/:1236/:1421`) are correctly wired in prod but TEST-ORPHANED: a regression that deletes or moves a real guard (e.g. relocating the favorites guard ABOVE its `eventQueue.push`, re-breaking §H.8 preservation) leaves all 9 tests green. This is the SDK-side recurrence of the modeled/self-injecting-test weakness RETRO-108 §4c flagged on the Python side. → **FOLLOW-389** (real-handler tests for all three guards + the route producer).
+
+**DG-1 — P3 (overturns §4d N/A): undocumented ingest-suppression asymmetry + a misleading comment.** The micro-poll guard (`:1236`) returns BEFORE its `quiz.event` ingest push (`eventQueue.push` at `:1251`), so an opted-out micro-poll answer emits NO ingest event — whereas favorites (`:1421`) returns AFTER its `listing.bookmarked` push (`:1408`). Multi-axis reconciliation: per the §H.8 protected set (memory `project_optout_enforcement_h9_scope` + FOLLOW-385 stub OUT-OF-SCOPE list = `chat.message.sent`/`intent.snapshot`/`live.signup` ONLY), `quiz.event` is an AL-signal stream, NOT a §H.8 stream — so suppressing the micro-poll push is IN SCOPE and consistent with the quiz-completion path (also suppressed via Guard 1). **NOT a leak.** But the in-code comment at `:1235` is copy-pasted verbatim from the favorites guard ("Ingest stream left flowing") and is FALSE on the micro-poll path, where the ingest IS suppressed. → comment fix folded into **FOLLOW-389.**
+
+**§6 lesson-count correction:** the consumer-guard-with-no-producer + self-injecting-test pattern is now at SURFACE count 3 within the §H.9 epic (RETRO-103→372, RETRO-108→384, RETRO-109→385/HW-1+TG-1). Per RETRO-108 §6 / RETRO-104 §6, all three are the SAME epic (independent-context count still 1) → **HOLD, no `CONVENTIONS_PATCH.md` write.** Promote at the first non-§H.9 instance. (The first pass's "no new rule" verdict stands, with this count bump recorded.) Rule L (CONVENTIONS_PATCH.md:597) and Rule S (`:883`) are confirming instances here, not amendments.
+
+**Net verdict (reconciled):** FOLLOW-385's five ACs are MET and the SDK guards suppress profiling correctly at runtime (first pass correct). The added findings are (a) an unwired defense-in-depth route gate (HW-1), (b) test orphaning of the real guards (TG-1), (c) an undocumented/mislabeled micro-poll ingest suppression (DG-1) — all collected into one P2 follow-up, FOLLOW-389. §H.9 epic remains OPEN on FOLLOW-387/388 as the first pass stated.
+
+---
+
+## RETRO-110 — FOLLOW-387 (thread `profiling_opt_out` through the live chat path; closes RETRO-108 HW-1/LG-1/TG-1 + RETRO-103 §3 HW-3 on the real-time axis) — 2026-06-24
+
+### 1. Summary of change
+
+- **PR:** #349 (squash-merged 2026-06-24 15:34:37 UTC, commit `b7412e1`; range `f7ac516..b7412e1`). The backend-engineer ticket that wires the producer leg RETRO-108 left open: the SDK chat-emit now sets the opt-out flag, the `chat.message.sent` ingest schema carries it, and `_spawn_chat_nlp` forwards it to the Modal `process_chat_message` spawn — feeding the FOLLOW-384 `write_shadow_intent` guard a TRUE value on the live real-time path for the first time.
+- **Files changed:** 7 (+468 / −11). Source (3): `packages/shared/src/schemas/events/chat.ts` (+12), `packages/sdk/src/index.ts` (+4), `apps/stream-consumer/src/consumers/events.py` (+21/−10). Tests (2): `apps/stream-consumer/src/tests/test_chat_nlp_bridge.py` (+195/−1), `packages/sdk/src/__tests__/follow-387.test.ts` (+163). Docs/ops (2): `backlog/ESCALATIONS.md` (+33, RESOLVED ESC-029), `.claude/agents/backend-engineer/lessons.md` (+40).
+- **Modules touched:** shared (event schema — public ingest surface), SDK (chat producer), stream-consumer (real-time spawn bridge). intent-engine NOT touched (the consumer guard shipped in FOLLOW-384 / PR #347).
+- **Key contracts changed:**
+  - `ChatMessageSentPayloadSchema.profiling_opt_out` — `z.boolean().optional()` ADDED (`chat.ts:57`). **breaking: no** — optional, additive; CEO-approved ESC-029 2026-06-24 (public ingest-surface edit per CLAUDE.md autonomy rules — escalation requirement RETRO-108 §5c flagged was honored).
+  - `_spawn_chat_nlp` now reads `payload.get("profiling_opt_out", False)` (`events.py:85`) and passes `profiling_opt_out=` to `fn.spawn(...)` (`events.py:107`). **breaking: no** — additive kwarg; the existing 3-arg spawn assertion was updated in the same PR.
+  - SDK `chat.message.sent` emit sets `profiling_opt_out: profilingOptedOut || undefined` (`index.ts:1344`). **breaking: no.**
+
+### 2. Verification done in PR
+
+- Test files changed: `test_chat_nlp_bridge.py` (4 new tests: 3 isolation + 1 real end-to-end), `follow-387.test.ts` (AC-2 schema round-trip contract tests). Assertions added: ~12 across both. The pre-existing 3-arg spawn assertion (`:134`) was updated to include `profiling_opt_out=False`, removing the RETRO-108 §4c "suite actively resists adding the flag" hazard.
+- CI checks: PM-validated GREEN on all real gates; Rule I pre-existing-red baseline only (per `project_ci_gate_landscape`). Not independently re-watched here. Coverage delta: the producer→consumer real-time hop is now covered by a genuine integration test (the gap RETRO-108 TG-1 named).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** `ChatMessageSentPayloadSchema.profiling_opt_out` has a real consumer (`events.py:85`). The `_spawn_chat_nlp` kwarg has a real consumer (`main.py:62` → `redis_writer.py:55`). The SDK field has a real consumer (the Python read). No new exports orphaned. ✅
+
+**CHECK B (half-wire):** The opt-out flag now has BOTH a PRODUCER (SDK `index.ts:1344`, fired by the real `estalara:chat:message-sent` DOM listener) AND a CONSUMER (`_spawn_chat_nlp` `events.py:85+107` → `process_chat_message` `main.py:37+62` → `write_shadow_intent` guard `redis_writer.py:55`). The HALF_WIRE_C that RETRO-108 recorded (consumer guard with no real-time producer) is now a complete wire on the real-time axis. ✅ **Wiring Audit — clean ✅** on the real-time chat path. (The BATCH axis remains a documented latent gap owned by FOLLOW-388 — see §4a/§7; it is NOT introduced by this PR and not re-counted as a new half-wire.)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, observation — not a defect in this diff) — the real-time producer is now the sole authority for the live opt-out bit, and it is fail-OPEN by construction.** `profiling_opt_out: profilingOptedOut || undefined` (SDK) + `payload.get("profiling_opt_out", False)` (Python) means: absent → False → shadow prior IS written. This is the deliberate §H.8-compatible backward-compat default for in-flight events from older SDK bundles, and it is the SAFE direction for §H.8 (raw event still flows) — but it is the UNSAFE direction for §H.9 if the SDK ever fails to set the flag for a genuinely opted-out user (stale cached bundle, a future refactor that drops line 1344). There is no server-side cross-check (the spawn trusts the SDK-supplied bit entirely). This is acceptable for MVP and matches the CEO §H.8/§H.9 boundary (client owns the AL-DOM opt-out, memory `project_consent_umbrella_optout_decision`), but it means the §H.9 chat guarantee is only as strong as the SDK bundle freshness. **No new follow-up** — recorded as the load-bearing architectural posture in §5d; raised to FOLLOW-386's attention (the cross-runtime opt-out integration test should pin the absent→False semantics so a future inversion is caught).
+- **LG-2 (P2, latent — pre-existing, owned by FOLLOW-388, NOT re-filed) — batch axis still defaults False.** RETRO-108 §4a LG-2 stands unchanged: once FOLLOW-101 implements `read_recent_chat_sessions` (today a stub returning `[]`, `clickhouse_reader.py:28`), the batch `session.get("profiling_opt_out", False)` re-opens the §H.9 leak on the batch axis unless the ClickHouse query surfaces per-session opt-out state. This PR closes ONLY the real-time axis. FOLLOW-388 already owns this (depends_on [FOLLOW-101, FOLLOW-387]). No duplicate stub.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. The diff is correct and minimal. The `events.py:107` (spawn kwarg) and `:113` (structured-log field) are two distinct legitimate uses of the same value, not a double-spawn. The Python consumer reads `payload` as a raw `dict[str, Any]` (`events.py:73`), so there is no Pydantic strict-mode field-stripping that would drop the new optional field before `_spawn_chat_nlp` reads it — verified no `EventEnvelope` re-validation sits between `_parse_message` and the read.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, minor) — no Python-side backward-compat test asserts that the new optional field SURVIVES the ingest `_parse_message` path with a real envelope.** The 3 isolation tests + 1 e2e test all construct the payload dict directly and feed it to `_spawn_chat_nlp` / `run_consumer`; they prove the read-and-forward logic but assume the field is present in `parsed["payload"]`. Since the consumer reads a raw dict (no schema strip — §4b), this is low risk, but a test that round-trips a `chat.message.sent` event through the actual `_parse_message`/envelope decode with the field present would harden the contract. The TS side (`follow-387.test.ts`) does cover the Zod schema round-trip. → folded as an AC note into FOLLOW-386 (the cross-runtime integration test), NOT a new stub. The dominant TG-1 weakness RETRO-108/109 flagged (modeled/self-injecting tests that prove nothing about the real path) is NOT present here — the AC-4 test `test_opted_out_event_threads_profiling_opt_out_through_consumer_to_spawn` (`:436`) drives the REAL `run_consumer → _spawn_chat_nlp` chain with only `sys.modules["modal"]` patched, asserts `profiling_opt_out=True` reaches `fn.spawn` AND `ch.insert_events` still fires (§H.8). It fails on `origin/main` and passes here. Confirmed genuine; see §7.
+
+#### 4d. Documentation gaps
+
+- N/A. Every changed site carries a `§H.9/FOLLOW-387` comment; the `chat.ts:46–56` JSDoc states the §H.8 (event flows) / §H.9 (derivation suppressed) boundary correctly. Notably, the `_spawn_chat_nlp` docstring (`events.py:54,63`) was corrected to state the §H.8 invariant explicitly — a positive contrast to the FALSE `batch_enrich.py:47–51` comment RETRO-108 DG-1 flagged (that one is still owned by FOLLOW-388, unchanged here).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-388 (held, depends_on [FOLLOW-101, FOLLOW-387]) — its FOLLOW-387 dependency is now SATISFIED.** FOLLOW-388 can proceed whenever FOLLOW-101 lands. Its scope is unchanged (surface opt-out in the ClickHouse batch query + fix the false `batch_enrich.py` comment). No new work added; the schema field FOLLOW-387 introduced is the contract FOLLOW-388's query must read from `default.events`.
+- **FOLLOW-386 (held, end-to-end opt-out integration test) — now has a SECOND concrete cross-runtime chain to cover.** RETRO-108 §5a noted the chat→Modal path (TS SDK → Redpanda → Python) is a distinct runtime boundary from the `/api/adapt` path. With FOLLOW-387 merged, that chain is now wired and testable end-to-end; FOLLOW-386 should pin (a) absent-flag → False → write-happens, and (b) flag=true → spawn carries true → no shadow write — across the real runtime boundary (Rule Z territory). Recorded for whoever promotes FOLLOW-386; no new stub.
+- **FOLLOW-389 (RETRO-109, P2, held) — unaffected.** Its scope is the quiz/favorites/micro-poll SDK guards + `/api/quiz/completion` producer; orthogonal to the chat axis. No interaction.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-101 (real `read_recent_chat_sessions`):** unchanged from RETRO-108 §5b — remains §H.9-compliance-sensitive and must be co-shipped with FOLLOW-388. FOLLOW-387 does not alter FOLLOW-101's scope but confirms the schema field it must surface now exists.
+
+#### 5c. Contracts changed others rely on
+
+- `ChatMessageSentPayloadSchema` gained an optional `profiling_opt_out` field — a public ingest-surface contract. Any future `chat.message.sent` producer (none today other than the SDK — verified by grep below) MUST set this flag for opted-out sessions or the shadow prior leaks. There is currently NO server-side synthetic chat producer, replay job, or backfill that calls `process_chat_message.spawn` other than `_spawn_chat_nlp` (`grep -rn "\.spawn(" apps/stream-consumer/src` + `grep -rn "process_chat_message" apps --include=*.py` → sole real-time invoker is `_spawn_chat_nlp`; batch invoker is `batch_enrich` via the stubbed reader). So the contract has exactly one producer and one consumer today — the wire is fully enumerated. If a replay/backfill producer is added later (e.g. re-driving ClickHouse `chat.message.sent` rows through the NLP engine), it MUST re-derive and set `profiling_opt_out` per row, or it re-opens the leak — this is the SAME risk FOLLOW-388 addresses for the batch query and should be checked at that time.
+- The default-False posture (RETRO-108 §5c "makes the half-wire INVISIBLE") is now MITIGATED for the real-time path because the producer always threads the real value (`profilingOptedOut || undefined`, where `profilingOptedOut` is the live module-scoped truth from `isProfilingOptedOut`, `index.ts:428`) — but the posture itself persists as the fail-open default (§4a LG-1).
+
+#### 5d. Architectural assumptions affected
+
+- The §H.8-vs-§H.9 invariant (RETRO-107 §5d "load-bearing": raw ingest flows; AL derivation suppressed) is now FULLY enforced on the real-time chat→shadow path, where RETRO-108 §5d declared it "only HALF-enforced." The chat event still reaches ClickHouse (§H.8, asserted by the e2e test's `ch.insert_events`), and the AL shadow prior is now skippable for opted-out sessions (§H.9, asserted by `fn.spawn(profiling_opt_out=True)`). The architectural claim "opted-out users contribute no AL chat-intent prior" is now TRUE on the live real-time path; it remains FALSE on the batch path until FOLLOW-101+388. Multi-axis: real-time axis CLOSED ✅, batch axis OPEN (FOLLOW-388). The new load-bearing assumption is §4a LG-1: the SDK is the sole source of the live opt-out bit and the server trusts it without cross-check (fail-open) — pin this in FOLLOW-386.
+
+### 6. New lesson candidates
+
+- **Pattern (SURFACE count 4 within the §H.9 epic; INDEPENDENT-context count still 1): "A remediation PR for a HALF_WIRE adds the CONSUMER guard but not the PRODUCER, so the gap moves one hop upstream; the consumer-direct/modeled test cannot see it."** This PR is the CLOSING instance of that pattern for the chat axis — it is the counter-example (the producer was finally wired AND a real end-to-end test, not a modeled/consumer-direct test, was added). Instances within the epic: RETRO-103→372, RETRO-108→384, RETRO-109→385 (HW-1/TG-1), and the chain RETRO-108→FOLLOW-387 now closes.
+  - **Promotion decision: HOLD — do NOT write to `CONVENTIONS_PATCH.md`.** All four surface instances remain inside the single §H.9 opt-out epic (FOLLOW-372→383→384→385→387). Per the explicit instruction and RETRO-108 §6 / RETRO-104 §6 / RETRO-109 ADDENDUM precedent, single-epic temporal recurrence is NOT two INDEPENDENT contexts. Independent-context count = 1. Promote at the first genuinely non-§H.9 instance. Rule L (`CONVENTIONS_PATCH.md:597`) and Rule S (`:883`) are confirming-good instances here — Rule S sibling-completeness is satisfied (real-time + batch call sites both pass the param; the real-time leg now also receives a true value); no amendment.
+- **Positive-pattern note (worth recording): "A producer-leg remediation that ships an UN-MOCKED end-to-end test driving the real consumer loop, patching only the external boundary (Modal), is the correct antidote to the modeled/self-injecting-test weakness."** FOLLOW-387's `test_opted_out_event_threads_profiling_opt_out_through_consumer_to_spawn` is the template the FOLLOW-389 real-handler-test AC and the FOLLOW-386 cross-runtime test should follow. This is the structural opposite of the TG-1 weakness and should be cited as the reference implementation.
+
+### 7. Prior-follow-up closure check (FOLLOW-387 → RETRO-108 HW-1/LG-1/TG-1 + RETRO-103 §3 HW-3)
+
+Traced END-TO-END (producer → consumer → derivation-skip), per algorithm step 7. The full chain, every hop with file:line:
+
+1. **PRODUCER (SDK):** `index.ts:1344` — `profiling_opt_out: profilingOptedOut || undefined` inside the real `estalara:chat:message-sent` DOM listener (`:1306`). `profilingOptedOut` is the live module-scoped truth (`:428` `isProfilingOptedOut(storedLeadId)`, mutated by the toggle at `:962`). ✅
+2. **INGEST CONTRACT:** `ChatMessageSentPayloadSchema.profiling_opt_out` (`chat.ts:57`) — the field now rides the `chat.message.sent` event across the SDK→Redpanda→consumer boundary. RETRO-108 §3's compounding root cause ("the schema carries NO opt-out field — grep `profiling_opt_out` packages/shared → zero hits") is RESOLVED. ✅
+3. **CONSUMER (stream-consumer):** `events.py:85` reads `payload.get("profiling_opt_out", False)`; `:107` passes it to `fn.spawn(..., profiling_opt_out=...)`. ✅
+4. **MIDDLE HOP (intent-engine):** `main.py:37` `process_chat_message(..., profiling_opt_out: bool = False)`; `:62` `write_shadow_intent(payload, profiling_opt_out=profiling_opt_out)`. (Shipped FOLLOW-384, unchanged.) ✅
+5. **DERIVATION-SKIP (final hop):** `redis_writer.py:55` `if profiling_opt_out: return` before the Redis `set`. (Shipped FOLLOW-384.) ✅
+6. **§H.8 PRESERVED:** the event STILL reaches the ClickHouse batch regardless of the flag — asserted by the e2e test's `ch.insert_events.assert_called_once()`. ✅
+
+- **RETRO-108 HW-1 (HALF_WIRE_C, P1): CLOSED. ✅** The consumer guard now has a real production producer; the wire is complete on the real-time axis.
+- **RETRO-108 LG-1 (P1 — real-time shadow prior accumulates for opted-out sessions): CLOSED. ✅** On the live real-time path an opted-out chat now threads `profiling_opt_out=True` to the spawn and the shadow write is skipped. The §H.9 contract ("opted-out sessions accumulate no chat-intent shadow prior") is now TRUE on the real-time axis.
+- **RETRO-108 TG-1 (P1 — no test covers the real producer→consumer chain): CLOSED. ✅** `test_opted_out_event_threads_profiling_opt_out_through_consumer_to_spawn` (`test_chat_nlp_bridge.py:436`) is the exact producer-chain test TG-1 named as the missing evidence; it drives the real loop, patches only Modal, and asserts the flag reaches `fn.spawn`. CONFIRMED NOT a TG-1/Rule-L repeat (it does not call `write_shadow_intent` directly and does not re-implement the guard inline).
+- **RETRO-103 §3 HW-3 (P1 — chat shadow prior skip for opted-out sessions): CLOSED end-to-end. ✅** This was the origin finding (RETRO-103) that FOLLOW-384 closed only one hop of (RETRO-108 §7 verdict: "gap moved one hop upstream to the producer"). FOLLOW-387 wires the missing producer hop + ingest contract, completing the `inquiry_submit_selector`-shaped chain RETRO-108 warned about. The full SDK→ingest→consumer→Modal→redis chain is now connected.
+- **Net closure verdict:** the §H.9 chat-derivation suppression is CLOSED on the REAL-TIME axis (FOLLOW-372 origin → FOLLOW-384 consumer guard → FOLLOW-387 producer thread). The §H.9 opt-out epic is NOT yet fully DONE: the BATCH axis (FOLLOW-388, gated on FOLLOW-101) and the FOLLOW-389 quiz/favorites/micro-poll test-orphaning items remain OPEN. PM: FOLLOW-387 is DONE and RETRO-108's three chat findings are closed; do NOT mark the broader §H.9 epic DONE until FOLLOW-388 + FOLLOW-389 land.
+
+### 8. Cross-references
+
+- **RETRO-108 (FOLLOW-384):** the direct predecessor — filed FOLLOW-387 and recorded HW-1/LG-1/TG-1 + the §7 "gap moved to the producer" verdict. THIS retro confirms all three CLOSED end-to-end.
+- **RETRO-103 (FOLLOW-372):** origin of §3 HW-3 (the chat-prior skip requirement). Now closed end-to-end on the real-time axis via the 372→384→387 chain.
+- **RETRO-107 (FOLLOW-383):** introduced the `profilingOptedOut` module-scoped producer variable (`index.ts:428`) and predicted (incorrectly, per RETRO-108 §7) that FOLLOW-384 alone would close HW-3. FOLLOW-387 is the leg that actually completes that closure. §H.8/§H.9 invariant (RETRO-107 §5d) now fully enforced on the real-time chat axis.
+- **RETRO-109 (FOLLOW-385):** the parallel SDK sibling-paths closure (quiz/favorites/micro-poll). Orthogonal to the chat axis; its open items (FOLLOW-389) are unaffected. The positive end-to-end-test pattern in §6 here is the antidote to RETRO-109's TG-1 weakness.
+- **FOLLOW-388 / FOLLOW-101 (batch axis):** the still-open §H.9 leg; FOLLOW-387 satisfies FOLLOW-388's dependency.
+- **CEO 2026-06-23/24 / ESC-029 (memory `project_optout_enforcement_h9_scope`, `project_consent_umbrella_optout_decision`):** the schema extension was CEO-approved (ESC-029 RESOLVED), honoring RETRO-108 §5c's escalation requirement; §H.8/§H.9 boundary upheld.
+
+## RETRO-111 — FOLLOW-359 (return `variant` in GET `/api/adapt` response body; closes RETRO-095 §3 HALF_WIRE_P / §4b CB-1 / §4c TG-2 for the GET copy-selection→response leg) — 2026-06-25
+
+### 1. Summary of change
+
+- **PR:** #350 (squash-merged 2026-06-25 11:33:09 UTC, commit `584907e`; FOLLOW-360 holdout gate already landed before this). One-line production change + one new test file.
+- **Files changed:** 2 (+257 / −0). Source (1): `apps/control-plane/src/app/api/adapt/route.ts` (+6/−0 — one `variant:` line in the GET response object + a 5-line FOLLOW-359 provenance comment). Tests (1): `apps/control-plane/src/app/api/adapt/route.follow359.test.ts` (+251, new, 4 tests).
+- **Modules touched:** control-plane (`/api/adapt` GET handler only). No SDK, shared, or schema file touched.
+- **Key contracts changed:**
+  - GET `/api/adapt` response body now carries `variant: getHandlerVariant` (`route.ts:826`). `variant?` is an EXISTING optional field on `AdaptationDirectives` (`packages/shared/src/directives.ts:171`) — no schema add. **breaking: no** (additive optional field on the response; POST already returned it via `selectedVariant`, `route.ts:1257`). The single `getHandlerVariant` variable now reaches THREE sinks on the GET path: `runDecisionTree` copy selection (`:805`), `logDecisionAsync` ClickHouse `param_p_variant` (`:837`), and the response body (`:826`).
+
+### 2. Verification done in PR
+
+- Test files changed: `route.follow359.test.ts` (4 tests: AC1 variant is a non-empty `control|v1|v2` string; AC2 response `variant` === ClickHouse `param_p_variant` for the same request; AC3 POST unchanged; HOLDOUT-COMPAT holdout GET → `variant='control'`). Assertions: ~8. The suite imports and drives the REAL `GET` handler (`route.follow359.test.ts:87` `import { GET }`, `:128` `await GET(makeGetRequest(...))`) and reads the live `param_p_variant` off the captured ClickHouse INSERT URL (`:168`) — it is a real-handler test, NOT a modeled/self-injecting test (no Rule L / TG-1-orphaning weakness). `thompsonSample` is mocked to return `'v1'` deterministically so the AC2 equality is stable; the variant value still flows through the real handler logic.
+- CI checks: PM-validated GREEN on real gates per PR body (typecheck exit 0, lint 0 errors, pre-push rule-h/rule-j/mirror green). Rule I pre-existing-red baseline per `project_ci_gate_landscape`. Not independently re-watched here. Coverage delta: the GET response-shape axis (RETRO-095 TG-2) is now covered.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** No new export, module, or symbol added. The `variant` response field reuses the existing `AdaptationDirectives.variant?` contract. ✅
+
+**CHECK B (half-wire):** `getHandlerVariant` now has a PRODUCER (Thompson sample / holdout override `route.ts:791-793`) AND three sinks. The RETRO-095 §3 HALF_WIRE_P ("GET serves a variant but never returns it") is **resolved on the producer→response leg**: the served arm is now present in the GET JSON. **However, CHECK B surfaces a residual on the CONSUMER side — recorded as HW-1 below, NOT as a NEW half-wire introduced by this PR but as the part of the original half-wire that this PR does not reach:**
+
+- **HW-1 (HALF_WIRE_C-adjacent, P2) — the GET-path `variant` field has NO in-repo consumer; the production SDK never calls GET `/api/adapt`.** The SDK's `fetchDirectives` issues `method: 'POST'` exclusively (`packages/sdk/src/core/adapt.ts:746`); the variant cache+echo consumer (`response.variant` → `cacheVariant` → `registerFeedbackListener`, `adapt.ts:775-783`) is reached ONLY from the POST response. GET `/api/adapt` is documented as the **legacy** surface (`packages/sdk/src/core/adapt-schema.ts:122` "legacy GET /api/adapt surface"). Grep: `grep -rn "method:\s*['\"]GET" packages/sdk/src apps/*/src | grep -i adapt` → ZERO hits. So FOLLOW-359's stated goal ("GET-path consumers can echo the served arm back via `/api/adapt/feedback → updateBanditArm`") is satisfied for the SERVER contract but has no in-repo client exercising it. Any GET-path conversion attribution depends on an EXTERNAL/legacy integrator reading `body.variant` and POSTing it to `/api/adapt/feedback` (`feedback/route.ts:57` accepts `variant: z.string().min(1).max(128)` from any caller, `:184` → `updateBanditArm`). → **FOLLOW-390** (decide: is the GET surface live for any external integrator, or is it dead? If dead, the RETRO-095 "GET-path reward is unattributable" concern is moot and the field is documentation-only; if live, an integration doc + a contract test pinning the GET→feedback echo is the missing evidence).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, multi-axis reconciliation with RETRO-095 §3 HALF_WIRE_C) — holdout × variant on the GET path.** RETRO-095 recorded TWO findings on the GET bandit path: HALF_WIRE_P (→ FOLLOW-359, this PR) AND HALF_WIRE_C/CB-2 (P0: holdout sessions served/logged a treatment variant → FOLLOW-360). The PR body and the HOLDOUT-COMPAT test assert `getHandlerVariant = holdoutGroup ? 'control' : thompsonSample(...)` (`route.ts:791-793`), i.e. FOLLOW-360's holdout gate is ALREADY in place and FOLLOW-359 correctly inherits it (`variant='control'` for holdout GET). **Reconciliation:** FOLLOW-360 (the P0 sibling of RETRO-095) landed before #350 — verified `getHandlerVariant` is `'control'` unconditionally on holdout at `:791`. No contradiction with RETRO-095; the P0 holdout-contamination finding is closed and this PR does not reopen it. ✅
+- **LG-2 (P3, pre-existing, NOT re-filed) — locale precedence (RETRO-095 §4a LG-2 → FOLLOW-362) is unchanged.** On non-`en` locales the served copy ignores the variant while the response/log still report `v1`/`v2`. Adding `variant` to the GET response now makes that mismatch VISIBLE to a GET consumer (served `control` copy but `variant:'v1'` in the body) on top of the existing log mismatch. FOLLOW-362 already owns this; the new visibility strengthens the case for it but adds no new gap.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. The diff is one correct line reusing an existing optional field. No double-spawn, no type widening, no provenance break. AC2 proves the response field and the ClickHouse log read the same variable.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — no test asserts the GET→feedback round-trip with a real (non-SDK) caller.** The AC2 test pins response==log; it does NOT assert that a value read off `body.variant` and POSTed to `/api/adapt/feedback` reaches `updateBanditArm` for the matching `(tenant, archetype, variant)` row. That is the HW-1 evidence gap. → folded into FOLLOW-390 AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — the `getHandlerVariant` provenance comment (`route.ts:809-813`) says "and now the response body" but does not state WHO consumes the GET response variant.** Given HW-1 (no in-repo GET consumer), a future reader will assume the SDK echoes it like the POST path. → folded into FOLLOW-390 (clarify GET-surface consumer status in the comment).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-360 (DONE / landed before #350):** its holdout gate is the precondition FOLLOW-359 relies on (LG-1). No new work. **FOLLOW-361** (seed-convention `'default'` vs `control/v1/v2`, RETRO-095 §4a LG-1) and **FOLLOW-362** (non-`en` A/B, RETRO-095 §4a LG-2): both still OPEN, both orthogonal to this one-line change, neither reopened.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-007 / FOLLOW-001 ("wire Thompson sampling end-to-end"):** RETRO-095 §7 declared this NOT closed because "GET response doesn't expose variant." That specific leg is now closed by FOLLOW-359. The end-to-end reward loop is now: POST ✅ fully closed (SDK caches + echoes); GET ✅ server-contract complete but ⚠️ no in-repo client (HW-1). PM: FOLLOW-007 may be marked closed for the POST axis; the GET axis is contract-complete but client-unverified — gate full closure on FOLLOW-390's GET-surface-liveness decision.
+
+#### 5c. Contracts changed others rely on
+
+- GET `/api/adapt` response gained `variant?` (already part of the `AdaptationDirectives` contract `directives.ts:171`, so no consumer that parses with `.passthrough()` breaks). The SDK `adaptResponseSchema` already declares `variant: z.string().optional()` (`adapt-schema.ts:136`), so even if the SDK ever adds a GET path it will parse the field. The `/api/adapt/feedback` consumer (`feedback/route.ts:57`) accepts `variant` from ANY caller — so an external GET integrator can already close its own loop without further server work.
+
+#### 5d. Architectural assumptions affected
+
+- The bandit reward loop is now SYMMETRIC at the server-response tier across GET and POST (both return the served arm). The remaining asymmetry is at the CLIENT tier: only POST has an in-repo consumer. This is the inverse of the RETRO-095 §5d "Rule-S–class asymmetry on one of two symmetric entry points" — the server-side asymmetry is closed; a client-side asymmetry (POST consumer exists, GET consumer does not) remains, and is acceptable IFF the GET surface is genuinely legacy/external (FOLLOW-390 to confirm).
+
+### 6. New lesson candidates
+
+- **Pattern: "Closing a HALF_WIRE_P by adding the missing PRODUCER-side field can leave the CONSUMER side of the SAME wire unverified when the only in-repo consumer rides the sibling (POST) path — the response now LOOKS complete but no client reads it on this surface."** Seen: RETRO-111 (this, GET `variant` with no GET consumer). Related shape but distinct surface from RETRO-095 §3 (which was the producer-side gap). Independent-context count for this "field added, no consumer on this surface" shape: **1** (below threshold). **No promotion.** Rule S (symmetric-set completeness) is the closest existing rule and this is a confirming instance on the GET/POST bandit pair — no amendment.
+
+### 7. Prior-follow-up closure check (FOLLOW-359 → RETRO-095 §3 HALF_WIRE_P / §4b CB-1 / §4c TG-2)
+
+Traced producer → response → (consumer):
+
+1. **PRODUCER:** `getHandlerVariant` sampled/holdout-gated at `route.ts:791-793`. ✅
+2. **COPY SELECTION:** threaded to `runDecisionTree(..., getHandlerVariant)` `:805`. ✅ (pre-existing)
+3. **CLICKHOUSE LOG:** `logDecisionAsync(..., getHandlerVariant, ...)` → `param_p_variant` `:837/:448`. ✅ (pre-existing)
+4. **RESPONSE BODY:** `variant: getHandlerVariant` `:826`. ✅ (THIS PR — the missing leg)
+5. **CLIENT CONSUMER:** ✅ for POST (`adapt.ts:775` caches + echoes) / ❌ no in-repo GET consumer (HW-1) — GET is legacy/external.
+6. **REWARD WRITE:** `feedback/route.ts:184 updateBanditArm` reachable by any caller carrying `variant`. ✅ (server-side)
+
+- **RETRO-095 §3 HALF_WIRE_P (P1): CLOSED on the producer→response leg. ✅** The GET response now exposes the served arm.
+- **RETRO-095 §4b CB-1 (P1, same root): CLOSED. ✅**
+- **RETRO-095 §4c TG-2 (P2, "no test asserts GET body shape includes variant"): CLOSED. ✅** `route.follow359.test.ts` AC1 asserts exactly this.
+- **Net verdict: the GET bandit reward loop is CONTRACT-complete but CLIENT-unverified.** This is the `inquiry_submit_selector`-shaped one-hop risk: the gap did not move downstream into a missing producer (the producer existed), it moved into "is there any client on this surface at all?" — answered by FOLLOW-390. PM: FOLLOW-359 is DONE; do NOT mark FOLLOW-007's GET axis fully closed until FOLLOW-390 resolves GET-surface liveness.
+
+### 8. Cross-references
+
+- **RETRO-095 (FOLLOW-342):** the direct predecessor — filed FOLLOW-359 (HALF_WIRE_P) AND FOLLOW-360 (HALF_WIRE_C/holdout, since landed). This retro confirms the HALF_WIRE_P leg closed and reconciles the holdout axis as already-gated.
+- **RETRO-097 (FOLLOW-344):** sibling intent-engine Rule S thread; orthogonal but note RETRO-112 (FOLLOW-363) below is the intent-engine analogue merging the same day.
+- **FOLLOW-360 / FOLLOW-361 / FOLLOW-362:** the rest of the RETRO-095 follow-up family; 360 landed, 361/362 OPEN, none reopened.
+
+---
+
+## RETRO-112 — FOLLOW-363 (thread hysteresis `state.archetype` into `applyDwellSignal` + `applyListingViewRate`; 13-call-site inventory; closes RETRO-097 §3 HALF_WIRE / §4a LG-1 / §4c TG-1+TG-2 / §4d DG-2) — 2026-06-25
+
+### 1. Summary of change
+
+- **PR:** #351 (squash-merged 2026-06-25 11:38:39 UTC, commit `a70a015`).
+- **Files changed:** 2 (+352 / −3). Source (1): `packages/sdk/src/core/intent.ts` (+53/−3 — two call sites threaded + a 34-line call-site-inventory JSDoc on `classifyFromProbabilities`). Tests (1): `packages/sdk/src/__tests__/follow-363.test.ts` (+299, new, 9 tests). Zero new imports/exports/modules — zero bundle delta.
+- **Modules touched:** SDK intent engine only (`packages/sdk`). No app, schema, or doc-of-record file.
+- **Key contracts changed:**
+  - `applyListingViewRate` now calls `classifyFromProbabilities(probabilities, state.archetype, state.quiz_answered)` (`intent.ts:~1639`) — was 1-arg. **breaking: no** (internal call site; the helper's 2nd/3rd params were already optional from FOLLOW-344).
+  - `applyDwellSignal` same change (`intent.ts:~1706`). **breaking: no.**
+  - `classifyFromProbabilities` signature UNCHANGED (FOLLOW-344 already added `currentArchetype?`, `quizAnswered?`); only its JSDoc grew the 13-site GUARDED/FREE-CLASSIFY inventory (Rule S documentation). **breaking: no.**
+
+### 2. Verification done in PR
+
+- Test files changed: `follow-363.test.ts` (9 tests). AC1/AC5: 3 repeated `applyDwellSignal` ticks on a near-tie (gap < SWITCH_MARGIN=0.05) do NOT flip the held archetype. AC2/AC5: repeated `applyListingViewRate` (2nd, 3rd view) near-tie does NOT flip. AC3/AC4: clear-win gap ≥ SWITCH_MARGIN DOES switch in both. **AC5 directly asserts the held-archetype outcome (`expect(after.archetype).toBe('yield_hunter')`) with NO conditional `if (changed)` branch — this is the explicit antidote to RETRO-097 §4c TG-2 (tautological/under-asserting AC5 cases).** Tests drive the REAL exported `applyDwellSignal`/`applyListingViewRate` (`follow-363.test.ts:30` imports them from `../core/intent.js`), feeding the output of tick N as input to tick N+1 to simulate the real `setInterval`/repeated-view loop — a real-function-path test, not a modeled re-implementation.
+- CI checks: PR body reports 65 test files / 1486 tests green; PM-validated. Not independently re-watched. Coverage delta: the two ongoing-classify paths (RETRO-097 TG-1, previously `grep -c = 0`) are now covered.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** No new symbol. `state.archetype` / `state.quiz_answered` are existing `IntentState` fields now read at two more call sites. ✅
+
+**CHECK B (half-wire):** The FOLLOW-344 hysteresis guard (`currentArchetype` param) now reaches BOTH ongoing repeated-classify sibling sites it was missing. RETRO-097 §3 enumerated 13 `classifyFromProbabilities` sites: 5 guarded (FOLLOW-344), 2 ongoing-but-unguarded (`applyDwellSignal`, `applyListingViewRate` — THIS PR), 6 free-classify (cold-start/one-shot). After #351: **7 GUARDED + 6 FREE-CLASSIFY = 13, and every FREE-CLASSIFY exemption is now JUSTIFIED in the JSDoc** (`intent.ts:~745` call-site inventory). The independent grep `grep -n "classifyFromProbabilities" packages/sdk/src/core/intent.ts` confirms 13 sites; no NEW ongoing-classify site was introduced. **Wiring Audit — clean ✅** (the Rule S sibling set is complete and each exemption is documented).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, design-tension observation, NOT a defect) — `applyDwellSignal` boosts the HELD archetype, so the AC3 "clear-win switches" test had to be reframed.** The PR author's own AC3 comment (`follow-363.test.ts:~118-130`) notes that `applyDwellSignal` reinforces the leader, so a competitor cannot easily overtake on a single boosted tick; the test ends up asserting "the dominant held archetype STAYS dominant after the boost" rather than "a competitor overtakes." This is correct behavior (dwell = engagement signal for the CURRENT archetype) but means the dwell path's "clear-win switch" is only reachable when the competitor ALREADY leads by ≥ SWITCH_MARGIN BEFORE the boost. The guard is correct; the switch-direction asymmetry between `applyDwellSignal` (boosts held) and `applyListingViewRate` (rate-derived, can favor a competitor) is undocumented in the JSDoc. → **FOLLOW-391** (P3 doc-only: note the per-path switch-direction semantics in the call-site inventory so a future calibrator of SWITCH_MARGIN — FOLLOW-212 — knows the two ongoing paths respond asymmetrically to a near-tie).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. Both threaded sites are correct and symmetric; the guard is read-only on `state.archetype`.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, minor) — no test asserts the FREE-CLASSIFY sites STAY free-classify (a regression guard against someone later "fixing" them by adding the guard incorrectly).** The 6 exempt sites (init/quiz/decay/chat/referrer/archetype-hints) are documented but not pinned by a test that would fail if e.g. `applyDecay` were wrongly guarded (which would break the decay-toward-neutral semantic, RETRO-097 §3). Low risk (the JSDoc is the guard) → folded into FOLLOW-391 AC as an optional regression test, not a standalone stub.
+
+#### 4d. Documentation gaps
+
+- N/A on the headline — the 13-call-site JSDoc inventory is exactly the RETRO-097 §4d DG-2 deliverable and is thorough. The only residual is the LG-1 switch-direction note (→ FOLLOW-391).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-342 (bandit variant → directive copy):** RETRO-097 §5a warned that an unguarded mid-session archetype flip from dwell/view-rate would trigger a directive re-fetch with a different archetype, partially defeating the bandit's churn-reduction at the copy layer. **That stability risk is now CLOSED** — the two passive time/rate signals (the most likely to produce flat near-tie distributions) can no longer flip the held archetype on a near-tie. The bandit now optimizes against a more stable archetype signal. Positive cascade.
+- **FOLLOW-359 / RETRO-111 (same-day GET variant):** orthogonal (server-side bandit response vs SDK-side archetype stability), but together they harden the same adapt loop: stable archetype (363) + attributable variant (359).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-212 (post-pilot SWITCH_MARGIN calibration, ≥500 labelled sessions):** now MUST calibrate against ALL FOUR signal classes that feed the guard (5 behavioral + dwell + view-rate), not just the behavioral ones FOLLOW-344 covered. The dwell/view-rate paths' asymmetric switch-direction (LG-1) is a calibration input. No new stub (FOLLOW-212 exists); noted for its scope.
+- **CEO-gated top-2 blending (FOLLOW-365 stub):** the deferred alternative to hysteresis. FOLLOW-363 completes the hysteresis approach across all ongoing paths, so the blending decision is now a clean either/or (hysteresis is fully shipped) rather than a partial-vs-partial comparison. Unchanged scope.
+
+#### 5c. Contracts changed others rely on
+
+- No public SDK export changed. `classifyFromProbabilities` signature is identical to post-FOLLOW-344. Any NEW code path that calls `classifyFromProbabilities` on an ESTABLISHED session MUST pass `state.archetype` (the standing Rule S trap RETRO-097 §5d flagged); the new JSDoc inventory now makes this explicit and discoverable at the call site — a structural mitigation of that trap.
+
+#### 5d. Architectural assumptions affected
+
+- Archetype stability is now uniformly enforced across ALL ongoing per-session classification paths (behavioral + dwell + view-rate). The "established session cannot flip on a near-tie" invariant, previously HALF-true (behavioral only, RETRO-097), is now FULLY true for every repeated-signal path. The 6 free-classify paths (cold-start/one-shot/decay) are intentional exceptions, now documented — so the invariant is "established session is stable on near-ties EXCEPT under explicit override (quiz/chat) or deliberate decay," which is the correct semantic.
+
+### 6. New lesson candidates
+
+- **Pattern (Rule S — symmetric-set completeness): "A guard parameter added to a shared helper is threaded into the call sites the author was looking at but not into the other sibling sites of the SAME helper — and the missed ones are the recurring loop paths that most need it."** Recurrence ledger: RETRO-044 (DSR erase vs access/portability — count 1, GAP), RETRO-045 (verification-tier residual asymmetry — count 2, PROMOTED — threshold met, Rule S codified `CONVENTIONS_PATCH.md:883`), RETRO-097 (5-of-13 `classifyFromProbabilities` sites — count 3, reinforcing). **FOLLOW-363 is the REMEDIATION of the RETRO-097 instance, not a new gap instance** — it is a CONFIRMING-GOOD touch (the sibling set is now complete AND each exemption is justified, which is exactly what Rule S §"enumerate the sibling set and justify each exemption" demands). So the GAP-instance count for Rule S stays at 3 (044/045/097); this PR is the first instance where a Rule-S finding was closed AT FULL COMPLETENESS (all 13 sites enumerated + exemptions justified + verification-tier matched: real-function tests for the two newly-guarded paths).
+  - **Promotion / strengthening decision — RECOMMENDATION FOR HUMAN (I do NOT edit `CONVENTIONS_PATCH.md`; per ticket instruction, flagging only):** Rule S is ALREADY codified (threshold met at RETRO-045). The ticket framed FOLLOW-363 as "3rd recurrence of Rule S." My reconciliation: it is the 3rd-finding/4th-touch of Rule S in the LEDGER, but as a CLOSURE it does not by itself justify a NEW amendment. **However**, there is a strengthening candidate worth the CEO/PM's attention: across RETRO-097 → FOLLOW-363, the durable fix was not just "thread the param everywhere" but "**enumerate ALL N call sites in a JSDoc inventory at the helper and justify each exemption.**" That inventory artifact is what makes future Rule S violations on `classifyFromProbabilities` self-evident at the call site. **Recommendation:** consider a Rule S amendment (one line) requiring that when a guard/param is added to a SHARED HELPER with ≥3 call sites, the PR MUST add (or update) a call-site inventory comment at the helper enumerating GUARDED vs EXEMPT and the per-exemption rationale — promoting the RETRO-097-DG-2/FOLLOW-363 remediation pattern from "follow-up cleanup" to "ship-time requirement." This is supported by exactly the same evidence base Rule S already cites (RETRO-044/045/097) plus this closure, so it stays within the existing rule's authority rather than minting a new rule. **Do NOT codify without human sign-off** — flagged here per ticket instruction; the bar for a brand-new rule (2 independent contexts) is NOT met, but an amendment to an EXISTING rule grounded in its own evidence chain is a judgment call for the CEO/PM.
+
+### 7. Prior-follow-up closure check (FOLLOW-363 → RETRO-097 §3 HALF_WIRE / §4a LG-1 / §4c TG-1+TG-2 / §4d DG-2)
+
+Traced end-to-end (signal → classify call → held-archetype outcome) for both newly-guarded paths:
+
+1. **`applyListingViewRate`:** fires on `listing.viewed` after 2nd view (`index.ts:953-963`) → `classifyFromProbabilities(probabilities, state.archetype, state.quiz_answered)` (`intent.ts:~1639`) → near-tie holds the archetype (asserted by AC2 test). ✅
+2. **`applyDwellSignal`:** fires on `setInterval` dwell tick (`index.ts:581-604`) → `classifyFromProbabilities(probabilities, state.archetype, state.quiz_answered)` (`intent.ts:~1706`) → near-tie holds (AC1 test). ✅
+3. **JSDoc inventory:** 13 sites enumerated, 7 guarded + 6 justified-exempt (`intent.ts:~745`). ✅
+
+- **RETRO-097 §3 HALF_WIRE (2× P1, the two ongoing unguarded paths): CLOSED. ✅** Both sites now thread the guard.
+- **RETRO-097 §4a LG-1 (P1, "hysteresis doesn't cover the two repeating paths it was designed to stabilize"): CLOSED. ✅** Verified the guard now reaches the dwell + view-rate loops — the exact paths most prone to flat near-tie churn.
+- **RETRO-097 §4c TG-1 (P1, "zero hysteresis tests for the two ongoing paths"): CLOSED. ✅** 9 tests, including direct near-tie-hold assertions on both.
+- **RETRO-097 §4c TG-2 (P2, "AC5 tests tautological — only assert WHEN a switch happened"): CLOSED. ✅** AC5 now asserts the held outcome directly with no conditional branch (`follow-363.test.ts` AC5 cases).
+- **RETRO-097 §4d DG-2 (P3, "Rule S exemption rationale not recorded"): CLOSED. ✅** The 13-site inventory JSDoc is exactly this.
+- **Net verdict:** RETRO-097's intent-engine Rule S finding is CLOSED at full completeness on ALL axes (behavior + test + verification-tier + documentation). This is the rare case where a follow-up closed the gap WITHOUT moving it one hop — the only residual is the P3 doc note on per-path switch-direction asymmetry (FOLLOW-391), which is a refinement, not an open hop of the original wire.
+
+### 8. Cross-references
+
+- **RETRO-097 (FOLLOW-344):** the direct predecessor — introduced the hysteresis guard, threaded 5 of 13 sites, filed FOLLOW-363 for the 2 ongoing misses + the exemption-documentation gap. THIS retro confirms all four findings CLOSED.
+- **RETRO-044 / RETRO-045 (Rule S origin):** the compliance-verb instances that promoted Rule S; FOLLOW-363 is the first FULL-COMPLETENESS closure of a Rule S finding (sibling set enumerated + exemptions justified + verification-tier matched) — the template the Rule S amendment recommendation (§6) is grounded in.
+- **RETRO-111 (FOLLOW-359, same merge batch):** the parallel adapt-loop hardening on the server/bandit side; together they stabilize archetype (363) and attribute variant (359).
+- **FOLLOW-212 (SWITCH_MARGIN calibration) / FOLLOW-365 (CEO-gated blending):** downstream consumers of a now-complete hysteresis surface.
+
+---
+
+## RETRO-113 — FOLLOW-341 (archetype embedding population job: `archetype-seeder.ts` lib + CLI + `archetype-embeddings-not-null` CI precheck + Rule I `.mts` scan; activates §F cosine affinity path) — 2026-06-25
+
+### 1. Summary of change
+
+- **PR:** #352 (squash-merged 2026-06-25 11:38:13 UTC, commit `cbd1d94`). Follow-on commit `0818391` (FOLLOW-341 Rule I `.mts` scan) is part of the same merge series.
+- **Files changed:** 7 (+809 / −202). Source (2): `apps/control-plane/src/lib/archetype-seeder.ts` (+215, new — `seedArchetypeEmbeddings()` + `ARCHETYPE_EMBEDDING_DIM=1024` + internal helpers), `apps/control-plane/scripts/seed-archetypes.mts` (+14/−175 — thinned to a CLI wrapper importing the new lib). Tests (1): `apps/control-plane/src/lib/__tests__/seed-archetypes.test.ts` (+268, new, 8 tests, `vi.mock('openai')` + `vi.stubGlobal('fetch')`). CI/tooling (2): `.github/workflows/ci.yml` (+83 — new `archetype-embeddings-not-null` job, `continue-on-error: true`), `scripts/check-rule-i.sh` (+5/−3 — `--include="*.mts"`). Backlog (1): `backlog/QUEUE.md` (+191/−24, PM reconciliation — NOT analyzed here). Lessons (1): `.claude/agents/ml-engineer/lessons.md` (+33).
+- **Modules touched:** control-plane (lib + script) · infra (ci.yml, Rule I script) · docs/lessons.
+- **Key contracts changed:**
+  - **NEW exported lib** `archetype-seeder.ts`: `seedArchetypeEmbeddings(): Promise<SeedResult>` + `ARCHETYPE_EMBEDDING_DIM = 1024`. Consumed by `scripts/seed-archetypes.mts:46` (and re-exported `:49`). **breaking: no** (new module).
+  - **NEW CI job** `archetype-embeddings-not-null` (`ci.yml`) — reads dev DB, fails if any `archetype_embeddings.embedding` is NULL; soft-skips when `DOPPLER_TOKEN_DEV` absent; `continue-on-error: true` (non-blocking).
+  - **Rule I script** now scans `*.mts` importers (`check-rule-i.sh:99`); total violations 187→178 per PR body (the ticket framed it 175→174 — minor count drift, both indicate a net decrease and the `.mts` importer of `archetype-seeder.ts` is now visible to Rule I). **breaking: no** (tooling-only; widens coverage).
+  - No public SDK export, ingest Zod schema, DB column, or decision-API response field changed. `archetype_embeddings` table schema is pre-existing (`packages/db/migrations/0002`).
+
+### 2. Verification done in PR
+
+- Test files changed: `seed-archetypes.test.ts` (8 tests: `ARCHETYPE_EMBEDDING_DIM=1024`; happy path → OpenAI called once + PATCH URL carries `archetype_name`; 1024-dim PATCH body spot-check; multi-row; no-op empty result → OpenAI never called; OpenAI throws → `failed++` no propagation; PATCH 500 → `failed++`; mixed success/fail). All mock the OpenAI client + global `fetch` — they prove the seeder's control flow + per-row error isolation, NOT a real OpenAI/Supabase round-trip (acceptable for a seeding job; the real round-trip is the `archetype-embeddings-not-null` CI job's responsibility).
+- CI checks: PR body reports control-plane suite green (1288 tests) + pre-push format/lint/Rule H/Rule J green. The new `archetype-embeddings-not-null` job is `continue-on-error: true` and soft-skips without `DOPPLER_TOKEN_DEV` — so it CANNOT block merge and provides NO signal in forked/secret-less environments. Not independently re-watched. Rule I baseline pre-existing-red per `project_ci_gate_landscape`.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** `archetype-seeder.ts` exports `seedArchetypeEmbeddings` + `ARCHETYPE_EMBEDDING_DIM`, both imported by the non-test `scripts/seed-archetypes.mts:46` (CLI entrypoint, invoked by `pnpm seed:archetypes` from `post-migrate-seed.yml:82` + `seed-archetypes.yml` workflow_dispatch). The `.mts` importer was previously INVISIBLE to Rule I (`*.ts`-only scan) — the same PR's `check-rule-i.sh` change makes it visible, so the new module is provably wired, not dead. ✅ (CLI/cron entrypoint suppression would have applied anyway, but the importer is real.)
+
+**CHECK B (half-wire):** The embedding column `archetype_embeddings.embedding` now has a PRODUCER (`seedArchetypeEmbeddings` → Supabase PATCH) AND a CONSUMER on the read side — **two consumers, in fact:** `affinityScore` in BOTH `apps/control-plane/src/app/api/adapt/route.ts:516` (POST handler, via `fetchArchetypeEmbedding` `route.ts:1162`) AND `apps/decision-api/src/lib/reorder.ts:286`. Both take the cosine branch when `archetypeEmbedding !== null`, else fall back to djb2 (`deterministicScore`). So the wire is complete AS CODE. **BUT the producer only RUNS against dev, never prod (HW-1 below) — this is a DEPLOYMENT half-wire, not a code half-wire:**
+
+- **HW-1 (HALF_WIRE_P, deployment — P1) — the embedding PRODUCER auto-runs against DEV ONLY; PROD `archetype_embeddings.embedding` stays NULL until an operator manually runs `pnpm seed:archetypes` with prod creds.** `post-migrate-seed.yml:82` runs `doppler run --config dev -- pnpm seed:archetypes` — hard-wired to the `dev` Doppler config — AND soft-skips entirely if `DOPPLER_TOKEN_DEV` is unset. There is NO workflow that seeds prod. The PR body's claim "the 18 rows will self-populate once this PR merges" is TRUE for dev only. In prod, `fetchArchetypeEmbedding` returns NULL → `affinityScore` silently takes the djb2 branch (a safe degradation — listings still reorder deterministically, no error) → the §F cosine affinity path the ticket "activates" is INACTIVE in prod. This is the SAME manual-apply trap as RETRO-076 / FOLLOW-307 / FOLLOW-308 (Postgres migrations + seeds don't auto-apply to prod; memory `project_postgres_migrations_no_autoapply`). → **FOLLOW-390-adjacent: a tracked operator-action stub (see §7 — and cross-reference, do NOT duplicate, FOLLOW-308 which owns the GENERAL standing auto-apply gate).**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the `archetype-embeddings-not-null` CI guard checks DEV, not PROD, and is `continue-on-error`.** It reads the dev DB via `DOPPLER_TOKEN_DEV`, so even when green it provides ZERO assurance that PROD embeddings are non-null. Combined with HW-1, prod can silently run djb2-only indefinitely while CI is green. The guard's NAME ("not-null") over-promises relative to its scope (dev-only, non-blocking). → folded into the FOLLOW-341 prod-seed stub (§7): the operator action should also assert prod non-null (the FOLLOW-293-style live smoke pattern RETRO-076/FOLLOW-307 established).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. The seeder logic is correct: NULL-only SELECT (`embedding=is.null`, `archetype-seeder.ts:108`), per-row try/catch isolation (one OpenAI/PATCH failure does not abort the batch), dimension validation (`vec.length !== ARCHETYPE_EMBEDDING_DIM` throws, `:70`). The `affinityScore` cosine/djb2 branch is dimension-guarded (`archetypeEmbedding.length === listingEmbedding.length`) so a partial/mismatched seed degrades safely rather than throwing.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — no test asserts `affinityScore` takes the cosine branch once embeddings are non-null end-to-end.** The 8 seeder tests cover the WRITE side (seeder → PATCH); no test wires a seeded embedding through `fetchArchetypeEmbedding` → `affinityScore` → cosine to prove the consumer flips from djb2 to cosine. That producer→consumer proof is what would make FOLLOW-342's "cosine produces real ordering" precondition verifiable. → folded into FOLLOW-342's ACs (it owns the variant-vs-cosine ordering) + the prod-seed stub's live-smoke AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — the PR body and `post-migrate-seed.yml` header state "self-populate once this PR merges" without qualifying DEV-ONLY.** A future operator (or RETRO reader) will assume prod is seeded by merge. The QUEUE.md FOLLOW-341 notes (`QUEUE.md:5276`) DO correctly record "manual `pnpm seed:archetypes` against prod Supabase (same trap as RETRO-076/FOLLOW-307)" — so the canonical backlog entry is accurate; the gap is only in the PR/workflow prose. → folded into the prod-seed stub (§7): add a one-line "dev-only auto-seed; prod is manual" note to the workflow header.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-342 (BLOCKED, depends_on [FOLLOW-341]) — code dependency SATISFIED, but the MEANINGFUL-lift precondition is NOT.** FOLLOW-342's `block_reason` is literally "Depends on FOLLOW-341 for lift to be meaningful (cosine must produce real ordering)" (`QUEUE.md:5263`). FOLLOW-341 ships the seeding CODE, but until prod is manually seeded (HW-1), `affinityScore` runs djb2 in prod and the bandit variant has NO real cosine ordering to optimize against. **PM: FOLLOW-342 is code-unblocked but its STATED rationale (real ordering signal) is not met in prod until the operator seed runs.** Do NOT treat FOLLOW-341 merge as fully satisfying FOLLOW-342's dependency — the prod-seed operator action (§7) is the true gate. This is the §8 multi-axis reconciliation: "unblocked in code" ≠ "unblocked in effect."
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-308 (standing Postgres auto-apply-or-checklist gate, RETRO-076/ESC-022):** HW-1 is a fresh concrete instance of exactly the gap FOLLOW-308 owns (merge ≠ prod-applied for Postgres data). The archetype-embedding seed should be added to whatever prod-apply checklist/automation FOLLOW-308 produces. No duplicate stub for the GENERAL mechanism — cross-reference FOLLOW-308.
+- **FOLLOW-293-style live smoke (the data_source:'live' assertion pattern):** the prod-seed stub should mirror it — assert prod `archetype_embeddings.embedding IS NOT NULL` for all 18 rows post-seed.
+
+#### 5c. Contracts changed others rely on
+
+- `archetype_embeddings.embedding` is consumed by TWO cosine call sites (control-plane `route.ts:516` + decision-api `reorder.ts:286`) — a cross-app duplicated scoring surface (Rule J/K territory; pre-existing mirror, not introduced here). Both degrade to djb2 on NULL, so the prod-NULL state is consistent (both apps run djb2 in prod) — no cross-app skew. When prod is seeded, BOTH apps flip to cosine simultaneously (they read the same global `archetype_embeddings` table) — a coordinated activation, which is the desired behavior. Rule I now scans `.mts`, so future `.mts` CLI importers of any lib are no longer falsely flagged dead.
+
+#### 5d. Architectural assumptions affected
+
+- The §F cosine affinity path is now CODE-COMPLETE and DEV-ACTIVE but PROD-INACTIVE-pending-operator-seed. The load-bearing assumption: "merging the seeding job activates cosine ranking" is FALSE for prod — it activates it for dev and provisions the operator a one-command path for prod. This is the recurring "Postgres/data merged ≠ live" architectural reality (memory `project_postgres_migrations_no_autoapply`); the safe-degradation design (djb2 fallback) means the prod gap is a SILENT capability-absence, not an outage — which is precisely why it needs a TRACKED operator stub rather than relying on someone noticing.
+
+### 6. New lesson candidates
+
+- **Pattern: "A merge that ships a data-seeding/migration job is described as 'self-populating on merge,' but the auto-seed workflow targets DEV ONLY (or soft-skips on a missing secret); PROD requires a manual operator command, so the capability the merge 'activates' is silently inactive in prod behind a safe fallback."** Recurrence ledger: RETRO-076 (migration 0030 / FOLLOW-307 — Postgres merged ≠ applied, count 1, → FOLLOW-308 standing gate), and now RETRO-113 (archetype-embedding seed dev-only auto, count 2). **Independent-context count: 2** (intent_weight_configs migration vs archetype_embeddings seed — distinct data, distinct job, distinct retro). **This MEETS the ≥2 threshold for a rule — RECOMMENDATION FOR HUMAN (I do NOT edit `CONVENTIONS_PATCH.md` per ticket instruction):** consider promoting a rule of the shape *"A PR that ships a Postgres/data seed or migration MUST NOT claim 'self-populates/applies on merge' unless a workflow applies it to PROD; if the auto-apply is dev-only or operator-manual, the PR description AND the workflow header MUST state 'dev-only auto; prod is manual operator action' and a tracked operator follow-up (with a prod non-null/applied assertion) MUST be filed."* **NB:** FOLLOW-308 already exists to BUILD the standing auto-apply mechanism; this candidate rule is the DOCUMENTATION/DISCLOSURE discipline that complements it (don't over-claim merge effects). Because FOLLOW-308 is the in-flight mechanism for the same gap, my recommendation is to HOLD the new rule until FOLLOW-308 lands (it may obviate the manual step entirely, making the rule moot) — but FLAG it now so the PM/CEO can decide. The 2-context threshold is technically met; the judgment call (codify now vs wait for FOLLOW-308) is human-owned. Rule I `.mts` widening here is a confirming-good improvement to the wired-or-dead gate (it closed the `.mts`-importer blind spot Rule I had) — worth a one-line note in Rule I's verification block, also human-owned.
+
+### 7. Prior-follow-up closure check + new follow-up
+
+- **FOLLOW-341 itself is the SHIP of the seeding capability — no prior follow-up is CLOSED by it end-to-end in prod.** RETRO-094 (the original FOLLOW-341 stub origin) scoped the seeding job; this PR delivers the code + dev auto-seed + CI guard. The end-to-end chain (seed → prod non-null → cosine active) is BROKEN at the prod-seed hop (HW-1). So per algorithm step 7: the gap is NOT closed end-to-end; it has moved to the operator-seed hop — the classic one-hop-downstream move. **New stub → FOLLOW-390** (the next free number is 390; RETRO-111 also references a FOLLOW-390 for the GET-surface question — to avoid a number collision I assign the GET-surface follow-up FOLLOW-390 and THIS prod-seed follow-up FOLLOW-391, and FOLLOW-363's doc note FOLLOW-392; see the FOLLOW_UPS.md stubs for the authoritative numbering).
+  - **Cross-reference, do NOT duplicate, FOLLOW-308** (standing Postgres auto-apply gate, RETRO-076) and the QUEUE.md FOLLOW-341 note (`:5276`, already records the manual prod step). The new stub is the SPECIFIC operator action for THIS data (seed prod archetype embeddings + assert 18 rows non-null), not a re-file of the general mechanism.
+
+### 8. Cross-references
+
+- **RETRO-076 / FOLLOW-307 / FOLLOW-308 (memory `project_postgres_migrations_no_autoapply`):** the canonical "Postgres merged ≠ prod-applied" precedent; HW-1 is its second concrete data-seed instance (§6). FOLLOW-308 owns the general standing gate; the new FOLLOW stub is the specific archetype-embedding operator action.
+- **RETRO-094 (FOLLOW-341 origin) / RETRO-096 (FOLLOW-347 force-reseed):** the seed-archetypes lineage; the workflow files RETRO-095 §1 noted were squashed into FOLLOW-342's branch belong to this seed family.
+- **RETRO-095 (FOLLOW-342):** the bandit-variant consumer whose "meaningful lift" precondition is GATED on this prod seed (§5a). FOLLOW-342 is code-unblocked, effect-blocked until prod seed.
+- **RETRO-111 / RETRO-112 (same merge batch):** the parallel adapt-loop hardening (variant attribution + archetype stability); FOLLOW-341 provides the cosine ordering signal the bandit (359/342) ultimately optimizes against — once prod is seeded.
+
+---

@@ -1,4 +1,145 @@
-# Status — 2026-06-21T00:00Z (Sprint 19 READY_FOR_REVIEW queue pending human merges; Sprint 20 OPEN — FOLLOW-372/FOLLOW-373 newly promoted READY [CEO-directed 2026-06-21]; FOLLOW-357 READY_FOR_REVIEW [PR #334]; FOLLOW-360/FOLLOW-366 DONE [P0 hotfixes merged]; ESC-020 OPEN [non-blocking])
+# Status — 2026-06-25T21:00Z (Sprint 22 ACTIVE — FOLLOW-359/363/341 DONE [merged]; FOLLOW-342 IN_PROGRESS [delegated 2026-06-25, backend-engineer]; FOLLOW-361/356/389 READY; ESC-020/ESC-028 OPEN [both non-blocking]; ESC-029/ESC-030 RESOLVED; §H.9 opt-out epic live-chat leg CLOSED — batch axis + test-hardening legs remain open; PROD SEED ACTION REQUIRED for §F cosine MOAT — see below)
+
+## Active CI-check counters (step 5b tracking)
+
+| Ticket     | CI checks used | Fix iterations used | Status                           |
+| ---------- | -------------- | ------------------- | -------------------------------- |
+| FOLLOW-359 | 1/5            | 0/3                 | DONE (PR #350 merged 2026-06-25) |
+| FOLLOW-363 | 1/5            | 0/3                 | DONE (PR #351 merged 2026-06-25) |
+| FOLLOW-341 | 1/5            | 0/3                 | DONE (PR #352 merged 2026-06-25) |
+
+## PROD SEED ACTION REQUIRED — §F cosine MOAT go-live (FOLLOW-341)
+
+FOLLOW-341 (PR #352) is merged and code-complete. The archetype embedding job populates
+archetype_embeddings.embedding so that affinityScore() in route.ts uses real cosine similarity
+instead of djb2-fallback ordering. Dev DB auto-populates via post-migrate-seed.yml on push:main
+(uses DOPPLER_TOKEN_DEV — dev Supabase). PROD Supabase does NOT auto-populate.
+
+OPERATOR ACTION (human — required before §F cosine signal is live in prod): cd apps/control-plane &&
+SUPABASE_SERVICE_ROLE_KEY=<prod_key> OPENAI_API_KEY=<key> pnpm seed:archetypes OR: trigger
+seed-archetypes.yml workflow_dispatch with prod credentials via GitHub Actions UI.
+
+Until this runs: affinityScore() silently falls back to djb2-fallback ordering in prod. Not a crash
+or error — a safe degradation. Same pattern as RETRO-076/FOLLOW-307 (Postgres migrations don't
+auto-apply). Must appear in prod deployment checklist before go-live.
+
+FOLLOW-342 is unblocked on code and can be delegated now. Its differentiated-playbook behavior will
+use djb2-fallback ordering in prod until the manual seed runs, which is acceptable.
+
+## Open escalations
+
+| ESC     | Age                                                                       | Summary                                     | Blocking?      |
+| ------- | ------------------------------------------------------------------------- | ------------------------------------------- | -------------- |
+| ESC-020 | 19d                                                                       | Estalara-app DOM hooks not deployed to prod | No (per note)  |
+| ESC-028 | 2d                                                                        | Upstash secrets for Redis smoke CI          | No (soft-skip) |
+| ESC-030 | RESOLVED (2026-06-25) — CEO Option A; FOLLOW-341 delegated to ml-engineer |
+
+## FOLLOW-384 — DONE (2026-06-24)
+
+- PR #347 squash-merged to main by Piotr Nawrocki. Merge commit: 532f3d8.
+- PM-validated 2026-06-24T13:00Z. CI green. Runtime wiring confirmed (step 5c).
+- RETRO-108 pending spawn (see Pending Retro Spawns table below).
+- QUEUE.md: FOLLOW-384 → DONE. FOLLOW_UPS.md: FOLLOW-384 → status DONE.
+
+## FOLLOW-385 — DONE (2026-06-24)
+
+- PR #348 squash-merged to main. Merge commit: f7ac516. Commit range: 532f3d8..f7ac516.
+- PM-validated 2026-06-24T18:00Z. CI green (Rule I pre-existing-red — non-blocking, same baseline as
+  PR #347/#346/#345). All other real gates PASS.
+- ACs 1–5 verified. Runtime wiring confirmed. Scope discipline confirmed (no §H.8 paths touched).
+- EPIC NOTE: §H.9 opt-out epic is NOT closed. FOLLOW-387 (P1) is the remaining open leg.
+- RETRO-109 appended 2026-06-24 by pm-orchestrator (this ticket — see RETROSPECTIVES.md). RETRO-108
+  pending spawn (FOLLOW-384 basis).
+
+## FOLLOW-341 — DONE (2026-06-25)
+
+- PR #352 merged to main 2026-06-25.
+- PM-validated 2026-06-25T14:00Z. CI: 1/5 checks used. Fix iterations: 0/3.
+- All real CI gates GREEN at time of merge. Non-blocking: archetype-embeddings-not-null
+  (continue-on-error:true) and Rule I pre-existing-red (net -1 violation vs main).
+- Runtime wiring confirmed: seedArchetypeEmbeddings() producer at archetype-seeder.ts:171, consumers
+  at seed-archetypes.mts:62 (CLI) + post-migrate-seed.yml (GHA). affinityScore() cosine path at
+  route.ts:516 reads vector(1024) from archetype_embeddings table.
+- UNBLOCKS FOLLOW-342 (code). §F cosine MOAT prod go-live requires manual seed — see "PROD SEED
+  ACTION REQUIRED" section above.
+- RETRO pending.
+
+## FOLLOW-363 — DONE (2026-06-25)
+
+- PR #351 merged to main 2026-06-25.
+- PM-validated 2026-06-25T12:00Z. CI: 1/5 checks used. Fix iterations: 0/3.
+- All real CI gates GREEN. Rule I pre-existing-red only (non-blocking).
+- ACs 1-5 verified. 13-call-site inventory comment added. Rule S satisfied.
+- Runtime wiring: applyDwellSignal + applyListingViewRate both thread state.archetype through
+  classifyFromProbabilities. Non-test consumers: index.ts:633 (dwell) + index.ts:1055 (view rate).
+- RETRO pending.
+
+## FOLLOW-359 — DONE (2026-06-25)
+
+- PR #350 merged to main 2026-06-25.
+- PM-validated 2026-06-25T12:00Z. CI: 1/5 checks used. Fix iterations: 0/3.
+- All real CI gates GREEN. Rule I pre-existing-red only (non-blocking).
+- ACs 1-4 + HOLDOUT COMPAT verified. variant field at route.ts:826 uses getHandlerVariant (single
+  source of truth for runDecisionTree + logDecisionAsync). Non-test producer: route.ts:791. Non-test
+  consumer: adapt.ts:775 (cacheVariant). No type break (directives.ts:171 already optional).
+- RETRO pending.
+
+## FOLLOW-387 — DONE (2026-06-24)
+
+- PR #349 squash-merged to main. Merge commit: b7412e1. Commit range: f7ac516..b7412e1.
+- PM post-merge reconciliation: 2026-06-24T23:00Z.
+- CI: all real gates GREEN (1/5 CI checks, 0/3 fix iterations). Rule I pre-existing-red only.
+- All 5 ACs verified (AC-4 confirmed real end-to-end test — NOT a TG-1 repeat).
+- Runtime wiring: SDK index.ts:1344 → events.py:85+107 → main.py:37+62 → write_shadow_intent.
+- ESC-029 RESOLVED (CEO approved ChatMessageSentPayloadSchema extension 2026-06-24).
+- §H.9 opt-out epic — live-chat leg: CLOSED by this merge.
+- §H.9 opt-out epic — remaining open legs: FOLLOW-389 (P2, sdk-engineer, test-hardening
+  HW-1/TG-1/DG-1) — READY in QUEUE.md. FOLLOW-388 (P2, data-engineer, batch axis) — READY in
+  QUEUE.md; blocked on FOLLOW-101.
+- RETRO-110: IN PROGRESS — dedicated retrospective-analyst running in parallel (dual-pass
+  prevention: pm-orchestrator did NOT write RETRO-110; do not append to RETROSPECTIVES.md in this
+  session).
+
+## FOLLOW-342 — IN_PROGRESS (delegated 2026-06-25)
+
+- Delegated to backend-engineer 2026-06-25. Branch:
+  backend-engineer/FOLLOW-342-variant-playbook-selection.
+- P1, backend-engineer. CI checks: 0/5. Fix iterations: 0/3.
+- Scope: thread selectedVariant into runDecisionTree/getPlaybook so control/v1/v2 produce distinct
+  playbook copy; unit test variant->copy mapping across all 3 arms.
+- PROD COSINE CAVEAT: affinityScore() uses djb2-fallback ordering in prod until operator runs
+  `pnpm seed:archetypes` against prod Supabase (§F cosine MOAT go-live — see PROD SEED ACTION
+  REQUIRED section above). FOLLOW-342 code is correct end-to-end; prod degradation is safe. Decision
+  to proceed on code rather than gate on prod-seed: the operator action is independent and can run
+  in parallel; stalling a P1 ticket for it is not justified.
+
+## CONVENTIONS_PATCH update — 2026-06-25 (traceability record)
+
+- CEO authorized two rule additions to CONVENTIONS_PATCH.md on 2026-06-25.
+- Rule S amendment: call-site inventory comment required for all shared guarded helpers (any helper
+  whose guard logic is invisible at the call site must carry an inline comment listing all call
+  sites affected). Codified following the FOLLOW-363 audit finding on classifyFromProbabilities.
+- Rule M (new): no code comment, PR body, or ticket note may claim a value/table/row "auto-populates
+  on merge" or "auto-applies on deploy" unless a workflow step explicitly targets the production
+  environment and runs unconditionally. Pattern codified from RETRO-076 (Postgres migrations don't
+  auto-apply) + RETRO-089 (drift-guard docstring overclaimed CI guard). Count >= 2.
+- CONVENTIONS_PATCH.md already updated by CEO directly. This entry is for audit traceability only.
+  PM did not edit CONVENTIONS_PATCH.md.
+
+## FOLLOW-389 — READY (promoted 2026-06-24)
+
+- Promoted to QUEUE.md from FOLLOW_UPS.md after PR #349 merged.
+- P2, sdk-engineer (lead) + backend-engineer (co: route gate confirmation).
+- Scope: wire /api/quiz/completion opt-out producer + replace modeled SDK tests + fix micro-poll
+  comment.
+- Dependency: FOLLOW-385 DONE. No blockers.
+
+## FOLLOW-388 — READY (promoted 2026-06-24, blocked on FOLLOW-101)
+
+- Promoted to QUEUE.md from FOLLOW_UPS.md after PR #349 merged.
+- P2, data-engineer.
+- Scope: surface per-session opt-out in read_recent_chat_sessions + correct batch_enrich.py comment.
+- Dependencies: FOLLOW-387 DONE. FOLLOW-101 still OPEN — do not delegate until FOLLOW-101 merges.
 
 _Rule I: a ticket is DONE only if its primary artifact has at least one non-test runtime caller._
 
@@ -222,6 +363,18 @@ auto-detect, archetype-pipeline, data-quality, intent-engine, llm-gateway, strea
 | FOLLOW-332 | 0/5       | 0/3            | DONE (PR #318, fb9d201)                          |
 | FOLLOW-335 | 1/5       | 0/3            | DONE (PR #319 merged 49540aa, 2026-06-18T21:56Z) |
 
+## CI CHECK COUNTER (Sprint 22 — ACTIVE)
+
+| Ticket     | CI checks | Fix iterations | Status                                                                                             |
+| ---------- | --------- | -------------- | -------------------------------------------------------------------------------------------------- |
+| FOLLOW-384 | 1/5       | 0/3            | DONE (PR #347 merged 532f3d8, 2026-06-24). RETRO-108 pending.                                      |
+| FOLLOW-385 | 1/5       | 0/3            | DONE (PR #348 merged f7ac516, 2026-06-24). RETRO-109 appended.                                     |
+| FOLLOW-387 | 1/5       | 0/3            | DONE (PR #349 merged b7412e1, 2026-06-24). RETRO-110 in-progress.                                  |
+| FOLLOW-359 | 1/5       | 0/3            | DONE (PR #350 merged 2026-06-25). RETRO pending.                                                   |
+| FOLLOW-363 | 1/5       | 0/3            | DONE (PR #351 merged 2026-06-25). RETRO pending.                                                   |
+| FOLLOW-341 | 1/5       | 0/3            | DONE (PR #352 merged 2026-06-25). RETRO pending. Prod seed action pending.                         |
+| FOLLOW-342 | 0/5       | 0/3            | IN_PROGRESS (delegated 2026-06-25; branch backend-engineer/FOLLOW-342-variant-playbook-selection). |
+
 ## CI CHECK COUNTER (Sprint 19 — ACTIVE)
 
 | Ticket          | CI checks | Fix iterations | Status                                                                                                                     |
@@ -242,14 +395,15 @@ auto-detect, archetype-pipeline, data-quality, intent-engine, llm-gateway, strea
 | FOLLOW-372 | 0/5       | 0/3            | READY — promoted to queue 2026-06-21 (CEO-directed). Not yet delegated.                                                             |
 | FOLLOW-373 | 0/5       | 0/3            | READY — promoted to queue 2026-06-21 (CEO-directed). Not yet delegated.                                                             |
 
-## OPEN ESCALATION AGES (as of 2026-06-21)
+## OPEN ESCALATION AGES (as of 2026-06-24)
 
-| ESC     | Filed      | Days open | Summary                                                      |
-| ------- | ---------- | --------- | ------------------------------------------------------------ |
-| ESC-020 | 2026-06-10 | 11        | Rafal prod deploy (non-blocking)                             |
-| ESC-025 | 2026-06-20 | RESOLVED  | P0 hotfix FOLLOW-366 merged (eaf31a9)                        |
-| ESC-026 | 2026-06-20 | RESOLVED  | P0 hotfix FOLLOW-360 merged (2836adc)                        |
-| ESC-027 | 2026-06-20 | RESOLVED  | CEO ruling (a) received; FOLLOW-357 PR #334 READY_FOR_REVIEW |
+| ESC     | Filed      | Days open | Summary                                                               |
+| ------- | ---------- | --------- | --------------------------------------------------------------------- |
+| ESC-020 | 2026-06-10 | 14        | Rafal prod deploy (non-blocking)                                      |
+| ESC-025 | 2026-06-20 | RESOLVED  | P0 hotfix FOLLOW-366 merged (eaf31a9)                                 |
+| ESC-026 | 2026-06-20 | RESOLVED  | P0 hotfix FOLLOW-360 merged (2836adc)                                 |
+| ESC-027 | 2026-06-20 | RESOLVED  | CEO ruling (a) received; FOLLOW-357 PR #334 READY_FOR_REVIEW          |
+| ESC-028 | 2026-06-23 | 1         | Upstash secrets not provisioned for redis-shadow smoke (non-blocking) |
 
 ---
 
@@ -282,18 +436,21 @@ Q4 (embedding job vs drop cosine claim → FOLLOW-341 direction). ESC-020 non-bl
 
 ## Pending Retro Spawns
 
-| RETRO     | Source ticket | PR(s)          | Status to spawn                                                     |
-| --------- | ------------- | -------------- | ------------------------------------------------------------------- |
-| RETRO-062 | FOLLOW-276    | #272           | PENDING                                                             |
-| RETRO-063 | FOLLOW-278    | #273           | PENDING                                                             |
-| RETRO-081 | FOLLOW-293    | #307           | DONE (2026-06-17) — no new FOLLOW filed                             |
-| RETRO-082 | FOLLOW-324    | #308           | DONE (2026-06-17) — FOLLOW-335 filed                                |
-| RETRO-083 | FOLLOW-326    | #309/#310/#311 | DONE (2026-06-17) — FOLLOW-336 filed                                |
-| RETRO-084 | FOLLOW-327    | #312           | DONE (2026-06-17) — FOLLOW-331/332 filed                            |
-| RETRO-085 | FOLLOW-328    | #313           | DONE (2026-06-17) — FOLLOW-333 filed                                |
-| RETRO-086 | FOLLOW-330    | #314           | DONE (2026-06-17) — FOLLOW-334 filed                                |
-| RETRO-091 | FOLLOW-335    | #319           | PENDING SPAWN (FOLLOW-335 merged 2026-06-18)                        |
-| RETRO-092 | FOLLOW-343    | #321           | PENDING SPAWN (FOLLOW-343 merged 2026-06-19, squash commit 56b0018) |
+| RETRO     | Source ticket | PR(s)          | Status to spawn                                                                                                                                  |
+| --------- | ------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| RETRO-062 | FOLLOW-276    | #272           | PENDING                                                                                                                                          |
+| RETRO-063 | FOLLOW-278    | #273           | PENDING                                                                                                                                          |
+| RETRO-081 | FOLLOW-293    | #307           | DONE (2026-06-17) — no new FOLLOW filed                                                                                                          |
+| RETRO-082 | FOLLOW-324    | #308           | DONE (2026-06-17) — FOLLOW-335 filed                                                                                                             |
+| RETRO-083 | FOLLOW-326    | #309/#310/#311 | DONE (2026-06-17) — FOLLOW-336 filed                                                                                                             |
+| RETRO-084 | FOLLOW-327    | #312           | DONE (2026-06-17) — FOLLOW-331/332 filed                                                                                                         |
+| RETRO-085 | FOLLOW-328    | #313           | DONE (2026-06-17) — FOLLOW-333 filed                                                                                                             |
+| RETRO-086 | FOLLOW-330    | #314           | DONE (2026-06-17) — FOLLOW-334 filed                                                                                                             |
+| RETRO-091 | FOLLOW-335    | #319           | PENDING SPAWN (FOLLOW-335 merged 2026-06-18)                                                                                                     |
+| RETRO-092 | FOLLOW-343    | #321           | PENDING SPAWN (FOLLOW-343 merged 2026-06-19, squash commit 56b0018)                                                                              |
+| RETRO-108 | FOLLOW-384    | #347           | PENDING SPAWN (FOLLOW-384 merged 2026-06-24, squash commit 532f3d8)                                                                              |
+| RETRO-109 | FOLLOW-385    | #348           | DONE (appended 2026-06-24 by pm-orchestrator; no new stubs — FOLLOW-387 already filed by RETRO-108)                                              |
+| RETRO-110 | FOLLOW-387    | #349           | IN PROGRESS — dedicated retrospective-analyst running in parallel (merge commit b7412e1, 2026-06-24). pm-orchestrator must NOT write this entry. |
 
 ## Sprint 19 State (2026-06-19)
 

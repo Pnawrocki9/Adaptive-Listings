@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Rule I hard gate — wired-or-dead: every exported symbol must have a non-test importer.
 #
-# Scans all export declarations in packages/*/src and apps/*/src (TypeScript only).
-# For each exported symbol, checks whether any non-test file outside the defining
-# file imports it. Prints a warning for each violation and exits 1 if any are found.
+# Scans all export declarations in packages/*/src and apps/*/src (TypeScript only,
+# *.ts/*.tsx source files). For each exported symbol, checks whether any non-test
+# file outside the defining file imports it — including *.mts CLI scripts in apps/.
+# Prints a warning for each violation and exits 1 if any are found.
 #
 # Exclusions:
 #   - Test files: *.test.ts, *.spec.ts, __tests__/ directories
@@ -95,6 +96,7 @@ for file in "${source_files[@]}"; do
       { grep -rl "\b${sym}\b" packages/ apps/ \
           --include="*.ts" \
           --include="*.tsx" \
+          --include="*.mts" \
           2>/dev/null || true; } \
       | grep -v "node_modules" \
       | grep -v "/dist/" \

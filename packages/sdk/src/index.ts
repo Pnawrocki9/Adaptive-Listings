@@ -1137,11 +1137,14 @@ async function init(): Promise<IntentState | null> {
               // FOLLOW-200: persist quiz completion to Postgres for MOAT training data.
               // Fire-and-forget — must never block the quiz dismiss UI.
               // Fails silently (postQuizCompletionPing catches all errors internally).
+              // FOLLOW-389 HW-1: thread profilingOptedOut so the server-side §H.9 gate
+              // at route.ts:363 is reachable (defense-in-depth alongside Guard 1).
               postQuizCompletionPing(
                 config,
                 currentSession.sessionId,
                 currentIntentState.archetype,
                 quizConfig.language,
+                profilingOptedOut,
               );
 
               eventQueue.push({
@@ -1232,7 +1235,11 @@ async function init(): Promise<IntentState | null> {
           microPollQuestionIndex += 1;
           microPollShownThisSession = false;
 
-          // §H.9 opt-out: suppress AL profiling. Ingest stream left flowing (§H.8/CEO 2026-06-23/FOLLOW-384).
+          // §H.9 opt-out: suppress AL profiling. NOTE: unlike the favorites handler
+          // (where listing.bookmarked is pushed BEFORE this guard), the quiz.event push
+          // below (trigger='micro_poll') is INSIDE this guard and IS suppressed for
+          // opted-out sessions. quiz.event is an AL-signal stream event — not in the §H.8
+          // protected set (chat / snapshot / live.signup) — so suppression is correct.
           if (profilingOptedOut) return;
 
           // Apply micro_poll.answered behavioral signal to intent state

@@ -183,19 +183,33 @@ function deriveQuizCompletionUrl(config: SdkConfig): string | null {
  * Failures are caught and logged to console.warn — they must never propagate to the
  * caller or affect the quiz dismiss flow.
  *
- * @param config    - SDK configuration (needs apiKey + decisionApiUrl).
- * @param sessionId - Current session identifier.
+ * §H.9 defense-in-depth (FOLLOW-389 HW-1): when `profilingOptedOut=true` the query
+ * param `profiling_opt_out=1` is appended so the server gate at
+ * `apps/control-plane/src/app/api/quiz/completion/route.ts:363` can skip
+ * persistence even if the primary Guard 1 (`showQuizTrigger` early return at
+ * `index.ts:1103`) is somehow bypassed. The primary enforcement is Guard 1; this is
+ * reachable defense-in-depth, NOT the sole protection.
+ *
+ * @param config           - SDK configuration (needs apiKey + decisionApiUrl).
+ * @param sessionId        - Current session identifier.
  * @param resolvedArchetype - Quiz leaf archetype (or 'neutral').
- * @param language  - Quiz locale (canonical `QuizLanguage` from `@estalara/shared`, FOLLOW-273).
+ * @param language         - Quiz locale (canonical `QuizLanguage` from `@estalara/shared`, FOLLOW-273).
+ * @param profilingOptedOut - When true, appends `?profiling_opt_out=1` to signal
+ *                            server-side persistence skip (§H.9 defense-in-depth).
  */
 export function postQuizCompletionPing(
   config: SdkConfig,
   sessionId: string,
   resolvedArchetype: string,
   language: QuizLanguage,
+  profilingOptedOut?: boolean,
 ): void {
-  const completionUrl = deriveQuizCompletionUrl(config);
-  if (!completionUrl) return;
+  const baseUrl = deriveQuizCompletionUrl(config);
+  if (!baseUrl) return;
+
+  // §H.9 defense-in-depth: mirror the /adapt pattern (adapt.ts:744) — append the
+  // opt-out flag so the route gate at route.ts:363 is reachable by real SDK traffic.
+  const completionUrl = profilingOptedOut ? `${baseUrl}?profiling_opt_out=1` : baseUrl;
 
   const body = JSON.stringify({
     session_id: sessionId,

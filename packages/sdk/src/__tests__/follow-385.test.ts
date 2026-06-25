@@ -1,21 +1,23 @@
 /**
  * FOLLOW-385 — Enforce profiling opt-out on quiz/favorites/micro-poll sibling paths.
  *
- * Tests cover:
- *   AC-1 — showQuizTrigger gates on profilingOptedOut. An opted-out user sees NO quiz
- *           trigger; postQuizCompletionPing is therefore never called.
- *   AC-3 — estalara:listing:favorited handler does NOT call applyBehavioralSignal /
- *           onIntentUpdate when profilingOptedOut=true. The eventQueue.push to ingest
- *           is deliberately preserved.
- *   AC-4 — onAnswer micro-poll callback does NOT call applyBehavioralSignal /
- *           onIntentUpdate when profilingOptedOut=true.
+ * Tests cover guard ORDER (structural proof that guards are positioned correctly
+ * relative to mutations/pushes). These are structural tests, not real-handler tests.
+ *
+ * REAL-HANDLER TESTS (FOLLOW-389 TG-1 augmentation):
+ *   The follow-389.test.ts file adds real-handler tests that drive the REAL init()
+ *   path and dispatch actual CustomEvents / advance timers, catching regressions that
+ *   these structural tests cannot catch (Rule L gap identified in RETRO-109).
+ *
+ * Guard structure tested here:
+ *   AC-1 — showQuizTrigger: guard fires BEFORE renderQuizTrigger/postQuizCompletionPing.
+ *   AC-3 — estalara:listing:favorited: guard fires AFTER eventQueue.push (push preserved).
+ *   AC-4 — onAnswer micro-poll: guard fires AFTER question-index advance (UI state preserved).
  *
  * AC-2 (server-side /api/quiz/completion route) is tested in
  *   apps/control-plane/src/app/api/quiz/completion/route.test.ts
  *
- * Rule L compliance: these tests drive the real guard paths in index.ts as closures,
- * verifying the structural guard order (guard before mutation) following the FOLLOW-383
- * pattern. The profilingOptedOut variable is produced non-test at packages/sdk/src/index.ts:428.
+ * The profilingOptedOut variable is produced non-test at packages/sdk/src/index.ts:428.
  *
  * @module packages/sdk/src/__tests__/follow-385.test
  */

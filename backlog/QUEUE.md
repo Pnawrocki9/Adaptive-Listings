@@ -5240,7 +5240,7 @@ items are DONE.
 - id: FOLLOW-341
   title: Populate archetype_embeddings.embedding (activate the cosine affinity path)
   agent: ml-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: ml-engineer
   started_at: '2026-06-25T12:00Z'
   priority: P1
@@ -5248,12 +5248,13 @@ items are DONE.
   depends_on: []
   source: AUDIT-2026-06-19 F-02
   spec: backlog/FOLLOW_UPS.md (FOLLOW-341 stub)
-  branch: ml-engineer/FOLLOW-341-archetype-embeddings-populate
+  branch: ml-engineer/FOLLOW-341-archetype-embedding-job
+  pr: '#352'
   notes: |
     ESC-030 RESOLVED 2026-06-25 — CEO chose Option A (build the real embedding job).
-    Delegated to ml-engineer 2026-06-25T12:00Z per ESC-030 resolution.
-    Scope: idempotent embed-and-UPSERT job for 18 seed rows in archetype_embeddings via
-    text-embedding-3-small. Add archetype-embeddings-not-null CI precheck. Unblocks FOLLOW-342.
+    Implemented: src/lib/archetype-seeder.ts (core logic), scripts/seed-archetypes.mts (thin CLI
+    wrapper), 8 unit tests (vi.mock openai + vi.stubGlobal fetch), archetype-embeddings-not-null CI
+    job in ci.yml (soft-skip without DOPPLER_TOKEN_DEV). PR #352. Unblocks FOLLOW-342.
 
 - id: FOLLOW-342
   title: Thread bandit variant into playbook selection (stop optimizing placebo arms)
@@ -6152,12 +6153,12 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   source: AUDIT-2026-06-19 F-02
   spec: backlog/FOLLOW_UPS.md (FOLLOW-341 stub)
   branch: ml-engineer/FOLLOW-341-archetype-embedding-job
-  pr: pending
+  pr: '#352'
   notes: |
     ESC-030 RESOLVED 2026-06-25 — CEO chose Option A (build the real embedding job).
     Implemented: src/lib/archetype-seeder.ts (core logic), scripts/seed-archetypes.mts (thin CLI
     wrapper), 8 unit tests (vi.mock openai + vi.stubGlobal fetch), archetype-embeddings-not-null CI
-    job in ci.yml (soft-skip without DOPPLER_TOKEN_DEV). Unblocks FOLLOW-342.
+    job in ci.yml (soft-skip without DOPPLER_TOKEN_DEV). PR #352. Unblocks FOLLOW-342.
 
 - id: FOLLOW-342
   title: Thread bandit variant into playbook selection (stop optimizing placebo arms)

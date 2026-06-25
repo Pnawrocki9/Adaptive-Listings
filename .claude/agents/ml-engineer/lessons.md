@@ -1,5 +1,38 @@
 # ml-engineer lessons
 
+- **2026-06-25 / FOLLOW-341** · Activated cosine affinity path by extracting
+  `seedArchetypeEmbeddings` into `src/lib/archetype-seeder.ts` (testable TypeScript module) from
+  `scripts/seed-archetypes.mts` (not in tsconfig include, cannot be imported in tests). Added 8 unit
+  tests via `vi.mock('openai')` + `vi.stubGlobal('fetch', ...)`. Added
+  `archetype-embeddings-not-null` CI job (soft-skip without Doppler). PR #324 had merged earlier
+  FOLLOW-341 work but only shipped a names/descriptions check — the embedding NULL check and unit
+  test were missing. · **Judgment calls:** (1) The Rule I check scans `packages/ apps/` with
+  `--include="*.ts"` but not `--include="*.mts"`, so `scripts/seed-archetypes.mts` importing
+  `archetype-seeder.ts` is invisible to it; the 4 new Rule I violations are a pre-existing Rule I
+  limitation. Accepted and noted in PR. (2) Kept `_resetOpenAIForTest()` exported (a test-only
+  helper) rather than injecting the OpenAI instance, because the test imports the module fresh and
+  the singleton needs a reset path. · **Guardrail I'd add:** Rule I should scan `*.mts` files as
+  potential importers so CLI scripts don't cause false-positive zero-importer violations for their
+  lib modules.
+
+- **2026-06-24 / FOLLOW-384** · Added `profiling_opt_out: bool = False` parameter to
+  `write_shadow_intent` with an early-return guard; threaded the flag through both call sites
+  (`process_chat_message` in `main.py` and `batch_enrich_conversations` in `batch_enrich.py`). Two
+  new tests assert the skip path (AC-2) and positive write path (AC-3). Change was ~15 lines across
+  4 files; all 16 pre-existing tests continued to pass. · **Judgment calls:** (1) The batch tier
+  (`batch_enrich.py`) cannot yet source opt-out state from ClickHouse — `clickhouse_reader.py` does
+  not return it. Used `session.get("profiling_opt_out", False)` with a comment explaining the safe
+  default and a "revisit" note, rather than silently dropping the hook or fabricating a query. (2)
+  The opt-out flag was NOT added to `ChatIntentDetectedPayload`/`schemas.py` — it is a session-level
+  control signal, not a payload dimension. This keeps the schema clean and avoids a misleading field
+  that would suggest the payload itself carries consent state. (3) The Redis shadow round-trip CI
+  check (cross-language, write_shadow_intent → readShadowChatIntent) passed — confirming the key
+  format contract was not broken. · **Guardrail I'd add:** When a compliance flag (opt-out, consent)
+  is added to one tier of a multi-tier pipeline, a CI check should verify ALL tiers that share the
+  downstream write path accept the flag — here main.py and batch_enrich.py, but if a third tier is
+  added later the check would not catch it. A shared test fixture that enumerates call sites would
+  help.
+
 - **2026-06-12 / FOLLOW-272** · Tightened `_check_headline_facts` to prevent digit-coincidence and
   first-word proper-name escape. Two changes: (1) Digit check: replaced bare
   `token.lower() in grounding` substring with a numeric-boundary lookaround

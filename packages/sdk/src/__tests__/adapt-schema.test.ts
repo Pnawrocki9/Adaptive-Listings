@@ -23,7 +23,7 @@ const VALID_RESPONSE = {
   archetype: 'yield_hunter',
   confidence: 0.87,
   similarity: 0.91,
-  tier: 1 as const,
+  page_context: 2 as const,
   directives: [
     {
       type: 'text' as const,
@@ -87,12 +87,8 @@ describe('adaptResponseSchema.parse', () => {
     expect(() => adaptResponseSchema.parse({ ...VALID_RESPONSE, archetype: 'investor' })).toThrow();
   });
 
-  it('throws on an invalid tier (4 is not 1|2|3)', () => {
-    expect(() => adaptResponseSchema.parse({ ...VALID_RESPONSE, tier: 4 })).toThrow();
-  });
-
-  it('throws on an invalid directive_scope (3 is not 1|2)', () => {
-    expect(() => adaptResponseSchema.parse({ ...VALID_RESPONSE, directive_scope: 3 })).toThrow();
+  it('throws on an invalid page_context (3 is not 1|2)', () => {
+    expect(() => adaptResponseSchema.parse({ ...VALID_RESPONSE, page_context: 3 })).toThrow();
   });
 
   it('allows unknown / extra fields (passthrough — forward-compatible)', () => {
@@ -151,13 +147,13 @@ describe('fetchDirectives — Zod validation path', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null on a type mismatch', async () => {
+  it('returns null on a type mismatch (confidence as string)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() =>
         Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ ...VALID_RESPONSE, tier: 'one' }),
+          json: () => Promise.resolve({ ...VALID_RESPONSE, confidence: 'high' }),
         }),
       ),
     );

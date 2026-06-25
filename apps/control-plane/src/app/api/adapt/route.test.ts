@@ -116,7 +116,7 @@ const AdaptationDirectivesSchema = z.object({
   archetype: z.string(),
   confidence: z.number().min(0).max(1),
   similarity: z.number().min(0).max(1),
-  directive_scope: z.union([z.literal(1), z.literal(2)]).optional(),
+  page_context: z.union([z.literal(1), z.literal(2)]).optional(),
   directives: z.array(z.union([TextDirectiveSchema, ClassDirectiveSchema, ReorderDirectiveSchema])),
   source: z.enum([
     'playbook',
@@ -975,39 +975,53 @@ describe('POST /api/adapt — ReorderDirective', () => {
   });
 });
 
-// ─── POST /api/adapt — directive_scope lock tests (FOLLOW-357 / partial TG-1 FOLLOW-356) ──
+// ─── POST /api/adapt — page_context derived from page_type (FOLLOW-357 / FOLLOW-356) ──
 
-describe('POST /api/adapt — directive_scope derived from page_type', () => {
+describe('POST /api/adapt — page_context derived from page_type', () => {
   beforeEach(() => {
     mockCallLlmGateway.mockClear();
     mockCallLlmGateway.mockResolvedValue(null);
   });
 
-  it('listing_detail page_type → directive_scope === 2', async () => {
+  // FOLLOW-356 AC-1 / AC-2: listing_detail → page_context === 2 AND headline directive present.
+  it('listing_detail page_type → page_context === 2 AND headline directive present (FOLLOW-356 AC-1)', async () => {
     const body = {
       ...VALID_POST_BODY,
       page_type: 'listing_detail' as const,
+      archetype_hint: 'yield_hunter',
+      confidence: 0.9,
+      similarity: 0.95,
     };
     const res = await POST(makePostRequest(body, 'Bearer demo_key'));
     expect(res.status).toBe(200);
     const resBody = await parseBody<Record<string, unknown>>(res);
-    expect(resBody.directive_scope).toBe(2);
+    expect(resBody.page_context).toBe(2);
     expect(resBody.tier).toBeUndefined();
+    // Headline directive must be present on listing_detail pages (FOLLOW-356 AC-1).
+    const directives = resBody.directives as { slot?: string; type: string }[];
+    expect(directives.some((d) => d.slot === 'headline')).toBe(true);
   });
 
-  it('listing_list page_type → directive_scope === 1', async () => {
+  // FOLLOW-356 AC-2: listing_list → page_context === 1 AND headline ABSENT for same archetype.
+  it('listing_list page_type → page_context === 1 AND headline absent (FOLLOW-356 AC-2)', async () => {
     const body = {
       ...VALID_POST_BODY,
       page_type: 'listing_list' as const,
+      archetype_hint: 'yield_hunter',
+      confidence: 0.9,
+      similarity: 0.95,
     };
     const res = await POST(makePostRequest(body, 'Bearer demo_key'));
     expect(res.status).toBe(200);
     const resBody = await parseBody<Record<string, unknown>>(res);
-    expect(resBody.directive_scope).toBe(1);
+    expect(resBody.page_context).toBe(1);
     expect(resBody.tier).toBeUndefined();
+    // Headline directive must be absent on list/search/home pages (FOLLOW-356 AC-2).
+    const directives = resBody.directives as { slot?: string; type: string }[];
+    expect(directives.every((d) => d.type === 'reorder' || d.slot !== 'headline')).toBe(true);
   });
 
-  it('search page_type → directive_scope === 1', async () => {
+  it('search page_type → page_context === 1', async () => {
     const body = {
       ...VALID_POST_BODY,
       page_type: 'search' as const,
@@ -1015,10 +1029,10 @@ describe('POST /api/adapt — directive_scope derived from page_type', () => {
     const res = await POST(makePostRequest(body, 'Bearer demo_key'));
     expect(res.status).toBe(200);
     const resBody = await parseBody<Record<string, unknown>>(res);
-    expect(resBody.directive_scope).toBe(1);
+    expect(resBody.page_context).toBe(1);
   });
 
-  it('home page_type → directive_scope === 1', async () => {
+  it('home page_type → page_context === 1', async () => {
     const body = {
       ...VALID_POST_BODY,
       page_type: 'home' as const,
@@ -1026,6 +1040,6 @@ describe('POST /api/adapt — directive_scope derived from page_type', () => {
     const res = await POST(makePostRequest(body, 'Bearer demo_key'));
     expect(res.status).toBe(200);
     const resBody = await parseBody<Record<string, unknown>>(res);
-    expect(resBody.directive_scope).toBe(1);
+    expect(resBody.page_context).toBe(1);
   });
 });

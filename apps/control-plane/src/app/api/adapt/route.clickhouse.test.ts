@@ -196,4 +196,31 @@ describe('logDecisionAsync — FOLLOW-261 parameterized ClickHouse INSERT', () =
 
     expect(mockFetch).not.toHaveBeenCalled();
   });
+
+  // FOLLOW-356 AC-3: logDecisionAsync receives page_context=2 for listing_detail pages.
+  it('FOLLOW-356 AC-3: logDecisionAsync receives page_context=2 for listing_detail', async () => {
+    await POST(makePostRequest({ ...BASE_BODY, page_type: 'listing_detail' as const }));
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockFetch).toHaveBeenCalled();
+    const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+    const parsedUrl = new URL(fetchUrl);
+
+    // The ClickHouse INSERT must carry page_context=2 for listing_detail.
+    expect(parsedUrl.searchParams.get('param_p_page_context')).toBe('2');
+  });
+
+  // FOLLOW-356 AC-3 (parity): logDecisionAsync receives page_context=1 for list/search/home.
+  it('FOLLOW-356 AC-3: logDecisionAsync receives page_context=1 for listing_list', async () => {
+    await POST(makePostRequest({ ...BASE_BODY, page_type: 'listing_list' as const }));
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockFetch).toHaveBeenCalled();
+    const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+    const parsedUrl = new URL(fetchUrl);
+
+    expect(parsedUrl.searchParams.get('param_p_page_context')).toBe('1');
+  });
 });

@@ -34,7 +34,7 @@ const SESSION: SessionState = {
 
 // FOLLOW-105 §F.5: the SDK now validates adapt responses against the canonical
 // AdaptationDirectives Zod schema (core/adapt-schema.ts). This fixture must therefore
-// carry every REQUIRED field of that contract (adapt_decision_id, similarity, tier,
+// carry every REQUIRED field of that contract (adapt_decision_id, similarity,
 // source, generated_at) and a valid archetype enum value (`yield_hunter`, not the
 // pre-FOLLOW-105 placeholder `investor` which was never a real ArchetypeId).
 const MOCK_RESPONSE: AdaptResponse = {
@@ -43,7 +43,7 @@ const MOCK_RESPONSE: AdaptResponse = {
   archetype: 'yield_hunter',
   confidence: 0.87,
   similarity: 0.9,
-  directive_scope: 1,
+  page_context: 1,
   source: 'playbook',
   generated_at: '2026-05-25T00:00:00.000Z',
   directives: [

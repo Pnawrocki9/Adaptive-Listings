@@ -740,9 +740,43 @@ export function normalize(probs: ArchetypeProbabilities): ArchetypeProbabilities
  * cycle-to-cycle archetype flipping on near-ties without delaying genuine shifts.
  * Pass `undefined` (or omit) at session init so the first classification runs freely.
  *
- * @param probs           - Normalized posterior distribution.
+ * @param probs            - Normalized posterior distribution.
  * @param currentArchetype - The archetype currently held by the session, or undefined
  *                           when classifying from scratch (init / quiz / decay paths).
+ *
+ * ── Call-site inventory (Rule S — FOLLOW-363) ────────────────────────────────────
+ * 13 call sites in intent.ts. Each is classified as either:
+ *   • GUARDED   — passes `state.archetype`; hysteresis active.
+ *   • FREE-CLASSIFY — omits `currentArchetype`; guard intentionally inactive.
+ *
+ * FREE-CLASSIFY sites (omit currentArchetype — cold-start or one-shot):
+ *   1. initIntentState (line ~807)         — session cold-start; no prior archetype exists.
+ *   2. applyQuizPrior (line ~842)          — quiz is an explicit override; free re-classify
+ *                                            is correct (quiz intent overrides behavioral state).
+ *   3. applyDecay (line ~1184)             — temporal decay erases confidence toward neutral;
+ *                                            free re-classify is the intended decay semantic
+ *                                            (the distribution is actively moving toward uniform).
+ *   4. applyChatIntentPrior (line ~1341)   — one-shot per session (guarded by chatPriorApplied
+ *                                            idempotency flag in fetchDirectives); not a repeated
+ *                                            ongoing classification path.
+ *   5. applyReferrerHints (line ~1445)     — session-init prior applied once before any behavioral
+ *                                            signal; no established archetype at call time.
+ *   6. applyArchetypeHints (line ~1532)    — session-init site-level prior applied once; same
+ *                                            rationale as applyReferrerHints.
+ *
+ * GUARDED sites (pass `state.archetype`; `state.quiz_answered`; hysteresis active):
+ *   7.  applyBehavioralSignal — listing.bookmarked intercept (line ~995)
+ *   8.  applyBehavioralSignal — micro_poll.answered intercept (line ~1040)
+ *   9.  applyBehavioralSignal — feature.expanded intercept    (line ~1097)
+ *   10. applyBehavioralSignal — filter.applied intercept      (line ~1119)
+ *   11. applyBehavioralSignal — generic path                  (line ~1143)
+ *   12. applyListingViewRate  (line ~1601) — fires on every listing.viewed after the 2nd view;
+ *                                            ongoing, repeated per-session classify — GUARDED
+ *                                            by FOLLOW-363 to prevent near-tie churn.
+ *   13. applyDwellSignal      (line ~1660) — fires on a setInterval dwell tick; ongoing,
+ *                                            repeated per-session classify — GUARDED by
+ *                                            FOLLOW-363 to prevent near-tie churn.
+ * ─────────────────────────────────────────────────────────────────────────────────
  */
 export function classifyFromProbabilities(
   probs: ArchetypeProbabilities,
@@ -1598,7 +1632,15 @@ export function applyListingViewRate(
   if (!rateBoost) return state;
 
   const probabilities = normalize(rateBoost);
-  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+  // FOLLOW-363: pass state.archetype so the hysteresis guard is active.
+  // applyListingViewRate fires on every listing.viewed after the 2nd view (index.ts:953-963)
+  // — an ongoing, repeated classification path where near-tie distributions can flip the
+  // archetype on every call.  The guard prevents churn without blocking genuine shifts.
+  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
+    probabilities,
+    state.archetype,
+    state.quiz_answered,
+  );
 
   return {
     archetype,
@@ -1657,7 +1699,15 @@ export function applyDwellSignal(state: IntentState, elapsed_ms: number): Intent
     ARCHETYPE_NAMES.map((k) => [k, k === state.archetype ? boost : 1.0]),
   ) as ArchetypeProbabilities;
   const probabilities = applyLikelihood(state.probabilities, likelihood);
-  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
+  // FOLLOW-363: pass state.archetype so the hysteresis guard is active.
+  // applyDwellSignal fires on a setInterval tick (index.ts:581-604) — an ongoing,
+  // repeated classification path where a near-tie distribution can flip the archetype
+  // on every tick.  The guard prevents churn without blocking genuine shifts.
+  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
+    probabilities,
+    state.archetype,
+    state.quiz_answered,
+  );
   return {
     archetype,
     confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),

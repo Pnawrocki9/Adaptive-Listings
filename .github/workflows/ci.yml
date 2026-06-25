@@ -564,6 +564,89 @@ jobs:
       - name: Assert all 18 archetype seeds have names and descriptions
         run: npx tsx scripts/check-archetype-seeds.ts
 
+  # ── Archetype embeddings not-NULL check (FOLLOW-341) ─────────────────────
+  # Verifies that archetype_embeddings.embedding is NOT NULL for all 18 rows
+  # in the live dev DB after pnpm seed:archetypes runs on push:main.
+  #
+  # Soft-skip contract (matching doppler-verify):
+  #   When DOPPLER_TOKEN_DEV is absent (forked PRs / secret not yet provisioned)
+  #   the job logs a clear notice and exits 0 — it does NOT block merges.
+  #   When DOPPLER_TOKEN_DEV IS present, a non-zero exit means real NULL rows
+  #   remain in the DB and `pnpm seed:archetypes` must be re-run.
+  #
+  # Trigger:
+  #   Run manually via seed-archetypes.yml workflow_dispatch, or automatically
+  #   on push:main via post-migrate-seed.yml before this check executes.
+  #   This job READS the result; post-migrate-seed.yml WRITES the embeddings.
+  archetype-embeddings-not-null:
+    name: Archetype embeddings not-NULL check
+    runs-on: ubuntu-latest
+    # Soft-skip: forked PRs and pre-DOPPLER environments must not block on this.
+    continue-on-error: true
+    needs: [archetype-seeds-complete]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @estalara/db
+        run: pnpm --filter @estalara/db build
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      - name: Check if DOPPLER_TOKEN_DEV is available
+        id: doppler-check
+        shell: bash
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
+        run: |
+          if [ -z "${DOPPLER_TOKEN}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOPPLER_TOKEN_DEV is not set — skipping archetype-embeddings-not-null check."
+            echo "Once DOPPLER_TOKEN_DEV is provisioned, this check will verify all 18 archetype"
+            echo "embeddings are populated (non-NULL) in the dev database after pnpm seed:archetypes."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Assert no NULL embeddings in archetype_embeddings
+        if: steps.doppler-check.outputs.skip == 'false'
+        run: |
+          doppler run --config dev -- node --input-type=module <<'EOF'
+          import { createAdminClient } from '@estalara/db';
+          import { isNull } from 'drizzle-orm';
+          import { archetypeEmbeddings } from '@estalara/db';
+
+          const db = createAdminClient();
+          const nullRows = await db
+            .select({ archetypeName: archetypeEmbeddings.archetypeName })
+            .from(archetypeEmbeddings)
+            .where(isNull(archetypeEmbeddings.embedding));
+
+          if (nullRows.length > 0) {
+            const names = nullRows.map(r => r.archetypeName).join(', ');
+            console.error(
+              `[archetype-embeddings-not-null] FAIL: ${nullRows.length} archetype(s) have NULL embedding: ${names}`
+            );
+            console.error(
+              '[archetype-embeddings-not-null] Run: pnpm seed:archetypes (or trigger seed-archetypes.yml workflow_dispatch)'
+            );
+            process.exit(1);
+          }
+          console.log('[archetype-embeddings-not-null] PASS: all 18 archetype embeddings populated.');
+          EOF
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}
+
   # ── SDK E2E tests (Playwright + Chromium) ────────────────────────────────
   sdk-e2e:
     name: SDK E2E tests

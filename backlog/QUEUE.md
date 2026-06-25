@@ -5240,7 +5240,9 @@ items are DONE.
 - id: FOLLOW-341
   title: Populate archetype_embeddings.embedding (activate the cosine affinity path)
   agent: ml-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: ml-engineer
+  started_at: '2026-06-25T12:00Z'
   priority: P1
   estimated_hours: 6
   depends_on: []
@@ -5248,9 +5250,10 @@ items are DONE.
   spec: backlog/FOLLOW_UPS.md (FOLLOW-341 stub)
   branch: ml-engineer/FOLLOW-341-archetype-embeddings-populate
   notes: |
-    CEO decision point (open question #4): build real embedding job OR formally drop cosine claim.
-    If build: embed 18 seed archetype descriptions via text-embedding-3-small, UPSERT, idempotent,
-    CI precheck. Unblocks FOLLOW-342.
+    ESC-030 RESOLVED 2026-06-25 — CEO chose Option A (build the real embedding job).
+    Delegated to ml-engineer 2026-06-25T12:00Z per ESC-030 resolution.
+    Scope: idempotent embed-and-UPSERT job for 18 seed rows in archetype_embeddings via
+    text-embedding-3-small. Add archetype-embeddings-not-null CI precheck. Unblocks FOLLOW-342.
 
 - id: FOLLOW-342
   title: Thread bandit variant into playbook selection (stop optimizing placebo arms)
@@ -5464,13 +5467,19 @@ others staged by priority; max 3 IN_PROGRESS at once.**
 - id: FOLLOW-363
   title: Thread hysteresis (currentArchetype) into applyDwellSignal + applyListingViewRate
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  started_at: '2026-06-25T00:00Z'
+  pm_validated_at: '2026-06-25T12:00Z'
   priority: P1
   estimated_hours: 3
   depends_on: []
   source: RETRO-097 (FOLLOW-344 / PR #329)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-363 stub)
   branch: sdk-engineer/FOLLOW-363-hysteresis-dwell-listing-view
+  pr: '#351'
+  notes: |
+    STALE DUPLICATE — canonical entry below (~line 5876). Status synced to READY_FOR_REVIEW.
 
 - id: FOLLOW-368
   title: Guarantee Python writer and TS reader share one Upstash Redis instance (env-var divergence)
@@ -5494,15 +5503,25 @@ others staged by priority; max 3 IN_PROGRESS at once.**
 - id: FOLLOW-359
   title: Return variant in GET /api/adapt response body
   agent: backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-06-25T00:00Z'
+  pm_validated_at: '2026-06-25T12:00Z'
   priority: P1
   estimated_hours: 2
   depends_on: [FOLLOW-360]
   source: RETRO-095 (FOLLOW-342 / PR #327)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-359 stub)
   branch: backend-engineer/FOLLOW-359-get-variant-response
+  pr: '#350'
   notes: |
-    Depends on FOLLOW-360 (GET holdout gate must land first to avoid compounding the regression).
+    FOLLOW-360 DONE (merged #333) — dependency cleared.
+    Delegated 2026-06-25T00:00Z. CI check counter: 1/5. Fix iterations: 0/3.
+    PM-VALIDATED 2026-06-25: CI green (Rule I pre-existing-red only). All real gates pass.
+    variant field confirmed in response object (route.ts:826) using same getHandlerVariant variable
+    as runDecisionTree (line 805) and logDecisionAsync (line 837) — single source of truth.
+    Non-test producer: route.ts:791 (getHandlerVariant sampled). Non-test consumer: adapt.ts:775
+    (cacheVariant called). AC1/AC2/AC3/AC4 verified. HOLDOUT COMPAT verified.
 
 - id: FOLLOW-361
   title: Reconcile bandit seed convention (default vs control/v1/v2)
@@ -5784,17 +5803,29 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   title:
     redis_writer.py — skip AL chat-intent shadow prior for opted-out sessions [AC-4 of FOLLOW-383]
   agent: ml-engineer
-  status: READY
+  status: DONE
+  assigned_to: ml-engineer
+  started_at: '2026-06-24T00:00Z'
+  pm_validated_at: '2026-06-24T13:00Z'
+  completed_at: '2026-06-24'
   priority: P1
   estimated_hours: 2
   depends_on: [FOLLOW-383]
   source: RETRO-103 HW-3 (FOLLOW-383 AC-4 split)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-384 stub)
   branch: ml-engineer/FOLLOW-384-redis-writer-optout-skip
+  pr: '#347'
+  merge_commit: 532f3d8
   notes: |
-    FOLLOW-383 merged 2026-06-23 — dependency satisfied. The SDK now sends profiling_opt_out=1
-    to /api/adapt; redis_writer.py must read this flag and skip the AL chat-intent shadow prior
-    write for opted-out sessions to close the server-side training suppression loop.
+    SQUASH-MERGED PR #347 to main (commit 532f3d8) 2026-06-24.
+    PM-validated 2026-06-24T13:00Z. CI green. Runtime wiring confirmed (step 5c):
+    - profiling_opt_out producer (non-test): main.py:62 (process_chat_message → write_shadow_intent)
+    - profiling_opt_out producer (non-test): jobs/batch_enrich.py:54 (session.get opt-out flag)
+    - profiling_opt_out consumer (non-test): redis_writer.py:55 (early-return guard)
+    AC-1 verified: skip guard at redis_writer.py:55. AC-2 verified: mock_redis.set.assert_not_called().
+    AC-3 verified: correct shadow key + 86400s TTL asserted. No TS files touched. Scope clean.
+    Rule I failures (2) are pre-existing baseline (FOLLOW-090, 107+ violations, non-blocking).
+    CI check counter: 1/5. Fix iterations: 0/3. RETRO-108 pending spawn.
 
 - id: FOLLOW-371
   title: One-shot ClickHouse remediation of holdout rows contaminated in PR#327→#333 window
@@ -5859,45 +5890,176 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
 - id: FOLLOW-363
   title: Thread hysteresis (currentArchetype) into applyDwellSignal + applyListingViewRate
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  started_at: '2026-06-25T00:00Z'
+  pm_validated_at: '2026-06-25T12:00Z'
   priority: P1
   estimated_hours: 3
   depends_on: []
   source: RETRO-097 (FOLLOW-344 / PR #329)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-363 stub)
   branch: sdk-engineer/FOLLOW-363-hysteresis-dwell-listing-view
+  pr: '#351'
+  notes: |
+    Delegated 2026-06-25T00:00Z. CI check counter: 1/5. Fix iterations: 0/3.
+    PM-VALIDATED 2026-06-25: CI green (Rule I pre-existing-red only). All real gates pass.
+    Both call sites patched: applyDwellSignal (intent.ts:~1703) + applyListingViewRate (intent.ts:~1636)
+    now pass state.archetype + state.quiz_answered to classifyFromProbabilities.
+    Non-test producer: intent.ts functions; non-test consumers: index.ts:633 (dwell) + index.ts:1055
+    (listing view). ACs 1-4 + AC5 behavioral tests verified. 13-call-site inventory comment added.
+    Rule S satisfied (free-classify vs guarded documented).
 
 - id: FOLLOW-385
   title:
     Enforce profiling opt-out across SDK sibling profiling paths (quiz/favorites/micro-poll +
     quiz-completion persistence) [§H.9-documented scope]
   agent: sdk-engineer
-  status: READY
+  status: DONE
+  assigned_to: sdk-engineer
+  started_at: '2026-06-24T14:00Z'
+  pm_validated_at: '2026-06-24T18:00Z'
+  completed_at: '2026-06-24'
   priority: P1
   estimated_hours: 4
   depends_on: [FOLLOW-383]
   source: pre-merge adversarial review of PR #342 + CEO scope decision 2026-06-23
   spec: backlog/FOLLOW_UPS.md (FOLLOW-385 stub)
   branch: sdk-engineer/FOLLOW-385-sibling-optout-enforcement
+  pr: '#348'
+  merge_commit: f7ac516
   notes: |
-    FOLLOW-383 merged — dependency satisfied. Scope = §H.9-documented set ONLY (quiz, favorites,
-    micro-poll client-side AL profiling suppression + quiz-completion persistence gate).
+    SQUASH-MERGED PR #348 to main (commit f7ac516, range 532f3d8..f7ac516) 2026-06-24.
+    FOLLOW-383 merged — dependency satisfied. FOLLOW-384 merged 2026-06-24.
+    Delegated to sdk-engineer 2026-06-24T14:00Z.
+    Scope = §H.9-documented set ONLY (quiz, favorites, micro-poll client-side AL profiling
+    suppression + quiz-completion persistence gate).
     Ingest behavioral stream (chat/intent.snapshot/live.signup) deliberately NOT in scope —
     rides §H.8 registration consent; AL training suppression handled server-side by FOLLOW-384.
     See FOLLOW-385 stub in FOLLOW_UPS.md for exact AC list.
+    Delegation table row: client SDK, browser code → sdk-engineer.
+    PM-VALIDATED 2026-06-24: CI green (Rule I pre-existing-red only — confirmed same baseline as
+    PR #347). ACs 1–5 verified against diff. Runtime wiring confirmed (profilingOptedOut producer
+    index.ts:428, three new guard consumers at :1103/:1236/:1421). Scope clean (no §H.8 paths
+    touched). Co-assignment (backend quiz/completion route.ts:363) coherent + tested.
+    EPIC NOTE: §H.9 opt-out epic NOT closed — FOLLOW-387 (P1, chat-path producer unwired)
+    remains OPEN. This PR covers quiz/favorites/micro-poll only.
+    CI check counter: 1/5. Fix iterations: 0/3. RETRO-109 appended 2026-06-24 by pm-orchestrator.
+
+- id: FOLLOW-387
+  title:
+    Thread profiling_opt_out from the SDK chat-emit through ingest → _spawn_chat_nlp →
+    process_chat_message (close RETRO-103 HW-3 end-to-end; real-time chat axis)
+  agent: backend-engineer
+  status: DONE
+  priority: P1
+  estimated_hours: 4
+  depends_on: [FOLLOW-384]
+  source:
+    RETRO-108 (§3 HW-1 HALF_WIRE_C — FOLLOW-384 closed only the redis_writer hop; real-time producer
+    never sets the flag)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-387 stub)
+  branch: backend-engineer/FOLLOW-387-live-chat-optout-thread
+  pr: 349
+  completed_at: 2026-06-24
+  notes: |
+    SQUASH-MERGED PR #349 to main. Merge commit: b7412e1. Commit range: f7ac516..b7412e1.
+    PR #349 opened. PM-validated 2026-06-24.
+    CI: all real gates GREEN. Rule I pre-existing-red only (same ~175-violation baseline on main;
+    not caused by this PR). Non-success count on real gates: 0.
+    Cross-language event contract gate: PASS (GREEN).
+    AC-1 PASS: profiling_opt_out: z.boolean().optional() in ChatMessageSentPayloadSchema — optional,
+      backward-compatible, existing events still validate.
+    AC-2 PASS: SDK index.ts:1344 sets profiling_opt_out: profilingOptedOut || undefined on
+      chat.message.sent. TS tests in packages/sdk/src/__tests__/follow-387.test.ts confirm.
+    AC-3 PASS: _spawn_chat_nlp reads payload.get("profiling_opt_out", False) and passes it to
+      fn.spawn(profiling_opt_out=...) at events.py:85+107. NOT hardcoded False.
+    AC-4 PASS (CRITICAL — confirmed NOT a TG-1 repeat): the end-to-end integration test
+      test_opted_out_event_threads_profiling_opt_out_through_consumer_to_spawn at
+      test_chat_nlp_bridge.py:436 runs the REAL run_consumer loop, does NOT mock _spawn_chat_nlp
+      (only patches sys.modules["modal"] to capture fn.spawn args), and asserts
+      fn.spawn called with profiling_opt_out=True. This is the producer-chain test RETRO-108
+      TG-1 identified as missing. The test FAILS on origin/main (no flag in spawn args)
+      and PASSES with this PR. This is not a self-injecting modeled test.
+    AC-5 PASS: §H.9/FOLLOW-387 comments present at events.py:83/107/113 and index.ts:1336.
+      §H.8 invariant preserved — ClickHouse batch still receives the event (confirmed by
+      the integration test's ch.insert_events.assert_called_once() assertion).
+    Runtime wiring (step 5c):
+      PRODUCER (non-test): packages/sdk/src/index.ts:1344
+      CONSUMER (non-test): apps/stream-consumer/src/consumers/events.py:85+107
+      FULL CHAIN: apps/intent-engine/src/main.py:37+62 — process_chat_message receives
+        profiling_opt_out and forwards it to write_shadow_intent (FOLLOW-384 guard, PR #347).
+    Scope discipline: only 5 non-doc files changed. intent.snapshot and live.signup paths
+      NOT touched. write_shadow_intent NOT modified (done in FOLLOW-384, PR #347).
+    ESC-029 RESOLVED: CEO (Piotr Nawrocki) approved ChatMessageSentPayloadSchema extension
+      on 2026-06-24, recorded in backlog/ESCALATIONS.md.
+    EPIC NOTE: §H.9 live-chat leg CLOSED by this merge. Epic NOT fully DONE — FOLLOW-388
+      (P2, batch axis, depends_on FOLLOW-101+387) and FOLLOW-389 (P2, test-hardening
+      HW-1/DG-1) are promoted to QUEUE.md as READY below.
+    CI check counter: 1/5. Fix iterations: 0/3.
+    RETRO-110 pending (dedicated retrospective-analyst running in parallel — do NOT write
+      RETRO-110 in pm-orchestrator session; dual-pass prevention per post-merge instructions).
+
+- id: FOLLOW-389
+  title:
+    Wire the /api/quiz/completion opt-out producer + replace modeled SDK guard tests with
+    real-handler tests + fix the misleading micro-poll comment (close RETRO-109 HW-1/TG-1/DG-1)
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: [FOLLOW-385]
+  source: RETRO-109 (§3 HW-1 HALF_WIRE_C, §4c TG-1, §4d DG-1 — ADDENDUM re-pass)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-389 stub)
+  branch: sdk-engineer/FOLLOW-389-quiz-completion-optout-producer
+  notes: |
+    Promoted to QUEUE.md 2026-06-24 post-merge of PR #349 (FOLLOW-387).
+    Co-assigned: backend-engineer confirms /api/quiz/completion route gate survives auth refactors.
+    FOLLOW-385 DONE (PR #348, f7ac516) — dependency satisfied.
+    See FOLLOW_UPS.md stub for full scope (HW-1, TG-1, DG-1).
+
+- id: FOLLOW-388
+  title:
+    Surface per-session opt-out state in read_recent_chat_sessions + fix the false batch_enrich.py
+    comment (close §H.9 on the batch axis once FOLLOW-101 lands)
+  agent: data-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-101, FOLLOW-387]
+  source: RETRO-108 (§4a LG-2 latent leak, §4d DG-1, §5b)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-388 stub)
+  branch: data-engineer/FOLLOW-388-batch-optout-surface
+  notes: |
+    Promoted to QUEUE.md 2026-06-24 post-merge of PR #349 (FOLLOW-387).
+    FOLLOW-387 DONE (PR #349, b7412e1) — dependency satisfied.
+    FOLLOW-101 still OPEN — this ticket is blocked on FOLLOW-101 (real ClickHouse query).
+    Do NOT start this ticket until FOLLOW-101 merges (stub is safe to carry as READY until then).
+    See FOLLOW_UPS.md stub for full scope (batch_enrich.py comment + read_recent_chat_sessions
+    opt-out surface).
 
 - id: FOLLOW-359
   title: Return variant in GET /api/adapt response body
   agent: backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-06-25T00:00Z'
+  pm_validated_at: '2026-06-25T12:00Z'
   priority: P1
   estimated_hours: 2
   depends_on: []
   source: RETRO-095 (FOLLOW-342 / PR #327)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-359 stub)
   branch: backend-engineer/FOLLOW-359-get-variant-response
+  pr: '#350'
   notes: |
     FOLLOW-360 DONE (merged #333) — dependency cleared.
+    Delegated 2026-06-25T00:00Z. CI check counter: 1/5. Fix iterations: 0/3.
+    PM-VALIDATED 2026-06-25: CI green (Rule I pre-existing-red only). All real gates pass.
+    variant field added to GET response at route.ts:826 using getHandlerVariant (same variable
+    used for runDecisionTree:805 and logDecisionAsync:837). Single source of truth confirmed.
+    Non-test producer: route.ts:791. Non-test consumer: adapt.ts:775. ACs 1-4 + HOLDOUT verified.
+    AdaptationDirectives.variant (directives.ts:171) was already optional — no type break.
 
 - id: FOLLOW-361
   title: Reconcile bandit seed convention (default vs control/v1/v2)
@@ -5981,17 +6143,21 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
 - id: FOLLOW-341
   title: Populate archetype_embeddings.embedding (activate the cosine affinity path)
   agent: ml-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: ml-engineer
+  started_at: '2026-06-25T12:00Z'
   priority: P1
   estimated_hours: 6
   depends_on: []
   source: AUDIT-2026-06-19 F-02
   spec: backlog/FOLLOW_UPS.md (FOLLOW-341 stub)
-  branch: ml-engineer/FOLLOW-341-archetype-embeddings-populate
+  branch: ml-engineer/FOLLOW-341-archetype-embedding-job
+  pr: pending
   notes: |
-    CEO decision point: build real embedding job OR formally drop cosine claim.
-    If build: embed 18 seed archetype descriptions via text-embedding-3-small, UPSERT, idempotent,
-    CI precheck. Unblocks FOLLOW-342.
+    ESC-030 RESOLVED 2026-06-25 — CEO chose Option A (build the real embedding job).
+    Implemented: src/lib/archetype-seeder.ts (core logic), scripts/seed-archetypes.mts (thin CLI
+    wrapper), 8 unit tests (vi.mock openai + vi.stubGlobal fetch), archetype-embeddings-not-null CI
+    job in ci.yml (soft-skip without DOPPLER_TOKEN_DEV). Unblocks FOLLOW-342.
 
 - id: FOLLOW-342
   title: Thread bandit variant into playbook selection (stop optimizing placebo arms)

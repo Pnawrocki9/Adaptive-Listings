@@ -39,7 +39,7 @@ export type ArchetypeId =
   | 'neutral';
 
 /**
- * Tier 1 text slot directive — rewrites the text content of a slot element.
+ * Text slot directive — rewrites the text content of a slot element.
  *
  * Matches elements via `[data-estalara-slot="<slot>"]`.
  */
@@ -55,7 +55,7 @@ export interface TextDirective {
 }
 
 /**
- * Tier 1 class directive — adds/removes CSS classes on a matched element.
+ * Class directive — adds/removes CSS classes on a matched element.
  *
  * Matches elements via `selector` (e.g. `[data-estalara-listing-id="123"]`).
  */
@@ -125,16 +125,18 @@ export interface AdaptationDirectives {
   /** Cosine similarity to matched archetype 0–1. */
   similarity: number;
   /**
-   * Integration tier the caller declared (GET handler only — caller-supplied URL param).
-   * The POST handler does NOT return this field; use `directive_scope` instead.
-   */
-  tier?: 1 | 2 | 3;
-  /**
-   * Page-context directive scope derived from `page_type` (POST handler only).
+   * Page context derived from `page_type` (POST handler only — FOLLOW-357).
+   *
    * NOT an integration Tier — the product has no Tiers (CEO ruling 2026-06-05, §E.7).
-   * Controls how many directive slots are sent: 2 = listing_detail (full), 1 = all other pages.
+   * This is a page-type signal used for analytics and to control how many directive
+   * slots are sent per page context:
+   *   - `2` = listing_detail: full per-listing directive set (headline, cta, feature)
+   *   - `1` = listing_list / search / home: lighter directive set (cta, feature, reorder only)
+   *
+   * The value is stored in the `adaptation_decisions.page_context` ClickHouse column
+   * (renamed from `tier` in migration 0017). Absent on legacy GET responses.
    */
-  directive_scope?: 1 | 2;
+  page_context?: 1 | 2;
   /** Empty when source is 'default' or 'llm_full'. */
   directives: (TextDirective | ClassDirective | ReorderDirective)[];
   /**

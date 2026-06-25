@@ -16,7 +16,7 @@
  *   AC2 — GET response `variant` equals the value logged to ClickHouse
  *          (`param_p_variant` URL param in the INSERT).
  *   AC3 — POST path behavior is unchanged (variant present, POST-only fields
- *          like `directive_scope` are not affected).
+ *          like `page_context` are not affected).
  *   AC4 — No new fields added beyond `variant` on the GET path.
  *   HOLDOUT COMPAT — holdout_group=true GET response variant='control' (FOLLOW-360).
  *
@@ -241,7 +241,7 @@ describe('GET /api/adapt — FOLLOW-359: variant in response body', () => {
     }
 
     // POST-only fields must NOT appear on the GET path.
-    const postOnlyFields = ['directive_scope', 'demo_override', 'chat_intent_dimensions'];
+    const postOnlyFields = ['page_context', 'demo_override', 'chat_intent_dimensions'];
     for (const field of postOnlyFields) {
       expect(body, `POST-only field '${field}' must not appear on GET path`).not.toHaveProperty(
         field,

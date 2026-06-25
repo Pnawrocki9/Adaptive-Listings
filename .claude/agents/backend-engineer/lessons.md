@@ -914,3 +914,46 @@ the first describe block).
 **A guardrail I'd add:** When dispatched to "implement FOLLOW-342", verify git log first — the core
 work was already merged in a prior PR (#327). Checking `git log --all --oneline | grep FOLLOW-342`
 before reading route.ts would have surfaced this in 30 seconds instead of after reading 1279 lines.
+
+---
+
+## 2026-06-25 / FOLLOW-357 + FOLLOW-356
+
+**What I built:** Renamed all "integration tier" / `tier` vocabulary to `page_context` across shared
+types, SDK schema, adapt route, CH migration, and tests. Removed `AdaptResponse.tier: 1|2|3`
+(analytics-only per CEO ruling 2026-06-05, no SDK consumer). Added FOLLOW-356 AC behavioral tests:
+`listing_detail` → `page_context===2` + headline present; `listing_list` → `page_context===1` +
+headline absent; `logDecisionAsync` receives correct `page_context` value via URL param. CH
+migration 0018 renames `adaptation_decisions.tier` → `adaptation_decisions.page_context` (Rule W
+safe: column not in ORDER BY).
+
+**Wiring/auth/fail-loud risks I weighed:**
+
+1. **Drift gate (check-adapt-schema-drift.sh):** Both `AdaptationDirectives` and
+   `adaptResponseSchema` field sets must match exactly. After removing `tier` and renaming
+   `directive_scope` to `page_context` in both, the gate passed. Worth running immediately after any
+   schema edit — it caught a mismatch in a prior session that wasn't visible from the code alone.
+
+2. **GET handler `satisfies AdaptationDirectives` footgun:** The GET handler's early-return objects
+   used `satisfies AdaptationDirectives` — removing `tier` from the type made these strict casts
+   fail because `tier` was an extra property. Fix: remove `satisfies` from early-return paths and
+   type the main response as `AdaptationDirectives & { tier: number }` to make the extra field
+   explicit. Lesson: `satisfies` is stricter than a plain type annotation for extra properties.
+
+3. **Rule W compliance checked before migration:** Confirmed `tier` not in ORDER BY
+   `(tenant_id, session_id, ts)` from migration 0003. Only then wrote 0018 with `RENAME COLUMN`. Had
+   `tier` been an ORDER BY column, we'd need drop-and-recreate with backfill.
+
+4. **FOLLOW-358 left open:** GET handler still passes caller-supplied `tier` (1|2|3) to
+   `logDecisionAsync` as `pageContext`. Documented with comment in route.ts. Making GET accept
+   `page_type` and derive `page_context` is a breaking API change — left for FOLLOW-358 (open).
+
+5. **Test fixup for passthrough schema:** The `returns null on a type mismatch` test originally used
+   `{ ...VALID_RESPONSE, tier: 'one' }`. After removing `tier` from the schema (which uses
+   `.passthrough()`), extra fields are preserved not rejected, so the test falsely passed. Updated
+   to `confidence: 'high'` which is a real required-field type mismatch that Zod will reject.
+
+**A guardrail I'd add:** When removing a field from a Zod schema that uses `.passthrough()`, scan
+test files for tests that depend on that specific field being _invalid_ — they silently stop testing
+what they claim. A lint rule or comment convention ("this test relies on field X being in schema")
+would help.

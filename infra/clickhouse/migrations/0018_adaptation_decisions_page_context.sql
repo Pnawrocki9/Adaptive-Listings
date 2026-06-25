@@ -1,0 +1,32 @@
+-- Migration: 0018_adaptation_decisions_page_context
+-- FOLLOW-357 — Rename `tier` → `page_context` in adaptation_decisions (CEO ruling 2026-06-25).
+--
+-- Background:
+--   The `tier` column was originally intended to carry the integration-Tier value
+--   (1|2|3) supplied by the GET /api/adapt caller. With the CEO 2026-06-05 ruling that
+--   "Adaptive Listings has no Tiers" (MASTER_DESIGN §E.7), the POST handler was updated
+--   to derive a page-type signal (1|2 from `page_type`: listing_detail → 2, others → 1).
+--   FOLLOW-357 renames both the TS vocabulary and this column off the integration-Tier
+--   framing. The column now carries `page_context` semantics: a page-type analytics signal,
+--   NOT an integration tier.
+--
+-- Rule W compliance:
+--   The `tier` column is NOT in the ORDER BY key (which is (tenant_id, session_id, ts)),
+--   so RENAME COLUMN is safe and will not cause a ClickHouse error 524.
+--   The ORDER BY key is confirmed from migration 0003_create_adaptation_decisions.sql.
+--
+-- Existing data semantics:
+--   Rows written by the GET handler carry the caller-supplied tier (1|2|3).
+--   Rows written by the POST handler (after FOLLOW-345, before this rename) carry
+--   the page-type-derived scope (1|2). These are the same numeric values; the semantic
+--   labelling change is in the column name only. FOLLOW-358 (P2, open) tracks the
+--   GET/POST semantic divergence for future unification.
+--
+-- idempotency: RENAME COLUMN IF EXISTS is NOT supported in ClickHouse; this migration
+-- is applied once via migrate.sh. Re-applying after success will fail with "column
+-- does not exist" — that is expected and migrate.sh's idempotency guard (IF NOT EXISTS
+-- on ADD COLUMN) is not applicable to RENAME. Operators must confirm applied state before
+-- re-running.
+
+ALTER TABLE adaptation_decisions
+    RENAME COLUMN tier TO page_context;

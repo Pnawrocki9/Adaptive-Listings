@@ -363,7 +363,7 @@ function logDecisionAsync(
   confidence: number,
   similarity: number,
   source: string,
-  tier: number,
+  pageContext: number,
   directiveCount: number,
   /**
    * A/B holdout assignment result.
@@ -420,7 +420,7 @@ function logDecisionAsync(
     confidence,
     similarity,
     source,
-    tier,
+    page_context: pageContext,
     holdout: holdoutGroup,
     variant,
   });
@@ -429,9 +429,9 @@ function logDecisionAsync(
   // interpolation; values passed as ?param_name= URL query params (ClickHouse HTTP interface).
   const query =
     `INSERT INTO adaptation_decisions ` +
-    `(session_id, tenant_id, archetype, confidence, similarity, source, tier, directive_count, holdout_group, variant, adapt_decision_id, demo_override, model_version, features_snapshot, lead_id, ts) ` +
+    `(session_id, tenant_id, archetype, confidence, similarity, source, page_context, directive_count, holdout_group, variant, adapt_decision_id, demo_override, model_version, features_snapshot, lead_id, ts) ` +
     `VALUES ({p_session_id:String}, {p_tenant_id:String}, {p_archetype:String}, ` +
-    `{p_confidence:Float64}, {p_similarity:Float64}, {p_source:String}, {p_tier:UInt32}, {p_directive_count:UInt32}, ` +
+    `{p_confidence:Float64}, {p_similarity:Float64}, {p_source:String}, {p_page_context:UInt32}, {p_directive_count:UInt32}, ` +
     `{p_holdout_group:UInt8}, {p_variant:String}, {p_adapt_decision_id:String}, ` +
     `{p_demo_override:UInt8}, {p_model_version:String}, {p_features_snapshot:String}, {p_lead_id:String}, {p_ts:String})`;
 
@@ -442,7 +442,7 @@ function logDecisionAsync(
   url.searchParams.set('param_p_confidence', String(confidence));
   url.searchParams.set('param_p_similarity', String(similarity));
   url.searchParams.set('param_p_source', source);
-  url.searchParams.set('param_p_tier', String(tier));
+  url.searchParams.set('param_p_page_context', String(pageContext));
   url.searchParams.set('param_p_directive_count', String(directiveCount));
   url.searchParams.set('param_p_holdout_group', holdoutGroup ? '1' : '0');
   url.searchParams.set('param_p_variant', variant);
@@ -591,7 +591,11 @@ function buildReorderDirective(
  *   archetype   — required, ArchetypeId string
  *   confidence  — required, float 0–1
  *   similarity  — required, float 0–1
- *   tier        — required, 1 | 2 | 3
+ *   tier        — required, 1 | 2 | 3 (caller-supplied; echoed back in response)
+ *
+ * NOTE: the GET handler echoes the caller-supplied `tier` param directly. The POST handler
+ * uses `page_context` (derived from `page_type`). These carry different semantics —
+ * FOLLOW-358 (P2) tracks unifying both. See also: `pageContextFromPageType()`.
  *
  * @returns 200 AdaptationDirectives JSON on valid params, even when source is 'default'.
  * @returns 400 ErrorResponseBody on invalid or missing params.
@@ -732,6 +736,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const adaptDecisionId = crypto.randomUUID();
     // Pilot freeze guard fires even on the opt-out path (observability only).
     checkPilotFrozenAsync(tenantId, requestId);
+    // NOTE: GET handler echoes caller-supplied `tier` (FOLLOW-358 open: GET/POST divergence).
+    // The object satisfies AdaptationDirectives plus the extra `tier` field from the GET contract.
     return NextResponse.json(
       {
         adapt_decision_id: adaptDecisionId,
@@ -743,7 +749,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         directives: [],
         source: 'default' as const,
         generated_at: new Date().toISOString(),
-      } satisfies AdaptationDirectives,
+      },
       { status: 200 },
     );
   }
@@ -762,6 +768,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     consentState !== undefined &&
     SKIP_CONSENT_STATES.has(consentState as 'opted_out' | 'unknown' | 'none')
   ) {
+    // NOTE: GET handler echoes caller-supplied `tier` (FOLLOW-358 open: GET/POST divergence).
     return NextResponse.json(
       {
         adapt_decision_id: crypto.randomUUID(),
@@ -773,7 +780,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         directives: [],
         source: 'default' as const,
         generated_at: new Date().toISOString(),
-      } satisfies AdaptationDirectives,
+      },
       { status: 200 },
     );
   }
@@ -814,7 +821,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // logDecisionAsync ClickHouse log → and now the response body.
   // Using the same variable in all three places proves the response field,
   // the copy selection, and the ClickHouse log all reflect the same value.
-  const response: AdaptationDirectives = {
+  // NOTE (FOLLOW-358 open): GET handler echoes caller-supplied `tier` (1|2|3 URL param).
+  // `tier` is not in `AdaptationDirectives` after FOLLOW-357 rename; the extra field is
+  // intentional here and documented. POST uses `page_context` instead.
+  const response: AdaptationDirectives & { tier: number } = {
     adapt_decision_id: adaptDecisionId,
     session_id: sessionId,
     archetype: archetypeId,
@@ -830,6 +840,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Pilot freeze guard (FOLLOW-106) — non-blocking, fire-and-forget ────────
   checkPilotFrozenAsync(tenantId, requestId);
 
+  // NOTE (FOLLOW-358 open): the GET handler passes the caller-supplied `tier` URL
+  // param (1|2|3) as the `pageContext` argument to logDecisionAsync. The POST handler
+  // derives `pageContext` from `page_type` (1|2). These carry different semantics —
+  // GET = integration-Tier supplied by caller, POST = page-type-derived context.
+  // FOLLOW-358 tracks unifying both handlers; for now the divergence is acknowledged.
   logDecisionAsync(
     sessionId,
     tenantId,
@@ -850,24 +865,23 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 // ─── Page-type helpers ────────────────────────────────────────────────────────
 
 /**
- * Derive the directive scope from the page type reported by the SDK.
+ * Derive the page context value from the page type reported by the SDK (FOLLOW-357).
  *
  * This is a page-context axis — NOT an integration Tier. The product has no Tiers
- * (CEO ruling 2026-06-05, MASTER_DESIGN §E.7). The returned value controls how many
- * directive slots are sent for the page in focus:
+ * (CEO ruling 2026-06-05, MASTER_DESIGN §E.7). The returned value signals which page
+ * type this request originates from and controls how many directive slots are sent:
  *
  * - `listing_detail` → 2: full per-listing directives (headline, cta, feature)
  * - `listing_list` / `search` / `home` → 1: lighter directives (cta, feature, reorder)
  *
- * Scope 2 applies on the detail page where a single listing is in focus — per-listing
+ * Context 2 applies on the detail page where a single listing is in focus — per-listing
  * headline rewrites are appropriate there. On list/search/home pages many listings appear
  * simultaneously, so only higher-level slots (cta, feature badge, reorder) are sent.
  *
- * NOTE: the `adaptation_decisions.tier` ClickHouse column name is retained for now;
- * the column rename to `directive_scope` is deferred to FOLLOW-358 (GET/POST column
- * divergence unification).
+ * The value is stored in the `adaptation_decisions.page_context` ClickHouse column
+ * (renamed from `tier` in migration 0017, FOLLOW-357).
  */
-function directiveScopeFromPageType(
+function pageContextFromPageType(
   pageType: 'listing_list' | 'listing_detail' | 'home' | 'search',
 ): 1 | 2 {
   return pageType === 'listing_detail' ? 2 : 1;
@@ -969,7 +983,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         archetype: 'neutral' as const,
         confidence: body.confidence ?? 0.5,
         similarity: body.similarity ?? 0.5,
-        tier: 1,
+        page_context: pageContextFromPageType(body.page_type),
         directives: [],
         source: 'default' as const,
         generated_at: new Date().toISOString(),
@@ -978,10 +992,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // FOLLOW-345/357: derive directive scope from page_type — listing_detail gets scope 2
-  // (full directives); all other page types get scope 1 (lighter directive set, no
-  // per-listing headline). This is a page-context axis, NOT an integration Tier (§E.7).
-  const directiveScope = directiveScopeFromPageType(body.page_type);
+  // FOLLOW-345/357: derive page_context from page_type — listing_detail gets context 2
+  // (full directives); all other page types get context 1 (lighter directive set, no
+  // per-listing headline). This is a page-type signal, NOT an integration Tier (§E.7).
+  const pageCtx = pageContextFromPageType(body.page_type);
 
   // FOLLOW-260 (F-26): JWT tenant_id is authoritative — supersedes body.tenant_id.
   // Prevents cross-tenant escalation: a caller with a valid demo JWT for tenant A
@@ -1017,7 +1031,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       archetype: 'neutral',
       confidence: 0.5,
       similarity: body.similarity ?? 0.5,
-      directive_scope: directiveScope,
+      page_context: pageCtx,
       directives: [],
       reorderDirectives: [],
       source: 'default' as const,
@@ -1043,7 +1057,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       archetype: 'neutral',
       confidence: 0.5,
       similarity: body.similarity ?? 0.5,
-      directive_scope: directiveScope,
+      page_context: pageCtx,
       directives: [],
       reorderDirectives: [],
       source: 'default' as const,
@@ -1251,7 +1265,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     archetype: archetypeId,
     confidence,
     similarity,
-    directive_scope: directiveScope,
+    page_context: pageCtx,
     directives: allDirectives,
     source,
     variant: selectedVariant,
@@ -1264,8 +1278,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     generated_at: new Date().toISOString(),
   };
 
-  // NOTE: writing directiveScope into the existing `tier` ClickHouse column; the
-  // column rename to `directive_scope` is deferred to FOLLOW-358.
+  // FOLLOW-357: writing pageCtx into the `page_context` ClickHouse column
+  // (renamed from `tier` in migration 0017).
   logDecisionAsync(
     body.session_id,
     tenantId,
@@ -1273,7 +1287,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     confidence,
     similarity,
     source,
-    directiveScope,
+    pageCtx,
     allDirectives.length,
     false, // treatment arm — not holdout
     selectedVariant,

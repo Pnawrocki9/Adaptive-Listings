@@ -9678,13 +9678,16 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   the two new fns `tierFromPageType`/`filterDirectivesByPageType` (`route.ts:763,778`) and AC-1/AC-2
   ship with ZERO assertions.
 - **ac:**
-  - [ ] A documented decision (wired consumer OR analytics-only); SDK `AdaptResponse.tier` type
-        matches what the POST path actually emits.
-  - [ ] Test: `listing_detail` body → response `tier===2` AND a `headline` directive present.
-  - [ ] Test: `listing_list`/`search`/`home` body → `tier===1` AND `headline` absent, same
+  - [x] A documented decision (wired consumer OR analytics-only); SDK `AdaptResponse.tier` type
+        matches what the POST path actually emits. **DONE: analytics-only; `AdaptResponse.tier`
+        removed; response field renamed to `page_context` (PR backend-engineer/FOLLOW-357-356).**
+  - [x] Test: `listing_detail` body → response `page_context===2` AND a `headline` directive
+        present.
+  - [x] Test: `listing_list`/`search`/`home` body → `page_context===1` AND `headline` absent, same
         archetype.
-  - [ ] Test: `logDecisionAsync` receives the derived tier (`2` on detail).
+  - [x] Test: `logDecisionAsync` receives the derived `page_context` (`2` on detail).
 - **promoted_to_queue:** true (Sprint 20, 2026-06-20)
+- **status:** DONE (2026-06-25, PR backend-engineer/FOLLOW-357-356-tier-page-context-rename)
 
 ---
 
@@ -9705,18 +9708,18 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   page-context axis and patch §E.7. Also fix the docstring's phantom `description` slot (LG-3) and
   drop the "integration tier" framing.
 - **ac:**
-  - [ ] CEO ruling recorded: rename-off-tier OR §E.7 carve-out.
-  - [ ] Code + `tierFromPageType` docstring reflect the ruling; no "integration tier" / phantom
-        `description`-slot language remains.
-  - [ ] §E.7 (or §E.1) in MASTER_DESIGN updated so SoT and shipped meaning of "tier" agree
-        (OPERATING_PRINCIPLE 2).
+  - [x] CEO ruling recorded: rename-off-tier. Use `page_context` (2026-06-25, CEO ruling in PR
+        desc).
+  - [x] Code + `pageContextFromPageType` docstring reflect the ruling; no "integration tier" /
+        phantom `description`-slot language remains.
+  - [x] §E.7 in MASTER_DESIGN updated so SoT and shipped meaning of `page_context` agree.
 - **promoted_to_queue:** true (Sprint 20, 2026-06-20)
-- **notes:** PM — §5d escalation candidate; surface to CEO before any further tier-axis work (incl.
-  the §E.7 description-pipeline tickets).
+- **notes:** CEO ruling 2026-06-25: rename off 'tier', use `page_context`. DONE.
+- **status:** DONE (2026-06-25, PR backend-engineer/FOLLOW-357-356-tier-page-context-rename)
 
 ---
 
-## FOLLOW-358 — Resolve GET-vs-POST `adaptation_decisions.tier` semantic divergence (Rule K parity)
+## FOLLOW-358 — Resolve GET-vs-POST `adaptation_decisions.page_context` semantic divergence (Rule K parity)
 
 - **source_retro:** RETRO-092 (§4a LG-2, §8 Rule K)
 - **source_ticket:** FOLLOW-345 (PR #323)
@@ -9724,18 +9727,20 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 - **recommended_agent:** backend-engineer
 - **priority:** P2
 - **estimated_hours:** 2
-- **scope:** Two handlers now write divergent semantics to the SAME `adaptation_decisions.tier`
-  column: GET `/api/adapt` (`route.ts:632,640,741`, untouched by #323) logs the CALLER-SUPPLIED
-  integration tier (`1|2|3` query param); POST (`route.ts:1087`) logs the page-type-DERIVED `1|2`.
-  An analyst querying `tier` cannot tell which meaning a row carries (Rule K dual-surface divergence
-  on the column-semantics axis). FOLLOW-170's `features_snapshot` (`route.ts:415`) also ingests this
-  mixed value.
+- **scope:** Two handlers write divergent semantics to the SAME `adaptation_decisions.page_context`
+  column (renamed from `tier` by FOLLOW-357, migration 0018): GET `/api/adapt` logs the
+  CALLER-SUPPLIED tier param (`1|2|3` query param); POST logs the page-type-DERIVED `1|2`. An
+  analyst querying `page_context` cannot tell which meaning a row carries (Rule K dual-surface
+  divergence on the column-semantics axis). The divergence is now DOCUMENTED in the GET handler
+  docstring and logDecisionAsync call comment (`route.ts`), but NOT yet resolved.
 - **ac:**
-  - [ ] Either a discriminator (`tier_source`/`page_type`) column distinguishes GET vs POST rows, OR
-        both handlers write the same `tier` definition.
-  - [ ] A test or documented note records which producers write `adaptation_decisions.tier` and with
-        what meaning.
+  - [ ] Either a discriminator (`page_context_source: 'caller_supplied' | 'page_type_derived'`)
+        column distinguishes GET vs POST rows, OR both handlers write the same definition.
+  - [ ] A test or documented note records which producers write `adaptation_decisions.page_context`
+        and with what meaning.
 - **promoted_to_queue:** true (Sprint 20, 2026-06-20)
+- **notes:** FOLLOW-357 (this PR) renamed the column and documented the divergence. FOLLOW-358
+  remains OPEN. The divergence is acknowledged in route.ts with an explicit FOLLOW-358 comment.
 
 ---
 
@@ -10808,4 +10813,52 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 - **depends_on:** [FOLLOW-341]
 - **promoted_to_queue:** false
 
-<!-- next free FOLLOW number: 393 (390 = RETRO-111 / PR #350 / FOLLOW-359: decide GET /api/adapt surface liveness — the added `variant` response field has NO in-repo consumer since the SDK calls /api/adapt via POST only, GET is the legacy surface; either document GET dead/external-only + retire the RETRO-095 "GET reward unattributable" concern, or add a GET→feedback contract test if a live integrator exists; backend-engineer P2 2h. 391 = RETRO-112 / PR #351 / FOLLOW-363: doc the dwell-vs-view-rate switch-direction asymmetry in the classifyFromProbabilities 13-site inventory + optional FREE-CLASSIFY regression test; sdk-engineer P3 1h. 392 = RETRO-113 / PR #352 / FOLLOW-341: OPERATOR ACTION — seed PROD archetype_embeddings (post-migrate-seed.yml is dev-config-only + soft-skips; prod stays NULL → affinityScore runs djb2 fallback → §F cosine INACTIVE in prod, same trap as RETRO-076/FOLLOW-307) + assert 18 rows non-null + cross-ref FOLLOW-308 don't-duplicate; gates FOLLOW-342's "real cosine ordering" precondition in effect though it is code-unblocked; devops+ml-engineer P1 2h.) -->
+---
+
+## FOLLOW-393 — Pre-delegation gap re-verification step for audit/backlog-derived tickets (Rule P at delegation time)
+
+- **source_retro:** RETRO-114
+- **source_ticket:** FOLLOW-342
+- **recommended_sprint:** next planning
+- **recommended_agent:** pm-orchestrator
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** FOLLOW-342 was delegated this session for variant-indexing work that PR #327
+  (`66054d6`) had already shipped on 2026-06-19 — ~2h after the AUDIT-2026-06-19 F-03 finding it
+  derives from was written. The finding self-invalidated the same day; it was stale for 6 days by
+  the time the ticket was promoted + delegated, and a worker run was burned (the worker read 1279
+  lines of `route.ts` before discovering the no-op; their own lesson note:
+  `git log --all --oneline | grep FOLLOW-342` would have surfaced it in 30s). The standing **Rule
+  P** (`CONVENTIONS_PATCH.md:774`) already mandates a prior-art check at PROPOSAL time ("already
+  IMPLEMENTED → reference the code; do not rebuild"), but it was not applied at DELEGATION time for
+  an audit-promoted ticket. This stub adds a lightweight, mechanical pre-delegation gate so any
+  audit/backlog-derived ticket is re-verified against current `main` before a worker is spawned. Do
+  NOT create a new rule yet — this is the 1st occurrence of the stale-finding-delegation shape
+  (RETRO-114 §6, count 1, below the 2-occurrence threshold). If a 2nd independent occurrence
+  appears, promote as a **Rule P amendment** (extend Rule P's verification step to fire at
+  delegation time for audit/backlog-derived tickets), NOT a brand-new rule — flag that decision to
+  the human at that point. This stub is the PROCESS-step instance; it does not itself codify a rule.
+- **ac:**
+  - [ ] Add a pre-delegation checklist item to the PM-orchestrator workflow (and/or
+        `docs/AGENT_WORKFLOW.md`): for any ticket whose `source` is an AUDIT-\* finding or a backlog
+        stub older than ~3 days, run `git log --all --oneline --grep '<TICKET-ID>'` AND a
+        symbol/keyword `git log -S` against the target file(s) BEFORE writing the delegation prompt;
+        if the core change is already on `main`, mark the ticket DONE-by-<prior-PR> (or re-scope to
+        only the residual gap) instead of delegating.
+  - [ ] Capture the residual-only re-scope path: when prior work covers MOST of the ACs (as here:
+        AC-1/3 by #327, AC-4 by #333), the delegation prompt must enumerate ONLY the genuinely-open
+        AC(s) (here AC-2's explicit fallback test) and cite the attributing commit for each closed
+        AC — so the worker does not re-read/re-touch already-shipped code.
+  - [ ] Cross-reference Rule P (`CONVENTIONS_PATCH.md:774`) in the checklist item as the
+        proposal-time complement; do NOT edit CONVENTIONS_PATCH.md (threshold not met — recommend a
+        Rule P amendment to the human ONLY on a 2nd occurrence).
+  - [ ] Retroactively annotate AUDIT-2026-06-19 F-03 (and the FOLLOW-342 stub/QUEUE entry) as
+        CLOSED-by-PR-#327 (2026-06-19), NOT closed-by-the-completion-PR-#353, so the audit ledger is
+        accurate for the next planning pass.
+  - [ ] (Process note, not gated by code) Reinforce to workers: setting a terminal QUEUE.md status
+        is PM-exclusive — a worker should signal READY in the PR, not write `status:DONE` (RETRO-114
+        PROC-2; 1st occurrence, no rule).
+- **depends_on:** []
+- **promoted_to_queue:** false
+
+<!-- next free FOLLOW number: 394 (393 = RETRO-114 / PR #353 / FOLLOW-342: pre-delegation gap re-verification for audit/backlog-derived tickets — FOLLOW-342 was delegated for variant-indexing work PR #327 (66054d6) already shipped 2026-06-19 (~2h after AUDIT-2026-06-19 F-03 was written; stale 6 days at delegation); PR #353 added exactly ONE fallback test + zero route.ts change; worker burned reading 1279 lines before finding the no-op. Add a delegation-time git-log/-S gate for AUDIT-*/aged-stub tickets + residual-only re-scope path; Rule P (CONVENTIONS_PATCH:774) is the proposal-time complement, this is its delegation-time analogue — count 1 of the stale-finding-delegation shape, NO new rule, recommend a Rule P AMENDMENT to the human on a 2nd occurrence; pm-orchestrator P2 2h. Also carries PROC-2 process note: worker wrote status:DONE to PM-exclusive QUEUE.md before merge — 1st occurrence, no rule. 390 = RETRO-111 / PR #350 / FOLLOW-359: decide GET /api/adapt surface liveness — the added `variant` response field has NO in-repo consumer since the SDK calls /api/adapt via POST only, GET is the legacy surface; either document GET dead/external-only + retire the RETRO-095 "GET reward unattributable" concern, or add a GET→feedback contract test if a live integrator exists; backend-engineer P2 2h. 391 = RETRO-112 / PR #351 / FOLLOW-363: doc the dwell-vs-view-rate switch-direction asymmetry in the classifyFromProbabilities 13-site inventory + optional FREE-CLASSIFY regression test; sdk-engineer P3 1h. 392 = RETRO-113 / PR #352 / FOLLOW-341: OPERATOR ACTION — seed PROD archetype_embeddings (post-migrate-seed.yml is dev-config-only + soft-skips; prod stays NULL → affinityScore runs djb2 fallback → §F cosine INACTIVE in prod, same trap as RETRO-076/FOLLOW-307) + assert 18 rows non-null + cross-ref FOLLOW-308 don't-duplicate; gates FOLLOW-342's "real cosine ordering" precondition in effect though it is code-unblocked; devops+ml-engineer P1 2h.) -->

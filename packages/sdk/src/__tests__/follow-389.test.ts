@@ -204,7 +204,7 @@ describe('FOLLOW-389 REAL-1: postQuizCompletionPing appends profiling_opt_out=1 
     await Promise.resolve();
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url] = mockFetch.mock.lastCall as [string, RequestInit];
+    const [url] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
     expect(url).toContain('profiling_opt_out=1');
     expect(url).toContain('/quiz/completion');
   });
@@ -220,7 +220,7 @@ describe('FOLLOW-389 REAL-1: postQuizCompletionPing appends profiling_opt_out=1 
     await Promise.resolve();
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url] = mockFetch.mock.lastCall as [string, RequestInit];
+    const [url] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
     expect(url).not.toContain('profiling_opt_out');
     expect(url).toContain('/quiz/completion');
   });
@@ -236,7 +236,7 @@ describe('FOLLOW-389 REAL-1: postQuizCompletionPing appends profiling_opt_out=1 
     await Promise.resolve();
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url] = mockFetch.mock.lastCall as [string, RequestInit];
+    const [url] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
     expect(url).not.toContain('profiling_opt_out');
     expect(url).toContain('/quiz/completion');
   });

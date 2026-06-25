@@ -809,6 +809,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // body and logged to ClickHouse for cross-correlation.
   const adaptDecisionId = crypto.randomUUID();
 
+  // FOLLOW-359: `getHandlerVariant` is the single variable threaded through
+  // bandit sampling (or holdout override) → runDecisionTree copy selection →
+  // logDecisionAsync ClickHouse log → and now the response body.
+  // Using the same variable in all three places proves the response field,
+  // the copy selection, and the ClickHouse log all reflect the same value.
   const response: AdaptationDirectives = {
     adapt_decision_id: adaptDecisionId,
     session_id: sessionId,
@@ -818,6 +823,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     tier,
     directives,
     source,
+    variant: getHandlerVariant,
     generated_at: new Date().toISOString(),
   };
 

@@ -187,8 +187,10 @@ function deriveQuizCompletionUrl(config: SdkConfig): string | null {
  * param `profiling_opt_out=1` is appended so the server gate at
  * `apps/control-plane/src/app/api/quiz/completion/route.ts:363` can skip
  * persistence even if the primary Guard 1 (`showQuizTrigger` early return at
- * `index.ts:1103`) is somehow bypassed. The primary enforcement is Guard 1; this is
- * reachable defense-in-depth, NOT the sole protection.
+ * `index.ts:1103`) is somehow bypassed. This branch is reachable ONLY as
+ * defense-in-depth if Guard 1 regresses — NOT under normal production traffic
+ * (Guard 1 returns before `renderQuizTrigger`, so `postQuizCompletionPing` is
+ * never called for opted-out sessions under normal conditions).
  *
  * @param config           - SDK configuration (needs apiKey + decisionApiUrl).
  * @param sessionId        - Current session identifier.

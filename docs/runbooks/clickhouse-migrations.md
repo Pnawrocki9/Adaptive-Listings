@@ -109,23 +109,38 @@ mechanism.
 
 ---
 
-## CI contract test (FOLLOW-394 / FOLLOW-402)
+## CI contract test (FOLLOW-394 / FOLLOW-402 / FOLLOW-415)
 
 The `clickhouse-smoke` CI job now runs `infra/clickhouse/scripts/migration-contract-test.sh`
-**before** the full `migrate.sh + smoke-test.sh` sequence on every PR. The test is self-maintaining
-(FOLLOW-402): it extracts the INSERT column list from `logDecisionAsync` in `route.ts` at runtime
-and determines the migration boundary automatically by sorting all `*.sql` files lexicographically.
-No manual update to the script is needed when a new column is added.
+**before** the full `migrate.sh + smoke-test.sh` sequence on every PR. The test is self-maintaining:
+it extracts the INSERT column list from `logDecisionAsync` in `route.ts` at runtime and determines
+the migration boundary automatically. No manual update to the script is needed when a new column is
+added.
 
 Test steps (fully automated):
 
 1. Extracts the INSERT column list from `logDecisionAsync` in `route.ts` at runtime.
-2. Sorts all `infra/clickhouse/migrations/*.sql` lexicographically; the last file is the boundary.
-3. Applies all migrations except the last.
-4. Attempts an INSERT into `adaptation_decisions` using the extracted column list.
-5. Asserts the INSERT is **rejected** (HTTP non-200) — the boundary column is absent.
-6. Applies the last migration.
-7. Repeats the INSERT and asserts it **succeeds** (HTTP 200).
+2. Asserts the extracted column count is at least 17 (floor sanity check — fires loudly if the
+   single-line extraction is truncated or the INSERT format changes to span multiple lines).
+3. Walks all `infra/clickhouse/migrations/*.sql` in **reverse lexicographic order**; the first file
+   that contains `ADD COLUMN` for any column in the INSERT list is the boundary migration.
+4. If no boundary migration is found (e.g. all recent migrations are non-column changes such as
+   index additions), the ordering assertion is **skipped** with exit 0 — no false failures.
+5. Applies all migrations **except** the boundary (including any newer non-column migrations).
+6. Attempts an INSERT into `adaptation_decisions` using the extracted column list.
+7. Asserts the INSERT is **rejected** (HTTP non-200) — the boundary column is absent.
+8. Applies the boundary migration.
+9. Repeats the INSERT and asserts it **succeeds** (HTTP 200).
+
+**Boundary detection guarantee (FOLLOW-415 / RETRO-129 LG-1):** the boundary is the newest migration
+that actually adds an `adaptation_decisions` INSERT column, not blindly the lexically-last file.
+Adding a non-column migration (e.g. an `intent_events` index) after the newest
+`adaptation_decisions` column migration will not cause a false failure.
+
+**Column-list extraction guarantee (FOLLOW-415 / RETRO-129 LG-2):** the extraction assumes the
+INSERT column list is on a single line in `logDecisionAsync`. If it spans multiple lines, the
+column-count floor assertion (step 2, floor = 17) fires immediately with a clear error message
+instead of silently passing with a partial list.
 
 **Self-maintaining guarantee:** if a future PR adds a new column to `logDecisionAsync`'s INSERT
 without a corresponding `*.sql` migration file, the extracted column list includes the new column,
@@ -142,7 +157,8 @@ same class of silent data-loss incident as ESC-031.
       **before** merging the code change.
 - [ ] Verify the column is present in production (DESCRIBE TABLE, see above).
 - [ ] Verify `migration-contract-test.sh` passes in CI — it derives the column list from
-      `logDecisionAsync` automatically (FOLLOW-402), so no manual update is needed.
+      `logDecisionAsync` automatically (FOLLOW-402/415) and finds the boundary migration via smart
+      reverse-walk (not the lexically-last file), so no manual update is needed.
 - [ ] Merge the code change.
 
 The order is: **migrate → verify → merge code**. Reversing steps 1 and 3 reproduces ESC-031.

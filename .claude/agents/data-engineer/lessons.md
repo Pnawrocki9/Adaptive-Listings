@@ -153,6 +153,34 @@ validation could catch this at PR time.
 
 ---
 
+## 2026-06-26 / FOLLOW-394
+
+**What I built:** CI contract test (`infra/clickhouse/scripts/migration-contract-test.sh`) that
+catches migration-before-code ordering failures for ClickHouse. Added as a step in the
+`clickhouse-smoke` CI job, runs before `migrate.sh + smoke-test.sh` on a clean container. Also added
+`docs/runbooks/clickhouse-migrations.md` documenting the invariant, the ESC-031 incident, the manual
+curl apply pattern, and the checklist for future column additions.
+
+**Vocabulary/seed/retention risks I weighed:**
+
+- No new table/column: the script is a pure test harness, no DDL side-effects beyond transient test
+  data. No seed or writer obligation.
+- The AC-supplied INSERT included columns (`listing_id`, `directives`, `created_at`) that do not
+  exist in the `adaptation_decisions` schema. Substituted correct real column names so the
+  post-migration assertion can succeed. Documented the deviation with a comment in the script.
+- The contract test applies 0001-0018, then 0019, leaving all migrations applied. The subsequent
+  full `migrate.sh` run is a no-op (all `IF NOT EXISTS` guards). No ordering conflict.
+- Cross-referenced FOLLOW-308 (standing prod-apply gate) in the runbook instead of duplicating the
+  mechanism — consistent with the ticket's "do NOT build a parallel mechanism" constraint.
+
+**A guardrail I'd add:** Extend the contract test to cover EVERY fire-and-forget ClickHouse writer
+in `apps/` (not just `logDecisionAsync`) — any `.catch()` that swallows a CH error is a
+silent-data-loss risk for the same migration-ordering pattern. A grep-based CI step that detects new
+`.catch(() => ...)` wrappers around ClickHouse `fetch()` calls and requires a corresponding contract
+test case would close that gap generically.
+
+---
+
 ## 2026-06-23 / FOLLOW-371
 
 **What I built:** One-shot remediation of ESC-026 holdout contamination. Between PR #327 (2026-06-19

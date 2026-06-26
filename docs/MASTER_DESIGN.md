@@ -2401,6 +2401,15 @@ Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adapto
 
 **Fundamentalna zasada:** AI-adapted copy NIGDY nie wypiera agentowego oryginału na pierwszej wizycie buyera. Dopiero gdy Sonnet skończy generację (w tle, dla konkretnej kombinacji listing × archetype × locale), kolejny buyer w tej samej kombinacji dostaje wersję zoptymalizowaną. Dodatkowo: Sonnet NIGDY nie zmyśla faktów (liczb, nazw, ratings) których nie ma w `original_description` ani `listing_context`.
 
+> **FOLLOW-354 — Confidence gating ladder:** `/adapt/description` has **no server-side confidence parameter** — the SDK `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` is its **sole** gate. Contrast with the directive axis: `/api/adapt` gates server-side at `CONFIDENCE_THRESHOLD = 0.6` (returns `[]` below it) so the directive axis is gated twice (SDK floor 0.5 + server 0.6) while the description axis is gated once (SDK floor 0.5 only).
+>
+> Gating ladder summary:
+> - `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` (SDK, `packages/sdk/src/core/adapt-floor.ts`) — gate for BOTH directive mutations AND `/adapt/description` fetch.
+> - `CONFIDENCE_THRESHOLD = 0.6` (server, `apps/control-plane/src/app/api/adapt/route.ts`) — gate for `/api/adapt` directive responses only.
+> - `SIDEBAR_SHOW_THRESHOLD = 0.6` (SDK, `packages/sdk/src/index.ts`) — gate for sidebar visibility.
+>
+> Practical implication: at confidence 0.5–0.59 the server returns `[]` directives but the SDK **will still fetch** `/adapt/description` and apply an AI-adapted description if `source === "ai_cached"`. This is intentional — early behavioral signals can produce confident description personalisation before the archetype clears the tighter directive gate.
+
 #### E.7.1. Endpoint contract
 
 `tier` parameter removed — single-tier endpoint.
@@ -2563,7 +2572,7 @@ Aby zniwelować "buyer 1 zawsze widzi oryginał" przy listingu który jest hit d
 
 - **E.6 (Placeholder Resolution Order):** v1.7.1 nie używa E.6 dla long-form copy. Templates nie zawierają placeholderów. Placeholdery pozostają w użyciu dla short slotów (tagline, headline, CTA) per E.2.
 - **B.4 (TenantConfig):** `data_extractors.description` jest źródłem CSS selector dla SDK do ekstrakcji `original_description` z DOM.
-- **D.5 (Detection Quality):** archetype confidence > 0.6 jest warunkiem wywołania endpointu (per E.1 decision tree).
+- **D.5 (Detection Quality):** `/adapt/description` is gated by the SDK `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` (sole gate — server has no confidence parameter for this endpoint). The `/api/adapt` directive endpoint has an additional server-side gate at `CONFIDENCE_THRESHOLD = 0.6`. See the FOLLOW-354 gating ladder note above (before E.7.1).
 - **K.3 (Internal Ops):** `description_generations` tabela ClickHouse dostępna w Internal Ops dla auditu halucynacji per tenant.
 - **V.4 (Threat Modeling):** halucynacja w copy = misrepresentation risk (V.4.3 reputational threats). Whitelist rules są mitigation control.
 

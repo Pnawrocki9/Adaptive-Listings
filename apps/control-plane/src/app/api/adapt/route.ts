@@ -789,7 +789,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         directives: [],
         source: 'default' as const,
         generated_at: new Date().toISOString(),
-      },
+      } satisfies AdaptationDirectives & { tier: number },
       { status: 200 },
     );
   }
@@ -820,7 +820,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         directives: [],
         source: 'default' as const,
         generated_at: new Date().toISOString(),
-      },
+      } satisfies AdaptationDirectives & { tier: number },
       { status: 200 },
     );
   }
@@ -876,7 +876,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // intentional here (GET contract). POST uses `page_context` instead.
   // FOLLOW-358 CLOSED: page_context_source discriminator ('caller_supplied') is logged
   // to ClickHouse so analysts can distinguish GET rows from POST rows.
-  const response: AdaptationDirectives & { tier: number } = {
+  const response = {
     adapt_decision_id: adaptDecisionId,
     session_id: sessionId,
     archetype: archetypeId,
@@ -887,7 +887,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     source,
     variant: getHandlerVariant,
     generated_at: new Date().toISOString(),
-  };
+  } satisfies AdaptationDirectives & { tier: number };
 
   // ── Pilot freeze guard (FOLLOW-106) — non-blocking, fire-and-forget ────────
   checkPilotFrozenAsync(tenantId, requestId);
@@ -935,7 +935,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  * simultaneously, so only higher-level slots (cta, feature badge, reorder) are sent.
  *
  * The value is stored in the `adaptation_decisions.page_context` ClickHouse column
- * (renamed from `tier` in migration 0017, FOLLOW-357).
+ * (renamed from `tier` in migration 0018, FOLLOW-357).
  */
 function pageContextFromPageType(
   pageType: 'listing_list' | 'listing_detail' | 'home' | 'search',
@@ -1346,7 +1346,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   };
 
   // FOLLOW-357: writing pageCtx into the `page_context` ClickHouse column
-  // (renamed from `tier` in migration 0017).
+  // (renamed from `tier` in migration 0018).
   // FOLLOW-358 (Rule K.1): page_context_source='page_type_derived' discriminates POST
   // rows (server-derived via pageContextFromPageType) from GET rows ('caller_supplied').
   logDecisionAsync(

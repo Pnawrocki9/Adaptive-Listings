@@ -1,0 +1,34 @@
+-- Migration: 0019_adaptation_decisions_page_context_source
+-- FOLLOW-358 — Add page_context_source discriminator to adaptation_decisions (Rule K.1 parity).
+--
+-- Background:
+--   Two handlers write to adaptation_decisions.page_context with DIFFERENT semantics
+--   (RETRO-092 / FOLLOW-358, Rule K.1 violation):
+--     - GET /api/adapt: logs the CALLER-SUPPLIED `tier` URL param (raw 1|2|3).
+--       The caller (originally the decision-api Worker, now tests/integrations) chooses
+--       the numeric value. Values 1|2|3 correspond to the old integration-Tier concept
+--       that the CEO removed in the 2026-06-05 ruling (MASTER_DESIGN §E.7).
+--     - POST /api/adapt: logs a PAGE-TYPE-DERIVED value computed by
+--       pageContextFromPageType() (values: 1 for listing_list/search/home, 2 for
+--       listing_detail). This is an internal server-side derivation, not a caller input.
+--
+--   An analyst querying page_context cannot tell which meaning a row carries without
+--   a discriminator. Both handlers write numeric values 1 or 2, but the semantics differ:
+--   GET's `1` = "caller said tier=1", POST's `1` = "server derived: non-detail page".
+--
+-- Resolution: discriminator column makes provenance explicit and observable.
+--
+-- Column values (LowCardinality for efficient GROUP BY / WHERE filtering):
+--   'caller_supplied'   — row written by GET /api/adapt; caller chose the numeric value.
+--   'page_type_derived' — row written by POST /api/adapt; server derived from page_type.
+--   'legacy'            — rows written BEFORE this migration (source indeterminate at
+--                         insert time); existing rows get this value via DEFAULT.
+--
+-- Rule W compliance:
+--   page_context_source is NOT in the table's ORDER BY key (which is
+--   (tenant_id, session_id, ts) per migration 0003_create_adaptation_decisions.sql),
+--   so ADD COLUMN is safe and will not cause a ClickHouse error 524.
+--   ADD COLUMN IF NOT EXISTS is idempotent on re-run (unlike RENAME COLUMN).
+
+ALTER TABLE adaptation_decisions
+    ADD COLUMN IF NOT EXISTS page_context_source LowCardinality(String) DEFAULT 'legacy';

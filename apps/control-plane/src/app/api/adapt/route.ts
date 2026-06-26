@@ -835,9 +835,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── FOLLOW-007 / FOLLOW-342: Thompson sampling variant selection ─────────
   // Sample variant BEFORE decision tree so copy selection uses the result.
   // Holdout sessions bypass sampling and receive 'control' directly.
-  const getHandlerVariant: string = holdoutGroup
-    ? 'control'
-    : (thompsonSample(await getBanditArms(tenantId, archetypeId)) ?? 'control');
+  //
+  // FOLLOW-362: suppress bandit sampling for non-`en` locales.
+  // No playbook populates `variants.pl` or `variants.es` arrays — every non-`en`
+  // slot carries a single locale string (identical for all bandit arms, equivalent
+  // to control). If thompsonSample returns v1/v2 for a `pl` or `es` session,
+  // `runDecisionTree` still serves the single `s.pl`/`s.es` string while ClickHouse
+  // records v1/v2 — a variant/copy mismatch that corrupts A/B analytics. Suppress
+  // sampling for non-`en` locales until `variants.pl/es` arrays are added to the
+  // playbooks.
+  const getHandlerVariant: string =
+    holdoutGroup || locale !== 'en'
+      ? 'control'
+      : (thompsonSample(await getBanditArms(tenantId, archetypeId)) ?? 'control');
 
   // ── Decision tree ─────────────────────────────────────────────────────────
   const { directives, source } = await runDecisionTree(
@@ -1184,8 +1194,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // running the decision tree so the selected variant can reach copy selection.
   // Auto-seeds 3 arms (control, v1, v2) with Beta(1, 1) on first request.
   // When all arms are paused (or DB unavailable), defaults to 'control'.
-  const banditArms = await getBanditArms(tenantId, archetypeId);
-  const selectedVariant = thompsonSample(banditArms) ?? 'control';
+  //
+  // FOLLOW-362: suppress bandit sampling for non-`en` locales.
+  // No playbook populates `variants.pl` or `variants.es` arrays — every non-`en`
+  // slot carries a single locale string (identical for all bandit arms, equivalent
+  // to control). If thompsonSample returns v1/v2 for a `pl` or `es` session,
+  // `runDecisionTree` still serves the single `s.pl`/`s.es` string while ClickHouse
+  // records v1/v2 — a variant/copy mismatch that corrupts A/B analytics. Suppress
+  // sampling for non-`en` locales until `variants.pl/es` arrays are added to the
+  // playbooks.
+  const postLocale: 'en' | 'pl' | 'es' = body.locale ?? 'en';
+  const banditArms = postLocale === 'en' ? await getBanditArms(tenantId, archetypeId) : [];
+  const selectedVariant =
+    postLocale === 'en' ? (thompsonSample(banditArms) ?? 'control') : 'control';
 
   const { directives: textDirectives, source } = await runDecisionTree(
     archetypeId,
@@ -1193,7 +1214,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     similarity,
     body.session_id,
     tenantId,
-    body.locale ?? 'en',
+    postLocale,
     listingContext,
     demoActive ? demoForceModel : undefined,
     selectedVariant,

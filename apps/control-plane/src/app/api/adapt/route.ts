@@ -252,8 +252,9 @@ const AdaptPostBodySchema = z.object({
  * @param locale         - Content locale; slot copy falls back to 'en' when locale override absent.
  * @param listingContext - Agency FAQ answers from RAG retrieval (may be empty).
  * @param forceModel     - Optional Anthropic model ID to force (DEMO MODE, DEMO-001).
- * @param variant        - Bandit variant ('control'|'v1'|'v2'). Defaults to 'control' for
- *                         backwards compat. Selects from `SlotDirective.variants.en` when present.
+ * @param variant        - Bandit variant (one of SEED_VARIANTS in bandit-query.ts). Defaults to
+ *                         'control' for backwards compat. Selects from
+ *                         `SlotDirective.variants.en` when present.
  *                         HOLDOUT RULE (FOLLOW-360 / RETRO-095): callers MUST pass 'control' when
  *                         the session is in the holdout group. Bandit sampling must be bypassed
  *                         entirely for holdout sessions so the counterfactual baseline stays
@@ -283,10 +284,26 @@ async function runDecisionTree(
 
   const playbook = getPlaybook(archetypeId);
 
-  // FOLLOW-342 / FOLLOW-397: resolve the variant index once per call.
+  // FOLLOW-342 / FOLLOW-397 / FOLLOW-405: resolve the variant index once per call.
   // VARIANT_INDEX is derived from SEED_VARIANTS (Rule K.1). Unknown variant names
-  // (e.g. a stray 'v3' not yet in SEED_VARIANTS) yield undefined; copy selection
-  // falls through to s.en rather than silently serving control (no ?? 0 coerce).
+  // (e.g. a stray 'v3' not yet in SEED_VARIANTS) yield undefined.
+  //
+  // STRAY-ARM CONTRACT (FOLLOW-405 AC-3):
+  //   served copy  → s.en (base English copy)
+  //     The value chain is:
+  //       locale-override ?? (variantIndex !== undefined ? s.variants?.en[idx] : undefined) ?? s.en
+  //     When variantIndex is undefined the middle branch short-circuits to undefined,
+  //     so the final ?? s.en fallback fires. No variant copy is served.
+  //   logged value → the RAW sampled arm string (e.g. 'v3') is written to
+  //     param_p_variant / adaptation_decisions.variant via logDecisionAsync. The
+  //     logged string is intentionally NOT resolved to 'control' so analytics can
+  //     distinguish "arm exists and was selected" from "arm was sampled but
+  //     unrecognised" — useful for detecting a misconfigured bandit table that
+  //     seeds arms not present in SEED_VARIANTS.
+  //
+  // The FOLLOW-405 parity test (variant-index.parity.test.ts) ensures this stray-arm
+  // path is never exercised in steady-state: it reds CI if SEED_VARIANTS gains an arm
+  // without a matching variants.en entry in every non-neutral playbook.
   const variantIndex: number | undefined = VARIANT_INDEX[variant];
 
   // Convert playbook slots → TextDirectives; prefer locale override, fall back to English [F-09].

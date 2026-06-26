@@ -90,7 +90,7 @@ vi.mock('@estalara/shared', async () => {
   };
 });
 
-import { POST } from './route';
+import { GET, POST } from './route';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -116,6 +116,27 @@ function makePostRequest(body: Record<string, unknown>): NextRequest {
     body: JSON.stringify(body),
   });
 }
+
+function makeGetRequest(params: Record<string, string>): NextRequest {
+  const url = new URL('http://localhost/api/adapt');
+  for (const [k, v] of Object.entries(params)) {
+    url.searchParams.set(k, v);
+  }
+  return new NextRequest(url, {
+    headers: {
+      Authorization: 'Bearer test-token',
+      'x-tenant-id': TENANT_ID,
+    },
+  });
+}
+
+const BASE_GET_PARAMS = {
+  session_id: 'sess-ch-get-001',
+  archetype: 'yield_hunter',
+  confidence: '0.75',
+  similarity: '0.90',
+  tier: '1',
+};
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -222,5 +243,81 @@ describe('logDecisionAsync — FOLLOW-261 parameterized ClickHouse INSERT', () =
     const parsedUrl = new URL(fetchUrl);
 
     expect(parsedUrl.searchParams.get('param_p_page_context')).toBe('1');
+  });
+});
+
+// ─── FOLLOW-358: page_context_source discriminator (Rule K.1) ─────────────────
+//
+// AC-2: asserts that GET and POST write DIFFERENT page_context_source values to
+// ClickHouse, making the semantic divergence observable to analysts.
+
+describe('logDecisionAsync — FOLLOW-358 page_context_source discriminator (Rule K.1)', () => {
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', mockFetch);
+    vi.stubEnv('CLICKHOUSE_URL', CLICKHOUSE_URL);
+    vi.stubEnv('ADAPT_API_KEY', '');
+    vi.stubEnv('DEMO_MODE_JWT_SECRET', 'test-secret-32-chars-long-enough!!');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('FOLLOW-358 AC-2: GET handler writes page_context_source=caller_supplied to ClickHouse', async () => {
+    await GET(makeGetRequest(BASE_GET_PARAMS));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockFetch).toHaveBeenCalled();
+    const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+    const parsedUrl = new URL(fetchUrl);
+
+    // GET path: caller supplies the tier value; source must be 'caller_supplied'.
+    expect(parsedUrl.searchParams.get('param_p_page_context_source')).toBe('caller_supplied');
+    // Sanity: page_context is the raw tier param passed by the caller.
+    expect(parsedUrl.searchParams.get('param_p_page_context')).toBe('1');
+  });
+
+  it('FOLLOW-358 AC-2: POST handler writes page_context_source=page_type_derived to ClickHouse', async () => {
+    await POST(makePostRequest({ ...BASE_BODY, page_type: 'listing_detail' as const }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockFetch).toHaveBeenCalled();
+    const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+    const parsedUrl = new URL(fetchUrl);
+
+    // POST path: server derives the value from page_type; source must be 'page_type_derived'.
+    expect(parsedUrl.searchParams.get('param_p_page_context_source')).toBe('page_type_derived');
+    // Sanity: listing_detail → page_context=2 (pageContextFromPageType).
+    expect(parsedUrl.searchParams.get('param_p_page_context')).toBe('2');
+  });
+
+  it('FOLLOW-358 AC-2: POST listing_list → page_context_source=page_type_derived, page_context=1', async () => {
+    await POST(makePostRequest({ ...BASE_BODY, page_type: 'listing_list' as const }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockFetch).toHaveBeenCalled();
+    const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+    const parsedUrl = new URL(fetchUrl);
+
+    expect(parsedUrl.searchParams.get('param_p_page_context_source')).toBe('page_type_derived');
+    expect(parsedUrl.searchParams.get('param_p_page_context')).toBe('1');
+  });
+
+  it('FOLLOW-358 AC-2: page_context_source placeholder is in the INSERT query body', async () => {
+    await POST(makePostRequest(BASE_BODY));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockFetch).toHaveBeenCalled();
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = options.body as string;
+
+    // The column name must appear in the INSERT field list AND the placeholder in VALUES.
+    expect(body).toContain('page_context_source');
+    expect(body).toContain('{p_page_context_source:String}');
   });
 });

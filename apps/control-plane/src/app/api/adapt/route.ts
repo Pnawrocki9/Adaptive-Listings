@@ -356,6 +356,27 @@ async function runDecisionTree(
 
 // ─── ClickHouse logging (fire-and-forget) ─────────────────────────────────────
 
+/**
+ * Log an adaptation decision to ClickHouse adaptation_decisions table (fire-and-forget).
+ *
+ * CALLERS AND page_context_source VALUES (FOLLOW-358 / Rule K.1):
+ *   1. GET /api/adapt handler (line ~848):
+ *      pageContext   = caller-supplied `tier` URL param (1|2|3 as integer).
+ *      pageContextSource = 'caller_supplied' — the caller chose the numeric value.
+ *      This reflects the old integration-Tier framing (CEO-removed 2026-06-05).
+ *
+ *   2. POST /api/adapt handler (line ~1283):
+ *      pageContext   = pageContextFromPageType(body.page_type) → 1 or 2 (internal derivation).
+ *      pageContextSource = 'page_type_derived' — server derived from the page_type field.
+ *      This is the canonical page-context signal per MASTER_DESIGN §E.7 / FOLLOW-357.
+ *
+ * The page_context_source column (migration 0019) makes the provenance of each
+ * page_context value observable to analysts, closing the Rule K.1 divergence.
+ * Rows written before migration 0019 carry the DEFAULT value 'legacy'.
+ *
+ * NOTE: logDecisionAsync is NOT called on profiling_opt_out or consent-skip paths —
+ * those early-return gates suppress ClickHouse logging entirely (FOLLOW-372/369).
+ */
 function logDecisionAsync(
   sessionId: string,
   tenantId: string,
@@ -402,6 +423,19 @@ function logDecisionAsync(
    * (follow-up); the column exists from day one so the field is never lost.
    */
   leadId = '',
+  /**
+   * FOLLOW-358 / Rule K.1 — provenance discriminator for the page_context column.
+   *
+   * Two handlers write page_context with different derivation semantics; this field
+   * makes the origin of each row's page_context value observable to analysts:
+   *
+   *   'caller_supplied'   — GET /api/adapt: caller-supplied `tier` URL param.
+   *   'page_type_derived' — POST /api/adapt: derived from page_type via pageContextFromPageType().
+   *   'legacy'            — rows written before migration 0019 (source indeterminate).
+   *
+   * See migration 0019_adaptation_decisions_page_context_source.sql.
+   */
+  pageContextSource: 'caller_supplied' | 'page_type_derived' | 'legacy' = 'legacy',
 ): void {
   // Fire-and-forget — never awaited, never blocks the response.
   // No-op when CLICKHOUSE_URL is not configured.
@@ -415,23 +449,26 @@ function logDecisionAsync(
   // Conversion Label Loop (FOLLOW-170, §T): PII-free snapshot of the scorer inputs/outputs
   // the server saw at decision time, so a stored label can later be replayed against a future
   // model. Only non-PII signals — no session/lead identifiers go in the snapshot.
+  // FOLLOW-358: include page_context_source so replayed labels know which derivation was used.
   const featuresSnapshot = JSON.stringify({
     archetype,
     confidence,
     similarity,
     source,
     page_context: pageContext,
+    page_context_source: pageContextSource,
     holdout: holdoutGroup,
     variant,
   });
 
   // FOLLOW-261 (F-30): parameterized INSERT — {name:Type} placeholders eliminate string
   // interpolation; values passed as ?param_name= URL query params (ClickHouse HTTP interface).
+  // FOLLOW-358: page_context_source column added (migration 0019); discriminates GET vs POST.
   const query =
     `INSERT INTO adaptation_decisions ` +
-    `(session_id, tenant_id, archetype, confidence, similarity, source, page_context, directive_count, holdout_group, variant, adapt_decision_id, demo_override, model_version, features_snapshot, lead_id, ts) ` +
+    `(session_id, tenant_id, archetype, confidence, similarity, source, page_context, page_context_source, directive_count, holdout_group, variant, adapt_decision_id, demo_override, model_version, features_snapshot, lead_id, ts) ` +
     `VALUES ({p_session_id:String}, {p_tenant_id:String}, {p_archetype:String}, ` +
-    `{p_confidence:Float64}, {p_similarity:Float64}, {p_source:String}, {p_page_context:UInt32}, {p_directive_count:UInt32}, ` +
+    `{p_confidence:Float64}, {p_similarity:Float64}, {p_source:String}, {p_page_context:UInt32}, {p_page_context_source:String}, {p_directive_count:UInt32}, ` +
     `{p_holdout_group:UInt8}, {p_variant:String}, {p_adapt_decision_id:String}, ` +
     `{p_demo_override:UInt8}, {p_model_version:String}, {p_features_snapshot:String}, {p_lead_id:String}, {p_ts:String})`;
 
@@ -443,6 +480,7 @@ function logDecisionAsync(
   url.searchParams.set('param_p_similarity', String(similarity));
   url.searchParams.set('param_p_source', source);
   url.searchParams.set('param_p_page_context', String(pageContext));
+  url.searchParams.set('param_p_page_context_source', pageContextSource);
   url.searchParams.set('param_p_directive_count', String(directiveCount));
   url.searchParams.set('param_p_holdout_group', holdoutGroup ? '1' : '0');
   url.searchParams.set('param_p_variant', variant);
@@ -593,9 +631,11 @@ function buildReorderDirective(
  *   similarity  — required, float 0–1
  *   tier        — required, 1 | 2 | 3 (caller-supplied; echoed back in response)
  *
- * NOTE: the GET handler echoes the caller-supplied `tier` param directly. The POST handler
- * uses `page_context` (derived from `page_type`). These carry different semantics —
- * FOLLOW-358 (P2) tracks unifying both. See also: `pageContextFromPageType()`.
+ * NOTE: the GET handler echoes the caller-supplied `tier` param (1|2|3) in the response
+ * and logs it as `page_context` to ClickHouse with source `'caller_supplied'`. The POST
+ * handler derives `page_context` from `page_type` via `pageContextFromPageType()` and logs
+ * source `'page_type_derived'`. The `page_context_source` column (migration 0019, FOLLOW-358)
+ * makes the two derivations distinguishable to analysts. Rule K.1 CLOSED.
  *
  * @returns 200 AdaptationDirectives JSON on valid params, even when source is 'default'.
  * @returns 400 ErrorResponseBody on invalid or missing params.
@@ -736,8 +776,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const adaptDecisionId = crypto.randomUUID();
     // Pilot freeze guard fires even on the opt-out path (observability only).
     checkPilotFrozenAsync(tenantId, requestId);
-    // NOTE: GET handler echoes caller-supplied `tier` (FOLLOW-358 open: GET/POST divergence).
-    // The object satisfies AdaptationDirectives plus the extra `tier` field from the GET contract.
+    // GET handler echoes caller-supplied `tier` in the response (GET contract).
+    // logDecisionAsync is suppressed on opt-out paths — no ClickHouse row is written.
     return NextResponse.json(
       {
         adapt_decision_id: adaptDecisionId,
@@ -768,7 +808,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     consentState !== undefined &&
     SKIP_CONSENT_STATES.has(consentState as 'opted_out' | 'unknown' | 'none')
   ) {
-    // NOTE: GET handler echoes caller-supplied `tier` (FOLLOW-358 open: GET/POST divergence).
+    // GET handler echoes caller-supplied `tier` in the response (consent-skip: no ClickHouse row).
     return NextResponse.json(
       {
         adapt_decision_id: crypto.randomUUID(),
@@ -821,9 +861,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // logDecisionAsync ClickHouse log → and now the response body.
   // Using the same variable in all three places proves the response field,
   // the copy selection, and the ClickHouse log all reflect the same value.
-  // NOTE (FOLLOW-358 open): GET handler echoes caller-supplied `tier` (1|2|3 URL param).
+  // GET handler echoes caller-supplied `tier` (1|2|3 URL param) in the response body.
   // `tier` is not in `AdaptationDirectives` after FOLLOW-357 rename; the extra field is
-  // intentional here and documented. POST uses `page_context` instead.
+  // intentional here (GET contract). POST uses `page_context` instead.
+  // FOLLOW-358 CLOSED: page_context_source discriminator ('caller_supplied') is logged
+  // to ClickHouse so analysts can distinguish GET rows from POST rows.
   const response: AdaptationDirectives & { tier: number } = {
     adapt_decision_id: adaptDecisionId,
     session_id: sessionId,
@@ -840,11 +882,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Pilot freeze guard (FOLLOW-106) — non-blocking, fire-and-forget ────────
   checkPilotFrozenAsync(tenantId, requestId);
 
-  // NOTE (FOLLOW-358 open): the GET handler passes the caller-supplied `tier` URL
-  // param (1|2|3) as the `pageContext` argument to logDecisionAsync. The POST handler
-  // derives `pageContext` from `page_type` (1|2). These carry different semantics —
-  // GET = integration-Tier supplied by caller, POST = page-type-derived context.
-  // FOLLOW-358 tracks unifying both handlers; for now the divergence is acknowledged.
+  // FOLLOW-358 (Rule K.1): the GET handler passes the caller-supplied `tier` URL param
+  // (1|2|3) as `pageContext`. The page_context_source discriminator 'caller_supplied'
+  // is logged so analysts can distinguish these rows from POST's derived values.
+  // The schema divergence is now observable (Rule K.1 closed); both handlers write
+  // to the same column but the source column identifies which path produced each row.
   logDecisionAsync(
     sessionId,
     tenantId,
@@ -857,6 +899,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     holdoutGroup,
     getHandlerVariant,
     adaptDecisionId,
+    false, // demoOverride — GET path has no demo-mode
+    'rulebased-bandit-v1', // modelVersion
+    '', // leadId — not wired on GET path
+    'caller_supplied', // pageContextSource (FOLLOW-358): GET echoes caller-supplied tier
   );
 
   return NextResponse.json(response, { status: 200 });
@@ -1280,6 +1326,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // FOLLOW-357: writing pageCtx into the `page_context` ClickHouse column
   // (renamed from `tier` in migration 0017).
+  // FOLLOW-358 (Rule K.1): page_context_source='page_type_derived' discriminates POST
+  // rows (server-derived via pageContextFromPageType) from GET rows ('caller_supplied').
   logDecisionAsync(
     body.session_id,
     tenantId,
@@ -1293,6 +1341,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     selectedVariant,
     adaptDecisionId,
     demoActive, // AC6: tag demo-driven decisions for analytics exclusion
+    'rulebased-bandit-v1', // modelVersion
+    '', // leadId — not wired via POST body yet (FOLLOW-170)
+    'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
   );
 
   return NextResponse.json(response, { status: 200 });

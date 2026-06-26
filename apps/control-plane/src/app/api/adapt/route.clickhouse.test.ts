@@ -11,6 +11,9 @@
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
+// ─── Sentry mock (FOLLOW-425) ─────────────────────────────────────────────────
+vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn() }));
+
 // ─── Mock all external dependencies ──────────────────────────────────────────
 
 vi.mock('@/lib/llm-gateway', () => ({
@@ -92,6 +95,7 @@ vi.mock('@estalara/shared', async () => {
   };
 });
 
+import * as Sentry from '@sentry/nextjs';
 import { GET, POST } from './route';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -321,5 +325,86 @@ describe('logDecisionAsync — FOLLOW-358 page_context_source discriminator (Rul
     // The column name must appear in the INSERT field list AND the placeholder in VALUES.
     expect(body).toContain('page_context_source');
     expect(body).toContain('{p_page_context_source:String}');
+  });
+});
+
+// ─── FOLLOW-425: fail loud on ClickHouse INSERT rejection ────────────────────
+//
+// Verifies that a non-2xx HTTP response from ClickHouse (e.g. auth failure Code
+// 516, unknown column, quota exceeded) is treated as an error: Sentry is
+// notified and the failure is logged — while the fire-and-forget guarantee is
+// preserved (logDecisionAsync does not throw and does not block the caller).
+
+describe('logDecisionAsync — FOLLOW-425 fail loud on ClickHouse INSERT rejection', () => {
+  let mockFetch: ReturnType<typeof vi.fn>;
+  let captureException: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    captureException = vi.mocked(Sentry.captureException);
+    captureException.mockReset();
+    vi.stubEnv('CLICKHOUSE_URL', CLICKHOUSE_URL);
+    vi.stubEnv('DEMO_MODE_JWT_SECRET', 'test-secret-32-chars-long-enough!!');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('FOLLOW-425: non-ok HTTP response → captureException called, route does not throw', async () => {
+    mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 516,
+      text: () =>
+        Promise.resolve('Authentication failed. Password is incorrect or there is no user.'),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    // Must not throw — fire-and-forget guarantee
+    await expect(POST(makePostRequest(BASE_BODY))).resolves.not.toThrow();
+
+    // Allow the fire-and-forget microtask chain to settle
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(captureException).toHaveBeenCalledOnce();
+    const [capturedErr, capturedCtx] = captureException.mock.calls[0] as [
+      Error,
+      { tags: Record<string, string> },
+    ];
+    expect(capturedErr).toBeInstanceOf(Error);
+    expect(capturedErr.message).toContain('516');
+    expect(capturedErr.message).toContain('Authentication failed');
+    expect(capturedCtx.tags.kind).toBe('insert_rejected');
+    expect(capturedCtx.tags.sink).toBe('clickhouse');
+  });
+
+  it('FOLLOW-425: network-level rejection → captureException called (kind=network)', async () => {
+    const networkErr = new Error('connect ECONNREFUSED 127.0.0.1:8123');
+    mockFetch = vi.fn().mockRejectedValue(networkErr);
+    vi.stubGlobal('fetch', mockFetch);
+
+    await expect(POST(makePostRequest(BASE_BODY))).resolves.not.toThrow();
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(captureException).toHaveBeenCalledOnce();
+    const [capturedErr, capturedCtx] = captureException.mock.calls[0] as [
+      Error,
+      { tags: Record<string, string> },
+    ];
+    expect(capturedErr).toBeInstanceOf(Error);
+    expect(capturedCtx.tags.kind).toBe('network');
+    expect(capturedCtx.tags.sink).toBe('clickhouse');
+  });
+
+  it('FOLLOW-425: successful HTTP 200 → captureException NOT called', async () => {
+    mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await POST(makePostRequest(BASE_BODY));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(captureException).not.toHaveBeenCalled();
   });
 });

@@ -72,6 +72,7 @@ import {
 } from '@/lib/demo-jwt-verify';
 import { readShadowChatIntent, flattenIntentDimensions } from '@/lib/chat-intent-cache';
 import { VARIANT_INDEX } from '@/lib/variant-index';
+import * as Sentry from '@sentry/nextjs';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -515,10 +516,27 @@ function logDecisionAsync(
       'Content-Type': 'text/plain',
       ...clickhouseAuthHeaders({ user: clickhouseUser, password: clickhousePassword }),
     },
-  }).catch((err: unknown) => {
-    // Analytics failures must not surface to callers
-    console.error('[adapt] ClickHouse log failed:', err instanceof Error ? err.message : err);
-  });
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const body = await res.text().catch(() => '<unreadable body>');
+        const msg = `[adapt] ClickHouse INSERT rejected: HTTP ${String(res.status)} — ${body.slice(0, 500)}`;
+        console.error(msg);
+        Sentry.captureException(new Error(msg), {
+          tags: { area: 'adapt', sink: 'clickhouse', kind: 'insert_rejected' },
+          extra: { status: res.status },
+        });
+      }
+    })
+    .catch((err: unknown) => {
+      // Network-layer failure (DNS, connection refused, malformed URL, timeout).
+      // Analytics failures must not surface to callers — log + Sentry only.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[adapt] ClickHouse log failed:', msg);
+      Sentry.captureException(err instanceof Error ? err : new Error(msg), {
+        tags: { area: 'adapt', sink: 'clickhouse', kind: 'network' },
+      });
+    });
 }
 
 // ─── ReorderDirective helpers ─────────────────────────────────────────────────

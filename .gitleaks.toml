@@ -169,14 +169,15 @@ paths = [
 # k6 official GPG fingerprint used in apt installation instructions
 # Transcript filenames (date-slug format, e.g. 2026-05-12-15-49-14-estalara-sprint7-corpus)
 # Branch names in QUEUE.md branch: field match [a-zA-Z0-9_-]{40} (false positive)
-# FOLLOW-407: CANONICAL_CONSENT_TEXT_HASH in consent/platform-registration — 64-char SHA-256 of
-# the public consent text; its 40-char substrings false-positive on this heuristic. Token-scoped
-# 38-char substring keeps cloudflare-api-token scanning fully active on the secret-handling route.
+# FOLLOW-407/FOLLOW-411 CB-1: CANONICAL_CONSENT_TEXT_HASH (consent/platform-registration/lib.ts:46)
+# is a 64-char SHA-256 of the public consent text; 40-char substrings false-positive on this rule.
+# Suppressed INLINE via the gitleaks:allow tag on lib.ts:46 — CB-1 (FOLLOW-411) confirmed the
+# inline suppress is sufficient (scan stays GREEN without a regexes entry here).
+# No paths or regexes entry needed. If the hash rotates, update the gitleaks:allow tag in lib.ts:46.
 regexes = [
   '''C5AD17C747E3415A3642D57D77C6C491D6AC1D69''',
   '''mnt/transcripts/''',
   '''0019_adaptation_decisions_page_context''',
-  '''a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9''',
 ]
 
 # JWT tokens (generic)

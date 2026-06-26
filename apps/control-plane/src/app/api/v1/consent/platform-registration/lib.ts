@@ -42,6 +42,10 @@ export const PLATFORM_REGISTRATION_TOS_VERSION = 'platform-v1.3-2026-06-21' as c
  * To recompute: echo -n "<exact text>" | sha256sum
  * See FOLLOW-374 PR description for the verification command.
  */
+// Suppression: the gitleaks:allow tag below is the SOLE suppression for this hash (no regexes
+// entry in .gitleaks.toml — CB-1/FOLLOW-411 confirmed the inline suppress is sufficient).
+// If this hash changes (consent text rotation), update the gitleaks:allow comment on the next
+// line to remain the current SHA-256 value so the inline suppress stays accurate.
 export const CANONICAL_CONSENT_TEXT_HASH =
   'a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2' as const; // gitleaks:allow SHA-256 of public consent text
 

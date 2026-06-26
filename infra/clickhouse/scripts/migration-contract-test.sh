@@ -13,14 +13,33 @@
 # This script derives the INSERT column list from logDecisionAsync in route.ts;
 # any new column without a corresponding migration causes CI to fail.
 #
+# Boundary detection (FOLLOW-415 / RETRO-129 LG-1 fix):
+#   The boundary migration is NOT blindly the lexically-last *.sql file. Instead,
+#   migrations are walked in REVERSE lexicographic order and the first file that
+#   contains ADD COLUMN for any column in the extracted INSERT list becomes the
+#   boundary migration. This prevents false failures when a non-column migration
+#   (e.g. an intent_events index) is the lexically newest file. If no migration
+#   adds any INSERT column (unusual but possible), the ordering assertion is
+#   skipped cleanly with exit 0 — no false failures.
+#
+# Column extraction (FOLLOW-415 / RETRO-129 LG-2 note):
+#   The INSERT column list is extracted from the single-line backtick segment
+#   immediately following 'INSERT INTO adaptation_decisions' in logDecisionAsync.
+#   A column-count floor assertion (>= 17) fires if the extraction is truncated or
+#   if the INSERT format changes to span multiple lines — the test fails loud
+#   instead of passing silently with a partial column list.
+#
 # Test steps:
 #   1. Extract INSERT column list from logDecisionAsync in route.ts at runtime.
-#   2. Sort all infra/clickhouse/migrations/*.sql lexicographically; identify
-#      the last migration as the boundary.
-#   3. Apply all migrations except the last.
-#   4. INSERT using extracted column list → expect HTTP 4xx (boundary column absent).
-#   5. Apply the last migration.
-#   6. Repeat same INSERT → expect HTTP 200 (all columns now present).
+#   2. Assert extracted column count >= 17 (floor sanity check).
+#   3. Walk all infra/clickhouse/migrations/*.sql in reverse lexicographic order;
+#      select the first file containing ADD COLUMN for any INSERT column as the
+#      boundary migration.
+#   4. If no boundary found: log a warning and exit 0 (test is not meaningful).
+#   5. Apply all migrations except the boundary.
+#   6. INSERT using extracted column list -> expect HTTP 4xx (boundary column absent).
+#   7. Apply the boundary migration.
+#   8. Repeat same INSERT -> expect HTTP 200 (all columns now present).
 #
 # Usage:
 #   LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
@@ -34,7 +53,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIGRATIONS_DIR="${SCRIPT_DIR}/../migrations"
-# Path from infra/clickhouse/scripts → repo root → route.ts
+# Path from infra/clickhouse/scripts -> repo root -> route.ts
 ROUTE_TS="${SCRIPT_DIR}/../../../apps/control-plane/src/app/api/adapt/route.ts"
 LOCAL="${LOCAL:-0}"
 CH_USER="${CLICKHOUSE_USER:-default}"
@@ -137,7 +156,7 @@ _apply_file() {
 }
 
 # ---------------------------------------------------------------------------
-# Dynamic column extraction (AC-1)
+# Step 1 — Dynamic column extraction
 #
 # Extract the INSERT column list from logDecisionAsync in route.ts at runtime.
 # The INSERT statement in logDecisionAsync spans two template-literal lines:
@@ -152,6 +171,10 @@ _apply_file() {
 # This is self-maintaining: when logDecisionAsync gains a new column, the
 # extracted list updates automatically and the contract test enforces that a
 # matching migration must exist before CI can pass.
+#
+# FOLLOW-415 / RETRO-129 LG-2: this extraction assumes the column list is on a
+# SINGLE line immediately after the INSERT line.  The column-count floor
+# assertion below fires loudly if that assumption breaks (truncated extraction).
 # ---------------------------------------------------------------------------
 if [ ! -f "${ROUTE_TS}" ]; then
   echo "ERROR: route.ts not found at ${ROUTE_TS}"
@@ -174,7 +197,26 @@ echo "Extracted column list from logDecisionAsync INSERT:"
 echo "  ${COLS}"
 echo ""
 
-# TEST_INSERT uses INSERT … SELECT … FROM the same table LIMIT 0 so no
+# ---------------------------------------------------------------------------
+# Step 2 — Column-count floor assertion (FOLLOW-415 AC-2)
+#
+# If the grep/sed extractor above is broken or the INSERT spans multiple lines,
+# the extracted COLS string will be truncated or empty.  A floor of 17 catches
+# this loudly instead of silently passing with a partial column list.
+# ---------------------------------------------------------------------------
+COLS_COUNT=$(echo "$COLS" | tr ',' '\n' | grep -c '[a-zA-Z]')
+if [ "$COLS_COUNT" -lt 17 ]; then
+  echo "  FAIL: Extracted only ${COLS_COUNT} columns from logDecisionAsync (expected >= 17). Check the grep/sed extractor."
+  exit 1
+fi
+echo "Column count: ${COLS_COUNT} (>= 17 floor OK)"
+echo ""
+
+# Normalised list of INSERT columns (one per line, whitespace trimmed) used
+# for exact matching in the boundary-detection walk below.
+INSERT_COLS=$(echo "${COLS}" | tr ',' '\n' | sed 's/^ *//;s/ *$//')
+
+# TEST_INSERT uses INSERT ... SELECT ... FROM the same table LIMIT 0 so no
 # type-specific placeholder values are required: ClickHouse rejects the query
 # with HTTP non-200 if any named column is absent from the table, regardless of
 # value types.  When all columns exist, SELECT returns 0 rows and INSERT
@@ -182,11 +224,22 @@ echo ""
 TEST_INSERT="INSERT INTO adaptation_decisions (${COLS}) SELECT ${COLS} FROM adaptation_decisions LIMIT 0"
 
 # ---------------------------------------------------------------------------
-# Determine migration boundary automatically (AC-1 item 3)
+# Step 3 — Smart boundary detection (FOLLOW-415 AC-1 / RETRO-129 LG-1 fix)
 #
-# Sort all *.sql migration files lexicographically.  Apply all except the last;
-# assert INSERT fails.  Apply the last; assert INSERT succeeds.  Future
-# migrations slot in automatically — no manual update to this script needed.
+# Walk all *.sql migration files in REVERSE lexicographic order and select the
+# FIRST file that adds (via ADD COLUMN) at least one column present in the
+# extracted INSERT list.  This is the boundary migration.
+#
+# Why not blindly use the lexically-last file?  Because the next migration
+# added after today may not touch adaptation_decisions at all (e.g. an
+# intent_events index).  If that file were used as the boundary, the INSERT
+# would already succeed before applying it — a false "FAIL: INSERT succeeded
+# before boundary migration."  The smart walk finds the newest migration that
+# actually introduces a column from the INSERT list, regardless of how many
+# non-column migrations come after it.
+#
+# If NO migration adds any INSERT column (unusual but theoretically possible),
+# the test is not meaningful and we exit 0 cleanly.
 # ---------------------------------------------------------------------------
 ALL_MIGRATIONS=()
 for f in "${MIGRATIONS_DIR}"/[0-9]*.sql; do
@@ -195,35 +248,70 @@ for f in "${MIGRATIONS_DIR}"/[0-9]*.sql; do
 done
 
 MIGRATION_COUNT=${#ALL_MIGRATIONS[@]}
-if [ "${MIGRATION_COUNT}" -lt 2 ]; then
-  echo "ERROR: Fewer than 2 migration files found in ${MIGRATIONS_DIR}"
-  echo "       Cannot run ordering test with only ${MIGRATION_COUNT} migration(s)."
+if [ "${MIGRATION_COUNT}" -lt 1 ]; then
+  echo "ERROR: No migration files found in ${MIGRATIONS_DIR}"
   exit 1
 fi
 
-LAST_MIGRATION="${ALL_MIGRATIONS[$((MIGRATION_COUNT - 1))]}"
-echo "Boundary migration (last):  $(basename "${LAST_MIGRATION}")"
-echo "Total migrations to apply:  ${MIGRATION_COUNT}"
+BOUNDARY_MIGRATION=""
+BOUNDARY_INDEX=-1
+
+for ((i = MIGRATION_COUNT - 1; i >= 0; i--)); do
+  f="${ALL_MIGRATIONS[$i]}"
+  # Extract column names introduced by ADD COLUMN in this migration file.
+  # Pattern matches: ADD COLUMN [IF NOT EXISTS] <name>
+  # awk '{print $NF}' isolates just the column name (last token of the match).
+  while IFS= read -r colname; do
+    [ -z "$colname" ] && continue
+    # Exact-match against the normalised INSERT column list.
+    if echo "${INSERT_COLS}" | grep -qx "${colname}"; then
+      BOUNDARY_MIGRATION="$f"
+      BOUNDARY_INDEX="$i"
+      break 2
+    fi
+  done < <(grep -oE 'ADD COLUMN (IF NOT EXISTS )?[a-zA-Z_][a-zA-Z0-9_]*' "${f}" 2>/dev/null \
+           | awk '{print $NF}'; true)
+done
+
+if [ -z "$BOUNDARY_MIGRATION" ]; then
+  echo "WARNING: No boundary migration found for current INSERT columns."
+  echo "         None of the migration files contain ADD COLUMN for any column in:"
+  echo "         ${COLS}"
+  echo ""
+  echo "         Skipping ordering assertion (no new adaptation_decisions columns"
+  echo "         in this migration set — this is expected when the newest migrations"
+  echo "         only add indexes or modify non-adaptation_decisions tables)."
+  echo ""
+  echo "=== Migration-Ordering Contract Test SKIPPED (no boundary migration found) ==="
+  exit 0
+fi
+
+echo "Boundary migration: $(basename "${BOUNDARY_MIGRATION}") (index ${BOUNDARY_INDEX})"
+echo "Total migrations:   ${MIGRATION_COUNT}"
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 1 — Apply all migrations except the last
+# Step 4 — Apply all migrations EXCEPT the boundary
+#
+# All non-boundary migrations (including any newer than the boundary) are
+# applied so the table is fully built except for the boundary column.
 # ---------------------------------------------------------------------------
-echo "1. Applying migrations 1–$((MIGRATION_COUNT - 1)) (without boundary migration)..."
+echo "4. Applying all migrations except boundary $(basename "${BOUNDARY_MIGRATION}")..."
 
-for ((i = 0; i < MIGRATION_COUNT - 1; i++)); do
+for ((i = 0; i < MIGRATION_COUNT; i++)); do
+  [ "$i" = "$BOUNDARY_INDEX" ] && continue
   f="${ALL_MIGRATIONS[$i]}"
   echo "  Applying: $(basename "${f}")"
   _apply_file "${f}"
 done
 
-echo "  ✓ applied $((MIGRATION_COUNT - 1)) migrations ($(basename "${LAST_MIGRATION}") not yet applied)"
+echo "  All non-boundary migrations applied ($(basename "${BOUNDARY_MIGRATION}") not yet applied)"
 
 # ---------------------------------------------------------------------------
-# Step 2 — Assert INSERT is REJECTED (boundary column absent)
+# Step 5 — Assert INSERT is REJECTED (boundary column absent)
 # ---------------------------------------------------------------------------
 echo ""
-echo "2. INSERT with full column list (expect HTTP 4xx — boundary column absent)..."
+echo "5. INSERT with full column list (expect HTTP 4xx — boundary column absent)..."
 
 STATUS_BEFORE=$(_http_status "${TEST_INSERT}")
 
@@ -238,21 +326,21 @@ fi
 echo "  PASS: INSERT rejected with HTTP ${STATUS_BEFORE} (boundary column absent)"
 
 # ---------------------------------------------------------------------------
-# Step 3 — Apply the boundary (last) migration
+# Step 6 — Apply the boundary migration
 # ---------------------------------------------------------------------------
 echo ""
-echo "3. Applying boundary migration: $(basename "${LAST_MIGRATION}")..."
-_apply_file "${LAST_MIGRATION}"
-echo "  ✓ $(basename "${LAST_MIGRATION}") applied"
+echo "6. Applying boundary migration: $(basename "${BOUNDARY_MIGRATION}")..."
+_apply_file "${BOUNDARY_MIGRATION}"
+echo "  $(basename "${BOUNDARY_MIGRATION}") applied"
 
 # ---------------------------------------------------------------------------
-# Step 4 — Assert INSERT now SUCCEEDS
+# Step 7 — Assert INSERT now SUCCEEDS
 # ---------------------------------------------------------------------------
 echo ""
-echo "4. Repeating INSERT (expect HTTP 200 — all columns now present)..."
+echo "7. Repeating INSERT (expect HTTP 200 — all columns now present)..."
 
 STATUS_AFTER=$(_http_status "${TEST_INSERT}")
-_assert_eq "INSERT HTTP status after $(basename "${LAST_MIGRATION}")" "200" "${STATUS_AFTER}"
+_assert_eq "INSERT HTTP status after $(basename "${BOUNDARY_MIGRATION}")" "200" "${STATUS_AFTER}"
 
 echo ""
 echo "=== Migration-Ordering Contract Test PASSED ==="

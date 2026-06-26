@@ -1099,7 +1099,10 @@ async function init(): Promise<IntentState | null> {
     // tenants that rely on behavioral + chat NLP signals only (§B.1 / §D.6).
     // No prompt, no widget, no quiz events are emitted when the quiz is disabled.
     function showQuizTrigger(): void {
-      // §H.9 opt-out: suppress AL profiling. Ingest stream left flowing (§H.8/CEO 2026-06-23/FOLLOW-384).
+      // §H.9 opt-out: suppress AL profiling. NOTE: unlike the favorites handler (where
+      // listing.bookmarked is pushed BEFORE its guard), the quiz.event step:'completed'
+      // push below is INSIDE the quiz completion callback — DOWNSTREAM of this early return.
+      // opted-out sessions never reach it: the ingest event IS suppressed here (FOLLOW-409).
       if (profilingOptedOut) return;
       if (config.quiz?.enabled === false) return;
       if (!shadowHost || quizTriggered) return;
@@ -1429,6 +1432,8 @@ async function init(): Promise<IntentState | null> {
 
       // (b) Apply behavioral signal with payload-conditional boosts
       // §H.9 opt-out: suppress AL profiling. Ingest stream left flowing (§H.8/CEO 2026-06-23/FOLLOW-384).
+      // NOTE: this asymmetry vs showQuizTrigger is intentional — listing.bookmarked (§H.8 protected)
+      // is pushed BEFORE this guard, so the ingest event reaches the pipeline for opted-out users.
       if (profilingOptedOut) return;
 
       const payload: Record<string, unknown> = {};

@@ -1,5 +1,46 @@
 # SDK Engineer — Lessons
 
+## 2026-06-26 / FOLLOW-398
+
+**What I built:** Doc-only fix removing `SIDEBAR_SHOW_THRESHOLD` (Rule Y phantom constant) from
+three places: MASTER_DESIGN.md line 728 (confidence-gating bullet), MASTER_DESIGN.md line 2409
+(gating-ladder rung), adapt-floor.ts JSDoc line 25. Also corrected the test description at
+follow-343.test.ts:207, which falsely implied the constant existed as a separate gate in index.ts
+(the assertion itself — floor < 0.6 — remained valid and was kept).
+
+**What was uncertain:** Whether the historical AUDIT-2026-06-19.md reference should be scrubbed.
+Decision: leave it — it describes the pre-fix state accurately and falsifying bug-report history
+would be worse than leaving one stale reference in a frozen audit doc.
+
+**A guardrail I'd add:** When a constant is removed or replaced, grep its name across all doc and
+test files before closing the ticket. A phantom constant cited in a test description is still a Rule
+Y violation even if the assertion body is correct.
+
+## 2026-06-25 / FOLLOW-389
+
+**What I built:** Three fixes in one ticket. HW-1: threaded `profilingOptedOut?: boolean` as a 5th
+parameter to `postQuizCompletionPing` in `packages/sdk/src/core/adapt.ts` and appended
+`?profiling_opt_out=1` to the URL when true — closing the HALF_WIRE gap where the server-side gate
+at `apps/control-plane/src/app/api/quiz/completion/route.ts:363` was permanently unreachable. TG-1:
+replaced Rule-L-violating structural-only tests in `follow-385.test.ts` with 7 real-handler tests in
+`follow-389.test.ts` that drive `_initForTest()` + `window.dispatchEvent` + fake timer advancement.
+DG-1: corrected a misleading comment at `index.ts:1235` that said "Ingest stream left flowing" for
+the `quiz.event` push, which is actually inside the guard and IS suppressed (unlike
+`listing.bookmarked`).
+
+**What was uncertain:** (1) Whether `crypto.subtle.importKey` / `.sign` are microtask-scheduled —
+they are truly async (macrotask-ish), requiring the stub pattern (`vi.spyOn(crypto.subtle, ...)` +
+3x `await Promise.resolve()`) to drain before assertions. (2) Handler accumulation across
+`_initForTest()` calls: each call registers a new `window.addEventListener` listener that teardown
+doesn't remove; test ordering matters (opted-out first, opted-in second). (3) TypeScript strict mode
+rejects `mock.lastCall as [string, RequestInit]` because `lastCall` has type `[] | undefined` — must
+use `as unknown as [string, RequestInit]`.
+
+**A guardrail I'd add:** When a function is fire-and-forget with internal async operations
+(`crypto.subtle`), the test file should document the drain pattern explicitly at the top of the
+suite so future contributors don't guess why bare `await` isn't enough. One comment block showing
+the importKey→sign→fetch chain saves repeated debugging.
+
 ## 2026-06-25 / FOLLOW-363
 
 **What I built:** Threaded the `SWITCH_MARGIN=0.05` hysteresis guard into the two ongoing-classify

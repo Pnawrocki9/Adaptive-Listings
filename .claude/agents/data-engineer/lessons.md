@@ -181,6 +181,28 @@ test case would close that gap generically.
 
 ---
 
+## 2026-06-26 / FOLLOW-403
+
+**What I built:** Doc-only correction to `docs/runbooks/clickhouse-migrations.md` — three accuracy
+errors from RETRO-121. (1) CI contract-test scope claim: corrected "catches any future column" to
+"catches regression of 0019/page_context_source specifically; hardcoded to that boundary." (2)
+migrate.sh caption: changed from "Apply a single migration file through migrate.sh's statement
+splitter" to "Apply ALL pending migrations idempotently (safe to re-run)"; curl block captioned
+"Apply a single migration file directly." (3) FOLLOW-402 cross-link added to Extending-the-contract-
+test paragraph.
+
+**Vocabulary/seed/retention risks I weighed:** No tables, columns, queries, or retention claims
+touched. This is documentation-only. Only risk was introducing a new inaccuracy while fixing the old
+ones — verified final state carefully before committing.
+
+**A guardrail I'd add:** When a CI gate is documented in a runbook, the runbook text should be
+generated (or at least validated) from the gate script itself — e.g., a comment at the top of
+`migration-contract-test.sh` that explicitly states "boundary: 0019/page_context_source" and a CI
+step that cross-checks the runbook mentions that exact token. Prevents prose from drifting from the
+script as new boundaries are added.
+
+---
+
 ## 2026-06-23 / FOLLOW-371
 
 **What I built:** One-shot remediation of ESC-026 holdout contamination. Between PR #327 (2026-06-19
@@ -206,3 +228,32 @@ were added in the same PR.
 `adaptation_decisions` WHERE `holdout_group = 1` must also carry `AND variant = 'control'` or the
 exclusion predicate. This would have flagged the original PR #327 gap immediately and caught any
 future regression without relying on a retro + follow-up ticket cycle.
+
+---
+
+## 2026-06-26 / FOLLOW-402
+
+**What I built:** Generalized the ClickHouse migration-ordering contract test
+(`infra/clickhouse/scripts/migration-contract-test.sh`) so it is self-maintaining. Previously the
+script hardcoded one column name (`page_context_source`) and two specific migration numbers
+(0001–0018 then 0019). A future engineer adding a column to `logDecisionAsync`'s INSERT without a
+migration would pass CI silently. Now the script: (1) uses `grep`/`sed` to extract the INSERT column
+list from `logDecisionAsync` in `route.ts` at runtime; (2) builds `TEST_INSERT` as
+`INSERT … SELECT … FROM adaptation_decisions LIMIT 0` (type-agnostic — any absent column causes a
+non-200 HTTP status from ClickHouse); (3) determines the boundary migration automatically by sorting
+all `[0-9]*.sql` files lexicographically and treating the last file as the boundary. Added
+`trap _cleanup EXIT` so `contract_test_ordering` DB is always dropped whether the test passes,
+fails, or is interrupted. Updated the runbook to remove stale "does NOT generically detect future
+columns" and "FOLLOW-402" caveats.
+
+**Vocabulary/seed/retention risks I weighed:** No new tables or columns. No retention claims. The
+extraction regex
+`sed 's/.*\`(\([^)]_\))._/\1/'`is tied to the single-line template-literal pattern in`logDecisionAsync`;
+if that INSERT is ever split differently, the extraction would silently return empty and the script
+would fail fast with an error (empty COLS guard).
+
+**A guardrail I'd add:** Add a self-test mode (`--self-test`) to the contract-test script that
+validates the regex extraction against a fixture string before running against the live DB. This
+would prevent a refactor of the INSERT format from silently passing CI due to an empty-COLS false
+negative that doesn't hit ClickHouse at all. Currently the empty-COLS guard exits with an error, so
+it's loud — but a fixture-driven self-test would make the extraction logic independently verifiable.

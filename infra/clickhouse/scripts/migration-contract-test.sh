@@ -8,14 +8,19 @@
 #
 # ESC-031 incident (2026-06-26): migration 0019 (page_context_source) was not
 # applied to prod before PR #357 deployed. All adaptation_decisions writes
-# failed silently from 10:40Z to ~12:00Z.  This script makes CI catch that
-# class of incident for future migrations.
+# failed silently from 10:40Z to ~12:00Z.
+#
+# This script derives the INSERT column list from logDecisionAsync in route.ts;
+# any new column without a corresponding migration causes CI to fail.
 #
 # Test steps:
-#   1. Apply migrations 0001–0018 (no page_context_source column yet).
-#   2. INSERT into adaptation_decisions WITH page_context_source → expect HTTP 4xx.
-#   3. Apply migration 0019 (adds page_context_source).
-#   4. Repeat same INSERT → expect HTTP 200 (success).
+#   1. Extract INSERT column list from logDecisionAsync in route.ts at runtime.
+#   2. Sort all infra/clickhouse/migrations/*.sql lexicographically; identify
+#      the last migration as the boundary.
+#   3. Apply all migrations except the last.
+#   4. INSERT using extracted column list → expect HTTP 4xx (boundary column absent).
+#   5. Apply the last migration.
+#   6. Repeat same INSERT → expect HTTP 200 (all columns now present).
 #
 # Usage:
 #   LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
@@ -29,6 +34,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIGRATIONS_DIR="${SCRIPT_DIR}/../migrations"
+# Path from infra/clickhouse/scripts → repo root → route.ts
+ROUTE_TS="${SCRIPT_DIR}/../../../apps/control-plane/src/app/api/adapt/route.ts"
 LOCAL="${LOCAL:-0}"
 CH_USER="${CLICKHOUSE_USER:-default}"
 CH_PASS="${CLICKHOUSE_PASSWORD:-}"
@@ -39,6 +46,16 @@ echo "=== ClickHouse Migration-Ordering Contract Test ==="
 echo "URL:   ${CLICKHOUSE_URL}"
 echo "Local: ${LOCAL}"
 echo ""
+
+# ---------------------------------------------------------------------------
+# Cleanup on EXIT (AC-2) — always drop the isolated database so a failure run
+# cannot poison the next run (prevents leftover 'contract_test_ordering' DB).
+# ---------------------------------------------------------------------------
+_cleanup() {
+  curl -sSf "${CLICKHOUSE_URL}" -u "${CH_USER}:${CH_PASS}" \
+    --data-binary "DROP DATABASE IF EXISTS ${CH_CONTRACT_DB}" >/dev/null 2>&1 || true
+}
+trap _cleanup EXIT
 
 # Create an isolated database so migrations applied here do not collide with
 # the subsequent migrate.sh run against the default database (which would
@@ -120,79 +137,124 @@ _apply_file() {
 }
 
 # ---------------------------------------------------------------------------
-# The INSERT under test
+# Dynamic column extraction (AC-1)
 #
-# Includes page_context_source (added by migration 0019).  All other columns
-# listed here exist after migrations 0001–0018.  Remaining schema columns
-# carry their DEFAULT values and are omitted from the column list.
+# Extract the INSERT column list from logDecisionAsync in route.ts at runtime.
+# The INSERT statement in logDecisionAsync spans two template-literal lines:
 #
-# NOTE: The AC INSERT spec included listing_id / directives / created_at which
-# are not in the adaptation_decisions schema.  Those have been replaced with
-# real column names so the post-0019 assertion can succeed.  The column being
-# validated is page_context_source.
+#   `INSERT INTO adaptation_decisions ` +
+#   `(col1, col2, ..., colN) ` +
+#
+# grep -A1 captures the column-list line immediately following the INSERT line.
+# grep -v removes the INSERT line itself, leaving only the column-list line.
+# sed extracts the content between the outermost `(` and `)` on that line.
+#
+# This is self-maintaining: when logDecisionAsync gains a new column, the
+# extracted list updates automatically and the contract test enforces that a
+# matching migration must exist before CI can pass.
 # ---------------------------------------------------------------------------
-TEST_INSERT="INSERT INTO adaptation_decisions \
-(adapt_decision_id, tenant_id, session_id, page_context, page_context_source, \
-archetype, confidence, variant, features_snapshot, ts) \
-VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'contract-test-tenant', \
-'contract-test-session', 0, 'caller_supplied', 'value_hunter', 0.9, 'control', \
-'{}', now())"
+if [ ! -f "${ROUTE_TS}" ]; then
+  echo "ERROR: route.ts not found at ${ROUTE_TS}"
+  exit 1
+fi
+
+COLS=$(grep -A1 'INSERT INTO adaptation_decisions' "${ROUTE_TS}" \
+  | grep -v 'INSERT INTO adaptation_decisions' \
+  | sed 's/.*`(\([^)]*\)).*/\1/')
+
+if [ -z "${COLS}" ]; then
+  echo "ERROR: Could not extract INSERT column list from logDecisionAsync in:"
+  echo "       ${ROUTE_TS}"
+  echo "       Expected a backtick-delimited column list on the line following"
+  echo "       'INSERT INTO adaptation_decisions' inside logDecisionAsync."
+  exit 1
+fi
+
+echo "Extracted column list from logDecisionAsync INSERT:"
+echo "  ${COLS}"
+echo ""
+
+# TEST_INSERT uses INSERT … SELECT … FROM the same table LIMIT 0 so no
+# type-specific placeholder values are required: ClickHouse rejects the query
+# with HTTP non-200 if any named column is absent from the table, regardless of
+# value types.  When all columns exist, SELECT returns 0 rows and INSERT
+# succeeds (HTTP 200).
+TEST_INSERT="INSERT INTO adaptation_decisions (${COLS}) SELECT ${COLS} FROM adaptation_decisions LIMIT 0"
 
 # ---------------------------------------------------------------------------
-# Step 1 — Apply migrations 0001–0018 (no page_context_source column)
+# Determine migration boundary automatically (AC-1 item 3)
+#
+# Sort all *.sql migration files lexicographically.  Apply all except the last;
+# assert INSERT fails.  Apply the last; assert INSERT succeeds.  Future
+# migrations slot in automatically — no manual update to this script needed.
 # ---------------------------------------------------------------------------
-echo "1. Applying migrations 0001–0018 (no page_context_source column yet)..."
+ALL_MIGRATIONS=()
+for f in "${MIGRATIONS_DIR}"/[0-9]*.sql; do
+  [ -f "$f" ] || continue
+  ALL_MIGRATIONS+=("$f")
+done
 
-# Two globs cover 0001–0009 and 0010–0018.  Both are quoted; [ -f ] skips any
-# unmatched pattern so the loop is safe even if the glob expands to a literal.
-for f in "${MIGRATIONS_DIR}"/000[1-9]_*.sql \
-          "${MIGRATIONS_DIR}"/001[0-8]_*.sql; do
-  [ -f "${f}" ] || continue
+MIGRATION_COUNT=${#ALL_MIGRATIONS[@]}
+if [ "${MIGRATION_COUNT}" -lt 2 ]; then
+  echo "ERROR: Fewer than 2 migration files found in ${MIGRATIONS_DIR}"
+  echo "       Cannot run ordering test with only ${MIGRATION_COUNT} migration(s)."
+  exit 1
+fi
+
+LAST_MIGRATION="${ALL_MIGRATIONS[$((MIGRATION_COUNT - 1))]}"
+echo "Boundary migration (last):  $(basename "${LAST_MIGRATION}")"
+echo "Total migrations to apply:  ${MIGRATION_COUNT}"
+echo ""
+
+# ---------------------------------------------------------------------------
+# Step 1 — Apply all migrations except the last
+# ---------------------------------------------------------------------------
+echo "1. Applying migrations 1–$((MIGRATION_COUNT - 1)) (without boundary migration)..."
+
+for ((i = 0; i < MIGRATION_COUNT - 1; i++)); do
+  f="${ALL_MIGRATIONS[$i]}"
   echo "  Applying: $(basename "${f}")"
   _apply_file "${f}"
 done
 
-echo "  ✓ migrations 0001–0018 applied"
+echo "  ✓ applied $((MIGRATION_COUNT - 1)) migrations ($(basename "${LAST_MIGRATION}") not yet applied)"
 
 # ---------------------------------------------------------------------------
-# Step 2 — Assert INSERT is REJECTED (page_context_source column absent)
+# Step 2 — Assert INSERT is REJECTED (boundary column absent)
 # ---------------------------------------------------------------------------
 echo ""
-echo "2. INSERT with page_context_source (expect HTTP 4xx — column absent)..."
+echo "2. INSERT with full column list (expect HTTP 4xx — boundary column absent)..."
 
 STATUS_BEFORE=$(_http_status "${TEST_INSERT}")
 
 if [ "${STATUS_BEFORE}" = "200" ]; then
-  echo "  FAIL: INSERT succeeded (HTTP 200) — page_context_source should not exist yet."
-  echo "        Possible cause: migration 0019 was already applied to this instance,"
-  echo "        or the column was added by an earlier migration we are not aware of."
+  echo "  FAIL: INSERT succeeded (HTTP 200) before the boundary migration was applied."
+  echo "        Possible cause: the boundary migration was already applied to this"
+  echo "        ClickHouse instance, or the column was added by an earlier migration."
   echo "        Ensure this script runs on a CLEAN ClickHouse instance before migrate.sh."
   exit 1
 fi
 
-echo "  PASS: INSERT rejected with HTTP ${STATUS_BEFORE} (page_context_source column absent)"
+echo "  PASS: INSERT rejected with HTTP ${STATUS_BEFORE} (boundary column absent)"
 
 # ---------------------------------------------------------------------------
-# Step 3 — Apply migration 0019 (adds page_context_source)
+# Step 3 — Apply the boundary (last) migration
 # ---------------------------------------------------------------------------
 echo ""
-echo "3. Applying migration 0019 (adds page_context_source)..."
-_apply_file "${MIGRATIONS_DIR}/0019_adaptation_decisions_page_context_source.sql"
-echo "  ✓ migration 0019 applied"
+echo "3. Applying boundary migration: $(basename "${LAST_MIGRATION}")..."
+_apply_file "${LAST_MIGRATION}"
+echo "  ✓ $(basename "${LAST_MIGRATION}") applied"
 
 # ---------------------------------------------------------------------------
 # Step 4 — Assert INSERT now SUCCEEDS
 # ---------------------------------------------------------------------------
 echo ""
-echo "4. Repeating INSERT (expect HTTP 200 — column now present)..."
+echo "4. Repeating INSERT (expect HTTP 200 — all columns now present)..."
 
 STATUS_AFTER=$(_http_status "${TEST_INSERT}")
-_assert_eq "INSERT HTTP status after migration 0019" "200" "${STATUS_AFTER}"
+_assert_eq "INSERT HTTP status after $(basename "${LAST_MIGRATION}")" "200" "${STATUS_AFTER}"
 
 echo ""
 echo "=== Migration-Ordering Contract Test PASSED ==="
-
-# Tear down the isolated database so the default database remains clean for
-# the subsequent migrate.sh run.
-curl -sSf "${CLICKHOUSE_URL}" -u "${CH_USER}:${CH_PASS}" \
-  --data-binary "DROP DATABASE IF EXISTS ${CH_CONTRACT_DB}"
+echo "    All columns in logDecisionAsync INSERT exist after applying all migrations."
+echo "    Any future column added to logDecisionAsync without a migration will fail CI."

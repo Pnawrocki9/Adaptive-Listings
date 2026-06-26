@@ -109,28 +109,28 @@ mechanism.
 
 ---
 
-## CI contract test (FOLLOW-394)
+## CI contract test (FOLLOW-394 / FOLLOW-402)
 
 The `clickhouse-smoke` CI job now runs `infra/clickhouse/scripts/migration-contract-test.sh`
-**before** the full `migrate.sh + smoke-test.sh` sequence on every PR. The test:
+**before** the full `migrate.sh + smoke-test.sh` sequence on every PR. The test is self-maintaining
+(FOLLOW-402): it extracts the INSERT column list from `logDecisionAsync` in `route.ts` at runtime
+and determines the migration boundary automatically by sorting all `*.sql` files lexicographically.
+No manual update to the script is needed when a new column is added.
 
-1. Applies migrations `0001`–`0018` only (no `page_context_source` column).
-2. Attempts an INSERT into `adaptation_decisions` that names `page_context_source`.
-3. Asserts the INSERT is **rejected** (HTTP non-200).
-4. Applies migration `0019`.
-5. Repeats the INSERT and asserts it **succeeds** (HTTP 200).
+Test steps (fully automated):
 
-This catches **regression of the 0019 / `page_context_source` boundary specifically** — it asserts
-the column is absent before migration 0019 and present after. It does NOT generically detect any
-future column added to `logDecisionAsync`; the test is hardcoded to this one boundary. For any new
-column you add to `logDecisionAsync`, follow the 'Extending the contract test' section below to add
-the assertion manually (or wait for FOLLOW-402, which will generalize the check).
+1. Extracts the INSERT column list from `logDecisionAsync` in `route.ts` at runtime.
+2. Sorts all `infra/clickhouse/migrations/*.sql` lexicographically; the last file is the boundary.
+3. Applies all migrations except the last.
+4. Attempts an INSERT into `adaptation_decisions` using the extracted column list.
+5. Asserts the INSERT is **rejected** (HTTP non-200) — the boundary column is absent.
+6. Applies the last migration.
+7. Repeats the INSERT and asserts it **succeeds** (HTTP 200).
 
-**Extending the contract test:** when a future migration adds a new column to an explicit INSERT in
-`logDecisionAsync` (or any other fire-and-forget ClickHouse writer), add a corresponding contract
-test case to `infra/clickhouse/scripts/migration-contract-test.sh` following the same four-step
-pattern. Once FOLLOW-402 lands, the column list will be derived automatically — see that ticket for
-the generalized parity check.
+**Self-maintaining guarantee:** if a future PR adds a new column to `logDecisionAsync`'s INSERT
+without a corresponding `*.sql` migration file, the extracted column list includes the new column,
+the INSERT still fails after applying all existing migrations, and CI exits non-zero — catching the
+same class of silent data-loss incident as ESC-031.
 
 ---
 
@@ -141,7 +141,8 @@ the generalized parity check.
 - [ ] Apply the migration to the production ClickHouse instance (via FOLLOW-308 checklist)
       **before** merging the code change.
 - [ ] Verify the column is present in production (DESCRIBE TABLE, see above).
-- [ ] Add a contract test case to `migration-contract-test.sh` for the new column.
+- [ ] Verify `migration-contract-test.sh` passes in CI — it derives the column list from
+      `logDecisionAsync` automatically (FOLLOW-402), so no manual update is needed.
 - [ ] Merge the code change.
 
 The order is: **migrate → verify → merge code**. Reversing steps 1 and 3 reproduces ESC-031.

@@ -71,6 +71,7 @@ import {
   type DemoJwtClaims,
 } from '@/lib/demo-jwt-verify';
 import { readShadowChatIntent, flattenIntentDimensions } from '@/lib/chat-intent-cache';
+import { VARIANT_INDEX } from '@/lib/variant-index';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -234,11 +235,8 @@ const AdaptPostBodySchema = z.object({
 
 // ─── Decision logic ───────────────────────────────────────────────────────────
 
-/**
- * Maps a bandit variant name to a zero-based index into `SlotDirective.variants.en`.
- * Index 0 = control (mirrors `s.en`), 1 = v1, 2 = v2.
- */
-const VARIANT_INDEX: Record<string, number> = { control: 0, v1: 1, v2: 2 };
+// VARIANT_INDEX is derived from SEED_VARIANTS in @/lib/variant-index (Rule K.1 / FOLLOW-397).
+// Imported above — no inline copy needed.
 
 /**
  * Run the adaptation decision tree per Master Design E.1.
@@ -285,9 +283,11 @@ async function runDecisionTree(
 
   const playbook = getPlaybook(archetypeId);
 
-  // FOLLOW-342: resolve the variant index once per call.
-  // Unknown variant names (e.g. future v3) fall through to control (index 0).
-  const variantIndex = VARIANT_INDEX[variant] ?? 0;
+  // FOLLOW-342 / FOLLOW-397: resolve the variant index once per call.
+  // VARIANT_INDEX is derived from SEED_VARIANTS (Rule K.1). Unknown variant names
+  // (e.g. a stray 'v3' not yet in SEED_VARIANTS) yield undefined; copy selection
+  // falls through to s.en rather than silently serving control (no ?? 0 coerce).
+  const variantIndex: number | undefined = VARIANT_INDEX[variant];
 
   // Convert playbook slots → TextDirectives; prefer locale override, fall back to English [F-09].
   // FOLLOW-342: when a slot carries `variants.en`, use the bandit-selected index.
@@ -300,7 +300,7 @@ async function runDecisionTree(
 
     value:
       (locale === 'pl' ? s.pl : locale === 'es' ? s.es : undefined) ??
-      s.variants?.en[variantIndex] ??
+      (variantIndex !== undefined ? s.variants?.en[variantIndex] : undefined) ??
       s.en,
     archetype: archetypeId,
     confidence,

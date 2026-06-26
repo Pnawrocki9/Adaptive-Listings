@@ -77,7 +77,9 @@ vi.mock('@estalara/sdk/playbooks', () => ({
 }));
 
 const mockGetBanditArms = vi.hoisted(() => vi.fn());
+// FOLLOW-397: include SEED_VARIANTS so VARIANT_INDEX is derived correctly at module load.
 vi.mock('@/lib/bandit-query', () => ({
+  SEED_VARIANTS: ['control', 'v1', 'v2'] as const,
   getBanditArms: mockGetBanditArms,
 }));
 

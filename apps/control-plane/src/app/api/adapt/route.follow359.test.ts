@@ -60,7 +60,9 @@ vi.mock('@estalara/sdk/playbooks', () => ({
 }));
 
 // Return 3 arms so Thompson sampling has something to pick from.
+// FOLLOW-397: include SEED_VARIANTS so VARIANT_INDEX is derived correctly at module load.
 vi.mock('@/lib/bandit-query', () => ({
+  SEED_VARIANTS: ['control', 'v1', 'v2'] as const,
   getBanditArms: vi.fn().mockResolvedValue([
     { variant: 'control', alpha: 1, beta: 1, paused: false },
     { variant: 'v1', alpha: 1, beta: 1, paused: false },

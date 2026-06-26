@@ -1,12 +1,15 @@
 /**
- * Unit tests for bandit-seed.ts — TICKET-AB-006.
+ * Unit tests for bandit-seed.ts — TICKET-AB-006 / FOLLOW-361.
  *
  * Tests:
- *  - seedBanditWeightsForTenant inserts exactly 18 rows (one per canonical archetype)
- *  - All rows have variant='default', alpha=1.0, beta=1.0, paused=false
+ *  - seedBanditWeightsForTenant inserts exactly 54 rows (18 archetypes × 3 variants)
+ *  - All rows have variant in SEED_VARIANTS (control / v1 / v2), NOT 'default'
+ *  - Each archetype is seeded with all three variants from SEED_VARIANTS
  *  - Idempotency: calling seed twice for the same tenant uses onConflictDoNothing
  *  - No-op when DATABASE_URL_ADMIN is not configured
  *  - Archetype list includes all expected names (investor, own-use, cross-border, neutral)
+ *  - AC-3 parity: variant list used by seedBanditWeightsForTenant equals SEED_VARIANTS
+ *    from bandit-query.ts (Rule K.1 — prevents future divergence)
  *
  * @module apps/control-plane/src/lib/__tests__/bandit-seed.test
  */
@@ -33,6 +36,7 @@ vi.mock('@estalara/db', () => ({
 }));
 
 import { seedBanditWeightsForTenant } from '../bandit-seed.js';
+import { SEED_VARIANTS } from '../bandit-query.js';
 
 // ─── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -46,7 +50,7 @@ describe('seedBanditWeightsForTenant — row count and shape', () => {
     vi.unstubAllEnvs();
   });
 
-  it('inserts exactly 18 rows — one per canonical archetype', async () => {
+  it('inserts exactly 54 rows — 18 archetypes × 3 variants (control/v1/v2)', async () => {
     await seedBanditWeightsForTenant('tenant-uuid-001');
 
     expect(mockValues).toHaveBeenCalledOnce();
@@ -59,7 +63,7 @@ describe('seedBanditWeightsForTenant — row count and shape', () => {
       paused: boolean;
     }[];
 
-    expect(rows).toHaveLength(18);
+    expect(rows).toHaveLength(54);
   });
 
   it('all inserted rows have tenantId matching the argument', async () => {
@@ -70,11 +74,13 @@ describe('seedBanditWeightsForTenant — row count and shape', () => {
     expect(rows.every((r) => r.tenantId === tenantId)).toBe(true);
   });
 
-  it('all inserted rows have variant="default"', async () => {
+  it('all inserted rows have variant in SEED_VARIANTS — never "default"', async () => {
     await seedBanditWeightsForTenant('tenant-uuid-003');
 
     const rows = mockValues.mock.calls[0]?.[0] as { variant: string }[];
-    expect(rows.every((r) => r.variant === 'default')).toBe(true);
+    const validVariants: readonly string[] = SEED_VARIANTS;
+    expect(rows.every((r) => validVariants.includes(r.variant))).toBe(true);
+    expect(rows.some((r) => r.variant === 'default')).toBe(false);
   });
 
   it('all inserted rows have alpha=1.0, beta=1.0 (Beta(1,1) uniform prior)', async () => {
@@ -133,14 +139,31 @@ describe('seedBanditWeightsForTenant — row count and shape', () => {
     expect(names).toContain('neutral');
   });
 
-  it('no duplicate archetypes in inserted rows', async () => {
+  it('no duplicate (archetype, variant) pairs in inserted rows', async () => {
     await seedBanditWeightsForTenant('tenant-uuid-009');
 
-    const rows = mockValues.mock.calls[0]?.[0] as { archetype: string }[];
-    const names = rows.map((r) => r.archetype);
-    const unique = new Set(names);
+    const rows = mockValues.mock.calls[0]?.[0] as { archetype: string; variant: string }[];
+    const keys = rows.map((r) => `${r.archetype}:${r.variant}`);
+    const unique = new Set(keys);
 
-    expect(unique.size).toBe(18);
+    expect(unique.size).toBe(54);
+  });
+
+  it('each archetype is seeded exactly once for each variant in SEED_VARIANTS', async () => {
+    await seedBanditWeightsForTenant('tenant-uuid-010');
+
+    const rows = mockValues.mock.calls[0]?.[0] as { archetype: string; variant: string }[];
+    const byArchetype = new Map<string, string[]>();
+    for (const r of rows) {
+      const list = byArchetype.get(r.archetype) ?? [];
+      list.push(r.variant);
+      byArchetype.set(r.archetype, list);
+    }
+
+    for (const [, variants] of byArchetype) {
+      expect([...variants].sort()).toEqual([...SEED_VARIANTS].sort());
+    }
+    expect(byArchetype.size).toBe(18);
   });
 });
 
@@ -155,14 +178,14 @@ describe('seedBanditWeightsForTenant — idempotency', () => {
   });
 
   it('uses onConflictDoNothing for idempotency', async () => {
-    await seedBanditWeightsForTenant('tenant-uuid-010');
+    await seedBanditWeightsForTenant('tenant-uuid-011');
 
     expect(mockOnConflictDoNothing).toHaveBeenCalledOnce();
   });
 
   it('calling seed twice for same tenant calls onConflictDoNothing twice', async () => {
-    await seedBanditWeightsForTenant('tenant-uuid-011');
-    await seedBanditWeightsForTenant('tenant-uuid-011');
+    await seedBanditWeightsForTenant('tenant-uuid-012');
+    await seedBanditWeightsForTenant('tenant-uuid-012');
 
     expect(mockOnConflictDoNothing).toHaveBeenCalledTimes(2);
   });
@@ -181,7 +204,7 @@ describe('seedBanditWeightsForTenant — no-op when DB not configured', () => {
     vi.stubEnv('DATABASE_URL_ADMIN', '');
     vi.stubEnv('DATABASE_URL_DIRECT', '');
 
-    await seedBanditWeightsForTenant('tenant-uuid-012');
+    await seedBanditWeightsForTenant('tenant-uuid-013');
 
     expect(mockCreateAdminClient).not.toHaveBeenCalled();
     expect(mockInsert).not.toHaveBeenCalled();
@@ -190,7 +213,7 @@ describe('seedBanditWeightsForTenant — no-op when DB not configured', () => {
   it('calls createAdminClient when DATABASE_URL_ADMIN is set', async () => {
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
 
-    await seedBanditWeightsForTenant('tenant-uuid-013');
+    await seedBanditWeightsForTenant('tenant-uuid-014');
 
     expect(mockCreateAdminClient).toHaveBeenCalledOnce();
   });
@@ -203,12 +226,49 @@ describe('seedBanditWeightsForTenant — no-op when DB not configured', () => {
     vi.stubEnv('DATABASE_URL_DIRECT', 'postgresql://user:pass@localhost:5432/db-direct');
 
     try {
-      await seedBanditWeightsForTenant('tenant-uuid-014');
+      await seedBanditWeightsForTenant('tenant-uuid-015');
       expect(mockCreateAdminClient).toHaveBeenCalledOnce();
     } finally {
       if (originalAdmin !== undefined) {
         process.env.DATABASE_URL_ADMIN = originalAdmin;
       }
     }
+  });
+});
+
+// ─── AC-3: Parity test — FOLLOW-361 / Rule K.1 ────────────────────────────────
+// Asserts that the variant list written by seedBanditWeightsForTenant is
+// exactly equal to SEED_VARIANTS exported from bandit-query.ts.
+// If the two lists diverge, this test fails — preventing a future engineer
+// from changing one side without the other.
+
+describe('seedBanditWeightsForTenant — parity with SEED_VARIANTS from bandit-query (Rule K.1 / FOLLOW-361)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('seeds exactly the variants in SEED_VARIANTS — no more, no less, no "default"', async () => {
+    await seedBanditWeightsForTenant('tenant-parity-001');
+
+    const rows = mockValues.mock.calls[0]?.[0] as { variant: string }[];
+    const seededVariants = [...new Set(rows.map((r) => r.variant))].sort();
+    const expectedVariants = [...SEED_VARIANTS].sort();
+
+    expect(seededVariants).toEqual(expectedVariants);
+    expect(seededVariants).not.toContain('default');
+  });
+
+  it('SEED_VARIANTS constant itself does not include "default"', () => {
+    // Guard: confirms the source-of-truth list was not accidentally patched
+    // to re-introduce the stale 'default' arm.
+    expect(Array.from(SEED_VARIANTS)).not.toContain('default');
+    expect(Array.from(SEED_VARIANTS)).toContain('control');
+    expect(Array.from(SEED_VARIANTS)).toContain('v1');
+    expect(Array.from(SEED_VARIANTS)).toContain('v2');
   });
 });

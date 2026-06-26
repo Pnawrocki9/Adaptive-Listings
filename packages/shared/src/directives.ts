@@ -134,7 +134,7 @@ export interface AdaptationDirectives {
    *   - `1` = listing_list / search / home: lighter directive set (cta, feature, reorder only)
    *
    * The value is stored in the `adaptation_decisions.page_context` ClickHouse column
-   * (renamed from `tier` in migration 0017). Absent on legacy GET responses.
+   * (renamed from `tier` in migration 0018). Absent on legacy GET responses.
    */
   page_context?: 1 | 2;
   /** Empty when source is 'default' or 'llm_full'. */

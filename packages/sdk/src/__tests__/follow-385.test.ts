@@ -208,7 +208,7 @@ describe('FOLLOW-385 AC-4: micro-poll onAnswer guards applyBehavioralSignal when
     // Models the guard pattern in the onAnswer callback inside tryShowMicroPoll (index.ts):
     //   microPollQuestionIndex += 1;
     //   microPollShownThisSession = false;
-    //   // §H.9 opt-out: suppress AL profiling. Ingest stream left flowing (...).
+    //   // §H.9 opt-out: suppress AL profiling (no ingest push before this guard in onAnswer).
     //   if (profilingOptedOut) return;
     //   currentIntentState = applyBehavioralSignal(...);
     //   onIntentUpdate(...);
@@ -222,7 +222,7 @@ describe('FOLLOW-385 AC-4: micro-poll onAnswer guards applyBehavioralSignal when
       microPollIndex += 1;
       microPollShown = false;
 
-      // §H.9 opt-out: suppress AL profiling. Ingest stream left flowing (§H.8/CEO 2026-06-23/FOLLOW-384).
+      // §H.9 opt-out: suppress AL profiling (no ingest push in onAnswer — contrast with favorites §H.8).
       if (profilingOptedOut) return;
 
       // Apply behavioral signal — skipped when opted out

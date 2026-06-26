@@ -224,6 +224,10 @@ describe('FOLLOW-409 REAL-4: micro-poll onAnswer real guard — opted-out sessio
     const ingestCalls = (mockFetch.mock.calls as [string, RequestInit][]).filter(
       ([url]) => typeof url === 'string' && url.includes('/v1/events'),
     );
+    // positive control: flush harness is alive — at least one ingest call must have
+    // fired (session.started or page_view). Without this, the absence assertion below
+    // could pass vacuously if the flush timer itself were broken.
+    expect(ingestCalls.length).toBeGreaterThanOrEqual(1);
     const hasMicroPollEvent = ingestCalls.some(([, init]) => {
       try {
         const body = JSON.parse(init.body as string) as {

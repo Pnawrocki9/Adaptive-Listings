@@ -210,7 +210,9 @@ export function postQuizCompletionPing(
   if (!baseUrl) return;
 
   // §H.9 defense-in-depth: mirror the /adapt pattern (adapt.ts:744) — append the
-  // opt-out flag so the route gate at route.ts:363 is reachable by real SDK traffic.
+  // opt-out flag so the route gate at route.ts:363 is reachable ONLY if Guard 1
+  // regresses — NOT under normal production traffic (Guard 1 returns before
+  // postQuizCompletionPing is called for opted-out sessions).
   const completionUrl = profilingOptedOut ? `${baseUrl}?profiling_opt_out=1` : baseUrl;
 
   const body = JSON.stringify({

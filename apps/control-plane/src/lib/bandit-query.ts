@@ -27,8 +27,11 @@ import type { BanditArm } from '@estalara/shared';
  * Three arms with the uniform Beta(1, 1) prior ensure Thompson sampling
  * starts unbiased — every variant has equal probability until evidence
  * (conversions / non-conversions) shifts the posterior.
+ *
+ * Exported so `bandit-seed.ts` derives its seed list from this single
+ * source of truth (Rule K.1 / Rule S — no divergent duplicate list).
  */
-const SEED_VARIANTS = ['control', 'v1', 'v2'] as const;
+export const SEED_VARIANTS = ['control', 'v1', 'v2'] as const;
 
 /**
  * Returns the `BanditArm[]` for the given `(tenantId, archetype)` pair.

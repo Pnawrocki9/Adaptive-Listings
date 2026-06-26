@@ -218,6 +218,13 @@
       "when": 1781420214161,
       "tag": "0030_seed_global_intent_weights",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1782464588649,
+      "tag": "0031_strip_bandit_default_variant",
+      "breakpoints": true
     }
   ]
 }

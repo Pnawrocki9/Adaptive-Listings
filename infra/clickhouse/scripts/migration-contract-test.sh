@@ -32,10 +32,20 @@ MIGRATIONS_DIR="${SCRIPT_DIR}/../migrations"
 LOCAL="${LOCAL:-0}"
 CH_USER="${CLICKHOUSE_USER:-default}"
 CH_PASS="${CLICKHOUSE_PASSWORD:-}"
+CH_CONTRACT_DB="contract_test_ordering"
+CH_CONTRACT_URL="${CLICKHOUSE_URL}/?database=${CH_CONTRACT_DB}"
 
 echo "=== ClickHouse Migration-Ordering Contract Test ==="
 echo "URL:   ${CLICKHOUSE_URL}"
 echo "Local: ${LOCAL}"
+echo ""
+
+# Create an isolated database so migrations applied here do not collide with
+# the subsequent migrate.sh run against the default database (which would
+# otherwise fail re-applying RENAME COLUMN on an already-renamed column).
+curl -sSf "${CLICKHOUSE_URL}" -u "${CH_USER}:${CH_PASS}" \
+  --data-binary "CREATE DATABASE IF NOT EXISTS ${CH_CONTRACT_DB}"
+echo "Contract-test database: ${CH_CONTRACT_DB}"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -45,9 +55,9 @@ echo ""
 _ch_query() {
   local sql="$1"
   if [ -n "$CH_PASS" ]; then
-    curl -sSf "${CLICKHOUSE_URL}" -u "${CH_USER}:${CH_PASS}" --data-binary "${sql}"
+    curl -sSf "${CH_CONTRACT_URL}" -u "${CH_USER}:${CH_PASS}" --data-binary "${sql}"
   else
-    curl -sSf "${CLICKHOUSE_URL}" --data-binary "${sql}"
+    curl -sSf "${CH_CONTRACT_URL}" --data-binary "${sql}"
   fi
 }
 
@@ -66,11 +76,11 @@ _assert_eq() {
 _http_status() {
   local sql="$1"
   if [ -n "$CH_PASS" ]; then
-    curl -s -o /dev/null -w "%{http_code}" "${CLICKHOUSE_URL}" \
+    curl -s -o /dev/null -w "%{http_code}" "${CH_CONTRACT_URL}" \
       -u "${CH_USER}:${CH_PASS}" \
       --data-binary "${sql}"
   else
-    curl -s -o /dev/null -w "%{http_code}" "${CLICKHOUSE_URL}" \
+    curl -s -o /dev/null -w "%{http_code}" "${CH_CONTRACT_URL}" \
       --data-binary "${sql}"
   fi
 }
@@ -79,11 +89,11 @@ _ch_send() {
   # Send a single SQL statement via HTTP.  Uses --fail-with-body so CI logs
   # show the ClickHouse error message rather than just the exit code.
   if [ -n "$CH_PASS" ]; then
-    curl -sS --fail-with-body "${CLICKHOUSE_URL}" \
+    curl -sS --fail-with-body "${CH_CONTRACT_URL}" \
       -u "${CH_USER}:${CH_PASS}" \
       --data-binary @-
   else
-    curl -sS --fail-with-body "${CLICKHOUSE_URL}" \
+    curl -sS --fail-with-body "${CH_CONTRACT_URL}" \
       --data-binary @-
   fi
 }
@@ -181,3 +191,8 @@ _assert_eq "INSERT HTTP status after migration 0019" "200" "${STATUS_AFTER}"
 
 echo ""
 echo "=== Migration-Ordering Contract Test PASSED ==="
+
+# Tear down the isolated database so the default database remains clean for
+# the subsequent migrate.sh run.
+curl -sSf "${CLICKHOUSE_URL}" -u "${CH_USER}:${CH_PASS}" \
+  --data-binary "DROP DATABASE IF EXISTS ${CH_CONTRACT_DB}"

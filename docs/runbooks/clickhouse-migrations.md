@@ -56,6 +56,7 @@ The `clickhouse-client` binary may not be available on the operator machine. Use
 directly. This is the same mechanism `migrate.sh` uses.
 
 ```bash
+# Apply a single migration file directly:
 # Required environment (load via Doppler in production):
 #   CLICKHOUSE_URL      e.g. https://<host>:8443
 #   CLICKHOUSE_USER     e.g. default
@@ -72,7 +73,7 @@ For files containing multiple statements (separated by `;`), use `migrate.sh`'s 
 helper which handles the statement-splitting automatically:
 
 ```bash
-# Apply a single migration file through migrate.sh's statement splitter:
+# Apply ALL pending migrations idempotently (safe to re-run):
 CLICKHOUSE_URL="..." CLICKHOUSE_PASSWORD="..." \
   bash infra/clickhouse/scripts/migrate.sh
 # migrate.sh is idempotent: migrations use IF NOT EXISTS / IF EXISTS guards.
@@ -119,13 +120,17 @@ The `clickhouse-smoke` CI job now runs `infra/clickhouse/scripts/migration-contr
 4. Applies migration `0019`.
 5. Repeats the INSERT and asserts it **succeeds** (HTTP 200).
 
-This catches any future PR that adds a column to the INSERT column list in `logDecisionAsync`
-without a matching migration in the same PR.
+This catches **regression of the 0019 / `page_context_source` boundary specifically** — it asserts
+the column is absent before migration 0019 and present after. It does NOT generically detect any
+future column added to `logDecisionAsync`; the test is hardcoded to this one boundary. For any new
+column you add to `logDecisionAsync`, follow the 'Extending the contract test' section below to add
+the assertion manually (or wait for FOLLOW-402, which will generalize the check).
 
 **Extending the contract test:** when a future migration adds a new column to an explicit INSERT in
 `logDecisionAsync` (or any other fire-and-forget ClickHouse writer), add a corresponding contract
 test case to `infra/clickhouse/scripts/migration-contract-test.sh` following the same four-step
-pattern.
+pattern. Once FOLLOW-402 lands, the column list will be derived automatically — see that ticket for
+the generalized parity check.
 
 ---
 

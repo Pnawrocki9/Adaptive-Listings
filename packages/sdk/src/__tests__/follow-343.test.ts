@@ -204,8 +204,11 @@ describe('AC2 — named constants (FOLLOW-343)', () => {
     expect(DOM_ADAPT_MIN_SIGNAL_COUNT).toBe(2);
   });
 
-  it('DOM_ADAPT_CONFIDENCE_FLOOR is strictly below SIDEBAR_SHOW_THRESHOLD (0.6) so the sidebar remains a separate gate', () => {
-    // Ensures the floor only gates DOM, not the sidebar visibility (which has its own 0.6 threshold).
+  it('DOM_ADAPT_CONFIDENCE_FLOOR is strictly below the server CONFIDENCE_THRESHOLD (0.6) so the SDK floor does not duplicate the server gate', () => {
+    // The server /api/adapt route gates directives at CONFIDENCE_THRESHOLD = 0.6 (route.ts).
+    // The SDK floor (0.5) must stay below that value so the description fetch (gated by SDK
+    // floor only) can proceed at 0.5–0.59 while the server still returns [] for directives.
+    // There is no SIDEBAR_SHOW_THRESHOLD constant in index.ts — the sidebar is admin-only.
     expect(DOM_ADAPT_CONFIDENCE_FLOOR).toBeLessThan(0.6);
   });
 });

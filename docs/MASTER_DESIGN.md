@@ -725,7 +725,7 @@ Three components carry the adaptive intelligence at runtime. The Modal Python se
 - **Location:** `packages/sdk/src/core/intent.ts`
 - **Size:** ~600 LOC of pure TypeScript, no external ML dependencies
 - **What it does:** Maintains a probability distribution over 18 archetypes per visitor session. Updates on every behavioral signal (page.view, scroll.depth, listing.viewed, cta.clicked — 4 of 37 declared signals actively emitted today). Uses Bayesian update with configurable priors (`BASE_PRIOR`) and signal likelihoods (`SIGNAL_LIKELIHOODS`).
-- **Confidence gating:** Sidebar widget hidden until `confidence >= 0.6` (`SIDEBAR_SHOW_THRESHOLD`). Cold start renders neutral — no premature adaptation.
+- **Confidence gating:** DOM adaptation is gated by `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` in `packages/sdk/src/core/adapt-floor.ts`; below this threshold `adapt-floor` returns `[]` and no mutation is applied. Cold start renders neutral — no premature adaptation. The sidebar widget is admin-only (not buyer-facing); there is no SDK constant gating sidebar visibility.
 - **Decay:** Confidence drifts toward uniform distribution (1/18 per archetype) at `DEFAULT_DECAY_RATE = 0.02 / minute` without new evidence.
 - **Why in-browser:** Zero latency for intent updates, no PII leaves the device for classification, graceful degradation if network is unavailable.
 - **Limitation:** Loses state on tab close. Cross-tab persistence is the responsibility of `apps/intent-engine` (Modal — to be built, see ADR-0005).
@@ -2406,7 +2406,7 @@ Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adapto
 > Gating ladder summary:
 > - `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` (SDK, `packages/sdk/src/core/adapt-floor.ts`) — gate for BOTH directive mutations AND `/adapt/description` fetch.
 > - `CONFIDENCE_THRESHOLD = 0.6` (server, `apps/control-plane/src/app/api/adapt/route.ts`) — gate for `/api/adapt` directive responses only.
-> - `SIDEBAR_SHOW_THRESHOLD = 0.6` (SDK, `packages/sdk/src/index.ts`) — gate for sidebar visibility.
+> - No third SDK gate exists. The buyer-facing sidebar widget is admin-only (`index.ts` lines 948–950); `sidebar.show()` calls are no-ops and there is no `SIDEBAR_SHOW_THRESHOLD` constant in the SDK.
 >
 > Practical implication: at confidence 0.5–0.59 the server returns `[]` directives but the SDK **will still fetch** `/adapt/description` and apply an AI-adapted description if `source === "ai_cached"`. This is intentional — early behavioral signals can produce confident description personalisation before the archetype clears the tighter directive gate.
 

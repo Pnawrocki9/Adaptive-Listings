@@ -22,7 +22,8 @@
  *   0.5 = DOM_ADAPT_CONFIDENCE_FLOOR (this constant) — SDK gate for BOTH directive
  *         mutations AND the /adapt/description fetch.
  *   0.6 = CONFIDENCE_THRESHOLD in route.ts — server-side gate for /api/adapt
- *         directives (returns [] below it), AND SIDEBAR_SHOW_THRESHOLD in index.ts.
+ *         directives (returns [] below it). No SDK constant gates sidebar
+ *         visibility — the buyer-facing sidebar is admin-only (index.ts:948–950).
  *
  * Asymmetry: /api/adapt has a server-side gate at 0.6, making the SDK floor
  * redundant on the DIRECTIVE axis. But /adapt/description has NO server-side

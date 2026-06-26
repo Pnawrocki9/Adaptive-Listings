@@ -56,7 +56,9 @@ vi.mock('@estalara/sdk/playbooks', () => ({
 
 // Return arms that include v1/v2 — ensures that IF sampling runs, it can return
 // a non-control variant. Used with the thompsonSample mock below.
+// FOLLOW-397: include SEED_VARIANTS so VARIANT_INDEX is derived correctly at module load.
 vi.mock('@/lib/bandit-query', () => ({
+  SEED_VARIANTS: ['control', 'v1', 'v2'] as const,
   getBanditArms: vi.fn().mockResolvedValue([
     { variant: 'control', alpha: 1, beta: 1, paused: false },
     { variant: 'v1', alpha: 1, beta: 1, paused: false },

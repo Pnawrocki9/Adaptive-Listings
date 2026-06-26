@@ -37,7 +37,9 @@ vi.mock('@/lib/demo-jwt-verify', () => ({
 }));
 
 // Mock bandit-query — POST handler now calls getBanditArms (FOLLOW-007)
+// FOLLOW-397: include SEED_VARIANTS so VARIANT_INDEX is derived correctly at module load.
 vi.mock('@/lib/bandit-query', () => ({
+  SEED_VARIANTS: ['control', 'v1', 'v2'] as const,
   getBanditArms: vi.fn().mockResolvedValue([
     { variant: 'control', alpha: 1, beta: 1, paused: false },
     { variant: 'v1', alpha: 1, beta: 1, paused: false },

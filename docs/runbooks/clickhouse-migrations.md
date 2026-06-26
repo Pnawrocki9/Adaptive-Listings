@@ -162,3 +162,58 @@ same class of silent data-loss incident as ESC-031.
 - [ ] Merge the code change.
 
 The order is: **migrate → verify → merge code**. Reversing steps 1 and 3 reproduces ESC-031.
+
+---
+
+## Prod Attestation — migration 0019
+
+**Date:** 2026-06-26 **Attested by:** FOLLOW-404 (devops-engineer)
+
+**DESCRIBE TABLE result (relevant rows):**
+
+```
+page_context_source	LowCardinality(String)	DEFAULT	'legacy'
+```
+
+Full `DESCRIBE TABLE adaptation_decisions FORMAT TSV` output (18 columns confirmed):
+
+```
+session_id	String
+tenant_id	String
+archetype	LowCardinality(String)
+confidence	Float32
+similarity	Float32
+source	LowCardinality(String)
+page_context	UInt8
+directive_count	UInt16
+ts	DateTime64(3, 'UTC')
+holdout_group	Bool	DEFAULT	false
+gate_reason	LowCardinality(String)	DEFAULT	''
+variant	LowCardinality(String)	DEFAULT	'control'
+adapt_decision_id	String	DEFAULT	''
+demo_override	UInt8	DEFAULT	0
+model_version	LowCardinality(String)	DEFAULT	''
+features_snapshot	String	DEFAULT	''
+lead_id	String	DEFAULT	''
+page_context_source	LowCardinality(String)	DEFAULT	'legacy'
+```
+
+**SELECT DISTINCT page_context_source:**
+
+Table had zero rows at time of attestation (consistent with the ~80-minute silent-write-failure
+window described in ESC-031; migration 0019 was applied manually after the incident). Column
+existence confirmed via DESCRIBE TABLE above.
+
+**Writer grant (ingest_worker):**
+
+`SHOW GRANTS FOR ingest_worker` returned:
+
+```
+GRANT SELECT, INSERT ON default.* TO ingest_worker
+```
+
+INSERT on `default.adaptation_decisions` is confirmed present (covered by `default.*`).
+
+**Cross-reference:** This is the one-time 0019 attestation per RETRO-121 §7. FOLLOW-308 is the
+standing prod-apply mechanism (different scope). ESC-031 root-cause incident documented in the
+ESC-031 section of this runbook above.

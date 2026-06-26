@@ -19,7 +19,7 @@
  */
 
 import { createAdminClient, abBanditWeights } from '@estalara/db';
-import { SEED_VARIANTS } from './bandit-query.js';
+import { SEED_VARIANTS } from './bandit-query';
 
 /**
  * Canonical archetype identifiers for Thompson sampling bandit seeding.

@@ -182,6 +182,7 @@ paths = [
 regexes = [
   '''C5AD17C747E3415A3642D57D77C6C491D6AC1D69''',
   '''mnt/transcripts/''',
+  '''0019_adaptation_decisions_page_context''',
 ]
 
 # JWT tokens (generic)

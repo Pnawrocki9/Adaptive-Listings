@@ -242,6 +242,14 @@ paths = [
   # (e.g. conversion_labels_tenant_prediction_unique = 40 chars) that false-positive on this rule.
   # The same allow-list exemption exists for packages/db/src/__tests__/ (same DDL, same pattern).
   '''apps/control-plane/src/app/api/.*route-driven-pglite\.test\.ts''',
+  # Operational runbooks contain SQL DDL, ClickHouse table/column identifiers, migration filenames
+  # (e.g. 0019_adaptation_decisions_page_context_source = 45 chars), and Markdown table separator
+  # rows (runs of 40+ '-') — all false-positive on the broad cloudflare-api-token heuristic. Same
+  # class as the migrations/schema exemptions above; these are prose docs, not secret stores.
+  '''docs/runbooks/''',
+  # Escalation log: long-form prose with table separators, migration/file identifiers, session and
+  # decision UUIDs, and ticket slugs that false-positive on the cloudflare-api-token heuristic.
+  '''backlog/ESCALATIONS\.md''',
 ]
 
 # Regexes for known safe patterns

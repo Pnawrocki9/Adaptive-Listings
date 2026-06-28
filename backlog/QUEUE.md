@@ -1257,6 +1257,11 @@ ARCH-003 (PR #95). FAIR-001 CANCELLED. NATIVE-001 deferred to MVP launch. CAUSAL
   commit: 1d21f7d354
   spec: backlog/sprint-9/TICKET-AB-006.md
   promoted_from: FOLLOW-008
+  historical_note: |
+    SUPERSEDED by FOLLOW-361 (PR #356, 2026-06-26). The original seed used variant='default'
+    (18 rows). FOLLOW-361 replaced this with the three-arm model: control/v1/v2 (54 rows).
+    The title "18 rows × variant='default'" is historical only; current prod schema uses
+    SEED_VARIANTS = ['control','v1','v2'] from bandit-query.ts. (RETRO-117 §4d DG-1 / FOLLOW-397 AC-4)
 
 - id: TICKET-AB-007
   title: Wire holdout_group into ClickHouse adaptation_decisions insert path
@@ -5543,46 +5548,88 @@ others staged by priority; max 3 IN_PROGRESS at once.**
 - id: FOLLOW-361
   title: Reconcile bandit seed convention (default vs control/v1/v2)
   agent: backend-engineer
-  status: READY
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-26T00:00Z'
+  completed_at: '2026-06-26T10:08Z'
   priority: P1
   estimated_hours: 3
   depends_on: []
   source: RETRO-095 (FOLLOW-342 / PR #327)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-361 stub)
   branch: backend-engineer/FOLLOW-361-bandit-seed-convention
+  pr: '#356'
+  merge_commit: '4eb24af4'
+  notes: |
+    MERGED 2026-06-26T10:08:42Z. Commit 4eb24af4.
 
 - id: FOLLOW-354
   title: Test + document the confidence floor real axis (suppress /adapt/description below floor)
   agent: sdk-engineer
-  status: READY
+  status: DONE
+  assigned_to: sdk-engineer
+  started_at: '2026-06-26T14:00Z'
+  completed_at: '2026-06-26T11:23Z'
   priority: P2
   estimated_hours: 4
   depends_on: []
   source: RETRO-091 (FOLLOW-343 / PR #321)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-354 stub)
   branch: sdk-engineer/FOLLOW-354-confidence-floor-description-axis
+  pr: '#358'
+  merge_commit: '701aa4efb9'
+  notes: |
+    MERGED 2026-06-26T11:23:33Z. Commit 701aa4efb9. PM-validated 2026-06-26T16:00Z.
+    CI: run 28234447026/28234468393 — only pre-existing failures (Rule I, Archetype embeddings).
+    All real gates PASS. CI non-success on real gates: 0.
+    AC-1: 3 tests assert NO /adapt/description fetch below floor.
+    AC-2: 3 tests assert description fetch IS issued at/above floor.
+    AC-3: MASTER_DESIGN §E.7 line 2404 confidence gating ladder note added.
+    AC-4: adapt-floor.ts JSDoc lines 21-32 documents 0.5 vs 0.6 asymmetry.
+    RETRO-119 SPAWNED. Generated FOLLOW-398 (P2 SIDEBAR_SHOW_THRESHOLD doc fix, sdk-engineer),
+    FOLLOW-399 (P3 signal_count branch test, sdk-engineer).
+    Retro note: RETRO-114/115/116 gap flagged in RETRO-119 — PM to reconcile.
 
 - id: FOLLOW-358
-  title: Resolve GET-vs-POST adaptation_decisions.tier semantic divergence (Rule K parity)
+  title: Resolve GET-vs-POST adaptation_decisions.page_context semantic divergence (Rule K parity)
   agent: backend-engineer
-  status: READY
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-26T12:00Z'
+  completed_at: '2026-06-26T10:40Z'
   priority: P2
   estimated_hours: 2
   depends_on: []
   source: RETRO-092 (FOLLOW-345 / PR #323)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-358 stub)
-  branch: backend-engineer/FOLLOW-358-tier-column-divergence
+  branch: backend-engineer/FOLLOW-358-page-context-divergence
+  pr: '#357'
+  merge_commit: 'a8eacb4a'
+  notes: |
+    MERGED 2026-06-26T10:40:15Z. Commit a8eacb4a. PM-validated 2026-06-26T15:00Z.
+    CI green (3/5 checks, 2/3 fix iterations). All real gates pass. RETRO-118 pending spawn.
 
 - id: FOLLOW-362
   title: Define non-en locale A/B behavior (stop logging unserved variants)
   agent: backend-engineer
-  status: READY
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-26T16:30Z'
+  completed_at: '2026-06-26T11:31Z'
   priority: P2
   estimated_hours: 3
   depends_on: []
   source: RETRO-095 (FOLLOW-342 / PR #327)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-362 stub)
   branch: backend-engineer/FOLLOW-362-locale-ab-variant
+  pr: '#359'
+  merge_commit: 'dfe8a9cd71'
+  notes: |
+    MERGED 2026-06-26T11:31:48Z. Commit dfe8a9cd71. CI run 28234468393: only pre-existing
+    failures (Rule I, Archetype embeddings not-NULL). All real gates PASS. CI real-gate count: 0.
+    Fix: suppress getBanditArms/thompsonSample for locale !== 'en' in GET + POST handlers.
+    Non-en sessions always log 'control' variant (matches served copy; no pl/es PlaybookEntry).
+    RETRO-120 spawned by coordinator.
 
 - id: FOLLOW-367
   title: Implement (or remove) the CHAT_NLP_LIVE gate — currently an inert no-op
@@ -5890,19 +5937,23 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     RETRO-110 pending (deferred — see STATUS.md).
 
 - id: FOLLOW-356
-  title: /api/adapt response directive_scope consumer + behavioral tests for page-type derivation
-  agent: sdk-engineer
-  status: READY
+  title: /api/adapt response page_context consumer + behavioral tests for page-type derivation
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
   priority: P1
   estimated_hours: 4
   depends_on: []
   source: RETRO-092 (FOLLOW-345 / PR #323)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-356 stub)
-  branch: sdk-engineer/FOLLOW-356-adapt-tier-consumer
+  branch: backend-engineer/FOLLOW-357-356-tier-page-context-rename
+  pr: '#354'
+  merge_commit: d8d5cb8
+  completed_at: '2026-06-25'
   notes: |
-    HALF_WIRE_P — directive_scope declared but no non-test consumer reads it (RETRO-101).
-    Decide: wire real consumer OR mark analytics-only + fix type.
-    Add tests for directiveScopeFromPageType / filterDirectivesByPageType.
+    DONE — absorbed into FOLLOW-357 PR #354 (d8d5cb8, 2026-06-25). CEO chose page_context
+    (analytics-only, no SDK consumer, AdaptResponse.tier removed). AC-1/2/3/4 met per
+    FOLLOW_UPS.md status (status: DONE 2026-06-25). RETRO-115 pending spawn.
 
 - id: FOLLOW-363
   title: Thread hysteresis (currentArchetype) into applyDwellSignal + applyListingViewRate
@@ -6024,18 +6075,25 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     Wire the /api/quiz/completion opt-out producer + replace modeled SDK guard tests with
     real-handler tests + fix the misleading micro-poll comment (close RETRO-109 HW-1/TG-1/DG-1)
   agent: sdk-engineer
-  status: READY
+  status: DONE
+  assigned_to: sdk-engineer
   priority: P2
   estimated_hours: 3
   depends_on: [FOLLOW-385]
   source: RETRO-109 (§3 HW-1 HALF_WIRE_C, §4c TG-1, §4d DG-1 — ADDENDUM re-pass)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-389 stub)
   branch: sdk-engineer/FOLLOW-389-quiz-completion-optout-producer
+  pr: '#355'
+  merge_commit: 0e1b9eb
+  completed_at: '2026-06-26'
   notes: |
-    Promoted to QUEUE.md 2026-06-24 post-merge of PR #349 (FOLLOW-387).
-    Co-assigned: backend-engineer confirms /api/quiz/completion route gate survives auth refactors.
-    FOLLOW-385 DONE (PR #348, f7ac516) — dependency satisfied.
-    See FOLLOW_UPS.md stub for full scope (HW-1, TG-1, DG-1).
+    DONE — PR #355 merged to main 2026-06-26 (0e1b9eb). "feat(sdk): wire quiz-completion
+    opt-out producer + real-handler tests [FOLLOW-389]". HW-1/TG-1/DG-1 from RETRO-109
+    all resolved. Co-assignment (backend-engineer route gate) confirmed in PR. RETRO-116
+    pending spawn.
+    NOTE: incomplete leg (micro-poll onAnswer guard not covered by this PR; micro_polls_enabled
+    forced false in buildMockFetch so path never driven) is COVERED_BY_FOLLOW-409 (PR #367,
+    READY_FOR_REVIEW pending human merge). Once FOLLOW-409 merges, §H.9 TG-1 is complete.
 
 - id: FOLLOW-388
   title:
@@ -6086,13 +6144,21 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
 - id: FOLLOW-361
   title: Reconcile bandit seed convention (default vs control/v1/v2)
   agent: backend-engineer
-  status: READY
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-26T00:00Z'
+  completed_at: '2026-06-26T10:08Z'
   priority: P1
   estimated_hours: 3
   depends_on: []
   source: RETRO-095 (FOLLOW-342 / PR #327)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-361 stub)
   branch: backend-engineer/FOLLOW-361-bandit-seed-convention
+  pr: '#356'
+  merge_commit: '4eb24af4'
+  notes: |
+    MERGED 2026-06-26T10:08:42Z. Commit 4eb24af4. PM-validated prior to merge.
+    All 4 ACs met. CI green. RETRO-117 pending spawn.
 
 - id: FOLLOW-370
   title: Cache getBanditArms on non-holdout GET/POST path (latency budget assertion)
@@ -6108,35 +6174,70 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
 - id: FOLLOW-354
   title: Test + document the confidence floor real axis (suppress /adapt/description below floor)
   agent: sdk-engineer
-  status: READY
+  status: DONE
+  assigned_to: sdk-engineer
+  started_at: '2026-06-26T14:00Z'
+  completed_at: '2026-06-26T11:23Z'
   priority: P2
   estimated_hours: 4
   depends_on: []
   source: RETRO-091 (FOLLOW-343 / PR #321)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-354 stub)
   branch: sdk-engineer/FOLLOW-354-confidence-floor-description-axis
+  pr: '#358'
+  merge_commit: '701aa4efb9'
+  notes: |
+    MERGED 2026-06-26T11:23:33Z. Commit 701aa4efb9. PM-validated 2026-06-26T16:00Z.
+    CI: run 28234447026/28234468393 — only pre-existing failures (Rule I, Archetype embeddings).
+    All real gates PASS. CI non-success on real gates: 0.
+    AC-1: 3 tests assert NO /adapt/description fetch below floor.
+    AC-2: 3 tests assert description fetch IS issued at/above floor.
+    AC-3: MASTER_DESIGN §E.7 line 2404 confidence gating ladder note added.
+    AC-4: adapt-floor.ts JSDoc lines 21-32 documents 0.5 vs 0.6 asymmetry.
+    RETRO-119 SPAWNED. Generated FOLLOW-398 (P2 SIDEBAR_SHOW_THRESHOLD doc fix, sdk-engineer),
+    FOLLOW-399 (P3 signal_count branch test, sdk-engineer).
+    Retro note: RETRO-114/115/116 gap flagged in RETRO-119 — PM to reconcile.
 
 - id: FOLLOW-358
-  title: Resolve GET-vs-POST adaptation_decisions.tier semantic divergence (Rule K parity)
+  title: Resolve GET-vs-POST adaptation_decisions.page_context semantic divergence (Rule K parity)
   agent: backend-engineer
-  status: READY
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-26T12:00Z'
+  completed_at: '2026-06-26T10:40Z'
   priority: P2
   estimated_hours: 2
   depends_on: []
   source: RETRO-092 (FOLLOW-345 / PR #323)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-358 stub)
-  branch: backend-engineer/FOLLOW-358-tier-column-divergence
+  branch: backend-engineer/FOLLOW-358-page-context-divergence
+  pr: '#357'
+  merge_commit: 'a8eacb4a'
+  notes: |
+    MERGED 2026-06-26T10:40:15Z. Commit a8eacb4a. PM-validated 2026-06-26T15:00Z.
+    CI green (3/5 checks, 2/3 fix iterations). All real gates pass. RETRO-118 pending spawn.
 
 - id: FOLLOW-362
   title: Define non-en locale A/B behavior (stop logging unserved variants)
   agent: backend-engineer
-  status: READY
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-26T16:30Z'
+  completed_at: '2026-06-26T11:31Z'
   priority: P2
   estimated_hours: 3
   depends_on: []
   source: RETRO-095 (FOLLOW-342 / PR #327)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-362 stub)
   branch: backend-engineer/FOLLOW-362-locale-ab-variant
+  pr: '#359'
+  merge_commit: 'dfe8a9cd71'
+  notes: |
+    MERGED 2026-06-26T11:31:48Z. Commit dfe8a9cd71. CI run 28234468393: only pre-existing
+    failures (Rule I, Archetype embeddings not-NULL). All real gates PASS. CI real-gate count: 0.
+    Fix: suppress getBanditArms/thompsonSample for locale !== 'en' in GET + POST handlers.
+    Non-en sessions always log 'control' variant (matches served copy; no pl/es PlaybookEntry).
+    RETRO-120 spawned by coordinator.
 
 - id: FOLLOW-367
   title: Implement (or remove) the CHAT_NLP_LIVE gate — currently an inert no-op
@@ -6242,6 +6343,617 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   spec: backlog/FOLLOW_UPS.md (FOLLOW-365 stub)
   notes: |
     CEO-gated. No work until CEO decides to pursue blended profile post-pilot.
+
+- id: FOLLOW-394
+  title: Guard migration-before-code ordering + INSERT contract test (ClickHouse smoke) + runbook
+  agent: data-engineer
+  status: DONE
+  assigned_to: data-engineer
+  started_at: '2026-06-26T18:00Z'
+  completed_at: '2026-06-26T13:24:58Z'
+  priority: P1
+  estimated_hours: 2
+  depends_on: []
+  source: RETRO-118 (§4b CB-1; §4a LG-1; §4c TG-1; §7) — source ticket FOLLOW-358 (PR #357)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-394 stub)
+  branch: data-engineer/FOLLOW-394-ch-migration-contract-test
+  pr: '#360'
+  merge_commit: '5898739afaf61a62176c68a3b211b7034dd66fa2'
+  notes: |
+    DONE. PR #360 merged 2026-06-26T13:24:58Z. RETRO-121 complete.
+    Generated FOLLOW-402 (P2, generalize contract test + DROP-on-failure fix),
+    FOLLOW-403 (P2, runbook overstatement correction), FOLLOW-404 (P2, prod attestation).
+    FOLLOW-396 sharpened: PR #360's token-scoped regex at .gitleaks.toml:185 supersedes
+    the file-wide route.ts paths allowlist line 177 — FOLLOW-396 can now simply delete
+    that paths entry.
+    CI counter: 3/5. Fix iterations: 2/3.
+    promoted_to_queue: 2026-06-26.
+
+- id: FOLLOW-395
+  title:
+    Realize page_context_source discriminator with an actual consumer (query or dashboard panel)
+  agent: data-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 2
+  depends_on: [FOLLOW-394]
+  source: RETRO-118 (§3 CHECK B HW-1) — source ticket FOLLOW-358 (PR #357)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-395 stub)
+  branch: data-engineer/FOLLOW-395-page-context-source-consumer
+  notes: |
+    Promoted 2026-06-26. Blocked on FOLLOW-394 (must apply migration before consumer is useful).
+    page_context_source column is write-only today — no in-repo read-side consumer confirmed.
+
+- id: FOLLOW-396
+  title: Narrow gitleaks route.ts allowlist (restore secret scanning on adapt route)
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-26T19:40Z'
+  completed_at: '2026-06-26T14:17Z'
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  source: RETRO-118 (§4d DG-1) — source ticket FOLLOW-358 (PR #357)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-396 stub)
+  branch: backend-engineer/FOLLOW-396-gitleaks-allowlist-narrow
+  pr: '#362'
+  notes: |
+    DONE. PR #362 merged 2026-06-26T14:17Z. RETRO-123 complete.
+    Rule V promoted to CONVENTIONS_PATCH.md (gitleaks token-scoped regexes over file-wide paths
+    on secret-handling files). Generated FOLLOW-406 (P3, negative-control attestation) and
+    FOLLOW-407 (P2, apply Rule V to consent endpoint exemption at .gitleaks.toml:172).
+    PM-VALIDATED 2026-06-26T19:50Z. CI green. Wiring verified (deletion only).
+    AC-1: route.ts file-wide paths exemption (5 lines, 173-177) deleted from .gitleaks.toml.
+          Verified: grep for route\.ts in .gitleaks.toml paths lists finds only the comment reference
+          at line 171 (in the consent-endpoint block, not an exemption entry). Entry gone.
+    AC-2: regexes entry '0019_adaptation_decisions_page_context' at .gitleaks.toml:180 retained.
+    AC-3: Gitleaks secrets scan 2x SUCCESS on commit bd0f82937793 (push-event + PR-event).
+          route.ts fully scanned; no cloudflare-api-token FP without the exemption.
+    AC-4: No other production files affected (deletion-only change, CI-verified).
+    CI counter: 1/5. Fix iterations: 0/3.
+
+- id: FOLLOW-397
+  title: Derive VARIANT_INDEX from SEED_VARIANTS + add stray-variant fallback test (Rule K.1)
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-26T19:15Z'
+  completed_at: '2026-06-26T14:01:44Z'
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: RETRO-117 — source ticket FOLLOW-361 (PR #356)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-397 stub)
+  branch: backend-engineer/FOLLOW-397-variant-index-from-seed-variants
+  pr: '#361'
+  merge_commit: '7962b4e9c22e1e7f7f11502e0309c2f8af60e36b'
+  notes: |
+    DONE. PR #361 merged 2026-06-26T14:01:44Z. RETRO-122 complete.
+    Generated FOLLOW-405 (P2, backend-engineer — SEED_VARIANTS order ↔ playbook variants.en
+    cross-package positional coupling guard; AC-3 SoT-growth tail not fully covered by Part A).
+    CI counter: 1/5. Fix iterations: 0/3.
+    promoted_to_queue: 2026-06-26.
+
+- id: FOLLOW-398
+  title: Correct SIDEBAR_SHOW_THRESHOLD rung of confidence gating ladder (Rule Y / RETRO-119)
+  agent: sdk-engineer
+  status: DONE
+  assigned_to: sdk-engineer
+  started_at: '2026-06-26T21:15Z'
+  completed_at: '2026-06-26T14:52Z'
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  source: RETRO-119 (§4d DG-1, §4d DG-2) — source ticket FOLLOW-354 (PR #358)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-398 stub)
+  branch: sdk-engineer/FOLLOW-398-sidebar-threshold-doc-fix
+  pr: '#365'
+  notes: |
+    PM-VALIDATED 2026-06-26. CI green. Doc-only PR. Ready for human review.
+    AC-1 (MASTER_DESIGN.md line 728): phantom "SIDEBAR_SHOW_THRESHOLD = 0.6" citation removed;
+      now reads "The sidebar widget is admin-only (not buyer-facing); there is no SDK constant
+      gating sidebar visibility." Confirmed by read of MASTER_DESIGN.md:728. ✓
+    AC-2 (MASTER_DESIGN.md line 2409): now reads "there is no SIDEBAR_SHOW_THRESHOLD constant
+      in the SDK". Confirmed by grep. ✓
+    AC-3 (adapt-floor.ts JSDoc line 25): SIDEBAR_SHOW_THRESHOLD fully absent. Grep confirms
+      NOT_IN_ADAPT_FLOOR. ✓
+    AC-4 (follow-343.test.ts line 211): comment now correctly states "There is no
+      SIDEBAR_SHOW_THRESHOLD constant in index.ts — the sidebar is admin-only." ✓
+    CI evidence (step 5b): real-gate non-success = 0. Failing: Archetype embeddings not-NULL
+      2x + Rule I 2x (pre-existing non-blocking baseline). All real gates PASS.
+    Wiring evidence (step 5c): doc/comment-only — no new symbols, events, columns, or exports.
+      No runtime wiring to verify per step 5c (Rule Y = doc accuracy, not a code wire).
+    CI counter: 1/5. Fix iterations: 0/3.
+    Promoted 2026-06-26. Delegated 2026-06-26T21:15Z (table row: client SDK, Shadow DOM,
+      browser code → sdk-engineer).
+
+- id: FOLLOW-399
+  title: Cover floor signal_count >= 2 OR-branch on description axis + fix AC-1 cold-start comment
+  agent: sdk-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 2
+  depends_on: [FOLLOW-355]
+  source: RETRO-119 — source ticket FOLLOW-354 (PR #358)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-399 stub)
+  branch: sdk-engineer/FOLLOW-399-signal-count-branch-test
+  notes: |
+    Promoted 2026-06-26. follow-354.test.ts does not cover the second OR-branch of the floor
+    gate (signal_count >= 2 with low confidence). Multi-axis gap from RETRO-119.
+    Depends on FOLLOW-355 (_initForTest harness).
+
+- id: FOLLOW-400
+  title: Bind FOLLOW-362 non-en bandit suppression removal to variants.pl/es population (guard test)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-031]
+  source: RETRO-120 (§4a LG-2, §4d DG-1) — source ticket FOLLOW-362 (PR #359)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-400 stub)
+  branch: backend-engineer/FOLLOW-400-locale-ab-unsuppress-trigger
+  notes: |
+    Promoted 2026-06-26. FOLLOW-362 suppressed non-en bandit with no trigger to un-suppress
+    once variants.pl/es are added. This ticket adds a guard test that fails if playbooks
+    ship variants.pl/es while suppression is still live. MASTER_DESIGN §E.3/E.7 doc.
+    Blocked on FOLLOW-031 (variants.pl/es population).
+
+- id: FOLLOW-401
+  title: Decide bandit arm locale-scoping vs shared-control-arm; test non-en reward leg
+  agent: backend-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-120 (§4a LG-1, §4c TG-1) — source ticket FOLLOW-362 (PR #359)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-401 stub)
+  branch: backend-engineer/FOLLOW-401-bandit-locale-scope-decision
+  notes: |
+    Promoted 2026-06-26. Non-en conversions log variant=control and update SHARED control arm.
+    Decide: locale-scope arms (add locale to PK) or document shared-control intentional.
+    Add e2e test proving non-en conversion updates control arm. ADR if scoping changes PK.
+
+- id: FOLLOW-402
+  title:
+    Generalize CH migration-ordering contract test + fix DROP-on-failure non-idempotency (RETRO-121
+    LG-1/CB-1/TG-1)
+  agent: data-engineer
+  status: DONE
+  assigned_to: data-engineer
+  started_at: '2026-06-26T23:30Z'
+  completed_at: '2026-06-26T16:37Z'
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-121 (§4a LG-1, §4b CB-1, §4c TG-1) — source ticket FOLLOW-394 (PR #360)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-402 stub)
+  branch: data-engineer/FOLLOW-402-contract-test-generalize
+  pr: '#368'
+  notes: |
+    Promoted 2026-06-26. FOLLOW-394's contract test pins ONE column (page_context_source/0019).
+    A future INSERT column addition re-opens the fail-CLOSED hazard (passes test unchanged).
+    Fix: derive/lint the asserted column list from the real logDecisionAsync INSERT in route.ts;
+    fail CI generically for any new column. Also: fix DROP-on-failure — add trap EXIT to drop
+    contract_test_ordering so failed LOCAL=1 runs don't poison the next run. Cross-ref FOLLOW-308
+    (prod-apply timing, different scope — do NOT duplicate).
+    Delegated 2026-06-26T23:30Z (table row: ClickHouse, ETL → data-engineer).
+    PM-VALIDATED 2026-06-26. CI non-success = 4 (Rule I 2x + Archetype embeddings 2x), all
+    pre-existing non-blocking baseline. All real gates PASS. AC-1 verified: column list extracted
+    at runtime via grep/sed from logDecisionAsync in route.ts (script lines 161-163); last migration
+    boundary via sorted glob (lines 191-204). AC-2 verified: _cleanup() + trap EXIT at lines 54/58.
+    AC-3 verified: runbook has no "does NOT generically detect" or "wait for FOLLOW-402" language.
+    AC-4 verified: header comment line 12-14 accurately describes dynamic derivation.
+    PR comment posted: https://github.com/Pnawrocki9/Adaptive-Listings/pull/368#issuecomment-4811465242
+    READY for human review. Do not merge without human approval.
+    CI counter: 1/5. Fix iterations: 0/3.
+
+- id: FOLLOW-403
+  title:
+    Correct clickhouse-migrations runbook — scope overstated coverage claim + fix migrate.sh
+    mislabel (RETRO-121 DG-1/DG-2)
+  agent: data-engineer
+  status: DONE
+  assigned_to: data-engineer
+  started_at: '2026-06-26T20:00Z'
+  completed_at: '2026-06-26T14:32Z'
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  source: RETRO-121 (§4d DG-1, §4d DG-2) — source ticket FOLLOW-394 (PR #360)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-403 stub)
+  branch: data-engineer/FOLLOW-403-runbook-correction
+  pr: '#363'
+  notes: |
+    DONE. PR #363 merged 2026-06-26T14:32Z. RETRO-124 complete (coordinator confirmed).
+    PM-VALIDATED 2026-06-26. CI green. Doc-only PR.
+    AC-1 (DG-1 scope claim): "catches any future PR..." replaced with "catches REGRESSION of the
+      0019/page_context_source boundary specifically... does NOT generically detect any future column."
+      Verified in docs/runbooks/clickhouse-migrations.md §CI contract test.
+    AC-2 (DG-2 migrate.sh caption): separate "Apply a single migration file directly" (curl) vs
+      "Apply ALL pending migrations idempotently (safe to re-run)" (migrate.sh). Verified.
+    AC-3 (FOLLOW-402 cross-link): "Once FOLLOW-402 lands, the column list will be derived
+      automatically — see that ticket for the generalized parity check." Verified.
+    CI counter: 1/5. Fix iterations: 0/3.
+
+- id: FOLLOW-404
+  title:
+    One-time prod-state attestation that 0019 page_context_source is live in prod CH + DDL grant
+    (RETRO-121 §7)
+  agent: devops-engineer
+  co_agent: data-engineer
+  status: DONE
+  assigned_to: devops-engineer
+  started_at: '2026-06-26T23:59Z'
+  completed_at: '2026-06-26T17:51Z'
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  source: RETRO-121 (§7), inherits RETRO-118 §4a LG-1 — source ticket FOLLOW-394 (PR #360)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-404 stub)
+  branch: devops-engineer/FOLLOW-404-prod-ch-attestation
+  pr: '#372'
+  notes: |
+    Promoted 2026-06-26. ESC-031 resolution stated migration 0019 "was applied manually" but
+    no DESCRIBE TABLE / SELECT DISTINCT attestation was recorded. RETRO-076 caveat: prod
+    ingest_worker user may lack DDL grant. ACs: (1) DESCRIBE TABLE adaptation_decisions confirms
+    page_context_source LowCardinality(String) present; (2) SELECT DISTINCT returns caller_supplied
+    / page_type_derived / legacy; (3) writer DDL/INSERT grant confirmed; (4) result recorded.
+    Cross-ref FOLLOW-308 (standing mechanism, different scope). Co-assigned devops+data-engineer.
+    Delegated 2026-06-26T23:59Z (table row: ClickHouse, Redpanda, ETL → data-engineer; co-agent
+    devops-engineer for Doppler prod credentials).
+    CI counter: 0/5. Fix iterations: 0/3.
+    PM-VALIDATED 2026-06-26. PR #372. CI non-success = 2 (Archetype embeddings not-NULL check 2x),
+    pre-existing non-blocking baseline (also fails on PR #371). All real gates PASS (Format check,
+    Gitleaks, ClickHouse migrations smoke, Rule H, Rule J, Cross-language event contract, Doppler,
+    Migration journal monotonicity, Privacy Notice SDK key-sync, Redis shadow round-trip,
+    Tracer query-builders, Archetype seeds completeness, all Python tests, Vercel).
+    Docs-only PR — no new symbols, events, columns, or exports. Wiring: N/A.
+    All 4 ACs confirmed per human attestation: (1) page_context_source LowCardinality(String) is
+    18th column in DESCRIBE TABLE; (2) table empty at attestation time (consistent with ESC-031
+    silent-write gap); (3) ingest_worker has GRANT SELECT, INSERT ON default.*; (4) recorded in PR.
+    DONE pending human merge of PR #372.
+
+- id: FOLLOW-405
+  title:
+    Gate SEED_VARIANTS order ↔ playbook variants.en index cross-package positional contract
+    (RETRO-122 SoT-growth tail)
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-26T18:30Z'
+  completed_at: '2026-06-26T23:59Z'
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: RETRO-122 (§4a LG-1, §4c TG-1, §4d DG-1) — source ticket FOLLOW-397 (PR #361)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-405 stub)
+  branch: backend-engineer/FOLLOW-405-seed-variants-playbook-parity-gate
+  pr: '#371'
+  notes: |
+    Promoted 2026-06-26. FOLLOW-397 derived VARIANT_INDEX from SEED_VARIANTS (closed the
+    third-list + TG-3 test). But the derived index now creates an IMPLICIT cross-package
+    POSITIONAL coupling: VARIANT_INDEX (control-plane) indexes variants.en[] (SDK package,
+    types.ts:27) — nothing binds their order/length. Part A guard test only asserts
+    VARIANT_INDEX self-consistency, NOT in-range vs real playbook variants.en arrays.
+    Gap: adding v3 to SEED_VARIANTS without adding variants.en[3] → silently serves s.en; CI green.
+    Fix: add parity test asserting every SEED_VARIANTS[i] maps to an in-range index in playbook
+    variants.en; pin SEED_VARIANTS[0] === 'control' order; doc served=base/logged=raw stray-arm
+    contract; update route.ts:255 JSDoc (4th textual twin).
+    Delegated 2026-06-26T18:30Z (table row: ingest worker, control-plane, Postgres/auth → backend-engineer).
+    CI counter: 1/5. Fix iterations: 0/3.
+    PM-VALIDATED 2026-06-26. PR #371. CI non-success = 4 (Rule I 2x + Archetype embeddings not-NULL 2x),
+    all pre-existing non-blocking baseline. All real gates PASS (Build, Build control-plane, Typecheck,
+    Lint, Test Node 22, SDK E2E, Format, ClickHouse migrations smoke, Rule H, Rule J, Gitleaks, Doppler).
+    DONE pending human merge.
+
+- id: FOLLOW-406
+  title:
+    Negative-control attestation that gitleaks still catches a real secret in adapt/route.ts after
+    paths deletion (close FOLLOW-396 AC-2 verification leg)
+  agent: devops-engineer
+  co_agent: backend-engineer
+  status: DONE
+  assigned_to: devops-engineer
+  started_at: '2026-06-26T...'
+  completed_at: '2026-06-27T00:00Z'
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: RETRO-123 (§4c TG-1, §7 step 3) — source ticket FOLLOW-396 (PR #362)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-406 stub)
+  branch: devops-engineer/FOLLOW-406-411-gitleaks-negative-control-attestation
+  pr: '#373'
+  merge_commit: '41aa878'
+  notes: |
+    DONE. PR #373 merged (commit 41aa878, branch commit 2336e33). Joint execution with FOLLOW-411.
+    Promoted 2026-06-26. PR #362 proved the FP no longer fires (CI green) but did NOT prove
+    detection is restored. "CI green" is consistent with "scanning restored, no secret present"
+    AND "scanning still suppressed." Add dummy cloudflare-api-token-shaped high-entropy value
+    to route.ts locally, confirm gitleaks REDs (true positive), remove dummy value, record result.
+    Cross-ref FOLLOW-407 (same proof on consent route).
+    JOINT EXECUTION with FOLLOW-411 (P2) per FOLLOW-411 AC recommendation: "Execute jointly
+    with FOLLOW-406 as ONE generalized negative-control pass over BOTH narrowed secret-handling
+    surfaces (route.ts + consent), with a reusable per-surface checklist." Delegated
+    2026-06-26 (table row: Terraform, CI/CD, workflows, secrets → devops-engineer; co-agent
+    backend-engineer for lib.ts maintenance comment in FOLLOW-411 DG-1).
+    CI counter: 0/5. Fix iterations: 0/3.
+    Retrospective-analyst to be spawned on PR #373.
+
+- id: FOLLOW-407
+  title:
+    Apply Rule V to consent endpoint — narrow FOLLOW-374 file-wide gitleaks paths exemption at
+    .gitleaks.toml:172 to token-scoped
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-26T21:00Z'
+  completed_at: '2026-06-26T14:48Z'
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  source: RETRO-123 (§5a cascade, §6 Rule V promotion, §4d DG-2) — source ticket FOLLOW-396 (PR #362)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-407 stub)
+  branch: backend-engineer/FOLLOW-407-consent-gitleaks-rule-v
+  pr: '#364'
+  notes: |
+    MERGED 2026-06-26T14:48Z. RETRO-125 WRITTEN 2026-06-26 (RETROSPECTIVES.md) — Wiring Audit clean
+      (config-only); closes RETRO-123 §5a/§4d DG-2 on the removal+regexes+comment legs; detection-restored
+      negative-control leg = moved-hop residual → FOLLOW-411 (consent twin of FOLLOW-406, recommend
+      merge). .gitleaks.toml now in GOOD state (Rule-V verif #1 empty, no secret-handling-source paths
+      exemptions left). NO rule promoted (negative-control gap governed by existing Rule V).
+    PM-VALIDATED 2026-06-26T21:15Z. CI green. Wiring verified (.gitleaks.toml only). Ready for human review.
+    AC-1 (paths deleted + regexes added): file-wide '''apps/control-plane/src/app/api/v1/consent/
+      platform-registration/''' paths entry REMOVED. Token-scoped regexes entry
+      '''a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9''' (38 chars — first 38 chars of the 64-char
+      CANONICAL_CONSENT_TEXT_HASH, verified in lib.ts:45) ADDED. 38 chars IS a substring of the
+      first 40-char capture (a3f2...c7b8a9f0). Allowlist correctly suppresses the FP. ✓
+    AC-2 (comment fixed): old comment ended "keys in route.ts are still scanned" (wrong file);
+      new comment: "Token-scoped 38-char substring keeps cloudflare-api-token scanning fully
+      active on the secret-handling route." ✓
+    AC-3 (Gitleaks passes): Gitleaks secrets scan 2x SUCCESS (push-event + PR-event). ✓
+    AC-4 (scope): gh pr diff 364 --name-only → .gitleaks.toml ONLY. ✓
+    CI evidence (step 5b): real-gate non-success = 4 (Rule I 2x + Archetype embeddings 2x),
+      all pre-existing non-blocking baseline. All real gates PASS.
+    Wiring evidence (step 5c): config-only — no new symbols/events/columns/exports.
+    CI counter: 1/5. Fix iterations: 0/3.
+    Promoted 2026-06-26. Delegated 2026-06-26T21:00Z (table row: control-plane, auth → backend-engineer).
+
+- id: FOLLOW-409
+  title:
+    Real-handler test for micro-poll onAnswer §H.9 guard + fix showQuizTrigger false comment +
+    correct adapt.ts:187 JSDoc reachability claim
+  agent: sdk-engineer
+  status: DONE
+  assigned_to: sdk-engineer
+  started_at: '2026-06-26T23:00Z'
+  completed_at: '2026-06-26T16:09Z'
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: RETRO-116 (§4c TG-1, §4d DG-1, §4a LG-1, §7 closure check) — source ticket FOLLOW-389 (PR #355)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-409 stub)
+  branch: sdk-engineer/FOLLOW-409-micropoll-handler-test
+  pr: '#367'
+  notes: |
+    Promoted 2026-06-26. FOLLOW-389 delivered real-handler tests for showQuizTrigger (index.ts:1103)
+    and estalara:listing:favorited (:1432) but NOT the micro-poll onAnswer guard (:1243).
+    buildMockFetch() returns micro_polls_enabled:false so the micro-poll path is never driven;
+    guard covered only by modeled modeledOnAnswer in follow-385.test.ts:220 — the exact
+    self-injecting-test weakness RETRO-109 flagged. A regression moving the :1243 guard below
+    the quiz.event push (re-leaking opted-out micro-poll AL signal) leaves all tests green.
+    FOLLOW-389 is flagged INCOMPLETE pending this ticket.
+    Delegated 2026-06-26T23:00Z (table row: client SDK, Shadow DOM, browser code → sdk-engineer).
+    CI counter: 1/5. Fix iterations: 0/3.
+    PM-VALIDATED 2026-06-26T23:30Z. PR #367. CI non-success = 4 (Rule I 2x + Archetype embeddings 2x),
+    all pre-existing non-blocking baseline. All real gates PASS.
+    AC-1: follow-409.test.ts exists with REAL-4 opted-out (intent NOT mutated + quiz.event absent)
+      and REAL-4 opted-in (intent mutated + quiz.event in batch) real-handler test cases.
+    AC-2: index.ts:1102 comment corrected (explains that quiz.event completed push is DOWNSTREAM of
+      the early return, so opted-out sessions never reach it). Favorites at :1433-1436 annotated
+      with "NOTE: this asymmetry vs showQuizTrigger is intentional" (§H.8/§H.9 clarification).
+    AC-3: adapt.ts postQuizCompletionPing JSDoc at :186-193 corrected to "ONLY as defense-in-depth
+      if Guard 1 regresses — NOT under normal production traffic."
+    Wiring evidence (step 5c): test-file + doc/comment changes only — no new exported symbols,
+      events, columns, or config fields. PROFILING_OPT_OUT_KEY (producer: profiling-opt-out.ts:30;
+      consumer: index.ts:428+) pre-existing wired. No new wires.
+    READY for human review. Do not merge without human approval.
+
+- id: FOLLOW-410
+  title:
+    Correct three "migration 0017" provenance citations to "migration 0018" + retype two untyped GET
+    /api/adapt early-return bodies
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-26T22:00Z'
+  completed_at: '2026-06-26T15:13Z'
+  priority: P2
+  estimated_hours: 1.5
+  depends_on: []
+  source: RETRO-115 (§4d DG-1, §4b CB-1, §4c TG-1) — source ticket FOLLOW-357/356 (PR #354)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-410 stub)
+  branch: backend-engineer/FOLLOW-410-migration-citation-fix
+  notes: |
+    Promoted 2026-06-26. Delegated 2026-06-26T22:00Z (table row: ingest worker, control-plane, Postgres/auth → backend-engineer).
+    Three in-code comments cite "migration 0017" for the tier→page_context
+    rename but the actual migration is 0018_adaptation_decisions_page_context.sql. Migration 0017
+    is the unrelated holdout-contamination note (FOLLOW-371). Also: opt-out (route.ts:781-793) and
+    consent-skip (route.ts:813-825) GET early-return bodies had their satisfies AdaptationDirectives
+    guard deleted in PR #354, leaving them untyped while main GET path (route.ts:879) uses
+    AdaptationDirectives & { tier: number }. Rule S asymmetry: 3 sibling GET return bodies,
+    1 typed, 2 untyped. Cross-ref FOLLOW-390 (GET-surface liveness), FOLLOW-404 (prod attestation).
+
+- id: FOLLOW-414
+  title:
+    Close FOLLOW-409 doc twins (adapt.ts JSDoc/inline contradiction + follow-385.test.ts micro-poll
+    copies) + flush positive-control + retire superseded modeled §H.9 tests (RETRO-128
+    DG-1/DG-2/TG-1/TG-2/TG-3)
+  agent: sdk-engineer
+  status: DONE
+  assigned_to: sdk-engineer
+  started_at: '2026-06-26T24:30Z'
+  completed_at: '2026-06-26T16:46Z'
+  priority: P2
+  estimated_hours: 1.5
+  depends_on: []
+  source: RETRO-128 (§4d DG-1, §4d DG-2, §4c TG-1, §4c TG-2, §4c TG-3, §7) — source ticket
+    FOLLOW-409 (PR #367)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-414 stub)
+  branch: sdk-engineer/FOLLOW-414-409-doc-twins-flush-control
+  pr: '#369'
+  notes: |
+    Promoted 2026-06-26. FOLLOW-409 (PR #367) closed the micro-poll onAnswer real-handler test but
+    left four one-hop residuals. DG-1 (P2): adapt.ts:212-213 inline comment contradicts the corrected
+    JSDoc at :186-193 — says guard IS reachable by live opted-out traffic; JSDoc says defense-in-depth
+    ONLY if Guard 1 regresses. Security-relevant contradiction. DG-2+TG-2 (P3): "Ingest stream left
+    flowing" false comment on micro-poll model in follow-385.test.ts:211/:225 (TRUE on favorites
+    copies :128/:144, leave those). TG-1 (P2, load-bearing): opted-out REAL-4 negative assertion
+    lacks flush positive-control — if flush harness regresses (zero /v1/events calls), assertion
+    passes trivially. TG-3 (P3): BATCH_INTERVAL_MS (index.ts:198) unexported; hardcoded 5001 in both
+    test files could rot. Scope: packages/sdk/src/core/adapt.ts, packages/sdk/src/__tests__/
+    follow-409.test.ts, packages/sdk/src/__tests__/follow-385.test.ts only.
+    Delegated 2026-06-26T24:30Z (table row: client SDK, Shadow DOM, browser code → sdk-engineer).
+    CI counter: 1/5. Fix iterations: 0/3.
+    PM-VALIDATED 2026-06-26. PR #369. CI non-success = 4 (Rule I 2x + Archetype embeddings not-NULL 2x),
+    all pre-existing non-blocking baseline. All real gates PASS.
+    AC-1: adapt.ts line 213 says "reachable ONLY if Guard 1 regresses" — grep confirmed.
+    AC-2: exactly 2 "Ingest stream left flowing" hits in follow-385.test.ts, both in favorites handler
+      (lines 128+144 within AC-3 favorites describe block). Micro-poll model copies removed.
+    AC-3: expect(ingestCalls.length).toBeGreaterThanOrEqual(1) at line 230 BEFORE hasMicroPollEvent===false
+      at line 243 — positive-control precedes negative assertion.
+    AC-4: BATCH_INTERVAL_MS export skipped (correct — Rule I failure if exported).
+    Wiring evidence: test-file + doc/comment changes only. No new exported symbols/events/columns/config.
+    READY for human review. Do not merge without human approval.
+
+- id: FOLLOW-415
+  title:
+    Harden generalized CH migration-ordering contract test — adaptation_decisions-column-aware
+    boundary (LG-1) + column-count sanity assertion (LG-2) + qualify self-maintaining guarantee
+    prose (DG-1)
+  agent: data-engineer
+  status: DONE
+  assigned_to: data-engineer
+  started_at: '2026-06-26T18:00Z'
+  completed_at: '2026-06-26T17:12Z'
+  priority: P2
+  estimated_hours: 2.5
+  depends_on: []
+  source: RETRO-129 (§4a LG-1, §4a LG-2, §4d DG-1) — source ticket FOLLOW-402 (PR #368)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-415 stub)
+  branch: data-engineer/FOLLOW-415-ch-migration-contract-hardening
+  pr: '#370'
+  notes: |
+    Promoted 2026-06-26. Delegated 2026-06-26T18:00Z (table row: ClickHouse, ETL → data-engineer).
+    CI counter: 0/5. Fix iterations: 0/3.
+    FOLLOW-402 (PR #368) generalized migration-contract-test.sh but left two structural assumptions
+    unasserted. LG-1 (P2): boundary heuristic uses lexical-last *.sql file which conflates newest-file
+    with newest-INSERT-column-migration; 4 of last 6 CH migrations add no adaptation_decisions column —
+    the next non-column migration makes boundary wrong → false alarm → trust erosion → guard disabled.
+    Fix: make boundary the newest migration that ACTUALLY adds an adaptation_decisions INSERT column.
+    LG-2 (P3): grep -A1|sed extractor assumes full column list on single line after INSERT INTO;
+    a multi-line rewrite fails cryptic — add column-count sanity assertion (>= pinned floor 17) so
+    truncation fails loud.
+    DG-1 (P3): "Self-maintaining guarantee" prose in clickhouse-migrations.md:130-133 + script header
+    omits both structural assumptions → overstated coverage (Rule Y broadened-sub-shape). Qualify or earn it.
+    DONE: PR #370 merged 2026-06-26T17:12Z. CI evidence: Archetype embeddings not-NULL (pre-existing-red)
+    + Rule I (pre-existing-red); all real gates PASS. Retrospective-analyst to be spawned.
+
+- id: FOLLOW-411
+  title:
+    Negative-control attestation for consent gitleaks exemption (twin of FOLLOW-406) + disambiguate
+    redundant regexes/inline-gitleaks:allow suppression + add bidirectional hash-rotation
+    maintenance link
+  agent: devops-engineer
+  co_agent: backend-engineer
+  status: DONE
+  assigned_to: devops-engineer
+  started_at: '2026-06-26T...'
+  completed_at: '2026-06-27T00:00Z'
+  priority: P2
+  estimated_hours: 1.5
+  depends_on: []
+  source: RETRO-125 (§4c TG-1, §4b CB-1, §4d DG-1, §5a, §7) — source ticket FOLLOW-407 (PR #364)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-411 stub)
+  branch: devops-engineer/FOLLOW-406-411-gitleaks-negative-control-attestation
+  pr: '#373'
+  merge_commit: '41aa878'
+  notes: |
+    DONE. PR #373 merged (commit 41aa878, branch commit 2336e33). Joint execution with FOLLOW-406.
+    Promoted 2026-06-26. Executed jointly with FOLLOW-406 in one PR per FOLLOW-411 AC-TG-1
+    recommendation. Three residuals from FOLLOW-407 (PR #364): (TG-1) detection-restored
+    negative control absent for consent endpoint — prove gitleaks REDs on a dummy
+    cloudflare-token-shaped string in consent dir; (CB-1) regexes entry may be redundant
+    with pre-existing inline gitleaks:allow on lib.ts:46 — disambiguate or justify
+    defense-in-depth; (DG-1) no bidirectional maintenance link between .gitleaks.toml:179
+    38-char substring and CANONICAL_CONSENT_TEXT_HASH in lib.ts:45-46 — add cross-reference
+    comment in both files. Joint branch with FOLLOW-406: devops-engineer/FOLLOW-406-411-
+    gitleaks-negative-control-attestation.
+    Delegated 2026-06-26 (table row: Terraform, CI/CD, workflows, secrets → devops-engineer;
+    co-agent backend-engineer for lib.ts:45-46 maintenance comment DG-1).
+    CI counter: 0/5. Fix iterations: 0/3.
+    Retrospective-analyst to be spawned on PR #373.
+
+- id: FOLLOW-425
+  title:
+    Fail loud on ClickHouse INSERT rejection in logDecisionAsync (add .then() + Sentry capture for
+    HTTP-level failures)
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-27T00:45:00Z'
+  completed_at: '2026-06-26T22:53:20Z'
+  priority: P1
+  estimated_hours: 1
+  depends_on: []
+  source:
+    ESC-031 / FOLLOW-422 — silent adaptation_decisions data-loss investigation (zero-row prod table)
+  spec: backlog/FOLLOW_UPS.md (stub pending — field-spawned hotfix; next free number was 425)
+  branch: backend-engineer/FOLLOW-425-adapt-clickhouse-fail-loud
+  pr: '#374'
+  merge_commit: 'df3c4c4'
+  notes: |
+    DONE. PR #374 merged 2026-06-26T22:53:20Z (merge commit df3c4c4). Field-spawned hotfix.
+    logDecisionAsync only had .catch() which fires only on network-layer errors; ClickHouse reports
+    INSERT rejections (HTTP 516 auth failure, unknown column, quota exceeded, type mismatch) as
+    successful HTTP responses with 4xx/5xx status — .catch() is completely blind to these.
+    Fix: adds .then() that inspects response.ok; on non-ok reads body text and captures to Sentry
+    (tags: area=adapt, sink=clickhouse, kind=insert_rejected). Existing .catch() now also captures
+    to Sentry (kind=network). Fire-and-forget guarantee preserved — logDecisionAsync remains
+    void/unawaited. 3 new tests in route.clickhouse.test.ts cover: HTTP 516 → Sentry called;
+    network reject → Sentry called; HTTP 200 → Sentry NOT called.
+    Files: apps/control-plane/src/app/api/adapt/route.ts (+26/-4),
+           apps/control-plane/src/app/api/adapt/route.clickhouse.test.ts (+85 new).
+    CI counter: 0/5. Fix iterations: 0/3.
+    Retrospective-analyst to be spawned on PR #374.
+
+- id: FOLLOW-422
+  title:
+    Live producer→prod-table write attestation for adaptation_decisions (verify writes work after
+    FOLLOW-425 fail-loud fix)
+  agent: data-engineer
+  status: DONE
+  assigned_to: data-engineer
+  started_at: '2026-06-28T00:00:00Z'
+  completed_at: '2026-06-28T13:01:00Z'
+  priority: P1
+  estimated_hours: 2
+  depends_on: [FOLLOW-425]
+  source: RETRO-133 (§4a CLOSURE-1, §5b, §8) — source ticket FOLLOW-404 (PR #372); see also ESC-031 / FOLLOW-425 (P1 hotfix now merged)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-422 stub)
+  branch: data-engineer/FOLLOW-422-adaptation-decisions-write-attestation
+  notes: |
+    DONE. AC-1: Smoke GET /api/adapt (session_id=smoke-follow422-1782651660, archetype=neutral,
+    confidence=0.5, similarity=0.5, tier=1) → HTTP 200 with adapt_decision_id
+    05e5bc1e-980d-428c-bd89-e9a577c70ec0 from prod (admin.estalara.com).
+    AC-2: SELECT count() FROM adaptation_decisions → 1.
+    SELECT DISTINCT page_context_source FROM adaptation_decisions → caller_supplied.
+    Row ts: 2026-06-28 13:01:00.906.
+    AC-3: docs/runbooks/clickhouse-migrations.md updated with dated attestation block
+    (section "Prod Attestation — writes confirmed flowing (FOLLOW-425 fix verified)").
+    Verdict: writes confirmed flowing. ESC-031 loop fully closed: migration applied
+    (FOLLOW-404), fail-loud fix deployed (FOLLOW-425), writes verified (FOLLOW-422).
+    CI counter: 0/5. Fix iterations: 0/3.
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

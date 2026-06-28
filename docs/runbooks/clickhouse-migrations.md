@@ -217,3 +217,62 @@ INSERT on `default.adaptation_decisions` is confirmed present (covered by `defau
 **Cross-reference:** This is the one-time 0019 attestation per RETRO-121 §7. FOLLOW-308 is the
 standing prod-apply mechanism (different scope). ESC-031 root-cause incident documented in the
 ESC-031 section of this runbook above.
+
+---
+
+## Prod Attestation — writes confirmed flowing (FOLLOW-425 fix verified)
+
+**Date:** 2026-06-28 **Attested by:** FOLLOW-422 (data-engineer)
+
+**Background:** FOLLOW-404 (2026-06-26) confirmed migration 0019 was applied and the column existed,
+but the table had zero rows at that time. The zero-row state was consistent with the ~80-minute
+ESC-031 silent-write-failure window. FOLLOW-425 (PR #374, merged 2026-06-26T22:53Z) fixed
+`logDecisionAsync` to check `response.ok` and capture to Sentry on HTTP-level ClickHouse rejections.
+This attestation verifies that writes are now actually flowing after the fix.
+
+**AC-1 — Smoke adapt request:**
+
+```
+GET https://admin.estalara.com/api/adapt
+  ?session_id=smoke-follow422-1782651660
+  &archetype=neutral
+  &confidence=0.5
+  &similarity=0.5
+  &tier=1
+Authorization: Bearer <ADAPT_API_KEY from Doppler prd>
+```
+
+Response: HTTP 200, `adapt_decision_id: 05e5bc1e-980d-428c-bd89-e9a577c70ec0`
+
+**AC-2 — ClickHouse queries (run ~30s after the adapt request):**
+
+```sql
+SELECT count() FROM adaptation_decisions;
+-- Result: 1
+
+SELECT DISTINCT page_context_source FROM adaptation_decisions;
+-- Result: caller_supplied
+
+SELECT min(ts), max(ts) FROM adaptation_decisions;
+-- Result: 2026-06-28 13:01:00.906    2026-06-28 13:01:00.906
+```
+
+**Row detail (full SELECT for the confirmed row):**
+
+```
+session_id:          smoke-follow422-1782651660
+archetype:           neutral
+confidence:          0.5
+similarity:          0.5
+source:              default
+page_context:        1
+page_context_source: caller_supplied
+variant:             control
+adapt_decision_id:   05e5bc1e-980d-428c-bd89-e9a577c70ec0
+ts:                  2026-06-28 13:01:00.906
+```
+
+**Verdict:** Writes confirmed flowing after FOLLOW-425 fix. The `page_context_source` column is
+populated correctly (`caller_supplied` for a GET request with an explicit `tier` param). ESC-031
+root cause is resolved end-to-end: migration applied (FOLLOW-404), fail-loud fix deployed
+(FOLLOW-425), writes verified (FOLLOW-422).

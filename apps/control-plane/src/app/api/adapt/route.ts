@@ -1132,14 +1132,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (assignment.holdout_group) {
     // AC-2: holdout → no adaptation, emit ab.assignment event fire-and-forget.
-    void publishAbAssignmentEvent({
+    // publishAbAssignmentEvent handles both HTTP-rejection and network errors
+    // internally (FOLLOW-426 / Rule K.2 fire-and-forget amendment) — it never throws.
+    publishAbAssignmentEvent({
       session_id: body.session_id,
       tenant_id: tenantId,
       holdout_group: true,
       holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
       assigned_at: assignment.assigned_at,
-    }).catch((e: unknown) => {
-      console.error('[adapt POST] ab.assignment emit failed', e instanceof Error ? e.message : e);
     });
 
     return NextResponse.json({
@@ -1158,14 +1158,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // Treatment arm: emit ab.assignment event and continue building directives.
-  void publishAbAssignmentEvent({
+  // publishAbAssignmentEvent handles both HTTP-rejection and network errors
+  // internally (FOLLOW-426 / Rule K.2 fire-and-forget amendment) — it never throws.
+  publishAbAssignmentEvent({
     session_id: body.session_id,
     tenant_id: tenantId,
     holdout_group: false,
     holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
     assigned_at: assignment.assigned_at,
-  }).catch((e: unknown) => {
-    console.error('[adapt POST] ab.assignment emit failed', e instanceof Error ? e.message : e);
   });
 
   // ── DEMO MODE override (DEMO-001 / AC4) ─────────────────────────────────────

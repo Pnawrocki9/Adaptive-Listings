@@ -39,6 +39,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
+import * as Sentry from '@sentry/nextjs';
 import { errorBody, ErrorCode } from '@estalara/shared';
 import type { DescriptionResponse, DescriptionRequestedEvent } from '@estalara/shared';
 import { getPlaybook } from '@estalara/sdk/playbooks';
@@ -82,15 +83,18 @@ const QueryParamsSchema = z.object({
 /**
  * Publish a `description.requested` event to the Redpanda topic `estalara.descriptions`.
  *
- * Fire-and-forget — callers must NOT await this function in the request path.
- * Errors are caught and logged; they do not propagate to callers.
+ * Fire-and-forget — this function returns immediately and never throws. The HTTP
+ * request runs in the background; both HTTP-rejection (non-ok response) and network
+ * failures are captured to Sentry with distinguishing `kind` tags
+ * (`insert_rejected` vs `network`) so dashboards can group them (FOLLOW-426 /
+ * Rule K.2 fire-and-forget amendment).
  *
  * The ml-engineer's Modal job subscribes to this topic and generates the description
  * asynchronously, then writes the result to Upstash Redis.
  *
  * @param event - The event payload to publish.
  */
-async function publishDescriptionRequested(event: DescriptionRequestedEvent): Promise<void> {
+function publishDescriptionRequested(event: DescriptionRequestedEvent): void {
   const redpandaUrl = process.env.REDPANDA_REST_URL;
   if (!redpandaUrl) return;
 
@@ -108,11 +112,35 @@ async function publishDescriptionRequested(event: DescriptionRequestedEvent): Pr
     headers.Authorization = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
   }
 
-  await fetch(url, {
+  // Fire-and-forget — never awaited. Both failure paths capture to Sentry so a
+  // Redpanda auth / missing-topic / quota rejection is observable (FOLLOW-426 /
+  // Rule K.2 fire-and-forget amendment). The .catch() handler covers network-layer
+  // failures; the .then() handler covers HTTP-level rejections (4xx/5xx), which
+  // `fetch` resolves (not rejects) and a bare `.catch()` would be blind to.
+  fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({ records: [{ value: event }] }),
-  });
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const body = await res.text().catch(() => '<unreadable body>');
+        const msg = `[description] Redpanda publish rejected: HTTP ${String(res.status)} — ${body.slice(0, 500)}`;
+        console.error(msg);
+        Sentry.captureException(new Error(msg), {
+          tags: { area: 'description', sink: 'redpanda', kind: 'insert_rejected' },
+          extra: { status: res.status },
+        });
+      }
+    })
+    .catch((err: unknown) => {
+      // Network-layer failure (DNS, connection refused, malformed URL, timeout).
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[description] Redpanda publish failed:', msg);
+      Sentry.captureException(err instanceof Error ? err : new Error(msg), {
+        tags: { area: 'description', sink: 'redpanda', kind: 'network' },
+      });
+    });
 }
 
 // ─── GET handler ──────────────────────────────────────────────────────────────
@@ -360,13 +388,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   };
 
   // Fire-and-forget: do NOT await. Response must not block on Modal enqueue.
-  void publishDescriptionRequested(event).catch((err: unknown) => {
-    // Analytics / enqueue failures must never surface to callers.
-    console.error(
-      '[description] Redpanda publish failed:',
-      err instanceof Error ? err.message : err,
-    );
-  });
+  // publishDescriptionRequested handles both HTTP-rejection and network errors
+  // internally (FOLLOW-426 / Rule K.2 fire-and-forget amendment) — it never throws.
+  publishDescriptionRequested(event);
 
   // Return template fallback immediately.
   // headline is null on cold-start — SDK keeps the playbook headline directive (ADR-0009).

@@ -1299,3 +1299,669 @@
   is itself a Rule S amendment candidate. Discipline held: do NOT promote single-epic/single-context
   recurrences; flag amendments to EXISTING rules (grounded in their own evidence chain) separately
   from brand-new rules (2 independent contexts required).
+
+## 2026-06-26 — RETRO-118 (FOLLOW-358 / PR #357)
+
+- **A finding I almost missed and why:** the headline CB-1 (fail-CLOSED migration-ordering hazard)
+  is invisible from the test suite — all 4 new tests mock `fetch` and assert the INSERT _string_, so
+  they PASS regardless of whether the prod table has the column. I almost rated the PR "clean, one
+  safe additive column" like the diff invites. The catch was tracing the INSERT column-list change
+  against the _fire-and-forget `.catch`_ (route.ts:501-504): adding a column NAME to an explicit
+  INSERT list is fail-CLOSED against an un-migrated table — the inverse of the usual
+  safe-additive-column intuition and of Rule M's fail-OPEN degrade. Lesson: when an INSERT/UPDATE
+  column-list grows, always ask "does the target schema have this column in PROD yet, and what
+  happens to the write if not?" — not just "is the new value correct?"
+- **An axis/chain I had to trace twice:** the scope. `gh pr diff 357` showed 9 files (+342)
+  including 200+ lines of bandit-seed work; I started analyzing it as FOLLOW-358 scope-creep.
+  `git log -- <path>` then showed the bandit files' last-touch commits are `[FOLLOW-361]` (PR #356,
+  merged 32 min earlier) and `git show --stat cdda69a` (the FOLLOW-358 commit) touches only 3 files.
+  The PR diff was an unrebased-branch three-dot artifact. Had to re-derive the true footprint from
+  `git`, not from `gh pr diff`. Meta-takeaway: NEVER trust `gh pr diff` as the change footprint when
+  sibling tickets merged close together — confirm each file's attributing commit with
+  `git log -- <path>`.
+- **A meta-pattern in how gaps recur across agents:** the "merged ≠ live in prod" trap keeps
+  re-surfacing (RETRO-076 Postgres, RETRO-113 CH seed → Rule M, now RETRO-118 CH column), but each
+  instance has a DIFFERENT failure mode: silent capability-inactive (fail-open, safe) vs silent
+  total-write-failure (fail-closed, data loss). Rule M covers the fail-open shape only. The
+  fail-closed variant (INSERT names a not-yet-migrated column) is a genuinely new sub-shape — held
+  at count 1, watch-listed for promotion. Backend agents treat "add column + reference it" as
+  atomic; in this repo migrations are manual and code auto-deploys, so the two halves arrive out of
+  order by default.
+- **Numbering note:** RETROSPECTIVES.md ends at RETRO-113 but FOLLOW_UPS ledger maps 114–117 to
+  #353–#356; I honored the PM-assigned RETRO-118 and documented the gap rather than renumbering.
+  Watch for the same race if 114–117 land out of order.
+
+## 2026-06-26 · RETRO-117 (PR #356, FOLLOW-361 — reconcile bandit seed convention `'default'`→control/v1/v2; export `SEED_VARIANTS`, migration 0031 strips `'default'`, parity test)
+
+- **A finding I almost missed and why:** the THIRD copy of the variant list — `VARIANT_INDEX` at
+  `route.ts:241`. The ticket's headline ("single source of truth for the three-arm variant list") +
+  a clean SEED-side parity test made the easy verdict "SoT achieved, clean ✅." The catch was
+  running the completeness grep from the SYMBOL the change semantically owns (`grep VARIANT_INDEX` +
+  the variant-list literals) rather than from the two files the PR touched. That surfaced the
+  consumer-side index map the PR never unified — the same RETRO-074→075 "fixed every site the ticket
+  named ≠ every site" shape, but applied to an SoT-consolidation instead of a fix. Lesson: on any
+  "consolidate the duplicates / single source of truth" PR, grep ALL copies of the value (producers
+  AND consumers/index-maps/enums), not just the ones the diff edited; "unified the writers"
+  routinely leaves a reader literal behind.
+- **An axis/chain I had to trace twice:** the prod-apply path for migration 0031. My first instinct
+  was to reuse RETRO-113's verdict (its HW-1: "Postgres merged ≠ prod-applied → file an operator
+  stub," per memory `project_postgres_migrations_no_autoapply`). That would have been WRONG here:
+  RETRO-113's gap was a dev-only SEED job; this is a Drizzle MIGRATION, which rides `db-migrate.yml`
+  — and ESC-023 (the secret-provisioning blocker) is RESOLVED, so it auto-applies staging→prod. I
+  verified by reading the workflow header + `ESCALATIONS.md:1131` +
+  `gh run list --workflow=db-migrate.yml` (a real run fired 3s after merge). Meta-takeaway: classify
+  a "merged ≠ live" finding by ARTIFACT TYPE (migration vs seed vs CH) and CHECK THE ACTUAL WORKFLOW
+  RUN before reusing a prior retro's prod-gap verdict — the blanket memory is now split (migrations
+  auto-apply post-ESC-023; seeds + ClickHouse do not).
+- **A meta-pattern in how gaps recur across agents:** "consolidate to a single source of truth"
+  tickets reliably leave an un-unified tail at the CONSUMER end (RETRO-095 P-2 two-producer split →
+  FOLLOW-361 unifies producers → leaves VARIANT_INDEX). The write side gets the attention because
+  that's where the bug manifested; the read/index side is treated as "just a lookup table" and
+  forgotten. Same single-feature context so no rule promotion (count 1), but it's the structural
+  cousin of Rule S sibling-incompleteness — worth watching for a genuinely independent 2nd instance
+  to promote a "consolidate ALL copies incl. consumer index maps" rule.
+- **Numbering note:** RETROSPECTIVES.md ended at RETRO-113 when I ran; per the merge cadence #356 =
+  RETRO-117 (114/115/116 = #353/#354/#355, not yet in-file). FOLLOW_UPS was being mutated
+  concurrently by the RETRO-118 run — FOLLOW-394 got taken mid-run, so my stub moved to FOLLOW-397.
+  Re-scanned the next-free number AFTER the concurrent writes landed rather than trusting my initial
+  read. Watch for this race when multiple retros run in parallel: always re-grep the highest FOLLOW
+  number immediately before writing the stub.
+
+## 2026-06-26 · RETRO-119 (PR #358, FOLLOW-354 — test+document the confidence floor's real axis; closed RETRO-091 TG-1/DG-1/LG-1)
+
+- **A finding I almost missed and why:** the `SIDEBAR_SHOW_THRESHOLD` rung of the new gating-ladder
+  note (DG-1). A test+docs PR whose JSDoc/§E.7 text _looks_ authoritative and whose first two rungs
+  I verified (`DOM_ADAPT_CONFIDENCE_FLOOR` ✅, server `CONFIDENCE_THRESHOLD` ✅) tempts an "accurate
+  doc, clean ✅" verdict after 2 of 3 checks pass. The catch was grepping the THIRD cited symbol
+  (`SIDEBAR_SHOW_THRESHOLD`) repo-wide instead of trusting it by association — it exists nowhere as
+  a const; the cited `index.ts` actually says the sidebar is admin-only/no-op. Lesson: when a doc
+  cites N symbols, verify ALL N against their named files (Rule Y), not a representative sample —
+  the irony-trap here is that the PR's own MISSION was to fix a stale citation, yet it shipped a new
+  one.
+- **An axis/chain I had to trace twice:** the floor's `confidence >= 0.5 || signal_count >= 2`
+  OR-branch. First pass: AC tests look complete (below-floor → no fetch, above → fetch). Second
+  pass: realized both arms of the OR are an AXIS — the tests only drive the confidence arm; the
+  signal_count arm on the description path is untested (FOLLOW-399). A two-condition gate is two
+  axes, not one.
+- **A meta-pattern in how gaps recur across agents:** "remediation PR closes the named gap genuinely
+  but introduces a smaller same-family defect" — here, FOLLOW-354 correctly closes RETRO-091's
+  description-axis test gap AND correctly fixes one stale cross-ref, while planting a new stale
+  citation (DG-1) and a new untested axis (TG-1). This is the softer cousin of the
+  `inquiry_submit_selector` one-hop-move: not the SAME gap relocating, but the closure act spawning
+  an adjacent fresh gap. Always diff what the closure ADDED, not just whether it closed.
+
+## 2026-06-26 · RETRO-120 (FOLLOW-362 / PR #359)
+
+- **A finding I almost missed and why:** The headline change (suppress non-`en` sampling so logged
+  == served) is clean and well-tested, which almost let me stop at "LG-2 closed ✅". The real action
+  was one hop downstream on the **reward leg**: `getBanditArms`/`updateBanditArm` key on
+  `(tenant, archetype, variant)` with NO locale, so non-`en` now silently feeds the SHARED control
+  arm. The fix removed treatment-arm pollution but moved the gap to control-arm locale-conflation.
+  Lesson: when a fix "routes everything to control," always ask where `control` is then consumed
+  (the reward/feedback loop), not just where it is logged.
+- **An axis/chain I had to trace twice:** The GET-vs-POST condition asymmetry
+  (`holdoutGroup || locale !== 'en'` vs bare `postLocale === 'en'`) looked like a Rule-S violation
+  on first read. Tracing POST showed `assignHoldout()` early-returns control at `route.ts:1098`
+  BEFORE the sampling site, so POST structurally cannot need the inline holdout term — correct, not
+  a bug. Had to verify the early-return ordering before writing it up; the parity is at the
+  _invariant_ level, not the _expression_ level.
+- **A meta-pattern in how gaps recur across agents:** Two instances now (RETRO-095 FOLLOW-347
+  carry-over; RETRO-120 FOLLOW-354/PR#358 carry-over) of `gh pr view/diff` showing already-merged
+  sibling-ticket files because the diff base predates the sibling merge. This is a retro-READING
+  discipline, not a worker coding rule, so it stays here, NOT in CONVENTIONS*PATCH: **always confirm
+  the true changed set via `git show <mergeCommit> --stat` / `git log --oneline -- <file>` before
+  classifying scope.** Also recurring: this variant-logging family (RETRO-095→111/117/118/120) keeps
+  surfacing "fix logs control / fixes the obvious axis, but a downstream consumer (GET response,
+  seed convention, reward arm, page_context) was keyed without the new dimension" — the durable
+  failure shape is \_a shared key that omits the axis the fix introduces*. Worth watching for a Rule
+  K.1 amendment if a 6th instance lands.
+
+---
+
+## 2026-06-26 · RETRO-121 (FOLLOW-394 / PR #360 — CH migration-ordering contract test + runbook)
+
+- **A finding I almost missed and why:** the contract test LOOKS like a generic "any future column"
+  guard (the runbook even claims it), but it is hard-coded to `page_context_source`/0019 and applies
+  only `0001`–`0019` — a future column PASSES it unchanged. I almost recorded TG-1 as "fully closed"
+  on the headline. Caught it by asking "what does this test do for column 0020?" The runbook's own
+  "Extending" section (manual per-column add) was the tell that contradicts its headline — DG-1.
+- **An axis/chain I had to trace twice:** the gitleaks change. First read: "another file-wide
+  allowlist, same as RETRO-118 DG-1 → flag it." Second read of `.gitleaks.toml:177` vs `:185`: this
+  PR added a **token-scoped `regexes`** entry (the GOOD shape), and that entry now makes PR #357's
+  **file-wide `paths`** entry REDUNDANT. So it's not a new sin — it's the fix that lets the OPEN
+  FOLLOW-396 finally DELETE the broad allowlist (Rule-U strip-superseded). Reconciled instead of
+  double-flagging.
+- **A meta-pattern in how gaps recur across agents:** the "remediation PR closes the CI/code leg but
+  only DOCUMENTS the prod-state leg" shape (Pattern C) — same as RETRO-113/FOLLOW-392 (seed in code,
+  prod NULL). A retro finding's follow-up keeps shipping the DETECTION + DOC and deferring the
+  actual prod mutation/verification to the standing FOLLOW-308 gate, so the original prod gap is
+  never retro-closed, only relocated. Watch: when a follow-up's deliverable is a test+runbook for an
+  incident, the incident's prod root-cause is almost always still unverified — always emit the
+  one-time prod attestation stub (here FOLLOW-404).
+- **Process note:** the ticket said FOLLOW-394 but RETRO-118 PROSE called it "FOLLOW-397"; the
+  FOLLOW_UPS.md footer (`394 = RETRO-118 …`) was authoritative and resolved the collision. Trust the
+  ledger footer over retro prose for ID reconciliation. RETRO-114/115/116 still un-committed in-file
+  — recurring numbering debt the PM keeps deferring.
+
+## 2026-06-26 · RETRO-122 (FOLLOW-397 / PR #361 — derive VARIANT_INDEX from SEED_VARIANTS)
+
+- **A finding I almost missed and why:** The PR _looks_ like a clean SoT win (third hardcoded list →
+  derived), and the explicit test for the stray-variant case made it tempting to stamp "closure ✅"
+  on AC-3 too. I almost did. The catch: AC-3 said "a future arm added WITHOUT a copy slot fails CI,"
+  but the delivered Part-A test only asserts `VARIANT_INDEX` is internally consistent — it never
+  indexes a REAL playbook `variants.en` array. So a 4th arm would derive fine and silently serve
+  base copy with CI green. The deconsolidation didn't disappear; it relocated from a same-file
+  literal to a CROSS-PACKAGE positional coupling (control-plane `SEED_VARIANTS` order ↔ SDK
+  `variants.en` index). Reading the stub's exact AC wording against the delivered assertions (not
+  just "is there a test for this?") is what surfaced it.
+- **An axis/chain I had to trace twice:** The served-vs-logged value for the stray arm. First pass I
+  read the fix as "serve control (per stub AC-2)"; second pass against the diff showed the
+  implementer dropped `?? 0` and serves `s.en` (base) instead — a DEVIATION from the stub that is
+  actually an IMPROVEMENT. Had to reconcile: it's not a bug, it's a better choice, but it left the
+  "pin the logged-value contract" sub-AC implicit (logs raw `v3`, serves base). Easy to misfile an
+  improvement as a deviation-defect or vice-versa.
+- **Meta-pattern in how gaps recur across agents:** This is now the THIRD hop of the SAME
+  variant-list lineage (RETRO-095 two-seeders-disagree → RETRO-117 consumer-literal-third-copy →
+  RETRO-122 cross-package-order-coupling). Each "fix" closes the named site and births the next-hop
+  site one layer out. The durable tell: when a consolidation replaces an EXPLICIT mapping with a
+  DERIVED/positional one, ask "what now silently binds the derivation's output to its consumer's
+  shape?" — that binding is the new untested contract. Also reaffirmed the ledger discipline: a
+  remediation of a count-1 finding does NOT advance the promotion count (same feature/context), even
+  when it's the 3rd temporal recurrence — only INDEPENDENT contexts count. Resisted a premature rule
+  here.
+
+## 2026-06-26 · RETRO-123 (FOLLOW-396 / PR #362 — restore gitleaks route.ts scanning; PROMOTED Rule V)
+
+- **A finding I almost missed and why:** The PR is a 5-line config deletion that does exactly what
+  RETRO-121 predicted — textbook "clean ✅, close it." The catch was running the MULTI-AXIS check on
+  the rest of `.gitleaks.toml`, not just the line that changed: one allowlist-entry UP (`:172`), the
+  FOLLOW-374 consent `platform-registration/` exemption is the SAME bad-shape file-wide `paths`
+  exemption on a secret-handling prod route (64-char `CANONICAL_CONSENT_TEXT_HASH`), still LIVE. The
+  act of promoting Rule V is what gave me the lens to see it — promoting a rule and then immediately
+  scanning the repo for OTHER live violations of that exact rule is the highest-leverage move a
+  retro can make. Lesson: when you promote a rule, grep for its violations in the same pass; the
+  promotion isn't done until you've found (or cleared) the next instance.
+- **The promotion-count judgment I had to reason through twice:** First instinct mirrored
+  RETRO-122's discipline — "this PR is a remediation of RETRO-118, and remediations don't advance
+  the count, so NO promotion." Second pass corrected it: the ≥2-prior-retro threshold is about how
+  many PRIOR retros carry the pattern, NOT whether the CURRENT PR is a fresh occurrence. RETRO-121
+  had ALREADY adjudicated 118 and 121 as two INDEPENDENT occurrences (different trigger sites +
+  remediation shapes) and deferred SOLELY on "only 1 prior retro at the time," explicitly
+  pre-authorizing "promote on the NEXT sighting." At RETRO-123 there are 2 prior retros → threshold
+  met. The remediation-doesn't-inflate rule and the promote-now decision are BOTH true and not in
+  tension: the count came from 118+121, the current PR just fired the pre-set trigger.
+  Distinguishing "a remediation can't be the 2nd occurrence" (RETRO-122, correct) from "a
+  remediation can be the moment a 2-already-banked threshold is acted on" (RETRO-123, correct) is
+  the subtle line.
+- **An axis/chain I had to trace twice:** "Gitleaks CI passes" as evidence of restoration. First
+  read: AC-2 satisfied (CI green). Second read: green proves the FP is GONE, not that real-secret
+  DETECTION is back — those are different claims, and the dummy-token negative control (the half of
+  AC-2 that disambiguates) wasn't run. A removed suppression's restoration is
+  asserted-by-construction until a true-positive is demonstrated. → FOLLOW-406.
+- **A meta-pattern in how gaps recur across agents:** the gitleaks-allowlist saga (RETRO-118
+  bad-shape add → RETRO-121 good-shape add + flag-redundant → RETRO-123 strip-superseded + promote)
+  is the same multi-hop lineage shape as the variant-list saga (095→117→122) and the
+  migration-ordering saga (118→121) — a finding doesn't close in one PR, it walks outward one hop
+  per retro, and the retro's job is to NAME the next hop before it's a surprise. The durable tell
+  for config-hygiene findings: "a suppression added to silence THIS PR's own noise" is almost always
+  over-broad on first attempt and almost always has a sibling instance elsewhere in the same config
+  file. Also reaffirmed: trust the FOLLOW_UPS.md footer ledger over retro prose for ID/threshold
+  reconciliation; and the RETRO-114/115/116 in-file hole is now 6 retros old — escalated its
+  visibility this round (it degrades every "last N retros" pattern scan).
+
+## 2026-06-26 — RETRO-124 (FOLLOW-403 / PR #363, CH-migrations runbook correction)
+
+- **A finding I almost missed and why:** This is a 1-file, +9/−4 doc PR that did exactly what
+  RETRO-121 §4d DG-1/DG-2 asked — the lazy verdict is "runbook fixed, clean ✅, close it." The catch
+  came from treating the corrected CLAIM as a string with multiple homes, not as a line number: I
+  grepped the corrected phrasing ("for future migrations" / "catches any future") across the repo
+  and found the IDENTICAL overstatement still live in `migration-contract-test.sh:11-12` — the
+  SOURCE FILE the runbook describes. FOLLOW-403 corrected the runbook's copy of the claim and left
+  the script's copy untouched. The author who EXTENDS the test reads the script header, not the
+  runbook, so the false "future migrations" coverage signal survives exactly where it does the most
+  damage. Lesson (now the §6 watch-item): a correction ticket spawned from a retro-QUOTED string
+  must grep that string repo-wide and fix every surface — the retro quotes ONE line for evidence;
+  the worker must not treat that one line as the whole scope.
+- **An axis/chain I had to trace twice:** the migrate.sh CAPTION fix. First read: DG-2 satisfied
+  (caption now says "Apply ALL pending migrations idempotently"). Second read: the fix corrected the
+  caption but the SENTENCE that introduces the block (`:72-73`, "for files with multiple statements,
+  use migrate.sh's \_apply_file helper") still frames the same `bash migrate.sh` command as a
+  single-file applier — so fixing the caption created a NEW intra-doc contradiction. A caption and
+  the prose that introduces it are two surfaces of one claim; fixing one without the other moves the
+  gap one hop rather than closing it. → FOLLOW-408.
+- **A judgment I had to reason through twice (promotion discipline, inverse of RETRO-123):** the
+  "doc-correction fixes the quoted line but leaves an identical sibling claim" pattern LOOKS like
+  RETRO-123's "fixed route.ts, missed consent — second live instance" — tempting to bank them as 2
+  occurrences and promote a rule. Held back: RETRO-123's instance is CONFIG-domain (gitleaks
+  allowlist shape) and was promoted under Rule V; THIS is DOC-domain (a prose/comment claim about
+  coverage). Same META-shape ("the named fix lands, an identical instance survives one hop over")
+  but different enough domains that banking them as one promotable pattern would be the
+  count-inflation RETRO-122 warned against. Kept count 1, no rule, explicit watch-item. The line: a
+  shared meta-shape across two domains is a LESSON, not yet a RULE — a rule needs ≥2 prior
+  occurrences in a coherent-enough domain that the rule's verification step is concrete.
+- **A meta-pattern in how gaps recur across agents:** doc/comment-correction tickets are the highest
+  under-fix risk in the whole loop — they are scoped to "fix the wording the retro quoted," and
+  workers (correctly, per the surgical-changes guardrail) touch only that. But a CLAIM about a
+  system (test coverage, what a script does, which file an allowlist guards — cf. RETRO-123 §4d
+  DG-2's "keys in route.ts" copy-paste comment on the consent block) is almost always replicated
+  across the runbook + the source file + an intro sentence + a References header. The retro's
+  durable job on any doc-correction merge: grep the corrected string repo-wide and enumerate EVERY
+  surface before declaring the claim closed. Also: a doc that points forward to an unlanded ticket
+  ("wait for FOLLOW-402 / Once FOLLOW-402 lands") creates a doc-update-BACK obligation on that
+  ticket — flag it on the ticket, or the fix that lands later silently re-stales the doc this PR
+  just corrected.
+
+## 2026-06-26 — RETRO-114 (FOLLOW-342 / PR #353, back-filled out of order; test-only AC-2 completion)
+
+- **A finding I almost missed and why:** PR #353 is a +43-line test-only PR over ground already
+  exhaustively retro'd in RETRO-095. The lazy verdict is "test added, wiring clean, close it." The
+  real story was buried in the FOLLOW_UPS.md FOOTER ledger, not the diff: a FOLLOW-393 already
+  existed attributed to "RETRO-114 / PR #353," meaning a prior run had analyzed this merge,
+  generated the follow-ups, and never committed the RETRO entry. The headline finding was PROCESS,
+  not code — FOLLOW-342 was a STALE ticket delegated for variant-indexing that PR #327 shipped 6
+  days earlier (~2h after the AUDIT-2026-06-19 F-03 it derived from was written). The diff tells you
+  nothing; the git-log + footer ledger tell you everything. Durable tell: when a "completion" PR is
+  tiny and over already-retro'd code, check `git log --all --grep <TICKET>` and the FOLLOW_UPS
+  footer BEFORE writing — the gap is upstream of the diff (was this ticket even real?), not in it.
+- **An axis/chain I had to trace twice:** the "correct end-to-end in prod regardless of path" claim
+  in the PR body. First pass: the en-axis variant chain (sample→`variants.en[idx]`→log) is intact,
+  so the claim reads true. Second pass against RETRO-095 §4a LG-2: at #353's merge MINUTE the
+  `pl`/`es` locale precedence still sampled+logged v1/v2 while serving control copy — the claim was
+  false on the non-en axis until FOLLOW-362 landed a day later. A "clean ✅" on the axis a PR tests
+  is not a "clean ✅" on the expression — the copy-selection precedence has three branches and the
+  AC-2 test asserts only the third.
+- **A judgment I had to reason through (promotion discipline):** the stale-finding-delegation
+  pattern is count 1 and maps to existing Rule P as a DELEGATION-time analogue — resisted minting a
+  new rule (FOLLOW-393 already records "amend Rule P on 2nd occurrence," which is the right call).
+  Also resisted minting any new FOLLOW number: 393/392 pre-existed; a back-fill retro's job is to
+  MATCH the existing ledger, not re-grow it.
+- **A meta-pattern in how gaps recur across agents:** the most expensive gaps in this loop aren't
+  code half-wires, they're STALE WORK — an audit finding self-invalidates the day it's written, then
+  walks through promotion → delegation → a burned worker run → a no-op completion PR, because no
+  step re-verifies the finding against current main. Same family as the "Postgres/data merged ≠
+  live" trap (RETRO-076/113): both are "the artifact says X, but the world already moved." The
+  retro's durable job: trace the ticket's PROVENANCE (when was the finding written vs. when did the
+  fix merge?), not just its diff. And: the RETRO-114/115/116 in-file hole — now PARTIALLY closed
+  (114 filled this run); 115 (#354) and 116 (#355) still missing and still degrading every "last N
+  retros" scan. Escalate to PM to back-fill those two.
+
+## 2026-06-26 · RETRO-116 (FOLLOW-389 / PR #355, out-of-order back-fill)
+
+- **A finding I almost missed and why:** The micro-poll `onAnswer` guard (`index.ts:1243`) being
+  left TEST-ORPHANED. The PR ships 7 "real-handler" tests and crows "Rule L compliant," which reads
+  as a clean TG-1 closure. I almost accepted it — but RETRO-109 TG-1 said "all THREE guards," so I
+  enumerated guard-site → test and found only 2 of 3 covered. The tell was buried in the mock:
+  `buildMockFetch()` returns `micro_polls_enabled: false`, which silently makes the third path
+  undrivable. Lesson: when a remediation claims to close a MULTI-SITE finding, re-list every site
+  from the SOURCE retro and tick them off individually — do not trust the test COUNT or a "Rule L
+  compliant" banner.
+- **An axis/chain I had to trace twice:** The HW-1 producer wire. First pass: "producer at :1148 →
+  fn appends param → route gate reads it = closed." Second pass: I followed the call site UPWARD and
+  realized it lives inside the quiz-completion callback, which is downstream of Guard 1's early
+  return at :1103 — so `profilingOptedOut` at the call site is ALWAYS false in normal flow. The wire
+  is connected but dormant; the PR's "reachable by real SDK traffic" is false. Lesson: for a
+  "producer now wired" claim, trace whether the producer call site is REACHABLE with the value that
+  matters, not just whether the arg is syntactically passed.
+- **A meta-pattern in how gaps recur across agents:** "Fix the retro-quoted string, miss the sibling
+  twin." DG-1 fixed the micro-poll comment but left the identical false line at `showQuizTrigger`
+  :1102 — the EXACT shape RETRO-124 logged for the clickhouse runbook (FOLLOW-403 → sibling
+  `migration-contract-test.sh`). Two different agents (data-engineer, sdk-engineer), two domains,
+  same failure: correcting the flagged copy without grepping the string repo-wide. This is now 2
+  independent contexts but only 1 PRIOR retro, so I HELD promotion (RETRO-123's ≥2-prior / 3rd-
+  sighting precedent) and banked RETRO-124 as occurrence 1. Watch for the 3rd; it should become a
+  Rule. My own blind-spot risk: the temptation to promote at count-2-total when the convention here
+  is count-2-PRIOR.
+
+---
+
+### 2026-06-26 · RETRO-115 (FOLLOW-357/356 / PR #354 — tier→page_context rename; OUT-OF-ORDER back-fill, last of the 114/115/116 gap)
+
+- **A finding I almost missed and why:** The migration-number citation bug (DG-1). The PR's wiring
+  was clean and all gates green, so the lazy read is "rename PR, low risk, Wiring Audit clean ✅,
+  done." The gap only surfaced because I grepped the `tier` provenance comments against the ACTUAL
+  migrations directory and found three comments saying "migration 0017" while the PR's own file is
+  0018 — and 0017 is a REAL, unrelated migration (follow371 holdout-contamination), which makes the
+  misdirection worse than a dangling reference. Lesson: on any rename/migration PR, grep every
+  in-code "migration NNNN" / provenance citation against `ls infra/.../migrations/` — renumber-drift
+  between a planned slot and the merged slot is invisible to every CI gate (schema-drift, rule-h,
+  journal-monotonicity all passed) and only a citation-vs-artifact cross-check catches it.
+- **An axis/chain I had to trace twice:** FOLLOW-358. PR #354 DEFERRED it (GET echoes caller `tier`
+  1|2|3 into the same `page_context` CH column POST fills with page-type 1|2). First pass I almost
+  logged it as this PR's open HALF_WIRE/LG. Second pass (step 7 end-to-end) showed it was already
+  CLOSED downstream by RETRO-118 / migration 0019's `page_context_source` discriminator — a slot
+  ABOVE this PR's 0018. So the right treatment was reconciliation (deferred-here, closed-there,
+  verified producer→sink→attestation), not a re-open. The two-PR rename arc (0018 column rename in
+  #354, 0019 source discriminator in #357) is only legible if you read BOTH retros' migration slots.
+- **A meta-pattern in how gaps recur across agents:** "Delete the guard to admit the new field"
+  (CB-1) — to let the GET-only `tier` survive after it left `AdaptationDirectives`, the worker
+  STRIPPED `satisfies AdaptationDirectives` from two early-return literals instead of widening to
+  `T & { tier }` (which they DID use on the main path). Same Rule-S "treat all symmetric siblings at
+  equal tier" failure I keep seeing across agents (RETRO-117/122 VARIANT_INDEX 3rd-literal,
+  RETRO-112 13-call-site dwell/view). The recurring shape: a contract change is applied completely
+  on the "obvious" branch and degraded (or dropped) on the early-return / fallback / non-en
+  siblings. Audit habit reinforced: enumerate ALL return/branch sites of a touched handler and diff
+  their completeness tier, never just the happy path.
+- **My own blind-spot logged:** the concurrent RETRO-116 run minted FOLLOW-409 while I was
+  mid-write, forcing my stub to 410 and the counter to 411. Lesson for back-fill/concurrent runs:
+  re-read the FOLLOW next-free counter AND the retros tail IMMEDIATELY before writing, not just at
+  the start — a parallel retro can claim a number and append a heading between my first read and my
+  append.
+
+---
+
+### 2026-06-26 · RETRO-125 (FOLLOW-407 / PR #364 — Rule V applied to the consent gitleaks exemption)
+
+- **A finding I almost missed and why:** the new token-scoped `regexes` entry is REDUNDANT with a
+  PRE-EXISTING inline `// gitleaks:allow` on `lib.ts:46`. I nearly recorded the PR as a clean Rule-V
+  application and stopped. What saved it: I grepped for the literal VALUE (not the symbol) and found
+  it lives at exactly ONE site — which already carried an inline allow. The lesson: for a
+  gitleaks-config retro, ALWAYS grep the suppressed literal's actual value repo-wide and check for a
+  co-located inline `gitleaks:allow`; a token-scoped allowlist entry that duplicates an inline allow
+  is unproven/dead config, and "CI green" hides it completely.
+- **An axis/chain I had to trace twice:** the 38-vs-40-char window math. My first instinct ("38 < 40
+  so it's contained, fine") was too shallow — the real question is WHICH of the hash's 25 possible
+  40-char windows the prefix sits in, and which window gitleaks actually REPORTS. I scripted it:
+  gitleaks reports the LEFTMOST window only ([0,39]), and the 38-char prefix is contained in window
+  [0] alone. So it works, but it is leftmost-anchored, not robustly "inside the capture." Trace the
+  regex-engine match semantics, not just substring length.
+- **A meta-pattern in how gaps recur across agents:** the SAME deferred-negative-control gap
+  recurred verbatim across two Rule-V remediation PRs (route.ts/FOLLOW-396 → FOLLOW-406, then
+  consent/FOLLOW-407 → FOLLOW-411). The interesting part: the governing rule (Rule V) ALREADY
+  mandates the negative control — this is not a missing-rule pattern, it is a rule-COMPLIANCE
+  pattern (the mandated proof keeps getting deferred at PR time). My discipline note to self: when a
+  recurring gap is already covered by an existing rule's text, resist minting a new rule
+  (count-inflation); instead flag it as an execution-discipline compliance gap and make the
+  follow-up carry the proof. Also: a retro that spawns FOLLOW-N+k should re-check whether an EARLIER
+  open follow (here FOLLOW-406) is now under-scoped by the new merge, rather than blindly filing a
+  parallel stub — cross-ref-and-widen beats duplicate.
+
+## 2026-06-26 · RETRO-126 (PR #365, FOLLOW-398 — phantom SIDEBAR_SHOW_THRESHOLD removal; AMENDED Rule Y, scope-broadening)
+
+- **A finding I almost missed and why:** the FOLLOW-398 fix LOOKED clean (it deleted the phantom
+  from all 4 sites and even fixed a test title), so the easy verdict was "closed ✅, no findings." I
+  almost recorded that. Forcing myself to diff the REPLACEMENT prose against `index.ts:720-724`
+  source — not against the prior doc — surfaced that the new line-728 text says "`adapt-floor`
+  returns `[]`" when `adapt-floor.ts` is const-only (no function), and that it drops the
+  `|| signal_count >= 2` OR-branch. The fix for a Rule-Y citation introduced a fresh Rule-Y citation
+  IN THE SAME SENTENCE. Lesson: a doc-fix PR is exactly where the next inaccuracy hides; verify the
+  NEW text against code, never against the text it replaced.
+- **An axis/chain I had to trace twice:** "does the constant exist?" had to be traced through git
+  HISTORY, not just current HEAD. The FOLLOW-398 stub (and RETRO-119) framed it as "never existed as
+  a real const." `git log -S` proved it WAS real (TICKET-037) and was DELETED by PR #340/FOLLOW-375
+  on 2026-06-23 — which reframes the whole thing from "typo phantom" to "Operating-Principle-2
+  propagation failure: a symbol removed from code, citations left behind." The stale
+  `.claude/worktrees/*` checkouts (which still DEFINE the const at index.ts:178/660) were the tell —
+  I almost dismissed them as noise. The real root cause only emerged from history.
+- **A meta-pattern in how gaps recur across agents:** the §E.7 confidence-gating-ladder paragraph
+  has now needed THREE PRs (FOLLOW-354 introduced the phantom rung while fixing a cross-ref →
+  FOLLOW-398 introduced "returns []" while fixing the phantom rung). Each editor diffed against the
+  prose, not the source, so each fix re-injected a sibling inaccuracy. This is the SAME shape as the
+  broadened Rule Y, and it is why I executed the amendment two prior retros (115, 119) had each
+  recommended/pre-authorized but deferred to the human — when ≥2 prior retros independently tee up
+  an amendment to an EXISTING rule, deferring again is just letting the gap recur a 4th time.
+  Amending (not minting a new letter) respected the RETRO-122 count-inflation discipline while
+  finally closing the loop.
+
+## 2026-06-26 · RETRO-127 (PR #366, FOLLOW-410 — the "0017"→"0018" migration-citation + GET `satisfies` fix; closes RETRO-115 §4d DG-1/§4b CB-1)
+
+- **A finding I almost missed and why:** I drafted this entire retro AS RETRO-126 and was about to
+  PROMOTE the Rule-Y broadening myself — then my first Edit failed with "file modified since read."
+  A CONCURRENT retro run had appended RETRO-126 for a DIFFERENT ticket (FOLLOW-398/PR #365) and had
+  ALREADY broadened Rule Y, citing my own FOLLOW-410 instance as its evidence. Had the Edit not
+  raced, I would have (a) collided on the RETRO-126 number, (b) DOUBLE-PROMOTED the same Rule-Y
+  amendment, and (c) double-cited RETRO-115/119 as evidence for two separate amendments — textbook
+  count-inflation. **Meta-takeaway: when the harness reports "file modified since read," do NOT just
+  re-read the anchor and retry — re-grep the RETRO/FOLLOW/Rule headers to detect a concurrent writer
+  before re-appending.** Numbering and rule-promotion are shared-mutable state; a stale snapshot is
+  a correctness hazard, not just a merge nuisance. The brief saying "RETRO-127" (not 126) was the
+  tell I under-weighted at the start — I assumed the brief miscounted; it actually knew 126 was
+  taken.
+- **An axis/chain I had to trace twice:** the closure of RETRO-115's DG-1. First pass I called it
+  "CLOSED" on the grep (zero `migration 0017`). Second pass I asked the harder question the role
+  demands — is it closed END-TO-END or did the gap move one hop? It moved: the VALUE is right but
+  the bare-ordinal STYLE that CAUSED the miscount survives, and the PG/CH trees collide on
+  0017/0018/0019 so a bare ordinal is structurally unverifiable. That reframed a "clean closure"
+  into a closed-with-moved-hop residual (FOLLOW-413). Also re-traced the CB-1 leg: the brief claimed
+  the main GET return "had satisfies" — the diff showed it had an EXPLICIT `:` annotation that the
+  PR CONVERTED to satisfies. Trusting the brief's premise would have mis-recorded the provenance in
+  a retro whose whole subject is provenance accuracy.
+- **A meta-pattern in how gaps recur across agents:** a remediation that fixes the VALUE a retro
+  quoted but leaves the STYLE/SHAPE that produced it. RETRO-127's bare-ordinal residual is the same
+  family as RETRO-124's "fix the quoted string, leave the sibling surface" and RETRO-126's "fix the
+  phantom rung, re-inject an inaccuracy in the replacement sentence." The durable fix is always the
+  CONVENTION (full-filename citation, diff-against-source) not the one-site value edit — which is
+  exactly what the broadened Rule Y now governs.
+- **Guardrail note:** the brief's step 5 asked me to mark FOLLOW-410 DONE in QUEUE.md. I did NOT —
+  the role is QUEUE-read-only ("Never QUEUE.md"). Surfaced the DONE action for the PM in the
+  FOLLOW-413 ledger note and the final summary instead.
+
+---
+
+### 2026-06-26 · RETRO-128 (FOLLOW-409 / PR #367)
+
+- **A finding I almost missed and why:** The headline win was real — the micro-poll `onAnswer`
+  real-handler test (RETRO-116's "load-bearing residual") is genuinely closed. It would have been
+  easy to stamp the whole thing CLOSED and move on. The near-miss was reading the AC-3 JSDoc fix
+  (`adapt.ts:186-193`), seeing it correctly reworded, and NOT scrolling 20 lines down into the
+  FUNCTION BODY where the inline comment at `:212-213` still said the exact opposite ("reachable by
+  real SDK traffic") — an internal contradiction within one function. The lesson: when an AC claims
+  to fix "the JSDoc," read the WHOLE symbol (JSDoc + body comments), because the same false claim
+  often lives in both and the fixer touches only the one the retro quoted by line number.
+- **An axis/chain I had to trace twice:** The "Ingest stream left flowing" string. First pass: the
+  three PRODUCTION sites are now symmetric (showQuizTrigger fixed, micro-poll fixed, favorites
+  TRUE+annotated) → looked clean. Only the literal repo-wide grep (`grep -rn ... packages/`)
+  surfaced the four TEST-file hits, two of which (`follow-385.test.ts:211/:225`, the micro-poll
+  model) carry the same falsehood. AC-2 ITSELF said "grep repo-wide and fix every occurrence" — so
+  the test was literally whether the worker ran the grep the AC mandated. They did not. Always run
+  the exact grep the AC prescribes; never trust the production-site survey alone.
+- **A meta-pattern in how gaps recur across agents:** This is the sharpest instance yet of the
+  "fix-one-copy-leave-the-twin" pattern (RETRO-124 → RETRO-116 → here) — because it recurred INSIDE
+  the PR chartered to close the prior twin, and across TWO distinct strings, despite an explicit
+  repo-wide-grep AC. Yet I held promotion: both RETRO-128 instances are the SAME strings / SAME §H.9
+  lineage RETRO-116 already flagged → same-lineage moved-hops, not fresh independent sightings, so
+  anti-count-inflation (RETRO-122/125/126) keeps the independent count at 2. The discipline tension
+  I felt: the EVIDENCE is overwhelming, but the COUNTING rule is strict; the right move was HOLD + a
+  loud human-flag (promote-now-if-you-judge-it) rather than self-authorizing the rule. Worth
+  watching: when an AC explicitly encodes the very discipline a candidate rule would codify, and the
+  worker still violates it, that may justify a "compliance-failure" promotion track distinct from
+  the independent-sighting-count track.
+- **Test-construction meta-pattern (new, banked as Pattern B):** negative-assertion tests ("event X
+  ABSENT after flush") silently false-green if nothing proves the flush fired. The opted-out REAL-4
+  half depends on the opted-IN half as an invisible flush canary. This is the test-harness cousin of
+  the RETRO-095/122 "served=base, logged green" family — assert the positive control (the harness
+  ran) before the negative (the guard suppressed).
+- **Guardrail note:** brief step 5 asked me to mark FOLLOW-409 DONE in QUEUE.md. I did NOT — role is
+  QUEUE-read-only ("Never QUEUE.md"). Surfaced the DONE action for the PM in the FOLLOW-414 ledger
+  note and the final summary.
+
+---
+
+## 2026-06-26 · RETRO-129 (FOLLOW-402 / PR #368 — generalize the CH migration-ordering contract test)
+
+- **A finding I almost missed and why:** the headline of the PR was "self-maintaining — no manual
+  update needed," which is seductive and easy to rubber-stamp. The load-bearing finding (LG-1) only
+  surfaced when I asked "what does step 2 assume?" — it asserts the INSERT is REJECTED before the
+  _last_ migration, which silently assumes the last migration adds an `adaptation_decisions` INSERT
+  column. The repo's own migration history (0014–0017 are intent*events / note migrations, NOT
+  adaptation_decisions column-adds) makes the false-alarm imminent, not theoretical. Lesson: when a
+  PR replaces a \_manual* step with an _automatic heuristic_, enumerate the heuristic's hidden
+  preconditions against the REAL input distribution (here: the actual migration filenames), not the
+  happy-path example the PR author chose.
+- **An axis/chain I had to trace twice:** the fail-OPEN-vs-fail-CLOSED direction of the `grep`/`sed`
+  extractor (LG-2). My first instinct was "multi-line reformat → silent truncation → fail-OPEN." On
+  second pass I worked through `sed`'s requirement for a literal `)`: most reformats actually
+  fail-CLOSED (cryptic red), with only a NARROW silent fail-OPEN window (a complete `(…)` subset on
+  the matched line). The correct framing changed the severity story and the fix (a column-COUNT
+  assertion catches both directions) — so I traced it twice and reported the nuance rather than the
+  first-pass scare.
+- **A meta-pattern in how gaps recur across agents:** this is the SECOND time in this lineage that a
+  fix for an overstated coverage claim introduced a NEW overstated coverage claim (RETRO-121 §4d
+  DG-1 "catches any future PR" → this PR's "self-maintaining guarantee"). The over-claim is sticky
+  because each author writes the aspiration, not the implementation's limits. It is governed by the
+  broadened Rule Y (a named guard cited as performing a check it does not fully perform) — I logged
+  it as a confirming instance, NOT a new rule, holding the anti-count-inflation line.
+- **Disjoint-axis discipline:** the brief asked whether FOLLOW-404 (prod attestation) is superseded.
+  Easy to wave away as "the contract test covers it now." It does NOT — CI runs against a throwaway
+  container; CH migrations don't auto-apply to prod (RETRO-076/FOLLOW-307/FOLLOW-308). I reconciled
+  this explicitly (§5a) instead of letting a CI-axis win imply a prod-axis win.
+- **Guardrail note:** brief steps 5 asked me to mark FOLLOW-402 DONE in QUEUE.md. I did NOT — role
+  is QUEUE-read-only ("Never QUEUE.md"). Surfaced the DONE action + the "confirm PR #368 formally
+  closed on GitHub (gh shows OPEN but the commit is on main)" note for the PM in the §7 verdict and
+  the final summary.
+
+## 2026-06-26 — RETRO-130 (FOLLOW-414 / PR #369)
+
+- **A finding I almost missed and why:** The third-hop "reachable by real SDK traffic" twin at
+  `follow-389.test.ts:12`. FOLLOW-414's AC-1 grep was scoped to `adapt.ts` and returned 0 — the
+  closure looked clean. I only caught the surviving twin by running the grep REPO-WIDE myself
+  (`grep -rn "reachable by real SDK traffic" packages/sdk/src/`) AND then a paraphrase sweep
+  (`grep -rniE "reachable" … | grep -iE "sdk traffic|opt|defense"`), which surfaced BOTH the false
+  test header AND the qualified-correct `index.ts:1144` sibling I had to distinguish. Lesson: when a
+  retro charters a string-correction, NEVER trust the PR's own narrowly-scoped grep — re-run it
+  repo-wide AND with paraphrase variants, because the whole failure mode IS the narrow grep.
+- **An axis/chain I had to trace twice:** RETRO-128 itself declared (implicitly) that FOLLOW-414
+  would close the doc residuals — but RETRO-128's own enumeration of "reachable by real SDK traffic"
+  copies was incomplete (it listed the adapt.ts inline twin, not the follow-389.test.ts:12 sibling).
+  So I had to reconcile against a PRIOR RETRO's audit, not just the PR: the closure is genuine for
+  the instances RETRO-128 NAMED, incomplete for the sibling it didn't. The chain is now adapt.ts
+  JSDoc → adapt.ts inline → follow-389.test.ts:12 — three hops, two of which slipped past retro
+  audits, not just worker fixes.
+- **A meta-pattern in how gaps recur across agents:** The same string has now survived THREE PRs and
+  TWO retros on one §H.9 lineage because every grep (worker AND analyst) was file-scoped. The
+  anti-count- inflation discipline correctly keeps this from auto-promoting Rule (still 2
+  independent domains: RETRO-124 + RETRO-116), but the recurrence-density is now strong enough that
+  I escalated the meta-flag to the human a second time. Also NEW: noted Rule I (wired-or-dead)
+  STRUCTURALLY BLOCKS the obvious "export the constant for tests" hygiene fix — a real rule-vs-rule
+  tension worth carrying forward so I don't file "just export it" follow-ups that can't pass CI.
+  Watch: when an AC is correctly SKIPPED for a CI-gate reason, verify the skip reasoning rather than
+  scoring it as an incomplete closure.
+
+---
+
+## 2026-06-26 / RETRO-131 (FOLLOW-415 / PR #370 — harden CH migration-contract-test boundary detection + column-count floor)
+
+- **A finding I almost missed and why:** The headline finding (LG-1) is that the new reverse
+  boundary walk recognizes ONLY `ADD COLUMN`, so a `RENAME COLUMN`-introduced INSERT column is
+  invisible to the ESC-031 guard. I almost scored the boundary fix as cleanly closed (the PR's
+  dry-run transcripts are convincing and the false-alarm IS genuinely fixed). What caught it: I
+  refused to trust the "boundary works today" transcript and grepped the ACTUAL migration that
+  introduced each INSERT column — and `page_context` (literally in the INSERT list) entered via
+  `RENAME COLUMN tier TO page_context` in 0018, which the new grep can't see. It's masked today only
+  because 0019's ADD COLUMN is newer. The live evidence sat ONE migration below the current
+  boundary. Lesson: when a guard filters by a DDL verb, always map each guarded symbol back to the
+  EXACT verb that introduced it — don't assume "column added" == "ADD COLUMN."
+
+- **An axis/chain I had to trace twice:** The `>= 17` floor. First pass I read it as a clean win
+  (truncation now fails loud). Second pass — checking the OTHER axis per step 8 — I realized 17 ==
+  today's exact full count, so it's a today-only guard: the dangerous subset-fail-OPEN window
+  RETRO-129 flagged reopens the moment the INSERT grows to 18 columns without the literal being
+  bumped. The floor didn't eliminate the manual-maintenance coupling RETRO-129 said the
+  generalization removed; it moved it from "the column name" to "the column count." Both axes
+  (under-count caught / over-count subset NOT caught) had to be walked separately.
+
+- **A meta-pattern in how gaps recur across agents:** "Each hardening pass of a parse-and-heuristic
+  CI guard RELOCATES the unasserted assumption rather than eliminating it." FOLLOW-402 traded
+  manual-pin for two implicit assumptions; FOLLOW-415 closed one of those and introduced two MORE of
+  the same family (magic-number count; verb-blind boundary). This is the same FOLLOW-402→415
+  lineage, so I held the rule (anti-count-inflation) — but the meta-shape is now strong enough that
+  the durable fix is schema-DERIVATION (verbs from the DDL grammar, counts from DESCRIBE TABLE), not
+  another pinned literal. If a THIRD independent guard shows the relocate-don't-eliminate shape,
+  that's a rule. Also reinforced: a CI guard that strengthens the CI axis says NOTHING about the
+  prod axis — FOLLOW-404 (prod attestation) got MORE relevant, not less, because the RENAME column
+  it attests is exactly the one the hardened guard is blind to.
+
+## 2026-06-26 · RETRO-132 (FOLLOW-405 / PR #371)
+
+- **A finding I almost missed and why:** The PR reads as a clean test+doc ticket (a parity GATE, no
+  behavior change), which biases toward "Wiring Audit clean, done." I almost stopped there. The real
+  findings only surfaced by asking what the gate does NOT cover: it asserts array LENGTH + in-range
+  INDEX but never element CONTENT — and `route.ts:320`'s `?? s.en` fallback does NOT fire on an
+  empty string, so a hole at a valid index serves blank copy. A "gate" PR lulls you; always diff the
+  gate's assertions against the runtime fallthroughs it claims to protect.
+- **An axis/chain I had to trace twice:** The locale axis. First pass I read
+  `variants: { en; pl?; es? }` in the type and assumed the gate's `en`-only scope matched a
+  deliberate en-only design. Second pass through `route.ts:319-320` showed the variant branch
+  HARDCODES `.en` regardless of session locale, so `variants.pl`/`variants.es` are a dead type
+  surface (grep: zero populated). And the src-vs-dist axis: the vitest alias → `src` looked like
+  "real source, good," until I checked `sdk/package.json` exports → prod loads `dist`. The gate
+  validates a different artifact than production loads. Both required going one hop past the obvious
+  read.
+- **A meta-pattern in how gaps recur across agents:** "Gate ships, gate is trusted, gate is
+  partial." Three of this retro's four follow-ups are _the gate not covering an axis it visually
+  appears to cover_ (content vs length, en vs all-locales, src vs dist) — plus the gate has no
+  committed negative-control proving it reds, unlike the repo's own Rule O (`--self-test`) and Rule
+  V (dummy-token) exemplars. The recurring agent blind spot: authors prove the steady state is
+  consistent and call the gate done, without proving the gate FIRES or enumerating every axis the
+  asserted invariant should span (this is exactly the Rule S "every sibling/locale/arm" discipline
+  applied to a CI gate's coverage rather than to a behavior change). Watch for a 2nd sighting of
+  "structural gate validates `src` while prod loads `dist`" and of "gate with no committed
+  negative-control" — both are count 1 today and would warrant promotion at count 2.
+
+## 2026-06-26 · RETRO-133 (FOLLOW-404 / PR #372 — one-time prod attestation for CH migration 0019 page_context_source)
+
+- **A finding I almost missed and why:** The PR is a doc-only attestation that reads "schema
+  confirmed, grant confirmed, done" — and the zero-row `SELECT DISTINCT` is pre-explained in the PR
+  body as "consistent with ESC-031," which is a very convincing hand-wave. I almost accepted it.
+  What caught it: I checked the chartered AC text in FOLLOW_UPS.md:11159, which says AC-2 must
+  return the EXPECTED VALUES "confirming the producer is writing it post-deploy." Zero rows confirms
+  NOTHING about writes. Then I tested the ESC-031 explanation against its own facts: ESC-031 was an
+  80-MINUTE window after which writes were restored — so an 80-minute outage cannot explain an
+  ALL-TIME-EMPTY table. The explanation only covers the window, not the emptiness. The attestation
+  closed the schema half and silently re-labeled the write half as closed. Lesson: when an
+  attestation's result is an EMPTY/zero read, never let "consistent with a prior incident" stand in
+  for "the thing we were chartered to verify" — map the result back to the literal AC and to the
+  incident's actual time-bounds.
+
+- **An axis/chain I had to trace twice:** The grant. First pass: `INSERT ON default.*` → "INSERT
+  present, AC-3 satisfied, clean." Second pass (step-8 multi-axis): the grant has a SCOPE axis too —
+  `default.*` is a wildcard, and `MASTER_DESIGN.md:44` documents the intended scope as
+  `default.events`. So the same line that satisfies AC-3 also reveals (a) an over-broad security
+  posture and (b) a design-doc divergence — and the wildcard is the ONLY reason the
+  `adaptation_decisions` write is even legal under a doc that says `events`-only. One grant line,
+  three findings, only visible on the second read.
+
+- **A meta-pattern in how gaps recur across agents:** "Schema/CI/code leg closed, prod-EFFECT leg
+  unverified, and the closure ticket quietly counts the unverified leg as done." This is the same
+  family as RETRO-113 (seeder ran but prod archetype_embeddings stayed NULL) and RETRO-121 §7
+  (migration applied per docs, prod-state not asserted) — Pattern C. The recurring agent blind spot:
+  an attestation/seed/migration proves the STATIC half (column exists / grant exists / journal
+  monotonic) and treats the DYNAMIC half (a row is actually written / a value is actually populated)
+  as implied. The durable tell is an EMPTY result that gets narrated rather than flagged. This is
+  now count ~3 across the prod-effect-unverified family but the SPECIFIC sub-shape "zero-row read
+  recorded as write-verification" is count 1 — I held the rule and pre-registered the 2nd-sighting
+  trigger in §6. Also reinforced RETRO-131's note that FOLLOW-404 "got more relevant, not less": it
+  did — and it still didn't close the leg it was relevant to, because schema attestation and write
+  attestation are different axes.
+
+---
+
+## 2026-06-28 · RETRO-135 (FOLLOW-425 / PR #374 — CH INSERT fail-loud in logDecisionAsync)
+
+- **A finding I almost missed and why:** The PR is a _behaviour-only_ 2-file diff with no contract
+  change — the kind that tempts a "Wiring Audit clean ✅, N/A everywhere" entry. The real value was
+  OUTSIDE the diff: grepping `await fetch(` / `void …catch(` across `apps/control-plane` surfaced
+  that FOLLOW-425 fixed **1 of 3** fire-and-forget HTTP sinks. The two Redpanda siblings
+  (`publishAbAssignmentEvent`, `publishDescriptionRequested`) carry the byte-identical
+  `res.ok`-blind hole. Lesson: when a PR fixes a _class_ of bug ("`.catch()` is blind to HTTP
+  rejection"), the mandatory move is to grep the WHOLE app for the same shape — the fix is rarely
+  complete across siblings (Rule S spirit), and the most useful retro finding is the un-fixed
+  sibling, not the fixed diff.
+
+- **An axis/chain I had to trace twice:** Whether the ClickHouse precedent (RETRO-118 §4 CB-1)
+  legitimately counts toward the promotion threshold. First pass: "RETRO-118's headline was
+  migration-ordering (Pattern A), so the `.catch`-silent-swallow was incidental — maybe count 1."
+  Second pass: RETRO-118 explicitly named the `.catch`-only swallow as the _mechanism_ of the silent
+  failure, and FOLLOW-425 is its direct remediation — so it IS a sighting of THIS pattern, in a
+  DIFFERENT backend (CH HTTP) than RETRO-135's (Redpanda REST). 2 independent backend contexts →
+  threshold met. Also had to re-verify the contrast: decision-api's `pushToRedpanda`
+  (redpanda-producer.ts:102) DOES check `response.ok`, so this is a real control-plane↔decision-api
+  divergence, not a repo-wide convention I was misreading.
+
+- **A meta-pattern in how gaps recur across agents:** "Fix one sink, leave the siblings" keeps
+  happening on the SILENT-FAILURE family (RETRO-085 summary-vs-lift, RETRO-117 producer-vs-consumer
+  list, now RETRO-135 CH-vs-Redpanda). The durable fix is never the single-site patch — it's a
+  grep-derived sweep across all siblings of the SAME shape. The promoted K.2 fire-and-forget
+  amendment ships a verification grep specifically because the parent K.2 grep (`catch(() =>`) was
+  itself blind to the bare-`await fetch()` / fire-and-forget-`.catch()` form — i.e. a RULE can have
+  the same blind spot as the code it governs. Watch for rules whose verification command can't see
+  their own newest sub-shape.

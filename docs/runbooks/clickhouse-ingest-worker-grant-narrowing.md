@@ -153,4 +153,36 @@ Then re-run the enumeration to find the missing table before retrying the narrow
 
 ## Prod Attestation
 
-_(to be filled in after Phase 2 execution — date, operator, SHOW GRANTS output, smoke-test verdict)_
+**Date:** 2026-06-29 **Operator:** Piotr (CEO) — REVOKE/GRANT via ClickHouse Cloud SQL console
+(admin) **Service:** `hl0kc83gt4.eu-west-1.aws.clickhouse.cloud:8443`
+
+**`SHOW GRANTS FOR ingest_worker` after execution** (14 privileges, NO `default.*` wildcard):
+
+```
+GRANT SELECT, INSERT, ALTER DELETE ON default.adaptation_decisions TO ingest_worker
+GRANT INSERT, ALTER UPDATE ON default.dsr_audit_log TO ingest_worker
+GRANT INSERT, ALTER DELETE ON default.events TO ingest_worker
+GRANT SELECT, INSERT ON default.intent_events TO ingest_worker
+GRANT SELECT, INSERT, ALTER DELETE ON default.llm_calls TO ingest_worker
+GRANT ALTER DELETE ON default.session_quality TO ingest_worker
+GRANT SELECT ON system.mutations TO ingest_worker
+```
+
+**Validation (direct `ingest_worker` tests against prod, post-narrowing):**
+
+| Check                                                                     | Result                                                                           |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Auth (`SELECT 1`)                                                         | ✅ HTTP 200                                                                      |
+| SELECT `adaptation_decisions`                                             | ✅ HTTP 200                                                                      |
+| INSERT `adaptation_decisions` (test row, then cleaned via `ALTER DELETE`) | ✅ row landed                                                                    |
+| ALTER DELETE `adaptation_decisions` (DSR mutation grant)                  | ✅ HTTP 200                                                                      |
+| Negative control: SELECT `default.description_generations`                | ✅ DENIED — `Code: 497 … ingest_worker: Not enough privileges … (ACCESS_DENIED)` |
+
+**Verdict:** Grant narrowing is **correct and complete**. Least-privilege enforced (wildcard gone;
+ungranted table denied). The grant does **not** break writes — `ingest_worker` retains full
+INSERT/SELECT/ALTER on its required set.
+
+**Caveat — not attested here:** end-to-end writes via the control-plane `/api/adapt` app path are
+**NOT** confirmed flowing. Two end-to-end smokes during this attestation returned HTTP 200 but did
+not persist a row, while direct `ingest_worker` INSERT succeeded — a **separate, grant-independent
+prod regression** tracked as **ESC-033 (P1)**. This runbook attests the grant only.

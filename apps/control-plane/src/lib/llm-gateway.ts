@@ -33,6 +33,7 @@ import type { ArchetypeId, TextDirective } from '@estalara/shared';
 import type { PlaybookEntry } from '@estalara/sdk/playbooks';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
+import * as Sentry from '@sentry/nextjs';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -192,9 +193,27 @@ function logLlmCallAsync(params: {
       'Content-Type': 'text/plain',
       ...clickhouseAuthHeaders({ user: clickhouseUser, password: clickhousePassword }),
     },
-  }).catch((err: unknown) => {
-    console.error('[llm-gateway] ClickHouse log failed:', err instanceof Error ? err.message : err);
-  });
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const body = await res.text().catch(() => '<unreadable body>');
+        const msg = `[llm-gateway] ClickHouse INSERT rejected: HTTP ${String(res.status)} — ${body.slice(0, 500)}`;
+        console.error(msg);
+        Sentry.captureException(new Error(msg), {
+          tags: { area: 'adapt', sink: 'clickhouse', kind: 'insert_rejected', table: 'llm_calls' },
+          extra: { status: res.status },
+        });
+      }
+    })
+    .catch((err: unknown) => {
+      // Network-layer failure (DNS, connection refused, malformed URL, timeout).
+      // Analytics failures must not surface to callers — log + Sentry only.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[llm-gateway] ClickHouse log failed:', msg);
+      Sentry.captureException(err instanceof Error ? err : new Error(msg), {
+        tags: { area: 'adapt', sink: 'clickhouse', kind: 'network', table: 'llm_calls' },
+      });
+    });
 }
 
 // ---------------------------------------------------------------------------

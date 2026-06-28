@@ -1185,3 +1185,28 @@ fire-and-forget microtasks is fragile in theory (relies on event-loop ordering).
 would be to inject a `fetchImpl` parameter for testing (like `pushToRedpanda` in decision-api does),
 which would let tests assert synchronously after the mock resolves. Worth considering for any new
 fire-and-forget publisher added in the future.
+
+---
+
+## 2026-06-28 / FOLLOW-427 + FOLLOW-428
+
+**What I built:** Hardened the last two ClickHouse fire-and-forget write paths in
+`apps/control-plane` to fail loud on HTTP-level rejection. `logLlmCallAsync` (llm-gateway.ts) had a
+`.catch()`-only handler — blind to HTTP 4xx/5xx. `writeDsrAuditLog` (dsr/\_clickhouse.ts) had a bare
+`await fetch()` with NO `.catch()` AND no `res.ok` check — both HTTP rejection and network errors
+were invisible (network errors propagated as unhandled promise rejections despite callers using
+`void`). Both now follow the `logDecisionAsync` reference pattern from FOLLOW-425.
+
+**Wiring/auth/fail-loud risks I weighed:** `writeDsrAuditLog` had the worst posture: the async
+function could throw on network error, making `void writeDsrAuditLog(...)` callers produce unhandled
+promise rejections. The try/catch fix is non-negotiable. For `logLlmCallAsync`, the private-function
+testing challenge — since it's not exported, tests must drive it through `callLlmGateway`. Used the
+Haiku path (0.6 < similarity ≤ 0.85) to keep the fetch call sequence predictable (spend-check SELECT
+first, INSERT second), avoiding `getGlobalGenerationModel()` DB calls that would complicate mocking.
+The module-level `_client` singleton in llm-gateway.ts is preserved across tests in the same file;
+this is fine because `mockCreate` is still the controlled mock fn.
+
+**A guardrail I'd add:** A lint rule that flags any `void asyncFn()` call site where `asyncFn` is
+`async` but lacks internal try/catch — would have caught the `writeDsrAuditLog` hole at code-review
+time. Alternatively, a naming convention: async analytics sinks should end in `*Async` and must have
+a CI check that the function body contains a try/catch.

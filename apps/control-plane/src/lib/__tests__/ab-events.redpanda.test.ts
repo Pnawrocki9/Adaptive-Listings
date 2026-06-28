@@ -63,7 +63,9 @@ describe('publishAbAssignmentEvent — FOLLOW-426 fail loud on Redpanda HTTP rej
     );
 
     // Must not throw — fire-and-forget guarantee preserved (synchronous return)
-    expect(() => { publishAbAssignmentEvent(VALID_ARGS); }).not.toThrow();
+    expect(() => {
+      publishAbAssignmentEvent(VALID_ARGS);
+    }).not.toThrow();
 
     // Allow the fire-and-forget .then() microtask chain to settle
     await new Promise((r) => setTimeout(r, 10));
@@ -86,7 +88,9 @@ describe('publishAbAssignmentEvent — FOLLOW-426 fail loud on Redpanda HTTP rej
     const networkErr = new Error('connect ECONNREFUSED redpanda.test:443');
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(networkErr));
 
-    expect(() => { publishAbAssignmentEvent(VALID_ARGS); }).not.toThrow();
+    expect(() => {
+      publishAbAssignmentEvent(VALID_ARGS);
+    }).not.toThrow();
 
     await new Promise((r) => setTimeout(r, 10));
 

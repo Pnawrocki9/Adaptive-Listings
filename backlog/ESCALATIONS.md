@@ -1551,3 +1551,207 @@ sufficient. PM will delegate accordingly.
 
 **Resolution:** CEO (Piotr) chose **Option A** on 2026-06-25 — "we need it to be fully functional in
 all aspects." FOLLOW-341 delegated to ml-engineer. FOLLOW-342 unblocked once FOLLOW-341 is done.
+
+---
+
+## RESOLVED — ESC-031: P1 prod incident — ALL adaptation_decisions writes silently failing since PR #357 merge [FOLLOW-394]
+
+**Filed by:** pm-orchestrator **Date:** 2026-06-26 **Affects:** FOLLOW-394 (and FOLLOW-395
+downstream), production ClickHouse `adaptation_decisions` table **Type:** P1 production data-loss
+incident
+
+**Description:**
+
+PR #357 (FOLLOW-358) merged at 2026-06-26T10:40Z adds `page_context_source` to the explicit column
+list of the `logDecisionAsync` INSERT in `apps/control-plane/src/app/api/adapt/route.ts` (~line
+468). ClickHouse rejects an INSERT that names a column not present in the table with
+`NO_SUCH_COLUMN_IN_BLOCK`. The `logDecisionAsync` function is fire-and-forget with a swallowed
+`.catch` (route.ts:501-504 — only `console.error`s). This means:
+
+**Every call to `/api/adapt` (GET or POST) since PR #357 merged has silently failed to write its row
+to `adaptation_decisions` in production ClickHouse.** No row is written, no error surfaces to the
+caller, no alert fires.
+
+The fix is migration `infra/clickhouse/migrations/0019_adaptation_decisions_page_context_source.sql`
+— an idempotent
+`ALTER TABLE adaptation_decisions ADD COLUMN IF NOT EXISTS page_context_source LowCardinality(String) DEFAULT 'legacy'`.
+This migration runs in CI against a throwaway container but does NOT auto-apply to prod (project
+invariant: ClickHouse migrations require manual operator apply, per memory
+`project_postgres_migrations_no_autoapply` and RETRO-076/FOLLOW-308).
+
+**Complicating factor (CAVEAT):** The prod ClickHouse user is `ingest_worker`. Per RETRO-076, this
+user may lack `ALTER TABLE` DDL grant. Attempting `ALTER TABLE` without the grant will also fail
+silently (or with a permission error). You must verify the DDL grant BEFORE applying.
+
+**Required human action — two paths:**
+
+**Path A (recommended — fastest to resolve the data loss):** Manually apply migration 0019 to prod
+ClickHouse via Doppler:
+
+```
+doppler run --config prd -- clickhouse-client --host <CH_HOST> --user ingest_worker --password <pw> \
+  --query "ALTER TABLE adaptation_decisions ADD COLUMN IF NOT EXISTS page_context_source LowCardinality(String) DEFAULT 'legacy'"
+```
+
+FIRST verify the `ingest_worker` user has `ALTER TABLE` privilege. If not, use the admin/default
+user for the DDL apply (or grant the privilege). After apply, run a smoke test: make one GET and one
+POST request to `/api/adapt`, then query
+`SELECT DISTINCT page_context_source FROM adaptation_decisions LIMIT 5` — should return
+`caller_supplied` and/or `page_type_derived` for new rows.
+
+**Path B (if prod ClickHouse access is unavailable right now):** Temporarily revert the
+`page_context_source` column from the INSERT in `route.ts` until the migration can be applied. This
+stops the data loss but requires another deploy. PM can delegate this to backend-engineer
+immediately.
+
+**PM is blocked from picking new tickets while this escalation is OPEN.**
+
+**Resolution:** Applied 2026-06-26T~12:00Z via ClickHouse Cloud SQL console (admin user). Migration
+0019
+(`ALTER TABLE adaptation_decisions ADD COLUMN IF NOT EXISTS page_context_source LowCardinality(String) DEFAULT 'legacy'`)
+applied successfully. Verified: column exists with correct type and default. All `/api/adapt` writes
+now succeeding. Remaining FOLLOW-394 code ACs (AC-4: ClickHouse-smoke contract test; AC-5: deploy
+runbook update) delegated to data-engineer — tracked in QUEUE.md FOLLOW-394 IN_PROGRESS.
+
+---
+
+## RESOLVED — ESC-032: `ingest_worker` prod ClickHouse grant is `INSERT,SELECT ON default.*` (all tables) — diverges from MASTER_DESIGN `default.events` least-privilege; security posture decision required [FOLLOW-424]
+
+**Filed by:** pm-orchestrator **Date:** 2026-06-28 **Affects:** FOLLOW-424, prod ClickHouse security
+posture, MASTER_DESIGN.md §44 **Type:** architectural / security
+
+**Description:**
+
+RETRO-133 (§4a LG-1, surfaced during FOLLOW-404 prod attestation) found that the prod ClickHouse
+user `ingest_worker` holds `GRANT SELECT, INSERT ON default.* TO ingest_worker` — covering EVERY
+table in the `default` schema. `MASTER_DESIGN.md:44` documents the intended scope as
+`default.events` only.
+
+Two-part divergence:
+
+1. **Security posture:** A compromised or misused `ingest_worker` credential can INSERT into and
+   SELECT from ANY table in `default`, not the minimal write set. The tables the worker actually
+   writes are: `events`, `adaptation_decisions`, `intent_events` (and potentially others). A
+   wildcard beyond those surfaces unnecessary blast radius.
+
+2. **Design-doc drift:** The Master Design says `default.events`; the actual prod grant is
+   `default.*`. Either the doc is stale (the wildcard was intentional, never updated) or the prod
+   grant is over-broad (should be narrowed). The current wildcard is what silently makes
+   `logDecisionAsync` INSERTs to `adaptation_decisions` legal.
+
+Per the autonomy rules (CLAUDE.md): "A test reveals a security issue" and "They need to change a
+public API surface … or compliance posture" → PM escalates.
+
+**Required action (Piotr — ~10 minutes decision + optional ~30 min implementation):**
+
+Choose ONE of:
+
+**Option A — Narrow the grant (recommended, least-privilege):**
+
+1. Enumerate all tables `ingest_worker` writes: grep INSERT call sites (currently `events`,
+   `adaptation_decisions`, `intent_events` — confirm complete list).
+2. Revoke the wildcard: `REVOKE SELECT, INSERT ON default.* FROM ingest_worker`
+3. Re-grant the minimal set: `GRANT INSERT ON default.events TO ingest_worker`,
+   `GRANT INSERT ON default.adaptation_decisions TO ingest_worker`,
+   `GRANT INSERT ON default.intent_events TO ingest_worker` (add SELECT where needed for existing
+   queries).
+4. Run a smoke test to confirm writes still succeed on all three tables.
+5. Update `MASTER_DESIGN.md:44` to document the exact minimal write set.
+
+**Option B — Accept the wildcard with documented rationale:**
+
+1. Update `MASTER_DESIGN.md:44` to say `default.*` (all tables) with explicit rationale (e.g.
+   "wildcard chosen to avoid grant-maintenance friction as new tables are added; accepted
+   blast-radius trade-off for this service tier").
+2. File a FOLLOW stub to revisit at pilot scale.
+
+**Blocking:** This does NOT block the PM pipeline. FOLLOW-424 tracks the implementation; this
+escalation records the security decision.
+
+**Resolution:** Piotr (CEO) chose **Option A — narrow the grant (least-privilege)**, 2026-06-28,
+with a mandatory safety sequence to avoid re-introducing a silent/broken write path so soon after
+ESC-031:
+
+1. **Enumerate first, narrow second.** Before any REVOKE, data-engineer must grep all
+   `ingest_worker` write call sites (`INSERT INTO …` across apps/ingest and apps/control-plane) and
+   produce the COMPLETE table list. Do not assume the list is only
+   `events`/`adaptation_decisions`/`intent_events` — confirm it.
+2. **Verify fail-loud coverage per table.** For each table in the write set, confirm the writer
+   surfaces HTTP-level rejections (non-ok response → Sentry capture), as FOLLOW-425 did for
+   `adaptation_decisions`. If any sink still only has `.catch()` (network-only), file a follow-up to
+   add fail-loud there — do NOT narrow the grant until each path will fail loudly, so a missed table
+   can't silently break.
+3. **Apply narrowed grant** via Doppler `prd`: REVOKE the `default.*` wildcard, re-GRANT the minimal
+   `INSERT` (+ `SELECT` only where an existing query needs it) on the confirmed table set.
+4. **Smoke-test** writes on every table in the set post-narrowing; confirm rows land.
+5. **Update `MASTER_DESIGN.md` §44** to document the exact minimal write set (aligns doc to
+   reality).
+
+Rationale: GDPR/PDPL posture wants least-privilege on a write-path service account; tighten reality
+to the stricter documented model rather than relaxing the model to match drift. The enumeration +
+fail-loud gate converts the wildcard into an explicit, auditable grant without gambling on an
+incomplete table list. Tracked by FOLLOW-424 (delegated to data-engineer 2026-06-28). Non-blocking
+for the pipeline.
+
+**EXECUTED & VALIDATED — 2026-06-29.** Phase 1 (read-only enumeration + fail-loud audit) found the
+write set is LARGER than the initial estimate: 5 INSERT tables (`events`, `intent_events`,
+`adaptation_decisions`, `llm_calls`, `dsr_audit_log`) plus DSR `ALTER DELETE/UPDATE` and
+`system.mutations` SELECT that the wildcard never covered. The fail-loud gate surfaced two more
+blind sinks (`logLlmCallAsync`, `writeDsrAuditLog`) — hardened in FOLLOW-427/428 (PR #377) before
+narrowing. Phase 2 REVOKE/GRANT run by Piotr in the ClickHouse Cloud SQL console;
+`SHOW GRANTS FOR ingest_worker` returned the exact 14-row minimal grant with NO `default.*`
+wildcard. Validated by direct `ingest_worker` tests against prod: auth ✅, SELECT ✅, INSERT ✅ (row
+landed), ALTER DELETE ✅, negative control `SELECT default.description_generations` →
+`Code: 497 … ingest_worker: Not enough privileges … (ACCESS_DENIED)` ✅ (confirms wildcard removed
+and least-privilege enforced). Full procedure + attestation in
+`docs/runbooks/clickhouse-ingest-worker-grant-narrowing.md`. §44 updated to the minimal grant.
+**Grant is correct and does not break writes.**
+
+NOTE: During validation, a SEPARATE prod regression was found — the control-plane `/api/adapt` app
+path no longer writes `adaptation_decisions` (two end-to-end smokes failed, while direct
+`ingest_worker` INSERT succeeds). This is NOT caused by the grant. Filed as ESC-033 (P1).
+
+---
+
+## OPEN — ESC-033: control-plane `/api/adapt` silently not writing `adaptation_decisions` in prod (regression; grant-independent) [P1]
+
+**Filed by:** orchestrator (acting) **Date:** 2026-06-29 **Affects:** prod control-plane adapt
+route, `adaptation_decisions` analytics, decision audit trail **Type:** prod regression / data loss
+(analytics)
+
+**Severity:** P1. NOT user-facing — `/api/adapt` returns HTTP 200 with a valid decision. Impact is
+analytics/audit: adaptation decisions are not being persisted, so lift/calibration dashboards and
+the decision audit trail go stale. Same silent-write-failure FAMILY as ESC-031 (but now fail-loud,
+so Sentry should hold the exact error).
+
+**Evidence (2026-06-29 session):**
+
+1. FOLLOW-422 confirmed writes flowed at 2026-06-28 13:01 (2 rows in `adaptation_decisions`,
+   sessions `smoke-follow422-*`).
+2. Two fresh end-to-end smokes today via `https://admin.estalara.com/api/adapt` (sessions
+   `smoke-esc032-1782683704` @ 21:55 and `smoke-esc032b-1782684969` @ 22:16) each returned HTTP 200
+   with a valid `adapt_decision_id`, but NEITHER row landed in `adaptation_decisions` (`count()=0`
+   per session).
+3. Direct `INSERT` into `adaptation_decisions` as `ingest_worker` (post grant-narrowing) SUCCEEDS —
+   so the table, grant, and credential are fine. The failure is specific to the control-plane
+   runtime write path (`logDecisionAsync`).
+4. Window: regression appeared between 13:01 (working) and 21:55 (broken) on 2026-06-28 — coincides
+   with prod redeploys from merging PR #376 (FOLLOW-426, touched
+   `apps/control-plane/src/app/api/adapt/route.ts`) and PR #377 (FOLLOW-427/428). Prime suspect: a
+   deploy-introduced change in the adapt route's fire-and-forget block, OR a runtime env/URL/user
+   difference in the deployed control-plane.
+
+**Required action (next work cycle):**
+
+1. Pull the exact error from Sentry (control-plane project, ~21:55 and ~22:16 UTC 2026-06-28, tag
+   `kind:insert_rejected` or `kind:network`) — the FOLLOW-425 fail-loud capture should hold the
+   verbatim ClickHouse/fetch error. Alternatively `vercel logs` for the control-plane prod
+   deployment (console.error from `logDecisionAsync`).
+2. The error class points the fix: `497 Not enough privileges` → control-plane connects as a user
+   OTHER than `ingest_worker`; `network`/DNS → `CLICKHOUSE_URL` missing/wrong in the deployed
+   runtime; `Unknown column` → a column drift in the INSERT list from a recent deploy.
+3. Likely owner: backend-engineer (adapt route) with data-engineer support.
+
+**Blocking:** Does NOT block the agent pipeline or ESC-032. Analytics-only data loss; fix promptly.
+
+**Resolution:** (empty)

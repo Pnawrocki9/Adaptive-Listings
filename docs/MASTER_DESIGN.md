@@ -41,7 +41,13 @@ RESOLVED. SDK→ingest→ClickHouse E2E verified. Key architectural facts now in
   required for shadow mode.
 
 - **Pilot tenant.** `id = cbc51cfa-1056-40aa-b0a9-6e982b52b1de`, `slug = 000-app-estalara`,
-  ClickHouse user `ingest_worker` (INSERT + SELECT on `default.events`). Migration sequencing:
+  ClickHouse user `ingest_worker` — minimal least-privilege grant (applied ESC-032 Phase 2 /
+  FOLLOW-424, 2026-06-29; see `docs/runbooks/clickhouse-ingest-worker-grant-narrowing.md`): INSERT on
+  `default.{events, intent_events, adaptation_decisions, llm_calls, dsr_audit_log}`; SELECT on
+  `default.{llm_calls, intent_events, adaptation_decisions}` and `system.mutations`; ALTER DELETE on
+  `default.{events, adaptation_decisions, llm_calls, session_quality}`; ALTER UPDATE on
+  `default.dsr_audit_log`. The prior `INSERT, SELECT ON default.*` wildcard was revoked. Migration
+  sequencing:
   `POST /api/tenants` (tenant-create) BEFORE `pnpm db:migrate` — RAISE EXCEPTION guard in 0016
   passed (ESC-012 RESOLVED).
 

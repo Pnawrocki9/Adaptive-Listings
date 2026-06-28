@@ -1965,3 +1965,32 @@
   itself blind to the bare-`await fetch()` / fire-and-forget-`.catch()` form — i.e. a RULE can have
   the same blind spot as the code it governs. Watch for rules whose verification command can't see
   their own newest sub-shape.
+
+## 2026-06-28 · RETRO-137 (PR #376, FOLLOW-426 — harden the 2 control-plane Redpanda fire-and-forget publishers; STRENGTHENED Rule K.2 verification)
+
+- **A finding I almost missed and why:** the SDK beacon `dispatchEvents`
+  (`packages/sdk/src/core/events.ts:85`). FOLLOW-426 was the remediation of the family RETRO-135
+  named, and the obvious completeness sweep is "grep `await fetch` in `apps/`" — which is _exactly_
+  the scope of the Rule K.2 amendment's own verification grep. Running that grep would have greened
+  cleanly and I'd have written "family closed." The catch: I deliberately re-ran the sweep over
+  `apps/` **AND `packages/`**, because the rule I was about to cite only scans `apps/` — and the SDK
+  browser beacon (a fire-and-forget ingest POST with no `res.ok` check, where a 401 silently drops
+  every event even in debug) lives in `packages/`. The rule's own blind spot would have become my
+  blind spot. Lesson banked into the rule itself: widened the verification scope + added an
+  enumerated sink registry so the next analyst checks a list, not a re-derivation.
+- **An axis/chain I had to trace twice:** the `async Promise<void>` → sync `void` signature flip.
+  The first trace (production call sites) was clean — all three `void fn().catch()` chains correctly
+  became bare `fn()` with the dead `.catch()` removed, both holdout AND treatment axes. But the
+  signature change has a SECOND axis I nearly skipped: the **11 sibling test files** still mock the
+  publisher with `.mockResolvedValue(undefined)` — modeling the dead async contract. Harmless today
+  (return value unused) so I folded it (anti-inflation), but it's a fixture-lies twin set that would
+  mask a future re-introduced `.catch()`. A return-type change has a test-fixture axis, not just a
+  call-site axis.
+- **A meta-pattern in how gaps recur across agents:** the "lateral hop, Nth consecutive time." This
+  silent fire-and-forget family has now moved sideways across FOUR backends without ever closing
+  (ClickHouse → Redpanda×2 → CH llm/dsr → Redis + SDK-beacon). Each retro closes the named sinks and
+  the next retro finds the next backend's copy of the identical shape. The durable fix is NEVER
+  another point-fix follow-up — it is the mechanical guard (registry + widened grep). When I see a
+  3rd consecutive lateral residual in the same family, the highest-value output is hardening the
+  _verification_, not just filing the next two stubs. Filed the stubs (FOLLOW-429/430) AND
+  strengthened the rule — but the rule strengthening is the load-bearing half.

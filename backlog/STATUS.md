@@ -154,7 +154,8 @@ Next free FOLLOW stub number: 427.
 | RETRO-134 | FOLLOW-406/411   | #373  | PENDING — to be spawned                                                  |
 | RETRO-135 | FOLLOW-425       | #374  | DONE — generated FOLLOW-426; promoted Rule K.2 fire-and-forget amendment |
 | RETRO-136 | FOLLOW-422       | #375  | PENDING — to be spawned                                                  |
-| RETRO-131 | FOLLOW-415       | #370  | PENDING — to be spawned                                                  |
+| RETRO-137 | FOLLOW-426       | #376  | DONE — generated FOLLOW-429/430; strengthened Rule K.2 verification      |
+| —         | FOLLOW-427/428   | #377  | PENDING — to be spawned (ESC-032 Phase 1 CH writers)                     |
 
 ---
 

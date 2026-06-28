@@ -642,6 +642,35 @@ grep -rn "await fetch(" apps/ --include="*.ts" | grep -v node_modules | grep -v 
 RETRO-135 §4b CB-1/CB-2 / §6 (Redpanda `publishAbAssignmentEvent` + `publishDescriptionRequested`,
 FOLLOW-426). 2 independent backend contexts — threshold met.
 
+**Verification strengthening (2026-06-28 — RETRO-137 §6).** The grep above proved insufficient on
+two counts: (a) it scans only `apps/`, so the SDK ingest beacon `dispatchEvents`
+(`packages/sdk/src/core/events.ts:85`) was invisible to it; and (b) per-hit human triage let the
+four-ticket family remediation (FOLLOW-425/426/427/428) walk past 2 still-blind sinks. So the
+verification is upgraded to (1) **scan `apps/` AND `packages/`**, and (2) **check against an
+enumerated registry, not a re-derivation.** Evidence: RETRO-135 §6 (the amendment itself recorded
+the parent grep was blind to this sub-shape — count 1) + RETRO-137 §4b (2 survivors found
+post-sweep, one outside the `apps/`-only scope — count 2).
+
+```bash
+# Widened scope — fire-and-forget fetch sinks live in packages/ too (SDK beacons):
+grep -rn "await fetch(\|void .*\.catch(\|)\.catch((err" apps/ packages/ --include="*.ts" \
+  | grep -v node_modules | grep -v "\.test\."
+```
+
+**Known fire-and-forget HTTP sink registry (keep current; audit each for `res.ok` + observability on
+BOTH the non-ok-then and the network paths).** Hardened: `logDecisionAsync`
+(`apps/control-plane/.../adapt/route.ts`, FOLLOW-425), `publishAbAssignmentEvent`
+(`apps/control-plane/src/lib/ab-events.ts`, FOLLOW-426), `publishDescriptionRequested`
+(`apps/control-plane/.../adapt/description/route.ts`, FOLLOW-426), `logLlmCallAsync`
+(`apps/control-plane/src/lib/llm-gateway.ts`, FOLLOW-427), `writeDsrAuditLog`
+(`apps/control-plane/src/app/api/dsr/_clickhouse.ts`, FOLLOW-428). Reference-correct (observability
+
+- retry): `pushToRedpanda` / `pushToClickHouse` (`apps/ingest`, `apps/decision-api`). Open
+  (RETRO-137): `redisSet` (`apps/decision-api/src/lib/reorder.ts:128`, FOLLOW-429), `dispatchEvents`
+  (`packages/sdk/src/core/events.ts:85`, FOLLOW-430 — browser, debug-log not Sentry). A new
+  fire-and-forget `fetch` sink added in any PR MUST be added to this registry with its `res.ok`
+  posture, or the PR is incomplete.
+
 ## Rule L — Verify the production install/snippet path PRODUCES the config a consumer reads — a test that injects the value is not evidence
 
 **Pattern:** A feature wires an SDK/runtime _consumer_ of a config value (an `<script>`

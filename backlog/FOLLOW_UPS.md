@@ -12137,7 +12137,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] (Optional, closes RETRO-135 §4c TG-2 while in the same code) a test driving the
         `res.text()`-rejection `<unreadable body>` fallback for the CH `logDecisionAsync` capture.
   - [ ] Prettier + `tsc --noEmit` on touched packages green.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true
 
 ---
 

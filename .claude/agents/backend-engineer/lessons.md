@@ -2,6 +2,142 @@
 
 ---
 
+## 2026-06-26 / FOLLOW-405
+
+**What I built:** Cross-package parity gate: `variant-index.parity.test.ts` imports the real
+`@estalara/sdk` playbooks (no mock) and asserts `VARIANT_INDEX[v]` is in-range for every non-neutral
+archetype's `variants.en[]`. Added order-pinning assertions for `SEED_VARIANTS[0]==='control'` and
+`VARIANT_INDEX['control']===0`. Documented the stray-arm served=base/logged=raw contract in route.ts
+AC-3 and updated the `@param variant` JSDoc to reference SEED_VARIANTS instead of a textual copy.
+
+**Wiring/auth/fail-loud risks I weighed:** Test-and-comment-only PR — no production behavior
+changed. Main risk was the parity test mocking the very data it was supposed to validate
+(self-injection weakness). Mitigated by explicitly NOT mocking `@estalara/sdk/playbooks` and
+confirming via the vitest alias config that the real source files are resolved. Had to mock
+`@estalara/db` and `drizzle-orm` to allow `bandit-query.ts` module load (it imports those at the top
+level), but that doesn't affect the SEED_VARIANTS constant.
+
+**A guardrail I'd add:** The `@typescript-eslint/restrict-template-expressions` rule was a surprise:
+`${number}` in template literals is disallowed by the project config. Future tests that need to
+embed numbers in error messages should use `String()` wrappers proactively. Worth adding this
+pattern to the coding standards note for test files.
+
+---
+
+## 2026-06-26 / FOLLOW-407
+
+**What I built:** Applied Rule V (strip-the-superseded) to the consent endpoint gitleaks exemption.
+Deleted the FOLLOW-374 file-wide `paths` entry for
+`apps/control-plane/src/app/api/v1/consent/platform-registration/` in the `cloudflare-api-token`
+rule's `[rules.allowlist]`, replacing it with a token-scoped `regexes` entry: the first 38 chars of
+`CANONICAL_CONSENT_TEXT_HASH` (`a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9`), which sits within the
+40-char `[a-zA-Z0-9_-]{40}` window that triggered the FP. Also fixed a copy-paste comment that
+mentioned `route.ts` (adapt-route language) on a consent-endpoint exemption.
+
+**Wiring/auth/fail-loud risks I weighed:** Config-only change — no TypeScript touched, no mutating
+endpoint, no new schema. The only risk was accidentally removing a legitimate exemption or
+mis-sizing the substring. Verified length in Python before writing. Confirmed "Archetype embeddings
+not-NULL check" is pre-existing-red (also failing on merged PR #352) and not caused by this PR.
+
+**A guardrail I'd add:** When a gitleaks `paths` exemption is added, a follow-up ticket stub should
+be auto-generated to convert it to token-scoped within the same sprint. The current flow (FOLLOW-374
+paths → FOLLOW-407 fix) took one full PR cycle. A linter that flags new `paths` entries on
+non-doc/non-fixture paths at PR time would catch this immediately.
+
+---
+
+## 2026-06-27 / FOLLOW-425
+
+**What I built:** `logDecisionAsync` in `apps/control-plane/src/app/api/adapt/route.ts` had a bare
+`.catch()` on its fire-and-forget `fetch()`. That only catches network-layer rejections. ClickHouse
+INSERT failures — auth Code 516, unknown column, quota, type mismatch — come back as 4xx/5xx HTTP
+responses with `ok: false`; `fetch()` resolves normally so `.catch()` never fires. Added
+`.then(async (res) => { if (!res.ok) { ... Sentry.captureException(..., { tags: { kind: 'insert_rejected' } }) } })`.
+Existing `.catch()` now also calls `Sentry.captureException` with `kind: 'network'`. Fire-and-forget
+semantics preserved throughout. Added three tests covering the HTTP-rejection, network-rejection,
+and success (no Sentry) paths.
+
+**Wiring/auth/fail-loud risks I weighed:** Pure observability change on an analytics write; no
+effect on decision-grade response path, no auth change, no new schema. Two lint surprises: (1)
+`@typescript-eslint/restrict-template-expressions` disallows `${number}` in template strings — fixed
+with `String(res.status)`; (2) ESLint `require-await` fires on `async () => 'literal'` in test mocks
+— fixed with `() => Promise.resolve(...)`.
+
+**A guardrail I'd add:** The `restrict-template-expressions` rule is non-obvious and bites on every
+error-message template that embeds a `number`. A project-level note (or IDE snippet) that says "wrap
+numbers in `String()` inside template literals" would save one lint-fail cycle per PR.
+
+---
+
+## 2026-06-26 / FOLLOW-358
+
+**What I built:** Closed a Rule K.1 violation — GET and POST `/api/adapt` were both writing to
+`adaptation_decisions.page_context` (ClickHouse) with different derivation semantics: GET echoed the
+caller-supplied `tier` URL param (1|2|3); POST derived a value via `pageContextFromPageType()`
+(1|2). Added a ClickHouse discriminator column `page_context_source` (migration 0019,
+`ADD COLUMN IF NOT EXISTS`, `DEFAULT 'legacy'`). Updated `logDecisionAsync` with a 15th optional
+parameter and a JSDoc caller-inventory comment listing both call sites. Added 4 tests in
+`route.clickhouse.test.ts` asserting GET→`'caller_supplied'` and POST→`'page_type_derived'`.
+
+**Wiring/auth/fail-loud risks I weighed:** Option A (discriminator column) vs Option B (align GET to
+derive from `page_type` too). Option B is cleaner long-term but changes the GET endpoint's contract
+and discards historical data provenance; Option A is additive with zero contract change and zero
+risk to existing callers. Chose Option A. ClickHouse `ADD COLUMN IF NOT EXISTS` is idempotent and
+does not touch the ORDER BY key, so Rule W compliance was straightforward.
+
+**A guardrail I'd add:** When a function is called from N places with optional parameter defaulting,
+a per-call-site inventory comment in the function's JSDoc (as I added here) prevents future callers
+from silently inheriting the wrong default. For `logDecisionAsync` the 15 positional parameters are
+a smell; consider a typed options object so future callers can't pass the wrong value to the wrong
+position. None new otherwise.
+
+---
+
+## 2026-06-26 / FOLLOW-361
+
+**What I built:** Reconciled the bandit seed convention — `bandit-seed.ts` was seeding
+`variant='default'` (18 rows/tenant) while `bandit-query.ts` lazy-seeded `control/v1/v2` (3 rows per
+archetype on first request). Exported `SEED_VARIANTS` from `bandit-query.ts` as the single source of
+truth, updated `bandit-seed.ts` to derive its list from the export (54 rows per tenant), added
+migration 0031 to delete all `variant='default'` rows, and added a Rule K.1 parity test.
+
+**Wiring/auth/fail-loud risks I weighed:** This ticket is a correctness fix (no new auth surface, no
+new data store). The main wiring risk was the import path: Next.js webpack does NOT resolve `.js` →
+`.ts` extensions the way Vitest/Vite does — using `'./bandit-query.js'` in production code caused
+`Module not found` in the Next.js build while local Vitest passed (a green local test masked a CI
+build failure). Fixed by using an extensionless import `'./bandit-query'` which both bundlers
+resolve correctly.
+
+**A guardrail I'd add:** When a production lib file imports another lib file in a Next.js project,
+always use an extensionless relative path — never `.js`. The `.js` extension convention is for test
+files (Vitest resolves it via Vite; webpack doesn't). A CI-enforced lint rule
+`no-relative-js-extensions-in-src-lib` would catch this class of issue before push.
+
+---
+
+## 2026-06-26 / FOLLOW-397
+
+**What I built:** Eliminated the third hardcoded variant list — `VARIANT_INDEX` in `route.ts` was a
+manual copy of `SEED_VARIANTS`. Extracted derivation into a new `variant-index.ts` lib (Rule K.1:
+single source), removed the `?? 0` silent coerce-to-control fallback, replaced it with an explicit
+`variantIndex !== undefined` guard in copy selection. Added 6 AC-2 tests (Part A: unit assertions on
+VARIANT_INDEX structure; Part B: integration with synthetic playbook where
+`s.en !== s.variants.en[0]` to distinguish the two code paths).
+
+**Wiring/auth/fail-loud risks I weighed:** Next.js prohibits non-handler named exports from route
+files — exporting `VARIANT_INDEX` directly from `route.ts` caused a `tsc --noEmit` typecheck failure
+via `.next/types/app/api/adapt/route.ts`. Solution: extracted `variant-index.ts` as a separate lib
+file, imported in route.ts, and used that as the test import target. The 15 existing test mocks of
+`@/lib/bandit-query` each needed `SEED_VARIANTS` added to prevent
+`SEED_VARIANTS.map is not a function` at module load time.
+
+**A guardrail I'd add:** Next.js route files should have a comment at the top stating "only handler
+exports are allowed from this file." A lint rule checking that only
+`GET/POST/PUT/DELETE/HEAD/OPTIONS/PATCH/dynamic/maxDuration/revalidate/fetchCache/runtime` are
+exported from `app/**/route.ts` files would catch this at authoring time rather than at typecheck.
+
+---
+
 ## 2026-06-02 / DEMO-001
 
 **What I built:** Per-tenant DEMO MODE archetype + model override. New `demo_overrides` table
@@ -957,3 +1093,95 @@ safe: column not in ORDER BY).
 test files for tests that depend on that specific field being _invalid_ — they silently stop testing
 what they claim. A lint rule or comment convention ("this test relies on field X being in schema")
 would help.
+
+---
+
+## 2026-06-26 / FOLLOW-358 (gitleaks CI fix)
+
+**What I built:** Surgical gitleaks false-positive suppression.
+`vi.stubEnv('DEMO_MODE_JWT_SECRET', 'test-secret-32-chars-long-enough!!')` on two lines in
+`route.clickhouse.test.ts` triggered the `generic-high-entropy` rule (keyword `SECRET` + 32-char
+string). Added the file path to the global `[allowlist]` paths in `.gitleaks.toml`, adjacent to the
+existing `apps/control-plane/src/app/api/adapt/feedback/route.test.ts` entry.
+
+**Wiring/auth/fail-loud risks I weighed:** Three options: inline `// gitleaks:allow` (Option A),
+low-entropy placeholder (Option B), or global allowlist entry (Option C). Chose C per the decision
+rule in the ticket (use C when the allowlist already has test file entries — it does). Option C is
+the least invasive to the test file itself and consistent with the existing allowlist pattern for
+sibling test files in the same directory.
+
+**A guardrail I'd add:** None new — the existing pattern of adding test file paths to the global
+allowlist is clear and consistent. The only future trap is adding a new real secret to a test file
+whose path is allowlisted; but that's caught by the secret value itself not being used in tests
+
+---
+
+## 2026-06-26 / FOLLOW-396
+
+**What I built:** Deleted the 5-line `paths` exemption for
+`apps/control-plane/src/app/api/adapt/route.ts` from the `cloudflare-api-token` rule in
+`.gitleaks.toml`. The exemption (added in FOLLOW-358 / PR #358) was made redundant by FOLLOW-394 (PR
+#360), which added a token-scoped `regexes` entry (`'''0019_adaptation_decisions_page_context'''`)
+that suppresses the same migration-filename false-positive for any file globally. Keeping both meant
+`route.ts` — the highest-value file for real secret detection — was excluded from the
+cloudflare-api-token scan.
+
+**Wiring/auth/fail-loud risks I weighed:** No code change, no auth surface, no schema. The only risk
+was accidentally deleting the `regexes` entry instead of the `paths` block — verified the regexes
+entry was intact after the edit. Also confirmed via `gh api commits/<main-sha>/check-runs` that both
+failures (`Archetype embeddings not-NULL check`, `Rule I — wired-or-dead check`) were pre-existing
+on `main` HEAD before branching, not caused by this PR. Both `Gitleaks secrets scan` runs passed.
+
+**A guardrail I'd add:** When adding a rule-specific `paths` exemption AND a `regexes` exemption for
+the same false-positive, add a comment on the `paths` entry noting which `regexes` entry supersedes
+it — and add a comment on the `regexes` entry saying "this makes the `paths` exemption redundant;
+delete the paths entry." That pairing comment would have made the redundancy self-documenting and
+catchable at PR review time without needing a separate cleanup ticket.
+
+---
+
+## 2026-06-26 / FOLLOW-362
+
+**What I built:** Fixed a locale/A/B variant logging mismatch in `GET` and `POST /api/adapt`.
+`thompsonSample()` was sampling v1/v2 for `pl`/`es` sessions and logging the result to ClickHouse,
+but no playbook populates `variants.pl` or `variants.es` arrays — so `runDecisionTree` always served
+the single locale string (equivalent to control), making the logged variant wrong. Fix: suppress
+`getBanditArms` + `thompsonSample` for `locale !== 'en'`; default to `'control'` and log that. Added
+13 tests covering all 3 locales (en/pl/es) for both GET and POST handlers.
+
+**Wiring/auth/fail-loud risks I weighed:** Two approaches: (A) suppress sampling for non-en, or (B)
+populate `variants.pl/es` from `en` arrays as a fallback. Option B would serve English text to
+Polish/Spanish users (language bug), so Option A is correct. Suppression is a two-line change in
+each handler; it avoids wasted `getBanditArms` DB calls for non-en sessions and ensures the logged
+variant always matches the served copy.
+
+**A guardrail I'd add:** When a new locale is added to the `z.enum(['en','pl','es'])` schema, the
+bandit suppression condition (`locale !== 'en'`) should be checked — it will correctly suppress the
+new locale until `variants.<locale>` arrays are populated. A code comment at the suppression site
+already documents this. No additional gate needed beyond the Rule S requirement to test all locales.
+(stubs are stubs).
+
+---
+
+## 2026-06-28 / FOLLOW-426
+
+**What I built:** Added `res.ok` check + `Sentry.captureException` on both the HTTP-rejection and
+network failure paths for two fire-and-forget Redpanda publishers in `apps/control-plane`:
+`publishAbAssignmentEvent` (ab-events.ts) and `publishDescriptionRequested` (description/route.ts).
+Pattern mirrors FOLLOW-425's `logDecisionAsync` fix. Added 7 tests total (4 + 3) covering non-ok
+HTTP → Sentry (kind=insert_rejected), network throw → Sentry (kind=network), and ok → no Sentry.
+
+**Wiring/auth/fail-loud risks I weighed:** No auth/mutation concerns — this is a purely
+observability change to fire-and-forget analytics sinks. Key risk: changing `await fetch()` to
+`fetch().then().catch()` changes WHEN the function's returned Promise<void> resolves (now resolves
+immediately rather than after the HTTP request). Callers `void` the call so this makes no functional
+difference, but tests needed a `setTimeout(r, 10)` flush to let the `.then().catch()` chain settle
+before asserting Sentry was called. The existing "does not block response on Redpanda publish
+failure" test in route.test.ts still passes since the outer `.catch()` on the call site becomes a
+no-op (the function now handles errors internally).
+
+**A guardrail I'd add:** The `setTimeout(r, 0)` vs `setTimeout(r, 10)` pattern for flushing
+fire-and-forget microtasks is fragile in theory (relies on event-loop ordering). A better approach
+would be to inject a `fetchImpl` parameter for testing (like `pushToRedpanda` in decision-api does),
+which would let tests assert synchronously after the mock resolves. Worth considering for any new
+fire-and-forget publisher added in the future.

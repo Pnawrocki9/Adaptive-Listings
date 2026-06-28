@@ -6894,6 +6894,41 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     CI counter: 0/5. Fix iterations: 0/3.
     Retrospective-analyst to be spawned on PR #373.
 
+- id: FOLLOW-426
+  title:
+    Harden both control-plane Redpanda fire-and-forget publishers (publishAbAssignmentEvent +
+    publishDescriptionRequested) with res.ok check + Sentry capture — mirror FOLLOW-425 fix
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-28T20:30:00Z'
+  completed_at: '2026-06-28T21:00:00Z'
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-425]
+  source: RETRO-135 §4b CB-1/CB-2 / §4c TG-1
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-426 stub)
+  branch: backend-engineer/FOLLOW-426-harden-redpanda-publishers
+  notes: |
+    DONE. Both Redpanda fire-and-forget sinks in apps/control-plane now fail loud on
+    HTTP-level rejection. Before this fix, publishAbAssignmentEvent (ab-events.ts:72)
+    and publishDescriptionRequested (description/route.ts:111) used bare await fetch()
+    with no res.ok check — fetch resolves (not rejects) on 4xx/5xx so a bare .catch()
+    at the call site was completely blind to Redpanda auth/topic/quota rejections.
+    Fix: both functions now use the FOLLOW-425 logDecisionAsync pattern — a .then()
+    that checks res.ok and captures to Sentry (kind=insert_rejected) on non-ok, plus
+    a .catch() that captures network failures (kind=network). Fire-and-forget guarantee
+    preserved — neither function throws. New Sentry tags: area=adapt/description,
+    sink=redpanda, kind=insert_rejected|network. 7 new tests total (4 for ab-events,
+    3 for description route) cover all three cases per sink. Converges control-plane
+    onto the decision-api pushToRedpanda (redpanda-producer.ts:102) posture.
+    Files: apps/control-plane/src/lib/ab-events.ts (+31/-6),
+           apps/control-plane/src/app/api/adapt/description/route.ts (+33/-10),
+           apps/control-plane/src/lib/__tests__/ab-events.redpanda.test.ts (new, +108),
+           apps/control-plane/src/app/api/adapt/description/route.redpanda.test.ts (new, +155).
+    CI counter: 0/5. Fix iterations: 0/3.
+    Retrospective-analyst to be spawned on PR.
+
 - id: FOLLOW-425
   title:
     Fail loud on ClickHouse INSERT rejection in logDecisionAsync (add .then() + Sentry capture for

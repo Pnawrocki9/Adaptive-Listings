@@ -13,6 +13,8 @@
  * @module apps/control-plane/src/lib/ab-events
  */
 
+import * as Sentry from '@sentry/nextjs';
+
 /** Arguments required to build and publish an `ab.assignment` event. */
 export interface AbAssignmentEventArgs {
   session_id: string;
@@ -25,12 +27,14 @@ export interface AbAssignmentEventArgs {
 /**
  * Publishes an `ab.assignment` event to Redpanda via the HTTP REST proxy.
  *
- * Fire-and-forget: callers should `void` this call and handle errors with `.catch()`.
- * Returns without throwing even when the publish fails.
+ * Fire-and-forget: the HTTP request runs in the background; this function returns
+ * immediately and never throws. Both HTTP-rejection (non-ok response) and network
+ * failures are captured to Sentry with distinguishing `kind` tags
+ * (`insert_rejected` vs `network`) so dashboards can group them.
  *
  * @param args - Assignment event fields.
  */
-export async function publishAbAssignmentEvent(args: AbAssignmentEventArgs): Promise<void> {
+export function publishAbAssignmentEvent(args: AbAssignmentEventArgs): void {
   const redpandaUrl = process.env.REDPANDA_REST_URL;
   if (!redpandaUrl) return;
 
@@ -69,9 +73,33 @@ export async function publishAbAssignmentEvent(args: AbAssignmentEventArgs): Pro
     headers.Authorization = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
   }
 
-  await fetch(url, {
+  // Fire-and-forget — never awaited. Both failure paths capture to Sentry so a
+  // Redpanda auth / missing-topic / quota rejection is observable (FOLLOW-426 /
+  // Rule K.2 fire-and-forget amendment). The .catch() handler covers network-layer
+  // failures; the .then() handler covers HTTP-level rejections (4xx/5xx), which
+  // `fetch` resolves (not rejects) and a bare `.catch()` would be blind to.
+  fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({ records: [{ value: envelope }] }),
-  });
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const body = await res.text().catch(() => '<unreadable body>');
+        const msg = `[ab-events] Redpanda publish rejected: HTTP ${String(res.status)} — ${body.slice(0, 500)}`;
+        console.error(msg);
+        Sentry.captureException(new Error(msg), {
+          tags: { area: 'adapt', sink: 'redpanda', kind: 'insert_rejected' },
+          extra: { status: res.status },
+        });
+      }
+    })
+    .catch((err: unknown) => {
+      // Network-layer failure (DNS, connection refused, malformed URL, timeout).
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[ab-events] Redpanda publish failed:', msg);
+      Sentry.captureException(err instanceof Error ? err : new Error(msg), {
+        tags: { area: 'adapt', sink: 'redpanda', kind: 'network' },
+      });
+    });
 }

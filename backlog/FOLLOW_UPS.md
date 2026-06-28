@@ -10861,4 +10861,1284 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 - **depends_on:** []
 - **promoted_to_queue:** false
 
-<!-- next free FOLLOW number: 394 (393 = RETRO-114 / PR #353 / FOLLOW-342: pre-delegation gap re-verification for audit/backlog-derived tickets — FOLLOW-342 was delegated for variant-indexing work PR #327 (66054d6) already shipped 2026-06-19 (~2h after AUDIT-2026-06-19 F-03 was written; stale 6 days at delegation); PR #353 added exactly ONE fallback test + zero route.ts change; worker burned reading 1279 lines before finding the no-op. Add a delegation-time git-log/-S gate for AUDIT-*/aged-stub tickets + residual-only re-scope path; Rule P (CONVENTIONS_PATCH:774) is the proposal-time complement, this is its delegation-time analogue — count 1 of the stale-finding-delegation shape, NO new rule, recommend a Rule P AMENDMENT to the human on a 2nd occurrence; pm-orchestrator P2 2h. Also carries PROC-2 process note: worker wrote status:DONE to PM-exclusive QUEUE.md before merge — 1st occurrence, no rule. 390 = RETRO-111 / PR #350 / FOLLOW-359: decide GET /api/adapt surface liveness — the added `variant` response field has NO in-repo consumer since the SDK calls /api/adapt via POST only, GET is the legacy surface; either document GET dead/external-only + retire the RETRO-095 "GET reward unattributable" concern, or add a GET→feedback contract test if a live integrator exists; backend-engineer P2 2h. 391 = RETRO-112 / PR #351 / FOLLOW-363: doc the dwell-vs-view-rate switch-direction asymmetry in the classifyFromProbabilities 13-site inventory + optional FREE-CLASSIFY regression test; sdk-engineer P3 1h. 392 = RETRO-113 / PR #352 / FOLLOW-341: OPERATOR ACTION — seed PROD archetype_embeddings (post-migrate-seed.yml is dev-config-only + soft-skips; prod stays NULL → affinityScore runs djb2 fallback → §F cosine INACTIVE in prod, same trap as RETRO-076/FOLLOW-307) + assert 18 rows non-null + cross-ref FOLLOW-308 don't-duplicate; gates FOLLOW-342's "real cosine ordering" precondition in effect though it is code-unblocked; devops+ml-engineer P1 2h.) -->
+## FOLLOW-394 — Guard the 0019 migration-before-code ordering + apply to prod ClickHouse + INSERT-rejection contract test (close RETRO-118 CB-1/LG-1/TG-1)
+
+- **source_retro:** RETRO-118 (§4b CB-1; §4a LG-1; §4c TG-1; §7)
+- **source_ticket:** FOLLOW-358 (PR #357, merged 2026-06-26)
+- **recommended_sprint:** next ops window (BEFORE/with the next control-plane prod deploy)
+- **recommended_agent:** devops-engineer (operator apply) + backend-engineer (contract test)
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** FOLLOW-358's `adaptation_decisions` INSERT now names `page_context_source` in its
+  explicit column list (`apps/control-plane/src/app/api/adapt/route.ts:~468`). ClickHouse REJECTS an
+  INSERT naming a column absent from the table (NO_SUCH_COLUMN). `logDecisionAsync` is
+  fire-and-forget with a `.catch` that only `console.error`s (`route.ts:501-504`), so on prod the
+  rejection is SILENT — but EVERY decision-log INSERT fails until migration 0019 is applied. Vercel
+  auto-deploys `route.ts` on merge; 0019 is a manual post-merge step (PR body "NEXT"). This is a
+  fail-CLOSED migration-ordering hazard (breaks ALL `adaptation_decisions` logging), distinct from
+  Rule M's fail-OPEN capability-inactive case (RETRO-113). CAVEAT (memory
+  `project_postgres_migrations_no_autoapply` / RETRO-076): the prod ClickHouse `ingest_worker` user
+  may lack DDL grant, so even the disclosed manual `ALTER TABLE` may fail — verify the grant first.
+  Cross-reference, do NOT duplicate, **FOLLOW-308** (standing prod-apply gate) and **Rule M**
+  (`CONVENTIONS_PATCH.md:1306`).
+- **ac:**
+  - [ ] Verify the prod ClickHouse apply user has DDL grant for `ALTER TABLE adaptation_decisions`;
+        if not, escalate/grant before applying.
+  - [ ] Apply migration `0019_adaptation_decisions_page_context_source.sql` to PROD ClickHouse via
+        `doppler run --config prd -- clickhouse-client ...` (idempotent `ADD COLUMN IF NOT EXISTS`).
+  - [ ] Assert post-apply: `SELECT DISTINCT page_context_source FROM adaptation_decisions` returns
+        the expected set (`legacy` for old rows; `caller_supplied`/`page_type_derived` for new) and
+        a fresh GET + POST request each produce a row with the correct discriminator (live smoke).
+  - [ ] Add a ClickHouse-smoke contract test (the existing "ClickHouse smoke" CI gate): run
+        migrations `0001..0018` and assert the `adaptation_decisions` INSERT is REJECTED; run
+        `0001..0019` and assert it SUCCEEDS — pinning the fail-CLOSED ordering dependency (TG-1).
+  - [ ] Document the migration-before-code invariant for this table in the deploy runbook (apply
+        0019 to prod BEFORE the `route.ts` change reaches prod), and feed it into FOLLOW-308's
+        checklist — do not build a parallel mechanism.
+- **depends_on:** []
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-395 — Realize the `page_context_source` discriminator with an actual consumer (close RETRO-118 §3 HW-1)
+
+- **source_retro:** RETRO-118 (§3 CHECK B HW-1; §7)
+- **source_ticket:** FOLLOW-358 (PR #357, merged 2026-06-26)
+- **recommended_sprint:** next analytics/dashboard pass
+- **recommended_agent:** data-engineer (or backend-engineer)
+- **priority:** P3
+- **estimated_hours:** 2
+- **scope:** `page_context_source` (ClickHouse column, migration 0019) has a PRODUCER (both GET/POST
+  handlers + the `features_snapshot` JSON) but ZERO in-repo read-side consumer
+  (`grep -rn "page_context_source" apps packages infra` → only the producer INSERT/snapshot, the
+  migration DDL, and tests). It is a write-only observability discriminator whose purpose (analysts
+  distinguishing GET `caller_supplied` rows from POST `page_type_derived` rows) is only realized
+  once someone actually filters on it. The FOLLOW-170 replay loop reads the embedded
+  `features_snapshot` key — a partial consumer on the JSON axis only; the dedicated column has none.
+  Same observability-HALF_WIRE_P exemption shape as RETRO-111 §3 (GET `variant` with no in-repo
+  consumer).
+- **ac:**
+  - [ ] Ship a documented analyst query OR a Grafana/dashboard panel that uses
+        `WHERE page_context_source = 'page_type_derived'` (or `GROUP BY page_context_source`) to
+        produce a semantically-clean `page_context` view, and link it from the migration 0019 header
+        / a runbook.
+  - [ ] OR, if no analyst surface is planned, downgrade: keep `page_context_source` only inside
+        `features_snapshot` (replay consumer) and drop the dedicated column — document the decision
+        so the column is not assumed live-queried.
+  - [ ] Either way, remove the "write-only column" ambiguity flagged in RETRO-118 §3.
+- **depends_on:** [FOLLOW-394]
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-396 — Narrow the gitleaks `route.ts` allowlist (restore secret scanning on the adapt route) (close RETRO-118 §4d DG-1)
+
+- **source_retro:** RETRO-118 (§4d DG-1)
+- **source_ticket:** FOLLOW-358 (PR #357, merged 2026-06-26)
+- **recommended_sprint:** next infra/security pass
+- **recommended_agent:** backend-engineer (or devops-engineer)
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** Commit `7092088` added `'''apps/control-plane/src/app/api/adapt/route\.ts'''` to the
+  cloudflare-api-token rule's `paths` allowlist (`.gitleaks.toml:177`, live on `main`) to silence a
+  SELF-AUTHORED false-positive: this PR's own JSDoc cites the 46-char migration filename
+  `0019_adaptation_decisions_page_context_source`. The remedy disables the generic/high-entropy
+  cloudflare-api-token rule for the ENTIRE adapt `route.ts` — a high-value file holding env-derived
+  HMAC + IP-encryption key usage — to suppress a transient, self-inflicted trigger. This is the
+  prod-file variant of the gitleaks-allowlist pattern (DISTINCT from the legitimate test-fixture
+  exemptions of FOLLOW-083 / Pattern G). RETRO-118 §6 Pattern B holds this at count 1 (no rule).
+- **ac:**
+  - [ ] Replace the file-wide `paths` allowlist for `route.ts` with a token-scoped allowlist (a
+        `stopwords`/`regexes` entry matching the migration filename string) OR break the filename
+        across two lines in the JSDoc so the heuristic never fires.
+  - [ ] Confirm gitleaks still scans `route.ts` for real secrets after the change (run the gitleaks
+        CI step; intentionally add a dummy high-entropy token locally to prove it is still caught,
+        then remove).
+  - [ ] Remove the `route.ts` line from `.gitleaks.toml:177` once the narrower mechanism is in
+        place.
+- **depends_on:** []
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-397 — Derive `VARIANT_INDEX` from `SEED_VARIANTS` (finish the SoT consolidation) + add the RETRO-095 TG-3 stray-variant fallback test
+
+- **source_retro:** RETRO-117
+- **source_ticket:** FOLLOW-361
+- **recommended_sprint:** next planning
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** FOLLOW-361 unified the TWO producer copies of the bandit variant list (`bandit-seed.ts`
+  eager seed + `bandit-query.ts` lazy auto-seed) onto the now-exported
+  `SEED_VARIANTS = ['control','v1','v2']`, but left a THIRD copy untouched: the consumer-side index
+  map `const VARIANT_INDEX: Record<string, number> = { control: 0, v1: 1, v2: 2 }`
+  (`apps/control-plane/src/app/api/adapt/route.ts:241`). The ticket's stated goal was a "single
+  source of truth for the three-arm variant list"; this residual makes it only ⅔ done. The map's own
+  JSDoc (`route.ts:288`) admits "Unknown variant names (e.g. future v3) fall through to control
+  (index 0)" — so if `SEED_VARIANTS` ever grows (v3), both seeders create a `v3` arm,
+  `thompsonSample` can SELECT `v3`, the request is LOGGED/attributed as `variant:'v3'`, but
+  `VARIANT_INDEX['v3'] ?? 0` SERVES control copy — silently re-introducing the "phantom arm whose
+  copy collapses to control" class of bug RETRO-095 §4a LG-1 (the very thing FOLLOW-361 fixed) one
+  hop downstream. Latent today (all three lists agree); the fix is to remove the divergence
+  possibility. This stub ALSO carries the RETRO-095 §4c **TG-3** AC that FOLLOW-361 was assigned but
+  did not deliver (no test exercises the `VARIANT_INDEX[variant] ?? 0` fallback). Confirming
+  instance of existing **Rule K.1** (SoT for parallel lists) / **Rule S** (sibling-set completeness)
+  — independent-context count 1, NO new rule (RETRO-117 §6).
+- **ac:**
+  - [ ] Derive `VARIANT_INDEX` from `SEED_VARIANTS` (e.g.
+        `Object.fromEntries(SEED_VARIANTS.map((v, i) => [v, i]))`) or co-locate an order-bearing SoT
+        in `bandit-query.ts` and import it into `route.ts`, so the index map cannot diverge from the
+        seeded arm set. No behavior change for the current control/v1/v2 set.
+  - [ ] Add the RETRO-095 TG-3 test: drive the REAL `route.ts` copy-selection path with a sampled
+        variant that is NOT in the canonical set (e.g. `'default'` or `'v3'`) and assert the
+        DOCUMENTED fallback — served copy = control (index 0) — AND decide/pin whether the logged
+        `param_p_variant` should record the raw sampled value or the resolved one (today it logs the
+        raw value, producing a served≠logged skew for an unknown arm; pin the intended contract).
+  - [ ] Add a guard test (or extend the FOLLOW-361 parity test) asserting every member of
+        `SEED_VARIANTS` resolves to a DISTINCT, in-range `VARIANT_INDEX` — so a future arm added to
+        the SoT without a copy slot fails CI rather than silently collapsing to control.
+  - [ ] (Doc, ungated) Annotate `QUEUE.md:1249` TICKET-AB-006 historical title ("18 rows ×
+        variant='default'") as superseded by FOLLOW-361 (54 rows control/v1/v2) — PM-owned QUEUE
+        edit (RETRO-117 §4d DG-1).
+- **depends_on:** []
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-398 — Correct the `SIDEBAR_SHOW_THRESHOLD` rung of the FOLLOW-354 confidence gating ladder (cited constant does not exist in `index.ts`; SDK investor sidebar is admin-only/no-op)
+
+- **source_retro:** RETRO-119 (§4d DG-1, §4d DG-2)
+- **source_ticket:** FOLLOW-354 (PR #358)
+- **recommended_sprint:** next (P2 wave)
+- **recommended_agent:** sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** FOLLOW-354's gating-ladder note (added in `docs/MASTER_DESIGN.md:2409` §E.7 blockquote
+  AND `packages/sdk/src/core/adapt-floor.ts:25` JSDoc) lists a third rung:
+  "`SIDEBAR_SHOW_THRESHOLD = 0.6` (SDK, `packages/sdk/src/index.ts`) — gate for sidebar visibility."
+  **That constant does not exist in `index.ts` (nor anywhere as a real `const`)** — repo-wide grep
+  finds it only in this PR's two new strings, a _test description string_
+  (`packages/sdk/src/__tests__/follow-343.test.ts:207`, no actual import), and prose docs
+  (`MASTER_DESIGN.md:728`, `AUDIT-2026-06-19.md:164`). Moreover the SDK has no investor-facing
+  confidence-gated sidebar: `index.ts:741` "Sidebar widget is admin-only — profiling visibility is
+  in admin.estalara.com" and `index.ts:948-950` "sidebar remains null; `sidebar.show()` calls below
+  are no-ops." This is a **Rule Y** (`CONVENTIONS_PATCH.md:1207`) violation — a doc/JSDoc citing a
+  named symbol in a named file as fact, un-verified against that file. Rungs 1 (DOM floor 0.5,
+  `adapt-floor.ts:33`) and 2 (server 0.6, `route.ts:77`) are accurate; only the sidebar rung is
+  fictional-in-the-SDK. Secondary (DG-2): the same note says `/api/adapt` "returns `[]` below" 0.6,
+  but the gate is `confidence <= 0.6 → []` (`route.ts:280`) — 0.6 itself returns `[]`, directives
+  flow strictly _above_ 0.6. Confirming instance of the EXISTING Rule Y; NO new rule.
+- **ac:**
+  - [ ] In `MASTER_DESIGN.md:2409` AND `adapt-floor.ts:25`, correct the third rung: either remove
+        it, or restate it accurately (the confidence-gated sidebar is **admin-only** in
+        admin.estalara.com, NOT an investor-facing SDK gate, and `SIDEBAR_SHOW_THRESHOLD` is not a
+        constant in the SDK) — verified against `packages/sdk/src/index.ts` (Rule Y).
+  - [ ] Fix DG-2 boundary wording: "returns `[]` at or below `CONFIDENCE_THRESHOLD = 0.6`"
+        (directives flow strictly above 0.6).
+  - [ ] Reconcile the pre-existing `MASTER_DESIGN.md:728` claim ("Sidebar widget hidden until
+        `confidence >= 0.6` (`SIDEBAR_SHOW_THRESHOLD`)") and the misleading `follow-343.test.ts:207`
+        test-description string with the admin-only reality, OR flag to PM if the investor sidebar
+        is a deliberately-deferred feature (so the doc stays as a forward-looking spec, clearly
+        marked).
+- **depends_on:** []
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-399 — Cover the floor's `signal_count >= 2` OR-branch on the description axis (multi-axis gap) + fix the AC-1 cold-start comment
+
+- **source_retro:** RETRO-119 (§4c TG-1, §4c TG-2)
+- **source_ticket:** FOLLOW-354 (PR #358)
+- **recommended_sprint:** next (P3 wave)
+- **recommended_agent:** sdk-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** The DOM floor is `confidence >= 0.5 **||** signal_count >= 2` (`index.ts:720-722`).
+  FOLLOW-354's 6 AC tests exercise ONLY the confidence branch (AC-1 below 0.5 at cold-start
+  `signal_count`; AC-2 at/above 0.5). **No test covers the second branch on the description axis:
+  confidence < 0.5 BUT `signal_count >= 2` → `/adapt/description` SHOULD fetch.** That OR-branch is
+  the soft underbelly RETRO-091 §4a LG-2 / FOLLOW-355 flagged (a future init-time prior tipping
+  `signal_count` to 2 silently re-opens adaptation); the directive-axis follow-343 tests share the
+  same blind spot, so the signal-count→description wire has zero coverage anywhere. Also TG-2: the
+  AC-1 test comment (`follow-354.test.ts:252`) says "signal_count=0 < 2", but real cold-start init
+  increments it to **1** via the device-type prior (`index.ts:869`); the assertion holds (1 < 2) but
+  the stated reason is off by one. Co-locate with FOLLOW-355's `_initForTest` harness.
+- **ac:**
+  - [ ] Add a description-axis test: confidence < `DOM_ADAPT_CONFIDENCE_FLOOR` (e.g. 0.3) but
+        `signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT` (drive 2+ real behavioral signals) → assert
+        `/adapt/description` IS fetched (positive control for the OR-branch). Goes RED if the
+        signal-count alternative gate is ever removed.
+  - [ ] Correct the AC-1 comment at `follow-354.test.ts:252` to "signal_count=1 (device prior),
+        still < 2" (TG-2).
+- **depends_on:** [FOLLOW-355]
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-400 — Bind the FOLLOW-362 non-`en` bandit suppression to `variants.pl/es` population (un-suppress trigger + guard)
+
+- **source_retro:** RETRO-120 (§4a LG-2, §4d DG-1)
+- **source_ticket:** FOLLOW-362 (PR #359)
+- **recommended_sprint:** next
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** FOLLOW-362 suppressed bandit sampling for non-`en` locales by hard-coding
+  `holdoutGroup || locale !== 'en'` (`route.ts:848`, GET) and `postLocale === 'en' ? … : 'control'`
+  (`route.ts:1206-1209`, POST), "until `variants.pl/es` arrays are added to the playbooks." That
+  population is owned by the unpromoted **FOLLOW-031** (thread locale +
+  `variants[locale]?.[i] ?? variants.en[i]` selection). Nothing binds the two: once `variants.pl/es`
+  ship, non-`en` A/B stays silently DEAD unless the suppression is manually removed. Add a
+  removal-trigger + guard, and record the decision (currently only in two code comments) in
+  MASTER_DESIGN §E.3 (bandit) / §E.7 (adapt endpoint).
+- **ac:**
+  - [ ] A guard test FAILS if any registered playbook ships a `variants.pl` or `variants.es` array
+        while the `locale !== 'en'` / `postLocale === 'en'` suppression is still live in `route.ts`
+        (forces co-removal).
+  - [ ] FOLLOW-031 (or whoever populates `variants.pl/es`) is cross-linked in the code comment as
+        the explicit un-suppress dependency.
+  - [ ] The "non-`en` gets no A/B until `variants.pl/es` exist" decision is documented in
+        MASTER_DESIGN §E.3/§E.7 (DG-1).
+  - [ ] (optional) A regression test pins unsupported-locale coercion: a `de`/`fr` GET coerces →
+        `en` (bandit runs); a `de` POST is Zod-rejected (TG-2).
+- **depends_on:** [FOLLOW-031]
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-401 — Decide bandit arm locale-scoping vs documented shared-control-arm; prove the non-`en` reward leg lands on `control`
+
+- **source_retro:** RETRO-120 (§4a LG-1, §4c TG-1)
+- **source_ticket:** FOLLOW-362 (PR #359)
+- **recommended_sprint:** next
+- **recommended_agent:** backend-engineer
+- **priority:** P3
+- **estimated_hours:** 3
+- **scope:** After FOLLOW-362, a non-`en` conversion logs `variant=control`, the SDK caches it, and
+  `/api/adapt/feedback` → `updateBanditArm` (`feedback/route.ts:184`) updates the SHARED control arm
+  — because `getBanditArms(tenantId, archetype)` (`bandit-query.ts:54`) and the reward write key on
+  `(tenant, archetype, variant)` only, with no locale dimension. This correctly stops the pre-fix
+  treatment-arm pollution but conflates en+pl+es control outcomes in one arm; if non-`en` markets
+  convert differently, the shared control baseline biases the `en` v1/v2-vs-control decision.
+  Decide: locale-scope the arms (add locale to the PK / query) OR explicitly document that non-`en`
+  intentionally feeds the shared control arm. Either way, close the untested reward leg (TG-1).
+- **ac:**
+  - [ ] Decision recorded (locale-scoped arms vs documented shared-control-arm) in MASTER_DESIGN
+        §E.3 + an ADR if scoping changes the PK.
+  - [ ] An end-to-end test proves a non-`en` conversion routes through `/api/adapt/feedback` and
+        updates the `control` arm (not `v1`/`v2`) for `(tenant, archetype[, locale])`.
+  - [ ] If scoping is chosen, a migration + parity test pins the new arm key; if not, the
+        shared-control decision is asserted by a test that documents the conflation as intentional.
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-402 — Generalize the CH migration-ordering contract test so a FUTURE INSERT column cannot reintroduce the fail-CLOSED hazard + fix DROP-on-failure non-idempotency (close RETRO-121 LG-1/CB-1/TG-1) — promoted_to_queue: '2026-06-26'
+
+- **source_retro:** RETRO-121 (§4a LG-1, §4b CB-1, §4c TG-1)
+- **source_ticket:** FOLLOW-394 (PR #360)
+- **recommended_sprint:** next
+- **recommended_agent:** data-engineer
+- **priority:** P2
+- **estimated_hours:** 3
+- **scope:** `infra/clickhouse/scripts/migration-contract-test.sh` (FOLLOW-394) pins the
+  migration-ordering invariant for exactly ONE column: it hard-codes the INSERT column list and
+  applies only `0001`–`0019`. A future PR that adds column `X` (migration 002x) and names `X` in
+  `logDecisionAsync`'s INSERT would PASS this test unchanged — the fail-CLOSED hazard RETRO-118 CB-1
+  flagged re-opens for every new column, relying on a human remembering the runbook's manual
+  "Extending" step. Separately, the `DROP DATABASE contract_test_ordering` cleanup runs ONLY on the
+  success path (no `trap … EXIT`), so a failed LOCAL=1 run leaves a poisoned DB that makes the next
+  run trip its own "0019 already applied" false-FAIL.
+- **ac:**
+  - [ ] The contract test's asserted INSERT column list is DERIVED from (or lint-asserted ⊇) the
+        columns named in the real `logDecisionAsync` INSERT in
+        `apps/control-plane/src/app/api/adapt/route.ts`, so the harness cannot silently drift out of
+        sync when the writer changes (TG-1).
+  - [ ] Adding a new column to the `logDecisionAsync` INSERT without a matching migration FAILS CI
+        generically (not only for `page_context_source`) — e.g. assert the INSERT is rejected at the
+        migration revision BEFORE the column's migration and accepted at/after it, parameterized
+        over the writer's column set (LG-1/CB-1).
+  - [ ] Cleanup is idempotent on FAILURE: `trap`-based
+        `DROP DATABASE IF EXISTS contract_test_ordering` on EXIT (or drop-at-start), so a failed
+        LOCAL=1 run does not poison the next (CB-1).
+  - [ ] Cross-reference FOLLOW-308 (prod-apply timing/mechanism) — do NOT duplicate the standing
+        gate; this ticket is the same-repo INSERT↔migration parity complement.
+- **depends_on:** []
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-403 — Correct the clickhouse-migrations runbook: scope the overstated "catches any future PR" claim + fix the migrate.sh single-file mislabel (close RETRO-121 DG-1/DG-2)
+
+- **source_retro:** RETRO-121 (§4d DG-1, §4d DG-2)
+- **source_ticket:** FOLLOW-394 (PR #360)
+- **recommended_sprint:** next
+- **recommended_agent:** data-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** `docs/runbooks/clickhouse-migrations.md` "CI contract test (FOLLOW-394)" claims the
+  test _"catches any future PR that adds a column to the INSERT column list in `logDecisionAsync`
+  without a matching migration in the same PR"_ — FALSE: the test is hard-coded to
+  `page_context_source`/0019 and the very next "Extending the contract test" section contradicts it
+  by requiring a MANUAL per-column add. A reader trusting the headline skips the manual step →
+  reproduces ESC-031 for the next column. Separately, the "Manual apply pattern" section captions a
+  full-`migrate.sh` invocation as _"Apply a single migration file"_ — migrate.sh applies ALL
+  migrations (idempotently), not one.
+- **ac:**
+  - [ ] The "CI contract test" claim is scoped to "catches REGRESSION of the
+        0019/`page_context_source` boundary; future columns require the documented manual extension
+        (or, once FOLLOW-402 lands, the generalized parity check)."
+  - [ ] The "Manual apply pattern" migrate.sh caption is corrected to reflect that it applies ALL
+        migrations idempotently; the single-statement `curl --data-binary @<file>` block stays as
+        the genuine single-file path.
+  - [ ] Cross-link FOLLOW-402 once the generalized check exists.
+- **depends_on:** []
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-404 — One-time prod-state attestation that 0019 `page_context_source` is live in prod ClickHouse + DDL grant (close RETRO-118 §4a LG-1 prod-verification leg)
+
+- **source_retro:** RETRO-121 (§7), inherits RETRO-118 §4a LG-1
+- **source_ticket:** FOLLOW-394 (PR #360); root incident ESC-031
+- **recommended_sprint:** next
+- **recommended_agent:** devops-engineer + data-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** FOLLOW-394's runbook STATES migration 0019 "was applied manually to the production
+  instance" during the ESC-031 incident, but no attestation verifies the current prod state. The
+  ESC-031 root cause (`adaptation_decisions` writes failing because `page_context_source` was absent
+  in prod) is only truly closed once prod is confirmed to carry the column. RETRO-076 caveat: the
+  prod `ingest_worker`/writer user may lack the DDL grant, so even a re-apply could fail silently.
+- **ac:**
+  - [ ] `DESCRIBE TABLE adaptation_decisions` against prod ClickHouse confirms
+        `page_context_source LowCardinality(String)` is present.
+  - [ ] `SELECT DISTINCT page_context_source FROM adaptation_decisions` returns the expected values
+        (`caller_supplied` / `page_type_derived` / `legacy`), confirming the producer is writing it
+        post-deploy.
+  - [ ] The writer DB user's DDL/INSERT grant on `adaptation_decisions` is confirmed (RETRO-076
+        caveat).
+  - [ ] Result recorded; cross-reference FOLLOW-308 — this is the one-time 0019 attestation, NOT the
+        standing prod-apply mechanism.
+- **depends_on:** []
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-405 — Gate the `SEED_VARIANTS`-order ↔ playbook `variants.en`-index cross-package contract (close the FOLLOW-397 AC-3 SoT-growth tail)
+
+- **source_retro:** RETRO-122 (§4a LG-1, §4c TG-1, §4d DG-1)
+- **source_ticket:** FOLLOW-397 (PR #361); inherits RETRO-117 §4c TG-1 / RETRO-095 §4c TG-3 lineage
+- **recommended_sprint:** next planning
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** FOLLOW-397 derived `VARIANT_INDEX` from `SEED_VARIANTS`
+  (`apps/control-plane/src/lib/variant-index.ts:25`) and added the stray-variant fallback test —
+  genuinely closing the RETRO-117 §4a LG-1 third-list residual + the RETRO-095 TG-3 test. But the
+  consolidation converted an EXPLICIT consumer literal into an IMPLICIT cross-package POSITIONAL
+  coupling: `VARIANT_INDEX` is now derived purely from `SEED_VARIANTS` ORDER (`bandit-query.ts:34`,
+  control-plane), and the copy it indexes lives in `SlotDirective.variants.en[]`
+  (`packages/sdk/src/core/playbooks/types.ts:27` "Index 0 mirrors `en`", SDK package) — two
+  positional arrays in DIFFERENT packages with NOTHING binding their order/length. FOLLOW-397 stub
+  AC-3 ("a future arm added to the SoT WITHOUT a copy slot fails CI") was only PARTIALLY met: the
+  delivered Part-A test asserts `VARIANT_INDEX` self-consistency (keys==['control','v1','v2']) but
+  NOT that each index is in-range for real playbook `variants.en` arrays. Failure modes: (a) REORDER
+  `SEED_VARIANTS` → `VARIANT_INDEX.control` shifts off 0 → control silently served the wrong copy;
+  (b) GROW `SEED_VARIANTS` to add `v3` → `variants.en[3]` is `undefined` on every 3-slot playbook →
+  the v3 arm silently serves base `s.en` for every listing while v1/v2 get distinct copy, CI green.
+  Latent today (all aligned on control/v1/v2). The gap moved ONE HOP from FOLLOW-397. Confirming
+  instance of existing Rule K.1 / Rule S — independent-context count stays 1, NO new rule (RETRO-122
+  §6).
+- **ac:**
+  - [ ] Add a parity/guard test (or extend `route.follow397.test.ts`) asserting that for EVERY
+        member of `SEED_VARIANTS`, its `VARIANT_INDEX` value is a valid in-range index into the
+        `variants.en` array of every non-neutral playbook that carries `variants` — so adding a 4th
+        arm to the SoT WITHOUT a matching copy slot in the playbooks fails CI (the unmet AC-3
+        intent), rather than silently collapsing that arm to base copy.
+  - [ ] Pin the order coupling: assert `SEED_VARIANTS[0] === 'control'` AND that index 0 maps to the
+        control/base copy convention (`types.ts:27`), so a future reorder of `SEED_VARIANTS` reds CI
+        instead of silently re-attributing copy.
+  - [ ] (Doc, ungated) Document the served=base / logged=raw contract for an unreachable stray arm
+        (Part B logs `variant:'v3'` while serving `s.en`) at the `route.ts:290` selection site — the
+        "pin the intended contract" item the FOLLOW-397 stub AC-2 left implicit. Decide whether the
+        logged `param_p_variant` should record the raw sampled value or the resolved one; if the
+        served≠logged skew is intended (only reachable for a non-existent arm), state so explicitly.
+  - [ ] (Doc, ungated) Update the `route.ts:255` JSDoc
+        `@param variant - Bandit variant ('control'|'v1'|'v2')` to reference `SEED_VARIANTS` rather
+        than re-stating the literal arm list (the 4th textual twin, RETRO-122 §4d DG-1).
+- **depends_on:** []
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-406 — Negative-control attestation that gitleaks still catches a real secret in `adapt/route.ts` after the `paths` deletion (close the FOLLOW-396 AC-2 verification leg)
+
+- **source_retro:** RETRO-123 (§4c TG-1, §7 step 3)
+- **source_ticket:** FOLLOW-396 (PR #362)
+- **recommended_sprint:** next infra/security pass
+- **recommended_agent:** devops-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** FOLLOW-396 / PR #362 deleted the file-wide `paths` exemption that excluded
+  `apps/control-plane/src/app/api/adapt/route.ts` from the `cloudflare-api-token` rule (AC-1/AC-3
+  done, verified `git show HEAD:.gitleaks.toml` — consent entry `:172` → closing `]` `:173`, no
+  `adapt/route\.ts` entry; the token-scoped `regexes` entry `0019_adaptation_decisions_page_context`
+  at `:180` retained). But the PR's evidence is only "Gitleaks CI passes" — which proves the FP no
+  longer fires, NOT that real-secret detection on `route.ts` is restored. "Gitleaks green" is
+  consistent with both "scanning restored, no secret present" AND "scanning still suppressed." Stub
+  AC-2 explicitly asked for the dummy-token negative control; it was not run/evidenced. Restoration
+  is asserted-by-construction (a real high-entropy token cannot match the specific-string `regexes`
+  allowlist), but unproven.
+- **ac:**
+  - [ ] Add a dummy `cloudflare-api-token`-shaped high-entropy value to `route.ts` locally, run the
+        gitleaks CI step (push-event + PR-event), confirm it REDs (true positive), then remove the
+        dummy value.
+  - [ ] Record the negative-control result (screenshot / log excerpt) so the restoration is proven,
+        not assumed.
+  - [ ] Cross-ref FOLLOW-407 — run the same proof there for the consent route.
+- **depends_on:** []
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-407 — Apply Rule V to its second live instance: narrow the FOLLOW-374 consent `platform-registration/` file-wide gitleaks `paths` exemption to token-scoped
+
+- **source_retro:** RETRO-123 (§5a cascade, §6 Rule V promotion, §4d DG-2)
+- **source_ticket:** FOLLOW-396 (PR #362) — surfaced by promoting Rule V; the parallel
+  RETRO-118-class gap is FOLLOW-374's
+- **recommended_sprint:** next infra/security pass
+- **recommended_agent:** backend-engineer (or devops-engineer)
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** Promoting **Rule V** (gitleaks self-inflicted-FP allowlist hygiene — token-scoped not
+  file-scoped on secret-handling files) this retro flags a LIVE second instance one allowlist-entry
+  up from the one FOLLOW-396 just fixed. `.gitleaks.toml:172`
+  `'''apps/control-plane/src/app/api/v1/consent/platform-registration/'''` is a file-wide `paths`
+  exemption that disables the `cloudflare-api-token` rule for the ENTIRE consent
+  platform-registration prod endpoint (which handles env-derived HMAC keys per its own comment), to
+  suppress a SELF-AUTHORED long string (the 64-char `CANONICAL_CONSENT_TEXT_HASH`). This is the
+  identical bad shape RETRO-118 flagged for `route.ts` and that PR #362 fixed — still live for the
+  consent route. Same remedy: token-scoped `regexes`/`stopwords` matching the hash. Also fix the
+  copy-paste comment at `.gitleaks.toml:171` that ends "...keys in **route.ts** are still scanned" —
+  it guards the consent directory, not `route.ts` (verbatim leftover from the route.ts justification
+  PR #362 deleted; RETRO-123 §4d DG-2).
+- **ac:**
+  - [ ] Replace the file-wide `paths` entry `'''…/v1/consent/platform-registration/'''` with a
+        token-scoped `regexes`/`stopwords` entry matching the 64-char `CANONICAL_CONSENT_TEXT_HASH`,
+        so the `cloudflare-api-token` rule scans the consent route again for real secrets.
+  - [ ] Run the dummy-token negative control (FOLLOW-406 pattern) on the consent route to prove
+        detection is restored.
+  - [ ] Fix the mislabeled "...keys in route.ts are still scanned" comment to name the consent
+        directory it actually guards.
+- **depends_on:** []
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-408 — Reconcile the two intra-doc residuals FOLLOW-403 left in the clickhouse-migrations runbook (intro-sentence vs corrected migrate.sh caption + stale References header)
+
+- **source_retro:** RETRO-124 (§4d DG-2, §4d DG-3, §7 step 2 residual)
+- **source_ticket:** FOLLOW-403 (PR #363)
+- **recommended_sprint:** next docs/data pass
+- **recommended_agent:** data-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** FOLLOW-403 / PR #363 corrected the `migrate.sh` code-block CAPTION in
+  `docs/runbooks/clickhouse-migrations.md:76` to "Apply ALL pending migrations idempotently (safe to
+  re-run)" — but left the introducing SENTENCE at `:72-73` ("For files containing multiple
+  statements (separated by `;`), use `migrate.sh`'s `_apply_file()` helper which handles the
+  statement-splitting automatically:") un-updated. The sentence still frames the
+  immediately-following `bash migrate.sh` block as the way to apply a SINGLE multi-statement file,
+  now contradicting its own corrected caption (`:82-84` only partially reconciles). Separately, the
+  References header at `:3-4` ("References: ESC-031, RETRO-118, FOLLOW-394, FOLLOW-308") is stale:
+  the body now cites FOLLOW-402 twice (`:127`/`:132-133`) and the doc was authored by FOLLOW-403,
+  neither listed. Both are one-hop residuals of FOLLOW-403's otherwise-correct DG-2 caption fix
+  (RETRO-124 §7 step 2). NOTE the separate sibling-surface residual — the IDENTICAL "for future
+  migrations" overstatement in `migration-contract-test.sh:11-12` (RETRO-124 §4d DG-1) — is NOT in
+  this ticket's scope; it is folded into FOLLOW-402 (which edits that script and makes the claim
+  accurate when it generalizes the test).
+- **ac:**
+  - [ ] Re-word `clickhouse-migrations.md:72-73` so the intro sentence matches the corrected `:76`
+        caption — e.g. "To apply ALL pending migrations idempotently, run `migrate.sh` (below); to
+        apply a SINGLE multi-statement file, source `_apply_file` directly or use the curl pattern
+        above."
+  - [ ] Add FOLLOW-402 and FOLLOW-403 to the `:3-4` References header.
+  - [ ] Confirm no remaining intra-doc contradiction between any caption and its surrounding prose
+        (re-read the "Manual apply pattern" section end-to-end).
+- **depends_on:** []
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-409 — Real-handler test for the micro-poll `onAnswer` §H.9 guard + fix the surviving "Ingest stream left flowing" comment twin at `showQuizTrigger` + correct the `postQuizCompletionPing` reachability JSDoc
+
+- **source_retro:** RETRO-116 (§4c TG-1, §4d DG-1, §4a LG-1, §7 closure check)
+- **source_ticket:** FOLLOW-389 (PR #355) — closes the three one-hop residuals FOLLOW-389 left
+- **recommended_sprint:** next SDK pass
+- **recommended_agent:** sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** FOLLOW-389 / PR #355 closed RETRO-109 ADDENDUM HW-1/TG-1/DG-1 only PARTIALLY — each
+  sub-item leaves a one-hop residual:
+  1. **TG (the load-bearing residual)** — RETRO-109 TG-1 asked for real-handler tests for ALL THREE
+     §H.9 SDK guards. FOLLOW-389 delivered REAL-3 (`showQuizTrigger`, `index.ts:1103`) and REAL-2
+     (`estalara:listing:favorited`, `:1432`) but NOT the micro-poll `onAnswer` guard (`:1243`). The
+     new `buildMockFetch()` returns `micro_polls_enabled: false` (`follow-389.test.ts:135`), so the
+     micro-poll render path (`tryShowMicroPoll`/`renderMicroPoll`) is never driven; the guard
+     remains covered ONLY by the modeled `modeledOnAnswer` re-implementation
+     (`follow-385.test.ts:220`) — the exact self-injecting-test weakness RETRO-109 flagged. A
+     regression moving the `:1243` guard below the `quiz.event` push (re-leaking the opted-out
+     micro-poll AL signal) leaves all tests green.
+  2. **DG (sibling twin)** — DG-1 fixed the false "Ingest stream left flowing" comment at the
+     micro-poll site (`:1238-1242`) but left the IDENTICAL false line at the sibling
+     `showQuizTrigger` guard (`index.ts:1102`). It is false there too: the `quiz.event`
+     `step:'completed'` push (`~:1158`) is DOWNSTREAM of the `:1103` early return, so for opted-out
+     users it IS suppressed, not "left flowing." (The favorites copy at `:1431` is the ONLY one
+     where the line is TRUE — `listing.bookmarked` is pushed at `:1419`, before the `:1432` guard.)
+     Grep the exact string repo-wide and fix/justify every occurrence.
+  3. **LG/doc nit** — HW-1's producer branch is unreachable in normal flow: Guard 1 (`:1103`) blocks
+     opted-out users upstream of the `:1142` call site, so `profilingOptedOut` at `:1148` is always
+     `false` in normal traffic and the `?profiling_opt_out=1` branch (`adapt.ts:212`) fires ONLY if
+     Guard 1 regresses. The `adapt.ts:187` JSDoc / PR body claim the gate is "reachable by real SDK
+     traffic" — overstated; it is reachable ONLY as defense-in-depth. Correct the wording (no
+     behavior change).
+- **ac:**
+  - [ ] Add a real-handler test that drives the REAL micro-poll `onAnswer` guard via
+        `_initForTest()` + a mock `/quiz/public-config` returning `micro_polls_enabled: true`, then
+        drives the real micro-poll render/answer path (NOT `modeledOnAnswer`): opted-out → intent
+        NOT mutated AND no `quiz.event`(`trigger:'micro_poll'`) in the ingest batch; opted-in →
+        intent mutated AND the `quiz.event` present. The test MUST fail if the `:1243` guard is
+        deleted/relocated.
+  - [ ] Correct the false "Ingest stream left flowing" comment at `index.ts:1102` to state the
+        quiz.event completion push IS suppressed for opted-out sessions (same correction DG-1
+        applied at the micro-poll site); leave the favorites copy (`:1431`) as-is (TRUE there) with
+        a one-line note on why it differs.
+  - [ ] Correct the `adapt.ts:187` JSDoc (and PR-body claim if surfaced elsewhere) so it says the
+        gate is reachable defense-in-depth IF Guard 1 regresses — NOT "by real SDK traffic" under
+        normal flow.
+- **depends_on:** []
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-410 — Correct the three "migration 0017" provenance citations (rename is migration 0018) + retype the two untyped GET `/api/adapt` early-return bodies to `AdaptationDirectives & { tier: number }`
+
+- **source_retro:** RETRO-115 (§4d DG-1, §4b CB-1, §4c TG-1)
+- **source_ticket:** FOLLOW-357/356 (PR #354) — the `tier`→`page_context` rename PR
+- **recommended_sprint:** next control-plane/shared pass
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** PR #354 (FOLLOW-357/356) renamed the analytics page-type signal
+  `tier`/`directive_scope` → `page_context` across shared/SDK/route + ClickHouse, and dropped
+  `AdaptResponse.tier:1|2|3`. Two introduced gaps survive at HEAD (FOLLOW-358 / PR #357 touched the
+  same file but neither). (a) DG-1 — three in-code provenance comments cite the WRONG ClickHouse
+  migration: they say the `tier`→`page_context` rename happened in "migration 0017", but the PR's
+  actual migration is `0018_adaptation_decisions_page_context.sql`;
+  `0017_follow371_holdout_contamination_note.sql` is an UNRELATED migration, so a reader tracing the
+  column's provenance is misdirected to a real-but-wrong file. `docs/MASTER_DESIGN.md §E.7` (edited
+  in the SAME PR) correctly says 0018 — the inconsistency is internal renumber-drift (comments
+  authored against a planned "0017" before FOLLOW-371 took that slot). Confirming instance of Rule
+  Y's citation-accuracy spirit (CONVENTIONS_PATCH:1207). (b) CB-1 — to admit the GET-only `tier`
+  field (which left `AdaptationDirectives`), the opt-out (`route.ts:781-793`) and consent-skip
+  (`route.ts:813-825`) GET early-return bodies had their `} satisfies AdaptationDirectives,` guard
+  DELETED outright and are now UNTYPED object literals (zero compile-time contract check), while the
+  main GET path (`route.ts:879`) correctly uses `AdaptationDirectives & { tier: number }`. Rule S
+  asymmetry: 3 sibling GET return bodies, 1 typed, 2 untyped — field drift in either early-return
+  now escapes `tsc`. Cross-ref FOLLOW-390 (owns the GET-surface dead-or-alive liveness decision;
+  THIS stub is type/doc hygiene only) and FOLLOW-404 (0018/0019 prod-apply attestation — not
+  duplicated).
+- **ac:**
+  - [ ] Correct "migration 0017" → "migration 0018" in
+        `apps/control-plane/src/app/api/adapt/route.ts:938`, `:1349`, and
+        `packages/shared/src/directives.ts:137`; regenerate the compiled twin
+        `packages/shared/dist/directives.d.ts:110` so it no longer says 0017.
+  - [ ] Grep the repo for any other "migration 0017" reference to the page_context rename and
+        confirm the only legitimate 0017 citation is
+        `0017_follow371_holdout_contamination_note.sql`'s own holdout-contamination context (per
+        Rule Y: verify every cited artifact).
+  - [ ] Retype the opt-out (`route.ts:781-793`) and consent-skip (`route.ts:813-825`) GET
+        early-return bodies to `AdaptationDirectives & { tier: number }`, matching the main GET path
+        (`:879`); confirm `tsc --noEmit` on control-plane is clean (Rule T) and the existing GET
+        tests still pass.
+  - [ ] (Optional, TG-1) add a shape assertion on each early-return body so the contract is also
+        runtime-covered, not just compile-time.
+- **depends_on:** []
+- **promoted_to_queue:** '2026-06-26'
+
+---
+
+## FOLLOW-411 — Negative-control attestation for the consent gitleaks exemption (twin of FOLLOW-406) + disambiguate the redundant `regexes`/inline-`gitleaks:allow` suppression + add a bidirectional hash-rotation maintenance link
+
+- **source_retro:** RETRO-125 (§4c TG-1, §4b CB-1, §4d DG-1, §5a, §7 closure check)
+- **source_ticket:** FOLLOW-407 (PR #364) — the Rule V consent-endpoint strip-the-superseded; closes
+  its moved-hop detection-restored residual
+- **recommended_sprint:** next infra/security pass
+- **recommended_agent:** devops-engineer + backend-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** PR #364 (FOLLOW-407) applied Rule V to the consent endpoint — DELETED the FOLLOW-374
+  file-wide `paths` exemption on `apps/control-plane/src/app/api/v1/consent/platform-registration/`
+  and ADDED a token-scoped `regexes` entry `'''a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9'''`
+  (`.gitleaks.toml:179`, first 38 chars of the 64-char `CANONICAL_CONSENT_TEXT_HASH`). Three
+  residuals survive. (a) TG-1 (load-bearing) — the PR proved only that the FP is GONE (gitleaks
+  green), NOT that detection is RESTORED: there is NO negative control showing a real
+  Cloudflare-token-shaped secret committed to the consent dir REDs CI. This is the IDENTICAL gap
+  RETRO-123 filed as FOLLOW-406 for the route.ts twin; FOLLOW-406 is therefore UNDER-SCOPED
+  (route.ts-only) and the consent surface inherits the same unproven-detection state. Rule V
+  mandates this negative control. (b) CB-1 — the new `regexes` entry is REDUNDANT with a
+  pre-existing inline `// gitleaks:allow` on `lib.ts:46` (the ONLY repo site of the 64-char literal
+  value; `route.ts:270` + `route.test.ts:174` reference the SYMBOL, not the value), so its necessity
+  was never proven — it may be dead config from day one. (c) DG-1 — no maintenance link binds the
+  38-char allowlist substring (`.gitleaks.toml:179`) to its source constant (`lib.ts:45-46`); a
+  consent-text/hash rotation changes the SHA-256 entirely and silently staleness-rots the allowlist.
+  NOTE §4a positional caveat: the 38-char prefix covers only the hash's LEFTMOST 40-char window (the
+  one gitleaks reports for a bare literal) — fine as written but fragile if the literal ever gains a
+  leading word-char neighbor.
+- **ac:**
+  - [ ] (TG-1) Add a dummy 40-char high-entropy Cloudflare-token-shaped string to a consent-dir file
+        (`lib.ts` or `route.ts`), run gitleaks, confirm it REDs (detection restored), remove it, and
+        record the attestation. Execute jointly with FOLLOW-406 as ONE generalized negative-control
+        pass over BOTH narrowed secret-handling surfaces (route.ts + consent), with a reusable
+        per-surface checklist so the next Rule-V strip cannot skip the proof.
+  - [ ] (CB-1) Disambiguate the redundancy: temporarily remove the `regexes` entry
+        `'''a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9'''`, confirm gitleaks stays green via the inline
+        `// gitleaks:allow` on `lib.ts:46` (the literal's only site) → then EITHER delete the
+        redundant `regexes` entry OR keep it with a one-line defense-in-depth justification in the
+        comment.
+  - [ ] (DG-1) Add a bidirectional maintenance comment: at `.gitleaks.toml:172-179` note "update
+        this 38-char substring if `CANONICAL_CONSENT_TEXT_HASH` (`lib.ts:45-46`) rotates," and at
+        `lib.ts:45-46` note the `.gitleaks.toml` allowlist entry that tracks it.
+  - [ ] Re-run Rule-V verification grep #1
+        (`grep -nE "src/app|src/lib|src/core|src/jobs"     .gitleaks.toml | grep -viE "test|fixture|__"`)
+        and confirm it stays EMPTY.
+- **depends_on:** []
+- **promoted_to_queue:** true
+- **promoted_at:** 2026-06-26
+- **queue_note:** Joint execution with FOLLOW-406; branch
+  devops-engineer/FOLLOW-406-411-gitleaks-negative-control-attestation
+
+---
+
+## FOLLOW-412 — Correct two in-place imprecisions the FOLLOW-398 fix introduced into the §E.7 line-728 confidence-gating bullet (`adapt-floor` is const-only, not a function that "returns []"; the gate omits the `|| signal_count >= 2` OR-branch) — Rule Y broadened-sub-shape residual
+
+- **source_retro:** RETRO-126 (§4d DG-1, §7 closure check)
+- **source_ticket:** FOLLOW-398 (PR #365) — the phantom-`SIDEBAR_SHOW_THRESHOLD` removal; this
+  closes its one in-place doc-accuracy residual
+- **recommended_sprint:** next doc pass
+- **recommended_agent:** sdk-engineer
+- **priority:** P3
+- **estimated_hours:** 0.5
+- **scope:** FOLLOW-398 (PR #365) correctly removed the phantom `SIDEBAR_SHOW_THRESHOLD` from all
+  four live citation sites (verified end-to-end, RETRO-126 §7), but the REPLACEMENT text it wrote at
+  `docs/MASTER_DESIGN.md:728` introduced TWO fresh imprecisions in one sentence: _"DOM adaptation is
+  gated by `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` in `packages/sdk/src/core/adapt-floor.ts`; below this
+  threshold `adapt-floor` returns `[]` and no mutation is applied."_ (a) **`adapt-floor` does not
+  "return []".** `adapt-floor.ts` is const-only — it exports two `const`s and has NO function
+  (`grep -nE "function|return|=>" packages/sdk/src/core/adapt-floor.ts` → no code hits). The
+  array-dropping gate is `if (aboveFloor) { applyDirectives(...) }` at `index.ts:720-724`.
+  Attributing "returns []" to the named module is the Rule-Y broadened-sub-shape (a named
+  file/module cited as performing a behavior it does not) — the SAME shape RETRO-126 §6 used to
+  broaden Rule Y. (b) **The bullet omits the `|| signal_count >= 2` OR-branch.** The real gate is
+  `confidence >= 0.5 || signal_count >= 2` (`index.ts:720-722`); below 0.5 confidence a mutation IS
+  still applied when `signal_count >= 2`, so "below this threshold … no mutation is applied"
+  overstates a confidence-only gate (the DOC twin of FOLLOW-399's TEST gap). The §E.7 ladder
+  _blockquote_ (`:2406-2412`) and the `adapt-floor.ts` JSDoc are already accurate — this is scoped
+  to the line-728 bullet ONLY. NON-blocking optional (NOT an AC): `docs/AUDIT-2026-06-19.md:164`
+  still names the removed constant; it is accurate as-of-audit (the const existed until PR
+  #340/FOLLOW-375 on 2026-06-23, 4 days after the audit) and frozen — leaving it is defensible
+  (RETRO-126 §4d DG-2); if a marker is desired, an inline
+  `[as-of-audit; constant removed in PR #340]` suffices, but do NOT rewrite the frozen finding.
+- **ac:**
+  - [ ] At `docs/MASTER_DESIGN.md:728`, reword so the gate is attributed to its real site
+        (`index.ts:720-724` `if (aboveFloor)`), not to the const-only `adapt-floor` module, and
+        state the OR-branch: mutation is applied when
+        `confidence >= DOM_ADAPT_CONFIDENCE_FLOOR (0.5)` **OR**
+        `signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT (2)`; below BOTH, no mutation is applied.
+  - [ ] Confirm the reworded bullet matches the §E.7 ladder blockquote (`:2406-2412`) and the
+        `adapt-floor.ts` JSDoc (no new divergence introduced — diff the gate against
+        `index.ts:720-724` source, not against the prior prose; this paragraph has now needed 3
+        PRs).
+  - [ ] `grep -rn "adapt-floor returns\|SIDEBAR_SHOW_THRESHOLD" docs/ packages/ --include="*.md"     --include="*.ts"`
+        (excl. frozen `AUDIT-2026-06-19.md`) returns no active false claim.
+- **depends_on:** []
+- **promoted_to_queue:** false
+- **cross_ref:** FOLLOW-399 (RETRO-119 §4c TG-1 — the description-axis OR-branch TEST gap; co-land
+  or cross-ref so doc + test describe the same gate). RETRO-126 §6 broadened Rule Y on this DG-1 as
+  the 3rd confirming instance (RETRO-115 FOLLOW-410 + RETRO-119 FOLLOW-398 prior).
+
+---
+
+## FOLLOW-413 — Convert the bare-ordinal migration citations in `/api/adapt` route + `directives.ts` to full-unique-filename form (the PG/CH migration trees collide on ordinals 0017/0018/0019) — operationalizes the RETRO-126 Rule-Y broadening for the migration-number sub-shape
+
+- **source_retro:** RETRO-127 (§4d DG-1, §6, §7 closure-residual)
+- **source_ticket:** FOLLOW-410 (PR #366) — the "0017"→"0018" citation fix; this closes its
+  citation-STYLE residual (the value is now correct but the bare-ordinal form remains ambiguous)
+- **recommended_sprint:** next doc/hygiene pass
+- **recommended_agent:** backend-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** FOLLOW-410 (PR #366) corrected the migration-citation VALUE (`0017`→`0018`) at three
+  sites but kept the AMBIGUOUS bare-ordinal STYLE — which is the ROOT CAUSE of the original drift.
+  The repo has TWO independently-numbered migration trees that COLLIDE on ordinals:
+  `packages/db/migrations/` (Drizzle/Postgres) and `infra/clickhouse/migrations/` (ClickHouse).
+  Ordinal `0018` = `0018_app_config.sql` (PG) vs `0018_adaptation_decisions_page_context.sql` (CH);
+  `0017` = `0017_demo_overrides.sql` (PG) vs `0017_follow371_holdout_contamination_note.sql` (CH);
+  `0019` = `0019_conversion_labels.sql` (PG) vs `0019_adaptation_decisions_page_context_source.sql`
+  (CH). A bare `migration 0018` citation is therefore unverifiable without surrounding context —
+  exactly what let an author miscount `0017`. The GOOD pattern already exists in the same file:
+  `route.ts:436` cites the full unique filename
+  `migration 0019_adaptation_decisions_page_context_source.sql`. This stub OPERATIONALIZES the
+  Rule-Y broadening RETRO-126 §6 promoted (which explicitly added "migration-number cited as fact"
+  to Rule Y's scope, using THIS ticket's RETRO-115 instance as broadened-count-1 evidence).
+  NON-blocking optional (LG-1, NOT an AC): the GET handler now uses
+  `} satisfies AdaptationDirectives & { tier: number }` on all three return sites
+  (`route.ts:792, 823, 890`) while the POST handler still uses the explicit-annotation idiom
+  `const response: AdaptationDirectives = {…}` (`route.ts:1329`) — a cosmetic same-file idiom split
+  PR #366 widened; align them or add a one-line note on why POST keeps the explicit annotation. Type
+  protection is equivalent either way (both forms excess-property- and missing-field-check the
+  literal).
+- **ac:**
+  - [ ] In `apps/control-plane/src/app/api/adapt/route.ts` (`:938`, `:1349`) and
+        `packages/shared/src/directives.ts` (`:137`), replace bare `migration 0018` with the full
+        unique filename `migration 0018_adaptation_decisions_page_context.sql`, matching the
+        `route.ts:436` exemplar.
+  - [ ] Sweep the file's other bare-ordinal CH/PG migration citations (e.g. `route.ts:405` `0012`,
+        `:466` `0019`, `:373/:375` `0019`) and convert any ambiguous bare ordinal to full-filename
+        form; leave already-full-name citations as-is.
+  - [ ] `grep -rnE "migration 00[0-9]{2}\b" apps/control-plane/src/app/api/adapt/route.ts     packages/shared/src/directives.ts | grep -vE "_[a-z]"`
+        returns no bare-ordinal migration citation (every survivor is either a full filename or has
+        unambiguous inline context).
+  - [ ] (optional, LG-1) Align the POST response idiom (`route.ts:1329`) with the GET `satisfies`
+        idiom OR document the deliberate difference in a one-line comment.
+- **depends_on:** []
+- **promoted_to_queue:** false
+- **cross_ref:** FOLLOW-404 (0018/0019 prod-apply attestation — NOT duplicated; this is comment
+  hygiene only, no migration/prod-state change). FOLLOW-412 (RETRO-126's §E.7 line-728 Rule-Y
+  broadened-shape residual — the SAME rule, a DISJOINT surface; not duplicated). FOLLOW-390 (GET
+  `/api/adapt` surface liveness — owns the dead-or-alive call for the surface these typed GET
+  returns sit inside).
+
+---
+
+## FOLLOW-414 — Close the two FOLLOW-409 doc twins (the `adapt.ts` JSDoc/inline contradiction + the `follow-385.test.ts` "Ingest stream left flowing" micro-poll copies) + harden the opted-out REAL-4 flush assertion + retire the now-superseded modeled §H.9 tests — promoted_to_queue: '2026-06-26'
+
+- **source_retro:** RETRO-128 (§4d DG-1, §4d DG-2, §4c TG-1, §4c TG-2, §4c TG-3, §7)
+- **source_ticket:** FOLLOW-409 (PR #367) — closes the one-hop residuals FOLLOW-409 itself left
+  while closing FOLLOW-389
+- **recommended_sprint:** next SDK pass
+- **recommended_agent:** sdk-engineer
+- **priority:** P2
+- **estimated_hours:** 1.5
+- **scope:** FOLLOW-409 / PR #367 GENUINELY closed the load-bearing residual (the micro-poll
+  `onAnswer` real-handler test, RETRO-116 §4c TG-1) — the §H.9 SDK-guard trio is now fully
+  real-handler-covered (REAL-2 favorites + REAL-3 showQuizTrigger in #355, REAL-4 micro-poll in
+  #367). BUT both DOC sub-items moved one hop AGAIN, inside the very PR chartered to close them, and
+  even though AC-2 explicitly said "grep the exact string repo-wide and fix every occurrence":
+  1. **DG-1 (P2, the load-bearing residual) — JSDoc/inline CONTRADICTION in
+     `postQuizCompletionPing`.** AC-3 corrected the JSDoc (`packages/sdk/src/core/adapt.ts:186-193`)
+     to "reachable ONLY as defense-in-depth if Guard 1 regresses — NOT under normal production
+     traffic," but left the IDENTICAL false claim in the INLINE comment 20 lines down at
+     **`adapt.ts:212-213`**
+     (`// append the opt-out flag so the route gate at route.ts:363 is reachable by real SDK traffic.`).
+     The two now directly contradict each other within one function, about a security-relevant
+     reachability boundary; a maintainer could wrongly conclude the gate is exercised by live
+     opted-out traffic (it is not — Guard 1 at `index.ts:1106` blocks it upstream).
+  2. **DG-2 + TG-2 (P3) — surviving "Ingest stream left flowing" twins + superseded modeled debt.**
+     AC-2 fixed the false comment at `showQuizTrigger` (`index.ts:1102`) but left the identical
+     false line on the MICRO-POLL model in `follow-385.test.ts:211` (doc) + `:225` (inside
+     `modeledOnAnswer`), where it is equally false (the micro-poll `quiz.event` push is downstream
+     of the guard → suppressed). `grep -rn "Ingest stream left flowing" packages/` = four hits:
+     `:128`/`:144` (favorites model, correctly TRUE, leave) + `:211`/`:225` (micro-poll model,
+     FALSE, fix-or-delete). With REAL-4 landing, all three modeled re-implementations in
+     `follow-385.test.ts` (`modeledShowQuizTrigger`, `modeledFavoritesHandler`, `modeledOnAnswer`)
+     are fully superseded self-injecting test debt — the cleanest fix is to delete the redundant
+     modeled bodies (absorbing DG-2), preserving only any structural assertion not covered by a REAL
+     test (the push-before-guard ordering at `:180` is already proven by REAL-2's §H.8 preservation
+     assertion).
+  3. **TG-1 (P2) — opted-out REAL-4 negative assertion lacks a flush positive-control → latent
+     false-green.** `follow-409.test.ts:219` waits 5001ms then asserts `hasMicroPollEvent === false`
+     (`:239`) but, unlike the opted-IN twin (`:302`), does NOT assert `ingestCalls.length > 0`. If
+     the flush harness ever regresses (zero `/v1/events` calls), the assertion passes trivially,
+     proving nothing about the `:1246` guard. Add a positive control: assert ≥1 flush occurred (a
+     producer the guard does NOT suppress, e.g. the page-view event) before asserting no
+     `micro_poll` event rode it.
+  4. **TG-3 (P3, optional) — export `BATCH_INTERVAL_MS`.** Both `follow-409.test.ts` (`:219`/`:296`)
+     and `follow-389.test.ts` (`:295`/`:361`) hardcode `advanceTimersByTimeAsync(5001)` + a
+     `// per index.ts:198` comment against the unexported `BATCH_INTERVAL_MS = 5_000`
+     (`index.ts:198`). Both are currently CORRECT (the "wrong-interval-elsewhere" hypothesis did NOT
+     hold). Export the constant (or a `__test__` re-export) so flush-dependent tests reference the
+     SoT and the comment cannot rot — closing the stale-coupling that compounds TG-1.
+- **ac:**
+  - [ ] Correct the inline comment at `packages/sdk/src/core/adapt.ts:212-213` so it MATCHES the
+        corrected JSDoc (`:186-193`): defense-in-depth, reachable ONLY if Guard 1 regresses, NOT
+        under normal SDK traffic. No behavior change.
+  - [ ] Fix or remove the false "Ingest stream left flowing" comment on the micro-poll model in
+        `packages/sdk/src/__tests__/follow-385.test.ts:211` + `:225` (preferred: delete the
+        redundant `modeledOnAnswer` body now that REAL-4 covers the guard). Leave the favorites
+        copies (`:128`/`:144`) — TRUE there. PR description MUST cite the repo-wide grep hit-count
+        for the string.
+  - [ ] Down-scope/delete the superseded modeled re-implementations in `follow-385.test.ts`
+        (`modeledShowQuizTrigger`/`modeledFavoritesHandler`/`modeledOnAnswer`), keeping only any
+        structural assertion a REAL test does not already prove; document why any survive.
+  - [ ] Add a flush positive-control to the opted-out REAL-4 test (`follow-409.test.ts`): assert ≥1
+        `/v1/events` flush occurred before asserting none carry `trigger:'micro_poll'`.
+  - [ ] (Optional) Export `BATCH_INTERVAL_MS` from `packages/sdk/src/index.ts` and reference it in
+        `follow-409.test.ts` + `follow-389.test.ts` instead of the `5001` literal.
+- **depends_on:** []
+- **promoted_to_queue:** false
+- **cross-ref:** FOLLOW-388 (RETRO-110 — the batch-axis §H.9 leg, `depends_on FOLLOW-101`; the only
+  OTHER open §H.9 leg — NOT duplicated, orthogonal axis). Pattern A (RETRO-124 + RETRO-116) HOLD
+  context: this stub's DG twins are same-lineage moved-hops of RETRO-116's DG-1/LG-1, so they did
+  NOT trip the Rule-promotion threshold (RETRO-128 §6) — but they are strong human-flag evidence
+  that the "grep-the-flagged-string-repo-wide" discipline needs codification on the next independent
+  sighting.
+
+---
+
+## FOLLOW-415 — Harden the generalized CH migration-ordering contract test: make the boundary `adaptation_decisions`-column-aware (LG-1), add a column-count sanity assertion to the `grep`/`sed` extraction (LG-2), and qualify the "self-maintaining guarantee" prose (DG-1)
+
+- **source_retro:** RETRO-129 (§4a LG-1, §4a LG-2, §4d DG-1, §4c TG-1, §7)
+- **source_ticket:** FOLLOW-402 (PR #368) — the generalization closed RETRO-121 TG-1 (idempotent
+  cleanup) and the manual-Extending burden of LG-1/CB-1 end-to-end, but moved the LG-1/CB-1 gap one
+  hop into two unasserted structural assumptions and replaced one overstated coverage claim with
+  another.
+- **recommended_sprint:** next infra/CI-hardening pass
+- **recommended_agent:** data-engineer
+- **priority:** P2
+- **estimated_hours:** 2.5
+- **scope:** `infra/clickhouse/scripts/migration-contract-test.sh` generalized the ESC-031 contract
+  guard to derive the INSERT column list from `logDecisionAsync` and auto-detect the boundary
+  migration. Two implicit assumptions it newly bakes in are unasserted and will misfire on common
+  near-future migrations; and the doc/header prose over-claims the result.
+  1. **LG-1 (P2) — boundary heuristic false alarm.** `:191-204` takes the lexical-last `[0-9]*.sql`
+     as the boundary and asserts at step 2 (`:228-238`) that the INSERT is REJECTED before it is
+     applied. That only holds if the LAST migration adds an `adaptation_decisions` INSERT column.
+     The next CH migration to a different table or a note migration (cf. the existing
+     `0017_follow371_holdout_contamination_note.sql`, `0014–0016_intent_events*`) leaves every
+     INSERT column already present in the all-but-last set → step 2's INSERT SUCCEEDS → the script
+     exits 1 with a FALSE `FAIL: INSERT succeeded … before the boundary migration`. 4 of the last 6
+     CH migrations did NOT add an `adaptation_decisions` column, so this is imminent and recurring,
+     and the likely "fix" is to disable the guard — re-opening ESC-031. Make the boundary the newest
+     migration that ACTUALLY adds an INSERT column (or check ordering per-column), and skip/short-
+     circuit cleanly when the newest migration touches no INSERT column.
+  2. **LG-2 (P3) — extraction brittleness + missing count check.** The `grep -A1 … | sed` extractor
+     (`:161-163`) assumes the full `(col, …)` list is on the SINGLE line after
+     `` `INSERT INTO adaptation_decisions ` `` with a literal `` `( … ) ``. A single-line INSERT
+     rewrite or a multi-line column wrap (the VALUES clause is ALREADY 4 lines, `:470-473`) breaks
+     this; most reformats fail cryptically (eroding trust), with a narrow silent fail-OPEN if a
+     complete `(…)` SUBSET lands on `:469`. Add a column-count sanity assertion — e.g. extracted
+     count must equal `DESCRIBE TABLE adaptation_decisions` (post-all-migrations) or be `>=` a
+     pinned floor (17 today) — converting every brittle case into a loud, correct failure.
+  3. **DG-1 (P3) — qualify the over-claim.** The "Self-maintaining guarantee" prose
+     (`docs/runbooks/clickhouse-migrations.md:130-133`) and the script header (`:13-14, :258-260`)
+     state the guarantee unconditionally, omitting both assumptions above — the same overstated-
+     coverage shape RETRO-121 §4d DG-1 flagged on the prior version (a confirming instance of the
+     broadened Rule Y). Either qualify the prose with the single-line + boundary-is-an-
+     `adaptation_decisions`-column assumptions, or (preferred) close LG-1/LG-2 so the prose is true.
+- **ac:**
+  - [ ] Boundary detection selects the newest migration that adds at least one column named in the
+        extracted INSERT list (or performs a per-column ordering check); when the newest migration
+        adds no INSERT column, the test does NOT false-fail at step 2.
+  - [ ] Add a column-count sanity assertion after extraction: the extracted `COLS` count must match
+        the live `adaptation_decisions` table column count (or `>=` a pinned floor of 17) — a
+        truncated or garbage extraction fails loudly with a clear message instead of testing a
+        subset / passing trivially.
+  - [ ] Qualify the "self-maintaining guarantee" prose in `clickhouse-migrations.md:130-133` and the
+        script header (`:13-14, :258-260`) to disclose the single-line-column-list +
+        boundary-adds-an- `adaptation_decisions`-column assumptions — OR update it to describe the
+        hardened behavior once the ACs above land.
+  - [ ] (optional, TG-1) Add a minimal meta-check that the script reds for the RIGHT reason on a
+        known-bad fixture (an un-migrated extra column AND a non-column newest migration); banked —
+        the count assertion above is the cheaper substitute.
+  - [ ] `bash -n infra/clickhouse/scripts/migration-contract-test.sh` exits 0; the CI
+        `clickhouse-smoke` job stays green on the current migration set.
+- **depends_on:** []
+- **promoted_to_queue:** false
+- **cross_ref:** FOLLOW-404 (one-time PROD-state attestation that 0019 `page_context_source` is live
+  in prod CH — NOT superseded by this PR or this stub; the contract test is the CI-axis guard,
+  FOLLOW-404 is the disjoint prod-apply axis, FOLLOW-308 is the standing prod gate). FOLLOW-408 (the
+  two intra-doc residuals FOLLOW-403 left in the same runbook — disjoint surface, not duplicated).
+  Rule Y (governs DG-1) + Rule M (the prod-claim rule reinforcing the FOLLOW-404 disjoint-axis
+  reasoning).
+
+---
+
+<!-- next free FOLLOW number: 416 (415 = RETRO-129 / PR #368 / FOLLOW-402: harden the generalized CH migration-ordering contract test — (1) LG-1 P2: the "boundary = lexical-last *.sql" heuristic (migration-contract-test.sh:191-204) conflates newest-file with newest-INSERT-column-migration; the next CH migration that does NOT add an adaptation_decisions INSERT column (cf. existing 0017_follow371_holdout_contamination_note.sql / 0014-0016_intent_events*; 4 of last 6 CH migrations) leaves all INSERT cols already present in the all-but-last set → step 2 INSERT SUCCEEDS → script exits 1 with FALSE "INSERT succeeded before boundary" (:230-235) → imminent+recurring false alarm that invites disabling the guard → re-opens ESC-031; make boundary the newest migration that ACTUALLY adds an INSERT column or per-column; (2) LG-2 P3: grep -A1|sed extractor (:161-163) assumes full (col,…) list on the SINGLE line after `INSERT INTO adaptation_decisions` with literal `(…); single-line rewrite or multi-line wrap (VALUES is ALREADY 4 lines :470-473) breaks it — most reformats fail cryptic (erodes trust), narrow silent fail-OPEN if a complete (…) SUBSET lands on :469; add column-count sanity assertion (== DESCRIBE TABLE or >= pinned floor 17) so truncation fails loud+correct; (3) DG-1 P3: the new "Self-maintaining guarantee" prose (clickhouse-migrations.md:130-133 + script header :13-14/:258-260) states the guarantee UNCONDITIONALLY, omitting both assumptions — same overstated-coverage shape RETRO-121 §4d DG-1 flagged on the prior version = confirming instance of the broadened Rule Y; qualify or earn it. data-engineer P2 2.5h promoted_to_queue false; cross-ref FOLLOW-404 (prod-state attestation NOT superseded — disjoint prod-apply axis, contract test is CI-axis only) + FOLLOW-408 (runbook intra-doc residuals, disjoint surface) + Rule Y/Rule M. NOTE RETRO-129 = retro for PR #368 (FOLLOW-402, squash commit 3fa3cbe on main HEAD 2026-06-26 16:20 UTC; gh PR object still OPEN/mergeCommit null — change IS on main, PM confirm GitHub PR closed; +180/-66 across migration-contract-test.sh +107/-45 + clickhouse-migrations.md +22/-21 + data-engineer/lessons.md +51 learning-hook). No contract change (CI shell harness + doc + lessons). Wiring Audit clean BOTH checks (only new symbol = _cleanup() wired via trap _cleanup EXIT :58; script is CI entrypoint ci.yml:320; no new export/event/env-var/column/topic/SDK-signal — consumes only pre-existing CLICKHOUSE_* / LOCAL env). FOLLOW-402 traced END-TO-END vs RETRO-121 §6 LG-1/CB-1/TG-1 + RETRO-124 forward doc-obligation: TG-1 (DROP-on-failure non-idempotency) GENUINELY CLOSED — _cleanup drops contract_test_ordering, trap set :58 BEFORE CREATE :63, fires on pass/set-e/exit1/SIGINT; LG-1/CB-1 manual-Extending burden CLOSED for the common case (dynamic extraction removes the page_context_source/0019 pins + human step) BUT gap MOVED ONE HOP into the two unasserted structural assumptions (LG-1 boundary + LG-2 extraction) → FOLLOW-415, recorded CLOSED-WITH-RESIDUAL; RETRO-124 forward doc-obligation CLOSED (AC-3 removed the "wait for FOLLOW-402 / does NOT generic" lines, grep=0) but replacement prose over-states oppositely (DG-1). NO rule promoted: DG-1 = confirming instance of broadened Rule Y (named script cited as a self-maintaining guarantee it does not fully perform) — anti-count-inflation (RETRO-122/125/126/128); trap-cleanup-on-all-exit-paths pattern = independent count 1 (this PR's AC-2 is the GOOD shape, fixes RETRO-121 TG-1) → watch-item, promote a "trap-cleanup for isolated-state harnesses" rule on a 2nd independent sighting. FOLLOW-404 (RETRO-118 prod attestation) NOT superseded — disjoint prod-apply axis (CH migrations don't auto-apply to prod, RETRO-076/FOLLOW-307/FOLLOW-308; CH CI only runs migrate.sh against a throwaway container ci.yml:322-325). DG-2 banked NON-finding: CI step name still "(FOLLOW-394)" — defensible provenance, no follow. PM: FOLLOW-402 DONE for its 3 ACs (cleanup + dynamic extraction + doc), FOLLOW-415 is a fresh P2 robustness residual NOT a re-open, FOLLOW-404 stays OPEN. PM ACTION: mark FOLLOW-402 DONE in QUEUE.md (retro-analyst is QUEUE-read-only per role guardrail) + confirm PR #368 formally closed on GitHub. 414 = RETRO-128 / PR #367 / FOLLOW-409: close the two FOLLOW-409 doc twins — (1) DG-1 P2: AC-3 fixed the postQuizCompletionPing JSDoc (adapt.ts:186-193 "reachable ONLY as defense-in-depth if Guard 1 regresses NOT normal traffic") but left the IDENTICAL false "reachable by real SDK traffic" claim in the INLINE comment adapt.ts:212-213 → internal contradiction within one function about a §H.9 reachability boundary; (2) DG-2+TG-2 P3: AC-2 fixed the false "Ingest stream left flowing" comment at showQuizTrigger index.ts:1102 but left the identical false line on the micro-poll model at follow-385.test.ts:211+:225 (grep packages/ = 4 hits, :128/:144 favorites TRUE leave, :211/:225 micro-poll FALSE fix-or-delete); with REAL-4 landed all 3 modeled re-implementations in follow-385.test.ts are superseded self-injecting debt → delete redundant; (3) TG-1 P2: opted-out REAL-4 negative assertion (follow-409.test.ts:219 wait 5001ms → hasMicroPollEvent===false :239) lacks a flush positive-control (no ingestCalls.length>0 like the opted-in :302) → latent false-green if flush harness regresses → add positive control; (4) TG-3 P3 optional: export BATCH_INTERVAL_MS=5000 (index.ts:198) so follow-409.test.ts:219/296 + follow-389.test.ts:295/361 stop hardcoding 5001+comment. sdk-engineer P2 1.5h promoted_to_queue false. NOTE RETRO-128 = IN-ORDER retro for PR #367 (FOLLOW-409, sdk test + comment/JSDoc only, +328/-3 across follow-409.test.ts NEW + adapt.ts + index.ts, merged 2026-06-26 16:09 UTC commit 30d1e9f). Wiring Audit clean BOTH checks (only new file = Vitest entrypoint follow-409.test.ts; no new export/event/column; profiling_opt_out producer+consumer + quiz.event micro_poll producer pre-wired). FOLLOW-409 traced END-TO-END vs RETRO-116 §4c TG-1 / §4d DG-1 / §4a LG-1: TG-1 (the load-bearing residual = micro-poll onAnswer real-handler test) GENUINELY CLOSED — REAL-4 drives _initForTest → 90s timer → renderMicroPoll → real shadow-DOM click → real onAnswer index.ts:1236 → guard :1246; mock sets micro_polls_enabled:true (the field FOLLOW-389 mock disabled, why its REAL set couldn't reach this guard); opted-out asserts intent absent + no quiz.event micro_poll in batch, opted-in asserts signal_count++ + event present; fails if guard deleted; the §H.9 SDK-guard trio (showQuizTrigger REAL-3 + favorites REAL-2 + micro-poll REAL-4) is now fully real-handler-covered. BUT DG-1 + LG-1 BOTH MOVED ONE HOP AGAIN inside the closing PR: DG-1 closed showQuizTrigger:1102 production comment but left follow-385.test.ts:211/:225 micro-poll twins; LG-1 closed the JSDoc but left adapt.ts:212-213 inline contradiction. Three-site guard now symmetrically TESTED (REAL-2/3/4) + symmetrically documented in PRODUCTION code, NOT yet symmetrically documented end-to-end (test-file + inline twins survive) → FOLLOW-414. NO rule promoted: Pattern A "doc-correction fixes flagged string, leaves identical claim on sibling surface" gains 2 MORE instances here (doubly damning — inside the closing PR + AC-2 explicitly demanded a repo-wide grep that was not run) BUT both are SAME-STRING/SAME-§H.9-lineage moved-hops of RETRO-116's own DG-1/LG-1, NOT fresh independent-context sightings → independent count stays 2 (RETRO-124 occ1 + RETRO-116 occ2), HOLD per anti-count-inflation (RETRO-122/125/126), RETRO-116 §6 "promote on NEXT independent sighting" NOT triggered; META-FLAG to human: explicit-AC-grep-still-failed evidence is strong enough that human may elect to promote now, candidate rule "a correction spawned from a retro-flagged string MUST grep it repo-wide + fix/justify every occurrence + cite the hit-count in the PR." Pattern B (negative-assertion test lacks positive-control of the producing harness → false-green) count 1 banked, watch-item, kin to RETRO-095/122 served=base-logged-green family. PM: FOLLOW-409 DONE for its primary charter (TG leg closes RETRO-116's load-bearing residual), FOLLOW-414 is a fresh P2 doc/test-hygiene residual NOT a re-open; §H.9 epic open only on FOLLOW-388 (batch, depends_on FOLLOW-101) + FOLLOW-414 (doc). PM ACTION: mark FOLLOW-409 DONE in QUEUE.md (retro-analyst is QUEUE-read-only per role guardrail). 413 = RETRO-127 / PR #366 / FOLLOW-410: convert the bare-ordinal migration citations in apps/control-plane/src/app/api/adapt/route.ts (:938, :1349) + packages/shared/src/directives.ts (:137) to full-unique-filename form (migration 0018_adaptation_decisions_page_context.sql), matching the route.ts:436 exemplar. FOLLOW-410 corrected the citation VALUE (0017→0018) but kept the AMBIGUOUS bare-ordinal STYLE — the ROOT CAUSE of the original drift: the PG (packages/db/migrations/) + CH (infra/clickhouse/migrations/) trees COLLIDE on ordinals (0018=app_config PG vs adaptation_decisions_page_context CH; 0017=demo_overrides PG vs follow371_holdout_contamination CH; 0019=conversion_labels PG vs adaptation_decisions_page_context_source CH) so a bare ordinal is unverifiable. OPERATIONALIZES the RETRO-126 §6 Rule-Y broadening (which added "migration-number cited as fact" to Rule Y, using THIS ticket's RETRO-115 "0017"-vs-"0018" instance as broadened-count-1 evidence). + optional LG-1: GET now uses `satisfies AdaptationDirectives & { tier: number }` on all 3 returns (:792/:823/:890) while POST keeps explicit annotation `const response: AdaptationDirectives` (:1329) — cosmetic same-file idiom split PR #366 widened; align or note. backend-engineer P3 1h promoted_to_queue false; cross-ref FOLLOW-404 (prod-apply, not-dup) + FOLLOW-412 (RETRO-126 §E.7 line-728 sibling Rule-Y residual, disjoint surface, not-dup) + FOLLOW-390 (GET liveness). NOTE RETRO-127 = IN-ORDER retro for PR #366 (FOLLOW-410 comment+type hygiene only, +7/-7 across route.ts + directives.ts, merged 2026-06-26 15:24 UTC commit 366223a). RETRO-126 was written CONCURRENTLY for a DIFFERENT ticket (FOLLOW-398/PR #365, merged 15:09 UTC) so this is correctly RETRO-127 (brief was right). Wiring Audit clean BOTH checks (no new export/event/column; satisfies adds no symbol; page_context producer=POST + consumer=SDK/CH wired since RETRO-115). FOLLOW-410 traced END-TO-END vs RETRO-115 §4d DG-1 + §4b CB-1: VALUE leg CLOSED (grep "migration 0017" over apps/+packages/ = 0 hits for the rename; 3 sites now "0018"; dist:110 also 0018 but dist/ gitignored so no committed stale artifact) — gap MOVED ONE HOP to citation STYLE → FOLLOW-413. CB-1 satisfies leg CLOSED with over-delivery (PR converted the main GET return from explicit `:` annotation TO satisfies too — brief mis-stated it "had satisfies"; all 3 GET AdaptationDirectives-shaped returns now satisfies-typed, error-envelope returns correctly excluded). Optional TG-1 (per-path shape assertion) NOT delivered (was optional) — banked, tsc is sole guard, not re-filed. NO new rule + NO re-amendment: DG-1 is a CONFIRMING instance of the Rule Y RETRO-126 broadened minutes earlier (migration-number sub-shape already in scope); re-promoting = count-inflation (RETRO-122 discipline). LG-1 idiom-split count 1 watch-item. PM: FOLLOW-410 DONE for delivered ACs, FOLLOW-413 is a fresh P3 residual not a re-open. PM ACTION: mark FOLLOW-410 DONE in QUEUE.md (retro-analyst is QUEUE-read-only per role guardrail). 412 = RETRO-126 / PR #365 / FOLLOW-398: correct the TWO in-place imprecisions the FOLLOW-398 fix introduced into the §E.7 line-728 confidence-gating bullet — (a) "adapt-floor returns []" personifies a const-only module (adapt-floor.ts has NO function; the array-dropping gate is `if (aboveFloor) applyDirectives` at index.ts:720-724) = Rule-Y broadened-sub-shape; (b) the bullet omits the `|| signal_count >= 2` OR-branch (real gate confidence>=0.5 || signal_count>=2, index.ts:720-722) so "below this threshold no mutation" overstates a confidence-only gate = DOC twin of FOLLOW-399's TEST gap. Scoped to line-728 bullet ONLY (the §E.7 ladder blockquote :2406-2412 + adapt-floor.ts JSDoc are already accurate). sdk-engineer P3 0.5h promoted_to_queue false; cross-ref FOLLOW-399. NON-blocking optional: AUDIT-2026-06-19.md:164 still names the removed const but is accurate as-of-audit (const removed only by PR #340/FOLLOW-375 4635c3d 2026-06-23, 4 days after the audit) + frozen → defensible non-change, no AC. NOTE RETRO-126 = IN-ORDER retro for PR #365 (FOLLOW-398 doc/JSDoc/test-string-only, merged 2026-06-26 15:09 UTC commit 667355b, +4 substantive lines/3 files + a 41-line lessons.md learning-hook append). Wiring Audit clean BOTH checks (no new symbol/event/column; the two adapt-floor consts pre-existing & wired index.ts:87/720-724/1560; follow-343.test.ts Vitest entrypoint). FOLLOW-398 traced END-TO-END vs RETRO-119 §4d DG-1: SIDEBAR_SHOW_THRESHOLD was a REAL const (added ac8893b/TICKET-037, used index.ts:660) REMOVED by PR #340/FOLLOW-375 (4635c3d 2026-06-23) WITHOUT propagating to its 4 doc/JSDoc/test citations = Operating-Principle-2 propagation violation at #340, then AMPLIFIED by FOLLOW-354/PR #358 into 2 new authoritative sites; PR #365 cleared all 4 (§E.7:728 bullet, §E.7:2409 ladder rung now corrective, adapt-floor.ts:25 JSDoc, follow-343.test.ts:207 title) — current main `grep -c SIDEBAR_SHOW_THRESHOLD index.ts`=0. CLOSED end-to-end (a real closure, NOT a hop-shuffle to another file) with ONE in-place P3 residual → FOLLOW-412. The 0.5-floor/0.6-gate asymmetry is now consistently documented in the 2 authoritative LIVE locations (adapt-floor.ts JSDoc + §E.7 ladder); only the line-728 bullet carries residual imprecisions. RULE Y AMENDED this retro (scope-broadened, NO new letter): from "a NAMED test/file cited as proof a guard RUNS IN CI" → "any named symbol / file / module / migration-number / schema-column cited as fact — it must exist and perform/contain the cited behavior." Evidence ≥2 PRIOR retros + this: RETRO-115 §4d DG-1/FOLLOW-410 ("0017" vs "0018" migration-number citation, prior, explicitly recommended this amendment) + RETRO-119 §6/FOLLOW-398 (SIDEBAR_SHOW_THRESHOLD nonexistent-const citation, prior, pre-registered the 2nd-sighting trigger) + RETRO-126 §4d DG-1 ("adapt-floor returns []" named-module behavior citation, 3rd confirming). Threshold firmly met + RETRO-119 trigger exceeded; count-inflation discipline (RETRO-122) honored (confirming instance of an EXISTING rule, amendment grounded in 2 prior retros that independently recommended it — NOT a new letter). 411 = RETRO-125 / PR #364 / FOLLOW-407: negative-control attestation for the CONSENT gitleaks exemption (twin of FOLLOW-406, which is route.ts-only and now UNDER-SCOPED) — add a dummy 40-char CF-token-shaped secret to the consent dir, confirm gitleaks REDs (detection restored), remove, record; PR #364 proved only FP-gone (gitleaks green) not detection-restored, same gap RETRO-123 flagged for route.ts → FOLLOW-406; Rule V MANDATES the negative control; execute JOINTLY with FOLLOW-406 as one generalized per-surface pass over both narrowed secret-handling surfaces (route.ts + consent). + CB-1 disambiguate the REDUNDANT suppression: lib.ts:46 already carries inline `// gitleaks:allow` and the 64-char literal value appears ONLY there (route.ts:270/route.test.ts:174 reference the SYMBOL not the value) → the new regexes entry .gitleaks.toml:179 may be dead config from day one; remove it, confirm still-green via inline allow, then delete-or-justify. + DG-1 add bidirectional maintenance link binding the 38-char substring .gitleaks.toml:179 ↔ CANONICAL_CONSENT_TEXT_HASH lib.ts:45-46 (consent-text/hash rotation silently staleness-rots the allowlist). §4a positional caveat: 38-char prefix covers only the LEFTMOST 40-char window (verified: window [0] of 25), fine for a bare literal, fragile to a leading word-char neighbor. devops+backend P2 1.5h promoted_to_queue false; cross-ref FOLLOW-406 (route.ts twin, recommend merge into one job). NOTE RETRO-125 = IN-ORDER retro for PR #364 (config-only .gitleaks.toml, merged 2026-06-26 14:48 UTC commit f7e178d), 2nd LIVE Rule V application (1st = FOLLOW-396 route.ts). Wiring Audit clean (config-only, no source symbols). .gitleaks.toml now in GOOD state — Rule-V verif #1 EMPTY at HEAD, NO secret-handling-SOURCE-file paths exemptions remain (both route.ts FOLLOW-396 + consent FOLLOW-407 narrowed); remaining cloudflare paths entries all legitimate Pattern-G doc/fixture/test/agent-lesson (FOLLOW-083, out of Rule V scope) → no further paths→regexes conversions warranted. FOLLOW-407 traced END-TO-END: removal leg CLOSED (file-wide paths deleted, consent dir w/ HMAC+IP-enc keys re-scanned) + regexes leg CLOSED (suppresses leftmost-window FP) + comment leg CLOSED (RETRO-123 §4d DG-2 copy-paste route.ts mislabel fixed) BUT detection-restored leg = MOVED-HOP residual → FOLLOW-411. NO rule promoted: the "Rule-V remediation proves FP-gone not detection-restored" pattern is count 2 (RETRO-123 route.ts/FOLLOW-406 + RETRO-125 consent) BUT Rule V's OWN TEXT already mandates the negative control → COMPLIANCE gap w/ existing rule, NOT a missing rule (a new rule would duplicate Rule V); remediation = the negative-control follow-up + a Rule-V execution-discipline note that remediations land WITH their negative control in-PR. CB-1 belt-and-suspenders (inline allow + regexes both cover one literal) count 1, watch-item. Anti-count-inflation discipline (RETRO-122) honored. 410 = RETRO-115 / PR #354 / FOLLOW-357-356: correct the three "migration 0017" provenance citations to "migration 0018" (route.ts:938, route.ts:1349, packages/shared/src/directives.ts:137 + dist twin :110 — the tier→page_context rename is migration 0018_adaptation_decisions_page_context.sql; 0017 is the UNRELATED follow371 holdout-contamination migration; MASTER_DESIGN §E.7 in the same PR correctly says 0018 → internal renumber-drift; confirming instance of Rule Y citation-accuracy) + retype the two UNTYPED GET /api/adapt early-return bodies (opt-out route.ts:781-793, consent-skip :813-825) to AdaptationDirectives & { tier: number } matching the main GET path :879 — PR #354 DELETED their `satisfies AdaptationDirectives` guard to admit the GET-only `tier` field (which left AdaptationDirectives), dropping compile-time contract checking; Rule S asymmetry (3 siblings, 1 typed via intersection, 2 untyped); backend-engineer P2 1.5h promoted_to_queue false; cross-ref FOLLOW-390 (GET liveness owns dead-or-alive call, this is type/doc hygiene only) + FOLLOW-404 (0018/0019 prod-apply, not-duplicate). NOTE RETRO-115 = OUT-OF-ORDER back-fill (PR #354 merged 2026-06-25 20:56 UTC, appended after RETRO-116 at file END); CLOSES the LAST 114/115/116 back-fill gap. Wiring Audit clean (rename only; page_context producer=POST route + consumer=SDK parse/CH INSERT wired; CH column has NO in-repo SELECT reader but that's PRE-EXISTING write-only state, tier was unread too — not a finding; SDK page_context field parsed-not-read = intentional Rule-H superset). FOLLOW-358 (GET/POST page_context divergence this PR deferred) traced END-TO-END as genuinely CLOSED downstream by RETRO-118/migration 0019 page_context_source discriminator — NOT a moved-hop gap. NO rule promoted: DG-1 citation-drift is governed by existing Rule Y; strict ≤113-prior-retro count for this back-fill is <2 (RETRO-119 SIDEBAR_SHOW_THRESHOLD is the 2nd confirming instance but POST-DATES this merge) → human-owned RECOMMENDATION to consider a Rule Y SCOPE-BROADENING amendment (extend from "CI-guard test-header" to "any provenance citation: migration number / constant home-file / schema column"); CB-1 satisfies-deletion sub-shape count 1, Rule S/Rule T spirit, watch-item banked. 409 = RETRO-116 / PR #355 / FOLLOW-389: real-handler test for the micro-poll onAnswer §H.9 guard (index.ts:1243) + fix the surviving "Ingest stream left flowing" comment twin at showQuizTrigger (index.ts:1102) + correct the adapt.ts:187 "reachable by real SDK traffic" JSDoc overstatement. FOLLOW-389 closed RETRO-109 ADDENDUM HW-1/TG-1/DG-1 only ⅔: TG-1 delivered REAL-3 (showQuizTrigger) + REAL-2 (favorites) but NOT the micro-poll guard — buildMockFetch returns micro_polls_enabled:false so the path is never driven; guard covered only by modeled modeledOnAnswer (follow-385.test.ts:220). DG-1 fixed the micro-poll comment twin but left the IDENTICAL false line at showQuizTrigger:1102 (quiz.event completed push is downstream of :1103 return → suppressed, NOT left flowing; favorites :1431 is the only TRUE copy, push precedes guard). HW-1 producer branch unreachable in normal flow (Guard 1 :1103 blocks opted-out upstream of :1142 call site) → defense-in-depth only, JSDoc overstates reachability. sdk-engineer P2 2h promoted_to_queue false. NOTE RETRO-116 = OUT-OF-ORDER back-fill (PR #355 merged 2026-06-25, appended after RETRO-124); §H.9 epic still NOT done — FOLLOW-388 (batch, depends_on FOLLOW-101) + FOLLOW-409 (micro-poll TG) remain. NO rule promoted: Pattern A "doc-correction fixes retro-flagged string, leaves identical claim on sibling surface" now count 2 total but only 1 PRIOR retro (RETRO-124 banked as occurrence 1) → HOLD, pre-authorize 3rd-sighting promotion per RETRO-123 ≥2-prior precedent; Pattern B micro-poll TG orphan stays inside the single §H.9 epic, independent-context count 1, confirming Rule L not amending. 408 = RETRO-124 / PR #363 / FOLLOW-403: reconcile the two intra-doc residuals FOLLOW-403 left in docs/runbooks/clickhouse-migrations.md — (a) intro sentence :72-73 still frames the `bash migrate.sh` block as a single multi-statement-FILE applier, now contradicting the corrected :76 "Apply ALL pending migrations idempotently" caption (DG-2 caption fixed, intro-sentence twin survived — gap moved one hop); (b) References header :3-4 stale (body now cites FOLLOW-402 twice + doc authored by FOLLOW-403, neither listed, DG-3); data-engineer P3 1h, promoted_to_queue false. NOTE RETRO-124 = FOLLOW-403 doc-only PR #363, RETRO-121 §4d DG-1/DG-2 CLOSED on the runbook axis (CI-claim scoped to the 0019/page_context_source boundary + reconciled with the Extending section; migrate.sh caption corrected; FOLLOW-402 cross-link added) — but TWO sibling-surface residuals: (1) the IDENTICAL "This script makes CI catch that class of incident for future migrations" overstatement survives in migration-contract-test.sh:11-12 (the source file the runbook documents) → SHARPENS FOLLOW-402 (it edits that script + the header becomes accurate once the test generalizes; correct it in that PR); (2) FOLLOW-402 now also carries a doc-update-BACK obligation on clickhouse-migrations.md:123-127/:132-133 — the "does NOT generically detect / wait for FOLLOW-402 / Once FOLLOW-402 lands" lines become FALSE the moment FOLLOW-402 merges. NO rule promoted RETRO-124: the "doc-correction fixes the retro-quoted string but leaves an identical claim on a sibling surface" pattern is count 1 (kin to RETRO-123's config-domain "second live instance" but distinct domain, not banked; RETRO-122 anti-count-inflation discipline honored); watch-item = "a correction spawned from a retro-quoted string MUST grep that string repo-wide and fix every surface." 407 = RETRO-123 / PR #362 / FOLLOW-396: apply newly-promoted Rule V to its 2nd LIVE instance — narrow the FOLLOW-374 consent platform-registration file-wide gitleaks paths exemption (.gitleaks.toml:172) to token-scoped regexes matching the 64-char CANONICAL_CONSENT_TEXT_HASH; identical bad shape RETRO-118 flagged for route.ts + PR #362 fixed, still live for consent; + fix copy-paste comment :171 "keys in route.ts" mislabeling the file it guards; backend/devops P2 1h. 406 = RETRO-123 / PR #362 / FOLLOW-396: negative-control attestation that gitleaks still CATCHES a real secret in adapt/route.ts after the paths deletion — PR proved only "CI green" (FP gone) not detection-restored (AC-2 dummy-token true-positive not evidenced); add dummy high-entropy token → confirm RED → remove → record; devops P3 1h, cross-ref FOLLOW-407. NOTE: RETRO-123 PROMOTED Rule V (gitleaks self-inflicted-FP allowlist hygiene: token-scoped regexes/stopwords not file-scoped paths on secret-handling files; strip the superseded paths entry when a token-scoped one covers the trigger) — evidence RETRO-118 §6 + RETRO-121 §6, ≥2 prior retros, as RETRO-121 pre-authorized "promote on the NEXT (3rd) sighting." FOLLOW-396 itself = RETRO-118 §4d DG-1 CLOSED on the removal leg (file-wide route.ts paths exemption deleted, route.ts re-scanned), AC-2 verification residual → FOLLOW-406. 405 = RETRO-122 / PR #361 / FOLLOW-397: gate the SEED_VARIANTS-order ↔ playbook variants.en-index CROSS-PACKAGE positional contract — FOLLOW-397 derived VARIANT_INDEX from SEED_VARIANTS (genuinely closed RETRO-117 LG-1 third-list + RETRO-095 TG-3 fallback test) but converted an explicit consumer literal into an IMPLICIT cross-package order coupling: VARIANT_INDEX (control-plane, derived from SEED_VARIANTS order) indexes variants.en[] (SDK package, types.ts:27); nothing binds their order/length. Stub AC-3 (4th arm w/o copy slot fails CI) only PARTIALLY met — delivered test asserts VARIANT_INDEX self-consistency, NOT in-range vs real playbook copy arrays; a v3 added to SoT → variants.en[3] undefined → silently serves base, CI green; a reorder → control served wrong copy. Latent today, gap moved one hop from FOLLOW-397. + doc the served=base/logged=raw stray-arm contract (AC-2 "pin the contract" left implicit) + route.ts:255 JSDoc 4th-literal twin. Confirming Rule K.1/Rule S, count stays 1 NO rule; backend-engineer P2 2h, promoted_to_queue false. 404 = RETRO-121 / PR #360 / FOLLOW-394: one-time prod-state attestation that 0019 page_context_source is live in prod CH (DESCRIBE TABLE + SELECT DISTINCT + writer DDL grant, RETRO-076 caveat) — closes the RETRO-118 §4a LG-1 prod-verification leg the FOLLOW-394 runbook documented-but-did-not-prove; root incident ESC-031; devops+data-engineer P2 1h; cross-ref FOLLOW-308 not-duplicate. 403 = RETRO-121 / PR #360 / FOLLOW-394: correct clickhouse-migrations.md runbook — scope the overstated "catches any future PR" claim to the 0019/page_context_source boundary (DG-1, contradicted by its own Extending section) + fix the migrate.sh "single migration file" mislabel (applies ALL idempotently, DG-2); data-engineer P2 1h. 402 = RETRO-121 / PR #360 / FOLLOW-394: generalize migration-contract-test.sh — the test pins ONE column (page_context_source/0019); a FUTURE new INSERT column re-opens the fail-CLOSED hazard (LG-1/CB-1) since it PASSES unchanged + relies on a manual Extending step; derive/lint the asserted column list from logDecisionAsync's real INSERT + fail CI generically + fix DROP-on-failure non-idempotency (no trap EXIT, leftover DB poisons next LOCAL run); data-engineer P2 3h, cross-ref FOLLOW-308 not-duplicate. NOTE: FOLLOW-396 (RETRO-118, OPEN) SHARPENED by PR #360 — its token-scoped regexes entry .gitleaks.toml:185 now supersedes the file-wide route.ts paths allowlist :177, so FOLLOW-396 can safely DELETE line 177 (Rule-U strip-superseded). 401 = RETRO-120 / PR #359 / FOLLOW-362: bandit arm locale-scoping vs shared-control + non-en reward-leg test; backend-engineer P3 3h. 400 = RETRO-120 / PR #359 / FOLLOW-362: bind FOLLOW-362 non-en suppression removal to variants.pl/es population (FOLLOW-031) + guard test + MASTER_DESIGN §E.3/E.7 decision doc; backend-engineer P2 2h, depends_on FOLLOW-031. 399 = RETRO-119 / PR #358 / FOLLOW-354: cover the floor's signal_count>=2 OR-branch on the DESCRIPTION axis — FOLLOW-354's 6 tests exercise only the confidence branch; confidence<0.5 + signal_count>=2 → /adapt/description SHOULD fetch is untested (RETRO-091 LG-2 / FOLLOW-355 underbelly, zero coverage on either axis) + fix AC-1 "signal_count=0" comment (real cold-start is 1 via device prior, index.ts:869); sdk-engineer P3 1h, depends_on FOLLOW-355. 398 = RETRO-119 / PR #358 / FOLLOW-354: correct the SIDEBAR_SHOW_THRESHOLD rung of the gating-ladder note — the constant is cited in MASTER_DESIGN.md:2409 + adapt-floor.ts:25 as living in index.ts but DOES NOT EXIST there (grep finds only this PR's strings + a test-desc string + prose docs); SDK investor sidebar is admin-only/no-op (index.ts:741,948-950); Rule Y violation, confirming instance NO new rule; also fix DG-2 boundary wording (route.ts:280 returns [] at confidence<=0.6); sdk-engineer P2 1h. 397 = RETRO-117 / PR #356 / FOLLOW-361: derive VARIANT_INDEX (route.ts:241) from the now-exported SEED_VARIANTS so the consumer-side variant list cannot diverge from the SoT the two seeders now share, + add the RETRO-095 TG-3 stray-variant fallback test FOLLOW-361 was assigned but did not deliver (a non-{control,v1,v2} sampled arm hits VARIANT_INDEX `?? 0` → control copy served while logged as the raw arm). FOLLOW-361 unified the 2 PRODUCER lists (bandit-seed eager + bandit-query lazy onto SEED_VARIANTS) but left this 3rd CONSUMER literal — ⅔ done; latent today (all 3 agree on control/v1/v2), bites when a 4th arm is added; confirming Rule K.1/Rule S, count 1 no rule; backend-engineer P2 2h. [CLOSED by PR #361 / RETRO-122 — primary AC (LG-1 third-list + TG-3 fallback test + DG-1 QUEUE annotation) done end-to-end; AC-3 SoT-growth guard tail carried to FOLLOW-405.] 394/395/396 = RETRO-118 / PR #357 / FOLLOW-358 — see above: 394 P1 migration-0019 prod-apply + fail-CLOSED ordering guard + INSERT-rejection contract test; 395 P3 realize the page_context_source discriminator consumer (HW-1); 396 P2 narrow the gitleaks route.ts allowlist (DG-1). 393 = RETRO-114 / PR #353 / FOLLOW-342: pre-delegation gap re-verification for audit/backlog-derived tickets — FOLLOW-342 was delegated for variant-indexing work PR #327 (66054d6) already shipped 2026-06-19 (~2h after AUDIT-2026-06-19 F-03 was written; stale 6 days at delegation); PR #353 added exactly ONE fallback test + zero route.ts change; worker burned reading 1279 lines before finding the no-op. Add a delegation-time git-log/-S gate for AUDIT-*/aged-stub tickets + residual-only re-scope path; Rule P (CONVENTIONS_PATCH:774) is the proposal-time complement, this is its delegation-time analogue — count 1 of the stale-finding-delegation shape, NO new rule, recommend a Rule P AMENDMENT to the human on a 2nd occurrence; pm-orchestrator P2 2h. Also carries PROC-2 process note: worker wrote status:DONE to PM-exclusive QUEUE.md before merge — 1st occurrence, no rule. 390 = RETRO-111 / PR #350 / FOLLOW-359: decide GET /api/adapt surface liveness — the added `variant` response field has NO in-repo consumer since the SDK calls /api/adapt via POST only, GET is the legacy surface; either document GET dead/external-only + retire the RETRO-095 "GET reward unattributable" concern, or add a GET→feedback contract test if a live integrator exists; backend-engineer P2 2h. 391 = RETRO-112 / PR #351 / FOLLOW-363: doc the dwell-vs-view-rate switch-direction asymmetry in the classifyFromProbabilities 13-site inventory + optional FREE-CLASSIFY regression test; sdk-engineer P3 1h. 392 = RETRO-113 / PR #352 / FOLLOW-341: OPERATOR ACTION — seed PROD archetype_embeddings (post-migrate-seed.yml is dev-config-only + soft-skips; prod stays NULL → affinityScore runs djb2 fallback → §F cosine INACTIVE in prod, same trap as RETRO-076/FOLLOW-307) + assert 18 rows non-null + cross-ref FOLLOW-308 don't-duplicate; gates FOLLOW-342's "real cosine ordering" precondition in effect though it is code-unblocked; devops+ml-engineer P1 2h.) --> / PR #360 / FOLLOW-394: one-time prod-state attestation that 0019 page_context_source is live in prod CH (DESCRIBE TABLE + SELECT DISTINCT + writer DDL grant, RETRO-076 caveat) — closes the RETRO-118 §4a LG-1 prod-verification leg the FOLLOW-394 runbook documented-but-did-not-prove; root incident ESC-031; devops+data-engineer P2 1h; cross-ref FOLLOW-308 not-duplicate. 403 = RETRO-121 / PR #360 / FOLLOW-394: correct clickhouse-migrations.md runbook — scope the overstated "catches any future PR" claim to the 0019/page_context_source boundary (DG-1, contradicted by its own Extending section) + fix the migrate.sh "single migration file" mislabel (applies ALL idempotently, DG-2); data-engineer P2 1h. 402 = RETRO-121 / PR #360 / FOLLOW-394: generalize migration-contract-test.sh — the test pins ONE column (page_context_source/0019); a FUTURE new INSERT column re-opens the fail-CLOSED hazard (LG-1/CB-1) since it PASSES unchanged + relies on a manual Extending step; derive/lint the asserted column list from logDecisionAsync's real INSERT + fail CI generically + fix DROP-on-failure non-idempotency (no trap EXIT, leftover DB poisons next LOCAL run); data-engineer P2 3h, cross-ref FOLLOW-308 not-duplicate. NOTE: FOLLOW-396 (RETRO-118, OPEN) SHARPENED by PR #360 — its token-scoped regexes entry .gitleaks.toml:185 now supersedes the file-wide route.ts paths allowlist :177, so FOLLOW-396 can safely DELETE line 177 (Rule-U strip-superseded). 401 = RETRO-120 / PR #359 / FOLLOW-362: bandit arm locale-scoping vs shared-control + non-en reward-leg test; backend-engineer P3 3h. 400 = RETRO-120 / PR #359 / FOLLOW-362: bind FOLLOW-362 non-en suppression removal to variants.pl/es population (FOLLOW-031) + guard test + MASTER_DESIGN §E.3/E.7 decision doc; backend-engineer P2 2h, depends_on FOLLOW-031. 399 = RETRO-119 / PR #358 / FOLLOW-354: cover the floor's signal_count>=2 OR-branch on the DESCRIPTION axis — FOLLOW-354's 6 tests exercise only the confidence branch; confidence<0.5 + signal_count>=2 → /adapt/description SHOULD fetch is untested (RETRO-091 LG-2 / FOLLOW-355 underbelly, zero coverage on either axis) + fix AC-1 "signal_count=0" comment (real cold-start is 1 via device prior, index.ts:869); sdk-engineer P3 1h, depends_on FOLLOW-355. 398 = RETRO-119 / PR #358 / FOLLOW-354: correct the SIDEBAR_SHOW_THRESHOLD rung of the gating-ladder note — the constant is cited in MASTER_DESIGN.md:2409 + adapt-floor.ts:25 as living in index.ts but DOES NOT EXIST there (grep finds only this PR's strings + a test-desc string + prose docs); SDK investor sidebar is admin-only/no-op (index.ts:741,948-950); Rule Y violation, confirming instance NO new rule; also fix DG-2 boundary wording (route.ts:280 returns [] at confidence<=0.6); sdk-engineer P2 1h. 397 = RETRO-117 / PR #356 / FOLLOW-361: derive VARIANT_INDEX (route.ts:241) from the now-exported SEED_VARIANTS so the consumer-side variant list cannot diverge from the SoT the two seeders now share, + add the RETRO-095 TG-3 stray-variant fallback test FOLLOW-361 was assigned but did not deliver (a non-{control,v1,v2} sampled arm hits VARIANT_INDEX `?? 0` → control copy served while logged as the raw arm). FOLLOW-361 unified the 2 PRODUCER lists (bandit-seed eager + bandit-query lazy onto SEED_VARIANTS) but left this 3rd CONSUMER literal — ⅔ done; latent today (all 3 agree on control/v1/v2), bites when a 4th arm is added; confirming Rule K.1/Rule S, count 1 no rule; backend-engineer P2 2h. 394/395/396 = RETRO-118 / PR #357 / FOLLOW-358 — see above: 394 P1 migration-0019 prod-apply + fail-CLOSED ordering guard + INSERT-rejection contract test; 395 P3 realize the page_context_source discriminator consumer (HW-1); 396 P2 narrow the gitleaks route.ts allowlist (DG-1). 393 = RETRO-114 / PR #353 / FOLLOW-342: pre-delegation gap re-verification for audit/backlog-derived tickets — FOLLOW-342 was delegated for variant-indexing work PR #327 (66054d6) already shipped 2026-06-19 (~2h after AUDIT-2026-06-19 F-03 was written; stale 6 days at delegation); PR #353 added exactly ONE fallback test + zero route.ts change; worker burned reading 1279 lines before finding the no-op. Add a delegation-time git-log/-S gate for AUDIT-*/aged-stub tickets + residual-only re-scope path; Rule P (CONVENTIONS_PATCH:774) is the proposal-time complement, this is its delegation-time analogue — count 1 of the stale-finding-delegation shape, NO new rule, recommend a Rule P AMENDMENT to the human on a 2nd occurrence; pm-orchestrator P2 2h. Also carries PROC-2 process note: worker wrote status:DONE to PM-exclusive QUEUE.md before merge — 1st occurrence, no rule. 390 = RETRO-111 / PR #350 / FOLLOW-359: decide GET /api/adapt surface liveness — the added `variant` response field has NO in-repo consumer since the SDK calls /api/adapt via POST only, GET is the legacy surface; either document GET dead/external-only + retire the RETRO-095 "GET reward unattributable" concern, or add a GET→feedback contract test if a live integrator exists; backend-engineer P2 2h. 391 = RETRO-112 / PR #351 / FOLLOW-363: doc the dwell-vs-view-rate switch-direction asymmetry in the classifyFromProbabilities 13-site inventory + optional FREE-CLASSIFY regression test; sdk-engineer P3 1h. 392 = RETRO-113 / PR #352 / FOLLOW-341: OPERATOR ACTION — seed PROD archetype_embeddings (post-migrate-seed.yml is dev-config-only + soft-skips; prod stays NULL → affinityScore runs djb2 fallback → §F cosine INACTIVE in prod, same trap as RETRO-076/FOLLOW-307) + assert 18 rows non-null + cross-ref FOLLOW-308 don't-duplicate; gates FOLLOW-342's "real cosine ordering" precondition in effect though it is code-unblocked; devops+ml-engineer P1 2h.) -->
+
+## FOLLOW-416 — Close the surviving §H.9 SDK doc/test residuals: the third-hop "reachable by real SDK traffic" twin in follow-389.test.ts (DG-1), retire the superseded modeled §H.9 re-implementations now that REAL-2/3/4 cover all three guards (TG-1), and dedup the 5001 flush-wait against BATCH_INTERVAL_MS WITHOUT a Rule-I-redding bare export (TG-2)
+
+- **source_retro:** RETRO-130 (§4d DG-1, §4c TG-1, §4c TG-2, §6 Pattern B, §7)
+- **source_ticket:** FOLLOW-414 (PR #369) — closed RETRO-128 DG-1/DG-2/TG-1 end-to-end and correctly
+  skipped AC-4 (Rule I), but the same "reachable by real SDK traffic" overstatement moved one hop a
+  THIRD time into a sibling test header the file-scoped grep never reached, and two chartered legs
+  (TG-2 modeled-test retirement, TG-3 magic-number) were deferred.
+- **recommended_sprint:** next SDK doc/test-hygiene pass
+- **recommended_agent:** sdk-engineer
+- **priority:** P3
+- **estimated_hours:** 2
+- **scope:** `packages/sdk/src/__tests__/follow-389.test.ts`,
+  `packages/sdk/src/__tests__/follow-385.test.ts`, `packages/sdk/src/__tests__/follow-409.test.ts`
+  (and possibly a small internal SoT module under `packages/sdk/src/`). All three legs are sdk/§H.9
+  test-hygiene — folded into one ticket per RETRO-122 anti-inflation (each is P3, same files, same
+  agent).
+  1. **DG-1 (P3) — third-hop doc twin.** `follow-389.test.ts:12` (the REAL-1 docstring header) still
+     reads _"The route gate at …quiz/completion/route.ts:363 is now reachable by real SDK traffic
+     (defense-in-depth, FOLLOW-389 HW-1)."_ The head clause "reachable by real SDK traffic" is the
+     EXACT overstatement RETRO-116 §4a LG-1 flagged and RETRO-128/FOLLOW-414 corrected in `adapt.ts`
+     to _"reachable ONLY if Guard 1 regresses — NOT under normal production traffic."_ Under normal
+     traffic Guard 1 (`index.ts:1103`) short-circuits before `postQuizCompletionPing`, so the
+     opt-out branch is never live-exercised. This is the THIRD consecutive hop of the same claim
+     (adapt.ts JSDoc → adapt.ts inline → follow-389.test.ts:12), surviving because each prior grep
+     was scoped to the single flagged FILE. The qualified-correct sibling at `index.ts:1144`
+     ("…reachable (defense-in-depth alongside Guard 1)") is acceptable and need only stay
+     consistent. Correct the header to the reachable-only-if-Guard-1-regresses form, and gate with a
+     REPO-WIDE grep (per RETRO-130 §6 Pattern A — grep the exact string across `packages/`, not the
+     flagged file alone).
+  2. **TG-1 (P3) — retire superseded modeled re-implementations.** `modeledOnAnswer`
+     (`follow-385.test.ts:220`, `:245`, `:260`) and `modeledFavoritesHandler` (`:136`, `:186`)
+     re-implement the §H.9 guards inline (the self-injecting-test weakness RETRO-109 §4c flagged)
+     and are now fully duplicated by the real-handler REAL-2/3/4 tests in `follow-389.test.ts` +
+     `follow-409.test.ts`. FOLLOW-414's QUEUE title chartered their retirement (RETRO-128 TG-2) but
+     the PR corrected only their comments. Remove the redundant modeled bodies, preserving only any
+     uniquely-valuable structural assertion not covered by a REAL test.
+  3. **TG-2 (P3) — dedup the 5001 flush-wait WITHOUT a bare export.** `follow-409.test.ts:219/:300`
+     and `follow-389.test.ts:295/:361` hardcode `advanceTimersByTimeAsync(5001)` against the
+     unexported `BATCH_INTERVAL_MS = 5_000` (`index.ts:198`). FOLLOW-414 AC-4 correctly skipped
+     exporting it because a test-only-consumed export reds Rule I (`scripts/check-rule-i.sh`) — see
+     RETRO-130 §6 Pattern B. Do NOT export it. Instead route the literal through a
+     production-consumed/internal shared constant or a Rule-I-exempt test seam (or, if not worth it,
+     leave as-is and close this leg as wont-fix with a note).
+- **ac:**
+  - [ ] `grep -rn "reachable by real SDK traffic" packages/` returns 0 hits; the surviving
+        "reachable" claims (`index.ts:1144`, `follow-389.test.ts:12`) each explicitly state
+        defense-in-depth / only-if- Guard-1-regresses / not-normal-traffic, consistent with
+        `adapt.ts:186-193` and `:212-215`. PR body cites the repo-wide grep hit-count (RETRO-130 §6
+        Pattern A discipline).
+  - [ ] The redundant modeled §H.9 re-implementations in `follow-385.test.ts` are removed (or
+        down-scoped to only structural assertions not covered by REAL-2/3/4); the suite still passes
+        and the real-handler trio remains the sole guard coverage.
+  - [ ] The `5001` flush-wait references a single source of truth via a production-consumed/internal
+        constant or a Rule-I-exempt seam — NOT a bare `BATCH_INTERVAL_MS` export (which would red
+        Rule I); OR this leg is explicitly closed wont-fix with a one-line rationale.
+        `pnpm --filter @estalara/sdk typecheck` exit 0; `scripts/check-rule-i.sh` not newly red.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-417 — Close the two robustness residuals FOLLOW-415 introduced into the CH migration-ordering contract test: make boundary detection recognize `RENAME`/`MODIFY COLUMN` (not just `ADD COLUMN`) [LG-1], replace the today-only `>= 17` magic-number floor with a schema-derived bound or a route.ts-pinned literal [LG-2], and disclose both new assumptions in the runbook/header prose [DG-1]
+
+- **source_retro:** RETRO-131 (§4a LG-1, §4a LG-2, §4d DG-1, §5b, §7)
+- **source_ticket:** FOLLOW-415 (PR #370) — hardened the test's boundary detection (reverse
+  ADD-COLUMN walk) and added a column-count floor, genuinely closing RETRO-129 LG-1/LG-2/DG-1 for
+  the common case, but introduced a `RENAME`/`MODIFY COLUMN` verb blind spot and a today-only floor.
+- **recommended_sprint:** next infra/CI-hardening pass
+- **recommended_agent:** data-engineer
+- **priority:** P2
+- **estimated_hours:** 2.5
+- **scope:** `infra/clickhouse/scripts/migration-contract-test.sh` +
+  `docs/runbooks/clickhouse-migrations.md`. FOLLOW-415's hardening relocated, rather than
+  eliminated, the parse-and-heuristic assumptions of the ESC-031 contract guard (RETRO-131 §5d).
+  1. **LG-1 (P2) — `ADD COLUMN`-only boundary walk is blind to `RENAME`/`MODIFY COLUMN`.** The walk
+     (`migration-contract-test.sh:259-274`) computes the set of INSERT columns a migration
+     introduces from `grep -oE 'ADD COLUMN (IF NOT EXISTS )?[a-zA-Z_][a-zA-Z0-9_]*'` only
+     (`:272-273`). But `page_context` — a live INSERT column (`route.ts:469`) — entered via
+     `RENAME COLUMN tier TO page_context` in `0018_adaptation_decisions_page_context.sql`, NOT
+     `ADD COLUMN` (verified: `grep -iE 'ADD COLUMN' 0018*.sql` = 0 hits). It is masked today only
+     because the newer `0019` does `ADD COLUMN page_context_source` and the reverse walk stops at
+     the first match. The moment the newest INSERT-column-introducing migration is a `RENAME` (the
+     exact tier→page_context shape; §E.7 no-Tiers churn makes another such rename plausible), the
+     walk skips it → an OLDER boundary or `exit 0 SKIPPED` (`:276-287`) = false-clean → a
+     rename-introduced unmigrated column sails through the ESC-031 guard. Recognize
+     `RENAME COLUMN … TO <name>` and `MODIFY COLUMN <name>` alongside `ADD COLUMN` when building
+     each migration's introduced-column set.
+  2. **LG-2 (P3) — the `>= 17` floor is a hand-pinned magic number = today's exact count.** The
+     floor (`:207-213`) converts the most-likely truncation (extraction below 17) to loud — good —
+     but (a) re-introduces the manual-maintenance coupling the dynamic extraction claimed to remove
+     (the count instead of the name), and (b) silently re-opens RETRO-129's subset fail-OPEN window
+     the instant the INSERT grows past 17: an extracted 17-of-18 subset passes `>= 17` while the
+     unmigrated 18th column is never tested. Prefer a schema-derived bound — assert the extracted
+     count `<=` `DESCRIBE TABLE adaptation_decisions` column count (the table has ≥ the INSERT's
+     columns) AND `>=` a floor — or at minimum pin the `17` with an inline comment binding it to
+     `route.ts:469` so the bump-coupling is visible.
+  3. **DG-1 (P3) — disclose both new assumptions.** The runbook "Boundary detection guarantee"
+     (`clickhouse-migrations.md:135-138`) and "Column-list extraction guarantee" (`:140-142`) and
+     the script header (`:16-30`) name the two guarantees but omit the RENAME/MODIFY blind spot
+     (LG-1) and the floor-equals-today's-count growth-staleness (LG-2). Add both caveats, OR
+     (preferred) close LG-1/LG-2 so the prose becomes true. Confirming instance of the broadened
+     Rule Y.
+- **ac:**
+  - [ ] Boundary detection recognizes a column introduced by `RENAME COLUMN … TO <name>` or
+        `MODIFY COLUMN <name>` as well as `ADD COLUMN`; a regression fixture where the newest
+        INSERT-column-introducing migration is a `RENAME` selects that migration as the boundary
+        (does NOT false-`SKIP`).
+  - [ ] The column-count check is no longer a bare today-only magic number: it asserts the extracted
+        count against the live `adaptation_decisions` table (`DESCRIBE TABLE`, as an upper bound)
+        and/or pins the floor literal with an inline comment citing `route.ts:469`; a 17-of-N subset
+        extraction on a grown INSERT fails loudly instead of passing.
+  - [ ] The runbook (`clickhouse-migrations.md:135-142`) and script header (`:16-30`) disclose the
+        introduction-verb coverage and the count-mechanism assumptions, OR are updated to describe
+        the hardened behavior once the ACs above land.
+  - [ ] `bash -n infra/clickhouse/scripts/migration-contract-test.sh` exits 0; the CI
+        `clickhouse-smoke` job stays green on the current migration set (boundary still resolves to
+        `0019` today).
+  - [ ] (optional, TG-1, still banked from RETRO-129/131) a minimal meta-check that the script reds
+        for the RIGHT reason on a known-bad fixture (un-migrated extra column AND a
+        RENAME-introduced newest column) — the LG-1 fixture above is the cheaper partial substitute.
+- **depends_on:** []
+- **promoted_to_queue:** false
+- **cross_ref:** FOLLOW-404 (one-time PROD-state attestation that `0019` `page_context_source` is
+  live in prod CH — NOT superseded; the contract test is the CI-axis guard, FOLLOW-404 is the
+  disjoint prod-apply axis, and LG-1 makes it MORE relevant because the RENAME column FOLLOW-404
+  attests is the one this guard is blind to — RETRO-131 §5a). FOLLOW-408 (the two intra-doc
+  residuals in the same runbook — disjoint surface, not duplicated). Rule Y (governs DG-1) + Rule S
+  / Rule W (the verb-set-completeness / RENAME-MODIFY-DROP rules whose spirit LG-1 invokes;
+  promotion held at independent count 1 per RETRO-131 §6).
+
+---
+
+## FOLLOW-418 — Harden the SEED_VARIANTS↔playbook parity gate: assert variant-array element CONTENT (not just length/index) + commit a negative-control proving the gate reds
+
+- **source_retro:** RETRO-132 §4c TG-1 / §4c TG-4 / §6
+- **source_ticket:** FOLLOW-405 (PR #371)
+- **recommended_sprint:** next
+- **recommended_agent:** qa-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** `variant-index.parity.test.ts` (AC-1) asserts
+  `variants.en.length >= SEED_VARIANTS.length` and `0 <= VARIANT_INDEX[v] < length`, but never
+  asserts each indexed element is a NON-EMPTY string. An `en: ['headline','','other']` passes the
+  gate, yet `route.ts:320` serves the empty string at that index because the `?? s.en` fallback does
+  NOT fire on `''` (nullish-coalescing catches only null/undefined) → blank copy for that arm's
+  sessions. Add per-index content assertions; AND add a committed negative-control (a
+  fixture/`it.fails` or a parameterized self-test) proving the gate actually reds when an arm is
+  added to `SEED_VARIANTS` without a matching `variants.en` entry — the PR validated "adding v3 reds
+  CI" only manually (no in-repo proof), unlike Rule O's `--self-test` and Rule V's dummy-token
+  control.
+- **ac:**
+  - [ ] For every `v` in `SEED_VARIANTS`, assert `slot.variants.en[VARIANT_INDEX[v]]` is a string of
+        non-whitespace length ≥ 1 (catches the empty-element-at-valid-index hole).
+  - [ ] Add a committed negative-control demonstrating the gate reds on a synthetic short/holey
+        `variants.en` (e.g. a local fixture playbook + `expect(...).toThrow`/`it.fails`), so "green"
+        proves the gate fires, not merely that steady state is consistent.
+  - [ ] Confirm `route.ts:320` runtime behavior is referenced in a comment near the content
+        assertion (empty-string is NOT caught by `??`).
+- **promoted_to_queue:** false
+
+## FOLLOW-419 — Wire-or-remove `variants.pl` / `variants.es`: variant selection is `en`-only by construction, so the localized variant arrays are a dead type surface (Rule S "every locale" + Rule I dead-type)
+
+- **source_retro:** RETRO-132 §4a LG-2 / §4c TG-2
+- **source_ticket:** FOLLOW-405 (PR #371)
+- **recommended_sprint:** next
+- **recommended_agent:** sdk-engineer
+- **priority:** P3
+- **estimated_hours:** 3
+- **scope:** `SlotDirective.variants` (`packages/sdk/src/core/playbooks/types.ts:31-36`) declares
+  `pl?: string[]` and `es?: string[]`, but `route.ts:319-320` selects locale base via `s.pl`/`s.es`
+  (single strings) and reads variant copy ONLY from `s.variants?.en[variantIndex]` — for a pl/es
+  session the single-string override wins the first `??`, so bandit variant copy is never served
+  outside English. Grep confirms zero `pl:[`/`es:[` inside any `variants` block today, so the fields
+  are currently harmless but invite a future dead, ungated wire. Decide ONE of: (a) localize variant
+  selection (`s.variants?.[locale]?.[idx]`) AND extend the FOLLOW-405 gate to iterate every locale
+  array; OR (b) strip `variants.pl`/`variants.es` from the type so the en-only reality is the
+  contract.
+- **ac:**
+  - [ ] Decision recorded (localize vs strip) with rationale; if strip, `variants.pl`/`variants.es`
+        removed from `types.ts` and no playbook regresses.
+  - [ ] If localize: `route.ts` variant branch reads the locale-matched array with `en` fallback,
+        AND `variant-index.parity.test.ts` iterates `['en','pl','es']` for every slot that carries
+        that locale array (length + in-range + content).
+  - [ ] `pnpm typecheck` + control-plane vitest green.
+- **promoted_to_queue:** false
+
+## FOLLOW-420 — Reconcile the stray-arm served-vs-logged contract so a non-`SEED_VARIANTS` arm cannot contaminate bandit reward attribution
+
+- **source_retro:** RETRO-132 §4a LG-1 / §5b
+- **source_ticket:** FOLLOW-405 (PR #371)
+- **recommended_sprint:** next
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** AC-3's documented contract (`route.ts:291-302`): when
+  `VARIANT_INDEX[variant]===undefined` (an arm not in `SEED_VARIANTS`), the SERVED copy
+  short-circuits to `s.en` (control/base, index 0) but the LOGGED value is the RAW arm string
+  (`'v3'`) written to `param_p_variant`/`adaptation_decisions.variant`. If a misconfigured
+  `ab_bandit_weights` ever seeds such an arm and it reaches the reward loop, the bandit credits a
+  phantom arm with CONTROL-copy performance (Rule K.2 spirit: a decision surface misattributing one
+  arm's impression to another). The parity gate makes this unreachable in steady state, but the
+  served/logged asymmetry is not reconciled. Either coerce the logged variant to a sentinel (e.g.
+  `'unrecognized'`) when `variantIndex===undefined`, or add+test an explicit reward-path guard that
+  refuses to update a non-seeded arm — and document whichever in the AC-3 comment.
+- **ac:**
+  - [ ] When `variantIndex===undefined`, the logged variant is either a non-arm sentinel OR the
+        reward writer provably skips updating a non-`SEED_VARIANTS` arm (test-covered).
+  - [ ] A test drives the stray-arm path and asserts no `updateBanditArm`-equivalent credits a
+        non-seeded arm with the served (control) outcome.
+  - [ ] `route.ts:291-302` comment updated to reflect the reconciled contract (served and logged no
+        longer silently diverge into the reward loop).
+- **promoted_to_queue:** false
+
+## FOLLOW-421 — Add a `src`-vs-`dist` freshness guard for the playbook parity gate (the gate validates SDK `src`; prod `route.ts` loads `dist`)
+
+- **source_retro:** RETRO-132 §4c TG-3 / §5d
+- **source_ticket:** FOLLOW-405 (PR #371)
+- **recommended_sprint:** next
+- **recommended_agent:** devops-engineer
+- **priority:** P2
+- **estimated_hours:** 3
+- **scope:** The parity test imports `@estalara/sdk/playbooks`, which the vitest alias
+  (`apps/control-plane/vitest.config.ts:24-28`) maps to `packages/sdk/src/core/playbooks/index.ts`
+  (SOURCE). Production `route.ts` imports the same specifier, but `packages/sdk/package.json`
+  `./playbooks` export resolves to `./dist/core/playbooks/index.js` (BUILT). Nothing asserts `dist`
+  matches `src` at the moment the gate runs, so a stale/partial SDK build could serve variant copy
+  the gate never validated — same family as Rule M (test-validates-X, prod-runs-Y) and Rule Z
+  (fixture not derived from the prod artifact). Either (a) ensure the parity job runs after a fresh
+  SDK build and assert `dist`==`src` for the playbooks module, or (b) point the parity test at the
+  built artifact in CI, or (c) add a turbo build-freshness check before the control-plane test job.
+- **ac:**
+  - [ ] CI cannot pass the parity gate against a `src` that diverges from the deployed
+        `dist/core/playbooks` (freshness asserted or the gate runs against dist).
+  - [ ] The chosen mechanism is documented next to the vitest alias so the next reader knows the
+        gate's source-of-truth vs prod's.
+  - [ ] Negative test/manual note: a deliberately-stale `dist` is caught by the chosen guard.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-422 — Live producer→prod-table write attestation for `adaptation_decisions` (disambiguate the FOLLOW-404 zero-row read; close the AC-2 write-verification leg)
+
+- **source_retro:** RETRO-133 §4a CLOSURE-1 / §5b / §8
+- **source_ticket:** FOLLOW-404 (PR #372)
+- **recommended_sprint:** next
+- **recommended_agent:** data-engineer (+ devops for prod access)
+- **priority:** P1
+- **estimated_hours:** 2
+- **scope:** FOLLOW-404's attestation confirmed the `page_context_source` column EXISTS in prod
+  (AC-1, `DESCRIBE TABLE`) but `SELECT DISTINCT page_context_source` returned **zero rows** — the
+  `adaptation_decisions` table is entirely empty. The chartered AC-2 ("returns expected values,
+  confirming the producer is writing it post-deploy") is therefore UNMET. A fully empty table is NOT
+  explained by the 80-minute ESC-031 window (after which writes were supposedly restored): it means
+  `logDecisionAsync` has produced zero successful prod writes EVER, OR there is simply no prod adapt
+  traffic. Disambiguate. **If writes are confirmed broken, this is a P0 prod outage of the entire
+  decision-logging + bandit-reward pipeline — escalate to the PM.**
+- **ac:**
+  - [ ] Trigger or observe at least one real adaptation decision against prod (or confirm whether
+        any prod adapt traffic exists in the attestation window).
+  - [ ] `SELECT count() FROM adaptation_decisions` is asserted; if `> 0`,
+        `SELECT DISTINCT page_context_source` returns at least `'legacy'` (or a derived value),
+        proving the producer→prod-table INSERT succeeds end-to-end.
+  - [ ] If `count() == 0` AND prod adapt traffic exists, root-cause the silent INSERT failure
+        (grant? schema? endpoint?) and escalate to the PM as a prod outage.
+  - [ ] The runbook attestation section is updated with the live-write result (replacing the "zero
+        rows, consistent with ESC-031" interpretation with a verified write or a root-caused
+        failure).
+  - [ ] Cross-ref FOLLOW-393 (apply-0019 AC) and FOLLOW-395 (consumer half-wire) — both are
+        unblocked/validatable only once writes are confirmed flowing.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-423 — Document the `system.grants` Code-497 quirk + codify `SHOW GRANTS FOR <user>` as the PRIMARY grant-attestation method in the CH runbook
+
+- **source_retro:** RETRO-133 §4d DG-1
+- **source_ticket:** FOLLOW-404 (PR #372)
+- **recommended_sprint:** next
+- **recommended_agent:** devops-engineer (+ data-engineer)
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** AC-3's PR body records that the Doppler-prd `CLICKHOUSE_USER` IS `ingest_worker`, a
+  restricted user that lacks `SELECT ON system.grants` (Code 497 ACCESS_DENIED), so
+  `SHOW GRANTS FOR ingest_worker` was used as a fallback. The committed runbook section shows only
+  the `SHOW GRANTS` output — it does NOT record WHY `system.grants` is unavailable or codify the
+  method. Because EVERY prod attestation runs AS the restricted writer, the next operator will
+  re-hit Code 497 and re-derive the workaround. Promote the fallback to the documented PRIMARY
+  method.
+- **ac:**
+  - [ ] The CH migrations runbook documents that `SELECT ON system.grants` fails with Code 497
+        ACCESS_DENIED for restricted writer users (e.g. `ingest_worker`) and that
+        `SHOW GRANTS FOR <user>` is the correct primary attestation query.
+  - [ ] The existing "Prod Attestation — migration 0019" section is annotated (or a general
+        "Attesting grants" note added) so the method choice is not re-derived per attestation.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-424 — Reconcile `ingest_worker` grant breadth: prod `INSERT,SELECT ON default.*` vs MASTER_DESIGN `default.events` (least-privilege / security posture)
+
+- **source_retro:** RETRO-133 §4a LG-1 / §5d
+- **source_ticket:** FOLLOW-404 (PR #372)
+- **recommended_sprint:** next
+- **recommended_agent:** devops-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** The attested prod grant is `GRANT SELECT, INSERT ON default.* TO ingest_worker` — every
+  table in `default`, not the minimal write set. `MASTER_DESIGN.md:44` documents the intended scope
+  as `default.events` (which would not even cover `adaptation_decisions` — the wildcard is what
+  silently makes the `logDecisionAsync` write legal). Two-part divergence: (a) security posture — an
+  over-broad writer credential can INSERT/SELECT on ANY `default` table; (b) design-doc drift — the
+  doc never tracked the move to a wildcard. **Security-posture decision: the PM escalates per the
+  autonomy rules before any prod grant change** (narrowing risks breaking ingest if a written table
+  is missed).
+- **ac:**
+  - [ ] Decision recorded (escalated to PM/Piotr): EITHER narrow the prod `ingest_worker` grant to
+        the explicit minimal write set (`events`, `adaptation_decisions`, `intent_events`, plus any
+        other tables the worker writes), OR update `MASTER_DESIGN.md:44` to document the `default.*`
+        wildcard with an explicit rationale.
+  - [ ] If narrowing: the full set of tables `ingest_worker` writes is enumerated (grep the INSERT
+        call sites) so none is dropped; a post-change smoke confirms writes still succeed.
+  - [ ] The doc and the prod grant are made consistent either way.
+- **promoted_to_queue:** false
+
+---
+
+## FOLLOW-426 — Apply the FOLLOW-425 fail-loud pattern to BOTH control-plane Redpanda fire-and-forget publishers (`publishAbAssignmentEvent` + `publishDescriptionRequested`) — they share the EXACT `res.ok`-blind silent-failure FOLLOW-425 just fixed for the ClickHouse sink
+
+- **source_retro:** RETRO-135 §4b CB-1/CB-2 / §4c TG-1 / §5d
+- **source_ticket:** FOLLOW-425 (PR #374)
+- **recommended_sprint:** next
+- **recommended_agent:** backend-engineer
+- **priority:** P1
+- **estimated_hours:** 3
+- **scope:** FOLLOW-425 hardened `logDecisionAsync` (the ClickHouse sink) to fail loud on an
+  HTTP-level rejection, but only **1 of 3** fire-and-forget `fetch` sinks in `apps/control-plane`
+  was fixed. The two Redpanda REST-proxy publishers share the identical blind spot — `fetch`
+  resolves (does NOT reject) on 4xx/5xx, so a `.catch()`-only handler (or a bare `await fetch()`
+  with no `res.ok` check) drops the event SILENTLY on a Redpanda auth / missing-topic / quota
+  rejection (zero log, zero Sentry — the same class as the ESC-031 ClickHouse outage, one backend
+  over):
+  - `apps/control-plane/src/lib/ab-events.ts:72` — `publishAbAssignmentEvent` does a bare
+    `await fetch(url, {…})`, NO `res.ok` check, NO Sentry. Callers
+    `apps/control-plane/src/app/api/adapt/route.ts:1135` / `:1161`
+    (`void publishAbAssignmentEvent({…})`) → a dropped `ab.assignment` event corrupts
+    holdout/variant attribution silently.
+  - `apps/control-plane/src/app/api/adapt/description/route.ts:111` — `publishDescriptionRequested`
+    bare `await fetch`, NO `res.ok` check. Caller `:363`
+    (`void publishDescriptionRequested(event).catch((err) => console.error(…))`) → a `.catch()`-only
+    handler blind to HTTP rejection; a dropped enqueue means the listing silently never gets an
+    adapted description. Converge both onto the decision-api `pushToRedpanda` posture
+    (`apps/decision-api/src/lib/redpanda-producer.ts:102` already checks `response.ok`, returns a
+    structured result, tags Sentry) — replicate the `res.ok` check + Sentry locally (no cross-app
+    import). Preserve the fire-and-forget guarantee (`void`, no re-throw). Reuse the FOLLOW-425 tag
+    taxonomy with `sink:'redpanda'`, `kind:'insert_rejected'|'network'`.
+- **ac:**
+  - [ ] `publishAbAssignmentEvent` checks `res.ok`; on a non-ok HTTP response it `console.error`s +
+        `Sentry.captureException(new Error(...), { tags:{ area:'adapt', sink:'redpanda', kind:'insert_rejected' }, extra:{ status } })`;
+        a network rejection is caught + captured with `kind:'network'`. The function still never
+        throws.
+  - [ ] `publishDescriptionRequested` gets the identical `res.ok` + Sentry treatment
+        (`area:'description'`, `sink:'redpanda'`).
+  - [ ] Per sink, a 3-test failure suite mirroring FOLLOW-425's: (1) non-ok HTTP (e.g. 401 /
+        missing-topic) → `captureException` called once with `kind='insert_rejected'`, caller does
+        not throw; (2) network rejection → `captureException` with `kind='network'`; (3) successful
+        2xx → `captureException` NOT called. (Closes RETRO-135 §4c TG-1 — these sinks currently have
+        ZERO failure tests.)
+  - [ ] (Optional, closes RETRO-135 §4c TG-2 while in the same code) a test driving the
+        `res.text()`-rejection `<unreadable body>` fallback for the CH `logDecisionAsync` capture.
+  - [ ] Prettier + `tsc --noEmit` on touched packages green.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 427 (426 = RETRO-135 / PR #374 / FOLLOW-425 Redpanda fire-and-forget sibling-sink hardening — the 2 control-plane publishers that share the res.ok-blind silent-failure FOLLOW-425 fixed for the CH sink; P1, threshold-2 promoted Rule K.2 fire-and-forget amendment. 425 = field-spawned ClickHouse fail-loud hotfix, no stub, reconciled by RETRO-135 §4d DG-1; 424 = RETRO-133 / PR #372 / FOLLOW-404 ingest_worker grant-breadth reconcile; 423 = system.grants Code-497 quirk runbook doc; 422 = live adaptation_decisions write attestation). RETRO-133 = retro for PR #372 (FOLLOW-404, MERGED 2026-06-26 17:51:00Z, mergeCommit bab4a66; +55/-0, docs/runbooks/clickhouse-migrations.md ONLY — doc-only one-time prod attestation for CH migration 0019 page_context_source). Wiring Audit clean BOTH checks (no new file/export/event/env-var/column/topic/signal; the attested column was added by PR #357/migration 0019, not this PR; the page_context_source consumer half-wire stays under EXISTING FOLLOW-395, NOT re-filed). PRIOR-FOLLOW-UP CLOSURE CHECK (step 7): FOLLOW-404 closes 3 of 4 chartered ACs end-to-end — AC-1 schema-exists CLOSED (DESCRIBE TABLE: page_context_source is col 18/18 LowCardinality DEFAULT 'legacy'), AC-3 grant CLOSED via SHOW GRANTS FOR fallback (INSERT on default.* covers adaptation_decisions), AC-4 runbook CLOSED — BUT AC-2 producer-write leg NOT CLOSED: SELECT DISTINCT returned ZERO ROWS (table fully empty), which the PR reinterprets as "consistent with ESC-031" but a fully-empty table is NOT explained by an 80-min window → logDecisionAsync may have NEVER successfully written to prod adaptation_decisions; gap moved one hop (column-existence-unverified → column-exists-but-no-row-ever-written). PM: FOLLOW-404 DONE for schema/grant/doc scope; DO NOT retire ESC-031/RETRO-118 §4a LG-1 write-verification axis — owned by FOLLOW-422 (P1, escalate as P0 prod outage if writes confirmed broken). Gaps: CLOSURE-1 P1 zero-row write-leg (FOLLOW-422), LG-1 P2 over-broad ingest_worker default.* grant vs MASTER_DESIGN:44 default.events least-privilege + design drift (FOLLOW-424, PM-escalate security), DG-1 P3 system.grants Code-497 quirk + SHOW GRANTS FOR primary-method not in committed runbook (FOLLOW-423). NO rule promoted: 2 fresh patterns at count 1 (zero-row-read-masquerading-as-write-verification; restricted-writer-can't-read-system.grants-method-constraint) + confirming instances of step-7 "gap moved one hop" discipline + Pattern C (code/CI-leg-closed/prod-leg-unverified, RETRO-113/121) — none reaches fresh ≥2 threshold; anti-count-inflation (RETRO-122/125/126/128/129/131/132) honored. PM ACTION: mark FOLLOW-404 DONE in QUEUE.md (retro-analyst is QUEUE-read-only per role guardrail); PRIORITIZE FOLLOW-422 (potential silent prod decision-logging outage — the whole adaptation_decisions + bandit-reward pipeline may be empty in prod); escalate FOLLOW-424 security-posture decision to Piotr. RETRO-132 = retro for PR #371 (FOLLOW-405, MERGED 2026-06-26 17:38:04Z, mergeCommit 0824db1; +126/-5 across variant-index.parity.test.ts +104/-0 [new, 4 tests] + route.ts +22/-5 [AC-3 stray-arm doc + AC-4 JSDoc, COMMENTS ONLY]). No contract value/shape change; a NEW cross-package STRUCTURAL coupling (SEED_VARIANTS↔SlotDirective.variants.en) is now test-enforced on the `en` axis. Wiring Audit clean BOTH checks (only new file is a __tests__ test → suppressed; no new non-test export/event/env-var/column/topic/SDK-signal; getAllPlaybooks/VARIANT_INDEX/SEED_VARIANTS all pre-existing non-test importers). Closure check: FOLLOW-342→397→405 chain CLOSED end-to-end on the `en` axis (producer SEED_VARIANTS → derive VARIANT_INDEX → consume route.ts:307 → gate playbook data) BUT NOT closed on the locale axis (LG-2: route.ts:320 reads only variants.en; variants.pl/es are a dead type surface, zero populated) nor against prod `dist` (TG-3: gate validates src via vitest alias, prod loads dist per sdk package.json exports). Gaps: LG-1 P2 stray-arm served=base/logged=raw reward-attribution contamination (FOLLOW-420), LG-2/TG-2 P3 locale dead-wire (FOLLOW-419), TG-1 P2 length-but-not-content blank-copy hole + TG-4 no committed negative-control (FOLLOW-418), TG-3 P2 src-vs-dist (FOLLOW-421). Rule Y citation CLEAN (types.ts:27 verifiably states "Index 0 mirrors en"). NO rule promoted: 3 fresh patterns at count 1 each (content-vs-length gate hole; src-vs-dist test-alias blindness; missing gate negative-control) + confirming instances of already-promoted Rule S (every-locale, count 1 on test-gate sub-shape) / Rule K.2 (LG-1 spirit); anti-count-inflation (RETRO-122/125/126/128/129/131) honored. PM: FOLLOW-405 DONE for its 4 ACs (parity gate AC-1 + order-pin AC-2 + stray-arm doc AC-3 + JSDoc AC-4); FOLLOW-418/419/420/421 are fresh residuals, NOT re-opens. PM ACTION: mark FOLLOW-405 DONE in QUEUE.md (retro-analyst is QUEUE-read-only per role guardrail) + run the PR's stated negative-control manual check (add 'v3' to SEED_VARIANTS, confirm parity test reds) before closing, since no committed self-test proves the gate fires (FOLLOW-418 AC). -->

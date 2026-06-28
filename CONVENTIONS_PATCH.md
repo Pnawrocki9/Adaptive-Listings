@@ -594,6 +594,54 @@ surface is decision-grade and would silently coerce the rejected body to a plaus
 **Evidence for this amendment:** RETRO-058 §3 (FOLLOW-277), RETRO-070 §3 CHECK-B / §4b CB-1
 (FOLLOW-299), RETRO-072 §3 CHECK-B / §4b CB-1 / §4c TG-2 (FOLLOW-303).
 
+### Rule K.2 amendment (2026-06-28 — RETRO-135 §6 — fire-and-forget HTTP-rejection observability sub-shape)
+
+**Trigger:** Rule K.2's parent framing covers AWAITED read paths that can "fail loud" by returning
+an error status. But a whole class of K.2 surfaces CANNOT throw to a caller: **fire-and-forget
+`fetch` sinks** — analytics writes / event publishes that callers `void` and never await. For these,
+`.catch()` is the developer's instinctive error handler — but `fetch` **resolves** (does not reject)
+on an HTTP 4xx/5xx, so `.catch()` catches ONLY network-layer failures (DNS, connection-refused,
+timeout) and is **completely blind to HTTP-level rejection** (auth Code 516, unknown column, missing
+topic, quota). A bare `await fetch()` with no `res.ok` check has the same hole. The
+configured-but-rejecting store/topic then fails with **zero log, zero Sentry, zero alert** — the
+ESC-031 failure mode. Instances (2 independent backend contexts): **RETRO-118 §4 CB-1** —
+`logDecisionAsync` `.catch`-only `console.error` on the **ClickHouse** HTTP interface (named as the
+mechanism that made the migration-ordering hazard silent; remediated by FOLLOW-425/PR #374); and
+**RETRO-135 §4b CB-1/CB-2** — the SAME shape in two **Redpanda REST-proxy** publishers
+(`publishAbAssignmentEvent` @ `apps/control-plane/src/lib/ab-events.ts:72`,
+`publishDescriptionRequested` @ `apps/control-plane/src/app/api/adapt/description/route.ts:111`).
+The parent rule's verification greps (`catch(() =>`, `.then((r)=>r.json())`) match NEITHER a bare
+`await fetch()` nor a fire-and-forget `.catch()`, so the sub-shape was invisible to K.2's own audit.
+
+**Amendment — a fire-and-forget `fetch` sink (one whose result is `void`ed / never awaited) MUST
+treat a non-ok HTTP response as an error, not just a network rejection.** Its fail-loud obligation
+is satisfied ONLY by BOTH: (1) a `.then((res) => { if (!res.ok) { … capture … } })` that checks
+`res.ok` and captures to Sentry (or the configured observability sink) with structured tags, AND (2)
+a `.catch()` that captures the network leg with a distinguishing tag (`kind:'network'` vs
+`kind:'insert_rejected'`). A bare `await fetch()` with no `res.ok` check, OR a `.catch()`-only
+handler, on a fire-and-forget sink is a silent configured-store/topic failure — fix it before merge.
+The reference implementations are `logDecisionAsync`
+(`apps/control-plane/src/app/api/adapt/route.ts` post-FOLLOW-425) and `pushToRedpanda`
+(`apps/decision-api/src/lib/redpanda-producer.ts:102`, which checks `response.ok` + returns a
+structured `PushResult`). Priority: P1 when the sink carries a decision-grade or attribution-grade
+signal (decision logging, bandit reward, A/B assignment, description enqueue); P2 for pure
+telemetry.
+
+**Verification:**
+
+```bash
+# A fire-and-forget sink with a .catch()-only handler is blind to HTTP rejection — verify each also checks res.ok:
+grep -rn "void .*\.catch(\|)\.catch((err" apps/ --include="*.ts" | grep -v node_modules | grep -v "\.test\."
+# A bare `await fetch(` inside a void-returning publisher with no nearby res.ok is the same hole:
+grep -rn "await fetch(" apps/ --include="*.ts" | grep -v node_modules | grep -v "\.test\."
+# For each hit that is a fire-and-forget WRITE/PUBLISH sink, confirm a `res.ok`/`response.ok` check
+# AND a Sentry.captureException on BOTH the non-ok-then and the .catch paths exist in the same function.
+```
+
+**Evidence for this amendment:** RETRO-118 §4 CB-1 (ClickHouse `logDecisionAsync`, FOLLOW-425),
+RETRO-135 §4b CB-1/CB-2 / §6 (Redpanda `publishAbAssignmentEvent` + `publishDescriptionRequested`,
+FOLLOW-426). 2 independent backend contexts — threshold met.
+
 ## Rule L — Verify the production install/snippet path PRODUCES the config a consumer reads — a test that injects the value is not evidence
 
 **Pattern:** A feature wires an SDK/runtime _consumer_ of a config value (an `<script>`
@@ -1267,6 +1315,45 @@ grep -n 'BASE_PRIOR' packages/sdk/src/__tests__/intent-weights-drift.test.ts    
 # (3) A cited file that returns ZERO hits for the symbols it supposedly reconciles is a Rule Y violation.
 ```
 
+**Amendment (2026-06-26, RETRO-126 §6 — SCOPE BROADENING, not a new letter):** Rule Y was promoted
+on the literal sub-shape "a docstring/test-header cites a NAMED TEST/FILE as proof a guard RUNS IN
+CI." Three confirming instances across distinct retros established that the SAME failure mode recurs
+for ANY named-artifact-cited-as-fact, outside the CI-guard mechanic — so Rule Y now governs **any
+named symbol, file, module, migration-number, or schema-column cited as fact in a doc / JSDoc / test
+header / schema annotation: the cited artifact MUST exist AND MUST perform / contain / be the
+behavior it is cited for, at the time the citation is written.** Sub-shapes now in scope (all
+observed): (i) a named CONSTANT cited as living in a file where it does not exist (or no longer
+exists — e.g. a symbol DELETED in an earlier PR whose doc citations were not propagated, an
+Operating Principle 2 violation); (ii) a named MODULE/FILE cited as performing a behavior it does
+not (e.g. a const-only module cited as a function that "returns `[]`"); (iii) a named MIGRATION
+NUMBER / SCHEMA COLUMN cited as the provenance of a change when the real artifact is a different
+number/column. The operative discipline is unchanged and now applies to all sub-shapes: **when a
+symbol is removed, renamed, or relocated, grep its name across ALL doc, JSDoc, and test files in the
+SAME change and fix/justify every site — a citation that survives its referent's removal is
+forbidden.** A retro for any PR touching a doc/JSDoc/test-header that names a
+symbol/file/module/migration/column as fact MUST open the source and confirm the cited artifact
+exists and does the cited thing before recording the gap closed.
+
+**Amendment evidence (≥2 PRIOR retros + the promoting retro):**
+
+- **RETRO-115 §4d DG-1 / FOLLOW-410 (PRIOR, broadened-sub-shape count 1)** — "migration 0017" cited
+  in three sites (`route.ts:938`, `route.ts:1349`, `directives.ts:137` + dist twin) as the
+  `tier→page_context` rename provenance, when the rename is migration **0018**. RETRO-115 explicitly
+  RECOMMENDED this exact "Rule Y scope-broadening amendment (extend from 'CI-guard test-header' to
+  'any provenance citation: migration number / constant home-file / schema column')."
+- **RETRO-119 §6 / FOLLOW-398 (PRIOR, broadened-sub-shape count 2)** — `SIDEBAR_SHOW_THRESHOLD`
+  cited in `MASTER_DESIGN.md:728/2409` + `adapt-floor.ts:25` JSDoc + `follow-343.test.ts:207` as a
+  live const in `index.ts`; it was a REAL const (TICKET-037) DELETED by PR #340/FOLLOW-375
+  (2026-06-23) whose citations were not propagated. RETRO-119 pre-registered: "If a 2nd
+  doc-citation-of-nonexistent -symbol (outside the CI-guard sub-shape) is flagged in a future retro,
+  consider a Rule Y amendment."
+- **RETRO-126 §4d DG-1 (the promoting retro, broadened-sub-shape count 3)** — the FOLLOW-398 fix for
+  the RETRO-119 instance itself introduced `MASTER_DESIGN.md:728` "`adapt-floor` returns `[]`,"
+  citing a const-only module (`adapt-floor.ts`, no function) as performing the array-drop that
+  actually lives at `index.ts:720-724`. Filed FOLLOW-412.
+
+<!-- Rule Y AMENDED 2026-06-26 — RETRO-126 §6 (SCOPE BROADENING, no new letter): from "named test/file cited as proof a guard runs in CI" to "any named symbol/file/module/migration-number/schema-column cited as fact." Evidence ≥2 PRIOR retros that INDEPENDENTLY recommended/pre-authorized this amendment — RETRO-115 §4d DG-1/FOLLOW-410 (migration-number "0017" vs "0018", broadened count 1, explicit amendment recommendation) + RETRO-119 §6/FOLLOW-398 (nonexistent-const SIDEBAR_SHOW_THRESHOLD, broadened count 2, pre-registered 2nd-sighting trigger) — plus the promoting RETRO-126 §4d DG-1 (const-only module cited as "returns []", broadened count 3, filed FOLLOW-412). RETRO-119's 2nd-sighting trigger exceeded; ≥2-prior-retro threshold firmly met. Count-inflation discipline (RETRO-122) honored: this is a confirming-instance amendment to an ALREADY-promoted rule, not a new letter, grounded in 2 prior retros that recommended it. Original promotion stands: RETRO-089 §6 (RETRO-084 + RETRO-089 CI-guard sub-shape, count 2). -->
+
 ---
 
 ## Rule Z — Every cross-runtime consumer (Python ↔ TS) that reads an event/payload/DB-write/query-result MUST be tested against a fixture derived from the OTHER runtime's canonical contract or a real backend — a mock that validates the shape THIS runtime emits is not evidence the wire connects
@@ -1359,6 +1446,70 @@ clause; the ≥2-retro gate also independently applies here.)
 
 ---
 
+## Rule V — A self-inflicted gitleaks false-positive (a PR's OWN long identifier) MUST be suppressed token-scoped (`regexes`/`stopwords`), NEVER file-scoped (`paths`) on a file that handles real secrets; and when a token-scoped entry supersedes a prior file-scoped one for the same trigger, STRIP the file-scoped entry
+
+**Pattern:** A PR introduces a long, high-entropy-looking identifier of its own — a migration
+filename (`0019_adaptation_decisions_page_context_source`, 46 chars), an ADR slug, a content hash
+(64-char SHA-256), or any ≥40-char snake/kebab symbol — cited in code (JSDoc), a script, a doc, or a
+test. A generic secret rule (here `cloudflare-api-token`, a 40-char entropy heuristic)
+false-positives on it. The author silences the FP the lazy way: a **file-wide `paths` allowlist**
+entry that disables the generic rule for the ENTIRE file/directory — even when that file handles
+REAL secrets (env-derived HMAC keys, IP-encryption keys, API tokens, DB creds). The transient,
+self-inflicted FP is gone, but so is secret scanning on a high-value file: a real token committed
+there later sails through CI. The correct fix is **token-scoped** — a `regexes`/`stopwords` entry
+matching the specific offending string, which suppresses only that one token anywhere and leaves the
+rule fully armed on the file. Sub-shape: once a token-scoped entry exists for a trigger, any earlier
+file-scoped `paths` entry for the same trigger is REDUNDANT and MUST be deleted
+(strip-the-superseded) — leaving it disables scanning for no remaining reason.
+
+**Evidence (≥2 prior retros):**
+
+- **RETRO-118 §6 Pattern B (occurrence 1, count 1)** — PR #357 / FOLLOW-358 added a file-wide
+  `paths` exemption `'''apps/control-plane/src/app/api/adapt/route\.ts'''` to the
+  `cloudflare-api-token` rule to silence its own 46-char migration-filename JSDoc, disabling generic
+  secret scanning on a route that holds env-derived HMAC + IP-encryption keys (the BAD shape).
+- **RETRO-121 §6 Pattern B (occurrence 2, count 2)** — PR #360 / FOLLOW-394 added a **token-scoped**
+  `regexes` entry `'''0019_adaptation_decisions_page_context'''` for the same filename cited in
+  `migration-contract-test.sh` + the CH runbook (the GOOD shape). RETRO-121 recorded this as the 2nd
+  occurrence and pre-committed: "Watch-item for the NEXT (3rd) sighting: promote a rule
+  [token-scoped not file-scoped; strip-the-superseded]." Threshold (≥2 prior retros) reached at
+  RETRO-123.
+- **RETRO-123 (the 3rd sighting / promotion trigger)** — PR #362 / FOLLOW-396 performed the
+  strip-the-superseded action: deleted the file-wide `route.ts` `paths` entry now that the
+  token-scoped `regexes` entry covers the trigger, restoring full scanning. Immediate live second
+  instance flagged by this rule: the FOLLOW-374 consent `platform-registration/` file-wide `paths`
+  exemption (`.gitleaks.toml:172`), suppressing a self-authored 64-char
+  `CANONICAL_CONSENT_TEXT_HASH` on a secret-handling endpoint → FOLLOW-407.
+
+**Rule:** To silence a self-inflicted gitleaks FP from a PR's own long identifier, use a
+token-scoped allowlist (`regexes`/`stopwords` matching the specific string), NEVER a file-scoped
+`paths` allowlist on a file or directory that handles real secrets. A blanket `paths` exemption for
+a generic high-entropy rule (e.g. `cloudflare-api-token`) on a secret-handling prod file is
+forbidden — it trades one transient FP for permanently-blind secret scanning. When a token-scoped
+entry is added (or already exists) for a trigger, DELETE any pre-existing file-scoped `paths` entry
+that exists solely for that same trigger (strip-the-superseded). After narrowing/removing an
+allowlist, PROVE detection is restored with a negative control: add a dummy high-entropy token to
+the file, confirm gitleaks REDs, remove it — "CI is green" alone proves only that the FP is gone,
+not that real-secret detection works. (Legitimate `paths` exemptions for non-secret-handling
+test-fixture / doc / agent-lesson directories — Pattern G / FOLLOW-083 — are NOT in scope; this rule
+governs secret-handling SOURCE files only.)
+
+**Verification:**
+
+```bash
+# 1. Flag file-wide paths exemptions of generic secret rules on secret-handling SOURCE files
+#    (exclude legitimate test-fixture/doc/agent-lesson exemptions):
+grep -nE "src/app|src/lib|src/core|src/jobs" .gitleaks.toml | grep -viE "test|fixture|__"
+#    Each hit on a file that handles env keys/tokens/HMAC/creds is a Rule-V violation → narrow to regexes.
+# 2. For each self-inflicted long identifier, confirm the suppression is token-scoped, not file-scoped:
+grep -nA3 "^regexes" .gitleaks.toml   # the GOOD shape lives here, matching the specific string
+# 3. After adding a token-scoped entry, confirm no file-scoped paths entry survives for the same trigger
+#    (strip-the-superseded), and run the dummy-token negative control to prove scanning is restored.
+```
+
+---
+
+<!-- Rule V added 2026-06-26 — RETRO-123 §6. Evidence: RETRO-118 §6 Pattern B (PR #357/FOLLOW-358 file-wide route.ts paths exemption, BAD shape, count 1) + RETRO-121 §6 Pattern B (PR #360/FOLLOW-394 token-scoped regexes for the migration filename in script+runbook, GOOD shape, count 2 — RETRO-121 pre-authorized "promote on the NEXT (3rd) sighting"). Promotion trigger: RETRO-123 (PR #362/FOLLOW-396) performed the strip-the-superseded delete; the 2 banked occurrences are both PRIOR retros, ≥2-prior threshold met (the promoting PR is itself a remediation and does NOT inflate the count — the discipline RETRO-122 guarded is respected; the count came from 118+121, adjudicated independent by RETRO-121 via different trigger sites + remediation shapes). DISTINCT axis from Rule U (typed-column-vs-JSONB strip-on-supersede — a data-modeling rule; Rule V is the secret-scanning-config sibling of U's strip-the-superseded clause) and from Pattern G / FOLLOW-083 (legitimate test-fixture/doc paths exemptions, which Rule V explicitly excludes). Filed FOLLOW-406 (negative-control attestation for route.ts) + FOLLOW-407 (apply Rule V to the live 2nd instance: the FOLLOW-374 consent platform-registration paths exemption). Letter choice: single letters A–Z were exhausted (Q reserved as the retro-analyst placeholder); V had been "intentionally skipped" only as a 2026-06-13 sequencing artifact (per the Rule W note) with no semantic reservation, and is now the sole remaining single letter once M was consumed — so V is RECLAIMED here on the same backfill logic Rule M used ("the sole genuinely-unused letter"). -->
 <!-- Rule M added 2026-06-25 by CEO directive (Piotr) — threshold also met independently: RETRO-076 §6 (FOLLOW-307 migrations-don't-auto-apply-in-prod, count 1) + RETRO-113 §6 (FOLLOW-341/PR #352 archetype-seeder post-migrate-seed.yml dev-only → prod archetype_embeddings stay NULL → §F cosine inactive in prod, count 2). DISTINCT axis from Rule H (wired-or-dead, gates source-importers) and Rule O (migration-journal monotonicity, gates the journal): Rule M governs the CLAIM that automation reaches PROD when the workflow only targets dev. Filed/cross-refs FOLLOW-392 (operator seed prod archetype_embeddings) + FOLLOW-308. Letter choice: single letters A–Z are exhausted except M (the sole genuinely-unused letter — Q is the reserved `Rule Q+` retro-analyst placeholder; V is intentionally skipped per the Rule W note), so the backfilled M is assigned here. -->
 <!-- Rule Z added 2026-06-20 — RETRO-098 §6 (P-XLANG-PAYLOAD-CONTRACT: parent "mock-can't-catch-cross-runtime-mismatch" family now 4 instances — RETRO-068 ingest dual-write INSERT body the mock fetchImpl accepts but ClickHouse rejects, count 1; RETRO-078 CH tracer query mock-fetch green but live engine 386s, count 2; RETRO-079 closure required a dedicated live-ClickHouse CI job because mocks structurally could not catch it; RETRO-098 §3 HW-1 SDK(TS) emits chat.message.sent {message,…} but Python _spawn_chat_nlp reads payload.content → spawn never fires for real traffic, both sides green because the Python test invents {role,content} fixtures, count 4; threshold long exceeded). DISTINCT axis from Rule J (byte-identical cross-runtime FILE mirror sync) — Rule Z governs the TEST CONTRACT across a producer/consumer language boundary, not duplicate source files; and from Rule L (missing-attribute) / Rule Y (over-claimed citation). Filed FOLLOW-366 (fix the payload-key mismatch with a producer-shape-grounded fixture) + FOLLOW-368 (live-Upstash round-trip smoke). Next free Rule letter was Z (V skipped per the Rule W note; W,X,Y used). -->
 <!-- Rule Y added 2026-06-18 — RETRO-089 §6 (RETRO-084 §4d DG-1 false/absent drift-guard citation, count 1 held as over-claimed-verification meta-pattern + RETRO-089 §4d DG-1 wrong-file guard citation introduced BY the FOLLOW-331 fix for RETRO-084's instance, count 2; threshold met). DISTINCT axis from Rule L (missing-attribute) / Rule K.2 (provenance-enum round-trip) / Rule Q (mirrored-test blind spot) — those govern the test MECHANICS; Rule Y governs the CITATION (a named artifact claimed as proof must perform the cited check). Filed FOLLOW-338 to fix the intent-weights.test.ts:28-30 mis-pointer + reconcile the migration-0030 third copy. Next free Rule letter was Y (Rule V skipped per the Rule W note; W, X used). -->
@@ -1371,3 +1522,4 @@ clause; the ≥2-retro gate also independently applies here.)
 <!-- Rule S added 2026-06-09 — RETRO-045 §6 (RETRO-044 §4a LG-1/§6 + RETRO-045 §4c TG-1/§4a LG-1, threshold met; RETRO-044 set the explicit promote-on-2nd-instance condition). -->
 <!-- Rule Q+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->
 <!-- Rule P added 2026-06-01 by direct CEO directive (provenance noted in-rule), not retro-promoted -->
+<!-- Rule K.2 amendment (fire-and-forget HTTP-rejection observability sub-shape) added 2026-06-28 — RETRO-135 §6 (RETRO-118 §4 CB-1 ClickHouse logDecisionAsync .catch-only silent-swallow, remediated by FOLLOW-425/PR #374, count 1 + RETRO-135 §4b CB-1/CB-2 Redpanda publishAbAssignmentEvent + publishDescriptionRequested same res.ok-blind shape, count 2; 2 independent backend contexts — ClickHouse HTTP interface + Redpanda REST proxy — threshold met). NOT a new rule letter: shares K.2's root ("a configured-but-failed store must be observable"); the fire-and-forget sink just can't fail loud by throwing, so the obligation is res.ok-in-.then + .catch, both → Sentry. The parent K.2 greps were themselves blind to this sub-shape (a bare `await fetch()` + a fire-and-forget `.catch()` match neither `catch(() =>` nor `.then((r)=>r.json())`). Filed FOLLOW-426 to harden the 2 control-plane Redpanda publishers. Reference impls: logDecisionAsync (post-FOLLOW-425) + decision-api pushToRedpanda (redpanda-producer.ts:102). -->

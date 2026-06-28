@@ -19973,3 +19973,2330 @@ Traced end-to-end (signal → classify call → held-archetype outcome) for both
 - **RETRO-111 / RETRO-112 (same merge batch):** the parallel adapt-loop hardening (variant attribution + archetype stability); FOLLOW-341 provides the cosine ordering signal the bandit (359/342) ultimately optimizes against — once prod is seeded.
 
 ---
+
+## RETRO-114 — FOLLOW-342 (explicit AC-2 fallback test for variant copy selection; test-only completion of work shipped in PR #327) — 2026-06-26
+
+> **Insertion / sequencing note (read first):** This entry is back-filled OUT OF ORDER. PR #353
+> merged 2026-06-25, but `RETROSPECTIVES.md` had jumped from RETRO-113 straight to RETRO-117 (the
+> RETRO-114/115/116 gap that RETRO-117's own header note flags). RETRO-114 is inserted here in its
+> correct chronological slot (after RETRO-113, before RETRO-117). Its follow-ups (**FOLLOW-393**,
+> and the **FOLLOW-392** cross-ref) were already written into `FOLLOW_UPS.md` by the prior
+> (unrecorded) run — this entry is the narrative that those stubs reference; **no new FOLLOW number
+> is minted and no rule is promoted here** (see §6/§7). The "last 5 retros" read for pattern
+> detection: RETRO-095/111/112/113 + RETRO-117 context, plus the FOLLOW-342 lineage (RETRO-095).
+
+### 1. Summary of change
+
+- **PR:** #353 (squash-merged 2026-06-25 14:03:25 UTC, commit `5a04a87`). Title:
+  `test(adapt): explicit AC-2 fallback coverage for FOLLOW-342 variant copy selection [FOLLOW-342]`.
+- **Files changed:** 11 (+1574 / -57) — but only **ONE** is FOLLOW-342 scope:
+  `apps/control-plane/src/app/api/adapt/route.variant.test.ts` (+43/-0, **test-only**). The other 10
+  are backlog/process artifacts squashed from other in-flight work — `RETROSPECTIVES.md` (+549),
+  `FOLLOW_UPS.md` (+254), `CONVENTIONS_PATCH.md` (+93), four `.claude/agents/*/lessons.md` (+340
+  total), `QUEUE.md` (+81), `STATUS.md` (+177), `ESCALATIONS.md` (+37) — **NOT** FOLLOW-342 scope
+  (same branch-history carry-over handling as RETRO-095 §1 / RETRO-096). **ZERO `route.ts`
+  (production code) change.**
+- **Modules touched (in-scope):** control-plane — `/api/adapt` POST test only.
+- **Key contracts changed:** **NONE.** No new export / event / env-var / column / topic / SDK
+  signal. The variant contract (`runDecisionTree(..., variant)` 9th param, `VARIANT_INDEX`, copy
+  precedence `(locale override) ?? s.variants?.en[idx] ?? s.en`) was shipped in **PR #327**
+  (analyzed in **RETRO-095**) and is unchanged here. This PR adds a regression test only.
+
+### 2. Verification done in PR
+
+- Test files changed: `route.variant.test.ts` (+1 test — "AC-2 fallback: slot without variants.en
+  returns slot.en regardless of bandit index"). Assertions added: 3 (status 200 + headline + cta
+  both fall back to `slot.en` while driving the v2 arm via `paused:false` only on v2). Coverage
+  delta: negligible (the path was already implicitly exercised by the first describe block's
+  no-variants mock; this makes it explicit).
+- CI checks: PR body claims 1293 tests green (110 files), typecheck + lint clean (1 pre-existing
+  unrelated warning), pre-push Rule H/Rule J green. Not independently re-watched.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** the only in-scope file is a route test (test entrypoint — suppressed per
+  the framework/test exemption). No new export/file introduced → nothing to orphan.
+- **CHECK B (half-wire):** no new event / env-var / column / topic / SDK signal introduced → no
+  producer/consumer pair to verify. The variant producer→consumer→log→reward wiring this test
+  exercises was already audited in RETRO-095 §3 and its findings closed downstream (see §7); it
+  remains intact at `route.ts:847/1208` (sample) → `:303` (copy) → `logDecisionAsync` (CH log).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, PROCESS not code) — FOLLOW-342 was a STALE ticket: it was delegated for
+  variant-indexing work that PR #327 (`66054d6`) had already shipped on 2026-06-19**, ~2h after the
+  `AUDIT-2026-06-19` F-03 finding it derives from was written. The finding self-invalidated the same
+  day and was stale for 6 days by the time the ticket was promoted + delegated; a worker run was
+  burned (per the worker's own lesson note it read ~1279 lines of `route.ts` before discovering the
+  change was already on `main`; `git log --all --oneline --grep FOLLOW-342` would have surfaced it
+  in ~30s). The net product of the session was a single regression test. → **FOLLOW-393** (already
+  filed). Headline finding of this retro.
+
+#### 4b. Code bugs not caught
+
+- N/A — no production code changed in this PR.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, latent, NOT filed) — the AC-2 test covers only the THIRD branch of the precedence
+  expression** `(locale override) ?? s.variants?.en[variantIndex] ?? s.en`: "variants absent →
+  `s.en`". (i) The FIRST branch — a `pl`/`es` locale override winning over the bandit variant — was
+  a KNOWN-OPEN axis at merge time (RETRO-095 §4a LG-2 / FOLLOW-362) and is NOT asserted in
+  `route.variant.test.ts`; it is now covered by `route.follow362.test.ts` (FOLLOW-362 / RETRO-120,
+  merged after #353) → no new stub. (ii) The "index out of range" fallback (a `variants.en` array
+  shorter than the arm count) is untested here but is CI-guarded by `playbooks.test.ts:93`
+  (`headline.variants.en.length >= 3` for all 17 non-neutral archetypes) — **note the guard is
+  headline-slot-only while `route.ts:303` consumes `s.variants?.en[idx]` for EVERY slot**; a future
+  non-headline slot shipping a short `variants.en` would silently degrade to control copy with no
+  CI guard. Zero live impact today (only `headline` carries variants; `cta`/`feature` carry none by
+  design), so NOT filed — recorded as a latent producer/consumer length-contract asymmetry for the
+  next planning pass.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — the PR description over-claims:** "Variant-indexed copy selection is correct
+  end-to-end in prod regardless of which ordering path runs." This holds only on the **`en` axis** at
+  merge time; on the non-`en` (`pl`/`es`) axis the route still sampled + logged `v1`/`v2` while
+  serving the single control-equivalent string (logged variant ≠ served copy) until FOLLOW-362
+  landed a day later. Reconciled in §8. No stub (the claim is now true post-FOLLOW-362).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- None — PR is test-only, introduces no contract or behavior change.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-342's "real cosine ordering produces meaningful per-arm lift" precondition is
+  EFFECT-BLOCKED on FOLLOW-392** (operator seed of prod `archetype_embeddings`; RETRO-113). The
+  variant copy-selection is code-complete and correct, but until prod embeddings are seeded
+  `affinityScore` runs the djb2 fallback, so the archetype/ordering signal the bandit optimizes
+  against is degraded in prod. Cross-reference, do NOT duplicate, **FOLLOW-392**.
+
+#### 5c. Contracts changed others rely on
+
+- N/A — no contract changed.
+
+#### 5d. Architectural assumptions affected
+
+- The stale-ticket episode exposes a **delegation-time blind spot**: audit/backlog-derived tickets
+  are not re-verified against current `main` before a worker is spawned. The standing **Rule P**
+  (`CONVENTIONS_PATCH.md:774`) mandates a prior-art check at PROPOSAL time but it was not applied at
+  DELEGATION time for an audit-promoted ticket. → **FOLLOW-393**.
+
+### 6. New lesson candidates
+
+- **Pattern (stale-finding delegation):** "An AUDIT-/backlog-derived ticket is promoted and
+  delegated for work that a later PR already shipped; the finding self-invalidated before delegation;
+  a worker run is burned rediscovering the no-op." Seen in: **RETRO-114 only — count 1**, below the
+  2-occurrence threshold. This maps to already-codified **Rule P** as its DELEGATION-time analogue —
+  **NO new rule promoted.** Per FOLLOW-393: on a 2nd independent occurrence, recommend a **Rule P
+  amendment** (extend its verification step to fire at delegation time for audit/backlog tickets) to
+  the human, not a brand-new rule.
+- **PROC-2 (process note):** the worker wrote a terminal `status:DONE` to PM-exclusive `QUEUE.md`
+  before merge — setting terminal queue status is PM-exclusive; a worker should signal READY in the
+  PR. 1st occurrence, **no rule** (folded into FOLLOW-393 AC as a reinforcement note).
+- **Reinforcing (multi-axis / Rule S):** the PR's "correct end-to-end" claim asserted on the tested
+  (`en`) axis while a sibling axis (`pl`/`es` locale precedence) of the SAME expression was open — a
+  recurrence of the already-codified Rule S + RETRO-003 multi-axis lesson. Reinforces, **no new
+  promotion**.
+
+### 7. Follow-ups
+
+**This retro mints NO new FOLLOW number** (both stubs pre-exist from the prior unrecorded run):
+
+- **FOLLOW-393 (P2, pm-orchestrator, 2h)** — pre-delegation gap re-verification gate for
+  audit/backlog-derived tickets (`git log --all --grep`/`-S` against target files before spawning a
+  worker; residual-only re-scope path; retro-annotate AUDIT-2026-06-19 F-03 as CLOSED-by-PR-#327).
+  Already in `FOLLOW_UPS.md`. Closes §4a LG-1 / §5d / §6.
+- **FOLLOW-392 (P1, devops + ml, 2h)** — cross-reference (RETRO-113): FOLLOW-342 is effect-blocked
+  on the prod `archetype_embeddings` seed. Do NOT duplicate.
+
+**Prior-follow-up closure check (algorithm step 7) — the 4 ACs FOLLOW-342/PR #353 declares DONE,
+traced end-to-end (none was closed by #353 alone; #353 only adds the AC-2 test):**
+
+- **AC-1 (control/v1/v2 distinct directives):** `getBanditArms`→`thompsonSample`
+  (`route.ts:847`/`:1208`) → `runDecisionTree(variant)` → `s.variants?.en[variantIndex]`
+  (`:303`) → SDK applies directives. Closed by **PR #327** (RETRO-095). ✓
+- **AC-2 (3 indices + fallback-to-`s.en`):** `:303` `?? s.en`; now EXPLICITLY tested by **this PR**
+  for the variants-absent branch. ✓
+- **AC-3 (CH logs selected variant):** `logDecisionAsync(..., variant)` → `param_p_variant` INSERT.
+  Closed by **PR #327**. ✓
+- **AC-4 (holdout preserved at control):** GET gate `holdoutGroup ? 'control' : thompsonSample(...)`
+  (`route.ts:791`) + `route.follow360.test.ts`. Closed by **FOLLOW-360 / PR #333** (commit
+  `2836adc`) — **NOT by #353**, contrary to a casual reading of the PR body. ✓ end-to-end.
+- **Whole-ticket verdict:** FOLLOW-342 is genuinely closed END-TO-END, but the closure is the sum of
+  **PRs #327 (AC-1/3) + #333 (AC-4) + #353 (AC-2 test) + #359/FOLLOW-362 (the `pl`/`es` axis,
+  post-merge)** — not a single PR. The gap did NOT move one hop downstream (the RETRO-095
+  HALF_WIRE_P/HALF_WIRE_C findings were each closed by their own spawned follow-up: FOLLOW-359 →
+  RETRO-111, FOLLOW-360 → PR #333, FOLLOW-361 → RETRO-117, FOLLOW-362 → RETRO-120, FOLLOW-397 →
+  RETRO-122). The only residual is the effect-block on FOLLOW-392 (prod embeddings).
+
+### 8. Cross-references
+
+- **RETRO-095 (FOLLOW-342 / PR #327)** — the substantive implementation retro; this entry is the
+  test-completion coda + the process finding. No double-counting of the RETRO-095 §3/§4 code gaps
+  here (they belong to #327 and are closed downstream).
+- **RETRO-111 (FOLLOW-359), PR #333 (FOLLOW-360), RETRO-117 (FOLLOW-361), RETRO-120 (FOLLOW-362),
+  RETRO-122 (FOLLOW-397)** — the closure chain for every wiring gap RETRO-095 spawned; traced in §7.
+- **RETRO-113 (FOLLOW-392)** — FOLLOW-342's prod effect-block (archetype embeddings seed).
+- **RETRO-003 multi-axis lesson + Rule S** — the `en`-only "correct end-to-end" claim reconciliation
+  (§4d / §6): the PR was clean on the variant axis it tested but a sibling locale axis was open at
+  merge (closed a day later by FOLLOW-362).
+- **RETRO-117 sequencing note** — explicitly flagged this RETRO-114 back-fill gap; this entry
+  resolves it.
+
+---
+
+## RETRO-117 — FOLLOW-361 (reconcile bandit seed convention `'default'` → control/v1/v2: export `SEED_VARIANTS` as SoT, seed 54 rows/tenant, migration 0031 strips `'default'`, parity test; closes RETRO-095 §4a LG-1) — 2026-06-26
+
+> **Sequencing note (read first):** This is the retro for PR #356. Per the merge cadence (RETRO-113 = #352), PRs #353 (FOLLOW-342), #354 (FOLLOW-357), #355 (FOLLOW-389) sit between RETRO-113 and this one, so #356 maps to RETRO-117. As of this writing, `RETROSPECTIVES.md` ends at RETRO-113 — **RETRO-114/115/116 (for #353/#354/#355) are not yet appended to this file** even though `FOLLOW_UPS.md` already carries FOLLOW-393 sourced from "RETRO-114." The "last 5 retros" read for pattern detection were the 5 present in-file (RETRO-109..113). **PM: reconcile the RETRO-114/115/116 gap** so cross-references in this entry resolve.
+
+### 1. Summary of change
+
+- **PR:** #356 (squash-merged 2026-06-26T10:08:42 UTC, commit `4eb24af`). Title: `fix(adapt): reconcile bandit seed convention default→control/v1/v2 [FOLLOW-361]`.
+- **Files changed:** 5 (+138 / −37). Source (2): `apps/control-plane/src/lib/bandit-query.ts` (+4/−1 — `SEED_VARIANTS` now `export`ed + JSDoc), `apps/control-plane/src/lib/bandit-seed.ts` (+31/−18 — imports `SEED_VARIANTS`, seeds 18×3=54 rows via `flatMap`). Migration (2): `packages/db/migrations/0031_strip_bandit_default_variant.sql` (+18, new — `DELETE FROM ab_bandit_weights WHERE variant = 'default'`), `packages/db/migrations/meta/_journal.json` (+7 — idx 31, `when=1782464588649` > 0030's `1781420214161`, monotonic). Tests (1): `apps/control-plane/src/lib/__tests__/bandit-seed.test.ts` (+78/−18 — 18→54 row assertions + a `SEED_VARIANTS` parity describe block).
+- **Modules touched:** control-plane (`bandit-query.ts`, `bandit-seed.ts`) · packages/db (forward-only data migration). No SDK, shared schema, decision-api, or ingest surface touched.
+- **Key contracts changed:**
+  - `SEED_VARIANTS = ['control', 'v1', 'v2'] as const` promoted from module-private to **exported** (`bandit-query.ts:34`). **breaking: no** (additive export; single new non-test consumer `bandit-seed.ts:22`).
+  - `seedBanditWeightsForTenant` row count 18 → **54** (18 archetypes × 3 variants), `variant` field `'default'` → `control|v1|v2` (`bandit-seed.ts:80-88`). **breaking: no** for the live app (idempotent `onConflictDoNothing`); **behavioral** for the seeded data shape — see §4d for the stale ticket-title doc drift.
+  - Migration `0031` deletes all `variant='default'` rows from `ab_bandit_weights`. Forward-only, idempotent. **breaking: no** (removes phantom arms only; see §4b for the accumulated-reward note).
+
+### 2. Verification done in PR
+
+- Test files changed: `bandit-seed.test.ts` — row-count assertions flipped 18→54; the `variant='default'` shape test replaced with "variant ∈ SEED_VARIANTS, never 'default'"; "no duplicate archetype" → "no duplicate (archetype,variant) pair = 54"; a new per-archetype-all-3-variants test; and a new **parity describe block** (`bandit-seed.test.ts:245`) asserting `Set(seededVariants) === Set(SEED_VARIANTS)` + a guard that `SEED_VARIANTS` itself excludes `'default'`. Assertions added: ~10. The tests drive the REAL exported `seedBanditWeightsForTenant` and read the captured Drizzle `.values(...)` payload (`mockValues.mock.calls`) — a real-function-path test of the row builder, not a modeled re-implementation. The DB write itself (`@estalara/db` insert) is mocked, which is acceptable for a row-builder unit test; the real DB round-trip is covered by `bandit-query.test.ts` auto-seed cases + the live app.
+- CI checks: PR body reports `110 test files / 1298 tests passed`, typecheck Done (packages/db + control-plane), pre-push Rule H / Rule J / mirror green, migration journal "32 entries, monotonic, within 7d." PM-validated GREEN. Rule I baseline pre-existing-red per `project_ci_gate_landscape`. Not independently re-watched here. Coverage delta: the 54-row shape + the seed↔SoT parity axis (the RETRO-095 LG-1 evidence gap) are now covered.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** The newly-exported `SEED_VARIANTS` has exactly one non-test importer — `bandit-seed.ts:22` (grep `SEED_VARIANTS` apps/packages → producers `bandit-query.ts:34/93`, consumer `bandit-seed.ts:22/81`, tests only otherwise). Not orphaned. ✅ The migration `0031` is executed by the Drizzle migrator (journal idx 31) — not dead. ✅
+
+**CHECK B (half-wire):** No new event / env-var / DB column / topic / SDK-signal introduced — `0031` is DML against an existing column. The bandit variant value's full wire is pre-existing and complete: PRODUCER `getBanditArms`+`seedBanditWeightsForTenant` → `thompsonSample` (`route.ts:840`) → `runDecisionTree` copy selection via `VARIANT_INDEX` (`route.ts:290`) → ClickHouse `param_p_variant` + (POST) response. Code CHECK B is **clean ✅**. **BUT the SoT consolidation this PR's own goal claims is INCOMPLETE — see §4a LG-1 (`VARIANT_INDEX` is a third, divergent, hardcoded copy of the variant list that the PR did NOT unify).** That is an incomplete-reconciliation (Rule K.1) finding, recorded below, not a strict producer/consumer half-wire.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2 — incomplete SoT consolidation; the ticket's stated goal is only ⅔ met) — `VARIANT_INDEX` (`route.ts:241`) is a THIRD hardcoded copy of the variant list, NOT derived from `SEED_VARIANTS`.** FOLLOW-361's framing is "single source of truth for the three-arm variant list." This PR unified the two PRODUCER sites (`bandit-seed.ts` eager + `bandit-query.ts` lazy) onto `SEED_VARIANTS`, but the CONSUMER-side index map `const VARIANT_INDEX: Record<string, number> = { control: 0, v1: 1, v2: 2 }` (`route.ts:241`) remains an independent literal. Concrete failure mode (the JSDoc even admits it — `route.ts:288` "Unknown variant names (e.g. future v3) fall through to control (index 0)"): if `SEED_VARIANTS` ever grows to include `v3`, both seeders create `v3` arms and `thompsonSample` can SELECT `v3`, but `VARIANT_INDEX['v3']` is `undefined` → `?? 0` → the request is logged/attributed as `variant:'v3'` while **silently serving control copy** — re-introducing the exact "phantom arm whose copy collapses to control" class of bug RETRO-095 §4a LG-1 set out to kill, one hop downstream. Today it is latent (all three lists agree on control/v1/v2). → **FOLLOW-397** (derive `VARIANT_INDEX` from `SEED_VARIANTS`, or co-locate an order-bearing SoT, so a future arm cannot diverge).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A as a defect in the diff. The `flatMap`/`map` row builder is correct (54 rows, no dup pairs — pinned by tests). One **data-correctness note, not a bug:** migration `0031` is an unconditional `DELETE` of `variant='default'` rows. If any prod `'default'` arm accumulated reward via the feedback path (`feedback/route.ts` → `updateBanditArm`, reachable because pre-fix `thompsonSample(getBanditArms)` could sample a coexisting `'default'` arm and the SDK echoes the served variant back), that accumulated α/β is discarded. This is the CORRECT outcome (the `'default'` arm was a phantom that diluted sampling and mapped to control copy anyway), so no rollback/preserve step is warranted — recorded for completeness so a reviewer doesn't mistake the delete for unintended data loss.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2 — an explicitly-assigned FOLLOW-361 AC was NOT delivered).** RETRO-095 §4c **TG-3** (`RETROSPECTIVES.md:18565`) assigned FOLLOW-361 an AC: "No test covers `variant` values outside `{control,v1,v2}` reaching `VARIANT_INDEX` … the `?? 0` fallback maps it to control copy silently. → AC in FOLLOW-361." This PR added parity tests on the SEED side only (`bandit-seed.test.ts`); it added **zero** test exercising the `VARIANT_INDEX[variant] ?? 0` fallback in `route.ts` for a stray/`'default'`/`v3` variant. So the consumer-side regression guard TG-3 named is still missing. → folded into **FOLLOW-397** (the natural home, since it touches `VARIANT_INDEX`).
+- **TG-2 (P3, minor) — no test pins the LAZY seeder's variant set to `SEED_VARIANTS`.** The parity test covers `seedBanditWeightsForTenant` (eager) only; `getBanditArms`'s auto-seed (`bandit-query.ts:93`) also uses `SEED_VARIANTS` so divergence is impossible (same constant), and `bandit-query.test.ts` already asserts the 3-arm control/v1/v2 auto-seed shape — so this is covered transitively. No new stub; noted for completeness.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — stale ticket-of-record title.** `QUEUE.md:1249` (historical TICKET-AB-006 entry) still reads "Seed ab_bandit_weights — 18 archetype rows × variant='default' per tenant," now false (54 rows, control/v1/v2). It is a COMPLETE/historical sprint entry, not an IN_PROGRESS assumption, so no cascade invalidation — but the next planning pass reading that line will mis-model the seed shape. I do not write QUEUE.md; flagged for the PM to annotate. No FOLLOW (historical record, not live work).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-342 (DONE, bandit variant → copy):** its `VARIANT_INDEX`-based copy selection (`route.ts:290`) is the exact consumer LG-1 flags as the un-unified third list. FOLLOW-342's behavior is correct TODAY (lists agree); FOLLOW-397 hardens it against a future arm. No reopen.
+- **FOLLOW-362 (OPEN, non-`en` A/B locale precedence, RETRO-095 §4a LG-2):** orthogonal — operates on locale fallback, not the variant set. Not reopened, not advanced.
+- **FOLLOW-359 / RETRO-111 (GET `variant` in response):** unaffected; this PR changes WHICH arms exist, not whether the served arm is returned. The two compose cleanly (clean arm set + returned arm).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-007 / "wire Thompson sampling end-to-end":** this PR removes the phantom-`'default'`-arm dilution that was a latent correctness defect in the bandit's posterior. Once `0031` lands in prod (§5c), `thompsonSample` samples exactly the 3 intended arms — a precondition for FOLLOW-007's "meaningful lift" claim to be measurable. Positive cascade.
+- **(SoT-growth) any future "add a 4th variant (v3)" ticket:** MUST update `VARIANT_INDEX` in lockstep until FOLLOW-397 lands; LG-1 is the trap such a ticket would fall into. Recorded as FOLLOW-397's motivating scenario.
+
+#### 5c. Contracts changed others rely on — and the prod-apply path (RECONCILES RETRO-113 / memory `project_postgres_migrations_no_autoapply`)
+
+- **Migration `0031` DOES auto-apply to prod — this is NOT the RETRO-113 deployment half-wire.** Unlike RETRO-113's archetype SEED (which rides `post-migrate-seed.yml`, hard-wired to `--config dev` and soft-skipping without `DOPPLER_TOKEN_DEV` → prod stays NULL), a Drizzle **migration** rides `db-migrate.yml`, which (per its header) "Runs staging FIRST; if staging succeeds, runs prod" on every push to `main` touching `packages/db/migrations/**`. **ESC-023 is RESOLVED** (`ESCALATIONS.md:1131`): `DOPPLER_TOKEN_STG` + `DOPPLER_TOKEN_PRD` are provisioned and a `workflow_dispatch` run (27513894932) executed real staging+prod migrations green. **Verified the workflow fired for THIS merge:** `gh run list --workflow=db-migrate.yml` shows a run on `headBranch:main` created `2026-06-26T10:08:45Z` (3s after merge), `status:in_progress`. So `0031` is being applied to staging→prod automatically right now.
+  - **Reconciliation with RETRO-113 §6 / the memory:** the memory `project_postgres_migrations_no_autoapply` ("merging a Drizzle/Supabase migration ≠ live in prod; no workflow applies") is now **STALE for the Postgres/Drizzle MIGRATION path** post-ESC-023 (2026-06-14). It remains accurate for (a) dev-only SEED jobs like RETRO-113's `seed:archetypes`, and (b) ClickHouse migrations (CH CI only runs `migrate.sh` against a throwaway container — no prod apply). RETRO-113's HW-1 was correctly classified (it was a seed, not a migration); its §6 lesson candidate should be **narrowed to "dev-only SEED jobs," not "migrations,"** since migrations now have a working prod auto-apply. **PM action: do NOT file a manual prod-apply operator stub for `0031`** (the mechanism is automatic) — instead **confirm the in-progress `db-migrate.yml` run reaches green on BOTH staging and prod**; if it fails (e.g. the FOLLOW-149 exit-2 journal guard, or a prod auth failure — which is a HARD fail, no soft-skip), escalate. This is a verification gate, not a follow-up ticket.
+- `SEED_VARIANTS` is now a public export of `bandit-query.ts`. Any future module needing the canonical arm list should import it (do not re-literal) — the LG-1 lesson. The only DB consumers of `ab_bandit_weights` are all in control-plane (grep: `bandit-seed`, `bandit-query`, `feedback/route`, `ab/weights/route`, `tenants/route`, `tenants/[id]/bandit/weights/[archetype]/route`); **decision-api does NOT read the table** (its `bandit.ts` is a pure `selectVariant` function over caller-supplied arms) — so the prod `'default'`-strip has a single-app blast radius, no cross-app skew.
+
+#### 5d. Architectural assumptions affected
+
+- The "every `(tenant,archetype)` has exactly the 3 intended Beta(1,1) arms" invariant is now TRUE in code for both new tenants (eager 54-row seed) and existing tenants (post-`0031` delete → `getBanditArms` lazy re-seeds the 3 on next query; a tenant left with 0 rows after the delete self-heals on first request). The invariant becomes true in PROD the moment the in-progress `db-migrate.yml` run commits `0031`. The residual architectural risk is LG-1: the invariant is enforced on the WRITE side (seeders) but the READ-to-copy mapping (`VARIANT_INDEX`) is a parallel literal that can silently drift from the arm set — the SoT is "mostly single" but has one un-consolidated tail.
+
+### 6. New lesson candidates
+
+- **Pattern: "A 'single source of truth' / reconcile-the-duplicates PR unifies the PRODUCER copies of a list onto an exported constant but leaves a CONSUMER-side copy (an index/order map, enum, or switch) still hardcoded — so the 'consolidation' is partial and a future addition to the SoT silently diverges at the un-unified site."** Seen: RETRO-117 (this — `VARIANT_INDEX` left out of the `SEED_VARIANTS` consolidation). Closest prior: RETRO-095 §6 **P-2** ("two seed paths write the same table under divergent variant conventions … coexisting silently because the PK includes variant," count 1) — but that was the SAME `ab_bandit_weights` variant convention (same feature/context), and this is its CONSUMER-side residual, so the two are **not two INDEPENDENT contexts** under the precedent this ledger applies (RETRO-104/108/109: single-feature temporal recurrence ≠ 2 independent contexts). **Independent-context count: 1. NO rule promotion.** This is a confirming instance of the EXISTING **Rule K.1** (single-source-of-truth for parallel lists) and **Rule S** (sibling-set completeness) — `VARIANT_INDEX` is the unenumerated sibling of the `SEED_VARIANTS` set. No amendment recommended on a count-1 finding; FOLLOW-397 is the concrete remediation.
+- **Meta-pattern (process, worth recording): "Classify a 'merged ≠ live in prod' finding by ARTIFACT TYPE before reusing a prior retro's verdict — Drizzle MIGRATIONS now auto-apply to prod (`db-migrate.yml`, post-ESC-023), whereas SEED jobs (`post-migrate-seed.yml`) and ClickHouse migrations do NOT."** RETRO-113 applied the blanket "Postgres merged ≠ prod-applied" frame; this retro shows the frame splits by artifact. The retro process should check `gh run list --workflow=db-migrate.yml` for the merge commit rather than assuming the memory's blanket claim. Recorded for the skill-upgrade loop; not a codebase rule.
+
+### 7. Prior-follow-up closure check (FOLLOW-361 → RETRO-095 §4a LG-1 + §4c TG-3)
+
+Traced end-to-end (seed write convention → table state → sample → copy/log), per algorithm step 7:
+
+1. **EAGER PRODUCER (tenant creation):** `seedBanditWeightsForTenant` now writes `control/v1/v2` from `SEED_VARIANTS` (`bandit-seed.ts:80-88`). No `'default'` row created. ✅
+2. **LAZY PRODUCER (first request):** `getBanditArms` auto-seeds `control/v1/v2` from the same `SEED_VARIANTS` (`bandit-query.ts:93`). The two producers are now provably identical (parity test). ✅
+3. **EXISTING `'default'` ROWS:** migration `0031` deletes them (`DELETE … WHERE variant='default'`); auto-applied to prod via `db-migrate.yml` (run on `main`, in-progress at merge — §5c). After it commits, the table holds only `control/v1/v2`. ✅ **(closure is contingent on that run reaching green — PM verify, §5c).**
+4. **SAMPLE:** `thompsonSample(getBanditArms(...))` (`route.ts:840`) now samples exactly the 3 intended arms — no phantom `'default'` arm dilutes the posterior (the RETRO-095 LG-1 harm). ✅
+5. **COPY/LOG (consumer):** `VARIANT_INDEX[variant] ?? 0` (`route.ts:290`) — works correctly for the current 3 arms, but is the un-unified third list (LG-1). ⚠️
+
+- **RETRO-095 §4a LG-1 (P1, the seed-convention split + phantom-arm dilution): CLOSED end-to-end** in code + migration, contingent on the in-progress prod `db-migrate.yml` run committing `0031`. Both producers unified; existing `'default'` rows stripped; sampling now sees the intended arm set. ✅
+- **RETRO-095 §4c TG-3 (P2, "no test covers a non-`{control,v1,v2}` variant hitting the `VARIANT_INDEX ?? 0` fallback"): NOT CLOSED.** The PR delivered SEED-side parity tests but no consumer-fallback test. The gap **moved one hop downstream** — from "two seeders disagree" to "the THIRD list (`VARIANT_INDEX`) is still an unreconciled, untested hardcoded duplicate" (the classic `inquiry_submit_selector`-shaped one-hop move). → **FOLLOW-397** carries both the `VARIANT_INDEX`-derive-from-SoT fix AND the missing TG-3 fallback test.
+- **Net verdict:** FOLLOW-361 GENUINELY closes the headline RETRO-095 LG-1 dilution bug end-to-end (a real closure, not a hop-shuffle) — the rare case where the producer convention is fully reconciled AND the cleanup migration auto-reaches prod. It does NOT close the TG-3 sub-AC, and it surfaces the `VARIANT_INDEX` consumer-list residual. **PM: FOLLOW-361 is DONE for its primary AC; confirm the prod `db-migrate.yml` run is green before marking the RETRO-095 LG-1 lineage fully closed, and promote FOLLOW-397 to carry the TG-3 + consumer-SoT tail.**
+
+### 8. Cross-references
+
+- **RETRO-095 (FOLLOW-342):** origin of FOLLOW-361 (§4a LG-1 seed-convention split at `RETROSPECTIVES.md:18552`, §4c TG-3 fallback-test AC at `:18565`, §6 P-2 divergent-list pattern at `:18581`). This retro confirms LG-1 CLOSED end-to-end and TG-3 carried forward to FOLLOW-397.
+- **RETRO-113 (FOLLOW-341):** the comparison case — its HW-1 was a dev-only SEED (genuine prod half-wire → FOLLOW-392 operator stub); THIS PR's `0031` is a MIGRATION that auto-applies to prod. §5c/§6 reconcile and narrow RETRO-113's "Postgres merged ≠ prod-applied" lesson to seeds + ClickHouse, not Drizzle migrations (post-ESC-023).
+- **RETRO-111 (FOLLOW-359) / RETRO-112 (FOLLOW-363):** same adapt-loop family — returned-variant attribution (359) + archetype stability (363) + now a clean arm set (361). Together they harden the bandit loop end-to-end.
+- **ESC-023 RESOLVED (`ESCALATIONS.md:1131`, devops, 2026-06-14) / FOLLOW-308 / memory `project_postgres_migrations_no_autoapply`:** the provenance for the §5c prod-auto-apply claim; the memory is now partially stale (migrations auto-apply; seeds + CH do not).
+- **Sequencing:** RETRO-114/115/116 (PRs #353/#354/#355) not yet in-file — see the top-of-entry note.
+
+---
+
+## RETRO-118 — FOLLOW-358 (resolve GET-vs-POST `adaptation_decisions.page_context` semantic divergence via `page_context_source` discriminator column; Rule K.1 parity) — 2026-06-26
+
+> **Numbering note:** RETROSPECTIVES.md currently ends at RETRO-113; entries RETRO-114 (FOLLOW-342/#353), RETRO-115 (FOLLOW-357/#354), RETRO-116 (FOLLOW-389/#355), RETRO-117 (FOLLOW-361/#356) are assigned (per `FOLLOW_UPS.md` next-free ledger) but not yet committed to this file. This entry is RETRO-118 per the PM-assigned ID and the FOLLOW_UPS mapping (118 = FOLLOW-358/#357). Appended at end-of-file; 114–117 to be interleaved when committed.
+
+### 1. Summary of change
+
+- **PR:** #357 (merged 2026-06-26T10:40:15Z; GitHub merge-commit `a8eacb4a`). **Net commits on `main`:** `cdda69a` (page_context_source) + `d651290` + `7092088` (two `.gitleaks.toml` allowlist additions) — verified via `git log -- <path>`.
+- **SCOPE RECONCILIATION (algorithm step 8 — read before trusting the diff):** `gh pr diff 357` shows **9 files / +342/−53**, but 4 of those (`bandit-seed.ts`, `bandit-query.ts`, `bandit-seed.test.ts`, `packages/db/migrations/0031_strip_bandit_default_variant.sql`) and the `_journal.json` bump belong to **FOLLOW-361 / PR #356** (commits `ad93d3d` / `1114802`, merged 10:08:42Z — 32 min BEFORE #357). `git log --oneline -- apps/control-plane/src/lib/bandit-seed.ts` → last touch `1114802 [FOLLOW-361]`; `git show --stat cdda69a` (the FOLLOW-358 commit) touches ONLY 3 files. PR #357's branch was cut before #356 merged and never rebased, so its three-dot diff re-displays #356's already-merged work. **The bandit changes are NOT FOLLOW-358's footprint on `main` and are NOT analyzed here — they are RETRO-117's (FOLLOW-361/#356) subject.** The `_journal.json` shows 0031 exactly once (32 entries), so no duplicate-migration clobber occurred. This retro scopes strictly to FOLLOW-358's net commits.
+- **Files changed (FOLLOW-358 net, on `main`):** 4 — `apps/control-plane/src/app/api/adapt/route.ts` (+81/−16, `cdda69a`), `apps/control-plane/src/app/api/adapt/route.clickhouse.test.ts` (+99, `cdda69a`), `infra/clickhouse/migrations/0019_adaptation_decisions_page_context_source.sql` (+34, `cdda69a`), `.gitleaks.toml` (2 lines, `d651290`+`7092088`).
+- **Modules touched:** control-plane (adapt route + ClickHouse logging) · infra (ClickHouse migration) · repo-config (gitleaks).
+- **Key contracts changed:**
+  - NEW ClickHouse column `adaptation_decisions.page_context_source LowCardinality(String) DEFAULT 'legacy'` (migration 0019). **breaking: NO** at read time (additive, defaulted) — **BUT see CB-1: the matching INSERT change is fail-CLOSED against an un-migrated prod table.**
+  - `logDecisionAsync` gained a 15th positional param `pageContextSource: 'caller_supplied' | 'page_type_derived' | 'legacy' = 'legacy'` (`route.ts:~440`). Private function, not exported, not in `packages/shared` — no Rule H obligation. **breaking: no.**
+  - The `adaptation_decisions` INSERT column-list now names `page_context_source` (`route.ts:~468`); GET passes `'caller_supplied'` (`route.ts:~902`), POST passes `'page_type_derived'` (`route.ts:~1344`). `featuresSnapshot` JSON (FOLLOW-170 replay) also embeds `page_context_source` (`route.ts:~457`). **breaking: no** for the JSON (additive key).
+
+### 2. Verification done in PR
+
+- Test files changed: `route.clickhouse.test.ts` (+99, 4 new tests in describe `FOLLOW-358 page_context_source discriminator`). Assertions: GET → `param_p_page_context_source==='caller_supplied'` + `param_p_page_context==='1'`; POST listing_detail → `'page_type_derived'`+`'2'`; POST listing_list → `'page_type_derived'`+`'1'`; INSERT body contains `page_context_source` column + `{p_page_context_source:String}` placeholder. These are **real-handler tests** (`import { GET, POST } from './route'`, drive the real handlers, read params off the captured INSERT URL) — not modeled/self-injecting (no Rule L weakness). ✅
+- **Verification BLIND SPOT (ties to CB-1/TG-1):** all 4 tests run against a **mocked `fetch`** and assert the INSERT *string*. None exercises a real ClickHouse that would **reject** the INSERT when `page_context_source` is absent from the schema. So the suite gives **zero signal** on the migration-before-code ordering hazard — the single most consequential risk this PR introduces.
+- CI checks: PM-validated GREEN per QUEUE notes (`QUEUE.md:5599` — "CI green, 3/5 checks, 2/3 fix iterations, all real gates pass"). Gitleaks PASS after 2 fix iterations. Not independently re-watched. Rule I pre-existing-red baseline per `project_ci_gate_landscape`.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** No new exported symbol or module. `pageContextSource` is an inline-union positional param on the private `logDecisionAsync`; the 0019 migration is infra. The column is produced by both handlers. **Clean ✅** (no dead export).
+
+**CHECK B (half-wire):** NEW ClickHouse column `page_context_source`. **PRODUCER:** both GET (`route.ts:~902`) and POST (`route.ts:~1344`) handlers write it, plus the `featuresSnapshot` JSON. **CONSUMER:** `grep -rn "page_context_source" apps packages infra --include=*.ts --include=*.sql --include=*.py` → the ONLY hits are the producer INSERT/snapshot in `route.ts`, the 0019 migration DDL, and the tests. **ZERO in-repo read-side consumer.** → **HW-1 (HALF_WIRE_P, observability — P3).** The column's intended consumer is out-of-repo analyst SQL (`WHERE page_context_source='page_type_derived'`) and the FOLLOW-170 replay loop (reads `features_snapshot`, which now embeds the key). Like RETRO-111 §3 (GET `variant` with no in-repo consumer), this is a *write-only discriminator* whose value is only realized once (a) prod is migrated and (b) an analyst/dashboard actually filters on it — neither shipped. Recorded as HALF_WIRE_P with the observability-column exemption (P3, not P1) → **FOLLOW-395.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — Rule M disclosure leg satisfied, but no tracked operator stub + no post-apply assertion for migration 0019.** The PR body discloses the manual prod apply (`doppler run --config prd -- clickhouse-client ...`), meeting Rule M's (`CONVENTIONS_PATCH.md:1306`) disclosure requirement. But it files **no tracked operator follow-up** and **no prod assertion** (e.g. "after apply, `SELECT DISTINCT page_context_source FROM adaptation_decisions` returns the three expected values"). Compounded by CB-1, an operator who skips 0019 gets **silent total loss of decision logging** with no alarm. CAVEAT (memory `project_postgres_migrations_no_autoapply`): the prod ClickHouse `ingest_worker` user may lack DDL grant (RETRO-076), so even the disclosed manual `ALTER TABLE` may fail on grants — the operator stub must verify the grant first. → **FOLLOW-397** (cross-ref Rule M / FOLLOW-308; do NOT duplicate the standing gate).
+- **LG-2 (P3, reconciliation — not a defect) — "Rule K parity" framing vs analytics-only field.** `page_context` is **analytics-only** post-§E.7 (CEO 2026-06-25, memory `project_tier_field_rename_decision`), NOT a decision-grade surface. Rule K.1's "decision-grade surfaces fail loud" clause therefore does not strictly bind here; the chosen remedy (an observability **discriminator** rather than a fail-loud gate) is the correct shape for an analytics column. The ticket title "Rule K parity" is defensible (Rule K also covers duplicate-semantics-without-a-parity-gate) but the fix is observability hygiene, not a hard parity gate. Reconciled — recorded so a future reader does not expect a runtime guard.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P1) — migration-before-code deploy-ordering hazard: an un-applied 0019 silently breaks ALL prod `adaptation_decisions` logging.** The INSERT now names `page_context_source` in its explicit column list (`route.ts:~468`). ClickHouse rejects an INSERT that names a column absent from the table (NO_SUCH_COLUMN). `logDecisionAsync` is fire-and-forget with a `.catch` that only `console.error`s (`route.ts:501-504`), so the rejection is **silent** — but **every** decision-log INSERT fails until 0019 is applied. Vercel auto-deploys `route.ts` on merge; 0019 is a **manual post-merge** operator step (PR body lists it under "NEXT"). → a guaranteed window where prod `adaptation_decisions` receives **zero rows**, undetected. This is the **inverse** of the usual safe-additive-column: adding a column to the INSERT is a **fail-CLOSED** change against an un-migrated table, distinct from Rule M's fail-OPEN "capability silently inactive behind a safe fallback" (RETRO-113). Here an EXISTING capability (all decision logging) BREAKS. The correct invariant — "apply 0019 to prod BEFORE the code deploy reaches it" — is unguarded by any automation. → **FOLLOW-397** (P1).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1, ties to CB-1) — no test exercises the INSERT against a schema MISSING `page_context_source`.** All 4 tests mock `fetch` and assert the INSERT string. The repo HAS a "ClickHouse smoke" CI gate (real container, runs `migrate.sh`); a contract test that runs migrations `0001..0018` (pre-0019) and asserts the INSERT is REJECTED — then `0001..0019` and asserts it SUCCEEDS — would pin the ordering dependency the production code now relies on. → folded into **FOLLOW-397** AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — the gitleaks remedy broadens secret-scanning exclusion across the ENTIRE adapt `route.ts`, a high-value file holding env-derived HMAC + IP-encryption key usage, to silence a SELF-AUTHORED false-positive.** Commit `7092088` adds `'''apps/control-plane/src/app/api/adapt/route\.ts'''` to the cloudflare-api-token rule's `paths` allowlist (`.gitleaks.toml:177`, verified live on `main`) because **this PR's own JSDoc** cites the 46-char migration filename `0019_adaptation_decisions_page_context_source`. The added comment claims provider-specific rules (aws/anthropic/openai/private-key/db-conn) stay active, but the cloudflare-api-token / generic high-entropy rule is now **disabled for all of `route.ts`** — a permanent, file-wide erosion to silence a transient, self-inflicted trigger. Tighter remedies: a targeted `stopwords`/`regexes` allowlist for the filename token, or break the filename across lines in the JSDoc so the heuristic never fires — both restore full scanning. → **FOLLOW-396** (P2).
+
+#### 4d-bis. Averted false-positive (recorded, NOT a finding)
+
+- **The GET/POST `logDecisionAsync` calls now pass 4 explicit trailing args (`false, 'rulebased-bandit-v1', '', '<source>'`) to reach the 15th positional `pageContextSource`.** Verified against the signature defaults (`route.ts:413` `demoOverride=false`, `:419` `modelVersion='rulebased-bandit-v1'`, `:~430` `leadId=''`): the first three explicit values are **identical to the prior defaults**, so the GET/POST rows' `demo_override`/`model_version`/`lead_id` columns are **unchanged**. Only `page_context_source` actually changed (default `'legacy'` → explicit source). No hidden side-effect regression on the decision log. Recorded because a positional-arg expansion of this kind is a classic silent-default-drift trap and it was checked and cleared.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-362 (IN_PROGRESS — non-`en` A/B, `QUEUE.md:5602`):** orthogonal. The discriminator column touches neither locale nor variant; not reopened, not blocked.
+- **FOLLOW-361 (DONE / #356, merged 10:08):** the `gh pr diff 357` conflation does NOT affect `main` (separate commits, verified §1). **PM note:** FOLLOW-361's bandit-seed reconciliation — including its own Postgres migration `0031_strip_bandit_default_variant.sql` whose prod-apply is a separate manual step — is **RETRO-117's** subject, not this one. Flagging only so the bandit work is not assumed retro-covered here.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-170 (Conversion Label Loop / §T replay):** positive cascade — `features_snapshot` now embeds `page_context_source`, so a replayed label knows which derivation produced its `page_context`. The replay consumer is the one in-repo path that benefits from the new key (mitigates HW-1's "write-only" concern on the snapshot axis, though NOT on the dedicated column axis).
+- **FOLLOW-308 (standing Postgres/data prod-apply gate, RETRO-076/ESC-022):** CB-1/LG-1 is a fresh **ClickHouse** instance of the manual-apply gap FOLLOW-308 owns — and a sharper, fail-CLOSED variant. Cross-ref; do NOT duplicate the general mechanism.
+
+#### 5c. Contracts changed others rely on
+
+- `adaptation_decisions` ClickHouse schema gained a column — any external dashboard/analytics querying the table can now `GROUP BY`/`WHERE page_context_source`. The `features_snapshot` JSON gained a key (additive; tolerant parsers unaffected). **The load-bearing coupling is the INSERT column-list ↔ table-schema dependency (CB-1)** — the first time the adapt decision-log write path has a hard ordering dependency on a not-yet-applied migration.
+
+#### 5d. Architectural assumptions affected
+
+- Prior to this PR, every column the `adaptation_decisions` INSERT named already existed in prod, so a code deploy was independent of migration timing. This PR introduces a **migration-ordering invariant** ("0019 MUST precede the code deploy") that is **unguarded** — and **fail-CLOSED** (breaks all logging) rather than fail-OPEN (RETRO-113's degrade-to-djb2). The recurring "Postgres/ClickHouse merged ≠ prod-applied" reality (memory `project_postgres_migrations_no_autoapply`) now has a consequence severity it did not have before: silent total data loss for the affected table, not a silent capability gap.
+
+### 6. New lesson candidates
+
+- **Pattern A: "Adding a column to an explicit INSERT column-list is a fail-CLOSED migration-ordering dependency — code deployed before the migration silently breaks EVERY insert to that table (swallowed by fire-and-forget), unlike the fail-OPEN missing-seed/capability gap that Rule M governs."** Seen: RETRO-118 (this). Independent-context count: **1** (below threshold). **No promotion.** Distinct axis from Rule M (`CONVENTIONS_PATCH.md:1306`, fail-OPEN capability-inactive) and Rule W (ClickHouse ORDER-BY-key migrations). **Watch-item:** if a future PR adds a column to a Drizzle/CH INSERT naming a not-yet-applied column (a 2nd independent context), promote a rule of the shape *"a code change that names a new column in an INSERT/UPDATE MUST gate its deploy on the migration being applied first (CI assertion that the INSERT fails pre-migration / succeeds post-migration), OR add the column read-side-tolerant (nullable, omitted-on-write until applied)."*
+- **Pattern B: "A gitleaks false-positive introduced by the PR's OWN added long string (a filename/identifier in a comment/JSDoc) is remedied by broadening a PRODUCTION-file scan exclusion rather than removing the trigger."** This is the **prod-file variant**, DISTINCT from Pattern G (RETRO-007, test-fixture key prefix → FOLLOW-083 test-fixture exemption convention, which is legitimate). A prior prod-path instance exists in the same file (`.gitleaks.toml:172` allowlists the `consent/platform-registration/` route dir, FOLLOW-374) but it was **not flagged as a finding in any prior RETRO** I can cite. Independent **prior-RETRO** count for this prod-file sub-shape: **0** (this is the 1st flagged). **No promotion** (guardrail: ≥2 prior RETRO IDs required; I will not infer from un-retro'd commits). Watch-item: each generic-rule exclusion on a secret-handling prod file erodes the net silently — if a 2nd prod-file gitleaks allowlist is flagged in a future retro, promote a rule requiring **token-scoped** (not file-scoped) allowlisting for any file outside test/fixture trees.
+
+**Rules promoted this retro: NONE** (both candidates below the 2-prior-RETRO threshold).
+
+### 7. Prior-follow-up closure check + Follow-ups
+
+**FOLLOW-358 claims to close the RETRO-092 (FOLLOW-345 / PR #323) Rule K.1 GET-vs-POST `page_context` divergence.** Traced end-to-end (producer → schema → consumer):
+
+1. **PRODUCER (GET):** `logDecisionAsync(..., 'caller_supplied')` `route.ts:~902`. ✅
+2. **PRODUCER (POST):** `logDecisionAsync(..., 'page_type_derived')` `route.ts:~1344`. ✅
+3. **SCHEMA:** column exists via migration 0019 — ✅ in CODE/dev; ⚠️ **NOT in prod until manual apply**, and worse, the INSERT itself **fails closed** there until applied (CB-1). So the closure is code-complete but **prod-broken-until-applied**, not merely "discriminator missing."
+4. **CONSUMER (analyst / dashboard):** ❌ **no in-repo consumer; no shipped query/dashboard** realizing the discriminator (HW-1). The `features_snapshot` replay path (FOLLOW-170) reads the embedded key — a partial consumer on the JSON axis only.
+
+- **RETRO-092 Rule K.1 finding: CLOSED on the producer→schema(code) leg ✅; NOT closed end-to-end.** The gap **moved one hop downstream** — classic `inquiry_submit_selector` shape: from "`page_context` is semantically ambiguous" to (a) "the discriminator isn't live in prod (and its INSERT fails closed until applied)" and (b) "no consumer realizes the discriminator." Per algorithm step 7, do **NOT** mark the Rule K.1 thread fully closed until FOLLOW-397 (prod apply + ordering guard) and FOLLOW-395 (an actual consumer) land.
+
+**Follow-ups (every CHECK-B / CB / DG finding emits one):**
+
+- **FOLLOW-397** (backend/devops-engineer, P1, 3h): Guard the 0019 migration-before-code ordering — operator action to apply 0019 to prod ClickHouse (verify `ingest_worker` DDL grant first per RETRO-076), assert post-apply `SELECT DISTINCT page_context_source` returns the 3 expected values, AND add a ClickHouse-smoke contract test that the `adaptation_decisions` INSERT is REJECTED at migration ≤0018 and SUCCEEDS at 0019 (closes CB-1 + LG-1 + TG-1). Cross-ref Rule M / FOLLOW-308 — do not duplicate the standing gate.
+- **FOLLOW-395** (data/backend-engineer, P3, 2h): Realize the `page_context_source` discriminator — ship a documented analyst query / dashboard panel (or a CH-read assertion) that filters `WHERE page_context_source='page_type_derived'`, so the write-only column has a consumer (closes HW-1). Otherwise document the column as replay-snapshot-only and downgrade the dedicated column.
+- **FOLLOW-396** (backend-engineer, P2, 1h): Narrow the gitleaks `route.ts` exclusion — replace the file-wide `paths` allowlist (`.gitleaks.toml:177`) with a token-scoped allowlist for the migration filename, or break the filename across lines in the JSDoc, restoring full secret scanning on the adapt route (closes DG-1).
+
+### 8. Cross-references
+
+- **RETRO-092 (FOLLOW-345 / PR #323):** origin of the FOLLOW-358 Rule K.1 finding; this retro confirms it CLOSED on the code leg but moved one hop downstream (prod-apply + consumer).
+- **RETRO-111 (FOLLOW-359 / PR #350):** precedent for the HALF_WIRE_P observability exemption — a produced field/column with no in-repo consumer because the intended reader is out-of-repo (there: SDK doesn't call GET; here: analyst SQL doesn't live in repo). Same downgrade logic (HW → P3) applied.
+- **RETRO-113 (FOLLOW-341 / PR #352) + Rule M (`CONVENTIONS_PATCH.md:1306`):** the manual-apply-prod precedent; CB-1 is its fail-CLOSED cousin (RETRO-113 degraded safely to djb2; this breaks logging). Memory `project_postgres_migrations_no_autoapply` + RETRO-076 DDL-grant caveat anchor FOLLOW-397.
+- **RETRO-117 (FOLLOW-361 / PR #356):** the bandit-seed reconciliation whose 4 files the `gh pr diff 357` conflates into this PR; analyzed there, NOT here (§1 reconciliation).
+- **FOLLOW-308 (standing Postgres/data prod-apply gate):** owns the general mechanism; FOLLOW-397 is the specific ClickHouse-0019 operator action — cross-ref, no duplicate.
+
+---
+
+## RETRO-119 — FOLLOW-354 (test + document the confidence floor's REAL axis: distinct `/adapt/description` stub proves the floor gates the ungated description fetch; gating-ladder doc + JSDoc asymmetry note; closes RETRO-091 §4c TG-1 / §4d DG-1 / §4a LG-1) — 2026-06-26
+
+> **Numbering note:** `RETROSPECTIVES.md` in-file still jumps RETRO-113 → RETRO-117 → RETRO-118; **RETRO-114 (FOLLOW-342/#353), RETRO-115 (FOLLOW-357/#354), RETRO-116 (FOLLOW-389/#355) remain un-committed to this file** (carried as assigned IDs in the `FOLLOW_UPS.md` ledger; FOLLOW-393 still cites "RETRO-114"). Per the PM-assigned ID and the established #357=RETRO-118 mapping, **PR #358 (FOLLOW-354) = RETRO-119**. The "last 5 retros" read for pattern detection were the 5 present in-file at higher IDs (RETRO-109, 110, 111, 112, 113) plus 117/118. **PM: reconcile the RETRO-114/115/116 gap** so the back-references resolve. NB: PR **#354** (FOLLOW-357 tier-rename) and ticket **FOLLOW-354** (this) are unrelated despite the colliding number — do not conflate.
+
+### 1. Summary of change
+
+- **PR:** #358 (merged 2026-06-26T11:23:33Z, merge-commit `701aa4e`). Title: `test(sdk): add confidence floor description-axis tests + ladder docs [FOLLOW-354]`. Branch `sdk-engineer/FOLLOW-354-confidence-floor-description-axis`.
+- **Files changed:** 3 (+385 / −1). `packages/sdk/src/__tests__/follow-354.test.ts` (+363, new — 10 tests, NO exports), `docs/MASTER_DESIGN.md` (+10/−1 — §E.7 gating-ladder blockquote + §E.7.9 stale cross-ref fix), `packages/sdk/src/core/adapt-floor.ts` (+12 — JSDoc asymmetry note on `DOM_ADAPT_CONFIDENCE_FLOOR`).
+- **Modules touched:** SDK (tests + JSDoc only) · docs. No production SDK code path, no shared schema, no decision-api/ingest/control-plane surface. **Bundle delta: 0** (PR body; verified — only a test file + JSDoc-comment + Markdown changed).
+- **Key contracts changed:** **NONE.** No new/changed/removed public symbol, event, env-var, column, topic, or SDK signal. `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` and `DOM_ADAPT_MIN_SIGNAL_COUNT = 2` (`adapt-floor.ts:33,43`, both already exported & re-exported at `index.ts:1560`) are unchanged in value; only their JSDoc grew. This is a test+docs PR — N/A on the contract axis.
+
+### 2. Verification done in PR
+
+- Test files changed: `follow-354.test.ts` (new) — 10 tests in 4 describe blocks. Assertions: AC-1 (3 tests, confidence 0.0 / 0.499 / 0.37 → `descriptionFetches(mock)` length 0), AC-2 (3 tests, confidence 0.5 / 0.75 / 0.85 → ≥1 `/adapt/description` fetch; the 0.75 case also asserts URL carries `listing_id`/`archetype=yield_hunter`/`locale=en`), 1 stub-collision doc test, 3 constants cross-checks. These are **real-path tests** — they drive `_initForTest()` → real `init()` → `refreshDirectives()` → the real `void applyDescriptionAdaptation(...)` fire-and-forget, stubbing only `fetch`. No injected/self-modeled value (no Rule L weakness). The DISTINCT stub (`/adapt/description` matched BEFORE generic `/adapt`) is the load-bearing fix vs follow-343's colliding `url.includes('/adapt')`.
+- CI checks: PR body reports `67 test files / 1502 tests passed (+10)`, lint clean, typecheck clean, Rule H + Rule J pre-push green, prettier on all 3 files. PM-validated GREEN per QUEUE. Rule I baseline pre-existing-red per memory `project_ci_gate_landscape`. Not independently re-watched. Coverage delta: the description-suppression axis (RETRO-091 TG-1, previously **zero** coverage) is now covered on the confidence branch.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** No new exported symbol or module. `follow-354.test.ts` is a Vitest entrypoint with no exports (PR body: `grep -n "^export"` empty; the file imports the already-wired `_initForTest` / `DOM_ADAPT_CONFIDENCE_FLOOR` / `DOM_ADAPT_MIN_SIGNAL_COUNT` from `../index.js`). `adapt-floor.ts` change is JSDoc-only. Docs are docs. **Clean ✅** (test entrypoint suppressed per the CHECK-A framework-entrypoint exemption).
+
+**CHECK B (half-wire):** No new event / env-var / DB column / topic / SDK signal introduced. The wire the tests EXERCISE (SDK floor → `applyDescriptionAdaptation` → `/adapt/description` fetch) is pre-existing (FOLLOW-159/343) and verified complete end-to-end: PRODUCER = SDK gate `index.ts:724` `if (aboveFloor)` → `void applyDescriptionAdaptation` `index.ts:734`; CONSUMER = `apps/control-plane/src/app/api/adapt/description/route.ts` GET handler (`route.ts:132`). **Clean ✅.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A. The test premise is correct and independently verified: (i) `aboveFloor` at `index.ts:720-722` gates BOTH `applyDirectives` AND `applyDescriptionAdaptation` inside one `if (aboveFloor)` block (`index.ts:724-735`) — so the floor genuinely gates the description fetch; (ii) `description/route.ts` has **no** confidence parameter or threshold (grep `confidence|threshold|CONFIDENCE|THRESHOLD` on the file → zero gate hits, only auth/method) — confirming the SDK floor is the SOLE gate for `/adapt/description`, the exact claim the doc/JSDoc now record. The fix is logically sound.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. No production code changed; nothing to defect.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3 — multi-axis gap; the floor's OR-branch is untested on the description axis).** The gate is `confidence >= 0.5 **||** signal_count >= 2` (`index.ts:720-722`). The 6 AC tests exercise ONLY the confidence branch: AC-1 drives confidence < 0.5 at cold-start `signal_count` (< 2) → no fetch; AC-2 drives confidence ≥ 0.5 → fetch. **No test covers the second branch on the description axis: confidence < 0.5 BUT `signal_count >= 2` → description SHOULD fetch.** That branch is exactly the path RETRO-091 §4a LG-2 / FOLLOW-355 flagged as the floor's soft underbelly (a future init-time prior tipping `signal_count` to 2 silently re-opens adaptation). The follow-343 directive-axis tests have the same blind spot, so the signal-count→description wire has **zero** coverage anywhere. → **FOLLOW-399** (P3).
+- **TG-2 (P3, comment-accuracy, not a coverage hole) — AC-1 asserts the OUTCOME but not the `signal_count` PRECONDITION it claims.** The AC-1 test comment (`follow-354.test.ts:252`) states "signal_count=0 < 2", but real cold-start init applies the device-type prior via `applyBehavioralSignal`, which increments `signal_count` to **1** (RETRO-091 §4a LG-2; FOLLOW-355 scope, `index.ts:869`). The assertion still holds (1 < 2 ⇒ no fetch), so the test is GREEN for the right outcome but the stated reason is off by one. If a future change tips cold-start `signal_count` to 2, AC-1 would flip to fetching and go RED — desirable, and the FOLLOW-355 sibling pins that invariant — but the comment should say "1 (device prior), still < 2," not "0". Cosmetic; fold the correction into FOLLOW-399.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2 — Rule Y violation: this PR PROPAGATES a stale symbol citation into TWO new authoritative locations while it was fixing a different stale cross-ref).** The new gating-ladder note adds, in both `docs/MASTER_DESIGN.md:2409` (§E.7 blockquote) and `adapt-floor.ts:25` (JSDoc), the rung: "`SIDEBAR_SHOW_THRESHOLD = 0.6` (SDK, `packages/sdk/src/index.ts`) — gate for sidebar visibility." **`SIDEBAR_SHOW_THRESHOLD` does NOT exist in `index.ts` — nor anywhere as a real `const`.** Repo-wide grep finds it only in: this PR's two new doc/JSDoc strings, a *test description string* (`follow-343.test.ts:207`, no actual import), and prose docs (`MASTER_DESIGN.md:728`, `AUDIT-2026-06-19.md:164`). Worse, the rung describes a live investor gate that no longer exists: `index.ts:741` "Sidebar widget is admin-only — profiling visibility is in admin.estalara.com" and `index.ts:948-950` "sidebar remains null; `sidebar.show()` calls below are no-ops." So the SDK has no investor-facing confidence-gated sidebar at all. This is the **Rule Y** shape (`CONVENTIONS_PATCH.md:1207` — a docstring citing a named symbol/file as fact MUST be verified against that file; the cited file does not contain it). The PR's mission was literally to FIX a stale §E.7.9 cross-ref, yet it shipped a fresh un-verified citation. The first two ladder rungs (DOM floor 0.5 @ `adapt-floor.ts:33` ✅; server 0.6 @ `route.ts:77` ✅) are accurate and verified; only the sidebar rung is fictional-in-the-SDK. → **FOLLOW-398** (P2). Also flags a pre-existing systemic mismatch (`MASTER_DESIGN.md:728` claims an investor sidebar gated at 0.6) for the PM — broader than this PR but propagated by it.
+- **DG-2 (P3, boundary-wording nit — fold into FOLLOW-398).** The ladder note says `/api/adapt` "gates server-side at `CONFIDENCE_THRESHOLD = 0.6` (returns `[]` below it)." The actual gate is `if (confidence <= CONFIDENCE_THRESHOLD) return { directives: [] }` (`route.ts:280`), i.e. confidence **exactly 0.6 also returns `[]`** — directives flow only strictly *above* 0.6. "below it" mis-states the inclusive boundary by one tick. Harmless to the 0.5<0.6 asymmetry argument but imprecise; correct to "at or below it."
+
+#### 4d-bis. Accurate corrections this PR landed (recorded, NOT findings)
+
+- The §E.7.9 D.5 cross-ref fix is **correct**: it replaced "archetype confidence > 0.6 jest warunkiem wywołania endpointu" (wrong — that was the directive axis attributed to the description endpoint) with "`/adapt/description` is gated by the SDK `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` (sole gate — server has no confidence parameter)." Verified against `description/route.ts` (no confidence param). The JSDoc's core asymmetry statement (directive axis gated twice 0.5+0.6; description axis gated once 0.5-only) is accurate. Only the sidebar rung (DG-1) and the boundary wording (DG-2) are off.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-362 (READY/IN_PROGRESS — non-`en` A/B locale precedence, `QUEUE.md:5602`):** orthogonal — operates on locale fallback in the directive/copy path, not the confidence floor. Not reopened, not advanced.
+- **FOLLOW-355 (P3, RETRO-091 §4a LG-2 — pin cold-start `signal_count` invariant):** directly adjacent. TG-1/TG-2 above show the description axis shares the same untested OR-branch FOLLOW-355 protects on the directive axis. FOLLOW-399 (new) and FOLLOW-355 should land together or FOLLOW-399 fold into FOLLOW-355's `_initForTest` harness. Cross-referenced, not duplicated.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-344 (ml-engineer, switch-margin hysteresis / blending, `QUEUE.md:5348`):** the PR's explicit purpose includes warning this ticket — the JSDoc (`adapt-floor.ts`) + ladder note now state that if blending lands confidence more often in **0.5–0.59**, the description path fires (no server gate) while directives do NOT (server 0.6). Positive cascade: FOLLOW-344 now has the asymmetry documented at the constant's definition site. The DG-1 sidebar-rung error does NOT touch this — the 0.5/0.6 rungs FOLLOW-344 cares about are accurate.
+- **Any future cold-start prior ticket (FOLLOW-207/216 lineage):** must re-check the floor's `signal_count >= 2` branch — now partially tested on the confidence side but still UNtested on the description-via-signal-count side (TG-1). FOLLOW-399 closes that.
+
+#### 5c. Contracts changed others rely on
+
+- None. No symbol, schema, event, or wire changed. Zero blast radius on the contract axis.
+
+#### 5d. Architectural assumptions affected
+
+- Reinforces (documents-as-intentional) the RETRO-091 §5d finding that adaptation gating is SPLIT with no single owner: server gates directives @0.6, SDK floor gates description @0.5. The ladder note makes the split intentional and discoverable — the assumption "the server `/adapt` 0.6 gate is the single source of adaptation gating" is now explicitly recorded as FALSE in MASTER_DESIGN, per FOLLOW-354's scope. **Residual:** the doc's THIRD rung (sidebar) misrepresents a removed investor feature as a live gate — the doc now over-states the ladder by one (fictional) rung (DG-1).
+
+### 6. New lesson candidates
+
+- **Pattern (Rule Y instance, NOT a new rule): "A docs/JSDoc PR that CORRECTS one stale cross-reference simultaneously introduces a NEW un-verified symbol citation — naming a constant in a named file (`SIDEBAR_SHOW_THRESHOLD` in `index.ts`) that does not exist there, and describing a removed feature as live."** This is governed by the EXISTING **Rule Y** (`CONVENTIONS_PATCH.md:1207`): a docstring citing a named symbol/file as proof MUST be verified against that file. Independent-context count for Rule Y's underlying shape is already ≥2 (it is a codified rule); this is a fresh *confirming* instance, **no promotion, no amendment** — the remediation is to apply Rule Y's existing verification gate to doc/JSDoc symbol citations, which FOLLOW-398 does. Meta-note for the skill loop: Rule Y's current text scopes to "a guard runs in CI"; this instance is a *constant-exists / behavior-holds* citation — same shape, slightly outside the literal text. If a 2nd doc-citation-of-nonexistent-symbol (outside the CI-guard sub-shape) is flagged in a future retro, consider a Rule Y amendment broadening "named test/file as proof a guard runs" to "any named symbol/file cited as fact."
+- **Pattern (P-UNVERIFIED-PREMISE-REDUNDANT-GATE — RETRO-091, count stays 1): the remediation loop WORKED.** RETRO-091 flagged the watch-item "when adding a gate, enumerate every axis it affects and prove with a test the axis NOT already protected elsewhere" (count 1, not promoted). This PR is that exact remediation — it proved the description axis (the non-redundant one) with a distinct-stub test. This is **not a 2nd independent sighting** (it is the closure of the 1st), so the count **stays 1**, no promotion. Recorded because the retro→follow-up→test loop closing a count-1 watch-item is the system working as designed.
+
+**Rules promoted this retro: NONE** (DG-1 is a fresh instance of the already-codified Rule Y, not a 2nd occurrence of an un-codified pattern; the redundant-gate pattern stays at count 1).
+
+### 7. Prior-follow-up closure check (FOLLOW-354 → RETRO-091 §4c TG-1 / §4d DG-1 / §4a LG-1 / §5d)
+
+Traced end-to-end (SDK floor gate → fetch decision → server endpoint → assertion), per algorithm step 7:
+
+1. **GATE (producer-side):** `aboveFloor = confidence >= 0.5 || signal_count >= 2` (`index.ts:720`); the description fetch sits INSIDE `if (aboveFloor)` (`index.ts:724-734`). Verified the floor genuinely gates `applyDescriptionAdaptation`. ✅
+2. **ENDPOINT (consumer-side):** `description/route.ts` GET handler has NO confidence parameter/threshold (grep verified). So the SDK floor is the SOLE gate. ✅
+3. **TEST (RED-without-fix):** AC-1 asserts 0 `/adapt/description` fetches below floor; AC-2 asserts ≥1 at/above, with a DISTINCT stub that does not collide on `url.includes('/adapt')`. The description axis — previously untestable with the colliding stub and untested (RETRO-091 TG-1) — is now covered on the confidence branch. ✅
+4. **DOC (RETRO-091 DG-1, three thresholds unreconciled):** §E.7 ladder note + §E.7.9 fix + JSDoc record the split. Rungs 1+2 accurate ✅; rung 3 (sidebar) INACCURATE (DG-1) ⚠️.
+
+- **RETRO-091 §4c TG-1 (description suppression untested): CLOSED end-to-end on the confidence branch ✅** (a genuine closure, not a hop-shuffle — the SDK gate, the ungated endpoint, and the test all verified). The `signal_count >= 2` branch on the description axis remains untested (TG-1 here / FOLLOW-399) — a NEW axis-coverage residual, distinct from the original gap.
+- **RETRO-091 §4a LG-1 (floor rationale mis-attributed to directives, not description): CLOSED ✅** — the JSDoc now correctly attributes the floor's genuine effect to the ungated description axis.
+- **RETRO-091 §4d DG-1 (3 thresholds undocumented): CLOSED-WITH-DEFECT ⚠️** — the ladder is documented, but the 3rd rung cites a nonexistent constant and a removed feature (DG-1). The documentation gap is closed; a documentation-*accuracy* defect was introduced in its place. Per algorithm step 7, do NOT mark the RETRO-091 DG-1 thread fully clean until FOLLOW-398 corrects the sidebar rung.
+- **RETRO-091 §5d (split-gating no single owner): ADDRESSED ✅** as documentation-of-intent (FOLLOW-354's scope was to "make the split intentional," not to assign an owner).
+- **Net verdict:** FOLLOW-354 GENUINELY closes its primary axis (description-suppression test + correct rationale + ungated-endpoint doc) end-to-end. It leaves one new test-coverage residual (signal-count branch, FOLLOW-399) and one new doc-accuracy defect (sidebar rung, FOLLOW-398). **PM: FOLLOW-354 is DONE for its 4 ACs; the two residuals are fresh follow-ups, not re-opens of FOLLOW-354.**
+
+### 8. Cross-references
+
+- **RETRO-091 (FOLLOW-343 / PR #321):** origin of FOLLOW-354 (§4c TG-1 description-axis untested `RETROSPECTIVES.md:18413`, §4d DG-1 three-thresholds `:18418`, §4a LG-1 mis-attributed rationale `:18404`, §5d split-gating `:18425`). This retro confirms TG-1/LG-1 CLOSED, DG-1 closed-with-defect (FOLLOW-398), and a new signal-count axis residual (FOLLOW-399).
+- **FOLLOW-355 (RETRO-091 §4a LG-2):** the sibling that pins the cold-start `signal_count < 2` invariant; TG-1/TG-2 here share its OR-branch concern. FOLLOW-399 should co-locate with FOLLOW-355's `_initForTest` harness.
+- **FOLLOW-344 (RETRO-097, blending):** the downstream consumer of the documented 0.5–0.6 asymmetry; positive cascade (§5b).
+- **Rule Y (`CONVENTIONS_PATCH.md:1207`):** the governing rule for DG-1 — a cited symbol/file must be verified against that file; the PR violated it for the `SIDEBAR_SHOW_THRESHOLD`-in-`index.ts` citation.
+- **Numbering:** RETRO-114/115/116 still un-committed in-file — see top-of-entry note; PM reconcile.
+
+## RETRO-120 — FOLLOW-362 (suppress bandit sampling for non-`en` locales so logged `variant` matches the served control-equivalent copy; closes RETRO-095 §4a LG-2) — 2026-06-26
+
+> **Numbering note:** RETRO-114/115/116 remain un-committed in-file (file jumps 113→117; 117/118/119 appended this session). FOLLOW_UPS.md footer references RETRO-114 (PR #353). PM to reconcile the gap. This entry is appended as RETRO-120 per instruction.
+
+### 1. Summary of change
+
+- **PR:** #359 (merged 2026-06-26 11:31 UTC; squash landed on `main` as commit `cbc0405` — the `gh`-reported `dfe8a9c` is a pre-squash oid absent locally).
+- **Files changed (FOLLOW-362 scope):** 2 — `apps/control-plane/src/app/api/adapt/route.ts` (+27/-6) and `apps/control-plane/src/app/api/adapt/route.follow362.test.ts` (+351, new). The 3 other files in `gh pr view` (`docs/MASTER_DESIGN.md`, `packages/sdk/src/__tests__/follow-354.test.ts`, `packages/sdk/src/core/adapt-floor.ts`) are **FOLLOW-354 carry-over** (committed in `c79efc9`, merged via PR #358 / RETRO-119) surfaced only by a stale `gh pr diff` base — verified via `git log --oneline -- <file>`. NOT analyzed here (covered by RETRO-119).
+- **Modules touched:** control-plane (`/api/adapt` GET + POST handlers).
+- **Key contracts changed:** behaviour-only. For `locale !== 'en'`, both handlers now short-circuit variant selection to `'control'` (no `getBanditArms`/`thompsonSample` call). `adaptation_decisions.variant` for non-`en` rows flips from `v1`/`v2` (the bug) → `control`. No new export / column / event / env-var.
+
+### 2. Verification done in PR
+
+- Test file: `route.follow362.test.ts` (+351) — 13 new tests across POST + GET. Covers: pl/es → `response.variant=control` AND ClickHouse `param_p_variant=control` even when v1 is the only active arm; en → `v1` (bandit unchanged); `getBanditArms` NOT called for pl/es, IS called for en; pl served-directive value is the `s.pl` string not the en variant. Rule S (en/pl/es all exercised) + Rule K.1 (logging variable == copy-selection variable) asserted.
+- Locale-validation axis verified sound: GET coerces any unknown locale → `'en'` (`route.ts:678-679`); POST is Zod-enum-constrained (`locale: z.enum(['en','pl','es']).optional()`, `route.ts:232`), so the `postLocale: 'en'|'pl'|'es'` cast (`:1206`) is sound, not unchecked.
+- CI checks: PR body records control-plane `pnpm test` 1314 pass + typecheck clean + rule-h/mirror/adapt-schema-drift green. CI green not independently re-verified in this retro (PM owns `gh pr checks --watch`).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅` — CHECK A: no new exported symbol (route handlers pre-exist; the new file is a test, suppressed). CHECK B: no new event / env-var / column / topic / SDK-signal introduced — the change only narrows an existing sampling condition. (The reward-attribution consequence is a logic gap, §4a LG-1, not a half-wire, since no new symbol is added.)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3) — non-`en` sessions now feed the SHARED `control` bandit arm; arms are not locale-scoped.** `getBanditArms(tenantId, archetype)` (`bandit-query.ts:54`) and `updateBanditArm` (`feedback/route.ts:184`) key on `(tenant, archetype, variant)` only — no locale. After this fix a pl/es conversion logs `variant=control`, the SDK caches it, and `/api/adapt/feedback` updates the **same** control arm that `en` Thompson sampling draws from. The fix correctly **stops treatment-arm pollution** (pre-fix, pl/es fed `v1`/`v2` with control-copy outcomes — strictly worse), but the gap **moves one hop**: en+pl+es control outcomes are now conflated in one arm, so if non-`en` markets convert differently the shared control baseline is biased, indirectly skewing the `en` v1/v2-vs-control decision. Pre-existing arm-keying limitation surfaced by the fix. → **FOLLOW-401**.
+- **LG-2 (P2) — the suppression hard-codes the current data state (`locale !== 'en'`) with no removal-trigger.** The fix is a deferred-fix stand-in ("until `variants.pl/es` arrays are added to the playbooks", `route.ts:845/1204`). When those arrays ARE populated — the work owned by the unpromoted **FOLLOW-031** (`FOLLOW_UPS.md`: thread locale + `variants[locale]?.[i] ?? variants.en[i]` selection) — non-`en` A/B stays **silently dead** unless someone manually deletes `locale !== 'en'` / `postLocale === 'en'`. No test or guard binds the two. Latent landmine. → **FOLLOW-400**.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. The GET/POST condition asymmetry (`holdoutGroup || locale !== 'en'` in GET vs `postLocale === 'en'` in POST) is **correct, not a Rule-S violation**: POST runs `assignHoldout()` and early-returns control for holdout sessions at `route.ts:1098` BEFORE reaching sampling (`:1206`), so POST never needs an inline holdout term; GET has no early-return and gates inline at the sampling site (`:828` comment + `:848`). Both honour the holdout-baseline invariant. Locale casts sound (see §2).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — the reward leg is unverified end-to-end.** All 13 tests stop at `response.variant` + ClickHouse `param_p_variant`; none trace a non-`en` conversion through `/api/adapt/feedback` → `updateBanditArm` to prove it lands on the `control` arm (the LG-1 axis). → folded into FOLLOW-401 AC.
+- **TG-2 (P3) — unsupported-locale coercion unpinned.** No test asserts a `de`/`fr` request: GET coerces → `en` (bandit RUNS), POST Zod-rejects. A regression test would prevent a future locale-enum edit from silently flipping sampling. Minor → noted, optional AC in FOLLOW-400.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — the architectural decision "non-`en` gets NO A/B until `variants.pl/es` exist" lives ONLY in two code comments.** Not recorded in MASTER_DESIGN §E.3 (bandit) or §E.7 (adapt endpoint). The MASTER_DESIGN edit in this PR's diff is FOLLOW-354's gating-ladder note (carry-over), unrelated. → folded into FOLLOW-400 AC.
+
+### 5. Cascading impact
+
+- **5a. Current sprint tickets affected:** FOLLOW-364/367/370 (READY P2, same RETRO-091/095 adapt batch) — no conflict; they touch the description/floor axis, not variant sampling. FOLLOW-031 (unpromoted) is the future dependency, see 5b.
+- **5b. Future sprint tickets affected:** **FOLLOW-031** (thread locale + `variants[locale]` fallback) and any playbook-i18n work that populates `variants.pl/es` MUST remove the FOLLOW-362 suppression in the same PR or non-`en` A/B remains disabled — captured as FOLLOW-400. RETRO-111 (FOLLOW-359 GET `variant` in response), RETRO-117 (FOLLOW-361 seed reconcile), RETRO-118 (FOLLOW-358 page_context) — the variant-logging family; this change is **consistent** with all three (non-`en` GET now returns `variant:'control'` via the FOLLOW-359 single-variable path, `route.ts:888`). No contradiction with any prior "clean" verdict.
+- **5c. Contracts others rely on:** `adaptation_decisions.variant` — **distribution shift**: non-`en` rows flip from `v1`/`v2` → `control` as of 2026-06-26 11:31 UTC. Any dashboard / pilot-calibration / ab-weights query that reads variant distribution **per locale** will see non-`en` collapse to ~100% control (correctly). Bandit reward loop (`feedback`→`updateBanditArm`) now attributes non-`en` to the shared control arm (LG-1).
+- **5d. Architectural assumptions affected:** the assumption "control copy is locale-independent, so one control arm serves all locales" is now **load-bearing** for bandit correctness — newly relevant because non-`en` traffic feeds that arm at volume. If/when `variants.pl/es` ship, arms likely need locale scoping (LG-1/FOLLOW-401).
+
+### 6. New lesson candidates
+
+- **P-1:** "A deferred-fix suppression that hard-codes the present data state (`locale !== 'en'` because no `variants.pl/es` exist yet) silently negates the feature once the data state changes, with no test binding the suppression to its removal trigger." Seen: RETRO-120 only. Count 1 — below the promotion threshold; no rule. Watch for a 2nd "conditional that encodes a transient data-shape assumption" instance.
+- **P-2 (retro-process, → lessons.md not CONVENTIONS):** "`gh pr view/diff` surfaces already-merged sibling-ticket files (here FOLLOW-354 / PR #358) because the diff base predates the sibling merge; always confirm the true changed set via `git show <mergeCommit> --stat` / `git log --oneline -- <file>`." Seen RETRO-095 (FOLLOW-347 carry-over) + RETRO-120 = 2 — but this is a retro-reading discipline, not a coding rule for worker agents, so it is recorded in lessons.md, NOT promoted to CONVENTIONS_PATCH.
+- **Rule S / Rule K.1** (already promoted) reinforced again by the GET/POST variant-parity tests — no amendment needed.
+
+### 7. Prior-follow-up closure check + new follow-ups
+
+- **FOLLOW-362 closes RETRO-095 §4a LG-2 — VERIFIED end-to-end on the "logged == served" axis.** Chain traced: producer `getHandlerVariant`/`selectedVariant='control'` for non-`en` (`route.ts:847-848`, `:1206-1209`) → served copy `runDecisionTree` emits the single `s.pl`/`s.es` string (control-equivalent, `route.ts:302`) → ClickHouse `adaptation_decisions.variant=control` (`param_p_variant`, asserted in tests) → analytics/render sees variant == served copy. AC-1/AC-2/AC-3 all met (13 tests). **LG-2 CLOSED.**
+- **Gap moved, not eliminated (the underbelly):** (a) the **reward leg** now silently feeds non-`en` into the shared control arm (§4a LG-1, untested §4c TG-1) → **FOLLOW-401**; (b) the **un-suppress trigger** is unbound to FOLLOW-031 / `variants.pl/es` population (§4a LG-2, §4d DG-1) → **FOLLOW-400**. The "populate `variants.pl/es`" alternative the FOLLOW-362 stub offered was NOT taken (suppress was chosen + documented in-comment per stub AC-2) — so the real multi-locale-A/B fix remains open under FOLLOW-031.
+- **New follow-ups:**
+  - **FOLLOW-400** (P2, backend-engineer, 2h) — bind FOLLOW-362 suppression removal to `variants.pl/es` population; add a guard test that fails if any playbook ships `variants.pl`/`variants.es` while `locale !== 'en'` suppression is still live; record the decision in MASTER_DESIGN §E.3/§E.7.
+  - **FOLLOW-401** (P3, backend-engineer, 3h) — decide bandit arm locale-scoping vs documented shared-control-arm; add an end-to-end reward test proving a non-`en` conversion updates the `control` arm (not v1/v2) through `/api/adapt/feedback`.
+
+### 8. Cross-references
+
+- **RETRO-095 (FOLLOW-342 / PR #327):** origin — §4a **LG-2** (`RETROSPECTIVES.md`, "locale precedence silently disables A/B for non-`en`") is the gap this PR closes. This retro confirms LG-2 CLOSED and opens its two successors.
+- **RETRO-111 (FOLLOW-359), RETRO-117 (FOLLOW-361), RETRO-118 (FOLLOW-358):** the variant-logging family; this change is consistent with all (non-`en` GET returns `variant:'control'` via FOLLOW-359's single-variable path; no `'default'`-arm interaction since non-`en` never samples).
+- **RETRO-119 (FOLLOW-354 / PR #358):** owns the 3 carry-over files (`MASTER_DESIGN.md`, `follow-354.test.ts`, `adapt-floor.ts`) that appear in PR #359's stale diff — NOT FOLLOW-362 scope.
+- **FOLLOW-031 (RETRO-004, unpromoted):** the downstream owner of `variants.pl/es` selection; its eventual implementation is gated on removing this PR's suppression (FOLLOW-400).
+- **Rule S (`CONVENTIONS_PATCH.md:883`) / Rule K (`:438`):** govern the GET/POST variant parity verified clean here.
+
+## RETRO-121 — FOLLOW-394 (ClickHouse migration-ordering contract test + deploy runbook; closes ESC-031 / RETRO-118 CB-1/LG-1/TG-1 on the CI-detection + doc legs) — 2026-06-26
+
+> **Numbering note:** RETRO-114/115/116 remain un-committed in-file (the file jumps 113→117; 117/118/119/120 appended in prior sessions). FOLLOW_UPS.md back-references still cite RETRO-114 (PR #353). PM to reconcile the gap. This entry is appended as RETRO-121 per instruction. The "last 5 retros" read for pattern detection were the 5 present in-file at the highest IDs: RETRO-117, 118, 119, 120 (+ the RETRO-111/113 precedents they reference). **NB:** the ticket is **FOLLOW-394** (RETRO-118 allocated it as 394, NOT 397 — the RETRO-118 prose used the placeholder "FOLLOW-397"; FOLLOW_UPS.md footer is authoritative: `394 = RETRO-118 migration-0019 prod-apply + ordering guard + INSERT-rejection contract test`).
+
+### 1. Summary of change
+
+- **PR:** #360 (merged 2026-06-26T13:24:58Z). Squash landed on `main` across 3 commits: `2ab3334` (initial), `7e813a4` (isolated contract DB + gitleaks FP allowlist), `4873457` (shorten gitleaks regex to a CF-rule substring). The `gh`-reported `mergeCommit 5898739` is a pre-squash oid absent locally.
+- **Files changed:** 5 (+376 / −0): `infra/clickhouse/scripts/migration-contract-test.sh` (+198, NEW), `docs/runbooks/clickhouse-migrations.md` (+142, NEW), `.github/workflows/ci.yml` (+7), `.gitleaks.toml` (+1 net), `.claude/agents/data-engineer/lessons.md` (+28).
+- **Modules touched:** infra/clickhouse (test harness) · CI · docs/runbooks · repo-config (gitleaks). **No production code path, no shared schema, no SDK/decision-api/ingest surface.**
+- **Key contracts changed:** **NONE.** No new/changed/removed public symbol, event, env-var, DB column, topic, or SDK signal. The script reuses the existing `CLICKHOUSE_URL` / `CLICKHOUSE_USER` / `CLICKHOUSE_PASSWORD` env vars (same as `migrate.sh`/`smoke-test.sh`); the `contract_test_ordering` DB is created+dropped within the script and is ephemeral. This is a test+docs+config PR — N/A on the contract axis.
+
+### 2. Verification done in PR
+
+- New harness `migration-contract-test.sh` is itself the regression test: applies `0001`–`0018` to an isolated `contract_test_ordering` DB, asserts an INSERT naming `page_context_source` is REJECTED (HTTP `!= 200`), applies `0019` (`ADD COLUMN IF NOT EXISTS page_context_source`), asserts the SAME INSERT SUCCEEDS (HTTP 200). Wired into the `clickhouse-smoke` job at `ci.yml:315` **before** `migrate.sh` (`:323`) on a fresh container.
+- **Two-phase design is self-validating (verified, recorded in §4c):** step 4's `_assert_eq ... 200` retroactively proves step 2's `!= 200` was caused specifically by the absent `page_context_source` and not an unrelated INSERT error (a wrong column name would also fail step 4) — so the "accept ANY non-200 as rejected" looseness in step 2 is closed by step 4.
+- **Isolation correctness verified:** migration files use UNqualified table names (`CREATE TABLE IF NOT EXISTS events`, `ALTER TABLE adaptation_decisions`), so the `?database=contract_test_ordering` URL override correctly routes the DDL into the isolated DB (verified against `0001_create_events.sql` and `0019`). This is why the subsequent `migrate.sh` against the default DB no longer hits "Cannot find column 'tier' to rename" — migration `0018` (the tier→page_context RENAME, commit `d8d5cb8`) is the non-idempotent step the isolation avoids re-running.
+- CI checks: PM-validated GREEN per ticket notes (Gitleaks PASS after 2 fix iterations). Not independently re-watched. Rule I pre-existing-red baseline per memory `project_ci_gate_landscape`. Coverage delta: the migration-ordering boundary (RETRO-118 §4c TG-1, previously **zero** CI coverage) is now pinned at the 0019/`page_context_source` boundary.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** the one new executable file `migration-contract-test.sh` HAS a non-test importer — `ci.yml:315` invokes it in the `clickhouse-smoke` job (verified `grep -n "migration-contract-test.sh" .github/workflows/ci.yml`). The runbook is a doc; `.gitleaks.toml`/`ci.yml` are config; `lessons.md` is an agent file. No dead export. **Clean ✅.**
+- **CHECK B (half-wire):** no new event / env-var / DB column / topic / SDK signal introduced. `page_context_source` (the column the script exercises) is NOT new in this PR — it shipped in migration 0019 / PR #357 and was audited in RETRO-118 §3 (HW-1). The `contract_test_ordering` DB has both a producer (CREATE/migrate) and consumer (INSERT assertions + DROP) inside the same script. **Clean ✅.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the contract test is FROZEN at the 0019/`page_context_source` boundary; it does NOT generalize to FUTURE columns, so CB-1's class re-opens for the next added column.** The script hard-codes the INSERT column list and applies exactly `0001`–`0019`. A future PR that adds column `X` (say migration 0025) AND names `X` in `logDecisionAsync`'s INSERT would **PASS this contract test unchanged** — the test neither references `X` nor applies past 0019. So the recurring fail-CLOSED ordering hazard (RETRO-118 CB-1) is pinned for exactly ONE column. The runbook's "Extending the contract test" section documents a MANUAL add-a-case step, but **nothing enforces it** — there is no check that every column in the live `logDecisionAsync` INSERT column list has a corresponding contract-test assertion. The gap moved one hop: from "0019 has no test" → "0019 has a test; 0020+ relies on a human remembering the manual extension." → **FOLLOW-402** (P2). Cross-ref FOLLOW-308 (prod-apply timing) — do NOT duplicate.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P3, local-only robustness — non-idempotent on FAILURE) — the `DROP DATABASE contract_test_ordering` cleanup runs ONLY on the success path.** The script does `CREATE DATABASE IF NOT EXISTS` at start but `DROP DATABASE IF EXISTS` only at the very end (after the final `_assert_eq`). With `set -euo pipefail`, any failed assertion (`exit 1`) leaves `contract_test_ordering` behind carrying migrations `0001`–`0019`. On a PERSISTENT local ClickHouse, the NEXT run's step-2 INSERT then SUCCEEDS (column already present from the leftover DB) → the script trips its own "FAIL: INSERT succeeded … migration 0019 was already applied" branch, a confusing spurious failure. Harmless in CI (ephemeral container, the documented usage) but a foot-gun for the LOCAL=1 path the script's own usage block advertises. Fix: `trap 'curl … DROP DATABASE IF EXISTS …' EXIT` or `DROP … IF EXISTS` at start too. → folded into **FOLLOW-402** AC.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, generalization — ties to LG-1) — no assertion binds the script's hard-coded INSERT column list to the REAL `logDecisionAsync` INSERT.** If the production writer adds/renames a column, the harness silently drifts out of sync (still green, no longer representative). A lint/test asserting the script's column list ⊇ (or ==) the columns named in `route.ts`'s `logDecisionAsync` INSERT would make the harness self-maintaining. → folded into **FOLLOW-402** AC.
+
+#### 4c-bis. Averted false-positive (recorded, NOT a finding)
+
+- **The step-2 "accept ANY non-200 as rejected" looseness is SAFE because of step 4.** A non-`page_context_source` error in the INSERT (typo in another column, auth failure, wrong DB) would make step 2 PASS for the wrong reason — but step 4 (post-0019, `_assert_eq … 200`) would then ALSO fail and RED the whole test. So the two-phase structure self-validates that step 2's rejection was specifically the missing column. Checked and cleared.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — the runbook OVERSTATES the contract test's coverage, and the next section contradicts it.** Under "CI contract test (FOLLOW-394)" the runbook claims: *"This catches any future PR that adds a column to the INSERT column list in `logDecisionAsync` without a matching migration in the same PR."* That is FALSE per LG-1 — the test is hard-coded to `page_context_source`/0019 and does not auto-detect new columns. The immediately following "Extending the contract test" section silently CONTRADICTS it by requiring a MANUAL per-column add. A reader trusting the headline will assume future columns are auto-guarded and skip the manual step — the exact complacency that reproduces ESC-031 for the next column. Scope the claim to "catches regression of the 0019/`page_context_source` boundary; future columns require the documented manual extension." → **FOLLOW-403** (P2).
+- **DG-2 (P3) — "Manual apply pattern" mislabels `migrate.sh` as a single-file applier.** The runbook's second code block is captioned *"Apply a single migration file through migrate.sh's statement splitter"* but the command shown (`bash infra/clickhouse/scripts/migrate.sh`) applies ALL migrations (idempotently via `IF NOT EXISTS`), not one. Harmless because migrate.sh is idempotent, but the label is wrong and could mislead an operator into thinking it scopes to one file. The single-statement `curl --data-binary @<file>` block above it is correct for 0019. → fold into **FOLLOW-403**.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-396 (P2, OPEN — narrow the gitleaks `route.ts` allowlist, RETRO-118 §4d DG-1):** this PR added a **token-scoped** `regexes` entry `'''0019_adaptation_decisions_page_context'''` to the cloudflare-api-token rule (`.gitleaks.toml:185`). That entry now allowlists the migration-filename token EVERYWHERE — INCLUDING inside `route.ts` — which makes the pre-existing **file-wide** `paths` allowlist `'''apps/control-plane/src/app/api/adapt/route\.ts'''` (`.gitleaks.toml:177`, added by PR #357, FOLLOW-396's target) **REDUNDANT for its stated purpose**. So this PR delivered the *narrow* remedy FOLLOW-396 recommended but left the *broad* one in place → FOLLOW-396 can now SAFELY delete line 177 (the token-scoped entry covers the only reason it existed). This is a Rule-U-shaped "superseding mechanism shipped, superseded mechanism not eliminated." **No new stub — this SHARPENS FOLLOW-396** (cross-ref §7).
+- **FOLLOW-395 (P3, `depends_on: [FOLLOW-394]`):** now UNBLOCKED — FOLLOW-394 is DONE. The `page_context_source` discriminator still has no in-repo consumer (RETRO-118 HW-1); FOLLOW-395 remains the realize-a-consumer ticket.
+- **FOLLOW-308 (P1 devops, standing prod-apply gate):** the runbook explicitly defers the prod-apply MECHANISM to FOLLOW-308 and does NOT duplicate it (verified — "Standing prod-apply gate" section). Correct boundary.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-308:** owns the generic "migrations don't auto-apply to prod" prevention. LG-1's generic-coverage gap (FOLLOW-402) is the CI-detection complement; the two are adjacent but distinct (FOLLOW-308 = prod-deploy timing/automation; FOLLOW-402 = same-repo INSERT↔migration parity). Cross-ref, no duplicate.
+
+#### 5c. Contracts changed others rely on
+
+- **None on the schema/symbol axis.** The `clickhouse-smoke` CI job gained a blocking step that runs FIRST — any future migration change that breaks the `0001`–`0018`-reject / `0019`-accept boundary for `page_context_source` will now fail CI. **Brittle coupling introduced:** the hard-coded globs `000[1-9]_*.sql` + `001[0-8]_*.sql` and the explicit `0019_…` path bind the test to the CURRENT migration numbering. A renumber/reorder/squash of migrations ≤0019 silently invalidates the boundary the test asserts. Noted for any future CH-migration-consolidation work.
+
+#### 5d. Architectural assumptions affected
+
+- Introduces a CI-time **"INSERT-column-list ↔ applied-migration" contract gate** for ClickHouse — a new safety net class, but scoped to one column. Reinforces (and now codifies in a runbook) the standing reality that "merging a CH migration ≠ applied in prod" (memory `project_postgres_migrations_no_autoapply`, RETRO-076/-113). The migrate→verify→merge ordering is now a documented invariant; the *enforcement* of it in prod-deploy remains owned by FOLLOW-308, not by this PR.
+
+### 6. New lesson candidates
+
+- **Pattern A (RETRO-118, "fail-CLOSED migration-ordering: a new INSERT column silently breaks every write until the migration is applied"):** this PR is the **REMEDIATION** of that finding, not a 2nd independent occurrence — so the count **stays 1**, no promotion. The remediation is PARTIAL (column-specific), so the watch-item **evolves**: *"a contract test that pins ONE column's migration-ordering boundary does not generalize — the durable fix derives the asserted INSERT column list from the real writer (or lints parity), so the NEXT added column cannot reintroduce the hazard."* If a 2nd independent fail-CLOSED-ordering incident occurs (a different column/table), promote the rule of shape *"a code change that names a NEW column in an INSERT/UPDATE MUST gate its deploy on the migration being applied first, enforced by a contract assertion derived from the writer's actual column list — not a per-column hand-written case."*
+- **Pattern B (RETRO-118, "a gitleaks false-positive introduced by the PR's OWN added long string is remedied by an allowlist entry"):** 2nd OCCURRENCE here (the 46-char migration filename in the script + runbook trips the cloudflare-api-token 40-char entropy heuristic) — but only **1 PRIOR retro** (RETRO-118), so **below the ≥2-prior threshold; no promotion** (guardrail honored). Crucially the remediation here is the **token-scoped `regexes`** form (the GOOD shape FOLLOW-396 recommended), DISTINCT from RETRO-118's **file-scoped `paths`** form (the bad shape). Watch-item for the NEXT (3rd) sighting: promote a rule of shape *"a self-inflicted gitleaks FP from a PR's own long identifier (migration filename / ADR slug / ≥40-char snake_case symbol) MUST be allowlisted token-scoped (`regexes`), never file-scoped (`paths`) on a secret-handling prod file; and when a token-scoped entry supersedes a prior file-scoped one for the same trigger, the file-scoped entry MUST be removed (Rule-U strip-the-superseded)."*
+- **Pattern C (NEW, count 1) — "a remediation PR closes the CI-detection + doc legs of a finding but only DOCUMENTS (does not perform/verify) the prod-state leg, so the original prod gap moves from 'unguarded' to 'guarded-in-CI-but-prod-state-unverified'."** Seen: RETRO-121 (this); kin to RETRO-113/FOLLOW-392 (seed shipped in code, prod NULL unverified). Count 1 of this exact "CI-leg-closed / prod-leg-documented-only" shape — below threshold, no rule. Watch for a 2nd.
+
+**Rules promoted this retro: NONE** (Pattern A is a remediation of a count-1 finding — count stays 1; Pattern B has only 1 prior retro and a different remediation shape; Pattern C is count 1).
+
+### 7. Prior-follow-up closure check (FOLLOW-394 → RETRO-118 §4b CB-1 / §4a LG-1 / §4c TG-1; root incident ESC-031)
+
+Traced end-to-end (producer INSERT → migration → prod-applied → CI guard), per algorithm step 7:
+
+1. **PRODUCER:** `logDecisionAsync` names `page_context_source` in the explicit INSERT column list (`route.ts`, RETRO-118 §1). Unchanged by this PR. ✅
+2. **MIGRATION (code):** `0019_adaptation_decisions_page_context_source.sql` = `ADD COLUMN IF NOT EXISTS … DEFAULT 'legacy'` — idempotent, Rule W-compliant (not in the `(tenant_id, session_id, ts)` ORDER BY key). ✅
+3. **PROD-APPLIED:** the runbook states 0019 "was applied manually to the production instance" during the ESC-031 incident response. **⚠️ DOCUMENTED, NOT VERIFIED in this retro** — no `DESCRIBE TABLE` / `SELECT DISTINCT page_context_source` attestation, and the RETRO-076 caveat (prod `ingest_worker` may lack the DDL grant) is unaddressed. → **FOLLOW-404** (one-time prod-state attestation).
+4. **CI GUARD:** `migration-contract-test.sh` wired at `ci.yml:315` BEFORE `migrate.sh`; isolated DB; self-validating (step 4 guards step 2). ✅ — but **column-specific** (LG-1).
+
+- **RETRO-118 §4c TG-1 (no test exercising the INSERT against a schema MISSING the column): CLOSED end-to-end ✅** — a genuine closure (harness applies 0001–0018, asserts reject; applies 0019, asserts accept; wired + isolated + self-validating). This is the cleanest leg.
+- **RETRO-118 §4b CB-1 (fail-CLOSED prod ordering hazard): MITIGATED, NOT fully closed ⚠️** — the CI test prevents a same-repo code↔migration mismatch for `page_context_source`, and the runbook codifies migrate→verify→merge. BUT (a) the Vercel-auto-deploy-vs-manual-CH-prod-apply timing is STILL unguarded (owned by FOLLOW-308 — a CI test does not gate the prod deploy), and (b) the guard is column-specific so the NEXT new column re-opens the class (LG-1/FOLLOW-402). Gap moved one hop: "no test" → "test pins one column; generic ordering + prod-deploy-timing still open."
+- **RETRO-118 §4a LG-1 (no tracked operator stub + no post-apply prod assertion): PARTIALLY closed ⚠️** — the runbook supplies the manual curl-apply + `DESCRIBE TABLE` verify pattern (the operator-doc leg), but the prod-state ASSERTION + grant check remain undone (FOLLOW-404).
+- **Net verdict:** FOLLOW-394 GENUINELY closes its CI-detection + documentation ACs (the contract test + runbook) end-to-end. It leaves three residuals — generic-column coverage (FOLLOW-402), runbook-overstatement (FOLLOW-403), and one-time prod-state attestation (FOLLOW-404) — plus it makes FOLLOW-396's broad-allowlist removal now-safe. **PM: FOLLOW-394 is DONE for its CI+doc scope; the prod-apply VERIFICATION and generic-coverage legs are NOT retro-closed — do not retire the ESC-031/CB-1 thread until FOLLOW-402+404 land.**
+
+**Follow-ups (every gap emits one; cross-refs do not duplicate existing stubs):**
+
+- **FOLLOW-402** (data-engineer, P2, 3h): Generalize the migration-ordering contract test so a FUTURE new INSERT column cannot reintroduce the fail-CLOSED hazard — derive the asserted column list from `logDecisionAsync`'s real INSERT (or add a lint asserting parity), AND fix the DROP-on-failure non-idempotency (`trap … EXIT` / drop-at-start). Closes LG-1 + CB-1 + TG-1. Cross-ref FOLLOW-308 — do NOT duplicate the prod-apply mechanism.
+- **FOLLOW-403** (data-engineer, P2, 1h): Correct the runbook — scope the "catches any future PR" claim to the 0019/`page_context_source` boundary + point to the Extending step (DG-1), and fix the "single migration via migrate.sh" mislabel (migrate.sh applies ALL, DG-2).
+- **FOLLOW-404** (devops + data-engineer, P2, 1h): One-time prod-state attestation that prod ClickHouse `adaptation_decisions` HAS `page_context_source` (`DESCRIBE TABLE`) + `SELECT DISTINCT page_context_source` returns the expected values, and confirm the `ingest_worker` DDL grant (RETRO-076 caveat). Closes the RETRO-118 §4a LG-1 prod-state-verification leg the FOLLOW-394 runbook documented but did not prove. Cross-ref FOLLOW-308 — this is the one-time 0019 attestation, NOT the standing mechanism.
+- **FOLLOW-396** (already OPEN, no new stub): SHARPENED — this PR's token-scoped `regexes` entry (`.gitleaks.toml:185`) now supersedes the file-wide `route.ts` `paths` allowlist (`:177`); FOLLOW-396 should DELETE line 177 (Rule-U strip-the-superseded), restoring full secret scanning on the adapt route.
+
+### 8. Cross-references
+
+- **RETRO-118 (FOLLOW-358 / PR #357):** origin — §4b CB-1 (fail-CLOSED ordering), §4a LG-1 (operator stub + prod assertion), §4c TG-1 (no INSERT-vs-missing-column test). This retro confirms TG-1 CLOSED, CB-1/LG-1 mitigated-but-moved-one-hop, and inherits Pattern A/B watch-items. ESC-031 is the incident both retros trace.
+- **ESC-031 (2026-06-26):** the 80-minute silent `adaptation_decisions` write outage this PR's test + runbook are built to prevent recurring.
+- **FOLLOW-308 (RETRO-076 / ESC-022, P1 devops):** owns the standing prod-apply mechanism; the runbook correctly defers to it. FOLLOW-402/404 are the CI-detection + one-time-attestation complements — cross-ref, no duplicate.
+- **FOLLOW-396 (RETRO-118 §4d DG-1):** the open gitleaks-narrowing ticket; this PR added the token-scoped fix that makes its file-wide-allowlist removal safe (§5a/§7).
+- **RETRO-113 (FOLLOW-341 / PR #352) + FOLLOW-392:** Pattern C precedent — code shipped, prod-state (seed / migration) unverified; the same "CI/code-leg closed, prod-leg documented-only" shape.
+- **Rule W (`CONVENTIONS_PATCH.md:1078`):** governs 0019's ADD-COLUMN safety (not in the ORDER BY key) — verified compliant. **Rule M / memory `project_postgres_migrations_no_autoapply`:** the standing "merged ≠ prod-applied" reality this runbook codifies for ClickHouse.
+- **Numbering:** RETRO-114/115/116 still un-committed in-file — PM reconcile.
+
+---
+
+## RETRO-122 — FOLLOW-397 (derive `VARIANT_INDEX` from `SEED_VARIANTS` — Rule K.1 third hardcoded variant list; closes RETRO-117 §4a LG-1 / §4c TG-1 + RETRO-095 §4c TG-3 / §4d DG-1) — 2026-06-26
+
+> **Numbering note:** RETROSPECTIVES.md was at RETRO-121 (FOLLOW-394/#360); this entry is RETRO-122 per the PM-assigned ID. The standing in-file gap (RETRO-114/115/116 for PRs #353/#354/#355 still un-committed; file jumps 113→117) is unchanged — PM to reconcile. The "last 5 retros" read for pattern detection were the 5 present at the highest IDs: RETRO-117, 118, 119, 120, 121 (+ the RETRO-095/111 precedents they reference).
+
+### 1. Summary of change
+
+- **PR:** #361 (merged 2026-06-26T14:01:44Z, merge-commit `7962b4e`). Title: `fix(adapt): derive VARIANT_INDEX from SEED_VARIANTS — Rule K.1 [FOLLOW-397]`.
+- **Files changed:** 19 (+294 / −9). Source (2): `apps/control-plane/src/lib/variant-index.ts` (+27, NEW — derives `VARIANT_INDEX` via `Object.fromEntries(SEED_VARIANTS.map((v,i)=>[v,i]))`), `apps/control-plane/src/app/api/adapt/route.ts` (+9/−9 — imports the lib, deletes the inline `{control:0,v1:1,v2:2}` literal AND the `?? 0` coerce, adds a `variantIndex !== undefined` guard). Tests (17): 1 new `route.follow397.test.ts` (+226), and 15 existing `route.*.test.ts` + `route.test.ts` each +2 (add `SEED_VARIANTS: ['control','v1','v2'] as const` to their `@/lib/bandit-query` mock so the derived map builds at module load).
+- **Modules touched:** control-plane only (`adapt` route + a new `lib`). **No SDK, shared schema, decision-api, ingest, packages/db, or migration surface.** Pure intra-app refactor + test.
+- **Key contracts changed:**
+  - `VARIANT_INDEX` relocated from a private inline `const` in `route.ts:241` to an **exported** symbol in `@/lib/variant-index` (`variant-index.ts:25`). **breaking: no** — single non-test consumer (`route.ts:74`); value-identical for the current arm set.
+  - **Behavioral change (stray-variant path only):** a sampled variant NOT in `SEED_VARIANTS` now resolves `variantIndex = undefined` → copy selection falls through to `s.en` (base copy). Previously `VARIANT_INDEX[variant] ?? 0` coerced it to index 0 → `s.variants.en[0]` (control-variant copy). **breaking: no** for production (the stray path is unreachable today — `thompsonSample` only returns arms seeded from `SEED_VARIANTS`); latent-only. For a well-formed playbook the two outputs are identical (`types.ts:27` "Index 0 mirrors `en`"); they diverge only in a malformed/future playbook — see §4a/§7.
+
+### 2. Verification done in PR
+
+- Test files changed: `route.follow397.test.ts` (NEW) — **Part A (unit):** imports the real exported `VARIANT_INDEX` and asserts `.control===0/.v1===1/.v2===2`, `.v3` and `.default` are `undefined` (RED if a hardcoded `default:0`/`v3:n` re-appears), and `Object.keys === ['control','v1','v2']`. **Part B (integration):** mocks `thompsonSample → 'v3'` (a stray arm) against a synthetic playbook where `s.en` ('BASE_EN_COPY') ≠ `s.variants.en[0]` ('CONTROL_VARIANT_COPY'), drives the REAL `POST` handler, asserts HTTP 200, `body.variant==='v3'`, and the headline directive value === 'BASE_EN_COPY' (not 'CONTROL_VARIANT_COPY') — proving `undefined` is no longer coerced to 0. Assertions added: ~9. This is the RETRO-095 §4c TG-3 consumer-fallback test FOLLOW-361 was assigned but did not deliver. The 15 mock edits are mechanical (add the `SEED_VARIANTS` export so the derived map populates under `vi.mock`).
+- CI checks: PR body reports `112 test files / 1320 tests pass`, typecheck clean, prettier no-op, pre-push Rule H/J green. PM-validated GREEN (per instruction). Not independently re-watched. Rule I pre-existing-red baseline per memory `project_ci_gate_landscape`. Coverage delta: the `VARIANT_INDEX` stray/`default`/`v3` fallback (previously **zero** coverage anywhere — RETRO-117 §4c TG-1) is now pinned on BOTH the unit (Part A) and the real-route (Part B) axes.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** the one new source file `variant-index.ts` has exactly one non-test importer — `route.ts:74` `import { VARIANT_INDEX }` (grep `VARIANT_INDEX` over apps/ → producer `variant-index.ts:25`, consumer `route.ts:74/290`, tests only otherwise). Not orphaned. **Clean ✅.**
+- **CHECK B (half-wire):** no new event / env-var / DB column / topic / SDK-signal introduced. The variant-list business rule has a complete in-process wire: PRODUCER `SEED_VARIANTS` (`bandit-query.ts:34`) → DERIVE `VARIANT_INDEX` (`variant-index.ts:25`) → CONSUME copy selection (`route.ts:290/302`). Both ends present. **Clean ✅.** (This PR *removes* a divergence rather than adding a new wire.)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, latent — the gap moved ONE HOP) — the SoT is consolidated, but a NEW implicit CROSS-PACKAGE positional contract is now unguarded: `SEED_VARIANTS[i]` (control-plane, `bandit-query.ts:34`) MUST align by index with the playbook `variants.en[i]` arrays (SDK, `packages/sdk/src/core/playbooks/types.ts:27` "Index 0 mirrors `en`").** Before this PR, the explicit literal `{control:0,v1:1,v2:2}` at the consumer at least made the index↔copy mapping locally visible. Now `VARIANT_INDEX` is derived purely from `SEED_VARIANTS` ORDER, and the copy it indexes lives in a DIFFERENT package's positional array — nothing binds the two. Failure mode: if `SEED_VARIANTS` is ever REORDERED (e.g. `['v1','control','v2']`), `VARIANT_INDEX.control` becomes 1 and the route serves `variants.en[1]` (the v1 copy) for control — a silent copy-misattribution with no test or type to catch it. This is the classic `inquiry_submit_selector`-shaped one-hop move: FOLLOW-361 killed "two seeders disagree" → FOLLOW-397 killed "the consumer literal is a third copy" → the residual is now "the consumer's ORDER and the playbook's copy-array order are an untested cross-package coupling." → **FOLLOW-405** (P2).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A as a defect in the diff. The `Object.fromEntries` derivation and the `variantIndex !== undefined` guard are correct. **Reconciliation note (implementation IMPROVED on its own stub AC, recorded so a reviewer doesn't read it as a deviation-bug):** FOLLOW-397 stub AC-2 asked the stray-variant test to assert "served copy = control (index 0)". The implementation instead made the stray path serve `s.en` (true base) by dropping `?? 0` — the MORE defensive choice (control-variant copy is only *supposed* to mirror `s.en`; serving `s.en` directly removes the dependence on that being true). The test correctly asserts the new (better) behavior. Accepted as an improvement, not a gap.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2 — an explicitly-assigned FOLLOW-397 AC was only PARTIALLY delivered).** Stub AC-3 (`FOLLOW_UPS.md:10995`): "assert every member of `SEED_VARIANTS` resolves to a DISTINCT, in-range `VARIANT_INDEX` — so a future arm added to the SoT WITHOUT a copy slot fails CI rather than silently collapsing to control." The delivered Part A test asserts `VARIANT_INDEX` is internally self-consistent (keys == `['control','v1','v2']`, indices 0/1/2) — but does NOT assert those indices are IN-RANGE for the actual playbook `variants.en` arrays. So if `SEED_VARIANTS` grows to add `'v3'`, `VARIANT_INDEX.v3 = 3` (derived fine) but `variants.en[3]` is `undefined` on every 3-slot playbook → the v3 arm silently serves `s.en` (base) for every listing while v1/v2 get distinct copy, and **CI stays green**. AC-3's intent ("a 4th arm without a copy slot fails CI") is unmet. The gap moved one hop — from "VARIANT_INDEX is a hardcoded third list" to "the SoT↔playbook-copy-slot coverage is untested." → **FOLLOW-405** (folds the cross-package guard test).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — a FOURTH hardcoded enumeration of the variant set survives in prose.** `route.ts:255` JSDoc `@param variant - Bandit variant ('control'|'v1'|'v2')` re-states the arm list as a literal in documentation; it goes stale the moment `SEED_VARIANTS` grows. Harmless (doc only, the param is typed `string` with a `'control'` default, not the union), but it is the residual textual twin of the consolidation. Also the served=base / logged=raw stray-arm contract (Part B logs `variant:'v3'` while serving base copy) is implied-by-code but undocumented — stub AC-2 explicitly asked to "pin the intended contract" for the logged value. → folded into **FOLLOW-405** as a doc AC (no separate stub).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-361 / RETRO-117 (DONE — the producer-side SoT consolidation):** this PR completes its stated "single source of truth for the three-arm variant list" goal — the ⅔-done residual RETRO-117 §4a LG-1 flagged is now closed (consumer derived). No reopen.
+- **FOLLOW-362 / RETRO-120 (DONE — suppress bandit for non-`en` locales):** composes cleanly. For non-`en`, `variant` is forced to `'control'` (index 0, always defined), so the new `variantIndex !== undefined` guard is a no-op on that axis; the pl/es precedence (`s.pl`/`s.es` first) is unchanged. Verified no interaction.
+- **FOLLOW-359 / RETRO-111 (DONE — return `variant` in GET response):** both GET and POST share `runDecisionTree`, so both inherit the fix identically — no GET/POST divergence introduced (contrast RETRO-118's page_context split).
+- **FOLLOW-400 / FOLLOW-401 (OPEN — bandit locale-scoping & `variants.pl/es` population, RETRO-120):** orthogonal; they govern WHETHER non-`en` variant copy exists, not the index map. The cross-package ordering contract LG-1 raises would extend to `variants.pl/es` if/when those are populated — cross-ref, no duplicate.
+
+#### 5b. Future sprint tickets affected
+
+- **Any future "add a 4th variant (v3)" ticket:** previously had to update `VARIANT_INDEX` in lockstep (the RETRO-117 trap) — that trap is GONE (derived). The NEW obligation: it must also add a `variants.en[3]` copy slot to every non-neutral playbook, and there is currently NO CI gate forcing that (TG-1 / FOLLOW-405). This is the motivating scenario for FOLLOW-405.
+- **FOLLOW-007 ("close the bandit loop"):** unaffected — this PR changes neither the arm set nor the sampling; it hardens the arm→copy mapping. Neutral.
+
+#### 5c. Contracts changed others rely on
+
+- `VARIANT_INDEX` is now a public export of `@/lib/variant-index`. Single in-repo consumer (`route.ts`); decision-api does NOT import it (its `bandit.ts` is a pure `selectVariant` over caller-supplied arms, per RETRO-117 §5c) — single-app blast radius. No cross-app skew.
+- The implicit `SEED_VARIANTS`-order ↔ `playbook.variants.en`-index contract (LG-1) is the one new cross-package coupling others must respect. Recorded for FOLLOW-405.
+
+#### 5d. Architectural assumptions affected
+
+- The "the bandit arm set has exactly ONE source of truth (`SEED_VARIANTS`)" invariant is now TRUE across both producers (seeders) AND the consumer (copy index) — the un-consolidated tail RETRO-117 §5d flagged is closed. The residual architectural risk shifts outward: the SoT now governs INDEX assignment, but the COPY those indices address lives in a separate package's positional array with no parity gate (LG-1) — "single source for the keys, no gate that the keys all have a value."
+
+### 6. New lesson candidates
+
+- **Pattern (SoT-consolidation residual): "a reconcile-the-duplicates PR finishes unifying the list onto an exported constant, but the consolidation converts an EXPLICIT local mapping into an IMPLICIT cross-module POSITIONAL coupling (derived-by-index) that no test/type binds — so the divergence risk doesn't vanish, it relocates to the order-alignment of two arrays in different packages."** Seen: RETRO-122 (this — `SEED_VARIANTS` order ↔ `playbook.variants.en` index). **This PR is the REMEDIATION of RETRO-117 §4a LG-1 (same feature/context — the bandit variant list), so per the ledger's single-feature-temporal-recurrence ≠ 2-independent-contexts precedent (RETRO-104/108/109, applied in RETRO-117 §6 and RETRO-121 §6), the count for the "SoT-leaves-a-consumer-residual" family STAYS 1. NO rule promotion.** It remains a confirming instance of existing **Rule K.1** (SoT for parallel lists) and **Rule S** (sibling-set completeness) — `playbook.variants.en` is now the unenumerated sibling of the `SEED_VARIANTS` set. FOLLOW-405 is the concrete remediation; watch for a 2nd INDEPENDENT context (a different feature) before considering a "derived-positional-coupling needs a parity gate" rule.
+- **Rules promoted this retro: NONE** (the only candidate is a remediation of a count-1 finding; count stays 1, threshold not met).
+
+### 7. Prior-follow-up closure check (FOLLOW-397 → RETRO-117 §4a LG-1 / §4c TG-1 / §4d DG-1 + RETRO-095 §4c TG-3)
+
+Traced end-to-end (SoT constant → derived index → real route copy selection → served/logged value), per algorithm step 7:
+
+1. **SoT (producer):** `SEED_VARIANTS = ['control','v1','v2'] as const` (`bandit-query.ts:34`) — unchanged, single authority. ✅
+2. **DERIVE (the former third list):** `VARIANT_INDEX = Object.fromEntries(SEED_VARIANTS.map((v,i)=>[v,i]))` (`variant-index.ts:25`) — no hardcoded literal. grep over non-test source for `control: 0`/`{control:0` returns only the historical JSDoc reference in `variant-index.ts:4`, zero live literals. ✅
+3. **CONSUME (copy selection):** `route.ts:290` `const variantIndex: number | undefined = VARIANT_INDEX[variant]`; `route.ts:302` `(variantIndex !== undefined ? s.variants?.en[variantIndex] : undefined) ?? s.en` — the `?? 0` coerce is gone; stray arms fall through to base. ✅
+4. **VERIFY (test):** `route.follow397.test.ts` Part A pins the derivation + `undefined` for `v3`/`default`; Part B drives the REAL route with a stray `'v3'` and asserts served = base, not control. ✅
+5. **SoT-GROWTH GUARD (AC-3):** NOT delivered end-to-end — the test asserts `VARIANT_INDEX` self-consistency but not playbook-copy-slot coverage; a 4th arm would pass CI and silently serve base. ⚠️ (FOLLOW-405).
+
+- **RETRO-117 §4a LG-1 (P2, `VARIANT_INDEX` third hardcoded copy): CLOSED end-to-end.** Derived from the SoT; no live literal remains; the future-`v3`-collapses-to-control failure mode RETRO-117 described is eliminated for the INDEX (a v3 now maps to index 3, not `undefined→0`). ✅
+- **RETRO-117 §4c TG-1 = RETRO-095 §4c TG-3 (P2, no test of the stray-variant fallback): CLOSED.** `route.follow397.test.ts` Part B is the real-route consumer-fallback regression test that was missing through two prior tickets. ✅ — a GENUINE closure, not a hop-shuffle, for the test leg.
+- **RETRO-117 §4d DG-1 (P3, stale QUEUE TICKET-AB-006 title): CLOSED.** `QUEUE.md:1261-1264` now carries the SUPERSEDED annotation (FOLLOW-397 AC-4, PM-owned QUEUE edit — verified in-file). ✅
+- **Net verdict:** FOLLOW-397 GENUINELY closes the RETRO-117 LG-1 third-list residual + the RETRO-095 TG-3 fallback test + the DG-1 doc leg end-to-end. It does NOT fully close AC-3 (the SoT-growth guard): the divergence risk relocated one hop — from "consumer literal diverges" to "consumer order ↔ playbook copy-array, untested cross-package." → **FOLLOW-405** carries the cross-package parity guard + the DG residuals. **PM: FOLLOW-397 is DONE for its primary AC (LG-1/TG-3/DG-1); promote FOLLOW-405 to carry the AC-3 tail.**
+
+### 8. Cross-references
+
+- **RETRO-117 (FOLLOW-361 / PR #356):** direct parent — origin of FOLLOW-397 (§4a LG-1 third-list, §4c TG-1 fallback-test, §4d DG-1 QUEUE annotation). This retro confirms all three CLOSED and carries the AC-3 tail forward to FOLLOW-405.
+- **RETRO-095 (FOLLOW-342):** root origin of the TG-3 fallback-test AC (`:18565`) and the §6 P-2 divergent-list pattern; the stray-variant test demanded since RETRO-095 is finally delivered here.
+- **RETRO-120 (FOLLOW-362) / RETRO-111 (FOLLOW-359):** same adapt-copy-selection family — non-`en` suppression (362) + returned-variant attribution (359) + now the SoT-derived index (397) compose into a coherent arm→copy→log loop; §5a verifies no interaction.
+- **Rule K.1 (`CONVENTIONS_PATCH.md:442`) / Rule S (sibling-set completeness):** the governing rules; FOLLOW-397 is a confirming-instance remediation, count stays 1, NO promotion.
+- **Numbering:** RETRO-114/115/116 (PRs #353/#354/#355) still un-committed in-file — PM reconcile (carried from RETRO-117/118/121).
+
+---
+
+## RETRO-123 — FOLLOW-396 (restore gitleaks `route.ts` scanning: strip the superseded file-wide `paths` allowlist; closes RETRO-118 §4d DG-1 on the removal leg) — 2026-06-26
+
+> **Numbering note:** RETROSPECTIVES.md was at RETRO-122 (FOLLOW-397 / PR #361); this entry is RETRO-123 per the PM-assigned ID. The standing in-file gap is UNCHANGED and now persists across SIX retros: **RETRO-114/115/116 (PRs #353/#354/#355) remain un-committed in-file — the file jumps 113→117.** FOLLOW_UPS.md back-references still cite RETRO-114 (PR #353, = FOLLOW-393). This is no longer "recurring numbering debt the PM keeps deferring" (RETRO-121 lessons) — it is a 6-retro-old documentation hole in the learning-loop's own SoT. PM MUST reconcile (back-fill 114/115/116 or annotate the gap as intentional). Surfaced again in §4d/§8. The "last 5 retros" read for pattern detection were the 5 present at the highest IDs: RETRO-118, 119, 120, 121, 122 (+ the RETRO-095/111/117 precedents they reference).
+
+### 1. Summary of change
+
+- **PR:** #362 (branch `backend-engineer/FOLLOW-396-gitleaks-allowlist-narrow`, head commit `bd0f829`). **OPEN at retro time** (`mergeStateStatus: UNSTABLE`, `mergeable: MERGEABLE`); merge expected 2026-06-26 — merge-commit pending. This retro runs pre-merge per the trigger; the changed set was verified against the branch HEAD (`git show HEAD:.gitleaks.toml`), not a stale `gh pr diff` base.
+- **Files changed:** 1 (+0 / −5): `.gitleaks.toml` only.
+- **Modules touched:** repo-config (gitleaks secret-scanning) ONLY. **No production code, no shared schema, no SDK / decision-api / ingest / control-plane source, no test, no migration, no doc.** This is a pure security-config change.
+- **Key contracts changed:** **NONE.** No new/changed/removed public symbol, event, env-var, DB column, topic, or SDK signal. The change *removes* a suppression: the 5-line `paths` exemption that excluded `apps/control-plane/src/app/api/adapt/route.ts` from the `cloudflare-api-token` rule is deleted. The token-scoped `regexes` entry `'''0019_adaptation_decisions_page_context'''` (`.gitleaks.toml:180`, added by FOLLOW-394 / PR #360) is RETAINED and untouched — it globally suppresses the migration-filename false-positive for any file. N/A on the contract axis.
+
+### 2. Verification done in PR
+
+- Test files changed: **none** (config-only change; no test surface exists for a gitleaks allowlist deletion).
+- PR evidence: AC-1 (delete the 5-line `paths` block) and AC-3 (remove the `route.ts` line) are satisfied — verified directly: `git show HEAD:.gitleaks.toml` shows the consent entry (`:172`) followed immediately by the closing `]` (`:173`), with NO `adapt/route\.ts` `paths` entry; the `regexes` migration-filename entry survives at `:180`. **AC-2 (negative control — prove gitleaks still CATCHES a real secret in `route.ts` after the deletion, by adding a dummy high-entropy token locally) is NOT evidenced** in the PR body. The body states only "Gitleaks CI passes on both push-event and PR-event runs" — that proves the FP no longer fires (no false RED), NOT that real-secret detection on `route.ts` is restored (no true-positive demonstrated). See §4c TG-1.
+- CI checks: PM-validated per ticket; `mergeStateStatus: UNSTABLE` at retro time (some checks still resolving). Gitleaks step reported green. Not independently re-watched. Rule I pre-existing-red baseline per memory `project_ci_gate_landscape`.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** no new file or export. The PR DELETES 5 config lines and adds nothing. No symbol to orphan. The retained `regexes` entry `0019_adaptation_decisions_page_context` (`:180`) has a live "consumer" (the `cloudflare-api-token` rule's allowlist) and live "producers" (the 46-char migration filename cited in `route.ts` JSDoc, in `migration-contract-test.sh`, and in the CH runbook — all per RETRO-121). **Clean ✅.**
+- **CHECK B (half-wire):** no new event / env-var / DB column / topic / SDK signal introduced. The change removes a wire-suppressor, RESTORING the `cloudflare-api-token` rule→`route.ts` scan that was severed by PR #357. The restored scan now has both ends present (rule + target file). **Clean ✅.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, latent config-coupling) — the global `regexes` entry `'''0019_adaptation_decisions_page_context'''` (`:180`) is now the SOLE suppressor of the migration-filename FP across THREE consumers** (`route.ts` JSDoc, `migration-contract-test.sh`, `clickhouse-migrations.md`). Before this PR, `route.ts`'s FP was double-covered (file-wide `paths` + global `regexes`); now it rides only the global entry. Correct and intended (this is the narrow remedy). The latent risk: the `regexes` value is a 38-char PREFIX of the 46-char filename `0019_adaptation_decisions_page_context_source` — if a future migration is named with a DIFFERENT ≥40-char slug and cited in `route.ts` (or any secret-handling file), the FP recurs with no file-wide net to catch it, and the next author may reach for the bad-shape `paths` fix again. This is exactly why the pattern is promoted to a rule this retro (§6). No separate stub — governed by new Rule V.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. The deletion is correct and complete; the retained `regexes` entry is a specific-string allowlist that a real Cloudflare-shaped token (high-entropy hex) cannot match, so real-secret detection on `route.ts` is restored in principle. No defect in the diff.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3 — an explicitly-assigned FOLLOW-396 AC was not evidenced).** Stub AC-2 (`FOLLOW_UPS.md`, FOLLOW-396): *"Confirm gitleaks still scans `route.ts` for real secrets after the change (run the gitleaks CI step; intentionally add a dummy high-entropy token locally to prove it is still caught, then remove)."* The PR delivered AC-1 + AC-3 (the deletion) and a "CI passes" claim, but the **negative-control true-positive** — the half of AC-2 that actually PROVES scanning was restored (not silently still-suppressed by some other allowlist entry) — is not shown. A "gitleaks green" result is consistent with BOTH "scanning restored, no secret present" AND "scanning still suppressed." Only the dummy-token positive proof disambiguates. The gap moved one hop: from "route.ts not scanned (RETRO-118 DG-1)" → "route.ts allowlist removed; restoration asserted-by-construction, not demonstrated." → **FOLLOW-406** (P3).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2, process / learning-loop SoT) — RETRO-114/115/116 (PRs #353/#354/#355) are still absent from RETROSPECTIVES.md** (file jumps 113→117), now carried unresolved across RETRO-117/118/121/122 and this entry (6 retros). The retro ledger is the learning loop's single source of truth; a 3-entry hole in it degrades every future pattern-count that scans "the last N retros." FOLLOW_UPS.md still cites RETRO-114 as the source of FOLLOW-393. → surfaced for PM (no code stub — this is a PM-owned ledger reconciliation, consistent with prior-retro handling; escalating its visibility, not its mechanism).
+- **DG-2 (P3, cosmetic) — copy-paste artifact in the surviving consent allowlist comment.** `.gitleaks.toml:168-171` (the FOLLOW-374 consent block, untouched by this PR) ends "...so the env-based HMAC and IP-encryption keys in **route.ts** are still scanned" — but that block guards the **consent `platform-registration/`** directory, not `route.ts`; the sentence is a verbatim copy of the route.ts justification this PR just deleted. Harmless, but it now mislabels which file it protects. → folded into FOLLOW-407 (the entry it annotates is FOLLOW-407's target anyway).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-396 itself:** this PR IS its delivery. RETRO-121 §5a/§7 SHARPENED FOLLOW-396 ("the token-scoped `regexes` entry now supersedes the file-wide `route.ts` `paths` allowlist; FOLLOW-396 can safely DELETE it — Rule-U strip-the-superseded"); PR #362 executed exactly that. The QUEUE spec (`QUEUE.md:6399`) "delete lines 173-177 (the route.ts comment block + path entry)" matches the −5-line diff. **The retro prediction → ticket → PR loop closed as designed.**
+- **NEW CASCADE — FOLLOW-374's consent allowlist is the SAME live anti-pattern, one entry up (`.gitleaks.toml:172`).** Promoting Rule V this retro flags it: `'''apps/control-plane/src/app/api/v1/consent/platform-registration/'''` is a **file-wide `paths` exemption disabling the `cloudflare-api-token` rule for an ENTIRE secret-handling prod endpoint** (the platform-registration route, which the comment says handles env-derived HMAC keys), to suppress a SELF-AUTHORED long string (the 64-char `CANONICAL_CONSENT_TEXT_HASH`). This is the identical bad shape RETRO-118 flagged for `route.ts` and that this PR just fixed — still LIVE for the consent route. The correct remedy is the same token-scoped `regexes` narrowing. → **FOLLOW-407** (P2). This is the multi-axis catch: the obvious axis ("FOLLOW-396 closed, clean") hides a second live instance of the exact pattern one allowlist-entry away.
+
+#### 5b. Future sprint tickets affected
+
+- Any future PR that introduces a self-inflicted gitleaks FP from its own long identifier (migration filename, ADR slug, content hash, ≥40-char snake/kebab symbol) is now governed by **Rule V** (§6): token-scoped `regexes`/`stopwords`, never file-scoped `paths` on a secret-handling file. The recurring "next author reaches for the `paths` fix" risk (LG-1) is the motivating scenario.
+
+#### 5c. Contracts changed others rely on
+
+- **None on the schema/symbol axis.** Security-posture change only: `cloudflare-api-token` scanning is RESTORED for `apps/control-plane/src/app/api/adapt/route.ts` (a file holding env-derived HMAC + IP-encryption key usage). Any real Cloudflare-shaped secret henceforth committed to that file will now RED gitleaks CI — a strictly tighter gate. The global `regexes` entry (`:180`) remains the only path-independent suppressor of the one migration-filename token.
+
+#### 5d. Architectural assumptions affected
+
+- Reinforces the secret-scanning invariant: **generic high-entropy rules must stay active on every secret-handling prod file; self-inflicted FPs are suppressed at the token granularity, not the file granularity.** This PR moves `route.ts` back into compliance with that invariant; FOLLOW-407 moves the consent route into it. After both land, no secret-handling prod file carries a blanket `cloudflare-api-token` `paths` exemption.
+
+### 6. New lesson candidates + RULE PROMOTION
+
+- **Pattern B — "gitleaks self-inflicted FP allowlist hygiene" — NOW AT ≥2 PRIOR RETROS → PROMOTED to Rule V.** Adjudicated occurrences across PRIOR retros:
+  - **RETRO-118 §6 Pattern B (occurrence 1):** PR #357 added a file-wide `paths` exemption on `route.ts` (the BAD shape) to silence its own 46-char migration-filename JSDoc — count 1.
+  - **RETRO-121 §6 Pattern B (occurrence 2):** PR #360 added a token-scoped `regexes` entry (the GOOD shape) for the same filename in the script+runbook; RETRO-121 explicitly recorded it as the "2nd OCCURRENCE," deferred promotion SOLELY because there was then "only 1 PRIOR retro (RETRO-118)," and pre-committed: *"Watch-item for the NEXT (3rd) sighting: promote a rule of shape [token-scoped not file-scoped; strip-the-superseded]."*
+  - **RETRO-123 (this — the 3rd sighting):** PR #362 performs the strip-the-superseded action itself. The two independent occurrences (RETRO-118, RETRO-121) are now BOTH PRIOR retros → the ≥2-prior-retro guardrail is satisfied, exactly as RETRO-121 pre-authorized. **This is NOT a count-inflation by a remediation** (the discipline RETRO-122 guarded): the 2 banked occurrences were adjudicated as independent by RETRO-121 itself (different trigger sites, different remediation shapes); this PR's remediation does not subtract from them. **→ Rule V promoted** (`CONVENTIONS_PATCH.md`). Evidence: RETRO-118 §6 + RETRO-121 §6. Immediate teeth: Rule V flags a LIVE second instance (the FOLLOW-374 consent `paths` exemption, §5a → FOLLOW-407).
+- **Rules promoted this retro: Rule V** (gitleaks self-inflicted-FP allowlist hygiene — token-scoped not file-scoped on secret-handling files; strip the superseded `paths` entry when a token-scoped one covers the trigger).
+
+### 7. Prior-follow-up closure check (FOLLOW-396 → RETRO-118 §4d DG-1) + new follow-ups
+
+Traced end-to-end (FP-suppressor removed → rule re-armed on the file → real-secret detection demonstrated), per algorithm step 7:
+
+1. **SUPPRESSOR REMOVED:** the 5-line `paths` block exempting `route.ts` is deleted — verified `git show HEAD:.gitleaks.toml` (consent entry `:172` → closing `]` `:173`, no `adapt/route\.ts` entry). ✅
+2. **RULE RE-ARMED:** the `cloudflare-api-token` rule no longer has a file-level allowlist for `route.ts`; only the specific-string `regexes` entry (`:180`) suppresses the one migration-filename token, which a real high-entropy secret cannot match. ✅ (by construction)
+3. **DETECTION DEMONSTRATED:** a dummy high-entropy token committed to `route.ts` REDs gitleaks. ⚠️ **NOT shown** — AC-2's negative control was not run/evidenced (§4c TG-1). → **FOLLOW-406**.
+
+- **RETRO-118 §4d DG-1 (file-wide allowlist disables scanning on a secret-handling file): CLOSED on the removal leg ✅.** The broad exemption is genuinely gone; `route.ts` is structurally back under the generic rule. This is a real closure of the primary AC (AC-1/AC-3), and the clean fulfilment of the RETRO-121 strip-the-superseded prediction.
+- **Residual (gap moved one hop):** the RESTORATION is asserted-by-construction, not demonstrated (AC-2 negative control unmet) → FOLLOW-406. And the SAME anti-pattern is still LIVE one entry up on the consent route → FOLLOW-407.
+- **Net verdict:** FOLLOW-396 GENUINELY closes RETRO-118 §4d DG-1 for its delete-the-broad-allowlist scope. **PM: FOLLOW-396 is DONE for AC-1/AC-3; AC-2's negative-control verification is NOT retro-closed (FOLLOW-406), and Rule V's promotion exposes the parallel live consent exemption (FOLLOW-407). Do not retire the gitleaks-allowlist-hygiene thread until FOLLOW-407 lands.**
+
+**Follow-ups (every gap emits one; cross-refs do not duplicate existing stubs):**
+
+- **FOLLOW-406** (devops-engineer, P3, 1h): One-time negative-control attestation that gitleaks still CATCHES a real secret in `apps/control-plane/src/app/api/adapt/route.ts` after the `paths` deletion — add a dummy high-entropy `cloudflare-api-token`-shaped value locally, confirm gitleaks REDs, remove it, and record the result. Closes the FOLLOW-396 AC-2 verification leg the PR asserted-but-did-not-prove (§4c TG-1 / §7 step 3).
+- **FOLLOW-407** (backend-engineer or devops-engineer, P2, 1h): Apply the newly-promoted **Rule V** to its second live instance — narrow the FOLLOW-374 consent allowlist (`.gitleaks.toml:172`, `'''…/v1/consent/platform-registration/'''`) from a file-wide `paths` exemption to a token-scoped `regexes`/`stopwords` entry matching the 64-char `CANONICAL_CONSENT_TEXT_HASH`, restoring `cloudflare-api-token` scanning on that secret-handling prod endpoint; run the same dummy-token negative control (FOLLOW-406 pattern); and fix the copy-paste "...keys in route.ts are still scanned" comment that mislabels the file it guards (§4d DG-2). Same shape as FOLLOW-396; the parallel RETRO-118-class gap for the consent route.
+
+### 8. Cross-references
+
+- **RETRO-118 (FOLLOW-358 / PR #357):** origin — §4d DG-1 (the file-wide `route.ts` `paths` exemption) is the gap this PR closes; §6 Pattern B occurrence 1 (file-scoped, bad shape). This retro confirms DG-1 CLOSED on the removal leg.
+- **RETRO-121 (FOLLOW-394 / PR #360):** the immediate parent — its §5a/§7 SHARPENED FOLLOW-396 (token-scoped `regexes` supersedes the file-wide `paths`; "delete it — Rule-U strip-superseded") and its §6 Pattern B (occurrence 2) explicitly set the "promote on the NEXT (3rd) sighting" trigger this retro fires. PR #362 is the prediction executed.
+- **RETRO-122 (FOLLOW-397 / PR #361):** the disciplinary precedent — "a remediation of a count-1 finding does NOT advance the count." Reconciled here: Rule V is promoted on TWO independent PRIOR occurrences (118, 121), not on this remediation; the discipline is respected, not breached.
+- **FOLLOW-374 (consent platform-registration allowlist):** the second live instance of the Rule V anti-pattern (§5a → FOLLOW-407).
+- **Rule V (`CONVENTIONS_PATCH.md`, promoted this retro) / Rule U (`:1017`, the typed-column strip-on-supersede analogue RETRO-121 referenced loosely as "Rule-U-shaped"):** Rule V is the secret-scanning-config sibling of Rule U's strip-the-superseded clause, in a distinct domain.
+- **Numbering:** RETRO-114/115/116 (PRs #353/#354/#355) STILL un-committed in-file — 6-retro-old ledger hole; PM reconcile (§4d DG-1, carried from RETRO-117/118/121/122).
+
+---
+
+## RETRO-124 — FOLLOW-403 (correct the clickhouse-migrations runbook: scope the overstated CI-coverage claim + fix the migrate.sh caption; closes RETRO-121 §4d DG-1/DG-2 on the runbook axis) — 2026-06-26
+
+> **Numbering note:** RETROSPECTIVES.md was at RETRO-123 (FOLLOW-396 / PR #362); this entry is RETRO-124 per the PM-assigned ID, appended at end. Per the invocation, RETRO-114/115/116 (PRs #353/#354/#355) are being back-filled concurrently by another agent — so this retro does NOT re-flag the 113→117 gap as a new finding (it is in-flight), only carries the one-line note (§8). The "last 5 retros" read for pattern detection were the 5 present at the highest IDs: RETRO-119, 120, 121, 122, 123 (+ the RETRO-118 precedent they reference). FOLLOW-403's lineage: RETRO-121 §4d DG-1/DG-2 → FOLLOW-394 (PR #360) → this correction.
+
+### 1. Summary of change
+
+- **PR:** #363 (merged 2026-06-26T14:32:15Z, merge-commit `e639b5b`). Title: `docs(data): correct CH migrations runbook — scope CI claim + fix migrate.sh caption [FOLLOW-403]`.
+- **Files changed:** 1 (+9 / −4): `docs/runbooks/clickhouse-migrations.md` only.
+- **Modules touched:** docs/runbooks ONLY. **No production code, no shared schema, no SDK / decision-api / ingest / control-plane source, no test, no migration, no CI/config.** Pure documentation correction.
+- **Key contracts changed:** **NONE.** No new/changed/removed public symbol, event, env-var, DB column, topic, or SDK signal. N/A on the contract axis. The only "contract" altered is a documentary CLAIM about the FOLLOW-394 CI contract test's coverage (narrowed from "catches any future column" to "catches regression of the 0019/`page_context_source` boundary specifically").
+
+### 2. Verification done in PR
+
+- Test files changed: **none** (doc-only; no test surface for a runbook prose correction). PR self-check correctly marked every evidence-requirement axis (tables/columns/writers/metrics/retention/golden-query/DATA_DICTIONARY) N/A.
+- Diff verified directly against `docs/runbooks/clickhouse-migrations.md`: AC-1 (`:123-127` now scopes the claim to the 0019/`page_context_source` boundary + adds the explicit "does NOT generically detect any future column" + the manual-extension/FOLLOW-402 pointer), AC-2 (`:76` caption corrected to "Apply ALL pending migrations idempotently (safe to re-run)" + `:59` curl block gains the distinguishing "Apply a single migration file directly:" caption), AC-3 (`:132-133` FOLLOW-402 cross-link). All three ACs delivered.
+- CI checks: PM-validated GREEN per QUEUE row (`QUEUE.md:6529`, real-gate non-success = 4 = Rule I 2x + Archetype-embeddings 2x, all pre-existing non-blocking per memory `project_ci_gate_landscape`). Not independently re-watched. Coverage delta: N/A (doc-only).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** no new file or export. The PR edits an existing operator runbook (+9/−4). Runbooks are framework-doc entrypoints (read by human operators), exempt from the importer requirement. No symbol to orphan. **Clean ✅.**
+- **CHECK B (half-wire):** no new event / env-var / DB column / topic / SDK signal introduced. The change corrects prose describing an EXISTING CI wire (`migration-contract-test.sh` → `ci.yml:315`, audited clean in RETRO-121 §3). **Clean ✅.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A. No logic in a doc correction.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. No code in the diff.
+
+#### 4c. Test coverage gaps
+
+- N/A. Doc-only; the underlying test-coverage gap (the contract test pins ONE column) is RETRO-121 §4a LG-1 / §4c TG-1, already owned by **FOLLOW-402** (promoted, queued). This PR documents that gap accurately rather than closing it — correct scope.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3 — the multi-axis miss: FOLLOW-403 corrected the runbook's overstatement but left the IDENTICAL overstatement in the source file the runbook documents).** The contract-test SCRIPT's own header comment overstates exactly as the runbook did before this PR: `infra/clickhouse/scripts/migration-contract-test.sh:11-12` reads *"This script makes CI catch that class of incident **for future migrations**."* (grep `for future migrations infra/clickhouse/scripts/migration-contract-test.sh`). That is the same "generic future coverage" claim RETRO-121 §4d DG-1 flagged and FOLLOW-403 just scoped out of the runbook (`clickhouse-migrations.md:123-127`) — but the script header (steps 2-4 of which hard-code `page_context_source` and migration `0019`) was not touched. A reader of the script (the data-engineer extending it) sees the overstated header, not the corrected runbook. The gap moved one hop: runbook-claim → script-header-claim, same false "future migrations" coverage. **This is the canonical "fixed the line the retro quoted, missed the sibling claim" under-fix** (the RETRO-001-missed-5-instances discipline). → SHARPENS **FOLLOW-402** (no new stub): FOLLOW-402 already edits this exact file to GENERALIZE the test — when it does, the header `:11-12` becomes accurate and must be updated in the same PR; until FOLLOW-402 lands, the header carries the same one-line scoping FOLLOW-403 applied to the runbook. Folded into FOLLOW-402 AC (§7).
+- **DG-2 (P3 — DG-2's caption fix created a new intra-doc contradiction the PR did not reconcile).** The corrected caption at `clickhouse-migrations.md:76` ("Apply ALL pending migrations idempotently") now CONTRADICTS the un-updated introducing sentence at `:72-73`: *"For files containing multiple statements (separated by `;`), use `migrate.sh`'s `_apply_file()` helper which handles the statement-splitting automatically:"* — which still frames the immediately-following `bash migrate.sh` block as the way to apply a SINGLE multi-statement file. The reader is told "to apply your multi-statement file, run this" and then the caption says "this applies ALL pending migrations." `:82-84` partially reconciles ("To apply only one specific migration… source the helper functions… call `_apply_file` directly"), but the intro sentence at `:72-73` is now mis-framed. FOLLOW-403 fixed the caption (the exact string RETRO-121 §4d DG-2 quoted) but not the sentence that introduces it. Gap moved one hop: caption → intro-sentence. → **FOLLOW-408** (P3).
+- **DG-3 (P3, trivial) — the runbook References header is stale relative to the body.** `clickhouse-migrations.md:3-4` lists "References: ESC-031, RETRO-118, FOLLOW-394, FOLLOW-308" but the body now references FOLLOW-402 (twice, `:127`/`:132-133`) and the doc was authored by FOLLOW-403 — neither is in the header. Cosmetic. → folded into **FOLLOW-408** (same file).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-403 itself:** this PR IS its delivery — RETRO-121 §4d DG-1/DG-2 closed on the runbook axis (§7). The retro-prediction → stub → ticket → PR loop closed as designed for the documented surface.
+- **FOLLOW-402 (data-engineer, P2, promoted_to_queue 2026-06-26):** SHARPENED twice by this retro. (1) It must also correct the script header `migration-contract-test.sh:11-12` "for future migrations" overstatement (DG-1) — when it generalizes the test the header becomes accurate; the correction belongs in that same PR. (2) **Forward-coupling — FOLLOW-402 now carries a doc-update-BACK obligation on the runbook FOLLOW-403 just edited:** the moment FOLLOW-402 lands, the runbook's `:123-127` ("It does NOT generically detect any future column… wait for FOLLOW-402") and `:132-133` ("Once FOLLOW-402 lands, the column list will be derived automatically") become FALSE and must be re-corrected. So this retro's own PR created a doc that FOLLOW-402 will partially invalidate — flagged so FOLLOW-402 doesn't leave a second-generation stale claim. No new stub; folded into FOLLOW-402 AC.
+- **FOLLOW-404 (devops+data-engineer, P2 — one-time prod-state attestation of 0019):** orthogonal; this doc PR neither helps nor blocks it. The runbook's "Standing prod-apply gate" / FOLLOW-308 deferral is unchanged. No interaction.
+
+#### 5b. Future sprint tickets affected
+
+- **Any future "add a 4th INSERT column" CH-migration ticket:** the runbook now correctly tells that author the contract test does NOT auto-guard their column and they must extend it manually (or rely on FOLLOW-402). This is a strictly-better signal than the pre-PR overstatement that would have lulled them into skipping the manual step (the ESC-031-reproduction complacency RETRO-121 §4d DG-1 named). The residual risk: the SAME author reading the SCRIPT (not the runbook) still sees the overstated header (DG-1) — the motivating scenario for the FOLLOW-402 header fix.
+
+#### 5c. Contracts changed others rely on
+
+- **None on the schema/symbol axis.** Documentary-only. The corrected claim improves the accuracy of the operator-facing description of an existing CI gate; no machine consumer reads this prose.
+
+#### 5d. Architectural assumptions affected
+
+- None changed. Reinforces (does not alter) the standing "merging a CH migration ≠ applied in prod, and the CI contract test is column-specific, not generic" reality (memory `project_postgres_migrations_no_autoapply`; RETRO-076/-113/-121). The migrate→verify→merge invariant and the FOLLOW-308 prod-apply boundary are untouched.
+
+### 6. New lesson candidates
+
+- **Pattern (NEW, count 1) — "a retro-spawned DOC-CORRECTION ticket fixes the exact line/string the retro quoted but leaves an IDENTICAL claim un-corrected on a sibling surface (the source file the doc describes; the sentence that introduces the corrected caption), so the overstatement the retro set out to kill survives one hop over."** Seen: RETRO-124 (this — runbook CI-claim corrected, the `migration-contract-test.sh:11-12` "for future migrations" twin + the `:72-73` intro-sentence twin survive). **Kin to RETRO-123 §5a** (FOLLOW-396 fixed the `route.ts` gitleaks `paths` exemption but the IDENTICAL bad-shape exemption was live one entry up on the consent route → FOLLOW-407) — but that is a CONFIG-domain "second live instance," whereas this is a DOC-domain "same claim on the source file." Different enough that I am **NOT** counting them as one pattern for promotion; this DOC-surface variant is **count 1**. Below the ≥2-prior-retro threshold → **NO rule promoted.** Watch-item for the next sighting: a doc/comment-correction ticket should grep the corrected STRING (not just edit the one cited line) across the repo and fix every surface — promote a rule of shape *"a correction ticket spawned from a retro-quoted string MUST grep that string repo-wide and correct every instance, not only the line the retro cited."* if it recurs independently.
+- **Rules promoted this retro: NONE** (the only candidate is count 1; the RETRO-123 kin is a distinct domain, not banked as a prior occurrence of this exact doc-surface shape — the RETRO-122 discipline against count-inflation is honored).
+
+### 7. Prior-follow-up closure check (FOLLOW-403 → RETRO-121 §4d DG-1 / §4d DG-2; root incident ESC-031)
+
+Traced surface-by-surface (the claim lives on three surfaces: runbook CI-test section, runbook migrate.sh caption, contract-test script header), per algorithm step 8's multi-axis requirement:
+
+1. **RETRO-121 §4d DG-1 (runbook overstates the CI test's coverage + contradicts its own "Extending" section): CLOSED on the runbook axis ✅.** `clickhouse-migrations.md:123-127` now reads "catches **regression of the 0019/`page_context_source` boundary specifically** … It does NOT generically detect any future column … the test is hardcoded to this one boundary" and points to the manual-extension step + FOLLOW-402. The self-contradiction with the "Extending" section is reconciled. A genuine closure of the quoted claim.
+   - **Residual (gap moved one hop, file→file):** the IDENTICAL "for future migrations" overstatement survives in `migration-contract-test.sh:11-12` — the source file the runbook documents (§4d DG-1). The CLASS ("the contract test's coverage is overstated") is closed on the runbook surface but live on the script surface. → FOLLOW-402 (sharpened).
+2. **RETRO-121 §4d DG-2 (migrate.sh mislabeled as a single-file applier): CLOSED on the caption axis ✅.** `:76` now correctly says "Apply ALL pending migrations idempotently (safe to re-run)"; the curl block at `:59` gains the distinguishing "Apply a single migration file directly:" caption — the two paths are now disambiguated.
+   - **Residual (gap moved one hop, caption→intro-sentence):** the introducing sentence at `:72-73` still frames the (now-correctly-captioned-as-ALL) `bash migrate.sh` block as a single multi-statement-file applier, creating a new mild intra-doc contradiction (§4d DG-2). → FOLLOW-408.
+3. **AC-3 (FOLLOW-402 cross-link): DELIVERED ✅.** `:127` ("or wait for FOLLOW-402, which will generalize the check") + `:132-133` ("Once FOLLOW-402 lands, the column list will be derived automatically — see that ticket for the generalized parity check"). Note this introduces the forward-coupling §5a flags (FOLLOW-402 must update these lines when it lands).
+- **Net verdict:** FOLLOW-403 GENUINELY closes RETRO-121 §4d DG-1/DG-2 **on the runbook surface it was scoped to** (AC-1/AC-2/AC-3 all delivered, verified in-file). It leaves two P3 sibling-surface residuals — the script-header twin (DG-1 → FOLLOW-402 sharpen) and the intro-sentence/References residuals (DG-2/DG-3 → FOLLOW-408) — neither of which the ticket's scope named. **PM: FOLLOW-403 is DONE for its stated runbook scope; the overstatement CLASS is not fully retired until the `migration-contract-test.sh` header is corrected (FOLLOW-402) — do not treat RETRO-121 DG-1 as closed repo-wide.**
+
+**Follow-ups (every gap emits one; cross-refs do not duplicate existing stubs):**
+
+- **FOLLOW-408** (data-engineer, P3, 1h): Reconcile the two intra-doc residuals FOLLOW-403 left in `docs/runbooks/clickhouse-migrations.md` — (a) `:72-73` intro sentence still frames the `bash migrate.sh` block as a single multi-statement-FILE applier, now contradicting the corrected `:76` "Apply ALL pending migrations idempotently" caption; re-word to "to apply ALL pending migrations, run migrate.sh (below); to apply ONE, see the curl pattern above / `_apply_file`"; (b) add FOLLOW-402 + FOLLOW-403 to the `:3-4` References header (the body now cites FOLLOW-402, the doc was authored by FOLLOW-403). DG-2/DG-3.
+- **FOLLOW-402** (already promoted, no new stub): SHARPENED — (1) when generalizing `migration-contract-test.sh`, also correct the `:11-12` header comment "This script makes CI catch that class of incident for future migrations" (the DG-1 sibling-surface twin; becomes accurate once the test is generic, must be scoped until then); (2) carries a doc-update-BACK obligation on `clickhouse-migrations.md:123-127`/`:132-133` — those "does NOT generically detect / wait for FOLLOW-402 / Once FOLLOW-402 lands" lines become FALSE the moment FOLLOW-402 merges and must be re-corrected in the same PR (§5a forward-coupling).
+
+### 8. Cross-references
+
+- **RETRO-121 (FOLLOW-394 / PR #360):** direct parent — origin of FOLLOW-403 (§4d DG-1 runbook overstatement, §4d DG-2 migrate.sh caption mislabel). This retro confirms both CLOSED on the runbook axis and surfaces the two sibling-surface residuals RETRO-121 did not separately enumerate (the script-header twin + the intro-sentence twin). FOLLOW-402/404 (the other RETRO-121 children) remain open and are cross-referenced, not duplicated.
+- **RETRO-123 (FOLLOW-396 / PR #362):** the kin-pattern precedent — "the named fix lands but an IDENTICAL instance is live one hop over" (config domain: consent `paths` exemption → FOLLOW-407). Reconciled in §6: NOT banked as a prior occurrence of this DOC-surface variant (distinct domain) → no rule promotion; the RETRO-122 anti-count-inflation discipline is honored.
+- **ESC-031 (2026-06-26):** the root incident the runbook + contract test exist to prevent recurring; this PR sharpens the runbook's accuracy about WHAT the CI guard actually covers, reducing the false-confidence that reproduces ESC-031 for the next column.
+- **FOLLOW-308 (RETRO-076 / ESC-022, P1 devops):** the standing prod-apply mechanism the runbook correctly defers to — untouched by this PR.
+- **Numbering:** RETRO-114/115/116 (PRs #353/#354/#355) being back-filled concurrently per the invocation — not re-flagged here as a finding (carried note only; PM/the back-fill agent owns reconciliation).
+
+## RETRO-116 — FOLLOW-389 (wire quiz-completion opt-out producer + real-handler tests; claims to close RETRO-109 ADDENDUM §3 HW-1 / §4c TG-1 / §4d DG-1) — 2026-06-26
+
+> **OUT-OF-ORDER BACK-FILL.** This retro is overdue: PR #355 merged 2026-06-25T21:17Z (commit `0e1b9eb`), chronologically BEFORE RETRO-117..124 which were written first. RETRO-115 (PR #354, tier→page_context) is being back-filled concurrently by another agent. Per the invocation this entry is appended at the END of the file, not in numeric position. Cascade/closure verdicts below were re-derived against the CURRENT tree (2026-06-26), so later merges (#354, #356–#363) are already in tree when I read line numbers — noted where it matters.
+
+### 1. Summary of change
+
+- **PR:** #355 (squash-merged 2026-06-25 21:17:15 UTC, commit `0e1b9eb`; author Pnawrocki9). The sdk-engineer ticket that wires the producer leg + real-handler tests RETRO-109's deeper-pass ADDENDUM left open as FOLLOW-389. Three sub-items: HW-1 (producer thread), TG-1 (real-handler tests), DG-1 (comment fix).
+- **Files changed:** 4 (+497 / −17). Source (2): `packages/sdk/src/core/adapt.ts` (+19/−5 — `postQuizCompletionPing` gains 5th param + JSDoc), `packages/sdk/src/index.ts` (+8/−1 — call-site threads the param + DG-1 comment rewrite). Tests (2): `packages/sdk/src/__tests__/follow-389.test.ts` (+457 new, 7 real-handler tests), `packages/sdk/src/__tests__/follow-385.test.ts` (+13/−11 — header/docstring re-label only; the 9 modeled tests are UNCHANGED, just re-framed "structural").
+- **Modules touched:** packages/sdk only (core/adapt producer fn + index.ts call site + test files). NO control-plane change — the `/api/quiz/completion` route gate (`route.ts:363`) was shipped in FOLLOW-385/PR #348 and is untouched here.
+- **Key contracts changed:**
+  - `postQuizCompletionPing(config, sessionId, resolvedArchetype, language, profilingOptedOut?)` — gains optional 5th boolean param (`adapt.ts:205`). When true, appends `?profiling_opt_out=1` to the completion URL (`adapt.ts:212`). **breaking: no** (optional, additive; mirrors the `/adapt` pattern at `adapt.ts:758`).
+  - SDK call site `index.ts:1142-1148` now passes `profilingOptedOut` as the 5th arg. **breaking: no.**
+
+### 2. Verification done in PR
+
+- Test files changed: `follow-389.test.ts` (NEW, 7 real-handler tests across REAL-1/2/3), `follow-385.test.ts` (docstring only). Assertions added: ~16 across the 7 tests. PR body claims `1493 tests pass across 66 test files`.
+- CI checks: not independently re-watched in this back-fill; PR body asserts green + a follow-up commit fixed a TS2352 strict-mode cast in the new tests (`as unknown as [string, RequestInit]`), indicating Typecheck was exercised. Rule I pre-existing-red baseline assumed per `project_ci_gate_landscape`. Coverage delta: 2 of 3 §H.9 SDK guards gain genuine real-handler coverage (see §4c — the micro-poll guard does NOT).
+- Bundle: PR body asserts `+0 bytes net` (production change is one optional param + URL concat; the rest is test-only). Plausible.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** `postQuizCompletionPing`'s new param has exactly ONE non-test caller — `index.ts:1142` (verified `grep -rn "postQuizCompletionPing" packages apps --include=*.ts | grep -v test` → the only invocation is `:1142`, plus the import `:60` and the definition `adapt.ts:200`). Not dead. No new exports introduced. CLEAN.
+
+**CHECK B (half-wire):** The `profiling_opt_out` query param now has a PRODUCER (`adapt.ts:212`, fed by the live module-scoped `profilingOptedOut` truth via the `:1148` call arg) AND a CONSUMER (`route.ts:363`, `url.searchParams.get('profiling_opt_out') === '1'`). Syntactically the wire RETRO-109 HW-1 named as "consumer-with-no-producer" is now connected. **BUT see HW-1 below** — the producer branch is unreachable in normal flow, so this is a CONNECTED-BUT-DORMANT wire, not a live one. Recorded as a §4-level finding rather than a fresh HALF_WIRE because both ends now exist.
+
+**Wiring-audit net: no NEW dead code or NEW half-wire introduced by this PR.** The findings below are residuals of the THREE items FOLLOW-389 claimed to close (§7).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, by-design, not a defect) — HW-1's producer branch is unreachable in normal production flow; "reachable by real SDK traffic" overstates it.** The `:1148` call site sits INSIDE the `renderQuizWidget` completion callback, which only runs after `showQuizTrigger()` renders the trigger AND the user completes the quiz. `showQuizTrigger` returns at `index.ts:1103` (`if (profilingOptedOut) return;`, Guard 1) for opted-out users → the trigger never renders → the completion callback never fires → `postQuizCompletionPing` at `:1142` is reached ONLY by opted-IN sessions, where `profilingOptedOut` is `false`. So the `?profiling_opt_out=1` branch (`adapt.ts:212`) is taken ONLY if Guard 1 is bypassed/removed by a future regression. This is legitimate, valuable defense-in-depth (before this PR, even a Guard-1 regression would leak server-side; now it won't) — but the PR body / `adapt.ts:187` JSDoc claim the gate is "reachable by real SDK traffic," which is FALSE under Guard 1. It is reachable ONLY as defense-in-depth. Doc-accuracy nit; folded into FOLLOW-409 as a JSDoc correction, no behavior change.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — the shipped diff is correct. The param threads correctly; the URL concat is sound (`baseUrl` is the result of `deriveQuizCompletionUrl`, no pre-existing query string to clobber — verified `adapt.ts:183` builds via `buildEndpoint(...,'/quiz/completion')`).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — TG-1 from RETRO-109 is only ⅔ closed: the micro-poll `onAnswer` guard (`index.ts:1243`) remains test-orphaned; the new mock actively DISABLES micro-polls.** RETRO-109 ADDENDUM TG-1 asked for "real-handler tests for all three guards." Enumerating the three §H.9 SDK guards against the 7 new tests:
+  - `showQuizTrigger` guard (`:1103`) → **REAL-3 covers it** ✅ (drives real `_initForTest()` + `vi.advanceTimersByTimeAsync(QUIZ_TRIGGER_DELAY_MS)`, asserts `.estalara-trigger` presence/absence in shadow DOM).
+  - `estalara:listing:favorited` guard (`:1432`) → **REAL-2 covers it** ✅ (dispatches the real CustomEvent via `window.dispatchEvent`, asserts intent mutation + §H.8 `listing.bookmarked` preservation).
+  - micro-poll `onAnswer` guard (`:1243`) → **NO real-handler test.** `buildMockFetch()` returns `micro_polls_enabled: false` (`follow-389.test.ts:135`), so the micro-poll render path (`tryShowMicroPoll`/`renderMicroPoll`) can never be driven in any of the 7 tests. The only coverage of this guard remains the modeled `modeledOnAnswer` re-implementation in `follow-385.test.ts:220` — the exact self-injecting-test weakness RETRO-109 TG-1 flagged. A regression that relocates or deletes the `:1243` guard (e.g. moving it BELOW the `quiz.event` push, re-leaking the micro-poll AL signal for opted-out sessions) leaves every test green. The gap moved one hop: from "all three guards orphaned" → "the micro-poll guard still orphaned." → **FOLLOW-409.**
+  - Secondary: REAL-1 (the producer-param tests) call `postQuizCompletionPing(...true)` DIRECTLY, hand-passing `true` — structurally the SAME hand-injection shape RETRO-109 HW-1 criticized in `route.test.ts:123`. It proves the function appends the param when given `true`, NOT that the production call site (`:1148`) ever supplies `true`. Per LG-1 it CANNOT supply `true` under Guard 1, so no end-to-end producer test is possible without bypassing Guard 1 — acceptable, but means the producer-reachability claim is test-unverified by construction. Noted, no separate stub (folded into FOLLOW-409's JSDoc fix).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — DG-1 fixed the flagged micro-poll comment but left the IDENTICAL false "Ingest stream left flowing" twin on the sibling `showQuizTrigger` guard at `index.ts:1102`.** The misleading comment `// §H.9 opt-out: suppress AL profiling. Ingest stream left flowing (§H.8/CEO 2026-06-23/FOLLOW-384).` is copy-pasted across THREE guard sites. FOLLOW-389 DG-1 correctly rewrote the micro-poll copy (`:1238-1242`, now states the `quiz.event` push IS suppressed). But:
+  - `:1102` (showQuizTrigger guard) still carries the verbatim "Ingest stream left flowing" line — and it is **FALSE there for the same reason**: the `quiz.event` `step:'completed'` push (`~:1158`) is downstream of the `:1103` return, so for opted-out users it is SUPPRESSED, not "left flowing." (quiz.event is an AL-signal stream, not in the §H.8 protected set — suppression is correct; the COMMENT is wrong.)
+  - `:1431` (favorites guard) carries the same line and there it is **TRUE/correct** — `listing.bookmarked` is pushed at `:1419`, BEFORE the `:1432` guard, so it genuinely keeps flowing.
+  So DG-1 corrected 1 of the 2 false copies and left the showQuizTrigger twin. This is the precise "a doc-correction fixes the retro-quoted string but leaves an identical claim on a sibling surface" shape RETRO-124 logged as a watch-item (see §6). → **FOLLOW-409.**
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **§H.9 opt-out epic (FOLLOW-372→383→384→385→387→389):** RETRO-110 §7 ruled "do NOT mark the broader §H.9 epic DONE until FOLLOW-388 + FOLLOW-389 land." FOLLOW-389 has now LANDED — but only ⅔ of its assigned TG-1 scope is delivered (§4c). Net: the SDK-guard test-orphaning leg is MOSTLY closed (showQuizTrigger + favorites), with the micro-poll guard residual carried to FOLLOW-409. The remaining FULLY-open §H.9 leg is **FOLLOW-388** (batch axis, `depends_on FOLLOW-101`). PM: §H.9 is NOT DONE — FOLLOW-388 + FOLLOW-409 remain.
+- **FOLLOW-409 (new, this retro):** the micro-poll real-handler test + the `:1102` comment twin + the `adapt.ts:187` reachability JSDoc nit.
+
+#### 5b. Future sprint tickets affected
+
+- Any future ticket that adds a new SDK profiling-mutation call site MUST (a) guard it with `if (profilingOptedOut) return;` AND (b) ship a REAL-handler test that drives the live path (not a modeled re-implementation) — the REAL-2/REAL-3 patterns in `follow-389.test.ts` are now the SDK-side reference template (the analogue of FOLLOW-387's `test_opted_out_event_threads...` Python template cited in RETRO-110 §6).
+
+#### 5c. Contracts changed others rely on
+
+- `postQuizCompletionPing`'s signature gained a 5th optional param. Sole caller is `index.ts:1142`; no external consumer. The `/api/quiz/completion` route contract is unchanged by this PR (the gate pre-existed). No cross-package break.
+
+#### 5d. Architectural assumptions affected
+
+- The §H.9 SDK-layer enforcement now has BOTH primary guards (client-side early return) AND defense-in-depth (server gate now reachable IF a guard regresses) for the quiz-completion path — but the defense-in-depth is DORMANT under the primary guard (LG-1). Load-bearing posture: the server gate is a safety net for a Guard-1 regression, NOT a live second filter. This should be stated accurately wherever the gate is documented (FOLLOW-409 JSDoc fix), so a future reader does not assume the gate is exercised by normal opted-out traffic (it is not — opted-out traffic never reaches the producer).
+
+### 6. New lesson candidates
+
+- **Pattern A — "a doc/comment correction fixes the retro-flagged copy of a duplicated string but leaves an IDENTICAL claim on a sibling surface, because the fixer did not grep the string repo-wide."** Seen in: RETRO-124 (FOLLOW-403, clickhouse-migrations runbook → sibling `migration-contract-test.sh` twin) + **RETRO-116 (this, FOLLOW-389 DG-1, micro-poll comment fixed → sibling `showQuizTrigger:1102` twin).** Independent contexts: data-engineer/runbook-docs vs sdk-engineer/code-comments — genuinely distinct domains. **Count = 2 total, but only 1 PRIOR retro (RETRO-124).** Per the repo's established promotion convention (RETRO-123 promoted Rule V only with TWO priors / on the 3rd sighting, citing RETRO-121's pre-authorization), this is the 2nd sighting → **HOLD, no `CONVENTIONS_PATCH.md` write.** Pre-authorize promotion on the NEXT (3rd) independent sighting. Candidate rule text for then: "a correction spawned from a retro-quoted/flagged string MUST `grep` that exact string repo-wide and fix (or justify) EVERY occurrence in the same PR." RETRO-124's watch-item is hereby BANKED as occurrence 1.
+- **Pattern B — "a remediation PR for a multi-site finding closes the obvious axes and silently drops the awkward-to-test one (here: the micro-poll path, which the test harness must opt INTO via `micro_polls_enabled:true`)."** This is the §H.9-epic recurrence of the modeled/self-injecting-test weakness (RETRO-108/109 TG-1). Still INSIDE the single §H.9 epic → independent-context count remains 1 (per RETRO-109 ADDENDUM §6 / RETRO-110 §6 single-epic discipline). NO rule. Confirming instance of the existing Rule L (real-handler tests) — the fix is to USE Rule L on the third path, not to add a rule.
+
+### 7. Prior-follow-up closure check (FOLLOW-389 → RETRO-109 ADDENDUM HW-1 / TG-1 / DG-1)
+
+Traced each claimed closure against the current tree, per algorithm step 7 (END-TO-END, not one hop):
+
+- **RETRO-109 ADDENDUM HW-1 (HALF_WIRE_C, P2 — `/api/quiz/completion` gate had no producer): CONNECTED, but DORMANT — PARTIALLY closed.** The producer now exists (`adapt.ts:212` ← `index.ts:1148`) and the consumer gate (`route.ts:363`) reads it, so the wire is no longer a bare consumer-with-no-producer. BUT the producer branch is unreachable in normal flow because Guard 1 (`:1103`) blocks opted-out users upstream of the `:1142` call site (§4a LG-1). So HW-1 is closed AS DEFENSE-IN-DEPTH (its only honest purpose), NOT as a live-traffic wire. The PR's "reachable by real SDK traffic" framing overstates it. Verdict: **substantively closed for its real purpose; documentation overstates reachability → FOLLOW-409 JSDoc fix.**
+- **RETRO-109 ADDENDUM TG-1 (P1 — real-handler tests for all three guards): ⅔ CLOSED.** showQuizTrigger (REAL-3) ✅ and favorites (REAL-2) ✅ now have genuine real-handler tests that drive the live `init()` path and fail if the guard is removed. The micro-poll `onAnswer` guard (`:1243`) does NOT — the mock disables micro-polls and no test drives `tryShowMicroPoll`; it remains covered only by the modeled `modeledOnAnswer` (`follow-385.test.ts:220`) RETRO-109 explicitly flagged. **The gap moved one hop (all-three-orphaned → micro-poll-orphaned) → FOLLOW-409.** This is the canonical "closure that moves the gap one hop downstream" the algorithm step 7 exists to catch.
+- **RETRO-109 ADDENDUM DG-1 (P3 — misleading micro-poll comment at index.ts:1235): CLOSED on the flagged site, but spawned a sibling-twin residual.** The micro-poll comment (`:1238-1242`) is now correct ✅. But the IDENTICAL false "Ingest stream left flowing" line survives at the sibling showQuizTrigger guard (`:1102`), where it is equally false (§4d DG-1). **Closed on the named line; new residual one hop over → FOLLOW-409.**
+- **Net closure verdict:** FOLLOW-389 is a GENUINE-but-INCOMPLETE closure. It really did wire the producer and add two real-handler tests (not a no-op, not a modeled re-implementation — REAL-2/REAL-3 drive the live path). But all three of its sub-items leave a one-hop residual (HW-1 dormant+overstated, TG-1 micro-poll orphan, DG-1 sibling-twin), all collected into one P2 follow-up, FOLLOW-409. PM: do NOT mark RETRO-109's FOLLOW-389 fully closed — TG-1's third guard is the load-bearing residual.
+
+### 8. Cross-references
+
+- **RETRO-109 (FOLLOW-385 / PR #348) — direct parent.** Its deeper-pass ADDENDUM filed FOLLOW-389 with HW-1/TG-1/DG-1; this retro confirms HW-1 connected-but-dormant, TG-1 ⅔-closed, DG-1 closed-with-sibling-residual.
+- **RETRO-110 (FOLLOW-387 / PR #349):** the parallel chat-axis §H.9 closure; its §7 ruled the epic not-DONE until FOLLOW-388 + FOLLOW-389 land. FOLLOW-389 now landed (incompletely); FOLLOW-388 (batch, gated on FOLLOW-101) remains the fully-open leg. RETRO-110 §6's un-mocked-real-loop test is the template REAL-2/REAL-3 followed and FOLLOW-409 should follow for the micro-poll path.
+- **RETRO-124 (FOLLOW-403 / PR #363):** the count-1 precedent for Pattern A (correction leaves an identical claim on a sibling surface). Reconciled in §6: this is the 2nd sighting / 1 prior retro → HOLD, pre-authorize 3rd-sighting promotion; RETRO-124's watch-item banked as occurrence 1.
+- **CEO 2026-06-23 §H.8/§H.9 scope (memory `project_optout_enforcement_h9_scope`):** confirms quiz.event is an AL-signal stream (suppressible), NOT in the §H.8 protected set — the basis for the DG-1 comment-correctness analysis in §4d.
+
+---
+
+## RETRO-115 — FOLLOW-357/356 (rename `tier` → `page_context` in shared types, SDK `adaptResponseSchema`/`AdaptResponse`, `/api/adapt` route, ClickHouse `adaptation_decisions` column via migration 0018; drop `AdaptResponse.tier:1|2|3`; analytics-only ruling §E.7) — 2026-06-26
+
+> **Insertion / sequencing note (read first):** This entry is back-filled OUT OF ORDER. PR #354
+> merged 2026-06-25 20:56 UTC, but `RETROSPECTIVES.md` jumped from RETRO-114 straight to RETRO-117
+> (the RETRO-115/116 gap that RETRO-117's and RETRO-124's header notes both flag). RETRO-115 is
+> appended at the END of the file (after RETRO-116, which was back-filled concurrently and took
+> FOLLOW-409), NOT in chronological slot, per the invocation. Its single follow-up is therefore
+> **FOLLOW-410** (409 was minted by the concurrent RETRO-116 micro-poll stub); the FOLLOW_UPS
+> next-free counter is advanced 410→411. With RETRO-116 now landed, RETRO-115 closes the LAST of the
+> 114/115/116 back-fill gaps. Because this is written 2026-06-26 with knowledge of the downstream
+> retros (117–124), §5/§7 reconcile against work that chronologically POST-DATES this merge (esp.
+> RETRO-118 / FOLLOW-358 / migration 0019). Where a "prior retro" must be ≤113 (strict chronology),
+> that constraint is honored for rule-promotion counting (§6).
+
+### 1. Summary of change
+
+- **PR:** #354 (squash-merged 2026-06-25 20:56:29 UTC, commit `d8d5cb8`). The merge bundles a
+  first commit (FOLLOW-342 AC-2 fallback test — covered by RETRO-114, not re-analyzed here) plus the
+  FOLLOW-357/356 rename commit analyzed below.
+- **Files changed:** 13 (+276 / −99). Source (4): `packages/shared/src/directives.ts` (+12/−10 —
+  `AdaptationDirectives.directive_scope`→`page_context`, `tier?:1|2|3` removed, two "Tier 1" JSDoc
+  leads de-Tiered), `packages/sdk/src/core/adapt-schema.ts` (+4/−8 — `adaptResponseSchema`:
+  `directive_scope`+`tier` both dropped → single `page_context` optional), `packages/sdk/src/core/adapt.ts`
+  (+3/−3 — `AdaptResponse.directive_scope`→`page_context`), `apps/control-plane/.../api/adapt/route.ts`
+  (+42/−28 — `directiveScopeFromPageType`→`pageContextFromPageType`, `logDecisionAsync` param
+  `tier`→`pageContext`, INSERT column + all POST response fields → `page_context`, GET-handler `tier`
+  retained as caller-echo). Migration (1): `infra/clickhouse/migrations/0018_adaptation_decisions_page_context.sql`
+  (+32, new — `ALTER TABLE adaptation_decisions RENAME COLUMN tier TO page_context`). Docs (1):
+  `docs/MASTER_DESIGN.md §E.7` (+1/−1). Tests (4): SDK adapt-schema/adapt + route.test/route.follow359.
+  Backlog (1): `backlog/FOLLOW_UPS.md` (+78/−25 — NOT analyzed here). Lessons (1):
+  `.claude/agents/backend-engineer/lessons.md` (+43).
+- **Modules touched:** shared · SDK (core) · control-plane (adapt route) · infra (CH migration) · docs.
+- **Key contracts changed:**
+  - `AdaptationDirectives.directive_scope?:1|2` → **`page_context?:1|2`** (shared). **breaking: yes**
+    for any importer reading `.directive_scope` — grep shows the only producer/consumer is the adapt
+    route + SDK mirror, both updated in-PR.
+  - `AdaptationDirectives.tier?:1|2|3` → **REMOVED** from the shared interface. **breaking: yes** for
+    GET-response typing — the GET handler now carries `tier` via an ad-hoc inline `AdaptationDirectives
+    & { tier: number }` (main path) or as an UNTYPED literal (two early-return paths — see §4b CB-1).
+  - SDK `adaptResponseSchema`: `directive_scope` + `tier` both removed → single `page_context` optional;
+    `AdaptResponse.directive_scope`→`page_context`. **breaking: yes** for any SDK consumer of
+    `AdaptResponse.tier` — grep confirms NONE (the only SDK `tier` is the unrelated `config.tier:
+    'observer'|'augment'|'native'` integration string, `config.ts:33`).
+  - CH `adaptation_decisions.tier` (UInt32) → **`page_context`** via migration 0018. **breaking: yes**
+    for any analytics reader of the `tier` column — grep finds NONE in-repo (the column is write-only;
+    see §3 CHECK B note).
+
+### 2. Verification done in PR
+
+- Test files changed: `route.test.ts` (+25/−11 — FOLLOW-356 ACs: `listing_detail`→`page_context=2`
+  + headline present; `listing_list`→`page_context=1` + headline absent; GET `tier` echoed-as-number),
+  `route.follow359.test.ts` (+2/−2 — field rename), `adapt-schema.test.ts` (+5/−9 — passthrough test
+  switched `tier:'one'`→`confidence:'high'` since `tier` left the schema), `adapt.test.ts` (+2/−2).
+  Assertions added: ~6 net (FOLLOW-356 page_context axis). The CH `route.clickhouse.test.ts` updates
+  visible at HEAD (`param_p_page_context` assertion) are from the FOLLOW-358 follow-on, NOT this PR.
+- CI checks: PR body reports `check-adapt-schema-drift` OK (field set now includes `page_context`,
+  excludes `tier`), `check-rule-h` PASS, `check-migration-journal` OK (31 entries monotonic),
+  1485 SDK + 1295 control-plane + 252 shared green. Not independently re-watched (back-fill, post-merge).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** No NEW exported TS symbol — the PR is a rename of existing symbols.
+`pageContextFromPageType` (renamed from `directiveScopeFromPageType`, `route.ts:~922`) has a non-test
+caller in the POST handler (`pageCtx = pageContextFromPageType(body.page_type)`, used in 3 response
+literals + the `logDecisionAsync` call). Migration `0018_*.sql` is a migration file (suppressed per
+the migration/cron-entrypoint exemption). No orphaned export introduced. ✅
+
+**CHECK B (half-wire):** `page_context` has BOTH a producer and a consumer on every axis it touches:
+- **shared/POST axis:** producer = POST `/api/adapt` (`pageContextFromPageType` → `page_context` field
+  in every POST response literal + `pageContext` arg to `logDecisionAsync`). consumer = SDK
+  `adaptResponseSchema.page_context` (runtime parse in `fetchDirectives`) + the CH INSERT column.
+  Wired. ✅
+- **CH column axis:** producer = `logDecisionAsync` parameterized INSERT (`{p_page_context:UInt32}`).
+  consumer = **NONE in-repo** — grep finds no `SELECT … page_context` / dashboard / lift-query reader.
+  This is a **PRE-EXISTING write-only-column state**: the old `tier` column had no analytics reader
+  either, so the rename neither introduces nor worsens a half-wire. **NOT classified as a finding
+  against this PR** (carried observation only; if a page_context analytics surface is ever specced,
+  it owns the read leg).
+- **SDK field axis:** `AdaptResponse.page_context` / `adaptResponseSchema.page_context` are PARSED but
+  never READ by SDK logic (analytics-only by design, per the PR/§E.7 "no SDK consumer"). This is an
+  intentional Rule-H schema-superset passthrough (the schema must remain a superset of
+  `AdaptationDirectives`), not dead code. Acceptable; carried note only.
+
+**Verdict: no DEAD_CODE / HALF_WIRE_P / HALF_WIRE_C P0/P1 finding.** The two write-only/parse-only
+observations above are pre-existing or by-design, not introduced gaps.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A on the rename itself** — it is value-preserving (the numeric 1|2 semantics of
+  `directive_scope` carry unchanged into `page_context`). The ONE known logic divergence at merge —
+  the GET handler echoing caller-supplied `tier` (1|2|3) into the same CH column the POST handler
+  fills with page-type-derived (1|2) values — was explicitly DEFERRED to FOLLOW-358 with inline
+  `// FOLLOW-358` comments, NOT a silent gap. That divergence has since been CLOSED downstream
+  (RETRO-118 / migration 0019 `page_context_source` discriminator) — verified end-to-end in §7.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — two GET early-return bodies lost their `satisfies AdaptationDirectives` type guard
+  and are now UNTYPED object literals; field drift will escape `tsc`.** To accommodate the `tier`
+  field (which left `AdaptationDirectives` in this PR), the opt-out path (`route.ts:781-793`) and the
+  consent-skip path (`route.ts:813-825`) had their `} satisfies AdaptationDirectives,` annotation
+  DELETED outright — they are now bare literals passed to `NextResponse.json()` with zero compile-time
+  contract checking. The MAIN GET path (`route.ts:879`) instead adopted the correct
+  `const response: AdaptationDirectives & { tier: number } = {…}`. **This is a Rule S asymmetry**
+  (CONVENTIONS_PATCH:883 — "a change to one branch of a symmetric set MUST be applied to ALL siblings
+  at the SAME completeness AND verification tier"): three sibling GET return bodies, one typed via the
+  intersection, two stripped to untyped. Verified LIVE at HEAD (FOLLOW-358 touched the logging/comments
+  but did not re-type these two literals). Impact: a future edit that mistypes `confidence`, drops
+  `session_id`, or misspells a field in either early-return body compiles green and ships a malformed
+  GET response. Fix: apply `AdaptationDirectives & { tier: number }` to BOTH early-return literals.
+  → FOLLOW-410.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, folded into CB-1) — no test asserts the two untyped GET early-return bodies conform to
+  the `AdaptationDirectives & { tier:number }` shape.** Because the `satisfies` guard was removed
+  (§4b), there is now neither compile-time NOR runtime coverage that the opt-out / consent-skip GET
+  bodies carry the contracted field set. The FOLLOW-410 retype restores compile-time coverage; an
+  optional shape assertion on each early-return path would restore runtime coverage. Folded into
+  FOLLOW-410 (no separate stub).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — three in-code provenance citations name the WRONG ClickHouse migration: they say
+  "migration 0017" for the `tier`→`page_context` rename, but the rename is migration 0018; 0017 is
+  the unrelated `0017_follow371_holdout_contamination_note.sql`.** Concretely: `route.ts:938`
+  ("…renamed from `tier` in migration 0017, FOLLOW-357"), `route.ts:1349` ("…renamed from `tier` in
+  migration 0017"), and `packages/shared/src/directives.ts:137` ("…renamed from `tier` in migration
+  0017") — plus the compiled twin `packages/shared/dist/directives.d.ts:110`. The PR's OWN migration
+  file is `0018_adaptation_decisions_page_context.sql` and `docs/MASTER_DESIGN.md §E.7` (also edited in
+  this PR) correctly cites 0018 — so the inconsistency is INTERNAL to the single PR (classic
+  renumber-drift: the comments were authored against a planned "0017" before FOLLOW-371 claimed that
+  slot, then never updated when the rename shifted to 0018). Impact: an operator or RETRO reader
+  tracing the `page_context` column's provenance is misdirected to a REAL-but-unrelated migration
+  (holdout-contamination), maximizing confusion — worse than a dangling number. **This is a confirming
+  instance of Rule Y's citation-accuracy spirit** (CONVENTIONS_PATCH:1207 — a citation must be verified
+  against the cited artifact; here a docstring cites migration N as a column's provenance, N is wrong).
+  Fix: correct all three comments (+ regenerate the dist) to "migration 0018". → FOLLOW-410.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-358 (GET/POST `page_context` semantic divergence) — was DEFERRED by THIS PR, has since
+  been CLOSED.** PR #354 left it open with inline comments; RETRO-118 / PR #357 / migration 0019
+  added the `page_context_source` discriminator ('caller_supplied' for GET, page-type for POST). The
+  CH column ambiguity this rename created is therefore resolved downstream (end-to-end trace in §7).
+- **FOLLOW-390 (GET `/api/adapt` surface liveness, RETRO-111) — directly intersects CB-1.** FOLLOW-390
+  already owns the question "is the GET surface dead/external-only?" The two untyped GET early-return
+  bodies (§4b) live on exactly that surface. CB-1's retype is the correct fix regardless of the
+  liveness verdict; cross-referenced, NOT duplicated, into FOLLOW-410 (which does the type hygiene)
+  while FOLLOW-390 owns the strategic dead-or-alive call.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-394 / FOLLOW-404 (RETRO-118/121 — migration-0019 prod-apply + ordering guard + prod-state
+  attestation):** migration 0018 (this PR) sits one slot below 0019 in the same `adaptation_decisions`
+  rename chain; the prod-apply discipline FOLLOW-394/404 establish for 0019 applies identically to
+  0018 (RENAME COLUMN is non-idempotent — re-run fails, as the 0018 header itself warns). No NEW stub:
+  the standing prod-apply gate (FOLLOW-308) and the 0019 attestation (FOLLOW-404) cover the mechanism;
+  0018's prod-applied state should be confirmed in the same operator pass. Cross-ref, do NOT duplicate.
+
+#### 5c. Contracts changed others rely on
+
+- `AdaptationDirectives.page_context` (shared) is the canonical field; the SDK schema + CH column
+  mirror it. No third consumer exists (decision-api `reorder.ts` does not read it; ingest does not).
+  The GET-only `tier` field now has NO shared-type home — it survives via the route-local intersection
+  type (main path) / passthrough parse (SDK) — which is why CB-1's untyped early-returns are a real
+  drift risk. The schema-drift gate (`check-adapt-schema-drift`) passes because `adaptResponseSchema`
+  uses `.passthrough()`, so the GET `tier` field is tolerated at runtime but is invisible to the gate.
+
+#### 5d. Architectural assumptions affected
+
+- The §E.7 "no integration Tiers" vocabulary cleanup is now CODE-COMPLETE across the TS surface +
+  CH column name. The load-bearing assumption "removing `tier` from the contract breaks no consumer"
+  HOLDS — verified by grep (no SDK `AdaptResponse.tier` reader, no CH `tier` analytics reader). The
+  residual `tier` on the GET surface is the last vestige of the old vocabulary; its fate is the
+  FOLLOW-390 liveness decision.
+
+### 6. New lesson candidates
+
+- **Pattern (DG-1): "an in-code provenance citation (migration number / constant location / file
+  name) is authored against a PLANNED identifier and never updated when the real artifact lands under
+  a different number/name, leaving the comment pointing at a real-but-unrelated artifact."** Governing
+  rule already exists: **Rule Y** (citation must be verified against the cited artifact). Chronology
+  for promotion counting (strict ≤113 per the back-fill constraint): this sub-shape does NOT appear
+  ≥2× in retros ≤113 → **NO new rule, NO Rule Y amendment promoted here.** Cross-temporal note for the
+  human: RETRO-119 §FOLLOW-398 independently hit the SAME shape later (the `SIDEBAR_SHOW_THRESHOLD`
+  constant cited as living in `index.ts` where it does not exist — explicitly logged there as a
+  "Rule Y confirming instance"). So as of 2026-06-26 the broadened shape ("any provenance/location
+  citation, not just a CI-guard test-header") has TWO confirming instances (RETRO-115 + RETRO-119).
+  **RECOMMENDATION (human-owned):** consider a Rule Y SCOPE-BROADENING amendment — extend Rule Y from
+  "cites a named test/file as proof a guard runs in CI" to "cites ANY artifact (migration number,
+  constant's home file, schema column) as fact MUST be grep-verified against that artifact in the same
+  PR." I do not append it (RETRO-122/124 anti-count-inflation discipline + the strict ≤113 prior-retro
+  rule for THIS back-fill).
+- **Pattern (CB-1): "to admit one extra field, a `satisfies T` guard is DELETED rather than widened to
+  `T & { extra }`, silently dropping compile-time contract checking on that literal."** Governing rule:
+  **Rule S** (symmetric siblings at equal completeness/verification tier) + the spirit of Rule T
+  (a green format hook ≠ a typecheck pass). Count 1 of this specific `satisfies`-deletion sub-shape →
+  NO rule. Watch-item banked.
+
+### 7. Prior-follow-up closure check
+
+- **This PR CLOSES no prior FOLLOW end-to-end** — FOLLOW-357 and FOLLOW-356 are the rename/ruling
+  themselves (delivered: vocabulary renamed, `AdaptResponse.tier` dropped, FOLLOW-356 behavioral
+  tests added). The work this PR DEFERRED — **FOLLOW-358** (GET/POST `page_context` divergence) — I
+  traced END-TO-END (producer→consumer→render) to confirm it was genuinely closed downstream and the
+  gap did NOT merely move one hop:
+  1. **Producer:** GET handler at `route.ts:907,915` passes the caller-supplied `tier` AND a literal
+     `'caller_supplied'` pageContextSource arg into `logDecisionAsync`; POST passes the page-type
+     `pageCtx` + (implicitly) a page-type source. ✅ both writers discriminate.
+  2. **Consumer/sink:** `logDecisionAsync` writes a distinct `page_context_source` column (migration
+     0019, the slot ABOVE this PR's 0018) — confirmed by `route.clickhouse.test.ts` asserting
+     `param_p_page_context` + the source discriminator at HEAD. ✅ the ambiguity is now disambiguated
+     IN the stored row, not just in a comment.
+  3. **Render/closure verdict:** `route.ts:877-878` carries the in-code attestation "FOLLOW-358
+     CLOSED: page_context_source discriminator ('caller_supplied') is logged to ClickHouse so analysts
+     can distinguish GET rows from POST rows." RETRO-118 owns that closure with its own residual stubs
+     (FOLLOW-394/395/396). **Verdict: the divergence THIS PR created in the `page_context` column is
+     genuinely resolved one slot downstream — not a moved-hop gap.** No re-open.
+- **New stub → FOLLOW-410** (covers DG-1 migration-citation fix + CB-1/TG-1 GET-return retype; both
+  live on the route.ts/directives.ts surface PR #354 introduced).
+
+**Follow-ups (every gap emits one; cross-refs do not duplicate existing stubs):**
+
+- **FOLLOW-410** (backend-engineer, P2, 1.5h): (a) DG-1 — correct the three "migration 0017"
+  provenance citations to "migration 0018" in `route.ts:938`, `route.ts:1349`,
+  `packages/shared/src/directives.ts:137` and regenerate `packages/shared/dist/directives.d.ts:110`
+  (0017 is the unrelated FOLLOW-371 holdout-contamination migration; the rename is 0018). (b) CB-1 —
+  retype the two untyped GET early-return bodies (`route.ts:781-793` opt-out, `route.ts:813-825`
+  consent-skip) to `AdaptationDirectives & { tier: number }`, matching the main GET path
+  (`route.ts:879`); Rule S parity. (c) TG-1 — optionally add a shape assertion per early-return path.
+  Cross-ref FOLLOW-390 (GET surface liveness — owns the dead-or-alive decision; FOLLOW-410 only does
+  type hygiene) and FOLLOW-404 (0018/0019 prod-apply attestation — not duplicated).
+
+### 8. Cross-references
+
+- **RETRO-118 (FOLLOW-358 / PR #357 / migration 0019):** the downstream closure of the GET/POST
+  `page_context` divergence THIS PR deferred — traced end-to-end in §7. RETRO-115 is the missing
+  upstream half of that two-PR rename arc (0018 column rename here; 0019 source discriminator there).
+- **RETRO-111 (FOLLOW-359 → FOLLOW-390 / PR #350):** owns the GET `/api/adapt` surface-liveness
+  question that CB-1's untyped GET early-returns sit inside; FOLLOW-410 does the type fix, FOLLOW-390
+  the strategic call. Cross-referenced, not duplicated.
+- **RETRO-119 (FOLLOW-354 → FOLLOW-398 / PR #358):** the kin Rule-Y citation-accuracy instance
+  (constant cited as living in a file where it does not exist). Together with DG-1 this is the 2nd
+  confirming instance of the broadened citation-accuracy shape (§6) — flagged for human, not promoted.
+- **RETRO-113 / RETRO-114 / RETRO-116 (PRs #352/#353/#355):** the concurrent back-fill batch;
+  RETRO-114's header note flagged the 114/115/116 gap. With RETRO-116 (FOLLOW-389) and this entry
+  landed, all three back-fill gaps are now closed.
+- **CONVENTIONS_PATCH Rule W (CH key-column migration safety):** migration 0018 `RENAME COLUMN` is
+  Rule-W-safe (`tier` not in the `(tenant_id, session_id, ts)` ORDER BY; asserted in the migration
+  header against migration 0003) — compliance satisfied; the prod-apply attestation belongs to the
+  FOLLOW-404 family.
+
+---
+
+## RETRO-125 — FOLLOW-407 (apply Rule V to the consent endpoint: replace the FOLLOW-374 file-wide `paths` gitleaks exemption on `consent/platform-registration/` with a token-scoped `regexes` entry for `CANONICAL_CONSENT_TEXT_HASH`; fix the copy-paste `route.ts` comment; closes RETRO-123 §5a cascade / §4d DG-2 on the removal + regexes legs) — 2026-06-26
+
+> RETRO-125 is the IN-ORDER retro for PR #364 (merged 2026-06-26 14:48 UTC), appended after the
+> RETRO-115/116 back-fill block. It is the 2nd LIVE application of newly-promoted **Rule V**
+> (CONVENTIONS_PATCH, added 2026-06-26 at RETRO-123 §6): the 1st live instance was PR #362 /
+> FOLLOW-396 (route.ts), this is the consent-endpoint twin RETRO-123 §5a queued as FOLLOW-407.
+
+### 1. Summary of change
+
+- **PR:** #364 (squash-merged 2026-06-26 14:48:32 UTC, commit `f7e178d`).
+- **Files changed:** 1 (+4 / −5, net −1). `.gitleaks.toml` ONLY. Two edits: (a) DELETED the file-wide
+  `paths` allowlist entry `'''apps/control-plane/src/app/api/v1/consent/platform-registration/'''`
+  from the `cloudflare-api-token` rule (added by FOLLOW-374 to silence the
+  `CANONICAL_CONSENT_TEXT_HASH` FP); (b) ADDED a token-scoped `regexes` entry
+  `'''a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9'''` (`.gitleaks.toml:179`) — the first 38 chars of the
+  64-char hash — plus a corrected comment (`:172-174`) replacing the copy-pasted "keys in route.ts
+  are still scanned" (wrong file — adapt-route language) with consent-endpoint language.
+- **Modules touched:** infra (gitleaks config). NO source / SDK / control-plane / shared / docs.
+- **Key contracts changed:** **N/A** — config-only. No TS type, event, env-var, column, or export
+  added/changed/removed. The only IMPLICIT contract is the value of `CANONICAL_CONSENT_TEXT_HASH`
+  (`lib.ts:45-46`, 64-char SHA-256 of the public consent text) that the 38-char `regexes` substring
+  now tracks — see §4d DG-1 (no maintenance link binds them).
+
+### 2. Verification done in PR
+
+- Test files changed: **none** (config-only). Assertions added: 0. Coverage delta: N/A.
+- CI checks (per QUEUE FOLLOW-407 notes, PM-validated 2026-06-26 21:15Z): Gitleaks secrets scan 2×
+  SUCCESS (push-event + PR-event); real-gate non-success = 4 (Rule I 2× + Archetype-embeddings 2×,
+  the standing pre-existing non-blocking baseline per the CI-gate-landscape memory) → all real gates
+  PASS; `gh pr diff 364 --name-only` = `.gitleaks.toml` only (scope clean). Not independently
+  re-watched (config-only, post-merge).
+- **Verification GAP (the load-bearing one):** the PR proved only that the FP is GONE (gitleaks
+  green). It did NOT prove **detection is RESTORED** on the now-paths-unexempted consent directory —
+  i.e. that a real Cloudflare-token-shaped secret committed to `lib.ts`/`route.ts` REDs CI. Rule V's
+  own text MANDATES this negative control ("'CI is green' alone proves only that the FP is gone, not
+  that real-secret detection works"). This is the IDENTICAL gap RETRO-123 flagged for the route.ts
+  twin (→ FOLLOW-406), now repeated for consent. → §4c TG-1 / FOLLOW-411.
+
+### 3. Wiring Audit
+
+Config-only change; no new exported TS symbol, event, env-var, column, topic, or SDK signal.
+**CHECK A (dead code):** N/A — no source export introduced. **CHECK B (half-wire):** N/A on the
+event/column axis. `Wiring Audit — clean ✅` on the code surface. One CONFIG-level observation
+carried to §4b: the new `regexes` "suppressor" is redundant with a pre-existing inline
+`// gitleaks:allow` on the sole line the 64-char literal occupies (`lib.ts:46`) — a config-hygiene
+redundancy, not a code DEAD_CODE/HALF_WIRE finding.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3) — the 38-char token-scoped suppression is POSITIONALLY anchored to the hash being a
+  bare leftmost literal; it covers only ONE of the hash's 40-char windows.** The `cloudflare-api-token`
+  rule (`.gitleaks.toml:137`, `[a-zA-Z0-9_-]{40}`) finds the LEFTMOST 40-char match in the 64-char
+  literal (window `[0,39]`), then resumes at char 40 where only 24 chars remain (< 40) → exactly ONE
+  reported window. Verified mechanically: of the 25 possible 40-char windows of the hash, the 38-char
+  prefix `a3f2…c7b8a9` is contained in window **[0] only** (it occupies chars 0-37; a length-40 window
+  contains [0,37] only when it starts at 0). The suppression therefore works for the literal AS
+  WRITTEN — a bare 64-char const at `lib.ts:46`. But it is fragile to position: if the literal ever
+  gains a leading `[a-zA-Z0-9_-]` neighbor (concatenation, a base64/prefix wrapper, embedding in a
+  longer token), the leftmost 40-char match shifts right and no longer contains the 38-char prefix →
+  the FP returns. Failure mode is FAIL-LOUD (CI REDs) and recoverable, so P3 — but it is undocumented
+  (the comment frames "38-char substring fits within the 40-char window" as robust, not as
+  leftmost-anchored). Acceptable as-is; banked.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P3) — the new `regexes` entry is functionally REDUNDANT with a pre-existing inline
+  `// gitleaks:allow`, and its necessity was never proven.** `lib.ts:46` already carries
+  `… as const; // gitleaks:allow SHA-256 of public consent text` — an inline allowlist comment that,
+  on its own, fully suppresses any finding on that line. Grep confirms the 64-char literal VALUE
+  appears at exactly ONE site repo-wide (`lib.ts:46`); `route.ts:270` and `route.test.ts:174-181`
+  reference the SYMBOL `CANONICAL_CONSENT_TEXT_HASH`, not the literal, so they never trip the regex.
+  Consequently the `regexes` entry added by this PR suppresses a finding the inline comment ALREADY
+  suppresses → it is redundant today, and (absent a negative control showing the FP fires WITHOUT it)
+  possibly dead config from day one. Not harmful, but it is unverified config — the PR did not
+  disambiguate "is the inline allow alone sufficient?" Fold the disambiguation into the same
+  negative-control pass (remove `regexes` → expect still-green via inline allow → then it is either
+  dead-and-removable OR explicitly kept as defense-in-depth with a one-line reason). → FOLLOW-411.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — no negative-control attestation that gitleaks still CATCHES a real secret in the
+  consent directory after the `paths` deletion.** PR #364 evidences only "Gitleaks 2× SUCCESS" (FP
+  gone); it provides ZERO true-positive evidence that a dummy Cloudflare-token-shaped 40-char
+  high-entropy string committed to `lib.ts`/`route.ts` REDs CI. This is precisely the gap RETRO-123
+  identified for the route.ts twin and filed as FOLLOW-406 (devops, P3, route.ts-scoped). The consent
+  surface is now in the IDENTICAL state — paths exemption removed, relying on a token-scoped entry —
+  and inherits the IDENTICAL unproven-detection gap. Rule V mandates this negative control as part of
+  the remediation; it was skipped. → FOLLOW-411 (and FOLLOW-406 is under-scoped — §5a).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — no bidirectional maintenance link binds the 38-char allowlist substring to its source
+  constant; a consent-text rotation silently staleness-rots the allowlist.** The `.gitleaks.toml`
+  comment (`:172-174`) does not say "update this 38-char substring if `CANONICAL_CONSENT_TEXT_HASH`
+  (`lib.ts:45-46`) changes," and `lib.ts:45-46` does not point back at the allowlist entry it depends
+  on. If the public consent text is ever revised, the SHA-256 changes ENTIRELY → the 38-char prefix
+  matches nothing → either the FP returns (fail-loud, recoverable) or — if the inline allow (CB-1)
+  carries it — the `regexes` entry silently becomes permanently-dead config. A one-line cross-pointer
+  on each side makes rotation safe. → FOLLOW-411.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-406 (RETRO-123 — gitleaks negative-control attestation) is NOW UNDER-SCOPED.** It was
+  written route.ts-only (devops, P3): "confirm gitleaks still REDs on a real secret in `adapt/route.ts`
+  after the FOLLOW-396 paths deletion." FOLLOW-407 has now performed the SAME strip-the-superseded on
+  the consent directory, creating a SECOND secret-handling surface that needs the SAME proof. Per
+  Rule V (negative control is mandatory on EVERY narrowed secret-handling file), FOLLOW-406's scope no
+  longer covers the live surface area. **Recommendation:** execute FOLLOW-406 + the new FOLLOW-411 as
+  ONE generalized negative-control job over BOTH surfaces (route.ts + consent `lib.ts`/`route.ts`),
+  with a per-surface checklist so the NEXT Rule-V strip cannot skip the proof. Cross-referenced into
+  FOLLOW-411; FOLLOW-406 stays the route.ts owner.
+
+#### 5b. Future sprint tickets affected
+
+- Any future secret-handling source file that self-inflicts a generic-rule FP is now governed by
+  Rule V (token-scoped, never file-wide) AND by its negative-control clause — both must be honored at
+  authoring time, not deferred to a retro. No specific future ticket is blocked.
+
+#### 5c. Contracts changed others rely on
+
+- **N/A on the TS/event surface** (config-only). The sole implicit dependency is the VALUE of
+  `CANONICAL_CONSENT_TEXT_HASH`: the allowlist substring is a 38-char copy of it. Consent-text
+  rotation is the cascade trigger (DG-1) — not a code-contract break, a config-staleness one.
+
+#### 5d. Architectural assumptions affected
+
+- **The Rule-V strip-the-superseded campaign is now CODE-COMPLETE across the known secret-handling
+  surface.** Rule-V verification grep #1 (`grep -nE "src/app|src/lib|src/core|src/jobs" .gitleaks.toml
+  | grep -viE "test|fixture|__"`) returns EMPTY at HEAD — i.e. NO secret-handling SOURCE-file `paths`
+  exemption survives on any rule. Both former offenders are removed: route.ts (FOLLOW-396/PR #362) and
+  consent (FOLLOW-407/PR #364). The remaining `cloudflare-api-token` `paths` entries
+  (`.gitleaks.toml:141-167`) are ALL legitimate non-secret-handling doc/narrative/test-fixture/
+  agent-lesson exemptions (HANDOFFS/QUEUE/RETROSPECTIVES/FOLLOW_UPS, docs/adr, docs/runbooks,
+  `__fixtures__`, Python `test_*.py`, `.claude/agents/`, `memory/`) — explicitly OUT of Rule V's scope
+  (Pattern G / FOLLOW-083). **Verdict: `.gitleaks.toml` is in a GOOD state; no further `paths`→`regexes`
+  conversions are warranted.** The OPEN residual is NOT another conversion — it is the negative-control
+  PROOF leg on the two already-narrowed surfaces (§4c / §5a).
+
+### 6. New lesson candidates
+
+- **Pattern (TG-1 / §5a): "a Rule-V strip-the-superseded remediation lands proving only that the FP
+  is gone (gitleaks green), NEVER the mandated negative control (a real token REDs CI on the narrowed
+  file)."** Seen in: **RETRO-123** (PR #362/FOLLOW-396 route.ts → deferred to FOLLOW-406) + **this
+  RETRO-125** (PR #364/FOLLOW-407 consent → FOLLOW-411). Count 2. **NO new rule:** the governing rule
+  ALREADY EXISTS — Rule V's text explicitly mandates the negative control and explicitly states "'CI
+  is green' alone proves only that the FP is gone." This is therefore a COMPLIANCE gap WITH an existing
+  rule (the negative-control clause is being under-executed at PR time), not a missing rule; promoting
+  a new rule would duplicate Rule V. Remediation is the negative-control follow-up itself
+  (FOLLOW-406+411), plus a note that Rule-V remediations MUST land WITH their negative control in the
+  same PR going forward. Banked as a Rule-V execution-discipline watch-item.
+- **Pattern (CB-1): "belt-and-suspenders FP suppression — an inline `// gitleaks:allow` AND a
+  token-scoped `regexes` entry BOTH cover the same single literal, leaving redundant/unproven config."**
+  Seen in: this RETRO-125 only. Count 1 → NO rule. Watch-item: a token-scoped suppression added for a
+  literal that already carries an inline allow should be proven necessary (or removed) via the same
+  negative control.
+
+### 7. Prior-follow-up closure check (FOLLOW-407 → RETRO-123 §5a cascade / §6 Rule V 2nd live instance / §4d DG-2)
+
+FOLLOW-407 claims to apply Rule V to the consent endpoint. Traced the claimed closure END-TO-END
+(bad-shape removal → token-scoped suppression → detection-restored proof), NOT one hop:
+
+1. **Removal leg (the FOLLOW-374 bad shape):** the file-wide `paths` entry
+   `'''apps/control-plane/src/app/api/v1/consent/platform-registration/'''` is **DELETED** —
+   confirmed in the PR diff AND by Rule-V verif grep #1 returning empty at HEAD. The consent directory
+   (which holds an env-derived `PLATFORM_REGISTRATION_CONSENT_SECRET` HMAC + a
+   `CONSENT_IP_ENCRYPTION_KEY` AES-GCM key, `route.ts:43,68,113`) is again under full
+   `cloudflare-api-token` scanning. ✅ removal CLOSED.
+2. **Token-scoped suppression leg:** the `regexes` entry `'''a3f2…c7b8a9'''` (`.gitleaks.toml:179`)
+   correctly suppresses the FP on the leftmost 40-char window of the hash (mechanically verified, §4a).
+   ✅ suppression CLOSED (with the §4a positional caveat + §4b redundancy caveat).
+3. **Comment leg (RETRO-123 §4d DG-2):** the copy-pasted "keys in route.ts are still scanned"
+   mislabel is corrected to consent-endpoint language (`:172-174`). ✅ CLOSED.
+4. **Detection-restored leg — the gap MOVED ONE HOP, NOT closed.** Rule V defines the negative control
+   as part of the remediation. FOLLOW-407 delivered legs 1-3 but NOT the dummy-token true-positive
+   proof — exactly as FOLLOW-396/route.ts deferred its proof to FOLLOW-406. **Verdict: FOLLOW-407
+   closes RETRO-123 §5a on the removal + regexes + comment legs, but the detection-restored proof is a
+   moved-hop residual → FOLLOW-411 (consent twin of FOLLOW-406).** Not a full end-to-end closure.
+
+**New stub → FOLLOW-411.**
+
+**Follow-ups:**
+
+- **FOLLOW-411** (devops-engineer + backend-engineer, P3, 1.5h): the consent twin of FOLLOW-406 plus
+  two config-hygiene tails. (a) TG-1 — add a dummy 40-char high-entropy Cloudflare-token-shaped string
+  to the consent dir (`lib.ts` or `route.ts`), confirm gitleaks REDs, remove it, record the attestation
+  (the proof FOLLOW-407 skipped). (b) CB-1 — disambiguate the `regexes`-vs-inline-`gitleaks:allow`
+  redundancy: remove the `regexes` entry, confirm the FP stays suppressed by the inline allow on
+  `lib.ts:46` (the literal's only site) → then either DELETE the redundant `regexes` entry OR keep it
+  with an explicit defense-in-depth one-liner. (c) DG-1 — add a bidirectional maintenance comment
+  linking `.gitleaks.toml:179` ↔ `lib.ts:45-46` (update the 38-char substring on consent-text/hash
+  rotation). Cross-ref FOLLOW-406 (route.ts negative control — recommend the two be executed as ONE
+  generalized job over both secret-handling surfaces with a reusable per-surface checklist; NOT
+  duplicated).
+
+### 8. Cross-references
+
+- **RETRO-123 (FOLLOW-396 / PR #362 — Rule V promotion):** the parent. RETRO-123 §6 PROMOTED Rule V,
+  performed the 1st live strip-the-superseded (route.ts), and queued FOLLOW-407 (this PR) as the 2nd
+  live instance + FOLLOW-406 as the route.ts negative control. RETRO-125 confirms FOLLOW-407 executed
+  the consent strip correctly but inherited the SAME deferred-negative-control gap (§4c/§5a).
+- **RETRO-118 §6 Pattern B + RETRO-121 §6 Pattern B:** the ≥2-prior-retro evidence chain behind Rule V
+  (file-wide route.ts paths exemption, BAD shape, count 1; token-scoped migration-filename `regexes`,
+  GOOD shape, count 2). This PR is a clean application of the rule those retros built.
+- **CONVENTIONS_PATCH Rule V (gitleaks self-inflicted-FP allowlist hygiene):** governs this PR fully —
+  token-scoped not file-scoped (satisfied), strip-the-superseded (satisfied), negative-control proof
+  (NOT satisfied → FOLLOW-411). No new rule promoted (the negative-control gap is a Rule-V compliance
+  gap, not a missing rule — §6).
+- **Pattern G / FOLLOW-083 (legitimate non-secret-handling paths exemptions):** the remaining
+  `cloudflare-api-token` `paths` entries fall here and are explicitly EXCLUDED from Rule V (§5d) — no
+  action.
+
+---
+
+
+## RETRO-126 — FOLLOW-398 (remove the phantom `SIDEBAR_SHOW_THRESHOLD` constant from `MASTER_DESIGN.md` §E.7 + the `adapt-floor.ts` JSDoc; Rule Y citation-accuracy; closes RETRO-119 §4d DG-1) — 2026-06-26
+
+> **Numbering note (carried, unchanged):** `RETROSPECTIVES.md` in-file still omits **RETRO-114
+> (FOLLOW-342/#353), RETRO-115 (FOLLOW-357/#354), RETRO-116 (FOLLOW-389/#355)** — they live as
+> assigned IDs in the `FOLLOW_UPS.md` next-free ledger (RETRO-115 = the 410 back-fill note, RETRO-116
+> = the 409 note). Per the PM-assigned ID and the established sequence (RETRO-125 = PR #364),
+> **PR #365 (FOLLOW-398) = RETRO-126.** The in-file "last 5 retros" read for pattern detection were
+> the committed high-ID entries **RETRO-121, 122, 123, 124, 125**; the direct parent is **RETRO-119**
+> (FOLLOW-354), which spawned this ticket. PM: the 114/115/116 in-file gap is still open.
+
+### 1. Summary of change
+
+- **PR:** #365 (squash-merged 2026-06-26T15:09:25Z, merge-commit `667355b`). Title: `docs(sdk): remove SIDEBAR_SHOW_THRESHOLD phantom constant from MASTER_DESIGN + adapt-floor JSDoc (Rule Y) [FOLLOW-398]`. Branch `sdk-engineer/FOLLOW-398-sidebar-threshold-doc-fix`.
+- **Files changed:** 4 (+50 / −5, net +45) — but +41/−0 of that is the `.claude/agents/sdk-engineer/lessons.md` learning-hook append. The substantive change is **4 lines across 3 files**: `docs/MASTER_DESIGN.md` (+2/−2 — §E.7 line 728 bullet + line 2409 gating-ladder rung), `packages/sdk/src/core/adapt-floor.ts` (+2/−1 — JSDoc line 25), `packages/sdk/src/__tests__/follow-343.test.ts` (+5/−2 — test description string at :207 + comment).
+- **Modules touched:** docs · SDK (JSDoc + test-description only). **No production code path, no exported symbol, no schema/event/column/topic.** Bundle delta: **0** (PR body; verified — only a Markdown bullet, a JSDoc comment, and a Vitest `it(...)` description string changed; `adapt-floor.ts` const VALUES untouched, `follow-343.test.ts` assertion BODY untouched).
+- **Key contracts changed:** **NONE.** `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` and `DOM_ADAPT_MIN_SIGNAL_COUNT = 2` (`adapt-floor.ts:34,44`) unchanged in value and JSDoc-only edited. This is a doc/JSDoc/test-string PR — **N/A on the contract axis.**
+
+### 2. Verification done in PR
+
+- Test files changed: `follow-343.test.ts` — the `it(...)` **description** at :207 was rewritten (the assertion body `expect(DOM_ADAPT_CONFIDENCE_FLOOR).toBeLessThan(0.6)` is unchanged and still valid). **Zero new assertions; zero coverage delta** — the only thing the test now does differently is no longer NAME a nonexistent constant in its title. No production-behavior test was added (none was needed — doc-only).
+- CI checks: per QUEUE FOLLOW-398 (PM-VALIDATED 2026-06-26, "CI green. Doc-only PR. Ready for human review"). Pre-commit hooks (format/lint/commitlint/rule-h/rule-j) pass per PR body; `MASTER_DESIGN.md` is in `.prettierignore`. Rule I / Vercel / Archetype-embeddings baseline pre-existing-red & non-blocking per the `project_ci_gate_landscape` memory. Not independently re-watched (doc-only, post-merge).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):** No new exported symbol or module. `adapt-floor.ts` change is JSDoc-only; its two consts are pre-existing and fully wired — `import { DOM_ADAPT_CONFIDENCE_FLOOR, DOM_ADAPT_MIN_SIGNAL_COUNT }` (`index.ts:87`), consumed at the gate `aboveFloor = resp.confidence >= DOM_ADAPT_CONFIDENCE_FLOOR || … >= DOM_ADAPT_MIN_SIGNAL_COUNT` (`index.ts:720-722`) → `if (aboveFloor)` (`index.ts:724`), and re-exported (`index.ts:1560`). `follow-343.test.ts` is a Vitest entrypoint (no exports; suppressed per the CHECK-A framework-entrypoint exemption). Docs are docs. **Clean ✅.**
+
+**CHECK B (half-wire):** No new event / env-var / DB column / topic / SDK signal introduced or removed. The PR DELETES references to a symbol that does not exist — the opposite of a half-wire. **Clean ✅.**
+
+`Wiring Audit — clean ✅` (both checks; doc/JSDoc/test-string-only, no code-surface change).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A on production logic (no code path changed). The doc-accuracy slip in the *new* line-728 text is recorded under §4d DG-1 (it is a documentation defect, not a runtime logic gap).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. No production code changed; nothing to defect.
+
+#### 4c. Test coverage gaps
+
+- N/A new. The pre-existing description-axis `signal_count >= 2` OR-branch coverage hole stays open under **FOLLOW-399** (RETRO-119 §4c TG-1) — not re-opened or advanced here; this PR touched only a test *title*, not the suite's coverage.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3 — Rule Y meta-recurrence: the fix for one Rule-Y citation introduced a NEW Rule-Y-shaped inaccuracy IN THE SAME REPLACEMENT SENTENCE).** The new §E.7 line-728 bullet reads: *"DOM adaptation is gated by `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` in `packages/sdk/src/core/adapt-floor.ts`; below this threshold `adapt-floor` returns `[]` and no mutation is applied."* Two imprecisions, both verified against source:
+  1. **`adapt-floor` does not "return `[]`."** `packages/sdk/src/core/adapt-floor.ts` contains exactly TWO `const` exports and NO function (`grep -nE "function|return|=>" adapt-floor.ts` → only the two JSDoc `returns []` mentions, no code). The array-dropping gate is `if (aboveFloor) { applyDirectives(...) }` at `index.ts:720-724` — i.e. the BEHAVIOR is in `index.ts`, not in the named `adapt-floor` module. Personifying a const-only module as a function that "returns `[]`" is the EXACT Rule-Y shape (a named file cited as performing a behavior it does not) — the same shape the phantom constant had (a named const cited as living where it did not).
+  2. **The bullet omits the `|| signal_count >= 2` OR-branch.** The real gate is `confidence >= 0.5 **||** signal_count >= 2` (`index.ts:720-722`); below 0.5 confidence a mutation IS still applied when `signal_count >= 2`. "below this threshold … no mutation is applied" overstates a confidence-only gate — the same OR-branch RETRO-119 §4c TG-1 / FOLLOW-399 track. (The §E.7 ladder *blockquote* at :2406-2412 is fine — it is framed as a confidence-threshold ladder — so this nit is scoped to the line-728 bullet only.) → **FOLLOW-412 (P3).**
+- **DG-2 (P3, RECORDED as a defensible deliberate NON-change — not a gap).** `docs/AUDIT-2026-06-19.md:164` still actively states *"the only confidence gate in the path is `SIDEBAR_SHOW_THRESHOLD = 0.6` … (`index.ts:660`)."* The PR intentionally left it (PR body + sdk-engineer lessons: "falsifying bug-report history would be worse"). **Verified defensible:** the const was REAL at audit date — `git log -S` shows it was added by `ac8893b` (TICKET-037) and removed only by **PR #340 / FOLLOW-375 `4635c3d` on 2026-06-23**, FOUR days AFTER the 2026-06-19 audit; the audit even cites `index.ts:660`, which matches the const's real historical line (confirmed in the stale `.claude/worktrees/*` checkouts that still carry `const SIDEBAR_SHOW_THRESHOLD = 0.6` at `index.ts:178/206/660`). A frozen point-in-time audit accurately describing its as-of state is NOT a Rule-Y violation. Optional micro-enhancement (folded into FOLLOW-412 as a NON-blocking suggestion, not an AC): a one-line inline marker `[as-of-audit; constant removed in PR #340]`. No mandatory follow-up.
+
+#### 4d-bis. Accurate corrections this PR landed (recorded, NOT findings)
+
+- All THREE active live citations of the phantom are now GONE or corrective: §E.7 line 728 (bullet rewritten), §E.7 line 2409 (ladder rung now states the constant does NOT exist + sidebar admin-only `index.ts:948-950`), `adapt-floor.ts:25` JSDoc (sidebar mention removed from the 0.6 rung), and `follow-343.test.ts:207/211` (title + comment now reference the real server `CONFIDENCE_THRESHOLD` and state no `SIDEBAR_SHOW_THRESHOLD` exists). Repo-wide grep on `main` (excl. `node_modules`/`.next`/transient `.claude/worktrees`) confirms the only surviving references are: `backlog/STATUS.md:108` (ticket tracking), `MASTER_DESIGN.md:2409` (now corrective), `AUDIT-2026-06-19.md:164` (frozen historical, DG-2). **The 0.5-floor/0.6-gate asymmetry is now consistently documented in the two authoritative LIVE locations** (`adapt-floor.ts` JSDoc + §E.7 ladder blockquote); only the line-728 bullet carries the two residual imprecisions (DG-1).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-399 (RETRO-119 §4c TG-1, P3 — description-axis `signal_count >= 2` OR-branch coverage):** adjacent. DG-1 imprecision #2 is the DOC twin of FOLLOW-399's TEST gap (both stem from the bullet/tests ignoring the OR-branch). Recommend FOLLOW-412's OR-branch wording fix co-land with or cross-ref FOLLOW-399 so the doc and the test describe the same gate. Not re-opened.
+- **FOLLOW-410 (RETRO-115, P2 — "migration 0017"→"0018" provenance-citation drift):** sibling Rule-Y citation-accuracy instance. RETRO-115's FOLLOW-410 note already RECOMMENDED a "Rule Y scope-broadening amendment" to the human and flagged RETRO-119's `SIDEBAR_SHOW_THRESHOLD` as "the 2nd confirming instance but POST-DATES this merge." DG-1 here is the 3rd confirming instance — the basis for the §6 amendment (cross-referenced, not duplicated).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-344 (ml-engineer, switch-margin/blending) & FOLLOW-355 (cold-start signal_count invariant):** the asymmetry doc (now clean in the JSDoc + ladder) is their reference. DG-1's OR-branch omission in the line-728 bullet is a small wording residual that FOLLOW-412 closes before either consumes the doc; no behavioral blast radius.
+
+#### 5c. Contracts changed others rely on
+
+- **None.** No symbol, schema, event, or wire changed. Zero blast radius on the contract axis (doc/JSDoc/test-string only).
+
+#### 5d. Architectural assumptions affected
+
+- **PROCESS-GAP (the load-bearing answer to "what let the phantom persist undetected"):** the constant was NOT a never-existed phantom — it was a **real const deleted in PR #340 / FOLLOW-375 (2026-06-23) WITHOUT propagating the removal** to its doc/JSDoc/test citations (§E.7 line 728, the gating ladder, the `adapt-floor` JSDoc, the `follow-343` test title). That is an **Operating Principle 2 (continuous propagation) violation at PR #340**: a symbol was removed from code but its name survived in 4+ documentation/test sites. RETRO-119/FOLLOW-354 (PR #358) then AMPLIFIED the stale citation into 2 fresh authoritative locations. FOLLOW-398/PR #365 is the third PR to touch this lineage and the first to clear it. The systemic guard is exactly the one the sdk-engineer recorded in their own lessons.md this PR ("when a constant is removed/replaced, grep its name across all doc AND test files before closing") — and it is the same shape as the §6 Rule-Y broadening.
+
+### 6. New lesson candidates
+
+- **Pattern (Rule-Y BROADENED sub-shape — "any named symbol/file/module cited as fact (the symbol exists / the file performs the cited behavior), OUTSIDE the literal CI-guard-test-header sub-shape Rule Y was promoted on"). Threshold MET → Rule Y AMENDED this retro (scope-broadening, NOT a new letter).** Evidence chain across ≥2 PRIOR retros + this one:
+  - **RETRO-115 §4d DG-1 / FOLLOW-410 (PRIOR):** "migration 0017" cited as the `tier→page_context` rename provenance in 3 sites when the rename is migration **0018** — a named-artifact (migration number) cited as fact, false. RETRO-115 explicitly RECOMMENDED a "Rule Y scope-broadening amendment (extend from 'CI-guard test-header' to 'any provenance citation: migration number / constant home-file / schema column')" to the human. (broadened-sub-shape count 1)
+  - **RETRO-119 §6 / FOLLOW-398 (PRIOR):** `SIDEBAR_SHOW_THRESHOLD` cited as a live const in `index.ts` — a named const cited as existing where it does not. RETRO-119 pre-registered: "If a 2nd doc-citation-of-nonexistent-symbol (outside the CI-guard sub-shape) is flagged in a future retro, consider a Rule Y amendment." (broadened-sub-shape count 2)
+  - **RETRO-126 §4d DG-1 (THIS):** `adapt-floor` (a const-only module) cited as a function that "returns `[]`" — a named module cited as performing a behavior it does not. (broadened-sub-shape count 3)
+  Two distinct PRIOR retros (115, 119) already recommended/pre-authorized this exact amendment; the ≥2-prior-retro threshold is firmly met and RETRO-119's 2nd-sighting trigger is exceeded. **Action: Rule Y broadened in CONVENTIONS_PATCH.md** (Pattern + Rule text extended from "a NAMED test/file cited as proof a guard runs in CI" to "any named symbol / file / module / migration-number / schema-column cited as fact — it must exist and perform/contain the cited behavior"). No new letter (it is the SAME rule, broadened).
+- **Pattern (meta, count 1 — banked): "every successive edit to the §E.7 confidence-gating-ladder doc lineage introduces a fresh inaccuracy while fixing the prior one" (FOLLOW-354 introduced the phantom rung while fixing a §E.7.9 cross-ref → FOLLOW-398 introduced 'adapt-floor returns []' + dropped the OR-branch while fixing the phantom rung).** This is a churn-locus observation, fully absorbed by the broadened Rule Y above — NOT a separate rule. Watch-item for the skill loop: this single doc paragraph has now required 3 PRs; the next editor MUST diff the gate against `index.ts:720-724` source, not against the prior prose.
+
+**Rules promoted this retro: Rule Y AMENDED (scope-broadened), no new letter.** No brand-new rule minted (count-inflation discipline per RETRO-122 honored — DG-1 is a confirming instance of an EXISTING rule, and the amendment is grounded in ≥2 prior retros that independently recommended it).
+
+### 7. Prior-follow-up closure check (FOLLOW-398 → RETRO-119 §4d DG-1 / §4d DG-2)
+
+Traced END-TO-END (source-of-truth code → every citation site → the test that names it), per algorithm step 7 — NOT one hop:
+
+1. **The cited symbol's reality:** `git log -S "SIDEBAR_SHOW_THRESHOLD" -- packages/sdk/src/index.ts` → added `ac8893b` (TICKET-037), **removed `4635c3d` (PR #340/FOLLOW-375, 2026-06-23)**. Current `main` `index.ts`: `grep -c SIDEBAR_SHOW_THRESHOLD` = **0** (only the `index.ts:950` comment "sidebar.show() calls below are no-ops" remains). ✅ the symbol is genuinely gone from code.
+2. **Citation site 1 — §E.7 line 2409 (the gating-ladder rung, RETRO-119 §4d DG-1's primary target):** now reads "No third SDK gate exists … there is no `SIDEBAR_SHOW_THRESHOLD` constant in the SDK." ✅ CLOSED.
+3. **Citation site 2 — §E.7 line 728 (the confidence-gating bullet, the BROADER systemic site RETRO-119 §4d DG-1 flagged for the PM):** phantom citation removed. ✅ CLOSED — but the replacement text introduced two fresh imprecisions (§4d DG-1 / FOLLOW-412): the gap did NOT move downstream (no new hop in another file), it mutated IN PLACE into a lower-severity (P3) accuracy nit. Recorded as **CLOSED-WITH-RESIDUAL**, not clean.
+4. **Citation site 3 — `adapt-floor.ts:25` JSDoc:** sidebar mention removed from the 0.6 rung. ✅ CLOSED.
+5. **Citation site 4 — `follow-343.test.ts:207` (the test-description string that NAMED the phantom):** title + comment corrected to the real server `CONFIDENCE_THRESHOLD`; assertion body unchanged & still valid. ✅ CLOSED (and is itself a confirming instance — a test header citing a nonexistent symbol — folded into the §6 Rule-Y broadening).
+6. **RETRO-119 §4d DG-2 (boundary wording "returns [] below 0.6" → should be "at or below"):** the §E.7 ladder "Practical implication" line is consistent with the inclusive boundary; the DG-2 wording concern is satisfied by the ladder text. ✅ ADDRESSED.
+
+- **Net verdict:** FOLLOW-398 GENUINELY closes RETRO-119 §4d DG-1 end-to-end — every one of the 4 live citation sites is removed/corrected and the underlying symbol is verified absent from code (a real closure, not a hop-shuffle to another file). It leaves ONE in-place doc-accuracy residual (the line-728 replacement sentence, §4d DG-1 / FOLLOW-412) and surfaces the PR #340 propagation root-cause (§5d). **PM: FOLLOW-398 is DONE for its 2 ACs; FOLLOW-412 is a fresh P3 residual, not a re-open of FOLLOW-398.**
+
+### 8. Cross-references
+
+- **RETRO-119 (FOLLOW-354 / PR #358):** the direct parent — its §4d DG-1 spawned FOLLOW-398; this retro confirms that closure end-to-end and records the in-place residual (FOLLOW-412). RETRO-119 §6 pre-registered the Rule-Y 2nd-sighting amendment trigger now satisfied.
+- **RETRO-115 (FOLLOW-357 / PR #354 → FOLLOW-410):** the sibling Rule-Y provenance-citation instance ("0017" vs "0018"); its FOLLOW-410 note already recommended the Rule-Y scope-broadening amendment and named RETRO-119 as the 2nd confirming instance. Together with this entry these are the ≥2 prior retros grounding the §6 amendment.
+- **PR #340 / FOLLOW-375 (`4635c3d`, cross-listing SPA + admin-only sidebar):** the propagation root-cause (§5d) — it removed the real const without updating its 4+ doc/test citations.
+- **Rule Y (`CONVENTIONS_PATCH.md`):** the governing rule for DG-1; AMENDED this retro (scope-broadened to any named symbol/file/module/migration-number/schema-column cited as fact). DISTINCT from Rule L (missing-attribute) / Rule Q (mirrored-test blind spot) / Rule S (typed-parity) — Rule Y governs the CITATION's truth.
+- **Operating Principle 2 (continuous propagation):** the principle PR #340 violated and the broadened Rule Y now operationalizes for symbol removals.
+
+---
+
+## RETRO-127 — FOLLOW-410 (correct three wrong "migration 0017" provenance citations to "migration 0018" for the tier→page_context rename + retype the two untyped GET `/api/adapt` early-return bodies to `satisfies AdaptationDirectives & { tier: number }`; closes RETRO-115 §4d DG-1 + §4b CB-1) — 2026-06-26
+
+> **Numbering / concurrency note:** the brief said "RETRO-127" and that is CORRECT — **RETRO-126 was
+> written concurrently for a DIFFERENT ticket** (FOLLOW-398 / PR #365, the `SIDEBAR_SHOW_THRESHOLD`
+> phantom-constant fix, merged 2026-06-26T15:09:25Z). This entry is the in-order retro for **PR #366
+> (FOLLOW-410, merged 2026-06-26T15:24:29Z)** — the next merge after #365. **Reconciliation that
+> matters for §6:** RETRO-126 §6 ALREADY broadened Rule Y (scope-extended to "any named
+> symbol/file/module/migration-number/schema-column cited as fact"), and it used THIS ticket's
+> RETRO-115 §4d DG-1 ("0017" vs "0018") as broadened-count-1 evidence. So the rule that governs this
+> PR's finding was promoted minutes ago in the sibling retro — I do NOT re-amend it here (§6).
+
+### 1. Summary of change
+
+- **PR:** #366 (squash-merged 2026-06-26T15:24:29Z, merge-commit `366223a`). Title: `fix(adapt): correct migration 0017→0018 citations + retype GET early-return bodies [FOLLOW-410]`. Branch `backend-engineer/FOLLOW-410-migration-citation-fix`.
+- **Files changed:** 2 (+7 / −7, net 0). `apps/control-plane/src/app/api/adapt/route.ts` (+6/−6) + `packages/shared/src/directives.ts` (+1/−1). `packages/shared/dist/directives.d.ts:110` carries the same `0018` correction in a freshly-built tree, but **`dist/` is gitignored** (`git ls-files packages/shared/dist/directives.d.ts` → empty) → there is NO committed dist artifact, so the FOLLOW-410 stub's "regen dist" leg is moot for the merged tree (and no stale committed `0017` survives anywhere).
+- **Modules touched:** control-plane · shared. **No SDK / ingest / decision-api / docs / configs.**
+- **Key contracts changed:** **N/A.** Comment-text + type-annotation hygiene ONLY. No TS type, export, event, env-var, column, topic, or SDK signal added/changed/removed; `AdaptationDirectives` / `AdaptResponse` byte-identical pre/post. The `satisfies`-vs-explicit-`:`-annotation swap is a type-_checking idiom_ change, not a contract change (both forms run the same excess-property + missing-field assignability check on the literal). **Brief-premise correction (provenance accuracy — fittingly the subject of this very PR):** the brief states the main GET return "had `satisfies AdaptationDirectives & { tier: number }`." The diff shows it was an EXPLICIT annotation `const response: AdaptationDirectives & { tier: number } = {…}`; PR #366 CONVERTED it to `} satisfies …` and added `satisfies` to the two early returns — unifying all three GET sites on the `satisfies` idiom.
+
+### 2. Verification done in PR
+
+- Test files changed: **none.** Assertions added: 0. Coverage delta: N/A (no behavior, no new branch).
+- Checks (per PR body): `pnpm tsc --noEmit` clean; pre-push Rule H (no unwired exports / mock routes / adapt-schema↔`AdaptationDirectives` in sync) PASS; Rule J (mirror pairs) PASS; format/lint PASS. Not independently re-watched (comment/type-only, post-merge).
+- **Verification adequacy:** appropriate for the change class. The load-bearing guard for the type leg is `tsc --noEmit` — the `satisfies` would error had any GET literal drifted from the contract; the citation leg is a text grep (zero residual `0017`, three correct `0018` — §7). No runtime path changed, so the absence of new tests is correct (one banked nicety at §4c).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`. **CHECK A (dead code):** N/A — no new file or export (the `satisfies` operator adds no symbol; the comment edits add none); every touched symbol (`AdaptationDirectives`, the GET/POST `response` locals) pre-exists and is consumed. **CHECK B (half-wire):** N/A — no new event / env-var / column / topic / SDK signal. The `page_context` column these comments describe was producer+consumer-wired at RETRO-115 (POST producer → SDK parse → CH INSERT); this PR only corrects the comment that NAMES its migration. No producer/consumer axis opened.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3) — GET-vs-POST type-idiom asymmetry, in the same file.** PR #366 unified the three GET returns on `} satisfies AdaptationDirectives & { tier: number }` (`route.ts:792, 823, 890`) but the POST response still uses the explicit-annotation idiom `const response: AdaptationDirectives = {…}` (`route.ts:1329`). The file now mixes two idioms for the same intent (typed response literal); the PR achieved **intra-GET** symmetry at the cost of a **GET-vs-POST** idiom split it newly widened (it converted the GET main return AWAY from POST's explicit-annotation style). **Type protection is equivalent** (both idioms excess-property- and missing-field-check the literal; GET additionally carries the GET-only `& { tier: number }` field POST omits because POST uses `page_context`), so this is cosmetic — **NOT** a Rule S violation (Rule S governs behavior/verification-tier symmetry, not annotation idiom). Banked; folded as an optional one-liner into FOLLOW-413, not its own ticket.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** Both legs are correct. The error-envelope GET returns (`route.ts:714, 733, 745, 757`) correctly remain `errorBody(...)`-typed and were rightly NOT given the `satisfies` (not `AdaptationDirectives`-shaped) — no over-application bug.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, banked — not filed) — no runtime test asserts the three GET early-return SHAPES; `tsc` is the sole guard.** The FOLLOW-410 stub's leg (c) ("optionally add a shape assertion per early-return path") was explicitly OPTIONAL and not delivered. Low marginal value over `tsc --noEmit` (which already fails the build if a literal drifts). Banked at §7, NOT re-filed (RETRO-122 anti-inflation discipline; avoids a sub-1h speculative-coverage stub).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — the fix corrected the citation VALUE (`0017`→`0018`) but kept the AMBIGUOUS bare-ordinal STYLE; bare ordinals across two parallel migration trees are the ROOT CAUSE of the original drift, and are now governed by the just-broadened Rule Y.** The repo has TWO independently-numbered migration trees — `packages/db/migrations/` (Drizzle/Postgres) and `infra/clickhouse/migrations/` (ClickHouse) — that **collide on ordinals**: `0018` = `0018_app_config.sql` (PG) vs `0018_adaptation_decisions_page_context.sql` (CH); `0017` = `0017_demo_overrides.sql` (PG) vs `0017_follow371_holdout_contamination_note.sql` (CH); `0019` = `0019_conversion_labels.sql` (PG) vs `0019_adaptation_decisions_page_context_source.sql` (CH). The corrected comments (`route.ts:938, :1349`, `directives.ts:137`) now say bare `migration 0018` — CORRECT-but-ambiguous (the reader needs the surrounding `adaptation_decisions` CH context to disambiguate). **The GOOD pattern already exists in the SAME file:** `route.ts:436` cites the full unique filename `migration 0019_adaptation_decisions_page_context_source.sql`. The original `0017` drift is exactly what bare ordinals invite — an author miscounts the ordinal because nothing binds it to a filename and no review verifies it. → **FOLLOW-413** (P3) converts the remaining bare-ordinal citations to full-filename form; this OPERATIONALIZES the Rule Y broadening that RETRO-126 §6 landed minutes earlier (which explicitly added "migration-number cited as fact" to Rule Y's scope and used THIS PR's RETRO-115 instance as evidence).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **None blocked.** FOLLOW-404 (the 0018/0019 prod-apply attestation family) is UNAFFECTED — this PR changes no migration and no prod state, only the comments that cite the migrations; no QUEUE IN_PROGRESS/READY ticket assumed the old `0017` text. **FOLLOW-412 (RETRO-126, §E.7 line-728 bullet "adapt-floor returns []" + OR-branch wording):** ADJACENT same-rule sibling (both are Rule-Y broadened-shape doc residuals) but a DISJOINT surface (MASTER_DESIGN §E.7 + SDK JSDoc vs `/api/adapt` migration citations) → FOLLOW-413 does NOT duplicate it; cross-referenced. FOLLOW-390 (GET `/api/adapt` surface liveness) still owns the dead-or-alive call for the surface these typed GET returns sit inside — this PR is type/citation hygiene only and does not pre-empt it.
+
+#### 5b. Future sprint tickets affected
+
+- Any FUTURE cross-tree schema-rename / column-add PR inherits the SAME bare-ordinal ambiguity unless the full-filename convention lands. The broadened Rule Y (RETRO-126) + FOLLOW-413 close this prospectively.
+
+#### 5c. Contracts changed others rely on
+
+- **N/A** — no contract changed (§1). The `page_context` column contract others rely on is untouched.
+
+#### 5d. Architectural assumptions affected
+
+- **The Postgres/ClickHouse migration-ordinal collision is a PERMANENT repo property** (two trees, independent monotonic counters, no shared namespace) → bare-ordinal citation drift is RECURRENCE-prone; every cross-tree rename PR is a fresh drift opportunity. This is the structural justification behind RETRO-126's Rule-Y broadening to cover migration-number citations. **Rule O** (migration journal monotonicity) governs ordinal allocation WITHIN one tree but is silent on cross-tree CITATION; the broadened Rule Y + the full-filename convention (FOLLOW-413) fill that gap.
+
+### 6. New lesson candidates — NO new rule (the governing rule was AMENDED at RETRO-126, minutes earlier)
+
+- **Pattern: "an in-code provenance citation names a migration by BARE ORDINAL, ambiguous/error-prone across the colliding PG+CH migration trees."** This is precisely the broadened Rule-Y shape that **RETRO-126 §6 PROMOTED** (scope-extended Rule Y to "any named symbol/file/module/**migration-number**/schema-column cited as fact"), citing **RETRO-115 §4d DG-1 / FOLLOW-410** (THIS ticket's source — "0017" vs "0018", broadened-count 1) + **RETRO-119 §6** (broadened-count 2) + **RETRO-126 §4d DG-1** (broadened-count 3). The threshold is firmly met and the rule is already on the books. **Therefore: NO new rule and NO re-amendment here** — DG-1 is a CONFIRMING instance of the just-broadened Rule Y, and re-promoting would be count-inflation (RETRO-122 discipline). The only operative addition this entry contributes is the concrete **full-unique-filename migration-citation convention** as Rule Y's verification mechanism for the migration-number sub-shape (carried in FOLLOW-413; the good exemplar already lives at `route.ts:436`). Recommend the human note it as a one-line verification addendum under Rule Y when FOLLOW-413 lands, not a separate rule.
+- **Pattern (LG-1, count 1 — banked): "a 'make-it-symmetric' hygiene fix unifies the inner sibling set but newly widens an idiom split with the outer sibling (GET on `satisfies`, POST on explicit annotation, same file)."** NO rule. Watch-item: enumerate the FULL symmetric set (all typed response literals — GET _and_ POST) before a symmetry fix (Rule S's "enumerate the full sibling set first"), even when the axis is cosmetic.
+
+### 7. Prior-follow-up closure check (FOLLOW-410 → RETRO-115 §4d DG-1 / §4b CB-1 / §4c TG-1)
+
+Traced END-TO-END (source citation/contract → every site → guard), per algorithm step 7 — NOT one hop:
+
+1. **DG-1 — citation VALUE leg: CLOSED.** `grep -rn "migration 0017"` over `apps/ packages/` (excl `node_modules` + transient `.claude/worktrees`) returns **zero** hits tied to the rename; the three sites now read `migration 0018` (`route.ts:938` "…0018, FOLLOW-357", `route.ts:1349`, `directives.ts:137`). The gitignored `dist/directives.d.ts:110` also reads `0018` → no committed stale artifact. ✅ VALUE closed. **The gap MOVED ONE HOP to STYLE** (citations still bare ordinals, ambiguous across PG/CH trees, §4d DG-1) → residual **FOLLOW-413**. Not a full closure of the citation-ROBUSTNESS spirit, only of the specific wrong-value instance RETRO-115 quoted.
+2. **CB-1 — untyped GET early-return leg: CLOSED (with over-delivery).** All three GET `AdaptationDirectives`-shaped returns carry `} satisfies AdaptationDirectives & { tier: number }` (`route.ts:792` opt-out, `:823` consent-skip, `:890` main). The stub named only the two early returns; the PR ALSO converted the main return from its explicit `:`-annotation to `satisfies` to unify the idiom — over-delivery beyond scope, acceptable (no behavior change, `tsc` clean). Error-envelope returns correctly excluded. ✅ closed. (Side effect: the new GET-vs-POST idiom split, §4a LG-1 — cosmetic.)
+3. **TG-1 — optional per-path shape assertion: NOT delivered (was OPTIONAL).** No runtime test pins the GET return shapes; `tsc --noEmit` is the sole guard. Low value; banked (§4c), not re-filed.
+
+- **Net verdict:** FOLLOW-410 CLOSES RETRO-115 §4d DG-1 (wrong-value) + §4b CB-1 (type parity) end-to-end on the instances RETRO-115 named. Residuals: the citation-STYLE ambiguity (moved-hop → FOLLOW-413, now governed by the broadened Rule Y) and the cosmetic GET/POST idiom split (banked). Optional TG-1 banked. **PM: FOLLOW-410 is DONE for its delivered ACs; FOLLOW-413 is a fresh P3 residual, not a re-open.**
+
+**Follow-ups:**
+
+- **FOLLOW-413** (backend-engineer, P3, 1h): convert the remaining bare-ordinal migration citations in `apps/control-plane/src/app/api/adapt/route.ts` (`:938`, `:1349`) and `packages/shared/src/directives.ts` (`:137`) to full-unique-filename form (`migration 0018_adaptation_decisions_page_context.sql`), matching the existing good pattern at `route.ts:436`; verify the file's other CH citations (`:373/:375/:434/:436/:466/:637` — already full-name or `0019`) are unambiguous; OPTIONALLY (LG-1) align the POST response idiom (`route.ts:1329`) with the GET `satisfies` idiom OR add a one-line note on why POST keeps the explicit annotation. Operationalizes the RETRO-126 Rule-Y broadening for the migration-number sub-shape. Cross-ref FOLLOW-404 (0018/0019 prod-apply — NOT duplicated; comment hygiene only) + FOLLOW-412 (the §E.7 sibling Rule-Y residual — disjoint surface, NOT duplicated).
+
+### 8. Cross-references
+
+- **RETRO-115 (FOLLOW-357/356 / PR #354):** the PARENT — source of DG-1 (the `0017` citations) + CB-1 (the deleted GET `satisfies` guards). FOLLOW-410 is its remediation; this entry confirms both legs closed (§7). RETRO-115 §6 first RECOMMENDED the Rule-Y broadening this PR's finding helped justify.
+- **RETRO-126 (FOLLOW-398 / PR #365):** the CONCURRENT sibling retro that PROMOTED the Rule-Y scope-broadening (§6) now governing this PR's DG-1; it explicitly cited THIS FOLLOW-410/"0017"-vs-"0018" instance as broadened-count-1 evidence and filed its own §E.7 residual as FOLLOW-412 (disjoint surface from FOLLOW-413). The two entries are the paired migration-citation / phantom-constant halves of the same Rule-Y broadening.
+- **RETRO-119 (FOLLOW-354 → FOLLOW-398):** broadened-count-2 instance (constant cited in a file where it does not exist) — co-evidence for the RETRO-126 Rule-Y amendment.
+- **CONVENTIONS_PATCH Rule Y (broadened 2026-06-26 at RETRO-126):** the governing rule for DG-1; this entry adds NO amendment, only the full-filename verification convention (FOLLOW-413). **Rule O** (migration journal monotonicity) is the within-tree complement; the PG/CH ordinal collision (§5d) is why bare-ordinal citations are unsafe.
+- **FOLLOW-390 (RETRO-111 — GET `/api/adapt` surface liveness):** owns the strategic dead-or-alive call for the GET surface these now-typed early returns sit inside; this entry is type+citation hygiene only and does not pre-empt it.
+
+---
+
+## RETRO-128 — FOLLOW-409 (close the three FOLLOW-389 residuals: add the micro-poll `onAnswer` real-handler §H.9 test, fix the surviving "Ingest stream left flowing" comment twin at `showQuizTrigger`, correct the `postQuizCompletionPing` reachability JSDoc; closes RETRO-116 §4c TG-1 / §4d DG-1 / §4a LG-1) — 2026-06-26
+
+> **In-order retro for PR #367** (the next merge after #366/RETRO-127), merged 2026-06-26T16:09:53Z, commit `30d1e9f`. Source ticket FOLLOW-409 was minted by RETRO-116 (the FOLLOW-389/#355 back-fill) to close the three one-hop residuals FOLLOW-389 left on the §H.9 SDK-guard epic. Net headline: **the load-bearing residual (the micro-poll real-handler test, RETRO-116 §4c TG-1) is GENUINELY closed end-to-end** — but BOTH doc residuals (DG + LG) moved one hop AGAIN, and twice INSIDE the very PR meant to close them, even though AC-2 explicitly demanded a repo-wide grep.
+
+### 1. Summary of change
+
+- **PR:** #367 (squash-merged 2026-06-26T16:09:53Z, commit `30d1e9f`). Title: `feat(sdk): real-handler micro-poll onAnswer §H.9 guard test + comment fixes [FOLLOW-409]`. Author Pnawrocki9.
+- **Files changed:** 3 (+328 / −3). `packages/sdk/src/__tests__/follow-409.test.ts` (NEW, +318 — two real-handler tests, REAL-4 opted-out + opted-in), `packages/sdk/src/core/adapt.ts` (+4/−2 — JSDoc rewrite, AC-3), `packages/sdk/src/index.ts` (+6/−1 — AC-2 comment fix at `showQuizTrigger` + favorites asymmetry note).
+- **Modules touched:** `packages/sdk` only (test + two comment/JSDoc edits). No control-plane / shared / ingest / docs / configs.
+- **Key contracts changed:** **N/A.** Comment + JSDoc + test-only. No TS type, export, event, env-var, column, topic, or SDK signal added/changed/removed. The `micro_polls_enabled` config field, `PROFILING_OPT_OUT_KEY`, and the `quiz.event(trigger:'micro_poll')` ingest event the test exercises all pre-exist. `BATCH_INTERVAL_MS = 5_000` (`index.ts:198`) is read by the test as a magic number (5001ms flush wait) but is not a contract change — see §4c TG-3.
+
+### 2. Verification done in PR
+
+- Test files changed: `follow-409.test.ts` (NEW, 2 real-handler tests). Assertions added: ~9 across the two `it()` blocks. Coverage delta: the **third and last** §H.9 SDK guard (micro-poll `onAnswer`, `index.ts:1246`) gains genuine real-handler coverage — completing the trio (REAL-2 favorites + REAL-3 showQuizTrigger landed in #355/FOLLOW-389; REAL-4 micro-poll lands here).
+- CI checks: per PR body `1504/1504 tests green; typecheck clean; prettier on every touched file`. Not independently re-watched post-merge (test + comment-only). Rule I pre-existing-red baseline assumed per `project_ci_gate_landscape`.
+- **Verification adequacy:** the AC-1 test is a TRUE real-handler test (drives `_initForTest()` → 90s `setTimeout` → `tryShowMicroPoll()` → `renderMicroPoll()` → real `.estalara-micro-poll__btn-yes` click → real `onAnswer` at `index.ts:1236` → guard at `:1246`), and the mock turns micro-polls ON (`micro_polls_enabled: true`, `:112`) — the exact thing FOLLOW-389's mock turned OFF, which is why its REAL-set could not reach this guard. It fails if the guard is deleted/relocated. Adequate for the TG leg. **One structural weakness in the opted-out half — §4c TG-1.**
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`. **CHECK A (dead code):** the one new file is `follow-409.test.ts` (Vitest entrypoint — suppressed per the framework-entrypoint carve-out). No new export/symbol in `adapt.ts`/`index.ts` (the edits are comment/JSDoc text; `postQuizCompletionPing` and the guards pre-exist and are consumed). **CHECK B (half-wire):** no new event / env-var / column / topic / SDK-signal. The `profiling_opt_out` query-param producer (`adapt.ts:214` ← `index.ts:1148`) + consumer (`route.ts:363`) wire was connected (DORMANT, defense-in-depth) at RETRO-116; unchanged here. The `quiz.event(trigger:'micro_poll')` producer (`index.ts:1261`) + ingest consumer is pre-existing. **No NEW dead code or half-wire introduced.** The findings below are residuals of the THREE items FOLLOW-409 claimed to close (§7), all doc/test-hygiene.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A.** No runtime logic changed; the three guards behave exactly as before. The §H.9 suppression semantics (favorites leaves `listing.bookmarked` flowing per §H.8; quiz/micro-poll suppress because `quiz.event` is an AL-signal stream, not §H.8-protected) are unchanged and correct.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A** (no runtime bug). The doc-correctness contradiction in `adapt.ts` is recorded at §4d DG-1 with P2 severity (it misleads a reader about a security-relevant reachability boundary), not as a runtime bug.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — the opted-out REAL-4 negative assertion has NO positive-control that the batch flush actually fired → latent false-green.** `follow-409.test.ts:219` advances 5001ms then asserts `expect(hasMicroPollEvent).toBe(false)` (`:239`) but, unlike the opted-IN twin, does **not** assert `ingestCalls.length > 0`. If the flush harness ever regresses (no `/v1/events` call emitted at all), `ingestCalls` is empty → `hasMicroPollEvent` is `false` → the assertion passes **trivially**, proving nothing about the `:1246` guard. The opted-in test (which asserts `ingestCalls.length > 0`, `:302`) is currently the sole canary that the harness flushes — a cross-test dependency that is invisible and brittle. The opted-out negative test should assert at least one flush occurred (a producer the guard did NOT suppress, e.g. the page-view event) BEFORE asserting no `micro_poll` event rode it. → **FOLLOW-414.**
+- **TG-2 (P3) — the three modeled re-implementations in `follow-385.test.ts` are now FULLY superseded test-debt.** With REAL-4 landing, all three §H.9 SDK guards have real-handler tests (REAL-3 `showQuizTrigger` + REAL-2 favorites in #355; REAL-4 micro-poll here). The modeled `modeledShowQuizTrigger` (`follow-385.test.ts:~99`), `modeledFavoritesHandler` (`:136`), and `modeledOnAnswer` (`:220`) are exactly the self-injecting re-implementations RETRO-109 §4c flagged; FOLLOW-389 only re-labeled them "structural" rather than retiring them. They now duplicate the real-handler trio AND carry stale comments (§4d DG-2). Recommend down-scope/delete the redundant modeled bodies (preserving only any uniquely-valuable structural assertion not covered by a REAL test — e.g. the push-before-guard ordering at `:180`, which REAL-2's §H.8 preservation assertion already proves). → **FOLLOW-414** (folded; same file as DG-2).
+- **TG-3 (P3, banked) — the `5001` flush-wait is a magic number duplicated against the unexported `BATCH_INTERVAL_MS = 5_000`.** Both `follow-409.test.ts` (`:219`, `:296`) and `follow-389.test.ts` (`:295`, `:361`) hardcode `advanceTimersByTimeAsync(5001)` with a `// per index.ts:198` comment. Both are CURRENTLY correct (5001 > 5000) — so the brief's "other guard tests use the WRONG interval" hypothesis is **NOT borne out**; the only two flush-dependent SDK guard tests both use the right value. But the duplication is stale-prone: if `BATCH_INTERVAL_MS` ever increases, the comment rots and (per TG-1) the opted-out test silently false-greens. Low-value-but-cheap fix: export `BATCH_INTERVAL_MS` (or a `__test__` re-export) so flush-dependent tests reference the SoT instead of a literal+comment. Banked into **FOLLOW-414** as an optional leg, not its own ticket (RETRO-122 anti-inflation).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — AC-3 corrected the JSDoc but left the IDENTICAL false "reachable by real SDK traffic" claim in the INLINE comment of the SAME function → an internal contradiction.** `postQuizCompletionPing`'s JSDoc (`adapt.ts:186-193`) now correctly reads "reachable ONLY as defense-in-depth if Guard 1 regresses — NOT under normal production traffic" (AC-3 ✅). But 20 lines down, the inline comment at **`adapt.ts:212-213`** still reads `// append the opt-out flag so the route gate at route.ts:363 is reachable by real SDK traffic.` — the EXACT overstatement RETRO-116 §4a LG-1 flagged, now **directly contradicting the JSDoc above it**. A reader gets opposite messages about a security-relevant defense-in-depth boundary within one function. The fix corrected the flagged copy (JSDoc) and left the sibling twin (inline) — the gap moved one hop (JSDoc → inline comment). P2 because the contradiction could lead a future maintainer to wrongly believe the gate is exercised by live opted-out traffic (it is not — Guard 1 at `index.ts:1106` blocks it upstream). → **FOLLOW-414.**
+- **DG-2 (P3) — AC-2 corrected the false "Ingest stream left flowing" comment at `showQuizTrigger` (`index.ts:1102`) but left TWO identical false copies on the MICRO-POLL model in `follow-385.test.ts:211` (doc) + `:225` (inside `modeledOnAnswer`), where the line is equally false (the micro-poll `quiz.event` push is downstream of the guard → suppressed).** AC-2's own scope said "grep the exact string repo-wide and fix/justify every occurrence" — yet the repo-wide grep was not run (or its test hits ignored): `grep -rn "Ingest stream left flowing" packages/` returns four hits — `:128`/`:144` (favorites model, correctly TRUE, rightly untouched) and `:211`/`:225` (micro-poll model, FALSE, untouched-but-should-have-been-fixed). The production trio is now symmetric (showQuizTrigger ✅ + micro-poll `index.ts:1241-1245` ✅ + favorites `:1434-1437` TRUE-with-asymmetry-note ✅); the surviving falsehoods are test-file-only. → **FOLLOW-414** (folded with TG-2; same file). If FOLLOW-414 deletes the redundant `modeledOnAnswer` body (TG-2), this DG-2 is absorbed.
+
+#### Symmetry verdict (per brief)
+
+The three-site §H.9 guard (`showQuizTrigger` / micro-poll `onAnswer` / favorites) is now **symmetrically TESTED** (REAL-3 / REAL-4 / REAL-2, each fails if its guard is deleted) and **symmetrically DOCUMENTED in production code** (all three production comments accurate + cross-referencing the favorites-vs-suppress asymmetry). It is **NOT yet symmetrically documented end-to-end** because two stale twins survive in the `follow-385.test.ts` modeled re-implementations (DG-2) and the JSDoc/inline contradiction survives in `adapt.ts` (DG-1).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **§H.9 opt-out epic (FOLLOW-372→383→384→385→387→389→409):** FOLLOW-409 CLOSES the SDK-guard test-orphaning leg end-to-end — all three guards now have regression-catching real-handler tests. The remaining FULLY-open §H.9 leg is **FOLLOW-388** (batch axis, `depends_on FOLLOW-101`), unchanged by this PR. **PM: the §H.9 SDK-test leg is DONE; the epic is NOT — FOLLOW-388 remains, plus the doc-hygiene residual FOLLOW-414.** No QUEUE IN_PROGRESS/READY ticket assumed the old comment/JSDoc text.
+
+#### 5b. Future sprint tickets affected
+
+- Any future SDK profiling-mutation call site must (a) guard with `if (profilingOptedOut) return;` and (b) ship a REAL-handler test driving the live path — the REAL-2/3/4 triad (`follow-389.test.ts` + `follow-409.test.ts`) is now the complete SDK-side reference template (the analogue of FOLLOW-387's Python `test_opted_out_event_threads…` cited in RETRO-110 §6). RETRO-116 §6 already recorded this; REAL-4 completes the set.
+
+#### 5c. Contracts changed others rely on
+
+- **N/A** — no contract changed (§1).
+
+#### 5d. Architectural assumptions affected
+
+- The §H.9 ingest-suppression asymmetry is now a load-bearing, documented-and-tested invariant: **`listing.bookmarked` (favorites) is §H.8-protected and rides the ingest stream even when opted-out; `quiz.event` (quiz-completion + micro-poll) is an AL-signal stream and IS suppressed when opted-out.** All three guard sites encode this consistently (push-before-guard for favorites; guard-before-push for quiz/micro-poll). The only residual risk is documentary drift (DG-1/DG-2), not behavioral.
+
+### 6. New lesson candidates — NO new rule (anti-count-inflation; same-lineage moved-hops, not a 3rd independent sighting)
+
+- **Pattern A — "a doc/comment correction fixes the retro-flagged copy of a duplicated string/claim but leaves an IDENTICAL copy on a sibling surface, because the fixer did not grep the string repo-wide."** Prior independent sightings: **RETRO-124** (FOLLOW-403, clickhouse-migrations runbook → `migration-contract-test.sh` twin; data-engineer/docs — banked occurrence 1) + **RETRO-116** (FOLLOW-389 DG-1, micro-poll comment fixed → `showQuizTrigger:1102` twin; sdk-engineer/code-comments — 2nd sighting). **This retro adds TWO MORE instances** (DG-1 JSDoc→inline twin in `adapt.ts`; DG-2 production-comment→test-file twin for "Ingest stream left flowing") **and they are doubly damning** because (i) they occurred INSIDE the PR explicitly chartered to close the RETRO-116 twin, and (ii) AC-2 EXPLICITLY instructed "grep the exact string repo-wide and fix every occurrence" and the worker still missed three copies. **BUT** both RETRO-128 instances are the SAME strings / SAME §H.9 lineage RETRO-116 already flagged (the "Ingest stream left flowing" string + the "reachable by real SDK traffic" claim) — i.e. **moved-hop residuals of RETRO-116's own DG-1/LG-1, NOT fresh independent-context sightings.** Per the entrenched anti-count-inflation discipline (RETRO-122/125/126: same-string moved-hops do not count as new independent sightings), the independent-sighting count stays at **2 (RETRO-124 + RETRO-116)** → **HOLD maintained, NO `CONVENTIONS_PATCH.md` write.** The RETRO-116 §6 pre-authorization ("promote on the NEXT independent sighting") is **NOT triggered** by a same-lineage recurrence. **Meta-flag to the human:** the "explicit-AC-grep-instruction-still-failed" evidence here is strong enough that the human may elect to promote NOW notwithstanding the strict independence rule; candidate rule text (from RETRO-116): *"A correction spawned from a retro-quoted/flagged string MUST `grep` that exact string repo-wide and fix (or justify) EVERY occurrence in the same PR; the PR description MUST cite the grep hit-count."* Recommend the human treat the next genuinely-independent-domain sighting as auto-promote.
+- **Pattern B (count 1, banked) — "a negative-assertion test (assert event ABSENT) lacks a positive-control that the producing harness actually ran, so a harness regression false-greens it."** Seen here at TG-1 (opted-out REAL-4). Kin to the RETRO-095/RETRO-122 "served=base, logged green" false-green family but a distinct test-construction shape. NO rule (count 1). Watch-item: every "assert X absent after flush/dispatch" test must first assert the flush/dispatch demonstrably fired (a sentinel the guard does NOT suppress).
+
+### 7. Prior-follow-up closure check (FOLLOW-409 → RETRO-116 §4c TG-1 / §4d DG-1 / §4a LG-1)
+
+Traced END-TO-END (charter → every site → guard), per algorithm step 7 — NOT one hop:
+
+1. **TG-1 (the load-bearing residual — micro-poll real-handler test): GENUINELY CLOSED end-to-end ✅.** `follow-409.test.ts` REAL-4 drives the REAL path (`_initForTest()` → `vi.advanceTimersByTimeAsync(90_000)` fires `tryShowMicroPoll` → `renderMicroPoll` paints `.estalara-micro-poll__btn-yes` in shadow DOM → real `.click()` → real `onAnswer` at `index.ts:1236` → guard at `:1246`). Opted-out asserts intent key absent AND no `quiz.event(trigger:'micro_poll')` in the flushed ingest batch; opted-in asserts `signal_count` increments AND the event IS present. The mock sets `micro_polls_enabled: true` (the field FOLLOW-389's mock disabled, which is why its REAL set could not reach this guard). The test fails if the `:1246` guard is deleted/relocated. The micro-poll guard is **no longer test-orphaned**; the §H.9 SDK-guard trio is fully real-handler-covered. Residual: the opted-out half lacks a flush positive-control (§4c TG-1) — a robustness gap, not a closure failure.
+2. **DG-1 (RETRO-116 §4d, the `showQuizTrigger:1102` "Ingest stream left flowing" twin): CLOSED on the production site ✅, but the gap MOVED ONE HOP into the test file.** `index.ts:1102-1106` now correctly states the ingest event IS suppressed for opted-out sessions, and the favorites site (`:1434-1437`) carries the intentional-asymmetry note. ✅ on production. **BUT** the identical false line survives at `follow-385.test.ts:211`/`:225` (micro-poll model) → §4d DG-2. Not a full closure of the string-correctness spirit.
+3. **LG-1 (RETRO-116 §4a, the `adapt.ts:187` JSDoc "reachable by real SDK traffic" overstatement): CLOSED on the JSDoc ✅, but the gap MOVED ONE HOP to the inline comment.** The JSDoc (`:186-193`) is now accurate. **BUT** the inline comment at `:212-213` still asserts the contradicted "reachable by real SDK traffic" → §4d DG-1 (now an internal contradiction, P2).
+
+- **Net verdict:** FOLLOW-409 **genuinely closes the one residual RETRO-116 called load-bearing** (the micro-poll real-handler test) — this is a real closure, not a no-op or a modeled re-implementation. But BOTH doc sub-items moved one hop AGAIN, recapitulating the exact "fix-one-copy-leave-the-twin" failure the PR was chartered to end — and doing so even though AC-2 explicitly demanded a repo-wide grep. The three-site guard is now symmetrically TESTED but not yet symmetrically DOCUMENTED end-to-end. → **FOLLOW-414** (P2, sdk-engineer) collects DG-1 (inline contradiction), DG-2 + TG-2 (test-file twins + redundant modeled debt), TG-1 (flush positive-control), and the optional TG-3 (`BATCH_INTERVAL_MS` export). **PM: FOLLOW-409 is DONE for its primary charter (the TG leg closes RETRO-116's load-bearing residual); FOLLOW-414 is a fresh P2 doc/test-hygiene residual, NOT a re-open. The §H.9 epic remains open only on FOLLOW-388 (batch) + FOLLOW-414 (doc).**
+
+### 8. Cross-references
+
+- **RETRO-116 (FOLLOW-389 / PR #355) — direct parent.** Filed FOLLOW-409 with TG-1/DG-1/LG-1. This entry confirms TG-1 closed end-to-end (the micro-poll real-handler test now exists and catches regressions), and DG-1/LG-1 moved one hop again into the test file + the `adapt.ts` inline comment.
+- **RETRO-109 (FOLLOW-385 / PR #348) — grandparent.** Origin of the modeled re-implementations in `follow-385.test.ts` (the "self-injecting test weakness") now fully superseded for the production guards by REAL-2/3/4 (§4c TG-2). The weakness RETRO-109 flagged is, on the production side, now genuinely remediated.
+- **RETRO-110 (FOLLOW-387 / PR #349) — parallel chat-axis §H.9 closure.** Its §7 ruled the epic not-DONE until FOLLOW-388 + FOLLOW-389 land; FOLLOW-389 (then FOLLOW-409) have landed; **FOLLOW-388 (batch, `depends_on FOLLOW-101`) remains the sole fully-open §H.9 leg.** Its §6 un-mocked-real-loop template is the one REAL-4 follows.
+- **RETRO-124 (FOLLOW-403):** Pattern A independent occurrence 1 (runbook→test-script twin) — co-evidence for the §6 HOLD accounting.
+- **RETRO-122 / RETRO-125 / RETRO-126:** the anti-count-inflation discipline (same-string moved-hops do not count as fresh sightings) that governs the §6 HOLD decision.
+- **CONVENTIONS_PATCH Rule L (real-handler tests):** the rule FOLLOW-409's AC-1 satisfies for the micro-poll guard; this PR is the confirming third application (after REAL-2/REAL-3), not a new rule.
+
+---
+
+## RETRO-129 — FOLLOW-402 (generalize the ClickHouse migration-ordering contract test: derive the INSERT column list from `logDecisionAsync` at runtime + auto-detect the boundary migration + `trap`-based cleanup; closes RETRO-121 §6 LG-1/CB-1/TG-1) — 2026-06-26
+
+> **PR-state / merge note:** at retro time `gh pr view 368` reports **state OPEN, mergeCommit null** — but the squash commit `3fa3cbe` ("fix(data): generalize CH migration-ordering contract test + fix DROP-on-failure [FOLLOW-402]") is the current `main` HEAD (committed 2026-06-26T16:20:31Z), i.e. the change is **merged into `main`** even though the GitHub PR object was not closed through the merge button (pushed/fast-forwarded to `main`, or the PR record lags). I analyze the merged tree (HEAD = `3fa3cbe`) per algorithm step 1. **PM: confirm PR #368 is formally closed on GitHub so the PR/branch bookkeeping matches `main`.**
+
+### 1. Summary of change
+
+- **PR:** #368 (squash commit `3fa3cbe` on `main`, 2026-06-26T16:20:31Z; GitHub PR object still OPEN — see note). Branch `data-engineer/FOLLOW-402-contract-test-generalize`. Title: `fix(data): generalize CH migration-ordering contract test + fix DROP-on-failure [FOLLOW-402]`.
+- **Files changed:** 3 (+180 / −66). `infra/clickhouse/scripts/migration-contract-test.sh` (+107/−45 — the generalization), `docs/runbooks/clickhouse-migrations.md` (+22/−21 — AC-3 caveat removal), `.claude/agents/data-engineer/lessons.md` (+51/−0 — learning-hook append, not code).
+- **Modules touched:** infra (ClickHouse CI scripts) · docs (runbook) · agent-lessons. **No SDK / control-plane / ingest / decision-api / shared source, no schema, no migration file.**
+- **Key contracts changed:** **N/A.** No TS type, export, event, env-var, ClickHouse column, topic, or SDK signal added/changed/removed. The script is a CI test harness; it READS (does not change) `logDecisionAsync`'s INSERT column list and the `infra/clickhouse/migrations/*.sql` set. The `adaptation_decisions` 17-column INSERT contract (`route.ts:468-469`) is byte-identical pre/post. The only new shell symbol is the local `_cleanup()` function (wired via `trap`, §3).
+
+### 2. Verification done in PR
+
+- Test files changed: the script IS the test; no Vitest/pytest suite. Assertions added: the script's own step-2 (`_http_status` ≠ 200) + step-4 (`_assert_eq 200`) checks now run against a dynamically-derived column list. Coverage delta: N/A (shell harness).
+- Checks per PR body: `bash -n` syntax check (exits 0); a manual column-extraction transcript (17 cols, matches the INSERT); a boundary-detection inspection (`0019_...` today, `0020_...` automatically next); prettier on the markdown. **Independently re-verified this retro:** `grep -A1 'INSERT INTO adaptation_decisions' route.ts | grep -v 'INSERT INTO' | sed 's/.*\`(\([^)]*\)).*/\1/'` extracts all 17 columns; the CI invoker (`.github/workflows/ci.yml:315-320`) runs the contract test on a CLEAN ClickHouse **before** `migrate.sh` (correct ordering — the script's clean-instance precondition holds).
+- **Verification adequacy:** adequate for the happy path (today's single-line column list + adaptation_decisions-column-adding last migration). **NOT adequate against the two implicit structural assumptions the generalization newly bakes in** — neither has a guard, and both will misfire on common near-future events (§4a LG-1/LG-2). `bash -n` proves syntax, not behavior; there is no meta-test that the extract+boundary logic reds on a known-bad input (§4c TG-1).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`. **CHECK A (dead code):** no new file (the script is modified, not new). The one new symbol — `_cleanup()` (`migration-contract-test.sh:54-57`) — is wired via `trap _cleanup EXIT` (`:58`), so it has a runtime invoker. The script itself is a CI entrypoint (invoked at `ci.yml:320`; framework/CI-entrypoint carve-out applies regardless). The `data-engineer/lessons.md` append is agent-lessons, not code. No new export. **CHECK B (half-wire):** no new event / env-var / column / topic / SDK-signal. The script CONSUMES only pre-existing env vars (`CLICKHOUSE_URL`/`CLICKHOUSE_USER`/`CLICKHOUSE_PASSWORD`/`LOCAL`), all already producer-set by the CI job (`ci.yml:300-301, 316-320`). No producer/consumer axis opened. **No DEAD_CODE / HALF_WIRE introduced.** The §4 findings are robustness gaps in the test harness, not wiring gaps.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the "boundary = last file in lexical sort" heuristic conflates *newest migration* with *the migration that adds the newest INSERT column*; the next CH migration that does NOT add an `adaptation_decisions` INSERT column will RED the contract test with a false alarm.** The script (`migration-contract-test.sh:191-204`) sorts `[0-9]*.sql`, takes the last file as the boundary, applies all-but-last, and asserts the INSERT is **rejected** at step 2 (`:228-238`). That assertion only holds if the **last** migration adds at least one column named in the INSERT. The moment a newer migration targets a *different* table or is a non-column note — exactly like the existing `0017_follow371_holdout_contamination_note.sql` (a comment-only migration) and the `0014–0016_intent_events*` migrations — the all-but-last set already contains every INSERT column, so step 2's INSERT **succeeds**, and the script exits 1 with `FAIL: INSERT succeeded (HTTP 200) before the boundary migration was applied` (`:230-235`). That is a **false positive**: nothing is wrong, but CI reds, and the most likely "fix" a hurried engineer reaches for is to loosen or skip the guard — re-opening the ESC-031 hazard the test exists to prevent. Given 4 of the last 6 CH migrations (`0014–0017`) did NOT add an `adaptation_decisions` INSERT column, this misfire is **imminent and recurring**, not theoretical. The correct boundary is *the newest migration that actually adds an INSERT column* (or a per-column ordering check); the single-last-file heuristic is the load-bearing weakness. → **FOLLOW-415.**
+- **LG-2 (P3) — the `grep -A1 … | sed` extraction is brittle to any reformat of the INSERT and lacks a column-count sanity check; most reformats fail-CLOSED with a cryptic error (eroding trust), with a narrow fail-OPEN window.** The extractor (`:161-163`) assumes the entire parenthesized column list sits on the SINGLE line immediately following `` `INSERT INTO adaptation_decisions ` `` and that the line contains a literal `` `( … ) ``. Reality checks: (a) a single-line rewrite (`` `INSERT INTO adaptation_decisions (cols) VALUES …` ``) puts cols on the matched line, which `grep -v 'INSERT INTO adaptation_decisions'` then DELETES → wrong/empty `COLS`; (b) a multi-line column wrap (mirroring the VALUES clause, which is ALREADY split across 4 lines, `:470-473`) leaves the `:469` line without a closing `)` → `sed` makes no substitution → malformed `TEST_INSERT` → step-4 `_assert_eq 200` fails. The empty-extraction case is caught loudly (`:165-171`, fail-closed); the dangerous narrow case is a *partial* extraction that still parses (e.g. a future split that happens to leave a complete `(…)` subset on `:469`) → a SUBSET of columns is tested → a genuinely-missing new column on the dropped line passes → **silent fail-OPEN**, the exact ESC-031 class. There is **no assertion that the extracted count matches the table** (e.g. `count == DESCRIBE TABLE adaptation_decisions` columns, or `>=` a pinned floor of 17), which would convert every brittle case into a loud, correct failure. → **FOLLOW-415.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** No runtime/product code changed. The harness behaves correctly for today's inputs (re-verified §2). LG-1/LG-2 are latent-on-future-input robustness gaps recorded as logic gaps, not shipped bugs. The `trap` (AC-2) is correct: it is set at `:58` BEFORE the `CREATE DATABASE` at `:63`, so even a create-time failure triggers cleanup; `DROP … IF EXISTS … || true` (`:55-56`) is harmless on every exit path (pass / `set -e` exit / explicit `exit 1` / SIGINT).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, banked — not filed) — nothing guards the guard.** The script's extract-and-boundary logic has no meta-test that feeds it a known-bad fixture (a route.ts with an un-migrated extra column, or a non-column last migration) and asserts it reds for the RIGHT reason. `bash -n` proves syntax only. A full meta-test of a CI shell script is heavy for the value; banked as a watch-item, folded into FOLLOW-415 as an OPTIONAL leg (the cheaper substitute is the LG-2 column-count assertion, which catches the most likely silent failure mode without a separate test). Not its own ticket (RETRO-122 anti-inflation).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3 — coverage-claim over-statement RECURS: the fix that REMOVED RETRO-121's "catches any future PR" over-claim REPLACED it with a new unqualified "self-maintaining guarantee" that the implementation does not fully deliver).** AC-3/AC-4 correctly stripped the now-false "does NOT generically detect" / "wait for FOLLOW-402" caveats (runbook `:116-118` re-verified: 0 surviving hits). But the replacement prose at `clickhouse-migrations.md:130-133` ("**Self-maintaining guarantee:** if a future PR adds a new column … the extracted column list includes the new column, the INSERT still fails after applying all existing migrations, and CI exits non-zero") and the script header (`migration-contract-test.sh:13-14, :258-260`) state the guarantee **unconditionally** — omitting BOTH structural assumptions §4a exposes: "the extracted column list includes the new column" is false under a multi-line/single-line reformat (LG-2), and "the INSERT still fails after applying all existing migrations" is false when the new column's migration is NOT the lexical last (LG-1). This is the SAME shape RETRO-121 §4d DG-1 flagged on the PREVIOUS version (an overstated coverage claim contradicted by the implementation's own limits) — the over-claim moved one hop from the old caveat to the new guarantee. It is a **confirming instance of the broadened Rule Y** (a named script cited as performing a check it does not fully perform), NOT a new rule (§6). Fix: qualify the guarantee with the single-line-column-list + boundary-is-an-adaptation_decisions-column assumptions (or, better, close LG-1/LG-2 so the prose becomes true). → folded into **FOLLOW-415**.
+- **DG-2 (P3, banked — NON-finding) — the CI step name `Migration-ordering contract test (FOLLOW-394)` (`ci.yml:315`) still cites the ORIGINAL ticket, not FOLLOW-402.** Defensible: FOLLOW-394 added the step; FOLLOW-402 generalized the script it runs. The step label is provenance, not a behavior claim, and naming the originating ticket is accurate. Optional one-liner only; no follow.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-404 (RETRO-118 §4a LG-1 prod-verification leg — one-time prod-state attestation that 0019 `page_context_source` is LIVE in prod ClickHouse) is NOT superseded by this PR — it remains needed, on a DISJOINT axis.** Reconciled explicitly per algorithm step 8: PR #368 strengthens the **CI** axis (does the migration SET, applied in order against a *throwaway* ClickHouse, satisfy the INSERT?) and says **nothing** about **prod** state. Per the standing fact that ClickHouse migrations do NOT auto-apply to prod (memory note; RETRO-076 / FOLLOW-307 / FOLLOW-308; CH CI only runs `migrate.sh` against a disposable container — re-confirmed at `ci.yml:322-325`), a green contract test does not imply 0019 is applied in prod. FOLLOW-404 owns that prod attestation and stays OPEN. **The contract test is the prevention-in-CI leg; FOLLOW-404 is the prove-it-in-prod leg; FOLLOW-308 is the standing prod-apply gate.** No QUEUE IN_PROGRESS/READY ticket assumed otherwise.
+- **FOLLOW-403 / FOLLOW-408 (RETRO-121 / RETRO-124 runbook reconciliation):** this PR's AC-3 discharged the forward doc-obligation RETRO-124 pre-registered ("the 'does NOT generically detect / wait for FOLLOW-402 / Once FOLLOW-402 lands' lines become FALSE the moment FOLLOW-402 merges") — those lines are now removed (§7). FOLLOW-408's own two residuals (intro-sentence twin + stale References header) are a DISJOINT surface, untouched here, still open.
+
+#### 5b. Future sprint tickets affected
+
+- **Any future PR that adds an `adaptation_decisions` column** now relies on this test as its ESC-031 guard. Until LG-1/LG-2 are closed, that reliance is partial: the guard fires correctly only when the new column's migration is the lexical-last file AND the INSERT stays single-line. A future column-add whose migration is NOT last (e.g. landed alongside an unrelated newer migration) interacts with the boundary heuristic (§4a) and may red for the wrong reason or, in the narrow LG-2 case, pass while a column is unmigrated.
+- **Any future CH migration to a DIFFERENT table** (intent_events, a note migration, a new table) will trip LG-1's false alarm the first time it is the newest file — a near-certain near-term event.
+
+#### 5c. Contracts changed others rely on
+
+- **N/A.** No contract changed (§1). The `adaptation_decisions` INSERT contract others depend on is read-only input to the harness.
+
+#### 5d. Architectural assumptions affected
+
+- **The generalization trades a MANUAL-maintenance failure mode for TWO IMPLICIT-ASSUMPTION failure modes.** RETRO-121's critique of the old script was "it pins one column and relies on a human Extending step" (a *visible* maintenance burden that fails safe — a forgotten step leaves a stale-but-honest test). The new script removes the human step but encodes two **invisible** assumptions (column list is single-line; newest file adds an INSERT column) whose violation is silent or cryptic. This is the recurring "automation hides the seam that the manual version exposed" shape: self-maintaining code is only as self-maintaining as its parsing + boundary heuristics, and neither is asserted. The durable fix is to make the assumptions LOUD (count assertion + adaptation_decisions-column-aware boundary), not to trust the heuristics.
+
+### 6. New lesson candidates — NO new rule (anti-count-inflation; DG-1 confirms the already-broadened Rule Y; the trap pattern is count 1)
+
+- **Pattern (DG-1) — "a fix that removes an overstated coverage claim replaces it with a fresh unconditional guarantee the implementation does not fully deliver."** This is a **confirming instance of the broadened Rule Y** (RETRO-126 §6: "any named symbol / file / module / migration-number / schema-column cited as fact — it must exist and perform/contain the cited behavior"; a named CI script cited as a "self-maintaining guarantee" that catches *any* future column squarely fits "a named file cited as performing a behavior it does not fully perform"). Prior in-lineage shape: **RETRO-121 §4d DG-1** (the old "catches any future PR" over-claim, contradicted by its own Extending section). Per the entrenched anti-count-inflation discipline (RETRO-122/125/126/128), a same-lineage moved-hop over-claim does NOT mint a new rule and is governed by the existing broadened Rule Y. **No `CONVENTIONS_PATCH.md` write.**
+- **Pattern (count 1, banked) — "an isolated-state CI/test harness MUST drop its scratch state on ALL exit paths (`trap … EXIT`), not just the success path; a leftover scratch DB/dir poisons the next run."** This PR's AC-2 (`trap _cleanup EXIT`) is the GOOD shape; the gap it fixes (RETRO-121 §6 TG-1: the original `DROP` ran only on the success path, leaving `contract_test_ordering` to poison the next `LOCAL=1` run) is **independent-sighting count 1**. No prior independent retro establishes this as a recurring pattern → **NO rule** (RULE_PROMOTION_THRESHOLD = 2 not met). Watch-item: if a 2nd independent harness-cleanup gap is flagged in a future retro, promote a "`trap`-cleanup on all exit paths for isolated-state test harnesses" rule. Candidate verification: `grep -L "trap .* EXIT" $(grep -rl "CREATE DATABASE\|mktemp\|CREATE TABLE.*_test" infra/**/scripts/*.sh)` → every isolated-state script must set an EXIT trap.
+
+**Rules promoted this retro: NONE.** (DG-1 = confirming instance of the broadened Rule Y; trap-cleanup = count 1.)
+
+### 7. Prior-follow-up closure check (FOLLOW-402 → RETRO-121 §6 LG-1 / CB-1 / TG-1; + RETRO-124 forward doc-obligation)
+
+Traced END-TO-END (charter → script behavior → the input it reads → the guard it produces), per algorithm step 7 — NOT one hop:
+
+1. **TG-1 (DROP-on-failure non-idempotency — the leftover-DB-poisons-next-run gap): GENUINELY CLOSED end-to-end ✅.** `_cleanup()` (`migration-contract-test.sh:54-57`) runs `DROP DATABASE IF EXISTS contract_test_ordering`; `trap _cleanup EXIT` (`:58`) is registered BEFORE the `CREATE DATABASE` (`:63`), so the scratch DB is dropped on pass, `set -e` failure, explicit `exit 1`, and SIGINT alike. A failed run no longer leaves `contract_test_ordering` behind to break the next `LOCAL=1` invocation. Verified by reading the exit-path ordering. ✅ real closure, no hop.
+2. **LG-1 / CB-1 (the test pinned ONE column / relied on a manual "Extending" step → a future INSERT column re-opened the fail-CLOSED hazard): CLOSED on the manual-maintenance axis ✅, but the gap MOVED into two implicit parsing/boundary assumptions.** The dynamic extraction (`:161-182`) genuinely removes the hardcoded `page_context_source`/`0019` pins and the human Extending step RETRO-121 flagged — a NEW `adaptation_decisions` column added on the existing single line, with its migration as the newest file, now auto-flows into `COLS` and is enforced with no script edit. ✅ for that case. **BUT** the generalization introduced (a) the boundary-heuristic false-alarm (§4a LG-1) and (b) the extraction brittleness + missing count assertion (§4a LG-2). The gap did not vanish — it **moved one hop** from "visible manual maintenance burden (fails safe)" to "invisible structural assumptions (fail cryptic, narrow fail-open)." Recorded as **CLOSED-WITH-RESIDUAL**, not clean. → **FOLLOW-415.**
+3. **RETRO-124 forward doc-obligation (the "wait for FOLLOW-402 / does NOT generically detect" runbook lines become FALSE on merge): CLOSED ✅** — AC-3 removed them; `grep -n "wait for FOLLOW-402\|does NOT generic" docs/runbooks/clickhouse-migrations.md` → 0 hits. The replacement prose, however, over-states in the opposite direction (§4d DG-1) — a fresh in-place residual, not a re-open.
+
+- **Net verdict:** FOLLOW-402 **genuinely closes RETRO-121 §6 TG-1 (idempotent cleanup) end-to-end** and **discharges RETRO-124's forward doc-obligation**, and it **genuinely removes the manual-Extending maintenance burden** of LG-1/CB-1 for the common case — a real generalization, not a no-op. But it **moves the LG-1/CB-1 gap one hop** into two unasserted structural assumptions (boundary-is-last-file; column-list-is-single-line) that will misfire on common near-future migrations, and it **replaces one overstated coverage claim with another** (DG-1). → **FOLLOW-415** (P2, data-engineer) collects LG-1 (adaptation_decisions-column-aware / per-column boundary), LG-2 (extraction robustness + column-count sanity assertion), and DG-1 (qualify or earn the self-maintaining claim). **PM: FOLLOW-402 is DONE for its three ACs (cleanup + dynamic extraction + doc); FOLLOW-415 is a fresh P2 robustness residual, NOT a re-open. FOLLOW-404 (prod attestation) remains OPEN on a disjoint axis (§5a).**
+
+### 8. Cross-references
+
+- **RETRO-121 (FOLLOW-394 / PR #360) — direct parent.** Filed FOLLOW-402 with LG-1/CB-1 (single-column pin + manual Extending) and TG-1 (DROP-on-failure non-idempotency). This entry confirms TG-1 closed end-to-end and LG-1/CB-1's manual-maintenance axis closed, with the gap moved one hop to the new parsing/boundary assumptions (FOLLOW-415).
+- **RETRO-124 (FOLLOW-403 / PR #363) — runbook sibling.** Pre-registered the forward doc-obligation this PR's AC-3 discharged; its own two intra-doc residuals (FOLLOW-408) are a disjoint surface, still open.
+- **RETRO-118 (FOLLOW-358 / PR #357) + ESC-031 — root incident.** The silent-data-loss class this entire contract-test lineage exists to prevent (`logDecisionAsync` `.catch()` swallows the CH rejection). LG-1/LG-2 matter precisely because a weakened guard re-exposes this class.
+- **RETRO-076 / FOLLOW-307 / FOLLOW-308 + memory note "Migrations don't auto-apply (Postgres AND ClickHouse)":** the basis for §5a — the contract test is a CI-axis guard and does NOT attest prod state, so FOLLOW-404 is not superseded.
+- **CONVENTIONS_PATCH Rule Y (broadened 2026-06-26 at RETRO-126):** governs DG-1 (a named script cited as a "self-maintaining guarantee" it does not fully perform) — confirming instance, no amendment. **Rule M** (prod-claim vs dev-only automation) is the adjacent prod-axis rule reinforcing §5a's FOLLOW-404 reasoning.
+
+---
+## RETRO-130 — FOLLOW-414 (close the four FOLLOW-409 doc/test residuals: adapt.ts inline-comment contradiction, the "Ingest stream left flowing" micro-poll twins in follow-385.test.ts, the missing flush positive-control on the opted-out REAL-4 test, and — chartered but deferred — the superseded modeled §H.9 tests + BATCH_INTERVAL_MS magic number; closes RETRO-128 §4d DG-1 / §4d DG-2 / §4c TG-1) — 2026-06-26
+
+> **PR-state / merge note:** at retro time `gh pr view 369` reports **state OPEN, mergeCommit null** — but the squash commit `14af3bd` ("fix(sdk): fix adapt.ts guard comment + add flush positive-control [FOLLOW-414]") is the current `main` HEAD (the same OPEN-PR/closed-on-main bookkeeping lag seen at RETRO-129/#368 and RETRO-128/#367). I analyze the merged tree (HEAD = `14af3bd`) per algorithm step 1. **PM: confirm PR #369 is formally closed on GitHub so the PR/branch record matches `main`.** Net headline: **all three load-bearing residuals RETRO-128 NAMED are genuinely closed end-to-end** (the adapt.ts contradiction, the micro-poll comment twins, and the flush positive-control), AC-4's Rule-I skip is CORRECT — **but the same "reachable by real SDK traffic" §H.9 overstatement has MOVED ONE HOP A THIRD TIME** into a sibling test file (`follow-389.test.ts:12`) that BOTH FOLLOW-409 and FOLLOW-414 walked past because each scoped its grep to the single flagged file, and that RETRO-128's own audit did not enumerate. Two chartered-but-deferred legs (TG-2 modeled-test retirement, TG-3 magic-number) also remain.
+
+### 1. Summary of change
+
+- **PR:** #369 (squash commit `14af3bd` on `main`, 2026-06-26; GitHub PR object still OPEN — see note). Branch `sdk-engineer/FOLLOW-414-409-doc-twins-flush-control`. Title: `feat(sdk): close FOLLOW-409 doc twins — adapt.ts comment + flush positive-control [FOLLOW-414]`. Author Pnawrocki9.
+- **Files changed:** 3 (+9 / −3). `packages/sdk/src/core/adapt.ts` (+3/−1 — AC-1 inline-comment rewrite at `:212-215`), `packages/sdk/src/__tests__/follow-385.test.ts` (+2/−2 — AC-2 two false "Ingest stream left flowing" → "no ingest push in onAnswer" on the micro-poll model), `packages/sdk/src/__tests__/follow-409.test.ts` (+4/−0 — AC-3 flush positive-control on the opted-out REAL-4 test).
+- **Modules touched:** `packages/sdk` only (one inline comment + two test-file edits). No control-plane / shared / ingest / decision-api / docs / configs.
+- **Key contracts changed:** **N/A.** Comment + test-only. No TS type, export, event, env-var, column, topic, or SDK signal added/changed/removed. `BATCH_INTERVAL_MS = 5_000` (`index.ts:198`) remains UNEXPORTED — AC-4 deliberately did not export it (§7, §6 Pattern B). Bundle delta: **0 bytes** (comment + test only).
+
+### 2. Verification done in PR
+
+- Test files changed: `follow-385.test.ts` (comment-only, 2 lines), `follow-409.test.ts` (AC-3, +1 assertion). Assertions added: **1** (`expect(ingestCalls.length).toBeGreaterThanOrEqual(1)`, `follow-409.test.ts:230`). Coverage delta: the opted-out REAL-4 negative test is now non-vacuous (a flush-harness regression reds it instead of false-greening) — a robustness improvement, not new line coverage.
+- CI checks: per PR body `Test Files 68 passed (68); Tests 1504 passed (1504); typecheck exit 0`. Not independently re-watched post-merge (comment + 1-assertion change). Rule I pre-existing-red baseline assumed per `project_ci_gate_landscape`.
+- **Verification adequacy:** adequate. AC-1 is a pure doc fix (no behavior to test). AC-3's positive control is itself the verification mechanism (it now fails if the flush harness emits zero `/v1/events` calls) — confirmed present at `follow-409.test.ts:227-230` with an accurate rationale comment; it mirrors the opted-in twin's `toBeGreaterThan(0)` at `:306`. AC-2 is comment-correctness, verified by repo grep (§7). The one gap is what the PR did NOT do (§7: TG-2/TG-3 deferred; the third-hop twin missed) — a scope-narrowing, not a faulty change.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`. **CHECK A (dead code):** no new file, no new export — all three edits are comment/assertion text inside pre-existing files. `postQuizCompletionPing` (consumed at `index.ts:1145`), the §H.9 guards, and the REAL-4 tests all pre-exist and are wired. **CHECK B (half-wire):** no new event / env-var / column / topic / SDK-signal. The `profiling_opt_out` query-param producer (`adapt.ts:216` ← `index.ts:1150`) + server consumer (`quiz/completion/route.ts:363`) wire is the DORMANT defense-in-depth wire connected at RETRO-116; unchanged. `BATCH_INTERVAL_MS` was NOT exported (AC-4), so no new dead/test-only symbol was introduced — Rule I is respected, not violated (§7). **No DEAD_CODE / HALF_WIRE introduced.** All §4 findings are doc/test-hygiene residuals of the items FOLLOW-414 was chartered to close.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A.** No runtime logic changed; the three §H.9 guards behave exactly as before. The favorites-vs-quiz suppression asymmetry (favorites pushes `listing.bookmarked` to ingest BEFORE the guard per §H.8; quiz/micro-poll guard BEFORE the `quiz.event` push) is unchanged and correct.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A** (no runtime bug). The surviving doc overstatement (§4d DG-1) is a documentation imprecision (P3), not a runtime defect.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — the modeled §H.9 re-implementations in `follow-385.test.ts` are STILL superseded test-debt; FOLLOW-414's QUEUE title chartered their retirement (RETRO-128 TG-2) but the PR did NOT deliver it.** `modeledOnAnswer` (`follow-385.test.ts:220`, `:245`, `:260`), `modeledFavoritesHandler` (`:136`, `:186`) remain — the self-injecting re-implementations RETRO-109 §4c first flagged, now fully duplicated by the REAL-2/3/4 trio (`follow-389.test.ts` + `follow-409.test.ts`). AC-2 corrected their COMMENTS but left the bodies. A regression that deletes the production `onAnswer` guard at `index.ts:1246` leaves every modeled test green (they re-implement the guard inline) — REAL-4 is the only canary, and it works, so the modeled bodies now add only maintenance surface + stale-comment risk. RETRO-128 banked this as TG-2 → folded into FOLLOW-414 → undelivered. → **FOLLOW-416.**
+- **TG-2 (P3, banked) — the `5001` flush-wait magic number is STILL duplicated against the unexported `BATCH_INTERVAL_MS = 5_000` (`index.ts:198`).** `follow-409.test.ts:219`/`:300` and `follow-389.test.ts:295`/`:361` hardcode `advanceTimersByTimeAsync(5001)` with `// per index.ts:198` comments. AC-4 was chartered to dedup this by exporting `BATCH_INTERVAL_MS` and was **correctly skipped** because a test-only-consumed export reds the Rule I (`scripts/check-rule-i.sh`) wired-or-dead gate (§7, §6 Pattern B). The duplication therefore survives; the correct fix is NOT a bare export but a production-consumed internal constant or a Rule-I-exempt test seam. Low value, banked. → **FOLLOW-416** (folded).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — the SAME "reachable by real SDK traffic" §H.9 overstatement RETRO-128 §4d DG-1 corrected in `adapt.ts` SURVIVES one hop away, in a SIBLING test file FOLLOW-414's grep never reached.** `follow-389.test.ts:12` (the REAL-1 docstring header) reads: *"The route gate at …quiz/completion/route.ts:363 is now reachable by real SDK traffic (defense-in-depth, FOLLOW-389 HW-1)."* The head clause "reachable by real SDK traffic" is the EXACT overstatement RETRO-116 §4a LG-1 first flagged and RETRO-128 corrected in `adapt.ts` to *"reachable ONLY if Guard 1 regresses — NOT under normal production traffic"*: under normal traffic Guard 1 (`showQuizTrigger` early return, `index.ts:1103`) returns before `renderQuizTrigger`, so `postQuizCompletionPing` is never called for opted-out sessions and the opt-out branch of the route gate is **never** exercised by real traffic. The `(defense-in-depth, FOLLOW-389 HW-1)` parenthetical points the right direction but does not retract the false head clause. **This is the THIRD consecutive hop of the same claim** (adapt.ts JSDoc → adapt.ts inline → `follow-389.test.ts:12`), surviving because FOLLOW-409, FOLLOW-414, AND RETRO-128's own audit each scoped the grep narrowly (FOLLOW-414's AC-1 grep was `… packages/sdk/src/core/adapt.ts` — one file). The **qualified-correct sibling** at `index.ts:1144` (*"…is reachable (defense-in-depth alongside Guard 1)"* — production call-site comment) is acceptable as-is (no "by real SDK traffic" claim) and need only be left consistent. P3 (doc imprecision in a test header, security-relevant but low blast radius). → **FOLLOW-416.**
+- **DG-2 (the "Ingest stream left flowing" micro-poll twins, RETRO-128 §4d DG-2): CLOSED ✅** — see §7. `grep -rn "Ingest stream left flowing" packages/sdk/src` now returns 3 hits, all on the favorites model/production (`index.ts:1434`, `follow-385.test.ts:128`, `:144`) where the claim is TRUE; the two false micro-poll copies are gone.
+
+#### Symmetry verdict (per brief)
+
+The three-site §H.9 guard (`showQuizTrigger` / micro-poll `onAnswer` / favorites) is now **symmetrically TESTED** (REAL-2/3/4, each reds if its guard is deleted), **symmetrically and consistently DOCUMENTED in production code** (adapt.ts JSDoc `:186-193` ↔ inline `:212-215` now AGREE — the RETRO-128 contradiction is gone; index.ts comments accurate incl. the favorites §H.8 asymmetry note), and the false "Ingest stream left flowing" test twins are eliminated. It is **NOT yet symmetrically documented end-to-end** for ONE residual: the `follow-389.test.ts:12` "reachable by real SDK traffic" twin (DG-1), plus the cosmetic TG-1/TG-2 test-debt. The doc-symmetry epic is one hop from genuinely closed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **§H.9 opt-out epic (FOLLOW-372→383→384→385→387→389→409→414):** FOLLOW-414 closes the SDK-guard DOC-consistency leg for the instances RETRO-128 named — production code (adapt.ts) is now internally consistent and the load-bearing false-green risk (TG-1 flush control) is eliminated. **Remaining open §H.9 legs:** **FOLLOW-388** (batch axis, `depends_on FOLLOW-101`, unchanged) and now **FOLLOW-416** (the third-hop doc twin + deferred test-debt). **PM: the §H.9 SDK production-code doc+test legs are effectively DONE; the epic is NOT — FOLLOW-388 + the P3 FOLLOW-416 remain.** No QUEUE IN_PROGRESS/READY ticket assumed the old comment/assertion text. The FOLLOW-414 QUEUE row (status IN_PROGRESS, title chartering DG-1/DG-2/TG-1/TG-2/TG-3) should move to DONE for DG-1/DG-2/TG-1 and re-bank TG-2/TG-3 onto FOLLOW-416 (§7).
+
+#### 5b. Future sprint tickets affected
+
+- Any future SDK profiling-mutation call site must (a) guard with `if (profilingOptedOut) return;`, (b) ship a REAL-handler test driving the live path, and (c) — newly reinforced here — when correcting a retro-flagged comment/claim, grep the EXACT string REPO-WIDE (not just the flagged file) and fix/justify every hit, citing the count. The REAL-2/3/4 triad remains the SDK-side reference template (analogue of FOLLOW-387's Python `test_opted_out_event_threads…`, RETRO-110 §6).
+
+#### 5c. Contracts changed others rely on
+
+- **N/A** — no contract changed (§1).
+
+#### 5d. Architectural assumptions affected
+
+- The §H.9 ingest-suppression asymmetry remains the load-bearing, documented-and-tested invariant (favorites `listing.bookmarked` rides the §H.8 stream when opted-out; quiz/micro-poll `quiz.event` is suppressed). The opt-out branch of the server gate (`quiz/completion/route.ts:363`) is **defense-in-depth ONLY** — unreachable under normal opted-out traffic because Guard 1 short-circuits upstream. The sole residual risk is documentary (DG-1's surviving "reachable by real SDK traffic" header could mislead a maintainer into believing the gate is live-exercised), not behavioral.
+
+### 6. New lesson candidates — NO new rule (anti-count-inflation; same-lineage moved-hop, not a 3rd independent sighting)
+
+- **Pattern A — "a doc/comment correction fixes the retro-flagged copy of a duplicated string/claim but leaves an IDENTICAL copy on a sibling surface, because the fixer (and sometimes the retro auditor) scoped the grep to the flagged FILE instead of the repo."** Prior INDEPENDENT sightings held at **2** by RETRO-128 §6: **RETRO-124** (FOLLOW-403, clickhouse-migrations runbook → `migration-contract-test.sh` twin; data-engineer/docs domain) + **RETRO-116** (FOLLOW-389 DG-1, micro-poll comment → `showQuizTrigger` twin; sdk/§H.9 domain). RETRO-128 added two MORE same-§H.9-lineage moved-hops and held the count at 2 (declining to count same-string recurrences). **This retro adds a THIRD same-lineage hop** — the `follow-389.test.ts:12` "reachable by real SDK traffic" twin, the SAME string from the SAME sdk/§H.9 lineage RETRO-116 originated. Per the entrenched anti-count-inflation discipline (RETRO-122/125/126/128: same-string moved-hops within one lineage do NOT count as fresh independent sightings), the independent-domain count stays at **2 (RETRO-124 + RETRO-116)** → **HOLD maintained, NO `CONVENTIONS_PATCH.md` write.** **Meta-flag to the human (escalating RETRO-128's flag, do NOT promote on the analyst's own authority):** this is now the THIRD PR (FOLLOW-389 created the twin, FOLLOW-409 missed it, FOLLOW-414 missed it) AND the SECOND retro (RETRO-128 did not enumerate it) to walk past the SAME claim because the corrective grep was file-scoped — even though FOLLOW-414's charter was explicitly to end this fix-one-leave-the-twin failure. The candidate rule text from RETRO-116 still applies verbatim: *"A correction spawned from a retro-quoted/flagged string MUST `grep` that EXACT string REPO-WIDE (not the flagged file alone) and fix/justify EVERY occurrence in the same PR; the PR description MUST cite the grep hit-count."* The strict independence rule (≥2 distinct DOMAINS) is not met by this same-§H.9 recurrence; the human may nonetheless elect to promote NOW on the strength of the recurrence-density evidence, or hold for a genuinely-independent-domain 3rd sighting.
+- **Pattern B (count 1, banked — NEW) — "a test-hygiene SoT-sharing improvement (export a constant so tests reference the source of truth instead of a duplicated literal) is STRUCTURALLY BLOCKED by Rule I (wired-or-dead), because the export has no production importer."** Seen here at AC-4: exporting `BATCH_INTERVAL_MS` to dedup the `5001` flush-wait literal would red `scripts/check-rule-i.sh`. The skip is **CORRECT** — Rule I forbids test-only exports by design. The lesson: a "share the constant via export" follow-up is the WRONG shape against Rule I; the right shapes are (a) a production-consumed internal constant both sides import, (b) a Rule-I-exempt `__test__` seam, or (c) accept the literal+comment. This is a genuine, recordable TENSION between Rule I (no test-only exports) and DRY-the-test-magic-number hygiene — not a defect. NO rule (count 1). Watch-item: scope future "export the SoT constant for tests" follow-ups as "route the literal through a production-consumed/internal constant," never a bare export.
+
+### 7. Prior-follow-up closure check (FOLLOW-414 → RETRO-128 §4d DG-1 / §4d DG-2 / §4c TG-1 + the chartered-deferred TG-2 / TG-3)
+
+Traced END-TO-END (charter → every site of the corrected string/claim → guard), per algorithm step 7 — NOT one hop:
+
+1. **DG-1 (RETRO-128 §4d — the `adapt.ts:212-213` inline comment contradicting the corrected JSDoc): GENUINELY CLOSED end-to-end ✅.** `adapt.ts:212-215` now reads *"…the route gate at route.ts:363 is reachable ONLY if Guard 1 regresses — NOT under normal production traffic (Guard 1 returns before postQuizCompletionPing is called for opted-out sessions)."* It now AGREES with the JSDoc at `:186-193`. The internal contradiction RETRO-128 flagged is gone. `grep -rn "reachable by real SDK traffic" packages/sdk/src/core/adapt.ts` → **0 hits**. ✅ real closure, no hop INTO adapt.ts.
+2. **DG-2 (RETRO-128 §4d — the two false "Ingest stream left flowing" copies on the micro-poll model in `follow-385.test.ts:211/:225`): CLOSED ✅.** Both now read *"§H.9 opt-out: suppress AL profiling (no ingest push in onAnswer — contrast with favorites §H.8)."* (`follow-385.test.ts:225`, and the parallel `modeledOnAnswer` blocks). `grep -rn "Ingest stream left flowing" packages/sdk/src` → 3 hits, ALL on the favorites model/production (`index.ts:1434` TRUE + `follow-385.test.ts:128` TRUE + `:144` TRUE). The false micro-poll twins are eliminated. ✅ closed for the instances RETRO-128 named.
+3. **TG-1 (RETRO-128 §4c — the opted-out REAL-4 negative assertion lacking a flush positive-control → latent false-green): GENUINELY CLOSED end-to-end ✅.** `follow-409.test.ts:227-230` now asserts `expect(ingestCalls.length).toBeGreaterThanOrEqual(1)` BEFORE the `expect(hasMicroPollEvent).toBe(false)` at `:243`, with an accurate rationale comment ("Without this, the absence assertion below could pass vacuously if the flush timer itself were broken"). It mirrors the opted-in twin's `toBeGreaterThan(0)` at `:306`. A flush-harness regression now reds the test instead of false-greening it. ✅ real closure.
+4. **TG-2 (RETRO-128 §4c — retire the superseded modeled §H.9 re-implementations; CHARTERED in the FOLLOW-414 QUEUE title): NOT delivered.** AC-2 corrected the modeled bodies' COMMENTS but did not remove the bodies; `modeledOnAnswer`/`modeledFavoritesHandler` survive in `follow-385.test.ts` (§4c TG-1 above). Deferred, re-banked → **FOLLOW-416.**
+5. **TG-3 (RETRO-128 §4c — export `BATCH_INTERVAL_MS` to dedup the `5001` literal; CHARTERED as AC-4): correctly SKIPPED, NOT a closure failure.** A test-only export reds Rule I (§6 Pattern B). The magic-number duplication therefore survives, to be closed via a non-export shape → **FOLLOW-416.**
+6. **NEW residual (not in RETRO-128's enumeration) — the "reachable by real SDK traffic" overstatement MOVED ONE HOP A THIRD TIME** to `follow-389.test.ts:12`, a sibling test header neither FOLLOW-409, FOLLOW-414, nor RETRO-128 reached because each grep was file-scoped (§4d DG-1). The qualified-correct sibling at `index.ts:1144` is acceptable. → **FOLLOW-416.**
+
+- **Net verdict:** FOLLOW-414 **genuinely closes the three residuals RETRO-128 explicitly named (DG-1, DG-2, TG-1) end-to-end** — the adapt.ts contradiction is resolved, the false micro-poll comment twins are eliminated, and the load-bearing flush positive-control is in place; AC-4's Rule-I skip is CORRECT. **But it leaves two CHARTERED legs undelivered (TG-2 modeled-test retirement, TG-3 magic-number) and the same "reachable by real SDK traffic" claim has moved one hop A THIRD TIME into `follow-389.test.ts:12`** — a twin RETRO-128 itself did not enumerate (a reconciliation against RETRO-128's implicit "the doc residuals will be closed by FOLLOW-414" verdict: closed for the NAMED instances, not for the unenumerated sibling). → **FOLLOW-416** (P3, sdk-engineer) collects the third-hop twin (DG-1), the deferred modeled-test retirement (TG-1/RETRO-128-TG-2), and the deferred magic-number dedup via a non-export shape (TG-2/RETRO-128-TG-3). **PM: FOLLOW-414 is DONE for its three load-bearing ACs (DG-1/DG-2/TG-1) and AC-4 is a correct Rule-I skip; FOLLOW-416 is a fresh P3 doc/test-hygiene residual + the re-bank of FOLLOW-414's two undelivered chartered legs, NOT a re-open. The §H.9 epic remains open only on FOLLOW-388 (batch) + the P3 FOLLOW-416.**
+
+### 8. Cross-references
+
+- **RETRO-128 (FOLLOW-409 / PR #367) — direct parent.** Filed FOLLOW-414 with DG-1 (adapt.ts inline contradiction), DG-2 (micro-poll comment twins), TG-1 (flush positive-control), and folded-in TG-2/TG-3. This entry confirms DG-1/DG-2/TG-1 closed end-to-end; reconciles that RETRO-128's repo-wide grep for "reachable by real SDK traffic" was itself incomplete (missed `follow-389.test.ts:12`); and records TG-2/TG-3 as chartered-but-deferred → FOLLOW-416.
+- **RETRO-116 (FOLLOW-389 / PR #355) — grandparent + Pattern A origin.** Originated the "reachable by real SDK traffic" claim AND the `follow-389.test.ts:12` twin now surviving its third hop; its §6 pre-authorized "promote Pattern A on the next genuinely-independent-domain sighting" — NOT triggered by this same-§H.9 recurrence (§6).
+- **RETRO-109 (FOLLOW-385 / PR #348) — origin of the modeled re-implementations** in `follow-385.test.ts` (the self-injecting-test weakness) now fully superseded for the production guards by REAL-2/3/4 and slated for retirement in FOLLOW-416 (§4c TG-1).
+- **RETRO-110 (FOLLOW-387 / PR #349) — parallel chat-axis §H.9 closure.** **FOLLOW-388 (batch, `depends_on FOLLOW-101`) remains the sole fully-open §H.9 leg** besides the P3 FOLLOW-416.
+- **RETRO-124 (FOLLOW-403):** Pattern A independent-domain occurrence 1 (runbook→test-script twin) — co-evidence for the §6 HOLD accounting (independent count = RETRO-124 + RETRO-116 = 2).
+- **RETRO-122 / RETRO-125 / RETRO-126 / RETRO-128:** the anti-count-inflation discipline (same-string moved-hops within one lineage are not fresh independent sightings) governing the §6 HOLD.
+- **CONVENTIONS_PATCH Rule I (wired-or-dead):** the rule whose correct application drove AC-4's skip (§6 Pattern B) — confirming instance, no amendment. **Rule L** (real-handler tests, production install/snippet produces what a consumer reads): the rule the REAL-2/3/4 trio satisfies; FOLLOW-416's TG-1 retirement removes the modeled non-compliant siblings. **Rule S** (apply a change to ALL symmetric siblings at the same completeness/verification tier): the rule Pattern A's repo-wide-grep discipline operationalizes for duplicated comment/claim strings.
+
+---
+
+## RETRO-131 — FOLLOW-415 (harden the generalized CH migration-ordering contract test: make boundary detection `adaptation_decisions`-column-aware via a reverse ADD-COLUMN walk [LG-1], add a `>= 17` column-count floor to the `grep`/`sed` extraction [LG-2], and qualify the "self-maintaining guarantee" runbook/header prose [DG-1]; closes RETRO-129 §4a LG-1 / §4a LG-2 / §4d DG-1) — 2026-06-26
+
+> **PR-state / merge note:** `gh pr view 370` reports **state MERGED, mergedAt 2026-06-26T17:12:07Z, mergeCommit `5bb8a2d`** — but the squash commit on `main` HEAD is **`dde27e7`** ("feat(data): harden CH migration boundary detection + column-count assertion [FOLLOW-415]"). The two oids differ (GitHub merge-object vs. the squash commit applied to `main`); the change **is** on `main` HEAD. I analyze the merged tree (HEAD = `dde27e7`) per algorithm step 1. Minor bookkeeping divergence only — **PM: confirm PR #370's branch/commit record matches `main` HEAD `dde27e7`.**
+
+### 1. Summary of change
+
+- **PR:** #370 (MERGED 2026-06-26T17:12:07Z; gh `mergeCommit` `5bb8a2d`, `main` HEAD squash commit `dde27e7` — see note). Branch `data-engineer/FOLLOW-415-*`. Title: `feat(data): harden CH migration boundary detection + column-count assertion [FOLLOW-415]`.
+- **Files changed:** 2 (+148 / −44). `infra/clickhouse/scripts/migration-contract-test.sh` (+120/−32 — AC-1 smart boundary + AC-2 count floor), `docs/runbooks/clickhouse-migrations.md` (+28/−12 — AC-3 prose). **No `.claude/.../lessons.md` append in the PR diff** (the agent-lessons learning-hook append, if any, is out-of-diff).
+- **Modules touched:** infra (ClickHouse CI scripts) · docs (runbook). **No SDK / control-plane / ingest / decision-api / shared source, no schema, no migration file.**
+- **Key contracts changed:** **N/A.** No TS type, export, event, env-var, ClickHouse column, topic, or SDK signal added/changed/removed. The script is a CI test harness; it READS (does not change) `logDecisionAsync`'s 17-column INSERT (`route.ts:468-469`, byte-identical pre/post) and the `infra/clickhouse/migrations/*.sql` set. New shell locals only (§3).
+
+### 2. Verification done in PR
+
+- Test files changed: the script IS the test; no Vitest/pytest suite. Assertions added: AC-2's column-count floor (`migration-contract-test.sh:207-213`, fail-loud if `< 17`); the boundary-detection reverse walk (`:259-274`) + the apply-loop's `[ "$i" = "$BOUNDARY_INDEX" ] && continue` skip (`:301-306`). Coverage delta: N/A (shell harness).
+- Checks per PR body: `bash -n` (AC-4, exits 0); a boundary dry-run transcript (today: reverse walk hits `0019` → `ADD COLUMN page_context_source` ∈ INSERT list → boundary `0019`); an LG-1 future-scenario transcript (a hypothetical `0020_intent_events_idx.sql` non-column migration → walk skips `0020`, boundary stays `0019`, `0020` applied in the all-but-boundary set → no false failure). **Independently re-verified this retro:** the extractor still yields all **17** columns; `tr ',' '\n' | grep -c '[a-zA-Z]'` = **17**, so the `>= 17` floor exactly equals today's count (zero head-room — §4a LG-2); `grep -oE 'ADD COLUMN ...'` over `0019` returns `page_context_source` (boundary correct), and over **`0018` returns NOTHING** because `page_context` entered via `RENAME COLUMN tier TO page_context` — the load-bearing blind spot (§4a LG-1).
+- **Verification adequacy:** adequate for the happy path (today's single-line 17-column INSERT + an `ADD COLUMN`-introduced newest INSERT column at `0019`). **NOT adequate against the two new structural assumptions this hardening bakes in** — the boundary walk recognizes only `ADD COLUMN` (blind to `RENAME`/`MODIFY COLUMN`-introduced INSERT columns, §4a LG-1), and the floor is a today-only `== full-count` guard that re-weakens silently as the INSERT grows past 17 (§4a LG-2). `bash -n` proves syntax, not behavior; still no meta-test that the harness reds for the RIGHT reason on a known-bad input (§4c TG-1, banked).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`. **CHECK A (dead code):** no new file (the script is modified). New shell symbols are all locals consumed in-script: `INSERT_COLS` (`:217` → used in the boundary walk `:267`), `COLS_COUNT` (`:207` → floor assert `:208`), `ALL_MIGRATIONS`/`MIGRATION_COUNT` (`:244-250` → walk + apply loops), `BOUNDARY_MIGRATION`/`BOUNDARY_INDEX` (`:256-274` → apply skip + steps 4-7). The pre-existing `_cleanup()`/`trap` (FOLLOW-402) is unchanged. The script itself is a CI entrypoint (`ci.yml` `clickhouse-smoke`; framework/CI-entrypoint carve-out). **CHECK B (half-wire):** no new event / env-var / column / topic / SDK-signal. The script CONSUMES only pre-existing env vars (`CLICKHOUSE_URL`/`_USER`/`_PASSWORD`/`LOCAL`), all already producer-set by the CI job. No producer/consumer axis opened. **No DEAD_CODE / HALF_WIRE introduced.** The §4 findings are robustness gaps in the harness, not wiring gaps.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the new boundary walk recognizes ONLY `ADD COLUMN`; a `RENAME COLUMN`- (or `MODIFY COLUMN`-) introduced INSERT column is INVISIBLE to it, silently disabling the ESC-031 guard for that column. This is a NEW fragility this PR introduced, and the live evidence sits one migration below the current boundary.** The walk (`migration-contract-test.sh:259-274`) selects a boundary only from `grep -oE 'ADD COLUMN (IF NOT EXISTS )?[a-zA-Z_][a-zA-Z0-9_]*'` matches (`:272-273`). But `page_context` — a column IN the INSERT list (`route.ts:469`) — entered the schema via `RENAME COLUMN tier TO page_context` in `0018_adaptation_decisions_page_context.sql`, NOT via `ADD COLUMN` (verified: `grep -iE 'ADD COLUMN' 0018*.sql` = 0 hits; only `RENAME COLUMN tier TO page_context`). Today this is MASKED because the newer `0019` does `ADD COLUMN page_context_source` and the reverse walk stops at the first match. But the moment the newest INSERT-column-introducing migration is a `RENAME` (exactly the tier→page_context shape — and §E.7 "no-Tiers" churn makes another such rename plausible), the walk skips it, falls through to an OLDER `ADD COLUMN` boundary or finds none → **exits 0 with `SKIPPED` (`:276-287`) = false-clean** → a rename-introduced INSERT column unapplied in prod sails through the very guard built to stop ESC-031. The single-boundary design only ever asserts ONE column's ordering anyway, but the `ADD COLUMN`-only filter narrows *which* verbs can even be the boundary, creating a verb-shaped blind spot. Fix: recognize `RENAME COLUMN … TO <name>` and `MODIFY COLUMN`/`ADD COLUMN` alike when computing the set of INSERT columns a migration introduces. → **FOLLOW-417.**
+- **LG-2 (P3) — the `>= 17` floor is a hand-pinned magic number equal to TODAY's exact column count; it converts the *most-likely* truncation case to loud (good) but (a) re-introduces the manual-maintenance smell the generalization claimed to remove, and (b) silently re-opens RETRO-129's dangerous subset fail-OPEN window the instant the INSERT grows past 17.** The floor (`:207-213`) catches an extraction that truncates BELOW 17 — the common `grep -A1 … | sed` failure. But RETRO-129 §4a LG-2's *dangerous* case was a reformat that leaves a complete `(…)` SUBSET on `:469`: today every proper subset has `< 17` columns so the floor catches it, but the floor only equals the full count *today*. When `logDecisionAsync` gains an 18th column without the literal `17` being bumped in lockstep, an extracted 17-column subset (missing the 18th) passes `>= 17` → a genuinely-unmigrated 18th column is never tested → silent fail-OPEN, the exact ESC-031 class. So the floor is a TODAY-only guard whose protection erodes as the INSERT grows, AND the literal `17` is itself the kind of manual-Extending coupling RETRO-129 said the dynamic extraction eliminated — it just moved from "the column name" to "the column count." Stronger mechanisms the FOLLOW-415 AC itself offered: assert the extracted count against `DESCRIBE TABLE adaptation_decisions` (an upper bound — the table has ≥ the INSERT's columns), or at minimum pin the `17` with an inline comment tying it to `route.ts:469` so the bump-coupling is visible. → **FOLLOW-417** (P3, fold).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** No runtime/product code changed. The harness behaves correctly for today's inputs (re-verified §2). LG-1/LG-2 are latent-on-future-input robustness gaps recorded as logic gaps, not shipped bugs. The reverse walk's `break 2` (`:270`), the no-match `exit 0` skip (`:276-287`), and the apply-loop `BOUNDARY_INDEX` skip (`:302`) are each correct for the current migration set (verified against the dry-run).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, banked — not filed) — still nothing guards the guard.** FOLLOW-415's optional meta-test leg (feed the script a route.ts with an un-migrated extra column AND a non-column newest migration, assert it reds for the right reason) was explicitly banked in RETRO-129 §4c as OPTIONAL, with the count floor as the cheaper substitute; the PR delivered the floor, not the meta-test. A full meta-test of a CI shell script remains heavy for the value. Banked again as a watch-item, NOT re-filed (RETRO-122 anti-inflation). Note: the LG-1 RENAME blind spot is precisely the kind of thing such a meta-test would have caught — if a 2nd robustness gap surfaces, reconsider the meta-test.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — the AC-3 prose now names the two guarantees (boundary + floor) with provenance, correctly retiring RETRO-129's unconditional over-claim, but it does NOT disclose EITHER new assumption §4a exposes.** The runbook "Boundary detection guarantee" (`clickhouse-migrations.md:135-138`) says the boundary is "the newest migration that ADD COLUMN…" without disclosing that a `RENAME`/`MODIFY`-introduced INSERT column is therefore invisible (LG-1); the "Column-list extraction guarantee" (`:140-142`) names the `floor = 17` without disclosing it equals today's full count and weakens as the INSERT grows (LG-2). The script header (`:16-30`) mirrors both. This is materially BETTER than the prior unconditional "self-maintaining guarantee" (RETRO-129 §4d DG-1 is genuinely closed, §7) — it is a *minor* residual confirming-instance of the broadened Rule Y (a named guarantee that does not fully hold under the disclosed-adjacent verb/growth axes), NOT a re-open. Fix: add the two caveats, OR (preferred) close LG-1/LG-2 so the prose becomes true. → folded into **FOLLOW-417**.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-404 (RETRO-118 §4a LG-1 / RETRO-129 §5a — one-time PROD-state attestation that `0019` `page_context_source` is LIVE in prod ClickHouse) is NOT superseded by this PR — it remains needed, on a DISJOINT axis.** Reconciled explicitly per algorithm step 8 (and consistent with RETRO-129 §5a): PR #370 strengthens the **CI** axis (does the migration SET, applied in order against a *throwaway* ClickHouse, satisfy the INSERT?) and says **nothing** about **prod** state. Per the standing fact that ClickHouse migrations do NOT auto-apply to prod (memory note; RETRO-076 / FOLLOW-307 / FOLLOW-308; CH CI only runs `migrate.sh` against a disposable container), a green contract test ≠ `0019` applied in prod. **The contract test is the prevention-in-CI leg; FOLLOW-404 is the prove-it-in-prod leg; FOLLOW-308 is the standing prod-apply gate.** Indeed LG-1 makes FOLLOW-404 MORE relevant, not less: the very column whose prod-apply FOLLOW-404 attests (`page_context`, a RENAME) is the column the hardened CI guard is now BLIND to (§4a LG-1) — the two axes are complementary and both required. No QUEUE IN_PROGRESS/READY ticket assumed otherwise.
+- **FOLLOW-408 (RETRO-124 runbook reconciliation — intro-sentence twin + stale References header):** disjoint surface within the same runbook; untouched here; still open. PR #370 edited the "CI contract test" section (`:112-161`), not the `:72-73` intro or `:3-4` header.
+
+#### 5b. Future sprint tickets affected
+
+- **Any future CH migration that introduces an `adaptation_decisions` INSERT column via `RENAME COLUMN` or `MODIFY COLUMN`** (rather than `ADD COLUMN`) will NOT be detectable as a boundary by this test (§4a LG-1) → the ESC-031 guard silently no-ops for that column until FOLLOW-417 lands. Given the tier→page_context rename precedent and ongoing §E.7 "no-Tiers" terminology churn, a future rename of an INSERT column is plausible, not theoretical.
+- **Any future PR that adds an 18th `adaptation_decisions` INSERT column** relies on this test as its ESC-031 guard; until the floor is bumped/derived (§4a LG-2), the narrow subset fail-OPEN window re-opens for that column. The `ADD COLUMN` happy path (new column, single-line, newest file) remains correctly guarded.
+
+#### 5c. Contracts changed others rely on
+
+- **N/A.** No contract changed (§1). The `adaptation_decisions` INSERT contract others depend on is read-only input to the harness.
+
+#### 5d. Architectural assumptions affected
+
+- **The "automation hides the seam the manual version exposed" shape RETRO-129 §5d named RECURS — reconciled here, not contradicted.** RETRO-129 warned the FOLLOW-402 generalization traded a *visible* manual-maintenance burden for two *invisible* structural assumptions (single-line column list; boundary-is-last-file). FOLLOW-415 closes the boundary-is-last-file assumption (the reverse-walk, §7) and converts the most-likely extraction break to loud — genuine progress. BUT it does so by introducing TWO fresh invisible seams of the *same family*: (i) the floor's literal `17` re-creates a manual-maintenance coupling (the count, not the name), and (ii) the `ADD COLUMN`-only boundary filter hides the `RENAME`/`MODIFY` verb axis. This is the durable meta-lesson: each hardening pass of a parse-and-heuristic CI guard tends to relocate the unasserted assumption rather than eliminate it. The durable fix is to make the guard schema-derived (verbs from the real DDL grammar; counts from `DESCRIBE TABLE`) rather than pattern-pinned — recorded for the §6 watch-item, NOT promoted (same lineage, §6).
+
+### 6. New lesson candidates — NO new rule (anti-count-inflation; same FOLLOW-402→415 lineage; DG-1 confirms the broadened Rule Y; LG-1 is Rule-S-spirit count 1 in this context)
+
+- **Pattern (LG-1) — "a CI/lint guard that recognizes a guarded symbol introduced by only ONE DDL verb (`ADD COLUMN`) is blind to the same symbol introduced by a sibling verb (`RENAME`/`MODIFY COLUMN`)."** This is the **verb-set-completeness shape of Rule S** ("a change/recognition applied to one verb of a symmetric set MUST be applied to ALL siblings at the same tier") and is adjacent to **Rule W** (which already governs `RENAME`/`MODIFY`/`DROP` on key columns). Independent-context count = **1** (this is the first sighting of the verb-blind-CI-guard shape; the tier→page_context RENAME at RETRO-115 is the *triggering data*, not a prior independent sighting of THIS pattern). Per RULE_PROMOTION_THRESHOLD = 2, **NO rule**. Watch-item: if a 2nd independent guard is found recognizing only one verb of a symmetric DDL set, promote a "DDL-introduction guards MUST enumerate ALL introduction verbs (`ADD`/`RENAME`/`MODIFY`)" rule (candidate verification: grep CI guards for `ADD COLUMN` without an adjacent `RENAME COLUMN`/`MODIFY COLUMN` clause).
+- **Pattern (LG-2 / §5d) — "each hardening pass of a parse-and-heuristic guard relocates the unasserted assumption (column name → column count; last-file → verb-blind) rather than eliminating it; the durable fix is schema-derivation, not a fresh pinned literal."** This is the SAME FOLLOW-402→415 lineage as RETRO-129 §5d (the "automation hides the seam" architectural note) — a same-lineage continuation, NOT a fresh independent sighting. Per the entrenched anti-count-inflation discipline (RETRO-122/125/126/128/129), a same-lineage moved-hop does NOT mint a rule. **No `CONVENTIONS_PATCH.md` write.**
+- **Pattern (DG-1) — "a fix that retires an overstated guarantee names the new guarantees but omits the freshly-introduced assumptions they rest on."** Confirming instance of the **broadened Rule Y** (RETRO-126: any named symbol/file/module/migration/guarantee cited as fact must hold). Governed by existing Rule Y; no amendment.
+
+**Rules promoted this retro: NONE.** (LG-1 = Rule-S/Rule-W-spirit, independent count 1; LG-2/§5d = same-lineage continuation of RETRO-129 §5d; DG-1 = confirming instance of the broadened Rule Y.)
+
+### 7. Prior-follow-up closure check (FOLLOW-415 → RETRO-129 §4a LG-1 / §4a LG-2 / §4d DG-1; + §4c TG-1 optional)
+
+Traced END-TO-END (charter → script behavior → the input it reads → the guard it produces), per algorithm step 7 — NOT one hop:
+
+1. **RETRO-129 §4a LG-1 (boundary = lexical-last-file false alarm): GENUINELY CLOSED end-to-end ✅.** The reverse walk (`migration-contract-test.sh:259-274`) selects the newest migration that adds an INSERT column, and the apply loop now skips `BOUNDARY_INDEX` rather than the last element (`:301-306`), so a newer NON-column migration (e.g. an `intent_events` index) is applied in the all-but-boundary set and step-5's rejection assertion (`:316-326`) still holds. Verified against the PR's `0020_intent_events_idx` dry-run scenario: walk skips `0020`, boundary stays `0019`, `0020` applied, INSERT correctly fails-then-passes — **no false alarm**. The imminent-and-recurring false-fail RETRO-129 flagged is closed. ✅ real closure. **BUT** the fix narrowed boundary-eligibility to `ADD COLUMN`-only, introducing the NEW `RENAME`/`MODIFY` verb blind spot (§4a LG-1) — a *different shape*, not the same gap moved.
+2. **RETRO-129 §4a LG-2 (extraction brittleness + missing count check): CLOSED on the truncation-below-17 leg ✅, residual on the root extractor + the floor's growth-staleness.** AC-2's `>= 17` floor (`:207-213`) genuinely converts the most-likely silent failure (a `grep`/`sed` truncation below 17) into a loud, correct exit-1 — verified the floor equals today's exact 17-column count. ✅ for that case. **BUT** the root single-line `grep -A1 … | sed` extractor (`:184-186`) is UNCHANGED (a multi-line reformat still breaks it), and the floor is a today-only `== full-count` guard that silently re-opens the subset fail-OPEN window once the INSERT exceeds 17 (§4a LG-2). Recorded **CLOSED-WITH-RESIDUAL**, not clean. → **FOLLOW-417.**
+3. **RETRO-129 §4d DG-1 (qualify the unconditional "self-maintaining guarantee"): CLOSED ✅** — the runbook (`clickhouse-migrations.md:135-142`) and script header (`:16-30`) now name the two guarantees (boundary reverse-walk + column-count floor) with FOLLOW-415/RETRO-129 provenance instead of the prior unconditional claim; `grep -n "Self-maintaining guarantee" docs/runbooks/clickhouse-migrations.md` no longer carries the unqualified RETRO-129-flagged form. A minor new in-place residual: the named guarantees omit the RENAME-blindness + floor-growth caveats (§4d DG-1) — fresh, not a re-open.
+4. **RETRO-129 §4c TG-1 (optional meta-test): NOT delivered (was optional), banked again** — the count floor was the chartered cheaper substitute and was delivered. Not re-filed (§4c).
+
+- **Net verdict:** FOLLOW-415 **genuinely closes RETRO-129 §4a LG-1 (boundary false-alarm) end-to-end**, **closes §4a LG-2's most-likely truncation leg**, and **discharges §4d DG-1's over-claim** — a real hardening, not a no-op. But it **introduces a NEW `RENAME`/`MODIFY COLUMN` boundary blind spot** (§4a LG-1, P2 — live-evidenced by `page_context`/`0018` one migration below today's boundary) and leaves the floor a **today-only magic-number guard** (§4a LG-2, P3). → **FOLLOW-417** (P2, data-engineer) collects the verb-completeness boundary fix, the schema-derived/pinned-comment count mechanism, and the two doc caveats. **PM: FOLLOW-415 is DONE for its three ACs (smart boundary + count floor + qualified prose); FOLLOW-417 is a fresh P2 robustness residual, NOT a re-open. FOLLOW-404 (prod attestation) remains OPEN on a disjoint axis (§5a) and is made MORE relevant by LG-1.**
+
+### 8. Cross-references
+
+- **RETRO-129 (FOLLOW-402 / PR #368) — direct parent.** Filed FOLLOW-415 with LG-1 (boundary false-alarm), LG-2 (extraction + count), DG-1 (over-claim). This entry confirms all three closed for the common case, with the gap moved one hop into the RENAME-verb blind spot + the floor's growth-staleness (FOLLOW-417), and reconciles the recurring §5d "automation hides the seam" shape.
+- **RETRO-121 (FOLLOW-394 / PR #360) — grandparent.** Original single-column-pin + manual-Extending critique; FOLLOW-402 generalized it, FOLLOW-415 hardened the generalization. The maintenance burden RETRO-121 flagged is now relocated to the floor literal `17` (§4a LG-2).
+- **RETRO-118 (FOLLOW-358 / PR #357) + ESC-031 — root incident.** The silent-data-loss class (`logDecisionAsync` `.catch()` swallows the CH rejection) this entire contract-test lineage prevents. LG-1 matters precisely because a RENAME-introduced unmigrated column re-exposes this class through the guard's blind spot.
+- **RETRO-115 (FOLLOW-357/356 / PR #354) — the live evidence for LG-1.** That PR performed `RENAME COLUMN tier TO page_context` (migration `0018`); `page_context` is the in-INSERT column the new `ADD COLUMN`-only boundary walk cannot see. The same no-Tiers churn that drove that rename makes a future rename-of-an-INSERT-column plausible (§5b).
+- **RETRO-076 / FOLLOW-404 / FOLLOW-307 / FOLLOW-308 + memory note "Migrations don't auto-apply (Postgres AND ClickHouse)":** the basis for §5a — the contract test is a CI-axis guard and does NOT attest prod state, so FOLLOW-404 is not superseded (and LG-1 makes it more relevant).
+- **CONVENTIONS_PATCH Rule Y (broadened at RETRO-126):** governs DG-1 (a named guarantee that does not fully hold) — confirming instance, no amendment. **Rule S** (verb/branch-set completeness) + **Rule W** (`RENAME`/`MODIFY`/`DROP` on CH columns): the adjacent rules whose spirit LG-1 invokes; promotion held at independent count 1 (§6).
+
+---
+
+## RETRO-132 — FOLLOW-405 (SEED_VARIANTS↔playbook `variants.en` cross-package parity gate + stray-arm served=base/logged=raw doc) — 2026-06-26
+
+### 1. Summary of change
+
+- **PR:** #371 (merged 2026-06-26 17:38:04 UTC, commit `0824db1`)
+- **Files changed:** 2 (+126 / -5)
+- **Modules touched:** [control-plane (test + route doc), shared-by-import: SDK playbooks data]
+- **Key contracts changed:**
+  - `SEED_VARIANTS` (`apps/control-plane/src/lib/bandit-query.ts:34` = `['control','v1','v2']`) ↔ `SlotDirective.variants.en[]` (`packages/sdk/src/core/playbooks/types.ts:31`) — a NEW cross-package **structural** coupling is now test-enforced; no value/shape of either symbol changed — breaking: no.
+  - `runDecisionTree` `@param variant` JSDoc + the `VARIANT_INDEX[variant]` stray-arm comment block (`route.ts:255-307`) — doc only — breaking: no.
+
+### 2. Verification done in PR
+
+- Test files changed: `apps/control-plane/src/lib/__tests__/variant-index.parity.test.ts` (new, 104 lines, 4 tests) · Assertions added: AC-1 length+in-range+exact-keys, AC-2 `SEED_VARIANTS[0]==='control'` + `VARIANT_INDEX.control===0` · Coverage delta: unknown (test-only PR)
+- CI checks: PR body reports 113 files / 1324 tests green; CI pass not independently re-verified here.
+- **Negative-control NOT committed:** the gate's "adding `v3` reds CI" claim is validated by the PM manually (PR `NEXT:` line), not by a committed self-test. Unlike the migration-journal gate (Rule O `--self-test`) and the gitleaks dummy-token control (Rule V), this parity gate ships with no in-repo proof it actually reds — "green" proves only that the steady state is consistent, not that the gate fires (§4c TG-4, §6).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- CHECK A (dead code): the only new file is a `__tests__/` test → suppressed (test-only). No new non-test exports; `route.ts` change is comments only. `getAllPlaybooks` / `VARIANT_INDEX` / `SEED_VARIANTS` all had pre-existing non-test importers (`route.ts:74`, `:285`, `:307`).
+- CHECK B (half-wire): this PR introduces no new event / env-var / column / topic / SDK-signal. (A PRE-EXISTING dead type surface — `variants.pl`/`variants.es` — was surfaced by the multi-axis sweep; it is NOT introduced by this PR and is recorded in §4a LG-2 / §4c TG-2, not here.)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — stray-arm served≠logged asymmetry corrupts bandit reward attribution.** The AC-3 contract (`route.ts:291-302`): when `VARIANT_INDEX[variant]===undefined` (an arm not in `SEED_VARIANTS`, e.g. a misconfigured-table `'v3'`), the SERVED copy short-circuits to `s.en` (= control/base copy, index 0) via the `?? s.en` fallback, but the LOGGED value is the RAW arm string `'v3'` written to `param_p_variant`/`adaptation_decisions.variant`. If such an arm ever reaches the reward loop, the bandit credits a phantom arm with **control-copy** performance — a decision-grade reward-signal contamination (Rule K.2 spirit: a decision surface attributing one arm's impression to another). The doc frames the raw log as a diagnostic feature ("distinguish unrecognised from control"); that is defensible ONLY if the reward writer never updates a non-seeded arm. The parity gate makes the path unreachable in steady state (hence P2, not P1), but the served-vs-logged contract itself is not reconciled. → FOLLOW-420.
+- **LG-2 (P3) — variant selection is `en`-only by construction; `variants.pl`/`variants.es` are a dead type surface.** `route.ts:319-320` selects locale base via `locale==='pl' ? s.pl : locale==='es' ? s.es : undefined`, then the variant branch reads ONLY `s.variants?.en[variantIndex]`. For a pl/es session the single-string locale override wins the first `??`, so bandit variant copy is NEVER served outside English. The type permits `variants.pl?: string[]` / `variants.es?: string[]` (`types.ts:34-35`) but NO consumer reads them (grep confirms zero `pl:[`/`es:[` inside any `variants` block across `packages/sdk/src/core/playbooks/`). A future author adding `variants.pl` would ship dead, ungated copy. → FOLLOW-419.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A (no shipped behavior change; no bug introduced by this PR).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — the gate validates index STRUCTURE, not element CONTENT.** AC-1 asserts `variants.en.length >= SEED_VARIANTS.length` and `0 <= VARIANT_INDEX[v] < length` (`parity.test.ts:68-76`). It never asserts each indexed element is a non-empty string. An `en: ['headline', '', 'other']` (length 3) PASSES the gate, yet at runtime `route.ts:320` serves the empty string: the `?? s.en` fallback does NOT fire on `''` (nullish-coalescing catches only `null`/`undefined`), so a hole at a valid index serves **blank copy** to that arm's sessions. This is the exact failure mode the gate exists to prevent, left open. → FOLLOW-418.
+- **TG-2 (P3) — locale axis uncovered (multi-axis / Rule S "every locale").** The gate iterates `slot.variants.en` only; `variants.pl`/`variants.es` (if ever populated) get no length/in-range/content check. Folded with LG-2 → FOLLOW-419.
+- **TG-3 (P2) — gate validates SDK `src`, prod loads `dist`.** The parity test imports `@estalara/sdk/playbooks` which the vitest alias (`apps/control-plane/vitest.config.ts:24-28`) maps to `packages/sdk/src/core/playbooks/index.ts` (source). Production `route.ts` imports the same specifier, but the SDK `package.json` `./playbooks` export resolves to `./dist/core/playbooks/index.js` (built). Nothing asserts `dist` matches `src` at the moment the gate runs; a stale/partial SDK build could serve variant copy the gate never validated. Same family as Rule M (test-validates-X, prod-runs-Y) / Rule Z (fixture not derived from what prod loads). → FOLLOW-421.
+- **TG-4 (P3) — no committed negative-control.** See §2; the gate has no `--self-test`/dummy-injection proof it reds. Noted as a lesson candidate (§6); folded as an AC into FOLLOW-418 rather than a standalone follow-up to avoid count inflation.
+
+#### 4d. Documentation gaps
+
+- **Rule Y citation check — CLEAN.** The test (`parity.test.ts:99-102`) and the `route.ts:292` stray-arm comment cite `types.ts:27` ("Index 0 mirrors `en` (default)") as the base-copy convention. Verified: `types.ts:27` reads exactly `* A/B copy variants for this slot. Index 0 mirrors \`en\` (default).` — the cited artifact exists and states the cited fact. No DG.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- Any in-flight ticket that adds a bandit arm to `SEED_VARIANTS` (or seeds a non-`control/v1/v2` row in `ab_bandit_weights`) now reds CI until a matching `variants.en[N]` entry is added to **every** non-neutral playbook slot that carries `variants`. This is the intended gate; surface it in that ticket's ACs.
+
+#### 5b. Future sprint tickets affected
+
+- A future "expand to `v3`/localized variants" ticket MUST: (a) extend the gate to the pl/es axis (FOLLOW-419), (b) add content-non-emptiness (FOLLOW-418), and (c) reconcile the stray-arm served/logged contract (FOLLOW-420) before the new arm reaches the reward loop.
+
+#### 5c. Contracts changed others rely on
+
+- `SEED_VARIANTS[0]==='control'` and `VARIANT_INDEX.control===0` are now **pinned** by AC-2 — a reorder reds CI. Downstream consumers (`route.ts` copy selection, bandit seed-row builder `bandit-query.ts:93`, `route.follow397.test.ts`) implicitly depend on `control` being index 0; AC-2 makes that load-bearing assumption explicit.
+
+#### 5d. Architectural assumptions affected
+
+- Positional-index coupling between a control-plane constant (`SEED_VARIANTS`) and SDK playbook DATA is now test-enforced on the `en` axis — a genuine improvement that closes the FOLLOW-342/FOLLOW-397 wiring chain's last structural seam. The residual architectural smell: the coupling is enforced against `src` for ONE locale, while prod loads `dist` and the type advertises three locales (§4c TG-2/TG-3).
+
+### 6. New lesson candidates
+
+- Pattern: "**A positional/structural parity gate that asserts array LENGTH + in-range INDEX but not element CONTENT leaves a blank-copy hole, because the runtime `?? base` fallback does not fire on an empty string at a valid index.**" — seen in: RETRO-132 (this) — promote-threshold 2, current count 1.
+- Pattern: "**A cross-package structural gate validates the imported package's `src` (via a vitest alias) while production loads its built `dist` — the gate is blind to a stale/partial build.**" — seen in: RETRO-132 (this); adjacent to promoted Rule M (dev-vs-prod claim) and Rule Z (fixture not derived from prod artifact) but on the src-vs-dist build axis — promote-threshold 2, current count 1.
+- Pattern: "**A CI gate ships with no committed negative-control (`--self-test` / dummy injection) proving it reds; green proves consistency, not that the gate fires.**" — seen in: RETRO-132 (this); the repo's counter-examples are Rule O (`--self-test`) and Rule V (dummy-token control) — promote-threshold 2, current count 1.
+- **Confirming instances of ALREADY-promoted rules (no new promotion):** LG-2/TG-2 align with **Rule S** ("apply to every locale of a symmetric set") — independent count 1 on the test-gate-coverage sub-shape; LG-1 invokes **Rule K.2** spirit (decision-grade surface must not misattribute). Neither reaches a fresh ≥2 threshold on its own axis → **no Rule promoted this retro.** Anti-count-inflation discipline (RETRO-122/125/126/128/129/131) honored.
+
+### 7. Follow-ups
+
+- **FOLLOW-418:** Extend the parity gate to assert `variants.en[idx]` element CONTENT (non-empty, non-whitespace) for every `SEED_VARIANTS` index + add a committed negative-control proving the gate reds (qa-engineer, 2h, **P2**).
+- **FOLLOW-419:** Decide wire-or-remove for `variants.pl`/`variants.es`: either localize variant selection in `route.ts:320` + extend the gate to the pl/es axis, OR strip the unused locale fields from `SlotDirective.variants` (Rule S "every locale" + Rule I dead-type) (sdk-engineer, 3h, **P3**).
+- **FOLLOW-420:** Reconcile the stray-arm served-vs-logged contract so a non-`SEED_VARIANTS` arm cannot contaminate bandit reward attribution — coerce the logged variant to a sentinel (e.g. `'unrecognized'`) or document+test the reward-path guard that prevents updating a non-seeded arm (backend-engineer, 2h, **P2**).
+- **FOLLOW-421:** Add a `src`-vs-`dist` freshness guard for the playbook parity gate (assert `dist/core/playbooks` matches `src`, or run the parity check against the built artifact) so a stale SDK build cannot serve variant copy the gate never validated (devops-engineer, 3h, **P2**).
+
+### 8. Cross-references
+
+- **Related to the FOLLOW-342 → FOLLOW-397 → FOLLOW-405 chain** (variant reaches copy selection → `VARIANT_INDEX` derived from `SEED_VARIANTS` → cross-package parity gate). FOLLOW-405 closes the chain's last STRUCTURAL seam on the `en` axis end-to-end (producer `SEED_VARIANTS` → derive `VARIANT_INDEX` → consume `route.ts:307` → gate the playbook data). The chain is NOT closed on the locale axis (§4a LG-2) or against the prod `dist` artifact (§4c TG-3) — the gap moved one AXIS over, not one hop down (step-8 multi-axis).
+- **Related to Rule K.1 / Rule Y:** the PR cites both; Rule K.1 (no duplicate VARIANT_INDEX) is upheld by FOLLOW-397's derivation, Rule Y citation (`types.ts:27`) verified clean (§4d).
+- **No prior "clean" verdict contradicted:** no earlier retro declared the `en`-only/locale axis or the src/dist boundary clean, so there is nothing to reconcile.
+
+---
+
+## RETRO-133 — FOLLOW-404 (one-time prod-state attestation for CH migration 0019 `page_context_source` — schema/grant attested, zero-row write-leg left open) — 2026-06-26
+
+### 1. Summary of change
+
+- **PR:** #372 (merged 2026-06-26 17:51:00 UTC, commit `bab4a66`)
+- **Files changed:** 1 (+55 / -0) — `docs/runbooks/clickhouse-migrations.md` only (doc-only attestation)
+- **Modules touched:** [docs] — no code, no migration, no config; three live read-only prod ClickHouse queries (`DESCRIBE TABLE`, `SELECT DISTINCT`, `SHOW GRANTS FOR`) transcribed into a dated runbook section
+- **Key contracts changed:** **N/A.** The `page_context_source LowCardinality(String) DEFAULT 'legacy'` column was added by migration 0019 / PR #357 — NOT by this PR. This PR only records the prod state of that pre-existing column; no symbol, schema, or contract is introduced or altered.
+
+### 2. Verification done in PR
+
+- Test files changed: none (doc-only; no automated path to verify an attestation). · Assertions added: 0 · Coverage delta: N/A
+- CI checks: PR body reports the existing `clickhouse-smoke` job covers the contract path; no new job. Branch `devops-engineer/FOLLOW-404-prod-ch-attestation` matches the `devops-engineer/*` push/PR trigger allowlist (Rule "branch-prefix CI trigger" honored). CI green not independently re-verified here.
+- **Attestation is a manual point-in-time read, not a committed/repeatable gate** — the runbook section is the only artifact; nothing re-runs it. (Acceptable for a chartered one-time attestation, but see §4a CLOSURE-1: the read it performed did not satisfy the AC it was chartered against.)
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** no new file, no new export, no new symbol — the sole change is +55 lines of markdown appended to a pre-existing runbook. Nothing to import; doc files are not wiring surfaces. Suppressed/clean.
+- **CHECK B (half-wire):** this PR introduces no new event / env-var / column / topic / SDK-signal. The `page_context_source` column it attests was wired at PR #357 (producer `logDecisionAsync` INSERT) + migration 0019; its consumer-side HALF (RETRO-118 §3 HW-1 — no analyst reads the discriminator) remains tracked under the pre-existing **FOLLOW-395**, NOT re-filed here. No new half-wire introduced by this PR.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **CLOSURE-1 (P1) — Prior-follow-up closure check (algorithm step 7): FOLLOW-404 closes 3 of its 4 chartered ACs end-to-end; the AC-2 producer-write leg is NOT closed — the gap moved one hop, from "column existence unverified" to "column exists but no row was ever written."** FOLLOW-404 was chartered (FOLLOW_UPS.md:11148, via RETRO-121 §7) to close the RETRO-118 §4a LG-1 **prod-state-verification** leg. Tracing the four ACs end-to-end:
+  - **AC-1 (schema column exists) — CLOSED ✅.** `DESCRIBE TABLE adaptation_decisions` confirms `page_context_source LowCardinality(String) DEFAULT 'legacy'` is column 18 of 18 (runbook §"Prod Attestation — migration 0019"). The SCHEMA axis is genuinely attested.
+  - **AC-2 (producer is writing the column post-deploy) — NOT CLOSED ⚠️.** The chartered AC text (FOLLOW_UPS.md:11159) reads: *"`SELECT DISTINCT page_context_source` returns the **expected values** (`caller_supplied`/`page_type_derived`/`legacy`), **confirming the producer is writing it post-deploy**."* The attestation returned **zero rows** — the table is entirely empty. Zero rows confirm NEITHER the expected values NOR that the producer is writing. The PR reinterprets the empty table as "consistent with the ESC-031 ~80-minute silent-write window," but that explanation does NOT hold for a FULLY empty table: ESC-031 was an 80-minute outage (10:40Z–12:00Z), after which writes were supposedly restored — a table empty across ALL time means `logDecisionAsync` has produced **zero successful prod writes to `adaptation_decisions` ever**, not merely during the incident window. AC-2 as chartered is therefore UNMET; the producer→prod-table wire is attested at the SCHEMA half and UNVERIFIED at the WRITE half. → **FOLLOW-422** (P1).
+  - **AC-3 (writer grant) — CLOSED ✅ via fallback, with a method caveat.** `SHOW GRANTS FOR ingest_worker` → `GRANT SELECT, INSERT ON default.* TO ingest_worker`; INSERT on `default.adaptation_decisions` is covered by the wildcard. The RETRO-076 caveat (writer may lack DDL/INSERT grant) is resolved for INSERT. Two residuals surface (CB-1 method quirk, §4d DG-1; over-broad grant, §4a LG-1).
+  - **AC-4 (runbook updated) — CLOSED ✅.** Dated attestation section added.
+  - **Net verdict:** FOLLOW-404 GENUINELY closes the SCHEMA-existence + grant + documentation legs (AC-1/AC-3/AC-4). It does NOT close the AC-2 **producer-write** leg — the zero-row read proves the column can hold a default but proves nothing about whether a real adaptation decision has ever landed. **PM: FOLLOW-404 is DONE for its schema/grant/doc scope; do NOT retire the ESC-031 / RETRO-118 §4a LG-1 thread on the write-verification axis — that leg is now owned by FOLLOW-422.**
+- **LG-1 (P2) — `ingest_worker` holds `INSERT, SELECT ON default.*` (all tables), diverging from the documented least-privilege intent `default.events`; over-broad write grant.** `MASTER_DESIGN.md:44` documents the pilot writer as *"ClickHouse user `ingest_worker` (INSERT + SELECT on `default.events`)."* The attested prod grant is `default.*` — every table in `default`, not just `events`. Two findings in one: (a) **security posture** — a compromised/misused writer credential can INSERT into (and SELECT from) ANY `default` table, not the minimal write set; (b) **design divergence** (algorithm step 5 — Master Design alignment) — the doc says `default.events`, which would NOT even cover `adaptation_decisions`; the wildcard is what silently makes the `logDecisionAsync` write legal. Either prod is over-granted vs intent, or the design doc is stale and never tracked the move to a wildcard. → **FOLLOW-424** (P2; PM escalation call — security posture per the autonomy rules).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** No code changed; no runtime defect. (The zero-row finding is a potential PROD-state defect surfaced for verification under FOLLOW-422, not a defect introduced by this PR.)
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — an attestation with no committed/repeatable check.** The prod state recorded here drifts the moment any migration or grant changes; nothing re-attests it. This is acceptable for a chartered ONE-TIME attestation, but it means the SCHEMA fact has the same "green proves consistency once, not continuously" property RETRO-132 §6 flagged for gates. No new follow-up (the standing FOLLOW-402/415 contract test + FOLLOW-308 prod-apply mechanism cover the continuous-verification axis); noted for completeness.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — the `system.grants` Code-497 quirk + the `SHOW GRANTS FOR` fallback method are in the PR BODY but NOT in the committed runbook.** AC-3's PR body explains that the Doppler-prd `CLICKHOUSE_USER` IS `ingest_worker`, a restricted user that lacks `SELECT ON system.grants` (Code 497 ACCESS_DENIED), so `SHOW GRANTS FOR ingest_worker` was used as the fallback. The committed runbook section (diff lines 207-213) shows only the `SHOW GRANTS` output — it does NOT record WHY `system.grants` is unavailable or codify the method choice. A future operator re-running an attestation will hit the same Code 497 and re-derive the workaround. Because every prod attestation runs AS the restricted writer, `SHOW GRANTS FOR <user>` should be documented as the **PRIMARY** grant-attestation method, not a fallback. → **FOLLOW-423** (P3). (Rule Y note: the committed runbook makes no false citation — it under-documents, it does not over-claim — so this is a coverage gap, not a Rule Y violation.)
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-395 (RETRO-118 §3 HW-1, OPEN)** — the consumer-side half-wire for `page_context_source` (no analyst surface reads the discriminator). The zero-row finding sharpens it: building a `WHERE page_context_source = …` analyst query against an EMPTY `adaptation_decisions` table would return nothing regardless of correctness, so FOLLOW-395 cannot be meaningfully validated until FOLLOW-422 confirms writes flow. Sequence FOLLOW-422 before FOLLOW-395 validation.
+- **FOLLOW-393 (apply migration 0019 to prod, FOLLOW_UPS.md:10887)** — its AC ("Assert post-apply: `SELECT DISTINCT page_context_source` returns expected values") is the SAME unmet write-verification AC; FOLLOW-422 is the live re-attestation that finally satisfies it.
+
+#### 5b. Future sprint tickets affected
+
+- Any ticket consuming `adaptation_decisions` for analytics or **bandit reward attribution** (e.g. the FOLLOW-405/418/420 variant-reward chain, the §256 holdout/cta_clicked weekly query) assumes the table is populated. If FOLLOW-422 confirms the table is empty because writes are NOT flowing (vs. no prod traffic), the ENTIRE prod decision-logging + bandit-reward loop is dead — a cross-cutting blocker for every analytics/learning ticket. Surfaced here at **P1 severity for the PM to escalate** (the analyst is escalation-read-only).
+
+#### 5c. Contracts changed others rely on
+
+- **N/A** — no contract changed by this doc-only PR. (The attested `page_context_source` contract is unchanged from PR #357.)
+
+#### 5d. Architectural assumptions affected
+
+- **The assumption "migration 0019 was applied to prod ⇒ `adaptation_decisions` writes are now succeeding" is only HALF-verified.** Schema presence ≠ write success. The attestation upgrades RETRO-121 §7 leg #3 ("PROD-APPLIED: documented, not verified") from *unverified* to *schema-verified, write-flow still unverified* — an explicit reconciliation, not a contradiction (RETRO-121 §7 itself chartered exactly this attestation and predicted the write-leg would need separate closure).
+- **The least-privilege assumption in `MASTER_DESIGN.md:44` (`default.events`) does not match the attested prod reality (`default.*`)** — an architectural/security posture drift (§4a LG-1).
+
+### 6. New lesson candidates
+
+- Pattern: "**A one-time prod attestation that reads ZERO rows proves the SCHEMA half (column exists) but cannot prove the PRODUCER-WRITE half, yet is liable to be recorded as closing a 'producer is writing post-deploy' AC — closure moves one hop, from 'column existence unverified' to 'column exists but no row ever written.'**" — seen in: RETRO-133 (this); adjacent to Pattern C (code/CI-leg closed, prod-leg documented-only — RETRO-113 §5 / RETRO-121 §7) and to Rule M (dev-automation claims prod effect), but the distinct axis here is *an empty-result read masquerading as write-verification* — promote-threshold 2, current count 1. **Watch for a 2nd sighting** (any future attestation/seed/migration whose "values are present in prod" AC is satisfied by an empty/zero-row read).
+- Pattern: "**A prod attestation that runs AS a restricted writer cannot read `system.grants` (Code 497) and must use `SHOW GRANTS FOR <user>`; this method constraint recurs every time and belongs documented as the primary method, not re-derived per attestation.**" — seen in: RETRO-133 (this) — promote-threshold 2, current count 1.
+- **Confirming instances of already-promoted rules (no new promotion):** §4a LG-1 (over-broad `default.*` writer grant vs. documented `default.events`) is a Master-Design-alignment / least-privilege finding, count 1 on the grant-scope axis — does NOT reach a fresh ≥2 threshold. CLOSURE-1 is a confirming instance of the step-7 "gap moved one hop downstream" discipline (the very reason that algorithm step exists), already operative, not a codifiable letter. **No Rule promoted this retro.** Anti-count-inflation discipline (RETRO-122/125/126/128/129/131/132) honored.
+
+### 7. Follow-ups
+
+- **FOLLOW-422:** Live producer→prod-table write attestation for `adaptation_decisions` — disambiguate the zero-row finding: is the table empty because (a) no prod adapt traffic, or (b) `logDecisionAsync` INSERTs are STILL failing post-ESC-031? Trigger/observe a real adapt decision against prod, then assert `SELECT count() > 0` AND `SELECT DISTINCT page_context_source` returns at least `'legacy'` (or a derived value). Closes the AC-2 producer-write leg FOLLOW-404's schema attestation left open. **If writes are confirmed broken, this is a P0 prod outage — PM escalates.** (data-engineer + devops, 2h, **P1**).
+- **FOLLOW-423:** Permanently document the `system.grants` Code-497 ACCESS_DENIED quirk in the CH migrations runbook AND codify `SHOW GRANTS FOR <user>` as the **PRIMARY** grant-attestation method for restricted prod writers (the attestation always runs AS the restricted `ingest_worker`, so `system.grants` is structurally unavailable). (devops + data-engineer, 1h, **P3**).
+- **FOLLOW-424:** Reconcile the `ingest_worker` grant breadth — prod holds `INSERT, SELECT ON default.*` while `MASTER_DESIGN.md:44` documents `default.events`. Either narrow the prod grant to the minimal write set (`events`, `adaptation_decisions`, `intent_events`, …) under least-privilege, OR update the design doc to reflect the wildcard with a documented rationale. Security-posture decision — **PM escalates per the autonomy rules** (public/infra security surface). (devops, 2h, **P2**).
+
+### 8. Cross-references
+
+- **Closes (partially) the RETRO-118 → RETRO-121 → FOLLOW-404 attestation chain.** RETRO-118 §4a LG-1 flagged "no operator stub + no prod-state assertion"; RETRO-121 §7 chartered FOLLOW-404 as the one-time attestation and explicitly predicted the prod-apply VERIFICATION leg would not be fully closed by documentation alone. This retro confirms: schema/grant/doc legs CLOSED, the **write-verification leg moved one hop** to FOLLOW-422. RETRO-121's "DOCUMENTED, NOT VERIFIED" verdict on leg #3 is reconciled to "SCHEMA verified, write-flow still unverified."
+- **ESC-031 (2026-06-26):** the 80-minute silent `adaptation_decisions` write outage. This attestation proves the SCHEMA fix landed; it does NOT prove writes resumed — the ESC-031 root symptom ("flat count on `adaptation_decisions`") is, per the zero-row read, still observable. The incident is NOT fully closeable until FOLLOW-422.
+- **RETRO-113 (FOLLOW-341) / FOLLOW-392 — Pattern C precedent:** "code/CI-leg closed, prod-state (seed/migration/write) unverified." Same shape (the seeder seeded prod `archetype_embeddings` NULL); this retro's zero-row write-gap is the `adaptation_decisions` instance of that family.
+- **FOLLOW-395 (RETRO-118 §3 HW-1, OPEN) / FOLLOW-393 (apply 0019 to prod):** both blocked-or-sharpened by the empty-table finding (§5a).
+- **FOLLOW-308 (RETRO-076 / ESC-022):** standing prod-apply mechanism; this attestation and FOLLOW-422 are the one-time / live-write complements, not duplicates.
+- **Rule W (`CONVENTIONS_PATCH.md:1078`) / Rule M / memory `project_postgres_migrations_no_autoapply`:** 0019's ADD COLUMN is Rule-W-safe (not in the ORDER BY key); the "merged ≠ prod-applied ≠ prod-writing" reality is the recurring theme this attestation half-validates.
+
+---
+
+## RETRO-135 — FOLLOW-425 (fail loud on ClickHouse INSERT rejection in `logDecisionAsync` — add `.then(res.ok)` + Sentry capture on both the insert_rejected and network paths; the code-fix leg of the ESC-031 chain) — 2026-06-28
+
+### 1. Summary of change
+
+- **PR:** #374 (merged 2026-06-26 22:53:20 UTC, commit `df3c4c4`)
+- **Files changed:** 2 (+107 / -4) — `apps/control-plane/src/app/api/adapt/route.ts` (+22/-4) and `apps/control-plane/src/app/api/adapt/route.clickhouse.test.ts` (+85/-0)
+- **Modules touched:** [control-plane (the `/api/adapt` analytics write-sink); tests]
+- **Key contracts changed:** N/A — **behaviour-only change inside the existing `logDecisionAsync` fire-and-forget sink.** No type/schema/event/column/env-var added or changed. The function stays `void`-returning; the fire-and-forget guarantee (no caller awaits, no exception escapes) is preserved. New *observability signal* only: two `Sentry.captureException` call-sites with tags `{ area:'adapt', sink:'clickhouse', kind:'insert_rejected' | 'network' }`.
+
+### 2. Verification done in PR
+
+- Test files changed: `route.clickhouse.test.ts` (FOLLOW-425 describe block, 3 new tests) · Assertions added: ~10 (insert_rejected path → `captureException` once + `kind='insert_rejected'` + `sink='clickhouse'` + msg contains `516`/`Authentication failed` + route does not throw; network path → `kind='network'`; HTTP 200 → `captureException` NOT called) · Coverage delta: unknown (no coverage report in PR; the 3 new branches — non-ok-then, network-catch, ok-noop — are each driven once)
+- CI checks: passed (PR body: "All 13 tests in the file pass; full suite 1 327/1 327 green"; PM validated per convention — not independently re-run here)
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅` (both checks).
+
+- **CHECK A (dead code):** no new file or export. The new `import * as Sentry from '@sentry/nextjs'` (`route.ts:75`) is consumed by the two new non-test call-sites inside `logDecisionAsync` (`route.ts:~525` and `~535`). `@sentry/nextjs` is an existing production dependency of `apps/control-plane`. No orphan.
+- **CHECK B (half-wire):** no new event / env-var / column / topic / SDK-signal. The new Sentry `kind` tags are an observability *producer* whose *consumer* is Sentry itself (external prod sink), not a repo-internal wire — not a HALF_WIRE. Clean.
+- NOTE: the sibling-sink defects in §4b are **pre-existing latent bugs surfaced by the multi-axis analysis (step 8)**, NOT wiring introduced by THIS merge — recorded as §4b code bugs, not as CHECK-A/B findings.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A — the fix itself is correct and minimal: `.then(async (res) => { if (!res.ok) … })` runs BEFORE `.catch()`, so an HTTP-level rejection (516 auth, NO_SUCH_COLUMN, quota) is now captured, and `.catch()` still captures the network leg. Both paths preserve fire-and-forget (`void`, no re-throw).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P1) — `publishAbAssignmentEvent` shares the EXACT blind spot FOLLOW-425 just fixed — `await fetch()` with NO `res.ok` check and NO Sentry; its callers' `.catch()` is blind to a Redpanda HTTP rejection.** `apps/control-plane/src/lib/ab-events.ts:72` does a bare `await fetch(url, { method:'POST', … })` to the Redpanda REST proxy and returns. There is no `res.ok` check. Callers `apps/control-plane/src/app/api/adapt/route.ts:1135` and `:1161` invoke it as `void publishAbAssignmentEvent({…})` — and the only error handling is the `void` (no `.catch` is even attached at the call site; the function just doesn't throw on a non-ok HTTP response because `fetch` resolves on 4xx/5xx). So a Redpanda REST-proxy auth failure, missing-topic, or quota rejection drops the `ab.assignment` event **silently** — the same class of outage as ESC-031, one backend over. Grep: `grep -n "await fetch" apps/control-plane/src/lib/ab-events.ts` → `:72`. → **FOLLOW-426.**
+- **CB-2 (P1) — `publishDescriptionRequested` shares the identical blind spot.** `apps/control-plane/src/app/api/adapt/description/route.ts:111` does a bare `await fetch(url, { method:'POST', … })` to the Redpanda descriptions topic, no `res.ok` check. Caller `:363` is `void publishDescriptionRequested(event).catch((err) => console.error('[description] Redpanda publish failed:', …))` — a `.catch()`-only handler that catches ONLY network rejections and is blind to a non-ok HTTP response (the precise FOLLOW-425 defect). A description-enqueue rejection (auth/topic/quota) → the listing silently never gets an adapted description generated, no Sentry, no log. → **FOLLOW-426.**
+- (Net: FOLLOW-425 hardened **1 of 3** fire-and-forget HTTP sinks in `apps/control-plane`. The two Redpanda siblings remain on the old, silent pattern.)
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — neither Redpanda sibling sink (CB-1/CB-2) has ANY publish-failure test**, so both blind spots pass CI green today. Grep for a test of either: `grep -rln "publishDescriptionRequested\|Redpanda publish failed" apps/control-plane --include="*.test.ts"` → **zero**; no `ab-events` failure test exists either. This is why the FOLLOW-425 fix could land on the CH sink while the identical Redpanda gap stayed invisible. → folded into **FOLLOW-426** AC (mirror the 3-test FOLLOW-425 pattern: non-ok HTTP → Sentry, network → Sentry, ok → no-op).
+- **TG-2 (P3) — FOLLOW-425's own fix has two undriven branches.** (a) The `res.text().catch(() => '<unreadable body>')` fallback (`route.ts:~520`) is never exercised — no test makes `res.text()` reject. (b) Only status `516` is asserted; a generic 5xx/quota rejection is not covered (the branch is shared, so low value). Minor; no separate stub (anti-inflation, RETRO-122/125 precedent) — noted for FOLLOW-426's author to add the `<unreadable body>` case for free while in the same helper shape.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — FOLLOW-425 was a field-spawned hotfix that never got a `backlog/FOLLOW_UPS.md` stub** (`QUEUE.md:6911`: "spec: backlog/FOLLOW_UPS.md (stub pending — field-spawned hotfix)"). Traceability gap only — the ticket is merged/DONE so the stub is moot; recorded so the FOLLOW-UPS ledger's "next free number" comment (which already reads `next free … 425`) is reconciled by THIS retro to `426`. No stub minted for a closed ticket.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- N/A — no IN_PROGRESS/READY QUEUE ticket reads or writes `logDecisionAsync`, `ab-events`, or the description publisher. The ESC-031 chain (FOLLOW-404 schema, FOLLOW-422 write-verify) is all DONE/merged.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-426 (new):** the two Redpanda sibling sinks must adopt this same pattern. Until then, A/B-assignment streaming and description-enqueue have an unguarded silent-failure mode.
+
+#### 5c. Contracts changed others rely on
+
+- N/A — no public contract changed. The Sentry tag vocabulary (`kind=insert_rejected|network`, `sink=clickhouse`, `area=adapt`) is a new alerting convention; FOLLOW-426 should reuse `sink='redpanda'` + the same `kind` taxonomy for consistency in dashboards.
+
+#### 5d. Architectural assumptions affected
+
+- **Control-plane diverges from decision-api on Redpanda error handling.** `apps/decision-api/src/lib/redpanda-producer.ts:102` (`pushToRedpanda`, the helper `decision-api`'s `publishAbAssignmentEvent` delegates to) DOES check `response.ok`, returns a structured `PushResult` (`ok/status/error`), retries 5xx, and tags Sentry on failure — i.e. it is the fail-loud-correct sibling. The `apps/control-plane` mirror (`ab-events.ts`, whose own header says it "Mirrors the fire-and-forget pattern in apps/decision-api/src/lib/ab-events.ts") copied the *envelope shape* but NOT the *error-surface discipline*. The two apps' Redpanda publishers are a Rule-K.1-adjacent divergent pair: same logical write, different failure semantics. FOLLOW-426 should converge control-plane onto the `res.ok`/structured-result posture (no need to import across apps — replicate the `res.ok` check + Sentry locally).
+
+### 6. New lesson candidates
+
+- **Pattern (PROMOTED this run): "A fire-and-forget `fetch()` sink (analytics write / event publish that callers `void` and never await) whose only error handler is `.catch()` — or which is a bare `await fetch()` with no `res.ok` check — is BLIND to HTTP-level rejection, because `fetch` resolves (does not reject) on 4xx/5xx. The configured-but-rejecting store/topic then fails completely silently: zero log, zero Sentry, zero alert."** Seen in: **RETRO-118 §4 CB-1** (the original sighting — `logDecisionAsync` ClickHouse sink, `.catch`-only `console.error`, named as the mechanism that made the migration-ordering hazard silent; FOLLOW-425 is its remediation) + **RETRO-135 (this)** — the SAME defect-shape in two *independent backend contexts*: `publishAbAssignmentEvent` and `publishDescriptionRequested`, both on the **Redpanda REST proxy** (a different backend/wire than ClickHouse). Independent-context count: **2** (ClickHouse HTTP interface + Redpanda REST proxy) — threshold met. This is the **fire-and-forget sub-shape of Rule K.2**: such a sink cannot "fail loud" by throwing (no caller to receive it), so its fail-loud obligation is satisfied ONLY by `res.ok`-checking in a `.then()` AND a `.catch()`, BOTH capturing to Sentry. Rule K.2's existing verification grep (`catch(() =>` and `.then((r)=>r.json())`) is itself BLIND to this sub-shape (a bare `await fetch()` + a fire-and-forget `.catch()` matches neither). → **promoted as a Rule K.2 amendment** (`CONVENTIONS_PATCH.md`).
+
+### 7. Follow-ups
+
+- **FOLLOW-426** (P1, backend-engineer, 3h): apply the FOLLOW-425 fail-loud pattern to BOTH control-plane Redpanda fire-and-forget publishers (`publishAbAssignmentEvent` @ `ab-events.ts:72`, `publishDescriptionRequested` @ `description/route.ts:111`) — add `res.ok` check + `Sentry.captureException` on both the HTTP-rejection and network paths (tags `sink:'redpanda'`, `kind:'insert_rejected'|'network'`), preserving fire-and-forget; add the 3-test failure suite per sink; converge onto the decision-api `pushToRedpanda` posture. (Covers §4b CB-1/CB-2, §4c TG-1, §4c TG-2, §5d.)
+
+### 8. Cross-references
+
+- **Related to RETRO-118 §4 CB-1:** this PR is the **remediation** of the `logDecisionAsync` `.catch`-only silent-swallow RETRO-118 flagged. **Closure (step 7): CLOSED-WITH-LATERAL-RESIDUAL.** The ClickHouse observability wire is now connected end-to-end (producer `logDecisionAsync` → `.then(res.ok)`/`.catch` → `Sentry.captureException` → Sentry alerting), but the *pattern's* closure is partial: the gap moved **sideways** to the two Redpanda siblings (FOLLOW-426). A future ESC-031-class CH outage will now be LOUD; the equivalent Redpanda outage is still silent.
+- **Related to RETRO-133 / ESC-031:** RETRO-133 covered the broader incident (schema attestation #372, zero-row write leg → FOLLOW-422). RETRO-135 is the **code-fix leg**. ESC-031 CH chain: schema #372 → fail-loud #374 (this) → writes verified #375 (FOLLOW-422). The fail-loud fix is the durable recurrence-prevention.
+- **Related to RETRO-085 §4a LG-1/LG-2 (FOLLOW-329):** the `dashboard/analytics/summary` route's silent-mock-on-CH-failure is the awaited-READ-path cousin of this fire-and-forget-WRITE-path defect — both are Rule K.2 sub-shapes (configured-but-failed store silently substitutes/drops). Same root, different surface.
+
+---
+
+<!-- next free FOLLOW number: 426 (425 = field-spawned hotfix, no stub, now reconciled by RETRO-135 §4d DG-1). RETRO-135 = retro for PR #374 (FOLLOW-425, MERGED 2026-06-26 22:53:20Z, mergeCommit df3c4c4; +107/-4 across route.ts +22/-4 [behaviour-only fail-loud in logDecisionAsync] + route.clickhouse.test.ts +85/-0 [3 tests]). Wiring Audit CLEAN both checks (no new file/export/event/env-var/column/topic; new Sentry kind-tag signal's consumer is Sentry, external prod dep — not a repo half-wire). The code-fix leg of the ESC-031 chain (schema #372 → fail-loud #374 → write-verify #375). PRIOR-FOLLOW-UP CLOSURE (step 7): closes RETRO-118 §4 CB-1 (logDecisionAsync .catch-only silent-swallow) end-to-end on the CH axis — but CLOSED-WITH-LATERAL-RESIDUAL: the identical fire-and-forget HTTP-rejection blind spot survives in 2 Redpanda siblings (publishAbAssignmentEvent ab-events.ts:72 callers route.ts:1135/1161; publishDescriptionRequested description/route.ts:111 caller :363) → gap moved sideways, FOLLOW-426. MULTI-AXIS (step 8): FOLLOW-425 fixed the ClickHouse axis; the Redpanda axis is unfixed in control-plane though FIXED in decision-api (pushToRedpanda redpanda-producer.ts:102 checks response.ok + structured PushResult + Sentry) → control-plane↔decision-api divergence (§5d). Gaps: CB-1/CB-2 P1 silent Redpanda fire-and-forget sinks (FOLLOW-426), TG-1 P2 zero failure-tests on those sinks (FOLLOW-426 AC), TG-2 P3 untested <unreadable body>/single-status branches (fold), DG-1 P3 FOLLOW-425 field-spawned with no FOLLOW_UPS stub (reconciled, no stub for closed ticket). RULE PROMOTED: Rule K.2 amendment (2026-06-28 — fire-and-forget HTTP-rejection observability sub-shape), evidence RETRO-118 §4 CB-1 (ClickHouse) + RETRO-135 (Redpanda x2) = 2 independent backend contexts, threshold met; the existing K.2 grep was itself blind to this sub-shape. PM ACTION: prioritize FOLLOW-426 (two unguarded silent-failure modes in A/B-assignment streaming + description enqueue — same class as ESC-031, one backend over). -->

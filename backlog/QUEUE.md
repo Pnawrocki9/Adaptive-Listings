@@ -6894,6 +6894,66 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     CI counter: 0/5. Fix iterations: 0/3.
     Retrospective-analyst to be spawned on PR #373.
 
+- id: FOLLOW-428
+  title:
+    Harden writeDsrAuditLog in dsr/_clickhouse.ts — add res.ok check + try/catch + Sentry for
+    dsr_audit_log INSERT (bare await fetch with no res.ok check and no catch)
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-28T21:30:00Z'
+  completed_at: '2026-06-28T22:00:00Z'
+  priority: P1
+  estimated_hours: 2
+  depends_on: [FOLLOW-425]
+  source: RETRO-135 §6 (Rule K.2 fire-and-forget amendment) / ESC-032 Phase 1
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-428 stub)
+  branch: backend-engineer/FOLLOW-427-428-harden-ch-writers
+  notes: |
+    DONE. writeDsrAuditLog in apps/control-plane/src/app/api/dsr/_clickhouse.ts now fails loud
+    on ClickHouse HTTP-level rejection and network errors. Before this fix: bare await fetch()
+    with NO res.ok check AND NO try/catch — HTTP rejections (auth Code 516, unknown column, quota)
+    were invisible; a network error would propagate as an unhandled promise rejection out of the
+    async function (all callers use void writeDsrAuditLog(...)).
+    Fix: wrapped fetch in try/catch; added res.ok check with Sentry.captureException
+    (tags: area=dsr, sink=clickhouse, kind=insert_rejected, table=dsr_audit_log);
+    network errors caught and captured (kind=network). Function never throws.
+    4 new tests (a: non-ok HTTP, b: network/throw, c: happy path 200, d: no-op when URL unset).
+    Files: apps/control-plane/src/app/api/dsr/_clickhouse.ts (+18/-3),
+           apps/control-plane/src/app/api/dsr/_clickhouse.fail-loud.test.ts (new, +112).
+    CI counter: 0/5. Fix iterations: 0/3.
+
+- id: FOLLOW-427
+  title:
+    Harden logLlmCallAsync in llm-gateway.ts — add res.ok check + Sentry capture for llm_calls
+    ClickHouse INSERT rejection (catch-only handler blind to HTTP rejection)
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-28T21:30:00Z'
+  completed_at: '2026-06-28T22:00:00Z'
+  priority: P1
+  estimated_hours: 2
+  depends_on: [FOLLOW-425]
+  source: RETRO-135 §6 (Rule K.2 fire-and-forget amendment) / ESC-032 Phase 1
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-427 stub)
+  branch: backend-engineer/FOLLOW-427-428-harden-ch-writers
+  notes: |
+    DONE. logLlmCallAsync in apps/control-plane/src/lib/llm-gateway.ts now fails loud on
+    ClickHouse HTTP-level rejection. Before this fix: fire-and-forget fetch with only a .catch()
+    handler — fetch resolves (does NOT reject) on 4xx/5xx, so HTTP rejections (auth Code 516,
+    unknown column, quota exceeded) were completely invisible (zero log, zero Sentry).
+    Fix: added .then(async res => { if (!res.ok) { capture body + Sentry kind=insert_rejected } })
+    before the existing .catch(); .catch() retains and is tagged kind=network. Matches the
+    logDecisionAsync reference implementation (FOLLOW-425). Tags: area=adapt, sink=clickhouse,
+    kind=insert_rejected|network, table=llm_calls. Fire-and-forget preserved (no added latency).
+    3 new tests (a: non-ok HTTP, b: network/throw, c: happy path 200). Tests drive callLlmGateway
+    (the public entrypoint) to exercise the private logLlmCallAsync, using the Haiku path
+    (0.6 < similarity <= 0.85) to simplify fetch sequencing to 2 calls (spend check + INSERT).
+    Files: apps/control-plane/src/lib/llm-gateway.ts (+18/-3),
+           apps/control-plane/src/lib/__tests__/llm-gateway.clickhouse.test.ts (new, +220).
+    CI counter: 0/5. Fix iterations: 0/3.
+
 - id: FOLLOW-426
   title:
     Harden both control-plane Redpanda fire-and-forget publishers (publishAbAssignmentEvent +

@@ -14,6 +14,7 @@
 
 import { createHash } from 'crypto';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
+import * as Sentry from '@sentry/nextjs';
 
 /**
  * Canonical set of DSR audit action strings written to `dsr_audit_log.action`.
@@ -106,9 +107,28 @@ export async function writeDsrAuditLog(entry: DsrAuditEntry): Promise<void> {
   const url = new URL(clickhouseUrl.replace(/\/$/, ''));
   url.searchParams.set('query', 'INSERT INTO dsr_audit_log FORMAT JSONEachRow');
 
-  await fetch(url.toString(), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(row),
-  });
+  try {
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(row),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '<unreadable body>');
+      const msg = `[dsr] ClickHouse INSERT rejected: HTTP ${String(res.status)} — ${body.slice(0, 500)}`;
+      console.error(msg);
+      Sentry.captureException(new Error(msg), {
+        tags: { area: 'dsr', sink: 'clickhouse', kind: 'insert_rejected', table: 'dsr_audit_log' },
+        extra: { status: res.status },
+      });
+    }
+  } catch (err: unknown) {
+    // Network-layer failure (DNS, connection refused, malformed URL, timeout).
+    // Analytics failures must not surface to callers — log + Sentry only.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[dsr] ClickHouse log failed:', msg);
+    Sentry.captureException(err instanceof Error ? err : new Error(msg), {
+      tags: { area: 'dsr', sink: 'clickhouse', kind: 'network', table: 'dsr_audit_log' },
+    });
+  }
 }

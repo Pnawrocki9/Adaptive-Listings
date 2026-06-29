@@ -2,6 +2,18 @@
 
 ---
 
+**Date / ticket:** 2026-06-29 — FOLLOW-433 (promotion + delegation) **Delegation row used:** ingest
+worker, control-plane, Postgres/auth → backend-engineer **What validation caught (or missed):**
+Verified exact line numbers for all 3 sinks against current HEAD before writing the brief —
+confirmed they match RETRO-139's enumeration and `afterResponse` is already imported in
+dsr/erase/route.ts but NOT in feedback/route.ts, making the import instruction load-bearing.
+Confirmed CI wiring pattern by reading ci.yml — new grep-guard should be a dedicated job following
+the rule-h/rule-j pattern, not embedded in an existing step. **A delegation/validation rule I'd
+add:** When delegating a sink-sweep ticket that spans multiple files, grep each target file for the
+wrapper import before writing the brief — a missing import is a common first-round CI failure.
+
+---
+
 **Date / ticket:** 2026-06-29 — FOLLOW-432 (promotion + delegation) **Delegation row used:** ingest
 worker, control-plane, Postgres/auth → backend-engineer **What validation caught (or missed):**
 RETRO-138's PM note buried in the `<!-- next free FOLLOW number -->` comment called for widening

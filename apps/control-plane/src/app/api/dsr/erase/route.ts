@@ -536,10 +536,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── Redis session DEL (fire-and-forget) ───────────────────────────────────
-  void deleteSessionFromRedis(record.sessionId).catch((err: unknown) => {
-    console.error('[dsr/erase] Redis DEL failed:', err instanceof Error ? err.message : err);
-  });
+  // ── Redis session DEL (fire-and-forget, RODO Art. 17) ────────────────────
+  // FOLLOW-433 / ESC-033: registered via afterResponse() so the Redis DEL
+  // (active erasure per RODO Art. 17) completes after the response before
+  // Vercel instance suspension.
+  afterResponse(() =>
+    deleteSessionFromRedis(record.sessionId).catch((err: unknown) => {
+      console.error('[dsr/erase] Redis DEL failed:', err instanceof Error ? err.message : err);
+    }),
+  );
 
   // ── ClickHouse hard-delete (FOLLOW-039 — RODO Art. 17) ────────────────────
   // Awaited (not fire-and-forget) so the response reflects mutation issuance.

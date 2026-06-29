@@ -478,6 +478,28 @@ jobs:
       - name: Assert all SDK storage keys are disclosed in Privacy Notice §4
         run: bash scripts/check-privacy-notice-keys.sh
 
+  # ── Fire-and-forget sink guard (FOLLOW-433 / ESC-033) ──────────────────────
+  # Asserts that no bare `void fn(` / `void (async` request-path sinks exist in
+  # apps/control-plane/src (excluding *.test.ts).  These patterns are silently
+  # dropped on Vercel instance suspension (ESC-033 mechanism); the correct pattern
+  # is afterResponse() → next/server after().
+  #
+  # FOLLOW-431 AC-1 and FOLLOW-432 AC-1 both shipped FALSE ("verify by grep" over-
+  # claimed twice). This dedicated CI job makes the AC self-enforcing.
+  #
+  # Hard gate — no continue-on-error.
+  fire-and-forget-guard:
+    name: Fire-and-forget sink guard (FOLLOW-433)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run FF sink self-test (validates the gate itself)
+        run: bash scripts/check-fire-and-forget-sinks.sh --self-test
+
+      - name: Assert no unwrapped fire-and-forget sinks
+        run: bash scripts/check-fire-and-forget-sinks.sh
+
   # ── Cross-language event contract gate (FOLLOW-198 / FOLLOW-168) ───────────
   # Asserts that the TypeScript DescriptionRequestedEventSchema required-field set
   # and the Python consumer's REQUIRED_FIELDS both match the single source of truth:

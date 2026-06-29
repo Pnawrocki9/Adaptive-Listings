@@ -64,7 +64,9 @@ describe('publishAbAssignmentEvent — FOLLOW-426 fail loud on Redpanda HTTP rej
 
     // Must not throw — fire-and-forget guarantee preserved (synchronous return)
     expect(() => {
-      publishAbAssignmentEvent(VALID_ARGS);
+      // void: publishAbAssignmentEvent now returns Promise<void> (FOLLOW-431); the
+      // fire-and-forget guarantee is unchanged — it never throws synchronously.
+      void publishAbAssignmentEvent(VALID_ARGS);
     }).not.toThrow();
 
     // Allow the fire-and-forget .then() microtask chain to settle
@@ -89,7 +91,9 @@ describe('publishAbAssignmentEvent — FOLLOW-426 fail loud on Redpanda HTTP rej
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(networkErr));
 
     expect(() => {
-      publishAbAssignmentEvent(VALID_ARGS);
+      // void: publishAbAssignmentEvent now returns Promise<void> (FOLLOW-431); the
+      // fire-and-forget guarantee is unchanged — it never throws synchronously.
+      void publishAbAssignmentEvent(VALID_ARGS);
     }).not.toThrow();
 
     await new Promise((r) => setTimeout(r, 10));
@@ -109,7 +113,7 @@ describe('publishAbAssignmentEvent — FOLLOW-426 fail loud on Redpanda HTTP rej
   it('FOLLOW-426 (c): successful HTTP 200 → captureException NOT called, caller unaffected', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
 
-    publishAbAssignmentEvent(VALID_ARGS);
+    void publishAbAssignmentEvent(VALID_ARGS);
     await new Promise((r) => setTimeout(r, 10));
 
     expect(captureException).not.toHaveBeenCalled();
@@ -120,7 +124,7 @@ describe('publishAbAssignmentEvent — FOLLOW-426 fail loud on Redpanda HTTP rej
     const mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
 
-    publishAbAssignmentEvent(VALID_ARGS);
+    void publishAbAssignmentEvent(VALID_ARGS);
     await new Promise((r) => setTimeout(r, 10));
 
     expect(mockFetch).not.toHaveBeenCalled();

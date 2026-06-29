@@ -1754,4 +1754,40 @@ so Sentry should hold the exact error).
 
 **Blocking:** Does NOT block the agent pipeline or ESC-032. Analytics-only data loss; fix promptly.
 
-**Resolution:** (empty)
+**ROOT CAUSE — diagnosed 2026-06-29 (NOT a regression; pre-existing latent bug):**
+
+The fire-and-forget ClickHouse write in `logDecisionAsync`
+(`apps/control-plane/src/app/api/adapt/route.ts:512`) issues `fetch(...)` but is **never awaited and
+never wrapped in `waitUntil()`/`after()`** (documented as "Fire-and-forget — never awaited, never
+blocks the response", route.ts:458). On Vercel, once the handler does
+`return NextResponse.json(...)`, the function instance is suspended; an in-flight un-awaited `fetch`
+is not guaranteed to complete — so the INSERT is silently dropped on cold/isolated requests.
+
+**Empirical proof:** a burst of 8 rapid GET `/api/adapt` requests (2026-06-29) all returned HTTP 200
+but only **1 of 8 rows landed** in `adaptation_decisions`. Isolated requests (21:55, 22:16) landed
+0; FOLLOW-422's two requests at 13:01 were 8s apart and landed 2/2 (warm instance). Identical
+credentials every call ⇒ not auth/grant — the variance is instance-lifecycle timing. The "regression
+/ deploy window" framing in the title is therefore WRONG: the write was never reliable; FOLLOW-422
+caught lucky warm-instance flushes.
+
+**Compounding finding:** because the instance can freeze before the `.then`/`.catch` runs, the
+**fail-loud Sentry capture itself (FOLLOW-425/426/427/428) is also unreliable** without `waitUntil`
+— which is why Sentry may show no `insert_rejected` event for the dropped writes. The write family
+and the fail-loud family share the same gap.
+
+**Scope:** the same un-awaited pattern (no `waitUntil`/`after`) applies to the whole family:
+`logDecisionAsync`, `logLlmCallAsync` (`lib/llm-gateway.ts`), `writeDsrAuditLog`
+(`api/dsr/_clickhouse.ts`), `publishAbAssignmentEvent` (`lib/ab-events.ts`),
+`publishDescriptionRequested` (`api/adapt/description/route.ts`).
+`grep -rn "waitUntil|after" apps/control-plane/src` → zero hits.
+
+**FIX (recommended):** wrap each fire-and-forget sink in Next.js 15 `after()`
+(`import { after } from 'next/server'`) — or `waitUntil` from `@vercel/functions` — so the async
+write (and its fail-loud `.then`/`.catch` → Sentry) completes after the response is sent, before
+suspension. `after()` needs no new dependency. Owner: backend-engineer; add tests asserting each
+sink promise is registered via `after()`. This also makes FOLLOW-425/426/427/428's fail-loud
+observability actually effective.
+
+**Resolution:** Root cause identified — missing `waitUntil`/`after` on fire-and-forget sinks (proof:
+1/8 burst writes landed). Fix pending: backend-engineer to wrap the sink family in `after()`.
+Title's "regression" framing superseded by this diagnosis.

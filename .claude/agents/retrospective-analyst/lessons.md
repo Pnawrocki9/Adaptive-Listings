@@ -1994,3 +1994,31 @@
   3rd consecutive lateral residual in the same family, the highest-value output is hardening the
   _verification_, not just filing the next two stubs. Filed the stubs (FOLLOW-429/430) AND
   strengthened the rule — but the rule strengthening is the load-bearing half.
+
+---
+
+## 2026-06-29 · RETRO-138 (FOLLOW-431 / PR #379 — ESC-033, Vercel after() fire-and-forget flush)
+
+- **A finding I almost missed and why:** I nearly accepted the PR's AC-1 ("no remaining un-awaited
+  bare fetch sink in apps/control-plane/src") at face value because the PR was a tightly-scoped P1
+  hotfix with green prod verification. A step-8 multi-axis grep (`void <sink>` / `void (async`) on
+  the SAME app surfaced ≥5 OTHER request-path fire-and-forget sinks (seed-listing-embeddings,
+  tenant-schema redisSet, two description-cache sinks, checkPilotFrozenAsync) with the identical
+  drop hazard — none wrapped. Lesson: when a fix's AC contains an absolute ("no remaining X"),
+  re-run the AC's own grep myself; a scoped hotfix almost always closes only the named instances.
+- **An axis/chain I had to trace twice:** the FLUSH vs OBSERVABILITY axes of the fire-and-forget
+  family. RETRO-135/137 declared the `.then(res.ok)→Sentry` fail-loud captures "real end-to-end
+  closure" — but those captures are THEMSELVES post-response fire-and-forget and were being dropped
+  on suspend. So the prior closures were code-correct but flush-incomplete; #379 is the missing hop.
+  I had to re-trace to confirm this is a _completion_, not a _contradiction_ (RETRO-135/137 simply
+  never analyzed the flush axis — ESC-033 was a later field escalation). The "gap" here moved
+  UPSTREAM (the delivery mechanism of an already-correct producer), the inverse of the usual
+  one-hop-downstream shape.
+- **A meta-pattern in how gaps recur across agents:** "fire-and-forget after the response" is a
+  runtime-specific contract (Vercel after() / CF-Worker waitUntil / browser sendBeacon), and every
+  agent treats it as a portable idiom. The SAME family now spans observability (K.2 amendment) AND
+  flush (this) AND durability (RETRO-137 no-retry) — three orthogonal preconditions on one idiom,
+  each discovered in a separate retro. The flush axis is the precondition that makes the other two
+  moot if absent. I held the flush pattern at count-1 (first retro sighting) per anti-inflation, but
+  pre-registered the likely count-2 (FOLLOW-429 decision-api waitUntil gap) so the K.2 registry gets
+  the flush requirement on the next sighting rather than a fresh rule letter.

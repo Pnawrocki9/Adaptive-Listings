@@ -1,7 +1,7 @@
 # PM Orchestrator — Session Status
 
-**Date:** 2026-06-29 **Session:** FOLLOW-433 promoted and delegated (backend-engineer). 1/3 in
-flight.
+**Date:** 2026-06-29 **Session:** FOLLOW-433 DONE (PR #383 merged, RETRO-140 written). FOLLOW-434
+promoted and delegated (backend-engineer). 1/3 in flight.
 
 ---
 
@@ -19,21 +19,28 @@ by FOLLOW-431 + prod verification).
 
 ## IN_PROGRESS tickets (1/3 max)
 
-- FOLLOW-433 (backend-engineer): Finish control-plane ff sweep (3 sinks) + CI grep-guard. Branch:
-  backend-engineer/FOLLOW-433-ff-sink-sweep-ci-guard. Started: 2026-06-29. CI counter: 0/5. Fix
-  iterations: 0/3.
+- FOLLOW-434 (backend-engineer): Bound seedListingEmbeddingsForActivation after() budget + offload
+  overflow to Modal/queue + fix stale JSDoc. Branch:
+  backend-engineer/FOLLOW-434-seed-budget-cap-modal-queue. Started: 2026-06-29. CI counter: 0/5.
+  Fix iterations: 0/3.
 
 ---
 
 ## CI check counter (current session)
 
-FOLLOW-432: DONE — CI verified green; baseline non-blocking only (Rule I ×2 + Archetype embeddings
-×2). Counter closed at 0/5 CI checks, 0/3 fix iterations.
+FOLLOW-433 (PR #383): DONE — CI verified green; baseline non-blocking only (Rule I ×2 + Archetype
+embeddings ×2). Counter closed at 1/5 CI checks (gh pr view 383 run), 0/3 fix iterations.
+
+FOLLOW-434: PENDING — counter starts at 0/5 / 0/3 when worker opens PR.
 
 ---
 
 ## Recent merges (most recent first)
 
+- PR #383 (FOLLOW-433, backend-engineer): Wrapped 3 surviving ff sinks in afterResponse()
+  (updateArmAsync + upsertConversionLabelAsync in feedback/route.ts, deleteSessionFromRedis in
+  dsr/erase/route.ts). Added scripts/check-fire-and-forget-sinks.sh + CI hard-gate job. 62/62 tests
+  passing. Merged 2026-06-29T17:35:35Z (squash). RETRO-140 written.
 - PR #381 (FOLLOW-432, backend-engineer): Swept 6 control-plane fire-and-forget sinks into
   afterResponse(), added after-response.ts unit test, corrected FOLLOW-431 AC-1. Merged 2026-06-29.
   RETRO-139 written (spawned FOLLOW-433 + FOLLOW-434).
@@ -42,26 +49,19 @@ FOLLOW-432: DONE — CI verified green; baseline non-blocking only (Rule I ×2 +
   Merged 2026-06-29. RETRO-138 written (spawned FOLLOW-432).
 - PR #378 (FOLLOW-424 Phase 2 closure, data-engineer): gitleaks allowlist + ESC-032 attestation.
   Merged 2026-06-29.
-- PR #375 (FOLLOW-422, data-engineer): Live write attestation for adaptation_decisions. Merged
-  2026-06-28.
 
 ## Queue state
 
-- FOLLOW-432: DONE (PR #381, merge commit 3cb5c28, ticket commit 8f94225, merged 2026-06-29, CI
-  green). Retrospective RETRO-139 spawned.
+- FOLLOW-433: DONE (PR #383, merged 2026-06-29T17:35:35Z). RETRO-140 written.
+- FOLLOW-432: DONE (PR #381, merge commit 3cb5c28, merged 2026-06-29). RETRO-139 written.
 - Next free FOLLOW stub number: 435.
-- FOLLOW-431: DONE (PR #379, commit 3a0f802, merged 2026-06-29, prod-verified 10/10 burst writes).
-- FOLLOW-433: READY in FOLLOW_UPS.md (not yet promoted to QUEUE; P2, backend-engineer, ~2.5h — sweep
-  3 surviving request-path ff sinks [updateArmAsync + upsertConversionLabelAsync in
-  adapt/feedback/route.ts, deleteSessionFromRedis in dsr/erase/route.ts] + add CI grep-guard to
-  prevent over-claim recurrence).
-- FOLLOW-434: READY in FOLLOW_UPS.md (not yet promoted to QUEUE; P2, backend-engineer, ~4h — bound
-  seedListingEmbeddingsForActivation after() budget for large catalogs + offload overflow to
-  Modal/queue + fix stale JSDoc).
-- FOLLOW-429: READY (not yet promoted to QUEUE; scope widened to include ctx.waitUntil — P2
-  backend-engineer, CF-Worker flush-axis analogue for decision-api reorder.ts:204).
-- FOLLOW-430: READY in FOLLOW_UPS.md (not promoted yet; P3 sdk-engineer, 2h).
+- FOLLOW-431: DONE (PR #379, merged 2026-06-29, prod-verified 10/10 burst writes).
+- FOLLOW-434: IN_PROGRESS (backend-engineer, branch backend-engineer/FOLLOW-434-seed-budget-cap-modal-queue).
+- FOLLOW-429: READY in FOLLOW_UPS.md (not yet promoted; scope widened to include ctx.waitUntil —
+  P2 backend-engineer, CF-Worker flush-axis analogue for decision-api reorder.ts:204). Next after
+  FOLLOW-434.
+- FOLLOW-430: READY in FOLLOW_UPS.md (not yet promoted; P3 sdk-engineer, 2h).
 - P2 tickets READY (not yet promoted to QUEUE): FOLLOW-417, FOLLOW-418, FOLLOW-420, FOLLOW-421,
-  FOLLOW-429, FOLLOW-433, FOLLOW-434.
+  FOLLOW-429.
 - P3 tickets READY: FOLLOW-355, FOLLOW-399, FOLLOW-401, FOLLOW-408, FOLLOW-412, FOLLOW-413,
   FOLLOW-416, FOLLOW-430.

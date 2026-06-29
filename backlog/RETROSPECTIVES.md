@@ -22564,3 +22564,98 @@ Traced END-TO-END (charter → script behavior → the input it reads → the gu
 - **Related to FOLLOW-429/430:** FLUSH-axis future work — §5b reiterates the FOLLOW-429 `ctx.waitUntil` widen (the designated cross-runtime count-2) without re-filing.
 
 <!-- next free FOLLOW number: 435 (434 = RETRO-139 §4a LG-2 + §4d DG-1 — bound seedListingEmbeddingsForActivation after() budget for large real-tenant catalogs [schema.listing_ids is discovery source #1, JSDoc anticipates 100+ listings, 100×~200ms≈20s > 15s Hobby after() budget → mid-loop kill → ungrounded tail]; cap inline loop + offload overflow to Modal/queue; fix stale :10 JSDoc still saying `void seedListingEmbeddingsForActivation()`; P2 backend-engineer ~4h. 433 = RETRO-139 §4a LG-1 / §4c TG-1 — sweep the 3 remaining control-plane request-path fire-and-forget sinks [feedback/route.ts:368 void updateArmAsync bandit-REWARD write P2 driver, feedback/route.ts:380 void upsertConversionLabelAsync durable conversion-label P2, dsr/erase/route.ts:540 void deleteSessionFromRedis Art.17 Redis erasure P2] into afterResponse() + add a committed CI grep-guard so the "verify by grep" AC can't silently over-claim a 3rd time; P2 backend-engineer ~2.5h. NOTE for PM: still WIDEN existing FOLLOW-429 to add ctx.waitUntil [decision-api CF-Worker flush analogue, reorder.ts:204] — NOT re-filed, extend its AC.) RETRO-139 = retro for PR #381 (FOLLOW-432, MERGED 2026-06-29 13:22Z, mergeCommit 3cb5c28, ticket commit 8f94225; 8 files +149/-46; NO contract change — only wraps 6 existing sinks in afterResponse [seedListingEmbeddingsForActivation activate:211/238, redisSet tenant-schema:234, setCachedDescription+insertPgCachedDescription description/route, checkPilotFrozenAsync route.ts, auditCorpusExport admin/labels/export — the 6th found by FOLLOW-432's own AC grep]; NEW after-response.test.ts +70 [2 direct cases, closes RETRO-138 §4c TG-1]; route.clickhouse.test.ts after()-count 2→3). Wiring Audit CLEAN both checks (only new file is __tests__ → suppressed; no new export/event/env-var/column/topic/signal). CLOSURE (step 7): RETRO-138 §4c TG-1 GENUINELY CLOSED; RETRO-138 §4a LG-1 sweep PARTIALLY closed — GAP MOVED ONE HOP: 3 request-path sinks STILL bare (feedback updateArmAsync+upsertConversionLabelAsync, dsr/erase deleteSessionFromRedis), none in RETRO-138's enumeration → true count was ≥8 not ≥5; FOLLOW-432's "no remaining sink, verify by grep" AC is FALSE just like FOLLOW-431 AC-1. KEY INSIGHT: the bandit learning loop is HALF-flush-exposed — RETRO-133/138 secured the PREDICTION write (adaptation_decisions 10/10) but the REWARD write (updateArmAsync) is still bare void → conversions silently droppable on suspend. GAPS: LG-1 P2 3 unwrapped sinks (FOLLOW-433 + CI grep-guard); LG-2 P2 seed-leg after() budget optimistic for 100+ listing real tenants — RETRO-138 §4a #2 Modal/queue caveat NOT discharged (FOLLOW-434); TG-1 P2 no completeness guard (folded 433); TG-2 P3 brittle hard-coded after()-count assertion (note); DG-1 P3 stale seed JSDoc (folded 434). RULES: NO promotion. FLUSH-axis HELD at count 1 — the 3 new sinks are the SAME Vercel runtime/SAME control-plane sweep WITHIN FOLLOW-432's chartered scope = same instance incompletely executed, NOT independent; RETRO-138 pre-designated the independent count-2 as the cross-runtime decision-api ctx.waitUntil gap (FOLLOW-429, not yet shipped) — promote K.2 flush amendment when 429 ships or a 3rd incomplete sweep appears. COMPLETENESS-OVER-CLAIM sub-pattern is count-2 in occurrences (FOLLOW-431+432) but same remediation saga → treated as the FLUSH enforcement corollary, HELD; durable fix driven via FOLLOW-433 CI-grep-guard AC (a guard that executes > a rule that asks a human to grep, which failed twice). VERIFICATION-PROCESS pattern NOT re-sighted (432 ran next build/next lint, CI green) — stays count 1. Anti-count-inflation (RETRO-122/125/126/128/129/131/132/133/135/137/138) honored. PM ACTION: (1) FOLLOW-433 P2 — finish the sweep + add the CI guard; the updateArmAsync bandit-REWARD leg is the priority (learning-loop reward loss, complements the ESC-031/133 prediction-write concern); (2) FOLLOW-434 P2 — the seed-leg can exceed after() budget for real large catalogs, needs Modal/queue not just afterResponse; (3) WIDEN FOLLOW-429 (ctx.waitUntil, decision-api) — still open, the designated cross-runtime count-2; (4) do NOT mark RETRO-138 §4a LG-1 closed — gap moved one hop. -->
+
+## RETRO-140 — FOLLOW-433 (finish the control-plane fire-and-forget sweep — wrap the 3 surviving request-path sinks + add the CI grep-guard so the completeness AC is mechanically enforced) — 2026-06-29
+
+### 1. Summary of change
+
+- **PR:** #383 (merged 2026-06-29T17:35:35Z, squash merge).
+- **Files changed:** 11 (+432 / -108). Prod code: `app/api/adapt/feedback/route.ts` (+28/-13), `app/api/dsr/erase/route.ts` (+9/-4), `scripts/check-fire-and-forget-sinks.sh` (NEW, +144), `.github/workflows/ci.yml` (+22). Tests: `app/api/adapt/feedback/route.test.ts` (+67/-1), `app/api/dsr/dsr-routes.test.ts` (+44). Ledger: `backlog/QUEUE.md` (+26), `backlog/FOLLOW_UPS.md` (+16/-10), `STATUS.md` (+58/-76), `.claude/agents/pm-orchestrator/*` (+18/-4).
+- **Modules touched:** control-plane (api/adapt/feedback, api/dsr/erase, tests), CI infrastructure, backlog docs.
+- **Key contracts changed:** **N/A — no signature/type/event/schema/env-var/column change.** This PR only wraps three bare `void` call sites in `afterResponse()` and adds a CI grep-guard shell script. No API surface changed.
+
+### 2. Verification done in PR
+
+- Test files changed: 2. `feedback/route.test.ts`: new `vi.mock('next/server')` with `after` spy + `FOLLOW-433` describe block (2 tests: `updateArmAsync` registered via `after()`, `upsertConversionLabelAsync` registered via `after()` when `prediction_id` present). `dsr-routes.test.ts`: new `FOLLOW-433` describe block (1 test: `deleteSessionFromRedis` registered via `after()`). CI: all real gates green; baseline non-blocking only (Rule I ×2 + Archetype embeddings ×2). New `fire-and-forget-guard` CI job PASS (5s, hard gate, no `continue-on-error`). Self-test mode PASS (synthetic `void someAsyncSink(` correctly detected; allowlisted variant correctly ignored).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** New `scripts/check-fire-and-forget-sinks.sh` is a shell script; its non-test consumer is the new `fire-and-forget-guard` CI job in `.github/workflows/ci.yml` (lines 491-501). Wired — not dead. Test files are `__tests__` suppressed. No new TS exports.
+- **CHECK B (half-wire):** No new event / env-var / column / topic / SDK-signal introduced. The `afterResponse()` helper and `after()` from `next/server` are pre-existing. Not a half-wire.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (note — pre-existing, not introduced) — `updateArmAsync` and `upsertConversionLabelAsync` lack explicit Sentry capture on DB error.** These two functions are Drizzle/Postgres DB writes (not HTTP fetch calls, so the Rule K.2 `res.ok`-blind pattern does not apply). If either throws, the error propagates to `after()`'s internal rejection handler (Next.js logs unhandled rejections from `after()` tasks but does not automatically send them to Sentry). This is a pre-existing posture — FOLLOW-431/432/433 never added Sentry capture to DB write helpers, only to HTTP-fetch sinks. The Rule K.2 amendment explicitly targets HTTP fire-and-forget (`fetch` resolves on 4xx/5xx); DB exceptions throw correctly and are handled by Next.js's built-in rejection logging. Minor concern — not a new gap introduced by this PR. **Note only — no stub (pre-existing).**
+- **LG-2 (note) — guard scope is intentionally control-plane-only; CF-Worker flush axis unaffected.** `check-fire-and-forget-sinks.sh` scans `apps/control-plane/src` only. CF-Worker apps (`decision-api` `ctx.waitUntil`, `ingest`) use a different flush mechanism and are out of scope for this guard. FOLLOW-429 (`decision-api` `reorder.ts:204` `redisSet` `ctx.waitUntil`) remains the designated cross-runtime count-2. Scope is correct — not a gap.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — the three wraps are mechanical and correct. The `afterResponse()` calls are placed correctly in each handler's conditional path (the `upsertConversionLabelAsync` call remains conditional on `prediction_id` presence, preserving original logic). Each wrapped function retains its own internal error handling. The guard script's regex, allowlist, self-test, and exit codes are all correct.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, note — carries forward from RETRO-139 §4c TG-2) — `route.clickhouse.test.ts`'s `toHaveBeenCalledTimes(3)` hard-count assertion is unchanged and remains brittle.** Any future `afterResponse` call added/removed from the POST adapt path silently breaks or must be hand-bumped. This PR did not touch `route.clickhouse.test.ts` — not introduced here, carried forward. Note only.
+- **TG-2 (P3, note) — the `FOLLOW-433` `dsr-routes.test.ts` test asserts `after()` was called "at least once" (comment says "both the Redis DEL and the audit log are registered via afterResponse()").** This is loose — it doesn't independently assert the Redis DEL and audit log are separate `after()` registrations. Acceptable for the current scope (2 calls → `≥1` is conservative-correct); worth tightening if the DSR erase handler grows more `afterResponse()` calls. Note only — no stub.
+
+#### 4d. Documentation gaps
+
+- N/A — the guard script header is accurate and comprehensive (explains WHY, WHAT IS DETECTED, ALLOWLIST, SELF-TEST, EXIT CODES).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **RETRO-138 §4a LG-1 (the full control-plane request-path fire-and-forget sweep) is NOW GENUINELY CLOSED end-to-end.** FOLLOW-431 (5 sinks) + FOLLOW-432 (6 sinks) + FOLLOW-433 (3 sinks) = 14 total request-path sinks wrapped across 7 route/handler files. The CI guard ensures no new bare `void` sink can be silently introduced. The "≥8 true count" correction from RETRO-139 is now fully accounted for.
+- **The bandit learning loop is NOW fully flush-safe on the control-plane.** RETRO-133/ESC-033/FOLLOW-431 secured the PREDICTION write (`logDecisionAsync` → `adaptation_decisions`). FOLLOW-433 secures the REWARD write (`updateArmAsync` → `ab_bandit_weights`). Both halves of the bandit loop will now execute post-response regardless of Vercel instance suspension. NOTE: whether `adaptation_decisions` is actually receiving rows in prod remains open (FOLLOW-422, P1, zero-row concern) — the flush fix is a precondition, not a substitute for that verification.
+- **RODO Art. 17 Redis active erasure is now flush-safe.** `deleteSessionFromRedis` executing via `afterResponse()` means the Redis DEL is guaranteed to run post-response even if the Vercel instance suspends between response send and execution. The earlier `TTL-eventually-expires-it` softening of the active-erasure obligation is now closed at the request-path flush level.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-434 (backend-engineer, P2) — still OPEN.** The seed-leg `after()` budget concern for large real-tenant catalogs (`seedListingEmbeddingsForActivation` ≥100 listings → ~20s > 15s Hobby budget → mid-loop kill) is NOT addressed by this PR. No change to that file. Remains the next P2 backend-engineer ticket after this one.
+- **FOLLOW-429 (backend-engineer, P2) — still OPEN.** `decision-api` `reorder.ts:204` `redisSet` `ctx.waitUntil` is the designated cross-runtime count-2 for the FLUSH-axis rule. Not affected by this PR. Reiterated, not re-filed.
+
+#### 5c. Contracts changed others rely on
+
+- N/A — no contract changed (§1). `POST /api/adapt/feedback` and `POST /api/dsr/erase` return identical response shapes and status codes; only the timing of post-response work changed.
+
+#### 5d. Architectural assumptions affected
+
+- **The `afterResponse()` abstraction + `check-fire-and-forget-sinks.sh` guard is now the complete solution for the Vercel instance-suspension flush hazard in `apps/control-plane/src`.** A correct primitive (`afterResponse`) + a mechanical completeness guard (CI grep) closes the three-PR saga (431 → 432 → 433) end-to-end. The architectural lesson: a runtime-specific contract (Vercel `after()`) needs both a helper abstraction AND an enforcement gate in CI — neither alone is sufficient (as the two false "verify by grep" ACs demonstrated).
+
+### 6. New lesson candidates
+
+- **Pattern (FLUSH axis): "un-awaited post-response async sink silently dropped on Vercel instance suspension."** — RETRO-138 count 1 (FOLLOW-431, ESC-033); FOLLOW-433's 3 sinks are the SAME Vercel runtime, SAME control-plane sweep, WITHIN the saga chartered by RETRO-138 → SAME INSTANCE, NOT independent count-2. **HELD at count 1.** FOLLOW-429 (`ctx.waitUntil`, cross-runtime decision-api CF-Worker) is the designated independent count-2. Promote K.2 flush amendment when FOLLOW-429 ships.
+- **Pattern (CI-GUARD-BEATS-GREP): "a 'verify by grep' completeness AC for a sweep ticket ships FALSE when the grep is manual; the only durable solution is a committed CI gate that fails the build on regression."** — RETRO-138 §6 (FOLLOW-431, count 1); RETRO-139 §6 (FOLLOW-432, count 2); FOLLOW-433 dissolves the pattern by shipping the CI guard. Pattern is now mechanically prevented in `apps/control-plane/src`. **NOT promoted as a CONVENTIONS_PATCH rule** — the guard itself is the enforcement (prose rule adds no marginal value when the gate already exists); anti-inflation discipline honored. The lesson is captured in the guard script header and the `fire-and-forget-guard` CI job name.
+- Anti-count-inflation (RETRO-122/125/126/128/129/131/132/133/135/137/138/139) honored. No rule promotion this retro.
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **RETRO-139 §4a LG-1 (3 unwrapped request-path sinks): GENUINELY CLOSED ✅.** `updateArmAsync` and `upsertConversionLabelAsync` wrapped in `feedback/route.ts`; `deleteSessionFromRedis` wrapped in `dsr/erase/route.ts`. `check-fire-and-forget-sinks.sh` PASS confirms zero remaining bare `void` sinks in `apps/control-plane/src` (excluding test files). Chain is NOT one hop — the CI guard runs on every PR, so recurrence is prevented.
+- **RETRO-139 §4c TG-1 (no committed CI completeness guard): GENUINELY CLOSED ✅.** `scripts/check-fire-and-forget-sinks.sh` committed, wired as hard-gate `fire-and-forget-guard` job in `ci.yml`, self-test mode proven in the same CI run. A guard that executes beats a human grep that failed twice (RETRO-139 §6 lesson).
+- **RETRO-138 §4a LG-1 (≥5 remaining sinks, the sweep): NOW FULLY CLOSED ✅.** The corrected count (≥8 → now 14 total wrapped, zero remaining per CI guard) is accounted for end-to-end. RETRO-139 §7 marked this "PARTIALLY closed — gap moved one hop" (3 sinks survived); those 3 are now wrapped. Not one-hop anymore.
+- **RETRO-138 §4a LG-2 (seed-leg after() budget) / RETRO-139 §4a LG-2: NOT closed.** FOLLOW-434 remains open. Reiterated.
+- **ESC-033:** remains genuinely closed (prod 10/10 verified in RETRO-138 §7). This retro does not disturb that.
+
+### 8. Multi-axis / contradiction reconciliation (step 8)
+
+- **No contract changed** (§1), so no producer/consumer, variant/holdout, or locale axes to split here.
+- **Bandit loop axis (PREDICTION vs REWARD):** RETRO-133/138/139 focused on the prediction side (`logDecisionAsync` → `adaptation_decisions`). FOLLOW-433 closes the reward side (`updateArmAsync` → `ab_bandit_weights`). Both axes are now flush-safe. Does this contradict any prior retro? No — RETRO-139 §5a explicitly flagged the reward-write as still flush-exposed post-#381; FOLLOW-433 is the named fix. Consistent.
+- **Compliance axis (Art. 17 Redis erasure):** `deleteSessionFromRedis` was pre-existing in `dsr/erase/route.ts`. FOLLOW-433 ensures it executes post-response regardless of suspension. No contradiction with any prior retro on DSR erasure correctness.
+
+### 9. Follow-ups
+
+- No new stubs generated — all residual gaps are covered by pre-existing open tickets (FOLLOW-434 for seed budget, FOLLOW-429 for decision-api ctx.waitUntil). Pre-existing notes (TG-1 brittle count, LG-1 DB Sentry) do not warrant new stubs (note-level concerns, not regression risks).
+
+### 10. Cross-references
+
+- **Related to RETRO-139 (FOLLOW-432):** direct parent — this retro's §4a LG-1 + §4c TG-1 are the chartered gaps. Both GENUINELY CLOSED here (§7 above).
+- **Related to RETRO-138 (FOLLOW-431):** the full control-plane request-path sweep is now complete (§5a). RETRO-138 §4a LG-1 is FULLY CLOSED by FOLLOW-431 + FOLLOW-432 + FOLLOW-433 together.
+- **Related to RETRO-133/135/137 (ESC-031 chain):** the bandit loop is now fully flush-safe on the control-plane — both the PREDICTION write and the REWARD write are wrapped. The PREDICTION write prod-verification concern (FOLLOW-422, zero-row) is independent and still open.
+- **Related to FOLLOW-429/434:** remaining FLUSH-axis work — cross-runtime (decision-api) and seed-budget; both reiterated, not re-filed.
+
+<!-- next free FOLLOW number: 435 (no new stubs from RETRO-140; 434 = RETRO-139 §4a LG-2 + §4d DG-1 still open, see its stub in FOLLOW_UPS.md). RETRO-140 = retro for PR #383 (FOLLOW-433, MERGED 2026-06-29T17:35:35Z, squash; 11 files +432/-108; NO contract change — wraps 3 request-path sinks in afterResponse [updateArmAsync + upsertConversionLabelAsync in feedback/route.ts, deleteSessionFromRedis in dsr/erase/route.ts] + adds scripts/check-fire-and-forget-sinks.sh + hard-gate fire-and-forget-guard CI job). Wiring Audit CLEAN both checks (new shell script wired into CI job → not dead; no new TS export/event/env-var/column/topic/signal). CLOSURE (step 7): RETRO-139 §4a LG-1 GENUINELY CLOSED (3 sinks wrapped + CI guard passes → zero remaining); RETRO-139 §4c TG-1 GENUINELY CLOSED (guard committed, self-test proven, hard gate); RETRO-138 §4a LG-1 sweep FULLY CLOSED end-to-end (FOLLOW-431[5] + FOLLOW-432[6] + FOLLOW-433[3] = 14 total wrapped, CI guard prevents regression). KEY CLOSURES: bandit REWARD write now flush-safe (completes RETRO-133/ESC-031 bandit loop); RODO Art.17 Redis erasure now flush-safe. GAPS: LG-1 note (DB sinks lack Sentry — pre-existing, not introduced, no stub); LG-2 note (guard scope = control-plane only, FOLLOW-429 tracks decision-api — correct, not a gap); TG-1 note (brittle toHaveBeenCalledTimes count in route.clickhouse.test.ts — carries forward from RETRO-139 §4c TG-2); NO new stubs. RULES: NO promotion. FLUSH-axis HELD at count 1 (FOLLOW-429 is designated cross-runtime count-2, not shipped). CI-GUARD-BEATS-GREP pattern DISSOLVED by the guard itself (mechanical enforcement > prose rule — anti-inflation honored). PM ACTION: (1) FOLLOW-434 P2 — bound seedListingEmbeddingsForActivation after() budget + Modal/queue overflow; (2) FOLLOW-429 P2 — widen ctx.waitUntil to decision-api reorder.ts:204 (the cross-runtime count-2 for the K.2 flush amendment). -->
+

@@ -282,7 +282,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       demoActive && demoOverrideModel
         ? `${baseCacheKeyForWarm}:demo:${demoOverrideModel}`
         : `${baseCacheKeyForWarm}:${globalModel}`;
-    void (async () => {
+    // FOLLOW-432 / Rule K.2: wrapped in afterResponse() so the Redis warm write
+    // completes after the response is sent rather than being dropped on Vercel suspension.
+    afterResponse(async () => {
       try {
         const { setCachedDescription } = await import('@/lib/description-cache');
         await setCachedDescription(warmKey, {
@@ -296,7 +298,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           err instanceof Error ? err.message : err,
         );
       }
-    })();
+    });
 
     const response: DescriptionResponse = {
       description: pgHit.description,
@@ -328,20 +330,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (cached !== null) {
     // Redis HIT — return AI-generated description (and headline when present).
     // Async backfill to Postgres so the durable cache is populated (FOLLOW-204 §E.7.2 step 2).
-    void insertPgCachedDescription(
-      tenantId,
-      listing_id,
-      archetypeId,
-      localeCode,
-      cached.text,
-      cached.headline ?? null,
-      effectiveModel,
-    ).catch((err: unknown) => {
-      console.error(
-        '[description] Postgres backfill from Redis hit failed (non-fatal):',
-        err instanceof Error ? err.message : err,
-      );
-    });
+    // FOLLOW-432 / Rule K.2: wrapped in afterResponse() so the Postgres write completes
+    // after the response is sent rather than being dropped on Vercel suspension.
+    afterResponse(() =>
+      insertPgCachedDescription(
+        tenantId,
+        listing_id,
+        archetypeId,
+        localeCode,
+        cached.text,
+        cached.headline ?? null,
+        effectiveModel,
+      ).catch((err: unknown) => {
+        console.error(
+          '[description] Postgres backfill from Redis hit failed (non-fatal):',
+          err instanceof Error ? err.message : err,
+        );
+      }),
+    );
 
     // headline is optional in DescriptionCacheValue (pre-ADR-0009 entries lack it).
     // Normalise absent/undefined to null so the SDK always sees a consistent field.

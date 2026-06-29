@@ -12301,7 +12301,8 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ## FOLLOW-432 — Sweep the remaining un-wrapped control-plane request-path fire-and-forget sinks into `afterResponse()` (FOLLOW-431/ESC-033 AC-1 was over-claimed) + add a direct `after-response.ts` unit test
 
-- **status:** OPEN
+- **status:** DONE (PR #381 merged; AC-1 "no remaining sinks" was over-claimed — 3 sinks survived,
+  addressed by FOLLOW-433)
 - **source_retro:** RETRO-138 (§4a LG-1, §4c TG-1)
 - **source_ticket:** FOLLOW-431 / ESC-033
 - **recommended_agent:** backend-engineer
@@ -12335,14 +12336,18 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
     via the fire-and-forget fallback; case 2 — mock `after` to succeed → assert the task is passed
     to `after` (and not double-run).
 - **ac:**
-  - [ ] Each of the 5 sinks above is wrapped in `afterResponse()` OR (seed leg) routed to a
-        Modal/queue job; no remaining un-awaited bare `fetch`/`void (async …)` sink in a
-        control-plane request path (verify by grep + a CI guard if cheap).
-  - [ ] `after-response.ts` has a direct 2-case unit test (fallback-on-throw + after-on-success).
-  - [ ] Correct AC-1's wording in the FOLLOW-431 record (was over-claimed).
-  - [ ] `next build` / `next lint` (not just standalone eslint) + affected vitest suites green.
-- **promoted_to_queue:** true (2026-06-29 → QUEUE.md, status READY; branch
-  backend-engineer/FOLLOW-432-sweep-remaining-ff-sinks)
+  - [x] Each of the 5 sinks above is wrapped in `afterResponse()` OR (seed leg) routed to a
+        Modal/queue job — **DONE (PR #381)**. However "no remaining un-awaited bare
+        `fetch`/`void (async …)` sink" was over-claimed: 3 further sinks in `feedback/route.ts` (×2)
+        and `dsr/erase/route.ts` (×1) survived and were detected by RETRO-139. These 3 are addressed
+        by FOLLOW-433 (PR pending).
+  - [x] `after-response.ts` has a direct 2-case unit test (fallback-on-throw + after-on-success) —
+        **DONE (PR #381)**.
+  - [x] Correct AC-1's wording in the FOLLOW-431 record (was over-claimed) — **DONE (PR #381)**.
+  - [x] `next build` / `next lint` (not just standalone eslint) + affected vitest suites green —
+        **DONE (PR #381)**.
+- **promoted_to_queue:** true (2026-06-29 → QUEUE.md, status DONE; branch
+  backend-engineer/FOLLOW-432-sweep-remaining-ff-sinks; PR #381 merged)
 
 ---
 
@@ -12383,7 +12388,8 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] Each newly-wrapped sink has a test asserting it registers via `after()` (synchronous
         pass-through `next/server` mock, per the existing convention).
   - [ ] `next build` / `next lint` (not just standalone eslint) + affected vitest suites green.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (2026-06-29 — IN_PROGRESS, backend-engineer, branch
+  backend-engineer/FOLLOW-433-ff-sink-sweep-ci-guard)
 
 ---
 

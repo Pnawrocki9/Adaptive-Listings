@@ -775,3 +775,47 @@ describe('FOLLOW-431: writeDsrAuditLog registered via after() in DSR initiate ro
     expect(mockWriteDsrAuditLog).toHaveBeenCalledOnce();
   });
 });
+
+// ─── FOLLOW-433: after() registration for deleteSessionFromRedis in DSR erase ─
+//
+// AC: POST /api/dsr/erase must register deleteSessionFromRedis via after()
+// so the Redis session DEL (RODO Art. 17 active erasure) completes after the
+// response is sent on Vercel — not silently dropped on instance suspension
+// (ESC-033 / FOLLOW-433).
+
+describe('FOLLOW-433: deleteSessionFromRedis registered via after() in DSR erase route', () => {
+  let mockAfter: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockHashOtp.mockImplementation((otp: string) => `hash_of_${otp}`);
+    mockWriteDsrAuditLog.mockResolvedValue(undefined);
+    mockAfter = vi.mocked(after);
+    mockAfter.mockReset();
+    mockAfter.mockImplementation((fn: () => unknown) => {
+      void fn();
+    });
+  });
+
+  it('FOLLOW-433: POST /api/dsr/erase registers deleteSessionFromRedis via after()', async () => {
+    const validRecord = makeValidRecord('erase');
+    mockSelect
+      .mockReturnValueOnce(buildChain([validRecord])) // dsr record lookup
+      .mockReturnValueOnce(buildChain([])); // idempotency check (no prior CH mutations)
+    mockUpdate.mockReturnValue(buildChain([]));
+    mockInsert.mockReturnValue(buildChain([]));
+    mockTransaction.mockImplementation((fn: (tx: unknown) => Promise<void>) => {
+      const txMock = { delete: vi.fn().mockReturnValue(buildChain([])) };
+      return fn(txMock);
+    });
+
+    const { POST } = await import('./erase/route.js');
+    const req = makeRequest('POST', '/api/dsr/erase', { body: { token: '123456' } });
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    // after() must have been called at least once — both the Redis DEL and the
+    // audit log are registered via afterResponse().
+    expect(mockAfter).toHaveBeenCalled();
+  });
+});

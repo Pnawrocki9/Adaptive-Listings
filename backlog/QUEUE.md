@@ -7128,6 +7128,32 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     FOLLOW-433 (those 3 + CI grep-guard, P2 backend-engineer ~2.5h) and FOLLOW-434 (bound
     seedListingEmbeddingsForActivation after() budget + fix stale JSDoc, P2 ~4h).
     FOLLOW-429 reiterated (not re-filed). Next free FOLLOW stub: 435.
+
+- id: FOLLOW-433
+  title: >-
+    Finish control-plane fire-and-forget sweep (3 surviving request-path sinks) + add CI grep-guard
+    so "verify by grep" AC cannot over-claim a third time (RETRO-139 §4a LG-1 / §4c TG-1)
+  agent: backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-06-29T00:00:00Z'
+  priority: P2
+  estimated_hours: 2.5
+  depends_on: [FOLLOW-432]
+  source: RETRO-139 (§4a LG-1, §4c TG-1) — source ticket FOLLOW-432 / PR #381
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-433 stub)
+  branch: backend-engineer/FOLLOW-433-ff-sink-sweep-ci-guard
+  notes: |
+    Promoted and delegated 2026-06-29 (table row: ingest worker, control-plane,
+    Postgres/auth → backend-engineer). Three surviving bare-void request-path sinks
+    confirmed at current HEAD:
+      - apps/control-plane/src/app/api/adapt/feedback/route.ts:368 void updateArmAsync
+      - apps/control-plane/src/app/api/adapt/feedback/route.ts:380 void upsertConversionLabelAsync
+      - apps/control-plane/src/app/api/dsr/erase/route.ts:540 void deleteSessionFromRedis
+    afterResponse already imported in dsr/erase/route.ts; needs adding to feedback/route.ts.
+    CI grep-guard: scripts/check-fire-and-forget-sinks.sh wired into ci.yml as a new
+    dedicated job (pattern matching existing rule-h / rule-j / privacy-notice-keys-sync jobs).
+    CI counter: 0/5. Fix iterations: 0/3.
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

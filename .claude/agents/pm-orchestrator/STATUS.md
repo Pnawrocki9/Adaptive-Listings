@@ -1,7 +1,7 @@
 # PM Orchestrator — Session Status
 
-**Date:** 2026-06-29 **Session:** FOLLOW-432 DONE (PR #381, merge commit 3cb5c28). RETRO-139
-written. 0/3 in flight.
+**Date:** 2026-06-29 **Session:** FOLLOW-433 promoted and delegated (backend-engineer). 1/3 in
+flight.
 
 ---
 
@@ -17,9 +17,11 @@ by FOLLOW-431 + prod verification).
 
 ---
 
-## IN_PROGRESS tickets (0/3 max)
+## IN_PROGRESS tickets (1/3 max)
 
-None. Pipeline clear.
+- FOLLOW-433 (backend-engineer): Finish control-plane ff sweep (3 sinks) + CI grep-guard. Branch:
+  backend-engineer/FOLLOW-433-ff-sink-sweep-ci-guard. Started: 2026-06-29. CI counter: 0/5. Fix
+  iterations: 0/3.
 
 ---
 

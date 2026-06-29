@@ -45,6 +45,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 
+import { afterResponse } from '@/lib/after-response';
+
 import { errorBody, ErrorCode, updateBanditArm, outcomeClassFromConverted } from '@estalara/shared';
 import { createAdminClient, abBanditWeights, upsertConversionLabel } from '@estalara/db';
 
@@ -362,28 +364,41 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── Fire-and-forget bandit update ─────────────────────────────────────────
+  // FOLLOW-433 / ESC-033: registered via afterResponse() so the DB write
+  // completes after the response before Vercel instance suspension.
   // We intentionally do NOT await the DB write here — the SDK's outcome ping
   // must never block. The microtask returns a resolved promise immediately,
   // and the DB upsert progresses in the background.
-  void updateArmAsync({
-    tenantId: parsed.data.tenant_id,
-    archetype: parsed.data.archetype,
-    variant: parsed.data.variant,
-    converted: parsed.data.converted,
-  });
+  afterResponse(() =>
+    updateArmAsync({
+      tenantId: parsed.data.tenant_id,
+      archetype: parsed.data.archetype,
+      variant: parsed.data.variant,
+      converted: parsed.data.converted,
+    }),
+  );
 
   // ── Fire-and-forget conversion-label persistence (FOLLOW-171, §T) ─────────
+  // FOLLOW-433 / ESC-033: registered via afterResponse() so the durable
+  // (prediction, outcome) write completes after the response before Vercel
+  // instance suspension.
   // When the SDK supplies prediction_id (= adapt_decision_id), persist the durable
   // (prediction, outcome) pair so it survives for later fine-tuning instead of being
   // collapsed into the bandit counters. Older SDKs omit prediction_id → bandit-only.
   if (parsed.data.prediction_id) {
-    void upsertConversionLabelAsync({
-      tenantId: parsed.data.tenant_id,
-      predictionId: parsed.data.prediction_id,
-      leadId: parsed.data.lead_id ?? '',
-      converted: parsed.data.converted,
-      outcomeRaw: parsed.data,
-    });
+    // Capture the narrowed string in a local const so the closure does not need
+    // a non-null assertion — TypeScript cannot narrow through the closure boundary
+    // for optional properties.
+    const predictionId: string = parsed.data.prediction_id;
+    afterResponse(() =>
+      upsertConversionLabelAsync({
+        tenantId: parsed.data.tenant_id,
+        predictionId,
+        leadId: parsed.data.lead_id ?? '',
+        converted: parsed.data.converted,
+        outcomeRaw: parsed.data,
+      }),
+    );
   }
 
   return NextResponse.json({ ok: true }, { status: 202 });

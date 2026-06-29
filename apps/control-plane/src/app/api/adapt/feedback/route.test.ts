@@ -22,7 +22,21 @@
  * @module apps/control-plane/src/app/api/adapt/feedback/route.test
  */
 
-import { NextRequest } from 'next/server';
+// ─── next/server mock (must be before all imports) ───────────────────────────
+// Mock after() as a synchronous pass-through spy so tests can assert that
+// fire-and-forget sinks are registered via after() (FOLLOW-433 / ESC-033).
+// The spread of the actual module preserves NextRequest, NextResponse, etc.
+vi.mock('next/server', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('next/server');
+  return {
+    ...actual,
+    after: vi.fn((fn: () => unknown) => {
+      void fn();
+    }),
+  };
+});
+
+import { NextRequest, after } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // ─── Mock @estalara/db (hoisted) ─────────────────────────────────────────────
@@ -667,5 +681,57 @@ describe('POST /api/adapt/feedback — HMAC signature path (FOLLOW-051)', () => 
     const randomSig = await computeHmac('random_wrong_key', JSON.stringify(VALID_BODY));
     const res = await POST(makePostRequest(VALID_BODY, 'Bearer real_tenant_key', randomSig));
     expect(res.status).toBe(401);
+  });
+});
+
+// ─── FOLLOW-433: after() registration for fire-and-forget sinks ──────────────
+//
+// Asserts that both request-path async sinks in POST /api/adapt/feedback are
+// registered via after() (through afterResponse()) and not issued as bare
+// fire-and-forget void calls (ESC-033 / FOLLOW-433).
+//
+// The top-of-file vi.mock('next/server', ...) provides a synchronous pass-through
+// spy: after(fn) immediately invokes fn(), so the existing DB-call assertions in
+// the suites above remain valid and these tests can assert after() was called.
+
+describe('FOLLOW-433: updateArmAsync + upsertConversionLabelAsync registered via after()', () => {
+  let mockAfter: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', 'test_key');
+    mockAfter = vi.mocked(after);
+    mockAfter.mockReset();
+    mockAfter.mockImplementation((fn: () => unknown) => {
+      void fn();
+    });
+    mockSelectLimit.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('FOLLOW-433: updateArmAsync is registered via after() (bandit REWARD write)', async () => {
+    await POST(makePostRequest(VALID_BODY));
+    await flushMicrotasks();
+
+    // after() must have been called — afterResponse() registers the bandit update.
+    expect(mockAfter).toHaveBeenCalled();
+    // The pass-through mock immediately invoked the task, so the DB upsert ran.
+    expect(mockInsertValues).toHaveBeenCalledOnce();
+  });
+
+  it('FOLLOW-433: upsertConversionLabelAsync is registered via after() when prediction_id is present', async () => {
+    mockSelectLimit.mockResolvedValue([{ alpha: 1.0, beta: 1.0 }]);
+
+    await POST(makePostRequest({ ...VALID_BODY, prediction_id: 'decision-uuid-433' }));
+    await flushMicrotasks();
+
+    // after() must have been called for both the bandit write and the label write.
+    expect(mockAfter).toHaveBeenCalledTimes(2);
+    // The pass-through mock invoked both tasks; label upsert ran.
+    expect(mockUpsertConversionLabel).toHaveBeenCalledOnce();
   });
 });

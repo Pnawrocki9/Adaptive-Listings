@@ -138,6 +138,33 @@ exported from `app/**/route.ts` files would catch this at authoring time rather 
 
 ---
 
+## 2026-06-29 / FOLLOW-432
+
+**What I built:** Swept 6 request-path fire-and-forget sinks into `afterResponse()` (Rule K.2).
+Sinks: `seedListingEmbeddingsForActivation` ×2 in activate route, `redisSet` in `tenant-schema.ts`,
+Redis warm-up IIFE + `insertPgCachedDescription` in description route, `checkPilotFrozenAsync` inner
+IIFE in adapt route, and `auditCorpusExport` in admin labels export (found by AC grep sweep, outside
+the original 5 named sinks). Added 2-case direct unit test for `after-response.ts`. Corrected
+FOLLOW-431 AC-1 wording.
+
+**Wiring/auth/fail-loud risks I weighed:** (1) Seed-embeddings judgement call: sequential loop of 12
+HTTP calls × ~200ms = ~2.4s fits within Vercel `after()` budget (15s Hobby / 60s Pro); real tenants
+are no-ops. Correct to use `afterResponse()`, documented in a code comment. (2) `tenant-schema.ts`
+is a shared library — importing `after-response.ts` there adds a Next.js-specific dependency;
+acceptable because the only callers are route handlers (request scope), and the fallback in
+`afterResponse` handles non-request callers (unit tests). (3) `checkPilotFrozenAsync` was already
+declared as fire-and-forget observability; wrapping in `afterResponse` is strictly a completeness
+fix with no behavior change. (4) The admin labels export sink was not in the original ticket's
+5-sink list but was caught by the AC grep; including it avoids a future retro gap.
+
+**A guardrail I'd add:** An ESLint rule (or `check-rule-h.sh` extension) that flags
+`void (async () => {...})()` and `void somePromise` outside `afterResponse()`/`ctx.waitUntil()` in
+Next.js route files and shared libs would catch new violations at authoring time rather than at
+retrospective time. The grep-based AC is good but runs only at PR merge; a lint gate runs on every
+save.
+
+---
+
 ## 2026-06-02 / DEMO-001
 
 **What I built:** Per-tenant DEMO MODE archetype + model override. New `demo_overrides` table

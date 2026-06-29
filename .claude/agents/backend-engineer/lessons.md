@@ -138,6 +138,37 @@ exported from `app/**/route.ts` files would catch this at authoring time rather 
 
 ---
 
+## 2026-06-29 / FOLLOW-434
+
+**What I built:** Bounded the `seedListingEmbeddingsForActivation` after() budget. Added
+`MAX_INLINE_SEED = 50` constant (50 × 200ms = 10s, 5s headroom under Vercel Hobby 15s limit).
+Overflow listings are NOT silently dropped — captured to Sentry via `captureMessage` +
+`console.warn` with full `overflow_listing_ids` for operator retry. Implemented
+`extractListingIdsFromSchema` to actually parse `schema.listing_ids` (the forward-compat hook it
+documented but never executed). Updated JSDoc at line 10 to remove stale "void fn()" claim and
+document the cap. Added activate route budget comment referencing both FOLLOW-432 and FOLLOW-434.
+Added 2 new describe blocks: one testing the `listing_ids` forward-compat path
+(extractListingIdsFromSchema), one testing the overflow cap (MAX_INLINE_SEED+1 listings → exactly
+MAX_INLINE_SEED fetch calls + Sentry captured).
+
+**Wiring/auth/fail-loud risks I weighed:** (1) Overflow path must NEVER silently discard listings —
+chose Sentry `captureMessage` (observable in prod dashboards) + `console.warn` (observable in Vercel
+logs). The `TODO: FOLLOW-434 — replace with Modal job` comment makes the deferred work clearly
+visible. (2) ES module test limitation: `vi.spyOn(module, 'embedOneListing')` cannot intercept
+same-module internal calls — the spy replaces the export binding but not the in-closure reference.
+Used `vi.stubGlobal('fetch', ...)` instead (equivalent: each `embedOneListing` call makes exactly
+one `fetch` call). Injected 51 listings via `schema.listing_ids` (newly implemented
+`extractListingIdsFromSchema`). (3) `DEMO_LISTING_MANIFEST` is a getter-only property on the module
+namespace; trying to reassign it with `(module as any).DEMO_LISTING_MANIFEST = ...` throws
+`TypeError: Cannot set property ... which has only a getter`. Never mutate module namespace objects.
+
+**A guardrail I'd add:** A comment in the test file near any `vi.spyOn(module, 'exportedFn')`
+stating "this spy intercepts external callers only, not same-module internal calls — use
+vi.stubGlobal/fetch mock for internal call coverage." Would prevent the next engineer from writing a
+test that silently passes because the spy was never hit.
+
+---
+
 ## 2026-06-29 / FOLLOW-432
 
 **What I built:** Swept 6 request-path fire-and-forget sinks into `afterResponse()` (Rule K.2).

@@ -207,12 +207,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const displayKey = existing.prefix + '...' + existing.last4;
       // Bust the Redis cache so the next adapt request sees the freshly activated schema.
       await invalidateTenantSchemaCache(tenantId);
-      // FOLLOW-432 / Rule K.2: registered via afterResponse() so the sequential embed loop
-      // completes after the response is sent before Vercel instance suspension.
-      // Budget assessment: demo tenant runs 12 sequential embed calls × ~200ms = ~2.4s,
-      // well within both the 15s Hobby and 60s Pro after() Node-runtime limits.
-      // Real tenants without schema-embedded listing_ids exit early (no-op), so the
-      // budget concern noted in FOLLOW-432 does NOT apply — afterResponse() is correct here.
+      // FOLLOW-432 / FOLLOW-434 / Rule K.2: registered via afterResponse() so the sequential
+      // embed loop completes after the response is sent before Vercel instance suspension.
+      // Budget assessment (FOLLOW-434): the seeder caps inline work at MAX_INLINE_SEED (50)
+      // listings × ~200ms ≈ 10s, leaving ~5s headroom under the 15s Hobby after() budget.
+      // Catalogs beyond 50 listings are NOT silently dropped — overflow is captured to Sentry
+      // + console.warn with listing_ids for operator retry or Modal job pickup.
+      // Demo tenant (12 listings ≈ 2.4s) and non-demo tenants without schema-embedded
+      // listing_ids (early-exit no-op) both remain safe within budget.
       afterResponse(() =>
         seedListingEmbeddingsForActivation(tenantId, schemaValue).catch((err: unknown) => {
           console.error(
@@ -240,7 +242,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Bust the Redis cache so the next adapt request sees the freshly activated schema.
     await invalidateTenantSchemaCache(tenantId);
-    // FOLLOW-432 / Rule K.2: same afterResponse() wrapping as the existing-key path above.
+    // FOLLOW-432 / FOLLOW-434 / Rule K.2: same afterResponse() wrapping + MAX_INLINE_SEED
+    // cap as the existing-key path above. See that path's comment for budget details.
     afterResponse(() =>
       seedListingEmbeddingsForActivation(tenantId, schemaValue).catch((err: unknown) => {
         console.error(

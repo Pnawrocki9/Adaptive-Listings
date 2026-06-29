@@ -32,7 +32,7 @@
  * @module apps/control-plane/src/app/api/dsr/erase/route
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { eq, and, ne, sql } from 'drizzle-orm';
@@ -497,20 +497,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
         // ── ClickHouse audit entry (fire-and-forget) — unverifiable state is auditable ─
         // DSR_AUDIT_ACTIONS.crm_unverifiable is the canonical action literal (FOLLOW-238 AC3).
-        void writeDsrAuditLog({
-          tenant_id: record.tenantId,
-          session_id: record.sessionId,
-          dsr_type: 'erase',
-          action: DSR_AUDIT_ACTIONS.crm_unverifiable,
-          email: record.email,
-          requested_at: record.createdAt,
-          completed_at: now,
-        }).catch((err: unknown) => {
-          console.error(
-            '[dsr/erase] ClickHouse crm-unverifiable audit log failed:',
-            err instanceof Error ? err.message : err,
-          );
-        });
+        // FOLLOW-431 / ESC-033: registered via after() so the async write and its
+        // fail-loud Sentry capture complete after the response before instance suspension.
+        // writeDsrAuditLog already handles all errors internally — no extra .catch() needed.
+        after(() =>
+          writeDsrAuditLog({
+            tenant_id: record.tenantId,
+            session_id: record.sessionId,
+            dsr_type: 'erase',
+            action: DSR_AUDIT_ACTIONS.crm_unverifiable,
+            email: record.email,
+            requested_at: record.createdAt,
+            completed_at: now,
+          }),
+        );
       }
       // If tenantCrmRows === 0: no CRM rows exist for this tenant at all.
       // crmErasureStatus stays 'complete' — correct and non-over-claiming.
@@ -569,20 +569,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── Audit log (fire-and-forget) ────────────────────────────────────────────
   // We persist the audit row immediately. The poller will later update the
   // clickhouse_mutation_* columns once mutations resolve.
-  void writeDsrAuditLog({
-    tenant_id: record.tenantId,
-    session_id: record.sessionId,
-    dsr_type: 'erase',
-    action: DSR_AUDIT_ACTIONS.completed,
-    email: record.email,
-    requested_at: record.createdAt,
-    completed_at: now,
-  }).catch((err: unknown) => {
-    console.error(
-      '[dsr/erase] ClickHouse audit log failed:',
-      err instanceof Error ? err.message : err,
-    );
-  });
+  // FOLLOW-431 / ESC-033: registered via after() so the async write and its
+  // fail-loud Sentry capture complete after the response before instance suspension.
+  after(() =>
+    writeDsrAuditLog({
+      tenant_id: record.tenantId,
+      session_id: record.sessionId,
+      dsr_type: 'erase',
+      action: DSR_AUDIT_ACTIONS.completed,
+      email: record.email,
+      requested_at: record.createdAt,
+      completed_at: now,
+    }),
+  );
 
   return NextResponse.json(
     {

@@ -20,7 +20,7 @@
  * @module apps/control-plane/src/app/api/dsr/initiate/route
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
@@ -208,19 +208,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── Audit log (fire-and-forget) ────────────────────────────────────────────
-  void writeDsrAuditLog({
-    tenant_id: tenantId,
-    session_id,
-    dsr_type,
-    action: DSR_AUDIT_ACTIONS.initiated,
-    email,
-    requested_at: new Date(),
-  }).catch((err: unknown) => {
-    console.error(
-      '[dsr/initiate] ClickHouse audit log failed:',
-      err instanceof Error ? err.message : err,
-    );
-  });
+  // FOLLOW-431 / ESC-033: registered via after() so the async write and its
+  // fail-loud Sentry capture complete after the response before instance suspension.
+  after(() =>
+    writeDsrAuditLog({
+      tenant_id: tenantId,
+      session_id,
+      dsr_type,
+      action: DSR_AUDIT_ACTIONS.initiated,
+      email,
+      requested_at: new Date(),
+    }),
+  );
 
   return NextResponse.json(
     {

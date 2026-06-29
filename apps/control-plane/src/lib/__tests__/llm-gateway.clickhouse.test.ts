@@ -11,6 +11,9 @@
  *   (b) network / thrown error → Sentry captured with kind='network'
  *   (c) happy path (ok response) → Sentry NOT called, caller unaffected
  *
+ * FOLLOW-431: also asserts that logLlmCallAsync is registered via after() inside
+ * callLlmGateway so it completes after the response on Vercel (AC-4).
+ *
  * logLlmCallAsync is a private function; it is exercised via callLlmGateway.
  * Fetch call sequence per callLlmGateway:
  *   1. getRolling24hSpend() → SELECT query (returns ok + zero spend)
@@ -21,6 +24,20 @@
  *
  * @module apps/control-plane/src/lib/__tests__/llm-gateway.clickhouse.test
  */
+
+// ─── next/server mock (must be before all imports) ───────────────────────────
+// Mock after() as a synchronous pass-through spy so existing tests that rely on
+// the fire-and-forget fetch completing synchronously continue to work, and new
+// tests can assert after() was called (FOLLOW-431 / AC-4).
+vi.mock('next/server', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('next/server');
+  return {
+    ...actual,
+    after: vi.fn((fn: () => unknown) => {
+      void fn();
+    }),
+  };
+});
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
@@ -50,6 +67,7 @@ vi.mock('@/lib/clickhouse-http', () => ({
 
 import Anthropic from '@anthropic-ai/sdk';
 import * as Sentry from '@sentry/nextjs';
+import { after } from 'next/server';
 import { callLlmGateway } from '@/lib/llm-gateway';
 
 const mockCreate = (Anthropic as unknown as Record<string, () => unknown>)
@@ -211,5 +229,51 @@ describe('logLlmCallAsync — FOLLOW-427 fail loud on ClickHouse INSERT rejectio
     await new Promise((r) => setTimeout(r, 10));
 
     expect(captureException).not.toHaveBeenCalled();
+  });
+});
+
+// ─── FOLLOW-431: after() registration ────────────────────────────────────────
+//
+// AC-1: logLlmCallAsync must be registered via after() inside callLlmGateway
+// so its async work completes after the response is sent on Vercel.
+// The after() mock is a synchronous pass-through (see top of file) so the
+// existing fail-loud tests still work; this test asserts the registration itself.
+
+describe('FOLLOW-431: logLlmCallAsync registered via after() inside callLlmGateway', () => {
+  let mockAfter: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockAfter = vi.mocked(after);
+    mockAfter.mockReset();
+    mockAfter.mockImplementation((fn: () => unknown) => {
+      void fn();
+    });
+    vi.stubEnv('CLICKHOUSE_URL', CLICKHOUSE_URL);
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-431');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('FOLLOW-431: callLlmGateway registers logLlmCallAsync via after() on the LLM path', async () => {
+    mockCreate.mockResolvedValueOnce(ANTHROPIC_RESPONSE);
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(SPEND_OK_RESPONSE) // getRolling24hSpend SELECT
+        .mockResolvedValue({ ok: true, status: 200 }), // logLlmCallAsync INSERT
+    );
+
+    const result = await callLlmGateway(GATEWAY_INPUT);
+    expect(result).not.toBeNull();
+
+    // after() must have been called with a function (the logLlmCallAsync wrapper)
+    expect(mockAfter).toHaveBeenCalledOnce();
+    const [callback] = mockAfter.mock.calls[0] as [() => unknown];
+    expect(typeof callback).toBe('function');
   });
 });

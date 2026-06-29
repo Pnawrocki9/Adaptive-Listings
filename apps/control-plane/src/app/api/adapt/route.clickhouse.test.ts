@@ -5,8 +5,25 @@
  * query body and passes all values as URL query params (?param_p_*=), so that
  * SQL-injection characters in string inputs never reach the query text.
  *
+ * FOLLOW-431: also asserts that logDecisionAsync and publishAbAssignmentEvent are
+ * registered via after() so they complete after the response on Vercel.
+ *
  * @module apps/control-plane/src/app/api/adapt/route.clickhouse.test
  */
+
+// ─── next/server mock (must be before all imports) ───────────────────────────
+// Mock after() as a synchronous pass-through spy so existing tests that rely on
+// the fire-and-forget fetch completing synchronously continue to work, and new
+// tests can assert after() was called (FOLLOW-431 / AC-4).
+vi.mock('next/server', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('next/server');
+  return {
+    ...actual,
+    after: vi.fn((fn: () => unknown) => {
+      void fn();
+    }),
+  };
+});
 
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
@@ -96,6 +113,7 @@ vi.mock('@estalara/shared', async () => {
 });
 
 import * as Sentry from '@sentry/nextjs';
+import { after } from 'next/server';
 import { GET, POST } from './route';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -406,5 +424,94 @@ describe('logDecisionAsync — FOLLOW-425 fail loud on ClickHouse INSERT rejecti
     await new Promise((r) => setTimeout(r, 0));
 
     expect(captureException).not.toHaveBeenCalled();
+  });
+});
+
+// ─── FOLLOW-431: after() registration — sinks must be registered via after() ───
+//
+// AC-1: logDecisionAsync and publishAbAssignmentEvent must be registered via
+// after() so their async work completes after the Vercel response is sent.
+// The after() mock is a synchronous pass-through (see top of file) so the
+// existing fail-loud tests still work; these tests assert the registration itself.
+
+describe('FOLLOW-431: logDecisionAsync registered via after() in GET and POST handlers', () => {
+  let mockAfter: ReturnType<typeof vi.fn>;
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockAfter = vi.mocked(after);
+    mockAfter.mockReset();
+    // Restore pass-through behaviour so the sink still runs in the same tick
+    mockAfter.mockImplementation((fn: () => unknown) => {
+      void fn();
+    });
+    mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', mockFetch);
+    vi.stubEnv('CLICKHOUSE_URL', 'http://localhost:8123');
+    vi.stubEnv('DEMO_MODE_JWT_SECRET', 'test-secret-32-chars-long-enough!!');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('FOLLOW-431: POST handler registers logDecisionAsync via after()', async () => {
+    await POST(makePostRequest(BASE_BODY));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // after() must have been called at least once with a function that starts the
+    // ClickHouse INSERT (verified by the subsequent fetch assertion).
+    expect(mockAfter).toHaveBeenCalled();
+    // The callback must have triggered the actual ClickHouse fetch
+    expect(mockFetch).toHaveBeenCalled();
+    const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+    expect(fetchUrl).toContain('param_p_session_id');
+  });
+
+  it('FOLLOW-431: GET handler registers logDecisionAsync via after()', async () => {
+    await GET(makeGetRequest(BASE_GET_PARAMS));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockAfter).toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalled();
+    const [fetchUrl] = mockFetch.mock.calls[0] as [string];
+    expect(fetchUrl).toContain('param_p_session_id');
+  });
+});
+
+describe('FOLLOW-431: publishAbAssignmentEvent registered via after() in POST handler', () => {
+  let mockAfter: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockAfter = vi.mocked(after);
+    mockAfter.mockReset();
+    mockAfter.mockImplementation((fn: () => unknown) => {
+      void fn();
+    });
+    // ClickHouse fetch succeeds (for logDecisionAsync)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
+    vi.stubEnv('CLICKHOUSE_URL', 'http://localhost:8123');
+    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
+    vi.stubEnv('DEMO_MODE_JWT_SECRET', 'test-secret-32-chars-long-enough!!');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('FOLLOW-431: POST handler registers publishAbAssignmentEvent via after() (treatment arm)', async () => {
+    // publishAbAssignmentEvent is mocked globally in this file (vi.mock '@/lib/ab-events')
+    // after() must be called; the mock records all calls so we can assert count.
+    await POST(makePostRequest(BASE_BODY));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Two after() calls are expected in the normal POST treatment path:
+    //   1. publishAbAssignmentEvent (treatment arm)
+    //   2. logDecisionAsync
+    expect(mockAfter).toHaveBeenCalledTimes(2);
   });
 });

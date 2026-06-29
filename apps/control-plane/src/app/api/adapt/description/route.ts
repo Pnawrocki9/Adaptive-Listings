@@ -36,7 +36,7 @@
  * @module apps/control-plane/src/app/api/adapt/description/route
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import * as Sentry from '@sentry/nextjs';
@@ -94,9 +94,11 @@ const QueryParamsSchema = z.object({
  *
  * @param event - The event payload to publish.
  */
-function publishDescriptionRequested(event: DescriptionRequestedEvent): void {
+function publishDescriptionRequested(event: DescriptionRequestedEvent): Promise<void> {
+  // Returns a promise so callers can register it via after() and guarantee
+  // completion after the response is sent (FOLLOW-431 / ESC-033).
   const redpandaUrl = process.env.REDPANDA_REST_URL;
-  if (!redpandaUrl) return;
+  if (!redpandaUrl) return Promise.resolve();
 
   const topic = process.env.REDPANDA_TOPIC_DESCRIPTIONS ?? 'estalara.descriptions';
   const url = `${redpandaUrl.replace(/\/$/, '')}/topics/${topic}`;
@@ -112,12 +114,13 @@ function publishDescriptionRequested(event: DescriptionRequestedEvent): void {
     headers.Authorization = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
   }
 
-  // Fire-and-forget — never awaited. Both failure paths capture to Sentry so a
-  // Redpanda auth / missing-topic / quota rejection is observable (FOLLOW-426 /
+  // Returns the fetch promise so after() can await it for guaranteed completion
+  // (FOLLOW-431 / ESC-033). Both failure paths capture to Sentry so a Redpanda
+  // auth / missing-topic / quota rejection is observable (FOLLOW-426 /
   // Rule K.2 fire-and-forget amendment). The .catch() handler covers network-layer
   // failures; the .then() handler covers HTTP-level rejections (4xx/5xx), which
   // `fetch` resolves (not rejects) and a bare `.catch()` would be blind to.
-  fetch(url, {
+  return fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({ records: [{ value: event }] }),
@@ -387,10 +390,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       : { generation_model: effectiveModel }),
   };
 
-  // Fire-and-forget: do NOT await. Response must not block on Modal enqueue.
-  // publishDescriptionRequested handles both HTTP-rejection and network errors
-  // internally (FOLLOW-426 / Rule K.2 fire-and-forget amendment) — it never throws.
-  publishDescriptionRequested(event);
+  // FOLLOW-431 / ESC-033: registered via after() so the async Redpanda publish (and its
+  // fail-loud Sentry capture) completes after the response is sent before instance suspension.
+  // Response is not blocked — after() runs post-response while keeping the instance alive.
+  after(() => publishDescriptionRequested(event));
 
   // Return template fallback immediately.
   // headline is null on cold-start — SDK keeps the playbook headline directive (ADR-0009).

@@ -2,13 +2,22 @@
  * Listing embedding seeder — fire-and-forget helper for the activation path.
  *
  * Called by POST /api/schema/activate after a tenant's schema is persisted.
+ * The activate route wraps the call via `afterResponse(() => seedListingEmbeddingsForActivation(…))`
+ * so activation latency is unaffected even when seeding 100+ listings.
  * Enumerates the listings known for the tenant (from the activated schema or,
  * for the canonical demo tenant, from the 000-app-estalara fixture manifest),
  * then calls POST /api/listings/embed for each listing.
  *
  * Design choices:
- *   - Fire-and-forget: the activate route calls `void seedListingEmbeddingsForActivation()`
- *     so activation latency is unaffected even when seeding 100+ listings.
+ *   - afterResponse() wrapped: the activate route registers this function via
+ *     afterResponse() (→ next/server after()), NOT via `void fn()`, so Vercel
+ *     keeps the instance alive while the loop runs.
+ *   - Budget cap (MAX_INLINE_SEED = 50): the Vercel Hobby after() budget is 15s.
+ *     At ~200ms per embed call, 50 listings ≈ 10s inline — leaving ~5s headroom.
+ *     Listings beyond MAX_INLINE_SEED are NOT silently dropped; overflow is
+ *     captured via Sentry + console.warn with the full listing_ids list so an
+ *     operator can manually retry or trigger a Modal seed job.
+ *     See: TODO FOLLOW-434 — replace overflow stub with Modal job when ready.
  *   - Internal service-to-service auth: uses INTERNAL_API_SECRET header, so
  *     this helper works without a tenant JWT (the tenant JWT belongs to the human
  *     user completing onboarding, not to a background job).
@@ -28,7 +37,26 @@
  * @module apps/control-plane/src/lib/seed-listing-embeddings
  */
 
+import * as Sentry from '@sentry/nextjs';
 import type { TenantSiteSchema } from '@estalara/shared';
+
+// ─── Budget cap ───────────────────────────────────────────────────────────────
+
+/**
+ * Maximum number of listings embedded inline within a single after() invocation.
+ *
+ * Budget reasoning (Vercel Hobby plan):
+ *   - after() (next/server) keeps the instance alive for up to 15s on Hobby.
+ *   - Each embedOneListing call is ~200ms (OpenAI embedding API round-trip).
+ *   - 50 × 200ms = 10s inline, leaving ~5s headroom before the budget expires.
+ *   - Any listings beyond this limit are NOT silently dropped — they are reported
+ *     to Sentry + console.warn so an operator can retry or a Modal job can pick
+ *     them up (TODO: FOLLOW-434 — replace with Modal job when seed-modal-job exists).
+ *
+ * Raise this value only after verifying the Vercel plan budget or migrating to
+ * a durable background job for overflow.
+ */
+export const MAX_INLINE_SEED = 50;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +82,8 @@ export interface SeedListingsResult {
   attempted: number;
   succeeded: number;
   failed: number;
+  /** Number of listings beyond MAX_INLINE_SEED that were deferred (logged + Sentry-captured). */
+  overflow_count: number;
   skipped_reason?: string;
 }
 
@@ -240,12 +270,22 @@ export async function embedOneListing(
  * engine do not enumerate listing IDs — that enumeration would require a live
  * crawl. When no IDs are found we fall back to the demo manifest (if the
  * tenant matches) or return an empty array.
+ *
+ * Forward-compat: if the schema object carries a `listing_ids: string[]` field
+ * (not yet in the canonical TenantSiteSchema type but anticipated — see JSDoc
+ * above), those IDs are extracted here and used as the listing source for
+ * real-tenant catalogs. This is the mechanism that enables large catalogs
+ * (100+ listings) to be seeded, subject to the MAX_INLINE_SEED cap.
  */
 export function extractListingIdsFromSchema(schema: TenantSiteSchema): ListingTextContent[] {
-  // Future: if schema gains a `listing_ids: string[]` field, extract here.
-  // For now this is a typed hook for forward compatibility.
-  void schema; // schema is read for forward-compat; currently unused
-  return [];
+  // Safe forward-compat read: schema.listing_ids is not yet in the canonical type
+  // but will be added when real-tenant listing enumeration is wired up.
+  const raw = schema as unknown as Record<string, unknown>;
+  const ids = raw.listing_ids;
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  return ids
+    .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    .map((id) => ({ listing_id: id }));
 }
 
 /**
@@ -272,6 +312,7 @@ export async function seedListingEmbeddingsForActivation(
     attempted: 0,
     succeeded: 0,
     failed: 0,
+    overflow_count: 0,
   };
 
   try {
@@ -307,10 +348,45 @@ export async function seedListingEmbeddingsForActivation(
     }
 
     const baseUrl = resolveBaseUrl();
-    result.attempted = listings.length;
+
+    // ── Cap inline work to MAX_INLINE_SEED (Vercel after() budget guard) ──────
+    // Vercel Hobby: 15s budget. At ~200ms/call, 50 × 200ms ≈ 10s (5s headroom).
+    // Overflow listings are NOT silently dropped — they are captured to Sentry
+    // + console.warn so an operator can retry or a Modal job can pick them up.
+    // TODO: FOLLOW-434 — replace overflow stub with Modal job when seed-modal-job
+    // is implemented.
+    const inline = listings.slice(0, MAX_INLINE_SEED);
+    const overflow = listings.slice(MAX_INLINE_SEED);
+
+    result.attempted = inline.length;
+    result.overflow_count = overflow.length;
+
+    if (overflow.length > 0) {
+      const overflowIds = overflow.map((l) => l.listing_id);
+      const msg =
+        `[seed-listing-embeddings] OVERFLOW: tenant=${tenantId} has ${String(overflow.length)} ` +
+        `listings beyond MAX_INLINE_SEED=${String(MAX_INLINE_SEED)}. ` +
+        `These were NOT embedded inline and require manual retry or a Modal seed job. ` +
+        `overflow_listing_ids=${JSON.stringify(overflowIds)}`;
+      console.warn(msg);
+      Sentry.captureMessage(msg, {
+        level: 'warning',
+        tags: {
+          area: 'onboarding',
+          sink: 'seed-listing-embeddings',
+          kind: 'overflow',
+        },
+        extra: {
+          tenant_id: tenantId,
+          overflow_count: overflow.length,
+          overflow_listing_ids: overflowIds,
+          max_inline_seed: MAX_INLINE_SEED,
+        },
+      });
+    }
 
     // Sequential to avoid overwhelming OpenAI quota; each call is ~200ms.
-    for (const listing of listings) {
+    for (const listing of inline) {
       const embedResult = await embedOneListing(baseUrl, internalSecret, tenantId, listing);
       if (embedResult.ok) {
         result.succeeded += 1;

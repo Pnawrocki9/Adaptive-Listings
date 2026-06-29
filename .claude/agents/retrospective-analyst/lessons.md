@@ -2037,8 +2037,8 @@
   is most likely (the author believes the prior over-claim was the floor), so the grep-self-rerun is
   MANDATORY there, and RETRO-138's "≥5" was a floor not a count — I corrected it to ≥8.
 - **The single most load-bearing catch:** `updateArmAsync` is the bandit-REWARD write. The whole
-  RETRO-133/138/ESC-031 saga was about the PREDICTION write (adaptation_decisions). Nobody — not the
-  escalation, not RETRO-138, not FOLLOW-432 — connected that the _reward_ half of the same bandit
+  RETRO-133/138/ESC-031 saga was about the PREDICTION write (adaptation*decisions). Nobody — not the
+  escalation, not RETRO-138, not FOLLOW-432 — connected that the \_reward* half of the same bandit
   loop sits in a different route (feedback) with the identical bare-`void` drop hazard. The learning
   loop was half-secured and everyone thought it was done. Lesson: when a pipeline has a
   write-in/write-out shape (decision→reward, request→response, produce→consume), securing one end is

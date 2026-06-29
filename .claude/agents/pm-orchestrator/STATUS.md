@@ -1,7 +1,7 @@
 # PM Orchestrator — Session Status
 
-**Date:** 2026-06-15 **Session:** Loop 8 (FOLLOW-324 DONE, FOLLOW-325 in-progress, FOLLOW-326
-promoted + delegating)
+**Date:** 2026-06-29 **Session:** FOLLOW-432 DONE (PR #381, merge commit 3cb5c28). RETRO-139
+written. 0/3 in flight.
 
 ---
 
@@ -9,60 +9,57 @@ promoted + delegating)
 
 | ESC     | Title                                                     | Filed      | Age | Blocker?                                                               |
 | ------- | --------------------------------------------------------- | ---------- | --- | ---------------------------------------------------------------------- |
-| ESC-020 | Estalara-app DOM hooks committed but not deployed to prod | 2026-06-06 | 9d  | Non-blocking per CEO 2026-06-10; Rafal (CTO) action required to deploy |
+| ESC-020 | Estalara-app DOM hooks committed but not deployed to prod | 2026-06-06 | 23d | Non-blocking per CEO 2026-06-10; Rafal (CTO) action required to deploy |
+| ESC-028 | Redis shadow smoke secrets not provisioned                | 2026-06-23 | 6d  | Non-blocking (soft-skip, no CI failure); Piotr/Rafal action required   |
 
-All ESC-001 through ESC-024 RESOLVED. ESC-020 is the only open item and is non-blocking.
-
----
-
-## IN_PROGRESS tickets (2/3 max)
-
-| Ticket     | Agent            | Branch                                                    | Started              | Status                                                    |
-| ---------- | ---------------- | --------------------------------------------------------- | -------------------- | --------------------------------------------------------- |
-| FOLLOW-325 | backend-engineer | backend-engineer/FOLLOW-325-buildsnippet-detect-companion | 2026-06-15T00:00:00Z | In flight — PR pending (FOLLOW-324 now merged, unblocked) |
-| FOLLOW-326 | backend-engineer | backend-engineer/FOLLOW-326-admin-auth-flow               | 2026-06-15T~14:00Z   | Delegating this session                                   |
-
-Note: FOLLOW-325 and FOLLOW-326 both go to backend-engineer but touch completely different files
-(onboarding snippet vs. auth pages). No file-level conflict. Both can run in parallel.
+All other escalations ESC-001 through ESC-033 RESOLVED (ESC-032 resolved Phase 2; ESC-033 resolved
+by FOLLOW-431 + prod verification).
 
 ---
 
-## CI check counter (current session — Loop 8)
+## IN_PROGRESS tickets (0/3 max)
 
-FOLLOW-324 PR #308: MERGED 2026-06-15T13:21:27Z (confirmed via gh pr view). No new CI validation
-needed for merged PR. CI check counter reset for new tickets: 0/5. Fix iteration counter: 0/3.
-
----
-
-## DONE this session
-
-- FOLLOW-324: marked DONE in QUEUE.md. PR #308 merged 2026-06-15T13:21:27Z.
-- FOLLOW-326: promoted from FOLLOW_UPS.md stub to QUEUE.md READY entry.
+None. Pipeline clear.
 
 ---
 
-## Pending retro spawns (carry-forward)
+## CI check counter (current session)
 
-- RETRO-064 — FOLLOW-266 Phase 1 (PR #277, data-engineer)
-- RETRO-067 — FOLLOW-266 Phase 3 (PR #280, sdk-engineer)
-- RETRO-068 — FOLLOW-286 (PR #279, backend-engineer)
-- RETRO for PR #299 (FOLLOW-309/310/311/312, backend-engineer)
-- RETRO for PR #308 (FOLLOW-324, sdk-engineer) — newly added
+FOLLOW-432: DONE — CI verified green; baseline non-blocking only (Rule I ×2 + Archetype embeddings
+×2). Counter closed at 0/5 CI checks, 0/3 fix iterations.
 
 ---
 
-## READY tickets (next up, by priority)
+## Recent merges (most recent first)
 
-After FOLLOW-325 and FOLLOW-326 complete: FOLLOW-317 (P2, data-engineer) and FOLLOW-318 (P2) are
-stubs pending promotion. Spawn pending retros while both tickets are in-flight.
+- PR #381 (FOLLOW-432, backend-engineer): Swept 6 control-plane fire-and-forget sinks into
+  afterResponse(), added after-response.ts unit test, corrected FOLLOW-431 AC-1. Merged 2026-06-29.
+  RETRO-139 written (spawned FOLLOW-433 + FOLLOW-434).
+- PR #380 (ESC-033 verification runbook, devops-engineer): docs only. Merged 2026-06-29.
+- PR #379 (FOLLOW-431, backend-engineer): Wrap 5 control-plane fire-and-forget sinks in after().
+  Merged 2026-06-29. RETRO-138 written (spawned FOLLOW-432).
+- PR #378 (FOLLOW-424 Phase 2 closure, data-engineer): gitleaks allowlist + ESC-032 attestation.
+  Merged 2026-06-29.
+- PR #375 (FOLLOW-422, data-engineer): Live write attestation for adaptation_decisions. Merged
+  2026-06-28.
 
----
+## Queue state
 
-## Pending human actions
-
-1. **ESC-020 (Rafal — deploy action):** Deploy Estalara-app (web-master HEAD) to production with
-   PUBLIC_ESTALARA_SDK_ENABLED=true. Non-blocking per CEO. Steps in ESC-020 detail block.
-2. **FOLLOW-326 post-merge operator step:** Add NEXT_PUBLIC_SUPABASE_URL and
-   NEXT_PUBLIC_SUPABASE_ANON_KEY to Vercel prod env (noted in PR description by backend-engineer).
-3. **Pending retros:** 5 retros queued (RETRO-064/067/068/PR#299/PR#308). Spawn
-   retrospective-analyst when pipeline permits.
+- FOLLOW-432: DONE (PR #381, merge commit 3cb5c28, ticket commit 8f94225, merged 2026-06-29, CI
+  green). Retrospective RETRO-139 spawned.
+- Next free FOLLOW stub number: 435.
+- FOLLOW-431: DONE (PR #379, commit 3a0f802, merged 2026-06-29, prod-verified 10/10 burst writes).
+- FOLLOW-433: READY in FOLLOW_UPS.md (not yet promoted to QUEUE; P2, backend-engineer, ~2.5h — sweep
+  3 surviving request-path ff sinks [updateArmAsync + upsertConversionLabelAsync in
+  adapt/feedback/route.ts, deleteSessionFromRedis in dsr/erase/route.ts] + add CI grep-guard to
+  prevent over-claim recurrence).
+- FOLLOW-434: READY in FOLLOW_UPS.md (not yet promoted to QUEUE; P2, backend-engineer, ~4h — bound
+  seedListingEmbeddingsForActivation after() budget for large catalogs + offload overflow to
+  Modal/queue + fix stale JSDoc).
+- FOLLOW-429: READY (not yet promoted to QUEUE; scope widened to include ctx.waitUntil — P2
+  backend-engineer, CF-Worker flush-axis analogue for decision-api reorder.ts:204).
+- FOLLOW-430: READY in FOLLOW_UPS.md (not promoted yet; P3 sdk-engineer, 2h).
+- P2 tickets READY (not yet promoted to QUEUE): FOLLOW-417, FOLLOW-418, FOLLOW-420, FOLLOW-421,
+  FOLLOW-429, FOLLOW-433, FOLLOW-434.
+- P3 tickets READY: FOLLOW-355, FOLLOW-399, FOLLOW-401, FOLLOW-408, FOLLOW-412, FOLLOW-413,
+  FOLLOW-416, FOLLOW-430.

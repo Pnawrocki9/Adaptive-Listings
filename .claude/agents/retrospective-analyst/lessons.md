@@ -2022,3 +2022,40 @@
   moot if absent. I held the flush pattern at count-1 (first retro sighting) per anti-inflation, but
   pre-registered the likely count-2 (FOLLOW-429 decision-api waitUntil gap) so the K.2 registry gets
   the flush requirement on the next sighting rather than a fresh rule letter.
+
+---
+
+- **Date / RETRO-139** (FOLLOW-432 / PR #381 — the sweep that was supposed to finish FOLLOW-431's
+  over-claim)
+- **A finding I almost missed and why:** the sweep ticket FOLLOW-432 carried the _same_ absolute AC
+  as FOLLOW-431 ("no remaining un-awaited `void (async`/`void fetch` sink … verify by grep"), and it
+  is tempting to trust a ticket whose explicit job was to be the completeness sweep. I almost took
+  "this IS the sweep" at face value. Re-running the AC's own grep MYSELF (the RETRO-138 lesson)
+  immediately surfaced 3 sinks neither RETRO-138 nor FOLLOW-432 enumerated — feedback/route.ts
+  `updateArmAsync` + `upsertConversionLabelAsync` and dsr/erase `deleteSessionFromRedis`.
+  Meta-lesson reinforced and SHARPENED: a "completeness sweep" ticket is exactly where an over-claim
+  is most likely (the author believes the prior over-claim was the floor), so the grep-self-rerun is
+  MANDATORY there, and RETRO-138's "≥5" was a floor not a count — I corrected it to ≥8.
+- **The single most load-bearing catch:** `updateArmAsync` is the bandit-REWARD write. The whole
+  RETRO-133/138/ESC-031 saga was about the PREDICTION write (adaptation_decisions). Nobody — not the
+  escalation, not RETRO-138, not FOLLOW-432 — connected that the _reward_ half of the same bandit
+  loop sits in a different route (feedback) with the identical bare-`void` drop hazard. The learning
+  loop was half-secured and everyone thought it was done. Lesson: when a pipeline has a
+  write-in/write-out shape (decision→reward, request→response, produce→consume), securing one end is
+  a tell to go hunt the other end in a DIFFERENT file.
+- **An axis/chain I had to trace twice:** the budget axis of the seed leg. FOLLOW-432's code comment
+  asserted "real tenants exit early (no-op)" to justify `afterResponse()` over Modal — but the
+  function's discovery-source #1 IS `schema.listing_ids` and its JSDoc says "100+ listings." Had to
+  open seed-listing-embeddings.ts to confirm the comment's premise contradicts the function's own
+  design → the RETRO-138 §4a #2 Modal caveat is NOT discharged. Lesson: a self-justifying code
+  comment that asserts a budget/edge-case is safe must be checked against the called function's
+  actual loop bound, not trusted.
+- **A meta-pattern in how gaps recur across agents:** the COMPLETENESS-SWEEP OVER-CLAIM is now
+  count-2 in occurrences (FOLLOW-431, FOLLOW-432) but it is the SAME remediation saga, so I HELD it
+  (and held the FLUSH axis at count 1) rather than promote — RETRO-138 pre-designated the
+  independent count-2 as the cross-runtime FOLLOW-429 waitUntil gap, which hasn't shipped, and
+  promoting on one saga split across PRs is the premature-codification the threshold exists to
+  prevent. BUT the durable fix doesn't need a rule: a human "verify by grep" AC failed twice, so I
+  drove an _executing_ CI grep-guard into FOLLOW-433's AC. Lesson for myself: when a process pattern
+  recurs but is the same instance, the right lever is often an enforced guard in the next FOLLOW,
+  not a CONVENTIONS rule — the guard prevents recurrence without the count-inflation debt.

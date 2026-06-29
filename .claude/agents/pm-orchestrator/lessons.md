@@ -2,6 +2,322 @@
 
 ---
 
+**Date / ticket:** 2026-06-29 — FOLLOW-432 (promotion + delegation) **Delegation row used:** ingest
+worker, control-plane, Postgres/auth → backend-engineer **What validation caught (or missed):**
+RETRO-138's PM note buried in the `<!-- next free FOLLOW number -->` comment called for widening
+FOLLOW-429 in FOLLOW_UPS.md to include `ctx.waitUntil` — a PM-only edit that would have been missed
+without reading the full PM note verbatim. Also caught that FOLLOW-431 was not yet in QUEUE.md as
+DONE despite being merged (PR #379, commit 3a0f802). **A delegation/validation rule I'd add:** When
+a retro or ESC-closure comment says "PM: separately widen existing TICKET-XXX", treat that as a
+mandatory QUEUE.md + FOLLOW_UPS.md edit before delegating the new ticket — not optional cleanup.
+
+---
+
+**Date / ticket:** 2026-06-28 — ESC-031 incident loop closure audit (FOLLOW-406/411/425/422 all
+DONE; 3 retros pending; ESC-032 filed) **Delegation row used:** N/A (state-read loop — no new
+delegation) **What validation caught (or missed):** STATUS.md showed RETRO-091 through 113, 126, 127
+as PENDING but RETROSPECTIVES.md confirmed all are DONE — STATUS.md had gone stale across multiple
+sessions. FOLLOW-409/402 shown as READY_FOR_REVIEW in STATUS.md were actually merged (git log
+confirmed PRs #367/#368). Also caught RETRO-133 recommendation to escalate FOLLOW-424 security
+posture — filed as ESC-032. **A delegation/validation rule I'd add:** At session start, cross-verify
+the STATUS.md retro table against RETROSPECTIVES.md grep (last RETRO-NNN entry) — STATUS.md pending
+entries often lag by multiple sessions and create phantom work.
+
+---
+
+**Date / ticket:** 2026-06-28 — FOLLOW-425 DONE (PR #374) + FOLLOW-406+411 DONE (PR #373) +
+FOLLOW-422 promoted P1 **Delegation row used:** ClickHouse, Redpanda, ETL, archetype pipeline →
+data-engineer (FOLLOW-422 write attestation) **What validation caught (or missed):** Session opened
+to find TWO PRs already merged (#373 and #374) that the previous session hadn't processed.
+FOLLOW-425 was field-spawned without a queue entry — caught by checking FOLLOW_UPS.md comment "next
+free FOLLOW number: 425". FOLLOW-422 (P1 prod write gap) was in FOLLOW_UPS.md only — had to be
+promoted. PR #374 was merged before this session started; gh pr create correctly failed with "No
+commits between main and branch" which surfaced this. **A delegation/validation rule I'd add:** At
+session start, always check if the current branch is BEHIND origin/main (fetch first) — a local
+branch that's been merged but not fetched will create a ghost PR error and hide the real queue
+state.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-404 DONE (PR #372) + FOLLOW-406+411 delegation **Delegation
+row used:** Terraform, CI/CD, workflows, secrets, observability → devops-engineer (primary);
+backend-engineer co-agent for lib.ts maintenance comment **What validation caught (or missed):** PR
+#372 CI confirmed Archetype embeddings not-NULL check fails pre-existing (also fails on PR #371
+baseline). Pre-existing non-blocking confirmed. FOLLOW-411 was under-scoped in FOLLOW-406 (route.ts
+only) — caught by reading FOLLOW-411 stub which specified joint execution; combined into one
+delegation+PR. **A delegation/validation rule I'd add:** When a new FOLLOW stub's AC says "execute
+jointly with FOLLOW-NNN", always check if that sibling is already in QUEUE.md as READY — if so, mark
+both IN_PROGRESS in the same edit to prevent one finishing without the other.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-405 DONE (PR #371) + FOLLOW-404 delegation **Delegation row
+used:** ClickHouse, Redpanda, ETL → data-engineer (primary); devops-engineer as co-agent for Doppler
+prod credentials **What validation caught (or missed):** PR #371 CI confirmed 4 non-success (Rule I
+2x + Archetype embeddings 2x), all pre-existing non-blocking baseline. All real gates PASS.
+FOLLOW-404 is a manual attestation task — the output is a recorded result, not a code PR; delegation
+brief must specify how the worker records the attestation (PR with runbook note or HANDOFFS.md
+entry). **A delegation/validation rule I'd add:** For manual attestation tickets (DESCRIBE TABLE,
+SELECT DISTINCT, grant checks), require the worker to open a PR that adds the attestation result to
+the runbook or a dedicated attestation doc, so the evidence is permanently on-chain and reviewable,
+not just local console output.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-415 DONE (PR #370) + FOLLOW-405 delegation **Delegation row
+used:** ingest worker, control-plane, Postgres/auth → backend-engineer (FOLLOW-405) **What
+validation caught (or missed):** PR #370 CI: only Archetype embeddings not-NULL and Rule I failing —
+both confirmed pre-existing-red per CI gate landscape memory. Step 5c not required
+(script-and-doc-only changes with no new exported symbols). Implicit cross-package positional
+coupling (SEED_VARIANTS order indexes variants.en in a different package) is an example of a
+half-wire that tests never caught — guard test is the fix. **A delegation/validation rule I'd add:**
+When closing a positional-coupling gap between two packages, confirm the parity test asserts the
+cross-package invariant (not just self-consistency within one package), and that the test file
+imports the actual playbook data from the SDK package to avoid a self-injecting test.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-414 validation (PR #369) + FOLLOW-415 delegation **Delegation
+row used:** ClickHouse, ETL → data-engineer (FOLLOW-415); SDK/Shadow DOM → sdk-engineer (FOLLOW-414
+validated) **What validation caught (or missed):** All 4 ACs verified by direct grep/read: AC-1
+adapt.ts:213 comment text; AC-2 exact count of "Ingest stream left flowing" hits (2, favorites
+only); AC-3 line ordering in follow-409.test.ts (230 before 243). Rule I and Archetype embeddings
+not-NULL failures were correctly identified as pre-existing non-blocking per CI landscape notes. **A
+delegation/validation rule I'd add:** For AC checks that require exact hit-count verification (e.g.
+"exactly 2 remaining"), always use grep -c to confirm count before marking READY_FOR_REVIEW, not
+just grep -n to spot-check.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-402 validation (PR #368) + FOLLOW-414 delegation **Delegation
+row used:** client SDK, Shadow DOM, browser code → sdk-engineer (FOLLOW-414) **What validation
+caught (or missed):** Step 5c clean: migration-contract-test.sh and runbook doc changes only — no
+new symbols/events/columns, no producer/consumer grep needed. AC verification confirmed all four ACs
+via direct file inspection of the script (lines 54/58 for trap, 161-163 for dynamic column
+extraction, 191-204 for boundary detection). The closing
+``` at QUEUE.md line 6718 was a structural artifact (yaml code fence enclosing ticket entries from line 5819) that required care when inserting FOLLOW-414 above it. **A delegation/validation rule I'd add:** When inserting new ticket entries into QUEUE.md, always locate the enclosing code fence boundaries first (grep "^\`\`\`")
+so the insertion lands inside the fence rather than corrupting the structure.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-409 validation + FOLLOW-402 delegation **Delegation row
+used:** ClickHouse, ETL → data-engineer (FOLLOW-402) **What validation caught (or missed):** Step 5c
+confirmed PR #367 changes are test-file + comment-only (no new symbols/events/columns). FOLLOW-399
+appeared in the task candidate list but is actually BLOCKED (depends_on FOLLOW-355 which is READY
+not DONE) — always verify depends_on resolution against QUEUE.md before treating a candidate as
+unblocked. Pre-existing CI baseline of 4 non-success matched prior ticket baseline exactly — good
+signal that baseline hasn't shifted. **A delegation/validation rule I'd add:** For every candidate
+ticket listed in a task brief, verify depends_on resolution against QUEUE.md status before treating
+it as truly unblocked — task briefs can be written before dependency tickets complete.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-409 delegation (post FOLLOW-398/410 merge) **Delegation row
+used:** client SDK, Shadow DOM, browser code → sdk-engineer **What validation caught (or missed):**
+FOLLOW-398 (PR #365) and FOLLOW-410 (PR #366) both merged before this invocation — QUEUE.md had
+stale READY_FOR_REVIEW/IN_PROGRESS statuses that needed atomic correction before picking the next
+ticket. Confirms the pattern: always reconcile merged-but-not-marked tickets before picking a new
+one. **A delegation/validation rule I'd add:** When multiple PRs merge between PM invocations, run
+gh pr list --state merged before reading QUEUE.md status, to catch stale
+IN_PROGRESS/READY_FOR_REVIEW entries before they mislead the IN_PROGRESS count.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-398 READY_FOR_REVIEW + FOLLOW-410 delegation **Delegation row
+used:** ingest worker, control-plane, auth → backend-engineer (FOLLOW-410) **What validation caught
+(or missed):** FOLLOW-398 AC verification required checking that grep matches in production files
+(MASTER_DESIGN.md, adapt-floor.ts, follow-343.test.ts) showed the CORRECTED text (denial of the
+phantom constant) not the original phantom citation. Grep-found occurrences of the string in
+backlog/QUEUE.md and FOLLOW_UPS.md are expected (they describe the ticket) and must not be confused
+with the real source files. CI exit code 1 on --watch flag does not mean CI failed — it exits
+non-zero when any check fails including the pre-existing baselines; always run a direct
+`gh pr checks` to count real-gate non-successes separately. **A delegation/validation rule I'd
+add:** For doc-only PRs that "remove a phantom citation," always grep the exact symbol in production
+source files (not backlog docs) to confirm the corrected text is semantically opposite to the
+original, not merely absent.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-407 READY_FOR_REVIEW + FOLLOW-403 DONE + FOLLOW-398
+delegation **Delegation row used:** client SDK, Shadow DOM, browser code → sdk-engineer (FOLLOW-398)
+**What validation caught (or missed):** AC-1 verification required reading the actual
+CANONICAL_CONSENT_TEXT_HASH value (lib.ts:45) to confirm the 38-char regexes entry was a real
+substring of the 40-char captured secret — not a fabricated placeholder. The entry was confirmed
+genuine. CI Gitleaks 2x PASS with paths exemption removed is the functional proof, but source
+verification eliminated the ambiguity. **A delegation/validation rule I'd add:** When a regexes
+allowlist entry is added to suppress a long-identifier FP, always grep the source constant to verify
+the entry is a genuine substring of the capture window — do not trust the worker's length arithmetic
+alone.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-403 READY_FOR_REVIEW + FOLLOW-396 DONE + FOLLOW-407
+delegation **Delegation row used:** control-plane, auth, onboarding HTTP → backend-engineer
+(FOLLOW-407) **What validation caught (or missed):** FOLLOW-403 AC-1/AC-2/AC-3 all verified in the
+runbook file before marking READY_FOR_REVIEW — the scope-narrowing and caption fix were both present
+and distinct from each other. CI confirmed 4 non-success = exact pre-existing baseline (Rule I 2x +
+Archetype embeddings 2x). **A delegation/validation rule I'd add:** When a promoted Rule (e.g. Rule
+V) names a second live instance in the same RETRO entry, immediately prioritize that second instance
+as the next ticket — it is a known security gap, not a speculative one.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-396 READY_FOR_REVIEW + FOLLOW-397 DONE + FOLLOW-403
+delegation
+
+**Delegation row used:** ClickHouse, Redpanda, ETL, archetype pipeline → data-engineer (FOLLOW-403)
+
+**What validation caught (or missed):** FOLLOW-396 deletion-only PR — no new symbols, so Gitleaks CI
+result IS the functional gate. RETRO-122 identified that FOLLOW-397 AC-3 was only partially met:
+guard test proves VARIANT_INDEX self-consistency but NOT that each index is in-range vs real
+playbook variants.en arrays. Gap moved one hop from explicit map to implicit cross-package
+positional coupling.
+
+**A delegation/validation rule I'd add:** When a "derive from SoT" refactor converts a typed local
+constant into a derived positional index, step 5c must check for a CROSS-PACKAGE positional binding
+guard (index in control-plane ↔ array slot in SDK/shared), not just intra-module self-consistency.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-397 READY_FOR_REVIEW + FOLLOW-394 DONE + FOLLOW-396
+delegation
+
+**Delegation row used:** ingest worker, control-plane, decision-api → backend-engineer (FOLLOW-396)
+
+**What validation caught (or missed):** Step 5c caught the behavior contract change in FOLLOW-397 —
+stray variant now returns s.en (not control copy via ??0). The test Part B with a distinguishable
+playbook (BASE_EN_COPY vs CONTROL_VARIANT_COPY) proves which path was taken. RETRO-121 identified
+the contract test is scoped to one column (FOLLOW-402) and the runbook overstates coverage
+(FOLLOW-403). PR #360 merge unblocked FOLLOW-396 since the token-scoped regexes entry supersedes the
+file-wide route.ts paths exemption — now a 1-line delete.
+
+**A delegation/validation rule I'd add:** When a RETRO produces a "doc overstates coverage" finding
+(DG-1), file the doc-fix ticket immediately — misleading runbooks are a P2 hazard even if the code
+is correct.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-397 delegation (VARIANT_INDEX SoT / Rule K.1)
+
+**Delegation row used:** ingest worker, control-plane, decision-api, Postgres/RLS, auth →
+backend-engineer
+
+**What validation caught (or missed):** Step 5c wiring pre-check revealed FOLLOW-396 (.gitleaks.toml
+narrowing) conflicts with PR #360 (also .gitleaks.toml) still pending human merge. Deferred
+FOLLOW-396 to avoid merge conflict. Picked FOLLOW-397 (route.ts only, no conflict) instead. AC-4
+(QUEUE.md annotation) was explicitly PM-owned per the FOLLOW-397 stub — handled before delegation.
+
+**A delegation/validation rule I'd add:** Before picking a ticket that touches a config file
+modified by an open PR, check open PR file lists; if same file, defer until the prior PR merges to
+avoid compound merge conflicts.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-394 fix iteration 2 (Gitleaks allowlist string-length bug)
+
+**Delegation row used:** ClickHouse, Redpanda, ETL, archetype pipeline → data-engineer
+
+**What validation caught (or missed):** ESC-031 resolved by human operator applying migration 0019
+to prod via ClickHouse Cloud SQL console. Remaining FOLLOW-394 code ACs (contract test + runbook)
+delegated to data-engineer. The existing clickhouse-smoke CI gate runs all migrations at once — the
+contract test requires a two-phase approach (partial apply through 0018 → assert rejection; then
+0019 → assert success) to pin the ordering dependency.
+
+**A delegation/validation rule I'd add:** When a CI smoke gate applies migrations in bulk, any
+"migration-ordering" contract test must be structured as a two-phase test, not a single full-apply
+smoke, which would pass regardless of column ordering.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-394 fix iteration 2 (Gitleaks allowlist string-length bug)
+
+**Delegation row used:** ClickHouse, Redpanda, ETL, archetype pipeline → data-engineer
+
+**What validation caught (or missed):** Step 5b caught that the allowlist.regexes fix (commit
+7e813a4) passed the push-event Gitleaks scan but not the PR-event scan. Root cause: the
+cloudflare-api-token rule regex `[a-zA-Z0-9_-]{40}` captures exactly 40 chars; the allowlist entry
+was 43 chars and cannot be a substring of a 40-char string, so `regexp.MatchString` returns false.
+The push-event scan passes for a different reason (different history range). Caught by running
+`gh api .../check-runs | jq` and noting two distinct Gitleaks results.
+
+**A delegation/validation rule I'd add:** When adding a Gitleaks `allowlist.regexes` entry, the
+allowlist string must be SHORTER than or equal to the length of the captured secret (rule's regex
+match length), not the length of the raw source string.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-354/362 DONE + ESC-031 P1 migration-ordering hazard
+
+**Delegation row used:** Post-merge state reconciliation (no new delegation this iteration)
+
+**What validation caught (or missed):** Validation caught that prod ClickHouse migration 0019 was
+never applied after PR #357 (FOLLOW-358) merged — RETRO-118 generated FOLLOW-394 P1. The swallowed
+`.catch` in `logDecisionAsync` makes this fail-CLOSED: ALL adaptation_decisions writes are silent
+no-ops in prod until the migration is applied. The CI watch background task (bw2rocpb1) confirmed PR
+#359 CI: only pre-existing Rule I + Archetype embeddings failures; all real gates passed.
+
+**A delegation/validation rule I'd add:** For every ticket that adds a new column name to a
+fire-and-forget (swallowed-.catch) INSERT, PM must explicitly verify the migration applied to prod
+before marking the parent ticket DONE — not just CI green. The fail-CLOSED pattern is invisible
+without this check.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-354 PR #358 validation (test+docs ticket) **Delegation row
+used:** Row 1 (client SDK, Shadow DOM → sdk-engineer). **What validation caught (or missed):** Step
+5c confirmed correctly that a test+docs ticket creates no new exported symbols — Rule I is not
+triggered. The distinct stub pattern (`url.includes('/adapt/description')` before
+`url.includes('/adapt')`) was verified as the AC-1/AC-2 axis fix. No wiring issues caught. **A
+delegation/validation rule I'd add:** For test+docs tickets, step 5c should confirm "no new exported
+symbols" rather than searching for producer/consumer pairs — affirming Rule I is not triggered is
+the correct gate.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-358 PR #357 cleared (fix iteration 2/3, 7092088) **Delegation
+row used:** Row 2 (control-plane → backend-engineer). Validation step 5b/5c. **What validation
+caught (or missed):** Second fix 7092088 correctly added
+`apps/control-plane/src/app/api/adapt/route.ts` to the `cloudflare-api-token` rule's `paths`
+allowlist — matching the pattern already used for the consent endpoint. Gitleaks now PASS on both
+push and pull_request event runs. Root cause was a migration filename in a JSDoc comment (46-char
+alphanumeric+underscore string) triggering the Cloudflare token heuristic. Two bounces required
+because the first fix targeted a test file while the actual hit was in production code. **A
+delegation/validation rule I'd add:** When Gitleaks hits production source code (not a test dir),
+the fix belongs in the per-rule `paths` allowlist inside the `[[rules]]` block, NOT in the global
+`[allowlist]` test-directory list.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-358 PR #357 bounce iteration 2/3 (Gitleaks PR-event false
+positive) **Delegation row used:** Row 2 (control-plane → backend-engineer). Validation step 5b.
+**What validation caught (or missed):** First fix (d651290) added `route.clickhouse.test.ts` to the
+allowlist, but the failing run (28231407938) is the `pull_request` event run which scans the FULL
+commit diff range. The actual finding was in `apps/control-plane/src/app/api/adapt/route.ts` line
+436 commit `cdda69a4` — the migration filename `0019_adaptation_decisions_page_context_source` (43
+chars) matches `cloudflare-api-token` pattern. Push-event run scans current state (PASS), PR-event
+run scans history (FAIL). Two distinct scan modes in Gitleaks, triggered by different GitHub event
+types. **A delegation/validation rule I'd add:** When a Gitleaks fix adds a file to the allowlist
+but the push-event run passes while the pull_request-event run still fails, check
+`gh run view <failing-run-id> --log-failed` for the EXACT file+line+commit in the log — the fix may
+have targeted the wrong file.
+
+---
+
+**Date / ticket:** 2026-06-26 — FOLLOW-358 PR #357 validation (Gitleaks REAL gate catch)
+**Delegation row used:** Row 2 (control-plane → backend-engineer). Validation-only for this entry.
+**What validation caught (or missed):** Step 5b caught Gitleaks FAILING on PR #357 while Gitleaks
+PASSED on main (run 28201082942) and on PR #356. The coordinator claimed "Gitleaks is pre-existing"
+but the baseline check disproved this. Root cause:
+`apps/control-plane/src/app/api/adapt/route.clickhouse.test.ts` is not in `.gitleaks.toml` allowlist
+(unlike `__tests__/` dirs or the explicitly-listed `feedback/route.test.ts`);
+`vi.stubEnv('DEMO_MODE_JWT_SECRET', 'test-secret-32-chars-long-enough!!')` triggers
+`generic-high-entropy`. Fix: add path to allowlist OR use `xxx` placeholder. PR bounced fix
+iteration 1/3. **A delegation/validation rule I'd add:** When a coordinator relays "Gitleaks is
+pre-existing," cross-check the gate against the LAST CLEAN main CI run before accepting — a
+pre-existing gate must be failing ON MAIN, not just on a prior PR.
+
+---
+
 **Date / ticket:** 2026-06-25 — FOLLOW-341 (PR #352) validation **Delegation row used:**
 Validation-only. FOLLOW-341 was delegated to ml-engineer (intent/adapt/embeddings row). **What
 validation caught (or missed):** Step 5c confirmed the full embedding dimension chain: seeder writes
@@ -1101,6 +1417,24 @@ escalation first — never hand it to an agent until the decision is recorded.
 
 ---
 
+**Date / ticket:** 2026-06-26 — FOLLOW-361 delegation (bandit seed convention) + post-merge
+reconciliation (PRs #353/354/355) **Delegation row used:** Row 2 (ingest worker, control-plane,
+decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks → backend-engineer). **What
+validation caught (or missed):** Context reconciliation found three PRs (#353/354/355) merged since
+last STATUS.md write — FOLLOW-342 (AC-2 test), FOLLOW-356+357 (page_context rename), FOLLOW-389
+(quiz opt-out producer) all needed DONE status. FOLLOW-356 was absorbed into PR #354 alongside
+FOLLOW-357 but QUEUE.md still showed it READY; cross-checking FOLLOW_UPS.md confirmed status:DONE
+before correcting QUEUE.md. FOLLOW-361 had two duplicate entries in QUEUE.md (canonical at line
+~6094, stale duplicate at ~5543); both required atomic update to avoid divergence. Grep confirmed
+bandit-query.ts:31 has SEED_VARIANTS=['control','v1','v2'] while bandit-seed.ts:72 seeds
+variant:'default' — the phantom 4th arm is real, not inherited from a previous fix. **A
+delegation/validation rule I'd add:** When the summary notes "QUEUE.md was stale" after multiple
+merges, always cross-check FOLLOW_UPS.md status fields for every recently-merged PR before touching
+QUEUE.md — FOLLOW_UPS.md is updated by the closing worker and is frequently more current than
+QUEUE.md.
+
+---
+
 **Date / ticket:** 2026-06-25 — FOLLOW-342 bookkeeping (IN_PROGRESS transition) **Delegation row
 used:** Row 2 (control-plane / decision-api → backend-engineer). Bookkeeping-only session; no code
 delegation performed. **What validation caught (or missed):** QUEUE.md carries two FOLLOW-342
@@ -1111,3 +1445,17 @@ by the human — ensures the "why" is preserved in the PM state file. **A delega
 I'd add:** When recording a CONVENTIONS_PATCH update in STATUS.md, always note both the pattern
 count that triggered promotion (>= 2 prior retros) and the source retros by ID — makes future
 grep-for-rule-origin unambiguous.
+
+---
+
+**Date / ticket:** 2026-06-29 — FOLLOW-432 DONE (reconciliation-only run) **Delegation row used:**
+N/A (reconciliation-only — no new delegation) **What validation caught (or missed):** RETRO-139
+found that FOLLOW-432's "verify by grep" AC over-claimed completeness a second time in the same
+family — 3 more request-path fire-and-forget sinks (updateArmAsync, upsertConversionLabelAsync,
+deleteSessionFromRedis) survived the sweep. The retro's §5d recommendation — "a guard that executes
+beats a human-asserted grep" — is exactly the lesson that should have been applied after RETRO-138
+flagged the same over-claim in FOLLOW-431. FOLLOW-433 carries the CI grep-guard that would have
+caught this on commit rather than in a second retro. **A delegation/validation rule I'd add:** Any
+ticket whose AC-1 is a grep-verified "no remaining X" MUST include a committed CI guard proving the
+grep fires on a violation — require it as a separate AC in the ticket or bounce back to the worker
+before READY_FOR_REVIEW.

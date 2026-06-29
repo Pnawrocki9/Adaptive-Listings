@@ -7049,6 +7049,85 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     Verdict: writes confirmed flowing. ESC-031 loop fully closed: migration applied
     (FOLLOW-404), fail-loud fix deployed (FOLLOW-425), writes verified (FOLLOW-422).
     CI counter: 0/5. Fix iterations: 0/3.
+
+- id: FOLLOW-431
+  title: >-
+    Wrap control-plane fire-and-forget sinks in after() so writes complete on Vercel (ESC-033
+    root-cause fix — 1/8 burst writes landing)
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-29T00:00:00Z'
+  completed_at: '2026-06-29T10:44:00Z'
+  priority: P1
+  estimated_hours: 1.5
+  depends_on: []
+  source: ESC-033 (P1) — field-spawned root-cause fix; prod 1/8 burst writes landing
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-431 stub)
+  branch: backend-engineer/FOLLOW-431-after-fire-and-forget-sinks
+  pr: '#379'
+  merge_commit: '3a0f802'
+  notes: |
+    DONE. PR #379 merged 2026-06-29 (merge commit 3a0f802). All five control-plane
+    fire-and-forget sinks (logDecisionAsync, logLlmCallAsync, publishAbAssignmentEvent,
+    publishDescriptionRequested, writeDsrAuditLog) wrapped in Next.js after() from
+    next/server so writes + fail-loud Sentry captures survive Vercel instance suspension.
+    Root cause: 1/8 burst writes landing in adaptation_decisions.
+    Prod verification PASSED 2026-06-29: burst of 10 GET /api/adapt → 10 rows in
+    adaptation_decisions (smoke-esc033-1782729874-* prefix). ESC-033 FULLY CLOSED.
+    Procedure recorded in docs/runbooks/esc-033-verification.md.
+    Retrospective RETRO-138 spawned (source of FOLLOW-432).
+    CI counter: 0/5. Fix iterations: 0/3.
+
+- id: FOLLOW-432
+  title: >-
+    Sweep remaining control-plane request-path fire-and-forget sinks into afterResponse() + add
+    direct after-response.ts unit test + correct FOLLOW-431 over-claimed AC-1 (RETRO-138 §4a LG-1 /
+    §4c TG-1)
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-06-29T11:00:00Z'
+  completed_at: '2026-06-29T00:00:00Z'
+  priority: P2
+  estimated_hours: 3
+  depends_on: [FOLLOW-431]
+  source: RETRO-138 (§4a LG-1, §4c TG-1) — source ticket FOLLOW-431 / ESC-033
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-432 stub)
+  branch: backend-engineer/FOLLOW-432-sweep-remaining-ff-sinks
+  pr: '#381'
+  merge_commit: '3cb5c28'
+  ticket_commit: '8f94225'
+  notes: |
+    Promoted 2026-06-29. FOLLOW-431 AC-1 ("no remaining un-awaited bare fetch sink in
+    apps/control-plane/src") is over-claimed — it wrapped only the 5 ESC-033-named sinks.
+    The identical Vercel-suspend drop hazard survives in ≥5 other request-path sinks.
+    Scope (wrap each in afterResponse() or route to Modal/queue if over duration budget):
+      P2: seedListingEmbeddingsForActivation (activate route.ts:211/:238) — evaluate
+          whether afterResponse() is sufficient or a Modal/queue job is needed.
+      P3: tenant-schema redisSet (lib/tenant-schema.ts:234)
+      P3: setCachedDescription warm-redis (description/route.ts:285)
+      P3: insertPgCachedDescription durable backfill (description/route.ts:331)
+      P3: checkPilotFrozenAsync void IIFE (adapt/route.ts:145)
+    Also: 2-case direct unit test for lib/after-response.ts (fallback-on-throw +
+    after-on-success). Correct AC-1 wording in FOLLOW-431 FOLLOW_UPS.md record.
+    NOTE: FOLLOW-429 scope widened in FOLLOW_UPS.md to also wrap its redisSet in
+    ctx.waitUntil (CF-Worker flush-axis analogue) per RETRO-138 PM note.
+    Delegated 2026-06-29T11:00Z (table row: ingest worker, control-plane, Postgres/auth →
+    backend-engineer). CI counter: 0/5. Fix iterations: 0/3.
+    DONE. PR #381 merged 2026-06-29 (merge commit 3cb5c28, ticket commit 8f94225). Swept
+    6 control-plane fire-and-forget sinks into afterResponse() (seedListingEmbeddingsForActivation
+    ×2 in activate route, tenant-schema redisSet, description warm-redis setCachedDescription,
+    insertPgCachedDescription durable backfill, checkPilotFrozenAsync void IIFE). Added direct
+    after-response.ts unit test (fallback-on-throw + after-on-success cases). Corrected
+    FOLLOW-431 AC-1 wording in FOLLOW_UPS.md. CI verified green; baseline non-blocking only
+    (Rule I ×2 + Archetype embeddings ×2). Retrospective RETRO-139 spawned (source of
+    FOLLOW-433 + FOLLOW-434). RETRO-139 finding: sweep was ALSO incomplete — 3 more
+    request-path fire-and-forget sinks survive (updateArmAsync + upsertConversionLabelAsync
+    in adapt/feedback/route.ts, deleteSessionFromRedis in dsr/erase/route.ts). Filed
+    FOLLOW-433 (those 3 + CI grep-guard, P2 backend-engineer ~2.5h) and FOLLOW-434 (bound
+    seedListingEmbeddingsForActivation after() budget + fix stale JSDoc, P2 ~4h).
+    FOLLOW-429 reiterated (not re-filed). Next free FOLLOW stub: 435.
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

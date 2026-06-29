@@ -50,6 +50,7 @@ import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { getAuthClaims } from '@estalara/auth';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { publishAbAssignmentEvent } from '@/lib/ab-events';
+import { afterResponse } from '@/lib/after-response';
 import { getTenantSchema as getTenantSchemaFromDb } from '@/lib/tenant-schema';
 import { getBanditArms } from '@/lib/bandit-query';
 import {
@@ -454,11 +455,12 @@ function logDecisionAsync(
    * See migration 0019_adaptation_decisions_page_context_source.sql.
    */
   pageContextSource: 'caller_supplied' | 'page_type_derived' | 'legacy' = 'legacy',
-): void {
-  // Fire-and-forget — never awaited, never blocks the response.
+): Promise<void> {
+  // Returns a promise so callers can register it via after() and guarantee
+  // completion after the response is sent (FOLLOW-431 / ESC-033).
   // No-op when CLICKHOUSE_URL is not configured.
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
-  if (!clickhouseUrl) return;
+  if (!clickhouseUrl) return Promise.resolve();
 
   const clickhouseUser = process.env.CLICKHOUSE_USER ?? 'default';
   const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
@@ -509,7 +511,7 @@ function logDecisionAsync(
   url.searchParams.set('param_p_lead_id', leadId);
   url.searchParams.set('param_p_ts', ts);
 
-  fetch(url.toString(), {
+  return fetch(url.toString(), {
     method: 'POST',
     body: query,
     headers: {
@@ -932,22 +934,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // is logged so analysts can distinguish these rows from POST's derived values.
   // The schema divergence is now observable (Rule K.1 closed); both handlers write
   // to the same column but the source column identifies which path produced each row.
-  logDecisionAsync(
-    sessionId,
-    tenantId,
-    archetypeId,
-    confidence,
-    similarity,
-    source,
-    tier,
-    directives.length,
-    holdoutGroup,
-    getHandlerVariant,
-    adaptDecisionId,
-    false, // demoOverride — GET path has no demo-mode
-    'rulebased-bandit-v1', // modelVersion
-    '', // leadId — not wired on GET path
-    'caller_supplied', // pageContextSource (FOLLOW-358): GET echoes caller-supplied tier
+  //
+  // FOLLOW-431 / ESC-033: registered via after() so the async write (and its fail-loud
+  // .then/.catch → Sentry) completes after the response is sent before instance suspension.
+  afterResponse(() =>
+    logDecisionAsync(
+      sessionId,
+      tenantId,
+      archetypeId,
+      confidence,
+      similarity,
+      source,
+      tier,
+      directives.length,
+      holdoutGroup,
+      getHandlerVariant,
+      adaptDecisionId,
+      false, // demoOverride — GET path has no demo-mode
+      'rulebased-bandit-v1', // modelVersion
+      '', // leadId — not wired on GET path
+      'caller_supplied', // pageContextSource (FOLLOW-358): GET echoes caller-supplied tier
+    ),
   );
 
   return NextResponse.json(response, { status: 200 });
@@ -1132,15 +1139,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (assignment.holdout_group) {
     // AC-2: holdout → no adaptation, emit ab.assignment event fire-and-forget.
-    // publishAbAssignmentEvent handles both HTTP-rejection and network errors
-    // internally (FOLLOW-426 / Rule K.2 fire-and-forget amendment) — it never throws.
-    publishAbAssignmentEvent({
-      session_id: body.session_id,
-      tenant_id: tenantId,
-      holdout_group: true,
-      holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
-      assigned_at: assignment.assigned_at,
-    });
+    // FOLLOW-431 / ESC-033: registered via after() so the async write and its
+    // fail-loud Sentry capture complete after the response, before instance suspension.
+    afterResponse(() =>
+      publishAbAssignmentEvent({
+        session_id: body.session_id,
+        tenant_id: tenantId,
+        holdout_group: true,
+        holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
+        assigned_at: assignment.assigned_at,
+      }),
+    );
 
     return NextResponse.json({
       adapt_decision_id: adaptDecisionId,
@@ -1158,15 +1167,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // Treatment arm: emit ab.assignment event and continue building directives.
-  // publishAbAssignmentEvent handles both HTTP-rejection and network errors
-  // internally (FOLLOW-426 / Rule K.2 fire-and-forget amendment) — it never throws.
-  publishAbAssignmentEvent({
-    session_id: body.session_id,
-    tenant_id: tenantId,
-    holdout_group: false,
-    holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
-    assigned_at: assignment.assigned_at,
-  });
+  // FOLLOW-431 / ESC-033: registered via after() so the async write and its
+  // fail-loud Sentry capture complete after the response, before instance suspension.
+  afterResponse(() =>
+    publishAbAssignmentEvent({
+      session_id: body.session_id,
+      tenant_id: tenantId,
+      holdout_group: false,
+      holdout_pct: body.holdout_pct ?? DEFAULT_HOLDOUT_PCT,
+      assigned_at: assignment.assigned_at,
+    }),
+  );
 
   // ── DEMO MODE override (DEMO-001 / AC4) ─────────────────────────────────────
   // Load the per-tenant demo override. When enabled, ignore the SDK's
@@ -1384,22 +1395,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // (renamed from `tier` in migration 0018).
   // FOLLOW-358 (Rule K.1): page_context_source='page_type_derived' discriminates POST
   // rows (server-derived via pageContextFromPageType) from GET rows ('caller_supplied').
-  logDecisionAsync(
-    body.session_id,
-    tenantId,
-    archetypeId,
-    confidence,
-    similarity,
-    source,
-    pageCtx,
-    allDirectives.length,
-    false, // treatment arm — not holdout
-    selectedVariant,
-    adaptDecisionId,
-    demoActive, // AC6: tag demo-driven decisions for analytics exclusion
-    'rulebased-bandit-v1', // modelVersion
-    '', // leadId — not wired via POST body yet (FOLLOW-170)
-    'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
+  //
+  // FOLLOW-431 / ESC-033: registered via after() so the async write (and its fail-loud
+  // .then/.catch → Sentry) completes after the response is sent before instance suspension.
+  afterResponse(() =>
+    logDecisionAsync(
+      body.session_id,
+      tenantId,
+      archetypeId,
+      confidence,
+      similarity,
+      source,
+      pageCtx,
+      allDirectives.length,
+      false, // treatment arm — not holdout
+      selectedVariant,
+      adaptDecisionId,
+      demoActive, // AC6: tag demo-driven decisions for analytics exclusion
+      'rulebased-bandit-v1', // modelVersion
+      '', // leadId — not wired via POST body yet (FOLLOW-170)
+      'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
+    ),
   );
 
   return NextResponse.json(response, { status: 200 });

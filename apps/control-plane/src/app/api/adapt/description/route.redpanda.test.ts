@@ -13,8 +13,25 @@
  *   (b) network / thrown error → Sentry captured with kind='network'
  *   (c) happy path (ok response) → Sentry NOT called, caller unaffected
  *
+ * FOLLOW-431: also asserts that publishDescriptionRequested is registered via after()
+ * so it completes after the response on Vercel (AC-4).
+ *
  * @module apps/control-plane/src/app/api/adapt/description/route.redpanda.test
  */
+
+// ─── next/server mock (must be before all imports) ───────────────────────────
+// Mock after() as a synchronous pass-through spy so existing tests that rely on
+// the fire-and-forget fetch completing synchronously continue to work, and new
+// tests can assert after() was called (FOLLOW-431 / AC-4).
+vi.mock('next/server', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('next/server');
+  return {
+    ...actual,
+    after: vi.fn((fn: () => unknown) => {
+      void fn();
+    }),
+  };
+});
 
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
@@ -86,6 +103,7 @@ vi.mock('@/lib/description-pg-cache', () => ({
 }));
 
 import * as Sentry from '@sentry/nextjs';
+import { after } from 'next/server';
 import { GET } from './route';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -188,5 +206,41 @@ describe('publishDescriptionRequested — FOLLOW-426 fail loud on Redpanda HTTP 
     await new Promise((r) => setTimeout(r, 10));
 
     expect(captureException).not.toHaveBeenCalled();
+  });
+});
+
+// ─── FOLLOW-431: after() registration ────────────────────────────────────────
+//
+// AC-1: publishDescriptionRequested must be registered via after() in the GET
+// handler so its async work completes after the response is sent on Vercel.
+
+describe('FOLLOW-431: publishDescriptionRequested registered via after() in GET handler', () => {
+  let mockAfter: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockAfter = vi.mocked(after);
+    mockAfter.mockReset();
+    mockAfter.mockImplementation((fn: () => unknown) => {
+      void fn();
+    });
+    mockGetCachedDescription.mockResolvedValue(null);
+    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('FOLLOW-431: GET handler registers publishDescriptionRequested via after() on cache-miss path', async () => {
+    const res = await GET(makeRequest(VALID_PARAMS));
+    expect(res.status).toBe(200);
+
+    // after() must have been called with a function (the publishDescriptionRequested wrapper)
+    expect(mockAfter).toHaveBeenCalledOnce();
+    const [callback] = mockAfter.mock.calls[0] as [() => unknown];
+    expect(typeof callback).toBe('function');
   });
 });

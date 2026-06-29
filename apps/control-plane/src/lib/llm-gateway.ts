@@ -33,6 +33,7 @@ import type { ArchetypeId, TextDirective } from '@estalara/shared';
 import type { PlaybookEntry } from '@estalara/sdk/playbooks';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
+import { afterResponse } from '@/lib/after-response';
 import * as Sentry from '@sentry/nextjs';
 
 // ---------------------------------------------------------------------------
@@ -157,9 +158,11 @@ function logLlmCallAsync(params: {
   costUsd: number;
   latencyMs: number;
   source: string;
-}): void {
+}): Promise<void> {
+  // Returns a promise so callers can register it via after() and guarantee
+  // completion after the response is sent (FOLLOW-431 / ESC-033).
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
-  if (!clickhouseUrl) return;
+  if (!clickhouseUrl) return Promise.resolve();
 
   const clickhouseUser = process.env.CLICKHOUSE_USER ?? 'default';
   const clickhousePassword = process.env.CLICKHOUSE_PASSWORD ?? '';
@@ -186,7 +189,7 @@ function logLlmCallAsync(params: {
   url.searchParams.set('param_p_source', params.source);
   url.searchParams.set('param_p_ts', ts);
 
-  fetch(url.toString(), {
+  return fetch(url.toString(), {
     method: 'POST',
     body: query,
     headers: {
@@ -457,18 +460,26 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
       latency_ms: latencyMs,
     };
 
-    // Log to ClickHouse (fire-and-forget)
-    logLlmCallAsync({
-      sessionId: input.sessionId ?? 'unknown',
-      tenantId: input.tenantId ?? 'unknown',
-      archetypeId: input.archetypeId,
-      model,
-      tokensIn,
-      tokensOut,
-      costUsd,
-      latencyMs,
-      source: model === HAIKU_MODEL ? 'llm_tweaked' : 'llm_full',
-    });
+    // Log to ClickHouse (fire-and-forget).
+    // FOLLOW-431 / ESC-033: registered via after() so the async write (and its
+    // fail-loud .then/.catch → Sentry) completes after the response is sent.
+    // afterResponse() is called here (inside the awaited callLlmGateway) rather than at
+    // the route call site — the async context flows from the route handler through
+    // callLlmGateway, so the request scope is still active here. Outside a request scope
+    // (unit tests calling callLlmGateway directly) afterResponse falls back to fire-and-forget.
+    afterResponse(() =>
+      logLlmCallAsync({
+        sessionId: input.sessionId ?? 'unknown',
+        tenantId: input.tenantId ?? 'unknown',
+        archetypeId: input.archetypeId,
+        model,
+        tokensIn,
+        tokensOut,
+        costUsd,
+        latencyMs,
+        source: model === HAIKU_MODEL ? 'llm_tweaked' : 'llm_full',
+      }),
+    );
 
     // Attach confidence from input confidence score
     const outputWithConfidence = {

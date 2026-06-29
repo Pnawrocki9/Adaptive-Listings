@@ -1713,7 +1713,7 @@ path no longer writes `adaptation_decisions` (two end-to-end smokes failed, whil
 
 ---
 
-## OPEN — ESC-033: control-plane `/api/adapt` silently not writing `adaptation_decisions` in prod (regression; grant-independent) [P1]
+## RESOLVED — ESC-033: control-plane `/api/adapt` silently not writing `adaptation_decisions` in prod (grant-independent latent bug) [P1]
 
 **Filed by:** orchestrator (acting) **Date:** 2026-06-29 **Affects:** prod control-plane adapt
 route, `adaptation_decisions` analytics, decision audit trail **Type:** prod regression / data loss
@@ -1788,6 +1788,13 @@ suspension. `after()` needs no new dependency. Owner: backend-engineer; add test
 sink promise is registered via `after()`. This also makes FOLLOW-425/426/427/428's fail-loud
 observability actually effective.
 
-**Resolution:** Root cause identified — missing `waitUntil`/`after` on fire-and-forget sinks (proof:
-1/8 burst writes landed). Fix pending: backend-engineer to wrap the sink family in `after()`.
-Title's "regression" framing superseded by this diagnosis.
+**Resolution:** RESOLVED 2026-06-29 by FOLLOW-431. Root cause was the missing `waitUntil`/`after` on
+fire-and-forget sinks (proof: 1/8 burst writes landed). FOLLOW-431 wraps all five sinks
+(`logDecisionAsync`, `logLlmCallAsync`, `publishAbAssignmentEvent`, `publishDescriptionRequested`,
+`writeDsrAuditLog`) in Next.js `after()` from `next/server`, so the async write and its fail-loud
+`.then`/`.catch` → Sentry complete after the response is sent, before instance suspension. Sinks now
+return `Promise<void>`; DSR call sites drop their redundant outer `.catch()` (the sink captures all
+errors internally and never rejects). Tests assert each sink is registered via `after()`. This also
+makes the FOLLOW-425/426/427/428 fail-loud observability effective. Title's "regression" framing
+superseded by the latent-bug diagnosis. **Post-merge:** verify in prod via a burst of N `/api/adapt`
+requests → expect N rows in `adaptation_decisions` (not the prior ~1/8).

@@ -34,9 +34,11 @@ export interface AbAssignmentEventArgs {
  *
  * @param args - Assignment event fields.
  */
-export function publishAbAssignmentEvent(args: AbAssignmentEventArgs): void {
+export function publishAbAssignmentEvent(args: AbAssignmentEventArgs): Promise<void> {
+  // Returns a promise so callers can register it via after() and guarantee
+  // completion after the response is sent (FOLLOW-431 / ESC-033).
   const redpandaUrl = process.env.REDPANDA_REST_URL;
-  if (!redpandaUrl) return;
+  if (!redpandaUrl) return Promise.resolve();
 
   const topic = process.env.REDPANDA_TOPIC_EVENTS ?? 'estalara.events';
 
@@ -73,12 +75,13 @@ export function publishAbAssignmentEvent(args: AbAssignmentEventArgs): void {
     headers.Authorization = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
   }
 
-  // Fire-and-forget — never awaited. Both failure paths capture to Sentry so a
-  // Redpanda auth / missing-topic / quota rejection is observable (FOLLOW-426 /
+  // Returns the fetch promise so after() can await it for guaranteed completion
+  // (FOLLOW-431 / ESC-033). Both failure paths capture to Sentry so a Redpanda
+  // auth / missing-topic / quota rejection is observable (FOLLOW-426 /
   // Rule K.2 fire-and-forget amendment). The .catch() handler covers network-layer
   // failures; the .then() handler covers HTTP-level rejections (4xx/5xx), which
   // `fetch` resolves (not rejects) and a bare `.catch()` would be blind to.
-  fetch(url, {
+  return fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({ records: [{ value: envelope }] }),

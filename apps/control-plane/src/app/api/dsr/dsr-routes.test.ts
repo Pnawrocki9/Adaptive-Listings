@@ -22,10 +22,27 @@
  *   - POST /api/dsr/erase with expired OTP → 401
  *   - GET  /api/dsr/portability with valid OTP → 200 with Content-Disposition header
  *
+ * FOLLOW-431: writeDsrAuditLog is now registered via after() in every DSR route.
+ * after() is mocked as a synchronous pass-through so existing assertions about
+ * writeDsrAuditLog being called remain valid.
+ *
  * @module apps/control-plane/src/app/api/dsr/dsr-routes.test
  */
 
-import { NextRequest } from 'next/server';
+// ─── next/server mock (must be before all imports) ───────────────────────────
+// Mock after() as a synchronous pass-through spy so DSR routes that call
+// after(() => writeDsrAuditLog(...)) still invoke the mock synchronously.
+vi.mock('next/server', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('next/server');
+  return {
+    ...actual,
+    after: vi.fn((fn: () => unknown) => {
+      void fn();
+    }),
+  };
+});
+
+import { NextRequest, after } from 'next/server';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 // ─── Stable mock references (vi.hoisted for hoist safety) ────────────────────
@@ -712,5 +729,49 @@ describe('FOLLOW-246: GET /api/dsr/portability — conversion_labels on both nam
     const body = JSON.parse(raw) as { conversion_labels: { lead_id: string }[] };
     expect(body.conversion_labels).toHaveLength(1);
     expect(body.conversion_labels[0]?.lead_id).toBe(CRM_LEAD_ID);
+  });
+});
+
+// ─── FOLLOW-431: after() registration for writeDsrAuditLog ───────────────────
+//
+// AC-1: each DSR route must register writeDsrAuditLog via after() so the async
+// ClickHouse write completes after the response is sent on Vercel.
+// The after() mock is a synchronous pass-through (see top of file) so the
+// existing writeDsrAuditLog call assertions above remain valid.
+
+describe('FOLLOW-431: writeDsrAuditLog registered via after() in DSR initiate route', () => {
+  let mockAfter: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAfter = vi.mocked(after);
+    mockAfter.mockReset();
+    mockAfter.mockImplementation((fn: () => unknown) => {
+      void fn();
+    });
+    mockWriteDsrAuditLog.mockResolvedValue(undefined);
+    mockSendEmail.mockResolvedValue(undefined);
+    mockGetAuthClaims.mockResolvedValue(TENANT_CLAIMS);
+    mockIsTenantClaims.mockReturnValue(true);
+  });
+
+  it('FOLLOW-431: POST /api/dsr/initiate registers writeDsrAuditLog via after()', async () => {
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-431-test' }]));
+    mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-431', expiresAt }]));
+
+    const { POST } = await import('./initiate/route.js');
+    const req = makeRequest('POST', '/api/dsr/initiate', {
+      body: { session_id: 'sess-431-test', dsr_type: 'access', email: 'buyer431@example.com' },
+      headers: { Authorization: 'Bearer jwt_token' },
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(202);
+
+    // after() must have been called (not void writeDsrAuditLog directly)
+    expect(mockAfter).toHaveBeenCalled();
+    // The callback inside after() must have invoked writeDsrAuditLog
+    expect(mockWriteDsrAuditLog).toHaveBeenCalledOnce();
   });
 });

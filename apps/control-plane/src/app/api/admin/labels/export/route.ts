@@ -38,6 +38,7 @@ import { eq } from 'drizzle-orm';
 import { getAuthClaims, isStaffClaims } from '@estalara/auth';
 import { createAdminClient, conversionLabels, staffAuditLog } from '@estalara/db';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
+import { afterResponse } from '@/lib/after-response';
 
 // ─── ExportRow ────────────────────────────────────────────────────────────────
 
@@ -257,7 +258,9 @@ function auditCorpusExport(args: {
   if (!process.env.DATABASE_URL_ADMIN && !process.env.DATABASE_URL_DIRECT) {
     return; // Dev/CI: no DB to write to.
   }
-  void (async () => {
+  // FOLLOW-432 / Rule K.2: wrapped in afterResponse() so the audit DB write completes
+  // after the response is sent rather than being dropped on Vercel instance suspension.
+  afterResponse(async () => {
     try {
       const db = createAdminClient();
       await db.insert(staffAuditLog).values({
@@ -275,7 +278,7 @@ function auditCorpusExport(args: {
         extra: { tenant_id: args.tenantId },
       });
     }
-  })();
+  });
 }
 
 // ─── Mock data (dev / CI — DATABASE_URL_ADMIN unset) ─────────────────────────

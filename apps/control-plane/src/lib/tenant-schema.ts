@@ -20,6 +20,7 @@
 
 import { eq } from 'drizzle-orm';
 import { createAdminClient, tenantSiteSchemas } from '@estalara/db';
+import { afterResponse } from '@/lib/after-response';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -229,9 +230,11 @@ export async function getTenantSchema(tenantId: string): Promise<TenantSiteSchem
   // 2. DB lookup
   const schema = await lookupSchemaFromDb(tenantId);
 
-  // 3. Populate cache (fire-and-forget) — cache null too so we don't hammer DB
+  // 3. Populate cache (fire-and-forget) — cache null too so we don't hammer DB.
+  // FOLLOW-432 / Rule K.2: wrapped in afterResponse() so the Upstash write completes
+  // after the response is sent rather than being dropped on Vercel instance suspension.
   const cacheValue = JSON.stringify(schema);
-  void redisSet(cacheKey, cacheValue, CACHE_TTL_SECONDS);
+  afterResponse(() => redisSet(cacheKey, cacheValue, CACHE_TTL_SECONDS));
 
   return schema;
 }

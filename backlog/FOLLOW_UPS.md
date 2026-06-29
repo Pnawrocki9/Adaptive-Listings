@@ -12212,12 +12212,21 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   {}`whose body is **empty**. A Redis REST auth (401) / quota (429) / wrong-token rejection is therefore doubly invisible: the non-ok HTTP response is never checked, and even a network throw is swallowed silently — zero Sentry, zero log. Third backend of the fire-and-forget-HTTP-rejection family (Upstash Redis REST), in a different app (decision-api), NOT covered by FOLLOW-425/426/427/428. **Lower blast radius than the analytics sinks** — this is a read-through *cache populate*; on failure`getTenantSchema`still returns the correct`fetchSchemaFromApi`result (just uncached → every reorder request pays the SCHEMA_API round-trip and a Redis outage stays permanently silent). Hence P2 (latency/cost, not correctness). Add a`res.ok`check + replace the empty`catch
   {}`; both paths capture to Sentry. Preserve fire-and-forget (the `void redisSet` caller is
   unchanged; the function must never throw).
+- **scope_amendment (RETRO-138 PM note 2026-06-29):** Also wrap `redisSet` in `ctx.waitUntil` (the
+  Cloudflare Worker flush-axis analogue of Next.js `after()`). Without `ctx.waitUntil`, the
+  fire-and-forget fetch and its new `res.ok`/Sentry capture can be dropped if the Worker instance is
+  recycled before the micro-task queue drains — same root cause as ESC-033 on the Vercel side. The
+  caller at `reorder.ts:204` passes `env` (which includes `ctx`); wrap:
+  `ctx.waitUntil(redisSet(...))` or accept `ctx: ExecutionContext` in `redisSet` and call
+  `ctx.waitUntil(fetch(...).then(...).catch(...))` internally (preferred: no call-site change).
 - **ac:**
   - [ ] `redisSet` checks `res.ok`; on non-ok reads body, `console.error`s, and captures to Sentry
         with `tags:{ area:'reorder', sink:'redis', kind:'insert_rejected' }` + `extra:{ status }`.
   - [ ] The empty `catch {}` is replaced with a `Sentry.captureException` tagged `kind:'network'`.
         The function still never throws (fire-and-forget preserved; `void redisSet(...)` caller
         untouched).
+  - [ ] The internal fetch chain is wrapped in `ctx.waitUntil()` so the Redis write + its Sentry
+        capture complete before Worker instance recycling (mirrors ESC-033 fix for CF Workers).
   - [ ] 4 tests: (a) non-ok HTTP → Sentry `kind=insert_rejected`, no throw; (b) network rejection →
         Sentry `kind=network`, no throw; (c) successful 200 → no Sentry; (d) no-op when
         `UPSTASH_REDIS_URL` unset.
@@ -12278,8 +12287,8 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   await them; DSR call sites drop their redundant outer `.catch()` (the sink captures all errors
   internally and never rejects). NOT `waitUntil` — `after()` needs no new dependency.
 - **ac:**
-  - [x] All five sinks registered via `after()`; no remaining un-awaited bare `fetch` sink in
-        `apps/control-plane/src`.
+  - [x] The 5 ESC-033-named sinks registered via `after()`. NOTE: AC-1 was over-claimed at merge
+        time — ≥5 additional request-path sinks remained un-wrapped (addressed by FOLLOW-432).
   - [x] Tests assert each sink is registered via `after()` (after() mocked as a synchronous
         pass-through).
   - [x] `tsc --noEmit`, eslint, prettier, and affected vitest suites (45 tests) green.
@@ -12332,7 +12341,8 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] `after-response.ts` has a direct 2-case unit test (fallback-on-throw + after-on-success).
   - [ ] Correct AC-1's wording in the FOLLOW-431 record (was over-claimed).
   - [ ] `next build` / `next lint` (not just standalone eslint) + affected vitest suites green.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (2026-06-29 → QUEUE.md, status READY; branch
+  backend-engineer/FOLLOW-432-sweep-remaining-ff-sinks)
 
 ---
 

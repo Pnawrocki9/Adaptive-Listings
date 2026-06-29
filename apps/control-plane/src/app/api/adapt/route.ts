@@ -141,8 +141,10 @@ const CHAT_NLP_LIVE = process.env.CHAT_NLP_LIVE === 'true';
 function checkPilotFrozenAsync(tenantId: string, requestId: string): void {
   if (!tenantId || tenantId === 'unknown') return;
 
-  // Fire-and-forget — never awaited, never surfaces to callers.
-  void (async () => {
+  // FOLLOW-432 / Rule K.2: wrapped in afterResponse() so the DB read and console.warn
+  // complete after the response is sent rather than being dropped on Vercel suspension.
+  // The function is still non-blocking and never surfaces errors to callers.
+  afterResponse(async () => {
     try {
       const db = createAdminClient();
       const rows = await db
@@ -185,7 +187,7 @@ function checkPilotFrozenAsync(tenantId: string, requestId: string): void {
       // Analytics/observability failures must never surface to callers.
       console.error('[adapt] pilot_frozen check failed:', err instanceof Error ? err.message : err);
     }
-  })();
+  });
 }
 
 // ─── POST body schema ─────────────────────────────────────────────────────────

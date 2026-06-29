@@ -30,6 +30,7 @@ import type { TenantSiteSchema } from '@estalara/shared';
 import { errorBody, ErrorCode } from '@estalara/shared';
 import { invalidateTenantSchemaCache } from '@/lib/tenant-schema';
 import { seedListingEmbeddingsForActivation } from '@/lib/seed-listing-embeddings';
+import { afterResponse } from '@/lib/after-response';
 
 // ─── Request schema ───────────────────────────────────────────────────────────
 
@@ -206,14 +207,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const displayKey = existing.prefix + '...' + existing.last4;
       // Bust the Redis cache so the next adapt request sees the freshly activated schema.
       await invalidateTenantSchemaCache(tenantId);
-      // Fire-and-forget: seed listing embeddings in the background (FOLLOW-046).
-      // Do not await — embedding generation must not block the activation response.
-      void seedListingEmbeddingsForActivation(tenantId, schemaValue).catch((err: unknown) => {
-        console.error(
-          '[schema/activate] seedListingEmbeddingsForActivation (existing-key path) threw unexpectedly:',
-          err instanceof Error ? err.message : err,
-        );
-      });
+      // FOLLOW-432 / Rule K.2: registered via afterResponse() so the sequential embed loop
+      // completes after the response is sent before Vercel instance suspension.
+      // Budget assessment: demo tenant runs 12 sequential embed calls × ~200ms = ~2.4s,
+      // well within both the 15s Hobby and 60s Pro after() Node-runtime limits.
+      // Real tenants without schema-embedded listing_ids exit early (no-op), so the
+      // budget concern noted in FOLLOW-432 does NOT apply — afterResponse() is correct here.
+      afterResponse(() =>
+        seedListingEmbeddingsForActivation(tenantId, schemaValue).catch((err: unknown) => {
+          console.error(
+            '[schema/activate] seedListingEmbeddingsForActivation (existing-key path) threw unexpectedly:',
+            err instanceof Error ? err.message : err,
+          );
+        }),
+      );
       return NextResponse.json({ api_key: displayKey, tenant_id: tenantId }, { status: 200 });
     }
 
@@ -233,14 +240,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Bust the Redis cache so the next adapt request sees the freshly activated schema.
     await invalidateTenantSchemaCache(tenantId);
-    // Fire-and-forget: seed listing embeddings in the background (FOLLOW-046).
-    // Do not await — embedding generation must not block the activation response.
-    void seedListingEmbeddingsForActivation(tenantId, schemaValue).catch((err: unknown) => {
-      console.error(
-        '[schema/activate] seedListingEmbeddingsForActivation (new-key path) threw unexpectedly:',
-        err instanceof Error ? err.message : err,
-      );
-    });
+    // FOLLOW-432 / Rule K.2: same afterResponse() wrapping as the existing-key path above.
+    afterResponse(() =>
+      seedListingEmbeddingsForActivation(tenantId, schemaValue).catch((err: unknown) => {
+        console.error(
+          '[schema/activate] seedListingEmbeddingsForActivation (new-key path) threw unexpectedly:',
+          err instanceof Error ? err.message : err,
+        );
+      }),
+    );
     // Return the raw key — it is only visible once.
     return NextResponse.json({ api_key: rawKey, tenant_id: tenantId }, { status: 200 });
   } catch (err) {

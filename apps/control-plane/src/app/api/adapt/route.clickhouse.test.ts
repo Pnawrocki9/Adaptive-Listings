@@ -509,9 +509,10 @@ describe('FOLLOW-431: publishAbAssignmentEvent registered via after() in POST ha
     await POST(makePostRequest(BASE_BODY));
     await new Promise((r) => setTimeout(r, 0));
 
-    // Two after() calls are expected in the normal POST treatment path:
-    //   1. publishAbAssignmentEvent (treatment arm)
-    //   2. logDecisionAsync
-    expect(mockAfter).toHaveBeenCalledTimes(2);
+    // Three after() calls are expected in the normal POST treatment path:
+    //   1. checkPilotFrozenAsync (FOLLOW-432: now wrapped in afterResponse())
+    //   2. publishAbAssignmentEvent (treatment arm)
+    //   3. logDecisionAsync
+    expect(mockAfter).toHaveBeenCalledTimes(3);
   });
 });

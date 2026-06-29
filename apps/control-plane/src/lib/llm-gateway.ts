@@ -29,11 +29,11 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
-import { after } from 'next/server';
 import type { ArchetypeId, TextDirective } from '@estalara/shared';
 import type { PlaybookEntry } from '@estalara/sdk/playbooks';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
+import { afterResponse } from '@/lib/after-response';
 import * as Sentry from '@sentry/nextjs';
 
 // ---------------------------------------------------------------------------
@@ -463,10 +463,11 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // Log to ClickHouse (fire-and-forget).
     // FOLLOW-431 / ESC-033: registered via after() so the async write (and its
     // fail-loud .then/.catch → Sentry) completes after the response is sent.
-    // after() is called here (inside the awaited callLlmGateway) rather than at
+    // afterResponse() is called here (inside the awaited callLlmGateway) rather than at
     // the route call site — the async context flows from the route handler through
-    // callLlmGateway, so after() can be registered here while still within the request scope.
-    after(() =>
+    // callLlmGateway, so the request scope is still active here. Outside a request scope
+    // (unit tests calling callLlmGateway directly) afterResponse falls back to fire-and-forget.
+    afterResponse(() =>
       logLlmCallAsync({
         sessionId: input.sessionId ?? 'unknown',
         tenantId: input.tenantId ?? 'unknown',

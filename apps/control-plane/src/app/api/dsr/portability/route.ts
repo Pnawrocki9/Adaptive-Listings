@@ -17,8 +17,9 @@
  * @module apps/control-plane/src/app/api/dsr/portability/route
  */
 
-import { NextResponse, after } from 'next/server';
+import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { afterResponse } from '@/lib/after-response';
 import { eq, and, ne } from 'drizzle-orm';
 import {
   createAdminClient,
@@ -215,7 +216,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Audit log (fire-and-forget) ────────────────────────────────────────────
   // FOLLOW-431 / ESC-033: registered via after() so the async write and its
   // fail-loud Sentry capture complete after the response before instance suspension.
-  after(() =>
+  afterResponse(() =>
     writeDsrAuditLog({
       tenant_id: record.tenantId,
       session_id: record.sessionId,

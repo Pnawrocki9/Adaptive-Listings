@@ -32,8 +32,9 @@
  * @module apps/control-plane/src/app/api/dsr/erase/route
  */
 
-import { NextResponse, after } from 'next/server';
+import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { afterResponse } from '@/lib/after-response';
 import { z } from 'zod';
 import { eq, and, ne, sql } from 'drizzle-orm';
 import {
@@ -500,7 +501,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         // FOLLOW-431 / ESC-033: registered via after() so the async write and its
         // fail-loud Sentry capture complete after the response before instance suspension.
         // writeDsrAuditLog already handles all errors internally — no extra .catch() needed.
-        after(() =>
+        afterResponse(() =>
           writeDsrAuditLog({
             tenant_id: record.tenantId,
             session_id: record.sessionId,
@@ -571,7 +572,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // clickhouse_mutation_* columns once mutations resolve.
   // FOLLOW-431 / ESC-033: registered via after() so the async write and its
   // fail-loud Sentry capture complete after the response before instance suspension.
-  after(() =>
+  afterResponse(() =>
     writeDsrAuditLog({
       tenant_id: record.tenantId,
       session_id: record.sessionId,

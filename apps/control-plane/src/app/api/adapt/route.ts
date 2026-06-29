@@ -27,7 +27,7 @@
  * @module apps/control-plane/src/app/api/adapt/route
  */
 
-import { NextResponse, after } from 'next/server';
+import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { errorBody, ErrorCode, computeCosineSimilarity } from '@estalara/shared';
@@ -50,6 +50,7 @@ import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { getAuthClaims } from '@estalara/auth';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { publishAbAssignmentEvent } from '@/lib/ab-events';
+import { afterResponse } from '@/lib/after-response';
 import { getTenantSchema as getTenantSchemaFromDb } from '@/lib/tenant-schema';
 import { getBanditArms } from '@/lib/bandit-query';
 import {
@@ -936,7 +937,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   //
   // FOLLOW-431 / ESC-033: registered via after() so the async write (and its fail-loud
   // .then/.catch → Sentry) completes after the response is sent before instance suspension.
-  after(() =>
+  afterResponse(() =>
     logDecisionAsync(
       sessionId,
       tenantId,
@@ -1140,7 +1141,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // AC-2: holdout → no adaptation, emit ab.assignment event fire-and-forget.
     // FOLLOW-431 / ESC-033: registered via after() so the async write and its
     // fail-loud Sentry capture complete after the response, before instance suspension.
-    after(() =>
+    afterResponse(() =>
       publishAbAssignmentEvent({
         session_id: body.session_id,
         tenant_id: tenantId,
@@ -1168,7 +1169,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Treatment arm: emit ab.assignment event and continue building directives.
   // FOLLOW-431 / ESC-033: registered via after() so the async write and its
   // fail-loud Sentry capture complete after the response, before instance suspension.
-  after(() =>
+  afterResponse(() =>
     publishAbAssignmentEvent({
       session_id: body.session_id,
       tenant_id: tenantId,
@@ -1397,7 +1398,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   //
   // FOLLOW-431 / ESC-033: registered via after() so the async write (and its fail-loud
   // .then/.catch → Sentry) completes after the response is sent before instance suspension.
-  after(() =>
+  afterResponse(() =>
     logDecisionAsync(
       body.session_id,
       tenantId,

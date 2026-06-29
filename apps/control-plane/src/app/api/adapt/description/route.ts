@@ -36,9 +36,10 @@
  * @module apps/control-plane/src/app/api/adapt/description/route
  */
 
-import { NextResponse, after } from 'next/server';
+import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
+import { afterResponse } from '@/lib/after-response';
 import * as Sentry from '@sentry/nextjs';
 import { errorBody, ErrorCode } from '@estalara/shared';
 import type { DescriptionResponse, DescriptionRequestedEvent } from '@estalara/shared';
@@ -393,7 +394,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // FOLLOW-431 / ESC-033: registered via after() so the async Redpanda publish (and its
   // fail-loud Sentry capture) completes after the response is sent before instance suspension.
   // Response is not blocked — after() runs post-response while keeping the instance alive.
-  after(() => publishDescriptionRequested(event));
+  afterResponse(() => publishDescriptionRequested(event));
 
   // Return template fallback immediately.
   // headline is null on cold-start — SDK keeps the playbook headline directive (ADR-0009).

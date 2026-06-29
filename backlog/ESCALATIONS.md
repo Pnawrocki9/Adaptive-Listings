@@ -1798,3 +1798,12 @@ errors internally and never rejects). Tests assert each sink is registered via `
 makes the FOLLOW-425/426/427/428 fail-loud observability effective. Title's "regression" framing
 superseded by the latent-bug diagnosis. **Post-merge:** verify in prod via a burst of N `/api/adapt`
 requests → expect N rows in `adaptation_decisions` (not the prior ~1/8).
+
+**PROD VERIFICATION — PASSED 2026-06-29.** Burst of 10 GET `/api/adapt` requests (session prefix
+`smoke-esc033-1782729874-`, archetype `luxury_buyer`, tier 2) all returned HTTP 200;
+`SELECT count() FROM adaptation_decisions WHERE session_id LIKE 'smoke-esc033-1782729874-%'`
+returned **10** (vs the prior ~1/8 burst-landing rate). All 10 rows present with distinct
+session_ids, ts 10:44:35–10:44:37Z, variant=control, source=playbook,
+page_context_source=caller_supplied. Confirmed against the post-merge prod deploy (commit `3a0f802`,
+prod deploy created 09:08Z). Procedure recorded in `docs/runbooks/esc-033-verification.md`. ESC-033
+fully closed.

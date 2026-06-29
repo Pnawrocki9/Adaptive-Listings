@@ -2,6 +2,20 @@
 
 ---
 
+**Date / ticket:** 2026-06-29 — FOLLOW-433 (full loop closure: validate, merge, RETRO-140, promote
+FOLLOW-434) **Delegation row used:** ingest worker, control-plane, Postgres/auth → backend-engineer
+**What validation caught (or missed):** `gh pr checks --json` flag does not exist on this version of
+gh; had to use `gh pr view --json statusCheckRollup` to get structured JSON. CI non-success count
+calculation required cross-referencing PR #381 failure pattern to confirm Rule I ×2 + Archetype
+embeddings ×2 are all pre-existing-red (not new regressions). Validated that `extractListingIdsFromSchema`
+currently returns `[]` for all non-demo tenants, so FOLLOW-434's budget concern is a FORWARD SAFETY
+fix (not a current regression) — delegation brief must make this clear so worker doesn't dismiss it.
+**A delegation/validation rule I'd add:** Before writing a budget-concern delegation brief, read the
+actual discovery function to confirm whether the concern is current (hot) or forward-looking (preventive)
+— this changes whether the brief should flag urgency or frame as hardening.
+
+---
+
 **Date / ticket:** 2026-06-29 — FOLLOW-433 (promotion + delegation) **Delegation row used:** ingest
 worker, control-plane, Postgres/auth → backend-engineer **What validation caught (or missed):**
 Verified exact line numbers for all 3 sinks against current HEAD before writing the brief —

@@ -7134,15 +7134,17 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     Finish control-plane fire-and-forget sweep (3 surviving request-path sinks) + add CI grep-guard
     so "verify by grep" AC cannot over-claim a third time (RETRO-139 §4a LG-1 / §4c TG-1)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-06-29T00:00:00Z'
+  completed_at: '2026-06-29T17:35:35Z'
   priority: P2
   estimated_hours: 2.5
   depends_on: [FOLLOW-432]
   source: RETRO-139 (§4a LG-1, §4c TG-1) — source ticket FOLLOW-432 / PR #381
   spec: backlog/FOLLOW_UPS.md (FOLLOW-433 stub)
   branch: backend-engineer/FOLLOW-433-ff-sink-sweep-ci-guard
+  pr: '#383'
   notes: |
     Promoted and delegated 2026-06-29 (table row: ingest worker, control-plane,
     Postgres/auth → backend-engineer). Three surviving bare-void request-path sinks
@@ -7153,6 +7155,39 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     afterResponse already imported in dsr/erase/route.ts; needs adding to feedback/route.ts.
     CI grep-guard: scripts/check-fire-and-forget-sinks.sh wired into ci.yml as a new
     dedicated job (pattern matching existing rule-h / rule-j / privacy-notice-keys-sync jobs).
+    CI counter: 0/5. Fix iterations: 0/3.
+    DONE. PR #383 merged 2026-06-29T17:35:35Z (squash). All 3 sinks wrapped in afterResponse():
+    updateArmAsync + upsertConversionLabelAsync (feedback/route.ts), deleteSessionFromRedis
+    (dsr/erase/route.ts). CI grep-guard (scripts/check-fire-and-forget-sinks.sh + --self-test)
+    added as hard-gate CI job "Fire-and-forget sink guard (FOLLOW-433)" — no continue-on-error.
+    Tests: FOLLOW-433 describe blocks in route.test.ts + dsr-routes.test.ts assert after()
+    registration (62/62 passing). CI verified green; baseline non-blocking only (Rule I ×2 +
+    Archetype embeddings ×2). Retrospective RETRO-140 written.
+
+- id: FOLLOW-434
+  title: >-
+    Bound seedListingEmbeddingsForActivation's after() budget for large real-tenant catalogs: cap
+    inline loop + offload overflow to Modal/queue job + fix stale JSDoc (RETRO-139 §4a LG-2 / §4d DG-1)
+  agent: backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-06-29T18:00:00Z'
+  priority: P2
+  estimated_hours: 4
+  depends_on: [FOLLOW-432, FOLLOW-433]
+  source: RETRO-139 (§4a LG-2, §4d DG-1) — source ticket FOLLOW-432 / PR #381
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-434 stub)
+  branch: backend-engineer/FOLLOW-434-seed-budget-cap-modal-queue
+  notes: |
+    Promoted 2026-06-29. FOLLOW-432 wrapped seedListingEmbeddingsForActivation in afterResponse()
+    with an optimistic budget assessment ("real tenants without schema-embedded listing_ids exit
+    early — no-op, so budget concern does NOT apply"). But discovery source #1 is
+    schema.listing_ids (lib/seed-listing-embeddings.ts:18-22) and JSDoc anticipates "100+
+    listings" (:12). A real tenant with many listing_ids → ~100 × ~200ms ≈ ~20s sequential loop
+    > 15s Hobby after() budget → mid-loop kill → un-embedded tail → ungrounded RAG adaptation.
+    RETRO-138 §4a #2 Modal/queue caveat NOT discharged by FOLLOW-432. Also: JSDoc at :10 still
+    says "the activate route calls void seedListingEmbeddingsForActivation()" — stale post-FOLLOW-432.
+    Delegated 2026-06-29 (table row: ingest worker, control-plane, Postgres/auth → backend-engineer).
     CI counter: 0/5. Fix iterations: 0/3.
 ```
 

@@ -204,18 +204,17 @@ TTL_TIER_2: int = 259200  # 72 hours
 TTL_TIER_3: int = 172800  # 48 hours
 
 # ---------------------------------------------------------------------------
-# Modal app definition
+# Modal app definition — shared with all llm-gateway consumers (FOLLOW-437)
+#
+# ``app`` and ``_image`` are imported from jobs._app so that a single
+# modal.App object owns every @app.function across the gateway.  Previously
+# this module declared its own modal.App("estalara-description-generator"),
+# which caused deploying consume_embed_seed_requests.py directly to silently
+# wipe generate_description + consume_description_requests from the live app
+# (BUG 2, ESC-034).  The shared _app.py module is the single source of truth.
 # ---------------------------------------------------------------------------
 
-app = modal.App("estalara-description-generator")
-
-_image = modal.Image.debian_slim(python_version="3.12").pip_install(
-    "anthropic>=0.28",
-    "httpx>=0.27",
-    "confluent-kafka>=2.4",
-    "sentry-sdk>=2.0",
-    "structlog>=24.0",
-)
+from jobs._app import _image, app  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

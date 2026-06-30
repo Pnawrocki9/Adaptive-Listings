@@ -1,5 +1,26 @@
 # ml-engineer lessons
 
+- **2026-06-30 / FOLLOW-437** · Fixed two Modal deployment bugs (ESC-034): (1) `main.py` was an
+  empty placeholder that registered zero functions on `modal deploy main.py`; (2) both
+  `generate_description.py` and `consume_embed_seed_requests.py` each independently declared
+  `modal.App("estalara-description-generator")`, so deploying either file wiped the other's
+  functions from the live app. Fix: extracted the shared `app` and `_image` into a new
+  `jobs/_app.py` module; both consumers import from there; `main.py` now imports both consumer
+  modules (load-bearing side-effects) and re-exports `app`. Verified: `modal.App(...)` called
+  exactly once, both consumers share the same object by identity. All 104 Python tests pass
+  including the cross-language contract gate. · **Judgment calls:** (1) App name
+  `estalara-description-generator` preserved despite being a misnomer for a multi-consumer gateway —
+  renaming would orphan live functions, and the risk is not worth a cosmetic. Filed a comment in
+  `_app.py` explaining the decision explicitly. (2) `_image` in `_app.py` carries the UNION of both
+  consumers' pip dependencies — `anthropic>=0.28` (only needed by `generate_description`) is
+  included in the image for both; this is intentional (single image for one app) and harmless
+  (anthropic is already in the llm-gateway pyproject dependencies). (3) `get_service_info()` status
+  changed from `"placeholder"` to `"active"` — the function is real infrastructure metadata now.
+  Updated test assertion accordingly. · **Guardrail I'd add:** When adding a second consumer to an
+  existing Modal app, CI should assert that no module other than the designated shared `_app.py`
+  calls `modal.App(...)` — a grep or AST check would have caught the collision before it reached
+  production.
+
 - **2026-06-30 / FOLLOW-435 LEG 2** · Built the Modal embed-seed consumer in
   `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py`, mirroring
   `consume_description_requests()` exactly (30s Modal cron, 25s poll window, confluent-kafka

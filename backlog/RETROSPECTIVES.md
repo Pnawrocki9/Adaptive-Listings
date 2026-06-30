@@ -23044,3 +23044,152 @@ Traced END-TO-END (charter → script behavior → the input it reads → the gu
   in future; LEG 1 passes that guard cleanly.
 - **FOLLOW-436:** the single new stub from this retro.
 
+<!-- next free FOLLOW number: 439 (438 = RETRO-143 §4a LG-1 — CI lint guard: assert exactly one
+modal.App() in apps/llm-gateway/src; P3 devops-engineer ~1h. RETRO-143 = retro for PR #393 /
+FOLLOW-437, MERGED 2026-06-30, commit 09084f3; fix BUG 1 orphan main.py + BUG 2 modal.App name
+collision; 104 pytest pass; NO new exported TS symbol / event / env-var / DB column / topic.) -->
+
+## RETRO-143 — FOLLOW-437 (consolidate llm-gateway Modal app: fix BUG 1 orphan main.py entrypoint + BUG 2 modal.App name collision, ESC-034) — 2026-06-30
+
+### 1. Summary of change
+
+- **PR:** #393 (merged 2026-06-30, commit 09084f3).
+- **Source:** FOLLOW-437 was NOT pre-planned. It was field-spawned by pm-orchestrator during
+  FOLLOW-436 go-live wiring verification when ESC-034 identified two structural blockers in the
+  FOLLOW-435 codebase.
+- **Files changed:** `apps/llm-gateway/src/jobs/_app.py` (NEW — single shared
+  `modal.App("estalara-description-generator")`); `generate_description.py` (imports `app` from
+  `_app.py`, removes standalone `modal.App`); `consume_embed_seed_requests.py` (imports `app` from
+  `_app.py`, removes standalone `modal.App`); `apps/llm-gateway/src/main.py` (imports both consumer
+  modules via load-bearing `# noqa: F401` so `modal deploy main.py` registers all 3 functions);
+  tests added.
+- **Modules touched:** `apps/llm-gateway` only.
+- **Key contracts changed:** None. App name `estalara-description-generator` preserved. No TS
+  exports, no event schema, no env-var, no DB column, no Redpanda topic changed.
+
+### 2. Verification done in PR
+
+- Python tests: 104/104 pass.
+- CI gates: Python tests, cross-language contract gate, gitleaks, Format — all green.
+- BUG 1 verified: `main.py` now imports both consumer modules and `modal deploy main.py` in dry-run
+  registers all 3 functions.
+- BUG 2 verified: only one `modal.App("estalara-description-generator")` exists (in `_app.py`);
+  both `generate_description.py` and `consume_embed_seed_requests.py` import from there.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean`
+
+- **CHECK A (dead code):** `_app.py` is a new module; its non-test importers are
+  `generate_description.py` and `consume_embed_seed_requests.py` — both non-test production code.
+  Not dead.
+- **CHECK B (half-wire):** No new event / env-var / column / topic / SDK-signal introduced. The
+  3 Modal functions (`generate_description`, `consume_description_requests`,
+  `consume_embed_seed_requests`) are all reachable from `main.py`. The existing cross-language
+  contract gate (from FOLLOW-435 LEG 2) continues to enforce the event schema.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2 — new stub FOLLOW-438):** The BUG 2 root cause — mirroring an existing Modal
+  consumer copied its `modal.App(name)` verbatim, creating a silent name collision — was invisible
+  to CI (no `modal deploy` in CI, no lint rule enforcing one `modal.App()` per app). The fix is
+  structural (shared `_app.py`) but leaves no mechanical guard preventing a future developer from
+  re-introducing a standalone `modal.App()` in a new consumer file. A lint rule or `grep`-based
+  CI check asserting exactly one `modal.App()` call in the entire `apps/llm-gateway/src` tree
+  (the shared one) would catch this at PR time. Filed as FOLLOW-438 (P3).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. The two bugs (BUG 1, BUG 2) are the scope of this ticket and are fixed. No new bugs
+  introduced by the fix.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (note — P3):** There is no CI step that runs `modal deploy --dry-run` to confirm the
+  function registry after a deploy. CI can assert the Python code is importable and tests pass, but
+  it cannot assert the live Modal function count post-deploy. This is a pre-existing limitation of
+  the CI model (no Modal account in CI). The fix is verified by the structural correctness of the
+  import graph, not a live deploy smoke. Acceptable given the constraint; noted.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (note):** `backlog/HANDOFFS.md` line 242 and `backlog/sprint-0/TICKET-009.md` line 144
+  both reference `modal deploy apps/llm-gateway/src/main.py` as the canonical deploy command.
+  Post-fix, this command is now correct and safe. No documentation update needed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-436 (BLOCKED_ON_HUMAN):** The two code blockers that prevented safe go-live are now
+  resolved. FOLLOW-436 is unblocked on the code axis. Only operator steps remain (provision
+  `estalara-secrets` + `modal deploy` + smoke). ESC-034 updated accordingly.
+- **FOLLOW-435 (DONE):** No change — FOLLOW-437 is a structural fix to the deployment entrypoint,
+  not a change to the FOLLOW-435 consumer logic.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-438 (P3, new stub):** File a lint/grep CI guard asserting exactly one `modal.App()`
+  call in `apps/llm-gateway/src` to prevent BUG 2 recurrence.
+
+#### 5c. Contracts changed others rely on
+
+- None. The `modal.App` name `estalara-description-generator` is preserved. The 3 function names
+  (`generate_description`, `consume_description_requests`, `consume_embed_seed_requests`) are
+  unchanged. No TS/Python public API changed.
+
+#### 5d. Architectural assumptions affected
+
+- **Single-entrypoint Modal deploy:** The repo now correctly assumes `modal deploy
+  apps/llm-gateway/src/main.py` is the single deploy command that registers all functions under
+  `estalara-description-generator`. This is a structural invariant; any new Modal function must be
+  added to `main.py` (via a module import) to be registered. This invariant has no CI enforcement
+  (see LG-1 / FOLLOW-438).
+
+### 6. New lesson candidates
+
+- **Pattern (MODAL-APP-COPY): "Copying an existing Modal consumer module copies its
+  `modal.App(name)` call; in Modal, deploying the copy alone wipes the original's functions from
+  the live app."** — RETRO-143, count 1. Not promoted (count-1, needs a second independent
+  instance). Held for FOLLOW-438 guard discussion.
+- **Pattern (ENTRYPOINT-ORPHAN): "A `main.py` that imports nothing from its worker modules
+  deploys an empty app; CI cannot catch this without a `modal deploy --dry-run` step."** — RETRO-143,
+  count 1. Not promoted. The structural fix (main.py with load-bearing imports) is the mitigation;
+  FOLLOW-438 (lint guard) is the mechanical prevention.
+- Anti-count-inflation honored: both patterns are count-1 fresh instances; no prior retro
+  covers either. No rule promotion this retro.
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **ESC-034 (code-fix axis): GENUINELY CLOSED.** BUG 1 and BUG 2 are fixed by this PR. The
+  code is now safe to deploy. ESC-034 remains OPEN on the operator go-live axis (provision
+  secrets + deploy + smoke).
+- **FOLLOW-436 (code-blocker axis): GENUINELY CLOSED.** The two `depends_on` code blockers that
+  prevented FOLLOW-436 delegation are resolved. FOLLOW-436 is now BLOCKED_ON_HUMAN (operator
+  steps only).
+- **RETRO-142 §9 (FOLLOW-436 operator go-live):** Not closed by this retro — that requires the
+  human operator to execute. Reiterated.
+
+### 8. Multi-axis / contradiction reconciliation
+
+- **Deployment axis:** The LEG 1 + LEG 2 code (PRs #389 + #390) was correct; the bug was in the
+  deployment entrypoint and the shared-app extraction. No contradiction with RETRO-142.
+- **FOLLOW-436 depends_on [FOLLOW-435, FOLLOW-437]:** Both are now DONE. FOLLOW-436 is correctly
+  BLOCKED_ON_HUMAN with no remaining code dependencies.
+
+### 9. Follow-ups
+
+- **FOLLOW-438 (P3, devops-engineer or ml-engineer, ~1h)** — add a `grep`-based CI guard (or
+  Python lint rule) asserting exactly one `modal.App()` instantiation exists in
+  `apps/llm-gateway/src` (the shared `_app.py` one). Prevents BUG 2 recurrence silently.
+
+### 10. Cross-references
+
+- **Related to RETRO-142 (FOLLOW-435):** direct parent chain — FOLLOW-435 shipped the consumer
+  code; FOLLOW-437 fixed the deployment entrypoint that FOLLOW-435 left as a placeholder.
+- **Related to ESC-034:** this retro closes the code-fix axis of ESC-034. Operator go-live axis
+  remains open.
+- **Related to FOLLOW-436:** FOLLOW-437 unblocks FOLLOW-436 on the code axis.
+

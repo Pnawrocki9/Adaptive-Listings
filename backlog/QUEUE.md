@@ -7167,7 +7167,8 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
 - id: FOLLOW-434
   title: >-
     Bound seedListingEmbeddingsForActivation's after() budget for large real-tenant catalogs: cap
-    inline loop + offload overflow to Modal/queue job + fix stale JSDoc (RETRO-139 §4a LG-2 / §4d DG-1)
+    inline loop + offload overflow to Modal/queue job + fix stale JSDoc (RETRO-139 §4a LG-2 / §4d
+    DG-1)
   agent: backend-engineer
   status: IN_PROGRESS
   assigned_to: backend-engineer

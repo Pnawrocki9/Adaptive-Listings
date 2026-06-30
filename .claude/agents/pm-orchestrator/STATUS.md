@@ -21,8 +21,8 @@ by FOLLOW-431 + prod verification).
 
 - FOLLOW-434 (backend-engineer): Bound seedListingEmbeddingsForActivation after() budget + offload
   overflow to Modal/queue + fix stale JSDoc. Branch:
-  backend-engineer/FOLLOW-434-seed-budget-cap-modal-queue. Started: 2026-06-29. CI counter: 0/5.
-  Fix iterations: 0/3.
+  backend-engineer/FOLLOW-434-seed-budget-cap-modal-queue. Started: 2026-06-29. CI counter: 0/5. Fix
+  iterations: 0/3.
 
 ---
 
@@ -56,9 +56,10 @@ FOLLOW-434: PENDING — counter starts at 0/5 / 0/3 when worker opens PR.
 - FOLLOW-432: DONE (PR #381, merge commit 3cb5c28, merged 2026-06-29). RETRO-139 written.
 - Next free FOLLOW stub number: 435.
 - FOLLOW-431: DONE (PR #379, merged 2026-06-29, prod-verified 10/10 burst writes).
-- FOLLOW-434: IN_PROGRESS (backend-engineer, branch backend-engineer/FOLLOW-434-seed-budget-cap-modal-queue).
-- FOLLOW-429: READY in FOLLOW_UPS.md (not yet promoted; scope widened to include ctx.waitUntil —
-  P2 backend-engineer, CF-Worker flush-axis analogue for decision-api reorder.ts:204). Next after
+- FOLLOW-434: IN_PROGRESS (backend-engineer, branch
+  backend-engineer/FOLLOW-434-seed-budget-cap-modal-queue).
+- FOLLOW-429: READY in FOLLOW_UPS.md (not yet promoted; scope widened to include ctx.waitUntil — P2
+  backend-engineer, CF-Worker flush-axis analogue for decision-api reorder.ts:204). Next after
   FOLLOW-434.
 - FOLLOW-430: READY in FOLLOW_UPS.md (not yet promoted; P3 sdk-engineer, 2h).
 - P2 tickets READY (not yet promoted to QUEUE): FOLLOW-417, FOLLOW-418, FOLLOW-420, FOLLOW-421,

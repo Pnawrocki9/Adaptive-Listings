@@ -12388,8 +12388,8 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] Each newly-wrapped sink has a test asserting it registers via `after()` (synchronous
         pass-through `next/server` mock, per the existing convention).
   - [ ] `next build` / `next lint` (not just standalone eslint) + affected vitest suites green.
-- **promoted_to_queue:** true (2026-06-29 — DONE, PR #383 merged 2026-06-29T17:35:35Z,
-  branch backend-engineer/FOLLOW-433-ff-sink-sweep-ci-guard)
+- **promoted_to_queue:** true (2026-06-29 — DONE, PR #383 merged 2026-06-29T17:35:35Z, branch
+  backend-engineer/FOLLOW-433-ff-sink-sweep-ci-guard)
 
 ---
 

@@ -531,6 +531,13 @@ jobs:
             --tb=short \
             --no-header
 
+      - name: Python contract test — listing-embed seed REQUIRED_FIELDS matches shared fixture (FOLLOW-435)
+        working-directory: apps/llm-gateway
+        run: |
+          python -m pytest src/jobs/test_listing_embed_seed_event_contract.py -v \
+            --tb=short \
+            --no-header
+
       # TypeScript side — validate that DescriptionRequestedEventSchema ⊇ fixture
       - uses: pnpm/action-setup@v4
 

@@ -7206,6 +7206,30 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     Sentry stub — the durable Modal seed job is deferred (tracked as FOLLOW-435). All 4 human-
     validated ACs met per PM + CI: 1355/1355 tests, lint/typecheck/build green; FF-sink guard PASS.
     RETRO-141 written. Retrospective-analyst spawned.
+
+- id: FOLLOW-435
+  title: >-
+    Replace the FOLLOW-434 overflow stub with a durable Modal seed job for large-catalog activation
+    embedding (RETRO-141 §4a LG-1)
+  agent: backend-engineer + ml-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 6
+  depends_on: [FOLLOW-434]
+  source: RETRO-141 (§4a LG-1) — source ticket FOLLOW-434 (PR #385)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-435 stub)
+  branch: backend-engineer/FOLLOW-435-modal-overflow-seed-job
+  notes: |
+    Promoted 2026-06-30. FOLLOW-434 (PR #385, 3a226b4) capped the inline embedding loop
+    at MAX_INLINE_SEED=50 and routes overflow listings to an observable-only Sentry stub
+    (captureMessage warning + console.warn carrying tenant_id + overflow_listing_ids). The
+    TODO marker at apps/control-plane/src/lib/seed-listing-embeddings.ts reads:
+    "FOLLOW-434 — replace overflow stub with Modal job when seed-modal-job is implemented."
+    This ticket removes that stub and replaces it with a durable Modal task queue job so
+    overflow listings (>50 per activation) are embedded end-to-end without manual operator
+    retry. Co-assigned: backend-engineer (enqueue call from control-plane overflow path) +
+    ml-engineer (Modal Python task consumer — idempotent upsert, retryable, observable
+    via Modal logs + Sentry). Scope and ACs: see backlog/FOLLOW_UPS.md (FOLLOW-435 stub).
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

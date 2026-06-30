@@ -1,7 +1,7 @@
 # PM Orchestrator — Session Status
 
-**Date:** 2026-06-30 **Session:** FOLLOW-434 DONE (PR #385 merged 3a226b4, RETRO-141 written,
-FOLLOW-435 filed). 0/3 in flight.
+**Date:** 2026-06-30 **Session:** FOLLOW-435 promoted to QUEUE.md (READY, co-assigned
+backend-engineer+ml-engineer, P2). 0/3 in flight.
 
 ---
 
@@ -63,14 +63,14 @@ pre-existing on main; Format fixed by PR #386). Counter closed at 1/5 CI checks,
 - FOLLOW-432: DONE (PR #381, merge commit 3cb5c28, merged 2026-06-29). RETRO-139 written.
 - Next free FOLLOW stub number: 436.
 - FOLLOW-431: DONE (PR #379, merged 2026-06-29, prod-verified 10/10 burst writes).
-- FOLLOW-435: OPEN in FOLLOW_UPS.md (not yet promoted; P2, replace Sentry overflow stub in
-  seed-listing-embeddings.ts with durable Modal seed job; backend-engineer+ml-engineer ~6h). Depends
-  on seed-modal-job infra ticket.
+- FOLLOW-435: READY in QUEUE.md (promoted 2026-06-30; P2, replace Sentry overflow stub in
+  seed-listing-embeddings.ts with durable Modal seed job; backend-engineer+ml-engineer ~6h;
+  depends_on FOLLOW-434 DONE). No worker assigned yet.
 - FOLLOW-429: READY in FOLLOW_UPS.md (not yet promoted; scope widened to include ctx.waitUntil — P2
   backend-engineer, CF-Worker flush-axis analogue for decision-api reorder.ts:204). Next after
   FOLLOW-435 or in parallel.
 - FOLLOW-430: READY in FOLLOW_UPS.md (not yet promoted; P3 sdk-engineer, 2h).
 - P2 tickets READY (not yet promoted to QUEUE): FOLLOW-417, FOLLOW-418, FOLLOW-420, FOLLOW-421,
-  FOLLOW-429, FOLLOW-435.
+  FOLLOW-429.
 - P3 tickets READY: FOLLOW-355, FOLLOW-399, FOLLOW-401, FOLLOW-408, FOLLOW-412, FOLLOW-413,
   FOLLOW-416, FOLLOW-430.

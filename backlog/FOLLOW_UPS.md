@@ -12454,7 +12454,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         (tenant_id + overflow listing_ids list).
   - [ ] `MAX_INLINE_SEED` remains the inline budget cap; the Modal path handles the remainder.
   - [ ] `next build` / `next lint` + vitest suites green; CI FF-sink guard PASS (no new bare void).
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (2026-06-30 — READY in QUEUE.md, no worker assigned yet)
 
 ---
 

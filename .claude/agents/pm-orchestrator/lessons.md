@@ -1516,3 +1516,14 @@ surfaced this distinction if the AC had been read literally against the diff. **
 delegation/validation rule I'd add:** When an AC explicitly names a durable queue/job as the
 delivery target, step 5c should check for a real enqueue call — not just an observable stub — and
 bounce to IN_PROGRESS if the job implementation is absent.
+
+---
+
+**Date / ticket:** 2026-06-30 — FOLLOW-435 (promotion-only run) **Delegation row used:** N/A
+(promotion bookkeeping, no delegation). **What validation caught (or missed):** STATUS.md had a
+stale line listing FOLLOW-435 under "P2 tickets READY (not yet promoted to QUEUE)" — caught on
+re-read after the QUEUE.md edit, and corrected before commit. The FOLLOW_UPS.md `promoted_to_queue`
+field was false; updated to true with date. No CI gates apply (docs-only change). **A
+delegation/validation rule I'd add:** After promoting a ticket, grep STATUS.md for the ticket ID and
+update every reference — the "not yet promoted" bucket list is the most common stale entry after
+promotion.

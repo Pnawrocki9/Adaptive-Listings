@@ -1807,3 +1807,56 @@ session_ids, ts 10:44:35–10:44:37Z, variant=control, source=playbook,
 page_context_source=caller_supplied. Confirmed against the post-merge prod deploy (commit `3a0f802`,
 prod deploy created 09:08Z). Procedure recorded in `docs/runbooks/esc-033-verification.md`. ESC-033
 fully closed.
+
+## OPEN — ESC-034: FOLLOW-436 embed-seed Modal consumer blocked on human operator — two code bugs must be fixed before go-live [FOLLOW-436]
+
+**Filed by:** devops-engineer **Date:** 2026-06-30T00:00:00Z **Affects:** FOLLOW-436, FOLLOW-435
+**Type:** other (privileged operator action + pre-go-live code blockers)
+
+**Description:**
+
+FOLLOW-436 (operator go-live for the FOLLOW-435 embed-seed Modal consumer) requires privileged human
+steps: Modal account access, the actual `INTERNAL_API_SECRET` value from Doppler `prd`, and
+`modal deploy`. Agents cannot execute these.
+
+Additionally, wiring verification during FOLLOW-436 surfaced **two structural code bugs** that make
+a safe go-live impossible with the current codebase:
+
+**BUG 1 — ORPHAN (`main.py` deploys nothing):** `apps/llm-gateway/src/main.py` is a placeholder stub
+(no `modal` import, no `modal.App`, no imports of the consumer modules). The canonical deploy
+command `modal deploy apps/llm-gateway/src/main.py` (per `backlog/HANDOFFS.md` line 242 and
+`backlog/sprint-0/TICKET-009.md` line 144) deploys a Modal app with **zero functions**. Neither
+`generate_description.py` nor `consume_embed_seed_requests.py` are reachable from `main.py`.
+
+**BUG 2 — APP-NAME COLLISION (deploying one consumer wipes the other):**
+`apps/llm-gateway/src/jobs/generate_description.py:210` and
+`apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:84` each create an independent
+`modal.App("estalara-description-generator")` object. In Modal, deploying a file REPLACES the entire
+app's function registry with what that file defines. Deploying `consume_embed_seed_requests.py`
+directly would remove `generate_description` and `consume_description_requests` from the live app,
+breaking the description generation pipeline.
+
+**Required actions (in order):**
+
+1. **Code fix (backend-engineer or ml-engineer, ~1h):**
+   - Extract `app = modal.App("estalara-description-generator")` into a shared module (e.g.,
+     `apps/llm-gateway/src/jobs/_app.py`).
+   - Both `generate_description.py` and `consume_embed_seed_requests.py` import `app` from that
+     shared location.
+   - `apps/llm-gateway/src/main.py` imports both consumer modules so
+     `modal deploy apps/llm-gateway/src/main.py` registers all three functions in one deployment.
+   - Open PR, get it merged to `main`.
+
+2. **Operator go-live (Piotr or Rafał, ~20 min, AFTER code fix is merged):** Follow
+   `docs/runbooks/modal-embed-seed-consumer-golive.md` in order:
+   - Step 1: Provision three secrets in Modal `estalara-secrets` (via web console):
+     - `REDPANDA_TOPIC_LISTING_EMBEDDINGS` = `estalara.listing-embeddings`
+     - `EMBED_API_BASE_URL` = `https://admin.estalara.com` (or staging URL)
+     - `INTERNAL_API_SECRET` = copy from
+       `doppler secrets get INTERNAL_API_SECRET --config prd --plain`
+   - Step 2: `modal deploy apps/llm-gateway/src/main.py` — verify `consume_embed_seed_requests`
+     appears in the Modal dashboard with schedule `every 30 seconds`.
+   - Step 3: Smoke verification per the runbook (trigger overflow activation, check Modal logs,
+     check Sentry `tags.area:onboarding tags.sink:modal-embed-seed`).
+
+**Resolution:** _(leave blank until both code fix and operator smoke verification complete)_

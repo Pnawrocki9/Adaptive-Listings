@@ -7246,6 +7246,86 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     gitleaks, FF-sink guard, Format, Lint, Typecheck, Test Node 22, Build). Known
     pre-existing non-blocking checks (Archetype embeddings not-NULL, Rule I) did not
     change status. RETRO-142 written. Retrospective-analyst spawned.
+
+- id: FOLLOW-436
+  title: >-
+    Operator go-live: provision Modal estalara-secrets + re-deploy apps/llm-gateway for embed-seed
+    consumer (RETRO-142 §9)
+  agent: devops-engineer
+  status: BLOCKED_ON_HUMAN
+  priority: P2
+  estimated_hours: 1
+  depends_on: [FOLLOW-435, FOLLOW-437]
+  source: RETRO-142 (§9) — source ticket FOLLOW-435 (PRs #389 + #390)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-436 stub)
+  notes: |
+    Promoted to QUEUE.md 2026-06-30 (pm-orchestrator/FOLLOW-437-436-reconcile reconcile
+    pass). Code blockers BUG 1 (orphan main.py entrypoint) and BUG 2 (modal.App name
+    collision) identified by ESC-034 during FOLLOW-436 go-live wiring verification are
+    now FIXED by FOLLOW-437 (PR #393, merged 2026-06-30, commit 09084f3). Code is safe
+    to deploy.
+
+    Remaining steps are privileged operator actions only:
+    1. Provision three secrets in Modal estalara-secrets (web console):
+       - REDPANDA_TOPIC_LISTING_EMBEDDINGS = estalara.listing-embeddings
+       - EMBED_API_BASE_URL = https://admin.estalara.com (or staging URL)
+       - INTERNAL_API_SECRET = copy from doppler secrets get INTERNAL_API_SECRET
+         --config prd --plain
+    2. modal deploy apps/llm-gateway/src/main.py — verify consume_embed_seed_requests
+       appears in Modal dashboard with schedule "every 30 seconds".
+    3. Smoke verification per docs/runbooks/modal-embed-seed-consumer-golive.md.
+
+    Runbook: docs/runbooks/modal-embed-seed-consumer-golive.md
+    ESC-034: OPEN (reduced to operator go-live steps only; code bugs fixed by FOLLOW-437).
+
+- id: FOLLOW-437
+  title: >-
+    Consolidate llm-gateway Modal app — fix orphan main.py entrypoint (BUG 1) + modal.App name
+    collision (BUG 2) found during FOLLOW-436 go-live wiring verification (ESC-034)
+  agent: ml-engineer
+  status: DONE
+  assigned_to: ml-engineer
+  started_at: '2026-06-30T00:00:00Z'
+  completed_at: '2026-06-30T00:00:00Z'
+  priority: P1
+  estimated_hours: 1
+  depends_on: [FOLLOW-435]
+  source: >-
+    FOLLOW-436 go-live wiring verification / ESC-034 — pre-go-live code bugs blocking safe
+    deployment
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-437 stub — filed and DONE this session)
+  branch: ml-engineer/FOLLOW-437-modal-app-consolidation
+  pr: '#393'
+  merge_commit: '09084f3'
+  notes: |
+    Filed directly by pm-orchestrator during FOLLOW-436 go-live wiring verification (not
+    pre-existing in QUEUE.md). Delegated to ml-engineer (table row: intent/adapt logic,
+    embeddings, LLM gateway, Modal — ml-engineer). Both bugs surfaced during ESC-034
+    wiring verification before operator could execute FOLLOW-436.
+
+    BUG 1 (ORPHAN ENTRYPOINT): apps/llm-gateway/src/main.py was a placeholder stub with
+    no modal import, no modal.App, and no imports of consumer modules. Running
+    `modal deploy apps/llm-gateway/src/main.py` (canonical deploy command per HANDOFFS.md
+    and sprint-0/TICKET-009.md) registered ZERO functions in the live app — neither
+    generate_description.py nor consume_embed_seed_requests.py were reachable.
+
+    BUG 2 (APP-NAME COLLISION): generate_description.py and consume_embed_seed_requests.py
+    each declared an independent modal.App("estalara-description-generator"). In Modal,
+    deploying a single file REPLACES the entire app's function registry. Deploying
+    consume_embed_seed_requests.py alone would have wiped generate_description and
+    consume_description_requests from the live app — breaking the description generation
+    pipeline silently.
+
+    Fix: extracted app = modal.App("estalara-description-generator") into shared module
+    apps/llm-gateway/src/jobs/_app.py. Both generate_description.py and
+    consume_embed_seed_requests.py import app from there. main.py now imports both consumer
+    modules (load-bearing # noqa: F401 imports) so `modal deploy apps/llm-gateway/src/main.py`
+    registers all 3 functions under one app. App name estalara-description-generator
+    preserved (no live-function orphaning). Tests added; 104 pytest pass.
+
+    CI: Python tests 104/104, cross-language contract gate, gitleaks, Format — all green.
+    RETRO-143 written. ESC-034 code-fix axis CLOSED; operator go-live axis remains.
+    CI counter: 1/5. Fix iterations: 0/3.
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

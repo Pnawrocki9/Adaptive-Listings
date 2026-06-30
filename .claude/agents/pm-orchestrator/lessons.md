@@ -2,6 +2,21 @@
 
 ---
 
+**Date / ticket:** 2026-06-30 — FOLLOW-437/436 reconcile (bookkeeping pass) **Delegation row used:**
+intent/adapt logic, embeddings, LLM gateway, Modal — ml-engineer (FOLLOW-437). **What validation
+caught (or missed):** Step 5c wiring check during FOLLOW-436 go-live verification caught BUG 2
+(modal.App name collision) and BUG 1 (orphan main.py entrypoint) — both were invisible to CI because
+no `modal deploy` step exists in CI. FOLLOW-435 LEG 2 review (PR #390) also missed BUG 2 because the
+reviewer checked the consumer's Python logic, not whether copying the existing consumer also
+duplicated its `modal.App(name)` call. Only the go-live wiring verification (step 5c: grep for
+non-test producer + consumer in prod code) surfaced both bugs before a destructive deploy.
+FOLLOW-438 filed (CI lint guard for modal.App count). **A delegation/validation rule I'd add:** When
+a new Modal consumer is created by copying an existing one, always grep the new file for
+`modal.App(` and assert it imports from a shared `_app.py` rather than declaring its own — a
+standalone `modal.App(name)` in a new consumer file is a deploy-time collision that CI cannot catch.
+
+---
+
 **Date / ticket:** 2026-06-29 — FOLLOW-433 loop closure (process deviation) **Delegation row used:**
 N/A (loop-closure bookkeeping). **What validation caught (or missed):** PR #383 (the FOLLOW-433
 code) was correctly squash-merged into main (6ed883a) per authorization. BUT the loop-closure

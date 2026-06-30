@@ -1808,10 +1808,10 @@ page_context_source=caller_supplied. Confirmed against the post-merge prod deplo
 prod deploy created 09:08Z). Procedure recorded in `docs/runbooks/esc-033-verification.md`. ESC-033
 fully closed.
 
-## OPEN — ESC-034: FOLLOW-436 embed-seed Modal consumer blocked on human operator — two code bugs must be fixed before go-live [FOLLOW-436]
+## OPEN — ESC-034: FOLLOW-436 embed-seed Modal consumer awaiting operator go-live — code bugs fixed by FOLLOW-437, operator steps remain [FOLLOW-436]
 
-**Filed by:** devops-engineer **Date:** 2026-06-30T00:00:00Z **Affects:** FOLLOW-436, FOLLOW-435
-**Type:** other (privileged operator action + pre-go-live code blockers)
+**Filed by:** devops-engineer **Date:** 2026-06-30T00:00:00Z **Affects:** FOLLOW-436, FOLLOW-435,
+FOLLOW-437 **Type:** other (privileged operator action — code bugs now resolved)
 
 **Description:**
 
@@ -1819,44 +1819,37 @@ FOLLOW-436 (operator go-live for the FOLLOW-435 embed-seed Modal consumer) requi
 steps: Modal account access, the actual `INTERNAL_API_SECRET` value from Doppler `prd`, and
 `modal deploy`. Agents cannot execute these.
 
-Additionally, wiring verification during FOLLOW-436 surfaced **two structural code bugs** that make
-a safe go-live impossible with the current codebase:
+**CODE BUGS — RESOLVED by FOLLOW-437 (PR #393, commit 09084f3, merged 2026-06-30):**
 
-**BUG 1 — ORPHAN (`main.py` deploys nothing):** `apps/llm-gateway/src/main.py` is a placeholder stub
-(no `modal` import, no `modal.App`, no imports of the consumer modules). The canonical deploy
-command `modal deploy apps/llm-gateway/src/main.py` (per `backlog/HANDOFFS.md` line 242 and
-`backlog/sprint-0/TICKET-009.md` line 144) deploys a Modal app with **zero functions**. Neither
-`generate_description.py` nor `consume_embed_seed_requests.py` are reachable from `main.py`.
+During FOLLOW-436 go-live wiring verification, two structural code bugs were found that made a safe
+go-live impossible with the FOLLOW-435 codebase. Both are now fixed:
 
-**BUG 2 — APP-NAME COLLISION (deploying one consumer wipes the other):**
-`apps/llm-gateway/src/jobs/generate_description.py:210` and
-`apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:84` each create an independent
-`modal.App("estalara-description-generator")` object. In Modal, deploying a file REPLACES the entire
-app's function registry with what that file defines. Deploying `consume_embed_seed_requests.py`
-directly would remove `generate_description` and `consume_description_requests` from the live app,
-breaking the description generation pipeline.
+**BUG 1 — ORPHAN (`main.py` deployed nothing) — FIXED:** `apps/llm-gateway/src/main.py` was a
+placeholder stub (no `modal` import, no `modal.App`, no imports of consumer modules). Running the
+canonical `modal deploy apps/llm-gateway/src/main.py` registered zero functions. Fix: `main.py` now
+imports both consumer modules (load-bearing `# noqa: F401`) so all 3 functions register under one
+deployment.
 
-**Required actions (in order):**
+**BUG 2 — APP-NAME COLLISION — FIXED:** `generate_description.py` and
+`consume_embed_seed_requests.py` each declared an independent
+`modal.App("estalara-description-generator")`. Deploying either file alone would have wiped the
+other's functions from the live app. Fix: the single shared `app` is now in
+`apps/llm-gateway/src/jobs/_app.py`; both consumers import from there. App name
+`estalara-description-generator` preserved.
 
-1. **Code fix (backend-engineer or ml-engineer, ~1h):**
-   - Extract `app = modal.App("estalara-description-generator")` into a shared module (e.g.,
-     `apps/llm-gateway/src/jobs/_app.py`).
-   - Both `generate_description.py` and `consume_embed_seed_requests.py` import `app` from that
-     shared location.
-   - `apps/llm-gateway/src/main.py` imports both consumer modules so
-     `modal deploy apps/llm-gateway/src/main.py` registers all three functions in one deployment.
-   - Open PR, get it merged to `main`.
+**Remaining required action (operator only):**
 
-2. **Operator go-live (Piotr or Rafał, ~20 min, AFTER code fix is merged):** Follow
-   `docs/runbooks/modal-embed-seed-consumer-golive.md` in order:
-   - Step 1: Provision three secrets in Modal `estalara-secrets` (via web console):
-     - `REDPANDA_TOPIC_LISTING_EMBEDDINGS` = `estalara.listing-embeddings`
-     - `EMBED_API_BASE_URL` = `https://admin.estalara.com` (or staging URL)
-     - `INTERNAL_API_SECRET` = copy from
-       `doppler secrets get INTERNAL_API_SECRET --config prd --plain`
-   - Step 2: `modal deploy apps/llm-gateway/src/main.py` — verify `consume_embed_seed_requests`
-     appears in the Modal dashboard with schedule `every 30 seconds`.
-   - Step 3: Smoke verification per the runbook (trigger overflow activation, check Modal logs,
-     check Sentry `tags.area:onboarding tags.sink:modal-embed-seed`).
+**Operator go-live (Piotr or Rafał, ~20 min):** Follow
+`docs/runbooks/modal-embed-seed-consumer-golive.md` in order:
 
-**Resolution:** _(leave blank until both code fix and operator smoke verification complete)_
+- Step 1: Provision three secrets in Modal `estalara-secrets` (via web console):
+  - `REDPANDA_TOPIC_LISTING_EMBEDDINGS` = `estalara.listing-embeddings`
+  - `EMBED_API_BASE_URL` = `https://admin.estalara.com` (or staging URL)
+  - `INTERNAL_API_SECRET` = copy from `doppler secrets get INTERNAL_API_SECRET --config prd --plain`
+- Step 2: `modal deploy apps/llm-gateway/src/main.py` — verify `consume_embed_seed_requests` appears
+  in the Modal dashboard with schedule `every 30 seconds`.
+- Step 3: Smoke verification per the runbook (trigger overflow activation, check Modal logs, check
+  Sentry `tags.area:onboarding tags.sink:modal-embed-seed`).
+
+**Resolution:** Code fix complete (FOLLOW-437 / PR #393 merged 2026-06-30). Awaiting operator
+go-live (Step 1-3 above). Escalation closes when smoke verification passes.

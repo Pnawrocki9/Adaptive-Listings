@@ -7170,15 +7170,18 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     inline loop + offload overflow to Modal/queue job + fix stale JSDoc (RETRO-139 §4a LG-2 / §4d
     DG-1)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-06-29T18:00:00Z'
+  completed_at: '2026-06-30T00:00:00Z'
   priority: P2
   estimated_hours: 4
   depends_on: [FOLLOW-432, FOLLOW-433]
   source: RETRO-139 (§4a LG-2, §4d DG-1) — source ticket FOLLOW-432 / PR #381
   spec: backlog/FOLLOW_UPS.md (FOLLOW-434 stub)
   branch: backend-engineer/FOLLOW-434-seed-budget-cap-modal-queue
+  pr: '#385'
+  merge_commit: 3a226b4
   notes: |
     Promoted 2026-06-29. FOLLOW-432 wrapped seedListingEmbeddingsForActivation in afterResponse()
     with an optimistic budget assessment ("real tenants without schema-embedded listing_ids exit
@@ -7190,6 +7193,19 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     says "the activate route calls void seedListingEmbeddingsForActivation()" — stale post-FOLLOW-432.
     Delegated 2026-06-29 (table row: ingest worker, control-plane, Postgres/auth → backend-engineer).
     CI counter: 0/5. Fix iterations: 0/3.
+    DONE: PR #385 squash-merged (3a226b4) into main 2026-06-30. Delivered: MAX_INLINE_SEED=50
+    constant exported; inline = listings.slice(0,50) runs the sequential embed loop; overflow =
+    listings.slice(50) captured via Sentry captureMessage (warning, tags area=onboarding/
+    sink=seed-listing-embeddings/kind=overflow, extra carries tenant_id + overflow_listing_ids) +
+    console.warn — NOT silently dropped. TODO stub: "FOLLOW-434 — replace overflow with Modal job
+    when seed-modal-job is implemented." SeedListingsResult gains overflow_count. JSDoc at file-top
+    fixed (documents afterResponse() + MAX_INLINE_SEED budget; removes void fn() claim). Test added
+    covering overflow path (MAX_INLINE_SEED+1 → exactly 50 inline, overflow_count=1, Sentry
+    captured). extractListingIdsFromSchema reads optional schema.listing_ids (forward-compat
+    cast-read; NOT added to canonical TenantSiteSchema type). AC caveat: overflow is an observable
+    Sentry stub — the durable Modal seed job is deferred (tracked as FOLLOW-435). All 4 human-
+    validated ACs met per PM + CI: 1355/1355 tests, lint/typecheck/build green; FF-sink guard PASS.
+    RETRO-141 written. Retrospective-analyst spawned.
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

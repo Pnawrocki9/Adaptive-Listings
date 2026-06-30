@@ -22659,3 +22659,185 @@ Traced END-TO-END (charter → script behavior → the input it reads → the gu
 
 <!-- next free FOLLOW number: 435 (no new stubs from RETRO-140; 434 = RETRO-139 §4a LG-2 + §4d DG-1 still open, see its stub in FOLLOW_UPS.md). RETRO-140 = retro for PR #383 (FOLLOW-433, MERGED 2026-06-29T17:35:35Z, squash; 11 files +432/-108; NO contract change — wraps 3 request-path sinks in afterResponse [updateArmAsync + upsertConversionLabelAsync in feedback/route.ts, deleteSessionFromRedis in dsr/erase/route.ts] + adds scripts/check-fire-and-forget-sinks.sh + hard-gate fire-and-forget-guard CI job). Wiring Audit CLEAN both checks (new shell script wired into CI job → not dead; no new TS export/event/env-var/column/topic/signal). CLOSURE (step 7): RETRO-139 §4a LG-1 GENUINELY CLOSED (3 sinks wrapped + CI guard passes → zero remaining); RETRO-139 §4c TG-1 GENUINELY CLOSED (guard committed, self-test proven, hard gate); RETRO-138 §4a LG-1 sweep FULLY CLOSED end-to-end (FOLLOW-431[5] + FOLLOW-432[6] + FOLLOW-433[3] = 14 total wrapped, CI guard prevents regression). KEY CLOSURES: bandit REWARD write now flush-safe (completes RETRO-133/ESC-031 bandit loop); RODO Art.17 Redis erasure now flush-safe. GAPS: LG-1 note (DB sinks lack Sentry — pre-existing, not introduced, no stub); LG-2 note (guard scope = control-plane only, FOLLOW-429 tracks decision-api — correct, not a gap); TG-1 note (brittle toHaveBeenCalledTimes count in route.clickhouse.test.ts — carries forward from RETRO-139 §4c TG-2); NO new stubs. RULES: NO promotion. FLUSH-axis HELD at count 1 (FOLLOW-429 is designated cross-runtime count-2, not shipped). CI-GUARD-BEATS-GREP pattern DISSOLVED by the guard itself (mechanical enforcement > prose rule — anti-inflation honored). PM ACTION: (1) FOLLOW-434 P2 — bound seedListingEmbeddingsForActivation after() budget + Modal/queue overflow; (2) FOLLOW-429 P2 — widen ctx.waitUntil to decision-api reorder.ts:204 (the cross-runtime count-2 for the K.2 flush amendment). -->
 
+## RETRO-141 — FOLLOW-434 (cap `seedListingEmbeddingsForActivation` inline loop at MAX_INLINE_SEED=50 + Sentry overflow capture + JSDoc fix — RETRO-139 §4a LG-2 / §4d DG-1) — 2026-06-30
+
+### 1. Summary of change
+
+- **PR:** #385 (merged 2026-06-30, squash merge, commit 3a226b4).
+- **Files changed:** `apps/control-plane/src/lib/seed-listing-embeddings.ts` (prod code rewrite)
+  and its test file. No other files touched.
+- **Modules touched:** control-plane — `lib/seed-listing-embeddings` seeder utility only.
+- **Key contracts changed:** No API surface, event schema, env-var, DB column, or Redpanda topic
+  changed. The activate route's call site (`afterResponse(() => seedListingEmbeddingsForActivation(...))`)
+  is unchanged. New exported symbols from `seed-listing-embeddings.ts`:
+  - `MAX_INLINE_SEED = 50` (constant)
+  - `overflow_count` field on `SeedListingsResult` (aggregate return type)
+  - `extractListingIdsFromSchema(schema)` (helper function, forward-compat cast-read)
+
+### 2. Verification done in PR
+
+- 1355/1355 tests passing (full control-plane suite). Test added:
+  `seedListingEmbeddingsForActivation` with MAX_INLINE_SEED+1 listings → exactly 50 embedded
+  inline, `overflow_count=1`, Sentry `captureMessage` called with correct overflow listing_id.
+- Lint, typecheck, `next build` green. FF-sink guard PASS (no bare `void` sinks in
+  `apps/control-plane/src`). CI checks: all real gates green; baseline non-blocking only (Rule I,
+  Archetype embeddings — pre-existing on main).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean (with one forward-compat note)`
+
+- **CHECK A (dead code):** New exports `MAX_INLINE_SEED`, `SeedListingsResult.overflow_count`, and
+  `extractListingIdsFromSchema` are all consumed by `seedListingEmbeddingsForActivation` itself (same
+  file) and by the new test. `seedListingEmbeddingsForActivation` is consumed by the activate route
+  (`apps/control-plane/src/app/api/schema/activate/route.ts`) — a pre-existing non-test consumer.
+  Not dead. `Sentry.captureMessage` side-effect in overflow path: producer is `seed-listing-embeddings.ts`
+  (non-test), consumer is the Sentry instrumentation layer (pre-existing). Wired.
+- **CHECK B (half-wire):** `extractListingIdsFromSchema` reads `schema.listing_ids` via a forward-
+  compat cast (`schema as unknown as Record<string, unknown>`). This field is NOT added to the
+  canonical `TenantSiteSchema` type and nothing populates it in production code — the function
+  returns `[]` for all real tenants today. This is an intentional "hook for future" design, not a
+  half-wire in the regression sense: the code paths for empty-return are fully covered
+  (demo-manifest fallback, no-op log). The TODO in the file documents this explicitly.
+  The FOLLOW-046 non-demo carve-out is NOT closed by this change. Noted in §4a below.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — Modal overflow job is a TODO stub, not a real queue enqueue.** The chartered AC-1
+  for FOLLOW-434 said "overflow is enqueued to a Modal/queue job." The delivered implementation
+  captures overflow to `Sentry.captureMessage` + `console.warn` with an explicit TODO:
+  `"FOLLOW-434 — replace overflow stub with Modal job when seed-modal-job is implemented."` This
+  closes the Vercel budget hazard (overflow is observable by operators, not silently dropped) but
+  does NOT complete the end-to-end durable seeding for large catalogs. A tenant with >50 listings
+  still requires manual operator retry or a future Modal job. Filed as **FOLLOW-435** (P2,
+  backend-engineer + ml-engineer, ~6h).
+- **LG-2 (note) — `extractListingIdsFromSchema` returns `[]` for all real tenants today.**
+  `schema.listing_ids` is a forward-compat hook that nothing populates in production. So the
+  overflow path (Sentry stub) is not exercisable by a real tenant today — it can only be triggered
+  by the demo tenant path or a test. When `schema.listing_ids` eventually gets populated (future
+  schema-version upgrade), the overflow path will become live. The TODO and FOLLOW-435 account for
+  this sequencing. Note only — not a gap that warrants a new stub.
+- **LG-3 (note) — FOLLOW-046 non-demo carve-out remains undischarged.** `extractListingIdsFromSchema`
+  does NOT add `listing_ids` to the canonical `TenantSiteSchema` Zod type — the forward-compat
+  read is a cast. The FOLLOW-046 "real tenant listing IDs from schema" path is not wired in prod.
+  This is pre-existing; FOLLOW-434 does not claim to close it. Note only.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — the cap logic (`inline = listings.slice(0, MAX_INLINE_SEED)`) is correct. The overflow
+  Sentry capture carries the right `tenant_id` and `overflow_listing_ids`. The `SeedListingsResult`
+  fields are accurately populated. No bug introduced.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, note) — overflow path not exercisable end-to-end in CI because `schema.listing_ids`
+  is never populated in production.** The test mocks the listing source directly to create 51
+  listings, bypassing the `extractListingIdsFromSchema` → real activation path. This is the
+  correct test strategy for a helper function; a future integration test covering the real activate
+  route with a >50-listing schema would be more thorough but is not a regression risk today. Note.
+- **TG-2 (P3, note) — `extractListingIdsFromSchema` is tested via `seedListingEmbeddingsForActivation`
+  indirectly (the overflow scenario sets up 51 schema-embedded IDs).** A dedicated unit test for
+  the helper itself would improve isolation. Low priority. Note only.
+
+#### 4d. Documentation gaps
+
+- N/A — the file-top JSDoc was the primary doc gap from RETRO-139 §4d DG-1. It is now accurate:
+  documents `afterResponse()` wrapper, `MAX_INLINE_SEED` budget rationale, and the overflow stub
+  TODO. The `TODO FOLLOW-434` comment in code correctly points to FOLLOW-435 as next step.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **RETRO-139 §4a LG-2 (seed-leg after() budget): GENUINELY CLOSED for the budget-safety axis.**
+  The Vercel Hobby 15s `after()` budget hazard is closed: inline loop is capped at 50 × ~200ms ≈
+  10s, leaving ~5s headroom. The mid-loop kill scenario (RETRO-138 §4a #2) cannot occur within the
+  cap. The durable queue leg (Modal job) remains a stub — that residual is FOLLOW-435.
+- **RETRO-138 §4a #2 (Modal/queue caveat): PARTIALLY closed.** The caveat was that `after()` alone
+  is insufficient for large catalogs and a Modal/queue job is the durable fix. FOLLOW-434 closes
+  the immediate hazard (cap + observable overflow) but does not implement the Modal job. FOLLOW-435
+  is the remaining leg.
+- **RETRO-139 §4d DG-1 (stale JSDoc): GENUINELY CLOSED.** The `seed-listing-embeddings.ts`
+  file-top JSDoc no longer claims `void fn()` and now accurately documents the `afterResponse()`
+  call site and `MAX_INLINE_SEED` budget.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-435 (backend-engineer + ml-engineer, P2) — OPEN.** Replace the Sentry overflow stub
+  with a durable Modal task: enqueue `(tenant_id, overflow_listing_ids[])` to a Modal task queue,
+  retry on failure, observable via Modal logs. This completes the end-to-end seeding for catalogs
+  of any size. See FOLLOW_UPS.md stub.
+- **FOLLOW-429 (backend-engineer, P2) — still OPEN.** `decision-api reorder.ts:204 redisSet
+  ctx.waitUntil` — unaffected by this PR. Reiterated, not re-filed.
+- **FOLLOW-046 (non-demo tenant listing IDs from schema): still OPEN.** `extractListingIdsFromSchema`
+  is the forward-compat hook but the schema type is not yet updated. Not affected.
+
+#### 5c. Contracts changed others rely on
+
+- N/A — no API response shape, event schema, env-var, DB column, or Redpanda topic changed. The
+  activate route's response to the calling client is unchanged. `SeedListingsResult` is an internal
+  type not exported via any package's public API surface.
+
+#### 5d. Architectural assumptions affected
+
+- **The `seedListingEmbeddingsForActivation` helper now has a two-tier seeding model:**
+  (1) inline `after()` loop for catalogs ≤ MAX_INLINE_SEED, and (2) Sentry stub (→ future Modal
+  job) for overflow. This is the correct architectural shape for the durable-background-job
+  pattern described in RETRO-138/139. Once FOLLOW-435 ships, the stub becomes a real enqueue and
+  the architecture is complete.
+
+### 6. New lesson candidates
+
+- **Pattern (AC-STUB vs AC-DONE): "an AC that says 'overflow is enqueued to X' is not met by
+  'overflow is captured to Sentry with a TODO for X'."** Count 1 (this retro). Not yet at the
+  ≥2-retro threshold for a CONVENTIONS_PATCH rule. The distinction matters: a Sentry stub is an
+  observable deferral (better than silent drop), but it is not the same as the durable enqueue the
+  AC chartered. Future workers: if an AC names a durable queue/job, implement it or file a scope
+  reduction before marking DONE. HELD at count 1.
+- Anti-count-inflation (RETRO-122/125/126/128/129/131/132/133/135/137/138/139/140) honored. No
+  rule promotion this retro.
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **RETRO-139 §4a LG-2 (seed-leg after() budget): GENUINELY CLOSED (budget-safety axis only).**
+  `MAX_INLINE_SEED=50` cap prevents mid-loop kill. The durable Modal job leg is deferred to
+  FOLLOW-435 — not one-hop (stub is observable, not silent).
+- **RETRO-138 §4a #2 (Modal/queue caveat): PARTIALLY CLOSED.** Budget-safety closed; durable job
+  deferred as FOLLOW-435. Gap acknowledged and tracked, not moved silently.
+- **RETRO-139 §4d DG-1 (stale JSDoc): GENUINELY CLOSED.** JSDoc is accurate and complete.
+- **RETRO-139 §4a LG-1 (3 unwrapped sinks): already CLOSED by FOLLOW-433 / RETRO-140.** No change.
+- **FOLLOW-046 (non-demo listing IDs): NOT closed.** `extractListingIdsFromSchema` is a forward-
+  compat hook; nothing populates the field in prod. This was pre-existing and not claimed by this
+  ticket.
+
+### 8. Multi-axis / contradiction reconciliation
+
+- **No contract changed** (§1); no producer/consumer, locale, or variant axes to reconcile.
+- **Seeding axis (inline vs. Modal):** The two-tier model (cap inline, stub overflow) is consistent
+  with the RETRO-138/139 chartered design. No contradiction with prior retros.
+- **FF-sink guard axis:** `seed-listing-embeddings.ts` calls the embed endpoint inside an
+  `afterResponse()`-wrapped function — it is not a bare `void` sink. The CI grep-guard (FOLLOW-433)
+  correctly does not flag it. Consistent.
+
+### 9. Follow-ups
+
+- **FOLLOW-435 (P2, backend-engineer + ml-engineer, ~6h)** — replace the Sentry overflow stub
+  with a durable Modal seed job. See FOLLOW_UPS.md stub. This is the one new stub generated by
+  this retro.
+
+### 10. Cross-references
+
+- **Related to RETRO-139 (FOLLOW-432):** direct grandparent — RETRO-139 §4a LG-2 is the chartered
+  gap closed here (budget-safety axis). The Modal-job leg remains FOLLOW-435.
+- **Related to RETRO-138 (FOLLOW-431):** RETRO-138 §4a #2 (Modal/queue caveat for seed) is
+  partially closed by this retro. FOLLOW-435 completes it.
+- **Related to FOLLOW-433 / RETRO-140:** no direct dependency; FOLLOW-433 closed the remaining
+  request-path sinks; this retro closes the seed-budget axis. Together (431→432→433→434) the
+  control-plane fire-and-forget sweep is as complete as it can be without the Modal seed job.
+- **FOLLOW-435:** the single new stub from this retro — durable Modal seed job for large-catalog
+  overflow activation seeding.
+
+<!-- next free FOLLOW number: 436 (435 = RETRO-141 §4a LG-1 — replace FOLLOW-434 overflow Sentry stub with durable Modal seed job for large-catalog activation embedding; P2 backend-engineer+ml-engineer ~6h). RETRO-141 = retro for PR #385 (FOLLOW-434, MERGED 2026-06-30, squash 3a226b4; files: seed-listing-embeddings.ts + test; NO API/event/schema/env-var/column change). KEY DELIVERIES: MAX_INLINE_SEED=50 exported const; overflow_count on SeedListingsResult; extractListingIdsFromSchema forward-compat cast-read; Sentry captureMessage on overflow path + console.warn; JSDoc fixed (afterResponse() wrapper + budget cap doc). Wiring Audit CLEAN (seed-listing-embeddings non-test consumer = activate route, pre-existing; overflow Sentry = Sentry instrumentation, pre-existing; forward-compat cast not a half-wire — empty-return path covered). CLOSURE: RETRO-139 §4a LG-2 CLOSED (budget-safety); RETRO-138 §4a #2 PARTIALLY CLOSED (durable Modal job → FOLLOW-435); RETRO-139 §4d DG-1 CLOSED (JSDoc). GAPS: LG-1 P2 Modal stub → FOLLOW-435; LG-2/LG-3 notes (listing_ids not in prod schema; FOLLOW-046 not discharged — pre-existing). TG-1/TG-2 P3 notes (test indirection on overflow, no dedicated extractListingIdsFromSchema unit test). NO rule promoted: AC-STUB vs AC-DONE pattern at count 1, not ≥2 threshold. Anti-count-inflation honored. PM ACTION: FOLLOW-434 DONE in QUEUE.md; FOLLOW-435 filed in FOLLOW_UPS.md (P2, promote at next sprint planning); FOLLOW-429 reiterated (decision-api ctx.waitUntil, cross-runtime K.2 count-2). -->
+

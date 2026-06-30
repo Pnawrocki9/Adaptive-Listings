@@ -1503,3 +1503,16 @@ caught this on commit rather than in a second retro. **A delegation/validation r
 ticket whose AC-1 is a grep-verified "no remaining X" MUST include a committed CI guard proving the
 grep fires on a violation — require it as a separate AC in the ticket or bounce back to the worker
 before READY_FOR_REVIEW.
+
+---
+
+**Date / ticket:** 2026-06-30 — FOLLOW-434 loop closure **Delegation row used:** Table row 2
+(control-plane, Postgres/auth → backend-engineer). **What validation caught (or missed):** The
+chartered AC-1 said "overflow is enqueued to a Modal/queue job" — the delivered implementation
+instead captures overflow to Sentry + console.warn with a TODO stub. The human validated this as
+meeting the ACs (observable deferral is better than silent drop), but retro §6 flags this as a new
+pattern: a Sentry stub is NOT the same as a durable enqueue. Step 5c wiring check would have
+surfaced this distinction if the AC had been read literally against the diff. **A
+delegation/validation rule I'd add:** When an AC explicitly names a durable queue/job as the
+delivery target, step 5c should check for a real enqueue call — not just an observable stub — and
+bounce to IN_PROGRESS if the job implementation is absent.

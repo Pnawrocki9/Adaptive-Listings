@@ -12454,7 +12454,42 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         (tenant_id + overflow listing_ids list).
   - [ ] `MAX_INLINE_SEED` remains the inline budget cap; the Modal path handles the remainder.
   - [ ] `next build` / `next lint` + vitest suites green; CI FF-sink guard PASS (no new bare void).
-- **promoted_to_queue:** true (2026-06-30 — READY in QUEUE.md, no worker assigned yet)
+- **promoted_to_queue:** true (2026-06-30 — DONE in QUEUE.md as of 2026-06-30. Both legs merged: PR
+  #389 8ea497c LEG 1 control-plane producer + shared schema; PR #390 b5acf73 LEG 2 Modal consumer.
+  Code-complete; NOT yet live — pending operator secret provisioning + llm-gateway redeploy.
+  Operator go-live tracked as FOLLOW-436.)
+
+---
+
+### FOLLOW-436 — Operator go-live: provision Modal secrets + re-deploy llm-gateway for embed-seed consumer
+
+- **source_retro:** RETRO-142
+- **source_ticket:** FOLLOW-435 (PRs #389 + #390)
+- **recommended_sprint:** next (P2 — do before first large-catalog tenant activation)
+- **recommended_agent:** devops-engineer
+- **priority:** P2
+- **estimated_hours:** 1
+- **scope:** FOLLOW-435 shipped the durable embed-seed Modal consumer (LEG 1 producer + LEG 2
+  consumer, both merged to main). The consumer is code-complete and CI-green but is NOT live in
+  production until an operator provisions three secrets in the Modal `estalara-secrets` secret store
+  and re-deploys `apps/llm-gateway`. Without this step, the overflow embedding path silently
+  produces no embeddings (the consumer process simply cannot start). This mirrors the "merged ≠
+  live" pattern from prod migration application (RETRO-076 / FOLLOW-307 / FOLLOW-308).
+- **ac:**
+  - [ ] `REDPANDA_TOPIC_LISTING_EMBEDDINGS` provisioned in Modal `estalara-secrets` (value:
+        `estalara.listing-embeddings`, matching `.env.example`).
+  - [ ] `EMBED_API_BASE_URL` provisioned in Modal `estalara-secrets` (base URL of the control-plane
+        `/api/listings/embed` endpoint for the target environment).
+  - [ ] `INTERNAL_API_SECRET` provisioned in Modal `estalara-secrets` (same secret used by the
+        existing `consume_description_requests` consumer for `x-internal-api-secret` auth).
+  - [ ] `apps/llm-gateway` re-deployed via `modal deploy` so the new `consume_embed_seed_requests`
+        cron is registered.
+  - [ ] Smoke verification: trigger a test activation with >MAX_INLINE_SEED (50) listings, confirm
+        overflow listing_ids appear in Modal logs and `/api/listings/embed` upsert succeeds for
+        each.
+  - [ ] Sentry `{area: onboarding, sink: modal-embed-seed}` telemetry visible (or zero failures for
+        a successful run).
+- **promoted_to_queue:** false
 
 ---
 

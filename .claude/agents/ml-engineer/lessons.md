@@ -1,5 +1,22 @@
 # ml-engineer lessons
 
+- **2026-06-30 / FOLLOW-435 LEG 2** · Built the Modal embed-seed consumer in
+  `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py`, mirroring
+  `consume_description_requests()` exactly (30s Modal cron, 25s poll window, confluent-kafka
+  consumer, commit-per-message, fire-per-listing). Added 13-test Python contract suite
+  `test_listing_embed_seed_event_contract.py` and a hard-gate CI step in the
+  `cross-language-contract` job. Extended `apps/llm-gateway` rather than creating a new Modal app —
+  same `estalara-secrets` secret, same image, same deploy command. · **Judgment calls:** (1)
+  `text_fields` omitted from the embed POST body: the handoff says "optional — may be omitted if not
+  available" and the consumer has no listing text at this stage; omitting it lets the endpoint fetch
+  from its own DB. Named this clearly in the docstring. (2) `EMBED_API_BASE_URL` and
+  `INTERNAL_API_SECRET` added to `.env.example` (not hardcoded) — both must be provisioned in the
+  Modal `estalara-secrets` secret before the consumer can go live. Documented in PR. · **Guardrail
+  I'd add:** When a new Modal consumer needs an outbound HTTP secret (`INTERNAL_API_SECRET`), a CI
+  step should verify the secret name is declared in `.env.example` AND in the consumer's docstring —
+  today both are true but only by convention; easy to miss in a PR that adds both the consumer and a
+  new secret name simultaneously.
+
 - **2026-06-25 / FOLLOW-341** · Activated cosine affinity path by extracting
   `seedArchetypeEmbeddings` into `src/lib/archetype-seeder.ts` (testable TypeScript module) from
   `scripts/seed-archetypes.mts` (not in tsconfig include, cannot be imported in tests). Added 8 unit

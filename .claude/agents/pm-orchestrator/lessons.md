@@ -1527,3 +1527,20 @@ field was false; updated to true with date. No CI gates apply (docs-only change)
 delegation/validation rule I'd add:** After promoting a ticket, grep STATUS.md for the ticket ID and
 update every reference — the "not yet promoted" bucket list is the most common stale entry after
 promotion.
+
+---
+
+**Date / ticket:** 2026-06-30 — FOLLOW-435 loop closure **Delegation row used:** N/A (loop-closure
+bookkeeping — retrospective-analyst, no worker delegation). **What validation caught (or missed):**
+The ml-engineer LEG 2 lesson (uncommitted in working tree) was explicitly flagged in the handoff and
+confirmed present via git status before branching — including it in the loop-closure PR is the
+correct delivery path. The "not live until deploy" gap (FOLLOW-436) is a deployment-axis not a
+code-half-wire; documented accurately in QUEUE.md DONE notes and FOLLOW_UPS.md stub rather than
+bouncing LEG 2 to IN_PROGRESS. Initial retro incorrectly claimed AC-STUB vs AC-DONE pattern met ≥2
+threshold (RETRO-141 count 1 + RETRO-142 as count 2) — CEO ruling 2026-06-30 corrected this: the two
+retros reference the SAME incident (FOLLOW-434's stub); FOLLOW-435 is the remediation, not an
+independent second occurrence. Rule AA removed per CEO ruling. **A delegation/validation rule I'd
+add:** When evaluating whether a pattern has reached the ≥2 independent retro threshold, verify the
+two instances are independent incidents (different tickets, different authors, different
+circumstances) — a remediation retro for the same original incident does NOT count as a second
+independent occurrence, even if it references the same pattern by name.

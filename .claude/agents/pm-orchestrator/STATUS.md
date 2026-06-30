@@ -1,7 +1,7 @@
 # PM Orchestrator — Session Status
 
-**Date:** 2026-06-30 **Session:** FOLLOW-435 promoted to QUEUE.md (READY, co-assigned
-backend-engineer+ml-engineer, P2). 0/3 in flight.
+**Date:** 2026-06-30 **Session:** FOLLOW-435 loop closure — both legs merged (PRs #389 + #390), DONE
+in QUEUE.md, RETRO-142 written, FOLLOW-436 filed. 0/3 in flight.
 
 ---
 
@@ -9,8 +9,8 @@ backend-engineer+ml-engineer, P2). 0/3 in flight.
 
 | ESC     | Title                                                     | Filed      | Age | Blocker?                                                               |
 | ------- | --------------------------------------------------------- | ---------- | --- | ---------------------------------------------------------------------- |
-| ESC-020 | Estalara-app DOM hooks committed but not deployed to prod | 2026-06-06 | 23d | Non-blocking per CEO 2026-06-10; Rafal (CTO) action required to deploy |
-| ESC-028 | Redis shadow smoke secrets not provisioned                | 2026-06-23 | 6d  | Non-blocking (soft-skip, no CI failure); Piotr/Rafal action required   |
+| ESC-020 | Estalara-app DOM hooks committed but not deployed to prod | 2026-06-06 | 24d | Non-blocking per CEO 2026-06-10; Rafal (CTO) action required to deploy |
+| ESC-028 | Redis shadow smoke secrets not provisioned                | 2026-06-23 | 7d  | Non-blocking (soft-skip, no CI failure); Piotr/Rafal action required   |
 
 All other escalations ESC-001 through ESC-033 RESOLVED (ESC-032 resolved Phase 2; ESC-033 resolved
 by FOLLOW-431 + prod verification).
@@ -19,8 +19,9 @@ by FOLLOW-431 + prod verification).
 
 ## IN_PROGRESS tickets (0/3 max)
 
-None. FOLLOW-434 closed this session. Next candidates: FOLLOW-435 (P2, durable Modal seed job,
-backend-engineer+ml-engineer), FOLLOW-429 (P2, decision-api ctx.waitUntil, backend-engineer).
+None. FOLLOW-435 loop-closure PR being opened. Next candidates: FOLLOW-436 (P2, operator go-live for
+embed-seed consumer, devops-engineer ~1h), FOLLOW-429 (P2, decision-api ctx.waitUntil,
+backend-engineer).
 
 ---
 
@@ -33,10 +34,23 @@ FOLLOW-434 (PR #385): DONE — CI verified green by human before merge; 1355/135
 PASS; lint/typecheck/build green. Baseline non-blocking only (Rule I + Archetype embeddings —
 pre-existing on main; Format fixed by PR #386). Counter closed at 1/5 CI checks, 0/3 fix iterations.
 
+FOLLOW-435 LEG 1 (PR #389): DONE — CI green (human-verified before merge at 8ea497c). All real gates
+PASS. Baseline non-blocking: Rule I, Archetype embeddings. Counter closed at 1/5, 0/3.
+
+FOLLOW-435 LEG 2 (PR #390): DONE — CI green (human-verified before merge at b5acf73). Python tests
+26/26, cross-language-contract PASS. Baseline non-blocking unchanged. Counter closed at 1/5, 0/3.
+
+FOLLOW-435 loop-closure PR: pending open (bookkeeping files only — no code change).
+
 ---
 
 ## Recent merges (most recent first)
 
+- PR #390 (FOLLOW-435 LEG 2, ml-engineer): Modal embed-seed consumer + cross-language contract gate.
+  Python tests 26/26. Merged 2026-06-30 (squash b5acf73). RETRO-142 written.
+- PR #389 (FOLLOW-435 LEG 1, backend-engineer): listing-embed seed producer + event contract +
+  gitleaks allowlist. Merged 2026-06-30 (squash 8ea497c). Handoff note to ml-engineer in
+  HANDOFFS.md.
 - PR #386 (Format fix, pm-orchestrator): prettier-fix bookkeeping files to unblock Format check on
   main. Merged 2026-06-30 (bd60ffc).
 - PR #385 (FOLLOW-434, backend-engineer): Cap seedListingEmbeddingsForActivation inline loop at
@@ -57,20 +71,21 @@ pre-existing on main; Format fixed by PR #386). Counter closed at 1/5 CI checks,
 
 ## Queue state
 
-- FOLLOW-434: DONE (PR #385, merge commit 3a226b4, merged 2026-06-30). RETRO-141 written. FOLLOW-435
-  filed.
+- FOLLOW-435: DONE (PRs #389 + #390, merge commits 8ea497c + b5acf73, both merged 2026-06-30).
+  Code-complete; NOT yet live — pending operator secret provisioning + llm-gateway redeploy.
+  Operator go-live tracked as FOLLOW-436. RETRO-142 written. No rule promoted (AC-STUB vs AC-DONE
+  held at count 1 per CEO ruling 2026-06-30 — FOLLOW-435 is the remediation, not a new instance).
+- FOLLOW-434: DONE (PR #385, merge commit 3a226b4, merged 2026-06-30). RETRO-141 written.
 - FOLLOW-433: DONE (PR #383, merged 2026-06-29T17:35:35Z). RETRO-140 written.
 - FOLLOW-432: DONE (PR #381, merge commit 3cb5c28, merged 2026-06-29). RETRO-139 written.
-- Next free FOLLOW stub number: 436.
+- Next free FOLLOW stub number: 437.
 - FOLLOW-431: DONE (PR #379, merged 2026-06-29, prod-verified 10/10 burst writes).
-- FOLLOW-435: READY in QUEUE.md (promoted 2026-06-30; P2, replace Sentry overflow stub in
-  seed-listing-embeddings.ts with durable Modal seed job; backend-engineer+ml-engineer ~6h;
-  depends_on FOLLOW-434 DONE). No worker assigned yet.
+- FOLLOW-436: READY in FOLLOW_UPS.md (filed 2026-06-30; P2 devops-engineer ~1h; provision Modal
+  estalara-secrets + re-deploy apps/llm-gateway; not yet promoted to QUEUE.md).
 - FOLLOW-429: READY in FOLLOW_UPS.md (not yet promoted; scope widened to include ctx.waitUntil — P2
-  backend-engineer, CF-Worker flush-axis analogue for decision-api reorder.ts:204). Next after
-  FOLLOW-435 or in parallel.
+  backend-engineer, CF-Worker flush-axis analogue for decision-api reorder.ts:204).
 - FOLLOW-430: READY in FOLLOW_UPS.md (not yet promoted; P3 sdk-engineer, 2h).
 - P2 tickets READY (not yet promoted to QUEUE): FOLLOW-417, FOLLOW-418, FOLLOW-420, FOLLOW-421,
-  FOLLOW-429.
+  FOLLOW-429, FOLLOW-436.
 - P3 tickets READY: FOLLOW-355, FOLLOW-399, FOLLOW-401, FOLLOW-408, FOLLOW-412, FOLLOW-413,
   FOLLOW-416, FOLLOW-430.

@@ -22839,5 +22839,208 @@ Traced END-TO-END (charter → script behavior → the input it reads → the gu
 - **FOLLOW-435:** the single new stub from this retro — durable Modal seed job for large-catalog
   overflow activation seeding.
 
-<!-- next free FOLLOW number: 436 (435 = RETRO-141 §4a LG-1 — replace FOLLOW-434 overflow Sentry stub with durable Modal seed job for large-catalog activation embedding; P2 backend-engineer+ml-engineer ~6h). RETRO-141 = retro for PR #385 (FOLLOW-434, MERGED 2026-06-30, squash 3a226b4; files: seed-listing-embeddings.ts + test; NO API/event/schema/env-var/column change). KEY DELIVERIES: MAX_INLINE_SEED=50 exported const; overflow_count on SeedListingsResult; extractListingIdsFromSchema forward-compat cast-read; Sentry captureMessage on overflow path + console.warn; JSDoc fixed (afterResponse() wrapper + budget cap doc). Wiring Audit CLEAN (seed-listing-embeddings non-test consumer = activate route, pre-existing; overflow Sentry = Sentry instrumentation, pre-existing; forward-compat cast not a half-wire — empty-return path covered). CLOSURE: RETRO-139 §4a LG-2 CLOSED (budget-safety); RETRO-138 §4a #2 PARTIALLY CLOSED (durable Modal job → FOLLOW-435); RETRO-139 §4d DG-1 CLOSED (JSDoc). GAPS: LG-1 P2 Modal stub → FOLLOW-435; LG-2/LG-3 notes (listing_ids not in prod schema; FOLLOW-046 not discharged — pre-existing). TG-1/TG-2 P3 notes (test indirection on overflow, no dedicated extractListingIdsFromSchema unit test). NO rule promoted: AC-STUB vs AC-DONE pattern at count 1, not ≥2 threshold. Anti-count-inflation honored. PM ACTION: FOLLOW-434 DONE in QUEUE.md; FOLLOW-435 filed in FOLLOW_UPS.md (P2, promote at next sprint planning); FOLLOW-429 reiterated (decision-api ctx.waitUntil, cross-runtime K.2 count-2). -->
+<!-- next free FOLLOW number: 437 (436 = RETRO-142 §4a LG-1 — operator go-live: provision Modal estalara-secrets + re-deploy apps/llm-gateway for embed-seed consumer; P2 devops-engineer ~1h). RETRO-142 = retro for FOLLOW-435 both legs (PRs #389 8ea497c + #390 b5acf73; MERGED 2026-06-30). KEY DELIVERIES LEG 1: packages/shared ListingEmbeddingSeedRequested schema + fixture + TS CI gate; control-plane publishListingEmbeddingSeed(); overflow block in seedListingEmbeddingsForActivation now enqueues instead of Sentry-stubs; .gitleaks.toml allowlist for 40-char schema ID. KEY DELIVERIES LEG 2: apps/llm-gateway/src/jobs/consume_embed_seed_requests.py (Modal cron, REQUIRED_FIELDS from shared fixture, per-listing Sentry capture); Python contract test + CI hard-gate step. Wiring Audit: producer in seed-listing-embeddings.ts non-test; consumer in consume_embed_seed_requests.py non-test; cross-language CI gate hard-gate. NOT LIVE: requires Modal secret provisioning + redeploy (FOLLOW-436). CLOSURE: RETRO-141 §4a LG-1 (Modal overflow job) GENUINELY CLOSED. GAPS: LG-1 P2 operator go-live → FOLLOW-436; DG-1 note (not-live-until-deploy gap). AC-STUB vs AC-DONE pattern HELD at count 1 (FOLLOW-435 is the REMEDIATION of the RETRO-141 instance, not a new AC-stub instance — counting it would be count-inflation; CEO ruling 2026-06-30). PM ACTION: FOLLOW-435 DONE in QUEUE.md; FOLLOW-436 filed in FOLLOW_UPS.md. No CONVENTIONS_PATCH rule promoted this retro. -->
+
+## RETRO-142 — FOLLOW-435 (replace FOLLOW-434 overflow stub with durable Modal seed job — cross-language contract + embed-seed producer + Modal consumer, both legs merged PRs #389 + #390) — 2026-06-30
+
+### 1. Summary of change
+
+- **PRs:** #389 (LEG 1, merge 8ea497c, merged 2026-06-30) + #390 (LEG 2, merge b5acf73, merged
+  2026-06-30). Both squash-merged to main; HEAD at b5acf73.
+- **Files changed (LEG 1):**
+  - `packages/shared/src/schemas/listing-embed-seed.ts` — new `ListingEmbeddingSeedRequested` Zod
+    schema + TypeScript type export.
+  - `packages/shared/contracts/listing-embed-seed-event.required.json` — cross-language contract
+    fixture `["tenant_id", "listing_ids"]` (single source of truth for TS and Python gates).
+  - `packages/shared/src/schemas/index.ts` — re-export of new schema.
+  - `apps/control-plane/src/lib/listing-embed-seed-publisher.ts` — new `publishListingEmbeddingSeed()`
+    Redpanda REST producer (topic `estalara.listing-embeddings` via env var
+    `REDPANDA_TOPIC_LISTING_EMBEDDINGS`).
+  - `apps/control-plane/src/lib/seed-listing-embeddings.ts` — overflow block replaced: now calls
+    `publishListingEmbeddingSeed()` instead of Sentry-only stub; TODO marker removed.
+  - `apps/control-plane/src/lib/seed-listing-embeddings.test.ts` — tests for overflow enqueue path.
+  - `.gitleaks.toml` — allowlist entry for the 40-char schema identifier false-positive on the
+    `cloudflare-api-token` heuristic.
+  - `.github/workflows/ci.yml` — TS contract test step added to `cross-language-contract` job.
+- **Files changed (LEG 2):**
+  - `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py` — Modal cron consumer (30s schedule,
+    25s poll window, confluent-kafka, commit-per-message, REQUIRED_FIELDS from shared fixture,
+    per-listing `POST /api/listings/embed` with `x-internal-api-secret` auth, Sentry on failure).
+  - `apps/llm-gateway/src/jobs/test_listing_embed_seed_event_contract.py` — 13-test Python contract
+    suite verifying REQUIRED_FIELDS matches fixture and the consumer validates both fields.
+  - `.github/workflows/ci.yml` — Python contract test step added to `cross-language-contract` job
+    (hard-gate, no `continue-on-error`).
+  - `.claude/agents/ml-engineer/lessons.md` — LEG 2 lesson entry.
+- **Modules touched:** `@estalara/shared` (new event schema), `control-plane` (producer + overflow
+  rewrite), `llm-gateway` (new Modal consumer), CI (`cross-language-contract` job extended).
+- **Key contracts introduced:**
+  - New Redpanda topic: `estalara.listing-embeddings` (env var `REDPANDA_TOPIC_LISTING_EMBEDDINGS`).
+  - New env vars for Modal consumer: `EMBED_API_BASE_URL`, `INTERNAL_API_SECRET` (already in
+    `.env.example`; not yet in Modal `estalara-secrets` — see §4a LG-1).
+  - New shared event schema: `ListingEmbeddingSeedRequested {tenant_id: string, listing_ids: string[]}`.
+  - New cross-language fixture: `packages/shared/contracts/listing-embed-seed-event.required.json`.
+
+### 2. Verification done in PRs
+
+- **LEG 1 (PR #389):** All real CI gates green. Format, Lint, Typecheck, Test Node 22, Build, gitleaks,
+  FF-sink guard PASS, cross-language-contract (TS gate) PASS. Known pre-existing non-blocking: Rule I,
+  Archetype embeddings not-NULL. Overflow enqueue test: payload shape + no-call on zero-overflow +
+  fail-open on publisher rejection — all asserted.
+- **LEG 2 (PR #390):** All real CI gates green. Python tests 26/26 (13 new contract tests + 13
+  pre-existing). cross-language-contract (Python gate) PASS. gitleaks PASS. Format, Lint, Typecheck,
+  Test Node 22, Build PASS. FF-sink guard PASS. Pre-existing non-blocking unchanged.
+
+### 3. Wiring Audit
+
+`Wiring Audit — CLEAN with one deployment-gap caveat`
+
+- **Producer (non-test):** `publishListingEmbeddingSeed()` in
+  `apps/control-plane/src/lib/listing-embed-seed-publisher.ts`, called from
+  `seedListingEmbeddingsForActivation` (same file, inside the existing `afterResponse()` wrapper).
+  `seedListingEmbeddingsForActivation` is consumed by the activate route
+  (`apps/control-plane/src/app/api/schema/activate/route.ts`) — a pre-existing non-test consumer.
+  Producer wired.
+- **Consumer (non-test):** `consume_embed_seed_requests.py` in
+  `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py`. Subscribes to
+  `REDPANDA_TOPIC_LISTING_EMBEDDINGS`, validates against `REQUIRED_FIELDS` (loaded from shared
+  fixture — not hardcoded), calls `POST /api/listings/embed` per `listing_id`. Non-test consumer
+  present.
+- **Cross-language contract gate:** `packages/shared/contracts/listing-embed-seed-event.required.json`
+  is the single source of truth. TS gate in CI confirms `ListingEmbeddingSeedRequested` schema fields
+  are a superset of the fixture. Python gate confirms `REQUIRED_FIELDS == frozenset(fixture)`. Both
+  gates are hard-gate (no `continue-on-error`). Contract is mechanically enforced.
+- **Deployment gap (caveat, not a half-wire):** The consumer process is deployed to Modal but requires
+  three secrets in `estalara-secrets` (`REDPANDA_TOPIC_LISTING_EMBEDDINGS`, `EMBED_API_BASE_URL`,
+  `INTERNAL_API_SECRET`) and a `modal deploy` re-run before it can execute. Until then, the consumer
+  exists in code but is not running. This is the same "merged ≠ live" pattern as prod migrations.
+  Tracked as FOLLOW-436. Not a code half-wire — the wire is present; the deployment is the gap.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — Consumer not live until operator provisions secrets + re-deploys llm-gateway.**
+  `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py` requires `EMBED_API_BASE_URL` and
+  `INTERNAL_API_SECRET` in Modal `estalara-secrets` and a fresh `modal deploy` to register the new
+  30s cron. Until those steps are done, overflow listing_ids published to
+  `estalara.listing-embeddings` are not consumed — the topic accumulates messages but nothing reads
+  them. Filed as **FOLLOW-436** (P2, devops-engineer, ~1h).
+- **LG-2 (note) — `extractListingIdsFromSchema` still returns `[]` for all real tenants.**
+  Pre-existing from RETRO-141 §4a LG-2. FOLLOW-435 does not change this. The overflow path is now
+  wired to a real enqueue, but the path is not exercisable by real tenants until `schema.listing_ids`
+  is populated in production. FOLLOW-046 tracks this. Note only.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — LEG 1 overflow enqueue path is straightforward (slice + publish); LEG 2 consumer mirrors
+  the description consumer exactly. No new logic bugs introduced.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, note) — No integration test covering the full activation → overflow → Redpanda →
+  Modal consumer → embed endpoint chain.** Both legs are unit/contract tested individually, but there
+  is no end-to-end test that fires the overflow path and verifies the Modal consumer receives and
+  processes the message. This gap is expected at this stage (the real broker is not available in CI).
+  An E2E smoke test post-deploy is the correct venue. Note only.
+- **TG-2 (P3, note) — `consume_embed_seed_requests.py` does not test the HTTP call to
+  `/api/listings/embed` with a mock httpretty/responses fixture.** The contract test verifies field
+  names but not the HTTP body shape. Low risk (the body mirrors the existing embed endpoint contract,
+  not new). Note only.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (note) — The "not live until deploy" state is documented in QUEUE.md FOLLOW-435 notes and
+  FOLLOW-436 stub but not in a runbook.** If a large-catalog activation is triggered before FOLLOW-436
+  is actioned, overflow listings will publish to the topic but the consumer will not drain them.
+  Operators need to know this. The FOLLOW-436 AC includes a smoke verification step. Note only;
+  promoted to FOLLOW-436 scope.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **RETRO-141 §4a LG-1 (Modal overflow job is a TODO stub): GENUINELY CLOSED.** The Sentry-only stub
+  is replaced by a real Redpanda producer (LEG 1) and Modal consumer (LEG 2). The AC-STUB issue
+  identified in RETRO-141 §6 is resolved.
+- **RETRO-138 §4a #2 (Modal/queue caveat): FULLY CLOSED (code axis).** The durable queue path is
+  implemented. The deployment gap (FOLLOW-436) is a deployment axis, not a code axis.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-436 (devops-engineer, P2, ~1h) — OPEN.** Provision `REDPANDA_TOPIC_LISTING_EMBEDDINGS`,
+  `EMBED_API_BASE_URL`, `INTERNAL_API_SECRET` in Modal `estalara-secrets` + re-deploy
+  `apps/llm-gateway`. See FOLLOW_UPS.md stub.
+- **FOLLOW-046 (non-demo listing IDs from schema): still OPEN.** Not affected by this PR.
+- **FOLLOW-429 (decision-api ctx.waitUntil): still OPEN.** Not affected.
+
+#### 5c. Contracts changed others rely on
+
+- **New Redpanda topic `estalara.listing-embeddings`** — only produced by the control-plane overflow
+  path and consumed by `consume_embed_seed_requests.py`. No other producer or consumer today. The
+  cross-language CI gate mechanically guards the field contract.
+- **New env var `REDPANDA_TOPIC_LISTING_EMBEDDINGS`** — used by control-plane (producer) and
+  llm-gateway (consumer). Both default gracefully (env var has a fallback to the literal topic name).
+
+#### 5d. Architectural assumptions affected
+
+- **Cross-language contract gate pattern is now used for two events** (description requests + embed
+  seed requests). The pattern (shared JSON fixture → TS schema test + Python REQUIRED_FIELDS test,
+  both hard-gated in CI) is proven at scale. It is the correct template for any future cross-language
+  Redpanda event added between control-plane and Modal workers.
+
+### 6. New lesson candidates
+
+- **Pattern (AC-STUB vs AC-DONE) — HELD at count 1.** "An AC that names a durable queue/job is not
+  met by a Sentry stub + TODO comment." RETRO-141 §6 recorded this pattern at count 1 against
+  FOLLOW-434 (Sentry-only overflow stub where AC said "enqueued to Modal queue"). RETRO-142 does NOT
+  add an independent second occurrence: FOLLOW-435 correctly wired the real call (LEG 1 producer +
+  LEG 2 consumer), so it is the REMEDIATION of the RETRO-141 instance, not a new AC-stub instance.
+  Counting FOLLOW-435 existence as "count 2" would be count-inflation — the FOLLOW was filed because
+  FOLLOW-434 used a stub, not because FOLLOW-435 used a stub. Pattern stays HELD at count 1 (same
+  status as RETRO-141 §6). No rule promoted.
+- **Pattern (merged ≠ live for Modal consumers) — count 2 (RETRO-076/FOLLOW-307 for Postgres + this
+  retro for Modal consumers).** The "merged ≠ live" pattern applies equally to Modal deployments that
+  need secret provisioning: code merging does not start the consumer. Reinforces the existing
+  CONVENTIONS_PATCH note (merged ≠ live); no new rule needed beyond the FOLLOW-436 stub.
+- Anti-count-inflation (RETRO-122/125/126/128/129/131/132/133/135/137/138/139/140/141) honored. No
+  rule promoted this retro.
+
+### 7. Prior-follow-up closure check
+
+- **RETRO-141 §4a LG-1 (Modal overflow job is a TODO stub): GENUINELY CLOSED.**
+  `publishListingEmbeddingSeed()` replaces the Sentry stub; `consume_embed_seed_requests.py`
+  consumes it. The code path is complete. Deployment gap acknowledged as FOLLOW-436 (not a code
+  gap).
+- **RETRO-141 §4a LG-2 (`extractListingIdsFromSchema` returns `[]` for all real tenants): still
+  OPEN.** Pre-existing; not claimed by FOLLOW-435.
+- **RETRO-138 §4a #2 (Modal/queue caveat): FULLY CLOSED (code axis).** Durable queue path
+  implemented. Deployment axis tracked as FOLLOW-436.
+- **RETRO-139 §4a LG-2 (seed-leg after() budget): already CLOSED by RETRO-141.** Unchanged.
+
+### 8. Multi-axis / contradiction reconciliation
+
+- **No contradiction with FOLLOW-433 FF-sink guard.** The overflow publish is inside
+  `afterResponse()` (inherited from the pre-existing wrapper); the CI grep-guard correctly passes.
+- **Cross-language contract axis:** LEG 1 TS gate + LEG 2 Python gate form a single enforced
+  contract. No divergence between the two agents' implementations — the fixture is the single source
+  of truth and both CI steps load it at test time.
+- **gitleaks axis:** The 40-char `ListingEmbeddingSeedRequestedEventSchema` identifier is in the
+  `.gitleaks.toml` allowlist (added in LEG 1). Python test function names in
+  `test_listing_embed_seed_event_contract.py` are covered by the existing
+  `apps/*/src/jobs/test_*.py` path allowlist. No new false-positives introduced.
+
+### 9. Follow-ups
+
+- **FOLLOW-436 (P2, devops-engineer, ~1h)** — provision Modal secrets + re-deploy llm-gateway.
+  This is the only new stub generated by this retro.
+
+### 10. Cross-references
+
+- **Related to RETRO-141 (FOLLOW-434):** direct parent — RETRO-141 §4a LG-1 is the chartered gap
+  closed here.
+- **Related to RETRO-139 (FOLLOW-432) + RETRO-138 (FOLLOW-431):** the RETRO-138 §4a #2 Modal/queue
+  caveat is now fully closed on the code axis by this retro.
+- **Related to RETRO-140 (FOLLOW-433):** FF-sink guard CI step is what catches any new bare void
+  in future; LEG 1 passes that guard cleanly.
+- **FOLLOW-436:** the single new stub from this retro.
 

@@ -23193,3 +23193,121 @@ collision; 104 pytest pass; NO new exported TS symbol / event / env-var / DB col
   remains open.
 - **Related to FOLLOW-436:** FOLLOW-437 unblocks FOLLOW-436 on the code axis.
 
+---
+
+## RETRO-144 — FOLLOW-438 (add CI lint guard: assert exactly one modal.App() in apps/llm-gateway/src — RETRO-143 §4a LG-1) — 2026-06-30
+
+### 1. Summary of change
+
+- **PR:** #395 (merged 2026-06-30T16:05:41Z, commit f3ac878).
+- **Source:** FOLLOW-438 was filed by pm-orchestrator as RETRO-143 §4a LG-1 — a P3 CI prevention
+  guard to close the mechanical gap left by the FOLLOW-437 structural fix (shared `_app.py`).
+- **Files changed:** `scripts/check-modal-app-singleton.sh` (NEW — grep-based singleton guard with
+  `--self-test` flag, mirrors `check-fire-and-forget-sinks.sh` structure); `.github/workflows/ci.yml`
+  (NEW job `modal-app-singleton-guard`, hard gate, no `continue-on-error: true`).
+- **Modules touched:** `scripts/` and `.github/workflows/` only. No application code changed.
+- **Key contracts changed:** None. No TS exports, no event schema, no env-var, no DB column, no
+  Redpanda topic changed.
+
+### 2. Verification done in PR
+
+- Matcher yields exactly 1 on HEAD (`apps/llm-gateway/src/jobs/_app.py`).
+- `--self-test` validates both the negative-control path (no match → exit 1) and positive-control
+  path (exactly 1 match → exit 0).
+- CI guard job `modal-app-singleton-guard` PASS in CI.
+- All real gates green. CI counter: 1/5. Fix iterations: 0/3.
+
+### 3. Wiring Audit
+
+`Wiring Audit — N/A (script + CI-config only)`
+
+- **CHECK A (dead code):** `check-modal-app-singleton.sh` is invoked directly by the CI job — not
+  dead.
+- **CHECK B (half-wire):** No new event / env-var / column / topic / SDK-signal introduced. The
+  script has a producer (CI job step) and a consumer (the bash execution itself). No application
+  wiring to trace.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- None. The scope is a grep guard; the guard fires correctly on the current codebase and the
+  self-test proves it catches a second instantiation.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. Pure CI/scripts addition; no application logic changed.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (note — P3, pre-existing):** The `--self-test` flag validates the detector logic, but the
+  CI job does not run `--self-test` in the guard step itself (it runs the real scan). This is
+  intentional — the `--self-test` is a developer/CI-debug tool, not a production CI gate. Acceptable.
+
+#### 4d. Documentation gaps
+
+- None. The script is self-documenting (usage printed on error), and the CI job name
+  `modal-app-singleton-guard` is descriptive.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-433→438 chain: FULLY CLOSED.** All six tickets in the chain are DONE in code AND
+  bookkeeping. The only remaining open item in the chain is FOLLOW-436 (BLOCKED_ON_HUMAN — operator
+  must provision Modal estalara-secrets + `modal deploy` + smoke).
+
+#### 5b. Future sprint tickets affected
+
+- None. This is a terminal guard ticket. No further CI enforcement needed for this pattern.
+
+#### 5c. Contracts changed others rely on
+
+- None. CI job name `modal-app-singleton-guard` is additive; no existing job is replaced.
+
+#### 5d. Architectural assumptions affected
+
+- The repo now has a durable mechanical guard for the Modal app singleton invariant. Any developer
+  who copies an existing consumer and re-introduces a standalone `modal.App(name)` will see a CI
+  failure on the PR — exactly the goal of RETRO-143 §4a LG-1.
+
+### 6. New lesson candidates
+
+- **Pattern (GUARD-AFTER-STRUCTURAL-FIX): "A structural fix (shared module, wrapper, single
+  entrypoint) that enforces an invariant must always be paired with a mechanical CI guard asserting
+  the invariant — structural fixes fail under copy-paste pressure."** — Pattern from RETRO-143 (count
+  1 for the Modal-app-singleton sub-shape). The broader principle (structural-fix + CI guard) was also
+  present in RETRO-140's `check-fire-and-forget-sinks.sh` guard for the afterResponse() sweep.
+  However, these are two different domains (Modal app registry vs. Vercel request-path sinks) and the
+  pairing was intentional by design in both, not a missed catch. Not promoting a new Rule: the
+  principle is already captured in the FOLLOW-433/438 parallel itself. Anti-count-inflation honored.
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **FOLLOW-438 (all 4 ACs): GENUINELY CLOSED.**
+  - AC-1: `modal-app-singleton-guard` CI job in `.github/workflows/ci.yml` — CLOSED.
+  - AC-2: `--self-test` negative-control documented and verified — CLOSED.
+  - AC-3: step passes on current HEAD — CLOSED (CI PASS confirmed).
+  - AC-4: CI gate is hard (no `continue-on-error: true`) — CLOSED.
+- **RETRO-143 §4a LG-1:** CLOSED by FOLLOW-438. The mechanical gap is now filled.
+- **FOLLOW-433→438 chain:** Fully closed in code. FOLLOW-436 is the sole remaining open item and
+  is correctly BLOCKED_ON_HUMAN (operator steps only; no code work remains).
+
+### 8. Multi-axis / contradiction reconciliation
+
+- No contradictions. FOLLOW-437 fixed the structure; FOLLOW-438 enforces it mechanically. The two
+  tickets are complementary and close the loop opened by ESC-034's BUG 2 finding.
+
+### 9. Follow-ups
+
+- None. This is a terminal guard; no residual gaps remain for this chain beyond FOLLOW-436
+  (operator go-live, BLOCKED_ON_HUMAN).
+
+### 10. Cross-references
+
+- **Related to RETRO-143 (FOLLOW-437):** direct parent — §4a LG-1 spawned FOLLOW-438.
+- **Related to RETRO-140 (FOLLOW-433):** parallel pattern — `check-fire-and-forget-sinks.sh` for
+  control-plane sinks; `check-modal-app-singleton.sh` for Modal app registry.
+- **Related to ESC-034:** code-fix axis fully closed by FOLLOW-437 + FOLLOW-438. Operator go-live
+  axis remains under FOLLOW-436 (BLOCKED_ON_HUMAN).
+

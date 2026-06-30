@@ -7326,6 +7326,36 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     CI: Python tests 104/104, cross-language contract gate, gitleaks, Format — all green.
     RETRO-143 written. ESC-034 code-fix axis CLOSED; operator go-live axis remains.
     CI counter: 1/5. Fix iterations: 0/3.
+
+- id: FOLLOW-438
+  title: >-
+    Add CI lint guard: assert exactly one modal.App() in apps/llm-gateway/src to prevent BUG 2
+    (app-name collision) recurrence (RETRO-143 §4a LG-1)
+  agent: devops-engineer
+  status: DONE
+  assigned_to: devops-engineer
+  started_at: '2026-06-30T00:00:00Z'
+  completed_at: '2026-06-30T16:05:41Z'
+  priority: P3
+  estimated_hours: 1
+  depends_on: [FOLLOW-437]
+  source: RETRO-143 §4a LG-1 — source ticket FOLLOW-437 (PR #393)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-438 stub)
+  branch: devops-engineer/FOLLOW-438-modal-app-singleton-guard
+  pr: '#395'
+  merge_commit: f3ac878
+  notes: |
+    Shipped scripts/check-modal-app-singleton.sh + hard-gate CI job modal-app-singleton-guard
+    in .github/workflows/ci.yml. Asserts exactly one modal.App( assignment in
+    apps/llm-gateway/src (the shared _app.py line), excluding comment lines, docstrings, test
+    files, and conftest.py mocks. Self-test (--self-test flag) validates both negative control
+    (no match → exit 1) and positive control (exactly 1 match → exit 0). CI gate is hard
+    (no continue-on-error: true). Mirrors check-fire-and-forget-sinks.sh structure.
+
+    Validated: matcher yields exactly 1 on HEAD; self-test + negative-control catch a 2nd
+    instantiation; CI guard job PASS; all real gates green. RETRO-144 written.
+    CI counter: 1/5. Fix iterations: 0/3.
+    FOLLOW-433→438 chain fully closed in code+bookkeeping.
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

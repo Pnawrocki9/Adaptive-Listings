@@ -2,6 +2,22 @@
 
 ---
 
+**Date / ticket:** 2026-06-30 — FOLLOW-438 loop closure (bookkeeping pass) **Delegation row used:**
+Terraform, CI/CD, workflows — devops-engineer (FOLLOW-438). **What validation caught (or missed):**
+FOLLOW-438 is a P3 CI guard ticket (script + ci.yml only); no new application symbols, events, env-
+vars, columns, or topics introduced. Step 5c wiring audit confirmed N/A (script invoked by CI job =
+non-test producer + consumer are the same step). The devops-engineer self-test evidence (--self-test
+negative + positive control, CI job PASS) was verifiable via gh pr view 395. The uncommitted
+devops-engineer/lessons.md FOLLOW-438 entry existed in the working tree since the PR merged but was
+not included in PR #395 (two-file PR: script + ci.yml only); carried it forward into this
+loop-closure branch to preserve the lesson on-chain. RETRO-144 written (short — no residual gaps for
+a terminal guard ticket). **A delegation/validation rule I'd add:** When a loop-closure branch
+carries an uncommitted agent-lessons.md entry from the working tree, always include it in the same
+branch — agent lesson files missing from their originating PR are a common omission for script-only
+PRs that touch no app code.
+
+---
+
 **Date / ticket:** 2026-06-30 — FOLLOW-437/436 reconcile (bookkeeping pass) **Delegation row used:**
 intent/adapt logic, embeddings, LLM gateway, Modal — ml-engineer (FOLLOW-437). **What validation
 caught (or missed):** Step 5c wiring check during FOLLOW-436 go-live verification caught BUG 2

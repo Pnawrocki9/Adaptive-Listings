@@ -12545,19 +12545,22 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   `_app.py` line) would catch this at PR time, matching the pattern established by
   `check-fire-and-forget-sinks.sh` for the control-plane.
 - **ac:**
-  - [ ] A grep or lint step in `.github/workflows/ci.yml` asserts exactly one `modal.App(`
+  - [x] A grep or lint step in `.github/workflows/ci.yml` asserts exactly one `modal.App(`
         instantiation in `apps/llm-gateway/src` (the `_app.py` one).
-  - [ ] The step fails if a second `modal.App(` is introduced (self-test or negative-control case
+  - [x] The step fails if a second `modal.App(` is introduced (self-test or negative-control case
         documented).
-  - [ ] The step passes on current HEAD at PR time.
-  - [ ] CI gate is hard (no `continue-on-error: true`).
-- **promoted_to_queue:** false
+  - [x] The step passes on current HEAD at PR time.
+  - [x] CI gate is hard (no `continue-on-error: true`).
+- **promoted_to_queue:** true (2026-06-30 — DONE, PR #395 merged 2026-06-30T16:05:41Z, commit
+  f3ac878. branch devops-engineer/FOLLOW-438-modal-app-singleton-guard. RETRO-144 written.
+  FOLLOW-433→438 chain fully closed in code+bookkeeping.)
 
 ---
 
 <!-- next free FOLLOW number: 439 (438 = RETRO-143 §4a LG-1 — CI lint guard: assert exactly one
 modal.App() in apps/llm-gateway/src to prevent BUG 2 app-name collision recurrence; P3
-devops-engineer ~1h). 437 = ESC-034 / FOLLOW-436 go-live wiring verification —
+devops-engineer ~1h; DONE PR #395 f3ac878 merged 2026-06-30T16:05:41Z; RETRO-144 written;
+FOLLOW-433→438 chain fully closed). 437 = ESC-034 / FOLLOW-436 go-live wiring verification —
 consolidate llm-gateway Modal app; fix BUG 1 orphan main.py + BUG 2 modal.App name collision;
 P1 ml-engineer ~1h; DONE PR #393 09084f3). 436 = RETRO-142 §9 — operator go-live: provision
 Modal estalara-secrets + re-deploy apps/llm-gateway for embed-seed consumer; P2 devops-engineer

@@ -43,3 +43,26 @@ from the deploy path.
 include a `modal app list` or `modal deploy --dry-run` step (or equivalent Modal SDK introspection)
 that proves the function name appears in the deployment manifest. Without this, "CI green" only
 means the code compiles, not that `modal deploy` would register the cron.
+
+---
+
+## 2026-06-30 / FOLLOW-438
+
+**What I shipped:** `scripts/check-modal-app-singleton.sh` + hard-gate `modal-app-singleton-guard`
+CI job. Guards against BUG 2 (ESC-034) recurrence: asserts exactly one `modal.App()` assignment in
+`apps/llm-gateway/src`, excluding comment lines, docstrings, test files, and `conftest.py` mocks.
+Mirrors `check-fire-and-forget-sinks.sh` structure (--self-test negative + positive control, env-var
+scan target, exit-code semantics 0/1/2).
+
+**Where a green badge could have hidden a broken run path:** The FOLLOW-437 structural fix (shared
+`_app.py`) has no runtime verification in CI — `modal deploy` is not in CI. A developer adding a
+second consumer by copy-paste from an old version of the file would re-introduce the modal.App
+declaration and get a green CI badge (Python tests pass, the mock stubs both calls). The collision
+would only surface at deploy time when one consumer's functions vanish from the live app. Without
+this guard, BUG 2 is invisible to CI.
+
+**A guardrail I'd add:** None beyond what is now shipped. The pattern (grep-based assignment guard +
+self-test that validates the detector) is the same durable approach that closed the fire-and-forget
+sweep gap. The key principle: when a "structural" fix (shared module, afterResponse wrapper) is the
+durable solution, a mechanical CI gate enforcing the structure is always the required companion —
+prose ACs and human grep checks fail under copy-paste pressure.

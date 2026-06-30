@@ -7212,24 +7212,40 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     Replace the FOLLOW-434 overflow stub with a durable Modal seed job for large-catalog activation
     embedding (RETRO-141 §4a LG-1)
   agent: backend-engineer + ml-engineer
-  status: READY
+  status: DONE
   priority: P2
   estimated_hours: 6
   depends_on: [FOLLOW-434]
   source: RETRO-141 (§4a LG-1) — source ticket FOLLOW-434 (PR #385)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-435 stub)
   branch: backend-engineer/FOLLOW-435-modal-overflow-seed-job
+  completed_at: '2026-06-30'
   notes: |
-    Promoted 2026-06-30. FOLLOW-434 (PR #385, 3a226b4) capped the inline embedding loop
-    at MAX_INLINE_SEED=50 and routes overflow listings to an observable-only Sentry stub
-    (captureMessage warning + console.warn carrying tenant_id + overflow_listing_ids). The
-    TODO marker at apps/control-plane/src/lib/seed-listing-embeddings.ts reads:
-    "FOLLOW-434 — replace overflow stub with Modal job when seed-modal-job is implemented."
-    This ticket removes that stub and replaces it with a durable Modal task queue job so
-    overflow listings (>50 per activation) are embedded end-to-end without manual operator
-    retry. Co-assigned: backend-engineer (enqueue call from control-plane overflow path) +
-    ml-engineer (Modal Python task consumer — idempotent upsert, retryable, observable
-    via Modal logs + Sentry). Scope and ACs: see backlog/FOLLOW_UPS.md (FOLLOW-435 stub).
+    DONE — code-complete, CI green, AC met on both legs. NOT yet live in production
+    (pending operator action: provision REDPANDA_TOPIC_LISTING_EMBEDDINGS,
+    EMBED_API_BASE_URL, INTERNAL_API_SECRET in Modal estalara-secrets + re-deploy
+    apps/llm-gateway). Operator go-live step tracked as FOLLOW-436.
+
+    LEG 1 — PR #389 (merge 8ea497c, merged 2026-06-30): @estalara/shared event schema
+    ListingEmbeddingSeedRequested {tenant_id, listing_ids[]} + cross-language fixture
+    packages/shared/contracts/listing-embed-seed-event.required.json + TS contract gate
+    in CI. Control-plane producer publishListingEmbeddingSeed() wired into the activation
+    overflow block of seedListingEmbeddingsForActivation (replaces FOLLOW-434 Sentry stub;
+    publishes to Redpanda topic estalara.listing-embeddings). .gitleaks.toml allowlist
+    entry added for the 40-char schema identifier (false-positive on cloudflare-api-token
+    heuristic).
+
+    LEG 2 — PR #390 (merge b5acf73, merged 2026-06-30): Modal consumer
+    apps/llm-gateway/src/jobs/consume_embed_seed_requests.py polls the topic and calls
+    POST /api/listings/embed per listing_id (idempotent upsert, INTERNAL_API_SECRET auth).
+    REQUIRED_FIELDS derived from the shared fixture (not hardcoded). Python contract test
+    + hard-gate CI step in the cross-language-contract job. Observability via Sentry
+    {area: onboarding, sink: modal-embed-seed, kind: embed_failed}.
+
+    All real CI gates green on both PRs (cross-language contract, Python tests 26/26,
+    gitleaks, FF-sink guard, Format, Lint, Typecheck, Test Node 22, Build). Known
+    pre-existing non-blocking checks (Archetype embeddings not-NULL, Rule I) did not
+    change status. RETRO-142 written. Retrospective-analyst spawned.
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

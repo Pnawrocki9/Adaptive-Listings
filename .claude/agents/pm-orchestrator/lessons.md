@@ -1527,3 +1527,18 @@ field was false; updated to true with date. No CI gates apply (docs-only change)
 delegation/validation rule I'd add:** After promoting a ticket, grep STATUS.md for the ticket ID and
 update every reference — the "not yet promoted" bucket list is the most common stale entry after
 promotion.
+
+---
+
+**Date / ticket:** 2026-06-30 — FOLLOW-435 loop closure **Delegation row used:** N/A (loop-closure
+bookkeeping — retrospective-analyst, no worker delegation). **What validation caught (or missed):**
+RETRO-142 §6 reached the ≥2 count threshold for the AC-STUB vs AC-DONE pattern (RETRO-141 count-1
+held + RETRO-142 confirming). All single letters A-Z are exhausted in CONVENTIONS_PATCH.md; the new
+Rule AA is the first two-letter rule. The ml-engineer LEG 2 lesson (uncommitted in working tree) was
+explicitly flagged in the handoff and confirmed present via git status before branching — including
+it in the loop-closure PR is the correct delivery path. The "not live until deploy" gap (FOLLOW-436)
+is a deployment-axis not a code-half-wire; documented accurately in QUEUE.md DONE notes and
+FOLLOW_UPS.md stub rather than bouncing LEG 2 to IN_PROGRESS. **A delegation/validation rule I'd
+add:** When closing a co-assigned ticket where LEG 2 depends on secrets not yet provisioned,
+explicitly document in QUEUE.md DONE notes that "code-complete does not equal live" and file the
+operator go-live action as a FOLLOW immediately — do not leave the deployment gap implicit.

@@ -551,6 +551,12 @@ jobs:
             src/__tests__/cross-runtime/description-event-contract.test.ts \
             --reporter=verbose
 
+      - name: TypeScript contract test — listing-embed seed event schema ⊇ fixture (FOLLOW-435)
+        run: |
+          pnpm --filter @estalara/shared exec vitest run \
+            src/__tests__/cross-runtime/listing-embed-seed-event-contract.test.ts \
+            --reporter=verbose
+
   # ── Migration journal monotonicity + recency check (FOLLOW-149) ─────────
   # Enforces _journal.json invariants:
   #   1. Every entry's `when` is strictly > previous entry's `when` (drizzle

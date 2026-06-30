@@ -261,4 +261,8 @@ regexes = [
   '''<YOUR_.*>''', # Another placeholder pattern
   '''xxx''', # Placeholder secrets
   '''test-key-''', # Test API key prefixes (fake values in test files)
+  # FOLLOW-435: the event-schema export identifier is exactly 40 chars and
+  # false-positives on the broad cloudflare-api-token heuristic (same class as the
+  # 40-char snake_case DDL identifiers exempted via paths above). Not a secret.
+  '''ListingEmbeddingSeedRequestedEventSchema''',
 ]

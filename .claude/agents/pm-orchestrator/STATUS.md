@@ -73,7 +73,8 @@ FOLLOW-435 loop-closure PR: pending open (bookkeeping files only — no code cha
 
 - FOLLOW-435: DONE (PRs #389 + #390, merge commits 8ea497c + b5acf73, both merged 2026-06-30).
   Code-complete; NOT yet live — pending operator secret provisioning + llm-gateway redeploy.
-  Operator go-live tracked as FOLLOW-436. RETRO-142 written. Rule AA added to CONVENTIONS_PATCH.md.
+  Operator go-live tracked as FOLLOW-436. RETRO-142 written. No rule promoted (AC-STUB vs AC-DONE
+  held at count 1 per CEO ruling 2026-06-30 — FOLLOW-435 is the remediation, not a new instance).
 - FOLLOW-434: DONE (PR #385, merge commit 3a226b4, merged 2026-06-30). RETRO-141 written.
 - FOLLOW-433: DONE (PR #383, merged 2026-06-29T17:35:35Z). RETRO-140 written.
 - FOLLOW-432: DONE (PR #381, merge commit 3cb5c28, merged 2026-06-29). RETRO-139 written.

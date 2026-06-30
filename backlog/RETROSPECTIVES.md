@@ -22839,7 +22839,7 @@ Traced END-TO-END (charter → script behavior → the input it reads → the gu
 - **FOLLOW-435:** the single new stub from this retro — durable Modal seed job for large-catalog
   overflow activation seeding.
 
-<!-- next free FOLLOW number: 437 (436 = RETRO-142 §4a LG-1 — operator go-live: provision Modal estalara-secrets + re-deploy apps/llm-gateway for embed-seed consumer; P2 devops-engineer ~1h). RETRO-142 = retro for FOLLOW-435 both legs (PRs #389 8ea497c + #390 b5acf73; MERGED 2026-06-30). KEY DELIVERIES LEG 1: packages/shared ListingEmbeddingSeedRequested schema + fixture + TS CI gate; control-plane publishListingEmbeddingSeed(); overflow block in seedListingEmbeddingsForActivation now enqueues instead of Sentry-stubs; .gitleaks.toml allowlist for 40-char schema ID. KEY DELIVERIES LEG 2: apps/llm-gateway/src/jobs/consume_embed_seed_requests.py (Modal cron, REQUIRED_FIELDS from shared fixture, per-listing Sentry capture); Python contract test + CI hard-gate step. Wiring Audit: producer in seed-listing-embeddings.ts non-test; consumer in consume_embed_seed_requests.py non-test; cross-language CI gate hard-gate. NOT LIVE: requires Modal secret provisioning + redeploy (FOLLOW-436). CLOSURE: RETRO-141 §4a LG-1 (Modal overflow job) GENUINELY CLOSED. GAPS: LG-1 P2 operator go-live → FOLLOW-436; DG-1 note (not-live-until-deploy gap). Pattern: AC-STUB vs AC-DONE count 2 (RETRO-141 + RETRO-142) → meets ≥2 threshold for CONVENTIONS_PATCH rule. PM ACTION: FOLLOW-435 DONE in QUEUE.md; FOLLOW-436 filed in FOLLOW_UPS.md; CONVENTIONS_PATCH updated with AC-STUB vs AC-DONE rule. -->
+<!-- next free FOLLOW number: 437 (436 = RETRO-142 §4a LG-1 — operator go-live: provision Modal estalara-secrets + re-deploy apps/llm-gateway for embed-seed consumer; P2 devops-engineer ~1h). RETRO-142 = retro for FOLLOW-435 both legs (PRs #389 8ea497c + #390 b5acf73; MERGED 2026-06-30). KEY DELIVERIES LEG 1: packages/shared ListingEmbeddingSeedRequested schema + fixture + TS CI gate; control-plane publishListingEmbeddingSeed(); overflow block in seedListingEmbeddingsForActivation now enqueues instead of Sentry-stubs; .gitleaks.toml allowlist for 40-char schema ID. KEY DELIVERIES LEG 2: apps/llm-gateway/src/jobs/consume_embed_seed_requests.py (Modal cron, REQUIRED_FIELDS from shared fixture, per-listing Sentry capture); Python contract test + CI hard-gate step. Wiring Audit: producer in seed-listing-embeddings.ts non-test; consumer in consume_embed_seed_requests.py non-test; cross-language CI gate hard-gate. NOT LIVE: requires Modal secret provisioning + redeploy (FOLLOW-436). CLOSURE: RETRO-141 §4a LG-1 (Modal overflow job) GENUINELY CLOSED. GAPS: LG-1 P2 operator go-live → FOLLOW-436; DG-1 note (not-live-until-deploy gap). AC-STUB vs AC-DONE pattern HELD at count 1 (FOLLOW-435 is the REMEDIATION of the RETRO-141 instance, not a new AC-stub instance — counting it would be count-inflation; CEO ruling 2026-06-30). PM ACTION: FOLLOW-435 DONE in QUEUE.md; FOLLOW-436 filed in FOLLOW_UPS.md. No CONVENTIONS_PATCH rule promoted this retro. -->
 
 ## RETRO-142 — FOLLOW-435 (replace FOLLOW-434 overflow stub with durable Modal seed job — cross-language contract + embed-seed producer + Modal consumer, both legs merged PRs #389 + #390) — 2026-06-30
 
@@ -22990,17 +22990,20 @@ Traced END-TO-END (charter → script behavior → the input it reads → the gu
 
 ### 6. New lesson candidates
 
-- **Pattern (AC-STUB vs AC-DONE) — count 2 (RETRO-141 + RETRO-142).** "An AC that names a durable
-  queue/job is not met by a Sentry stub + TODO comment." RETRO-141 was count 1 (held). RETRO-142 is
-  count 2. **This meets the ≥2 threshold.** Promoting to `CONVENTIONS_PATCH.md` Rule AA (AC
-  deliverability): "If an AC names a durable queue job or external-system call (Modal, Redpanda, RPC),
-  the implementation MUST wire the real call — a Sentry/log stub + TODO is a P2 scope reduction, not
-  AC fulfillment. File the scope reduction as a FOLLOW before marking DONE."
+- **Pattern (AC-STUB vs AC-DONE) — HELD at count 1.** "An AC that names a durable queue/job is not
+  met by a Sentry stub + TODO comment." RETRO-141 §6 recorded this pattern at count 1 against
+  FOLLOW-434 (Sentry-only overflow stub where AC said "enqueued to Modal queue"). RETRO-142 does NOT
+  add an independent second occurrence: FOLLOW-435 correctly wired the real call (LEG 1 producer +
+  LEG 2 consumer), so it is the REMEDIATION of the RETRO-141 instance, not a new AC-stub instance.
+  Counting FOLLOW-435 existence as "count 2" would be count-inflation — the FOLLOW was filed because
+  FOLLOW-434 used a stub, not because FOLLOW-435 used a stub. Pattern stays HELD at count 1 (same
+  status as RETRO-141 §6). No rule promoted.
 - **Pattern (merged ≠ live for Modal consumers) — count 2 (RETRO-076/FOLLOW-307 for Postgres + this
   retro for Modal consumers).** The "merged ≠ live" pattern applies equally to Modal deployments that
   need secret provisioning: code merging does not start the consumer. Reinforces the existing
   CONVENTIONS_PATCH note (merged ≠ live); no new rule needed beyond the FOLLOW-436 stub.
-- Anti-count-inflation honored. Only the ≥2-count rule is promoted.
+- Anti-count-inflation (RETRO-122/125/126/128/129/131/132/133/135/137/138/139/140/141) honored. No
+  rule promoted this retro.
 
 ### 7. Prior-follow-up closure check
 

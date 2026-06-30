@@ -1732,3 +1732,97 @@ suppress:
 - No change to buying-intent / lead-ranking / agent-summary pipelines.
 
 ---
+
+## FOLLOW-435 LEG 1 (backend-engineer) → FOLLOW-435 LEG 2 (ml-engineer)
+
+**Date:** 2026-06-30 | **Producer PR:** backend-engineer/FOLLOW-435-listing-embed-seed-producer
+
+### What LEG 1 shipped (contract + producer)
+
+**Topic and env var:**
+
+- Redpanda topic: `estalara.listing-embeddings`
+- Env var: `REDPANDA_TOPIC_LISTING_EMBEDDINGS` (default `estalara.listing-embeddings`)
+- Auth: same Redpanda REST pattern as descriptions — `REDPANDA_REST_URL`, `REDPANDA_REST_USERNAME`,
+  `REDPANDA_REST_PASSWORD` (already in `.env.example`)
+
+**Event schema (`ListingEmbeddingSeedRequestedEvent`):**
+
+```ts
+// Source: packages/shared/src/schemas/listing-embed-seed.ts
+// Exported from: @estalara/shared
+{
+  tenant_id: string;   // UUID — RLS scope
+  listing_ids: string[]; // non-empty list of listing IDs to embed
+}
+```
+
+**Shared fixture (cross-language gate SoT):**
+
+- `packages/shared/contracts/listing-embed-seed-event.required.json` →
+  `["tenant_id", "listing_ids"]`
+- TS gate already added to CI (step "TypeScript contract test — listing-embed seed event schema ⊇
+  fixture")
+
+**Producer:**
+
+- `apps/control-plane/src/lib/listing-embed-seed-publisher.ts` →
+  `publishListingEmbeddingSeed(event)`
+- Called from `seedListingEmbeddingsForActivation` (inside `afterResponse()`) when overflow > 0
+
+### What the Modal consumer (LEG 2) must do
+
+**1. Subscribe to the topic** (`REDPANDA_TOPIC_LISTING_EMBEDDINGS` / `estalara.listing-embeddings`),
+consume `ListingEmbeddingSeedRequestedEvent` messages.
+
+**2. For each `listing_id` in `event.listing_ids`, call the embed endpoint:**
+
+```
+POST /api/listings/embed
+x-internal-api-secret: <INTERNAL_API_SECRET>
+Content-Type: application/json
+
+{
+  "tenant_id": "<event.tenant_id>",
+  "listing_id": "<listing_id>",
+  "text_fields": {        // optional — may be omitted if not available
+    "title": "...",
+    "description": "...",
+    "price": "...",
+    "location": "..."
+  }
+}
+```
+
+The endpoint is idempotent (upsert semantics) — re-runs are safe.
+
+**3. Mirror the cross-language contract gate:**
+
+The consumer MUST derive its required field set from the shared fixture, NOT hard-code it. Pattern
+to mirror from `apps/llm-gateway/src/jobs/generate_description.py`:
+
+```python
+import json
+from pathlib import Path
+
+_CONTRACT_FIXTURE = (
+    Path(__file__).parent / "../../../../packages/shared/contracts/listing-embed-seed-event.required.json"
+)
+REQUIRED_FIELDS: frozenset[str] = frozenset(json.loads(_CONTRACT_FIXTURE.read_text()))
+```
+
+Then create `apps/llm-gateway/src/jobs/test_listing_embed_seed_event_contract.py` that:
+
+- Asserts `REQUIRED_FIELDS == frozenset(["tenant_id", "listing_ids"])`
+- Asserts the consumer validates both fields on each incoming message
+
+Add a Python pytest step to the `cross-language-contract` CI job (after the existing description
+step, following the same pattern).
+
+**4. Observability:** log successful/failed embed calls per listing_id; capture failures to Sentry
+with `tags: { area: "onboarding", sink: "modal-embed-seed", kind: "embed_failed" }`.
+
+**5. Retryability:** the Modal job should be idempotent and retryable — re-processing a message that
+already succeeded is safe because `/api/listings/embed` uses upsert.
+
+---

@@ -11,6 +11,8 @@
  *   - seedListingEmbeddingsForActivation: non-demo tenant, no schema IDs → no-op
  *   - seedListingEmbeddingsForActivation: demo tenant, some embeds fail → failed count correct
  *   - DEMO_LISTING_MANIFEST has exactly 12 entries with required fields
+ *   - overflow path: MAX_INLINE_SEED+1 listings → MAX_INLINE_SEED embedded inline +
+ *     publishListingEmbeddingSeed called once with the 1 overflow id (FOLLOW-435)
  *
  * @module apps/control-plane/src/lib/__tests__/seed-listing-embeddings.test
  */
@@ -24,6 +26,12 @@ vi.mock('@sentry/nextjs', () => ({
   captureException: vi.fn(),
 }));
 
+// Mock the Redpanda publisher so overflow tests don't need a live broker.
+// The mock is defined at module scope (hoisted) so it applies before any imports below.
+vi.mock('../listing-embed-seed-publisher', () => ({
+  publishListingEmbeddingSeed: vi.fn().mockResolvedValue(undefined),
+}));
+
 import {
   DEMO_LISTING_MANIFEST,
   MAX_INLINE_SEED,
@@ -31,6 +39,7 @@ import {
   extractListingIdsFromSchema,
   seedListingEmbeddingsForActivation,
 } from '../seed-listing-embeddings';
+import { publishListingEmbeddingSeed } from '../listing-embed-seed-publisher';
 import type { TenantSiteSchema } from '@estalara/shared';
 
 // ─── Minimal schema fixture ────────────────────────────────────────────────────
@@ -375,5 +384,101 @@ describe('seedListingEmbeddingsForActivation — overflow cap (FOLLOW-434)', () 
 
     // Function must NOT throw on overflow — fail-open contract preserved.
     // (If it threw, the await above would have rejected — no explicit assertion needed.)
+  });
+});
+
+// ─── seedListingEmbeddingsForActivation — overflow enqueue (FOLLOW-435) ──────
+
+describe('seedListingEmbeddingsForActivation — overflow enqueue (FOLLOW-435)', () => {
+  it(
+    `enqueues exactly the 1 overflow listing via publishListingEmbeddingSeed ` +
+      `when MAX_INLINE_SEED+1 listings are present`,
+    async () => {
+      const publishMock = vi.mocked(publishListingEmbeddingSeed);
+      publishMock.mockClear();
+
+      const totalCount = MAX_INLINE_SEED + 1;
+      const listingIds = Array.from(
+        { length: totalCount },
+        (_, i) => `enqueue-test-${String(i + 1).padStart(3, '0')}`,
+      );
+
+      const schemaWithListings = {
+        ...MINIMAL_SCHEMA,
+        listing_ids: listingIds,
+      } as unknown as TenantSiteSchema;
+
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await seedListingEmbeddingsForActivation(TENANT_A, schemaWithListings);
+
+      // Inline: exactly MAX_INLINE_SEED embed calls.
+      expect(fetchMock).toHaveBeenCalledTimes(MAX_INLINE_SEED);
+      expect(result.attempted).toBe(MAX_INLINE_SEED);
+      expect(result.succeeded).toBe(MAX_INLINE_SEED);
+      expect(result.overflow_count).toBe(1);
+
+      // Publisher called exactly once with the 1 overflow id.
+      expect(publishMock).toHaveBeenCalledOnce();
+      const publishCall = publishMock.mock.calls[0]?.[0];
+      expect(publishCall).toBeDefined();
+      expect(publishCall?.tenant_id).toBe(TENANT_A);
+      expect(publishCall?.listing_ids).toEqual([
+        `enqueue-test-${String(MAX_INLINE_SEED + 1).padStart(3, '0')}`,
+      ]);
+    },
+  );
+
+  it('does NOT call publishListingEmbeddingSeed when all listings fit within MAX_INLINE_SEED', async () => {
+    const publishMock = vi.mocked(publishListingEmbeddingSeed);
+    publishMock.mockClear();
+
+    // Exactly MAX_INLINE_SEED listings — no overflow.
+    const listingIds = Array.from(
+      { length: MAX_INLINE_SEED },
+      (_, i) => `no-overflow-${String(i + 1).padStart(3, '0')}`,
+    );
+
+    const schemaWithListings = {
+      ...MINIMAL_SCHEMA,
+      listing_ids: listingIds,
+    } as unknown as TenantSiteSchema;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    );
+
+    await seedListingEmbeddingsForActivation(TENANT_A, schemaWithListings);
+
+    expect(publishMock).not.toHaveBeenCalled();
+  });
+
+  it('never throws even when publishListingEmbeddingSeed rejects', async () => {
+    const publishMock = vi.mocked(publishListingEmbeddingSeed);
+    // publishListingEmbeddingSeed is designed to never reject, but test fail-open anyway.
+    publishMock.mockRejectedValueOnce(new Error('Redpanda unreachable'));
+
+    const listingIds = Array.from(
+      { length: MAX_INLINE_SEED + 2 },
+      (_, i) => `failopen-${String(i + 1).padStart(3, '0')}`,
+    );
+
+    const schemaWithListings = {
+      ...MINIMAL_SCHEMA,
+      listing_ids: listingIds,
+    } as unknown as TenantSiteSchema;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    );
+
+    // Must not throw even when the publisher rejects.
+    const result = await seedListingEmbeddingsForActivation(TENANT_A, schemaWithListings);
+    expect(result.overflow_count).toBe(2);
   });
 });

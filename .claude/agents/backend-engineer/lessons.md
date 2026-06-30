@@ -1268,3 +1268,31 @@ this is fine because `mockCreate` is still the controlled mock fn.
 `async` but lacks internal try/catch — would have caught the `writeDsrAuditLog` hole at code-review
 time. Alternatively, a naming convention: async analytics sinks should end in `*Async` and must have
 a CI check that the function body contains a try/catch.
+
+---
+
+## 2026-06-30 / FOLLOW-435 LEG 1
+
+**What I built:** Event contract + Redpanda producer for the listing-embedding seed overflow path.
+the `ListingEmbeddingSeedRequested` event schema in `@estalara/shared`; shared fixture JSON at
+`packages/shared/contracts/listing-embed-seed-event.required.json`; TS cross-runtime contract test;
+`publishListingEmbeddingSeed()` producer in
+`apps/control-plane/src/lib/listing-embed-seed-publisher.ts`; overflow stub in
+`seed-listing-embeddings.ts` replaced with an `await publishListingEmbeddingSeed(…)` call; 3 new
+test cases (enqueue called once with correct payload, not called on no-overflow, fail-open on
+publisher reject); CI step for new TS contract test added.
+
+**Wiring/auth/fail-loud risks I weighed:** (1) The producer uses the same Redpanda REST auth pattern
+as `publishDescriptionRequested` — Basic auth header, no-op when `REDPANDA_REST_URL` absent, Sentry
+capture on HTTP rejection AND network failure. (2) The overflow call is `await`ed inside the
+already-`afterResponse()`-wrapped `seedListingEmbeddingsForActivation` — no new bare `void` needed;
+FF-sink guard verified clean. (3) The outer try/catch in `seedListingEmbeddingsForActivation`
+already wraps the publish call, so a publisher rejection (even though it's designed to never reject)
+is fail-open. (4) Next.js webpack requires no `.js` extension on relative imports — caught by a
+build failure; fixed before commit.
+
+**A guardrail I'd add:** The cross-language CI gate currently only covers the TS side for the new
+event (no Python consumer yet). LEG 2 MUST add the Python pytest step to CI before the gate is fully
+bidirectional. The HANDOFF note documents this explicitly. A CI check that asserts "every
+`*.required.json` fixture in `packages/shared/contracts/` has at least one Python pytest referencing
+it" would prevent the Python side from being silently skipped.

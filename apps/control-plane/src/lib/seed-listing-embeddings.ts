@@ -39,6 +39,7 @@
 
 import * as Sentry from '@sentry/nextjs';
 import type { TenantSiteSchema } from '@estalara/shared';
+import { publishListingEmbeddingSeed } from './listing-embed-seed-publisher';
 
 // ─── Budget cap ───────────────────────────────────────────────────────────────
 
@@ -351,10 +352,10 @@ export async function seedListingEmbeddingsForActivation(
 
     // ── Cap inline work to MAX_INLINE_SEED (Vercel after() budget guard) ──────
     // Vercel Hobby: 15s budget. At ~200ms/call, 50 × 200ms ≈ 10s (5s headroom).
-    // Overflow listings are NOT silently dropped — they are captured to Sentry
-    // + console.warn so an operator can retry or a Modal job can pick them up.
-    // TODO: FOLLOW-434 — replace overflow stub with Modal job when seed-modal-job
-    // is implemented.
+    // Overflow listings are NOT silently dropped — they are enqueued to the
+    // `estalara.listing-embeddings` Redpanda topic so the Modal background job
+    // (ml-engineer, FOLLOW-435 LEG 2) can embed them durably without manual retry.
+    // A Sentry breadcrumb is also emitted for observability.
     const inline = listings.slice(0, MAX_INLINE_SEED);
     const overflow = listings.slice(MAX_INLINE_SEED);
 
@@ -366,7 +367,7 @@ export async function seedListingEmbeddingsForActivation(
       const msg =
         `[seed-listing-embeddings] OVERFLOW: tenant=${tenantId} has ${String(overflow.length)} ` +
         `listings beyond MAX_INLINE_SEED=${String(MAX_INLINE_SEED)}. ` +
-        `These were NOT embedded inline and require manual retry or a Modal seed job. ` +
+        `Enqueueing to estalara.listing-embeddings for Modal processing (FOLLOW-435). ` +
         `overflow_listing_ids=${JSON.stringify(overflowIds)}`;
       console.warn(msg);
       Sentry.captureMessage(msg, {
@@ -383,6 +384,11 @@ export async function seedListingEmbeddingsForActivation(
           max_inline_seed: MAX_INLINE_SEED,
         },
       });
+      // Enqueue overflow listing_ids to the durable Modal seed job.
+      // publishListingEmbeddingSeed never throws — failures are captured to Sentry
+      // internally (Rule K.2). This function already runs inside afterResponse() so
+      // awaiting here is safe and does NOT add a bare void (FOLLOW-433 FF-guard).
+      await publishListingEmbeddingSeed({ tenant_id: tenantId, listing_ids: overflowIds });
     }
 
     // Sequential to avoid overwhelming OpenAI quota; each call is ~200ms.

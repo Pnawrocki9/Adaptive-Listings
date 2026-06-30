@@ -1,7 +1,7 @@
 # PM Orchestrator — Session Status
 
-**Date:** 2026-06-29 **Session:** FOLLOW-433 DONE (PR #383 merged, RETRO-140 written). FOLLOW-434
-promoted and delegated (backend-engineer). 1/3 in flight.
+**Date:** 2026-06-30 **Session:** FOLLOW-434 DONE (PR #385 merged 3a226b4, RETRO-141 written,
+FOLLOW-435 filed). 0/3 in flight.
 
 ---
 
@@ -17,26 +17,31 @@ by FOLLOW-431 + prod verification).
 
 ---
 
-## IN_PROGRESS tickets (1/3 max)
+## IN_PROGRESS tickets (0/3 max)
 
-- FOLLOW-434 (backend-engineer): Bound seedListingEmbeddingsForActivation after() budget + offload
-  overflow to Modal/queue + fix stale JSDoc. Branch:
-  backend-engineer/FOLLOW-434-seed-budget-cap-modal-queue. Started: 2026-06-29. CI counter: 0/5. Fix
-  iterations: 0/3.
+None. FOLLOW-434 closed this session. Next candidates: FOLLOW-435 (P2, durable Modal seed job,
+backend-engineer+ml-engineer), FOLLOW-429 (P2, decision-api ctx.waitUntil, backend-engineer).
 
 ---
 
 ## CI check counter (current session)
 
 FOLLOW-433 (PR #383): DONE — CI verified green; baseline non-blocking only (Rule I ×2 + Archetype
-embeddings ×2). Counter closed at 1/5 CI checks (gh pr view 383 run), 0/3 fix iterations.
+embeddings ×2). Counter closed at 1/5 CI checks, 0/3 fix iterations.
 
-FOLLOW-434: PENDING — counter starts at 0/5 / 0/3 when worker opens PR.
+FOLLOW-434 (PR #385): DONE — CI verified green by human before merge; 1355/1355 tests; FF-sink guard
+PASS; lint/typecheck/build green. Baseline non-blocking only (Rule I + Archetype embeddings —
+pre-existing on main; Format fixed by PR #386). Counter closed at 1/5 CI checks, 0/3 fix iterations.
 
 ---
 
 ## Recent merges (most recent first)
 
+- PR #386 (Format fix, pm-orchestrator): prettier-fix bookkeeping files to unblock Format check on
+  main. Merged 2026-06-30 (bd60ffc).
+- PR #385 (FOLLOW-434, backend-engineer): Cap seedListingEmbeddingsForActivation inline loop at
+  MAX_INLINE_SEED=50 + Sentry overflow capture + JSDoc fix. 1355/1355 tests; FF-sink guard PASS.
+  Merged 2026-06-30 (squash 3a226b4). RETRO-141 written. FOLLOW-435 filed.
 - PR #383 (FOLLOW-433, backend-engineer): Wrapped 3 surviving ff sinks in afterResponse()
   (updateArmAsync + upsertConversionLabelAsync in feedback/route.ts, deleteSessionFromRedis in
   dsr/erase/route.ts). Added scripts/check-fire-and-forget-sinks.sh + CI hard-gate job. 62/62 tests
@@ -52,17 +57,20 @@ FOLLOW-434: PENDING — counter starts at 0/5 / 0/3 when worker opens PR.
 
 ## Queue state
 
+- FOLLOW-434: DONE (PR #385, merge commit 3a226b4, merged 2026-06-30). RETRO-141 written. FOLLOW-435
+  filed.
 - FOLLOW-433: DONE (PR #383, merged 2026-06-29T17:35:35Z). RETRO-140 written.
 - FOLLOW-432: DONE (PR #381, merge commit 3cb5c28, merged 2026-06-29). RETRO-139 written.
-- Next free FOLLOW stub number: 435.
+- Next free FOLLOW stub number: 436.
 - FOLLOW-431: DONE (PR #379, merged 2026-06-29, prod-verified 10/10 burst writes).
-- FOLLOW-434: IN_PROGRESS (backend-engineer, branch
-  backend-engineer/FOLLOW-434-seed-budget-cap-modal-queue).
+- FOLLOW-435: OPEN in FOLLOW_UPS.md (not yet promoted; P2, replace Sentry overflow stub in
+  seed-listing-embeddings.ts with durable Modal seed job; backend-engineer+ml-engineer ~6h). Depends
+  on seed-modal-job infra ticket.
 - FOLLOW-429: READY in FOLLOW_UPS.md (not yet promoted; scope widened to include ctx.waitUntil — P2
   backend-engineer, CF-Worker flush-axis analogue for decision-api reorder.ts:204). Next after
-  FOLLOW-434.
+  FOLLOW-435 or in parallel.
 - FOLLOW-430: READY in FOLLOW_UPS.md (not yet promoted; P3 sdk-engineer, 2h).
 - P2 tickets READY (not yet promoted to QUEUE): FOLLOW-417, FOLLOW-418, FOLLOW-420, FOLLOW-421,
-  FOLLOW-429.
+  FOLLOW-429, FOLLOW-435.
 - P3 tickets READY: FOLLOW-355, FOLLOW-399, FOLLOW-401, FOLLOW-408, FOLLOW-412, FOLLOW-413,
   FOLLOW-416, FOLLOW-430.

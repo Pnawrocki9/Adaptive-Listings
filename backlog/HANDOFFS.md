@@ -1826,3 +1826,50 @@ with `tags: { area: "onboarding", sink: "modal-embed-seed", kind: "embed_failed"
 already succeeded is safe because `/api/listings/embed` uses upsert.
 
 ---
+
+## FOLLOW-437 (ml-engineer) → FOLLOW-436 operator (Piotr / Rafał)
+
+**Date:** 2026-06-30 | **PR:** ml-engineer/FOLLOW-437-consolidate-llm-gateway-modal-app
+
+### What FOLLOW-437 shipped (BUG 1 + BUG 2 fix)
+
+Both ESC-034 code bugs are fixed and merged. The deploy entrypoint is now correct.
+
+**Deploy command (unchanged from the runbook in PR #392):**
+
+```bash
+modal deploy apps/llm-gateway/src/main.py
+```
+
+This single command now registers ALL three Modal functions under one app:
+
+- `generate_description`
+- `consume_description_requests`
+- `consume_embed_seed_requests`
+
+**What changed structurally:**
+
+1. `apps/llm-gateway/src/jobs/_app.py` — new shared module that owns the single
+   `modal.App("estalara-description-generator")` instance and the shared Docker image.
+2. `generate_description.py` and `consume_embed_seed_requests.py` now import `app` and `_image` from
+   `_app.py` instead of each constructing their own `modal.App(...)`.
+3. `main.py` is no longer a placeholder — it imports both consumer modules (load-bearing
+   side-effects that register their `@app.function` decorators) and re-exports `app` so Modal can
+   locate the App object.
+
+**App name preserved:** `estalara-description-generator` — the live app identity is unchanged; no
+decommissioning of running functions is required.
+
+**Operator: nothing changes in the go-live procedure from PR #392's runbook.** The three-step
+runbook (provision secrets → `modal deploy main.py` → smoke verify) is correct as written. The only
+difference is that `modal deploy main.py` now actually works (previously it deployed zero
+functions).
+
+### Verification proof (from FOLLOW-437 PR description)
+
+- `modal.App("estalara-description-generator")` called exactly **once** at import time (from
+  `jobs/_app.py`).
+- `generate_description.app is consume_embed_seed_requests.app` → `True`.
+- All 104 llm-gateway Python tests pass (including cross-language contract gates).
+
+---

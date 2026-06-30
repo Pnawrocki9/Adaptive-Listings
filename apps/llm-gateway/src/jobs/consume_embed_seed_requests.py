@@ -78,17 +78,17 @@ _CONTRACT_FIXTURE = (
 REQUIRED_FIELDS: frozenset[str] = frozenset(json.loads(_CONTRACT_FIXTURE.read_text()))
 
 # ---------------------------------------------------------------------------
-# Modal app definition — reuses the llm-gateway app and image
+# Modal app definition — shared with all llm-gateway consumers (FOLLOW-437)
+#
+# ``app`` and ``_image`` are imported from jobs._app so that a single
+# modal.App object owns every @app.function across the gateway.  Previously
+# this module declared its own modal.App("estalara-description-generator"),
+# which caused deploying this file directly to silently wipe
+# generate_description + consume_description_requests from the live app
+# (BUG 2, ESC-034).  The shared _app.py module is the single source of truth.
 # ---------------------------------------------------------------------------
 
-app = modal.App("estalara-description-generator")
-
-_image = modal.Image.debian_slim(python_version="3.12").pip_install(
-    "httpx>=0.27",
-    "confluent-kafka>=2.4",
-    "sentry-sdk>=2.0",
-    "structlog>=24.0",
-)
+from jobs._app import _image, app  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

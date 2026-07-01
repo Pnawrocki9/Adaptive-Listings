@@ -1296,3 +1296,44 @@ event (no Python consumer yet). LEG 2 MUST add the Python pytest step to CI befo
 bidirectional. The HANDOFF note documents this explicitly. A CI check that asserts "every
 `*.required.json` fixture in `packages/shared/contracts/` has at least one Python pytest referencing
 it" would prevent the Python side from being silently skipped.
+
+---
+
+## 2026-07-02 / FOLLOW-451
+
+**What I built:** Added a real tenant API-key auth fallback to `POST /api/adapt` (audit F-05). The
+handler tries the pre-existing demo HS256 JWT (`verifyDemoJwt`/`DEMO_MODE_JWT_SECRET`) first; on
+`DemoJwtInvalidError` it falls back to the shared ADR-0015 `resolveApiKey()` (SHA-256 bearer →
+`api_keys`, constant-time compare) — the same helper already used by `adapt/feedback/route.ts`.
+`tenantId` is now `apiKeyTenantId ?? jwtClaims.tenant_id ?? body.tenant_id`, never trusting the body
+when either auth path resolved a tenant. Added a 403 on `body.tenant_id !== apiKeyTenantId` for the
+API-key path only (parity with feedback route's Step 7). 6 new tests in `route.follow451.test.ts`
+covering the full auth matrix (valid key → 200 with real directives, mismatched tenant → 403,
+unknown bearer → 401, revoked-equivalent → 401, DB error during lookup → 401 fail-loud via Sentry,
+DEMO_MODE_JWT_SECRET-missing still 500 even with a valid key present). All 283 existing adapt
+tests + 1395 control-plane tests stayed green; no route.demo-auth.test.ts edits needed.
+
+**Wiring/auth/fail-loud risks I weighed:** (1) A missing `DEMO_MODE_JWT_SECRET` still hard-500s
+before the API-key path is ever attempted — I kept this literal (rather than falling through to try
+the API key), because an existing test locks that exact contract and the ticket explicitly said
+"still surfaces as 500." I flagged in the PR that this means a misconfigured demo secret in prod
+would also break real-tenant traffic on this route, which is a real operational risk worth watching,
+even though it's the ticket-mandated behavior. (2) The ticket's AC2 ("body.tenant_id mismatch →
+403") directly conflicts with the pre-existing FOLLOW-260 test, which expects a mismatched
+body.tenant_id on the JWT path to be silently superseded (200), not rejected (403). I did not touch
+the JWT path's behavior and scoped the new 403 check to the API-key path only — both because the
+ticket explicitly required "no regression, existing tests green" and because JWT-path superseding
+already closes the same cross-tenant vulnerability by a different mechanism (ignoring the
+attacker-controlled field entirely rather than rejecting it). (3) resolveApiKey() DB errors are
+caught and normalized to 401 + Sentry capture (Rule K.2) rather than allowed to bubble into a
+generic 500 or silently authenticate. (4) Left the GET handler's separate `ADAPT_API_KEY`
+presence-only auth untouched — out of ticket scope; noted as a candidate follow-up in the PR since
+it's a materially weaker auth pattern than what POST now has, but expanding scope wasn't authorized
+here.
+
+**A guardrail I'd add:** When a ticket's AC list contains two clauses that turn out to conflict with
+an existing locked-in test (as happened here with AC2 vs. FOLLOW-260), a lightweight pre-flight
+`grep`/read of the acceptance-criteria-adjacent test file BEFORE writing the auth code would surface
+the conflict earlier — I found it while reading the reference tests, but a step in the ticket
+template itself ("list any existing test whose assertions this AC's literal wording would break")
+would make agents surface these tensions explicitly.

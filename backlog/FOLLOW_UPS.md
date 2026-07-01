@@ -12559,7 +12559,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-### FOLLOW-439 — Fix lift route fabricated metrics: remove `buildMockLiftRows` fallback, correct `dqsUnavailable=false` on error, add `data_source` provenance (AUD-01 / F-01)
+## FOLLOW-439 — Fix lift route fabricated metrics: remove `buildMockLiftRows` fallback, correct `dqsUnavailable=false` on error, add `data_source` provenance (AUD-01 / F-01)
 
 - **source_retro:** 2026-07-01 end-to-end code audit (F-01)
 - **source_ticket:** AUD-01 (sibling of FOLLOW-329 which covers summary/route.ts)
@@ -12591,7 +12591,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-### FOLLOW-440 — Fix phantom columns in summary + inquiry-starts routes: `assigned_at`→`ts`, drop or null-safe `latency_ms` p95 tile (AUD-02 / F-02)
+## FOLLOW-440 — Fix phantom columns in summary + inquiry-starts routes: `assigned_at`→`ts`, drop or null-safe `latency_ms` p95 tile (AUD-02 / F-02)
 
 - **source_retro:** 2026-07-01 end-to-end code audit (F-02)
 - **source_ticket:** AUD-02
@@ -12690,7 +12690,36 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 443 (442 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
+## FOLLOW-445 — Restore p95 adaptation latency tile in `/api/dashboard/analytics/summary` via `llm_calls` join
+
+- **source_retro:** 2026-07-01 FOLLOW-440 resolution (PR resolving FOLLOW-439/440/329)
+- **source_ticket:** FOLLOW-440 (the original p95 drop was done here as the safe option)
+- **recommended_sprint:** next (P2 — dashboard KPI completeness; not a pilot go-live blocker)
+- **recommended_agent:** backend-engineer
+- **priority:** P2
+- **estimated_hours:** 2
+- **scope:** `apps/control-plane/src/app/api/dashboard/analytics/summary/route.ts`. The `p95Latency`
+  tile was dropped (returns null) because `adaptation_decisions` has no `latency_ms` column
+  (migration 0003). The `llm_calls` table (migration 0004) does have `latency_ms`. This ticket
+  implements the correct join:
+  `LEFT JOIN llm_calls lc ON ad.tenant_id = lc.tenant_id AND ad.session_id = lc.session_id` and
+  changes `quantile(0.95)(lc.latency_ms)` to compute p95 LLM latency per tenant window. Ensure the
+  join does not double-count sessions (use `anyIf` or `argMin` aggregation). Update
+  `SummaryResponse.p95Latency` from `number | null` back to `number` once the join is live and
+  tested.
+- **ac:**
+  - [ ] Summary route computes p95 latency via llm_calls join; `p95Latency` is a positive number on
+        the ClickHouse success path (not null).
+  - [ ] `SummaryResponse.p95Latency` type updated to `number | null` where null = no LLM calls in
+        window (or back to `number` with 0 sentinel — document choice).
+  - [ ] analytics/page.tsx consumer updated to handle the number return (no "—" display).
+  - [ ] Unit test: mock llm_calls join returning a valid p95 → assert non-null p95Latency.
+  - [ ] pnpm lint + typecheck + test pass; CI green.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 446 (445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
 P1 backend-engineer ~1h). 441 = AUD-03/F-06 — prod CH write-verification canary; P0 data-engineer
 ~3h). 440 = AUD-02/F-02 — fix assigned_at→ts + latency_ms phantom columns; P0 backend-engineer
 ~2h). 439 = AUD-01/F-01 — fix lift route buildMockLiftRows fabrication + dqsUnavailable=false;

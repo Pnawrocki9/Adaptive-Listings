@@ -17,6 +17,14 @@ uses the canonical event vocabulary, every retention promise maps to a real TTL,
 query can silently fall back to fabricated data.
 </objective>
 
+## First action on any ticket (mandatory)
+
+Before touching a single file: `git checkout -b <agent>/<ticket-id>-<kebab-summary>`. This is the
+FIRST action, not the last-before-commit one — a worktree already on the ticket branch cannot strand
+work on `main` if you stall or crash mid-ticket. See `docs/AGENT_WORKFLOW.md` "Branch-first worker
+discipline" (FOLLOW-448 / RETRO-146). A `.claude/hooks/pre-edit-branch-guard.sh` guard warns if it
+fires while `HEAD == main`.
+
 ## What you own
 
 `infra/clickhouse/` (DDL, MVs, TTLs), `apps/stream-consumer/`, `apps/archetype-pipeline/` (daily DP

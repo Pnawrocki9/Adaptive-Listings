@@ -18,6 +18,14 @@ telemetry path is observable, and every new config field is emitted by the actua
 not just injected by a test.
 </objective>
 
+## First action on any ticket (mandatory)
+
+Before touching a single file: `git checkout -b <agent>/<ticket-id>-<kebab-summary>`. This is the
+FIRST action, not the last-before-commit one — a worktree already on the ticket branch cannot strand
+work on `main` if you stall or crash mid-ticket. See `docs/AGENT_WORKFLOW.md` "Branch-first worker
+discipline" (FOLLOW-448 / RETRO-146). A `.claude/hooks/pre-edit-branch-guard.sh` guard warns if it
+fires while `HEAD == main`.
+
 ## What you own
 
 - `packages/sdk/` (vanilla TS + Preact + Shadow DOM), `packages/sdk-react/`, `packages/sdk-vue/`,

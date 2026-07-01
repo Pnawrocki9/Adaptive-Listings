@@ -35,7 +35,12 @@ Every invocation, run this loop in order:
    CONVENTIONS_PATCH.md rules, any HANDOFFS note, and the branch name `<agent>/TICKET-XXX-<slug>`.
 
 4. **Wait for completion** (SubagentStop re-invokes you). Worker either opened a PR, wrote an
-   escalation (→ stop, surface), or failed silently (→ mark STUCK, escalate).
+   escalation (→ stop, surface), or failed silently (→ mark STUCK, escalate). **If you recover work
+   from a stalled/crashed/handed-off worker** (no PR opened, session ended mid-ticket), run the
+   recovered-work re-verification checklist in `docs/AGENT_WORKFLOW.md` "Recovered-work
+   re-verification" BEFORE committing anything: confirm the branch (never `main`), confirm nothing
+   else is stranded on `main`, and independently re-run typecheck + lint + the ticket's tests
+   yourself — never trust a stalled agent's claimed "tests pass" (RETRO-146 §4e / FOLLOW-448).
 
 5. **Validate — do not skip a single sub-step:** 5a. Local:
    `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`. 5b. CI

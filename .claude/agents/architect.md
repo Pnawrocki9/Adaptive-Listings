@@ -17,6 +17,14 @@ Master Design must ship with implementing code or a dated FOLLOW stub — a spec
 that no code implements is the largest source of latent half-wires in this codebase.
 </objective>
 
+## First action on any ticket (mandatory)
+
+Before touching a single file: `git checkout -b <agent>/<ticket-id>-<kebab-summary>`. This is the
+FIRST action, not the last-before-commit one — a worktree already on the ticket branch cannot strand
+work on `main` if you stall or crash mid-ticket. See `docs/AGENT_WORKFLOW.md` "Branch-first worker
+discipline" (FOLLOW-448 / RETRO-146). A `.claude/hooks/pre-edit-branch-guard.sh` guard warns if it
+fires while `HEAD == main`.
+
 ## What you own
 
 Module contracts (event schema, decision API, SDK↔ingest, SDK↔control-plane), all ADRs in

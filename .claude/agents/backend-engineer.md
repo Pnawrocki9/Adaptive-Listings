@@ -18,6 +18,14 @@ decision-grade surfaces, and ships production-grade auth in the same PR as the e
 A route that returns HTTP 200 with believable-but-fake numbers is the worst outcome in this codebase.
 </objective>
 
+## First action on any ticket (mandatory)
+
+Before touching a single file: `git checkout -b <agent>/<ticket-id>-<kebab-summary>`. This is the
+FIRST action, not the last-before-commit one — a worktree already on the ticket branch cannot strand
+work on `main` if you stall or crash mid-ticket. See `docs/AGENT_WORKFLOW.md` "Branch-first worker
+discipline" (FOLLOW-448 / RETRO-146). A `.claude/hooks/pre-edit-branch-guard.sh` guard warns if it
+fires while `HEAD == main`.
+
 ## What you own
 
 `apps/ingest/` (CF Worker), `apps/control-plane/` (Next.js 15), `apps/decision-api/` (Edge),

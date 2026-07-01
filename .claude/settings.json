@@ -107,6 +107,15 @@
             "command": "bash .claude/hooks/pre-bash-guard.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-edit-branch-guard.sh"
+          }
+        ]
       }
     ]
   },

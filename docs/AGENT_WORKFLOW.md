@@ -85,6 +85,61 @@ edit.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+## Branch-first worker discipline (mandatory — FOLLOW-448 / RETRO-146)
+
+A worker's **FIRST action on any ticket, before touching a single file**, is:
+
+```
+git checkout -b <agent>/<ticket-id>-<kebab-summary>
+```
+
+Not "edit, then branch before committing." Not "branch once the diff looks done." **First**, before
+any `Edit`/`Write` tool call. A worktree that is already on the ticket branch cannot strand work on
+`main` no matter when the worker stalls, crashes, or is interrupted — the diagram's "worker agent"
+box above starts with this step implicitly on every ticket.
+
+**Why this is codified as a rule and not left as a convention:** on FOLLOW-442 (RETRO-146 §4e) the
+implementing `backend-engineer` subagent stalled (600s, no progress) after producing a correct
+implementation but **before ever running `git checkout -b`** — the edits sat uncommitted directly in
+the `main` working tree. The main session recovered it that time (see "Recovered-work
+re-verification" below), but the near-miss is real: uncommitted edits stranded on `main` are
+invisible to the next `git checkout -b <newbranch>` — the _next_ ticket that branches from `main`
+**silently absorbs the stranded diff into an unrelated branch**, or a routine `git checkout main` /
+`git stash drop` **discards the work entirely**. Neither failure mode announces itself.
+
+A mechanical guard backs up this rule: `.claude/hooks/pre-edit-branch-guard.sh` fires on every
+`Edit`/`Write`/`MultiEdit` tool call and, when `HEAD == main` (or `master`), surfaces a warning via
+the `PreToolUse` `additionalContext` channel so Claude itself sees it mid-session — not just a human
+reading a debug log. It is **non-blocking by design** (see the script's header comment for the
+rationale: the pm-orchestrator legitimately edits `backlog/QUEUE.md` and its sibling state files
+directly on `main`, and a hard block on every `main`-branch edit would break that sanctioned
+workflow). Treat the warning as a hard stop anyway: if you see it fire on a ticket file, branch
+immediately before continuing.
+
+## Recovered-work re-verification (mandatory when the orchestrator recovers a stalled/handed-off worker)
+
+If a worker stalls, crashes, or is otherwise interrupted mid-ticket, and the pm-orchestrator (or the
+human) picks up its output to finish the job, the recovering party MUST, before committing or
+opening a PR:
+
+1. **Confirm the branch.** `git status --branch` / `git rev-parse --abbrev-ref HEAD` — the work must
+   land on `<agent>/<ticket-id>-<slug>`, never `main`. If it's sitting uncommitted on `main`, move
+   it (`git stash` → `git checkout -b <agent>/<ticket-id>-<slug>` → `git stash pop`) before anything
+   else.
+2. **Confirm nothing else is stranded.** `git status --short` on `main` after the move — it must be
+   clean. A second, unrelated stranded diff would otherwise get silently swept into this ticket's
+   branch.
+3. **Independently re-run verification — never trust a stalled agent's claimed "tests pass."**
+   Re-run typecheck + lint + the ticket's test suite yourself (aggregated root commands per the
+   tool-call budget rules, not per-package). A worker that stalled did not necessarily finish its
+   own verification pass; a worker that crashed produced zero verification. Only the recovering
+   party's own run counts as evidence.
+4. **Only then** commit, push, and open the PR — with a note in the PR description that the work was
+   recovered from a stalled/handed-off subagent and independently re-verified.
+
+This mirrors OPERATING_PRINCIPLE 5 (verify-not-guess) applied to intra-session handoff. Source:
+RETRO-146 §4e / FOLLOW-448.
+
 ## The retrospective loop (learning loop)
 
 After every PR is merged, the PM spawns a second subagent that runs in parallel with the next

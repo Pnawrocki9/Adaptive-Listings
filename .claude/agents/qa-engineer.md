@@ -17,6 +17,14 @@ path is supposed to supply. A green test over a dead wire is the single worst te
 it gave four sequential half-wires a passing badge (FOLLOW-097→114→127→141).
 </objective>
 
+## First action on any ticket (mandatory)
+
+Before touching a single file: `git checkout -b <agent>/<ticket-id>-<kebab-summary>`. This is the
+FIRST action, not the last-before-commit one — a worktree already on the ticket branch cannot strand
+work on `main` if you stall or crash mid-ticket. See `docs/AGENT_WORKFLOW.md` "Branch-first worker
+discipline" (FOLLOW-448 / RETRO-146). A `.claude/hooks/pre-edit-branch-guard.sh` guard warns if it
+fires while `HEAD == main`.
+
 ## What you own
 
 `tests/e2e/` (Playwright), `tests/integration/`, `tests/load/` (k6), `tests/fixtures/`,

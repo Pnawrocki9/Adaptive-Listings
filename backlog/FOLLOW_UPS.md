@@ -12719,7 +12719,40 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 446 (445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
+## FOLLOW-446 — Harden the archetype-embeddings-not-NULL CI gate against silent blind-spots
+
+- **source_retro:** 2026-07-01 FOLLOW-392 resolution session (post-merge PR #402 fix)
+- **source_ticket:** FOLLOW-392 (embeddings verified; gate found blind during validation)
+- **recommended_sprint:** next (P3 — CI hygiene; not a pilot go-live blocker)
+- **recommended_agent:** devops-engineer
+- **priority:** P3
+- **estimated_hours:** 1
+- **scope:** `.github/workflows/ci.yml`, job `archetype-embeddings-not-null` (~L645). This session
+  fixed the immediate breakage — the job built `@estalara/db` without first building
+  `@estalara/shared`, so it died at `TS2307 Cannot find module '@estalara/shared'` and never reached
+  the NULL assertion. Root residual: the job carries `continue-on-error: true` (intended only as a
+  soft-skip when `DOPPLER_TOKEN_DEV` is absent on forked PRs), but that flag swallows **every** kind
+  of failure — including a broken build or a broken query — so the gate can silently stop verifying
+  again with zero signal (exactly how the `@estalara/db` import break went unnoticed until
+  FOLLOW-392 validation). Distinguish "expected soft-skip" (missing token → exit 0, notice) from
+  "gate is broken" (build/import/query error → visible failure), so infrastructure rot in this check
+  surfaces instead of masquerading as a benign non-blocking red.
+- **ac:**
+  - [ ] The `@estalara/shared` build step lands before the `@estalara/db` build step (done this
+        session — assert it stays and add a comment tying it to `upsert-conversion-label.ts`'s
+        import).
+  - [ ] Build/setup failures in this job are NOT swallowed by `continue-on-error` — scope the
+        soft-skip strictly to the missing-`DOPPLER_TOKEN_DEV` path (e.g. gate the assertion step on
+        the doppler-check output and drop `continue-on-error` from the build steps, or split build
+        into its own hard-failing job that `needs:` feeds this one).
+  - [ ] Only a genuine NULL-embedding row (token present) or a real gate malfunction turns the check
+        red; a missing token still exits 0 with the existing notice.
+  - [ ] pnpm lint (workflow yaml) + a dry CI run confirm the job builds `@estalara/db` green.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 447 (446 = harden archetype-embeddings-not-NULL CI gate against silent blind-spots [shared-build-order fixed PR #402 follow-up + continue-on-error swallows gate-broken vs soft-skip]; P3 devops-engineer ~1h. 445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
 P1 backend-engineer ~1h). 441 = AUD-03/F-06 — prod CH write-verification canary; P0 data-engineer
 ~3h). 440 = AUD-02/F-02 — fix assigned_at→ts + latency_ms phantom columns; P0 backend-engineer
 ~2h). 439 = AUD-01/F-01 — fix lift route buildMockLiftRows fabrication + dqsUnavailable=false;

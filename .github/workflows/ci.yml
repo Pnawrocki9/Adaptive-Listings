@@ -661,6 +661,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # @estalara/db imports from @estalara/shared (e.g. src/upsert-conversion-label.ts),
+      # so shared must be built first or the db build fails with TS2307 and this gate
+      # never reaches the NULL assertion — i.e. silently stops verifying (FOLLOW-446).
+      - name: Build @estalara/shared
+        run: pnpm --filter @estalara/shared build
+
       - name: Build @estalara/db
         run: pnpm --filter @estalara/db build
 

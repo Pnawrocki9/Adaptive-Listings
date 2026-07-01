@@ -152,3 +152,15 @@
   with a top-level `src/test_*.py` and verbose test names will hit this. Worth codifying: "Modal-app
   Python test modules with >40-char snake*case test names live at `src/test*\*.py`; ensure the
   gitleaks allowlist matches both nested and top-level test paths."
+
+- **2026-07-01 / FOLLOW-364** · Docs-only fix: reconciled the §D.6 archetype coverage-summary prose
+  in `docs/MASTER_DESIGN.md` to a clean 18-way partition (9 🟢 Full + 6 🟡 Quiz/chat-only + 2 ⚪
+  Quiz/chat-only + 1 🟢 Always [neutral] = 18), verified by counting the actual Status column of
+  every table row (via `awk`/`grep`) rather than trusting the prior prose. Also fixed the
+  directly-contradicted Snapshot.1 D.6 row (line 439, dated pre-FOLLOW-344, claimed 13/3/2) to
+  match. · **Judgment call:** the original double-count (`lifestyle_expat`/`upsizer` counted once
+  inside "8/18 Full" and again as a standalone "+2/18 Full") was a prose bug, not a genuine
+  two-bucket archetype — the table's Status column gives each archetype exactly one value. No
+  escalation needed; there was no real taxonomy ambiguity. · **Guardrail I'd add:** a small CI check
+  that greps the §D.6 table's Status column and asserts the coverage-summary sentence's counts match
+  would catch this class of prose/table drift before it reaches a retro.

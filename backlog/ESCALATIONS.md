@@ -1808,7 +1808,7 @@ page_context_source=caller_supplied. Confirmed against the post-merge prod deplo
 prod deploy created 09:08Z). Procedure recorded in `docs/runbooks/esc-033-verification.md`. ESC-033
 fully closed.
 
-## OPEN — ESC-035: SECURITY — feedback route uses caller-supplied bearer as HMAC key with no api_keys lookup; trusts caller's body.tenant_id → forgeable auth + cross-tenant bandit write-poisoning [FOLLOW-442 / AUD-05]
+## RESOLVED — ESC-035: SECURITY — feedback route uses caller-supplied bearer as HMAC key with no api_keys lookup; trusts caller's body.tenant_id → forgeable auth + cross-tenant bandit write-poisoning [FOLLOW-442 / AUD-05]
 
 **Filed by:** pm-orchestrator **Date:** 2026-07-01T00:00:00Z **Affects:**
 `apps/control-plane/src/app/api/adapt/feedback/route.ts`, `ab_bandit_weights`, `conversion_labels`
@@ -1888,6 +1888,27 @@ extract `resolveApiKey()` into `apps/control-plane/src/lib/api-key-auth.ts`, use
 (`docs/adr/ADR-0015-feedback-endpoint-authentication.md`), status PROPOSED. Backend-engineer
 implements from ADR-0015 in the FOLLOW-443 implementation ticket once ADR-0015 is ACCEPTED; the
 interim 503 is lifted (`FEEDBACK_ENDPOINT_ENABLED=true`) only after that PR merges CI-green.
+
+**FINAL RESOLUTION (verified 2026-07-01 by pm-orchestrator — closing the loop the same session):**
+ADR-0015 status is now **ACCEPTED** (`docs/adr/ADR-0015-feedback-endpoint-authentication.md:3`).
+FOLLOW-443 merged to main (PR #401, commit `6224c2d`): `feedback/route.ts` now runs the 5-step
+ADR-0015 algorithm — SHA-256 bearer → `api_keys` DB lookup via the new shared
+`resolveApiKey()`/`sha256Hex()`/`constantTimeEqual()` lib
+(`apps/control-plane/src/lib/api-key-auth.ts`), HMAC body-signature defense-in-depth, and
+server-authoritative `body.tenant_id !== resolvedTenantId → 403` enforcement. `ADAPT_API_KEY` ops
+bypass retained but now scoped to `OPS_TENANT_ID` (403 on mismatch), per CEO ruling (c). 49 tests in
+`feedback/route.test.ts` cover the T1–T12 auth matrix. CI green on PR #401
+(lint/typecheck/build/test all pass). ESC-035 code-fix axis is CLOSED — the forgeable-auth
+vulnerability no longer exists in main.
+
+**Remaining non-blocking operator step (same pattern as ESC-034):** the endpoint is still
+secure-by-default OFF in prod (`FEEDBACK_ENDPOINT_ENABLED` not yet flipped). Per PR #401's own
+"NEXT" note: ops must set `OPS_TENANT_ID` + `ADAPT_API_KEY` in Doppler `prd` and flip
+`FEEDBACK_ENDPOINT_ENABLED=true` before the feedback endpoint serves live traffic. This is a
+privileged operator action, not a code gap — it does NOT block further ticket delegation (mirrors
+ESC-020/ESC-028/ESC-034 precedent: code-complete-awaiting-operator-action is non-blocking). Tracked
+going forward as part of the pilot go-live checklist in `backlog/STATUS.md`, not as its own new
+FOLLOW ticket.
 
 ---
 

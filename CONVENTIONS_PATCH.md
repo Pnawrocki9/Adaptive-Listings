@@ -1538,6 +1538,77 @@ grep -nA3 "^regexes" .gitleaks.toml   # the GOOD shape lives here, matching the 
 
 ---
 
+## Rule Q — A CI gate that can soft-skip (`continue-on-error` / exit-0-on-missing-secret / opt-in flag) MUST emit positive proof its assertion executed, and its soft-skip MUST be scoped to the ONE intended condition; a green/non-blocking status is NOT evidence the assertion ran
+
+**Pattern (INERT-GATE):** A CI check is structurally present and reports a green — or intentionally
+non-blocking (`continue-on-error: true`) — status, but its actual assertion **never executes**. The
+assertion is bypassed because (a) a required flag/secret is unset and the job exits 0 by design, (b)
+stacked soft-skips swallow the real failure ("soft-skip inception"), or (c) a build/module-
+resolution/runtime error kills the job before the assert line and `continue-on-error` masks it. The
+reported status is therefore meaningless: nobody can distinguish "intentionally skipped" from
+"silently broken and verifying nothing." This is the verify-not-guess principle turned on the
+verifier itself — a gate whose entire purpose is to verify an invariant is never itself verified to
+run. The failure is invisible precisely because the status looks fine, so it survives for as long as
+nobody independently exercises the invariant the gate was supposed to defend.
+
+**Evidence (≥2 prior retros):**
+
+- **RETRO-006 §Pattern C (occurrence 1, count 1)** — PR #130 E2E spec: "Test exists but is opt-in
+  behind an environment flag that CI never sets" — the assertion exists in code but CI never runs
+  it. RETRO-006 explicitly pre-authorized promotion: "If a second ticket ships a 'test exists but
+  doesn't run' surface, promote to a Rule."
+- **RETRO-007 §4b CB-1 (occurrence 2, count 2)** — PR #137 `demo-integration.yml`: "soft-skip
+  inception — every layer says 'I could not run, but I am OK with that' and the cumulative effect is
+  'the job is structurally present but never actually runs against a real DB'" (P2, → FOLLOW-079). A
+  distinct PR, file, and mechanism from RETRO-006 — and, being the FAILED remediation of RETRO-006's
+  own gap, the strongest evidence the shape is systemic, not incidental.
+- **RETRO-145 (the 3rd sighting / promotion trigger)** — PR #403 / FOLLOW-446, `ci.yml` job
+  `archetype-embeddings-not-null`: three stacked blindnesses each stopped the job before its NULL
+  assertion (build died at `TS2307` because `@estalara/shared` wasn't built first; then
+  `ERR_MODULE_NOT_FOUND` because a bare `@estalara/db` specifier ran from the repo root; then a
+  postgres-js socket hung with no `process.exit` and no `timeout-minutes`), while
+  `continue-on-error: true` masked every one as an indistinguishable non-blocking red. The gate had
+  never once run its assertion between shipping (FOLLOW-341) and this fix; it was discovered only
+  when FOLLOW-392 independently validated the invariant the gate was meant to guard.
+
+**Rule:** Any CI gate that can soft-skip MUST:
+
+1. **Prove the assertion executed** on the happy path — emit a distinct, greppable success line
+   (e.g. `PASS: all 18 archetype embeddings populated`) that a reviewer/other check can point to, OR
+   run a hard-failing `--strict` variant on `push:main`. A green job with no positive-execution
+   evidence is treated as unverified.
+2. **Scope the soft-skip to the single intended condition.** `continue-on-error` /
+   exit-0-on-missing-secret / opt-in-flag must cover ONLY that one condition (e.g. missing
+   `DOPPLER_TOKEN_DEV` on a forked PR). Build, dependency, module-resolution, and runtime failures
+   MUST fail LOUD — never be swallowed by the same soft-skip. Prefer splitting a hard-failing
+   build/setup job that `needs:`-feeds the soft-skippable assertion, or gating only the assert step
+   on the skip condition.
+3. **Bound the job** with an explicit `timeout-minutes`, and ensure any script that opens a
+   persistent socket (postgres-js / ClickHouse / broker) exits explicitly — never rely on the
+   360-minute default.
+4. When narrowing/adding a soft-skip, PROVE the gate still catches a real violation with a
+   **negative control** (a fixture that makes the assertion RED), because "CI is green" proves only
+   that nothing tripped the (possibly inert) check — not that the check works.
+
+**Verification:**
+
+```bash
+# 1. Find every soft-skippable gate and confirm each has an explicit timeout-minutes:
+grep -nE "continue-on-error:|timeout-minutes:" .github/workflows/ci.yml
+#    Any job with continue-on-error but no timeout-minutes (or no positive-execution log) is suspect.
+# 2. Flag inline node scripts that import a bare @estalara/* specifier without a package context
+#    (blindness #2 — ERR_MODULE_NOT_FOUND from repo root):
+grep -nB2 "import .*@estalara/" .github/workflows/ci.yml | grep -iE "node --input-type|pnpm --filter"
+# 3. Confirm any job that builds/uses an @estalara/shared-dependent package builds shared first
+#    (blindness #1 — TS2307 before the assertion):
+grep -nE "pnpm --filter @estalara/(shared|db|sdk) build" .github/workflows/ci.yml
+# 4. For each soft-skippable gate, confirm a distinct success log line exists AND a negative control
+#    proves the assert path REDs — a passing job without both is INERT until proven otherwise.
+```
+
+---
+
+<!-- Rule Q added 2026-07-01 — RETRO-145 §6. Evidence: RETRO-006 §Pattern C (PR #130 E2E spec opt-in-behind-a-flag-CI-never-sets, assertion never runs, count 1 — RETRO-006 explicitly pre-authorized "promote on a 2nd 'test exists but doesn't run' sighting") + RETRO-007 §4b CB-1 (PR #137 demo-integration.yml "soft-skip inception — structurally present but never actually runs against a real DB", P2 → FOLLOW-079, count 2; distinct PR/file/mechanism AND the failed remediation of RETRO-006's gap). Promotion trigger: RETRO-145 (PR #403/FOLLOW-446) — archetype-embeddings-not-null gate had three stacked blindnesses (TS2307 build-order / ERR_MODULE_NOT_FOUND bare-specifier / postgres-js socket-hang no-exit no-timeout) all masked by continue-on-error; the gate never ran its assertion until this fix. The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro is the 3rd sighting and does NOT inflate the count (same adjudication as Rule V). Letter Q: the placeholder explicitly reserved for exactly this retro-analyst promotion (see the "Rule Q+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met" note and the Q-reservation references in the Rule M/V provenance comments). DISTINCT axis from Rule A (PM must watch CI-green before READY_FOR_REVIEW — governs whether the human/PM verifies status, not whether the gate's own assertion ran), Rule Y (a docstring/test-header CITATION must be verified against the cited file — governs claims-about-a-check, whereas Q governs a check that reports a status but never executes), Rule L (prod install path must PRODUCE the config a consumer reads), and RETRO-121 §6 Pattern C (CI-leg-runs-but-prod-state-unverified — the inverse: Q is CI-leg-reports-status-but-never-runs). Filed FOLLOW-447 (audit sibling ci.yml gates for the 3 failure modes + add defense-in-depth timeout-minutes to all jobs); the continue-on-error scoping for the archetype gate is FOLLOW-446 (pre-existing, not re-filed). -->
 <!-- Rule V added 2026-06-26 — RETRO-123 §6. Evidence: RETRO-118 §6 Pattern B (PR #357/FOLLOW-358 file-wide route.ts paths exemption, BAD shape, count 1) + RETRO-121 §6 Pattern B (PR #360/FOLLOW-394 token-scoped regexes for the migration filename in script+runbook, GOOD shape, count 2 — RETRO-121 pre-authorized "promote on the NEXT (3rd) sighting"). Promotion trigger: RETRO-123 (PR #362/FOLLOW-396) performed the strip-the-superseded delete; the 2 banked occurrences are both PRIOR retros, ≥2-prior threshold met (the promoting PR is itself a remediation and does NOT inflate the count — the discipline RETRO-122 guarded is respected; the count came from 118+121, adjudicated independent by RETRO-121 via different trigger sites + remediation shapes). DISTINCT axis from Rule U (typed-column-vs-JSONB strip-on-supersede — a data-modeling rule; Rule V is the secret-scanning-config sibling of U's strip-the-superseded clause) and from Pattern G / FOLLOW-083 (legitimate test-fixture/doc paths exemptions, which Rule V explicitly excludes). Filed FOLLOW-406 (negative-control attestation for route.ts) + FOLLOW-407 (apply Rule V to the live 2nd instance: the FOLLOW-374 consent platform-registration paths exemption). Letter choice: single letters A–Z were exhausted (Q reserved as the retro-analyst placeholder); V had been "intentionally skipped" only as a 2026-06-13 sequencing artifact (per the Rule W note) with no semantic reservation, and is now the sole remaining single letter once M was consumed — so V is RECLAIMED here on the same backfill logic Rule M used ("the sole genuinely-unused letter"). -->
 <!-- Rule M added 2026-06-25 by CEO directive (Piotr) — threshold also met independently: RETRO-076 §6 (FOLLOW-307 migrations-don't-auto-apply-in-prod, count 1) + RETRO-113 §6 (FOLLOW-341/PR #352 archetype-seeder post-migrate-seed.yml dev-only → prod archetype_embeddings stay NULL → §F cosine inactive in prod, count 2). DISTINCT axis from Rule H (wired-or-dead, gates source-importers) and Rule O (migration-journal monotonicity, gates the journal): Rule M governs the CLAIM that automation reaches PROD when the workflow only targets dev. Filed/cross-refs FOLLOW-392 (operator seed prod archetype_embeddings) + FOLLOW-308. Letter choice: single letters A–Z are exhausted except M (the sole genuinely-unused letter — Q is the reserved `Rule Q+` retro-analyst placeholder; V is intentionally skipped per the Rule W note), so the backfilled M is assigned here. -->
 <!-- Rule Z added 2026-06-20 — RETRO-098 §6 (P-XLANG-PAYLOAD-CONTRACT: parent "mock-can't-catch-cross-runtime-mismatch" family now 4 instances — RETRO-068 ingest dual-write INSERT body the mock fetchImpl accepts but ClickHouse rejects, count 1; RETRO-078 CH tracer query mock-fetch green but live engine 386s, count 2; RETRO-079 closure required a dedicated live-ClickHouse CI job because mocks structurally could not catch it; RETRO-098 §3 HW-1 SDK(TS) emits chat.message.sent {message,…} but Python _spawn_chat_nlp reads payload.content → spawn never fires for real traffic, both sides green because the Python test invents {role,content} fixtures, count 4; threshold long exceeded). DISTINCT axis from Rule J (byte-identical cross-runtime FILE mirror sync) — Rule Z governs the TEST CONTRACT across a producer/consumer language boundary, not duplicate source files; and from Rule L (missing-attribute) / Rule Y (over-claimed citation). Filed FOLLOW-366 (fix the payload-key mismatch with a producer-shape-grounded fixture) + FOLLOW-368 (live-Upstash round-trip smoke). Next free Rule letter was Z (V skipped per the Rule W note; W,X,Y used). -->

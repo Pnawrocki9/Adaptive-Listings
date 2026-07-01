@@ -23311,3 +23311,109 @@ collision; 104 pytest pass; NO new exported TS symbol / event / env-var / DB col
 - **Related to ESC-034:** code-fix axis fully closed by FOLLOW-437 + FOLLOW-438. Operator go-live
   axis remains under FOLLOW-436 (BLOCKED_ON_HUMAN).
 
+---
+
+## RETRO-145 — FOLLOW-446 (un-blind the `archetype-embeddings-not-null` CI gate — three stacked blindnesses each stopped the gate before its assertion; each fix exposed the next) — 2026-07-01
+
+### 1. Summary of change
+
+- **PR:** #403 (merged 2026-07-01T14:32:28Z, squash merge, commit `288484d`). Title: `ci: build @estalara/shared before @estalara/db in embeddings not-NULL gate [FOLLOW-446]`.
+- **Files changed:** 2 (+51 / -2). `.github/workflows/ci.yml` (+17/-1, job `archetype-embeddings-not-null` ~L645), `backlog/FOLLOW_UPS.md` (+34/-1, the FOLLOW-446 stub + pointer bump).
+- **Source:** FOLLOW-446 was NOT pre-planned. It was field-discovered during validation of the prior PR #402 (FOLLOW-392, which corrected a stale "embeddings NULL" claim after prod was verified seeded 18/18). Validating that claim exposed that the *gate meant to defend it* had never actually run its assertion.
+- **Modules touched:** CI infrastructure (`ci.yml`) + backlog docs only. No application code.
+- **Key contracts changed:** **N/A — CI-config only.** No TS export, event schema, env-var, DB column, or Redpanda topic changed. The gate's node script reads pre-existing `@estalara/db` exports (`createAdminClient`, `archetypeEmbeddings`); none changed.
+
+### 2. Verification done in PR
+
+- Test files changed: none (CI-config change). The verification IS the CI run: the fixed gate is genuinely green in ~41s and, for the first time, actually executes the NULL query and asserts all 18 dev archetype embeddings are non-NULL. Prior to this PR the job also reported non-blocking-green — but it died before the assertion (three distinct ways, below), so the green was meaningless.
+- CI checks: gate green post-fix (per PR context; read-only retro did not re-watch). The three fixes were validated by fix-then-rerun iterations — each fix surfaced the next failure, so a single fix-and-assume would have left the gate still inert.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅ (with a self-half-wire meta-finding, now closed)`
+
+- **CHECK A (dead code):** No new file/export. The changed unit is the `archetype-embeddings-not-null` job — a CI workflow entrypoint, suppressed per the framework-route/cron/Worker entrypoint carve-out. Not dead.
+- **CHECK B (half-wire):** No new event / env-var / column / topic / SDK-signal introduced. `DOPPLER_TOKEN_DEV`, `pnpm seed:archetypes`, and the `archetype_embeddings.embedding` column are all pre-existing. **Meta-finding (now closed):** the gate was effectively a *self-half-wire* — the producer (`post-migrate-seed.yml` writes embeddings on push:main) and the consumer (this gate reads + asserts non-NULL) both existed, but the consumer's assertion **never executed** (build died → module unresolvable → socket hang), so the "consumer" was present-but-inert. This PR reconnects the consumer's assertion end-to-end. Not a code half-wire in the CHECK-B sense (no new signal); recorded here because the failure shape is identical: a wire that appears connected but carries no effect.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (the three stacked blindnesses — all fixed by this PR; recorded for the lesson).** Each was invisible until the one before it was fixed:
+  1. **Build-order:** the job built `@estalara/db` without first building `@estalara/shared`; `packages/db/src/upsert-conversion-label.ts` imports `@estalara/shared`, so the db build died at `TS2307 Cannot find module '@estalara/shared'` — the assertion never ran. Fix: added a `Build @estalara/shared` step before `Build @estalara/db` (`ci.yml:670-671`).
+  2. **Bare-specifier resolution:** the assert ran `node --input-type=module` from the repo root, where the bare `@estalara/db` specifier is unresolvable → `ERR_MODULE_NOT_FOUND` — assertion still never ran. Fix: `doppler run … pnpm --filter @estalara/db exec node …` so the package self-resolves via its `exports` map (`ci.yml:701`).
+  3. **Socket hang:** after resolution was fixed the assert finally ran, but `createAdminClient()` opens a postgres-js socket and the PASS path never called `process.exit`; with no `timeout-minutes` the job would hang for the 360-min default. Fix: `process.exit(0)` after the PASS log (`ci.yml:725`) + `timeout-minutes: 8` (`ci.yml:652`).
+- **LG-2 (P3 — residual, ALREADY TRACKED by FOLLOW-446, do NOT re-file).** The job still carries `continue-on-error: true` (`ci.yml:649`), intended only as a soft-skip when `DOPPLER_TOKEN_DEV` is absent (forked PRs). But `continue-on-error` swallows **every** failure kind — a broken build, an unresolvable import, a real NULL row — so the gate can silently stop verifying again with a non-blocking-red that is indistinguishable from the intentional soft-skip. This is exactly how the three blindnesses above went unnoticed until FOLLOW-392 validation. Deliberately NOT fixed here; it is the open portion of **FOLLOW-446** (scope the soft-skip strictly to the missing-token path). Reiterated, not re-filed.
+- **LG-3 (P3 — NEW, cross-cutting) — sibling CI gates in `ci.yml` may share blindness #1, #2, or #3, and only this job has a `timeout-minutes` cap.** See §5b for the audit findings. → **FOLLOW-447.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — no new application logic. The three latent CI bugs (LG-1) are the ticket's scope and are fixed. The fixes are minimal and correct (build-order step, package-context node exec, explicit exit + timeout).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, note) — the gate has no negative control proving it would RED on a real NULL row.** The assertion now executes and PASSes on 18/18 populated dev embeddings, but nothing in CI proves the FAIL path (`process.exit(1)`) actually fires when a NULL is present — the exact class of "does the gate catch the thing it exists to catch?" gap that a positive-execution + negative-control pair would close. Hard to exercise without a fixture DB with a deliberately-NULLed row; low priority given the assertion is now demonstrably reached. Folded into FOLLOW-447 scope as an optional AC, not a standalone stub. Note.
+
+#### 4d. Documentation gaps
+
+- N/A — the fix added three precise inline comments in `ci.yml` (each tying a step to the failure mode it prevents and to FOLLOW-446). The soft-skip contract is documented in the job header (`ci.yml:635-644`). Documentation is accurate.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-392 (embeddings verified 18/18 in prod) — the DEV gate that is supposed to back the non-NULL invariant now genuinely verifies it.** FOLLOW-392 corrected the *prod* claim (a6a2991, PR #402); this PR makes the *dev* CI gate actually assert non-NULL instead of dying silently. The two are complementary axes (prod state vs dev CI guard); neither substitutes for the other. Prod remains attested by the FOLLOW-392 correction; this gate now prevents dev regression from slipping through green.
+- **FOLLOW-446 residual (continue-on-error scoping) — OPEN.** The gate now *reaches* its assertion (fixed), but a future breakage is still swallowed by `continue-on-error` (LG-2). Not closed by this PR by design.
+
+#### 5b. Future sprint tickets affected
+
+- **Sibling single-package / DB-connecting CI gates — audit for the same three failure modes (→ FOLLOW-447):**
+  - **Blindness #1 (build a package without its `@estalara/shared` dep):** LOW residual — `tracer-query-smoke` (`ci.yml:369-370`), `corpus-gate` (`ci.yml:424`), `lint`, `cross-language-contract` (`ci.yml:575`), and `sdk-e2e` all build `@estalara/shared` first. The archetype gate was the lone omission. Audit should confirm no other gate consumes a package that transitively imports `@estalara/shared` without building it.
+  - **Blindness #2 (bare `@estalara/*` specifier from repo root):** LOW residual — the archetype gate was the only job running an inline `node --input-type=module` heredoc with a bare workspace import from root; siblings use `pnpm --filter … exec vitest` or a `working-directory` package context. Audit any future inline node scripts.
+  - **Blindness #3 (opens a DB/broker socket, never exits, no `timeout-minutes`):** **HIGH / systemic** — `archetype-embeddings-not-null` is the ONLY job in `ci.yml` with a `timeout-minutes`; every other job relies on the 360-min default. Any current or future gate that opens a persistent postgres-js/ClickHouse/broker socket in a node script and forgets to exit will hang for 6h. Defense-in-depth: add a sane `timeout-minutes` to every job.
+
+#### 5c. Contracts changed others rely on
+
+- N/A — no contract changed (§1). The gate reads existing `@estalara/db` exports unchanged.
+
+#### 5d. Architectural assumptions affected
+
+- **"A green (or non-blocking) CI status is not evidence the check's assertion ran."** This is the verify-not-guess principle turned on the verifier itself: a gate whose entire purpose is to verify an invariant had itself never been verified to execute. The corollary that fed the fix: **fix-then-revalidate beats fix-and-assume** — three independent bugs were stacked such that each fix only exposed the next; a single fix followed by "assume green = verified" would have left the gate inert (exactly its state for the interval between FOLLOW-341 shipping the gate and FOLLOW-392 validating it).
+- Reconciles the **"CI gate landscape" memory** ("Archetype embeddings not-NULL check … pre-existing-red & non-blocking") — that note framed the gate as a benign non-blocking check; this retro reveals it was non-blocking AND *inert* (its assertion never ran). The memory's "non-blocking" framing is accurate; its implicit assumption that the check was nonetheless *doing something* was not.
+
+### 6. New lesson candidates
+
+- **Pattern (INERT-GATE): "A CI gate is structurally present and reports a green / soft-skipped (non-blocking) status, but its actual assertion never executes — because a required flag/secret is unset, stacked soft-skips swallow the real failure, or a build/resolution/runtime error kills the job before the assert line and `continue-on-error` masks it. The reported status is therefore meaningless: nobody can distinguish 'intentionally skipped' from 'silently broken and verifying nothing.'"**
+  - **RETRO-006 §Pattern C (count 1, PRIOR)** — PR #130 E2E spec: "Test exists but is opt-in behind an environment flag that CI never sets" — the assertion exists but CI never runs it. RETRO-006 explicitly pre-authorized: "If a second ticket ships a 'test exists but doesn't run' surface, promote to a Rule."
+  - **RETRO-007 §4b CB-1 (count 2, PRIOR)** — PR #137 `demo-integration.yml`: "soft-skip inception — every layer says 'I could not run, but I am OK with that' and the cumulative effect is 'the job is structurally present but never actually runs against a real DB'" (P2, → FOLLOW-079). A distinct PR, file, and mechanism from RETRO-006, and notably the FAILED-remediation of RETRO-006's gap — the strongest evidence the shape is systemic, not incidental.
+  - **RETRO-145 (this, count 3 / promotion trigger)** — `archetype-embeddings-not-null` gate: three stacked blindnesses each stopped the job before its NULL assertion, and `continue-on-error` masked the difference from the intended soft-skip.
+  - **Threshold (≥2 prior retros) MET** — RETRO-006 + RETRO-007 are both prior. No existing Rule covers this axis (Rule A = PM watches CI-green; Rule Y = docstring citation must be verified; Rule L = prod install path produces config — none govern "a soft-skippable gate must PROVE its assertion executed and scope its soft-skip narrowly"). **PROMOTED as Rule Q** (the letter reserved for exactly this retro-analyst promotion, per the `CONVENTIONS_PATCH.md` placeholder). The promoting retro is itself the 3rd sighting and does NOT inflate the count — the two banked occurrences are both PRIOR (same adjudication methodology as Rule V).
+- Anti-count-inflation (RETRO-122/125/126/128/129/131/132/133/135/137/138/139/140/141/142/143/144) reviewed. This promotion is the first rule this analyst has promoted in the recent run because the count is genuinely ≥2-prior-independent AND there is no mechanical guard already enforcing it (unlike RETRO-140/144, where the guard itself was the enforcement).
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **The "gate never verified" leg discovered during PR #402 (FOLLOW-392) validation: GENUINELY CLOSED (execution axis).** Traced end-to-end: (build) `@estalara/shared` now builds first → (resolution) node runs in the `@estalara/db` package context → (execution) the NULL query executes → (assertion) it asserts 18/18 non-NULL → (exit) `process.exit(0)` + `timeout-minutes:8` prevent the hang. The full producer→consumer→assert chain now connects; this is NOT a one-hop move — the three concrete bugs are fixed and revalidated (~41s green), not relocated.
+- **FOLLOW-446 (continue-on-error scoping): NOT closed — correctly still OPEN.** The residual is a distinct, named axis (failure-visibility), not a downstream hop of the execution fix. The gate reaches its assertion but a future breakage is still swallowed. Tracked; not re-filed.
+- **FOLLOW-392 (prod embeddings 18/18): unaffected — remains closed on the prod-state axis** (a6a2991). This PR touches only the dev CI gate; it does not disturb the prod attestation.
+
+### 8. Multi-axis / contradiction reconciliation (step 8)
+
+- **No contract changed** (§1) — no producer/consumer, variant/holdout, or locale axes to split.
+- **Two gate axes, explicitly separated:** (a) **execution axis** — does the assertion run? — CLOSED by this PR; (b) **failure-visibility axis** — can a broken gate be distinguished from an intentional soft-skip? — OPEN (FOLLOW-446). Recording both prevents the (a)-fix from being mis-recorded as closing (b).
+- **Reconciliation with RETRO-007 §4b CB-1 ("soft-skip inception"):** same failure-visibility axis, still unresolved for THIS gate. RETRO-007's fix vehicle was FOLLOW-079 (flip `demo-integration.yml` inner gates to fail-loud); the archetype gate's analogue is FOLLOW-446. No contradiction — the pattern demonstrably did NOT dissolve after RETRO-007; it recurred here, which is precisely why Rule Q is warranted.
+- **Reconciliation with RETRO-121 §6 Pattern C ("code/CI-leg closed, prod-leg documented-only"):** related but DISTINCT axis. RETRO-121's Pattern C is about a CI leg that *does run* while the *prod state* is unverified. RETRO-145's INERT-GATE pattern is about a CI leg that *reports a status but never runs its own assertion*. Rule Q governs the latter (gate never executes); it does not subsume Pattern C (prod-state-unverified). Kept separate.
+
+### 9. Follow-ups
+
+- **FOLLOW-447 (P3, devops-engineer, ~2h)** — audit sibling `ci.yml` gates for the three INERT-GATE failure modes (#1 build-without-`@estalara/shared`, #2 bare-specifier-from-repo-root, #3 socket-hang) and add defense-in-depth `timeout-minutes` to every job (only `archetype-embeddings-not-null` has one today). Optional AC: add a negative-control fixture proving the archetype gate REDs on a real NULL row (RETRO-145 §4c TG-1). The `continue-on-error` scoping is NOT in scope here — it is already FOLLOW-446. See FOLLOW_UPS.md stub. The only new stub from this retro.
+
+### 10. Cross-references
+
+- **Related to RETRO-006 §Pattern C + RETRO-007 §4b CB-1:** the two prior INERT-GATE sightings that, with this retro, meet the ≥2-prior threshold → **Rule Q** promoted.
+- **Related to RETRO-113 (FOLLOW-341) / FOLLOW-392:** FOLLOW-341 shipped this gate; FOLLOW-392 corrected the stale prod-NULL claim and, in validation, exposed that the gate had never run. This PR closes the gate's execution axis.
+- **Related to RETRO-121 §6 Pattern C:** adjacent-but-distinct (prod-leg-unverified vs assertion-never-runs); reconciled in §8, kept as separate axes.
+- **Related to RETRO-007 (FOLLOW-079):** the demo-integration soft-skip-inception analogue of the FOLLOW-446 continue-on-error residual.
+
+<!-- next free FOLLOW number: 448 (447 = audit sibling ci.yml gates for the 3 INERT-GATE failure modes [#1 build-without-shared, #2 bare-specifier-from-root, #3 socket-hang] + add defense-in-depth timeout-minutes to all jobs [only archetype-embeddings-not-null has one]; optional negative-control for the archetype gate; P3 devops-engineer ~2h). RETRO-145 = retro for PR #403 (FOLLOW-446, MERGED 2026-07-01T14:32:28Z, squash, commit 288484d; 2 files +51/-2; ci.yml archetype-embeddings-not-null gate + FOLLOW_UPS stub). NO contract change (CI-config only). Wiring Audit CLEAN (workflow entrypoint suppressed; no new signal) with a self-half-wire meta-finding NOW CLOSED (consumer assertion was present-but-inert, three stacked ways). GAPS: LG-1 the 3 stacked blindnesses (build-order TS2307 / bare-specifier ERR_MODULE_NOT_FOUND / socket-hang no-exit no-timeout) all FIXED; LG-2 continue-on-error swallows ALL failure kinds = ALREADY FOLLOW-446, not re-filed; LG-3 sibling gates + missing timeout-minutes = NEW FOLLOW-447; TG-1 no negative-control (folded into FOLLOW-447 optional AC). CLOSURE (step 7): "gate never verified" execution axis GENUINELY CLOSED end-to-end (build→resolve→execute→assert→exit, ~41s green, not one-hop); FOLLOW-446 failure-visibility axis correctly still OPEN; FOLLOW-392 prod attestation unaffected. RULE: PROMOTED Rule Q (INERT-GATE — a soft-skippable/continue-on-error/die-before-assert CI gate must PROVE its assertion executed + scope its soft-skip to the single intended condition; a green/non-blocking status is not evidence the assertion ran). Evidence ≥2 PRIOR: RETRO-006 §Pattern C (PR #130 opt-in-flag, count 1) + RETRO-007 §4b CB-1 (PR #137 soft-skip-inception, count 2); RETRO-145 = 3rd/trigger. Q was the reserved retro-analyst placeholder letter. PM ACTION: (1) FOLLOW-446 P3 — scope the soft-skip (still open); (2) FOLLOW-447 P3 — audit sibling gates + add timeout-minutes everywhere. -->
+
+

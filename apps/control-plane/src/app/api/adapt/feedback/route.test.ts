@@ -166,6 +166,110 @@ async function flushMicrotasks(): Promise<void> {
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
+// ─── FOLLOW-444 / ESC-035: interim 503 disable ───────────────────────────────
+//
+// AC: POST /api/adapt/feedback returns 503 for ALL callers when
+// FEEDBACK_ENDPOINT_DISABLED=true (the production Doppler prd setting while
+// FOLLOW-443 full-fix is pending).
+
+describe('FOLLOW-444 / ESC-035: interim 503 disable (FEEDBACK_ENDPOINT_DISABLED=true)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_DISABLED', 'true');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns 503 with SERVICE_TEMPORARILY_UNAVAILABLE for an anonymous caller', async () => {
+    const res = await POST(makePostRequest(VALID_BODY, 'Bearer any_key'));
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: string; message: string };
+    expect(body.error).toBe('SERVICE_TEMPORARILY_UNAVAILABLE');
+  });
+
+  it('returns 503 even when ADAPT_API_KEY matches (ops bypass does not exempt from disable)', async () => {
+    vi.stubEnv('ADAPT_API_KEY', 'ops-key');
+    const res = await POST(makePostRequest(VALID_BODY, 'Bearer ops-key'));
+    expect(res.status).toBe(503);
+  });
+
+  it('returns 503 even for a correctly HMAC-signed request', async () => {
+    const req = await makeSignedRequest(VALID_BODY, 'tenant_api_key');
+    const res = await POST(req);
+    expect(res.status).toBe(503);
+  });
+
+  it('returns 503 even with no Authorization header (before auth is evaluated)', async () => {
+    const res = await POST(makePostRequest(VALID_BODY, null));
+    expect(res.status).toBe(503);
+  });
+
+  it('returns 503 for an invalid JSON body (before body is parsed)', async () => {
+    const req = new NextRequest('http://localhost/api/adapt/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer any' },
+      body: 'not-json',
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(503);
+  });
+});
+
+// ─── FOLLOW-444 / ESC-035: OPS_TENANT_ID scope enforcement ──────────────────
+//
+// AC: ops bypass returns 403 when body.tenant_id !== OPS_TENANT_ID.
+// Tests run WITHOUT FEEDBACK_ENDPOINT_DISABLED=true so the interim 503 block
+// is not triggered, allowing the underlying scope-check logic to be exercised.
+// This is the code path that will be active in production once FOLLOW-443 ships
+// and the 503 block is removed.
+
+describe('FOLLOW-444 / ESC-035: OPS_TENANT_ID scope enforcement', () => {
+  const OPS_TENANT = '00000000-0000-0000-0000-000000000001';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', 'ops-key');
+    vi.stubEnv('OPS_TENANT_ID', OPS_TENANT);
+    // FEEDBACK_ENDPOINT_DISABLED intentionally NOT set → 503 block is inactive
+    mockSelectLimit.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('403 FORBIDDEN when ops key used with body.tenant_id !== OPS_TENANT_ID', async () => {
+    const wrongTenantBody = { ...VALID_BODY, tenant_id: 'attacker-tenant' };
+    const res = await POST(makePostRequest(wrongTenantBody, 'Bearer ops-key'));
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string; message: string };
+    expect(body.error).toBe('FORBIDDEN');
+    expect(body.message).toBe('Ops key may only write the designated ops tenant.');
+  });
+
+  it('202 Accepted when ops key used with body.tenant_id === OPS_TENANT_ID', async () => {
+    const correctTenantBody = { ...VALID_BODY, tenant_id: OPS_TENANT };
+    const res = await POST(makePostRequest(correctTenantBody, 'Bearer ops-key'));
+    expect(res.status).toBe(202);
+  });
+
+  it('403 when OPS_TENANT_ID set but body.tenant_id is empty string', async () => {
+    const emptyTenantBody = { ...VALID_BODY, tenant_id: 'x' }; // 'x' !== OPS_TENANT
+    const res = await POST(makePostRequest(emptyTenantBody, 'Bearer ops-key'));
+    expect(res.status).toBe(403);
+  });
+
+  it('OPS_TENANT_ID unset → no tenant restriction, request proceeds normally', async () => {
+    vi.stubEnv('OPS_TENANT_ID', '');
+    const res = await POST(makePostRequest(VALID_BODY, 'Bearer ops-key'));
+    // No OPS_TENANT_ID set → restriction inactive → request proceeds (202)
+    expect(res.status).toBe(202);
+  });
+});
+
 // ─── Auth gate ────────────────────────────────────────────────────────────────
 
 describe('POST /api/adapt/feedback — auth gate', () => {

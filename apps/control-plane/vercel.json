@@ -12,6 +12,10 @@
     {
       "path": "/api/internal/retention/conversion-labels",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/canary/adaptation-writes",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

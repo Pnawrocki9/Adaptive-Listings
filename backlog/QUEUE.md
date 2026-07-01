@@ -5289,8 +5289,13 @@ items are DONE.
     (3) ClickHouse logs the selected variant via logDecisionAsync; (4) holdout sessions forced
     to 'control' before bandit sampling (FOLLOW-360 holdout gate preserved).
     AC-2 fallback test added explicitly in route.variant.test.ts (2026-06-25 session).
-    PROD COSINE CAVEAT: variant-indexed copy is correct in prod; cosine ORDERING is NOT active
-    in prod until operator runs `pnpm seed:archetypes` (FOLLOW-392). djb2 fallback is safe.
+    PROD COSINE CAVEAT (corrected 2026-07-01): archetype_embeddings ARE seeded in prod — 18/18
+    non-null, 1024-dim, 18 distinct real vectors (verified 2026-07-01) — so FOLLOW-392's goal is
+    already met (NOT "pending operator seed"; the `pnpm seed:archetypes` script is separately broken,
+    tracked by FOLLOW-446). cosine ORDERING is still inactive in prod because `listing_embeddings` is
+    EMPTY for the pilot tenant (000-app-estalara); cosine needs BOTH sides non-null, else djb2 (safe
+    fallback). Real remaining blocker = seed pilot listing embeddings (activation / POST
+    /api/listings/embed), tied to ESC-020 pilot activation.
 
 - id: FOLLOW-346-dpia
   title: 'FOLLOW-346 DPIA parallel track: C-07 chat-retention scope brief (docs-only)'
@@ -6318,8 +6323,10 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     ClickHouse logDecisionAsync logs the selected variant (AC-3). All 4 ACs met.
     AC-2 fallback test (slot.en when variants absent) added explicitly in route.variant.test.ts
     2026-06-25 session. 1293 tests green.
-    PROD COSINE CAVEAT: variant-indexed copy works in prod; cosine ORDERING requires
-    FOLLOW-392 (operator seed prod archetype_embeddings). djb2 fallback is safe degradation.
+    PROD COSINE CAVEAT (corrected 2026-07-01): archetype_embeddings ARE seeded in prod (18/18
+    verified 2026-07-01) — FOLLOW-392 goal met. cosine ORDERING is still inactive because
+    `listing_embeddings` is EMPTY for the pilot tenant — the real blocker is seeding pilot listing
+    embeddings (tied to ESC-020), NOT FOLLOW-392. djb2 remains safe degradation.
 
 - id: FOLLOW-355
   title: Pin cold-start signal_count invariant (future init-time prior guard)

@@ -149,6 +149,10 @@ paths = [
   # rules (aws/anthropic/openai/stripe/github/private-key/db-conn) remain active on these paths.
   '''backlog/RETROSPECTIVES\.md''',
   '''backlog/FOLLOW_UPS\.md''',
+  # Same class, confirmed 2026-07-02 (PR #414): STATUS.md prose cites the same long kebab-case
+  # branch-name strings (e.g. data-engineer/FOLLOW-449-intent-events-session-id-prod) as QUEUE.md's
+  # `branch:` field — was missed when QUEUE.md/HANDOFFS.md were exempted; same reasoning applies.
+  '''backlog/STATUS\.md''',
   # ADRs and runbooks: prose + cross-reference links cite long kebab-case ADR filenames
   # (e.g. ADR-0014-cross-listing-adaptation-and-sot-archetype) whose 40-char substrings
   # false-positive on this generic heuristic. Provider-specific secret rules stay active here.
@@ -270,4 +274,10 @@ regexes = [
   # false-positives on the broad cloudflare-api-token heuristic (same class as the
   # 40-char snake_case DDL identifiers exempted via paths above). Not a secret.
   '''ListingEmbeddingSeedRequestedEventSchema''',
+  # FOLLOW-449 / Rule V: agent branch slugs written into backlog docs (QUEUE.md, STATUS.md)
+  # — e.g. `data-engineer/FOLLOW-449-intent-events-session-id-prod` = exactly 40 chars —
+  # false-positive on the broad cloudflare-api-token heuristic. Token-scoped exemption for the
+  # `<agent>/<ticket>-<kebab>` branch-name pattern (Rule V: never file-scope backlog/*.md, which
+  # are decision-grade prose stores that must stay scanned for real secrets). Not a secret.
+  '''(?i)(architect|backend-engineer|compliance-engineer|data-engineer|devops-engineer|ml-engineer|pm-orchestrator|qa-engineer|sdk-engineer)/[a-z0-9._-]{3,}''',
 ]

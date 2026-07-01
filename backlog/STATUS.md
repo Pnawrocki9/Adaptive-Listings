@@ -1,4 +1,80 @@
-# Status — 2026-07-01 (Sprint 22 CLOSED-on-code-side; Sprint 22b CHARTERED — full-stack audit remediation session 2; PR #412 open, awaiting human merge before delegation)
+# Status — 2026-07-02 (Sprint 22b OPEN — CEO decisions Q1/Q2/Q3 recorded; FOLLOW-451 delegated)
+
+## SESSION 4 (2026-07-02) — CEO decisions recorded, FOLLOW-449 marked code-complete, FOLLOW-451 delegated
+
+**Branch-first (FOLLOW-448) applied to this docs-only PM session:** started uncommitted edits on
+`main` for the CEO-decision recording, caught by the pre-commit hook warning, immediately branched
+to `pm-orchestrator/FOLLOW-449-ceo-decisions-0702` before committing (mirrors PR #412 precedent for
+docs-only PM sessions).
+
+**PR #413 (FOLLOW-449) confirmed MERGED** to `main` at `18367d3`. QUEUE.md updated: FOLLOW-449
+status → `CODE_COMPLETE_OPERATOR_PENDING` (code/CI/docs scope AC3/AC4/AC5 DONE; AC1/AC2 prod
+attest+apply remain OPERATOR-PENDING, tracked in the new "PILOT GO-LIVE CHECKLIST" section below,
+per ESC-020/ESC-034 precedent — code-complete-awaiting-operator is non-blocking for delegation but
+the ticket itself is NOT DONE).
+
+**CEO decisions Q1/Q2/Q3 (2026-07-02) recorded** in `backlog/QUEUE.md` (Sprint 22b ticket notes) and
+`docs/MASTER_DESIGN.md` §Snapshot.1 addendum:
+
+- Q1: BOTH PATHS mandated for POST /api/adapt (demo-JWT + real API key). FOLLOW-451 confirmed P0.
+- Q2: SHADOW-ONLY for this pilot. FOLLOW-458 downgraded P1→P2 fast-follow (deploy deferred, code
+  kept — not deleted).
+- Q3: MEASURED pilot confirmed. FOLLOW-450/452/453 confirmed P0/P1 go-live blockers.
+
+**Escalations re-checked:** ESC-020, ESC-028, ESC-034 all OPEN but non-blocking (unchanged). No new
+escalations opened. No blocking escalation prevents delegation this session.
+
+**Delegated FOLLOW-451** (P0, backend-engineer; table row: "ingest worker, control-plane,
+decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks -> backend-engineer") — add
+real API-key auth path to POST /api/adapt reusing ADR-0015 `resolveApiKey()`. Pure code ticket, no
+depends_on, no operator/prod gate — proceeds immediately. QUEUE.md updated atomically before
+delegation: `status: IN_PROGRESS`, `assigned_to: backend-engineer`, `started_at`,
+`branch: backend-engineer/FOLLOW-451-adapt-api-key-auth`.
+
+**FOLLOW-450 depends_on review:** flagged in QUEUE.md notes that `depends_on:[FOLLOW-449]` looks
+over-constrained — the feedback/bandit subsystem (`ab_bandit_weights`) is Postgres-only and has no
+code dependency on `intent_events` (ClickHouse); the real coupling is that both need a Doppler prd
+touch, which is an operator-sequencing convenience, not a technical blocker. Left the dependency in
+place pending explicit confirmation (not unilaterally changing scope/dependencies without review) —
+flagged for whoever picks up FOLLOW-450 next.
+
+**IN_PROGRESS count after this delegation:** 2 — FOLLOW-451 (backend-engineer, this session);
+TICKET-PILOT-001 (sdk-engineer+backend-engineer, STALE since 2026-05-29, Lane B, not touched again
+this session — carrying forward the session-3 flag for a future queue-hygiene pass; within the
+3-ticket cap either way). FOLLOW-449 no longer counts (moved to CODE_COMPLETE_OPERATOR_PENDING, off
+the IN_PROGRESS cap).
+
+**CI check-count this iteration:** 0/5 (no PR opened yet for FOLLOW-451 — it was just delegated).
+Fix-iteration counter: 0/3. This session's own PR (docs-only, CEO-decision recording) is a separate
+artifact from the ticket itself; validate that PR's CI as usual once opened.
+
+## SESSION 3 (2026-07-01) — PR #412 merged, FOLLOW-449 delegated to data-engineer
+
+PR #412 merged to `main` (commit `9278cca`). Sprint 22b (FOLLOW-449..471) is now live in
+`backlog/QUEUE.md` on `main`. Queue hygiene: found FOLLOW-448 (branch-first discipline) still marked
+`IN_PROGRESS` in QUEUE.md despite its PR #411 having merged (`42050a0`, 2026-07-01T20:09:09Z) —
+corrected to `DONE` before picking new work (self-check: no stale IN_PROGRESS counted against the
+3-ticket cap).
+
+Escalations re-checked, all still non-blocking (unchanged from session 2): ESC-020, ESC-028, ESC-034
+(all OPEN but explicitly marked non-blocking-for-pipeline in ESCALATIONS.md). ESC-035 is RESOLVED.
+No new escalations opened this session.
+
+**Delegated FOLLOW-449** (P0, data-engineer; table row: "ClickHouse, Redpanda, ETL, archetype
+pipeline, drift cron, DSR delete -> data-engineer") — apply CH migration 0015
+(`intent_events.session_id`) to prod + de-silence rejected `intent_events` inserts + extend
+FOLLOW-402 contract test to `intent_events`. QUEUE.md updated atomically before delegation:
+`status: IN_PROGRESS`, `assigned_to: data-engineer`, `started_at`,
+`branch: data-engineer/FOLLOW-449-intent-events-session-id-prod`. Branch-first (FOLLOW-448) mandated
+as the worker's literal first action. Prod-apply caveat embedded in the delegation: the worker
+prepares code/CI/runbook only — actual `migrate.sh` execution against Doppler `prd` CH credentials
+is a privileged operator action (Piotr/Rafał), per ESC-022/ESC-031 precedent.
+
+IN_PROGRESS count after this delegation: 2 (FOLLOW-449 data-engineer; TICKET-PILOT-001
+sdk-engineer+backend-engineer, stale since 2026-05-29, Lane B, not touched this session — flagging
+for a future queue-hygiene pass, not blocking). Within the 3-ticket cap.
+
+CI check-count this iteration: 0/5 (no PR opened yet for FOLLOW-449). Fix-iteration counter: 0/3.
 
 ## SESSION 2 (2026-07-01) — Sprint 22b chartered, PR #412 open
 
@@ -81,6 +157,23 @@ Migration 0019 applied 2026-06-26T~12:00Z via ClickHouse Cloud SQL console. Colu
 `page_context_source` exists with correct type and default. All `/api/adapt` writes now succeeding.
 FOLLOW-394 remaining code ACs (contract test + runbook) delegated to data-engineer. See
 backlog/ESCALATIONS.md ESC-031.
+
+---
+
+## PILOT GO-LIVE CHECKLIST — privileged operator actions (Piotr/Rafał)
+
+Running list of code-complete-awaiting-operator items that must clear before/during the measured
+pilot. Each is non-blocking for further ticket delegation (ESC-020/ESC-034 precedent) but IS
+blocking for actual go-live. Do not mark any of these DONE until the real output is pasted in.
+
+| Item                                                                                                | Ticket             | What's needed                                                                                                                                                                          | Status                                                                             |
+| --------------------------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| CH migration 0015 attest+apply to prod                                                              | FOLLOW-449         | `doppler run --config prd -- ./migrate.sh` (or equivalent) against prod ClickHouse; paste real `DESCRIBE TABLE intent_events` proof into `docs/runbooks/clickhouse-migrations.md` stub | OPERATOR-PENDING (code/CI/docs DONE, PR #413 merged 18367d3)                       |
+| Backfill/verify all 0015→latest CH migrations applied in prod                                       | FOLLOW-449         | Same runbook, step 4 attestation                                                                                                                                                       | OPERATOR-PENDING                                                                   |
+| Provision `OPS_TENANT_ID` + `ADAPT_API_KEY` in Doppler `prd`; flip `FEEDBACK_ENDPOINT_ENABLED=true` | FOLLOW-450         | Doppler prd secrets + flag flip, then prod canary ping                                                                                                                                 | NOT STARTED (ticket READY, CEO-confirmed P0 2026-07-02)                            |
+| Modal embed-seed consumer go-live (3 secrets + `modal deploy`)                                      | FOLLOW-436/ESC-034 | `docs/runbooks/modal-embed-seed-consumer-golive.md` steps 1-3                                                                                                                          | OPERATOR-PENDING                                                                   |
+| Upstash Redis test-instance secrets (4x) in GitHub Actions + Doppler                                | ESC-028            | Create test Upstash DB, add 4 secrets, add to Doppler dev/staging/prod                                                                                                                 | OPERATOR-PENDING                                                                   |
+| Estalara-app prod deploy of committed DOM hooks + SDK flag                                          | ESC-020            | Deploy `web-master` HEAD, set `PUBLIC_ESTALARA_SDK_ENABLED=true`, verify `data-estalara-*` in prod HTML                                                                                | OPERATOR-PENDING (local-first testing agreed; deploy still gates live measurement) |
 
 ---
 

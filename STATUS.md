@@ -48,7 +48,11 @@ Neither ESC blocks the PM pipeline for other tickets.
 ## Pre-existing-red CI checks (non-blocking)
 
 - `Rule I — wired-or-dead check`: pre-existing red, 107+ violations (FOLLOW-090 tracking).
-- `Archetype embeddings not-NULL check`: soft-skips in prod (seeds pending FOLLOW-392).
+- `Archetype embeddings not-NULL check`: soft-skips in CI due to missing Doppler creds — NOT because
+  prod is NULL. Prod `archetype_embeddings` verified SEEDED 18/18 (1024-dim, distinct) on
+  2026-07-01; FOLLOW-392's goal is met. (Cosine ordering is still djb2 in prod because
+  `listing_embeddings` is empty for the pilot tenant — the real cosine blocker, tied to ESC-020, not
+  FOLLOW-392.)
 - Both appear on every PR as 2x fail each (run from push + PR event). Baseline = 4 non-success.
 
 ---

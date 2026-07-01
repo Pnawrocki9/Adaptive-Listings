@@ -647,6 +647,9 @@ jobs:
     runs-on: ubuntu-latest
     # Soft-skip: forked PRs and pre-DOPPLER environments must not block on this.
     continue-on-error: true
+    # Safety net: the assert opens a postgres-js connection; bound the job so a
+    # stuck connection can never hang for the 360-minute default (FOLLOW-446).
+    timeout-minutes: 8
     needs: [archetype-seeds-complete]
     steps:
       - uses: actions/checkout@v4
@@ -660,6 +663,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # @estalara/db imports from @estalara/shared (e.g. src/upsert-conversion-label.ts),
+      # so shared must be built first or the db build fails with TS2307 and this gate
+      # never reaches the NULL assertion — i.e. silently stops verifying (FOLLOW-446).
+      - name: Build @estalara/shared
+        run: pnpm --filter @estalara/shared build
 
       - name: Build @estalara/db
         run: pnpm --filter @estalara/db build
@@ -685,7 +694,11 @@ jobs:
       - name: Assert no NULL embeddings in archetype_embeddings
         if: steps.doppler-check.outputs.skip == 'false'
         run: |
-          doppler run --config dev -- node --input-type=module <<'EOF'
+          # Run node inside the @estalara/db package context so the bare
+          # `@estalara/db` specifier self-resolves via its exports map. A plain
+          # `node` from the repo root cannot resolve the workspace package
+          # (ERR_MODULE_NOT_FOUND) and the assertion never runs (FOLLOW-446).
+          doppler run --config dev -- pnpm --filter @estalara/db exec node --input-type=module <<'EOF'
           import { createAdminClient } from '@estalara/db';
           import { isNull } from 'drizzle-orm';
           import { archetypeEmbeddings } from '@estalara/db';
@@ -707,6 +720,9 @@ jobs:
             process.exit(1);
           }
           console.log('[archetype-embeddings-not-null] PASS: all 18 archetype embeddings populated.');
+          // postgres-js keeps the connection open, so exit explicitly or node
+          // hangs on the live socket until the job timeout (FOLLOW-446).
+          process.exit(0);
           EOF
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}

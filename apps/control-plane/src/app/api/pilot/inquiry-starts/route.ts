@@ -133,7 +133,7 @@ async function fetchFromClickHouse(
       AND ad.tenant_id = e.tenant_id
       AND e.type = 'inquiry.started'
     WHERE ad.tenant_id = {tenant_id:String}
-      AND ad.assigned_at >= now() - INTERVAL {window_days:UInt8} DAY
+      AND ad.ts >= now() - INTERVAL {window_days:UInt8} DAY
       AND NOT (ad.holdout_group = 1 AND ad.variant != 'control')
     GROUP BY ad.holdout_group
     FORMAT JSONEachRow
@@ -182,7 +182,7 @@ async function fetchFromClickHouse(
       AND ad.tenant_id = e.tenant_id
       AND e.type = 'inquiry.started'
     WHERE ad.tenant_id = {tenant_id:String}
-      AND ad.assigned_at >= now() - INTERVAL {window_days:UInt8} DAY
+      AND ad.ts >= now() - INTERVAL {window_days:UInt8} DAY
       AND NOT (ad.holdout_group = 1 AND ad.variant != 'control')
     GROUP BY date
     ORDER BY date ASC

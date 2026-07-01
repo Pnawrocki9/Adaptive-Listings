@@ -20,6 +20,12 @@
  * dqsUnavailable=true and empty rows — the page renders a "data not yet available"
  * message.
  *
+ * Rule K.2 — fail loud: when CLICKHOUSE_URL is set but a query fails, this route
+ * returns HTTP 500 and captures the error in Sentry. It NEVER silently falls back
+ * to mock data when a real ClickHouse is configured (RETRO-008 / FOLLOW-439).
+ * When CLICKHOUSE_URL is unset (dev / CI), the mock fallback is legitimate and is
+ * tagged data_source:'mock' so it is never mistaken for real data.
+ *
  * --- FOLLOW-093 RECONCILIATION NOTE ---
  * Previously this route queried the non-canonical `dqs_events` table using the
  * event vocabulary `cta_clicked` (underscore) and filtered on `assigned_at`.
@@ -43,6 +49,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { getAuthClaims, isTenantClaims } from '@estalara/auth';
 import { zTest } from '@/lib/z-test';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
@@ -70,6 +77,12 @@ export interface LiftResponse {
   /** True when no CTA conversion data is available in the window — rows will be empty. */
   dqsUnavailable: boolean;
   generated_at: string;
+  /**
+   * Provenance field (Rule K.2).
+   * 'clickhouse' — live data from a successful ClickHouse query.
+   * 'mock'       — CLICKHOUSE_URL is unset (dev / CI); deterministic stub data.
+   */
+  data_source: 'clickhouse' | 'mock';
 }
 
 // ─── Statistics helpers ────────────────────────────────────────────────────────
@@ -107,8 +120,8 @@ interface ChLiftRow {
  * This is the same join pattern used by the canonical pilot route at
  * /api/pilot/cta-lift (FOLLOW-093 reconciliation).
  *
- * Returns null when CLICKHOUSE_URL is not set or the query fails.
- * Returns empty array when the join yields no rows (no data in window yet).
+ * Returns null when CLICKHOUSE_URL is not set (dev / CI — caller uses mock data).
+ * THROWS when CLICKHOUSE_URL is set but the query fails (Rule K.2 — fail loud).
  */
 async function fetchLiftFromClickHouse(tenantId: string): Promise<ChLiftRow[] | null> {
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
@@ -162,32 +175,32 @@ async function fetchLiftFromClickHouse(tenantId: string): Promise<ChLiftRow[] | 
     ...clickhouseAuthHeaders({ user, password }),
   };
 
-  try {
-    const res = await fetch(url.toString(), { method: 'GET', headers });
-    if (!res.ok) return null;
-
-    const text = await res.text();
-    return text
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => {
-        const row = JSON.parse(line) as Record<string, unknown>;
-        return {
-          // eslint-disable-next-line @typescript-eslint/no-base-to-string -- row is Record<string,unknown>; String() coerces safely for primitive values from JSON
-          archetype: String(row.archetype ?? ''),
-          adapted_n: Number(row.adapted_n ?? 0),
-          adapted_conversions: Number(row.adapted_conversions ?? 0),
-          holdout_n: Number(row.holdout_n ?? 0),
-          holdout_conversions: Number(row.holdout_conversions ?? 0),
-        };
-      });
-  } catch {
-    return null;
+  // Rule K.2: let network errors propagate (caller wraps in try/catch + Sentry).
+  const res = await fetch(url.toString(), { method: 'GET', headers });
+  if (!res.ok) {
+    throw new Error(`ClickHouse lift query failed: HTTP ${String(res.status)} ${res.statusText}`);
   }
+
+  const text = await res.text();
+  return text
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const row = JSON.parse(line) as Record<string, unknown>;
+      return {
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- row is Record<string,unknown>; String() coerces safely for primitive values from JSON
+        archetype: String(row.archetype ?? ''),
+        adapted_n: Number(row.adapted_n ?? 0),
+        adapted_conversions: Number(row.adapted_conversions ?? 0),
+        holdout_n: Number(row.holdout_n ?? 0),
+        holdout_conversions: Number(row.holdout_conversions ?? 0),
+      };
+    });
 }
 
 // ─── Mock data (dev / CI fallback) ────────────────────────────────────────────
+// Only reachable when CLICKHOUSE_URL is unset. Always tagged data_source:'mock'.
 
 /** Deterministic integer hash of a string. */
 function hash(s: string): number {
@@ -245,6 +258,9 @@ function buildMockLiftRows(tenantId: string): LiftRow[] {
  *
  * @returns 200 LiftResponse on success.
  * @returns 401 when no valid JWT is present.
+ * @returns 500 when CLICKHOUSE_URL is set but the ClickHouse query fails
+ *   (Rule K.2 — fail loud; never silently fall back to mock data when a real
+ *   ClickHouse is configured).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const claims = await getAuthClaims(req);
@@ -259,21 +275,56 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const tenantId: string = claims.tenant_id;
 
-  const chRows = await fetchLiftFromClickHouse(tenantId).catch(() => null);
+  // Rule K.2: when CLICKHOUSE_URL is unset (dev / CI), serve deterministic mock
+  // data tagged data_source:'mock' so consumers can distinguish it from real data.
+  const clickhouseConfigured = Boolean(process.env.CLICKHOUSE_URL);
+
+  if (!clickhouseConfigured) {
+    const rows = buildMockLiftRows(tenantId);
+    const response: LiftResponse = {
+      tenant_id: tenantId,
+      rows,
+      window_days: 7,
+      dqsUnavailable: false,
+      generated_at: new Date().toISOString(),
+      data_source: 'mock',
+    };
+    return NextResponse.json(response, { status: 200 });
+  }
+
+  // Rule K.2: CLICKHOUSE_URL is set — fail loud on any error; never fabricate data.
+  let chRows: ChLiftRow[] | null;
+  try {
+    chRows = await fetchLiftFromClickHouse(tenantId);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    Sentry.captureException(err, {
+      tags: { route: 'dashboard/analytics/lift', tenant_id: tenantId },
+    });
+    return NextResponse.json(
+      {
+        error: {
+          code: 'clickhouse_query_failed',
+          message: `ClickHouse query failed: ${message}`,
+        },
+      },
+      { status: 500 },
+    );
+  }
 
   let rows: LiftRow[];
   let dqsUnavailable = false;
 
-  if (chRows === null) {
-    // No ClickHouse configured or query failed — fall back to deterministic mock data.
-    rows = buildMockLiftRows(tenantId);
-    dqsUnavailable = false;
-  } else if (chRows.length === 0) {
+  // chRows is null only when CLICKHOUSE_URL is unset — already handled above.
+  // Treat null as empty (no data) to satisfy the type safely.
+  const safeRows = chRows ?? [];
+
+  if (safeRows.length === 0) {
     // ClickHouse responded but no cta.clicked events in the window yet.
     rows = [];
     dqsUnavailable = true;
   } else {
-    rows = chRows.map((row) => {
+    rows = safeRows.map((row) => {
       const adaptedRate = row.adapted_n > 0 ? row.adapted_conversions / row.adapted_n : 0;
       const holdoutRate = row.holdout_n > 0 ? row.holdout_conversions / row.holdout_n : 0;
       const pValue = zTest(
@@ -303,6 +354,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     window_days: 7,
     dqsUnavailable,
     generated_at: new Date().toISOString(),
+    data_source: 'clickhouse',
   };
 
   return NextResponse.json(response, { status: 200 });

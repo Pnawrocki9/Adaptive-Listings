@@ -2059,3 +2059,31 @@
   drove an _executing_ CI grep-guard into FOLLOW-433's AC. Lesson for myself: when a process pattern
   recurs but is the same instance, the right lever is often an enforced guard in the next FOLLOW,
   not a CONVENTIONS rule — the guard prevents recurrence without the count-inflation debt.
+
+## 2026-07-01 · RETRO-145 (PR #403, FOLLOW-446 — un-blind the archetype-embeddings-not-null CI gate; PROMOTED Rule Q, INERT-GATE)
+
+- **A finding I almost missed and why:** the promotion itself. The recent-5 retros (140–144) were a
+  run of DELIBERATE non-promotions ("the guard is the enforcement", "count stays 1", saga-split), so
+  my prior on any new pattern was "hold, don't promote." I nearly let INERT-GATE ride at "count 1
+  (this retro)". The catch was NOT trusting the recent window: the task hint pointed at "gate
+  silently stopped verifying", so I grepped the WHOLE file for the family and found RETRO-006
+  §Pattern C ("test exists but is opt-in behind a flag CI never sets") AND RETRO-007 §4b CB-1
+  ("soft-skip inception — structurally present but never actually runs"). Two genuine PRIOR
+  sightings — and RETRO-006 had _pre-authorized_ promotion on a 2nd sighting. Lesson: a string of
+  recent non-promotions is not evidence the next one should be held; count against the FULL history,
+  not the window I just read.
+- **An axis/chain I had to trace twice:** the closure axis vs the residual axis. It was tempting to
+  record FOLLOW-446 as "closed — gate now green in 41s." But the PR closes only the EXECUTION axis
+  (assertion now runs); the FAILURE-VISIBILITY axis (continue-on-error swallows all failures) is
+  still open and is the explicitly-deferred part of FOLLOW-446. I traced build→resolve→execute→
+  assert→exit to confirm the execution fix is end-to-end (not one-hop), then separately confirmed
+  the visibility residual is a distinct named axis, not a downstream hop. Two axes, one ticket —
+  record both or mis-credit the fix.
+- **A meta-pattern in how gaps recur across agents:** "a soft-skip / continue-on-error is written to
+  handle ONE benign condition (missing dev token) and silently grows into a universal failure
+  swallower." RETRO-007's demo-integration gate and RETRO-145's archetype gate are the same shape,
+  two years/sprints apart, in different subsystems — the soft-skip is the reusable footgun. And the
+  discovery vector is always external: nobody notices an inert gate from the gate itself; it
+  surfaces only when someone independently exercises the invariant (here, FOLLOW-392 validation).
+  The retro-analyst is often that external exerciser — so when a PR "fixes a gate", my default
+  question is now "was this gate EVER proven to run its assertion, or only proven to be green?"

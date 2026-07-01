@@ -12752,7 +12752,48 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 447 (446 = harden archetype-embeddings-not-NULL CI gate against silent blind-spots [shared-build-order fixed PR #402 follow-up + continue-on-error swallows gate-broken vs soft-skip]; P3 devops-engineer ~1h. 445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
+## FOLLOW-447 — Audit sibling CI gates for the three INERT-GATE failure modes + add defense-in-depth `timeout-minutes` to all `ci.yml` jobs
+
+- **source_retro:** RETRO-145 §4a LG-3 / §5b (PR #403, FOLLOW-446)
+- **source_ticket:** FOLLOW-446 (un-blinding the archetype-embeddings-not-null gate exposed three
+  reusable failure modes)
+- **recommended_sprint:** next (P3 — CI hygiene; not a pilot go-live blocker)
+- **recommended_agent:** devops-engineer
+- **priority:** P3
+- **estimated_hours:** 2
+- **scope:** `.github/workflows/ci.yml` (all jobs). FOLLOW-446 fixed three stacked blindnesses in
+  the `archetype-embeddings-not-null` gate, each of which could recur in a sibling gate. Audit every
+  job for the same failure modes and close the systemic one:
+  1. **Build-without-`@estalara/shared`:** any job that builds/uses a package which transitively
+     imports `@estalara/shared` MUST build `@estalara/shared` first (else `TS2307` kills the job
+     before its assertion). Most gates already do (`tracer-query-smoke`, `corpus-gate`, `lint`,
+     `cross-language-contract`, `sdk-e2e`); confirm no other omission like the one FOLLOW-446 fixed.
+  2. **Bare `@estalara/*` specifier from repo root:** any inline `node --input-type=module` script
+     that imports a workspace package MUST run in that package's context
+     (`pnpm --filter <pkg> exec node …`) or it dies with `ERR_MODULE_NOT_FOUND`. The archetype gate
+     was the only current offender; guard against new inline node heredocs.
+  3. **Socket-hang / no `timeout-minutes`:** **systemic** — `archetype-embeddings-not-null` is the
+     ONLY job in `ci.yml` with a `timeout-minutes`; every other job relies on the 360-minute
+     default. Any job that opens a persistent postgres-js / ClickHouse / broker socket in a node
+     script and forgets to `process.exit` will hang for 6h. Add a sane `timeout-minutes` to every
+     job as defense-in-depth, and ensure any DB-connecting node script exits explicitly. NOTE: the
+     `continue-on-error` soft-skip scoping for the archetype gate is NOT in this ticket's scope — it
+     is already tracked by **FOLLOW-446**. Do not duplicate it here.
+- **ac:**
+  - [ ] Every `ci.yml` job that builds/consumes a `@estalara/shared`-dependent package builds
+        `@estalara/shared` first (audit table in the PR body; fix any omission found).
+  - [ ] No inline `node --input-type=module` step imports a bare `@estalara/*` specifier from the
+        repo root; each such step runs in the owning package's context.
+  - [ ] Every `ci.yml` job has an explicit `timeout-minutes` (sane per-job bound; documented
+        rationale for any DB/broker-connecting job), so no job can hang for the 360-minute default.
+  - [ ] (Optional) A negative-control fixture proves the `archetype-embeddings-not-null` gate REDs
+        on a deliberately-NULLed embedding row (RETRO-145 §4c TG-1).
+  - [ ] `pnpm lint` (workflow yaml) + a dry CI run confirm all gates still pass.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 448 (447 = audit sibling ci.yml gates for the 3 INERT-GATE failure modes [#1 build-without-@estalara/shared, #2 bare-specifier-from-repo-root, #3 socket-hang] + add defense-in-depth timeout-minutes to ALL jobs [only archetype-embeddings-not-null has one]; optional negative-control for the archetype gate; P3 devops-engineer ~2h; source RETRO-145 §4a LG-3/§5b; continue-on-error scoping is SEPARATE = FOLLOW-446). 446 = harden archetype-embeddings-not-NULL CI gate against silent blind-spots [shared-build-order fixed PR #402/#403 follow-up + continue-on-error swallows gate-broken vs soft-skip]; P3 devops-engineer ~1h. 445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
 P1 backend-engineer ~1h). 441 = AUD-03/F-06 — prod CH write-verification canary; P0 data-engineer
 ~3h). 440 = AUD-02/F-02 — fix assigned_at→ts + latency_ms phantom columns; P0 backend-engineer
 ~2h). 439 = AUD-01/F-01 — fix lift route buildMockLiftRows fabrication + dqsUnavailable=false;

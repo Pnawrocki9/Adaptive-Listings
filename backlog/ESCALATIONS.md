@@ -1869,7 +1869,25 @@ existing ops `ADAPT_API_KEY` bypass should be removed or scoped.
 feedback metrics is worse than no pilot). Per PM guardrails, no new ticket can be delegated while
 this escalation is open.
 
-**Resolution:** (empty — awaiting human decision)
+**Resolution:** RESOLVED 2026-07-01 by Piotr Nawrocki (CEO). CEO rulings (from decision prompt
+2026-07-01): (a) **Priority P0**, routed architect-ADR-then-backend. (b) **Interim =
+secure-by-default 503**: the feedback endpoint is disabled unless `FEEDBACK_ENDPOINT_ENABLED=true`
+is explicitly set — shipped in FOLLOW-444 (PR #397, merged, main `0e0bdb0`). Prod is safe with zero
+operator action. (c) **`ADAPT_API_KEY` ops bypass RETAINED but scoped** to a single designated ops
+tenant (`OPS_TENANT_ID`, 403 on mismatch) — also shipped in FOLLOW-444.
+
+**SCHEMA CORRECTION (verified in code 2026-07-01, supersedes the "argon2id / new column" framing in
+the Required-fix section above):** `api_keys.hashed_key` is **SHA-256(raw_key) with a unique index**
+(the schema doc-comment saying "argon2id" is wrong — ADR-0015 fixes it), and a correct
+`resolveApiKey()` helper already exists and is used by four routes (`quiz/public-config`,
+`intent/config`, `quiz/completion`, `crm/outcome`). Therefore the permanent fix needs **NO migration
+and NO new column** — the `lookup_hash`/argon2id path is REJECTED (ADR-0015 §Alternatives). The fix:
+extract `resolveApiKey()` into `apps/control-plane/src/lib/api-key-auth.ts`, use it in
+`feedback/route.ts`, derive `tenantId` from the resolved key, reject
+`body.tenant_id !== resolvedTenantId` (403). Design: **ADR-0015**
+(`docs/adr/ADR-0015-feedback-endpoint-authentication.md`), status PROPOSED. Backend-engineer
+implements from ADR-0015 in the FOLLOW-443 implementation ticket once ADR-0015 is ACCEPTED; the
+interim 503 is lifted (`FEEDBACK_ENDPOINT_ENABLED=true`) only after that PR merges CI-green.
 
 ---
 

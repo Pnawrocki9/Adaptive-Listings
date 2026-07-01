@@ -65,3 +65,26 @@ implements. This needs either a dated FOLLOW stub or a correction to the comment
 the PR description MUST explicitly state what happens to existing tenants who don't add the second
 script, and `buildSnippet()` MUST be audited to confirm whether the new artifact should appear in
 the generated snippet. Failing this, the "opt-in" framing silently downgrades all existing tenants.
+
+## 2026-07-01 / FOLLOW-443 (ADR-0015)
+
+**What I decided:** Use the existing `resolveApiKey()` pattern (SHA-256 indexed lookup on
+`api_keys.hashed_key`) already implemented in `quiz/public-config/route.ts` — no new column, no new
+env var, no migration, no SDK change. Extract to `lib/api-key-auth.ts` for shared use. Retain HMAC
+body sig as defense-in-depth. Derive `tenantId` from the DB row, reject `body.tenant_id`
+mismatch 403. Ops bypass permanently scoped to `OPS_TENANT_ID`.
+
+**Critical discovery during design:** The ESC-035 filing (and schema docstring) stated `hashed_key`
+is argon2id, implying O(n) brute scan was required. Code audit (`seed-local-tenant.mts:73` +
+`quiz/public-config/route.ts:156`) revealed it is SHA-256 with a unique index. An entire "Option B
+new column" design was drafted and then discarded after reading the code. The lesson: ALWAYS grep
+actual seeder/auth code before accepting a schema comment as ground truth.
+
+**Where a spec risked describing behavior with no owner:** None in the final ADR — the fix is
+limited to one new shared lib file and two route changes, all with a 12-case test matrix. The Master
+Design §V.3.2 update is explicitly delegated to architect post-PR-merge (named, not floated).
+
+**A guardrail I'd add:** Security ADRs MUST grep the live auth code (seeders, existing route
+helpers) before designing a new auth scheme. A wrong schema comment caused a full "new column +
+migration + env var + key rotation" design to be drafted before the code audit showed SHA-256 was
+already there. Rule: "read the seeder and the closest working auth route before writing the ADR."

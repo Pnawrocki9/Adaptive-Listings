@@ -16,10 +16,17 @@
  *      a. CB-2: confidence_before is 0.0 (not null) in ClickHouse JSONEachRow body
  *      b. CB-1: session_id in ClickHouse body is the raw session_id string (not a 64-char SHA-256 hex converted to UUID)
  *      c. DG-1: console.error is called when Promise.allSettled returns a rejection
+ *   9. FOLLOW-449 (Rule K.2 fire-and-forget amendment, RETRO-135 §6): a rejected/failed write on
+ *      either sink is captured to Sentry with a `kind` tag distinguishing an HTTP-level rejection
+ *      (`insert_rejected` — the ESC-031/F-02 class: ClickHouse 4xx on a schema/column mismatch)
+ *      from a network-level failure (`network`); no capture on the success path.
  */
 
 import { describe, expect, it, vi, type Mock } from 'vitest';
 
+vi.mock('@sentry/cloudflare', () => ({ captureException: vi.fn() }));
+
+import * as Sentry from '@sentry/cloudflare';
 import { INTENT_EVENTS_VOCABULARY, INTENT_SNAPSHOT_EVENT_TYPE } from '@estalara/shared';
 
 import {
@@ -711,6 +718,127 @@ describe('TG-1 FOLLOW-287: DG-1 — console.error fires on Promise.allSettled re
       const { fetchImpl } = captureFetch(200);
       await handleIntentSnapshot(makeEvent(), ENV_FULL, fetchImpl);
       expect(consoleErrorSpy).not.toHaveBeenCalled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FOLLOW-449 — Sentry capture on write rejection (Rule K.2 fire-and-forget
+// amendment, RETRO-135 §6). `fetch` resolves (does not reject) on an HTTP
+// 4xx/5xx, so a bare `.catch()` is blind to an HTTP-level rejection — the
+// exact ESC-031/F-02 failure class (a ClickHouse migration not yet applied ->
+// every INSERT 4xx's on the missing column -> intent_events stays at count 0
+// with zero observability). These tests assert the rejection is now captured.
+// ---------------------------------------------------------------------------
+
+describe('FOLLOW-449: Sentry capture on write rejection', () => {
+  const captureExceptionMock = Sentry.captureException as unknown as Mock;
+
+  it('captures a ClickHouse HTTP-level rejection (SCHEMA/4xx class) with kind=insert_rejected', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    captureExceptionMock.mockClear();
+
+    try {
+      const fetchImpl = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes('intent_events')) {
+          return Promise.resolve(new Response('Code: 47. Unknown column', { status: 400 }));
+        }
+        return Promise.resolve(new Response('', { status: 200 }));
+      }) as unknown as typeof fetch;
+
+      await handleIntentSnapshot(makeEvent(), ENV_FULL, fetchImpl);
+
+      expect(captureExceptionMock).toHaveBeenCalledTimes(1);
+      const [, options] = captureExceptionMock.mock.calls[0] as [
+        Error,
+        { tags: Record<string, string>; extra: Record<string, unknown> },
+      ];
+      expect(options.tags).toMatchObject({
+        area: 'intent-snapshot',
+        sink: 'clickhouse',
+        kind: 'insert_rejected',
+      });
+      expect(options.extra.tenant_id).toBe(TENANT_ID);
+      expect(options.extra.session_id).toBe(SESSION_ID_HEX);
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('captures a ClickHouse network-level failure with kind=network', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    captureExceptionMock.mockClear();
+
+    try {
+      const fetchImpl = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes('intent_events')) {
+          return Promise.reject(new Error('connect_timeout'));
+        }
+        return Promise.resolve(new Response('', { status: 200 }));
+      }) as unknown as typeof fetch;
+
+      await handleIntentSnapshot(makeEvent(), ENV_FULL, fetchImpl);
+
+      expect(captureExceptionMock).toHaveBeenCalledTimes(1);
+      const [, options] = captureExceptionMock.mock.calls[0] as [
+        Error,
+        { tags: Record<string, string> },
+      ];
+      expect(options.tags).toMatchObject({
+        area: 'intent-snapshot',
+        sink: 'clickhouse',
+        kind: 'network',
+      });
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('captures a Supabase HTTP-level rejection with kind=insert_rejected', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    captureExceptionMock.mockClear();
+
+    try {
+      const fetchImpl = vi.fn((input: RequestInfo | URL): Promise<Response> => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes('intent_sessions')) {
+          return Promise.resolve(new Response('unknown column', { status: 400 }));
+        }
+        return Promise.resolve(new Response('', { status: 200 }));
+      }) as unknown as typeof fetch;
+
+      await handleIntentSnapshot(makeEvent(), ENV_FULL, fetchImpl);
+
+      expect(captureExceptionMock).toHaveBeenCalledTimes(1);
+      const [, options] = captureExceptionMock.mock.calls[0] as [
+        Error,
+        { tags: Record<string, string> },
+      ];
+      expect(options.tags).toMatchObject({
+        area: 'intent-snapshot',
+        sink: 'supabase',
+        kind: 'insert_rejected',
+      });
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('does NOT call Sentry.captureException when both writes succeed', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    captureExceptionMock.mockClear();
+
+    try {
+      const { fetchImpl } = captureFetch(200);
+      await handleIntentSnapshot(makeEvent(), ENV_FULL, fetchImpl);
+      expect(captureExceptionMock).not.toHaveBeenCalled();
     } finally {
       consoleErrorSpy.mockRestore();
     }

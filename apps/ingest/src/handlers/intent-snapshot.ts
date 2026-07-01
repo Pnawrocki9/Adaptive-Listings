@@ -18,6 +18,15 @@
  *   - DG-1: Promise.allSettled rejections are logged via console.error (visible in CF Worker logs)
  *     in addition to the structured logger, so operators can observe degraded state.
  *
+ * FOLLOW-449 fix applied (Rule K.2 fire-and-forget amendment, RETRO-135 §6):
+ *   - A rejected/failed write (HTTP non-ok OR network throw) on EITHER sink is captured to Sentry
+ *     via `Sentry.captureException` with `tags: { area: 'intent-snapshot', sink, kind }`, mirroring
+ *     `publishAbAssignmentEvent` (apps/control-plane/src/lib/ab-events.ts). `kind` distinguishes
+ *     `insert_rejected` (HTTP-level rejection — e.g. a missing-column/SCHEMA error after a ClickHouse
+ *     migration drift, the exact ESC-031/F-02 failure mode) from `network` (fetch-level failure —
+ *     DNS, connection refused, timeout). Stays fully async: capture happens inside the same
+ *     already-fire-and-forgotten `Promise.allSettled` continuation, adding zero ACK latency.
+ *
  * Privacy:
  *   - `event_payload` sent to ClickHouse is PII-scrubbed: contains only { signal_count,
  *     quiz_completed, quiz_leaf, chat_turns }. Never includes `probabilities` (archetype weight
@@ -31,6 +40,8 @@
  *
  * @module apps/ingest/src/handlers/intent-snapshot
  */
+
+import * as Sentry from '@sentry/cloudflare';
 
 import type { IntentSnapshotPayload } from '@estalara/shared';
 import { INTENT_SNAPSHOT_EVENT_TYPE } from '@estalara/shared';
@@ -388,6 +399,13 @@ export async function handleIntentSnapshot(
       { tenant_id: event.tenant_id, session_id: event.session_id, reason },
       'intent_snapshot_clickhouse_rejected',
     );
+    // FOLLOW-449: an unexpected synchronous throw out of insertIntentEventToClickHouse
+    // (it otherwise always resolves — this branch is a defensive backstop) must still
+    // be observable, not just console/pino.
+    Sentry.captureException(new Error(`intent_snapshot_clickhouse_rejected: ${reason}`), {
+      tags: { area: 'intent-snapshot', sink: 'clickhouse', kind: 'network' },
+      extra: { tenant_id: event.tenant_id, session_id: event.session_id, unexpected: true },
+    });
   } else if (!chResult.value.ok) {
     console.error(
       JSON.stringify({
@@ -400,6 +418,26 @@ export async function handleIntentSnapshot(
     logger.error(
       { tenant_id: event.tenant_id, session_id: event.session_id, error: chResult.value.error },
       'intent_snapshot_clickhouse_write_failed',
+    );
+    // FOLLOW-449 (Rule K.2 fire-and-forget amendment, RETRO-135 §6): `fetch` resolves
+    // (does not reject) on an HTTP 4xx/5xx, so a `.catch()`-only handler is blind to a
+    // ClickHouse SCHEMA/column-drift rejection — the exact ESC-031/F-02 failure mode
+    // (migration not yet applied to prod -> every insert silently 4xx'd, count() stayed 0).
+    // `insertIntentEventToClickHouse` already checks `response.ok`; this call makes that
+    // HTTP-level rejection observable in Sentry, not just CF Worker logs.
+    const isHttpRejection = (chResult.value.error ?? '').includes(
+      'clickhouse_intent_events_status_',
+    );
+    Sentry.captureException(
+      new Error(`intent_snapshot_clickhouse_write_failed: ${chResult.value.error ?? 'unknown'}`),
+      {
+        tags: {
+          area: 'intent-snapshot',
+          sink: 'clickhouse',
+          kind: isHttpRejection ? 'insert_rejected' : 'network',
+        },
+        extra: { tenant_id: event.tenant_id, session_id: event.session_id },
+      },
     );
   }
 
@@ -417,6 +455,10 @@ export async function handleIntentSnapshot(
       { tenant_id: event.tenant_id, session_id: event.session_id, reason },
       'intent_snapshot_supabase_rejected',
     );
+    Sentry.captureException(new Error(`intent_snapshot_supabase_rejected: ${reason}`), {
+      tags: { area: 'intent-snapshot', sink: 'supabase', kind: 'network' },
+      extra: { tenant_id: event.tenant_id, session_id: event.session_id, unexpected: true },
+    });
   } else if (!pgResult.value.ok) {
     console.error(
       JSON.stringify({
@@ -429,6 +471,20 @@ export async function handleIntentSnapshot(
     logger.error(
       { tenant_id: event.tenant_id, session_id: event.session_id, error: pgResult.value.error },
       'intent_snapshot_supabase_write_failed',
+    );
+    const isHttpRejection = (pgResult.value.error ?? '').includes(
+      'supabase_intent_sessions_status_',
+    );
+    Sentry.captureException(
+      new Error(`intent_snapshot_supabase_write_failed: ${pgResult.value.error ?? 'unknown'}`),
+      {
+        tags: {
+          area: 'intent-snapshot',
+          sink: 'supabase',
+          kind: isHttpRejection ? 'insert_rejected' : 'network',
+        },
+        extra: { tenant_id: event.tenant_id, session_id: event.session_id },
+      },
     );
   }
 }

@@ -647,6 +647,9 @@ jobs:
     runs-on: ubuntu-latest
     # Soft-skip: forked PRs and pre-DOPPLER environments must not block on this.
     continue-on-error: true
+    # Safety net: the assert opens a postgres-js connection; bound the job so a
+    # stuck connection can never hang for the 360-minute default (FOLLOW-446).
+    timeout-minutes: 8
     needs: [archetype-seeds-complete]
     steps:
       - uses: actions/checkout@v4
@@ -717,6 +720,9 @@ jobs:
             process.exit(1);
           }
           console.log('[archetype-embeddings-not-null] PASS: all 18 archetype embeddings populated.');
+          // postgres-js keeps the connection open, so exit explicitly or node
+          // hangs on the live socket until the job timeout (FOLLOW-446).
+          process.exit(0);
           EOF
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DEV }}

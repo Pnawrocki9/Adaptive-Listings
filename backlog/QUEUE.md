@@ -5653,13 +5653,25 @@ others staged by priority; max 3 IN_PROGRESS at once.**
 - id: FOLLOW-364
   title: Reconcile §D.6 coverage-summary counts to a clean 18-way partition
   agent: ml-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: ml-engineer
+  started_at: '2026-07-01T00:00:00Z'
   priority: P2
   estimated_hours: 1
   depends_on: []
   source: RETRO-097 (FOLLOW-344 / PR #329)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-364 stub)
   branch: ml-engineer/FOLLOW-364-d6-coverage-counts
+  notes: |
+    Delegated 2026-07-01 (table row: intent/adapt logic, embeddings, LLM gateway, auto-detect,
+    ontology, platform-templates -> ml-engineer). Premise re-verified against current repo
+    2026-07-01: docs/MASTER_DESIGN.md:1954 still shows the double-counted §D.6 coverage summary
+    (two disjoint "Full" buckets — 8 + 2 — plus 6/2 quiz/chat-only split — sums to 18 but the
+    prose/table Status-column mapping is confusing per RETRO-097). Docs-only change, no runtime
+    wiring to verify at 5c. NOTE: this ticket had a byte-identical duplicate block elsewhere in
+    QUEUE.md (queue-hygiene artifact from repeated append passes) — both instances updated in
+    lockstep here to avoid a future double-pick.
+    CI counter: 0/5. Fix iterations: 0/3.
 
 - id: FOLLOW-355
   title: Pin cold-start signal_count invariant (future init-time prior guard)
@@ -6115,10 +6127,17 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   notes: |
     Promoted to QUEUE.md 2026-06-24 post-merge of PR #349 (FOLLOW-387).
     FOLLOW-387 DONE (PR #349, b7412e1) — dependency satisfied.
-    FOLLOW-101 still OPEN — this ticket is blocked on FOLLOW-101 (real ClickHouse query).
-    Do NOT start this ticket until FOLLOW-101 merges (stub is safe to carry as READY until then).
-    See FOLLOW_UPS.md stub for full scope (batch_enrich.py comment + read_recent_chat_sessions
-    opt-out surface).
+    PM re-check 2026-07-01: the depends_on field lists FOLLOW-101 (DONE, PR #256) but that
+    ticket shipped the REAL-TIME chat bridge only — its own notes state "ClickHouse reader
+    stubbed ([]) for Sprint 13". Confirmed still true today by grep: apps/intent-engine/src/
+    clickhouse_reader.py:4 is a hardcoded stub returning []; no ticket in QUEUE.md has yet
+    implemented the real batch ClickHouse query for read_recent_chat_sessions. This ticket's
+    AC ("surface opt-out state in read_recent_chat_sessions") is therefore not meaningfully
+    actionable yet — there is no real query to add opt-out surfacing to. Leaving status READY
+    (not blocking anything else, P2, not pilot-critical) but flagging: do NOT delegate until
+    the real batch-query implementation ticket exists and is DONE, or the scope is expanded to
+    include it. See FOLLOW_UPS.md stub for full scope (batch_enrich.py comment +
+    read_recent_chat_sessions opt-out surface).
 
 - id: FOLLOW-359
   title: Return variant in GET /api/adapt response body
@@ -6260,13 +6279,25 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
 - id: FOLLOW-364
   title: Reconcile §D.6 coverage-summary counts to a clean 18-way partition
   agent: ml-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: ml-engineer
+  started_at: '2026-07-01T00:00:00Z'
   priority: P2
   estimated_hours: 1
   depends_on: []
   source: RETRO-097 (FOLLOW-344 / PR #329)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-364 stub)
   branch: ml-engineer/FOLLOW-364-d6-coverage-counts
+  notes: |
+    Delegated 2026-07-01 (table row: intent/adapt logic, embeddings, LLM gateway, auto-detect,
+    ontology, platform-templates -> ml-engineer). Premise re-verified against current repo
+    2026-07-01: docs/MASTER_DESIGN.md:1954 still shows the double-counted §D.6 coverage summary
+    (two disjoint "Full" buckets — 8 + 2 — plus 6/2 quiz/chat-only split — sums to 18 but the
+    prose/table Status-column mapping is confusing per RETRO-097). Docs-only change, no runtime
+    wiring to verify at 5c. NOTE: this ticket had a byte-identical duplicate block elsewhere in
+    QUEUE.md (queue-hygiene artifact from repeated append passes) — both instances updated in
+    lockstep here to avoid a future double-pick.
+    CI counter: 0/5. Fix iterations: 0/3.
 
 - id: FOLLOW-341
   title: Populate archetype_embeddings.embedding (activate the cosine affinity path)

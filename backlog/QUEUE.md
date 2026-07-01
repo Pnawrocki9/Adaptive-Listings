@@ -1,5 +1,16 @@
 # Backlog Queue
 
+**Updated 2026-07-02 — CEO DECISIONS Q1/Q2/Q3 recorded for Sprint 22b.** Q1: BOTH PATHS mandated for
+POST /api/adapt (demo-JWT AND real tenant API key via ADR-0015 resolveApiKey) — FOLLOW-451 confirmed
+P0, not deferrable. Q2: SHADOW-ONLY for this pilot — live chat→archetype adaptation is OUT of scope;
+FOLLOW-458 downgraded P1→P2 fast-follow, shadow consumer code stays (deploy deferred, not cut). Q3:
+MEASURED pilot confirmed — FOLLOW-450 (feedback/bandit loop), FOLLOW-452 (holdout archetype
+logging), FOLLOW-453 (dashboard fail-loud) are CONFIRMED P0/P1 go-live blockers. Also: FOLLOW-449's
+code/CI/docs leg (AC3/AC4/AC5) is DONE — PR #413 merged (18367d3) — but its prod-apply leg (AC1/AC2,
+CH migration 0015 attest+apply) is OPERATOR-PENDING (Piotr/Rafał), tracked on the pilot go-live
+checklist below, not silently closed. See §"CEO decisions" table further down and MASTER_DESIGN
+§Snapshot.1 for propagation.
+
 **Updated 2026-07-01 (session 2) — Full-Stack Audit Remediation epic added as `Sprint 22b` (bottom
 of file): tickets FOLLOW-449…FOLLOW-471 close every finding (F-01…F-21) from the 2026-07-01
 end-to-end code audit. FOLLOW-471 is the epic's acceptance gate — a clean re-audit ("no gaps, no
@@ -7928,11 +7939,12 @@ gate) closes the epic and must be last.
     Apply ClickHouse migration 0015 (intent_events.session_id) to prod + de-silence rejected
     intent_events inserts (F-02)
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: CODE_COMPLETE_OPERATOR_PENDING # PR #413 merged to main (18367d3) 2026-07-02; AC1/AC2 (prod attest+apply) are OPERATOR-PENDING, not done. See ESC-020/ESC-034 precedent.
   assigned_to: data-engineer
   started_at: '2026-07-01T22:00:00Z'
+  completed_code_at: '2026-07-02T00:00:00Z'
   branch: data-engineer/FOLLOW-449-intent-events-session-id-prod
-  pr: '#413'
+  pr: '#413 (MERGED)'
   priority: P0
   estimated_hours: 3
   depends_on: []
@@ -7956,11 +7968,18 @@ gate) closes the epic and must be last.
     to CI service account permits a SELECT/DESCRIBE), that's fine; anything requiring prd write
     creds is operator-only.
 
-    PR #413 opened 2026-07-01. CI counter: 1/5 (first run green on every real gate). Fix
-    iterations: 0/3. Only non-passing check is "Rule I — wired-or-dead check" (173 violations,
-    ALL pre-existing in packages/sdk + packages/shared/pii-blacklist.ts, ZERO in this PR's touched
-    files apps/ingest/* — confirmed pre-existing baseline noise per project CI-gate-landscape
-    precedent, not introduced by this PR).
+    PR #413 opened 2026-07-01, MERGED 2026-07-02 (commit 18367d3, main). CI counter: 1/5 (first
+    run green on every real gate). Fix iterations: 0/3. Only non-passing check is "Rule I —
+    wired-or-dead check" (173 violations, ALL pre-existing in packages/sdk + packages/shared/
+    pii-blacklist.ts, ZERO in this PR's touched files apps/ingest/* — confirmed pre-existing
+    baseline noise per project CI-gate-landscape precedent, not introduced by this PR).
+
+    PM-validated 2026-07-02: code/CI/docs scope (AC3/AC4/AC5) is DONE and merged. AC1/AC2 (prod
+    attest+apply, DESCRIBE TABLE proof) remain OPERATOR-PENDING (Piotr/Rafał) — tracked on the
+    pilot go-live checklist in backlog/STATUS.md, NOT silently closed. Ticket status set to
+    CODE_COMPLETE_OPERATOR_PENDING (ESC-020/ESC-034 precedent: code-complete-awaiting-operator-
+    action is non-blocking for further delegation, but the ticket itself is not DONE until the
+    operator leg completes). This frees data-engineer's IN_PROGRESS slot.
 
     Code/CI/docs-complete; migration 0015 IS idempotent (`ADD COLUMN IF NOT EXISTS`), verified by a
     double-apply of migrate.sh against a clean local ClickHouse container — no change needed to the
@@ -8004,6 +8023,16 @@ gate) closes the epic and must be last.
     sampling is uniform-random; no conversion labels captured.
   spec: ADR-0015; audit report §5.1 F-06
   notes: |
+    CEO DECISION (Q3, 2026-07-02): MEASURED pilot confirmed — this ticket (enable feedback/bandit
+    loop) is a CONFIRMED P0 go-live blocker. DECISION-GATED note resolved.
+    depends_on note: PM-reviewed 2026-07-02 — the feedback/bandit subsystem (ab_bandit_weights)
+    reads/writes Postgres only and has NO code dependency on intent_events (ClickHouse). The
+    depends_on:[FOLLOW-449] link is an OPERATOR-SEQUENCING convenience (both need a Doppler prd
+    touch), not a technical blocker. Recommend loosening to depends_on:[] so backend-engineer can
+    start the AC1 code/canary work now; the only truly-blocking piece is the OPS_TENANT_ID +
+    ADAPT_API_KEY Doppler prd provisioning (operator action, same class as FOLLOW-449's operator
+    leg — can be scheduled together but is not a code dependency). Left as historical dependency
+    marker below pending explicit confirmation; flagging for whoever picks this up next.
     AC:
     - [ ] Provision OPS_TENANT_ID + ADAPT_API_KEY in Doppler prd; set FEEDBACK_ENDPOINT_ENABLED=true.
     - [ ] Add a prod canary: a signed test ping increments a Beta counter (real ab_bandit_weights
@@ -8016,7 +8045,10 @@ gate) closes the epic and must be last.
   title: >-
     Add real API-key auth path to POST /api/adapt (currently demo-JWT-only) (F-05)
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-02T00:00:00Z'
+  branch: backend-engineer/FOLLOW-451-adapt-api-key-auth
   priority: P0
   estimated_hours: 4
   depends_on: []
@@ -8026,8 +8058,9 @@ gate) closes the epic and must be last.
     (silent no-adapt). Blocks the standalone-SaaS path.
   spec: ADR-0015 (resolveApiKey); audit report §5.2 F-05
   notes: |
-    DECISION-GATED (CEO Q1 pilot auth model): if the pilot runs demo-JWT, this is P1 SaaS-enablement;
-    if the pilot runs real API keys, this is a P0 pilot blocker. Charter assumes both paths must work.
+    CEO DECISION (Q1, 2026-07-02): BOTH PATHS mandated — POST /api/adapt must accept a demo-JWT
+    AND a real tenant API key (reuse ADR-0015 resolveApiKey, same pattern as feedback/route.ts).
+    Confirmed P0, not deferrable. DECISION-GATED note resolved: "both paths mandated."
     AC:
     - [ ] POST /api/adapt accepts EITHER a demo JWT OR a tenant API key resolved via the shared
           resolveApiKey() (SHA-256 → api_keys) added in ADR-0015; tenant_id derived server-side.
@@ -8049,6 +8082,9 @@ gate) closes the epic and must be last.
     holdout defaults to false when the param is absent → silent treatment-arm contamination.
   spec: audit report §5.1 F-08; docs/ops/PILOT_CTA_LIFT_METRIC_v1.md
   notes: |
+    CEO DECISION (Q3, 2026-07-02): MEASURED pilot confirmed — this ticket (per-archetype holdout
+    logging so lift is measurable) is CONFIRMED as a go-live blocker at its stated P1. No gating
+    note to resolve (priority was already P1, un-gated); recorded for the decision trail.
     AC:
     - [ ] Holdout rows log the would-be archetype/confidence (the classification the session would
           have received), not a hardcoded 'neutral', so lift/route per-archetype arms populate.
@@ -8072,6 +8108,9 @@ gate) closes the epic and must be last.
     quiz/config GET catch→enabled defaults.
   spec: CONVENTIONS_PATCH.md Rule K.2; audit report §5.1 F-07
   notes: |
+    CEO DECISION (Q3, 2026-07-02): MEASURED pilot confirmed — this ticket (dashboard fail-loud,
+    no fabricated zeros) is CONFIRMED as a go-live blocker at its stated P1. No gating note to
+    resolve (priority was already P1, un-gated); recorded for the decision trail.
     AC:
     - [ ] analytics/page.tsx surfaces an explicit error state on non-2xx (no zero coercion), and
           renders a MockDataBadge when data_source==='mock' (parity with /dashboard/pilot).
@@ -8172,7 +8211,7 @@ gate) closes the epic and must be last.
     (F-03)
   agent: devops-engineer
   status: READY
-  priority: P1
+  priority: P2
   estimated_hours: 6
   depends_on: [FOLLOW-449]
   source: >-
@@ -8182,8 +8221,10 @@ gate) closes the epic and must be last.
     daily drift detection offline.
   spec: MASTER_DESIGN §Snapshot.2; ADR-0005; audit report §5.2 F-03
   notes: |
-    DECISION-GATED (CEO Q2 chat-in-pilot): if chat intelligence is in-scope for THIS pilot, P1
-    blocker; if shadow-only acceptable, fast-follow. Charter: make the path live-or-formally-deleted.
+    CEO DECISION (Q2, 2026-07-02): SHADOW-ONLY for this pilot — live chat→archetype adaptation is
+    NOT in scope. Downgraded from P1 blocker to P2/P3 FAST-FOLLOW. Do NOT delete the consumer or
+    its topic wiring; deploy is deferred, not cut (shadow path stays intact for later go-live).
+    DECISION-GATED note resolved: "shadow-only, deploy deferred."
     AC:
     - [ ] Either (a) deploy stream-consumer to Modal + wire the events topic so process_chat_message
           runs on live traffic and CHAT_NLP_LIVE has a real effect (remove the log-only stub), OR

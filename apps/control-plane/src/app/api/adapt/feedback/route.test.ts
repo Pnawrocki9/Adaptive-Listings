@@ -168,14 +168,14 @@ async function flushMicrotasks(): Promise<void> {
 
 // ─── FOLLOW-444 / ESC-035: interim 503 disable ───────────────────────────────
 //
-// AC: POST /api/adapt/feedback returns 503 for ALL callers when
-// FEEDBACK_ENDPOINT_DISABLED=true (the production Doppler prd setting while
-// FOLLOW-443 full-fix is pending).
+// AC: POST /api/adapt/feedback returns 503 for ALL callers by default
+// (secure-by-default: FEEDBACK_ENDPOINT_ENABLED must be explicitly set to 'true'
+// to enable; unset = disabled). Production is safe with NO operator action required.
 
-describe('FOLLOW-444 / ESC-035: interim 503 disable (FEEDBACK_ENDPOINT_DISABLED=true)', () => {
+describe('FOLLOW-444 / ESC-035: interim 503 disable (FEEDBACK_ENDPOINT_ENABLED unset = default disabled)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv('FEEDBACK_ENDPOINT_DISABLED', 'true');
+    // Intentionally do NOT set FEEDBACK_ENDPOINT_ENABLED → endpoint is disabled by default.
   });
 
   afterEach(() => {
@@ -220,20 +220,18 @@ describe('FOLLOW-444 / ESC-035: interim 503 disable (FEEDBACK_ENDPOINT_DISABLED=
 // ─── FOLLOW-444 / ESC-035: OPS_TENANT_ID scope enforcement ──────────────────
 //
 // AC: ops bypass returns 403 when body.tenant_id !== OPS_TENANT_ID.
-// Tests run WITHOUT FEEDBACK_ENDPOINT_DISABLED=true so the interim 503 block
-// is not triggered, allowing the underlying scope-check logic to be exercised.
-// This is the code path that will be active in production once FOLLOW-443 ships
-// and the 503 block is removed.
+// Tests set FEEDBACK_ENDPOINT_ENABLED=true to reach the scope-check logic
+// (simulating the state after FOLLOW-443 ships and the 503 block is removed).
 
 describe('FOLLOW-444 / ESC-035: OPS_TENANT_ID scope enforcement', () => {
   const OPS_TENANT = '00000000-0000-0000-0000-000000000001';
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
     vi.stubEnv('ADAPT_API_KEY', 'ops-key');
     vi.stubEnv('OPS_TENANT_ID', OPS_TENANT);
-    // FEEDBACK_ENDPOINT_DISABLED intentionally NOT set → 503 block is inactive
     mockSelectLimit.mockResolvedValue([]);
   });
 
@@ -275,6 +273,7 @@ describe('FOLLOW-444 / ESC-035: OPS_TENANT_ID scope enforcement', () => {
 describe('POST /api/adapt/feedback — auth gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
   });
 
@@ -384,6 +383,7 @@ describe('POST /api/adapt/feedback — auth gate', () => {
 describe('POST /api/adapt/feedback — body validation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
     // Use ADAPT_API_KEY fallback so validation tests don't need HMAC overhead
     vi.stubEnv('ADAPT_API_KEY', 'test_key');
@@ -453,6 +453,7 @@ describe('POST /api/adapt/feedback — body validation', () => {
 describe('POST /api/adapt/feedback — bandit update', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
     vi.stubEnv('ADAPT_API_KEY', 'test_key');
     mockSelectLimit.mockResolvedValue([]);
@@ -641,6 +642,7 @@ describe('POST /api/adapt/feedback — bandit update', () => {
 describe('POST /api/adapt/feedback — fire-and-forget', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
     vi.stubEnv('ADAPT_API_KEY', 'test_key');
   });
@@ -711,6 +713,7 @@ describe('POST /api/adapt/feedback — fire-and-forget', () => {
 describe('POST /api/adapt/feedback — HMAC signature path (FOLLOW-051)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
     vi.stubEnv('ADAPT_API_KEY', ''); // Disable ops fallback → force HMAC path
   });
@@ -803,6 +806,7 @@ describe('FOLLOW-433: updateArmAsync + upsertConversionLabelAsync registered via
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
     vi.stubEnv('ADAPT_API_KEY', 'test_key');
     mockAfter = vi.mocked(after);

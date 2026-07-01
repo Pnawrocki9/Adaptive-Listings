@@ -288,15 +288,15 @@ async function upsertConversionLabelAsync(args: {
  *   202 Accepted  — feedback acknowledged; DB update happens asynchronously.
  *   400 VALIDATION_ERROR — invalid body.
  *   401 AUTH_REQUIRED / FORBIDDEN — missing or invalid auth.
- *   503 SERVICE_TEMPORARILY_UNAVAILABLE — endpoint disabled (ESC-035 interim).
+ *   503 SERVICE_TEMPORARILY_UNAVAILABLE — endpoint disabled by default (ESC-035 interim).
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
 
-  // ESC-035: Feedback endpoint temporarily disabled pending HMAC auth security fix.
+  // ESC-035: Feedback endpoint disabled by default (secure-by-default) pending FOLLOW-443 full fix.
   // REMOVE this block when FOLLOW-443 ADR + backend full-fix implementation ships.
-  // Set FEEDBACK_ENDPOINT_DISABLED=true in production (Doppler prd) until then.
-  if (process.env.FEEDBACK_ENDPOINT_DISABLED === 'true') {
+  // Set FEEDBACK_ENDPOINT_ENABLED=true ONLY after the HMAC auth fix ships.
+  if (process.env.FEEDBACK_ENDPOINT_ENABLED !== 'true') {
     return NextResponse.json(
       {
         error: 'SERVICE_TEMPORARILY_UNAVAILABLE',

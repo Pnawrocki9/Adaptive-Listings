@@ -23416,4 +23416,112 @@ collision; 104 pytest pass; NO new exported TS symbol / event / env-var / DB col
 
 <!-- next free FOLLOW number: 448 (447 = audit sibling ci.yml gates for the 3 INERT-GATE failure modes [#1 build-without-shared, #2 bare-specifier-from-root, #3 socket-hang] + add defense-in-depth timeout-minutes to all jobs [only archetype-embeddings-not-null has one]; optional negative-control for the archetype gate; P3 devops-engineer ~2h). RETRO-145 = retro for PR #403 (FOLLOW-446, MERGED 2026-07-01T14:32:28Z, squash, commit 288484d; 2 files +51/-2; ci.yml archetype-embeddings-not-null gate + FOLLOW_UPS stub). NO contract change (CI-config only). Wiring Audit CLEAN (workflow entrypoint suppressed; no new signal) with a self-half-wire meta-finding NOW CLOSED (consumer assertion was present-but-inert, three stacked ways). GAPS: LG-1 the 3 stacked blindnesses (build-order TS2307 / bare-specifier ERR_MODULE_NOT_FOUND / socket-hang no-exit no-timeout) all FIXED; LG-2 continue-on-error swallows ALL failure kinds = ALREADY FOLLOW-446, not re-filed; LG-3 sibling gates + missing timeout-minutes = NEW FOLLOW-447; TG-1 no negative-control (folded into FOLLOW-447 optional AC). CLOSURE (step 7): "gate never verified" execution axis GENUINELY CLOSED end-to-end (build→resolve→execute→assert→exit, ~41s green, not one-hop); FOLLOW-446 failure-visibility axis correctly still OPEN; FOLLOW-392 prod attestation unaffected. RULE: PROMOTED Rule Q (INERT-GATE — a soft-skippable/continue-on-error/die-before-assert CI gate must PROVE its assertion executed + scope its soft-skip to the single intended condition; a green/non-blocking status is not evidence the assertion ran). Evidence ≥2 PRIOR: RETRO-006 §Pattern C (PR #130 opt-in-flag, count 1) + RETRO-007 §4b CB-1 (PR #137 soft-skip-inception, count 2); RETRO-145 = 3rd/trigger. Q was the reserved retro-analyst placeholder letter. PM ACTION: (1) FOLLOW-446 P3 — scope the soft-skip (still open); (2) FOLLOW-447 P3 — audit sibling gates + add timeout-minutes everywhere. -->
 
+## RETRO-146 — FOLLOW-442 (log holdout-arm decisions to `adaptation_decisions` on POST /api/adapt so the pilot lift query's holdout denominator stops counting zero — AUD-04 / F-05, P1 pilot go-live gate) — 2026-07-01
+
+### 1. Summary of change
+
+- **PR:** #406 (squash-merged 2026-07-01T16:29:05Z, commit `306f98a`). Title: `fix(control-plane): log holdout decisions to adaptation_decisions on POST /api/adapt [FOLLOW-442]`.
+- **Files changed:** 2 (+48 / -7). `apps/control-plane/src/app/api/adapt/route.ts` (+29/-0, new `afterResponse(() => logDecisionAsync(...))` on the holdout early-return branch ~L1165), `apps/control-plane/src/app/api/adapt/route.holdout.test.ts` (+19/-7, inverts the prior "no INSERT" smoke to assert the holdout arm DOES emit the ClickHouse INSERT with `param_p_holdout_group=1`).
+- **Modules touched:** control-plane (POST /api/adapt handler + its holdout test). No shared/SDK/ingest/decision-api/docs/config change.
+- **Key contracts changed:** **N/A — no signature/type/event/env-var/column/topic change.** The `adaptation_decisions.holdout_group` column and `logDecisionAsync`'s 15-param signature (route.ts:401) are both pre-existing. This PR only adds a *new call site* of an existing sink on a previously-unlogged branch. The wrapped call is `afterResponse`-registered, so it is compliant with the `check-fire-and-forget-sinks.sh` CI guard (RETRO-140).
+
+### 2. Verification done in PR
+
+- Test files changed: 1 (`route.holdout.test.ts`). Assertions added/changed: the 100%-holdout smoke was rewritten from asserting *no* ClickHouse INSERT to asserting the INSERT fires with `param_p_holdout_group=1`, `param_p_variant=control`, `param_p_archetype=neutral`, `param_p_confidence=0.5`, and body containing `INSERT INTO adaptation_decisions` + `holdout_group`. Coverage delta: est. + on the holdout branch (previously the branch's telemetry was asserted-absent).
+- CI checks: per PR context the real gates were green; the recovering main session independently re-ran typecheck + lint + the 11/11 holdout suite before committing (see §4e). Read-only retro did not re-watch CI.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅ (closes an in-practice half-wire on the POST axis)`
+
+- **CHECK A (dead code):** No new file/export. The change is a call site inside the existing POST handler (a framework-route entrypoint — suppressed). Not dead.
+- **CHECK B (half-wire):** No NEW event / env-var / column / topic / SDK-signal introduced. The `holdout_group=1` value already had a producer (GET holdout call site route.ts:943, and the treatment arm writes `holdout_group=0` at route.ts:1433) **and** a consumer (`pilot/cta-lift/route.ts:116/138/163` joins `FROM adaptation_decisions` and `route-helpers.ts:120/142` picks the `holdout=1` arm into `PilotSummary.holdout_sessions`). So no CHECK-B half-wire in the new-signal sense. **However** — recorded because the failure shape is identical to a half-wire — on the **POST handler specifically** the `holdout_group=1` value had **no producer at all** while the cta-lift consumer read it: an *in-practice half-wire* (consumer present, POST-side producer missing). This PR reconnects the POST producer. The FF-guard passes (the call is `afterResponse`-wrapped, no bare `void`).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **The fix itself is correct and faithfully mirrors the treatment arm (route.ts:1433) and GET holdout convention (route.ts:943).** Arg-by-arg the new holdout call is consistent with the holdout *response body* (route.ts:1185-1194): `archetype='neutral'`, `confidence=0.5`, `similarity=body.similarity ?? 0.5`, `source='default'`, `directiveCount=0`, `pageContext=pageCtx` — producer↔render consistent. No new logic gap introduced.
+- **LG-1 (root-cause, now fixed) — ARM ASYMMETRY.** The treatment arm called `logDecisionAsync`; the holdout early-return arm returned without it → the cta-lift query's `holdout_sessions` denominator was structurally zero → `holdoutRate=0`, degenerate z-test, every holdout-vs-treatment lift silently biased. Fixed. Recorded as the driver finding.
+- **Sibling-arm audit (reconciled, no gap):** the POST handler has **three** early-return arms — `profiling_opt_out` (route.ts:1077), consent-skip `assignment.skipped` (route.ts:1126), and holdout (route.ts:1142). The first two ALSO return without `logDecisionAsync` — **by design** (route.ts:398 documents "logDecisionAsync is NOT called on profiling_opt_out or consent-skip paths"): a no-consent / opted-out session is excluded from measurement entirely and must NOT be counted in either lift arm. Only the holdout arm (consented control group) belongs in the denominator, and it was the sole omission. Correctly scoped — the fix did not over-reach into the opt-out/consent arms. No gap.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — the mirror is faithful; the logged row matches the rendered holdout body; the call is `afterResponse`-wrapped for Vercel flush durability (ESC-033/FOLLOW-431). No new bug.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (note, P3) — the pre-existing test actively asserted the BUG as expected behavior.** Before this PR, `route.holdout.test.ts` asserted the holdout arm makes *no* ClickHouse INSERT ("returns early"), cementing the silent gap in the suite so it read green while the denominator was broken. The fix correctly inverts it. Lesson-bearing (see §6) but the test is now correct — note only, no stub.
+- **TG-2 (note, P3) — no test links the producer INSERT to the consumer denominator.** The new test asserts the *producer* (INSERT with `holdout_group=1`); nothing asserts the *consumer* (`cta-lift` `holdout_sessions > 0` given holdout rows). The end-to-end "holdout write → non-zero lift denominator" chain is only argued, not tested in one place. Low priority (both halves are unit-tested separately); the prod-side attestation belongs to FOLLOW-441's canary — see §5a. Note, no new stub.
+- **TG-3 (note, P3) — the new assertion set omits `param_p_directive_count=0`.** It checks holdout_group/variant/archetype/confidence but not directiveCount, one of the values the fix explicitly passes (`0`). Minor completeness gap. Note.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (trivial, note) — the FOLLOW-442 code comment (route.ts:1158) cites the treatment mirror at "line ~1417"; the actual treatment call site is L1433 (~16-line drift).** The reference is tilde-approximate and harmless. Note only, no stub.
+
+#### 4e. Process / workflow gap — DEDICATED ANALYSIS (stalled-worker recovery)
+
+The implementing `backend-engineer` subagent **STALLED** (no progress for 600s) before committing. It had produced the correct implementation but left it **UNCOMMITTED** and, critically, **on the wrong branch — directly in the `main` working tree** (it never ran `git checkout -b`). The main session recovered: moved the work onto a proper `<agent>/FOLLOW-442-*` branch, **independently re-ran the verification the stalled agent never ran** (typecheck + lint + 11/11 holdout tests), then committed/pushed/opened PR #406. The recovery was clean and no bad code shipped — but three latent hazards are worth codifying:
+
+- **(a) CONTAMINATION / SILENT WORK-LOSS.** Uncommitted edits stranded in the `main` working tree are invisible to `git checkout -b <newbranch>` — the next ticket that branches from `main` **silently absorbs the stranded diff into an unrelated branch** (cross-ticket contamination), or a routine `git checkout main` / `git stash drop` **discards the work entirely**. On a P1 go-live-gate ticket this is a real correctness/loss hazard, not hypothetical. It did not bite here only because the same session that owned the work recovered it before any branch switch.
+- **(b) BRANCH-FIRST DISCIPLINE.** A worker that runs `git checkout -b <agent>/<ticket>-<slug>` as its **FIRST action, before touching any file**, cannot strand work on `main` no matter when it crashes/stalls — the worktree is already on the ticket branch. The current failure only exists because the branch was to be created *after* editing.
+- **(c) VERIFY-NOT-TRUST ON HANDOFF.** The orchestrator correctly re-ran the suite rather than trusting any claimed "tests pass" — here the agent stalled and claimed nothing, but the general rule stands: **a stalled / handed-off agent's work must be independently re-verified by the recovering party**, never trusted on assertion. This mirrors OPERATING_PRINCIPLE 5 (verify-not-guess) applied to intra-session handoff.
+
+→ **FOLLOW-448** codifies branch-first worker discipline + a mechanical guardrail (a SessionStart/pre-edit hook or agent-definition rule that refuses/branches when `HEAD == main` before the first edit) + an orchestrator "recovered-work re-verification" checklist. P2 — the contamination/loss hazard is real and cross-cutting across all 9 worker agents.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **AUD-04 / F-05 (P1 pilot go-live gate): closed on the CODE axis.** The pilot cta-lift query now receives a real holdout denominator. **Complementary to FOLLOW-441** (prod `adaptation_decisions` write-verification canary, AUD-03/F-06): the code fix guarantees the holdout *branch emits* the INSERT, but whether prod actually *lands* holdout rows still rides on (i) a prod deploy and (ii) the ESC-031/RETRO-133/FOLLOW-422 "is adaptation_decisions actually being written in prod?" concern. **Scope note for FOLLOW-441 (NOT re-filed):** the canary should verify **both arms** — a holdout=1 row AND a holdout=0 row in the window — otherwise a future recurrence of arm-asymmetry (one arm silently absent) would pass a canary that only checks "≥1 row written." Recommend extending FOLLOW-441's AC; do not duplicate.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-441 (P0/P1, data-engineer) — OPEN.** Prod write-verification canary; §5a recommends widening its AC to assert both holdout arms are present. Reiterated, not re-filed.
+- **FOLLOW-446 / FOLLOW-447 (P3, devops) — unaffected.** CI-gate hardening; no interaction with this route change.
+- **FOLLOW-422 (P1) — reinforced, not closed.** The prod "adaptation_decisions may be empty" attestation still governs whether this fix produces real prod rows. This PR is a precondition (the holdout branch now *tries* to write), not a substitute for that attestation.
+
+#### 5c. Contracts changed others rely on
+
+- N/A — no contract changed (§1). `POST /api/adapt` response shape and status are byte-identical; only a new post-response `afterResponse` telemetry write was added on the holdout arm. `adaptation_decisions.holdout_group` now carries `1` from the POST path (previously only GET produced `holdout_group=1`).
+
+#### 5d. Architectural assumptions affected
+
+- **Pilot lift measurement now counts its control arm.** Any A/B-style measured handler with early-return arms must be audited for **telemetry-side-effect symmetry** — an arm that returns without the sibling arm's logging call silently biases whatever denominator reads that log. This is the generalizable lesson (see §6 ARM-ASYMMETRY).
+
+### 6. New lesson candidates
+
+- **Pattern (ARM-ASYMMETRY-WRITE-GAP): "an early-return arm of a measured handler (holdout / skip) omits a telemetry side-effect that its sibling arm (treatment) performs, silently zeroing a downstream analytics denominator that reads that telemetry."** — **RETRO-146, count 1 (fresh).** Adjacent but DISTINCT from RETRO-132 §4a LG-1 (stray-arm `served=base` / `logged=raw` reward-attribution *mislabel* — a wrong value, not a missing write) and from ESC-031/033/RETRO-138 (a *flush drop* affecting ALL arms uniformly, not one-arm asymmetry). No prior independent sighting of the *missing-write-on-one-arm* shape in the corpus. **HELD at count 1 — no promotion.** Watch: any future "one branch omits the sibling's log/metric write" is count 2.
+- **Pattern (WORKER-BRANCH-HYGIENE / STALLED-HANDOFF): "a worker that edits before running `git checkout -b` can strand uncommitted work on the `main` working tree when it stalls/crashes, where a later branch-from-main silently absorbs or discards it; recovered/handed-off work must be independently re-verified, not trusted."** — **RETRO-146, count 1 (fresh).** Corpus grep (`checkout -b|uncommitted|wrong branch|stalled|stranded on main|orchestrator trusted`) found **no prior instance**. Distinct from RETRO-138 §6 VERIFICATION-PROCESS (that is "standalone eslint/tsc ≠ CI's type-aware rules" — a tooling-fidelity pattern, not branch hygiene). **HELD at count 1 — no promotion.** → FOLLOW-448 is the durable fix (a guard that executes beats a prose rule).
+- **Pattern (TEST-LOCKS-IN-BUG): "a test that asserts the buggy behavior as expected (here: holdout → NO INSERT) masks the gap and reads green."** — noted, count 1, not formalized (folded into the ARM-ASYMMETRY lesson as its detection-failure mode).
+- **FLUSH axis (RETRO-138): unchanged, count 1.** This PR is a *correct application* of the established `afterResponse` pattern, NOT a new sighting of the flush bug. FOLLOW-429 (decision-api `ctx.waitUntil`) remains the designated cross-runtime count-2. No increment.
+- Anti-count-inflation (RETRO-122/125/126/128/129/131/132/133/135/137/138/139/140/141/142/143/144/145) honored. **No rule promoted this retro.**
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **AUD-04 / F-05 (the chartered target): GENUINELY CLOSED on the CODE axis — traced end-to-end, not one-hop.** Producer: `afterResponse(() => logDecisionAsync(..., holdoutGroup=true, variant='control'))` at route.ts:1166 → Flush: `after()` keeps the instance alive past response (ESC-033 durability, FOLLOW-431) → Consumer: `pilot/cta-lift/route.ts:163` joins `FROM adaptation_decisions` and buckets by holdout → Render: `route-helpers.ts:142` `holdout_sessions` → `PilotSummary`. The full producer→flush→consumer→render chain connects. **PROD axis NOT yet attested** (needs deploy + FOLLOW-441 canary + the FOLLOW-422 "is the table actually written in prod?" question) — correctly OPEN, not claimed here.
+- **ESC-033 / FOLLOW-431 / FOLLOW-433 (afterResponse family): undisturbed.** This PR is a new, correct CONSUMER of the `afterResponse` primitive; the FF-guard passes (no bare `void` introduced). No regression to the sweep's closure.
+- **RETRO-132 §4a LG-1 (stray-arm reward mislabel, FOLLOW-420): unaffected** — different arm defect (mislabel vs missing write). Not closed here.
+
+### 8. Multi-axis / contradiction reconciliation (step 8)
+
+- **Handler axis (GET vs POST):** GET already logged holdout via a *unified* call site (route.ts:943 passes `holdoutGroup` as a variable, so both arms log). POST used a *separate early-return* holdout branch that skipped logging → the bug was **POST-only**. Analyzing only GET (which was clean) would have missed it — exactly the both-directions discipline. Both handlers now log holdout.
+- **Arm axis (opt-out / consent-skip / holdout / treatment):** reconciled in §4a — only holdout belongs in the lift denominator and only holdout was missing; opt-out and consent-skip suppression is intentional (route.ts:398). No over-reach.
+- **Producer/consumer axis:** the POST-side producer was absent while the consumer existed (in-practice half-wire, §3); now symmetric.
+- **Contradiction check:** no prior retro declared the POST holdout arm "clean," so no prior verdict is contradicted. This is a *fresh* finding of a pre-existing (AUD-04-charted) gap, now fixed.
+
+### 9. Follow-ups
+
+- **FOLLOW-448 (P2, devops-engineer / pm-orchestrator, ~3h)** — branch-first worker discipline + mechanical guardrail (pre-edit/SessionStart hook refusing edits or auto-branching when `HEAD == main`) + orchestrator "recovered/handed-off work must be independently re-verified" checklist. Source: §4e. The only NEW stub from this retro.
+- **Scope note (NOT re-filed) — FOLLOW-441:** widen the prod `adaptation_decisions` write-verification canary to assert BOTH holdout arms (a `holdout_group=1` AND a `holdout_group=0` row in the window), so an arm-asymmetry recurrence cannot pass a "≥1 row" canary (§5a).
+
+### 10. Cross-references
+
+- **Related to RETRO-138 / RETRO-140 (FOLLOW-431/433, afterResponse family):** this PR reuses the `afterResponse` primitive and the FF-guard they built; §7 confirms no regression.
+- **Related to RETRO-133 / FOLLOW-422 / FOLLOW-441 (ESC-031 adaptation_decisions prod-write concern):** this code fix is a precondition for real prod holdout rows; the prod-write attestation remains under those tickets (§5a/§5b/§7).
+- **Related to RETRO-132 §4a LG-1 (FOLLOW-420, stray-arm reward mislabel):** adjacent arm-defect family, distinct mechanism (mislabel vs missing write) — kept separate (§6).
+- **First retro of the WORKER-BRANCH-HYGIENE process pattern (§4e/§6) → FOLLOW-448.**
+
+<!-- next free FOLLOW number: 449 (448 = RETRO-146 §4e/§9 — branch-first worker discipline + mechanical guardrail [pre-edit/SessionStart hook refusing edits or auto-branching when HEAD==main so a stalled worker can't strand uncommitted work on the main working tree where a later branch-from-main silently absorbs/discards it] + orchestrator "recovered/handed-off work must be independently re-verified, not trusted" checklist; P2 devops-engineer/pm-orchestrator ~3h; source: backend-engineer subagent stalled 600s on FOLLOW-442, left correct impl UNCOMMITTED on the main working tree [never ran git checkout -b], main session recovered+re-verified typecheck+lint+11/11 holdout tests). RETRO-146 = retro for PR #406 (FOLLOW-442, AUD-04/F-05 P1 go-live gate, MERGED 2026-07-01T16:29:05Z squash, commit 306f98a; 2 files +48/-7; route.ts +29 new afterResponse(logDecisionAsync holdoutGroup=true variant=control archetype=neutral directiveCount=0) on POST holdout branch ~L1165 + route.holdout.test.ts inverts prior "no INSERT" smoke → asserts param_p_holdout_group=1). NO contract change (existing holdout_group column + logDecisionAsync 15-param sig; new call site only; afterResponse-wrapped so FF-guard passes). Wiring Audit CLEAN both checks (framework-route entrypoint suppressed; no new signal) — closes an IN-PRACTICE half-wire: holdout_group=1 had a cta-lift consumer [route.ts:116/138/163 FROM adaptation_decisions, route-helpers.ts:142 holdout_sessions] but NO POST-side producer [GET produced it at :943, POST holdout branch returned without logging]. GAPS: LG-1 arm-asymmetry root cause FIXED (treatment logged, holdout didn't → lift holdout denominator structurally zero → degenerate z-test); sibling-arm audit reconciled — opt-out :1077 + consent-skip :1126 also skip logDecisionAsync BY DESIGN (route.ts:398, excluded from measurement) so correctly untouched; TG-1 note the prior test ASSERTED THE BUG (holdout→no INSERT) as expected, masking it; TG-2 note no producer→consumer denominator test; TG-3 note assertion omits param_p_directive_count=0; DG-1 trivial comment cites treatment "~1417" actual L1433; §4e PROCESS = stalled-worker/branch-hygiene → FOLLOW-448. CLOSURE (step 7): AUD-04/F-05 GENUINELY CLOSED on CODE axis end-to-end (producer→flush after()→consumer cta-lift→render holdout_sessions, not one-hop); PROD axis NOT attested (rides FOLLOW-441 canary + FOLLOW-422 empty-table concern), correctly OPEN. RULES: NO promotion. ARM-ASYMMETRY-WRITE-GAP count 1 fresh (distinct from RETRO-132 mislabel + RETRO-138 flush-drop-all-arms); WORKER-BRANCH-HYGIENE count 1 fresh (corpus grep found no prior; distinct from RETRO-138 §6 tooling-fidelity); FLUSH axis unchanged count 1 (this PR is a correct APPLICATION of afterResponse, not a new bug sighting; FOLLOW-429 remains the designated cross-runtime count-2). Anti-count-inflation honored. PM ACTION: (1) FOLLOW-448 P2 — branch-first guardrail + recovered-work re-verification; (2) widen FOLLOW-441 canary to assert BOTH holdout arms (NOT re-filed); (3) prod-attest holdout rows land after deploy (FOLLOW-441/422). -->
+
 

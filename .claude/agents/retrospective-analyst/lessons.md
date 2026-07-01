@@ -2087,3 +2087,34 @@
   surfaces only when someone independently exercises the invariant (here, FOLLOW-392 validation).
   The retro-analyst is often that external exerciser — so when a PR "fixes a gate", my default
   question is now "was this gate EVER proven to run its assertion, or only proven to be green?"
+
+---
+
+## 2026-07-01 · RETRO-146 (FOLLOW-442, PR #406 — holdout logDecisionAsync)
+
+- **A finding I almost missed and why:** the fix looked trivially correct (mirror the treatment
+  arm), so the temptation was to stamp it clean. The real value was in the SIBLING-ARM audit: the
+  POST handler has THREE early-return arms (opt-out, consent-skip, holdout), and I had to prove that
+  omitting logDecisionAsync on opt-out/consent-skip is BY DESIGN (route.ts:398) while omitting it on
+  holdout was the bug. Without that reconciliation I'd have either flagged the two by-design arms as
+  false gaps or missed why only holdout mattered. The general reflex: when a fix adds a side-effect
+  to ONE branch, enumerate ALL sibling branches and classify each as by-design-absent vs bug-absent.
+- **An axis/chain I had to trace twice:** the GET-vs-POST handler axis. GET was never broken
+  (unified logging call at :943 passes holdoutGroup as a variable, so both arms log); POST used a
+  SEPARATE early-return branch that skipped logging. Analyzing only the "cleaner" handler (GET)
+  would have concluded no bug. I had to trace the holdout_group=1 producer set on BOTH handlers to
+  see the POST producer was the sole gap — an in-practice half-wire (consumer cta-lift present, POST
+  producer absent) even though CHECK-B is technically clean (GET produces the same value).
+- **A meta-pattern in how gaps recur across agents:** the adaptation_decisions table is a recurring
+  silent-write magnet, but each recurrence has a DIFFERENT mechanism — ESC-031/033 was a flush drop
+  (all arms), RETRO-132 was an arm MISLABEL (wrong value), RETRO-146 is an arm OMISSION (missing
+  write on one branch). Same table, same "silent analytics corruption" outcome, three distinct root
+  causes. Do NOT collapse them into one count — but DO treat "any handler that writes to a measured
+  telemetry table" as a standing audit target for arm-symmetry.
+- **My OWN blind spot (process, count 1):** I nearly under-weighted the stalled-worker /
+  uncommitted- on-main / never-ran-checkout-b episode as "recovered fine, move on." It was a
+  near-miss on silent cross-ticket contamination (a later branch-from-main would absorb the stranded
+  diff). The prompt forced a dedicated section; my default should include a process-hygiene axis
+  whenever the PR's provenance (not just its diff) reveals a workflow footgun. Filed FOLLOW-448;
+  held at count 1 (no prior corpus instance — grepped checkout-b/uncommitted/wrong-branch/stalled →
+  none). If a second stranded-work-on-main episode appears, promote a branch-first Rule.

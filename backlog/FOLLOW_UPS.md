@@ -12793,7 +12793,50 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 448 (447 = audit sibling ci.yml gates for the 3 INERT-GATE failure modes [#1 build-without-@estalara/shared, #2 bare-specifier-from-repo-root, #3 socket-hang] + add defense-in-depth timeout-minutes to ALL jobs [only archetype-embeddings-not-null has one]; optional negative-control for the archetype gate; P3 devops-engineer ~2h; source RETRO-145 §4a LG-3/§5b; continue-on-error scoping is SEPARATE = FOLLOW-446). 446 = harden archetype-embeddings-not-NULL CI gate against silent blind-spots [shared-build-order fixed PR #402/#403 follow-up + continue-on-error swallows gate-broken vs soft-skip]; P3 devops-engineer ~1h. 445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
+## FOLLOW-448 — branch-first worker discipline + mechanical guardrail against stranding uncommitted work on `main`
+
+- **source_retro:** RETRO-146 §4e / §9
+- **source_ticket:** FOLLOW-442 (PR #406) — during implementation the `backend-engineer` subagent
+  STALLED (600s no progress), leaving the correct implementation UNCOMMITTED and on the wrong branch
+  — directly in the `main` working tree, because it never ran `git checkout -b`. The main session
+  recovered the work (moved it to a proper `<agent>/FOLLOW-442-*` branch, independently re-ran
+  typecheck + lint + 11/11 holdout tests since the agent never did, then committed/pushed/PR'd).
+  Clean recovery, no bad code shipped — but the near-miss exposes a cross-cutting hazard for all 9
+  worker agents.
+- **recommended_sprint:** next infra/ops sprint
+- **recommended_agent:** devops-engineer (hook + CI/agent-config) with pm-orchestrator (workflow
+  checklist)
+- **priority:** P2 (contamination / silent work-loss hazard; surfaced on a P1 go-live-gate ticket)
+- **estimated_hours:** 3
+- **scope:**
+  1. **Branch-first discipline.** Codify (in `docs/AGENT_WORKFLOW.md` + each `.claude/agents/*.md`
+     worker preamble) that a worker's FIRST action on any ticket — BEFORE touching a single file —
+     is `git checkout -b <agent>/<ticket-id>-<kebab-summary>`. A worktree already on the ticket
+     branch cannot strand work on `main` no matter when the worker stalls/crashes.
+  2. **Mechanical guardrail.** Add a pre-edit / SessionStart hook (e.g. under `.claude/hooks/`) that
+     refuses edits — or auto-creates the ticket branch — when
+     `git rev-parse --abbrev-ref HEAD == main`. A guard that executes beats a prose rule that a
+     stalled agent silently skipped.
+  3. **Recovered-work re-verification checklist.** Add to the pm-orchestrator handoff procedure: any
+     work recovered from a stalled / handed-off agent MUST be independently re-verified (typecheck +
+     lint + the ticket's tests) by the recovering party — never trusted on a claimed "tests pass".
+     (OPERATING_PRINCIPLE 5, verify-not-guess, applied to intra-session handoff.)
+- **ac:**
+  - [ ] `docs/AGENT_WORKFLOW.md` states `git checkout -b` is the worker's mandated first action,
+        before any file edit; each worker agent definition references it.
+  - [ ] A hook (or documented equivalent) detects `HEAD == main` and blocks-or-auto-branches before
+        the first edit; a self-test demonstrates it fires (edit attempted on `main` →
+        refused/branched).
+  - [ ] The pm-orchestrator handoff/recovery procedure includes a "recovered work must be
+        independently re-verified (typecheck + lint + ticket tests), not trusted" step.
+  - [ ] A short note documents the contamination mechanism (uncommitted diff on the `main` working
+        tree is silently absorbed by a later `git checkout -b`, or discarded by `git checkout main`
+        / `git stash drop`) so the rationale is durable.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 449 (448 = RETRO-146 §4e/§9 — branch-first worker discipline [git checkout -b as the worker's FIRST action before any edit] + mechanical guardrail [pre-edit/SessionStart hook refusing edits or auto-branching when HEAD==main so a stalled worker can't strand uncommitted work on the main working tree, where a later branch-from-main silently absorbs/discards it] + orchestrator "recovered/handed-off work must be independently re-verified, not trusted" checklist; P2 devops-engineer/pm-orchestrator ~3h; source: backend-engineer stalled 600s on FOLLOW-442/PR #406, left correct impl UNCOMMITTED on the main working tree, main session recovered+re-verified typecheck+lint+11/11 holdout tests). 447 = audit sibling ci.yml gates for the 3 INERT-GATE failure modes [#1 build-without-@estalara/shared, #2 bare-specifier-from-repo-root, #3 socket-hang] + add defense-in-depth timeout-minutes to ALL jobs [only archetype-embeddings-not-null has one]; optional negative-control for the archetype gate; P3 devops-engineer ~2h; source RETRO-145 §4a LG-3/§5b; continue-on-error scoping is SEPARATE = FOLLOW-446). 446 = harden archetype-embeddings-not-NULL CI gate against silent blind-spots [shared-build-order fixed PR #402/#403 follow-up + continue-on-error swallows gate-broken vs soft-skip]; P3 devops-engineer ~1h. 445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
 P1 backend-engineer ~1h). 441 = AUD-03/F-06 — prod CH write-verification canary; P0 data-engineer
 ~3h). 440 = AUD-02/F-02 — fix assigned_at→ts + latency_ms phantom columns; P0 backend-engineer
 ~2h). 439 = AUD-01/F-01 — fix lift route buildMockLiftRows fabrication + dqsUnavailable=false;

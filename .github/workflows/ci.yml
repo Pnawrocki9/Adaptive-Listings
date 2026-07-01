@@ -691,7 +691,11 @@ jobs:
       - name: Assert no NULL embeddings in archetype_embeddings
         if: steps.doppler-check.outputs.skip == 'false'
         run: |
-          doppler run --config dev -- node --input-type=module <<'EOF'
+          # Run node inside the @estalara/db package context so the bare
+          # `@estalara/db` specifier self-resolves via its exports map. A plain
+          # `node` from the repo root cannot resolve the workspace package
+          # (ERR_MODULE_NOT_FOUND) and the assertion never runs (FOLLOW-446).
+          doppler run --config dev -- pnpm --filter @estalara/db exec node --input-type=module <<'EOF'
           import { createAdminClient } from '@estalara/db';
           import { isNull } from 'drizzle-orm';
           import { archetypeEmbeddings } from '@estalara/db';

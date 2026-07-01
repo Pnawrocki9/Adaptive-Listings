@@ -66,3 +66,33 @@ self-test that validates the detector) is the same durable approach that closed 
 sweep gap. The key principle: when a "structural" fix (shared module, afterResponse wrapper) is the
 durable solution, a mechanical CI gate enforcing the structure is always the required companion —
 prose ACs and human grep checks fail under copy-paste pressure.
+
+---
+
+## 2026-07-01 / FOLLOW-448
+
+**What I shipped:** Branch-first worker discipline codified in `docs/AGENT_WORKFLOW.md` + all 8
+worker agent definitions (`git checkout -b` as the FIRST action, before any edit), a non-blocking
+`PreToolUse` hook (`.claude/hooks/pre-edit-branch-guard.sh`) that warns via `additionalContext` when
+`Edit`/`Write`/`MultiEdit` fires while `HEAD == main`, and a PM "recovered-work re-verification"
+checklist (confirm branch → confirm nothing else stranded → independently re-run
+typecheck/lint/tests → only then commit). Root cause: FOLLOW-442's `backend-engineer` subagent
+stalled 600s before ever running `git checkout -b`, leaving correct work uncommitted directly on
+`main` (RETRO-146 §4e).
+
+**Where a green badge could have hidden a broken run path:** the guard itself is not CI — it only
+fires inside a live Claude Code session, so there is no CI job whose green status could ever prove
+it ran against a real stall. The evidence I could produce (a `git worktree` self-test exercising 5
+cases against the script directly) proves the _script's logic_ is correct, but does NOT prove Claude
+Code's `PreToolUse` machinery actually invokes it with the JSON shape I assumed
+(`tool_input.file_path`, `additionalContext` respected) — that's asserted from the hooks doc, not
+observed end-to-end inside a real agent turn. If the hook's `tool_input` field name is wrong for a
+given tool version, the guard would silently never fire while `.claude/settings.json` still shows it
+"registered" — a config-exists badge masking a dead wire, the exact shape this codebase's Rule Q
+warns about.
+
+**A guardrail I'd add:** a lightweight repo self-test (e.g. `scripts/check-hook-registration.sh`,
+run in CI) that parses `.claude/settings.json`, confirms every hook `command` path exists and is
+executable, and — where feasible — asserts the hook script's expected JSON input/output shape
+against a fixture, so a hook silently going dead (wrong field name, moved file, JSON schema drift)
+fails CI instead of only being caught the next time a human happens to `cat` a debug log.

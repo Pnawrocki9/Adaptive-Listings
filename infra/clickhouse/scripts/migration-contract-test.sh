@@ -58,7 +58,12 @@ ROUTE_TS="${SCRIPT_DIR}/../../../apps/control-plane/src/app/api/adapt/route.ts"
 LOCAL="${LOCAL:-0}"
 CH_USER="${CLICKHOUSE_USER:-default}"
 CH_PASS="${CLICKHOUSE_PASSWORD:-}"
-CH_CONTRACT_DB="contract_test_ordering"
+# Two independent isolated databases — one per table under contract test — so
+# Part A (adaptation_decisions) and Part B (intent_events, FOLLOW-449) cannot
+# interfere with each other's boundary-migration walk.
+CH_CONTRACT_DB_ADAPT="contract_test_ordering"
+CH_CONTRACT_DB_INTENT="contract_test_ordering_intent_events"
+CH_CONTRACT_DB="${CH_CONTRACT_DB_ADAPT}"
 CH_CONTRACT_URL="${CLICKHOUSE_URL}/?database=${CH_CONTRACT_DB}"
 
 echo "=== ClickHouse Migration-Ordering Contract Test ==="
@@ -67,12 +72,14 @@ echo "Local: ${LOCAL}"
 echo ""
 
 # ---------------------------------------------------------------------------
-# Cleanup on EXIT (AC-2) — always drop the isolated database so a failure run
-# cannot poison the next run (prevents leftover 'contract_test_ordering' DB).
+# Cleanup on EXIT (AC-2) — always drop BOTH isolated databases so a failure run
+# cannot poison the next run (prevents leftover contract-test DBs).
 # ---------------------------------------------------------------------------
 _cleanup() {
   curl -sSf "${CLICKHOUSE_URL}" -u "${CH_USER}:${CH_PASS}" \
-    --data-binary "DROP DATABASE IF EXISTS ${CH_CONTRACT_DB}" >/dev/null 2>&1 || true
+    --data-binary "DROP DATABASE IF EXISTS ${CH_CONTRACT_DB_ADAPT}" >/dev/null 2>&1 || true
+  curl -sSf "${CLICKHOUSE_URL}" -u "${CH_USER}:${CH_PASS}" \
+    --data-binary "DROP DATABASE IF EXISTS ${CH_CONTRACT_DB_INTENT}" >/dev/null 2>&1 || true
 }
 trap _cleanup EXIT
 
@@ -343,6 +350,192 @@ STATUS_AFTER=$(_http_status "${TEST_INSERT}")
 _assert_eq "INSERT HTTP status after $(basename "${BOUNDARY_MIGRATION}")" "200" "${STATUS_AFTER}"
 
 echo ""
-echo "=== Migration-Ordering Contract Test PASSED ==="
+echo "=== Part A (adaptation_decisions) Migration-Ordering Contract Test PASSED ==="
 echo "    All columns in logDecisionAsync INSERT exist after applying all migrations."
 echo "    Any future column added to logDecisionAsync without a migration will fail CI."
+
+# =============================================================================
+# Part B — intent_events (FOLLOW-449)
+#
+# Same self-maintaining reverse-walk pattern as Part A, applied to the
+# `intent_events` table via `insertIntentEventToClickHouse` in
+# apps/ingest/src/handlers/intent-snapshot.ts. This is the F-02 audit finding:
+# migration 0015 (`ADD COLUMN IF NOT EXISTS session_id`) must be applied to
+# prod before the writer's INSERT names `session_id`, or every fire-and-forget
+# insert is silently rejected and `intent_events` stays at count 0 forever
+# (the exact ESC-031 failure class, on a different table).
+#
+# Uses its own isolated database (CH_CONTRACT_DB_INTENT) so this part's
+# "apply all migrations except the boundary" step cannot collide with Part A's
+# already-completed run against CH_CONTRACT_DB_ADAPT.
+# =============================================================================
+
+echo ""
+echo "=== Part B: ClickHouse Migration-Ordering Contract Test — intent_events (FOLLOW-449) ==="
+echo ""
+
+CH_CONTRACT_DB="${CH_CONTRACT_DB_INTENT}"
+CH_CONTRACT_URL="${CLICKHOUSE_URL}/?database=${CH_CONTRACT_DB}"
+
+curl -sSf "${CLICKHOUSE_URL}" -u "${CH_USER}:${CH_PASS}" \
+  --data-binary "CREATE DATABASE IF NOT EXISTS ${CH_CONTRACT_DB}"
+echo "Contract-test database: ${CH_CONTRACT_DB}"
+echo ""
+
+# Path from infra/clickhouse/scripts -> repo root -> intent-snapshot.ts
+INTENT_TS="${SCRIPT_DIR}/../../../apps/ingest/src/handlers/intent-snapshot.ts"
+
+if [ ! -f "${INTENT_TS}" ]; then
+  echo "ERROR: intent-snapshot.ts not found at ${INTENT_TS}"
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Step B1 — Dynamic column extraction
+#
+# `insertIntentEventToClickHouse` builds the INSERT body from a JS object
+# literal (`const row = { ... };`), not a backtick SQL column list (unlike
+# logDecisionAsync). Scope the extraction to the function body (from its
+# `export async function insertIntentEventToClickHouse` declaration up to the
+# next exported function) so the second `const row = {` literal inside
+# `upsertIntentSessionToSupabase` (a different table, Supabase — not in scope
+# here) is never picked up.
+#
+# Each row-literal line is either `key: value,` or a shorthand `key,` — both
+# forms are matched; comment-only lines (`//...`) are excluded. This is
+# self-maintaining: a future column added to the `row` object is picked up
+# automatically with no script change required.
+# ---------------------------------------------------------------------------
+INTENT_FUNC_START=$(grep -n 'export async function insertIntentEventToClickHouse' "${INTENT_TS}" \
+  | head -1 | cut -d: -f1)
+INTENT_FUNC_END=$(grep -n 'export async function upsertIntentSessionToSupabase' "${INTENT_TS}" \
+  | head -1 | cut -d: -f1)
+
+if [ -z "${INTENT_FUNC_START}" ] || [ -z "${INTENT_FUNC_END}" ]; then
+  echo "ERROR: Could not locate insertIntentEventToClickHouse function boundaries in:"
+  echo "       ${INTENT_TS}"
+  exit 1
+fi
+
+INTENT_COLS_LIST=$(sed -n "${INTENT_FUNC_START},${INTENT_FUNC_END}p" "${INTENT_TS}" \
+  | sed -n '/const row = {/,/^  };/p' \
+  | grep -v '^[[:space:]]*//' \
+  | grep -v 'const row = {' \
+  | grep -v '^[[:space:]]*};' \
+  | sed -E 's/^[[:space:]]*([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*[:,].*/\1/' \
+  | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+  | grep -E '^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+if [ -z "${INTENT_COLS_LIST}" ]; then
+  echo "ERROR: Could not extract the intent_events row column list from"
+  echo "       insertIntentEventToClickHouse in ${INTENT_TS}."
+  echo "       Expected a 'const row = { key: value, ... };' object literal."
+  exit 1
+fi
+
+echo "Extracted column list from insertIntentEventToClickHouse's row object:"
+echo "${INTENT_COLS_LIST}" | sed 's/^/  /'
+echo ""
+
+# ---------------------------------------------------------------------------
+# Step B2 — Column-count floor assertion
+#
+# 9 columns as of FOLLOW-449 (session_id, tenant_id, event_at, event_type,
+# archetype_deltas, confidence_before, confidence_after, top_archetype,
+# event_payload). Floor of 8 catches a broken extractor loudly instead of
+# silently passing with a partial list.
+# ---------------------------------------------------------------------------
+INTENT_COLS_COUNT=$(echo "${INTENT_COLS_LIST}" | grep -c '[a-zA-Z]')
+if [ "${INTENT_COLS_COUNT}" -lt 8 ]; then
+  echo "  FAIL: Extracted only ${INTENT_COLS_COUNT} columns from insertIntentEventToClickHouse's row object (expected >= 8). Check the sed extractor."
+  exit 1
+fi
+echo "Column count: ${INTENT_COLS_COUNT} (>= 8 floor OK)"
+echo ""
+
+INTENT_COLS=$(echo "${INTENT_COLS_LIST}" | paste -sd, -)
+INTENT_TEST_INSERT="INSERT INTO intent_events (${INTENT_COLS}) SELECT ${INTENT_COLS} FROM intent_events LIMIT 0"
+
+# ---------------------------------------------------------------------------
+# Step B3 — Smart boundary detection (same reverse-walk as Part A)
+# ---------------------------------------------------------------------------
+INTENT_BOUNDARY_MIGRATION=""
+INTENT_BOUNDARY_INDEX=-1
+
+for ((i = MIGRATION_COUNT - 1; i >= 0; i--)); do
+  f="${ALL_MIGRATIONS[$i]}"
+  while IFS= read -r colname; do
+    [ -z "$colname" ] && continue
+    if echo "${INTENT_COLS_LIST}" | grep -qx "${colname}"; then
+      INTENT_BOUNDARY_MIGRATION="$f"
+      INTENT_BOUNDARY_INDEX="$i"
+      break 2
+    fi
+  done < <(grep -oE 'ADD COLUMN (IF NOT EXISTS )?[a-zA-Z_][a-zA-Z0-9_]*' "${f}" 2>/dev/null \
+           | awk '{print $NF}'; true)
+done
+
+if [ -z "$INTENT_BOUNDARY_MIGRATION" ]; then
+  echo "WARNING: No boundary migration found for the current intent_events INSERT columns."
+  echo "         Skipping ordering assertion for Part B (no ADD COLUMN migration matches"
+  echo "         any column in: ${INTENT_COLS}"
+  echo ""
+  echo "=== Part B (intent_events) Migration-Ordering Contract Test SKIPPED ==="
+  exit 0
+fi
+
+echo "Boundary migration: $(basename "${INTENT_BOUNDARY_MIGRATION}") (index ${INTENT_BOUNDARY_INDEX})"
+echo ""
+
+# ---------------------------------------------------------------------------
+# Step B4 — Apply all migrations EXCEPT the boundary
+# ---------------------------------------------------------------------------
+echo "4. Applying all migrations except boundary $(basename "${INTENT_BOUNDARY_MIGRATION}")..."
+
+for ((i = 0; i < MIGRATION_COUNT; i++)); do
+  [ "$i" = "$INTENT_BOUNDARY_INDEX" ] && continue
+  f="${ALL_MIGRATIONS[$i]}"
+  echo "  Applying: $(basename "${f}")"
+  _apply_file "${f}"
+done
+
+echo "  All non-boundary migrations applied ($(basename "${INTENT_BOUNDARY_MIGRATION}") not yet applied)"
+
+# ---------------------------------------------------------------------------
+# Step B5 — Assert INSERT is REJECTED (boundary column absent)
+# ---------------------------------------------------------------------------
+echo ""
+echo "5. INSERT with full column list (expect HTTP 4xx — boundary column absent)..."
+
+INTENT_STATUS_BEFORE=$(_http_status "${INTENT_TEST_INSERT}")
+
+if [ "${INTENT_STATUS_BEFORE}" = "200" ]; then
+  echo "  FAIL: INSERT succeeded (HTTP 200) before the boundary migration was applied."
+  echo "        Ensure this script runs on a CLEAN ClickHouse instance before migrate.sh."
+  exit 1
+fi
+
+echo "  PASS: INSERT rejected with HTTP ${INTENT_STATUS_BEFORE} (boundary column absent)"
+
+# ---------------------------------------------------------------------------
+# Step B6 — Apply the boundary migration
+# ---------------------------------------------------------------------------
+echo ""
+echo "6. Applying boundary migration: $(basename "${INTENT_BOUNDARY_MIGRATION}")..."
+_apply_file "${INTENT_BOUNDARY_MIGRATION}"
+echo "  $(basename "${INTENT_BOUNDARY_MIGRATION}") applied"
+
+# ---------------------------------------------------------------------------
+# Step B7 — Assert INSERT now SUCCEEDS
+# ---------------------------------------------------------------------------
+echo ""
+echo "7. Repeating INSERT (expect HTTP 200 — all columns now present)..."
+
+INTENT_STATUS_AFTER=$(_http_status "${INTENT_TEST_INSERT}")
+_assert_eq "INSERT HTTP status after $(basename "${INTENT_BOUNDARY_MIGRATION}")" "200" "${INTENT_STATUS_AFTER}"
+
+echo ""
+echo "=== Part B (intent_events) Migration-Ordering Contract Test PASSED ==="
+echo "    session_id (migration 0015) exists on intent_events after applying all migrations."
+echo "    Any future column added to insertIntentEventToClickHouse's row object without a"
+echo "    corresponding migration will fail CI (F-02 / FOLLOW-449)."

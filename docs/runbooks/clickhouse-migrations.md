@@ -1,7 +1,7 @@
 # ClickHouse Migrations Runbook
 
-**Owner:** data-engineer **Last updated:** 2026-06-26 **References:** ESC-031, RETRO-118,
-FOLLOW-394, FOLLOW-308
+**Owner:** data-engineer **Last updated:** 2026-07-01 **References:** ESC-031, RETRO-118,
+FOLLOW-394, FOLLOW-308, FOLLOW-449 (audit finding F-02)
 
 ---
 
@@ -109,13 +109,26 @@ mechanism.
 
 ---
 
-## CI contract test (FOLLOW-394 / FOLLOW-402 / FOLLOW-415)
+## CI contract test (FOLLOW-394 / FOLLOW-402 / FOLLOW-415 / FOLLOW-449)
 
 The `clickhouse-smoke` CI job now runs `infra/clickhouse/scripts/migration-contract-test.sh`
 **before** the full `migrate.sh + smoke-test.sh` sequence on every PR. The test is self-maintaining:
 it extracts the INSERT column list from `logDecisionAsync` in `route.ts` at runtime and determines
 the migration boundary automatically. No manual update to the script is needed when a new column is
 added.
+
+**Two independent tables, two independent boundary walks (FOLLOW-449):** the script runs the
+reject-then-accept assertion twice, against two isolated databases so neither run's "apply all
+migrations except the boundary" step can interfere with the other:
+
+- **Part A — `adaptation_decisions`.** Column list extracted from `logDecisionAsync` in
+  `apps/control-plane/src/app/api/adapt/route.ts` (unchanged from FOLLOW-394/402/415).
+- **Part B — `intent_events` (FOLLOW-449 / audit finding F-02).** Column list extracted from the
+  `const row = { ... }` object literal inside `insertIntentEventToClickHouse` in
+  `apps/ingest/src/handlers/intent-snapshot.ts`. The current boundary migration is `0015`
+  (`ADD COLUMN IF NOT EXISTS session_id`) — this is the exact migration this ticket is about. If a
+  future PR adds a new column to that `row` object without a corresponding migration, Part B fails
+  CI the same way Part A already does for `adaptation_decisions`.
 
 Test steps (fully automated):
 
@@ -276,3 +289,140 @@ ts:                  2026-06-28 13:01:00.906
 populated correctly (`caller_supplied` for a GET request with an explicit `tier` param). ESC-031
 root cause is resolved end-to-end: migration applied (FOLLOW-404), fail-loud fix deployed
 (FOLLOW-425), writes verified (FOLLOW-422).
+
+---
+
+## Prod Attestation — migration 0015 (`intent_events.session_id`) — STUB, OPERATOR MUST COMPLETE
+
+**Ticket:** FOLLOW-449 (P0) **Audit finding:** F-02 — `intent_events` count = 0 in prod. **Status:**
+OPEN — this section is a stub. `data-engineer` cannot hold Doppler `prd` ClickHouse credentials
+(ESC-022/ESC-031 precedent: applying to prod is a privileged operator action). Piotr or Rafał must
+run the commands below against Doppler `prd` and paste the REAL output in place of the
+`<<< OPERATOR MUST RUN AND PASTE >>>` markers before this ticket can close AC1/AC2.
+
+### Background
+
+Migration `0015_intent_events_session_id_fix.sql` adds the `session_id` column (the FOLLOW-269/K.3.6
+tracer join key) to `intent_events` via
+`ALTER TABLE intent_events ADD COLUMN IF NOT EXISTS session_id String DEFAULT ''`. The ingest
+handler (`apps/ingest/src/handlers/intent-snapshot.ts:insertIntentEventToClickHouse`) has named
+`session_id` in its INSERT column list since FOLLOW-286/287 (merged 2026-06-12). If migration 0015
+(and its successors up to the current HEAD migration) were never attested-applied to the production
+ClickHouse instance, **every fire-and-forget `intent.snapshot` INSERT has been silently rejected by
+ClickHouse (HTTP 4xx, unknown column) since that PR merged** — the exact ESC-031 failure class, on a
+different table. This is consistent with the audit finding that `intent_events` has count = 0 in
+prod and the Archetype Identification Tracer (K.3.6) has never shown live data.
+
+**Local verification already completed (data-engineer, this ticket, non-prod):**
+
+- Migration 0015 is idempotent: `ADD COLUMN IF NOT EXISTS` — confirmed by running `migrate.sh` twice
+  in a row against a clean local ClickHouse container; migration 0015 applied cleanly both times
+  with no error (the container's second run failed later, at migration 0018's pre-existing
+  non-idempotent `RENAME COLUMN tier` — a separate, already-documented issue, not introduced by or
+  in scope for this ticket).
+- A synthetic `intent.snapshot` event, inserted via the REAL `insertIntentEventToClickHouse`
+  function against a local ClickHouse instance with migrations 0001-0019 applied, produced
+  `count() = 1` and was queryable via the tracer's exact SELECT shape (`fetchIntentEventsForSession`
+  in `apps/control-plane/src/lib/clickhouse-tracer.ts`). See the FOLLOW-449 PR description for the
+  full command transcript.
+
+None of the above substitutes for the prod attestation below — a clean local container has no
+bearing on whether migration 0015 was ever applied to the actual production ClickHouse Cloud
+instance.
+
+### Exact command sequence (operator: Piotr or Rafał, Doppler `prd`)
+
+```bash
+# 1. Load prod ClickHouse credentials from Doppler (do NOT paste raw secrets into any file/chat):
+export CLICKHOUSE_URL="$(doppler secrets get CLICKHOUSE_URL --config prd --plain)"
+export CLICKHOUSE_USER="$(doppler secrets get CLICKHOUSE_USER --config prd --plain)"
+export CLICKHOUSE_PASSWORD="$(doppler secrets get CLICKHOUSE_PASSWORD --config prd --plain)"
+
+# 2. Check current column state BEFORE applying anything (safe, read-only):
+curl -sS "${CLICKHOUSE_URL}" -u "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}" \
+  --data-binary "DESCRIBE TABLE intent_events FORMAT TSV"
+
+# 3. If `session_id` is ABSENT from the output above, apply migration 0015 (idempotent —
+#    safe even if it turns out to already be partially applied):
+MIGRATION_FILE="infra/clickhouse/migrations/0015_intent_events_session_id_fix.sql"
+curl -sS --fail-with-body "${CLICKHOUSE_URL}" \
+  -u "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}" \
+  --data-binary @"${MIGRATION_FILE}"
+
+# 4. Also confirm every migration 0016-0019 (and any newer HEAD migration) is applied —
+#    same drift class as ESC-022/ESC-031. Easiest: run the full idempotent migrate.sh,
+#    which is safe to re-run (each migration uses IF NOT EXISTS / IF EXISTS guards, with the
+#    sole known exception of 0018's RENAME COLUMN — already applied to prod per the 0019
+#    attestation above, so re-running migrate.sh in prod should be a no-op past that point):
+doppler run --config prd -- bash infra/clickhouse/scripts/migrate.sh
+
+# 5. Re-run DESCRIBE TABLE and confirm session_id is now present:
+curl -sS "${CLICKHOUSE_URL}" -u "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}" \
+  --data-binary "DESCRIBE TABLE intent_events FORMAT TSV"
+
+# 6. Row-level attestation — confirm writes are actually flowing post-fix (mirrors the
+#    FOLLOW-422 pattern above): trigger a real intent.snapshot from a live SDK session (or the
+#    mock decision harness), then:
+curl -sS "${CLICKHOUSE_URL}" -u "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}" \
+  --data-binary "SELECT count() FROM intent_events FORMAT TSV"
+curl -sS "${CLICKHOUSE_URL}" -u "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}" \
+  --data-binary "SELECT session_id, tenant_id, toString(event_at) AS event_at, event_type, top_archetype FROM intent_events ORDER BY event_at DESC LIMIT 5 FORMAT TSV"
+```
+
+### Expected `DESCRIBE TABLE intent_events` shape (post-migration)
+
+Column order/types confirmed against a clean local ClickHouse container with all 19 migrations
+applied (data-engineer, this ticket — NOT prod data, shown here only as the expected shape):
+
+```
+intent_session_id      UUID
+tenant_id              UUID
+event_at               DateTime64(3, 'UTC')
+event_type             LowCardinality(String)
+archetype_deltas       String   DEFAULT '{}'
+confidence_before      Float32  DEFAULT 0
+confidence_after       Float32  DEFAULT 0
+top_archetype          LowCardinality(String)  DEFAULT ''
+event_payload          String   DEFAULT '{}'
+session_id             String   DEFAULT ''
+```
+
+**The load-bearing row is the last one: `session_id String DEFAULT ''` must be present.** Column
+order in prod may differ slightly depending on prior ALTER history — what matters is that
+`session_id` exists at all (the F-02 gap) and is type `String` (not `UUID` — migration 0016 was a
+documented no-op, see that file's header).
+
+### `<<< OPERATOR MUST RUN AND PASTE >>>` — real prod output goes here
+
+**Date:** _(operator fills in)_ **Attested by:** _(Piotr / Rafał)_
+
+**Step 2 — `DESCRIBE TABLE intent_events` BEFORE:**
+
+```
+<<< OPERATOR MUST RUN AND PASTE >>>
+```
+
+**Step 3/4 — migration apply output:**
+
+```
+<<< OPERATOR MUST RUN AND PASTE >>>
+```
+
+**Step 5 — `DESCRIBE TABLE intent_events` AFTER (must show `session_id`):**
+
+```
+<<< OPERATOR MUST RUN AND PASTE >>>
+```
+
+**Step 6 — row-level attestation (`count()` and the 5 most recent rows):**
+
+```
+<<< OPERATOR MUST RUN AND PASTE >>>
+```
+
+**Verdict:** _(operator fills in — PASS only once `session_id` is confirmed present in prod AND at
+least one real row is confirmed queryable)._
+
+**Cross-reference:** FOLLOW-449 (this ticket) is data/code-complete without prod access per the
+ESC-022/ESC-031 privileged-operator-action precedent; this stub is the handoff artifact. FOLLOW-308
+is the standing prod-apply mechanism (different scope, still open per the Sprint 22b backlog note).

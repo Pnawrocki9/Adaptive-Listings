@@ -107,17 +107,33 @@ Canonical event store. One row per event emitted by the SDK or ingest worker.
 
 ## Table: `intent_events`
 
-Per-session intent signal snapshots.
+Per-signal append-only event trail for the K.3.6 Archetype Identification Tracer. Written by
+`insertIntentEventToClickHouse` (`apps/ingest/src/handlers/intent-snapshot.ts`), fire-and-forget on
+every validated `intent.snapshot` ingest event. Queried by
+`apps/control-plane/src/lib/clickhouse-tracer.ts` (admin tracer routes).
 
-**Engine:** MergeTree() **Migrations:** 0014, 0015, 0016
+**Engine:** MergeTree() **Order by:** `(tenant_id, intent_session_id, event_at)` **Migrations:**
+0014, 0015 (FOLLOW-449 — adds `session_id`, the authoritative join key), 0016 (no-op placeholder;
+`intent_session_id` type-fix was rejected by ClickHouse — MODIFY COLUMN is forbidden on ORDER BY key
+columns — the writer omits `intent_session_id` from every INSERT instead)
 
-| Column              | Type                   | Description                                                     |
-| ------------------- | ---------------------- | --------------------------------------------------------------- |
-| `tenant_id`         | `String`               | Tenant UUID.                                                    |
-| `session_id`        | `String`               | Session identifier.                                             |
-| `intent_session_id` | `UUID`                 | Legacy UUID field (zero-UUID default; see migration 0016 note). |
-| `event_at`          | `DateTime64(3, 'UTC')` | Snapshot timestamp.                                             |
-| `intent_vector`     | `Array(Float32)`       | 12-dimensional intent vector.                                   |
+| Column              | Type                     | Description                                                                                                                                                                        |
+| ------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `intent_session_id` | `UUID`                   | ORDER BY key column. **Not written since FOLLOW-287** — every INSERT omits it, so ClickHouse uses the zero-UUID default. Do NOT join on this column (see `session_id` below).      |
+| `tenant_id`         | `UUID`                   | Tenant identifier.                                                                                                                                                                 |
+| `event_at`          | `DateTime64(3, 'UTC')`   | Snapshot timestamp.                                                                                                                                                                |
+| `event_type`        | `LowCardinality(String)` | Pinned to `INTENT_SNAPSHOT_EVENT_TYPE` (`'intent.snapshot'`) from `@estalara/shared` — see `INTENT_EVENTS_VOCABULARY`.                                                             |
+| `archetype_deltas`  | `String`                 | JSON `{ archetype -> delta }` — how weights changed on this signal.                                                                                                                |
+| `confidence_before` | `Float32`                | Confidence before this signal (`0.0` sentinel — `IntentSnapshotPayload` carries no prior-confidence field).                                                                        |
+| `confidence_after`  | `Float32`                | Confidence after this signal (`payload.confidence`).                                                                                                                               |
+| `top_archetype`     | `LowCardinality(String)` | Leading archetype after this signal (`payload.archetype`).                                                                                                                         |
+| `event_payload`     | `String`                 | JSON, PII-scrubbed: `{ signal_count, quiz_completed, quiz_leaf, chat_turns }`. Never includes `probabilities` or chat content.                                                     |
+| `session_id`        | `String`                 | **Migration 0015 (FOLLOW-449).** Authoritative join key: `intent_events.session_id = intent_sessions.session_id` (+ `tenant_id`). Raw SDK session fingerprint, NOT a derived UUID. |
+
+**Retention:** 90 days documented as the intent (migration 0014 header comment, matches the
+cross-session localStorage TTL in §13.2) — **no TTL clause has been added to the DDL yet** (tracked
+as "Pending" in the retention table below; a follow-up migration is required before this promise is
+enforced, out of FOLLOW-449 scope).
 
 ---
 
@@ -157,9 +173,9 @@ Time column is always `ts`. NOT `assigned_at` (non-existent, vocabulary bug).
 
 ## Retention / TTL promises
 
-| Table                  | TTL                                        | Mechanism             | Status             |
-| ---------------------- | ------------------------------------------ | --------------------- | ------------------ |
-| `events`               | Per-tenant override (Sprint 9 TODO)        | ClickHouse TTL clause | Pending            |
-| `adaptation_decisions` | No explicit TTL (inherits cluster default) | —                     | Pending            |
-| `intent_events`        | —                                          | —                     | Pending            |
-| `dsr_audit_log`        | Per-compliance requirement                 | TTL column            | See migration 0011 |
+| Table                  | TTL                                                                                         | Mechanism             | Status             |
+| ---------------------- | ------------------------------------------------------------------------------------------- | --------------------- | ------------------ |
+| `events`               | Per-tenant override (Sprint 9 TODO)                                                         | ClickHouse TTL clause | Pending            |
+| `adaptation_decisions` | No explicit TTL (inherits cluster default)                                                  | —                     | Pending            |
+| `intent_events`        | 90 days documented intent (migration 0014 header, matches §13.2) — no TTL clause in DDL yet | —                     | Pending            |
+| `dsr_audit_log`        | Per-compliance requirement                                                                  | TTL column            | See migration 0011 |

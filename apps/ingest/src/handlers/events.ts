@@ -16,6 +16,7 @@
  * @module apps/ingest/src/handlers/events
  */
 
+import * as Sentry from '@sentry/cloudflare';
 import { trace } from '@opentelemetry/api';
 import { EventSchema } from '@estalara/shared';
 import type { IntentSnapshotPayload } from '@estalara/shared';
@@ -229,7 +230,29 @@ events.post('/', async (c) => {
         c.env,
       );
       if (ctx?.waitUntil) {
-        ctx.waitUntil(writePromise);
+        // FOLLOW-449 defensive backstop: `handleIntentSnapshot`'s own Promise.allSettled
+        // branches already capture every ClickHouse/Supabase write rejection to Sentry
+        // (see intent-snapshot.ts). This `.catch()` only fires if `handleIntentSnapshot`
+        // itself throws synchronously (a code bug, not a configured-store failure) —
+        // without it, that would be an unhandled rejection inside `ctx.waitUntil` that the
+        // CF Workers runtime drops silently (no Sentry event, no log). Stays fire-and-forget:
+        // no `await`, so no added ACK latency.
+        ctx.waitUntil(
+          writePromise.catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(
+              JSON.stringify({
+                event: 'intent_snapshot_handler_threw',
+                tenant_id: tenantId,
+                error: msg,
+              }),
+            );
+            Sentry.captureException(err instanceof Error ? err : new Error(msg), {
+              tags: { area: 'intent-snapshot', sink: 'handler', kind: 'unexpected_throw' },
+              extra: { tenant_id: tenantId },
+            });
+          }),
+        );
       }
       // If waitUntil is unavailable (test env), the promise is still dispatched;
       // it will resolve before the Worker exits on a hot-path because handleIntentSnapshot

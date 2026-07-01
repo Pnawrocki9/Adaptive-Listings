@@ -12789,7 +12789,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   - [ ] (Optional) A negative-control fixture proves the `archetype-embeddings-not-null` gate REDs
         on a deliberately-NULLed embedding row (RETRO-145 §4c TG-1).
   - [ ] `pnpm lint` (workflow yaml) + a dry CI run confirm all gates still pass.
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (2026-07-01, pm-orchestrator — delegated to devops-engineer)
 
 ---
 

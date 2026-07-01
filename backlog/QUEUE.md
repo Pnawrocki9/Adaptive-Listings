@@ -5653,24 +5653,21 @@ others staged by priority; max 3 IN_PROGRESS at once.**
 - id: FOLLOW-364
   title: Reconcile §D.6 coverage-summary counts to a clean 18-way partition
   agent: ml-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: ml-engineer
   started_at: '2026-07-01T00:00:00Z'
+  completed_at: '2026-07-01T19:24:10Z'
   priority: P2
   estimated_hours: 1
   depends_on: []
   source: RETRO-097 (FOLLOW-344 / PR #329)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-364 stub)
   branch: ml-engineer/FOLLOW-364-d6-coverage-counts
+  pr: '#408'
   notes: |
-    Delegated 2026-07-01 (table row: intent/adapt logic, embeddings, LLM gateway, auto-detect,
-    ontology, platform-templates -> ml-engineer). Premise re-verified against current repo
-    2026-07-01: docs/MASTER_DESIGN.md:1954 still shows the double-counted §D.6 coverage summary
-    (two disjoint "Full" buckets — 8 + 2 — plus 6/2 quiz/chat-only split — sums to 18 but the
-    prose/table Status-column mapping is confusing per RETRO-097). Docs-only change, no runtime
-    wiring to verify at 5c. NOTE: this ticket had a byte-identical duplicate block elsewhere in
-    QUEUE.md (queue-hygiene artifact from repeated append passes) — both instances updated in
-    lockstep here to avoid a future double-pick.
+    DONE — PR #408 merged 2026-07-01T19:24:10Z. Docs-only §D.6 reconciliation, no runtime wiring.
+    NOTE: this ticket had a byte-identical duplicate block elsewhere in QUEUE.md (queue-hygiene
+    artifact from repeated append passes) — both instances updated in lockstep here.
     CI counter: 0/5. Fix iterations: 0/3.
 
 - id: FOLLOW-355
@@ -6279,24 +6276,21 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
 - id: FOLLOW-364
   title: Reconcile §D.6 coverage-summary counts to a clean 18-way partition
   agent: ml-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: ml-engineer
   started_at: '2026-07-01T00:00:00Z'
+  completed_at: '2026-07-01T19:24:10Z'
   priority: P2
   estimated_hours: 1
   depends_on: []
   source: RETRO-097 (FOLLOW-344 / PR #329)
   spec: backlog/FOLLOW_UPS.md (FOLLOW-364 stub)
   branch: ml-engineer/FOLLOW-364-d6-coverage-counts
+  pr: '#408'
   notes: |
-    Delegated 2026-07-01 (table row: intent/adapt logic, embeddings, LLM gateway, auto-detect,
-    ontology, platform-templates -> ml-engineer). Premise re-verified against current repo
-    2026-07-01: docs/MASTER_DESIGN.md:1954 still shows the double-counted §D.6 coverage summary
-    (two disjoint "Full" buckets — 8 + 2 — plus 6/2 quiz/chat-only split — sums to 18 but the
-    prose/table Status-column mapping is confusing per RETRO-097). Docs-only change, no runtime
-    wiring to verify at 5c. NOTE: this ticket had a byte-identical duplicate block elsewhere in
-    QUEUE.md (queue-hygiene artifact from repeated append passes) — both instances updated in
-    lockstep here to avoid a future double-pick.
+    DONE — PR #408 merged 2026-07-01T19:24:10Z. Docs-only §D.6 reconciliation, no runtime wiring.
+    NOTE: this ticket had a byte-identical duplicate block elsewhere in QUEUE.md (queue-hygiene
+    artifact from repeated append passes) — both instances updated in lockstep here.
     CI counter: 0/5. Fix iterations: 0/3.
 
 - id: FOLLOW-341
@@ -7597,26 +7591,71 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     repo-root, socket-hang) and add timeout-minutes defense-in-depth to every job (currently
     only archetype-embeddings-not-null has one).
 
+- id: FOLLOW-448
+  title: >-
+    Branch-first worker discipline + mechanical guardrail against stranding uncommitted work on main
+  agent: devops-engineer
+  status: IN_PROGRESS
+  assigned_to: devops-engineer
+  started_at: '2026-07-01T00:00:00Z'
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: RETRO-146 (§4e / §9) — source ticket FOLLOW-442 (PR #406)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-448 stub)
+  branch: devops-engineer/FOLLOW-448-branch-first-worker-discipline
+  notes: |
+    Delegated 2026-07-01 (table row: Terraform, CI/CD, workflows, secrets, observability,
+    runbooks -> devops-engineer). Promoted from FOLLOW_UPS.md stub (promoted_to_queue: false ->
+    true this session; P2 > P3 siblings FOLLOW-447/FOLLOW-395 per priority rule). Premise
+    re-verified 2026-07-01: RETRO-146 (PR #409) confirms the backend-engineer worker on
+    FOLLOW-442 stalled 600s and left the correct fix uncommitted directly on the `main` working
+    tree (never ran `git checkout -b`); PM recovered + independently re-verified
+    typecheck/lint/tests before opening PR #406. No existing hook under .claude/hooks/ currently
+    guards against edits on HEAD==main.
+    Scope (3 items, see FOLLOW_UPS.md FOLLOW-448 stub for full AC list):
+      1. Codify "git checkout -b <agent>/<ticket-id>-<kebab-summary> is the worker's mandated
+         FIRST action, before any file edit" in docs/AGENT_WORKFLOW.md + reference it from every
+         .claude/agents/*.md worker preamble (all 9 agents, not just devops-engineer's own).
+      2. Add a mechanical hook (under .claude/hooks/, e.g. a PreToolUse/SessionStart guard) that
+         detects `git rev-parse --abbrev-ref HEAD == main` and blocks-or-auto-branches before the
+         first edit; self-test that demonstrates it firing.
+      3. Add a "recovered/handed-off work must be independently re-verified (typecheck + lint +
+         ticket tests), never trusted on a claimed pass" step to the pm-orchestrator
+         handoff/recovery procedure in docs/AGENT_WORKFLOW.md (and .claude/agents/pm-orchestrator
+         definition if that is where the procedure is codified) — this is a docs/hook change, not
+         a change to pm-orchestrator's own runtime behavior, so it is in-scope for devops-engineer
+         to author; PM will review for accuracy before merge.
+    Do NOT touch unrelated CI gates (that is FOLLOW-447, separate ticket, do not merge scope).
+    CI counter: 0/5. Fix iterations: 0/3.
+
 - id: FOLLOW-442
   title: >-
     Fix POST /api/adapt holdout branch: add logDecisionAsync call so holdout rows are written to
     adaptation_decisions (AUD-04 / F-05)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-01T00:00:00Z'
+  completed_at: '2026-07-01T16:29:05Z'
   priority: P1
   estimated_hours: 1
   depends_on: []
   source: 2026-07-01 end-to-end code audit (F-05); unblocked by ESC-035 resolution
   spec: backlog/FOLLOW_UPS.md (FOLLOW-442 stub)
   branch: backend-engineer/FOLLOW-442-post-holdout-logdecision
+  pr: '#406'
   notes: |
-    Delegated 2026-07-01 (table row: ingest worker, control-plane, decision-api, Postgres/RLS,
-    auth, onboarding HTTP, billing, webhooks -> backend-engineer). Last remaining code item
-    on the hard pilot go-live gate. GET handler's holdout-adjacent treatment-arm call
-    (route.ts:942-960) and POST's own treatment-arm call (route.ts:1403-1421) are the
-    reference patterns; this ticket adds the missing equivalent call in the POST holdout
+    DONE — PR #406 merged 2026-07-01T16:29:05Z. Last remaining code item on the hard pilot
+    go-live gate — gate now fully clear on the code side (ESC-035 resolved + FOLLOW-329/439/
+    440/441/442 all DONE + FOLLOW-392 prod seed verified). During implementation the worker
+    stalled 600s leaving the fix uncommitted on the main working tree; PM recovered it onto
+    the correct branch and independently re-verified typecheck+lint+11/11 holdout tests before
+    opening the PR. RETRO-146 (PR #409) generated FOLLOW-448 (P2, branch-first worker
+    discipline + mechanical guardrail) to prevent recurrence. GET handler's holdout-adjacent
+    treatment-arm call (route.ts:942-960) and POST's own treatment-arm call
+    (route.ts:1403-1421) are the reference patterns; this ticket adds the missing equivalent
+    call in the POST holdout
     branch (route.ts:~1141-1156).
 ```
 

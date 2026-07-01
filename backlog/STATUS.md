@@ -1,22 +1,37 @@
-# Status — 2026-07-01 (Sprint 22 ACTIVE — Audit wave; ESC-035 RESOLVED (code-fix merged); FOLLOW-442 is the last code item on the hard pilot go-live gate)
+# Status — 2026-07-01 (Sprint 22 ACTIVE — Audit wave; ESC-035 RESOLVED; hard pilot go-live gate fully clear on the code side — FOLLOW-442 merged #406; PM picking up FOLLOW-448)
 
 ## AUDIT 2026-07-01 — Pilot-blocking findings promoted to tickets
 
 A staff-level end-to-end code audit (F-01..F-25, verdict YELLOW) completed this session. Five
 pilot-blocking findings were promoted; four are now DONE:
 
-| Audit ref | FOLLOW / ESC | Priority | Agent          | Status                                                                                            | Summary                                                                                              |
-| --------- | ------------ | -------- | -------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| F-01      | FOLLOW-439   | P0       | backend        | DONE (#398)                                                                                       | Lift route: delete buildMockLiftRows, fix dqsUnavailable=false, add data_source                      |
-| F-02      | FOLLOW-440   | P0       | backend        | DONE (#398)                                                                                       | Fix assigned_at→ts + phantom latency_ms in summary + inquiry-starts                                  |
-| F-04      | FOLLOW-329   | P0       | backend        | DONE (#398)                                                                                       | Summary route: same fail-loud + data_source fix (resolved in same PR as 439/440)                     |
-| F-05      | FOLLOW-442   | P1       | backend        | **IN_PROGRESS (PR #406, CI running, human-authorized to merge on green — main session watching)** | POST adapt holdout missing logDecisionAsync                                                          |
-| F-06      | FOLLOW-441   | P0       | data           | DONE (#399)                                                                                       | Prod CH write-verification canary for logDecisionAsync                                               |
-| F-09      | **ESC-035**  | **SEC**  | human decision | **RESOLVED**                                                                                      | SECURITY fix shipped: ADR-0015 ACCEPTED + FOLLOW-443 merged (#401); FOLLOW-444 interim merged (#397) |
+| Audit ref | FOLLOW / ESC | Priority | Agent          | Status                                   | Summary                                                                                              |
+| --------- | ------------ | -------- | -------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| F-01      | FOLLOW-439   | P0       | backend        | DONE (#398)                              | Lift route: delete buildMockLiftRows, fix dqsUnavailable=false, add data_source                      |
+| F-02      | FOLLOW-440   | P0       | backend        | DONE (#398)                              | Fix assigned_at→ts + phantom latency_ms in summary + inquiry-starts                                  |
+| F-04      | FOLLOW-329   | P0       | backend        | DONE (#398)                              | Summary route: same fail-loud + data_source fix (resolved in same PR as 439/440)                     |
+| F-05      | FOLLOW-442   | P1       | backend        | DONE (#406, merged 2026-07-01T16:29:05Z) | POST adapt holdout missing logDecisionAsync                                                          |
+| F-06      | FOLLOW-441   | P0       | data           | DONE (#399)                              | Prod CH write-verification canary for logDecisionAsync                                               |
+| F-09      | **ESC-035**  | **SEC**  | human decision | **RESOLVED**                             | SECURITY fix shipped: ADR-0015 ACCEPTED + FOLLOW-443 merged (#401); FOLLOW-444 interim merged (#397) |
 
 FOLLOW-392 (prod archetype seed) DONE — verified 18/18 seeded in prod 2026-07-01 (PR #402 corrected
 the stale NULL claim). CI gate hardening follow-ons FOLLOW-446 DONE (#403), FOLLOW-447 (P3, READY,
 not pilot-blocking).
+
+**HARD PILOT GO-LIVE GATE: FULLY CLEAR ON THE CODE SIDE as of 2026-07-01T19:24Z** (ESC-035
+RESOLVED + FOLLOW-329/439/440/441/442 all DONE + FOLLOW-392 prod seed verified). Only the two
+non-blocking operator actions remain outside the pipeline: ESC-034 (Modal embed-seed go-live) and
+setting `OPS_TENANT_ID`/`ADAPT_API_KEY`/`FEEDBACK_ENDPOINT_ENABLED` in Doppler `prd` (see below).
+
+RETRO-146 (PR #409, for FOLLOW-442) surfaced a near-miss: the backend-engineer worker stalled 600s
+mid-ticket, leaving the correct fix uncommitted directly on the `main` working tree (never ran
+`git checkout -b`). PM recovered it onto the proper branch, independently re-ran
+typecheck+lint+11/11 holdout tests (never trusting the stalled worker's unclaimed "passing" state),
+then committed/pushed/opened the PR. Generated FOLLOW-448 (P2, devops-engineer + pm-orchestrator) —
+branch-first worker discipline + a mechanical `HEAD==main` guard hook + formalizing "recovered work
+must be independently re-verified" in the PM handoff procedure. Promoted to QUEUE.md and delegated
+this session (queue hygiene: FOLLOW-364 and FOLLOW-442 were also corrected from stale IN_PROGRESS to
+DONE in QUEUE.md — both were already merged, #408 and #406 respectively).
 
 **HARD PILOT GO-LIVE GATE:** ESC-035 RESOLVED ✓ + FOLLOW-329/439/440/441 DONE ✓ + FOLLOW-392 seed
 run ✓. Only **FOLLOW-442** remains open on the code side. Separately, an **operator action** remains

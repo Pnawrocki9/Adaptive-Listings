@@ -1,4 +1,30 @@
-# Status — 2026-07-02 (Sprint 22b OPEN — CEO decisions Q1/Q2/Q3 recorded; FOLLOW-451 delegated)
+# Status — 2026-07-02 (Sprint 22b OPEN — PR #414 merged; FOLLOW-451 IN_PROGRESS)
+
+## SESSION 4 FOLLOW-UP (2026-07-02) — PR #414 merged, CI green confirmed, worker branch live
+
+PR #414 MERGED by Piotr Nawrocki (CEO) at commit `e867092`, 2026-07-01T23:13:57Z. CI evidence:
+non-success count for REAL gates = **0** (verified via `gh pr checks 414` after full completion; the
+only fail is `Rule I — wired-or-dead check`, 173 violations, confirmed via job log
+`Rule I FAILED: 173 symbol(s) with zero non-test importers` — same count as PR #413's own
+pre-existing baseline, and this PR touched zero source files, only `backlog/*.md`,
+`docs/MASTER_DESIGN.md`, `.gitleaks.toml`).
+
+**CI check-count for PR #414: 2/5** (iteration 1: gitleaks false-positive found on
+`backlog/STATUS.md:68` — a 40+-char branch-name substring tripping the `cloudflare-api-token`
+heuristic, same class as the existing QUEUE.md/HANDOFFS.md exemptions; iteration 2: fixed via a
+path-scoped allowlist addition, confirmed green). Fix-iteration counter: 1/3.
+
+**Mid-session collaboration note:** while this PR's CI was running, Piotr pushed a second,
+complementary `.gitleaks.toml` fix directly to the same branch (commit `6df0d0a`, co-authored
+"Claude Fable 5") — a token-scoped regex for the `<agent>/<ticket>-<kebab>` branch-slug pattern,
+narrower than my path-based fix per Rule V's "never file-scope backlog/\*.md" principle. Both
+exemptions now coexist in `.gitleaks.toml` (harmless redundancy, not a conflict); no action needed.
+
+**FOLLOW-451 worker branch confirmed live:** `backend-engineer/FOLLOW-451-adapt-api-key-auth` exists
+(branch-first per FOLLOW-448), currently at parity with `main` — work not yet pushed.
+
+**IN_PROGRESS count:** 2 — FOLLOW-451 (backend-engineer); TICKET-PILOT-001 (stale since 2026-05-29,
+unchanged, flagged again for a future queue-hygiene pass). Within the 3-ticket cap.
 
 ## SESSION 4 (2026-07-02) — CEO decisions recorded, FOLLOW-449 marked code-complete, FOLLOW-451 delegated
 

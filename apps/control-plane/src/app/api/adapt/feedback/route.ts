@@ -4,38 +4,40 @@
  * FOLLOW-007. Fire-and-forget conversion signal endpoint. The SDK calls this
  * route when an outcome event (inquiry / click-through / configurable goal)
  * is observed for a previously-served `(tenant_id, archetype, variant)`
- * triple. The server:
+ * triple.
  *
- *   1. Reads the matching row from `ab_bandit_weights` via the composite
- *      index `ab_bandit_weights_tenant_archetype_idx`.
- *   2. Computes new Beta parameters with `updateBanditArm(alpha, beta, converted)`:
- *        converted=true  → alpha += 1
- *        converted=false → beta  += 1
- *   3. Upserts the updated row (insert with `onConflictDoUpdate`).
- *   4. Returns `202 Accepted` immediately — the DB write is fire-and-forget
- *      so the SDK's outcome ping never blocks the user-visible adapt flow.
+ * Auth: ADR-0015 (FOLLOW-443, closes ESC-035/F-09).
  *
- * Auth: HMAC-SHA256 tenant-scoped signature (FOLLOW-051).
+ * Verification algorithm (ADR-0015 §Verification Algorithm):
  *
- * The SDK sends:
+ *   Step 1 — Guard: FEEDBACK_ENDPOINT_ENABLED === 'true' (pilot launch toggle).
+ *   Step 2 — Ops bypass (ADAPT_API_KEY env var):
+ *              if bearerToken === ADAPT_API_KEY:
+ *                if OPS_TENANT_ID not set → 500 (server misconfiguration)
+ *                resolvedTenantId = OPS_TENANT_ID
+ *                goto Step 6 (skip SHA-256 lookup + HMAC check)
+ *   Step 3 — resolveApiKey(req): SHA-256(bearerToken) → api_keys lookup.
+ *              Constant-time belt-and-suspenders compare.
+ *              Failure → 401 (404 normalized to 401 — no key-existence leak).
+ *   Step 4 — resolvedTenantId = row.tenantId.
+ *   Step 5 — HMAC body signature (defense-in-depth):
+ *              X-Estalara-Signature = HMAC-SHA256(bearerToken, rawBody).
+ *              Missing / malformed / mismatch → 401.
+ *   Step 6 — Parse body JSON (Zod).  Failure → 400.
+ *   Step 7 — Cross-tenant enforcement:
+ *              body.tenant_id !== resolvedTenantId → 403.
+ *   Step 8 — Fire-and-forget writes (afterResponse) using resolvedTenantId.
+ *              Returns 202 Accepted.
+ *
+ * SDK wire contract (unchanged — no SDK re-deployment required):
  *   Authorization: Bearer {rawApiKey}
- *   X-Estalara-Signature: {hmacHex}
+ *   X-Estalara-Signature: HMAC_SHA256(rawApiKey, rawBodyText)
+ *   Body: { session_id, tenant_id, archetype, variant, converted,
+ *           [prediction_id], [lead_id] }
  *
- * The server:
- *   1. Extracts the raw Bearer token (= tenant's public API key).
- *   2. Reads the raw request body as text.
- *   3. Computes HMAC-SHA256(key=rawApiKey, data=rawBodyText).
- *   4. Constant-time compares against the X-Estalara-Signature header value.
- *
- * Fallback: when `ADAPT_API_KEY` env var is set (ops / integration testing), a
- * matching Bearer token is accepted directly without HMAC verification.
- *
- * Threat model (FOLLOW-051):
- *   - Protects against external adversaries who do not know the tenant's API key.
- *   - Does NOT protect against a malicious tenant manipulating their own bandit
- *     weights — that is an acceptable risk because tenant_id is already scoped.
- *   - Prevents cross-tenant poisoning (attacker must know the specific tenant
- *     key to produce a valid signature for that tenant's weights).
+ * FEEDBACK_ENDPOINT_ENABLED gate: The 503 block (Step 1) is NOT removed in
+ * this PR. Ops sets FEEDBACK_ENDPOINT_ENABLED=true at pilot go-live only after
+ * this PR merges and CI is green (per ADR-0015 §Lifting the interim 503).
  *
  * @module apps/control-plane/src/app/api/adapt/feedback/route
  */
@@ -46,6 +48,7 @@ import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 
 import { afterResponse } from '@/lib/after-response';
+import { resolveApiKey, constantTimeEqual, type ApiKeyAuthResult } from '@/lib/api-key-auth';
 
 import { errorBody, ErrorCode, updateBanditArm, outcomeClassFromConverted } from '@estalara/shared';
 import { createAdminClient, abBanditWeights, upsertConversionLabel } from '@estalara/db';
@@ -69,11 +72,14 @@ const FeedbackBodySchema = z.object({
   lead_id: z.string().max(256).optional(),
 });
 
-// ─── HMAC helpers ─────────────────────────────────────────────────────────────
+// ─── HMAC helper (defense-in-depth body signature) ───────────────────────────
 
 /**
  * Compute HMAC-SHA256(key=secret, data=message) and return the lower-case hex digest.
  * Uses the Web Crypto API available in the Next.js runtime.
+ *
+ * Used only for Step 5 (body signature defense-in-depth). The auth key (Step 3)
+ * is resolved via SHA-256 DB lookup in resolveApiKey() from @/lib/api-key-auth.
  *
  * @internal
  */
@@ -90,58 +96,6 @@ async function hmacSha256Hex(secret: string, message: string): Promise<string> {
   return Array.from(new Uint8Array(sig))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
-}
-
-/**
- * Constant-time hex string comparison. Returns true iff `a === b` without
- * short-circuiting (prevents timing side-channels).
- *
- * Both inputs must be lower-case hex of equal length; if lengths differ the
- * function returns false immediately (length itself is not secret).
- *
- * @internal
- */
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-}
-
-/**
- * Verify the HMAC-SHA256 signature on a feedback request.
- *
- * Returns true when:
- *   (a) ADAPT_API_KEY is set and the Bearer token matches it (ops fallback), or
- *   (b) X-Estalara-Signature header is present and valid for the given Bearer
- *       token (raw API key) + raw body.
- *
- * Returns false in all other cases (missing signature, wrong key, etc.).
- *
- * @internal
- */
-async function verifyFeedbackAuth(
-  bearerToken: string,
-  signatureHeader: string | null,
-  rawBody: string,
-): Promise<boolean> {
-  // Ops / integration-test fallback: ADAPT_API_KEY present → accept direct key match.
-  const adaptApiKey = process.env.ADAPT_API_KEY;
-  if (adaptApiKey && bearerToken === adaptApiKey) {
-    return true;
-  }
-
-  // HMAC path: require X-Estalara-Signature header.
-  if (!signatureHeader) return false;
-
-  const providedHex = signatureHeader.trim().toLowerCase();
-  // Reject obviously-malformed values (non-hex chars, wrong length for SHA-256).
-  if (!/^[0-9a-f]{64}$/.test(providedHex)) return false;
-
-  const expectedHex = await hmacSha256Hex(bearerToken, rawBody);
-  return constantTimeEqual(providedHex, expectedHex);
 }
 
 // ─── Fire-and-forget bandit arm update ───────────────────────────────────────
@@ -270,32 +224,24 @@ async function upsertConversionLabelAsync(args: {
 /**
  * POST /api/adapt/feedback
  *
- * Body:
- *   session_id  — string (required)
- *   tenant_id   — string (required)
- *   archetype   — string (required)
- *   variant     — string (required)
- *   converted   — boolean (required)
- *
- * Auth: HMAC-SHA256 tenant-scoped signature (FOLLOW-051).
- *   Authorization: Bearer {rawApiKey}
- *   X-Estalara-Signature: {hmacSha256OfBodyHex}
- *
- * Fallback: when `ADAPT_API_KEY` env var is set, a matching Bearer token is
- * accepted directly (ops/integration-test convenience).
+ * Auth: ADR-0015 (FOLLOW-443). SHA-256 bearer→tenant resolution + HMAC body sig.
  *
  * Responses:
  *   202 Accepted  — feedback acknowledged; DB update happens asynchronously.
  *   400 VALIDATION_ERROR — invalid body.
- *   401 AUTH_REQUIRED / FORBIDDEN — missing or invalid auth.
- *   503 SERVICE_TEMPORARILY_UNAVAILABLE — endpoint disabled by default (ESC-035 interim).
+ *   401 AUTH_REQUIRED / FORBIDDEN — missing bearer, unknown/revoked key, bad HMAC sig.
+ *   403 FORBIDDEN — body.tenant_id does not match the API key's tenant.
+ *   500 INTERNAL_ERROR — server misconfiguration (OPS_TENANT_ID unset with ADAPT_API_KEY).
+ *   503 SERVICE_TEMPORARILY_UNAVAILABLE — endpoint disabled (FEEDBACK_ENDPOINT_ENABLED unset).
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
 
-  // ESC-035: Feedback endpoint disabled by default (secure-by-default) pending FOLLOW-443 full fix.
-  // REMOVE this block when FOLLOW-443 ADR + backend full-fix implementation ships.
-  // Set FEEDBACK_ENDPOINT_ENABLED=true ONLY after the HMAC auth fix ships.
+  // ── Step 1: Guard — endpoint enabled ─────────────────────────────────────
+  // ESC-035: Feedback endpoint disabled by default (secure-by-default).
+  // Set FEEDBACK_ENDPOINT_ENABLED=true ONLY after ADR-0015 fix ships and CI is green
+  // (ADR-0015 §Lifting the interim 503). This block is NOT removed in FOLLOW-443 —
+  // it stays until ops enables it at pilot go-live.
   if (process.env.FEEDBACK_ENDPOINT_ENABLED !== 'true') {
     return NextResponse.json(
       {
@@ -306,7 +252,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Auth gate ─────────────────────────────────────────────────────────────
+  // ── Extract bearer token ──────────────────────────────────────────────────
   const auth = req.headers.get('Authorization') ?? req.headers.get('authorization');
   const bearerToken = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : '';
   if (!bearerToken) {
@@ -320,7 +266,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // Read raw body text once — used for both JSON parsing and HMAC verification.
+  // ── Read raw body text once — needed for HMAC verification (Step 5) ──────
   let rawBody: string;
   try {
     rawBody = await req.text();
@@ -335,21 +281,115 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const signatureHeader = req.headers.get('X-Estalara-Signature');
-  const authOk = await verifyFeedbackAuth(bearerToken, signatureHeader, rawBody);
-  if (!authOk) {
-    return NextResponse.json(
-      errorBody({
-        code: ErrorCode.FORBIDDEN,
-        message:
-          'Invalid or missing HMAC signature. Expected X-Estalara-Signature: HMAC-SHA256(apiKey, body)',
-        requestId,
-      }),
-      { status: 401 },
-    );
+  // ── Steps 2-5: Auth resolution ────────────────────────────────────────────
+  let resolvedTenantId: string;
+
+  const adaptApiKey = process.env.ADAPT_API_KEY;
+  if (adaptApiKey && bearerToken === adaptApiKey) {
+    // ── Step 2: Ops bypass (ADAPT_API_KEY path) ──────────────────────────
+    // ADAPT_API_KEY is a server-side Doppler secret; never in the browser.
+    // Permanent disposition (CEO 2026-07-01, ADR-0015): scoped to OPS_TENANT_ID only.
+    // If OPS_TENANT_ID is not configured, this is a server misconfiguration (→ 500).
+    const opsTenantId = process.env.OPS_TENANT_ID;
+    if (!opsTenantId) {
+      return NextResponse.json(
+        {
+          error: 'INTERNAL_ERROR',
+          message: 'OPS_TENANT_ID must be set alongside ADAPT_API_KEY (server misconfiguration).',
+        },
+        { status: 500 },
+      );
+    }
+    resolvedTenantId = opsTenantId;
+    // Skip Steps 3-5 (SHA-256 lookup + HMAC check) for the ops path.
+  } else {
+    // ── Step 3: resolveApiKey — SHA-256(bearerToken) → api_keys lookup ───
+    // Failure (key not found, revoked, expired) → 401.
+    // We normalize 404 → 401 to avoid leaking key-existence information
+    // on this mutation endpoint.
+    let keyAuth: ApiKeyAuthResult;
+    try {
+      keyAuth = await resolveApiKey(req);
+    } catch (err) {
+      // DB threw during auth lookup (configured-but-failed, Rule K.2).
+      console.error('[adapt/feedback] auth DB error', err);
+      try {
+        const { captureException } = await import('@sentry/nextjs');
+        captureException(err);
+      } catch {
+        // Sentry not configured in this env
+      }
+      return NextResponse.json(
+        errorBody({
+          code: ErrorCode.FORBIDDEN,
+          message: 'Authentication service temporarily unavailable',
+          requestId,
+        }),
+        { status: 401 },
+      );
+    }
+
+    if (!keyAuth.ok) {
+      // Normalize 404 → 401 (no key-existence oracle on mutation endpoint).
+      return NextResponse.json(
+        errorBody({
+          code: ErrorCode.FORBIDDEN,
+          message: 'Invalid or missing API key',
+          requestId,
+        }),
+        { status: 401 },
+      );
+    }
+
+    // ── Step 4: resolvedTenantId from the authenticated key row ──────────
+    resolvedTenantId = keyAuth.tenantId;
+
+    // ── Step 5: HMAC body signature (defense-in-depth) ───────────────────
+    // Proves the caller knows the raw API key value by computing a keyed
+    // digest over the exact body content. Prevents replay of any body by
+    // a caller who only observes a valid (key, HMAC) pair but doesn't know rawKey.
+    const signatureHeader = req.headers.get('X-Estalara-Signature');
+    if (!signatureHeader) {
+      return NextResponse.json(
+        errorBody({
+          code: ErrorCode.FORBIDDEN,
+          message:
+            'Invalid or missing HMAC signature. Expected X-Estalara-Signature: HMAC-SHA256(apiKey, body)',
+          requestId,
+        }),
+        { status: 401 },
+      );
+    }
+
+    const providedHex = signatureHeader.trim().toLowerCase();
+    // Reject obviously-malformed values (non-hex chars, wrong length for SHA-256).
+    if (!/^[0-9a-f]{64}$/.test(providedHex)) {
+      return NextResponse.json(
+        errorBody({
+          code: ErrorCode.FORBIDDEN,
+          message:
+            'Invalid or missing HMAC signature. Expected X-Estalara-Signature: HMAC-SHA256(apiKey, body)',
+          requestId,
+        }),
+        { status: 401 },
+      );
+    }
+
+    const expectedHex = await hmacSha256Hex(bearerToken, rawBody);
+    if (!constantTimeEqual(providedHex, expectedHex)) {
+      return NextResponse.json(
+        errorBody({
+          code: ErrorCode.FORBIDDEN,
+          message:
+            'Invalid or missing HMAC signature. Expected X-Estalara-Signature: HMAC-SHA256(apiKey, body)',
+          requestId,
+        }),
+        { status: 401 },
+      );
+    }
   }
 
-  // ── Parse + validate body ─────────────────────────────────────────────────
+  // ── Step 6: Parse + validate body ─────────────────────────────────────────
   let raw: unknown;
   try {
     raw = JSON.parse(rawBody) as unknown;
@@ -377,41 +417,34 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ESC-035: Scope the ADAPT_API_KEY ops bypass to a single designated ops tenant
-  // (FOLLOW-444). When OPS_TENANT_ID is set, requests for any other tenant_id are
-  // rejected. This prevents the ops key from writing arbitrary tenants while the
-  // full HMAC fix (FOLLOW-443) is pending. Remove / replace with api_keys lookup
-  // when FOLLOW-443 ships.
-  const opsTenantId = process.env.OPS_TENANT_ID;
-  if (opsTenantId && parsed.data.tenant_id !== opsTenantId) {
+  // ── Step 7: Cross-tenant enforcement ──────────────────────────────────────
+  // The tenantId used for all downstream writes is ALWAYS resolvedTenantId
+  // (from the authenticated key row, or from OPS_TENANT_ID for the ops path).
+  // body.tenant_id is compared against it to catch misconfigured callers and
+  // cross-tenant write attempts.
+  if (parsed.data.tenant_id !== resolvedTenantId) {
     return NextResponse.json(
-      { error: 'FORBIDDEN', message: 'Ops key may only write the designated ops tenant.' },
+      {
+        error: 'FORBIDDEN',
+        message: 'tenant_id in body does not match the API key tenant',
+      },
       { status: 403 },
     );
   }
 
-  // ── Fire-and-forget bandit update ─────────────────────────────────────────
+  // ── Step 8: Fire-and-forget writes ────────────────────────────────────────
   // FOLLOW-433 / ESC-033: registered via afterResponse() so the DB write
   // completes after the response before Vercel instance suspension.
-  // We intentionally do NOT await the DB write here — the SDK's outcome ping
-  // must never block. The microtask returns a resolved promise immediately,
-  // and the DB upsert progresses in the background.
+  // All writes use resolvedTenantId — never parsed.data.tenant_id directly.
   afterResponse(() =>
     updateArmAsync({
-      tenantId: parsed.data.tenant_id,
+      tenantId: resolvedTenantId,
       archetype: parsed.data.archetype,
       variant: parsed.data.variant,
       converted: parsed.data.converted,
     }),
   );
 
-  // ── Fire-and-forget conversion-label persistence (FOLLOW-171, §T) ─────────
-  // FOLLOW-433 / ESC-033: registered via afterResponse() so the durable
-  // (prediction, outcome) write completes after the response before Vercel
-  // instance suspension.
-  // When the SDK supplies prediction_id (= adapt_decision_id), persist the durable
-  // (prediction, outcome) pair so it survives for later fine-tuning instead of being
-  // collapsed into the bandit counters. Older SDKs omit prediction_id → bandit-only.
   if (parsed.data.prediction_id) {
     // Capture the narrowed string in a local const so the closure does not need
     // a non-null assertion — TypeScript cannot narrow through the closure boundary
@@ -419,7 +452,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const predictionId: string = parsed.data.prediction_id;
     afterResponse(() =>
       upsertConversionLabelAsync({
-        tenantId: parsed.data.tenant_id,
+        tenantId: resolvedTenantId,
         predictionId,
         leadId: parsed.data.lead_id ?? '',
         converted: parsed.data.converted,

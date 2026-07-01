@@ -1,6 +1,6 @@
 # ADR-0015 — Feedback endpoint authentication: permanent fix for ESC-035 / F-09
 
-**Status:** PROPOSED — 2026-07-01 **Tickets:** FOLLOW-443 (P0 design), FOLLOW-444 (interim 503
+**Status:** ACCEPTED — 2026-07-01 **Tickets:** FOLLOW-443 (P0 design), FOLLOW-444 (interim 503
 already merged PR #397) **Cross-references:** ESC-035, ADR-0006, ADR-0013, Master Design §V.3.2,
 §V.3.5, `apps/control-plane/src/app/api/adapt/feedback/route.ts`,
 `apps/control-plane/src/app/api/quiz/public-config/route.ts` (existing `resolveApiKey` pattern),

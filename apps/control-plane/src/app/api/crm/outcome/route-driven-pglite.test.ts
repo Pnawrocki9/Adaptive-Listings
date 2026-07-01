@@ -369,7 +369,10 @@ describe('AC1 (FOLLOW-250): CRM route writes the correct conversion_labels row',
 describe('AC3 (FOLLOW-250): two-writer convergence — feedback→CRM on same prediction_id', () => {
   beforeEach(() => {
     vi.stubEnv('ADAPT_API_KEY', 'ops-test-key');
-    vi.stubEnv('ADAPT_TENANT_ID', TENANT_ID);
+    vi.stubEnv('ADAPT_TENANT_ID', TENANT_ID); // used by crm/outcome ops path
+    // ADR-0015 (FOLLOW-443): feedback route ops path requires OPS_TENANT_ID alongside
+    // ADAPT_API_KEY. ADAPT_TENANT_ID is used by crm/outcome; OPS_TENANT_ID by feedback.
+    vi.stubEnv('OPS_TENANT_ID', TENANT_ID);
     // FEEDBACK_ENDPOINT_ENABLED=true so the feedback route is reachable in this
     // integration test (ESC-035 secure-by-default gate; prod keeps this unset).
     vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');

@@ -178,6 +178,11 @@ regexes = [
   '''C5AD17C747E3415A3642D57D77C6C491D6AC1D69''',
   '''mnt/transcripts/''',
   '''0019_adaptation_decisions_page_context''',
+  # ADR kebab filenames (e.g. ADR-0015-feedback-endpoint-authentication) are cited in @see
+  # doc-comments inside code modules OUTSIDE docs/adr/ (e.g. lib/api-key-auth.ts). Their 40-char
+  # substrings false-positive on this generic heuristic. Token-scoped allowlist per Rule V — do NOT
+  # path-ignore the secret-handling file. Real Cloudflare tokens are random, never ADR-NNNN-kebab.
+  '''ADR-\d{4}-[a-z0-9-]+''',
 ]
 
 # JWT tokens (generic)

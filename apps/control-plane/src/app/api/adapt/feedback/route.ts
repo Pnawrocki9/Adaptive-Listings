@@ -288,9 +288,23 @@ async function upsertConversionLabelAsync(args: {
  *   202 Accepted  — feedback acknowledged; DB update happens asynchronously.
  *   400 VALIDATION_ERROR — invalid body.
  *   401 AUTH_REQUIRED / FORBIDDEN — missing or invalid auth.
+ *   503 SERVICE_TEMPORARILY_UNAVAILABLE — endpoint disabled by default (ESC-035 interim).
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
+
+  // ESC-035: Feedback endpoint disabled by default (secure-by-default) pending FOLLOW-443 full fix.
+  // REMOVE this block when FOLLOW-443 ADR + backend full-fix implementation ships.
+  // Set FEEDBACK_ENDPOINT_ENABLED=true ONLY after the HMAC auth fix ships.
+  if (process.env.FEEDBACK_ENDPOINT_ENABLED !== 'true') {
+    return NextResponse.json(
+      {
+        error: 'SERVICE_TEMPORARILY_UNAVAILABLE',
+        message: 'Feedback endpoint temporarily disabled pending security fix.',
+      },
+      { status: 503 },
+    );
+  }
 
   // ── Auth gate ─────────────────────────────────────────────────────────────
   const auth = req.headers.get('Authorization') ?? req.headers.get('authorization');
@@ -360,6 +374,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         details: { issues: parsed.error.flatten() },
       }),
       { status: 400 },
+    );
+  }
+
+  // ESC-035: Scope the ADAPT_API_KEY ops bypass to a single designated ops tenant
+  // (FOLLOW-444). When OPS_TENANT_ID is set, requests for any other tenant_id are
+  // rejected. This prevents the ops key from writing arbitrary tenants while the
+  // full HMAC fix (FOLLOW-443) is pending. Remove / replace with api_keys lookup
+  // when FOLLOW-443 ships.
+  const opsTenantId = process.env.OPS_TENANT_ID;
+  if (opsTenantId && parsed.data.tenant_id !== opsTenantId) {
+    return NextResponse.json(
+      { error: 'FORBIDDEN', message: 'Ops key may only write the designated ops tenant.' },
+      { status: 403 },
     );
   }
 

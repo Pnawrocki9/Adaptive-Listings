@@ -12557,7 +12557,144 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 439 (438 = RETRO-143 §4a LG-1 — CI lint guard: assert exactly one
+---
+
+### FOLLOW-439 — Fix lift route fabricated metrics: remove `buildMockLiftRows` fallback, correct `dqsUnavailable=false` on error, add `data_source` provenance (AUD-01 / F-01)
+
+- **source_retro:** 2026-07-01 end-to-end code audit (F-01)
+- **source_ticket:** AUD-01 (sibling of FOLLOW-329 which covers summary/route.ts)
+- **recommended_sprint:** current (P0 — pilot go-live blocker)
+- **recommended_agent:** backend-engineer
+- **priority:** P0
+- **estimated_hours:** 2
+- **scope:** `apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts:215-304`.
+  `buildMockLiftRows(tenantId)` is called when ClickHouse returns an error (line 269) but
+  `dqsUnavailable` is set to `false` on the SAME line (270), so the response appears as real data
+  with fabricated numbers. The correct path on ANY ClickHouse error is: (a) set
+  `dqsUnavailable = true`, (b) return empty rows `[]`, (c) add a `data_source: 'error'` field to the
+  response body. Additionally, every successful CH response should carry
+  `data_source: 'clickhouse'`. Mirror the correct pattern in
+  `apps/control-plane/src/app/api/pilot/cta-lift/route.ts:352-369`. Delete `buildMockLiftRows`
+  entirely — it is never safe to serve fabricated lift metrics with `dqsUnavailable=false`.
+  FOLLOW-329 is the sibling ticket covering the same fix for `summary/route.ts`; both may be done in
+  one PR.
+- **ac:**
+  - [ ] `buildMockLiftRows` is deleted from `lift/route.ts`.
+  - [ ] On any ClickHouse fetch error, `dqsUnavailable = true` and `rows = []`.
+  - [ ] Every `200 OK` response from `/api/dashboard/analytics/lift` carries
+        `data_source: 'clickhouse' | 'error'`.
+  - [ ] Unit test: stub CH to return 500 → assert response has `dqsUnavailable: true`, `rows: []`,
+        `data_source: 'error'`.
+  - [ ] Unit test: stub CH to return valid row → assert `data_source: 'clickhouse'`.
+  - [ ] pnpm lint + typecheck + test pass; CI green.
+- **promoted_to_queue:** false
+
+---
+
+### FOLLOW-440 — Fix phantom columns in summary + inquiry-starts routes: `assigned_at`→`ts`, drop or null-safe `latency_ms` p95 tile (AUD-02 / F-02)
+
+- **source_retro:** 2026-07-01 end-to-end code audit (F-02)
+- **source_ticket:** AUD-02
+- **recommended_sprint:** current (P0 — pilot go-live blocker; both routes currently 500 in prod)
+- **recommended_agent:** backend-engineer
+- **priority:** P0
+- **estimated_hours:** 2
+- **scope:** Two routes query columns that do not exist on `adaptation_decisions` (schema
+  established by `infra/clickhouse/migrations/0003`; only `ts` exists for the timestamp;
+  `latency_ms` is not present):
+  1. `apps/control-plane/src/app/api/dashboard/analytics/summary/route.ts:60,63` —
+     `quantile(0.95)(latency_ms)` and `AND assigned_at >= now() - INTERVAL 7 DAY` Both cause a
+     ClickHouse 500 → `buildMockSummary` fallback fires with fabricated data. Fix: replace
+     `assigned_at` with `ts`. For `latency_ms`, either drop the p95 tile entirely (return
+     `p95_latency: null`) or add a sentinel `if (isNaN(p95)) return null` guard — do NOT keep
+     querying a non-existent column.
+  2. `apps/control-plane/src/app/api/pilot/inquiry-starts/route.ts:136,185` —
+     `AND ad.assigned_at >= now() - INTERVAL ...` on both query arms. Replace with
+     `AND ad.ts >= now() - INTERVAL ...`.
+- **ac:**
+  - [ ] `assigned_at` references in both files replaced with `ts`.
+  - [ ] `latency_ms` tile in `summary/route.ts` is either removed or replaced with a column that
+        actually exists, with `p95_latency: null` as the safe fallback.
+  - [ ] Unit tests for both routes: mock a successful CH response with correct column names and
+        confirm the route returns `200` without falling back to mock data.
+  - [ ] `buildMockSummary` (if still present after FOLLOW-329) is only reachable when
+        `dqsUnavailable = true`.
+  - [ ] pnpm lint + typecheck + test pass; CI green.
+- **depends_on:** Can be done in the same PR as FOLLOW-439 and FOLLOW-329 (all backend, same file
+  cluster).
+- **promoted_to_queue:** false
+
+---
+
+### FOLLOW-441 — Add a prod ClickHouse write-verification canary for `logDecisionAsync` (AUD-03 / F-06)
+
+- **source_retro:** 2026-07-01 end-to-end code audit (F-06)
+- **source_ticket:** AUD-03
+- **recommended_sprint:** current (P0 — pilot go-live blocker)
+- **recommended_agent:** data-engineer
+- **priority:** P0
+- **estimated_hours:** 3
+- **scope:** RETRO-133 found zero rows in prod `adaptation_decisions` after ESC-031 was supposedly
+  fixed. FOLLOW-422 later attested writes were flowing. But there is no ongoing canary: if a future
+  migration causes a silent column mismatch, `logDecisionAsync` will drop rows again with no
+  alerting. Add a lightweight write-verification canary:
+  - A scheduled GitHub Actions workflow (or Modal cron, or a new `/api/internal/ch-canary` endpoint
+    called from an existing health check) that:
+    1. INSERTs a sentinel canary row into `adaptation_decisions` (with `demo_override=true` or a
+       dedicated `is_canary=true` UInt8 column, whichever is simpler).
+    2. SELECTs the row back within 5 seconds.
+    3. Fires a Sentry alert (or `process.env.SENTRY_DSN` error) if the row is absent.
+  - The canary must use the SAME CH credentials as `logDecisionAsync` (not a superuser).
+  - If a dedicated column is not possible without a migration, use `session_id` prefixed with
+    `__canary__` as the sentinel discriminator and filter it out of prod queries.
+- **ac:**
+  - [ ] A scheduled canary runs at least every 15 minutes in prod.
+  - [ ] The canary fires a Sentry error (or equivalent alert) if the round-trip fails.
+  - [ ] The canary is excluded from prod analytics queries (either via `is_canary` column or
+        `session_id NOT LIKE '__canary__%'` filter added to `logDecisionAsync`'s companion query
+        helpers).
+  - [ ] A test confirms the canary correctly reports failure when CH is unreachable (mock).
+  - [ ] pnpm/pytest lint + typecheck + test pass; CI green.
+- **promoted_to_queue:** false
+
+---
+
+### FOLLOW-442 — Fix POST `/api/adapt` holdout branch: add `logDecisionAsync` call so holdout rows are written to `adaptation_decisions` (AUD-04 / F-05)
+
+- **source_retro:** 2026-07-01 end-to-end code audit (F-05)
+- **source_ticket:** AUD-04
+- **recommended_sprint:** current (P1 — pilot go-live blocker for lift denominator completeness)
+- **recommended_agent:** backend-engineer
+- **priority:** P1
+- **estimated_hours:** 1
+- **scope:** `apps/control-plane/src/app/api/adapt/route.ts:1142-1169` (POST handler). The holdout
+  branch returns at line 1156 WITHOUT calling `logDecisionAsync`, so no row with `holdout_group=1`
+  is written to `adaptation_decisions`. The lift query's holdout denominator therefore counts zero
+  holdout sessions, making lift metrics unmeasurable. NOTE (PM verified 2026-07-01): the live SDK
+  production path is GET /api/adapt (via decision-api Worker), NOT POST. The GET handler (lines
+  867-942) correctly logs all sessions including holdout via `getHandlerVariant='control'` passed to
+  `logDecisionAsync`. The GET path is NOT affected by this bug. However, the POST handler is a valid
+  control-plane endpoint (reachable directly, used by integration tests, and may be reactivated in
+  future). Fix it now to prevent silent data loss. Fix: add
+  `afterResponse(() => logDecisionAsync(body.session_id, tenantId, 'neutral', 0.5, body.similarity ?? 0.5, 'default', pageCtx, pageContextSource, 0, true, 'control', adaptDecisionId, false, null, null, null))`
+  before the `return NextResponse.json(...)` on line 1156. Match the GET handler's callsite at
+  line 942.
+- **ac:**
+  - [ ] POST holdout branch calls
+        `afterResponse(() => logDecisionAsync(..., holdoutGroup=true,     variant='control'))`
+        before returning.
+  - [ ] The existing route.holdout.test.ts test suite passes; add a test asserting
+        `logDecisionAsync` is called with `holdoutGroup=true` on the POST holdout path.
+  - [ ] pnpm lint + typecheck + test pass; CI green.
+- **promoted_to_queue:** false
+
+---
+
+<!-- next free FOLLOW number: 443 (442 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
+P1 backend-engineer ~1h). 441 = AUD-03/F-06 — prod CH write-verification canary; P0 data-engineer
+~3h). 440 = AUD-02/F-02 — fix assigned_at→ts + latency_ms phantom columns; P0 backend-engineer
+~2h). 439 = AUD-01/F-01 — fix lift route buildMockLiftRows fabrication + dqsUnavailable=false;
+P0 backend-engineer ~2h — sibling of FOLLOW-329 (summary route same fix). 438 = RETRO-143 §4a LG-1 — CI lint guard: assert exactly one
 modal.App() in apps/llm-gateway/src to prevent BUG 2 app-name collision recurrence; P3
 devops-engineer ~1h; DONE PR #395 f3ac878 merged 2026-06-30T16:05:41Z; RETRO-144 written;
 FOLLOW-433→438 chain fully closed). 437 = ESC-034 / FOLLOW-436 go-live wiring verification —

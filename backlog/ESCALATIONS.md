@@ -1808,6 +1808,71 @@ page_context_source=caller_supplied. Confirmed against the post-merge prod deplo
 prod deploy created 09:08Z). Procedure recorded in `docs/runbooks/esc-033-verification.md`. ESC-033
 fully closed.
 
+## OPEN — ESC-035: SECURITY — feedback route uses caller-supplied bearer as HMAC key with no api_keys lookup; trusts caller's body.tenant_id → forgeable auth + cross-tenant bandit write-poisoning [FOLLOW-442 / AUD-05]
+
+**Filed by:** pm-orchestrator **Date:** 2026-07-01T00:00:00Z **Affects:**
+`apps/control-plane/src/app/api/adapt/feedback/route.ts`, `ab_bandit_weights`, `conversion_labels`
+**Type:** security
+
+**Description (Rule C — security finding; agents must escalate):**
+
+`apps/control-plane/src/app/api/adapt/feedback/route.ts:143` computes:
+
+```ts
+const expectedHex = await hmacSha256Hex(bearerToken, rawBody);
+```
+
+where `bearerToken` is the **caller-supplied** `Authorization: Bearer <value>`, NOT a value looked
+up from `api_keys`. Any caller who knows their own bearer token (which they chose themselves) can
+compute a valid HMAC over any payload they craft and pass signature verification. There is no
+`api_keys` table lookup in the HMAC path.
+
+Additionally, `tenantId` is taken from `parsed.data.tenant_id` (the request body, line 374/395), not
+derived from a resolved API key. A malicious caller can therefore write `ab_bandit_weights` and
+`conversion_labels` for ANY `tenant_id` they supply.
+
+The fallback at lines 130-134 (`if (adaptApiKey && bearerToken === adaptApiKey)`) only protects the
+ops integration-test key path; the HMAC path is unprotected.
+
+**Impact:**
+
+- Any tenant (or external actor who has ever made a legitimate feedback call) can poison bandit
+  Thompson-sampling weights for any other tenant, corrupting variant selection.
+- Any actor can forge conversion labels (`conversion_labels` table) for any tenant.
+- This makes pilot A/B results forgeable.
+
+**Evidence:**
+
+```
+grep -n "hmacSha256Hex\|bearerToken\|api_keys\|tenant_id" \
+  apps/control-plane/src/app/api/adapt/feedback/route.ts
+# Line 143: hmacSha256Hex(bearerToken, rawBody) — bearerToken is caller-supplied
+# Lines 374, 395: tenantId: parsed.data.tenant_id — caller-supplied
+# No api_keys lookup anywhere in the file
+```
+
+**Required fix (backend-engineer, after human confirms scope):**
+
+1. Look up `bearerToken` in `api_keys` table → derive `resolvedTenantId` and a stored `secret`.
+2. Use the stored `secret` (not the raw bearer) as the HMAC key.
+3. After auth, assert `parsed.data.tenant_id === resolvedTenantId`; reject with 403 if mismatch.
+4. If `ADAPT_API_KEY` ops fallback is kept, scope it to the ops tenant or add a hard `tenant_id`
+   constraint.
+
+**Required action:** Piotr (CEO) to confirm: (a) The fix scope above is correct — particularly
+whether `api_keys` already stores the shared HMAC secret per tenant, or whether a new
+`api_key_secrets` column/table is needed. (b) Priority: this is a security bug in production NOW.
+Recommend P0 fix before ANY pilot traffic runs through the feedback endpoint. (c) Whether the
+existing ops `ADAPT_API_KEY` bypass should be removed or scoped.
+
+**Blocking:** YES — blocks delegating FOLLOW-442 and blocks pilot go-live (a pilot with forgeable
+feedback metrics is worse than no pilot). Per PM guardrails, no new ticket can be delegated while
+this escalation is open.
+
+**Resolution:** (empty — awaiting human decision)
+
+---
+
 ## OPEN — ESC-034: FOLLOW-436 embed-seed Modal consumer awaiting operator go-live — code bugs fixed by FOLLOW-437, operator steps remain [FOLLOW-436]
 
 **Filed by:** devops-engineer **Date:** 2026-06-30T00:00:00Z **Affects:** FOLLOW-436, FOLLOW-435,

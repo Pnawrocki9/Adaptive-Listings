@@ -7603,9 +7603,12 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
   title: >-
     Branch-first worker discipline + mechanical guardrail against stranding uncommitted work on main
   agent: devops-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: devops-engineer
   started_at: '2026-07-01T00:00:00Z'
+  completed_at: '2026-07-01T20:09:09Z'
+  pr: 411
+  merge_commit: 42050a0
   priority: P2
   estimated_hours: 3
   depends_on: []
@@ -7925,7 +7928,11 @@ gate) closes the epic and must be last.
     Apply ClickHouse migration 0015 (intent_events.session_id) to prod + de-silence rejected
     intent_events inserts (F-02)
   agent: data-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: data-engineer
+  started_at: '2026-07-01T22:00:00Z'
+  branch: data-engineer/FOLLOW-449-intent-events-session-id-prod
+  pr: '#413'
   priority: P0
   estimated_hours: 3
   depends_on: []
@@ -7935,16 +7942,53 @@ gate) closes the epic and must be last.
     Archetype Tracer (K.3.6) has no live data.
   spec: audit report §5.1 F-02; backlog/QUEUE.md Sprint 22b
   notes: |
+    Delegated 2026-07-01 (table row: ClickHouse, Redpanda, ETL, archetype pipeline, drift cron,
+    DSR delete -> data-engineer). Branch-first (FOLLOW-448) enforced: first action must be
+    `git checkout -b data-engineer/FOLLOW-449-intent-events-session-id-prod main`.
+    PROD-APPLY CAVEAT (ESC-022/ESC-031 precedent, memory: migrations don't auto-apply): the actual
+    prod ClickHouse `migrate.sh` execution against Doppler `prd` credentials is a PRIVILEGED
+    OPERATOR ACTION. The worker does NOT have prod CH credentials and must NOT attempt to fetch or
+    fabricate them. Worker prepares/verifies everything code+CI-side (migration file correctness,
+    idempotent guard, the de-silencing fail-loud fix, the FOLLOW-402 contract-test extension) and
+    writes the EXACT runbook command sequence + expected DESCRIBE TABLE / attestation format into
+    docs/runbooks/clickhouse-migrations.md for Piotr/Rafał to execute and paste real output into.
+    If the worker can verify prod state read-only (e.g. an existing script/secret already available
+    to CI service account permits a SELECT/DESCRIBE), that's fine; anything requiring prd write
+    creds is operator-only.
+
+    PR #413 opened 2026-07-01. CI counter: 1/5 (first run green on every real gate). Fix
+    iterations: 0/3. Only non-passing check is "Rule I — wired-or-dead check" (173 violations,
+    ALL pre-existing in packages/sdk + packages/shared/pii-blacklist.ts, ZERO in this PR's touched
+    files apps/ingest/* — confirmed pre-existing baseline noise per project CI-gate-landscape
+    precedent, not introduced by this PR).
+
+    Code/CI/docs-complete; migration 0015 IS idempotent (`ADD COLUMN IF NOT EXISTS`), verified by a
+    double-apply of migrate.sh against a clean local ClickHouse container — no change needed to the
+    migration file. De-silencing (Sentry capture on both ClickHouse+Supabase rejection paths, kind
+    insert_rejected|network) landed in intent-snapshot.ts + a defensive events.ts waitUntil catch.
+    migration-contract-test.sh Part B extends the FOLLOW-402 self-maintaining reverse-walk to
+    intent_events (boundary correctly auto-detected as 0015); ci.yml already invokes the script
+    (no wiring change needed). Runtime proof: a synthetic intent.snapshot inserted via the REAL
+    insertIntentEventToClickHouse function against a local ClickHouse container produced count()=1,
+    queried via the tracer's exact SELECT shape (fetchIntentEventsForSession). Full transcript in
+    PR #413 description.
+
+    AC1/AC2 (attest+apply to prod, DESCRIBE TABLE proof) remain OPEN — OPERATOR ACTION REQUIRED
+    (Piotr/Rafał) per the runbook stub in docs/runbooks/clickhouse-migrations.md ("Prod Attestation
+    — migration 0015 — STUB, OPERATOR MUST COMPLETE"). Ticket cannot move to DONE until that stub
+    is filled with real prod output.
     AC:
     - [ ] Attest+apply CH migration 0015 to prod (doppler prd) via the migrations runbook; record
-          DESCRIBE TABLE proof that intent_events has session_id.
+          DESCRIBE TABLE proof that intent_events has session_id. OPERATOR ACTION REQUIRED
+          (Piotr/Rafał) — runbook stub ready, real output not yet pasted.
     - [ ] Backfill/verify all 0015→latest CH migrations are applied in prod (same drift class as
           ESC-022/ESC-031); publish an attestation line in docs/runbooks/clickhouse-migrations.md.
-    - [ ] intent-snapshot handler INSERT rejections capture to Sentry (drop silent fire-and-forget
+          OPERATOR ACTION REQUIRED (same runbook stub, step 4).
+    - [x] intent-snapshot handler INSERT rejections capture to Sentry (drop silent fire-and-forget
           for SCHEMA/4xx errors; keep async for latency) so a future column drift fails loud.
-    - [ ] Extend FOLLOW-402 migration-contract test to cover intent_events (not just
+    - [x] Extend FOLLOW-402 migration-contract test to cover intent_events (not just
           adaptation_decisions).
-    - [ ] Runtime proof: after apply, a synthetic intent.snapshot produces a row (count>0) queried
+    - [x] Runtime proof: after apply, a synthetic intent.snapshot produces a row (count>0) queried
           via the tracer SELECT path.
 - id: FOLLOW-450
   title: >-

@@ -2,6 +2,57 @@
 
 ---
 
+## 2026-07-01 / FOLLOW-449
+
+**What I built:** F-02 remediation (audit finding: `intent_events` count=0 in prod). Three
+code/CI-side deliverables, one operator-handoff artifact: (1) de-silenced the `intent.snapshot`
+fire-and-forget dual-write — `handleIntentSnapshot` already checked `response.ok` but only logged to
+console/pino; added `Sentry.captureException` on both the ClickHouse and Supabase rejection paths
+(`kind: insert_rejected` for HTTP non-ok, `network` for a fetch throw), mirroring
+`publishAbAssignmentEvent`. (2) Extended `migration-contract-test.sh` (FOLLOW-402's self-maintaining
+reverse-walk) with a Part B covering `intent_events`, sourced from `insertIntentEventToClickHouse`'s
+`const row = {}` object literal (not a backtick SQL list — a new extraction shape), running in its
+own isolated ClickHouse DB so it can't collide with Part A's `adaptation_decisions` run. (3)
+Verified migration 0015 (`ADD COLUMN IF NOT EXISTS session_id`) is already idempotent — no code
+change needed — by double-applying `migrate.sh` against a clean local container. (4) Added a "Prod
+Attestation — migration 0015 — STUB" section to the runbook with the exact Doppler-`prd` command
+sequence, clearly marked for Piotr/Rafał to paste real output into (the ticket explicitly forbids
+the worker from seeking prod CH credentials — ESC-022/ESC-031 precedent).
+
+**Vocabulary/seed/retention risks I weighed:**
+
+- No new table/column: `session_id` already existed on `intent_events` since migration 0015
+  (FOLLOW-286/287); this ticket's gap was purely "never attested-applied to prod," not a missing
+  writer. Rule H doesn't apply — the writer (`insertIntentEventToClickHouse`) has existed since
+  FOLLOW-266/286/287; I only added observability to its existing failure paths.
+- Rule K.2 fire-and-forget amendment (RETRO-135 §6): confirmed the ClickHouse leg already checked
+  `response.ok` (not the "bare `await fetch()`" hole the amendment describes) — the actual gap was
+  narrower than the amendment's canonical shape: `response.ok` was checked and logged, but never
+  captured to Sentry. Didn't assume the amendment's exact failure mode applied verbatim; read the
+  actual code first.
+- Extending a self-maintaining contract-test script to a SECOND table/extraction-shape (JS object
+  literal vs. backtick SQL list) is a new sub-pattern worth naming: the script now demonstrates the
+  pattern generalizes, but each new "Part" needs its OWN isolated database or the boundary walks
+  interfere (Part A's "apply all migrations except boundary X" would silently satisfy Part B's
+  assertion if they shared a database).
+- Refreshed a stale `DATA_DICTIONARY.md` entry for `intent_events` in the same PR (it listed a
+  nonexistent `intent_vector` column and omitted 6 real ones) since I was already touching that
+  table's docs — didn't expand scope to add the 90-day TTL enforcement the table's own migration
+  comment promises (out of F-02 scope; `DATA_DICTIONARY.md` already honestly marks it "Pending," not
+  a false promise, so no new guardrail violation to fix under THIS ticket).
+- Did not fetch or attempt to derive prod Doppler `prd` ClickHouse credentials at any point — the
+  ticket's PROD-APPLY CAVEAT was explicit and a CI service account read-only credential was not
+  available either, so the entire prod-verification AC pair is a clean operator handoff, not a
+  partial/best-effort attempt.
+
+**A guardrail I'd add:** When a migration-contract-test script is extended to a second table with a
+different column-extraction shape (object literal vs. SQL string), a repo convention should require
+each "Part" to declare its own isolated database name at the top of the script (not inline near its
+own steps) so a future third table's author can immediately see the naming pattern and can't
+accidentally reuse a database another Part is still using mid-run.
+
+---
+
 ## 2026-06-20 / FOLLOW-366
 
 **What I built:** P0 hotfix for the dead FOLLOW-346 chat NLP shadow bridge. The defect:

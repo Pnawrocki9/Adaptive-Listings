@@ -1627,3 +1627,24 @@ independent occurrence, even if it references the same pattern by name.
   sufficient — always read the ticket's own notes/prose for soft dependencies (DPIA sign-off, "the
   real X hasn't shipped yet") that were never promoted into the structured depends_on array, and
   grep the actual prerequisite artifact (not just the ticket ID) before trusting a READY label.
+
+- **Date / ticket:** 2026-07-01 — Sprint 22b charter (FOLLOW-449..471), PR #412
+- **Delegation row used:** none this iteration — this was PM's own backlog/planning action (charter
+  a new sprint into QUEUE.md), not a code delegation. No table row applies to authoring ticket
+  definitions; that's explicitly in-scope PM work.
+- **What validation caught (or missed):** Caught that the Sprint 22b plan (541-line QUEUE.md diff +
+  Master_Design v4.2 bump) existed only on an uncommitted PM branch, never pushed/PR'd. Per
+  FOLLOW-448 (branch-first worker discipline, merged same session prior), a worker's first action is
+  `git checkout -b <branch> main` — so delegating FOLLOW-449 straight from the branch would have
+  sent a data-engineer to branch off a `main` that has no Sprint 22b ticket at all, silently losing
+  the ticket definition the worker was supposed to implement against. Committed+pushed+opened PR
+  #412 first; verified CI green (2 iterations, 2/5 check-budget used) with the one known
+  pre-existing-red gate (Rule I) cross-checked against the immediately-prior merged PR #411 to
+  confirm it's baseline noise, not something this diff caused. Correctly withheld delegation of
+  FOLLOW-449 pending human merge of #412 rather than guessing it was "close enough."
+- **A delegation/validation rule I'd add:** Before delegating any ticket that was just
+  authored/edited in the _same session_ (not previously on main), check
+  `git status`/`git diff main --stat` first — if the ticket's own QUEUE.md entry isn't on `main`
+  yet, the PR that adds it must merge before any worker can branch off main and see it. Never
+  delegate against ticket text that only exists locally or on a different branch than the one
+  workers will branch from.

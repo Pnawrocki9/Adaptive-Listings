@@ -1,6 +1,40 @@
-# Status — 2026-07-01 (Sprint 22 ACTIVE — Audit wave; ESC-035 RESOLVED; hard pilot go-live gate fully clear on the code side — FOLLOW-442 merged #406; PM picking up FOLLOW-448)
+# Status — 2026-07-01 (Sprint 22 CLOSED-on-code-side; Sprint 22b CHARTERED — full-stack audit remediation session 2; PR #412 open, awaiting human merge before delegation)
 
-## AUDIT 2026-07-01 — Pilot-blocking findings promoted to tickets
+## SESSION 2 (2026-07-01) — Sprint 22b chartered, PR #412 open
+
+Second end-to-end code audit (session 2, 8 tracks) found 21 findings (F-01..F-21). Chartered as
+**Sprint 22b** directly into `backlog/QUEUE.md` (FOLLOW-449..471), Master_Design bumped to v4.2.
+This is a **docs/backlog-only** change (no app code) on branch
+`pm-orchestrator/AUDIT-0701B-full-audit-remediation-plan` → **PR #412**
+(https://github.com/Pnawrocki9/Adaptive-Listings/pull/412).
+
+**CI check-count this iteration: 1/5.** CI green — non-success count for REAL gates = **0** (only
+pre-existing-red `Rule I — wired-or-dead check` fails, confirmed also FAILURE on the immediately
+prior merged PR #411, unrelated to this diff). Fix-iteration counter: 0/3 (no fixes needed).
+
+**Escalations reviewed, all confirmed non-blocking-for-new-work (operator/CEO-priority items, not
+unresolved architectural decisions):** ESC-020 (Rafał prod DOM-hook deploy, non-blocking per CEO),
+ESC-028 (4 Upstash GH secrets, soft-skip canary by design), ESC-034 (Modal embed-seed operator
+go-live, code bugs already fixed by FOLLOW-437). None block picking Sprint 22b's P0s.
+
+**Why PR #412 must merge BEFORE any Sprint 22b ticket is delegated:** per FOLLOW-448 (branch-first
+worker discipline, merged #411), every worker's first action is `git checkout -b <branch> main` — a
+ticket only exists for a worker once it is on `main`'s `QUEUE.md`. Delegating FOLLOW-449 now would
+mean the data-engineer branches from a main that has no Sprint 22b ticket definition.
+
+**Three CEO decisions still open (gate priority, not correctness):** Q1 pilot auth model (demo-JWT
+vs real API key, affects FOLLOW-451 severity), Q2 chat in scope for this pilot (affects FOLLOW-458),
+Q3 measured vs demonstration pilot (affects FOLLOW-450/452/453 urgency). Not escalated as blocking
+since Sprint 22b's P0 ordering (FOLLOW-449 → 450 → 451) is CEO-directed and correct regardless of
+the answers — the answers only affect P1-tier severity, not what ships first.
+
+**Next action:** human merges PR #412, then PM delegates FOLLOW-449 (data-engineer, ClickHouse
+migration + fail-loud row — decision table row: "ClickHouse, Redpanda, ETL, archetype pipeline,
+drift cron, DSR delete").
+
+---
+
+## AUDIT 2026-07-01 (session 1) — Pilot-blocking findings promoted to tickets
 
 A staff-level end-to-end code audit (F-01..F-25, verdict YELLOW) completed this session. Five
 pilot-blocking findings were promoted; four are now DONE:

@@ -1,5 +1,13 @@
 # Backlog Queue
 
+**Updated 2026-07-01 (session 2) — Full-Stack Audit Remediation epic added as `Sprint 22b` (bottom
+of file): tickets FOLLOW-449…FOLLOW-471 close every finding (F-01…F-21) from the 2026-07-01
+end-to-end code audit. FOLLOW-471 is the epic's acceptance gate — a clean re-audit ("no gaps, no
+bugs, Adaptive Listings works as intended") is the Definition of Done. P0 blockers for a _measured_
+pilot: FOLLOW-449 (intent_events prod migration), FOLLOW-450 (enable feedback/bandit loop),
+FOLLOW-451 (real API-key adapt auth). See MASTER_DESIGN §Snapshot.1 "Update 2026-07-01" + Changelog
+v4.2.**
+
 **Updated 2026-06-14T11:00Z (partial-resolution pass). K.3.6 D-1 "immediate weights" is
 PRODUCTION-LIVE as of 2026-06-14. FOLLOW-307 DONE: migration 0030 applied to prod Supabase (project
 yhmivuqeqkmzpxpyrsvc, eu-west-3) via `doppler run --config prd -- pnpm db:migrate` on 2026-06-14.
@@ -7894,3 +7902,530 @@ audit Sprint 1 (#158), and Sprint 13a-hardening (#159–#162) merged to main 202
 - 2026-05-03T10:51Z — TICKET-018/019 fix (PR #25): Missing span attributes + README paths
 - 2026-05-01T21:37Z — TICKET-018+019 (PR #24): Ingest observability + error handling
 - 2026-05-01T10:46Z — TICKET-025 (PR #20): control-plane Next.js + Tailwind + shadcn/ui skeleton
+
+---
+
+## Sprint 22b — Full-Stack Audit Remediation (2026-07-01, session 2) (OPEN)
+
+**Source:** end-to-end code audit run 2026-07-01 (session 2), 8 parallel tracks (SDK, ingest/data,
+intent-engine, control-plane/LLM, analytics/dashboard, compliance/security, plan-reconciliation) +
+CEO-directed remediation. Findings F-01…F-21 in the audit report. This wave's **Definition of Done
+is a clean re-audit**: FOLLOW-471 re-runs the same audit and every finding must close with file:line
+proof, so a final code review returns "no gaps, no bugs — Adaptive Listings works as intended."
+Ticket-to-finding map is in each `source:` line. Nothing here is scaffold: every ticket has a
+runtime-wired acceptance gate (Rule H) and a verification step (Operating Principle 5).
+
+**Ordering:** P0 (F-02/F-05/F-06) are prod-truth/deploy/config blockers for a _measured_ pilot and
+run first; P1 correctness + compliance next; P2/P3 hardening + cleanup; FOLLOW-471 (clean re-audit
+gate) closes the epic and must be last.
+
+```yaml
+- id: FOLLOW-449
+  title: >-
+    Apply ClickHouse migration 0015 (intent_events.session_id) to prod + de-silence rejected
+    intent_events inserts (F-02)
+  agent: data-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-02 — intent_events count=0 in prod; writer sends session_id (0015) but
+    migration is not attested-applied to prod CH → every fire-and-forget insert silently rejected;
+    Archetype Tracer (K.3.6) has no live data.
+  spec: audit report §5.1 F-02; backlog/QUEUE.md Sprint 22b
+  notes: |
+    AC:
+    - [ ] Attest+apply CH migration 0015 to prod (doppler prd) via the migrations runbook; record
+          DESCRIBE TABLE proof that intent_events has session_id.
+    - [ ] Backfill/verify all 0015→latest CH migrations are applied in prod (same drift class as
+          ESC-022/ESC-031); publish an attestation line in docs/runbooks/clickhouse-migrations.md.
+    - [ ] intent-snapshot handler INSERT rejections capture to Sentry (drop silent fire-and-forget
+          for SCHEMA/4xx errors; keep async for latency) so a future column drift fails loud.
+    - [ ] Extend FOLLOW-402 migration-contract test to cover intent_events (not just
+          adaptation_decisions).
+    - [ ] Runtime proof: after apply, a synthetic intent.snapshot produces a row (count>0) queried
+          via the tracer SELECT path.
+- id: FOLLOW-450
+  title: >-
+    Enable feedback endpoint in prod so the bandit learning loop is live (F-06)
+  agent: backend-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 2
+  depends_on: [FOLLOW-449]
+  source: >-
+    2026-07-01 audit F-06 — feedback/route.ts 503-gated (FEEDBACK_ENDPOINT_ENABLED!=='true') per
+    ADR-0015 interim; SDK swallows the 503 → ab_bandit_weights frozen at Beta(1,1) → Thompson
+    sampling is uniform-random; no conversion labels captured.
+  spec: ADR-0015; audit report §5.1 F-06
+  notes: |
+    AC:
+    - [ ] Provision OPS_TENANT_ID + ADAPT_API_KEY in Doppler prd; set FEEDBACK_ENDPOINT_ENABLED=true.
+    - [ ] Add a prod canary: a signed test ping increments a Beta counter (real ab_bandit_weights
+          delta observed), then is reverted/scoped to OPS_TENANT_ID.
+    - [ ] SDK: on a non-2xx feedback response, capture to Sentry (breadcrumb) instead of silent
+          console.warn, so a re-disabled endpoint is visible.
+    - [ ] Verify end-to-end: adapt → outcome event → feedback ping → conversion_labels row +
+          bandit update, all under the resolved (not body) tenant.
+- id: FOLLOW-451
+  title: >-
+    Add real API-key auth path to POST /api/adapt (currently demo-JWT-only) (F-05)
+  agent: backend-engineer
+  status: READY
+  priority: P0
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-05 — POST /api/adapt accepts only an HS256 demo JWT (DEMO_MODE_JWT_SECRET);
+    SDK sends Bearer config.apiKey → a real tenant API key 401s and the SDK fail-opens to null
+    (silent no-adapt). Blocks the standalone-SaaS path.
+  spec: ADR-0015 (resolveApiKey); audit report §5.2 F-05
+  notes: |
+    DECISION-GATED (CEO Q1 pilot auth model): if the pilot runs demo-JWT, this is P1 SaaS-enablement;
+    if the pilot runs real API keys, this is a P0 pilot blocker. Charter assumes both paths must work.
+    AC:
+    - [ ] POST /api/adapt accepts EITHER a demo JWT OR a tenant API key resolved via the shared
+          resolveApiKey() (SHA-256 → api_keys) added in ADR-0015; tenant_id derived server-side.
+    - [ ] body.tenant_id mismatch vs resolved tenant → 403 (parity with feedback route).
+    - [ ] SDK path documented: which credential the pilot snippet ships; a real-key integration test
+          returns 200 directives (not 401→null).
+    - [ ] No regression to the demo-JWT path (existing tests green).
+- id: FOLLOW-452
+  title: >-
+    Fix per-archetype holdout logging + GET holdout default so lift is measurable (F-08)
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-08 — POST holdout rows logged as archetype='neutral',confidence=0.5 →
+    per-archetype lift compares adapted-X vs an ~empty holdout arm (0/not-significant forever); GET
+    holdout defaults to false when the param is absent → silent treatment-arm contamination.
+  spec: audit report §5.1 F-08; docs/ops/PILOT_CTA_LIFT_METRIC_v1.md
+  notes: |
+    AC:
+    - [ ] Holdout rows log the would-be archetype/confidence (the classification the session would
+          have received), not a hardcoded 'neutral', so lift/route per-archetype arms populate.
+    - [ ] GET /api/adapt computes holdout server-side (assignHoldout) like POST; never trusts a
+          caller-supplied holdout_group as the default.
+    - [ ] Test: a synthetic archetype-X session in holdout produces a holdout row keyed to X; the
+          per-archetype lift query returns a non-empty holdout_n for X.
+- id: FOLLOW-453
+  title: >-
+    Stop the analytics UI rendering fabricated zeros on error; retire /api/analytics mock; fail-loud
+    quiz/config (F-07)
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-07 — dashboard/analytics/page.tsx catches all fetches and coerces 500 bodies
+    to Number(...??0) → Panel 1 shows fabricated zeros and drops data_source (Rule K.2 defeated at
+    the UI); /api/analytics is a 100% mock route with spoofable x-tenant-id, still deployed;
+    quiz/config GET catch→enabled defaults.
+  spec: CONVENTIONS_PATCH.md Rule K.2; audit report §5.1 F-07
+  notes: |
+    AC:
+    - [ ] analytics/page.tsx surfaces an explicit error state on non-2xx (no zero coercion), and
+          renders a MockDataBadge when data_source==='mock' (parity with /dashboard/pilot).
+    - [ ] Delete or hard-gate /api/analytics (fabricated, spoofable, no consumer); if retained,
+          add JWT tenant scoping + data_source and a real query.
+    - [ ] quiz/config GET fails loud (500) when a configured DB throws instead of returning
+          enabled defaults.
+- id: FOLLOW-454
+  title: >-
+    Fix SSR-cookie auth mismatch on tenant dashboard + analytics/pilot/ab APIs (F-01)
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-01 — browser sessions hold chunked @supabase/ssr cookies, but
+    /api/dashboard/analytics/*, /api/pilot/*, /api/ab/weights, /api/quiz/config, /api/tenants/[id]*
+    and the /dashboard/* middleware authenticate via getAuthClaims (Bearer/legacy sb-access-token
+    only) → 401 for the very UIs that call them (same class as FOLLOW-326, unpatched tenant-side).
+  spec: ADR-0013; project memory admin_ssr_cookie_auth; audit report §4 trap 5
+  notes: |
+    AC:
+    - [ ] Tenant browser-session API routes + /dashboard/* middleware resolve the user via
+          @supabase/ssr createServerClient().getUser() (or accept the chunked cookie), not
+          getAuthClaims-only.
+    - [ ] A browser-session agency user loads /dashboard/analytics with real 200s (no 401→zeros).
+    - [ ] Regression test covering the cookie path for at least one analytics route.
+- id: FOLLOW-455
+  title: >-
+    Harden DSR: CSPRNG OTP + rate-limit/lockout + complete erasure & disclosure coverage (F-20)
+  agent: compliance-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 6
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-20 — dsr-otp uses Math.random() (not CSPRNG); no rate-limit/attempt-cap and
+    global-by-hash lookup → brute-forceable 6-digit code across tenants; erase misses intent_events,
+    quiz_completions, intent_sessions (Art.17 holes); access/portability report a stubbed event
+    count (Art.15/20).
+  spec: MASTER_DESIGN §H.1.1; audit report §5.5 F-20
+  notes: |
+    AC:
+    - [ ] OTP generated with crypto.getRandomValues/randomInt (CSPRNG).
+    - [ ] Per-capability attempt cap + lockout + request-scoped lookup (not global-by-hash);
+          initiate is rate-limited (anti email-bomb); mark-used is atomic.
+    - [ ] DSR erase set includes intent_events (CH), quiz_completions + intent_sessions (PG).
+    - [ ] Access/portability disclose the real behavioral event count (remove the count=1 stub).
+    - [ ] Tests for brute-force lockout + erase coverage on the three added stores.
+- id: FOLLOW-456
+  title: >-
+    Close tenant-isolation holes: demo revoke, global generation-model, fail-open secrets (F-13)
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-13 — /api/demo/sessions/[id]/revoke trusts spoofable x-tenant-id on a real
+    mutation; PUT /api/admin/generation-model lets any tenant agency:admin mutate the
+    platform-global model; /api/tenants, /api/webhooks/listing-updated, /api/internal/description-
+    cache fail OPEN when their secret env is unset.
+  spec: audit report §5.5 F-13; CONVENTIONS_PATCH.md Rule (tenant isolation)
+  notes: |
+    AC:
+    - [ ] demo revoke derives tenant from the verified JWT, not x-tenant-id.
+    - [ ] generation-model global write gated on estalara_staff (not a tenant agency:admin role).
+    - [ ] The three secret-guarded routes fail CLOSED (reject) when the secret env is unset;
+          comparisons use timingSafeEqual.
+    - [ ] Tests: spoofed x-tenant-id revoke → 403; unset-secret webhook → reject.
+- id: FOLLOW-457
+  title: >-
+    LLM grounding integrity: fail-loud on empty original + fact whitelist on the directive path
+    (F-11)
+  agent: ml-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 5
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-11 — ESC-019 still open: fetchListingOriginalDescription returns '' on
+    302/timeout/non-2xx, logs console-only, does not block → near-ungrounded copy; and the directive
+    path (lib/llm-gateway.ts Haiku/Sonnet for headline/CTA) has NO fact whitelist / fit gate → a
+    hallucinated number in a headline directive would ship.
+  spec: MASTER_DESIGN §E.7.5 anti-hallucination; ADR-0009/ADR-0010; audit report §5.6 F-11
+  notes: |
+    AC:
+    - [ ] Empty/failed original-description fetch captures to Sentry AND skips generation (no
+          ungrounded Sonnet call); ESC-019 marked resolved with a runtime proof.
+    - [ ] Directive prompts (buildHaikuPrompt/buildSonnetPrompt) get the same fact-whitelist +
+          numeric/proper-noun grounding check the description headline path already has.
+    - [ ] A test with a poisoned context proves a hallucinated price/area is rejected on BOTH the
+          description and directive paths (fail-safe: falls back to playbook copy).
+- id: FOLLOW-458
+  title: >-
+    Deploy stream-consumer + data-quality cron so live chat NLP and drift detection actually run
+    (F-03)
+  agent: devops-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 6
+  depends_on: [FOLLOW-449]
+  source: >-
+    2026-07-01 audit F-03 — apps/stream-consumer (real consumer that spawns the Modal Haiku NLP) is
+    deployed by no workflow and its Redpanda topic is never fed → real-time chat→archetype path is
+    dead in prod; apps/data-quality schema_validation cron (real, 526 LOC) is never modal-deployed →
+    daily drift detection offline.
+  spec: MASTER_DESIGN §Snapshot.2; ADR-0005; audit report §5.2 F-03
+  notes: |
+    DECISION-GATED (CEO Q2 chat-in-pilot): if chat intelligence is in-scope for THIS pilot, P1
+    blocker; if shadow-only acceptable, fast-follow. Charter: make the path live-or-formally-deleted.
+    AC:
+    - [ ] Either (a) deploy stream-consumer to Modal + wire the events topic so process_chat_message
+          runs on live traffic and CHAT_NLP_LIVE has a real effect (remove the log-only stub), OR
+          (b) per ADR-0005 re-scope chat NLP onto the direct control-plane read path and delete the
+          dead consumer + its topic expectation (no orphan code).
+    - [ ] data-quality schema_validation cron is modal-deployed on its 0 2 * * * schedule; a drift
+          run writes a schema_validation_history row in prod.
+    - [ ] Fix the estalara.events vs consumer-default 'events' topic-name mismatch either way.
+- id: FOLLOW-459
+  title: >-
+    Ingest: ACK before the ClickHouse insert to meet the <50ms p95 budget (F-09)
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-09 — handlers/events.ts awaits the CH insert before ACK (worst case ~15s:
+    3×4s timeouts + backoff); the <50ms p95 budget stated at index.ts:10 is unachievable.
+  spec: MASTER_DESIGN quality bars (ingest ACK p95 <50ms); audit report §5.4 F-09
+  notes: |
+    AC:
+    - [ ] ACK is returned before the CH insert completes (waitUntil/queue/DO), preserving at-least-
+          once delivery + the existing 503/DLQ-less retry semantics documented.
+    - [ ] A CH failure after ACK is captured to Sentry (not lost silently) and, if feasible, retried
+          via a durable path.
+    - [ ] Latency test/benchmark demonstrating ACK p95 within budget under a happy-path insert.
+- id: FOLLOW-460
+  title: >-
+    Finish the v2.0 permanent description cache: Modal writes Postgres, drop TTL/tier (F-10)
+  agent: ml-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-10 — generate_description.py still SETs Redis with EX 72h/48h and
+    tier-derived logic and NEVER writes description_cache_persistent; durability depends on a read
+    landing within 72h to trigger backfill → unread generations silently expire and are re-paid;
+    contradicts the "no Tiers, no TTL" §E.7 v2.0 ruling.
+  spec: MASTER_DESIGN §E.7 (v2.0 permanent cache); audit report §5.2 F-10
+  notes: |
+    AC:
+    - [ ] Modal job writes description_cache_persistent (Postgres) on generation; Redis SET has no
+          EX; all tier/ttl_seconds logic removed from the Python job.
+    - [ ] Lookup order description_cache_persistent → Redis → template_fallback holds end-to-end.
+    - [ ] Test: a generated description survives a >72h simulated gap (present in Postgres, no
+          re-enqueue).
+- id: FOLLOW-461
+  title: >-
+    Reconcile the event schema to reality: register adapt.description.* + prune/wire unproduced
+    types (F-04)
+  agent: sdk-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-04 — SDK emits adapt.description.* events that are NOT in EventSchema →
+    ingest rejects them (description adaptation observably blind server-side); 25 of 46 defined
+    event types have no SDK producer (floorplan, mouse.*, photo open/zoom, search/sort, tour,
+    inquiry.completed, ab.assignment, sidebar.closed).
+  spec: ADR-0003 event schema; CONVENTIONS_PATCH.md Rule H; audit report §5.3 F-04
+  notes: |
+    AC:
+    - [ ] adapt.description.* event types added to packages/shared EventSchema (or their emission
+          removed) so ingest no longer silently drops description-adaptation observability.
+    - [ ] Each unproduced event type is either wired to an SDK producer or removed from the schema;
+          document the final defined==producible set (Rule H: no schema without a consumer/producer).
+    - [ ] A round-trip test asserts every defined event type validates at ingest.
+- id: FOLLOW-462
+  title: >-
+    ClickHouse DSR SQL: bind session_id as a param (backslash-safe) so erasure can't silently fail
+    (F-14)
+  agent: data-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-14 — clickhouse-dsr.ts escapes ' only (not backslash); a session_id ending in
+    \ malforms the ALTER…DELETE → DSR erasure silently fails (Art.17 compliance failure).
+  spec: audit report §5.5 F-14; §4 trap 9
+  notes: |
+    AC:
+    - [ ] DSR erase/status SQL uses ClickHouse param_* binding (or a strict hex/uuid allowlist) for
+          session_id/tenant/mutation IDs — no raw quote-only escaping.
+    - [ ] Test: a session_id containing a trailing backslash produces a well-formed, executed DELETE.
+- id: FOLLOW-463
+  title: >-
+    Persist the verified_facts_used anti-hallucination audit trail (table exists, zero writers)
+    (F-17)
+  agent: data-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-17 — description_generations CH table exists but nothing writes it;
+    verified_facts_used lives only in the Redis value and expires with TTL; the §E.7.5 audit trail
+    promised for anti-hallucination is not persisted.
+  spec: MASTER_DESIGN §E.7.5; audit report §5.3 F-17
+  notes: |
+    AC:
+    - [ ] The Modal description job writes verified_facts_used + model_version + archetype/listing to
+          description_generations (or a Postgres column) on every generation.
+    - [ ] A query proves the audit trail is durable (survives Redis TTL).
+- id: FOLLOW-464
+  title: >-
+    Model-key the Postgres description cache so a model switch isn't defeated by a stale pg hit
+    (F-15)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: [FOLLOW-460]
+  source: >-
+    2026-07-01 audit F-15 — getPgCachedDescription lookup omits model though Redis key includes it;
+    Step-1 pg hit runs before the model-suffixed Redis key, so a global/demo model switch serves
+    stale copy until webhook invalidation.
+  spec: audit report §5.2 F-15
+  notes: |
+    AC:
+    - [ ] description_cache_persistent lookup filters on model; a model change yields a miss→regen,
+          not a stale pg hit.
+    - [ ] Test covering model-switch cache-busting on the pg path.
+- id: FOLLOW-465
+  title: >-
+    Negative-cache NEUTRAL archetype-fit verdicts to stop perpetual Sonnet re-spend (F-18)
+  agent: ml-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-18 — a NEUTRAL fit verdict writes nothing to Redis/Postgres, so every
+    subsequent request for that (listing, archetype) re-enqueues a Modal Sonnet call.
+  spec: ADR-0010; audit report §5.4 F-18
+  notes: |
+    AC:
+    - [ ] A NEUTRAL verdict is negative-cached (persistent) keyed by (tenant,listing,archetype,
+          locale,model); a repeat request short-circuits without a new Sonnet call until listing.
+          updated invalidation.
+    - [ ] Test: two identical neutral requests trigger exactly one generation enqueue.
+- id: FOLLOW-466
+  title: >-
+    Add replay protection to feedback HMAC + unify secret comparisons on timingSafeEqual (F-21)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: [FOLLOW-450]
+  source: >-
+    2026-07-01 audit F-21 — feedback HMAC has no timestamp/nonce → an observed (body,sig) pair is
+    replayable (bounded bandit inflation); INTERNAL_API_SECRET/CRON_SECRET/webhook use plain ===/!==
+    not timingSafeEqual.
+  spec: ADR-0015; audit report §5.5 F-21
+  notes: |
+    AC:
+    - [ ] Feedback signature covers a timestamp with a bounded acceptance window (replayed old ping
+          rejected); optional nonce store.
+    - [ ] All shared-secret comparisons migrate to timingSafeEqual.
+    - [ ] Test: replayed ping outside the window → rejected.
+- id: FOLLOW-467
+  title: >-
+    Remove or annotate dead scaffolds that mislead Rule-H/wiring audits (F-12)
+  agent: architect
+  status: READY
+  priority: P3
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-12 — dead: packages/intent-ontology (14-line stub, 0 consumers),
+    packages/compliance (0.0.0 placeholder), embedding.ts heuristic vectors (0 importers),
+    price.compared signal (no emitter), session_quality + description_generations CH tables (0
+    writers — until F-17), quiz_completions (0 readers — until F-455 DSR), sidebar-widget.ts (463
+    LOC unmounted).
+  spec: CONVENTIONS_PATCH.md Rule H/Rule I; MASTER_DESIGN §Snapshot.7 #7; audit report §5.3 F-12
+  notes: |
+    AC:
+    - [ ] Each dead artifact is deleted OR carries a header comment stating it is intentionally
+          reserved with the tracking ticket; no exported symbol remains importer-less without a note.
+    - [ ] Rule I (wired-or-dead) violation count for these artifacts drops to zero.
+- id: FOLLOW-468
+  title: >-
+    Route the adapt-description URL through buildEndpoint + encodeURIComponent (F-16)
+  agent: sdk-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-16 — core/adapt-description.ts hand-concatenates the description URL outside
+    buildEndpoint and does not encode listing_id/archetype/locale (DOM-sourced) — the exact class
+    Rule X centralized buildEndpoint to prevent.
+  spec: CONVENTIONS_PATCH.md Rule X; audit report §5.1 F-16
+  notes: |
+    AC:
+    - [ ] adapt-description builds its URL via buildEndpoint with encoded query params; tested
+          against the real snippet base (Rule X).
+- id: FOLLOW-469
+  title: >-
+    Recover SDK bundle headroom below the 42KB gzip budget (F-19)
+  agent: sdk-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    2026-07-01 audit F-19 — estalara-sdk.iife.js is 39.86KB gzip vs the raised 42KB budget (~95%,
+    near-zero headroom).
+  spec: MASTER_DESIGN §B.2 (bundle budget, raised to 42KB ESC-028); audit report §5.4 F-19
+  notes: |
+    AC:
+    - [ ] Bundle gzip drops below ~90% of budget via code-split/lazy-load of quiz/chat/micro-poll
+          or dead-code removal (compose with F-12).
+    - [ ] CI bundle-size gate stays green with restored headroom.
+- id: FOLLOW-470
+  title: >-
+    Refresh stale status docs: Master_Design §Snapshot.1 + README + CLAUDE.md; promote orphaned
+    FOLLOW-380 (Doc/governance)
+  agent: pm-orchestrator
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    2026-07-01 audit §6.4 — §Snapshot.1 dated 2026-05-24 (~5wk stale, lists Sprint-13-era priorities
+    as "next", claims "8 rules A–H" vs actual 25); README says "Sprint 0"; CLAUDE.md still describes
+    Tiers 1/2/3; FOLLOW-380 (cross-listing re-adaptation hardening, P1) authored in FOLLOW_UPS.md
+    but never promoted to QUEUE. Violates Operating Principle 1 (Snapshot.1 = SoT).
+  spec: docs/ops/OPERATING_PRINCIPLES.md Rule 1; audit report §6.4
+  notes: |
+    AC:
+    - [ ] §Snapshot.1 header re-dated + per-section verdicts reconciled to the 2026-07-01 audit
+          (intent-engine real, 21/46 events, chat code-complete-dead-in-prod, bandit frozen, etc.).
+    - [ ] README status corrected (not "Sprint 0"); CLAUDE.md Tier language flagged/removed per the
+          no-Tiers ruling.
+    - [ ] FOLLOW-380 promoted into a QUEUE ticket; §Snapshot.6 rule-count corrected.
+- id: FOLLOW-471
+  title: >-
+    Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with
+    proof (epic Definition of Done)
+  agent: qa-engineer
+  status: BACKLOG
+  priority: P1
+  estimated_hours: 6
+  depends_on:
+    [
+      FOLLOW-449,
+      FOLLOW-450,
+      FOLLOW-451,
+      FOLLOW-452,
+      FOLLOW-453,
+      FOLLOW-454,
+      FOLLOW-455,
+      FOLLOW-456,
+      FOLLOW-457,
+      FOLLOW-458,
+      FOLLOW-459,
+      FOLLOW-460,
+      FOLLOW-461,
+      FOLLOW-462,
+      FOLLOW-463,
+      FOLLOW-464,
+      FOLLOW-465,
+      FOLLOW-466,
+      FOLLOW-467,
+      FOLLOW-468,
+      FOLLOW-469,
+      FOLLOW-470,
+    ]
+  source: >-
+    2026-07-01 audit — CEO acceptance goal: a final code review returns "no gaps, no bugs, Adaptive
+    Listings works as intended."
+  spec: audit report §7 output_validation; this Sprint 22b epic
+  notes: |
+    This is the epic's acceptance gate. Runs LAST, only after every ticket above is DONE.
+    AC:
+    - [ ] Re-run the same 8-track audit (SDK / ingest+data / intent / control-plane+LLM /
+          analytics / compliance / plan-reconciliation) against HEAD.
+    - [ ] Each of F-01…F-21 has a CLOSED verdict with file:line proof OR a CEO-ratified explicit
+          deferral logged in ESCALATIONS.md (no silent carry-over).
+    - [ ] Add the missing end-to-end test §Snapshot.5 flags: behavioral trace → ingest → intent →
+          adapt → DOM mutation → measured lift (the differentiator e2e).
+    - [ ] Baseline gates green (typecheck/lint/test incl. the e2e-smoke against a live wrangler);
+          bundle within budget; Rule H + Rule I violation counts at zero for touched surfaces.
+    - [ ] Verdict recorded in a new docs/AUDIT-2026-07-XX.md; only GREEN closes the epic.
+```

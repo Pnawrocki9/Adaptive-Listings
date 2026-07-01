@@ -1591,3 +1591,17 @@ add:** When evaluating whether a pattern has reached the ≥2 independent retro 
 two instances are independent incidents (different tickets, different authors, different
 circumstances) — a remediation retro for the same original incident does NOT count as a second
 independent occurrence, even if it references the same pattern by name.
+
+- **Date / ticket:** 2026-07-01 — FOLLOW-442 (delegation) / bookkeeping reconciliation for
+  FOLLOW-439/440/441/443/444/446/447 + ESC-035
+- **Delegation row used:** ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks → backend-engineer
+- **What validation caught (or missed):** QUEUE.md/STATUS.md were left stale mid-session — 8 merged
+  PRs (#397-#404) existed only in git log, never got YAML entries in QUEUE.md, and ESC-035's header
+  still said "OPEN" even though its own Resolution text recorded a CEO decision and the permanent
+  fix (FOLLOW-443/ADR-0015) had since merged CI-green. Caught by re-deriving ground truth from
+  `git log` + `gh pr view` diffs instead of trusting QUEUE.md/STATUS.md prose.
+- **A delegation/validation rule I'd add:** After merging a PR, the SAME session must append the
+  QUEUE.md YAML entry and flip any escalation header before moving on — do not defer bookkeeping to
+  "next session," or the next PM has to reconstruct 8 PRs of history from git log before it can
+  trust the queue.

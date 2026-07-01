@@ -7363,6 +7363,230 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     instantiation; CI guard job PASS; all real gates green. RETRO-144 written.
     CI counter: 1/5. Fix iterations: 0/3.
     FOLLOW-433→438 chain fully closed in code+bookkeeping.
+
+- id: FOLLOW-444
+  title: >-
+    Interim disable feedback endpoint (secure-by-default 503) + scope ops bypass to OPS_TENANT_ID
+    (ESC-035 interim ruling)
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 1
+  depends_on: []
+  source: ESC-035 CEO interim ruling 2026-07-01
+  spec: backlog/ESCALATIONS.md (ESC-035)
+  pr: '#397'
+  completed_at: '2026-07-01'
+  notes: |
+    DONE. PR #397 merged. Feedback endpoint disabled unless FEEDBACK_ENDPOINT_ENABLED=true
+    is explicitly set; ADAPT_API_KEY ops bypass scoped to OPS_TENANT_ID (403 on mismatch).
+    Interim fix landed same day as ESC-035 filing; superseded on the code-security axis by
+    the permanent fix FOLLOW-443 (still gates prod traffic behind FEEDBACK_ENDPOINT_ENABLED
+    until operator flips it — tracked in STATUS.md, non-blocking).
+
+- id: FOLLOW-329
+  title: Summary route fail-loud + data_source provenance (F-04, sibling of FOLLOW-439/440)
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 2
+  depends_on: []
+  source: 2026-07-01 end-to-end code audit (F-04)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-329 stub, pre-existing)
+  pr: '#398'
+  completed_at: '2026-07-01'
+  notes: |
+    DONE — resolved in the same PR as FOLLOW-439/440 (PR #398, merge 96e6900). See
+    FOLLOW-439 notes for full evidence (shared PR, shared test suite, 1380/1380 green).
+
+- id: FOLLOW-439
+  title: >-
+    Fix lift route fabricated metrics: remove buildMockLiftRows fallback, correct
+    dqsUnavailable=false on error, add data_source provenance (AUD-01 / F-01)
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 2
+  depends_on: []
+  source: 2026-07-01 end-to-end code audit (F-01)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-439 stub)
+  pr: '#398'
+  merge_commit: '96e6900'
+  completed_at: '2026-07-01'
+  notes: |
+    DONE. PR #398 merged (96e6900). lift/route.ts now distinguishes configured-but-failed CH
+    (throw → caught → Sentry + HTTP 500) from unconfigured (mock, tagged data_source:'mock').
+    data_source added to LiftResponse ('clickhouse'|'mock'|'error'). Mirrors pilot/cta-lift
+    pattern. Non-test producer: lift/route.ts. Non-test consumer: analytics dashboard page +
+    lift/route.test.ts (+8 tests). All real CI gates green (1380/1380 tests).
+    PM-VALIDATED 2026-07-01. CI counter: 1/5. Fix iterations: 0/3.
+
+- id: FOLLOW-440
+  title: >-
+    Fix phantom columns in summary + inquiry-starts routes: assigned_at→ts, drop or null-safe
+    latency_ms p95 tile (AUD-02 / F-02)
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 2
+  depends_on: []
+  source: 2026-07-01 end-to-end code audit (F-02)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-440 stub)
+  pr: '#398'
+  merge_commit: '96e6900'
+  completed_at: '2026-07-01'
+  notes: |
+    DONE. PR #398 merged (96e6900). assigned_at→ts fixed in summary/route.ts and both query
+    arms of inquiry-starts/route.ts (non-existent column was causing silent CH 500 →
+    buildMockSummary fabrication). latency_ms tile dropped (column does not exist on
+    adaptation_decisions per migration 0003) — p95Latency returns null; FOLLOW-445 stub
+    filed for the correct llm_calls join. analytics/page.tsx updated to show '—' when null.
+    Query guards added asserting 'ts' not 'assigned_at' in both route.test.ts files.
+    PM-VALIDATED 2026-07-01. CI counter: 1/5. Fix iterations: 0/3.
+
+- id: FOLLOW-441
+  title: Add a prod ClickHouse write-verification canary for logDecisionAsync (AUD-03 / F-06)
+  agent: data-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 3
+  depends_on: []
+  source: 2026-07-01 end-to-end code audit (F-06)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-441 stub)
+  pr: '#399'
+  completed_at: '2026-07-01'
+  notes: |
+    DONE. PR #399 merged: feat(data) prod adaptation_decisions write-verification canary.
+    Scheduled canary INSERTs a sentinel row, SELECTs it back, fires Sentry alert on
+    round-trip failure; excluded from prod analytics via session_id discriminator.
+    PM-VALIDATED 2026-07-01. All real CI gates green.
+
+- id: ADR-0015
+  title: Feedback endpoint authentication fix design (ESC-035/F-09)
+  agent: architect
+  status: DONE
+  priority: P0
+  estimated_hours: 2
+  depends_on: []
+  source: ESC-035 (P0 security)
+  spec: docs/adr/ADR-0015-feedback-endpoint-authentication.md
+  pr: '#400'
+  completed_at: '2026-07-01'
+  notes: |
+    DONE. PR #400 merged. ADR-0015 status ACCEPTED (docs/adr/ADR-0015-feedback-endpoint-authentication.md:3).
+    Designed the 5-step fix: SHA-256 bearer -> api_keys DB lookup via resolveApiKey(), HMAC
+    body-signature defense-in-depth, server-authoritative tenant_id enforcement. Rejected
+    the argon2id/new-column alternative (api_keys.hashed_key is already SHA-256 with a
+    unique index; resolveApiKey() already existed and is reused, not reinvented).
+
+- id: FOLLOW-443
+  title: Secure feedback endpoint per ADR-0015 (ESC-035/F-09 permanent fix)
+  agent: backend-engineer
+  status: DONE
+  priority: P0
+  estimated_hours: 3
+  depends_on: [ADR-0015]
+  source: ESC-035 (P0 security) / ADR-0015
+  spec: docs/adr/ADR-0015-feedback-endpoint-authentication.md
+  pr: '#401'
+  merge_commit: '6224c2d'
+  completed_at: '2026-07-01'
+  notes: |
+    DONE. PR #401 merged (6224c2d). apps/control-plane/src/lib/api-key-auth.ts (new): shared
+    resolveApiKey()/sha256Hex()/constantTimeEqual(). feedback/route.ts implements the
+    ADR-0015 algorithm end to end; ADAPT_API_KEY ops bypass now requires OPS_TENANT_ID match.
+    quiz/public-config, intent/config, quiz/completion, crm/outcome routes consolidated onto
+    the shared lib (Rule K.1). 49 tests in feedback/route.test.ts (T1-T12 matrix). 1389/1389
+    tests pass, lint/typecheck/build green.
+    Non-test producer: apps/control-plane/src/lib/api-key-auth.ts (resolveApiKey, sha256Hex,
+    constantTimeEqual). Non-test consumers (grep, 5 importers): feedback/route.ts,
+    quiz/public-config/route.ts, intent/config/route.ts, quiz/completion/route.ts,
+    crm/outcome/route.ts.
+    PM-VALIDATED 2026-07-01. CI green (1389/1389). ESC-035 code-fix axis CLOSED (see
+    ESCALATIONS.md ESC-035 final resolution). Operator step (flip FEEDBACK_ENDPOINT_ENABLED)
+    remains non-blocking, tracked in STATUS.md pilot go-live checklist.
+
+- id: FOLLOW-392
+  title: >-
+    Operator action: seed prod archetype_embeddings + assert all 18 rows non-null (activate section
+    F cosine in prod; close FOLLOW-341's prod hop)
+  agent: devops-engineer
+  status: DONE
+  priority: P1
+  estimated_hours: 1
+  depends_on: [FOLLOW-341]
+  source: AUDIT-2026-06-19 (§F cosine MOAT go-live)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-392 stub)
+  pr: '#402'
+  merge_commit: 'd1a33d8'
+  completed_at: '2026-07-01'
+  notes: |
+    DONE. Prod Supabase archetype_embeddings verified 18/18 seeded, non-null, 1024-dim, real
+    vectors 2026-07-01. PR #402 corrects a stale "embeddings NULL" claim in STATUS.md/QUEUE.md
+    that predated the actual seed run. cosine ORDERING is still inactive in prod because
+    listing_embeddings (not archetype_embeddings) is empty for the pilot tenant — that gap is
+    tracked under ESC-020 pilot activation, NOT this ticket. djb2 remains a safe fallback.
+
+- id: FOLLOW-446
+  title: Harden the archetype-embeddings-not-NULL CI gate against silent blind-spots
+  agent: devops-engineer
+  status: DONE
+  priority: P3
+  estimated_hours: 1
+  depends_on: [FOLLOW-392]
+  source: RETRO (FOLLOW-392 resolution session, post-merge PR #402 fix)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-446 stub)
+  pr: '#403'
+  merge_commit: '288484d'
+  completed_at: '2026-07-01'
+  notes: |
+    DONE. PR #403 merged (288484d). Fixed 3 stacked blindnesses in the archetype-embeddings-
+    not-null CI gate: missing @estalara/shared build before @estalara/db build (TS2307),
+    bare-specifier node script run from repo root (ERR_MODULE_NOT_FOUND), postgres-js socket
+    hang (added timeout-minutes). Gate is now genuinely green and verifies embeddings instead
+    of silently soft-skipping on every kind of failure via continue-on-error.
+    RETRO-145 written (PR #404); generated FOLLOW-447 (P3 devops); Rule Q (INERT-GATE)
+    promoted to CONVENTIONS_PATCH.md.
+
+- id: FOLLOW-447
+  title: >-
+    Audit sibling CI gates for the three INERT-GATE failure modes + add defense-in-depth
+    timeout-minutes to all ci.yml jobs
+  agent: devops-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 2
+  depends_on: [FOLLOW-446]
+  source: RETRO-145 (§4a LG-3 / §5b) — source ticket FOLLOW-446 (PR #403)
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-447 stub)
+  branch: devops-engineer/FOLLOW-447-ci-gate-inert-audit
+  notes: |
+    Promoted 2026-07-01. Not pilot-blocking (P3, CI hygiene). Audit every ci.yml job for the
+    3 failure modes FOLLOW-446 fixed (build-without-@estalara/shared, bare-specifier-from-
+    repo-root, socket-hang) and add timeout-minutes defense-in-depth to every job (currently
+    only archetype-embeddings-not-null has one).
+
+- id: FOLLOW-442
+  title: >-
+    Fix POST /api/adapt holdout branch: add logDecisionAsync call so holdout rows are written to
+    adaptation_decisions (AUD-04 / F-05)
+  agent: backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-01T00:00:00Z'
+  priority: P1
+  estimated_hours: 1
+  depends_on: []
+  source: 2026-07-01 end-to-end code audit (F-05); unblocked by ESC-035 resolution
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-442 stub)
+  branch: backend-engineer/FOLLOW-442-post-holdout-logdecision
+  notes: |
+    Delegated 2026-07-01 (table row: ingest worker, control-plane, decision-api, Postgres/RLS,
+    auth, onboarding HTTP, billing, webhooks -> backend-engineer). Last remaining code item
+    on the hard pilot go-live gate. GET handler's holdout-adjacent treatment-arm call
+    (route.ts:942-960) and POST's own treatment-arm call (route.ts:1403-1421) are the
+    reference patterns; this ticket adds the missing equivalent call in the POST holdout
+    branch (route.ts:~1141-1156).
 ```
 
 **History — Sprint 13a Lane A — Wave 1+2+3 MERGED (Scenario D Sequential, then Wave 3 parallel,

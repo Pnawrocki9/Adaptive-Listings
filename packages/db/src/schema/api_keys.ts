@@ -1,8 +1,10 @@
 /**
  * api_keys — public and secret keys issued to tenants for SDK + server-side auth.
  *
- * Keys are never stored in plaintext. Only argon2id hash + last 4 chars are kept.
- * Key lifecycle: active → rotated (rotated_at set) → revoked (revoked_at set).
+ * Keys are never stored in plaintext. Only SHA-256(rawKey) hex digest + last 4
+ * chars are kept. Key lifecycle: active → rotated (rotated_at set) → revoked
+ * (revoked_at set). The hashed_key column has a unique index enabling O(1)
+ * bearer-token → tenant resolution (see ADR-0015).
  *
  * @module @estalara/db/schema/api_keys
  */
@@ -21,7 +23,7 @@ export const apiKeys = pgTable(
     type: text('type').notNull(),
     /** Key prefix for display, e.g. 'est_live_' | 'est_test_' */
     prefix: text('prefix').notNull(),
-    /** argon2id hash of the raw key. */
+    /** SHA-256(rawKey) hex digest. Used for O(1) bearer→row resolution. See ADR-0015. */
     hashedKey: text('hashed_key').notNull().unique(),
     /** Last 4 characters of the raw key for identification in UI. */
     last4: text('last_4').notNull(),

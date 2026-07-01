@@ -47,15 +47,16 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
-import { createAdminClient, apiKeys, tenants } from '@estalara/db';
+import { createAdminClient, tenants } from '@estalara/db';
 import type { QuizPublicConfigResponse } from '@estalara/shared';
 import {
   QUIZ_DEFAULT_CONFIG,
   QuizPublicConfigResponseSchema,
   parseStoredQuizConfig,
 } from '@estalara/shared';
+import { resolveApiKey } from '@/lib/api-key-auth';
 
 // ─── CORS headers ─────────────────────────────────────────────────────────────
 
@@ -78,114 +79,6 @@ const FALLBACK_CONFIG: QuizPublicConfigResponse = {
   language: QUIZ_DEFAULT_CONFIG.language,
   accent_color: QUIZ_DEFAULT_CONFIG.accent_color,
 };
-
-// ─── Crypto helpers ───────────────────────────────────────────────────────────
-
-/**
- * Compute SHA-256 of a raw string → lower-case hex digest.
- * Used for api_keys lookup: the `hashed_key` column stores SHA-256(rawKey).
- *
- * @internal
- */
-async function sha256Hex(input: string): Promise<string> {
-  const enc = new TextEncoder();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', enc.encode(input));
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-/**
- * Constant-time string comparison. Returns true iff `a === b` without short-circuiting.
- * Prevents timing side-channels when comparing SHA-256 hex digests.
- *
- * Both inputs must be lower-case hex of equal length; if lengths differ the function
- * returns false immediately (length itself is not secret for fixed-length hashes).
- *
- * @internal
- */
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-}
-
-// ─── Auth helper ──────────────────────────────────────────────────────────────
-
-interface AuthOk {
-  ok: true;
-  tenantId: string;
-}
-interface AuthFail {
-  ok: false;
-  status: 401 | 404;
-  error: string;
-}
-
-/**
- * Resolve `tenant_id` from the `Authorization: Bearer <api-key>` header.
- *
- * 1. SHA-256(bearerToken) compared (constant-time) against `api_keys.hashed_key`.
- * 2. Key must be active (not revoked, not expired).
- * 3. Returns 401 on invalid/missing bearer, 404 when key is not found in the DB.
- *
- * @internal
- */
-async function resolveApiKey(req: NextRequest): Promise<AuthOk | AuthFail> {
-  const authHeader = req.headers.get('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    return { ok: false, status: 401, error: 'Invalid API key' };
-  }
-
-  const bearerToken = authHeader.slice('Bearer '.length).trim();
-  if (!bearerToken) {
-    return { ok: false, status: 401, error: 'Invalid API key' };
-  }
-
-  const adminUrl = process.env.DATABASE_URL_ADMIN ?? process.env.DATABASE_URL_DIRECT;
-  if (!adminUrl) {
-    // Dev/CI: DB not configured — return fallback (unconfigured, not configured-but-failed).
-    // We cannot authenticate without a DB; caller treats this as a successful no-op for
-    // the read-only fallback path.
-    return { ok: false, status: 401, error: 'Invalid API key' };
-  }
-
-  const keyHash = await sha256Hex(bearerToken);
-
-  // Constant-time path: we hash the provided token then do a DB equality lookup.
-  // The DB lookup itself uses the hash so no timing oracle on the raw token.
-  // We additionally constant-time compare the returned hash with the computed hash
-  // as a belt-and-suspenders guard (in case DB returns a near-miss row somehow).
-  const db = createAdminClient();
-  const now = new Date();
-
-  const rows = await db
-    .select({ tenantId: apiKeys.tenantId, hashedKey: apiKeys.hashedKey })
-    .from(apiKeys)
-    .where(
-      and(
-        eq(apiKeys.hashedKey, keyHash),
-        isNull(apiKeys.revokedAt),
-        or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, now)),
-      ),
-    )
-    .limit(1);
-
-  const keyRow = rows[0];
-  if (!keyRow) {
-    return { ok: false, status: 404, error: 'Tenant not found' };
-  }
-
-  // Belt-and-suspenders: constant-time compare the stored hash with our computed hash.
-  if (!constantTimeEqual(keyRow.hashedKey, keyHash)) {
-    return { ok: false, status: 401, error: 'Invalid API key' };
-  }
-
-  return { ok: true, tenantId: keyRow.tenantId };
-}
 
 // ─── Route handlers ───────────────────────────────────────────────────────────
 

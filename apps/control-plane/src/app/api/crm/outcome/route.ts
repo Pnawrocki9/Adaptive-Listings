@@ -47,6 +47,7 @@ import { eq, and, isNull, or, gt, sql } from 'drizzle-orm';
 import { errorBody, ErrorCode } from '@estalara/shared';
 import { createAdminClient, apiKeys, upsertConversionLabel } from '@estalara/db';
 import type { Database } from '@estalara/db';
+import { sha256Hex, constantTimeEqual } from '@/lib/api-key-auth';
 
 // ─── Body schema (ALLOW-LIST, compliance condition 1) ─────────────────────────
 //
@@ -103,7 +104,8 @@ const CrmOutcomeBodySchema = z
 
 type CrmOutcomeBody = z.infer<typeof CrmOutcomeBodySchema>;
 
-// ─── HMAC helpers (copied exactly from feedback/route.ts — FOLLOW-051 threat model) ──
+// ─── HMAC helper ──────────────────────────────────────────────────────────────
+// sha256Hex and constantTimeEqual are imported from @/lib/api-key-auth (ADR-0015 / Rule K.1).
 
 /**
  * Compute HMAC-SHA256(key=secret, data=message) → lower-case hex digest.
@@ -122,38 +124,6 @@ async function hmacSha256Hex(secret: string, message: string): Promise<string> {
   );
   const sig = await crypto.subtle.sign('HMAC', keyMaterial, enc.encode(message));
   return Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-/**
- * Constant-time hex string comparison. Returns true iff `a === b` without
- * short-circuiting (prevents timing side-channels).
- *
- * Both inputs must be lower-case hex of equal length; if lengths differ the
- * function returns false immediately (length itself is not secret).
- *
- * @internal
- */
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-}
-
-/**
- * Compute SHA-256 of a raw string and return the lower-case hex digest.
- * Used for api_keys lookup: the `hashed_key` column stores SHA-256(rawKey).
- *
- * @internal
- */
-async function sha256Hex(input: string): Promise<string> {
-  const enc = new TextEncoder();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', enc.encode(input));
-  return Array.from(new Uint8Array(hashBuffer))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }

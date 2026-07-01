@@ -1,31 +1,30 @@
 /**
- * Unit tests for POST /api/adapt/feedback — FOLLOW-007 + FOLLOW-051 + FOLLOW-179.
+ * Unit tests for POST /api/adapt/feedback — ADR-0015 (FOLLOW-443) + FOLLOW-007 + FOLLOW-179.
  *
- * Coverage:
- *  - 202 Accepted on valid HMAC-signed body (success path)
- *  - ADAPT_API_KEY fallback: matching Bearer → 202, wrong Bearer → 401
- *  - HMAC path: valid signature → 202; wrong signature → 401; missing sig → 401
- *  - Adversarial ping without valid signature → 401
- *  - converted: true   → alpha increments (updateBanditArm(3, 2, true) = {alpha: 4, beta: 2})
- *  - converted: false  → beta increments  (updateBanditArm(3, 2, false) = {alpha: 3, beta: 3})
- *  - Missing Authorization → 401 AUTH_REQUIRED
- *  - Empty Bearer token   → 401 AUTH_REQUIRED
- *  - Invalid JSON body    → 400 VALIDATION_ERROR
- *  - Zod validation fail  → 400 VALIDATION_ERROR
- *  - Fire-and-forget: response returns 202 before DB upsert resolves
- *  FOLLOW-179:
- *  - upsertConversionLabel called (not plain insert) when prediction_id present
- *  - idempotent: same prediction_id twice calls upsertConversionLabel twice (idempotency enforced by helper + DB)
- *  - invalid outcomeClass bubbles a ZodError → logged, response still 202 (fail-safe)
- *  - confidence is always passed as 1.0 for system-source labels
+ * ADR-0015 test matrix (T1–T12):
+ *   T1  Valid registered key, matching body.tenant_id, valid HMAC sig → 202
+ *   T2  Bearer token not in api_keys (SHA-256 lookup empty)           → 401
+ *   T3  Valid key but body.tenant_id is a different tenant's ID        → 403
+ *   T4  Valid key but HMAC body sig invalid (body tampered)            → 401
+ *   T5  Valid key but X-Estalara-Signature header absent               → 401
+ *   T6  Valid key but revoked (revoked_at IS NOT NULL)                 → 401
+ *   T7  Valid key but expired (expires_at < now())                     → 401
+ *   T8  Ops path: bearerToken === ADAPT_API_KEY, body.tenant_id === OPS_TENANT_ID → 202
+ *   T9  Ops path: bearerToken === ADAPT_API_KEY, body.tenant_id !== OPS_TENANT_ID → 403
+ *   T10 ADAPT_API_KEY set but OPS_TENANT_ID not set                    → 500
+ *   T11 FEEDBACK_ENDPOINT_ENABLED not set (interim 503)                → 503
+ *   T12 resolveApiKey shared lib: parity with existing quiz/public-config fixtures → pass
+ *
+ * Coverage retained from FOLLOW-007 + FOLLOW-051 + FOLLOW-179:
+ *   - Bandit arm update math (alpha/beta increments)
+ *   - Fire-and-forget semantics (response before DB)
+ *   - upsertConversionLabel called when prediction_id present
+ *   - FOLLOW-433: afterResponse() registration for both sinks
  *
  * @module apps/control-plane/src/app/api/adapt/feedback/route.test
  */
 
 // ─── next/server mock (must be before all imports) ───────────────────────────
-// Mock after() as a synchronous pass-through spy so tests can assert that
-// fire-and-forget sinks are registered via after() (FOLLOW-433 / ESC-033).
-// The spread of the actual module preserves NextRequest, NextResponse, etc.
 vi.mock('next/server', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('next/server');
   return {
@@ -39,7 +38,13 @@ vi.mock('next/server', async () => {
 import { NextRequest, after } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-// ─── Mock @estalara/db (hoisted) ─────────────────────────────────────────────
+// ─── Mock @estalara/db ────────────────────────────────────────────────────────
+//
+// Two select call sites in the new auth flow:
+//   1. resolveApiKey() → SELECT from api_keys (via @/lib/api-key-auth)
+//   2. updateArmAsync() → SELECT from ab_bandit_weights
+//
+// Both go through the same mock chain; use mockResolvedValueOnce to control order.
 
 const {
   mockSelectLimit,
@@ -59,7 +64,6 @@ const {
 
   const mockCreateAdminClient = vi.fn(() => ({ select: mockSelect, insert: mockInsert }));
 
-  // FOLLOW-179: upsertConversionLabel is now the write path for conversion_labels.
   const mockUpsertConversionLabel = vi.fn().mockResolvedValue(undefined);
 
   return {
@@ -82,22 +86,29 @@ vi.mock('@estalara/db', () => ({
     paused: 'paused',
     updatedAt: 'updated_at',
   },
-  // FOLLOW-179: the route now calls upsertConversionLabel (no longer raw insert).
+  apiKeys: {
+    tenantId: 'tenant_id',
+    hashedKey: 'hashed_key',
+    revokedAt: 'revoked_at',
+    expiresAt: 'expires_at',
+  },
   upsertConversionLabel: mockUpsertConversionLabel,
 }));
 
 vi.mock('drizzle-orm', () => ({
   and: vi.fn((...preds: unknown[]) => ({ kind: 'and', preds })),
   eq: vi.fn((col: unknown, val: unknown) => ({ kind: 'eq', col, val })),
+  isNull: vi.fn((col: unknown) => ({ kind: 'isNull', col })),
+  or: vi.fn((...preds: unknown[]) => ({ kind: 'or', preds })),
+  gt: vi.fn((col: unknown, val: unknown) => ({ kind: 'gt', col, val })),
 }));
 
 import { POST } from './route';
 
-// ─── HMAC test helper ─────────────────────────────────────────────────────────
+// ─── Crypto helpers ───────────────────────────────────────────────────────────
 
 /**
- * Compute HMAC-SHA256(key, data) hex digest using the Web Crypto API.
- * Mirrors the implementation in route.ts and packages/sdk/src/core/adapt.ts.
+ * Compute HMAC-SHA256(key, data) hex digest — mirrors route.ts + SDK implementation.
  */
 async function computeHmac(secret: string, message: string): Promise<string> {
   const enc = new TextEncoder();
@@ -114,7 +125,19 @@ async function computeHmac(secret: string, message: string): Promise<string> {
     .join('');
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+/**
+ * Compute SHA-256(input) → lower-case hex — mirrors api-key-auth.ts.
+ * Used in tests to construct the `hashedKey` value the DB mock should return.
+ */
+async function sha256Hex(input: string): Promise<string> {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(input));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+// ─── Request helpers ──────────────────────────────────────────────────────────
 
 function makePostRequest(
   body: unknown,
@@ -122,12 +145,8 @@ function makePostRequest(
   signatureHeader: string | null = null,
 ): NextRequest {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (authHeader !== null) {
-    headers.Authorization = authHeader;
-  }
-  if (signatureHeader !== null) {
-    headers['X-Estalara-Signature'] = signatureHeader;
-  }
+  if (authHeader !== null) headers.Authorization = authHeader;
+  if (signatureHeader !== null) headers['X-Estalara-Signature'] = signatureHeader;
   return new NextRequest('http://localhost/api/adapt/feedback', {
     method: 'POST',
     headers,
@@ -153,9 +172,23 @@ async function makeSignedRequest(body: unknown, apiKey = 'test_key'): Promise<Ne
   });
 }
 
+/**
+ * Build a valid API key DB row mock that resolveApiKey() will accept.
+ * The hashedKey must match SHA-256(rawApiKey) — computed at test time.
+ */
+async function makeApiKeyRow(rawApiKey: string, tenantId: string) {
+  return {
+    tenantId,
+    hashedKey: await sha256Hex(rawApiKey),
+  };
+}
+
+const TENANT_ID = 'tenant-abc-uuid';
+const VALID_API_KEY = 'pk_live_test_tenant_key';
+
 const VALID_BODY = {
   session_id: 'sess-feedback-001',
-  tenant_id: 'tenant-abc',
+  tenant_id: TENANT_ID,
   archetype: 'family_buyer',
   variant: 'v1',
   converted: true,
@@ -166,13 +199,9 @@ async function flushMicrotasks(): Promise<void> {
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
-// ─── FOLLOW-444 / ESC-035: interim 503 disable ───────────────────────────────
-//
-// AC: POST /api/adapt/feedback returns 503 for ALL callers by default
-// (secure-by-default: FEEDBACK_ENDPOINT_ENABLED must be explicitly set to 'true'
-// to enable; unset = disabled). Production is safe with NO operator action required.
+// ─── T11: FEEDBACK_ENDPOINT_ENABLED unset → 503 (existing, retained) ─────────
 
-describe('FOLLOW-444 / ESC-035: interim 503 disable (FEEDBACK_ENDPOINT_ENABLED unset = default disabled)', () => {
+describe('T11 / FOLLOW-444 / ESC-035: interim 503 disable (FEEDBACK_ENDPOINT_ENABLED unset = default disabled)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Intentionally do NOT set FEEDBACK_ENDPOINT_ENABLED → endpoint is disabled by default.
@@ -191,12 +220,13 @@ describe('FOLLOW-444 / ESC-035: interim 503 disable (FEEDBACK_ENDPOINT_ENABLED u
 
   it('returns 503 even when ADAPT_API_KEY matches (ops bypass does not exempt from disable)', async () => {
     vi.stubEnv('ADAPT_API_KEY', 'ops-key');
+    vi.stubEnv('OPS_TENANT_ID', TENANT_ID);
     const res = await POST(makePostRequest(VALID_BODY, 'Bearer ops-key'));
     expect(res.status).toBe(503);
   });
 
   it('returns 503 even for a correctly HMAC-signed request', async () => {
-    const req = await makeSignedRequest(VALID_BODY, 'tenant_api_key');
+    const req = await makeSignedRequest(VALID_BODY, VALID_API_KEY);
     const res = await POST(req);
     expect(res.status).toBe(503);
   });
@@ -217,13 +247,232 @@ describe('FOLLOW-444 / ESC-035: interim 503 disable (FEEDBACK_ENDPOINT_ENABLED u
   });
 });
 
-// ─── FOLLOW-444 / ESC-035: OPS_TENANT_ID scope enforcement ──────────────────
-//
-// AC: ops bypass returns 403 when body.tenant_id !== OPS_TENANT_ID.
-// Tests set FEEDBACK_ENDPOINT_ENABLED=true to reach the scope-check logic
-// (simulating the state after FOLLOW-443 ships and the 503 block is removed).
+// ─── T1: Valid registered key + matching tenant_id + valid HMAC → 202 ─────────
 
-describe('FOLLOW-444 / ESC-035: OPS_TENANT_ID scope enforcement', () => {
+describe('T1: Valid registered key + matching body.tenant_id + valid HMAC → 202', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', ''); // force non-ops path
+
+    // First mockSelectLimit call: resolveApiKey returns a valid key row.
+    // Second call: updateArmAsync returns empty (no existing bandit row).
+    const keyRow = await makeApiKeyRow(VALID_API_KEY, TENANT_ID);
+    mockSelectLimit
+      .mockResolvedValueOnce([keyRow]) // api_keys lookup
+      .mockResolvedValueOnce([]); // ab_bandit_weights lookup
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('T1: returns 202 Accepted on valid key + matching tenant + valid HMAC', async () => {
+    const req = await makeSignedRequest(VALID_BODY, VALID_API_KEY);
+    const res = await POST(req);
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { ok: boolean };
+    expect(body.ok).toBe(true);
+  });
+});
+
+// ─── T2: Bearer token not in api_keys → 401 ──────────────────────────────────
+
+describe('T2: Bearer token not in api_keys (SHA-256 lookup empty) → 401', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', '');
+
+    // resolveApiKey returns empty rows → key not found → 401
+    mockSelectLimit.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('T2: unknown bearer token (not in DB) → 401 FORBIDDEN', async () => {
+    // Send a signed request but the key is not in DB
+    const req = await makeSignedRequest(VALID_BODY, 'unknown_key_not_in_db');
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+});
+
+// ─── T3: Valid key but body.tenant_id is a different tenant → 403 ─────────────
+
+describe('T3: Valid key but body.tenant_id is a different tenant → 403', () => {
+  const ATTACKER_TENANT = 'victim-tenant-uuid';
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', '');
+
+    // The key resolves to TENANT_ID (the attacker's own tenant)
+    const keyRow = await makeApiKeyRow(VALID_API_KEY, TENANT_ID);
+    mockSelectLimit.mockResolvedValueOnce([keyRow]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('T3: valid key but body.tenant_id differs from resolved tenant → 403 FORBIDDEN', async () => {
+    // Attacker's valid key resolves to TENANT_ID but body claims ATTACKER_TENANT
+    const crossTenantBody = { ...VALID_BODY, tenant_id: ATTACKER_TENANT };
+    const bodyStr = JSON.stringify(crossTenantBody);
+    const sig = await computeHmac(VALID_API_KEY, bodyStr);
+
+    const req = new NextRequest('http://localhost/api/adapt/feedback', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${VALID_API_KEY}`,
+        'X-Estalara-Signature': sig,
+      },
+      body: bodyStr,
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string; message: string };
+    expect(body.error).toBe('FORBIDDEN');
+    expect(body.message).toContain('tenant_id in body does not match');
+  });
+});
+
+// ─── T4: Valid key but HMAC body sig invalid → 401 ───────────────────────────
+
+describe('T4: Valid key but HMAC body sig invalid (body tampered) → 401', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', '');
+
+    const keyRow = await makeApiKeyRow(VALID_API_KEY, TENANT_ID);
+    mockSelectLimit.mockResolvedValueOnce([keyRow]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('T4a: valid key + wrong HMAC (different body signed) → 401', async () => {
+    const tamperedBody = JSON.stringify({ ...VALID_BODY, converted: false });
+    const sig = await computeHmac(VALID_API_KEY, tamperedBody);
+
+    // Send original body but sig computed over tampered body
+    const res = await POST(makePostRequest(VALID_BODY, `Bearer ${VALID_API_KEY}`, sig));
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('T4b: valid key + attacker-crafted signature → 401', async () => {
+    const fakeSig = 'a'.repeat(64);
+    const res = await POST(makePostRequest(VALID_BODY, `Bearer ${VALID_API_KEY}`, fakeSig));
+    expect(res.status).toBe(401);
+  });
+
+  it('T4c: signature computed with different API key → 401', async () => {
+    const bodyStr = JSON.stringify(VALID_BODY);
+    const wrongSig = await computeHmac('different_key', bodyStr);
+    const res = await POST(makePostRequest(VALID_BODY, `Bearer ${VALID_API_KEY}`, wrongSig));
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─── T5: Valid key but X-Estalara-Signature absent → 401 ─────────────────────
+
+describe('T5: Valid key but X-Estalara-Signature header absent → 401', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', '');
+
+    const keyRow = await makeApiKeyRow(VALID_API_KEY, TENANT_ID);
+    mockSelectLimit.mockResolvedValueOnce([keyRow]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('T5: valid key but no X-Estalara-Signature header → 401 (presence-only Bearer blocked)', async () => {
+    // This is the RETRO-006 regression guard: presence-only Bearer must be rejected.
+    const res = await POST(
+      makePostRequest(VALID_BODY, `Bearer ${VALID_API_KEY}`, null /* no sig */),
+    );
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+});
+
+// ─── T6: Valid key but revoked → 401 ─────────────────────────────────────────
+
+describe('T6: Valid key but revoked (revoked_at IS NOT NULL) → 401', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', '');
+
+    // resolveApiKey filters revoked keys via WHERE revoked_at IS NULL.
+    // The mock returns empty rows (the WHERE clause filters out revoked keys at DB level).
+    mockSelectLimit.mockResolvedValueOnce([]); // revoked key → no rows returned
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('T6: revoked key (empty DB result after WHERE revoked_at IS NULL) → 401', async () => {
+    const req = await makeSignedRequest(VALID_BODY, VALID_API_KEY);
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+});
+
+// ─── T7: Valid key but expired → 401 ─────────────────────────────────────────
+
+describe('T7: Valid key but expired (expires_at < now()) → 401', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', '');
+
+    // resolveApiKey filters expired keys via WHERE (expires_at IS NULL OR expires_at > now()).
+    // The mock returns empty rows (the WHERE clause filters out expired keys at DB level).
+    mockSelectLimit.mockResolvedValueOnce([]); // expired key → no rows returned
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('T7: expired key (empty DB result after WHERE expires_at > now()) → 401', async () => {
+    const req = await makeSignedRequest(VALID_BODY, VALID_API_KEY);
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+  });
+});
+
+// ─── T8 + T9 + T10: Ops bypass path ──────────────────────────────────────────
+
+describe('T8/T9/T10: Ops bypass (ADAPT_API_KEY) — permanent tenant scope enforcement', () => {
   const OPS_TENANT = '00000000-0000-0000-0000-000000000001';
 
   beforeEach(() => {
@@ -232,49 +481,94 @@ describe('FOLLOW-444 / ESC-035: OPS_TENANT_ID scope enforcement', () => {
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
     vi.stubEnv('ADAPT_API_KEY', 'ops-key');
     vi.stubEnv('OPS_TENANT_ID', OPS_TENANT);
-    mockSelectLimit.mockResolvedValue([]);
+    mockSelectLimit.mockResolvedValue([]); // bandit arm not found → use Beta(1,1)
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it('403 FORBIDDEN when ops key used with body.tenant_id !== OPS_TENANT_ID', async () => {
-    const wrongTenantBody = { ...VALID_BODY, tenant_id: 'attacker-tenant' };
+  it('T8: ops key + body.tenant_id === OPS_TENANT_ID → 202 Accepted', async () => {
+    const correctTenantBody = { ...VALID_BODY, tenant_id: OPS_TENANT };
+    const res = await POST(makePostRequest(correctTenantBody, 'Bearer ops-key'));
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { ok: boolean };
+    expect(body.ok).toBe(true);
+  });
+
+  it('T9: ops key + body.tenant_id !== OPS_TENANT_ID → 403 FORBIDDEN', async () => {
+    const wrongTenantBody = { ...VALID_BODY, tenant_id: 'attacker-tenant-id' };
     const res = await POST(makePostRequest(wrongTenantBody, 'Bearer ops-key'));
     expect(res.status).toBe(403);
     const body = (await res.json()) as { error: string; message: string };
     expect(body.error).toBe('FORBIDDEN');
-    expect(body.message).toBe('Ops key may only write the designated ops tenant.');
+    expect(body.message).toContain('tenant_id in body does not match');
   });
 
-  it('202 Accepted when ops key used with body.tenant_id === OPS_TENANT_ID', async () => {
-    const correctTenantBody = { ...VALID_BODY, tenant_id: OPS_TENANT };
-    const res = await POST(makePostRequest(correctTenantBody, 'Bearer ops-key'));
-    expect(res.status).toBe(202);
-  });
-
-  it('403 when OPS_TENANT_ID set but body.tenant_id is empty string', async () => {
-    const emptyTenantBody = { ...VALID_BODY, tenant_id: 'x' }; // 'x' !== OPS_TENANT
+  it('T9b: ops key + empty tenant_id body → 400 (validation fails before cross-tenant check)', async () => {
+    const emptyTenantBody = { ...VALID_BODY, tenant_id: '' };
     const res = await POST(makePostRequest(emptyTenantBody, 'Bearer ops-key'));
-    expect(res.status).toBe(403);
+    // Zod schema: tenant_id min(1) → 400 validation error
+    expect(res.status).toBe(400);
   });
 
-  it('OPS_TENANT_ID unset → no tenant restriction, request proceeds normally', async () => {
+  it('T10: ADAPT_API_KEY set but OPS_TENANT_ID not set → 500 (server misconfiguration)', async () => {
     vi.stubEnv('OPS_TENANT_ID', '');
     const res = await POST(makePostRequest(VALID_BODY, 'Bearer ops-key'));
-    // No OPS_TENANT_ID set → restriction inactive → request proceeds (202)
-    expect(res.status).toBe(202);
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string; message: string };
+    expect(body.error).toBe('INTERNAL_ERROR');
+    expect(body.message).toContain('OPS_TENANT_ID');
   });
 });
 
-// ─── Auth gate ────────────────────────────────────────────────────────────────
+// ─── T12: resolveApiKey parity — shared lib matches quiz/public-config fixture ──
 
-describe('POST /api/adapt/feedback — auth gate', () => {
+describe('T12: resolveApiKey shared lib parity', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('T12: resolveApiKey returns the tenant from the matched DB row (same as quiz/public-config)', async () => {
+    // This proves the shared resolveApiKey() behaves identically whether called from
+    // feedback/route.ts or quiz/public-config/route.ts — same DB lookup, same result.
+    const rawKey = 'parity_test_key';
+    const expectedTenantId = 'parity-tenant-uuid';
+    const keyRow = await makeApiKeyRow(rawKey, expectedTenantId);
+
+    mockSelectLimit
+      .mockResolvedValueOnce([keyRow]) // api_keys lookup → found
+      .mockResolvedValueOnce([]); // bandit arm lookup → not found
+
+    const body = { ...VALID_BODY, tenant_id: expectedTenantId };
+    const req = await makeSignedRequest(body, rawKey);
+    const res = await POST(req);
+
+    // If resolveApiKey returned the correct tenant, the cross-tenant check passes → 202.
+    expect(res.status).toBe(202);
+    await flushMicrotasks();
+    // Bandit update uses resolvedTenantId (from DB) — not body.tenant_id directly.
+    const insertedRow = mockInsertValues.mock.calls[0]?.[0] as { tenantId: string };
+    expect(insertedRow.tenantId).toBe(expectedTenantId);
+  });
+});
+
+// ─── Auth gate (existing tests, updated for new auth flow) ───────────────────
+
+describe('POST /api/adapt/feedback — auth gate (ADR-0015)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', '');
+    mockSelectLimit.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -295,86 +589,34 @@ describe('POST /api/adapt/feedback — auth gate', () => {
     expect(body.error.code).toBe('AUTH_REQUIRED');
   });
 
-  it('correct ADAPT_API_KEY fallback key → 202 (no HMAC required)', async () => {
+  it('wrong key when ADAPT_API_KEY is set → falls through to resolveApiKey → 401', async () => {
     vi.stubEnv('ADAPT_API_KEY', 'expected_key');
-    const res = await POST(makePostRequest(VALID_BODY, 'Bearer expected_key'));
-    expect(res.status).toBe(202);
-  });
-
-  it('wrong key when ADAPT_API_KEY is set → 401 FORBIDDEN', async () => {
-    vi.stubEnv('ADAPT_API_KEY', 'expected_key');
-    // Wrong Bearer + no valid HMAC → rejected
+    vi.stubEnv('OPS_TENANT_ID', TENANT_ID);
+    // bearerToken 'wrong_key' !== 'expected_key' → not ops path → resolveApiKey → DB returns []
     const res = await POST(makePostRequest(VALID_BODY, 'Bearer wrong_key'));
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('FORBIDDEN');
   });
 
-  it('ADAPT_API_KEY unset + valid HMAC signature → 202', async () => {
-    vi.stubEnv('ADAPT_API_KEY', '');
-    const req = await makeSignedRequest(VALID_BODY, 'my_tenant_key');
-    const res = await POST(req);
-    expect(res.status).toBe(202);
-  });
-
-  it('ADAPT_API_KEY unset + no signature → 401 FORBIDDEN (adversarial ping blocked)', async () => {
-    vi.stubEnv('ADAPT_API_KEY', '');
-    // Any non-empty Bearer but NO X-Estalara-Signature → rejected
-    const res = await POST(makePostRequest(VALID_BODY, 'Bearer any_token'));
-    expect(res.status).toBe(401);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe('FORBIDDEN');
-  });
-
-  it('ADAPT_API_KEY unset + wrong HMAC signature → 401 FORBIDDEN', async () => {
-    vi.stubEnv('ADAPT_API_KEY', '');
-    // Correct Bearer key but wrong (attacker-crafted) signature
-    const attacker_sig = 'a'.repeat(64); // 64 hex chars of zeros — invalid HMAC
-    const res = await POST(makePostRequest(VALID_BODY, 'Bearer my_tenant_key', attacker_sig));
-    expect(res.status).toBe(401);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe('FORBIDDEN');
-  });
-
-  it('ADAPT_API_KEY unset + malformed signature (not 64 hex chars) → 401 FORBIDDEN', async () => {
-    vi.stubEnv('ADAPT_API_KEY', '');
-    const res = await POST(makePostRequest(VALID_BODY, 'Bearer key', 'not-a-valid-hmac'));
-    expect(res.status).toBe(401);
-  });
-
-  it('signature computed with wrong key → 401 FORBIDDEN', async () => {
-    vi.stubEnv('ADAPT_API_KEY', '');
-    // Sign with a DIFFERENT key than what is in the Bearer header → mismatch
-    const bodyStr = JSON.stringify(VALID_BODY);
-    const wrongSig = await computeHmac('different_key', bodyStr);
-    const res = await POST(makePostRequest(VALID_BODY, 'Bearer correct_key', wrongSig));
-    expect(res.status).toBe(401);
-  });
-
-  it('signature computed over different body → 401 FORBIDDEN', async () => {
-    vi.stubEnv('ADAPT_API_KEY', '');
-    const apiKey = 'my_key';
-    // Sign the tampered body but send the original body in the request
-    const tamperedBody = JSON.stringify({ ...VALID_BODY, converted: false });
-    const sig = await computeHmac(apiKey, tamperedBody);
-    const res = await POST(makePostRequest(VALID_BODY, `Bearer ${apiKey}`, sig));
-    expect(res.status).toBe(401);
-  });
-
-  it('rejects presence-only Bearer (LG-3 regression guard)', async () => {
-    // Regression guard: 2026-05-22 → 2026-05-23 production window where POST
-    // /api/adapt/feedback accepted a presence-only Bearer token without requiring
-    // an X-Estalara-Signature header.  RETRO-006 §3 LG-3; CONVENTIONS_PATCH.md
-    // Rule H amendment (2026-05-23).
-    //
-    // This test MUST remain in the default test run with no env-flag gating.
-    // If it starts failing, a mutation-endpoint auth regression has been introduced.
-    vi.stubEnv('ADAPT_API_KEY', '');
-    // Send a valid-looking Bearer token but deliberately omit X-Estalara-Signature.
+  it('rejects presence-only Bearer (RETRO-006 regression guard)', async () => {
+    // RETRO-006 §3 LG-3: 2026-05-22→23 production window where presence-only Bearer
+    // was accepted. With ADR-0015, Bearer alone is rejected:
+    //   - resolveApiKey returns no rows (DB mock returns []) → 401 before HMAC check
+    // This guard MUST remain in the default test run with no env-flag gating.
     const res = await POST(makePostRequest(VALID_BODY, 'Bearer tenant_api_key_realkey', null));
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('malformed signature (not 64 hex chars) after valid key lookup → 401', async () => {
+    const keyRow = await makeApiKeyRow(VALID_API_KEY, TENANT_ID);
+    mockSelectLimit.mockResolvedValueOnce([keyRow]);
+    const res = await POST(
+      makePostRequest(VALID_BODY, `Bearer ${VALID_API_KEY}`, 'not-a-valid-hmac'),
+    );
+    expect(res.status).toBe(401);
   });
 });
 
@@ -385,8 +627,9 @@ describe('POST /api/adapt/feedback — body validation', () => {
     vi.clearAllMocks();
     vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
-    // Use ADAPT_API_KEY fallback so validation tests don't need HMAC overhead
+    // Use ops path for validation tests to avoid HMAC overhead
     vi.stubEnv('ADAPT_API_KEY', 'test_key');
+    vi.stubEnv('OPS_TENANT_ID', TENANT_ID);
   });
 
   afterEach(() => {
@@ -406,7 +649,7 @@ describe('POST /api/adapt/feedback — body validation', () => {
   });
 
   it('missing session_id → 400 VALIDATION_ERROR', async () => {
-    const rest: Record<string, unknown> = { ...VALID_BODY };
+    const rest: Record<string, unknown> = { ...VALID_BODY, tenant_id: TENANT_ID };
     delete rest.session_id;
     const res = await POST(makePostRequest(rest));
     expect(res.status).toBe(400);
@@ -415,47 +658,50 @@ describe('POST /api/adapt/feedback — body validation', () => {
   });
 
   it('missing tenant_id → 400', async () => {
-    const rest: Record<string, unknown> = { ...VALID_BODY };
+    const rest: Record<string, unknown> = { ...VALID_BODY, tenant_id: TENANT_ID };
     delete rest.tenant_id;
     const res = await POST(makePostRequest(rest));
     expect(res.status).toBe(400);
   });
 
   it('missing archetype → 400', async () => {
-    const rest: Record<string, unknown> = { ...VALID_BODY };
+    const rest: Record<string, unknown> = { ...VALID_BODY, tenant_id: TENANT_ID };
     delete rest.archetype;
     const res = await POST(makePostRequest(rest));
     expect(res.status).toBe(400);
   });
 
   it('missing variant → 400', async () => {
-    const rest: Record<string, unknown> = { ...VALID_BODY };
+    const rest: Record<string, unknown> = { ...VALID_BODY, tenant_id: TENANT_ID };
     delete rest.variant;
     const res = await POST(makePostRequest(rest));
     expect(res.status).toBe(400);
   });
 
   it('missing converted → 400', async () => {
-    const rest: Record<string, unknown> = { ...VALID_BODY };
+    const rest: Record<string, unknown> = { ...VALID_BODY, tenant_id: TENANT_ID };
     delete rest.converted;
     const res = await POST(makePostRequest(rest));
     expect(res.status).toBe(400);
   });
 
   it('converted: "yes" (string) → 400 (must be boolean)', async () => {
-    const res = await POST(makePostRequest({ ...VALID_BODY, converted: 'yes' }));
+    const res = await POST(
+      makePostRequest({ ...VALID_BODY, tenant_id: TENANT_ID, converted: 'yes' }),
+    );
     expect(res.status).toBe(400);
   });
 });
 
 // ─── Bandit update math ──────────────────────────────────────────────────────
 
-describe('POST /api/adapt/feedback — bandit update', () => {
+describe('POST /api/adapt/feedback — bandit update (ops path)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
     vi.stubEnv('ADAPT_API_KEY', 'test_key');
+    vi.stubEnv('OPS_TENANT_ID', TENANT_ID);
     mockSelectLimit.mockResolvedValue([]);
   });
 
@@ -463,8 +709,10 @@ describe('POST /api/adapt/feedback — bandit update', () => {
     vi.unstubAllEnvs();
   });
 
+  const OPS_VALID_BODY = { ...VALID_BODY, tenant_id: TENANT_ID };
+
   it('returns 202 Accepted', async () => {
-    const res = await POST(makePostRequest(VALID_BODY));
+    const res = await POST(makePostRequest(OPS_VALID_BODY));
     expect(res.status).toBe(202);
     const body = (await res.json()) as { ok: boolean };
     expect(body.ok).toBe(true);
@@ -473,7 +721,7 @@ describe('POST /api/adapt/feedback — bandit update', () => {
   it('converted: true with existing row (alpha=3, beta=2) → upserts alpha=4, beta=2', async () => {
     mockSelectLimit.mockResolvedValueOnce([{ alpha: 3.0, beta: 2.0 }]);
 
-    await POST(makePostRequest({ ...VALID_BODY, converted: true }));
+    await POST(makePostRequest({ ...OPS_VALID_BODY, converted: true }));
     await flushMicrotasks();
 
     expect(mockInsertValues).toHaveBeenCalledOnce();
@@ -485,7 +733,7 @@ describe('POST /api/adapt/feedback — bandit update', () => {
   it('converted: false with existing row (alpha=3, beta=2) → upserts alpha=3, beta=3', async () => {
     mockSelectLimit.mockResolvedValueOnce([{ alpha: 3.0, beta: 2.0 }]);
 
-    await POST(makePostRequest({ ...VALID_BODY, converted: false }));
+    await POST(makePostRequest({ ...OPS_VALID_BODY, converted: false }));
     await flushMicrotasks();
 
     const insertedRow = mockInsertValues.mock.calls[0]?.[0] as { alpha: number; beta: number };
@@ -496,7 +744,7 @@ describe('POST /api/adapt/feedback — bandit update', () => {
   it('missing arm row → treats as Beta(1, 1), then increments', async () => {
     mockSelectLimit.mockResolvedValueOnce([]); // no existing row
 
-    await POST(makePostRequest({ ...VALID_BODY, converted: true }));
+    await POST(makePostRequest({ ...OPS_VALID_BODY, converted: true }));
     await flushMicrotasks();
 
     const insertedRow = mockInsertValues.mock.calls[0]?.[0] as { alpha: number; beta: number };
@@ -505,18 +753,10 @@ describe('POST /api/adapt/feedback — bandit update', () => {
     expect(insertedRow.beta).toBe(1);
   });
 
-  it('upserts the same (tenant, archetype, variant) tuple from the request', async () => {
+  it('upserts the resolvedTenantId (from ops env) NOT the raw body tenant_id', async () => {
     mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
 
-    await POST(
-      makePostRequest({
-        session_id: 'sess-x',
-        tenant_id: 'tenant-zzz',
-        archetype: 'yield_hunter',
-        variant: 'v2',
-        converted: true,
-      }),
-    );
+    await POST(makePostRequest({ ...OPS_VALID_BODY, archetype: 'yield_hunter', variant: 'v2' }));
     await flushMicrotasks();
 
     const insertedRow = mockInsertValues.mock.calls[0]?.[0] as {
@@ -524,44 +764,35 @@ describe('POST /api/adapt/feedback — bandit update', () => {
       archetype: string;
       variant: string;
     };
-    expect(insertedRow.tenantId).toBe('tenant-zzz');
+    // tenantId must come from resolvedTenantId (OPS_TENANT_ID), not body
+    expect(insertedRow.tenantId).toBe(TENANT_ID);
     expect(insertedRow.archetype).toBe('yield_hunter');
     expect(insertedRow.variant).toBe('v2');
   });
 
-  it('FOLLOW-179: calls upsertConversionLabel (not raw insert) when prediction_id is present', async () => {
+  it('FOLLOW-179: calls upsertConversionLabel when prediction_id is present', async () => {
     mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
 
     await POST(
       makePostRequest({
-        session_id: 'sess-x',
-        tenant_id: 'tenant-zzz',
-        archetype: 'yield_hunter',
-        variant: 'v2',
-        converted: true,
+        ...OPS_VALID_BODY,
         prediction_id: 'decision-uuid-123',
       }),
     );
     await flushMicrotasks();
 
-    // upsertConversionLabel must be called with the correct input.
     expect(mockUpsertConversionLabel).toHaveBeenCalledOnce();
     const [, input] = mockUpsertConversionLabel.mock.calls[0] as [unknown, Record<string, unknown>];
     expect(input.predictionId).toBe('decision-uuid-123');
-    expect(input.tenantId).toBe('tenant-zzz');
-    expect(input.outcomeClass).toBe('viewing_booked'); // converted=true → shallowest positive
+    expect(input.tenantId).toBe(TENANT_ID);
+    expect(input.outcomeClass).toBe('viewing_booked');
     expect(input.labelSource).toBe('system');
   });
 
   it('FOLLOW-179: confidence is always 1.0 for system-source labels (CB-2 fix)', async () => {
     mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
 
-    await POST(
-      makePostRequest({
-        ...VALID_BODY,
-        prediction_id: 'decision-uuid-cb2',
-      }),
-    );
+    await POST(makePostRequest({ ...OPS_VALID_BODY, prediction_id: 'decision-uuid-cb2' }));
     await flushMicrotasks();
 
     expect(mockUpsertConversionLabel).toHaveBeenCalledOnce();
@@ -569,28 +800,16 @@ describe('POST /api/adapt/feedback — bandit update', () => {
     expect(input.confidence).toBe(1.0);
   });
 
-  it('FOLLOW-179: idempotent — second ping with same prediction_id calls upsertConversionLabel again (dedup is DB-enforced)', async () => {
-    // The route calls upsertConversionLabel on every ping with a prediction_id.
-    // The DB-level uniqueness + precedence WHERE clause prevents corruption.
-    // This test verifies the route does NOT short-circuit on repeated prediction_id values —
-    // the idempotency contract belongs to the helper + DB, not to the route layer.
+  it('FOLLOW-179: idempotent — second ping with same prediction_id calls upsertConversionLabel again', async () => {
     mockSelectLimit.mockResolvedValue([{ alpha: 1.0, beta: 1.0 }]);
 
-    const body = {
-      session_id: 'sess-idem',
-      tenant_id: 'tenant-abc',
-      archetype: 'family_buyer',
-      variant: 'v1',
-      converted: false,
-      prediction_id: 'same-prediction-id',
-    };
+    const body = { ...OPS_VALID_BODY, prediction_id: 'same-prediction-id' };
 
     await POST(makePostRequest(body));
     await flushMicrotasks();
     await POST(makePostRequest(body));
     await flushMicrotasks();
 
-    // Called twice — once per request. The upsert helper handles conflict resolution.
     expect(mockUpsertConversionLabel).toHaveBeenCalledTimes(2);
   });
 
@@ -598,11 +817,7 @@ describe('POST /api/adapt/feedback — bandit update', () => {
     mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
 
     await POST(
-      makePostRequest({
-        ...VALID_BODY,
-        converted: false,
-        prediction_id: 'dec-false-001',
-      }),
+      makePostRequest({ ...OPS_VALID_BODY, converted: false, prediction_id: 'dec-false-001' }),
     );
     await flushMicrotasks();
 
@@ -613,15 +828,7 @@ describe('POST /api/adapt/feedback — bandit update', () => {
   it('FOLLOW-171: no conversion_labels upsert when prediction_id is absent (bandit-only)', async () => {
     mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
 
-    await POST(
-      makePostRequest({
-        session_id: 'sess-x',
-        tenant_id: 'tenant-zzz',
-        archetype: 'yield_hunter',
-        variant: 'v2',
-        converted: false,
-      }),
-    );
+    await POST(makePostRequest({ ...OPS_VALID_BODY }));
     await flushMicrotasks();
 
     expect(mockUpsertConversionLabel).not.toHaveBeenCalled();
@@ -630,10 +837,40 @@ describe('POST /api/adapt/feedback — bandit update', () => {
   it('uses onConflictDoUpdate to update existing bandit rows', async () => {
     mockSelectLimit.mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]);
 
-    await POST(makePostRequest(VALID_BODY));
+    await POST(makePostRequest(OPS_VALID_BODY));
     await flushMicrotasks();
 
     expect(mockOnConflictDoUpdate).toHaveBeenCalledOnce();
+  });
+});
+
+// ─── Bandit update via non-ops path (registered key) ─────────────────────────
+
+describe('POST /api/adapt/feedback — bandit update (registered API key path)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('writes use resolvedTenantId from DB row, not body.tenant_id', async () => {
+    const keyRow = await makeApiKeyRow(VALID_API_KEY, TENANT_ID);
+    mockSelectLimit
+      .mockResolvedValueOnce([keyRow]) // api_keys lookup
+      .mockResolvedValueOnce([{ alpha: 1.0, beta: 1.0 }]); // bandit arm
+
+    const req = await makeSignedRequest(VALID_BODY, VALID_API_KEY);
+    await POST(req);
+    await flushMicrotasks();
+
+    const insertedRow = mockInsertValues.mock.calls[0]?.[0] as { tenantId: string };
+    // Must use tenantId from the DB key row, not from the request body
+    expect(insertedRow.tenantId).toBe(TENANT_ID);
   });
 });
 
@@ -645,14 +882,16 @@ describe('POST /api/adapt/feedback — fire-and-forget', () => {
     vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
     vi.stubEnv('ADAPT_API_KEY', 'test_key');
+    vi.stubEnv('OPS_TENANT_ID', TENANT_ID);
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
+  const OPS_VALID_BODY = { ...VALID_BODY, tenant_id: TENANT_ID };
+
   it('returns 202 even before the DB upsert resolves', async () => {
-    // Make the DB select hang — the response must still come back quickly.
     let resolveSelect!: (v: unknown[]) => void;
     mockSelectLimit.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -660,12 +899,10 @@ describe('POST /api/adapt/feedback — fire-and-forget', () => {
       }),
     );
 
-    const res = await POST(makePostRequest(VALID_BODY));
+    const res = await POST(makePostRequest(OPS_VALID_BODY));
     expect(res.status).toBe(202);
-    // DB write has not been issued yet at the point we got the response.
     expect(mockInsertValues).not.toHaveBeenCalled();
 
-    // Let the background work complete so we don't leak a pending promise.
     resolveSelect([]);
     await flushMicrotasks();
   });
@@ -673,11 +910,10 @@ describe('POST /api/adapt/feedback — fire-and-forget', () => {
   it('DB error during upsert does NOT crash the response', async () => {
     mockSelectLimit.mockRejectedValueOnce(new Error('connection refused'));
 
-    const res = await POST(makePostRequest(VALID_BODY));
+    const res = await POST(makePostRequest(OPS_VALID_BODY));
     expect(res.status).toBe(202);
 
     await flushMicrotasks();
-    // No exception should escape to the test runner.
   });
 
   it('upsertConversionLabel throwing does NOT crash the response (fail-safe)', async () => {
@@ -685,22 +921,18 @@ describe('POST /api/adapt/feedback — fire-and-forget', () => {
     mockUpsertConversionLabel.mockRejectedValueOnce(new Error('unique constraint violation'));
 
     const res = await POST(
-      makePostRequest({
-        ...VALID_BODY,
-        prediction_id: 'decision-error-test',
-      }),
+      makePostRequest({ ...OPS_VALID_BODY, prediction_id: 'decision-error-test' }),
     );
     expect(res.status).toBe(202);
 
     await flushMicrotasks();
-    // No exception should escape to the test runner.
   });
 
   it('no DB call when DATABASE_URL_ADMIN is unset', async () => {
     vi.stubEnv('DATABASE_URL_ADMIN', '');
     vi.stubEnv('DATABASE_URL_DIRECT', '');
 
-    const res = await POST(makePostRequest(VALID_BODY));
+    const res = await POST(makePostRequest(OPS_VALID_BODY));
     expect(res.status).toBe(202);
     await flushMicrotasks();
 
@@ -708,98 +940,7 @@ describe('POST /api/adapt/feedback — fire-and-forget', () => {
   });
 });
 
-// ─── HMAC-signed path end-to-end (FOLLOW-051) ────────────────────────────────
-
-describe('POST /api/adapt/feedback — HMAC signature path (FOLLOW-051)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
-    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
-    vi.stubEnv('ADAPT_API_KEY', ''); // Disable ops fallback → force HMAC path
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it('valid HMAC-signed request → 202 Accepted', async () => {
-    const req = await makeSignedRequest(VALID_BODY, 'tenant_public_key_abc');
-    const res = await POST(req);
-    expect(res.status).toBe(202);
-    const body = (await res.json()) as { ok: boolean };
-    expect(body.ok).toBe(true);
-  });
-
-  it('adversarial ping without any signature → 401 (bandit poisoning blocked)', async () => {
-    const res = await POST(makePostRequest(VALID_BODY, 'Bearer attacker_does_not_know_key'));
-    expect(res.status).toBe(401);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe('FORBIDDEN');
-  });
-
-  it('valid key but tampered body (converted flipped) → 401 (integrity protected)', async () => {
-    const apiKey = 'real_tenant_key';
-    const originalBody = JSON.stringify(VALID_BODY);
-    const sig = await computeHmac(apiKey, originalBody);
-
-    // Send request with correct signature but body has been tampered
-    const tamperedBodyStr = JSON.stringify({ ...VALID_BODY, converted: false });
-    const req = new NextRequest('http://localhost/api/adapt/feedback', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        'X-Estalara-Signature': sig,
-      },
-      body: tamperedBodyStr,
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(401);
-  });
-
-  it('cross-tenant attack: attacker uses own key to sign different tenant body → 401', async () => {
-    const attackerKey = 'attacker_key';
-    // Attacker signs the body with THEIR key but sends victim's tenant_id
-    const bodyStr = JSON.stringify({ ...VALID_BODY, tenant_id: 'victim_tenant' });
-    const attackerSig = await computeHmac(attackerKey, bodyStr);
-
-    // Server sees Bearer = attacker_key, body = victim's tenant_id
-    // HMAC verifies (attacker signed with their own key correctly)
-    // BUT this is acceptable: attacker can only poison their own weights because
-    // db update uses tenant_id from the BODY — which they must fabricate
-    // The test verifies the signature passes but the tenant_id scope is preserved
-    const req = new NextRequest('http://localhost/api/adapt/feedback', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${attackerKey}`,
-        'X-Estalara-Signature': attackerSig,
-      },
-      body: bodyStr,
-    });
-    // The signature is valid (attacker signed correctly) → 202 accepted
-    // The threat model note: attacker can only affect their own scope
-    // This is documented acceptable risk (see FOLLOW-051 spec)
-    const res = await POST(req);
-    expect(res.status).toBe(202);
-  });
-
-  it('attacker with NO valid key tries random signature → 401', async () => {
-    const randomSig = await computeHmac('random_wrong_key', JSON.stringify(VALID_BODY));
-    const res = await POST(makePostRequest(VALID_BODY, 'Bearer real_tenant_key', randomSig));
-    expect(res.status).toBe(401);
-  });
-});
-
 // ─── FOLLOW-433: after() registration for fire-and-forget sinks ──────────────
-//
-// Asserts that both request-path async sinks in POST /api/adapt/feedback are
-// registered via after() (through afterResponse()) and not issued as bare
-// fire-and-forget void calls (ESC-033 / FOLLOW-433).
-//
-// The top-of-file vi.mock('next/server', ...) provides a synchronous pass-through
-// spy: after(fn) immediately invokes fn(), so the existing DB-call assertions in
-// the suites above remain valid and these tests can assert after() was called.
 
 describe('FOLLOW-433: updateArmAsync + upsertConversionLabelAsync registered via after()', () => {
   let mockAfter: ReturnType<typeof vi.fn>;
@@ -809,6 +950,7 @@ describe('FOLLOW-433: updateArmAsync + upsertConversionLabelAsync registered via
     vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
     vi.stubEnv('ADAPT_API_KEY', 'test_key');
+    vi.stubEnv('OPS_TENANT_ID', TENANT_ID);
     mockAfter = vi.mocked(after);
     mockAfter.mockReset();
     mockAfter.mockImplementation((fn: () => unknown) => {
@@ -821,25 +963,23 @@ describe('FOLLOW-433: updateArmAsync + upsertConversionLabelAsync registered via
     vi.unstubAllEnvs();
   });
 
+  const OPS_VALID_BODY = { ...VALID_BODY, tenant_id: TENANT_ID };
+
   it('FOLLOW-433: updateArmAsync is registered via after() (bandit REWARD write)', async () => {
-    await POST(makePostRequest(VALID_BODY));
+    await POST(makePostRequest(OPS_VALID_BODY));
     await flushMicrotasks();
 
-    // after() must have been called — afterResponse() registers the bandit update.
     expect(mockAfter).toHaveBeenCalled();
-    // The pass-through mock immediately invoked the task, so the DB upsert ran.
     expect(mockInsertValues).toHaveBeenCalledOnce();
   });
 
   it('FOLLOW-433: upsertConversionLabelAsync is registered via after() when prediction_id is present', async () => {
     mockSelectLimit.mockResolvedValue([{ alpha: 1.0, beta: 1.0 }]);
 
-    await POST(makePostRequest({ ...VALID_BODY, prediction_id: 'decision-uuid-433' }));
+    await POST(makePostRequest({ ...OPS_VALID_BODY, prediction_id: 'decision-uuid-433' }));
     await flushMicrotasks();
 
-    // after() must have been called for both the bandit write and the label write.
     expect(mockAfter).toHaveBeenCalledTimes(2);
-    // The pass-through mock invoked both tasks; label upsert ran.
     expect(mockUpsertConversionLabel).toHaveBeenCalledOnce();
   });
 });

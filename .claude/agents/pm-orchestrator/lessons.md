@@ -1605,3 +1605,25 @@ independent occurrence, even if it references the same pattern by name.
   QUEUE.md YAML entry and flip any escalation header before moving on — do not defer bookkeeping to
   "next session," or the next PM has to reconstruct 8 PRs of history from git log before it can
   trust the queue.
+
+- **Date / ticket:** 2026-07-01 — FOLLOW-364 (delegation, post-FOLLOW-442 handoff pass)
+- **Delegation row used:** intent/adapt logic, embeddings, LLM gateway, auto-detect, ontology,
+  platform-templates → ml-engineer
+- **What validation caught (or missed):** Pre-delegation premise check caught two things before
+  picking: (1) FOLLOW-356 and FOLLOW-364 each had a byte-identical duplicate YAML block elsewhere in
+  QUEUE.md (append-only editing over many sessions never deduped); FOLLOW-356's duplicate was
+  actively stale — the real ticket was DONE under a renamed FOLLOW-357/356 pair, but the orphan
+  READY block would have caused a future PM to needlessly re-run it. (2) FOLLOW-388's depends_on
+  lists FOLLOW-101 as DONE, but FOLLOW-101 only shipped the real-time chat bridge — its own PR notes
+  say "ClickHouse reader stubbed ([]) for Sprint 13," confirmed still true today by grep on
+  clickhouse_reader.py. The dependency ID was DONE but the actual prerequisite work it stood in for
+  (a real batch ClickHouse query) was never ticketed, so FOLLOW-388 is not really actionable despite
+  showing depends_on-satisfied. Also found the STATUS.md "READY (P2/P3 next up)" list referenced 4
+  FOLLOW IDs (417/418/420/421) that no longer exist anywhere in QUEUE.md — fully stale, replaced
+  with a fresh survey. Also skipped FOLLOW-367 (CHAT_NLP_LIVE) despite depends_on being satisfied in
+  the YAML field, because its notes carry an un-tracked soft-dependency (C-07 DPIA 5-item sign-off)
+  that isn't recorded as a structured depends_on and isn't confirmed complete.
+- **A delegation/validation rule I'd add:** "depends_on satisfied" in the YAML is necessary but not
+  sufficient — always read the ticket's own notes/prose for soft dependencies (DPIA sign-off, "the
+  real X hasn't shipped yet") that were never promoted into the structured depends_on array, and
+  grep the actual prerequisite artifact (not just the ticket ID) before trusting a READY label.

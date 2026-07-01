@@ -1561,6 +1561,22 @@ promotion.
 
 ---
 
+**Date / ticket:** 2026-07-01 — Audit wave promotion (FOLLOW-439..442, ESC-035) **Delegation row
+used:** N/A (audit promotion + escalation — no worker delegated this session; ESC-035 security
+finding blocks delegation per guardrails). **What validation caught (or missed):** Step 5c (runtime
+wiring check) applied to the audit evidence caught that AUD-04/F-05 (POST holdout missing
+logDecisionAsync) is NOT currently affecting the live production path — the live SDK uses GET which
+already correctly logs holdout. The audit characterised AUD-04 as "Critical" but the live path is
+safe. PM verified this by grepping decision-api/src for POST /api/adapt callers and confirming 410
+Gone routing. This distinction was encoded in FOLLOW-442 scope note, preventing over-prioritisation.
+The security finding (AUD-05/ESC-035) correctly triggered the escalation path before any ticket
+could be delegated, consistent with the guardrail "A test reveals a security issue → escalate." **A
+delegation/validation rule I'd add:** When an audit flags a bug in a non-live handler (e.g. a POST
+endpoint behind a 410 deprecation layer), verify the live call path first before assigning P0;
+re-categorise to P1 if the live path is unaffected, but do NOT skip the fix.
+
+---
+
 **Date / ticket:** 2026-06-30 — FOLLOW-435 loop closure **Delegation row used:** N/A (loop-closure
 bookkeeping — retrospective-analyst, no worker delegation). **What validation caught (or missed):**
 The ml-engineer LEG 2 lesson (uncommitted in working tree) was explicitly flagged in the handoff and

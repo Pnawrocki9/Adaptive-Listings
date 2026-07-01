@@ -274,4 +274,10 @@ regexes = [
   # false-positives on the broad cloudflare-api-token heuristic (same class as the
   # 40-char snake_case DDL identifiers exempted via paths above). Not a secret.
   '''ListingEmbeddingSeedRequestedEventSchema''',
+  # FOLLOW-449 / Rule V: agent branch slugs written into backlog docs (QUEUE.md, STATUS.md)
+  # — e.g. `data-engineer/FOLLOW-449-intent-events-session-id-prod` = exactly 40 chars —
+  # false-positive on the broad cloudflare-api-token heuristic. Token-scoped exemption for the
+  # `<agent>/<ticket>-<kebab>` branch-name pattern (Rule V: never file-scope backlog/*.md, which
+  # are decision-grade prose stores that must stay scanned for real secrets). Not a secret.
+  '''(?i)(architect|backend-engineer|compliance-engineer|data-engineer|devops-engineer|ml-engineer|pm-orchestrator|qa-engineer|sdk-engineer)/[a-z0-9._-]{3,}''',
 ]

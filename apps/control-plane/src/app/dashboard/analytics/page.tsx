@@ -24,7 +24,8 @@ interface SummaryData {
   sessions: number;
   adapted: number;
   holdout: number;
-  p95Latency: number;
+  /** null when ClickHouse is configured but adaptation_decisions has no latency_ms column (FOLLOW-445). */
+  p95Latency: number | null;
   window_days: number;
 }
 
@@ -122,7 +123,10 @@ function Panel1({ loading, data }: { loading: boolean; data: SummaryData | null 
     { label: 'Tracked Sessions', value: data?.sessions.toLocaleString() ?? '—' },
     { label: 'Adapted Impressions', value: data?.adapted.toLocaleString() ?? '—' },
     { label: 'Holdout Impressions', value: data?.holdout.toLocaleString() ?? '—' },
-    { label: 'p95 Adapt Latency', value: data ? `${data.p95Latency.toString()} ms` : '—' },
+    {
+      label: 'p95 Adapt Latency',
+      value: data && data.p95Latency !== null ? `${data.p95Latency.toString()} ms` : '—',
+    },
   ];
 
   return (
@@ -457,7 +461,7 @@ export default function AnalyticsDashboardPage() {
             sessions: Number(d.sessions ?? 0),
             adapted: Number(d.adapted ?? 0),
             holdout: Number(d.holdout ?? 0),
-            p95Latency: Number(d.p95Latency ?? 0),
+            p95Latency: d.p95Latency != null ? Number(d.p95Latency) : null,
             window_days: Number(d.window_days ?? 7),
           });
         }

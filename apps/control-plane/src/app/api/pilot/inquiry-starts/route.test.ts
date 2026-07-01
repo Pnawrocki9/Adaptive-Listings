@@ -301,4 +301,36 @@ describe('GET /api/pilot/inquiry-starts', () => {
     expect(body1.holdout_count).toBe(body2.holdout_count);
     expect(body1.lift_pct).toBe(body2.lift_pct);
   });
+
+  // ─── Query guard: ts not assigned_at (FOLLOW-440) ────────────────────────────
+
+  it('inquiry-starts queries use ts not assigned_at on adaptation_decisions (guard against phantom column regression)', async () => {
+    authAsTenant();
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+
+    const capturedSqls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((urlStr: unknown) => {
+        const url = new URL(String(urlStr));
+        const sql = url.searchParams.get('query') ?? '';
+        capturedSqls.push(sql);
+        // Return empty response for both aggregate and daily queries.
+        return Promise.resolve(new Response('', { status: 200 }));
+      }),
+    );
+
+    const { GET } = await import('./route.js');
+    await GET(makeRequest({ tenantId: TENANT_ID }));
+
+    // Both aggregate and daily queries must have been sent.
+    expect(capturedSqls.length).toBe(2);
+
+    for (const sql of capturedSqls) {
+      // Must use ts (the canonical timestamp column on adaptation_decisions, migration 0003).
+      expect(sql).toContain('ad.ts');
+      // Must NOT reference the phantom column assigned_at.
+      expect(sql).not.toContain('assigned_at');
+    }
+  });
 });

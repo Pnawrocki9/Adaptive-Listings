@@ -1,14 +1,18 @@
 /**
  * Tests for GET /api/dashboard/analytics/lift
  *
- * ClickHouse absent in CI → mock data path.
+ * Rule K.2 paths:
+ *   - CLICKHOUSE_URL set + query fails → 500 + Sentry.captureException
+ *   - CLICKHOUSE_URL not set           → 200 + data_source: 'mock'
+ *   - CLICKHOUSE_URL set + success     → 200 + data_source: 'clickhouse'
+ *
  * JWT verification mocked via vi.mock('@estalara/auth').
  *
  * @module apps/control-plane/src/app/api/dashboard/analytics/lift/route.test
  */
 
 import { NextRequest } from 'next/server';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 import type { LiftResponse } from './route.js';
 import { zTest } from '../../../../../lib/z-test.js';
@@ -29,6 +33,15 @@ vi.mock('@estalara/auth', () => ({
 import { getAuthClaims } from '@estalara/auth';
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
 
+// ─── Mock @sentry/nextjs ──────────────────────────────────────────────────────
+
+const mockCaptureException = vi.fn();
+
+vi.mock('@sentry/nextjs', () => ({
+  captureException: mockCaptureException,
+  captureMessage: vi.fn(),
+}));
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeRequest(tenantId?: string): NextRequest {
@@ -43,6 +56,17 @@ function makeRequest(tenantId?: string): NextRequest {
 async function parseBody<T>(res: Response): Promise<T> {
   const raw: unknown = await res.json();
   return raw as T;
+}
+
+function authAsTenant(): void {
+  mockGetAuthClaims.mockResolvedValue({
+    sub: 'user-uuid',
+    email: 'user@agency.com',
+    tenant_id: TENANT_ID,
+    agency_role: 'agency:admin',
+    estalara_staff: false,
+    mfa_verified: true,
+  });
 }
 
 // ─── zTest unit tests ──────────────────────────────────────────────────────────
@@ -85,6 +109,13 @@ describe('zTest (two-proportion z-test)', () => {
 describe('GET /api/dashboard/analytics/lift', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Ensure CLICKHOUSE_URL is not set so CI uses mock data path by default.
+    delete process.env.CLICKHOUSE_URL;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.CLICKHOUSE_URL;
   });
 
   it('returns 401 when getAuthClaims returns null', async () => {
@@ -114,15 +145,125 @@ describe('GET /api/dashboard/analytics/lift', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 200 with correct top-level shape', async () => {
-    mockGetAuthClaims.mockResolvedValue({
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: TENANT_ID,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: true,
+  // ─── Rule K.2: CLICKHOUSE_URL unset → mock path ─────────────────────────────
+
+  it('returns 200 with data_source: mock when CLICKHOUSE_URL is not set', async () => {
+    authAsTenant();
+    // CLICKHOUSE_URL is deleted in beforeEach.
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest(TENANT_ID));
+
+    expect(res.status).toBe(200);
+    const body = await parseBody<LiftResponse>(res);
+    expect(body.data_source).toBe('mock');
+    expect(body.tenant_id).toBe(TENANT_ID);
+    expect(Array.isArray(body.rows)).toBe(true);
+    expect(body.rows.length).toBeGreaterThan(0);
+  });
+
+  // ─── Rule K.2: CLICKHOUSE_URL set + query fails → 500 + Sentry ───────────────
+
+  it('returns 500 and calls Sentry.captureException when CLICKHOUSE_URL is set but query returns non-ok', async () => {
+    authAsTenant();
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('Internal Server Error', { status: 500 })),
+    );
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest(TENANT_ID));
+
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('clickhouse_query_failed');
+    expect(body.error.message).toContain('ClickHouse');
+
+    // Sentry must be notified — never silently swallow.
+    expect(mockCaptureException).toHaveBeenCalledOnce();
+    const [err, extras] = mockCaptureException.mock.calls[0] as [unknown, unknown];
+    expect(err).toBeInstanceOf(Error);
+    expect(extras).toMatchObject({ tags: { route: 'dashboard/analytics/lift' } });
+  });
+
+  it('returns 500 when CLICKHOUSE_URL is set and fetch throws (network error)', async () => {
+    authAsTenant();
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest(TENANT_ID));
+
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('clickhouse_query_failed');
+    expect(mockCaptureException).toHaveBeenCalledOnce();
+  });
+
+  it('does NOT fall back to mock when CLICKHOUSE_URL is set and query fails', async () => {
+    authAsTenant();
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('boom', { status: 503 })));
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest(TENANT_ID));
+
+    // Must be 500, NOT 200 with mock data.
+    expect(res.status).toBe(500);
+  });
+
+  // ─── Rule K.2: CLICKHOUSE_URL set + success → data_source: clickhouse ────────
+
+  it('returns 200 with data_source: clickhouse when ClickHouse responds successfully', async () => {
+    authAsTenant();
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+
+    const chRow = JSON.stringify({
+      archetype: 'investor',
+      adapted_n: 600,
+      adapted_conversions: 96,
+      holdout_n: 150,
+      holdout_conversions: 15,
     });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(chRow, { status: 200 })));
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest(TENANT_ID));
+
+    expect(res.status).toBe(200);
+    const body = await parseBody<LiftResponse>(res);
+    expect(body.data_source).toBe('clickhouse');
+    expect(body.dqsUnavailable).toBe(false);
+    expect(body.rows.length).toBe(1);
+    expect(body.rows[0]!.archetype).toBe('investor');
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 with dqsUnavailable:true when ClickHouse returns empty response', async () => {
+    authAsTenant();
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })));
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest(TENANT_ID));
+
+    expect(res.status).toBe(200);
+    const body = await parseBody<LiftResponse>(res);
+    expect(body.data_source).toBe('clickhouse');
+    expect(body.dqsUnavailable).toBe(true);
+    expect(body.rows).toEqual([]);
+  });
+
+  // ─── Existing shape / invariant tests (mock path) ─────────────────────────────
+
+  it('returns 200 with correct top-level shape', async () => {
+    authAsTenant();
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest(TENANT_ID));
@@ -135,17 +276,11 @@ describe('GET /api/dashboard/analytics/lift', () => {
     expect(typeof body.window_days).toBe('number');
     expect(typeof body.dqsUnavailable).toBe('boolean');
     expect(typeof body.generated_at).toBe('string');
+    expect(['clickhouse', 'mock']).toContain(body.data_source);
   });
 
   it('each row has archetype, adaptedRate, holdoutRate, lift, pValue, status fields', async () => {
-    mockGetAuthClaims.mockResolvedValue({
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: TENANT_ID,
-      agency_role: 'agency:viewer',
-      estalara_staff: false,
-      mfa_verified: true,
-    });
+    authAsTenant();
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest(TENANT_ID));
@@ -165,14 +300,7 @@ describe('GET /api/dashboard/analytics/lift', () => {
   });
 
   it('lift and pValue fields are computed (not zero-defaulted)', async () => {
-    mockGetAuthClaims.mockResolvedValue({
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: TENANT_ID,
-      agency_role: 'agency:viewer',
-      estalara_staff: false,
-      mfa_verified: true,
-    });
+    authAsTenant();
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest(TENANT_ID));
@@ -190,14 +318,7 @@ describe('GET /api/dashboard/analytics/lift', () => {
   });
 
   it('mock data is deterministic for same tenant_id', async () => {
-    mockGetAuthClaims.mockResolvedValue({
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: TENANT_ID,
-      agency_role: 'agency:viewer',
-      estalara_staff: false,
-      mfa_verified: true,
-    });
+    authAsTenant();
 
     const { GET } = await import('./route.js');
     const res1 = await GET(makeRequest(TENANT_ID));

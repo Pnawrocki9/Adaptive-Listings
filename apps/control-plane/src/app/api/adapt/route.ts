@@ -17,9 +17,12 @@
  *
  * POST /api/adapt
  *
- * Demo-mode adaptation endpoint. Accepts a JSON body with archetype hint,
- * confidence, similarity, and session context. Requires a valid HS256 JWT
- * signed by DEMO_MODE_JWT_SECRET (FOLLOW-205 — presence-only check removed).
+ * Adaptation endpoint. Accepts a JSON body with archetype hint, confidence,
+ * similarity, and session context. Accepts EITHER a valid HS256 demo JWT
+ * signed by DEMO_MODE_JWT_SECRET (FOLLOW-205 — presence-only check removed)
+ * OR a real tenant API key resolved via the shared ADR-0015 `resolveApiKey()`
+ * (FOLLOW-451 — closes audit F-05: real tenant keys previously 401'd here
+ * with no fallback, causing the SDK to silently fail open to no-adaptation).
  *
  * ClickHouse logging is fire-and-forget — the response is returned immediately
  * and the analytics insert happens asynchronously.
@@ -71,6 +74,7 @@ import {
   DemoJwtInvalidError,
   type DemoJwtClaims,
 } from '@/lib/demo-jwt-verify';
+import { resolveApiKey } from '@/lib/api-key-auth';
 import { readShadowChatIntent, flattenIntentDimensions } from '@/lib/chat-intent-cache';
 import { VARIANT_INDEX } from '@/lib/variant-index';
 import * as Sentry from '@sentry/nextjs';
@@ -1009,9 +1013,30 @@ function filterDirectivesByPageType(
 /**
  * POST /api/adapt
  *
- * Demo-mode adaptation endpoint. Accepts a JSON body and returns AdaptationDirectives.
- * Requires a valid HS256 JWT signed by DEMO_MODE_JWT_SECRET in the Authorization:
- * Bearer header. Presence-only check replaced by cryptographic verification (FOLLOW-205).
+ * Adaptation endpoint. Accepts a JSON body and returns AdaptationDirectives.
+ * Accepts EITHER credential in the `Authorization: Bearer <token>` header
+ * (FOLLOW-451, CEO Q1 2026-07-02 — both paths mandated; closes audit F-05):
+ *
+ *   1. A valid HS256 JWT signed by DEMO_MODE_JWT_SECRET (demo mode,
+ *      FOLLOW-205). `tenant_id` is taken from the JWT's `tenant_id` claim
+ *      when present, else falls back to `body.tenant_id` (FOLLOW-260 —
+ *      unchanged).
+ *   2. A real tenant API key resolved via the shared `resolveApiKey()`
+ *      (ADR-0015, SHA-256(bearer) → `api_keys` lookup, constant-time
+ *      compare). `tenant_id` is the resolved row's tenant — never taken from
+ *      the body. If `body.tenant_id` is present and does not match, the
+ *      request is rejected 403 (parity with `POST /api/adapt/feedback`).
+ *
+ * The demo-JWT path is tried first; if the token is not a valid demo JWT,
+ * the API-key path is attempted as a fallback. Neither valid → 401.
+ *
+ * Pilot snippet credential: the SDK snippet may ship EITHER a demo JWT
+ * (`config.apiKey` = demo session token, used during onboarding/demo
+ * sandboxes) OR a real tenant `pk_live_`/`sk_live_` API key (used once a
+ * tenant is fully onboarded) — both work against this same endpoint with no
+ * SDK-side branching required (`packages/sdk/src/core/adapt.ts` always sends
+ * `Authorization: Bearer ${config.apiKey}` regardless of which kind of
+ * credential it holds).
  *
  * Body:
  *   tenant_id      — required, string
@@ -1023,32 +1048,83 @@ function filterDirectivesByPageType(
  *
  * @returns 200 AdaptationDirectives JSON.
  * @returns 400 on Zod validation failure.
- * @returns 401 if Authorization header is missing, token is not a valid JWT, or JWT is expired.
+ * @returns 401 if Authorization header is missing, or the token is neither a
+ *   valid demo JWT nor a valid/registered tenant API key.
+ * @returns 403 if the API-key path authenticated the request AND
+ *   `body.tenant_id` names a different tenant than the resolved key.
  * @returns 500 if DEMO_MODE_JWT_SECRET is not configured (deployment misconfiguration).
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // JWT auth — demo mode requires a validly-signed HS256 JWT (FOLLOW-205).
-  // The token is verified cryptographically using DEMO_MODE_JWT_SECRET via
-  // crypto.subtle (Web Crypto, no new dependency). Presence-only check removed.
+  // ── Auth — demo JWT OR tenant API key (FOLLOW-451, CEO Q1 2026-07-02: both
+  // paths mandated) ─────────────────────────────────────────────────────────
+  //
+  // Try the demo-mode HS256 JWT (DEMO_MODE_JWT_SECRET) first — this preserves
+  // the exact pre-existing behavior and test coverage for demo sessions
+  // (FOLLOW-205, FOLLOW-260, route.demo-auth.test.ts, all unchanged below).
+  //
+  // If the token is not a valid demo JWT, fall back to the tenant API-key
+  // path: resolveApiKey() (ADR-0015, SHA-256(bearer) → api_keys lookup,
+  // constant-time compare) — the SAME shared helper used by
+  // adapt/feedback/route.ts. This is the fix for audit F-05: the SDK sends
+  // `Authorization: Bearer ${config.apiKey}` (a real tenant key), which
+  // previously 401'd against verifyDemoJwt with no fallback, causing the SDK
+  // to fail open to `{ adaptResponse: null }` (silent no-adaptation) for
+  // every non-demo tenant.
+  //
+  // Neither path valid → 401. DEMO_MODE_JWT_SECRET missing is still a hard
+  // config-error 500 (unchanged) — it never falls through to the API-key
+  // path, matching the pre-existing `demo_auth_misconfigured` contract.
+  //
+  // Replay/crypto posture: demo path — JWT `exp` claim (replay-resistant,
+  // FOLLOW-205). API-key path — SHA-256 bearer→row resolution +
+  // constant-time compare, identical trust model already accepted for
+  // POST /api/adapt/feedback under ADR-0015 (bearer-token confidentiality is
+  // carried by TLS in transit; revocation via `api_keys.revoked_at` is the
+  // mitigation for a leaked key — ADR-0015 §Replay protection explicitly
+  // defers per-request nonces for this same reason).
   const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization');
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
   if (!token) {
     return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
   }
   let jwtClaims: DemoJwtClaims = {};
+  // Set when the API-key fallback path (not the demo-JWT path) authenticates
+  // the request. tenantId is ALWAYS derived server-side from one of these two
+  // paths — never from body.tenant_id (F-05 / FOLLOW-260 invariant).
+  let apiKeyTenantId: string | null = null;
   try {
     jwtClaims = await verifyDemoJwt(token);
   } catch (err) {
     if (err instanceof DemoJwtSecretMissingError) {
       // Config error — secret not set. Surface as 500 so ops are alerted.
       // This is NOT a normal auth path; it means the deployment is misconfigured.
+      // Unchanged by FOLLOW-451: a missing demo secret never falls through to
+      // the API-key path — it is always a deployment misconfiguration signal.
       return NextResponse.json({ error: 'demo_auth_misconfigured' }, { status: 500 });
     }
     if (err instanceof DemoJwtInvalidError) {
-      return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
+      // Not a valid demo JWT — fall back to the tenant API-key path (FOLLOW-451).
+      let keyAuth: Awaited<ReturnType<typeof resolveApiKey>>;
+      try {
+        keyAuth = await resolveApiKey(req);
+      } catch (dbErr) {
+        // Configured-but-failed DB lookup (Rule K.2) — fail loud to Sentry,
+        // surface as 401 (do not fabricate a tenant / fall back silently).
+        console.error('[adapt] API-key auth DB error', dbErr);
+        Sentry.captureException(dbErr instanceof Error ? dbErr : new Error(String(dbErr)), {
+          tags: { area: 'adapt', kind: 'api_key_auth_db_error' },
+        });
+        return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
+      }
+      if (!keyAuth.ok) {
+        // Neither a valid demo JWT nor a valid tenant API key.
+        return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
+      }
+      apiKeyTenantId = keyAuth.tenantId;
+    } else {
+      // Unexpected error — rethrow to surface as 500 via Next.js error handler.
+      throw err;
     }
-    // Unexpected error — rethrow to surface as 500 via Next.js error handler.
-    throw err;
   }
 
   let rawBody: unknown;
@@ -1100,7 +1176,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // FOLLOW-260 (F-26): JWT tenant_id is authoritative — supersedes body.tenant_id.
   // Prevents cross-tenant escalation: a caller with a valid demo JWT for tenant A
   // cannot access tenant B's data by sending tenant_id: B in the body.
-  const tenantId = jwtClaims.tenant_id ?? body.tenant_id;
+  // FOLLOW-451: when the API-key path authenticated the request, the resolved
+  // tenant (from api_keys, never from the body) is authoritative instead.
+  const tenantId = apiKeyTenantId ?? jwtClaims.tenant_id ?? body.tenant_id;
+
+  // FOLLOW-451 / ADR-0015 parity: on the API-key path, a caller-supplied
+  // body.tenant_id that does not match the resolved tenant is rejected — the
+  // same cross-tenant enforcement adapt/feedback/route.ts applies (Step 7).
+  // The demo-JWT path keeps its existing supersede-only behavior (FOLLOW-260,
+  // route.demo-auth.test.ts) — it already ignores body.tenant_id entirely
+  // when the JWT carries a tenant_id claim, so no additional check is added
+  // there to avoid regressing that locked-in behavior.
+  if (apiKeyTenantId && body.tenant_id !== apiKeyTenantId) {
+    return NextResponse.json(
+      {
+        error: 'FORBIDDEN',
+        message: 'tenant_id in body does not match the API key tenant',
+      },
+      { status: 403 },
+    );
+  }
 
   // ── Pilot freeze guard (FOLLOW-106) — non-blocking, fire-and-forget ────────
   // Emits a structured warning if pilot_frozen=true AND any Lane C feature flag

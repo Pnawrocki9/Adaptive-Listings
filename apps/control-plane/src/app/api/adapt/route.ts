@@ -1153,6 +1153,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }),
     );
 
+    // FOLLOW-442 (AUD-04 / F-05): holdout decisions were never written to
+    // adaptation_decisions, so the lift query's holdout denominator counted zero
+    // sessions. Mirrors the treatment-arm call below (line ~1417) with
+    // holdoutGroup=true, variant='control' (no bandit consulted on the holdout
+    // path — matches GET's holdout logging convention), and directiveCount=0
+    // (no directives are built on this branch).
+    // FOLLOW-431 / ESC-033: registered via after() so the async write (and its
+    // fail-loud .then/.catch → Sentry) completes after the response is sent
+    // before instance suspension.
+    afterResponse(() =>
+      logDecisionAsync(
+        body.session_id,
+        tenantId,
+        'neutral',
+        0.5,
+        body.similarity ?? 0.5,
+        'default',
+        pageCtx,
+        0, // directiveCount — no directives built on the holdout path
+        true, // holdoutGroup
+        'control', // variant — bandit not consulted on holdout path
+        adaptDecisionId,
+        false, // demoOverride — holdout path bypasses demo override
+        'rulebased-bandit-v1', // modelVersion
+        '', // leadId — not wired via POST body yet (FOLLOW-170)
+        'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
+      ),
+    );
+
     return NextResponse.json({
       adapt_decision_id: adaptDecisionId,
       session_id: body.session_id,

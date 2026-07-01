@@ -229,10 +229,12 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     expect(url!.searchParams.get('param_p_holdout_group')).toBe('0');
   });
 
-  it('smoke: holdout arm (holdout_pct=1.0) → no ClickHouse INSERT (returns early)', async () => {
+  it('smoke: holdout arm (holdout_pct=1.0) → returns early with empty directives AND still logs to ClickHouse (FOLLOW-442)', async () => {
     const capture = captureFetchBody();
 
-    // holdout_pct=1.0 → 100% holdout → route returns early, no ClickHouse log
+    // holdout_pct=1.0 → 100% holdout → route returns early with empty directives,
+    // but (FOLLOW-442) MUST still call logDecisionAsync so the lift query's holdout
+    // denominator is non-zero.
     const res = await POST(
       makePostRequest({ ...VALID_POST_BODY, holdout_pct: 1.0, consent_mode_enabled: false }),
     );
@@ -240,14 +242,24 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     expect(res.status).toBe(200);
     const resBody = (await res.json()) as Record<string, unknown>;
     expect(resBody.holdout_group).toBe(true);
-    // captureFetchBody captures the LAST fetch call — for holdout path that's the
-    // ab.assignment event fetch (not ClickHouse). The ClickHouse INSERT is skipped.
-    // We verify the response structure rather than the ClickHouse body here.
     expect(Array.isArray(resBody.directives)).toBe(true);
     expect((resBody.directives as unknown[]).length).toBe(0);
-    // Confirm no ClickHouse INSERT was made (body will be JSON for Redpanda, not SQL)
+
+    // FOLLOW-442: REDPANDA_REST_URL is not stubbed in this suite, so
+    // publishAbAssignmentEvent is a configured-no-op (no fetch); the ONLY fetch call
+    // on this path is the ClickHouse INSERT from logDecisionAsync. Assert it fired
+    // with holdout_group=1 (i.e. holdoutGroup=true) and the expected feature values.
     const fetchBody = capture.getLastBody() ?? '';
-    expect(fetchBody).not.toMatch(/INSERT INTO adaptation_decisions/);
+    expect(fetchBody).toMatch(/INSERT INTO adaptation_decisions/);
+    expect(fetchBody).toContain('holdout_group');
+    const url = capture.getLastUrl();
+    expect(url).not.toBeNull();
+    expect(url!.searchParams.get('param_p_holdout_group')).toBe('1');
+    // variant='control' — bandit not consulted on the holdout path.
+    expect(url!.searchParams.get('param_p_variant')).toBe('control');
+    // archetype/confidence/similarity match the neutral holdout response body.
+    expect(url!.searchParams.get('param_p_archetype')).toBe('neutral');
+    expect(url!.searchParams.get('param_p_confidence')).toBe('0.5');
   });
 
   it('smoke: consent skipped → no ClickHouse INSERT (no holdout_group field)', async () => {

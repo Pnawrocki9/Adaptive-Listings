@@ -8568,14 +8568,18 @@ gate) closes the epic and must be last.
   pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/430'
   ci: 'green (57 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
   merge_risk: >-
-    ⚠️ MERGE-ORDER RISK: this PR makes POST /api/tenants FAIL CLOSED when its admin secret is unset
-    (previously it ran with NO auth at all — a real hole). If ADMIN_API_SECRET is NOT set in Vercel
-    prod, tenant onboarding (POST /api/tenants) will start returning 401 after merge. VERIFY
-    ADMIN_API_SECRET is provisioned in Vercel prod BEFORE merging #430 (relates to the
-    never-promoted FOLLOW-155 stub). Filed as FOLLOW-483. New shared helper secret-compare.ts
-    (SHA-256 + timingSafeEqual) guards all three previously fail-open routes;
-    DESCRIPTION_CACHE_INTERNAL_SECRET name unchanged so FOLLOW-460's Modal callback stays intact
-    (proven by a new 201 test).
+    ⚠️ MERGE-ORDER RISK (VERIFIED 2026-07-02 via `vercel env ls`): this PR makes THREE routes FAIL
+    CLOSED when their secret is unset (each previously ran with NO auth — real holes). ALL THREE
+    secrets are confirmed MISSING in BOTH Vercel prod AND preview: ADMIN_API_SECRET (POST
+    /api/tenants — onboarding), LISTING_UPDATED_WEBHOOK_SECRET (POST /api/webhooks/listing-updated),
+    DESCRIPTION_CACHE_INTERNAL_SECRET (POST /api/internal/description-cache — also FOLLOW-460's
+    Modal callback). So merging #430 as-is makes all three 401 in prod until each secret is
+    provisioned AND its legitimate caller sends it. OPEN QUESTION: is /api/tenants a
+    server-to-server (secret-bearing) or browser-session endpoint — if browser, requiring a server
+    secret needs a JWT/session rethink, not just provisioning. Full detail + AC in FOLLOW-483 (P1).
+    New shared helper secret-compare.ts (SHA-256 + timingSafeEqual) guards all three;
+    DESCRIPTION_CACHE_INTERNAL_SECRET name unchanged so FOLLOW-460's Modal callback contract is
+    intact (proven by a new 201 test).
   priority: P1
   estimated_hours: 3
   depends_on: []

@@ -13095,8 +13095,19 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   BEFORE merge. Relates to the never-promoted FOLLOW-155 stub which already flagged ADMIN_API_SECRET
   as possibly unset. Also re-verify /api/admin/generation-model (now verifyTracerAdminAuth) and the
   webhook/internal-cache routes have their secrets set in every environment that must reach them.
-  ac:
+  VERIFIED 2026-07-02 (pm-orchestrator, `vercel env ls production/preview`): ALL THREE fail-closed
+  secrets are MISSING in BOTH prod and preview — ADMIN_API_SECRET (/api/tenants),
+  LISTING_UPDATED_WEBHOOK_SECRET (/api/webhooks/listing-updated), DESCRIPTION_CACHE_INTERNAL_SECRET
+  (/api/internal/description-cache; also FOLLOW-460's Modal callback). So merging #430 as-is will
+  make all three routes 401 in prod until each secret is provisioned AND its legitimate caller is
+  configured to send it. OPEN QUESTION for the owner: is POST /api/tenants meant to be called
+  server-to-server (bearing ADMIN_API_SECRET) or from a browser onboarding session? If browser, a
+  server secret can't be shipped client-side — that path needs a session/JWT gate rethink, not just
+  provisioning. Same question applies to whichever system posts listing-updated webhooks. ac:
   - ADMIN_API_SECRET confirmed set in Vercel prod (and preview if onboarding is exercised there).
+  - LISTING_UPDATED_WEBHOOK_SECRET + DESCRIPTION_CACHE_INTERNAL_SECRET confirmed set in prod, with
+    their callers (MLS/webhook sender; FOLLOW-460 Modal job) configured to send the matching value.
+  - The server-to-server-vs-browser caller question for /api/tenants is resolved and documented.
   - A documented decision on merge sequencing for #430 relative to that provisioning.
   - FOLLOW-155 reconciled (promoted or closed) so this operational check has one owner.
 

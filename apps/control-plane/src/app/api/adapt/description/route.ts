@@ -378,29 +378,48 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     fetchListingOriginalDescription(listing_id, localeCode),
   ]);
 
-  const event: DescriptionRequestedEvent = {
-    tenant_id: tenantId,
-    listing_id,
-    archetype: archetypeId,
-    locale: localeCode,
-    copy_template: templateText,
-    original_description: originalDescription,
-    listing_context: listingContext,
-    cache_key: cacheKey,
-    max_tokens: 500,
-    // Precedence chain: demo override_model > global generation_model > default (in Python job).
-    // - DEMO MODE: override_model carries the operator-chosen model (DEMO-001 / FOLLOW-166).
-    // - Standard path: generation_model carries the global admin setting (FOLLOW-161).
-    // The Python _resolve_generation_model() validates both against its allow-list.
-    ...(demoActive && demoOverrideModel
-      ? { override_model: demoOverrideModel }
-      : { generation_model: effectiveModel }),
-  };
+  // FOLLOW-457 AC1 (ESC-019 residual gap): fetchListingOriginalDescription fails
+  // open to '' on any 302/timeout/non-2xx/malformed-JSON/missing-field outcome, and
+  // an empty original leaves the Modal job's Sonnet call with (at best) whatever
+  // thin listing_context RAG returned — near-ungrounded copy. Rather than enqueue
+  // that job and hope the v1.8 thin-original exception saves it, fail loud here and
+  // skip generation entirely: capture to Sentry so a genuine fetch failure is
+  // observable, and do not publish the description.requested event. The response
+  // below is unaffected — it is always template_fallback on a cache miss.
+  if (originalDescription === '') {
+    const msg =
+      `[description] empty original_description — skipping AI generation (no grounding ` +
+      `source) tenant=${tenantId} listing=${listing_id} archetype=${archetypeId}`;
+    console.error(msg);
+    Sentry.captureException(new Error(msg), {
+      tags: { area: 'description', kind: 'empty_original_description' },
+      extra: { tenantId, listingId: listing_id, archetype: archetypeId, locale: localeCode },
+    });
+  } else {
+    const event: DescriptionRequestedEvent = {
+      tenant_id: tenantId,
+      listing_id,
+      archetype: archetypeId,
+      locale: localeCode,
+      copy_template: templateText,
+      original_description: originalDescription,
+      listing_context: listingContext,
+      cache_key: cacheKey,
+      max_tokens: 500,
+      // Precedence chain: demo override_model > global generation_model > default (in Python job).
+      // - DEMO MODE: override_model carries the operator-chosen model (DEMO-001 / FOLLOW-166).
+      // - Standard path: generation_model carries the global admin setting (FOLLOW-161).
+      // The Python _resolve_generation_model() validates both against its allow-list.
+      ...(demoActive && demoOverrideModel
+        ? { override_model: demoOverrideModel }
+        : { generation_model: effectiveModel }),
+    };
 
-  // FOLLOW-431 / ESC-033: registered via after() so the async Redpanda publish (and its
-  // fail-loud Sentry capture) completes after the response is sent before instance suspension.
-  // Response is not blocked — after() runs post-response while keeping the instance alive.
-  afterResponse(() => publishDescriptionRequested(event));
+    // FOLLOW-431 / ESC-033: registered via after() so the async Redpanda publish (and its
+    // fail-loud Sentry capture) completes after the response is sent before instance suspension.
+    // Response is not blocked — after() runs post-response while keeping the instance alive.
+    afterResponse(() => publishDescriptionRequested(event));
+  }
 
   // Return template fallback immediately.
   // headline is null on cold-start — SDK keeps the playbook headline directive (ADR-0009).

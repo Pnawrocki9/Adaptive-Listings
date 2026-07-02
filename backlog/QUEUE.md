@@ -8730,6 +8730,47 @@ gate) closes the epic and must be last.
     - [ ] Lookup order description_cache_persistent → Redis → template_fallback holds end-to-end.
     - [ ] Test: a generated description survives a >72h simulated gap (present in Postgres, no
           re-enqueue).
+- id: FOLLOW-485
+  title: >-
+    Pilot: replace Redpanda with direct Modal HTTPS invocation for description + embed-seed
+    (ADR-0016)
+  agent: ml-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 6
+  depends_on: []
+  source: >-
+    ESC-036 stand-up finding: prod Redpanda is Serverless, whose HTTP Proxy (the REST endpoint the
+    edge/serverless producers publish through) is BYOC/Dedicated-only; a Dedicated cluster
+    (~$500/mo) is out of pilot budget (CEO 2026-07-03). The bus's only job in these two flows is to
+    hand a request from the control-plane (Vercel) to Modal — Modal supports authenticated HTTPS
+    invocation natively, so the bus can be dropped for the pilot.
+  spec: ADR-0016 (pilot direct Modal invocation); ESC-036; ADR-0005; FOLLOW-458 precedent
+  notes: |
+    CEO DECISION 2026-07-03: adopt ADR-0016 — direct Modal web endpoint, no Redpanda for the pilot
+    description + embed-seed flows. Cross-agent: touches Modal Python (ml-engineer, owns llm-gateway)
+    AND the control-plane publisher seam (TS). Assigned ml-engineer as primary; the control-plane
+    swap is small and in scope. ISOLATED WORKTREE per FOLLOW-448.
+    AC:
+    - [ ] Modal (apps/llm-gateway): add one authenticated web endpoint per flow (POST, Bearer =
+          INTERNAL_API_SECRET) that validates the payload and calls generate_description.spawn(event)
+          / the embed job's .spawn(...). Use the current Modal decorator (fastapi_endpoint/web_endpoint
+          for modal 1.4.x). Retire consume_description_requests / consume_embed_seed_requests from the
+          deploy (remove the schedule; keep the code, clearly commented as superseded by ADR-0016).
+    - [ ] control-plane: publishDescriptionRequested → POST MODAL_DESCRIPTION_URL (Bearer
+          INTERNAL_API_SECRET), inside the existing afterResponse() fail-loud wrapper; same for the
+          listing-embed-seed publisher → MODAL_EMBED_SEED_URL. On non-2xx, fail loud (Sentry), do not
+          throw.
+    - [ ] Config: MODAL_DESCRIPTION_URL + MODAL_EMBED_SEED_URL documented in .env.example; the
+          Phase-A path no longer requires any REDPANDA_* var. estalara-secrets loses REDPANDA_* for
+          description generation (keep ANTHROPIC/UPSTASH/DESCRIPTION_CACHE_*/SENTRY/INTERNAL_API_SECRET).
+    - [ ] Tests: a poisoned/unauthorized POST to the Modal endpoint is rejected; a valid POST spawns
+          generation; control-plane publisher posts to the Modal URL with the Bearer and handles
+          non-2xx fail-loud. next build + full gates green.
+    - [ ] OUT OF SCOPE (documented in ADR-0016, not this ticket): ab-events + ingest Redpanda mirror
+          — they no-op without REDPANDA_REST_URL; pilot metrics come from direct ClickHouse/Postgres
+          writes. A separate follow-up decides their fate.
+    - [ ] Update docs/runbooks/MODAL_PROD_STANDUP.md + the operator guide to the no-Redpanda flow.
 - id: FOLLOW-461
   title: >-
     Reconcile the event schema to reality: register adapt.description.* + prune/wire unproduced

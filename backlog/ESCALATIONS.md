@@ -2002,4 +2002,16 @@ stream-consumer / data-quality per FOLLOW-458 scope); (5) add a CI deploy workfl
 drift again. Until then, FOLLOW-460's Postgres-cache write and full AI description generation are
 inert in prod; the code PRs (#428/#429/#430) can still merge — this gap is infra, not code.
 
+**Update 2026-07-03 (Redpanda cost/blocker resolved by ADR-0016):** During stand-up we found the
+prod Redpanda cluster is **Serverless**, whose HTTP Proxy (the REST endpoint the edge/serverless
+producers publish through) is **BYOC/Dedicated-only** — and a Dedicated cluster (~$500/mo) is out of
+pilot budget (CEO). Decision **ADR-0016**: drop Redpanda for the pilot and invoke Modal directly
+over HTTPS (Modal web endpoint); implementation **FOLLOW-485** (P1, ml-engineer). This removes
+Redpanda from the Phase-A critical path entirely. ESC-036 stays OPEN for the remaining, non-Redpanda
+work: create the `estalara` Modal workspace + provision `estalara-secrets` (minus Redpanda) + deploy
+`apps/llm-gateway`
+
+- add a CI deploy workflow. Operator guide + `MODAL_PROD_STANDUP.md` updated to the no-Redpanda
+  flow.
+
 **Resolution:** <empty until resolved>

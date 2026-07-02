@@ -1,6 +1,6 @@
 /**
  * Tests for POST /api/tenants — tenant creation + bandit weight seeding.
- * TICKET-AB-006
+ * TICKET-AB-006. Auth updated FOLLOW-456 / audit F-13 (fail-closed + constant-time).
  *
  * DATABASE_URL_ADMIN is not set in CI — route returns a mock response
  * with { mock: true }. seedBanditWeightsForTenant() is tested separately
@@ -39,6 +39,8 @@ vi.mock('@/lib/bandit-seed', () => ({
 import { seedBanditWeightsForTenant } from '@/lib/bandit-seed';
 const mockSeedBandit = vi.mocked(seedBanditWeightsForTenant);
 
+const ADMIN_SECRET = 'super-secret';
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function makePostRequest(body: Record<string, unknown>, adminSecret?: string): NextRequest {
@@ -66,9 +68,68 @@ const VALID_BODY = {
 
 // ─── Tests ─────────────────────────────────────────────────────────────────────
 
+describe('POST /api/tenants — auth (FOLLOW-456 / audit F-13 fail-closed)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns 401 when ADMIN_API_SECRET is unset, even with no header at all', async () => {
+    const { POST } = await import('./route.js');
+    const res = await POST(makePostRequest(VALID_BODY));
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 401 when ADMIN_API_SECRET is unset, even if a header is provided', async () => {
+    // Fail-closed: the header cannot "guess" its way past an unconfigured secret.
+    const { POST } = await import('./route.js');
+    const res = await POST(makePostRequest(VALID_BODY, 'anything'));
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 401 when ADMIN_API_SECRET is set and header is missing', async () => {
+    vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makePostRequest(VALID_BODY));
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 401 when wrong admin secret is provided', async () => {
+    vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makePostRequest(VALID_BODY, 'wrong-secret'));
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 201 when correct admin secret is provided', async () => {
+    vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
+    vi.stubEnv('DATABASE_URL_ADMIN', '');
+    vi.stubEnv('DATABASE_URL_DIRECT', '');
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makePostRequest(VALID_BODY, ADMIN_SECRET));
+
+    expect(res.status).toBe(201);
+  });
+});
+
 describe('POST /api/tenants — no DB in CI (mock path)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
+    vi.stubEnv('DATABASE_URL_ADMIN', '');
+    vi.stubEnv('DATABASE_URL_DIRECT', '');
   });
 
   afterEach(() => {
@@ -77,11 +138,8 @@ describe('POST /api/tenants — no DB in CI (mock path)', () => {
 
   it('returns 201 with tenant data when no DATABASE_URL_ADMIN is set', async () => {
     // CI has no admin DB — route returns { mock: true }
-    vi.stubEnv('DATABASE_URL_ADMIN', '');
-    vi.stubEnv('DATABASE_URL_DIRECT', '');
-
     const { POST } = await import('./route.js');
-    const res = await POST(makePostRequest(VALID_BODY));
+    const res = await POST(makePostRequest(VALID_BODY, ADMIN_SECRET));
 
     expect(res.status).toBe(201);
     const body = await parseBody<{
@@ -97,65 +155,32 @@ describe('POST /api/tenants — no DB in CI (mock path)', () => {
   });
 
   it('returns 400 for invalid slug (uppercase)', async () => {
-    vi.stubEnv('DATABASE_URL_ADMIN', '');
-
     const { POST } = await import('./route.js');
-    const res = await POST(makePostRequest({ ...VALID_BODY, slug: 'Test-Agency' }));
+    const res = await POST(makePostRequest({ ...VALID_BODY, slug: 'Test-Agency' }, ADMIN_SECRET));
 
     expect(res.status).toBe(400);
   });
 
   it('returns 400 when name is too short', async () => {
-    vi.stubEnv('DATABASE_URL_ADMIN', '');
-
     const { POST } = await import('./route.js');
-    const res = await POST(makePostRequest({ ...VALID_BODY, name: 'X' }));
+    const res = await POST(makePostRequest({ ...VALID_BODY, name: 'X' }, ADMIN_SECRET));
 
     expect(res.status).toBe(400);
   });
 
   it('returns 400 for invalid plan', async () => {
-    vi.stubEnv('DATABASE_URL_ADMIN', '');
-
     const { POST } = await import('./route.js');
-    const res = await POST(makePostRequest({ ...VALID_BODY, plan: 'gold' }));
+    const res = await POST(makePostRequest({ ...VALID_BODY, plan: 'gold' }, ADMIN_SECRET));
 
     expect(res.status).toBe(400);
-  });
-
-  it('returns 401 when ADMIN_API_SECRET is set and header is missing', async () => {
-    vi.stubEnv('ADMIN_API_SECRET', 'super-secret');
-
-    const { POST } = await import('./route.js');
-    const res = await POST(makePostRequest(VALID_BODY));
-
-    expect(res.status).toBe(401);
-  });
-
-  it('returns 401 when wrong admin secret is provided', async () => {
-    vi.stubEnv('ADMIN_API_SECRET', 'super-secret');
-
-    const { POST } = await import('./route.js');
-    const res = await POST(makePostRequest(VALID_BODY, 'wrong-secret'));
-
-    expect(res.status).toBe(401);
-  });
-
-  it('returns 201 when correct admin secret is provided', async () => {
-    vi.stubEnv('ADMIN_API_SECRET', 'super-secret');
-    vi.stubEnv('DATABASE_URL_ADMIN', '');
-    vi.stubEnv('DATABASE_URL_DIRECT', '');
-
-    const { POST } = await import('./route.js');
-    const res = await POST(makePostRequest(VALID_BODY, 'super-secret'));
-
-    expect(res.status).toBe(201);
   });
 });
 
 describe('POST /api/tenants — with DB configured', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
   });
 
@@ -165,7 +190,7 @@ describe('POST /api/tenants — with DB configured', () => {
 
   it('calls seedBanditWeightsForTenant after successful tenant insert', async () => {
     const { POST } = await import('./route.js');
-    const res = await POST(makePostRequest(VALID_BODY));
+    const res = await POST(makePostRequest(VALID_BODY, ADMIN_SECRET));
 
     expect(res.status).toBe(201);
     expect(mockSeedBandit).toHaveBeenCalledOnce();
@@ -176,7 +201,7 @@ describe('POST /api/tenants — with DB configured', () => {
     mockSeedBandit.mockRejectedValueOnce(new Error('DB connection refused'));
 
     const { POST } = await import('./route.js');
-    const res = await POST(makePostRequest(VALID_BODY));
+    const res = await POST(makePostRequest(VALID_BODY, ADMIN_SECRET));
 
     // Seeding failure must not surface as a 500
     expect(res.status).toBe(201);
@@ -184,7 +209,7 @@ describe('POST /api/tenants — with DB configured', () => {
 
   it('response contains id, slug, name, plan', async () => {
     const { POST } = await import('./route.js');
-    const res = await POST(makePostRequest(VALID_BODY));
+    const res = await POST(makePostRequest(VALID_BODY, ADMIN_SECRET));
 
     expect(res.status).toBe(201);
     const body = await parseBody<Record<string, unknown>>(res);

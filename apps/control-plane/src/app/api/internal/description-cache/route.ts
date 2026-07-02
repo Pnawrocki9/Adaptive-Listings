@@ -10,9 +10,16 @@
  * survives Redis eviction (FOLLOW-204, Master Design §E.7.3 v4.0).
  *
  * Auth:
- *   Bearer <DESCRIPTION_CACHE_INTERNAL_SECRET> (HMAC-grade shared secret).
- *   When the env var is unset (dev/test) any non-empty token is accepted
- *   (backward-compat pattern matching /api/internal/schema).
+ *   Bearer <DESCRIPTION_CACHE_INTERNAL_SECRET> (HMAC-grade shared secret),
+ *   compared constant-time via `secretEquals`.
+ *
+ *   Fail-closed (FOLLOW-456 / audit F-13): when the env var is unset, every
+ *   request is rejected with 401 — previously an unset secret accepted ANY
+ *   non-empty bearer token, letting anyone write into the permanent
+ *   description cache. `DESCRIPTION_CACHE_INTERNAL_SECRET` is the real secret
+ *   the Modal `generate_description.py` callback (FOLLOW-460) authenticates
+ *   with — the env var name is unchanged, so a correctly-configured Modal
+ *   caller is unaffected.
  *
  * This is an internal-only endpoint: it must NEVER be called by tenants or the SDK.
  * The secret must be rotated on any suspected compromise.
@@ -38,6 +45,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
+import { secretEquals } from '@/lib/secret-compare';
 // Note: insertPgCachedDescription (fail-open) is intentionally not used here.
 // This internal endpoint uses insertPgCachedDescriptionStrict (defined below)
 // which re-throws on configured-DB errors so the Modal job can retry.
@@ -71,15 +79,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── Auth gate ─────────────────────────────────────────────────────────────
   // Bearer <DESCRIPTION_CACHE_INTERNAL_SECRET>. This is a high-entropy shared
   // secret exchanged between the Modal job and the control-plane via Doppler.
-  // When unset (dev/CI) any non-empty token is accepted — matching the pattern
-  // used by /api/internal/schema.
+  // Fail CLOSED: an unset secret denies every request rather than accepting
+  // any non-empty token (FOLLOW-456 / audit F-13).
   const auth = req.headers.get('Authorization') ?? req.headers.get('authorization');
   const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : '';
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
   const expectedSecret = process.env.DESCRIPTION_CACHE_INTERNAL_SECRET;
-  if (expectedSecret && token !== expectedSecret) {
+  if (!token || !expectedSecret || !secretEquals(expectedSecret, token)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

@@ -1699,3 +1699,28 @@ independent occurrence, even if it references the same pattern by name.
   on this repo's gh version even though `gh pr view --json` works fine) — an until-loop gating on a
   command that silently errors every iteration never terminates and burns time; grep the plain-text
   `gh pr checks` output for `pending`/`in_progress` instead when in doubt.
+
+- **Date / ticket:** 2026-07-02 — FOLLOW-454/FOLLOW-455 (recovery + close-out),
+  FOLLOW-450/FOLLOW-457 (delegation)
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks -> backend-engineer" (FOLLOW-450); "intent/adapt logic,
+  embeddings, LLM gateway, auto-detect, ontology, platform-templates -> ml-engineer" (FOLLOW-457).
+- **What validation caught (or missed):** Recovering FOLLOW-455 exposed a hazard distinct from
+  RETRO-146's branch-hygiene finding: a worker can die inside a CORRECTLY branch-isolated worktree
+  (FOLLOW-448 respected) and still leave 4 separate gate-class defects uncaught (lint, format,
+  typecheck, and — the sharpest edge — a `next build` webpack import-resolution failure that neither
+  `vitest` nor `tsc --noEmit` catches, because webpack's extension-less relative-import resolution
+  is stricter than ts-node/vitest's). Also caught a real prod-risk half-wire before it went
+  unnoticed: the new `dsr-verify.ts` reads a Postgres column (`attempt_count`) added by a migration
+  that was STILL RUNNING (not yet confirmed applied) when the session ended — traced it to
+  `.github/workflows/db-migrate.yml` auto-applying Postgres/Drizzle migrations on push-to-main
+  (unlike ClickHouse, which has no such mechanism), documented the run ID and an explicit
+  next-session verification requirement instead of either blocking on it or silently assuming it
+  succeeded.
+- **A delegation/validation rule I'd add:** When closing out a ticket that adds a Postgres/Drizzle
+  migration, check `gh run list --workflow=db-migrate.yml` for a run auto-triggered by the merge
+  commit and explicitly track it as IN PROGRESS / NOT YET CONFIRMED rather than assuming "migrations
+  don't auto-apply" uniformly — that project memory is true for ClickHouse but false for
+  Postgres/Drizzle migrations under `packages/db/migrations/**`, and conflating the two either
+  creates a false blocker (treating a self-applying migration as operator-gated) or a false
+  all-clear (assuming a still-running workflow already completed).

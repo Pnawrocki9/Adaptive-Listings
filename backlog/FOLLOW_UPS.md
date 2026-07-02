@@ -12894,7 +12894,56 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 474 (472 = FOLLOW-451 residual — demo-JWT path tenant_id-claim-vs-body mismatch not checked when JWT lacks a tenant_id claim, P3 backend-engineer ~2h; 473 = FOLLOW-451 residual — GET /api/adapt presence-only ADAPT_API_KEY auth + spoofable x-tenant-id fallback now weaker than hardened POST path, P2 backend-engineer ~3h. Both promoted directly to Sprint 22b as READY, 2026-07-02.) (449–471 = 2026-07-01 Full-Stack Audit Remediation epic, chartered directly into backlog/QUEUE.md "Sprint 22b" as READY/BACKLOG tickets rather than as stubs here — FOLLOW-449 F-02 intent_events prod migration+de-silence [P0], 450 F-06 enable feedback/bandit loop [P0], 451 F-05 real API-key adapt auth [P0], 452 F-08 holdout archetype logging [P1], 453 F-07 analytics UI fail-loud + kill /api/analytics mock [P1], 454 F-01 SSR-cookie auth on tenant dashboard/analytics APIs [P1], 455 F-20 DSR OTP CSPRNG+rate-limit+erasure coverage [P1], 456 F-13 tenant-isolation holes [P1], 457 F-11 grounding fail-loud + directive whitelist [P1], 458 F-03 deploy stream-consumer + data-quality cron [P1], 459 F-09 ingest ACK-before-insert [P1], 460 F-10 finish v2.0 permanent description cache [P1], 461 F-04 event-schema reconciliation [P2], 462 F-14 CH DSR param-binding [P2], 463 F-17 verified_facts_used writer [P2], 464 F-15 pg description cache model-key [P2], 465 F-18 NEUTRAL negative-cache [P2], 466 F-21 feedback HMAC replay + timingSafeEqual [P2], 467 F-12 dead-scaffold cleanup [P3], 468 F-16 adapt-description buildEndpoint+encode [P3], 469 F-19 bundle headroom [P3], 470 refresh §Snapshot.1/README/CLAUDE.md + promote FOLLOW-380 [P2], 471 clean re-audit acceptance gate [P1, depends on all]). Original pointer: 448 = RETRO-146 §4e/§9 — branch-first worker discipline [git checkout -b as the worker's FIRST action before any edit] + mechanical guardrail [pre-edit/SessionStart hook refusing edits or auto-branching when HEAD==main so a stalled worker can't strand uncommitted work on the main working tree, where a later branch-from-main silently absorbs/discards it] + orchestrator "recovered/handed-off work must be independently re-verified, not trusted" checklist; P2 devops-engineer/pm-orchestrator ~3h; source: backend-engineer stalled 600s on FOLLOW-442/PR #406, left correct impl UNCOMMITTED on the main working tree, main session recovered+re-verified typecheck+lint+11/11 holdout tests). 447 = audit sibling ci.yml gates for the 3 INERT-GATE failure modes [#1 build-without-@estalara/shared, #2 bare-specifier-from-repo-root, #3 socket-hang] + add defense-in-depth timeout-minutes to ALL jobs [only archetype-embeddings-not-null has one]; optional negative-control for the archetype gate; P3 devops-engineer ~2h; source RETRO-145 §4a LG-3/§5b; continue-on-error scoping is SEPARATE = FOLLOW-446). 446 = harden archetype-embeddings-not-NULL CI gate against silent blind-spots [shared-build-order fixed PR #402/#403 follow-up + continue-on-error swallows gate-broken vs soft-skip]; P3 devops-engineer ~1h. 445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
+## FOLLOW-474 — Codify a mandatory pre-PR local gate sequence (incl. `next build`) for control-plane workers + worktree workspace-dts bootstrap
+
+- **source_retro:** RETRO-150 §9 (FOLLOW-455 recovery), 2026-07-02 — pm-orchestrator
+- **source_ticket:** FOLLOW-455 — the implementing compliance-engineer subagent died mid-ticket
+  inside a correctly branch-isolated worktree (FOLLOW-448 respected — nothing stranded on `main`),
+  but left FOUR uncaught gate-class defects in its uncommitted diff: 4 ESLint errors, Prettier
+  formatting violations, 1 `tsc --noEmit` error (pglite test-db type vs. the prod
+  `PostgresJsDatabase` parameter type), and a `next build` webpack import-resolution failure (a
+  relative `./dsr-otp.js` import that resolves under vitest/ts-node but not webpack). The recovering
+  pm-orchestrator session caught all four only because it independently ran the FULL local gate
+  suite (lint + format + typecheck + `next build` + tests) before committing, per RETRO-146
+  §4e(c)/Operating Principle 5 (verify-not-trust-on-handoff) — this is a second, distinct hazard
+  from RETRO-146's WORKER-BRANCH-HYGIENE finding (that pattern is about WHERE work ends up; this one
+  is about whether correctly-located work is actually gate-clean).
+- **recommended_sprint:** next available (P3, not a go-live blocker — a process/tooling hardening)
+- **recommended_agent:** devops-engineer (primary: `docs/AGENT_WORKFLOW.md` + any pre-PR
+  hook/script); pm-orchestrator co-owns the documentation update
+- **priority:** P3
+- **estimated_hours:** 2
+- **scope:**
+  1. Add an explicit `next build` step (not just `vitest run` + `tsc --noEmit`) to the documented
+     pre-PR checklist for any worker touching `apps/control-plane` in `docs/AGENT_WORKFLOW.md` —
+     RETRO-150 §4e/§6 found webpack's import resolution is a DISTINCT failure axis that neither
+     Vitest's nor `tsc --noEmit`'s module resolution catches (an extension-less relative import can
+     pass both and still fail a real Next.js build).
+  2. Fold in the session-6 QUEUE.md candidate note (FOLLOW-452 PR #418 validation): a fresh
+     `git worktree` should build the `@estalara/{shared,db,auth,sdk}` workspace packages BEFORE a
+     worker's first local lint/typecheck pass, to avoid the OPPOSITE failure mode — spurious
+     unresolved-type lint noise (37 false-positive errors observed in that instance) masking real
+     defects. This is a distinct, narrower issue from item 1 (environmental noise vs. a genuine code
+     bug), but both belong in the same "worktree/pre-PR hygiene" hardening pass.
+  3. Consider (not mandatory — evaluate cost/benefit) whether a lightweight pre-PR script
+     (`scripts/pre-pr-check.sh` or similar) that runs build-deps→lint→format→typecheck→`next build`
+     in one command would reduce the chance of a future crashed/recovering worker missing a step,
+     versus relying on the documented checklist alone.
+- **ac:**
+  - [ ] `docs/AGENT_WORKFLOW.md` (or the equivalent pre-PR section) explicitly lists `next build` as
+        a required pre-PR gate for any `apps/control-plane` change, distinct from `vitest run` and
+        `tsc --noEmit`.
+  - [ ] The worktree/worker bootstrap guidance documents building `@estalara/{shared,db,auth,sdk}`
+        before the first local lint/typecheck pass in a fresh worktree.
+  - [ ] (Optional, evaluate first) a `scripts/pre-pr-check.sh` convenience script exists and is
+        referenced from the same doc section, OR a documented decision that a script is not worth
+        the maintenance cost is recorded instead.
+- **promoted_to_queue:** true (2026-07-02, pm-orchestrator — promoted to Sprint 22b as READY, P3,
+  non-blocking hardening; not on the FOLLOW-471 clean-re-audit-gate critical path)
+
+---
+
+<!-- next free FOLLOW number: 475 (474 = RETRO-150 §9 — codify mandatory pre-PR local gate sequence [next build + worktree workspace-dts bootstrap] for control-plane workers; P3 devops-engineer/pm-orchestrator ~2h; source: compliance-engineer subagent for FOLLOW-455 died mid-ticket, correctly branch-isolated but left 4 gate-class defects uncaught, recovered by pm-orchestrator session 8. Promoted directly to Sprint 22b as READY.) 472 = FOLLOW-451 residual — demo-JWT path tenant_id-claim-vs-body mismatch not checked when JWT lacks a tenant_id claim, P3 backend-engineer ~2h; 473 = FOLLOW-451 residual — GET /api/adapt presence-only ADAPT_API_KEY auth + spoofable x-tenant-id fallback now weaker than hardened POST path, P2 backend-engineer ~3h. Both promoted directly to Sprint 22b as READY, 2026-07-02.) (449–471 = 2026-07-01 Full-Stack Audit Remediation epic, chartered directly into backlog/QUEUE.md "Sprint 22b" as READY/BACKLOG tickets rather than as stubs here — FOLLOW-449 F-02 intent_events prod migration+de-silence [P0], 450 F-06 enable feedback/bandit loop [P0], 451 F-05 real API-key adapt auth [P0], 452 F-08 holdout archetype logging [P1], 453 F-07 analytics UI fail-loud + kill /api/analytics mock [P1], 454 F-01 SSR-cookie auth on tenant dashboard/analytics APIs [P1], 455 F-20 DSR OTP CSPRNG+rate-limit+erasure coverage [P1], 456 F-13 tenant-isolation holes [P1], 457 F-11 grounding fail-loud + directive whitelist [P1], 458 F-03 deploy stream-consumer + data-quality cron [P1], 459 F-09 ingest ACK-before-insert [P1], 460 F-10 finish v2.0 permanent description cache [P1], 461 F-04 event-schema reconciliation [P2], 462 F-14 CH DSR param-binding [P2], 463 F-17 verified_facts_used writer [P2], 464 F-15 pg description cache model-key [P2], 465 F-18 NEUTRAL negative-cache [P2], 466 F-21 feedback HMAC replay + timingSafeEqual [P2], 467 F-12 dead-scaffold cleanup [P3], 468 F-16 adapt-description buildEndpoint+encode [P3], 469 F-19 bundle headroom [P3], 470 refresh §Snapshot.1/README/CLAUDE.md + promote FOLLOW-380 [P2], 471 clean re-audit acceptance gate [P1, depends on all]). Original pointer: 448 = RETRO-146 §4e/§9 — branch-first worker discipline [git checkout -b as the worker's FIRST action before any edit] + mechanical guardrail [pre-edit/SessionStart hook refusing edits or auto-branching when HEAD==main so a stalled worker can't strand uncommitted work on the main working tree, where a later branch-from-main silently absorbs/discards it] + orchestrator "recovered/handed-off work must be independently re-verified, not trusted" checklist; P2 devops-engineer/pm-orchestrator ~3h; source: backend-engineer stalled 600s on FOLLOW-442/PR #406, left correct impl UNCOMMITTED on the main working tree, main session recovered+re-verified typecheck+lint+11/11 holdout tests). 447 = audit sibling ci.yml gates for the 3 INERT-GATE failure modes [#1 build-without-@estalara/shared, #2 bare-specifier-from-repo-root, #3 socket-hang] + add defense-in-depth timeout-minutes to ALL jobs [only archetype-embeddings-not-null has one]; optional negative-control for the archetype gate; P3 devops-engineer ~2h; source RETRO-145 §4a LG-3/§5b; continue-on-error scoping is SEPARATE = FOLLOW-446). 446 = harden archetype-embeddings-not-NULL CI gate against silent blind-spots [shared-build-order fixed PR #402/#403 follow-up + continue-on-error swallows gate-broken vs soft-skip]; P3 devops-engineer ~1h. 445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
 P1 backend-engineer ~1h). 441 = AUD-03/F-06 — prod CH write-verification canary; P0 data-engineer
 ~3h). 440 = AUD-02/F-02 — fix assigned_at→ts + latency_ms phantom columns; P0 backend-engineer
 ~2h). 439 = AUD-01/F-01 — fix lift route buildMockLiftRows fabrication + dqsUnavailable=false;

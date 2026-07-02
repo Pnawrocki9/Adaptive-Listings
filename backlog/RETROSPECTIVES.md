@@ -23687,6 +23687,196 @@ The implementing `backend-engineer` subagent **STALLED** (no progress for 600s) 
 - **Sibling of the RETRO-135/137/138/139/140 fire-and-forget-observability family** (Rule K.2) on the read/render axis instead of the write/flush axis.
 
 
-<!-- next free FOLLOW number: 449 (448 = RETRO-146 §4e/§9 — branch-first worker discipline + mechanical guardrail [pre-edit/SessionStart hook refusing edits or auto-branching when HEAD==main so a stalled worker can't strand uncommitted work on the main working tree where a later branch-from-main silently absorbs/discards it] + orchestrator "recovered/handed-off work must be independently re-verified, not trusted" checklist; P2 devops-engineer/pm-orchestrator ~3h; source: backend-engineer subagent stalled 600s on FOLLOW-442, left correct impl UNCOMMITTED on the main working tree [never ran git checkout -b], main session recovered+re-verified typecheck+lint+11/11 holdout tests). RETRO-146 = retro for PR #406 (FOLLOW-442, AUD-04/F-05 P1 go-live gate, MERGED 2026-07-01T16:29:05Z squash, commit 306f98a; 2 files +48/-7; route.ts +29 new afterResponse(logDecisionAsync holdoutGroup=true variant=control archetype=neutral directiveCount=0) on POST holdout branch ~L1165 + route.holdout.test.ts inverts prior "no INSERT" smoke → asserts param_p_holdout_group=1). NO contract change (existing holdout_group column + logDecisionAsync 15-param sig; new call site only; afterResponse-wrapped so FF-guard passes). Wiring Audit CLEAN both checks (framework-route entrypoint suppressed; no new signal) — closes an IN-PRACTICE half-wire: holdout_group=1 had a cta-lift consumer [route.ts:116/138/163 FROM adaptation_decisions, route-helpers.ts:142 holdout_sessions] but NO POST-side producer [GET produced it at :943, POST holdout branch returned without logging]. GAPS: LG-1 arm-asymmetry root cause FIXED (treatment logged, holdout didn't → lift holdout denominator structurally zero → degenerate z-test); sibling-arm audit reconciled — opt-out :1077 + consent-skip :1126 also skip logDecisionAsync BY DESIGN (route.ts:398, excluded from measurement) so correctly untouched; TG-1 note the prior test ASSERTED THE BUG (holdout→no INSERT) as expected, masking it; TG-2 note no producer→consumer denominator test; TG-3 note assertion omits param_p_directive_count=0; DG-1 trivial comment cites treatment "~1417" actual L1433; §4e PROCESS = stalled-worker/branch-hygiene → FOLLOW-448. CLOSURE (step 7): AUD-04/F-05 GENUINELY CLOSED on CODE axis end-to-end (producer→flush after()→consumer cta-lift→render holdout_sessions, not one-hop); PROD axis NOT attested (rides FOLLOW-441 canary + FOLLOW-422 empty-table concern), correctly OPEN. RULES: NO promotion. ARM-ASYMMETRY-WRITE-GAP count 1 fresh (distinct from RETRO-132 mislabel + RETRO-138 flush-drop-all-arms); WORKER-BRANCH-HYGIENE count 1 fresh (corpus grep found no prior; distinct from RETRO-138 §6 tooling-fidelity); FLUSH axis unchanged count 1 (this PR is a correct APPLICATION of afterResponse, not a new bug sighting; FOLLOW-429 remains the designated cross-runtime count-2). Anti-count-inflation honored. PM ACTION: (1) FOLLOW-448 P2 — branch-first guardrail + recovered-work re-verification; (2) widen FOLLOW-441 canary to assert BOTH holdout arms (NOT re-filed); (3) prod-attest holdout rows land after deploy (FOLLOW-441/422). -->
+## RETRO-149 — FOLLOW-454 (fix SSR-cookie auth mismatch on tenant dashboard + analytics/pilot/ab APIs — audit F-01) — 2026-07-02
+
+### 1. Summary of change
+
+- **PR:** #422 (squash-merged 2026-07-02T11:35:35Z, commit `c060a69`). Title: `fix(control-plane): accept supabase ssr session on tenant dashboard routes [FOLLOW-454]`.
+- **Files changed:** 19 (new `lib/session-auth.ts` + `session-auth.test.ts`; `middleware.ts` + `middleware.test.ts`; 13 route files across `dashboard/analytics/{lift,summary}`, `pilot/{inquiry-starts,calibration,cta-lift}`, `ab/weights`, `quiz/config` GET+POST, `tenants/[id]{,/answers,/answers/[answerId],/lia,/lia/[recordId],/bandit/weights/[archetype]}`).
+- **Modules touched:** control-plane auth/session layer + 13 tenant-facing API routes + dashboard middleware. No shared/SDK/ingest/decision-api contract change — `@estalara/auth`'s `getAuthClaims` is explicitly untouched (still consumed unmodified by `apps/ingest` and `apps/decision-api`).
+- **Key contracts changed:** none at the wire level. New internal helper `getSessionAuth()`/`getSessionAuthClaims()`/`requireTenantSessionAccess()` is a superset of the existing `getAuthClaims()` behavior (tries Bearer/legacy-cookie first, unchanged; falls back to `@supabase/ssr createServerClient().auth.getUser()` only when the legacy path fails) — every pre-existing test mocking `@estalara/auth` keeps passing unmodified per the PR body.
+
+### 2. Verification done in PR
+
+- PR claims: 1429/1429 control-plane vitest tests green (full suite, no regressions), `tsc --noEmit` clean with workspace deps built, 0 ESLint errors on all 18 touched files, `prettier --write` no-op, `scripts/check-rule-h.sh` + `scripts/check-rule-i.sh` both clean (new symbols show zero wired-or-dead violations). PM independently confirmed via `gh pr checks 422`: 57 pass / 2 fail, the 2 failures both the pre-existing non-blocking "Rule I — wired-or-dead check" (both PR-diff matrix legs), zero violations tied to this PR's touched files.
+- Recovered-work handling: this session found PR #422 ALREADY OPEN with CI green at session start (the prior session, session 7, had delegated FOLLOW-454 to an isolated worktree and its work completed there before the session ended — unlike FOLLOW-455 below, no crash/recovery was needed for this ticket). Per the "verify, don't trust" discipline this session independently re-ran `gh pr view 422 --json state,mergedAt,mergeCommit` and `gh pr checks 422` rather than accepting QUEUE.md's carried-forward IN_PROGRESS status at face value.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** New exported symbols `getSessionAuth`, `getSessionAuthClaims`, `requireTenantSessionAccess`, `checkDashboardSession`. `grep -rn "getSessionAuth\b" apps/control-plane/src --include=*.ts | grep -v '\.test\.'` → 1 definition (`session-auth.ts:151`) + 2 real non-test call sites (`ab/weights/route.ts:70`, `tenants/[id]/bandit/weights/[archetype]/route.ts:48`); `getSessionAuthClaims` and `requireTenantSessionAccess` are consumed by the remaining 11 route files per the PR's own route list (not individually re-verified line-by-line in this pass, but the route list is a diff-derived enumeration, not a claim). `checkDashboardSession` confirmed defined `middleware.ts:195`, called `middleware.ts:332` — a real framework entrypoint, not a test-only call.
+- **CHECK B (half-wire — RLS sub-finding, PR's own "not explicitly in the AC list" note):** `getSessionAuth()`'s returned `rawToken` (sourced from `getSession().access_token` on the SSR fallback path) is the producer that keeps `createTenantClient(rawToken)` RLS-enforced on `ab/weights` and `bandit/weights/[archetype]` — verified this is a genuine fix, not a claim: prior to this PR, an SSR-cookie-only request (no Bearer header) would have called `createTenantClient(undefined)`, which the PR body correctly identifies as the RLS-disabled pass-through branch in `packages/db/src/client.ts`. This is exactly the shape of half-wire Rule H/Operating-Principle-5 exists to catch (a security-relevant fallback silently degrading), and the PR closes it as part of the SAME diff rather than leaving it for a follow-up.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- No new logic gap found in the touched diff. The two-path (legacy-first, SSR-fallback) structure is applied consistently across all 13 routes + middleware per the PR's own route enumeration.
+- **Scope-boundary check (reconciled, no gap):** `@estalara/auth`'s `getAuthClaims` is correctly left unmodified rather than being taught about `@supabase/ssr` directly — the PR's stated rationale (ingest/decision-api must not gain a `@supabase/ssr` dependency) is architecturally sound and matches the admin-side precedent (FOLLOW-326/ADR-0013) exactly.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — no bug found in the touched diff by this retro pass.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (note, P3) — this retro did not independently re-run the 1429-test control-plane suite** (relied on CI's independently-confirmed green + the PR's own reported count); a future retro with more time budget could spot-check a subset of the 13 route diffs directly rather than trusting the PR's route enumeration. Low risk: CI is the merge gate and was independently confirmed green by this session via `gh pr checks`, not just read from the PR description.
+- **TG-2 (note, P3) — `tenants/[id]/lia/[recordId]/route.ts` DELETE is staff-only per the PR body ("SSR fallback also covers staff browser sessions here, for consistency") but this retro did not verify a dedicated test asserts a non-staff SSR-authenticated session is still rejected on that specific route.** Worth a spot-check, not escalating as a gap (the underlying `estalara_staff` check is pre-existing and this PR's diff is additive to the auth-resolution step, not the authorization step).
+
+#### 4d. Documentation gaps
+
+- None found.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **F-01 (this ticket): closed on the CODE axis.** Directly complements the just-merged FOLLOW-453 (PR #419, analytics fail-loud UI) — a real agency user hitting this exact SSR-cookie mismatch previously got the OLD 401→fabricated-zeros path; post-FOLLOW-453 they would have at least SEEN an honest error banner; post-FOLLOW-454 they now get a real 200 and no error banner at all. The two tickets compose correctly (no re-test needed of FOLLOW-453's error-banner path — it simply won't fire for the 401 case anymore, and FOLLOW-453's still-relevant paths, e.g. `data_source==='mock'`, `clickhouse` query failures, are untouched by this diff).
+- **FOLLOW-471 (clean re-audit gate):** F-01 is in its depends_on list; this closes that dependency.
+
+#### 5b. Future sprint tickets affected
+
+- None newly affected. The admin-side precedent (FOLLOW-326/ADR-0013) and this tenant-side fix together mean the SSR-cookie-auth class (project memory `admin_ssr_cookie_auth`) is now closed on BOTH axes — no third axis (e.g. a partner/staff-cross-tenant surface) was identified as still outstanding in this pass, but this retro did not exhaustively re-audit every route in the repo for a third unpatched surface; flagged as a watch-item rather than a new stub (no evidence of a third surface found).
+
+#### 5c. Contracts changed others rely on
+
+- N/A — no wire-level contract change; the new session-resolution path is a superset (broadens accepted credentials, narrows nothing).
+
+#### 5d. Architectural assumptions affected
+
+- Reinforces the RLS-token-provenance lesson implicit in `createTenantClient(rawToken)`: any NEW auth-resolution helper that feeds a `rawToken` into an RLS-enforced client must supply a real token on every accepted auth path, not just the historically-first one, or it silently degrades to the RLS-disabled pass-through. This PR got it right; worth checking on any FUTURE new auth path added to `createTenantClient()` call sites.
+
+### 6. New lesson candidates
+
+- **No new pattern reaches count 1 as a fresh sighting.** This PR is the tenant-side mirror of the already-established admin-side SSR-cookie-auth fix (project memory `admin_ssr_cookie_auth`, FOLLOW-326/ADR-0013/PRs #310-#311) — same root cause, same remedy shape, applied to a second (larger) route surface. Not a new axis.
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **F-01 (chartered target): CLOSED end-to-end on the code axis.** Producer (`getSessionAuth()`'s SSR-cookie fallback) → consumer (13 route handlers + `/dashboard/*` middleware, all confirmed real non-test call sites) → the actual failure mode (401→fabricated-zeros for a legitimately-authenticated browser session) is eliminated. Prod-side attestation (a real agency user's browser session actually succeeding against prod) is not independently observable by this retro pass — same class of residual as every other Sprint 22b ticket whose final proof is a live pilot session, not re-litigated here.
+
+### 8. Multi-axis / contradiction reconciliation (step 8)
+
+- **Auth-path axis (Bearer/legacy vs SSR-cookie):** both paths verified to compose correctly — the PR's own DASHBOARD-5 test proves the legacy Bearer path still short-circuits before touching `@supabase/ssr` (no added latency/risk on the pre-existing hot path).
+- **RLS-token axis (§3 CHECK B):** reconciled as a genuine fix bundled into this PR, not a separate residual — see §3.
+- No contradiction with any prior retro's verdict (this is the first retro to analyze the tenant-side SSR-cookie fix; the admin-side fix predates the RETRO-NNN numbering scheme's coverage of that PR pair).
+
+### 9. Follow-ups
+
+- No new FOLLOW stub filed. §5b's "third unpatched surface" watch-item and §4c's two test-coverage notes do not clear the bar for a dedicated ticket at this time; folded into FOLLOW-471 re-audit QA awareness.
+
+### 10. Cross-references
+
+- **Tenant-side sibling of the admin-side SSR-cookie-auth fix** (project memory `admin_ssr_cookie_auth`, FOLLOW-326, ADR-0013, PRs #310/#311). **Complements RETRO-148/FOLLOW-453** (analytics fail-loud UI) on an orthogonal axis (who can call the route vs. what the UI does with the response).
+
+---
+
+## RETRO-150 — FOLLOW-455 (harden DSR: CSPRNG OTP + rate-limit/lockout + complete erasure & disclosure — audit F-20) — 2026-07-02
+
+### 1. Summary of change
+
+- **PR:** #423 (squash-merged 2026-07-02T11:35:45Z, commit `765cb81`). Title: `feat(compliance): harden DSR — CSPRNG OTP, rate-limit/lockout, complete erasure & disclosure [FOLLOW-455]`.
+- **Files changed:** 19 (+~1500/-~470 net across route + lib + test files). New `lib/dsr-verify.ts` (request-scoped OTP verify + atomic mark-used + attempt-cap lockout), new `lib/dsr-rate-limit.ts` (anti-email-bomb rate limiter on `initiate`), `lib/dsr-otp.ts` (CSPRNG generation), `lib/clickhouse-dsr.ts` (+intent_events erasure), `dsr/erase/route.ts` (+quiz_completions/intent_sessions cascades), `dsr/access/route.ts` + `dsr/portability/route.ts` (real event-count disclosure), `dsr/mutation-poll/route.ts`, new migration `0032_dsr_verifications_attempt_count.sql`, ~9 test files (106 DSR tests total per PR body).
+- **Modules touched:** compliance/DSR subsystem (control-plane) + one Postgres migration. No shared/SDK/ingest/decision-api contract change.
+- **Key contracts changed:** `dsr_verifications` gains `attempt_count` (new column, default 0, idempotent `ADD COLUMN IF NOT EXISTS`) + a new composite index. OTP lookup contract changes from **global-by-hash** (`WHERE otp_hash = hash(token) AND dsr_type = X`, scans every pending row for every tenant) to **request-scoped** (`WHERE id = request_id AND dsr_type = X`, a single specific row) — callers must now supply the `request_id` returned by `POST /api/dsr/initiate` alongside the OTP. Erase set contract extended: `quiz_completions` + `intent_sessions` (Postgres) and `intent_events` (ClickHouse) are now in scope for Art.17 erasure, resolved via the subject's `intent_sessions.id` BEFORE that row is deleted (documented ordering dependency in `erase/route.ts`'s header comment).
+
+### 2. Verification done in PR
+
+- PR claims 106 DSR tests green (`vitest run src/app/api/dsr src/lib/__tests__/{dsr-verify,dsr-rate-limit,intent-session-lookup}.test.ts`) and ESLint clean on all changed files. PM independently confirmed via `gh pr checks 423`: 56 pass / 2 fail, the 2 failures both the pre-existing non-blocking "Rule I — wired-or-dead check", zero violations tied to this PR's touched files.
+- **RECOVERY VERIFICATION (the substantive part of this session's work on this ticket — see §4e below):** the implementing `compliance-engineer` subagent died mid-ticket, leaving its diff uncommitted but correctly isolated on its own branch/worktree (`.claude/worktrees/wt-follow455`, already on `compliance-engineer/FOLLOW-455-dsr-otp-hardening`). Before committing anything, this session independently ran: `npx eslint` (found 4 errors, fixed), `npx prettier --write` (found unformatted files, fixed), `tsc --noEmit` (found 1 error — the pglite test-db client's inferred type did not structurally satisfy the prod `PostgresJsDatabase` parameter type the new `dsr-verify.ts`/`clickhouse-dsr.ts` functions declared; fixed by widening the parameter type), and `next build` (found a webpack module-resolution failure on a relative `./dsr-otp.js` import that only resolves under ts-node/vitest's extension-less resolution, not webpack's; fixed by switching to the `@/lib/dsr-otp` path alias already used elsewhere in the codebase). Re-ran the full 106-test DSR suite AND `next build` to exit 0 before committing.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** New exported symbols `verifyAndConsumeOtp`, `MAX_OTP_ATTEMPTS` (`dsr-verify.ts`), `checkInitiateRateLimit` (`dsr-rate-limit.ts`). `grep -n "checkInitiateRateLimit" apps/control-plane/src/app/api/dsr/initiate/route.ts` → real non-test import + call site (`route.ts:31`). `grep -rln "dsr-rate-limit\|dsr-verify" apps/control-plane/src --include=*.ts | grep -v '\.test\.'` → 4 real non-test consumers (`dsr-otp.ts`, `dsr/initiate/route.ts`, `dsr/portability/route.ts`, `dsr/erase/route.ts`, `dsr/access/route.ts`).
+- **CHECK B (half-wire — schema-vs-prod-state, the load-bearing check for this PR):** `dsr-verify.ts:90` (`record.attemptCount >= MAX_OTP_ATTEMPTS`) and `:110` (`.set({ attemptCount: sql\`...+1\` })`) reference the NEW `dsr_verifications.attempt_count` column added by migration `0032`. Unlike ClickHouse migrations (no auto-apply mechanism, confirmed project memory), this repo's `.github/workflows/db-migrate.yml` auto-applies Postgres/Drizzle migrations under `packages/db/migrations/**` on every push to `main` that touches that path (staging first, then prod) — this session confirmed the exact merge commit triggered a fresh run (`gh run list --workflow=db-migrate.yml` → run `28586941940`, triggered by this PR's merge commit). **This is the reason the code-schema pairing is NOT a half-wire left for an operator**, unlike FOLLOW-449's ClickHouse migration 0015 (which genuinely does require a manual Doppler-prd operator step) — the mechanism exists and is confirmed to have fired; the run itself was still in progress (staging leg) as this session ended and its completion is NOT yet confirmed. See STATUS.md Migration status table — next session must verify `gh run view 28586941940` reports `completed success` before treating 0032 as live in prod.
+- **CHECK B (half-wire — erasure cascade ordering):** `erase/route.ts`'s new `intent_sessions.id` resolution happens BEFORE the `intent_sessions` row is deleted (verified via `grep -n "Resolve intent_sessions.id BEFORE"` in the file's own header comment + the code at `:335`) — because ClickHouse `intent_events` is keyed on `intent_session_id`, not `session_id`, deleting the Postgres row first would have orphaned the ClickHouse erasure target with no way to find it. This ordering dependency is correctly handled, not merely commented.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- No new logic gap found in the erasure/rate-limit/OTP logic itself.
+- **Reconciled, no gap:** the request-scoped lookup change (global-by-hash → `WHERE id = request_id`) is a breaking change to the OTP-verification CALLING CONVENTION (callers must now supply `request_id`), but this is entirely internal to the DSR route handlers (`access`/`erase`/`portability` all call `verifyAndConsumeOtp` server-side; no external API consumer of the intermediate lookup exists) — confirmed via the 4-consumer grep in §3, not a half-wire.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A in the merged diff — see §4e for the FOUR gate-class defects that WERE present in the crashed worker's uncommitted diff and were fixed by this session before commit (not shipped, so not counted as a "code bug not caught" against the merged PR; counted instead as a process finding below).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (note, P3) — no test in this PR directly exercises the migration-not-yet-applied failure mode** (a `dsr_verifications` row lacking `attempt_count` — e.g. a prod row inserted moments before this migration's `prd` leg completes). Low risk given `db-migrate.yml`'s staging-then-prod ordering and this session's confirmation the workflow ran on this exact merge (§3), but no explicit regression test pins "the code degrades gracefully if the column is briefly missing" — it does not; it would 500. Acceptable given the auto-apply mechanism exists and there is no realistic multi-minute drift window on THIS migration class (unlike ClickHouse, which has no such mechanism at all). Note, no new stub.
+
+#### 4d. Documentation gaps
+
+- None found in the shipped diff (the file-header comments in `dsr-verify.ts` and `erase/route.ts` are notably thorough — see §3).
+
+#### 4e. Process / workflow gap — DEDICATED ANALYSIS (crashed-worker recovery, second instance this sprint)
+
+The implementing `compliance-engineer` subagent **DIED** (not stalled-and-recoverable — no further output, session ended) partway through this ticket. Unlike RETRO-146's FOLLOW-442 near-miss, this worker HAD correctly followed branch-first discipline (FOLLOW-448): its uncommitted diff sat safely in an isolated worktree already on `compliance-engineer/FOLLOW-455-dsr-otp-hardening`, not stranded on `main`. So the FOLLOW-448 guardrail worked exactly as designed for the branch-hygiene axis.
+
+However, recovering the work exposed a DIFFERENT, previously-unlabeled hazard: the crashed worker's diff carried **four separate gate-class defects** it never got to catch, because it died before running its own local verification pass:
+
+1. 4 ESLint errors.
+2. Prettier formatting violations.
+3. 1 `tsc --noEmit` error (pglite test-db type vs. the prod `PostgresJsDatabase` parameter type — a genuine type-narrowness bug in the new library code's function signatures, not a tooling artifact).
+4. A `next build` webpack import-resolution failure (a relative `./dsr-otp.js` import that resolves under ts-node/vitest's module resolution but NOT webpack's — this is the kind of defect that is INVISIBLE to `vitest run` and even `tsc --noEmit` in some configurations, and would only have been caught by an actual `next build`, which the PR's own "Verification" section for FOLLOW-454 explicitly ran but which this worker never reached).
+
+None of these four defects were of the "unbuilt-workspace lint-noise" shape flagged as a candidate follow-up in session 6's QUEUE.md note (FOLLOW-452's 37 unresolved-type lint errors, attributed there to workspace `@estalara/*` packages not being built before lint ran in a fresh worktree) — defect #3 and #4 here are GENUINE bugs in the new code, not environmental noise. This means the session-6 "worktree bootstrap should build workspace dts" note, if implemented in isolation, would NOT have caught defects #3/#4.
+
+#### 4e — closure
+
+- (a) BRANCH-FIRST DISCIPLINE (FOLLOW-448) worked correctly here — nothing was stranded on `main`. Confirms the guardrail's value on a real second incident.
+- (b) VERIFY-NOT-TRUST-ON-HANDOFF (RETRO-146 §4e(c) / Operating Principle 5) was applied literally by this session: none of the crashed worker's implicit "this should work" was trusted — the full local gate suite (lint/format/typecheck/`next build`/106 tests) was independently run and its failures independently fixed before commit.
+- (c) NEW HAZARD IDENTIFIED: **a crashed/died worker's uncommitted work — even when correctly branch-isolated — can carry MULTIPLE independent gate-class defects (lint, format, type, and build-tool-specific import resolution) that only a full local pre-PR gate run surfaces, because the crashed worker never got to run its own equivalent of that pass.** `next build`'s webpack resolution is the sharpest edge here: it is NOT redundant with `tsc --noEmit` (TypeScript's own module resolution is more permissive of extension-less relative imports than webpack's bundler resolution in this Next.js config), so a worker (or a recovering session) that runs only `vitest` + `tsc` and skips `next build` could still ship a defect this class exactly resembles.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **F-20 (this ticket): closed on the CODE axis** — CSPRNG OTP, rate-limit/lockout, request-scoped lookup, atomic mark-used, and the 3-store erasure extension are all shipped and wired (§3). The PROD-migration-apply axis is NOT a residual escalation (unlike FOLLOW-449's ClickHouse leg) because `db-migrate.yml` auto-applies — see §3 CHECK B and STATUS.md.
+- **FOLLOW-471 (clean re-audit gate):** F-20 is in its depends_on list; this closes that dependency's code leg.
+
+#### 5b. Future sprint tickets affected
+
+- None directly blocked. Recommend (not re-filing, folding into FOLLOW-471 QA awareness): the re-audit gate should include an explicit `next build` run as part of its verification pass, not just `vitest`/`tsc`, given §4e's finding that webpack import resolution is a DISTINCT failure axis from TypeScript's own module resolution.
+
+#### 5c. Contracts changed others rely on
+
+- `dsr_verifications` OTP-lookup calling convention changed from global-by-hash to request-scoped (§1) — confirmed internal-only (§4a), no external contract break.
+
+#### 5d. Architectural assumptions affected
+
+- Reinforces the "migrations don't auto-apply" project memory with an important REFINEMENT: it is true for ClickHouse (confirmed, no mechanism exists) but FALSE for Postgres/Drizzle migrations under `packages/db/migrations/**`, which DO auto-apply via `db-migrate.yml` on push to main. Any future retro or session reasoning about "is this migration live in prod yet" must check WHICH database the migration targets before assuming the ClickHouse-class manual-apply risk applies.
+
+### 6. New lesson candidates
+
+- **Pattern (RECOVERED-WORK-MULTI-GATE-DEFECT): "a crashed/died worker's uncommitted work, even when correctly branch-isolated (FOLLOW-448 respected), can carry multiple independent gate-class defects — lint, format, type-narrowness, AND bundler-specific import resolution — that only a full local pre-PR gate run (including an actual `next build`, not just `vitest`+`tsc`) surfaces, because the crashed worker never reached its own equivalent verification pass."** — **RETRO-150, count 1 (fresh).** Distinct axis from RETRO-146's WORKER-BRANCH-HYGIENE (that pattern is about STRANDING work on the wrong branch; this pattern is about the CONTENT of correctly-isolated work being under-verified). Corpus grep (`next build.*webpack\|import resolution\|pglite.*PostgresJsDatabase\|gate-class defect`) found no prior instance matching this specific shape. The session-6 QUEUE.md candidate note ("worktree bootstrap should build workspace dts") is a NARROWER, distinct precursor observation (environmental lint noise from unbuilt `@estalara/*` deps) — this pattern's defects #3/#4 are genuine code bugs, not environmental noise, so the session-6 note alone would not have caught them. **HELD at count 1 — no promotion** (anti-count-inflation; the session-6 note is a QUEUE.md observation, not a numbered prior RETRO, so does not count toward the ≥2-PRIOR-RETRO threshold even if the underlying theme rhymes).
+- No rule promoted this retro (single fresh sighting).
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **F-20 (chartered target): CLOSED end-to-end on the code axis, not one-hop.** Producer (CSPRNG `dsr-otp.ts` + request-scoped `dsr-verify.ts` + rate-limited `initiate/route.ts`) → consumer (all 4 DSR capability routes, confirmed real non-test call sites in §3) → the 3-store erasure cascade (`erase/route.ts`, verified ordering-correct in §3) → disclosure (`access`/`portability` routes reading the real event count). Migration `0032`'s prod-apply is confirmed IN-FLIGHT via the auto-apply workflow, not left as a silent gap (§3/§5d).
+
+### 8. Multi-axis / contradiction reconciliation (step 8)
+
+- **Migration-class axis (ClickHouse vs Postgres):** explicitly reconciled in §5d — this PR's migration auto-applies where FOLLOW-449's does not; no contradiction, just two different migration systems with different operational postures that this retro is careful not to conflate.
+- **Recovery axis (branch-hygiene vs content-verification):** reconciled in §4e — FOLLOW-448 solved one hazard; this retro identifies a sibling hazard FOLLOW-448 does not cover.
+- No contradiction with any prior retro's verdict.
+
+### 9. Follow-ups
+
+- **FOLLOW-474 filed** (P3, devops-engineer/pm-orchestrator process ticket): codify a mandatory pre-PR local gate sequence for ANY worker (fresh or recovering-from-crash) that touches `apps/control-plane` — specifically, add `next build` (not just `vitest run` + `tsc --noEmit`) to the documented pre-PR checklist in `docs/AGENT_WORKFLOW.md`, since §4e/§6 found `next build`'s webpack import resolution is a DISTINCT failure axis neither `vitest` nor `tsc --noEmit` catches. Also fold in the session-6 QUEUE.md candidate (worktree bootstrap should build `@estalara/*` workspace deps before a worker's first local lint/typecheck pass, to avoid the OPPOSITE failure — spurious unresolved-type noise masking real errors). HELD at count 1 (§6) so this is filed as a hygiene/process improvement, not a rule promotion.
+
+### 10. Cross-references
+
+- **Sibling of RETRO-146 (FOLLOW-442/FOLLOW-448) on the crashed/stalled-worker-recovery family** — RETRO-146 covers branch-hygiene (where the work ends up); this retro covers content-verification (whether the work, correctly located, is actually gate-clean). **Refines the "migrations don't auto-apply" project memory** (§5d) with the Postgres-vs-ClickHouse distinction.
+
+---
+
+<!-- next free FOLLOW number: 474 (473 = FOLLOW-473, promoted directly to Sprint 22b as READY by pm-orchestrator session 5, not retro-numbered; 474 = RETRO-150 §9 — codify mandatory pre-PR local gate sequence including `next build` for control-plane workers + worktree bootstrap building @estalara/* workspace deps before first lint/typecheck pass; P3 devops-engineer/pm-orchestrator ~2h; source: compliance-engineer subagent for FOLLOW-455 died mid-ticket, correctly branch-isolated [FOLLOW-448 respected] but left 4 gate-class defects [lint/format/typecheck/next-build] uncaught, recovered by pm-orchestrator session 8 independently re-running the full local gate suite before commit). RETRO-149 = retro for PR #422 (FOLLOW-454, F-01, MERGED 2026-07-02T11:35:35Z squash, commit c060a69; 19 files; new session-auth.ts + checkDashboardSession wired into middleware + 13 route files). RETRO-150 = retro for PR #423 (FOLLOW-455, F-20, MERGED 2026-07-02T11:35:45Z squash, commit 765cb81; 19 files; new dsr-verify.ts + dsr-rate-limit.ts + migration 0032). Both wiring audits clean. RETRO-149 found no fresh pattern (tenant-side mirror of the already-fixed admin-side SSR-cookie-auth class). RETRO-150 found one fresh count-1 pattern (RECOVERED-WORK-MULTI-GATE-DEFECT, distinct from RETRO-146's WORKER-BRANCH-HYGIENE) — held at count 1, no rule promotion, FOLLOW-474 filed as the durable fix. Both retros independently confirmed CI green via `gh pr checks` rather than trusting the PR bodies' self-reported counts (Operating Principle 5). -->
+
+<!-- superseded trailer notes for RETRO-145/146 (previously duplicated below this line, now folded into the RETRO-150 trailer above) removed 2026-07-02 by pm-orchestrator session 8 to avoid two conflicting "next free FOLLOW number" markers; no content lost — see RETRO-145/146 bodies above for full detail. -->
 
 

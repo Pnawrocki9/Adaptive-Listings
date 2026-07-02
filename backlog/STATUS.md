@@ -1,4 +1,94 @@
-# Status — 2026-07-02 (Sprint 22b OPEN — FOLLOW-452/453 DONE; FOLLOW-454/455 IN_PROGRESS)
+# Status — 2026-07-02 (Sprint 22b OPEN — FOLLOW-452/453/454/455 DONE; FOLLOW-450/457 IN_PROGRESS)
+
+## SESSION 8 (2026-07-02) — recovered crashed session 7; FOLLOW-454/455 DONE + retros written, FOLLOW-450/457 delegated
+
+**Read state first (step 1):** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md`, `backlog/HANDOFFS.md`,
+`git log --oneline -20`, `gh pr list --state open` (0 open PRs at session start — both FOLLOW-454
+and FOLLOW-455 PRs had already merged before this session started reading state; `git status` clean
+on `main`, in sync with `origin/main` at `765cb81`). Session 7 had crashed mid-flight after
+delegating FOLLOW-454 and FOLLOW-455 to isolated worktrees; both completed and merged (PR #422 →
+`c060a69`, PR #423 → `765cb81`) via a mechanism outside this session's visibility (matching the
+session-6/session-7 pattern where the recovering session finds the PR already open/merged).
+
+**Verification, not trust (step 1, per user's explicit framing this session):**
+
+- `gh pr view 422/423 --json state,mergedAt,mergeCommit,title` → both `state: MERGED`, merge commits
+  match `git log` HEAD exactly (`c060a69` then `765cb81`).
+- `gh pr checks 422` → 57 pass / 2 fail (both fails = pre-existing non-blocking "Rule I —
+  wired-or-dead check", zero violations in touched files). `gh pr checks 423` → 56 pass / 2 fail,
+  same pattern. **CI non-success count for all REAL gates: 0 on both PRs** (evidence requirement §1
+  — Rule I is a documented pre-existing baseline, not a real merge gate, per project memory "CI gate
+  landscape").
+- Runtime-wiring (step 5c, evidence requirement §2) — FOLLOW-454:
+  `grep -rn "getSessionAuth\b" apps/control-plane/src --include=*.ts | grep -v '\.test\.'` → 1
+  producer (`session-auth.ts:151`) + 2 non-test consumers (`ab/weights/route.ts:70`,
+  `tenants/[id]/bandit/weights/[archetype]/route.ts:48`);
+  `grep -n "checkDashboardSession" apps/control-plane/src/middleware.ts` → definition :195, call
+  site :332 (real middleware entrypoint). FOLLOW-455:
+  `grep -rln "dsr-rate-limit\|dsr-verify" apps/control-plane/src --include=*.ts | grep -v '\.test\.'`
+  → 4 non-test consumers across the 4 DSR capability routes;
+  `grep -n "intent_events\|quiz_completions\|intent_sessions" apps/control-plane/src/app/api/dsr/erase/ route.ts`
+  → all 3 new erasure targets have real DELETE call sites, not comments only.
+- **Migration-class distinction confirmed (important refinement to the "migrations don't auto-apply"
+  project memory):** FOLLOW-455's new migration `0032_dsr_verifications_attempt_count.sql` targets
+  Postgres/Drizzle, which DOES auto-apply on push to `main` via `.github/workflows/db-migrate.yml`
+  (staging then prod) — unlike ClickHouse, which has no such mechanism (FOLLOW-449's class). This
+  session found and is tracking `gh run` id `28586941940`, auto-triggered by the FOLLOW-455 merge
+  commit; it was STILL IN PROGRESS (staging leg) when this session ended (prior runs of this
+  workflow took up to ~1h42m end-to-end) — **NOT YET CONFIRMED COMPLETE.** `dsr-verify.ts` reads/
+  writes the new `attempt_count` column on every DSR verify, so until the prod leg completes, a live
+  DSR request against prod would 500 on the missing column — this is a real but BOUNDED drift window
+  (the mechanism is confirmed to exist and fire, unlike the ClickHouse class where no mechanism
+  exists at all). **NEXT SESSION MUST run `gh run view 28586941940` and confirm `completed success`
+  before treating migration 0032 as live in prod; if it failed, this is a P0/P1 escalation** (DSR is
+  a live legal-compliance surface).
+
+**QUEUE.md updated:** FOLLOW-454 and FOLLOW-455 flipped `IN_PROGRESS` → `DONE`, all AC checkboxes
+`[x]`, `completed_at` set to the actual merge timestamps.
+
+**RETRO-149 (FOLLOW-454) and RETRO-150 (FOLLOW-455) written** to `backlog/RETROSPECTIVES.md`
+(10-section format). RETRO-149: no fresh pattern (tenant-side mirror of the already-established
+admin-side SSR-cookie-auth fix, project memory `admin_ssr_cookie_auth`). RETRO-150: **one fresh
+count-1 pattern — RECOVERED-WORK-MULTI-GATE-DEFECT** ("a crashed/died worker's uncommitted work,
+even when correctly branch-isolated per FOLLOW-448, can carry multiple independent gate-class
+defects — lint, format, type-narrowness, AND bundler-specific import resolution — that only a full
+local pre-PR gate run [including an actual `next build`, not just `vitest`+`tsc`] surfaces").
+Explicitly distinguished from RETRO-146's WORKER-BRANCH-HYGIENE (that pattern is about WHERE
+uncommitted work ends up — stranded on `main` vs. a proper branch; this pattern is about whether
+correctly-located work is actually gate-clean). Held at count 1, no rule promotion — **FOLLOW-474
+filed** (P3, devops-engineer, promoted directly to Sprint 22b as READY) to codify a mandatory pre-PR
+`next build` gate for control-plane workers + fold in the session-6 candidate note about worktree
+workspace-dts bootstrap.
+
+**Delegated FOLLOW-450 and FOLLOW-457**, the next two unblocked Sprint 22b tickets, to different
+free agents (no shared-tree hazard), each requiring an isolated worktree as its literal first action
+per FOLLOW-448:
+
+- FOLLOW-450 (P0, backend-engineer) — the only READY P0 this session (FOLLOW-449 remains
+  CODE_COMPLETE_OPERATOR_PENDING, not a fresh pick; FOLLOW-451 is DONE). Enable feedback endpoint /
+  bandit learning loop — code leg only (canary wiring, SDK Sentry breadcrumb, e2e verification
+  harness); the Doppler-prd provisioning + flag flip (AC1) stays operator-only, same class as
+  FOLLOW-449's AC1/AC2.
+- FOLLOW-457 (P1, ml-engineer) — LLM grounding integrity: fail-loud on empty original-description
+  fetch + fact whitelist on the directive (headline/CTA) path. Noted in the ticket that ESC-019 is
+  ALREADY RESOLVED (the reachability/auth half) per ESCALATIONS.md — this ticket's audit-report
+  source text calling it "still open" refers to the distinct fail-loud/whitelist residual, not a
+  reopen; flagged in the delegation note to avoid confusion.
+
+**IN_PROGRESS count:** FOLLOW-450 + FOLLOW-457 + stale TICKET-PILOT-001 = 3 (at the 3-ticket cap —
+no further delegation until one clears).
+
+**No new escalation opened.** Three OPEN escalations (ESC-020, ESC-028, ESC-034) re-confirmed
+non-blocking against established precedent (each explicitly self-documents as operator-action-
+pending, not an unresolved architectural/product decision).
+
+**Tool-availability note (carried forward from session 7):** this session's toolset does not include
+a subagent-spawn mechanism for `retrospective-analyst` or the two newly-delegated workers; retro
+analysis and delegation bookkeeping were performed directly in QUEUE.md/RETROSPECTIVES.md/
+FOLLOW_UPS.md by the orchestrating session, and the actual FOLLOW-450/457 implementation work is
+expected to happen via the external harness that acts on this session's `NEXT:` directive.
+
+---
 
 ## SESSION 7 (2026-07-02) — FOLLOW-452/453 DONE + retros written, FOLLOW-454/455 delegated
 
@@ -502,10 +592,11 @@ below,** **those IDs no longer exist in QUEUE.md):**
 
 ## Migration status
 
-| Migration       | Scope   | CI             | Prod apply          | Notes                                             |
-| --------------- | ------- | -------------- | ------------------- | ------------------------------------------------- |
-| 0019 (CH)       | CH      | CI container   | APPLIED ~12:00Z     | page_context_source — ESC-031 RESOLVED 2026-06-26 |
-| 0031 (Postgres) | Drizzle | db-migrate.yml | APPLIED (confirmed) | Strip variant='default'; run 28231486742 success  |
+| Migration       | Scope   | CI             | Prod apply                      | Notes                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------------- | ------- | -------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0019 (CH)       | CH      | CI container   | APPLIED ~12:00Z                 | page_context_source — ESC-031 RESOLVED 2026-06-26                                                                                                                                                                                                                                                                                                                                                            |
+| 0031 (Postgres) | Drizzle | db-migrate.yml | APPLIED (confirmed)             | Strip variant='default'; run 28231486742 success                                                                                                                                                                                                                                                                                                                                                             |
+| 0032 (Postgres) | Drizzle | db-migrate.yml | IN PROGRESS — NOT YET CONFIRMED | dsr_verifications.attempt_count (FOLLOW-455); run 28586941940 auto-triggered by merge `765cb81`, still on staging leg as of 2026-07-02 session 8 end. `dsr-verify.ts` reads this column on every DSR verify — NEXT SESSION MUST `gh run view 28586941940` and confirm `completed success` (both staging+prod legs) before treating as live; escalate as P0/P1 if failed (DSR is a legal-compliance surface). |
 
 ---
 

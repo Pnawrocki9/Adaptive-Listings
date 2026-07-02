@@ -53,6 +53,7 @@
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DSR_CLICKHOUSE_TABLES } from '@/lib/clickhouse-dsr';
+import type * as DsrVerifyModule from '@/lib/dsr-verify';
 
 // ─── Hoisted mocks ────────────────────────────────────────────────────────────
 
@@ -65,6 +66,8 @@ const {
   mockHashOtp,
   mockCaptureMessage,
   mockCaptureException,
+  mockVerifyAndConsumeOtp,
+  mockResolveIntentSessionId,
   insertedRows,
   selectedRows,
 } = vi.hoisted(() => {
@@ -81,6 +84,13 @@ const {
     // on SENTRY_DSN_CONTROL_PLANE being set; mocked here to assert call-through.
     mockCaptureMessage: vi.fn(),
     mockCaptureException: vi.fn(),
+    // FOLLOW-455: request-scoped OTP verification is a separately mocked
+    // module — see apps/control-plane/src/lib/dsr-verify.ts.
+    mockVerifyAndConsumeOtp: vi.fn(),
+    // Defaults to a non-null id so the uniform per-table status assertions in
+    // this file (all DSR_CLICKHOUSE_TABLES entries behave identically) hold
+    // for intent_events too. A dedicated test below covers the null case.
+    mockResolveIntentSessionId: vi.fn().mockResolvedValue('intent-session-uuid-001'),
     insertedRows,
     selectedRows,
   };
@@ -116,6 +126,16 @@ vi.mock('@estalara/db', () => ({
     sessionId: 'session_id',
     tenantId: 'tenant_id',
   },
+  // FOLLOW-455 / audit F-20: quiz_completions + intent_sessions erasure cascades.
+  quizCompletions: {
+    sessionId: 'session_id',
+    tenantId: 'tenant_id',
+  },
+  intentSessions: {
+    id: 'id',
+    sessionId: 'session_id',
+    tenantId: 'tenant_id',
+  },
   dsrClickhouseMutations: {
     id: 'id',
     tenantId: 'tenant_id',
@@ -130,6 +150,21 @@ vi.mock('@estalara/db', () => ({
 
 vi.mock('@/lib/dsr-otp', () => ({
   hashOtp: mockHashOtp,
+}));
+
+// FOLLOW-455: keep the real (pure) dsrVerifyFailureResponse mapper; only mock
+// verifyAndConsumeOtp so tests configure {ok, record|reason} directly instead
+// of fabricating the underlying select/update chain.
+vi.mock('@/lib/dsr-verify', async (importOriginal) => {
+  const real = await importOriginal<typeof DsrVerifyModule>();
+  return {
+    ...real,
+    verifyAndConsumeOtp: mockVerifyAndConsumeOtp,
+  };
+});
+
+vi.mock('@/lib/intent-session-lookup', () => ({
+  resolveIntentSessionId: mockResolveIntentSessionId,
 }));
 
 vi.mock('../_clickhouse', () => ({
@@ -208,12 +243,12 @@ function buildFailingChain(err: Error) {
   return self;
 }
 
-function makeRequest(body: unknown): NextRequest {
+function makeRequest(body: { token: string; request_id?: string }): NextRequest {
   const url = new URL('http://localhost/api/dsr/erase');
   return new NextRequest(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ request_id: 'dsr-uuid-001', ...body }),
   });
 }
 
@@ -247,18 +282,20 @@ beforeEach(() => {
   });
   mockInsert.mockReturnValue(buildChain([]));
 
+  // FOLLOW-455: OTP verification (request-scoped lookup + attempt-cap/lockout
+  // + atomic mark-used) is handled by the separately-mocked verifyAndConsumeOtp
+  // — it no longer consumes a db.select() slot in this file's mockSelect queue.
+  mockVerifyAndConsumeOtp.mockResolvedValue({ ok: true, record: makeValidRecord() });
+  mockResolveIntentSessionId.mockResolvedValue('intent-session-uuid-001');
+
   // Default: no pre-existing dsr_clickhouse_mutations rows.
   // Execution order of db.select() calls in the route:
-  //   1st: dsr_verifications lookup → record.
-  //   2nd: FOLLOW-239 CRM completeness count query → 0 surviving rows (default: no CRM rows).
-  //   3rd: dsr_clickhouse_mutations idempotency check → empty (no prior mutations).
+  //   1st: FOLLOW-239 CRM completeness count query → 0 surviving rows (default: no CRM rows).
+  //   2nd: dsr_clickhouse_mutations idempotency check → empty (no prior mutations).
   //
   // IMPORTANT: the FOLLOW-239 count runs AFTER the main transaction but BEFORE the
   // ClickHouse mutations idempotency check. Mock order must match execution order.
-  mockSelect
-    .mockReturnValueOnce(buildChain([makeValidRecord()]))
-    .mockReturnValueOnce(buildChain([{ count: 0 }]))
-    .mockReturnValueOnce(buildChain([]));
+  mockSelect.mockReturnValueOnce(buildChain([{ count: 0 }])).mockReturnValueOnce(buildChain([]));
 
   // Default fetch impl — pretend ClickHouse accepts every ALTER + returns a mutation_id.
   // Both ALTER and SELECT system.mutations are POSTed to the same CLICKHOUSE_URL
@@ -335,9 +372,9 @@ describe('POST /api/dsr/erase — ClickHouse hard-delete', () => {
       status: 'done',
     }));
     mockSelect.mockReset();
-    // Execution order: 1st=DSR lookup, 2nd=FOLLOW-239 count, 3rd=CH idempotency.
+    // Execution order: 1st=FOLLOW-239 count, 2nd=CH idempotency (DSR lookup is
+    // handled by the separately-mocked verifyAndConsumeOtp — see beforeEach).
     mockSelect
-      .mockReturnValueOnce(buildChain([makeValidRecord()]))
       .mockReturnValueOnce(buildChain([{ count: 0 }])) // FOLLOW-239 count (0 CRM rows)
       .mockReturnValueOnce(buildChain(preExisting)); // CH mutations idempotency
 
@@ -374,6 +411,61 @@ describe('POST /api/dsr/erase — ClickHouse hard-delete', () => {
     for (const inserted of insertedRows as Record<string, unknown>[]) {
       expect(inserted.status).toBe('failed');
     }
+  });
+
+  // ─── FOLLOW-455 / audit F-20: intent_events keyed on intent_session_id ──────
+
+  it('marks intent_events "done" directly (no mutation issued) when no intent_sessions row exists', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123');
+    mockResolveIntentSessionId.mockResolvedValueOnce(null);
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      clickhouse_deletion: { status: string; mutations: { table: string; status: string }[] };
+    };
+    const intentEventsMutation = body.clickhouse_deletion.mutations.find(
+      (m) => m.table === 'intent_events',
+    );
+    expect(intentEventsMutation?.status).toBe('done');
+    // The other 4 tables were still issued as real 'pending' mutations.
+    const otherStatuses = body.clickhouse_deletion.mutations
+      .filter((m) => m.table !== 'intent_events')
+      .map((m) => m.status);
+    expect(otherStatuses.every((s) => s === 'pending')).toBe(true);
+  });
+
+  it('filters intent_events on intent_session_id (not session_id) when a tracer row exists', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123');
+    mockResolveIntentSessionId.mockResolvedValueOnce('intent-session-uuid-999');
+
+    const alterSqls: string[] = [];
+    const fetchMock = vi.fn((_input: string | URL, init?: RequestInit) => {
+      const requestBody = typeof init?.body === 'string' ? init.body : '';
+      if (requestBody.includes('system.mutations')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: [{ mutation_id: 'mut_id_test' }] }), {
+            status: 200,
+          }),
+        );
+      }
+      alterSqls.push(requestBody);
+      return Promise.resolve(new Response('', { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+
+    expect(res.status).toBe(200);
+    const intentEventsSql = alterSqls.find((sql) => sql.includes('ALTER TABLE intent_events'));
+    expect(intentEventsSql).toBeDefined();
+    expect(intentEventsSql).toContain('WHERE intent_session_id IN');
+    expect(intentEventsSql).toContain("'intent-session-uuid-999'");
+    // Must NOT filter on the SDK session_id for this table.
+    expect(intentEventsSql).not.toContain("'sess-abc123'");
   });
 });
 
@@ -418,10 +510,13 @@ describe('POST /api/dsr/erase — FOLLOW-172 conversion_labels cascade', () => {
 
     // Return a DSR record with an empty session_id (edge case — should not happen in production
     // but guard must hold regardless).
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({
+      ok: true,
+      record: makeValidRecord({ sessionId: '' }),
+    });
     mockSelect.mockReset();
-    // Execution order: 1st=DSR lookup, 2nd=FOLLOW-239 count, 3rd=CH idempotency.
+    // Execution order: 1st=FOLLOW-239 count, 2nd=CH idempotency.
     mockSelect
-      .mockReturnValueOnce(buildChain([makeValidRecord({ sessionId: '' })]))
       .mockReturnValueOnce(buildChain([{ count: 0 }])) // FOLLOW-239 count (0 CRM rows)
       .mockReturnValueOnce(buildChain([])); // CH mutations idempotency
 
@@ -460,10 +555,12 @@ describe('POST /api/dsr/erase — FOLLOW-184 Pass B: durable CRM lead_id erasure
     const CRM_LEAD_ID = 'crm-opaque-token-xyz789';
 
     // Return a DSR record with a durable_lead_id (CRM token, different from session_id).
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({
+      ok: true,
+      record: makeValidRecord({ durableLeadId: CRM_LEAD_ID }),
+    });
     mockSelect.mockReset();
-    mockSelect
-      .mockReturnValueOnce(buildChain([makeValidRecord({ durableLeadId: CRM_LEAD_ID })]))
-      .mockReturnValueOnce(buildChain([]));
+    mockSelect.mockReturnValueOnce(buildChain([])); // CH idempotency (Pass B ran, no count query)
 
     const { conversionLabels: mockConversionLabels } = await import('@estalara/db');
 
@@ -495,11 +592,11 @@ describe('POST /api/dsr/erase — FOLLOW-184 Pass B: durable CRM lead_id erasure
   it('does NOT run Pass B when durable_lead_id is null/undefined (no CRM record)', async () => {
     vi.stubEnv('CLICKHOUSE_URL', '');
 
-    // Record without durableLeadId (standard SDK-only session).
+    // Record without durableLeadId (standard SDK-only session) — this is the
+    // default set in the shared beforeEach, so no override needed here.
     mockSelect.mockReset();
-    // Execution order: 1st=DSR lookup, 2nd=FOLLOW-239 count, 3rd=CH idempotency.
+    // Execution order: 1st=FOLLOW-239 count, 2nd=CH idempotency.
     mockSelect
-      .mockReturnValueOnce(buildChain([makeValidRecord()])) // no durableLeadId
       .mockReturnValueOnce(buildChain([{ count: 0 }])) // FOLLOW-239 count (0 CRM rows)
       .mockReturnValueOnce(buildChain([])); // CH mutations idempotency
 
@@ -534,11 +631,14 @@ describe('POST /api/dsr/erase — FOLLOW-184 Pass B: durable CRM lead_id erasure
     const SESSION_ID = 'sess-abc123'; // matches makeValidRecord default sessionId
 
     // durable_lead_id = same as session_id → dedup guard fires, Pass B skipped.
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({
+      ok: true,
+      record: makeValidRecord({ durableLeadId: SESSION_ID }),
+    });
     mockSelect.mockReset();
-    // Execution order: 1st=DSR lookup, 2nd=FOLLOW-239 count, 3rd=CH idempotency.
+    // Execution order: 1st=FOLLOW-239 count, 2nd=CH idempotency.
     // durableLeadId = SESSION_ID (dedup: passBRan = false) → FOLLOW-239 count runs.
     mockSelect
-      .mockReturnValueOnce(buildChain([makeValidRecord({ durableLeadId: SESSION_ID })]))
       .mockReturnValueOnce(buildChain([{ count: 0 }])) // FOLLOW-239 count (0 CRM rows)
       .mockReturnValueOnce(buildChain([])); // CH mutations idempotency
 
@@ -710,9 +810,9 @@ describe('POST /api/dsr/erase — FOLLOW-238 CRM scope correction', () => {
     vi.stubEnv('CLICKHOUSE_URL', '');
 
     // The default beforeEach already sets up:
-    //   1st select: DSR lookup → valid record (no durableLeadId)
-    //   2nd select: FOLLOW-238 count → { count: 0 }   ← tenant has NO CRM rows
-    //   3rd select: CH idempotency → []
+    //   verifyAndConsumeOtp → valid record (no durableLeadId)
+    //   1st select: FOLLOW-238 count → { count: 0 }   ← tenant has NO CRM rows
+    //   2nd select: CH idempotency → []
     // This is the default setup — nothing to override.
 
     const { POST } = await import('./route.js');
@@ -738,12 +838,14 @@ describe('POST /api/dsr/erase — FOLLOW-238 CRM scope correction', () => {
     vi.stubEnv('CLICKHOUSE_URL', '');
 
     const CRM_LEAD_ID = 'crm-token-supplied-abc';
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({
+      ok: true,
+      record: makeValidRecord({ durableLeadId: CRM_LEAD_ID }),
+    });
     mockSelect.mockReset();
     // When passBRan = true, the count query is NOT issued at all.
-    // Execution order: 1st=DSR lookup, 2nd=CH idempotency (no count query).
-    mockSelect
-      .mockReturnValueOnce(buildChain([makeValidRecord({ durableLeadId: CRM_LEAD_ID })]))
-      .mockReturnValueOnce(buildChain([])); // CH idempotency
+    // Execution order: 1st=CH idempotency (no count query).
+    mockSelect.mockReturnValueOnce(buildChain([])); // CH idempotency
 
     const { POST } = await import('./route.js');
     const res = await POST(makeRequest({ token: '123456' }));
@@ -764,9 +866,8 @@ describe('POST /api/dsr/erase — FOLLOW-238 CRM scope correction', () => {
 
     const dbError = new Error('DB connection lost');
     mockSelect.mockReset();
-    // Execution order: 1st=DSR lookup (succeeds), 2nd=count query (throws), 3rd=CH idempotency.
+    // Execution order: 1st=count query (throws), 2nd=CH idempotency.
     mockSelect
-      .mockReturnValueOnce(buildChain([makeValidRecord()])) // DSR lookup
       .mockReturnValueOnce(buildFailingChain(dbError)) // FOLLOW-238 count query throws
       .mockReturnValueOnce(buildChain([])); // CH idempotency
 
@@ -803,14 +904,11 @@ describe('POST /api/dsr/erase — FOLLOW-244 crm_tenant_unverifiable positive br
     vi.stubEnv('SENTRY_DSN_CONTROL_PLANE', 'https://fake@sentry.io/1');
 
     mockSelect.mockReset();
-    // Execution order:
-    //   1st: DSR lookup → valid record (no durableLeadId)
-    //   2nd: FOLLOW-238 count query → { count: 1 } ← tenant HAS CRM rows
-    //   3rd: CH idempotency → []
-    mockSelect
-      .mockReturnValueOnce(buildChain([makeValidRecord()]))
-      .mockReturnValueOnce(buildChain([{ count: 1 }]))
-      .mockReturnValueOnce(buildChain([]));
+    // Execution order (DSR lookup handled by verifyAndConsumeOtp — default
+    // from beforeEach, no durableLeadId):
+    //   1st: FOLLOW-238 count query → { count: 1 } ← tenant HAS CRM rows
+    //   2nd: CH idempotency → []
+    mockSelect.mockReturnValueOnce(buildChain([{ count: 1 }])).mockReturnValueOnce(buildChain([]));
 
     const { POST } = await import('./route.js');
     const res = await POST(makeRequest({ token: '123456' }));
@@ -832,10 +930,7 @@ describe('POST /api/dsr/erase — FOLLOW-244 crm_tenant_unverifiable positive br
 
     mockCaptureMessage.mockReset();
     mockSelect.mockReset();
-    mockSelect
-      .mockReturnValueOnce(buildChain([makeValidRecord()]))
-      .mockReturnValueOnce(buildChain([{ count: 1 }]))
-      .mockReturnValueOnce(buildChain([]));
+    mockSelect.mockReturnValueOnce(buildChain([{ count: 1 }])).mockReturnValueOnce(buildChain([]));
 
     const { POST } = await import('./route.js');
     await POST(makeRequest({ token: '123456' }));
@@ -862,10 +957,7 @@ describe('POST /api/dsr/erase — FOLLOW-244 crm_tenant_unverifiable positive br
     mockWriteDsrAuditLog.mockReset();
     mockWriteDsrAuditLog.mockResolvedValue(undefined);
     mockSelect.mockReset();
-    mockSelect
-      .mockReturnValueOnce(buildChain([makeValidRecord()]))
-      .mockReturnValueOnce(buildChain([{ count: 1 }]))
-      .mockReturnValueOnce(buildChain([]));
+    mockSelect.mockReturnValueOnce(buildChain([{ count: 1 }])).mockReturnValueOnce(buildChain([]));
 
     // Import the canonical DSR_AUDIT_ACTIONS from the mocked module so the
     // assertion stays in sync with the source of truth (no raw strings in tests).

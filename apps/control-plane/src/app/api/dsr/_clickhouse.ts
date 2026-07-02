@@ -50,6 +50,12 @@ export const DSR_AUDIT_ACTIONS = {
    * durable token was supplied.
    */
   crm_unverifiable: 'crm_unverifiable',
+  /**
+   * FOLLOW-455 / audit F-20: POST /api/dsr/initiate rejected a request
+   * because (tenant_id, email) exceeded INITIATE_RATE_LIMIT_MAX within the
+   * rolling window (anti email-bomb guard). No OTP was generated or sent.
+   */
+  rate_limited: 'rate_limited',
 } as const;
 
 /** Union of all valid DSR audit action strings. */

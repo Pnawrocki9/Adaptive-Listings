@@ -225,6 +225,13 @@
       "when": 1782464588649,
       "tag": "0031_strip_bandit_default_variant",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1782987109000,
+      "tag": "0032_dsr_verifications_attempt_count",
+      "breakpoints": true
     }
   ]
 }

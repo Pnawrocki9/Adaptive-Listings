@@ -24,6 +24,20 @@
  *   - adaptation_decisions    (PII: archetype + confidence per session)
  *   - llm_calls               (PII: LLM cost per session)
  *   - session_quality         (PII: DQS metrics per session)
+ *   - intent_events           (FOLLOW-455 / audit F-20: K.3.6 tracer per-signal
+ *                              event trail. Keyed on `intent_session_id`, NOT
+ *                              `session_id` — it is the Postgres
+ *                              `intent_sessions.id` UUID, a DIFFERENT namespace
+ *                              from the SDK session_id. The erase route resolves
+ *                              it via `resolveIntentSessionId()`
+ *                              (apps/control-plane/src/lib/intent-session-lookup.ts)
+ *                              BEFORE the Postgres `intent_sessions` row is
+ *                              deleted, and the mutation-poll retry path
+ *                              re-resolves it on every retry for the same
+ *                              reason. When no `intent_sessions` row exists for
+ *                              the subject, there is nothing to erase and the
+ *                              row is recorded 'done' directly (no mutation
+ *                              issued).)
  *
  * Tables intentionally NOT erased:
  *   - dsr_audit_log           — retained for GDPR Art. 17(3)(b) legal claims
@@ -45,12 +59,22 @@ import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
  * The canonical inventory of ClickHouse PII tables erased on a DSR-erase
  * request. Each entry has the table name and the column to filter on. If a
  * new PII-bearing, session-scoped table is added, append it here.
+ *
+ * `idSource` marks entries whose filter value is NOT the SDK `session_id`
+ * directly. `intent_events` is filtered on `intent_session_id` — the
+ * Postgres `intent_sessions.id` UUID — which callers must resolve via
+ * `resolveIntentSessionId()` before issuing the mutation (FOLLOW-455).
  */
-export const DSR_CLICKHOUSE_TABLES: readonly { table: string; column: string }[] = [
+export const DSR_CLICKHOUSE_TABLES: readonly {
+  table: string;
+  column: string;
+  idSource?: 'intent_session_id';
+}[] = [
   { table: 'events', column: 'session_id' },
   { table: 'adaptation_decisions', column: 'session_id' },
   { table: 'llm_calls', column: 'session_id' },
   { table: 'session_quality', column: 'session_id' },
+  { table: 'intent_events', column: 'intent_session_id', idSource: 'intent_session_id' },
 ];
 
 export type DsrTableName = (typeof DSR_CLICKHOUSE_TABLES)[number]['table'];
@@ -162,6 +186,58 @@ export async function queryClickHouseJson<T = unknown>(
   const text = await executeClickHouseSql(cfg, `${sql} FORMAT JSON`);
   const parsed = JSON.parse(text) as { data?: T[] };
   return parsed.data ?? [];
+}
+
+// ─── Real behavioral event count (FOLLOW-455 / audit F-20) ───────────────────
+
+export interface SessionEventSummary {
+  count: number;
+  firstAt: string | null;
+  lastAt: string | null;
+}
+
+/**
+ * Query the real number of behavioral events ClickHouse holds for a given
+ * (tenant_id, session_id), plus the first/last event timestamps.
+ *
+ * Replaces the previous `events_summary.count = 1` stub in
+ * `GET /api/dsr/access` and `GET /api/dsr/portability` (Art. 15/20
+ * completeness gap, audit F-20) — Art. 15/20 require the ACTUAL extent of
+ * processing to be disclosed, not a placeholder.
+ *
+ * Callers must check `readClickHouseConfig()` first; when ClickHouse is not
+ * configured this function is not reachable — the caller should report the
+ * count as unavailable (`null`), never fabricate a number (Rule K.2).
+ */
+export async function getSessionEventSummary(
+  cfg: ClickHouseConfig,
+  tenantId: string,
+  sessionId: string,
+): Promise<SessionEventSummary> {
+  const escTenant = tenantId.replace(/'/g, "''");
+  const escSession = sessionId.replace(/'/g, "''");
+  const sql = `
+    SELECT
+      count() AS cnt,
+      toString(min(ts)) AS first_at,
+      toString(max(ts)) AS last_at
+    FROM events
+    WHERE tenant_id = '${escTenant}'
+      AND session_id = '${escSession}'
+  `;
+  const rows = await queryClickHouseJson<{ cnt: string; first_at: string; last_at: string }>(
+    cfg,
+    sql,
+  );
+  const row = rows[0];
+  if (!row || Number(row.cnt) === 0) {
+    return { count: 0, firstAt: null, lastAt: null };
+  }
+  return {
+    count: Number(row.cnt),
+    firstAt: row.first_at ? new Date(`${row.first_at.replace(' ', 'T')}Z`).toISOString() : null,
+    lastAt: row.last_at ? new Date(`${row.last_at.replace(' ', 'T')}Z`).toISOString() : null,
+  };
 }
 
 // ─── Mutation issue + poll ────────────────────────────────────────────────────

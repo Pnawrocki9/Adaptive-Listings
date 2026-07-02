@@ -2,27 +2,30 @@
  * DSR OTP helpers — generate, hash, and verify 6-digit one-time passwords for
  * Data Subject Rights request verification.
  *
- * Security notes:
+ * Security notes (FOLLOW-455 / audit F-20):
  *   - The raw OTP is NEVER stored. Only its SHA-256 hash is persisted in the DB.
  *   - `verifyOtp()` uses timingSafeEqual from Node crypto to prevent timing attacks.
- *   - `generateOtp()` uses Math.random(), which is sufficient for low-value 6-digit
- *     OTPs with short TTLs (15 min). A future improvement could use crypto.getRandomValues()
- *     for stronger entropy.
+ *   - `generateOtp()` uses `randomInt` from `node:crypto` — a CSPRNG — instead of
+ *     `Math.random()` (which is NOT cryptographically secure and must never be
+ *     used to generate an authentication secret). See
+ *     `apps/control-plane/src/lib/dsr-verify.ts` for the request-scoped lookup +
+ *     attempt-cap/lockout that close the remaining brute-force surface.
  *
  * @module apps/control-plane/src/lib/dsr-otp
  */
 
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHash, randomInt, timingSafeEqual } from 'crypto';
 
 /**
  * Generate a 6-digit OTP string, zero-padded (e.g. '042813').
  *
+ * Uses `crypto.randomInt` (CSPRNG) — NOT `Math.random()` — because this value
+ * is an authentication secret (FOLLOW-455 / audit F-20).
+ *
  * @returns A string of exactly 6 decimal digits.
  */
 export function generateOtp(): string {
-  return Math.floor(Math.random() * 1_000_000)
-    .toString()
-    .padStart(6, '0');
+  return randomInt(0, 1_000_000).toString().padStart(6, '0');
 }
 
 /**

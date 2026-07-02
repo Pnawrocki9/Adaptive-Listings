@@ -15,6 +15,11 @@
  * Fail-before: on origin/main (pre-fix), holdout GET logs param_p_variant='v1'.
  * Pass-after: with the fix, holdout GET logs param_p_variant='control'.
  *
+ * FOLLOW-452: the GET handler no longer trusts a caller-supplied `holdout_group`
+ * query param — it computes holdout server-side via `assignHoldout()`. These
+ * tests now drive the holdout/non-holdout branches via a per-test
+ * `assignHoldout` mock override instead of the (now-ignored) query param.
+ *
  * @module apps/control-plane/src/app/api/adapt/route.follow360.test
  */
 
@@ -86,6 +91,7 @@ vi.mock('@estalara/shared', async () => {
 
 import { GET } from './route.js';
 import { getBanditArms } from '@/lib/bandit-query';
+import { assignHoldout } from '@estalara/shared';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -144,7 +150,16 @@ describe('GET /api/adapt — FOLLOW-360: holdout gate bypasses bandit sampling',
     async () => {
       const capture = captureClickhouseUrl();
 
-      const res = await GET(makeGetRequest({ ...BASE_PARAMS, holdout_group: 'true' }));
+      // FOLLOW-452: holdout is now computed server-side via assignHoldout() —
+      // drive the holdout branch by overriding the mock, not a query param.
+      vi.mocked(assignHoldout).mockResolvedValueOnce({
+        skipped: false,
+        holdout_group: true,
+        holdout_pct: 0.1,
+        assigned_at: new Date().toISOString(),
+      });
+
+      const res = await GET(makeGetRequest(BASE_PARAMS));
 
       expect(res.status).toBe(200);
 
@@ -162,12 +177,13 @@ describe('GET /api/adapt — FOLLOW-360: holdout gate bypasses bandit sampling',
   );
 
   it(
-    'positive control: holdout_group=false GET logs param_p_variant=v1 ' +
+    'positive control: assignHoldout()=false GET logs param_p_variant=v1 ' +
       '(bandit sampling runs normally for non-holdout sessions)',
     async () => {
       const capture = captureClickhouseUrl();
 
-      const res = await GET(makeGetRequest({ ...BASE_PARAMS, holdout_group: 'false' }));
+      // Default mock (from the module factory above) already resolves holdout_group=false.
+      const res = await GET(makeGetRequest(BASE_PARAMS));
 
       expect(res.status).toBe(200);
 
@@ -182,10 +198,16 @@ describe('GET /api/adapt — FOLLOW-360: holdout gate bypasses bandit sampling',
     },
   );
 
-  it('holdout_group=true GET response directives use control copy (slot index 0, not v1/v2)', async () => {
+  it('assignHoldout()=true GET response directives use control copy (slot index 0, not v1/v2)', async () => {
     captureClickhouseUrl();
+    vi.mocked(assignHoldout).mockResolvedValueOnce({
+      skipped: false,
+      holdout_group: true,
+      holdout_pct: 0.1,
+      assigned_at: new Date().toISOString(),
+    });
 
-    const res = await GET(makeGetRequest({ ...BASE_PARAMS, holdout_group: 'true' }));
+    const res = await GET(makeGetRequest(BASE_PARAMS));
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -199,13 +221,39 @@ describe('GET /api/adapt — FOLLOW-360: holdout gate bypasses bandit sampling',
     expect(headline?.value).toBe('Control headline');
   });
 
-  it('holdout_group=true GET does not call getBanditArms (sampling skipped entirely)', async () => {
+  it('assignHoldout()=true GET does not call getBanditArms (sampling skipped entirely)', async () => {
     captureClickhouseUrl();
+    vi.mocked(assignHoldout).mockResolvedValueOnce({
+      skipped: false,
+      holdout_group: true,
+      holdout_pct: 0.1,
+      assigned_at: new Date().toISOString(),
+    });
 
-    await GET(makeGetRequest({ ...BASE_PARAMS, holdout_group: 'true' }));
+    await GET(makeGetRequest(BASE_PARAMS));
 
     // On origin/main (pre-fix), getBanditArms IS called for holdout sessions.
     // After FOLLOW-360 fix, it must NOT be called — the gate short-circuits before sampling.
     expect(getBanditArms).not.toHaveBeenCalled();
   });
+
+  it(
+    'FOLLOW-452: GET ignores a caller-supplied `holdout_group=true` query param — ' +
+      'the server-side assignHoldout() mock (false) wins, so bandit sampling still runs',
+    async () => {
+      const capture = captureClickhouseUrl();
+
+      // Caller tries to force holdout via the query param; default mock says non-holdout.
+      const res = await GET(makeGetRequest({ ...BASE_PARAMS, holdout_group: 'true' }));
+
+      expect(res.status).toBe(200);
+      const url = capture.getLastUrl();
+      expect(url, 'ClickHouse INSERT URL must be present').not.toBeNull();
+
+      // If the caller-supplied param were still honored, this would be 'control'/1.
+      // It must instead reflect assignHoldout()'s (mocked) result: non-holdout, sampled 'v1'.
+      expect(url!.searchParams.get('param_p_holdout_group')).toBe('0');
+      expect(url!.searchParams.get('param_p_variant')).toBe('v1');
+    },
+  );
 });

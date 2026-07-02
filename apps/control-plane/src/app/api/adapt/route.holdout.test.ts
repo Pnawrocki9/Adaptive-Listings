@@ -56,7 +56,22 @@ vi.mock('@/lib/bandit-query', () => ({
   ]),
 }));
 
+// FOLLOW-452: `assignHoldout` is spied (not fixed) so the POST describe block below
+// keeps exercising the REAL deterministic algorithm (holdout_pct=0.0/1.0 behavior),
+// while the GET describe block can override it per-test to drive the holdout branch
+// now that GET computes holdout server-side instead of trusting a caller query param.
+const { mockAssignHoldout } = vi.hoisted(() => ({ mockAssignHoldout: vi.fn() }));
+vi.mock('@estalara/shared', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@estalara/shared');
+  mockAssignHoldout.mockImplementation(actual.assignHoldout as (...args: unknown[]) => unknown);
+  return {
+    ...actual,
+    assignHoldout: mockAssignHoldout,
+  };
+});
+
 import { GET, POST } from './route.js';
+import { assignHoldout } from '@estalara/shared';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -134,10 +149,19 @@ describe('GET /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET-
     vi.unstubAllGlobals();
   });
 
-  it('smoke: holdout_group=true → INSERT includes holdout_group=1 (FOLLOW-261: URL param)', async () => {
+  it('smoke: assignHoldout()=true → INSERT includes holdout_group=1 (FOLLOW-261: URL param)', async () => {
     const capture = captureFetchBody();
 
-    const res = await GET(makeGetRequest({ ...VALID_GET_PARAMS, holdout_group: 'true' }));
+    // FOLLOW-452: holdout is computed server-side via assignHoldout(); drive
+    // the holdout branch by overriding the mock instead of a query param.
+    vi.mocked(assignHoldout).mockResolvedValueOnce({
+      skipped: false,
+      holdout_group: true,
+      holdout_pct: 0.1,
+      assigned_at: new Date().toISOString(),
+    });
+
+    const res = await GET(makeGetRequest(VALID_GET_PARAMS));
 
     expect(res.status).toBe(200);
     const body = capture.getLastBody();
@@ -149,10 +173,17 @@ describe('GET /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET-
     expect(url!.searchParams.get('param_p_holdout_group')).toBe('1');
   });
 
-  it('smoke: holdout_group=false → INSERT includes holdout_group=0 (FOLLOW-261: URL param)', async () => {
+  it('smoke: assignHoldout()=false → INSERT includes holdout_group=0 (FOLLOW-261: URL param)', async () => {
     const capture = captureFetchBody();
 
-    const res = await GET(makeGetRequest({ ...VALID_GET_PARAMS, holdout_group: 'false' }));
+    vi.mocked(assignHoldout).mockResolvedValueOnce({
+      skipped: false,
+      holdout_group: false,
+      holdout_pct: 0.1,
+      assigned_at: new Date().toISOString(),
+    });
+
+    const res = await GET(makeGetRequest(VALID_GET_PARAMS));
 
     expect(res.status).toBe(200);
     const body = capture.getLastBody();
@@ -164,23 +195,39 @@ describe('GET /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET-
     expect(url!.searchParams.get('param_p_holdout_group')).toBe('0');
   });
 
-  it('smoke: holdout_group absent → INSERT defaults to holdout_group=0 (FOLLOW-261: URL param)', async () => {
-    const capture = captureFetchBody();
+  it(
+    'FOLLOW-452: GET ignores a caller-supplied `holdout_group=true` query param — ' +
+      'the server-side assignHoldout() result (false) is what gets logged',
+    async () => {
+      const capture = captureFetchBody();
 
-    const res = await GET(makeGetRequest(VALID_GET_PARAMS));
+      vi.mocked(assignHoldout).mockResolvedValueOnce({
+        skipped: false,
+        holdout_group: false,
+        holdout_pct: 0.1,
+        assigned_at: new Date().toISOString(),
+      });
 
-    expect(res.status).toBe(200);
-    const body = capture.getLastBody();
-    expect(body).not.toBeNull();
-    expect(body).toContain('holdout_group');
-    // FOLLOW-261: default false → URL param '0'
-    const url = capture.getLastUrl();
-    expect(url).not.toBeNull();
-    expect(url!.searchParams.get('param_p_holdout_group')).toBe('0');
-  });
+      // Caller tries to force holdout via the (now-ignored) query param.
+      const res = await GET(makeGetRequest({ ...VALID_GET_PARAMS, holdout_group: 'true' }));
+
+      expect(res.status).toBe(200);
+      const url = capture.getLastUrl();
+      expect(url).not.toBeNull();
+      // If the caller-supplied param were still honored this would be '1'.
+      expect(url!.searchParams.get('param_p_holdout_group')).toBe('0');
+    },
+  );
 
   it('INSERT includes holdout_group column in the field list', async () => {
     const capture = captureFetchBody();
+
+    vi.mocked(assignHoldout).mockResolvedValueOnce({
+      skipped: false,
+      holdout_group: false,
+      holdout_pct: 0.1,
+      assigned_at: new Date().toISOString(),
+    });
 
     await GET(makeGetRequest(VALID_GET_PARAMS));
 
@@ -241,7 +288,10 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
 
     expect(res.status).toBe(200);
     const resBody = (await res.json()) as Record<string, unknown>;
+    // Response body to the held-out caller is UNCHANGED (locked-in product
+    // behavior, FOLLOW-452): still 'neutral' with empty directives.
     expect(resBody.holdout_group).toBe(true);
+    expect(resBody.archetype).toBe('neutral');
     expect(Array.isArray(resBody.directives)).toBe(true);
     expect((resBody.directives as unknown[]).length).toBe(0);
 
@@ -257,9 +307,13 @@ describe('POST /api/adapt — holdout_group wired into ClickHouse INSERT (TICKET
     expect(url!.searchParams.get('param_p_holdout_group')).toBe('1');
     // variant='control' — bandit not consulted on the holdout path.
     expect(url!.searchParams.get('param_p_variant')).toBe('control');
-    // archetype/confidence/similarity match the neutral holdout response body.
-    expect(url!.searchParams.get('param_p_archetype')).toBe('neutral');
-    expect(url!.searchParams.get('param_p_confidence')).toBe('0.5');
+    // FOLLOW-452 (audit F-08): the LOGGED row carries the WOULD-BE archetype/
+    // confidence (VALID_POST_BODY.archetype_hint/confidence) — NOT the hardcoded
+    // 'neutral'/0.5 that the RESPONSE body above still uses. This is the core
+    // fix: without it, the per-archetype lift query's holdout arm was starved
+    // for every real archetype.
+    expect(url!.searchParams.get('param_p_archetype')).toBe(VALID_POST_BODY.archetype_hint);
+    expect(url!.searchParams.get('param_p_confidence')).toBe(String(VALID_POST_BODY.confidence));
   });
 
   it('smoke: consent skipped → no ClickHouse INSERT (no holdout_group field)', async () => {

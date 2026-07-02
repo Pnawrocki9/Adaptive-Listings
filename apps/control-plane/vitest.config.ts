@@ -31,7 +31,10 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    // FOLLOW-450 AC2: scripts/**/*.test.ts covers pure helper functions in
+    // operator scripts (e.g. scripts/feedback-canary.mts) that CI cannot run
+    // end-to-end (they need live prod credentials + a live deployment).
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'scripts/**/*.test.ts'],
     // Integration tests (*.integration.test.ts) hit live external services
     // (ClickHouse) and are run via the dedicated vitest.integration.config.ts.
     // Never let the standard suite pick them up.

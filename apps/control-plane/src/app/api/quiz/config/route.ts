@@ -1,11 +1,14 @@
 /**
  * GET/POST /api/quiz/config — quiz widget configuration per tenant.
  *
- * Auth: JWT-verified tenant claims required.
- *   GET  — requires valid JWT (getAuthClaims). Defaults apply only when the tenant
+ * Auth: JWT-verified tenant claims required, via getSessionAuthClaims /
+ *   requireTenantSessionAccess (apps/control-plane/src/lib/session-auth.ts), which
+ *   try the Bearer/legacy-cookie path first and fall back to the Supabase SSR
+ *   browser session cookie (FOLLOW-454).
+ *   GET  — requires a valid session. Defaults apply only when the tenant
  *     row exists but has no stored config (legitimate no-exception case); a thrown
  *     DB error returns HTTP 500 instead of enabled defaults (Rule K.2, FOLLOW-453).
- *   POST — requires agency:viewer or higher (requireTenantAccess).
+ *   POST — requires agency:viewer or higher.
  *
  * Persists to tenants.quiz_config JSONB column via createAdminClient().
  *
@@ -50,7 +53,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { createAdminClient, tenants } from '@estalara/db';
-import { getAuthClaims, requireTenantAccess } from '@estalara/auth';
+import { getSessionAuthClaims, requireTenantSessionAccess } from '@/lib/session-auth';
 import type { QuizConfig } from '@estalara/shared';
 import { QuizConfigSchema, QUIZ_DEFAULT_CONFIG, parseStoredQuizConfig } from '@estalara/shared';
 import { eq } from 'drizzle-orm';
@@ -59,7 +62,7 @@ import { eq } from 'drizzle-orm';
 export type { QuizConfig } from '@estalara/shared';
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -98,7 +101,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let claims;
   try {
-    claims = await requireTenantAccess(req, 'agency:viewer');
+    claims = await requireTenantSessionAccess(req, 'agency:viewer');
   } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

@@ -2,8 +2,10 @@
  * POST /api/tenants/:id/answers — create an FAQ answer for a listing.
  * GET  /api/tenants/:id/answers?listing_id=X — list answers (without embeddings).
  *
- * Auth: Bearer JWT via `getAuthClaims()`. The tenant in the JWT must match the
- * `:id` param — 401 for missing/invalid token, 403 for mismatched tenant.
+ * Auth: Bearer JWT or Supabase SSR browser session via `getSessionAuthClaims()`
+ * (apps/control-plane/src/lib/session-auth.ts, FOLLOW-454). The tenant in the
+ * resolved claims must match the `:id` param — 401 for missing/invalid session,
+ * 403 for mismatched tenant.
  *
  * POST body:
  *   listing_id  — string, required
@@ -22,7 +24,7 @@ import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 
 import { createAdminClient, answers } from '@estalara/db';
-import { getAuthClaims } from '@estalara/auth';
+import { getSessionAuthClaims } from '@/lib/session-auth';
 import { embedText } from '@/lib/openai-client';
 
 // ---------------------------------------------------------------------------
@@ -47,7 +49,7 @@ async function validateTenantAuth(
   req: NextRequest,
   tenantId: string,
 ): Promise<{ ok: true } | NextResponse> {
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

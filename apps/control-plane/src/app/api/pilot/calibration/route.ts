@@ -55,7 +55,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { getAuthClaims } from '@estalara/auth';
+import { getSessionAuthClaims } from '@/lib/session-auth';
 import { eq, and, inArray } from 'drizzle-orm';
 import { createAdminClient, conversionLabels } from '@estalara/db';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
@@ -295,7 +295,7 @@ function jsonExportResponse(
  *   mock when a real data store is configured).
  */
 export async function GET(req: NextRequest): Promise<NextResponse | Response> {
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims || !('tenant_id' in claims) || !claims.tenant_id) {
     return NextResponse.json(
       {

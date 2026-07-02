@@ -3,8 +3,10 @@
  *
  * Currently supports: quiz_enabled (boolean).
  *
- * Auth: Bearer JWT via `getAuthClaims()`. The tenant in the JWT must match the
- * `:id` param — 401 for missing/invalid token, 403 for mismatched tenant.
+ * Auth: Bearer JWT or Supabase SSR browser session via `getSessionAuthClaims()`
+ * (apps/control-plane/src/lib/session-auth.ts, FOLLOW-454). The tenant in the
+ * resolved claims must match the `:id` param — 401 for missing/invalid session,
+ * 403 for mismatched tenant.
  *
  * RLS: the update is scoped to the authenticated tenant's own row (WHERE id = tenantId).
  * Only columns listed in the Zod schema are ever written — no other columns are touched.
@@ -21,7 +23,7 @@ import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 
 import { createAdminClient, tenants } from '@estalara/db';
-import { getAuthClaims } from '@estalara/auth';
+import { getSessionAuthClaims } from '@/lib/session-auth';
 
 // ─── Request schema ────────────────────────────────────────────────────────────
 
@@ -47,7 +49,7 @@ async function validateTenantAuth(
   req: NextRequest,
   tenantId: string,
 ): Promise<{ ok: true } | NextResponse> {
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

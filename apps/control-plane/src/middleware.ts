@@ -20,10 +20,12 @@
  *   The /api/intent/config and /api/quiz/public-config routes already set
  *   Access-Control-Allow-Origin: * inline and are unaffected.
  *
- * Admin session auth uses @supabase/ssr createServerClient so it handles the
- * chunked sb-<project-ref>-auth-token cookie format set by signInWithPassword().
- * The @estalara/auth getAuthClaims path remains for Bearer-token API routes and
- * tenant dashboard routes.
+ * Admin AND dashboard session auth use @supabase/ssr createServerClient so they
+ * handle the chunked sb-<project-ref>-auth-token cookie format set by
+ * signInWithPassword() (FOLLOW-326 for /admin, FOLLOW-454 for /dashboard). The
+ * @estalara/auth getAuthClaims path is tried first in both blocks and remains the
+ * path for Bearer-token programmatic API callers and existing tests; the SSR
+ * cookie check is the fallback for same-origin browser-session requests.
  *
  * @module apps/control-plane/src/middleware
  */
@@ -166,6 +168,79 @@ async function checkAdminSession(req: NextRequest): Promise<{
   return { authorized: true, role: staffRole, supabaseResponse };
 }
 
+// ─── Supabase SSR tenant (agency) session check ─────────────────────────────
+// Same rationale as checkAdminSession above, applied to /dashboard/* routes:
+// an agency user's browser session also lives in the chunked SSR cookie, not
+// the legacy sb-access-token cookie that getAuthClaims reads, so a logged-in
+// dashboard user got 401s on every same-origin fetch (FOLLOW-454).
+
+type AgencyRole = 'agency:owner' | 'agency:admin' | 'agency:viewer';
+
+const AGENCY_ROLE_RANK: Record<AgencyRole, number> = {
+  'agency:owner': 3,
+  'agency:admin': 2,
+  'agency:viewer': 1,
+};
+
+function isAgencyRole(v: unknown): v is AgencyRole {
+  return v === 'agency:owner' || v === 'agency:admin' || v === 'agency:viewer';
+}
+
+interface DashboardSessionClaims {
+  sub: string;
+  tenantId: string;
+  agencyRole: AgencyRole;
+}
+
+async function checkDashboardSession(req: NextRequest): Promise<{
+  authorized: boolean;
+  claims?: DashboardSessionClaims;
+  supabaseResponse: NextResponse;
+}> {
+  const supabaseResponse = NextResponse.next({ request: req });
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) return { authorized: false, supabaseResponse };
+
+  const supabase = createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return req.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          supabaseResponse.cookies.set(name, value, options);
+        });
+      },
+    },
+  });
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { authorized: false, supabaseResponse };
+
+  const appMeta = user.app_metadata as Record<string, unknown>;
+  // Staff accounts have no tenant scope — /dashboard is agency-user-only
+  // (staff use /admin, gated by checkAdminSession above).
+  if (appMeta.estalara_staff === true) return { authorized: false, supabaseResponse };
+
+  const tenantId = appMeta.tenant_id;
+  const agencyRole = appMeta.agency_role;
+  if (typeof tenantId !== 'string' || tenantId.length === 0 || !isAgencyRole(agencyRole)) {
+    return { authorized: false, supabaseResponse };
+  }
+  if (AGENCY_ROLE_RANK[agencyRole] < AGENCY_ROLE_RANK['agency:viewer']) {
+    return { authorized: false, supabaseResponse };
+  }
+
+  return {
+    authorized: true,
+    claims: { sub: user.id, tenantId, agencyRole },
+    supabaseResponse,
+  };
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 
 function loginRedirect(req: NextRequest): NextResponse {
@@ -218,30 +293,60 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
 
   // Tenant dashboard routes — require agency user (viewer minimum)
   if (pathname.startsWith('/dashboard')) {
+    // Path 1: legacy Bearer header / sb-access-token cookie (existing
+    // programmatic callers and tests — unchanged).
     const claims = await getAuthClaims(req);
-    if (!claims) return loginRedirect(req);
-    try {
-      requireAgencyRole(claims, 'agency:viewer');
-    } catch {
-      return loginRedirect(req);
+    if (claims) {
+      try {
+        requireAgencyRole(claims, 'agency:viewer');
+      } catch {
+        return loginRedirect(req);
+      }
+      // Forward tenant identity in request headers so Server Components can read them
+      // via `import { headers } from 'next/headers'` or populate AsyncLocalStorage.
+      // AsyncLocalStorage cannot be written from Edge Runtime (middleware); layouts
+      // should call tenantContextStorage.run() using these headers.
+      const reqHeaders = new Headers(req.headers);
+      if (isTenantClaims(claims)) {
+        reqHeaders.set('x-tenant-id', claims.tenant_id);
+        reqHeaders.set('x-user-id', claims.sub);
+        reqHeaders.set('x-agency-role', claims.agency_role);
+      }
+      reqHeaders.set('x-request-id', requestId);
+      const res = NextResponse.next({ request: { headers: reqHeaders } });
+      // Also surface as response headers for debugging
+      if (isTenantClaims(claims)) {
+        res.headers.set('X-Tenant-Id', claims.tenant_id);
+      }
+      res.headers.set('X-Request-Id', requestId);
+      return res;
     }
-    // Forward tenant identity in request headers so Server Components can read them
-    // via `import { headers } from 'next/headers'` or populate AsyncLocalStorage.
-    // AsyncLocalStorage cannot be written from Edge Runtime (middleware); layouts
-    // should call tenantContextStorage.run() using these headers.
+
+    // Path 2: Supabase SSR browser session (chunked sb-<project-ref>-auth-token
+    // cookie) — the path a logged-in agency dashboard browser session actually
+    // takes (FOLLOW-454; mirrors checkAdminSession above for /admin).
+    const {
+      authorized,
+      claims: sessionClaims,
+      supabaseResponse,
+    } = await checkDashboardSession(req);
+    if (!authorized || !sessionClaims) return loginRedirect(req);
+
     const reqHeaders = new Headers(req.headers);
-    if (isTenantClaims(claims)) {
-      reqHeaders.set('x-tenant-id', claims.tenant_id);
-      reqHeaders.set('x-user-id', claims.sub);
-      reqHeaders.set('x-agency-role', claims.agency_role);
-    }
+    reqHeaders.set('x-tenant-id', sessionClaims.tenantId);
+    reqHeaders.set('x-user-id', sessionClaims.sub);
+    reqHeaders.set('x-agency-role', sessionClaims.agencyRole);
     reqHeaders.set('x-request-id', requestId);
     const res = NextResponse.next({ request: { headers: reqHeaders } });
-    // Also surface as response headers for debugging
-    if (isTenantClaims(claims)) {
-      res.headers.set('X-Tenant-Id', claims.tenant_id);
-    }
+    res.headers.set('X-Tenant-Id', sessionClaims.tenantId);
     res.headers.set('X-Request-Id', requestId);
+    // Propagate any refreshed session cookie captured by checkDashboardSession's
+    // setAll callback onto the final response — res is a fresh NextResponse.next()
+    // call (needed to forward the x-tenant-id request headers), distinct from the
+    // supabaseResponse object that setAll wrote the refreshed cookie onto.
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      res.cookies.set(cookie);
+    });
     return res;
   }
 

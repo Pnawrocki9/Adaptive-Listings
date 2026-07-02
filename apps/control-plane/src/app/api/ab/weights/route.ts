@@ -25,7 +25,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getAuthClaims } from '@estalara/auth';
+import { getSessionAuth } from '@/lib/session-auth';
 import { createTenantClient } from '@estalara/db';
 import { abBanditWeights } from '@estalara/db';
 import { eq, and } from 'drizzle-orm';
@@ -65,8 +65,10 @@ export interface AbWeightsResponse {
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   // Auth: tenant_id from verified JWT claims — NEVER from x-tenant-id header (TICKET-FIX-014).
-  const claims = await getAuthClaims(req);
-  if (!claims || !('tenant_id' in claims) || !claims.tenant_id) {
+  // getSessionAuth() also resolves a same-origin browser session via the Supabase
+  // SSR cookie (FOLLOW-454) and returns the raw JWT for RLS propagation below.
+  const session = await getSessionAuth(req);
+  if (!session || !('tenant_id' in session.claims) || !session.claims.tenant_id) {
     return NextResponse.json(
       {
         error: { code: 'unauthorized', message: 'Valid Bearer JWT with tenant_id claim required' },
@@ -75,7 +77,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const tenantId: string = claims.tenant_id;
+  const tenantId: string = session.claims.tenant_id;
   const archetypeFilter = req.nextUrl.searchParams.get('archetype') ?? undefined;
 
   // DATABASE_URL may not be set in dev/CI — graceful empty response.
@@ -90,11 +92,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const rawToken =
-      req.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') ??
-      req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ??
-      '';
-    const db = createTenantClient(rawToken || undefined);
+    // rawToken comes from getSessionAuth() above — the Bearer/legacy-cookie JWT
+    // for programmatic callers, or the SSR session's access_token for browser
+    // sessions (FOLLOW-454) — so RLS stays enforced on both paths.
+    const db = createTenantClient(session.rawToken ?? undefined);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- package types not compiled; any is safe here since db.rls enforces the DB type at runtime
     const dbRows: any[] = await db.rls((tx: any) => {

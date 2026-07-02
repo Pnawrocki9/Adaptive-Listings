@@ -8,7 +8,8 @@
  * DOM dependency; the node environment uses the native fetch Headers consistently.
  *
  * Tests for src/middleware.ts — CORS injection for SDK-facing adapt routes,
- * and admin gate (checkAdminSession) via @supabase/ssr (FOLLOW-336, RETRO-083 TG-2).
+ * admin gate (checkAdminSession) via @supabase/ssr (FOLLOW-336, RETRO-083 TG-2),
+ * and dashboard gate (checkDashboardSession) via @supabase/ssr (FOLLOW-454).
  *
  * Covers the dev-only localhost CORS gating added for local E2E testing
  * (Estalara-app SvelteKit on :5173 calling control-plane on :3000).
@@ -33,6 +34,15 @@
  *            redirect to /sign-in
  *   ADMIN-4: GET /sign-in → NOT caught by the admin gate → passes through (no redirect loop)
  *   ADMIN-5: GET /admin/dashboard — Supabase env vars absent → redirect to /sign-in
+ *
+ *   DASHBOARD-1: GET /dashboard/analytics — SSR browser session (agency:admin) →
+ *                passes through, X-Tenant-Id header set (FOLLOW-454)
+ *   DASHBOARD-2: GET /dashboard/analytics — no SSR session → redirect to /sign-in
+ *   DASHBOARD-3: GET /dashboard/analytics — SSR session belongs to staff (no tenant) →
+ *                redirect to /sign-in
+ *   DASHBOARD-4: GET /dashboard/analytics — Supabase env vars absent + no legacy JWT →
+ *                redirect to /sign-in
+ *   DASHBOARD-5: legacy Bearer JWT (Path 1) still authorizes — SSR client never invoked
  *
  * Auth calls are mocked so the test does not require a live DB or JWT secret.
  */
@@ -64,7 +74,11 @@ vi.mock('@supabase/ssr', () => ({
   })),
 }));
 
+import { getAuthClaims, isTenantClaims } from '@estalara/auth';
 import { middleware } from './middleware.js';
+
+const mockGetAuthClaims = vi.mocked(getAuthClaims);
+const mockIsTenantClaims = vi.mocked(isTenantClaims);
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -302,5 +316,124 @@ describe('Admin gate — /admin/* routes via checkAdminSession (FOLLOW-336)', ()
     const location = res.headers.get('location');
     expect(location).not.toBeNull();
     expect(location).toContain('/sign-in');
+  });
+});
+
+// ─── Dashboard gate tests (FOLLOW-454) ────────────────────────────────────────
+//
+// These tests exercise the checkDashboardSession branch of the REAL middleware
+// function, plus the legacy Bearer/getAuthClaims Path 1 that must keep working
+// unmodified. createServerClient from @supabase/ssr is mocked above; mockGetUser
+// controls what the SSR client returns. The REAL middleware reads the result —
+// no logic is re-implemented in the test (Rule Q guardrail).
+
+function makeBearerRequest(pathname: string, token: string): NextRequest {
+  const url = `http://localhost:3000${pathname}`;
+  return new NextRequest(url, {
+    method: 'GET',
+    headers: new Headers({ Authorization: `Bearer ${token}` }),
+  });
+}
+
+describe('Dashboard gate — /dashboard/* routes via checkDashboardSession (FOLLOW-454)', () => {
+  beforeEach(() => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://project.supabase.co');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'anon-key-test');
+  });
+
+  it('DASHBOARD-1: GET /dashboard/analytics — SSR browser session (agency:admin) → passes through, X-Tenant-Id header set', async () => {
+    // The value under test — tenant_id + agency_role — comes from the mocked
+    // createServerClient().auth.getUser() response, mirroring what Supabase
+    // returns for an active agency-user session with NO Authorization header
+    // (same-origin browser fetch relying solely on the chunked SSR cookie).
+    mockGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'user-uuid',
+          app_metadata: { tenant_id: 'tenant-uuid-001', agency_role: 'agency:admin' },
+          user_metadata: {},
+          aud: 'authenticated',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      },
+      error: null,
+    });
+
+    const req = makeAdminRequest('/dashboard/analytics');
+    const res = await middleware(req);
+
+    expect(res.headers.get('location')).toBeNull();
+    expect(res.headers.get('X-Tenant-Id')).toBe('tenant-uuid-001');
+  });
+
+  it('DASHBOARD-2: GET /dashboard/analytics — no SSR session (getUser → null user) → redirect to /sign-in', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+
+    const req = makeAdminRequest('/dashboard/analytics');
+    const res = await middleware(req);
+
+    const location = res.headers.get('location');
+    expect(location).not.toBeNull();
+    expect(location).toContain('/sign-in');
+    expect(location).toContain('redirect=%2Fdashboard%2Fanalytics');
+  });
+
+  it('DASHBOARD-3: GET /dashboard/analytics — SSR session belongs to Estalara staff (no tenant scope) → redirect to /sign-in', async () => {
+    // Staff accounts use /admin, not /dashboard — checkDashboardSession must
+    // reject them even though they hold a valid Supabase session.
+    mockGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'staff-uuid',
+          app_metadata: { estalara_staff: true, estalara_role: 'estalara:ops' },
+          user_metadata: {},
+          aud: 'authenticated',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      },
+      error: null,
+    });
+
+    const req = makeAdminRequest('/dashboard/analytics');
+    const res = await middleware(req);
+
+    const location = res.headers.get('location');
+    expect(location).not.toBeNull();
+    expect(location).toContain('/sign-in');
+  });
+
+  it('DASHBOARD-4: GET /dashboard/analytics — Supabase env vars absent AND no legacy JWT → redirect to /sign-in', async () => {
+    vi.unstubAllEnvs();
+    // Deliberately do NOT set NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.
+
+    const req = makeAdminRequest('/dashboard/analytics');
+    const res = await middleware(req);
+
+    const location = res.headers.get('location');
+    expect(location).not.toBeNull();
+    expect(location).toContain('/sign-in');
+  });
+
+  it('DASHBOARD-5: legacy Bearer JWT (Path 1) still authorizes — SSR client never invoked', async () => {
+    // Regression guard: programmatic/API-key callers and existing tests that rely
+    // on getAuthClaims must keep working unmodified after the FOLLOW-454 fallback
+    // was added.
+    mockGetAuthClaims.mockResolvedValue({
+      sub: 'user-uuid',
+      email: 'user@agency.com',
+      tenant_id: 'tenant-uuid-legacy',
+      agency_role: 'agency:admin',
+      estalara_staff: false,
+      mfa_verified: true,
+    });
+    mockIsTenantClaims.mockReturnValue(true);
+
+    const req = makeBearerRequest('/dashboard/analytics', 'mock-jwt-token');
+    const res = await middleware(req);
+
+    expect(res.headers.get('location')).toBeNull();
+    expect(res.headers.get('X-Tenant-Id')).toBe('tenant-uuid-legacy');
+    // The SSR fallback (Path 2) must not run once Path 1 already authorized.
+    expect(mockGetUser).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,8 @@
  * PATCH /api/tenants/:id/answers/:answerId — update question and/or answer.
  * DELETE /api/tenants/:id/answers/:answerId — delete an answer row.
  *
- * Auth: Bearer JWT via `getAuthClaims()`. Tenant in JWT must match `:id` — 403 on mismatch.
+ * Auth: Bearer JWT or Supabase SSR browser session via `getSessionAuthClaims()`
+ * (apps/control-plane/src/lib/session-auth.ts, FOLLOW-454). Tenant must match `:id` — 403 on mismatch.
  *
  * PATCH:
  *   - If `question` changes, re-embeds via OpenAI and persists the new vector.
@@ -17,7 +18,7 @@ import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 
 import { createAdminClient, answers } from '@estalara/db';
-import { getAuthClaims } from '@estalara/auth';
+import { getSessionAuthClaims } from '@/lib/session-auth';
 import { embedText } from '@/lib/openai-client';
 
 // ---------------------------------------------------------------------------
@@ -41,7 +42,7 @@ async function validateTenantAuth(
   req: NextRequest,
   tenantId: string,
 ): Promise<{ ok: true } | NextResponse> {
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

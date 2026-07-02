@@ -6,7 +6,10 @@
  *   - CLICKHOUSE_URL not set           → 200 + data_source: 'mock'
  *   - CLICKHOUSE_URL set + success     → 200 + data_source: 'clickhouse'
  *
- * JWT verification mocked via vi.mock('@estalara/auth').
+ * JWT verification mocked via vi.mock('@estalara/auth'). The 'SSR cookie session
+ * fallback' describe block additionally mocks '@supabase/ssr' to prove the route
+ * authorizes a same-origin browser session with NO Authorization header at all
+ * (FOLLOW-454 — the getSessionAuthClaims() fallback in session-auth.ts).
  *
  * @module apps/control-plane/src/app/api/dashboard/analytics/summary/route.test
  */
@@ -26,6 +29,20 @@ vi.mock('@estalara/auth', () => ({
 
 import { getAuthClaims } from '@estalara/auth';
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
+
+// ─── Mock @supabase/ssr (FOLLOW-454 SSR cookie session fallback) ──────────────
+// createServerClient is called by the REAL getSessionAuth() (session-auth.ts)
+// when the legacy getAuthClaims path finds nothing. mockGetUser/mockGetSession
+// let individual tests control what the SSR client returns.
+
+const mockGetUser = vi.fn();
+const mockGetSession = vi.fn();
+
+vi.mock('@supabase/ssr', () => ({
+  createServerClient: vi.fn().mockImplementation(() => ({
+    auth: { getUser: mockGetUser, getSession: mockGetSession },
+  })),
+}));
 
 // ─── Mock @sentry/nextjs ──────────────────────────────────────────────────────
 
@@ -289,5 +306,101 @@ describe('GET /api/dashboard/analytics/summary', () => {
     // Mock path returns a positive number for p95Latency.
     expect(typeof body.p95Latency).toBe('number');
     expect(body.p95Latency!).toBeGreaterThan(0);
+  });
+});
+
+// ─── SSR cookie session fallback (FOLLOW-454) ─────────────────────────────────
+//
+// Drives the REAL route handler with NO Authorization header at all — the
+// legacy getAuthClaims path (mocked to resolve null) finds nothing, forcing the
+// real getSessionAuthClaims() fallback in session-auth.ts to authorize via the
+// Supabase SSR session cookie (@supabase/ssr mocked above). This is the exact
+// scenario a logged-in agency dashboard browser session hits: same-origin
+// fetch(), no Authorization header, only the chunked sb-<project-ref>-auth-token
+// cookie (Rule Q guardrail — no hand-fabricated fixtures, the real handler runs).
+
+describe('GET /api/dashboard/analytics/summary — SSR cookie session fallback (FOLLOW-454)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.CLICKHOUSE_URL;
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://project.supabase.co');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'anon-key-test');
+    // Legacy path finds nothing — no Authorization header, no sb-access-token cookie.
+    mockGetAuthClaims.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    delete process.env.CLICKHOUSE_URL;
+  });
+
+  it('browser session (chunked SSR cookie), agency tenant user → 200, no Bearer header needed', async () => {
+    mockGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'user-uuid',
+          email: 'user@agency.com',
+          app_metadata: { tenant_id: TENANT_ID, agency_role: 'agency:admin' },
+          user_metadata: {},
+          aud: 'authenticated',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      },
+      error: null,
+    });
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: 'ssr-session-jwt' } },
+      error: null,
+    });
+
+    // No Authorization header at all — a same-origin browser fetch() relying
+    // solely on the chunked sb-<project-ref>-auth-token cookie.
+    const req = new NextRequest('http://localhost/api/dashboard/analytics/summary', {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const { GET } = await import('./route.js');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const body = await parseBody<SummaryResponse>(res);
+    expect(body.tenant_id).toBe(TENANT_ID);
+    expect(body.data_source).toBe('mock');
+  });
+
+  it('browser session belongs to Estalara staff (no tenant_id) → 401', async () => {
+    mockGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'staff-uuid',
+          email: 'staff@estalara.com',
+          app_metadata: { estalara_staff: true, estalara_role: 'estalara:ops' },
+          user_metadata: {},
+          aud: 'authenticated',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      },
+      error: null,
+    });
+
+    const req = new NextRequest('http://localhost/api/dashboard/analytics/summary', {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const { GET } = await import('./route.js');
+    const res = await GET(req);
+
+    expect(res.status).toBe(401);
+  });
+
+  it('no session anywhere (getUser → null user) → 401', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+
+    const req = new NextRequest('http://localhost/api/dashboard/analytics/summary', {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const { GET } = await import('./route.js');
+    const res = await GET(req);
+
+    expect(res.status).toBe(401);
   });
 });

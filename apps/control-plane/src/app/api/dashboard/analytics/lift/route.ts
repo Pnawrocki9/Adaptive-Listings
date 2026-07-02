@@ -50,7 +50,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { getAuthClaims, isTenantClaims } from '@estalara/auth';
+import { isTenantClaims } from '@estalara/auth';
+import { getSessionAuthClaims } from '@/lib/session-auth';
 import { zTest } from '@/lib/z-test';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 
@@ -263,7 +264,7 @@ function buildMockLiftRows(tenantId: string): LiftRow[] {
  *   ClickHouse is configured).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims || !isTenantClaims(claims)) {
     return NextResponse.json(
       {

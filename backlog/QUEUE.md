@@ -23,22 +23,26 @@ SEQUENTIAL PROGRESS (session 9): FOLLOW-460 → PR #428 (READY_FOR_REVIEW, CI gr
 previously-dead /api/internal/description-cache endpoint to the Modal job; NEW operator go-live item
 per Rule AA — provision DESCRIPTION_CACHE_API_BASE_URL + DESCRIPTION_CACHE_INTERNAL_SECRET in Modal
 `estalara-secrets`, else the cache write silently no-ops). FOLLOW-459 → PR #429 (READY_FOR_REVIEW,
-CI green; ACK-before-CH via ctx.waitUntil; durable retry deferred to FOLLOW-482). FOLLOW-456
-(tenant-isolation) IN_PROGRESS. NOTE the FOLLOW-459 worker mis-numbered its deferral FOLLOW-475
-(collided with RETRO-151's 475 on this PM branch, invisible to its origin/main worktree) —
-renumbered to FOLLOW-482 + its FOLLOW_UPS.md edit reverted (PR #429 commit `c87073b`) so this PM
-branch is the single writer of FOLLOW_UPS.md; the FOLLOW-456 worker was pre-instructed NOT to touch
-backlog files. FOLLOW-450 → PR #426 (commits `8d6543d` feature + `1ca735e` a path-scoped
-`.gitleaks.toml` allowlist for two test-fixture false positives in the new PGlite e2e file — same
-Rule V exemption class the repo already applies to sibling `*route-driven-pglite.test.ts`; feature
-code byte-for-byte unchanged). FOLLOW-457 → PR #425 (commit `a3123ab`, zero defects — passed every
-gate on first run). Both flipped IN_PROGRESS → READY_FOR_REVIEW. CI GREEN on every real gate on BOTH
-(Typecheck, Test Node 22, SDK E2E, Build, Build control-plane, Lint, Format, Gitleaks, all Python,
-Demo integration, Vercel, Rule H/J) — independently re-confirmed via `gh pr checks`, not trusted
-from the agent summaries; only the pre-existing non-blocking "Rule I — wired-or-dead" is red on each
-(neither diff adds a dead symbol: FOLLOW-450's `reportFeedbackPingRejected` + canary exports and
-FOLLOW-457's fact-check helpers are all wired to consumers). FOLLOW-457's ticket `branch:` field
-corrected from the stale `ml-engineer/FOLLOW-457-grounding-integrity` to the branch actually used,
+CI green; ACK-before-CH via ctx.waitUntil; durable retry deferred to FOLLOW-482). FOLLOW-456 → PR
+#430 (READY_FOR_REVIEW, CI green; JWT-derived demo revoke, estalara_staff-gated generation-model,
+new secret-compare.ts fail-closed + timingSafeEqual on 3 routes). ⚠️ FOLLOW-456 MERGE RISK:
+/api/tenants now fails closed → verify ADMIN_API_SECRET is set in Vercel prod BEFORE merging #430 or
+onboarding 401s (FOLLOW-483 filed, P1; FOLLOW-484 grep-lint filed P3). All three CEO-directed P1s
+now READY_FOR_REVIEW. NOTE the FOLLOW-459 worker mis-numbered its deferral FOLLOW-475 (collided with
+RETRO-151's 475 on this PM branch, invisible to its origin/main worktree) — renumbered to
+FOLLOW-482 + its FOLLOW_UPS.md edit reverted (PR #429 commit `c87073b`) so this PM branch is the
+single writer of FOLLOW_UPS.md; the FOLLOW-456 worker was pre-instructed NOT to touch backlog files.
+FOLLOW-450 → PR #426 (commits `8d6543d` feature + `1ca735e` a path-scoped `.gitleaks.toml` allowlist
+for two test-fixture false positives in the new PGlite e2e file — same Rule V exemption class the
+repo already applies to sibling `*route-driven-pglite.test.ts`; feature code byte-for-byte
+unchanged). FOLLOW-457 → PR #425 (commit `a3123ab`, zero defects — passed every gate on first run).
+Both flipped IN_PROGRESS → READY_FOR_REVIEW. CI GREEN on every real gate on BOTH (Typecheck, Test
+Node 22, SDK E2E, Build, Build control-plane, Lint, Format, Gitleaks, all Python, Demo integration,
+Vercel, Rule H/J) — independently re-confirmed via `gh pr checks`, not trusted from the agent
+summaries; only the pre-existing non-blocking "Rule I — wired-or-dead" is red on each (neither diff
+adds a dead symbol: FOLLOW-450's `reportFeedbackPingRejected` + canary exports and FOLLOW-457's
+fact-check helpers are all wired to consumers). FOLLOW-457's ticket `branch:` field corrected from
+the stale `ml-engineer/FOLLOW-457-grounding-integrity` to the branch actually used,
 `ml-engineer/FOLLOW-457-llm-grounding-integrity`. FOLLOW-450 remains CODE_COMPLETE_OPERATOR_PENDING:
 its AC1 (Doppler prd `FEEDBACK_ENDPOINT_ENABLED=true` flip + `ADAPT_API_KEY`/`OPS_TENANT_ID`/
 `DATABASE_URL_ADMIN` provisioning) is operator-only and stays on the pilot go-live checklist, not
@@ -8556,10 +8560,22 @@ gate) closes the epic and must be last.
   title: >-
     Close tenant-isolation holes: demo revoke, global generation-model, fail-open secrets (F-13)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: backend-engineer
   started_at: '2026-07-02T19:25:00Z'
+  completed_at: '2026-07-02T20:30:00Z'
   branch: backend-engineer/FOLLOW-456-tenant-isolation-holes
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/430'
+  ci: 'green (57 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
+  merge_risk: >-
+    ⚠️ MERGE-ORDER RISK: this PR makes POST /api/tenants FAIL CLOSED when its admin secret is unset
+    (previously it ran with NO auth at all — a real hole). If ADMIN_API_SECRET is NOT set in Vercel
+    prod, tenant onboarding (POST /api/tenants) will start returning 401 after merge. VERIFY
+    ADMIN_API_SECRET is provisioned in Vercel prod BEFORE merging #430 (relates to the
+    never-promoted FOLLOW-155 stub). Filed as FOLLOW-483. New shared helper secret-compare.ts
+    (SHA-256 + timingSafeEqual) guards all three previously fail-open routes;
+    DESCRIPTION_CACHE_INTERNAL_SECRET name unchanged so FOLLOW-460's Modal callback stays intact
+    (proven by a new 201 test).
   priority: P1
   estimated_hours: 3
   depends_on: []

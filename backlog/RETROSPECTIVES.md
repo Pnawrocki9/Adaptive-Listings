@@ -23880,3 +23880,213 @@ None of these four defects were of the "unbuilt-workspace lint-noise" shape flag
 <!-- superseded trailer notes for RETRO-145/146 (previously duplicated below this line, now folded into the RETRO-150 trailer above) removed 2026-07-02 by pm-orchestrator session 8 to avoid two conflicting "next free FOLLOW number" markers; no content lost — see RETRO-145/146 bodies above for full detail. -->
 
 
+
+
+## RETRO-151 — FOLLOW-457 (LLM grounding integrity: fail-loud on empty original + directive fact-whitelist on the /api/adapt path — audit F-11 / ESC-019 residual) — 2026-07-02
+
+### 1. Summary of change
+
+- **PR:** #425 (squash-merged 2026-07-02T15:58:59Z, commit `0b9b7ad`). Title: `fix(adapt): fail-loud on empty original + directive fact-whitelist grounding [FOLLOW-457]`.
+- **Files changed:** 7 (+673 / -38). `lib/llm-gateway.ts` (+207: `checkDirectiveFacts` + `buildDirectiveGroundingText` + `FACT_CHECK_STOP_CAPS` + `FACT_CHECK_DIGIT_RE` + `escapeRegExpToken` + the post-generation batch check wired into `callLlmGateway`), `api/adapt/description/route.ts` (+63/-38 net: AC1 empty-original fail-loud/skip-generation guard), plus new `route.follow457.test.ts` (+191) and updates to `route.test.ts` (+65), `route.redpanda.test.ts` (+7), `llm-gateway.test.ts` (+169: 7 new AC2/AC3 cases), `llm-gateway.clickhouse.test.ts` (+9).
+- **Modules touched:** control-plane adapt/LLM-gateway subsystem only. No shared/SDK/ingest/decision-api contract change. Does **not** touch the Python `apps/llm-gateway/src/jobs/generate_description.py` it mirrors.
+- **Key contracts changed:** none at the wire level. `DescriptionRequestedEvent` schema (`packages/shared`) unchanged — the change is a **suppression** (the `description.requested` event is simply not published when `fetchListingOriginalDescription` returns `''`). `callLlmGateway`'s return contract (`LlmGatewayOutput | null`) is unchanged; the fact-check adds a NEW reason for the pre-existing `null` (→ playbook-fallback) branch.
+
+### 2. Verification done in PR
+
+- CI green on 56 real gates per QUEUE.md; Rule I "wired-or-dead" pre-existing-red, non-blocking. New tests: 7 AC2/AC3 directive cases in `llm-gateway.test.ts` (poisoned-price boundary, poisoned area/m², hallucinated proper-name, plus 3 green-side + 1 generic-copy pass), 191-line `route.follow457.test.ts` for the AC1 empty-original skip, and a `route.redpanda.test.ts` update asserting no publish on empty original. Six pre-existing routing/circuit-breaker tests were edited to lowercase their placeholder directive values (`'Tweaked headline'`→`'tweaked headline copy'`) so they don't trip the new proper-noun check — an expected, benign test-fixture adjustment, not a masked regression.
+- This retro independently re-grepped the wiring and re-read both heuristics (TS vs Python) rather than trusting the PR body's "mirrors" claim — see §3/§8.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** The 5 new symbols (`checkDirectiveFacts`, `buildDirectiveGroundingText`, `FACT_CHECK_STOP_CAPS`, `FACT_CHECK_DIGIT_RE`, `escapeRegExpToken`) are all **module-private** (none exported — confirmed `grep -n "export" llm-gateway.ts | grep -iE "checkDirectiveFacts|buildDirective|FACT_CHECK|escapeRegExp"` → none). CHECK A's "every new export has a non-test importer" therefore does not apply; instead verified they are USED internally: `checkDirectiveFacts` called `llm-gateway.ts:631` inside the `callLlmGateway` post-generation loop; `buildDirectiveGroundingText` at `:629`; both `FACT_CHECK_*` consts referenced at `:477`/`:487`; `escapeRegExpToken` at `:479`/`:490`. Not dead.
+- **CHECK B (half-wire) — directive path:** PRODUCER = `checkDirectiveFacts` returning a violation → `callLlmGateway` returns `null` (`:648`). CONSUMER verified real and non-test: `apps/control-plane/src/app/api/adapt/route.ts` `runDecisionTree` handles the `null` on BOTH gateway call sites — Branch 4 (low-similarity full-gen, `:341`) → `{ directives: [], source: 'playbook_fallback_llm_unavailable' }`; Branch 3 (medium-similarity Haiku tweak, `:362`) → `{ directives: playbookDirectives, source: 'playbook_fallback_llm_unavailable' }`. End-to-end producer→consumer→render (SDK keeps playbook copy) is wired. **Note the asymmetry** carried forward to §4a LG-1: the full-gen branch returns an EMPTY directive array on suppression, the tweaked branch returns real playbook directives — pre-existing null-handling shape, now carrying more traffic.
+- **CHECK B (half-wire) — empty-original guard:** the guard SUPPRESSES a producer (`publishDescriptionRequested`), so there is no orphaned consumer to pair. Confirmed `description.requested` / `publishDescriptionRequested` has exactly ONE producer repo-wide (`grep -rn "publishDescriptionRequested\|DescriptionRequestedEvent" apps packages --include=*.ts | grep -v test` → sole producer at `description/route.ts:98/421`; `listing-embed-seed-publisher.ts` only references it in a doc-comment). No second producer bypasses the guard; no POST handler exists on this route (only `export async function GET` at `:164`) — see §8 GET/POST axis.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the directive path grounds against a materially WEAKER source than the description path it mirrors, so the same heuristic over-suppresses.** `buildDirectiveGroundingText` (`llm-gateway.ts:450`) builds the whitelist from `basePlaybook.description + signals + slots[].en + (listingContext?…) + sessionContext.recentEvents` — and the code's own comment admits "there is no original_description here." The description-path check (`_check_headline_facts`) grounds against the ACTUAL agency listing copy (`original_description + listing_context`), which is rich in the very place-names/prices/features a good directive would legitimately echo. The directive path substitutes **generic archetype playbook seed copy** for that, and `listingContext` is OPTIONAL. So when `listingContext` is thin/absent, legitimate listing-specific numbers and proper nouns in a directive are flagged as hallucinations → whole-batch `null` → over-fallback to playbook. The identical heuristic that has acceptable precision on the description path will have a **materially higher false-positive rate** on the directive path. Amplified two ways: (a) **whole-batch rejection** — `checkDirectiveFacts` `return null` on the FIRST violation discards ALL directives, so one flagged slot throws away correctly-grounded sibling slots (`route.ts` full-gen branch then serves `directives: []`); (b) on the full-gen branch the fallback is empty, not playbook copy. This is the central finding → FOLLOW-475.
+- **LG-2 (P3) — locale number-format false positives.** `FACT_CHECK_DIGIT_RE = /\d[\d.,/%m²sqft-]*/g` tokenizes on digit runs; a space-grouped EU/UAE thousands figure like `1 500 000` splits into three tokens `1`,`500`,`000`, each checked independently. `1` will essentially never appear as a *standalone numeric unit* under the `(?<![0-9.,])…(?![0-9.,])` boundary in grounding → false `hallucinated_number`. Multi-word / space-grouped numbers are not handled. Given four regions EU/US/UK/UAE this is a live locale gap → FOLLOW-476.
+- **LG-3 (P3) — currency-code / all-caps false positives.** Region currency codes (`AED`, `GBP`, `EUR`, `USD`) satisfy `/^[A-Z]/`, are ≥2 chars, and are NOT in `FACT_CHECK_STOP_CAPS`, so they are checked as proper names and flagged unless the code appears verbatim in grounding (only true if `listingContext.currency` happens to carry it). Legitimate currency framing in a directive can trigger whole-batch suppression → folded into FOLLOW-476.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A — no shipped bug.** Adversarially checked the classic global-regex hazard: `FACT_CHECK_DIGIT_RE` carries `/g` and is a module-level singleton, but it is consumed only via `value.matchAll(FACT_CHECK_DIGIT_RE)` (`:477`), and `String.prototype.matchAll` does not mutate/observe the shared regex's `lastIndex` across calls — so there is NO stateful-lastIndex bug (which a `.test()`/`.exec()`-in-loop would have had). Lookbehind `(?<![0-9.,])` is Node-supported. Clean.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — no test for the LG-1 over-fallback case:** every green-side test in `llm-gateway.test.ts` supplies a `listingContext` that DOES contain the asserted fact (`{ rent_pcm: '1,200' }`, `{ location: 'Marbella' }`). There is no test for the realistic thin/absent-`listingContext` case where a legitimately-listing-grounded directive is FALSELY suppressed — i.e. the false-positive axis is untested. → FOLLOW-475 AC.
+- **TG-2 (P3) — no locale test:** no case for space-grouped thousands (`1 500 000`) or currency codes (`AED …`). → FOLLOW-476 AC.
+- **TG-3 (P3) — whole-batch rejection semantics untested:** no test asserts that one hallucinated directive among several correctly-grounded ones discards the whole set (the amplification in LG-1). → FOLLOW-475 AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3):** the `checkDirectiveFacts` docstring and section header state it applies the "same numeric-boundary + proper-noun heuristic" and mirrors "the description path's (original_description + listing_context) grounding pair." The ALGORITHM is faithfully mirrored, but the GROUNDING SOURCE is not (playbook seed copy replaces original_description) — the docstring's "mirrors … grounding pair" framing understates the precision delta that drives LG-1. A one-line caveat would prevent a future reader assuming parity. Minor; folded into FOLLOW-475 (no standalone doc stub).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **F-11 (this ticket): closed on the CODE axis** (AC1 fail-loud skip + AC2/AC3 directive whitelist, both wired end-to-end per §3). **FOLLOW-471** (clean re-audit gate, qa-engineer) lists FOLLOW-457 in its `depends_on` — this closes that leg's code requirement; the re-audit should spot-check LG-1's over-fallback rate rather than assume the whitelist is cost-neutral.
+- **ESC-019:** the reachability half (server-side listing fetch no longer 302s to login) was already RESOLVED separately (per the ticket's own delegation note + project memory `esc019_prod_grounding_gap`); this PR closes the DISTINCT residual (fail-open-to-`''` now skips generation instead of shipping near-ungrounded copy, + the directive path gains the fact gate). Do NOT reopen the resolved reachability escalation.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-460 (P1, ml-engineer — v2.0 permanent description cache, drop TTL/tier):** touches `generate_description.py`, the Modal job downstream of the `description.requested` event this PR now sometimes suppresses. No conflict — the AC1 guard is UPSTREAM of enqueue; a suppressed event simply means the Modal job never runs for that request (no cache write to reconcile). Whoever does FOLLOW-460 should be aware fewer events now reach the job.
+- **FOLLOW-458 (P2, devops — deploy stream-consumer, shadow-only):** unaffected (different topic/path).
+
+#### 5c. Contracts changed others rely on
+
+- N/A — no wire contract changed. `DescriptionRequestedEventSchema` (`packages/shared`) untouched; `callLlmGateway`'s `LlmGatewayOutput | null` signature unchanged. Net behavioural delta: FEWER `description.requested` events published (empty-original suppression) and MORE `null` returns from `callLlmGateway` (fact-check suppression) — both route to pre-existing, already-consumed fallback branches.
+
+#### 5d. Architectural assumptions affected
+
+- **Porting a check across paths must port its grounding-source STRENGTH, not just its algorithm.** The generalizable lesson (§6 PORTED-CHECK-WEAKER-GROUNDING): a fact/grounding heuristic lifted from path A to path B where B's trusted-source corpus is materially thinner will exhibit a different (worse) false-positive profile even though the code is a faithful mirror — the precision of a whitelist check is a property of its GROUNDING corpus, not its regex.
+- **Secondary (telemetry):** on a fact-check suppression the spend is still logged (`afterResponse(logLlmCallAsync … source: llm_full | llm_tweaked)` at `:640`) with a "served" source label even though the directives were DISCARDED. Cost/served attribution reading `llm_calls` will count a paid-but-discarded generation as served. Rhymes with the RETRO-132/146 telemetry-mislabel family but is distinct (paid-and-suppressed, not arm-asymmetry) → FOLLOW-477.
+
+### 6. New lesson candidates
+
+- **Pattern (PORTED-CHECK-WEAKER-GROUNDING): "a fact/grounding check ported from one path to another faithfully reuses the algorithm but grounds against a materially weaker trusted-source corpus (generic playbook seed copy instead of the original listing text), silently raising the false-positive / over-suppression rate on the new path even though the code is a correct mirror."** — **RETRO-151, count 1 (fresh).** Corpus grep found no prior numbered RETRO of this shape (distinct from RETRO-150's RECOVERED-WORK-MULTI-GATE-DEFECT and from the ARM-ASYMMETRY family). **HELD at count 1 — no promotion.** Watch: any future "ported guard/validator behaves differently because its reference/allow-list corpus is thinner on the new call site" is count 2.
+- **Sub-note (telemetry, no independent count):** "paid-but-suppressed LLM call logged with a `served` source label" — rhymes with RETRO-132 §4a LG-1 (served/logged mislabel) but is a different mechanism; recorded as a watch-item, folded into FOLLOW-477, not counted toward any promotion.
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **F-11 / ESC-019 residual (chartered target): CLOSED end-to-end, not one-hop — with one deliberately-flagged trade.**
+  - **AC1 chain:** PRODUCER (`description/route.ts` GET, sole handler) suppresses `publishDescriptionRequested` when `originalDescription === ''` + `Sentry.captureException` → CONSUMER (Modal `generate_description.py`) is never enqueued → no ungrounded Sonnet call → RENDER: response is unchanged `template_fallback`. Traced the full chain: with the reachability fix in place a successful fetch returns real copy (grounded generation); a failed fetch returns `''` and is now SKIPPED. **No ungrounded path remains via the description route — the gap did not move one hop downstream**, it was eliminated at the enqueue boundary.
+  - **AC2/AC3 chain:** PRODUCER (`checkDirectiveFacts` → `null`) → CONSUMER (`adapt/route.ts` both branches, §3) → RENDER (SDK keeps playbook copy per ADR-0009). Poisoned-context tests prove rejection on the directive path; AC3's "description path" leg is the pre-existing Python `_check_headline_facts` (unchanged, correctly not re-litigated).
+  - **The one-hop caveat (honest):** the fix TRADES a hallucination risk for an over-SUPPRESSION risk on the directive path (LG-1). The gap did not silently move down the grounding chain — but the remediation introduces a new quality axis (false-positive fallback rate) that is itself unmeasured. That is exactly the "verify closure didn't just relocate the problem" discipline this step exists for → surfaced as FOLLOW-475, not swallowed.
+
+### 8. Multi-axis / contradiction reconciliation (step 8)
+
+- **GET vs POST axis (AC1):** `description/route.ts` exposes ONLY a `GET` handler (verified `grep -n "export async function" route.ts` → sole `GET` at `:164`); no POST path constructs `DescriptionRequestedEvent`, and `publishDescriptionRequested` has exactly one producer repo-wide (§3). No missing sibling-axis guard.
+- **Directive branch axis (AC2/AC3):** both `callLlmGateway` call sites (full-gen Branch 4 / Haiku-tweak Branch 3) handle the new `null`; verified asymmetric fallback (empty `[]` vs `playbookDirectives`) is pre-existing, now carrying more traffic (§3/LG-1).
+- **Heuristic-parity axis (TS `checkDirectiveFacts` vs Python `_check_headline_facts`):** digit character classes are EQUIVALENT (`[\d.,/%m²sqft-]` vs Python `[\d.,/%m²sqftftm-]` — the extra `ftm` chars are redundant duplicates of an already-present set {m,s,q,f,t}); boundary lookaround + word-boundary proper-noun logic + all-words scan (FOLLOW-272) match. **Two minor divergences found:** (a) the TS digit regex omits the `i` flag Python's `re.IGNORECASE` carries, so an uppercase unit suffix (`1200SQFT`, `120M²`) is not consumed into the numeric token on the TS side (marginal); (b) `FACT_CHECK_STOP_CAPS` is identical to `_HEADLINE_STOP_CAPS` EXCEPT the TS set adds `"Request"` — so TS is marginally MORE permissive on that one token. Neither changes the audit verdict; recorded per the "any divergence in heuristic strength is a finding" instruction.
+- **Grounding-source axis:** DIVERGENT and load-bearing — the algorithm is mirrored but the corpus is weaker on the directive path (§4a LG-1 / §6). This is the reconciliation that matters.
+- **Locale axis:** number formatting (space/period-grouped thousands, currency codes) not handled uniformly across EU/US/UK/UAE → LG-2/LG-3.
+- **Contradiction with prior retros:** none. This is the first retro to analyze the `/api/adapt` directive fact-whitelist and the description-route empty-original guard; no prior "clean" verdict on this surface to reconcile.
+
+### 9. Follow-ups
+
+- **FOLLOW-475** (P2, ml-engineer, 3h): Reduce directive fact-whitelist over-fallback — feed the directive path a real listing grounding source (original_description / verified-facts inventory) and/or switch whole-batch rejection to per-directive suppression; add a thin/absent-`listingContext` false-positive test + a whole-batch-rejection test; add the DG-1 grounding-source caveat to the docstring.
+- **FOLLOW-476** (P3, ml-engineer, 2h): Harden the fact-whitelist for EU/UAE locale number formats (space/period-grouped thousands) and region currency codes (AED/GBP/EUR/USD) to cut false positives; add locale-specific tests.
+- **FOLLOW-477** (P3, data-engineer, 2h): Distinguish paid-but-suppressed directive LLM calls in the `llm_calls` spend log (e.g. `source: 'llm_full_suppressed' | 'llm_tweaked_suppressed'`) so cost/served attribution stops counting fact-check-discarded generations as served.
+
+### 10. Cross-references
+
+- **Mirrors** the Python headline fact-check (`generate_description.py` `_check_headline_facts`, FOLLOW-169 / FOLLOW-272) — the source heuristic this PR ports to the directive path (§8).
+- **Closes the ESC-019 residual** (project memory `esc019_prod_grounding_gap`) whose reachability half was resolved separately; **feeds FOLLOW-471** (clean re-audit gate) via its `depends_on`.
+- **FOLLOW-477 relates to RETRO-132 §4a LG-1 / the RETRO-146 telemetry-mislabel family** (paid-but-suppressed call logged as served) on an orthogonal axis.
+
+---
+
+
+## RETRO-152 — FOLLOW-450 (enable feedback/bandit loop in prod — operator canary + SDK Sentry breadcrumb + route-driven e2e; audit F-06) — 2026-07-02
+
+### 1. Summary of change
+
+- **PR:** #426 (squash-merged 2026-07-02T23:59:24+08:00, commit `2460457`). Title: `feat(adapt): enable feedback/bandit loop — canary + SDK Sentry breadcrumb + e2e [FOLLOW-450]`.
+- **Files changed:** 8 (+945 / -1). New `apps/control-plane/scripts/feedback-canary.mts` (266) + `scripts/__tests__/feedback-canary.test.ts` (78); new `apps/control-plane/src/app/api/adapt/feedback/route.follow450-e2e.test.ts` (473); `packages/sdk/src/core/adapt.ts` (+33, new `reportFeedbackPingRejected` + wire into `postFeedbackPing`); `packages/sdk/src/__tests__/adapt.test.ts` (+84, 2 AC3 tests); `apps/control-plane/vitest.config.ts` (+scripts glob); `package.json` (+`feedback:canary` script); `.gitleaks.toml` (+1 path-scoped allowlist for the e2e fixtures).
+- **Modules touched:** SDK (`@estalara/sdk` core), control-plane (new operator script + new e2e test + vitest config), root config (`package.json`, `.gitleaks.toml`). No Postgres/ClickHouse migration; no production route-handler logic change; no shared/ingest/decision-api contract change.
+- **Key contracts changed:** **N/A — no public API / type / event / env-var / column / topic signature changed.** `reportFeedbackPingRejected` is a new SDK-internal (`@internal`) helper, not exported. The canary's `expectedAfter` / `deltaObserved` / `CANARY_ARCHETYPE` / `CANARY_VARIANT` / `BanditRow` are new exports of an operator-tool `.mts` module (consumed only by its own test + `main()`). This PR is pure verification/observability scaffolding around the pre-existing `POST /api/adapt/feedback` (ADR-0015) contract; it changes no contract that another module reads. **AC1 (the actual go-live: Doppler prd `FEEDBACK_ENDPOINT_ENABLED=true` + `ADAPT_API_KEY`/`OPS_TENANT_ID`/`DATABASE_URL_ADMIN` provisioning) is INTENTIONALLY operator-only and is NOT in this diff** — ticket status `CODE_COMPLETE_OPERATOR_PENDING`.
+
+### 2. Verification done in PR
+
+- Test files changed/added: 3 — `scripts/__tests__/feedback-canary.test.ts` (12 assertions across `CANARY_*` identity + `expectedAfter` 4-case + `deltaObserved` 4-case), `packages/sdk/src/__tests__/adapt.test.ts` (2 AC3 tests: breadcrumb-emitted-on-503, no-throw-when-Sentry-absent-on-401), `route.follow450-e2e.test.ts` (2 route-driven cases: full adapt→feedback happy path with exact Beta(2,1) + `conversion_labels` assertions; cross-tenant `body.tenant_id` mismatch → 403 + writes-nothing). Coverage delta: est. + on the SDK non-2xx feedback branch (previously silent) and net-new e2e coverage of the two-route chain.
+- CI checks: per QUEUE (`ci: green (57 real gates)`), all real gates green; the only non-passing check is the pre-existing non-blocking `Rule I — wired-or-dead` baseline noise (project CI-gate-landscape precedent). This read-only retro did not re-watch CI; the QUEUE line is PM-attested.
+- **Honest scope of "verification":** the PR ships the *machinery to prove* the loop is live (canary) + *observability for when it silently re-dies* (SDK breadcrumb) + *a route-driven proof the write is resolved-tenant-scoped* (e2e). It does **not** itself prove the prod loop is live — that requires the operator to run `pnpm feedback:canary` against Doppler prd after flipping the flag (§5).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):**
+  - `reportFeedbackPingRejected` (`packages/sdk/src/core/adapt.ts:107`) → real non-test consumer at `adapt.ts:175` inside `postFeedbackPing`'s `.then((res) => { if (!res.ok) reportFeedbackPingRejected(...) })`; `postFeedbackPing` is itself called by the registered outcome listener (`adapt.ts:447`/`:478`, `addEventListener` at `:459`). Full chain live, not dead.
+  - `feedback-canary.mts` exports `expectedAfter`/`deltaObserved`/`CANARY_ARCHETYPE`/`CANARY_VARIANT`/`BanditRow`/`runFeedbackCanary` — `expectedAfter`/`deltaObserved` consumed by both `main()` (`:… readRow`/poll loop) AND `scripts/__tests__/feedback-canary.test.ts`; `CANARY_ARCHETYPE`/`CANARY_VARIANT` consumed in `readRow`/body/revert + asserted in the test; `runFeedbackCanary` is the CLI entrypoint (operator-tool entrypoint — suppressed per framework/entrypoint exemption, and additionally guarded by the `isMain` `process.argv[1]` check so importing it in tests does not fire `main()`). Not dead.
+  - `route.follow450-e2e.test.ts` is a test file (exempt). `vitest.config.ts` glob addition (`scripts/**/*.test.ts`) is the wiring that makes the canary test actually run in CI — confirmed the test targets exist under that glob.
+- **CHECK B (half-wire — producer/consumer for every new signal):** No NEW event / env-var / column / topic / SDK-signal is *introduced* by this PR. The consumed env vars (`FEEDBACK_URL`, `ADAPT_API_KEY`, `OPS_TENANT_ID`, `DATABASE_URL_ADMIN`) are all read-side (canary is a *consumer* of prod config the operator provisions — the "producer" is the Doppler prd operator step, which is AC1 and correctly OUT of this code PR by design). The Sentry breadcrumb (`category: 'estalara.feedback'`) has a producer (`reportFeedbackPingRejected`) and its consumer is Sentry's own breadcrumb-attachment machinery (`globalThis.Sentry.addBreadcrumb`) — an external SDK sink, not a repo-internal half-wire. No CHECK-B gap.
+- **Canary safety verification (explicit, per task):** the canary writes ONLY to the dedicated `(OPS_TENANT_ID, CANARY_ARCHETYPE='estalara_ops_canary', CANARY_VARIANT='estalara_ops_canary_v1')` row — never a real archetype/variant arm (the test asserts `CANARY_ARCHETYPE !== 'neutral'`, `CANARY_VARIANT !== 'control'`). Revert logic verified: if `before === null` it `DELETE`s the row; else it `UPDATE`s `alpha`/`beta` back to the pre-ping values. Both branches scope the WHERE to the same 3-key tuple. Claim "never writes to a real tenant's bandit arms" holds (ops-bypass `ADAPT_API_KEY` is permanently scoped to `OPS_TENANT_ID` per ADR-0015). See §4a RC-1/RC-2 for two bounded revert edge-cases (both self-healing, neither touches a real arm).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- No logic gap in the shipped production path. The SDK breadcrumb helper is correct; `expectedAfter` faithfully mirrors `updateBanditArm(alpha,beta,converted)` = `{alpha+1,beta}` on convert (`packages/shared/src/bandit.ts:160`) and the feedback route's "missing row → Beta(1,1)" convention; `deltaObserved` uses exact equality, which is safe here because the canary row's values are always integer (`1.0` default or restored integers) and `updateBanditArm` only ever does integer `+1`.
+- **RC-1 (canary revert race, note, self-healing) — a FAILED canary run can leave the dedicated canary row drifted.** If the async `after()` write lands AFTER the poll timeout (`passed=false`), the code reverts to `before`, but a straggler write could still land after the revert, leaving the canary row at the delta'd state instead of `before`. Bounded and harmless: it only ever affects the dedicated `estalara_ops_canary` row (never a real Thompson arm), and the NEXT run re-reads `before` fresh and reverts to whatever it reads, so it self-heals. Note.
+- **RC-2 (revert not guaranteed on interrupt, note) — the revert is not in a `finally`.** If a `readRow` poll throws, or the operator kills the process mid-run, the revert `UPDATE`/`DELETE` never executes and the canary row is left drifted (again: dedicated row only, self-healing next run). → folded into FOLLOW-481.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A — no bug found in the merged diff.** Adversarial checks all passed: (a) SDK breadcrumb path is robust when `globalThis.Sentry` is undefined — it uses double optional-chaining `gSentry?.addBreadcrumb?.(…)` and is explicitly covered by the "does not throw when Sentry is absent" test (`adapt.test.ts`, 401 case). (b) `.gitleaks.toml` allowlist is path-scoped to the single exact file `route\.follow450-e2e\.test\.ts` (not a broad glob) — no real-secret masking surface beyond that one fixture file; consistent with the sibling `route\.test\.ts` exemption and Rule V. No P0/P1/P2.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, test-robustness — fail-safe direction) — the e2e's fire-and-forget drain is a single `setImmediate`, not a poll-until-condition.** `drainMicrotasks()` (`route.follow450-e2e.test.ts`) awaits one `setImmediate` to flush the two `afterResponse`-registered writes (`updateArmAsync` + `upsertConversionLabelAsync`, `feedback/route.ts:439`/`:453`), each of which is a separate async chain with its own DB round-trips. Under the CPU contention the file's own 30s `hookTimeout` comment acknowledges (multiple PGlite suites running concurrently), one tick may not flush both chains → the `banditRow`/`label` assertions could flake. This flakes RED (assertion fails), not false-green, so it is a CI-noise hazard rather than a correctness hole — but it is worth hardening to a bounded `vi.waitFor`/poll. → **FOLLOW-480.**
+- **TG-2 (note, P3) — the e2e covers only the `converted=true` (alpha) path; the `converted=false` (beta) path is unit-covered in `feedback-canary.test.ts` (`expectedAfter(null,false)` → Beta(1,2)) but not exercised through the real route chain.** Low value (the route's converted→outcome_class mapping for the false case is covered elsewhere in `route.test.ts`); note only, no stub.
+- **TG-3 (note, P3) — the canary itself has no test that its REVERT restores state** (the pure `expectedAfter`/`deltaObserved` helpers are tested, but the `readRow`→revert side-effect logic is not, because it needs a live DB). Acceptable for an operator tool CI cannot run end-to-end; the revert is simple and the RC-1/RC-2 edges are self-healing. Note.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (note, P3) — the operator go-live sequence lives in the ticket's `operator_action` field and the `.mts` header, but there is no standalone go-live runbook step** (contrast FOLLOW-449, which has an explicit `docs/runbooks/clickhouse-migrations.md` "Prod Attestation — STUB, OPERATOR MUST COMPLETE" gate that cannot be silently skipped). The feedback-canary equivalent — "after flipping `FEEDBACK_ENDPOINT_ENABLED=true`, run `pnpm feedback:canary` and paste the PASS line as the F-06 attestation" — is not a checklist stub anywhere except the QUEUE ticket. Recommend folding into the pilot go-live checklist (STATUS.md) / FOLLOW-471's DoD, NOT re-filing (see §9). The ticket does record the operator step, so this is a hardening recommendation, not a missing-tracking gap.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **F-06 (this ticket): closed ONLY on the CODE axis — the prod-measurement gap is NOT closed by this merge.** The merged code ships (i) the canary that PROVES a real `ab_bandit_weights` delta lands, (ii) SDK observability so a re-disabled endpoint stops being silent, and (iii) an e2e proving the write is resolved-tenant-scoped. It does NOT flip `FEEDBACK_ENDPOINT_ENABLED`. Until the operator runs the Doppler-prd flip + provisions `ADAPT_API_KEY`/`OPS_TENANT_ID`/`DATABASE_URL_ADMIN` + runs `pnpm feedback:canary` to a PASS, the prod feedback loop remains 503-gated → `ab_bandit_weights` frozen at Beta(1,1) → Thompson sampling uniform-random → no conversion labels. **The bar this PR meets is "the operator now has a fail-loud, prod-safe way to verify go-live," not "the loop is live."**
+- **FOLLOW-449 (data-engineer, `CODE_COMPLETE_OPERATOR_PENDING`) — sibling of the same class.** Both need a Doppler-prd operator touch. Confirmed independent: the bandit/feedback subsystem (`ab_bandit_weights`, `conversion_labels`) is Postgres-only with NO code dependency on `intent_events`/ClickHouse migration 0015 (FOLLOW-449's scope) — the QUEUE's 2026-07-02 DECOUPLE note is accurate. The two operator legs MAY be scheduled together (both are Doppler-prd touches) but that is a scheduling convenience, not a technical dependency.
+- **FOLLOW-451 (DONE, PR #416): reinforced.** The e2e exercises the `resolveApiKey()` real-API-key path FOLLOW-451 added to `POST /api/adapt`, plus the parity 403-on-`body.tenant_id`-mismatch — so this PR is also a downstream regression net for FOLLOW-451's auth surface.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-471 (clean re-audit gate, P1, BACKLOG) — depends_on includes FOLLOW-450.** This closes FOLLOW-450's CODE leg but NOT its operator leg. FOLLOW-471's F-06 verdict cannot be "CLOSED with proof" until (a) the operator runs the canary to a PASS in prod AND (b) the FEEDBACK_ENDPOINT_ENABLED flip is attested — same gating shape as FOLLOW-449's F-02 leg. FOLLOW-471 must treat F-06 as operator-attestation-pending, not code-closed. Recommend FOLLOW-471's DoD explicitly require the canary PASS transcript as the F-06 evidence.
+
+#### 5c. Contracts changed others rely on
+
+- **N/A.** No contract signature changed (§1). The new SDK breadcrumb is additive and internal; the canary is a standalone operator tool. `POST /api/adapt/feedback` request/response shape is byte-identical.
+
+#### 5d. Architectural assumptions affected
+
+- **Reinforces the CODE_COMPLETE_OPERATOR_PENDING posture as a first-class, recurring state** (ESC-020/ESC-034 precedent; now RETRO-146 §7, RETRO-150 §3, and this retro). A P0 go-live-gate ticket's *code* can be fully shipped + CI-green while its *production effect* stays behind a privileged Doppler-prd operator action the merged code cannot and must not perform. Any retro reasoning "is this finding closed?" must split the code axis from the prod/operator axis before answering (§6).
+
+### 6. New lesson candidates
+
+- **Pattern (CODE-VS-PROD-AXIS / OPERATOR-PENDING-GO-LIVE): "a P0 audit-remediation ticket ships and merges its full code+CI+test axis (here: a fail-loud prod canary, SDK observability, and a route-driven e2e proof) but the actual production effect is gated behind a privileged operator-only Doppler-prd action (flag flip / migration apply / credential provisioning) the merged code cannot perform; the merge therefore closes ONLY the code axis, and the retro MUST keep the prod/measurement axis explicitly OPEN on the go-live checklist and NOT mark the audit finding DONE."** — **seen in: RETRO-146 §5a/§7 (FOLLOW-442 "closed on the CODE axis … PROD axis NOT yet attested"), RETRO-150 §3/§5a (FOLLOW-455 code-axis closed; explicitly frames FOLLOW-449's ClickHouse leg as "genuinely requires a manual Doppler-prd operator step"), and RETRO-152 (this — the purest/canonical instance: the ENTIRE ticket is CODE_COMPLETE_OPERATOR_PENDING by design).** promote-threshold 2, **current count 3 (≥2 PRIOR numbered retros: RETRO-146 + RETRO-150).** **PROMOTION WARRANTED.** Proposed rule text below (§9) — this retro is read-only on `CONVENTIONS_PATCH.md` per its output contract, so the rule is PROPOSED here for the orchestrator to splice, not written by this retro.
+- Distinct-pattern check (anti-count-inflation, honoring RETRO-146/150 discipline): this is NOT the same as RETRO-150's RECOVERED-WORK-MULTI-GATE-DEFECT (that is about a crashed worker's *content* being under-verified) nor RETRO-146's ARM-ASYMMETRY-WRITE-GAP (a *missing telemetry write on one arm*). CODE-VS-PROD-AXIS is about the *closure verdict* of an operator-gated go-live ticket — a retro-hygiene / ticket-status-classification discipline, orthogonal to both. The two prior citations articulate exactly this discipline in numbered retros, so the ≥2-PRIOR-RETRO threshold is met (not on a QUEUE-note technicality — both are numbered retro bodies).
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **F-06 (the chartered target): CLOSED on the CODE axis only — traced end-to-end for the code deliverables, NOT one-hop; explicitly OPEN on the prod axis.**
+  - Observability chain (AC3): producer `postFeedbackPing` non-2xx branch (`adapt.ts:173`) → `reportFeedbackPingRejected` (`:107`) → `console.warn` + `globalThis.Sentry.addBreadcrumb` (`:113`) → asserted end-to-end by the AC3 breadcrumb test. Connected.
+  - Verification chain (AC2): `feedback:canary` npm script → `feedback-canary.mts main()` → signed ops-bypass POST → poll `ab_bandit_weights` via `DATABASE_URL_ADMIN` until `deltaObserved` → revert. Pure pass/fail logic unit-proven. The chain is code-complete; its ACTUAL EXECUTION against prod is the operator leg (AC1) — correctly NOT claimed closed here.
+  - Proof chain (AC4): `POST /api/adapt` (real key) → `adapt_decision_id`/`variant` → `POST /api/adapt/feedback` (same key) → `ab_bandit_weights` Beta(2,1) + `conversion_labels` row keyed to the RESOLVED tenant, plus the cross-tenant 403-writes-nothing case. Producer→consumer→persisted-state connected in one test.
+  - **NOT closed (correctly): the prod go-live hop.** Unlike the FOLLOW-097→114→127→141 `inquiry_submit_selector` cautionary chain (where each "fix" moved the gap one hop downstream unnoticed), here the remaining hop (the Doppler-prd flip + canary run) is EXPLICITLY declared operator-pending in the ticket and this retro — it is a *known, tracked* open hop, not a silently-relocated gap. The distinction: FOLLOW-097's chain failed because closure was *claimed* while the gap moved; here closure is *scoped* to the code axis and the prod hop is named. That is the correct handling.
+- **No prior FOLLOW is *claimed closed* by this PR** beyond F-06's code axis — so there is no other end-to-end closure to re-verify.
+
+### 8. Multi-axis / contradiction reconciliation (step 8)
+
+- **Code axis vs prod/operator axis:** reconciled throughout (§2/§5a/§7) — code shipped + CI-green; prod effect operator-gated and explicitly OPEN. No conflation.
+- **Producer vs consumer axis (feedback loop):** the SDK (`postFeedbackPing`) is the producer of the feedback ping; `POST /api/adapt/feedback` is the consumer that writes `ab_bandit_weights`/`conversion_labels`; the canary is an independent out-of-band producer+verifier. All three analyzed; all wired (§3).
+- **Auth axis (ops-bypass vs real-key):** the canary uses the `ADAPT_API_KEY` ops-bypass path (no HMAC signature, scoped to `OPS_TENANT_ID`); the e2e uses the real registered-key path (`resolveApiKey()` + HMAC signature). BOTH auth axes of the feedback route are exercised — not just the obvious one. No axis left unanalyzed.
+- **Contradiction check:** no prior retro declared F-06 "closed" or the feedback loop "live" — RETRO-146 §5a in fact named FOLLOW-441/F-06 as the still-open prod-write-verification sibling. This retro is consistent with that: it delivers the F-06 verification machinery and keeps the prod attestation open. No prior verdict contradicted.
+
+### 9. Follow-ups
+
+- **FOLLOW-480 (P3, qa-engineer / backend-engineer, ~1–2h)** — harden the FOLLOW-450 route-driven e2e's fire-and-forget drain: replace the single `setImmediate` (`drainMicrotasks`) with a bounded `vi.waitFor`/poll-until-rows-present so the `ab_bandit_weights`/`conversion_labels` assertions cannot flake RED under the CPU contention the file's own 30s `hookTimeout` note acknowledges. Source: §4c TG-1.
+- **FOLLOW-481 (P3, backend-engineer, ~1h)** — make the `feedback-canary.mts` revert interrupt-safe: wrap the revert `UPDATE`/`DELETE` in a `finally` (or run it before the `!passed` exit) and document that a killed/errored run may leave a bounded, self-healing drift on the dedicated `estalara_ops_canary` row (never a real Thompson arm). Source: §4a RC-2.
+- **Scope recommendation (NOT re-filed): fold F-06's operator attestation into the pilot go-live checklist / FOLLOW-471 DoD** — require the `pnpm feedback:canary` PASS transcript (post-`FEEDBACK_ENDPOINT_ENABLED=true`) as the F-06 evidence, mirroring FOLLOW-449's "runbook attestation stub must be filled" gate. Source: §4d DG-1 / §5b. The ticket already records the operator step; this is a hardening of where the *proof* is captured, not new tracking.
+- **RULE PROMOTION PROPOSED (≥2 prior numbered retros: RETRO-146 + RETRO-150; this is the 3rd sighting) — for the orchestrator to splice into `CONVENTIONS_PATCH.md` (this retro is read-only on that file):**
+  > **Rule (CODE-VS-PROD-AXIS closure for operator-gated go-live tickets).**
+  > **Pattern:** A P0/P1 go-live or audit-remediation ticket ships its full code+CI+test axis, but the production effect is gated behind a privileged operator-only action (Doppler-prd flag flip, migration apply, or credential provisioning) that the merged code cannot and must not perform.
+  > **Evidence:** RETRO-146 (FOLLOW-442 — code axis closed, prod holdout-write attestation left open), RETRO-150 (FOLLOW-455 — code axis closed; FOLLOW-449's ClickHouse apply named as an operator-only Doppler-prd step), RETRO-152 (FOLLOW-450 — entire ticket `CODE_COMPLETE_OPERATOR_PENDING`; canary + observability + e2e shipped, prod flip operator-only).
+  > **Rule:** Such a ticket is set to `CODE_COMPLETE_OPERATOR_PENDING`, NOT `DONE`. The retro/PM verdict MUST split the code axis from the prod/operator axis, mark ONLY the code axis closed, and keep the prod/measurement axis explicitly OPEN on the pilot go-live checklist (STATUS.md). The operator leg MUST have a fail-loud proof step (canary / attestation stub) whose output is pasted as the finding's closure evidence; the audit finding is not "closed with proof" until that proof exists.
+  > **Verification:** Any retro on an operator-gated ticket cites both the code-axis closure chain AND the still-open operator hop by name (never claims the finding DONE on code alone); FOLLOW-471's re-audit gate requires the operator proof transcript per finding.
+
+### 10. Cross-references
+
+- **Related to RETRO-146 (FOLLOW-442, F-05) and RETRO-150 (FOLLOW-455/§3 FOLLOW-449):** the two prior numbered sightings of the CODE-VS-PROD-AXIS / operator-pending pattern that this retro promotes to a Rule (§6/§9). RETRO-146 also names the F-06 prod-write-verification sibling (FOLLOW-441) that this ticket's canary now partially discharges on the feedback-loop side.
+- **Sibling of FOLLOW-449 (RETRO not yet written; `CODE_COMPLETE_OPERATOR_PENDING`):** same operator-leg class; confirmed technically decoupled (Postgres-only vs ClickHouse) per §5a.
+- **Downstream regression net for FOLLOW-451 (PR #416, real-API-key auth on POST /api/adapt):** the AC4 e2e exercises FOLLOW-451's `resolveApiKey()` path + parity 403.
+- **Feeds FOLLOW-471 (clean re-audit gate):** F-06 code leg closed here; operator attestation still governs the final CLOSED verdict (§5b).

@@ -233,6 +233,12 @@ paths = [
   '''apps/control-plane/src/lib/email/__tests__/''',
   '''apps/control-plane/src/__tests__/''',
   '''apps/control-plane/src/app/api/adapt/feedback/route\.test\.ts''',
+  # FOLLOW-450 AC4: route-driven PGlite e2e for the feedback loop. Same class as
+  # route.test.ts (same dir) and the *route-driven-pglite.test.ts exemption below —
+  # the fixture DDL embeds a 40-char snake_case index name
+  # (conversion_labels_tenant_prediction_unique → cloudflare-api-token FP) and a
+  # fake `sk_live_` test API key (generic-api-key FP). No real secrets.
+  '''apps/control-plane/src/app/api/adapt/feedback/route\.follow450-e2e\.test\.ts''',
   '''apps/control-plane/src/app/api/adapt/route\.clickhouse\.test\.ts''',
   '''apps/decision-api/src/lib/__tests__/''',
   '''apps/decision-api/src/__tests__/''',

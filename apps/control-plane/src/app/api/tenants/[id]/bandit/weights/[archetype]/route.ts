@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return --
+/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return --
  * @estalara/auth and @estalara/db are workspace packages not built locally.
  * TypeScript sees their return types as `any` until packages are built.
  * CI builds packages before lint so these errors don't appear in CI.
@@ -21,7 +21,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getAuthClaims } from '@estalara/auth';
+import { getSessionAuth } from '@/lib/session-auth';
 import { createTenantClient } from '@estalara/db';
 import { abBanditWeights } from '@estalara/db';
 import { eq, and } from 'drizzle-orm';
@@ -42,8 +42,11 @@ export async function PATCH(
   req: NextRequest,
   context: { params: Promise<{ id: string; archetype: string }> },
 ): Promise<NextResponse> {
-  const claims = await getAuthClaims(req);
-  if (!claims || !('tenant_id' in claims) || !claims.tenant_id) {
+  // getSessionAuth() tries the Bearer/legacy-cookie path first, then falls back
+  // to the Supabase SSR browser session cookie (FOLLOW-454), and returns the raw
+  // JWT so RLS stays enforced on db.rls() below on both paths.
+  const session = await getSessionAuth(req);
+  if (!session || !('tenant_id' in session.claims) || !session.claims.tenant_id) {
     return NextResponse.json(
       {
         error: { code: 'unauthorized', message: 'Valid Bearer JWT with tenant_id claim required' },
@@ -51,6 +54,7 @@ export async function PATCH(
       { status: 401 },
     );
   }
+  const claims = session.claims;
 
   const { id: tenantId, archetype } = await context.params;
 
@@ -76,11 +80,7 @@ export async function PATCH(
   }
 
   try {
-    const rawToken =
-      req.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') ??
-      req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ??
-      '';
-    const db = createTenantClient(rawToken || undefined);
+    const db = createTenantClient(session.rawToken ?? undefined);
 
     // tx type is Database from @estalara/db — annotated explicitly to satisfy noImplicitAny.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- package types not compiled; any is safe here since db.rls enforces the DB type at runtime

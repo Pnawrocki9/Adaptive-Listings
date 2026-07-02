@@ -1337,3 +1337,41 @@ an existing locked-in test (as happened here with AC2 vs. FOLLOW-260), a lightwe
 the conflict earlier — I found it while reading the reference tests, but a step in the ticket
 template itself ("list any existing test whose assertions this AC's literal wording would break")
 would make agents surface these tensions explicitly.
+
+---
+
+**Date / ticket:** 2026-07-02 / FOLLOW-454 — Fix SSR-cookie auth mismatch on tenant dashboard +
+analytics/pilot/ab APIs.
+
+**What I built:** A single `apps/control-plane/src/lib/session-auth.ts` (`getSessionAuth`,
+`getSessionAuthClaims`, `requireTenantSessionAccess`) that tries the existing Bearer/legacy-cookie
+`getAuthClaims` path first, then falls back to validating the chunked `sb-<project-ref>-auth-token`
+SSR cookie via `createServerClient().auth.getUser()` and reconstructing `AuthClaims` from
+`app_metadata` — exactly mirroring the admin-side fix (FOLLOW-326/ADR-0013, `checkAdminSession` in
+middleware.ts, `checkStaffSession` in tracer-auth.ts). Applied it to `/dashboard/*` middleware (new
+`checkDashboardSession`) and every `getAuthClaims` call site in
+`dashboard/analytics/{lift,summary}`, `pilot/{inquiry-starts,calibration,cta-lift}`, `ab/weights`,
+`quiz/config` (GET + POST via `requireTenantSessionAccess`), and `tenants/[id]*` (route, answers,
+lia, bandit/weights/[archetype]).
+
+**Wiring/auth/fail-loud risks I weighed:** (1) `ab/weights` and `bandit/weights/[archetype]` call
+`createTenantClient(rawToken)` → `db.rls()` for RLS-enforced queries. The pre-existing code derived
+`rawToken` purely from the `Authorization` header, so an SSR-cookie-authenticated browser session
+(no Bearer header) would have silently hit `createTenantClient(undefined)` — which DISABLES RLS
+(pass-through branch in `packages/db/src/client.ts`). I made `getSessionAuth()` also return a
+`rawToken`, sourced from `supabase.auth.getSession().access_token` on the SSR path (the same
+already-validated session from `getUser()`), so RLS stays enforced on both auth paths — this was not
+explicitly called out in the ticket but would have been a silent RLS-bypass regression if missed.
+(2) Deliberately did NOT modify `@estalara/auth`'s `getAuthClaims` itself — it's also used by
+`apps/ingest` (CF Workers) and `apps/decision-api` (Edge), neither of which should gain a
+`@supabase/ssr` dependency; the fallback lives only in control-plane, same precedent as the admin
+fix. (3) `tenants/[id]/lia/[recordId]` DELETE is staff-only (not explicitly named in the ticket's
+route list but matches the `tenants/[id]*` glob) — extending the SSR fallback there is a pure auth
+improvement (a staff browser session now also works) with zero behavior change for existing callers,
+so I included it for consistency rather than leaving an inconsistent gap.
+
+**A guardrail I'd add:** When a route derives a "raw JWT" from the `Authorization` header solely to
+feed `createTenantClient()`/`db.rls()`, and a browser-session auth fallback is added elsewhere in
+the same app, grep for `createTenantClient(rawToken` / `.rls(` across the app BEFORE wiring the
+fallback — it's easy to fix the claims-resolution 401 and miss that the RLS-token propagation path
+silently degrades to "RLS disabled" for the exact same request that now successfully authenticates.

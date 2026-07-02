@@ -25,7 +25,8 @@ import { NextResponse } from 'next/server';
 import { eq, and, sql } from 'drizzle-orm';
 
 import { createAdminClient, tenantComplianceRecords } from '@estalara/db';
-import { getAuthClaims, isStaffClaims } from '@estalara/auth';
+import { isStaffClaims } from '@estalara/auth';
+import { getSessionAuthClaims } from '@/lib/session-auth';
 
 // ---------------------------------------------------------------------------
 // DELETE — soft-delete a specific LIA record
@@ -50,7 +51,7 @@ export async function DELETE(
   const { id: tenantId, recordId } = await params;
 
   // Staff-only: tenant admins cannot delete compliance records.
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

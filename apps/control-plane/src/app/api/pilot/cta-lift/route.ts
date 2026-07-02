@@ -27,7 +27,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { getAuthClaims } from '@estalara/auth';
+import { getSessionAuthClaims } from '@/lib/session-auth';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import {
   FUNNEL_STAGES,
@@ -322,7 +322,7 @@ function buildMockRaw(tenantId: string, windowDays: number): ChRawData {
  *   (Rule K.2 — fail loud; never silently fall back to mock in production).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims || !('tenant_id' in claims) || !claims.tenant_id) {
     return NextResponse.json(
       {

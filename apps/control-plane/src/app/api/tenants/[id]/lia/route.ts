@@ -31,7 +31,8 @@ import { desc, eq, and, isNull, or } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 
 import { createAdminClient, tenantComplianceRecords } from '@estalara/db';
-import { getAuthClaims, isStaffClaims } from '@estalara/auth';
+import { isStaffClaims } from '@estalara/auth';
+import { getSessionAuthClaims } from '@/lib/session-auth';
 import { LiaRecordSchema } from '@estalara/shared';
 
 // ---------------------------------------------------------------------------
@@ -51,7 +52,7 @@ async function validateLiaAuth(
   req: NextRequest,
   tenantId: string,
 ): Promise<{ ok: true } | NextResponse> {
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

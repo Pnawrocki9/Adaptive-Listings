@@ -36,7 +36,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { getAuthClaims } from '@estalara/auth';
+import { getSessionAuthClaims } from '@/lib/session-auth';
 import type { DailyBreakdownRow, InquiryStartsResponse } from './route-helpers';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 
@@ -332,7 +332,7 @@ function buildMockResponse(tenantId: string, windowDays: number): InquiryStartsR
  *   ClickHouse is configured).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims || !('tenant_id' in claims) || !claims.tenant_id) {
     return NextResponse.json(
       {

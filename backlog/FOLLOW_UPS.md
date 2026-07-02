@@ -13103,7 +13103,25 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   configured to send it. OPEN QUESTION for the owner: is POST /api/tenants meant to be called
   server-to-server (bearing ADMIN_API_SECRET) or from a browser onboarding session? If browser, a
   server secret can't be shipped client-side — that path needs a session/JWT gate rethink, not just
-  provisioning. Same question applies to whichever system posts listing-updated webhooks. ac:
+  provisioning. Same question applies to whichever system posts listing-updated webhooks. RESOLVED +
+  PROVISIONED 2026-07-02 (pm-orchestrator): (1) /api/tenants caller question ANSWERED — it is a
+  server-to-server INTERNAL-ADMIN endpoint (route docstring: "Not exposed to tenant dashboard
+  users"), authed by the `x-admin-secret` header; grep confirms ZERO in-repo callers (tenants are
+  created by a manual/ops admin call), so NO browser rethink is needed. #430 keeps the same
+  `x-admin-secret` header. (2) All THREE secrets GENERATED (openssl rand -hex 32) and SET in Vercel
+  PRODUCTION via `vercel env add`, verified present: ADMIN_API_SECRET,
+  DESCRIPTION_CACHE_INTERNAL_SECRET, LISTING_UPDATED_WEBHOOK_SECRET. Values delivered to the
+  operator out-of-band (NOT stored here — never commit secrets). Vercel env changes take effect on
+  the NEXT prod deployment (i.e. when #428/#430 merge), so current running prod is unchanged.
+  REMAINING external coordination (not Vercel): (a) Modal `estalara-secrets` must get
+  DESCRIPTION_CACHE_INTERNAL_SECRET = the SAME value + set DESCRIPTION_CACHE_API_BASE_URL = the
+  control-plane prod base (per .env.example: https://admin.estalara.com) — NOT done here because
+  Modal secret updates are replace-on-create and could clobber existing keys; devops action
+  (FOLLOW-460 operator leg). (b) If a LIVE external listing-updated webhook sender exists,
+  reconfigure it to send `X-Webhook-Secret: <value>` before #430 deploys (header is
+  X-Webhook-Secret); if none exists (likely in pilot), no action. (c) Optionally mirror the three
+  secrets into Vercel PREVIEW if onboarding/webhook/cache flows are exercised there. (d) Ops
+  runbook: tenant creation now requires the `x-admin-secret` header. ac:
   - ADMIN_API_SECRET confirmed set in Vercel prod (and preview if onboarding is exercised there).
   - LISTING_UPDATED_WEBHOOK_SECRET + DESCRIPTION_CACHE_INTERNAL_SECRET confirmed set in prod, with
     their callers (MLS/webhook sender; FOLLOW-460 Modal job) configured to send the matching value.

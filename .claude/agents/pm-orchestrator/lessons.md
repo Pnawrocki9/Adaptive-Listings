@@ -1648,3 +1648,29 @@ independent occurrence, even if it references the same pattern by name.
   yet, the PR that adds it must merge before any worker can branch off main and see it. Never
   delegate against ticket text that only exists locally or on a different branch than the one
   workers will branch from.
+
+---
+
+- **Date / ticket:** 2026-07-02 — FOLLOW-451 bookkeeping close-out + FOLLOW-452/453 delegation, PR
+  #417
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks -> backend-engineer" (FOLLOW-452 and FOLLOW-453; row also cited
+  when FOLLOW-451 itself was originally delegated, referenced here for consistency).
+- **What validation caught (or missed):** Pulled FOLLOW-451's DONE evidence directly from
+  `gh pr view 416` (merge commit, CI counter, test count) rather than trusting the prompt's summary
+  of it — confirmed the merge commit matched `main` HEAD before writing DONE. The two residuals
+  (FOLLOW-472 demo-JWT mismatch gap, FOLLOW-473 GET-path auth parity) were both already explicitly
+  named in PR #416's own "Scope decisions" section — filing them was transcription-plus-triage, not
+  novel discovery; worth noting that a worker who documents its own scope cuts makes the PM's
+  follow-up filing nearly mechanical. FOLLOW-450's depends_on loosening was a pure documentation
+  correction (a prior session had already done the analysis and just left the edit undone) —
+  verified the Postgres-vs-ClickHouse subsystem separation claim against the ticket text itself
+  rather than re-deriving it from scratch. Two co-assigned-adjacent tickets (FOLLOW-452/453)
+  delegated to the same agent concurrently in isolated worktrees — flagged the
+  shared-working-directory hazard explicitly in both QUEUE.md notes since that's a spawn-time human
+  responsibility, not something a QUEUE.md note alone enforces.
+- **A delegation/validation rule I'd add:** When a merged PR's own body already states its "scope
+  decisions" (deliberate AC exclusions with rationale), treat those as the residual-ticket source of
+  truth for follow-up filing — do not re-derive gaps from the diff independently first, since the
+  worker's own documented tradeoffs are higher-fidelity than an after-the-fact re-audit and save a
+  full re-read of the route logic.

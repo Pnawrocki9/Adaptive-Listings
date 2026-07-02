@@ -12836,7 +12836,65 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 472 (449–471 = 2026-07-01 Full-Stack Audit Remediation epic, chartered directly into backlog/QUEUE.md "Sprint 22b" as READY/BACKLOG tickets rather than as stubs here — FOLLOW-449 F-02 intent_events prod migration+de-silence [P0], 450 F-06 enable feedback/bandit loop [P0], 451 F-05 real API-key adapt auth [P0], 452 F-08 holdout archetype logging [P1], 453 F-07 analytics UI fail-loud + kill /api/analytics mock [P1], 454 F-01 SSR-cookie auth on tenant dashboard/analytics APIs [P1], 455 F-20 DSR OTP CSPRNG+rate-limit+erasure coverage [P1], 456 F-13 tenant-isolation holes [P1], 457 F-11 grounding fail-loud + directive whitelist [P1], 458 F-03 deploy stream-consumer + data-quality cron [P1], 459 F-09 ingest ACK-before-insert [P1], 460 F-10 finish v2.0 permanent description cache [P1], 461 F-04 event-schema reconciliation [P2], 462 F-14 CH DSR param-binding [P2], 463 F-17 verified_facts_used writer [P2], 464 F-15 pg description cache model-key [P2], 465 F-18 NEUTRAL negative-cache [P2], 466 F-21 feedback HMAC replay + timingSafeEqual [P2], 467 F-12 dead-scaffold cleanup [P3], 468 F-16 adapt-description buildEndpoint+encode [P3], 469 F-19 bundle headroom [P3], 470 refresh §Snapshot.1/README/CLAUDE.md + promote FOLLOW-380 [P2], 471 clean re-audit acceptance gate [P1, depends on all]). Original pointer: 448 = RETRO-146 §4e/§9 — branch-first worker discipline [git checkout -b as the worker's FIRST action before any edit] + mechanical guardrail [pre-edit/SessionStart hook refusing edits or auto-branching when HEAD==main so a stalled worker can't strand uncommitted work on the main working tree, where a later branch-from-main silently absorbs/discards it] + orchestrator "recovered/handed-off work must be independently re-verified, not trusted" checklist; P2 devops-engineer/pm-orchestrator ~3h; source: backend-engineer stalled 600s on FOLLOW-442/PR #406, left correct impl UNCOMMITTED on the main working tree, main session recovered+re-verified typecheck+lint+11/11 holdout tests). 447 = audit sibling ci.yml gates for the 3 INERT-GATE failure modes [#1 build-without-@estalara/shared, #2 bare-specifier-from-repo-root, #3 socket-hang] + add defense-in-depth timeout-minutes to ALL jobs [only archetype-embeddings-not-null has one]; optional negative-control for the archetype gate; P3 devops-engineer ~2h; source RETRO-145 §4a LG-3/§5b; continue-on-error scoping is SEPARATE = FOLLOW-446). 446 = harden archetype-embeddings-not-NULL CI gate against silent blind-spots [shared-build-order fixed PR #402/#403 follow-up + continue-on-error swallows gate-broken vs soft-skip]; P3 devops-engineer ~1h. 445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
+## FOLLOW-472 — demo-JWT path on POST /api/adapt has no tenant_id-claim-vs-body mismatch check
+
+- **source_retro:** FOLLOW-451 (PR #416) validation, 2026-07-02 — pm-orchestrator
+- **source_ticket:** FOLLOW-451 — audit F-05 sub-case, deliberately NOT closed by FOLLOW-451, which
+  scoped its new 403-on-mismatch check to the API-key path only (see PR #416 "Scope decisions" §1)
+  to avoid breaking the existing FOLLOW-260 supersede-only demo-JWT test.
+- **recommended_sprint:** Sprint 22b (promoted directly, see below)
+- **recommended_agent:** backend-engineer
+- **priority:** P3 (demo JWTs are server-minted and always carry the `tenant_id` claim today, so the
+  exploit window is theoretical, not observed in prod; PM default, override if you judge the risk
+  higher)
+- **estimated_hours:** 2
+- **scope:** When a demo JWT carries NO `tenant_id` claim, `body.tenant_id` still silently selects
+  the tenant on `POST /api/adapt` with no mismatch check — this is pre-existing behavior, not
+  introduced by FOLLOW-451. Harden by either (a) requiring a `tenant_id` claim on all demo JWTs
+  (reject ones without it), or (b) applying the same 403-on-mismatch check FOLLOW-451 added for the
+  API-key path to the demo-JWT path too, without breaking the FOLLOW-260 supersede-only test for the
+  case where the JWT DOES carry a `tenant_id` claim.
+- **ac:**
+  - [ ] A demo JWT with a `tenant_id` claim + mismatched `body.tenant_id` still supersedes silently
+        (FOLLOW-260 regression test stays green) — behavior unchanged for the claim-present case.
+  - [ ] A demo JWT with NO `tenant_id` claim + a `body.tenant_id` no longer silently trusts the body
+        value with zero verification (reject, or apply an equivalent 403/claim-requirement).
+  - [ ] New test covers the claim-absent case explicitly (this gap has no existing test today).
+- **promoted_to_queue:** true (2026-07-02, pm-orchestrator — promoted to Sprint 22b as READY)
+
+---
+
+## FOLLOW-473 — GET /api/adapt auth is presence-only + spoofable x-tenant-id fallback, now materially weaker than the hardened POST path
+
+- **source_retro:** FOLLOW-451 (PR #416) validation, 2026-07-02 — pm-orchestrator
+- **source_ticket:** FOLLOW-451 — PR #416 "Scope decisions" §2 explicitly flagged this as a
+  follow-up: FOLLOW-451's AC items only covered POST; GET's separate, weaker `ADAPT_API_KEY` auth
+  axis was out of scope for that ticket.
+- **recommended_sprint:** Sprint 22b (promoted directly, see below)
+- **recommended_agent:** backend-engineer
+- **priority:** P2 (GET is now the visibly weaker of the two `/api/adapt` auth paths — asymmetric
+  hardening is itself a signal to close before pilot go-live)
+- **estimated_hours:** 3
+- **scope:** `GET /api/adapt` authenticates via `ADAPT_API_KEY` env-var presence-only comparison; if
+  the env var is UNSET, auth degrades further to "any non-empty bearer token accepted." Tenant is
+  derived from a caller-supplied `x-tenant-id` header with no verification — fully spoofable. Bring
+  GET to parity with the now-hardened POST path: either route GET through `resolveApiKey()`
+  (deriving `tenantId` server-side, same as POST/feedback) or, if GET is intentionally a distinct
+  ops/internal-only surface, implement a real constant-time key check (never "any non-empty token")
+  and stop trusting `x-tenant-id` as an authority.
+- **ac:**
+  - [ ] GET /api/adapt no longer accepts "any non-empty bearer" when `ADAPT_API_KEY` is unset — a
+        missing/misconfigured key fails closed (401), never fails open.
+  - [ ] Tenant resolution for GET no longer trusts a raw `x-tenant-id` header with zero verification
+        — either derived from `resolveApiKey()` or a documented, narrower internal-only trust
+        boundary (e.g. mTLS/internal network only) if GET truly has different callers than POST.
+  - [ ] Test matrix parity with FOLLOW-451's `route.follow451.test.ts` (valid key/tenant, missing
+        key, wrong tenant, DB error fails loud) applied to the GET handler.
+- **promoted_to_queue:** true (2026-07-02, pm-orchestrator — promoted to Sprint 22b as READY)
+
+---
+
+<!-- next free FOLLOW number: 474 (472 = FOLLOW-451 residual — demo-JWT path tenant_id-claim-vs-body mismatch not checked when JWT lacks a tenant_id claim, P3 backend-engineer ~2h; 473 = FOLLOW-451 residual — GET /api/adapt presence-only ADAPT_API_KEY auth + spoofable x-tenant-id fallback now weaker than hardened POST path, P2 backend-engineer ~3h. Both promoted directly to Sprint 22b as READY, 2026-07-02.) (449–471 = 2026-07-01 Full-Stack Audit Remediation epic, chartered directly into backlog/QUEUE.md "Sprint 22b" as READY/BACKLOG tickets rather than as stubs here — FOLLOW-449 F-02 intent_events prod migration+de-silence [P0], 450 F-06 enable feedback/bandit loop [P0], 451 F-05 real API-key adapt auth [P0], 452 F-08 holdout archetype logging [P1], 453 F-07 analytics UI fail-loud + kill /api/analytics mock [P1], 454 F-01 SSR-cookie auth on tenant dashboard/analytics APIs [P1], 455 F-20 DSR OTP CSPRNG+rate-limit+erasure coverage [P1], 456 F-13 tenant-isolation holes [P1], 457 F-11 grounding fail-loud + directive whitelist [P1], 458 F-03 deploy stream-consumer + data-quality cron [P1], 459 F-09 ingest ACK-before-insert [P1], 460 F-10 finish v2.0 permanent description cache [P1], 461 F-04 event-schema reconciliation [P2], 462 F-14 CH DSR param-binding [P2], 463 F-17 verified_facts_used writer [P2], 464 F-15 pg description cache model-key [P2], 465 F-18 NEUTRAL negative-cache [P2], 466 F-21 feedback HMAC replay + timingSafeEqual [P2], 467 F-12 dead-scaffold cleanup [P3], 468 F-16 adapt-description buildEndpoint+encode [P3], 469 F-19 bundle headroom [P3], 470 refresh §Snapshot.1/README/CLAUDE.md + promote FOLLOW-380 [P2], 471 clean re-audit acceptance gate [P1, depends on all]). Original pointer: 448 = RETRO-146 §4e/§9 — branch-first worker discipline [git checkout -b as the worker's FIRST action before any edit] + mechanical guardrail [pre-edit/SessionStart hook refusing edits or auto-branching when HEAD==main so a stalled worker can't strand uncommitted work on the main working tree, where a later branch-from-main silently absorbs/discards it] + orchestrator "recovered/handed-off work must be independently re-verified, not trusted" checklist; P2 devops-engineer/pm-orchestrator ~3h; source: backend-engineer stalled 600s on FOLLOW-442/PR #406, left correct impl UNCOMMITTED on the main working tree, main session recovered+re-verified typecheck+lint+11/11 holdout tests). 447 = audit sibling ci.yml gates for the 3 INERT-GATE failure modes [#1 build-without-@estalara/shared, #2 bare-specifier-from-repo-root, #3 socket-hang] + add defense-in-depth timeout-minutes to ALL jobs [only archetype-embeddings-not-null has one]; optional negative-control for the archetype gate; P3 devops-engineer ~2h; source RETRO-145 §4a LG-3/§5b; continue-on-error scoping is SEPARATE = FOLLOW-446). 446 = harden archetype-embeddings-not-NULL CI gate against silent blind-spots [shared-build-order fixed PR #402/#403 follow-up + continue-on-error swallows gate-broken vs soft-skip]; P3 devops-engineer ~1h. 445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
 P1 backend-engineer ~1h). 441 = AUD-03/F-06 — prod CH write-verification canary; P0 data-engineer
 ~3h). 440 = AUD-02/F-02 — fix assigned_at→ts + latency_ms phantom columns; P0 backend-engineer
 ~2h). 439 = AUD-01/F-01 — fix lift route buildMockLiftRows fabrication + dqsUnavailable=false;

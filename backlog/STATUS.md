@@ -1,4 +1,71 @@
-# Status — 2026-07-02 (Sprint 22b OPEN — PR #414 merged; FOLLOW-451 IN_PROGRESS)
+# Status — 2026-07-02 (Sprint 22b OPEN — PR #416 merged; FOLLOW-452/453 IN_PROGRESS)
+
+## SESSION 5 (2026-07-02) — FOLLOW-451 DONE, two residuals filed, FOLLOW-450 decoupled, FOLLOW-452/453 delegated
+
+**Read state first (step 1):** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md`, `backlog/HANDOFFS.md`,
+`git log --oneline -20`, `gh pr list --state open` (0 open PRs at session start). Three OPEN
+escalations re-confirmed non-blocking against precedent already recorded in this file (ESC-020,
+ESC-028, ESC-034 — all operator-action-pending, none is an unresolved architectural/product
+decision). No new escalation opened. Proceeded with bookkeeping + delegation.
+
+**FOLLOW-451 marked DONE.** PR #416 confirmed MERGED (`gh pr view 416`) at merge commit
+`0e994156773c58c04c21f092233e5dc28e7a34d9` (matches `main` HEAD `0e99415` at session start),
+2026-07-01T23:37:35Z. Real API-key auth added to `POST /api/adapt` alongside the existing demo-JWT
+path via the shared ADR-0015 `resolveApiKey()`; 403 on API-key-path `body.tenant_id` mismatch;
+`resolveApiKey()` DB error fails loud (401 + Sentry, tags `area:adapt kind:api_key_auth_db_error`)
+per Rule K.2. Evidence pulled from PR #416's own body: 13 tests (6 new `route.follow451.test.ts` + 7
+unmodified `route.demo-auth.test.ts` regressions), CI counter 0/5, fix-iterations 0/3.
+
+**Two residuals filed as new FOLLOW tickets** (next-free-pointer confirmed at 472 via
+`backlog/FOLLOW_UPS.md` tail comment before writing):
+
+- **FOLLOW-472** (P3, backend-engineer) — demo-JWT path has no tenant_id-claim-vs-body mismatch
+  check when the JWT carries no `tenant_id` claim (PR #416 scope decision §1, deliberately not
+  closed by FOLLOW-451 to avoid breaking the FOLLOW-260 supersede-only test). Low risk (demo JWTs
+  are server-minted with the claim today).
+- **FOLLOW-473** (P2, backend-engineer) — `GET /api/adapt` still uses `ADAPT_API_KEY` presence-only
+  auth (degrades to "any non-empty bearer" when unset) + spoofable `x-tenant-id` fallback (PR #416
+  scope decision §2) — now materially weaker than the hardened POST path.
+
+Both stubbed in `backlog/FOLLOW_UPS.md` with source/scope/AC, next-free pointer bumped to 474, AND
+promoted directly into `backlog/QUEUE.md` Sprint 22b as `status: READY` (not left as stubs — the
+user's request was explicit that these should be immediately actionable).
+
+**FOLLOW-450 `depends_on` loosened from `[FOLLOW-449]` to `[]`.** Confirmed by re-reading the prior
+session's own flagged note (session 4, this file) that the bandit/feedback subsystem
+(`ab_bandit_weights`, `conversion_labels`) is Postgres-only with zero code dependency on
+`intent_events`/ClickHouse migration 0015 (FOLLOW-449's scope). Left a note in QUEUE.md that
+FOLLOW-450's CODE can proceed now; only its production go-live (`FEEDBACK_ENDPOINT_ENABLED` flip +
+`OPS_TENANT_ID`/`ADAPT_API_KEY` Doppler prd provisioning) remains operator-gated — same class as
+FOLLOW-449's own operator leg, schedulable together but not a technical blocker.
+
+**FOLLOW-452 and FOLLOW-453 marked IN_PROGRESS**, delegated to backend-engineer on isolated worktree
+branches:
+
+- `backend-engineer/FOLLOW-452-holdout-archetype-logging` — table row: "ingest worker,
+  control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks ->
+  backend-engineer".
+- `backend-engineer/FOLLOW-453-analytics-fail-loud-ui` — same table row.
+
+Both notes in QUEUE.md flag the ISOLATED-WORKTREE requirement explicitly: the FOLLOW-451/RETRO-146
+near-miss showed a shared working directory lets one worker's branch-switch strand another's
+uncommitted commit on `main`. Each worker gets its own `git worktree` checkout on its own branch
+before either touches a file — this is the human's responsibility when spawning (delegation scopes
+below), not something this PM session executes.
+
+**IN_PROGRESS count after this session: 3** — FOLLOW-452 (backend-engineer), FOLLOW-453
+(backend-engineer), TICKET-PILOT-001 (stale since 2026-05-29, unchanged, still flagged for a future
+queue-hygiene pass). This is AT the 3-ticket cap — acceptable for this batch per the user's explicit
+instruction, but no further ticket may be delegated until one of these three clears.
+
+**CI check-count this session: 0/5** (docs-only bookkeeping PR about to be opened; will validate its
+own CI once pushed). Fix-iteration counter: 0/3.
+
+**Branch-first discipline (FOLLOW-448) applied:** branched
+`pm-orchestrator/FOLLOW-451-bookkeeping-0702` off `main` (`0e99415`) before any edit, per the
+mandated first action.
+
+---
 
 ## SESSION 4 FOLLOW-UP (2026-07-02) — PR #414 merged, CI green confirmed, worker branch live
 
@@ -267,17 +334,23 @@ FOLLOW-392 (devops+ml, P1, promoted).
 | FOLLOW-442     | 0/5            | 0/3                 | IN_PROGRESS — PR #406 open, CI running (owned by main session; PM-orchestrator instructed NOT to touch/re-validate/merge this ticket).                         |
 | FOLLOW-447     | 0/5            | 0/3                 | READY — P3, not pilot-blocking. depends_on FOLLOW-446 (DONE).                                                                                                  |
 | FOLLOW-364     | 0/5            | 0/3                 | IN_PROGRESS — delegated to ml-engineer 2026-07-01 (this PM pass). Docs-only §D.6 coverage-summary fix, premise re-verified against docs/MASTER_DESIGN.md:1954. |
+| FOLLOW-451     | 0/5            | 0/3                 | DONE — PR #416 merged 2026-07-01T23:37:35Z (commit 0e99415). Real API-key auth on POST /api/adapt.                                                             |
+| FOLLOW-450     | 0/5            | 0/3                 | READY — depends_on loosened to [] 2026-07-02 (Postgres-only, no code coupling to FOLLOW-449).                                                                  |
+| FOLLOW-452     | 0/5            | 0/3                 | IN_PROGRESS — delegated to backend-engineer 2026-07-02, isolated worktree.                                                                                     |
+| FOLLOW-453     | 0/5            | 0/3                 | IN_PROGRESS — delegated to backend-engineer 2026-07-02, isolated worktree.                                                                                     |
+| FOLLOW-472     | 0/5            | 0/3                 | READY — filed + promoted 2026-07-02 (FOLLOW-451 residual, demo-JWT mismatch check).                                                                            |
+| FOLLOW-473     | 0/5            | 0/3                 | READY — filed + promoted 2026-07-02 (FOLLOW-451 residual, GET auth parity).                                                                                    |
 
 ---
 
-## Open escalations
+## Open escalations (re-checked 2026-07-02, session 5)
 
 | ESC     | Age | Summary                                                         | Blocking pipeline?                          |
 | ------- | --- | --------------------------------------------------------------- | ------------------------------------------- |
-| ESC-020 | 25d | Estalara-app DOM hooks not deployed to prod                     | No (operator action)                        |
-| ESC-028 | 8d  | Upstash Redis secrets for smoke CI                              | No (soft-skip)                              |
-| ESC-034 | 1d  | Modal embed-seed consumer operator go-live                      | No (operator action, code ready)            |
-| ESC-035 | 0d  | RESOLVED 2026-07-01 — feedback HMAC forgeable auth (code fixed) | No (only a flip-flag operator step remains) |
+| ESC-020 | 26d | Estalara-app DOM hooks not deployed to prod                     | No (operator action)                        |
+| ESC-028 | 9d  | Upstash Redis secrets for smoke CI                              | No (soft-skip)                              |
+| ESC-034 | 2d  | Modal embed-seed consumer operator go-live                      | No (operator action, code ready)            |
+| ESC-035 | 1d  | RESOLVED 2026-07-01 — feedback HMAC forgeable auth (code fixed) | No (only a flip-flag operator step remains) |
 
 ---
 

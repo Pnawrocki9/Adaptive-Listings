@@ -1362,6 +1362,90 @@ describe('fetchDirectives — FOLLOW-041 feedback ping on outcome event', () => 
     warnSpy.mockRestore();
   });
 
+  it('FOLLOW-450 AC3: a non-2xx feedback response is reported to Sentry as a breadcrumb', async () => {
+    const sessionId = 'NON_2XX_SESSION';
+    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
+
+    const responseWithVariant: AdaptResponse = {
+      ...MOCK_RESPONSE,
+      session_id: sessionId,
+      variant: 'v1',
+    };
+
+    const mockFetch = vi.fn();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(responseWithVariant),
+    });
+    // Feedback ping resolves with a 503 — e.g. FEEDBACK_ENDPOINT_ENABLED unset.
+    // Before FOLLOW-450 this was completely silent (not even console.warn).
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const addBreadcrumb = vi.fn();
+    (globalThis as { Sentry?: { addBreadcrumb: typeof addBreadcrumb } }).Sentry = {
+      addBreadcrumb,
+    };
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com/api',
+      tenantId,
+    };
+    const session: SessionState = { ...SESSION, sessionId };
+
+    await fetchDirectives(config, session, 'listing_list');
+
+    document.dispatchEvent(new Event('inquiry.completed'));
+    // Flush the HMAC → fetch → .then(status check) chain (mirrors the network-error test above).
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+
+    expect(addBreadcrumb).toHaveBeenCalledWith({
+      category: 'estalara.feedback',
+      message: 'feedback ping rejected: HTTP 503',
+      level: 'error',
+      data: { status: 503, tenant_id: tenantId },
+    });
+
+    delete (globalThis as { Sentry?: unknown }).Sentry;
+  });
+
+  it('FOLLOW-450 AC3: does not throw when Sentry is absent and the response is non-2xx', async () => {
+    const sessionId = 'NON_2XX_NO_SENTRY_SESSION';
+    const tenantId = '550e8400-e29b-41d4-a716-446655440000';
+
+    const responseWithVariant: AdaptResponse = {
+      ...MOCK_RESPONSE,
+      session_id: sessionId,
+      variant: 'v1',
+    };
+
+    const mockFetch = vi.fn();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(responseWithVariant),
+    });
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+    vi.stubGlobal('fetch', mockFetch);
+    delete (globalThis as { Sentry?: unknown }).Sentry;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const config: SdkConfig = {
+      ...BASE_CONFIG,
+      decisionApiUrl: 'https://decision.estalara.com/api',
+      tenantId,
+    };
+    const session: SessionState = { ...SESSION, sessionId };
+
+    await fetchDirectives(config, session, 'listing_list');
+    document.dispatchEvent(new Event('inquiry.completed'));
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+
+    expect(warnSpy).toHaveBeenCalledWith('[estalara] feedback ping rejected: HTTP 401');
+
+    warnSpy.mockRestore();
+  });
+
   it('FOLLOW-259: includes prediction_id and lead_id in feedback ping body', async () => {
     const sessionId = 'FOLLOW259_SESSION';
     const tenantId = '550e8400-e29b-41d4-a716-446655440000';

@@ -92,6 +92,30 @@ async function computeHmacSha256Hex(secret: string, message: string): Promise<st
 }
 
 /**
+ * Report a non-2xx feedback response to Sentry as a breadcrumb (FOLLOW-450 AC3).
+ *
+ * Before this, a disabled/misconfigured feedback endpoint (e.g. a 503 from
+ * `FEEDBACK_ENDPOINT_ENABLED` being unset, or a 401 from a rotated key) resolved
+ * the fetch promise successfully and was never surfaced anywhere — not even
+ * console.warn — so a re-disabled endpoint in production was invisible until
+ * someone manually checked the bandit weights. A breadcrumb (not an exception —
+ * this is an expected server response, not a JS error) attaches to the next
+ * captured Sentry event for this session, giving operators a trail.
+ *
+ * @internal
+ */
+function reportFeedbackPingRejected(status: number, tenantId: string | undefined): void {
+  console.warn(`[estalara] feedback ping rejected: HTTP ${String(status)}`);
+  const gSentry = (globalThis as { Sentry?: { addBreadcrumb?: (b: unknown) => void } }).Sentry;
+  gSentry?.addBreadcrumb?.({
+    category: 'estalara.feedback',
+    message: `feedback ping rejected: HTTP ${String(status)}`,
+    level: status >= 500 ? 'error' : 'warning',
+    data: { status, tenant_id: tenantId },
+  });
+}
+
+/**
  * Post a conversion signal to the feedback endpoint. Fire-and-forget — never awaited,
  * never throws. Network errors are logged to console.warn only.
  *
@@ -100,6 +124,11 @@ async function computeHmacSha256Hex(secret: string, message: string): Promise<st
  * `X-Estalara-Signature` header. When SubtleCrypto is unavailable (rare legacy
  * environments), the ping is skipped to avoid sending an unsigned request that
  * the server would reject.
+ *
+ * FOLLOW-450 AC3: a non-2xx HTTP response (e.g. the 503 the endpoint returns
+ * while `FEEDBACK_ENDPOINT_ENABLED` is unset, or a 401 on an unknown/revoked
+ * key) is reported to Sentry as a breadcrumb via `reportFeedbackPingRejected`
+ * so a re-disabled endpoint is observable instead of silently dropped.
  */
 function postFeedbackPing(
   config: SdkConfig,
@@ -141,6 +170,10 @@ function postFeedbackPing(
           'X-Estalara-Signature': signatureHex,
         },
         body,
+      }).then((res) => {
+        if (!res.ok) {
+          reportFeedbackPingRejected(res.status, config.tenantId);
+        }
       });
     })
     .catch((err: unknown) => {

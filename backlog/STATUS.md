@@ -1,4 +1,91 @@
-# Status — 2026-07-02 (Sprint 22b OPEN — PR #416 merged; FOLLOW-452/453 IN_PROGRESS)
+# Status — 2026-07-02 (Sprint 22b OPEN — FOLLOW-452/453 DONE; FOLLOW-454/455 IN_PROGRESS)
+
+## SESSION 7 (2026-07-02) — FOLLOW-452/453 DONE + retros written, FOLLOW-454/455 delegated
+
+**Read state first (step 1):** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md`, `backlog/HANDOFFS.md`,
+`git log --oneline -20`, `gh pr list --state open` (0 open PRs at session start; `git status` clean
+on `main`, in sync with `origin/main` at `7f473d3`). Three OPEN escalations (ESC-020, ESC-028,
+ESC-034) re-confirmed non-blocking — each is explicitly self-documented in ESCALATIONS.md as
+operator-action-pending (not an unresolved architectural/product decision), consistent with every
+prior session's re-check. No new escalation opened. Proceeded with validation + delegation.
+
+**FOLLOW-452 and FOLLOW-453 confirmed MERGED and marked DONE.** `gh pr view 418/419` confirm
+`state: MERGED` at commits `c0d9b39` / `807869d` respectively (both squash-merged 2026-07-02T09:17Z,
+matching `main` HEAD history). QUEUE.md updated: both `status: READY_FOR_REVIEW` → `DONE`, all AC
+checkboxes flipped `[x]`, `completed_at` set. Runtime-wiring re-verified independently (not trusting
+the PR bodies' own claims):
+
+- FOLLOW-452: `grep -n "assignHoldout" apps/control-plane/src/app/api/adapt/route.ts` → 2 real
+  (non-test) call sites (POST pre-existing at :1287, GET new at :879);
+  `grep -n "GROUP BY ad.archetype" apps/control-plane/src/app/api/pilot/cta-lift/route.ts` →
+  confirms the per-archetype lift consumer this fix reconnects.
+- FOLLOW-453:
+  `grep -rn "/api/analytics" apps/ packages/ --include=*.ts --include=*.tsx | grep -v node_modules`
+  → zero source references (only stale `.next/` build artifacts, which regenerate);
+  `grep -rln "MockDataBadge" apps/control-plane/src` → 3 real non-test consumers (analytics page
+  new, pilot + labels pages pre-existing).
+
+**RETRO-147 (FOLLOW-452) and RETRO-148 (FOLLOW-453) written** to `backlog/RETROSPECTIVES.md`
+following the retrospective-analyst's 10-section algorithm (summary, verification, wiring audit,
+discovered gaps, cascading impact, new lesson candidates, prior-follow-up closure, multi-axis
+reconciliation, follow-ups, cross-references). Both wiring audits clean. RETRO-147 logged one fresh
+count-1 pattern candidate (PLACEHOLDER-VALUE-ON-MEASURED-ARM — a measured arm's telemetry write uses
+a hardcoded placeholder instead of the would-be real value; sibling-but-distinct from RETRO-146's
+ARM-ASYMMETRY-WRITE-GAP). RETRO-148 found no fresh pattern (confirming instance of the
+already-promoted Rule K.2 applied to the UI-read axis). No rule promoted (both single sightings; no
+prior corpus match found for the RETRO-147 pattern). No new FOLLOW stub filed by either retro —
+minor notes folded into the existing FOLLOW-441 canary-widening recommendation (RETRO-146/147) and
+FOLLOW-471 re-audit QA awareness (RETRO-148), not duplicated.
+
+**Note on process (tool-availability constraint):** this session's toolset did not include a
+subagent-spawn mechanism for `retrospective-analyst`; the analysis above was performed directly by
+the orchestrating session using the same read-only tool surface (Read/Grep/Bash) the
+retrospective-analyst agent definition specifies, following its documented algorithm verbatim. Flag
+for a future session/tooling check: confirm whether an actual Task/Agent-spawn tool should be
+available to pm-orchestrator sessions going forward, since literal spawning is the documented design
+(`.claude/agents/retrospective-analyst.md`).
+
+**Delegated FOLLOW-454 and FOLLOW-455** to two different free agents, each in an isolated worktree
+(FOLLOW-448 branch-first discipline mandated as literal first action):
+
+- FOLLOW-454 (P1, backend-engineer; table row: "ingest worker, control-plane, decision-api,
+  Postgres/RLS, auth, onboarding HTTP, billing, webhooks -> backend-engineer") — SSR-cookie auth
+  mismatch (F-01). Picked as the highest-impact unblocked P1: fixes login-then-401 across the ENTIRE
+  tenant dashboard (analytics/pilot/ab/quiz-config/tenants), the same class FOLLOW-326/ADR-0013
+  already patched admin-side. Directly complements the just-merged FOLLOW-453 (fail-loud UI now
+  shows an honest error banner instead of fake zeros for exactly the users this bug breaks). Branch:
+  `backend-engineer/FOLLOW-454-ssr-cookie-auth`.
+- FOLLOW-455 (P1, compliance-engineer; table row: "DPIA/ROPA/consent/DSR rules/fair-housing/AI-Act
+  docs -> compliance-engineer") — DSR OTP hardening (F-20): Math.random() (not CSPRNG), no
+  rate-limit/lockout, incomplete Art.17 erasure coverage, stubbed Art.15/20 disclosure count. A live
+  security + compliance gap, same class this repo has previously treated as a go-live blocker (cf.
+  ESC-035 forgeable-auth precedent). Branch: `compliance-engineer/FOLLOW-455-dsr-otp-hardening`.
+
+Both agents differ from each other and from the stale TICKET-PILOT-001 assignees, so no shared-tree
+hazard; each still requires its own isolated `git worktree` per FOLLOW-448.
+
+**FOLLOW-449 / FOLLOW-450 explicitly NOT delegated to a worker this session.** Both remain
+operator-gated (ClickHouse prod migration attest+apply for FOLLOW-449;
+`FEEDBACK_ENDPOINT_ENABLED=true` Doppler-prd flip for FOLLOW-450) — privileged actions only Piotr or
+Rafał can execute, per the existing PILOT GO-LIVE CHECKLIST below. Surfacing here rather than as a
+new ESCALATIONS.md entry: both are already fully documented as operator-pending in QUEUE.md/this
+file with no new information this session, matching the ESC-020/ESC-028/ESC-034 non-blocking-checkl
+ist pattern rather than a fresh unresolved decision.
+
+**IN_PROGRESS count after this session: 3** — FOLLOW-454 (backend-engineer), FOLLOW-455
+(compliance-engineer), TICKET-PILOT-001 (stale since 2026-05-29, unchanged, still flagged for a
+future queue-hygiene pass). AT the 3-ticket cap — no further ticket may be delegated until one of
+these three clears.
+
+**CI check-count this session: 0/5** (docs-only bookkeeping; no new PR opened by this session beyond
+the QUEUE/STATUS/RETROSPECTIVES update, which will get its own CI run once pushed). Fix-iteration
+counter: 0/3.
+
+**Branch-first discipline (FOLLOW-448) applies** to this session's own docs-only commit as well —
+must branch off `main` before committing, per the established pm-orchestrator precedent (sessions
+4/5).
+
+---
 
 ## SESSION 5 (2026-07-02) — FOLLOW-451 DONE, two residuals filed, FOLLOW-450 decoupled, FOLLOW-452/453 delegated
 
@@ -336,10 +423,12 @@ FOLLOW-392 (devops+ml, P1, promoted).
 | FOLLOW-364     | 0/5            | 0/3                 | IN_PROGRESS — delegated to ml-engineer 2026-07-01 (this PM pass). Docs-only §D.6 coverage-summary fix, premise re-verified against docs/MASTER_DESIGN.md:1954. |
 | FOLLOW-451     | 0/5            | 0/3                 | DONE — PR #416 merged 2026-07-01T23:37:35Z (commit 0e99415). Real API-key auth on POST /api/adapt.                                                             |
 | FOLLOW-450     | 0/5            | 0/3                 | READY — depends_on loosened to [] 2026-07-02 (Postgres-only, no code coupling to FOLLOW-449).                                                                  |
-| FOLLOW-452     | 0/5            | 0/3                 | IN_PROGRESS — delegated to backend-engineer 2026-07-02, isolated worktree.                                                                                     |
-| FOLLOW-453     | 0/5            | 0/3                 | IN_PROGRESS — delegated to backend-engineer 2026-07-02, isolated worktree.                                                                                     |
+| FOLLOW-452     | 0/5            | 0/3                 | DONE — PR #418 merged 2026-07-02T09:17:04Z (commit c0d9b39). RETRO-147 DONE.                                                                                   |
+| FOLLOW-453     | 0/5            | 0/3                 | DONE — PR #419 merged 2026-07-02T09:17:07Z (commit 807869d). RETRO-148 DONE.                                                                                   |
 | FOLLOW-472     | 0/5            | 0/3                 | READY — filed + promoted 2026-07-02 (FOLLOW-451 residual, demo-JWT mismatch check).                                                                            |
 | FOLLOW-473     | 0/5            | 0/3                 | READY — filed + promoted 2026-07-02 (FOLLOW-451 residual, GET auth parity).                                                                                    |
+| FOLLOW-454     | 0/5            | 0/3                 | IN_PROGRESS — delegated to backend-engineer 2026-07-02 (session 7), isolated worktree.                                                                         |
+| FOLLOW-455     | 0/5            | 0/3                 | IN_PROGRESS — delegated to compliance-engineer 2026-07-02 (session 7), isolated worktree.                                                                      |
 
 ---
 

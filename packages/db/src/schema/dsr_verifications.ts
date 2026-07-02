@@ -17,7 +17,7 @@
  * @module @estalara/db/schema/dsr_verifications
  */
 
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { tenants } from './tenants.js';
 
 export const dsrVerifications = pgTable(
@@ -72,12 +72,24 @@ export const dsrVerifications = pgTable(
      */
     durableLeadId: text('durable_lead_id'),
 
+    /**
+     * FOLLOW-455 / audit F-20: number of failed OTP-verification attempts
+     * against this specific request. Incremented atomically on every wrong
+     * guess. Once it reaches `MAX_OTP_ATTEMPTS` (see
+     * `apps/control-plane/src/lib/dsr-verify.ts`) the row is locked — no
+     * further verification attempts are accepted, even with the correct
+     * code. This bounds the brute-force search space for a single request
+     * to `MAX_OTP_ATTEMPTS` guesses instead of the full 6-digit (1e6) space.
+     */
+    attemptCount: integer('attempt_count').notNull().default(0),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('dsr_verifications_tenant_session_idx').on(t.tenantId, t.sessionId),
     index('dsr_verifications_otp_hash_idx').on(t.otpHash),
     index('dsr_verifications_expires_at_idx').on(t.expiresAt),
+    index('dsr_verifications_tenant_email_created_idx').on(t.tenantId, t.email, t.createdAt),
   ],
 );
 

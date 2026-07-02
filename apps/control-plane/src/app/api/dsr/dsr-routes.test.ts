@@ -44,6 +44,7 @@ vi.mock('next/server', async () => {
 
 import { NextRequest, after } from 'next/server';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type * as DsrVerifyModule from '@/lib/dsr-verify';
 
 // ─── Stable mock references (vi.hoisted for hoist safety) ────────────────────
 
@@ -58,6 +59,9 @@ const {
   mockGetAuthClaims,
   mockIsTenantClaims,
   mockHashOtp,
+  mockVerifyAndConsumeOtp,
+  mockResolveIntentSessionId,
+  mockCheckInitiateRateLimit,
 } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
   mockInsert: vi.fn(),
@@ -69,6 +73,12 @@ const {
   mockGetAuthClaims: vi.fn(),
   mockIsTenantClaims: vi.fn(),
   mockHashOtp: vi.fn().mockImplementation((otp: string) => `hash_of_${otp}`),
+  // FOLLOW-455: request-scoped OTP verification is extracted into its own
+  // module so route tests don't need to fabricate the full select/update
+  // chain for the OTP check — see apps/control-plane/src/lib/dsr-verify.ts.
+  mockVerifyAndConsumeOtp: vi.fn(),
+  mockResolveIntentSessionId: vi.fn().mockResolvedValue(null),
+  mockCheckInitiateRateLimit: vi.fn().mockResolvedValue({ allowed: true, count: 0 }),
 }));
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -125,6 +135,17 @@ vi.mock('@estalara/db', () => ({
     sessionId: 'session_id',
     tenantId: 'tenant_id',
   },
+  // FOLLOW-455 / audit F-20 — used by POST /api/dsr/erase for quiz_completions
+  // and intent_sessions erasure cascades.
+  quizCompletions: {
+    sessionId: 'session_id',
+    tenantId: 'tenant_id',
+  },
+  intentSessions: {
+    id: 'id',
+    sessionId: 'session_id',
+    tenantId: 'tenant_id',
+  },
   eq: vi.fn((col: unknown, val: unknown) => ({ col, val, _op: 'eq' })),
   and: vi.fn((...args: unknown[]) => ({ args, _op: 'and' })),
   ne: vi.fn((col: unknown, val: unknown) => ({ col, val, _op: 'ne' })),
@@ -141,6 +162,27 @@ vi.mock('@/lib/dsr-otp', () => ({
   verifyOtp: vi.fn(),
 }));
 
+// FOLLOW-455: keep the real (pure) dsrVerifyFailureResponse mapper; only
+// mock verifyAndConsumeOtp so tests configure {ok, record|reason} directly
+// instead of fabricating the underlying select/update chain.
+vi.mock('@/lib/dsr-verify', async (importOriginal) => {
+  const real = await importOriginal<typeof DsrVerifyModule>();
+  return {
+    ...real,
+    verifyAndConsumeOtp: mockVerifyAndConsumeOtp,
+  };
+});
+
+vi.mock('@/lib/intent-session-lookup', () => ({
+  resolveIntentSessionId: mockResolveIntentSessionId,
+}));
+
+vi.mock('@/lib/dsr-rate-limit', () => ({
+  checkInitiateRateLimit: mockCheckInitiateRateLimit,
+  INITIATE_RATE_LIMIT_MAX: 5,
+  INITIATE_RATE_LIMIT_WINDOW_MS: 60 * 60 * 1000,
+}));
+
 vi.mock('@/lib/email/resend', () => ({
   sendEmail: mockSendEmail,
 }));
@@ -154,6 +196,7 @@ vi.mock('./_clickhouse', () => ({
     expired: 'expired',
     failed: 'failed',
     crm_unverifiable: 'crm_unverifiable',
+    rate_limited: 'rate_limited',
   },
 }));
 
@@ -268,6 +311,7 @@ describe('POST /api/dsr/initiate', () => {
     mockWriteDsrAuditLog.mockResolvedValue(undefined);
     mockGetAuthClaims.mockResolvedValue(TENANT_CLAIMS);
     mockIsTenantClaims.mockReturnValue(true);
+    mockCheckInitiateRateLimit.mockResolvedValue({ allowed: true, count: 0 });
   });
 
   it('returns 401 when Authorization header is missing', async () => {
@@ -345,6 +389,26 @@ describe('POST /api/dsr/initiate', () => {
       }),
     );
   });
+
+  // ─── FOLLOW-455 / audit F-20: anti email-bomb rate limiting ────────────────
+
+  it('returns 429 and does NOT send an email when the rate limit is exceeded', async () => {
+    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }]));
+    mockCheckInitiateRateLimit.mockResolvedValueOnce({ allowed: false, count: 5 });
+
+    const { POST } = await import('./initiate/route.js');
+    const req = makeRequest('POST', '/api/dsr/initiate', {
+      body: { session_id: 'sess-valid-001', email: 'bombed@example.com', dsr_type: 'access' },
+      headers: { Authorization: 'Bearer jwt_token' },
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('RATE_LIMITED');
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
 });
 
 // ─── GET /api/dsr/access ──────────────────────────────────────────────────────
@@ -356,7 +420,7 @@ describe('GET /api/dsr/access', () => {
     mockWriteDsrAuditLog.mockResolvedValue(undefined);
   });
 
-  it('returns 400 when token param is missing', async () => {
+  it('returns 400 when token or request_id param is missing', async () => {
     const { GET } = await import('./access/route.js');
     const req = makeRequest('GET', '/api/dsr/access');
     const res = await GET(req);
@@ -364,24 +428,25 @@ describe('GET /api/dsr/access', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 404 when OTP is not found', async () => {
-    mockSelect.mockReturnValue(buildChain([]));
+  it('returns 404 when the DSR request is not found (verifyAndConsumeOtp: not_found)', async () => {
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: false, reason: 'not_found' });
 
     const { GET } = await import('./access/route.js');
-    const req = makeRequest('GET', '/api/dsr/access', { searchParams: { token: '000000' } });
+    const req = makeRequest('GET', '/api/dsr/access', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '000000' },
+    });
     const res = await GET(req);
 
     expect(res.status).toBe(404);
   });
 
-  it('returns 401 with token_expired when OTP is expired', async () => {
-    const expiredRecord = makeValidRecord('access', {
-      expiresAt: new Date(Date.now() - 1000), // 1 second in the past
-    });
-    mockSelect.mockReturnValueOnce(buildChain([expiredRecord]));
+  it('returns 401 with token_expired when the request has expired', async () => {
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: false, reason: 'expired' });
 
     const { GET } = await import('./access/route.js');
-    const req = makeRequest('GET', '/api/dsr/access', { searchParams: { token: '123456' } });
+    const req = makeRequest('GET', '/api/dsr/access', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await GET(req);
 
     expect(res.status).toBe(401);
@@ -389,14 +454,13 @@ describe('GET /api/dsr/access', () => {
     expect(body.error.code).toBe('token_expired');
   });
 
-  it('returns 401 with token_already_used when OTP has been consumed', async () => {
-    const usedRecord = makeValidRecord('access', {
-      usedAt: new Date(Date.now() - 60_000), // used 1 min ago
-    });
-    mockSelect.mockReturnValueOnce(buildChain([usedRecord]));
+  it('returns 401 with token_already_used when the request has already been consumed', async () => {
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: false, reason: 'already_used' });
 
     const { GET } = await import('./access/route.js');
-    const req = makeRequest('GET', '/api/dsr/access', { searchParams: { token: '123456' } });
+    const req = makeRequest('GET', '/api/dsr/access', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await GET(req);
 
     expect(res.status).toBe(401);
@@ -404,8 +468,38 @@ describe('GET /api/dsr/access', () => {
     expect(body.error.code).toBe('token_already_used');
   });
 
-  it('returns 200 with correct shape for a valid OTP', async () => {
+  it('returns 429 with too_many_attempts when the request is locked out (FOLLOW-455)', async () => {
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: false, reason: 'locked' });
+
+    const { GET } = await import('./access/route.js');
+    const req = makeRequest('GET', '/api/dsr/access', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
+    const res = await GET(req);
+
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('too_many_attempts');
+  });
+
+  it('returns 401 with invalid_code when a wrong code is submitted for a valid request_id (FOLLOW-455)', async () => {
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: false, reason: 'invalid_code' });
+
+    const { GET } = await import('./access/route.js');
+    const req = makeRequest('GET', '/api/dsr/access', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '000001' },
+    });
+    const res = await GET(req);
+
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('invalid_code');
+  });
+
+  it('returns 200 with correct shape for a valid (request_id, token)', async () => {
     const validRecord = makeValidRecord('access');
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
+
     const sessionRow = {
       sessionId: 'sess-abc123',
       tenantId: 'tenant-uuid-001',
@@ -421,25 +515,26 @@ describe('GET /api/dsr/access', () => {
       revokedAt: null,
     };
 
-    // Call order: dsrVerifications → update usedAt → sessionEmbeddings → consentRecords
-    //             → conversion_labels Pass A → (no Pass B: durableLeadId null)
+    // Call order (OTP verification handled by mocked verifyAndConsumeOtp,
+    // NOT via mockSelect): sessionEmbeddings → consentRecords →
+    // conversion_labels Pass A → (no Pass B: durableLeadId null)
     mockSelect
-      .mockReturnValueOnce(buildChain([validRecord])) // 1st: dsr record
-      .mockReturnValueOnce(buildChain([sessionRow])) // 2nd: session
-      .mockReturnValueOnce(buildChain([consentRow])) // 3rd: consents
-      .mockReturnValueOnce(buildChain([])); // 4th: conversion_labels Pass A (empty)
+      .mockReturnValueOnce(buildChain([sessionRow])) // 1st: session
+      .mockReturnValueOnce(buildChain([consentRow])) // 2nd: consents
+      .mockReturnValueOnce(buildChain([])); // 3rd: conversion_labels Pass A (empty)
     // Pass B skipped: durableLeadId is null.
-    mockUpdate.mockReturnValue(buildChain([]));
 
     const { GET } = await import('./access/route.js');
-    const req = makeRequest('GET', '/api/dsr/access', { searchParams: { token: '123456' } });
+    const req = makeRequest('GET', '/api/dsr/access', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await GET(req);
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       session_id: string;
       tenant_id: string;
-      events_summary: { count: number };
+      events_summary: { count: number | null };
       matched_archetype: string | null;
       consent_records: unknown[];
       conversion_labels: unknown[];
@@ -448,6 +543,9 @@ describe('GET /api/dsr/access', () => {
     expect(body).toHaveProperty('tenant_id');
     expect(body).toHaveProperty('events_summary');
     expect(body.events_summary).toHaveProperty('count');
+    // FOLLOW-455: no CLICKHOUSE_URL in the test env → count is null (Rule K.2:
+    // never fabricate a number), NOT the old hardcoded `1` stub.
+    expect(body.events_summary.count).toBeNull();
     expect(body).toHaveProperty('matched_archetype');
     expect(body).toHaveProperty('consent_records');
     expect(Array.isArray(body.consent_records)).toBe(true);
@@ -464,9 +562,10 @@ describe('POST /api/dsr/erase', () => {
     vi.clearAllMocks();
     mockHashOtp.mockImplementation((otp: string) => `hash_of_${otp}`);
     mockWriteDsrAuditLog.mockResolvedValue(undefined);
+    mockResolveIntentSessionId.mockResolvedValue(null);
   });
 
-  it('returns 400 when body is missing token', async () => {
+  it('returns 400 when body is missing request_id or token', async () => {
     const { POST } = await import('./erase/route.js');
     const req = makeRequest('POST', '/api/dsr/erase', { body: {} });
     const res = await POST(req);
@@ -474,14 +573,13 @@ describe('POST /api/dsr/erase', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 401 with token_expired when OTP is expired', async () => {
-    const expiredRecord = makeValidRecord('erase', {
-      expiresAt: new Date(Date.now() - 1000),
-    });
-    mockSelect.mockReturnValueOnce(buildChain([expiredRecord]));
+  it('returns 401 with token_expired when the request has expired', async () => {
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: false, reason: 'expired' });
 
     const { POST } = await import('./erase/route.js');
-    const req = makeRequest('POST', '/api/dsr/erase', { body: { token: '123456' } });
+    const req = makeRequest('POST', '/api/dsr/erase', {
+      body: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await POST(req);
 
     expect(res.status).toBe(401);
@@ -489,12 +587,27 @@ describe('POST /api/dsr/erase', () => {
     expect(body.error.code).toBe('token_expired');
   });
 
-  it('returns 200 and deletes session data for a valid OTP', async () => {
+  it('returns 429 with too_many_attempts when locked out (FOLLOW-455)', async () => {
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: false, reason: 'locked' });
+
+    const { POST } = await import('./erase/route.js');
+    const req = makeRequest('POST', '/api/dsr/erase', {
+      body: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('too_many_attempts');
+  });
+
+  it('returns 200 and deletes session data for a valid (request_id, token)', async () => {
     const validRecord = makeValidRecord('erase');
-    // FOLLOW-039: second select is the idempotency check against
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
+    // FOLLOW-039: select is the idempotency check against
     // dsr_clickhouse_mutations — return empty so the route issues fresh
     // (no-op when CLICKHOUSE_URL is unset) mutation rows.
-    mockSelect.mockReturnValueOnce(buildChain([validRecord])).mockReturnValueOnce(buildChain([]));
+    mockSelect.mockReturnValueOnce(buildChain([]));
     mockUpdate.mockReturnValue(buildChain([]));
     mockInsert.mockReturnValue(buildChain([]));
     mockTransaction.mockImplementation((fn: (tx: unknown) => Promise<void>) => {
@@ -503,7 +616,9 @@ describe('POST /api/dsr/erase', () => {
     });
 
     const { POST } = await import('./erase/route.js');
-    const req = makeRequest('POST', '/api/dsr/erase', { body: { token: '123456' } });
+    const req = makeRequest('POST', '/api/dsr/erase', {
+      body: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await POST(req);
 
     expect(res.status).toBe(200);
@@ -529,8 +644,10 @@ describe('GET /api/dsr/portability', () => {
     mockWriteDsrAuditLog.mockResolvedValue(undefined);
   });
 
-  it('returns 200 with Content-Disposition attachment header for a valid OTP', async () => {
+  it('returns 200 with Content-Disposition attachment header for a valid (request_id, token)', async () => {
     const validRecord = makeValidRecord('portability');
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
+
     const sessionRow = {
       sessionId: 'sess-abc123',
       tenantId: 'tenant-uuid-001',
@@ -541,14 +658,14 @@ describe('GET /api/dsr/portability', () => {
     };
 
     mockSelect
-      .mockReturnValueOnce(buildChain([validRecord])) // dsr record
       .mockReturnValueOnce(buildChain([sessionRow])) // session
       .mockReturnValueOnce(buildChain([])) // consents (empty)
       .mockReturnValueOnce(buildChain([])); // conversion_labels Pass A (empty; no Pass B: durableLeadId null)
-    mockUpdate.mockReturnValue(buildChain([]));
 
     const { GET } = await import('./portability/route.js');
-    const req = makeRequest('GET', '/api/dsr/portability', { searchParams: { token: '123456' } });
+    const req = makeRequest('GET', '/api/dsr/portability', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await GET(req);
 
     expect(res.status).toBe(200);
@@ -580,17 +697,19 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
   it('(a) returns SDK-ping labels when durable_lead_id is null', async () => {
     const validRecord = makeValidRecord('access', { durableLeadId: null });
     const sdkLabel = makeLabelRow(validRecord.sessionId, 'pred-sdk-001');
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
-    // Call order: dsr record → update → session → consents → labels Pass A (SDK rows) → (no Pass B)
+    // Call order (OTP verification handled by mocked verifyAndConsumeOtp):
+    // session → consents → labels Pass A (SDK rows) → (no Pass B)
     mockSelect
-      .mockReturnValueOnce(buildChain([validRecord]))
       .mockReturnValueOnce(buildChain([])) // session (absent — that's fine)
       .mockReturnValueOnce(buildChain([])) // consents (empty)
       .mockReturnValueOnce(buildChain([sdkLabel])); // Pass A: SDK labels
-    mockUpdate.mockReturnValue(buildChain([]));
 
     const { GET } = await import('./access/route.js');
-    const req = makeRequest('GET', '/api/dsr/access', { searchParams: { token: '123456' } });
+    const req = makeRequest('GET', '/api/dsr/access', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await GET(req);
 
     expect(res.status).toBe(200);
@@ -603,19 +722,19 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     const CRM_LEAD_ID = 'crm-opaque-token-xyz';
     const validRecord = makeValidRecord('access', { durableLeadId: CRM_LEAD_ID });
     const crmLabel = makeLabelRow(CRM_LEAD_ID, 'pred-crm-001');
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
-    // Call order: dsr record → update → session → consents → Pass A (empty, no sdk labels)
-    //             → Pass B (CRM labels)
+    // Call order: session → consents → Pass A (empty, no sdk labels) → Pass B (CRM labels)
     mockSelect
-      .mockReturnValueOnce(buildChain([validRecord]))
       .mockReturnValueOnce(buildChain([])) // session (absent)
       .mockReturnValueOnce(buildChain([])) // consents (empty)
       .mockReturnValueOnce(buildChain([])) // Pass A: no SDK labels for this session
       .mockReturnValueOnce(buildChain([crmLabel])); // Pass B: CRM labels
-    mockUpdate.mockReturnValue(buildChain([]));
 
     const { GET } = await import('./access/route.js');
-    const req = makeRequest('GET', '/api/dsr/access', { searchParams: { token: '123456' } });
+    const req = makeRequest('GET', '/api/dsr/access', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await GET(req);
 
     expect(res.status).toBe(200);
@@ -629,17 +748,18 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     const validRecord = makeValidRecord('access', { durableLeadId: CRM_LEAD_ID });
     const sdkLabel = makeLabelRow(validRecord.sessionId, 'pred-sdk-002');
     const crmLabel = makeLabelRow(CRM_LEAD_ID, 'pred-crm-002');
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
     mockSelect
-      .mockReturnValueOnce(buildChain([validRecord]))
       .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
       .mockReturnValueOnce(buildChain([sdkLabel])) // Pass A: SDK label
       .mockReturnValueOnce(buildChain([crmLabel])); // Pass B: CRM label
-    mockUpdate.mockReturnValue(buildChain([]));
 
     const { GET } = await import('./access/route.js');
-    const req = makeRequest('GET', '/api/dsr/access', { searchParams: { token: '123456' } });
+    const req = makeRequest('GET', '/api/dsr/access', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await GET(req);
 
     expect(res.status).toBe(200);
@@ -654,25 +774,27 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
 
   it('(d) null durable_lead_id → only Pass A runs, no error, empty labels when no SDK rows', async () => {
     const validRecord = makeValidRecord('access', { durableLeadId: null });
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
     mockSelect
-      .mockReturnValueOnce(buildChain([validRecord]))
       .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
       .mockReturnValueOnce(buildChain([])); // Pass A: no SDK labels
     // Pass B must NOT be called when durableLeadId is null.
-    mockUpdate.mockReturnValue(buildChain([]));
 
     const { GET } = await import('./access/route.js');
-    const req = makeRequest('GET', '/api/dsr/access', { searchParams: { token: '123456' } });
+    const req = makeRequest('GET', '/api/dsr/access', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await GET(req);
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as { conversion_labels: unknown[] };
     // No labels but no error — graceful skip.
     expect(body.conversion_labels).toHaveLength(0);
-    // Pass B (5th select call) must NOT have been made.
-    expect(mockSelect).toHaveBeenCalledTimes(4);
+    // Pass B (4th select call) must NOT have been made. OTP verification is
+    // now handled by the mocked verifyAndConsumeOtp, not mockSelect.
+    expect(mockSelect).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -686,16 +808,17 @@ describe('FOLLOW-246: GET /api/dsr/portability — conversion_labels on both nam
   it('exports SDK-ping labels when durable_lead_id is null', async () => {
     const validRecord = makeValidRecord('portability', { durableLeadId: null });
     const sdkLabel = makeLabelRow(validRecord.sessionId, 'pred-sdk-port-001');
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
     mockSelect
-      .mockReturnValueOnce(buildChain([validRecord]))
       .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
       .mockReturnValueOnce(buildChain([sdkLabel])); // Pass A
-    mockUpdate.mockReturnValue(buildChain([]));
 
     const { GET } = await import('./portability/route.js');
-    const req = makeRequest('GET', '/api/dsr/portability', { searchParams: { token: '123456' } });
+    const req = makeRequest('GET', '/api/dsr/portability', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await GET(req);
 
     expect(res.status).toBe(200);
@@ -711,17 +834,18 @@ describe('FOLLOW-246: GET /api/dsr/portability — conversion_labels on both nam
     const CRM_LEAD_ID = 'crm-opaque-port-token';
     const validRecord = makeValidRecord('portability', { durableLeadId: CRM_LEAD_ID });
     const crmLabel = makeLabelRow(CRM_LEAD_ID, 'pred-crm-port-001');
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
     mockSelect
-      .mockReturnValueOnce(buildChain([validRecord]))
       .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
       .mockReturnValueOnce(buildChain([])) // Pass A: no SDK labels
       .mockReturnValueOnce(buildChain([crmLabel])); // Pass B: CRM labels
-    mockUpdate.mockReturnValue(buildChain([]));
 
     const { GET } = await import('./portability/route.js');
-    const req = makeRequest('GET', '/api/dsr/portability', { searchParams: { token: '123456' } });
+    const req = makeRequest('GET', '/api/dsr/portability', {
+      searchParams: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await GET(req);
 
     expect(res.status).toBe(200);
@@ -799,9 +923,9 @@ describe('FOLLOW-433: deleteSessionFromRedis registered via after() in DSR erase
 
   it('FOLLOW-433: POST /api/dsr/erase registers deleteSessionFromRedis via after()', async () => {
     const validRecord = makeValidRecord('erase');
-    mockSelect
-      .mockReturnValueOnce(buildChain([validRecord])) // dsr record lookup
-      .mockReturnValueOnce(buildChain([])); // idempotency check (no prior CH mutations)
+    mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
+    mockResolveIntentSessionId.mockResolvedValueOnce(null);
+    mockSelect.mockReturnValueOnce(buildChain([])); // idempotency check (no prior CH mutations)
     mockUpdate.mockReturnValue(buildChain([]));
     mockInsert.mockReturnValue(buildChain([]));
     mockTransaction.mockImplementation((fn: (tx: unknown) => Promise<void>) => {
@@ -810,7 +934,9 @@ describe('FOLLOW-433: deleteSessionFromRedis registered via after() in DSR erase
     });
 
     const { POST } = await import('./erase/route.js');
-    const req = makeRequest('POST', '/api/dsr/erase', { body: { token: '123456' } });
+    const req = makeRequest('POST', '/api/dsr/erase', {
+      body: { request_id: 'dsr-uuid-001', token: '123456' },
+    });
     const res = await POST(req);
 
     expect(res.status).toBe(200);

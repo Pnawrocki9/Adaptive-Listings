@@ -28,6 +28,7 @@ import { eq, and } from 'drizzle-orm';
 import { getAuthClaims, isTenantClaims } from '@estalara/auth';
 import { createAdminClient, sessionEmbeddings, dsrVerifications } from '@estalara/db';
 import { generateOtp, hashOtp } from '@/lib/dsr-otp';
+import { checkInitiateRateLimit } from '@/lib/dsr-rate-limit';
 import { sendEmail } from '@/lib/email/resend';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 
@@ -153,6 +154,31 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         },
       },
       { status: 404 },
+    );
+  }
+
+  // ── Rate limit (anti email-bomb, FOLLOW-455 / audit F-20) ──────────────────
+  const rateLimit = await checkInitiateRateLimit(db, tenantId, email);
+  if (!rateLimit.allowed) {
+    afterResponse(() =>
+      writeDsrAuditLog({
+        tenant_id: tenantId,
+        session_id,
+        dsr_type,
+        action: DSR_AUDIT_ACTIONS.rate_limited,
+        email,
+        requested_at: new Date(),
+      }),
+    );
+    return NextResponse.json(
+      {
+        error: {
+          code: 'RATE_LIMITED',
+          message: 'Too many data subject requests for this email. Please try again later.',
+          request_id: requestId,
+        },
+      },
+      { status: 429 },
     );
   }
 

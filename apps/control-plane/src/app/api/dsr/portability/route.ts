@@ -1,8 +1,8 @@
 /**
- * GET /api/dsr/portability?token=<OTP>
+ * GET /api/dsr/portability?request_id=<uuid>&token=<OTP>
  *
  * Returns the same data as the access endpoint but as a downloadable JSON file.
- * No JWT required — the OTP is the authorisation mechanism.
+ * No JWT required — the (request_id, OTP) pair is the authorisation mechanism.
  *
  * Differences from GET /api/dsr/access:
  *   - Response headers include Content-Disposition (attachment) and Content-Type: application/json.
@@ -14,6 +14,10 @@
  *     session_id; empty-key guard on both passes (FOLLOW-180/LG-2).
  *   Rows are union-merged and deduplicated by primary key (id).
  *
+ * FOLLOW-455 / audit F-20: verification is now request-scoped (see
+ * apps/control-plane/src/lib/dsr-verify.ts) and events_summary.count is the
+ * REAL ClickHouse count (replaces the previous `count = 1` stub).
+ *
  * @module apps/control-plane/src/app/api/dsr/portability/route
  */
 
@@ -23,74 +27,49 @@ import { afterResponse } from '@/lib/after-response';
 import { eq, and, ne } from 'drizzle-orm';
 import {
   createAdminClient,
-  dsrVerifications,
   sessionEmbeddings,
   consentRecords,
   conversionLabels,
 } from '@estalara/db';
-import { hashOtp } from '@/lib/dsr-otp';
+import { verifyAndConsumeOtp, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
+import { getSessionEventSummary, readClickHouseConfig } from '@/lib/clickhouse-dsr';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 
 // ─── GET handler ───────────────────────────────────────────────────────────────
 
 /**
- * GET /api/dsr/portability?token=<6-digit-OTP>
+ * GET /api/dsr/portability?request_id=<uuid>&token=<6-digit-OTP>
  *
  * @returns 200 downloadable JSON file on success.
- * @returns 400 when token param is missing.
- * @returns 401 when OTP is expired or already used.
- * @returns 404 when OTP is not found or wrong type.
+ * @returns 400 when request_id or token param is missing.
+ * @returns 401 when OTP is expired, already used, or incorrect.
+ * @returns 404 when request_id is not found or is a different capability.
+ * @returns 429 when the request has been locked out after too many wrong guesses.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const token = req.nextUrl.searchParams.get('token');
-  if (!token) {
+  const requestId = req.nextUrl.searchParams.get('request_id');
+  if (!token || !requestId) {
     return NextResponse.json(
-      { error: { code: 'VALIDATION_ERROR', message: "Query param 'token' is required" } },
+      {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: "Query params 'request_id' and 'token' are required",
+        },
+      },
       { status: 400 },
     );
   }
 
   const db = createAdminClient();
-  const otpHash = hashOtp(token);
 
-  // ── Look up the verification record ──────────────────────────────────────
-  const [record] = await db
-    .select()
-    .from(dsrVerifications)
-    .where(and(eq(dsrVerifications.otpHash, otpHash), eq(dsrVerifications.dsrType, 'portability')))
-    .limit(1);
-
-  if (!record) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'Token not found or invalid type' } },
-      { status: 404 },
-    );
+  const verification = await verifyAndConsumeOtp(db, { requestId, token, dsrType: 'portability' });
+  if (!verification.ok) {
+    const { status, code, message } = dsrVerifyFailureResponse(verification.reason);
+    return NextResponse.json({ error: { code, message } }, { status });
   }
-
-  // ── Validate: not expired ─────────────────────────────────────────────────
-  if (record.expiresAt < new Date()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'token_expired',
-          message: 'This token has expired. Please request a new one.',
-        },
-      },
-      { status: 401 },
-    );
-  }
-
-  // ── Validate: not already used ────────────────────────────────────────────
-  if (record.usedAt !== null) {
-    return NextResponse.json(
-      { error: { code: 'token_already_used', message: 'This token has already been used.' } },
-      { status: 401 },
-    );
-  }
-
-  // ── Mark as used ──────────────────────────────────────────────────────────
+  const record = verification.record;
   const now = new Date();
-  await db.update(dsrVerifications).set({ usedAt: now }).where(eq(dsrVerifications.id, record.id));
 
   // ── Query session data ─────────────────────────────────────────────────────
   const [session] = await db
@@ -228,16 +207,41 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }),
   );
 
+  // ── Real ClickHouse behavioral event count (FOLLOW-455 / audit F-20) ──────
+  // Replaces the previous `count = 1` stub — Art. 20 requires the exported
+  // machine-readable data to reflect the ACTUAL extent of processing. When
+  // ClickHouse is not configured, count is reported as `null` rather than
+  // fabricated (Rule K.2).
+  let eventsSummary: { count: number | null; first_at: string | null; last_at: string | null };
+  const chConfig = readClickHouseConfig();
+  if (chConfig) {
+    try {
+      const summary = await getSessionEventSummary(chConfig, record.tenantId, record.sessionId);
+      eventsSummary = { count: summary.count, first_at: summary.firstAt, last_at: summary.lastAt };
+    } catch (err: unknown) {
+      console.error(
+        '[dsr/portability] ClickHouse event count query failed:',
+        err instanceof Error ? err.message : err,
+      );
+      eventsSummary = {
+        count: null,
+        first_at: session?.createdAt ? session.createdAt.toISOString() : null,
+        last_at: session?.updatedAt ? session.updatedAt.toISOString() : null,
+      };
+    }
+  } else {
+    eventsSummary = {
+      count: null,
+      first_at: session?.createdAt ? session.createdAt.toISOString() : null,
+      last_at: session?.updatedAt ? session.updatedAt.toISOString() : null,
+    };
+  }
+
   const exportData = {
     session_id: record.sessionId,
     tenant_id: record.tenantId,
     exported_at: now.toISOString(),
-    events_summary: {
-      // TODO: query ClickHouse for actual event count (FOLLOW-UP: post-MVP).
-      count: session ? 1 : 0,
-      first_at: session?.createdAt ? session.createdAt.toISOString() : null,
-      last_at: session?.updatedAt ? session.updatedAt.toISOString() : null,
-    },
+    events_summary: eventsSummary,
     matched_archetype: session?.finalArchetype ?? session?.matchedArchetype ?? null,
     consent_records: consents.map((c) => ({
       consent_type: c.consentType,

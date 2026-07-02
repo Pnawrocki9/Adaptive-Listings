@@ -129,6 +129,7 @@ const FIXTURE_DDL = /* sql */ `
     expires_at      timestamptz NOT NULL,
     used_at         timestamptz,
     durable_lead_id text,
+    attempt_count   integer NOT NULL DEFAULT 0,
     created_at      timestamptz NOT NULL DEFAULT now()
   );
 
@@ -250,18 +251,21 @@ async function seedVerification(opts: {
   sessionId: string;
   dsrType: 'access' | 'portability';
   durableLeadId?: string | null;
-}): Promise<{ otp: string }> {
+}): Promise<{ otp: string; requestId: string }> {
   const otp = '123456';
   const otpHash = hashOtpLocal(otp);
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-  await pg.query(
+  const res = await pg.query<{ id: string }>(
     `INSERT INTO dsr_verifications
        (tenant_id, session_id, email, dsr_type, otp_hash, expires_at, durable_lead_id)
-     VALUES ($1, $2, 'test@example.com', $3, $4, $5, $6)`,
+     VALUES ($1, $2, 'test@example.com', $3, $4, $5, $6)
+     RETURNING id`,
     [TENANT_ID, opts.sessionId, opts.dsrType, otpHash, expiresAt, opts.durableLeadId ?? null],
   );
-  return { otp };
+  const row = res.rows[0];
+  if (!row) throw new Error('Failed to insert dsr_verifications');
+  return { otp, requestId: row.id };
 }
 
 /** Insert a conversion_labels row for disclosure testing. */
@@ -283,12 +287,14 @@ async function insertLabel(opts: {
   return row.id;
 }
 
-function makeAccessRequest(otp: string): NextRequest {
-  return new NextRequest(`http://localhost/api/dsr/access?token=${otp}`);
+function makeAccessRequest(otp: string, requestId: string): NextRequest {
+  return new NextRequest(`http://localhost/api/dsr/access?request_id=${requestId}&token=${otp}`);
 }
 
-function makePortabilityRequest(otp: string): NextRequest {
-  return new NextRequest(`http://localhost/api/dsr/portability?token=${otp}`);
+function makePortabilityRequest(otp: string, requestId: string): NextRequest {
+  return new NextRequest(
+    `http://localhost/api/dsr/portability?request_id=${requestId}&token=${otp}`,
+  );
 }
 
 /** Extract conversion_labels from an access response body. */
@@ -315,7 +321,7 @@ describe('AC1 (FOLLOW-256): access handler discloses both identifier namespaces'
     const SESSION_ID = 'sess-access-ac1-001';
     const CRM_LEAD = 'crm-token-ac1-001';
 
-    const { otp } = await seedVerification({
+    const { otp, requestId } = await seedVerification({
       sessionId: SESSION_ID,
       dsrType: 'access',
       durableLeadId: CRM_LEAD,
@@ -334,7 +340,7 @@ describe('AC1 (FOLLOW-256): access handler discloses both identifier namespaces'
       outcomeClass: 'purchased',
     });
 
-    const res = await getAccess(makeAccessRequest(otp));
+    const res = await getAccess(makeAccessRequest(otp, requestId));
     expect(res.status).toBe(200);
 
     const labels = await getAccessLabels(res);
@@ -347,7 +353,7 @@ describe('AC1 (FOLLOW-256): access handler discloses both identifier namespaces'
     const SESSION_ID = 'sess-access-ac1-null';
     const CRM_LEAD = 'crm-token-ac1-null';
 
-    const { otp } = await seedVerification({
+    const { otp, requestId } = await seedVerification({
       sessionId: SESSION_ID,
       dsrType: 'access',
       durableLeadId: null,
@@ -367,7 +373,7 @@ describe('AC1 (FOLLOW-256): access handler discloses both identifier namespaces'
       outcomeClass: 'purchased',
     });
 
-    const res = await getAccess(makeAccessRequest(otp));
+    const res = await getAccess(makeAccessRequest(otp, requestId));
     expect(res.status).toBe(200);
 
     const labels = await getAccessLabels(res);
@@ -377,9 +383,9 @@ describe('AC1 (FOLLOW-256): access handler discloses both identifier namespaces'
 
   it('discloses an empty list when no labels exist for this subject', async () => {
     const SESSION_ID = 'sess-access-empty';
-    const { otp } = await seedVerification({ sessionId: SESSION_ID, dsrType: 'access' });
+    const { otp, requestId } = await seedVerification({ sessionId: SESSION_ID, dsrType: 'access' });
 
-    const res = await getAccess(makeAccessRequest(otp));
+    const res = await getAccess(makeAccessRequest(otp, requestId));
     expect(res.status).toBe(200);
     const labels = await getAccessLabels(res);
     expect(labels).toHaveLength(0);
@@ -391,7 +397,7 @@ describe('AC1 (FOLLOW-256): portability handler discloses both identifier namesp
     const SESSION_ID = 'sess-portability-ac1-001';
     const CRM_LEAD = 'crm-token-portability-001';
 
-    const { otp } = await seedVerification({
+    const { otp, requestId } = await seedVerification({
       sessionId: SESSION_ID,
       dsrType: 'portability',
       durableLeadId: CRM_LEAD,
@@ -410,7 +416,7 @@ describe('AC1 (FOLLOW-256): portability handler discloses both identifier namesp
       outcomeClass: 'offer_made',
     });
 
-    const res = await getPortability(makePortabilityRequest(otp));
+    const res = await getPortability(makePortabilityRequest(otp, requestId));
     expect(res.status).toBe(200);
 
     const labels = await getPortabilityLabels(res);
@@ -421,9 +427,12 @@ describe('AC1 (FOLLOW-256): portability handler discloses both identifier namesp
 
   it('portability response includes Content-Disposition attachment header', async () => {
     const SESSION_ID = 'sess-portability-header';
-    const { otp } = await seedVerification({ sessionId: SESSION_ID, dsrType: 'portability' });
+    const { otp, requestId } = await seedVerification({
+      sessionId: SESSION_ID,
+      dsrType: 'portability',
+    });
 
-    const res = await getPortability(makePortabilityRequest(otp));
+    const res = await getPortability(makePortabilityRequest(otp, requestId));
     expect(res.status).toBe(200);
     const disposition = res.headers.get('Content-Disposition');
     expect(disposition).toMatch(/attachment/);
@@ -434,14 +443,17 @@ describe('AC1 (FOLLOW-256): portability handler discloses both identifier namesp
     const SESSION_ID = 'sess-portability-wrongtype';
     // Seed an 'access' OTP — must NOT work for the portability endpoint.
     const otp = '111111';
-    await pg.query(
+    const inserted = await pg.query<{ id: string }>(
       `INSERT INTO dsr_verifications
          (tenant_id, session_id, email, dsr_type, otp_hash, expires_at)
-       VALUES ($1, $2, 'test@example.com', 'access', $3, NOW() + INTERVAL '15 minutes')`,
+       VALUES ($1, $2, 'test@example.com', 'access', $3, NOW() + INTERVAL '15 minutes')
+       RETURNING id`,
       [TENANT_ID, SESSION_ID, hashOtpLocal(otp)],
     );
+    const wrongTypeRequestId = inserted.rows[0]?.id;
+    if (!wrongTypeRequestId) throw new Error('Failed to insert dsr_verifications row');
 
-    const res = await getPortability(makePortabilityRequest(otp));
+    const res = await getPortability(makePortabilityRequest(otp, wrongTypeRequestId));
     expect(res.status).toBe(404);
   });
 });
@@ -458,7 +470,7 @@ describe('AC2 (FOLLOW-256): route-driven tenant isolation', () => {
     const CRM_LEAD = 'crm-iso-shared';
 
     // Tenant 1 DSR.
-    const { otp } = await seedVerification({
+    const { otp, requestId } = await seedVerification({
       sessionId: SESSION_ID,
       dsrType: 'access',
       durableLeadId: CRM_LEAD,
@@ -492,7 +504,7 @@ describe('AC2 (FOLLOW-256): route-driven tenant isolation', () => {
       outcomeClass: 'offer_made',
     });
 
-    const res = await getAccess(makeAccessRequest(otp));
+    const res = await getAccess(makeAccessRequest(otp, requestId));
     expect(res.status).toBe(200);
 
     const labels = await getAccessLabels(res);
@@ -506,7 +518,7 @@ describe('AC2 (FOLLOW-256): route-driven tenant isolation', () => {
     const SESSION_ID = 'sess-iso-port';
     const CRM_LEAD = 'crm-iso-port';
 
-    const { otp } = await seedVerification({
+    const { otp, requestId } = await seedVerification({
       sessionId: SESSION_ID,
       dsrType: 'portability',
       durableLeadId: CRM_LEAD,
@@ -525,7 +537,7 @@ describe('AC2 (FOLLOW-256): route-driven tenant isolation', () => {
       outcomeClass: 'quiz_completed',
     });
 
-    const res = await getPortability(makePortabilityRequest(otp));
+    const res = await getPortability(makePortabilityRequest(otp, requestId));
     expect(res.status).toBe(200);
 
     const labels = await getPortabilityLabels(res);
@@ -548,21 +560,28 @@ describe('AC3 (FOLLOW-256): access and portability produce identical conversion_
 
     // Seed access OTP for tenant 1.
     const accessOtp = '111222';
-    await pg.query(
+    const accessInserted = await pg.query<{ id: string }>(
       `INSERT INTO dsr_verifications
          (tenant_id, session_id, email, dsr_type, otp_hash, expires_at, durable_lead_id)
-       VALUES ($1, $2, 'test@example.com', 'access', $3, NOW() + INTERVAL '15 minutes', $4)`,
+       VALUES ($1, $2, 'test@example.com', 'access', $3, NOW() + INTERVAL '15 minutes', $4)
+       RETURNING id`,
       [TENANT_ID, SESSION_ID, hashOtpLocal(accessOtp), CRM_LEAD],
     );
+    const accessRequestId = accessInserted.rows[0]?.id;
+    if (!accessRequestId) throw new Error('Failed to insert access dsr_verifications row');
 
     // Seed portability OTP for the same subject.
     const portabilityOtp = '333444';
-    await pg.query(
+    const portabilityInserted = await pg.query<{ id: string }>(
       `INSERT INTO dsr_verifications
          (tenant_id, session_id, email, dsr_type, otp_hash, expires_at, durable_lead_id)
-       VALUES ($1, $2, 'test@example.com', 'portability', $3, NOW() + INTERVAL '15 minutes', $4)`,
+       VALUES ($1, $2, 'test@example.com', 'portability', $3, NOW() + INTERVAL '15 minutes', $4)
+       RETURNING id`,
       [TENANT_ID, SESSION_ID, hashOtpLocal(portabilityOtp), CRM_LEAD],
     );
+    const portabilityRequestId = portabilityInserted.rows[0]?.id;
+    if (!portabilityRequestId)
+      throw new Error('Failed to insert portability dsr_verifications row');
 
     // Seed conversion_labels on both namespaces.
     await insertLabel({
@@ -579,10 +598,12 @@ describe('AC3 (FOLLOW-256): access and portability produce identical conversion_
     });
 
     // Drive both handlers.
-    const accessRes = await getAccess(makeAccessRequest(accessOtp));
+    const accessRes = await getAccess(makeAccessRequest(accessOtp, accessRequestId));
     expect(accessRes.status).toBe(200);
 
-    const portabilityRes = await getPortability(makePortabilityRequest(portabilityOtp));
+    const portabilityRes = await getPortability(
+      makePortabilityRequest(portabilityOtp, portabilityRequestId),
+    );
     expect(portabilityRes.status).toBe(200);
 
     const accessLabels = await getAccessLabels(accessRes);
@@ -608,21 +629,31 @@ describe('AC3 (FOLLOW-256): access and portability produce identical conversion_
 
     const accessOtp = '555666';
     const portabilityOtp = '777888';
-    await pg.query(
+    const accessInserted = await pg.query<{ id: string }>(
       `INSERT INTO dsr_verifications
          (tenant_id, session_id, email, dsr_type, otp_hash, expires_at)
-       VALUES ($1, $2, 'test@example.com', 'access', $3, NOW() + INTERVAL '15 minutes')`,
+       VALUES ($1, $2, 'test@example.com', 'access', $3, NOW() + INTERVAL '15 minutes')
+       RETURNING id`,
       [TENANT_ID, SESSION_ID, hashOtpLocal(accessOtp)],
     );
-    await pg.query(
+    const accessRequestId = accessInserted.rows[0]?.id;
+    if (!accessRequestId) throw new Error('Failed to insert access dsr_verifications row');
+
+    const portabilityInserted = await pg.query<{ id: string }>(
       `INSERT INTO dsr_verifications
          (tenant_id, session_id, email, dsr_type, otp_hash, expires_at)
-       VALUES ($1, $2, 'test@example.com', 'portability', $3, NOW() + INTERVAL '15 minutes')`,
+       VALUES ($1, $2, 'test@example.com', 'portability', $3, NOW() + INTERVAL '15 minutes')
+       RETURNING id`,
       [TENANT_ID, SESSION_ID, hashOtpLocal(portabilityOtp)],
     );
+    const portabilityRequestId = portabilityInserted.rows[0]?.id;
+    if (!portabilityRequestId)
+      throw new Error('Failed to insert portability dsr_verifications row');
 
-    const accessRes = await getAccess(makeAccessRequest(accessOtp));
-    const portabilityRes = await getPortability(makePortabilityRequest(portabilityOtp));
+    const accessRes = await getAccess(makeAccessRequest(accessOtp, accessRequestId));
+    const portabilityRes = await getPortability(
+      makePortabilityRequest(portabilityOtp, portabilityRequestId),
+    );
 
     expect(accessRes.status).toBe(200);
     expect(portabilityRes.status).toBe(200);
@@ -642,7 +673,7 @@ describe('AC1-LG2 (FOLLOW-256): ne() guard — empty lead_id rows are never disc
     const SESSION_ID = 'sess-access-lg2';
     const CRM_LEAD = 'crm-lg2-token';
 
-    const { otp } = await seedVerification({
+    const { otp, requestId } = await seedVerification({
       sessionId: SESSION_ID,
       dsrType: 'access',
       durableLeadId: CRM_LEAD,
@@ -663,7 +694,7 @@ describe('AC1-LG2 (FOLLOW-256): ne() guard — empty lead_id rows are never disc
       outcomeClass: 'viewing_booked',
     });
 
-    const res = await getAccess(makeAccessRequest(otp));
+    const res = await getAccess(makeAccessRequest(otp, requestId));
     expect(res.status).toBe(200);
 
     const labels = await getAccessLabels(res);
@@ -676,7 +707,7 @@ describe('AC1-LG2 (FOLLOW-256): ne() guard — empty lead_id rows are never disc
     const SESSION_ID = 'sess-port-lg2';
     const CRM_LEAD = 'crm-port-lg2';
 
-    const { otp } = await seedVerification({
+    const { otp, requestId } = await seedVerification({
       sessionId: SESSION_ID,
       dsrType: 'portability',
       durableLeadId: CRM_LEAD,
@@ -695,7 +726,7 @@ describe('AC1-LG2 (FOLLOW-256): ne() guard — empty lead_id rows are never disc
       outcomeClass: 'purchased',
     });
 
-    const res = await getPortability(makePortabilityRequest(otp));
+    const res = await getPortability(makePortabilityRequest(otp, requestId));
     expect(res.status).toBe(200);
 
     const labels = await getPortabilityLabels(res);

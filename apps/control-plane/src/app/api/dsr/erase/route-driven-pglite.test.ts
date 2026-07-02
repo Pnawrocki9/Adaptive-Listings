@@ -81,6 +81,11 @@ vi.mock('@/lib/clickhouse-dsr', () => ({
     { table: 'adaptation_decisions', column: 'session_id' },
     { table: 'llm_calls', column: 'session_id' },
     { table: 'session_quality', column: 'session_id' },
+    // FOLLOW-455: intent_events omitted from this mocked inventory — this
+    // file's scope is the conversion_labels/engagement_scores cascades, not
+    // the intent_events identifier-resolution path (covered separately in
+    // apps/control-plane/src/app/api/dsr/erase/route.test.ts and
+    // apps/control-plane/src/lib/__tests__/intent-session-lookup.test.ts).
   ],
   readClickHouseConfig: vi.fn().mockReturnValue(null), // unset → no-op path
   issueEraseMutation: vi.fn(),
@@ -136,7 +141,41 @@ const FIXTURE_DDL = /* sql */ `
     expires_at      timestamptz NOT NULL,
     used_at         timestamptz,
     durable_lead_id text,
+    attempt_count   integer NOT NULL DEFAULT 0,
     created_at      timestamptz NOT NULL DEFAULT now()
+  );
+
+  CREATE TABLE IF NOT EXISTS intent_sessions (
+    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id         uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    session_id        text NOT NULL,
+    cross_session_id  text,
+    started_at        timestamptz NOT NULL DEFAULT now(),
+    last_event_at     timestamptz NOT NULL DEFAULT now(),
+    finalized_at      timestamptz,
+    final_archetype   text,
+    final_confidence  numeric(4,3),
+    signal_count      integer NOT NULL DEFAULT 0,
+    quiz_completed    boolean NOT NULL DEFAULT false,
+    quiz_leaf         text,
+    chat_turns        integer NOT NULL DEFAULT 0,
+    intent_state      jsonb
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS intent_sessions_tenant_session_unique
+    ON intent_sessions (tenant_id, session_id);
+
+  CREATE TABLE IF NOT EXISTS quiz_completions (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id           uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    session_id          text NOT NULL,
+    resolved_archetype  text NOT NULL DEFAULT 'neutral',
+    branch              text,
+    q1_answer           integer,
+    q2_answer           integer,
+    q3_answer           integer,
+    language            text NOT NULL DEFAULT 'en',
+    created_at          timestamptz NOT NULL DEFAULT now()
   );
 
   CREATE TABLE IF NOT EXISTS session_embeddings (
@@ -257,6 +296,8 @@ beforeEach(async () => {
   await pg.exec('DELETE FROM dsr_clickhouse_mutations');
   await pg.exec('DELETE FROM conversion_labels');
   await pg.exec('DELETE FROM engagement_scores');
+  await pg.exec('DELETE FROM quiz_completions');
+  await pg.exec('DELETE FROM intent_sessions');
   await pg.exec('DELETE FROM consent_records');
   await pg.exec('DELETE FROM session_embeddings');
   await pg.exec('DELETE FROM dsr_verifications');
@@ -327,11 +368,11 @@ async function insertLabel(opts: {
   );
 }
 
-function makeEraseRequest(otp: string): NextRequest {
+function makeEraseRequest(otp: string, requestId: string): NextRequest {
   return new NextRequest('http://localhost/api/dsr/erase', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: otp }),
+    body: JSON.stringify({ request_id: requestId, token: otp }),
   });
 }
 
@@ -340,7 +381,7 @@ function makeEraseRequest(otp: string): NextRequest {
 describe('AC2a (FOLLOW-250): erase handler erases SDK-ping labels (Pass A)', () => {
   it('deletes conversion_labels WHERE lead_id = session_id', async () => {
     const SESSION_ID = 'sess-erase-passA-001';
-    const { otp } = await seedDsrVerification({ sessionId: SESSION_ID });
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: SESSION_ID });
 
     await insertLabel({
       predictionId: 'pred-passA-sdk',
@@ -351,7 +392,7 @@ describe('AC2a (FOLLOW-250): erase handler erases SDK-ping labels (Pass A)', () 
     const before = await getLabels(TENANT_ID);
     expect(before).toHaveLength(1);
 
-    const res = await postErase(makeEraseRequest(otp));
+    const res = await postErase(makeEraseRequest(otp, verificationId));
     expect(res.status).toBe(200);
 
     const after = await getLabels(TENANT_ID);
@@ -361,7 +402,7 @@ describe('AC2a (FOLLOW-250): erase handler erases SDK-ping labels (Pass A)', () 
   it('leaves rows for other sessions untouched (tenant isolation within Pass A)', async () => {
     const SESSION_ID = 'sess-erase-passA-iso';
     const OTHER_SESSION = 'sess-erase-other';
-    const { otp } = await seedDsrVerification({ sessionId: SESSION_ID });
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: SESSION_ID });
 
     // Row for the target session — should be erased.
     await insertLabel({
@@ -376,7 +417,7 @@ describe('AC2a (FOLLOW-250): erase handler erases SDK-ping labels (Pass A)', () 
       outcomeClass: 'viewing_booked',
     });
 
-    const res = await postErase(makeEraseRequest(otp));
+    const res = await postErase(makeEraseRequest(otp, verificationId));
     expect(res.status).toBe(200);
 
     const after = await getLabels(TENANT_ID);
@@ -391,7 +432,7 @@ describe('AC2b (FOLLOW-250): erase handler erases CRM labels (Pass B)', () => {
   it('deletes conversion_labels WHERE lead_id = durable_lead_id when supplied', async () => {
     const SESSION_ID = 'sess-erase-passB-001';
     const CRM_LEAD = 'crm-token-passB-001';
-    const { otp } = await seedDsrVerification({
+    const { otp, verificationId } = await seedDsrVerification({
       sessionId: SESSION_ID,
       durableLeadId: CRM_LEAD,
     });
@@ -405,7 +446,7 @@ describe('AC2b (FOLLOW-250): erase handler erases CRM labels (Pass B)', () => {
     const before = await getLabels(TENANT_ID);
     expect(before).toHaveLength(1);
 
-    const res = await postErase(makeEraseRequest(otp));
+    const res = await postErase(makeEraseRequest(otp, verificationId));
     expect(res.status).toBe(200);
 
     const after = await getLabels(TENANT_ID);
@@ -415,7 +456,7 @@ describe('AC2b (FOLLOW-250): erase handler erases CRM labels (Pass B)', () => {
   it('erases both Pass A (session_id) and Pass B (durable_lead_id) in one call', async () => {
     const SESSION_ID = 'sess-erase-both-001';
     const CRM_LEAD = 'crm-token-both-001';
-    const { otp } = await seedDsrVerification({
+    const { otp, verificationId } = await seedDsrVerification({
       sessionId: SESSION_ID,
       durableLeadId: CRM_LEAD,
     });
@@ -434,7 +475,7 @@ describe('AC2b (FOLLOW-250): erase handler erases CRM labels (Pass B)', () => {
     const before = await getLabels(TENANT_ID);
     expect(before).toHaveLength(2);
 
-    const res = await postErase(makeEraseRequest(otp));
+    const res = await postErase(makeEraseRequest(otp, verificationId));
     expect(res.status).toBe(200);
 
     const after = await getLabels(TENANT_ID);
@@ -444,7 +485,7 @@ describe('AC2b (FOLLOW-250): erase handler erases CRM labels (Pass B)', () => {
   it('does NOT erase CRM row when durable_lead_id is NULL (Pass B skipped)', async () => {
     const SESSION_ID = 'sess-erase-null-durable';
     const CRM_LEAD = 'crm-token-null-durable';
-    const { otp } = await seedDsrVerification({
+    const { otp, verificationId } = await seedDsrVerification({
       sessionId: SESSION_ID,
       durableLeadId: null, // Pass B must not run
     });
@@ -455,7 +496,7 @@ describe('AC2b (FOLLOW-250): erase handler erases CRM labels (Pass B)', () => {
       outcomeClass: 'purchased',
     });
 
-    const res = await postErase(makeEraseRequest(otp));
+    const res = await postErase(makeEraseRequest(otp, verificationId));
     expect(res.status).toBe(200);
 
     // CRM row must survive — Pass B was skipped.
@@ -470,7 +511,7 @@ describe('AC2b (FOLLOW-250): erase handler erases CRM labels (Pass B)', () => {
 describe('AC2c (FOLLOW-250): LG-2 guard — empty lead_id rows are never erased', () => {
   it('does NOT erase a row where lead_id is empty string', async () => {
     const SESSION_ID = 'sess-erase-empty-guard';
-    const { otp } = await seedDsrVerification({ sessionId: SESSION_ID });
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: SESSION_ID });
 
     // Row with empty lead_id — the ne(conversionLabels.leadId, '') guard must protect it.
     await insertLabel({
@@ -479,7 +520,7 @@ describe('AC2c (FOLLOW-250): LG-2 guard — empty lead_id rows are never erased'
       outcomeClass: 'no_response',
     });
 
-    const res = await postErase(makeEraseRequest(otp));
+    const res = await postErase(makeEraseRequest(otp, verificationId));
     expect(res.status).toBe(200);
 
     // Empty-lead_id row must survive — the guard prevents tenant-wide erasure.
@@ -492,8 +533,8 @@ describe('AC2c (FOLLOW-250): LG-2 guard — empty lead_id rows are never erased'
 // ─── AC2 (FOLLOW-250): OTP validation errors ─────────────────────────────────
 
 describe('AC2d (FOLLOW-250): erase handler OTP validation', () => {
-  it('returns 404 when OTP hash does not match any dsr_verifications row', async () => {
-    const res = await postErase(makeEraseRequest('999999'));
+  it('returns 404 when request_id does not match any dsr_verifications row', async () => {
+    const res = await postErase(makeEraseRequest('999999', '00000000-0000-0000-0000-000000000000'));
     expect(res.status).toBe(404);
   });
 
@@ -501,14 +542,17 @@ describe('AC2d (FOLLOW-250): erase handler OTP validation', () => {
     const otp = '654321';
     const otpHash = hashOtpLocal(otp);
     // Insert a row with expires_at in the past.
-    await pg.query(
+    const inserted = await pg.query<{ id: string }>(
       `INSERT INTO dsr_verifications
          (tenant_id, session_id, email, dsr_type, otp_hash, expires_at)
-       VALUES ($1, 'sess-expired', 'e@example.com', 'erase', $2, NOW() - INTERVAL '1 hour')`,
+       VALUES ($1, 'sess-expired', 'e@example.com', 'erase', $2, NOW() - INTERVAL '1 hour')
+       RETURNING id`,
       [TENANT_ID, otpHash],
     );
+    const expiredRequestId = inserted.rows[0]?.id;
+    if (!expiredRequestId) throw new Error('Failed to insert expired dsr_verifications row');
 
-    const res = await postErase(makeEraseRequest(otp));
+    const res = await postErase(makeEraseRequest(otp, expiredRequestId));
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('token_expired');
@@ -516,13 +560,13 @@ describe('AC2d (FOLLOW-250): erase handler OTP validation', () => {
 
   it('returns 401 when OTP has already been used', async () => {
     const SESSION_ID = 'sess-erase-already-used';
-    const { otp } = await seedDsrVerification({ sessionId: SESSION_ID });
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: SESSION_ID });
 
     // First call — marks the token as used.
-    await postErase(makeEraseRequest(otp));
+    await postErase(makeEraseRequest(otp, verificationId));
 
     // Second call — must be rejected.
-    const res = await postErase(makeEraseRequest(otp));
+    const res = await postErase(makeEraseRequest(otp, verificationId));
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('token_already_used');
@@ -535,7 +579,7 @@ describe('AC2e (FOLLOW-250): crm_erasure_status field in the 200 response', () =
   it('returns crm_erasure_status=complete when Pass B ran', async () => {
     const SESSION_ID = 'sess-erase-status-complete';
     const CRM_LEAD = 'crm-token-status-complete';
-    const { otp } = await seedDsrVerification({
+    const { otp, verificationId } = await seedDsrVerification({
       sessionId: SESSION_ID,
       durableLeadId: CRM_LEAD,
     });
@@ -546,7 +590,7 @@ describe('AC2e (FOLLOW-250): crm_erasure_status field in the 200 response', () =
       outcomeClass: 'purchased',
     });
 
-    const res = await postErase(makeEraseRequest(otp));
+    const res = await postErase(makeEraseRequest(otp, verificationId));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { crm_erasure_status: string };
     expect(body.crm_erasure_status).toBe('complete');
@@ -554,10 +598,10 @@ describe('AC2e (FOLLOW-250): crm_erasure_status field in the 200 response', () =
 
   it('returns crm_erasure_status=complete when no CRM rows exist for the tenant', async () => {
     const SESSION_ID = 'sess-erase-status-no-crm';
-    const { otp } = await seedDsrVerification({ sessionId: SESSION_ID });
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: SESSION_ID });
     // No CRM rows exist at all → complete (no capability gap).
 
-    const res = await postErase(makeEraseRequest(otp));
+    const res = await postErase(makeEraseRequest(otp, verificationId));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { crm_erasure_status: string };
     expect(body.crm_erasure_status).toBe('complete');
@@ -567,7 +611,7 @@ describe('AC2e (FOLLOW-250): crm_erasure_status field in the 200 response', () =
     const SESSION_ID = 'sess-erase-status-unverifiable';
     const CRM_LEAD = 'crm-token-unverifiable';
     // No durable_lead_id supplied — Pass B skipped.
-    const { otp } = await seedDsrVerification({
+    const { otp, verificationId } = await seedDsrVerification({
       sessionId: SESSION_ID,
       durableLeadId: null,
     });
@@ -579,7 +623,7 @@ describe('AC2e (FOLLOW-250): crm_erasure_status field in the 200 response', () =
       outcomeClass: 'purchased',
     });
 
-    const res = await postErase(makeEraseRequest(otp));
+    const res = await postErase(makeEraseRequest(otp, verificationId));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { crm_erasure_status: string };
     expect(body.crm_erasure_status).toBe('crm_tenant_unverifiable');

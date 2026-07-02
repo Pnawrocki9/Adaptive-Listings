@@ -31,6 +31,8 @@ const {
   mockCaptureMessage,
   mockCaptureException,
   mockMaybeFinaliseAuditLog,
+  mockIssueEraseMutation,
+  mockResolveIntentSessionId,
 } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
   mockUpdate: vi.fn(),
@@ -38,6 +40,9 @@ const {
   mockCaptureMessage: vi.fn(),
   mockCaptureException: vi.fn(),
   mockMaybeFinaliseAuditLog: vi.fn().mockResolvedValue(undefined),
+  // FOLLOW-455 / audit F-20: intent_events retry-path resolution.
+  mockIssueEraseMutation: vi.fn(),
+  mockResolveIntentSessionId: vi.fn(),
 }));
 
 vi.mock('@sentry/nextjs', () => ({
@@ -77,10 +82,14 @@ vi.mock('@estalara/db', () => ({
 vi.mock('@/lib/clickhouse-dsr', () => ({
   readClickHouseConfig: mockReadClickHouseConfig,
   computeNextRetryAt: vi.fn(() => null),
-  issueEraseMutation: vi.fn(),
+  issueEraseMutation: mockIssueEraseMutation,
   MAX_MUTATION_RETRIES: 3,
   pollMutationStatus: vi.fn(),
   resolveMutationIdByMarker: vi.fn(),
+}));
+
+vi.mock('@/lib/intent-session-lookup', () => ({
+  resolveIntentSessionId: mockResolveIntentSessionId,
 }));
 
 vi.mock('./_finalise', () => ({
@@ -344,5 +353,95 @@ describe('GET /api/dsr/mutation-poll — stuck mutation detection (FOLLOW-078)',
       tags: { dsr_stuck_check_error: 'true' },
     });
     expect(mockCaptureMessage).not.toHaveBeenCalled();
+  });
+});
+
+// ─── FOLLOW-455 / audit F-20: intent_events retry-path identifier resolution ──
+//
+// intent_events is filtered on intent_session_id (Postgres intent_sessions.id),
+// NOT session_id. On every retry the poller must re-resolve it — reissuing
+// with the SDK session_id would silently no-op (or worse, target the wrong
+// rows) against ClickHouse.
+
+describe('GET /api/dsr/mutation-poll — intent_events retry-path resolution (FOLLOW-455)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    vi.stubEnv('CRON_SECRET', 'cron-test-secret');
+    mockReadClickHouseConfig.mockReturnValue({
+      url: 'http://clickhouse.test:8123',
+      database: 'default',
+    });
+    mockMaybeFinaliseAuditLog.mockResolvedValue(undefined);
+    mockUpdate.mockReturnValue(buildChain([]));
+  });
+
+  it('reissues with column=intent_session_id and the resolved id when a tracer row exists', async () => {
+    const failedRow = makeRow({
+      tableName: 'intent_events',
+      status: 'failed',
+      retryCount: 0,
+      mutationId: 'mut-intent-001',
+      sessionId: 'sess-abc123',
+      tenantId: 'tenant-uuid-001',
+    });
+    mockSelect
+      .mockReturnValueOnce(buildChain([failedRow])) // main polling query
+      .mockReturnValueOnce(buildChain([])); // stuck check
+
+    mockResolveIntentSessionId.mockResolvedValueOnce('intent-session-uuid-resolved');
+    mockIssueEraseMutation.mockResolvedValueOnce({
+      table: 'intent_events',
+      markerToken: 'marker-xyz',
+      alterSql:
+        "ALTER TABLE intent_events DELETE WHERE intent_session_id IN ('intent-session-uuid-resolved') /* DSR:marker-xyz */",
+      mutationId: 'mut-intent-002',
+    });
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest({ authorization: 'Bearer cron-test-secret' }));
+
+    expect(res.status).toBe(200);
+    expect(mockResolveIntentSessionId).toHaveBeenCalledWith(
+      expect.anything(),
+      'tenant-uuid-001',
+      'sess-abc123',
+    );
+    expect(mockIssueEraseMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        table: 'intent_events',
+        column: 'intent_session_id',
+        sessionIds: ['intent-session-uuid-resolved'],
+      }),
+    );
+  });
+
+  it('marks the row "done" directly (no reissue) when no intent_sessions row exists', async () => {
+    const failedRow = makeRow({
+      tableName: 'intent_events',
+      status: 'failed',
+      retryCount: 0,
+      mutationId: 'mut-intent-001',
+      sessionId: 'sess-no-tracer',
+      tenantId: 'tenant-uuid-001',
+    });
+    mockSelect
+      .mockReturnValueOnce(buildChain([failedRow])) // main polling query
+      .mockReturnValueOnce(buildChain([])); // stuck check
+
+    mockResolveIntentSessionId.mockResolvedValueOnce(null);
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest({ authorization: 'Bearer cron-test-secret' }));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { advanced: number };
+    expect(body.advanced).toBe(1);
+    // The mutation must NOT have been reissued — nothing left to erase.
+    expect(mockIssueEraseMutation).not.toHaveBeenCalled();
+    expect(mockUpdate).toHaveBeenCalled();
+    const setCalls = mockUpdate.mock.results.length;
+    expect(setCalls).toBeGreaterThan(0);
   });
 });

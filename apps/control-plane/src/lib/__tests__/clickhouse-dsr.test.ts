@@ -17,17 +17,21 @@
  *       * exponential backoff schedule
  *       * null after MAX retries
  *   - DSR_CLICKHOUSE_TABLES inventory:
- *       * contains the canonical 4 PII tables
+ *       * contains the canonical PII tables (incl. intent_events, FOLLOW-455)
+ *   - getSessionEventSummary (FOLLOW-455 / audit F-20):
+ *       * returns the real count/first_at/last_at from ClickHouse
+ *       * returns count:0 with null timestamps when no rows match
  *
  * @module apps/control-plane/src/lib/__tests__/clickhouse-dsr.test
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   aggregateMutationStatus,
   buildEraseMutationSql,
   computeNextRetryAt,
   DSR_CLICKHOUSE_TABLES,
+  getSessionEventSummary,
   MAX_MUTATION_RETRIES,
 } from '../clickhouse-dsr.js';
 
@@ -155,6 +159,8 @@ describe('DSR_CLICKHOUSE_TABLES', () => {
     expect(names).toContain('adaptation_decisions');
     expect(names).toContain('llm_calls');
     expect(names).toContain('session_quality');
+    // FOLLOW-455 / audit F-20: K.3.6 tracer per-signal event trail.
+    expect(names).toContain('intent_events');
   });
 
   it('does NOT include dsr_audit_log (legal-claims retention)', () => {
@@ -167,9 +173,88 @@ describe('DSR_CLICKHOUSE_TABLES', () => {
     expect(names).not.toContain('description_generations');
   });
 
-  it('every entry uses session_id as the filter column', () => {
+  it('every entry uses session_id as the filter column, EXCEPT intent_events which uses intent_session_id', () => {
     for (const t of DSR_CLICKHOUSE_TABLES) {
-      expect(t.column).toBe('session_id');
+      if (t.table === 'intent_events') {
+        expect(t.column).toBe('intent_session_id');
+        expect(t.idSource).toBe('intent_session_id');
+      } else {
+        expect(t.column).toBe('session_id');
+        expect(t.idSource).toBeUndefined();
+      }
     }
+  });
+});
+
+// ─── getSessionEventSummary (FOLLOW-455 / audit F-20) ─────────────────────────
+
+describe('getSessionEventSummary', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const cfg = { url: 'http://clickhouse.test:8123', user: 'default', password: '' };
+
+  it('returns the real count and first/last timestamps from ClickHouse', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                cnt: '7',
+                first_at: '2026-06-01 10:00:00.000',
+                last_at: '2026-06-02 12:30:00.000',
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const summary = await getSessionEventSummary(cfg, 'tenant-1', 'sess-1');
+
+    expect(summary.count).toBe(7);
+    expect(summary.firstAt).toBe(new Date('2026-06-01T10:00:00.000Z').toISOString());
+    expect(summary.lastAt).toBe(new Date('2026-06-02T12:30:00.000Z').toISOString());
+  });
+
+  it('returns count 0 and null timestamps when no events match', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ data: [{ cnt: '0', first_at: '', last_at: '' }] }), {
+          status: 200,
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const summary = await getSessionEventSummary(cfg, 'tenant-1', 'sess-empty');
+
+    expect(summary.count).toBe(0);
+    expect(summary.firstAt).toBeNull();
+    expect(summary.lastAt).toBeNull();
+  });
+
+  it('never fabricates a count — this is a real ClickHouse query, not a stub', async () => {
+    // Regression guard for audit F-20: events_summary.count must never be a
+    // hardcoded literal. This test asserts the count on the wire is exactly
+    // what the mocked ClickHouse HTTP response says, proving no stub path exists.
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ cnt: '42', first_at: '2026-01-01 00:00:00', last_at: '2026-01-02 00:00:00' }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const summary = await getSessionEventSummary(cfg, 'tenant-1', 'sess-42');
+    expect(summary.count).toBe(42);
   });
 });

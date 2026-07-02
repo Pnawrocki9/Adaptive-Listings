@@ -90,9 +90,12 @@ vi.mock('@/lib/demo-override-store', () => ({
   }),
 }));
 
-// Mock listing-details so only the Redpanda publish triggers a real fetch call
+// Mock listing-details so only the Redpanda publish triggers a real fetch call.
+// FOLLOW-457 AC1: publish is now gated on a non-empty original_description
+// (empty → skip generation entirely, tested separately) — this suite exercises
+// the Redpanda publish mechanics, so the mock must resolve to real copy.
 vi.mock('@/lib/listing-details', () => ({
-  fetchListingOriginalDescription: vi.fn().mockResolvedValue(''),
+  fetchListingOriginalDescription: vi.fn().mockResolvedValue('The agent original copy.'),
 }));
 
 // Mock description-pg-cache: getPgCachedDescription returns null (no Postgres in tests)

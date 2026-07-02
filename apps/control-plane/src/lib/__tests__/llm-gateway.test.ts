@@ -101,7 +101,9 @@ describe('callLlmGateway — routing', () => {
       {
         type: 'text',
         slot: 'headline',
-        value: 'Tweaked headline',
+        // Lowercase, no proper nouns/digits: these routing tests only assert
+        // which model was selected, not fact grounding (FOLLOW-457 AC2).
+        value: 'tweaked headline copy',
         archetype: 'yield_hunter',
         confidence: 0.8,
       },
@@ -121,7 +123,7 @@ describe('callLlmGateway — routing', () => {
       {
         type: 'text',
         slot: 'headline',
-        value: 'Full gen headline',
+        value: 'full generation headline copy',
         archetype: 'yield_hunter',
         confidence: 0.75,
       },
@@ -176,7 +178,7 @@ describe('callLlmGateway — circuit breaker', () => {
       {
         type: 'text',
         slot: 'headline',
-        value: 'Normal headline',
+        value: 'normal headline copy',
         archetype: 'yield_hunter',
         confidence: 0.75,
       },
@@ -235,7 +237,7 @@ describe('callLlmGateway — listingContext injection', () => {
       {
         type: 'text',
         slot: 'headline',
-        value: 'Plain headline',
+        value: 'plain headline copy',
         archetype: 'yield_hunter',
         confidence: 0.8,
       },
@@ -254,7 +256,7 @@ describe('callLlmGateway — listingContext injection', () => {
       {
         type: 'text',
         slot: 'headline',
-        value: 'Plain headline',
+        value: 'plain headline copy',
         archetype: 'yield_hunter',
         confidence: 0.8,
       },
@@ -273,7 +275,7 @@ describe('callLlmGateway — listingContext injection', () => {
       {
         type: 'text',
         slot: 'headline',
-        value: 'Full gen headline',
+        value: 'full generation headline copy',
         archetype: 'yield_hunter',
         confidence: 0.75,
       },
@@ -299,7 +301,7 @@ describe('callLlmGateway — listingContext injection', () => {
       {
         type: 'text',
         slot: 'headline',
-        value: 'Full gen headline',
+        value: 'full generation headline copy',
         archetype: 'yield_hunter',
         confidence: 0.75,
       },
@@ -367,6 +369,159 @@ describe('callLlmGateway — response shape', () => {
 
     const result = await callLlmGateway(BASE_INPUT);
     expect(result).toBeNull();
+  });
+});
+
+describe('callLlmGateway — FOLLOW-457 AC2/AC3: directive fact-whitelist grounding check', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [{ total: '0' }] }),
+    });
+  });
+
+  afterEach(() => {
+    delete process.env.ANTHROPIC_API_KEY;
+    vi.restoreAllMocks();
+  });
+
+  it('POISONED CONTEXT: rejects a hallucinated price that only coincidentally overlaps a grounded number (fails safe -> null, caller falls back to playbook)', async () => {
+    // Poisoned context: listingContext genuinely contains "1,200" (rent_pcm), but
+    // the model hallucinates a DIFFERENT, similar-looking price "1,500". A naive
+    // substring check would wrongly "verify" 1,500 via the "1,200" digits; the
+    // numeric-boundary check must reject it.
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Prime rental at $1,500/mo — strong demand',
+        archetype: 'yield_hunter',
+        confidence: 0.75,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: { rent_pcm: '1,200', currency: 'USD' },
+    });
+
+    // Rejected -> whole gateway call fails safe (caller falls back to playbook copy).
+    expect(result).toBeNull();
+  });
+
+  it('POISONED CONTEXT: rejects a hallucinated area/sqm figure absent from grounding', async () => {
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Spacious 120m² apartment with private terrace',
+        archetype: 'yield_hunter',
+        confidence: 0.5,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    // Low similarity -> full-generation (Sonnet) path.
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.5,
+      listingContext: { bedrooms: '3', location: 'Marbella' },
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('rejects a hallucinated proper name (school/agent/developer) absent from grounding', async () => {
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'feature',
+        // "Close" is grounded (via listingContext.notes below); "Redland" is not
+        // grounded anywhere — the invented school name must trip the check.
+        value: 'Close to Redland Primary',
+        archetype: 'yield_hunter',
+        confidence: 0.75,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: { location: 'Bristol', notes: 'close to primary schools' },
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('GREEN SIDE: a number present verbatim in listingContext passes the check', async () => {
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Rental Yield: 6.5% | Gross Income: 12000',
+        archetype: 'yield_hunter',
+        confidence: 0.75,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    // The digit token extracted from the directive value must appear as an
+    // exact, complete numeric unit in the grounding — so listingContext carries
+    // the same literal strings ("6.5%" including the percent sign, "12000" with
+    // no thousands separator) the directive echoes back.
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: { yield: '6.5%', income: '12000' },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.directives[0]?.value).toBe('Rental Yield: 6.5% | Gross Income: 12000');
+  });
+
+  it('GREEN SIDE: a proper name present in listingContext (e.g. location) passes the check', async () => {
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'headline',
+        value: 'Marbella investment with strong rental demand',
+        archetype: 'yield_hunter',
+        confidence: 0.75,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    const result = await callLlmGateway({
+      ...BASE_INPUT,
+      similarity: 0.75,
+      listingContext: { location: 'Marbella' },
+    });
+
+    expect(result).not.toBeNull();
+  });
+
+  it('GREEN SIDE: generic descriptive copy with no digits/proper nouns always passes', async () => {
+    const mockDirectives: TextDirective[] = [
+      {
+        type: 'text',
+        slot: 'cta',
+        // Every capitalised word here is a generic stop-cap opener/framing word
+        // (see FACT_CHECK_STOP_CAPS) — no proper noun, no digit.
+        value: 'Ideal Investment For Your Portfolio',
+        archetype: 'yield_hunter',
+        confidence: 0.75,
+      },
+    ];
+    mockCreate.mockResolvedValue(makeAnthropicResponse(JSON.stringify(mockDirectives)));
+
+    const result = await callLlmGateway({ ...BASE_INPUT, similarity: 0.75 });
+
+    expect(result).not.toBeNull();
   });
 });
 

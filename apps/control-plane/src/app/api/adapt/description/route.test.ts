@@ -266,8 +266,20 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
   it('returns template_fallback and publishes description.requested event', async () => {
     mockGetCachedDescription.mockResolvedValueOnce(null);
 
+    // FOLLOW-457 AC1: publish is now gated on a non-empty original_description
+    // (empty → skip generation, see the dedicated describe block below), so the
+    // listing-details fetch must resolve to real copy for this test to still
+    // exercise the Redpanda publish path.
     const publishedBodies: string[] = [];
-    const mockFetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+    const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/v1/listing/details')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ description: 'The agent original copy.' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
       if (init?.method === 'POST') {
         publishedBodies.push((init.body as string | undefined) ?? '');
       }
@@ -310,10 +322,19 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
   it('event payload includes max_tokens: 500 for all requests (AC-7 / FOLLOW-203)', async () => {
     mockGetCachedDescription.mockResolvedValueOnce(null);
 
+    // FOLLOW-457 AC1: publish is gated on a non-empty original_description.
     const publishedBodies: string[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        if (url.includes('/api/v1/listing/details')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ description: 'The agent original copy.' }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
         if (init?.method === 'POST') {
           publishedBodies.push((init.body as string | undefined) ?? '');
         }
@@ -380,7 +401,23 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
   it('does not block response on Redpanda publish failure (fire-and-forget)', async () => {
     mockGetCachedDescription.mockResolvedValueOnce(null);
 
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Redpanda down')));
+    // FOLLOW-457 AC1: listing-details must succeed (non-empty original) so this
+    // test still exercises the Redpanda-publish-fails branch rather than the
+    // separate empty-original skip-generation branch.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/api/v1/listing/details')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ description: 'The agent original copy.' }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
+        return Promise.reject(new Error('Redpanda down'));
+      }),
+    );
     vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
 
     const res = await GET(makeRequest(VALID_PARAMS));
@@ -447,10 +484,19 @@ describe('GET /api/adapt/description — FOLLOW-161 global model wiring', () => 
     mockGetGlobalGenerationModel.mockResolvedValue('claude-opus-4-8');
     mockGetCachedDescription.mockResolvedValueOnce(null);
 
+    // FOLLOW-457 AC1: publish is gated on a non-empty original_description.
     const publishedBodies: string[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        if (url.includes('/api/v1/listing/details')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ description: 'The agent original copy.' }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
         if (init?.method === 'POST') {
           publishedBodies.push((init.body as string | undefined) ?? '');
         }
@@ -503,10 +549,19 @@ describe('GET /api/adapt/description — FOLLOW-161 cache key includes model', (
     mockGetGlobalGenerationModel.mockResolvedValue('claude-haiku-4-5-20251001');
     mockGetCachedDescription.mockResolvedValueOnce(null);
 
+    // FOLLOW-457 AC1: publish is gated on a non-empty original_description.
     const publishedBodies: string[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        if (url.includes('/api/v1/listing/details')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ description: 'The agent original copy.' }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
         if (init?.method === 'POST') {
           publishedBodies.push((init.body as string | undefined) ?? '');
         }

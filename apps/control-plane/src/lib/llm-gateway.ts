@@ -328,6 +328,175 @@ function parseDirectivesFromResponse(
 }
 
 // ---------------------------------------------------------------------------
+// Fact-whitelist grounding check (FOLLOW-457 AC2)
+// ---------------------------------------------------------------------------
+//
+// The description/headline generation path already suppresses any headline
+// asserting a specific number or proper name absent from its grounding
+// sources (apps/llm-gateway/src/jobs/generate_description.py
+// _check_headline_facts, FOLLOW-169/FOLLOW-272). This directive path
+// (buildHaikuPrompt / buildSonnetPrompt) had no equivalent — an LLM-returned
+// directive could assert a hallucinated price, area, or named entity and it
+// would ship unchecked.
+//
+// Grounding sources for the directive path — there is no original_description
+// here (LlmGatewayInput has none), so the whitelist is built from every
+// trusted input the prompt builders already pass to the model:
+//   - basePlaybook.description / signals / slots[].en — curated seed copy,
+//     safe by construction (author-approved, not LLM output).
+//   - listingContext — agency-provided per-listing facts (RAG retrieval).
+//   - sessionContext.recentEvents — behavioural event labels.
+// Any number or capitalised word in a returned directive value that cannot be
+// traced to one of these is treated as a hallucination. The whole gateway
+// call is failed (returns null) so the caller falls back to playbook copy —
+// same fail-safe contract runDecisionTree already applies on any null return.
+
+const FACT_CHECK_STOP_CAPS: ReadonlySet<string> = new Set([
+  // Articles, prepositions, conjunctions
+  'A',
+  'An',
+  'The',
+  'In',
+  'On',
+  'At',
+  'Of',
+  'For',
+  'To',
+  'And',
+  'Or',
+  'But',
+  'With',
+  'From',
+  'By',
+  'As',
+  'Its',
+  'Is',
+  'Are',
+  'Was',
+  'Be',
+  'Has',
+  'Have',
+  'This',
+  'That',
+  'These',
+  'Those',
+  'Your',
+  'Our',
+  'Their',
+  // Common real-estate descriptive adjectives / openers (not proper names)
+  'Ideal',
+  'Prime',
+  'Strong',
+  'Stunning',
+  'Spacious',
+  'Modern',
+  'Elegant',
+  'Bright',
+  'Charming',
+  'Impressive',
+  'Exceptional',
+  'Superb',
+  'Excellent',
+  'Beautiful',
+  'Luxury',
+  'Luxurious',
+  'Attractive',
+  'Unique',
+  'Rare',
+  'Perfect',
+  'Classic',
+  'Contemporary',
+  'Traditional',
+  'Cosy',
+  'Cozy',
+  'Quiet',
+  'Peaceful',
+  'Vibrant',
+  'Sought',
+  'Desirable',
+  'Prestigious',
+  'Newly',
+  'Well',
+  'Fully',
+  'Tastefully',
+  'Beautifully',
+  'Recently',
+  'Lovingly',
+  'Generously',
+  'Conveniently',
+  // Archetype framing words that open adapted directives
+  'Investor',
+  'Family',
+  'Investment',
+  'Lifestyle',
+  'Portfolio',
+  'Request',
+]);
+
+/** Digit sequences: numbers, prices, percentages, areas (m²/sqft), dates, etc. */
+const FACT_CHECK_DIGIT_RE = /\d[\d.,/%m²sqft-]*/g;
+
+type DirectiveFactViolation = 'hallucinated_number' | 'hallucinated_proper_name';
+
+function escapeRegExpToken(token: string): string {
+  return token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Build the combined grounding text a directive value must be traceable to.
+ * Mirrors the description path's (original_description + listing_context)
+ * grounding pair — see the section docstring above.
+ */
+function buildDirectiveGroundingText(input: LlmGatewayInput): string {
+  const { basePlaybook, listingContext, sessionContext } = input;
+  const parts = [
+    basePlaybook.description,
+    basePlaybook.signals.join(' '),
+    basePlaybook.slots.map((s) => s.en).join(' '),
+    listingContext ? JSON.stringify(listingContext) : '',
+    sessionContext?.recentEvents?.join(' ') ?? '',
+  ];
+  return parts.join(' ').toLowerCase();
+}
+
+/**
+ * Post-generation fact check for a single directive value (FOLLOW-457 AC2).
+ * Same numeric-boundary + proper-noun heuristic as
+ * generate_description.py `_check_headline_facts` (FOLLOW-169/FOLLOW-272):
+ *
+ * 1. Digit tokens use a numeric-boundary lookaround so a short token like "5"
+ *    is not "verified" by matching inside "425000" or "1,500" as a bare
+ *    substring — the token must appear as a complete numeric unit.
+ * 2. Capitalised words (including the first word) are checked for a
+ *    whole-token match in the grounding text; the stop-caps set filters
+ *    generic sentence-starters so they are not falsely flagged.
+ *
+ * @returns A violation reason code, or null when the value is fully grounded.
+ */
+function checkDirectiveFacts(value: string, grounding: string): DirectiveFactViolation | null {
+  for (const match of value.matchAll(FACT_CHECK_DIGIT_RE)) {
+    const token = match[0].toLowerCase();
+    const boundary = new RegExp(`(?<![0-9.,])${escapeRegExpToken(token)}(?![0-9.,])`);
+    if (!boundary.test(grounding)) {
+      return 'hallucinated_number';
+    }
+  }
+
+  for (const word of value.split(/\s+/)) {
+    const clean = word.replace(/["'.,;:!?)]+$/, '');
+    if (clean.length < 2 || !/^[A-Z]/.test(clean) || FACT_CHECK_STOP_CAPS.has(clean)) {
+      continue;
+    }
+    const boundary = new RegExp(`\\b${escapeRegExpToken(clean)}\\b`, 'i');
+    if (!boundary.test(grounding)) {
+      return 'hallucinated_proper_name';
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Compute cost
 // ---------------------------------------------------------------------------
 
@@ -449,6 +618,44 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     if (!directives) {
       console.warn('[llm-gateway] Failed to parse directives from LLM response');
       return null;
+    }
+
+    // FOLLOW-457 AC2/AC3: reject the whole batch if any directive value asserts
+    // a specific fact (number, proper name) absent from the trusted grounding
+    // sources. Rule K.2: log + Sentry so the suppression is observable. The cost
+    // was still incurred (Anthropic was called), so the ClickHouse spend log
+    // below still runs — only the directives themselves are discarded, and the
+    // caller (runDecisionTree) falls back to playbook copy on a null return.
+    const grounding = buildDirectiveGroundingText(input);
+    for (const directive of directives) {
+      const violation = checkDirectiveFacts(directive.value, grounding);
+      if (violation) {
+        const msg =
+          `[llm-gateway] directive fact-check violation: ${violation} ` +
+          `archetype=${input.archetypeId} slot=${directive.slot} value=${JSON.stringify(directive.value)}`;
+        console.warn(msg);
+        Sentry.captureMessage(msg, {
+          level: 'warning',
+          tags: { area: 'adapt', kind: 'directive_fact_check_violation', violation },
+          extra: { archetypeId: input.archetypeId, slot: directive.slot, model },
+        });
+
+        afterResponse(() =>
+          logLlmCallAsync({
+            sessionId: input.sessionId ?? 'unknown',
+            tenantId: input.tenantId ?? 'unknown',
+            archetypeId: input.archetypeId,
+            model,
+            tokensIn,
+            tokensOut,
+            costUsd,
+            latencyMs,
+            source: model === HAIKU_MODEL ? 'llm_tweaked' : 'llm_full',
+          }),
+        );
+
+        return null;
+      }
     }
 
     const output: LlmGatewayOutput = {

@@ -104,12 +104,17 @@ const MOCK_PLAYBOOK = {
   },
 };
 
-/** Valid Anthropic response producing one parseable TextDirective. */
+/**
+ * Valid Anthropic response producing one parseable TextDirective.
+ * FOLLOW-457 AC2: "Rental Yield" is grounded — "rental" is in MOCK_PLAYBOOK.description
+ * and "yield" is in MOCK_PLAYBOOK.slots[0].en — so it passes the directive
+ * fact-whitelist check unrelated tests in this file don't exercise.
+ */
 const ANTHROPIC_RESPONSE = {
   content: [
     {
       type: 'text' as const,
-      text: '[{"type":"text","slot":"headline","value":"Top Yield","archetype":"yield_hunter","confidence":0.75}]',
+      text: '[{"type":"text","slot":"headline","value":"Rental Yield","archetype":"yield_hunter","confidence":0.75}]',
     },
   ],
   usage: { input_tokens: 100, output_tokens: 30 },

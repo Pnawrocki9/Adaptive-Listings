@@ -1,5 +1,27 @@
 # Backlog Queue
 
+**Updated 2026-07-02 (session 8) — Recovered from a crashed session 7 that had delegated FOLLOW-454
+and FOLLOW-455 to isolated worktrees and then ended mid-flight. Both confirmed MERGED to `main`:
+FOLLOW-454 (PR #422, commit `c060a69`, SSR-cookie auth on tenant dashboard) and FOLLOW-455 (PR #423,
+commit `765cb81`, DSR OTP hardening — its worker had DIED leaving work uncommitted-but-correctly-
+branch-isolated; this session fixed 4 gate-class defects [lint/format/typecheck/`next build`] before
+committing, verified 106 DSR tests + `next build` exit 0). Both independently re-confirmed via
+`gh pr view`/`gh pr checks` (not trusted from the handoff summary) — CI green on every real gate on
+both (only the pre-existing non-blocking "Rule I" red). Flipped both IN_PROGRESS → DONE. RETRO-149
+(FOLLOW-454, no fresh pattern — tenant-side mirror of the admin SSR-cookie fix) and RETRO-150
+(FOLLOW-455, one fresh count-1 pattern: RECOVERED-WORK-MULTI-GATE-DEFECT, distinct from RETRO-146's
+branch-hygiene finding) written to `backlog/RETROSPECTIVES.md`. FOLLOW-474 filed (P3,
+devops-engineer) to codify a mandatory pre-PR `next build` gate + worktree workspace-dts bootstrap,
+promoted directly to Sprint 22b as READY. Migration `0032_dsr_verifications_attempt_count.sql`
+(FOLLOW-455) auto-triggered `.github/workflows/db-migrate.yml` run `28586941940` on merge — still IN
+PROGRESS (staging leg) as this session ended; NOT YET CONFIRMED COMPLETE, next session must verify.
+IN_PROGRESS count freed to 1 (stale TICKET-PILOT-001) after the DONE flips, then refilled to 3 (cap)
+by delegating the next two unblocked Sprint 22b tickets on different agents: FOLLOW-450 (P0,
+backend-engineer — the only READY P0; feedback/bandit go-live code leg, AC1 Doppler-prd provisioning
+stays operator-only) and FOLLOW-457 (P1, ml-engineer — LLM grounding integrity fail-loud + fact
+whitelist). No new escalation opened; the three standing OPEN escalations (ESC-020, ESC-028,
+ESC-034) re-confirmed non-blocking (operator-action-pending, not architectural).**
+
 **Updated 2026-07-02 (session 7) — FOLLOW-452 (PR #418, commit c0d9b39) and FOLLOW-453 (PR #419,
 commit 807869d) confirmed MERGED to `main`; both flipped READY_FOR_REVIEW → DONE. RETRO-147 and
 RETRO-148 written to `backlog/RETROSPECTIVES.md` (no new FOLLOW stubs — both PRs' minor notes folded
@@ -8051,7 +8073,10 @@ gate) closes the epic and must be last.
   title: >-
     Enable feedback endpoint in prod so the bandit learning loop is live (F-06)
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-02T12:00:00Z'
+  branch: backend-engineer/FOLLOW-450-feedback-loop-golive
   priority: P0
   estimated_hours: 2
   depends_on: []
@@ -8073,6 +8098,17 @@ gate) closes the epic and must be last.
     OPS_TENANT_ID/ADAPT_API_KEY Doppler prd provisioning) is an operator-gated step, same class as
     FOLLOW-449's own operator leg — the two operator actions may still be scheduled together, but
     that is a scheduling choice, not a dependency.
+
+    DELEGATED 2026-07-02 (pm-orchestrator, session 8, table row: "ingest worker, control-plane,
+    decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks -> backend-engineer"). The
+    only READY P0 in Sprint 22b this session (FOLLOW-449 is CODE_COMPLETE_OPERATOR_PENDING, not a
+    fresh pick; FOLLOW-451 is DONE). Expect this ticket to land in the SAME
+    CODE_COMPLETE_OPERATOR_PENDING pattern as FOLLOW-449: AC1 (Doppler prd provisioning + flag flip)
+    is operator-only and should NOT block AC2-AC4 (canary wiring, SDK breadcrumb, verification
+    harness) from being coded, tested, and merged. Runs CONCURRENTLY with FOLLOW-457 (different
+    agent, ml-engineer — no shared-tree hazard). ISOLATED WORKTREE required per FOLLOW-448
+    branch-first discipline: `git checkout -b backend-engineer/FOLLOW-450-feedback-loop-golive main`
+    in its own `git worktree` MUST be the FIRST action, before any file edit.
     AC:
     - [ ] Provision OPS_TENANT_ID + ADAPT_API_KEY in Doppler prd; set FEEDBACK_ENDPOINT_ENABLED=true.
     - [ ] Add a prod canary: a signed test ping increments a Beta counter (real ab_bandit_weights
@@ -8287,10 +8323,16 @@ gate) closes the epic and must be last.
   title: >-
     Fix SSR-cookie auth mismatch on tenant dashboard + analytics/pilot/ab APIs (F-01)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-02T00:00:00Z'
+  completed_at: '2026-07-02T11:35:35Z'
   branch: backend-engineer/FOLLOW-454-ssr-cookie-auth
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/422'
+  merge_commit: c060a69beeb7b39395b8562782d22b4b7fef5923
+  ci:
+    'green on every real gate (57 pass / 2 fail — Rule I pre-existing-red, non-blocking, zero
+    touched-file violations)'
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -8320,19 +8362,58 @@ gate) closes the epic and must be last.
     (FOLLOW-326, PRs #310/#311) — mirror that pattern on the tenant-side routes/middleware listed
     in source above, do not invent a new auth mechanism.
     AC:
-    - [ ] Tenant browser-session API routes + /dashboard/* middleware resolve the user via
+    - [x] Tenant browser-session API routes + /dashboard/* middleware resolve the user via
           @supabase/ssr createServerClient().getUser() (or accept the chunked cookie), not
           getAuthClaims-only.
-    - [ ] A browser-session agency user loads /dashboard/analytics with real 200s (no 401→zeros).
-    - [ ] Regression test covering the cookie path for at least one analytics route.
+    - [x] A browser-session agency user loads /dashboard/analytics with real 200s (no 401→zeros).
+    - [x] Regression test covering the cookie path for at least one analytics route.
+
+    DONE 2026-07-02 (PM-validated, session 8). PR #422 MERGED at commit `c060a69`
+    (2026-07-02T11:35:35Z). Recovered from a crashed prior session (session 7) that had delegated
+    this ticket to an isolated worktree (`.claude/worktrees/wt-follow454`) and completed it there
+    before the session ended; PR was already open with CI green when session 8 began — this
+    session independently re-confirmed (not trusted) via `gh pr view 422 --json state,mergedAt` and
+    `gh pr checks 422` (57 pass, only the pre-existing non-blocking "Rule I — wired-or-dead" red on
+    both matrix legs, zero violations in this PR's touched files).
+
+    New `apps/control-plane/src/lib/session-auth.ts` (`getSessionAuth`/`getSessionAuthClaims`/
+    `requireTenantSessionAccess`) mirrors the admin-side FOLLOW-326/ADR-0013 pattern: tries the
+    legacy Bearer/`sb-access-token` path first (unchanged), falls back to
+    `@supabase/ssr createServerClient().auth.getUser()` on the chunked SSR cookie, reconstructing
+    `AuthClaims` from `app_metadata`. Wired into `middleware.ts` (`checkDashboardSession`, new
+    Path-2 fallback on `/dashboard/*`) and 13 route files (dashboard/analytics/{lift,summary},
+    pilot/{inquiry-starts,calibration,cta-lift}, ab/weights, quiz/config GET+POST,
+    tenants/[id]{,/answers,/answers/[answerId],/lia,/lia/[recordId],/bandit/weights/[archetype]}).
+    RLS note: `ab/weights` and `bandit/weights/[archetype]` pass a raw JWT into
+    `createTenantClient(rawToken)` for RLS enforcement — `getSessionAuth()` also returns a
+    `rawToken` sourced from `getSession().access_token` on the SSR path, so RLS is NOT silently
+    disabled (the pass-through/RLS-off branch in `packages/db/src/client.ts` fires only on a truly
+    absent token) on either auth path.
+
+    Runtime-wiring verified independently: `grep -rn "getSessionAuth\b" apps/control-plane/src
+    --include=*.ts | grep -v '\.test\.'` → 1 producer (`session-auth.ts:151` definition) + 2 real
+    non-test consumers (`ab/weights/route.ts:70`, `tenants/[id]/bandit/weights/[archetype]/
+    route.ts:48`); `grep -n "checkDashboardSession" apps/control-plane/src/middleware.ts` → defined
+    at :195, called at :332 (real middleware entrypoint, not a test). `@estalara/auth`'s
+    `getAuthClaims` itself is untouched (still used unmodified by `apps/ingest`/`apps/decision-api`,
+    which correctly do not gain a `@supabase/ssr` dependency). PR claims 1429/1429 control-plane
+    tests green, `tsc --noEmit` clean with workspace deps built, 0 ESLint errors on all 18 touched
+    files — PM did not re-run the full local suite this session (relied on independently-confirmed
+    CI green + the wiring greps above, consistent with the CI-is-the-merge-gate policy); no fix
+    iterations were needed (CI was green when this session found the PR). CI counter: 0/5 (this
+    session), 0/3 fix-iterations. RETRO-149 written (backlog/RETROSPECTIVES.md).
 - id: FOLLOW-455
   title: >-
     Harden DSR: CSPRNG OTP + rate-limit/lockout + complete erasure & disclosure coverage (F-20)
   agent: compliance-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: compliance-engineer
   started_at: '2026-07-02T00:00:00Z'
+  completed_at: '2026-07-02T11:35:45Z'
   branch: compliance-engineer/FOLLOW-455-dsr-otp-hardening
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/423'
+  merge_commit: 765cb81fd3576d78c8b8305ae17251b40acb0acd
+  ci: 'green on every real gate (56 pass / 2 fail — Rule I pre-existing-red, non-blocking)'
   priority: P1
   estimated_hours: 6
   depends_on: []
@@ -8358,12 +8439,58 @@ gate) closes the epic and must be last.
     ambiguous architectural call (e.g., a new external rate-limit store), escalate per the standard
     ESCALATIONS.md guardrail rather than guessing.
     AC:
-    - [ ] OTP generated with crypto.getRandomValues/randomInt (CSPRNG).
-    - [ ] Per-capability attempt cap + lockout + request-scoped lookup (not global-by-hash);
+    - [x] OTP generated with crypto.getRandomValues/randomInt (CSPRNG).
+    - [x] Per-capability attempt cap + lockout + request-scoped lookup (not global-by-hash);
           initiate is rate-limited (anti email-bomb); mark-used is atomic.
-    - [ ] DSR erase set includes intent_events (CH), quiz_completions + intent_sessions (PG).
-    - [ ] Access/portability disclose the real behavioral event count (remove the count=1 stub).
-    - [ ] Tests for brute-force lockout + erase coverage on the three added stores.
+    - [x] DSR erase set includes intent_events (CH), quiz_completions + intent_sessions (PG).
+    - [x] Access/portability disclose the real behavioral event count (remove the count=1 stub).
+    - [x] Tests for brute-force lockout + erase coverage on the three added stores.
+
+    DONE 2026-07-02 (PM-validated, session 8). PR #423 MERGED at commit `765cb81`
+    (2026-07-02T11:35:45Z). RECOVERED FROM A CRASHED WORKER SESSION: this session found the
+    implementing compliance-engineer subagent had died mid-ticket, leaving its work UNCOMMITTED but
+    correctly isolated on its own worktree/branch (`.claude/worktrees/wt-follow455`, on
+    `compliance-engineer/FOLLOW-455-dsr-otp-hardening` — unlike the FOLLOW-442/RETRO-146 near-miss,
+    the crashed worker HAD followed branch-first discipline, so nothing was stranded on `main`).
+    Recovery required fixing FOUR separate gate-class defects the crashed worker never got to run
+    locally: 4 ESLint errors, Prettier formatting, 1 typecheck error (pglite test-db type vs the
+    prod `PostgresJsDatabase` type), and a `next build` webpack import-resolution bug (a relative
+    `./dsr-otp.js` import that only resolves under ts-node/vitest, not webpack — fixed to the
+    `@/lib/dsr-otp` path alias already used elsewhere in the codebase). Verified 106 DSR tests green
+    AND `next build` exit 0 BEFORE committing/pushing/opening the PR (Operating Principle 5 /
+    RETRO-146 §4e(c) verify-not-trust-on-handoff, applied literally: did not trust the crashed
+    worker's uncommitted diff as "tests pass" — independently ran the full local gate suite).
+
+    Migration `packages/db/migrations/0032_dsr_verifications_attempt_count.sql` landed (adds
+    `attempt_count integer NOT NULL DEFAULT 0` to `dsr_verifications` + a composite
+    `(tenant_id, email, created_at)` index; idempotent, `ADD COLUMN IF NOT EXISTS`/
+    `CREATE INDEX IF NOT EXISTS`). **PROD-APPLY note (does NOT block DONE, unlike the ClickHouse
+    migration class in FOLLOW-449):** unlike ClickHouse migrations (no auto-apply mechanism, per
+    project memory), Postgres/Drizzle migrations under `packages/db/migrations/**` ARE
+    auto-applied on push to `main` via `.github/workflows/db-migrate.yml` (staging first, then
+    prod) — this session confirmed `gh run list --workflow=db-migrate.yml` shows a run
+    (`28586941940`) auto-triggered by this exact merge; run was STILL IN PROGRESS (staging leg,
+    "Run Drizzle migrations (staging)" step) as of this session's end — prior runs of this same
+    workflow took up to ~1h42m end-to-end (staging+prod), so this is expected, not stalled. NOT YET
+    CONFIRMED COMPLETE — see STATUS.md Migration status table; next session MUST verify
+    `gh run view 28586941940` shows `completed success` (both staging and prod legs) before
+    treating migration 0032 as live in prod. `dsr-verify.ts:90/110` reads/writes the new `attemptCount` Drizzle field
+    on every DSR verify — until the prod leg of that workflow run completes, a live DSR
+    verify/erase/access/portability request against prod would 500 on the missing column; this is
+    the same drift-window risk class as ESC-022/ESC-031, now on rails via the existing db-migrate.yml
+    automation rather than requiring a fresh operator escalation.
+
+    Runtime-wiring verified independently: `grep -rln "dsr-rate-limit\|dsr-verify"
+    apps/control-plane/src --include=*.ts | grep -v '\.test\.'` → 4 non-test consumers
+    (`dsr-otp.ts`, `dsr/initiate/route.ts`, `dsr/portability/route.ts`, `dsr/erase/route.ts`,
+    `dsr/access/route.ts`); `grep -n "intent_events\|quiz_completions\|intent_sessions"
+    apps/control-plane/src/app/api/dsr/erase/route.ts` → all three new erasure targets present with
+    real DELETE/ALTER-TABLE-DELETE call sites, not just comments. CI counter this session: 0/5 (the
+    4 gate-class fixes were made and verified locally BEFORE opening the PR, so PR #423's own CI run
+    was green on the first and only push — no CI-driven fix-iteration was consumed). RETRO-150
+    written (backlog/RETROSPECTIVES.md) — flags a candidate process gap (worker crashes can leave
+    multi-gate-class defects even inside a correctly-isolated worktree) distinct from RETRO-146's
+    branch-hygiene finding; see FOLLOW-474.
 - id: FOLLOW-456
   title: >-
     Close tenant-isolation holes: demo revoke, global generation-model, fail-open secrets (F-13)
@@ -8390,7 +8517,10 @@ gate) closes the epic and must be last.
     LLM grounding integrity: fail-loud on empty original + fact whitelist on the directive path
     (F-11)
   agent: ml-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: ml-engineer
+  started_at: '2026-07-02T12:00:00Z'
+  branch: ml-engineer/FOLLOW-457-grounding-integrity
   priority: P1
   estimated_hours: 5
   depends_on: []
@@ -8401,6 +8531,19 @@ gate) closes the epic and must be last.
     hallucinated number in a headline directive would ship.
   spec: MASTER_DESIGN §E.7.5 anti-hallucination; ADR-0009/ADR-0010; audit report §5.6 F-11
   notes: |
+    DELEGATED 2026-07-02 (pm-orchestrator, session 8, table row: "intent/adapt logic, embeddings,
+    LLM gateway, auto-detect, ontology, platform-templates -> ml-engineer"). Highest-priority READY
+    P1 on a distinct agent from FOLLOW-450 (backend-engineer) — no shared-tree hazard, run
+    CONCURRENTLY. NOTE: `backlog/ESCALATIONS.md` shows ESC-019 as RESOLVED (the reachability/auth
+    half — server-side listing fetch no longer 302s to login) — this ticket's own source text
+    ("ESC-019 still open") is the 2026-07-01 audit report's wording for the DISTINCT residual gap
+    (fail-loud-on-empty + no fact whitelist on the directive path), not a claim that the resolved
+    escalation should be reopened; do not conflate. If the fetch-reachability half is confirmed
+    still fully fixed, scope this ticket to AC1 (fail-loud skip-generation) + AC2/AC3 (directive
+    fact-whitelist) without re-litigating the auth fix.
+    ISOLATED WORKTREE required per FOLLOW-448 branch-first discipline: `git checkout -b
+    ml-engineer/FOLLOW-457-grounding-integrity main` in its own `git worktree` MUST be the FIRST
+    action, before any file edit.
     AC:
     - [ ] Empty/failed original-description fetch captures to Sentry AND skips generation (no
           ungrounded Sonnet call); ESC-019 marked resolved with a runtime proof.
@@ -8591,6 +8734,33 @@ gate) closes the epic and must be last.
           rejected); optional nonce store.
     - [ ] All shared-secret comparisons migrate to timingSafeEqual.
     - [ ] Test: replayed ping outside the window → rejected.
+- id: FOLLOW-474
+  title: >-
+    Codify a mandatory pre-PR local gate sequence (incl. next build) for control-plane workers +
+    worktree workspace-dts bootstrap
+  agent: devops-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    RETRO-150 §9 (FOLLOW-455 recovery, 2026-07-02) — a crashed compliance-engineer subagent left 4
+    gate-class defects (lint, format, typecheck, next-build webpack import resolution) uncaught in
+    its otherwise correctly branch-isolated worktree; only an independent full local gate run by the
+    recovering pm-orchestrator caught them. Folds in the session-6 candidate note (FOLLOW-452
+    validation) about worktree bootstrap needing @estalara/* workspace deps built before lint.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-474; backlog/RETROSPECTIVES.md RETRO-150 §4e/§6/§9
+  notes: |
+    Promoted 2026-07-02 (pm-orchestrator) directly to Sprint 22b as READY. NOT on the FOLLOW-471
+    clean-re-audit-gate critical path (process/tooling hardening, not a functional/compliance gap).
+    AC:
+    - [ ] docs/AGENT_WORKFLOW.md explicitly lists `next build` as a required pre-PR gate for any
+          apps/control-plane change, distinct from `vitest run` and `tsc --noEmit` (RETRO-150 found
+          webpack's import resolution catches defects neither of those two catch).
+    - [ ] Worktree/worker bootstrap guidance documents building @estalara/{shared,db,auth,sdk}
+          before the first local lint/typecheck pass in a fresh worktree.
+    - [ ] (Optional, evaluate cost/benefit first) a scripts/pre-pr-check.sh convenience script, or a
+          documented decision that one isn't worth the maintenance cost.
 - id: FOLLOW-467
   title: >-
     Remove or annotate dead scaffolds that mislead Rule-H/wiring audits (F-12)

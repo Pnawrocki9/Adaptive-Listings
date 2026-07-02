@@ -1,5 +1,16 @@
 # Backlog Queue
 
+**Updated 2026-07-02 (session 6) — FOLLOW-452 and FOLLOW-453 completed and opened as PRs #418 and
+#419 (resumed from a suspended session that had delegated both to backend-engineer worktrees but
+left the work uncommitted). Both flipped IN_PROGRESS → READY_FOR_REVIEW. CI green on every real
+merge gate (Test Node 22, SDK E2E, Build, Build control-plane, Lint, Format, Typecheck); the only
+red is the pre-existing, non-blocking "Rule I — wired-or-dead check" (173 legacy sdk/shared symbol
+warnings, untouched by these diffs — see CI gate landscape). NOTE: FOLLOW-452's isolated worktree
+needed its @estalara/{shared,db,auth,sdk} deps built before the local pre-commit lint could resolve
+types — the 37 "type could not be resolved" errors were an unbuilt-workspace artifact, not a code
+defect (candidate FOLLOW-UP: worktree bootstrap should build workspace dts). IN_PROGRESS count now:
+stale TICKET-PILOT-001 = 1.**
+
 **Updated 2026-07-02 (session 5) — FOLLOW-451 DONE (PR #416, merge commit 0e99415); two residual
 follow-ups filed and promoted to Sprint 22b as READY: FOLLOW-472 (P3, demo-JWT path tenant_id-claim
 mismatch not checked) and FOLLOW-473 (P2, GET /api/adapt presence-only auth now weaker than the
@@ -8106,9 +8117,11 @@ gate) closes the epic and must be last.
   title: >-
     Fix per-archetype holdout logging + GET holdout default so lift is measurable (F-08)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: backend-engineer
   started_at: '2026-07-02T00:00:00Z'
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/418'
+  ci: 'green (all real gates); Rule I pre-existing-red non-blocking'
   branch: backend-engineer/FOLLOW-452-holdout-archetype-logging
   priority: P1
   estimated_hours: 3
@@ -8140,9 +8153,11 @@ gate) closes the epic and must be last.
     Stop the analytics UI rendering fabricated zeros on error; retire /api/analytics mock; fail-loud
     quiz/config (F-07)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: backend-engineer
   started_at: '2026-07-02T00:00:00Z'
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/419'
+  ci: 'green (all real gates); Rule I pre-existing-red non-blocking'
   branch: backend-engineer/FOLLOW-453-analytics-fail-loud-ui
   priority: P1
   estimated_hours: 3

@@ -8735,7 +8735,10 @@ gate) closes the epic and must be last.
     Pilot: replace Redpanda with direct Modal HTTPS invocation for description + embed-seed
     (ADR-0016)
   agent: ml-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: ml-engineer
+  started_at: '2026-07-03T10:00:00Z'
+  branch: ml-engineer/FOLLOW-485-direct-modal-invocation
   priority: P1
   estimated_hours: 6
   depends_on: []

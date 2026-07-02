@@ -314,7 +314,7 @@ events.post('/', async (c) => {
   //   NOT preserved: client-driven re-delivery specifically for a ClickHouse-only
   //   terminal failure. Closing that gap fully needs a durable, crash-survivable retry
   //   queue (e.g. Cloudflare Queues) — new infrastructure outside this ticket's scope
-  //   (see FOLLOW-475 in backlog/FOLLOW_UPS.md).
+  //   (see FOLLOW-482 in backlog/FOLLOW_UPS.md).
   const batchId = crypto.randomUUID();
   if (validated.length > 0) {
     const redpandaPush = await pushToRedpanda(validated, c.env);
@@ -356,7 +356,7 @@ events.post('/', async (c) => {
           'clickhouse_push_failed_post_ack',
         );
         // Rule K.2: a configured store that failed AFTER the ACK must stay observable,
-        // not silently dropped — this is the terminal-failure signal for FOLLOW-475's
+        // not silently dropped — this is the terminal-failure signal for FOLLOW-482's
         // durable-retry-queue follow-up until that infra exists.
         Sentry.captureException(
           new Error(`clickhouse_push_failed_post_ack: ${clickhousePush.error}`),
